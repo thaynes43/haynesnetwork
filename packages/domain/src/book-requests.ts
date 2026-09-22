@@ -24,6 +24,7 @@ import {
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import type { KapowarrSearchCandidate, KapowarrVolume } from '@hnet/kapowarr/read';
 import { NotFoundError } from './errors';
+import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import { inTransaction, resolveDb } from './db-client';
 
 // ---------------------------------------------------------------------------
@@ -90,6 +91,31 @@ export function llFormatAlreadyHeld(
   return format === 'audiobook'
     ? nonBlank(status.audioLibrary) || nonBlank(status.audioFile)
     : nonBlank(status.ebookLibrary) || nonBlank(status.ebookFile);
+}
+
+/**
+ * The guard's ONE-BOOK read, shared by every USER-CLICK search site (books Force Search, the Wanted
+ * detail page's per-format Force Search). It is the same `getAllBooks` snapshot the unattended passes
+ * take — the deployed LL build has no `getBook` (it answers `Unknown command`; see @hnet/lazylibrarian
+ * schemas), so there is no cheaper per-book read and no second call pattern to maintain — narrowed to
+ * one BookID. One read per click, already bounded by the ADR-080 media-action budget the click paths
+ * enforce before it: no click, no call.
+ *
+ * An LL read failure is NOT fatal and NOT an error the caller sees: it returns `undefined`, which
+ * `llFormatAlreadyHeld` reads as "not held", so the site proceeds exactly as it did before the guard.
+ * That is invariant 1 of DESIGN-028's 2026-09-22 amendment — the guard may only ever SUPPRESS a write,
+ * never invent one — and a genuine LL outage still surfaces on the write itself, as it always has.
+ */
+export async function readLlHeldSignals(
+  ll: LazyLibrarianClientBundle,
+  llBookId: string,
+): Promise<LlHeldSignals | undefined> {
+  try {
+    const statuses = await ll.read.getAllBookStatuses();
+    return statuses.get(llBookId);
+  } catch {
+    return undefined;
+  }
 }
 
 const POSITIVE = new Set<BookRequestStatus>(['grabbed', 'landed']);

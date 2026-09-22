@@ -90,12 +90,29 @@ type Fired =
 
 const FIRED_FORMAT_LABEL: Record<string, string> = { ebook: 'Ebook', audiobook: 'Audio' };
 
-const NOOP_COPY: Record<string, string> = {
-  unroutable: 'Nothing to search — routing pending.',
-  no_ll_id: 'Nothing to search — no LazyLibrarian id yet.',
-  no_kapowarr_id: 'Nothing to search — not routed to Kapowarr yet.',
-  landed: 'Already landed — nothing to search.',
+/**
+ * The honest "nothing fired" copy, per domain reason — chip LABEL + title. Every reason but one reads
+ * "Nothing to search": the want has no target yet, or it already landed. `already_held` (the ADR-055
+ * 2026-09-22 push guard) is the opposite case and needs its own words — LazyLibrarian HAS this copy
+ * filed, and it will not search for another; the honest next step is Fix, on the book's own page. The
+ * books detail head says the same thing in the same words (books-head-actions.tsx SEARCH_NOOP_COPY).
+ */
+const NOOP_COPY: Record<string, { label: string; title: string }> = {
+  unroutable: { label: 'Nothing to search', title: 'Nothing to search — routing pending.' },
+  no_ll_id: { label: 'Nothing to search', title: 'Nothing to search — no LazyLibrarian id yet.' },
+  no_kapowarr_id: {
+    label: 'Nothing to search',
+    title: 'Nothing to search — not routed to Kapowarr yet.',
+  },
+  landed: { label: 'Nothing to search', title: 'Already landed — nothing to search.' },
+  already_held: {
+    label: 'Already have this copy',
+    title:
+      'LazyLibrarian already has this copy filed, so it won’t search for another. If the file itself is wrong, use Fix on the book’s page.',
+  },
 };
+
+const NOOP_DEFAULT = { label: 'Nothing to search', title: 'Nothing to search.' };
 
 function firedTitle(fired: Extract<Fired, { kind: 'fired' }>): string {
   if (fired.target === 'kapowarr') return 'Search fired — Kapowarr (auto-search)';
@@ -169,9 +186,8 @@ function FormatSearchSlot({
   } else if (fired?.kind === 'fired') {
     live = chip('fired', 'Search fired', 'info', { pulse: true, title: firedTitle(fired) });
   } else if (fired?.kind === 'noop') {
-    live = chip('noop', 'Nothing to search', 'warning', {
-      title: (fired.reason ? NOOP_COPY[fired.reason] : undefined) ?? 'Nothing to search.',
-    });
+    const copy = (fired.reason ? NOOP_COPY[fired.reason] : undefined) ?? NOOP_DEFAULT;
+    live = chip('noop', copy.label, 'warning', { title: copy.title });
   } else if (fired?.kind === 'failed') {
     live = chip('failed', 'Search failed', 'danger', { title: fired.message });
   }

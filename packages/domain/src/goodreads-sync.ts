@@ -22,6 +22,7 @@ import {
   markRequestFormatsRequeued,
   markRequestPushed,
   pickBestVolume,
+  readLlHeldSignals,
   recordManualSearch,
   searchableFormats,
   syncShelfRequests,
@@ -425,8 +426,9 @@ export interface RunManualBookSearchInput {
 export interface RunManualBookSearchResult {
   searched: boolean;
   formats: BookRequestFormat[];
-  /** When false: nothing was searched — an unroutable comic or a want with no resolved LL id. */
-  reason?: 'unroutable' | 'no_ll_id';
+  /** When false: nothing was searched — an unroutable comic, a want with no resolved LL id, or (since the
+   *  2026-09-22 push guard) every candidate format is one LazyLibrarian already holds (`already_held`). */
+  reason?: 'unroutable' | 'no_ll_id' | 'already_held';
 }
 
 /**
@@ -435,6 +437,14 @@ export interface RunManualBookSearchResult {
  * per-format button). A comic (unroutable) or a want with no resolved LL id searches nothing but is STILL
  * audited (the intent is recorded). An LL failure surfaces as LazyLibrarianUpstreamError (BAD_GATEWAY) AFTER
  * the audit — the honest "we tried, LL was down" record.
+ *
+ * ADR-055 amendment (2026-09-22 — the LL push guard), the SEARCH leg: a format LazyLibrarian already holds
+ * is DROPPED before firing, and a click left with nothing to fire returns `already_held`. This path never
+ * called `queueBook`, so it never clobbered LL's state — but `searchbook.py::search_book` only enqueues a
+ * book whose status is literally `Wanted`, so `searchBook` on a held (`Open`) format is a SILENT NO-OP, and
+ * reporting "Search fired" for it is a claim the user has no way to check. Same guard, same one-read budget,
+ * same degradation (an LL read failure ⇒ search everything, exactly as before). The `landed` narrowing below
+ * (our own row status) is unchanged and still returns the reason-less "nothing fired".
  */
 export async function runManualBookSearch(
   input: RunManualBookSearchInput,
@@ -450,7 +460,16 @@ export async function runManualBookSearch(
   if (!request.llBookId) return { searched: false, formats: [], reason: 'no_ll_id' };
 
   const notLanded = searchableFormats(request);
-  const formats = input.format ? notLanded.filter((f) => f === input.format) : notLanded;
+  const candidates = input.format ? notLanded.filter((f) => f === input.format) : notLanded;
+  // One `getAllBooks` per click, and only when there is something to fire (no click, no call).
+  const held =
+    candidates.length > 0 ? await readLlHeldSignals(input.ll, request.llBookId) : undefined;
+  const formats = candidates.filter((f) => !llFormatAlreadyHeld(held, f));
+  // Every candidate was a format LL already has filed: an honest decline that points at Fix, never a
+  // "Search fired" for a searchBook LazyLibrarian would have dropped on the floor.
+  if (formats.length === 0 && candidates.length > 0) {
+    return { searched: false, formats: [], reason: 'already_held' };
+  }
   try {
     for (const format of formats) await input.ll.write.searchBook(request.llBookId, format);
   } catch (error) {

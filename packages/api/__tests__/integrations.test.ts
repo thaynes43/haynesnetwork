@@ -133,9 +133,16 @@ describe('integrations router — link + shelf', () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]?.title).toBe('Dune');
 
-    // And once synced, last_synced_at is stamped → the card leaves the pending state.
-    const shelf = await caller(ctx).integrations.shelf();
-    expect(shelf.integration.lastSyncedAt).not.toBeNull();
+    // And once synced, last_synced_at is stamped → the card leaves the pending state. POLL for it: the
+    // request mint (step 3 of syncGoodreadsIntegration) lands well before markIntegrationSynced (step 6),
+    // so the poll above proves the mint, not the stamp. Asserting the stamp immediately made this test
+    // flake under a loaded full-suite run (seen 2026-09-22; it always passed in isolation).
+    let lastSyncedAt: string | null = null;
+    for (let i = 0; i < 50 && lastSyncedAt === null; i += 1) {
+      await new Promise((r) => setTimeout(r, 100));
+      lastSyncedAt = (await caller(ctx).integrations.shelf()).integration.lastSyncedAt;
+    }
+    expect(lastSyncedAt).not.toBeNull();
 
     await caller(ctx).integrations.unlink();
   });

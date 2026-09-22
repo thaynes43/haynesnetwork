@@ -19,7 +19,7 @@ import { bookRequests, booksItems, permissionAudit, users, type DbClient } from 
 import { desc, eq } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import { BookFixRateLimitError, countRecentBooksBudget } from './book-fix';
-import { llFormatAlreadyHeld } from './book-requests';
+import { llFormatAlreadyHeld, readLlHeldSignals } from './book-requests';
 import {
   effectiveMediaActionBudget,
   mediaActionBudgetReachedMessage,
@@ -164,7 +164,7 @@ export async function runBookItemForceSearch(
   // `Wanted`, where LL re-searches it daily and qBittorrent rejects every re-grab as a duplicate hash.
   // That is the exact defect this guard exists to stop, so a held format now returns an honest
   // `already_held` instead of a write that damages LL's state and achieves nothing.
-  const held = await llHoldsFormat(input.ll, llBookId!, format);
+  const held = llFormatAlreadyHeld(await readLlHeldSignals(input.ll, llBookId!), format);
   if (held) return { searched: false, reason: 'already_held' };
 
   try {
@@ -177,24 +177,4 @@ export async function runBookItemForceSearch(
     throw new LazyLibrarianUpstreamError('LazyLibrarian search failed', { cause: error });
   }
   return { searched: true };
-}
-
-/**
- * Does LL already hold this format? One `getAllBooks` read per user click (the deployed LL build has no
- * `getBook` — see @hnet/lazylibrarian schemas), so this is bounded by the ADR-080 media-action budget the
- * caller already enforces above: no click, no call. An LL read failure is NOT fatal — the guard falls
- * through to `false` and the push proceeds exactly as it did before, because this guard may only ever
- * suppress a write, never invent one; a genuine LL outage then surfaces on the write as it always has.
- */
-async function llHoldsFormat(
-  ll: LazyLibrarianClientBundle,
-  llBookId: string,
-  format: 'ebook' | 'audiobook',
-): Promise<boolean> {
-  try {
-    const statuses = await ll.read.getAllBookStatuses();
-    return llFormatAlreadyHeld(statuses.get(llBookId), format);
-  } catch {
-    return false;
-  }
 }
