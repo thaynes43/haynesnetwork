@@ -84,20 +84,34 @@ const MISSING_FORMAT_LABEL: Record<'ebook' | 'audiobook', string> = {
   audiobook: 'Audiobook',
 };
 
+/** The `already_held` decline's title on THIS page — verbatim the head pair's copy (DESIGN-033 D-12). */
+const PAIRING_ALREADY_HELD_TITLE =
+  'LazyLibrarian already has this copy filed, so it won’t search for another. If the file itself is wrong — bad quality, wrong edition, won’t open — use Fix instead.';
+
 /**
  * The pairing want's audited Search button in a reserved slot (the wanted-detail FormatSearchSlot
  * idiom): one fire per page load, the button swaps to a live PhaseChip in place. Non-destructive, so
  * a plain button (hard rule 8); the endpoint is the books-gated `books.searchPairingWant`.
+ *
+ * ADR-055 amendment (2026-09-22 — the push guard, search leg): a missing format LazyLibrarian turns out
+ * to already hold declines as `already_held`. It gets the SAME words the Fix/Force-Search pair at the top
+ * of THIS page already uses for that decline (books-head-actions.tsx) — one concept, one phrasing, and
+ * Fix is right there in the head. Every other no-op keeps the generic chip.
  */
 function PairingSearchSlot({ requestId, missingLabel }: { requestId: string; missingLabel: string }) {
   const [fired, setFired] = useState<
     | { kind: 'fired' }
-    | { kind: 'noop' }
+    | { kind: 'noop'; reason?: string }
     | { kind: 'failed'; message: string }
     | null
   >(null);
   const search = trpc.books.searchPairingWant.useMutation({
-    onSuccess: (result) => setFired(result.searched ? { kind: 'fired' } : { kind: 'noop' }),
+    onSuccess: (result) =>
+      setFired(
+        result.searched
+          ? { kind: 'fired' }
+          : { kind: 'noop', ...(result.reason ? { reason: result.reason } : {}) },
+      ),
     onError: (error) => setFired({ kind: 'failed', message: error.message }),
   });
 
@@ -107,7 +121,17 @@ function PairingSearchSlot({ requestId, missingLabel }: { requestId: string; mis
   } else if (fired?.kind === 'fired') {
     content = <PhaseChip phase="fired" label="Search fired" tone="info" pulse meter title={`${missingLabel} search sent to the library.`} />;
   } else if (fired?.kind === 'noop') {
-    content = <PhaseChip phase="noop" label="Nothing to search" tone="warning" title="Nothing to search right now." />;
+    content =
+      fired.reason === 'already_held' ? (
+        <PhaseChip
+          phase="noop"
+          label="Already have this copy"
+          tone="warning"
+          title={PAIRING_ALREADY_HELD_TITLE}
+        />
+      ) : (
+        <PhaseChip phase="noop" label="Nothing to search" tone="warning" title="Nothing to search right now." />
+      );
   } else if (fired?.kind === 'failed') {
     content = <PhaseChip phase="failed" label="Search failed" tone="danger" title={fired.message} />;
   } else {

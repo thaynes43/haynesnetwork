@@ -328,3 +328,37 @@ implementation — books compose an overlay row, the \*arr walls negate a `media
 The only change on the books side: the wanted segment gains a leading **"Wanted"** axis label
 (`.library-axis__label`) to match the \*arr walls' now-labeled rails — the segment values, `?wanted=`
 contract, gating, and server composition of amendment 3 are otherwise unchanged.
+
+## Amendment 5 — 2026-09-22 (the per-format Force Search declines a copy LazyLibrarian already has)
+
+Amendment 2's D-09 detail page gave each format row its own Force Search, dispatching
+`integrations.search` (a goodreads want) or `books.searchPairingWant` (a pairing/collection want) —
+both `runManualBookSearch` — and swapping the button for a live `PhaseChip` in the reserved slot.
+Per **DESIGN-028's 2026-09-22 follow-up**, that dispatch now DROPS any format LazyLibrarian already
+holds before firing, and returns the new `already_held` outcome when that leaves nothing to fire. The
+reason: LL's `search_book()` only enqueues a book whose status is literally `Wanted`, so a `searchBook`
+aimed at a filed copy is a silent no-op — and this page, whose whole job is a want our mirror still
+calls missing, is exactly where that mirror is most likely to be the stale thing.
+
+**The chip is where the honesty lands**, so its LABEL now comes from the reason instead of being the
+fixed "Nothing to search":
+
+| reason                                           | chip label               | title                                                                                                                             |
+| ------------------------------------------------ | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `already_held`                                   | **Already have this copy** | _LazyLibrarian already has this copy filed, so it won't search for another. If the file itself is wrong, use Fix on the book's page._ |
+| `unroutable` / `no_ll_id` / `no_kapowarr_id` / `landed` (unchanged) | Nothing to search        | the existing per-reason sentence                                                                                                  |
+
+**The sibling surface follows, with its own page's words.** `runManualBookSearch` also backs the pairing
+want's Search button on the BOOK detail page (`PairingSearchSlot`, DESIGN-036) — which read a flat
+"Nothing to search" for every no-op and so would have said the same bland thing for this one. It now
+shows **"Already have this copy"** with the wording DESIGN-033 D-12 already ships at the top of that very
+page (`books-head-actions.tsx`): one concept, one phrasing, and _"use Fix instead"_ is the right pointer
+there because Fix is in that page's head. The collection-drill Wanted badge
+(`collection-want-forcesearch.tsx`) renders no feedback chip at all and is unchanged.
+
+"Nothing to search" would have been a lie in the other direction here: there IS something, we have it.
+The title points at **Fix** — deliberately unguarded (DESIGN-033 D-05/D-12) and the only sanctioned way
+to make LL re-acquire a format it holds — and names where it lives, because Fix is on the BOOK's detail
+page and this is the want page. Layout is untouched: the chip renders in the same
+`<ReservedActionSlot reserve="roll">` (12rem reservation), and the longer label still measures inside it,
+so the swap stays reflow-free (ADR-015 / hard rule 9). The comic (Kapowarr) leg is unaffected.

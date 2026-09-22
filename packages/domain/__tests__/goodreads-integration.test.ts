@@ -779,6 +779,119 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
     expect(searches[0]!.format).toBe('audiobook');
   });
 
+  // ADR-055 amendment (2026-09-22 — the LL push guard), the SEARCH leg. The wanted-page per-format Force
+  // Search never called `queueBook`, so it never clobbered LL — but LL's `search_book()` only enqueues a
+  // book whose status is literally `Wanted`, so searchBook on a held (`Open`) format is a SILENT NO-OP the
+  // UI reported as "Search fired". These three pin the same invariants the push sites carry.
+  //
+  // Each seeds the request through a sync that reports `Ignored` (our row reads missing, both formats
+  // searchable) and then hands the MANUAL search a different stub — LL has imported the copy since, which
+  // is exactly the drift that makes the decline necessary.
+  async function seedTogRequest() {
+    const { user, integration } = await seed();
+    const ll = stubLl((id) =>
+      id === 'gb-tog' ? { ebookStatus: 'Ignored', audioStatus: 'Ignored' } : null,
+    );
+    await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: ll.bundle,
+      pacer: async () => {},
+    });
+    const [tog] = await t.db
+      .select()
+      .from(bookRequests)
+      .where(and(eq(bookRequests.integrationId, integration.id), eq(bookRequests.llBookId, 'gb-tog')));
+    expect(tog!.ebookStatus).toBe('missing');
+    expect(tog!.audioStatus).toBe('missing');
+    return { user, requestId: tog!.id };
+  }
+
+  it('runManualBookSearch declines a format LazyLibrarian already holds (already_held) — and still audits the click', async () => {
+    const { user, requestId } = await seedTogRequest();
+    // LL imported the ebook since our last reconcile: Open + a library date.
+    const held = stubLl((id) =>
+      id === 'gb-tog'
+        ? { ebookStatus: 'Open', audioStatus: 'Ignored', ebookLibrary: '2026-09-21 04:12:00' }
+        : null,
+    );
+
+    const result = await runManualBookSearch({
+      db: t.db,
+      requestId,
+      userId: user.id,
+      actorId: user.id,
+      ll: held.bundle,
+      format: 'ebook',
+    });
+
+    expect(result).toEqual({ searched: false, formats: [], reason: 'already_held' });
+    expect(held.calls.filter((c) => c.cmd === 'searchBook')).toHaveLength(0);
+    // The INTENT is still recorded — recordManualSearch commits before anything is decided, exactly as
+    // it always did. A decline is not a reason to lose the click.
+    const audits = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.action, 'request_book_search'));
+    expect(audits).toHaveLength(1);
+  });
+
+  it('runManualBookSearch drops ONLY the held format — per format, never per book', async () => {
+    const { user, requestId } = await seedTogRequest();
+    // The ebook is filed (a `Skipped` row with a real file on disk — the status lies, the file does not);
+    // the audiobook is genuinely missing.
+    const held = stubLl((id) =>
+      id === 'gb-tog'
+        ? { ebookStatus: 'Skipped', audioStatus: 'Skipped', ebookFile: '/books/tog.epub' }
+        : null,
+    );
+
+    const result = await runManualBookSearch({
+      db: t.db,
+      requestId,
+      userId: user.id,
+      actorId: user.id,
+      ll: held.bundle,
+    });
+
+    expect(result.searched).toBe(true);
+    expect(result.formats).toEqual(['audiobook']);
+    expect(result.reason).toBeUndefined();
+    const searches = held.calls.filter((c) => c.cmd === 'searchBook');
+    expect(searches).toHaveLength(1);
+    expect(searches[0]!.format).toBe('audiobook');
+  });
+
+  it('runManualBookSearch degrades to searching everything when the LL read fails — the guard may only ever remove a search', async () => {
+    const { user, requestId } = await seedTogRequest();
+    const ll = stubLl(() => null);
+    // Break ONLY the read; the writes still record.
+    (ll.bundle as unknown as { read: { getAllBookStatuses: () => Promise<never> } }).read = {
+      getAllBookStatuses: async () => {
+        throw new Error('LL 503');
+      },
+    };
+
+    const result = await runManualBookSearch({
+      db: t.db,
+      requestId,
+      userId: user.id,
+      actorId: user.id,
+      ll: ll.bundle,
+    });
+
+    expect(result.searched).toBe(true);
+    expect(result.formats).toEqual(['ebook', 'audiobook']);
+    expect(
+      ll.calls
+        .filter((c) => c.cmd === 'searchBook')
+        .map((c) => c.format)
+        .sort(),
+    ).toEqual(['audiobook', 'ebook']);
+  });
+
   it('getBookRequestDetail resolves shelf, owner, household attribution, cover match, and per-format status', async () => {
     const { user, integration } = await seed();
     const ll = stubLl((id) => (id === 'gb-tog' ? { ebookStatus: 'Ignored', audioStatus: 'Ignored' } : null));

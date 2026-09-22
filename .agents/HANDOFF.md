@@ -4,6 +4,61 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-22 (later) — The FIFTH LL site: the Wanted page's Force Search said "Search fired" at copies LL already had
+
+**The gap the guard left.** The push guard below fixed the four sites that call `queueBook`. The Wanted
+detail page's **per-format Force Search** (`FormatSearchSlot` → `integrations.search` for a goodreads
+want, `books.searchPairingWant` for a pairing/collection want → `runManualBookSearch` in
+`goodreads-sync.ts`) is not one of them: it calls `searchBook` **alone**, never `queueBook`. So it never
+clobbered LazyLibrarian and is **not** part of the 292-row measurement below — but it was wrong for the
+_other_ half of the same LL fact. `searchbook.py::search_book` only enqueues a book whose status is
+literally `Wanted`, so a `searchBook` aimed at a format LL has filed (`Open`, or a `Skipped`/`Snatched`
+row with a real file) is a **silent no-op**: LL drops it on the floor and the UI reports "Search fired".
+On this page of all places — the user is there _because_ our `book_requests` mirror says the want is
+missing, which is precisely the claim most likely to be the stale one.
+
+**Owner ruling (2026-09-22): Force Search on a held format declines and points at Fix; Fix stays
+unguarded.** So `runManualBookSearch` now takes the same one-`getAllBooks` snapshot the click sites
+already take, drops every format `llFormatAlreadyHeld` reports, and returns
+`{ searched: false, formats: [], reason: 'already_held' }` when that leaves nothing. Invariants
+unchanged: a failed LL read searches everything (suppress only, never invent); per format, never per book
+(held ebook + missing audiobook ⇒ the audiobook still fires); a decline is not a failure — and the
+`request_book_search` **audit still commits first**, so a declined click is recorded exactly as before.
+The pre-existing reason-less "nothing fired" (every candidate already `landed` in OUR row) is a
+different statement and keeps its own copy.
+
+**The chip label now comes from the reason** (it was the fixed "Nothing to search"). `already_held`
+reads **"Already have this copy"**, titled _"LazyLibrarian already has this copy filed, so it won't
+search for another. If the file itself is wrong, use Fix on the book's page."_ — the books detail head's
+sentence for the same decline, with the surface named, because Fix lives on the BOOK's page and this is
+the want page. Every other reason keeps its label and sentence. Same `ReservedActionSlot`,
+same 12rem reservation, no reflow (ADR-015).
+
+**The sibling surface, found on the way:** `runManualBookSearch` also backs the pairing want's Search
+button on the BOOK detail page (`PairingSearchSlot` in `books-detail.tsx`), which collapsed every no-op
+into a flat "Nothing to search". It now shows the same **"Already have this copy"** decline using the
+wording that page's OWN head already ships (`books-head-actions.tsx` — _"use Fix instead"_ is right
+there because Fix is in that head). The collection-drill Wanted badge renders no chip at all and is
+unchanged.
+
+**One-book read de-duplicated:** `readLlHeldSignals(ll, llBookId)` (packages/domain, beside the
+predicate) is now THE per-click read for both click sites; `runBookItemForceSearch` was refactored onto
+it, so the degrade-to-"not held" catch exists once, not twice. No new LL call pattern — still
+`getAllBooks`, still no `getBook` (the deployed build answers `Unknown command`).
+
+**Docs:** DESIGN-028 follow-up to the 2026-09-22 amendment (the fifth, search-only site), DESIGN-029
+amendment 5 (the chip-label table for this surface).
+
+**One pre-existing test race fixed on the way** (it reddened the local full-suite run and would redden
+CI at random): `packages/api/__tests__/integrations.test.ts` — "runs the FIRST shelf sync on link" polled
+for the minted request (sync step 3) and then asserted `lastSyncedAt` (`markIntegrationSynced`, step 6)
+immediately. It now polls for the stamp too. Test-only; no production path touched.
+
+**Not observable in logs, by design:** this is a user-click path with no server-side log event (the same
+as the books Force Search sibling — the unattended passes are the ones that carry counters + the
+`ll_push_skipped_have` token). The decline is visible in the UI chip and, indirectly, as a
+`request_book_search` audit row with no LL search behind it.
+
 ## ▶ 2026-09-22 — The books pipeline was re-buying books it already had: the LL push is now guarded
 
 **The finding (live, 2026-09-22).** LazyLibrarian's `queueBook` is an unguarded

@@ -246,7 +246,9 @@ egress IP (the Kapowarr 429 storm).
 **This amendment is normative for EVERY LazyLibrarian acquisition push in the app**, not just D-04's
 shelf push: the pairing mint + sweep (DESIGN-036), the find-missing collection force-search — cron AND
 on-demand (DESIGN-043 D-14), and the books Force Search (DESIGN-033 D-09). It is recorded here because
-D-02/D-04 define the confined write surface and the ordered chain.
+D-02/D-04 define the confined write surface and the ordered chain. A FIFTH site — the search-only manual
+"Search again" behind the Wanted page's per-format Force Search — is covered by the follow-up at the end
+of this amendment; it never queued, and was wrong for the other half of the same LL fact.
 
 **The defect.** `queueBook` is, in the deployed LL build (`api.py::_queuebook`), an **unguarded**
 `UPDATE books SET Status='Wanted' WHERE BookID=?` (`AudioStatus` for the audiobook leg). It has no
@@ -309,3 +311,32 @@ copy on disk is defective and asking for a replacement, with a durable `book_fix
 reason. Making LL want that book again is the _point_, so Fix keeps the unguarded chain. It is now also
 the only sanctioned way to make LL re-acquire a format it already holds — which is what the Force
 Search decline points users at.
+
+### Follow-up — 2026-09-22: the SEARCH-ONLY leg (`runManualBookSearch`) declines too
+
+The amendment above enumerated four LL sites, every one of which **queues**. There is a fifth, and it was
+missed because it does not. The audited manual
+"Search again" (D-06's `runManualBookSearch`, which the Wanted detail page's per-format Force Search
+fires through `integrations.search` / `books.searchPairingWant`, DESIGN-029 amendment-2 / DESIGN-038
+D-13) calls `searchBook` **alone** and has never called `queueBook`. It therefore never clobbered LL's
+state and is **not** part of the 292-row measurement above. It was still wrong, for the _other_ half of
+the same LL fact: `searchbook.py::search_book` only enqueues a book whose `Status`/`AudioStatus` is
+literally `'Wanted'`, so a `searchBook` aimed at a format LL has filed (`Open`, or a `Skipped`/`Snatched`
+row with a real file) is a **silent no-op** — LL drops it on the floor — while the UI reported "Search
+fired". That is a claim the user has no way to check, on the surface where our own `book_requests` mirror
+is most likely to be the thing that is stale (it is why they are on that page at all).
+
+So the search leg now reads the same snapshot, drops the formats `llFormatAlreadyHeld` reports, and
+returns `{ searched: false, formats: [], reason: 'already_held' }` when that leaves nothing. The three
+invariants hold unchanged — suppression only (a failed LL read searches everything, exactly as before);
+per format, never per book (a held ebook + a missing audiobook still searches the audiobook); and a
+decline is not a failure. The **audit is untouched**: `recordManualSearch` commits the
+`request_book_search` row before any of this, so a declined click is still recorded, as it always was.
+The pre-existing reason-less "nothing fired" (every candidate format already reads `landed` in OUR row)
+is a different statement — about our mirror, not LL's shelf — and keeps its own copy.
+
+**The one-book read is now shared.** `readLlHeldSignals(ll, llBookId)` (packages/domain, beside the
+predicate) is the single per-click read for both click sites — the same `getAllBooks` snapshot, narrowed
+to one BookID, with the degrade-to-`undefined` catch in one place instead of two. `runBookItemForceSearch`
+was refactored onto it in the same change; there is no second LL call pattern, and no `getBook` (the
+deployed build answers `Unknown command`).
