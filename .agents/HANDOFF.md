@@ -54,10 +54,28 @@ CI at random): `packages/api/__tests__/integrations.test.ts` — "runs the FIRST
 for the minted request (sync step 3) and then asserted `lastSyncedAt` (`markIntegrationSynced`, step 6)
 immediately. It now polls for the stamp too. Test-only; no production path touched.
 
-**Not observable in logs, by design:** this is a user-click path with no server-side log event (the same
-as the books Force Search sibling — the unattended passes are the ones that carry counters + the
-`ll_push_skipped_have` token). The decline is visible in the UI chip and, indirectly, as a
-`request_book_search` audit row with no LL search behind it.
+**Not observable in logs, by design — and now confirmed by measurement:** this is a user-click path with
+no server-side log event (the same as the books Force Search sibling — the unattended passes are the ones
+that carry counters + the `ll_push_skipped_have` token). Checked against Loki rather than assumed: the
+`haynesnetwork-main` pods emit **30 log lines in 24h**, all of them boot lines (`✓ Ready`, `Migrations
+applied.`), so there is no per-request logging on this surface at all and there never was. The decline
+shows in the UI chip and, indirectly, as a `request_book_search` audit row with no LL search behind it.
+The guard FAMILY is demonstrably alive in Loki from the unattended sites — e.g. `ll_push_skipped_have ·
+site=format-pairing.mint-push` on _Nemesis Games_, _Harry Potter and the Sorcerer's Stone_, _The Last
+Battle_ at 11:33Z — but none of those lines can come from this path.
+
+**v0.96.4 IS LIVE — verified same session (2026-09-22 12:48Z):** hnet #549 (`353f201`) → release PR #548
+→ tag `v0.96.4` (image `sha256:8e81316c…` + its cosign `.sig` both 200 in GHCR) → haynes-ops #3098
+(`cd9e9c6`) → `flux reconcile kustomization haynesnetwork -n frontend` (the Kustomization lives in
+**frontend**; KICKOFF.md said `flux-system` and has been corrected — OPS-004 was already right) →
+`haynesnetwork-main` rolled
+out **3/3 on v0.96.4**, `/api/health` **200**, all books/collections CronJobs on the new image.
+
+Because nothing on this path logs, the live proof is the served bundle: the new title string **"use Fix
+on the book's page"** was ABSENT from the v0.96.3 pod (grepped before the deploy) and is now present in
+both the SSR chunk and the client static chunk of the v0.96.4 pod — so the decline copy a user would see
+is genuinely the code that is running, not just the code that was merged. A first real firing needs a
+household click on a want whose copy LL has since filed; there is no natural trigger to wait for.
 
 ## ▶ 2026-09-22 — The books pipeline was re-buying books it already had: the LL push is now guarded
 
