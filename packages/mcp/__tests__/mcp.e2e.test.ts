@@ -479,8 +479,9 @@ describe('the write tools (D-12..D-15, AC-22)', () => {
 
     const mark = await call('mark_watched', { title: 'Foundation' });
     expect(mark.text).toBe('Marked Foundation (2021) as watched in Plex, all 10 episodes.');
-    // HaynesOps holds it (the ledger's Plex match): the show key once, on that server only.
-    expect(fake.writes()).toEqual([{ server: 'haynesops', op: 'scrobble', key: 'found' }]);
+    // HaynesOps holds it (the ledger's Plex match): its one season's key (never the show key — DESIGN-049
+    // D-26), on that server only.
+    expect(fake.writes()).toEqual([{ server: 'haynesops', op: 'scrobble', key: 'found-s1' }]);
     const [row] = await db.select().from(watchMarks);
     expect(row).toMatchObject({ action: 'watched', scope: 'show', consumer: 'hop', plexResult: 'written' });
     expect(row?.flipped).toHaveLength(10);
@@ -490,7 +491,7 @@ describe('the write tools (D-12..D-15, AC-22)', () => {
 
     const undo = await call('undo_last_change');
     expect(undo.text).toBe('Undone. Foundation (2021) is back to unwatched in Plex, 10 episodes.');
-    expect(fake.writes().at(-1)).toEqual({ server: 'haynesops', op: 'unscrobble', key: 'found' });
+    expect(fake.writes().at(-1)).toEqual({ server: 'haynesops', op: 'unscrobble', key: 'found-s1' });
     expect((await call('recommend')).text).toContain('Foundation');
     expect((await call('undo_last_change')).text).toBe('Nothing to undo from the past day.');
   });
@@ -498,7 +499,10 @@ describe('the write tools (D-12..D-15, AC-22)', () => {
   it('marking a season of an unfinished show updates the next unfinished answer', async () => {
     const r = await call('mark_watched', { title: 'Silo', season: 1 });
     expect(r.text).toBe('Marked season 1 of Silo (2023) as watched in Plex, 10 episodes.');
-    expect(fake.writes()).toEqual([{ server: 'haynesops', op: 'scrobble', key: 'silo-s1' }]);
+    // Seven of the ten were watched: the season key would re-stamp those, so the three others are written.
+    expect(fake.writes()).toEqual(
+      ['silo-1-8', 'silo-1-9', 'silo-1-10'].map((key) => ({ server: 'haynesops', op: 'scrobble', key })),
+    );
     const u = await call('unfinished');
     expect(u.text).not.toContain('Silo');
   });

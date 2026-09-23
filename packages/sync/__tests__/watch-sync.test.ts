@@ -16,16 +16,21 @@ import {
   type WatchTitleRow,
 } from '@hnet/db';
 import {
+  markWatched,
+  undoLastChange,
   upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
   upsertWatchOwner,
+  upsertWatchTitles,
   type PlexClientBundle,
+  type WatchPlexClients,
 } from '@hnet/domain';
 import type { TmdbPagedResults } from '@hnet/arr';
 import type { PlexSectionItem } from '@hnet/plex';
 import type { SyncLogger } from '../src/logger';
 import { runSync } from '../src/orchestrator';
 import { runWatchSync, type WatchSyncInput, type WatchTmdb } from '../src/watch';
+import { groupTitles, planShowRereads } from '../src/watch-assemble';
 import { bootMigratedDb, type TestDb } from './helpers';
 import {
   FakePlexServer,
@@ -433,6 +438,125 @@ describe('watch sync — the first run backfills, later runs are incremental (D-
     expect(w.ops.calls.filter((c) => c.startsWith('leaves:'))).toEqual(['leaves:sh-ops']);
     expect(w.tower.calls.filter((c) => c.startsWith('leaves:'))).toEqual(['leaves:sh-tower']);
     expect((await titles()).get('Shared Show')).toMatchObject({ episodesWatched: 2, plexWatched: true });
+  });
+});
+
+/**
+ * The domain's Watch Mark flows over a sync fake server (DESIGN-049 D-14/D-15): its reads plus the two
+ * writes, which — like Plex — flip EVERY leaf under a key (a show, a season `<show>-s<n>`, or an episode):
+ * a scrobble bumps `viewCount` and re-stamps `lastViewedAt` even on an already-watched leaf.
+ */
+function markClients(server: FakePlexServer, at: number): WatchPlexClients {
+  const read = server.read();
+  const leavesUnder = (key: string) => {
+    for (const s of server.shows) {
+      if (s.ratingKey === key) return s.episodes;
+      const season = s.episodes.filter((e) => `${s.ratingKey}-s${e.season}` === key);
+      if (season.length > 0) return season;
+      const ep = s.episodes.find((e) => e.ratingKey === key);
+      if (ep) return [ep];
+    }
+    return [];
+  };
+  const write = (key: string, watched: boolean) => {
+    server.calls.push(`${watched ? 'scrobble' : 'unscrobble'}:${key}`);
+    for (const e of leavesUnder(key)) {
+      if (watched) Object.assign(e, { viewCount: (e.viewCount ?? 0) + 1, lastViewedAt: at });
+      else {
+        e.viewCount = 0;
+        delete e.lastViewedAt;
+      }
+      delete e.viewOffset;
+    }
+    return Promise.resolve();
+  };
+  return {
+    read: {
+      [server.slug]: {
+        getMetadataItem: read.getMetadataItem,
+        listAllLeaves: read.listAllLeaves,
+        findByGuid: async () => [],
+      },
+    },
+    write: {
+      [server.slug]: { scrobble: (key: string) => write(key, true), unscrobble: (key: string) => write(key, false) },
+    },
+  };
+}
+
+describe('watch sync — after a Watch Mark and its undo (D-26, live incident 2026-09-23)', () => {
+  const DATES = ['lastWatchedAt', 'plexLastViewedAt', 'firstWatchedAt'] as const;
+
+  it('mark → undo → the next sync re-reads the show and restores the pre-mark dates and counters', async () => {
+    const w = world();
+    await runWatchSync(w.input());
+    const before = (await titles()).get('Breaking Prod');
+    if (!before) throw new Error('no Breaking Prod');
+    expect(before).toMatchObject({ episodesWatched: 4, nextSeason: 2, nextEpisode: 2 });
+    expect(before.lastWatchedAt?.toISOString()).toBe('2026-08-30T02:45:00.000Z');
+    const markAt = new Date(NOW.getTime() + 5 * 60_000);
+    const plex = markClients(w.tower, Math.floor(markAt.getTime() / 1000));
+    const actor = { plexAccountId: OWNER, appUserId: null };
+
+    // The whole show: season 2 still has a watched episode, so only S2E2 is written — never the show key
+    // (it covers the special) and never a season key over a watched episode (Plex would re-stamp it).
+    w.tower.calls.length = 0;
+    const marked = await markWatched({ db, plex, actor, consumer: 'hop', query: 'breaking prod', now: markAt });
+    expect(marked).toMatchObject({ status: 'done', view: { plexResult: 'written', flipped: 1, episodes: 5 } });
+    expect(w.tower.calls.filter((c) => c.includes('scrobble'))).toEqual(['scrobble:50122']);
+    expect((await titles()).get('Breaking Prod')?.plexCounts.haynestower).toBeUndefined();
+
+    w.tower.calls.length = 0;
+    const undone = await undoLastChange({ db, plex, actor, now: new Date(markAt.getTime() + 60_000) });
+    expect(undone).toMatchObject({ status: 'done', view: { undone: true, revertResult: 'written', episodes: 1 } });
+    expect(w.tower.calls.filter((c) => c.includes('scrobble'))).toEqual(['unscrobble:50122']);
+    const afterUndo = (await titles()).get('Breaking Prod');
+    if (!afterUndo) throw new Error('no Breaking Prod');
+    expect(afterUndo.plexCounts.haynestower).toBeUndefined();
+
+    // The detector itself: Plex's show counters are back EXACTLY where the first sync stored them, so with
+    // those counters it would never look again; with them dropped it re-reads the show.
+    const meta = await w.tower.read().getMetadataItem('501');
+    if (!meta) throw new Error('no show item');
+    const listed = { server: 'haynestower' as const, item: meta.item };
+    const detect = (row: WatchTitleRow) =>
+      planShowRereads(groupTitles({ stored: [row], shows: [listed], movies: [], events: [], ledger: [] })).map(
+        (o) => `${o.server}:${o.item.ratingKey}`,
+      );
+    expect(detect({ ...afterUndo, plexCounts: before.plexCounts })).toEqual([]);
+    expect(detect(afterUndo)).toEqual(['haynestower:501']);
+
+    w.tower.calls.length = 0;
+    const r = await runWatchSync(w.input({ now: new Date(markAt.getTime() + 15 * 60_000) }));
+    expect(r.errors).toEqual([]);
+    expect(w.tower.calls.filter((c) => c.startsWith('leaves:'))).toEqual(['leaves:501']);
+    const after = (await titles()).get('Breaking Prod');
+    expect(after?.plexCounts).toEqual(before.plexCounts);
+    for (const f of DATES) expect(after?.[f]).toEqual(before[f]);
+    expect(after).toMatchObject({ episodesWatched: 4, nextSeason: 2, nextEpisode: 2, plexWatched: false });
+    // The special was never touched.
+    const special = w.tower.shows.find((s) => s.ratingKey === '501')?.episodes.find((e) => e.season === 0);
+    expect(special?.viewCount ?? 0).toBe(0);
+  });
+
+  it('a re-read recomputes the dates from Plex leaves and events alone: no newer stored date survives it', async () => {
+    const w = world();
+    await runWatchSync(w.input());
+    const before = (await titles()).get('Breaking Prod');
+    if (!before) throw new Error('no Breaking Prod');
+    // A stale write-through claiming "watched today", with the counters dropped as D-26 does.
+    const { id: _id, plexAccountId: _a, refreshedAt: _r, ...rest } = before;
+    await upsertWatchTitles({
+      db,
+      plexAccountId: OWNER,
+      titles: [{ ...rest, id: before.id, plexCounts: {}, lastWatchedAt: NOW, plexLastViewedAt: NOW }],
+    });
+    expect((await titles()).get('Breaking Prod')?.lastWatchedAt).toEqual(NOW);
+
+    await runWatchSync(w.input({ now: new Date(NOW.getTime() + 15 * 60_000) }));
+    const after = (await titles()).get('Breaking Prod');
+    for (const f of DATES) expect(after?.[f]).toEqual(before[f]);
+    expect(after?.plexCounts).toEqual(before.plexCounts);
   });
 });
 

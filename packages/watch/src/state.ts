@@ -96,8 +96,8 @@ export function plexGenres(item: Pick<PlexItemLike, 'Genre'>): string[] {
 
 /**
  * `allLeaves` → D-10 episode observations for one server. Leaves without a season/episode index are
- * dropped; season 0 (specials) is KEPT here — `computeShowProgress` excludes it from the math, while a
- * Watch Mark's before-state needs every leaf (a show scrobble flips specials too).
+ * dropped; season 0 (specials) is KEPT here — `computeShowProgress` excludes it from the math. (A Watch
+ * Mark leaves specials out of its before-state itself: they never take part in a mark, DESIGN-049 D-26.)
  */
 export function episodeObsFromLeaves(leaves: readonly PlexItemLike[]): EpisodeObs[] {
   const out: EpisodeObs[] = [];
