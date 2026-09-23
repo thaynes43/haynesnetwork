@@ -1,6 +1,6 @@
 # ADR-087: The MCP surface — a stateless, in-cluster-only endpoint in the web app, reached through a header-injecting hop with a cluster-generated consumer token
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-09-23 — live as haynesnetwork v0.97.0 behind the hop, haynes-ops #3131/#3139; the Movie Room agent attached, AC-24 passed)
 - **Date:** 2026-09-23
 - **Deciders:** Tom Haynes (owner request 2026-09-23: *"Possibly an MCP Server for the haynesnetwork
   site? … I want specialized agents for specialized things and I want dev-env to have access to the

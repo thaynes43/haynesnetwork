@@ -4,6 +4,41 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-23 — Watch Companion LIVE (v0.97.1): PLAN-068 completed, the specials fix shipped and re-verified
+
+The Watch Companion is live end to end: haynesnetwork **v0.97.0** (#563 + #566 → release #560; every
+Opus review finding fixed on the branch first), haynes-ops **#3139** (tag + the `sync-watch` and
+`sync-activity-scan` CronJobs; the hop/token/ingress exclusions were #3131), the first `sync-watch`
+backfill (owner row, 2,657 events, 561 Title States, 151 watchlist, 300 seeds, 0 errors), the live MCP
+checks from the HA pod (no session id, `tools/list` 2,712 bytes, spoken answers ≤ 467 chars in ≤ 203 ms),
+and the Movie Room agent attached (HA `mcp` entry `01M381GTWER1BG9K4MWG3GDEGR`; hass-sandbox #195 holds
+the prompt block, the attach/detach helper and the bench table). **Bench medians, Assist only → with
+Watch history: 4.62 → 3.12 s, 1.87 → 1.57 s, 2.98 → 2.96 s** (R-245 passes); all three US-13 questions
+answered (AC-24). #556 closed after the first activity-scan (279 opened, nothing pushed). Full trail:
+issue #565 and `.agents/plans/completed/068-watch-companion.md` (S9–S14 rows).
+
+**The live mark test found a defect** (S12): `mark_watched` on a show whose regular episodes are all
+watched issued the SHOW-key scrobble on HaynesOps: it marked 7 *specials* watched (the undo reversed
+exactly those) **and re-stamped all 62 already-watched regular episodes (viewCount 1 → 2, lastViewedAt
+= 2026-09-23T21:04Z), which no Plex API can backdate** — so The Expanse reads "finished today" on
+HaynesOps for good (HaynesTower/HaynesKube untouched). Fix: **PR #567** (`fix/mark-specials`: the show
+key is never scrobbled or unscrobbled; a season key only when the whole season is unwatched, else each
+unwatched episode; season 0 never takes part; the show's `plex_counts` dropped after a written
+mark/undo so the next sync re-reads it) — **released as v0.97.1 (#569), deployed by haynes-ops #3141,
+re-verified live 22:10Z**: `mark_watched` "The Expanse" now answers "was already watched in Plex, all
+62 episodes" with no Plex write (HaynesOps leaves identical before and after: 62 × viewCount 2,
+lastViewedAt 21:04Z, specials 0/7), and the undo records `none`. The live-test rule, refined: a safe
+live whole-show mark is a title with no unwatched regular episode on the preferred server (zero flips,
+no write); "fully watched" per the app's union view is not enough on its own. One hand correction was
+made on the live row (`watch_titles.plex_counts` cleared for The Expanse so the sync re-read it).
+
+Still open for the owner: haynes-ops **#3140** (dev-env `mcp.json` + CLAUDE.md, held draft because
+merging bounces the pod). Known wrinkles: the OpenAI subentry reconfigure flow re-derives the Movie Room
+agent's `city` on every save (now Leominster; web-search localisation only); HaynesKube's workout
+libraries are show-typed, so three "shows" (Strength, Cycling, Besties) sit in `watch_titles` as tasters
+(the D-10 rule keeps them out of the voice answer); the Q-06 retry touches ~30 guid-less Title States per
+run for its 60-day window (harmless churn). ADR-087/088/089 Accepted, DESIGN-049 Accepted, OPS-015 Active.
+
 ## ▶ 2026-09-23 — Watch Companion S7–S8 (the `/api/mcp` endpoint, `dev:local`) is PR #566 (opened as #564, re-opened after the #563 merge deleted its base branch)
 
 PLAN-068 S7 added `packages/mcp` (`@hnet/mcp`, SDK pinned 1.30.0) and the POST-only

@@ -1,6 +1,6 @@
 # OPS-015 — Watch Companion: the MCP hop, the consumer token, the `watch` sync, and the Home Assistant wiring
 
-- **Status:** Draft (2026-09-23) — becomes the operating record when PLAN-068 S12 passes.
+- **Status:** Active (2026-09-23) — the operating record since PLAN-068 S12 passed live (haynesnetwork v0.97.0, haynes-ops #3139).
 - **Scope:** operating the in-cluster MCP surface (`/api/mcp`), its hop, its generated token, the
   `sync-watch` CronJob, and the Movie Room agent that consumes it.
 - **Normative basis:** ADR-087, ADR-088, ADR-089, DESIGN-049, PLAN-068.

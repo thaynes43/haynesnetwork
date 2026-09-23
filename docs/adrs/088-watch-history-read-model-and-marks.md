@@ -1,6 +1,6 @@
 # ADR-088: Watch history read-model — Plex progress plus the Tautulli event log, explicit Watch Marks, and a Plex write-back for "I already watched it"
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-09-23 — live as haynesnetwork v0.97.0: the `watch` sync, Title States, Watch Marks with the Plex write-back and undo, verified against the owner's servers)
 - **Date:** 2026-09-23
 - **Deciders:** Tom Haynes (owner request 2026-09-23; **owner ruling 2026-09-23**, asked on his phone:
   *"When you tell the Movie Room agent 'I already watched X', should it also mark X as watched in

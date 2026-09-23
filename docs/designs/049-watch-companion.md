@@ -1,6 +1,6 @@
 # DESIGN-049: Watch Companion — watch history read-model, recommendations, voice reconcile marks, and the in-cluster MCP surface
 
-- **Status:** Draft
+- **Status:** Accepted (2026-09-23; live as v0.97.0, PLAN-068 S9–S13 verified)
 - **Last updated:** 2026-09-23 (PLAN-068 S7–S8: D-27 records the MCP-surface and local-stack rulings —
   `tools/list` is served from hand-written schemas, 2,712 bytes). Prior: PLAN-068 S5–S6 (D-26 records the
   domain and sync rulings; Q-05 and Q-06 ruled; `name:` keys carry the kind; D-04 corrected after the
