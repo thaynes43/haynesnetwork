@@ -17,6 +17,13 @@ export type PlexServerName = (typeof PLEX_SERVERS)[number];
 export const PLEX_TV_BASE_URL = 'https://plex.tv';
 
 /**
+ * ADR-089 / DESIGN-049 D-09 step 6 (PLAN-068) — the plex.tv DISCOVER provider, where an account's
+ * watchlist lives (`/library/sections/watchlist/all`, read with the owner token). A separate host from
+ * PLEX_TV_BASE_URL; fixed and non-secret, overridable via PLEX_DISCOVER_URL (e2e points it at the stub).
+ */
+export const PLEX_DISCOVER_BASE_URL = 'https://discover.provider.plex.tv';
+
+/**
  * In-cluster service DNS defaults (OPS-002 topology; the app runs in the `frontend` ns and
  * reaches the `media` ns by FQDN). Local dev / staging override with the public ingresses
  * (`https://plex.haynesnetwork.com` etc.) via PLEX_<SLUG>_URL. These URLs are backend config
@@ -56,6 +63,8 @@ export interface PlexInstanceConfig {
   machineIdentifier: string;
   /** plex.tv host for the sharing API (overridable via PLEX_TV_URL — e2e points it at the stub). */
   plexTvBaseUrl: string;
+  /** plex.tv discover-provider host for the watchlist (overridable via PLEX_DISCOVER_URL). */
+  plexDiscoverBaseUrl: string;
 }
 
 export type PlexEnvConfig = Record<PlexServerName, PlexInstanceConfig>;
@@ -69,6 +78,7 @@ export function assertPlexEnv(env: Record<string, string | undefined> = process.
   const missing: string[] = [];
   const config = {} as PlexEnvConfig;
   const plexTvBaseUrl = env.PLEX_TV_URL?.trim() || PLEX_TV_BASE_URL;
+  const plexDiscoverBaseUrl = env.PLEX_DISCOVER_URL?.trim() || PLEX_DISCOVER_BASE_URL;
   for (const server of PLEX_SERVERS) {
     const prefix = `PLEX_${server.toUpperCase()}`;
     const baseUrl = env[`${prefix}_URL`]?.trim() || PLEX_CLUSTER_URL_DEFAULTS[server];
@@ -76,7 +86,7 @@ export function assertPlexEnv(env: Record<string, string | undefined> = process.
     const machineIdentifier =
       env[`${prefix}_MACHINE_ID`]?.trim() || PLEX_MACHINE_IDENTIFIERS[server];
     if (!token) missing.push(`${prefix}_TOKEN`);
-    config[server] = { baseUrl, token, machineIdentifier, plexTvBaseUrl };
+    config[server] = { baseUrl, token, machineIdentifier, plexTvBaseUrl, plexDiscoverBaseUrl };
   }
   if (missing.length > 0) throw new PlexConfigError(missing);
   return config;
