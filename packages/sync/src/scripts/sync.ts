@@ -191,7 +191,10 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
                            + blocklist / ProcessMonitoredDownloads / blocklist + re-search) behind the safety
                            rails. Needs SONARR/RADARR/LIDARR_URL/_API_KEY (URLs default in-cluster). No
                            --source. Writes no sync_runs row.
-  --source=NAME            limit the run to one source (repeatable; default: all sources; for
+  --mode=watch             the WATCH COMPANION read-model (ADR-088 / DESIGN-049 D-09). NOT BUILT YET: the
+                           mode lands in PLAN-068 S6 and is refused until then (migration 0077 already
+                           admits it as a run kind).
+  --source=NAME           limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
   --help                   print this usage
