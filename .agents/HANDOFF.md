@@ -4,7 +4,7 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ 2026-09-23 — Watch Companion LIVE (v0.97.0): PLAN-068 completed; the specials fix `fix/mark-specials` is the last leg
+## ▶ 2026-09-23 — Watch Companion LIVE (v0.97.1): PLAN-068 completed, the specials fix shipped and re-verified
 
 The Watch Companion is live end to end: haynesnetwork **v0.97.0** (#563 + #566 → release #560; every
 Opus review finding fixed on the branch first), haynes-ops **#3139** (tag + the `sync-watch` and
@@ -24,12 +24,13 @@ exactly those) **and re-stamped all 62 already-watched regular episodes (viewCou
 HaynesOps for good (HaynesTower/HaynesKube untouched). Fix: **PR #567** (`fix/mark-specials`: the show
 key is never scrobbled or unscrobbled; a season key only when the whole season is unwatched, else each
 unwatched episode; season 0 never takes part; the show's `plex_counts` dropped after a written
-mark/undo so the next sync re-reads it) — **its release (0.97.1) and the haynes-ops tag bump are the
-remaining leg**; until then a whole-show mark re-stamps already-watched episodes on the written server.
-The live-test rule is therefore stricter than "a title Tom fully watched": on v0.97.0 there is no safe
-live whole-show mark at all; after #567, a title with no unwatched regular episode on the preferred
-server is safe (zero flips, no write). One hand correction was made on the live row
-(`watch_titles.plex_counts` cleared for The Expanse so the sync re-read it).
+mark/undo so the next sync re-reads it) — **released as v0.97.1 (#569), deployed by haynes-ops #3141,
+re-verified live 22:10Z**: `mark_watched` "The Expanse" now answers "was already watched in Plex, all
+62 episodes" with no Plex write (HaynesOps leaves identical before and after: 62 × viewCount 2,
+lastViewedAt 21:04Z, specials 0/7), and the undo records `none`. The live-test rule, refined: a safe
+live whole-show mark is a title with no unwatched regular episode on the preferred server (zero flips,
+no write); "fully watched" per the app's union view is not enough on its own. One hand correction was
+made on the live row (`watch_titles.plex_counts` cleared for The Expanse so the sync re-read it).
 
 Still open for the owner: haynes-ops **#3140** (dev-env `mcp.json` + CLAUDE.md, held draft because
 merging bounces the pod). Known wrinkles: the OpenAI subentry reconfigure flow re-derives the Movie Room
