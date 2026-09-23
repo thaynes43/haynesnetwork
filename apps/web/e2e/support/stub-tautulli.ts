@@ -152,6 +152,15 @@ const bp = (ratingKey: number, season: number, episode: number) => ({
   episode,
   seasonKey: 5010 + season,
 });
+const expanse = (ratingKey: number, season: number, episode: number) => ({
+  showKey: 503,
+  show: 'Stub Expanse',
+  year: 2015,
+  ratingKey,
+  season,
+  episode,
+  seasonKey: 5030 + season,
+});
 const toons = (ratingKey: number, episode: number) => ({
   showKey: 502,
   show: 'Stub Toons',
@@ -168,8 +177,9 @@ const toons = (ratingKey: number, episode: number) => ({
  *   progress — and a household member's movie (proves the `user_id` filter).
  * - HaynesKube: music only for the owner (a track the watch sync skips).
  * - HaynesTower (the long history): Breaking Prod S1E1–S2E1 with a rewatched S1E1, a children's episode on
- *   the owner account, The Fixture watched twice (the harvest's SUM/MAX case), a friend's episode, and an
- *   episode of a show Plex has since deleted (get_metadata → 400 → "gone").
+ *   the owner account, The Fixture watched twice (the harvest's SUM/MAX case), a friend's episode, an
+ *   episode of a show Plex has since deleted (get_metadata → 400 → "gone"), and (PLAN-068 S8) a fully
+ *   watched Stub Expanse plus one sampled episode of Stub Big Brother (a Taster).
  */
 const HISTORY: Record<Instance, HistoryRow[]> = {
   haynesops: [
@@ -202,6 +212,20 @@ const HISTORY: Record<Instance, HistoryRow[]> = {
     episodeRow(4008, owner, '2026-03-01T17:00:00Z', toons(50211, 1)),
     episodeRow(4009, owner, '2026-08-30T02:00:00Z', bp(50121, 2, 1)),
     episodeRow(4010, owner, '2026-09-05T02:00:00Z', bp(50111, 1, 1), 40), // a rewatch, abandoned at 40%
+    // PLAN-068 S8 — a fully watched show and a Taster (the owner's local history for dev:local).
+    episodeRow(3001, owner, '2025-03-01T02:00:00Z', expanse(50311, 1, 1)),
+    episodeRow(3002, owner, '2025-03-02T02:00:00Z', expanse(50312, 1, 2)),
+    episodeRow(3003, owner, '2025-03-08T02:00:00Z', expanse(50321, 2, 1)),
+    episodeRow(3004, owner, '2025-03-09T02:00:00Z', expanse(50322, 2, 2)),
+    episodeRow(3005, owner, '2026-05-01T02:00:00Z', {
+      show: 'Stub Big Brother',
+      showKey: 504,
+      seasonKey: 5041,
+      ratingKey: 504101,
+      season: 1,
+      episode: 1,
+      year: 2000,
+    }),
   ],
 };
 
@@ -221,6 +245,8 @@ const METADATA: Record<Instance, Record<string, Record<string, unknown>>> = {
       guids: ['imdb://tt9900010', 'tmdb://55501', 'tvdb://990001'],
     },
     '502': { media_type: 'show', guid: 'plex://show/5d9c086c46115600200a0002', guids: ['tvdb://990002'] },
+    '503': { media_type: 'show', guid: 'plex://show/5d9c086c46115600200a0003', guids: ['tvdb://990003', 'tmdb://55503'] },
+    '504': { media_type: 'show', guid: 'plex://show/5d9c086c46115600200a0004', guids: ['tvdb://990004'] },
     ...Object.fromEntries(
       [50111, 50112, 50113, 50121].map((rk) => [
         String(rk),

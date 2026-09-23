@@ -305,6 +305,44 @@ const STUB_TOONS: StubSectionItem = {
   addedAt: 1_751_400_000,
 };
 
+// PLAN-068 S8 — the rest of the owner's local history: a fully watched show (caught up: the stub ledger
+// carries no Sonarr "ended" status for it), a Taster (one episode of twelve, months ago), and an unwatched
+// show on the owner's watchlist that IS on Plex (the dev:local demo seed gives it a ledger row, so
+// `recommend` has an on-Plex pick and `mark_watched` a real target).
+const STUB_EXPANSE: StubSectionItem = {
+  ratingKey: '503',
+  title: 'Stub Expanse',
+  type: 'show',
+  year: 2015,
+  guid: 'plex://show/5d9c086c46115600200a0003',
+  Guid: [{ id: 'tvdb://990003' }, { id: 'tmdb://55503' }],
+  Genre: [{ tag: 'Science Fiction' }, { tag: 'Drama' }],
+  contentRating: 'TV-14',
+  addedAt: 1_751_300_000,
+};
+const STUB_BIG_BROTHER: StubSectionItem = {
+  ratingKey: '504',
+  title: 'Stub Big Brother',
+  type: 'show',
+  year: 2000,
+  guid: 'plex://show/5d9c086c46115600200a0004',
+  Guid: [{ id: 'tvdb://990004' }],
+  Genre: [{ tag: 'Reality' }],
+  contentRating: 'TV-14',
+  addedAt: 1_751_200_000,
+};
+const STUB_SEVERANCE: StubSectionItem = {
+  ratingKey: '506',
+  title: 'Stub Severance',
+  type: 'show',
+  year: 2022,
+  guid: 'plex://show/5d9f35110000000000000001',
+  Guid: [{ id: 'imdb://tt9900020' }, { id: 'tmdb://95396' }, { id: 'tvdb://990020' }],
+  Genre: [{ tag: 'Drama' }, { tag: 'Mystery' }, { tag: 'Science Fiction' }],
+  contentRating: 'TV-MA',
+  addedAt: 1_758_000_000,
+};
+
 /** The watch sections, per (slug, sectionKey) — served ALONGSIDE SECTION_CONTENTS. */
 const WATCH_SECTION_CONTENTS: Partial<Record<Slug, Record<string, StubSectionItem[]>>> = {
   haynesops: { '1': [{ ratingKey: '6001', ...FIXTURE }, { ratingKey: '6002', ...RUNNER }, TOONS_MOVIE] },
@@ -313,7 +351,7 @@ const WATCH_SECTION_CONTENTS: Partial<Record<Slug, Record<string, StubSectionIte
       { ratingKey: '601', ...FIXTURE },
       { ratingKey: '602', ...RUNNER },
     ],
-    '2': [BREAKING_PROD, STUB_TOONS],
+    '2': [BREAKING_PROD, STUB_TOONS, STUB_EXPANSE, STUB_BIG_BROTHER, STUB_SEVERANCE],
   },
 };
 
@@ -375,6 +413,23 @@ const WATCH_CHILDREN: Record<string, StubSectionItem[]> = {
     watchEpisode(STUB_TOONS, '5021', 1, 1, '50211', '2020-03-01'),
     watchEpisode(STUB_TOONS, '5021', 1, 2, '50212', '2020-03-08'),
   ],
+  '503': [watchSeason(STUB_EXPANSE, '5031', 1), watchSeason(STUB_EXPANSE, '5032', 2)],
+  '5031': [
+    watchEpisode(STUB_EXPANSE, '5031', 1, 1, '50311', '2015-12-14'),
+    watchEpisode(STUB_EXPANSE, '5031', 1, 2, '50312', '2015-12-21'),
+  ],
+  '5032': [
+    watchEpisode(STUB_EXPANSE, '5032', 2, 1, '50321', '2017-02-01'),
+    watchEpisode(STUB_EXPANSE, '5032', 2, 2, '50322', '2017-02-08'),
+  ],
+  '504': [watchSeason(STUB_BIG_BROTHER, '5041', 1)],
+  '5041': Array.from({ length: 12 }, (_, i) =>
+    watchEpisode(STUB_BIG_BROTHER, '5041', 1, i + 1, `5041${String(i + 1).padStart(2, '0')}`, '2000-07-05'),
+  ),
+  '506': [watchSeason(STUB_SEVERANCE, '5061', 1)],
+  '5061': Array.from({ length: 3 }, (_, i) =>
+    watchEpisode(STUB_SEVERANCE, '5061', 1, i + 1, `5061${i + 1}`, '2022-02-18'),
+  ),
 };
 
 /** The owning section of every watch item (the metadata/children `librarySectionID`). */
@@ -405,7 +460,8 @@ interface WatchState {
  * The SEEDED owner state (reset by POST /_stub/reset). The Fixture is watched on both servers (plex.tv
  * view-state sync); Stub Runner is in progress on HaynesOps only (resume points do not sync); Breaking
  * Prod is watched through S2E1 (next: S2E2) with its special unwatched; Stub Toons (a children's show)
- * has one episode watched.
+ * has one episode watched; Stub Expanse is fully watched; Stub Big Brother is a Taster (1 of 12); Stub
+ * Severance (on the watchlist) is untouched.
  */
 const WATCH_SEED: Record<string, WatchState> = {
   // Last views = the stop times of the matching stub-tautulli history rows.
@@ -417,6 +473,12 @@ const WATCH_SEED: Record<string, WatchState> = {
   '50113': { viewCount: 1, lastViewedAt: epochSeconds('2026-01-09T02:45:00Z') },
   '50121': { viewCount: 1, lastViewedAt: epochSeconds('2026-08-30T02:45:00Z') },
   '50211': { viewCount: 1, lastViewedAt: epochSeconds('2026-03-01T17:45:00Z') },
+  // Stub Expanse: every episode watched in March 2025. Stub Big Brother: one episode sampled in May.
+  '50311': { viewCount: 1, lastViewedAt: epochSeconds('2025-03-01T02:45:00Z') },
+  '50312': { viewCount: 1, lastViewedAt: epochSeconds('2025-03-02T02:45:00Z') },
+  '50321': { viewCount: 1, lastViewedAt: epochSeconds('2025-03-08T02:45:00Z') },
+  '50322': { viewCount: 1, lastViewedAt: epochSeconds('2025-03-09T02:45:00Z') },
+  '504101': { viewCount: 1, lastViewedAt: epochSeconds('2026-05-01T02:45:00Z') },
 };
 
 /** A plex.tv discover watchlist (newest-watchlisted first): one title on Plex, two that are not. */

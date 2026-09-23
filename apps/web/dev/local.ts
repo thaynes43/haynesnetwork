@@ -4,7 +4,9 @@
 // Sonarr/Radarr/Lidarr/Seerr server (startStack() calls startStubArr()), and
 // `next dev` — but long-running, so the app can be vetted hands-on in a real
 // browser (phone/tablet/PC via devtools device emulation) with no Docker, no
-// Authentik, no *arr stack, no cluster, and no real credentials.
+// Authentik, no *arr stack, no cluster, and no real credentials. On top of the
+// e2e stack it runs the Watch Companion bootstrap (a one-row demo seed + one
+// `watch` sync, PLAN-068 S8) so `POST /api/mcp` answers locally.
 //
 //   pnpm dev:local            # from the repo root (PORT=3000 by default)
 //
@@ -17,7 +19,8 @@
 // Everything is throwaway: the database lives in a temp dir and is deleted on
 // Ctrl-C. Restarting gives a pristine seeded catalog.
 import { createInterface } from 'node:readline';
-import { startStack } from '../e2e/support/harness';
+import { join } from 'node:path';
+import { runInStack, startStack } from '../e2e/support/harness';
 import { erroredArrQueueFixture } from '../e2e/support/stub-arr';
 import { STUB_USERS, type PersonaName } from '../e2e/support/stub-oidc';
 
@@ -37,6 +40,21 @@ async function main(): Promise<void> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ records: erroredArrQueueFixture() }),
   }).catch(() => {});
+
+  // ADR-088 / DESIGN-049 D-09 (PLAN-068 S8) — the Watch Companion: give the stub owner's watchlist show a
+  // ledger row (the dev-only demo seed), then run the real `watch` sync ONCE against stub Plex + stub
+  // Tautulli, so `POST /api/mcp` answers from a real read-model. Best-effort: a failure never blocks the
+  // stack (re-run it with the command the banner prints).
+  try {
+    await runInStack(stack, [join('e2e', 'support', 'seed-watch-demo.ts')], 'watch demo seed');
+    await runInStack(
+      stack,
+      [join('..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'), '--mode=watch'],
+      'watch sync',
+    );
+  } catch (error) {
+    console.error('[dev:local] watch bootstrap failed (the rest of the stack is up):', error);
+  }
 
   let shuttingDown = false;
   const shutdown = async (code: number): Promise<never> => {
@@ -62,6 +80,13 @@ async function main(): Promise<void> {
   Active:    member (stub default) — type a persona name + Enter
              to switch, then use the normal "Sign in" button.
   Tip:       phone/tablet sizes → browser devtools device toolbar.
+
+  Watch MCP: POST ${stack.appUrl}/api/mcp  (Authorization: Bearer ${stack.env.HNET_MCP_HOP_TOKEN})
+             headers: Content-Type: application/json + Accept: application/json, text/event-stream
+             body e.g. {"jsonrpc":"2.0","id":1,"method":"tools/call",
+                        "params":{"name":"unfinished","arguments":{}}}
+             re-sync: DATABASE_URL=${stack.env.DATABASE_URL} … tsx packages/sync/src/scripts/sync.ts --mode=watch
+             (docs/ops/003-local-verification.md — "Watch Companion MCP")
 ──────────────────────────────────────────────────────────────`);
 
   const rl = createInterface({ input: process.stdin });

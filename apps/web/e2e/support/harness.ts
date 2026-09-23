@@ -162,6 +162,25 @@ async function runToCompletion(
   });
 }
 
+/**
+ * PLAN-068 S8 — run one tsx script against a RUNNING stack (its env, its stubs — hosted in this process, hence
+ * the async spawn), e.g. `pnpm dev:local`'s watch-history bootstrap: the demo seed, then `--mode=watch`.
+ */
+export async function runInStack(
+  stack: RunningStack,
+  args: string[],
+  label: string,
+  cwd = process.cwd(),
+): Promise<void> {
+  await runToCompletion(
+    join(cwd, 'node_modules', '.bin', 'tsx'),
+    args,
+    { ...process.env, ...stack.env },
+    cwd,
+    label,
+  );
+}
+
 async function killDevServer(dev: ChildProcess): Promise<void> {
   if (dev.exitCode !== null || dev.signalCode !== null) return;
   await new Promise<void>((resolve) => {

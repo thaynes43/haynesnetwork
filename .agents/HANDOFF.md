@@ -4,6 +4,18 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-23 — Watch Companion S7–S8 (the `/api/mcp` endpoint, `dev:local`) is PR #566 (opened as #564, re-opened after the #563 merge deleted its base branch)
+
+PLAN-068 S7 added `packages/mcp` (`@hnet/mcp`, SDK pinned 1.30.0) and the POST-only
+`apps/web/app/api/mcp/route.ts`: stateless per-request server + transport, bearer auth
+(`HNET_MCP_HOP_TOKEN`, 401/503), a 64 KB cap, the seven D-05 tools, D-06 logging, D-11 revalidation. The
+SDK-generated `tools/list` was 3,475 bytes, so it is served from hand-written schemas — **2,712 bytes**;
+default answers are ≤ 373 characters over the fixture. S8: `pnpm dev:local` runs a demo seed + the real
+`watch` sync at start; the curl proof (initialize, tools/list, unfinished, recommend, mark + undo against
+the stub) is in PLAN-068's S8 row and OPS-003 §3. Rulings in DESIGN-049 D-27. **Next:** the driver merges
+#563, retargets and merges this PR; then S9 (release) and S10 (haynes-ops: the `sync-watch` CronJob, the
+image tag; the hop and token already exist from #3131).
+
 ## ▶ 2026-09-23 — Watch Companion S5–S6 (domain writers, Watch Marks, the `watch` sync) is PR #563, awaiting the driver's merge
 
 PLAN-068 S5 put the five watch tables' single writers and the Watch Mark flows (`markWatched`,

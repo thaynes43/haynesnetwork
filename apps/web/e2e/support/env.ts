@@ -155,6 +155,9 @@ export interface RuntimeEnv {
   /** ADR-026 / DESIGN-012 — per-source Bulletin webhook shared secrets (Seerr + Tautulli). */
   SEERR_WEBHOOK_SECRET: string;
   TAUTULLI_WEBHOOK_SECRET: string;
+  /** ADR-087 / DESIGN-049 D-03 (PLAN-068 S8) — the MCP hop consumer's bearer for `POST /api/mcp` (a local,
+   *  throwaway value; in-cluster it is minted by an External Secrets generator and never seen). */
+  HNET_MCP_HOP_TOKEN: string;
   /** ADR-028 test hook — the found-nothing window, shortened so the nothing_found
    *  terminal is reachable inside a Playwright test (prod default is 15 min). */
   ACTION_FOUND_NOTHING_WINDOW_MS: string;
@@ -165,6 +168,9 @@ export const STUB_MAINTAINERR_WEBHOOK_SECRET = 'e2e-maintainerr-webhook-secret';
 /** ADR-026 — the per-source Bulletin webhook secrets the e2e receiver requires. */
 export const STUB_SEERR_WEBHOOK_SECRET = 'e2e-seerr-webhook-secret';
 export const STUB_TAUTULLI_WEBHOOK_SECRET = 'e2e-tautulli-webhook-secret';
+
+/** PLAN-068 S8 — the local MCP consumer token (`Authorization: Bearer local-dev-mcp-hop-token`). */
+export const LOCAL_MCP_HOP_TOKEN = 'local-dev-mcp-hop-token';
 
 /** The throwaway key every stubbed *arr accepts (never a real credential). */
 export const STUB_ARR_API_KEY = 'stub-arr-key';
@@ -286,6 +292,7 @@ export function composeRuntimeEnv(opts: {
     SMTP_USER: STUB_SMTP_USER,
     SMTP_PASS: STUB_SMTP_PASS,
     SMTP_FROM: STUB_SMTP_FROM,
+    HNET_MCP_HOP_TOKEN: LOCAL_MCP_HOP_TOKEN,
     SEERR_WEBHOOK_SECRET: STUB_SEERR_WEBHOOK_SECRET,
     TAUTULLI_WEBHOOK_SECRET: STUB_TAUTULLI_WEBHOOK_SECRET,
     // 30 s (vs 15 min in prod): long enough that fresh submits deterministically read
