@@ -1,7 +1,7 @@
 # DESIGN-049: Watch Companion — watch history read-model, recommendations, voice reconcile marks, and the in-cluster MCP surface
 
 - **Status:** Draft
-- **Last updated:** 2026-09-23
+- **Last updated:** 2026-09-23 (PLAN-068 S4: D-25 records the pure-math rulings; D-21 example order fixed; Q-05)
 - **Satisfies:** PRD-001 R-240..R-246, US-13, AC-20..AC-24; governed by ADR-087 (MCP surface),
   ADR-088 (read-model, Watch Marks, Plex write-back), ADR-089 (recommendations); reuses ADR-017
   (confined Plex writes), ADR-029 (Server Owner), ADR-068 (Tautulli trio env contract).
@@ -459,8 +459,9 @@ this year, "in March 2025" otherwise. At most `limit` items, then "and N more". 
 characters, cut at a sentence boundary. Examples:
 
 - `unfinished`: *"Three unfinished shows. Silo: 30 of 40 watched, next is season 3 episode 1, last
-  watched on September 12. For All Mankind: next is season 5 episode 3, on September 20. Stalled:
-  The Righteous Gemstones, 36 of 45, untouched since March 2025."*
+  watched on September 20. For All Mankind: next is season 5 episode 3, on September 12. Stalled:
+  The Righteous Gemstones, 36 of 45, untouched since March 2025."* (Dates swapped in S4: the first
+  draft listed the older show first, against the D-10 order.)
 - `recommend`: *"Five picks on Plex. Foundation, a 2021 show, because you watched The Expanse.
   Severance, a 2022 show, on your watchlist. … Not on Plex yet: Dark Matter, a 2024 show, on your
   watchlist."*
@@ -504,6 +505,22 @@ held draft for the owner to merge at a natural break.
 4. The hop's CiliumNetworkPolicy admits the dev-env pod from the start, so the order of 3 does not
    matter for the hop.
 
+### D-25 — Pure-math rulings made while building `@hnet/watch` (PLAN-068 S4)
+
+Where D-08..D-21 left a case open or two sections disagreed, S4 decided as below. The package README
+lists the final signatures; the tests pin each row.
+
+| Section | Ruling |
+|---|---|
+| D-08 | A show known only by its TMDB id keys as `tmdb:show:<id>`, after `imdb:` (D-08 named TMDB for movies only). A TVDB id counts for shows only. `identityKeys` always adds the `name:` key; `name:` keys carry no kind, so a watched movie also excludes a same-name, same-year show (errs toward leaving a pick out). Grouping by keys is kind-scoped. |
+| D-10 | Season-0 events are ignored like specials (plays, rewatch, dates). An event without `stopped_at` counts at `started_at`. With nothing watched and several started episodes, next is the one viewed most recently. Next is served from HaynesOps, then HaynesTower, then HaynesKube. "Within 90 days" includes exactly 90; a Taster is untouched for more than 30. An unknown last-watched time counts as old. A movie outside the 5–90% band is `finished` when watched in Plex, else `unstarted`; a `lastViewedAt` tie between servers goes to the one with a resume point. |
+| D-13 | A bare trailing year becomes the hint but stays in the normalized title ("Blade Runner 2049"); the 0.95 rule matches the year-less form. The 0.95 rule drops ONE side's tag; two different tags ("office us", "office uk") never match there. Country tags leave out the English words "it", "in", "no", "be". Pool entries that share an identity key are one title (a Title State, its ledger item and its watchlist row are not rivals); the history bonus is per title; bonuses never lift a zero match. A margin of exactly 0.05 resolves, so the year and history bonuses each break an exact tie. Options list newer years first on a tie. |
+| D-16 | "Once three episodes are watched" counts the event log too, and a show gone from Plex (`episodes_total` 0) weighs 0.25 once three episodes are in the log — otherwise shows Maintainerr deleted after he finished them, the strongest signals, would weigh nothing. A title without a last-watched time weighs 0. Genres are folded onto canonical names first; compound source genres split ("Sci-Fi & Fantasy"). |
+| D-18 | A show whose next episode is started (a resume-only start, which D-10 counts as Unfinished) is "started" too. Exclusion is per title: Title States and marks that share a key form one title whose every key joins the set, and a candidate goes when any candidate sharing a key with it is excluded. A title is children's when any source says so or its sources' genres together do. |
+| D-19 | Every pick has a reason (AC-21): after "new on Plex" comes "new to you". `<genre> like <title>` names the requested genre, else the owner's strongest shared genre with drama last (nearly every show carries it); kids read "for kids, like Bluey". A rating of 0 is missing (TMDB reports 0 when unrated). Final tie-break after title is the title key. Candidates from the library, the watchlist and the seeds merge into one before scoring. |
+| D-20 | The not-on-Plex picks page two at a time with `offset` (page = ⌊offset ÷ limit⌋), so "more" never repeats them. Past the end: "No more picks. Try another genre or kind." |
+| D-21 | Dates use the owner's time zone (America/New_York by default). "And N more." is its own sentence. Only the first in-progress show carries its counts, as in the example; relative dates keep "last watched" ("last watched yesterday"). A started next episode reads "resume season 3 episode 7"; a rewatch reads "(rewatch)". Titles lose markdown characters, emoji and URLs (`M*A*S*H` → `MASH`). The cut never splits a title like "Mr. Robot". |
+
 ## Alternatives considered
 
 - **A standalone media MCP server** (hass-sandbox 2026-09-22 proposal) and **a separate MCP process**:
@@ -546,3 +563,4 @@ held draft for the owner to merge at a natural break.
 | Q-02 | Seerr requests by voice. | PRD Q-13 — open. |
 | Q-03 | Public connectors (OAuth). | PRD Q-14 — deferred. |
 | Q-04 | Should the HaynesOps Tautulli webhook trigger an immediate Title State refresh? | Open; D-11 covers answers, so only worth it if the bench shows stale answers. |
+| Q-05 | D-21's ambiguous example offers Dune: Prophecy for "Dune", but D-13 scores it 0: a 4-of-13-character prefix is under the 60% rule and its Jaro-Winkler (0.86) is under 0.9. D-13's 0.6 floor never binds either, since the lowest nonzero score is 0.81. Should a whole-word prefix score about 0.7, so it is offered as an option but can never resolve alone (0.7 plus both bonuses is 0.8)? | Open; S4 follows D-13, so "Dune" offers only the two Dune films. |
