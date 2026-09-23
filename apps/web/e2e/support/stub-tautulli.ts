@@ -6,9 +6,10 @@
 // 2026-09-23: `row_id` is the per-row identity (`id` mirrors it, `reference_id` is the group's first row),
 // the owner's rows carry his plex.tv id (12874060 = STUB_PLEX_OWNER.id), movies send "" for the episode
 // indices, and the rating keys are stub-plex's keys ON THAT SERVER. `get_history` honors `user_id`,
-// `media_type`, `after` (YYYY-MM-DD, strictly after that day), `order_dir`, `start` and `length`;
-// `get_metadata` answers HTTP 400 for a key Plex no longer has (current Tautulli; the client maps it to
-// "gone").
+// `media_type`, `after` (YYYY-MM-DD, that day and later — inclusive, like Tautulli; UTC here),
+// `include_activity` (a CURRENTLY PLAYING owner session with NO row_id is listed unless it is 0, as with
+// Tautulli's default), `order_dir`, `start` and `length`; `get_metadata` answers HTTP 400 "Unable to
+// retrieve metadata …" for a key Plex no longer has (current Tautulli; the client maps it to "gone").
 //
 // Deliberately NOT served: `get_libraries_table` (answered like any unknown command — HTTP 400). Wiring
 // Tautulli into the stack env makes the home page's play scoreboard (ADR-068) ask for it on every render;
@@ -234,9 +235,31 @@ const INSTANCE_BY_KEY = new Map<string, Instance>(
   (Object.entries(STUB_TAUTULLI_API_KEYS) as Array<[Instance, string]>).map(([inst, key]) => [key, inst]),
 );
 
-/** Tautulli's `after`: rows whose start falls on a day strictly after YYYY-MM-DD (UTC here). */
-function startedAfter(row: HistoryRow, after: string): boolean {
-  return new Date(row.started * 1000).toISOString().slice(0, 10) > after;
+/** Tautulli's `after`: rows whose start falls on YYYY-MM-DD or later ("after and including"; UTC here). */
+function startedOnOrAfter(row: HistoryRow, after: string): boolean {
+  return new Date(row.started * 1000).toISOString().slice(0, 10) >= after;
+}
+
+/**
+ * A session PLAYING NOW on HaynesOps (the owner, Stub Runner): Tautulli lists live sessions in get_history
+ * unless `include_activity=0`, and they are not in session_history yet, so they carry no row id — the
+ * shape the Watch Event ingest must skip.
+ */
+function liveSessionRow(): Omit<HistoryRow, 'reference_id' | 'row_id' | 'id'> & {
+  reference_id: null;
+  row_id: null;
+  id: null;
+  state: string;
+} {
+  const started = Math.floor(Date.now() / 1000) - 600;
+  return {
+    ...movieRow(0, owner, new Date(started * 1000).toISOString(), { ratingKey: 6002, ...RUNNER }, 35),
+    reference_id: null,
+    row_id: null,
+    id: null,
+    stopped: 0,
+    state: 'playing',
+  };
 }
 
 export async function startStubTautulli(): Promise<StubTautulliServer> {
@@ -256,14 +279,19 @@ export async function startStubTautulli(): Promise<StubTautulliServer> {
     if (!instance) return reply(401, 'error', {}, 'Invalid apikey');
 
     if (cmd === 'get_history') {
-      const all = HISTORY[instance];
+      const activity = params.get('include_activity');
+      const withActivity = activity !== '0' && activity !== 'false';
+      const all: Array<HistoryRow | ReturnType<typeof liveSessionRow>> = [
+        ...(withActivity && instance === 'haynesops' ? [liveSessionRow()] : []),
+        ...HISTORY[instance],
+      ];
       const userId = params.get('user_id');
       const mediaType = params.get('media_type');
       const after = params.get('after');
       const filtered = all
         .filter((row) => userId === null || String(row.user_id) === userId)
         .filter((row) => mediaType === null || row.media_type === mediaType)
-        .filter((row) => after === null || startedAfter(row, after))
+        .filter((row) => after === null || startedOnOrAfter(row as HistoryRow, after))
         .sort((a, b) => (params.get('order_dir') === 'asc' ? a.date - b.date : b.date - a.date));
       const start = Math.max(Number(params.get('start') ?? 0) || 0, 0);
       const length = Math.max(Number(params.get('length') ?? 25) || 25, 1);

@@ -128,14 +128,15 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
 - **Stub Tautulli** (ADR-088 / PLAN-068 S3; `TAUTULLI_URL`, `TAUTULLI_K8PLEX_URL` and
   `TAUTULLI_HAYNESTOWER_URL` all point at one server, told apart by their keys) serves each
   instance's `get_history` — the owner's rows (plex.tv id 12874060) plus a household member's and a
-  friend's, honoring `user_id` / `after` / `start` / `length` / `order_dir` — and `get_metadata`
-  (HTTP 400 for a deleted item, like current Tautulli). It deliberately does not serve
-  `get_libraries_table`, so the Home play scoreboard stays hidden, as before the stub was wired.
+  friend's, honoring `user_id` / `after` / `start` / `length` / `order_dir`, plus a playing session
+  with no row id unless `include_activity=0` — and `get_metadata` (HTTP 400 for a deleted item, like
+  current Tautulli). It deliberately does not serve `get_libraries_table`, so the Home play scoreboard
+  stays hidden, as before the stub was wired.
 - **Stub Plex watch state** (same PLAN-068 stage): the owner's movies on HaynesOps and movies + TV on
   HaynesTower carry watch fields; `allLeaves`, `/library/all?guid=`, the section filters and the
-  plex.tv watchlist (`PLEX_DISCOVER_URL` points at the stub) are served. `/:/scrobble` and
-  `/:/unscrobble` are recorded at `/_stub/calls` and flip an in-memory watch map every read overlays;
-  `POST /_stub/reset` restores the seed.
+  plex.tv watchlist (`PLEX_DISCOVER_URL` points at the stub) are served; a watch item answers only to its
+  own server's token. `/:/scrobble` and `/:/unscrobble` are recorded at `/_stub/calls` and flip an
+  in-memory watch map every read overlays; `POST /_stub/reset` restores the seed.
 - Everything is **throwaway**: the database is a temp dir deleted on Ctrl-C; restart for a
   pristine seeded catalog.
 - Phone/tablet/PC layouts: use the browser devtools device toolbar.

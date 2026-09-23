@@ -470,13 +470,42 @@ function leavesOf(item: StubSectionItem): StubSectionItem[] {
     .sort((a, b) => (a.parentIndex ?? 0) - (b.parentIndex ?? 0) || (a.index ?? 0) - (b.index ?? 0));
 }
 
-/** Find one metadata item (show/season/episode/movie) by ratingKey across the canned hierarchy. */
-function findMetadataItem(ratingKey: string): StubSectionItem | undefined {
+/**
+ * The server each WATCH item lives on. Real ratingKeys are server-local, so a watch item (and everything
+ * under a watch show) answers ONLY to its own server's token: a server / ratingKey mix-up — the core risk of
+ * a Watch Mark — 404s here as it would live. The pre-existing fixtures stay server-agnostic, as before.
+ */
+const WATCH_SERVER_OF = new Map<string, Slug>();
+for (const [slug, bySection] of Object.entries(WATCH_SECTION_CONTENTS) as Array<
+  [Slug, Record<string, StubSectionItem[]>]
+>) {
+  const claim = (item: StubSectionItem): void => {
+    WATCH_SERVER_OF.set(item.ratingKey, slug);
+    for (const child of WATCH_CHILDREN[item.ratingKey] ?? []) claim(child);
+  };
+  for (const items of Object.values(bySection)) items.forEach(claim);
+}
+
+/** A watch item is addressable only with its own server's token; anything else answers as before. */
+function watchVisible(ratingKey: string, slug: Slug | undefined): boolean {
+  const owner = WATCH_SERVER_OF.get(ratingKey);
+  return owner === undefined || owner === slug;
+}
+
+/**
+ * Find one metadata item (show/season/episode/movie) by ratingKey across the canned hierarchy, as seen by
+ * `slug`'s token: the watch pools only yield the token's own server's items (see WATCH_SERVER_OF).
+ */
+function findMetadataItem(ratingKey: string, slug?: Slug): StubSectionItem | undefined {
+  const ownWatch = (items: StubSectionItem[]) =>
+    items.filter((i) => WATCH_SERVER_OF.get(i.ratingKey) === slug);
   const pools = [
     ...Object.values(SECTION_CONTENTS.hayneskube ?? {}),
-    ...Object.values(WATCH_SECTION_CONTENTS).flatMap((bySection) => Object.values(bySection ?? {})),
+    ...Object.values(WATCH_SECTION_CONTENTS)
+      .flatMap((bySection) => Object.values(bySection ?? {}))
+      .map(ownWatch),
     ...Object.values(METADATA_CHILDREN),
-    ...Object.values(WATCH_CHILDREN),
+    ...Object.values(WATCH_CHILDREN).map(ownWatch),
   ];
   for (const items of pools) {
     const hit = items.find((i) => i.ratingKey === ratingKey);
@@ -591,11 +620,12 @@ export async function startStubPlex(): Promise<StubPlexServer> {
    * Overlay the watch map the way Plex reports it: a leaf (movie/episode) gains viewCount only once
    * watched, lastViewedAt once ever viewed, viewOffset only with a resume point; a WATCH show/season derives
    * leafCount / viewedLeafCount / lastViewedAt / viewCount from its episodes (specials included, as Plex
-   * counts them). Items outside the watch dataset with no state come back untouched.
+   * counts them). Items outside the watch dataset with no state come back untouched. The state is the
+   * token's server's only: another server's token reading a same-numbered key never sees it.
    */
-  const withWatch = (item: StubSectionItem): Record<string, unknown> => {
+  const withWatch = (item: StubSectionItem, slug: Slug | undefined): Record<string, unknown> => {
     if (item.type === 'movie' || item.type === 'episode') {
-      const state = watch.get(item.ratingKey);
+      const state = watchVisible(item.ratingKey, slug) ? watch.get(item.ratingKey) : undefined;
       if (!state) return { ...item };
       return {
         ...item,
@@ -604,7 +634,7 @@ export async function startStubPlex(): Promise<StubPlexServer> {
         ...(state.viewOffset ? { viewOffset: state.viewOffset } : {}),
       };
     }
-    if (!WATCH_CONTAINERS.has(item.ratingKey)) return { ...item };
+    if (!WATCH_CONTAINERS.has(item.ratingKey) || !watchVisible(item.ratingKey, slug)) return { ...item };
     const states = leavesOf(item).map((leaf) => watch.get(leaf.ratingKey));
     const watched = states.filter((state) => (state?.viewCount ?? 0) > 0);
     const lastViewedAt = Math.max(0, ...states.map((state) => state?.lastViewedAt ?? 0));
@@ -687,6 +717,9 @@ export async function startStubPlex(): Promise<StubPlexServer> {
       const path = url.pathname;
       const token = req.headers['x-plex-token'];
       const tokenStr = Array.isArray(token) ? token[0] : token;
+      // ADR-088 (PLAN-068) — the server this token belongs to: scopes the watch dataset and its state.
+      const viewer = tokenStr ? SLUG_BY_TOKEN.get(tokenStr) : undefined;
+      const overlay = (item: StubSectionItem) => withWatch(item, viewer);
 
       // ---- control surface ----
       if (path === '/_stub/calls') return json(res, 200, { calls });
@@ -769,18 +802,18 @@ export async function startStubPlex(): Promise<StubPlexServer> {
               : typeName === 'season'
                 ? top.flatMap((show) => childrenOf(show.ratingKey).filter((c) => c.type === 'season'))
                 : top.filter((item) => item.type === typeName);
-        const items = listed.map(withWatch).filter((item) => matchesWatchFilters(item, url.searchParams));
+        const items = listed.map(overlay).filter((item) => matchesWatchFilters(item, url.searchParams));
         return json(res, 200, { MediaContainer: containerPage(items, url.searchParams) });
       }
       // ADR-088 / DESIGN-049 D-14 step 2 (PLAN-068) — `/library/all?guid=`: this server's items with the guid.
       if (path === '/library/all') {
-        const slug = tokenStr ? SLUG_BY_TOKEN.get(tokenStr) : undefined;
+        const slug = viewer;
         const guid = url.searchParams.get('guid') ?? '';
         const hits = slug
           ? LIBRARIES[slug]
               .flatMap((section) => sectionItems(slug, section.key))
               .filter((item) => guid !== '' && item.guid === guid)
-              .map(withWatch)
+              .map(overlay)
           : [];
         return json(res, 200, { MediaContainer: containerPage(hits, url.searchParams) });
       }
@@ -788,13 +821,13 @@ export async function startStubPlex(): Promise<StubPlexServer> {
       // (like the other writes) and applied to the watch map: scrobble marks every leaf under the key watched
       // (a show or season key covers all its episodes), unscrobble clears them (resume points included).
       if ((path === '/:/scrobble' || path === '/:/unscrobble') && method === 'GET') {
-        const slug = tokenStr ? SLUG_BY_TOKEN.get(tokenStr) : undefined;
+        const slug = viewer;
         if (!slug) return json(res, 401, { message: 'unauthorized' });
         if (url.searchParams.get('identifier') !== 'com.plexapp.plugins.library') {
           return json(res, 400, { message: 'identifier must be com.plexapp.plugins.library' });
         }
         const key = url.searchParams.get('key') ?? '';
-        const target = findMetadataItem(key);
+        const target = findMetadataItem(key, slug);
         if (!target) return json(res, 404, { message: 'no such metadata' });
         calls.push({ method, path, machineId: slug, body: { key } });
         const now = Math.floor(Date.now() / 1000);
@@ -848,7 +881,7 @@ export async function startStubPlex(): Promise<StubPlexServer> {
       const childrenMatch = path.match(/^\/library\/metadata\/([^/]+)\/children$/);
       if (childrenMatch) {
         const key = childrenMatch[1]!;
-        const Metadata = childrenOf(key).map(withWatch);
+        const Metadata = (watchVisible(key, viewer) ? childrenOf(key) : []).map(overlay);
         const sectionId = METADATA_SECTION[key] ?? WATCH_SECTION_OF[key];
         return json(res, 200, {
           MediaContainer: {
@@ -864,12 +897,12 @@ export async function startStubPlex(): Promise<StubPlexServer> {
       const leavesMatch = path.match(/^\/library\/metadata\/([^/]+)\/allLeaves$/);
       if (leavesMatch) {
         const key = leavesMatch[1]!;
-        const item = findMetadataItem(key);
+        const item = findMetadataItem(key, viewer);
         if (!item) return json(res, 404, { message: 'no such metadata' });
         const sectionId = METADATA_SECTION[key] ?? WATCH_SECTION_OF[key];
         return json(res, 200, {
           MediaContainer: {
-            ...containerPage(leavesOf(item).map(withWatch), url.searchParams),
+            ...containerPage(leavesOf(item).map(overlay), url.searchParams),
             librarySectionID: sectionId ? Number(sectionId) : undefined,
           },
         });
@@ -878,13 +911,13 @@ export async function startStubPlex(): Promise<StubPlexServer> {
       const metaMatch = path.match(/^\/library\/metadata\/([^/]+)$/);
       if (metaMatch) {
         const key = metaMatch[1]!;
-        const item = findMetadataItem(key);
+        const item = findMetadataItem(key, viewer);
         if (!item) return json(res, 404, { message: 'no such metadata' });
         const sectionId = METADATA_SECTION[key] ?? WATCH_SECTION_OF[key];
         return json(res, 200, {
           MediaContainer: {
             size: 1,
-            Metadata: [{ ...withWatch(item), librarySectionID: sectionId ? Number(sectionId) : undefined }],
+            Metadata: [{ ...overlay(item), librarySectionID: sectionId ? Number(sectionId) : undefined }],
           },
         });
       }
