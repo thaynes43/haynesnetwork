@@ -488,10 +488,12 @@ export function formatUndoResult(r: UndoView): string {
         `Undone. ${capitalize(subject)}${through} is back to unwatched in Plex${n > 1 ? `, ${n} episodes` : ''}.`,
       );
     case 'partial':
-      return capSpoken(`Undid the mark on ${subject}${through}, but only part of it reached Plex.`);
+      return capSpoken(
+        `Only part of ${subject}${through} went back to unwatched in Plex, so the mark stays for now. Say undo again to retry the rest.`,
+      );
     case 'failed':
       return capSpoken(
-        `Undid the mark on ${subject}${through} in your history, but Plex didn't take the change, so it still shows as watched there.`,
+        `Plex didn't take the change, so ${subject}${through} still shows as watched there and the mark stays for now. Say undo again to retry.`,
       );
     default:
       return capSpoken(`Undone. ${capitalize(subject)}${through} is no longer marked as watched.`);
@@ -533,6 +535,17 @@ export function formatAmbiguous(
 export function formatNotFound(query: string, opts: { kind?: WatchKind | null } = {}): string {
   const what = opts.kind ? `a ${opts.kind} called` : 'anything called';
   return capSpoken(`I couldn't find ${what} ${spokenQuery(query)}.`);
+}
+
+/**
+ * `mark_watched` got an episode without its season (D-05 lists both; nothing is written): ask for it.
+ * "Which season is episode 3 of Silo in? Say it like season 2 episode 3."
+ */
+export function formatNeedSeason(query: string, episode?: number | null): string {
+  const which = typeof episode === 'number' ? `episode ${episode}` : 'that episode';
+  return capSpoken(
+    `Which season is ${which} of ${spokenQuery(query)} in? Say it like season 2 episode ${typeof episode === 'number' ? episode : 3}.`,
+  );
 }
 
 /** No owner row yet (D-03). */

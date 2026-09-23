@@ -34,4 +34,7 @@ export * from './plex-collections';
 // `books-collections-sync` mode hands to the domain syncBooksCollections single-writer (the books
 // walls' Collections group view's mirror; runs after books-sync).
 export * from './books-collections';
+// ADR-088 / DESIGN-049 D-09 (PLAN-068 S6) — the `watch` mode: the fetcher/orchestration and its pure assembler.
+export * from './watch-assemble';
+export * from './watch';
 export * from './orchestrator';

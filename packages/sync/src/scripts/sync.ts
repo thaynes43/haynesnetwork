@@ -8,10 +8,12 @@
 // down must not mask the sources that synced (D-14 failure isolation).
 import {
   ARR_KINDS,
+  PLEX_SERVER_SLUGS,
   SYNC_RUN_KINDS,
   SYNC_SOURCES,
   db,
   getPool,
+  type PlexServerSlug,
   type SyncRunKind,
   type SyncSource,
 } from '@hnet/db';
@@ -38,6 +40,9 @@ import {
   type UtilizationArrBundle,
 } from '@hnet/domain';
 import { prometheusClientFromEnv } from '@hnet/metrics';
+import { resolveTautulliInstances, resolveTmdbConfig } from '@hnet/arr';
+import { TautulliClient, TmdbClient } from '@hnet/arr/read';
+import type { WatchTautulliSource } from '../watch';
 import { assertAuthentikEnv, authentikReadClient } from '@hnet/authentik';
 import { assertBooksEnv } from '@hnet/books';
 import { booksReadClients } from '@hnet/books/read';
@@ -191,9 +196,19 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
                            + blocklist / ProcessMonitoredDownloads / blocklist + re-search) behind the safety
                            rails. Needs SONARR/RADARR/LIDARR_URL/_API_KEY (URLs default in-cluster). No
                            --source. Writes no sync_runs row.
-  --mode=watch             the WATCH COMPANION read-model (ADR-088 / DESIGN-049 D-09). NOT BUILT YET: the
-                           mode lands in PLAN-068 S6 and is refused until then (migration 0077 already
-                           admits it as a run kind).
+  --mode=watch             the WATCH COMPANION read-model (ADR-088 / ADR-089 / DESIGN-049 D-09): resolve the
+                           Server Owner (plex.tv, HaynesOps then HaynesTower), page each configured Tautulli's
+                           history for the owner into the append-only watch_events log (insert-or-ignore on
+                           (instance, row_id); a 3-day overlap window, the whole history on the first run;
+                           NULL show guids retried, 40 per run), read the owner's Plex progress (show
+                           listings + allLeaves only for shows whose counters moved; the watched and
+                           in-progress movie listings), write the changed watch_titles, replace the plex.tv
+                           watchlist, and refresh the TMDB seed recommendations when older than 20 h.
+                           READ-ONLY against Tautulli/Plex/plex.tv/TMDB — the sync NEVER scrobbles. Needs
+                           PLEX_HAYNESTOWER/HAYNESOPS/HAYNESKUBE_TOKEN; TAUTULLI_API_KEY /
+                           TAUTULLI_K8PLEX_API_KEY / TAUTULLI_HAYNESTOWER_API_KEY (+ _URL) and
+                           TMDB_API_READ_ACCESS_TOKEN (or TMDB_API_KEY) are optional, each skip-if-absent.
+                           No --source. Writes no sync_runs row.
   --source=NAME           limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -204,6 +219,10 @@ LIDARR_URL/LIDARR_API_KEY, SEERR_URL/SEERR_API_KEY (URLs default to in-cluster D
 Metadata sources (ADR-018 / DESIGN-008 — all OPTIONAL, skip-if-absent): TAUTULLI_API_KEY,
 TAUTULLI_K8PLEX_API_KEY, TAUTULLI_HAYNESTOWER_API_KEY (+ _URL for haynestower), TMDB_API_KEY /
 TMDB_API_READ_ACCESS_TOKEN, TVDB_API_KEY, MAINTAINERR_URL/MAINTAINERR_API_KEY.`;
+
+function isPlexServerSlug(slug: string): slug is PlexServerSlug {
+  return (PLEX_SERVER_SLUGS as readonly string[]).includes(slug);
+}
 
 interface CliArgs {
   mode: SyncRunKind;
@@ -257,7 +276,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'activity-scan' ||
       mode === 'queue-cleanup' ||
       mode === 'goodreads-sync' ||
-      mode === 'format-pairing') &&
+      mode === 'format-pairing' ||
+      mode === 'watch') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
@@ -281,7 +301,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'activity-scan' ||
     mode === 'queue-cleanup' ||
     mode === 'goodreads-sync' ||
-    mode === 'format-pairing'
+    mode === 'format-pairing' ||
+    mode === 'watch'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -449,9 +470,31 @@ async function main(): Promise<number> {
   // TV/Music libraries. Built INSIDE @hnet/domain (plexClientBundleFromEnv), so the confined Plex write
   // surface stays domain-only (ADR-017 guard); throws one PlexConfigError if a PLEX_*_TOKEN is absent.
   // ADR-064 / DESIGN-035 — `collections-sync` reuses the same bundle (READ side only, haynesops).
+  // ADR-088 / DESIGN-049 D-09 — `watch` reuses the same bundle (READ side only: the owner, the section
+  // listings, allLeaves, metadata, the plex.tv watchlist — the sync never scrobbles).
   const plex =
-    args.mode === 'poster-guard' || args.mode === 'plex-match' || args.mode === 'collections-sync'
+    args.mode === 'poster-guard' ||
+    args.mode === 'plex-match' ||
+    args.mode === 'collections-sync' ||
+    args.mode === 'watch'
       ? plexClientBundleFromEnv()
+      : undefined;
+  // ADR-068 / DESIGN-049 D-09 — the `watch` mode's Tautulli instances (each skip-if-unconfigured: a missing
+  // key just leaves that server's history out of this run) and the OPTIONAL TMDB client for the daily seeds.
+  const watchTautulli: WatchTautulliSource[] | undefined =
+    args.mode === 'watch'
+      ? resolveTautulliInstances().flatMap((inst) =>
+          isPlexServerSlug(inst.slug)
+            ? [{ slug: inst.slug, client: new TautulliClient({ baseUrl: inst.baseUrl, apiKey: inst.apiKey }) }]
+            : [],
+        )
+      : undefined;
+  const watchTmdb =
+    args.mode === 'watch'
+      ? (() => {
+          const cfg = resolveTmdbConfig();
+          return cfg ? new TmdbClient(cfg) : null;
+        })()
       : undefined;
   // DESIGN-035 D-16 — the OPTIONAL Radarr read the `collections-sync` mode uses for the movie
   // Wanted-tile membership. Skip-if-absent: no RADARR_API_KEY ⇒ held-only (the mirror still runs).
@@ -587,6 +630,9 @@ async function main(): Promise<number> {
     mode: args.mode,
     sources: args.sources,
     forceTombstones: args.forceTombstones,
+    ...(watchTautulli
+      ? { tautulliInstances: watchTautulli.map((t) => t.slug), tmdb: Boolean(watchTmdb) }
+      : {}),
     ...(metadataSources
       ? {
           tautulliInstances: metadataSources.tautulli.map((t) => t.slug),
@@ -623,6 +669,8 @@ async function main(): Promise<number> {
     ...(kapowarr ? { kapowarr } : {}),
     ...(pairingGb ? { pairingGb } : {}),
     ...(gbMeter ? { gbMeter } : {}),
+    ...(watchTautulli ? { watchTautulli } : {}),
+    ...(watchTmdb !== undefined ? { watchTmdb } : {}),
     logger,
   });
 
@@ -780,6 +828,22 @@ async function main(): Promise<number> {
     ...(report.goodreadsSyncError !== undefined
       ? { goodreadsSyncError: report.goodreadsSyncError }
       : {}),
+    ...(report.watch
+      ? {
+          watch: {
+            owner: report.watch.owner,
+            events: report.watch.events,
+            showGuids: report.watch.showGuids,
+            shows: report.watch.shows,
+            movies: report.watch.movies,
+            titles: report.watch.titles,
+            watchlist: report.watch.watchlist,
+            seeds: report.watch.seeds,
+            errors: report.watch.errors,
+          },
+        }
+      : {}),
+    ...(report.watchError !== undefined ? { watchError: report.watchError } : {}),
     ...(report.formatPairing ? { formatPairing: report.formatPairing } : {}),
     ...(report.formatPairingError !== undefined
       ? { formatPairingError: report.formatPairingError }

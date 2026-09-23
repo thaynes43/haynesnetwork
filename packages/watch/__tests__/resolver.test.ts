@@ -2,6 +2,8 @@
 // year bonuses, the "different title within 0.05" rule and the kind filter.
 import { describe, expect, it } from 'vitest';
 import {
+  RESOLVE_MIN_SCORE,
+  WORD_PREFIX_SCORE,
   jaroWinkler,
   resolveTitle,
   titleMatchScore,
@@ -65,8 +67,9 @@ describe('titleMatchScore (the D-13 tiers)', () => {
   });
 
   it('applies the 60% length rule and never matches two different country tags as equal', () => {
-    // "dune" is 4 of 13 characters of "dune prophecy": no prefix credit, and Jaro-Winkler is 0.86.
-    expect(titleMatchScore('dune', 'Dune: Prophecy')).toBe(0);
+    // "dune" is 4 of 13 characters of "dune prophecy": no 0.85 prefix credit, and Jaro-Winkler is
+    // 0.86 — only the Q-05 whole-word prefix (0.7) applies.
+    expect(titleMatchScore('dune', 'Dune: Prophecy')).toBe(WORD_PREFIX_SCORE);
     expect(titleMatchScore('silo', 'Silos')).toBe(0.85);
     expect(titleMatchScore('the office us', 'The Office (UK)')).toBeLessThan(0.9);
     expect(titleMatchScore('', 'Dune')).toBe(0);
@@ -115,11 +118,11 @@ describe('resolveTitle (D-13)', () => {
     if (warm.status === 'resolved') expect(warm.score).toBeCloseTo(0.9, 10);
   });
 
-  it('asks between the two Dunes, newest first; Dune: Prophecy scores nothing for "dune"', () => {
+  it('asks between the two Dunes, newest first, then offers Dune: Prophecy (Q-05, D-21 example)', () => {
     const r = resolveTitle('dune', [prophecy, dune1984, dune2021]);
     expect(r.status).toBe('ambiguous');
     if (r.status !== 'ambiguous') return;
-    expect(r.options).toEqual([dune2021, dune1984]);
+    expect(r.options).toEqual([dune2021, dune1984, prophecy]);
     expect(r.best).toBe(1);
   });
 
@@ -176,6 +179,43 @@ describe('resolveTitle (D-13)', () => {
       cand('Blade Runner 2049', 2017, 'movie'),
     ]);
     expect(r).toMatchObject({ status: 'resolved', candidate: { year: 2017 } });
+  });
+
+  describe('Q-05 — the whole-word prefix (0.7)', () => {
+    it('scores only when the query is the leading whole words of the title', () => {
+      expect(titleMatchScore('star trek', 'Star Trek: Strange New Worlds')).toBe(WORD_PREFIX_SCORE);
+      expect(titleMatchScore('the office', 'The Office Christmas Party')).toBe(WORD_PREFIX_SCORE);
+      // Not a whole word: "dun" is a prefix of "dune" only.
+      expect(titleMatchScore('dun', 'Dune: Prophecy')).toBe(0);
+      // Not the leading words.
+      expect(titleMatchScore('prophecy', 'Dune: Prophecy')).toBe(0);
+      // The title leading the QUERY is not this rule (the ruling is one-directional).
+      expect(titleMatchScore('dune prophecy', 'Dune')).toBe(0);
+    });
+
+    it('never resolves alone, even with both bonuses: "Did you mean" instead', () => {
+      // 0.7 + the year bonus + the history bonus = 0.8, still under 0.9.
+      for (const query of ['dune 2024', 'Dune (2024)']) {
+        const alone = resolveTitle(query, [{ ...prophecy, inHistory: true }]);
+        expect(alone.status).toBe('ambiguous');
+        if (alone.status !== 'ambiguous') return;
+        expect(alone.options).toEqual([{ ...prophecy, inHistory: true }]);
+        expect(alone.best).toBeCloseTo(0.8, 10);
+        expect(alone.best).toBeLessThan(RESOLVE_MIN_SCORE);
+      }
+      expect(resolveTitle('dune', [prophecy])).toMatchObject({
+        status: 'ambiguous',
+        options: [prophecy],
+        best: WORD_PREFIX_SCORE,
+      });
+    });
+
+    it('never outranks or blocks an exact title', () => {
+      expect(resolveTitle('dune', [prophecy, dune2021])).toMatchObject({
+        status: 'resolved',
+        candidate: dune2021,
+      });
+    });
   });
 
   it('answers not found below 0.6, and for an empty query', () => {

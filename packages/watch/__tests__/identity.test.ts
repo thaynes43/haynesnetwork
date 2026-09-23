@@ -24,7 +24,7 @@ describe('titleKeyFor (D-08 preference order)', () => {
       'tmdb:show:63639',
     );
     expect(titleKeyFor({ kind: 'show', title: 'The Expanse', year: 2015 })).toBe(
-      'name:expanse|2015',
+      'name:show:expanse|2015',
     );
   });
 
@@ -41,7 +41,7 @@ describe('titleKeyFor (D-08 preference order)', () => {
     expect(titleKeyFor({ ...movie, plexGuid: null })).toBe('tmdb:movie:603');
     expect(titleKeyFor({ ...movie, plexGuid: null, tmdbId: null })).toBe('imdb:tt0133093');
     expect(titleKeyFor({ kind: 'movie', title: 'The Matrix', year: 1999 })).toBe(
-      'name:matrix|1999',
+      'name:movie:matrix|1999',
     );
   });
 
@@ -55,15 +55,25 @@ describe('titleKeyFor (D-08 preference order)', () => {
     expect(titleKeyFor({ ...base, plexGuid: 'plex://episode/abc' })).toBe('tvdb:400599');
     expect(
       titleKeyFor({ kind: 'show', title: 'Hazbin Hotel', year: 2024, plexGuid: 'local://9' }),
-    ).toBe('name:hazbin hotel|2024');
+    ).toBe('name:show:hazbin hotel|2024');
   });
 
-  it('builds the name key from the normalized title and the year (or the title year hint)', () => {
-    expect(nameKey('The Office (US)', 2005)).toBe('name:office us|2005');
-    expect(nameKey('Dune (2021)')).toBe('name:dune|2021');
-    expect(nameKey('Dune')).toBe('name:dune|');
-    expect(nameKey('Blade Runner 2049', 2017)).toBe('name:blade runner 2049|2017');
-    expect(nameKey('Pokémon: Detective Pikachu', 2019)).toBe('name:pokemon detective pikachu|2019');
+  it('builds the name key from the kind, the normalized title and the year (or the title year hint)', () => {
+    expect(nameKey('show', 'The Office (US)', 2005)).toBe('name:show:office us|2005');
+    expect(nameKey('movie', 'Dune (2021)')).toBe('name:movie:dune|2021');
+    expect(nameKey('movie', 'Dune')).toBe('name:movie:dune|');
+    expect(nameKey('movie', 'Blade Runner 2049', 2017)).toBe('name:movie:blade runner 2049|2017');
+    expect(nameKey('movie', 'Pokémon: Detective Pikachu', 2019)).toBe(
+      'name:movie:pokemon detective pikachu|2019',
+    );
+  });
+
+  it('keeps a show and a movie of the same title and year apart (the key carries the kind)', () => {
+    const show = titleKeyFor({ kind: 'show', title: 'Fargo', year: 1996 });
+    const movie = titleKeyFor({ kind: 'movie', title: 'Fargo', year: 1996 });
+    expect(show).toBe('name:show:fargo|1996');
+    expect(movie).toBe('name:movie:fargo|1996');
+    expect(identityKeys({ kind: 'show', title: 'Fargo', year: 1996 })).not.toContain(movie);
   });
 });
 
@@ -84,10 +94,12 @@ describe('identityKeys', () => {
       'tvdb:371980',
       'tmdb:show:95396',
       'imdb:tt11280740',
-      'name:severance|2022',
+      'name:show:severance|2022',
     ]);
     expect(keys).toContain(titleKeyFor(ids));
-    expect(identityKeys({ kind: 'movie', title: 'Dune', year: 2021 })).toEqual(['name:dune|2021']);
+    expect(identityKeys({ kind: 'movie', title: 'Dune', year: 2021 })).toEqual([
+      'name:movie:dune|2021',
+    ]);
   });
 
   it('ignores a tvdb id on a movie and malformed ids', () => {
@@ -100,20 +112,27 @@ describe('identityKeys', () => {
         tmdbId: 0,
         imdbId: 'nm123',
       }),
-    ).toEqual(['name:x|2020']);
+    ).toEqual(['name:movie:x|2020']);
     expect(identityKeys({ kind: 'show', title: 'X', year: 2020, tvdbId: 1.5, tmdbId: -3 })).toEqual(
-      ['name:x|2020'],
+      ['name:show:x|2020'],
     );
   });
 
   it('keysOf adds a stored title key its ids no longer produce', () => {
     expect(
       keysOf({ kind: 'movie', title: 'Dune', year: 2021, titleKey: 'tmdb:movie:438631' }),
-    ).toEqual(['name:dune|2021', 'tmdb:movie:438631']);
+    ).toEqual(['name:movie:dune|2021', 'tmdb:movie:438631']);
   });
 
   it('ranks keys so a writer can tell a stronger key (re-keying, D-08)', () => {
-    const ordered = ['plex:plex://show/a', 'tvdb:1', 'imdb:tt1', 'tmdb:show:1', 'name:x|', 'odd'];
+    const ordered = [
+      'plex:plex://show/a',
+      'tvdb:1',
+      'imdb:tt1',
+      'tmdb:show:1',
+      'name:show:x|',
+      'odd',
+    ];
     expect(ordered.map(titleKeyRank)).toEqual([0, 1, 2, 3, 4, 5]);
     expect(titleKeyRank('tmdb:movie:1')).toBe(1);
   });

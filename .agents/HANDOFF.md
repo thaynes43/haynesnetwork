@@ -4,6 +4,19 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-23 — Watch Companion S5–S6 (domain writers, Watch Marks, the `watch` sync) is PR #563, awaiting the driver's merge
+
+PLAN-068 S5 put the five watch tables' single writers and the Watch Mark flows (`markWatched`,
+`dismissTitle`, `undoLastChange`, `revalidateTitles`) in `packages/domain/src/watch/`; S6 built the
+`watch` sync mode (`packages/sync/src/watch.ts`, `watch-assemble.ts`) and removed S2's refusal. Rulings
+applied and recorded in DESIGN-049 (D-26, Q-05, Q-06): `name:<kind>:…` keys, the 0.7 whole-word prefix,
+`PLEX_SERVERS` from `PLEX_SERVER_SLUGS`, the bounded Q-06 show-guid retry (`fillShowGuids`, the one
+event update), and `watch_events` / `watch_marks` in the DELETE guard. D-04 and OPS-015 §1/§4 now match
+the live #3131 deploy (key `HNET_MCP_HOP_TOKEN`, `refreshPolicy: CreatedOnce`, rotation = delete the
+Secret — the owner's action). No real Plex server was ever scrobbled: every mark test runs on a
+recording fake. **Next:** S7 (`@hnet/mcp` + `/api/mcp`) and S8 (`dev:local`) on the stacked branch
+`agent/watch-mcp`; then S9 release, S10 haynes-ops (the `sync-watch` CronJob is not scheduled yet).
+
 ## ▶ 2026-09-23 — Watch Companion foundation (PLAN-068 S1–S3) is PR #559, awaiting the driver's merge
 
 **What #559 lands** (S4, `@hnet/watch`, already merged as #558):

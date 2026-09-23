@@ -24,6 +24,7 @@
     "@hnet/libretto": "workspace:*",
     "@hnet/openwebui": "workspace:*",
     "@hnet/plex": "workspace:*",
+    "@hnet/watch": "workspace:*",
     "drizzle-orm": "^0.36.4",
     "nodemailer": "^9.0.3"
   },

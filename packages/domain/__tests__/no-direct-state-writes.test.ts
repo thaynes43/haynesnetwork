@@ -190,12 +190,14 @@ const ALLOWED_FILES = new Set<string>([
 // REPLACES one source's rows for the account in one transaction). No permission_audit/ledger rows: the
 // read-model is rebuildable from Tautulli + Plex (the media_plex_matches class) and the marks audit
 // themselves. All five are guarded in the INSERT / UPDATE families (+ Drizzle .insert/.update — UPDATE on the
-// append-only log too, so nothing outside the domain can rewrite history); watch_reco_signals (the replace)
-// and watch_titles (history must never be dropped from outside the domain) also in DELETE (+ .delete). The
-// account/event/mark DELETE forms stay unguarded like book_requests (test cleanups outside the domain may
-// delete fixtures directly); the schema carries the invariant instead — writers never delete an account,
-// the rebuildable event/title/signal rows cascade from it, and watch_marks (the owner's corrections, not
-// rebuildable — OPS-015 §7) RESTRICT the account delete.
+// append-only log too, so nothing outside the domain can rewrite history; the domain's one event UPDATE is
+// the DESIGN-049 Q-06 `fillShowGuids`, which only fills a NULL show_guid); watch_reco_signals (the replace),
+// watch_titles (history must never be dropped from outside the domain), and — driver ruling, PLAN-068 S5 —
+// watch_events (the append-only log) and watch_marks (the owner's corrections and the undo record, not
+// rebuildable — OPS-015 §7) also in DELETE (+ .delete): nothing outside the domain may ever delete them, and
+// the domain itself never does. Only the account DELETE form stays unguarded like book_requests; the schema
+// carries that invariant instead — writers never delete an account, the rebuildable event/title/signal rows
+// cascade from it, and watch_marks RESTRICT the account delete.
 const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'UPDATE users SET role_id (SQL)',
@@ -214,7 +216,7 @@ const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'DELETE FROM guarded table (SQL)',
     regex:
-      /DELETE\s+FROM\s+(watch_titles|watch_reco_signals|trash_save_intents|pending_pool_refresh|role_app_grants|role_section_permissions|role_trash_action_grants|role_message_action_grants|role_bulletin_view_grants|notifications|notification_outbox|smart_drive_state|ai_usage_chats|pending_role_assignments|tickets|ticket_events|ticket_replies|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|roles|app_catalog|media_items|media_metadata|media_plex_matches|plex_collections|plex_collection_members|books_collections|books_collection_members|gb_quota_state|gb_call_budget|books_format_pairs|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|role_collection_action_grants|plex_share_audit)\b/i,
+      /DELETE\s+FROM\s+(watch_events|watch_marks|watch_titles|watch_reco_signals|trash_save_intents|pending_pool_refresh|role_app_grants|role_section_permissions|role_trash_action_grants|role_message_action_grants|role_bulletin_view_grants|notifications|notification_outbox|smart_drive_state|ai_usage_chats|pending_role_assignments|tickets|ticket_events|ticket_replies|app_settings|trash_batches|trash_batch_items|trash_batch_saves|trash_candidates|trash_candidates_state|roles|app_catalog|media_items|media_metadata|media_plex_matches|plex_collections|plex_collection_members|books_collections|books_collection_members|gb_quota_state|gb_call_budget|books_format_pairs|ledger_events|fix_requests|restore_runs|sync_runs|sync_state|plex_servers|plex_libraries|role_library_grants|role_plex_server_all_grants|role_collection_action_grants|plex_share_audit)\b/i,
   },
   {
     name: '.insert() into guarded/audit table (Drizzle)',
@@ -229,7 +231,7 @@ const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: '.delete() on guarded table (Drizzle)',
     regex:
-      /\.delete\(\s*(?:[A-Za-z_$][\w$]*\.)?(watchTitles|watchRecoSignals|roleAppGrants|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|roleBulletinViewGrants|notifications|notificationOutbox|smartDriveState|aiUsageChats|pendingRoleAssignments|tickets|ticketEvents|ticketReplies|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|trashSaveIntents|pendingPoolRefresh|roles|appCatalog|mediaItems|mediaMetadata|mediaPlexMatches|plexCollections|plexCollectionMembers|booksCollections|booksCollectionMembers|gbQuotaState|gbCallBudget|booksFormatPairs|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|roleLibraryGrants|rolePlexServerAllGrants|roleCollectionActionGrants|plexLibraries|plexServers)\s*\)/,
+      /\.delete\(\s*(?:[A-Za-z_$][\w$]*\.)?(watchEvents|watchMarks|watchTitles|watchRecoSignals|roleAppGrants|roleSectionPermissions|roleTrashActionGrants|roleMessageActionGrants|roleBulletinViewGrants|notifications|notificationOutbox|smartDriveState|aiUsageChats|pendingRoleAssignments|tickets|ticketEvents|ticketReplies|appSettings|trashBatches|trashBatchItems|trashBatchSaves|trashCandidates|trashCandidatesState|trashSaveIntents|pendingPoolRefresh|roles|appCatalog|mediaItems|mediaMetadata|mediaPlexMatches|plexCollections|plexCollectionMembers|booksCollections|booksCollectionMembers|gbQuotaState|gbCallBudget|booksFormatPairs|ledgerEvents|fixRequests|restoreRuns|syncRuns|syncState|roleLibraryGrants|rolePlexServerAllGrants|roleCollectionActionGrants|plexLibraries|plexServers)\s*\)/,
   },
 ];
 

@@ -67,6 +67,8 @@ do not reach around it.
 | `upsertMediaItemsBatch`, `tombstoneMissingItems`             | `media-sync.ts`            | `media_items`, `sync_state`             | `ledger_events` (tombstones) |
 | `ingestLedgerEvents`, `backfillEventAttribution`             | `ledger-ingest.ts`         | `ledger_events`, `sync_state`           | (is the ledger)              |
 | `startSyncRun`, `finishSyncRun`                              | `sync-runs.ts`             | `sync_runs`                             | —                            |
+| `upsertWatchOwner`, `appendWatchEvents`, `fillShowGuids`, `upsertWatchTitles`, `replaceRecoSignals` | `watch/*` (ADR-088, DESIGN-049) | `watch_accounts`, `watch_events` (append-only; the one update fills a NULL `show_guid`), `watch_titles`, `watch_reco_signals` | — (rebuildable read-model) |
+| `markWatched`, `dismissTitle`, `undoLastChange`              | `watch/marks.ts`           | `watch_marks` (+ the `watch_titles` write-through) | the mark rows are the audit trail; the ONLY Plex watched-state writes (`@hnet/plex/write`), never from a dismissal |
 
 Orchestrators (compose the writers above + the *arr bundle, open no transaction of their
 own): `runFixRequest` (`fix-flow.ts`), `runForceSearch` (`search-flow.ts`),

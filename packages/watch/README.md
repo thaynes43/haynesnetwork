@@ -2,12 +2,16 @@
 
 The Watch Companion's pure math (DESIGN-049; ADR-088, ADR-089; PLAN-068 S4): title identity,
 per-episode progress and states, the spoken-title resolver, the Taste Profile, the recommendation
-exclusions and score, and the spoken answers of the seven watch tools.
+exclusions and score, and the spoken answers of the seven watch tools — plus (S5–S7) the Title State
+helpers the sync, the live revalidation and the Watch Mark write-through share, and the read queries.
 
-Exports raw TS — no build step (see root `CLAUDE.md`). **Pure in this stage:** no database, no
-network, no clock, no `@hnet/domain`, no MCP SDK; `zod` is the only dependency. Every function that
-depends on time takes `now`. The read queries (SELECT only) join in a later stage; the package never
-writes (D-01).
+Exports raw TS — no build step (see root `CLAUDE.md`). The math is **pure**: no network, no clock, no
+`@hnet/domain`, no MCP SDK; every function that depends on time takes `now`. The queries (`src/queries/`)
+are SELECT only and take the `db` to run on; the package **never writes** (D-01). Dependencies:
+`@hnet/db` (schema types, the queries), `drizzle-orm` (their query builder) and `zod`.
+
+**Servers.** `PLEX_SERVERS` is the schema's `PLEX_SERVER_SLUGS` in preference order (HaynesOps,
+HaynesTower, HaynesKube) — one source of truth (DESIGN-049 D-26); `PlexServer` is `PlexServerSlug`.
 
 **Units.** Every time is a unix timestamp in **seconds** (Plex `lastViewedAt`, Tautulli
 `started`/`stopped`, `now`). Resume offsets and durations are milliseconds, as Plex reports them.
@@ -16,11 +20,11 @@ writes (D-01).
 
 | Export | Contract |
 |---|---|
-| `titleKeyFor(ids: TitleIds): string` | The `title_key`: `plex:<plex://show\|movie/… guid>` (same kind; `local://` and legacy agent guids never), then `tvdb:<id>` (show) or `tmdb:movie:<id>` (movie), then `imdb:<id>`, then `tmdb:show:<id>`, last `name:<normalized title>\|<year>`. |
+| `titleKeyFor(ids: TitleIds): string` | The `title_key`: `plex:<plex://show\|movie/… guid>` (same kind; `local://` and legacy agent guids never), then `tvdb:<id>` (show) or `tmdb:movie:<id>` (movie), then `imdb:<id>`, then `tmdb:show:<id>`, last `name:<kind>:<normalized title>\|<year>`. |
 | `identityKeys(ids: TitleIds): string[]` | Every key the title can be matched by, strongest first; always one `name:` key. Two records are the same title when their key sets intersect. |
 | `keysOf(ids & { titleKey? })` | `identityKeys` plus a stored `titleKey`. |
 | `titleKeyRank(key): number` | 0 plex, 1 tvdb / tmdb:movie, 2 imdb, 3 tmdb:show, 4 name — for re-keying a row to a stronger key. |
-| `nameKey(title, year?)` | The `name:` key alone. |
+| `nameKey(kind, title, year?)` | The `name:<kind>:…` key alone — it carries the kind (PLAN-068 S5 ruling), so a show and a movie of the same title and year never share it. |
 | `normalizeTitle(s): { norm, year }` | D-13: NFKD, no diacritics, lower-case, `&`→`and`, apostrophes and periods join, other punctuation → space, one leading the/a/an dropped. A `(2019)` tag leaves the title and becomes the year hint; a bare trailing year (`dune 2021`, `Blade Runner 2049`) becomes the hint but stays in `norm`. |
 | `stripTrailingTag(norm)` | Drops one trailing country tag (`us`, `uk`, `au`, …) or bare year. |
 
@@ -45,7 +49,7 @@ counts for shows only (TVDB movie ids are another id space).
 | Export | Contract |
 |---|---|
 | `resolveTitle(query, pool: ResolverCandidate[], { kind? }): ResolveResult` | Pool entries sharing an identity key (same kind) are ONE title. Title score = best entry's match + 0.05 year-hint match + 0.05 when any entry is in history (bonuses never lift a zero match). `resolved` (with `candidate`, `score`, `sameTitle`) when the best is ≥ 0.9 and the runner-up title is at least 0.05 below — a margin of exactly 0.05 resolves; `ambiguous` (`options`: ≤ 3 titles, best first, newer first on a tie) when ≥ 0.6; else `not_found` (the caller may then try TMDB `search/multi`). |
-| `titleMatchScore(query, title)` | Before bonuses: 1.0 exact; 0.95 exact once ONE side's trailing country or year tag is dropped (two different tags never match); 0.85 prefix when the shorter is ≥ 60% of the longer; Jaro-Winkler × 0.9 when Jaro-Winkler ≥ 0.9; else 0. Use `=== 1` for the TMDB exact-match acceptance. |
+| `titleMatchScore(query, title)` | Before bonuses: 1.0 exact; 0.95 exact once ONE side's trailing country or year tag is dropped (two different tags never match); 0.85 prefix when the shorter is ≥ 60% of the longer; else the better of Jaro-Winkler × 0.9 (when Jaro-Winkler ≥ 0.9) and `WORD_PREFIX_SCORE` 0.7 when the query's words are the leading whole words of the title ("dune" → "Dune: Prophecy"; also with a trailing year hint dropped — Q-05 ruling: listed in an ambiguous answer, never resolved alone); else 0. Use `=== 1` for the TMDB exact-match acceptance. |
 | `jaroWinkler(a, b)` | Standard Jaro-Winkler (prefix scale 0.1, up to 4 characters, boost above 0.7). |
 
 `ResolverCandidate = { titleKey; kind; title; year: number \| null; inHistory: boolean; ids?: ExternalIds }`.
@@ -66,9 +70,9 @@ counts for shows only (TVDB movie ids are another id space).
 | `scoreCandidates(cands, profile, { kind?, genre?, now, genreTitles? }): ScoredPick[]` | D-19 `0.45 × affinity + 0.30 × quality + boosts` (watchlist +0.35, seeds +0.3 × min(1, n/3), new on Plex within 21 days +0.1); ties on quality, then title. Reason, first that applies: "on your watchlist"; `because you watched <most recent seed>`; `<genre> like <title>` (the requested genre, else the owner's strongest shared genre, drama last); `rated <x> on IMDb`; "new on Plex"; "new to you". |
 | `pickRecommendations(input): { onPlex, notOnPlex }` | The whole pure pipeline: exclude → merge → score with the adult or kids profile → split. |
 
-Known conservative edge: `name:` keys carry no kind, so a watched movie also excludes a show with the
-same normalized title and year. The rules err toward leaving a pick out, never toward repeating a
-watched title.
+`name:` keys carry the kind (since PLAN-068 S5), so a watched movie no longer excludes a show with the
+same normalized title and year. Where identity is uncertain the rules still err toward leaving a pick
+out, never toward repeating a watched title.
 
 ## Spoken answers (D-14, D-15, D-20, D-21) — `src/format.ts`, `src/spoken.ts`
 
@@ -89,6 +93,33 @@ leads; episodes are "season 3 episode 1"; at most `limit` items, then "And N mor
 | `formatNotFound(query, { kind? })`, `formatNotReady()`, `formatWatchError()` | "I couldn't find anything called Severence." / "Watch history isn't ready yet." / "Watch history hit an error. Try again in a minute." |
 | `spokenDate(ts, now, { timeZone? })` | "today", "yesterday", "on September 12" (this year), "in March 2025"; the owner's calendar (`America/New_York` by default). `spokenSince` phrases the same after "since". |
 | `capSpoken(text, max?)`, `capSpokenList({ lead, items, more?, tail? }, max?)` | The cap: a sentence-boundary cut (not after "Mr." or an initial); lists drop the tail first, then items from the end, raising "And N more.". |
+
+## Title State helpers (D-09 step 4, D-11, D-14 step 6) — `src/state.ts`
+
+Shared by the `watch` sync, `revalidateTitles` and the Watch Mark write-through, so all three write the
+same shape. Plex items are read structurally (`PlexItemLike`; a `@hnet/plex` `PlexSectionItem` is
+assignable — this package does not import `@hnet/plex`).
+
+| Export | Contract |
+|---|---|
+| `parsePlexItemIds(item)`, `plexGenres(item)` | The `plex://` guid, `tmdb://` / `tvdb://` / `imdb://` agent ids, `local` (an unmatched `local://` item); the `Genre[]` tags. |
+| `episodeObsFromLeaves(leaves)`, `movieObsFromItem(server, item)` | `allLeaves` / a movie item → the D-10 observations (specials kept; the math drops them). |
+| `showCounts(item)`, `movieCounts(obs)`, `countsEqual(a, b)` | The per-server change-detection counters (`plex_counts`). |
+| `serverEpisodesFromMap(map)`, `withServerEpisodes(base, fresh)`, `storedMovieObs(row)` | Rebuild the inputs of servers not read this time from the stored snapshot. |
+| `applyEpisodeFlips(servers, flips, watched, at)`, `applyMovieFlips(…)` | A mark or its undo applied without a second read (a flip sets the whole pair on every server). |
+| `showProgressFields(p, carry?)`, `movieProgressFields(p, servers)` | D-10 outputs → the progress columns (a movie's `next_server` is its resume server). |
+| `orderOnPlex(entries)`, `preferredHolder(onPlex)` | `on_plex` in preference order; the preferred holder. |
+| `eventObs(row)`, `secondsToDate`, `dateToSeconds` | Unit conversions at the edge. |
+
+## Read queries (SELECT only) — `src/queries/`
+
+| Export | Returns |
+|---|---|
+| `selectWatchOwner(db)` | THE `owner` row (D-03) or null ("not ready yet"). |
+| `selectResolverPool(db, account, { kind? })` | D-13's pool: Title States (`inHistory`), the live ledger, the signals — each a `PoolEntry` that remembers its row / ledger item. |
+| `selectTitleRows`, `selectTitleRowsByIdentity`, `selectLedgerHolders`, `selectLedgerFacts`, `selectLedgerIndex` | Title States by id / kind / identity; where a ledger item is on Plex; ledger genres and Sonarr's ended status. |
+| `selectAccountEvents`, `selectTitleEvents`, `selectKnownShowGuids`, `selectUnresolvedShowPairs` | Events for the sync and for one title; the Q-06 show-guid lookups. |
+| `selectLiveMarks`, `selectSignals`, `selectSignalsFetchedAt` | Unreverted marks; the signal cache and its freshness (the 20-hour seed cadence). |
 
 ## Tests
 

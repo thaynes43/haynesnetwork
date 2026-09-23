@@ -85,10 +85,35 @@ export function jaroWinkler(a: string, b: string): number {
 }
 
 /**
+ * Q-05 (owner/driver ruling, PLAN-068 S5): a query whose words are the LEADING WHOLE WORDS of a longer
+ * title ("dune" → "Dune: Prophecy") scores this. It lists the title among the options of an ambiguous
+ * answer but can never resolve alone: even with both bonuses it is 0.8, under RESOLVE_MIN_SCORE (and a
+ * single-option ambiguous answer reads "Did you mean …?").
+ */
+export const WORD_PREFIX_SCORE = 0.7;
+
+/** `query` is the leading whole words of `title` (both normalized): "dune" of "dune prophecy". */
+function isWordPrefix(query: string, title: string): boolean {
+  return query.length > 0 && title.length > query.length && title.startsWith(`${query} `);
+}
+
+/**
+ * The query's words for the Q-05 rule: as normalized, and — when it ends in its bare year hint ("dune
+ * 2024") — also without that year, which is a hint, not a title word (the D-25 0.95-rule reading).
+ */
+function wordPrefixQueries(q: NormalizedTitle): string[] {
+  const suffix = q.year === null ? null : ` ${q.year}`;
+  return suffix !== null && q.norm.endsWith(suffix)
+    ? [q.norm, q.norm.slice(0, -suffix.length)]
+    : [q.norm];
+}
+
+/**
  * The D-13 match score of a query against one title, before bonuses: 1.0 exact; 0.95 exact once ONE
  * side's trailing country or year tag is dropped ("the office us" vs "The Office"; two different tags
  * never match); 0.85 when one is a prefix of the other and the shorter is at least 60% of the longer;
- * otherwise Jaro-Winkler × 0.9 when Jaro-Winkler is at least 0.9; else 0.
+ * otherwise the better of Jaro-Winkler × 0.9 (when Jaro-Winkler is at least 0.9) and the Q-05
+ * whole-word prefix (0.7, the query's words leading the title's); else 0.
  */
 export function titleMatchScore(
   query: string | NormalizedTitle,
@@ -102,7 +127,9 @@ export function titleMatchScore(
   const [shorter, longer] = q.norm.length <= c.norm.length ? [q.norm, c.norm] : [c.norm, q.norm];
   if (longer.startsWith(shorter) && shorter.length >= 0.6 * longer.length) return 0.85;
   const jw = jaroWinkler(q.norm, c.norm);
-  return jw >= 0.9 ? jw * 0.9 : 0;
+  const fuzzy = jw >= 0.9 ? jw * 0.9 : 0;
+  const wordPrefix = wordPrefixQueries(q).some((words) => isWordPrefix(words, c.norm));
+  return Math.max(fuzzy, wordPrefix ? WORD_PREFIX_SCORE : 0);
 }
 
 interface Scored {
