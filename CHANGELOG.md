@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.96.5](https://github.com/thaynes43/haynesnetwork/compare/v0.96.4...v0.96.5) (2026-09-23)
+
+
+### Bug Fixes
+
+* **library:** wire the ADR-053 Plex Account Map so per-user watch state fills ([#557](https://github.com/thaynes43/haynesnetwork/issues/557)) ([72cdbca](https://github.com/thaynes43/haynesnetwork/commit/72cdbca9f747e99fcb632df44c5c5058ff3cd689))
+
+
+### Documentation
+
+* **agents:** v0.96.4 rolled out and verified (3/3, health 200) — and KICKOFF's reconcile namespace was wrong ([#550](https://github.com/thaynes43/haynesnetwork/issues/550)) ([1231f51](https://github.com/thaynes43/haynesnetwork/commit/1231f5192a5315ab2cabea2b85c532f18e6c5e14))
+* Watch Companion design — ADR-087/088/089, DESIGN-049, PLAN-068 ([#552](https://github.com/thaynes43/haynesnetwork/issues/552)) ([05c5242](https://github.com/thaynes43/haynesnetwork/commit/05c52422036691abf0817a790981ca7d7aef0176))
+
 ## [0.96.4](https://github.com/thaynes43/haynesnetwork/compare/v0.96.3...v0.96.4) (2026-09-22)
 
 
