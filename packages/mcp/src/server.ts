@@ -5,7 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ListToolsRequestSchema, type CallToolResult, type Tool } from '@modelcontextprotocol/sdk/types.js';
 import { formatNotReady, formatWatchError, selectWatchOwner } from '@hnet/watch';
-import type { z } from 'zod';
+import { z } from 'zod';
 import {
   answerDismiss,
   answerMarkWatched,
@@ -45,6 +45,21 @@ function text(t: string, isError = false): CallToolResult {
   return isError ? { content: [{ type: 'text', text: t }], isError: true } : { content: [{ type: 'text', text: t }] };
 }
 
+/**
+ * What the SDK validates a call against: anything. The STRICT zod schema of each tool validates inside
+ * `runTool` instead, so an invalid call is answered — and logged (D-06: one line per call) — like any other.
+ */
+const ACCEPT_ANY = z.looseObject({});
+
+/** A short, value-free summary of why arguments were refused (paths and zod messages only). */
+function invalidArgs(tool: string, error: z.ZodError): string {
+  const issues = error.issues
+    .slice(0, 3)
+    .map((i) => `${i.path.join('.') || 'arguments'}: ${i.message}`)
+    .join('; ');
+  return `Invalid arguments for ${tool}: ${issues}.`;
+}
+
 /** Run one tool call: principal, scope, answer, D-06 logging and error sanitizing. Never throws. */
 export async function runTool(
   tool: WatchToolDef,
@@ -65,11 +80,13 @@ export async function runTool(
     if (!consumer.scopes.includes(tool.scope)) {
       return finish(text(`This connection can't use ${tool.name}.`, true), 'scope');
     }
+    const parsed = tool.input.safeParse(args ?? {});
+    if (!parsed.success) return finish(text(invalidArgs(tool.name, parsed.error), true), 'invalid_args');
     // D-03: the principal is THE owner row; none yet ⇒ an ordinary answer, not an error.
     const owner = await selectWatchOwner(deps.db);
     if (!owner) return finish(text(formatNotReady()));
     const ctx: AnswerContext = { deps, owner, consumer, phases };
-    const answer = await ANSWERS[tool.name as WatchToolName](ctx, args as never);
+    const answer = await ANSWERS[tool.name as WatchToolName](ctx, parsed.data as never);
     if (ctx.revalidateTimedOut) deps.log(revalidateTimeoutLine({ tool: tool.name, consumer: consumer.name }));
     return finish(text(answer));
   } catch (error) {
@@ -97,8 +114,8 @@ export function toolList(consumer: McpConsumer): Tool[] {
 }
 
 /**
- * A fresh server for one request, with the consumer's tools. Calls go through `registerTool` (the zod
- * schemas, module-scope, validate every call); `tools/list` is then served from the hand-written JSON
+ * A fresh server for one request, with the consumer's tools. Calls go through `registerTool` into `runTool`,
+ * where the module-scope strict zod schema validates them; `tools/list` is served from the hand-written JSON
  * Schemas through the low-level handler (D-05: the SDK-generated list is over the Voice Budget).
  */
 export function buildServer(deps: McpDeps, consumer: McpConsumer): McpServer {
@@ -110,8 +127,8 @@ export function buildServer(deps: McpDeps, consumer: McpConsumer): McpServer {
     if (!consumer.scopes.includes(tool.scope)) continue;
     server.registerTool(
       tool.name,
-      { description: tool.description, inputSchema: tool.input, annotations: tool.annotations },
-      (args: z.infer<typeof tool.input>) => runTool(tool, args, deps, consumer),
+      { description: tool.description, inputSchema: ACCEPT_ANY, annotations: tool.annotations },
+      (args: unknown) => runTool(tool, args, deps, consumer),
     );
   }
   server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: toolList(consumer) }));

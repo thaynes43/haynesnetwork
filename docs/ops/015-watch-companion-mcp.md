@@ -36,7 +36,7 @@ with urllib.request.urlopen(req, timeout=5) as r:
   body = r.read(); print(r.status, len(body), "bytes", r.headers.get("Mcp-Session-Id"))'
 ```
 
-Expect `200`, at most 3,072 bytes, and `None` for the session id. `401` means the hop and the web
+Expect `200`, at most 3,072 bytes (2,712 as built in PLAN-068 S7), and `None` for the session id. `401` means the hop and the web
 pods hold different tokens (section 4); `503` means the web pods have no token (the Secret is
 missing — check `kubectl get externalsecret -n frontend haynesnetwork-mcp-consumer`).
 
