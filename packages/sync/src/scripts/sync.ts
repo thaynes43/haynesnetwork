@@ -61,7 +61,9 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
   --mode=metadata-refresh  harvest ratings/genres/runtime/posters (+ Tautulli watch-stats,
-                           Maintainerr, direct TMDB/TVDB fallback) into media_metadata (ADR-018)
+                           Maintainerr, direct TMDB/TVDB fallback) into media_metadata (ADR-018);
+                           first maps unmapped users' plex.tv ids from their stored id_tokens
+                           (ADR-053), then writes per-user watch rows (user_media_watch) for them
   --mode=trash-batch-sweep delete the survivors of every EXPIRED Leaving-Soon batch, one guarded
                            item at a time (ADR-025 — SAFE audit + live exclusions + guardian re-run).
                            Drives Maintainerr; needs MAINTAINERR_URL/MAINTAINERR_API_KEY. No --source.
@@ -612,6 +614,11 @@ async function main(): Promise<number> {
     totalFailure: report.totalFailure,
     backfill: report.backfill,
     fixesCompleted: report.fixesCompleted,
+    // ADR-053 — the metadata-refresh Plex Account Map reconcile (only that mode carries it).
+    ...(report.plexAccountMap ? { plexAccountMap: report.plexAccountMap } : {}),
+    ...(report.plexAccountMapError !== undefined
+      ? { plexAccountMapError: report.plexAccountMapError }
+      : {}),
     ...(report.candidateRefresh
       ? {
           candidateRefresh: {

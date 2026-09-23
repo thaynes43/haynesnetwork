@@ -4,6 +4,21 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-23 — The ADR-053 Plex Account Map is wired, so the per-user Watched chip can fill
+
+`ensurePlexUserIdMapping` had no caller, so `user_account_map` and `user_media_watch` held 0 rows in
+production. That PR (`fix(library)`, branch `agent/fix-plex-account-map`) adds a sign-in hook and a
+`metadata-refresh` pre-step reconcile that backfills the 12 users whose stored tokens carry
+`plex_user_id` (DESIGN-026 D-07 status note). The same PR fixes the harvest cadence. The 6 h
+staleness threshold equalled the 6 h schedule, so every second run was nearly empty and rows
+refreshed every 12 h. A 30 min slack fixes it (DESIGN-008 D-03 amendment). **Verify after deploy:**
+the first `sync-metadata` run (at :15, every 6 h) logs `plexAccountMap.mapped` of about 12 and a
+`userWatchWritten` above 0, and every later run re-harvests about 18.4k rows.
+
+Still open: ABS handle entry ([#555](https://github.com/thaynes43/haynesnetwork/issues/555)).
+`activity-scan` was never scheduled and is unsafe to schedule until its per-failure Pushover rows go
+([#556](https://github.com/thaynes43/haynesnetwork/issues/556)).
+
 ## ▶ 2026-09-23 — Watch Companion designed (PLAN-068): the Movie Room voice agent gets the owner's watch history over an in-cluster MCP surface
 
 **Owner request (2026-09-23):** a specialized voice agent for the Movie Room Voice PE that knows his

@@ -1,7 +1,7 @@
 # DESIGN-026: Library views, grouping, and the per-view Sorting & Filtering overhaul
 
 - **Status:** Accepted <!-- ratified with ADR-051/052/053 on 2026-07-11; the Draft label was a docs-only-PR oversight (noted by the PLAN-029 data/domain build, fixed in the UX build PR) -->
-- **Last updated:** 2026-07-20 <!-- ADR-075 amendment: the Books + Audiobooks registry walls MERGE into one Books wall (facet union with data-gating, a three-state Format seg, default grouped-Author); the audiobooks view levels retire; Comics untouched — see the Amendment section at the end. Prior same day: D-03 amendment — Music Collection facet removed (owner ruling) — no music collections exist/planned, the empty filter was worse than absent (ADR-047/ADR-051 empty-state); Genre stays. Prior: 2026-07-18 wanted-filter rail unification amendment (three-state Wanted axis; both axes labeled On disk / Wanted; the Missing + Hide-wanted composed-gap insight) -->
+- **Last updated:** 2026-09-23 <!-- D-07 status note: the plex.tv id auto-fill (sign-in hook + metadata-refresh reconcile) was never wired — 0 map rows / 0 per-user watch rows in production — now wired; ABS handle entry still missing (#555). Prior: 2026-07-20 ADR-075 amendment: the Books + Audiobooks registry walls MERGE into one Books wall (facet union with data-gating, a three-state Format seg, default grouped-Author); the audiobooks view levels retire; Comics untouched — see the Amendment section at the end. Prior same day: D-03 amendment — Music Collection facet removed (owner ruling) — no music collections exist/planned, the empty filter was worse than absent (ADR-047/ADR-051 empty-state); Genre stays. Prior: 2026-07-18 wanted-filter rail unification amendment (three-state Wanted axis; both axes labeled On disk / Wanted; the Missing + Hide-wanted composed-gap insight) -->
 - **Satisfies:** PRD-001 **R-165..R-171**; governed by **ADR-051** (views + registries), **ADR-052** (per-user
   preferences), **ADR-053** (per-user watch/read-state). EXTENDS **DESIGN-008 D-09** (the shared `ledger.search`
   filter/sort engine + keyset cursor) and **DESIGN-024** (the `books.search`/`filterFacets` contract); reads the
@@ -233,6 +233,43 @@ sort field) — it is purely a registry-surfacing task (ADR-051 C-01).
   (ADR-053 C-05) — no admin per-user progress read exists; Books/Comics ship without read facets.
 - **Security** — per-user state is a FACET on content the ADR-047 gate already filtered; the map never widens
   access. Handle entry is admin-only.
+
+> **D-07 status note (2026-09-23): the plex.tv id auto-fill had never been wired. It is now.** PR #243
+> shipped the map, the per-user read-model and the harvest re-key, but `ensurePlexUserIdMapping` had no
+> caller. Production therefore held **0** `user_account_map` rows and **0** `user_media_watch` rows, even
+> though 12 of the 14 users' stored id_tokens carried `plex_user_id`, and all 12 ids are Tautulli users on
+> all three servers (live, read-only). The fix adds two callers of the same fill-if-empty single-writer:
+>
+> - **Sign-in.** `mapPlexAccountOnSignin` (`@hnet/auth`) runs in `databaseHooks.session.create.after`,
+>   after the bootstrap-admin and pending-role hooks. Better Auth has already stored the fresh id_token
+>   by then. It never throws into sign-in.
+> - **Reconcile.** `reconcilePlexUserIdMappings` (`@hnet/domain`) is the `metadata-refresh` mode's
+>   pre-step. It maps every user who has a stored token and no `plex_user_id`, so the same run
+>   attributes their plays. It is the backfill for users who signed in before the hook existed, and the
+>   retry for a failed hook: sessions roll for 7 days, so a user's next fresh sign-in can be weeks away.
+>   The run log carries `plexAccountMap`. Each kind's log now always carries `userWatchMappedUsers` and
+>   `userWatchWritten`, even when they are 0.
+> - **The recorded id is the session's own identity.** It is exactly `session.plexIdentity.userId`:
+>   `resolvePlexIdentity` over the stored token, with the `users.plex_email`/`plex_username` override
+>   passed as the session passes it.
+>   - The numeric id comes only from the claim, so an override never invents one.
+>   - The override only ever feeds the friend-matcher arm (approach B). That arm needs a plex.tv round
+>     trip and is still not wired. No active user needs it: every sign-in since the scope mapping
+>     shipped (2026-07-07) carries the claim, and the two claim-less accounts are mapped at their next
+>     sign-in.
+> - **An existing id always wins.** A present `plex_user_id`, whether auto-filled or admin-set, is never
+>   overwritten. An id that another app user already holds is reported as a `conflict` and left for an
+>   admin (the UNIQUE constraint allows one app user per plex.tv account).
+> - **Code move.** `plex-identity.ts` moved from `@hnet/auth` to `@hnet/domain`, so the sync runner can
+>   use it without Better Auth. Behavior is unchanged, and `@hnet/auth` re-exports it (T-154: "the
+>   `@hnet/domain` single-writer + resolution helpers").
+> - **What users see.** The **Watched** chip (Watched / Unwatched / In progress) on the Movies and TV
+>   Shows walls appears for each mapped user who has at least one attributed play (`library.facetGates`).
+> - **Still open.** The Books wall's **Read** chip stays empty because nothing sets `abs_user_id`: there
+>   is no admin entry surface, and `upsertUserAccountHandles` has no caller
+>   ([#555](https://github.com/thaynes43/haynesnetwork/issues/555)). Per-user state also inherits the
+>   harvest's newest-10k-rows-per-Tautulli window
+>   ([#553](https://github.com/thaynes43/haynesnetwork/issues/553)).
 
 ### D-08 — Facet UI
 

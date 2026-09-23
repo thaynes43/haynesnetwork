@@ -29,6 +29,7 @@ import {
   evaluateSmartAlerts,
   evaluateSpacePolicy,
   finishSyncRun,
+  reconcilePlexUserIdMappings,
   refreshTrashCandidates,
   runFormatPairing,
   runPelotonPosterGuard,
@@ -77,6 +78,7 @@ import {
   KAPOWARR_ACTIVITY_SOURCE,
   type OutboxDeliveryReport,
   type PlexClientBundle,
+  type PlexUserIdReconcileReport,
   type PosterGuardReport,
   type SmartAlertsReport,
   type SpacePolicyReport,
@@ -155,7 +157,8 @@ export interface RunSyncOptions {
   /** ADR-018 / DESIGN-008 — the OPTIONAL metadata-harvest source clients (Tautulli/TMDB/
    *  TVDB/Maintainerr). Required only for mode 'metadata-refresh'; every tier is degradable. */
   metadataSources?: MetadataSourceClients;
-  /** metadata-refresh: rows older than now-threshold (or missing) refresh. Default 6h. */
+  /** metadata-refresh: rows older than now-threshold (or missing) refresh. Default 6h less a 30-min
+   *  slack (METADATA_STALE_SLACK_MS) so each 6-hourly tick re-harvests the previous tick's rows. */
   metadataStaleThresholdMs?: number;
   /** metadata-refresh: cap the rows harvested this run. */
   metadataLimit?: number;
@@ -361,6 +364,12 @@ export interface SyncReport {
   relink?: TrashRelinkReport | null;
   /** The relink reconciler's error. NEVER sets totalFailure — protection is re-asserted next tick. */
   relinkError?: string;
+  /** ADR-053 / DESIGN-026 D-07 — the metadata-refresh PRE-STEP: the Plex Account Map reconcile that maps
+   *  every app user whose stored id_token carries a plex.tv id (absent for every other mode; null when
+   *  the reconcile errored — see plexAccountMapError). */
+  plexAccountMap?: PlexUserIdReconcileReport | null;
+  /** The reconcile's error. NEVER sets totalFailure — the harvest proceeds with the map it has. */
+  plexAccountMapError?: string;
   /** True when EVERY requested source failed/aborted — the CLI's nonzero-exit signal. */
   totalFailure: boolean;
 }
@@ -1381,6 +1390,26 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   const startedAt = new Date();
   const reports: SourceRunReport[] = [];
 
+  // ADR-053 / DESIGN-026 D-07 — the Plex Account Map RECONCILE, before the harvest reads the map (once
+  // per kind): map every app user whose stored id_token carries a plex.tv id but who has no
+  // plex_user_id yet, through the @hnet/domain fill-if-empty single-writer (never overwrites an existing
+  // or admin-set id). This is the backfill for users who signed in before the sign-in hook existed, and
+  // the self-heal for a failed hook attempt; this same run then attributes their Tautulli plays.
+  // Idempotent + cheap (walks unmapped users only). Isolated: a failure logs, never fails the run.
+  let plexAccountMap: PlexUserIdReconcileReport | null = null;
+  let plexAccountMapError: string | undefined;
+  if (options.mode === 'metadata-refresh') {
+    try {
+      plexAccountMap = await reconcilePlexUserIdMappings({ db });
+      if (plexAccountMap.candidates > 0) {
+        logger.info('plex account map reconciled', { ...plexAccountMap });
+      }
+    } catch (error) {
+      plexAccountMapError = error instanceof Error ? error.message : String(error);
+      logger.error('plex account map reconcile failed', { error: plexAccountMapError });
+    }
+  }
+
   // Build the shared Tautulli/Maintainerr context ONCE (D-03) so a 3-kind harvest doesn't
   // re-scan Tautulli three times. Degrades internally — never throws for a tier failure.
   const metadataContext =
@@ -1439,6 +1468,8 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       sources: reports,
       backfill,
       fixesCompleted,
+      plexAccountMap,
+      ...(plexAccountMapError !== undefined ? { plexAccountMapError } : {}),
       totalFailure,
     };
   }
