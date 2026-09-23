@@ -32,7 +32,7 @@ import {
   titleKeyFor,
   type EventObs,
 } from '@hnet/watch';
-import { handleMcpRequest, type McpDeps } from '../src/index';
+import { handleMcpRequest, type McpDeps, type McpRequestOptions } from '../src/index';
 
 export const OWNER = 12874060;
 export const NOW = new Date('2026-09-23T20:00:00Z');
@@ -614,7 +614,11 @@ function headersOf(h: IncomingHttpHeaders): Headers {
 }
 
 /** Serve `handleMcpRequest` on a free port (the Next route's job, minus Next). */
-export async function serveMcp(deps: McpDeps, env: Record<string, string | undefined>): Promise<McpHttp> {
+export async function serveMcp(
+  deps: McpDeps,
+  env: Record<string, string | undefined>,
+  opts: Pick<McpRequestOptions, 'deadlineMs'> = {},
+): Promise<McpHttp> {
   const logs: string[] = [];
   const withLogs: McpDeps = { ...deps, log: (line) => logs.push(line) };
   const server = createServer((req, res) => {
@@ -627,7 +631,7 @@ export async function serveMcp(deps: McpDeps, env: Record<string, string | undef
         headers: headersOf(req.headers),
         ...(method === 'GET' || method === 'HEAD' ? {} : { body: Buffer.concat(chunks) }),
       });
-      const response = await handleMcpRequest(request, { deps: withLogs, env });
+      const response = await handleMcpRequest(request, { deps: withLogs, env, ...opts });
       const headers: Record<string, string> = {};
       response.headers.forEach((v, k) => (headers[k] = v));
       res.writeHead(response.status, headers);
