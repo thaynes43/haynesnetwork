@@ -71,13 +71,14 @@ Dockerfile deps stage copies 9 of 20 package manifests (PLAN-068 S1).
 **Next:** PLAN-068 S1 onward. Build is split into a foundation PR (S1–S3), a pure-math PR (S4), then
 domain + sync + MCP (S5–S8).
 
-**Progress (2026-09-23):** the foundation PR #559 (S1–S3) is open for the driver's review:
-Dockerfile 20/20 manifests, migration 0077 (five tables, `watch` run kind), the `@hnet/arr` key
-redaction (`apikey`/`api_key`/`token`/`X-Plex-Token` gone from every error surface), the Tautulli /
-TMDB / Plex read clients, `scrobble`/`unscrobble` (stub-tested only — no Plex write before S5's undo
-test), and the stubs (stub Tautulli now in the `dev:local`/e2e stack). The live-verified facts S4–S6
-build on (Tautulli `row_id`, `after`, the Plex movie filters, `allLeaves`, the 151-title watchlist
-paged at 100) are in PLAN-068's S3 row.
+**Progress (2026-09-23):** S4 (`@hnet/watch`) merged as #558. The foundation PR #559 (S1–S3) is open for
+the driver's review: the Dockerfile lists every manifest (21 with `@hnet/watch`), migration 0077 (five
+tables, `watch` run kind, `watch_marks` RESTRICT an account delete), the `@hnet/arr` key redaction
+(`apikey`/`api_key`/`token`/`X-Plex-Token` gone from every error surface), the Tautulli / TMDB / Plex
+read clients, `scrobble`/`unscrobble` (stub-tested only — no Plex write before S5's undo test), and the
+stubs (stub Tautulli now in the `dev:local`/e2e stack). The live-verified facts S5–S6 build on (Tautulli
+`row_id`, `after`, `include_activity`, the Plex movie filters, `allLeaves`, the 151-title watchlist paged
+at 100) are in PLAN-068's S3 row; DESIGN-049 Q-06 (a Plex outage vs. a "gone" show) is open for S6.
 
 ## ▶ 2026-09-22 (later) — The FIFTH LL site: the Wanted page's Force Search said "Search fired" at copies LL already had
 
