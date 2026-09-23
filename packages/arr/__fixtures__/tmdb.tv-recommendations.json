@@ -1,0 +1,55 @@
+{
+  "page": 1,
+  "total_pages": 25,
+  "total_results": 485,
+  "results": [
+    {
+      "adult": false,
+      "backdrop_path": "/577eXC8wFQT0eUrJcgznSiFPRmk.jpg",
+      "id": 94997,
+      "name": "House of the Dragon",
+      "original_name": "House of the Dragon",
+      "overview": "The Targaryen dynasty is at the absolute apex of its power.",
+      "poster_path": "/7V0Ebks0GgpKvQ7QbLAIdX5dos4.jpg",
+      "media_type": "tv",
+      "original_language": "en",
+      "genre_ids": [
+        10765,
+        18,
+        10759
+      ],
+      "popularity": 117.2006,
+      "first_air_date": "2022-08-21",
+      "softcore": false,
+      "vote_average": 8.381,
+      "vote_count": 7144,
+      "origin_country": [
+        "US"
+      ]
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/foGkPxpw9h8zln81j63mix5B7m8.jpg",
+      "id": 71912,
+      "name": "The Witcher",
+      "original_name": "The Witcher",
+      "overview": "Geralt of Rivia, a mutated monster-hunter for hire.",
+      "poster_path": "/AoGsDM02UVt0npBA8OvpDcZbaMi.jpg",
+      "media_type": "tv",
+      "original_language": "en",
+      "genre_ids": [
+        10765,
+        18,
+        10759
+      ],
+      "popularity": 83.0323,
+      "first_air_date": "2019-12-20",
+      "softcore": false,
+      "vote_average": 7.888,
+      "vote_count": 6906,
+      "origin_country": [
+        "US"
+      ]
+    }
+  ]
+}

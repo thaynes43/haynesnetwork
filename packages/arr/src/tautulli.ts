@@ -3,6 +3,8 @@
 // cross-server history requirement). Tautulli auths via an `apikey` QUERY param (not a
 // header) and namespaces every call under `/api/v2?cmd=…`; we reuse the shared ArrHttp
 // (timeout + GET-retry + typed errors) with the key passed in the query. READ-ONLY.
+import { z } from 'zod';
+import { ArrHttpError, ArrParseError } from './errors';
 import { ArrHttp } from './http';
 import {
   tautulliEnvelopeSchema,
@@ -28,7 +30,29 @@ export interface TautulliHistoryParams {
   start?: number;
   /** 'movie' | 'episode' | 'track' — narrow the history scan to a kind. */
   mediaType?: string;
+  /**
+   * ADR-088 / DESIGN-049 D-09 — one account's rows only: the plex.tv numeric user id (the Server Owner is
+   * 12874060). Tautulli's `user_id` filter.
+   */
+  userId?: number | string;
+  /**
+   * Only rows whose play started AFTER this date, `YYYY-MM-DD` — Tautulli's `after` filter (verified live
+   * 2026-09-23: `after=2099-01-01` returns 0 rows; a 30-day window returns only newer rows). The watch sync's
+   * incremental window (newest stored start minus 3 days). A malformed date throws before any request.
+   */
+  after?: string;
+  /**
+   * 0 = one row per play session (the Watch Event grain — each row has its own `row_id`); 1 = Tautulli's
+   * grouped view (consecutive partial plays collapsed). Omitted ⇒ Tautulli's configured default (grouped).
+   */
+  grouping?: 0 | 1;
+  /** Sort column, e.g. `date` / `started` (Tautulli's `order_column`). */
+  orderColumn?: string;
+  /** `desc` (newest first) or `asc` (Tautulli's `order_dir`). */
+  orderDir?: 'asc' | 'desc';
 }
+
+const AFTER_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class TautulliClient {
   private readonly http: ArrHttp;
@@ -41,8 +65,14 @@ export class TautulliClient {
     this.apiKey = options.apiKey;
   }
 
-  /** `cmd=get_history` — a page of watch history (newest first). */
+  /**
+   * `cmd=get_history` — a page of watch history (newest first unless `orderDir` says otherwise). Every
+   * filter is optional and omitted from the query when unset, so the household harvest's call is unchanged.
+   */
   async getHistory(params: TautulliHistoryParams = {}): Promise<TautulliHistoryRow[]> {
+    if (params.after !== undefined && !AFTER_DATE.test(params.after)) {
+      throw new TypeError(`TautulliClient.getHistory: after must be YYYY-MM-DD (got "${params.after}")`);
+    }
     const { response } = await this.http.requestJson(
       'GET',
       'v2',
@@ -54,6 +84,11 @@ export class TautulliClient {
           length: params.length ?? 200,
           start: params.start ?? 0,
           ...(params.mediaType ? { media_type: params.mediaType } : {}),
+          ...(params.userId !== undefined ? { user_id: params.userId } : {}),
+          ...(params.after !== undefined ? { after: params.after } : {}),
+          ...(params.grouping !== undefined ? { grouping: params.grouping } : {}),
+          ...(params.orderColumn ? { order_column: params.orderColumn } : {}),
+          ...(params.orderDir ? { order_dir: params.orderDir } : {}),
         },
       },
     );
@@ -74,14 +109,40 @@ export class TautulliClient {
     return response.data.data;
   }
 
-  /** `cmd=get_metadata` — the title's external-id `guids` (the join key) + last_viewed_at. */
-  async getMetadata(ratingKey: string | number): Promise<TautulliMetadata> {
-    const { response } = await this.http.requestJson(
-      'GET',
-      'v2',
-      tautulliEnvelopeSchema(tautulliMetadataSchema),
-      { query: { apikey: this.apiKey, cmd: 'get_metadata', rating_key: ratingKey } },
-    );
-    return response.data;
+  /**
+   * `cmd=get_metadata` — the title's Plex `guid`, external-id `guids` (the join key) + last_viewed_at.
+   * Returns `null` when the item is GONE from Plex (Maintainerr deletes watched media, so a history row's
+   * rating_key goes stale): current Tautulli answers HTTP 400 for that (verified live 2026-09-23), older
+   * builds answered 200 with an empty `data` object — both mean the same thing and map to `null`. Any other
+   * failure (5xx, timeout, schema drift) still throws the typed ArrError.
+   */
+  async getMetadata(ratingKey: string | number): Promise<TautulliMetadata | null> {
+    const query = { apikey: this.apiKey, cmd: 'get_metadata', rating_key: ratingKey };
+    let data: unknown;
+    try {
+      ({
+        response: { data },
+      } = await this.http.requestJson('GET', 'v2', tautulliEnvelopeSchema(z.unknown()), { query }));
+    } catch (error) {
+      if (error instanceof ArrHttpError && error.status === 400) return null;
+      throw error;
+    }
+    if (isEmptyPayload(data)) return null;
+    const parsed = tautulliMetadataSchema.safeParse(data);
+    if (!parsed.success) {
+      throw new ArrParseError(
+        'GET',
+        this.http.buildUrl('v2', query), // redacted by the error — the apikey never survives
+        parsed.error.issues.map((i) => `response.data.${i.path.join('.')}: ${i.message}`),
+      );
+    }
+    return parsed.data;
   }
+}
+
+/** An absent / `{}` / `[]` get_metadata `data` — Tautulli's "no such item" shape. */
+function isEmptyPayload(data: unknown): boolean {
+  if (data === null || data === undefined) return true;
+  if (Array.isArray(data)) return data.length === 0;
+  return typeof data === 'object' && Object.keys(data).length === 0;
 }

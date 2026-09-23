@@ -515,12 +515,15 @@ async function harvestWatchStats(input: BuildMetadataContextInput): Promise<Watc
         if (rows.length < pageSize) break;
       }
       for (const [ratingKey, g] of groups) {
-        let meta: TautulliMetadata;
+        let meta: TautulliMetadata | null;
         try {
           meta = await inst.client.getMetadata(ratingKey);
         } catch {
           continue; // one unresolved title never fails the instance
         }
+        // Gone from Plex (Tautulli's HTTP 400 / empty data — DESIGN-049 D-09): nothing to join on. Same
+        // outcome as before (a 400 used to throw into the catch above, an empty object yielded no guids).
+        if (!meta) continue;
         const guids = guidsFromMetadata(meta);
         if (guids.tmdbId === undefined && guids.imdbId === undefined && guids.tvdbId === undefined) {
           continue;

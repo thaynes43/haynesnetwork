@@ -151,6 +151,6 @@ describe('TautulliClient (DESIGN-008 D-04)', () => {
     const meta = await client.getMetadata(42);
     expect(stub.calls[0]!.url.searchParams.get('cmd')).toBe('get_metadata');
     expect(stub.calls[0]!.url.searchParams.get('rating_key')).toBe('42');
-    expect(meta.guids).toEqual(['imdb://tt1', 'tmdb://2', 'tvdb://3']);
+    expect(meta?.guids).toEqual(['imdb://tt1', 'tmdb://2', 'tvdb://3']);
   });
 });
