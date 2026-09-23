@@ -39,7 +39,7 @@ revalidate the handful of titles in an answer (D-11) and to apply a Watch Mark (
 | `@hnet/db` | migration `0077_watch_companion.sql` (+ `_journal.json` entry), schema file for the five tables, enum constants | CHECK constraints written by hand from `schema/enums.ts` |
 | `@hnet/watch` (**new**) | pure progress math (D-10), states, resolver scoring (D-13), taste profile and scoring (D-16..D-19), spoken formatter (D-21), read queries (SELECT only) | imports `@hnet/db` and zod only; never writes; never imports `@hnet/domain`, `@hnet/plex/write` or the MCP SDK (the `/sync` bundle flattens its dependencies) |
 | `@hnet/domain` | `watch/*` single-writers: accounts, events, titles, marks, signals; `markWatched`, `dismissTitle`, `undoLastChange`, `revalidateTitles` | the only importer of `@hnet/plex/write`; tables join `no-direct-state-writes` |
-| `@hnet/plex` | read: the optional watch fields added to `sectionItemSchema` (`viewCount`, `viewedLeafCount`, `lastViewedAt`, `viewOffset`, `Genre[]`, `contentRating`, `parentIndex`, `parentRatingKey`, `grandparentRatingKey`, `grandparentTitle`, `grandparentGuid`), `listAllLeaves(ratingKey)` (paged, with a `truncated` flag), filtered section pages (`type`, `unwatched`, `inProgress`), `findByGuid(guid)` (`/library/all?guid=`), `getWatchlist()` (discover provider; base URL `plexDiscoverBaseUrl`, default `https://discover.provider.plex.tv`, env override `PLEX_DISCOVER_URL`); write: `scrobble(ratingKey)`, `unscrobble(ratingKey)` on `PlexWriteClient` | fields are optional, so `plex-match` and every existing reader are unchanged; `@hnet/plex/write` stays import-confined (ADR-017 C-10, `arr-write-import-guard.test.ts`). The two writes are GETs, issued through `PlexHttp.requestIdempotentGet` and **retried like a read** (3 attempts on timeout / network / 502-504): both are idempotent on watched state, so a retry after an ambiguous timeout cannot flip anything else, while giving up would record a failed mark for a write that probably landed |
+| `@hnet/plex` | read: the optional watch fields added to `sectionItemSchema` (`viewCount`, `viewedLeafCount`, `lastViewedAt`, `viewOffset`, `Genre[]`, `contentRating`, `parentIndex`, `parentRatingKey`, `grandparentRatingKey`, `grandparentTitle`, `grandparentGuid`), `listAllLeaves(ratingKey)` (paged, with a `truncated` flag), filtered section pages (`type`, `unwatched`, `inProgress`), `findByGuid(guid)` (`/library/all?guid=`), `getWatchlist()` (discover provider; base URL `plexDiscoverBaseUrl`, default `https://discover.provider.plex.tv`, env override `PLEX_DISCOVER_URL`); write: `scrobble(ratingKey)`, `unscrobble(ratingKey)` on `PlexWriteClient` | fields are optional, so `plex-match` and every existing reader are unchanged; `@hnet/plex/write` stays import-confined (ADR-017 C-10, `arr-write-import-guard.test.ts`). The two writes are GETs, issued through `PlexHttp.requestIdempotentGet` and **retried like a read** (3 attempts on timeout / network / 502-504): both are idempotent on watched state, so a retry after an ambiguous timeout cannot flip anything else, while giving up would record a failed mark for a write that probably landed. `timeoutMs` bounds each attempt (worst case 3 × `timeoutMs` + 2 × `retryDelayMs`), so S5 builds its write client for D-14's 3 s budget (about 0.8 s per attempt or less) |
 | `@hnet/arr` | Tautulli `getHistory` gains `userId`, `after`, `grouping`, `orderColumn`/`orderDir`, and the history row schema gains the row id (`row_id`), `guid`, `media_index`, `parent_media_index`, `parent_rating_key`, `percent_complete`, `year`, `full_title`, `started`; `getMetadata` maps both HTTP 400 and `{}` to "gone" (`null`); TMDB `getMovieRecommendations`/`getTvRecommendations`/`searchMulti`; **error messages redact credential query values** — `apikey`, `api_key`, `token` and `X-Plex-Token`, case-insensitively, in every ArrError's `message`, `url` and `bodySnippet` (every `ArrHttpError`/`ArrTimeoutError`/`ArrParseError` used to embed the full URL, and Tautulli and TMDB v3 carry their keys in the query) | read-only clients |
 | `@hnet/sync` | `watch` mode (D-09): `SYNC_RUN_KINDS` gains `watch` (migration 0077 re-adds the `sync_runs_run_kind_enum` CHECK), an early-return orchestrator block like `plex-match`, `sync.ts` USAGE and both `parseArgs` lists | calls domain writers only; depends on `@hnet/watch` as a `dependency` (not dev) so `deploy --prod` keeps it |
 | `@hnet/mcp` (**new**) | request handler, consumer auth, tool registry, budgets, logging | depends on `@modelcontextprotocol/sdk` 1.30.x (zod `^3.25 \|\| ^4` peer, so zod 4.4.3 is fine), `@hnet/watch`, `@hnet/domain`; its tests use embedded Postgres and the SDK `Client` |
@@ -273,9 +273,11 @@ this up: the rebuildable `watch_events`, `watch_titles` and `watch_reco_signals`
 while `watch_marks` is `ON DELETE RESTRICT` — the marks are the one table that cannot be rebuilt (the
 owner's corrections and the undo record, OPS-015 §7), so an account delete or delete-and-recreate fails
 instead of silently wiping them (driver review of #559). The user FKs and `media_item_id` are
-`ON DELETE SET NULL`. `resolved_at`, `refreshed_at` and
-`fetched_at` default to `now()`. Until the `watch` mode exists (S6), `runSync` refuses `--mode=watch`
-rather than fall through to the per-source *arr loop.
+`ON DELETE SET NULL`. `title` is NOT NULL wherever it appears; the jsonb, boolean and counter columns
+are NOT NULL with the defaults the tables show; every `*_at` column the tables mark "not null"
+(`resolved_at`, `created_at`, `updated_at`, `ingested_at`, `refreshed_at`, `fetched_at`) defaults to
+`now()` except the event's own `started_at`. Until the `watch` mode exists (S6), `runSync` refuses
+`--mode=watch` rather than fall through to the per-source *arr loop.
 
 ### D-08 — Title identity (`title_key`)
 
@@ -296,14 +298,18 @@ the others' results (per-source degradation, the DESIGN-008 posture):
    row (app user by email). Failure with a stored owner ⇒ continue; with none ⇒ `totalFailure`.
 2. **Events.** For each configured Tautulli instance: window start = the newest stored `started_at`
    for (instance, owner) minus 3 days, or no window on the first run. Page `get_history`
-   (`user_id`, `grouping=0`, `length=500`, the `after` date filter, newest first) and
-   insert-or-ignore on (instance, row id). The row id is Tautulli's **`row_id`** (verified live
-   2026-09-23 on all three instances: under `grouping=0` it is unique per row and `id` mirrors it, while
-   `reference_id` names the first row of a group and repeats — HaynesTower row 42195 has reference
-   41839). `after` filters by day (`after=2099-01-01` returns nothing); movies send `""` for the
-   episode indices. Movies and episodes only. For a new episode whose show guid is unknown, look it
-   up once per (instance, grandparent key): first in stored events, then `get_metadata`; a 400 means
-   the show is gone (null guid, fall back to the show title). Page cap 200 per instance per run.
+   (`user_id`, `grouping=0`, `include_activity=0`, `length=500`, the `after` date filter, newest
+   first) and insert-or-ignore on (instance, row id). The row id is Tautulli's **`row_id`** (verified
+   live 2026-09-23 on all three instances: under `grouping=0` it is unique per row and `id` mirrors it,
+   while `reference_id` names the first row of a group and repeats — HaynesTower row 42195 has
+   reference 41839). A session still playing is listed by default and has no row id yet, hence
+   `include_activity=0`; skip any row without a `row_id` regardless. `after` is inclusive and uses the
+   Tautulli server's local day (`after=2099-01-01` returns nothing); the 3-day overlap absorbs both.
+   Movies send `""` for the episode indices. Movies and episodes only. For a new episode whose show
+   guid is unknown, look it up once per (instance, grandparent key): first in stored events, then
+   `get_metadata`; a 400 "Unable to retrieve metadata" means the show is gone (null guid, fall back to
+   the show title). Tautulli gives the same answer while it cannot reach its Plex server, so that
+   verdict is not proof — see Q-06. Page cap 200 per instance per run.
 3. **Plex progress** on each server with movie or show sections (HaynesOps and HaynesTower today;
    decided from `/library/sections`, never hard-coded):
    - shows: one section listing (`type=2`, `includeGuids=1`) gives `leafCount`, `viewedLeafCount`,
@@ -582,10 +588,11 @@ lists the final signatures; the tests pin each row.
   `/:/unscrobble` (recorded in `calls`); `stub-tautulli.ts` gains `user_id`, row ids, episode indices and
   `percent_complete`, and is wired into the stack env. As built (PLAN-068 S3): the stub Plex keeps the
   owner's watch state in an in-memory map every read overlays (a scrobble round-trips), also serves
-  `/library/all?guid=`, the section filters and the discover watchlist (`PLEX_DISCOVER_URL`), and adds
-  its dataset only to the seeded sections; the stub Tautulli serves all three instances (told apart by
-  key) and deliberately does not serve `get_libraries_table`, so the Home play scoreboard stays hidden
-  in the stack as before.
+  `/library/all?guid=`, the section filters and the discover watchlist (`PLEX_DISCOVER_URL`), adds its
+  dataset only to the seeded sections, and answers a watch item only to its own server's token (a
+  server/ratingKey mix-up 404s, as live); the stub Tautulli serves all three instances (told apart by
+  key), lists a playing session with no row id unless `include_activity=0`, and deliberately does not
+  serve `get_libraries_table`, so the Home play scoreboard stays hidden in the stack as before.
 - Live (PLAN-068): the HA bench and the three US-13 questions (AC-24).
 
 ## Open questions
@@ -597,3 +604,4 @@ lists the final signatures; the tests pin each row.
 | Q-03 | Public connectors (OAuth). | PRD Q-14 — deferred. |
 | Q-04 | Should the HaynesOps Tautulli webhook trigger an immediate Title State refresh? | Open; D-11 covers answers, so only worth it if the bench shows stale answers. |
 | Q-05 | D-21's ambiguous example offers Dune: Prophecy for "Dune", but D-13 scores it 0: a 4-of-13-character prefix is under the 60% rule and its Jaro-Winkler (0.86) is under 0.9. D-13's 0.6 floor never binds either, since the lowest nonzero score is 0.81. Should a whole-word prefix score about 0.7, so it is offered as an option but can never resolve alone (0.7 plus both bonuses is 0.8)? | Open; S4 follows D-13, so "Dune" offers only the two Dune films. |
+| Q-06 | Tautulli answers `get_metadata` with the same HTTP 400 "Unable to retrieve metadata" for a deleted item and while it cannot reach its Plex server, and `watch_events` rows are never updated. How should S6 keep a Plex outage from leaving a permanent null `show_guid`? (a) Trust the 400 only when that server's Plex answered earlier in the same run, else hold those episodes back. But the next window starts from the newest stored row, so held-back rows older than 3 days are never re-read. (b) Let the event writer backfill a null `show_guid` later, a narrow exception to append-only. (c) Accept it: the event falls back to the show title (D-08 `name:` key). | Open (found in the #559 review); S6 decides. The client already limits "gone" to this one message. |
