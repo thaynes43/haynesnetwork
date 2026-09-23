@@ -13,13 +13,28 @@ ENV PATH=$PNPM_HOME:$PATH
 RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 
 # Copy lockfile + workspace manifests so the install layer caches well.
+# EVERY workspace package.json must be listed here (DESIGN-049 D-01 / PLAN-068 S1): a package
+# missing from this list is not a workspace member during `pnpm install --frozen-lockfile`, so its
+# dependencies are never installed and the build stage fails only here — `build-image` is not a
+# required check, so the gap would merge green and break the release. Keep it alphabetical.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY packages/api/package.json packages/api/package.json
 COPY packages/arr/package.json packages/arr/package.json
 COPY packages/auth/package.json packages/auth/package.json
+COPY packages/authentik/package.json packages/authentik/package.json
+COPY packages/books/package.json packages/books/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/domain/package.json packages/domain/package.json
+COPY packages/downloads/package.json packages/downloads/package.json
+COPY packages/goodreads/package.json packages/goodreads/package.json
+COPY packages/haynesops/package.json packages/haynesops/package.json
+COPY packages/kapowarr/package.json packages/kapowarr/package.json
+COPY packages/lazylibrarian/package.json packages/lazylibrarian/package.json
+COPY packages/libretto/package.json packages/libretto/package.json
+COPY packages/metrics/package.json packages/metrics/package.json
+COPY packages/openwebui/package.json packages/openwebui/package.json
+COPY packages/plex/package.json packages/plex/package.json
 COPY packages/sync/package.json packages/sync/package.json
 COPY packages/test-utils/package.json packages/test-utils/package.json
 COPY packages/ui/package.json packages/ui/package.json
