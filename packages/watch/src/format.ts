@@ -535,6 +535,17 @@ export function formatNotFound(query: string, opts: { kind?: WatchKind | null } 
   return capSpoken(`I couldn't find ${what} ${spokenQuery(query)}.`);
 }
 
+/**
+ * `mark_watched` got an episode without its season (D-05 lists both; nothing is written): ask for it.
+ * "Which season is episode 3 of Silo in? Say it like season 2 episode 3."
+ */
+export function formatNeedSeason(query: string, episode?: number | null): string {
+  const which = typeof episode === 'number' ? `episode ${episode}` : 'that episode';
+  return capSpoken(
+    `Which season is ${which} of ${spokenQuery(query)} in? Say it like season 2 episode ${typeof episode === 'number' ? episode : 3}.`,
+  );
+}
+
 /** No owner row yet (D-03). */
 export function formatNotReady(): string {
   return "Watch history isn't ready yet.";

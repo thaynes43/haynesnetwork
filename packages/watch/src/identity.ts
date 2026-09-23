@@ -3,7 +3,7 @@
 // plex.tv watchlist).
 
 import { normalizeTitle } from './normalize';
-import type { TitleIds } from './types';
+import type { TitleIds, WatchKind } from './types';
 
 const PLEX_GUID = /^plex:\/\/(show|movie)\/[^\s/]+$/;
 
@@ -35,22 +35,26 @@ function imdbKey(ids: TitleIds): string | null {
   return id && /^tt\d+$/.test(id) ? `imdb:${id}` : null;
 }
 
-/** `name:<normalized title>|<year>` — the year falls back to a hint in the title, else empty. */
-export function nameKey(title: string, year?: number | null): string {
+/**
+ * `name:<kind>:<normalized title>|<year>` — the year falls back to a hint in the title, else empty. The
+ * key carries the KIND (PLAN-068 S5 driver ruling), so a show and a movie with the same title and year
+ * can never collide on `watch_titles (plex_account_id, title_key)` or exclude each other.
+ */
+export function nameKey(kind: WatchKind, title: string, year?: number | null): string {
   const n = normalizeTitle(title);
-  return `name:${n.norm}|${positiveInt(year) ?? n.year ?? ''}`;
+  return `name:${kind}:${n.norm}|${positiveInt(year) ?? n.year ?? ''}`;
 }
 
 /**
  * The strongest key for a title, in D-08 preference order: `plex:<guid>` (a `plex://show|movie/…`
  * guid of the same kind — `local://` never), then `tvdb:<id>` for a show or `tmdb:movie:<id>` for a
  * movie, then `imdb:<id>`, then `tmdb:show:<id>` (a show TMDB alone knows, e.g. a TMDB seed), last
- * `name:<normalized title>|<year>`.
+ * `name:<kind>:<normalized title>|<year>`.
  */
 export function titleKeyFor(ids: TitleIds): string {
   const middle = ids.kind === 'show' ? tvdbKey(ids) : tmdbKey(ids);
   const late = ids.kind === 'show' ? tmdbKey(ids) : null;
-  return plexKey(ids) ?? middle ?? imdbKey(ids) ?? late ?? nameKey(ids.title, ids.year);
+  return plexKey(ids) ?? middle ?? imdbKey(ids) ?? late ?? nameKey(ids.kind, ids.title, ids.year);
 }
 
 /**
@@ -64,7 +68,7 @@ export function identityKeys(ids: TitleIds): string[] {
     tvdbKey(ids),
     tmdbKey(ids),
     imdbKey(ids),
-    nameKey(ids.title, ids.year),
+    nameKey(ids.kind, ids.title, ids.year),
   ];
   return keys.filter((k): k is string => k !== null);
 }

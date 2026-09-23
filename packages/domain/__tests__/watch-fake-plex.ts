@@ -1,0 +1,231 @@
+// A recording fake of the Plex surface the Watch Companion flows use (DESIGN-049 D-11/D-14/D-15): per-server
+// shows (with seasons and episodes, specials included) and movies, the owner's watched state, and the two
+// watched-state writes. Like a real PMS, scrobbling a show or season key flips every leaf under it,
+// unscrobbling clears resume points too, and a ratingKey answers only on its own server (a mix-up 404s).
+// PLAN-068 hard rule: nothing in the Watch Companion work orders scrobbles a REAL server — only this fake
+// and the e2e stub.
+import { PlexHttpError, type PlexSectionItem } from '@hnet/plex';
+import type { PlexServerSlug } from '@hnet/db';
+import type { WatchPlexClients } from '../src/watch/plex';
+
+export interface FakeEpisode {
+  ratingKey: string;
+  season: number;
+  episode: number;
+  viewCount?: number;
+  lastViewedAt?: number;
+  viewOffset?: number;
+}
+
+export interface FakeShow {
+  server: PlexServerSlug;
+  ratingKey: string;
+  title: string;
+  year: number;
+  guid: string;
+  Guid?: Array<{ id: string }>;
+  Genre?: Array<{ tag: string }>;
+  contentRating?: string;
+  episodes: FakeEpisode[];
+}
+
+export interface FakeMovie {
+  server: PlexServerSlug;
+  ratingKey: string;
+  title: string;
+  year: number;
+  guid: string;
+  Guid?: Array<{ id: string }>;
+  Genre?: Array<{ tag: string }>;
+  contentRating?: string;
+  duration?: number;
+  viewCount?: number;
+  lastViewedAt?: number;
+  viewOffset?: number;
+}
+
+export interface FakeCall {
+  server: PlexServerSlug;
+  op: 'scrobble' | 'unscrobble' | 'getMetadataItem' | 'listAllLeaves' | 'findByGuid';
+  key: string;
+}
+
+const seasonKey = (show: FakeShow, season: number) => `${show.ratingKey}-s${season}`;
+
+function notFound(server: string, key: string): PlexHttpError {
+  return new PlexHttpError(404, 'GET', `http://${server}.fake/library/metadata/${key}`, 'not found');
+}
+
+export class FakePlex {
+  readonly calls: FakeCall[] = [];
+  /** `${server}:${ratingKey}` of writes that fail (a 503 after retries). */
+  readonly failWrites = new Set<string>();
+  /** `${server}:${op}` reads that fail. */
+  readonly failReads = new Set<string>();
+  /** Delay every read by this many ms (revalidation budget tests). */
+  readDelayMs = 0;
+  now = 1_790_000_000;
+
+  constructor(
+    readonly shows: FakeShow[] = [],
+    readonly movies: FakeMovie[] = [],
+  ) {}
+
+  writes(): FakeCall[] {
+    return this.calls.filter((c) => c.op === 'scrobble' || c.op === 'unscrobble');
+  }
+
+  /** The (server, ratingKey) of every watched leaf, sorted — the state an undo must restore. */
+  watchedState(): string[] {
+    const out: string[] = [];
+    for (const s of this.shows)
+      for (const e of s.episodes) if ((e.viewCount ?? 0) > 0) out.push(`${s.server}:${e.ratingKey}`);
+    for (const m of this.movies) if ((m.viewCount ?? 0) > 0) out.push(`${m.server}:${m.ratingKey}`);
+    return out.sort();
+  }
+
+  private showOn(server: PlexServerSlug, key: string): FakeShow | undefined {
+    return this.shows.find((s) => s.server === server && s.ratingKey === key);
+  }
+
+  /** Every leaf a key covers on a server: a show, a season, an episode or a movie. */
+  private leavesFor(server: PlexServerSlug, key: string): Array<FakeEpisode | FakeMovie> {
+    const movie = this.movies.find((m) => m.server === server && m.ratingKey === key);
+    if (movie) return [movie];
+    for (const s of this.shows) {
+      if (s.server !== server) continue;
+      if (s.ratingKey === key) return s.episodes;
+      const inSeason = s.episodes.filter((e) => seasonKey(s, e.season) === key);
+      if (inSeason.length > 0) return inSeason;
+      const ep = s.episodes.find((e) => e.ratingKey === key);
+      if (ep) return [ep];
+    }
+    return [];
+  }
+
+  private leafItem(show: FakeShow, e: FakeEpisode): PlexSectionItem {
+    return {
+      ratingKey: e.ratingKey,
+      type: 'episode',
+      title: `${show.title} ${e.season}x${e.episode}`,
+      index: e.episode,
+      parentIndex: e.season,
+      parentRatingKey: seasonKey(show, e.season),
+      grandparentRatingKey: show.ratingKey,
+      grandparentTitle: show.title,
+      grandparentGuid: show.guid,
+      guid: `plex://episode/${e.ratingKey}`,
+      Guid: [],
+      Label: [],
+      ...(e.viewCount ? { viewCount: e.viewCount } : {}),
+      ...(e.lastViewedAt ? { lastViewedAt: e.lastViewedAt } : {}),
+      ...(e.viewOffset ? { viewOffset: e.viewOffset } : {}),
+    };
+  }
+
+  private showItem(show: FakeShow): PlexSectionItem {
+    const watched = show.episodes.filter((e) => (e.viewCount ?? 0) > 0);
+    const last = Math.max(0, ...show.episodes.map((e) => e.lastViewedAt ?? 0));
+    return {
+      ratingKey: show.ratingKey,
+      type: 'show',
+      title: show.title,
+      year: show.year,
+      guid: show.guid,
+      Guid: show.Guid ?? [],
+      Label: [],
+      ...(show.Genre ? { Genre: show.Genre } : {}),
+      ...(show.contentRating ? { contentRating: show.contentRating } : {}),
+      leafCount: show.episodes.length,
+      viewedLeafCount: watched.length,
+      ...(last > 0 ? { lastViewedAt: last } : {}),
+    };
+  }
+
+  private movieItem(m: FakeMovie): PlexSectionItem {
+    return {
+      ratingKey: m.ratingKey,
+      type: 'movie',
+      title: m.title,
+      year: m.year,
+      guid: m.guid,
+      Guid: m.Guid ?? [],
+      Label: [],
+      ...(m.Genre ? { Genre: m.Genre } : {}),
+      ...(m.contentRating ? { contentRating: m.contentRating } : {}),
+      duration: m.duration ?? 6_000_000,
+      ...(m.viewCount ? { viewCount: m.viewCount } : {}),
+      ...(m.lastViewedAt ? { lastViewedAt: m.lastViewedAt } : {}),
+      ...(m.viewOffset ? { viewOffset: m.viewOffset } : {}),
+    };
+  }
+
+  private async read<T>(server: PlexServerSlug, op: FakeCall['op'], key: string, fn: () => T): Promise<T> {
+    this.calls.push({ server, op, key });
+    if (this.readDelayMs > 0) await new Promise((r) => setTimeout(r, this.readDelayMs));
+    if (this.failReads.has(`${server}:${op}`)) {
+      throw new PlexHttpError(503, 'GET', `http://${server}.fake/${op}`, 'unavailable');
+    }
+    return fn();
+  }
+
+  private write(server: PlexServerSlug, op: 'scrobble' | 'unscrobble', key: string): Promise<void> {
+    this.calls.push({ server, op, key });
+    if (this.failWrites.has(`${server}:${key}`)) {
+      return Promise.reject(new PlexHttpError(503, 'GET', `http://${server}.fake/:/${op}`, 'unavailable'));
+    }
+    const leaves = this.leavesFor(server, key);
+    if (leaves.length === 0) return Promise.reject(notFound(server, key));
+    for (const leaf of leaves) {
+      if (op === 'scrobble') {
+        leaf.viewCount = (leaf.viewCount ?? 0) + 1;
+        leaf.lastViewedAt = this.now;
+        delete leaf.viewOffset;
+      } else {
+        leaf.viewCount = 0;
+        delete leaf.lastViewedAt;
+        delete leaf.viewOffset;
+      }
+    }
+    return Promise.resolve();
+  }
+
+  clients(): WatchPlexClients & { read: Required<WatchPlexClients['read']> } {
+    const servers: PlexServerSlug[] = ['haynesops', 'haynestower', 'hayneskube'];
+    const read = {} as Required<WatchPlexClients['read']>;
+    const write = {} as Required<WatchPlexClients['write']>;
+    for (const server of servers) {
+      read[server] = {
+        getMetadataItem: (key: string) =>
+          this.read(server, 'getMetadataItem', key, () => {
+            const show = this.showOn(server, key);
+            if (show) return { item: this.showItem(show), librarySectionId: '2' };
+            const movie = this.movies.find((m) => m.server === server && m.ratingKey === key);
+            if (movie) return { item: this.movieItem(movie), librarySectionId: '1' };
+            throw notFound(server, key);
+          }),
+        listAllLeaves: (key: string) =>
+          this.read(server, 'listAllLeaves', key, () => {
+            const show = this.showOn(server, key);
+            if (!show) throw notFound(server, key);
+            const items = [...show.episodes]
+              .sort((a, b) => a.season - b.season || a.episode - b.episode)
+              .map((e) => this.leafItem(show, e));
+            return { items, totalSize: items.length, truncated: false };
+          }),
+        findByGuid: (guid: string) =>
+          this.read(server, 'findByGuid', guid, () => [
+            ...this.shows.filter((s) => s.server === server && s.guid === guid).map((s) => this.showItem(s)),
+            ...this.movies.filter((m) => m.server === server && m.guid === guid).map((m) => this.movieItem(m)),
+          ]),
+      };
+      write[server] = {
+        scrobble: (key: string) => this.write(server, 'scrobble', key),
+        unscrobble: (key: string) => this.write(server, 'unscrobble', key),
+      };
+    }
+    return { read, write };
+  }
+}
+
+export const seasonKeyOf = seasonKey;

@@ -37,6 +37,17 @@ export function buildPlexClientBundle(options: PlexBundleOptions): PlexClientBun
 }
 
 /**
+ * DESIGN-049 D-11 / D-14 (PLAN-068 S7) — per-bundle HTTP tuning. The request paths that answer a voice
+ * turn size their clients for their budget: live revalidation reads at 300 ms per request, Watch Mark
+ * writes at about 800 ms per attempt (a write keeps the GET retries — 3 attempts — so 800 ms fits D-14's
+ * 3 s). Omitted ⇒ the client defaults (30 s, 250 ms between retries) every sync uses.
+ */
+export interface PlexBundleTuning {
+  timeoutMs?: number;
+  retryDelayMs?: number;
+}
+
+/**
  * Build the Plex client bundle from the D-03 env contract (`PLEX_<SLUG>_URL` default to the
  * in-cluster service DNS + `PLEX_<SLUG>_TOKEN` required; machine identifiers pinned in config,
  * overridable via `PLEX_<SLUG>_MACHINE_ID`). Missing tokens throw one PlexConfigError naming
@@ -44,6 +55,7 @@ export function buildPlexClientBundle(options: PlexBundleOptions): PlexClientBun
  */
 export function plexClientBundleFromEnv(
   env: Record<string, string | undefined> = process.env,
+  tuning: PlexBundleTuning = {},
 ): PlexClientBundle {
   const config: PlexEnvConfig = assertPlexEnv(env);
   const options = {} as PlexBundleOptions;
@@ -54,6 +66,8 @@ export function plexClientBundleFromEnv(
       machineIdentifier: config[slug].machineIdentifier,
       plexTvBaseUrl: config[slug].plexTvBaseUrl,
       plexDiscoverBaseUrl: config[slug].plexDiscoverBaseUrl,
+      ...(tuning.timeoutMs !== undefined ? { timeoutMs: tuning.timeoutMs } : {}),
+      ...(tuning.retryDelayMs !== undefined ? { retryDelayMs: tuning.retryDelayMs } : {}),
     };
   }
   return buildPlexClientBundle(options);

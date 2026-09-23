@@ -116,6 +116,12 @@ export * from './collection-arr-search';
 // action phases on demand from the queue + ledger milestones (read-only; no writes, no migration)
 export * from './action-progress';
 export * from './restore-flow';
+// ADR-087 / ADR-088 / ADR-089 / DESIGN-049 (PLAN-068 — the Watch Companion) — the single writers of the five
+// watch tables (owner account, the append-only Watch Event log + the Q-06 show-guid fill, Title States,
+// recommendation signals) and the Watch Mark flows (markWatched / dismissTitle / undoLastChange) plus the
+// live revalidation. The ONLY code that writes Plex watched state (scrobble/unscrobble via the confined
+// @hnet/plex/write surface); dismissals never call Plex.
+export * from './watch';
 // ADR-017 / DESIGN-007 Phase 3 — Plex library self-service single-writers + orchestrators
 // (the mutating Plex surface @hnet/plex/write stays confined to this package — guard test).
 export * from './plex-clients';

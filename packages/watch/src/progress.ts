@@ -2,6 +2,7 @@
 // it, its next episode and rewatch flag; a movie's watched flag and resume point; the children's-title
 // rule; the read-time states; and the Watch Mark write-through (D-14 step 6). Pure: no I/O, no clock.
 
+import { PLEX_SERVER_SLUGS, type WatchEpisodeMap } from '@hnet/db/schema';
 import { z } from 'zod';
 import { canonicalGenres } from './genres';
 import {
@@ -57,16 +58,14 @@ export interface EventObs {
 // ---------------------------------------------------------------------------------------------------
 // The compact episode map (D-07 `watch_titles.episode_map`)
 
-/** `[episode, watched 0/1, lastViewedAt s or 0, {server: ratingKey}]`. */
-export type EpisodeMapEntry = [
-  episode: number,
-  watched: 0 | 1,
-  lastViewedAt: number,
-  ratingKeys: Partial<Record<PlexServer, string>>,
-];
+/**
+ * `{"<season>": EpisodeMapEntry[]}`, seasons ≥ 1, episodes ascending — the column's own jsonb type
+ * (`WatchEpisodeMap` in @hnet/db), so a computed map is written and read back with no cast (PLAN-068 S5).
+ */
+export type EpisodeMap = WatchEpisodeMap;
 
-/** `{"<season>": EpisodeMapEntry[]}`, seasons ≥ 1, episodes ascending. */
-export type EpisodeMap = Record<string, EpisodeMapEntry[]>;
+/** `[episode, watched 0/1, lastViewedAt s or 0, {server: ratingKey}]`. */
+export type EpisodeMapEntry = WatchEpisodeMap[string][number];
 
 /** Validates a stored `episode_map` (jsonb reads back as `unknown`). */
 export const episodeMapSchema = z.record(
@@ -76,7 +75,7 @@ export const episodeMapSchema = z.record(
       z.number().int().nonnegative(),
       z.union([z.literal(0), z.literal(1)]),
       z.number().nonnegative(),
-      z.partialRecord(z.enum(PLEX_SERVERS), z.string()),
+      z.partialRecord(z.enum(PLEX_SERVER_SLUGS), z.string()),
     ]),
   ),
 );
