@@ -415,6 +415,16 @@ export const SYNC_RUN_KINDS = [
   // arr_queue_cleanup_actions table (D-06) plus one JSON log line per instance. It joins SYNC_RUN_KINDS so the
   // CLI --mode parser + SyncMode accept it (migration 0075 rebuilds the sync_runs.run_kind CHECK for parity).
   'queue-cleanup',
+  // ADR-088 / DESIGN-049 D-09 (PLAN-068 — Watch Companion) — 'watch' builds the owner's watch-history read-model:
+  // it resolves the Server Owner (ADR-029), pages the three Tautulli histories into the append-only watch_events
+  // log (insert-or-ignore on (instance, row_id)), reads the owner's Plex progress (section listings + allLeaves
+  // only for shows whose counts moved), assembles the watch_titles snapshot, and refreshes the recommendation
+  // inputs (plex.tv watchlist, daily TMDB seeds) in watch_reco_signals — all through @hnet/domain single-writers,
+  // READ-ONLY against Tautulli/Plex/plex.tv/TMDB (the only Plex writes are owner-issued Watch Marks, never the
+  // sync). Standalone mode like plex-match: no --source, writes NO sync_runs row — its trail is the watch tables.
+  // It joins SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0077 rebuilds the
+  // sync_runs.run_kind CHECK for parity).
+  'watch',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -1253,3 +1263,65 @@ export type BookRequestOrigin = (typeof BOOK_REQUEST_ORIGINS)[number];
 // Q-02) would join this const + relax the CHECK.
 export const FORMAT_PAIR_MATCH_KINDS = ['title_author'] as const;
 export type FormatPairMatchKind = (typeof FORMAT_PAIR_MATCH_KINDS)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-088 / ADR-089 / DESIGN-049 D-07 (PLAN-068 — Watch Companion). text + CHECK: these const arrays are
+// the single source of truth for the TS column types AND the migration-0077 CHECKs (DESIGN-001 D-02 — never
+// Postgres enum types). The instance a watch_events row came from and watch_titles.next_server reuse
+// PLEX_SERVER_SLUGS (each Tautulli instance tracks the Plex server of the same slug — ADR-068).
+// ---------------------------------------------------------------------------
+
+// watch_accounts.role — v1 tracks exactly ONE `owner` row, the ADR-029 Server Owner (a partial unique index
+// enforces "one owner" in the schema; the MCP principal IS that row — DESIGN-049 D-03). `household` is
+// reserved for household persons (PRD Q-12): the model is keyed by Plex account id, so adding one is data.
+export const WATCH_ACCOUNT_ROLES = ['owner', 'household'] as const;
+export type WatchAccountRole = (typeof WATCH_ACCOUNT_ROLES)[number];
+
+// watch_events.kind — the Tautulli history media_types that become Watch Events (T-243). Every other
+// media_type (tracks, clips) is skipped at ingest (DESIGN-049 D-09 step 2), so it never reaches the table.
+export const WATCH_EVENT_KINDS = ['movie', 'episode'] as const;
+export type WatchEventKind = (typeof WATCH_EVENT_KINDS)[number];
+
+// The kind of a TITLE (T-244) — watch_titles.kind, watch_marks.kind (the resolved identity) and
+// watch_reco_signals.kind. A title is a show or a movie; seasons and episodes live inside a show's row.
+export const WATCH_TITLE_KINDS = ['show', 'movie'] as const;
+export type WatchTitleKind = (typeof WATCH_TITLE_KINDS)[number];
+
+// watch_titles.show_status — from the ledger (Sonarr's `ended` flag) when the *arrs manage the show, else
+// NULL. Separates `caught_up` (still running) from `finished` (DESIGN-049 D-10).
+export const WATCH_SHOW_STATUSES = ['continuing', 'ended'] as const;
+export type WatchShowStatus = (typeof WATCH_SHOW_STATUSES)[number];
+
+// watch_marks.action — Watch Marks (T-248). `watched` is the ONLY action that writes Plex (owner ruling
+// 2026-09-23, "Mark it in Plex too"); `not_interested` and `not_mine` NEVER call Plex — the children watch on
+// the owner account and an un-mark would erase their progress (ADR-088).
+export const WATCH_MARK_ACTIONS = ['watched', 'not_interested', 'not_mine'] as const;
+export type WatchMarkAction = (typeof WATCH_MARK_ACTIONS)[number];
+
+// watch_marks.scope — what a mark covers (DESIGN-049 D-14 step 1): a movie; a whole show; one season; one
+// episode; or `through` = everything up to and including (season, episode).
+export const WATCH_MARK_SCOPES = ['movie', 'show', 'season', 'episode', 'through'] as const;
+export type WatchMarkScope = (typeof WATCH_MARK_SCOPES)[number];
+
+// watch_marks.plex_result — the Plex write-back outcome (D-14 steps 4/6): inserted `pending` before any
+// write, finalized `written` / `partial` / `failed`, or `not_on_plex` (no holding server — history only).
+// `none` = a mark that never writes Plex (`not_interested` / `not_mine`).
+export const WATCH_MARK_PLEX_RESULTS = [
+  'pending',
+  'written',
+  'partial',
+  'not_on_plex',
+  'failed',
+  'none',
+] as const;
+export type WatchMarkPlexResult = (typeof WATCH_MARK_PLEX_RESULTS)[number];
+
+// watch_marks.revert_result — the undo outcome (D-15); NULL until `undo_last_change` reverts the mark.
+// `none` = nothing to unscrobble (a dismiss, or a `watched` mark that flipped nothing).
+export const WATCH_MARK_REVERT_RESULTS = ['written', 'partial', 'failed', 'none'] as const;
+export type WatchMarkRevertResult = (typeof WATCH_MARK_REVERT_RESULTS)[number];
+
+// watch_reco_signals.source — the recommendation input caches (ADR-089 / DESIGN-049 D-17): the owner's
+// plex.tv watchlist, and the daily TMDB `/recommendations` seeds of recently finished titles.
+export const WATCH_RECO_SOURCES = ['watchlist', 'tmdb_seed'] as const;
+export type WatchRecoSource = (typeof WATCH_RECO_SOURCES)[number];

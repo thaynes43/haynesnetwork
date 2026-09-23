@@ -4,6 +4,19 @@ import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPostgres, withMigratedDb, type StartedPostgres } from '@hnet/test-utils';
 import { DEFAULT_MIGRATIONS_FOLDER, runMigrations } from '../src/migrate';
+import {
+  PLEX_SERVER_SLUGS,
+  SYNC_RUN_KINDS,
+  WATCH_ACCOUNT_ROLES,
+  WATCH_EVENT_KINDS,
+  WATCH_MARK_ACTIONS,
+  WATCH_MARK_PLEX_RESULTS,
+  WATCH_MARK_REVERT_RESULTS,
+  WATCH_MARK_SCOPES,
+  WATCH_RECO_SOURCES,
+  WATCH_SHOW_STATUSES,
+  WATCH_TITLE_KINDS,
+} from '../src/schema/enums';
 
 // NOTE: this file exercises schema-level invariants (CHECK constraints, seed
 // semantics) with direct SQL on purpose — it is on the ALLOWED_FILES list of the
@@ -2008,6 +2021,309 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query(`DELETE FROM gb_call_budget`);
     });
   });
+
+  // ADR-088 / ADR-089 / DESIGN-049 D-07 (PLAN-068 S2 — migration 0077, journal idx 76): the Watch Companion's
+  // five tables + the sync_runs.run_kind relax admitting 'watch'. Additive; every enumerated column's CHECK is
+  // exercised against its enums.ts const array (parity both ways: each value admitted, a bogus one rejected).
+  describe('0077 watch companion (ADR-088/089 — five tables + run-kind CHECK)', () => {
+    const OWNER = 12874060;
+
+    async function columnsOf(table: string): Promise<Map<string, { type: string; nullable: string }>> {
+      const cols = await client.query({
+        text: `SELECT column_name, data_type, is_nullable FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = $1`,
+        values: [table],
+      });
+      return new Map(
+        cols.rows.map((r) => [
+          r.column_name as string,
+          { type: r.data_type as string, nullable: r.is_nullable as string },
+        ]),
+      );
+    }
+
+    async function withOwner<T>(fn: () => Promise<T>): Promise<T> {
+      await client.query({
+        text: `INSERT INTO watch_accounts (plex_account_id, username, role) VALUES ($1, 'manofoz', 'owner')`,
+        values: [OWNER],
+      });
+      try {
+        return await fn();
+      } finally {
+        // ON DELETE CASCADE clears the account's events/titles/marks/signals with it.
+        await client.query({ text: `DELETE FROM watch_accounts WHERE plex_account_id = $1`, values: [OWNER] });
+      }
+    }
+
+    it('creates the five tables with the D-07 columns; FKs to users/media_items are uuid', async () => {
+      const accounts = await columnsOf('watch_accounts');
+      for (const c of ['plex_account_id', 'username', 'role', 'app_user_id', 'tracked', 'resolved_at', 'created_at', 'updated_at']) {
+        expect(accounts.has(c), `watch_accounts.${c}`).toBe(true);
+      }
+      expect(accounts.get('plex_account_id')?.type).toBe('bigint');
+      // users.id is uuid (Better Auth's model here is DESIGN-001 D-02 uuid) — the FK column matches.
+      expect(accounts.get('app_user_id')).toEqual({ type: 'uuid', nullable: 'YES' });
+
+      const events = await columnsOf('watch_events');
+      for (const c of [
+        'id', 'plex_account_id', 'instance', 'tautulli_row_id', 'kind', 'item_guid', 'show_guid', 'title',
+        'show_title', 'season', 'episode', 'year', 'rating_key', 'grandparent_rating_key', 'started_at',
+        'stopped_at', 'percent_complete', 'watched', 'ingested_at',
+      ]) {
+        expect(events.has(c), `watch_events.${c}`).toBe(true);
+      }
+      expect(events.get('id')?.type).toBe('bigint');
+      expect(events.get('tautulli_row_id')).toEqual({ type: 'bigint', nullable: 'NO' });
+      expect(events.get('percent_complete')?.type).toBe('smallint');
+      expect(events.get('started_at')?.nullable).toBe('NO');
+
+      const titles = await columnsOf('watch_titles');
+      for (const c of [
+        'id', 'plex_account_id', 'kind', 'title_key', 'plex_guid', 'tmdb_id', 'tvdb_id', 'imdb_id',
+        'media_item_id', 'title', 'year', 'genres', 'content_rating', 'is_kids', 'on_plex', 'plex_counts',
+        'episode_map', 'episodes_total', 'episodes_watched', 'furthest_season', 'furthest_episode',
+        'next_season', 'next_episode', 'next_title', 'next_server', 'next_rating_key', 'next_resume',
+        'resume_percent', 'plex_watched', 'plex_last_viewed_at', 'event_plays', 'event_watched_episodes',
+        'first_watched_at', 'last_watched_at', 'rewatch', 'show_status', 'refreshed_at',
+      ]) {
+        expect(titles.has(c), `watch_titles.${c}`).toBe(true);
+      }
+      expect(titles.get('media_item_id')).toEqual({ type: 'uuid', nullable: 'YES' });
+      expect(titles.get('genres')).toEqual({ type: 'jsonb', nullable: 'NO' });
+      expect(titles.get('episode_map')).toEqual({ type: 'jsonb', nullable: 'YES' });
+
+      const marks = await columnsOf('watch_marks');
+      for (const c of [
+        'id', 'plex_account_id', 'action', 'scope', 'title_key', 'kind', 'title', 'year', 'plex_guid',
+        'tmdb_id', 'tvdb_id', 'imdb_id', 'season', 'episode', 'query', 'consumer', 'actor_user_id', 'flipped',
+        'plex_result', 'plex_error', 'created_at', 'reverted_at', 'revert_result',
+      ]) {
+        expect(marks.has(c), `watch_marks.${c}`).toBe(true);
+      }
+      expect(marks.get('actor_user_id')).toEqual({ type: 'uuid', nullable: 'YES' });
+
+      const signals = await columnsOf('watch_reco_signals');
+      for (const c of [
+        'id', 'plex_account_id', 'source', 'kind', 'title', 'year', 'tmdb_id', 'tvdb_id', 'imdb_id',
+        'plex_guid', 'seed_title_key', 'seed_title', 'rank', 'added_at', 'fetched_at',
+      ]) {
+        expect(signals.has(c), `watch_reco_signals.${c}`).toBe(true);
+      }
+      expect(signals.get('rank')).toEqual({ type: 'smallint', nullable: 'NO' });
+
+      const idx = await client.query(
+        `SELECT indexname FROM pg_indexes WHERE tablename IN
+           ('watch_accounts','watch_events','watch_titles','watch_marks','watch_reco_signals')`,
+      );
+      const idxNames = idx.rows.map((r) => r.indexname as string);
+      for (const name of [
+        'watch_accounts_one_owner',
+        'watch_events_instance_row_unique',
+        'watch_events_account_started_idx',
+        'watch_events_account_show_idx',
+        'watch_titles_account_title_key_unique',
+        'watch_marks_account_created_idx',
+      ]) {
+        expect(idxNames, name).toContain(name);
+      }
+    });
+
+    it('watch_accounts: one owner at most (partial unique); many household rows; role CHECK', async () => {
+      await withOwner(async () => {
+        await expect(
+          client.query(`INSERT INTO watch_accounts (plex_account_id, username, role) VALUES (1, 'second', 'owner')`),
+        ).rejects.toMatchObject({ code: '23505' });
+        // Every non-owner role is admitted, any number of times (the owner row above proves 'owner').
+        expect(WATCH_ACCOUNT_ROLES).toContain('owner');
+        const others = WATCH_ACCOUNT_ROLES.filter((r) => r !== 'owner');
+        for (const [i, role] of others.entries()) {
+          await client.query({
+            text: `INSERT INTO watch_accounts (plex_account_id, username, role) VALUES ($1, 'kid-a', $2), ($3, 'kid-b', $2)`,
+            values: [100 + 2 * i, role, 101 + 2 * i],
+          });
+        }
+        await expect(
+          client.query(`INSERT INTO watch_accounts (plex_account_id, username, role) VALUES (4, 'x', 'friend')`),
+        ).rejects.toMatchObject({ code: '23514' });
+        await client.query(`DELETE FROM watch_accounts WHERE plex_account_id <> ${OWNER}`);
+      });
+    });
+
+    it('watch_events: insert-or-ignore on (instance, tautulli_row_id); CHECKs from PLEX_SERVER_SLUGS / WATCH_EVENT_KINDS', async () => {
+      await withOwner(async () => {
+        const insert = (instance: string, rowId: number, kind = 'episode') =>
+          client.query({
+            text: `INSERT INTO watch_events (plex_account_id, instance, tautulli_row_id, kind, title, started_at, watched)
+                   VALUES ($1, $2, $3, $4, 't', now(), true)
+                   ON CONFLICT (instance, tautulli_row_id) DO NOTHING`,
+            values: [OWNER, instance, rowId, kind],
+          });
+        for (const instance of PLEX_SERVER_SLUGS) {
+          expect((await insert(instance, 42)).rowCount, instance).toBe(1); // same row id, different instance
+        }
+        expect((await insert('haynesops', 42)).rowCount).toBe(0); // the re-read row is ignored
+        for (const [i, kind] of WATCH_EVENT_KINDS.entries()) {
+          expect((await insert('haynesops', 1000 + i, kind)).rowCount, kind).toBe(1);
+        }
+        await expect(insert('plexops', 7)).rejects.toMatchObject({ code: '23514' }); // ingress name ≠ slug
+        await expect(insert('haynesops', 8, 'track')).rejects.toMatchObject({ code: '23514' });
+        // An event must belong to a tracked account (FK).
+        await expect(
+          client.query(
+            `INSERT INTO watch_events (plex_account_id, instance, tautulli_row_id, kind, title, started_at, watched)
+             VALUES (999, 'haynesops', 9, 'movie', 't', now(), true)`,
+          ),
+        ).rejects.toMatchObject({ code: '23503' });
+      });
+      const left = await client.query(`SELECT count(*)::int AS n FROM watch_events`);
+      expect(left.rows[0].n).toBe(0); // the account delete cascaded
+    });
+
+    it('watch_titles: unique (account, title_key); kind/next_server/show_status CHECKs; jsonb defaults', async () => {
+      await withOwner(async () => {
+        const inserted = await client.query({
+          text: `INSERT INTO watch_titles (plex_account_id, kind, title_key, title)
+                 VALUES ($1, 'show', 'plex:plex://show/abc', 'Silo')
+                 RETURNING genres, on_plex, plex_counts, episode_map, next_resume, plex_watched, event_plays, rewatch`,
+          values: [OWNER],
+        });
+        expect(inserted.rows[0]).toMatchObject({
+          genres: [],
+          on_plex: [],
+          plex_counts: {},
+          episode_map: null,
+          next_resume: false,
+          plex_watched: false,
+          event_plays: 0,
+          rewatch: false,
+        });
+        await expect(
+          client.query({
+            text: `INSERT INTO watch_titles (plex_account_id, kind, title_key, title) VALUES ($1, 'show', 'plex:plex://show/abc', 'dup')`,
+            values: [OWNER],
+          }),
+        ).rejects.toMatchObject({ code: '23505' });
+        for (const [i, kind] of WATCH_TITLE_KINDS.entries()) {
+          await client.query({
+            text: `INSERT INTO watch_titles (plex_account_id, kind, title_key, title) VALUES ($1, $2, $3, 'k')`,
+            values: [OWNER, kind, `name:k${i}|`],
+          });
+        }
+        for (const [i, server] of PLEX_SERVER_SLUGS.entries()) {
+          await client.query({
+            text: `INSERT INTO watch_titles (plex_account_id, kind, title_key, title, next_server) VALUES ($1, 'show', $2, 'n', $3)`,
+            values: [OWNER, `name:n${i}|`, server],
+          });
+        }
+        for (const [i, status] of WATCH_SHOW_STATUSES.entries()) {
+          await client.query({
+            text: `INSERT INTO watch_titles (plex_account_id, kind, title_key, title, show_status) VALUES ($1, 'show', $2, 's', $3)`,
+            values: [OWNER, `name:s${i}|`, status],
+          });
+        }
+        const bad = (column: string, value: string) =>
+          client.query({
+            text: `INSERT INTO watch_titles (plex_account_id, kind, title_key, title, ${column}) VALUES ($1, 'show', $2, 'b', $3)`,
+            values: [OWNER, `name:bad-${column}|`, value],
+          });
+        await expect(
+          client.query({
+            text: `INSERT INTO watch_titles (plex_account_id, kind, title_key, title) VALUES ($1, 'season', 'name:bad-kind|', 'b')`,
+            values: [OWNER],
+          }),
+        ).rejects.toMatchObject({ code: '23514' });
+        await expect(bad('next_server', 'k8plex')).rejects.toMatchObject({ code: '23514' });
+        await expect(bad('show_status', 'cancelled')).rejects.toMatchObject({ code: '23514' });
+      });
+    });
+
+    it('watch_marks: action/scope/kind/plex_result/revert_result CHECKs from their const arrays', async () => {
+      await withOwner(async () => {
+        const mark = (overrides: Record<string, string | null>) => {
+          const row: Record<string, string | null> = {
+            action: 'watched',
+            scope: 'show',
+            kind: 'show',
+            plex_result: 'pending',
+            revert_result: null,
+            ...overrides,
+          };
+          return client.query({
+            text: `INSERT INTO watch_marks (plex_account_id, action, scope, title_key, kind, title, query, consumer,
+                                            plex_result, revert_result)
+                   VALUES ($1, $2, $3, 'plex:plex://show/abc', $4, 'Silo', 'i already watched silo', 'hop', $5, $6)
+                   RETURNING flipped, created_at`,
+            values: [OWNER, row.action, row.scope, row.kind, row.plex_result, row.revert_result],
+          });
+        };
+        const first = await mark({});
+        expect(first.rows[0].flipped).toEqual([]);
+        for (const action of WATCH_MARK_ACTIONS) await mark({ action });
+        for (const scope of WATCH_MARK_SCOPES) await mark({ scope });
+        for (const kind of WATCH_TITLE_KINDS) await mark({ kind });
+        for (const plexResult of WATCH_MARK_PLEX_RESULTS) await mark({ plex_result: plexResult });
+        for (const revertResult of WATCH_MARK_REVERT_RESULTS) await mark({ revert_result: revertResult });
+        await expect(mark({ action: 'unwatched' })).rejects.toMatchObject({ code: '23514' });
+        await expect(mark({ scope: 'series' })).rejects.toMatchObject({ code: '23514' });
+        await expect(mark({ kind: 'episode' })).rejects.toMatchObject({ code: '23514' });
+        await expect(mark({ plex_result: 'ok' })).rejects.toMatchObject({ code: '23514' });
+        await expect(mark({ revert_result: 'pending' })).rejects.toMatchObject({ code: '23514' });
+
+        // actor_user_id → users.id (uuid) ON DELETE SET NULL: a deleted user never orphans a mark.
+        const user = await client.query(
+          `INSERT INTO users (email, display_name) VALUES ('watch-mig@example.com', 'Watch Mig') RETURNING id`,
+        );
+        const userId = user.rows[0].id as string;
+        const withActor = await client.query({
+          text: `INSERT INTO watch_marks (plex_account_id, action, scope, title_key, kind, title, query, consumer,
+                                          plex_result, actor_user_id)
+                 VALUES ($1, 'not_mine', 'show', 'name:bluey|2018', 'show', 'Bluey', 'bluey', 'hop', 'none', $2)
+                 RETURNING id`,
+          values: [OWNER, userId],
+        });
+        await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [userId] });
+        const after = await client.query({
+          text: `SELECT actor_user_id FROM watch_marks WHERE id = $1`,
+          values: [withActor.rows[0].id],
+        });
+        expect(after.rows[0].actor_user_id).toBeNull();
+      });
+    });
+
+    it('watch_reco_signals: source/kind CHECKs; rank is required', async () => {
+      await withOwner(async () => {
+        const signal = (source: string, kind: string, rank: number | null = 1) =>
+          client.query({
+            text: `INSERT INTO watch_reco_signals (plex_account_id, source, kind, title, rank) VALUES ($1, $2, $3, 'Severance', $4)`,
+            values: [OWNER, source, kind, rank],
+          });
+        for (const source of WATCH_RECO_SOURCES) {
+          for (const kind of WATCH_TITLE_KINDS) await signal(source, kind);
+        }
+        await expect(signal('trakt', 'show')).rejects.toMatchObject({ code: '23514' });
+        await expect(signal('watchlist', 'person')).rejects.toMatchObject({ code: '23514' });
+        await expect(signal('watchlist', 'show', null)).rejects.toMatchObject({ code: '23502' });
+      });
+    });
+
+    it('sync_runs_run_kind_enum admits watch + EVERY SYNC_RUN_KINDS value (const↔CHECK parity)', async () => {
+      expect(SYNC_RUN_KINDS).toContain('watch');
+      const ids: string[] = [];
+      for (const kind of SYNC_RUN_KINDS) {
+        const row = await client.query({
+          text: `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', $1, 'running') RETURNING id`,
+          values: [kind],
+        });
+        ids.push(row.rows[0].id as string);
+      }
+      await expect(
+        client.query(
+          `INSERT INTO sync_runs (source, run_kind, status) VALUES ('radarr', 'bogus-mode', 'running')`,
+        ),
+      ).rejects.toMatchObject({ code: '23514' });
+      await client.query({ text: `DELETE FROM sync_runs WHERE id = ANY ($1::uuid[])`, values: [ids] });
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -2045,5 +2361,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
   it('idx values are contiguous from 0 (no gap/duplicate that would desync journal order)', () => {
     const idxs = journal.entries.map((e) => e.idx).sort((a, b) => a - b);
     expect(idxs).toEqual(idxs.map((_, i) => i));
+  });
+
+  // PLAN-068 S2 gate — the Watch Companion migration is journaled (idx 76), after 0076, and its SQL exists.
+  it('lists 0077_watch_companion at idx 76, strictly after 0076_trash_save_intents', () => {
+    const entry = journal.entries.find((e) => e.tag === '0077_watch_companion');
+    const prev = journal.entries.find((e) => e.tag === '0076_trash_save_intents');
+    expect(entry?.idx).toBe(76);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    expect(readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0077_watch_companion.sql'), 'utf8')).toContain(
+      'CREATE TABLE "watch_events"',
+    );
   });
 });
