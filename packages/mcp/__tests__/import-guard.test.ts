@@ -3,12 +3,16 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+// Assembled at runtime: the domain-wide guard (arr-write-import-guard.test.ts) flags the literal anywhere.
+const PLEX_WRITE = ['@hnet/plex', 'write'].join('/');
+
 /**
  * DESIGN-049 D-01 (ADR-087) — the layering between the Watch Companion packages, as static analysis (the
  * `packages/domain/__tests__/arr-write-import-guard.test.ts` pattern):
  *
  * - `@hnet/watch` is pure math and SELECT-only reads: it imports `@hnet/db`, `drizzle-orm` and zod only, and
- *   never `@hnet/domain` (the writers), `@hnet/plex/write` (Plex writes stay domain-confined, ADR-017) or the
+ *   never `@hnet/domain` (the writers), the Plex write surface (`@hnet/plex` + `/write`; Plex writes stay
+ *   domain-confined, ADR-017) or the
  *   MCP SDK — the `/sync` bundle flattens its dependencies, so a stray import would ship the SDK there.
  * - `@modelcontextprotocol/sdk` is imported only under `packages/mcp/` (the one MCP surface).
  */
@@ -42,7 +46,11 @@ async function walk(dir: string): Promise<string[]> {
     if (IGNORE_DIRS.has(entry.name)) continue;
     const full = join(dir, entry.name);
     if (entry.isDirectory()) files.push(...(await walk(full)));
-    else if (entry.isFile() && SCANNED_EXTENSIONS.has(entry.name.slice(entry.name.lastIndexOf('.')))) files.push(full);
+    else if (
+      entry.isFile() &&
+      SCANNED_EXTENSIONS.has(entry.name.slice(entry.name.lastIndexOf('.')))
+    )
+      files.push(full);
   }
   return files;
 }
@@ -58,7 +66,8 @@ function specifiers(source: string): Array<{ specifier: string; line: number }> 
 }
 
 const rel = (abs: string) => relative(REPO_ROOT, abs).split(sep).join('/');
-const isModule = (specifier: string, name: string) => specifier === name || specifier.startsWith(`${name}/`);
+const isModule = (specifier: string, name: string) =>
+  specifier === name || specifier.startsWith(`${name}/`);
 
 describe('DESIGN-049 D-01 — Watch Companion import layering', () => {
   it('the scanner sees imports in every form it guards (a canary for the regex)', () => {
@@ -66,7 +75,7 @@ describe('DESIGN-049 D-01 — Watch Companion import layering', () => {
       [
         "import { a } from '@hnet/domain';",
         'import {\n  b,\n} from "@modelcontextprotocol/sdk/server/mcp.js";',
-        "export * from '@hnet/plex/write';",
+        `export * from '${PLEX_WRITE}';`,
         "import type { C } from '@hnet/domain/watch';",
         "const d = await import('@modelcontextprotocol/sdk/types.js');",
         "const e = require('@hnet/domain');",
@@ -76,7 +85,7 @@ describe('DESIGN-049 D-01 — Watch Companion import layering', () => {
     expect(found).toEqual([
       '@hnet/domain',
       '@modelcontextprotocol/sdk/server/mcp.js',
-      '@hnet/plex/write',
+      PLEX_WRITE,
       '@hnet/domain/watch',
       '@modelcontextprotocol/sdk/types.js',
       '@hnet/domain',
@@ -84,7 +93,7 @@ describe('DESIGN-049 D-01 — Watch Companion import layering', () => {
     ]);
   });
 
-  it('packages/watch/src never imports @hnet/domain, @hnet/plex/write or the MCP SDK — only @hnet/db, drizzle-orm and zod', async () => {
+  it('packages/watch/src never imports @hnet/domain, the Plex write surface or the MCP SDK — only @hnet/db, drizzle-orm and zod', async () => {
     const files = await walk(WATCH_SRC);
     expect(files.length).toBeGreaterThan(10);
     const forbidden: string[] = [];
@@ -92,8 +101,17 @@ describe('DESIGN-049 D-01 — Watch Companion import layering', () => {
     for (const file of files) {
       for (const { specifier, line } of specifiers(await readFile(file, 'utf8'))) {
         const at = `${rel(file)}:${line} → ${specifier}`;
-        if (['@hnet/domain', '@hnet/plex/write', '@modelcontextprotocol/sdk'].some((m) => isModule(specifier, m))) forbidden.push(at);
-        if (!specifier.startsWith('.') && !['@hnet/db', 'drizzle-orm', 'zod'].some((m) => isModule(specifier, m))) outsideD01.push(at);
+        if (
+          ['@hnet/domain', PLEX_WRITE, '@modelcontextprotocol/sdk'].some((m) =>
+            isModule(specifier, m),
+          )
+        )
+          forbidden.push(at);
+        if (
+          !specifier.startsWith('.') &&
+          !['@hnet/db', 'drizzle-orm', 'zod'].some((m) => isModule(specifier, m))
+        )
+          outsideD01.push(at);
       }
     }
     expect(forbidden, 'forbidden imports in @hnet/watch').toEqual([]);
