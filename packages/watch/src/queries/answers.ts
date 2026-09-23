@@ -7,10 +7,10 @@ import {
   mediaMetadata,
   mediaPlexMatches,
   watchEvents,
-  watchMarks,
   watchTitles,
   type DbClient,
   type WatchEventRow,
+  type WatchMarkRow,
   type WatchRecoSignalRow,
   type WatchTitleRow,
 } from '@hnet/db';
@@ -19,14 +19,43 @@ import { GENRE_SYNONYMS, canonicalGenre } from '../genres';
 import { titleKeyFor } from '../identity';
 import type { RecoCandidate, RecoSeed } from '../recommend';
 import type { WatchKind } from '../types';
+import { selectLiveMarks } from './marks';
 import { selectSignals } from './signals';
+
+/**
+ * The Title State columns `unfinished` ranks, filters and speaks: no episode map, Plex counters or `on_plex`
+ * (the live revalidation loads those whole rows for the few titles it reports — `selectTitleRows`).
+ */
+export type UnfinishedRow = Pick<
+  WatchTitleRow,
+  | 'id'
+  | 'kind'
+  | 'titleKey'
+  | 'title'
+  | 'year'
+  | 'plexGuid'
+  | 'tmdbId'
+  | 'tvdbId'
+  | 'imdbId'
+  | 'isKids'
+  | 'episodesWatched'
+  | 'episodesTotal'
+  | 'nextSeason'
+  | 'nextEpisode'
+  | 'nextResume'
+  | 'resumePercent'
+  | 'plexWatched'
+  | 'lastWatchedAt'
+  | 'rewatch'
+  | 'showStatus'
+>;
 
 /** D-10 / T-245 candidates: shows with a next episode, movies resumed between 5% and 90%. */
 export async function selectUnfinishedRows(
   db: DbClient,
   plexAccountId: number,
   opts: { kind?: WatchKind | 'any' | null } = {},
-): Promise<WatchTitleRow[]> {
+): Promise<UnfinishedRow[]> {
   const shows = and(eq(watchTitles.kind, 'show'), sql`${watchTitles.nextSeason} IS NOT NULL`);
   const movies = and(
     eq(watchTitles.kind, 'movie'),
@@ -35,7 +64,28 @@ export async function selectUnfinishedRows(
   const kind = opts.kind ?? 'show';
   const which = kind === 'show' ? shows : kind === 'movie' ? movies : or(shows, movies);
   return db
-    .select()
+    .select({
+      id: watchTitles.id,
+      kind: watchTitles.kind,
+      titleKey: watchTitles.titleKey,
+      title: watchTitles.title,
+      year: watchTitles.year,
+      plexGuid: watchTitles.plexGuid,
+      tmdbId: watchTitles.tmdbId,
+      tvdbId: watchTitles.tvdbId,
+      imdbId: watchTitles.imdbId,
+      isKids: watchTitles.isKids,
+      episodesWatched: watchTitles.episodesWatched,
+      episodesTotal: watchTitles.episodesTotal,
+      nextSeason: watchTitles.nextSeason,
+      nextEpisode: watchTitles.nextEpisode,
+      nextResume: watchTitles.nextResume,
+      resumePercent: watchTitles.resumePercent,
+      plexWatched: watchTitles.plexWatched,
+      lastWatchedAt: watchTitles.lastWatchedAt,
+      rewatch: watchTitles.rewatch,
+      showStatus: watchTitles.showStatus,
+    })
     .from(watchTitles)
     .where(and(eq(watchTitles.plexAccountId, plexAccountId), which));
 }
@@ -64,6 +114,7 @@ export type RecoTitleRow = Pick<
   | 'tmdbId'
   | 'tvdbId'
   | 'imdbId'
+  | 'mediaItemId'
   | 'genres'
   | 'isKids'
   | 'episodesWatched'
@@ -79,6 +130,8 @@ export interface RecommendInputs {
   /** Library, watchlist and TMDB-seed candidates, not yet merged or excluded. */
   candidates: RecoCandidate[];
   titles: RecoTitleRow[];
+  /** The owner's live (unreverted) marks — the same rows the library query was anti-joined on. */
+  marks: WatchMarkRow[];
 }
 
 /** D-17 library pre-filter: at most this many candidates reach the scorer. */
@@ -119,7 +172,7 @@ function seconds(d: Date | string | null | undefined): number | null {
 }
 
 /** A ledger item's candidate fields. */
-interface LedgerCandidate {
+export interface LedgerCandidate {
   id: string;
   arrKind: 'sonarr' | 'radarr' | 'lidarr';
   title: string;
@@ -173,43 +226,127 @@ function ledgerCandidate(m: LedgerCandidate): RecoCandidate {
   };
 }
 
+/** One kind's excluded ledger identifiers (no NULLs, no duplicates). */
+export interface ExcludedLedgerIds {
+  mediaItemIds: string[];
+  tvdbIds: number[];
+  tmdbIds: number[];
+  imdbIds: string[];
+}
+
+/** D-17's anti-join inputs per kind: what a ledger item of that kind must not share. */
+export interface LedgerExclusions {
+  show: ExcludedLedgerIds;
+  movie: ExcludedLedgerIds;
+}
+
+type ExclusionTitle = Pick<
+  WatchTitleRow,
+  | 'kind'
+  | 'mediaItemId'
+  | 'tvdbId'
+  | 'tmdbId'
+  | 'imdbId'
+  | 'episodesWatched'
+  | 'plexWatched'
+  | 'eventWatchedEpisodes'
+  | 'nextResume'
+  | 'resumePercent'
+>;
+type ExclusionMark = Pick<WatchMarkRow, 'kind' | 'tvdbId' | 'tmdbId' | 'imdbId' | 'revertedAt'>;
+
+/**
+ * The identifiers D-17 anti-joins the ledger on: from every Title State the owner started or watched (its
+ * ledger link, TVDB, TMDB and IMDb ids) and from every live mark (its ids — a mark has no ledger link), per
+ * kind. A ledger item is excluded when it shares one of them with a title of its own kind (TVDB: shows only).
+ */
+export function ledgerExclusions(
+  titles: readonly ExclusionTitle[],
+  marks: readonly ExclusionMark[],
+): LedgerExclusions {
+  const empty = () => ({
+    mediaItemIds: new Set<string>(),
+    tvdbIds: new Set<number>(),
+    tmdbIds: new Set<number>(),
+    imdbIds: new Set<string>(),
+  });
+  const sets = { show: empty(), movie: empty() };
+  const add = (r: { kind: WatchKind; tvdbId: number | null; tmdbId: number | null; imdbId: string | null }, mediaItemId: string | null) => {
+    const k = sets[r.kind];
+    if (mediaItemId !== null) k.mediaItemIds.add(mediaItemId);
+    if (r.tvdbId !== null) k.tvdbIds.add(r.tvdbId);
+    if (r.tmdbId !== null) k.tmdbIds.add(r.tmdbId);
+    if (r.imdbId !== null) k.imdbIds.add(r.imdbId);
+  };
+  for (const t of titles) {
+    const startedOrWatched =
+      (t.episodesWatched ?? 0) > 0 || t.plexWatched || t.eventWatchedEpisodes > 0 || t.nextResume || (t.resumePercent ?? 0) > 0;
+    if (startedOrWatched) add(t, t.mediaItemId);
+  }
+  for (const m of marks) if (!m.revertedAt) add(m, null);
+  const out = (k: ReturnType<typeof empty>): ExcludedLedgerIds => ({
+    mediaItemIds: [...k.mediaItemIds],
+    tvdbIds: [...k.tvdbIds],
+    tmdbIds: [...k.tmdbIds],
+    imdbIds: [...k.imdbIds],
+  });
+  return { show: out(sets.show), movie: out(sets.movie) };
+}
+
+/**
+ * `column` is none of `ids` — ONE array parameter, which Postgres (≥ 14) hashes; a NULL column is never
+ * excluded (as a NULL comparison never matched in the anti-join).
+ */
+function noneOf(column: SQL, ids: readonly unknown[], type: 'uuid' | 'integer' | 'text'): SQL {
+  return sql`(${column} IS NULL OR ${column} <> ALL (${sql.param(ids)}::${sql.raw(type)}[]))`;
+}
+
 /**
  * D-17's library candidates: live Sonarr/Radarr items that are on Plex, with genres and ratings; SQL
  * pre-filter on kind, genre overlap and children's titles; anti-joined on the owner's Ever Watched and
- * started Title States and on every live mark; best rated first, at most 600. The pre-filter only ever
- * drops titles the pure D-18 exclusions would drop too — the exclusions still run on what survives.
+ * started Title States and on every live mark (`ledgerExclusions`); best rated first, at most 600. The
+ * pre-filter only ever drops titles the pure D-18 exclusions would drop too — the exclusions still run on
+ * what survives.
+ *
+ * The anti-join takes the excluded ids as arrays, one per identifier and kind. The first cut OR-ed the four
+ * identifiers inside one correlated `NOT EXISTS`, which left `kind` as the only joinable equality: Postgres
+ * compared every candidate with every owner title of its kind (≈ 0.5–1 s per `recommend` at 7k ledger items
+ * × 1.5k titles, before `LIMIT` could help). EXPLAIN ANALYZE on that fixture: ≈ 630 ms (OR-ed) → 38 ms (one
+ * `NOT EXISTS` per identifier, 12 ms of it planning the eight joins) → 18 ms (these arrays).
  */
-async function selectLibraryCandidates(
+export async function selectLibraryCandidates(
   db: DbClient,
-  plexAccountId: number,
-  opts: { kind: WatchKind | 'any'; genre: string | null; kids: boolean; limit: number },
+  opts: {
+    kind: WatchKind | 'any';
+    genre: string | null;
+    kids: boolean;
+    limit: number;
+    exclusions: LedgerExclusions;
+  },
 ): Promise<LedgerCandidate[]> {
   const arrKinds =
     opts.kind === 'show' ? ['sonarr'] : opts.kind === 'movie' ? ['radarr'] : ['sonarr', 'radarr'];
-  const kindSql = sql`(CASE ${mediaItems.arrKind} WHEN 'sonarr' THEN 'show' ELSE 'movie' END)`;
-  const sameTitle = (t: { kind: SQL; mediaItemId?: SQL; tvdb: SQL; tmdb: SQL; imdb: SQL }) =>
-    sql`${t.kind} = ${kindSql} AND (${t.mediaItemId ? sql`${t.mediaItemId} = ${mediaItems.id} OR ` : sql``}(${mediaItems.arrKind} = 'sonarr' AND ${t.tvdb} = ${mediaItems.tvdbId}) OR ${t.tmdb} = ${mediaItems.tmdbId} OR ${t.imdb} = ${mediaItems.imdbId})`;
+  const { show, movie } = opts.exclusions;
   const where: SQL[] = [
     inArray(mediaItems.arrKind, arrKinds as Array<'sonarr' | 'radarr'>),
     isNull(mediaItems.deletedFromArrAt),
     sql`EXISTS (SELECT 1 FROM ${mediaPlexMatches} WHERE ${mediaPlexMatches.mediaItemId} = ${mediaItems.id})`,
-    sql`NOT EXISTS (SELECT 1 FROM ${watchTitles} WHERE ${watchTitles.plexAccountId} = ${plexAccountId} AND ${sameTitle(
-      {
-        kind: sql`${watchTitles.kind}`,
-        mediaItemId: sql`${watchTitles.mediaItemId}`,
-        tvdb: sql`${watchTitles.tvdbId}`,
-        tmdb: sql`${watchTitles.tmdbId}`,
-        imdb: sql`${watchTitles.imdbId}`,
-      },
-    )} AND (COALESCE(${watchTitles.episodesWatched}, 0) > 0 OR ${watchTitles.plexWatched} OR ${watchTitles.eventWatchedEpisodes} > 0 OR ${watchTitles.nextResume} OR COALESCE(${watchTitles.resumePercent}, 0) > 0))`,
-    sql`NOT EXISTS (SELECT 1 FROM ${watchMarks} WHERE ${watchMarks.plexAccountId} = ${plexAccountId} AND ${watchMarks.revertedAt} IS NULL AND ${sameTitle(
-      {
-        kind: sql`${watchMarks.kind}`,
-        tvdb: sql`${watchMarks.tvdbId}`,
-        tmdb: sql`${watchMarks.tmdbId}`,
-        imdb: sql`${watchMarks.imdbId}`,
-      },
-    )})`,
+    sql`(CASE WHEN ${mediaItems.arrKind} = 'sonarr' THEN ${sql.join(
+      [
+        noneOf(sql`${mediaItems.id}`, show.mediaItemIds, 'uuid'),
+        noneOf(sql`${mediaItems.tvdbId}`, show.tvdbIds, 'integer'),
+        noneOf(sql`${mediaItems.tmdbId}`, show.tmdbIds, 'integer'),
+        noneOf(sql`${mediaItems.imdbId}`, show.imdbIds, 'text'),
+      ],
+      sql` AND `,
+    )} ELSE ${sql.join(
+      [
+        noneOf(sql`${mediaItems.id}`, movie.mediaItemIds, 'uuid'),
+        noneOf(sql`${mediaItems.tmdbId}`, movie.tmdbIds, 'integer'),
+        noneOf(sql`${mediaItems.imdbId}`, movie.imdbIds, 'text'),
+      ],
+      sql` AND `,
+    )} END)`,
   ];
   if (opts.genre) {
     const patterns = genrePatterns(opts.genre);
@@ -268,8 +405,8 @@ function signalMatches(s: WatchRecoSignalRow, m: LedgerCandidate): boolean {
 /**
  * Everything `recommend` scores (D-17): the library candidates, the watchlist (+ its ledger match, which
  * says whether it is on Plex and carries genres and ratings), the TMDB seed recommendations grouped per
- * title with every seed that listed it, and the owner's Title States (the Taste Profile and exclusions).
- * The caller adds the live marks.
+ * title with every seed that listed it, the owner's Title States (the Taste Profile and exclusions) and
+ * live marks. The Title States and marks load first: the library query is anti-joined on their ids.
  */
 export async function selectRecommendInputs(
   db: DbClient,
@@ -277,13 +414,7 @@ export async function selectRecommendInputs(
   opts: { kind?: WatchKind | 'any' | null; genre?: string | null; kids?: boolean; limit?: number } = {},
 ): Promise<RecommendInputs> {
   const kind = opts.kind ?? 'any';
-  const [library, watchlist, seeds, titles] = await Promise.all([
-    selectLibraryCandidates(db, plexAccountId, {
-      kind,
-      genre: opts.genre ?? null,
-      kids: opts.kids === true,
-      limit: opts.limit ?? LIBRARY_CANDIDATE_LIMIT,
-    }),
+  const [watchlist, seeds, titles, marks] = await Promise.all([
     selectSignals(db, plexAccountId, 'watchlist'),
     selectSignals(db, plexAccountId, 'tmdb_seed'),
     db
@@ -296,6 +427,7 @@ export async function selectRecommendInputs(
         tmdbId: watchTitles.tmdbId,
         tvdbId: watchTitles.tvdbId,
         imdbId: watchTitles.imdbId,
+        mediaItemId: watchTitles.mediaItemId,
         genres: watchTitles.genres,
         isKids: watchTitles.isKids,
         episodesWatched: watchTitles.episodesWatched,
@@ -308,9 +440,19 @@ export async function selectRecommendInputs(
       })
       .from(watchTitles)
       .where(eq(watchTitles.plexAccountId, plexAccountId)),
+    selectLiveMarks(db, plexAccountId),
   ]);
   const signals = [...watchlist, ...seeds].filter((s) => kind === 'any' || s.kind === kind);
-  const ledger = await selectLedgerForSignals(db, signals);
+  const [library, ledger] = await Promise.all([
+    selectLibraryCandidates(db, {
+      kind,
+      genre: opts.genre ?? null,
+      kids: opts.kids === true,
+      limit: opts.limit ?? LIBRARY_CANDIDATE_LIMIT,
+      exclusions: ledgerExclusions(titles, marks),
+    }),
+    selectLedgerForSignals(db, signals),
+  ]);
 
   const lastWatched = new Map(titles.map((t) => [t.titleKey, seconds(t.lastWatchedAt)]));
   const candidates: RecoCandidate[] = library.map(ledgerCandidate);
@@ -341,5 +483,5 @@ export async function selectRecommendInputs(
       seeds: seedsOf,
     });
   }
-  return { candidates, titles };
+  return { candidates, titles, marks };
 }

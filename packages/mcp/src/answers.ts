@@ -32,10 +32,12 @@ import {
   selectLiveMarks,
   selectRecentEvents,
   selectRecommendInputs,
+  selectTitleRows,
   selectTitleRowsByIdentity,
   selectUnfinishedRows,
   unfinishedItems,
   watchStatusView,
+  type UnfinishedRow,
   type WatchOwner,
 } from '@hnet/watch';
 import type { z } from 'zod';
@@ -79,7 +81,7 @@ const NO_PLEX: WatchPlexClients = { read: {}, write: {} };
 const nowSec = (ctx: AnswerContext) => Math.floor(ctx.deps.now().getTime() / 1000);
 
 /** D-11 for the titles about to be reported; the fresh rows by id (none when Plex is not configured). */
-async function revalidate(ctx: AnswerContext, rows: WatchTitleRow[]): Promise<Map<number, WatchTitleRow>> {
+async function revalidate(ctx: AnswerContext, rows: readonly WatchTitleRow[]): Promise<Map<number, WatchTitleRow>> {
   const plex = ctx.deps.revalidatePlex();
   const out = new Map<number, WatchTitleRow>();
   if (!plex || rows.length === 0) return out;
@@ -98,7 +100,22 @@ async function revalidate(ctx: AnswerContext, rows: WatchTitleRow[]): Promise<Ma
   return out;
 }
 
-/** `unfinished` (D-05, T-245): the snapshot, the reported titles revalidated live (D-11), then formatted. */
+/**
+ * {@link revalidate} by row id: the whole rows (episode map, Plex counters, `on_plex`) are loaded only for
+ * the titles being revalidated, and only when Plex is configured. The load counts toward the phase.
+ */
+async function revalidateIds(ctx: AnswerContext, ids: readonly number[]): Promise<Map<number, WatchTitleRow>> {
+  if (ids.length === 0 || !ctx.deps.revalidatePlex()) return new Map();
+  const started = Date.now();
+  const out = await revalidate(ctx, await selectTitleRows(ctx.deps.db, ctx.owner.plexAccountId, { ids }));
+  ctx.phases.revalidate = Date.now() - started;
+  return out;
+}
+
+/**
+ * `unfinished` (D-05, T-245): the snapshot (narrow candidate rows), the reported titles revalidated live
+ * (D-11, whole rows loaded for those only), then formatted.
+ */
 export async function answerUnfinished(
   ctx: AnswerContext,
   args: z.infer<typeof unfinishedInput>,
@@ -113,12 +130,12 @@ export async function answerUnfinished(
   ]);
   const index = indexMarks(marks);
   const first = unfinishedItems(rows, index, { kind, kids, now });
-  const fresh = await revalidate(
+  const fresh = await revalidateIds(
     ctx,
-    first.slice(0, limit).map((u) => u.row),
+    first.slice(0, limit).map((u) => u.row.id),
   );
   const items = unfinishedItems(
-    rows.map((r) => fresh.get(r.id) ?? r),
+    rows.map((r): UnfinishedRow => fresh.get(r.id) ?? r),
     index,
     { kind, kids, now },
   ).map((u) => u.item);
@@ -133,11 +150,9 @@ export async function answerRecommend(
   const kind = args.kind ?? 'any';
   const kids = args.kids ?? false;
   const genre = args.genre ?? null;
-  const [inputs, marks] = await Promise.all([
-    selectRecommendInputs(ctx.deps.db, ctx.owner.plexAccountId, { kind, genre, kids }),
-    selectLiveMarks(ctx.deps.db, ctx.owner.plexAccountId),
-  ]);
-  const recs = recommendations(inputs, marks, { kind, genre, kids, now: nowSec(ctx) });
+  // The live marks come with the inputs: the library query was anti-joined on these very rows.
+  const inputs = await selectRecommendInputs(ctx.deps.db, ctx.owner.plexAccountId, { kind, genre, kids });
+  const recs = recommendations(inputs, inputs.marks, { kind, genre, kids, now: nowSec(ctx) });
   return formatRecommendations(recs, {
     limit: args.limit ?? 5,
     offset: args.offset ?? 0,
