@@ -53,6 +53,8 @@ export class FakePlexServer {
   readonly failing = new Set<string>();
   /** grandparent / show keys whose metadata read throws a 503 (Plex cannot answer for them). */
   readonly unreachableKeys = new Set<string>();
+  /** Keys whose metadata read never answers (a host that hangs instead of refusing). */
+  readonly hangingKeys = new Set<string>();
   owner: { id: string; username: string; email: string } | null = null;
   watchlist: PlexSectionItem[] = [];
 
@@ -162,6 +164,7 @@ export class FakePlexServer {
         if (this.unreachableKeys.has(key)) {
           throw new PlexHttpError(503, 'GET', `http://${this.slug}.fake/library/metadata/${key}`, 'unavailable');
         }
+        if (this.hangingKeys.has(key)) await new Promise<never>(() => {});
         const s = this.shows.find((x) => x.ratingKey === key);
         if (s) return { item: this.showItem(s), librarySectionId: '2' };
         const m = this.movies.find((x) => x.ratingKey === key);
@@ -202,8 +205,12 @@ export interface FakeTautulli {
   rows: HRow[];
   /** get_metadata answers: data, 'gone400' (current Tautulli), 'goneEmpty' (older builds: 200 + {}). */
   metadata: Map<string, Record<string, unknown> | 'gone400' | 'goneEmpty'>;
+  /** Every get_metadata request's rating key, in order (retries included). */
+  metadataRequests: string[];
   /** Make every call answer HTTP 500. */
   down: boolean;
+  /** Make get_metadata alone answer HTTP 500 (history still pages). */
+  metadataDown: boolean;
 }
 
 /** The REAL TautulliClient over an in-memory history. */
@@ -213,7 +220,9 @@ export function fakeTautulli(slug: PlexServerSlug, rows: HRow[] = []): FakeTautu
     requests: [],
     rows,
     metadata: new Map(),
+    metadataRequests: [],
     down: false,
+    metadataDown: false,
   };
   const reply = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -241,6 +250,8 @@ export function fakeTautulli(slug: PlexServerSlug, rows: HRow[] = []): FakeTautu
     }
     if (p.get('cmd') === 'get_metadata') {
       const key = p.get('rating_key') ?? '';
+      state.metadataRequests.push(key);
+      if (state.metadataDown) return reply(500, { response: { result: 'error', message: 'boom', data: {} } });
       const md = state.metadata.get(key);
       if (md === undefined || md === 'gone400') {
         return reply(400, {

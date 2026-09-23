@@ -2,7 +2,9 @@
 // fake Plex servers and the REAL TautulliClient over a fetch stub: first-run backfill, the incremental
 // window, change-detected allLeaves re-reads (every server that holds a moved show), 404 / 400 / `{}` →
 // "gone", the Q-06 show-guid retry, per-source degradation, the watchlist replace, the 20-hour TMDB seed
-// cadence, and absent / deleted movies. The sync is read-only against every source.
+// cadence, and absent / deleted movies. PR #563 review: the show-guid circuit breaker and retry budget,
+// the history page cap, the absent-movie checks read once, and no title ever reaches a log line. The sync
+// is read-only against every source.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import {
@@ -21,6 +23,7 @@ import {
 } from '@hnet/domain';
 import type { TmdbPagedResults } from '@hnet/arr';
 import type { PlexSectionItem } from '@hnet/plex';
+import type { SyncLogger } from '../src/logger';
 import { runSync } from '../src/orchestrator';
 import { runWatchSync, type WatchSyncInput, type WatchTmdb } from '../src/watch';
 import { bootMigratedDb, type TestDb } from './helpers';
@@ -241,6 +244,34 @@ function world(): World {
   return w;
 }
 
+/** A logger that keeps every line (D-06: the tests assert no title ever reaches one). */
+function captureLogs(): { logger: SyncLogger; lines: string[] } {
+  const lines: string[] = [];
+  const push = (level: string) => (msg: string, fields?: Record<string, unknown>) => {
+    lines.push(JSON.stringify({ level, msg, ...fields }));
+  };
+  return { lines, logger: { info: push('info'), warn: push('warn'), error: push('error') } };
+}
+
+const WORLD_TITLES = [
+  'Breaking Prod',
+  'Stub Toons',
+  'Finished Show',
+  'Taster Show',
+  'Unstarted Show',
+  'Deleted Show',
+  'The Fixture',
+  'Stub Runner',
+  'Stub Severance',
+  'Stub Dune',
+  'Solo Movie',
+];
+
+function expectNoTitles(lines: readonly string[]) {
+  const text = lines.join('\n').toLowerCase();
+  for (const title of WORLD_TITLES) expect(text).not.toContain(title.toLowerCase());
+}
+
 async function titles(): Promise<Map<string, WatchTitleRow>> {
   const rows = await db.select().from(watchTitles);
   return new Map(rows.map((r) => [r.title, r]));
@@ -284,6 +315,7 @@ describe('watch sync — the first run backfills, later runs are incremental (D-
     expect(r.owner).toEqual({ plexAccountId: OWNER, username: 'plexowner', from: 'plex' });
     // The owner's movies and episodes only: no friend row, no track, no live session.
     expect(r.events).toEqual({ haynesops: 2, haynestower: 7 });
+    expect(r.eventsCapped).toEqual([]);
     expect(w.tautTower.requests[0]?.get('after')).toBeNull();
     expect(w.tautTower.requests[0]?.get('include_activity')).toBe('0');
     expect(w.tautTower.requests[0]?.get('grouping')).toBe('0');
@@ -447,8 +479,12 @@ describe('watch sync — Tautulli paging and "gone" (D-09 step 2, Q-06)', () => 
     w.tautTower.metadata.set('777', 'gone400');
     w.tautTower.metadata.set('888', 'gone400');
     w.tautTower.metadata.set('4040', 'goneEmpty');
+    w.tautTower.metadata.set('502', { guid: 'plex://show/toons' });
     const first = await runWatchSync(w.input());
     expect(first.showGuids.retried).toBe(0); // every pair was just asked at ingest
+    // The circuit breaker: Plex failed on the newest show (777), so the rest of the run asked Tautulli.
+    expect(w.tower.calls.filter((c) => c.startsWith('meta:'))).toEqual(['meta:777']);
+    expect(first.errors.filter((e) => e.step === 'show_guids').map((e) => e.source)).toEqual(['plex:haynestower']);
     const guidless = await db
       .select({ key: watchEvents.grandparentRatingKey, guid: watchEvents.showGuid })
       .from(watchEvents)
@@ -462,7 +498,7 @@ describe('watch sync — Tautulli paging and "gone" (D-09 step 2, Q-06)', () => 
     // and 4040 are older — the retry asks Plex first: 888 answers, 4040 is a 404 (truly gone).
     w.tower.unreachableKeys.clear();
     const r = await runWatchSync(w.input({ now: new Date(NOW.getTime() + 15 * 60_000) }));
-    expect(r.showGuids).toEqual({ resolved: 1, retried: 2, filled: 2 });
+    expect(r.showGuids).toEqual({ resolved: 1, retried: 2, filled: 2, skipped: 0 });
     const rows = await db
       .select({ key: watchEvents.grandparentRatingKey, guid: watchEvents.showGuid })
       .from(watchEvents)
@@ -476,6 +512,98 @@ describe('watch sync — Tautulli paging and "gone" (D-09 step 2, Q-06)', () => 
     const byTitle = await titles();
     expect(byTitle.get('Outage Show')).toMatchObject({ titleKey: 'plex:plex://show/777', eventPlays: 1 });
     expect(byTitle.get('Old Outage')).toMatchObject({ titleKey: 'plex:plex://show/888', eventPlays: 1 });
+  });
+});
+
+describe('watch sync — the Tautulli history page cap (D-09 step 2)', () => {
+  it('reports an instance whose history stopped at the page cap, with a warn line and no title', async () => {
+    const w = world();
+    w.tautTower.rows.length = 0;
+    for (let i = 0; i < 50; i += 1) {
+      w.tautTower.rows.push(
+        episodeRow(OWNER, BP, { ratingKey: 50111, season: 1, episode: 1 }, new Date(Date.UTC(2025, 0, 1) + i * 3_600_000).toISOString()),
+      );
+    }
+    const { logger, lines } = captureLogs();
+    const r = await runWatchSync(w.input({ logger, tuning: { historyPageSize: 10, maxHistoryPages: 3 } }));
+    expect(r.events).toEqual({ haynesops: 2, haynestower: 30 });
+    expect(w.tautTower.requests).toHaveLength(3);
+    expect(r.eventsCapped).toEqual(['haynestower']);
+    const warn = lines.map((l) => JSON.parse(l) as Record<string, unknown>).find((l) => l.msg === 'watch: Tautulli history hit the page cap');
+    expect(warn).toMatchObject({ level: 'warn', source: 'haynestower', pages: 3, pageSize: 10 });
+    expectNoTitles(lines);
+  });
+});
+
+describe('watch sync — the show-guid circuit breaker and the retry budget (D-09, Q-06)', () => {
+  it('asks a failing source once per run; a pair with no source left is skipped', async () => {
+    const w = world();
+    w.tower.failing.add('getMetadataItem');
+    w.tautTower.metadataDown = true;
+    const { logger, lines } = captureLogs();
+    const first = await runWatchSync(w.input({ logger }));
+    // Three new shows at ingest (501, 502, 4040): Plex and Tautulli are each asked about the first only.
+    expect(w.tower.calls.filter((c) => c === 'getMetadataItem')).toHaveLength(1);
+    expect([...new Set(w.tautTower.metadataRequests)]).toEqual(['501']);
+    expect(first.errors.map((e) => `${e.step}:${e.source}`)).toEqual([
+      'show_guids:plex:haynestower',
+      'show_guids:tautulli:haynestower',
+    ]);
+    // Everything else still lands.
+    expect(first.titles.inserted).toBeGreaterThan(0);
+    expect(first.watchlist).toBe(2);
+
+    w.tower.calls.length = 0;
+    w.tautTower.metadataRequests.length = 0;
+    const r = await runWatchSync(w.input({ logger, now: new Date(NOW.getTime() + 15 * 60_000) }));
+    // The ingest window re-reads Breaking Prod's newest episode (its show asked once more); the two older
+    // guid-less pairs are skipped by the retry — both of their sources already failed this run.
+    expect(w.tower.calls.filter((c) => c === 'getMetadataItem')).toHaveLength(1);
+    expect([...new Set(w.tautTower.metadataRequests)]).toEqual(['501']);
+    expect(r.showGuids).toEqual({ resolved: 0, retried: 0, filled: 0, skipped: 2 });
+    expectNoTitles(lines);
+  });
+
+  it('stops the retry at its time budget (a hanging host) and reports the skipped pairs', async () => {
+    const w = world();
+    w.tower.unreachableKeys.add('502');
+    await runWatchSync(w.input());
+    const guidless = async () =>
+      (
+        await db
+          .selectDistinct({ key: watchEvents.grandparentRatingKey })
+          .from(watchEvents)
+          .where(sql`${watchEvents.showGuid} is null and ${watchEvents.kind} = 'episode'`)
+      )
+        .map((e) => e.key)
+        .sort();
+    expect(await guidless()).toEqual(['4040', '502']);
+
+    // Plex now hangs on both instead of refusing: the step gives up at its budget.
+    w.tower.unreachableKeys.clear();
+    w.tower.hangingKeys.add('502');
+    w.tower.hangingKeys.add('4040');
+    w.tower.calls.length = 0;
+    const { logger, lines } = captureLogs();
+    const started = Date.now();
+    const r = await runWatchSync(
+      w.input({ logger, now: new Date(NOW.getTime() + 15 * 60_000), tuning: { showGuidRetryBudgetMs: 50 } }),
+    );
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(r.showGuids).toEqual({ resolved: 0, retried: 0, filled: 0, skipped: 2 });
+    expect(w.tower.calls.filter((c) => c === 'meta:502' || c === 'meta:4040')).toHaveLength(1);
+    const warn = lines.map((l) => JSON.parse(l) as Record<string, unknown>).find((l) => l.msg === 'watch: show-guid retry ran out of time');
+    expect(warn).toMatchObject({ level: 'warn', budgetMs: 50, retried: 0, skipped: 2 });
+    // The later steps still ran.
+    expect(r.watchlist).toBe(2);
+    expect(r.errors).toEqual([]);
+    expectNoTitles(lines);
+
+    // Plex answers again: the next run retries both (Stub Toons resolves, the deleted show stays gone).
+    w.tower.hangingKeys.clear();
+    const next = await runWatchSync(w.input({ now: new Date(NOW.getTime() + 30 * 60_000) }));
+    expect(next.showGuids).toEqual({ resolved: 0, retried: 2, filled: 1, skipped: 0 });
+    expect(await guidless()).toEqual(['4040']);
   });
 });
 
@@ -519,8 +647,12 @@ describe('watch sync — the TMDB seed cadence (D-17)', () => {
     expect((await runWatchSync(w.input({ now: at(1) }))).seeds).toMatchObject({ refreshed: false });
     w.tmdb.failIds.add(55501);
     w.tmdbCalls.length = 0;
-    const r = await runWatchSync(w.input({ now: at(21) }));
+    const { logger, lines } = captureLogs();
+    const r = await runWatchSync(w.input({ logger, now: at(21) }));
     expect(r.seeds).toMatchObject({ refreshed: true, seeds: 3 });
+    // D-06: the failed seed is named by its TMDB id — never by its title (the owner's viewing history).
+    expect(r.errors).toEqual([{ step: 'seeds', source: 'tmdb:show:55501', message: 'tmdb down' }]);
+    expectNoTitles([...lines, JSON.stringify(r.errors)]);
     const rows = await db.select().from(watchRecoSignals).where(sql`${watchRecoSignals.source} = 'tmdb_seed'`);
     const bpRows = rows.filter((s) => s.seedTitle === 'Breaking Prod');
     expect(bpRows).toHaveLength(2);
@@ -551,6 +683,36 @@ describe('watch sync — movies that left the listings', () => {
     const byTitle = await titles();
     expect(byTitle.get('Solo Movie')).toMatchObject({ plexWatched: false, onPlex: [{ server: 'haynestower', ratingKey: '611', local: false }] });
     expect(byTitle.get('Doomed Movie')).toMatchObject({ onPlex: [] });
+  });
+});
+
+describe('watch sync — the absent-movie check reads each changed movie once (D-09)', () => {
+  it('checks only movies stored as watched or resuming there, oldest row first, and never re-reads one', async () => {
+    const w = world();
+    w.tower.movies.push({ ratingKey: '611', title: 'Solo Movie', year: 2011, guid: 'plex://movie/solo', viewCount: 1, lastViewedAt: T('2026-05-01T00:00:00Z') });
+    w.tower.movies.push({ ratingKey: '612', title: 'Doomed Movie', year: 2012, guid: 'plex://movie/doomed', viewCount: 1, lastViewedAt: T('2026-05-02T00:00:00Z') });
+    await runWatchSync(w.input());
+    const byTitle = await titles();
+    const order = ['Solo Movie', 'Doomed Movie']
+      .map((t) => ({ key: t === 'Solo Movie' ? '611' : '612', id: byTitle.get(t)?.id ?? 0 }))
+      .sort((a, b) => a.id - b.id)
+      .map((m) => m.key);
+    // Both are reset in Plex (they leave the watched listing).
+    for (const m of w.tower.movies) if (m.ratingKey === '611' || m.ratingKey === '612') m.viewCount = 0;
+    const checked = () => w.tower.calls.filter((c) => c === 'meta:611' || c === 'meta:612');
+    const run = async (hours: number) => {
+      w.tower.calls.length = 0;
+      await runWatchSync(w.input({ now: new Date(NOW.getTime() + hours * 3_600_000), tuning: { absentMovieChecks: 1 } }));
+      return checked();
+    };
+    // One check per run: the older row first, then the other; once each reads unwatched it is not re-read.
+    expect(await run(1)).toEqual([`meta:${order[0]}`]);
+    expect(await run(2)).toEqual([`meta:${order[1]}`]);
+    expect(await run(3)).toEqual([]);
+    expect(await run(4)).toEqual([]);
+    const after = await titles();
+    expect(after.get('Solo Movie')).toMatchObject({ plexWatched: false, onPlex: [{ server: 'haynestower', ratingKey: '611', local: false }] });
+    expect(after.get('Doomed Movie')?.plexCounts.haynestower).toMatchObject({ viewedLeafCount: 0 });
   });
 });
 

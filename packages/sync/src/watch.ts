@@ -6,6 +6,7 @@
 //   6 watchlist · 7 TMDB seeds (every 20 h, ≤ 15 seeds).
 import type { DbClient, PlexServerSlug, WatchMarkRow, WatchTitleRow } from '@hnet/db';
 import {
+  WatchBudgetExceeded,
   appendWatchEvents,
   fillShowGuids,
   isPlexNotFound,
@@ -13,6 +14,7 @@ import {
   replaceRecoSignals,
   upsertWatchOwner,
   upsertWatchTitles,
+  withDeadline,
   type RecoSignalInput,
   type ShowGuidFill,
   type WatchEventInput,
@@ -74,6 +76,8 @@ export interface WatchSyncTuning {
   /** Q-06 retry: pairs per run (ruling: 40) and the ingest window (60 days). */
   showGuidRetryLimit?: number;
   showGuidRetryDays?: number;
+  /** Q-06 retry: the step's time budget; when it runs out the rest of the pairs wait for the next run. */
+  showGuidRetryBudgetMs?: number;
   /** Stored movies missing from the listings checked per run (a 404 = gone from that server). */
   absentMovieChecks?: number;
   /** D-17: at most 15 seeds, refreshed when older than 20 hours. */
@@ -102,8 +106,13 @@ export interface WatchSyncReport {
   owner: { plexAccountId: number; username: string; from: 'plex' | 'stored' } | null;
   /** Events inserted per instance. */
   events: Partial<Record<PlexServerSlug, number>>;
-  /** Show guids: resolved at ingest, retried (Q-06) and events filled. */
-  showGuids: { resolved: number; retried: number; filled: number };
+  /** Instances whose history read stopped at the page cap (the older rows were not read this run). */
+  eventsCapped: PlexServerSlug[];
+  /**
+   * Show guids: resolved at ingest, retried (Q-06) and events filled; `skipped` = retry pairs not asked this
+   * run (the step's time budget ran out, or both sources of their instance had already failed this run).
+   */
+  showGuids: { resolved: number; retried: number; filled: number; skipped: number };
   shows: { listed: number; reread: number };
   /** Movies from the watched and in-progress listings. */
   movies: number;
@@ -123,6 +132,7 @@ const DEFAULTS = {
   sectionPageSize: 500,
   showGuidRetryLimit: 40,
   showGuidRetryDays: 60,
+  showGuidRetryBudgetMs: 60_000,
   absentMovieChecks: 100,
   seedLimit: 15,
   seedMaxAgeHours: 20,
@@ -171,35 +181,70 @@ export function eventFromHistory(instance: PlexServerSlug, row: TautulliHistoryR
 
 type GuidAnswer = { guid: string | null; from: 'plex' | 'tautulli' | 'none' };
 
+/** The per-run show-guid lookups (D-09 step 2 and the Q-06 retry) with their circuit breaker. */
+interface ShowGuidLookups {
+  /** Whether a source for this instance can still be asked this run. */
+  available(instance: PlexServerSlug): boolean;
+  resolve(instance: PlexServerSlug, grandparentKey: string): Promise<GuidAnswer>;
+  /** Stop: a lookup still in flight asks nothing more and reports nothing. */
+  close(): void;
+}
+
 /**
  * A show's Plex guid from its (instance, grandparent key) — the instance's OWN Plex server first (a 404 there
  * is truly gone; a success is authoritative), Tautulli's get_metadata only when Plex could not answer (Q-06
  * ruling). A `local://` show has no Plex guid (it never gets a `plex:` key, D-08).
+ *
+ * Circuit breaker: a source that fails with anything but "gone" (Plex 404; Tautulli's 400 / `{}` are already
+ * `null`) is not asked again this run — a host that hangs instead of refusing would otherwise cost every
+ * pair its full timeout and retries. `onTrip` hears the first failure of each source.
  */
-async function resolveShowGuid(
-  plex: WatchSyncPlexRead | undefined,
-  tautulli: WatchTautulliSource['client'] | undefined,
-  grandparentKey: string,
-): Promise<GuidAnswer> {
-  if (plex) {
-    try {
-      const meta = await plex.getMetadataItem(grandparentKey);
-      const guid = meta?.item.guid ?? null;
-      return { guid: guid?.startsWith('plex://show/') ? guid : null, from: 'plex' };
-    } catch (error) {
-      if (isPlexNotFound(error)) return { guid: null, from: 'plex' };
-    }
-  }
-  if (tautulli) {
-    try {
-      const md = await tautulli.getMetadata(grandparentKey);
-      const guid = md?.guid ?? null;
-      return { guid: guid?.startsWith('plex://show/') ? guid : null, from: 'tautulli' };
-    } catch {
-      // Tautulli down too: unknown for now.
-    }
-  }
-  return { guid: null, from: 'none' };
+function showGuidLookups(
+  plex: WatchSyncPlex['read'],
+  tautulli: readonly WatchTautulliSource[],
+  onTrip: (source: string, error: unknown) => void,
+): ShowGuidLookups {
+  const down = new Set<string>();
+  let closed = false;
+  const trip = (source: string, error: unknown) => {
+    if (closed || down.has(source)) return;
+    down.add(source);
+    onTrip(source, error);
+  };
+  const plexOf = (instance: PlexServerSlug) => (down.has(`plex:${instance}`) ? undefined : plex[instance]);
+  const tautulliOf = (instance: PlexServerSlug) =>
+    down.has(`tautulli:${instance}`) ? undefined : tautulli.find((t) => t.slug === instance)?.client;
+  return {
+    available: (instance) => !closed && Boolean(plexOf(instance) ?? tautulliOf(instance)),
+    close: () => {
+      closed = true;
+    },
+    resolve: async (instance, grandparentKey) => {
+      const p = closed ? undefined : plexOf(instance);
+      if (p) {
+        try {
+          const meta = await p.getMetadataItem(grandparentKey);
+          const guid = meta?.item.guid ?? null;
+          return { guid: guid?.startsWith('plex://show/') ? guid : null, from: 'plex' };
+        } catch (error) {
+          if (isPlexNotFound(error)) return { guid: null, from: 'plex' };
+          trip(`plex:${instance}`, error);
+        }
+      }
+      const t = closed ? undefined : tautulliOf(instance);
+      if (t) {
+        try {
+          const md = await t.getMetadata(grandparentKey);
+          const guid = md?.guid ?? null;
+          return { guid: guid?.startsWith('plex://show/') ? guid : null, from: 'tautulli' };
+        } catch (error) {
+          // Tautulli down too: unknown for now.
+          trip(`tautulli:${instance}`, error);
+        }
+      }
+      return { guid: null, from: 'none' };
+    },
+  };
 }
 
 /** Page one section listing to completion (throws when the page cap is hit — a partial read). */
@@ -279,7 +324,8 @@ export async function runWatchSync(input: WatchSyncInput): Promise<WatchSyncRepo
   const report: WatchSyncReport = {
     owner: null,
     events: {},
-    showGuids: { resolved: 0, retried: 0, filled: 0 },
+    eventsCapped: [],
+    showGuids: { resolved: 0, retried: 0, filled: 0, skipped: 0 },
     shows: { listed: 0, reread: 0 },
     movies: 0,
     titles: { upserted: 0, inserted: 0, updated: 0, rekeyed: 0, unchanged: 0 },
@@ -327,11 +373,15 @@ export async function runWatchSync(input: WatchSyncInput): Promise<WatchSyncRepo
   // the first run: the whole history), newest first, insert-or-ignore on (instance, row_id).
   const freshEventIds = new Set<number>();
   const attempted = new Set<string>();
+  const guids = showGuidLookups(input.plex.read, input.tautulli, (source, error) =>
+    fail('show_guids', error, source),
+  );
   for (const src of input.tautulli) {
     try {
       const newest = await newestEventStart(db, acct, src.slug);
       const after = newest ? isoDay(new Date(newest.getTime() - 3 * DAY_MS)) : undefined;
       const events: WatchEventInput[] = [];
+      let complete = false;
       for (let page = 0; page < tune.maxHistoryPages; page += 1) {
         const rows = await src.client.getHistory({
           userId: acct,
@@ -347,7 +397,20 @@ export async function runWatchSync(input: WatchSyncInput): Promise<WatchSyncRepo
           const e = eventFromHistory(src.slug, row);
           if (e) events.push(e);
         }
-        if (rows.length < tune.historyPageSize) break;
+        if (rows.length < tune.historyPageSize) {
+          complete = true;
+          break;
+        }
+      }
+      if (!complete) {
+        // The page cap: the rows older than the last page read are not ingested this run (and the next
+        // window starts after them), so say so — slug and counts only, never a title.
+        report.eventsCapped.push(src.slug);
+        logger.warn('watch: Tautulli history hit the page cap', {
+          source: src.slug,
+          pages: tune.maxHistoryPages,
+          pageSize: tune.historyPageSize,
+        });
       }
       // A new episode's show guid: stored events first, then Plex, then Tautulli — once per grandparent key.
       const keys = [
@@ -358,7 +421,7 @@ export async function runWatchSync(input: WatchSyncInput): Promise<WatchSyncRepo
       for (const key of keys) {
         if (known.has(key)) continue;
         attempted.add(`${src.slug}\u0000${key}`);
-        const answer = await resolveShowGuid(input.plex.read[src.slug], src.client, key);
+        const answer = await guids.resolve(src.slug, key);
         if (answer.guid) {
           known.set(key, answer.guid);
           resolved.push({ instance: src.slug, grandparentRatingKey: key, showGuid: answer.guid });
@@ -381,7 +444,8 @@ export async function runWatchSync(input: WatchSyncInput): Promise<WatchSyncRepo
   }
 
   // 2b — Q-06: a NULL show guid is not final. Retry up to 40 (instance, grandparent key) pairs ingested in the
-  // last 60 days (a rotating slice), Plex first, Tautulli second; fill the events in place.
+  // last 60 days (a rotating slice), Plex first, Tautulli second; fill the events in place. The step has a
+  // time budget (60 s): a slow source must not hold up the Title States, the watchlist and the seeds.
   try {
     const slot = String(Math.floor(now.getTime() / (15 * 60_000)));
     const candidates = await selectUnresolvedShowPairs(db, acct, {
@@ -393,17 +457,45 @@ export async function runWatchSync(input: WatchSyncInput): Promise<WatchSyncRepo
       .filter((p) => !attempted.has(`${p.instance}\u0000${p.grandparentRatingKey}`))
       .slice(0, tune.showGuidRetryLimit);
     const fills: ShowGuidFill[] = [];
-    for (const p of pairs) {
+    const deadline = Date.now() + tune.showGuidRetryBudgetMs;
+    let outOfTime = false;
+    for (const [i, p] of pairs.entries()) {
+      if (Date.now() >= deadline) {
+        outOfTime = true;
+        report.showGuids.skipped += pairs.length - i;
+        break;
+      }
+      if (!guids.available(p.instance)) {
+        report.showGuids.skipped += 1;
+        continue;
+      }
+      let answer: GuidAnswer;
+      try {
+        answer = await withDeadline(guids.resolve(p.instance, p.grandparentRatingKey), deadline);
+      } catch (error) {
+        if (!(error instanceof WatchBudgetExceeded)) throw error;
+        outOfTime = true;
+        report.showGuids.skipped += pairs.length - i;
+        break;
+      }
       report.showGuids.retried += 1;
-      const src = input.tautulli.find((t) => t.slug === p.instance);
-      const answer = await resolveShowGuid(input.plex.read[p.instance], src?.client, p.grandparentRatingKey);
       if (answer.guid) fills.push({ ...p, showGuid: answer.guid });
+    }
+    if (outOfTime) {
+      logger.warn('watch: show-guid retry ran out of time', {
+        budgetMs: tune.showGuidRetryBudgetMs,
+        retried: report.showGuids.retried,
+        skipped: report.showGuids.skipped,
+      });
     }
     if (fills.length > 0) {
       report.showGuids.filled += (await fillShowGuids({ db, plexAccountId: acct, fills })).filled;
     }
   } catch (error) {
     fail('show_guids', error);
+  } finally {
+    // A lookup abandoned at the deadline asks nothing more and reports nothing after this step.
+    guids.close();
   }
 
   // 3 — Plex progress on every server with movie or show sections (decided from /library/sections).
@@ -462,27 +554,39 @@ export async function runWatchSync(input: WatchSyncInput): Promise<WatchSyncRepo
       selectLedgerIndex(db),
     ]);
 
-    // Stored movies missing from a complete watched/in-progress listing: unwatched there now, or gone.
+    // Stored movies missing from a complete watched/in-progress listing: unwatched there now, or gone. Only
+    // an entry whose STORED state says watched or resuming on that server can have left those listings (one
+    // already unwatched there is expected to be absent — re-reading it every run changed nothing); the check
+    // writes its fresh state, so each one is read once. Oldest row first, so the order is stable.
     const listed = new Set(movies.map((m) => obsKey(m.server, m.item.ratingKey)));
     const goneMovies = new Set<string>();
-    let checks = 0;
-    for (const row of stored) {
-      if (row.kind !== 'movie') continue;
-      for (const e of row.onPlex) {
-        const key = obsKey(e.server, e.ratingKey);
-        if (!movieServersRead.has(e.server) || listed.has(key) || checks >= tune.absentMovieChecks) continue;
-        const client = input.plex.read[e.server];
-        if (!client) continue;
-        checks += 1;
-        try {
-          const meta = await client.getMetadataItem(e.ratingKey);
-          if (meta) {
-            movies.push({ server: e.server, item: meta.item });
-            listed.add(key);
-          } else goneMovies.add(key);
-        } catch (error) {
-          if (isPlexNotFound(error)) goneMovies.add(key);
-        }
+    const absent = stored
+      .filter((row) => row.kind === 'movie')
+      .sort((a, b) => a.id - b.id)
+      .flatMap((row) =>
+        row.onPlex
+          .filter(
+            (e) =>
+              movieServersRead.has(e.server) &&
+              !listed.has(obsKey(e.server, e.ratingKey)) &&
+              ((row.plexCounts[e.server]?.viewedLeafCount ?? 0) > 0 ||
+                (row.nextServer === e.server && row.resumePercent !== null)),
+          )
+          .map((e) => ({ server: e.server, ratingKey: e.ratingKey })),
+      )
+      .slice(0, tune.absentMovieChecks);
+    for (const e of absent) {
+      const key = obsKey(e.server, e.ratingKey);
+      const client = input.plex.read[e.server];
+      if (!client || listed.has(key)) continue;
+      try {
+        const meta = await client.getMetadataItem(e.ratingKey);
+        if (meta) {
+          movies.push({ server: e.server, item: meta.item });
+          listed.add(key);
+        } else goneMovies.add(key);
+      } catch (error) {
+        if (isPlexNotFound(error)) goneMovies.add(key);
       }
     }
 
@@ -585,7 +689,8 @@ export async function runWatchSync(input: WatchSyncInput): Promise<WatchSyncRepo
             }
           } catch (error) {
             failed.add(seed.titleKey);
-            fail('seeds', error, seed.title);
+            // The TMDB id names the seed, never its title (the owner's viewing history stays out of logs).
+            fail('seeds', error, `tmdb:${seed.kind}:${String(seed.tmdbId)}`);
           }
         }
         if (seeds.length > 0 && failed.size === seeds.length) {
@@ -614,6 +719,7 @@ export async function runWatchSync(input: WatchSyncInput): Promise<WatchSyncRepo
   logger.info('watch sync complete', {
     owner: report.owner.plexAccountId,
     events: report.events,
+    ...(report.eventsCapped.length > 0 ? { eventsCapped: report.eventsCapped } : {}),
     showGuids: report.showGuids,
     shows: report.shows,
     movies: report.movies,
