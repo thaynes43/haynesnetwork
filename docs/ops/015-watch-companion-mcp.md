@@ -15,7 +15,7 @@
 | Piece | Where | Notes |
 |---|---|---|
 | MCP endpoint | `haynesnetwork` web pods, `POST /api/mcp` | stateless; never routed by an IngressRoute |
-| Consumer token | Secret `frontend/haynesnetwork-mcp-consumer`, key `HOP_TOKEN` | minted once by an External Secrets `Password` generator; no copy exists in 1Password |
+| Consumer token | Secret `frontend/haynesnetwork-mcp-consumer`, key `HNET_MCP_HOP_TOKEN` (the generator's `secretKeys`) | minted once by an External Secrets `Password` generator (ExternalSecret `refreshPolicy: CreatedOnce`); the web container loads it through an optional `envFrom`; no copy exists in 1Password |
 | Hop | `frontend/haynesnetwork-mcp-hop` :8080 `/mcp` | nginx injects `Authorization: Bearer`; CiliumNetworkPolicy admits Home Assistant, dev-env and probes only |
 | Sync | CronJob `haynesnetwork-sync-watch`, `3,18,33,48 * * * *` | owner, events, Plex progress, watchlist, TMDB seeds |
 | Voice consumer | HA `mcp` entry "Watch history" → Movie Room agent `conversation.chatgpt_5` only | prompt backup in hass-sandbox `agent-docs/voice-agent-prompts.md` |
@@ -57,14 +57,23 @@ reads); later runs take seconds.
 
 ## 4. Rotate the consumer token
 
+Rotation = **delete the generated Secret**; the ExternalSecret (`refreshPolicy: CreatedOnce`) then
+recreates it from the generator with a new value:
+
 ```bash
-kubectl annotate externalsecret -n frontend haynesnetwork-mcp-consumer force-sync=$(date +%s) --overwrite
+kubectl delete secret -n frontend haynesnetwork-mcp-consumer
 ```
 
-The generator mints a new value, and Reloader restarts the web pods and the hop. Home Assistant and
-dev-env need nothing (they never hold the token). If one side restarted before the other, a few
-calls answer 401 until both are rolled; `kubectl rollout restart deploy/haynesnetwork-mcp-hop -n frontend`
-settles it.
+The dev-env service account has no secrets RBAC, so this is **the owner's action** — or, without
+touching the cluster by hand, a git rename of the ExternalSecret in haynes-ops (the new object mints a
+new Secret; the old one goes with its ExternalSecret). A `force-sync` annotation does **not** rotate
+under `CreatedOnce`: the Secret already exists, so nothing is regenerated.
+
+Reloader restarts the web pods and the hop when the Secret changes. Home Assistant and dev-env need
+nothing (they never hold the token). If one side restarted before the other, a few calls answer 401
+until both are rolled; `kubectl rollout restart deploy/haynesnetwork-mcp-hop -n frontend` settles it.
+*(Corrected after the haynes-ops #3131 deploy: this section first said a force-sync rotates, and §1
+named the key `HOP_TOKEN`.)*
 
 ## 5. Turn it off
 

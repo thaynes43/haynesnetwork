@@ -29,6 +29,8 @@ not here (Hard Rule 4; ADR-008).
 | `normalize.ts` | `HISTORY_EVENT_NORMALIZATION` — the D-07 raw-eventType → ledger-type map; unmapped raw types are **dropped** (no event) but still advance the cursor. |
 | `db-reads.ts` | Read-only lookups between writers (history cursor, `arr_item_id` → `media_items.id`, Seerr item match, email → user). Nothing here mutates. |
 | `clients.ts` | `buildSyncClients` — per-source read-client construction from the D-18 env contract; `requireClient` narrows. Tests inject stubs. |
+| `watch.ts` | `runWatchSync` — the `watch` mode (ADR-088 / DESIGN-049 D-09): owner, Tautulli history → `appendWatchEvents` (+ the Q-06 show-guid retry), Plex progress reads, the watchlist and the daily TMDB seeds; read-only against every source, per-source degradation. |
+| `watch-assemble.ts` | The pure half of the `watch` mode: group a title's records by identity keys, plan the `allLeaves` re-reads (counters moved ⇒ every holder), assemble the Title States `upsertWatchTitles` writes. |
 | `logger.ts` | JSON-lines console logger (one object per line for k8s log pipelines); `noopLogger` for tests. |
 | `index.ts` | Barrel re-export of the above. |
 

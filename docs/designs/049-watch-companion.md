@@ -1,7 +1,9 @@
 # DESIGN-049: Watch Companion — watch history read-model, recommendations, voice reconcile marks, and the in-cluster MCP surface
 
 - **Status:** Draft
-- **Last updated:** 2026-09-23 (PLAN-068 S4: D-25 records the pure-math rulings; D-21 example order fixed; Q-05)
+- **Last updated:** 2026-09-23 (PLAN-068 S5–S6: D-26 records the domain and sync rulings; Q-05 and Q-06
+  ruled; `name:` keys carry the kind; D-04 corrected after the haynes-ops #3131 deploy). Prior: PLAN-068 S4
+  (D-25 records the pure-math rulings; D-21 example order fixed; Q-05)
 - **Satisfies:** PRD-001 R-240..R-246, US-13, AC-20..AC-24; governed by ADR-087 (MCP surface),
   ADR-088 (read-model, Watch Marks, Plex write-back), ADR-089 (recommendations); reuses ADR-017
   (confined Plex writes), ADR-029 (Server Owner), ADR-068 (Tautulli trio env contract).
@@ -37,7 +39,7 @@ revalidate the handful of titles in an answer (D-11) and to apply a Watch Mark (
 | Package | Adds | Rule |
 |---|---|---|
 | `@hnet/db` | migration `0077_watch_companion.sql` (+ `_journal.json` entry), schema file for the five tables, enum constants | CHECK constraints written by hand from `schema/enums.ts` |
-| `@hnet/watch` (**new**) | pure progress math (D-10), states, resolver scoring (D-13), taste profile and scoring (D-16..D-19), spoken formatter (D-21), read queries (SELECT only) | imports `@hnet/db` and zod only; never writes; never imports `@hnet/domain`, `@hnet/plex/write` or the MCP SDK (the `/sync` bundle flattens its dependencies) |
+| `@hnet/watch` (**new**) | pure progress math (D-10), states, resolver scoring (D-13), taste profile and scoring (D-16..D-19), spoken formatter (D-21), read queries (SELECT only) | imports `@hnet/db`, `drizzle-orm` (the query builder of the SELECT-only queries) and zod only; never writes; never imports `@hnet/domain`, `@hnet/plex/write` or the MCP SDK (the `/sync` bundle flattens its dependencies). Its server list is the schema's `PLEX_SERVER_SLUGS` in preference order and its `EpisodeMap` is the column's type (D-26) |
 | `@hnet/domain` | `watch/*` single-writers: accounts, events, titles, marks, signals; `markWatched`, `dismissTitle`, `undoLastChange`, `revalidateTitles` | the only importer of `@hnet/plex/write`; tables join `no-direct-state-writes` |
 | `@hnet/plex` | read: the optional watch fields added to `sectionItemSchema` (`viewCount`, `viewedLeafCount`, `lastViewedAt`, `viewOffset`, `Genre[]`, `contentRating`, `parentIndex`, `parentRatingKey`, `grandparentRatingKey`, `grandparentTitle`, `grandparentGuid`), `listAllLeaves(ratingKey)` (paged, with a `truncated` flag), filtered section pages (`type`, `unwatched`, `inProgress`), `findByGuid(guid)` (`/library/all?guid=`), `getWatchlist()` (discover provider; base URL `plexDiscoverBaseUrl`, default `https://discover.provider.plex.tv`, env override `PLEX_DISCOVER_URL`); write: `scrobble(ratingKey)`, `unscrobble(ratingKey)` on `PlexWriteClient` | fields are optional, so `plex-match` and every existing reader are unchanged; `@hnet/plex/write` stays import-confined (ADR-017 C-10, `arr-write-import-guard.test.ts`). The two writes are GETs, issued through `PlexHttp.requestIdempotentGet` and **retried like a read** (3 attempts on timeout / network / 502-504): both are idempotent on watched state, so a retry after an ambiguous timeout cannot flip anything else, while giving up would record a failed mark for a write that probably landed. `timeoutMs` bounds each attempt (worst case 3 × `timeoutMs` + 2 × `retryDelayMs`), so S5 builds its write client for D-14's 3 s budget (about 0.8 s per attempt or less) |
 | `@hnet/arr` | Tautulli `getHistory` gains `userId`, `after`, `grouping`, `orderColumn`/`orderDir`, and the history row schema gains the row id (`row_id`), `guid`, `media_index`, `parent_media_index`, `parent_rating_key`, `percent_complete`, `year`, `full_title`, `started`; `getMetadata` maps both HTTP 400 and `{}` to "gone" (`null`); TMDB `getMovieRecommendations`/`getTvRecommendations`/`searchMulti`; **error messages redact credential query values** — `apikey`, `api_key`, `token` and `X-Plex-Token`, case-insensitively, in every ArrError's `message`, `url` and `bodySnippet` (every `ArrHttpError`/`ArrTimeoutError`/`ArrParseError` used to embed the full URL, and Tautulli and TMDB v3 carry their keys in the query) | read-only clients |
@@ -112,10 +114,12 @@ merge green and fail only at release.
   (`home-automation`, its app label), the dev-env pod (`dev`, its app label) and the `host` entity
   (kubelet probes), TCP 8080.
 - The token: an External Secrets `Password` generator (48 characters, letters and digits) feeding an
-  ExternalSecret with `refreshInterval: "0"` in the haynesnetwork app, target Secret
-  `haynesnetwork-mcp-consumer`, key `HOP_TOKEN`. The web controller reads it as
-  `HNET_MCP_HOP_TOKEN` (`optional: true`, so a missing Secret degrades to 503, never a crash loop);
-  the hop reads the same key. Reloader on both.
+  ExternalSecret with `refreshPolicy: CreatedOnce` in the haynesnetwork app, target Secret
+  `haynesnetwork-mcp-consumer`, key `HNET_MCP_HOP_TOKEN` (the generator's `secretKeys`). The web
+  container loads it through an OPTIONAL `envFrom` `secretRef` (a missing Secret degrades to 503, never
+  a crash loop); the hop reads the same key. Reloader on both. Rotation = delete the generated Secret
+  (OPS-015 §4). *Corrected after the haynes-ops #3131 deploy (live): the first draft said
+  `refreshInterval: "0"`, key `HOP_TOKEN` and a renamed `env` entry.*
 
 ### D-05 — The tool contract and the Voice Budget
 
@@ -254,8 +258,9 @@ Indexes: (`plex_account_id`, `started_at` desc), (`plex_account_id`, `show_guid`
 Each run replaces a source's rows for the account in one transaction.
 
 All five tables join `packages/domain/__tests__/no-direct-state-writes.test.ts` (snake_case names in
-the SQL families, camelCase schema identifiers in the Drizzle families; `watch_reco_signals` and
-`watch_titles` also in DELETE). `users.id` and `media_items.id` are **uuid** (this design first said
+the SQL families, camelCase schema identifiers in the Drizzle families; `watch_reco_signals`,
+`watch_titles` and — driver ruling, PLAN-068 S5 — `watch_events` and `watch_marks` also in DELETE:
+nothing outside the domain may ever delete them, and the domain never does). `users.id` and `media_items.id` are **uuid** (this design first said
 `users.id` was text; the schema has always been uuid — corrected in PLAN-068 S2), so `app_user_id`,
 `actor_user_id` and `media_item_id` are uuid. The same migration drops and re-adds
 `sync_runs_run_kind_enum` with `watch` added, and the journal entry is idx 76 with a `when` above
@@ -276,14 +281,16 @@ instead of silently wiping them (driver review of #559). The user FKs and `media
 `ON DELETE SET NULL`. `title` is NOT NULL wherever it appears; the jsonb, boolean and counter columns
 are NOT NULL with the defaults the tables show; every `*_at` column the tables mark "not null"
 (`resolved_at`, `created_at`, `updated_at`, `ingested_at`, `refreshed_at`, `fetched_at`) defaults to
-`now()` except the event's own `started_at`. Until the `watch` mode exists (S6), `runSync` refuses
-`--mode=watch` rather than fall through to the per-source *arr loop.
+`now()` except the event's own `started_at`. Until the `watch` mode existed, `runSync` refused
+`--mode=watch` rather than fall through to the per-source *arr loop; S6 replaced the refusal with the
+mode's early-return block.
 
 ### D-08 — Title identity (`title_key`)
 
 In order of preference: `plex:<plex guid>` (a `plex://show/…` or `plex://movie/…` guid, identical on
-every server); `tvdb:<id>` (shows) or `tmdb:movie:<id>`; `imdb:<id>`; last `name:<normalized
-title>|<year>`. When a later run learns a stronger key for an existing row (for example an event-only
+every server); `tvdb:<id>` (shows) or `tmdb:movie:<id>`; `imdb:<id>`; last `name:<kind>:<normalized
+title>|<year>` — the name key carries the kind (driver ruling, PLAN-068 S5), so a show and a movie with
+the same title and year cannot collide on `watch_titles (plex_account_id, title_key)`. When a later run learns a stronger key for an existing row (for example an event-only
 title that reappears on Plex), the writer re-keys the row in place so marks keep pointing at it
 (marks also carry the ids, D-13). Unmatched `local://` items never produce a `plex:` key; they match
 by external ids, then by normalized title and year.
@@ -398,9 +405,11 @@ around its database rows, with Plex calls outside the transaction (D-14).
 - **Pool**: the owner's `watch_titles`, the live ledger (`media_items` for Sonarr and Radarr, not
   tombstoned), and `watch_reco_signals`, filtered by `kind` when given.
 - **Score**: 1.0 exact; 0.95 exact once a trailing country or year tag is dropped ("the office us");
-  0.85 when one is a prefix of the other and the shorter is at least 60% of the longer; otherwise
-  Jaro-Winkler × 0.9 when at least 0.9. Plus 0.05 when the title is in the owner's history and 0.05
-  when the year hint matches.
+  0.85 when one is a prefix of the other and the shorter is at least 60% of the longer; otherwise the
+  better of Jaro-Winkler × 0.9 when at least 0.9 and **0.7 when the query's words are the leading whole
+  words of the title** ("dune" → "Dune: Prophecy"; Q-05 ruling, PLAN-068 S5 — it can appear in an
+  ambiguous list but never resolves alone: 0.7 plus both bonuses is 0.8). Plus 0.05 when the title is in
+  the owner's history and 0.05 when the year hint matches.
 - **Decide**: resolved when the best is at least 0.9 and no *different* title scores within 0.05 of
   it; ambiguous when the best is at least 0.6 (return up to three candidates as "Title (year, kind)");
   otherwise one TMDB `search/multi` call, accepted only on an exact normalized title match (the title
@@ -546,14 +555,29 @@ lists the final signatures; the tests pin each row.
 
 | Section | Ruling |
 |---|---|
-| D-08 | A show known only by its TMDB id keys as `tmdb:show:<id>`, after `imdb:` (D-08 named TMDB for movies only). A TVDB id counts for shows only. `identityKeys` always adds the `name:` key; `name:` keys carry no kind, so a watched movie also excludes a same-name, same-year show (errs toward leaving a pick out). Grouping by keys is kind-scoped. |
+| D-08 | A show known only by its TMDB id keys as `tmdb:show:<id>`, after `imdb:` (D-08 named TMDB for movies only). A TVDB id counts for shows only. `identityKeys` always adds the `name:` key; `name:` keys carried no kind in S4, so a watched movie also excluded a same-name, same-year show — superseded in S5: the key carries the kind (D-26). Grouping by keys is kind-scoped. |
 | D-10 | Season-0 events are ignored like specials (plays, rewatch, dates). An event without `stopped_at` counts at `started_at`. With nothing watched and several started episodes, next is the one viewed most recently. Next is served from HaynesOps, then HaynesTower, then HaynesKube. "Within 90 days" includes exactly 90; a Taster is untouched for more than 30. An unknown last-watched time counts as old. A movie outside the 5–90% band is `finished` when watched in Plex, else `unstarted`; a `lastViewedAt` tie between servers goes to the one with a resume point. |
-| D-13 | A bare trailing year becomes the hint but stays in the normalized title ("Blade Runner 2049"); the 0.95 rule matches the year-less form. The 0.95 rule drops ONE side's tag; two different tags ("office us", "office uk") never match there. Country tags leave out the English words "it", "in", "no", "be". Pool entries that share an identity key are one title (a Title State, its ledger item and its watchlist row are not rivals); the history bonus is per title; bonuses never lift a zero match. A margin of exactly 0.05 resolves, so the year and history bonuses each break an exact tie. Options list newer years first on a tie. |
+| D-13 | A bare trailing year becomes the hint but stays in the normalized title ("Blade Runner 2049"); the 0.95 rule matches the year-less form (so does the S5 whole-word prefix, D-26). The 0.95 rule drops ONE side's tag; two different tags ("office us", "office uk") never match there. Country tags leave out the English words "it", "in", "no", "be". Pool entries that share an identity key are one title (a Title State, its ledger item and its watchlist row are not rivals); the history bonus is per title; bonuses never lift a zero match. A margin of exactly 0.05 resolves, so the year and history bonuses each break an exact tie. Options list newer years first on a tie. |
 | D-16 | "Once three episodes are watched" counts the event log too, and a show gone from Plex (`episodes_total` 0) weighs 0.25 once three episodes are in the log — otherwise shows Maintainerr deleted after he finished them, the strongest signals, would weigh nothing. A title without a last-watched time weighs 0. Genres are folded onto canonical names first; compound source genres split ("Sci-Fi & Fantasy"). |
 | D-18 | A show whose next episode is started (a resume-only start, which D-10 counts as Unfinished) is "started" too. Exclusion is per title: Title States and marks that share a key form one title whose every key joins the set, and a candidate goes when any candidate sharing a key with it is excluded. A title is children's when any source says so or its sources' genres together do. |
 | D-19 | Every pick has a reason (AC-21): after "new on Plex" comes "new to you". `<genre> like <title>` names the requested genre, else the owner's strongest shared genre with drama last (nearly every show carries it); kids read "for kids, like Bluey". A rating of 0 is missing (TMDB reports 0 when unrated). Final tie-break after title is the title key. Candidates from the library, the watchlist and the seeds merge into one before scoring. |
 | D-20 | The not-on-Plex picks page two at a time with `offset` (page = ⌊offset ÷ limit⌋), so "more" never repeats them. Past the end: "No more picks. Try another genre or kind." |
 | D-21 | Dates use the owner's time zone (America/New_York by default). "And N more." is its own sentence. Only the first in-progress show carries its counts, as in the example; relative dates keep "last watched" ("last watched yesterday"). A started next episode reads "resume season 3 episode 7"; a rewatch reads "(rewatch)". Titles lose markdown characters, emoji and URLs (`M*A*S*H` → `MASH`). The cut never splits a title like "Mr. Robot". |
+
+### D-26 — Rulings made while building the domain and the sync (PLAN-068 S5–S6)
+
+Owner/driver rulings given for S5–S8 are marked *ruling*; the rest are as-built decisions where D-07..D-15
+left a case open. `packages/watch/README.md` lists the final signatures; the tests pin each row.
+
+| Section | Ruling |
+|---|---|
+| D-01 | *Ruling:* one source of truth for server slugs — `@hnet/watch`'s `PLEX_SERVERS` is `PLEX_SERVER_SLUGS` sorted by a `Record<PlexServerSlug, rank>` (a new slug fails typecheck until ranked), and `EpisodeMap` / `PlexItemKey` are the schema's `WatchEpisodeMap` / `WatchMarkFlip`. `@hnet/watch` also imports `drizzle-orm` for its SELECT-only queries. `plexClientBundleFromEnv(env, { timeoutMs, retryDelayMs })` sizes a bundle for a voice budget (S7 builds a 300 ms revalidation bundle and an 800 ms mark bundle). The Title State helpers that turn Plex reads into D-10 inputs and D-10 outputs into columns live in `@hnet/watch` (`state.ts`), so the sync, the revalidation and the mark write-through write the same shape. |
+| D-07 | *Ruling:* `watch_events` and `watch_marks` join the DELETE guard families. The one UPDATE of `watch_events` is `fillShowGuids` (Q-06): a NULL `show_guid` is filled, a known one never overwritten. Movies: `next_server` / `next_rating_key` name where the resume point lives (resume points are not synced), null without one; `plex_counts[server]` is `{leafCount: 1, viewedLeafCount: 1 when watched there, lastViewedAt}`; `event_watched_episodes` is 1 when a Watch Event says it was watched (T-247's "watched event"). |
+| D-08 | *Ruling:* `name:<kind>:<normalized>\|<year>`. The writer re-keys a row only to a STRONGER key no other row holds, and an input matching two stored rows (two rows created before a key linked them) updates the strongest-keyed one. Guid-less show events (Q-06) key as `name:show:<show title>\|<year>` for each year they carry (an episode's Tautulli `year` is its own air year, not the show's) and, when that matches nothing, join the one Plex or stored show with the same normalized title. |
+| D-09 | Show guids come from the instance's own Plex server first (`getMetadataItem` on the grandparent key: a success is authoritative, a 404 is truly gone) and from Tautulli's `get_metadata` only when Plex cannot answer — at ingest as well as in the Q-06 retry; a guid learned at ingest also fills the pair's older events. A tracked show whose counters moved on ANY server (or with no stored counters for a server, or with new events this run) is re-read on EVERY server that holds it: the stored map is pair-level, so one server's own flags cannot be recovered from it. A failed re-read keeps the stored counters, so the next run retries. A show missing from a complete show listing is gone from that server; a stored movie missing from the complete watched/in-progress listings is checked (≤ 100 per run): 404 = gone from that server, else its fresh state (a reset). Tracked = stored, in the event log, or watched/started on Plex (movies: in those listings). Seeds (D-17): a show gone from Plex counts once three episodes are in the log (D-25's Taste Profile reading); a seed whose TMDB call fails keeps its previous rows; when every call fails nothing is replaced. The report adds `showGuids {resolved, retried, filled}` and splits `titles` into `upserted`, `inserted`, `updated`, `rekeyed`, `unchanged`. |
+| D-11 | A movie revalidates on its resume server (`next_server`) when it has one, else the preferred holder. A show re-reads `allLeaves` on the revalidated server only and keeps its other servers from the stored map (the next sync re-reads every holder). |
+| D-14 | Targets: the most preferred MATCHED holder (view-state sync carries it) plus every `local://` holder (not synced) — so a title whose preferred copy is local is also written on its matched copy. Only writes that flip something are issued: an already-watched title makes no write and answers "was already watched". A whole-show mark's `flipped` includes unwatched specials (the show scrobble marks them too); `through` covers seasons 1…S−1, never specials. A season or episode Plex does not have is recorded `not_on_plex` (history only). An episode without its season writes nothing and asks for it (`formatNeedSeason`). A title new to the owner's history takes its identity from the Plex item read for the before-state, before the mark is inserted. The write-through keeps the stored `plex_counts`, so the next sync re-reads the title fully. The replay rule (step 7) covers dismissals too. A failed before-state read counts as a failed write (`partial` / `failed`). |
+| D-15 | Undo reads the show's live `allLeaves` on each flipped server to collapse (the show key when every current leaf is in `flipped`, else each season key whose every leaf is), so an episode added after the mark is never touched; a failed read unscrobbles each flipped key. An unscrobble answering 404 counts as done (nothing is left to put back). A dismissal's undo has `revertResult: null` in its view. |
 
 ## Alternatives considered
 
@@ -603,5 +627,5 @@ lists the final signatures; the tests pin each row.
 | Q-02 | Seerr requests by voice. | PRD Q-13 — open. |
 | Q-03 | Public connectors (OAuth). | PRD Q-14 — deferred. |
 | Q-04 | Should the HaynesOps Tautulli webhook trigger an immediate Title State refresh? | Open; D-11 covers answers, so only worth it if the bench shows stale answers. |
-| Q-05 | D-21's ambiguous example offers Dune: Prophecy for "Dune", but D-13 scores it 0: a 4-of-13-character prefix is under the 60% rule and its Jaro-Winkler (0.86) is under 0.9. D-13's 0.6 floor never binds either, since the lowest nonzero score is 0.81. Should a whole-word prefix score about 0.7, so it is offered as an option but can never resolve alone (0.7 plus both bonuses is 0.8)? | Open; S4 follows D-13, so "Dune" offers only the two Dune films. |
-| Q-06 | Tautulli answers `get_metadata` with the same HTTP 400 "Unable to retrieve metadata" for a deleted item and while it cannot reach its Plex server, and `watch_events` rows are never updated. How should S6 keep a Plex outage from leaving a permanent null `show_guid`? (a) Trust the 400 only when that server's Plex answered earlier in the same run, else hold those episodes back. But the next window starts from the newest stored row, so held-back rows older than 3 days are never re-read. (b) Let the event writer backfill a null `show_guid` later, a narrow exception to append-only. (c) Accept it: the event falls back to the show title (D-08 `name:` key). | Open (found in the #559 review); S6 decides. The client already limits "gone" to this one message. |
+| Q-05 | D-21's ambiguous example offers Dune: Prophecy for "Dune", but D-13 scores it 0: a 4-of-13-character prefix is under the 60% rule and its Jaro-Winkler (0.86) is under 0.9. D-13's 0.6 floor never binds either, since the lowest nonzero score is 0.81. Should a whole-word prefix score about 0.7, so it is offered as an option but can never resolve alone (0.7 plus both bonuses is 0.8)? | **Ruled (PLAN-068 S5): yes.** The query's words leading the title's whole words score 0.7 (also with a trailing year hint dropped: "dune 2024"); it appears in an ambiguous list, never resolves alone, and a single option reads "Did you mean …?" (D-13). |
+| Q-06 | Tautulli answers `get_metadata` with the same HTTP 400 "Unable to retrieve metadata" for a deleted item and while it cannot reach its Plex server, and `watch_events` rows are never updated. How should S6 keep a Plex outage from leaving a permanent null `show_guid`? (a) Trust the 400 only when that server's Plex answered earlier in the same run, else hold those episodes back. But the next window starts from the newest stored row, so held-back rows older than 3 days are never re-read. (b) Let the event writer backfill a null `show_guid` later, a narrow exception to append-only. (c) Accept it: the event falls back to the show title (D-08 `name:` key). | **Ruled (PLAN-068 S6): (b), bounded.** A null `show_guid` may stay null but is not final: each run retries at most 40 distinct (instance, grandparent key) pairs whose events have a null `show_guid` and were ingested in the last 60 days (a rotating slice, so a truly gone show never starves the others), asking the instance's own Plex first (a 404 is truly gone, a success gives the guid) and Tautulli second. `fillShowGuids` is the one permitted `watch_events` update. Title linkage falls back to the show title (and year) meanwhile (D-26). |
