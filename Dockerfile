@@ -23,6 +23,7 @@ COPY packages/domain/package.json packages/domain/package.json
 COPY packages/sync/package.json packages/sync/package.json
 COPY packages/test-utils/package.json packages/test-utils/package.json
 COPY packages/ui/package.json packages/ui/package.json
+COPY packages/watch/package.json packages/watch/package.json
 
 RUN pnpm install --frozen-lockfile
 
