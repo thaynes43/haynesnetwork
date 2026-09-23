@@ -214,7 +214,9 @@ export class PlexHttp {
    * bump its play count and lastViewedAt — nothing downstream reads more than `viewCount > 0`), unscrobbling
    * an unwatched item leaves it unwatched. So a retry after an ambiguous timeout can never flip an item the
    * caller did not ask about, whereas giving up on the first timeout would record a failed Watch Mark for a
-   * write that very likely landed. Callers bound the total time with `timeoutMs` (the mark flow has 3 s).
+   * write that very likely landed. TIME BUDGET: `timeoutMs` bounds EACH attempt, so the worst case is
+   * 3 × timeoutMs + 2 × retryDelayMs — a caller with a total budget sizes the client for it (D-14's 3 s mark
+   * budget needs a per-attempt timeout of about 0.8 s or less).
    */
   async requestIdempotentGet(base: string, options: PlexRequestOptions = {}): Promise<void> {
     const response = await this.request('GET', base, options);

@@ -84,7 +84,8 @@ export class PlexWriteClient {
    * `GET {baseUrl}/:/scrobble?identifier=com.plexapp.plugins.library&key=<ratingKey>` on the PMS itself. A
    * show or season key marks every episode under it. Reached ONLY from an owner-issued `watched` Watch Mark
    * (markWatched in @hnet/domain — this surface is import-confined, ADR-017 C-10), never from a sync.
-   * Retried like a read on a timeout/5xx because it is idempotent on watched state (PlexHttp.requestIdempotentGet).
+   * Retried like a read on a timeout/5xx because it is idempotent on watched state; the worst case is
+   * 3 × timeoutMs + 2 × retryDelayMs, so build the client for the caller's budget (PlexHttp.requestIdempotentGet).
    */
   async scrobble(ratingKey: string): Promise<void> {
     await this.http.requestIdempotentGet(`${this.baseUrl}/:/scrobble`, {
