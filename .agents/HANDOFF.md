@@ -4,7 +4,7 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ 2026-09-23 — Watch Companion S5–S6 (domain writers, Watch Marks, the `watch` sync) is PR #PR1, awaiting the driver's merge
+## ▶ 2026-09-23 — Watch Companion S5–S6 (domain writers, Watch Marks, the `watch` sync) is PR #563, awaiting the driver's merge
 
 PLAN-068 S5 put the five watch tables' single writers and the Watch Mark flows (`markWatched`,
 `dismissTitle`, `undoLastChange`, `revalidateTitles`) in `packages/domain/src/watch/`; S6 built the
