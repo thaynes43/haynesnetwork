@@ -1,6 +1,6 @@
 # ADR-089: Recommendations are scored in the app — deterministic, explainable, exclusion-enforced; the voice model only chooses and phrases
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-09-23 — live as haynesnetwork v0.97.0; `recommend` answers from the scored candidates in about 200 ms with every pick reasoned)
 - **Date:** 2026-09-23
 - **Deciders:** Tom Haynes (owner request 2026-09-23: *"since it has my history it can give me curated
   recommendations that don't duplicate what I already watched"*) · drafted by Opus 5.5

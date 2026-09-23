@@ -4,6 +4,35 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-23 — Watch Companion LIVE (v0.97.0): PLAN-068 completed; the specials fix `fix/mark-specials` is the last leg
+
+The Watch Companion is live end to end: haynesnetwork **v0.97.0** (#563 + #566 → release #560; every
+Opus review finding fixed on the branch first), haynes-ops **#3139** (tag + the `sync-watch` and
+`sync-activity-scan` CronJobs; the hop/token/ingress exclusions were #3131), the first `sync-watch`
+backfill (owner row, 2,657 events, 561 Title States, 151 watchlist, 300 seeds, 0 errors), the live MCP
+checks from the HA pod (no session id, `tools/list` 2,712 bytes, spoken answers ≤ 467 chars in ≤ 203 ms),
+and the Movie Room agent attached (HA `mcp` entry `01M381GTWER1BG9K4MWG3GDEGR`; hass-sandbox #195 holds
+the prompt block, the attach/detach helper and the bench table). **Bench medians, Assist only → with
+Watch history: 4.62 → 3.12 s, 1.87 → 1.57 s, 2.98 → 2.96 s** (R-245 passes); all three US-13 questions
+answered (AC-24). #556 closed after the first activity-scan (279 opened, nothing pushed). Full trail:
+issue #565 and `.agents/plans/completed/068-watch-companion.md` (S9–S14 rows).
+
+**The live mark test found a defect** (S12): `mark_watched` on a show whose regular episodes are all
+watched still scrobbled 7 HaynesOps *specials* through the show key, and the undo write-through cannot
+restore dates ("finished today"). The undo reversed exactly the 7 flips (verified in Plex: nothing
+changed net). Fix on branch `fix/mark-specials` (season keys, never the show key; season 0 never takes
+part in a mark; a forced `allLeaves` re-read after mark/undo) — **the next release (0.97.1) and its
+haynes-ops tag bump are the remaining leg**; until then a whole-show mark on a show with unwatched
+specials on HaynesOps writes those specials (undo reverses it). One hand correction was made on the
+live row (`watch_titles.plex_counts` cleared for The Expanse so the sync re-read it).
+
+Still open for the owner: haynes-ops **#3140** (dev-env `mcp.json` + CLAUDE.md, held draft because
+merging bounces the pod). Known wrinkles: the OpenAI subentry reconfigure flow re-derives the Movie Room
+agent's `city` on every save (now Leominster; web-search localisation only); HaynesKube's workout
+libraries are show-typed, so three "shows" (Strength, Cycling, Besties) sit in `watch_titles` as tasters
+(the D-10 rule keeps them out of the voice answer); the Q-06 retry touches ~30 guid-less Title States per
+run for its 60-day window (harmless churn). ADR-087/088/089 Accepted, DESIGN-049 Accepted, OPS-015 Active.
+
 ## ▶ 2026-09-23 — Watch Companion S7–S8 (the `/api/mcp` endpoint, `dev:local`) is PR #566 (opened as #564, re-opened after the #563 merge deleted its base branch)
 
 PLAN-068 S7 added `packages/mcp` (`@hnet/mcp`, SDK pinned 1.30.0) and the POST-only
