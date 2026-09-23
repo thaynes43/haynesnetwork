@@ -24,6 +24,7 @@
     "@hnet/libretto": "workspace:*",
     "@hnet/metrics": "workspace:*",
     "@hnet/plex": "workspace:*",
+    "@hnet/watch": "workspace:*",
     "drizzle-orm": "^0.36.4"
   },
   "devDependencies": {

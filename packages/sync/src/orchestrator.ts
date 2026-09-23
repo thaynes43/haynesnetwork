@@ -142,6 +142,15 @@ import {
 } from './metadata-refresh';
 import { noopLogger, type SyncLogger } from './logger';
 import { runSeerrSync } from './seerr';
+// ADR-088 / ADR-089 / DESIGN-049 D-09 (PLAN-068 S6) — the `watch` mode: the owner's watch-history read-model
+// (Tautulli ×3 → the append-only event log; Plex progress → Title States; the plex.tv watchlist + daily TMDB
+// seeds → the recommendation inputs), READ-ONLY against every source, written through the domain writers.
+import {
+  runWatchSync,
+  type WatchSyncReport,
+  type WatchTautulliSource,
+  type WatchTmdb,
+} from './watch';
 
 export type SyncMode = SyncRunKind; // 'full' | 'incremental' | 'metadata-refresh'
 
@@ -199,6 +208,12 @@ export interface RunSyncOptions {
   /** ADR-043 / DESIGN-021 — the Plex client bundle (read + confined write) the `poster-guard` mode uses to
    *  read the k8plex Peloton library and re-apply drifted override posters. Required only for that mode. */
   plex?: PlexClientBundle;
+  /** ADR-088 / DESIGN-049 D-09 — the Tautulli instances the `watch` mode pages (each skip-if-unconfigured).
+   *  The mode also needs `plex` (read side only — the sync never writes Plex). */
+  watchTautulli?: readonly WatchTautulliSource[];
+  /** ADR-089 / DESIGN-049 D-17 — the OPTIONAL TMDB client for the `watch` mode's daily seed
+   *  recommendations. Absent ⇒ seeds are skipped (the watchlist and library still feed `recommend`). */
+  watchTmdb?: WatchTmdb | null;
   /** DESIGN-035 D-16 — the OPTIONAL Radarr read the `collections-sync` mode uses for the movie
    *  Wanted-tile membership (its TMDb collections → held/wanted split). Absent ⇒ held-only. */
   collectionsRadarr?: RadarrCollectionsReader;
@@ -325,6 +340,10 @@ export interface SyncReport {
   plexMatch?: (SyncPlexMatchesReport & { stats: PlexMatchStats }) | null;
   /** The plex-match run's error — sets totalFailure for the CLI exit. */
   plexMatchError?: string;
+  /** ADR-088 — the `watch` result (null for every other mode / when it threw). */
+  watch?: WatchSyncReport | null;
+  /** The watch run's fatal error (no owner at all, or a thrown step) — sets totalFailure for the CLI exit. */
+  watchError?: string;
   /** ADR-064 — the `collections-sync` result (null for every other mode / when it errored). */
   collectionsSync?: (SyncPlexCollectionsReport & { stats: PlexCollectionsStats }) | null;
   /** The collections-sync run's error — sets totalFailure for the CLI exit. */
@@ -486,12 +505,44 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   const logger = options.logger ?? noopLogger;
   const db = options.db ?? (defaultDb as DbClient);
 
-  // ADR-088 / DESIGN-049 D-09 (PLAN-068) — 'watch' joined SYNC_RUN_KINDS with migration 0077 (PLAN-068 S2) so
-  // the const and the sync_runs.run_kind CHECK stay in parity; the mode itself is built in PLAN-068 S6. Until
-  // then it must be REFUSED here: falling through to the per-source loop below would run an incremental *arr
-  // sync (and write sync_runs rows) labelled 'watch'.
+  // ADR-088 / ADR-089 / DESIGN-049 D-09 (PLAN-068 S6) — the `watch` mode builds the Server Owner's watch-history
+  // read-model: the owner row, the append-only Watch Event log from every configured Tautulli (+ the Q-06
+  // show-guid retry), the Title States from Plex progress, the watchlist and the daily TMDB seeds — each step
+  // isolated (per-source degradation). READ-ONLY against Tautulli/Plex/plex.tv/TMDB: only an owner-issued
+  // Watch Mark ever writes Plex. Standalone mode like plex-match: no --source, writes NO sync_runs row — its
+  // trail is the watch tables. A run with no owner at all (none from plex.tv, none stored) is a totalFailure.
   if (options.mode === 'watch') {
-    throw new Error("sync mode 'watch' is not implemented yet (PLAN-068 S6)");
+    const startedAt = new Date();
+    if (!options.plex) throw new Error('watch requires a Plex client bundle (plex)');
+    let watch: WatchSyncReport | null = null;
+    let watchError: string | undefined;
+    try {
+      watch = await runWatchSync({
+        db,
+        plex: options.plex,
+        tautulli: options.watchTautulli ?? [],
+        tmdb: options.watchTmdb ?? null,
+        logger,
+        ...(options.now ? { now: options.now } : {}),
+      });
+      if (watch.totalFailure) {
+        watchError = 'watch: no Server Owner (plex.tv unreachable and none stored)';
+      }
+    } catch (error) {
+      watchError = error instanceof Error ? error.message : String(error);
+      logger.error('watch failed', { error: watchError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      watch,
+      ...(watchError !== undefined ? { watchError } : {}),
+      totalFailure: watchError !== undefined,
+    };
   }
 
   // ADR-025 / DESIGN-011 — the batch-expiry sweep is NOT a per-source loop; it drives Maintainerr
