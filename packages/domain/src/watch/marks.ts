@@ -79,6 +79,12 @@ export type WatchMarkOutcome<V> =
   /** An episode was given without its season (D-05): nothing is written; ask for the season. */
   | { status: 'need_season' };
 
+/**
+ * D-06: where a slow call spent its time — filled by the flows when the caller passes one (the MCP layer
+ * logs the slowest phase of a call over 2 s). Milliseconds.
+ */
+export type WatchPhases = Partial<Record<'resolve' | 'revalidate' | 'plex_write', number>>;
+
 /** D-14 step 7: a repeat of the same mark within this window that would flip nothing is a replay. */
 export const MARK_REPLAY_SECONDS = 10 * 60;
 /** D-15: undo reaches back this far. */
@@ -188,6 +194,8 @@ export interface MarkWatchedInput {
   episode?: number | null;
   through?: boolean | null;
   now?: Date;
+  /** Filled with the time spent resolving and talking to Plex (D-06). */
+  phases?: WatchPhases;
 }
 
 type ScopeSpec = { scope: WatchMarkScope; season: number | null; episode: number | null };
@@ -413,6 +421,7 @@ export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOut
   const acct = input.actor.plexAccountId;
   await assertWatchOwner(db, acct);
 
+  const resolveStart = Date.now();
   const resolution = await resolveWatchTitle({
     db,
     plexAccountId: acct,
@@ -420,6 +429,7 @@ export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOut
     kind: input.kind ?? null,
     tmdb: input.tmdb ?? null,
   });
+  if (input.phases) input.phases.resolve = Date.now() - resolveStart;
   if (resolution.status === 'ambiguous') return { status: 'ambiguous', options: resolution.options };
   if (resolution.status === 'not_found') return { status: 'not_found', kind: input.kind ?? null };
   const t = resolution;
@@ -431,6 +441,7 @@ export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOut
   let identity = identityOf(t, row);
 
   // D-14 steps 2–3: holders, targets, live before-state.
+  const plexStart = Date.now();
   const holders = t.source === 'tmdb' ? [] : await holdingServers(db, input.plex, t, row);
   const targets = markTargets(holders);
   const reads = await Promise.all(
@@ -553,6 +564,7 @@ export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOut
     if (s.status === 'fulfilled') flipped.push(...w.flips);
     else errors.push(s.reason);
   });
+  if (input.phases) input.phases.plex_write = Date.now() - plexStart;
   const attempts = writes.length + readErrors.length;
   const failures = errors.length;
   const plexResult: WatchMarkPlexResult =
@@ -697,6 +709,7 @@ export interface DismissTitleInput {
   /** Default `not_interested`. */
   reason?: Dismissal | null;
   now?: Date;
+  phases?: WatchPhases;
 }
 
 export interface DismissView {
@@ -718,6 +731,7 @@ export async function dismissTitle(input: DismissTitleInput): Promise<WatchMarkO
   const acct = input.actor.plexAccountId;
   await assertWatchOwner(db, acct);
   const reason: Dismissal = input.reason ?? 'not_interested';
+  const resolveStart = Date.now();
   const resolution = await resolveWatchTitle({
     db,
     plexAccountId: acct,
@@ -725,6 +739,7 @@ export async function dismissTitle(input: DismissTitleInput): Promise<WatchMarkO
     kind: input.kind ?? null,
     tmdb: input.tmdb ?? null,
   });
+  if (input.phases) input.phases.resolve = Date.now() - resolveStart;
   if (resolution.status === 'ambiguous') return { status: 'ambiguous', options: resolution.options };
   if (resolution.status === 'not_found') return { status: 'not_found', kind: input.kind ?? null };
   const [row = null] =
@@ -771,6 +786,7 @@ export interface UndoLastChangeInput {
   plex: WatchPlexClients;
   actor: WatchMarkActor;
   now?: Date;
+  phases?: WatchPhases;
 }
 
 interface PlannedRevert {
@@ -864,6 +880,7 @@ export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchM
   const liveLeaves = new Map<PlexServerSlug, PlexItemLike[]>();
 
   if (flips.length > 0) {
+    const plexStart = Date.now();
     // The Title State tells us the show key on each server (the flips are episode keys).
     rows = await selectTitleRowsByIdentity(db, acct, identity);
     const row = rows[0] ?? null;
@@ -910,6 +927,7 @@ export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchM
       reverted.push(...p.flips);
     });
     revertResult = ok === plans.length ? 'written' : ok > 0 ? 'partial' : 'failed';
+    if (input.phases) input.phases.plex_write = Date.now() - plexStart;
   }
 
   const row = rows[0] ?? null;

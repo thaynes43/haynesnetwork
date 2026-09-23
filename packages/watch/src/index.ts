@@ -14,3 +14,4 @@ export * from './spoken';
 export * from './format';
 export * from './state';
 export * from './queries';
+export * from './views';
