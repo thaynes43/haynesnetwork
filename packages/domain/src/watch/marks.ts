@@ -406,8 +406,8 @@ async function readBefore(
       client.listAllLeaves(holder.ratingKey),
       wantShowItem ? client.getMetadataItem(holder.ratingKey) : Promise.resolve(null),
     ]);
-    // A truncated listing is a partial before-state: a show scrobble would flip leaves it never saw, so
-    // `flipped` (and the undo) would miss them. It is a failed read: no write on this server.
+    // A truncated listing is a partial before-state: a season key planned from it could cover leaves it
+    // never saw, and `flipped` (and the undo) would miss them. It is a failed read: no write on this server.
     if (listing.truncated) {
       return { holder, status: 'error', error: new Error(`allLeaves ${holder.ratingKey} was truncated`) };
     }
@@ -473,6 +473,8 @@ export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOut
   );
   const plans: TargetPlan[] = [];
   const readErrors: unknown[] = [];
+  // A show Plex lists, but with specials only: on Plex, yet nothing a mark may write (D-26).
+  let listsOnlySpecials = false;
   for (const r of reads) {
     if (r.status === 'error') {
       readErrors.push(r.error);
@@ -496,6 +498,7 @@ export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOut
           : [{ server: r.holder.server, ratingKey: item.ratingKey, flips: [flipOf(r.holder.server, item)] }],
       });
     } else {
+      if (r.leaves.length > 0 && !r.leaves.some(isRegularLeaf)) listsOnlySpecials = true;
       plans.push({
         holder: r.holder,
         leaves: r.leaves.filter(isRegularLeaf),
@@ -510,6 +513,9 @@ export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOut
   const planned = writes.flatMap((w) => w.flips);
   const covered = scoped[0]?.covered ?? null;
   const notOnPlex = scoped.length === 0 && readErrors.length === 0;
+  // D-26: a whole-show mark of a show Plex lists with specials only is recorded `none` — nothing written,
+  // and not "not on Plex" either, which would be false.
+  const specialsOnly = notOnPlex && spec.scope === 'show' && listsOnlySpecials;
 
   const view = (plexResult: WatchMarkPlexResult, flipped: number): MarkResultView => ({
     kind: identity.kind,
@@ -557,11 +563,12 @@ export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOut
   };
 
   if (notOnPlex) {
+    const plexResult: WatchMarkPlexResult = specialsOnly ? 'none' : 'not_on_plex';
     const [mark] = await db
       .insert(watchMarks)
-      .values({ ...base, flipped: [], plexResult: 'not_on_plex' })
+      .values({ ...base, flipped: [], plexResult })
       .returning({ id: watchMarks.id });
-    return { status: 'done', view: view('not_on_plex', 0), markId: mark?.id ?? null, replayed: false };
+    return { status: 'done', view: view(plexResult, 0), markId: mark?.id ?? null, replayed: false };
   }
 
   // D-14 step 4: the pending row with the planned keys, BEFORE any Plex write.

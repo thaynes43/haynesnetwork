@@ -1,10 +1,11 @@
 // ADR-088 / DESIGN-049 D-11..D-15 (PLAN-068 S5) — the Watch Mark flows against embedded Postgres 16 and a
 // RECORDING FAKE Plex (never a real server — PLAN-068's hard rule): every mark scope, the replay rule, a
 // partial Plex failure with an accurate `flipped`, not-on-Plex (and the TMDB fallback), ambiguous titles
-// that write nothing, local:// copies, undo reversing EXACTLY `flipped` (collapsed to show/season keys),
-// dismissals that never touch Plex, and live revalidation with its budget. PR #563 review: truncated
-// listings are failed reads, a failed undo retries the same mark, pending marks are never undone, and only
-// the current owner is served (D-03).
+// that write nothing, local:// copies, undo reversing EXACTLY `flipped` (collapsed to season keys, never the
+// show key), dismissals that never touch Plex, and live revalidation with its budget. PR #563 review:
+// truncated listings are failed reads, a failed undo retries the same mark, pending marks are never undone,
+// and only the current owner is served (D-03). Live incident 2026-09-23 (D-26): specials never take part in
+// a mark, no write touches an already-watched leaf, and a mark or undo leaves the next read to Plex.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { watchMarks, watchTitles, type Database, type WatchMarkFlip, type WatchTitleRow } from '@hnet/db';
@@ -439,6 +440,51 @@ describe('markWatched — season, episode and through scopes (D-14 step 5)', () 
     });
   });
 
+  describe('planShowWrites writes a season key only when it provably covers just the flipped leaves', () => {
+    const leaf = (key: string, parentIndex: number, index: number, parentRatingKey?: string, viewCount = 0) => ({
+      ratingKey: key,
+      title: 'x',
+      parentIndex,
+      index,
+      ...(parentRatingKey ? { parentRatingKey } : {}),
+      ...(viewCount > 0 ? { viewCount } : {}),
+    });
+    const plannedKeys = (leaves: Parameters<typeof planShowWrites>[1], scope: 'show' | 'season' = 'show') => {
+      const spec = { scope, season: scope === 'season' ? 1 : null, episode: null };
+      return planShowWrites('haynesops', leaves, spec).writes.map((w) => w.ratingKey);
+    };
+
+    it('with every leaf keyed, a wholly unwatched season goes by its key', () => {
+      const leaves = [leaf('a1', 1, 1, 's1'), leaf('a2', 1, 2, 's1'), leaf('b1', 2, 1, 's2')];
+      expect(plannedKeys(leaves)).toEqual(['s1', 's2']);
+    });
+
+    it('a watched leaf without parentRatingKey ⇒ episode keys only (no season key can be proven)', () => {
+      // a0 may sit under s1: scrobbling s1 would re-stamp it.
+      const leaves = [
+        leaf('a0', 1, 1, undefined, 1),
+        leaf('a1', 1, 2, 's1'),
+        leaf('a2', 1, 3, 's1'),
+        leaf('b1', 2, 1, 's2'),
+      ];
+      expect(plannedKeys(leaves)).toEqual(['a1', 'a2', 'b1']);
+      expect(plannedKeys(leaves, 'season')).toEqual(['a1', 'a2']);
+      // The same for a special without its key: season 2 is not written by its key either.
+      expect(plannedKeys([leaf('sp', 0, 1), leaf('b1', 2, 1, 's2'), leaf('b2', 2, 2, 's2')])).toEqual(['b1', 'b2']);
+    });
+
+    it('two leaves of one season with different parentRatingKey values ⇒ episode keys only', () => {
+      const leaves = [leaf('a1', 1, 1, 's1'), leaf('a2', 1, 2, 's1-other')];
+      expect(plannedKeys(leaves)).toEqual(['a1', 'a2']);
+      expect(plannedKeys(leaves, 'season')).toEqual(['a1', 'a2']);
+    });
+
+    it('a leaf of another season under the same key (a special) ⇒ episode keys only', () => {
+      const leaves = [leaf('sp', 0, 1, 's1', 1), leaf('a1', 1, 1, 's1'), leaf('a2', 1, 2, 's1')];
+      expect(plannedKeys(leaves)).toEqual(['a1', 'a2']);
+    });
+  });
+
   it('a season Plex does not have is recorded as not on Plex, with no write', async () => {
     const show = severance();
     const fake = new FakePlex([show]);
@@ -480,6 +526,32 @@ describe('specials never take part in a mark (D-26, live incident 2026-09-23)', 
     // D-14 step 7 still applies: the repeat is a replay, not a second row.
     expect(await mark(fake, 'The Expanse')).toMatchObject({ status: 'done', replayed: true, markId: row?.id });
     expect(await marks()).toHaveLength(1);
+  });
+
+  it('a show Plex lists with specials only is noted as `none` — never "not on Plex" — and writes nothing', async () => {
+    const show: FakeShow = { ...expanse(), episodes: expanse().episodes.filter((e) => e.season === 0) };
+    const fake = new FakePlex([show]);
+    const seeded = await seedShow(fake, show);
+    const out = await mark(fake, 'the expanse');
+    expect(out).toMatchObject({
+      status: 'done',
+      replayed: false,
+      view: { scope: 'show', plexResult: 'none', flipped: 0 },
+    });
+    if (out.status !== 'done') return;
+    expect(formatMarkResult(out.view)).toBe(
+      'Noted The Expanse (2015) as watched. Plex only lists specials for it, so nothing changed there.',
+    );
+    expect(fake.writes()).toEqual([]);
+    const [row] = await marks();
+    expect(row).toMatchObject({ action: 'watched', scope: 'show', plexResult: 'none', flipped: [] });
+    expect((await titleRow(seeded.id)).plexCounts).toEqual(seeded.plexCounts);
+    // A repeat is a replay with the same answer; the undo has nothing to put back in Plex.
+    const again = await mark(fake, 'The Expanse');
+    expect(again).toMatchObject({ status: 'done', replayed: true, markId: row?.id });
+    if (again.status === 'done') expect(again.view).toEqual(out.view);
+    expect(await undo(fake)).toMatchObject({ view: { undone: true, revertResult: 'none', episodes: 0 } });
+    expect(fake.writes()).toEqual([]);
   });
 
   it('two unwatched episodes that are all of season 3 → one scrobble of the season-3 key; its undo collapses to it', async () => {
@@ -724,6 +796,9 @@ describe('markWatched — unmatched local:// copies (ADR-088)', () => {
     };
     const fake = new FakePlex([local, matched]);
     const row = await seedShow(fake, matched);
+    const localItem = (await fake.clients().read.haynesops.getMetadataItem('hh-ops'))?.item;
+    if (!localItem) throw new Error('no local item');
+    fake.calls.length = 0;
     await upsertWatchTitles({
       db,
       plexAccountId: OWNER,
@@ -735,16 +810,20 @@ describe('markWatched — unmatched local:// copies (ADR-088)', () => {
             { server: 'haynesops', ratingKey: 'hh-ops', local: true },
             { server: 'haynestower', ratingKey: 'hh-tower', local: false },
           ],
+          plexCounts: { ...row.plexCounts, haynesops: showCounts(localItem) },
           episodeMap: row.episodeMap,
         },
       ],
     });
+    expect(Object.keys((await titleRow(row.id)).plexCounts).sort()).toEqual(['haynesops', 'haynestower']);
     const out = await mark(fake, 'hazbin hotel');
     expect(out).toMatchObject({ status: 'done', view: { plexResult: 'written', flipped: 2 } });
     expect(fake.writes().map((c) => `${c.server}:${c.key}`).sort()).toEqual([
       'haynesops:hh-ops-s1',
       'haynestower:hh-tower-s1',
     ]);
+    // D-26: both written servers' counters are dropped, so the next sync re-reads the show on each.
+    expect((await titleRow(row.id)).plexCounts).toEqual({});
   });
 });
 

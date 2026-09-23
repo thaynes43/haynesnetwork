@@ -552,8 +552,13 @@ describe('formatMarkResult (D-14 read-back)', () => {
       'Marked WarGames (1983) as watched in Plex.',
     ],
     [
-      { ...severance, scope: 'show', plexResult: 'none', episodes: 19, flipped: 0 },
+      { ...severance, scope: 'show', plexResult: 'written', episodes: 19, flipped: 0 },
       'Severance (2022) was already watched in Plex, all 19 episodes.',
+    ],
+    // DESIGN-049 D-26: a show Plex lists with specials only is noted, and nothing is written.
+    [
+      { kind: 'show', title: 'The Expanse', year: 2015, scope: 'show', plexResult: 'none', flipped: 0 },
+      'Noted The Expanse (2015) as watched. Plex only lists specials for it, so nothing changed there.',
     ],
     [
       { ...severance, scope: 'season', season: 2, plexResult: 'written', episodes: 10, flipped: 0 },
