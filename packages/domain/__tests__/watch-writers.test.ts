@@ -271,6 +271,19 @@ describe('upsertWatchTitles (D-08, D-09 step 5)', () => {
     expect(after).toEqual(before);
   });
 
+  it('never re-keys a row to a key an earlier input of the same batch is inserting (no unique violation)', async () => {
+    const stored = titleWrite({ titleKey: 'name:show:twin peaks|1990', title: 'Twin Peaks', year: 1990 });
+    const [row] = (await upsertWatchTitles({ db, plexAccountId: OWNER, titles: [stored] })).rows;
+    // First a NEW title that carries TVDB 1234, then an input that matches the stored row by name and has
+    // the same (stronger) TVDB key: the insert claims `tvdb:1234`, so the stored row keeps its key.
+    const inserted = titleWrite({ titleKey: 'tvdb:1234', tvdbId: 1234, title: 'Other Show', year: 2001 });
+    const rekey = titleWrite({ titleKey: 'tvdb:1234', tvdbId: 1234, title: 'Twin Peaks', year: 1990, eventPlays: 2 });
+    const r = await upsertWatchTitles({ db, plexAccountId: OWNER, titles: [inserted, rekey] });
+    expect(r).toMatchObject({ inserted: 1, updated: 1, rekeyed: 0, conflicts: 0 });
+    expect(r.rows[0]).toMatchObject({ titleKey: 'tvdb:1234', title: 'Other Show' });
+    expect(r.rows[1]).toMatchObject({ id: row?.id, titleKey: 'name:show:twin peaks|1990', eventPlays: 2 });
+  });
+
   it('matches by any shared identity key and reports a second input claiming the same row', async () => {
     const a = titleWrite({ titleKey: 'tvdb:555', tvdbId: 555, title: 'Twin', year: 2020 });
     await upsertWatchTitles({ db, plexAccountId: OWNER, titles: [a] });

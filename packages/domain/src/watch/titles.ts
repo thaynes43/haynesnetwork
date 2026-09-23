@@ -229,7 +229,9 @@ export async function upsertWatchTitles(input: {
         claimed.add(target.id);
         const stronger = titleKeyRank(w.titleKey) < titleKeyRank(target.titleKey);
         const holder = keyOwner.get(w.titleKey);
-        const free = holder === undefined || holder === target.id;
+        // Free = no stored row holds it AND no earlier input of this batch is inserting it (the unique
+        // (account, title_key) would reject the batch).
+        const free = (holder === undefined || holder === target.id) && !insertKeys.has(w.titleKey);
         const titleKey = stronger && free ? w.titleKey : target.titleKey;
         if (titleKey !== target.titleKey) {
           keyOwner.delete(target.titleKey);
