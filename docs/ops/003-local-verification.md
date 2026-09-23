@@ -137,6 +137,36 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   plex.tv watchlist (`PLEX_DISCOVER_URL` points at the stub) are served; a watch item answers only to its
   own server's token. `/:/scrobble` and `/:/unscrobble` are recorded at `/_stub/calls` and flip an
   in-memory watch map every read overlays; `POST /_stub/reset` restores the seed.
+  PLAN-068 S8 widened the owner's local history: Breaking Prod in progress (its special unwatched),
+  Stub Expanse fully watched, Stub Big Brother a Taster (1 of 12), Stub Toons a children's show, Stub
+  Runner a movie in progress, and a watchlist of Stub Severance (unwatched, on stub HaynesTower), Stub Dune
+  (not on Plex) and Stub Runner.
+- **Watch Companion MCP** (ADR-087 / DESIGN-049; PLAN-068 S8). After the stack is up, `dev:local` (not the
+  e2e harness) runs a one-row demo seed (`e2e/support/seed-watch-demo.ts`: Stub Severance's Sonarr ledger
+  row + Plex match, so `recommend` has an on-Plex pick) and then the real `--mode=watch` sync once against
+  stub Plex + stub Tautulli. `POST /api/mcp` answers with the local consumer token
+  `local-dev-mcp-hop-token` (`HNET_MCP_HOP_TOKEN` in the stack env; the banner prints it):
+
+  ```bash
+  U=http://localhost:3000/api/mcp
+  H=(-H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+     -H 'authorization: Bearer local-dev-mcp-hop-token')
+  curl -si "${H[@]}" $U -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+  curl -s "${H[@]}" $U -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | wc -c
+  call() { curl -s "${H[@]}" $U -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":${2:-{\}}}}"; }
+  call unfinished; call recommend; call watch_status '{"title":"stub expanse"}'
+  call mark_watched '{"title":"stub severance"}'; call undo_last_change
+  ```
+
+  Expect: no `Mcp-Session-Id` header on initialize; `tools/list` 2,712 bytes; "One unfinished show.
+  Breaking Prod: 4 of 5 watched, next is season 2 episode 2, …"; "One pick on Plex. Stub Severance, a 2022
+  show, on your watchlist. Not on Plex yet: Stub Dune, …"; the mark answers "Marked Stub Severance (2022) as
+  watched in Plex, all 3 episodes." and `GET <stub-plex>/_stub/calls` records `/:/scrobble` key 506 on
+  haynestower, the undo `/:/unscrobble` key 506. GET / DELETE on `/api/mcp` answer 405; a missing or wrong
+  bearer 401 with `WWW-Authenticate: Bearer`. Every call logs one `[mcp] tool_called` line (no arguments,
+  no results). To re-run the sync against the running stack: `DATABASE_URL=<the stack's>` plus the stack's
+  `PLEX_*` / `TAUTULLI_*` env, then `pnpm --filter @hnet/sync sync -- --mode=watch` (the banner prints the
+  database URL). Nothing here ever reaches a real Plex server.
 - Everything is **throwaway**: the database is a temp dir deleted on Ctrl-C; restart for a
   pristine seeded catalog.
 - Phone/tablet/PC layouts: use the browser devtools device toolbar.

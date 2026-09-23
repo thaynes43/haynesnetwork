@@ -159,11 +159,18 @@ describe('the transport (D-02)', () => {
     expect((await rpc(null, JSON_HEADERS, 'DELETE')).status).toBe(405);
   });
 
-  it('rejects unknown arguments (strict inputs) as a tool error, and logs no arguments', async () => {
+  it('rejects unknown or out-of-range arguments (strict inputs) as a logged tool error, never echoing values', async () => {
     const r = await call('unfinished', { user: 'someone-else' });
     expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/^Invalid arguments for unfinished: /);
+    expect(r.text).not.toContain('someone-else');
     const r2 = await call('recommend', { limit: 50 });
-    expect(r2.isError).toBe(true);
+    expect(r2.text).toMatch(/^Invalid arguments for recommend: limit: /);
+    const r3 = await call('watch_status', {});
+    expect(r3.text).toMatch(/^Invalid arguments for watch_status: title: /);
+    const lines = http.logs.filter((l) => l.includes('"code":"invalid_args"'));
+    expect(lines).toHaveLength(3);
+    expect(http.logs.join('\n')).not.toContain('someone-else');
   });
 });
 
