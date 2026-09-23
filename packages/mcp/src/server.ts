@@ -46,10 +46,12 @@ function text(t: string, isError = false): CallToolResult {
 }
 
 /**
- * What the SDK validates a call against: anything. The STRICT zod schema of each tool validates inside
- * `runTool` instead, so an invalid call is answered — and logged (D-06: one line per call) — like any other.
+ * What the SDK validates a call against: anything, including no `arguments` at all (the key is optional in
+ * MCP, and a bare `z.looseObject({})` refuses `undefined` before the tool runs). The STRICT zod schema of
+ * each tool validates inside `runTool` instead (which reads a missing `arguments` as `{}`), so an invalid
+ * call is answered — and logged (D-06: one line per call) — like any other.
  */
-const ACCEPT_ANY = z.looseObject({});
+const ACCEPT_ANY = z.looseObject({}).optional();
 
 /** A short, value-free summary of why arguments were refused (paths and zod messages only). */
 function invalidArgs(tool: string, error: z.ZodError): string {
@@ -60,22 +62,40 @@ function invalidArgs(tool: string, error: z.ZodError): string {
   return `Invalid arguments for ${tool}: ${issues}.`;
 }
 
-/** Run one tool call: principal, scope, answer, D-06 logging and error sanitizing. Never throws. */
+/**
+ * Run one tool call: principal, scope, answer, D-06 logging and error sanitizing. Never throws.
+ *
+ * `signal` is the SDK's per-request abort signal: it fires when the per-request server closes — the D-02
+ * deadline in `handleMcpRequest` — while the call is still running. The call is then finished at once (its
+ * one `tool_called` line, `"code":"deadline"`; the HTTP layer answers the client), and whatever the
+ * abandoned work does later is never logged: every line goes through `finish`, which runs once.
+ */
 export async function runTool(
   tool: WatchToolDef,
   args: unknown,
   deps: McpDeps,
   consumer: McpConsumer,
+  signal?: AbortSignal,
 ): Promise<CallToolResult> {
   const started = Date.now();
   const phases = {};
-  const finish = (result: CallToolResult, code?: string): CallToolResult => {
+  let finished = false;
+  const onAbort = () => {
+    finish(text(formatWatchError(), true), 'deadline');
+  };
+  const finish = (result: CallToolResult, code?: string, revalidateTimedOut = false): CallToolResult => {
+    if (finished) return result;
+    finished = true;
+    signal?.removeEventListener('abort', onAbort);
     const ms = Date.now() - started;
     const chars = result.content.reduce((n, c) => n + (c.type === 'text' ? c.text.length : 0), 0);
+    if (revalidateTimedOut) deps.log(revalidateTimeoutLine({ tool: tool.name, consumer: consumer.name }));
     deps.log(toolCalledLine({ tool: tool.name, consumer: consumer.name, ms, ok: !result.isError, chars, ...(code ? { code } : {}) }));
     if (ms > SLOW_CALL_MS) deps.log(slowCallLine({ tool: tool.name, consumer: consumer.name, ms, phase: slowestPhase(phases) }));
     return result;
   };
+  if (signal?.aborted) return finish(text(formatWatchError(), true), 'deadline');
+  signal?.addEventListener('abort', onAbort, { once: true });
   try {
     if (!consumer.scopes.includes(tool.scope)) {
       return finish(text(`This connection can't use ${tool.name}.`, true), 'scope');
@@ -87,8 +107,7 @@ export async function runTool(
     if (!owner) return finish(text(formatNotReady()));
     const ctx: AnswerContext = { deps, owner, consumer, phases };
     const answer = await ANSWERS[tool.name as WatchToolName](ctx, parsed.data as never);
-    if (ctx.revalidateTimedOut) deps.log(revalidateTimeoutLine({ tool: tool.name, consumer: consumer.name }));
-    return finish(text(answer));
+    return finish(text(answer), undefined, ctx.revalidateTimedOut === true);
   } catch (error) {
     return finish(text(formatWatchError(), true), errorCode(error));
   }
@@ -128,7 +147,7 @@ export function buildServer(deps: McpDeps, consumer: McpConsumer): McpServer {
     server.registerTool(
       tool.name,
       { description: tool.description, inputSchema: ACCEPT_ANY, annotations: tool.annotations },
-      (args: unknown) => runTool(tool, args, deps, consumer),
+      (args, extra) => runTool(tool, args, deps, consumer, extra.signal),
     );
   }
   server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: toolList(consumer) }));

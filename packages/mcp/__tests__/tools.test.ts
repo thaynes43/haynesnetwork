@@ -1,11 +1,15 @@
 // ADR-087 / DESIGN-049 D-02 / D-03 / D-05 (PLAN-068 S7) — the tool contract without a database: the exact
 // D-05 names and descriptions, the D-02 instructions, the hand-written `tools/list` schemas pinned to the zod
-// schemas that validate every call, the static list, consumer auth (401 / 503 / constant-time match) and
-// scopes as configuration (a read-only consumer sees and runs only the read tools).
+// schemas that validate every call, the static list, consumer auth (401 / 503 / constant-time match),
+// scopes as configuration (a read-only consumer sees and runs only the read tools), and the D-02 deadline's
+// two halves: the runner logs an aborted call once, and the late answer's shape.
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { authenticate, type McpConsumer } from '../src/auth';
-import { runTool, toolList } from '../src/server';
+import { deadlineResponse } from '../src/http';
+import { buildServer, runTool, toolList } from '../src/server';
 import { INSTRUCTIONS, SERVER_NAME, WATCH_TOOLS } from '../src/tools';
 
 describe('the D-05 contract', () => {
@@ -116,5 +120,102 @@ describe('consumer auth (D-03)', () => {
     const out = await runTool(mark, { title: 'x' }, { log: (l: string) => logs.push(l) } as never, reader);
     expect(out.isError).toBe(true);
     expect(logs[0]).toMatch(/"tool":"mark_watched","consumer":"reader".*"ok":false.*"code":"scope"/);
+  });
+
+  it('over the protocol, an out-of-scope tool is not registered: tools/list omits it and a call answers "not found" (D-27)', async () => {
+    const reader: McpConsumer = { name: 'reader', tokenEnv: 'READER_TOKEN', scopes: ['watch:read'] };
+    const logs: string[] = [];
+    const server = buildServer({ log: (l: string) => logs.push(l) } as never, reader);
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverSide);
+    const client = new Client({ name: 'vitest', version: '1.0.0' });
+    await client.connect(clientSide);
+    try {
+      expect((await client.listTools()).tools.map((t) => t.name)).toEqual(['unfinished', 'recommend', 'watch_status', 'recent_history']);
+      const out = await client.callTool({ name: 'mark_watched', arguments: { title: 'x' } });
+      expect(out.isError).toBe(true);
+      expect(out.content).toEqual([{ type: 'text', text: expect.stringMatching(/Tool mark_watched not found/) }]);
+      // The runner never ran, so no D-06 line (the SDK refused before it).
+      expect(logs).toEqual([]);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+});
+
+describe('the D-02 deadline', () => {
+  const hop: McpConsumer = { name: 'hop', tokenEnv: 'HNET_MCP_HOP_TOKEN', scopes: ['watch:read', 'watch:write'] };
+
+  /** A database whose every query answers `rows` after `ms`. */
+  function lateDb(ms: number, rows: unknown[]) {
+    const late: unknown = new Proxy(function late() {}, {
+      get: (_target, prop) =>
+        prop === 'then' ? (resolve: (v: unknown) => void) => setTimeout(() => resolve(rows), ms) : late,
+      apply: () => late,
+    });
+    return late;
+  }
+
+  /** A database the call must never reach. */
+  function untouchableDb() {
+    return new Proxy(
+      {},
+      {
+        get: () => {
+          throw new Error('the database must not be touched');
+        },
+      },
+    );
+  }
+
+  it('an aborted call is finished at once (one "deadline" line) and its late completion logs nothing', async () => {
+    const logs: string[] = [];
+    const deps = { db: lateDb(80, []), log: (l: string) => logs.push(l) } as never;
+    const tool = WATCH_TOOLS.find((t) => t.name === 'unfinished');
+    if (!tool) throw new Error('no unfinished');
+    const controller = new AbortController();
+    const running = runTool(tool, {}, deps, hop, controller.signal);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    controller.abort();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatch(/^\[mcp\] tool_called \{"tool":"unfinished","consumer":"hop","ms":\d+,"ok":false,"chars":50,"code":"deadline"\}$/);
+    // The abandoned work still settles (the SDK drops its result) — without a second line.
+    await expect(running).resolves.toEqual({ content: [{ type: 'text', text: "Watch history isn't ready yet." }] });
+    expect(logs).toHaveLength(1);
+  });
+
+  it('a call that finished first is not re-logged when the server closes afterwards', async () => {
+    const logs: string[] = [];
+    const deps = { db: lateDb(0, []), log: (l: string) => logs.push(l) } as never;
+    const tool = WATCH_TOOLS.find((t) => t.name === 'recommend');
+    if (!tool) throw new Error('no recommend');
+    const controller = new AbortController();
+    await runTool(tool, undefined, deps, hop, controller.signal);
+    controller.abort();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('"ok":true');
+    // Already aborted before the call starts: answered and logged as a deadline without running.
+    const aborted = new AbortController();
+    aborted.abort();
+    const out = await runTool(tool, {}, { db: untouchableDb(), log: (l: string) => logs.push(l) } as never, hop, aborted.signal);
+    expect(out.isError).toBe(true);
+    expect(logs[1]).toContain('"code":"deadline"');
+  });
+
+  it('answers a timed-out tools/call as an isError result with its id, anything else as a 504 JSON-RPC error', async () => {
+    const call = deadlineResponse({ jsonrpc: '2.0', id: 'abc', method: 'tools/call', params: { name: 'mark_watched' } });
+    expect(call.status).toBe(200);
+    expect(call.headers.get('content-type')).toBe('application/json');
+    expect(await call.json()).toEqual({
+      jsonrpc: '2.0',
+      id: 'abc',
+      result: { content: [{ type: 'text', text: 'Watch history hit an error. Try again in a minute.' }], isError: true },
+    });
+    for (const body of [{ jsonrpc: '2.0', id: 3, method: 'tools/list' }, { jsonrpc: '2.0', method: 'tools/call' }, null, [1]]) {
+      const res = deadlineResponse(body);
+      expect(res.status, JSON.stringify(body)).toBe(504);
+      expect(await res.json()).toEqual({ jsonrpc: '2.0', error: { code: -32001, message: 'Request timed out' }, id: null });
+    }
   });
 });

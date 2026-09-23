@@ -3,14 +3,18 @@
 // Postgres 16 seeded owner history and a recording fake Plex (never a real server). Covers: stateless
 // initialize (no `Mcp-Session-Id`), every tool's happy path, the Voice Budget (tools/list ≤ 3,072 bytes,
 // default read results ≤ 1,200 characters, no structuredContent), an ambiguous title writing nothing,
-// mark → the next unfinished/recommend reflects it → undo, 401 / 503 / 405 / 413 / strict inputs, the
-// D-06 log lines (never arguments or results).
+// mark → the next unfinished/recommend reflects it → undo, 401 / 503 / 405 / 413 / strict inputs, a call
+// without `arguments`, batches refused, the overall deadline (a hung call answers in time and its abandoned
+// work never logs), the revalidation-timeout snapshot, "not ready" for every tool, the D-06 log lines
+// (never arguments or results).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { watchMarks, watchTitles, type Database } from '@hnet/db';
-import { upsertWatchTitles } from '@hnet/domain';
+import * as schema from '@hnet/db/schema';
+import { upsertWatchTitles, type WatchPlexClients } from '@hnet/domain';
 import { SPOKEN_MAX_CHARS } from '@hnet/watch';
 import type { McpDeps } from '../src/index';
 import { FakePlex, NOW, OWNER, ownerWorld, seedWorld, serveMcp, type McpHttp } from './fixture';
@@ -60,7 +64,43 @@ async function call(name: string, args: Record<string, unknown> = {}) {
 }
 
 async function rpc(body: unknown, headers: Record<string, string> = JSON_HEADERS, method = 'POST') {
-  return fetch(http.url, { method, headers, body: method === 'POST' ? JSON.stringify(body) : undefined });
+  // A hang fails the test in seconds instead of at the test timeout.
+  return fetch(http.url, {
+    method,
+    headers,
+    body: method === 'POST' ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(10_000),
+  });
+}
+
+const WATCH_ERROR = 'Watch history hit an error. Try again in a minute.';
+const NOT_READY = "Watch history isn't ready yet.";
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const toolLines = () => http.logs.filter((l) => l.startsWith('[mcp] tool_called '));
+
+/** A database whose every query never settles (a hung connection). */
+function hungDb(): Database {
+  const hung: unknown = new Proxy(function hung() {}, {
+    get: (_target, prop) => (prop === 'then' ? () => {} : hung),
+    apply: () => hung,
+  });
+  return hung as Database;
+}
+
+/** The fake Plex, with every metadata read answering only after `ms`. */
+function slowReads(ms: number): WatchPlexClients {
+  const clients = fake.clients();
+  for (const [server, read] of Object.entries(clients.read)) {
+    if (!read) continue;
+    clients.read[server as keyof typeof clients.read] = {
+      ...read,
+      getMetadataItem: async (key) => {
+        await sleep(ms);
+        return read.getMetadataItem(key);
+      },
+    };
+  }
+  return clients;
 }
 
 beforeAll(async () => {
@@ -159,6 +199,40 @@ describe('the transport (D-02)', () => {
     expect((await rpc(null, JSON_HEADERS, 'DELETE')).status).toBe(405);
   });
 
+  it('runs a tools/call that has no `arguments` key (optional in MCP) like any other call', async () => {
+    const res = await rpc({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'undo_last_change' } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      jsonrpc: '2.0',
+      id: 9,
+      result: { content: [{ type: 'text', text: 'Nothing to undo from the past day.' }] },
+    });
+    const lines = toolLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^\[mcp\] tool_called \{"tool":"undo_last_change","consumer":"hop","ms":\d+,"ok":true,"chars":34\}$/);
+    // A read tool takes its defaults the same way.
+    const recent = await rpc({ jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: 'recent_history' } });
+    const body = (await recent.json()) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+    expect(body.result.isError).toBeUndefined();
+    expect(body.result.content[0]?.text).toMatch(/^In the last two weeks: /);
+  });
+
+  it('refuses a JSON-RPC batch with 400 — a call batched with its own cancellation used to hang forever', async () => {
+    const call = { jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'unfinished', arguments: {} } };
+    const cancel = { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 7 } };
+    for (const batch of [[call, cancel], [call], [{ jsonrpc: '2.0', id: 8, method: 'tools/list' }]]) {
+      const res = await rpc(batch);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        jsonrpc: '2.0',
+        error: { code: -32600, message: 'Batch requests are not supported' },
+        id: null,
+      });
+    }
+    // Refused before the transport: no tool ran.
+    expect(http.logs).toEqual([]);
+  });
+
   it('rejects unknown or out-of-range arguments (strict inputs) as a logged tool error, never echoing values', async () => {
     const r = await call('unfinished', { user: 'someone-else' });
     expect(r.isError).toBe(true);
@@ -199,6 +273,28 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
     }
     const { text } = await call('unfinished');
     expect(text).toMatch(/Silo: 8 of 10 watched, next is season 1 episode 9, last watched today\./);
+  });
+
+  it('unfinished ranks narrow candidate rows and loads whole rows only for the titles it revalidates', async () => {
+    const queries: Array<{ text: string; params: unknown[] }> = [];
+    const logging = drizzle(t.pool, { schema, logger: { logQuery: (text, params) => queries.push({ text, params }) } }) as Database;
+    const wholeRowLoads = () => queries.filter((x) => x.text.includes('"episode_map"'));
+    await http.stop();
+    http = await serveMcp({ ...deps(), db: logging }, ENV);
+    const { text } = await call('unfinished', { kind: 'any', limit: 2 });
+    expect(text).toBe('Six unfinished: five shows and one movie. Stub Runner (movie): 30 percent in, last watched yesterday. Silo: next is season 1 episode 8, on September 21. And 4 more.');
+    // One whole-row read: the owner and the two reported titles' ids — never every candidate.
+    expect(wholeRowLoads()).toHaveLength(1);
+    expect(wholeRowLoads()[0]?.params).toHaveLength(3);
+    expect(fake.calls.filter((c) => c.op === 'getMetadataItem')).toHaveLength(2);
+
+    // Without Plex configured nothing is revalidated, so no whole row is read at all.
+    queries.length = 0;
+    await http.stop();
+    http = await serveMcp({ ...deps(), db: logging, revalidatePlex: () => null }, ENV);
+    expect((await call('unfinished', { kind: 'any', limit: 2 })).text).toBe(text);
+    expect(queries.length).toBeGreaterThan(0);
+    expect(wholeRowLoads()).toEqual([]);
   });
 
   it('unfinished for movies and with kids', async () => {
@@ -248,8 +344,124 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
   it('every read tool answers "not ready" before the first sync (no owner row)', async () => {
     await db.execute(sql`TRUNCATE watch_marks, watch_titles, watch_events, watch_reco_signals, watch_accounts CASCADE`);
     for (const tool of ['unfinished', 'recommend', 'recent_history']) {
-      expect(await call(tool)).toEqual({ text: "Watch history isn't ready yet.", isError: false });
+      expect(await call(tool)).toEqual({ text: NOT_READY, isError: false });
     }
+  });
+
+  it('watch_status and every write tool answer "not ready" before the first sync, touching neither Plex nor marks', async () => {
+    await db.execute(sql`TRUNCATE watch_marks, watch_titles, watch_events, watch_reco_signals, watch_accounts CASCADE`);
+    const calls: Array<[string, Record<string, unknown>]> = [
+      ['watch_status', { title: 'Silo' }],
+      ['mark_watched', { title: 'Foundation' }],
+      ['dismiss', { title: 'Bluey', reason: 'not_mine' }],
+      ['undo_last_change', {}],
+    ];
+    for (const [tool, args] of calls) {
+      expect(await call(tool, args), tool).toEqual({ text: NOT_READY, isError: false });
+    }
+    expect(fake.calls).toEqual([]);
+    expect(await db.select().from(watchMarks)).toEqual([]);
+    const lines = toolLines();
+    expect(lines).toHaveLength(4);
+    for (const [i, [tool]] of calls.entries()) {
+      expect(lines[i]).toMatch(new RegExp(`^\\[mcp\\] tool_called \\{"tool":"${tool}","consumer":"hop","ms":\\d+,"ok":true,"chars":${NOT_READY.length}\\}$`));
+    }
+  });
+
+  it('answers from the snapshot when revalidation runs out of budget, and logs revalidate_timeout', async () => {
+    // Plex has moved (Silo episode 8 watched since the last sync), but every read answers after 400 ms —
+    // past a 60 ms budget — so the answer is the stored snapshot, not the live state.
+    const silo = fake.shows.find((x) => x.ratingKey === 'silo');
+    const e8 = silo?.episodes.find((e) => e.episode === 8);
+    if (!e8) throw new Error('no Silo 1x8');
+    e8.viewCount = 1;
+    e8.lastViewedAt = Math.floor(NOW.getTime() / 1000) - 600;
+    await http.stop();
+    http = await serveMcp({ ...deps(), revalidatePlex: () => slowReads(400), revalidateBudgetMs: 60 }, ENV);
+
+    const unfinished = await call('unfinished');
+    expect(unfinished.isError).toBe(false);
+    expect(unfinished.text).toMatch(/^Five unfinished shows\. Silo: 7 of 10 watched, next is season 1 episode 8, last watched on September 21\./);
+    const status = await call('watch_status', { title: 'Silo' });
+    expect(status.text).toMatch(/^Silo \(2023 show\): 7 of 10 watched, next is season 1 episode 8/);
+    expect(http.logs.filter((l) => l.startsWith('[mcp] revalidate_timeout '))).toEqual([
+      '[mcp] revalidate_timeout {"tool":"unfinished","consumer":"hop"}',
+      '[mcp] revalidate_timeout {"tool":"watch_status","consumer":"hop"}',
+    ]);
+    // Each timeout line comes right before its call's tool_called line.
+    const at = http.logs.findIndex((l) => l.startsWith('[mcp] revalidate_timeout {"tool":"unfinished"'));
+    expect(http.logs[at + 1]).toMatch(/^\[mcp\] tool_called \{"tool":"unfinished","consumer":"hop","ms":\d+,"ok":true/);
+    // Nothing was written through (the late reads are ignored); let them finish before the next test.
+    await sleep(450);
+    const [row] = await db.select().from(watchTitles).where(sql`${watchTitles.title} = 'Silo'`);
+    expect(row?.episodesWatched).toBe(7);
+  });
+});
+
+describe('the overall deadline (D-02: under Home Assistant\'s 10 s per call)', () => {
+  it('answers a call that never finishes with the D-06 text as isError, and logs it once as a deadline', async () => {
+    await http.stop();
+    http = await serveMcp({ ...deps(), db: hungDb() }, ENV, { deadlineMs: 150 });
+    const started = Date.now();
+    const res = await rpc({ jsonrpc: '2.0', id: 11, method: 'tools/call', params: { name: 'unfinished', arguments: {} } });
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      jsonrpc: '2.0',
+      id: 11,
+      result: { content: [{ type: 'text', text: WATCH_ERROR }], isError: true },
+    });
+    const lines = toolLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^\[mcp\] tool_called \{"tool":"unfinished","consumer":"hop","ms":\d+,"ok":false,"chars":\d+,"code":"deadline"\}$/);
+    // The SDK client takes it as an ordinary tool error (Home Assistant hands the text to the model).
+    expect(await call('recent_history')).toEqual({ text: WATCH_ERROR, isError: true });
+    expect(toolLines()).toHaveLength(2);
+  });
+
+  it('never logs or surfaces the abandoned work when it finishes after the deadline', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const gated = (): WatchPlexClients => {
+      const clients = fake.clients();
+      for (const [server, write] of Object.entries(clients.write)) {
+        if (!write) continue;
+        clients.write[server as keyof typeof clients.write] = {
+          ...write,
+          scrobble: async (key) => {
+            await gate;
+            return write.scrobble(key);
+          },
+        };
+      }
+      return clients;
+    };
+    await http.stop();
+    http = await serveMcp({ ...deps(), markPlex: gated }, ENV, { deadlineMs: 300 });
+    const res = await rpc({ jsonrpc: '2.0', id: 12, method: 'tools/call', params: { name: 'mark_watched', arguments: { title: 'Foundation' } } });
+    expect(await res.json()).toEqual({
+      jsonrpc: '2.0',
+      id: 12,
+      result: { content: [{ type: 'text', text: WATCH_ERROR }], isError: true },
+    });
+    expect(toolLines()).toHaveLength(1);
+    expect(toolLines()[0]).toContain('"tool":"mark_watched","consumer":"hop"');
+    expect(toolLines()[0]).toContain('"code":"deadline"');
+    const logged = [...http.logs];
+
+    // Plex answers late: the flow runs to the end (the mark is recorded) — and nothing more is logged.
+    release();
+    for (let i = 0; i < 100; i += 1) {
+      const [mark] = await db.select().from(watchMarks);
+      if (mark?.plexResult === 'written') break;
+      await sleep(50);
+    }
+    const [mark] = await db.select().from(watchMarks);
+    expect(mark?.plexResult).toBe('written');
+    await sleep(200);
+    expect(http.logs).toEqual(logged);
   });
 });
 
