@@ -7,6 +7,7 @@ import { db, users, session, account, verification, rateLimit } from '@hnet/db';
 import { authEnv, OIDC_PROVIDER_ID } from './env';
 import { bootstrapAdminOnSignin } from './hooks/bootstrap-admin';
 import { consumePendingRoleOnSignin } from './hooks/consume-pending-role';
+import { mapPlexAccountOnSignin } from './hooks/map-plex-account';
 
 /**
  * DESIGN-002 D-02 — the Better Auth instance. Authentik OIDC via genericOAuth is the
@@ -177,6 +178,9 @@ export const auth = betterAuth({
           await bootstrapAdminOnSignin({ id: userId, email: row.email });
           // ADR-045 (PLAN-026) — apply any parked Authentik-portal role intent for this identity.
           await consumePendingRoleOnSignin({ id: userId, email: row.email });
+          // ADR-053 / DESIGN-026 D-07 — record the plex.tv numeric id (the id_token `plex_user_id`
+          // claim) in the Plex Account Map, fill-if-empty, so the harvest attributes their plays.
+          await mapPlexAccountOnSignin({ id: userId });
         },
       },
     },

@@ -91,6 +91,9 @@ export * from './gb-quota-breaker';
 export * from './gb-call-budget';
 // ADR-053 / DESIGN-026 D-07 (PLAN-029) — per-user watch/read-state seam: the app-user↔account mapping,
 // the per-user video watch read-model, and the per-user ABS book read-state (single-writers, no audit).
+// plex-identity is the pure id_token → Plex identity resolver the mapping's auto-fill shares with the
+// session (moved here from @hnet/auth, which re-exports it unchanged).
+export * from './plex-identity';
 export * from './user-account-map';
 export * from './user-media-watch';
 export * from './user-book-progress';

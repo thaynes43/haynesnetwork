@@ -48,6 +48,16 @@ import { selectMetadataTargets, type MetadataTarget } from './db-reads';
 import type { SyncLogger } from './logger';
 
 export const METADATA_STALE_THRESHOLD_MS = 6 * 60 * 60 * 1000; // D-03 — 6h
+/**
+ * DESIGN-008 D-03 amendment (2026-09-23): the DEFAULT threshold is applied 30 min early. The
+ * sync-metadata CronJob fires every 6h, the same period as the threshold, and a run stamps each row's
+ * fetched_at (DB now()) seconds to a minute AFTER the run starts. At the next tick, exactly 6h later,
+ * those rows were still a few seconds too fresh to count as stale. Live 2026-09-22/23: 18,460 rows at
+ * 16:15Z, then 1 at 22:15Z, 18,460 at 04:15Z, 32 at 10:15Z. So every row, household and per-user watch
+ * state included, refreshed every 12h, not 6h. The slack absorbs that write lag plus scheduling jitter,
+ * so each tick re-harvests what the previous tick wrote. An explicit `staleThresholdMs` is exact.
+ */
+export const METADATA_STALE_SLACK_MS = 30 * 60 * 1000;
 const DEFAULT_BATCH = 500;
 
 /** The cross-kind indices harvested once and shared by every per-kind run. */
@@ -99,7 +109,8 @@ export interface MetadataKindRefreshInput {
   arrKind: ArrKind;
   arrInstanceId?: string;
   logger: SyncLogger;
-  /** rows older than now-threshold (or missing) refresh. Default 6h (D-03). */
+  /** rows older than now-threshold (or missing) refresh. Default 6h (D-03) less
+   *  METADATA_STALE_SLACK_MS; an explicit value is exact. */
   staleThresholdMs?: number;
   /** cap the rows harvested this run (steady progress); default all eligible. */
   limit?: number;
@@ -116,6 +127,10 @@ export interface MetadataRefreshStats extends Record<string, unknown> {
   tierTmdb: number;
   tierTvdb: number;
   tierMaintainerr: number;
+  /** ADR-053 — app users with a plex.tv id in the Plex Account Map when this kind ran. */
+  userWatchMappedUsers: number;
+  /** ADR-053 — per-user watch rows (user_media_watch) upserted this run; 0 when nobody is mapped. */
+  userWatchWritten: number;
   degraded: string[];
 }
 
@@ -124,7 +139,9 @@ export async function runMetadataRefreshForKind(
   input: MetadataKindRefreshInput,
 ): Promise<MetadataRefreshStats> {
   const { db, logger, arrKind } = input;
-  const staleBefore = new Date(Date.now() - (input.staleThresholdMs ?? METADATA_STALE_THRESHOLD_MS));
+  const staleBefore = new Date(
+    Date.now() - (input.staleThresholdMs ?? METADATA_STALE_THRESHOLD_MS - METADATA_STALE_SLACK_MS),
+  );
   const batchSize = input.batchSize ?? DEFAULT_BATCH;
   const degraded = [...input.context.degraded];
 
@@ -175,6 +192,8 @@ export async function runMetadataRefreshForKind(
     tierTmdb: 0,
     tierTvdb: 0,
     tierMaintainerr: 0,
+    userWatchMappedUsers: plexUserMap.size,
+    userWatchWritten: 0,
     degraded,
   };
 

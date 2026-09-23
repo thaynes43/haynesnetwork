@@ -92,6 +92,12 @@ Agent-type discussion with the owner still required before any build dispatch (s
    wired in the UX PR (resolution on every wall; persistence on explicit selection only).
 5. ✅ **Per-user watch/read seam** (DESIGN-026 D-07 / ADR-053) — DONE in PR #243 (migration 0044) +
    the UX PR's `library.facetGates`-gated Watched/Read chips; **Kavita read-state NOT in this plan**.
+   **Correction (2026-09-23):** "done" was not true in production. The plex.tv id auto-fill
+   (`ensurePlexUserIdMapping`) had no caller, so `user_account_map` and `user_media_watch` both held
+   0 rows and the Watched chip never appeared. The fix adds the sign-in hook plus a
+   `metadata-refresh` reconcile (DESIGN-026 D-07 status note, `fix(library)` PR from
+   `agent/fix-plex-account-map`). The ABS handle still has no entry surface, so the Read chip stays
+   empty ([#555](https://github.com/thaynes43/haynesnetwork/issues/555)).
 6. ✅ **Facet UI + A–Z jump bar + URL contract** (DESIGN-026 D-08/D-09/D-10) — DONE (UX PR): book
    genre/author/narrator/series/language/format/length chips (value-gated), Decade + Released-range
    chips on the *arr walls, watch/read select chips (gated), the fixed-overlay A–Z rail (`?at=`),
