@@ -5,7 +5,13 @@
 // no-op with rows untouched / rendered copy + deep-link), and the audited settings read/write.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { notificationOutbox, permissionAudit, trashBatches } from '@hnet/db/schema';
+import {
+  NOTIFY_OUTBOX_EVENT_TYPES,
+  notificationOutbox,
+  permissionAudit,
+  trashBatches,
+  type NotifyOutboxEventType,
+} from '@hnet/db/schema';
 import {
   computeEarliestSend,
   computeReminderSend,
@@ -433,7 +439,7 @@ describe('deliverOutbox (the notify-outbox drainer)', () => {
         payload: { mediaKind: 'movie', pendingCount: 5, expiresAt: '2026-09-04T12:00:00Z' },
       },
       'America/New_York',
-    );
+    )!;
     expect(msg.title).toBe('Movies batch is Leaving Soon');
     expect(msg.message).toContain('Sep 4');
     expect(msg.message).toContain('5 items');
@@ -447,12 +453,119 @@ describe('deliverOutbox (the notify-outbox drainer)', () => {
         payload: { mediaKind: 'tv', pendingCount: 7, expiresAt: '2026-09-05T03:04:00Z' },
       },
       'America/New_York',
-    );
+    )!;
     expect(msg.title).toBe('Last call — TV batch');
     expect(msg.message).toBe(
       'Last call: the TV batch closes at 11:04 PM — 7 items still slated. Save anything you want to keep.',
     );
     expect(msg.url).toBe('https://haynesnetwork.com/trash?tab=tv');
+  });
+
+  // Issue #556 — the renderer had a Trash fallback, so an `activity_import_failed` row (the retired
+  // per-failure activity event) would have pushed "Trash batch update" linked to /trash. No event type may
+  // masquerade as a Trash push any more: a type without a Pushover case renders NOTHING.
+  describe('no event type falls through to the Trash copy (issue #556)', () => {
+    const PUSHOVER_RENDERED: readonly NotifyOutboxEventType[] = [
+      'batch_created',
+      'batch_leaving_soon',
+      'batch_leaving_soon_reminder',
+      'batch_final_warning',
+      'batch_swept',
+      'smart_degraded',
+      'smart_recovered',
+      'ticket_created',
+      'mam_gate_paused',
+      'mam_gate_resumed',
+      'mam_gate_stuck',
+    ];
+    const TRASH_BATCH_TYPES: readonly NotifyOutboxEventType[] = [
+      'batch_created',
+      'batch_leaving_soon',
+      'batch_leaving_soon_reminder',
+      'batch_final_warning',
+      'batch_swept',
+    ];
+
+    it('renders the retired activity_import_failed as NOTHING — never a Trash push', () => {
+      const msg = renderOutboxMessage(
+        {
+          eventType: 'activity_import_failed',
+          payload: { source: 'arr', sourceRef: 'arr:sonarr:501:50110', kind: 'tv', failureKind: 'import_blocked', title: 'Blocked Show' },
+        },
+        'America/New_York',
+      );
+      expect(msg).toBeNull();
+    });
+
+    it('renders NOTHING for an event type this build does not know (a newer writer / hand-inserted row)', () => {
+      const msg = renderOutboxMessage(
+        { eventType: 'some_future_event' as unknown as NotifyOutboxEventType, payload: { mediaKind: 'movie' } },
+        'America/New_York',
+      );
+      expect(msg).toBeNull();
+    });
+
+    it('exactly the Pushover event types render; only the batch_* types carry Trash copy or a Trash link', () => {
+      const rendered: NotifyOutboxEventType[] = [];
+      for (const eventType of NOTIFY_OUTBOX_EVENT_TYPES) {
+        const msg = renderOutboxMessage({ eventType, payload: { mediaKind: 'tv' } }, 'America/New_York');
+        if (msg === null) continue;
+        rendered.push(eventType);
+        if (!TRASH_BATCH_TYPES.includes(eventType)) {
+          expect(msg.url ?? '', eventType).not.toContain('/trash');
+          expect(msg.title, eventType).not.toMatch(/trash|batch/i);
+        }
+      }
+      expect(rendered).toEqual(PUSHOVER_RENDERED);
+    });
+
+    it('the drainer never sends an unrenderable pushover row: failed + logged, not delivered', async () => {
+      const retired = await seedRow({
+        eventType: 'activity_import_failed',
+        payload: { source: 'arr', sourceRef: 'arr:radarr:601', kind: 'movie', failureKind: 'import_blocked', title: 'Blocked Movie' },
+      });
+      const emailOnly = await seedRow({ eventType: 'ticket_replied', payload: { ticketId: 't1', title: 'No audio' } });
+      const good = await seedRow(); // a real batch_created push still goes out in the same run
+      const sent: OutboxMessage[] = [];
+      const warns: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
+      const now = new Date();
+      const report = await deliverOutbox({
+        db: t.db,
+        now,
+        sender: async (m) => void sent.push(m),
+        logger: { warn: (msg, meta) => void warns.push({ msg, ...(meta ? { meta } : {}) }) },
+      });
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.title).toBe('New Movies batch');
+      expect(report).toMatchObject({ dueCount: 3, sent: 1, failed: 2, parked: 0, skipped: false });
+      for (const id of [retired.id, emailOnly.id]) {
+        const [row] = await t.db.select().from(notificationOutbox).where(eq(notificationOutbox.id, id));
+        expect(row!.sentAt).toBeNull();
+        expect(row!.attempts).toBe(1);
+        expect(row!.lastError).toContain('unrenderable');
+        expect(row!.earliestSendAt.getTime()).toBeGreaterThan(now.getTime()); // backed off like any failure
+      }
+      const [goodRow] = await t.db.select().from(notificationOutbox).where(eq(notificationOutbox.id, good.id));
+      expect(goodRow!.sentAt).not.toBeNull();
+      expect(warns.map((w) => w.msg)).toEqual([
+        'notify-outbox: unrenderable row — not delivered',
+        'notify-outbox: unrenderable row — not delivered',
+      ]);
+      expect(warns.map((w) => w.meta?.eventType).sort()).toEqual(['activity_import_failed', 'ticket_replied']);
+    });
+
+    it('an unrenderable row parks after MAX_ATTEMPTS and is never sent', async () => {
+      const row = await seedRow({ eventType: 'activity_import_failed', payload: { title: 'x' }, attempts: 4 });
+      const sent: OutboxMessage[] = [];
+      const report = await deliverOutbox({ db: t.db, sender: async (m) => void sent.push(m) });
+      expect(sent).toHaveLength(0);
+      expect(report.parked).toBe(1);
+      const [after] = await t.db.select().from(notificationOutbox).where(eq(notificationOutbox.id, row.id));
+      expect(after!.attempts).toBe(5);
+      expect(after!.sentAt).toBeNull();
+      expect((await deliverOutbox({ db: t.db, sender: async (m) => void sent.push(m) })).dueCount).toBe(0);
+    });
   });
 });
 

@@ -341,18 +341,24 @@ export function parseArrActivityRef(ref: string): ParsedArrRef | null {
 // The live adapter (the fan-out seam) — reads each *arr's queue + recent history and folds them.
 // ---------------------------------------------------------------------------
 
-/** The read surface the *arr adapter needs (tests inject fetch-stubbed clients). */
+/**
+ * The read surface the *arr adapter needs (tests inject fetch-stubbed clients). The queue read is
+ * `getQueueAll` — the WHOLE instance queue, paged until `totalRecords` (the ADR-083 janitor's read) — never
+ * the single-page `getQueue()`: that one is sized for a per-parent filter (200 records), and an unfiltered
+ * read of a longer queue silently drops the tail. Sonarr's queue passed 200 (212 on 2026-09-23), and the
+ * dropped items flapped between open and closed from one `activity-scan` run to the next (issue #556).
+ */
 export interface ArrActivityReadClients {
   radarr: {
-    getQueue(movieId?: number): Promise<RadarrQueueRecord[]>;
+    getQueueAll(): Promise<RadarrQueueRecord[]>;
     getHistory(params?: { pageSize?: number }): Promise<{ records: RadarrHistoryRecord[] }>;
   };
   sonarr: {
-    getQueue(seriesId?: number): Promise<SonarrQueueRecord[]>;
+    getQueueAll(): Promise<SonarrQueueRecord[]>;
     getHistory(params?: { pageSize?: number }): Promise<{ records: SonarrHistoryRecord[] }>;
   };
   lidarr: {
-    getQueue(artistId?: number): Promise<LidarrQueueRecord[]>;
+    getQueueAll(): Promise<LidarrQueueRecord[]>;
     getHistory(params?: { pageSize?: number }): Promise<{ records: LidarrHistoryRecord[] }>;
   };
 }
@@ -379,10 +385,11 @@ export function resolveArrBaseUrls(env: Record<string, string | undefined> = pro
 }
 
 /**
- * Build the *arr ActivitySourceAdapter — its `list()` reads each instance's whole download queue + a small
- * recent-history page LIVE (six bounded calls) and folds them through the pure normalizer. A read failure
- * propagates so the aggregator can degrade the *arr source without failing the whole read (a Radarr outage
- * never blanks the books items).
+ * Build the *arr ActivitySourceAdapter — its `list()` reads each instance's WHOLE download queue (paged to
+ * `totalRecords` — one call per 250 records) + a small recent-history page LIVE and folds them through the
+ * pure normalizer. A read failure propagates so the aggregator can degrade the *arr source without failing
+ * the whole read (a Radarr outage never blanks the books items), and so `activity-scan` leaves the *arr
+ * source unreconciled rather than closing its open failures on a partial read.
  */
 export function buildArrActivityAdapter(
   clients: ArrActivityReadClients,
@@ -394,11 +401,11 @@ export function buildArrActivityAdapter(
     async list() {
       const [radarrQueue, radarrHistory, sonarrQueue, sonarrHistory, lidarrQueue, lidarrHistory] =
         await Promise.all([
-          clients.radarr.getQueue(),
+          clients.radarr.getQueueAll(),
           clients.radarr.getHistory({ pageSize: historyPageSize }),
-          clients.sonarr.getQueue(),
+          clients.sonarr.getQueueAll(),
           clients.sonarr.getHistory({ pageSize: historyPageSize }),
-          clients.lidarr.getQueue(),
+          clients.lidarr.getQueueAll(),
           clients.lidarr.getHistory({ pageSize: historyPageSize }),
         ]);
       return buildArrActivity(

@@ -56,7 +56,7 @@ import type { BooksSyncBundle } from '../books';
 import { createConsoleLogger } from '../logger';
 import { runSync } from '../orchestrator';
 
-const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts|poster-guard|ai-usage-sync|authentik-users|books-sync|plex-match|collections-sync|books-collections-sync|mam-governor|goodreads-sync|format-pairing|activity-scan|queue-cleanup [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
+const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYNC_SOURCES.join('|')}] [--force-tombstones]
 
   --mode=full              item-list upsert + tombstone pass per *arr (+ Seerr requests)
   --mode=incremental       history/since cursor polling per *arr (+ Seerr requests)
@@ -72,10 +72,12 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            stays the human check). Needs SONARR/RADARR/LIDARR_URL/_API_KEY +
                            MAINTAINERR_URL/MAINTAINERR_API_KEY. No --source. No-op unless space_policy
                            is enabled in app_settings.
-  --mode=notify-outbox     drain DUE notification_outbox rows to Pushover (ADR-034 — batch-lifecycle
-                           pushes; sent_at null + attempts<5 + earliest_send_at<=now). Needs
-                           PUSHOVER_APP_TOKEN + PUSHOVER_USER_KEY; disabled-safe — a clean no-op that
-                           leaves rows queued when either is absent. No --source. Writes no sync_runs row.
+  --mode=notify-outbox     drain DUE notification_outbox rows to their channel (ADR-034 Pushover pushes,
+                           ADR-060 email; sent_at null + attempts<5 + earliest_send_at<=now). Pushover
+                           needs PUSHOVER_APP_TOKEN + PUSHOVER_USER_KEY, email needs SMTP_HOST/PORT/USER/
+                           PASS/FROM; each channel is disabled-safe — its rows wait untouched while its
+                           credentials are absent. A row its channel cannot render is never sent (it fails
+                           into backoff and parks). No --source. Writes no sync_runs row.
   --mode=smart-alerts      detect CRITICAL SMART transitions since the last check (ADR-040 — pass→FAIL,
                            media_errors 0→n, spare crossing threshold margin, a NEW critical_warning bit,
                            or the critical appdata pool wear crossing 80/90%) and enqueue ONE
@@ -99,6 +101,11 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            /admin/users portal reads (ADR-045). READ-ONLY against Authentik. Needs
                            AUTHENTIK_API_TOKEN (AUTHENTIK_URL defaults to the in-cluster Service DNS).
                            No --source. Writes no sync_runs row.
+  --mode=books-sync        mirror the BOOK servers' libraries READ-ONLY (ADR-046): page Kavita series + the
+                           Audiobookshelf items into the books_items mirror (reconcile scoped to the
+                           fully-read servers), then read each linked user's ABS listening progress.
+                           Needs KAVITA_PASSWORD + AUDIOBOOKSHELF_PASSWORD (URLs default in-cluster). No
+                           --source. Writes no sync_runs row.
   --mode=plex-match        resolve each *arr ledger media_item to its exact Plex {library, ratingKey} by
                            shared-GUID match (tmdb/imdb/tvdb/musicbrainz) and UPSERT the media_plex_matches
                            cache (ADR-047 — the Library access gate + "Watch on Plex" deep-link substrate).
@@ -157,14 +164,24 @@ const USAGE = `Usage: sync.ts --mode=full|incremental|metadata-refresh|trash-bat
                            No --source. Writes no sync_runs row.
   --mode=activity-scan     the ACTIVITY / IN-FLIGHT failure scan (ADR-059 — the pipeline made visible): poll
                            each source family's queue/import state (the books LL wanted-table + SAB queue/
-                           history AND the *arr Radarr/Sonarr/Lidarr queue + recent-import state), detect OPEN
-                           import failures (stranded_import — downloaded but never imported; import_blocked —
-                           the *arr importer needs a manual import; download_failed), UPSERT the
-                           activity_import_failures ledger + enqueue one activity_import_failed
-                           notification_outbox row per NEW failure (same-tx). Each source is reconciled
-                           independently (a source down never closes another's strands). Needs
-                           LAZYLIBRARIAN_API_KEY + SABNZBD_API_KEY + SONARR/RADARR/LIDARR_API_KEY (URLs default
-                           in-cluster). No --source. Writes no sync_runs row.
+                           history, each WHOLE *arr Radarr/Sonarr/Lidarr queue + recent imports, and the
+                           Kapowarr queue), detect OPEN import failures (stranded_import — downloaded but
+                           never imported; import_blocked — the *arr importer needs a manual import;
+                           postprocess_failed; download_failed) and UPSERT the activity_import_failures
+                           ledger: open new ones, refresh the still-open, close the cleared. Sends NOTHING
+                           (ADR-090 — no per-event push; the nightly failure-digest email reads the open
+                           ledger). Every source is OPTIONAL and skip-if-absent: books needs
+                           LAZYLIBRARIAN_API_KEY + SABNZBD_API_KEY, the *arrs SONARR/RADARR/LIDARR_API_KEY
+                           (all three), comics KAPOWARR_API_KEY (URLs default in-cluster). A missing key
+                           skips only that source, logs it, and leaves its open failures untouched — a
+                           source that is down never closes another's. With no source configured at all
+                           the run fails. No --source. Writes no sync_runs row.
+  --mode=failure-digest    the NIGHTLY admin failure digest (ADR-060 follow-up): read the OPEN
+                           activity_import_failures rows and enqueue ONE email-channel notification_outbox
+                           row (count + the oldest 20) to TICKET_ADMIN_EMAIL (default
+                           admin@haynesnetwork.com); it also carries the queue-janitor census rollup. Nothing
+                           when the ledger is clean and the janitor observed nothing. notify-outbox delivers
+                           it. No --source. Writes no sync_runs row.
   --mode=queue-cleanup     the *arr QUEUE JANITOR (ADR-083 — census-first cleanup of errored grabs): read the
                            WHOLE download queue of Sonarr/Radarr/Lidarr READ-ONLY, classify every errored grab
                            into an Action Class (have_better / retry_import / bad_release / unknown), and write
@@ -219,9 +236,7 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     }
   }
   if (mode === undefined) {
-    throw new CliUsageError(
-      '--mode=full|incremental|metadata-refresh|trash-batch-sweep|space-policy|notify-outbox|smart-alerts is required',
-    );
+    throw new CliUsageError(`--mode=${SYNC_RUN_KINDS.join('|')} is required`);
   }
   if (
     (mode === 'trash-batch-sweep' ||

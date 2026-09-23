@@ -1,7 +1,7 @@
 # DESIGN-015: Pushover notifications for the Trash batch lifecycle
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-08
+- **Last updated:** 2026-09-23 (D-09 — the renderer has no generic fallback; issue #556 / ADR-090)
 - **Satisfies:** PRD-001 R-115, R-116; governed by ADR-034 (and ADR-025 pipeline / ADR-031 space
   policy for the enqueue sites). Glossary T-100 (Notification Outbox), T-101 (Delivery Window).
 
@@ -183,6 +183,29 @@ tunable N hours before the save window closes, right ahead of the sweep.
   where `<time>` is the close time in the owner's tz and `N` is `pendingCount`; the deep link is the
   same per-kind `?tab=movies|tv`. Reuses the green-light `leavingPayload` (`{ batchId, mediaKind,
   pendingCount, pendingBytes, expiresAt }`).
+
+### D-09 — Amendment 2026-09-23 (issue #556 / ADR-090) — no generic renderer fallback
+
+`renderOutboxMessage` used to end in a `default` branch that rendered the Trash copy ("Trash batch update
+— A Trash batch changed state.", linked to `/trash?tab=tv`). Any event type without its own case went out
+as that message. The case that surfaced it: `activity_import_failed` rows, which `activity-scan` enqueued
+on the default `pushover` channel (now retired — DESIGN-030 D-07a).
+
+- **`renderOutboxMessage(row, tz): OutboxMessage | null`.** It returns `null` for every event type without
+  an explicit Pushover case: the retired `activity_import_failed`, the email-only `ticket_replied` /
+  `ticket_status_changed` / `activity_failure_digest`, and any value this build does not know (a row from a
+  newer writer, or a hand-inserted one). This is the same contract as `renderOutboxEmail` (DESIGN-031
+  D-03). The Trash link and copy are used only by the `batch_*` cases.
+- **Exhaustive at compile time.** The `default` branch passes the event type to a `never`-typed parameter,
+  so adding a value to `NOTIFY_OUTBOX_EVENT_TYPES` fails typecheck until the renderer names it, either with
+  a real message or in the explicit "not a Pushover event" group.
+- **The drainer never sends a null-rendered row.** D-05 step 4 gains a check: a `null` render throws
+  `UnrenderableOutboxRowError`, and the row takes the ordinary failure path (`attempts += 1`,
+  `last_error`, backoff, parked at 5 — the channel-agnostic path DESIGN-031 D-04 already gives an
+  unrenderable email row). It logs under its own line, `notify-outbox: unrenderable row — not delivered`,
+  with `id`, `channel`, `eventType` and `attempts`. The backoff is kept, rather than parking on sight, so a
+  row written by a newer build than the drainer that first sees it still delivers once the newer image
+  drains it (ADR-090 C-06).
 
 ## Alternatives considered
 

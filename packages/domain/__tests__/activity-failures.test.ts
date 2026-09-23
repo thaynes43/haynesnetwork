@@ -19,9 +19,10 @@ import { setRoleActivityActions, activityActionsForRole } from '../src/activity-
 import type { ActivityItem } from '../src/activity/contract';
 
 // ADR-059 / DESIGN-030 (PLAN-048) — the durable failure ledger single-writer + audited actions + the grant
-// seam. Proves: a NEW failure upserts the ledger AND enqueues EXACTLY ONE outbox row same-tx; a repeat
-// scan enqueues zero (dedupe); a cleared failure is CLOSED not deleted; an action stamps + audits same-tx;
-// and the grant seam gates (admin ⇒ all, a role grants one, absence ⇒ none).
+// seam. Proves: a NEW failure upserts the ledger and enqueues NO outbox row (ADR-090 / DESIGN-030 D-07a —
+// issue #556: the per-failure Pushover row is retired, the nightly digest reads the ledger); a repeat scan
+// changes nothing; a cleared failure is CLOSED not deleted; a recurrence RE-OPENS (still no outbox row); an
+// action stamps + audits same-tx; and the grant seam gates (admin ⇒ all, a role grants one, absence ⇒ none).
 
 let boot: TestDb;
 beforeAll(async () => {
@@ -52,30 +53,38 @@ function failure(overrides: Partial<ActivityFailureInput> & { sourceRef: string 
   };
 }
 
-describe('evaluateActivityFailures — the failure ledger + same-tx outbox', () => {
-  it('records a new failure and enqueues exactly one outbox row', async () => {
+describe('evaluateActivityFailures — the failure ledger (no per-failure outbox row)', () => {
+  it('records a new failure and enqueues NO outbox row (issue #556 — owner ruling: no per-event push)', async () => {
     const report = await evaluateActivityFailures({
       db: boot.db,
       failures: [failure({ sourceRef: 'books:ll:b1:ebook' })],
       scannedSources: ['books'],
     });
-    expect(report).toMatchObject({ seen: 1, opened: 1, resolved: 0, enqueued: 1 });
+    expect(report).toEqual({ seen: 1, opened: 1, resolved: 0 });
     const rows = await boot.db.select().from(activityImportFailures);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ source: 'books', sourceRef: 'books:ll:b1:ebook', failureKind: 'stranded_import', resolvedAt: null });
-    expect(rows[0]!.notifiedAt).not.toBeNull();
-    const outbox = await boot.db.select().from(notificationOutbox);
-    expect(outbox).toHaveLength(1);
-    expect(outbox[0]!.eventType).toBe('activity_import_failed');
+    // notified_at is RETIRED (DESIGN-030 D-07a): nothing writes it any more.
+    expect(rows[0]!.notifiedAt).toBeNull();
+    expect(await boot.db.select().from(notificationOutbox)).toHaveLength(0);
   });
 
-  it('a repeat scan of the same failure enqueues ZERO more (dedupe) and keeps it open', async () => {
+  it('a first scan of a whole backlog writes the ledger and ZERO outbox rows (the ~267-failure first run)', async () => {
+    const backlog = Array.from({ length: 267 }, (_, i) =>
+      failure({ source: 'arr', sourceRef: `arr:sonarr:${1000 + i}:${50_000 + i}`, kind: 'tv', section: null, failureKind: 'import_blocked', sourceApp: 'sonarr' }),
+    );
+    const report = await evaluateActivityFailures({ db: boot.db, failures: backlog, scannedSources: ['arr'] });
+    expect(report).toEqual({ seen: 267, opened: 267, resolved: 0 });
+    expect(await boot.db.select().from(activityImportFailures).where(isNull(activityImportFailures.resolvedAt))).toHaveLength(267);
+    expect(await boot.db.select().from(notificationOutbox)).toHaveLength(0);
+  });
+
+  it('a repeat scan of the same failure opens nothing new and keeps it open', async () => {
     const f = failure({ sourceRef: 'books:ll:b2:ebook' });
     await evaluateActivityFailures({ db: boot.db, failures: [f], scannedSources: ['books'] });
     const report2 = await evaluateActivityFailures({ db: boot.db, failures: [f], scannedSources: ['books'] });
-    expect(report2.opened).toBe(0);
-    expect(report2.enqueued).toBe(0);
-    expect(await boot.db.select().from(notificationOutbox)).toHaveLength(1);
+    expect(report2).toEqual({ seen: 1, opened: 0, resolved: 0 });
+    expect(await boot.db.select().from(notificationOutbox)).toHaveLength(0);
     expect(await boot.db.select().from(activityImportFailures)).toHaveLength(1);
   });
 
@@ -97,15 +106,22 @@ describe('evaluateActivityFailures — the failure ledger + same-tx outbox', () 
     expect(open).toHaveLength(1);
   });
 
-  it('re-opens + re-notifies a previously-resolved failure that recurs', async () => {
+  it('re-opens a previously-resolved failure that recurs (first_seen restarts, the action re-arms) — still no outbox row', async () => {
     const f = failure({ sourceRef: 'books:ll:b4:ebook' });
-    await evaluateActivityFailures({ db: boot.db, failures: [f], scannedSources: ['books'] });
+    const t0 = new Date('2026-09-20T12:00:00Z');
+    const t2 = new Date('2026-09-22T12:00:00Z');
+    await evaluateActivityFailures({ db: boot.db, failures: [f], scannedSources: ['books'], now: t0 });
+    const [row0] = await boot.db.select().from(activityImportFailures);
+    const actor = await createUser(boot.db);
+    await recordActivityAction({ db: boot.db, failureId: row0!.id, action: 'retry_import', actorId: actor.id });
     await evaluateActivityFailures({ db: boot.db, failures: [], scannedSources: ['books'] }); // resolve
-    const report = await evaluateActivityFailures({ db: boot.db, failures: [f], scannedSources: ['books'] }); // recur
-    expect(report.opened).toBe(1);
-    expect(await boot.db.select().from(notificationOutbox)).toHaveLength(2);
+    const report = await evaluateActivityFailures({ db: boot.db, failures: [f], scannedSources: ['books'], now: t2 }); // recur
+    expect(report).toEqual({ seen: 1, opened: 1, resolved: 0 });
+    expect(await boot.db.select().from(notificationOutbox)).toHaveLength(0);
     const rows = await boot.db.select().from(activityImportFailures);
-    expect(rows[0]!.resolvedAt).toBeNull();
+    expect(rows).toHaveLength(1); // the same row, re-opened — not a second one
+    expect(rows[0]).toMatchObject({ id: row0!.id, resolvedAt: null, lastAction: null, lastActionAt: null, lastActionBy: null });
+    expect(rows[0]!.firstSeenAt.toISOString()).toBe(t2.toISOString());
   });
 });
 

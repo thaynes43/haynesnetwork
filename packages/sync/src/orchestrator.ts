@@ -745,13 +745,13 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   }
 
   // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the `activity-scan` mode polls each source
-  // family's queue/import state (SLICE 1: the books LL+SAB adapter), extracts the current OPEN import
-  // failures, and via evaluateActivityFailures UPSERTS the durable activity_import_failures ledger AND
-  // enqueues one `activity_import_failed` notification_outbox row per NEW failure in the SAME transaction.
-  // No *arr source, no sync_runs row — its trail is the ledger + the outbox rows. Disabled-safe: the
-  // enqueue always records; the notify-outbox drainer no-ops without PUSHOVER_* creds. A source read
-  // failure is logged and treated as "no failures for that source" (never resolves a strand on a wire
-  // hiccup — evaluateActivityFailures only closes failures for the sources actually scanned).
+  // family's queue/import state (the books LL+SAB adapter, the *arr adapter over each WHOLE queue, the
+  // Kapowarr adapter), extracts the current OPEN import failures, and via evaluateActivityFailures UPSERTS
+  // the durable activity_import_failures ledger (open / refresh / close). It enqueues NO notification_outbox
+  // row (ADR-090 / DESIGN-030 D-07a, issue #556 — the owner ruled no per-event push; the nightly
+  // `failure-digest` reads the open ledger rows). No --source, no sync_runs row — its trail is the ledger.
+  // A source read failure is logged and that source is left unreconciled (never resolves a strand on a
+  // wire hiccup — evaluateActivityFailures only closes failures for the sources actually scanned).
   if (options.mode === 'activity-scan') {
     const startedAt = new Date();
     if (
@@ -808,7 +808,6 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         seen: activity.seen,
         opened: activity.opened,
         resolved: activity.resolved,
-        enqueued: activity.enqueued,
         scannedSources,
       });
     } catch (error) {

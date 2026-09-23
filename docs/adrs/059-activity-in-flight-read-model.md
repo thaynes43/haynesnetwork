@@ -1,6 +1,12 @@
 # ADR-059: Activity / In-Flight — live poll-through read + a thin persisted failure ledger
 
 - **Status:** Accepted
+- **Superseded in part by:** [ADR-090](090-activity-failures-digest-only.md) (2026-09-23) — the
+  per-failure outbox row is retired. The decision-outcome clause "enqueues one `activity_import_failed`
+  notification-outbox row in the same transaction … (per row) pages once", its decision driver, and C-03
+  no longer hold. The owner ruled no per-event push (PLAN-048), and the nightly digest reads the failure
+  ledger directly. The live read, the failure ledger, the actions and the contract stand. This is a status
+  note only; the decision body below is unchanged (immutable once Accepted).
 - **Date:** 2026-07-14
 - **Deciders:** Tom Haynes (PLAN-048 owner rulings R1–R3, 2026-07-14 morning)
 - **Builds on:** ADR-035 (the `trash_candidates` synced read-model), ADR-034/DESIGN-015 (the

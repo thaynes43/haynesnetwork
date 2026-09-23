@@ -321,8 +321,8 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       'books-collections-sync seed',
     );
 
-    // ADR-059 / DESIGN-030 (PLAN-048) — populate the activity_import_failures ledger + the outbox by RUNNING
-    // the real activity-scan mode against the stub LL + SAB AND the stub *arr (exercises the adapter →
+    // ADR-059 / DESIGN-030 (PLAN-048) — populate the activity_import_failures ledger (no outbox row since
+    // ADR-090) by RUNNING the real activity-scan mode against the stub LL + SAB AND the stub *arr (the adapter →
     // normalizer → evaluateActivityFailures single-writer, like prod), so the Activity failure detail pages
     // resolve + the failed tiles link on first load. The tab/badges themselves read LIVE (no seed needed).
     // Stage the *arr queue (the import_blocked movie) so the scan writes its durable failure row, then CLEAR

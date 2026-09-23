@@ -63,9 +63,11 @@ describe('runFailureDigest (ADR-060 follow-up)', () => {
     const report = await runFailureDigest({ db: t.db, adminEmail: 'admin@haynesnetwork.com' });
     expect(report).toEqual({ openCount: 1, enqueued: 1, queueObserved: 0 });
 
+    // The digest row is the ONLY outbox row: the scans above wrote no per-failure row (ADR-090 /
+    // DESIGN-030 D-07a, issue #556) — the digest reads the ledger directly.
     const rows = await t.db.select().from(notificationOutbox);
-    const digest = rows.filter((r) => r.eventType === 'activity_failure_digest');
-    expect(digest).toHaveLength(1);
+    expect(rows.map((r) => r.eventType)).toEqual(['activity_failure_digest']);
+    const digest = rows;
     expect(digest[0]!.channel).toBe('email');
     expect(digest[0]!.payload).toMatchObject({ to: 'admin@haynesnetwork.com', count: 1 });
 

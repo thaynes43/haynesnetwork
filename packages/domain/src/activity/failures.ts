@@ -1,10 +1,12 @@
 // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the DURABLE failure ledger single-writer +
-// the audited Admin actions. `evaluateActivityFailures` is the `activity-scan` sync mode's body: it upserts
-// the current OPEN import-failure set and, for each NEWLY-seen failure, enqueues one `activity_import_failed`
-// notification_outbox row in the SAME transaction (ADR-034 C-01 / the evaluateMamGovernor idiom); a cleared
-// failure is CLOSED (resolved_at), not deleted, so the detail page + audit survive. The retry-import /
-// force-research actions stamp the row + co-write a permission_audit row in one tx (hard rule 6, the
-// recordManualSearch precedent); the confined LL write fires AFTER commit in the API resolver.
+// the audited Admin actions. `evaluateActivityFailures` is the `activity-scan` sync mode's body: in ONE
+// transaction it upserts the current OPEN import-failure set and CLOSES (resolved_at) the failures a scan no
+// longer sees — never deleting them, so the detail page + audit survive. It enqueues NOTHING: ADR-090 /
+// DESIGN-030 D-07a retired the per-failure `activity_import_failed` outbox row (owner ruling — NO per-event
+// push, in-app only). The only failure notification is the nightly `failure-digest` email, which reads the
+// OPEN ledger rows directly (activity/digest.ts). The retry-import / force-research actions stamp the row +
+// co-write a permission_audit row in one tx (hard rule 6, the recordManualSearch precedent); the confined
+// LL write fires AFTER commit in the API resolver.
 import {
   activityImportFailures,
   permissionAudit,
@@ -14,8 +16,6 @@ import {
 } from '@hnet/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { inTransaction, resolveDb } from '../db-client';
-import { enqueueOutbox } from '../notify-outbox';
-import { computeEarliestSend, getNotifyWindow } from '../notify-window';
 import { NotFoundError } from '../errors';
 import type { ActivityFailureKind, ActivityItem } from './contract';
 
@@ -54,20 +54,22 @@ export function toFailureInputs(source: string, items: readonly ActivityItem[]):
 export interface ActivityFailuresReport {
   /** Failures seen this scan. */
   seen: number;
-  /** Newly-recorded (or re-opened) failures — one outbox row each. */
+  /** Newly-recorded (or re-opened) failures. Counted for the run log only — nothing is enqueued for them. */
   opened: number;
   /** Previously-open failures that cleared this scan. */
   resolved: number;
-  /** Outbox rows enqueued (== opened). */
-  enqueued: number;
 }
 
 /**
- * Upsert the current failure set + enqueue an outbox row per NEW failure, all in one transaction. Only the
- * `scannedSources` are reconciled (so a books-only scan never resolves a future *arr failure). A recurring
- * failure whose row was resolved is RE-OPENED and re-notified; a still-open failure just refreshes
- * last_seen_at (no duplicate page). First sight of a failure enqueues exactly one row (dedupe via
- * notified_at). Never throws for the enqueue path — the outbox drainer (disabled-safe) delivers later.
+ * Upsert the current failure set in one transaction. Only the `scannedSources` are reconciled (so a
+ * books-only scan never resolves an *arr failure, and a source that was unreachable this run keeps its open
+ * rows). A recurring failure whose row was resolved is RE-OPENED (first_seen_at restarts, the prior action
+ * stamps clear so the badge re-arms); a still-open failure just refreshes last_seen_at and its display facts.
+ *
+ * Writes NO notification_outbox row (ADR-090 / DESIGN-030 D-07a): the owner ruled NO per-event push, and the
+ * nightly `failure-digest` reads the open rows straight from this ledger. `notified_at` is RETIRED — nothing
+ * writes or reads it any more; the column stays (no destructive migration) and is null on every row written
+ * since.
  */
 export async function evaluateActivityFailures(input: {
   db?: DbClient;
@@ -77,8 +79,6 @@ export async function evaluateActivityFailures(input: {
   now?: Date;
 }): Promise<ActivityFailuresReport> {
   const now = input.now ?? new Date();
-  const window = await getNotifyWindow(input.db);
-  const earliestSendAt = computeEarliestSend(now, window);
 
   let opened = 0;
   let resolved = 0;
@@ -93,7 +93,7 @@ export async function evaluateActivityFailures(input: {
         .where(and(eq(activityImportFailures.source, f.source), eq(activityImportFailures.sourceRef, f.sourceRef)))
         .for('update');
 
-      const isNew = !existing || existing.resolvedAt !== null || existing.notifiedAt === null;
+      const reopened = existing !== undefined && existing.resolvedAt !== null;
 
       if (existing) {
         await tx
@@ -109,10 +109,8 @@ export async function evaluateActivityFailures(input: {
             downstreamUrl: f.downstreamUrl,
             lastSeenAt: now,
             resolvedAt: null,
-            // Re-opened / never-notified failures re-notify; a still-open one keeps its stamp.
-            notifiedAt: isNew ? now : existing.notifiedAt,
             // Re-opening clears the prior action so the badge re-arms.
-            ...(existing.resolvedAt !== null
+            ...(reopened
               ? { firstSeenAt: now, lastActionAt: null, lastActionBy: null, lastAction: null }
               : {}),
           })
@@ -131,24 +129,10 @@ export async function evaluateActivityFailures(input: {
           downstreamUrl: f.downstreamUrl,
           firstSeenAt: now,
           lastSeenAt: now,
-          notifiedAt: now,
         });
       }
 
-      if (isNew) {
-        opened += 1;
-        await enqueueOutbox(tx, {
-          eventType: 'activity_import_failed',
-          payload: {
-            source: f.source,
-            sourceRef: f.sourceRef,
-            kind: f.kind,
-            failureKind: f.failureKind,
-            title: f.title,
-          },
-          earliestSendAt,
-        });
-      }
+      if (!existing || reopened) opened += 1;
     }
 
     // Close open failures for the scanned sources that the scan no longer sees.
@@ -167,7 +151,7 @@ export async function evaluateActivityFailures(input: {
     }
   });
 
-  return { seen: input.failures.length, opened, resolved, enqueued: opened };
+  return { seen: input.failures.length, opened, resolved };
 }
 
 // ---------------------------------------------------------------------------
