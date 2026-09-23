@@ -36,6 +36,14 @@ describe('TautulliClient.getHistory — the Watch Event window (DESIGN-049 D-09)
     });
   });
 
+  it('includeActivity maps to include_activity=0|1 (the ingest sends 0: live sessions have no row_id)', async () => {
+    const stub = stubFetch([{ path: '/api/v2', body: fixture('tautulli.history-owner') }]);
+    const client = new TautulliClient({ ...TAUT, fetchImpl: stub.fetchImpl });
+    await client.getHistory({ includeActivity: false });
+    await client.getHistory({ includeActivity: true });
+    expect(stub.calls.map((c) => c.url.searchParams.get('include_activity'))).toEqual(['0', '1']);
+  });
+
   it('omits every unset filter (the household harvest call is unchanged)', async () => {
     const stub = stubFetch([{ path: '/api/v2', body: fixture('tautulli.history-owner') }]);
     await new TautulliClient({ ...TAUT, fetchImpl: stub.fetchImpl }).getHistory({ length: 5 });
@@ -103,6 +111,21 @@ describe('TautulliClient.getMetadata — gone is null (DESIGN-049 D-09)', () => 
     const stub = stubFetch([{ path: '/api/v2', status: 400, body: fixture('tautulli.metadata-gone') }]);
     expect(await new TautulliClient({ ...TAUT, fetchImpl: stub.fetchImpl }).getMetadata(999999999)).toBeNull();
     expect(stub.calls).toHaveLength(1); // a 400 is not retried
+  });
+
+  it('a 400 that is NOT the "Unable to retrieve metadata" answer still throws (Tautulli 400s every error)', async () => {
+    const stub = stubFetch([
+      {
+        path: '/api/v2',
+        status: 400,
+        body: { response: { result: 'error', message: 'Unknown command: get_metadata2', data: {} } },
+      },
+    ]);
+    const error = await new TautulliClient({ ...TAUT, fetchImpl: stub.fetchImpl })
+      .getMetadata(1)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ArrHttpError);
+    expect((error as ArrHttpError).status).toBe(400);
   });
 
   it('an empty `{}` data object (older Tautulli) → null', async () => {

@@ -36,11 +36,19 @@ export interface TautulliHistoryParams {
    */
   userId?: number | string;
   /**
-   * Only rows whose play started AFTER this date, `YYYY-MM-DD` — Tautulli's `after` filter (verified live
-   * 2026-09-23: `after=2099-01-01` returns 0 rows; a 30-day window returns only newer rows). The watch sync's
-   * incremental window (newest stored start minus 3 days). A malformed date throws before any request.
+   * Only rows from this day on, `YYYY-MM-DD` — Tautulli's `after` filter ("history after and including the
+   * date", by the Tautulli server's LOCAL day; verified live 2026-09-23: `after=2099-01-01` returns 0 rows,
+   * a 30-day window returns only newer rows). The watch sync's incremental window (newest stored start minus
+   * 3 days — the overlap absorbs the day/time-zone granularity). A malformed date throws before any request.
    */
   after?: string;
+  /**
+   * Include the CURRENTLY PLAYING sessions (`include_activity`). Tautulli's default follows its "show
+   * activity in the history table" setting (on by default), and a live-session row has NO `row_id` (it is
+   * not in session_history yet) — so the Watch Event ingest sends `false`, and must skip any row whose
+   * `row_id` is null regardless. Omitted ⇒ Tautulli's default (the household harvest's call is unchanged).
+   */
+  includeActivity?: boolean;
   /**
    * 0 = one row per play session (the Watch Event grain — each row has its own `row_id`); 1 = Tautulli's
    * grouped view (consecutive partial plays collapsed). Omitted ⇒ Tautulli's configured default (grouped).
@@ -53,6 +61,8 @@ export interface TautulliHistoryParams {
 }
 
 const AFTER_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** The HTTP-400 message Tautulli's get_metadata answers for an item Plex does not have (verified live). */
+const METADATA_GONE = /unable to retrieve metadata/i;
 
 export class TautulliClient {
   private readonly http: ArrHttp;
@@ -87,6 +97,7 @@ export class TautulliClient {
           ...(params.userId !== undefined ? { user_id: params.userId } : {}),
           ...(params.after !== undefined ? { after: params.after } : {}),
           ...(params.grouping !== undefined ? { grouping: params.grouping } : {}),
+          ...(params.includeActivity !== undefined ? { include_activity: params.includeActivity ? 1 : 0 } : {}),
           ...(params.orderColumn ? { order_column: params.orderColumn } : {}),
           ...(params.orderDir ? { order_dir: params.orderDir } : {}),
         },
@@ -112,9 +123,13 @@ export class TautulliClient {
   /**
    * `cmd=get_metadata` — the title's Plex `guid`, external-id `guids` (the join key) + last_viewed_at.
    * Returns `null` when the item is GONE from Plex (Maintainerr deletes watched media, so a history row's
-   * rating_key goes stale): current Tautulli answers HTTP 400 for that (verified live 2026-09-23), older
-   * builds answered 200 with an empty `data` object — both mean the same thing and map to `null`. Any other
-   * failure (5xx, timeout, schema drift) still throws the typed ArrError.
+   * rating_key goes stale): current Tautulli answers HTTP 400 with the message "Unable to retrieve metadata
+   * for rating_key …" (verified live 2026-09-23), older builds answered 200 with an empty `data` object — both
+   * map to `null`. ONLY that message does: Tautulli answers 400 for every error result (an unknown command,
+   * say), and those still throw the typed ArrHttpError, as do 5xx, timeouts and schema drift.
+   *
+   * Caveat for callers: Tautulli builds that message from an empty Plex answer, so it can also come back while
+   * Tautulli cannot reach its Plex server — treat `null` as "gone for now", never as permanent (DESIGN-049 D-09).
    */
   async getMetadata(ratingKey: string | number): Promise<TautulliMetadata | null> {
     const query = { apikey: this.apiKey, cmd: 'get_metadata', rating_key: ratingKey };
@@ -124,7 +139,13 @@ export class TautulliClient {
         response: { data },
       } = await this.http.requestJson('GET', 'v2', tautulliEnvelopeSchema(z.unknown()), { query }));
     } catch (error) {
-      if (error instanceof ArrHttpError && error.status === 400) return null;
+      if (
+        error instanceof ArrHttpError &&
+        error.status === 400 &&
+        METADATA_GONE.test(error.bodySnippet ?? '')
+      ) {
+        return null;
+      }
       throw error;
     }
     if (isEmptyPayload(data)) return null;

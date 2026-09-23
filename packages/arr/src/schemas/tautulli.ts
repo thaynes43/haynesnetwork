@@ -55,7 +55,9 @@ export const tautulliHistoryRowSchema = z.object({
   // three instances with `grouping=0`:
   //   • `row_id` is the STABLE PER-ROW id (the session_history row; `id` mirrors it). `reference_id` is NOT —
   //     it names the first row of a group and repeats across rows (HaynesTower row 42195 → reference 41839),
-  //     so it is deliberately not consumed. The Watch Event identity is (instance, row_id).
+  //     so it is deliberately not consumed. The Watch Event identity is (instance, row_id). A CURRENTLY
+  //     PLAYING session (`include_activity`) is not in session_history yet and carries no row_id (null
+  //     here) — the ingest skips it.
   //   • `guid` is the Plex item guid (`plex://episode/…`, `plex://movie/…`), identical across servers; an
   //     unmatched item carries its local agent guid (`com.plexapp.agents.none://…`).
   //   • `media_index` / `parent_media_index` are the episode / season numbers (`""` on movies → null).
