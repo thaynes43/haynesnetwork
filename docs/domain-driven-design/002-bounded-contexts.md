@@ -1,10 +1,10 @@
 # DDD-002: Bounded Contexts
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-03
+- **Last updated:** 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
 - **Related:** PRD-001, DDD-001
 
-Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs as
+Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs as
 `DDD-002 BC-NN`. Terms in **bold** are defined in DDD-001.
 
 ## 1. Context map
@@ -38,6 +38,7 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 | BC-03 | Media Ledger | 2 | Core | Mirror the media estate from the *arrs; own **Fix Request** and **Restore**. |
 | BC-04 | Plex Sharing | 3 | Supporting | Apply library-share decisions to the three Plex servers. |
 | BC-05 | Media Communication | 2.5 | Supporting | Aggregate inbound third-party events into a **Feed**; host a user **Messages** board (Bulletin). |
+| BC-06 | Watch Companion | 7 | Supporting | Know what the Server Owner has watched, is watching and might watch next; serve it to voice and agent consumers over MCP. |
 
 ## 3. Contexts in detail
 
@@ -157,6 +158,26 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 - **Does NOT own:** the media estate or the Fix flow — Messages **complement** Fix (BC-03), never
   replace it; the Feed is a read-through over inbound events, not a media source of truth.
 
+### BC-06 — Watch Companion (ADR-087 / ADR-088 / ADR-089 / DESIGN-049, PLAN-068)
+
+- **Purpose:** answer "what haven't I finished", "what should I watch next" and "I already watched
+  that" for the **Server Owner** (T-94), fast enough for a voice turn, and expose it to machine
+  consumers (the Movie Room voice agent, the dev-env agents) through the in-cluster MCP surface.
+- **Owned aggregates:** **Watch Event** (`watch_events`, the append-only play log), **Title State**
+  (`watch_titles`, the per-account progress snapshot), **Watch Mark** (`watch_marks`, the owner's
+  audited corrections), the tracked-account registry (`watch_accounts`) and the recommendation
+  signal cache (`watch_reco_signals`).
+- **Inbound:** the `watch` sync mode (Tautulli history, the owner's Plex progress, the plex.tv
+  watchlist, TMDB recommendations); MCP tool calls from an **MCP Consumer** (T-251) through the
+  **MCP Hop** (T-252).
+- **Outbound:** Plex `scrobble`/`unscrobble` for `watched` Watch Marks only (owner ruling
+  2026-09-23), through the import-confined `@hnet/plex/write`. Nothing else is written anywhere.
+- **Reuse, not reinvention:** the Server Owner comes from BC-04's owner recognition (ADR-029); the
+  Tautulli trio from the ADR-068 env contract; ratings, genres and availability from BC-03's
+  ledger (`media_metadata`, `media_plex_matches`). BC-06 reads them and owns none of them.
+- **Does NOT own:** ADR-053's per-title `user_media_watch` facets or the household watch stats
+  (BC-03), library access (BC-02/BC-04), or requests (Seerr).
+
 ## 4. Relationship rules
 
 - **Entitlements decides; the Dashboard and BC-04 enforce.** Both consume Effective
@@ -168,6 +189,7 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 - **BC-04 owns library identity; BC-02 references it** — `role_library_grants` (BC-02)
   point at `plex_libraries` `(server_id, section_key)` identities from BC-04's registry.
 - **Seerr is read-only** — attribution source and a catalog Tile; never replaced (Non-goals).
+- **BC-06 reads BC-03 and BC-04, writes only Plex watch state.** Its one outbound write is the owner-issued `watched` mark (ADR-088); MCP consumers get watch scopes only (ADR-087 C-05).
 
 ## 5. Cross-cutting (not bounded contexts)
 
@@ -184,3 +206,4 @@ Four bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across 
 | 2026-07-06 | Fable 5 | BC-04 Plex Sharing promoted intent → **built** (ADR-017 / DESIGN-007): owns `plex_servers`/`plex_libraries`/`plex_share_audit`; family gating is a `Family`-role grant (no `is_family_only` flag); BC-02→BC-04 reference named as `role_library_grants` → `plex_libraries (server_id, section_key)`; server slugs corrected to `haynestower`/`haynesops`/`hayneskube`. |
 | 2026-07-07 | Fable 5 | Added **BC-05 Media Communication** (ADR-026 / DESIGN-012, PLAN-009 Bulletin, backend built): owns Notification (`notifications`, widened), Message (`messages`), Message Action Grant (`role_message_action_grants`); inbound-only webhook adapters (Seerr/Tautulli/Maintainerr); reuses BC-03's single email/media attribution path; complements (never replaces) BC-03's Fix. The Feed/Messages UX lands as a Fable follow-up. |
 | 2026-07-10 | Fable 5 | BC-02 Entitlements gains an **outbound apply into Authentik** — the R-30 follow-on is now built as the **Authentik Role Portal** (ADR-045 / DESIGN-023, PLAN-026): a synced-tier Role projects to an Authentik group and role assignment writes group membership (exclusive across owned tier groups) through the import-confined `@hnet/authentik/write` + `@hnet/openwebui/write`, gated by a positive owned-groups allowlist (never the admin/MFA groups or ADR-042 blueprint-owned flows/stages/brand). The BC-04 "decide here, apply externally" posture applied to identity; external writes audited after the apply (`authentik_group_audit`), local changes same-tx audited. No BC renumbering. |
+| 2026-09-23 | Opus 5.5 | Added **BC-06 Watch Companion** (ADR-087/088/089 / DESIGN-049, PLAN-068): owns Watch Event, Title State, Watch Mark, the tracked-account registry and the recommendation signal cache; reads BC-03/BC-04; one outbound write (Plex scrobble for an owner-issued `watched` mark); serves MCP consumers through the in-cluster hop. |

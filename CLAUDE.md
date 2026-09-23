@@ -98,7 +98,9 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
 ## Commands
 
 pnpm 11.9 workspace (Node >= 22). Apps live in `apps/*`; internal packages in `packages/*`
-are scoped **`@hnet/*`** and export raw TS — no per-package build step. There are nine:
+are scoped **`@hnet/*`** and export raw TS — no per-package build step. There are more than twenty
+(`ls packages`); every one needs a `COPY packages/<name>/package.json` line in the Dockerfile's deps
+stage (a missing line fails only the release image build, which is not a required check). The core ones:
 
 - `@hnet/db` — Drizzle schema + migrations against Postgres 16.
 - `@hnet/domain` — single-writer domain logic; audit/ledger rows written in the same
@@ -112,6 +114,10 @@ are scoped **`@hnet/*`** and export raw TS — no per-package build step. There 
 - `@hnet/api` — tRPC routers.
 - `@hnet/ui` — token-themed components (`data-theme`); `tokens.css` is the only place for hex.
 - `@hnet/test-utils` — embedded-Postgres + stub harness helpers.
+- `@hnet/watch` — the Watch Companion's pure progress math, recommendation scoring, title resolver
+  and spoken formatter, plus read queries (DESIGN-049). No MCP SDK, no writes.
+- `@hnet/mcp` — the in-cluster MCP endpoint behind `/api/mcp` (ADR-087): consumer auth, the seven
+  watch tools, the Voice Budget tests.
 
 - `pnpm install` — install workspace deps.
 - `pnpm dev` — Next.js dev server (`apps/web`) on http://localhost:3000. Needs a real
