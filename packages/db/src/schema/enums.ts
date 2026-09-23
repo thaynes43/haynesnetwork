@@ -355,15 +355,16 @@ export const SYNC_RUN_KINDS = [
   // sync_runs.run_kind CHECK to keep the const array + CHECK in parity).
   'goodreads-sync',
   // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — 'activity-scan' polls each source family's
-  // queue/import state (SLICE 1: LazyLibrarian wanted-table + SABnzbd queue/history), computes the current
-  // OPEN import-failure set (incl. the stranded_import class), and via the domain evaluateActivityFailures
-  // single-writer UPSERTS the activity_import_failures ledger AND — for each NEWLY-seen failure — enqueues
-  // one 'activity_import_failed' notification_outbox row in the SAME transaction (ADR-034 C-01; first sight
-  // pages once, a cleared failure is closed). The Activity tab + wall badges read LIVE (ADR-059 Q-01), so
-  // this mode owns ONLY the durable failure ledger + the outbox transition. Like mam-governor/notify-outbox
-  // it touches NO *arr source (no --source) and writes NO sync_runs row — its trail is the failure ledger +
-  // the outbox rows. It joins SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0048
-  // rebuilds the sync_runs.run_kind CHECK to keep the const array + CHECK in parity).
+  // queue/import state (LazyLibrarian wanted-table + SABnzbd queue/history, each WHOLE *arr queue, the
+  // Kapowarr queue), computes the current OPEN import-failure set (incl. the stranded_import class), and via
+  // the domain evaluateActivityFailures single-writer UPSERTS the activity_import_failures ledger (a cleared
+  // failure is closed). It enqueues NO outbox row: ADR-090 / DESIGN-030 D-07a (2026-09-23, issue #556)
+  // retired the per-failure 'activity_import_failed' row — owner ruling, no per-event push; the nightly
+  // 'failure-digest' reads the open ledger rows. The Activity tab + wall badges read LIVE (ADR-059 Q-01), so
+  // this mode owns ONLY the durable failure ledger. Like mam-governor/notify-outbox it takes no --source and
+  // writes NO sync_runs row — its trail is the failure ledger. It joins SYNC_RUN_KINDS so the CLI --mode
+  // parser + SyncMode accept it (migration 0048 rebuilds the sync_runs.run_kind CHECK to keep the const
+  // array + CHECK in parity).
   'activity-scan',
   // ADR-060 follow-up (PLAN-048 tail, 2026-07-15) — 'failure-digest' reads OPEN
   // activity_import_failures (resolved_at IS NULL) and enqueues ONE email-channel
@@ -1120,14 +1121,15 @@ export const NOTIFY_OUTBOX_EVENT_TYPES = [
   'mam_gate_paused',
   'mam_gate_resumed',
   'mam_gate_stuck',
-  //   activity_import_failed      — ADR-059 / DESIGN-030 (PLAN-048 Activity/In-Flight) — a media item's
-  //                                 acquisition FAILED to import (incl. the stranded_import class: the
-  //                                 download completed but never landed — the OPS-013 §11 42-book incident).
-  //                                 Enqueued by evaluateActivityFailures in the SAME tx as the
-  //                                 activity_import_failures upsert, ONCE per newly-seen failure (dedupe via
-  //                                 the row's notified_at). Feeds the future admin digest (PLAN-035 channel,
-  //                                 post-SMTP) — NO per-event push in v1 (owner ruled in-app only). The
-  //                                 renderer deep-links the failure detail page. Migration 0048 rebuilds the CHECK.
+  //   activity_import_failed      — RETIRED 2026-09-23 (ADR-090 / DESIGN-030 D-07a, issue #556). It was the
+  //                                 ADR-059 per-failure row evaluateActivityFailures enqueued for each newly
+  //                                 seen import failure — with no channel, so on the default 'pushover' one,
+  //                                 contradicting the owner ruling (NO per-event push, in-app only), and with
+  //                                 no renderer case, so it would have pushed the Trash fallback copy. Nothing
+  //                                 enqueues it now: the nightly digest (activity_failure_digest) reads the
+  //                                 open activity_import_failures rows directly. renderOutboxMessage returns
+  //                                 null for it, so a stray row is failed, never sent. The value stays here
+  //                                 only for CHECK parity (migration 0048) — no destructive migration.
   'activity_import_failed',
   //   ticket_replied / ticket_status_changed — ADR-060 / DESIGN-031 D-02 (PLAN-035) — the ticket
   //                                 AUTHOR's opt-in email moments (email channel only; never enqueued

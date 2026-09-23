@@ -7,11 +7,12 @@ const ACTIVITY_FAILURE_KINDS_SQL_LIST = ACTIVITY_FAILURE_KINDS.map((k) => `'${k}
 /**
  * ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the DURABLE import-failure ledger (migration
  * 0048). This is the ONLY persisted Activity state: the tab + wall badges read LIVE per source (ADR-059
- * Q-01 — live poll-through), but a FAILURE must survive a request so it can (a) drive the outbox transition
- * (enqueue once per new failure — R2 / the future admin digest) and (b) give the failure a stable identity
+ * Q-01 — live poll-through), but a FAILURE must survive a request so it can (a) feed the nightly admin
+ * failure digest, which reads the OPEN rows directly (R-198), and (b) give the failure a stable identity
  * for the detail-page URL + the audited Admin action. The mam_gate_state / smart_drive_state class:
- * derived, rebuildable operational state; the writer appends no ledger row of its own — its trail is the
- * outbox rows + the per-action permission_audit rows.
+ * derived, rebuildable operational state; the writer appends no ledger row of its own and enqueues NO
+ * outbox row (ADR-090 / DESIGN-030 D-07a retired the per-failure `activity_import_failed` row — owner
+ * ruling: no per-event push) — its trail is the per-action permission_audit rows.
  *
  * One row per OPEN failure keyed by (source, source_ref). Written ONLY by the @hnet/domain
  * `evaluateActivityFailures` single-writer (the `activity-scan` sync mode); a failure that CLEARS is closed
@@ -49,7 +50,10 @@ export const activityImportFailures = pgTable(
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
     /** Set when a scan no longer sees the failure (imported/cleared). Null ⇒ OPEN. */
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
-    /** When the `activity_import_failed` outbox row was enqueued (dedupe — enqueue once per failure). */
+    /** RETIRED (ADR-090 / DESIGN-030 D-07a, 2026-09-23). It stamped the per-failure
+     *  `activity_import_failed` outbox enqueue (dedupe), which no longer exists; nothing writes or reads it
+     *  and it is null on every row written since. Kept (nullable) rather than dropped — no destructive
+     *  migration for a dead column. */
     notifiedAt: timestamp('notified_at', { withTimezone: true }),
     /** The last Admin action stamps (retry-import / force-research). */
     lastActionAt: timestamp('last_action_at', { withTimezone: true }),

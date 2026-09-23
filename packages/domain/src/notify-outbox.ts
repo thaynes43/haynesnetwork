@@ -120,15 +120,32 @@ function smartReasonLabel(reason: unknown): string {
   }
 }
 
-/** Render an outbox row's Pushover title/message/url from its event type + payload. */
+/**
+ * The compile-time half of the renderer's safe default: every NotifyOutboxEventType must be named by a case in
+ * `renderOutboxMessage`, so adding an event type fails typecheck until its Pushover rendering is decided.
+ * At runtime it answers `null` — the event type this build does not know (a row from a newer writer, or a
+ * hand-inserted one) renders NOTHING.
+ */
+function noPushoverRendering(_eventType: never): null {
+  return null;
+}
+
+/**
+ * Render an outbox row's Pushover title/message/url from its event type + payload — or `null` when the event
+ * type has NO Pushover rendering (issue #556 / ADR-090). There is deliberately no generic fallback: before
+ * #556 an unmatched type fell through to the Trash copy, so an `activity_import_failed` row would have pushed
+ * "Trash batch update" deep-linked to `/trash`. The drainer fails a null-rendered row (never sends it); the
+ * email channel's `renderOutboxEmail` has the same contract.
+ */
 export function renderOutboxMessage(
   row: { eventType: NotifyOutboxEventType; payload: Record<string, unknown> },
   tz: string,
-): OutboxMessage {
+): OutboxMessage | null {
   const p = row.payload ?? {};
   const mediaKind = p.mediaKind === 'movie' ? 'movie' : 'tv';
   const kindLabel = mediaKind === 'movie' ? 'Movies' : 'TV';
-  // Deep-link into the relevant per-kind Trash tab (ADR-033 — `?tab=movies|tv`).
+  // The batch_* cases deep-link into the relevant per-kind Trash tab (ADR-033 — `?tab=movies|tv`). Only the
+  // Trash batch cases use these two; every other case carries its own link (or none).
   const url = `https://haynesnetwork.com/trash?tab=${mediaKind === 'movie' ? 'movies' : 'tv'}`;
   const urlTitle = 'Open Trash';
 
@@ -257,13 +274,19 @@ export function renderOutboxMessage(
         message: `Unsatisfied torrents have sat at the cap (${u}/${limit}) for over 48h — book demand exceeds the ~${limit}-per-72h throughput. Consider prioritising the wanted list or a MAM rank bump.`,
       };
     }
+    // NOT Pushover events — they render nothing, so the drainer fails the row instead of pushing it:
+    //   • activity_import_failed — RETIRED (ADR-090 / DESIGN-030 D-07a). Owner ruling: NO per-event push for
+    //     import failures (in-app only); the nightly failure digest is their one notification. No writer
+    //     enqueues it any more; the value stays in the enum only for CHECK parity.
+    //   • ticket_replied / ticket_status_changed / activity_failure_digest — email-channel events
+    //     (ADR-060); `renderOutboxEmail` renders them.
+    case 'activity_import_failed':
+    case 'ticket_replied':
+    case 'ticket_status_changed':
+    case 'activity_failure_digest':
+      return null;
     default:
-      return {
-        title: 'Trash batch update',
-        message: 'A Trash batch changed state.',
-        url,
-        urlTitle,
-      };
+      return noPushoverRendering(row.eventType);
   }
 }
 
@@ -517,6 +540,16 @@ const MAX_ATTEMPTS = 5;
 /** Backoff after attempt 1/2/3/4+ (a failed row's next earliest_send_at = now + this). */
 const BACKOFF_MS = [15 * 60_000, 60 * 60_000, 4 * 60 * 60_000, 12 * 60 * 60_000];
 
+/**
+ * A due row its channel's renderer returned `null` for: an event type that channel does not render (a
+ * retired, foreign-channel, or unknown type), or an email row missing `payload.to`. Such a row is NEVER sent.
+ * It takes the ordinary failure path (attempts + last_error + backoff, parked at MAX_ATTEMPTS — the
+ * channel-agnostic DESIGN-031 D-04 semantics) under its own log line. The backoff is kept, rather than parking
+ * on sight, so a row written by a newer build than the drainer that first saw it still delivers once the new
+ * image drains it.
+ */
+class UnrenderableOutboxRowError extends Error {}
+
 interface OutboxLogger {
   info?: (msg: string, meta?: Record<string, unknown>) => void;
   warn?: (msg: string, meta?: Record<string, unknown>) => void;
@@ -530,7 +563,8 @@ interface OutboxLogger {
  * EXCLUDED from the due scan — its rows wait untouched (per-channel disabled-safe, R-197); when no
  * channel has a sender the run no-ops entirely. At-least-once (ADR-034 C-05): a crash between a
  * successful send and the `sent_at` write re-sends next run; single job + Forbid concurrency keeps it
- * single-sender.
+ * single-sender. A row its channel cannot render is never sent: it fails like a delivery error under its
+ * own log line (`UnrenderableOutboxRowError`, issue #556).
  */
 export async function deliverOutbox(input: {
   db?: DbClient;
@@ -606,13 +640,18 @@ export async function deliverOutbox(input: {
       if (row.channel === 'email') {
         const mail = renderOutboxEmail(row);
         if (mail === null) {
-          throw new Error(
+          throw new UnrenderableOutboxRowError(
             `email row unrenderable (event_type=${row.eventType}, payload.to ${typeof row.payload?.to === 'string' ? 'set' : 'MISSING'})`,
           );
         }
         await emailSender!(mail);
       } else {
         const msg = renderOutboxMessage(row, window.tz);
+        if (msg === null) {
+          throw new UnrenderableOutboxRowError(
+            `pushover row unrenderable (event_type=${row.eventType} has no Pushover rendering) — not sent`,
+          );
+        }
         await pushoverSender!(msg);
       }
       await db
@@ -630,7 +669,12 @@ export async function deliverOutbox(input: {
         .where(eq(notificationOutbox.id, row.id));
       failed += 1;
       if (attempts >= MAX_ATTEMPTS) parked += 1;
-      log?.warn?.('notify-outbox: delivery failed', { id: row.id, attempts, error: message });
+      log?.warn?.(
+        err instanceof UnrenderableOutboxRowError
+          ? 'notify-outbox: unrenderable row — not delivered'
+          : 'notify-outbox: delivery failed',
+        { id: row.id, channel: row.channel, eventType: row.eventType, attempts, error: message },
+      );
     }
   }
   if (sent > 0 || failed > 0) {

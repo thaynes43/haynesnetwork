@@ -23,6 +23,9 @@
   a format with an active grab never reads "Missing" — the hero collapse, the Library-Wanted wall cards, and
   the Goodreads items wall (a one-query `activity.wallStages` overlay) all honor it. The precedence is ONE
   pure rule (`apps/web/lib/format-live-status.ts`, unit-tested) both the detail and the walls consume.
+- **Amended 2026-09-23 (issue #556 — ADR-090):** D-07a (the per-failure outbox row is retired; the nightly
+  digest is the only failure notification; `notifiedAt` retired) and D-08c (the *arr adapter reads each
+  WHOLE queue). Together they make `activity-scan` safe to schedule — it had never been scheduled.
 
 ## D-01 — Library → Activity sub-tab (R1, the Trash→Activity idiom)
 
@@ -134,6 +137,35 @@ transaction upserts the ledger AND — for each NEWLY-seen failure — enqueues 
 closed). NO push per in-flight event (owner ruling — in-app only for now); the outbox feeds the future
 admin digest (PLAN-035 channel, post-SMTP).
 
+_Superseded in part by **D-07a** (2026-09-23): the scan enqueues nothing, and `notifiedAt` is retired._
+
+## D-07a — Amendment 2026-09-23: per-event outbox rows retired, digest-only (issue #556, ADR-090)
+
+D-07 said the scan enqueues an `activity_import_failed` outbox row for each newly seen failure, with
+"NO push per in-flight event" and the row feeding the future digest. The code did not match the second
+half. The row went out on the default `pushover` channel, and `renderOutboxMessage` had no case for it,
+so the drainer would have pushed every one as "Trash batch update". The digest, when it shipped (the
+DESIGN-031 amendment, 2026-07-15), reads the OPEN ledger rows directly, so nothing ever consumed the
+per-failure rows. `activity-scan` was never scheduled, so none was ever sent.
+
+From this amendment:
+
+- **Digest-only.** `evaluateActivityFailures` writes the ledger and nothing else: it opens (inserts or
+  re-opens), refreshes, and closes rows in one transaction. The only notification of an import failure is
+  the nightly `failure-digest` email (R-198), which lists every OPEN row. In-app nothing changes: the
+  Activity **Failed** chip, the failure detail page and its actions.
+- **`notifiedAt` is retired.** It was the enqueue's dedupe stamp. Nothing writes or reads it any more,
+  and every row written since carries null. The column stays, with no destructive migration for a dead
+  nullable column (ADR-090 C-05).
+- **`activity_import_failed` is unused.** No writer enqueues it; the value stays in
+  `NOTIFY_OUTBOX_EVENT_TYPES` only for CHECK parity.
+- **The Pushover renderer has no generic fallback.** An event type with no Pushover case renders `null`,
+  and the drainer fails that row instead of sending it (DESIGN-015 D-09). No event type can go
+  out as a Trash message again.
+- **Re-open semantics are unchanged.** A recurring failure re-opens its own row: `first_seen_at`
+  restarts and the last action clears, so the badge re-arms. The run log's `opened` counts new plus
+  re-opened rows; the report no longer has an `enqueued` field.
+
 ## D-08 — the fan-out recipe (for the *arr + Kapowarr follow-up agents)
 
 A new source family plugs in WITHOUT touching the contract, the card, the tab, the chips, or the
@@ -206,6 +238,18 @@ Coverage:
   retry-import surface, and a comic only ever fails as `download_failed` (which offers re-search only anyway).
   A comic `retry_import` reaching the resolver is an honest no-op (it audits but fires nothing).
 
+### D-08 amendment — the *arr adapter reads each WHOLE queue (D-08c, 2026-09-23, issue #556)
+
+The *arr adapter read each queue with `getQueue()`: one unfiltered page of 200 records. That read is
+sized for the per-parent filter of the Fix progress poll (DESIGN-005 D-20). Sonarr's queue reached 212
+items, so every scan dropped a tail. The *arr's default queue order is not stable between reads, so a
+different tail dropped each run, and those failures flapped between open and closed. The adapter now
+reads `getQueueAll()`, the ADR-083 janitor's whole-queue read: 250 records a page until `totalRecords`.
+A failed page fails the whole *arr read, so the scan leaves the *arr source unreconciled instead of
+closing failures on a partial read. The live `activity.list` read uses the same adapter, so the Activity
+tab shows the whole queue too. `@hnet/arr`'s single-page `getQueue` now requires its parent id, so the
+truncating unfiltered call cannot be written again.
+
 ## D-09 — click-through EVERYWHERE (owner ruling 2026-07-14 — "I can't click on anything in Activity")
 
 Every Activity tile navigates — not just failures. The aggregator (`resolveActivityHrefs`, the seam that
@@ -269,9 +313,11 @@ card, which then wears (and updates) the live stage badge.
 | D-05 | `ActivityCard` is a new BaseCard family member (typed variant + gallery + spec), never a fork. |
 | D-06 | Actions are `activityActionProcedure(action)`-gated (admin OR grant), audited same-tx, LL write after commit; non-actors get FORBIDDEN. |
 | D-07 | Failures persist in `activity_import_failures`; `activity-scan` upserts + enqueues the outbox same-tx; no per-event push. |
+| D-07a | Per-event outbox rows RETIRED (ADR-090, issue #556, 2026-09-23): `activity-scan` writes only the ledger; the nightly `failure-digest` is the one failure notification; `notifiedAt` retired (column kept, no destructive migration); `activity_import_failed` unused (kept for CHECK parity); the Pushover renderer has no fallback, so an unrenderable row is failed, never sent. |
 | D-08 | The fan-out recipe: new adapters fill the contract; the card/tab/chips/detail are source-agnostic. |
 | D-08a | *arr adapter (Radarr/Sonarr/Lidarr) shipped (PLAN-048 slice 2): `source: 'arr'`, `section: null` (universal), `id` encodes instance + fix target; stages downloading/importing/completed + failures import_blocked/download_failed; retry = confined `ProcessMonitoredDownloads`, re-search = the existing per-kind Force-Search. No card/tab/chip/detail change. |
 | D-08b | Kapowarr (comics) adapter shipped (PLAN-048 slice 3): `source: 'kapowarr'`, `id` = `kapowarr:<volumeId>`, `kind: 'comic'` / `wall: 'comics'`, **`section: 'books'`** (comics ride the books gate — reused value, contract union NOT widened; flagged Q-03). Stages searching/downloading/importing/completed; failure class ONLY `download_failed` (no manual-import queue ⇒ `import_blocked` not detectable). Action: `force_research` → confined `searchVolume` (`auto_search`); **`retry_import` absent** (Kapowarr has no retry-import surface — honest no-op). No card/tab/chip/detail change. |
+| D-08c | The *arr adapter reads each WHOLE queue (`getQueueAll`, paged to `totalRecords`); the single 200-record page dropped Sonarr's tail and made those failures flap (issue #556). `@hnet/arr` `getQueue` now requires its parent id. |
 | D-09 | Click-through EVERYWHERE (owner ruling): the aggregator fills `href` for every item — failed → failure detail; non-failed *arr → ledger detail (`media_items` join); book/comic want → Wanted detail (`book_requests` join); all `?from=activity` (new back-link key). Join miss → inert (honest). Whole-face target (#264); the Activity stage/kind filters moved to the URL so Back restores the tab AND its filters. |
 | D-10 | LIVE progress, the Fix feel: adaptive `activity.list` poll (2.5 s while any item downloads, else 5 s); the shared in-flight badge gained typed `pulse` + `progressPct` cues (a pulsing dot + filling mini-meter — the Fix `PhaseChip` vocabulary, a typed-prop+gallery ADR-058 extension, NOT a new slot); a just-landed tile flashes a one-shot accent before aging out; the failure + Wanted detail poll a lean new `activity.itemStatus` after a fire and render a reserved-slot stage chip that walks failed → … → done; the books walls now consume `activity.wallStages` (`books.wanted` exposes the join keys). Same DOM node updates in place (no remount). |
 

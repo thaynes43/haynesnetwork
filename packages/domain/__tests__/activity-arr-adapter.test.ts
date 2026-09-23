@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildArrActivity,
+  buildArrActivityAdapter,
   parseArrActivityRef,
   type ArrActivitySources,
 } from '../src/activity/arr-adapter';
+import { buildArrClientBundle } from '../src/arr-clients';
 import type {
   LidarrHistoryRecord,
   LidarrQueueRecord,
@@ -228,5 +230,85 @@ describe('parseArrActivityRef — the wall-join + force-search dispatch target',
   it('returns null for a non-*arr ref (a books ref)', () => {
     expect(parseArrActivityRef('books:ll:abc:ebook')).toBeNull();
     expect(parseArrActivityRef('arr:bogus:1')).toBeNull();
+  });
+});
+
+// Issue #556 — the LIVE adapter (the `activity-scan` + `activity.list` read) over REAL *arr read clients: it
+// must read each instance's WHOLE queue. It used the single-page `getQueue()` (200 records, unfiltered), so
+// Sonarr's 212-item queue lost its tail and those failures flapped open/closed between scans.
+describe('buildArrActivityAdapter — reads the WHOLE queue (issue #556)', () => {
+  /** A paging `/queue` + empty `/history` *arr stub; honours the client's page/pageSize like the real API. */
+  function stubArrHosts(queues: { sonarr: unknown[]; radarr: unknown[]; lidarr: unknown[] }) {
+    const queueCalls: URL[] = [];
+    const fetchImpl = (async (input: unknown) => {
+      const url = new URL(String(input));
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+      const page = Number(url.searchParams.get('page') ?? 1);
+      const pageSize = Number(url.searchParams.get('pageSize') ?? 20);
+      if (/\/api\/v[13]\/history$/.test(url.pathname)) {
+        return json({ page, pageSize, sortKey: 'date', sortDirection: 'descending', totalRecords: 0, records: [] });
+      }
+      if (/\/api\/v[13]\/queue$/.test(url.pathname)) {
+        queueCalls.push(url);
+        const all = url.host.startsWith('sonarr') ? queues.sonarr : url.host.startsWith('radarr') ? queues.radarr : queues.lidarr;
+        return json({
+          page,
+          pageSize,
+          sortKey: 'timeleft',
+          sortDirection: 'ascending',
+          totalRecords: all.length,
+          records: all.slice((page - 1) * pageSize, page * pageSize),
+        });
+      }
+      return new Response('{}', { status: 404 });
+    }) as typeof fetch;
+    const opts = { apiKey: 'test-api-key', retryDelayMs: 0, fetchImpl } as const;
+    const bundle = buildArrClientBundle({
+      sonarr: { baseUrl: 'http://sonarr.test:8989', ...opts },
+      radarr: { baseUrl: 'http://radarr.test:7878', ...opts },
+      lidarr: { baseUrl: 'http://lidarr.test:8686', ...opts },
+      bazarr: { baseUrl: 'http://bazarr.test:6767', ...opts },
+    });
+    return { read: bundle.read, queueCalls };
+  }
+
+  const blocked = (id: number, parent: Record<string, number>) => ({
+    id,
+    status: 'completed',
+    trackedDownloadStatus: 'warning',
+    trackedDownloadState: 'importBlocked',
+    size: 1000,
+    sizeleft: 0,
+    title: `Blocked.Release.${id}`,
+    statusMessages: [{ title: 'Blocked.Release', messages: ['Episode was not found in the grabbed release'] }],
+    ...parent,
+  });
+
+  it("surfaces all 212 of Sonarr's import_blocked items (a single 200-record page dropped 12)", async () => {
+    const sonarr = Array.from({ length: 212 }, (_, i) => blocked(i + 1, { seriesId: 1000 + i, episodeId: 50_000 + i }));
+    const radarr = Array.from({ length: 10 }, (_, i) => blocked(900 + i, { movieId: 600 + i }));
+    const stub = stubArrHosts({ sonarr, radarr, lidarr: [] });
+    const items = await buildArrActivityAdapter(stub.read, { now: () => NOW }).list();
+
+    const failed = items.filter((i) => i.stage === 'failed');
+    expect(failed.filter((i) => i.sourceApp === 'sonarr')).toHaveLength(212);
+    expect(failed.filter((i) => i.sourceApp === 'radarr')).toHaveLength(10);
+    expect(failed.every((i) => i.failureKind === 'import_blocked')).toBe(true);
+    expect(new Set(items.map((i) => i.id)).size).toBe(items.length);
+    // The whole-queue read: unfiltered, paged by the client (250/page), never the 200-record single page.
+    for (const u of stub.queueCalls) {
+      expect(u.searchParams.get('pageSize')).toBe('250');
+      expect(['seriesIds', 'movieIds', 'artistIds'].some((k) => u.searchParams.has(k))).toBe(false);
+    }
+  });
+
+  it('follows the pages past 250 until totalRecords', async () => {
+    const sonarr = Array.from({ length: 530 }, (_, i) => blocked(i + 1, { seriesId: 1000 + i, episodeId: 50_000 + i }));
+    const stub = stubArrHosts({ sonarr, radarr: [], lidarr: [] });
+    const items = await buildArrActivityAdapter(stub.read, { now: () => NOW }).list();
+    expect(items.filter((i) => i.sourceApp === 'sonarr' && i.stage === 'failed')).toHaveLength(530);
+    const sonarrPages = stub.queueCalls.filter((u) => u.host.startsWith('sonarr')).map((u) => u.searchParams.get('page'));
+    expect(sonarrPages).toEqual(['1', '2', '3']);
   });
 });

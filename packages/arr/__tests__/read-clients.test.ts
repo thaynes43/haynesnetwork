@@ -598,14 +598,60 @@ describe('queue read client (getQueue, PLAN-015 D-20)', () => {
     expect(records[0]).toMatchObject({ artistId: 5973, albumId: 41 });
   });
 
-  it('omits the filter param when no parent id is given (whole queue)', async () => {
-    const stub = stubFetch([{ path: '/api/v3/queue', body: paged([]) }]);
+  /**
+   * A paging `/queue` stub over `all`: serves `page`/`pageSize` slices with the given `totalRecords`
+   * (default: the true count), recording every request URL.
+   */
+  function pagingQueue(all: unknown[], totalRecords = all.length) {
+    const calls: URL[] = [];
+    const fetchImpl = (async (input: unknown) => {
+      const url = new URL(String(input));
+      calls.push(url);
+      const page = Number(url.searchParams.get('page'));
+      const pageSize = Number(url.searchParams.get('pageSize'));
+      const records = all.slice((page - 1) * pageSize, page * pageSize);
+      return new Response(
+        JSON.stringify({ page, pageSize, sortKey: 'timeleft', sortDirection: 'ascending', totalRecords, records }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+    return { calls, fetchImpl };
+  }
+
+  // Issue #556 — the whole-instance queue is `getQueueAll`, paged to totalRecords. The single-page
+  // `getQueue` REQUIRES a parent id: unfiltered, its one 200-record page silently dropped Sonarr's tail
+  // (212 items on 2026-09-23), so the Activity scan flapped those failures open/closed run to run.
+  it('getQueueAll reads the WHOLE unfiltered queue across pages, up to totalRecords', async () => {
+    const all = Array.from({ length: 262 }, (_, i) =>
+      queueRecord({ id: i + 1, seriesId: 1000 + i, episodeId: 50_000 + i }),
+    );
+    const q = pagingQueue(all);
     const client = new SonarrClient({
       baseUrl: 'http://sonarr.test:8989',
-      fetchImpl: stub.fetchImpl,
+      fetchImpl: q.fetchImpl,
       ...TEST_OPTS,
     });
-    await client.getQueue();
-    expect(stub.calls[0]?.url.searchParams.has('seriesIds')).toBe(false);
+    const records = await client.getQueueAll();
+    expect(records).toHaveLength(262);
+    expect(new Set(records.map((r) => r.id)).size).toBe(262);
+    expect(q.calls.map((u) => u.searchParams.get('page'))).toEqual(['1', '2']);
+    for (const u of q.calls) {
+      expect(u.pathname).toBe('/api/v3/queue');
+      expect(u.searchParams.get('pageSize')).toBe('250');
+      expect(u.searchParams.has('seriesIds')).toBe(false); // unfiltered — the whole instance queue
+    }
+  });
+
+  it('getQueueAll stops on an empty page even when totalRecords over-counts (no runaway paging)', async () => {
+    const all = Array.from({ length: 3 }, (_, i) => queueRecord({ id: i + 1, movieId: 10 + i }));
+    const q = pagingQueue(all, 999); // the envelope claims far more than exists
+    const client = new RadarrClient({
+      baseUrl: 'http://radarr.test:7878',
+      fetchImpl: q.fetchImpl,
+      ...TEST_OPTS,
+    });
+    const records = await client.getQueueAll();
+    expect(records).toHaveLength(3);
+    expect(q.calls.map((u) => u.searchParams.get('page'))).toEqual(['1', '2']); // page 2 came back empty
   });
 });

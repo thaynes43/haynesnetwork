@@ -4,6 +4,31 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-23 — `activity-scan` made safe to schedule (issue #556); the CronJob waits for the release
+
+`activity-scan` (ADR-059 / PLAN-048) never had a CronJob. Scheduled as the code stood, its first run would
+have sent about 267 Pushover pushes reading "Trash batch update", one per stuck import. That PR
+(`fix(activity)`, branch `agent/activity-scan-no-push`) fixes the app side:
+
+- **No per-failure push** (ADR-090, DESIGN-030 D-07a). `evaluateActivityFailures` writes only the ledger.
+  The nightly `failure-digest` email is the one failure notification (owner ruling: in-app only).
+  `notified_at` is retired; the column stays.
+- **No Trash fallback** (DESIGN-015 D-09). `renderOutboxMessage` returns null for any event type without
+  a Pushover case, and a new event type fails typecheck until it gets one. The drainer fails such a row
+  (log `notify-outbox: unrenderable row — not delivered`) and never sends it.
+- **Whole-queue read** (DESIGN-030 D-08c). The *arr adapter pages each queue (`getQueueAll`); one
+  200-record page made the tail of Sonarr's 212-item queue flap. `@hnet/arr` `getQueue` now requires its
+  parent id.
+- `sync.ts --help` is accurate: activity-scan's keys are optional per source, `failure-digest` and
+  `books-sync` are documented, and the mode list comes from `SYNC_RUN_KINDS`.
+- Three source files carried raw NUL bytes, so GitHub showed their diffs as binary. They are `\u0000`
+  escapes now.
+
+**Next, in order:** merge and release; add the `sync-activity-scan` CronJob in haynes-ops (the spec and
+what to expect are in PLAN-048 §Scheduling); check the first two runs (no push, no flap); close #556.
+The next digest will report about 270 stuck imports, mostly Sonarr's `importBlocked` pile. The janitor is
+still at L0, and PLAN-065's ladder log has a dated blocker for the overdue spot-check.
+
 ## ▶ 2026-09-23 — The ADR-053 Plex Account Map is wired, so the per-user Watched chip can fill
 
 `ensurePlexUserIdMapping` had no caller, so `user_account_map` and `user_media_watch` held 0 rows in
@@ -16,8 +41,8 @@ the first `sync-metadata` run (at :15, every 6 h) logs `plexAccountMap.mapped` o
 `userWatchWritten` above 0, and every later run re-harvests about 18.4k rows.
 
 Still open: ABS handle entry ([#555](https://github.com/thaynes43/haynesnetwork/issues/555)).
-`activity-scan` was never scheduled and is unsafe to schedule until its per-failure Pushover rows go
-([#556](https://github.com/thaynes43/haynesnetwork/issues/556)).
+`activity-scan` is not scheduled yet ([#556](https://github.com/thaynes43/haynesnetwork/issues/556)):
+the app side is fixed in the section above, and the CronJob waits for the release.
 
 ## ▶ 2026-09-23 — Watch Companion designed (PLAN-068): the Movie Room voice agent gets the owner's watch history over an in-cluster MCP surface
 
