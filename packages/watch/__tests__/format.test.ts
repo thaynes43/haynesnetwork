@@ -627,10 +627,10 @@ describe('formatDismissResult / formatUndoResult (D-15)', () => {
       formatUndoResult({ ...sev, title: 'Dark Matter', year: 2024, revertResult: 'none' }),
     ).toBe('Undone. Dark Matter (2024) is no longer marked as watched.');
     expect(formatUndoResult({ ...sev, revertResult: 'partial' })).toBe(
-      'Undid the mark on Severance (2022), but only part of it reached Plex.',
+      'Only part of Severance (2022) went back to unwatched in Plex, so the mark stays for now. Say undo again to retry the rest.',
     );
     expect(formatUndoResult({ ...sev, revertResult: 'failed' })).toBe(
-      "Undid the mark on Severance (2022) in your history, but Plex didn't take the change, so it still shows as watched there.",
+      "Plex didn't take the change, so Severance (2022) still shows as watched there and the mark stays for now. Say undo again to retry.",
     );
     expect(
       formatUndoResult({ ...sev, action: 'not_interested', title: "Grey's Anatomy", year: 2005 }),
