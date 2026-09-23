@@ -52,14 +52,29 @@ merge green and fail only at release.
 
 ### D-02 — The MCP endpoint
 
-- `POST /api/mcp` only. `GET`, `DELETE` and other methods answer **405** with `Allow: POST`.
+- `POST /api/mcp` only. The route exports only `POST`, so Next answers every other method with
+  **405**. GET and DELETE must never reach the transport: in stateless mode it would open an SSE
+  stream that never ends for a GET.
 - MCP Streamable HTTP, **stateless**: a new `McpServer` and a new
   `WebStandardStreamableHTTPServerTransport` (`@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js`,
   `handleRequest(req: Request): Promise<Response>`) per request, `sessionIdGenerator: undefined`,
   `enableJsonResponse: true`. No `Mcp-Session-Id` is ever issued, so
-  clients never open the GET stream or send DELETE.
-- Body limit 64 KB (a tool call is a few hundred bytes); JSON-RPC batches are rejected.
-- `serverInfo`: name `haynesnetwork`, version = app version. `instructions` (≤600 characters; only
+  clients never open the GET stream or send DELETE. The pair must be new per request (a stateless
+  transport refuses a second request and a server binds one transport); the zod schemas live at
+  module scope, which keeps the per-request build under a millisecond (prototype, 2026-09-23).
+- SDK: `@modelcontextprotocol/sdk` **1.30.x** (v1). v2 (`@modelcontextprotocol/server` 2.x, GA
+  2026-07-27) answers older-protocol clients, which Home Assistant and Codex are, with SSE even in
+  JSON mode; it is the upgrade path, not day one.
+- Clients must send `Accept: application/json, text/event-stream` (406 otherwise) and
+  `Content-Type: application/json` (415 otherwise); all three consumer clients do.
+- Body limit 64 KB, enforced before the transport (v1 has none): read the body capped, parse it, and
+  pass `parsedBody` to `handleRequest`. A thrown tool error is replaced by the D-06 text before it can
+  reach the client (the SDK would otherwise return the raw `error.message`).
+- `serverInfo`: name **`Watch history`**, version = app version. Home Assistant uses the name as
+  the config entry title and in the prompt ("tools … from a remote server named Watch history"),
+  and, because the Movie Room agent also has Assist, namespaces every tool with its slug:
+  `watch_history__recommend`, and Assist's own tools become `assist__…` (HA `helpers/llm.py`
+  `MergedAPI`). Claude Code and Codex name tools after their `mcp.json` key instead. `instructions` (≤600 characters; only
   Claude Code and Codex read them): *"Watch history for the owner's Plex account across HaynesOps,
   HaynesKube and HaynesTower. Every result is short plain text meant to be read aloud. unfinished:
   shows started and not finished. recommend: never-watched picks with reasons (pass offset for
@@ -119,11 +134,20 @@ OpenAI strips top-level `oneOf/anyOf/allOf/enum/not`): flat objects, primitive p
 property-level `enum` only, no `default`, no `nullable`, no unions, no `$ref`. Defaults are applied in
 the handler.
 
+Every Home Assistant tool call is four POSTs: `initialize`, `notifications/initialized`,
+`tools/call`, then `tools/list` (the client refreshes its tool list on each new session). So the list is
+paid on every call and must be static and cheap. If that trailing `tools/list` fails after a
+successful `mark_watched`, HA reports a failure for a change that happened: one more reason marks
+must be idempotent (D-14).
+
 **Voice Budget (T-253), enforced by `@hnet/mcp` tests:** the serialized `tools/list` result is at
 most **3,072 bytes**; a default call to each read tool over the seeded fixture returns at most
-**1,200 characters**; no result carries `structuredContent`. If the SDK's generated schema pushes the
-list over budget (for example a per-tool `$schema` key), serve the list from hand-written JSON
-Schemas instead of trimming descriptions.
+**1,200 characters**; no result carries `structuredContent`. The v1 SDK adds about 89 bytes per tool (a `$schema`
+URL on each input schema and `execution: {taskSupport}`); if the generated list is over budget, serve
+`tools/list` from hand-written JSON Schemas through the low-level request handler instead of
+trimming descriptions. Integer parameters use `.int().min().max()` (a bare `.int()` emits ±2^53
+bounds, 73 bytes), and schemas avoid `z.email()`, `z.tuple()`, `z.date()` and `z.bigint()`: Home
+Assistant's converter rejects the first two and the SDK cannot serialize the last two.
 
 ### D-06 — Logging and errors
 
@@ -365,7 +389,10 @@ around its database rows, with Plex calls outside the transaction (D-14).
    unwatched before.
 6. Finalize the mark (`written`, `partial`, `failed`, or `not_on_plex` with no writes) and write the
    Title State through by applying the flips to the snapshot (no second read).
-7. Say it back: *"Marked Severance (2022) as watched in Plex, all 19 episodes."* or *"Noted Dark
+7. **Replay:** the same mark (title, scope, season, episode) repeated within 10 minutes that would
+   flip nothing answers like the first and inserts no row, so a retried call never becomes the
+   "last change" that `undo_last_change` would pick.
+8. Say it back: *"Marked Severance (2022) as watched in Plex, all 19 episodes."* or *"Noted Dark
    Matter (2024) as watched. It isn't on Plex, so only your history changed."* Budget: 3 s end to end
    (Home Assistant allows 10 s per call including connect).
 
@@ -447,7 +474,7 @@ characters, cut at a sentence boundary. Examples:
 ### D-22 — Home Assistant (hass-sandbox owns the record)
 
 1. An `mcp` config entry with URL `http://haynesnetwork-mcp-hop.frontend.svc.cluster.local:8080/mcp`
-   (no auth), titled "Watch" so the tools read as `Watch__unfinished` beside Assist's.
+   (no auth). Its title comes from `serverInfo.name`, "Watch history" (D-02).
 2. The Movie Room agent (`conversation.chatgpt_5`, OpenAI entry `01JK456T3JV6CPBG2ZQ2FS10GE`,
    subentry `01JZ8DWMCRND9599AR8EFJVN0A`) gets `llm_hass_api: ["assist", "mcp-<entry id>"]` and a
    WATCH HISTORY block appended to its prompt (text kept in hass-sandbox

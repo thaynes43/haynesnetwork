@@ -18,7 +18,7 @@
 | Consumer token | Secret `frontend/haynesnetwork-mcp-consumer`, key `HOP_TOKEN` | minted once by an External Secrets `Password` generator; no copy exists in 1Password |
 | Hop | `frontend/haynesnetwork-mcp-hop` :8080 `/mcp` | nginx injects `Authorization: Bearer`; CiliumNetworkPolicy admits Home Assistant, dev-env and probes only |
 | Sync | CronJob `haynesnetwork-sync-watch`, `3,18,33,48 * * * *` | owner, events, Plex progress, watchlist, TMDB seeds |
-| Voice consumer | HA `mcp` entry "Watch" → Movie Room agent `conversation.chatgpt_5` only | prompt backup in hass-sandbox `agent-docs/voice-agent-prompts.md` |
+| Voice consumer | HA `mcp` entry "Watch history" → Movie Room agent `conversation.chatgpt_5` only | prompt backup in hass-sandbox `agent-docs/voice-agent-prompts.md` |
 | Agent consumer | dev-env `mcp.json` server `haynesnetwork` | same hop URL, no token |
 
 ## 2. Is it healthy?
@@ -77,7 +77,7 @@ settles it.
 
 | Symptom | Look at |
 |---|---|
-| HA shows the "Watch" entry as failed to set up | HA log `homeassistant.components.mcp`; usually a tool schema HA cannot convert (DESIGN-049 D-05 rules) or the hop unreachable |
+| HA shows the "Watch history" entry as failed to set up | HA log `homeassistant.components.mcp`; usually a tool schema HA cannot convert (DESIGN-049 D-05 rules) or the hop unreachable |
 | Answers are stale (just-finished episode still "next") | the sync's last success; `revalidate_timeout` lines in the web log (Plex slow) |
 | A voice turn got slow | `[mcp] slow_call` lines (phase: resolve, revalidate, plex_write); the HA pipeline debug timings |
 | "Watch history isn't ready yet." | no `owner` row: the sync has not succeeded once (plex.tv unreachable, or no Plex token) |

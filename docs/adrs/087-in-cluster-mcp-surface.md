@@ -65,7 +65,12 @@ authenticates people only through Authentik OIDC (hard rule 5).
    touches hard rule 5. Kept as the path for a future public connector (Q-14).
 4. **An unauthenticated endpoint protected only by a NetworkPolicy.** Rejected: the same pods are
    internet-facing through Traefik; one mis-scoped rule would publish the owner's history.
-5. **A standalone media MCP server in haynes-ops** (the 2026-09-22 hass-sandbox proposal,
+5. **A static token in the URL for Home Assistant** (`http://ha:<token>@host/api/mcp`, which HA's
+   httpx client sends as `Authorization: Basic`; proven with HA's client library on 2026-09-23).
+   Rejected: the token would sit in HA's config entry and in any URL HA displays, and someone would
+   have to copy the plaintext out of the cluster to configure it. The hop keeps it inside the
+   Secret. Kept as the fallback if the hop is ever unwanted.
+6. **A standalone media MCP server in haynes-ops** (the 2026-09-22 hass-sandbox proposal,
    `ai/media-mcp`). Rejected by the owner's 2026-09-23 steer toward this app: it would duplicate the
    Tautulli/Plex clients, the identity model, the ledger and the tokens that already live here.
 
