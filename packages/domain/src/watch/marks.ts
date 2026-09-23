@@ -52,8 +52,9 @@ import {
   type UndoView,
   type WatchKind,
 } from '@hnet/watch';
-import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from '../db-client';
+import { assertWatchOwner } from './accounts';
 import {
   isPlexNotFound,
   plexErrorText,
@@ -373,6 +374,11 @@ async function readBefore(
       client.listAllLeaves(holder.ratingKey),
       wantShowItem ? client.getMetadataItem(holder.ratingKey) : Promise.resolve(null),
     ]);
+    // A truncated listing is a partial before-state: a show scrobble would flip leaves it never saw, so
+    // `flipped` (and the undo) would miss them. It is a failed read: no write on this server.
+    if (listing.truncated) {
+      return { holder, status: 'error', error: new Error(`allLeaves ${holder.ratingKey} was truncated`) };
+    }
     return { holder, status: 'ok', leaves: listing.items, item: meta?.item ?? null };
   } catch (error) {
     return isPlexNotFound(error) ? { holder, status: 'gone' } : { holder, status: 'error', error };
@@ -398,12 +404,14 @@ function withPlexIdentity(identity: MarkIdentity, item: PlexItemLike | null): Ma
  * holding servers, read the before-state live, record the mark as `pending` with the planned flips, write
  * Plex (≤ 6 concurrent), then finalize the mark with exactly what flipped and write the Title State
  * through. A repeat within 10 minutes that would flip nothing answers like the first and inserts no row.
+ * The actor must be the current owner (D-03): anything else throws {@link WatchNotReadyError} first.
  */
 export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOutcome<MarkResultView>> {
   const now = input.now ?? new Date();
   const nowSec = Math.floor(now.getTime() / 1000);
   const db = resolveDb(input.db);
   const acct = input.actor.plexAccountId;
+  await assertWatchOwner(db, acct);
 
   const resolution = await resolveWatchTitle({
     db,
@@ -702,11 +710,13 @@ export interface DismissView {
  * `dismiss` (D-15): record `not_interested` (never suggested again, dropped from Unfinished) or `not_mine`
  * (out of Ever Watched, the Taste Profile and Unfinished). NEVER calls Plex — there is no Plex parameter.
  * A repeat within 10 minutes answers like the first without a new row (so it never becomes the "last change").
+ * The actor must be the current owner (D-03): anything else throws {@link WatchNotReadyError} first.
  */
 export async function dismissTitle(input: DismissTitleInput): Promise<WatchMarkOutcome<DismissView>> {
   const now = input.now ?? new Date();
   const db = resolveDb(input.db);
   const acct = input.actor.plexAccountId;
+  await assertWatchOwner(db, acct);
   const reason: Dismissal = input.reason ?? 'not_interested';
   const resolution = await resolveWatchTitle({
     db,
@@ -773,7 +783,9 @@ interface PlannedRevert {
 /**
  * D-15's collapse on one server: unscrobble the SHOW key when `flipped` covers every leaf the show has
  * now, else each SEASON key whose every leaf is in `flipped`, else the episode keys — so an undo never
- * touches an item the mark did not flip. `leaves` null (the live read failed) ⇒ one call per flipped key.
+ * touches an item the mark did not flip. `leaves` must be the COMPLETE live listing: null (the read failed
+ * or was truncated) ⇒ one call per flipped key, and so does a listing with a leaf that names no season
+ * (its season's membership is unknown, so no show or season key can be proven exact).
  */
 export function planReverts(
   server: PlexServerSlug,
@@ -783,7 +795,7 @@ export function planReverts(
 ): PlannedRevert[] {
   const own = flips.filter((f) => f.server === server);
   const one = (f: WatchMarkFlip): PlannedRevert => ({ server, ratingKey: f.ratingKey, flips: [f] });
-  if (!leaves || leaves.length === 0) return own.map(one);
+  if (!leaves || leaves.length === 0 || leaves.some((l) => !l.parentRatingKey)) return own.map(one);
   const keys = new Set(own.map((f) => f.ratingKey));
   if (showKey && leaves.every((l) => keys.has(l.ratingKey))) {
     return [{ server, ratingKey: showKey, flips: [...own] }];
@@ -792,10 +804,10 @@ export function planReverts(
   const done = new Set<string>();
   const seasons = new Map<string, PlexItemLike[]>();
   for (const l of leaves) {
-    if (!l.parentRatingKey) continue;
-    const list = seasons.get(l.parentRatingKey) ?? [];
+    const seasonKey = l.parentRatingKey as string;
+    const list = seasons.get(seasonKey) ?? [];
     list.push(l);
-    seasons.set(l.parentRatingKey, list);
+    seasons.set(seasonKey, list);
   }
   for (const [seasonKey, items] of seasons) {
     if (items.length > 0 && items.every((l) => keys.has(l.ratingKey))) {
@@ -812,16 +824,22 @@ export function planReverts(
 }
 
 /**
- * `undo_last_change` (D-15): revert the owner's newest unreverted mark of the last 24 hours. A `watched`
- * mark unscrobbles exactly `flipped` (collapsed to show/season keys where `flipped` covers all of it) and
- * writes the Title State through; a dismissal is simply reverted (no Plex call). Plex's unscrobble clears
- * resume points (ADR-088 C-04). Nothing to undo ⇒ `{ undone: false }`.
+ * `undo_last_change` (D-15): revert the owner's newest unreverted, COMPLETED mark of the last 24 hours (a
+ * `pending` mark is in flight or crashed: its `flipped` is only the plan, so it is never picked). A
+ * `watched` mark unscrobbles exactly `flipped` (collapsed to show/season keys where `flipped` covers all of
+ * it) and writes the Title State through; a dismissal is simply reverted (no Plex call). Plex's unscrobble
+ * clears resume points (ADR-088 C-04). The mark is stamped reverted only when the unscrobbles all landed
+ * (`written`, or `none` with nothing to put back): a `failed` / `partial` undo records its result and
+ * leaves the mark live, so the next undo retries THE SAME mark (unscrobble is idempotent) instead of
+ * reaching an older one. Nothing to undo ⇒ `{ undone: false }`. The actor must be the current owner (D-03):
+ * anything else throws {@link WatchNotReadyError} first.
  */
 export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchMarkOutcome<UndoView>> {
   const now = input.now ?? new Date();
   const nowSec = Math.floor(now.getTime() / 1000);
   const db = resolveDb(input.db);
   const acct = input.actor.plexAccountId;
+  await assertWatchOwner(db, acct);
   const since = new Date(now.getTime() - UNDO_WINDOW_SECONDS * 1000);
   const [mark] = await db
     .select()
@@ -830,6 +848,7 @@ export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchM
       and(
         eq(watchMarks.plexAccountId, acct),
         isNull(watchMarks.revertedAt),
+        ne(watchMarks.plexResult, 'pending'),
         gt(watchMarks.createdAt, since),
       ),
     )
@@ -857,8 +876,13 @@ export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchM
       const client = input.plex.read[server];
       if (showKey && client) {
         try {
-          leaves = (await client.listAllLeaves(showKey)).items;
-          liveLeaves.set(server, leaves);
+          const listing = await client.listAllLeaves(showKey);
+          // A truncated listing could make a partial season (or show) look fully flipped and collapse onto
+          // leaves the mark never flipped: treat it like a failed read (one unscrobble per flipped key).
+          if (!listing.truncated) {
+            leaves = listing.items;
+            liveLeaves.set(server, leaves);
+          }
         } catch {
           leaves = null;
         }
@@ -908,10 +932,12 @@ export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchM
           at: nowSec,
         })
       : null;
+  // Only a complete revert closes the mark; a failed or partial one stays live for the retry.
+  const complete = revertResult === 'written' || revertResult === 'none';
   await inTransaction(db, async (tx) => {
     await tx
       .update(watchMarks)
-      .set({ revertedAt: now, revertResult })
+      .set(complete ? { revertedAt: now, revertResult } : { revertResult })
       .where(and(eq(watchMarks.id, mark.id), isNull(watchMarks.revertedAt)));
     if (title) await upsertWatchTitles({ db: tx, plexAccountId: acct, titles: [title], now });
   });

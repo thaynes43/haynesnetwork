@@ -64,6 +64,11 @@ export class FakePlex {
   readonly failReads = new Set<string>();
   /** Delay every read by this many ms (revalidation budget tests). */
   readDelayMs = 0;
+  /**
+   * When set, every `allLeaves` answers only its first N leaves flagged `truncated` — a listing that ran
+   * past the client's page cap (the real client's `truncated` flag).
+   */
+  truncateLeavesAt: number | null = null;
   now = 1_790_000_000;
 
   constructor(
@@ -211,6 +216,9 @@ export class FakePlex {
             const items = [...show.episodes]
               .sort((a, b) => a.season - b.season || a.episode - b.episode)
               .map((e) => this.leafItem(show, e));
+            if (this.truncateLeavesAt !== null && items.length > this.truncateLeavesAt) {
+              return { items: items.slice(0, this.truncateLeavesAt), totalSize: items.length, truncated: true };
+            }
             return { items, totalSize: items.length, truncated: false };
           }),
         findByGuid: (guid: string) =>

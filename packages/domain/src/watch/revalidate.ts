@@ -24,6 +24,7 @@ import {
   type PlexItemLike,
 } from '@hnet/watch';
 import { resolveDb } from '../db-client';
+import { assertWatchOwner } from './accounts';
 import { WatchBudgetExceeded, withDeadline, type WatchPlexReaders } from './plex';
 import { upsertWatchTitles, type WatchTitleWrite } from './titles';
 
@@ -78,7 +79,8 @@ function rowWrite(row: WatchTitleRow): Omit<WatchTitleWrite, keyof ReturnType<ty
 
 /**
  * Revalidate `rows` (D-11). Returns them with any that moved recomputed and written through; never throws
- * for a Plex problem (the snapshot answers). `budgetMs` defaults to 400.
+ * for a Plex problem (the snapshot answers). `budgetMs` defaults to 400. The account must be the current
+ * owner (D-03): anything else throws {@link WatchNotReadyError} before any read.
  */
 export async function revalidateTitles(input: {
   db?: DbClient;
@@ -89,6 +91,7 @@ export async function revalidateTitles(input: {
   now?: Date;
 }): Promise<RevalidateTitlesResult> {
   const db = resolveDb(input.db);
+  await assertWatchOwner(db, input.plexAccountId);
   const deadline = Date.now() + (input.budgetMs ?? REVALIDATE_BUDGET_MS);
   const result: RevalidateTitlesResult = { rows: [...input.rows], changed: 0, timedOut: false, failed: 0 };
   const noteFailure = (error: unknown) => {
@@ -121,7 +124,11 @@ export async function revalidateTitles(input: {
       const client = input.plex.read[probe.holder.server];
       if (!client) return null;
       try {
-        return (await withDeadline(client.listAllLeaves(probe.holder.ratingKey), deadline)).items;
+        const listing = await withDeadline(client.listAllLeaves(probe.holder.ratingKey), deadline);
+        // A truncated listing would store a partial episode map under FRESH counters, so the sync would
+        // never re-read it: keep the snapshot (a failed read).
+        if (listing.truncated) throw new Error(`allLeaves ${probe.holder.ratingKey} was truncated`);
+        return listing.items;
       } catch (error) {
         noteFailure(error);
         return null;

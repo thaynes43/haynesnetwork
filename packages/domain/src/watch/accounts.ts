@@ -3,6 +3,7 @@
 // THE owner row (D-03), so an owner change is an UPDATE — the previous owner is demoted to an untracked
 // `household` row, never deleted (watch_marks RESTRICT the delete; OPS-015 §7).
 import { users, watchAccounts, type DbClient, type WatchAccountRow } from '@hnet/db';
+import { formatNotReady } from '@hnet/watch';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { inTransaction } from '../db-client';
 
@@ -75,4 +76,33 @@ export async function upsertWatchOwner(input: {
     if (!row) throw new Error('watch owner upsert returned no row');
     return row;
   });
+}
+
+/**
+ * D-03: thrown by `markWatched`, `dismissTitle`, `undoLastChange` and `revalidateTitles` when the account
+ * they are handed is not THE current `owner` row — no owner yet, or a demoted `household` row after an
+ * owner change. Raised before any Plex call or write. Its message is the D-03 answer ("Watch history isn't
+ * ready yet."), so a caller can speak it as-is.
+ */
+export class WatchNotReadyError extends Error {
+  readonly plexAccountId: number;
+
+  constructor(plexAccountId: number) {
+    super(formatNotReady());
+    this.name = 'WatchNotReadyError';
+    this.plexAccountId = plexAccountId;
+  }
+}
+
+/**
+ * D-03: the flows act only for the current owner — marks are recorded on the account they are given while
+ * Plex is written with the owner's tokens, so any other account is refused (one primary-key SELECT).
+ */
+export async function assertWatchOwner(db: DbClient, plexAccountId: number): Promise<void> {
+  const [row] = await db
+    .select({ plexAccountId: watchAccounts.plexAccountId })
+    .from(watchAccounts)
+    .where(and(eq(watchAccounts.plexAccountId, plexAccountId), eq(watchAccounts.role, 'owner')))
+    .limit(1);
+  if (!row) throw new WatchNotReadyError(plexAccountId);
 }
