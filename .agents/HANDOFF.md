@@ -4,6 +4,34 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-23 — Watch Companion foundation (PLAN-068 S1–S3) is PR #559, awaiting the driver's merge
+
+**What #559 lands** (S4, `@hnet/watch`, already merged as #558):
+- The Dockerfile lists every workspace manifest (21 with `@hnet/watch`).
+- Migration 0077 adds the five Watch Companion tables and the `watch` run kind. `watch_marks` RESTRICT an
+  account delete (marks are the one table that can't be rebuilt, OPS-015 §7). Writers never delete a
+  `watch_accounts` row.
+- `@hnet/arr` errors no longer carry the Tautulli or TMDB key: `apikey`, `api_key`, `token` and
+  `X-Plex-Token` are redacted from every error surface.
+- New client methods:
+  - Tautulli: `getHistory` gains `userId`, `after`, `grouping` and `includeActivity`; `getMetadata`
+    returns null for a gone item.
+  - TMDB: recommendations and `search/multi`.
+  - Plex: the watch fields, `allLeaves`, `findByGuid`, the movie filters and the plex.tv watchlist.
+- `scrobble` / `unscrobble`, tested against stubs only. No Plex write happens before S5's undo test.
+- Stubs: stub Tautulli is now in the `dev:local` and e2e stack. Stub Plex holds the owner's watch data
+  and answers only to each server's own token.
+
+**Where the facts live:** PLAN-068's S3 row has the live-verified facts S5 and S6 build on: Tautulli
+`row_id`, `after`, `include_activity`, the Plex `unwatched=0` / `inProgress=1` filters, `allLeaves`, and
+the 151-title watchlist paged at 100.
+
+**Next:**
+1. The driver merges #559.
+2. S5 (domain writers + Watch Marks).
+3. S6 (the `watch` sync). It must answer DESIGN-049 **Q-06**: Tautulli's "gone" 400 also comes back
+   during a Plex outage, so how does S6 avoid a permanently null `show_guid`?
+
 ## ▶ 2026-09-23 — `activity-scan` made safe to schedule (issue #556); the CronJob waits for the release
 
 `activity-scan` (ADR-059 / PLAN-048) never had a CronJob. Scheduled as the code stood, its first run would
@@ -70,15 +98,6 @@ Dockerfile deps stage copies 9 of 20 package manifests (PLAN-068 S1).
 
 **Next:** PLAN-068 S1 onward. Build is split into a foundation PR (S1–S3), a pure-math PR (S4), then
 domain + sync + MCP (S5–S8).
-
-**Progress (2026-09-23):** S4 (`@hnet/watch`) merged as #558. The foundation PR #559 (S1–S3) is open for
-the driver's review: the Dockerfile lists every manifest (21 with `@hnet/watch`), migration 0077 (five
-tables, `watch` run kind, `watch_marks` RESTRICT an account delete), the `@hnet/arr` key redaction
-(`apikey`/`api_key`/`token`/`X-Plex-Token` gone from every error surface), the Tautulli / TMDB / Plex
-read clients, `scrobble`/`unscrobble` (stub-tested only — no Plex write before S5's undo test), and the
-stubs (stub Tautulli now in the `dev:local`/e2e stack). The live-verified facts S5–S6 build on (Tautulli
-`row_id`, `after`, `include_activity`, the Plex movie filters, `allLeaves`, the 151-title watchlist paged
-at 100) are in PLAN-068's S3 row; DESIGN-049 Q-06 (a Plex outage vs. a "gone" show) is open for S6.
 
 ## ▶ 2026-09-22 (later) — The FIFTH LL site: the Wanted page's Force Search said "Search fired" at copies LL already had
 
