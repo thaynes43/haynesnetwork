@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.97.1](https://github.com/thaynes43/haynesnetwork/compare/v0.97.0...v0.97.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **watch:** marks never write the show key; specials never take part; counters re-read after a mark or undo ([#567](https://github.com/thaynes43/haynesnetwork/issues/567)) ([18bde65](https://github.com/thaynes43/haynesnetwork/commit/18bde65c231ad9e715c3a02eb57b844ed444f8f4))
+
 ## [0.97.0](https://github.com/thaynes43/haynesnetwork/compare/v0.96.5...v0.97.0) (2026-09-23)
 
 
