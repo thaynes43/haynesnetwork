@@ -4,7 +4,7 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ 2026-09-23 — Watch Companion S7–S8 (the `/api/mcp` endpoint, `dev:local`) is PR #PR2, stacked on #563
+## ▶ 2026-09-23 — Watch Companion S7–S8 (the `/api/mcp` endpoint, `dev:local`) is PR #564, stacked on #563
 
 PLAN-068 S7 added `packages/mcp` (`@hnet/mcp`, SDK pinned 1.30.0) and the POST-only
 `apps/web/app/api/mcp/route.ts`: stateless per-request server + transport, bearer auth
