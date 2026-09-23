@@ -39,8 +39,8 @@ revalidate the handful of titles in an answer (D-11) and to apply a Watch Mark (
 | `@hnet/db` | migration `0077_watch_companion.sql` (+ `_journal.json` entry), schema file for the five tables, enum constants | CHECK constraints written by hand from `schema/enums.ts` |
 | `@hnet/watch` (**new**) | pure progress math (D-10), states, resolver scoring (D-13), taste profile and scoring (D-16..D-19), spoken formatter (D-21), read queries (SELECT only) | imports `@hnet/db` and zod only; never writes; never imports `@hnet/domain`, `@hnet/plex/write` or the MCP SDK (the `/sync` bundle flattens its dependencies) |
 | `@hnet/domain` | `watch/*` single-writers: accounts, events, titles, marks, signals; `markWatched`, `dismissTitle`, `undoLastChange`, `revalidateTitles` | the only importer of `@hnet/plex/write`; tables join `no-direct-state-writes` |
-| `@hnet/plex` | read: the optional watch fields added to `sectionItemSchema` (`viewCount`, `viewedLeafCount`, `lastViewedAt`, `viewOffset`, `Genre[]`, `contentRating`, `parentIndex`, `parentRatingKey`, `grandparentRatingKey`, `grandparentTitle`), `listAllLeaves(ratingKey)`, filtered section pages, `getWatchlist()` (discover provider); write: `scrobble(ratingKey)`, `unscrobble(ratingKey)` on `PlexWriteClient` | fields are optional, so `plex-match` and every existing reader are unchanged; `@hnet/plex/write` stays import-confined (ADR-017 C-10, `arr-write-import-guard.test.ts`) |
-| `@hnet/arr` | Tautulli `getHistory` gains `userId`, `after`, `grouping`, `orderColumn`/`orderDir`, and the history row schema gains the row id, `guid`, `media_index`, `parent_media_index`, `parent_rating_key`, `percent_complete`, `year`, `full_title`; `getMetadata` maps both HTTP 400 and `{}` to "gone"; TMDB `getMovieRecommendations`/`getTvRecommendations`/`searchMulti`; **error messages redact `apikey`/`api_key` query values** (today every `ArrHttpError`/`ArrTimeoutError`/`ArrParseError` embeds the full URL, and Tautulli carries its key in the query) | read-only clients |
+| `@hnet/plex` | read: the optional watch fields added to `sectionItemSchema` (`viewCount`, `viewedLeafCount`, `lastViewedAt`, `viewOffset`, `Genre[]`, `contentRating`, `parentIndex`, `parentRatingKey`, `grandparentRatingKey`, `grandparentTitle`, `grandparentGuid`), `listAllLeaves(ratingKey)` (paged, with a `truncated` flag), filtered section pages (`type`, `unwatched`, `inProgress`), `findByGuid(guid)` (`/library/all?guid=`), `getWatchlist()` (discover provider; base URL `plexDiscoverBaseUrl`, default `https://discover.provider.plex.tv`, env override `PLEX_DISCOVER_URL`); write: `scrobble(ratingKey)`, `unscrobble(ratingKey)` on `PlexWriteClient` | fields are optional, so `plex-match` and every existing reader are unchanged; `@hnet/plex/write` stays import-confined (ADR-017 C-10, `arr-write-import-guard.test.ts`). The two writes are GETs, issued through `PlexHttp.requestIdempotentGet` and **retried like a read** (3 attempts on timeout / network / 502-504): both are idempotent on watched state, so a retry after an ambiguous timeout cannot flip anything else, while giving up would record a failed mark for a write that probably landed |
+| `@hnet/arr` | Tautulli `getHistory` gains `userId`, `after`, `grouping`, `orderColumn`/`orderDir`, and the history row schema gains the row id (`row_id`), `guid`, `media_index`, `parent_media_index`, `parent_rating_key`, `percent_complete`, `year`, `full_title`, `started`; `getMetadata` maps both HTTP 400 and `{}` to "gone" (`null`); TMDB `getMovieRecommendations`/`getTvRecommendations`/`searchMulti`; **error messages redact credential query values** — `apikey`, `api_key`, `token` and `X-Plex-Token`, case-insensitively, in every ArrError's `message`, `url` and `bodySnippet` (every `ArrHttpError`/`ArrTimeoutError`/`ArrParseError` used to embed the full URL, and Tautulli and TMDB v3 carry their keys in the query) | read-only clients |
 | `@hnet/sync` | `watch` mode (D-09): `SYNC_RUN_KINDS` gains `watch` (migration 0077 re-adds the `sync_runs_run_kind_enum` CHECK), an early-return orchestrator block like `plex-match`, `sync.ts` USAGE and both `parseArgs` lists | calls domain writers only; depends on `@hnet/watch` as a `dependency` (not dev) so `deploy --prod` keeps it |
 | `@hnet/mcp` (**new**) | request handler, consumer auth, tool registry, budgets, logging | depends on `@modelcontextprotocol/sdk` 1.30.x (zod `^3.25 \|\| ^4` peer, so zod 4.4.3 is fine), `@hnet/watch`, `@hnet/domain`; its tests use embedded Postgres and the SDK `Client` |
 | `apps/web` | `app/api/mcp/route.ts` (a thin adapter) and a `lib/__tests__` route test that mocks `@hnet/mcp` (web tests never touch a database) | `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`; declares `@hnet/mcp` as a workspace dependency |
@@ -255,9 +255,22 @@ Each run replaces a source's rows for the account in one transaction.
 
 All five tables join `packages/domain/__tests__/no-direct-state-writes.test.ts` (snake_case names in
 the SQL families, camelCase schema identifiers in the Drizzle families; `watch_reco_signals` and
-`watch_titles` also in DELETE). `users.id` is text (Better Auth); `media_items.id` per its schema. The
-same migration drops and re-adds `sync_runs_run_kind_enum` with `watch` added, and the journal entry
-is idx 76 with a `when` above 1783903301000 (the journal test requires strictly increasing values).
+`watch_titles` also in DELETE). `users.id` and `media_items.id` are **uuid** (this design first said
+`users.id` was text; the schema has always been uuid — corrected in PLAN-068 S2), so `app_user_id`,
+`actor_user_id` and `media_item_id` are uuid. The same migration drops and re-adds
+`sync_runs_run_kind_enum` with `watch` added, and the journal entry is idx 76 with a `when` above
+1783903301000 (the journal test requires strictly increasing values); it landed as `when`
+1783903302000.
+
+As built (migration 0077, PLAN-068 S2): every enumerated column is text + CHECK from an `enums.ts` const
+array, including the nullable ones this table leaves implicit — `watch_titles.show_status`,
+`watch_titles.next_server` and `watch_marks.revert_result` admit NULL or a listed value, and
+`watch_marks.kind` / `watch_reco_signals.kind` are `show`|`movie`. `watch_events.instance` and
+`next_server` reuse `PLEX_SERVER_SLUGS`. `watch_marks.consumer` is deliberately unconstrained (a new
+consumer is a config change, D-03). Rows owned by an account `ON DELETE CASCADE` from `watch_accounts`;
+the user FKs and `media_item_id` are `ON DELETE SET NULL`. `resolved_at`, `refreshed_at` and
+`fetched_at` default to `now()`. Until the `watch` mode exists (S6), `runSync` refuses `--mode=watch`
+rather than fall through to the per-source *arr loop.
 
 ### D-08 — Title identity (`title_key`)
 
@@ -279,8 +292,11 @@ the others' results (per-source degradation, the DESIGN-008 posture):
 2. **Events.** For each configured Tautulli instance: window start = the newest stored `started_at`
    for (instance, owner) minus 3 days, or no window on the first run. Page `get_history`
    (`user_id`, `grouping=0`, `length=500`, the `after` date filter, newest first) and
-   insert-or-ignore on (instance, row id). The exact row-id field (`row_id`, `id` or `reference_id`
-   under `grouping=0`) is confirmed against a live Tautulli before the schema is written. Movies and episodes only. For a new episode whose show guid is unknown, look it
+   insert-or-ignore on (instance, row id). The row id is Tautulli's **`row_id`** (verified live
+   2026-09-23 on all three instances: under `grouping=0` it is unique per row and `id` mirrors it, while
+   `reference_id` names the first row of a group and repeats — HaynesTower row 42195 has reference
+   41839). `after` filters by day (`after=2099-01-01` returns nothing); movies send `""` for the
+   episode indices. Movies and episodes only. For a new episode whose show guid is unknown, look it
    up once per (instance, grandparent key): first in stored events, then `get_metadata`; a 400 means
    the show is gone (null guid, fall back to the show title). Page cap 200 per instance per run.
 3. **Plex progress** on each server with movie or show sections (HaynesOps and HaynesTower today;
@@ -290,14 +306,21 @@ the others' results (per-source degradation, the DESIGN-008 posture):
    - re-read `allLeaves` only for shows whose counts differ from `plex_counts[server]`, or that have
      `viewedLeafCount > 0` and no stored episode map for that server;
    - movies: the watched listing and the in-progress listing of each movie section (Plex filters
-     `unwatched=0` and `inProgress=1`, both verified against a live server in PLAN-068 S3; if either is
-     unsupported, page the full section listing and filter client-side).
+     `unwatched=0` and `inProgress=1`, both verified live in PLAN-068 S3: on HaynesOps' 5,273 movies
+     `unwatched=0` returns the 310 with `viewCount ≥ 1` and `unwatched=1` the other 4,963; `inProgress=1`
+     returns the items with a `viewOffset` — 97 on HaynesTower, none on HaynesOps). The filters are for
+     movies only: on a show section `unwatched=0` means *fully* watched shows, so show progress always
+     comes from the plain listing above.
 4. **Assemble** Title States with the pure D-10 function: merge across servers by `title_key`, attach
    event facts, ledger links (`media_items` by guid or external id), genres, `show_status`.
 5. **Write** through the domain writer: upsert changed rows only; never delete. A title gone from
    Plex keeps its event facts with `on_plex = []`.
 6. **Watchlist**: the owner's plex.tv watchlist (discover provider, owner token), replacing
-   `source = watchlist`.
+   `source = watchlist`. Verified live 2026-09-23: 151 titles; the provider rejects a page over 100
+   (HTTP 400), so it is read in pages of 100; the default order is `watchlistedAt:desc` (the client asks
+   for it explicitly), and list items carry no watchlist timestamp (`addedAt` is the catalog date), so
+   `rank` is the order and `added_at` stays null (the per-item `userState` endpoint has
+   `watchlistedAt`; one call per title is not worth it in v1).
 7. **TMDB seeds** when the stored seeds are older than 20 hours (D-17).
 
 Report: `{ owner, events: {instance: inserted}, shows: {listed, reread}, movies, titles: {upserted},
@@ -548,11 +571,16 @@ lists the final signatures; the tests pin each row.
   (no session id), `tools/list` ≤ 3,072 bytes, each tool's happy path and budget, 401/503/405,
   scope checks, strict inputs.
 - `apps/web`: the route adapter test (mocks `@hnet/mcp`, like the webhook route test).
-- `@hnet/arr`: an error-message test proving `apikey`/`api_key` values never appear in `ArrHttpError`,
+- `@hnet/arr`: an error-message test proving `apikey`/`api_key`/`token`/`X-Plex-Token` values never appear in `ArrHttpError`,
   `ArrTimeoutError` or `ArrParseError` messages.
 - Stubs: `apps/web/e2e/support/stub-plex.ts` gains the watch fields, `allLeaves`, `/:/scrobble` and
   `/:/unscrobble` (recorded in `calls`); `stub-tautulli.ts` gains `user_id`, row ids, episode indices and
-  `percent_complete`, and is wired into the stack env.
+  `percent_complete`, and is wired into the stack env. As built (PLAN-068 S3): the stub Plex keeps the
+  owner's watch state in an in-memory map every read overlays (a scrobble round-trips), also serves
+  `/library/all?guid=`, the section filters and the discover watchlist (`PLEX_DISCOVER_URL`), and adds
+  its dataset only to the seeded sections; the stub Tautulli serves all three instances (told apart by
+  key) and deliberately does not serve `get_libraries_table`, so the Home play scoreboard stays hidden
+  in the stack as before.
 - Live (PLAN-068): the HA bench and the three US-13 questions (AC-24).
 
 ## Open questions
