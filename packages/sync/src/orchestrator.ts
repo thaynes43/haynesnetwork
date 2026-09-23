@@ -486,6 +486,14 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   const logger = options.logger ?? noopLogger;
   const db = options.db ?? (defaultDb as DbClient);
 
+  // ADR-088 / DESIGN-049 D-09 (PLAN-068) — 'watch' joined SYNC_RUN_KINDS with migration 0077 (PLAN-068 S2) so
+  // the const and the sync_runs.run_kind CHECK stay in parity; the mode itself is built in PLAN-068 S6. Until
+  // then it must be REFUSED here: falling through to the per-source loop below would run an incremental *arr
+  // sync (and write sync_runs rows) labelled 'watch'.
+  if (options.mode === 'watch') {
+    throw new Error("sync mode 'watch' is not implemented yet (PLAN-068 S6)");
+  }
+
   // ADR-025 / DESIGN-011 — the batch-expiry sweep is NOT a per-source loop; it drives Maintainerr
   // to delete the survivors of every expired `leaving_soon` batch (each item re-checked fresh:
   // SAFE audit + live exclusions + guardian). Its audit trail is the ledger + batch rows (never a

@@ -6,5 +6,7 @@
 //   @hnet/arr/read   — read clients (sync, ledger.children, restore.diff)
 //   @hnet/arr/write  — write clients (ONLY packages/domain fix/restore writers)
 export * from './errors';
+// DESIGN-049 D-01 — the credential redactors the errors use (reusable by any caller that logs a URL).
+export * from './redact';
 export * from './config';
 export * from './schemas/index';

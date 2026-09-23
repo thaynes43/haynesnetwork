@@ -1,9 +1,12 @@
 // DESIGN-005 D-18 — shared fetch wrapper: X-Api-Key header, per-request timeout,
-// retry(2) for idempotent GETs only, typed errors (errors.ts). The API key is sent
-// exclusively as a header so URLs (and therefore error messages/logs) stay key-free.
+// retry(2) for idempotent GETs only, typed errors (errors.ts). The *arr key is sent as a header,
+// but two callers must put theirs in the QUERY (Tautulli `apikey`, TMDB v3 `api_key`), so a request
+// URL here can carry a credential: the typed errors redact it at construction (DESIGN-049 D-01) —
+// never log or rethrow a raw URL from this module.
 import type { ZodType } from 'zod';
 import { ZodError } from 'zod';
 import { ArrHttpError, ArrParseError, ArrTimeoutError } from './errors';
+import { redactSecrets } from './redact';
 
 export type QueryParams = Record<string, string | number | boolean | undefined>;
 
@@ -84,7 +87,10 @@ export class ArrHttp {
       clearTimeout(timer);
     }
     if (!response.ok) {
-      const snippet = (await response.text().catch(() => '')).slice(0, 300);
+      // Redact BEFORE cutting the snippet: a limit that lands inside a credential value would otherwise
+      // leave a prefix of it the patterns can no longer recognise.
+      const body = await response.text().catch(() => '');
+      const snippet = redactSecrets(body.slice(0, 4000)).slice(0, 300);
       throw new ArrHttpError(response.status, method, url, snippet || undefined);
     }
     return response;

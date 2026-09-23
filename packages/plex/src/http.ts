@@ -203,4 +203,23 @@ export class PlexHttp {
     const response = await this.request(method, base, options);
     await response.text().catch(() => ''); // drain — body may be empty or non-JSON
   }
+
+  /**
+   * DESIGN-049 D-14 (PLAN-068) — a mutation Plex exposes as a GET: `/:/scrobble` and `/:/unscrobble` (the
+   * watched-state writes). `requestVoid` deliberately admits only the mutating verbs, so these get their own
+   * door, used ONLY by the confined write client — a GET-shaped write must never be issued by a read path.
+   *
+   * RETRY CHOICE: they keep the GET retry policy (up to 3 attempts on a timeout, a network failure or a
+   * 502/503/504). Both are idempotent on watched STATE: scrobbling a watched item leaves it watched (Plex may
+   * bump its play count and lastViewedAt — nothing downstream reads more than `viewCount > 0`), unscrobbling
+   * an unwatched item leaves it unwatched. So a retry after an ambiguous timeout can never flip an item the
+   * caller did not ask about, whereas giving up on the first timeout would record a failed Watch Mark for a
+   * write that very likely landed. TIME BUDGET: `timeoutMs` bounds EACH attempt, so the worst case is
+   * 3 × timeoutMs + 2 × retryDelayMs — a caller with a total budget sizes the client for it (D-14's 3 s mark
+   * budget needs a per-attempt timeout of about 0.8 s or less).
+   */
+  async requestIdempotentGet(base: string, options: PlexRequestOptions = {}): Promise<void> {
+    const response = await this.request('GET', base, options);
+    await response.text().catch(() => ''); // drain — PMS answers an empty 200
+  }
 }

@@ -153,3 +153,13 @@ export * from './role-media-action-budgets';
 // direct add/edit needs no grant, the over-cap `collection_override` ticket carries the definition payload
 // (see tickets). Libretto's recipes + produced collections are NOT mirrored (its API is the read model).
 export * from './role-collection-action-grants';
+// ADR-088 / ADR-089 / DESIGN-049 D-07 (PLAN-068 — Watch Companion, migration 0077) — the owner's watch-history
+// read-model: the tracked Plex accounts (one `owner` row — the MCP principal), the append-only Watch Event log
+// (every Tautulli history row, never capped), the Title State snapshot (Plex progress united across servers),
+// the Watch Marks (explicit, reversible, the only path that writes Plex), and the recommendation input cache.
+// All guarded single-writer tables (@hnet/domain watch writers).
+export * from './watch-accounts';
+export * from './watch-events';
+export * from './watch-titles';
+export * from './watch-marks';
+export * from './watch-reco-signals';

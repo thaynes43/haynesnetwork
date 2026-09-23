@@ -1,0 +1,64 @@
+{
+  "page": 1,
+  "total_pages": 28,
+  "total_results": 541,
+  "results": [
+    {
+      "adult": false,
+      "backdrop_path": "/ihOJcrorpDQtHTzIOrobbOhpJsj.jpg",
+      "id": 604,
+      "title": "The Matrix Reloaded",
+      "original_title": "The Matrix Reloaded",
+      "overview": "The Resistance builds in numbers as humans are freed from the Matrix.",
+      "poster_path": "/8xEVAe84zlL9rkfYT6dZXero4KK.jpg",
+      "media_type": "movie",
+      "original_language": "en",
+      "genre_ids": [
+        12,
+        28,
+        53,
+        878
+      ],
+      "popularity": 25.612,
+      "release_date": "2003-05-15",
+      "softcore": false,
+      "video": false,
+      "vote_average": 7.085,
+      "vote_count": 12326
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/wvlIoof1FnKPLv9jAYanuP31V0C.jpg",
+      "id": 87101,
+      "title": "Terminator Genisys",
+      "original_title": "Terminator Genisys",
+      "overview": "The year is 2029.",
+      "poster_path": "/oZRVDpNtmHk8M1VYy1aeOWUXgbC.jpg",
+      "media_type": "movie",
+      "original_language": "en",
+      "genre_ids": [
+        878,
+        28,
+        53
+      ],
+      "popularity": 28.6308,
+      "release_date": "2015-06-23",
+      "softcore": false,
+      "video": false,
+      "vote_average": 5.96,
+      "vote_count": 9182
+    },
+    {
+      "adult": false,
+      "id": 1200001,
+      "title": "An Unreleased Stub",
+      "media_type": "movie",
+      "genre_ids": [],
+      "popularity": 0.1,
+      "release_date": "",
+      "vote_average": 0,
+      "vote_count": 0,
+      "poster_path": null
+    }
+  ]
+}

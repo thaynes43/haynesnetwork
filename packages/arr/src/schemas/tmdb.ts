@@ -32,3 +32,44 @@ export const tmdbFindSchema = z.object({
   movie_results: z.array(z.object({ id: z.number().int() })).nullish(),
 });
 export type TmdbFind = z.infer<typeof tmdbFindSchema>;
+
+/**
+ * ADR-089 / DESIGN-049 D-13 + D-17 (PLAN-068) — one result of a TMDB v3 LIST endpoint:
+ * `/3/{movie|tv}/{id}/recommendations` (the daily recommendation seeds) and `/3/search/multi` (the
+ * resolver's last resort for a title the owner never had). Shape verified live 2026-09-23. Movies carry
+ * `title` / `release_date`, shows `name` / `first_air_date`; search/multi also returns PEOPLE
+ * (`media_type: 'person'`, name only) — callers filter by `media_type`. `id` is the only required field
+ * (a result without one is useless); everything else is nullish because TMDB omits fields freely and
+ * sends `""` for an unknown date.
+ */
+export const tmdbListResultSchema = z.object({
+  id: z.number().int(),
+  media_type: z.string().nullish(),
+  title: z.string().nullish(),
+  original_title: z.string().nullish(),
+  name: z.string().nullish(),
+  original_name: z.string().nullish(),
+  release_date: z.string().nullish(),
+  first_air_date: z.string().nullish(),
+  genre_ids: z.array(z.number().int()).nullish(),
+  vote_average: z.number().nullish(),
+  vote_count: z.number().int().nullish(),
+  popularity: z.number().nullish(),
+  original_language: z.string().nullish(),
+  origin_country: z.array(z.string()).nullish(),
+  poster_path: z.string().nullish(),
+  adult: z.boolean().nullish(),
+});
+export type TmdbListResult = z.infer<typeof tmdbListResultSchema>;
+
+/** A page of a TMDB list endpoint; `results` is normalized to an array (absent ⇒ `[]`). */
+export const tmdbPagedResultsSchema = z.object({
+  page: z.number().int().nullish(),
+  results: z
+    .array(tmdbListResultSchema)
+    .nullish()
+    .transform((results) => results ?? []),
+  total_pages: z.number().int().nullish(),
+  total_results: z.number().int().nullish(),
+});
+export type TmdbPagedResults = z.infer<typeof tmdbPagedResultsSchema>;

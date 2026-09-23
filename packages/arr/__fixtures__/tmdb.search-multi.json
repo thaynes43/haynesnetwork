@@ -1,0 +1,70 @@
+{
+  "page": 1,
+  "total_pages": 65,
+  "total_results": 1285,
+  "results": [
+    {
+      "adult": false,
+      "backdrop_path": "/zRKQW58MBEY078AxkHxEJzUskCl.jpg",
+      "id": 438631,
+      "title": "Dune",
+      "original_title": "Dune",
+      "overview": "Paul Atreides, a brilliant and gifted young man.",
+      "poster_path": "/v1tRXZ4JtD2Iv6fjkPvT4GiwslV.jpg",
+      "media_type": "movie",
+      "original_language": "en",
+      "genre_ids": [
+        878,
+        12
+      ],
+      "popularity": 42.6137,
+      "release_date": "2021-09-15",
+      "softcore": false,
+      "video": false,
+      "vote_average": 7.784,
+      "vote_count": 15571
+    },
+    {
+      "adult": false,
+      "backdrop_path": "/lBoHzOgft2QfpjkVVvZCqeM4ttT.jpg",
+      "id": 90228,
+      "name": "Dune: Prophecy",
+      "original_name": "Dune: Prophecy",
+      "overview": "Ten thousand years before the ascension of Paul Atreides.",
+      "poster_path": "/oWVohNsxkxA3u92EzRo8fTuXIS0.jpg",
+      "media_type": "tv",
+      "original_language": "en",
+      "genre_ids": [
+        10765,
+        18,
+        10759
+      ],
+      "popularity": 26.6877,
+      "first_air_date": "2024-11-17",
+      "softcore": false,
+      "vote_average": 7.202,
+      "vote_count": 650,
+      "origin_country": [
+        "US"
+      ]
+    },
+    {
+      "adult": false,
+      "id": 3084139,
+      "name": "Aggy Dune",
+      "original_name": "Aggy Dune",
+      "media_type": "person",
+      "popularity": 0.4237,
+      "gender": 2,
+      "known_for_department": "Acting",
+      "profile_path": null,
+      "known_for": [
+        {
+          "id": 1,
+          "title": "Known For Stub",
+          "media_type": "movie"
+        }
+      ]
+    }
+  ]
+}

@@ -3,8 +3,9 @@
 // share orchestrator's read-merge-write base (the plex.tv friend list + a user's current
 // SharedServer). Nothing here mutates a Plex account; the write surface lives in
 // `@hnet/plex/write` and is import-guarded to packages/domain.
-import { PLEX_TV_BASE_URL } from './config';
-import { PlexHttp } from './http';
+import type { ZodType } from 'zod';
+import { PLEX_DISCOVER_BASE_URL, PLEX_TV_BASE_URL } from './config';
+import { PlexHttp, type QueryParams } from './http';
 import { childrenNamed, parseXml, type XmlElement } from './xml';
 import { PlexParseError } from './errors';
 import {
@@ -17,6 +18,7 @@ import {
   plexServerSectionSchema,
   sectionContentsSchema,
   sharedServerSchema,
+  watchlistContainerSchema,
   type PlexAccount,
   type PlexCollection,
   type PlexFriend,
@@ -36,6 +38,8 @@ export interface PlexClientOptions {
   machineIdentifier: string;
   /** plex.tv host for the sharing API. Defaults to PLEX_TV_BASE_URL. */
   plexTvBaseUrl?: string;
+  /** plex.tv discover-provider host for the watchlist. Defaults to PLEX_DISCOVER_BASE_URL. */
+  plexDiscoverBaseUrl?: string;
   clientIdentifier?: string;
   product?: string;
   timeoutMs?: number;
@@ -50,6 +54,33 @@ const xmlBool = (v: string | undefined): boolean => v === '1' || v === 'true';
 export const COLLECTIONS_PAGE_SIZE = 200;
 /** … under a safety cap so a bad totalSize can never loop forever (the plex-match MAX_PAGES idiom). */
 export const MAX_COLLECTION_PAGES = 50;
+
+/** DESIGN-049 D-09 — a show's `allLeaves` read pages in this container size … */
+export const ALL_LEAVES_PAGE_SIZE = 500;
+/** … under a safety cap (20 × 500 = 10,000 episodes; the estate's longest show is ~1,000). */
+export const MAX_ALL_LEAVES_PAGES = 20;
+/**
+ * DESIGN-049 D-09 step 6 — the discover provider REJECTS a container over 100 (HTTP 400; verified live
+ * 2026-09-23: 100 → 100 items, 101 → 400), so the watchlist pages at exactly this size …
+ */
+export const WATCHLIST_PAGE_SIZE = 100;
+/** … under a safety cap (2,000 titles). */
+export const MAX_WATCHLIST_PAGES = 20;
+
+/**
+ * A fully paged Plex listing plus its completeness flag. `truncated` = the read ended WITHOUT proof of
+ * completion (the page cap, or a page that contradicted the server's own totalSize): the items are a
+ * PARTIAL view — a caller must not treat an absent item as absent from Plex.
+ */
+export interface PlexPagedListing<T> {
+  items: T[];
+  /** The server's own total, when it sent one. */
+  totalSize: number | null;
+  truncated: boolean;
+}
+
+/** The `MediaContainer` subset every paged metadata listing shares. */
+type PagedContainer = { MediaContainer: { totalSize?: number; Metadata: PlexSectionItem[] } };
 
 /** ADR-064 — a section's paged /collections listing plus its completeness flag. */
 export interface PlexCollectionsListing {
@@ -70,6 +101,7 @@ export class PlexReadClient {
   protected readonly http: PlexHttp;
   protected readonly baseUrl: string;
   protected readonly plexTvBaseUrl: string;
+  protected readonly plexDiscoverBaseUrl: string;
   readonly machineIdentifier: string;
   /** Cache for `getOwnerAccount` — the owner is stable for the client's lifetime. */
   private ownerAccount?: PlexAccount;
@@ -78,7 +110,48 @@ export class PlexReadClient {
     this.http = new PlexHttp(options);
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.plexTvBaseUrl = (options.plexTvBaseUrl ?? PLEX_TV_BASE_URL).replace(/\/+$/, '');
+    this.plexDiscoverBaseUrl = (options.plexDiscoverBaseUrl ?? PLEX_DISCOVER_BASE_URL).replace(/\/+$/, '');
     this.machineIdentifier = options.machineIdentifier;
+  }
+
+  /**
+   * Page a container-bounded listing to completion with the X-Plex-Container-Start/-Size loop, under a
+   * page cap. Termination follows listCollections exactly: with `totalSize` on the wire the loop ends at
+   * `start >= totalSize`; without it only an empty or short page ends it; anything else (the cap, or an
+   * empty page that contradicts totalSize) returns `truncated: true`. The returned-page `size` is never
+   * mistaken for the grand total.
+   */
+  private async readAllPages(
+    url: string,
+    query: QueryParams,
+    pageSize: number,
+    maxPages: number,
+    schema: ZodType<PagedContainer>,
+  ): Promise<PlexPagedListing<PlexSectionItem>> {
+    const items: PlexSectionItem[] = [];
+    let start = 0;
+    let totalSize: number | null = null;
+    let truncated = true; // proven complete only by a terminating condition below
+    for (let page = 0; page < maxPages; page += 1) {
+      const body = await this.http.requestJson('GET', url, schema, {
+        query: { ...query, 'X-Plex-Container-Start': start, 'X-Plex-Container-Size': pageSize },
+      });
+      const mc = body.MediaContainer;
+      items.push(...mc.Metadata);
+      start += mc.Metadata.length;
+      totalSize = mc.totalSize ?? null;
+      if (totalSize !== null) {
+        if (start >= totalSize) {
+          truncated = false;
+          break;
+        }
+        if (mc.Metadata.length === 0) break; // under-delivered against its own totalSize — PARTIAL
+      } else if (mc.Metadata.length < pageSize) {
+        truncated = false; // no totalSize: an empty/short page is the only honest completion signal
+        break;
+      }
+    }
+    return { items, totalSize, truncated };
   }
 
   // ---- PMS reads (registry refresh) ----
@@ -136,7 +209,28 @@ export class PlexReadClient {
    */
   async listSectionContentsPage(
     sectionKey: string,
-    opts: { start: number; size: number },
+    opts: {
+      start: number;
+      size: number;
+      /**
+       * DESIGN-049 D-09 — the Plex metadata `type` to list (1 movie, 2 show, 3 season, 4 episode). Omitted ⇒
+       * the section's own top-level type.
+       */
+      type?: number;
+      /**
+       * DESIGN-049 D-09 — `true` ⇒ `unwatched=1` (unwatched only); `false` ⇒ `unwatched=0` (WATCHED only).
+       * Verified live 2026-09-23 on a 5,273-movie section: unwatched=0 → 310 + unwatched=1 → 4,963 = the
+       * unfiltered total, and every unwatched=0 item has viewCount ≥ 1 (a full scan agreed: 310). On a SHOW
+       * section `unwatched=0` means FULLY watched shows only — read show progress from the plain listing.
+       */
+      unwatched?: boolean;
+      /**
+       * DESIGN-049 D-09 — `true` ⇒ `inProgress=1`: items with a resume point (viewOffset > 0). Verified live
+       * 2026-09-23 (HaynesTower movies: 97, every one with a viewOffset; HaynesOps: 0, and a full scan found no
+       * viewOffset either). `false`/omitted ⇒ no filter.
+       */
+      inProgress?: boolean;
+    },
   ): Promise<{ items: PlexSectionItem[]; totalSize: number | null }> {
     const size = Math.min(Math.max(opts.size, 1), 1000);
     const start = Math.max(opts.start, 0);
@@ -149,6 +243,9 @@ export class PlexReadClient {
           'X-Plex-Container-Start': start,
           'X-Plex-Container-Size': size,
           includeGuids: 1,
+          type: opts.type,
+          unwatched: opts.unwatched === undefined ? undefined : opts.unwatched ? 1 : 0,
+          inProgress: opts.inProgress ? 1 : undefined,
         },
       },
     );
@@ -272,6 +369,67 @@ export class PlexReadClient {
     );
     const item = body.MediaContainer.Metadata[0];
     return item ? item.Label.map((l) => l.tag) : [];
+  }
+
+  /**
+   * ADR-088 / DESIGN-049 D-09/D-11 (PLAN-068) — `GET /library/metadata/{ratingKey}/allLeaves`: EVERY episode
+   * of a show (specials included — season 0 — callers exclude them), paged to completion, each with its
+   * `index`, `parentIndex`, and the token account's `viewCount` / `lastViewedAt` / `viewOffset` when it has
+   * one (verified live 2026-09-23: a 106-episode show → 106 leaves, and the leaves with viewCount > 0 matched
+   * the show's viewedLeafCount, 28 = 28). Read-only; token in the header.
+   */
+  async listAllLeaves(
+    ratingKey: string,
+    opts: { pageSize?: number; maxPages?: number } = {},
+  ): Promise<PlexPagedListing<PlexSectionItem>> {
+    const pageSize = Math.min(Math.max(opts.pageSize ?? ALL_LEAVES_PAGE_SIZE, 1), 1000);
+    return this.readAllPages(
+      `${this.baseUrl}/library/metadata/${encodeURIComponent(ratingKey)}/allLeaves`,
+      {},
+      pageSize,
+      opts.maxPages ?? MAX_ALL_LEAVES_PAGES,
+      metadataContainerSchema,
+    );
+  }
+
+  /**
+   * ADR-088 / DESIGN-049 D-14 step 2 (PLAN-068) — `GET /library/all?guid=<plex guid>`: every item on THIS
+   * server carrying that Plex guid (`plex://show/…`, `plex://movie/…`), across all sections — the live "does
+   * this server hold it" lookup when neither the snapshot nor the ledger knows. Verified live 2026-09-23 (one
+   * hit, the same ratingKey the section listing carries). A blank guid answers [] without a request.
+   */
+  async findByGuid(guid: string): Promise<PlexSectionItem[]> {
+    const needle = guid.trim();
+    if (!needle) return [];
+    const body = await this.http.requestJson(
+      'GET',
+      `${this.baseUrl}/library/all`,
+      metadataContainerSchema,
+      { query: { guid: needle, includeGuids: 1 } },
+    );
+    return body.MediaContainer.Metadata;
+  }
+
+  // ---- plex.tv discover provider (the watchlist) ----
+
+  /**
+   * ADR-089 / DESIGN-049 D-09 step 6 (PLAN-068) — the TOKEN ACCOUNT's plex.tv watchlist (use an owner
+   * token — every server token here is the owner's): `GET {discover}/library/sections/watchlist/all` with
+   * `includeGuids=1`, newest-watchlisted first (`sort=watchlistedAt:desc`, also the provider's default),
+   * paged at WATCHLIST_PAGE_SIZE (the provider rejects larger containers). Verified live 2026-09-23: 151
+   * titles in two pages. Items carry no watchlist timestamp — position is the order. Read-only.
+   */
+  async getWatchlist(
+    opts: { pageSize?: number; maxPages?: number } = {},
+  ): Promise<PlexPagedListing<PlexSectionItem>> {
+    const pageSize = Math.min(Math.max(opts.pageSize ?? WATCHLIST_PAGE_SIZE, 1), WATCHLIST_PAGE_SIZE);
+    return this.readAllPages(
+      `${this.plexDiscoverBaseUrl}/library/sections/watchlist/all`,
+      { includeGuids: 1, sort: 'watchlistedAt:desc' },
+      pageSize,
+      opts.maxPages ?? MAX_WATCHLIST_PAGES,
+      watchlistContainerSchema,
+    );
   }
 
   // ---- plex.tv account read (owner identity) ----

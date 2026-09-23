@@ -18,6 +18,20 @@ export const tautulliEnvelopeSchema = <T extends z.ZodType>(data: T) =>
 const ratingKey = z.union([z.number(), z.string()]).nullish();
 
 /**
+ * A numeric history field Tautulli serializes loosely: a number when present, but `""` when absent
+ * (verified live 2026-09-23 — a MOVIE row carries `media_index: ""`, `parent_media_index: ""`). Normalized
+ * to `number | null` so callers never compare against the empty string.
+ */
+const looseNumber = z
+  .union([z.number(), z.string()])
+  .nullish()
+  .transform((value): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const n = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(n) ? n : null;
+  });
+
+/**
  * `cmd=get_history` row. The GUID that identifies the title is NOT on the history row
  * (tmdb_id/imdb_id are null there); it is resolved via get_metadata by rating_key. For
  * episodes the SERIES is `grandparent_rating_key`. `date`/`stopped` are unix seconds.
@@ -37,6 +51,26 @@ export const tautulliHistoryRowSchema = z.object({
   user_id: z.union([z.number(), z.string()]).nullish(),
   title: z.string().nullish(),
   grandparent_title: z.string().nullish(),
+  // ADR-088 / DESIGN-049 D-07/D-09 (PLAN-068 — the Watch Event log). Verified live 2026-09-23 against all
+  // three instances with `grouping=0`:
+  //   • `row_id` is the STABLE PER-ROW id (the session_history row; `id` mirrors it). `reference_id` is NOT —
+  //     it names the first row of a group and repeats across rows (HaynesTower row 42195 → reference 41839),
+  //     so it is deliberately not consumed. The Watch Event identity is (instance, row_id). A CURRENTLY
+  //     PLAYING session (`include_activity`) is not in session_history yet and carries no row_id (null
+  //     here) — the ingest skips it.
+  //   • `guid` is the Plex item guid (`plex://episode/…`, `plex://movie/…`), identical across servers; an
+  //     unmatched item carries its local agent guid (`com.plexapp.agents.none://…`).
+  //   • `media_index` / `parent_media_index` are the episode / season numbers (`""` on movies → null).
+  //   • `started` is unix seconds (= `date` under grouping=0); `percent_complete` 0–100; `year` a number.
+  row_id: looseNumber,
+  guid: z.string().nullish(),
+  media_index: looseNumber,
+  parent_media_index: looseNumber,
+  parent_rating_key: ratingKey,
+  percent_complete: looseNumber,
+  year: looseNumber,
+  full_title: z.string().nullish(),
+  started: z.number().nullish(),
 });
 export type TautulliHistoryRow = z.infer<typeof tautulliHistoryRowSchema>;
 
@@ -70,7 +104,10 @@ export type TautulliLibrariesTableData = z.infer<typeof tautulliLibrariesTableDa
 /**
  * `cmd=get_metadata` payload (subset). `guids` carries the external ids as scheme URIs
  * (`imdb://tt…`, `tmdb://…`, `tvdb://…`) — the join key to media_items. `last_viewed_at`
- * is unix seconds. An unknown rating_key returns an empty object, so all fields are optional.
+ * is unix seconds. All fields are optional. An item Plex no longer has is GONE, reported one of two ways
+ * (TautulliClient.getMetadata maps both to `null`): current Tautulli answers HTTP 400 with
+ * `{ result: 'error', message: "Unable to retrieve metadata for rating_key '…'", data: {} }` (verified live
+ * 2026-09-23 on all three instances); older builds answered 200 with an empty `data` object.
  */
 export const tautulliMetadataSchema = z.object({
   guid: z.string().nullish(),

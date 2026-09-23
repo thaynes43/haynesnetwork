@@ -533,6 +533,13 @@
       "when": 1783903301000,
       "tag": "0076_trash_save_intents",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1783903302000,
+      "tag": "0077_watch_companion",
+      "breakpoints": true
     }
   ]
 }

@@ -1,11 +1,17 @@
 // DESIGN-005 D-18 — typed error taxonomy for the *arr/Seerr HTTP clients.
-// Messages never contain API keys: keys travel only in the X-Api-Key header and are
-// never interpolated into URLs or error strings.
+// Messages never contain API keys. The *arrs, Seerr, Bazarr and Maintainerr take their key in a header,
+// but Tautulli (`apikey`) and TMDB v3 (`api_key`) can only take it in the QUERY STRING, so the request URL
+// these errors carry is itself a secret. DESIGN-049 D-01 (PLAN-068 S3): every constructor below stores a
+// REDACTED url (`redactUrl`) and every message passes through `redactSecrets` in the base class — the
+// `message`, `stack`, `url` and `bodySnippet` of an ArrError never hold a credential value.
+import { redactSecrets, redactUrl } from './redact';
 
 /** Base class — lets callers `catch (e) { if (e instanceof ArrError) … }`. */
 export class ArrError extends Error {
   constructor(message: string) {
-    super(message);
+    // Defense in depth: whatever a subclass (or a future one) interpolates, the message — and therefore
+    // the stack, which embeds it — is scrubbed of credential query values before it exists.
+    super(redactSecrets(message));
     this.name = new.target.name;
   }
 }
@@ -21,27 +27,37 @@ export class ArrConfigError extends ArrError {
 /** Non-2xx response from an *arr/Seerr endpoint. */
 export class ArrHttpError extends ArrError {
   readonly code = 'ARR_HTTP_ERROR' as const;
+  /** The request URL with every credential query value replaced by `REDACTED`. */
+  readonly url: string;
+  /** The first ≤300 characters of the response body, credential values redacted (servers echo URLs). */
+  readonly bodySnippet?: string;
   constructor(
     readonly status: number,
     readonly method: string,
-    readonly url: string,
-    readonly bodySnippet?: string,
+    url: string,
+    bodySnippet?: string,
   ) {
-    super(
-      `${method} ${url} → HTTP ${status}${bodySnippet ? ` — ${bodySnippet}` : ''}`,
-    );
+    const safeUrl = redactUrl(url);
+    const safeSnippet = bodySnippet === undefined ? undefined : redactSecrets(bodySnippet);
+    super(`${method} ${safeUrl} → HTTP ${status}${safeSnippet ? ` — ${safeSnippet}` : ''}`);
+    this.url = safeUrl;
+    this.bodySnippet = safeSnippet;
   }
 }
 
 /** The request exceeded the client timeout (aborted). */
 export class ArrTimeoutError extends ArrError {
   readonly code = 'ARR_TIMEOUT' as const;
+  /** The request URL with every credential query value replaced by `REDACTED`. */
+  readonly url: string;
   constructor(
     readonly method: string,
-    readonly url: string,
+    url: string,
     readonly timeoutMs: number,
   ) {
-    super(`${method} ${url} → timed out after ${timeoutMs}ms`);
+    const safeUrl = redactUrl(url);
+    super(`${method} ${safeUrl} → timed out after ${timeoutMs}ms`);
+    this.url = safeUrl;
   }
 }
 
@@ -56,29 +72,45 @@ export class ArrTimeoutError extends ArrError {
  */
 export class MaintainerrWriteFailedError extends ArrError {
   readonly code = 'MAINTAINERR_WRITE_FAILED' as const;
+  /** The request URL with every credential query value replaced by `REDACTED`. */
+  readonly url: string;
+  /** Maintainerr's own failure message, credential values redacted. */
+  readonly upstreamMessage?: string;
   constructor(
     readonly method: string,
-    readonly url: string,
-    readonly upstreamMessage?: string,
+    url: string,
+    upstreamMessage?: string,
   ) {
+    const safeUrl = redactUrl(url);
+    const safeUpstream = upstreamMessage === undefined ? undefined : redactSecrets(upstreamMessage);
     super(
-      `${method} ${url} → Maintainerr reported a logical failure (code 0)` +
-        `${upstreamMessage ? ` — ${upstreamMessage}` : ''}`,
+      `${method} ${safeUrl} → Maintainerr reported a logical failure (code 0)` +
+        `${safeUpstream ? ` — ${safeUpstream}` : ''}`,
     );
+    this.url = safeUrl;
+    this.upstreamMessage = safeUpstream;
   }
 }
 
 /** A 2xx response body failed its zod schema — upstream schema drift (BC-03 ACL). */
 export class ArrParseError extends ArrError {
   readonly code = 'ARR_PARSE_ERROR' as const;
+  /** The request URL with every credential query value replaced by `REDACTED`. */
+  readonly url: string;
+  /** The zod issues (path: message), credential values redacted. */
+  readonly issues: readonly string[];
   constructor(
     readonly method: string,
-    readonly url: string,
-    readonly issues: readonly string[],
+    url: string,
+    issues: readonly string[],
   ) {
+    const safeUrl = redactUrl(url);
+    const safeIssues = issues.map(redactSecrets);
     super(
-      `${method} ${url} → response failed schema validation (upstream schema drift?): ` +
-        issues.slice(0, 5).join('; '),
+      `${method} ${safeUrl} → response failed schema validation (upstream schema drift?): ` +
+        safeIssues.slice(0, 5).join('; '),
     );
+    this.url = safeUrl;
+    this.issues = safeIssues;
   }
 }

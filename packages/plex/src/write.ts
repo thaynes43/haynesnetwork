@@ -1,6 +1,8 @@
 // @hnet/plex/write — the WRITE surface (DESIGN-007 D-03 write table, read/write split).
-// ADR-017: the ONLY sanctioned Plex write-backs are applying / revoking a per-user library
-// share via the plex.tv v1 sharing API (POST/PUT/DELETE .../shared_servers). This entrypoint
+// ADR-017: the sanctioned Plex write-backs are applying / revoking a per-user library share via the
+// plex.tv v1 sharing API (POST/PUT/DELETE .../shared_servers), the ADR-043 poster upload, and — ADR-088
+// (owner ruling 2026-09-23, "Mark it in Plex too") — the owner's watched state (`scrobble` / `unscrobble`),
+// reached only through an owner-issued Watch Mark and its undo in @hnet/domain. This entrypoint
 // may be imported ONLY by the packages/domain share orchestrator and by packages/plex itself
 // — enforced by the arr-write-import-guard test (extended for @hnet/plex/write). The
 // read-merge-write invariant (never blind-overwrite a user's section set — ADR-017 D-02) is
@@ -35,6 +37,9 @@ interface SharedServerAllBody {
     invited_id?: number;
   };
 }
+
+/** The library plugin identifier Plex's watched-state endpoints require. */
+const LIBRARY_IDENTIFIER = 'com.plexapp.plugins.library';
 
 export class PlexWriteClient {
   private readonly http: PlexHttp;
@@ -72,6 +77,34 @@ export class PlexWriteClient {
         accept: 'application/xml',
       },
     );
+  }
+
+  /**
+   * ADR-088 / DESIGN-049 D-14 (PLAN-068) — mark an item WATCHED for the token account (the owner):
+   * `GET {baseUrl}/:/scrobble?identifier=com.plexapp.plugins.library&key=<ratingKey>` on the PMS itself. A
+   * show or season key marks every episode under it. Reached ONLY from an owner-issued `watched` Watch Mark
+   * (markWatched in @hnet/domain — this surface is import-confined, ADR-017 C-10), never from a sync.
+   * Retried like a read on a timeout/5xx because it is idempotent on watched state; the worst case is
+   * 3 × timeoutMs + 2 × retryDelayMs, so build the client for the caller's budget (PlexHttp.requestIdempotentGet).
+   */
+  async scrobble(ratingKey: string): Promise<void> {
+    await this.http.requestIdempotentGet(`${this.baseUrl}/:/scrobble`, {
+      query: { identifier: LIBRARY_IDENTIFIER, key: requireRatingKey(ratingKey) },
+      accept: 'application/xml',
+    });
+  }
+
+  /**
+   * ADR-088 / DESIGN-049 D-15 (PLAN-068) — the undo: mark an item UNWATCHED,
+   * `GET {baseUrl}/:/unscrobble?identifier=com.plexapp.plugins.library&key=<ratingKey>`. Plex's unscrobble
+   * also clears the resume point, so a half-watched episode comes back unwatched from the start (ADR-088
+   * C-04). Called only by undoLastChange with the exact keys a mark flipped.
+   */
+  async unscrobble(ratingKey: string): Promise<void> {
+    await this.http.requestIdempotentGet(`${this.baseUrl}/:/unscrobble`, {
+      query: { identifier: LIBRARY_IDENTIFIER, key: requireRatingKey(ratingKey) },
+      accept: 'application/xml',
+    });
   }
 
   private sharedServersUrl(sharedServerId?: string): string {
@@ -180,4 +213,11 @@ export class PlexWriteClient {
 
 export function plexWriteClient(options: PlexClientOptions): PlexWriteClient {
   return new PlexWriteClient(options);
+}
+
+/** A blank key would address nothing (or everything) — refuse it before any request. */
+function requireRatingKey(ratingKey: string): string {
+  const key = String(ratingKey).trim();
+  if (!key) throw new TypeError('PlexWriteClient: a ratingKey is required');
+  return key;
 }

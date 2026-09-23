@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PlexWriteClient } from '../src/write';
+import { PlexHttpError } from '../src/errors';
 import { plexStub, TEST_CLIENT_OPTIONS } from './helpers';
 import { CREATED_SHARED_SERVER_XML } from '../__fixtures__/xml';
 
@@ -66,5 +67,61 @@ describe('PlexWriteClient — the sharing write surface', () => {
     expect(call.headers['Content-Type']).toBe('image/png');
     expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
     expect(call.url.toString()).not.toContain('owner-secret-token');
+  });
+});
+
+// ADR-088 / DESIGN-049 D-14/D-15 (PLAN-068 S3) — the watched-state writes. Stub-only: these are NEVER
+// exercised against a real server here (PLAN-068: no Plex write before S5's undo test passes).
+describe('PlexWriteClient — scrobble / unscrobble (the Watch Mark write-back)', () => {
+  it('scrobble GETs {baseUrl}/:/scrobble with the library identifier and key; token header-only', async () => {
+    const stub = plexStub([{ path: '/:/scrobble', body: '' }]);
+    await client(stub).scrobble('45724');
+    expect(stub.calls).toHaveLength(1);
+    const call = stub.calls[0]!;
+    expect(call.method).toBe('GET');
+    expect(call.url.origin).toBe('http://plexops.test:32400'); // the PMS itself, not plex.tv
+    expect(call.url.pathname).toBe('/:/scrobble');
+    expect(Object.fromEntries(call.url.searchParams)).toEqual({
+      identifier: 'com.plexapp.plugins.library',
+      key: '45724',
+    });
+    expect(call.headers['X-Plex-Token']).toBe('owner-secret-token');
+    expect(call.url.toString()).not.toContain('owner-secret-token');
+    expect(call.body).toBeUndefined();
+  });
+
+  it('unscrobble GETs {baseUrl}/:/unscrobble the same way', async () => {
+    const stub = plexStub([{ path: '/:/unscrobble', body: '' }]);
+    await client(stub).unscrobble(' 45668 ');
+    const call = stub.callsFor('GET', '/:/unscrobble')[0]!;
+    expect(call.url.searchParams.get('key')).toBe('45668');
+    expect(call.url.searchParams.get('identifier')).toBe('com.plexapp.plugins.library');
+  });
+
+  it('keeps the GET retry policy: a transient 503 is retried (idempotent on watched state)', async () => {
+    let n = 0;
+    const flaky = plexStub([
+      { path: '/:/scrobble', status: 503, body: 'busy' },
+    ]);
+    const fetchImpl = (async (input: unknown, init?: RequestInit) => {
+      n += 1;
+      if (n === 1) return flaky.fetchImpl(input as string, init);
+      return new Response('', { status: 200 });
+    }) as typeof fetch;
+    await new PlexWriteClient({ ...TEST_CLIENT_OPTIONS, fetchImpl }).scrobble('1');
+    expect(n).toBe(2);
+  });
+
+  it('a non-retryable status fails once and is typed (never a silent success)', async () => {
+    const stub = plexStub([{ path: '/:/scrobble', status: 404, body: 'no such item' }]);
+    await expect(client(stub).scrobble('999')).rejects.toBeInstanceOf(PlexHttpError);
+    expect(stub.calls).toHaveLength(1);
+  });
+
+  it('refuses a blank ratingKey before any request', async () => {
+    const stub = plexStub([]);
+    await expect(client(stub).scrobble('  ')).rejects.toBeInstanceOf(TypeError);
+    await expect(client(stub).unscrobble('')).rejects.toBeInstanceOf(TypeError);
+    expect(stub.calls).toHaveLength(0);
   });
 });

@@ -80,6 +80,22 @@ export const sectionItemSchema = z.object({
   // stamps a `Kometa` label on every collection it manages; the collections-sync reads these to
   // derive plex_collections.created_by. `{ id, filter, tag }` — we consume only `tag`.
   Label: z.array(z.object({ tag: z.string() })).optional().default([]),
+  // ADR-088 / DESIGN-049 D-09..D-11 (PLAN-068 — the Watch Companion) — the TOKEN ACCOUNT's watch state (the
+  // owner's, with the owner token) and the hierarchy an episode carries in `allLeaves`. All OPTIONAL and
+  // without defaults: Plex omits a field it has no value for (verified live 2026-09-23 — an unwatched
+  // episode carries no viewCount/lastViewedAt, an item without a resume point no viewOffset), and every
+  // pre-existing reader (plex-match, collections, ytdl-sub, poster guard) ignores them.
+  viewCount: z.union([z.string(), z.number()]).transform(Number).optional(), // plays; > 0 ⇒ watched
+  viewedLeafCount: z.union([z.string(), z.number()]).transform(Number).optional(), // shows/seasons: episodes watched
+  lastViewedAt: z.union([z.string(), z.number()]).transform(Number).optional(), // epoch secs
+  viewOffset: z.union([z.string(), z.number()]).transform(Number).optional(), // resume point, ms
+  Genre: z.array(z.object({ tag: z.string() })).optional(),
+  contentRating: z.string().optional(), // e.g. 'TV-14', 'PG-13', 'TV-Y7'
+  parentIndex: z.union([z.string(), z.number()]).transform(Number).optional(), // an episode's season number
+  parentRatingKey: z.union([z.string(), z.number()]).transform(String).optional(),
+  grandparentRatingKey: z.union([z.string(), z.number()]).transform(String).optional(),
+  grandparentTitle: z.string().optional(), // an episode's show title
+  grandparentGuid: z.string().optional(), // an episode's show guid (`plex://show/…`)
 });
 export type PlexSectionItem = z.infer<typeof sectionItemSchema>;
 
@@ -138,6 +154,24 @@ export const metadataContainerSchema = z.object({
   }),
 });
 export type PlexMetadataContainer = z.infer<typeof metadataContainerSchema>;
+
+/**
+ * ADR-089 / DESIGN-049 D-09 step 6 (PLAN-068) — `GET {discover}/library/sections/watchlist/all`: the
+ * token account's plex.tv watchlist (verified live 2026-09-23 — the owner's holds 151 titles). Items use
+ * the section-item shape: `ratingKey` is the DISCOVER id (not a server ratingKey), `guid` the Plex guid
+ * (`plex://movie/…`, `plex://show/…` — the join key to a server's library), `Guid[]` the external ids with
+ * `includeGuids=1`. `addedAt` here is the CATALOG date, not when it was watchlisted — the list carries no
+ * watchlist timestamp; the provider's default (and our explicit) order is `watchlistedAt:desc`.
+ */
+export const watchlistContainerSchema = z.object({
+  MediaContainer: z.object({
+    size: z.union([z.string(), z.number()]).transform(Number).optional(),
+    totalSize: z.union([z.string(), z.number()]).transform(Number).optional(),
+    offset: z.union([z.string(), z.number()]).transform(Number).optional(),
+    Metadata: z.array(sectionItemSchema).optional().default([]),
+  }),
+});
+export type PlexWatchlistContainer = z.infer<typeof watchlistContainerSchema>;
 
 // ---------------------------------------------------------------------------
 // plex.tv v1 sharing API (XML) — the read client extracts attributes into these plain

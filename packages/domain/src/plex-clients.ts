@@ -53,6 +53,7 @@ export function plexClientBundleFromEnv(
       token: config[slug].token,
       machineIdentifier: config[slug].machineIdentifier,
       plexTvBaseUrl: config[slug].plexTvBaseUrl,
+      plexDiscoverBaseUrl: config[slug].plexDiscoverBaseUrl,
     };
   }
   return buildPlexClientBundle(options);
