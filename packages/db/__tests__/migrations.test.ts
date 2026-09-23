@@ -2050,7 +2050,9 @@ describe('migrations against embedded Postgres 16', () => {
       try {
         return await fn();
       } finally {
-        // ON DELETE CASCADE clears the account's events/titles/marks/signals with it.
+        // Marks RESTRICT an account delete (they are not rebuildable), so a fixture clears its marks first;
+        // ON DELETE CASCADE then clears the account's events/titles/signals with it.
+        await client.query({ text: `DELETE FROM watch_marks WHERE plex_account_id = $1`, values: [OWNER] });
         await client.query({ text: `DELETE FROM watch_accounts WHERE plex_account_id = $1`, values: [OWNER] });
       }
     }
@@ -2288,6 +2290,76 @@ describe('migrations against embedded Postgres 16', () => {
         });
         expect(after.rows[0].actor_user_id).toBeNull();
       });
+    });
+
+    it('an account delete: RESTRICTED by a watch mark (not rebuildable), CASCADES events/titles/signals', async () => {
+      // The four account FKs: marks RESTRICT (OPS-015 §7 — the owner's corrections and the undo record),
+      // the rebuildable tables CASCADE.
+      const rules = await client.query(
+        `SELECT conrelid::regclass::text AS tbl, confdeltype FROM pg_constraint
+          WHERE contype = 'f' AND confrelid = 'watch_accounts'::regclass`,
+      );
+      expect(Object.fromEntries(rules.rows.map((r) => [r.tbl as string, r.confdeltype as string]))).toEqual({
+        watch_events: 'c',
+        watch_titles: 'c',
+        watch_marks: 'r',
+        watch_reco_signals: 'c',
+      });
+
+      const seed = async (account: number, withMark: boolean) => {
+        await client.query({
+          text: `INSERT INTO watch_accounts (plex_account_id, username, role) VALUES ($1, $2, 'household')`,
+          values: [account, `acct-${account}`],
+        });
+        await client.query({
+          text: `INSERT INTO watch_events (plex_account_id, instance, tautulli_row_id, kind, title, started_at, watched)
+                 VALUES ($1, 'haynestower', $1, 'episode', 'e', now(), true)`,
+          values: [account],
+        });
+        await client.query({
+          text: `INSERT INTO watch_titles (plex_account_id, kind, title_key, title) VALUES ($1, 'show', 'name:s|', 's')`,
+          values: [account],
+        });
+        await client.query({
+          text: `INSERT INTO watch_reco_signals (plex_account_id, source, kind, title, rank) VALUES ($1, 'watchlist', 'movie', 'm', 1)`,
+          values: [account],
+        });
+        if (withMark) {
+          await client.query({
+            text: `INSERT INTO watch_marks (plex_account_id, action, scope, title_key, kind, title, query, consumer, plex_result)
+                   VALUES ($1, 'not_interested', 'show', 'name:s|', 'show', 's', 's', 'hop', 'none')`,
+            values: [account],
+          });
+        }
+      };
+      const counts = async (account: number) => {
+        const r = await client.query({
+          text: `SELECT (SELECT count(*)::int FROM watch_accounts WHERE plex_account_id = $1) AS accounts,
+                        (SELECT count(*)::int FROM watch_events WHERE plex_account_id = $1) AS events,
+                        (SELECT count(*)::int FROM watch_titles WHERE plex_account_id = $1) AS titles,
+                        (SELECT count(*)::int FROM watch_reco_signals WHERE plex_account_id = $1) AS signals,
+                        (SELECT count(*)::int FROM watch_marks WHERE plex_account_id = $1) AS marks`,
+          values: [account],
+        });
+        return r.rows[0];
+      };
+
+      // WITH a mark: the delete is refused (FK violation) and nothing — not even the rebuildable rows — goes.
+      await seed(910001, true);
+      await expect(client.query(`DELETE FROM watch_accounts WHERE plex_account_id = 910001`)).rejects.toMatchObject({
+        code: '23503',
+      });
+      expect(await counts(910001)).toEqual({ accounts: 1, events: 1, titles: 1, signals: 1, marks: 1 });
+
+      // WITHOUT marks: the delete cascades the account's events, titles and signals.
+      await seed(910002, false);
+      await client.query(`DELETE FROM watch_accounts WHERE plex_account_id = 910002`);
+      expect(await counts(910002)).toEqual({ accounts: 0, events: 0, titles: 0, signals: 0, marks: 0 });
+
+      // Cleanup: only an explicit mark delete (never a writer's job) releases the first account.
+      await client.query(`DELETE FROM watch_marks WHERE plex_account_id = 910001`);
+      await client.query(`DELETE FROM watch_accounts WHERE plex_account_id = 910001`);
+      expect(await counts(910001)).toEqual({ accounts: 0, events: 0, titles: 0, signals: 0, marks: 0 });
     });
 
     it('watch_reco_signals: source/kind CHECKs; rank is required', async () => {

@@ -192,8 +192,10 @@ const ALLOWED_FILES = new Set<string>([
 // themselves. All five are guarded in the INSERT / UPDATE families (+ Drizzle .insert/.update — UPDATE on the
 // append-only log too, so nothing outside the domain can rewrite history); watch_reco_signals (the replace)
 // and watch_titles (history must never be dropped from outside the domain) also in DELETE (+ .delete). The
-// account/event/mark DELETE forms stay unguarded like book_requests — the account FK cascades them, and
-// test cleanups outside the domain may delete fixtures directly.
+// account/event/mark DELETE forms stay unguarded like book_requests (test cleanups outside the domain may
+// delete fixtures directly); the schema carries the invariant instead — writers never delete an account,
+// the rebuildable event/title/signal rows cascade from it, and watch_marks (the owner's corrections, not
+// rebuildable — OPS-015 §7) RESTRICT the account delete.
 const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {
     name: 'UPDATE users SET role_id (SQL)',

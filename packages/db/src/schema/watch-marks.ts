@@ -56,15 +56,21 @@ export interface WatchMarkFlip {
  * is a config change (D-03). The rows ARE the audit trail (no permission_audit coupling).
  *
  * Written ONLY by the @hnet/domain mark writers (markWatched / dismissTitle / undoLastChange) — guard-listed.
- * Updated only to finalize `plex_result` and to record a revert; never deleted.
+ * Updated only to finalize `plex_result` and to record a revert; never deleted. The only NON-REBUILDABLE
+ * table of the five (OPS-015 §7), hence the ON DELETE RESTRICT account FK below.
  */
 export const watchMarks = pgTable(
   'watch_marks',
   {
     id: bigserial('id', { mode: 'number' }).primaryKey(),
+    /**
+     * RESTRICT, not cascade: marks are the one Watch Companion table that cannot be rebuilt from Tautulli or
+     * Plex (the owner's corrections and the undo record — OPS-015 §7), so an account delete or
+     * delete-and-recreate must fail rather than silently wipe them. Writers never delete watch_accounts.
+     */
     plexAccountId: bigint('plex_account_id', { mode: 'number' })
       .notNull()
-      .references(() => watchAccounts.plexAccountId, { onDelete: 'cascade' }),
+      .references(() => watchAccounts.plexAccountId, { onDelete: 'restrict' }),
     action: text('action').$type<WatchMarkAction>().notNull(),
     scope: text('scope').$type<WatchMarkScope>().notNull(),
     // The resolved identity (D-13).

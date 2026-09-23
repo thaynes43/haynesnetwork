@@ -267,8 +267,13 @@ array, including the nullable ones this table leaves implicit — `watch_titles.
 `watch_titles.next_server` and `watch_marks.revert_result` admit NULL or a listed value, and
 `watch_marks.kind` / `watch_reco_signals.kind` are `show`|`movie`. `watch_events.instance` and
 `next_server` reuse `PLEX_SERVER_SLUGS`. `watch_marks.consumer` is deliberately unconstrained (a new
-consumer is a config change, D-03). Rows owned by an account `ON DELETE CASCADE` from `watch_accounts`;
-the user FKs and `media_item_id` are `ON DELETE SET NULL`. `resolved_at`, `refreshed_at` and
+consumer is a config change, D-03). **Writers never delete a `watch_accounts` row**: an owner change is
+an UPDATE of `role` / `username` (and `tracked = false` stops a household account). The account FKs back
+this up: the rebuildable `watch_events`, `watch_titles` and `watch_reco_signals` are `ON DELETE CASCADE`,
+while `watch_marks` is `ON DELETE RESTRICT` — the marks are the one table that cannot be rebuilt (the
+owner's corrections and the undo record, OPS-015 §7), so an account delete or delete-and-recreate fails
+instead of silently wiping them (driver review of #559). The user FKs and `media_item_id` are
+`ON DELETE SET NULL`. `resolved_at`, `refreshed_at` and
 `fetched_at` default to `now()`. Until the `watch` mode exists (S6), `runSync` refuses `--mode=watch`
 rather than fall through to the per-source *arr loop.
 

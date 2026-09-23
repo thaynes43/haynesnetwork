@@ -11,7 +11,11 @@
 --     per-server Plex progress united, event facts and ledger links attached. Upserted, never deleted.
 --   • watch_marks — Watch Marks (T-248): the owner's explicit statements (`watched` / `not_interested` /
 --     `not_mine`), each row carrying the exact Plex keys it flipped (`flipped`) so undo reverses precisely that.
---     The rows ARE the audit trail (no permission_audit coupling — the poster_guard_applications class).
+--     The rows ARE the audit trail (no permission_audit coupling — the poster_guard_applications class). The
+--     ONLY non-rebuildable Watch Companion table (the owner's corrections and the undo record, OPS-015 §7), so
+--     its account FK is ON DELETE RESTRICT: deleting (or delete-and-recreating) an account can never silently
+--     wipe the marks. Writers never delete watch_accounts rows — an owner change is an UPDATE of role/username.
+--     The rebuildable tables (events, titles, reco signals) keep ON DELETE CASCADE.
 --   • watch_reco_signals — the recommendation input cache (ADR-089): the owner's plex.tv watchlist and the daily
 --     TMDB recommendation seeds; each run replaces one source's rows for the account in one transaction.
 --   • sync_runs.run_kind admits 'watch' (the 0024/0030/0048/0056/0075 relax pattern: drop + re-add the full ARRAY
@@ -20,7 +24,8 @@
 -- admit NULL. `users.id` and `media_items.id` are uuid, so the three FKs to them are uuid (DESIGN-049 D-07 said
 -- "users.id is text" — it is not; recorded in the design). All five tables are written ONLY by @hnet/domain
 -- single-writers (the no-direct-state-writes guard lists them).
--- A down-migration drops the five tables (children first) and reverts the run_kind CHECK.
+-- A down-migration drops the five tables (children first — watch_marks before watch_accounts, which its RESTRICT
+-- FK requires) and reverts the run_kind CHECK.
 CREATE TABLE "watch_accounts" (
 	"plex_account_id" bigint PRIMARY KEY NOT NULL,
 	"username" text NOT NULL,
@@ -140,7 +145,7 @@ CREATE TABLE "watch_marks" (
 	CONSTRAINT "watch_marks_revert_result_enum" CHECK ("watch_marks"."revert_result" IS NULL OR "watch_marks"."revert_result" = ANY (ARRAY['written','partial','failed','none']))
 );
 --> statement-breakpoint
-ALTER TABLE "watch_marks" ADD CONSTRAINT "watch_marks_plex_account_id_watch_accounts_plex_account_id_fk" FOREIGN KEY ("plex_account_id") REFERENCES "public"."watch_accounts"("plex_account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "watch_marks" ADD CONSTRAINT "watch_marks_plex_account_id_watch_accounts_plex_account_id_fk" FOREIGN KEY ("plex_account_id") REFERENCES "public"."watch_accounts"("plex_account_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "watch_marks" ADD CONSTRAINT "watch_marks_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "watch_marks_account_created_idx" ON "watch_marks" USING btree ("plex_account_id","created_at" DESC);--> statement-breakpoint
 CREATE TABLE "watch_reco_signals" (

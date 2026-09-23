@@ -27,8 +27,12 @@ const ROLES_SQL_LIST = WATCH_ACCOUNT_ROLES.map((r) => `'${r}'`).join(',');
  * owner row must be impossible, not merely unwritten. `app_user_id` links the app user whose email is the
  * owner's, for attribution only.
  *
- * Written ONLY by the @hnet/domain watch single-writers (guard-listed). Rows are never deleted by the app;
- * `tracked = false` stops a household account's ingest without dropping its history (PRD Q-12 later).
+ * Written ONLY by the @hnet/domain watch single-writers (guard-listed). **Writers NEVER delete a row:** an
+ * owner change is an UPDATE (the old owner's `role` moves off `owner`, `username` follows plex.tv), and
+ * `tracked = false` stops a household account's ingest without dropping its history (PRD Q-12 later). The
+ * schema backs this up: watch_marks (the owner's corrections and the undo record — not rebuildable,
+ * OPS-015 §7) reference this row ON DELETE RESTRICT, so a delete of an account with marks fails; the
+ * rebuildable watch_events / watch_titles / watch_reco_signals cascade.
  */
 export const watchAccounts = pgTable(
   'watch_accounts',
