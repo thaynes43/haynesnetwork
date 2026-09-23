@@ -120,8 +120,9 @@ assignable — this package does not import `@hnet/plex`).
 | `selectTitleRows`, `selectTitleRowsByIdentity`, `selectLedgerHolders`, `selectLedgerFacts`, `selectLedgerIndex` | Title States by id / kind / identity; where a ledger item is on Plex; ledger genres and Sonarr's ended status. |
 | `selectAccountEvents`, `selectTitleEvents`, `selectKnownShowGuids`, `selectUnresolvedShowPairs` | Events for the sync and for one title; the Q-06 show-guid lookups. |
 | `selectLiveMarks`, `selectSignals`, `selectSignalsFetchedAt` | Unreverted marks; the signal cache and its freshness (the 20-hour seed cadence). |
-| `selectUnfinishedRows`, `selectRecentEvents` | The T-245 candidates (shows with a next episode, movies resumed 5–90%); the events of a window. |
-| `selectRecommendInputs(db, account, { kind, genre, kids })` | D-17: the library candidates (live Sonarr/Radarr items on Plex; SQL pre-filter on kind, genre (every source spelling, substring) and children's genres; anti-joined on Ever Watched / started Title States and every live mark; best rated first, ≤ 600), the watchlist and TMDB-seed candidates matched to the ledger, and the Title States. |
+| `selectUnfinishedRows`, `selectRecentEvents` | The T-245 candidates (shows with a next episode, movies resumed 5–90%) as narrow `UnfinishedRow`s — no episode map or Plex counters (`selectTitleRows` loads whole rows for the few titles revalidated); the events of a window. |
+| `selectRecommendInputs(db, account, { kind, genre, kids })` | D-17: the library candidates (live Sonarr/Radarr items on Plex; SQL pre-filter on kind, genre (every source spelling, substring) and children's genres; anti-joined on Ever Watched / started Title States and every live mark; best rated first, ≤ 600), the watchlist and TMDB-seed candidates matched to the ledger, the Title States and the live marks. |
+| `ledgerExclusions(titles, marks)`, `selectLibraryCandidates(db, { kind, genre, kids, limit, exclusions })` | The anti-join as excluded-id arrays per kind (ledger link, TVDB — shows only —, TMDB, IMDb; one array parameter each, which Postgres hashes) and the library query itself. |
 
 ## Views (D-10, D-15, D-18..D-21) — `src/views.ts`
 
@@ -131,7 +132,7 @@ Pure: stored rows, events and live marks → the formatters' inputs, so the MCP 
 |---|---|
 | `indexMarks(marks)`, `marksFor(index, ids)` | Live marks by kind-scoped identity key → `{ watched, dismissed }`. |
 | `unfinishedItems(rows, marks, { kind, kids, now })` | T-245: `in_progress` / `stalled` (never a Taster), not dismissed, children's only with `kids`; `compareUnfinished` order. |
-| `recentEntries(events, marks)` | Per title: distinct episodes, the latest, when; a `not_mine` title is left out. |
+| `recentEntries(events, marks)` | Per title: distinct episodes, the latest, when; a `not_mine` title is left out (a show whose episodes have no guid, Q-06, by its normalized name). |
 | `recommendations(inputs, marks, opts)` | Exclusions + Taste Profile + exemplars → `pickRecommendations`. |
 | `watchStatusView({ title, row, marks, onPlexElsewhere, now })` | The `formatWatchStatus` view (Ever Watched per T-247). |
 

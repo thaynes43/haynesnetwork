@@ -6,7 +6,7 @@ import type { RecentEntry, UnfinishedItem, WatchStatusView } from './format';
 import { keysOf, nameKey } from './identity';
 import { normalizeTitle } from './normalize';
 import { compareUnfinished, movieState, showState } from './progress';
-import type { RecommendInputs, RecoTitleRow } from './queries/answers';
+import type { RecommendInputs, RecoTitleRow, UnfinishedRow } from './queries/answers';
 import {
   buildExclusions,
   buildTasteProfile,
@@ -29,18 +29,35 @@ export interface MarkIndex {
   watched: ReadonlySet<string>;
   notInterested: ReadonlySet<string>;
   notMine: ReadonlySet<string>;
+  /**
+   * The normalized names (no year) of the shows marked `not_mine`: how an episode without a show guid (Q-06)
+   * is matched to its show — the `selectTitleEvents` rule — since its name key has no year to match.
+   */
+  notMineShowNames: ReadonlySet<string>;
+}
+
+const SHOW_NAME_KEY = 'name:show:';
+
+/** `name:show:<normalized>|<year>` → `<normalized>`. */
+function showNameOf(key: string): string {
+  const bar = key.lastIndexOf('|');
+  return key.slice(SHOW_NAME_KEY.length, bar < SHOW_NAME_KEY.length ? undefined : bar);
 }
 
 export function indexMarks(marks: readonly WatchMarkRow[]): MarkIndex {
   const watched = new Set<string>();
   const notInterested = new Set<string>();
   const notMine = new Set<string>();
+  const notMineShowNames = new Set<string>();
   for (const m of marks) {
     if (m.revertedAt) continue;
     const set = m.action === 'watched' ? watched : m.action === 'not_interested' ? notInterested : notMine;
-    for (const k of keysOf(m)) set.add(`${m.kind}|${k}`);
+    for (const k of keysOf(m)) {
+      set.add(`${m.kind}|${k}`);
+      if (m.action === 'not_mine' && m.kind === 'show' && k.startsWith(SHOW_NAME_KEY)) notMineShowNames.add(showNameOf(k));
+    }
   }
-  return { watched, notInterested, notMine };
+  return { watched, notInterested, notMine, notMineShowNames };
 }
 
 /** The live marks that apply to one title (any shared identity key, same kind). */
@@ -60,12 +77,12 @@ export function marksFor(
  * Unfinished (T-245, D-10): shows `in_progress` or `stalled` (a Taster is neither), movies resumed between
  * 5% and 90%; not dismissed; children's titles only when `kids`. Ordered in progress first, newest first.
  */
-export function unfinishedItems(
-  rows: readonly WatchTitleRow[],
+export function unfinishedItems<R extends UnfinishedRow>(
+  rows: readonly R[],
   marks: MarkIndex,
   opts: { kind: WatchKind | 'any'; kids: boolean; now: number },
-): Array<{ row: WatchTitleRow; item: UnfinishedItem }> {
-  const out: Array<{ row: WatchTitleRow; item: UnfinishedItem }> = [];
+): Array<{ row: R; item: UnfinishedItem }> {
+  const out: Array<{ row: R; item: UnfinishedItem }> = [];
   for (const row of rows) {
     if (opts.kind !== 'any' && row.kind !== opts.kind) continue;
     if (row.isKids && !opts.kids) continue;
@@ -117,7 +134,8 @@ export function unfinishedItems(
 /**
  * `recent_history` (D-21): the events grouped per title — a show by its guid (else its title), a movie by
  * its guid (else title and year) — with the distinct episodes played, the latest one, and when. A title
- * marked `not_mine` (someone else's viewing on the owner's account) is left out (PLAN-068 S7).
+ * marked `not_mine` (someone else's viewing on the owner's account) is left out (PLAN-068 S7); a show whose
+ * episodes carry no guid (Q-06) is matched to such a mark by its normalized name alone.
  */
 export function recentEntries(events: readonly WatchEventRow[], marks: MarkIndex): RecentEntry[] {
   interface Acc {
@@ -157,6 +175,7 @@ export function recentEntries(events: readonly WatchEventRow[], marks: MarkIndex
   for (const g of groups.values()) {
     const ids: TitleIds = { kind: g.kind, title: g.title, year: g.kind === 'movie' ? g.year : null, plexGuid: g.guid };
     if (marksFor(marks, ids).dismissed === 'not_mine') continue;
+    if (g.kind === 'show' && g.guid === null && marks.notMineShowNames.has(showNameOf(nameKey('show', g.title)))) continue;
     out.push(
       g.kind === 'show'
         ? { kind: 'show', title: g.title, episodes: Math.max(1, g.pairs.size), latest: g.latest, lastAt: g.lastAt }
