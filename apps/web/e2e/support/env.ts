@@ -24,6 +24,7 @@ import { STUB_SABNZBD_API_KEY } from './stub-sabnzbd';
 import { STUB_KAPOWARR_API_KEY } from './stub-kapowarr';
 import { STUB_LIBRETTO_API_KEY } from './stub-libretto';
 import { STUB_SMTP_FROM, STUB_SMTP_PASS, STUB_SMTP_USER } from './stub-smtp';
+import { STUB_TAUTULLI_API_KEYS } from './stub-tautulli';
 
 /** Default app port — off 3000 so the stack coexists with a running `pnpm dev`.
  *  playwright.config.ts's baseURL derives from this. */
@@ -70,6 +71,18 @@ export interface RuntimeEnv {
   PLEX_HAYNESOPS_TOKEN: string;
   PLEX_HAYNESKUBE_TOKEN: string;
   PLEX_TV_URL: string;
+  /** ADR-089 / DESIGN-049 (PLAN-068) — the plex.tv discover provider (the watchlist), also the stub Plex. */
+  PLEX_DISCOVER_URL: string;
+  /** ADR-068 / ADR-088 (PLAN-068 S3) — the three Tautulli instances, all pointed at the one stub Tautulli
+   *  (distinct keys tell them apart, like the Plex tokens). Consumers: the watch-history sync, the
+   *  metadata-refresh harvest, and the home play scoreboard (kept hidden — see stub-tautulli.ts). */
+  STUB_TAUTULLI_URL: string;
+  TAUTULLI_URL: string;
+  TAUTULLI_API_KEY: string;
+  TAUTULLI_K8PLEX_URL: string;
+  TAUTULLI_K8PLEX_API_KEY: string;
+  TAUTULLI_HAYNESTOWER_URL: string;
+  TAUTULLI_HAYNESTOWER_API_KEY: string;
   /** ADR-023 / DESIGN-010 — stub Maintainerr origin (specs GET its /_stub/calls) + the Trash
    *  contract (URL/key + the webhook shared secret). */
   STUB_MAINTAINERR_URL: string;
@@ -169,6 +182,7 @@ export function composeRuntimeEnv(opts: {
   stubArrBaseUrl: string;
   stubBazarrBaseUrl: string;
   stubPlexBaseUrl: string;
+  stubTautulliBaseUrl: string;
   stubMaintainerrBaseUrl: string;
   stubPrometheusBaseUrl: string;
   stubGatusBaseUrl: string;
@@ -215,6 +229,14 @@ export function composeRuntimeEnv(opts: {
     PLEX_HAYNESOPS_TOKEN: STUB_PLEX_TOKENS.haynesops,
     PLEX_HAYNESKUBE_TOKEN: STUB_PLEX_TOKENS.hayneskube,
     PLEX_TV_URL: opts.stubPlexBaseUrl,
+    PLEX_DISCOVER_URL: opts.stubPlexBaseUrl,
+    STUB_TAUTULLI_URL: opts.stubTautulliBaseUrl,
+    TAUTULLI_URL: opts.stubTautulliBaseUrl,
+    TAUTULLI_API_KEY: STUB_TAUTULLI_API_KEYS.haynesops,
+    TAUTULLI_K8PLEX_URL: opts.stubTautulliBaseUrl,
+    TAUTULLI_K8PLEX_API_KEY: STUB_TAUTULLI_API_KEYS.hayneskube,
+    TAUTULLI_HAYNESTOWER_URL: opts.stubTautulliBaseUrl,
+    TAUTULLI_HAYNESTOWER_API_KEY: STUB_TAUTULLI_API_KEYS.haynestower,
     STUB_MAINTAINERR_URL: opts.stubMaintainerrBaseUrl,
     MAINTAINERR_URL: opts.stubMaintainerrBaseUrl,
     MAINTAINERR_API_KEY: STUB_MAINTAINERR_API_KEY,

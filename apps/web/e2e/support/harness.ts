@@ -17,6 +17,7 @@ import { startStubOidc, type StubOidcServer } from './stub-oidc';
 import { startStubArr, arrActivityQueueFixture, type StubArrServer } from './stub-arr';
 import { startStubBazarr, type StubBazarrServer } from './stub-bazarr';
 import { startStubPlex, type StubPlexServer } from './stub-plex';
+import { startStubTautulli, type StubTautulliServer } from './stub-tautulli';
 import { startStubMaintainerr, type StubMaintainerrServer } from './stub-maintainerr';
 import { startStubPrometheus, type StubPrometheusServer } from './stub-prometheus';
 import { startStubGatus, type StubGatusServer } from './stub-gatus';
@@ -56,6 +57,8 @@ export interface RunningStack {
   bazarr: StubBazarrServer;
   /** Stub Plex stand-in — library self-service e2e layer (ADR-017 / DESIGN-007). */
   plex: StubPlexServer;
+  /** Stub Tautulli ×3 (one server, keyed per instance) — watch history (ADR-088 / PLAN-068 S3). */
+  tautulli: StubTautulliServer;
   /** Stub Maintainerr stand-in — Trash section e2e layer (ADR-023 / DESIGN-010). */
   maintainerr: StubMaintainerrServer;
   /** Stub Prometheus stand-in — free-space-trend e2e layer (ADR-030 amendment 2026-07-09). */
@@ -81,7 +84,7 @@ export interface RunningStack {
   devServer: ChildProcess;
   /** The DESIGN-002 D-08 env the dev server was booted with. */
   env: RuntimeEnv;
-  /** Idempotent, reverse-order teardown: dev server → stub Prometheus → stub Maintainerr → stub Plex → stub Bazarr → stub *arr → stub OIDC → Postgres. */
+  /** Idempotent, reverse-order teardown: dev server → … → stub Maintainerr → stub Tautulli → stub Plex → stub Bazarr → stub *arr → stub OIDC → Postgres. */
   stop: () => Promise<void>;
 }
 
@@ -196,6 +199,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   let arr: StubArrServer | undefined;
   let bazarr: StubBazarrServer | undefined;
   let plex: StubPlexServer | undefined;
+  let tautulli: StubTautulliServer | undefined;
   let maintainerr: StubMaintainerrServer | undefined;
   let prometheus: StubPrometheusServer | undefined;
   let gatus: StubGatusServer | undefined;
@@ -237,6 +241,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     arr = await startStubArr();
     bazarr = await startStubBazarr();
     plex = await startStubPlex();
+    tautulli = await startStubTautulli();
     maintainerr = await startStubMaintainerr();
     prometheus = await startStubPrometheus();
     gatus = await startStubGatus();
@@ -256,6 +261,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       stubArrBaseUrl: arr.baseUrl,
       stubBazarrBaseUrl: bazarr.baseUrl,
       stubPlexBaseUrl: plex.baseUrl,
+      stubTautulliBaseUrl: tautulli.baseUrl,
       stubMaintainerrBaseUrl: maintainerr.baseUrl,
       stubPrometheusBaseUrl: prometheus.baseUrl,
       stubGatusBaseUrl: gatus.baseUrl,
@@ -364,6 +370,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     const runningArr = arr;
     const runningBazarr = bazarr;
     const runningPlex = plex;
+    const runningTautulli = tautulli;
     const runningMaintainerr = maintainerr;
     const runningPrometheus = prometheus;
     const runningGatus = gatus;
@@ -384,6 +391,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       arr: runningArr,
       bazarr: runningBazarr,
       plex: runningPlex,
+      tautulli: runningTautulli,
       maintainerr: runningMaintainerr,
       prometheus: runningPrometheus,
       gatus: runningGatus,
@@ -414,6 +422,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
         await runningGatus.stop().catch(() => undefined);
         await runningPrometheus.stop().catch(() => undefined);
         await runningMaintainerr.stop().catch(() => undefined);
+        await runningTautulli.stop().catch(() => undefined);
         await runningPlex.stop().catch(() => undefined);
         await runningBazarr.stop().catch(() => undefined);
         await runningArr.stop().catch(() => undefined);
@@ -436,6 +445,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     if (gatus) await gatus.stop().catch(() => undefined);
     if (prometheus) await prometheus.stop().catch(() => undefined);
     if (maintainerr) await maintainerr.stop().catch(() => undefined);
+    if (tautulli) await tautulli.stop().catch(() => undefined);
     if (plex) await plex.stop().catch(() => undefined);
     if (bazarr) await bazarr.stop().catch(() => undefined);
     if (arr) await arr.stop().catch(() => undefined);

@@ -6,9 +6,18 @@
 // add → myLibraries round-trip reflects the change, and RECORDS every sharing write so specs
 // can assert the read-merge-write preservation (ADR-017 D-02).
 //
+// ADR-088 / DESIGN-049 (PLAN-068 S3) — it also serves the OWNER's watch state for the Watch Companion: watch
+// fields on section items / metadata / children, `/library/metadata/{rk}/allLeaves`, `/library/all?guid=`,
+// section-listing filters (type / unwatched / inProgress, Start/Size paging), the plex.tv discover watchlist
+// (`/library/sections/watchlist/all` — PLEX_DISCOVER_URL points here), and the GET-shaped watched-state
+// writes `/:/scrobble` + `/:/unscrobble`, which are RECORDED in `calls` and flip an in-memory watch map that
+// every read overlays — so a mark → re-read round-trip behaves like a real server. Only the WATCH dataset
+// below carries watch state; every pre-existing fixture item reads exactly as before.
+//
 // Control endpoints:
-//   GET  /_stub/calls  → { calls: [{method, path, machineId, body}] } (sharing writes only)
-//   POST /_stub/reset  → 204 (clears recorded calls AND resets shares)
+//   GET  /_stub/calls  → { calls: [{method, path, machineId, body}] } (sharing writes, poster uploads,
+//                         scrobble/unscrobble)
+//   POST /_stub/reset  → 204 (clears recorded calls AND resets shares AND the watch map)
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 
 export const STUB_PLEX_TOKENS = {
@@ -80,6 +89,18 @@ interface StubSectionItem {
   duration?: number; // ms
   originallyAvailableAt?: string; // 'YYYY-MM-DD'
   summary?: string;
+  // ADR-088 / DESIGN-049 (PLAN-068) — identity + descriptive fields the watch reads consume. The watch
+  // STATE (viewCount / lastViewedAt / viewOffset / viewedLeafCount) is never stored here: it is overlaid
+  // from the stub's watch map at read time (see withWatch).
+  guid?: string;
+  Guid?: Array<{ id: string }>;
+  Genre?: Array<{ tag: string }>;
+  contentRating?: string;
+  parentIndex?: number;
+  parentRatingKey?: string;
+  grandparentRatingKey?: string;
+  grandparentTitle?: string;
+  grandparentGuid?: string;
 }
 
 // ADR-038 — canned `/library/sections/{key}/all` contents per (slug, sectionKey). One show carries a
@@ -211,13 +232,253 @@ const METADATA_CHILDREN: Record<string, StubSectionItem[]> = {
   ],
 };
 
-/** Find one metadata item (show/season/episode) by ratingKey across the canned hierarchy. */
+// ---------------------------------------------------------------------------
+// ADR-088 / DESIGN-049 (PLAN-068 S3) — the Watch Companion dataset: the OWNER's library and watch state on
+// HaynesOps (movies) and HaynesTower (movies + TV), in the SEEDED sections only (adding a section would
+// change the registry refresh — see LIBRARIES). Identities line up with seed-ledger.ts (The Fixture / Stub
+// Runner / Breaking Prod = tmdb 880001 / 880002 / tvdb 990001; HaynesTower 601 / 602 / 501 are the seeded
+// media_plex_matches keys; HaynesOps 6001 / 6002 are the keys the Stub Franchise collection lists) and with
+// stub-tautulli.ts's histories, so a `watch` sync against this stack assembles coherent Title States.
+// Season 0 (specials) and a children's show exercise DESIGN-049 D-10's exclusions.
+// ---------------------------------------------------------------------------
+
+const GUID_FIXTURE = 'plex://movie/5d7768a4ad5437001f740001';
+const GUID_RUNNER = 'plex://movie/5d7768a4ad5437001f740002';
+const GUID_TOONS_MOVIE = 'plex://movie/5d7768a4ad5437001f740003';
+const GUID_BREAKING_PROD = 'plex://show/5d9c086c46115600200a0001';
+const GUID_STUB_TOONS = 'plex://show/5d9c086c46115600200a0002';
+
+const FIXTURE: Omit<StubSectionItem, 'ratingKey'> = {
+  title: 'The Fixture',
+  type: 'movie',
+  year: 2022,
+  guid: GUID_FIXTURE,
+  Guid: [{ id: 'imdb://tt8800010' }, { id: 'tmdb://880001' }],
+  Genre: [{ tag: 'Action' }, { tag: 'Thriller' }],
+  contentRating: 'PG-13',
+  duration: 6_600_000,
+  addedAt: 1_751_600_000,
+};
+const RUNNER: Omit<StubSectionItem, 'ratingKey'> = {
+  title: 'Stub Runner',
+  type: 'movie',
+  year: 2020,
+  guid: GUID_RUNNER,
+  Guid: [{ id: 'tmdb://880002' }],
+  Genre: [{ tag: 'Science Fiction' }],
+  contentRating: 'R',
+  duration: 6_000_000,
+  addedAt: 1_751_700_000,
+};
+const TOONS_MOVIE: StubSectionItem = {
+  ratingKey: '6003',
+  title: 'Stub Toons: The Movie',
+  type: 'movie',
+  year: 2021,
+  guid: GUID_TOONS_MOVIE,
+  Guid: [{ id: 'tmdb://880003' }],
+  Genre: [{ tag: 'Animation' }, { tag: 'Family' }],
+  contentRating: 'G',
+  duration: 5_400_000,
+  addedAt: 1_751_800_000,
+};
+const BREAKING_PROD: StubSectionItem = {
+  ratingKey: '501',
+  title: 'Breaking Prod',
+  type: 'show',
+  year: 2019,
+  guid: GUID_BREAKING_PROD,
+  Guid: [{ id: 'imdb://tt9900010' }, { id: 'tmdb://55501' }, { id: 'tvdb://990001' }],
+  Genre: [{ tag: 'Drama' }, { tag: 'Crime' }],
+  contentRating: 'TV-MA',
+  addedAt: 1_751_500_000,
+};
+const STUB_TOONS: StubSectionItem = {
+  ratingKey: '502',
+  title: 'Stub Toons',
+  type: 'show',
+  year: 2020,
+  guid: GUID_STUB_TOONS,
+  Guid: [{ id: 'tvdb://990002' }],
+  Genre: [{ tag: 'Animation' }, { tag: 'Kids' }],
+  contentRating: 'TV-Y7',
+  addedAt: 1_751_400_000,
+};
+
+/** The watch sections, per (slug, sectionKey) — served ALONGSIDE SECTION_CONTENTS. */
+const WATCH_SECTION_CONTENTS: Partial<Record<Slug, Record<string, StubSectionItem[]>>> = {
+  haynesops: { '1': [{ ratingKey: '6001', ...FIXTURE }, { ratingKey: '6002', ...RUNNER }, TOONS_MOVIE] },
+  haynestower: {
+    '1': [
+      { ratingKey: '601', ...FIXTURE },
+      { ratingKey: '602', ...RUNNER },
+    ],
+    '2': [BREAKING_PROD, STUB_TOONS],
+  },
+};
+
+function watchSeason(show: StubSectionItem, ratingKey: string, index: number): StubSectionItem {
+  return {
+    ratingKey,
+    title: index === 0 ? 'Specials' : `Season ${index}`,
+    type: 'season',
+    index,
+    parentRatingKey: show.ratingKey,
+    guid: `plex://season/${show.ratingKey}-${index}`,
+  };
+}
+
+function watchEpisode(
+  show: StubSectionItem,
+  seasonKey: string,
+  season: number,
+  episode: number,
+  ratingKey: string,
+  airDate: string,
+): StubSectionItem {
+  return {
+    ratingKey,
+    title: `${show.title} ${season === 0 ? 'Special' : 'Episode'} ${season}x${episode}`,
+    type: 'episode',
+    index: episode,
+    parentIndex: season,
+    parentRatingKey: seasonKey,
+    grandparentRatingKey: show.ratingKey,
+    grandparentTitle: show.title,
+    grandparentGuid: show.guid,
+    guid: `plex://episode/${ratingKey}`,
+    contentRating: show.contentRating,
+    duration: 2_700_000,
+    originallyAvailableAt: airDate,
+  };
+}
+
+/** The watch shows' hierarchy (show → seasons → episodes), served ALONGSIDE METADATA_CHILDREN. */
+const WATCH_CHILDREN: Record<string, StubSectionItem[]> = {
+  '501': [
+    watchSeason(BREAKING_PROD, '5010', 0),
+    watchSeason(BREAKING_PROD, '5011', 1),
+    watchSeason(BREAKING_PROD, '5012', 2),
+  ],
+  '5010': [watchEpisode(BREAKING_PROD, '5010', 0, 1, '50101', '2019-12-20')],
+  '5011': [
+    watchEpisode(BREAKING_PROD, '5011', 1, 1, '50111', '2019-01-06'),
+    watchEpisode(BREAKING_PROD, '5011', 1, 2, '50112', '2019-01-13'),
+    watchEpisode(BREAKING_PROD, '5011', 1, 3, '50113', '2019-01-20'),
+  ],
+  '5012': [
+    watchEpisode(BREAKING_PROD, '5012', 2, 1, '50121', '2020-01-05'),
+    watchEpisode(BREAKING_PROD, '5012', 2, 2, '50122', '2020-01-12'),
+  ],
+  '502': [watchSeason(STUB_TOONS, '5021', 1)],
+  '5021': [
+    watchEpisode(STUB_TOONS, '5021', 1, 1, '50211', '2020-03-01'),
+    watchEpisode(STUB_TOONS, '5021', 1, 2, '50212', '2020-03-08'),
+  ],
+};
+
+/** The owning section of every watch item (the metadata/children `librarySectionID`). */
+const WATCH_SECTION_OF: Record<string, string> = Object.fromEntries([
+  ...['6001', '6002', '6003', '601', '602'].map((k) => [k, '1'] as const),
+  ...['501', '502', ...Object.keys(WATCH_CHILDREN)].map((k) => [k, '2'] as const),
+  ...Object.values(WATCH_CHILDREN)
+    .flat()
+    .map((i) => [i.ratingKey, '2'] as const),
+]);
+
+/** Show/season keys whose counts (leafCount / viewedLeafCount / lastViewedAt) derive from the watch map. */
+const WATCH_CONTAINERS = new Set<string>(['501', '502', ...Object.keys(WATCH_CHILDREN)]);
+
+/** Seconds since the epoch for a UTC wall time. */
+function epochSeconds(iso: string): number {
+  return Math.floor(Date.parse(iso) / 1000);
+}
+
+/** The owner's watch state for one item: plays, last view (epoch s), resume point (ms). */
+interface WatchState {
+  viewCount: number;
+  lastViewedAt?: number;
+  viewOffset?: number;
+}
+
+/**
+ * The SEEDED owner state (reset by POST /_stub/reset). The Fixture is watched on both servers (plex.tv
+ * view-state sync); Stub Runner is in progress on HaynesOps only (resume points do not sync); Breaking
+ * Prod is watched through S2E1 (next: S2E2) with its special unwatched; Stub Toons (a children's show)
+ * has one episode watched.
+ */
+const WATCH_SEED: Record<string, WatchState> = {
+  // Last views = the stop times of the matching stub-tautulli history rows.
+  '6001': { viewCount: 1, lastViewedAt: epochSeconds('2026-09-20T03:40:00Z') },
+  '601': { viewCount: 1, lastViewedAt: epochSeconds('2026-09-20T03:40:00Z') },
+  '6002': { viewCount: 0, lastViewedAt: epochSeconds('2026-09-22T04:10:00Z'), viewOffset: 1_800_000 },
+  '50111': { viewCount: 1, lastViewedAt: epochSeconds('2026-01-06T02:45:00Z') },
+  '50112': { viewCount: 1, lastViewedAt: epochSeconds('2026-01-07T02:45:00Z') },
+  '50113': { viewCount: 1, lastViewedAt: epochSeconds('2026-01-09T02:45:00Z') },
+  '50121': { viewCount: 1, lastViewedAt: epochSeconds('2026-08-30T02:45:00Z') },
+  '50211': { viewCount: 1, lastViewedAt: epochSeconds('2026-03-01T17:45:00Z') },
+};
+
+/** A plex.tv discover watchlist (newest-watchlisted first): one title on Plex, two that are not. */
+const WATCHLIST: StubSectionItem[] = [
+  {
+    ratingKey: '5d9f35110000000000000001',
+    title: 'Stub Severance',
+    type: 'show',
+    year: 2022,
+    guid: 'plex://show/5d9f35110000000000000001',
+    Guid: [{ id: 'imdb://tt9900020' }, { id: 'tmdb://95396' }, { id: 'tvdb://990020' }],
+    contentRating: 'TV-MA',
+    addedAt: 1_645_142_400, // a CATALOG date, as live — not the watchlist time
+  },
+  {
+    ratingKey: '5d776d1b0000000000000002',
+    title: 'Stub Dune',
+    type: 'movie',
+    year: 2021,
+    guid: 'plex://movie/5d776d1b0000000000000002',
+    Guid: [{ id: 'imdb://tt8800020' }, { id: 'tmdb://880020' }],
+    contentRating: 'PG-13',
+    addedAt: 1_631_664_000,
+  },
+  { ratingKey: '5d7768a4ad5437001f740002', ...RUNNER },
+];
+
+/** Plex metadata `type` numbers the section-listing `type=` filter accepts. */
+const PLEX_TYPE_NUMBERS: Record<string, string> = { '1': 'movie', '2': 'show', '3': 'season', '4': 'episode' };
+
+/** A section's items: the canned fixtures plus the watch dataset. */
+function sectionItems(slug: Slug, sectionKey: string): StubSectionItem[] {
+  return [
+    ...(SECTION_CONTENTS[slug]?.[sectionKey] ?? []),
+    ...(WATCH_SECTION_CONTENTS[slug]?.[sectionKey] ?? []),
+  ];
+}
+
+/** An item's direct children (seasons of a show, episodes of a season, members of a collection). */
+function childrenOf(ratingKey: string): StubSectionItem[] {
+  return METADATA_CHILDREN[ratingKey] ?? WATCH_CHILDREN[ratingKey] ?? [];
+}
+
+/** Every episode under a show or season (specials included), in (season, episode) order; a leaf is itself. */
+function leavesOf(item: StubSectionItem): StubSectionItem[] {
+  if (item.type === 'movie' || item.type === 'episode') return [item];
+  return childrenOf(item.ratingKey)
+    .flatMap((child) =>
+      child.type === 'season' ? childrenOf(child.ratingKey) : child.type === 'episode' ? [child] : [],
+    )
+    .sort((a, b) => (a.parentIndex ?? 0) - (b.parentIndex ?? 0) || (a.index ?? 0) - (b.index ?? 0));
+}
+
+/** Find one metadata item (show/season/episode/movie) by ratingKey across the canned hierarchy. */
 function findMetadataItem(ratingKey: string): StubSectionItem | undefined {
-  for (const items of Object.values(SECTION_CONTENTS.hayneskube ?? {})) {
-    const hit = items.find((i) => i.ratingKey === ratingKey);
-    if (hit) return hit;
-  }
-  for (const items of Object.values(METADATA_CHILDREN)) {
+  const pools = [
+    ...Object.values(SECTION_CONTENTS.hayneskube ?? {}),
+    ...Object.values(WATCH_SECTION_CONTENTS).flatMap((bySection) => Object.values(bySection ?? {})),
+    ...Object.values(METADATA_CHILDREN),
+    ...Object.values(WATCH_CHILDREN),
+  ];
+  for (const items of pools) {
     const hit = items.find((i) => i.ratingKey === ratingKey);
     if (hit) return hit;
   }
@@ -309,13 +570,82 @@ export async function startStubPlex(): Promise<StubPlexServer> {
   };
   // ADR-029 — the OWNER account email `GET /api/v2/user` reports (runtime-overridable for UX capture).
   let ownerEmail = STUB_PLEX_OWNER.email;
+  // ADR-088 / DESIGN-049 (PLAN-068) — the owner's watch map (ratingKey → state), flipped by
+  // /:/scrobble + /:/unscrobble and overlaid on every read.
+  const watch = new Map<string, WatchState>();
+  const seedWatch = () => {
+    watch.clear();
+    for (const [key, state] of Object.entries(WATCH_SEED)) watch.set(key, { ...state });
+  };
   const resetState = () => {
     calls.length = 0;
     shares.clear();
     ownerEmail = STUB_PLEX_OWNER.email;
     seedFixtures();
+    seedWatch();
   };
   seedFixtures();
+  seedWatch();
+
+  /**
+   * Overlay the watch map the way Plex reports it: a leaf (movie/episode) gains viewCount only once
+   * watched, lastViewedAt once ever viewed, viewOffset only with a resume point; a WATCH show/season derives
+   * leafCount / viewedLeafCount / lastViewedAt / viewCount from its episodes (specials included, as Plex
+   * counts them). Items outside the watch dataset with no state come back untouched.
+   */
+  const withWatch = (item: StubSectionItem): Record<string, unknown> => {
+    if (item.type === 'movie' || item.type === 'episode') {
+      const state = watch.get(item.ratingKey);
+      if (!state) return { ...item };
+      return {
+        ...item,
+        ...(state.viewCount > 0 ? { viewCount: state.viewCount } : {}),
+        ...(state.lastViewedAt ? { lastViewedAt: state.lastViewedAt } : {}),
+        ...(state.viewOffset ? { viewOffset: state.viewOffset } : {}),
+      };
+    }
+    if (!WATCH_CONTAINERS.has(item.ratingKey)) return { ...item };
+    const states = leavesOf(item).map((leaf) => watch.get(leaf.ratingKey));
+    const watched = states.filter((state) => (state?.viewCount ?? 0) > 0);
+    const lastViewedAt = Math.max(0, ...states.map((state) => state?.lastViewedAt ?? 0));
+    return {
+      ...item,
+      leafCount: states.length,
+      viewedLeafCount: watched.length,
+      ...(item.type === 'show' ? { childCount: childrenOf(item.ratingKey).length } : {}),
+      ...(watched.length > 0 ? { viewCount: watched.reduce((n, st) => n + (st?.viewCount ?? 0), 0) } : {}),
+      ...(lastViewedAt > 0 ? { lastViewedAt } : {}),
+    };
+  };
+
+  /** Plex's `unwatched` / `inProgress` section filters, over overlaid items (verified-live semantics). */
+  const matchesWatchFilters = (item: Record<string, unknown>, params: URLSearchParams): boolean => {
+    const viewCount = Number(item.viewCount ?? 0);
+    const leafCount = Number(item.leafCount ?? 0);
+    const viewedLeafCount = Number(item.viewedLeafCount ?? 0);
+    const isContainer = item.type === 'show' || item.type === 'season';
+    const fullyWatched = isContainer ? leafCount > 0 && viewedLeafCount >= leafCount : viewCount > 0;
+    const unwatched = params.get('unwatched');
+    if (unwatched === '1' && fullyWatched) return false;
+    if (unwatched === '0' && !fullyWatched) return false;
+    if (params.get('inProgress') === '1' && !(Number(item.viewOffset ?? 0) > 0)) return false;
+    return true;
+  };
+
+  /** One X-Plex-Container window of `items`, with the MediaContainer paging fields Plex sends. */
+  const containerPage = (items: Array<Record<string, unknown>>, params: URLSearchParams) => {
+    const start = Math.max(Number(params.get('X-Plex-Container-Start') ?? 0) || 0, 0);
+    const rawSize = params.get('X-Plex-Container-Size');
+    const size = rawSize === null ? items.length : Math.max(Number(rawSize) || 0, 0);
+    const withGuids = params.get('includeGuids') === '1';
+    const Metadata = items.slice(start, start + size).map((item) => {
+      if (withGuids) return item;
+      const copy = { ...item };
+      delete copy.Guid; // Plex sends the external Guid[] only with includeGuids=1
+      return copy;
+    });
+    return { size: Metadata.length, totalSize: items.length, offset: start, Metadata };
+  };
 
   const usersXml = () =>
     `<MediaContainer friendlyName="StubPlex" identifier="com.plexapp.plugins.myplex" size="1">` +
@@ -398,13 +728,85 @@ export async function startStubPlex(): Promise<StubPlexServer> {
           : [];
         return json(res, 200, { MediaContainer: { size: Directory.length, Directory } });
       }
-      // ADR-038 (PLAN-022) — a library section's contents (the ytdl-sub shows).
+      // ADR-089 / DESIGN-049 D-09 step 6 (PLAN-068) — the plex.tv DISCOVER watchlist (PLEX_DISCOVER_URL points
+      // here). Matched BEFORE the section listing below, which would take `watchlist` for a section key. Any
+      // owner token reads it (all three are the owner's account); a container over 100 is refused with 400,
+      // exactly like the live provider.
+      if (path === '/library/sections/watchlist/all') {
+        if (!tokenStr || !SLUG_BY_TOKEN.has(tokenStr)) return json(res, 401, { error: 'unauthorized' });
+        if (Number(url.searchParams.get('X-Plex-Container-Size') ?? 20) > 100) {
+          return json(res, 400, { error: 'X-Plex-Container-Size must be at most 100' });
+        }
+        const params = new URLSearchParams(url.searchParams);
+        if (!params.has('X-Plex-Container-Size')) params.set('X-Plex-Container-Size', '20');
+        return json(res, 200, {
+          MediaContainer: {
+            librarySectionID: 'watchlist',
+            identifier: 'tv.plex.provider.discover',
+            ...containerPage(
+              WATCHLIST.map((item) => ({ ...item })),
+              params,
+            ),
+          },
+        });
+      }
+      // ADR-038 (PLAN-022) — a library section's contents (the ytdl-sub shows). ADR-088 / DESIGN-049 (PLAN-068)
+      // adds the watch dataset, the `type` / `unwatched` / `inProgress` filters, Start/Size paging with the
+      // filtered totalSize, and `includeGuids` (Guid[] only when asked, as Plex does).
       const allMatch = path.match(/^\/library\/sections\/([^/]+)\/all$/);
       if (allMatch) {
         const slug = tokenStr ? SLUG_BY_TOKEN.get(tokenStr) : undefined;
         const key = allMatch[1]!;
-        const Metadata = (slug && SECTION_CONTENTS[slug]?.[key]) || [];
-        return json(res, 200, { MediaContainer: { size: Metadata.length, Metadata } });
+        const top = slug ? sectionItems(slug, key) : [];
+        const typeName = url.searchParams.has('type')
+          ? PLEX_TYPE_NUMBERS[url.searchParams.get('type') ?? ''] ?? 'unsupported'
+          : null;
+        const listed =
+          typeName === null
+            ? top
+            : typeName === 'episode'
+              ? top.flatMap(leavesOf)
+              : typeName === 'season'
+                ? top.flatMap((show) => childrenOf(show.ratingKey).filter((c) => c.type === 'season'))
+                : top.filter((item) => item.type === typeName);
+        const items = listed.map(withWatch).filter((item) => matchesWatchFilters(item, url.searchParams));
+        return json(res, 200, { MediaContainer: containerPage(items, url.searchParams) });
+      }
+      // ADR-088 / DESIGN-049 D-14 step 2 (PLAN-068) — `/library/all?guid=`: this server's items with the guid.
+      if (path === '/library/all') {
+        const slug = tokenStr ? SLUG_BY_TOKEN.get(tokenStr) : undefined;
+        const guid = url.searchParams.get('guid') ?? '';
+        const hits = slug
+          ? LIBRARIES[slug]
+              .flatMap((section) => sectionItems(slug, section.key))
+              .filter((item) => guid !== '' && item.guid === guid)
+              .map(withWatch)
+          : [];
+        return json(res, 200, { MediaContainer: containerPage(hits, url.searchParams) });
+      }
+      // ADR-088 / DESIGN-049 D-14/D-15 (PLAN-068) — Plex's GET-shaped watched-state WRITES. Recorded in `calls`
+      // (like the other writes) and applied to the watch map: scrobble marks every leaf under the key watched
+      // (a show or season key covers all its episodes), unscrobble clears them (resume points included).
+      if ((path === '/:/scrobble' || path === '/:/unscrobble') && method === 'GET') {
+        const slug = tokenStr ? SLUG_BY_TOKEN.get(tokenStr) : undefined;
+        if (!slug) return json(res, 401, { message: 'unauthorized' });
+        if (url.searchParams.get('identifier') !== 'com.plexapp.plugins.library') {
+          return json(res, 400, { message: 'identifier must be com.plexapp.plugins.library' });
+        }
+        const key = url.searchParams.get('key') ?? '';
+        const target = findMetadataItem(key);
+        if (!target) return json(res, 404, { message: 'no such metadata' });
+        calls.push({ method, path, machineId: slug, body: { key } });
+        const now = Math.floor(Date.now() / 1000);
+        for (const leaf of leavesOf(target)) {
+          const prev = watch.get(leaf.ratingKey);
+          watch.set(
+            leaf.ratingKey,
+            path === '/:/scrobble' ? { viewCount: (prev?.viewCount ?? 0) + 1, lastViewedAt: now } : { viewCount: 0 },
+          );
+        }
+        res.writeHead(200);
+        return res.end();
       }
       // ADR-064 (PLAN-037) — a section's Plex collections (the collections-sync fetcher's listing).
       // The fixture fits one container page; totalSize ends the client's paging loop immediately.
@@ -446,13 +848,29 @@ export async function startStubPlex(): Promise<StubPlexServer> {
       const childrenMatch = path.match(/^\/library\/metadata\/([^/]+)\/children$/);
       if (childrenMatch) {
         const key = childrenMatch[1]!;
-        const Metadata = METADATA_CHILDREN[key] ?? [];
+        const Metadata = childrenOf(key).map(withWatch);
+        const sectionId = METADATA_SECTION[key] ?? WATCH_SECTION_OF[key];
         return json(res, 200, {
           MediaContainer: {
             size: Metadata.length,
             totalSize: Metadata.length,
-            librarySectionID: METADATA_SECTION[key] ? Number(METADATA_SECTION[key]) : undefined,
+            librarySectionID: sectionId ? Number(sectionId) : undefined,
             Metadata,
+          },
+        });
+      }
+      // ADR-088 / DESIGN-049 D-09/D-11 (PLAN-068) — every episode under a show/season (specials included),
+      // overlaid with the watch map, paged with X-Plex-Container-Start/Size and the full totalSize.
+      const leavesMatch = path.match(/^\/library\/metadata\/([^/]+)\/allLeaves$/);
+      if (leavesMatch) {
+        const key = leavesMatch[1]!;
+        const item = findMetadataItem(key);
+        if (!item) return json(res, 404, { message: 'no such metadata' });
+        const sectionId = METADATA_SECTION[key] ?? WATCH_SECTION_OF[key];
+        return json(res, 200, {
+          MediaContainer: {
+            ...containerPage(leavesOf(item).map(withWatch), url.searchParams),
+            librarySectionID: sectionId ? Number(sectionId) : undefined,
           },
         });
       }
@@ -462,11 +880,11 @@ export async function startStubPlex(): Promise<StubPlexServer> {
         const key = metaMatch[1]!;
         const item = findMetadataItem(key);
         if (!item) return json(res, 404, { message: 'no such metadata' });
-        const sectionId = METADATA_SECTION[key];
+        const sectionId = METADATA_SECTION[key] ?? WATCH_SECTION_OF[key];
         return json(res, 200, {
           MediaContainer: {
             size: 1,
-            Metadata: [{ ...item, librarySectionID: sectionId ? Number(sectionId) : undefined }],
+            Metadata: [{ ...withWatch(item), librarySectionID: sectionId ? Number(sectionId) : undefined }],
           },
         });
       }
