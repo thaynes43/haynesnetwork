@@ -30,8 +30,9 @@ function decodeName(raw: string): string {
 /**
  * Redact the value of every credential query parameter in a URL string. Structure-preserving: nothing
  * else in the URL is decoded, re-encoded or reordered (so the result still reads as the request that was
- * made). A parameter NAME is compared after percent-decoding, so `X%2DPlex%2DToken=…` is caught too.
- * Strings that are not URLs pass through `redactSecrets` unchanged in shape.
+ * made). A parameter NAME is compared after percent-decoding, so `X%2DPlex%2DToken=…` is caught too. The
+ * whole URL then gets the free-text pass as well, which catches what a `&`-split cannot see (a `;`-joined
+ * pair, a key pasted into the path). Strings that are not URLs get the free-text pass alone.
  */
 export function redactUrl(url: string): string {
   const q = url.indexOf('?');
@@ -47,21 +48,25 @@ export function redactUrl(url: string): string {
       return SECRET_NAMES.has(decodeName(rawName)) ? `${rawName}=${REDACTED}` : pair;
     })
     .join('&');
-  // The path and fragment get the free-text pass too (a key pasted into a path segment is still a key).
-  return redactSecrets(url.slice(0, q + 1)) + query + redactSecrets(url.slice(end));
+  return redactSecrets(url.slice(0, q + 1) + query + url.slice(end));
 }
 
-// `name=value` anywhere in free text — an upstream error page that echoes the request URL, a log line that
-// quotes one. The left boundary refuses word characters and '-', so `csrf_token=` or `x-plex-token` (when
-// `token` alone would match inside it) are handled as whole names only. Values end at the first URL/text
-// delimiter.
-const PAIR_PATTERN = /(^|[^A-Za-z0-9_-])(apikey|api_key|token|x-plex-token)=([^&\s#"'<>]*)/gi;
-// `"name": "value"` — a JSON body (an error payload) that echoes a credential field.
-const JSON_PATTERN = /("(?:apikey|api_key|token|x-plex-token)"\s*:\s*")((?:[^"\\]|\\.)*)(")/gi;
+const NAMES = 'apikey|api_key|token|x-plex-token';
+// `"name": "value"` — a JSON body (an error payload) that echoes a credential field. The closing quote is
+// optional so a value CUT OFF by a body-snippet limit is still redacted to its end.
+const JSON_PATTERN = new RegExp(`("(?:${NAMES})"\\s*:\\s*")((?:[^"\\\\]|\\\\.)*)("|$)`, 'gi');
+// `name=value`, `name: value`, `'name': 'value'` anywhere in free text — a query pair, an echoed request
+// URL or header, a Python/YAML dump. The left boundary refuses word characters and '-', so `csrf_token=` or
+// the `token` inside `x-plex-token` are never taken as the name; a value ends at the first URL/text
+// delimiter (or the end of the text, when a snippet limit cut it).
+const PAIR_PATTERN = new RegExp(
+  `(^|[^A-Za-z0-9_-])(${NAMES})(['"]?\\s*[=:]\\s*['"]?)([^&\\s#"'<>,;}]*)`,
+  'gi',
+);
 
-/** Redact credential `name=value` pairs and `"name":"value"` JSON fields anywhere in free text. */
+/** Redact credential `"name":"value"` JSON fields and `name=value` / `name: value` pairs in free text. */
 export function redactSecrets(text: string): string {
   return text
-    .replace(PAIR_PATTERN, (_m, lead: string, name: string) => `${lead}${name}=${REDACTED}`)
-    .replace(JSON_PATTERN, (_m, open: string, _value: string, close: string) => `${open}${REDACTED}${close}`);
+    .replace(JSON_PATTERN, (_m, open: string, _value: string, close: string) => `${open}${REDACTED}${close}`)
+    .replace(PAIR_PATTERN, (_m, lead: string, name: string, sep: string) => `${lead}${name}${sep}${REDACTED}`);
 }

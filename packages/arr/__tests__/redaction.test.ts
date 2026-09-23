@@ -76,6 +76,17 @@ describe('redactUrl / redactSecrets', () => {
     expect(redactUrl('http://sonarr.test:8989/api/v3/series/1')).toBe('http://sonarr.test:8989/api/v3/series/1');
   });
 
+  it('catches what a &-split cannot see: a ;-joined pair, colon and quoted forms, a cut-off JSON value', () => {
+    expect(redactUrl(`http://t/api?cmd=x;apikey=${TAUTULLI_KEY}`)).toBe(`http://t/api?cmd=x;apikey=${REDACTED}`);
+    const out = redactSecrets(
+      `X-Plex-Token: ${PLEX_TOKEN} | {'apikey': '${TAUTULLI_KEY}'} | token : ${WEBHOOK_TOKEN} | {"api_key":"${TMDB_KEY.slice(0, 12)}`,
+    );
+    for (const secret of ALL_SECRETS) expect(out).not.toContain(secret.slice(0, 8));
+    expect(out).toContain(`X-Plex-Token: ${REDACTED}`);
+    expect(out).toContain(`'apikey': '${REDACTED}'`);
+    expect(out.endsWith(`"api_key":"${REDACTED}`)).toBe(true);
+  });
+
   it('redactSecrets scrubs name=value pairs and JSON fields in free text (echoed error bodies)', () => {
     const text =
       `The path '/api/v2?apikey=${TAUTULLI_KEY}&cmd=x' was not found. ` +
@@ -109,6 +120,15 @@ describe('ArrError subclasses never expose a credential', () => {
     expect(parse.issues).toEqual(['response.data: expected object']);
     expectNoSecret(new MaintainerrWriteFailedError('POST', keyUrl, 'Failed - no metadata'));
   });
+
+  it('the stored issues and upstream message are redacted too, not only the message', () => {
+    const parse = new ArrParseError('GET', 'http://t/x', [`response.data: got token=${WEBHOOK_TOKEN}`]);
+    expect(parse.issues).toEqual([`response.data: got token=${REDACTED}`]);
+    expectNoSecret(parse);
+    const failed = new MaintainerrWriteFailedError('POST', 'http://m/x', `bad apikey=${TAUTULLI_KEY}`);
+    expect(failed.upstreamMessage).toBe(`bad apikey=${REDACTED}`);
+    expectNoSecret(failed);
+  });
 });
 
 describe('the real clients, driven into each error path', () => {
@@ -124,6 +144,15 @@ describe('the real clients, driven into each error path', () => {
     expect(error).toBeInstanceOf(ArrHttpError);
     expectNoSecret(error);
     expect((error as ArrHttpError).url).toContain('cmd=get_history'); // still diagnosable
+  });
+
+  it('a key straddling the 300-character body-snippet limit leaves no prefix behind', async () => {
+    // The limit lands inside the JSON value; redacting before cutting keeps even a prefix out.
+    const body = { message: 'x'.repeat(264), apikey: TAUTULLI_KEY }; // the key starts at char 288
+    const { fetchImpl } = stubFetchSequence([{ status: 400, body }]);
+    const error = await new TautulliClient({ ...TAUT, fetchImpl }).getHistory().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ArrHttpError);
+    for (const surface of surfaces(error)) expect(surface).not.toContain(TAUTULLI_KEY.slice(0, 8));
   });
 
   it('Tautulli timeout → ArrTimeoutError without the key', async () => {

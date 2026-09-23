@@ -6,6 +6,7 @@
 import type { ZodType } from 'zod';
 import { ZodError } from 'zod';
 import { ArrHttpError, ArrParseError, ArrTimeoutError } from './errors';
+import { redactSecrets } from './redact';
 
 export type QueryParams = Record<string, string | number | boolean | undefined>;
 
@@ -86,7 +87,10 @@ export class ArrHttp {
       clearTimeout(timer);
     }
     if (!response.ok) {
-      const snippet = (await response.text().catch(() => '')).slice(0, 300);
+      // Redact BEFORE cutting the snippet: a limit that lands inside a credential value would otherwise
+      // leave a prefix of it the patterns can no longer recognise.
+      const body = await response.text().catch(() => '');
+      const snippet = redactSecrets(body.slice(0, 4000)).slice(0, 300);
       throw new ArrHttpError(response.status, method, url, snippet || undefined);
     }
     return response;

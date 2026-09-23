@@ -74,17 +74,21 @@ export class MaintainerrWriteFailedError extends ArrError {
   readonly code = 'MAINTAINERR_WRITE_FAILED' as const;
   /** The request URL with every credential query value replaced by `REDACTED`. */
   readonly url: string;
+  /** Maintainerr's own failure message, credential values redacted. */
+  readonly upstreamMessage?: string;
   constructor(
     readonly method: string,
     url: string,
-    readonly upstreamMessage?: string,
+    upstreamMessage?: string,
   ) {
     const safeUrl = redactUrl(url);
+    const safeUpstream = upstreamMessage === undefined ? undefined : redactSecrets(upstreamMessage);
     super(
       `${method} ${safeUrl} → Maintainerr reported a logical failure (code 0)` +
-        `${upstreamMessage ? ` — ${upstreamMessage}` : ''}`,
+        `${safeUpstream ? ` — ${safeUpstream}` : ''}`,
     );
     this.url = safeUrl;
+    this.upstreamMessage = safeUpstream;
   }
 }
 
@@ -93,16 +97,20 @@ export class ArrParseError extends ArrError {
   readonly code = 'ARR_PARSE_ERROR' as const;
   /** The request URL with every credential query value replaced by `REDACTED`. */
   readonly url: string;
+  /** The zod issues (path: message), credential values redacted. */
+  readonly issues: readonly string[];
   constructor(
     readonly method: string,
     url: string,
-    readonly issues: readonly string[],
+    issues: readonly string[],
   ) {
     const safeUrl = redactUrl(url);
+    const safeIssues = issues.map(redactSecrets);
     super(
       `${method} ${safeUrl} → response failed schema validation (upstream schema drift?): ` +
-        issues.slice(0, 5).join('; '),
+        safeIssues.slice(0, 5).join('; '),
     );
     this.url = safeUrl;
+    this.issues = safeIssues;
   }
 }
