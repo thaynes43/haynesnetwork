@@ -4,6 +4,33 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-23 — Watch Companion designed (PLAN-068): the Movie Room voice agent gets the owner's watch history over an in-cluster MCP surface
+
+**Owner request (2026-09-23):** a specialized voice agent for the Movie Room Voice PE that knows his
+watch history on every server ("what series haven't I finished?", "what should I watch next?" without
+repeats, "I already watched X, recommend a new show"), served from this app, with the same tools for
+the dev-env agents. **Owner ruling (2026-09-23, on his phone): "I already watched X" also marks it
+watched in Plex.**
+
+**Design of record:** ADR-087 (stateless `/api/mcp`, in-cluster only, a header-injecting hop with a
+cluster-minted token), ADR-088 (Watch Events from all three Tautullis + Plex per-episode progress +
+Watch Marks with the Plex write-back), ADR-089 (deterministic recommendations), DESIGN-049, PLAN-068,
+OPS-015; PRD R-240..R-246, glossary T-243..T-253, new bounded context BC-06. All ADRs **Proposed**
+until PLAN-068 S14.
+
+**Why so small a tool surface:** Home Assistant sends every MCP tool schema on every voice turn;
+cigar-journal's 35 tools cost about 2 s per turn on OpenAI (owner, 2026-09-22: "We can't afford 2
+seconds"). The Voice Budget (3 KB `tools/list`, 1,200-character results) is test-enforced.
+
+**Found on the way (not this feature):** `ensurePlexUserIdMapping` has no caller, so ADR-053's per-user
+facets are empty in production (being fixed on `agent/fix-plex-account-map`); the household Tautulli
+harvest reads only the newest 10k rows per instance (a GitHub issue — it moves Trash numbers); every
+`@hnet/arr` client error embeds the Tautulli API key in its URL (fixed first in PLAN-068 S3); the
+Dockerfile deps stage copies 9 of 20 package manifests (PLAN-068 S1).
+
+**Next:** PLAN-068 S1 onward. Build is split into a foundation PR (S1–S3), a pure-math PR (S4), then
+domain + sync + MCP (S5–S8).
+
 ## ▶ 2026-09-22 (later) — The FIFTH LL site: the Wanted page's Force Search said "Search fired" at copies LL already had
 
 **The gap the guard left.** The push guard below fixed the four sites that call `queueBook`. The Wanted
