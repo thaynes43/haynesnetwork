@@ -1,7 +1,7 @@
 # DESIGN-008: Library metadata enrichment, poster proxy, and the shared filter/sort contract
 
 - **Status:** Draft
-- **Last updated:** 2026-07-06
+- **Last updated:** 2026-09-23 <!-- D-03 amendment: default staleness cut is 6h minus a 30-min slack (the 6h threshold = 6h schedule made every other run near-empty, so rows refreshed every 12h); the mode runs the ADR-053 Plex Account Map reconcile first. Prior: 2026-07-06 -->
 - **Satisfies:** PRD-001 R-40..R-42 (extended) + new **R-67..R-72**; governed by **ADR-018**
   (metadata modeling), **ADR-019** (poster proxy), ADR-008 (one-way sync), ADR-003
   (Postgres/Drizzle + transactional audit), ADR-015 (no reorientation). Bounded context DDD-002
@@ -94,6 +94,16 @@ context is built ONCE and shared. `selectMetadataTargets` picks rows missing OR
 `fetched_at < now()-6h`, oldest-first. Extend `SYNC_RUN_KINDS`, the orchestrator dispatch, and the
 `scripts/sync.ts` parser (`--mode=metadata-refresh`). CronJob `sync-metadata` `15 */6 * * *`,
 `concurrencyPolicy: Forbid`.
+
+> **D-03 amendment (2026-09-23): the default staleness cut is `now() − (6h − 30 min)`.** With the
+> threshold equal to the 6h schedule, the rows a run wrote were stamped (DB `now()`) seconds after that
+> run started. At the next tick they were a few seconds too fresh, so every second run found almost
+> nothing to do. Live logs: 18,460 rows at 16:15Z, 1 at 22:15Z, 18,460 at 04:15Z, 32 at 10:15Z. The
+> household watch signal (and, since ADR-053, the per-user one) therefore refreshed every 12h.
+> `METADATA_STALE_SLACK_MS` (30 min) absorbs that write lag plus scheduling jitter. Each tick now
+> re-harvests the previous tick's rows, which is the designed 6h cadence (about a minute per run in
+> cluster). An explicit `staleThresholdMs` (tests) is still exact. Also since ADR-053, the mode runs
+> the Plex Account Map reconcile before harvesting (DESIGN-026 D-07 status note).
 
 ```mermaid
 sequenceDiagram

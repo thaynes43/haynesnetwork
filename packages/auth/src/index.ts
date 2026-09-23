@@ -6,6 +6,7 @@ import type { PlexIdentity } from './hooks/plex-identity';
 
 export { auth, oidcEnabled, type Auth } from './config';
 export { bootstrapAdminOnSignin } from './hooks/bootstrap-admin';
+export { mapPlexAccountOnSignin } from './hooks/map-plex-account';
 export {
   getSessionExtension,
   type SessionExtension,
