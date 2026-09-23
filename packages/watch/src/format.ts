@@ -415,7 +415,8 @@ function episodeCount(r: MarkResultView): string {
 /**
  * The `mark_watched` read-back (D-14 step 8): "Marked Severance (2022) as watched in Plex, all 19
  * episodes." / "Noted Dark Matter (2024) as watched. It isn't on Plex, so only your history
- * changed." Covers each scope, an already-watched title, and partial or failed Plex writes.
+ * changed." Covers each scope, an already-watched title, partial or failed Plex writes, and a show
+ * Plex lists with specials only (`none`: specials never take part in a mark, DESIGN-049 D-26).
  */
 export function formatMarkResult(r: MarkResultView): string {
   const { subject, through } = markSubject(r);
@@ -424,6 +425,10 @@ export function formatMarkResult(r: MarkResultView): string {
     case 'not_on_plex':
       return capSpoken(
         `Noted ${subject}${through} as watched. It isn't on Plex, so only your history changed.`,
+      );
+    case 'none':
+      return capSpoken(
+        `Noted ${subject}${through} as watched. Plex only lists specials for it, so nothing changed there.`,
       );
     case 'failed':
       return capSpoken(

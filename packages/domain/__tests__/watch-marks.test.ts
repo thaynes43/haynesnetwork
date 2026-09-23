@@ -1,10 +1,11 @@
 // ADR-088 / DESIGN-049 D-11..D-15 (PLAN-068 S5) — the Watch Mark flows against embedded Postgres 16 and a
 // RECORDING FAKE Plex (never a real server — PLAN-068's hard rule): every mark scope, the replay rule, a
 // partial Plex failure with an accurate `flipped`, not-on-Plex (and the TMDB fallback), ambiguous titles
-// that write nothing, local:// copies, undo reversing EXACTLY `flipped` (collapsed to show/season keys),
-// dismissals that never touch Plex, and live revalidation with its budget. PR #563 review: truncated
-// listings are failed reads, a failed undo retries the same mark, pending marks are never undone, and only
-// the current owner is served (D-03).
+// that write nothing, local:// copies, undo reversing EXACTLY `flipped` (collapsed to season keys, never the
+// show key), dismissals that never touch Plex, and live revalidation with its budget. PR #563 review:
+// truncated listings are failed reads, a failed undo retries the same mark, pending marks are never undone,
+// and only the current owner is served (D-03). Live incident 2026-09-23 (D-26): specials never take part in
+// a mark, no write touches an already-watched leaf, and a mark or undo leaves the next read to Plex.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { watchMarks, watchTitles, type Database, type WatchMarkFlip, type WatchTitleRow } from '@hnet/db';
@@ -27,6 +28,7 @@ import {
 import {
   WatchNotReadyError,
   dismissTitle,
+  markScopeOf,
   markWatched,
   planReverts,
   planShowWrites,
@@ -98,6 +100,36 @@ function movies(): FakeMovie[] {
   ];
 }
 
+const APRIL = Math.floor(Date.parse('2026-04-02T02:00:00Z') / 1000);
+
+/**
+ * The live incident's shape (2026-09-23): The Expanse with every regular episode watched (last in April) and
+ * specials never watched. `unwatched` lists regular episodes to leave unwatched.
+ */
+function expanse(unwatched: readonly string[] = []): FakeShow {
+  const regular = [1, 2, 3].flatMap((season) =>
+    [1, 2].map((episode) => {
+      const ratingKey = `exp-${season}-${episode}`;
+      return unwatched.includes(ratingKey)
+        ? { ratingKey, season, episode }
+        : { ratingKey, season, episode, viewCount: 1, lastViewedAt: APRIL - (6 - (season - 1) * 2 - episode) * DAY };
+    }),
+  );
+  return {
+    server: 'haynesops',
+    ratingKey: 'exp',
+    title: 'The Expanse',
+    year: 2015,
+    guid: 'plex://show/exp',
+    Guid: [{ id: 'tvdb://280619' }, { id: 'tmdb://63639' }],
+    episodes: [
+      { ratingKey: 'exp-0-10', season: 0, episode: 10 },
+      { ratingKey: 'exp-0-28', season: 0, episode: 28 },
+      ...regular,
+    ],
+  };
+}
+
 let t: TestDb;
 let db: Database;
 
@@ -144,6 +176,53 @@ async function seedShow(fake: FakePlex, show: FakeShow, opts: { local?: boolean 
         onPlex: [{ server: show.server, ratingKey: show.ratingKey, local: opts.local ?? false }],
         plexCounts: { [show.server]: showCounts(meta) },
         showStatus: 'continuing',
+        ...showProgressFields(p),
+      },
+    ],
+  });
+  const row = r.rows[0];
+  if (!row) throw new Error('seed failed');
+  return row;
+}
+
+/** Seed ONE Title State over several copies of a show (one per server), as the sync would. */
+async function seedCopies(fake: FakePlex, copies: readonly FakeShow[]): Promise<WatchTitleRow> {
+  const reads = [];
+  for (const copy of copies) {
+    const client = fake.clients().read[copy.server];
+    const leaves = (await client.listAllLeaves(copy.ratingKey)).items;
+    const meta = (await client.getMetadataItem(copy.ratingKey))?.item;
+    if (!meta) throw new Error('no meta');
+    reads.push({ copy, leaves, meta });
+  }
+  fake.calls.length = 0;
+  const lead = reads[0];
+  if (!lead) throw new Error('no copies');
+  const ids = parsePlexItemIds(lead.meta);
+  const p = computeShowProgress(
+    reads.map((r) => ({ server: r.copy.server, episodes: episodeObsFromLeaves(r.leaves) })),
+    [],
+  );
+  const r = await upsertWatchTitles({
+    db,
+    plexAccountId: OWNER,
+    titles: [
+      {
+        kind: 'show',
+        titleKey: titleKeyFor({ kind: 'show', title: lead.copy.title, year: lead.copy.year, ...ids }),
+        plexGuid: ids.plexGuid,
+        tmdbId: ids.tmdbId,
+        tvdbId: ids.tvdbId,
+        imdbId: ids.imdbId,
+        mediaItemId: null,
+        title: lead.copy.title,
+        year: lead.copy.year,
+        genres: [],
+        contentRating: null,
+        isKids: false,
+        onPlex: reads.map((x) => ({ server: x.copy.server, ratingKey: x.copy.ratingKey, local: false })),
+        plexCounts: Object.fromEntries(reads.map((x) => [x.copy.server, showCounts(x.meta)])),
+        showStatus: 'ended',
         ...showProgressFields(p),
       },
     ],
@@ -203,19 +282,59 @@ function mark(fake: FakePlex, query: string, extra: Record<string, unknown> = {}
   return markWatched({ db, plex: fake.clients(), actor: ACTOR, consumer: 'hop', query, now: NOW, ...extra });
 }
 
+/** The recorded Plex writes as `op:key`, in call order. */
+function writeKeys(fake: FakePlex): string[] {
+  return fake.writes().map((c) => `${c.op}:${c.key}`);
+}
+
+type LeafState = { viewCount: number; lastViewedAt: number | null; viewOffset: number | null };
+
+/** Every leaf's watch fields by `server:ratingKey` — to prove a write touched nothing but its flips. */
+function leafSnapshot(fake: FakePlex): Map<string, LeafState> {
+  const out = new Map<string, LeafState>();
+  for (const s of fake.shows) {
+    for (const e of s.episodes) {
+      out.set(`${s.server}:${e.ratingKey}`, {
+        viewCount: e.viewCount ?? 0,
+        lastViewedAt: e.lastViewedAt ?? null,
+        viewOffset: e.viewOffset ?? null,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Only the `flipped` leaves changed. The fake, like Plex, bumps `viewCount` and re-stamps `lastViewedAt` on
+ * EVERY leaf under a scrobbled key — so a show or season key written over an already-watched episode or a
+ * special shows up here (D-26, live incident 2026-09-23).
+ */
+function expectOnlyFlippedChanged(fake: FakePlex, before: Map<string, LeafState>, flipped: readonly string[]) {
+  const after = leafSnapshot(fake);
+  const changed = [...after.entries()]
+    .filter(([key, state]) => JSON.stringify(state) !== JSON.stringify(before.get(key)))
+    .map(([key]) => key.slice(key.indexOf(':') + 1))
+    .sort();
+  expect(changed).toEqual([...flipped].sort());
+}
+
 describe('markWatched — whole show, replay, and an exact undo (D-14, D-15)', () => {
-  it('scrobbles the show key once, records exactly the flipped leaves, writes the Title State through', async () => {
+  it('writes season by season (never the show key, never a special), records exactly the flipped leaves, writes the Title State through', async () => {
     const show = severance();
     const fake = new FakePlex([show], movies());
     const seeded = await seedShow(fake, show);
     const before = fake.watchedState();
+    const leavesBefore = leafSnapshot(fake);
 
     const out = await mark(fake, 'severance');
     expect(out.status).toBe('done');
     if (out.status !== 'done') return;
-    expect(fake.writes()).toEqual([{ server: 'haynesops', op: 'scrobble', key: 'sev' }]);
-    expect(out.view).toMatchObject({ scope: 'show', plexResult: 'written', episodes: 5, flipped: 4 });
+    // Season 1 still has watched episodes, so only its unwatched S1E3 is written; season 2 is wholly
+    // unwatched, so its season key flips exactly its leaves. The specials (season 0) are never written.
+    expect(writeKeys(fake).sort()).toEqual(['scrobble:sev-1-3', `scrobble:${seasonKeyOf(show, 2)}`].sort());
+    expect(out.view).toMatchObject({ scope: 'show', plexResult: 'written', episodes: 5, flipped: 3 });
     expect(formatMarkResult(out.view)).toBe('Marked Severance (2022) as watched in Plex, all 5 episodes.');
+    expectOnlyFlippedChanged(fake, leavesBefore, ['sev-1-3', 'sev-2-1', 'sev-2-2']);
 
     const [row] = await marks();
     expect(row).toMatchObject({
@@ -226,68 +345,81 @@ describe('markWatched — whole show, replay, and an exact undo (D-14, D-15)', (
       query: 'severance',
       titleKey: seeded.titleKey,
     });
-    expect(row?.flipped.map((f) => f.ratingKey).sort()).toEqual(['sev-0-1', 'sev-1-3', 'sev-2-1', 'sev-2-2']);
+    expect(row?.flipped.map((f) => f.ratingKey).sort()).toEqual(['sev-1-3', 'sev-2-1', 'sev-2-2']);
     const title = await titleRow(seeded.id);
     expect(title).toMatchObject({ episodesWatched: 5, episodesTotal: 5, plexWatched: true, nextSeason: null });
+    // D-26: the written server's counters are dropped, so the next sync re-reads the show there.
+    expect(title.plexCounts.haynesops).toBeUndefined();
 
     // D-14 step 7: said again within 10 minutes, nothing would flip → the same answer, no second row.
     const again = await mark(fake, 'Severance');
     expect(again).toMatchObject({ status: 'done', replayed: true, markId: row?.id });
     if (again.status === 'done') expect(again.view).toEqual(out.view);
     expect(await marks()).toHaveLength(1);
-    expect(fake.writes()).toHaveLength(1);
+    expect(fake.writes()).toHaveLength(2);
 
-    // D-15: undo unscrobbles exactly `flipped` — season 0 and season 2 collapse to their keys (all
-    // flipped), S1E3 alone (S1E1/S1E2 were already watched and stay watched).
+    // D-15: undo unscrobbles exactly `flipped` — season 2 collapses to its key (all flipped), S1E3 alone
+    // (S1E1/S1E2 were already watched and stay watched); never the show key, never season 0.
     fake.calls.length = 0;
     const undo = await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: NOW });
     expect(undo.status).toBe('done');
     if (undo.status !== 'done') return;
-    expect(fake.writes().map((c) => `${c.op}:${c.key}`).sort()).toEqual(
-      ['unscrobble:sev-1-3', `unscrobble:${seasonKeyOf(show, 0)}`, `unscrobble:${seasonKeyOf(show, 2)}`].sort(),
-    );
+    expect(writeKeys(fake).sort()).toEqual(['unscrobble:sev-1-3', `unscrobble:${seasonKeyOf(show, 2)}`].sort());
     expect(fake.watchedState()).toEqual(before);
-    expect(undo.view).toMatchObject({ undone: true, action: 'watched', revertResult: 'written', episodes: 4 });
-    expect(formatUndoResult(undo.view)).toBe('Undone. Severance (2022) is back to unwatched in Plex, 4 episodes.');
+    expect(undo.view).toMatchObject({ undone: true, action: 'watched', revertResult: 'written', episodes: 3 });
+    expect(formatUndoResult(undo.view)).toBe('Undone. Severance (2022) is back to unwatched in Plex, 3 episodes.');
     const [reverted] = await marks();
     expect(reverted?.revertedAt).toEqual(NOW);
     expect(reverted?.revertResult).toBe('written');
-    expect(await titleRow(seeded.id)).toMatchObject({ episodesWatched: 2, nextSeason: 1, nextEpisode: 3 });
+    const undone = await titleRow(seeded.id);
+    expect(undone).toMatchObject({ episodesWatched: 2, nextSeason: 1, nextEpisode: 3 });
+    expect(undone.plexCounts.haynesops).toBeUndefined();
 
     // Nothing left to undo.
     const none = await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: NOW });
     expect(none).toMatchObject({ status: 'done', view: { undone: false } });
   });
 
-  it('undo collapses to the SHOW key when the mark flipped every leaf', async () => {
+  it('a mark that flips every regular leaf writes and undoes SEASON keys — never the show key', async () => {
     const show = silo();
+    show.episodes.push(
+      { ratingKey: 'silo-0-1', season: 0, episode: 1 },
+      { ratingKey: 'silo-2-1', season: 2, episode: 1 },
+    );
     const fake = new FakePlex([show]);
     await seedShow(fake, show);
-    await mark(fake, 'silo');
+    const out = await mark(fake, 'silo');
+    expect(out).toMatchObject({ status: 'done', view: { plexResult: 'written', episodes: 3, flipped: 3 } });
+    expect(writeKeys(fake).sort()).toEqual(['scrobble:silo-s1', 'scrobble:silo-s2']);
     fake.calls.length = 0;
     await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: NOW });
-    expect(fake.writes()).toEqual([{ server: 'haynesops', op: 'unscrobble', key: 'silo' }]);
+    expect(writeKeys(fake).sort()).toEqual(['unscrobble:silo-s1', 'unscrobble:silo-s2']);
     expect(fake.watchedState()).toEqual([]);
   });
 });
 
 describe('markWatched — season, episode and through scopes (D-14 step 5)', () => {
   it.each([
+    // Season 2 is wholly unwatched: its key flips exactly its leaves.
     [{ season: 2 }, ['scrobble:sev-s2'], ['sev-2-1', 'sev-2-2'], 'season', 2],
+    // Season 1 has watched episodes: its key would re-stamp them, so only the unwatched S1E3 is written.
+    [{ season: 1 }, ['scrobble:sev-1-3'], ['sev-1-3'], 'season', 3],
     [{ season: 1, episode: 3 }, ['scrobble:sev-1-3'], ['sev-1-3'], 'episode', 1],
-    // through S2E1: season 1's key (it has an unwatched episode) + S2E1; specials untouched.
-    [{ season: 2, episode: 1, through: true }, ['scrobble:sev-s1', 'scrobble:sev-2-1'], ['sev-1-3', 'sev-2-1'], 'through', 4],
+    // through S2E1: season 1's unwatched S1E3 (not its key — S1E1/S1E2 are watched) + S2E1; specials untouched.
+    [{ season: 2, episode: 1, through: true }, ['scrobble:sev-1-3', 'scrobble:sev-2-1'], ['sev-1-3', 'sev-2-1'], 'through', 4],
   ] as const)('%o', async (params, writes, flipped, scope, covered) => {
     const show = severance();
     const fake = new FakePlex([show]);
     await seedShow(fake, show);
+    const before = leafSnapshot(fake);
     const out = await mark(fake, 'severance', params);
     expect(out.status).toBe('done');
     if (out.status !== 'done') return;
-    expect(fake.writes().map((c) => `${c.op}:${c.key}`)).toEqual(writes);
+    expect(writeKeys(fake)).toEqual(writes);
     expect(out.view).toMatchObject({ scope, plexResult: 'written', flipped: flipped.length, episodes: covered });
     const [row] = await marks();
     expect(row?.flipped.map((f) => f.ratingKey)).toEqual(flipped);
+    expectOnlyFlippedChanged(fake, before, flipped);
     expect(show.episodes.find((e) => e.season === 0)?.viewCount ?? 0).toBe(0);
   });
 
@@ -302,9 +434,54 @@ describe('markWatched — season, episode and through scopes (D-14 step 5)', () 
       parentRatingKey: seasonKeyOf(show, e.season),
       viewCount: 1,
     }));
-    expect(planShowWrites('haynesops', 'sev', leaves, { scope: 'show', season: null, episode: null }).writes).toEqual([]);
-    expect(planShowWrites('haynesops', 'sev', leaves, { scope: 'season', season: 9, episode: null })).toMatchObject({
+    expect(planShowWrites('haynesops', leaves, { scope: 'show', season: null, episode: null }).writes).toEqual([]);
+    expect(planShowWrites('haynesops', leaves, { scope: 'season', season: 9, episode: null })).toMatchObject({
       hasScope: false,
+    });
+  });
+
+  describe('planShowWrites writes a season key only when it provably covers just the flipped leaves', () => {
+    const leaf = (key: string, parentIndex: number, index: number, parentRatingKey?: string, viewCount = 0) => ({
+      ratingKey: key,
+      title: 'x',
+      parentIndex,
+      index,
+      ...(parentRatingKey ? { parentRatingKey } : {}),
+      ...(viewCount > 0 ? { viewCount } : {}),
+    });
+    const plannedKeys = (leaves: Parameters<typeof planShowWrites>[1], scope: 'show' | 'season' = 'show') => {
+      const spec = { scope, season: scope === 'season' ? 1 : null, episode: null };
+      return planShowWrites('haynesops', leaves, spec).writes.map((w) => w.ratingKey);
+    };
+
+    it('with every leaf keyed, a wholly unwatched season goes by its key', () => {
+      const leaves = [leaf('a1', 1, 1, 's1'), leaf('a2', 1, 2, 's1'), leaf('b1', 2, 1, 's2')];
+      expect(plannedKeys(leaves)).toEqual(['s1', 's2']);
+    });
+
+    it('a watched leaf without parentRatingKey ⇒ episode keys only (no season key can be proven)', () => {
+      // a0 may sit under s1: scrobbling s1 would re-stamp it.
+      const leaves = [
+        leaf('a0', 1, 1, undefined, 1),
+        leaf('a1', 1, 2, 's1'),
+        leaf('a2', 1, 3, 's1'),
+        leaf('b1', 2, 1, 's2'),
+      ];
+      expect(plannedKeys(leaves)).toEqual(['a1', 'a2', 'b1']);
+      expect(plannedKeys(leaves, 'season')).toEqual(['a1', 'a2']);
+      // The same for a special without its key: season 2 is not written by its key either.
+      expect(plannedKeys([leaf('sp', 0, 1), leaf('b1', 2, 1, 's2'), leaf('b2', 2, 2, 's2')])).toEqual(['b1', 'b2']);
+    });
+
+    it('two leaves of one season with different parentRatingKey values ⇒ episode keys only', () => {
+      const leaves = [leaf('a1', 1, 1, 's1'), leaf('a2', 1, 2, 's1-other')];
+      expect(plannedKeys(leaves)).toEqual(['a1', 'a2']);
+      expect(plannedKeys(leaves, 'season')).toEqual(['a1', 'a2']);
+    });
+
+    it('a leaf of another season under the same key (a special) ⇒ episode keys only', () => {
+      const leaves = [leaf('sp', 0, 1, 's1', 1), leaf('a1', 1, 1, 's1'), leaf('a2', 1, 2, 's1')];
+      expect(plannedKeys(leaves)).toEqual(['a1', 'a2']);
     });
   });
 
@@ -324,6 +501,160 @@ describe('markWatched — season, episode and through scopes (D-14 step 5)', () 
     expect(await mark(fake, 'severance', { episode: 3 })).toEqual({ status: 'need_season' });
     expect(await marks()).toEqual([]);
     expect(fake.writes()).toEqual([]);
+  });
+});
+
+describe('specials never take part in a mark (D-26, live incident 2026-09-23)', () => {
+  it('a fully watched show with unwatched specials makes no write and answers with its regular episodes', async () => {
+    const show = expanse();
+    const fake = new FakePlex([show]);
+    const seeded = await seedShow(fake, show);
+    const out = await mark(fake, 'the expanse');
+    expect(out).toMatchObject({ status: 'done', replayed: false });
+    if (out.status !== 'done') return;
+    expect(fake.writes()).toEqual([]);
+    expect(out.view).toMatchObject({ scope: 'show', plexResult: 'written', episodes: 6, flipped: 0 });
+    expect(formatMarkResult(out.view)).toBe('The Expanse (2015) was already watched in Plex, all 6 episodes.');
+    const [row] = await marks();
+    expect(row).toMatchObject({ plexResult: 'written', flipped: [] });
+    expect(show.episodes.filter((e) => e.season === 0).map((e) => e.viewCount ?? 0)).toEqual([0, 0]);
+    // Nothing was written, so nothing needs a re-read: the counters and the April dates stand.
+    const title = await titleRow(seeded.id);
+    expect(title.plexCounts).toEqual(seeded.plexCounts);
+    expect(title.lastWatchedAt).toEqual(seeded.lastWatchedAt);
+    expect(title.lastWatchedAt?.toISOString()).toBe('2026-04-02T02:00:00.000Z');
+    // D-14 step 7 still applies: the repeat is a replay, not a second row.
+    expect(await mark(fake, 'The Expanse')).toMatchObject({ status: 'done', replayed: true, markId: row?.id });
+    expect(await marks()).toHaveLength(1);
+  });
+
+  it('a show Plex lists with specials only is noted as `none` — never "not on Plex" — and writes nothing', async () => {
+    const show: FakeShow = { ...expanse(), episodes: expanse().episodes.filter((e) => e.season === 0) };
+    const fake = new FakePlex([show]);
+    const seeded = await seedShow(fake, show);
+    const out = await mark(fake, 'the expanse');
+    expect(out).toMatchObject({
+      status: 'done',
+      replayed: false,
+      view: { scope: 'show', plexResult: 'none', flipped: 0 },
+    });
+    if (out.status !== 'done') return;
+    expect(formatMarkResult(out.view)).toBe(
+      'Noted The Expanse (2015) as watched. Plex only lists specials for it, so nothing changed there.',
+    );
+    expect(fake.writes()).toEqual([]);
+    const [row] = await marks();
+    expect(row).toMatchObject({ action: 'watched', scope: 'show', plexResult: 'none', flipped: [] });
+    expect((await titleRow(seeded.id)).plexCounts).toEqual(seeded.plexCounts);
+    // A repeat is a replay with the same answer; the undo has nothing to put back in Plex.
+    const again = await mark(fake, 'The Expanse');
+    expect(again).toMatchObject({ status: 'done', replayed: true, markId: row?.id });
+    if (again.status === 'done') expect(again.view).toEqual(out.view);
+    expect(await undo(fake)).toMatchObject({ view: { undone: true, revertResult: 'none', episodes: 0 } });
+    expect(fake.writes()).toEqual([]);
+  });
+
+  it('two unwatched episodes that are all of season 3 → one scrobble of the season-3 key; its undo collapses to it', async () => {
+    const show = expanse(['exp-3-1', 'exp-3-2']);
+    const fake = new FakePlex([show]);
+    await seedShow(fake, show);
+    const before = fake.watchedState();
+    const leaves = leafSnapshot(fake);
+    const out = await mark(fake, 'the expanse');
+    expect(out).toMatchObject({ status: 'done', view: { plexResult: 'written', episodes: 6, flipped: 2 } });
+    expect(writeKeys(fake)).toEqual([`scrobble:${seasonKeyOf(show, 3)}`]);
+    const [row] = await marks();
+    expect(row?.flipped).toEqual([
+      { server: 'haynesops', ratingKey: 'exp-3-1' },
+      { server: 'haynesops', ratingKey: 'exp-3-2' },
+    ]);
+    expectOnlyFlippedChanged(fake, leaves, ['exp-3-1', 'exp-3-2']);
+
+    fake.calls.length = 0;
+    const out2 = await undo(fake);
+    expect(out2).toMatchObject({ view: { undone: true, revertResult: 'written', episodes: 2 } });
+    expect(writeKeys(fake)).toEqual([`unscrobble:${seasonKeyOf(show, 3)}`]);
+    expect(fake.watchedState()).toEqual(before);
+    expectOnlyFlippedChanged(fake, leaves, []);
+  });
+
+  it('a season with a watched episode is written episode by episode — its key would re-stamp the watched one', async () => {
+    const show = expanse(['exp-3-2']);
+    show.episodes.push({ ratingKey: 'exp-3-3', season: 3, episode: 3 });
+    const fake = new FakePlex([show]);
+    await seedShow(fake, show);
+    const leaves = leafSnapshot(fake);
+    const out = await mark(fake, 'the expanse');
+    expect(out).toMatchObject({ status: 'done', view: { plexResult: 'written', episodes: 7, flipped: 2 } });
+    expect(writeKeys(fake)).toEqual(['scrobble:exp-3-2', 'scrobble:exp-3-3']);
+    // S3E1 keeps its one play and its April date.
+    expectOnlyFlippedChanged(fake, leaves, ['exp-3-2', 'exp-3-3']);
+
+    fake.calls.length = 0;
+    await undo(fake);
+    expect(writeKeys(fake)).toEqual(['unscrobble:exp-3-2', 'unscrobble:exp-3-3']);
+    expectOnlyFlippedChanged(fake, leaves, []);
+  });
+
+  it('through and season scopes ignore specials; a season below 1 asks for a season and writes nothing', async () => {
+    const show = expanse(['exp-3-1', 'exp-3-2']);
+    const fake = new FakePlex([show]);
+    await seedShow(fake, show);
+    const leaves = leafSnapshot(fake);
+    const through = await mark(fake, 'the expanse', { season: 3, episode: 1, through: true });
+    expect(through).toMatchObject({ status: 'done', view: { scope: 'through', flipped: 1, episodes: 5 } });
+    expect(writeKeys(fake)).toEqual(['scrobble:exp-3-1']);
+    expectOnlyFlippedChanged(fake, leaves, ['exp-3-1']);
+
+    fake.calls.length = 0;
+    expect(await mark(fake, 'the expanse', { season: 0 })).toEqual({ status: 'need_season' });
+    expect(await mark(fake, 'the expanse', { season: 0, episode: 10 })).toEqual({ status: 'need_season' });
+    expect(await mark(fake, 'the expanse', { season: 0, episode: 10, through: true })).toEqual({
+      status: 'need_season',
+    });
+    expect(fake.calls).toEqual([]);
+    expect(await marks()).toHaveLength(1);
+    expect(markScopeOf('show', { season: 0 })).toBe('need_season');
+    expect(markScopeOf('show', { season: 1 })).toEqual({ scope: 'season', season: 1, episode: null });
+  });
+
+  it('the undo of a mark made before D-26 (specials in `flipped`) puts them back by their own keys — never the show key', async () => {
+    const show = expanse(['exp-3-1', 'exp-3-2']);
+    const fake = new FakePlex([show]);
+    const seeded = await seedShow(fake, show);
+    const before = fake.watchedState();
+    // What the old show-key scrobble did: every unwatched leaf, specials included, flipped.
+    const legacy = ['exp-0-10', 'exp-0-28', 'exp-3-1', 'exp-3-2'];
+    for (const e of show.episodes) {
+      if (legacy.includes(e.ratingKey)) Object.assign(e, { viewCount: 1, lastViewedAt: NOW_S - 60 });
+    }
+    await db.insert(watchMarks).values({
+      plexAccountId: OWNER,
+      action: 'watched',
+      scope: 'show',
+      titleKey: seeded.titleKey,
+      kind: 'show',
+      title: 'The Expanse',
+      year: 2015,
+      plexGuid: seeded.plexGuid,
+      tmdbId: seeded.tmdbId,
+      tvdbId: seeded.tvdbId,
+      imdbId: seeded.imdbId,
+      season: null,
+      episode: null,
+      query: 'the expanse',
+      consumer: 'hop',
+      actorUserId: null,
+      flipped: legacy.map((ratingKey) => ({ server: 'haynesops' as const, ratingKey })),
+      plexResult: 'written',
+      createdAt: new Date(NOW.getTime() - 60_000),
+    });
+    const out = await undo(fake);
+    expect(out).toMatchObject({ view: { undone: true, revertResult: 'written', episodes: 4 } });
+    expect(writeKeys(fake).sort()).toEqual(
+      ['unscrobble:exp-0-10', 'unscrobble:exp-0-28', `unscrobble:${seasonKeyOf(show, 3)}`].sort(),
+    );
+    expect(fake.watchedState()).toEqual(before);
   });
 });
 
@@ -377,7 +708,7 @@ describe('markWatched — partial and failed Plex writes (D-14 step 6)', () => {
     const show = silo();
     const fake = new FakePlex([show]);
     await seedShow(fake, show);
-    fake.failWrites.add('haynesops:silo');
+    fake.failWrites.add(`haynesops:${seasonKeyOf(show, 1)}`);
     const out = await mark(fake, 'silo');
     expect(out).toMatchObject({ status: 'done', view: { plexResult: 'failed', flipped: 0 } });
     const [row] = await marks();
@@ -465,6 +796,9 @@ describe('markWatched — unmatched local:// copies (ADR-088)', () => {
     };
     const fake = new FakePlex([local, matched]);
     const row = await seedShow(fake, matched);
+    const localItem = (await fake.clients().read.haynesops.getMetadataItem('hh-ops'))?.item;
+    if (!localItem) throw new Error('no local item');
+    fake.calls.length = 0;
     await upsertWatchTitles({
       db,
       plexAccountId: OWNER,
@@ -476,16 +810,20 @@ describe('markWatched — unmatched local:// copies (ADR-088)', () => {
             { server: 'haynesops', ratingKey: 'hh-ops', local: true },
             { server: 'haynestower', ratingKey: 'hh-tower', local: false },
           ],
+          plexCounts: { ...row.plexCounts, haynesops: showCounts(localItem) },
           episodeMap: row.episodeMap,
         },
       ],
     });
+    expect(Object.keys((await titleRow(row.id)).plexCounts).sort()).toEqual(['haynesops', 'haynestower']);
     const out = await mark(fake, 'hazbin hotel');
     expect(out).toMatchObject({ status: 'done', view: { plexResult: 'written', flipped: 2 } });
     expect(fake.writes().map((c) => `${c.server}:${c.key}`).sort()).toEqual([
-      'haynesops:hh-ops',
-      'haynestower:hh-tower',
+      'haynesops:hh-ops-s1',
+      'haynestower:hh-tower-s1',
     ]);
+    // D-26: both written servers' counters are dropped, so the next sync re-reads the show on each.
+    expect((await titleRow(row.id)).plexCounts).toEqual({});
   });
 });
 
@@ -621,7 +959,7 @@ describe('truncated allLeaves listings are failed reads (D-14, D-15, D-11)', () 
     const fake = new FakePlex([show]);
     await seedShow(fake, show);
     const before = fake.watchedState();
-    // Only S0E1 is listed: planning from it would scrobble the SHOW key and record one flip for four.
+    // Only S0E1 is listed: planning from it would see none of the show's five regular episodes.
     fake.truncateLeavesAt = 1;
 
     const out = await mark(fake, 'severance');
@@ -634,21 +972,22 @@ describe('truncated allLeaves listings are failed reads (D-14, D-15, D-11)', () 
   });
 
   it('a truncated undo listing unscrobbles each flipped key and never collapses', async () => {
-    const show = severance();
+    const show = silo();
+    show.episodes.push({ ratingKey: 'silo-1-3', season: 1, episode: 3, viewCount: 1, lastViewedAt: NOW_S - DAY });
     const fake = new FakePlex([show]);
     await seedShow(fake, show);
     const before = fake.watchedState();
-    await mark(fake, 'severance');
+    await mark(fake, 'silo');
+    // S1E3 was already watched, so the mark wrote S1E1 and S1E2 by their own keys.
+    expect(writeKeys(fake).sort()).toEqual(['scrobble:silo-1-1', 'scrobble:silo-1-2']);
     fake.calls.length = 0;
-    // The listing shows S0E1 only, which IS flipped: a collapse would unscrobble the show key and with it
-    // S1E1/S1E2, watched before the mark.
-    fake.truncateLeavesAt = 1;
+    // The listing stops after S1E2: season 1 would look wholly flipped, and collapsing to its key would
+    // unscrobble S1E3, watched before the mark.
+    fake.truncateLeavesAt = 2;
 
     const out = await undo(fake);
-    expect(out).toMatchObject({ status: 'done', view: { undone: true, revertResult: 'written', episodes: 4 } });
-    expect(fake.writes().map((c) => `${c.op}:${c.key}`).sort()).toEqual(
-      ['unscrobble:sev-0-1', 'unscrobble:sev-1-3', 'unscrobble:sev-2-1', 'unscrobble:sev-2-2'].sort(),
-    );
+    expect(out).toMatchObject({ status: 'done', view: { undone: true, revertResult: 'written', episodes: 2 } });
+    expect(writeKeys(fake).sort()).toEqual(['unscrobble:silo-1-1', 'unscrobble:silo-1-2']);
     expect(fake.watchedState()).toEqual(before);
   });
 
@@ -790,7 +1129,7 @@ describe('undo never picks a pending mark (D-15)', () => {
   });
 });
 
-describe('planReverts — a leaf without its season key disables every collapse (D-15)', () => {
+describe('planReverts — season keys only, and only when every leaf names its season (D-15, D-26)', () => {
   const leaf = (ratingKey: string, parentIndex: number, index: number, parentRatingKey?: string) => ({
     ratingKey,
     title: 'x',
@@ -800,24 +1139,28 @@ describe('planReverts — a leaf without its season key disables every collapse 
   });
   const flips = (...keys: string[]): WatchMarkFlip[] => keys.map((ratingKey) => ({ server: 'haynesops', ratingKey }));
 
-  it('collapses to season and show keys when every leaf names its season', () => {
-    const leaves = [leaf('a1', 1, 1, 's1'), leaf('a2', 1, 2, 's1'), leaf('b1', 2, 1, 's2')];
-    expect(planReverts('haynesops', 'show', flips('a1', 'a2', 'b1'), leaves).map((p) => p.ratingKey)).toEqual([
-      'show',
+  it('collapses to the season keys whose every leaf flipped — never the show key, never season 0', () => {
+    const leaves = [leaf('sp1', 0, 1, 's0'), leaf('a1', 1, 1, 's1'), leaf('a2', 1, 2, 's1'), leaf('b1', 2, 1, 's2')];
+    expect(planReverts('haynesops', flips('a1', 'a2', 'b1'), leaves).map((p) => p.ratingKey)).toEqual(['s1', 's2']);
+    expect(planReverts('haynesops', flips('a1', 'a2'), leaves).map((p) => p.ratingKey)).toEqual(['s1']);
+    // Every leaf flipped (a mark made before D-26 flipped the specials too): the regular seasons collapse,
+    // the special goes back by its own key — no call covers the show.
+    expect(planReverts('haynesops', flips('sp1', 'a1', 'a2', 'b1'), leaves).map((p) => p.ratingKey)).toEqual([
+      's1',
+      's2',
+      'sp1',
     ]);
-    expect(planReverts('haynesops', 'show', flips('a1', 'a2'), leaves).map((p) => p.ratingKey)).toEqual(['s1']);
   });
 
   it('unscrobbles per flipped key when any leaf lacks parentRatingKey', () => {
-    // b0 has no season key: it may belong to s1, so s1 cannot be proven fully flipped — nor the show.
+    // b0 has no season key: it may belong to s1, so s1 cannot be proven fully flipped.
     const leaves = [leaf('a1', 1, 1, 's1'), leaf('a2', 1, 2, 's1'), leaf('b0', 1, 3)];
-    expect(planReverts('haynesops', 'show', flips('a1', 'a2'), leaves).map((p) => p.ratingKey)).toEqual([
+    expect(planReverts('haynesops', flips('a1', 'a2'), leaves).map((p) => p.ratingKey)).toEqual(['a1', 'a2']);
+    expect(planReverts('haynesops', flips('a1', 'a2', 'b0'), leaves).map((p) => p.ratingKey)).toEqual([
       'a1',
       'a2',
+      'b0',
     ]);
-    expect(
-      planReverts('haynesops', 'show', flips('a1', 'a2', 'b0'), leaves).map((p) => p.ratingKey),
-    ).toEqual(['a1', 'a2', 'b0']);
   });
 });
 
@@ -837,6 +1180,93 @@ describe('undo never touches an episode added after the mark (D-15)', () => {
     expect(out).toMatchObject({ view: { revertResult: 'written', episodes: 2 } });
     expect(fake.writes().map((c) => `${c.op}:${c.key}`).sort()).toEqual([...writes].sort());
     expect(fake.watchedState()).toEqual([`haynesops:${added.ratingKey}`]);
+  });
+});
+
+describe('the write-through leaves the next read to Plex (D-26, live incident 2026-09-23)', () => {
+  it("mark then undo: the written server's counters are dropped (the other's kept) and the dates round-trip", async () => {
+    const ops = expanse(['exp-3-2']);
+    const tower: FakeShow = {
+      ...expanse(['exp-3-2']),
+      server: 'haynestower',
+      ratingKey: 'expt',
+      episodes: expanse(['exp-3-2']).episodes.map((e) => ({ ...e, ratingKey: e.ratingKey.replace('exp-', 'expt-') })),
+    };
+    const fake = new FakePlex([ops, tower]);
+    const seeded = await seedCopies(fake, [ops, tower]);
+    expect(Object.keys(seeded.plexCounts).sort()).toEqual(['haynesops', 'haynestower']);
+    expect(seeded.lastWatchedAt?.toISOString()).toBe('2026-04-01T02:00:00.000Z');
+
+    await mark(fake, 'the expanse');
+    // The preferred matched copy only (view-state sync carries it).
+    expect(fake.writes().map((c) => `${c.server}:${c.op}:${c.key}`)).toEqual(['haynesops:scrobble:exp-3-2']);
+    const marked = await titleRow(seeded.id);
+    expect(marked.plexCounts).toEqual({ haynestower: seeded.plexCounts.haynestower });
+    // The flipped episode reads as watched now — as Plex stamps it.
+    expect(marked).toMatchObject({ episodesWatched: 6, plexWatched: true, lastWatchedAt: NOW });
+
+    fake.calls.length = 0;
+    await undo(fake);
+    expect(writeKeys(fake)).toEqual(['unscrobble:exp-3-2']);
+    const undone = await titleRow(seeded.id);
+    expect(undone.plexCounts).toEqual({ haynestower: seeded.plexCounts.haynestower });
+    // No container write re-stamped a watched episode, so the undo's live read still carries April.
+    expect(undone.lastWatchedAt).toEqual(seeded.lastWatchedAt);
+    expect(undone.plexLastViewedAt).toEqual(seeded.plexLastViewedAt);
+    expect(undone).toMatchObject({ episodesWatched: 5, plexWatched: false, nextSeason: 3, nextEpisode: 2 });
+
+    // Plex's show counters are back exactly where they were — the change detector alone would never look
+    // again. The dropped counters make the next live revalidation (D-11) re-read the leaves (and the next
+    // sync too: packages/sync watch-sync.test.ts) and store fresh ones.
+    fake.calls.length = 0;
+    const r = await revalidateTitles({ db, plex: fake.clients(), plexAccountId: OWNER, rows: [undone], now: NOW });
+    expect(fake.calls.map((c) => `${c.op}:${c.key}`)).toEqual(['getMetadataItem:exp', 'listAllLeaves:exp']);
+    expect(r.rows[0]?.plexCounts).toEqual(seeded.plexCounts);
+  });
+
+  it('an undo whose unscrobbles all fail still drops the counters: one may have landed after its timeout', async () => {
+    const show = expanse(['exp-3-1', 'exp-3-2']);
+    const fake = new FakePlex([show]);
+    const seeded = await seedShow(fake, show);
+    await mark(fake, 'the expanse');
+    // A revalidation between the mark and the undo stores fresh counters again.
+    const rows = [await titleRow(seeded.id)];
+    await revalidateTitles({ db, plex: fake.clients(), plexAccountId: OWNER, rows, now: NOW });
+    expect((await titleRow(seeded.id)).plexCounts.haynesops).toMatchObject({ viewedLeafCount: 6 });
+
+    fake.failWrites.add(`haynesops:${seasonKeyOf(show, 3)}`);
+    expect(await undo(fake)).toMatchObject({ view: { revertResult: 'failed', episodes: 0 } });
+    const title = await titleRow(seeded.id);
+    expect(title.plexCounts.haynesops).toBeUndefined();
+    expect(title).toMatchObject({ episodesWatched: 6, plexWatched: true });
+  });
+
+  it("a movie's written server takes the applied state as its counters, so the sync re-checks a disagreeing Plex", async () => {
+    const fake = new FakePlex([], movies());
+    const fixture = await seedMovie(fake, fake.movies[0] as FakeMovie);
+    expect(fixture.plexCounts.haynesops).toEqual({ leafCount: 1, viewedLeafCount: 0, lastViewedAt: null });
+
+    await mark(fake, 'the fixture');
+    expect((await titleRow(fixture.id)).plexCounts.haynesops).toEqual({
+      leafCount: 1,
+      viewedLeafCount: 1,
+      lastViewedAt: NOW_S,
+    });
+
+    // A failed undo changes nothing: the counters still say watched there (the sync's absent-movie check
+    // re-reads a movie that left the watched listing while its counters say watched).
+    fake.failWrites.add('haynesops:fix');
+    expect(await undo(fake)).toMatchObject({ view: { revertResult: 'failed' } });
+    expect(await titleRow(fixture.id)).toMatchObject({
+      plexWatched: true,
+      plexCounts: { haynesops: { viewedLeafCount: 1 } },
+    });
+
+    fake.failWrites.clear();
+    expect(await undo(fake)).toMatchObject({ view: { revertResult: 'written' } });
+    const undone = await titleRow(fixture.id);
+    expect(undone.plexCounts.haynesops).toEqual({ leafCount: 1, viewedLeafCount: 0, lastViewedAt: null });
+    expect(undone).toMatchObject({ plexWatched: false, lastWatchedAt: null });
   });
 });
 
