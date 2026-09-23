@@ -3,7 +3,11 @@
 // answers plain text (no `structuredContent`, no `outputSchema`); a thrown failure is replaced by the D-06
 // text here, before the SDK could hand the raw `error.message` to the client.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { ListToolsRequestSchema, type CallToolResult, type Tool } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ListToolsRequestSchema,
+  type CallToolResult,
+  type Tool,
+} from '@modelcontextprotocol/sdk/types.js';
 import { formatNotReady, formatWatchError, selectWatchOwner } from '@hnet/watch';
 import { z } from 'zod';
 import {
@@ -17,6 +21,7 @@ import {
   type AnswerContext,
   type McpDeps,
 } from './answers';
+import { WatchNotReadyError } from '@hnet/domain';
 import type { McpConsumer } from './auth';
 import {
   SLOW_CALL_MS,
@@ -26,7 +31,13 @@ import {
   slowestPhase,
   toolCalledLine,
 } from './log';
-import { INSTRUCTIONS, SERVER_NAME, WATCH_TOOLS, type WatchToolDef, type WatchToolName } from './tools';
+import {
+  INSTRUCTIONS,
+  SERVER_NAME,
+  WATCH_TOOLS,
+  type WatchToolDef,
+  type WatchToolName,
+} from './tools';
 import { APP_VERSION } from './version';
 
 type Answer = (ctx: AnswerContext, args: never) => Promise<string>;
@@ -42,7 +53,9 @@ const ANSWERS: Record<WatchToolName, Answer> = {
 };
 
 function text(t: string, isError = false): CallToolResult {
-  return isError ? { content: [{ type: 'text', text: t }], isError: true } : { content: [{ type: 'text', text: t }] };
+  return isError
+    ? { content: [{ type: 'text', text: t }], isError: true }
+    : { content: [{ type: 'text', text: t }] };
 }
 
 /**
@@ -83,15 +96,32 @@ export async function runTool(
   const onAbort = () => {
     finish(text(formatWatchError(), true), 'deadline');
   };
-  const finish = (result: CallToolResult, code?: string, revalidateTimedOut = false): CallToolResult => {
+  const finish = (
+    result: CallToolResult,
+    code?: string,
+    revalidateTimedOut = false,
+  ): CallToolResult => {
     if (finished) return result;
     finished = true;
     signal?.removeEventListener('abort', onAbort);
     const ms = Date.now() - started;
     const chars = result.content.reduce((n, c) => n + (c.type === 'text' ? c.text.length : 0), 0);
-    if (revalidateTimedOut) deps.log(revalidateTimeoutLine({ tool: tool.name, consumer: consumer.name }));
-    deps.log(toolCalledLine({ tool: tool.name, consumer: consumer.name, ms, ok: !result.isError, chars, ...(code ? { code } : {}) }));
-    if (ms > SLOW_CALL_MS) deps.log(slowCallLine({ tool: tool.name, consumer: consumer.name, ms, phase: slowestPhase(phases) }));
+    if (revalidateTimedOut)
+      deps.log(revalidateTimeoutLine({ tool: tool.name, consumer: consumer.name }));
+    deps.log(
+      toolCalledLine({
+        tool: tool.name,
+        consumer: consumer.name,
+        ms,
+        ok: !result.isError,
+        chars,
+        ...(code ? { code } : {}),
+      }),
+    );
+    if (ms > SLOW_CALL_MS)
+      deps.log(
+        slowCallLine({ tool: tool.name, consumer: consumer.name, ms, phase: slowestPhase(phases) }),
+      );
     return result;
   };
   if (signal?.aborted) return finish(text(formatWatchError(), true), 'deadline');
@@ -101,7 +131,8 @@ export async function runTool(
       return finish(text(`This connection can't use ${tool.name}.`, true), 'scope');
     }
     const parsed = tool.input.safeParse(args ?? {});
-    if (!parsed.success) return finish(text(invalidArgs(tool.name, parsed.error), true), 'invalid_args');
+    if (!parsed.success)
+      return finish(text(invalidArgs(tool.name, parsed.error), true), 'invalid_args');
     // D-03: the principal is THE owner row; none yet ⇒ an ordinary answer, not an error.
     const owner = await selectWatchOwner(deps.db);
     if (!owner) return finish(text(formatNotReady()));
@@ -109,6 +140,9 @@ export async function runTool(
     const answer = await ANSWERS[tool.name as WatchToolName](ctx, parsed.data as never);
     return finish(text(answer), undefined, ctx.revalidateTimedOut === true);
   } catch (error) {
+    // D-03: the domain refuses a principal that is not the current owner row (the owner changed between
+    // the read above and the flow's own check) — still "not ready", an ordinary answer, never isError.
+    if (error instanceof WatchNotReadyError) return finish(text(formatNotReady()));
     return finish(text(formatWatchError(), true), errorCode(error));
   }
 }
@@ -153,4 +187,3 @@ export function buildServer(deps: McpDeps, consumer: McpConsumer): McpServer {
   server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: toolList(consumer) }));
   return server;
 }
-
