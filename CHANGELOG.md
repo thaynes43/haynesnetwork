@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.97.0](https://github.com/thaynes43/haynesnetwork/compare/v0.96.5...v0.97.0) (2026-09-23)
+
+
+### Features
+
+* **mcp:** the in-cluster Watch history MCP endpoint (PLAN-068 S7–S8) ([#566](https://github.com/thaynes43/haynesnetwork/issues/566)) ([de4b2fc](https://github.com/thaynes43/haynesnetwork/commit/de4b2fcd0fc2a7b4f5b53b287cc939f23c4ef320))
+* **watch:** domain writers, mark flows and the watch sync mode (PLAN-068 S5–S6) ([#563](https://github.com/thaynes43/haynesnetwork/issues/563)) ([8f16eb0](https://github.com/thaynes43/haynesnetwork/commit/8f16eb088e1fc3d89179c2916ae4448cfce65f6f))
+* **watch:** foundation — schema, clients, key redaction, stubs (PLAN-068 S1–S3) ([#559](https://github.com/thaynes43/haynesnetwork/issues/559)) ([ec90cf1](https://github.com/thaynes43/haynesnetwork/commit/ec90cf1ce0b48063b35595852194ebb082c36d8a))
+* **watch:** pure progress, resolver, recommendation and spoken-text math (PLAN-068 S4) ([#558](https://github.com/thaynes43/haynesnetwork/issues/558)) ([d79c19e](https://github.com/thaynes43/haynesnetwork/commit/d79c19e630b98600eac2a294a7a3eea6c078c3dd))
+
+
+### Bug Fixes
+
+* **activity:** retire the per-failure push and read each *arr queue whole (prepares [#556](https://github.com/thaynes43/haynesnetwork/issues/556)) ([#561](https://github.com/thaynes43/haynesnetwork/issues/561)) ([e2a0920](https://github.com/thaynes43/haynesnetwork/commit/e2a0920358e22c987717cef399ad16c54ce737d0))
+
 ## [0.96.5](https://github.com/thaynes43/haynesnetwork/compare/v0.96.4...v0.96.5) (2026-09-23)
 
 
