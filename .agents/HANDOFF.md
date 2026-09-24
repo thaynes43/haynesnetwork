@@ -4,6 +4,27 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-23 — Public MCP connector (ChatGPT) — docs on branch, build in progress
+
+Owner directive 2026-09-23: *"We should do what we did for cigar-journal so I can hook
+haynesnetwork-mcp up to ChatGPT."* Same-day ruling: *"The auth path needs to be user aware too"* (no
+owner gate: any signed-in user may connect, the tools answer for that user's tracked Plex account,
+Plex write-back stays owner-only). The docs are on branch `docs/mcp-public-connector`: **ADR-091**
+(Proposed), **DESIGN-050**, **FLOW-001**, PRD R-247..R-251 / US-14 / AC-25..AC-28 (Q-14 resolved, Q-12
+answered for connectors), glossary T-254..T-259, DDD-002 BC-06, **OPS-016** (skeleton), and the plans
+**PLAN-069** (build, deploy, live gate: `.agents/plans/069-mcp-public-connector.md`) and **PLAN-070**
+(track household accounts, queued stub). `/api/mcp` and the hop do not change.
+
+Before S2 the driver rules the design gaps found while writing the paperwork (listed in PLAN-069 S1–S5
+and the docs PR): where the non-audited OAuth writes live given the domain-only write guard (D-01);
+the rate-limit response status (D-10); who sees the Connected apps menu entry and D-08's stale "admin
+sees the owner's list"; the D-12 claim that the IPv4-first note does not apply to dev-env. Findings
+recorded in PLAN-069's evidence: dev-env reaches `https://haynesnetwork.com` today only because the
+apex shares Cloudflare IPs with the allowlisted `cigars.haynesnetwork.com` (S7 adds an explicit
+entry); the live owner row has `watch_accounts.app_user_id` NULL, so the principal must come through
+`user_account_map` (which maps the owner correctly); no test account exists, so the AC-27 second-user
+check is owner-run. **Next:** merge the docs PR (S1), then S2.
+
 ## ▶ 2026-09-23 — Watch Companion LIVE (v0.97.1): PLAN-068 completed, the specials fix shipped and re-verified
 
 The Watch Companion is live end to end: haynesnetwork **v0.97.0** (#563 + #566 → release #560; every
