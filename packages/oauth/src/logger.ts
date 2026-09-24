@@ -16,6 +16,9 @@ export type AuthEventName =
   | 'token_issued'
   | 'token_refreshed'
   | 'refresh_reuse_detected'
+  // A REVOKED refresh token presented again — the expected aftermath of a Disconnect or a client revoke, not a
+  // theft signal: logged quietly, never paged (DESIGN-050 D-11 pages on refresh_reuse_detected only).
+  | 'refresh_rejected'
   | 'token_revoked'
   | 'code_replayed'
   | 'audience_mismatch'

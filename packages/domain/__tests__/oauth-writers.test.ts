@@ -461,6 +461,14 @@ describe('exchangeCode (D-06 authorization_code)', () => {
     expect(await t.db.select().from(oauthRefreshTokens)).toHaveLength(0);
   });
 
+  it('a client that registered only the authorization_code grant gets no refresh token, even with offline_access', async () => {
+    const client = await newClient({ ...CHATGPT, grant_types: ['authorization_code'] });
+    const tokens = await connect(client, alice);
+    expect(tokens.scope).toBe('watch:read watch:write offline_access');
+    expect(tokens.refresh_token).toBeUndefined();
+    expect(await t.db.select().from(oauthRefreshTokens)).toHaveLength(0);
+  });
+
   it('a code is single use: a replay answers invalid_grant (logged code_replayed) and issues nothing', async () => {
     const client = await newClient();
     const a = await approve(client, alice);
@@ -648,37 +656,145 @@ describe('rotateRefreshToken + revokeFamilyOnReuse (D-06 refresh_token)', () => 
         )
       ).code,
     ).toBe('invalid_grant');
-    expect(await audits('family_revoked_on_reuse')).toHaveLength(2); // every detection is audited
+    // That second refusal is a REVOKED token presented after the response — quiet: no second audit row, no page.
+    expect(await audits('family_revoked_on_reuse')).toHaveLength(1);
+    expect(logs.filter((l) => l.startsWith('[auth] refresh_reuse_detected '))).toHaveLength(1);
+    expect(logs.filter((l) => l.startsWith('[auth] refresh_rejected '))).toHaveLength(1);
   });
 
-  it('a revoked refresh token presented again is reuse too; another family is untouched', async () => {
+  it('replaying the spent token again after the response is still reuse (it was rotated, not revoked by a person)', async () => {
+    const client = await newClient();
+    const first = await connect(client, alice);
+    await rotateRefreshToken({
+      db: t.db,
+      client,
+      request: { refreshToken: first.refresh_token! },
+      now: at(10),
+    });
+    for (const s of [20, 30]) {
+      await oauthError(
+        rotateRefreshToken({
+          db: t.db,
+          client,
+          request: { refreshToken: first.refresh_token! },
+          now: at(s),
+        }),
+      );
+    }
+    // The first replay revoked the family (and rotated_at stays set), so the second finds it revoked: quiet.
+    expect(await audits('family_revoked_on_reuse')).toHaveLength(1);
+  });
+
+  it('a REVOKED refresh token presented again (after Disconnect or a client revoke) is refused quietly — no audit, no page', async () => {
     const client = await newClient();
     const mine = await connect(client, alice);
     const theirs = await connect(client, bob);
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((line: string) => void logs.push(line));
     await revokeToken({ db: t.db, client, token: mine.refresh_token!, now: at(5) });
+    const refused = await oauthError(
+      rotateRefreshToken({
+        db: t.db,
+        client,
+        request: { refreshToken: mine.refresh_token! },
+        now: at(6),
+      }),
+    );
+    expect(refused).toMatchObject({
+      code: 'invalid_grant',
+      description: 'Refresh token was revoked',
+    });
+    const again = await connect(client, alice);
+    await disconnectClient({ db: t.db, clientId: client.clientId, userId: alice, now: at(7) });
     expect(
       (
         await oauthError(
           rotateRefreshToken({
             db: t.db,
             client,
-            request: { refreshToken: mine.refresh_token! },
-            now: at(6),
+            request: { refreshToken: again.refresh_token! },
+            now: at(8),
           }),
         )
       ).code,
     ).toBe('invalid_grant');
-    expect(await audits('family_revoked_on_reuse')).toMatchObject([
-      { userId: alice, details: { reason: 'revoked', refresh_revoked: 0, access_revoked: 0 } },
-    ]);
+    expect(await audits('family_revoked_on_reuse')).toEqual([]);
+    expect(logs.filter((l) => l.startsWith('[auth] refresh_reuse_detected '))).toEqual([]);
+    const rejected = logs.filter((l) => l.startsWith('[auth] refresh_rejected '));
+    expect(rejected).toHaveLength(2);
+    expect(rejected[0]).toMatch(/"reason":"revoked"/);
+    // Another user's family is untouched.
     await expect(
       rotateRefreshToken({
         db: t.db,
         client,
         request: { refreshToken: theirs.refresh_token! },
-        now: at(7),
+        now: at(9),
       }),
     ).resolves.toMatchObject({ token_type: 'Bearer' });
+  });
+
+  it('a revocation racing a rotation catches the child the rotation just committed (Disconnect and RFC 7009)', async () => {
+    for (const revoker of ['disconnect', 'revoke'] as const) {
+      const client = await newClient();
+      const tokens = await connect(client, alice);
+      const [parent] = await t.db
+        .select()
+        .from(oauthRefreshTokens)
+        .where(eq(oauthRefreshTokens.tokenHash, hashToken(tokens.refresh_token!)));
+      // T1 — a rotation on another replica, mid-flight: it holds the parent's row lock and has inserted its child.
+      const rotation = await t.pool.connect();
+      try {
+        await rotation.query('BEGIN');
+        await rotation.query(`UPDATE oauth_refresh_tokens SET rotated_at = now() WHERE id = $1`, [
+          parent!.id,
+        ]);
+        const childHash = hashToken(`child-${revoker}`);
+        await rotation.query(
+          `INSERT INTO oauth_refresh_tokens (token_hash, family_id, parent_id, client_id, user_id, scopes, resource, expires_at)
+           VALUES ($1, $2, $3, $4, $5, '["watch:read","offline_access"]'::jsonb, $6, now() + interval '60 days')`,
+          [childHash, parent!.familyId, parent!.id, client.clientId, alice, RESOURCE],
+        );
+        await rotation.query(
+          `INSERT INTO oauth_access_tokens (token_hash, family_id, client_id, user_id, scopes, resource, expires_at)
+           VALUES ($1, $2, $3, $4, '["watch:read"]'::jsonb, $5, now() + interval '1 hour')`,
+          [
+            hashToken(`child-access-${revoker}`),
+            parent!.familyId,
+            client.clientId,
+            alice,
+            RESOURCE,
+          ],
+        );
+        // T2 — the revocation blocks on the parent's lock…
+        const revoking =
+          revoker === 'disconnect'
+            ? disconnectClient({ db: t.db, clientId: client.clientId, userId: alice, now: at(5) })
+            : revokeToken({ db: t.db, client, token: tokens.refresh_token!, now: at(5) });
+        await new Promise((r) => setTimeout(r, 150));
+        // …until T1 commits.
+        await rotation.query('COMMIT');
+        await revoking;
+        const family = await t.db
+          .select()
+          .from(oauthRefreshTokens)
+          .where(eq(oauthRefreshTokens.familyId, parent!.familyId));
+        expect(
+          family.map((r) => r.revokedAt !== null),
+          revoker,
+        ).toEqual([true, true]);
+        const access = await t.db
+          .select()
+          .from(oauthAccessTokens)
+          .where(eq(oauthAccessTokens.familyId, parent!.familyId));
+        expect(
+          access.every((a) => a.revokedAt !== null),
+          revoker,
+        ).toBe(true);
+      } finally {
+        rotation.release();
+      }
+    }
   });
 
   it('two replicas rotating the same token at once: one wins, the loser is reuse and the family is revoked', async () => {
@@ -892,7 +1008,8 @@ describe('disconnectClient + listConnectedApps (D-08)', () => {
             db: t.db,
             client,
             request: { code: unexchanged.code, codeVerifier: unexchanged.verifier },
-            now: at(31),
+            // A replica whose clock is BEHIND the one that disconnected still sees the code as expired.
+            now: at(29),
           }),
         )
       ).code,
@@ -1083,13 +1200,11 @@ describe('pruneExpired (D-03) — bounded, thresholded', () => {
       max: 60,
       now: T0,
     });
-    await t.db
-      .insert(rateLimit)
-      .values({
-        key: '198.51.100.1|/sign-in/oauth2',
-        count: 1,
-        lastRequest: T0.getTime() - 999_999,
-      });
+    await t.db.insert(rateLimit).values({
+      key: '198.51.100.1|/sign-in/oauth2',
+      count: 1,
+      lastRequest: T0.getTime() - 999_999,
+    });
     const report = await pruneExpired({ db: t.db, now: at(61) });
     expect(report.rateLimitBuckets).toBe(1);
     expect((await t.db.select().from(rateLimit)).map((r) => r.key).sort()).toEqual([

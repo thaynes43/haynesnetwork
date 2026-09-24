@@ -88,14 +88,42 @@ export function clientIp(headers: Headers): string {
   return 'unknown';
 }
 
-/** D-10 — count one request against `oauth:<route>|<ip>`; a refusal logs `rate_limited`. */
+/**
+ * What a D-10 bucket is keyed on: an IPv4 address as is (an IPv4-mapped IPv6 address as its IPv4), an IPv6
+ * address by its /64 — one subscriber usually holds a whole /64, so per-address buckets would be free to dodge.
+ * Anything unparseable stays as given (it already passed the IP-literal check).
+ */
+export function rateLimitSubject(ip: string): string {
+  if (!ip.includes(':')) return ip;
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (mapped) return mapped[1]!;
+  const halves = ip.split('::');
+  if (halves.length > 2) return ip;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const groups =
+    halves.length === 2
+      ? [...head, ...Array<string>(8 - head.length - tail.length).fill('0'), ...tail]
+      : head;
+  if (groups.length !== 8 || groups.some((g) => !/^[0-9a-f]{1,4}$/i.test(g))) return ip;
+  return `${groups
+    .slice(0, 4)
+    .map((g) => parseInt(g, 16).toString(16))
+    .join(':')}::/64`;
+}
+
+/** D-10 — count one request against `oauth:<route>|<subject>`; a refusal logs `rate_limited`. */
 export async function limitRequest(
   route: 'register' | 'token' | 'authorize',
   ip: string,
   windowSeconds: number,
   max: number,
 ): Promise<{ allowed: boolean; retryAfterSeconds: number }> {
-  const decision = await consumeRateLimit({ key: `oauth:${route}|${ip}`, windowSeconds, max });
+  const decision = await consumeRateLimit({
+    key: `oauth:${route}|${rateLimitSubject(ip)}`,
+    windowSeconds,
+    max,
+  });
   if (!decision.allowed) authEvent('rate_limited', { route, ip, count: decision.count });
   return decision;
 }

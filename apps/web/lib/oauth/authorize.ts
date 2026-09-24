@@ -15,6 +15,7 @@ import {
   OAuthError,
   authEvent,
   clientRedirect,
+  isClientId,
   issuerOrigin,
   validateAuthorizationParams,
   type OAuthEnv,
@@ -59,8 +60,10 @@ export async function handleAuthorize(input: {
   const issuer = issuerOrigin(env);
   const one = (name: string) => query.get(name) ?? undefined;
   const clientId = one('client_id');
-  const reject = (reason: string, extra: Record<string, unknown> = {}): AuthorizeOutcome => {
-    authEvent('authorize_rejected', { reason, client_id: clientId ?? null, ...extra });
+  const reject = (reason: string): AuthorizeOutcome => {
+    // The raw query value is untrusted and unbounded: log it only when it has the shape of a client id.
+    const loggedId = clientId === undefined ? null : isClientId(clientId) ? clientId : 'malformed';
+    authEvent('authorize_rejected', { reason, client_id: loggedId });
     return { kind: 'bad_request' };
   };
 

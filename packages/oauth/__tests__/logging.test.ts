@@ -20,7 +20,7 @@ import { ENV, NOW, RESOURCE, captureLogs, pkcePair, secondsAfter } from './helpe
 
 afterEach(() => vi.restoreAllMocks());
 
-/** Every D-06 event name — the Loki alerts (D-11) count on these exact strings. */
+/** Every D-06 event name (plus `refresh_rejected`) — the Loki alerts (D-11) count on these exact strings. */
 const EVENTS: AuthEventName[] = [
   'client_registered',
   'authorize_started',
@@ -31,6 +31,7 @@ const EVENTS: AuthEventName[] = [
   'token_issued',
   'token_refreshed',
   'refresh_reuse_detected',
+  'refresh_rejected',
   'token_revoked',
   'code_replayed',
   'audience_mismatch',

@@ -363,6 +363,20 @@ describe('D-03 / D-06 — token pairs', () => {
     expect(plan.response.scope).toBe('watch:read');
   });
 
+  it('no refresh token for a client that did not register the refresh grant (it could never use one)', () => {
+    const plan = planTokenPair({
+      clientId: CLIENT.clientId,
+      userId: USER,
+      scopes: ALL,
+      resource: RESOURCE,
+      refreshAllowed: false,
+      now: NOW,
+    });
+    expect(plan.refresh).toBeNull();
+    expect(plan.response).not.toHaveProperty('refresh_token');
+    expect(plan.response.scope).toBe('watch:read watch:write offline_access');
+  });
+
   it('a rotation stays in its family with the spent token as parent', () => {
     const plan = planTokenPair({
       clientId: CLIENT.clientId,

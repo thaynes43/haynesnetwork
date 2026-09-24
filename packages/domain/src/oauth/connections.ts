@@ -15,6 +15,9 @@ import { and, eq, gt, inArray, isNull, max, min, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { inTransaction, resolveDb } from '../db-client';
 
+/** What Disconnect sets a pending request's or an unexchanged code's `expires_at` to: long past, on any clock. */
+const EPOCH = new Date(0);
+
 export interface ConnectedApp {
   clientId: string;
   clientName: string;
@@ -176,9 +179,10 @@ export async function listConnectedApps(input: {
 }
 
 /**
- * D-08 — Disconnect (the Connected apps page): in ONE transaction, revoke every refresh and access token of the
- * client for the user, expire the user's pending consent requests and unexchanged codes for it (so nothing can
- * mint a new token afterwards), and write the `client_disconnected` audit row. The client's next `/mcp` call answers
+ * D-08 — Disconnect (the Connected apps page): in ONE transaction, expire the user's pending consent requests and
+ * unexchanged codes for the client, revoke every refresh and access token of it (so nothing can mint a new token
+ * afterwards, even a rotation or an exchange racing this on another replica), and write the `client_disconnected`
+ * audit row. The client's next `/mcp` call answers
  * 401. `actorUserId` is who pressed Disconnect — the user themself, or an admin acting on another user's row
  * (recorded in the audit details). Nothing to revoke ⇒ `{ changed: false }` and no audit row (the domain's
  * idempotent-no-op rule).
@@ -192,17 +196,48 @@ export async function disconnectClient(input: {
 }): Promise<{ changed: boolean; refreshRevoked: number; accessRevoked: number }> {
   const now = input.now ?? new Date();
   return inTransaction(input.db, async (tx) => {
-    const refresh = await tx
-      .update(oauthRefreshTokens)
-      .set({ revokedAt: now })
+    // 1. Pending consent requests and unexchanged codes first — EXPIRED, not deleted (deleting is the pruner's job):
+    // the consent page then shows the expired state, and a code can no longer be exchanged. They are set to the
+    // epoch, so no clock difference between replicas can let a racing exchange see them as live; an exchange that
+    // consumed a code just before this lands in the token sweeps below.
+    const pending = await tx
+      .update(oauthAuthorizations)
+      .set({ expiresAt: EPOCH })
       .where(
         and(
-          eq(oauthRefreshTokens.clientId, input.clientId),
-          eq(oauthRefreshTokens.userId, input.userId),
-          isNull(oauthRefreshTokens.revokedAt),
+          eq(oauthAuthorizations.clientId, input.clientId),
+          eq(oauthAuthorizations.userId, input.userId),
+          gt(oauthAuthorizations.expiresAt, now),
         ),
       )
-      .returning({ id: oauthRefreshTokens.id });
+      .returning({ id: oauthAuthorizations.id });
+    const codes = await tx
+      .update(oauthAuthorizationCodes)
+      .set({ expiresAt: EPOCH })
+      .where(
+        and(
+          eq(oauthAuthorizationCodes.clientId, input.clientId),
+          eq(oauthAuthorizationCodes.userId, input.userId),
+          isNull(oauthAuthorizationCodes.consumedAt),
+          gt(oauthAuthorizationCodes.expiresAt, now),
+        ),
+      )
+      .returning({ id: oauthAuthorizationCodes.id });
+    // 2. Every token: refresh, access, then refresh AGAIN — a revoking UPDATE that waited on a concurrent
+    // rotation's row lock never sees the child that rotation inserted, but the next statement does (tokens.ts).
+    const sweepRefresh = () =>
+      tx
+        .update(oauthRefreshTokens)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(oauthRefreshTokens.clientId, input.clientId),
+            eq(oauthRefreshTokens.userId, input.userId),
+            isNull(oauthRefreshTokens.revokedAt),
+          ),
+        )
+        .returning({ id: oauthRefreshTokens.id });
+    const refreshFirst = await sweepRefresh();
     const access = await tx
       .update(oauthAccessTokens)
       .set({ revokedAt: now })
@@ -214,31 +249,7 @@ export async function disconnectClient(input: {
         ),
       )
       .returning({ id: oauthAccessTokens.id });
-    // Pending consent requests and unexchanged codes for the client are EXPIRED, not deleted (deleting is the
-    // pruner's job): the consent page then shows the expired state and a code can no longer be exchanged.
-    const pending = await tx
-      .update(oauthAuthorizations)
-      .set({ expiresAt: now })
-      .where(
-        and(
-          eq(oauthAuthorizations.clientId, input.clientId),
-          eq(oauthAuthorizations.userId, input.userId),
-          gt(oauthAuthorizations.expiresAt, now),
-        ),
-      )
-      .returning({ id: oauthAuthorizations.id });
-    const codes = await tx
-      .update(oauthAuthorizationCodes)
-      .set({ expiresAt: now })
-      .where(
-        and(
-          eq(oauthAuthorizationCodes.clientId, input.clientId),
-          eq(oauthAuthorizationCodes.userId, input.userId),
-          isNull(oauthAuthorizationCodes.consumedAt),
-          gt(oauthAuthorizationCodes.expiresAt, now),
-        ),
-      )
-      .returning({ id: oauthAuthorizationCodes.id });
+    const refresh = [...refreshFirst, ...(await sweepRefresh())];
     const changed = refresh.length + access.length + pending.length + codes.length > 0;
     if (changed) {
       const [client] = await tx

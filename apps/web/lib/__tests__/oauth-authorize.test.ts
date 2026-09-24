@@ -144,6 +144,18 @@ describe('D-05 — the authorize gate', () => {
     expect(logs.filter((l) => l.startsWith('[auth] authorize_rejected '))).toHaveLength(6);
   });
 
+  it('never logs an untrusted client_id verbatim (unbounded query input)', async () => {
+    await run(request({ client_id: `${'x'.repeat(5000)}<script>` }));
+    await run(request({ client_id: 'f'.repeat(32) }));
+    const rejected = logs.filter((l) => l.startsWith('[auth] authorize_rejected '));
+    expect(rejected[0]).toBe(
+      '[auth] authorize_rejected {"reason":"invalid_client","client_id":"malformed"}',
+    );
+    expect(rejected[1]).toBe(
+      `[auth] authorize_rejected {"reason":"invalid_client","client_id":"${'f'.repeat(32)}"}`,
+    );
+  });
+
   it('parameter errors go back to the trusted callback with error, error_description and state', async () => {
     const cases: Array<[Record<string, string | string[] | null>, string]> = [
       [{ response_type: 'token' }, 'unsupported_response_type'],

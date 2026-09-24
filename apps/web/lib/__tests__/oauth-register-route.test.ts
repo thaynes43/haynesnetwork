@@ -9,6 +9,7 @@ const consumeRateLimit = vi.hoisted(() => vi.fn());
 vi.mock('@hnet/domain', () => ({ registerClient, consumeRateLimit }));
 
 import * as route from '../../app/oauth/register/route';
+import { rateLimitSubject } from '../oauth/http';
 
 const BODY = { client_name: 'ChatGPT', redirect_uris: ['https://chatgpt.com/connector/oauth/abc'] };
 const post = (body: BodyInit, headers: Record<string, string> = {}) =>
@@ -88,7 +89,10 @@ describe('POST /oauth/register', () => {
       'x-forwarded-for': '2001:db8::1, 10.0.0.1',
     });
     expect(consumeRateLimit).toHaveBeenLastCalledWith(
-      expect.objectContaining({ key: 'oauth:register|2001:db8::1' }),
+      expect.objectContaining({ key: 'oauth:register|2001:db8:0:0::/64' }),
+    );
+    expect(registerClient).toHaveBeenLastCalledWith(
+      expect.objectContaining({ registeredIp: '2001:db8::1' }),
     );
     await post(JSON.stringify(BODY), { 'cf-connecting-ip': 'not an ip|x' });
     expect(consumeRateLimit).toHaveBeenLastCalledWith(
@@ -97,6 +101,17 @@ describe('POST /oauth/register', () => {
     expect(registerClient).toHaveBeenLastCalledWith(
       expect.objectContaining({ registeredIp: null }),
     );
+  });
+
+  it('buckets IPv6 by /64 (one subscriber holds a whole /64) and an IPv4-mapped address as its IPv4', () => {
+    expect(rateLimitSubject('203.0.113.9')).toBe('203.0.113.9');
+    expect(rateLimitSubject('2001:db8:1:2:3:4:5:6')).toBe('2001:db8:1:2::/64');
+    expect(rateLimitSubject('2001:0db8:0001:0002:ffff:ffff:ffff:ffff')).toBe('2001:db8:1:2::/64');
+    expect(rateLimitSubject('2001:db8:1:2::9')).toBe(rateLimitSubject('2001:db8:1:2:aaaa::1'));
+    expect(rateLimitSubject('2001:db8:1:3::9')).not.toBe(rateLimitSubject('2001:db8:1:2::9'));
+    expect(rateLimitSubject('::1')).toBe('0:0:0:0::/64');
+    expect(rateLimitSubject('::ffff:198.51.100.7')).toBe('198.51.100.7');
+    expect(rateLimitSubject('1:2::3::4')).toBe('1:2::3::4'); // not an address: left as given
   });
 
   it('JSON only and bounded: a form body, malformed JSON or an oversize body is 400 invalid_client_metadata', async () => {

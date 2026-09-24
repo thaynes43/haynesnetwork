@@ -192,6 +192,7 @@ describe('D-04 — the minted client', () => {
       scope: 'watch:read watch:write offline_access',
     });
     expect(plan.response).not.toHaveProperty('client_secret');
+    expect(plan.response).not.toHaveProperty('client_secret_expires_at');
   });
 
   it('a confidential client gets its secret exactly once, stored only as SHA-256', () => {
@@ -202,6 +203,7 @@ describe('D-04 — the minted client', () => {
       );
       const secret = plan.response.client_secret!;
       expect(secret).toMatch(/^[A-Za-z0-9_-]{43}$/); // 32 bytes base64url
+      expect(plan.response.client_secret_expires_at).toBe(0); // RFC 7591 §3.2.1: required with a secret
       expect(plan.row.clientSecretHash).toBe(hashToken(secret));
       expect(JSON.stringify(plan.row)).not.toContain(secret);
     }

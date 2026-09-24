@@ -75,6 +75,8 @@ export interface TokenResponse {
 export interface RegisteredClient {
   client_id: string;
   client_secret?: string;
+  /** RFC 7591 §3.2.1: REQUIRED with a secret; 0 = the secret does not expire. */
+  client_secret_expires_at?: number;
   client_id_issued_at: number;
   client_name: string;
   redirect_uris: string[];
@@ -109,7 +111,7 @@ export function planClientRegistration(
     },
     response: {
       client_id: clientId,
-      ...(secret ? { client_secret: secret } : {}),
+      ...(secret ? { client_secret: secret, client_secret_expires_at: 0 } : {}),
       client_id_issued_at: Math.floor(ctx.now.getTime() / 1000),
       client_name: reg.clientName,
       redirect_uris: reg.redirectUris,
@@ -380,8 +382,8 @@ export interface TokenPairPlan {
 }
 
 /**
- * D-03 / D-06 — mint an access token (1 h) and, only with `offline_access`, a refresh token (60 days), into a
- * family (a new one for a code exchange; the same one for a rotation, with the spent token as parent).
+ * D-03 / D-06 — mint an access token (1 h) and, only with `offline_access` (and the refresh grant registered), a
+ * refresh token (60 days), into a family (a new one for a code exchange; the same one for a rotation, with the spent token as parent).
  */
 export function planTokenPair(input: {
   clientId: string;
@@ -390,12 +392,18 @@ export function planTokenPair(input: {
   resource: string;
   familyId?: string;
   parentRefreshId?: string;
+  /**
+   * The client registered the `refresh_token` grant. A refresh token it could never use (the grant check refuses
+   * it) would only linger as a "live connection" for 60 days, so none is issued. Default true.
+   */
+  refreshAllowed?: boolean;
   now: Date;
 }): TokenPairPlan {
   const familyId = input.familyId ?? randomUUID();
   const scopes = canonicalScopes(input.scopes);
   const accessToken = randomToken();
-  const refreshToken = scopes.includes('offline_access') ? randomToken() : null;
+  const refreshToken =
+    scopes.includes('offline_access') && input.refreshAllowed !== false ? randomToken() : null;
   return {
     familyId,
     access: {
