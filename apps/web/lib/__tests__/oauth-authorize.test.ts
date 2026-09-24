@@ -119,14 +119,55 @@ describe('D-05 — the authorize gate', () => {
     expect(startAuthorization).not.toHaveBeenCalled();
   });
 
-  it('a request too long to survive the sign-in round trip is refused back to the client', async () => {
+  it('a request too long to survive the sign-in round trip gets the bad-request page (signed out: never the client)', async () => {
     getServerSession.mockResolvedValue(null);
     // Within every parameter cap, but `!` percent-encodes to three characters: the next would exceed 2,048.
-    const out = await run(request({ state: '!'.repeat(1000) }));
+    expect(await run(request({ state: '!'.repeat(1000) }))).toEqual({ kind: 'bad_request' });
+    expect(logs.at(-1)).toBe(
+      `[auth] authorize_rejected {"reason":"request_too_long","client_id":"${CLIENT.clientId}"}`,
+    );
+  });
+
+  it('D-15 #24 — signed OUT, a parameter error (e.g. plain PKCE) goes to OUR login, never to the client', async () => {
+    getServerSession.mockResolvedValue(null);
+    const q = request({ code_challenge_method: 'plain' });
+    const out = await run(q);
     if (out.kind !== 'redirect') throw new Error('expected a redirect');
     const url = new URL(out.location);
-    expect(url.origin).toBe('https://chatgpt.com');
+    expect(`${url.origin}${url.pathname}`).toBe(`${ISSUER}/login`);
+    expect(url.searchParams.get('next')).toBe(authorizeNext(q));
+    expect(out.location).not.toContain('chatgpt.com/connector');
+    expect(startAuthorization).not.toHaveBeenCalled();
+    // …and so does every other parameter error: an open registration cannot turn authorize into a redirector.
+    for (const over of [
+      { response_type: 'token' },
+      { response_type: null },
+      { code_challenge: null },
+      { code_challenge_method: null },
+      { state: null },
+      { scope: 'watch:admin' },
+      { resource: 'https://evil.example/mcp' },
+      { scope: ['watch:read', 'watch:write'] },
+    ] as Array<Record<string, string | string[] | null>>) {
+      const r = await run(request(over));
+      if (r.kind !== 'redirect') throw new Error(`expected a redirect for ${JSON.stringify(over)}`);
+      expect(new URL(r.location).origin, JSON.stringify(over)).toBe(ISSUER);
+      expect(new URL(r.location).pathname, JSON.stringify(over)).toBe('/login');
+    }
+    expect(logs.filter((l) => l.startsWith('[auth] authorize_rejected '))).toEqual([]);
+  });
+
+  it('D-15 #24 — signed IN, the same plain-PKCE request goes back to the registered callback with the error and state', async () => {
+    const out = await run(request({ code_challenge_method: 'plain' }));
+    if (out.kind !== 'redirect') throw new Error('expected a redirect');
+    const url = new URL(out.location);
+    expect(`${url.origin}${url.pathname}`).toBe(CLIENT.redirectUris[0]);
     expect(url.searchParams.get('error')).toBe('invalid_request');
+    expect(url.searchParams.get('error_description')).toBe(
+      'Only PKCE code_challenge_method=S256 is supported',
+    );
+    expect(url.searchParams.get('state')).toBe('st-1');
+    expect(startAuthorization).not.toHaveBeenCalled();
   });
 
   it('an unknown client or an unregistered redirect renders the bad-request page — never a redirect', async () => {

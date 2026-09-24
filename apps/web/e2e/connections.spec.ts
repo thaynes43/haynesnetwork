@@ -237,6 +237,29 @@ test.describe('public MCP connectors (ADR-091)', () => {
     await expect(page.getByText('No connected apps yet.')).toBeVisible();
   });
 
+  test('signed out, a parameter error (plain PKCE) lands on our login — never on the client callback (D-15 #24)', async ({
+    page,
+  }) => {
+    const clientId = await register('E2E Plain');
+    const callback = await captureCallback(page);
+    const url = authorizeUrl(clientId, pkce().challenge, 'plain-state').replace(
+      'code_challenge_method=S256',
+      'code_challenge_method=plain',
+    );
+    await page.goto(url);
+    await page.waitForURL(/\/login\?next=/);
+    expect(callback()).toBeNull();
+    // Signed in, the same request goes back to the client with the error and its state. (It arrives through an
+    // HTTP redirect chain — Better Auth's callback → /oauth/authorize → 307 — so it is observed as a request.)
+    await selectStubUser('member');
+    const back = page.waitForRequest((r) => r.url().startsWith(CALLBACK));
+    await page.getByRole('button', { name: SIGN_IN_BUTTON }).click();
+    const cb = new URL((await back).url());
+    expect(cb.searchParams.get('error')).toBe('invalid_request');
+    expect(cb.searchParams.get('state')).toBe('plain-state');
+    expect(cb.searchParams.get('code')).toBeNull();
+  });
+
   test('an unknown client renders the bad-request page in place (never a redirect)', async ({
     page,
   }) => {

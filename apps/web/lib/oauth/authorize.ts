@@ -3,9 +3,12 @@
 //   0. D-10 rate limit (30 / minute / client IP) — refused ⇒ the bad-request page;
 //   1. the client and its redirect (a repeated client_id / redirect_uri, an unknown client or an unregistered
 //      redirect ⇒ the bad-request page, NEVER a redirect: the callback is untrusted);
-//   2. the parameters (response_type, a REQUIRED state, S256 PKCE, scopes, resource) ⇒ errors go back to the now
-//      trusted callback with `error`, `error_description` and `state`;
-//   3. the session gate ⇒ no session: `${issuer}/login?next=<this path and query>`;
+//   2. the session gate ⇒ no session: `${issuer}/login?next=<this path and query>` — BEFORE the parameters, so a
+//      signed-out request never redirects anywhere but our own login (driver ruling 2026-09-23, D-15 #24): with open
+//      registration anyone can register a callback, and redirecting parameter errors there without a session made
+//      /oauth/authorize an open redirector (RFC 9700 §4.11.2);
+//   3. the parameters (response_type, a REQUIRED state, S256 PKCE, scopes, resource) ⇒ for the signed-in user,
+//      errors go back to the registered callback with `error`, `error_description` and `state` (RFC 6749 §4.1.2.1);
 //   4. no owner gate (ADR-091 C-04: any signed-in user may connect);
 //   5. the pending transaction ⇒ `${issuer}/oauth/consent?txn=<uuid>`.
 // Every URL it sends a browser to is built from the issuer (BETTER_AUTH_URL), never from the request.
@@ -101,7 +104,18 @@ export async function handleAuthorize(input: {
     };
   };
 
-  // 2. The redirectable parameters.
+  // 2. The session gate — before any parameter is judged: signed out, the only redirect is to our own login, and
+  // the parameters are judged when the user comes back to this exact request.
+  const session = await getServerSession(headers);
+  if (!session) {
+    const next = authorizeNext(query);
+    // A request too long to survive the sign-in round trip (D-09 caps `next`): with no session nothing may redirect
+    // to the client, so it gets the bad-request page.
+    if (next.length > NEXT_MAX_LENGTH) return reject('request_too_long');
+    return { kind: 'redirect', location: `${issuer}${loginPath(next)}` };
+  }
+
+  // 3. The redirectable parameters — a signed-in user's errors go back to the registered callback.
   const repeated = SINGLE.find((name) => query.getAll(name).length > 1);
   if (repeated)
     return backWithError(new OAuthError('invalid_request', `${repeated} was sent more than once`));
@@ -121,19 +135,6 @@ export async function handleAuthorize(input: {
   } catch (error) {
     if (error instanceof OAuthError) return backWithError(error);
     throw error;
-  }
-
-  // 3. The session gate: sign in, then come back to this exact request.
-  const session = await getServerSession(headers);
-  if (!session) {
-    const next = authorizeNext(query);
-    // A request too long to survive the sign-in round trip (D-09 caps `next`) is refused up front.
-    if (next.length > NEXT_MAX_LENGTH) {
-      return backWithError(
-        new OAuthError('invalid_request', 'The authorization request is too long'),
-      );
-    }
-    return { kind: 'redirect', location: `${issuer}${loginPath(next)}` };
   }
 
   // 4. No owner gate. 5. The pending transaction, then consent.
