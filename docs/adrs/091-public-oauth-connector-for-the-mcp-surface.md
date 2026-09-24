@@ -33,8 +33,11 @@ stays on its hop.
   token is a *delegation* of an existing signed-in session, never a way to sign in.
 - **The hop must stay cluster-only** (ADR-087 C-03): whatever is opened to the internet must not
   make the hop token useful outside the cluster.
-- **Owner-only data** (ADR-088): every tool acts as the Server Owner, and marks write to Plex as the
-  owner. A connector must therefore only ever be authorized by the owner's own account.
+- **User-bound, not owner-bound** (owner ruling 2026-09-23: *"The auth path needs to be user aware
+  too"*): any haynesnetwork user may connect, and the tools answer for that user's own Plex account.
+  What is owner-only today is the *data* (the `watch` sync tracks the owner, ADR-088) and the Plex
+  write-back (it uses the owner's server tokens). Tracking more accounts is data plus a principal
+  lookup (ADR-088 C-06); writing another person's Plex state needs their token and stays out.
 - **Stateless server, three replicas** (ADR-087): nothing in-process; every replica must validate a
   token with a database lookup.
 - **Proven client compatibility** over elegance: ChatGPT caches metadata, registers per connector,
@@ -75,16 +78,16 @@ uses, keeps the server stateless and the hop cluster-only, and keeps sign-in Aut
 | C-01 | Good: ChatGPT, claude.ai, Claude Code and Codex connect through DCR + PKCE; the owner authorizes with the normal Authentik sign-in and a consent page. No new credential exists; hard rule 5 is intact. |
 | C-02 | Good: tokens are opaque and stored only as SHA-256 hashes; any replica validates with one indexed lookup; the MCP server stays stateless on three replicas. |
 | C-03 | Good: the hop path is unchanged and `/api/mcp` stays excluded from every IngressRoute; the public `/mcp` accepts OAuth tokens only, so the hop token stays useless outside the cluster. |
-| C-04 | **The principal stays the Server Owner.** Only the owner's app user (the `watch_accounts` owner row's `app_user_id`, matched by email as the `watch` sync does) can complete consent; any other signed-in user gets a plain "not available for this account" page. Per-person connectors are PRD Q-12 territory and a later ADR. |
+| C-04 | **The principal is the token's user, resolved to their Plex account.** Any signed-in user can complete consent. On each `/mcp` call the token's user is mapped to a Plex account through the ADR-053 Plex Account Map and must be a tracked `watch_accounts` row; the tools then answer for that account. A user whose account is not tracked gets an ordinary answer ("Watch history isn't set up for your account yet"), never an auth error. Today only the owner is tracked; PLAN-070 extends the `watch` sync to every mapped household account (reads from Tautulli's history, which already holds everyone). Plex write-back (`mark_watched`, undo of a watched mark) stays **owner-only** until per-person Plex tokens exist: for anyone else the mark is recorded in history only and the answer says so. |
 | C-05 | Scopes are exactly `watch:read`, `watch:write` and `offline_access`; a request without `scope` gets the default set, so no client ends up with an empty token. Clients request everything advertised, so nothing else is advertised. |
 | C-06 | Attribution: a connector's marks record `watch_marks.consumer = oauth:<client_id>`; consent grant, deny, disconnect and reuse-detected family revocation write audit rows in the same transaction (hard rule 6). |
 | C-07 | Abuse controls cigar-journal lacks: a per-IP (`CF-Connecting-IP`) database rate limit on `/oauth/register` and `/oauth/token`; `client_name` and redirect-URI caps; the consent page shows the redirect host (anyone can register a client named "ChatGPT"); expired rows and dormant DCR clients are pruned inline; a Gatus probe and a Loki alert watch the surface. |
-| C-08 | Bad: a public OAuth surface on `haynesnetwork.com`. Mitigated by C-04 and C-05 — a stolen token acts only as the owner, only on the watch tools — and by C-07. |
+| C-08 | Bad: a public OAuth surface on `haynesnetwork.com`. Mitigated by C-04 and C-05 — a stolen token acts only as its own user, only on the watch tools, and writes Plex only if that user is the owner — and by C-07. |
 | C-09 | Bad: two consumer paths in `@hnet/mcp` (hop bearer, OAuth token). Both resolve to one `McpConsumer` and share every downstream rule (budget, deadline, logging), so the divergence is confined to authentication. |
 | C-10 | A **Connected apps** page (self-service disconnect with the ADR-014 inline confirm) ships in the same plan. Cigar-journal promised one and never built it. |
 | C-11 | Home Assistant stays on the hop (no PKCE, no DCR — ADR-087 C-01). Nothing about the Movie Room path changes. |
 | C-12 | Endpoint paths are fixed forever once published: clients cache authorization-server metadata (cigar-journal had to add permanent root aliases after ChatGPT cached a spike's paths). They are chosen once in DESIGN-050 D-02. |
-| C-13 | ADR-087 C-08 is resolved by this ADR; PRD Q-14 closes. Stateless JSON-mode transport with GET answering 405 was never proven against ChatGPT (cigar-journal is stateful); PLAN-069's live gate checks it, and the fallback is a GET that opens and immediately closes an empty stream. |
+| C-13 | ADR-087 C-08 is resolved by this ADR; PRD Q-14 closes; PRD Q-12 (household persons) is answered for connectors by C-04 and PLAN-070. Stateless JSON-mode transport with GET answering 405 was never proven against ChatGPT (cigar-journal is stateful); PLAN-069's live gate checks it, and the fallback is a GET that opens and immediately closes an empty stream. |
 
 ## More information
 

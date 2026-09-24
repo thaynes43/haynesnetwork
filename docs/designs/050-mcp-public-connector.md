@@ -1,7 +1,7 @@
 # DESIGN-050: Public connectors for the MCP surface — the in-app OAuth 2.1 authorization server, the public `/mcp`, and the Connected apps page
 
 - **Status:** Draft
-- **Last updated:** 2026-09-23 (first draft, from the cigar-journal survey of the same day)
+- **Last updated:** 2026-09-23 (owner ruling: user-aware principal, no owner gate; D-05, D-07, D-14, Q-02)
 - **Satisfies:** PRD-001 R-247..R-251, US-14, AC-25..AC-28; governed by ADR-091 (this surface),
   ADR-087 (the in-cluster surface it sits beside), ADR-088 (the owner-only principal), ADR-014
   (inline two-step confirm), ADR-015 (no re-orientation on interaction).
@@ -98,9 +98,8 @@ confidential method), the echoed metadata, `client_id_issued_at`. Errors are RFC
    `error_description` and `state`.
 3. **Session gate.** No app session ⇒ redirect to `${issuer}/login?next=<the authorize path and query>`.
    `next` is accepted only as a relative path that starts with `/` and not `//` (D-09).
-4. **Owner gate.** The signed-in user must be the app user of the `watch_accounts` `owner` row
-   (resolved as the `watch` sync resolves it: the app user whose email matches the Plex owner). Any
-   other user sees the "not available for this account" page (D-14) — no transaction is written.
+4. **No owner gate.** Any signed-in user may continue (ADR-091 C-04, owner ruling 2026-09-23). Whether
+   the user's account has watch history is decided at tool time (D-07), never at consent.
 5. **Transaction.** Insert an `oauth_authorizations` row; redirect to `/oauth/consent?txn=<uuid>`.
 6. **Consent page** (copy in D-14): re-derives the user; the transaction must be a well-formed UUID,
    unexpired and the user's own, else the expired state. Shows the client name **and the redirect
@@ -135,11 +134,23 @@ confidential method), the echoed metadata, `client_id_issued_at`. Errors are RFC
 ### D-07 — The public `/mcp`
 
 `apps/web/app/mcp/route.ts` exports only `POST`. Order: `authenticateOAuth` (D-03 lookup by hash
-joined to `users`; refused when revoked, expired, `resource` ≠ canonical, or the user is no longer
-the owner's app user), then the same `handleMcpRequest` as `/api/mcp` (64 KB cap, batch refusal,
+joined to `users`; refused when revoked, expired or `resource` ≠ canonical), then the same
+`handleMcpRequest` as `/api/mcp` (64 KB cap, batch refusal,
 the 9 s deadline, D-06 logging of DESIGN-049). The consumer is
-`{ name: 'oauth:<client_id>', scopes: <the token's scopes ∩ watch scopes> }`; `tools/list` is filtered
-by scope as today. Failures: no or bad bearer ⇒ **401** with
+`{ name: 'oauth:<client_id>', scopes: <the token's scopes ∩ watch scopes>, userId }`; `tools/list` is
+filtered by scope as today.
+
+**Principal (user-aware).** The hop consumer keeps acting as the Server Owner (ADR-087). An OAuth
+consumer's principal is the token user's Plex account: `users.id` → the ADR-053 Plex Account Map →
+`watch_accounts` row with `tracked = true`. No mapped or tracked account ⇒ every tool answers
+"Watch history isn't set up for your account yet." as an ordinary result. The tool runner passes that
+account where it passes the owner today (the `AnswerContext.owner` field becomes `account`), and the
+domain flows accept any tracked account (their owner assertion becomes a tracked-account assertion).
+**Plex write-back stays owner-only:** `mark_watched` for a non-owner account records the mark with
+`plex_result = 'none'` and answers "Noted <title> as watched in your history. Only the server owner's
+marks change Plex."; `dismiss` and `undo` behave as today (never Plex for a dismiss; an undo of a
+history-only mark makes no Plex call). Until PLAN-070 tracks household accounts, only the owner's
+account is tracked, so this path answers "isn't set up" for everyone else. Failures: no or bad bearer ⇒ **401** with
 `WWW-Authenticate: Bearer resource_metadata="https://haynesnetwork.com/.well-known/oauth-protected-resource"`;
 a tool outside the token's scopes ⇒ **403** with `WWW-Authenticate: Bearer error="insufficient_scope", resource_metadata="…"`.
 `last_used_at` is stamped on the token and the client at most once a minute. `/api/mcp` is
@@ -210,10 +221,6 @@ Redirect line: `Sends you back to <redirect host>.` Scope lines: `watch:read` �
 watched and what is unfinished`; `watch:write` → `Mark titles watched or dismissed, and change them
 in Plex`; `offline_access` → `Stay connected without signing in again`. Buttons: `Approve`, `Deny`.
 
-**Not available** (the owner gate) — title: `Not available for this account`. Body: `Watch history
-connectors work for the server owner's account only right now. You are signed in as <email>.`
-Button: `Back to haynesnetwork` (to `/`).
-
 **Expired request** — title: `This request expired`. Body: `Start the connection again from
 <client name>.` (or `from your app` when the client is unknown).
 
@@ -241,11 +248,13 @@ insist on one — kept as the fallback (ADR-091 C-13) if the live gate shows a c
 - `@hnet/domain` (embedded Postgres): the four writers, each with its audit row in the same
   transaction; the guard lists.
 - `apps/web`: route tests for the metadata, register, token and revoke handlers; the authorize gate
-  (no session → `/login?next=`; non-owner → not available; owner → transaction + consent); the
+  (no session → `/login?next=`; a session → transaction + consent); the
   consent action with a bound decision; `/login?next=` safety; the `/mcp` route test (mocks
   `@hnet/mcp`) for 401/403 headers and 405s.
 - `@hnet/mcp`: `authenticateOAuth` against a seeded database (valid, expired, revoked, wrong
-  resource, non-owner user, scope filtering of `tools/list`).
+  resource, scope filtering of `tools/list`); the principal lookup (mapped + tracked → that account;
+  unmapped or untracked → "isn't set up"); a non-owner `mark_watched` records history only and never
+  calls Plex.
 - Live gate (PLAN-069): ChatGPT, Claude Code and Codex each complete DCR → consent → a read tool → a
   refresh; ChatGPT completes a zero-flip `mark_watched` and `undo_last_change` on a title with no
   unwatched regular episode on the preferred server; revoke from the Connected apps page stops the
@@ -256,4 +265,4 @@ insist on one — kept as the fallback (ADR-091 C-13) if the live gate shows a c
 | ID | Question | Resolution |
 |----|----------|------------|
 | Q-01 | claude.ai / Claude Desktop connectors were never exercised against cigar-journal; do they accept a stateless server whose GET answers 405? | Open; the live gate decides, with the empty-stream GET as the fallback. |
-| Q-02 | Per-person connectors (a household member connecting their own ChatGPT): the read-model is owner-only (PRD Q-12). | Deferred with Q-12; the owner gate is the v1 answer. |
+| Q-02 | Per-person connectors: the read-model tracks only the owner today (PRD Q-12). | **Ruled 2026-09-23:** the auth path and the principal are user-aware from day one (ADR-091 C-04); tracking household accounts in the `watch` sync is PLAN-070; Plex write-back stays owner-only until per-person Plex tokens exist. |
