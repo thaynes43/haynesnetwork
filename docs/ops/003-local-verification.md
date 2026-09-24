@@ -167,6 +167,45 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   no results). To re-run the sync against the running stack: `DATABASE_URL=<the stack's>` plus the stack's
   `PLEX_*` / `TAUTULLI_*` env, then `pnpm --filter @hnet/sync sync -- --mode=watch` (the banner prints the
   database URL). Nothing here ever reaches a real Plex server.
+- **Public MCP connectors** (ADR-091 / DESIGN-050; PLAN-069). `POST /mcp` takes only delegated OAuth
+  tokens; a local client can walk the whole flow against the stub OIDC with curl alone (verified 2026-09-23,
+  port 3200 — substitute yours). Type `plex-linked-owner-id` at the `dev:local` terminal first (or `POST
+  <stub-oidc>/_control/user {"persona":"plex-linked-owner-id"}`): its `plex_user_id` claim maps it to the
+  tracked owner account on sign-in, so the tools answer from the seeded history. Any other persona connects
+  too and every tool answers "Watch history isn't set up for your account yet."
+
+  ```bash
+  APP=http://localhost:3000; J=jar.txt; rm -f $J
+  curl -si $APP/.well-known/oauth-protected-resource        # 200, CORS *, public max-age=3600
+  curl -si $APP/.well-known/oauth-authorization-server      # 200
+  CID=$(curl -s -X POST $APP/oauth/register -H 'content-type: application/json' \
+    -d '{"client_name":"Local client","redirect_uris":["http://127.0.0.1:8765/callback"]}' | jq -r .client_id)   # 201
+  VER=$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n' | cut -c1-64)
+  CH=$(printf %s "$VER" | openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '=')
+  AUTHZ="$APP/oauth/authorize?response_type=code&client_id=$CID&redirect_uri=http%3A%2F%2F127.0.0.1%3A8765%2Fcallback&state=s1&code_challenge=$CH&code_challenge_method=S256"
+  NEXT=$(curl -s -o /dev/null -w '%{redirect_url}' "$AUTHZ" | sed 's/.*next=//' | python3 -c 'import sys,urllib.parse;print(urllib.parse.unquote(sys.stdin.read().strip()))')
+  # Sign in (Better Auth → stub OIDC → callback), landing back on NEXT:
+  URL=$(curl -s -c $J -b $J -X POST $APP/api/auth/sign-in/oauth2 -H 'content-type: application/json' \
+    -H "origin: $APP" -d "{\"providerId\":\"authentik\",\"callbackURL\":\"$NEXT\"}" | jq -r .url)
+  curl -s -c $J -b $J -o /dev/null "$(curl -s -o /dev/null -w '%{redirect_url}' "$URL")"
+  CONSENT=$(curl -s -b $J -o /dev/null -w '%{redirect_url}' "$AUTHZ")      # → /oauth/consent?txn=…
+  curl -s -b $J "$CONSENT" > consent.html                                   # "Connect Local client", the host
+  ```
+
+  Approve without JavaScript: the consent form is progressively enhanced, so POST the Approve button's
+  hidden fields (`$ACTION_REF_n`, `$ACTION_n:0` with the action id, `$ACTION_n:1` = `["approve","<txn>"]`,
+  read from `consent.html`) as multipart to `$CONSENT` with `-H "origin: $APP"`; the answer is a 303 to
+  `http://127.0.0.1:8765/callback?code=…&state=s1`. Then exchange the code at `/oauth/token`
+  (`grant_type=authorization_code`, `code`, `code_verifier=$VER`, `client_id=$CID`) and call
+  `POST $APP/mcp` with `Authorization: Bearer <access_token>`. Expect: `tools/list` 2,712 bytes; `unfinished`
+  "One unfinished show. Breaking Prod: 4 of 5 watched, …"; `/mcp` without a token 401 with
+  `WWW-Authenticate: Bearer resource_metadata="<app>/.well-known/oauth-protected-resource"`; GET `/mcp` 405;
+  the OAuth token at `/api/mcp` 401 (`WWW-Authenticate: Bearer`) and the hop token at `/mcp` 401; a refresh
+  narrowed to `watch:read offline_access` lists four tools and a `mark_watched` call answers 403
+  `insufficient_scope`; replaying the spent refresh token is `invalid_grant` and kills the family (the newest
+  access token turns 401); the eleventh registration from one IP in an hour is 429 with `Retry-After` and
+  `{"error":"rate_limited"}`. The dev server logs one `[auth] <event> {…}` line per step and never a token,
+  code or verifier. Connected apps is at `/settings/connections` (sign in through the browser to Disconnect).
 - Everything is **throwaway**: the database is a temp dir deleted on Ctrl-C; restart for a
   pristine seeded catalog.
 - Phone/tablet/PC layouts: use the browser devtools device toolbar.

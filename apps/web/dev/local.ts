@@ -6,7 +6,9 @@
 // browser (phone/tablet/PC via devtools device emulation) with no Docker, no
 // Authentik, no *arr stack, no cluster, and no real credentials. On top of the
 // e2e stack it runs the Watch Companion bootstrap (a one-row demo seed + one
-// `watch` sync, PLAN-068 S8) so `POST /api/mcp` answers locally.
+// `watch` sync, PLAN-068 S8) so `POST /api/mcp` answers locally — and, with the
+// public connector path (ADR-091, PLAN-069), a local OAuth client can register,
+// sign in through the stub OIDC, consent, and call `POST /mcp` with its token.
 //
 //   pnpm dev:local            # from the repo root (PORT=3000 by default)
 //
@@ -87,6 +89,15 @@ async function main(): Promise<void> {
                         "params":{"name":"unfinished","arguments":{}}}
              re-sync: DATABASE_URL=${stack.env.DATABASE_URL} … tsx packages/sync/src/scripts/sync.ts --mode=watch
              (docs/ops/003-local-verification.md — "Watch Companion MCP")
+
+  Connectors (ADR-091, the public OAuth path — POST ${stack.appUrl}/mcp takes only OAuth tokens):
+             metadata: ${stack.appUrl}/.well-known/oauth-authorization-server
+             register: POST ${stack.appUrl}/oauth/register, then send the browser to /oauth/authorize
+             (PKCE S256 + state); sign in and Approve on the consent page; exchange at /oauth/token.
+             Type plex-linked-owner-id here first to sign in as the Plex owner (its plex_user_id claim
+             maps to the tracked owner account, so the tools answer from the seeded history);
+             any other persona connects too and gets "isn't set up for your account yet".
+             Connected apps: ${stack.appUrl}/settings/connections
 ──────────────────────────────────────────────────────────────`);
 
   const rl = createInterface({ input: process.stdin });

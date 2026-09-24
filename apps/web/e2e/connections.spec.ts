@@ -5,9 +5,19 @@
 // client's callback with its state; the PKCE exchange yields tokens that open the public /mcp. Then the user finds
 // the connection under Connected apps (user menu), disconnects it with the two-step confirm WITHOUT the row
 // moving (ADR-015), sees "Disconnected" in place, and the token is 401 at /mcp at once. A second test denies.
+import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
+import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { SIGN_IN_BUTTON, openUserMenu, selectStubUser, signIn } from './support/helpers';
+import { readRuntimeEnv } from './support/env';
+import {
+  SIGN_IN_BUTTON,
+  expectViewportFit,
+  openUserMenu,
+  selectStubUser,
+  signIn,
+} from './support/helpers';
+import { STUB_USERS, type PersonaName } from './support/stub-oidc';
 
 const BASE = 'http://localhost:3100';
 const CALLBACK = 'https://connector.e2e.test/callback';
@@ -237,5 +247,79 @@ test.describe('public MCP connectors (ADR-091)', () => {
       page.getByRole('heading', { name: 'Something is off with this connection request' }),
     ).toBeVisible();
     expect(new URL(page.url()).pathname).toBe('/oauth/authorize');
+  });
+});
+
+// AC-10 / R-60 — the resize matrix on Connected apps with 0, 1 and 5 rows (and the admin view with its user
+// column): no page-level scrollbar, nothing off-screen, <main> owns the overflow, the first Disconnect reachable.
+const SIZES = [
+  { w: 375, h: 667 },
+  { w: 390, h: 844 },
+  { w: 412, h: 915 },
+  { w: 768, h: 1024 },
+  { w: 820, h: 1180 },
+  { w: 1280, h: 800 },
+  { w: 1920, h: 1080 },
+  { w: 2560, h: 1440 },
+] as const;
+
+function seedConnections(persona: PersonaName, count: number): void {
+  const env = readRuntimeEnv();
+  const run = spawnSync(
+    join(process.cwd(), 'node_modules', '.bin', 'tsx'),
+    [
+      join(process.cwd(), 'e2e', 'support', 'seed-connections.ts'),
+      STUB_USERS[persona].email,
+      String(count),
+    ],
+    { env: { ...process.env, ...env }, encoding: 'utf8', cwd: process.cwd() },
+  );
+  expect(run.status, run.stderr || 'seed-connections must succeed').toBe(0);
+}
+
+async function expectMatrix(page: Page, rows: number): Promise<void> {
+  for (const { w, h } of SIZES) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto('/settings/connections');
+    await expect(page.getByRole('heading', { name: 'Connected apps' })).toBeVisible();
+    await expect(page.getByTestId('connection-row')).toHaveCount(rows);
+    if (rows === 0) await expect(page.getByText('No connected apps yet.')).toBeInViewport();
+    else await expect(page.getByTestId('connection-disconnect').first()).toBeInViewport();
+    await expectViewportFit(page);
+    const hOverflow = await page.evaluate(() => {
+      const main = document.querySelector('main');
+      return main ? main.scrollWidth - main.clientWidth : -1;
+    });
+    expect(hOverflow, `no horizontal overflow inside <main> @ ${w}x${h}`).toBeLessThanOrEqual(1);
+  }
+}
+
+test.describe('Connected apps — resize matrix (AC-10) with 0, 1 and 5 rows', () => {
+  test.setTimeout(120_000);
+
+  test('0 rows (a fresh member)', async ({ page }) => {
+    await signIn(page, 'fresh-member');
+    await expectMatrix(page, 0);
+  });
+
+  test('1 row', async ({ page }) => {
+    await signIn(page, 'plex-linked-owner');
+    seedConnections('plex-linked-owner', 1);
+    await expectMatrix(page, 1);
+  });
+
+  test('5 rows, long names, loopback and https hosts, narrower grants', async ({ page }) => {
+    await signIn(page, 'plex-linked-owner-id');
+    seedConnections('plex-linked-owner-id', 5);
+    await expectMatrix(page, 5);
+  });
+
+  test("the admin view (every user's connections, with the user column)", async ({ page }) => {
+    await signIn(page, 'admin');
+    await page.goto('/settings/connections');
+    const rows = await page.getByTestId('connection-row').count();
+    expect(rows).toBeGreaterThanOrEqual(6);
+    await expect(page.getByTestId('connection-user').first()).toBeVisible();
+    await expectMatrix(page, rows);
   });
 });
