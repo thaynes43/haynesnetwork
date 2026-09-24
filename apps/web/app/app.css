@@ -787,6 +787,80 @@ button.motd__dismiss:hover {
   white-space: nowrap;
 }
 
+/* ---------- Connected apps (ADR-091 C-10 / DESIGN-050 D-08) ---------- */
+/* One row per connection. ADR-015: the action slot always holds the width of its widest label — the
+   bold armed "Confirm disconnect" — via a hidden ghost stacked in the same grid cell, so arming the
+   button and the "Disconnected" done state never move or resize the row. Token colours only. */
+.conn-page__lead {
+  margin: 0 0 var(--space);
+  color: var(--color-text-muted);
+}
+.conn-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.conn-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+.conn-row__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.conn-row__main p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.conn-row__meta,
+.conn-row__user {
+  font-size: 13px;
+}
+.conn-row__chips {
+  margin: 4px 0 0;
+}
+.conn-row__action {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+}
+.conn-row__done {
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  background: transparent;
+  cursor: default;
+  white-space: nowrap;
+}
+.conn-reserve {
+  display: inline-grid;
+}
+.conn-reserve > * {
+  grid-area: 1 / 1;
+}
+.conn-reserve__ghost {
+  visibility: hidden;
+  font-weight: 700;
+}
+@media (max-width: 480px) {
+  .conn-row {
+    flex-direction: column;
+  }
+  .conn-row__action {
+    align-self: stretch;
+  }
+}
+
 /* ---------- Dashboard (D-06/D-07, reshaped by DESIGN-006 D-03) ---------- */
 .greeting {
   font-size: 21px;

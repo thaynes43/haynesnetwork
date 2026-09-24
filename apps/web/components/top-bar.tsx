@@ -21,8 +21,9 @@
 // destinations, top → bottom: My Plex (everyone — the user's own Plex account), Integrations +
 // Metrics (each when its section ≠ Disabled), then the tooling group — Ledger (when ≠ Disabled —
 // the shipped default is Disabled for members), Trash settings (/settings/trash, only at Trash
-// Edit level), Admin settings (admin) — then Sign out. Navigating from a menu item is a `<Link>`
-// push (D-19).
+// Edit level), Admin settings (admin) — then Sign out. ADR-091 C-10 / DESIGN-050 D-08 adds the
+// UNIVERSAL "Connected apps" (/settings/connections) to the settings cluster, after Collection
+// settings. Navigating from a menu item is a `<Link>` push (D-19).
 //
 // HOME/PORTAL SPLIT (2026-07-17, owner-directed — DESIGN-004 D-23): the brand block is now a LINK
 // to `/` (the calm Home screen — the owner kept clicking the logo, so it navigates), and the
@@ -274,6 +275,16 @@ function UserMenu({ user }: { user: TopBarUser }) {
             onClick={() => setOpen(false)}
           >
             Collection settings
+          </Link>
+          {/* ADR-091 C-10 / DESIGN-050 D-08 — Connected apps: UNIVERSAL (every signed-in user may connect an app
+              to their own watch history, and disconnect it here), in the settings cluster. */}
+          <Link
+            href="/settings/connections"
+            role="menuitem"
+            className="usermenu__item"
+            onClick={() => setOpen(false)}
+          >
+            Connected apps
           </Link>
           {showTrashSettings ? (
             <Link
