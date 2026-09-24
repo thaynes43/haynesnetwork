@@ -88,7 +88,7 @@ D-03; correct this section against the migration at PLAN-069 S2 if they differ.
 
 - **One app, one user:** that user opens **Connected apps** (the user menu, `/settings/connections`)
   and presses **Disconnect**, then **Confirm disconnect**. It revokes every token the app holds for
-  that user in one transaction with an `oauth_client_disconnected` audit row; the app's next call is
+  that user in one transaction with an `client_disconnected` audit row (`oauth_audit`); the app's next call is
   refused on every replica. The owner does this for his own connectors.
 - **There is no admin or command-line revoke.** Do not update or delete OAuth rows with SQL: the
   audited writers are the only way in (hard rule 6), and a hand edit leaves no record. Use §3 to see

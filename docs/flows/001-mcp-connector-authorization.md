@@ -93,7 +93,7 @@ sequenceDiagram
     `token_refreshed`.
 11. **Disconnect or revoke (end of the lifecycle).** The user opens **Connected apps**, presses
     **Disconnect** and then **Confirm disconnect**: one transaction revokes every family and token that
-    app holds for this user and writes `oauth_client_disconnected`; the app's next `/mcp` call answers
+    app holds for this user and writes `client_disconnected`; the app's next `/mcp` call answers
     401 and it must start again at step 3 (ChatGPT reuses its `client_id`). A client may also call
     `/oauth/revoke` itself (ChatGPT does on reconnect): a refresh token or a family access token revokes
     the family, and the answer is always 200. Log: `token_revoked`.
