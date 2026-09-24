@@ -47,12 +47,18 @@ importers:
       '@hnet/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
+      '@hnet/oauth':
+        specifier: workspace:*
+        version: link:../../packages/oauth
       '@hnet/sync':
         specifier: workspace:*
         version: link:../../packages/sync
       '@hnet/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@hnet/watch':
+        specifier: workspace:*
+        version: link:../../packages/watch
       '@tanstack/react-query':
         specifier: ^5.100.10
         version: 5.101.2(react@19.2.4)

@@ -1,11 +1,15 @@
 // DESIGN-004 D-11 — /login: public, centered .card with the brand and the single
 // OIDC sign-in button (AC-01 — no password form exists). An existing session
 // server-redirects to /; ?error=… renders an alert (donor: todos-for-dues login).
+// ADR-091 / DESIGN-050 D-09 — ?next= (a safe relative path, else /) is where the
+// sign-in lands and where an existing session is sent: the OAuth authorize and
+// consent pages send a signed-out user here and get them back.
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getServerSession, oidcEnabled } from '@hnet/auth';
 import { BrandMark } from '@/components/brand-mark';
 import { loginRouteRedirect } from '@/lib/route-gate';
+import { firstParam, safeNext } from '@/lib/safe-next';
 import { LoginButton } from './login-button';
 
 export const metadata = { title: 'Sign in — haynesnetwork' };
@@ -20,17 +24,19 @@ const ERROR_COPY: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string | string[] }>;
+  searchParams: Promise<{ error?: string | string[]; next?: string | string[] }>;
 }) {
+  const params = await searchParams;
+  const next = safeNext(firstParam(params.next));
   const session = await getServerSession(await headers());
-  const dest = loginRouteRedirect(session?.user ?? null);
+  const dest = loginRouteRedirect(session?.user ?? null, next);
   if (dest) redirect(dest);
 
   // OAuth callback failures arrive as /login?error=callback_failed&error=<code>:
   // better-auth's redirectOnError appends its machine-readable code as a second
   // `error` param after ours. Render the first (our taxonomy); the raw code stays
   // visible in the URL for debugging.
-  const { error: rawError } = await searchParams;
+  const { error: rawError } = params;
   const error = Array.isArray(rawError) ? rawError[0] : rawError;
 
   return (
@@ -50,7 +56,7 @@ export default async function LoginPage({
           </p>
         ) : null}
         {oidcEnabled ? (
-          <LoginButton />
+          <LoginButton callbackURL={next} />
         ) : (
           <p className="alert" role="alert">
             Sign-in is not configured (missing OIDC credentials). See DESIGN-002 D-08.

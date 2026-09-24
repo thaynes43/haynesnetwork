@@ -744,6 +744,49 @@ button.motd__dismiss:hover {
   font-size: 14px;
 }
 
+/* ---------- OAuth connector pages (ADR-091 / DESIGN-050 D-05 / D-14) ---------- */
+/* The consent, expired and bad-request states reuse the login card. Token colours only (hard rule 2).
+   ADR-015: Approve and Deny carry fixed labels and reserve the same width; a pending decision only
+   disables them (colour), so nothing on the card ever moves. */
+.oauth-card {
+  text-align: left;
+}
+.oauth-card p {
+  margin: 0;
+}
+.oauth-card__title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.oauth-scopes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.oauth-scopes__item {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-size: 14px;
+}
+.oauth-actions {
+  display: flex;
+  gap: 12px;
+}
+.oauth-actions__btn {
+  flex: 1 1 0;
+  min-width: 7rem;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
 /* ---------- Dashboard (D-06/D-07, reshaped by DESIGN-006 D-03) ---------- */
 .greeting {
   font-size: 21px;
