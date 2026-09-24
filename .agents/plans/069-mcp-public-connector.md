@@ -1,6 +1,6 @@
 # PLAN-069: Public MCP connectors (ChatGPT, Claude Code, Codex): build, deploy, live-verify
 
-- **Status:** Draft (S1 in progress: the docs are on branch `docs/mcp-public-connector`)
+- **Status:** In progress — S1–S7 done 2026-09-24 (v0.98.0 live, haynes-ops #3160, probes green); S8 pre-checks passed from dev-env; the owner's ChatGPT connect + S9 remain (S1 in progress: the docs are on branch `docs/mcp-public-connector`)
 - **ADRs:** ADR-091 (Proposed; Accepted at S9) · **Design:** DESIGN-050 · **Flow:** FLOW-001 ·
   **PRD:** R-247..R-251, US-14, AC-25..AC-28 · **Glossary:** T-254..T-259 · **Ops:** OPS-016
 - **Owner:** whoever holds the session; this plan is the tracked owner.

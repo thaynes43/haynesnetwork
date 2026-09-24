@@ -4,6 +4,26 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-24 — Public MCP connector LIVE (v0.98.0): the owner's ChatGPT connect is the last gate
+
+ADR-091 / DESIGN-050 shipped as **haynesnetwork v0.98.0** (#572 → release #570; two Opus reviews, every
+finding fixed first — the rulings are DESIGN-050 D-15) and haynes-ops **#3160** (tag + the two Gatus
+probes + the Loki alerts; the dev-env egress rule was #3150). Live checks from the pod: both metadata
+documents 200 with framing denied, `POST /mcp` without a token → 401 with the `resource_metadata`
+challenge, `GET /mcp` 405, public `/api/mcp` still 404, DCR 201, a signed-out authorize (valid or
+with a bad parameter) → our own `/login?next=` and never the client; both Gatus probes green on the
+first run after the rollout. Movie Room voice and dev-env are untouched (the hop, `/api/mcp`).
+
+**What is left (PLAN-069 S8–S9):** consent needs a real browser sign-in through Authentik, so the
+owner adds haynesnetwork as a ChatGPT connector (`https://haynesnetwork.com/mcp`), signs in, approves,
+and asks a question; the driver verifies from the web log (`client_registered` → `consent_granted` →
+`token_issued` → `[mcp] tool_called {"consumer":"oauth:<client_id>"}`) and from `/settings/connections`.
+Then ADR-091 → Accepted, OPS-016 → Active, PLAN-069 → `completed/`. Claude Code / Codex / claude.ai
+connects are unverified until someone approves one (DESIGN-050 Q-01). PLAN-070 (household accounts
+in the `watch` sync) is queued: until it lands, a non-owner connector gets "Watch history isn't set up
+for your account yet." haynes-ops #3140 (dev-env `mcp.json`, held draft) is still the owner's to
+merge.
+
 ## ▶ 2026-09-23 — Public MCP connector (ChatGPT) — docs on branch, build in progress
 
 Owner directive 2026-09-23: *"We should do what we did for cigar-journal so I can hook
