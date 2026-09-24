@@ -15,7 +15,7 @@ ChatGPT / claude.ai / Claude Code / Codex ──▶ https://haynesnetwork.com/.w
         │                                      https://haynesnetwork.com/.well-known/oauth-authorization-server
         │  DCR ──▶ POST /oauth/register
         │  browser ──▶ GET /oauth/authorize ──▶ (no session) /login?next=… ──▶ Authentik ──▶ back
-        │                                   ──▶ /oauth/consent?txn=… (owner only) ──▶ code ──▶ client
+        │                                   ──▶ /oauth/consent?txn=… (any signed-in user) ──▶ code ──▶ client
         │  POST /oauth/token (code + PKCE verifier | refresh rotation) ──▶ opaque access + refresh tokens
         └─ POST /mcp  Authorization: Bearer <access token> ──▶ @hnet/mcp (OAuth consumer) ──▶ the seven tools
 Home Assistant / dev-env ──▶ hop ──▶ POST /api/mcp  (unchanged, ADR-087; never routed publicly)
