@@ -5,7 +5,7 @@
 - **Deciders:** Tom Haynes (owner directive 2026-09-23: *"We should do what we did for cigar-journal so I
   can hook haynesnetwork-mcp up to ChatGPT"*) · drafted by Fable 5.1
 - **Relates:** ADR-087 (the in-cluster surface; its C-08 deferred public connectors until a consumer
-  existed — this ADR ends that deferral), ADR-088 (the owner-only read-model that fixes the principal),
+  existed — this ADR ends that deferral), ADR-088 (the watch read-model; it tracks the owner today),
   ADR-014 (inline two-step confirm), hard rule 5 (Authentik is the only login). Realized by DESIGN-050
   and FLOW-001; built by PLAN-069. PRD-001 Q-14 → R-247..R-251, US-14, AC-25..AC-28.
 
@@ -75,7 +75,7 @@ uses, keeps the server stateless and the hop cluster-only, and keeps sign-in Aut
 
 | ID | Consequence |
 |----|-------------|
-| C-01 | Good: ChatGPT, claude.ai, Claude Code and Codex connect through DCR + PKCE; the owner authorizes with the normal Authentik sign-in and a consent page. No new credential exists; hard rule 5 is intact. |
+| C-01 | Good: ChatGPT, claude.ai, Claude Code and Codex connect through DCR + PKCE; a user authorizes with the normal Authentik sign-in and a consent page. No new credential exists; hard rule 5 is intact. |
 | C-02 | Good: tokens are opaque and stored only as SHA-256 hashes; any replica validates with one indexed lookup; the MCP server stays stateless on three replicas. |
 | C-03 | Good: the hop path is unchanged and `/api/mcp` stays excluded from every IngressRoute; the public `/mcp` accepts OAuth tokens only, so the hop token stays useless outside the cluster. |
 | C-04 | **The principal is the token's user, resolved to their Plex account.** Any signed-in user can complete consent. On each `/mcp` call the token's user is mapped to a Plex account through the ADR-053 Plex Account Map and must be a tracked `watch_accounts` row; the tools then answer for that account. A user whose account is not tracked gets an ordinary answer ("Watch history isn't set up for your account yet"), never an auth error. Today only the owner is tracked; PLAN-070 extends the `watch` sync to every mapped household account (reads from Tautulli's history, which already holds everyone). Plex write-back (`mark_watched`, undo of a watched mark) stays **owner-only** until per-person Plex tokens exist: for anyone else the mark is recorded in history only and the answer says so. |
@@ -83,7 +83,7 @@ uses, keeps the server stateless and the hop cluster-only, and keeps sign-in Aut
 | C-06 | Attribution: a connector's marks record `watch_marks.consumer = oauth:<client_id>`; consent grant, deny, disconnect and reuse-detected family revocation write audit rows in the same transaction (hard rule 6). |
 | C-07 | Abuse controls cigar-journal lacks: a per-IP (`CF-Connecting-IP`) database rate limit on `/oauth/register` and `/oauth/token`; `client_name` and redirect-URI caps; the consent page shows the redirect host (anyone can register a client named "ChatGPT"); expired rows and dormant DCR clients are pruned inline; a Gatus probe and a Loki alert watch the surface. |
 | C-08 | Bad: a public OAuth surface on `haynesnetwork.com`. Mitigated by C-04 and C-05 — a stolen token acts only as its own user, only on the watch tools, and writes Plex only if that user is the owner — and by C-07. |
-| C-09 | Bad: two consumer paths in `@hnet/mcp` (hop bearer, OAuth token). Both resolve to one `McpConsumer` and share every downstream rule (budget, deadline, logging), so the divergence is confined to authentication. |
+| C-09 | Bad: two consumer paths in `@hnet/mcp` (hop bearer, OAuth token). Both resolve to one `McpConsumer` and share every downstream rule (budget, deadline, logging), so the divergence is confined to authentication and the principal lookup. The single-writer rule holds: `@hnet/oauth` is pure (validation, crypto, metadata, decisions) and every OAuth-table write, the pruner included, is a `@hnet/domain` writer (DESIGN-050 D-01). |
 | C-10 | A **Connected apps** page (self-service disconnect with the ADR-014 inline confirm) ships in the same plan. Cigar-journal promised one and never built it. |
 | C-11 | Home Assistant stays on the hop (no PKCE, no DCR — ADR-087 C-01). Nothing about the Movie Room path changes. |
 | C-12 | Endpoint paths are fixed forever once published: clients cache authorization-server metadata (cigar-journal had to add permanent root aliases after ChatGPT cached a spike's paths). They are chosen once in DESIGN-050 D-02. |

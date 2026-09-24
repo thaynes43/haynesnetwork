@@ -1,9 +1,9 @@
 # DESIGN-050: Public connectors for the MCP surface — the in-app OAuth 2.1 authorization server, the public `/mcp`, and the Connected apps page
 
 - **Status:** Draft
-- **Last updated:** 2026-09-23 (owner ruling: user-aware principal, no owner gate; D-05, D-07, D-14, Q-02)
+- **Last updated:** 2026-09-23 (owner ruling: user-aware principal, no owner gate; the single-writer split between `@hnet/oauth` and `@hnet/domain`; `oauth_audit`; 429s; Gatus and IPv4 notes)
 - **Satisfies:** PRD-001 R-247..R-251, US-14, AC-25..AC-28; governed by ADR-091 (this surface),
-  ADR-087 (the in-cluster surface it sits beside), ADR-088 (the owner-only principal), ADR-014
+  ADR-087 (the in-cluster surface it sits beside), ADR-088 (the watch read-model), ADR-014
   (inline two-step confirm), ADR-015 (no re-orientation on interaction).
 - **Context:** DDD-002 BC-06 Watch Companion; glossary DDD-001 T-254..T-259 (Connector, OAuth client,
   Authorization transaction, Refresh family, Connected app, Delegated token).
@@ -31,10 +31,10 @@ OAuth tables in Postgres hold the shared state, so all three replicas serve ever
 
 | Package | Adds | Rule |
 |---|---|---|
-| `@hnet/oauth` (**new**) | a port of cigar-journal `packages/oauth/src/{config,crypto,errors,metadata,provider,validate,logger}.ts`: metadata documents, DCR, the authorize/consent/code/token/refresh/revoke state machine, token hashing and validation | depends on `@hnet/db` and zod only; never imports Better Auth, `@hnet/domain` or the MCP SDK; a `COPY packages/oauth/package.json` line in the Dockerfile deps stage. `service-tokens.ts` and the CLI are **not** ported (ADR-091 option 5) |
+| `@hnet/oauth` (**new**) | the **pure** half of cigar-journal's `packages/oauth`: metadata documents, request validation (DCR, authorize, token, revoke), loopback matching, PKCE, token generation and hashing, the decision functions (what to issue, rotate, revoke, prune) — no database access | depends on zod only (types from `@hnet/db` at most); never imports Better Auth, `@hnet/domain`, drizzle or the MCP SDK; a `COPY packages/oauth/package.json` line in the Dockerfile deps stage. `service-tokens.ts` and the CLI are **not** ported (ADR-091 option 5) |
 | `@hnet/db` | migration `0078_oauth_connectors.sql` + `_journal.json` entry; schema files for the five tables (D-03); `rate_limit` reuse | CHECK constraints from `enums.ts` const arrays, as 0077 did |
-| `@hnet/domain` | `oauth/*` single-writers: `grantConsent`, `denyConsent`, `disconnectClient`, `revokeFamilyOnReuse` — each one transaction with its audit row (hard rule 6) | the only writers of the OAuth tables; they join `no-direct-state-writes.test.ts` (and `oauth_access_tokens` / `oauth_refresh_tokens` join DELETE for the pruner only) |
-| `@hnet/mcp` | a second consumer source: `authenticateOAuth(req)` → `McpConsumer { name: 'oauth:<client_id>', scopes }`; the 401 challenge with `resource_metadata`; the 403 `insufficient_scope` | the hop consumer is untouched; everything after authentication is shared |
+| `@hnet/domain` | `oauth/*` single-writers for **every** OAuth-table write: `registerClient`, `startAuthorization`, `grantConsent`, `denyConsent`, `exchangeCode`, `rotateRefreshToken`, `revokeToken`, `revokeFamilyOnReuse`, `disconnectClient`, `touchLastUsed`, `pruneExpired`; consent, deny, disconnect and reuse revocation each write an `oauth_audit` row in the same transaction (hard rule 6) | the only writers of the six OAuth tables (the five of D-03 plus `oauth_audit`); all six join `no-direct-state-writes.test.ts`, and `oauth_authorizations`, `oauth_authorization_codes`, `oauth_access_tokens`, `oauth_refresh_tokens`, `oauth_clients` join the DELETE family with `pruneExpired` as the one allowed path. `@hnet/oauth` decides; `@hnet/domain` writes; the web routes call the domain |
+| `@hnet/mcp` | a second consumer source: `authenticateOAuth(req)` → `McpConsumer { name: 'oauth:<client_id>', scopes, userId }` (a read-only hash lookup); the principal lookup of D-07; the 401 challenge with `resource_metadata`; the 403 `insufficient_scope` | the hop consumer is untouched; everything after authentication is shared |
 | `apps/web` | routes outside the `(app)` gate: `.well-known/*`, `/oauth/*`, `/mcp`; the consent page; `/login?next=`; `(app)/settings/connections` | every redirect is built from `BETTER_AUTH_URL` (behind the tunnel `req.url` is `0.0.0.0:3000`), never from the request |
 
 ### D-02 — Endpoints (fixed forever, ADR-091 C-12)
@@ -56,8 +56,8 @@ metadata, register, token and revoke routes only, never on `/mcp`.
 
 ### D-03 — Storage (migration 0078)
 
-Five tables, all `ON DELETE CASCADE` from `users.id` and from `oauth_clients.id`; every `expires_at`
-NOT NULL (no never-expiring tokens: ADR-091 option 5).
+Five state tables plus `oauth_audit`, all `ON DELETE CASCADE` from `users.id` and from
+`oauth_clients.id`; every `expires_at` NOT NULL (no never-expiring tokens: ADR-091 option 5).
 
 | Table | Columns (beyond `id`, `created_at`) |
 |---|---|
@@ -66,6 +66,7 @@ NOT NULL (no never-expiring tokens: ADR-091 option 5).
 | `oauth_authorization_codes` | `code_hash` unique, the same binding columns, `expires_at` (60 s), `consumed_at` null |
 | `oauth_refresh_tokens` | `token_hash` unique, `family_id` uuid, `parent_id` self-FK null, `client_id`, `user_id`, `scopes`, `resource`, `expires_at` (60 days, re-issued on rotation), `rotated_at` null, `revoked_at` null |
 | `oauth_access_tokens` | `token_hash` unique, `family_id` uuid null, `client_id`, `user_id`, `scopes`, `resource`, `expires_at` (1 h), `revoked_at` null, `last_used_at` null |
+| `oauth_audit` | append-only: `event` text CHECK `consent_granted`\|`consent_denied`\|`client_disconnected`\|`family_revoked_on_reuse`, `user_id`, `client_id`, `family_id` uuid null, `details` jsonb, `at` timestamptz default now() |
 
 Tokens, codes and client secrets are 32 random bytes in base64url, opaque, hashed with SHA-256 before
 they touch the database; validation is a hash lookup joined to `users`. A refresh token presented
@@ -128,8 +129,8 @@ confidential method), the echoed metadata, `client_id_issued_at`. Errors are RFC
 - Every step logs one `[auth] <event> {…}` line with masked token fingerprints (first 6 characters
   of the hash) and never a token, code, secret or verifier. Events: `client_registered`,
   `authorize_started`, `authorize_rejected`, `consent_shown`, `consent_granted`, `consent_denied`,
-  `owner_gate_refused`, `token_issued`, `token_refreshed`, `refresh_reuse_detected`, `token_revoked`,
-  `code_replayed`, `audience_mismatch`, `rate_limited`.
+  `token_issued`, `token_refreshed`, `refresh_reuse_detected`, `token_revoked`, `code_replayed`,
+  `audience_mismatch`, `rate_limited`.
 
 ### D-07 — The public `/mcp`
 
@@ -158,8 +159,9 @@ unchanged and stays excluded from every IngressRoute.
 
 ### D-08 — Connected apps page
 
-`(app)/settings/connections` — the owner's self-service view (an admin sees the same list, which is
-the owner's anyway). One row per client with a live refresh family or an unexpired access token:
+`(app)/settings/connections` — every signed-in user's self-service view of their own connections
+(the settings menu entry is visible to everyone signed in); an admin additionally sees every user's
+connections with a user column. One row per client with a live refresh family or an unexpired access token:
 client name, redirect host, "Connected <date>", "Last used <date or never>", scope chips, and a
 **Disconnect** `ConfirmButton` (armed label "Confirm disconnect"; the row reserves the width of the
 armed label, ADR-015). Disconnect = `disconnectClient`: revoke every family and token of that client
@@ -182,15 +184,19 @@ and not `//`, at most 2,048 characters; anything else falls back to `/`.
 | `/oauth/authorize` | 30 / minute | client IP |
 | `/mcp` | none beyond the existing 64 KB cap and 9 s deadline (a valid token is required first) | — |
 
-Bounded inputs (D-04), inline pruning (D-03), the redirect host on the consent page (D-05), owner-only
-consent (ADR-091 C-04), no never-expiring tokens.
+A rate-limited `/oauth/register` or `/oauth/token` request answers **429** with `Retry-After` and the
+RFC 6749 body `{"error":"rate_limited"}`; a rate-limited `/oauth/authorize` renders the bad-request
+page (D-14). Bounded inputs (D-04), inline pruning (D-03), the redirect host on the consent page
+(D-05), user-bound tokens (ADR-091 C-04), no never-expiring tokens.
 
 ### D-11 — Observability (haynes-ops, OPS-016)
 
-Gatus: `https://haynesnetwork.com/mcp` (POST, empty body) must answer **401** with the
-`resource_metadata` challenge; `https://haynesnetwork.com/.well-known/oauth-protected-resource` must
-answer 200 with `resource` equal to the canonical value. A Loki alert on `[auth]` `refresh_reuse_detected`
-or more than 20 `authorize_rejected` / `rate_limited` in 10 minutes. No IngressRoute change is needed:
+Gatus: `https://haynesnetwork.com/mcp` (POST, empty body) must answer **401** (Gatus cannot read
+response headers, so the `resource_metadata` challenge is checked by the OPS-016 curl instead);
+`https://haynesnetwork.com/.well-known/oauth-protected-resource` must answer 200 with `resource` equal
+to the canonical value. Loki alerts on `[auth]`: `refresh_reuse_detected` (any, **critical** — it
+pages; a replayed refresh token is a stolen credential) and more than 20 `authorize_rejected` /
+`rate_limited` in 10 minutes (warning, UI only). No IngressRoute change is needed:
 the routes already forward `PathPrefix(/)` and keep `!PathPrefix(/api/mcp)`.
 
 ### D-12 — Client notes (from cigar-journal's logs)
@@ -206,7 +212,8 @@ the routes already forward `PathPrefix(/)` and keep `!PathPrefix(/api/mcp)`.
   (the reason for the port-insensitive loopback rule). **claude.ai / Claude Desktop**: unverified
   (Q-01). **Home Assistant**: stays on the hop.
 - In-cluster Node clients need `NODE_OPTIONS=--dns-result-order=ipv4first` for the public name (AAAA
-  records, no IPv6 egress) — dev-env uses the hop, so this does not apply to it.
+  records, no IPv6 egress) — that includes Claude Code and Codex run from dev-env for the live gate
+  (the pod's day-to-day MCP client uses the hop, which is unaffected).
 
 ### D-13 — What does not change
 
@@ -218,8 +225,9 @@ The hop, `/api/mcp`, the seven tools and their budgets, the Movie Room agent, de
 **Consent page** — title: `Connect <client name>`. Lead: `<client name> wants to use your watch
 history on haynesnetwork. It will act as your account and can only do what you approve below.`
 Redirect line: `Sends you back to <redirect host>.` Scope lines: `watch:read` → `See what you have
-watched and what is unfinished`; `watch:write` → `Mark titles watched or dismissed, and change them
-in Plex`; `offline_access` → `Stay connected without signing in again`. Buttons: `Approve`, `Deny`.
+watched and what is unfinished`; `watch:write` → for the server owner `Mark titles watched or
+dismissed, and change them in Plex`, for anyone else `Mark titles watched or dismissed in your
+history`; `offline_access` → `Stay connected without signing in again`. Buttons: `Approve`, `Deny`.
 
 **Expired request** — title: `This request expired`. Body: `Start the connection again from
 <client name>.` (or `from your app` when the client is unknown).
