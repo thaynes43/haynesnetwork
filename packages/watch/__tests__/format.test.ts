@@ -8,6 +8,7 @@ import {
   formatMarkResult,
   formatNotFound,
   formatNotReady,
+  formatNotSetUp,
   formatRecentHistory,
   formatRecommendations,
   formatUndoResult,
@@ -578,6 +579,30 @@ describe('formatMarkResult (D-14 read-back)', () => {
   });
 });
 
+describe('formatMarkResult — a history-only mark (ADR-091 C-04: Plex write-back is owner-only)', () => {
+  const base: MarkResultView = { kind: 'show', title: 'Severance', year: 2022, scope: 'show', plexResult: 'none', flipped: 0 };
+  it('says the mark is in the history and that only the owner changes Plex — for every scope', () => {
+    expect(formatMarkResult({ ...base, historyOnly: true })).toBe(
+      "Noted Severance (2022) as watched in your history. Only the server owner's marks change Plex.",
+    );
+    expect(formatMarkResult({ ...base, historyOnly: true, scope: 'season', season: 2 })).toBe(
+      "Noted season 2 of Severance (2022) as watched in your history. Only the server owner's marks change Plex.",
+    );
+    expect(formatMarkResult({ ...base, historyOnly: true, scope: 'through', season: 1, episode: 4 })).toMatch(
+      /^Noted Severance \(2022\) through .+ as watched in your history\. Only the server owner's marks change Plex\.$/,
+    );
+    expect(formatMarkResult({ kind: 'movie', title: 'Arrival', year: 2016, scope: 'movie', plexResult: 'none', historyOnly: true })).toBe(
+      "Noted Arrival (2016) as watched in your history. Only the server owner's marks change Plex.",
+    );
+  });
+
+  it("the owner's own 'none' (specials only) is unchanged", () => {
+    expect(formatMarkResult(base)).toBe(
+      'Noted Severance (2022) as watched. Plex only lists specials for it, so nothing changed there.',
+    );
+  });
+});
+
 describe('formatDismissResult / formatUndoResult (D-15)', () => {
   it('reads back a dismissal without promising any Plex change', () => {
     expect(
@@ -671,6 +696,8 @@ describe('resolver outcomes and fixed answers', () => {
     );
     expect(formatNotFound('  ')).toBe("I couldn't find anything called that.");
     expect(formatNotReady()).toBe("Watch history isn't ready yet.");
+    // ADR-091 C-04 / DESIGN-050 D-07 — a connector user with no tracked Plex account.
+    expect(formatNotSetUp()).toBe("Watch history isn't set up for your account yet.");
     expect(formatWatchError()).toBe('Watch history hit an error. Try again in a minute.');
   });
 });

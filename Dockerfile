@@ -34,6 +34,7 @@ COPY packages/lazylibrarian/package.json packages/lazylibrarian/package.json
 COPY packages/libretto/package.json packages/libretto/package.json
 COPY packages/mcp/package.json packages/mcp/package.json
 COPY packages/metrics/package.json packages/metrics/package.json
+COPY packages/oauth/package.json packages/oauth/package.json
 COPY packages/openwebui/package.json packages/openwebui/package.json
 COPY packages/plex/package.json packages/plex/package.json
 COPY packages/sync/package.json packages/sync/package.json

@@ -1325,3 +1325,50 @@ export type WatchMarkRevertResult = (typeof WATCH_MARK_REVERT_RESULTS)[number];
 // plex.tv watchlist, and the daily TMDB `/recommendations` seeds of recently finished titles.
 export const WATCH_RECO_SOURCES = ['watchlist', 'tmdb_seed'] as const;
 export type WatchRecoSource = (typeof WATCH_RECO_SOURCES)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-091 / DESIGN-050 D-03 (PLAN-069 — public OAuth connectors for the MCP surface, migration 0078). The
+// in-app OAuth 2.1 authorization server's closed vocabularies. Each is the single source of truth for its
+// TS type AND its SQL CHECK (DESIGN-001 D-02). @hnet/oauth (pure: zod only at runtime, D-01) declares the same
+// lists for its validators and metadata; `packages/oauth/__tests__/parity.test.ts` fails on any drift.
+// ---------------------------------------------------------------------------
+
+// The scopes the authorization server issues (D-02, ADR-091 C-05) — exactly these three, advertised in both
+// metadata documents (@hnet/oauth keeps its own copy — it imports nothing at runtime but zod — and a parity
+// test pins the two). `offline_access` gates refresh-token issuance; a request without `scope` gets all three.
+export const OAUTH_SCOPES = ['watch:read', 'watch:write', 'offline_access'] as const;
+export type OAuthScope = (typeof OAUTH_SCOPES)[number];
+
+// oauth_clients.token_endpoint_auth_method (D-02/D-04): public PKCE clients (ChatGPT, Claude Code, Codex)
+// register `none`; a confidential client posts its secret in the body or in HTTP Basic.
+export const OAUTH_TOKEN_ENDPOINT_AUTH_METHODS = [
+  'none',
+  'client_secret_post',
+  'client_secret_basic',
+] as const;
+export type OAuthTokenEndpointAuthMethod = (typeof OAUTH_TOKEN_ENDPOINT_AUTH_METHODS)[number];
+
+// oauth_clients.grant_types members (D-04): a registration may narrow to a subset, never widen.
+export const OAUTH_GRANT_TYPES = ['authorization_code', 'refresh_token'] as const;
+export type OAuthGrantType = (typeof OAUTH_GRANT_TYPES)[number];
+
+// oauth_clients.response_types (D-04): the authorization-code flow only.
+export const OAUTH_RESPONSE_TYPES = ['code'] as const;
+export type OAuthResponseType = (typeof OAUTH_RESPONSE_TYPES)[number];
+
+// code_challenge_method on transactions and codes (D-05): PKCE S256 only — `plain` is refused (OAuth 2.1).
+export const OAUTH_CODE_CHALLENGE_METHODS = ['S256'] as const;
+export type OAuthCodeChallengeMethod = (typeof OAUTH_CODE_CHALLENGE_METHODS)[number];
+
+// oauth_audit.event (D-03 / D-05 / D-08, hard rule 6): the four audited connector transitions, each written by
+// its @hnet/domain oauth single-writer in the SAME transaction as the state change — `consent_granted` (Approve
+// issued a code), `consent_denied` (Deny discarded the request), `client_disconnected` (the Connected apps page
+// revoked every token of a client for a user) and `family_revoked_on_reuse` (a spent or revoked refresh token
+// was presented, so its whole family was revoked).
+export const OAUTH_AUDIT_EVENTS = [
+  'consent_granted',
+  'consent_denied',
+  'client_disconnected',
+  'family_revoked_on_reuse',
+] as const;
+export type OAuthAuditEvent = (typeof OAUTH_AUDIT_EVENTS)[number];

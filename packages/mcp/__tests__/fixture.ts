@@ -617,7 +617,7 @@ function headersOf(h: IncomingHttpHeaders): Headers {
 export async function serveMcp(
   deps: McpDeps,
   env: Record<string, string | undefined>,
-  opts: Pick<McpRequestOptions, 'deadlineMs'> = {},
+  opts: Pick<McpRequestOptions, 'deadlineMs' | 'authenticate'> & { path?: string } = {},
 ): Promise<McpHttp> {
   const logs: string[] = [];
   const withLogs: McpDeps = { ...deps, log: (line) => logs.push(line) };
@@ -631,7 +631,8 @@ export async function serveMcp(
         headers: headersOf(req.headers),
         ...(method === 'GET' || method === 'HEAD' ? {} : { body: Buffer.concat(chunks) }),
       });
-      const response = await handleMcpRequest(request, { deps: withLogs, env, ...opts });
+      const { path: _path, ...handlerOpts } = opts;
+      const response = await handleMcpRequest(request, { deps: withLogs, env, ...handlerOpts });
       const headers: Record<string, string> = {};
       response.headers.forEach((v, k) => (headers[k] = v));
       res.writeHead(response.status, headers);
@@ -645,7 +646,7 @@ export async function serveMcp(
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('no port');
   return {
-    url: `http://127.0.0.1:${address.port}/api/mcp`,
+    url: `http://127.0.0.1:${address.port}${opts.path ?? '/api/mcp'}`,
     logs,
     stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };

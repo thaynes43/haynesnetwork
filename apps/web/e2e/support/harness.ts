@@ -121,6 +121,9 @@ async function prewarmRoutes(baseUrl: string): Promise<void> {
     '/library/plex',
     '/ledger',
     '/trash',
+    // ADR-091 / DESIGN-050 (PLAN-069) — the connector pages the connections spec walks.
+    '/settings/connections',
+    '/oauth/consent',
     '/integrations',
     '/my-fixes',
     '/admin',

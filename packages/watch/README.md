@@ -116,6 +116,7 @@ assignable — this package does not import `@hnet/plex`).
 | Export | Returns |
 |---|---|
 | `selectWatchOwner(db)` | THE `owner` row (D-03) or null ("not ready yet"). |
+| `selectWatchAccountForUser(db, userId)` | ADR-091 C-04 — the tracked account an app user acts as through a connector: `users.id` → the ADR-053 Plex Account Map → `watch_accounts` (`tracked = true`); null ⇒ "isn't set up for your account yet". Never via `app_user_id`. |
 | `selectResolverPool(db, account, { kind? })` | D-13's pool: Title States (`inHistory`), the live ledger, the signals — each a `PoolEntry` that remembers its row / ledger item. |
 | `selectTitleRows`, `selectTitleRowsByIdentity`, `selectLedgerHolders`, `selectLedgerFacts`, `selectLedgerIndex` | Title States by id / kind / identity; where a ledger item is on Plex; ledger genres and Sonarr's ended status. |
 | `selectAccountEvents`, `selectTitleEvents`, `selectKnownShowGuids`, `selectUnresolvedShowPairs` | Events for the sync and for one title; the Q-06 show-guid lookups. |

@@ -67,9 +67,18 @@ export interface McpDeps {
   revalidateBudgetMs?: number;
 }
 
+/**
+ * The watch account a call acts for (ADR-091 C-04 / DESIGN-050 D-07): the Server Owner for the hop; the token
+ * user's own tracked account for a connector. `appUserId` is the acting app user (mark attribution). Only the
+ * owner's account is revalidated live and written to Plex — both use the owner's server tokens.
+ */
+export interface WatchPrincipal extends WatchOwner {
+  isOwner: boolean;
+}
+
 export interface AnswerContext {
   deps: McpDeps;
-  owner: WatchOwner;
+  account: WatchPrincipal;
   consumer: McpConsumer;
   /** Where the time went (D-06 `slow_call`). */
   phases: WatchPhases;
@@ -82,14 +91,16 @@ const nowSec = (ctx: AnswerContext) => Math.floor(ctx.deps.now().getTime() / 100
 
 /** D-11 for the titles about to be reported; the fresh rows by id (none when Plex is not configured). */
 async function revalidate(ctx: AnswerContext, rows: readonly WatchTitleRow[]): Promise<Map<number, WatchTitleRow>> {
-  const plex = ctx.deps.revalidatePlex();
   const out = new Map<number, WatchTitleRow>();
+  // Live revalidation reads Plex with the OWNER's tokens, so it describes the owner's state only (ADR-091 C-04).
+  if (!ctx.account.isOwner) return out;
+  const plex = ctx.deps.revalidatePlex();
   if (!plex || rows.length === 0) return out;
   const started = Date.now();
   const result = await revalidateTitles({
     db: ctx.deps.db,
     plex,
-    plexAccountId: ctx.owner.plexAccountId,
+    plexAccountId: ctx.account.plexAccountId,
     rows,
     ...(ctx.deps.revalidateBudgetMs !== undefined ? { budgetMs: ctx.deps.revalidateBudgetMs } : {}),
     now: ctx.deps.now(),
@@ -105,9 +116,9 @@ async function revalidate(ctx: AnswerContext, rows: readonly WatchTitleRow[]): P
  * the titles being revalidated, and only when Plex is configured. The load counts toward the phase.
  */
 async function revalidateIds(ctx: AnswerContext, ids: readonly number[]): Promise<Map<number, WatchTitleRow>> {
-  if (ids.length === 0 || !ctx.deps.revalidatePlex()) return new Map();
+  if (ids.length === 0 || !ctx.account.isOwner || !ctx.deps.revalidatePlex()) return new Map();
   const started = Date.now();
-  const out = await revalidate(ctx, await selectTitleRows(ctx.deps.db, ctx.owner.plexAccountId, { ids }));
+  const out = await revalidate(ctx, await selectTitleRows(ctx.deps.db, ctx.account.plexAccountId, { ids }));
   ctx.phases.revalidate = Date.now() - started;
   return out;
 }
@@ -125,8 +136,8 @@ export async function answerUnfinished(
   const kids = args.kids ?? false;
   const now = nowSec(ctx);
   const [rows, marks] = await Promise.all([
-    selectUnfinishedRows(ctx.deps.db, ctx.owner.plexAccountId, { kind }),
-    selectLiveMarks(ctx.deps.db, ctx.owner.plexAccountId),
+    selectUnfinishedRows(ctx.deps.db, ctx.account.plexAccountId, { kind }),
+    selectLiveMarks(ctx.deps.db, ctx.account.plexAccountId),
   ]);
   const index = indexMarks(marks);
   const first = unfinishedItems(rows, index, { kind, kids, now });
@@ -151,7 +162,7 @@ export async function answerRecommend(
   const kids = args.kids ?? false;
   const genre = args.genre ?? null;
   // The live marks come with the inputs: the library query was anti-joined on these very rows.
-  const inputs = await selectRecommendInputs(ctx.deps.db, ctx.owner.plexAccountId, { kind, genre, kids });
+  const inputs = await selectRecommendInputs(ctx.deps.db, ctx.account.plexAccountId, { kind, genre, kids });
   const recs = recommendations(inputs, inputs.marks, { kind, genre, kids, now: nowSec(ctx) });
   return formatRecommendations(recs, {
     limit: args.limit ?? 5,
@@ -170,7 +181,7 @@ export async function answerWatchStatus(
   const started = Date.now();
   const r = await resolveWatchTitle({
     db: ctx.deps.db,
-    plexAccountId: ctx.owner.plexAccountId,
+    plexAccountId: ctx.account.plexAccountId,
     query: args.title,
     kind: args.kind ?? null,
     tmdb: ctx.deps.tmdb(),
@@ -180,8 +191,8 @@ export async function answerWatchStatus(
   if (r.status === 'not_found') return formatNotFound(args.title, { kind: args.kind ?? null });
   const ids = { kind: r.kind, title: r.title, year: r.year, titleKey: r.titleKey, ...r.ids };
   const [rows, marks, holders] = await Promise.all([
-    selectTitleRowsByIdentity(ctx.deps.db, ctx.owner.plexAccountId, ids),
-    selectLiveMarks(ctx.deps.db, ctx.owner.plexAccountId),
+    selectTitleRowsByIdentity(ctx.deps.db, ctx.account.plexAccountId, ids),
+    selectLiveMarks(ctx.deps.db, ctx.account.plexAccountId),
     selectLedgerHolders(ctx.deps.db, r.mediaItemIds),
   ]);
   let row = rows[0] ?? null;
@@ -205,8 +216,8 @@ export async function answerRecentHistory(
   const now = nowSec(ctx);
   const since = new Date((now - days * 86_400) * 1000);
   const [events, marks] = await Promise.all([
-    selectRecentEvents(ctx.deps.db, ctx.owner.plexAccountId, since),
-    selectLiveMarks(ctx.deps.db, ctx.owner.plexAccountId),
+    selectRecentEvents(ctx.deps.db, ctx.account.plexAccountId, since),
+    selectLiveMarks(ctx.deps.db, ctx.account.plexAccountId),
   ]);
   return formatRecentHistory(recentEntries(events, indexMarks(marks)), {
     now,
@@ -224,7 +235,7 @@ export async function answerMarkWatched(
     db: ctx.deps.db,
     plex: ctx.deps.markPlex() ?? NO_PLEX,
     tmdb: ctx.deps.tmdb(),
-    actor: { plexAccountId: ctx.owner.plexAccountId, appUserId: ctx.owner.appUserId },
+    actor: { plexAccountId: ctx.account.plexAccountId, appUserId: ctx.account.appUserId },
     consumer: ctx.consumer.name,
     query: args.title,
     kind: args.kind ?? null,
@@ -254,7 +265,7 @@ export async function answerDismiss(
   const out = await dismissTitle({
     db: ctx.deps.db,
     tmdb: ctx.deps.tmdb(),
-    actor: { plexAccountId: ctx.owner.plexAccountId, appUserId: ctx.owner.appUserId },
+    actor: { plexAccountId: ctx.account.plexAccountId, appUserId: ctx.account.appUserId },
     consumer: ctx.consumer.name,
     query: args.title,
     reason: args.reason ?? 'not_interested',
@@ -271,7 +282,7 @@ export async function answerUndo(ctx: AnswerContext): Promise<string> {
   const out = await undoLastChange({
     db: ctx.deps.db,
     plex: ctx.deps.markPlex() ?? NO_PLEX,
-    actor: { plexAccountId: ctx.owner.plexAccountId, appUserId: ctx.owner.appUserId },
+    actor: { plexAccountId: ctx.account.plexAccountId, appUserId: ctx.account.appUserId },
     now: ctx.deps.now(),
     phases: ctx.phases,
   });

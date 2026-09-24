@@ -69,10 +69,17 @@ do not reach around it.
 | `startSyncRun`, `finishSyncRun`                              | `sync-runs.ts`             | `sync_runs`                             | —                            |
 | `upsertWatchOwner`, `appendWatchEvents`, `fillShowGuids`, `upsertWatchTitles`, `replaceRecoSignals` | `watch/*` (ADR-088, DESIGN-049) | `watch_accounts`, `watch_events` (append-only; the one update fills a NULL `show_guid`), `watch_titles`, `watch_reco_signals` | — (rebuildable read-model) |
 | `markWatched`, `dismissTitle`, `undoLastChange`              | `watch/marks.ts`           | `watch_marks` (+ the `watch_titles` write-through) | the mark rows are the audit trail; the ONLY Plex watched-state writes (`@hnet/plex/write`), never from a dismissal |
+| `registerClient`, `startAuthorization`, `exchangeCode`, `rotateRefreshToken`, `revokeToken`, `touchLastUsed`, `pruneExpired` | `oauth/*` (ADR-091, DESIGN-050) | `oauth_clients`, `oauth_authorizations`, `oauth_authorization_codes`, `oauth_access_tokens`, `oauth_refresh_tokens` (`@hnet/oauth` decides, these write; `pruneExpired` is the inline pruner, bounded 200 rows per table) | — (client-driven protocol steps and bookkeeping; each logs an `[auth]` line) |
+| `grantConsent`, `denyConsent`, `disconnectClient`, `revokeFamilyOnReuse` | `oauth/consent.ts`, `oauth/connections.ts`, `oauth/tokens.ts` | the same OAuth tables | `oauth_audit` (`consent_granted` / `consent_denied` / `client_disconnected` / `family_revoked_on_reuse`), same transaction |
 
 Orchestrators (compose the writers above + the *arr bundle, open no transaction of their
 own): `runFixRequest` (`fix-flow.ts`), `runForceSearch` (`search-flow.ts`),
 `computeRestoreDiff` + `executeRestore` (`restore-flow.ts`).
+
+OAuth DELETEs are confined further than the repo-wide guard: `__tests__/oauth-delete-paths.test.ts` allows them
+only inside `pruneExpired` and the two consent writers (which delete the request they decide); `oauth_audit` is
+never deleted. `consumeRateLimit` (`rate-limit.ts`) is the shared fixed-window limiter the `/oauth/*` routes use
+(D-10) over Better Auth's `rate_limit` table (library-managed, unaudited).
 
 Pure / read-only helpers (no guarded writes): `effective-apps.ts` (`effectiveAppsForUser`),
 `family.ts` (`isEffectivelyFamily`), `media-children.ts` (`listMediaChildren`,

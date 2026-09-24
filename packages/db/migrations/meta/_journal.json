@@ -540,6 +540,13 @@
       "when": 1783903302000,
       "tag": "0077_watch_companion",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1783903303000,
+      "tag": "0078_oauth_connectors",
+      "breakpoints": true
     }
   ]
 }

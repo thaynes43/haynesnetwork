@@ -17,6 +17,7 @@
     "@hnet/arr": "workspace:*",
     "@hnet/db": "workspace:*",
     "@hnet/domain": "workspace:*",
+    "@hnet/oauth": "workspace:*",
     "@hnet/watch": "workspace:*",
     "@modelcontextprotocol/sdk": "1.30.0",
     "zod": "^4.4.3"
