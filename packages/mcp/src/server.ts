@@ -8,7 +8,13 @@ import {
   type CallToolResult,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import { formatNotReady, formatWatchError, selectWatchOwner } from '@hnet/watch';
+import {
+  formatNotReady,
+  formatNotSetUp,
+  formatWatchError,
+  selectWatchAccountForUser,
+  selectWatchOwner,
+} from '@hnet/watch';
 import { z } from 'zod';
 import {
   answerDismiss,
@@ -20,6 +26,7 @@ import {
   answerWatchStatus,
   type AnswerContext,
   type McpDeps,
+  type WatchPrincipal,
 } from './answers';
 import { WatchNotReadyError } from '@hnet/domain';
 import type { McpConsumer } from './auth';
@@ -133,18 +140,45 @@ export async function runTool(
     const parsed = tool.input.safeParse(args ?? {});
     if (!parsed.success)
       return finish(text(invalidArgs(tool.name, parsed.error), true), 'invalid_args');
-    // D-03: the principal is THE owner row; none yet ⇒ an ordinary answer, not an error.
-    const owner = await selectWatchOwner(deps.db);
-    if (!owner) return finish(text(formatNotReady()));
-    const ctx: AnswerContext = { deps, owner, consumer, phases };
+    // The principal (an ordinary answer when there is none, never an error): the hop acts as THE owner row
+    // (D-03; none yet ⇒ "not ready"); a delegated token acts as its user's own tracked account (ADR-091 C-04 /
+    // DESIGN-050 D-07; unmapped or untracked ⇒ "isn't set up for your account yet").
+    const account = await resolvePrincipal(deps, consumer);
+    if (!account) return finish(text(notServed(consumer)));
+    const ctx: AnswerContext = { deps, account, consumer, phases };
     const answer = await ANSWERS[tool.name as WatchToolName](ctx, parsed.data as never);
     return finish(text(answer), undefined, ctx.revalidateTimedOut === true);
   } catch (error) {
-    // D-03: the domain refuses a principal that is not the current owner row (the owner changed between
-    // the read above and the flow's own check) — still "not ready", an ordinary answer, never isError.
-    if (error instanceof WatchNotReadyError) return finish(text(formatNotReady()));
+    // The domain refuses an account that is no longer tracked (or no longer the owner) between the read above
+    // and the flow's own check — still the ordinary answer, never isError.
+    if (error instanceof WatchNotReadyError) return finish(text(notServed(consumer)));
     return finish(text(formatWatchError(), true), errorCode(error));
   }
+}
+
+/**
+ * The watch account a call acts for. The hop: THE `owner` row (D-03), attributed to the owner's linked app user.
+ * A delegated token: `users.id` → the ADR-053 Plex Account Map → its `tracked` watch account (ADR-091 C-04),
+ * attributed to the token's user.
+ */
+export async function resolvePrincipal(deps: McpDeps, consumer: McpConsumer): Promise<WatchPrincipal | null> {
+  if (consumer.userId === undefined) {
+    const owner = await selectWatchOwner(deps.db);
+    return owner ? { ...owner, isOwner: true } : null;
+  }
+  const account = await selectWatchAccountForUser(deps.db, consumer.userId);
+  if (!account) return null;
+  return {
+    plexAccountId: account.plexAccountId,
+    username: account.username,
+    appUserId: consumer.userId,
+    isOwner: account.role === 'owner',
+  };
+}
+
+/** The ordinary answer when the principal has no watch history to serve. */
+function notServed(consumer: McpConsumer): string {
+  return consumer.userId === undefined ? formatNotReady() : formatNotSetUp();
 }
 
 /** The static `tools/list` entries per scope set — built once, from the hand-written schemas (D-05). */

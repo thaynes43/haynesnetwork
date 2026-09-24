@@ -7,9 +7,10 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { formatWatchError } from '@hnet/watch';
 import type { McpDeps } from './answers';
-import { authenticate, jsonRpcError, type McpConsumer } from './auth';
+import { authenticate, jsonRpcError, type AuthResult, type McpConsumer } from './auth';
 import { defaultDeps } from './deps';
 import { buildServer } from './server';
+import { WATCH_TOOLS } from './tools';
 
 /** D-02: requests over this are refused before any parsing. */
 export const MAX_MCP_BODY_BYTES = 64 * 1024;
@@ -52,6 +53,22 @@ export interface McpRequestOptions {
   env?: Record<string, string | undefined>;
   /** The overall deadline of the transport's handling (default {@link MCP_DEADLINE_MS}). */
   deadlineMs?: number;
+  /**
+   * The consumer source. Default: the hop's configured bearer ({@link authenticate} over `env`) — `/api/mcp`.
+   * The public `/mcp` passes `authenticateOAuth` (ADR-091 D-07). Everything after it is shared.
+   */
+  authenticate?: (req: Request) => AuthResult | Promise<AuthResult>;
+}
+
+/**
+ * The tool a JSON-RPC `tools/call` names, when it is one of the watch tools the consumer's scopes do NOT cover
+ * (the OAuth consumer answers it 403 `insufficient_scope`, D-07); null otherwise.
+ */
+export function outOfScopeTool(body: unknown, consumer: McpConsumer): string | null {
+  const msg = (body ?? {}) as { method?: unknown; params?: { name?: unknown } };
+  if (msg.method !== 'tools/call' || typeof msg.params?.name !== 'string') return null;
+  const tool = WATCH_TOOLS.find((t) => t.name === msg.params?.name);
+  return tool && !consumer.scopes.includes(tool.scope) ? tool.name : null;
 }
 
 /**
@@ -84,7 +101,7 @@ export async function handleMcpRequest(req: Request, opts: McpRequestOptions = {
   if (req.method !== 'POST') {
     return new Response(null, { status: 405, headers: { allow: 'POST' } });
   }
-  const auth = authenticate(req, opts.env ?? process.env);
+  const auth = opts.authenticate ? await opts.authenticate(req) : authenticate(req, opts.env ?? process.env);
   if (!auth.ok) return auth.response;
 
   const raw = await readBodyCapped(req);
@@ -99,6 +116,7 @@ export async function handleMcpRequest(req: Request, opts: McpRequestOptions = {
   // and a batch of a call plus its own `notifications/cancelled` never answers: the cancelled response is
   // dropped, so the JSON response waits forever for it.
   if (Array.isArray(parsedBody)) return jsonRpcError(400, -32600, 'Batch requests are not supported');
+  if (auth.insufficientScope && outOfScopeTool(parsedBody, auth.consumer)) return auth.insufficientScope();
 
   const deps = opts.deps ?? defaultDeps();
   const server = buildServer(deps, auth.consumer);

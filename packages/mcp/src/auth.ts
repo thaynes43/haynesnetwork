@@ -7,20 +7,44 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 export type WatchScope = 'watch:read' | 'watch:write';
 
+/**
+ * Who is calling, once authenticated. Two sources share everything after authentication (ADR-091 C-09): the
+ * configured hop consumers (below) and a delegated OAuth token (`authenticateOAuth`, `./oauth.ts`).
+ */
 export interface McpConsumer {
-  /** Logged as `consumer`, recorded on marks as `watch_marks.consumer`. */
+  /** Logged as `consumer`, recorded on marks as `watch_marks.consumer` (`hop`, `oauth:<client_id>`). */
   name: string;
+  scopes: readonly WatchScope[];
+  /**
+   * The principal. Absent: the Server Owner (the hop, ADR-087 / DESIGN-049 D-03). Present (a delegated OAuth
+   * token, ADR-091 C-04): that app user, acting as their OWN tracked Plex account (D-07).
+   */
+  userId?: string;
+}
+
+/** A configured machine consumer: a bearer token from the environment, acting as the Server Owner. */
+export interface HopConsumer extends McpConsumer {
   /** The env var holding its bearer token. */
   tokenEnv: string;
-  scopes: readonly WatchScope[];
 }
 
 /** v1: one consumer, the hop (T-252), acting as the Server Owner with both watch scopes. */
-export const MCP_CONSUMERS: readonly McpConsumer[] = [
+export const MCP_CONSUMERS: readonly HopConsumer[] = [
   { name: 'hop', tokenEnv: 'HNET_MCP_HOP_TOKEN', scopes: ['watch:read', 'watch:write'] },
 ];
 
-export type AuthResult = { ok: true; consumer: McpConsumer } | { ok: false; response: Response };
+export type AuthResult =
+  | {
+      ok: true;
+      consumer: McpConsumer;
+      /**
+       * The answer to a `tools/call` of a known tool outside the consumer's scopes, when this source answers it at
+       * the HTTP layer (the OAuth consumer's 403 `insufficient_scope`, D-07). Absent (the hop): the tool is simply
+       * not registered for the connection, as before.
+       */
+      insufficientScope?: () => Response;
+    }
+  | { ok: false; response: Response };
 
 const digest = (s: string) => createHash('sha256').update(s).digest();
 
@@ -39,7 +63,7 @@ export function jsonRpcError(status: number, code: number, message: string, head
 export function authenticate(
   req: Request,
   env: Record<string, string | undefined> = process.env,
-  consumers: readonly McpConsumer[] = MCP_CONSUMERS,
+  consumers: readonly HopConsumer[] = MCP_CONSUMERS,
 ): AuthResult {
   const configured = consumers.flatMap((c) => {
     const token = env[c.tokenEnv]?.trim();

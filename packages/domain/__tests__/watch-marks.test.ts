@@ -1307,3 +1307,153 @@ describe('the flows serve only the current owner (D-03)', () => {
     expect(fake.calls).toEqual([]);
   });
 });
+
+// ADR-091 C-04 / DESIGN-050 D-07 (PLAN-069 S4) — the mark flows act for ANY tracked account, and Plex write-back
+// stays OWNER-ONLY: a household account reached through its user's connector records `watched` in its history
+// only (plex_result `none`, nothing flipped) and never causes a single Plex call — not a read, not a write, not
+// an unscrobble on undo. Untracked accounts are still refused; live revalidation stays owner-only.
+describe('a tracked non-owner account (ADR-091 C-04): history only, never Plex', () => {
+  const HOUSE = 55501;
+  const HOUSE_ACTOR = { plexAccountId: HOUSE, appUserId: null };
+
+  async function household(tracked = true): Promise<void> {
+    await db.execute(
+      sql`INSERT INTO watch_accounts (plex_account_id, username, role, tracked) VALUES (${HOUSE}, 'kid', 'household', ${tracked})`,
+    );
+  }
+
+  /** The household account's own Title State for Severance (what its history would hold). */
+  async function seedHouseholdSeverance(): Promise<void> {
+    await upsertWatchTitles({
+      db,
+      plexAccountId: HOUSE,
+      titles: [
+        {
+          kind: 'show',
+          titleKey: titleKeyFor({ kind: 'show', title: 'Severance', year: 2022, plexGuid: 'plex://show/sev', tmdbId: 95396, tvdbId: 371980, imdbId: 'tt11280740' }),
+          plexGuid: 'plex://show/sev',
+          tmdbId: 95396,
+          tvdbId: 371980,
+          imdbId: 'tt11280740',
+          mediaItemId: null,
+          title: 'Severance',
+          year: 2022,
+          genres: [],
+          contentRating: null,
+          isKids: false,
+          onPlex: [{ server: 'haynesops', ratingKey: 'sev', local: false }],
+          plexCounts: {},
+          showStatus: 'continuing',
+          ...showProgressFields(computeShowProgress([], [])),
+        },
+      ],
+    });
+  }
+
+  it('mark_watched records the mark in history with plex_result none and makes ZERO Plex calls', async () => {
+    await household();
+    await seedHouseholdSeverance();
+    const fake = new FakePlex([severance()]);
+    const out = await markWatched({ db, plex: fake.clients(), actor: HOUSE_ACTOR, consumer: 'oauth:abc', query: 'severance', now: NOW });
+    expect(out).toMatchObject({ status: 'done', replayed: false });
+    if (out.status !== 'done') throw new Error(out.status);
+    expect(out.view).toMatchObject({ plexResult: 'none', flipped: 0, historyOnly: true, title: 'Severance', year: 2022 });
+    expect(formatMarkResult(out.view)).toBe(
+      "Noted Severance (2022) as watched in your history. Only the server owner's marks change Plex.",
+    );
+    expect(fake.calls).toEqual([]);
+    const [mark] = await marks();
+    expect(mark).toMatchObject({ plexAccountId: HOUSE, action: 'watched', plexResult: 'none', flipped: [], consumer: 'oauth:abc' });
+    // The owner's history is untouched.
+    expect((await marks()).filter((m) => m.plexAccountId === OWNER)).toEqual([]);
+  });
+
+  it('a season / episode mark reads the same way; a repeat within 10 minutes is a replay (no second row)', async () => {
+    await household();
+    await seedHouseholdSeverance();
+    const fake = new FakePlex([severance()]);
+    const plex = fake.clients();
+    const season = await markWatched({ db, plex, actor: HOUSE_ACTOR, consumer: 'oauth:abc', query: 'severance', season: 2, now: NOW });
+    if (season.status !== 'done') throw new Error(season.status);
+    expect(formatMarkResult(season.view)).toBe(
+      "Noted season 2 of Severance (2022) as watched in your history. Only the server owner's marks change Plex.",
+    );
+    const again = await markWatched({ db, plex, actor: HOUSE_ACTOR, consumer: 'oauth:abc', query: 'severance', season: 2, now: new Date(NOW.getTime() + 60_000) });
+    expect(again).toMatchObject({ status: 'done', replayed: true, markId: season.markId });
+    expect(await marks()).toHaveLength(1);
+    expect(fake.calls).toEqual([]);
+  });
+
+  it('dismiss works for the household account (never Plex, as for the owner)', async () => {
+    await household();
+    await seedHouseholdSeverance();
+    const fake = new FakePlex([severance()]);
+    const out = await dismissTitle({ db, actor: HOUSE_ACTOR, consumer: 'oauth:abc', query: 'severance', reason: 'not_mine', now: NOW });
+    if (out.status !== 'done') throw new Error(out.status);
+    expect(formatDismissResult(out.view)).toContain('Severance (2022)');
+    expect((await marks())[0]).toMatchObject({ plexAccountId: HOUSE, action: 'not_mine', plexResult: 'none' });
+    expect(fake.calls).toEqual([]);
+  });
+
+  it('undo of a history-only mark makes no Plex call and answers as a plain undo', async () => {
+    await household();
+    await seedHouseholdSeverance();
+    const fake = new FakePlex([severance()]);
+    const plex = fake.clients();
+    await markWatched({ db, plex, actor: HOUSE_ACTOR, consumer: 'oauth:abc', query: 'severance', now: NOW });
+    const undo = await undoLastChange({ db, plex, actor: HOUSE_ACTOR, now: new Date(NOW.getTime() + 120_000) });
+    if (undo.status !== 'done') throw new Error(undo.status);
+    expect(undo.view).toMatchObject({ undone: true, revertResult: 'none', episodes: 0 });
+    expect(formatUndoResult(undo.view)).toBe('Undone. Severance (2022) is no longer marked as watched.');
+    expect(fake.calls).toEqual([]);
+    expect((await marks())[0]!.revertedAt).not.toBeNull();
+  });
+
+  it("even a household mark row that claims flips is never unscrobbled with the owner's tokens", async () => {
+    await household();
+    const fake = new FakePlex([severance()]);
+    await db.execute(sql`
+      INSERT INTO watch_marks (plex_account_id, action, scope, title_key, kind, title, year, query, consumer, flipped, plex_result, created_at)
+      VALUES (${HOUSE}, 'watched', 'show', 'plex:plex://show/sev', 'show', 'Severance', 2022, 'severance', 'oauth:abc',
+              ${JSON.stringify([{ server: 'haynesops', ratingKey: 'sev-1-3' }])}::jsonb, 'written', ${NOW})`);
+    const undo = await undoLastChange({ db, plex: fake.clients(), actor: HOUSE_ACTOR, now: new Date(NOW.getTime() + 1000) });
+    expect(undo).toMatchObject({ status: 'done', view: { undone: true, revertResult: 'none' } });
+    expect(fake.calls).toEqual([]);
+  });
+
+  it('an UNTRACKED household account is refused before anything — mark, dismiss, undo', async () => {
+    await household(false);
+    const fake = new FakePlex([severance()]);
+    const plex = fake.clients();
+    for (const call of [
+      () => markWatched({ db, plex, actor: HOUSE_ACTOR, consumer: 'oauth:abc', query: 'severance', now: NOW }),
+      () => dismissTitle({ db, actor: HOUSE_ACTOR, consumer: 'oauth:abc', query: 'severance', now: NOW }),
+      () => undoLastChange({ db, plex, actor: HOUSE_ACTOR, now: NOW }),
+    ]) {
+      await expect(call()).rejects.toBeInstanceOf(WatchNotReadyError);
+    }
+    expect(fake.calls).toEqual([]);
+    expect(await marks()).toEqual([]);
+  });
+
+  it("live revalidation stays owner-only — it reads Plex with the owner's tokens", async () => {
+    await household();
+    const fake = new FakePlex([severance()]);
+    await expect(revalidateTitles({ db, plex: fake.clients(), plexAccountId: HOUSE, rows: [], now: NOW })).rejects.toBeInstanceOf(
+      WatchNotReadyError,
+    );
+    expect(fake.calls).toEqual([]);
+  });
+
+  it('the owner still writes Plex exactly as before (the hop path is unchanged)', async () => {
+    await household();
+    const show = severance();
+    const fake = new FakePlex([show]);
+    await seedShow(fake, show);
+    const out = await markWatched({ db, plex: fake.clients(), actor: ACTOR, consumer: 'hop', query: 'severance', season: 1, now: NOW });
+    if (out.status !== 'done') throw new Error(out.status);
+    expect(out.view.historyOnly).toBeUndefined();
+    expect(out.view.plexResult).toBe('written');
+    expect(fake.writes().length).toBeGreaterThan(0);
+  });
+});

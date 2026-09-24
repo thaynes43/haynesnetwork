@@ -2,7 +2,7 @@
 // (ADR-029) the `watch` sync resolves from `PlexReadClient.getOwnerAccount()`. The MCP surface answers for
 // THE owner row (D-03), so an owner change is an UPDATE — the previous owner is demoted to an untracked
 // `household` row, never deleted (watch_marks RESTRICT the delete; OPS-015 §7).
-import { users, watchAccounts, type DbClient, type WatchAccountRow } from '@hnet/db';
+import { users, watchAccounts, type DbClient, type WatchAccountRole, type WatchAccountRow } from '@hnet/db';
 import { formatNotReady } from '@hnet/watch';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { inTransaction } from '../db-client';
@@ -95,8 +95,27 @@ export class WatchNotReadyError extends Error {
 }
 
 /**
- * D-03: the flows act only for the current owner — marks are recorded on the account they are given while
- * Plex is written with the owner's tokens, so any other account is refused (one primary-key SELECT).
+ * ADR-091 C-04 / DESIGN-050 D-07 — the mark flows (`markWatched`, `dismissTitle`, `undoLastChange`) act for ANY
+ * TRACKED account: the Server Owner (the hop, or the owner's own connector) or, once PLAN-070 tracks them, a
+ * household account reached through a user's connector. An untracked or unknown account — a demoted former owner,
+ * an id nobody tracks — is refused with {@link WatchNotReadyError} before any Plex call or write (one primary-key
+ * SELECT). Returns the account's role: only the `owner` row may write Plex (its tokens are the owner's), so the
+ * flows record a non-owner's mark in history only.
+ */
+export async function assertTrackedWatchAccount(db: DbClient, plexAccountId: number): Promise<WatchAccountRole> {
+  const [row] = await db
+    .select({ role: watchAccounts.role })
+    .from(watchAccounts)
+    .where(and(eq(watchAccounts.plexAccountId, plexAccountId), eq(watchAccounts.tracked, true)))
+    .limit(1);
+  if (!row) throw new WatchNotReadyError(plexAccountId);
+  return row.role;
+}
+
+/**
+ * D-03: live revalidation (`revalidateTitles`) reads Plex with the OWNER's tokens, so its snapshot is the owner's
+ * watched state — it serves the current owner only, and any other account is refused (one primary-key SELECT).
+ * (The mark flows moved to {@link assertTrackedWatchAccount} with ADR-091 C-04.)
  */
 export async function assertWatchOwner(db: DbClient, plexAccountId: number): Promise<void> {
   const [row] = await db

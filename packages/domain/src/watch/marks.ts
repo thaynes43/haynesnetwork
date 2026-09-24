@@ -59,7 +59,7 @@ import {
 } from '@hnet/watch';
 import { and, desc, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from '../db-client';
-import { assertWatchOwner } from './accounts';
+import { assertTrackedWatchAccount } from './accounts';
 import {
   isPlexNotFound,
   plexErrorText,
@@ -69,10 +69,13 @@ import {
 import { resolveWatchTitle, type ResolvedWatchTitle, type WatchTmdbSearch } from './resolve';
 import { upsertWatchTitles, type WatchTitleWrite } from './titles';
 
-/** Who a mark is for and who made it (the MCP principal: the owner row, D-03). */
+/**
+ * Who a mark is for and who made it: the MCP principal — the owner row for the hop (D-03), the token user's own
+ * tracked account for a connector (ADR-091 C-04).
+ */
 export interface WatchMarkActor {
   plexAccountId: number;
-  /** The app user linked to the owner (attribution, `actor_user_id`). */
+  /** The acting app user (attribution, `actor_user_id`): the connector's user, or the owner's linked user. */
   appUserId: string | null;
 }
 
@@ -432,18 +435,77 @@ function withPlexIdentity(identity: MarkIdentity, item: PlexItemLike | null): Ma
 }
 
 /**
+ * ADR-091 C-04 / DESIGN-050 D-07 — a `watched` mark for a tracked account that is NOT the Server Owner: recorded
+ * with `plex_result = 'none'` and nothing flipped, never touching Plex. The replay rule applies as for the owner
+ * (a repeat within 10 minutes answers like the first and inserts no row); the view carries `historyOnly`.
+ */
+async function recordHistoryOnlyMark(
+  db: DbClient,
+  args: {
+    input: MarkWatchedInput;
+    acct: number;
+    identity: MarkIdentity;
+    spec: Exclude<ReturnType<typeof markScopeOf>, 'need_season'>;
+    now: Date;
+  },
+): Promise<WatchMarkOutcome<MarkResultView>> {
+  const { input, acct, identity, spec, now } = args;
+  const view: MarkResultView = {
+    kind: identity.kind,
+    title: identity.title,
+    year: identity.year,
+    scope: spec.scope,
+    season: spec.season,
+    episode: spec.episode,
+    plexResult: 'none',
+    episodes: null,
+    flipped: 0,
+    historyOnly: true,
+  };
+  const first = await findReplay(db, acct, { action: 'watched', ...spec, identity }, now);
+  if (first) return { status: 'done', view, markId: first.id, replayed: true };
+  const [mark] = await db
+    .insert(watchMarks)
+    .values({
+      plexAccountId: acct,
+      action: 'watched',
+      scope: spec.scope,
+      titleKey: identity.titleKey,
+      kind: identity.kind,
+      title: identity.title,
+      year: identity.year,
+      plexGuid: identity.plexGuid,
+      tmdbId: identity.tmdbId,
+      tvdbId: identity.tvdbId,
+      imdbId: identity.imdbId,
+      season: spec.season,
+      episode: spec.episode,
+      query: trimQuery(input.query),
+      consumer: input.consumer,
+      actorUserId: input.actor.appUserId,
+      flipped: [],
+      plexResult: 'none',
+      createdAt: now,
+    })
+    .returning({ id: watchMarks.id });
+  return { status: 'done', view, markId: mark?.id ?? null, replayed: false };
+}
+
+/**
  * `mark_watched` (D-14). Resolve (ambiguous / not found / episode-without-season write nothing), find the
  * holding servers, read the before-state live, record the mark as `pending` with the planned flips, write
  * Plex (≤ 6 concurrent), then finalize the mark with exactly what flipped and write the Title State
  * through. A repeat within 10 minutes that would flip nothing answers like the first and inserts no row.
- * The actor must be the current owner (D-03): anything else throws {@link WatchNotReadyError} first.
+ * The actor must be a TRACKED account (ADR-091 C-04): anything else throws {@link WatchNotReadyError} first. Plex
+ * write-back is owner-only: for any other tracked account the mark is recorded in history only (`plex_result`
+ * `none`, nothing flipped, no Plex call at all) and the answer says so (`historyOnly`).
  */
 export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOutcome<MarkResultView>> {
   const now = input.now ?? new Date();
   const nowSec = Math.floor(now.getTime() / 1000);
   const db = resolveDb(input.db);
   const acct = input.actor.plexAccountId;
-  await assertWatchOwner(db, acct);
+  const role = await assertTrackedWatchAccount(db, acct);
 
   const resolveStart = Date.now();
   const resolution = await resolveWatchTitle({
@@ -463,6 +525,10 @@ export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOut
   const [row = null] =
     t.titleRowId !== null ? await selectTitleRows(db, acct, { ids: [t.titleRowId] }) : [];
   let identity = identityOf(t, row);
+
+  // ADR-091 C-04 — not the Server Owner: Plex is written with the owner's tokens, so a household account's mark is
+  // recorded in its history only — no read, no write, no write-through (the live mark is what the reads honour).
+  if (role !== 'owner') return recordHistoryOnlyMark(db, { input, acct, identity, spec, now });
 
   // D-14 steps 2–3: holders, targets, live before-state.
   const plexStart = Date.now();
@@ -783,13 +849,13 @@ export interface DismissView {
  * `dismiss` (D-15): record `not_interested` (never suggested again, dropped from Unfinished) or `not_mine`
  * (out of Ever Watched, the Taste Profile and Unfinished). NEVER calls Plex — there is no Plex parameter.
  * A repeat within 10 minutes answers like the first without a new row (so it never becomes the "last change").
- * The actor must be the current owner (D-03): anything else throws {@link WatchNotReadyError} first.
+ * The actor must be a TRACKED account (ADR-091 C-04): anything else throws {@link WatchNotReadyError} first.
  */
 export async function dismissTitle(input: DismissTitleInput): Promise<WatchMarkOutcome<DismissView>> {
   const now = input.now ?? new Date();
   const db = resolveDb(input.db);
   const acct = input.actor.plexAccountId;
-  await assertWatchOwner(db, acct);
+  await assertTrackedWatchAccount(db, acct);
   const reason: Dismissal = input.reason ?? 'not_interested';
   const resolveStart = Date.now();
   const resolution = await resolveWatchTitle({
@@ -906,15 +972,16 @@ export function planReverts(
  * clears resume points (ADR-088 C-04). The mark is stamped reverted only when the unscrobbles all landed
  * (`written`, or `none` with nothing to put back): a `failed` / `partial` undo records its result and
  * leaves the mark live, so the next undo retries THE SAME mark (unscrobble is idempotent) instead of
- * reaching an older one. Nothing to undo ⇒ `{ undone: false }`. The actor must be the current owner (D-03):
- * anything else throws {@link WatchNotReadyError} first.
+ * reaching an older one. Nothing to undo ⇒ `{ undone: false }`. The actor must be a TRACKED account (ADR-091
+ * C-04): anything else throws {@link WatchNotReadyError} first. A non-owner's marks never flipped anything, and
+ * their undo never calls Plex either (revert `none`).
  */
 export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchMarkOutcome<UndoView>> {
   const now = input.now ?? new Date();
   const nowSec = Math.floor(now.getTime() / 1000);
   const db = resolveDb(input.db);
   const acct = input.actor.plexAccountId;
-  await assertWatchOwner(db, acct);
+  const role = await assertTrackedWatchAccount(db, acct);
   const since = new Date(now.getTime() - UNDO_WINDOW_SECONDS * 1000);
   const [mark] = await db
     .select()
@@ -932,7 +999,9 @@ export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchM
   if (!mark) return { status: 'done', view: { undone: false }, markId: null, replayed: false };
 
   const identity = markIdentity(mark);
-  const flips = mark.action === 'watched' ? mark.flipped : [];
+  // Plex write-back is owner-only (ADR-091 C-04): a non-owner's mark flipped nothing, and even a row that claims
+  // otherwise is never unscrobbled with the owner's tokens.
+  const flips = mark.action === 'watched' && role === 'owner' ? mark.flipped : [];
   let revertResult: WatchMarkRevertResult = 'none';
   const reverted: WatchMarkFlip[] = [];
   /** Servers an unscrobble was sent to. */

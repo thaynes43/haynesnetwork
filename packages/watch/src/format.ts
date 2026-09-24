@@ -380,6 +380,11 @@ export interface MarkResultView {
   episodes?: number | null;
   /** Items that actually changed in Plex (`flipped.length`); 0 means it was already watched. */
   flipped?: number | null;
+  /**
+   * ADR-091 C-04 — the mark was recorded in the history of an account that is not the Server Owner's: Plex
+   * write-back is owner-only, so nothing was sent to Plex.
+   */
+  historyOnly?: boolean;
 }
 
 function markSubject(r: {
@@ -421,6 +426,11 @@ function episodeCount(r: MarkResultView): string {
 export function formatMarkResult(r: MarkResultView): string {
   const { subject, through } = markSubject(r);
   const count = episodeCount(r);
+  if (r.historyOnly) {
+    return capSpoken(
+      `Noted ${subject}${through} as watched in your history. Only the server owner's marks change Plex.`,
+    );
+  }
   switch (r.plexResult) {
     case 'not_on_plex':
       return capSpoken(
@@ -556,6 +566,14 @@ export function formatNeedSeason(query: string, episode?: number | null): string
 /** No owner row yet (D-03). */
 export function formatNotReady(): string {
   return "Watch history isn't ready yet.";
+}
+
+/**
+ * ADR-091 C-04 / DESIGN-050 D-07 — a connector's user has no tracked Plex account (unmapped in the ADR-053 map,
+ * or not tracked): every tool answers this, as an ordinary result.
+ */
+export function formatNotSetUp(): string {
+  return "Watch history isn't set up for your account yet.";
 }
 
 /** The `isError` text for an unexpected failure (D-06). */

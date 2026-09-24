@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { WatchNotReadyError } from '@hnet/domain';
-import { authenticate, type McpConsumer } from '../src/auth';
+import { authenticate, type HopConsumer } from '../src/auth';
 import { deadlineResponse } from '../src/http';
 import { buildServer, runTool, toolList } from '../src/server';
 import { INSTRUCTIONS, SERVER_NAME, WATCH_TOOLS } from '../src/tools';
@@ -134,7 +134,7 @@ describe('consumer auth (D-03)', () => {
   });
 
   it('a second, read-only consumer is configuration: it lists and runs only the read tools', async () => {
-    const reader: McpConsumer = {
+    const reader: HopConsumer = {
       name: 'reader',
       tokenEnv: 'READER_TOKEN',
       scopes: ['watch:read'],
@@ -171,7 +171,7 @@ describe('consumer auth (D-03)', () => {
   });
 
   it('over the protocol, an out-of-scope tool is not registered: tools/list omits it and a call answers "not found" (D-27)', async () => {
-    const reader: McpConsumer = {
+    const reader: HopConsumer = {
       name: 'reader',
       tokenEnv: 'READER_TOKEN',
       scopes: ['watch:read'],
@@ -204,7 +204,7 @@ describe('consumer auth (D-03)', () => {
 });
 
 describe('the D-02 deadline', () => {
-  const hop: McpConsumer = {
+  const hop: HopConsumer = {
     name: 'hop',
     tokenEnv: 'HNET_MCP_HOP_TOKEN',
     scopes: ['watch:read', 'watch:write'],

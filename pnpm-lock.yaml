@@ -399,6 +399,9 @@ importers:
       '@hnet/domain':
         specifier: workspace:*
         version: link:../domain
+      '@hnet/oauth':
+        specifier: workspace:*
+        version: link:../oauth
       '@hnet/watch':
         specifier: workspace:*
         version: link:../watch
