@@ -87,3 +87,22 @@ describe('D-09 — the /login routes honour next', () => {
     expect(safeNext(withNext('/login?error=callback_failed', AUTHORIZE))).not.toBe('/');
   });
 });
+
+describe('D-09 — encoded slashes and backslashes, either case (pinned by the review)', () => {
+  it('refuses %2F / %5C in upper and lower case — they never pass Better Auth’s grammar or ours', () => {
+    for (const v of [
+      '/%2F%2Fevil.example',
+      '/%2f%2fevil.example',
+      '/%5Cevil.example',
+      '/%5cevil.example',
+      '/%2F/evil.example',
+      '/%5C%5Cevil.example/x',
+    ]) {
+      expect(safeNext(v), v).toBe('/');
+    }
+    // Encoded characters inside the QUERY of a real path are fine (the OAuth authorize next carries them).
+    expect(safeNext('/oauth/authorize?redirect_uri=https%3A%2F%2Fchatgpt.com%2Fcb')).toBe(
+      '/oauth/authorize?redirect_uri=https%3A%2F%2Fchatgpt.com%2Fcb',
+    );
+  });
+});

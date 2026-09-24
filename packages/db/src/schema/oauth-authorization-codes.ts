@@ -39,6 +39,11 @@ export const oauthAuthorizationCodes = pgTable(
     codeChallengeMethod: text('code_challenge_method').$type<OAuthCodeChallengeMethod>().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    /**
+     * The refresh family the code's exchange started (set in the same UPDATE that consumes it), so a replayed code
+     * revokes every token issued from it (RFC 6749 §4.1.2).
+     */
+    familyId: uuid('family_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -53,6 +58,7 @@ export const oauthAuthorizationCodes = pgTable(
     ),
     index('oauth_authorization_codes_expires_idx').on(t.expiresAt),
     index('oauth_authorization_codes_client_user_idx').on(t.clientId, t.userId),
+    index('oauth_authorization_codes_user_idx').on(t.userId),
   ],
 );
 

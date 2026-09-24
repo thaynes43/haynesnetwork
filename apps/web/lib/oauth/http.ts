@@ -72,8 +72,10 @@ const IP_SHAPE = /^[0-9A-Fa-f:.]{2,45}$/;
 /**
  * The client IP the D-10 limits key on: `CF-Connecting-IP` first (Cloudflare sets it at the edge and overwrites
  * any client value), then `X-Real-IP` (Traefik's connecting client — the closest a route handler gets to the
- * socket address), then the first `X-Forwarded-For` hop. The same order Better Auth's limiter uses. A value that
- * is not an IP literal is ignored, so a header cannot mint arbitrary bucket keys.
+ * socket address), then the first `X-Forwarded-For` hop. Deliberately NOT Better Auth's order (CF-Connecting-IP →
+ * X-Forwarded-For → X-Real-IP, `@hnet/auth` config.ts): X-Real-IP is set by our own proxy, so it outranks a
+ * client-supplied X-Forwarded-For. A value that is not an IP literal is ignored, so a header cannot mint
+ * arbitrary bucket keys.
  */
 export function clientIp(headers: Headers): string {
   const candidates = [
@@ -114,7 +116,7 @@ export function rateLimitSubject(ip: string): string {
 
 /** D-10 — count one request against `oauth:<route>|<subject>`; a refusal logs `rate_limited`. */
 export async function limitRequest(
-  route: 'register' | 'token' | 'authorize',
+  route: 'register' | 'token' | 'authorize' | 'revoke',
   ip: string,
   windowSeconds: number,
   max: number,

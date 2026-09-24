@@ -25,6 +25,7 @@ import {
   hashToken,
   invalidGrant,
   planTokenPair,
+  replayedCodeFamily,
   type TokenPairPlan,
   type TokenResponse,
 } from '@hnet/oauth';
@@ -82,6 +83,18 @@ export async function exchangeCode(input: {
     .from(oauthAuthorizationCodes)
     .where(eq(oauthAuthorizationCodes.codeHash, hashToken(request.code)))
     .limit(1);
+  // RFC 6749 §4.1.2 — a replayed code revokes every token its exchange issued (audited), then is refused below.
+  const replayed = replayedCodeFamily(rec);
+  if (replayed && rec) {
+    await revokeFamilyOnReuse({
+      db,
+      familyId: replayed,
+      clientId: rec.clientId,
+      userId: rec.userId,
+      reason: 'code_replayed',
+      now,
+    });
+  }
   const grant = decideCodeExchange(rec, client, request, now);
   const plan = planTokenPair({
     clientId: client.clientId,
@@ -94,7 +107,7 @@ export async function exchangeCode(input: {
   const issued = await inTransaction(db, async (tx) => {
     const consumed = await tx
       .update(oauthAuthorizationCodes)
-      .set({ consumedAt: now })
+      .set({ consumedAt: now, familyId: plan.familyId })
       .where(
         and(
           eq(oauthAuthorizationCodes.id, rec!.id),
@@ -108,6 +121,27 @@ export async function exchangeCode(input: {
     return true;
   });
   if (!issued) {
+    // Lost to another exchange of the same code (or the code was expired by a Disconnect meanwhile): re-read it —
+    // if it was consumed, this presentation is a replay, and the family the winner started is revoked too.
+    const [fresh] = await db
+      .select({
+        consumedAt: oauthAuthorizationCodes.consumedAt,
+        familyId: oauthAuthorizationCodes.familyId,
+      })
+      .from(oauthAuthorizationCodes)
+      .where(eq(oauthAuthorizationCodes.id, rec!.id))
+      .limit(1);
+    const family = replayedCodeFamily(fresh);
+    if (family) {
+      await revokeFamilyOnReuse({
+        db,
+        familyId: family,
+        clientId: rec!.clientId,
+        userId: rec!.userId,
+        reason: 'code_replayed',
+        now,
+      });
+    }
     authEvent('code_replayed', { client_id: client.clientId, code: fingerprint(request.code) });
     throw invalidGrant('Authorization code already used');
   }
@@ -123,18 +157,19 @@ export async function exchangeCode(input: {
 }
 
 /**
- * D-03 / D-06 — the audited family revocation (hard rule 6): a SPENT refresh token was presented again — replayed
- * after its rotation, or losing a rotation race to another presentation of the same token — which is a theft
- * signal. Every refresh and access token of its family is revoked and a `family_revoked_on_reuse` audit row is
- * written, in one transaction. The detection itself is the audited event, so it writes its row even when the family
- * was already dead (zero counts). A REVOKED token presented again is not this — see `rotateRefreshToken`.
+ * D-03 / D-06 — the audited family revocation (hard rule 6): a SPENT credential was presented again — a refresh
+ * token replayed after its rotation (`rotated`) or losing a rotation race (`race`), or an authorization code
+ * replayed after its exchange (`code_replayed`, RFC 6749 §4.1.2) — which is a theft signal. Every refresh and access
+ * token of the family is revoked and a `family_revoked_on_reuse` audit row is written, in one transaction. The
+ * detection itself is the audited event, so it writes its row even when the family was already dead (zero counts).
+ * A REVOKED, never-rotated refresh token presented again is not this — see `rotateRefreshToken`.
  */
 export async function revokeFamilyOnReuse(input: {
   db?: DbClient;
   familyId: string;
   clientId: string;
   userId: string;
-  reason: 'rotated' | 'race';
+  reason: 'rotated' | 'race' | 'code_replayed';
   now?: Date;
 }): Promise<{ refreshRevoked: number; accessRevoked: number }> {
   const now = input.now ?? new Date();
@@ -159,9 +194,10 @@ export async function revokeFamilyOnReuse(input: {
 /**
  * D-06 `refresh_token` — rotation with reuse detection.
  *
- * - A SPENT token (rotated) presented again is a theft signal: the family is revoked with its audit row
- *   (`revokeFamilyOnReuse`), `refresh_reuse_detected` is logged (the D-11 alert pages on it), `invalid_grant`.
- * - A REVOKED token presented again is the expected aftermath of a revocation someone chose — Disconnect, the
+ * - A SPENT token (ever rotated — even if revoked since) presented again is a theft signal: the family is revoked
+ *   with its audit row (`revokeFamilyOnReuse`), `refresh_reuse_detected` is logged (the D-11 alert pages on it),
+ *   `invalid_grant`.
+ * - A REVOKED token that was never rotated, presented again, is the expected aftermath of a revocation someone chose — Disconnect, the
  *   client's own RFC 7009 revoke (ChatGPT revokes on every reconnect), an earlier reuse response — so it is
  *   refused quietly: `invalid_grant`, a `refresh_rejected` line, no audit row and no page. The family is swept
  *   once more, unaudited, in case a racing rotation left a live member.
@@ -253,6 +289,7 @@ export async function rotateRefreshToken(input: {
       .from(oauthRefreshTokens)
       .where(eq(oauthRefreshTokens.id, r.id))
       .limit(1);
+    // Revoked while still unspent is the quiet case; anything rotated (by the racing request) is reuse.
     if (fresh?.revokedAt && !fresh.rotatedAt) return refuseRevoked();
     return reuse('race');
   }

@@ -40,13 +40,18 @@ export default async function ConsentPage({
 
   return (
     <OAuthCard testId="oauth-consent">
-      <h1 className="oauth-card__title">Connect {view.clientName}</h1>
+      {/* The client name is self-chosen (anyone can register "ChatGPT. Sends you back to chatgpt.com"), so it is
+          always set apart as a bold name inside the heading and the lead — never styled like the host line, which
+          is our own separate muted line with the host in a bordered monospace token. React renders both as text. */}
+      <h1 className="oauth-card__title">
+        Connect <span className="oauth-client-name">{view.clientName}</span>
+      </h1>
       <p>
-        {view.clientName} wants to use your watch history on haynesnetwork. It will act as your
-        account and can only do what you approve below.
+        <span className="oauth-client-name">{view.clientName}</span> wants to use your watch history
+        on haynesnetwork. It will act as your account and can only do what you approve below.
       </p>
-      <p className="muted" data-testid="oauth-consent-redirect">
-        Sends you back to {view.redirectHost}.
+      <p className="oauth-redirect muted" data-testid="oauth-consent-redirect">
+        Sends you back to <span className="oauth-host">{view.redirectHost}</span>.
       </p>
       <ul className="oauth-scopes">
         {lines.map((line) => (

@@ -7,19 +7,23 @@
 --     page and the dormant-client pruner) are new against the cigar-journal port.
 --   • oauth_authorizations — the pending consent transaction a SIGNED-IN user's /oauth/authorize created (10 min).
 --     state is NOT NULL (DESIGN-050 D-05: state is required).
---   • oauth_authorization_codes — single-use PKCE codes (60 s), consumed once by a conditional UPDATE.
+--   • oauth_authorization_codes — single-use PKCE codes (60 s), consumed once by a conditional UPDATE that also records
+--     the refresh family the exchange started (family_id), so a replayed code revokes what it issued (RFC 6749 §4.1.2).
 --   • oauth_refresh_tokens — rotating refresh families (60 days, re-issued per rotation); parent_id is a self-FK
 --     (ON DELETE SET NULL, so the pruner may drop an old ancestor).
 --   • oauth_access_tokens — 1 h access tokens bound to the canonical resource; last_used_at stamped by /mcp.
 -- Every token, code and secret is stored ONLY as its SHA-256 hex digest — a format CHECK refuses anything else, so
 -- plaintext can never land at rest. Every expires_at is NOT NULL (no never-expiring token: ADR-091 option 5).
+-- Each of the four dependent tables also carries a (user_id) index: the Connected apps self view filters on it and
+-- a user delete cascades through it (the (client_id, user_id) composites cannot serve a user_id-only lookup).
 -- Every scopes column is a non-empty jsonb array ⊆ OAUTH_SCOPES (jsonb containment, built from enums.ts). All four
 -- dependent tables reference oauth_clients(client_id) — the unique public handle, as the port does — and users(id),
 -- both ON DELETE CASCADE: deleting a user or a client removes every transaction, code and token it owns.
 --   • oauth_audit — the APPEND-ONLY connector audit trail (hard rule 6): event ∈ OAUTH_AUDIT_EVENTS (consent_granted,
 --     consent_denied, client_disconnected, family_revoked_on_reuse), each inserted by its @hnet/domain writer in the
---     same transaction as the state change. user_id cascades with the user; client_id is TEXT with no FK on purpose —
---     the inline pruner deletes dormant DCR clients, and the audit trail must outlive them.
+--     same transaction as the state change. user_id is SET NULL when the user is deleted (the permission_audit
+--     convention) and client_id is TEXT with no FK on purpose — the pruner deletes dormant DCR clients — so the audit
+--     trail outlives both.
 -- All six tables are written ONLY by the @hnet/domain oauth single-writers (@hnet/oauth is pure: it decides, the
 -- domain writes); the no-direct-state-writes guard lists all six in every family, and the state tables are deleted
 -- only by the domain's audited transitions and its inline pruner (pruneExpired).
@@ -68,6 +72,7 @@ ALTER TABLE "oauth_authorizations" ADD CONSTRAINT "oauth_authorizations_client_i
 ALTER TABLE "oauth_authorizations" ADD CONSTRAINT "oauth_authorizations_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "oauth_authorizations_expires_idx" ON "oauth_authorizations" USING btree ("expires_at");--> statement-breakpoint
 CREATE INDEX "oauth_authorizations_client_user_idx" ON "oauth_authorizations" USING btree ("client_id","user_id");--> statement-breakpoint
+CREATE INDEX "oauth_authorizations_user_idx" ON "oauth_authorizations" USING btree ("user_id");--> statement-breakpoint
 CREATE TABLE "oauth_authorization_codes" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"code_hash" text NOT NULL,
@@ -80,6 +85,7 @@ CREATE TABLE "oauth_authorization_codes" (
 	"code_challenge_method" text NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
 	"consumed_at" timestamp with time zone,
+	"family_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "oauth_authorization_codes_code_hash_unique" UNIQUE("code_hash"),
 	CONSTRAINT "oauth_authorization_codes_hash_format" CHECK ("oauth_authorization_codes"."code_hash" ~ '^[0-9a-f]{64}$'),
@@ -91,6 +97,7 @@ ALTER TABLE "oauth_authorization_codes" ADD CONSTRAINT "oauth_authorization_code
 ALTER TABLE "oauth_authorization_codes" ADD CONSTRAINT "oauth_authorization_codes_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "oauth_authorization_codes_expires_idx" ON "oauth_authorization_codes" USING btree ("expires_at");--> statement-breakpoint
 CREATE INDEX "oauth_authorization_codes_client_user_idx" ON "oauth_authorization_codes" USING btree ("client_id","user_id");--> statement-breakpoint
+CREATE INDEX "oauth_authorization_codes_user_idx" ON "oauth_authorization_codes" USING btree ("user_id");--> statement-breakpoint
 CREATE TABLE "oauth_refresh_tokens" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"token_hash" text NOT NULL,
@@ -114,6 +121,7 @@ ALTER TABLE "oauth_refresh_tokens" ADD CONSTRAINT "oauth_refresh_tokens_client_i
 ALTER TABLE "oauth_refresh_tokens" ADD CONSTRAINT "oauth_refresh_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "oauth_refresh_tokens_family_idx" ON "oauth_refresh_tokens" USING btree ("family_id");--> statement-breakpoint
 CREATE INDEX "oauth_refresh_tokens_client_user_idx" ON "oauth_refresh_tokens" USING btree ("client_id","user_id");--> statement-breakpoint
+CREATE INDEX "oauth_refresh_tokens_user_idx" ON "oauth_refresh_tokens" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "oauth_refresh_tokens_expires_idx" ON "oauth_refresh_tokens" USING btree ("expires_at");--> statement-breakpoint
 CREATE TABLE "oauth_access_tokens" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -136,11 +144,12 @@ ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_client_id_
 ALTER TABLE "oauth_access_tokens" ADD CONSTRAINT "oauth_access_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "oauth_access_tokens_family_idx" ON "oauth_access_tokens" USING btree ("family_id");--> statement-breakpoint
 CREATE INDEX "oauth_access_tokens_client_user_idx" ON "oauth_access_tokens" USING btree ("client_id","user_id");--> statement-breakpoint
+CREATE INDEX "oauth_access_tokens_user_idx" ON "oauth_access_tokens" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "oauth_access_tokens_expires_idx" ON "oauth_access_tokens" USING btree ("expires_at");--> statement-breakpoint
 CREATE TABLE "oauth_audit" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"event" text NOT NULL,
-	"user_id" uuid NOT NULL,
+	"user_id" uuid,
 	"client_id" text NOT NULL,
 	"family_id" uuid,
 	"details" jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -148,6 +157,6 @@ CREATE TABLE "oauth_audit" (
 	CONSTRAINT "oauth_audit_event_enum" CHECK ("oauth_audit"."event" = ANY (ARRAY['consent_granted','consent_denied','client_disconnected','family_revoked_on_reuse']))
 );
 --> statement-breakpoint
-ALTER TABLE "oauth_audit" ADD CONSTRAINT "oauth_audit_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "oauth_audit" ADD CONSTRAINT "oauth_audit_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "oauth_audit_user_at_idx" ON "oauth_audit" USING btree ("user_id","at" DESC);--> statement-breakpoint
 CREATE INDEX "oauth_audit_client_idx" ON "oauth_audit" USING btree ("client_id");

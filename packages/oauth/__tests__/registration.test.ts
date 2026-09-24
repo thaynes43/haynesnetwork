@@ -98,23 +98,61 @@ describe('D-04 — what a registration accepts', () => {
 });
 
 describe('D-04 — the caps and refusals (RFC 7591 §3.2.2 error codes)', () => {
-  it(`client_name is required, 1–${CLIENT_NAME_MAX} characters, and free of control / bidi characters`, () => {
+  it(`client_name is required, 1–${CLIENT_NAME_MAX} characters after NFKC + trim`, () => {
     expect(
       validateRegistration({ ...CHATGPT, client_name: 'x'.repeat(80) }).clientName,
     ).toHaveLength(80);
-    for (const name of [
-      undefined,
-      '',
-      '   ',
-      'x'.repeat(81),
-      42,
-      'Chat\nGPT',
-      'Chat\u0000GPT',
-      'TPG‮tahC',
-    ]) {
+    // NFKC folds compatibility forms: full-width "ＣｈａｔＧＰＴ" is stored as "ChatGPT"; the length counts after it.
+    expect(validateRegistration({ ...CHATGPT, client_name: 'ＣｈａｔＧＰＴ' }).clientName).toBe(
+      'ChatGPT',
+    );
+    expect(validateRegistration({ ...CHATGPT, client_name: '  Codex  ' }).clientName).toBe('Codex');
+    for (const name of [undefined, '', '   ', '　', 'x'.repeat(81), 'ﷺ'.repeat(5), 42]) {
       const e = refused({ ...CHATGPT, client_name: name });
       expect(e.code, JSON.stringify(name)).toBe('invalid_client_metadata');
       expect(e.status).toBe(400);
+    }
+  });
+
+  it('client_name refuses every character that can hide or disguise text — one of each class', () => {
+    const cases: Array<[string, string]> = [
+      ['Cc (C0 control)', 'Chat\u0000GPT'],
+      ['Cc (newline)', 'Chat\nGPT'],
+      ['Cc (C1 control)', 'Chat\u0085GPT'],
+      ['Cf (right-to-left override)', 'TPG‮tahC'],
+      ['Cf (isolate)', 'Chat⁦GPT'],
+      ['Cf (Arabic letter mark U+061C)', 'Chat؜GPT'],
+      ['Cf (zero-width space)', 'Chat​GPT'],
+      ['Cf (zero-width non-joiner)', 'Chat‌GPT'],
+      ['Cf (zero-width joiner)', 'Chat‍GPT'],
+      ['Cf (word joiner U+2060)', 'Chat⁠GPT'],
+      ['Cf (BOM U+FEFF)', '﻿ChatGPT'],
+      ['Cf (tag character)', 'ChatGPT\u{E0041}'],
+      ['Zl (line separator)', 'Chat GPT'],
+      ['Zp (paragraph separator)', 'Chat GPT'],
+      ['Co (private use)', 'ChatGPT'],
+      ['Cn (unassigned)', 'Chat͸GPT'],
+      ['Hangul filler U+3164', 'ChatㅤGPT'],
+      ['Hangul filler U+115F', 'ChatᅟGPT'],
+      ['Hangul filler U+FFA0 (NFKC-folds to U+1160)', 'ChatﾠGPT'],
+    ];
+    for (const [label, name] of cases) {
+      const e = refused({ ...CHATGPT, client_name: name });
+      expect(e.code, label).toBe('invalid_client_metadata');
+      expect(e.description, label).toBe('client_name contains invisible or control characters');
+    }
+    // Ordinary names, accents, other scripts and emoji pass.
+    for (const name of [
+      'ChatGPT',
+      'Claude Code (haynesnetwork)',
+      'Codex',
+      'Café Connect',
+      '日本語',
+      'Bot \u{1F916}',
+    ]) {
+      expect(validateRegistration({ ...CHATGPT, client_name: name }).clientName, name).toBe(
+        name.normalize('NFKC'),
+      );
     }
   });
 

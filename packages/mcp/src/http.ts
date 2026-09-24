@@ -7,7 +7,13 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { formatWatchError } from '@hnet/watch';
 import type { McpDeps } from './answers';
-import { authenticate, jsonRpcError, type AuthResult, type McpConsumer } from './auth';
+import {
+  authenticate,
+  jsonRpcError,
+  type AuthResult,
+  type McpConsumer,
+  type WatchScope,
+} from './auth';
 import { defaultDeps } from './deps';
 import { buildServer } from './server';
 import { WATCH_TOOLS } from './tools';
@@ -22,7 +28,10 @@ export const MAX_MCP_BODY_BYTES = 64 * 1024;
 export const MCP_DEADLINE_MS = 9_000;
 
 /** Read the body with a hard byte cap (a declared oversize length is refused up front). Null = too large. */
-export async function readBodyCapped(req: Request, cap: number = MAX_MCP_BODY_BYTES): Promise<string | null> {
+export async function readBodyCapped(
+  req: Request,
+  cap: number = MAX_MCP_BODY_BYTES,
+): Promise<string | null> {
   const declared = Number(req.headers.get('content-length') ?? Number.NaN);
   if (Number.isFinite(declared) && declared > cap) return null;
   if (!req.body) return '';
@@ -61,14 +70,19 @@ export interface McpRequestOptions {
 }
 
 /**
- * The tool a JSON-RPC `tools/call` names, when it is one of the watch tools the consumer's scopes do NOT cover
- * (the OAuth consumer answers it 403 `insufficient_scope`, D-07); null otherwise.
+ * The tool a JSON-RPC `tools/call` names, with the scope it needs, when it is one of the watch tools the consumer's
+ * scopes do NOT cover (the OAuth consumer answers it 403 `insufficient_scope`, D-07); null otherwise.
  */
-export function outOfScopeTool(body: unknown, consumer: McpConsumer): string | null {
+export function outOfScopeTool(
+  body: unknown,
+  consumer: McpConsumer,
+): { name: string; scope: WatchScope } | null {
   const msg = (body ?? {}) as { method?: unknown; params?: { name?: unknown } };
   if (msg.method !== 'tools/call' || typeof msg.params?.name !== 'string') return null;
   const tool = WATCH_TOOLS.find((t) => t.name === msg.params?.name);
-  return tool && !consumer.scopes.includes(tool.scope) ? tool.name : null;
+  return tool && !consumer.scopes.includes(tool.scope)
+    ? { name: tool.name, scope: tool.scope }
+    : null;
 }
 
 /**
@@ -97,11 +111,16 @@ export function deadlineResponse(body: unknown): Response {
  * Handle one MCP request. Only POST reaches the transport (the Next route exports only POST, so Next
  * answers every other method 405; this guard keeps the handler safe on its own).
  */
-export async function handleMcpRequest(req: Request, opts: McpRequestOptions = {}): Promise<Response> {
+export async function handleMcpRequest(
+  req: Request,
+  opts: McpRequestOptions = {},
+): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response(null, { status: 405, headers: { allow: 'POST' } });
   }
-  const auth = opts.authenticate ? await opts.authenticate(req) : authenticate(req, opts.env ?? process.env);
+  const auth = opts.authenticate
+    ? await opts.authenticate(req)
+    : authenticate(req, opts.env ?? process.env);
   if (!auth.ok) return auth.response;
 
   const raw = await readBodyCapped(req);
@@ -115,8 +134,12 @@ export async function handleMcpRequest(req: Request, opts: McpRequestOptions = {
   // MCP 2025-06-18 dropped JSON-RPC batching and none of our clients batch. The SDK still accepts arrays,
   // and a batch of a call plus its own `notifications/cancelled` never answers: the cancelled response is
   // dropped, so the JSON response waits forever for it.
-  if (Array.isArray(parsedBody)) return jsonRpcError(400, -32600, 'Batch requests are not supported');
-  if (auth.insufficientScope && outOfScopeTool(parsedBody, auth.consumer)) return auth.insufficientScope();
+  if (Array.isArray(parsedBody))
+    return jsonRpcError(400, -32600, 'Batch requests are not supported');
+  if (auth.insufficientScope) {
+    const denied = outOfScopeTool(parsedBody, auth.consumer);
+    if (denied) return auth.insufficientScope(denied.scope);
+  }
 
   const deps = opts.deps ?? defaultDeps();
   const server = buildServer(deps, auth.consumer);

@@ -42,14 +42,19 @@ export type AuthResult =
        * the HTTP layer (the OAuth consumer's 403 `insufficient_scope`, D-07). Absent (the hop): the tool is simply
        * not registered for the connection, as before.
        */
-      insufficientScope?: () => Response;
+      insufficientScope?: (required: WatchScope) => Response;
     }
   | { ok: false; response: Response };
 
 const digest = (s: string) => createHash('sha256').update(s).digest();
 
 /** A JSON-RPC-shaped error body with an HTTP status (MCP clients read the status). */
-export function jsonRpcError(status: number, code: number, message: string, headers: Record<string, string> = {}): Response {
+export function jsonRpcError(
+  status: number,
+  code: number,
+  message: string,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify({ jsonrpc: '2.0', error: { code, message }, id: null }), {
     status,
     headers: { 'content-type': 'application/json', ...headers },

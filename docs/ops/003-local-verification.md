@@ -199,10 +199,13 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   (`grant_type=authorization_code`, `code`, `code_verifier=$VER`, `client_id=$CID`) and call
   `POST $APP/mcp` with `Authorization: Bearer <access_token>`. Expect: `tools/list` 2,712 bytes; `unfinished`
   "One unfinished show. Breaking Prod: 4 of 5 watched, …"; `/mcp` without a token 401 with
-  `WWW-Authenticate: Bearer resource_metadata="<app>/.well-known/oauth-protected-resource"`; GET `/mcp` 405;
-  the OAuth token at `/api/mcp` 401 (`WWW-Authenticate: Bearer`) and the hop token at `/mcp` 401; a refresh
+  `WWW-Authenticate: Bearer resource_metadata="<app>/.well-known/oauth-protected-resource"` (a presented but refused
+  token adds `error="invalid_token"`); GET `/mcp` 405; the OAuth token at `/api/mcp` 401 (`WWW-Authenticate:
+  Bearer`) and the hop token at `/mcp` 401; an authorize request with a parameter error (say
+  `code_challenge_method=plain`) goes to `/login?next=` when signed out and renders the bad-request page when signed
+  in — never a redirect to the client; a refresh
   narrowed to `watch:read offline_access` lists four tools and a `mark_watched` call answers 403
-  `insufficient_scope`; replaying the spent refresh token is `invalid_grant` and kills the family (the newest
+  `insufficient_scope` with `scope="watch:write"`; replaying the spent refresh token is `invalid_grant` and kills the family (the newest
   access token turns 401); the eleventh registration from one IP in an hour is 429 with `Retry-After` and
   `{"error":"rate_limited"}`. The dev server logs one `[auth] <event> {…}` line per step and never a token,
   code or verifier. Connected apps is at `/settings/connections` (sign in through the browser to Disconnect).

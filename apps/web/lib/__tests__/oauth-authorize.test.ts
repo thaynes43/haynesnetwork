@@ -1,8 +1,9 @@
 // ADR-091 / DESIGN-050 D-05 steps 1–5 / D-10 — the authorization endpoint's gate, branch by branch (@hnet/auth and
 // @hnet/domain mocked; the real pure @hnet/oauth validates): the rate limit and an untrusted client or redirect
-// render the bad-request page and NEVER redirect; parameter errors go back to the trusted callback with `state`;
-// no session ⇒ `${issuer}/login?next=<this request>`; ANY signed-in user (no owner gate) ⇒ a transaction and the
-// consent page. Plus the page adapter itself (redirect vs the D-14 card).
+// render the bad-request page and NEVER redirect; no session ⇒ `${issuer}/login?next=<this request>` before any
+// parameter is judged; a parameter error renders the bad-request page too — NOTHING redirects an error to the client
+// (RFC 9700 §4.11.2, D-15 #24/#25); ANY signed-in user (no owner gate) ⇒ a transaction and the consent page. Plus the
+// page adapter itself (redirect vs the D-14 card).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OAuthError, s256Challenge } from '@hnet/oauth';
 import { RedirectSignal, elements } from './oauth-helpers';
@@ -157,16 +158,11 @@ describe('D-05 — the authorize gate', () => {
     expect(logs.filter((l) => l.startsWith('[auth] authorize_rejected '))).toEqual([]);
   });
 
-  it('D-15 #24 — signed IN, the same plain-PKCE request goes back to the registered callback with the error and state', async () => {
-    const out = await run(request({ code_challenge_method: 'plain' }));
-    if (out.kind !== 'redirect') throw new Error('expected a redirect');
-    const url = new URL(out.location);
-    expect(`${url.origin}${url.pathname}`).toBe(CLIENT.redirectUris[0]);
-    expect(url.searchParams.get('error')).toBe('invalid_request');
-    expect(url.searchParams.get('error_description')).toBe(
-      'Only PKCE code_challenge_method=S256 is supported',
+  it('D-15 #25 — signed IN, the same plain-PKCE request renders the bad-request page: no redirect to the client', async () => {
+    expect(await run(request({ code_challenge_method: 'plain' }))).toEqual({ kind: 'bad_request' });
+    expect(logs.at(-1)).toBe(
+      `[auth] authorize_rejected {"reason":"invalid_request","client_id":"${CLIENT.clientId}"}`,
     );
-    expect(url.searchParams.get('state')).toBe('st-1');
     expect(startAuthorization).not.toHaveBeenCalled();
   });
 
@@ -197,33 +193,28 @@ describe('D-05 — the authorize gate', () => {
     );
   });
 
-  it('parameter errors go back to the trusted callback with error, error_description and state', async () => {
+  it('every parameter error renders the bad-request page for a signed-in user — the client is never redirected to', async () => {
     const cases: Array<[Record<string, string | string[] | null>, string]> = [
       [{ response_type: 'token' }, 'unsupported_response_type'],
+      [{ response_type: null }, 'unsupported_response_type'],
       [{ code_challenge_method: 'plain' }, 'invalid_request'],
+      [{ code_challenge_method: null }, 'invalid_request'],
       [{ code_challenge: null }, 'invalid_request'],
+      [{ code_challenge: 'short' }, 'invalid_request'],
+      [{ state: null }, 'invalid_request'],
       [{ scope: 'watch:admin' }, 'invalid_scope'],
       [{ resource: 'https://evil.example/mcp' }, 'invalid_target'],
       [{ scope: ['watch:read', 'watch:write'] }, 'invalid_request'],
+      [{ state: ['a', 'b'] }, 'invalid_request'],
     ];
     for (const [over, code] of cases) {
-      const out = await run(request(over));
-      if (out.kind !== 'redirect') throw new Error(`expected a redirect for ${code}`);
-      const url = new URL(out.location);
-      expect(`${url.origin}${url.pathname}`).toBe(CLIENT.redirectUris[0]);
-      expect(url.searchParams.get('error'), JSON.stringify(over)).toBe(code);
-      expect(url.searchParams.get('error_description')).toBeTruthy();
-      expect(url.searchParams.get('state')).toBe('st-1');
+      logs.length = 0;
+      expect(await run(request(over)), JSON.stringify(over)).toEqual({ kind: 'bad_request' });
+      expect(logs.at(-1), JSON.stringify(over)).toBe(
+        `[auth] authorize_rejected {"reason":"${code}","client_id":"${CLIENT.clientId}"}`,
+      );
     }
     expect(startAuthorization).not.toHaveBeenCalled();
-  });
-
-  it('state is REQUIRED: without it the error goes back without a state', async () => {
-    const out = await run(request({ state: null }));
-    if (out.kind !== 'redirect') throw new Error('expected a redirect');
-    const url = new URL(out.location);
-    expect(url.searchParams.get('error')).toBe('invalid_request');
-    expect(url.searchParams.has('state')).toBe(false);
   });
 
   it('a missing scope grants all three', async () => {

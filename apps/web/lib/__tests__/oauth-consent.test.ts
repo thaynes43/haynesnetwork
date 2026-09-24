@@ -98,6 +98,32 @@ describe('the consent page (D-05 step 6)', () => {
     ]);
   });
 
+  it('a client name is TEXT, never HTML, and is set apart from the host line (a name cannot pose as the host)', async () => {
+    const hostile = '<img src=x onerror=alert(1)>ChatGPT. Sends you back to chatgpt.com';
+    getConsentView.mockResolvedValue({
+      status: 'ok',
+      view: { ...VIEW, clientName: hostile, redirectHost: 'evil.example' },
+    });
+    const page = deep(await render());
+    const names = elements(page).filter(
+      (e) => (e.props as { className?: string }).className === 'oauth-client-name',
+    );
+    // Both occurrences (the heading and the lead) are the bold name element, holding the raw string as a child.
+    expect(names).toHaveLength(2);
+    for (const n of names) expect((n.props as { children: unknown }).children).toBe(hostile);
+    // The host line is our own element; the host sits in its bordered token.
+    const hostLine = elements(page).find(
+      (e) => (e.props as { 'data-testid'?: string })['data-testid'] === 'oauth-consent-redirect',
+    )!;
+    expect(textOf(hostLine)).toBe('Sends you back to evil.example.');
+    const host = elements(hostLine).find(
+      (e) => (e.props as { className?: string }).className === 'oauth-host',
+    );
+    expect((host!.props as { children: unknown }).children).toBe('evil.example');
+    // No element anywhere sets raw HTML.
+    for (const e of elements(page)) expect(e.props).not.toHaveProperty('dangerouslySetInnerHTML');
+  });
+
   it('for anyone else, watch:write says the history only (Plex write-back is owner-only)', async () => {
     for (const account of [null, { plexAccountId: 7, role: 'household' }]) {
       selectWatchAccountForUser.mockResolvedValue(account);

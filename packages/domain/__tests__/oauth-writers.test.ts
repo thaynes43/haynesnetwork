@@ -493,10 +493,25 @@ describe('exchangeCode (D-06 authorization_code)', () => {
       ).code,
     ).toBe('invalid_grant');
     expect(logs.some((l) => l.startsWith('[auth] code_replayed '))).toBe(true);
-    expect(await t.db.select().from(oauthAccessTokens)).toHaveLength(1);
+    // Nothing new was issued, and (RFC 6749 §4.1.2) every token the code's exchange issued is revoked, audited.
+    const access = await t.db.select().from(oauthAccessTokens);
+    expect(access).toHaveLength(1);
+    expect(access[0]!.revokedAt).toEqual(at(2));
+    for (const r of await t.db.select().from(oauthRefreshTokens))
+      expect(r.revokedAt).toEqual(at(2));
+    const [code] = await t.db.select().from(oauthAuthorizationCodes);
+    expect(code!.familyId).toBe(access[0]!.familyId);
+    expect(await audits('family_revoked_on_reuse')).toMatchObject([
+      {
+        userId: alice,
+        clientId: client.clientId,
+        familyId: access[0]!.familyId,
+        details: { reason: 'code_replayed', refresh_revoked: 1, access_revoked: 1 },
+      },
+    ]);
   });
 
-  it('two replicas exchanging the same code at once: exactly one pair is issued', async () => {
+  it('two replicas exchanging the same code at once: exactly one pair is issued — and, the code being replayed, revoked', async () => {
     const client = await newClient();
     const a = await approve(client, alice);
     const settled = await Promise.allSettled([
@@ -516,7 +531,13 @@ describe('exchangeCode (D-06 authorization_code)', () => {
     expect(settled.filter((s) => s.status === 'fulfilled')).toHaveLength(1);
     const rejected = settled.find((s) => s.status === 'rejected') as PromiseRejectedResult;
     expect((rejected.reason as OAuthError).code).toBe('invalid_grant');
-    expect(await t.db.select().from(oauthAccessTokens)).toHaveLength(1);
+    const access = await t.db.select().from(oauthAccessTokens);
+    expect(access).toHaveLength(1);
+    // Strict RFC 6749 §4.1.2: two presentations of one code — the winner's family is revoked too.
+    expect(access[0]!.revokedAt).not.toBeNull();
+    expect(await audits('family_revoked_on_reuse')).toMatchObject([
+      { details: { reason: 'code_replayed' } },
+    ]);
   });
 
   it('a wrong verifier, another client, an expired code, or a mismatched redirect issues nothing', async () => {
@@ -681,8 +702,14 @@ describe('rotateRefreshToken + revokeFamilyOnReuse (D-06 refresh_token)', () => 
         }),
       );
     }
-    // The first replay revoked the family (and rotated_at stays set), so the second finds it revoked: quiet.
-    expect(await audits('family_revoked_on_reuse')).toHaveLength(1);
+    // rotated_at stays set, so the second replay — of a token that is now also revoked — is STILL reuse: a
+    // revocation never silences the theft alert.
+    const rows = await audits('family_revoked_on_reuse');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => (r.details as { reason: string }).reason)).toEqual([
+      'rotated',
+      'rotated',
+    ]);
   });
 
   it('a REVOKED refresh token presented again (after Disconnect or a client revoke) is refused quietly — no audit, no page', async () => {
@@ -940,6 +967,36 @@ describe('revokeToken (D-06 / RFC 7009)', () => {
 });
 
 describe('disconnectClient + listConnectedApps (D-08)', () => {
+  it('shows the host the user CONSENTED to, not the first registered URI (newest consent wins)', async () => {
+    const client = await newClient({
+      ...CHATGPT,
+      redirect_uris: [
+        'https://first.example/cb',
+        'https://second.example/cb',
+        'http://127.0.0.1:1/cb',
+      ],
+    });
+    await connect(client, alice, { now: at(0) }); // consents through the first URI (the helper's default)
+    const viaSecond = await pendingRequest(client, alice, {
+      now: at(10),
+      redirect: 'https://second.example/cb',
+    });
+    const granted = await grantConsent({
+      db: t.db,
+      txnId: viaSecond.txnId,
+      userId: alice,
+      now: at(10),
+    });
+    if (granted.status !== 'redirect') throw new Error(granted.status);
+    const [row] = await listConnectedApps({ db: t.db, userId: alice, now: at(20) });
+    expect(row!.redirectHost).toBe('second.example');
+    // Bob never consented through the audit trail (a legacy row): the first registered URI is the fallback.
+    await connect(client, bob, { now: at(30) });
+    await t.db.execute(sql`DELETE FROM oauth_audit WHERE user_id = ${bob}`);
+    const [bobs] = await listConnectedApps({ db: t.db, userId: bob, now: at(40) });
+    expect(bobs!.redirectHost).toBe('first.example');
+  });
+
   it('lists one row per live (client, user) connection with host, dates, last use and scope union', async () => {
     const chatgpt = await newClient();
     const codex = await newClient({
@@ -1171,18 +1228,44 @@ describe('pruneExpired (D-03) — bounded, thresholded', () => {
     expect((await pruneExpired({ db: t.db, now: at(62 * DAY) })).refreshTokens).toBe(2);
   });
 
-  it('dormant DCR clients (older than 30 days, no token or request) are deleted; the audit trail survives them', async () => {
+  it('dormant DCR clients (older than 30 days, NEVER used, no token or request) are deleted; the audit trail survives them', async () => {
     const dormant = await newClient(CHATGPT, T0);
-    const used = await newClient(CHATGPT, T0);
+    const connected = await newClient(CHATGPT, T0);
     const young = await newClient(CHATGPT, at(20 * DAY));
-    await connect(used, alice, { now: at(29 * DAY) });
+    await connect(connected, alice, { now: at(29 * DAY) });
     const auditBefore = await audits();
     const report = await pruneExpired({ db: t.db, now: at(31 * DAY) });
     expect(report.clients).toBe(1);
     const left = (await t.db.select().from(oauthClients)).map((c) => c.clientId).sort();
-    expect(left).toEqual([used.clientId, young.clientId].sort());
+    expect(left).toEqual([connected.clientId, young.clientId].sort());
     expect(left).not.toContain(dormant.clientId);
     expect(await audits()).toHaveLength(auditBefore.length); // oauth_audit.client_id has no FK: nothing cascaded
+  });
+
+  it('a client that was EVER used survives even with no rows left (ChatGPT reuses its client to reconnect)', async () => {
+    const client = await newClient(CHATGPT, T0);
+    const tokens = await connect(client, alice, { now: T0 });
+    const bearer = (await selectBearerToken({ db: t.db, token: tokens.access_token }))!;
+    await touchLastUsed({
+      db: t.db,
+      tokenId: bearer.id,
+      clientId: client.clientId,
+      tokenLastUsedAt: null,
+      clientLastUsedAt: null,
+      now: at(60),
+    });
+    // Months later: every token, code and request has long been pruned…
+    for (let i = 0; i < 3; i++) await pruneExpired({ db: t.db, now: at(200 * DAY) });
+    expect(await t.db.select().from(oauthAccessTokens)).toHaveLength(0);
+    expect(await t.db.select().from(oauthRefreshTokens)).toHaveLength(0);
+    expect(await t.db.select().from(oauthAuthorizationCodes)).toHaveLength(0);
+    // …but the client stays, so the connector can re-authorize with it.
+    expect((await t.db.select().from(oauthClients)).map((c) => c.clientId)).toEqual([
+      client.clientId,
+    ]);
+    await expect(connect(client, alice, { now: at(200 * DAY) })).resolves.toMatchObject({
+      token_type: 'Bearer',
+    });
   });
 
   it('expired oauth: rate-limit buckets go; live ones and Better Auth buckets stay', async () => {
@@ -1305,14 +1388,6 @@ describe('D-06 — the [auth] log over a whole flow never carries a credential',
       now: at(1),
     });
     secrets.push(first.access_token, first.refresh_token!);
-    await oauthError(
-      exchangeCode({
-        db: t.db,
-        client,
-        request: { code: a.code, codeVerifier: a.verifier },
-        now: at(2),
-      }),
-    );
     const second = await rotateRefreshToken({
       db: t.db,
       client,
@@ -1320,15 +1395,31 @@ describe('D-06 — the [auth] log over a whole flow never carries a credential',
       now: at(3),
     });
     secrets.push(second.access_token, second.refresh_token!);
+    await revokeToken({ db: t.db, client, token: second.access_token, now: at(4) });
+    await oauthError(
+      rotateRefreshToken({
+        db: t.db,
+        client,
+        request: { refreshToken: second.refresh_token! },
+        now: at(5),
+      }),
+    );
     await oauthError(
       rotateRefreshToken({
         db: t.db,
         client,
         request: { refreshToken: first.refresh_token! },
-        now: at(4),
+        now: at(5),
       }),
     );
-    await revokeToken({ db: t.db, client, token: second.access_token, now: at(5) });
+    await oauthError(
+      exchangeCode({
+        db: t.db,
+        client,
+        request: { code: a.code, codeVerifier: a.verifier },
+        now: at(6),
+      }),
+    );
     const d = await pendingRequest(client, alice);
     secrets.push(d.verifier);
     await denyConsent({ db: t.db, txnId: d.txnId, userId: alice, now: at(6) });
@@ -1343,6 +1434,7 @@ describe('D-06 — the [auth] log over a whole flow never carries a credential',
       'code_replayed',
       'token_refreshed',
       'refresh_reuse_detected',
+      'refresh_rejected',
       'token_revoked',
       'consent_denied',
     ]) {

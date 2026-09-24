@@ -10,7 +10,8 @@ const EVENTS_SQL_LIST = OAUTH_AUDIT_EVENTS.map((e) => `'${e}'`).join(',');
  * one row per audited transition, inserted by its @hnet/domain oauth single-writer in the SAME transaction as the
  * state change — `consent_granted` (grantConsent), `consent_denied` (denyConsent), `client_disconnected`
  * (disconnectClient) and `family_revoked_on_reuse` (revokeFamilyOnReuse). `user_id` is the subject — the user
- * whose delegation changed — and cascades with the user like every OAuth table. `client_id` is the public handle
+ * whose delegation changed — and is SET NULL when the user is deleted (the repo's audit-table convention:
+ * permission_audit does the same), so the trail outlives both the user and the client. `client_id` is the public handle
  * as TEXT with NO foreign key, deliberately: the inline pruner deletes dormant DCR clients, and the audit trail
  * must outlive the client it describes. `details` carries a denormalized snapshot (client name, redirect host,
  * scopes, the acting user when it differs, revocation counts) — never a token, code or secret.
@@ -23,9 +24,8 @@ export const oauthAudit = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     event: text('event').$type<OAuthAuditEvent>().notNull(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The subject — whose delegation changed. SET NULL on user delete: the audit trail outlives the user. */
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
     clientId: text('client_id').notNull(),
     familyId: uuid('family_id'),
     details: jsonb('details').$type<Record<string, unknown>>().notNull().default({}),

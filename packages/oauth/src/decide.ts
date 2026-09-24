@@ -327,6 +327,18 @@ export interface CodeRecord {
   codeChallenge: string;
   expiresAt: Date;
   consumedAt: Date | null;
+  /** The refresh family the code's exchange started (null until consumed, or when nothing was issued). */
+  familyId?: string | null;
+}
+
+/**
+ * RFC 6749 §4.1.2 — a code presented after it was consumed is a replay: the family its exchange started must be
+ * revoked (the authorization server SHOULD revoke every token issued from it). Null when there is nothing to revoke.
+ */
+export function replayedCodeFamily(
+  rec: Pick<CodeRecord, 'consumedAt' | 'familyId'> | undefined,
+): string | null {
+  return rec?.consumedAt && rec.familyId ? rec.familyId : null;
 }
 
 /**
@@ -459,7 +471,10 @@ export interface RefreshRecord {
 }
 
 export type RefreshDecision =
-  /** A spent or revoked token was presented: revoke the whole family (with its audit row), answer invalid_grant. */
+  /**
+   * A spent token (`rotated` — ever rotated, even if revoked since) is theft: revoke the family with its audit row.
+   * A `revoked` token that was never rotated is the aftermath of a chosen revocation: refused quietly.
+   */
   | { kind: 'reuse'; reason: 'rotated' | 'revoked' }
   /** Rotate: mark this token spent (conditionally — a lost race is reuse too) and issue the pair with `scopes`. */
   | { kind: 'rotate'; scopes: OAuthScope[] };
@@ -479,8 +494,10 @@ export function decideRefresh(
   if (!rec) throw invalidGrant('Invalid refresh token');
   if (rec.clientId !== client.clientId)
     throw invalidGrant('Refresh token was issued to another client');
-  if (rec.revokedAt) return { kind: 'reuse', reason: 'revoked' };
+  // A token that was ever ROTATED is spent: presenting it again is reuse whatever happened to it since (a revocation
+  // afterwards must not silence the theft alert). Only a token revoked while still unspent is the quiet case.
   if (rec.rotatedAt) return { kind: 'reuse', reason: 'rotated' };
+  if (rec.revokedAt) return { kind: 'reuse', reason: 'revoked' };
   if (rec.expiresAt.getTime() <= now.getTime()) throw invalidGrant('Refresh token expired');
   if (req.resource !== undefined && !resourceMatches(req.resource, rec.resource)) {
     authEvent('audience_mismatch', {

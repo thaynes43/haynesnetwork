@@ -3,12 +3,12 @@
 //   0. D-10 rate limit (30 / minute / client IP) — refused ⇒ the bad-request page;
 //   1. the client and its redirect (a repeated client_id / redirect_uri, an unknown client or an unregistered
 //      redirect ⇒ the bad-request page, NEVER a redirect: the callback is untrusted);
-//   2. the session gate ⇒ no session: `${issuer}/login?next=<this path and query>` — BEFORE the parameters, so a
-//      signed-out request never redirects anywhere but our own login (driver ruling 2026-09-23, D-15 #24): with open
-//      registration anyone can register a callback, and redirecting parameter errors there without a session made
-//      /oauth/authorize an open redirector (RFC 9700 §4.11.2);
-//   3. the parameters (response_type, a REQUIRED state, S256 PKCE, scopes, resource) ⇒ for the signed-in user,
-//      errors go back to the registered callback with `error`, `error_description` and `state` (RFC 6749 §4.1.2.1);
+//   2. the session gate ⇒ no session: `${issuer}/login?next=<this path and query>` — before the parameters are judged;
+//   3. the parameters (response_type, a REQUIRED state, S256 PKCE, scopes, resource) ⇒ an error renders the
+//      bad-request page too. NOTHING here ever redirects an error to the client: with open registration a
+//      registered redirect URI is not a trusted one (RFC 9700 §4.11.2; driver rulings 2026-09-23, D-15 #24/#25),
+//      so the only redirects to a client are a code after Approve and `access_denied` after Deny (the consent
+//      page's actions);
 //   4. no owner gate (ADR-091 C-04: any signed-in user may connect);
 //   5. the pending transaction ⇒ `${issuer}/oauth/consent?txn=<uuid>`.
 // Every URL it sends a browser to is built from the issuer (BETTER_AUTH_URL), never from the request.
@@ -17,7 +17,6 @@ import { resolveAuthorizationClient, startAuthorization } from '@hnet/domain';
 import {
   OAuthError,
   authEvent,
-  clientRedirect,
   isClientId,
   issuerOrigin,
   validateAuthorizationParams,
@@ -89,20 +88,9 @@ export async function handleAuthorize(input: {
     if (error instanceof OAuthError) return reject(error.code);
     throw error;
   }
-  // Matched a registered URI (a loopback one on any port): the browser goes back to the one it presented.
+  // Matched a registered URI (a loopback one on any port): the consent's Approve / Deny go back to the one presented.
   const trustedRedirect = redirectUri!;
   const state = query.getAll('state').length === 1 ? one('state') : undefined;
-  const backWithError = (error: OAuthError): AuthorizeOutcome => {
-    authEvent('authorize_rejected', { reason: error.code, client_id: clientId });
-    return {
-      kind: 'redirect',
-      location: clientRedirect(trustedRedirect, {
-        error: error.code,
-        error_description: error.description,
-        ...(state ? { state } : {}),
-      }),
-    };
-  };
 
   // 2. The session gate — before any parameter is judged: signed out, the only redirect is to our own login, and
   // the parameters are judged when the user comes back to this exact request.
@@ -115,10 +103,9 @@ export async function handleAuthorize(input: {
     return { kind: 'redirect', location: `${issuer}${loginPath(next)}` };
   }
 
-  // 3. The redirectable parameters — a signed-in user's errors go back to the registered callback.
+  // 3. The parameters — an error renders the bad-request page (never a redirect to the client).
   const repeated = SINGLE.find((name) => query.getAll(name).length > 1);
-  if (repeated)
-    return backWithError(new OAuthError('invalid_request', `${repeated} was sent more than once`));
+  if (repeated) return reject('invalid_request');
   let validated;
   try {
     validated = validateAuthorizationParams(
@@ -133,7 +120,7 @@ export async function handleAuthorize(input: {
       { env, clientId },
     );
   } catch (error) {
-    if (error instanceof OAuthError) return backWithError(error);
+    if (error instanceof OAuthError) return reject(error.code);
     throw error;
   }
 

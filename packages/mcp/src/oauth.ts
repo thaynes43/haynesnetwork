@@ -22,14 +22,19 @@ export interface OAuthAuthOptions {
   env?: OAuthEnv;
 }
 
-/** `WWW-Authenticate` for a missing or refused bearer (RFC 9728 §5.1). */
-export function oauthChallenge(env: OAuthEnv = process.env): string {
-  return `Bearer resource_metadata="${protectedResourceMetadataUrl(env)}"`;
+/**
+ * `WWW-Authenticate` for a missing or refused bearer (RFC 9728 §5.1). With no credential presented there is no error
+ * code (RFC 6750 §3.1); a bearer that was presented but refused (unknown, revoked, expired, another audience) adds
+ * `error="invalid_token"`.
+ */
+export function oauthChallenge(env: OAuthEnv = process.env, presented = false): string {
+  const error = presented ? 'error="invalid_token", ' : '';
+  return `Bearer ${error}resource_metadata="${protectedResourceMetadataUrl(env)}"`;
 }
 
-/** `WWW-Authenticate` for a tool the token's scopes do not cover (RFC 6750 §3.1). */
-export function insufficientScopeChallenge(env: OAuthEnv = process.env): string {
-  return `Bearer error="insufficient_scope", resource_metadata="${protectedResourceMetadataUrl(env)}"`;
+/** `WWW-Authenticate` for a tool the token's scopes do not cover (RFC 6750 §3.1), naming the scope it needs. */
+export function insufficientScopeChallenge(required: string, env: OAuthEnv = process.env): string {
+  return `Bearer error="insufficient_scope", scope="${required}", resource_metadata="${protectedResourceMetadataUrl(env)}"`;
 }
 
 export async function authenticateOAuth(
@@ -38,13 +43,16 @@ export async function authenticateOAuth(
 ): Promise<AuthResult> {
   const env = opts.env ?? process.env;
   const now = opts.now?.() ?? new Date();
+  const header = req.headers.get('authorization');
+  // A Bearer credential was presented (well formed or not): a refusal says `invalid_token`.
+  const presented = /^\s*bearer\b/i.test(header ?? '');
   const unauthorized = (): AuthResult => ({
     ok: false,
     response: jsonRpcError(401, -32001, 'Unauthorized', {
-      'www-authenticate': oauthChallenge(env),
+      'www-authenticate': oauthChallenge(env, presented),
     }),
   });
-  const token = parseBearer(req.headers.get('authorization'));
+  const token = parseBearer(header);
   if (!token) return unauthorized();
   const row = await selectBearerToken({ db: opts.db, token });
   const decision = decideBearer(row, { now, env });
@@ -68,9 +76,9 @@ export async function authenticateOAuth(
   return {
     ok: true,
     consumer: { name: `oauth:${row.clientId}`, scopes: decision.scopes, userId: row.userId },
-    insufficientScope: () =>
+    insufficientScope: (required) =>
       jsonRpcError(403, -32001, 'Insufficient scope', {
-        'www-authenticate': insufficientScopeChallenge(env),
+        'www-authenticate': insufficientScopeChallenge(required, env),
       }),
   };
 }

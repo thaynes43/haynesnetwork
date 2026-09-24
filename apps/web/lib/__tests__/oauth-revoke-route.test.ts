@@ -6,7 +6,8 @@ import { OAuthError } from '@hnet/oauth';
 
 const authenticateOAuthClient = vi.hoisted(() => vi.fn());
 const revokeToken = vi.hoisted(() => vi.fn());
-vi.mock('@hnet/domain', () => ({ authenticateOAuthClient, revokeToken }));
+const consumeRateLimit = vi.hoisted(() => vi.fn());
+vi.mock('@hnet/domain', () => ({ authenticateOAuthClient, revokeToken, consumeRateLimit }));
 
 import * as route from '../../app/oauth/revoke/route';
 
@@ -23,11 +24,41 @@ const post = (body: string, headers: Record<string, string> = {}) =>
 beforeEach(() => {
   authenticateOAuthClient.mockReset().mockResolvedValue(CLIENT);
   revokeToken.mockReset().mockResolvedValue(undefined);
+  consumeRateLimit
+    .mockReset()
+    .mockResolvedValue({ allowed: true, count: 1, retryAfterSeconds: 60 });
 });
 
 describe('POST /oauth/revoke', () => {
-  it('exports POST and OPTIONS only', () => {
-    expect(Object.keys(route).sort()).toEqual(['OPTIONS', 'POST', 'dynamic', 'runtime']);
+  it('exports POST and OPTIONS only (+ the rate limit)', () => {
+    expect(Object.keys(route).sort()).toEqual([
+      'OPTIONS',
+      'POST',
+      'REVOKE_LIMIT',
+      'dynamic',
+      'runtime',
+    ]);
+    expect(route.REVOKE_LIMIT).toEqual({ windowSeconds: 60, max: 60 });
+  });
+
+  it('rate-limited like the token endpoint: over 60 a minute ⇒ 429 + Retry-After + {"error":"rate_limited"}', async () => {
+    consumeRateLimit.mockResolvedValue({ allowed: false, count: 61, retryAfterSeconds: 12 });
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((l: string) => void logs.push(l));
+    const res = await post(`token=t&client_id=${CLIENT.clientId}`, {
+      'cf-connecting-ip': '198.51.100.9',
+    });
+    spy.mockRestore();
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBe('12');
+    expect(await res.json()).toEqual({ error: 'rate_limited' });
+    expect(consumeRateLimit).toHaveBeenCalledWith({
+      key: 'oauth:revoke|198.51.100.9',
+      windowSeconds: 60,
+      max: 60,
+    });
+    expect(revokeToken).not.toHaveBeenCalled();
+    expect(logs).toEqual(['[auth] rate_limited {"route":"revoke","ip":"198.51.100.9","count":61}']);
   });
 
   it('200, empty body, no-store + CORS — the token handed to the domain writer', async () => {

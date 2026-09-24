@@ -11,7 +11,7 @@ import {
   type DbClient,
 } from '@hnet/db';
 import { canonicalScopes, redirectHost, type OAuthScope } from '@hnet/oauth';
-import { and, eq, gt, inArray, isNull, max, min, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, max, min, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { inTransaction, resolveDb } from '../db-client';
 
@@ -21,7 +21,10 @@ const EPOCH = new Date(0);
 export interface ConnectedApp {
   clientId: string;
   clientName: string;
-  /** Host of the client's first registered redirect URI (where its consent sent the browser). */
+  /**
+   * The host the user consented to (the newest `consent_granted` audit row's redirect host); the client's first
+   * registered redirect URI only when no consent row exists.
+   */
   redirectHost: string;
   userId: string;
   userEmail: string;
@@ -97,7 +100,7 @@ export async function listConnectedApps(input: {
 
   const clientIds = [...new Set([...liveRefresh, ...liveAccess].map((r) => r.clientId))];
   const userIds = [...new Set([...liveRefresh, ...liveAccess].map((r) => r.userId))];
-  const [clients, people, lastUsed] = await Promise.all([
+  const [clients, people, lastUsed, consents] = await Promise.all([
     db
       .select({
         clientId: oauthClients.clientId,
@@ -124,10 +127,32 @@ export async function listConnectedApps(input: {
         ),
       )
       .groupBy(oauthAccessTokens.clientId, oauthAccessTokens.userId),
+    // The host each user actually consented to (the consent_granted audit's redirect_host), newest first — a client
+    // may register up to five redirect URIs, and the page must show the one the user saw on the consent page.
+    db
+      .select({
+        clientId: oauthAudit.clientId,
+        userId: oauthAudit.userId,
+        host: sql<string | null>`${oauthAudit.details} ->> 'redirect_host'`,
+      })
+      .from(oauthAudit)
+      .where(
+        and(
+          eq(oauthAudit.event, 'consent_granted'),
+          inArray(oauthAudit.clientId, clientIds),
+          inArray(oauthAudit.userId, userIds),
+        ),
+      )
+      .orderBy(desc(oauthAudit.at)),
   ]);
   const clientOf = new Map(clients.map((c) => [c.clientId, c]));
   const personOf = new Map(people.map((p) => [p.id, p]));
   const usedOf = new Map(lastUsed.map((u) => [`${u.clientId}|${u.userId}`, u.lastUsedAt]));
+  const consentedHostOf = new Map<string, string>();
+  for (const c of consents) {
+    const key = `${c.clientId}|${c.userId}`;
+    if (c.host && !consentedHostOf.has(key)) consentedHostOf.set(key, c.host); // newest first
+  }
 
   const byPair = new Map<
     string,
@@ -163,7 +188,7 @@ export async function listConnectedApps(input: {
     out.push({
       clientId: p.clientId,
       clientName: client.clientName,
-      redirectHost: redirectHost(client.redirectUris[0] ?? ''),
+      redirectHost: consentedHostOf.get(key) ?? redirectHost(client.redirectUris[0] ?? ''),
       userId: p.userId,
       userEmail: person.email,
       userName: person.displayName,

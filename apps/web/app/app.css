@@ -760,6 +760,24 @@ button.motd__dismiss:hover {
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+/* The self-chosen client name: bold, inside the heading and the lead — never mistakable for the host line. */
+.oauth-client-name {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+/* Our own line: small muted text, the host in a bordered monospace token. */
+.oauth-redirect {
+  font-size: 13px;
+}
+.oauth-host {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
 .oauth-scopes {
   margin: 0;
   padding: 0;

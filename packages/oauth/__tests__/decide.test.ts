@@ -22,6 +22,7 @@ import {
   planAuthorization,
   planTokenPair,
   pruneCutoffs,
+  replayedCodeFamily,
   type CodeRecord,
   type OAuthScope,
   type RefreshRecord,
@@ -322,6 +323,15 @@ describe('D-06 — the authorization_code exchange', () => {
   });
 });
 
+describe('RFC 6749 §4.1.2 — a replayed code names the family to revoke', () => {
+  it('only a consumed code with a family', () => {
+    expect(replayedCodeFamily({ consumedAt: NOW, familyId: 'fam' })).toBe('fam');
+    expect(replayedCodeFamily({ consumedAt: null, familyId: 'fam' })).toBeNull();
+    expect(replayedCodeFamily({ consumedAt: NOW, familyId: null })).toBeNull();
+    expect(replayedCodeFamily(undefined)).toBeNull();
+  });
+});
+
 describe('D-03 / D-06 — token pairs', () => {
   it('offline_access ⇒ a refresh token (60 days) beside the 1 h access token, one family, hashes only', () => {
     const plan = planTokenPair({
@@ -409,7 +419,7 @@ describe('D-06 — refresh rotation decisions', () => {
     expect(decideRefresh(rec, CLIENT, {}, NOW)).toEqual({ kind: 'rotate', scopes: ALL });
   });
 
-  it('a spent or revoked token is REUSE (the family is revoked by the caller)', () => {
+  it('a spent token is REUSE (rotated), a never-rotated revoked one is the quiet case (revoked)', () => {
     expect(decideRefresh({ ...rec, rotatedAt: NOW }, CLIENT, {}, NOW)).toEqual({
       kind: 'reuse',
       reason: 'rotated',
@@ -418,9 +428,12 @@ describe('D-06 — refresh rotation decisions', () => {
       kind: 'reuse',
       reason: 'revoked',
     });
+  });
+
+  it('rotated AND later revoked is still reuse — a revocation must not silence the theft alert', () => {
     expect(decideRefresh({ ...rec, revokedAt: NOW, rotatedAt: NOW }, CLIENT, {}, NOW)).toEqual({
       kind: 'reuse',
-      reason: 'revoked',
+      reason: 'rotated',
     });
   });
 

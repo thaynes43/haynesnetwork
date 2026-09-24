@@ -97,10 +97,20 @@ export function redirectUriMatches(registered: string, incoming: string): boolea
 
 // ---- DCR (RFC 7591, D-04) -----------------------------------------------------------------------------
 
-// C0/C1 controls and the Unicode bidi overrides/isolates: a client name is shown on the consent page and logged,
-// and a right-to-left override can make one name read as another.
-// eslint-disable-next-line no-control-regex
-const UNSAFE_NAME_CHARS = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/;
+// A client name is shown on the consent page and logged, so it is NFKC-normalized (compatibility forms such as
+// full-width letters fold to their plain form) and refused when it holds a character that can hide or disguise
+// text: controls (Cc), format characters (Cf — the bidi overrides and isolates, U+061C, zero-width U+200B–U+200D,
+// U+2060, U+FEFF, the tag characters), the line and paragraph separators (Zl, Zp), private-use (Co) and unassigned
+// (Cn) code points, and the Hangul fillers (letters by category, but blank on screen). Written with escapes only.
+const UNSAFE_NAME_CHARS = new RegExp(
+  '[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}\\p{Co}\\p{Cn}\\u115F\\u1160\\u3164\\uFFA0]',
+  'u',
+);
+
+/** NFKC, then trimmed — the stored and displayed form of a client name (after the character check). */
+export function normalizeClientName(name: string): string {
+  return name.normalize('NFKC').trim();
+}
 
 /**
  * The D-04 registration body. Unknown RFC 7591 metadata (client_uri, logo_uri, contacts, …) is accepted and
@@ -114,10 +124,19 @@ const registrationSchema = z
       .max(REDIRECT_URIS_MAX, `At most ${REDIRECT_URIS_MAX} redirect_uris are allowed`),
     client_name: z
       .string('client_name is required')
-      .trim()
-      .min(1, 'client_name is required')
-      .max(CLIENT_NAME_MAX, `client_name is at most ${CLIENT_NAME_MAX} characters`)
-      .refine((s) => !UNSAFE_NAME_CHARS.test(s), 'client_name contains control characters'),
+      // NFKC, then the character check on the UNTRIMMED text (trim() would silently drop a leading U+FEFF), then trim.
+      .transform((s) => s.normalize('NFKC'))
+      .refine(
+        (s) => !UNSAFE_NAME_CHARS.test(s),
+        'client_name contains invisible or control characters',
+      )
+      .transform((s) => s.trim())
+      .pipe(
+        z
+          .string()
+          .min(1, 'client_name is required')
+          .max(CLIENT_NAME_MAX, `client_name is at most ${CLIENT_NAME_MAX} characters`),
+      ),
     token_endpoint_auth_method: z
       .enum(OAUTH_TOKEN_ENDPOINT_AUTH_METHODS, 'Unsupported token_endpoint_auth_method')
       .optional(),
@@ -208,10 +227,11 @@ export interface ValidatedAuthorization {
 }
 
 /**
- * D-05 step 2 — validate the redirectable parameters: `response_type` `code`; `state` REQUIRED (stricter than the
+ * D-05 step 2 — validate the authorization parameters: `response_type` `code`; `state` REQUIRED (stricter than the
  * port); a 43-character S256 `code_challenge` (`plain` refused); every scope one of the three, a missing or empty
  * `scope` meaning all three; `resource`, if sent, the canonical one (`invalid_target`, logged
- * `audience_mismatch`). Errors are OAuthErrors the route redirects back to the (already validated) callback.
+ * `audience_mismatch`). Errors are OAuthErrors; the route renders them as the bad-request page — never a redirect to
+ * the client (RFC 9700 §4.11.2: a dynamically registered redirect URI is not a trusted one).
  */
 export function validateAuthorizationParams(
   params: AuthorizationParams,

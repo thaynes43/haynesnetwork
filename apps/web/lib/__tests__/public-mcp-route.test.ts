@@ -17,8 +17,11 @@ vi.mock('@hnet/domain', async (importOriginal) => ({
 import * as route from '../../app/mcp/route';
 import * as hopRoute from '../../app/api/mcp/route';
 
-const CHALLENGE =
-  'Bearer resource_metadata="https://haynesnetwork.com/.well-known/oauth-protected-resource"';
+const PRM = 'resource_metadata="https://haynesnetwork.com/.well-known/oauth-protected-resource"';
+/** No credential presented. */
+const CHALLENGE = `Bearer ${PRM}`;
+/** A bearer presented and refused. */
+const INVALID = `Bearer error="invalid_token", ${PRM}`;
 const ROW = {
   id: 'tok-1',
   clientId: 'a'.repeat(32),
@@ -69,7 +72,7 @@ describe('POST /mcp — the public route', () => {
     expect(selectBearerToken).not.toHaveBeenCalled();
   });
 
-  it('an unknown, revoked, expired or wrong-resource bearer ⇒ 401 with the challenge', async () => {
+  it('an unknown, revoked, expired or wrong-resource bearer ⇒ 401 with error="invalid_token"', async () => {
     const refusals = [
       undefined,
       { ...ROW, revokedAt: new Date() },
@@ -81,7 +84,7 @@ describe('POST /mcp — the public route', () => {
       selectBearerToken.mockResolvedValueOnce(row);
       const res = await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, 'Bearer tok');
       expect(res.status).toBe(401);
-      expect(res.headers.get('www-authenticate')).toBe(CHALLENGE);
+      expect(res.headers.get('www-authenticate')).toBe(INVALID);
     }
     expect(touchLastUsed).not.toHaveBeenCalled();
   });
@@ -90,6 +93,7 @@ describe('POST /mcp — the public route', () => {
     selectBearerToken.mockResolvedValueOnce(undefined);
     const res = await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, 'Bearer hop-secret');
     expect(res.status).toBe(401);
+    expect(res.headers.get('www-authenticate')).toBe(INVALID);
     expect(selectBearerToken).toHaveBeenCalledWith({ db: undefined, token: 'hop-secret' });
   });
 
@@ -109,8 +113,9 @@ describe('POST /mcp — the public route', () => {
         'Bearer tok',
       );
       expect(res.status, name).toBe(403);
+      // RFC 6750 §3.1: the challenge names the scope the tool needs.
       expect(res.headers.get('www-authenticate')).toBe(
-        'Bearer error="insufficient_scope", resource_metadata="https://haynesnetwork.com/.well-known/oauth-protected-resource"',
+        `Bearer error="insufficient_scope", scope="watch:write", ${PRM}`,
       );
     }
     expect(touchLastUsed).toHaveBeenCalledWith(

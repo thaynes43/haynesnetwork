@@ -21,7 +21,8 @@ import { STUB_USERS, type PersonaName } from './support/stub-oidc';
 
 const BASE = 'http://localhost:3100';
 const CALLBACK = 'https://connector.e2e.test/callback';
-const CHALLENGE_HEADER = `Bearer resource_metadata="${BASE}/.well-known/oauth-protected-resource"`;
+/** A disconnected token was presented and refused: `error="invalid_token"` (RFC 6750 §3.1). */
+const CHALLENGE_HEADER = `Bearer error="invalid_token", resource_metadata="${BASE}/.well-known/oauth-protected-resource"`;
 
 async function register(name: string): Promise<string> {
   const res = await fetch(`${BASE}/oauth/register`, {
@@ -237,27 +238,44 @@ test.describe('public MCP connectors (ADR-091)', () => {
     await expect(page.getByText('No connected apps yet.')).toBeVisible();
   });
 
-  test('signed out, a parameter error (plain PKCE) lands on our login — never on the client callback (D-15 #24)', async ({
+  test('a parameter error (plain PKCE) never reaches the client: signed out → our login; signed in → the bad-request page (D-15 #24/#25)', async ({
     page,
   }) => {
     const clientId = await register('E2E Plain');
     const callback = await captureCallback(page);
+    const seen: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().startsWith(CALLBACK)) seen.push(r.url());
+    });
     const url = authorizeUrl(clientId, pkce().challenge, 'plain-state').replace(
       'code_challenge_method=S256',
       'code_challenge_method=plain',
     );
     await page.goto(url);
     await page.waitForURL(/\/login\?next=/);
-    expect(callback()).toBeNull();
-    // Signed in, the same request goes back to the client with the error and its state. (It arrives through an
-    // HTTP redirect chain — Better Auth's callback → /oauth/authorize → 307 — so it is observed as a request.)
+    // Signed in, the same request comes back to /oauth/authorize and renders the card — still no redirect.
     await selectStubUser('member');
-    const back = page.waitForRequest((r) => r.url().startsWith(CALLBACK));
     await page.getByRole('button', { name: SIGN_IN_BUTTON }).click();
-    const cb = new URL((await back).url());
-    expect(cb.searchParams.get('error')).toBe('invalid_request');
-    expect(cb.searchParams.get('state')).toBe('plain-state');
-    expect(cb.searchParams.get('code')).toBeNull();
+    await page.waitForURL(/\/oauth\/authorize\?/);
+    await expect(
+      page.getByRole('heading', { name: 'Something is off with this connection request' }),
+    ).toBeVisible();
+    expect(callback()).toBeNull();
+    expect(seen).toEqual([]);
+  });
+
+  test('every page refuses to be framed (RFC 9700 §4.16): X-Frame-Options DENY + frame-ancestors none', async ({
+    page,
+  }) => {
+    for (const path of [
+      '/login',
+      '/oauth/consent?txn=x',
+      `/oauth/authorize?client_id=${'0'.repeat(32)}`,
+    ]) {
+      const res = await page.request.get(path, { maxRedirects: 0 });
+      expect(res.headers()['x-frame-options'], path).toBe('DENY');
+      expect(res.headers()['content-security-policy'], path).toBe("frame-ancestors 'none'");
+    }
   });
 
   test('an unknown client renders the bad-request page in place (never a redirect)', async ({

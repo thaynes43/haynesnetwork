@@ -36,10 +36,12 @@ import { FakePlex, NOW, OWNER, ownerWorld, seedWorld, serveMcp, type McpHttp } f
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
 const ENV: OAuthEnv = { BETTER_AUTH_URL: 'https://haynesnetwork.com' };
-const CHALLENGE =
-  'Bearer resource_metadata="https://haynesnetwork.com/.well-known/oauth-protected-resource"';
-const SCOPE_CHALLENGE =
-  'Bearer error="insufficient_scope", resource_metadata="https://haynesnetwork.com/.well-known/oauth-protected-resource"';
+const PRM = 'resource_metadata="https://haynesnetwork.com/.well-known/oauth-protected-resource"';
+/** No credential presented: no error code (RFC 6750 §3.1). */
+const CHALLENGE = `Bearer ${PRM}`;
+/** A bearer presented and refused. */
+const INVALID_CHALLENGE = `Bearer error="invalid_token", ${PRM}`;
+const SCOPE_CHALLENGE = `Bearer error="insufficient_scope", scope="watch:write", ${PRM}`;
 const HOP_TOKEN = 'test-hop-token-000000000000000000000000000000000';
 const HOUSE = 55501;
 const NOT_SET_UP = "Watch history isn't set up for your account yet.";
@@ -205,18 +207,29 @@ describe('authenticateOAuth (D-07) — a hash lookup, refused when unknown, revo
     }
   });
 
-  it('no bearer, a malformed or unknown one ⇒ 401 with the resource_metadata challenge', async () => {
-    const requests = [
-      new Request('http://x/mcp', { method: 'POST' }),
-      new Request('http://x/mcp', { method: 'POST', headers: { authorization: 'Basic abc' } }),
-      bearer('never-issued'),
-      bearer(HOP_TOKEN),
+  it('no bearer ⇒ 401 with the bare challenge; a presented but refused bearer ⇒ 401 with error="invalid_token"', async () => {
+    const requests: Array<[Request, string]> = [
+      [new Request('http://x/mcp', { method: 'POST' }), CHALLENGE],
+      [
+        new Request('http://x/mcp', { method: 'POST', headers: { authorization: 'Basic abc' } }),
+        CHALLENGE,
+      ],
+      [
+        new Request('http://x/mcp', { method: 'POST', headers: { authorization: 'Bearer' } }),
+        INVALID_CHALLENGE,
+      ],
+      [
+        new Request('http://x/mcp', { method: 'POST', headers: { authorization: 'Bearer a b' } }),
+        INVALID_CHALLENGE,
+      ],
+      [bearer('never-issued'), INVALID_CHALLENGE],
+      [bearer(HOP_TOKEN), INVALID_CHALLENGE],
     ];
-    for (const req of requests) {
+    for (const [req, challenge] of requests) {
       const r = await authenticateOAuth(req, { db, now: at(0), env: ENV });
       if (r.ok) throw new Error('expected a refusal');
       expect(r.response.status).toBe(401);
-      expect(r.response.headers.get('www-authenticate')).toBe(CHALLENGE);
+      expect(r.response.headers.get('www-authenticate')).toBe(challenge);
       expect(await r.response.json()).toEqual({
         jsonrpc: '2.0',
         error: { code: -32001, message: 'Unauthorized' },
@@ -248,7 +261,8 @@ describe('authenticateOAuth (D-07) — a hash lookup, refused when unknown, revo
       env: ENV,
     });
     expect(revoked.ok).toBe(false);
-    if (!revoked.ok) expect(revoked.response.headers.get('www-authenticate')).toBe(CHALLENGE);
+    if (!revoked.ok)
+      expect(revoked.response.headers.get('www-authenticate')).toBe(INVALID_CHALLENGE);
   });
 
   it('a token bound to another resource (the issuer changed) is refused, logged audience_mismatch', async () => {
@@ -505,7 +519,7 @@ describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpR
       { authorization: `Bearer ${HOP_TOKEN}` },
     );
     expect(atMcp.status).toBe(401);
-    expect(atMcp.headers.get('www-authenticate')).toBe(CHALLENGE);
+    expect(atMcp.headers.get('www-authenticate')).toBe(INVALID_CHALLENGE);
     const { tokens } = await connect(ownerUser);
     const hop = await serveMcp(deps(), { HNET_MCP_HOP_TOKEN: HOP_TOKEN });
     try {

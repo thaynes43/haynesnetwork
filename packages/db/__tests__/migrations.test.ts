@@ -2485,7 +2485,7 @@ describe('migrations against embedded Postgres 16', () => {
         oauth_authorizations: ['id', 'client_id', 'user_id', 'redirect_uri', 'scopes', 'resource', 'state',
           'code_challenge', 'code_challenge_method', 'expires_at', 'created_at'],
         oauth_authorization_codes: ['id', 'code_hash', 'client_id', 'user_id', 'redirect_uri', 'scopes', 'resource',
-          'code_challenge', 'code_challenge_method', 'expires_at', 'consumed_at', 'created_at'],
+          'code_challenge', 'code_challenge_method', 'expires_at', 'consumed_at', 'family_id', 'created_at'],
         oauth_refresh_tokens: ['id', 'token_hash', 'family_id', 'parent_id', 'client_id', 'user_id', 'scopes',
           'resource', 'expires_at', 'rotated_at', 'revoked_at', 'created_at'],
         oauth_access_tokens: ['id', 'token_hash', 'family_id', 'client_id', 'user_id', 'scopes', 'resource',
@@ -2521,6 +2521,10 @@ describe('migrations against embedded Postgres 16', () => {
         'oauth_access_tokens_expires_idx',
         'oauth_audit_user_at_idx',
         'oauth_audit_client_idx',
+        'oauth_authorizations_user_idx',
+        'oauth_authorization_codes_user_idx',
+        'oauth_refresh_tokens_user_idx',
+        'oauth_access_tokens_user_idx',
       ]) {
         expect(names, name).toContain(name);
       }
@@ -2641,7 +2645,7 @@ describe('migrations against embedded Postgres 16', () => {
       expect(left.rows[0].parent_id).toBeNull();
     });
 
-    it('oauth_audit: every OAUTH_AUDIT_EVENTS value admitted, a bogus one refused; client_id has NO FK (the audit outlives a pruned client); cascades with the user', async () => {
+    it('oauth_audit: every OAUTH_AUDIT_EVENTS value admitted, a bogus one refused; client_id has NO FK (the audit outlives a pruned client); user_id SETs NULL (it outlives the user)', async () => {
       expect([...OAUTH_AUDIT_EVENTS]).toEqual([
         'consent_granted',
         'consent_denied',
@@ -2668,13 +2672,19 @@ describe('migrations against embedded Postgres 16', () => {
       await expect(
         client.query({ text: `INSERT INTO oauth_audit (event, user_id, client_id) VALUES ('consent_denied', $1, NULL)`, values: [auditUser] }),
       ).rejects.toMatchObject({ code: '23502' });
+      // A NULL user (a deleted one) is admitted.
+      await client.query(`INSERT INTO oauth_audit (event, user_id, client_id) VALUES ('consent_denied', NULL, '${'0'.repeat(32)}')`);
       const fks = await client.query(
         `SELECT conname FROM pg_constraint WHERE conrelid = 'oauth_audit'::regclass AND contype = 'f'`,
       );
       expect(fks.rows.map((r) => r.conname)).toEqual(['oauth_audit_user_id_users_id_fk']);
+      const before = await client.query(`SELECT count(*)::int AS n FROM oauth_audit`);
       await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [auditUser] });
       const left = await client.query({ text: `SELECT count(*)::int AS n FROM oauth_audit WHERE user_id = $1`, values: [auditUser] });
       expect(left.rows[0].n).toBe(0);
+      const after = await client.query(`SELECT count(*)::int AS n, count(user_id)::int AS with_user FROM oauth_audit`);
+      expect(after.rows[0].n).toBe(before.rows[0].n); // every row survived the user…
+      expect(after.rows[0].with_user).toBe(0); // …with its user_id nulled
     });
   });
 });

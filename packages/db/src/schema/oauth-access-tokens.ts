@@ -44,6 +44,7 @@ export const oauthAccessTokens = pgTable(
     ),
     index('oauth_access_tokens_family_idx').on(t.familyId),
     index('oauth_access_tokens_client_user_idx').on(t.clientId, t.userId),
+    index('oauth_access_tokens_user_idx').on(t.userId),
     index('oauth_access_tokens_expires_idx').on(t.expiresAt),
   ],
 );

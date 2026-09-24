@@ -11,7 +11,7 @@ import {
   type DbClient,
 } from '@hnet/db';
 import { pruneCutoffs } from '@hnet/oauth';
-import { and, inArray, like, lt, or, sql } from 'drizzle-orm';
+import { and, inArray, isNull, like, lt, or, sql } from 'drizzle-orm';
 import { resolveDb } from '../db-client';
 
 export interface PruneReport {
@@ -26,8 +26,8 @@ export interface PruneReport {
 /**
  * D-03 — delete, at most 200 rows per table: expired consent transactions and codes; access and refresh tokens
  * that expired or were revoked more than 30 days ago (a rotated refresh token is kept until then, so a late replay
- * is still recognised as reuse); DCR clients older than 30 days that own no token, code or transaction (after the
- * token deletes, so a client emptied in this run can go too); and expired `oauth:` rate-limit buckets (the D-10
+ * is still recognised as reuse); DCR clients older than 30 days that were NEVER used (`last_used_at` null) and own no
+ * token, code or transaction (after the token deletes, so a client emptied in this run can go too); and expired `oauth:` rate-limit buckets (the D-10
  * limiter's rows — Better Auth prunes its own). Never throws past the caller's catch: the route logs and moves on.
  */
 export async function pruneExpired(
@@ -110,6 +110,9 @@ export async function pruneExpired(
           .where(
             and(
               lt(oauthClients.createdAt, c.dormantBefore),
+              // A client that was EVER used is never pruned: ChatGPT reuses its client for every re-authorization,
+              // so deleting one breaks the connector's reconnect long after its tokens expired.
+              isNull(oauthClients.lastUsedAt),
               sql`NOT EXISTS (SELECT 1 FROM oauth_access_tokens t WHERE t.client_id = ${oauthClients.clientId})`,
               sql`NOT EXISTS (SELECT 1 FROM oauth_refresh_tokens t WHERE t.client_id = ${oauthClients.clientId})`,
               sql`NOT EXISTS (SELECT 1 FROM oauth_authorizations t WHERE t.client_id = ${oauthClients.clientId})`,

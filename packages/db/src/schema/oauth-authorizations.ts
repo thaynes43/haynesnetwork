@@ -53,6 +53,7 @@ export const oauthAuthorizations = pgTable(
     ),
     index('oauth_authorizations_expires_idx').on(t.expiresAt),
     index('oauth_authorizations_client_user_idx').on(t.clientId, t.userId),
+    index('oauth_authorizations_user_idx').on(t.userId),
   ],
 );
 
