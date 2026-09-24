@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.98.0](https://github.com/thaynes43/haynesnetwork/compare/v0.97.1...v0.98.0) (2026-09-24)
+
+
+### Features
+
+* **mcp:** public OAuth connectors for the MCP surface — the in-app authorization server, POST /mcp, Connected apps (PLAN-069 S2–S6) ([#572](https://github.com/thaynes43/haynesnetwork/issues/572)) ([93d76a9](https://github.com/thaynes43/haynesnetwork/commit/93d76a9b88e40e37023ee60d4d6877d1e28f743f))
+
+
+### Documentation
+
+* **mcp:** ADR-091 / DESIGN-050 / PLAN-069 — public OAuth connectors for the MCP surface ([#571](https://github.com/thaynes43/haynesnetwork/issues/571)) ([e4d6bc1](https://github.com/thaynes43/haynesnetwork/commit/e4d6bc13697270e8025fc05237fbffb7995af742))
+* **mcp:** DESIGN-050 D-15 — the build and review rulings from PR [#572](https://github.com/thaynes43/haynesnetwork/issues/572) ([#573](https://github.com/thaynes43/haynesnetwork/issues/573)) ([0e8568a](https://github.com/thaynes43/haynesnetwork/commit/0e8568a18a17787221f2710bb3f1f485c1178334))
+* **watch:** PLAN-068 completed — v0.97.1 live, AC-24 passed; ADR-087/088/089 Accepted ([#568](https://github.com/thaynes43/haynesnetwork/issues/568)) ([c443de9](https://github.com/thaynes43/haynesnetwork/commit/c443de91a4267eef1b6ba5d473ace53586b7f6d9))
+
 ## [0.97.1](https://github.com/thaynes43/haynesnetwork/compare/v0.97.0...v0.97.1) (2026-09-23)
 
 
