@@ -1,7 +1,7 @@
 # DESIGN-049: Watch Companion — watch history read-model, recommendations, voice reconcile marks, and the in-cluster MCP surface
 
 - **Status:** Accepted (2026-09-23; live as v0.97.0, PLAN-068 S9–S13 verified)
-- **Last updated:** 2026-09-23 (PLAN-068 S7–S8: D-27 records the MCP-surface and local-stack rulings —
+- **Last updated:** 2026-09-23 (Q-01 and Q-03 point at ADR-091 / DESIGN-050, the public connectors). Prior: 2026-09-23 (PLAN-068 S7–S8: D-27 records the MCP-surface and local-stack rulings —
   `tools/list` is served from hand-written schemas, 2,712 bytes). Prior: PLAN-068 S5–S6 (D-26 records the
   domain and sync rulings; Q-05 and Q-06 ruled; `name:` keys carry the kind; D-04 corrected after the
   haynes-ops #3131 deploy). Prior: PLAN-068 S4
@@ -647,9 +647,9 @@ left a case open. `packages/watch/README.md` lists the final signatures; the tes
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | Household persons by spoken name. | PRD Q-12 — open; v1 owner only. |
+| Q-01 | Household persons by spoken name. | PRD Q-12 — open for voice; v1 owner only. Answered for public connectors by ADR-091 C-04 (a connector answers for its own user's tracked account); tracking household accounts is PLAN-070. |
 | Q-02 | Seerr requests by voice. | PRD Q-13 — open. |
-| Q-03 | Public connectors (OAuth). | PRD Q-14 — deferred. |
+| Q-03 | Public connectors (OAuth). | PRD Q-14 — **resolved by ADR-091 / DESIGN-050 (2026-09-23)**: a separate public `/mcp` behind the app's own OAuth 2.1 server; `/api/mcp` and the hop are unchanged. |
 | Q-04 | Should the HaynesOps Tautulli webhook trigger an immediate Title State refresh? | Open; D-11 covers answers, so only worth it if the bench shows stale answers. |
 | Q-05 | D-21's ambiguous example offers Dune: Prophecy for "Dune", but D-13 scores it 0: a 4-of-13-character prefix is under the 60% rule and its Jaro-Winkler (0.86) is under 0.9. D-13's 0.6 floor never binds either, since the lowest nonzero score is 0.81. Should a whole-word prefix score about 0.7, so it is offered as an option but can never resolve alone (0.7 plus both bonuses is 0.8)? | **Ruled (PLAN-068 S5): yes.** The query's words leading the title's whole words score 0.7 (also with a trailing year hint dropped: "dune 2024"); it appears in an ambiguous list, never resolves alone, and a single option reads "Did you mean …?" (D-13). |
 | Q-06 | Tautulli answers `get_metadata` with the same HTTP 400 "Unable to retrieve metadata" for a deleted item and while it cannot reach its Plex server, and `watch_events` rows are never updated. How should S6 keep a Plex outage from leaving a permanent null `show_guid`? (a) Trust the 400 only when that server's Plex answered earlier in the same run, else hold those episodes back. But the next window starts from the newest stored row, so held-back rows older than 3 days are never re-read. (b) Let the event writer backfill a null `show_guid` later, a narrow exception to append-only. (c) Accept it: the event falls back to the show title (D-08 `name:` key). | **Ruled (PLAN-068 S6): (b), bounded.** A null `show_guid` may stay null but is not final: each run retries at most 40 distinct (instance, grandparent key) pairs whose events have a null `show_guid` and were ingested in the last 60 days (a rotating slice, so a truly gone show never starves the others), asking the instance's own Plex first (a 404 is truly gone, a success gives the guid) and Tautulli second. `fillShowGuids` is the one permitted `watch_events` update. Title linkage falls back to the show title (and year) meanwhile (D-26). |
