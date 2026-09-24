@@ -1,7 +1,7 @@
 # DESIGN-050: Public connectors for the MCP surface — the in-app OAuth 2.1 authorization server, the public `/mcp`, and the Connected apps page
 
 - **Status:** Draft
-- **Last updated:** 2026-09-23 (owner ruling: user-aware principal, no owner gate; the single-writer split between `@hnet/oauth` and `@hnet/domain`; `oauth_audit`; 429s; Gatus and IPv4 notes)
+- **Last updated:** 2026-09-24 (D-15: the build rulings from PR #572, incl. the authorize order that closes the open redirector)
 - **Satisfies:** PRD-001 R-247..R-251, US-14, AC-25..AC-28; governed by ADR-091 (this surface),
   ADR-087 (the in-cluster surface it sits beside), ADR-088 (the watch read-model), ADR-014
   (inline two-step confirm), ADR-015 (no re-orientation on interaction).
@@ -241,6 +241,23 @@ Disconnecting stops an app at its next request.` Empty state: `No connected apps
 name>` · `<redirect host>` · `Connected <date>` · `Last used <date>` / `Never used`. Scope chips:
 `Read history`, `Mark titles`, `Stays connected`. Button `Disconnect`, armed `Confirm disconnect`,
 done state `Disconnected`.
+
+### D-15 — Rulings made while building (PLAN-069 S2–S6, PR #572)
+
+Where D-01..D-14 left a case open or the port found a better rule, the build decided as below; each row
+is accepted by the driver (2026-09-24). The tests pin every row.
+
+| Section | Ruling |
+|---|---|
+| D-03 | The dependent tables reference `oauth_clients.client_id` (the unique public handle) rather than `oauth_clients.id`; the cascade is the same. `oauth_audit.client_id` has **no** foreign key so pruning a dormant client never erases its audit history; `oauth_audit` has `at` only. Rate-limit buckets use keys `oauth:<route>\|<ip>` and store the window **end** in `last_request` so Better Auth's 60 s pruner cannot reset an hour bucket; `pruneExpired` also removes expired `oauth:` buckets. |
+| D-01 | `@hnet/oauth` imports zod and `node:crypto` at runtime and `@hnet/db` for types only, keeping its own copies of the enum arrays (a parity test pins them to `enums.ts`). The Connected apps page reads through a domain read (`listConnectedApps`) beside the writers and Disconnect is a server action, not a tRPC router. |
+| D-05 | `/oauth/authorize` is a **page** (so the bad-request card renders with the app's tokens): its redirects are 307, and a rate-limited authorize shows the card with status 200. **Order (review ruling, RFC 9700 §4.11.2):** client and redirect validated first (bad ⇒ the card, never a redirect); then the session gate; parameter errors are redirected to the registered `redirect_uri` only for a signed-in user — an anonymous request with a bad parameter goes to our own login, never to a registrable URL. `client_name` is required (RFC 7591 makes it optional; every known client sends it). Bound server-action arguments (the decision and the transaction id) are visible in the form; that is safe because the action re-derives the session user and the writer checks the transaction is theirs. |
+| D-04 / D-10 | Bounds beyond D-04: a redirect URI ≤ 1,024 characters with no userinfo and no fragment; `client_name` refuses control and bidi-override characters; `state` ≤ 1,024; `code_challenge` exactly 43 base64url characters and the verifier 43–128 unreserved characters; presented tokens ≤ 512 characters; repeated parameters refused; an authorize whose `next` would exceed 2,048 characters answers the client `invalid_request`. Client IP: `CF-Connecting-IP`, then `X-Real-IP`, then the first `X-Forwarded-For` hop; non-literals ignored; IPv6 keyed by /64 and IPv4-mapped addresses by their IPv4 (the full address is still `registered_ip`). A refresh token is issued only to a client that registered the `refresh_token` grant, even with `offline_access`. A confidential client's secret comes with `client_secret_expires_at: 0`. Metadata suffixes other than `/mcp` are 404. |
+| D-06 | `/oauth/revoke` answers 200 for every token outcome, but a failed client authentication is 401 `invalid_client` and a malformed request 400 `invalid_request` (RFC 7009 §2.2.1). **Spent versus revoked refresh tokens:** a *spent* (rotated) token replayed is theft — the family is revoked, `family_revoked_on_reuse` is audited (even for an already-dead family) and `refresh_reuse_detected` is logged (it pages); a *revoked* token presented again (after Disconnect, a client's own revoke, or an earlier reuse response) answers `invalid_grant` with a quiet `refresh_rejected` line and no audit row, after an unaudited re-sweep of the family — otherwise every Disconnect would page on the client's next refresh. When two rotations of one token race, the loser re-reads it: rotated ⇒ reuse, revoked ⇒ the quiet path. The `owner_gate_refused` event is gone; the authorize log never echoes an untrusted `client_id` (anything not shaped like one logs as `malformed`), and `audience_mismatch` logs the supplied resource as origin plus path, capped, with token-like runs masked. |
+| D-06 / D-08 | Every family revocation (reuse, RFC 7009, Disconnect) sweeps refresh, access, then refresh again so a rotation committed on another replica while the revocation waited on its row lock cannot leave a live child. Disconnect first expires the user's pending transactions and unexchanged codes for that client to the epoch (not a delete), then revokes; nothing revoked ⇒ no audit row (the domain's no-op rule). The code consume also requires the code to be unexpired. |
+| D-07 | `revalidateTitles` stays owner-only (`assertWatchOwner`) because it reads Plex with the owner's tokens; the answers skip revalidation for a non-owner account. The three mark flows use `assertTrackedWatchAccount`. A non-owner mark's wording reuses the mark's subject ("Noted season 2 of X (Y) as watched in your history. …"). `/mcp` answers OPTIONS with Next's automatic 204 (`Allow` only, no CORS headers) because the route exports only `POST`; GET, DELETE, PUT and PATCH are 405 (D-02's "every other method" reads as "every other method Next routes"). |
+| D-08 | The admin view is one list of every user's connections (the admin's own included) with a user line; an admin may Disconnect any row and the audit `details` record `actor_user_id`. |
+| D-09 | `/login?next=` must also fit Better Auth's relative-callback grammar (else the sign-in 403s); anything else becomes `/`. The authorize `next` is re-encoded (including `*`) so it always fits. |
 
 ## Alternatives considered
 
