@@ -5,6 +5,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPostgres, withMigratedDb, type StartedPostgres } from '@hnet/test-utils';
 import { DEFAULT_MIGRATIONS_FOLDER, runMigrations } from '../src/migrate';
 import {
+  OAUTH_CODE_CHALLENGE_METHODS,
+  OAUTH_GRANT_TYPES,
+  OAUTH_RESPONSE_TYPES,
+  OAUTH_SCOPES,
+  OAUTH_AUDIT_EVENTS,
+  OAUTH_TOKEN_ENDPOINT_AUTH_METHODS,
   PLEX_SERVER_SLUGS,
   SYNC_RUN_KINDS,
   WATCH_ACCOUNT_ROLES,
@@ -2396,6 +2402,281 @@ describe('migrations against embedded Postgres 16', () => {
       await client.query({ text: `DELETE FROM sync_runs WHERE id = ANY ($1::uuid[])`, values: [ids] });
     });
   });
+
+  // ADR-091 / DESIGN-050 D-03 (PLAN-069 S2 — migration 0078, journal idx 77): the in-app OAuth 2.1 authorization
+  // server's five state tables + the append-only oauth_audit. Additive; every CHECK is exercised against its
+  // enums.ts const array (each value admitted, a bogus one rejected), the hash-only invariant (plaintext is
+  // refused), the bounded inputs, NOT NULL expires_at everywhere, and the FK cascades from users and clients.
+  describe('0078 oauth connectors (ADR-091 — five state tables + oauth_audit)', () => {
+    const HEX64 = 'a'.repeat(64);
+    const hex64 = (n: number) => n.toString(16).padStart(64, '0');
+    let userId: string;
+    let seq = 0;
+
+    beforeAll(async () => {
+      const u = await client.query(
+        `INSERT INTO users (email, display_name) VALUES ('oauth-0078@example.test', 'OAuth 0078') RETURNING id`,
+      );
+      userId = u.rows[0].id as string;
+    });
+
+    async function insertClient(overrides: Record<string, unknown> = {}): Promise<string> {
+      const clientId = (overrides.client_id as string) ?? (++seq).toString(16).padStart(32, '0');
+      const row = {
+        client_id: clientId,
+        client_secret_hash: null,
+        client_name: 'ChatGPT',
+        redirect_uris: JSON.stringify(['https://chatgpt.com/connector/oauth/abc']),
+        grant_types: JSON.stringify(['authorization_code', 'refresh_token']),
+        response_types: JSON.stringify(['code']),
+        token_endpoint_auth_method: 'none',
+        ...overrides,
+      };
+      await client.query({
+        text: `INSERT INTO oauth_clients (client_id, client_secret_hash, client_name, redirect_uris, grant_types,
+                 response_types, token_endpoint_auth_method)
+               VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7)`,
+        values: [
+          row.client_id,
+          row.client_secret_hash,
+          row.client_name,
+          row.redirect_uris,
+          row.grant_types,
+          row.response_types,
+          row.token_endpoint_auth_method,
+        ],
+      });
+      return clientId;
+    }
+
+    const tokenInsert = (table: 'oauth_access_tokens' | 'oauth_refresh_tokens', clientId: string, over: Record<string, unknown> = {}) => {
+      const v = { hash: hex64(++seq), scopes: '["watch:read"]', expires: 'now() + interval \'1 hour\'', ...over };
+      const family = table === 'oauth_refresh_tokens' ? `, family_id` : '';
+      const familyVal = table === 'oauth_refresh_tokens' ? `, gen_random_uuid()` : '';
+      return client.query({
+        text: `INSERT INTO ${table} (token_hash, client_id, user_id, scopes, resource, expires_at${family})
+               VALUES ($1, $2, $3, $4::jsonb, 'https://haynesnetwork.com/mcp', ${String(v.expires)}${familyVal})`,
+        values: [v.hash, clientId, userId, v.scopes],
+      });
+    };
+
+    it('creates the five tables with the D-03 columns, indexes and NOT NULL expires_at everywhere', async () => {
+      const cols = await client.query(
+        `SELECT table_name, column_name, is_nullable, data_type FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name LIKE 'oauth\\_%'`,
+      );
+      const byTable = new Map<string, Map<string, { nullable: string; type: string }>>();
+      for (const r of cols.rows) {
+        const t = byTable.get(r.table_name) ?? new Map();
+        t.set(r.column_name, { nullable: r.is_nullable, type: r.data_type });
+        byTable.set(r.table_name, t);
+      }
+      expect([...byTable.keys()].sort()).toEqual([
+        'oauth_access_tokens',
+        'oauth_audit',
+        'oauth_authorization_codes',
+        'oauth_authorizations',
+        'oauth_clients',
+        'oauth_refresh_tokens',
+      ]);
+      const expected: Record<string, string[]> = {
+        oauth_clients: ['id', 'client_id', 'client_secret_hash', 'client_name', 'redirect_uris', 'grant_types',
+          'response_types', 'scope', 'token_endpoint_auth_method', 'registered_ip', 'last_used_at', 'created_at'],
+        oauth_authorizations: ['id', 'client_id', 'user_id', 'redirect_uri', 'scopes', 'resource', 'state',
+          'code_challenge', 'code_challenge_method', 'expires_at', 'created_at'],
+        oauth_authorization_codes: ['id', 'code_hash', 'client_id', 'user_id', 'redirect_uri', 'scopes', 'resource',
+          'code_challenge', 'code_challenge_method', 'expires_at', 'consumed_at', 'created_at'],
+        oauth_refresh_tokens: ['id', 'token_hash', 'family_id', 'parent_id', 'client_id', 'user_id', 'scopes',
+          'resource', 'expires_at', 'rotated_at', 'revoked_at', 'created_at'],
+        oauth_access_tokens: ['id', 'token_hash', 'family_id', 'client_id', 'user_id', 'scopes', 'resource',
+          'expires_at', 'revoked_at', 'last_used_at', 'created_at'],
+        oauth_audit: ['id', 'event', 'user_id', 'client_id', 'family_id', 'details', 'at'],
+      };
+      for (const [table, columns] of Object.entries(expected)) {
+        expect([...byTable.get(table)!.keys()].sort(), table).toEqual([...columns].sort());
+      }
+      // ADR-091 option 5: no never-expiring row anywhere.
+      for (const table of ['oauth_authorizations', 'oauth_authorization_codes', 'oauth_refresh_tokens', 'oauth_access_tokens']) {
+        expect(byTable.get(table)!.get('expires_at'), table).toEqual({ nullable: 'NO', type: 'timestamp with time zone' });
+      }
+      expect(byTable.get('oauth_authorizations')!.get('state')!.nullable).toBe('NO'); // D-05: state required
+      expect(byTable.get('oauth_clients')!.get('client_name')!.nullable).toBe('NO');
+      expect(byTable.get('oauth_access_tokens')!.get('user_id')!.type).toBe('uuid');
+
+      const idx = await client.query(`SELECT indexname FROM pg_indexes WHERE tablename LIKE 'oauth\\_%'`);
+      const names = idx.rows.map((r) => r.indexname as string);
+      for (const name of [
+        'oauth_clients_client_id_unique',
+        'oauth_authorizations_expires_idx',
+        'oauth_authorizations_client_user_idx',
+        'oauth_authorization_codes_code_hash_unique',
+        'oauth_authorization_codes_expires_idx',
+        'oauth_refresh_tokens_token_hash_unique',
+        'oauth_refresh_tokens_family_idx',
+        'oauth_refresh_tokens_client_user_idx',
+        'oauth_refresh_tokens_expires_idx',
+        'oauth_access_tokens_token_hash_unique',
+        'oauth_access_tokens_family_idx',
+        'oauth_access_tokens_client_user_idx',
+        'oauth_access_tokens_expires_idx',
+        'oauth_audit_user_at_idx',
+        'oauth_audit_client_idx',
+      ]) {
+        expect(names, name).toContain(name);
+      }
+    });
+
+    it('oauth_clients: every OAUTH_TOKEN_ENDPOINT_AUTH_METHODS value admitted, a bogus one refused; secret ⇔ confidential', async () => {
+      for (const method of OAUTH_TOKEN_ENDPOINT_AUTH_METHODS) {
+        await insertClient({ token_endpoint_auth_method: method, client_secret_hash: method === 'none' ? null : HEX64 });
+      }
+      await expect(insertClient({ token_endpoint_auth_method: 'private_key_jwt', client_secret_hash: HEX64 })).rejects.toMatchObject({ code: '23514' });
+      // A public client carries no secret; a confidential one must.
+      await expect(insertClient({ token_endpoint_auth_method: 'none', client_secret_hash: HEX64 })).rejects.toMatchObject({ code: '23514' });
+      await expect(insertClient({ token_endpoint_auth_method: 'client_secret_post', client_secret_hash: null })).rejects.toMatchObject({ code: '23514' });
+    });
+
+    it('oauth_clients: the D-04 bounds are schema invariants (client_id format, name 1–80, 1–5 redirect URIs, grant/response subsets, hashed secret)', async () => {
+      await expect(insertClient({ client_id: 'not-hex' })).rejects.toMatchObject({ code: '23514' });
+      await expect(insertClient({ client_id: 'A'.repeat(32) })).rejects.toMatchObject({ code: '23514' });
+      await insertClient({ client_name: 'x'.repeat(80) });
+      await expect(insertClient({ client_name: 'x'.repeat(81) })).rejects.toMatchObject({ code: '23514' });
+      await expect(insertClient({ client_name: '' })).rejects.toMatchObject({ code: '23514' });
+      await expect(insertClient({ client_name: null })).rejects.toMatchObject({ code: '23502' });
+      const uris = (n: number) => JSON.stringify(Array.from({ length: n }, (_, i) => `https://a.example/${i}`));
+      await insertClient({ redirect_uris: uris(5) });
+      await expect(insertClient({ redirect_uris: uris(6) })).rejects.toMatchObject({ code: '23514' });
+      await expect(insertClient({ redirect_uris: uris(0) })).rejects.toMatchObject({ code: '23514' });
+      await expect(insertClient({ redirect_uris: '"https://a.example"' })).rejects.toMatchObject({ code: '23514' });
+      for (const g of OAUTH_GRANT_TYPES) await insertClient({ grant_types: JSON.stringify([g]) });
+      await expect(insertClient({ grant_types: '["client_credentials"]' })).rejects.toMatchObject({ code: '23514' });
+      await expect(insertClient({ grant_types: '[]' })).rejects.toMatchObject({ code: '23514' });
+      for (const r of OAUTH_RESPONSE_TYPES) await insertClient({ response_types: JSON.stringify([r]) });
+      await expect(insertClient({ response_types: '["token"]' })).rejects.toMatchObject({ code: '23514' });
+      // A plaintext secret can never be stored: only 64 lowercase hex characters pass.
+      await expect(
+        insertClient({ token_endpoint_auth_method: 'client_secret_post', client_secret_hash: 'plain-secret-base64url' }),
+      ).rejects.toMatchObject({ code: '23514' });
+    });
+
+    it('tokens and codes: hash-only (plaintext refused), scopes ⊆ OAUTH_SCOPES and non-empty, S256 only', async () => {
+      const clientId = await insertClient();
+      for (const scope of OAUTH_SCOPES) {
+        await tokenInsert('oauth_access_tokens', clientId, { scopes: JSON.stringify([scope]) });
+        await tokenInsert('oauth_refresh_tokens', clientId, { scopes: JSON.stringify([scope]) });
+      }
+      await tokenInsert('oauth_access_tokens', clientId, { scopes: JSON.stringify(OAUTH_SCOPES) });
+      for (const table of ['oauth_access_tokens', 'oauth_refresh_tokens'] as const) {
+        await expect(tokenInsert(table, clientId, { scopes: '["admin"]' })).rejects.toMatchObject({ code: '23514' });
+        await expect(tokenInsert(table, clientId, { scopes: '[]' })).rejects.toMatchObject({ code: '23514' });
+        await expect(tokenInsert(table, clientId, { scopes: '"watch:read"' })).rejects.toMatchObject({ code: '23514' });
+        // A base64url token (43 chars) is not a SHA-256 hex digest.
+        await expect(tokenInsert(table, clientId, { hash: 'x'.repeat(43) })).rejects.toMatchObject({ code: '23514' });
+        await expect(tokenInsert(table, clientId, { expires: 'NULL' })).rejects.toMatchObject({ code: '23502' });
+      }
+      const code = (hash: string, method: string, scopes = '["watch:read"]') =>
+        client.query({
+          text: `INSERT INTO oauth_authorization_codes (code_hash, client_id, user_id, redirect_uri, scopes, resource,
+                   code_challenge, code_challenge_method, expires_at)
+                 VALUES ($1, $2, $3, 'https://chatgpt.com/cb', $4::jsonb, 'https://haynesnetwork.com/mcp', 'c', $5, now())`,
+          values: [hash, clientId, userId, scopes, method],
+        });
+      for (const method of OAUTH_CODE_CHALLENGE_METHODS) await code(hex64(++seq), method);
+      await expect(code(hex64(++seq), 'plain')).rejects.toMatchObject({ code: '23514' });
+      await expect(code('not-a-hash', 'S256')).rejects.toMatchObject({ code: '23514' });
+      await expect(code(hex64(++seq), 'S256', '["watch:delete"]')).rejects.toMatchObject({ code: '23514' });
+      const txn = (state: string | null, method = 'S256') =>
+        client.query({
+          text: `INSERT INTO oauth_authorizations (client_id, user_id, redirect_uri, scopes, resource, state,
+                   code_challenge, code_challenge_method, expires_at)
+                 VALUES ($1, $2, 'https://chatgpt.com/cb', '["watch:read"]'::jsonb, 'https://haynesnetwork.com/mcp', $3, 'c', $4,
+                   now() + interval '10 minutes')`,
+          values: [clientId, userId, state, method],
+        });
+      await txn('xyz');
+      await expect(txn(null)).rejects.toMatchObject({ code: '23502' });
+      await expect(txn('xyz', 'plain')).rejects.toMatchObject({ code: '23514' });
+    });
+
+    it('a token must reference a registered client and a user (FKs); deleting either cascades every dependent row', async () => {
+      await expect(tokenInsert('oauth_access_tokens', 'f'.repeat(32))).rejects.toMatchObject({ code: '23503' });
+      const clientId = await insertClient();
+      await tokenInsert('oauth_access_tokens', clientId);
+      await tokenInsert('oauth_refresh_tokens', clientId);
+      const count = async (table: string) =>
+        (await client.query({ text: `SELECT count(*)::int AS n FROM ${table} WHERE client_id = $1`, values: [clientId] })).rows[0].n as number;
+      expect(await count('oauth_access_tokens')).toBe(1);
+      await client.query({ text: `DELETE FROM oauth_clients WHERE client_id = $1`, values: [clientId] });
+      expect(await count('oauth_access_tokens')).toBe(0);
+      expect(await count('oauth_refresh_tokens')).toBe(0);
+
+      const other = await client.query(
+        `INSERT INTO users (email, display_name) VALUES ('oauth-0078-b@example.test', 'B') RETURNING id`,
+      );
+      const otherId = other.rows[0].id as string;
+      const c2 = await insertClient();
+      await client.query({
+        text: `INSERT INTO oauth_access_tokens (token_hash, client_id, user_id, scopes, resource, expires_at)
+               VALUES ($1, $2, $3, '["watch:read"]'::jsonb, 'r', now())`,
+        values: [hex64(++seq), c2, otherId],
+      });
+      await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [otherId] });
+      expect(await count('oauth_access_tokens')).toBe(0);
+    });
+
+    it('oauth_refresh_tokens.parent_id is a self-FK that SETs NULL when the parent is deleted', async () => {
+      const clientId = await insertClient();
+      const parent = await client.query({
+        text: `INSERT INTO oauth_refresh_tokens (token_hash, family_id, client_id, user_id, scopes, resource, expires_at)
+               VALUES ($1, gen_random_uuid(), $2, $3, '["offline_access"]'::jsonb, 'r', now()) RETURNING id, family_id`,
+        values: [hex64(++seq), clientId, userId],
+      });
+      const child = await client.query({
+        text: `INSERT INTO oauth_refresh_tokens (token_hash, family_id, parent_id, client_id, user_id, scopes, resource, expires_at)
+               VALUES ($1, $2, $3, $4, $5, '["offline_access"]'::jsonb, 'r', now()) RETURNING id`,
+        values: [hex64(++seq), parent.rows[0].family_id, parent.rows[0].id, clientId, userId],
+      });
+      await client.query({ text: `DELETE FROM oauth_refresh_tokens WHERE id = $1`, values: [parent.rows[0].id] });
+      const left = await client.query({ text: `SELECT parent_id FROM oauth_refresh_tokens WHERE id = $1`, values: [child.rows[0].id] });
+      expect(left.rows[0].parent_id).toBeNull();
+    });
+
+    it('oauth_audit: every OAUTH_AUDIT_EVENTS value admitted, a bogus one refused; client_id has NO FK (the audit outlives a pruned client); cascades with the user', async () => {
+      expect([...OAUTH_AUDIT_EVENTS]).toEqual([
+        'consent_granted',
+        'consent_denied',
+        'client_disconnected',
+        'family_revoked_on_reuse',
+      ]);
+      const other = await client.query(
+        `INSERT INTO users (email, display_name) VALUES ('oauth-0078-audit@example.test', 'A') RETURNING id`,
+      );
+      const auditUser = other.rows[0].id as string;
+      const insert = (event: string, clientId = 'f'.repeat(32)) =>
+        client.query({
+          text: `INSERT INTO oauth_audit (event, user_id, client_id) VALUES ($1, $2, $3) RETURNING details, at`,
+          values: [event, auditUser, clientId],
+        });
+      for (const event of OAUTH_AUDIT_EVENTS) {
+        const row = await insert(event);
+        expect(row.rows[0].details).toEqual({});
+        expect(row.rows[0].at).toBeInstanceOf(Date);
+      }
+      // A client id that no oauth_clients row carries is fine — the pruner may have removed the client.
+      await insert('consent_granted', '0'.repeat(32));
+      await expect(insert('token_minted')).rejects.toMatchObject({ code: '23514' });
+      await expect(
+        client.query({ text: `INSERT INTO oauth_audit (event, user_id, client_id) VALUES ('consent_denied', $1, NULL)`, values: [auditUser] }),
+      ).rejects.toMatchObject({ code: '23502' });
+      const fks = await client.query(
+        `SELECT conname FROM pg_constraint WHERE conrelid = 'oauth_audit'::regclass AND contype = 'f'`,
+      );
+      expect(fks.rows.map((r) => r.conname)).toEqual(['oauth_audit_user_id_users_id_fk']);
+      await client.query({ text: `DELETE FROM users WHERE id = $1`, values: [auditUser] });
+      const left = await client.query({ text: `SELECT count(*)::int AS n FROM oauth_audit WHERE user_id = $1`, values: [auditUser] });
+      expect(left.rows[0].n).toBe(0);
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -2443,6 +2724,17 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(entry!.when).toBeGreaterThan(prev!.when);
     expect(readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0077_watch_companion.sql'), 'utf8')).toContain(
       'CREATE TABLE "watch_events"',
+    );
+  });
+
+  // PLAN-069 S2 gate — the OAuth connector migration is journaled (idx 77), strictly after 0077, and its SQL exists.
+  it('lists 0078_oauth_connectors at idx 77, strictly after 0077_watch_companion', () => {
+    const entry = journal.entries.find((e) => e.tag === '0078_oauth_connectors');
+    const prev = journal.entries.find((e) => e.tag === '0077_watch_companion');
+    expect(entry?.idx).toBe(77);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    expect(readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0078_oauth_connectors.sql'), 'utf8')).toContain(
+      'CREATE TABLE "oauth_access_tokens"',
     );
   });
 });

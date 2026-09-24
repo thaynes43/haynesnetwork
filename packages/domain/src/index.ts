@@ -216,3 +216,8 @@ export * from './kometa-collections';
 // DESIGN-044 (collection builder page) — the search-first ref lookup + the live member preview split
 // held/missing against the app's own mirrors (books_items / media_items). Read-only, confined-client only.
 export * from './collection-builder';
+// ADR-091 / DESIGN-050 (PLAN-069 — public OAuth connectors for the MCP surface) — the OAuth single-writers for
+// all six OAuth tables (@hnet/oauth decides, these write; consent / deny / disconnect / reuse revocation co-write
+// oauth_audit in-tx) and the shared-table fixed-window rate limiter the /oauth/* routes use (D-10).
+export * from './oauth';
+export * from './rate-limit';

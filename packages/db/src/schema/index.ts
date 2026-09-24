@@ -163,3 +163,15 @@ export * from './watch-events';
 export * from './watch-titles';
 export * from './watch-marks';
 export * from './watch-reco-signals';
+// ADR-091 / DESIGN-050 D-03 (PLAN-069 — public OAuth connectors for the MCP surface, migration 0078) — the
+// in-app OAuth 2.1 authorization server's state: DCR clients, pending consent transactions, single-use codes,
+// rotating refresh families and short-lived access tokens (every token, code and secret stored only as a
+// SHA-256 hash), plus the append-only oauth_audit trail. Guarded: written ONLY by the @hnet/domain oauth
+// single-writers (@hnet/oauth is pure — it decides, the domain writes); consent, deny, disconnect and reuse
+// revocation co-write their oauth_audit row in the same transaction (hard rule 6).
+export * from './oauth-clients';
+export * from './oauth-authorizations';
+export * from './oauth-authorization-codes';
+export * from './oauth-refresh-tokens';
+export * from './oauth-access-tokens';
+export * from './oauth-audit';

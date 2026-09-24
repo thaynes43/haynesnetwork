@@ -22,6 +22,7 @@
     "@hnet/kapowarr": "workspace:*",
     "@hnet/lazylibrarian": "workspace:*",
     "@hnet/libretto": "workspace:*",
+    "@hnet/oauth": "workspace:*",
     "@hnet/openwebui": "workspace:*",
     "@hnet/plex": "workspace:*",
     "@hnet/watch": "workspace:*",
