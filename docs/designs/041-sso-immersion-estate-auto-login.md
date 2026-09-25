@@ -92,6 +92,11 @@ Estate URLs resolved from `haynes-ops` (traefik-external ingressroutes + app ing
 | Kavita | `kavita.haynesnetwork.com` (plain pass-through route — "NO forward-auth middleware" by design) | **Authentik OIDC live** (provider pk 110). 2026-07-16 estate state: `DisablePasswordAuthentication=true` (admins exempt = built-in break-glass), **Default Roles Login+Bookmark+Download landed** (future members auto-provision), owner's SSO acct maps to `hnetadmin`. **`AutoLogin=false`** — deliberately, during the admin work; flipping it ON was explicitly deferred into PLAN-058 | Yes (live) | **Yes — a runtime flag** (`AutoLogin` in the `OidcConfiguration` blob, ServerSetting Key=40; effective immediately, no restart) | Unnecessary | Native + rich: "Sync user settings with OIDC roles" derives roles, `library-<Name>` access and `age-restriction-<Rating>` from a roles claim, re-synced each login (<https://wiki.kavitareader.com/guides/admin-settings/open-id-connect/>) — **deferred into this plan**, needs the Authentik claim design (D-08) |
 | Audiobookshelf | `audiobookshelf.haynesnetwork.com` (plain pass-through route) | **Authentik OIDC live + hardened** (OPS-012): `abs_role` claim maps admin/user; `local` + `openid` both enabled; AudioBooth mobile allow-listed | Yes (live) | **Yes — a runtime flag**: `authOpenIDAutoLaunch=true` (OPS-012 option A, recommended there and **not yet applied**) | Unnecessary | Solved (OPS-012 `hnet-abs-role` scope mapping: `authentik Admins`/`abs-admin` → admin, everyone else → user, never denied) |
 
+Added since the seed: **Haynes Quest** (`quest.haynesnetwork.com`, migration 0079, DESIGN-004 D-26). The
+game signs people in through its own Authentik OIDC client, and its Authentik application binds exactly
+`authentik Admins` and `family` (haynes-quest ADR-005 D-01/D-03, configured in haynes-ops). Both are
+owned by the haynes-quest repo, not by this plan.
+
 Not on the dashboard (grafana, homepage, headlamp, Home Assistant, dev-env, the *arrs, qBittorrent,
 …): out of scope for v1 unless the owner widens it (Q-03). haynesnetwork.com itself is the session
 anchor and already correct (ADR-002).

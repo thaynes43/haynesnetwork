@@ -580,6 +580,12 @@ environment and every subsequent catalog change flows through the audited admin 
 accepted: new *seeded* defaults for existing environments must ship as a new migration or be
 entered via the UI.
 
+> **Later per-slug seeds (forward migrations, never edits to `0002`):** `0037` adds `kavita` and
+> `audiobookshelf` with no role grants (DESIGN-024 D-08), and `0079` adds `haynes-quest` with a grant to
+> the seeded Family role written only alongside the row it inserts (DESIGN-004 D-26, PRD R-254). Both
+> guard on the slug (`WHERE NOT EXISTS (… WHERE slug = …)`), so an existing row, and an admin's later
+> edits or delete, win.
+
 ```sql
 -- Seed the app catalog on first deploy only. Admin edits/deletions win forever after
 -- (R-11); later catalog changes go through the admin UI, audited via permission_audit.

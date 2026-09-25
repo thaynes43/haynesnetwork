@@ -547,6 +547,13 @@
       "when": 1783903303000,
       "tag": "0078_oauth_connectors",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1783903304000,
+      "tag": "0079_haynes_quest_catalog_card",
+      "breakpoints": true
     }
   ]
 }

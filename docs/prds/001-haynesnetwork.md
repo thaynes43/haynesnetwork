@@ -623,6 +623,20 @@ found auto-requesting his watchlist: "Add it, say it downloads."
 | R-252 | **List and change the owner's Plex watchlist (ADR-092).** `watchlist` lists it newest first (filter by kind, pages of up to 10), each title with its year, kind, whether it is on Plex, and whether it is started or watched. `set_watchlist` adds or removes one title: it resolves the spoken title (a remove only among titles on the watchlist), finds the title in Plex's catalog, says back Plex's title and year, and changes plex.tv only when the title is not already in the asked state, so a repeated call is a truthful no-op. Every change is a **Watchlist Change** (T-260), a Watch Mark that `undo_last_change` reverses. An ambiguous or unknown title changes nothing. Only the Server Owner's watchlist is read or changed; anyone else is told their watchlist isn't set up yet. | Must |
 | R-253 | **Honest about Seerr, and "on your watchlist" everywhere (ADR-092 C-03, C-06).** Adding a title that is not on Plex says Seerr will request it (Seerr auto-requests the owner's watchlist); undoing such an add says Seerr may already have requested it. For the owner, `watch_status` always says whether the title is on Plex and whether it is on the watchlist. A change shows in the very next answer of every tool (the 15-minute cache is overlaid with the changes made since the last sync). | Must |
 
+### Haynes Quest portal card (owner directive 2026-09-25 — DESIGN-004 D-26)
+
+Haynes Quest is the family's own browser adventure game (separate repo `thaynes43/haynes-quest`,
+its PRD-004 R-03: "Add a Haynes Quest tile to the Haynes Network portal that opens the game and signs
+in through existing SSO"). The card is only a link; the game admits people through its own Authentik
+application.
+
+<!-- New IDs beyond the current max, per the two-track numbering protocol: the Plex-watchlist track
+     (PLAN-071, docs PR #577) took R-252/R-253 and AC-29..AC-31, so this section takes R-254 / AC-32. -->
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| R-254 | **A seeded Haynes Quest card for Family and Admin.** Migration `0079` seeds one catalog card, slug `haynes-quest`, name "Haynes Quest", description "Play — our family adventure game", URL `https://quest.haynesnetwork.com`, the code-shipped `haynes-quest` icon (a compass), sort order 110, and grants it to the seeded **Family** role. Admin sees it implicitly (all apps); Default, Friends and any other role get no grant. Per-slug idempotent: an existing `haynes-quest` card, and an admin's later edits, revokes or delete, win (R-11), and the grant is written only with the row the migration creates. Access to the game itself is enforced by the game's own Authentik application (binding exactly `authentik Admins` and `family` — haynes-quest ADR-005 D-03, configured in haynes-ops), not by the card; the card carries no Authentik link and is outside ADR-085's derived bindings. | Must |
+
 ### Platform & non-functional
 
 | ID   | Requirement                                                                                                                                                                                                                                        | Priority |
@@ -691,6 +705,7 @@ found auto-requesting his watchlist: "Add it, say it downloads."
 | AC-29 | `tools/list` lists nine tools in at most 4,096 bytes; a `watch:read`-only token sees `watchlist` and not `set_watchlist`. `watchlist` over a seeded watchlist lists titles newest first with kind, year and on-Plex state, pages with `offset`, filters by `kind`, and stays within 1,200 characters. For the owner, `watch_status` says "on your watchlist" or "not on your watchlist" in every case. |
 | AC-30 | With a recording fake Plex: `set_watchlist` add of a title on Plex makes one add call and one Watch Mark; add of a title not on Plex also says Seerr will request it; add of a title already on the watchlist and remove of one not on it make no call and no row; a remove resolves only among watchlist titles; an ambiguous title (including two exact TMDB matches for an add) makes no call; a Plex failure records `failed`, and undoing it makes no call and says so; a non-owner principal makes no call and no row; `undo_last_change` makes exactly the inverse call, and a repeated undo within 30 seconds reverts nothing more; the new mark actions never count as watched or dismissed (exclusions, Taste Profile, Unfinished, recent history, TMDB seeds). The very next `watchlist` and `watch_status` answers reflect a change even when the cached rows predate it. |
 | AC-31 | Live: through the hop, an add of a title already on Plex shows in `watchlist` and in plex.tv's own `userState`, a repeat add answers "already on", and `undo_last_change` removes it again; the voice bench shows the Movie Room agent still within R-245's 0.5 s bound. |
+| AC-32 | A Family-role user's Portal shows the Haynes Quest card and it opens `https://quest.haynesnetwork.com` in a new tab; an Admin sees it too; a Default-role user does not. The live migration applies once (one `haynes-quest` row, one Family grant) and a replay changes nothing. |
 
 ## Phasing
 

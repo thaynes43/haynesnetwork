@@ -109,6 +109,17 @@ function AudiobookshelfIcon(props: SvgProps): ReactElement {
   );
 }
 
+/** haynes-quest — adventure: a compass, its needle's leading half filled to point the way. */
+function HaynesQuestIcon(props: SvgProps): ReactElement {
+  return (
+    <svg {...frame(props)}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M16.4 7.6 14 14 7.6 16.4 10 10Z" />
+      <path d="M16.4 7.6 14 14 10 10Z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 /** Fallback tile glyph for null/unknown keys (DESIGN-003 D-10). */
 export function GenericAppIcon(props: SvgProps): ReactElement {
   return (
@@ -130,6 +141,7 @@ export const ICON_COMPONENTS: Record<IconKey, (props: SvgProps) => ReactElement>
   tautulli: TautulliIcon,
   kavita: KavitaIcon,
   audiobookshelf: AudiobookshelfIcon,
+  'haynes-quest': HaynesQuestIcon,
 };
 
 /**

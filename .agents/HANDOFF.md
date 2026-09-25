@@ -4,6 +4,23 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-25 — Haynes Quest portal card (PRD R-254, DESIGN-004 D-26): merged, then release + haynes-ops tag
+
+Owner directive (haynes-quest PRD-004 R-03, its work order WO110): a Portal card for the family game.
+Migration **0079** seeds `haynes-quest` → `https://quest.haynesnetwork.com` ("Play — our family
+adventure game", new compass icon key `haynes-quest`, sort 110) and grants it to the seeded Family role
+in the same statement; Admin sees it implicitly, no other role is granted. Data only, no schema change.
+The game's own Authentik application (haynes-quest ADR-005 D-03, `authentik Admins` + `family`, a
+separate haynes-ops change owned by the haynes-quest coordinator) is the gate; the card may point at the
+host before it resolves.
+
+Premises checked on the live DB before writing (read-only, from a web pod): the Family role still has
+its 0007 id and `grants_all = false`; no `haynes-quest` row existed; the last applied migration is 0078.
+**Heads-up for the owner (counts only):** of the users who will see the card, 1 of 5 Family-role users
+and 1 of 2 Admin-role users are in neither `family` nor `authentik Admins` in the Authentik mirror, so
+Authentik will refuse them at the game. That is PLAN-066's membership drift (its L1 reconcile), not the
+card. Release and deploy evidence is added here once live.
+
 ## ▶ 2026-09-25 — Plex watchlist tools (PLAN-071): researched, owner-ruled, docs on branch, build next
 
 Owner request 2026-09-25: the agents (ChatGPT, the Movie Room voice agent, dev-env) should add and remove

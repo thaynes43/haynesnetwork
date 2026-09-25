@@ -40,6 +40,8 @@ const SEED_SLUGS = [
   // ADR-046 (PLAN-023, migration 0037) — the two book-server cards (seeded rows; no role grants).
   'kavita',
   'audiobookshelf',
+  // PRD R-254 / DESIGN-004 D-26 (migration 0079) — the Haynes Quest card (seeded row + a Family grant).
+  'haynes-quest',
 ];
 describe('withMigratedDb', () => {
   it('boots an embedded Postgres 16, applies both migrations, and tears down', async () => {
@@ -48,7 +50,7 @@ describe('withMigratedDb', () => {
       await client.connect();
       try {
         const seeded = await client.query('SELECT count(*)::int AS n FROM app_catalog');
-        expect(seeded.rows[0].n).toBe(7);
+        expect(seeded.rows[0].n).toBe(8);
         const v = await client.query('SHOW server_version');
         return String(v.rows[0].server_version);
       } finally {
@@ -108,7 +110,7 @@ describe('migrations against embedded Postgres 16', () => {
   it('is idempotent: re-running runMigrations applies nothing new', async () => {
     await runMigrations({ databaseUrl: pg.connectionString });
     const seeded = await client.query('SELECT count(*)::int AS n FROM app_catalog');
-    expect(seeded.rows[0].n).toBe(7);
+    expect(seeded.rows[0].n).toBe(8);
   });
 
   it('seeds the catalog exactly per DESIGN-001 D-14', async () => {
@@ -131,8 +133,14 @@ describe('migrations against embedded Postgres 16', () => {
     expect(bySlug.get('kavita').icon).toBe('kavita');
     expect(bySlug.get('audiobookshelf').url).toBe('https://audiobookshelf.haynesnetwork.com');
     expect(bySlug.get('audiobookshelf').icon).toBe('audiobookshelf');
+    // PRD R-254 / DESIGN-004 D-26 (migration 0079) — the Haynes Quest card.
+    expect(bySlug.get('haynes-quest')).toMatchObject({
+      name: 'Haynes Quest',
+      url: 'https://quest.haynesnetwork.com',
+      icon: 'haynes-quest',
+    });
     // 20/30/40 (plex/k8plex/plexops) removed by 0061; the surviving rows keep their seed order.
-    expect(rows.rows.map((r) => r.sort_order)).toEqual([10, 50, 60, 70, 80, 90, 100]);
+    expect(rows.rows.map((r) => r.sort_order)).toEqual([10, 50, 60, 70, 80, 90, 100, 110]);
   });
 
   it('seeds Admin + Default + Family roles with the right app sets (ADR-012)', async () => {
@@ -158,7 +166,14 @@ describe('migrations against embedded Postgres 16', () => {
     // Plex cards and their grants cascaded away (ON DELETE cascade), leaving just seerr.
     expect(await grantsFor('Default')).toEqual(['seerr']);
     // Family was every app except tautulli; the three Plex grants likewise cascaded away.
-    expect(await grantsFor('Family')).toEqual(['seerr', 'immich', 'open-webui', 'paperless']);
+    // Migration 0079 (PRD R-254) then granted Family the Haynes Quest card it seeded.
+    expect(await grantsFor('Family')).toEqual([
+      'seerr',
+      'immich',
+      'open-webui',
+      'paperless',
+      'haynes-quest',
+    ]);
     // Admin stores NO explicit grants (all-apps is implicit via is_admin).
     expect(await grantsFor('Admin')).toEqual([]);
   });
@@ -2687,6 +2702,90 @@ describe('migrations against embedded Postgres 16', () => {
       expect(after.rows[0].with_user).toBe(0); // …with its user_id nulled
     });
   });
+
+  // PRD R-254 / DESIGN-004 D-26 — the Haynes Quest card: seeded per slug, granted to Family only.
+  describe('0079 haynes quest catalog card (per-slug seed + a Family grant that rides the insert)', () => {
+    const FAMILY_ROLE_ID = '33333333-3333-4333-8333-333333333333';
+    const seedSql = readFileSync(
+      join(DEFAULT_MIGRATIONS_FOLDER, '0079_haynes_quest_catalog_card.sql'),
+      'utf8',
+    );
+    const cardGrants = async () => {
+      const res = await client.query(
+        `SELECT rag.role_id FROM role_app_grants rag
+           JOIN app_catalog ac ON ac.id = rag.app_id AND ac.slug = 'haynes-quest'`,
+      );
+      return res.rows.map((r) => r.role_id as string);
+    };
+    // Each scenario runs in a transaction that is rolled back, so the migrated state stays pristine.
+    const inRolledBackTx = async (fn: () => Promise<void>) => {
+      await client.query('BEGIN');
+      try {
+        await fn();
+      } finally {
+        await client.query('ROLLBACK');
+      }
+    };
+
+    it('the migrated state grants the card to the Family role only (Admin implicit, no Default row)', async () => {
+      expect(await cardGrants()).toEqual([FAMILY_ROLE_ID]);
+    });
+
+    it('a fresh insert writes the card and exactly one grant, for Family', async () => {
+      await inRolledBackTx(async () => {
+        await client.query(`DELETE FROM app_catalog WHERE slug = 'haynes-quest'`); // grant cascades
+        expect(await cardGrants()).toEqual([]);
+        await client.query(seedSql);
+        const card = await client.query(
+          `SELECT name, description, url, icon, sort_order FROM app_catalog WHERE slug = 'haynes-quest'`,
+        );
+        expect(card.rows).toEqual([
+          {
+            name: 'Haynes Quest',
+            description: 'Play — our family adventure game',
+            url: 'https://quest.haynesnetwork.com',
+            icon: 'haynes-quest',
+            sort_order: 110,
+          },
+        ]);
+        expect(await cardGrants()).toEqual([FAMILY_ROLE_ID]);
+      });
+    });
+
+    it('an existing haynes-quest card wins: no second row, its edits and revoked grant stay as the admin left them', async () => {
+      await inRolledBackTx(async () => {
+        await client.query(
+          `UPDATE app_catalog SET description = 'admin copy', url = 'https://example.com/quest' WHERE slug = 'haynes-quest'`,
+        );
+        await client.query(
+          `DELETE FROM role_app_grants WHERE role_id = $1
+             AND app_id = (SELECT id FROM app_catalog WHERE slug = 'haynes-quest')`,
+          [FAMILY_ROLE_ID],
+        );
+        await client.query(seedSql);
+        const rows = await client.query(
+          `SELECT description, url FROM app_catalog WHERE slug = 'haynes-quest'`,
+        );
+        expect(rows.rows).toEqual([
+          { description: 'admin copy', url: 'https://example.com/quest' },
+        ]);
+        expect(await cardGrants()).toEqual([]); // never re-granted behind the admin's back
+      });
+    });
+
+    it('an all-apps Family role gets no grant row (grants_all roles store none)', async () => {
+      await inRolledBackTx(async () => {
+        await client.query(`DELETE FROM app_catalog WHERE slug = 'haynes-quest'`);
+        await client.query(`UPDATE roles SET grants_all = true WHERE id = $1`, [FAMILY_ROLE_ID]);
+        await client.query(seedSql);
+        const card = await client.query(
+          `SELECT count(*)::int AS n FROM app_catalog WHERE slug = 'haynes-quest'`,
+        );
+        expect(card.rows[0].n).toBe(1);
+        expect(await cardGrants()).toEqual([]);
+      });
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -2746,5 +2845,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0078_oauth_connectors.sql'), 'utf8')).toContain(
       'CREATE TABLE "oauth_access_tokens"',
     );
+  });
+
+  // PRD R-254 gate — the Haynes Quest card seed is journaled (idx 78), strictly after 0078, and its SQL exists.
+  it('lists 0079_haynes_quest_catalog_card at idx 78, strictly after 0078_oauth_connectors', () => {
+    const entry = journal.entries.find((e) => e.tag === '0079_haynes_quest_catalog_card');
+    const prev = journal.entries.find((e) => e.tag === '0078_oauth_connectors');
+    expect(entry?.idx).toBe(78);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    expect(
+      readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0079_haynes_quest_catalog_card.sql'), 'utf8'),
+    ).toContain('INSERT INTO role_app_grants');
   });
 });

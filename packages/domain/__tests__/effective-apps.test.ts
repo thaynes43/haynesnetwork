@@ -3,6 +3,9 @@ import { SEEDED_ROLE_IDS } from '@hnet/db/schema';
 import { assignRole, createApp, createRole, effectiveAppsForUser, updateRole } from '../src/index';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
+// The seeded Family role's fixed id (migration 0007). Not a system role, so it is not in SEEDED_ROLE_IDS.
+const FAMILY_ROLE_ID = '33333333-3333-4333-8333-333333333333';
+
 describe('effectiveAppsForUser (ADR-012 — role-based, replaces the tri-union view)', () => {
   let t: TestDb;
   let appA: string;
@@ -41,11 +44,35 @@ describe('effectiveAppsForUser (ADR-012 — role-based, replaces the tri-union v
     });
     const slugs = (await effectiveAppsForUser(admin.id, t.db)).map((a) => a.slug);
     // 7 surviving seeded cards (0002 minus plex/k8plex/plexops deleted by 0061; + kavita/
-    // audiobookshelf, ADR-046) + the 'extra' app created in beforeAll.
-    expect(slugs).toHaveLength(8);
+    // audiobookshelf, ADR-046; + haynes-quest, migration 0079) + the 'extra' app created in beforeAll.
+    expect(slugs).toHaveLength(9);
     expect(slugs).toContain('extra');
     expect(slugs).toContain('tautulli'); // a normally-hidden app — admins still see it
     expect(slugs).toContain('kavita'); // ADR-046 — seeded book-server card, admins see it implicitly
+    expect(slugs).toContain('haynes-quest'); // PRD R-254 — admins see the Haynes Quest card implicitly
+  });
+
+  it('a Family-role user sees the Haynes Quest card (migration 0079 grant — PRD R-254)', async () => {
+    const user = await createUser(t.db);
+    await assignRole({
+      db: t.db,
+      userId: user.id,
+      toRoleId: FAMILY_ROLE_ID,
+      initiator: { id: null, kind: 'system' },
+    });
+    const apps = await effectiveAppsForUser(user.id, t.db);
+    expect(apps.map((a) => a.slug)).toEqual([
+      'seerr',
+      'immich',
+      'open-webui',
+      'paperless',
+      'haynes-quest',
+    ]);
+    expect(apps.find((a) => a.slug === 'haynes-quest')).toMatchObject({
+      name: 'Haynes Quest',
+      url: 'https://quest.haynesnetwork.com',
+      icon: 'haynes-quest',
+    });
   });
 
   it('a custom role grants exactly its app set, and editing the role updates effective apps', async () => {

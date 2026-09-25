@@ -15,6 +15,8 @@ export const ICON_KEYS = [
   // ADR-046 / DESIGN-024 (PLAN-023) — the two book-server catalog cards.
   'kavita',
   'audiobookshelf',
+  // PRD R-254 / DESIGN-004 D-26 — the Haynes Quest family-game card (migration 0079).
+  'haynes-quest',
 ] as const;
 
 export type IconKey = (typeof ICON_KEYS)[number];
