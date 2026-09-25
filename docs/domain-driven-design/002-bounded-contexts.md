@@ -1,7 +1,7 @@
 # DDD-002: Bounded Contexts
 
 - **Status:** Accepted
-- **Last updated:** 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
+- **Last updated:** 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
 - **Related:** PRD-001, DDD-001
 
 Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs as
@@ -158,7 +158,7 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
 - **Does NOT own:** the media estate or the Fix flow — Messages **complement** Fix (BC-03), never
   replace it; the Feed is a read-through over inbound events, not a media source of truth.
 
-### BC-06 — Watch Companion (ADR-087 / ADR-088 / ADR-089 / DESIGN-049, PLAN-068; ADR-091 / DESIGN-050, PLAN-069)
+### BC-06 — Watch Companion (ADR-087 / ADR-088 / ADR-089 / DESIGN-049, PLAN-068; ADR-091 / DESIGN-050, PLAN-069; ADR-092 / DESIGN-051, PLAN-071)
 
 - **Purpose:** answer "what haven't I finished", "what should I watch next" and "I already watched
   that" for the **Server Owner** (T-94), fast enough for a voice turn, and expose it to machine
@@ -195,7 +195,7 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
 - **BC-04 owns library identity; BC-02 references it** — `role_library_grants` (BC-02)
   point at `plex_libraries` `(server_id, section_key)` identities from BC-04's registry.
 - **Seerr is read-only** — attribution source and a catalog Tile; never replaced (Non-goals).
-- **BC-06 reads BC-03 and BC-04, writes only Plex watch state.** Its one outbound write is the owner-issued `watched` mark (ADR-088); MCP consumers get watch scopes only (ADR-087 C-05). A Connector's principal is its user's Tracked Account, resolved through the ADR-053 Plex Account Map; Plex is written only when that account is the Server Owner's (ADR-091 C-04). BC-06 reads the BC-01 session at consent and never turns a Delegated Token into one (hard rule 5).
+- **BC-06 reads BC-03 and BC-04, writes only Plex watch state and the owner's plex.tv watchlist.** Its outbound writes are the owner-issued `watched` mark (ADR-088) and the owner-issued Watchlist Change (ADR-092; plex.tv only, and Seerr auto-requests what it adds); MCP consumers get watch scopes only (ADR-087 C-05). A Connector's principal is its user's Tracked Account, resolved through the ADR-053 Plex Account Map; Plex is written only when that account is the Server Owner's (ADR-091 C-04). BC-06 reads the BC-01 session at consent and never turns a Delegated Token into one (hard rule 5).
 
 ## 5. Cross-cutting (not bounded contexts)
 
