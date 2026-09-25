@@ -15,3 +15,4 @@ export * from './format';
 export * from './state';
 export * from './queries';
 export * from './views';
+export * from './watchlist';

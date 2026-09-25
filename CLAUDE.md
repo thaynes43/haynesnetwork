@@ -116,8 +116,8 @@ stage (a missing line fails only the release image build, which is not a require
 - `@hnet/test-utils` — embedded-Postgres + stub harness helpers.
 - `@hnet/watch` — the Watch Companion's pure progress math, recommendation scoring, title resolver
   and spoken formatter, plus read queries (DESIGN-049). No MCP SDK, no writes.
-- `@hnet/mcp` — the in-cluster MCP endpoint behind `/api/mcp` (ADR-087): consumer auth, the seven
-  watch tools, the Voice Budget tests.
+- `@hnet/mcp` — the in-cluster MCP endpoint behind `/api/mcp` (ADR-087): consumer auth, the nine
+  watch tools (ADR-092 added `watchlist` / `set_watchlist`), the Voice Budget tests.
 - `@hnet/oauth` — the pure half of the public connectors' OAuth 2.1 authorization server (ADR-091):
   metadata, validation, PKCE, token hashing and the decisions. It never touches a database; every OAuth-table
   write is a `@hnet/domain` `oauth/*` single-writer.

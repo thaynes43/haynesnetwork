@@ -5,7 +5,8 @@
 // expired / revoked / wrong-resource / malformed bearers and the exact 401 challenge; no owner check (any user's
 // token authenticates); scopes ∩ watch scopes and the 403 `insufficient_scope`; the once-a-minute stamp; the
 // user-aware principal (the owner's mapped account, "isn't set up" for an unmapped or untracked user, a tracked
-// household account answering from ITS history and writing Plex never); the Voice Budget and the D-06 log lines
+// household account answering from ITS history and writing Plex never, and told its Plex watchlist isn't set up —
+// DESIGN-051 D-02); the Voice Budget (DESIGN-051 D-08: nine tools, 4,096 bytes) and the D-06 log lines
 // unchanged on this path; and the two paths kept apart (the hop token is useless at /mcp, an OAuth token is
 // useless at /api/mcp).
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -314,7 +315,7 @@ describe('authenticateOAuth (D-07) — a hash lookup, refused when unknown, revo
 });
 
 describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpRequest + authenticateOAuth', () => {
-  it('the owner connector gets the same seven tools in the same 2,712-byte list (Voice Budget unchanged)', async () => {
+  it('the owner connector gets the same nine tools in the same 3,633-byte list (DESIGN-051 D-08: cap 4,096)', async () => {
     const { tokens } = await connect(ownerUser);
     const res = await rpc(
       { jsonrpc: '2.0', id: 1, method: 'tools/list' },
@@ -325,7 +326,8 @@ describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpR
     const raw = await res.text();
     const bytes = Buffer.byteLength(raw, 'utf8');
     console.log(`[voice-budget] oauth tools/list = ${bytes} bytes`);
-    expect(bytes).toBe(2_712);
+    expect(bytes).toBe(3_633);
+    expect(bytes).toBeLessThanOrEqual(4_096);
     expect(
       (JSON.parse(raw) as { result: { tools: Array<{ name: string }> } }).result.tools.map(
         (x) => x.name,
@@ -335,8 +337,10 @@ describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpR
       'recommend',
       'watch_status',
       'recent_history',
+      'watchlist',
       'mark_watched',
       'dismiss',
+      'set_watchlist',
       'undo_last_change',
     ]);
   });
@@ -400,13 +404,25 @@ describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpR
   it('a read-only token lists only the read tools; calling a write tool is HTTP 403 insufficient_scope', async () => {
     const { tokens } = await connect(ownerUser, { scope: 'watch:read offline_access' });
     const c = await client(tokens.access_token);
+    // DESIGN-051 D-01 / AC-29: a watch:read-only token sees `watchlist`, never `set_watchlist`.
     expect((await c.listTools()).tools.map((x) => x.name)).toEqual([
       'unfinished',
       'recommend',
       'watch_status',
       'recent_history',
+      'watchlist',
     ]);
     await c.close();
+    const change = await rpc(
+      {
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'tools/call',
+        params: { name: 'set_watchlist', arguments: { title: 'Silo', action: 'add' } },
+      },
+      { authorization: `Bearer ${tokens.access_token}` },
+    );
+    expect(change.status).toBe(403);
     const res = await rpc(
       {
         jsonrpc: '2.0',
@@ -452,15 +468,17 @@ describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpR
         ['recommend', {}],
         ['watch_status', { title: 'Silo' }],
         ['recent_history', {}],
+        ['watchlist', {}],
         ['mark_watched', { title: 'Silo' }],
         ['dismiss', { title: 'Silo' }],
+        ['set_watchlist', { title: 'Silo', action: 'add' }],
         ['undo_last_change', {}],
       ] as const) {
         const r = await call(token, tool, args);
         expect(r, tool).toEqual({ text: NOT_SET_UP, isError: false });
       }
       const lines = http.logs.filter((l) => l.startsWith('[mcp] tool_called '));
-      expect(lines).toHaveLength(7);
+      expect(lines).toHaveLength(9);
       for (const l of lines) expect(l).toContain('"ok":true');
     }
     expect(fake.calls).toEqual([]);
@@ -480,7 +498,19 @@ describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpR
     });
     const undo = await call(tokens.access_token, 'undo_last_change');
     expect(undo.text).toBe('Undone. Arrival (2016) is no longer marked as watched.');
-    expect(fake.calls).toEqual([]); // not a read, not a write, not an unscrobble
+    // DESIGN-051 D-02 / ADR-092 C-04: the watchlist is the Server Owner's only — no row, no plex.tv call — and
+    // watch_status keeps DESIGN-049's availability sentence (no watchlist to read).
+    const PLEX_WATCHLIST_NOT_SET_UP = "Your Plex watchlist isn't set up for your account yet.";
+    expect(await call(tokens.access_token, 'watchlist')).toEqual({ text: PLEX_WATCHLIST_NOT_SET_UP, isError: false });
+    expect(await call(tokens.access_token, 'set_watchlist', { title: 'Arrival', action: 'add' })).toEqual({
+      text: PLEX_WATCHLIST_NOT_SET_UP,
+      isError: false,
+    });
+    expect(http.logs.filter((l) => l.startsWith('[mcp] watchlist_changed '))).toEqual([
+      `[mcp] watchlist_changed {"consumer":"oauth:${clientId}","action":"add","kind":null,"result":"not_owner","onPlex":null}`,
+    ]);
+    expect((await call(tokens.access_token, 'watch_status', { title: 'Arrival' })).text).toMatch(/ (On|Not on) Plex\.$/);
+    expect(fake.calls).toEqual([]); // not a read, not a write, not an unscrobble, not a watchlist call
     const [row] = await db.select().from(watchMarks);
     expect(row).toMatchObject({
       plexAccountId: HOUSE,

@@ -1,10 +1,12 @@
-// Spoken answers (DESIGN-049 D-21, D-20, D-14, D-15): the plain-text results of the seven watch tools.
+// Spoken answers (DESIGN-049 D-21, D-20, D-14, D-15; DESIGN-051 D-02): the plain-text results of the nine
+// watch tools.
 // Short natural sentences that lead with the count, name episodes as "season 3 episode 1", say dates
 // the way people do, list at most `limit` items then "And N more.", and never exceed 1,200 characters.
 
 import { canonicalGenre } from './genres';
 import { compareUnfinished, type EpisodeRef, type MovieState, type ShowState } from './progress';
-import type { Dismissal, MarkAction, Recommendations, ScoredPick } from './recommend';
+import type { WatchMarkAction } from '@hnet/db/schema';
+import type { Dismissal, Recommendations, ScoredPick } from './recommend';
 import type { ResolverCandidate } from './resolver';
 import {
   capSpoken,
@@ -223,6 +225,11 @@ export interface WatchStatusView {
   resumePercent?: number | null;
   lastWatchedAt: number | null;
   dismissed?: Dismissal | null;
+  /**
+   * DESIGN-051 D-02 — on the owner's (overlaid) watchlist. `null` / absent for a principal whose watchlist the
+   * app cannot read (not the Server Owner): the answer keeps DESIGN-049's "On Plex." / "Not on Plex.".
+   */
+  onWatchlist?: boolean | null;
 }
 
 const NOT_MINE_BODY = "marked as someone else's viewing, so it isn't in your history";
@@ -286,17 +293,33 @@ function movieStatusBody(v: WatchStatusView, opts: SpokenOptions): string {
   }
 }
 
+/** "The Expanse (2015 show)" — a title with its year and kind (watch_status, the watchlist answers). */
+function titleYearKind(title: string, year: number | null | undefined, kind: WatchKind): string {
+  return `${spokenTitle(title)} (${year ? `${year} ` : ''}${kind})`;
+}
+
+/**
+ * The availability sentence (DESIGN-051 D-02): explicit both ways, so an agent never has to infer — "On Plex
+ * and on your watchlist." · "On Plex, not on your watchlist." · "Not on Plex, but on your watchlist." · "Not
+ * on Plex or your watchlist." Without a watchlist to read (`onWatchlist` null), DESIGN-049's sentence.
+ */
+function availabilitySentence(onPlex: boolean, onWatchlist: boolean | null | undefined): string {
+  if (onWatchlist === null || onWatchlist === undefined) return onPlex ? 'On Plex.' : 'Not on Plex.';
+  if (onPlex) return onWatchlist ? 'On Plex and on your watchlist.' : 'On Plex, not on your watchlist.';
+  return onWatchlist ? 'Not on Plex, but on your watchlist.' : 'Not on Plex or your watchlist.';
+}
+
 /**
  * `watch_status` (D-21): "The Expanse (2015 show): all 62 episodes watched, finished in March 2025.
- * On Plex." Covers progress, a rewatch, history the Plex state no longer shows ("watched 62 episodes
- * before"), dismissals and availability.
+ * On Plex, not on your watchlist." Covers progress, a rewatch, history the Plex state no longer shows
+ * ("watched 62 episodes before"), dismissals, and availability on Plex and on the watchlist (DESIGN-051 D-02).
  */
 export function formatWatchStatus(v: WatchStatusView, opts: SpokenOptions): string {
-  const head = `${spokenTitle(v.title)} (${v.year ? `${v.year} ` : ''}${v.kind})`;
+  const head = titleYearKind(v.title, v.year, v.kind);
   const body = v.kind === 'show' ? showStatusBody(v, opts) : movieStatusBody(v, opts);
   const parts = [`${head}: ${body || 'no progress yet'}.`];
   if (v.dismissed === 'not_interested') parts.push("You dismissed it, so it won't be suggested.");
-  parts.push(v.onPlex ? 'On Plex.' : 'Not on Plex.');
+  parts.push(availabilitySentence(v.onPlex, v.onWatchlist));
   return capSpoken(parts.join(' '));
 }
 
@@ -476,22 +499,56 @@ export type UndoView =
   | { undone: false }
   | {
       undone: true;
-      action: MarkAction;
+      action: WatchMarkAction;
       kind: WatchKind;
       title: string;
       year: number | null;
       scope?: MarkScope | null;
       season?: number | null;
       episode?: number | null;
-      /** The unscrobble outcome for a `watched` mark (`none` when nothing had changed in Plex). */
+      /**
+       * The Plex outcome: the unscrobble for a `watched` mark (`none` when nothing had changed in Plex); the
+       * inverse watchlist call for a Watchlist Change (DESIGN-051 D-04).
+       */
       revertResult?: 'written' | 'partial' | 'failed' | 'none' | null;
       /** Items put back to unwatched. */
       episodes?: number | null;
+      /** A Watchlist Change: whether the title is on Plex (the Seerr sentences, DESIGN-051 D-04). */
+      onPlex?: boolean | null;
     };
 
-/** The `undo_last_change` read-back (D-15). */
+/**
+ * DESIGN-051 D-04 — the undo of a Watchlist Change: "Removed The Matrix (1999 movie) from your watchlist
+ * again." / "Put The Matrix (1999 movie) back on your watchlist." When the title is not on Plex, undoing an add
+ * adds "Seerr may already have requested it." and undoing a remove "Seerr will request it." A failed inverse
+ * call leaves the change live for the next undo.
+ */
+function formatWatchlistUndo(r: Extract<UndoView, { undone: true }>): string {
+  const label = titleYearKind(r.title, r.year, r.kind);
+  const add = r.action === 'watchlist_add';
+  if (r.revertResult === 'none') {
+    // PLAN-071 ruling 3: the change never reached Plex (its write failed), so undoing it only closes the record.
+    return capSpoken(
+      `Your last change, ${add ? `adding ${label} to` : `removing ${label} from`} your watchlist, never reached Plex, so there was nothing to undo.`,
+    );
+  }
+  if (r.revertResult !== 'written') {
+    return capSpoken(
+      `I couldn't reach Plex, so ${label} is still ${add ? 'on' : 'off'} your watchlist. Say undo again to retry.`,
+    );
+  }
+  if (add) {
+    return capSpoken(
+      `Removed ${label} from your watchlist again.${r.onPlex === false ? ' Seerr may already have requested it.' : ''}`,
+    );
+  }
+  return capSpoken(`Put ${label} back on your watchlist.${r.onPlex === false ? ' Seerr will request it.' : ''}`);
+}
+
+/** The `undo_last_change` read-back (D-15; a Watchlist Change: DESIGN-051 D-04). */
 export function formatUndoResult(r: UndoView): string {
   if (!r.undone) return 'Nothing to undo from the past day.';
+  if (r.action === 'watchlist_add' || r.action === 'watchlist_remove') return formatWatchlistUndo(r);
   const label = titleAndYear(r.title, r.year);
   if (r.action === 'not_interested') return capSpoken(`Undone. ${label} can be suggested again.`);
   if (r.action === 'not_mine') return capSpoken(`Undone. ${label} counts as your viewing again.`);
@@ -513,6 +570,112 @@ export function formatUndoResult(r: UndoView): string {
     default:
       return capSpoken(`Undone. ${capitalize(subject)}${through} is no longer marked as watched.`);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// watchlist, set_watchlist (DESIGN-051 D-02)
+
+/** One title of the `watchlist` answer. */
+export interface WatchlistItemView {
+  kind: WatchKind;
+  title: string;
+  year: number | null;
+  /** The D-02 rule (recommend's, DESIGN-049 D-17). */
+  onPlex: boolean;
+  /** `started`: the Title State is in progress or stalled; `watched`: Ever Watched and not unfinished. */
+  progress: 'started' | 'watched' | null;
+}
+
+function watchlistItemSentence(it: WatchlistItemView): string {
+  return `${sentence([
+    spokenTitle(it.title),
+    yearAndKind(it.year, it.kind),
+    it.onPlex ? 'on Plex' : 'not on Plex yet',
+    it.progress,
+  ])}.`;
+}
+
+/**
+ * `watchlist` (DESIGN-051 D-02): "Your watchlist has 150 titles. Newest first: Slow Horses, a 2022 show, on
+ * Plex, started. The Toxic Avenger, a 2023 movie, not on Plex yet. … And 145 more." `items` is the page (after
+ * `offset`), `total` the whole list of the asked kind. With a kind: "Your watchlist has 61 shows." Empty: "Your
+ * watchlist is empty." Past the end: "That's the end of your watchlist." A later page names where it starts.
+ */
+export function formatWatchlist(
+  items: readonly WatchlistItemView[],
+  opts: { total: number; offset: number; kind?: WatchKind | 'any' | null },
+): string {
+  const kind = opts.kind === 'show' || opts.kind === 'movie' ? opts.kind : null;
+  const noun = kind ?? 'title';
+  const total = Math.max(0, Math.floor(opts.total));
+  const offset = Math.max(0, Math.floor(opts.offset));
+  if (total === 0) return kind ? `Your watchlist has no ${noun}s.` : 'Your watchlist is empty.';
+  if (items.length === 0) return "That's the end of your watchlist.";
+  const lead = `Your watchlist has ${total === 1 ? `one ${noun}` : `${countWord(total)} ${noun}s`}.`;
+  const first =
+    offset === 0
+      ? 'Newest first: '
+      : items.length === 1
+        ? `Number ${offset + 1}: `
+        : `Numbers ${offset + 1} to ${offset + items.length}: `;
+  const sentences = items.map((it, i) => `${i === 0 ? first : ''}${watchlistItemSentence(it)}`);
+  return capSpokenList({ lead, items: sentences, more: Math.max(0, total - offset - items.length) });
+}
+
+/** What a `set_watchlist` call did (DESIGN-051 D-02 / D-03). */
+export type WatchlistChangeView =
+  | { status: 'added'; kind: WatchKind; title: string; year: number | null; onPlex: boolean }
+  | { status: 'removed'; kind: WatchKind; title: string; year: number | null }
+  /** The title was already in the asked state: nothing written, nothing sent. */
+  | { status: 'unchanged'; action: 'add' | 'remove'; kind: WatchKind; title: string; year: number | null }
+  /** Resolved, but plex.tv's catalog has no such title. */
+  | { status: 'not_in_catalog'; kind: WatchKind; title: string; year: number | null }
+  /**
+   * PLAN-071 ruling 6: the title's plex guid and its external-id match named different catalog titles (or the
+   * match found none), so nothing was written.
+   */
+  | { status: 'unconfirmed'; kind: WatchKind; title: string; year: number | null }
+  /** Plex could not be reached (or refused the change). */
+  | { status: 'failed' };
+
+/**
+ * The `set_watchlist` read-back (DESIGN-051 D-02). The title and year are plex.tv's (the discover match), so
+ * the agent can check the change: "Added The Matrix (1999 movie) to your watchlist. It's on Plex." / "Added Dune:
+ * Part Three (2026 movie) to your watchlist. It isn't on Plex yet, so Seerr will request it." (ADR-092 C-03).
+ */
+export function formatWatchlistChange(v: WatchlistChangeView): string {
+  if (v.status === 'failed') return "I couldn't reach Plex, so your watchlist didn't change.";
+  const label = titleYearKind(v.title, v.year, v.kind);
+  switch (v.status) {
+    case 'added':
+      return capSpoken(
+        `Added ${label} to your watchlist. ${v.onPlex ? "It's on Plex." : "It isn't on Plex yet, so Seerr will request it."}`,
+      );
+    case 'removed':
+      return capSpoken(`Removed ${label} from your watchlist.`);
+    case 'unchanged':
+      return capSpoken(
+        v.action === 'add' ? `${label} is already on your watchlist.` : `${label} isn't on your watchlist.`,
+      );
+    case 'unconfirmed':
+      return capSpoken(`I couldn't confirm ${label} in Plex's catalog, so your watchlist didn't change.`);
+    default:
+      return capSpoken(`I found ${label} but not in Plex's catalog, so your watchlist didn't change.`);
+  }
+}
+
+/**
+ * A `set_watchlist` remove resolves only among the titles on the watchlist (DESIGN-051 D-03 step 2), so its
+ * not-found answer says where it looked: "I couldn't find X on your watchlist."
+ */
+export function formatNotOnWatchlist(query: string, opts: { kind?: WatchKind | null } = {}): string {
+  const what = opts.kind ? `a ${opts.kind} called ` : '';
+  return capSpoken(`I couldn't find ${what}${spokenQuery(query)} on your watchlist.`);
+}
+
+/** DESIGN-051 D-02 — `watchlist` and `set_watchlist` for a principal that is not the Server Owner. */
+export function formatWatchlistNotSetUp(): string {
+  return "Your Plex watchlist isn't set up for your account yet.";
 }
 
 // ---------------------------------------------------------------------------------------------------

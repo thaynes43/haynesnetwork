@@ -1292,10 +1292,18 @@ export type WatchTitleKind = (typeof WATCH_TITLE_KINDS)[number];
 export const WATCH_SHOW_STATUSES = ['continuing', 'ended'] as const;
 export type WatchShowStatus = (typeof WATCH_SHOW_STATUSES)[number];
 
-// watch_marks.action — Watch Marks (T-248). `watched` is the ONLY action that writes Plex (owner ruling
-// 2026-09-23, "Mark it in Plex too"); `not_interested` and `not_mine` NEVER call Plex — the children watch on
-// the owner account and an un-mark would erase their progress (ADR-088).
-export const WATCH_MARK_ACTIONS = ['watched', 'not_interested', 'not_mine'] as const;
+// watch_marks.action — Watch Marks (T-248). `watched` is the ONLY statement that writes Plex watched state
+// (owner ruling 2026-09-23, "Mark it in Plex too"); `not_interested` and `not_mine` NEVER call Plex — the
+// children watch on the owner account and an un-mark would erase their progress (ADR-088).
+// ADR-092 / DESIGN-051 D-07 (PLAN-071, migration 0080) — `watchlist_add` / `watchlist_remove`: a Watchlist
+// Change (T-260), the owner's plex.tv watchlist changed through `set_watchlist` (never view state, never a
+// library). They are NOT watch statements: only the watchlist overlay and undo read them, and every reader of
+// the statements (Ever Watched, exclusions, the Taste Profile, dismissals, Unfinished, seeds) ignores them.
+export const WATCH_STATEMENT_ACTIONS = ['watched', 'not_interested', 'not_mine'] as const;
+export type WatchStatementAction = (typeof WATCH_STATEMENT_ACTIONS)[number];
+export const WATCH_WATCHLIST_ACTIONS = ['watchlist_add', 'watchlist_remove'] as const;
+export type WatchWatchlistAction = (typeof WATCH_WATCHLIST_ACTIONS)[number];
+export const WATCH_MARK_ACTIONS = [...WATCH_STATEMENT_ACTIONS, ...WATCH_WATCHLIST_ACTIONS] as const;
 export type WatchMarkAction = (typeof WATCH_MARK_ACTIONS)[number];
 
 // watch_marks.scope — what a mark covers (DESIGN-049 D-14 step 1): a movie; a whole show; one season; one
@@ -1305,7 +1313,8 @@ export type WatchMarkScope = (typeof WATCH_MARK_SCOPES)[number];
 
 // watch_marks.plex_result — the Plex write-back outcome (D-14 steps 4/6): inserted `pending` before any
 // write, finalized `written` / `partial` / `failed`, or `not_on_plex` (no holding server — history only).
-// `none` = a mark that never writes Plex (`not_interested` / `not_mine`).
+// `none` = a mark that never writes Plex (`not_interested` / `not_mine`). A Watchlist Change (ADR-092) is
+// `pending` → `written` | `failed` (a `failed` one changed nothing: the overlay and undo skip it).
 export const WATCH_MARK_PLEX_RESULTS = [
   'pending',
   'written',

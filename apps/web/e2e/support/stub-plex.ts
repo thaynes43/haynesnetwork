@@ -9,7 +9,10 @@
 // ADR-088 / DESIGN-049 (PLAN-068 S3) — it also serves the OWNER's watch state for the Watch Companion: watch
 // fields on section items / metadata / children, `/library/metadata/{rk}/allLeaves`, `/library/all?guid=`,
 // section-listing filters (type / unwatched / inProgress, Start/Size paging), the plex.tv discover watchlist
-// (`/library/sections/watchlist/all` — PLEX_DISCOVER_URL points here), and the GET-shaped watched-state
+// (`/library/sections/watchlist/all` — PLEX_DISCOVER_URL points here; ADR-092 / DESIGN-051 D-11: kept in memory
+// and changed by `PUT /actions/addToWatchlist|removeFromWatchlist?ratingKey=`, with the external-id match
+// `/library/metadata/matches?type=&guid=` and `/library/metadata/<id>/userState`, so an add, a list and an undo
+// round-trip under `pnpm dev:local`), and the GET-shaped watched-state
 // writes `/:/scrobble` + `/:/unscrobble`, which are RECORDED in `calls` and flip an in-memory watch map that
 // every read overlays — so a mark → re-read round-trip behaves like a real server. Only the WATCH dataset
 // below carries watch state; every pre-existing fixture item reads exactly as before.
@@ -509,6 +512,22 @@ const WATCHLIST: StubSectionItem[] = [
 /** Plex metadata `type` numbers the section-listing `type=` filter accepts. */
 const PLEX_TYPE_NUMBERS: Record<string, string> = { '1': 'movie', '2': 'show', '3': 'season', '4': 'episode' };
 
+/**
+ * ADR-092 / DESIGN-051 D-11 — the discover catalog the stub's `library/metadata/matches` answers from: every
+ * watchlist title and every library title whose guid is a `plex://movie|show/<24 hex>` (its discover id is the
+ * suffix, as live), once each.
+ */
+function discoverCatalog(): StubSectionItem[] {
+  const out = new Map<string, StubSectionItem>();
+  const library = Object.values(WATCH_SECTION_CONTENTS).flatMap((bySection) => Object.values(bySection ?? {}).flat());
+  for (const item of [...WATCHLIST, ...library]) {
+    const m = /^plex:\/\/(movie|show)\/([0-9a-f]{24})$/.exec(item.guid ?? '');
+    if (!m || out.has(m[2]!)) continue;
+    out.set(m[2]!, { ...item, ratingKey: m[2]! });
+  }
+  return [...out.values()];
+}
+
 /** A section's items: the canned fixtures plus the watch dataset. */
 function sectionItems(slug: Slug, sectionKey: string): StubSectionItem[] {
   return [
@@ -668,15 +687,27 @@ export async function startStubPlex(): Promise<StubPlexServer> {
     watch.clear();
     for (const [key, state] of Object.entries(WATCH_SEED)) watch.set(key, { ...state });
   };
+  // ADR-092 / DESIGN-051 D-11 — the owner's plex.tv watchlist (newest first) and when each title was added.
+  const catalog = discoverCatalog();
+  let watchlist: StubSectionItem[] = [];
+  const watchlistedAt = new Map<string, number>();
+  const seedWatchlist = () => {
+    watchlist = WATCHLIST.map((item) => ({ ...item }));
+    watchlistedAt.clear();
+    const now = Math.floor(Date.now() / 1000);
+    watchlist.forEach((item, i) => watchlistedAt.set(item.ratingKey, now - (i + 1) * 86_400));
+  };
   const resetState = () => {
     calls.length = 0;
     shares.clear();
     ownerEmail = STUB_PLEX_OWNER.email;
     seedFixtures();
     seedWatch();
+    seedWatchlist();
   };
   seedFixtures();
   seedWatch();
+  seedWatchlist();
 
   /**
    * Overlay the watch map the way Plex reports it: a leaf (movie/episode) gains viewCount only once
@@ -839,9 +870,61 @@ export async function startStubPlex(): Promise<StubPlexServer> {
             librarySectionID: 'watchlist',
             identifier: 'tv.plex.provider.discover',
             ...containerPage(
-              WATCHLIST.map((item) => ({ ...item })),
+              watchlist.map((item) => ({ ...item })),
               params,
             ),
+          },
+        });
+      }
+      // ADR-092 / DESIGN-051 D-11 — the discover provider's watchlist writes, its external-id match and its
+      // per-title userState, all against the in-memory watchlist above. Matched BEFORE the generic
+      // `/library/metadata/<key>` routes below (which would take `matches` for a key). Any owner token (all
+      // three are the owner's account), like the listing.
+      if ((path === '/actions/addToWatchlist' || path === '/actions/removeFromWatchlist') && method === 'PUT') {
+        if (!tokenStr || !SLUG_BY_TOKEN.has(tokenStr)) return json(res, 401, { error: 'unauthorized' });
+        const id = url.searchParams.get('ratingKey') ?? '';
+        const item = catalog.find((c) => c.ratingKey === id);
+        if (!item) {
+          return json(res, 404, {
+            Error: { error: 'Not Found', message: `MetadataItem for ${id} not found!`, statusCode: 404 },
+          });
+        }
+        calls.push({ method, path, machineId: viewer ?? '', body: { ratingKey: id } });
+        const on = watchlist.some((w) => w.ratingKey === id);
+        if (path === '/actions/addToWatchlist' && !on) {
+          watchlist = [{ ...item }, ...watchlist];
+          watchlistedAt.set(id, Math.floor(Date.now() / 1000));
+        }
+        if (path === '/actions/removeFromWatchlist' && on) {
+          watchlist = watchlist.filter((w) => w.ratingKey !== id);
+          watchlistedAt.delete(id);
+        }
+        return json(res, 200, { MediaContainer: { size: 0 } });
+      }
+      if (path === '/library/metadata/matches') {
+        if (!tokenStr || !SLUG_BY_TOKEN.has(tokenStr)) return json(res, 401, { error: 'unauthorized' });
+        const type = PLEX_TYPE_NUMBERS[url.searchParams.get('type') ?? ''];
+        if (type !== 'movie' && type !== 'show') return json(res, 400, { error: 'type is required' });
+        const guid = url.searchParams.get('guid') ?? '';
+        const Metadata = catalog
+          .filter((c) => c.type === type && (c.Guid ?? []).some((g) => g.id === guid))
+          .map((c) => ({ type: c.type, title: c.title, year: c.year, ratingKey: c.ratingKey, guid: c.guid, Guid: c.Guid ?? [] }));
+        return json(res, 200, {
+          MediaContainer: { size: Metadata.length, identifier: 'tv.plex.provider.metadata', ...(Metadata.length > 0 ? { Metadata } : {}) },
+        });
+      }
+      const userStateMatch = path.match(/^\/library\/metadata\/([0-9a-f]{24})\/userState$/);
+      if (userStateMatch) {
+        if (!tokenStr || !SLUG_BY_TOKEN.has(tokenStr)) return json(res, 401, { error: 'unauthorized' });
+        const id = userStateMatch[1]!;
+        const item = catalog.find((c) => c.ratingKey === id);
+        if (!item) return json(res, 404, { Error: { error: 'Not Found', statusCode: 404 } });
+        const at = watchlistedAt.get(id);
+        // The one-element-array form (both it and a bare object were seen live).
+        return json(res, 200, {
+          MediaContainer: {
+            size: 1,
+            UserState: [{ ratingKey: id, type: item.type, ...(at !== undefined ? { watchlistedAt: at } : {}) }],
           },
         });
       }

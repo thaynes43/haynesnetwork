@@ -31,6 +31,7 @@ import {
   episodeObsFromLeaves,
   eventObs,
   isKidsTitle,
+  isWatchlistAction,
   keysOf,
   movieCounts,
   movieObsFromItem,
@@ -57,7 +58,7 @@ import {
   type UndoView,
   type WatchKind,
 } from '@hnet/watch';
-import { and, desc, eq, gt, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from '../db-client';
 import { assertTrackedWatchAccount } from './accounts';
 import {
@@ -65,9 +66,11 @@ import {
   plexErrorText,
   settleLimited,
   type WatchPlexClients,
+  type WatchPlexReaders,
 } from './plex';
 import { resolveWatchTitle, type ResolvedWatchTitle, type WatchTmdbSearch } from './resolve';
 import { upsertWatchTitles, type WatchTitleWrite } from './titles';
+import { revertWatchlistChange, titleOnPlex } from './watchlist';
 
 /**
  * Who a mark is for and who made it: the MCP principal — the owner row for the hop (D-03), the token user's own
@@ -97,6 +100,12 @@ export type WatchPhases = Partial<Record<'resolve' | 'revalidate' | 'plex_write'
 export const MARK_REPLAY_SECONDS = 10 * 60;
 /** D-15: undo reaches back this far. */
 export const UNDO_WINDOW_SECONDS = 24 * 60 * 60;
+/**
+ * PLAN-071 ruling 5 (all marks): an undo this soon after the account's last COMPLETED undo, with no mark made
+ * since, is a retry of that undo (Home Assistant's trailing `tools/list` failure, a ChatGPT retry): it repeats the
+ * previous answer and reverts nothing, so a retry never cascades into older changes.
+ */
+export const UNDO_REPLAY_SECONDS = 30;
 /** D-14 step 5: at most this many Plex writes in flight. */
 export const MARK_WRITE_CONCURRENCY = 6;
 const QUERY_MAX = 200;
@@ -514,6 +523,7 @@ export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOut
     query: input.query,
     kind: input.kind ?? null,
     tmdb: input.tmdb ?? null,
+    now,
   });
   if (input.phases) input.phases.resolve = Date.now() - resolveStart;
   if (resolution.status === 'ambiguous') return { status: 'ambiguous', options: resolution.options };
@@ -864,6 +874,7 @@ export async function dismissTitle(input: DismissTitleInput): Promise<WatchMarkO
     query: input.query,
     kind: input.kind ?? null,
     tmdb: input.tmdb ?? null,
+    now,
   });
   if (input.phases) input.phases.resolve = Date.now() - resolveStart;
   if (resolution.status === 'ambiguous') return { status: 'ambiguous', options: resolution.options };
@@ -910,9 +921,57 @@ export async function dismissTitle(input: DismissTitleInput): Promise<WatchMarkO
 export interface UndoLastChangeInput {
   db?: DbClient;
   plex: WatchPlexClients;
+  /** The discover reads on the short live-read budget, for a Watchlist Change's re-read (DESIGN-051 D-04). */
+  reads?: WatchPlexReaders | null;
   actor: WatchMarkActor;
   now?: Date;
   phases?: WatchPhases;
+}
+
+/** The answer of undoing `mark` (a completed revert: its `revert_result` is `written` or `none`). */
+async function undoViewOf(
+  db: DbClient,
+  acct: number,
+  mark: WatchMarkRow,
+  revertResult: WatchMarkRevertResult,
+  episodes: number,
+): Promise<UndoView> {
+  const base = {
+    undone: true as const,
+    action: mark.action,
+    kind: mark.kind,
+    title: mark.title,
+    year: mark.year,
+    scope: mark.scope,
+    season: mark.season,
+    episode: mark.episode,
+  };
+  if (isWatchlistAction(mark.action)) {
+    // DESIGN-051 D-04: the Seerr sentences need the D-02 "on Plex" rule.
+    return { ...base, revertResult, episodes: 0, onPlex: revertResult === 'written' ? await titleOnPlex(db, acct, mark) : null };
+  }
+  return { ...base, revertResult: mark.action === 'watched' ? revertResult : null, episodes };
+}
+
+/**
+ * PLAN-071 ruling 5 — the replay of a retried undo: the account's last completed undo, when it is under
+ * {@link UNDO_REPLAY_SECONDS} old and no mark was made since. Null otherwise.
+ */
+async function findUndoReplay(db: DbClient, acct: number, now: Date): Promise<WatchMarkRow | null> {
+  const [last] = await db
+    .select()
+    .from(watchMarks)
+    .where(and(eq(watchMarks.plexAccountId, acct), isNotNull(watchMarks.revertedAt)))
+    .orderBy(desc(watchMarks.revertedAt), desc(watchMarks.id))
+    .limit(1);
+  const at = last?.revertedAt?.getTime();
+  if (!last || at === undefined || now.getTime() - at >= UNDO_REPLAY_SECONDS * 1000 || at > now.getTime()) return null;
+  const [newer] = await db
+    .select({ id: watchMarks.id })
+    .from(watchMarks)
+    .where(and(eq(watchMarks.plexAccountId, acct), gt(watchMarks.createdAt, last.revertedAt as Date)))
+    .limit(1);
+  return newer ? null : last;
 }
 
 interface PlannedRevert {
@@ -963,8 +1022,11 @@ export function planReverts(
 }
 
 /**
- * `undo_last_change` (D-15): revert the owner's newest unreverted, COMPLETED mark of the last 24 hours (a
- * `pending` mark is in flight or crashed: its `flipped` is only the plan, so it is never picked). A
+ * `undo_last_change` (D-15; a Watchlist Change: DESIGN-051 D-04): revert the owner's newest unreverted,
+ * COMPLETED mark of the last 24 hours (a `pending` mark is in flight or crashed: its `flipped` is only the plan,
+ * so it is never picked). A Watchlist Change is reverted by the inverse watchlist call; one that never reached
+ * Plex (`failed`) is still picked, makes no call and closes as `none` (PLAN-071 ruling 3). An undo within 30
+ * seconds of the last completed undo, with no mark made since, repeats that undo's answer (ruling 5). A
  * `watched` mark unscrobbles exactly `flipped` (collapsed to season keys where `flipped` covers all of a
  * season, never to the show key — D-26) and writes the Title State through, dropping a show's counters on
  * every server an unscrobble went to, so the next sync re-reads it there even when the unscrobbles all
@@ -982,6 +1044,17 @@ export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchM
   const db = resolveDb(input.db);
   const acct = input.actor.plexAccountId;
   const role = await assertTrackedWatchAccount(db, acct);
+  // PLAN-071 ruling 5: a retried undo repeats its answer and reverts nothing older.
+  const replay = await findUndoReplay(db, acct, now);
+  if (replay) {
+    const revert = replay.revertResult ?? 'none';
+    return {
+      status: 'done',
+      view: await undoViewOf(db, acct, replay, revert, revert === 'written' ? replay.flipped.length : 0),
+      markId: replay.id,
+      replayed: true,
+    };
+  }
   const since = new Date(now.getTime() - UNDO_WINDOW_SECONDS * 1000);
   const [mark] = await db
     .select()
@@ -997,6 +1070,25 @@ export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchM
     .orderBy(desc(watchMarks.createdAt), desc(watchMarks.id))
     .limit(1);
   if (!mark) return { status: 'done', view: { undone: false }, markId: null, replayed: false };
+
+  // ADR-092 / DESIGN-051 D-04 — a Watchlist Change: the inverse watchlist call (none for a change that never
+  // reached Plex — PLAN-071 ruling 3 — or for a non-owner's row). No Title State is involved.
+  if (isWatchlistAction(mark.action)) {
+    const plexStart = Date.now();
+    const out = await revertWatchlistChange({ plex: input.plex, reads: input.reads ?? null, mark, isOwner: role === 'owner' });
+    if (input.phases && mark.plexResult === 'written') input.phases.plex_write = Date.now() - plexStart;
+    const complete = out.revertResult === 'written' || out.revertResult === 'none';
+    await db
+      .update(watchMarks)
+      .set(complete ? { revertedAt: now, revertResult: out.revertResult } : { revertResult: out.revertResult })
+      .where(and(eq(watchMarks.id, mark.id), isNull(watchMarks.revertedAt)));
+    return {
+      status: 'done',
+      view: await undoViewOf(db, acct, mark, out.revertResult, 0),
+      markId: mark.id,
+      replayed: false,
+    };
+  }
 
   const identity = markIdentity(mark);
   // Plex write-back is owner-only (ADR-091 C-04): a non-owner's mark flipped nothing, and even a row that claims

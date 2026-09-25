@@ -49,13 +49,18 @@ export interface WatchMarkFlip {
  *   that went from unwatched to watched, so `undo_last_change` unscrobbles precisely those and nothing
  *   the owner (or the children, who share the account) had already watched.
  * - `not_interested` and `not_mine` NEVER touch Plex (`plex_result = 'none'`).
+ * - ADR-092 / DESIGN-051 D-07 (migration 0080) — `watchlist_add` / `watchlist_remove`, a Watchlist Change
+ *   (T-260): the owner's plex.tv watchlist changed by `set_watchlist` (`scope` = the kind, `plex_guid` =
+ *   `plex://<kind>/<discover id>`, `flipped = []`, `plex_result` `pending` → `written` | `failed`). Not a watch
+ *   statement: only the watchlist overlay and undo read them.
  *
  * The row carries the resolved identity (`title_key` plus the external ids) so a later re-key of the
  * watch_titles row cannot orphan it. `query` is what was asked, trimmed to 200 characters by the writer.
  * `consumer` names the MCP consumer from config (`hop` in v1), deliberately not a CHECK — a second consumer
  * is a config change (D-03). The rows ARE the audit trail (no permission_audit coupling).
  *
- * Written ONLY by the @hnet/domain mark writers (markWatched / dismissTitle / undoLastChange) — guard-listed.
+ * Written ONLY by the @hnet/domain mark writers (markWatched / dismissTitle / changeWatchlist / undoLastChange)
+ * — guard-listed.
  * Updated only to finalize `plex_result` and to record a revert; never deleted. The only NON-REBUILDABLE
  * table of the five (OPS-015 §7), hence the ON DELETE RESTRICT account FK below.
  */

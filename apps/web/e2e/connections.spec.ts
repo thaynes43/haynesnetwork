@@ -97,7 +97,7 @@ test.describe('public MCP connectors (ADR-091)', () => {
       ),
     ).toBeVisible();
     await expect(page.getByText('Sends you back to connector.e2e.test.')).toBeVisible();
-    await expect(page.getByText('See what you have watched and what is unfinished')).toBeVisible();
+    await expect(page.getByText('See what you have watched, what is unfinished, and your watchlist')).toBeVisible();
     await expect(page.getByText('Mark titles watched or dismissed in your history')).toBeVisible();
     await expect(page.getByText('Stay connected without signing in again')).toBeVisible();
     // ADR-015: both buttons reserve the same width.

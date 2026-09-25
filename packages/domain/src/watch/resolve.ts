@@ -85,13 +85,13 @@ function yearOf(date: string | null | undefined): number | null {
 /**
  * D-13's last resort. Movies and shows only (people are dropped), the `kind` filter applies, and a hit is
  * accepted only on an EXACT normalized title match — or the year-tag-dropped form when the spoken year
- * hint is the hit's year ("dark matter 2024").
+ * hint is the hit's year ("dark matter 2024"). Every accepted hit, in TMDB's order, one per (kind, id).
  */
 async function fromTmdb(
   tmdb: WatchTmdbSearch,
   query: string,
   kind: WatchKind | null,
-): Promise<ResolvedWatchTitle | null> {
+): Promise<ResolvedWatchTitle[]> {
   const q = normalizeTitle(query);
   // Search without a trailing year ("dark matter 2024", "Dune (2021)"): TMDB's multi search reads it as a
   // title word. The exact-match check below still weighs the year.
@@ -102,6 +102,7 @@ async function fromTmdb(
       .replace(/\s+(?:19|20)\d{2}$/, '')
       .trim() || query.trim();
   const page = await tmdb.searchMulti(term);
+  const hits: ResolvedWatchTitle[] = [];
   for (const r of page.results) {
     const k: WatchKind | null = r.media_type === 'tv' ? 'show' : r.media_type === 'movie' ? 'movie' : null;
     if (k === null || (kind && k !== kind)) continue;
@@ -111,8 +112,9 @@ async function fromTmdb(
     const score = titleMatchScore(q, title);
     const exact = score === 1 || (score === 0.95 && q.year !== null && q.year === year);
     if (!exact) continue;
+    if (hits.some((h) => h.kind === k && h.ids.tmdbId === r.id)) continue;
     const ids = { plexGuid: null, tmdbId: r.id, tvdbId: null, imdbId: null };
-    return {
+    hits.push({
       status: 'resolved',
       source: 'tmdb',
       kind: k,
@@ -123,14 +125,37 @@ async function fromTmdb(
       titleRowId: null,
       mediaItemIds: [],
       members: [],
-    };
+    });
   }
-  return null;
+  return hits;
+}
+
+/** A TMDB hit as an ambiguity option (title, year and kind are what the answer lists). */
+function tmdbOption(t: ResolvedWatchTitle): PoolEntry {
+  return {
+    titleKey: t.titleKey,
+    kind: t.kind,
+    title: t.title,
+    year: t.year,
+    inHistory: false,
+    ids: t.ids,
+    source: 'tmdb',
+    titleRowId: null,
+    mediaItemId: null,
+  };
 }
 
 /**
  * Resolve `query` for the owner (D-13). The TMDB fallback runs only for "not found" and only when a
  * client is given; a TMDB failure answers "not found" (the voice turn must not fail on it).
+ *
+ * ADR-092 / DESIGN-051 (PLAN-071):
+ * - `pool: 'watchlist'` — a `set_watchlist` remove: the pool is only the overlaid watchlist plus the titles a
+ *   Watchlist Change removed in the last 10 minutes (so a retried remove finds the title and answers "isn't on
+ *   your watchlist"), and there is no TMDB fallback (D-03 step 2).
+ * - `tmdbAmbiguity: 'ask'` — a `set_watchlist` add, which can download the title (ADR-092 C-07): EVERY exact TMDB
+ *   hit of the eligible kind(s) counts, and more than one distinct title is ambiguous (listed with their years),
+ *   never the first hit. The mark flows keep D-13's first exact hit.
  */
 export async function resolveWatchTitle(input: {
   db?: DbClient;
@@ -138,19 +163,32 @@ export async function resolveWatchTitle(input: {
   query: string;
   kind?: WatchKind | null;
   tmdb?: WatchTmdbSearch | null;
+  /** Bounds the watchlist overlay's look-back when nothing is cached (DESIGN-051 D-05). Default: the clock. */
+  now?: Date;
+  pool?: 'all' | 'watchlist';
+  tmdbAmbiguity?: 'first' | 'ask';
 }): Promise<WatchResolution> {
   const db = resolveDb(input.db);
   const kind = input.kind ?? null;
-  const pool = await selectResolverPool(db, input.plexAccountId, { kind });
+  const watchlistOnly = input.pool === 'watchlist';
+  const pool = await selectResolverPool(db, input.plexAccountId, {
+    kind,
+    now: input.now ?? new Date(),
+    ...(watchlistOnly ? { only: 'watchlist' as const } : {}),
+  });
   const r = resolveTitle(input.query, pool, { kind });
   if (r.status === 'resolved') {
     const members = r.sameTitle as PoolEntry[];
     return fromPool(members, r.candidate as PoolEntry);
   }
   if (r.status === 'ambiguous') return { status: 'ambiguous', options: r.options as PoolEntry[] };
-  if (input.tmdb) {
+  if (input.tmdb && !watchlistOnly) {
     try {
-      const hit = await fromTmdb(input.tmdb, input.query, kind);
+      const hits = await fromTmdb(input.tmdb, input.query, kind);
+      if (input.tmdbAmbiguity === 'ask' && hits.length > 1) {
+        return { status: 'ambiguous', options: hits.map(tmdbOption) };
+      }
+      const hit = hits[0];
       if (hit) return hit;
     } catch {
       // TMDB down or unconfigured upstream: the pool said not found, so the answer stays not found.

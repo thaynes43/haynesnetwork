@@ -1,8 +1,8 @@
 // ADR-087 / DESIGN-049 D-06 — one log line per tool call: `[mcp] tool_called {"tool","consumer","ms","ok",
 // "chars"}` (+ `"code"` on failure); `[mcp] slow_call` with the slowest phase over 2 s;
-// `[mcp] revalidate_timeout` when D-11 ran out of budget. Arguments and results are NEVER logged — they are
-// the owner's viewing history.
-import type { WatchPhases } from '@hnet/domain';
+// `[mcp] revalidate_timeout` when D-11 ran out of budget; `[mcp] watchlist_changed` per `set_watchlist` call
+// (DESIGN-051 D-10). Arguments and results are NEVER logged — they are the owner's viewing history.
+import type { WatchlistChangeResult, WatchPhases } from '@hnet/domain';
 
 export const SLOW_CALL_MS = 2_000;
 
@@ -39,4 +39,22 @@ export function errorCode(error: unknown): string {
     return (error as { code: string }).code;
   }
   return error instanceof Error ? error.name : 'unknown';
+}
+
+/**
+ * ADR-092 / DESIGN-051 D-10 (PLAN-071 ruling 9) — one line per `set_watchlist` call: exactly the consumer, the
+ * action, the kind, the result and whether the title is on Plex. Never a title, a query or a token (DESIGN-049
+ * D-06: arguments and results are the owner's viewing history).
+ */
+export interface WatchlistChangedLog {
+  consumer: string;
+  action: 'add' | 'remove';
+  kind: 'show' | 'movie' | null;
+  result: WatchlistChangeResult;
+  onPlex: boolean | null;
+}
+
+export function watchlistChangedLine(entry: WatchlistChangedLog): string {
+  const { consumer, action, kind, result, onPlex } = entry;
+  return `[mcp] watchlist_changed ${JSON.stringify({ consumer, action, kind, result, onPlex })}`;
 }

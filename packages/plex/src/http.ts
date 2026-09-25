@@ -127,9 +127,11 @@ export class PlexHttp {
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     base: string,
     options: PlexRequestOptions = {},
+    /** Retry like a GET (a write that is idempotent on the server's state — see requestIdempotentPut). */
+    idempotent = false,
   ): Promise<Response> {
     const url = this.buildUrl(base, options.query);
-    const attempts = method === 'GET' ? 1 + GET_RETRIES : 1;
+    const attempts = method === 'GET' || idempotent ? 1 + GET_RETRIES : 1;
     let lastError: unknown;
     for (let i = 0; i < attempts; i++) {
       if (i > 0) await sleep(this.retryDelayMs);
@@ -221,5 +223,17 @@ export class PlexHttp {
   async requestIdempotentGet(base: string, options: PlexRequestOptions = {}): Promise<void> {
     const response = await this.request('GET', base, options);
     await response.text().catch(() => ''); // drain — PMS answers an empty 200
+  }
+
+  /**
+   * ADR-092 / DESIGN-051 D-06 (PLAN-071 ruling 4) — a PUT that is idempotent on the account's state: the plex.tv
+   * discover provider's `addToWatchlist` / `removeFromWatchlist` (verified live 2026-09-25: a repeat add and
+   * removing an absent title both answer 200). It keeps the GET retry policy (up to 3 attempts on a timeout, a
+   * network failure or a 502/503/504) — a retry after an ambiguous timeout can only re-assert the same state —
+   * with the same worst case, 3 × timeoutMs + 2 × retryDelayMs. Only the confined write client uses it.
+   */
+  async requestIdempotentPut(base: string, options: PlexRequestOptions = {}): Promise<void> {
+    const response = await this.request('PUT', base, options, true);
+    await response.text().catch(() => ''); // drain — `{"MediaContainer":{"size":0}}`
   }
 }

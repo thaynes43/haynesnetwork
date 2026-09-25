@@ -21,8 +21,10 @@ import {
   answerMarkWatched,
   answerRecentHistory,
   answerRecommend,
+  answerSetWatchlist,
   answerUndo,
   answerUnfinished,
+  answerWatchlist,
   answerWatchStatus,
   type AnswerContext,
   type McpDeps,
@@ -37,6 +39,7 @@ import {
   slowCallLine,
   slowestPhase,
   toolCalledLine,
+  watchlistChangedLine,
 } from './log';
 import {
   INSTRUCTIONS,
@@ -54,8 +57,10 @@ const ANSWERS: Record<WatchToolName, Answer> = {
   recommend: answerRecommend as Answer,
   watch_status: answerWatchStatus as Answer,
   recent_history: answerRecentHistory as Answer,
+  watchlist: answerWatchlist as Answer,
   mark_watched: answerMarkWatched as Answer,
   dismiss: answerDismiss as Answer,
+  set_watchlist: answerSetWatchlist as Answer,
   undo_last_change: answerUndo as Answer,
 };
 
@@ -106,15 +111,17 @@ export async function runTool(
   const finish = (
     result: CallToolResult,
     code?: string,
-    revalidateTimedOut = false,
+    ctx?: Pick<AnswerContext, 'revalidateTimedOut' | 'watchlistChanged'>,
   ): CallToolResult => {
     if (finished) return result;
     finished = true;
     signal?.removeEventListener('abort', onAbort);
     const ms = Date.now() - started;
     const chars = result.content.reduce((n, c) => n + (c.type === 'text' ? c.text.length : 0), 0);
-    if (revalidateTimedOut)
+    if (ctx?.revalidateTimedOut === true)
       deps.log(revalidateTimeoutLine({ tool: tool.name, consumer: consumer.name }));
+    // DESIGN-051 D-10: logged here, with the call's one `tool_called` line — so abandoned work never logs it.
+    if (ctx?.watchlistChanged) deps.log(watchlistChangedLine(ctx.watchlistChanged));
     deps.log(
       toolCalledLine({
         tool: tool.name,
@@ -147,7 +154,7 @@ export async function runTool(
     if (!account) return finish(text(notServed(consumer)));
     const ctx: AnswerContext = { deps, account, consumer, phases };
     const answer = await ANSWERS[tool.name as WatchToolName](ctx, parsed.data as never);
-    return finish(text(answer), undefined, ctx.revalidateTimedOut === true);
+    return finish(text(answer), undefined, ctx);
   } catch (error) {
     // The domain refuses an account that is no longer tracked (or no longer the owner) between the read above
     // and the flow's own check — still the ordinary answer, never isError.

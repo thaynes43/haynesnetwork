@@ -87,8 +87,8 @@ describe('the consent page (D-05 step 6)', () => {
       (e) => (e.props as { className?: string }).className === 'oauth-scopes__item',
     );
     expect(items.map((e) => textOf(e))).toEqual([
-      'See what you have watched and what is unfinished',
-      'Mark titles watched or dismissed, and change them in Plex',
+      'See what you have watched, what is unfinished, and your watchlist',
+      'Mark titles watched or dismissed, update Plex to match, and add or remove titles on your Plex watchlist',
       'Stay connected without signing in again',
     ]);
     expect(text).toContain('Approve');

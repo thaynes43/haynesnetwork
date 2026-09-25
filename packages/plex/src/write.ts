@@ -2,12 +2,16 @@
 // ADR-017: the sanctioned Plex write-backs are applying / revoking a per-user library share via the
 // plex.tv v1 sharing API (POST/PUT/DELETE .../shared_servers), the ADR-043 poster upload, and — ADR-088
 // (owner ruling 2026-09-23, "Mark it in Plex too") — the owner's watched state (`scrobble` / `unscrobble`),
-// reached only through an owner-issued Watch Mark and its undo in @hnet/domain. This entrypoint
+// reached only through an owner-issued Watch Mark and its undo in @hnet/domain, and — ADR-092 (owner ruling
+// 2026-09-25, "Add it, say it downloads") — the owner's plex.tv WATCHLIST (`addToWatchlist` /
+// `removeFromWatchlist` on the discover provider), reached only through an owner-issued Watchlist Change and
+// its undo in @hnet/domain (never a view state, never a library). This entrypoint
 // may be imported ONLY by the packages/domain share orchestrator and by packages/plex itself
 // — enforced by the arr-write-import-guard test (extended for @hnet/plex/write). The
 // read-merge-write invariant (never blind-overwrite a user's section set — ADR-017 D-02) is
 // the domain orchestrator's job; this client issues the single computed mutation it is given.
-import { PLEX_TV_BASE_URL } from './config';
+import { PLEX_DISCOVER_BASE_URL, PLEX_TV_BASE_URL } from './config';
+import { requireDiscoverId } from './discover';
 import { PlexHttp } from './http';
 import { childrenNamed } from './xml';
 import type { PlexClientOptions } from './read';
@@ -46,12 +50,15 @@ export class PlexWriteClient {
   /** Direct PMS base URL — the poster-upload write goes to the server itself (not plex.tv). */
   private readonly baseUrl: string;
   private readonly plexTvBaseUrl: string;
+  /** The plex.tv discover provider (the watchlist writes, ADR-092) — like the read client's. */
+  private readonly plexDiscoverBaseUrl: string;
   private readonly machineIdentifier: string;
 
   constructor(options: PlexClientOptions) {
     this.http = new PlexHttp(options);
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.plexTvBaseUrl = (options.plexTvBaseUrl ?? PLEX_TV_BASE_URL).replace(/\/+$/, '');
+    this.plexDiscoverBaseUrl = (options.plexDiscoverBaseUrl ?? PLEX_DISCOVER_BASE_URL).replace(/\/+$/, '');
     this.machineIdentifier = options.machineIdentifier;
   }
 
@@ -104,6 +111,36 @@ export class PlexWriteClient {
     await this.http.requestIdempotentGet(`${this.baseUrl}/:/unscrobble`, {
       query: { identifier: LIBRARY_IDENTIFIER, key: requireRatingKey(ratingKey) },
       accept: 'application/xml',
+    });
+  }
+
+  /**
+   * ADR-092 / DESIGN-051 D-03 step 6 / D-06 (PLAN-071) — add a title to the TOKEN ACCOUNT's plex.tv watchlist
+   * (the owner's — every server token here is his): `PUT {discover}/actions/addToWatchlist?ratingKey=<id>`.
+   * Verified live 2026-09-25: 200 `{"MediaContainer":{"size":0}}` whether or not anything changed (a repeat add
+   * is 200), and 404 for an id plex.tv does not know. The id is validated (24 hex digits) before the URL is
+   * built. Idempotent on the watchlist, so it is RETRIED like a GET on a timeout / network failure / 502–504
+   * (PLAN-071 ruling 4: `requestIdempotentPut`; the domain re-reads userState if the last attempt still fails).
+   * Reached only from an owner-issued Watchlist Change or the undo of a remove (changeWatchlist / undoLastChange
+   * in @hnet/domain — ADR-017 C-10).
+   * Seerr auto-requests the owner's newest watchlist titles, so an add of a title not on Plex downloads it.
+   */
+  async addToWatchlist(id: string): Promise<void> {
+    await this.http.requestIdempotentPut(`${this.plexDiscoverBaseUrl}/actions/addToWatchlist`, {
+      query: { ratingKey: requireDiscoverId(id) },
+      accept: 'application/json',
+    });
+  }
+
+  /**
+   * ADR-092 / DESIGN-051 D-03 / D-04 / D-06 — remove a title from the token account's plex.tv watchlist:
+   * `PUT {discover}/actions/removeFromWatchlist?ratingKey=<id>` (200 even when the title was not on it;
+   * verified live). Same id check and retry policy as {@link addToWatchlist}.
+   */
+  async removeFromWatchlist(id: string): Promise<void> {
+    await this.http.requestIdempotentPut(`${this.plexDiscoverBaseUrl}/actions/removeFromWatchlist`, {
+      query: { ratingKey: requireDiscoverId(id) },
+      accept: 'application/json',
     });
   }
 

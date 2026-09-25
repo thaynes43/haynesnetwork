@@ -122,3 +122,71 @@ export function watchlistItem(n: number, type: 'movie' | 'show' = n % 2 === 0 ? 
     Guid: [{ id: `imdb://tt${String(n).padStart(7, '0')}` }, { id: `tmdb://${9000 + n}` }, { id: `tvdb://${7000 + n}` }],
   };
 }
+
+// ---- ADR-092 / DESIGN-051 D-06 (PLAN-071) — the discover provider's watchlist surface, verified live 2026-09-25 ----
+
+/** `GET {discover}/library/metadata/matches?type=1&guid=tmdb://218` — one match, under `Metadata`. */
+export const DISCOVER_MATCH_TERMINATOR_JSON = {
+  MediaContainer: {
+    offset: 0,
+    totalSize: 1,
+    identifier: 'tv.plex.provider.metadata',
+    size: 1,
+    Metadata: [
+      {
+        type: 'movie',
+        title: 'The Terminator',
+        year: 1984,
+        ratingKey: '5d776824151a60001f24a29e',
+        key: '/library/metadata/5d776824151a60001f24a29e',
+        guid: 'plex://movie/5d776824151a60001f24a29e',
+        Guid: [{ id: 'imdb://tt0088247' }, { id: 'tmdb://218' }, { id: 'tvdb://470' }],
+      },
+    ],
+  },
+};
+
+/** The same match reported under `Video` (upstream clients see this shape on some responses). */
+export const DISCOVER_MATCH_VIDEO_JSON = {
+  MediaContainer: {
+    size: 1,
+    Video: DISCOVER_MATCH_TERMINATOR_JSON.MediaContainer.Metadata,
+  },
+};
+
+/** No match: the list is absent. */
+export const DISCOVER_NO_MATCH_JSON = { MediaContainer: { offset: 0, totalSize: 0, identifier: 'tv.plex.provider.metadata', size: 0 } };
+
+/** `GET {discover}/library/metadata/<id>/userState` — a ONE-ELEMENT ARRAY, on the watchlist. */
+export const DISCOVER_USER_STATE_ARRAY_JSON = {
+  MediaContainer: {
+    size: 1,
+    identifier: 'tv.plex.provider.metadata',
+    UserState: [
+      {
+        ratingKey: '608ae6cf5077dd002d3bb8be',
+        type: 'show',
+        userRating: 7,
+        viewedLeafCount: 2,
+        watchlistedAt: 1789061676,
+      },
+    ],
+  },
+};
+
+/** The same read as an OBJECT, not on the watchlist (no `watchlistedAt`). */
+export const DISCOVER_USER_STATE_OBJECT_JSON = {
+  MediaContainer: {
+    size: 1,
+    identifier: 'tv.plex.provider.metadata',
+    UserState: { ratingKey: '5d776824151a60001f24a29e', type: 'movie', viewCount: 1 },
+  },
+};
+
+/** `PUT {discover}/actions/addToWatchlist|removeFromWatchlist?ratingKey=` — 200, changed or not. */
+export const DISCOVER_ACTION_OK_JSON = { MediaContainer: { size: 0 } };
+
+/** The 404 a bogus discover id gets. */
+export const DISCOVER_NOT_FOUND_JSON = {
+  Error: { error: 'Not Found', message: 'MetadataItem for 000000000000000000000000 not found!', statusCode: 404 },
+};

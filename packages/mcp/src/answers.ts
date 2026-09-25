@@ -1,14 +1,17 @@
-// ADR-087 / DESIGN-049 D-05, D-10, D-11, D-13..D-15, D-20, D-21 — what each watch tool answers: read
+// ADR-087 / DESIGN-049 D-05, D-10, D-11, D-13..D-15, D-20, D-21 (+ ADR-092 / DESIGN-051 D-02..D-05, the
+// watchlist) — what each watch tool answers: read
 // (@hnet/watch queries), revalidate (D-11) or write (the @hnet/domain flows), then format (@hnet/watch).
 // Every answer is plain spoken text; problems a person can act on (not found, ambiguous, nothing
 // unfinished) are ordinary answers, never errors.
 import type { DbClient, WatchTitleRow } from '@hnet/db';
 import {
+  changeWatchlist,
   dismissTitle,
   markWatched,
   resolveWatchTitle,
   revalidateTitles,
   undoLastChange,
+  type WatchlistChangeResult,
   type WatchPhases,
   type WatchPlexClients,
   type WatchPlexReaders,
@@ -20,10 +23,14 @@ import {
   formatMarkResult,
   formatNeedSeason,
   formatNotFound,
+  formatNotOnWatchlist,
   formatRecentHistory,
   formatRecommendations,
   formatUndoResult,
   formatUnfinished,
+  formatWatchlist,
+  formatWatchlistChange,
+  formatWatchlistNotSetUp,
   formatWatchStatus,
   indexMarks,
   recentEntries,
@@ -32,29 +39,38 @@ import {
   selectLiveMarks,
   selectRecentEvents,
   selectRecommendInputs,
+  selectTitleFacts,
   selectTitleRows,
   selectTitleRowsByIdentity,
   selectUnfinishedRows,
+  selectWatchlist,
   unfinishedItems,
+  watchlistItems,
   watchStatusView,
   type UnfinishedRow,
   type WatchOwner,
 } from '@hnet/watch';
 import type { z } from 'zod';
 import type { McpConsumer } from './auth';
+import type { WatchlistChangedLog } from './log';
 import type {
   dismissInput,
   markWatchedInput,
   recentHistoryInput,
   recommendInput,
+  setWatchlistInput,
   unfinishedInput,
+  watchlistInput,
   watchStatusInput,
 } from './tools';
 
 /** What the handlers run against (tests inject fakes; production builds these from env — deps.ts). */
 export interface McpDeps {
   db: DbClient;
-  /** Live revalidation reads (D-11: 300 ms per request); null when Plex is not configured. */
+  /**
+   * Live reads on the short budget (D-11: 300 ms per request): the revalidation, and the plex.tv discover reads of
+   * a Watchlist Change (DESIGN-051 D-03, PLAN-071 ruling 8); null when Plex is not configured.
+   */
   revalidatePlex: () => WatchPlexReaders | null;
   /** Watch Mark reads and writes (≈ 800 ms per attempt, D-14's 3 s); null when Plex is not configured. */
   markPlex: () => WatchPlexClients | null;
@@ -84,6 +100,8 @@ export interface AnswerContext {
   phases: WatchPhases;
   /** Set when D-11 ran out of budget (logged as `revalidate_timeout`). */
   revalidateTimedOut?: boolean;
+  /** Set by `set_watchlist` (logged as `watchlist_changed`, DESIGN-051 D-10). */
+  watchlistChanged?: WatchlistChangedLog;
 }
 
 const NO_PLEX: WatchPlexClients = { read: {}, write: {} };
@@ -162,7 +180,12 @@ export async function answerRecommend(
   const kids = args.kids ?? false;
   const genre = args.genre ?? null;
   // The live marks come with the inputs: the library query was anti-joined on these very rows.
-  const inputs = await selectRecommendInputs(ctx.deps.db, ctx.account.plexAccountId, { kind, genre, kids });
+  const inputs = await selectRecommendInputs(ctx.deps.db, ctx.account.plexAccountId, {
+    now: ctx.deps.now(),
+    kind,
+    genre,
+    kids,
+  });
   const recs = recommendations(inputs, inputs.marks, { kind, genre, kids, now: nowSec(ctx) });
   return formatRecommendations(recs, {
     limit: args.limit ?? 5,
@@ -173,7 +196,11 @@ export async function answerRecommend(
   });
 }
 
-/** `watch_status` (D-13, D-21): resolve, revalidate the title (D-11), answer. */
+/**
+ * `watch_status` (D-13, D-21): resolve, revalidate the title (D-11), answer — with DESIGN-051 D-02's availability
+ * sentence: on the owner's watchlist when the resolver's matched entries include an overlaid watchlist entry
+ * (PLAN-071 ruling 11). A principal that is not the Server Owner keeps DESIGN-049's sentence.
+ */
 export async function answerWatchStatus(
   ctx: AnswerContext,
   args: z.infer<typeof watchStatusInput>,
@@ -185,6 +212,7 @@ export async function answerWatchStatus(
     query: args.title,
     kind: args.kind ?? null,
     tmdb: ctx.deps.tmdb(),
+    now: ctx.deps.now(),
   });
   ctx.phases.resolve = Date.now() - started;
   if (r.status === 'ambiguous') return formatAmbiguous(args.title, r.options);
@@ -203,8 +231,77 @@ export async function answerWatchStatus(
     marks: indexMarks(marks),
     onPlexElsewhere: holders.length > 0,
     now: nowSec(ctx),
+    onWatchlist: ctx.account.isOwner ? r.members.some((m) => m.source === 'watchlist') : null,
   });
   return formatWatchStatus(view, { now: nowSec(ctx) });
+}
+
+/**
+ * `watchlist` (DESIGN-051 D-02 / D-05): the overlaid watchlist of the asked kind, newest first; the page's titles
+ * with the D-02 "on Plex" rule and started / watched from the owner's Title States. The watchlist is the Server
+ * Owner's only (ADR-092 C-04): anyone else is told it isn't set up for their account.
+ */
+export async function answerWatchlist(
+  ctx: AnswerContext,
+  args: z.infer<typeof watchlistInput>,
+): Promise<string> {
+  if (!ctx.account.isOwner) return formatWatchlistNotSetUp();
+  const kind = args.kind ?? 'any';
+  const limit = args.limit ?? 5;
+  const offset = args.offset ?? 0;
+  const acct = ctx.account.plexAccountId;
+  const { entries } = await selectWatchlist(ctx.deps.db, acct, { now: ctx.deps.now() });
+  const list = kind === 'any' ? entries : entries.filter((e) => e.kind === kind);
+  const page = list.slice(offset, offset + limit);
+  const [facts, marks] = await Promise.all([
+    selectTitleFacts(ctx.deps.db, acct, page),
+    selectLiveMarks(ctx.deps.db, acct),
+  ]);
+  const items = watchlistItems(page, facts, indexMarks(marks), nowSec(ctx));
+  return formatWatchlist(items, { total: list.length, offset, kind });
+}
+
+/**
+ * `set_watchlist` (DESIGN-051 D-03): the domain flow resolves, confirms, writes and records; this formats what it
+ * returns and leaves the D-10 line for the runner to log (once, with the call's `tool_called` line).
+ */
+export async function answerSetWatchlist(
+  ctx: AnswerContext,
+  args: z.infer<typeof setWatchlistInput>,
+): Promise<string> {
+  const out = await changeWatchlist({
+    db: ctx.deps.db,
+    plex: ctx.deps.markPlex() ?? NO_PLEX,
+    reads: ctx.deps.revalidatePlex(),
+    tmdb: ctx.deps.tmdb(),
+    actor: { plexAccountId: ctx.account.plexAccountId, appUserId: ctx.account.appUserId },
+    consumer: ctx.consumer.name,
+    query: args.title,
+    action: args.action,
+    kind: args.kind ?? null,
+    now: ctx.deps.now(),
+    phases: ctx.phases,
+  });
+  const result: WatchlistChangeResult = out.result;
+  ctx.watchlistChanged = {
+    consumer: ctx.consumer.name,
+    action: args.action,
+    kind: out.status === 'done' ? out.kind : (args.kind ?? null),
+    result,
+    onPlex: out.status === 'done' ? out.onPlex : null,
+  };
+  switch (out.status) {
+    case 'not_owner':
+      return formatWatchlistNotSetUp();
+    case 'ambiguous':
+      return formatAmbiguous(args.title, out.options);
+    case 'not_found':
+      return args.action === 'remove'
+        ? formatNotOnWatchlist(args.title, { kind: args.kind ?? null })
+        : formatNotFound(args.title, { kind: args.kind ?? null });
+    default:
+      return formatWatchlistChange(out.view);
+  }
 }
 
 /** `recent_history` (D-21): the event log of the last `days` days. */
@@ -277,11 +374,12 @@ export async function answerDismiss(
   return formatNotFound(args.title);
 }
 
-/** `undo_last_change` (D-15). */
+/** `undo_last_change` (D-15; a Watchlist Change: DESIGN-051 D-04). */
 export async function answerUndo(ctx: AnswerContext): Promise<string> {
   const out = await undoLastChange({
     db: ctx.deps.db,
     plex: ctx.deps.markPlex() ?? NO_PLEX,
+    reads: ctx.deps.revalidatePlex(),
     actor: { plexAccountId: ctx.account.plexAccountId, appUserId: ctx.account.appUserId },
     now: ctx.deps.now(),
     phases: ctx.phases,

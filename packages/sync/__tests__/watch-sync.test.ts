@@ -470,16 +470,25 @@ function markClients(server: FakePlexServer, at: number): WatchPlexClients {
     }
     return Promise.resolve();
   };
+  // The watchlist (ADR-092) is not exercised here: its reads and writes refuse, so a stray call fails the test.
+  const noWatchlist = () => Promise.reject(new Error('the sync fake has no watchlist'));
   return {
     read: {
       [server.slug]: {
         getMetadataItem: read.getMetadataItem,
         listAllLeaves: read.listAllLeaves,
         findByGuid: async () => [],
+        matchDiscover: noWatchlist,
+        getDiscoverUserState: noWatchlist,
       },
     },
     write: {
-      [server.slug]: { scrobble: (key: string) => write(key, true), unscrobble: (key: string) => write(key, false) },
+      [server.slug]: {
+        scrobble: (key: string) => write(key, true),
+        unscrobble: (key: string) => write(key, false),
+        addToWatchlist: noWatchlist,
+        removeFromWatchlist: noWatchlist,
+      },
     },
   };
 }

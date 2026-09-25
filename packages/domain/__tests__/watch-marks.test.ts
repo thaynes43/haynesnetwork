@@ -375,8 +375,17 @@ describe('markWatched — whole show, replay, and an exact undo (D-14, D-15)', (
     expect(undone).toMatchObject({ episodesWatched: 2, nextSeason: 1, nextEpisode: 3 });
     expect(undone.plexCounts.haynesops).toBeUndefined();
 
-    // Nothing left to undo.
-    const none = await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: NOW });
+    // PLAN-071 ruling 5: a retried undo within 30 seconds (no mark made since) repeats its answer and reverts
+    // nothing — no Plex call, no second revert.
+    fake.calls.length = 0;
+    const retried = await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: new Date(NOW.getTime() + 29_000) });
+    expect(retried).toMatchObject({ status: 'done', replayed: true, markId: reverted?.id });
+    if (retried.status === 'done') expect(retried.view).toEqual(undo.view);
+    expect(fake.calls).toEqual([]);
+    expect((await marks())[0]?.revertedAt).toEqual(NOW);
+
+    // Nothing left to undo, once the replay window has passed.
+    const none = await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: new Date(NOW.getTime() + 31_000) });
     expect(none).toMatchObject({ status: 'done', view: { undone: false } });
   });
 
@@ -1044,8 +1053,8 @@ describe('a failed or partial undo is retried on the SAME mark (D-15)', () => {
     expect(afterRetry[0]?.revertedAt).toBeNull();
     expect(fake.watchedState()).toEqual([...before, 'haynesops:fix'].sort());
 
-    // Only now does undo reach the older change.
-    const third = await undo(fake);
+    // Only now does undo reach the older change (past the 30-second replay of the retry, PLAN-071 ruling 5).
+    const third = await undo(fake, new Date(NOW.getTime() + 31_000));
     expect(third).toMatchObject({ markId: older?.id, view: { undone: true, revertResult: 'written' } });
     expect(fake.watchedState()).toEqual(before);
   });

@@ -2,8 +2,9 @@
 
 The Watch Companion's pure math (DESIGN-049; ADR-088, ADR-089; PLAN-068 S4): title identity,
 per-episode progress and states, the spoken-title resolver, the Taste Profile, the recommendation
-exclusions and score, and the spoken answers of the seven watch tools — plus (S5–S7) the Title State
-helpers the sync, the live revalidation and the Watch Mark write-through share, and the read queries.
+exclusions and score, and the spoken answers of the nine watch tools — plus (S5–S7) the Title State
+helpers the sync, the live revalidation and the Watch Mark write-through share, the read queries, and (ADR-092 /
+DESIGN-051, PLAN-071) the watchlist's read-time overlay.
 
 Exports raw TS — no build step (see root `CLAUDE.md`). The math is **pure**: no network, no clock, no
 `@hnet/domain`, no MCP SDK; every function that depends on time takes `now`. The queries (`src/queries/`)
@@ -84,11 +85,14 @@ leads; episodes are "season 3 episode 1"; at most `limit` items, then "And N mor
 |---|---|
 | `formatUnfinished(items, { now, limit, kind?, timeZone? })` | "Three unfinished shows. Silo: 30 of 40 watched, next is season 3 episode 1, last watched on September 20. For All Mankind: next is season 5 episode 3, on September 12. Stalled: The Righteous Gemstones, 36 of 45, untouched since March 2025." |
 | `formatRecommendations({ onPlex, notOnPlex }, { limit, offset?, genre?, kids?, kind? })` | "Five picks on Plex. Foundation, a 2021 show, because you watched The Expanse. … Not on Plex yet: Dark Matter, a 2024 show, on your watchlist." Not-on-Plex picks page two at a time with `offset`. Empty: "Nothing new matches that. Try another genre or kind." |
-| `formatWatchStatus(view, { now })` | "The Expanse (2015 show): all 62 episodes watched, finished in March 2025. On Plex." |
+| `formatWatchStatus(view, { now })` | "The Expanse (2015 show): all 62 episodes watched, finished in March 2025. On Plex, not on your watchlist." — DESIGN-051 D-02's four availability sentences (`On Plex and on your watchlist.` · `On Plex, not on your watchlist.` · `Not on Plex, but on your watchlist.` · `Not on Plex or your watchlist.`); with `onWatchlist` null (a non-owner), DESIGN-049's `On Plex.` / `Not on Plex.` |
+| `formatWatchlist(items, { total, offset, kind? })` | DESIGN-051 D-02: "Your watchlist has 150 titles. Newest first: Slow Horses, a 2022 show, on Plex, started. The Toxic Avenger, a 2023 movie, not on Plex yet. And 148 more." A later page: "Numbers 6 to 10: …"; empty: "Your watchlist is empty." (with a kind: "Your watchlist has no movies."); past the end: "That's the end of your watchlist." |
+| `formatWatchlistChange(view)` | "Added The Matrix (1999 movie) to your watchlist. It's on Plex." / "… It isn't on Plex yet, so Seerr will request it." / "Removed …" / "… is already on your watchlist." / "… isn't on your watchlist." / "I found … but not in Plex's catalog, so your watchlist didn't change." / "I couldn't confirm … in Plex's catalog, …" / "I couldn't reach Plex, so your watchlist didn't change." |
+| `formatNotOnWatchlist(query, { kind? })`, `formatWatchlistNotSetUp()` | "I couldn't find Arrival on your watchlist." (a remove resolves only there) / "Your Plex watchlist isn't set up for your account yet." |
 | `formatRecentHistory(entries, { now, days, limit })` | "In the last two weeks: Silo, 5 episodes, latest season 2 episode 10 on September 20. WarGames, a movie, on September 5." |
 | `formatMarkResult(view)` | "Marked Severance (2022) as watched in Plex, all 19 episodes." / "Noted Dark Matter (2024) as watched. It isn't on Plex, so only your history changed." |
 | `formatDismissResult(view)` | "Got it. I won't suggest Grey's Anatomy (2005) again." |
-| `formatUndoResult(view)` | "Undone. Severance (2022) is back to unwatched in Plex, 19 episodes." / "Nothing to undo from the past day." |
+| `formatUndoResult(view)` | "Undone. Severance (2022) is back to unwatched in Plex, 19 episodes." / "Nothing to undo from the past day." A Watchlist Change (DESIGN-051 D-04): "Removed The Matrix (1999 movie) from your watchlist again." (+ " Seerr may already have requested it." when not on Plex) / "Put … back on your watchlist." (+ " Seerr will request it.") / a failed inverse: "I couldn't reach Plex, so … is still on your watchlist. Say undo again to retry." / a change that never reached Plex: "Your last change, adding … to your watchlist, never reached Plex, so there was nothing to undo." |
 | `formatAmbiguous(query, options)` | "More than one match for Dune: Dune (2021, movie), Dune (1984, movie), Dune: Prophecy (2024, show). Which one?" |
 | `formatNotFound(query, { kind? })`, `formatNotReady()`, `formatWatchError()` | "I couldn't find anything called Severence." / "Watch history isn't ready yet." / "Watch history hit an error. Try again in a minute." |
 | `spokenDate(ts, now, { timeZone? })` | "today", "yesterday", "on September 12" (this year), "in March 2025"; the owner's calendar (`America/New_York` by default). `spokenSince` phrases the same after "since". |
@@ -117,12 +121,14 @@ assignable — this package does not import `@hnet/plex`).
 |---|---|
 | `selectWatchOwner(db)` | THE `owner` row (D-03) or null ("not ready yet"). |
 | `selectWatchAccountForUser(db, userId)` | ADR-091 C-04 — the tracked account an app user acts as through a connector: `users.id` → the ADR-053 Plex Account Map → `watch_accounts` (`tracked = true`); null ⇒ "isn't set up for your account yet". Never via `app_user_id`. |
-| `selectResolverPool(db, account, { kind? })` | D-13's pool: Title States (`inHistory`), the live ledger, the signals — each a `PoolEntry` that remembers its row / ledger item. |
+| `selectResolverPool(db, account, { kind?, now, only? })` | D-13's pool: Title States (`inHistory`), the live ledger, the TMDB seeds, and the OVERLAID watchlist (`selectWatchlist`, source `watchlist`) — each a `PoolEntry` that remembers its row / ledger item. `only: 'watchlist'` (a `set_watchlist` remove) is the overlaid watchlist plus the titles a written remove took off in the last 10 minutes (source `watchlist_removed`). |
+| `selectWatchlist(db, account, { now })` | DESIGN-051 D-05 — THE watchlist every reader sees: the `watchlist` signal rows (rank order) with the account's written Watchlist Changes and written reverts since `fetched_at − 5 min` overlaid (`overlayWatchlist`); with no cached rows the look-back is `now − 24 h`. |
+| `selectTitleFacts(db, account, titles)`, `selectLedgerByIds(db, titles)`, `ledgerMatchesTitle(t, item)` | The D-02 "on Plex" facts for a few titles (the owner's Title States with `on_plex` and progress; ledger items sharing an external id, with their Plex match). |
 | `selectTitleRows`, `selectTitleRowsByIdentity`, `selectLedgerHolders`, `selectLedgerFacts`, `selectLedgerIndex` | Title States by id / kind / identity; where a ledger item is on Plex; ledger genres and Sonarr's ended status. |
 | `selectAccountEvents`, `selectTitleEvents`, `selectKnownShowGuids`, `selectUnresolvedShowPairs` | Events for the sync and for one title; the Q-06 show-guid lookups. |
-| `selectLiveMarks`, `selectSignals`, `selectSignalsFetchedAt` | Unreverted marks; the signal cache and its freshness (the 20-hour seed cadence). |
+| `selectLiveMarks`, `selectSignals`, `selectSignalsFetchedAt` | The unreverted watch STATEMENTS (`watched`, `not_interested`, `not_mine` — never a Watchlist Change, DESIGN-051 D-07; typed `LiveWatchMark`); the signal cache and its freshness (the 20-hour seed cadence). |
 | `selectUnfinishedRows`, `selectRecentEvents` | The T-245 candidates (shows with a next episode, movies resumed 5–90%) as narrow `UnfinishedRow`s — no episode map or Plex counters (`selectTitleRows` loads whole rows for the few titles revalidated); the events of a window. |
-| `selectRecommendInputs(db, account, { kind, genre, kids })` | D-17: the library candidates (live Sonarr/Radarr items on Plex; SQL pre-filter on kind, genre (every source spelling, substring) and children's genres; anti-joined on Ever Watched / started Title States and every live mark; best rated first, ≤ 600), the watchlist and TMDB-seed candidates matched to the ledger, the Title States and the live marks. |
+| `selectRecommendInputs(db, account, { now, kind, genre, kids })` | D-17: the library candidates (live Sonarr/Radarr items on Plex; SQL pre-filter on kind, genre (every source spelling, substring) and children's genres; anti-joined on Ever Watched / started Title States and every live mark; best rated first, ≤ 600), the watchlist and TMDB-seed candidates matched to the ledger, the Title States and the live marks. |
 | `ledgerExclusions(titles, marks)`, `selectLibraryCandidates(db, { kind, genre, kids, limit, exclusions })` | The anti-join as excluded-id arrays per kind (ledger link, TVDB — shows only —, TMDB, IMDb; one array parameter each, which Postgres hashes) and the library query itself. |
 
 ## Views (D-10, D-15, D-18..D-21) — `src/views.ts`
@@ -135,7 +141,16 @@ Pure: stored rows, events and live marks → the formatters' inputs, so the MCP 
 | `unfinishedItems(rows, marks, { kind, kids, now })` | T-245: `in_progress` / `stalled` (never a Taster), not dismissed, children's only with `kids`; `compareUnfinished` order. |
 | `recentEntries(events, marks)` | Per title: distinct episodes, the latest, when; a `not_mine` title is left out (a show whose episodes have no guid, Q-06, by its normalized name). |
 | `recommendations(inputs, marks, opts)` | Exclusions + Taste Profile + exemplars → `pickRecommendations`. |
-| `watchStatusView({ title, row, marks, onPlexElsewhere, now })` | The `formatWatchStatus` view (Ever Watched per T-247). |
+| `watchStatusView({ title, row, marks, onPlexElsewhere, now, onWatchlist? })` | The `formatWatchStatus` view (Ever Watched per T-247; `onWatchlist` for DESIGN-051's availability sentence). |
+| `onPlexFor(ids, facts)`, `watchlistItems(entries, facts, marks, now)` | DESIGN-051 D-02: on Plex = a ledger item with a Plex match or a Title State with `on_plex`; `started` (in progress / stalled), `watched` (Ever Watched, not unfinished; never for a `not_mine` title). |
+
+## The watchlist overlay and the statement filter (DESIGN-051 D-05 / D-07) — `src/watchlist.ts`
+
+| Export | Contract |
+|---|---|
+| `overlayWatchlist(base, marks, fetchedAt)`, `watchlistEvents(marks, fetchedAt)` | The cached rows with every WRITTEN change (at `created_at`) and WRITTEN revert (the inverse, at `reverted_at`) since `fetchedAt − WATCHLIST_OVERLAY_MARGIN_SECONDS` applied oldest first (then by mark id): an add of a title not present goes on top, a remove drops every row of the title. Set operations, so an event the cache already reflects changes nothing. |
+| `sameWatchlistTitle(a, b)`, `isOnWatchlist(entries, ids)` | The same kind and a shared plex guid or TMDB / TVDB / IMDb id; the name and year only when a side knows no external id. |
+| `isStatementAction`, `isWatchlistAction`, `statementMarks(marks)` | `watched` / `not_interested` / `not_mine` are watch statements; `watchlist_add` / `watchlist_remove` are not, and every statement reader (`indexMarks`, `recommendations`, `ledgerExclusions`) drops them. |
 
 ## Tests
 
