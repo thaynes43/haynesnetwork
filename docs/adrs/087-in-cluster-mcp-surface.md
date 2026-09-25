@@ -1,7 +1,7 @@
 # ADR-087: The MCP surface — a stateless, in-cluster-only endpoint in the web app, reached through a header-injecting hop with a cluster-generated consumer token
 
 - **Status:** Accepted (2026-09-23 — live as haynesnetwork v0.97.0 behind the hop, haynes-ops #3131/#3139; the Movie Room agent attached, AC-24 passed)
-- **Superseded in part by:** [ADR-092](092-plex-watchlist-tools.md) (2026-09-25) — C-07's 3 KB `tools/list`
+- **Superseded in part by:** [ADR-092](092-plex-watchlist-tools.md) (2026-09-25, effective when ADR-092 is Accepted) — C-07's 3 KB `tools/list`
   cap becomes 4 KB for the two watchlist tools (ADR-092 C-09). Everything else stands.
 - **Date:** 2026-09-23
 - **Deciders:** Tom Haynes (owner request 2026-09-23: *"Possibly an MCP Server for the haynesnetwork

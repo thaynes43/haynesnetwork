@@ -147,7 +147,7 @@ successful `mark_watched`, HA reports a failure for a change that happened: one 
 must be idempotent (D-14).
 
 **Voice Budget (T-253), enforced by `@hnet/mcp` tests:** the serialized `tools/list` result is at
-most **3,072 bytes**; a default call to each read tool over the seeded fixture returns at most
+most **3,072 bytes** _(4,096 bytes since ADR-092 C-09 / DESIGN-051 D-08)_; a default call to each read tool over the seeded fixture returns at most
 **1,200 characters**; no result carries `structuredContent`. The v1 SDK adds about 89 bytes per tool (a `$schema`
 URL on each input schema and `execution: {taskSupport}`); if the generated list is over budget, serve
 `tools/list` from hand-written JSON Schemas through the low-level request handler instead of
