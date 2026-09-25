@@ -219,6 +219,61 @@ describe('LidarrWriteClient', () => {
   });
 });
 
+// ADR-083 / DESIGN-046 D-04 + D-10 (PLAN-065 — queue janitor): the queue removal carries skipRedownload, so a
+// blocklisting removal never triggers the *arr's own "Redownload Failed" re-search (QueueController.RemoveAction
+// at Sonarr v4.0.20 / Radarr v6.4.4 / Lidarr v3.1.6 defaults it to false).
+describe('deleteQueueItem (DESIGN-046 D-10 — skipRedownload on every *arr)', () => {
+  const cases = [
+    {
+      name: 'Sonarr',
+      make: (fetchImpl: typeof fetch) =>
+        new SonarrWriteClient({ baseUrl: 'http://sonarr.test:8989', fetchImpl, ...TEST_OPTS }),
+      path: '/api/v3/queue/4101',
+    },
+    {
+      name: 'Radarr',
+      make: (fetchImpl: typeof fetch) =>
+        new RadarrWriteClient({ baseUrl: 'http://radarr.test:7878', fetchImpl, ...TEST_OPTS }),
+      path: '/api/v3/queue/4101',
+    },
+    {
+      name: 'Lidarr',
+      make: (fetchImpl: typeof fetch) =>
+        new LidarrWriteClient({ baseUrl: 'http://lidarr.test:8686', fetchImpl, ...TEST_OPTS }),
+      path: '/api/v1/queue/4101',
+    },
+  ];
+
+  for (const c of cases) {
+    it(`${c.name}: DELETEs ${c.path} with removeFromClient + blocklist + skipRedownload`, async () => {
+      const stub = stubFetch([{ method: 'DELETE', path: c.path }]);
+      await c.make(stub.fetchImpl).deleteQueueItem(4101, {
+        removeFromClient: true,
+        blocklist: true,
+        skipRedownload: true,
+      });
+      expect(stub.calls).toHaveLength(1);
+      const call = stub.calls[0]!;
+      expect(call.method).toBe('DELETE');
+      expect(call.url.pathname).toBe(c.path);
+      expect(Object.fromEntries(call.url.searchParams)).toEqual({
+        removeFromClient: 'true',
+        blocklist: 'true',
+        skipRedownload: 'true',
+      });
+      expect(call.body).toBeUndefined();
+    });
+  }
+
+  it('sends skipRedownload=false verbatim when a caller asks for it (never dropped)', async () => {
+    const stub = stubFetch([{ method: 'DELETE', path: '/api/v3/queue/7' }]);
+    await new SonarrWriteClient({ baseUrl: 'http://sonarr.test:8989', fetchImpl: stub.fetchImpl, ...TEST_OPTS })
+      .deleteQueueItem(7, { removeFromClient: false, blocklist: true, skipRedownload: false });
+    expect(stub.calls[0]!.url.searchParams.get('skipRedownload')).toBe('false');
+    expect(stub.calls[0]!.url.searchParams.get('removeFromClient')).toBe('false');
+  });
+});
+
 describe('MaintainerrWriteClient (ADR-023 P1a — in-band ReturnStatus failure detection)', () => {
   function client(routes: Parameters<typeof stubFetch>[0]) {
     const stub = stubFetch(routes);

@@ -43,6 +43,9 @@ import { QueueCleanupConfigInvalidError } from './errors';
 
 /** The minimal queue-record shape the classifier reads (SonarrQueueRecord/… all satisfy it structurally). */
 export interface ClassifiableQueueItem {
+  /** The queue record's own title — the download's release name. The *arr titles a release-level statusMessage
+   *  with it, which tells that entry apart from per-file ones (D-10). Optional: absent ⇒ a file-name check. */
+  title?: string | null;
   status?: string | null;
   trackedDownloadStatus?: string | null;
   trackedDownloadState?: string | null;
@@ -52,7 +55,8 @@ export interface ClassifiableQueueItem {
 
 export interface QueueCleanupClassification {
   class: QueueCleanupActionClass;
-  /** The statusMessage that drove the class (≤500 chars), or the first message for the unknown fallback. */
+  /** The MESSAGE that drove the class (≤500 chars), or the most informative message for the unknown fallback.
+   *  Never a statusMessage title that only names the release or a file (D-10). */
   reason: string | null;
   confidence: 'high' | 'low';
 }
@@ -66,61 +70,145 @@ const HAVE_BETTER_PATTERNS = [
   /cutoff.*already.*met/i,
 ];
 
-/** Release-defect signals (D-03 bad_release). */
+/**
+ * Identity-mismatch signals (D-10): the *arr is not sure this grab IS the item it was grabbed for, so an
+ * "already have it" verdict in the same item may be about the wrong target. A have_better match that also
+ * carries one of these goes to `unknown` (report only). Upstream strings at the running tags (Sonarr
+ * v4.0.20.3014 / Radarr v6.4.4.10685 / Lidarr v3.1.6.5078): MatchesGrabSpecification "Episode(s) … was/were
+ * not found in the grabbed release: …"; CompletedDownloadService "Found matching series|movie via grab
+ * history, but release was matched to series|movie by ID. …"; MatchesFolderSpecification "Episode(s) … was/
+ * were unexpected considering the … folder name"; and, defensively, CompletedDownloadService's "Series title
+ * mismatch" / "Movie title mismatch" / "Artist name mismatch".
+ */
+const IDENTITY_MISMATCH_PATTERNS = [
+  /not found in the grabbed release/i,
+  /matched to (?:series|movie|artist|album) by id/i,
+  /unexpected considering the\b.*\bfolder name/i,
+  /\b(?:series|movie) title mismatch\b/i,
+  /\bartist name mismatch\b/i,
+];
+
+/**
+ * Release-defect signals (D-03 bad_release), matched against RELEASE-LEVEL messages only (D-10): never a
+ * release or file name, and never a per-file rejection among real files (a `-sample.mkv` or an unparseable
+ * featurette beside the episodes condemns that file, not the release). "Sample" is the upstream
+ * NotSampleSpecification rejection verbatim; "Unable to determine if file is a sample" (SampleIndeterminate) is
+ * not a verdict and does not match. "archive" is the upstream import rejection verbatim ("Found archive file,
+ * might need to be extracted"): a bare \barchive\b also hit release names and paths that upstream embeds in
+ * other messages ("Archive 81", "…not found in the grabbed release: <release>", "…eligible for import in
+ * <path>").
+ */
 const BAD_RELEASE_PATTERNS = [
   /unable to parse/i,
-  /\bsample\b/i,
-  /\barchive\b/i,
+  /found archive file/i,
   /password/i,
   /executable/i,
+  /^sample\.?$/i,
 ];
+
+/** The header the *arrs put first in a multi-file statusMessage set ("One or more episodes|movies|tracks
+ *  expected in this release were not imported or missing…"); every titled entry after it names a FILE. */
+const MULTI_FILE_HEADER = /^one or more \w+ expected in this release were not imported or missing/i;
+
+/** A statusMessage title that is a file name (per-file entries are titled with the file's name). */
+const MEDIA_FILE_NAME =
+  /\.(?:mkv|mp4|m4v|avi|wmv|mov|mpe?g|ts|m2ts|webm|iso|img|vob|flac|mp3|m4a|m4b|aac|ogg|opus|wav|wv|ape|alac)$/i;
 
 /** The empty/transient set the stuck-import class ProcessMonitoredDownloads exists for (D-03 retry_import). */
 const RETRY_TRANSIENT_PATTERNS = [/waiting to import/i];
 
 const truncate = (s: string): string => (s.length > 500 ? s.slice(0, 500) : s);
 
-/** Flatten a queue record's errorMessage + every statusMessage title/message into a plain string list. */
-function collectMessages(item: ClassifiableQueueItem): string[] {
-  const out: string[] = [];
-  if (typeof item.errorMessage === 'string' && item.errorMessage.trim() !== '') {
-    out.push(item.errorMessage.trim());
+const nonEmpty = (s: unknown): string | null => (typeof s === 'string' && s.trim() !== '' ? s.trim() : null);
+
+interface QueueItemMessages {
+  /** Reason-bearing texts, most informative first: `errorMessage`, every statusMessage `messages[]` entry,
+   *  then titles that ARE the message (an entry with no messages, e.g. Lidarr's single-result shape), the
+   *  generic multi-file header last. A title with messages under it only NAMES the release or a file and is
+   *  left out (the release name is already the row's `title` column). */
+  messages: string[];
+  /** The subset that speaks for the WHOLE release: `errorMessage`, the messages of a release-level entry, and
+   *  title-borne messages outside a multi-file set. Never a per-file entry's rejections. */
+  releaseLevel: string[];
+}
+
+/**
+ * Split a queue record's texts into reasons vs. names (D-10). The upstream shapes (Sonarr/Radarr/Lidarr
+ * `TrackedDownload.Warn` + `CompletedDownloadService`): a single-result or plain warning is ONE entry titled
+ * with the download's own title, its messages the reasons; a multi-file result is the header entry (no
+ * messages) followed by one entry per unimported file, titled with the FILE name, its messages that file's
+ * rejections. So a title with messages under it is a name, never a reason.
+ */
+function collectMessages(item: ClassifiableQueueItem): QueueItemMessages {
+  const itemTitle = nonEmpty(item.title);
+  const entries = (item.statusMessages ?? []).filter((sm) => sm != null);
+  const multiFile = entries.some((sm) => MULTI_FILE_HEADER.test(nonEmpty(sm.title) ?? ''));
+  // A per-file entry: anything in a multi-file set, or a title that is a file name other than the download's.
+  const isPerFile = (title: string | null): boolean =>
+    multiFile || (title !== null && title !== itemTitle && MEDIA_FILE_NAME.test(title));
+
+  const primary: string[] = [];
+  const titleBorne: string[] = [];
+  const headers: string[] = [];
+  const releaseLevel: string[] = [];
+
+  const error = nonEmpty(item.errorMessage);
+  if (error) {
+    primary.push(error);
+    releaseLevel.push(error);
   }
-  for (const sm of item.statusMessages ?? []) {
-    if (sm == null) continue;
-    if (typeof sm.title === 'string' && sm.title.trim() !== '') out.push(sm.title.trim());
-    for (const m of sm.messages ?? []) {
-      if (typeof m === 'string' && m.trim() !== '') out.push(m.trim());
+  for (const sm of entries) {
+    const title = nonEmpty(sm.title);
+    const messages = (sm.messages ?? []).map(nonEmpty).filter((m): m is string => m !== null);
+    if (messages.length === 0) {
+      if (title === null) continue;
+      if (MULTI_FILE_HEADER.test(title)) {
+        headers.push(title);
+      } else {
+        titleBorne.push(title);
+        if (!multiFile) releaseLevel.push(title);
+      }
+      continue;
     }
+    primary.push(...messages);
+    if (!isPerFile(title)) releaseLevel.push(...messages);
   }
-  return out;
+  return { messages: [...primary, ...titleBorne, ...headers], releaseLevel };
 }
 
 /**
  * Classify one queue item into exactly one Action Class (D-03, FIRST-MATCH order: have_better → bad_release →
- * retry_import → unknown). Pure. Lidarr's match-ambiguity messages ("…not close enough…", manual-import
- * prompts) deliberately fall to `unknown` initially (Q-01) — census evidence graduates specific patterns later.
+ * retry_import → unknown). Pure. Patterns read MESSAGES, never a statusMessage title that names the release or
+ * a file; release-defect patterns read only the release-level ones; a have_better match that also carries an
+ * identity mismatch goes to `unknown` (all D-10). Lidarr's match-ambiguity messages ("…not close enough…",
+ * manual-import prompts) deliberately fall to `unknown` initially (Q-01) — census evidence graduates specific
+ * patterns later.
  */
 export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClassification {
-  const messages = collectMessages(item);
+  const { messages, releaseLevel } = collectMessages(item);
   const state = (item.trackedDownloadState ?? '').toLowerCase();
   const status = (item.status ?? '').toLowerCase();
   const trackedStatus = (item.trackedDownloadStatus ?? '').toLowerCase();
   const isImportStuck = state === 'importblocked' || state === 'importpending';
-  const firstMessage = messages[0] ?? null;
-  const matchIn = (patterns: RegExp[]): string | null =>
-    messages.find((m) => patterns.some((p) => p.test(m))) ?? null;
+  const bestMessage = messages[0] ?? null;
+  const matchIn = (patterns: RegExp[], texts: string[] = messages): string | null =>
+    texts.find((m) => patterns.some((p) => p.test(m))) ?? null;
 
-  // 1. have_better — import blocked/pending + an already-satisfied rejection.
+  // 1. have_better — import blocked/pending + an already-satisfied rejection, UNLESS the *arr also doubts the
+  //    grab's identity: then its "have better" may be about the wrong target, so report only.
   if (isImportStuck) {
     const hb = matchIn(HAVE_BETTER_PATTERNS);
-    if (hb) return { class: 'have_better', reason: truncate(hb), confidence: 'high' };
+    if (hb) {
+      const mismatch = matchIn(IDENTITY_MISMATCH_PATTERNS);
+      if (mismatch) return { class: 'unknown', reason: truncate(mismatch), confidence: 'low' };
+      return { class: 'have_better', reason: truncate(hb), confidence: 'high' };
+    }
   }
 
-  // 2. bad_release — errored transfer, a failed download, or a release-defect message.
-  const badMsg = matchIn(BAD_RELEASE_PATTERNS);
+  // 2. bad_release — errored transfer, a failed download, or a release-level release-defect message.
+  const badMsg = matchIn(BAD_RELEASE_PATTERNS, releaseLevel);
   if (trackedStatus === 'error' || status === 'failed' || state === 'failed' || badMsg) {
-    const r = badMsg ?? firstMessage;
+    const r = badMsg ?? bestMessage;
     return { class: 'bad_release', reason: r ? truncate(r) : null, confidence: 'high' };
   }
 
@@ -133,7 +221,7 @@ export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClas
   }
 
   // 4. unknown — everything else (incl. Lidarr match-ambiguity, Q-01). Reported, never acted on.
-  return { class: 'unknown', reason: firstMessage ? truncate(firstMessage) : null, confidence: 'low' };
+  return { class: 'unknown', reason: bestMessage ? truncate(bestMessage) : null, confidence: 'low' };
 }
 
 // ---------------------------------------------------------------------------
@@ -297,10 +385,11 @@ export interface QueueCleanupQueueItem {
 export interface QueueCleanupInstanceClient {
   /** The WHOLE instance queue (paged read; read-only). */
   getQueueAll(): Promise<QueueCleanupQueueItem[]>;
-  /** DELETE /queue/{id}?removeFromClient=&blocklist= — remove the stuck grab + blocklist the release. */
+  /** DELETE /queue/{id}?removeFromClient=&blocklist=&skipRedownload= — remove the stuck grab + blocklist the
+   *  release. The janitor always passes `skipRedownload: true` (D-10): the *arr must not re-search on its own. */
   deleteQueueItem(
     item: QueueCleanupQueueItem,
-    opts: { removeFromClient: boolean; blocklist: boolean },
+    opts: { removeFromClient: boolean; blocklist: boolean; skipRedownload: boolean },
   ): Promise<void>;
   /** POST /command ProcessMonitoredDownloads — estate-wide (at most once per instance per run). */
   processMonitoredDownloads(): Promise<void>;
@@ -511,6 +600,10 @@ function emptyByClass(): Record<QueueCleanupActionClass, { observed: number; enf
 
 const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+/** The one removal shape the janitor sends (D-04 / D-10): out of the download client, blocklisted, and NO
+ *  automatic re-search by the *arr. */
+const JANITOR_REMOVAL = { removeFromClient: true, blocklist: true, skipRedownload: true } as const;
+
 /** Count the item's prior retry_import rows (the escalation lookback via the (instance, downloadId) index). */
 async function priorRetryImportRuns(
   db: ReturnType<typeof resolveDb>,
@@ -631,13 +724,16 @@ export async function evaluateQueueCleanup(input: {
           action = 'skipped_cap';
         } else {
           try {
+            // Every janitor removal passes skipRedownload (D-10): with the *arr's "Redownload Failed" on, a
+            // blocklisting removal would otherwise re-search by itself — have_better must never re-search, and
+            // bad_release re-searches only through its own monitored-checked search below.
             if (actionClass === 'have_better') {
-              await client.deleteQueueItem(item, { removeFromClient: true, blocklist: true });
+              await client.deleteQueueItem(item, JANITOR_REMOVAL);
               action = 'removed_blocklisted';
               outcome = 'done';
             } else {
               // bad_release — blocklist, then re-search ONLY if the target is still monitored.
-              await client.deleteQueueItem(item, { removeFromClient: true, blocklist: true });
+              await client.deleteQueueItem(item, JANITOR_REMOVAL);
               const monitored = await client.isTargetMonitored(item);
               if (monitored) {
                 await client.searchTarget(item);
