@@ -46,7 +46,7 @@ describe('migrator advisory lock — concurrent runs (saga haynesnetwork-ha plan
 
         // ...and the idempotent 0002 catalog seed did not double-apply under the race.
         const seeded = await client.query('SELECT count(*)::int AS n FROM app_catalog');
-        expect(seeded.rows[0].n).toBe(7);
+        expect(seeded.rows[0].n).toBe(8); // 7 after 0061 + the Haynes Quest card (0079)
       } finally {
         await client.end();
       }

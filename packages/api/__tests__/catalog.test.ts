@@ -71,6 +71,7 @@ describe('catalog.myApps — role-based visible apps (R-10, ADR-012)', () => {
       'tautulli',
       'kavita',
       'audiobookshelf',
+      'haynes-quest',
     ]);
   });
 
@@ -101,6 +102,7 @@ describe('catalog.adminList (R-11)', () => {
       'tautulli',
       'kavita',
       'audiobookshelf',
+      'haynes-quest',
     ]);
     const seerr = rows[0]!;
     expect(seerr.sortOrder).toBe(10);

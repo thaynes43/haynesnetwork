@@ -71,9 +71,12 @@ is silently skipped**. This is the top footgun. Steps:
    for each view lives in a comment above its declaration in `src/schema/`.
 5. **Seeding `app_catalog`** → any seeded `url` MUST satisfy the DB CHECK `app_catalog_url_scheme`
    (`^https?://` — ADR-013 retired the old `*.haynesnetwork.com`-only host CHECK in migration
-   `0008`; any host is now allowed, the app normalizes/validates authoritatively). Seed guarded by
-   `WHERE NOT EXISTS (SELECT 1 FROM app_catalog)` so admin edits win forever after (see
-   `0002_seed_app_catalog.sql`).
+   `0008`; any host is now allowed, the app normalizes/validates authoritatively). The first-deploy
+   seed is guarded by `WHERE NOT EXISTS (SELECT 1 FROM app_catalog)` so admin edits win forever after
+   (see `0002_seed_app_catalog.sql`). A card added later ships as its own migration guarded per slug
+   (`WHERE NOT EXISTS (… WHERE slug = …)` — see `0037`); a role grant for it rides the insert in a
+   data-modifying CTE so it is written only for the row that migration created (see `0079`). Update
+   `SEED_SLUGS` and the catalog counts in the tests in the same change.
 
 ## Applying migrations
 

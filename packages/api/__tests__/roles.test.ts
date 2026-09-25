@@ -53,7 +53,8 @@ describe('roles.list', () => {
       isDefault: false,
       grantsAll: false,
     });
-    expect(byName.get('Family')!.appIds.length).toBe(4); // seerr/immich/open-webui/paperless (Plex cards deleted)
+    // seerr/immich/open-webui/paperless (Plex cards deleted) + haynes-quest (migration 0079, PRD R-254)
+    expect(byName.get('Family')!.appIds.length).toBe(5);
     expect(byName.get('Admin')!.memberCount).toBe(1); // the admin user created above
   });
 });

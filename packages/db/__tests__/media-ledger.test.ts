@@ -76,8 +76,9 @@ describe('0003_media_ledger against embedded Postgres 16', () => {
   it('is idempotent: re-running runMigrations applies nothing new', async () => {
     await runMigrations({ databaseUrl: pg.connectionString });
     const seeded = await client.query('SELECT count(*)::int AS n FROM app_catalog');
-    // 8 from 0002, +2 book cards (ADR-046/0037), -3 Plex cards deleted by 0061 (DESIGN-004 Q-04) = 7.
-    expect(seeded.rows[0].n).toBe(7);
+    // 8 from 0002, +2 book cards (ADR-046/0037), -3 Plex cards deleted by 0061 (DESIGN-004 Q-04),
+    // +1 Haynes Quest card (0079, PRD R-254) = 8.
+    expect(seeded.rows[0].n).toBe(8);
   });
 
   describe('media_items (D-05)', () => {

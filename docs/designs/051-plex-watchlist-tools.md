@@ -170,7 +170,7 @@ read plex.tv just before a change cannot erase it from the answers.
 
 ### D-07 — Data
 
-- Migration **0079**: `watch_marks_action_enum` CHECK gains `watchlist_add`, `watchlist_remove`
+- Migration **0080**: `watch_marks_action_enum` CHECK gains `watchlist_add`, `watchlist_remove`
   (`WATCH_MARK_ACTIONS`). No new table or column.
 - **Structural filter:** `selectLiveMarks` (`packages/watch/src/queries/marks.ts`) returns only the watch
   statements (`watched`, `not_interested`, `not_mine`) and types them so, because its readers treat any

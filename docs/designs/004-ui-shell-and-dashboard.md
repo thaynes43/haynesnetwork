@@ -1,8 +1,8 @@
 # DESIGN-004: UI shell and dashboard (Phase 1)
 
 - **Status:** Accepted — presentation details partially superseded by DESIGN-006 (visual identity: brand mark, typeface, radii, tile geometry); the mechanism and structure here remain normative
-- **Last updated:** 2026-07-17
-- **Satisfies:** PRD-001 R-10, R-12, R-14 (rendering side), R-60, R-61, R-66, AC-01, AC-04, AC-10; governed by ADR-005 (CSS-token theming via `data-theme`) and **ADR-012 (unified Role model)** — API consumed per DESIGN-003 / ADR-004 (API layer: tRPC v11).
+- **Last updated:** 2026-09-25 (D-26, the Haynes Quest card)
+- **Satisfies:** PRD-001 R-10, R-12, R-14 (rendering side), R-60, R-61, R-66, AC-01, AC-04, AC-10, R-254/AC-32 (D-26); governed by ADR-005 (CSS-token theming via `data-theme`) and **ADR-012 (unified Role model)** — API consumed per DESIGN-003 / ADR-004 (API layer: tRPC v11).
 
 > **Amended by ADR-012 (2026-07-05):** the admin permissions UI is now role-based.
 > **`/admin/roles` replaces `/admin/tags`** (roles table + Add-role modal + edit-in-place, the
@@ -1263,6 +1263,40 @@ harness like stub-maintainerr), `resize-matrix.spec.ts` (Home at all eight viewp
 includes the badge), `packages/ui/__tests__/UptimeBadge.test.tsx` (anatomy + percent
 formatting + reserved-width class), and the `@hnet/arr` / `@hnet/metrics` / `@hnet/api` unit
 specs (plain-text parse, snapshot honesty, router posture).
+
+### D-26 — Amendment 2026-09-25 (owner directive, PRD R-254) — the Haynes Quest card
+
+The owner's family game, **Haynes Quest** (`https://quest.haynesnetwork.com`, repo
+`thaynes43/haynes-quest`), gets a Portal card. Nothing about the Portal changes: the card is one more
+catalog row rendered by the existing tile grid (D-23), so this amendment only records the seed, the
+grant and the icon.
+
+- **Seed.** Migration `0079_haynes_quest_catalog_card` inserts slug `haynes-quest`, name "Haynes
+  Quest", description "Play — our family adventure game" (the verb-first register of the Kavita and
+  Audiobookshelf cards), URL `https://quest.haynesnetwork.com`, icon `haynes-quest`, sort order 110
+  (after Audiobookshelf's 100; admins can reorder). Per-slug idempotent, the DESIGN-024 D-08 pattern:
+  if any row already holds the slug, nothing is inserted.
+- **Grant.** In the same statement (a data-modifying CTE), the row the migration inserted is granted to
+  the seeded **Family** role, addressed by its fixed migration-0007 id. The grant never touches a card
+  the migration did not create, so an admin-made card or a revoked grant is left alone (R-11). If the
+  Family role is gone, or has become an all-apps role (which stores no grant rows), nothing is granted.
+  Admin sees the card implicitly; no other role is granted. Unlike 0037, which shipped its cards
+  Admin-only for the owner to open after review, the owner has already ruled the audience: Family and
+  Admin, the same two groups the game's Authentik application admits. Like the 0002/0007 seeds and
+  0061, the migration writes no `permission_audit` row: it has no admin actor.
+- **Icon.** A new code-shipped key `haynes-quest` (DESIGN-003 D-10): a compass whose needle's leading
+  half is filled, drawn in the registry's 24×24 stroke style with `currentColor` only.
+- **Access.** The card is a link, not a gate. The game signs people in through its own Authentik
+  application, which binds exactly `authentik Admins` and `family` (haynes-quest ADR-005 D-03,
+  configured in haynes-ops), so a Family-role user whose Authentik account is missing from `family`
+  sees the card but is refused by Authentik. The card has no Authentik link, so ADR-085's derived
+  bindings never manage the game's application.
+
+Enforced by `packages/db/__tests__/migrations.test.ts` (the seed row, Family-only grant, a fresh
+insert, an existing card that wins, an all-apps Family role, the journal entry),
+`packages/domain/__tests__/effective-apps.test.ts` (a Family-role user's apps include the card; Admin
+sees it), and `packages/ui/__tests__/icons.test.tsx` (the new key renders a self-contained
+`currentColor` SVG).
 
 ## Open questions
 
