@@ -4,7 +4,7 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ 2026-09-25 — Haynes Quest portal card (PRD R-254, DESIGN-004 D-26): merged, then release + haynes-ops tag
+## ▶ 2026-09-25 — Haynes Quest portal card LIVE (v0.99.0; PRD R-254, DESIGN-004 D-26)
 
 Owner directive (haynes-quest PRD-004 R-03, its work order WO110): a Portal card for the family game.
 Migration **0079** seeds `haynes-quest` → `https://quest.haynesnetwork.com` ("Play — our family
@@ -19,7 +19,19 @@ its 0007 id and `grants_all = false`; no `haynes-quest` row existed; the last ap
 **Heads-up for the owner (counts only):** of the users who will see the card, 1 of 5 Family-role users
 and 1 of 2 Admin-role users are in neither `family` nor `authentik Admins` in the Authentik mirror, so
 Authentik will refuse them at the game. That is PLAN-066's membership drift (its L1 reconcile), not the
-card. Release and deploy evidence is added here once live.
+card.
+
+**Live (2026-09-25 22:55Z):** #578 (squash `451e9eb`) → release **v0.99.0** (#575, `e16835d`; it also
+carries the #579 janitor fixes) → image digest `sha256:8122e28d…c5da2bc5b`, manifest and cosign `.sig`
+both 200 in GHCR → haynes-ops **#3190** (`c61c07f`, one-line tag bump). Flux applied `c61c07f`; the
+HelmRelease is Ready at `haynesnetwork.v198`; three new `haynesnetwork-main` pods are Ready on that
+digest with 0 restarts; each `migrate` log says "Migrations applied."; `/api/health` is 200. The DB now
+holds 79 applied migrations (the last `when` is 0079's), one `haynes-quest` row (8 catalog rows), and
+exactly one grant for it, Family. The live read path behind `/portal` (`effectiveAppsForUser`, run in a
+web pod for the first user of each role) lists `haynes-quest` for Admin and Family, and not for Default or
+Friends. **Owner checks still open:** clicking the card from a Family account once
+`quest.haynesnetwork.com` is live (haynes-ops #3188), and the membership drift above. Nothing here needs
+an admin UI action.
 
 ## ▶ 2026-09-25 — Plex watchlist tools (PLAN-071): researched, owner-ruled, docs on branch, build next
 
