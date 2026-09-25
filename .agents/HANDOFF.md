@@ -4,6 +4,21 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-25 — Plex watchlist tools (PLAN-071): researched, owner-ruled, docs on branch, build next
+
+Owner request 2026-09-25: the agents (ChatGPT, the Movie Room voice agent, dev-env) should add and remove
+titles on his Plex watchlist; ChatGPT had asked for `list_watchlist`, `set_watchlist` and `onWatchlist`
+in `watch_status`. Research + live probes: `.agents/context/2026-09-25-plex-agent-interactions-research.md`
+(plex.tv discover add/remove/match/userState verified from a web pod; one add/remove round trip on The
+Matrix, watchlist restored). **Seerr auto-requests the owner's watchlist** (every 3 min, 20 newest,
+auto-approved), so an add of a title not on Plex downloads it; owner ruling on his phone: **"Add it, say
+it downloads"** (settles PRD Q-13). Docs: **ADR-092** (supersedes ADR-087 C-07's 3 KB cap → 4 KB and
+ADR-088 C-03 in part), **DESIGN-051**, **PLAN-071**, PRD R-252..R-253 / US-15 / AC-29..AC-31, glossary
+T-260. Follow-ups ranked in the research note §5 (play in the Movie Room needs HA's Plex integration,
+which does not exist today; ratings as a taste signal; Continue Watching hygiene; household
+watchlists). Issue **#576**: Seerr re-requests a Trashed title still among the owner's 20 newest
+watchlist titles (low exposure, needs a decision). **Next:** PLAN-071 S1 merge → S2 build → S3–S6.
+
 ## ▶ 2026-09-24 — Public MCP connector LIVE (v0.98.0): the owner's ChatGPT connect is the last gate
 
 ADR-091 / DESIGN-050 shipped as **haynesnetwork v0.98.0** (#572 → release #570; two Opus reviews, every
