@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.99.0](https://github.com/thaynes43/haynesnetwork/compare/v0.98.0...v0.99.0) (2026-09-25)
+
+
+### Features
+
+* **portal:** seed the Haynes Quest card for Family (PRD R-254, migration 0079) ([#578](https://github.com/thaynes43/haynesnetwork/issues/578)) ([451e9eb](https://github.com/thaynes43/haynesnetwork/commit/451e9eb36c406b49aebe3133c6916b8e170db576))
+
+
+### Bug Fixes
+
+* **janitor:** no re-search on removal, identity-mismatch guard, message-only reasons, release-level sample ([#579](https://github.com/thaynes43/haynesnetwork/issues/579)) ([daa4633](https://github.com/thaynes43/haynesnetwork/commit/daa4633ee26664fdf91f60259c292561204e31a6))
+
+
+### Documentation
+
+* **mcp:** ADR-092 / DESIGN-051 / PLAN-071 — the owner's Plex watchlist through the watch tools ([#577](https://github.com/thaynes43/haynesnetwork/issues/577)) ([a0b5c74](https://github.com/thaynes43/haynesnetwork/commit/a0b5c74078e51191f9a416da977c049555e803b5))
+* **mcp:** PLAN-069 S1–S7 done — v0.98.0 live; the owner's ChatGPT connect is the last gate ([#574](https://github.com/thaynes43/haynesnetwork/issues/574)) ([abe3806](https://github.com/thaynes43/haynesnetwork/commit/abe38062e860865c6930d21912054d875878acf6))
+
 ## [0.98.0](https://github.com/thaynes43/haynesnetwork/compare/v0.97.1...v0.98.0) (2026-09-24)
 
 
