@@ -201,6 +201,32 @@ describe('the watchlist items (D-02): on Plex, started, watched', () => {
       { kind: 'show', title: 'Dark Matter', year: 2024, onPlex: false, progress: null },
     ]);
   });
+
+  it('a taster (a show tried and left) reads started, not watched', () => {
+    const taster = {
+      kind: 'show' as const,
+      titleKey: 'tvdb:371980',
+      title: 'Severance',
+      year: 2022,
+      plexGuid: null,
+      tmdbId: 95396,
+      tvdbId: 371980,
+      imdbId: null,
+      onPlex: true,
+      episodesWatched: 1,
+      episodesTotal: 19,
+      eventWatchedEpisodes: 1,
+      nextSeason: 1,
+      nextEpisode: 2,
+      nextResume: null,
+      resumePercent: null,
+      plexWatched: null,
+      lastWatchedAt: new Date((FETCHED - 400 * 86_400) * 1000),
+      showStatus: 'continuing' as const,
+    };
+    const items = watchlistItems([BASE[0]!], { ...facts, titles: [taster] }, indexMarks([]), FETCHED);
+    expect(items[0]!.progress).toBe('started');
+  });
 });
 
 describe('formatWatchlist (D-02)', () => {

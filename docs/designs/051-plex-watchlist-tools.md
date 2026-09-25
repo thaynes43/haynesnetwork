@@ -232,6 +232,19 @@ plex.tv title (D-03 step 5), the byte estimate (D-08), the read budget (D-03), s
 supersession notes, and the consent copy (D-09). An old pod treating a new watchlist mark as `not_mine`
 during the rolling deploy is accepted (minutes, and only if the owner changes his watchlist mid-rollout).
 
+### D-14 — Rulings made while building (PLAN-071 S2, 2026-09-25)
+
+| ID | Ruling |
+|---|---|
+| D-14a | **Latency.** The two GETs use the 300 ms revalidation budget; the PUT keeps the 800 ms mark-write budget with the idempotent retries, then one `userState` re-read. Normal calls take about 3 × 80 ms; if plex.tv stalls on every attempt the worst case is about 4.4 s (5.3 s when the discover id needs a catalog lookup), inside the 9 s MCP deadline and Home Assistant's 10 s. A shorter PUT budget was rejected: a false "didn't change" is worse than a slow answer. |
+| D-14b | **One catalog lookup.** `matchDiscover` is called once, with the first external id the title has (tmdb, then tvdb for shows, then imdb), not a fallback chain. |
+| D-14c | **Wording.** Ambiguous and not-found answers reuse the existing phrasing ("More than one match for …", "I couldn't find anything called X."); a remove that finds nothing says "I couldn't find X on your watchlist."; later pages start "Numbers 6 to 10:"; counts up to twenty are words. |
+| D-14d | **Logging.** `unconfirmed` is the D-10 result for a guid/catalog disagreement; `failed` is also logged when plex.tv is unreachable before any row is written. |
+| D-14e | **Empty watchlist.** No fetch time is recorded for an empty list (the sync writes no rows and `watch_accounts.resolved_at` is stamped before the read), so D-05's now − 24 h fallback stands. |
+| D-14f | **Same title** on the watchlist is decided by plex guid or tmdb/tvdb/imdb id, and by name and year only when one side has no id. A title known only through the watchlist leaves the resolver pool once removed, so `watch_status` then finds it through TMDB. |
+| D-14g | **A Taster reads "started"** in the watchlist answer (a show tried and left is not "watched"). |
+| D-14h | **Migration 0080**, not 0079: the Haynes Quest portal card (PR #578) took 0079 first. |
+
 ## Alternatives considered
 
 - One `watchlist` tool with an `action` (ADR-092 option 4): one scope per tool is how the filter works

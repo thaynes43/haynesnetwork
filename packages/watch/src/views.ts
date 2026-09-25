@@ -378,7 +378,7 @@ export function watchlistItems(
                 { showStatus: row.showStatus, now },
               )
             : movieState({ plexWatched: row.plexWatched, resumePercent: row.resumePercent, lastWatchedAt }, { now });
-        if (state === 'in_progress' || state === 'stalled') progress = 'started';
+        if (state === 'in_progress' || state === 'stalled' || state === 'taster') progress = 'started';
         else if (
           isEverWatched(
             { episodesWatched: row.episodesWatched, plexWatched: row.plexWatched, eventWatched: row.eventWatchedEpisodes > 0 },

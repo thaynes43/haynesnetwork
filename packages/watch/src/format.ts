@@ -582,7 +582,7 @@ export interface WatchlistItemView {
   year: number | null;
   /** The D-02 rule (recommend's, DESIGN-049 D-17). */
   onPlex: boolean;
-  /** `started`: the Title State is in progress or stalled; `watched`: Ever Watched and not unfinished. */
+  /** `started`: the Title State is in progress, stalled or a taster (a show tried and left); `watched`: Ever Watched and not unfinished. */
   progress: 'started' | 'watched' | null;
 }
 

@@ -1,6 +1,6 @@
 # PLAN-071: Plex watchlist tools (`watchlist`, `set_watchlist`, "on your watchlist"): build, deploy, live-verify
 
-- **Status:** In progress — S1 (docs) on branch `docs/plex-watchlist-tools`
+- **Status:** In progress — S1 done (#577); S2 built on `feat/plex-watchlist-tools`, in review
 - **ADRs:** ADR-092 (Proposed; Accepted at S6) · **Design:** DESIGN-051 · **PRD:** R-252, R-253,
   R-245 (amended), US-15, AC-29..AC-31, Q-13 resolved · **Glossary:** T-260, T-248 and T-253 amended
 - **Owner:** whoever holds the session; this plan is the tracked owner.
@@ -40,3 +40,7 @@
 ## Log
 
 - 2026-09-25: research + live probes done; owner ruling on the Seerr coupling; S1 docs written.
+- 2026-09-25: S1 merged (#577) after an Opus design review (1 blocker, 9 should-fix, all ruled: DESIGN-051 D-13).
+- 2026-09-25: S2 built (Opus): nine tools, `tools/list` 3,633 bytes, full workspace 3,292 tests green, a
+  `pnpm dev:local` round trip through `/api/mcp` (list, add, list, watch_status, repeat add, undo, remove).
+  Build rulings in DESIGN-051 D-14; migration renumbered 0080 (#578 took 0079).
