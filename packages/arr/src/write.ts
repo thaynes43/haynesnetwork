@@ -109,18 +109,32 @@ abstract class ArrWriteClientBase {
 
   /**
    * ADR-083 / DESIGN-046 D-04 (PLAN-065 — *arr queue janitor) — `DELETE /queue/{id}?removeFromClient=&
-   * blocklist=`: remove a stuck grab from the download queue. `removeFromClient` also deletes it from the
-   * download client (SABnzbd/qBittorrent); `blocklist` marks the release so the same one is never re-grabbed
-   * (the *arr picks a different release on a re-search). Shared verbatim by Sonarr/Radarr/Lidarr (identical
-   * endpoint + query params, verified against the shared Servarr `QueueController`). Confined to
+   * blocklist=&skipRedownload=`: remove a stuck grab from the download queue. `removeFromClient` also deletes
+   * it from the download client (SABnzbd/qBittorrent); `blocklist` marks the release so the same one is never
+   * re-grabbed (the *arr picks a different release on a re-search). Shared verbatim by Sonarr/Radarr/Lidarr
+   * (identical endpoint + query params, verified against the shared Servarr `QueueController`). Confined to
    * packages/domain (the ADR-008 write guard) exactly like the other write clients.
+   *
+   * `skipRedownload` is REQUIRED on purpose (DESIGN-046 D-10, 2026-09-25): a blocklisting removal goes
+   * through `FailedDownloadService.MarkAsFailed(trackedDownload, skipRedownload)`, and with the *arr's
+   * "Redownload Failed" setting on (`autoRedownloadFailed`, on for all three here) the resulting
+   * `DownloadFailedEvent` triggers an automatic re-search unless `skipRedownload=true`. Verified against
+   * `QueueController.RemoveAction(int id, bool removeFromClient = true, bool blocklist = false,
+   * bool skipRedownload = false, bool changeCategory = false)` and `RedownloadFailedDownloadService`
+   * (`if (message.SkipRedownload) return;` before the `AutoRedownloadFailed` check) at the running tags
+   * Sonarr v4.0.20.3014, Radarr v6.4.4.10685 and Lidarr v3.1.6.5078. The server default is `false`, so a
+   * caller that omitted it would silently re-search.
    */
   deleteQueueItem(
     id: number,
-    opts: { removeFromClient: boolean; blocklist: boolean },
+    opts: { removeFromClient: boolean; blocklist: boolean; skipRedownload: boolean },
   ): Promise<void> {
     return this.http.requestVoid('DELETE', `queue/${id}`, {
-      query: { removeFromClient: opts.removeFromClient, blocklist: opts.blocklist },
+      query: {
+        removeFromClient: opts.removeFromClient,
+        blocklist: opts.blocklist,
+        skipRedownload: opts.skipRedownload,
+      },
     });
   }
 

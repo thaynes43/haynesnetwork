@@ -80,8 +80,23 @@ describe('classifyQueueItem (D-03, pure)', () => {
       class: 'bad_release',
     },
     {
-      name: 'lidarr bad_release: sample',
-      item: { ...msg('Rejected', 'Sample detected in the release') },
+      // The single-result shape (RejectedImportService): the release's ONE file is a sample, so the "Sample"
+      // rejection sits on the entry titled with the download's own title — the release IS a sample (D-10).
+      name: 'radarr bad_release: the whole release is a sample ("Sample" on the release-level entry)',
+      item: {
+        title: 'Some.Movie.2024.1080p.WEB-DL.DDP5.1.H.264-GRP',
+        trackedDownloadState: 'importBlocked',
+        trackedDownloadStatus: 'warning',
+        ...msg('Some.Movie.2024.1080p.WEB-DL.DDP5.1.H.264-GRP', 'Sample'),
+      },
+      class: 'bad_release',
+    },
+    {
+      name: 'sonarr bad_release: upstream archive rejection ("Found archive file, might need to be extracted")',
+      item: {
+        trackedDownloadState: 'importBlocked',
+        ...msg('Some.Show.S01E01.1080p.WEB.h264-GRP', 'Found archive file, might need to be extracted'),
+      },
       class: 'bad_release',
     },
     {
@@ -145,6 +160,279 @@ describe('classifyQueueItem (D-03, pure)', () => {
       statusMessages: [{ title: 'x', messages: ['Waiting to import...'] }],
     });
     expect(result.class).toBe('bad_release');
+  });
+
+  // --- DESIGN-046 D-10 (2026-09-25 spot-check) — fixtures from the real census strings ---
+
+  describe('D-10 identity-mismatch guard: have_better + an identity mismatch → unknown (report only)', () => {
+    // Real case: 8 "Lioness.2023 S01E01–08" releases grabbed for "Lioness (2021)", a different show missing those
+    // episodes; the items ALSO carried CF-score "not an upgrade" messages. Removing them could lose wanted episodes.
+    const LIONESS = 'Lioness.2023.S01E03.1080p.WEB.h264-ETHEL';
+    const NOT_CF_UPGRADE =
+      'Not a Custom Format upgrade for existing episode file(s). New: [] do not improve on Existing: [WEB-DL, x264]';
+    const mismatchCases: Array<{ name: string; mismatch: string; hb: string }> = [
+      {
+        name: 'sonarr: "not found in the grabbed release" (MatchesGrabSpecification)',
+        mismatch: `Episode 1x03 was not found in the grabbed release: ${LIONESS}`,
+        hb: NOT_CF_UPGRADE,
+      },
+      {
+        name: 'sonarr: "matched to series by ID" (CompletedDownloadService)',
+        mismatch:
+          'Found matching series via grab history, but release was matched to series by ID. Automatic import is not possible. See the FAQ for details.',
+        hb: 'Not an upgrade for existing episode file(s). Existing quality: WEBDL-1080p. New quality WEBDL-1080p.',
+      },
+      {
+        name: 'radarr: "matched to movie by ID" (CompletedDownloadService)',
+        mismatch:
+          'Found matching movie via grab history, but release was matched to movie by ID. Manual Import required.',
+        hb: 'Not an upgrade for existing movie file(s)',
+      },
+      {
+        name: 'sonarr: "unexpected considering the … folder name" (MatchesFolderSpecification)',
+        mismatch: `Episode 1x05 was unexpected considering the ${LIONESS} folder name`,
+        hb: 'Quality and Language cutoff has already been met',
+      },
+    ];
+
+    for (const c of mismatchCases) {
+      it(c.name, () => {
+        const result = classifyQueueItem({
+          title: LIONESS,
+          status: 'completed',
+          trackedDownloadStatus: 'warning',
+          trackedDownloadState: 'importBlocked',
+          statusMessages: [
+            {
+              title: 'One or more episodes expected in this release were not imported or missing from the release',
+              messages: [],
+            },
+            { title: `${LIONESS}.mkv`, messages: [c.mismatch, c.hb] },
+          ],
+        });
+        expect(result.class).toBe('unknown');
+        expect(result.confidence).toBe('low');
+        expect(result.reason).toBe(c.mismatch); // the identity doubt is the reason reported
+      });
+    }
+
+    it('the guard only vetoes have_better: the same item WITHOUT the mismatch is still have_better', () => {
+      const result = classifyQueueItem({
+        title: LIONESS,
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [{ title: `${LIONESS}.mkv`, messages: [NOT_CF_UPGRADE] }],
+      });
+      expect(result.class).toBe('have_better');
+      expect(result.reason).toBe(NOT_CF_UPGRADE);
+    });
+  });
+
+  describe('D-10 reason: the stored reason is a MESSAGE, never a release or file name', () => {
+    it('a plain warning (entry titled with the release name) stores the message, not the release name', () => {
+      const release = 'Some.Show.S02E04.1080p.WEB.h264-GRP';
+      const text =
+        'Found matching series via grab history, but release was matched to series by ID. Automatic import is not possible. See the FAQ for details.';
+      const result = classifyQueueItem({
+        title: release,
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [{ title: release, messages: [text] }],
+      });
+      expect(result.class).toBe('unknown');
+      expect(result.reason).toBe(text);
+    });
+
+    it('a multi-file set stores a per-file rejection, not the file name and not the generic header', () => {
+      const result = classifyQueueItem({
+        title: 'Some.Show.S02.1080p.WEB.h264-GRP',
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [
+          {
+            title: 'One or more episodes expected in this release were not imported or missing from the release',
+            messages: [],
+          },
+          { title: 'Some.Show.S02E01.1080p.WEB.h264-GRP.mkv', messages: ['Locked file, try again later'] },
+        ],
+      });
+      expect(result.class).toBe('unknown');
+      expect(result.reason).toBe('Locked file, try again later');
+    });
+
+    it('the download client error comes first when present', () => {
+      const result = classifyQueueItem({
+        title: 'Some.Movie.2024.1080p-GRP',
+        status: 'warning',
+        errorMessage: 'The download is stalled with no connections',
+        statusMessages: [{ title: 'Some.Movie.2024.1080p-GRP', messages: ['Something the classifier has never seen'] }],
+      });
+      expect(result.reason).toBe('The download is stalled with no connections');
+    });
+
+    it('a title-borne message (an entry with no messages, Lidarr single-result shape) is still a reason', () => {
+      const text = 'Album match is not close enough: 58.3% vs 80% [Title 0.12, Track Count 0.40]';
+      const result = classifyQueueItem({
+        title: 'Some Artist - Some Album (2019) [FLAC]',
+        trackedDownloadState: 'importPending',
+        statusMessages: [{ title: text, messages: [] }],
+      });
+      expect(result.class).toBe('unknown');
+      expect(result.reason).toBe(text);
+    });
+
+    it('only the generic multi-file header present → it is the reason of last resort', () => {
+      const header = 'One or more movies expected in this release were not imported or missing';
+      const result = classifyQueueItem({
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [{ title: header, messages: [] }],
+      });
+      expect(result.class).toBe('unknown');
+      expect(result.reason).toBe(header);
+    });
+  });
+
+  describe('D-10 sample: only a release-level "Sample" verdict is a bad_release signal', () => {
+    // Real cases: The Gentlemen, Star Wars Visions — per-file "…-sample.mkv" status TITLES inside otherwise good
+    // releases were briefly classed bad_release by the old \bsample\b (title-inclusive) pattern.
+    const GENTLEMEN = 'The.Gentlemen.2024.S01.1080p.NF.WEB-DL.DDP5.1.H.264-FLUX';
+
+    it('a per-file "…-sample.mkv" TITLE is a name, not a verdict', () => {
+      const result = classifyQueueItem({
+        title: GENTLEMEN,
+        status: 'completed',
+        trackedDownloadStatus: 'warning',
+        trackedDownloadState: 'importing',
+        statusMessages: [
+          {
+            title: 'The.Gentlemen.2024.S01E01.1080p.NF.WEB-DL.DDP5.1.H.264-FLUX-sample.mkv',
+            messages: ['Locked file, try again later'],
+          },
+        ],
+      });
+      expect(result.class).toBe('unknown');
+      expect(result.reason).toBe('Locked file, try again later');
+    });
+
+    it('a per-file "Sample" rejection among real files (multi-file set) does not condemn the release', () => {
+      const result = classifyQueueItem({
+        title: 'Star.Wars.Visions.S03.2160p.DSNP.WEB-DL.DDP5.1.H.265-FLUX',
+        status: 'completed',
+        trackedDownloadStatus: 'warning',
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [
+          {
+            title: 'One or more episodes expected in this release were not imported or missing from the release',
+            messages: [],
+          },
+          {
+            title: 'Star.Wars.Visions.S03E01.2160p.DSNP.WEB-DL.DDP5.1.H.265-FLUX-sample.mkv',
+            messages: ['Sample'],
+          },
+          {
+            title: 'Star.Wars.Visions.S03E02.2160p.DSNP.WEB-DL.DDP5.1.H.265-FLUX.mkv',
+            messages: ['Locked file, try again later'],
+          },
+        ],
+      });
+      expect(result.class).toBe('unknown');
+    });
+
+    it('a sample-named FILE among real files still classes have_better on the files\' own verdict', () => {
+      const hb = 'Not a Custom Format upgrade for existing episode file(s). New: [] do not improve on Existing: [DV]';
+      const result = classifyQueueItem({
+        title: GENTLEMEN,
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [
+          {
+            title: 'One or more episodes expected in this release were not imported or missing from the release',
+            messages: [],
+          },
+          { title: 'The.Gentlemen.2024.S01E01.1080p.NF.WEB-DL.DDP5.1.H.264-FLUX-sample.mkv', messages: ['Sample'] },
+          { title: 'The.Gentlemen.2024.S01E01.1080p.NF.WEB-DL.DDP5.1.H.264-FLUX.mkv', messages: [hb] },
+        ],
+      });
+      expect(result.class).toBe('have_better');
+      expect(result.reason).toBe(hb);
+    });
+
+    it('a stand-alone file-named entry (no item title) is treated as per-file — conservative', () => {
+      const result = classifyQueueItem({
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [{ title: 'Some.Show.S01E01-sample.mkv', messages: ['Sample'] }],
+      });
+      expect(result.class).toBe('unknown');
+    });
+
+    it('a single-file download named like a file IS the release when the item title matches', () => {
+      const name = 'Some.Show.S01E01.1080p-GRP.mkv';
+      const result = classifyQueueItem({
+        title: name,
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [{ title: name, messages: ['Sample'] }],
+      });
+      expect(result.class).toBe('bad_release');
+      expect(result.reason).toBe('Sample');
+    });
+
+    it('"Unable to determine if file is a sample" (SampleIndeterminate) is not a sample verdict', () => {
+      const result = classifyQueueItem({
+        title: 'Some.Movie.2024.1080p-GRP',
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [
+          { title: 'Some.Movie.2024.1080p-GRP', messages: ['Unable to determine if file is a sample'] },
+        ],
+      });
+      expect(result.class).toBe('unknown');
+    });
+  });
+
+  describe('D-10 release-defect patterns read release-level messages only (sibling of the sample fix)', () => {
+    it('"archive" inside a release name or path embedded in a message is not an archive verdict (Archive 81)', () => {
+      const release = 'Archive.81.S01E03.1080p.WEB.H264-GLHF';
+      const result = classifyQueueItem({
+        title: release,
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [
+          { title: release, messages: [`No files found are eligible for import in /data/downloads/complete/${release}`] },
+        ],
+      });
+      expect(result.class).toBe('unknown');
+    });
+
+    it('a release NAME that contains "archive" never classifies on its own', () => {
+      const release = 'Archive.81.S01E04.1080p.WEB.H264-GLHF';
+      const result = classifyQueueItem({
+        title: release,
+        status: 'completed',
+        trackedDownloadState: 'importing',
+        statusMessages: [{ title: release, messages: ['Something the classifier has never seen'] }],
+      });
+      expect(result.class).toBe('unknown');
+    });
+
+    it('a per-file "Unable to parse" among real files does not condemn the release', () => {
+      const result = classifyQueueItem({
+        title: 'Some.Show.S01.1080p.WEB.h264-GRP',
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [
+          {
+            title: 'One or more episodes expected in this release were not imported or missing from the release',
+            messages: [],
+          },
+          { title: 'Some.Show.S01.Featurette.1080p.WEB.h264-GRP.mkv', messages: ['Unable to parse file'] },
+        ],
+      });
+      expect(result.class).toBe('unknown');
+    });
+
+    it('a download-client failure (errorMessage) still reads as a release defect', () => {
+      const result = classifyQueueItem({
+        title: 'Some.Movie.2024.1080p-GRP',
+        status: 'completed',
+        trackedDownloadState: 'importing',
+        errorMessage: 'Unpacking failed, archive requires a password',
+      });
+      expect(result.class).toBe('bad_release');
+      expect(result.reason).toBe('Unpacking failed, archive requires a password');
+    });
   });
 
   it('carries the driving message as the reason (≤500 chars)', () => {
@@ -281,7 +569,7 @@ const unknownItem = (id: number) =>
 interface InstanceStub {
   client: QueueCleanupInstanceClient;
   calls: {
-    deletes: Array<{ id: number; removeFromClient: boolean; blocklist: boolean }>;
+    deletes: Array<{ id: number; removeFromClient: boolean; blocklist: boolean; skipRedownload: boolean }>;
     processMonitored: number;
     searches: number[];
     monitoredChecks: number;
@@ -303,7 +591,12 @@ function makeInstanceStub(
       async deleteQueueItem(qi, o) {
         if (opts.explodeOnWrite) throw new Error('census must never write');
         if (opts.deleteError) throw new Error('delete failed');
-        calls.deletes.push({ id: qi.queueItemId, removeFromClient: o.removeFromClient, blocklist: o.blocklist });
+        calls.deletes.push({
+          id: qi.queueItemId,
+          removeFromClient: o.removeFromClient,
+          blocklist: o.blocklist,
+          skipRedownload: o.skipRedownload,
+        });
       },
       async processMonitoredDownloads() {
         if (opts.explodeOnWrite) throw new Error('census must never write');
@@ -426,13 +719,14 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     );
   });
 
-  it('ENFORCE have_better: removes + blocklists, no re-search (action removed_blocklisted)', async () => {
+  it('ENFORCE have_better: removes + blocklists with skipRedownload, no re-search (action removed_blocklisted)', async () => {
     const radarr = makeInstanceStub([haveBetter(10)]);
     const cfg = clone();
     cfg.modes.radarr.have_better = 'enforce';
     await evaluateQueueCleanup({ db: t.db, clients: makeClients({ radarr: radarr.client }), config: cfg });
 
-    expect(radarr.calls.deletes).toEqual([{ id: 10, removeFromClient: true, blocklist: true }]);
+    // D-10: skipRedownload so the *arr's own "Redownload Failed" never re-searches behind the janitor's back.
+    expect(radarr.calls.deletes).toEqual([{ id: 10, removeFromClient: true, blocklist: true, skipRedownload: true }]);
     expect(radarr.calls.searches).toHaveLength(0);
     const [row] = await t.db.select().from(arrQueueCleanupActions);
     expect(row!.action).toBe('removed_blocklisted');
@@ -445,7 +739,8 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
 
     const monitored = makeInstanceStub([badRelease(20)], { monitored: true });
     await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: monitored.client }), config: cfg });
-    expect(monitored.calls.deletes).toHaveLength(1);
+    // D-10: the *arr's automatic re-search is suppressed; the janitor's own monitored-checked search is the one.
+    expect(monitored.calls.deletes).toEqual([{ id: 20, removeFromClient: true, blocklist: true, skipRedownload: true }]);
     expect(monitored.calls.searches).toEqual([20]);
     let rows = await t.db.select().from(arrQueueCleanupActions);
     expect(rows[0]!.action).toBe('blocklisted_searched');
@@ -453,6 +748,9 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     await t.db.delete(arrQueueCleanupActions);
     const unmonitored = makeInstanceStub([badRelease(21)], { monitored: false });
     await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: unmonitored.client }), config: cfg });
+    expect(unmonitored.calls.deletes).toEqual([
+      { id: 21, removeFromClient: true, blocklist: true, skipRedownload: true },
+    ]);
     expect(unmonitored.calls.searches).toHaveLength(0);
     rows = await t.db.select().from(arrQueueCleanupActions);
     expect(rows[0]!.action).toBe('removed_blocklisted');
@@ -593,6 +891,62 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     const hb = radarr.classes.find((c) => c.actionClass === 'have_better')!;
     expect(hb.census).toBe(2);
     expect(hb.topReasons[0]!.count).toBe(2);
+  });
+
+  it('REASON (D-10): rows store the message as reason (release name only in title); digest top reasons are messages', async () => {
+    const release = 'Some.Show.S02E04.1080p.WEB.h264-GRP';
+    const text =
+      'Found matching series via grab history, but release was matched to series by ID. Automatic import is not possible. See the FAQ for details.';
+    const orphan = (id: number) =>
+      item({
+        queueItemId: id,
+        downloadId: `dl-${id}`,
+        title: release,
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [{ title: release, messages: [text] }],
+      });
+    await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: makeInstanceStub([orphan(110), orphan(111)]).client }),
+      config: clone(),
+    });
+    const rows = await t.db.select().from(arrQueueCleanupActions);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.actionClass === 'unknown' && r.reason === text && r.title === release)).toBe(true);
+
+    const section = await buildQueueCleanupDigestSection({ db: t.db });
+    const unknown = section!.instances
+      .find((i) => i.instance === 'sonarr')!
+      .classes.find((c) => c.actionClass === 'unknown')!;
+    expect(unknown.topReasons).toEqual([{ reason: text, count: 2 }]);
+  });
+
+  it('GUARD (D-10): an identity-mismatched "have better" item is never removed, even with have_better enforced', async () => {
+    const release = 'Lioness.2023.S01E01.1080p.WEB.h264-ETHEL';
+    const lioness = item({
+      queueItemId: 120,
+      downloadId: 'dl-lioness',
+      title: release,
+      trackedDownloadState: 'importBlocked',
+      statusMessages: [
+        {
+          title: `${release}.mkv`,
+          messages: [
+            `Episode 1x01 was not found in the grabbed release: ${release}`,
+            'Not a Custom Format upgrade for existing episode file(s). New: [] do not improve on Existing: [WEB-DL]',
+          ],
+        },
+      ],
+    });
+    const cfg = clone();
+    cfg.modes.sonarr.have_better = 'enforce';
+    const sonarr = makeInstanceStub([lioness], { explodeOnWrite: true });
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: sonarr.client }), config: cfg });
+    expect(sonarr.calls.deletes).toHaveLength(0);
+    const [row] = await t.db.select().from(arrQueueCleanupActions);
+    expect(row!.actionClass).toBe('unknown');
+    expect(row!.action).toBe('none');
+    expect(row!.outcome).toBe('observed');
   });
 
   it('LADDER nag: promotionDue when census data spans ≥3 distinct days at L0', async () => {
