@@ -38,10 +38,10 @@ was printed; outputs are counts plus the Trash items themselves.
 | Path | Accounts | Notes |
 |---|---|---|
 | (a) The app today: discover provider with the owner server token (`packages/plex/src/read.ts` `getWatchlist`, 100 per page, `includeGuids`) | owner (1) | Cached in `watch_reco_signals` (source `watchlist`, 150 rows, replaced every 15 minutes by `sync-watch`). |
-| (b) Seerr `GET /api/v1/user/{id}/watchlist?page=N` with the app's `SEERR_API_KEY` | the 16 Seerr users: owner, 1 of 2 full Home members, 14 of 36 friends | Seerr reads each user's list with **that user's own stored Plex token**, so it sees **private** lists. 20 per page, `{page,totalPages,totalResults,results[{id,ratingKey,title,mediaType,tmdbId}]}`. All 16 tokens answered 200 (list sizes 150 for the owner, then 4, 75, 1, 131, 5, 2, 28, 3, 0, 42, 34, 56, 10, 26, 3). The API key acts as Seerr user 1 (ADMIN). Seerr's local Watchlist table is empty. |
+| (b) Seerr `GET /api/v1/user/{id}/watchlist?page=N` with the app's `SEERR_API_KEY` | the 16 Seerr users: owner, 1 of 2 full Home members, 14 of 36 friends | Seerr reads each user's list with **that user's own stored Plex token**, so it sees **private** lists. 20 per page, `{page,totalPages,totalResults,results[{id,ratingKey,title,mediaType,tmdbId}]}`. All 16 tokens answered 200 (list sizes 150 for the owner, then 4, 75, 1, 131, 5, 2, 28, 3, 0, 42, 34, 56, 10, 26, 3). **Correction (design review, PR #594):** a 200 proves nothing on this route: Seerr 3.4.1 answers any failed plex.tv read (a bad token, a 5xx, a 429) with 200 and an empty list, so the one user that answered 0 has an unverified token; the 15 with titles are proven. The API key acts as Seerr user 1 (ADMIN). Seerr's local Watchlist table is empty (the route would serve it instead of the Plex list). |
 | (c) Maintainerr 3.29.0 Plex rule properties `[0,28]` "Watchlisted by (username)" and `[0,30]` "Is Watchlisted" | **4**: owner, 2 full Home members, 1 friend | Maintainerr is bound to the one server it manages (HaynesOps). It enumerates that server's `/accounts` (21 entries) joined to plex.tv users that have a username and an avatar uuid. Managed users have no username and are dropped; 35 friends are not on HaynesOps at all. Rules run every 8 h (`0 0-23/8 * * *`). |
 | (d) Plex Home switch: `POST https://plex.tv/api/home/users/{id}/switch` → `authenticationToken` | the 3 managed users (untested) | A POST that mints a token/session for the managed user; not probed (read-only scope). Whether managed users even have a discover watchlist is unknown. All 3 have no PIN. |
-| (e) community.plex.tv GraphQL with the owner token | owner, both full Home members, all 36 friends **resolve**; managed users answer `User not found: Data loader item not found` | Works as an HTTP GET: `https://community.plex.tv/api?query=…&variables=…` with `X-Plex-Token`. Query: `query W($uuid: ID = "", $first: PaginationInt!, $after: String) { user(id: $uuid) { watchlist(first: $first, after: $after) { nodes { id guid type title year } pageInfo { hasNextPage endCursor } } } }`, `first` 10..100 (1, 101, 200 are rejected). Nodes carry the 24-hex discover `id`, `guid` (`plex://movie|show/<id>`), `type`, `title`, `year` (also `originallyAvailableAt`, `slug`, `userState{watchlistedAt}`); **no tmdb/tvdb/imdb** field is accepted and introspection is disabled. The uuid comes from each `/api/users` `thumb` (`https://plex.tv/users/<uuid>/avatar?c=<digits>`). |
+| (e) community.plex.tv GraphQL with the owner token | owner, both full Home members, all 36 friends **resolve**; managed users answer `User not found: Data loader item not found` | Works as an HTTP GET: `https://community.plex.tv/api?query=…&variables=…` with `X-Plex-Token`. Query: `query W($uuid: ID = "", $first: PaginationInt!, $after: String) { user(id: $uuid) { watchlist(first: $first, after: $after) { nodes { id guid type title year } pageInfo { hasNextPage endCursor } } } }`, `first` 10..100 (1, 101, 200 are rejected). Nodes carry the 24-hex discover `id`, `guid` (`plex://movie|show/<id>`), `type` (the upper-case enum `MOVIE` / `SHOW`, re-probed 2026-09-26), `title`, `year` (also `originallyAvailableAt`, `slug`, `userState{watchlistedAt}`); **no tmdb/tvdb/imdb** field is accepted and introspection is disabled. The uuid comes from each `/api/users` `thumb` (`https://plex.tv/users/<uuid>/avatar?c=<digits>`). |
 
 **Correction (skeptics, partly refuted "reads 39 of 42"):** community returns a watchlist the owner may not see as
 an **empty list with no error**. Three friends whose Seerr reads return 75, 26 and 3 titles read as empty through
@@ -50,7 +50,8 @@ null; the 10 non-FRIENDS accounts are almost certainly hidden, not empty. The ow
 `watchlist: PRIVATE` (a setting in real use). So:
 
 - **Positively known today: 22 of 42 accounts** (18 read with titles through community, plus 4 Seerr users among
-  the community-empties: 3 hidden lists and 1 confirmed empty).
+  the community-empties: 3 hidden lists and 1 that answered empty, unverified since an empty answer is also Seerr's
+  error answer).
 - **Unknowable today: 20 accounts** (17 friends that read empty through community and have no Seerr user, plus the
   3 managed users). The hidden lists found so far add no hit in the pool, the open batch or the deleted set.
 - Any friend who signs in to Seerr once (it is linked to HaynesTower, `newPlexLogin` true) gives Seerr a token, and
@@ -69,8 +70,11 @@ Other facts:
 - **Pool items need no mapping:** Maintainerr's collection content (`GET /api/collections/media/{id}/content/{page}`)
   carries `mediaData.guid` (`plex://movie/<24hex>`, the show guid for TV) and a top-level `ruleEvaluationFailed`; all
   170 pool members have `plex://` guids. The app's zod schema strips both today.
-- Seerr's `getWatchlist` keeps one cached response (with ETag) per token. Sequential page reads for one user worked
-  live; concurrent reads of different pages were not tested.
+- Seerr's `getWatchlist` keeps one cached response (with ETag) per token, whatever the offset. Sequential page reads
+  for one user worked live; concurrent reads of different pages were not tested. It also wraps the discover call and
+  the page's 20 metadata fetches in one try/catch and returns an empty list on any error (Loki shows `Failed to
+  retrieve watchlist items`, 2 in one day from the owner-only sync, one a plex.tv 503), and it drops items with no
+  tmdb guid or a 404.
 - Watchlist history: the app keeps only the owner's current list. Community `activityFeed(types:[WATCHLIST])`
   returns dated **add** events (750 from 2022-05-08 to 2026-09-26) but not removals.
 
@@ -96,7 +100,13 @@ Other facts:
 - Maintainerr flags an already-pooled item whose rule data was transiently unavailable (`ruleEvaluationFailed`) and
   its own handler skips such items, but the per-item handle the app calls never checks the flag.
 - Side finding: the sweep marks an item `deleted` before the handle call and tolerates handle failures, so "deleted"
-  overstates reality (2026-09-13: 45 marked, 39 removed; The Devil's Mouth is still in Radarr).
+  overstates reality (2026-09-13: 45 marked, 39 removed; The Devil's Mouth is still in Radarr, id 9555, with its
+  file). Maintainerr's handle answers 409 while its rule or collection executor holds the lock, and 409 again when
+  `handleMedia` returns 'failed'.
+- **Addition (design review, PR #594): a removed *arr record is not proof the files are gone.** Never Let Go (2024)
+  and Sleeping Beauty (2011), marked deleted on 2026-08-22, have no Radarr record, yet their files still exist and are
+  accessible on HaynesOps and HaynesTower (Plex `checkFiles=1`). Orphaned files are a Maintainerr cleanup matter;
+  DESIGN-052 D-14 notes them.
 
 ## 4. Watchlisted titles already deleted, and at risk
 
@@ -123,7 +133,10 @@ Other facts:
   auto-request and auto-approve permission (`defaultPermissions` 277872800). 96 requests, 0 auto-requests.
 - Radarr/Sonarr accept a Seerr add of an excluded title (exclusions are read only by list sync and Radarr's own
   collection auto-add). Seerr requests carry tag `mediarequests` (except anime series, which get `animeTags`, empty
-  live), and that tag excludes a title from both Trash pools from then on.
+  live), and that tag excludes a title from both Trash pools from then on. **Addition (design review):** live, Seerr's
+  Sonarr settings are `tags: [1]` and `animeTags: []`, so an anime series Seerr requests is untagged (Boruto and
+  Attack on Titan are Seerr-requested and untagged); an admin's request-level override can replace the tags too, and
+  Seerr adds no tag when it only searches a movie Radarr already has.
 - **No release memory survives the delete.** The *arr deletes the title's blocklist and history with the record
   (`BlocklistService.HandleAsync(MoviesDeletedEvent)` / `SeriesDeletedEvent`); the blocklist API has **no create
   call** (only `POST /api/v3/history/failed/{id}` and `DELETE /api/v3/queue/{id}?blocklist=true`, both needing a
@@ -139,7 +152,11 @@ Other facts:
   the item's tag at grab time: `mediarequests` items go to SABnzbd-Fast, everything else to SABnzbd main, so a Seerr
   re-request of a title SAB main downloaded meets no duplicate record. Most Trash-deleted movies (about 78%) have no
   cluster SAB record at all; the pre-July **legacy SAB on HaynesTower** (`binhex-sabnzbdvpn`, history 2023-09 to
-  2026-09) holds the original NZB names for about 80% of them.
+  2026-09) holds the original NZB names for about 80% of them. Exactly (rm-skeptic): the two legacy histories
+  (`binhex-sabnzbdvpn` and `linuxserver-sabnzbd`, the latter up to 2026-07-03) hold a completed record for 331 of the
+  416 deleted movies, 284 of the 327 with no cluster record, so about 43 deleted movies have no recoverable release
+  identity. Silent Night and The Unholy Trinity have 0 grabbed or imported `ledger_events` rows (as do Babygirl,
+  Another Simple Favor and Terrifier), so only the legacy histories can identify them (DESIGN-052 D-15).
 - When the duplicate check does fire, SAB fails the job in about 5 s, Radarr blocklists that post and searches again,
   and every copy costs one counted indexer fetch (Prowlarr logs a duplicate grab as a successful redirect). Terminator
   3 took 11 fetches across 4 indexers.

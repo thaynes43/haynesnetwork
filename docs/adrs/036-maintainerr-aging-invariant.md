@@ -1,6 +1,9 @@
 # ADR-036: Maintainerr aging-invariant safeguard (rule pools never self-delete)
 
 - **Status:** Accepted
+- **Amended by:** [ADR-093](093-watchlists-protect-trash-and-fresh-rerequests.md) (2026-09-26, effective when ADR-093
+  is Accepted), C-10: the aging invariant also requires `listExclusions` and `forceSeerr` true on both rule pools, so
+  a drift makes the safety audit unsafe (DESIGN-052 D-16). Status note only; the decision body below is unchanged.
 - **Date:** 2026-07-09
 - **Deciders:** Tom Haynes
 

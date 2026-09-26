@@ -5,6 +5,9 @@
   admin-review gate, no cooldown). The cooldown knob (`cooldownDays`) is retired everywhere. See the
   **D-14** amendment below; the original D-01..D-09 text describes the pre-073 propose-only behavior.
 - **Last updated:** 2026-07-18
+- **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26, Draft): the
+  space policy's proposal leaves out a title on any read Plex watchlist (it takes no cap slot), and `minCandidates`
+  counts deletable candidates only (DESIGN-052 D-08).
 - **Author:** Fable 5 (autonomous run, PLAN-014); D-14 amendment by an Opus autonomous run
 - **Implements:** [ADR-031](../adrs/031-space-driven-batch-policy.md),
   [ADR-073](../adrs/073-autonomous-trash-cycle.md). Consumes ADR-030 / DESIGN-013
