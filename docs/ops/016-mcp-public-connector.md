@@ -1,6 +1,7 @@
 # OPS-016 — Public MCP connectors: the OAuth surface, the public `/mcp`, connected clients
 
-- **Status:** Draft (skeleton; becomes Active when PLAN-069 S8 passes, with the per-client notes filled in).
+- **Status:** Draft (becomes Active when PLAN-069 S8 passes). The ChatGPT and Codex notes in §9 are from
+  the owner's first connects (2026-09-25, audited 2026-09-26); Claude Code and claude.ai are still unexercised.
 - **Scope:** operating the internet-facing half of the watch MCP surface: the app's own OAuth 2.1
   authorization server, the public `POST /mcp`, the five OAuth tables, and the clients connected
   through them (ChatGPT, Claude Code, Codex). The in-cluster hop, `/api/mcp`, the `sync-watch` CronJob
@@ -13,16 +14,16 @@
 
 ## 1. What runs where
 
-| Piece                   | Where                                                                                                                                                                                                                            | Notes                                                                                                                |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Authorization server    | `haynesnetwork` web pods: `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server` (each also under `…/mcp`), `/oauth/register`, `/oauth/authorize`, `/oauth/consent`, `/oauth/token`, `/oauth/revoke` | issuer `https://haynesnetwork.com`; stateless; the paths never change (ADR-091 C-12)                                 |
-| Public MCP endpoint     | the same pods, `POST /mcp`                                                                                                                                                                                                       | accepts Delegated Tokens only; the hop token is refused there; routed by the existing `PathPrefix(/)` IngressRoutes  |
-| In-cluster MCP endpoint | `POST /api/mcp`                                                                                                                                                                                                                  | the hop's, never routed (OPS-015)                                                                                    |
-| State                   | the `haynesnetwork` database on CNPG `database/postgres16`: `oauth_clients`, `oauth_authorizations`, `oauth_authorization_codes`, `oauth_refresh_tokens`, `oauth_access_tokens`; rate-limit buckets in `rate_limit`              | tokens, codes and secrets are stored only as SHA-256 hashes                                                          |
-| Principal               | per call: the token's user → `user_account_map` → a tracked `watch_accounts` row                                                                                                                                                 | only the Server Owner is tracked until PLAN-070; Plex is written only for the owner                                  |
-| Probes                  | Gatus (haynes-ops `gatus.yaml`): `POST https://haynesnetwork.com/mcp` → 401; `GET …/.well-known/oauth-protected-resource` → 200 with the canonical `resource`                                                                    | Gatus cannot read response headers; §2's curl checks the challenge header                                            |
-| Alert                   | Loki ruler (haynes-ops `lokirule.yaml`): `[auth] refresh_reuse_detected`, or more than 20 `authorize_rejected` / `rate_limited` in 10 minutes                                                                                    | only `severity: critical` reaches a human                                                                            |
-| Clients                 | ChatGPT (owner's connector), Claude Code, Codex; claude.ai unverified (DESIGN-050 Q-01)                                                                                                                                          | per-client behaviour in DESIGN-050 D-12; this runbook gains a client-notes section from the live gate at PLAN-069 S9 |
+| Piece                   | Where                                                                                                                                                                                                                                                                                                      | Notes                                                                                                               |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Authorization server    | `haynesnetwork` web pods: `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server` (each also under `…/mcp`), `/oauth/register`, `/oauth/authorize`, `/oauth/consent`, `/oauth/token`, `/oauth/revoke`                                                                           | issuer `https://haynesnetwork.com`; stateless; the paths never change (ADR-091 C-12)                                |
+| Public MCP endpoint     | the same pods, `POST /mcp`                                                                                                                                                                                                                                                                                 | accepts Delegated Tokens only; the hop token is refused there; routed by the existing `PathPrefix(/)` IngressRoutes |
+| In-cluster MCP endpoint | `POST /api/mcp`                                                                                                                                                                                                                                                                                            | the hop's, never routed (OPS-015)                                                                                   |
+| State                   | the `haynesnetwork` database on CNPG `database/postgres16`: `oauth_clients`, `oauth_authorizations`, `oauth_authorization_codes`, `oauth_refresh_tokens`, `oauth_access_tokens`; rate-limit buckets in `rate_limit`                                                                                        | tokens, codes and secrets are stored only as SHA-256 hashes                                                         |
+| Principal               | per call: the token's user → `user_account_map` → a tracked `watch_accounts` row                                                                                                                                                                                                                           | only the Server Owner is tracked until PLAN-070; Plex is written only for the owner                                 |
+| Probes                  | Gatus (haynes-ops `gatus.yaml`): `POST https://haynesnetwork.com/mcp` → 401; `GET …/.well-known/oauth-protected-resource` → 200 with the canonical `resource`                                                                                                                                              | Gatus cannot read response headers; §2's curl checks the challenge header                                           |
+| Alert                   | Loki ruler (haynes-ops `lokirule.yaml`, group `haynesnetwork-mcp-connector`): `McpConnectorRefreshReuseDetected` on any `[auth] refresh_reuse_detected` (`severity: critical`), `McpConnectorAuthRejectionBurst` on more than 20 `authorize_rejected` / `rate_limited` in 10 minutes (`severity: warning`) | only `severity: critical` reaches a human, so a reuse detection pages and a burst does not                          |
+| Clients                 | ChatGPT (owner's connector), Claude Code, Codex; claude.ai unverified (DESIGN-050 Q-01)                                                                                                                                                                                                                    | per-client behaviour in DESIGN-050 D-12 and, as seen live, §9                                                       |
 
 ## 2. Is it healthy?
 
@@ -46,11 +47,12 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST https://haynesnetwork.com/api/
 
 Anything but 404 on `/api/mcp` is an exposure bug (OPS-015 §2): fix the IngressRoute first.
 
-The auth log, in Grafana Explore (Loki):
+The auth log, in Grafana Explore (Loki). The web pods' container is `app`; `main` is the sync CronJobs'
+container and holds none of these lines:
 
 ```logql
-{app="haynesnetwork", container="main"} |= "[auth]"
-{app="haynesnetwork", container="main"} |= "[mcp] tool_called" |= "oauth:"
+{app="haynesnetwork", container="app"} |= "[auth]"
+{app="haynesnetwork", container="app"} |= "[mcp] tool_called" |= "oauth:"
 ```
 
 Every step logs one `[auth] <event> {…}` line (DESIGN-050 D-06) with at most a 6-character hash
@@ -68,11 +70,14 @@ kubectl exec -n database "$REPLICA" -c postgres -- psql -d haynesnetwork -c "
          min(r.created_at) AS connected, max(c.last_used_at) AS last_used,
          count(*) FILTER (WHERE r.revoked_at IS NULL AND r.rotated_at IS NULL AND r.expires_at > now()) AS live_refresh
   FROM oauth_clients c
-  JOIN oauth_refresh_tokens r ON r.client_id = c.id
+  JOIN oauth_refresh_tokens r ON r.client_id = c.client_id
   JOIN users u ON u.id = r.user_id
   GROUP BY c.client_name, c.client_id, u.email
   ORDER BY last_used DESC NULLS LAST;"
 ```
+
+The query lists a client once it holds a refresh token (every client so far asked for
+`offline_access`); a registration that never reached consent shows only in the "never used" read below.
 
 Other useful reads (same exec):
 
@@ -81,8 +86,11 @@ Other useful reads (same exec):
 - Registrations never used (pruning candidates): `SELECT client_name, created_at, registered_ip FROM oauth_clients WHERE last_used_at IS NULL ORDER BY created_at;`
 - A connector's marks: `SELECT created_at, action, scope, title, plex_result, reverted_at FROM watch_marks WHERE consumer = 'oauth:<client_id>' ORDER BY created_at DESC;`
 
-Never select `token_hash` or `code_hash` into a ticket, PR or chat. Column names follow DESIGN-050
-D-03; correct this section against the migration at PLAN-069 S2 if they differ.
+Never select `token_hash` or `code_hash` into a ticket, PR or chat. Joins and columns were checked
+against `packages/db/src/schema/oauth-*.ts` and run on a replica on 2026-09-26: every OAuth table
+refers to its client by the public `client_id` (text: a foreign key to `oauth_clients.client_id`, or
+in `oauth_audit` no key at all, so the trail outlives a pruned client), never by `oauth_clients.id` (a
+uuid), and `user_id` is `users.id`.
 
 ## 4. Revoke by hand
 
@@ -122,6 +130,7 @@ The hop's consumer token is separate and rotates per OPS-015 §4.
 | "This request expired"                                             | more than 10 minutes on the consent page, or a consent link opened in another user's session. Start again from the app                                                                                                                                                                                                   |
 | Consent approved but the client says it failed                     | the code lives 60 seconds: a slow paste or a callback that never reached the client (a loopback URL opened on another device) answers `invalid_grant`                                                                                                                                                                    |
 | Every answer is "Watch history isn't set up for your account yet." | the signed-in user has no Plex Account Map row, or their account is not tracked (everyone but the owner until PLAN-070). For the owner: check `user_account_map` maps his Plex id 12874060 to his app user                                                                                                               |
+| A tool call answers "Invalid arguments for \<tool\>: …"            | the client sent arguments outside the tool's schema (the text names the field; the values are never logged). ChatGPT's and Codex's first calls did this once and retried (§9). A client that keeps doing it may hold stale tool schemas: for ChatGPT, see the first row                                                  |
 | A mark "did not change Plex"                                       | expected for anyone but the owner (history only, `plex_result = 'none'`)                                                                                                                                                                                                                                                 |
 | A dev-env CLI cannot connect                                       | egress (the dev-env policy's HTTPS rule must list `haynesnetwork.com`) or IPv6: set `NODE_OPTIONS=--dns-result-order=ipv4first`                                                                                                                                                                                          |
 | The Loki alert fired                                               | `refresh_reuse_detected`: a refresh token was replayed (a leaked token, or a client bug); see which client and user in the line and §3. A burst of `authorize_rejected` / `rate_limited`: someone probing the endpoints; check the IPs, and turn it off (§5) if it persists                                              |
@@ -135,3 +144,53 @@ The hop's consumer token is separate and rotates per OPS-015 §4.
 | `oauth_refresh_tokens`, `oauth_access_tokens`       | nothing to rebuild: losing them disconnects every app, and each user consents again                                         |
 | `rate_limit` (the OAuth route buckets)              | transient buckets                                                                                                           |
 | the consent, disconnect and reuse audit rows        | the only record of who connected what; never truncate                                                                       |
+
+## 9. Client notes (as seen live)
+
+From the owner's first connects on 2026-09-25, audited read-only on 2026-09-26 (PLAN-069, _Evidence
+(S8 live audit)_). Tell clients apart by the `oauth:<client_id>` consumer and the registered name,
+**not by the user agent**: ChatGPT's tool calls say `(Codex)` in theirs.
+
+**ChatGPT** (the owner's connector, client name `ChatGPT`, redirect host `chatgpt.com`):
+
+- Each step comes from a different user agent: discovery and registration from ChatGPT's backend
+  (`Python/3.14 aiohttp`), the code exchange from `openai-connectors-oauth/1.0`, the connect
+  (`initialize`, `tools/list`) from `openai-mcp/1.0.0`, and the tool calls from
+  **`openai-mcp/1.0.0 (Codex)`**. That last one is ChatGPT, not the Codex CLI (which sends
+  `codex-mcp-client/<version>`).
+- It registers without a `scope`; its authorization then covered all three scopes. It reads the
+  root `/.well-known/oauth-protected-resource`, not the `/mcp` variant.
+- It never sends `GET /mcp`, so the 405 does not affect it (ADR-091 C-13).
+- Right after the code exchange, a `POST /mcp` from its backend (`aiohttp`) answered 401, apparently
+  sent without the new bearer; then its first `POST /mcp` from `openai-mcp/1.0.0` answered 400 and its
+  retry 0.2 s later 200 (the cause of the 400 is not logged: `[mcp]` logs tool calls only). The connect
+  completed; neither needed action.
+- **Its first tool calls ask for more than a limit allows, then retry.** Its first `recent_history`,
+  `unfinished` and `recommend` calls were refused as `invalid_args`, and it retried each successfully
+  about 11 s later. Each issue text is 43 characters, exactly the length of zod's
+  `limit: Too big: expected number to be <=10.` (`<=20` for `recent_history`); arguments are never
+  logged, so which argument it was is an inference.
+  One such refusal followed by a success is normal. Refusals that never turn into a success may mean
+  stale tool schemas: refresh the connector and start a new chat (§7).
+- The owner spent 3.5 minutes on the consent page; the transaction lives 10 minutes (§7).
+- Refresh: not yet seen live (PLAN-069 S8).
+
+**Codex CLI** (the owner's own install, client name `Codex`, redirect `127.0.0.1:<port>`):
+
+- User agent `codex-mcp-client/<version>` (0.155.0-alpha.9.2 on 2026-09-25). It registers with
+  `scope` `watch:read watch:write offline_access`, and reads the `/mcp` variant of the
+  protected-resource document.
+- It sends `GET /mcp` before each connect round and gets 405 (nine times in its first session), then
+  carries on over POST: expected, not an error (ADR-091 C-13).
+- Signed out in the browser, `/oauth/authorize` goes to `/login?next=` and back to the consent page
+  after sign-in. It exchanges the code a fraction of a second after Approve (its loopback listener),
+  so the 60-second code life is not a concern when the browser is on the same machine.
+- One `recommend` call in its first session was refused as `invalid_args` with the same
+  43-character issue, and a `recommend` succeeded 8 s later.
+- Refresh: not yet seen live (PLAN-069 S8).
+
+**Claude Code** and **claude.ai** (DESIGN-050 Q-01): not connected yet.
+
+**`dev-env precheck`** (registered 2026-09-24 by the PLAN-069 S8 pre-check, redirect
+`127.0.0.1:8765`): never used. It owns no token, code or transaction, so the inline pruner removes it
+on the first `/oauth/token` request after it turns 30 days old (2026-10-24).
