@@ -426,7 +426,8 @@ around its database rows, with Plex calls outside the transaction (D-14).
   "Blade Runner 2049"), the exact titles without it drop out. When the best title is still another year's, the
   TMDB call runs as for "not found", and its first exact hit of the named year wins; otherwise the pool's answer
   stands. A TMDB hit whose kind and TMDB id the pool knows is the pool's title, not "not on Plex". A
-  `set_watchlist` add weighs the pool further, D-15x and D-15y. A TMDB call made while the pool already has an
+  `set_watchlist` add weighs the pool further and never takes a TMDB hit of another year than the one named, D-15x,
+  D-15y and D-15ac. A TMDB call made while the pool already has an
   answer is a single attempt, since the pool's answer stands if it fails and `mark_watched`'s Plex work follows it;
   "not found" keeps the retries, DESIGN-051 D-15aa.)*
 - Ambiguous and not-found never write.

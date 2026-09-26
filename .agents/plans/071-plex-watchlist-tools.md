@@ -106,3 +106,13 @@
   DESIGN-049 (the ADR-092 amendment on its overview, D-05 table, D-13 and D-15 undo text), ADR-092's context, PRD
   AC-30, the `@hnet/mcp`, `@hnet/domain`, `@hnet/arr` and `@hnet/watch` READMEs, this plan's status line and S5
   (a long-running show's add), and HANDOFF.
+- 2026-09-26: eighth review pass on PR #580 (findings J1..J7, verified by independent skeptics), fixed on the
+  branch: an add never takes a TMDB title of another year than the one named ("Road House (2024)" added the 1989
+  film when TMDB's page listed only it; now "Did you mean Road House (1989, movie)?"), and the pool's own title
+  named exactly counts among TMDB's hits when TMDB's page leaves it out ("Shōgun (1980)" added the 2024 show over
+  the 1980 recommendation, and "shogun" added it without asking) (DESIGN-051 D-15ac). Tests now pin the undo
+  replay guard's "no mark made since" (a second undo after a new change inside 30 seconds undoes it, at the domain
+  and MCP levels), the Seerr sentence on the cleared undo of an add not on Plex, and the run walk's stop at a live
+  change the cache has read. Docs made current: DESIGN-051 (D-03 step 2, D-15v and D-15x notes), DESIGN-049 D-13,
+  ADR-092 C-07, PRD AC-30, the glossary's T-260 (D-15z), the `WatchPlexReaders` comment, the `@hnet/domain` and
+  `@hnet/mcp` READMEs, the PR description, and HANDOFF.

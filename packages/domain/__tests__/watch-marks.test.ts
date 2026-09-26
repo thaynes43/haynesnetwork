@@ -6,7 +6,8 @@
 // truncated listings are failed reads, a failed undo retries the same mark, and only the current owner is served
 // (D-03). DESIGN-051 D-15t / D-15u (amending that review's "pending marks are never undone"): undo never walks
 // past a pending mark (in progress; ten minutes on, closed and its planned keys unscrobbled), and a revert is never
-// stamped before its mark. Live incident 2026-09-23 (D-26): specials never take part in
+// stamped before its mark; the undo replay guard (DESIGN-051 D-04) repeats only a retry, so an undo after a new
+// mark inside its 30 seconds undoes that mark. Live incident 2026-09-23 (D-26): specials never take part in
 // a mark, no write touches an already-watched leaf, and a mark or undo leaves the next read to Plex.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
@@ -406,6 +407,37 @@ describe('markWatched — whole show, replay, and an exact undo (D-14, D-15)', (
     await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: NOW });
     expect(writeKeys(fake).sort()).toEqual(['unscrobble:silo-s1', 'unscrobble:silo-s2']);
     expect(fake.watchedState()).toEqual([]);
+  });
+});
+
+describe('the undo replay guard is only for a retry (DESIGN-051 D-04; PR #580 eighth pass)', () => {
+  it('a second undo after a new mark within 30 seconds undoes that mark; only a third, with nothing new, is a replay', async () => {
+    const sev = severance();
+    const s = silo();
+    const fake = new FakePlex([sev, s]);
+    await seedShow(fake, sev);
+    await seedShow(fake, s);
+    const at = (seconds: number) => new Date(NOW.getTime() + seconds * 1000);
+    const before = fake.watchedState();
+
+    expect(await mark(fake, 'severance', { season: 2 })).toMatchObject({ status: 'done', view: { plexResult: 'written' } });
+    const first = await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: at(5) });
+    expect(first).toMatchObject({ status: 'done', replayed: false, view: { title: 'Severance', revertResult: 'written' } });
+    // A new mark inside the replay window: the next undo is the owner's, never a retry of the first.
+    expect(await mark(fake, 'silo', { season: 1, now: at(10) })).toMatchObject({ status: 'done', view: { plexResult: 'written' } });
+    fake.calls.length = 0;
+    const second = await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: at(15) });
+    expect(second).toMatchObject({ status: 'done', replayed: false, view: { title: 'Silo', revertResult: 'written' } });
+    if (second.status !== 'done') throw new Error(second.status);
+    expect(formatUndoResult(second.view)).toBe('Undone. Season 1 of Silo (2023) is back to unwatched in Plex, 2 episodes.');
+    expect(writeKeys(fake)).toEqual([`unscrobble:${seasonKeyOf(s, 1)}`]);
+    expect(fake.watchedState()).toEqual(before);
+    // Said again with nothing new: the replay of the second undo, not a third revert.
+    fake.calls.length = 0;
+    const third = await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: at(20) });
+    expect(third).toMatchObject({ status: 'done', replayed: true });
+    if (third.status === 'done') expect(third.view).toEqual(second.view);
+    expect(fake.calls).toEqual([]);
   });
 });
 

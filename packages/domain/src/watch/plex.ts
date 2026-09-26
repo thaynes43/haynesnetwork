@@ -26,7 +26,9 @@ export interface WatchPlexClients {
 
 /**
  * A read-only view on the SHORT live-read budget (DESIGN-049 D-11: ≈ 300 ms per attempt): the revalidation
- * reads, and the discover reads of a Watchlist Change (DESIGN-051 D-03, D-13).
+ * reads, and the live `userState` read before a Watchlist Change (DESIGN-051 D-03). The catalog lookup
+ * (`matchDiscover`) and the re-read after a failed PUT use {@link WatchDiscoverReaders} (D-15ab): plex.tv answers a
+ * long-running show's lookup in 0.3 to 1.3 s, which this budget cuts short every time.
  */
 export interface WatchPlexReaders {
   read: Partial<Record<PlexServerSlug, Pick<PlexReadClient, 'getMetadataItem' | 'listAllLeaves'> & Partial<WatchDiscoverRead>>>;

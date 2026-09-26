@@ -11,7 +11,9 @@
 // here), and an add that reaches TMDB past a near title or a recommendation of another year (D-15x, D-15y); and from
 // the seventh pass: a TMDB check made with the pool's answer in hand is one attempt, in real time before a mark's
 // Plex work (D-15aa), and an add whose catalog lookup plex.tv answers in a second, through real clients on the
-// discover bundle's production tuning (D-15ab).
+// discover bundle's production tuning (D-15ab); and from the eighth: a second undo after a new change inside the
+// replay window is the owner's own, the cleared undo of an add not on Plex says Seerr may have acted (D-04), and an
+// add never takes a TMDB title of another year than the one named (D-15ac).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -646,5 +648,68 @@ describe('the seventh review pass on PR #580 (DESIGN-051 D-15aa, D-15ab)', () =>
     const rows = await db.select().from(watchMarks);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ action: 'watchlist_add', plexResult: 'written' });
+  });
+});
+
+describe('the eighth review pass on PR #580 (DESIGN-051 D-04, D-15ac)', () => {
+  const at = (seconds: number) => new Date(NOW.getTime() + seconds * 1000);
+
+  it('a second undo after a new change within 30 seconds undoes that change; a third, with nothing new, is a replay (D-04)', async () => {
+    expect(await say('set_watchlist', { title: 'Foundation', action: 'add' })).toBe(
+      "Added Foundation (2021 show) to your watchlist. It's on Plex.",
+    );
+    clock = at(5);
+    expect(await say('undo_last_change')).toBe('Removed Foundation (2021 show) from your watchlist again.');
+    clock = at(10);
+    expect(await say('set_watchlist', { title: 'Silo', action: 'add' })).toBe("Added Silo (2023 show) to your watchlist. It's on Plex.");
+    // Inside the replay window, but a change was made since the last undo: this undo is the owner's own.
+    clock = at(15);
+    fake.calls.length = 0;
+    expect(await say('undo_last_change')).toBe('Removed Silo (2023 show) from your watchlist again.');
+    expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${DISCOVER.silo}`]);
+    expect(fake.watchlist.has(DISCOVER.silo)).toBe(false);
+    expect(fake.watchlist.has(DISCOVER.foundation)).toBe(false);
+    // Said again with nothing new: the same answer, and nothing reverted.
+    clock = at(20);
+    fake.calls.length = 0;
+    expect(await say('undo_last_change')).toBe('Removed Silo (2023 show) from your watchlist again.');
+    expect(fake.watchlistWrites()).toEqual([]);
+  });
+
+  it('undoing an add of a title not on Plex that plex.tv refused clears it and says Seerr may already have requested it (D-04)', async () => {
+    fake.failWatchlistWrites.add(DISCOVER.andor);
+    expect(await say('set_watchlist', { title: 'Andor', action: 'add' })).toBe(
+      "I couldn't reach Plex, so your watchlist didn't change.",
+    );
+    fake.failWatchlistWrites.clear();
+    fake.calls.length = 0;
+    expect(await say('undo_last_change')).toBe(
+      "Your last change, adding Andor (2022 show) to your watchlist, may not have reached Plex, so I made sure it's off your watchlist. Seerr may already have requested it.",
+    );
+    expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${DISCOVER.andor}`]);
+  });
+
+  it('an add never takes a TMDB title of another year than the one named: it asks (D-15ac)', async () => {
+    const ROAD89 = '9e5f60718293a4b5c6d7e8f9';
+    fake.catalog.push({ id: ROAD89, kind: 'movie', title: 'Road House', year: 1989, guids: ['tmdb://10127'] });
+    const search = {
+      searchMulti: async () => ({
+        page: 1,
+        total_pages: 1,
+        total_results: 1,
+        results: [{ id: 10127, media_type: 'movie', title: 'Road House', release_date: '1989-05-19' }],
+      }),
+    };
+    await http.stop();
+    http = await serveMcp({ ...deps(), tmdb: () => search, tmdbOnce: () => search }, ENV);
+    expect(await say('set_watchlist', { title: 'Road House (2024)', action: 'add' })).toBe(
+      'Did you mean Road House (1989, movie)?',
+    );
+    expect(fake.watchlistWrites()).toEqual([]);
+    expect(await db.select().from(watchMarks)).toEqual([]);
+    expect(await say('set_watchlist', { title: 'Road House (1989)', action: 'add' })).toBe(
+      "Added Road House (1989 movie) to your watchlist. It isn't on Plex yet, so Seerr will request it.",
+    );
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${ROAD89}`]);
   });
 });

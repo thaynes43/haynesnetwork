@@ -99,9 +99,9 @@ function yearOf(date: string | null | undefined): number | null {
 /**
  * D-13's last resort. Movies and shows only (people are dropped), the `kind` filter applies, and a hit is
  * accepted only on an EXACT normalized title match — or the year-tag-dropped form when the spoken year
- * hint is the hit's year ("dark matter 2024"). Every accepted hit, in TMDB's order, one per (kind, id). A year the
- * query names settles it whenever a hit has that year, as its year or one of its title's words (DESIGN-051 D-15v,
- * D-15x): only those hits are kept.
+ * hint is the hit's year ("dark matter 2024"). Every accepted hit, in TMDB's order, one per (kind, id). The year the
+ * query names is weighed by the caller (DESIGN-051 D-15v, D-15x, D-15ac), after an add has counted the pool's own
+ * title among the hits.
  */
 async function fromTmdb(
   tmdb: WatchTmdbSearch,
@@ -143,11 +143,6 @@ async function fromTmdb(
       members: [],
     });
   }
-  // DESIGN-051 D-15v: "Shōgun (2024)" names the year the way D-13 reads it, but a parenthesized year leaves the
-  // title's norm, so every "Shōgun" scores 1 and the exact check above never weighs it. When some hit has the
-  // named year, keep only those; when none does, nothing is filtered. A year that is one of the hit's own title
-  // words ("Blade Runner 2049", a 2017 film) is its named year too (D-15x).
-  if (hits.some((h) => hasNamedYear(q, h))) return hits.filter((h) => hasNamedYear(q, h));
   return hits;
 }
 
@@ -169,6 +164,19 @@ function tmdbOption(t: ResolvedWatchTitle): PoolEntry {
     titleRowId: null,
     mediaItemId: null,
   };
+}
+
+/**
+ * An add's question about TMDB's hits (ADR-092 C-07): one option per title that reads differently, so the question
+ * lists each once; hits that all read the same (one name, year and kind) can only be told apart by an argument
+ * `set_watchlist` does not have, so they are `indistinct` (DESIGN-051 D-15w). A lone hit is asked about ("Did you
+ * mean …?", D-15ac).
+ */
+function askAbout(hits: readonly ResolvedWatchTitle[]): WatchResolution | IndistinctWatchTitles {
+  const distinct = new Map<string, ResolvedWatchTitle>();
+  for (const h of hits) if (!distinct.has(spokenKey(h))) distinct.set(spokenKey(h), h);
+  if (distinct.size === 1 && hits.length > 1) return { status: 'indistinct', options: hits.map(tmdbOption) };
+  return { status: 'ambiguous', options: [...distinct.values()].map(tmdbOption) };
 }
 
 /** What {@link resolveWatchTitle} answers: `indistinct` only in the `'ask'` mode (DESIGN-051 D-15w). */
@@ -221,8 +229,10 @@ export interface ResolveWatchTitleInput {
  *   hit. Either way a year the query names keeps only the hits of that year when there are any (D-15v). The pool's
  *   title is taken outright only when the owner or the library knows it (not only a TMDB recommendation, D-15x), the
  *   query names it exactly and its year is not another than the one named (D-15y); otherwise TMDB's exact hits
- *   decide as above, and when there are none (or TMDB fails) the pool's title is asked about, never taken, except a
- *   recommendation the query names with its own year (the answer to that question).
+ *   decide as above, the pool's own exact title counting as one when TMDB's page leaves it out (D-15ac), and when
+ *   there are none (or TMDB fails) the pool's title is asked about, never taken, except a recommendation the query
+ *   names with its own year (the answer to that question). An add never takes a hit of another year than the one
+ *   named (D-15ac): when no hit has it, the pool's answer stands, or with none the hits are asked about.
  */
 export async function resolveWatchTitle<A extends 'first' | 'ask' = 'first'>(
   input: ResolveWatchTitleInput & { tmdbAmbiguity?: A },
@@ -281,16 +291,29 @@ async function resolveAny(input: ResolveWatchTitleInput): Promise<WatchResolutio
     // TMDB down or unconfigured upstream: the pool's answer stands.
     return fallback;
   }
-  // D-15x: past a pool title (the mark flows), only a hit of the year the query named beats it.
-  if (r.status !== 'not_found' && !add && !hits.some((h) => hasNamedYear(q, h))) return fallback;
-  if (ask && hits.length > 1) {
-    // One option per title that reads differently: the question lists each once, and a hit that shares its
-    // name, year and kind with another can only be told apart by an argument set_watchlist does not have.
-    const distinct = new Map<string, ResolvedWatchTitle>();
-    for (const h of hits) if (!distinct.has(spokenKey(h))) distinct.set(spokenKey(h), h);
-    if (distinct.size === 1) return { status: 'indistinct', options: hits.map(tmdbOption) };
-    return { status: 'ambiguous', options: [...distinct.values()].map(tmdbOption) };
+  // DESIGN-051 D-15ac: an add counts the pool's own title named exactly (a TMDB recommendation, which TMDB knows)
+  // among TMDB's exact hits when TMDB's page leaves it out, so "shogun" asks between the 1980 show and the 2024 one
+  // rather than adding the only one the page lists. Only once TMDB answered with an exact hit: with none, the pool's
+  // answer stands as before (asked about, or a recommendation named with its own year).
+  if (add && hits.length > 0 && r.status === 'resolved' && r.exact) {
+    const own = fromPool(r.sameTitle as PoolEntry[], r.candidate as PoolEntry);
+    const id = own.ids.tmdbId;
+    if (id !== null && !hits.some((h) => h.kind === own.kind && h.ids.tmdbId === id)) hits.push(own);
   }
+  // D-15v: "Shōgun (2024)" names the year the way D-13 reads it, but a parenthesized year leaves the title's norm,
+  // so every "Shōgun" scores 1 and the exact check never weighs it. When some hit has the named year (as its year
+  // or one of its title's own words, "Blade Runner 2049" a 2017 film, D-15x), only those are kept.
+  const named = hits.filter((h) => hasNamedYear(q, h));
+  if (named.length > 0) hits = named;
+  else if (q.year !== null && hits.length > 0) {
+    // No hit has the named year. Past a pool title the pool's answer stands (D-15x): for an add, a recommendation
+    // named with its own year, or the question about the pool's title. D-15ac: an add, which can download, never
+    // takes a hit of another year than the one named; with no pool answer it asks about the hits. The mark flows
+    // keep D-13's reading of the year as a hint when the pool has nothing close.
+    if (r.status !== 'not_found') return fallback;
+    if (ask) return askAbout(hits);
+  }
+  if (ask && hits.length > 1) return askAbout(hits);
   const hit = hits[0];
   if (!hit) return fallback;
   // D-15x: a title the pool knows is the pool's (its Title State, ledger items and watchlist rows).
