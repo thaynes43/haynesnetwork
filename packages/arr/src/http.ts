@@ -37,9 +37,20 @@ export interface ArrHttpOptions {
    * instead of undici's 300 s body timeout.
    */
   timeoutCoversBody?: boolean;
+  /**
+   * ADR-093 / DESIGN-052 D-02 — which HTTP statuses a GET retries. Default: the gateway statuses 502/503/504. The
+   * Watchlist Registry's Seerr reads also retry 429 and every 5xx (`registryRetryStatus`).
+   */
+  retryStatus?: (status: number) => boolean;
+  /** The wait before retry `attempt` (1-based). Default: `retryDelayMs` every time; the registry backs off 2 s × attempt. */
+  retryBackoffMs?: (attempt: number) => number;
   /** Injectable fetch — tests pass a stub; production uses global fetch. */
   fetchImpl?: typeof fetch;
 }
+
+/** DESIGN-052 D-02 — the Watchlist Registry's retryable statuses: 429 and every 5xx. */
+export const registryRetryStatus = (status: number): boolean =>
+  status === 429 || (status >= 500 && status <= 599);
 
 /** GETs are idempotent → up to 2 retries (3 attempts) on transient failures (D-18). */
 const GET_RETRIES = 2;
@@ -60,6 +71,8 @@ export class ArrHttp {
   private readonly retryDelayMs: number;
   private readonly getRetries: number;
   private readonly timeoutCoversBody: boolean;
+  private readonly retryStatus: (status: number) => boolean;
+  private readonly retryBackoffMs: (attempt: number) => number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: ArrHttpOptions) {
@@ -71,6 +84,9 @@ export class ArrHttp {
     this.retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     this.getRetries = Math.max(0, Math.floor(options.getRetries ?? GET_RETRIES));
     this.timeoutCoversBody = options.timeoutCoversBody ?? false;
+    this.retryStatus = options.retryStatus ?? ((status) => RETRYABLE_STATUSES.has(status));
+    const retryDelayMs = this.retryDelayMs;
+    this.retryBackoffMs = options.retryBackoffMs ?? (() => retryDelayMs);
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -141,14 +157,14 @@ export class ArrHttp {
     const attempts = method === 'GET' ? 1 + this.getRetries : 1;
     let lastError: unknown;
     for (let i = 0; i < attempts; i++) {
-      if (i > 0) await sleep(this.retryDelayMs);
+      if (i > 0) await sleep(this.retryBackoffMs(i));
       try {
         return await this.attempt(method, url, options.body);
       } catch (error) {
         lastError = error;
         const retryable =
           error instanceof ArrTimeoutError ||
-          (error instanceof ArrHttpError && RETRYABLE_STATUSES.has(error.status)) ||
+          (error instanceof ArrHttpError && this.retryStatus(error.status)) ||
           (!(error instanceof ArrHttpError) && !(error instanceof ArrTimeoutError)); // network error
         if (!retryable || i === attempts - 1) throw error;
       }

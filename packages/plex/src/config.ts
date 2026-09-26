@@ -24,6 +24,13 @@ export const PLEX_TV_BASE_URL = 'https://plex.tv';
 export const PLEX_DISCOVER_BASE_URL = 'https://discover.provider.plex.tv';
 
 /**
+ * ADR-093 / DESIGN-052 D-02 (PLAN-072) — community.plex.tv, whose GraphQL API (read with the owner token) answers
+ * friends' and full Home members' watchlists for the Watchlist Registry. Fixed and non-secret, overridable via
+ * PLEX_COMMUNITY_URL (e2e and `pnpm dev:local` point it at the stub).
+ */
+export const PLEX_COMMUNITY_BASE_URL = 'https://community.plex.tv';
+
+/**
  * In-cluster service DNS defaults (OPS-002 topology; the app runs in the `frontend` ns and
  * reaches the `media` ns by FQDN). Local dev / staging override with the public ingresses
  * (`https://plex.haynesnetwork.com` etc.) via PLEX_<SLUG>_URL. These URLs are backend config
@@ -65,6 +72,8 @@ export interface PlexInstanceConfig {
   plexTvBaseUrl: string;
   /** plex.tv discover-provider host for the watchlist (overridable via PLEX_DISCOVER_URL). */
   plexDiscoverBaseUrl: string;
+  /** community.plex.tv host for the Watchlist Registry's GraphQL reads (overridable via PLEX_COMMUNITY_URL). */
+  plexCommunityBaseUrl: string;
 }
 
 export type PlexEnvConfig = Record<PlexServerName, PlexInstanceConfig>;
@@ -79,6 +88,7 @@ export function assertPlexEnv(env: Record<string, string | undefined> = process.
   const config = {} as PlexEnvConfig;
   const plexTvBaseUrl = env.PLEX_TV_URL?.trim() || PLEX_TV_BASE_URL;
   const plexDiscoverBaseUrl = env.PLEX_DISCOVER_URL?.trim() || PLEX_DISCOVER_BASE_URL;
+  const plexCommunityBaseUrl = env.PLEX_COMMUNITY_URL?.trim() || PLEX_COMMUNITY_BASE_URL;
   for (const server of PLEX_SERVERS) {
     const prefix = `PLEX_${server.toUpperCase()}`;
     const baseUrl = env[`${prefix}_URL`]?.trim() || PLEX_CLUSTER_URL_DEFAULTS[server];
@@ -86,7 +96,14 @@ export function assertPlexEnv(env: Record<string, string | undefined> = process.
     const machineIdentifier =
       env[`${prefix}_MACHINE_ID`]?.trim() || PLEX_MACHINE_IDENTIFIERS[server];
     if (!token) missing.push(`${prefix}_TOKEN`);
-    config[server] = { baseUrl, token, machineIdentifier, plexTvBaseUrl, plexDiscoverBaseUrl };
+    config[server] = {
+      baseUrl,
+      token,
+      machineIdentifier,
+      plexTvBaseUrl,
+      plexDiscoverBaseUrl,
+      plexCommunityBaseUrl,
+    };
   }
   if (missing.length > 0) throw new PlexConfigError(missing);
   return config;

@@ -8,9 +8,12 @@ Jellyseerr and lands the result in the media ledger.
 surface (`@hnet/arr/read`) and mutates the ledger **exclusively** through the `@hnet/domain`
 single-writers (`upsertMediaItemsBatch`, `tombstoneMissingItems`, `ingestLedgerEvents`,
 `backfillEventAttribution`, `completeFixRequests`, `startSyncRun`/`finishSyncRun`). It never
-writes drizzle tables directly and never touches `@hnet/arr/write`. The only write-backs to
-the *arrs are Fix / Restore / Force-Search, which live in `packages/domain` + `apps/web` —
-not here (Hard Rule 4; ADR-008).
+writes drizzle tables directly and never touches `@hnet/arr/write`. Every write-back to the
+*arrs and Seerr lives in `packages/domain` (Hard Rule 4 lists them; ADR-008): Fix / Restore /
+Force-Search, the ADR-083 queue janitor, and ADR-093's Release Block (the app's Radarr / Sonarr
+release profile, written by the `trash-batch-sweep` mode through `sweepExpiredBatches`) and Seerr
+watchlist enrollment (the `watchlist-registry` mode's enrollment step, `enrollSeerrWatchlistSync`).
+A sync mode reaches them only through those domain orchestrators, never here.
 
 > DESIGN-005 D-18 places the CronJob runner in its **own** `@hnet/sync` package
 > (`packages/sync/src/scripts/sync.ts`) so the CLI and orchestration stay out of the

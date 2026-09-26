@@ -35,6 +35,7 @@ import {
   candidatesAsOfLabel,
   daysUntil,
   deadlineCountdown,
+  keptReasonTooltip,
   releaseNeedsConfirm,
   sweepTimeLabel,
   watchNote,
@@ -117,6 +118,10 @@ interface BatchItemWire {
    * Display only. Treated as `null` when absent, so an older server keeps every tile slated.
    */
   inLivePool: boolean | null;
+  /** ADR-093 / DESIGN-052 D-10 — why the sweep kept a `skipped` row (the kept tooltip); null / absent otherwise. */
+  keepReason?: string | null;
+  /** D-10 — on a watchlist (the newest registry check): the "On a watchlist" note. Absent ⇒ false (older server). */
+  onWatchlist?: boolean;
 }
 
 /** The pending-candidate fields the new-candidates diff + the Start-a-batch target preview read (a
@@ -131,6 +136,8 @@ interface PendingCandidate {
   imdbRating: number | null;
   tmdbRating: number | null;
   protectedByTag: boolean;
+  /** ADR-093 / DESIGN-052 D-08 — a targeted batch leaves a watchlisted candidate out. */
+  onWatchlist?: boolean;
 }
 
 interface SafetyLike {
@@ -154,6 +161,7 @@ function tileLabel(
   savedByName: string | null,
   armed = false,
   projectedSkip = false,
+  keptTooltip: string | null = null,
 ): string {
   // A PROJECTED skip (a still-`pending` row the live pool no longer holds) announces a different
   // fact from a row the sweep actually skipped — the sweep never ran on it (amendment (b)).
@@ -180,6 +188,8 @@ function tileLabel(
         ? `${title} is protected — tap to un-protect it`
         : `${title} is protected — already safe from deletion`;
     case 'skip':
+      // ADR-093 / DESIGN-052 D-10 — a swept `skipped` row names why the sweep kept it.
+      if (keptTooltip !== null) return `${title}. ${keptTooltip}`;
       return `${title} was kept — it couldn’t be verified safe, so it was never deleted`;
     case 'gone':
       return `${title} was deleted`;
@@ -226,7 +236,9 @@ function BatchTile({
   }, [needsConfirm]);
   const armed = release.armed && needsConfirm;
   const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
-  const label = tileLabel(item.title, glyph, tappable, savedByName, armed, projectedSkip);
+  // ADR-093 / DESIGN-052 D-10 — a kept (swept `skipped`) tile's tooltip names the reason ("Kept: on a watchlist").
+  const keptTooltip = glyph === 'skip' && !projectedSkip ? keptReasonTooltip(item.keepReason) : null;
+  const label = tileLabel(item.title, glyph, tappable, savedByName, armed, projectedSkip, keptTooltip);
   const rating = formatRating(ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating));
   // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone (recently watched) or muted
   // (watched a while ago); null with no watch signal. NEVER in the action corner.
@@ -246,7 +258,7 @@ function BatchTile({
         // A saved/protected tile reads "pressed" (kept); a slated pending tile is not pressed.
         pressed: glyph === 'shield' || glyph === 'check',
         label,
-        title: label,
+        title: keptTooltip ?? label,
         busy,
         armed,
         onTap: needsConfirm ? release.trigger : () => onTap(item),
@@ -264,6 +276,7 @@ function BatchTile({
       metaText={`${item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}${rating !== null ? ` · ★ ${rating}` : ''}`}
       requesters={item.requesters}
       watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
+      onWatchlist={item.onWatchlist === true}
     />
   );
 }
@@ -1513,6 +1526,7 @@ export function KindTab({
     imdbRating: p.imdbRating,
     tmdbRating: p.tmdbRating,
     protectedByTag: p.protectedByTag,
+    onWatchlist: p.onWatchlist === true,
   }));
 
   const kindNoun = kind === 'movie' ? 'movie' : 'TV';

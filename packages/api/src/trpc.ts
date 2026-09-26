@@ -69,7 +69,12 @@ import {
   TrashBatchStateError,
   TrashMusicUnsupportedError,
   TrashSaveNotOwnedError,
+  TrashSweepPausedError,
+  WatchlistRegistryUnverifiedError,
+  ReleaseBlockError,
+  MaintainerrRuleDriftError,
   type ArrClientBundle,
+  type ReleaseBlockArrClients,
   type AuthentikPortalBundle,
   type MaintainerrClientBundle,
   type PlexClientBundle,
@@ -135,6 +140,12 @@ export interface TRPCContext {
    * requires MAINTAINERR_API_KEY), stubbed bundle in tests.
    */
   maintainerr?: MaintainerrClientBundle;
+  /**
+   * ADR-093 C-07 / DESIGN-052 D-14 — the Radarr / Sonarr clients the Trash delete paths (Expedite, the manual Expire
+   * now) record and block each release through, and the Watchlists card reads its exclusion counts from. Absent in
+   * production (the `arr` bundle serves: it has every method); tests inject the in-memory Release Block stub.
+   */
+  releaseBlockArr?: ReleaseBlockArrClients;
   /**
    * ADR-030 amendment (2026-07-09) / DESIGN-013 D-07 — the Prometheus range reader the
    * `storage.trend` read runs against. Same injection model: env-built singleton in production
@@ -218,6 +229,14 @@ export function resolveArrBundle(ctx: TRPCContext): ArrClientBundle {
   if (ctx.arr) return ctx.arr;
   envArrBundle ??= arrClientBundleFromEnv();
   return envArrBundle;
+}
+
+/**
+ * ADR-093 / DESIGN-052 D-14 — the Release Block clients for this request: injected (tests) or the env-built *arr
+ * bundle (it carries every identity read and the confined release-profile writes).
+ */
+export function resolveReleaseBlockArr(ctx: TRPCContext): ReleaseBlockArrClients {
+  return ctx.releaseBlockArr ?? resolveArrBundle(ctx);
 }
 
 let envMaintainerrBundle: MaintainerrClientBundle | undefined;
@@ -460,6 +479,10 @@ const APP_CODED_ERRORS = [
   TrashBatchOpenError,
   TrashBatchEmptyError,
   TrashSaveNotOwnedError,
+  WatchlistRegistryUnverifiedError,
+  TrashSweepPausedError,
+  ReleaseBlockError,
+  MaintainerrRuleDriftError,
   AuthentikGroupNotOwnedError,
   AuthentikUnavailableError,
   OwuiUnavailableError,
@@ -530,6 +553,10 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | TrashBatchOpenError         | TRASH_BATCH_ALREADY_OPEN    | CONFLICT              |
  * | TrashBatchEmptyError        | TRASH_BATCH_EMPTY           | UNPROCESSABLE_CONTENT |
  * | TrashSaveNotOwnedError      | TRASH_SAVE_NOT_OWNED        | FORBIDDEN             |
+ * | WatchlistRegistryUnverified | WATCHLIST_REGISTRY_UNVERIFIED | PRECONDITION_FAILED |
+ * | TrashSweepPausedError       | TRASH_SWEEP_PAUSED          | PRECONDITION_FAILED   |
+ * | ReleaseBlockError           | RELEASE_BLOCK_FAILED        | PRECONDITION_FAILED   |
+ * | MaintainerrRuleDriftError   | MAINTAINERR_RULE_DRIFT      | BAD_GATEWAY           |
  * | InvalidTicketTransitionError| TICKET_INVALID_TRANSITION   | CONFLICT              |
  * | NotFoundError               | —                           | NOT_FOUND             |
  */
@@ -642,6 +669,20 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof TrashSaveNotOwnedError) {
       throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
+    }
+    if (
+      err instanceof WatchlistRegistryUnverifiedError ||
+      err instanceof TrashSweepPausedError ||
+      err instanceof ReleaseBlockError
+    ) {
+      // ADR-093 / DESIGN-052 D-07 / D-13 / D-14 — the Registry Gate refused (Expedite), the Release Block could not be
+      // written and read back, or the manual Expire now paused: nothing was deleted; the message is the banner's
+      // wording, never a name or a title.
+      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: err.message, cause: err });
+    }
+    if (err instanceof MaintainerrRuleDriftError) {
+      // DESIGN-052 D-16 — a rule save's read-back found a safety flag not as intended.
+      throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
     }
     if (err instanceof InvalidTicketTransitionError) {
       throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });

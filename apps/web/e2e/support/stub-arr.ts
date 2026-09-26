@@ -17,7 +17,10 @@
 //                        deterministically (queued → downloading with a shrinking sizeleft →
 //                        importing → empty-after-import). GET /queue serves the staged records,
 //                        server-side filtered by seriesIds/movieIds/artistIds like the real *arrs.
+//   POST /_stub/seerr-watchlist → 204; body { userId, results? } — ADR-093: that Seerr user's watchlist
+//                        (Seerr result rows: ratingKey, title, mediaType, tmdbId); no `results` restores the default.
 import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { clearStubArrDeleted, stubArrDeleted } from './stub-arr-state';
 
 export interface RecordedArrWrite {
   method: string;
@@ -427,6 +430,19 @@ export async function startStubArr(): Promise<StubArrServer> {
   // throws. Exercises per-source failure isolation (one source down → the OTHERS still flow + a
   // per-source `unavailable` marker). Toggled via `POST /_stub/fault {on}`; cleared by reset.
   let faultReads = false;
+  // ADR-093 / DESIGN-052 D-20 — Seerr's watchlist error switch: when on, every `/user/{id}/watchlist` page answers
+  // Seerr 3.4.1's failed-read body (HTTP 200, `totalPages: 0`, `totalResults: 0`, no results). Cleared by reset.
+  let seerrWatchlistError = false;
+  // ADR-093 / DESIGN-052 D-10 — a spec-set Seerr watchlist per user id (`POST /_stub/seerr-watchlist`), in place of the
+  // default (the member's Stub Dune). Cleared by reset, or per user by posting no `results`.
+  const seerrWatchlistOverride = new Map<string, Array<Record<string, unknown>>>();
+  // ADR-093 / DESIGN-052 D-13 / D-20 — the app-owned "must not contain" release profile. One list: this one stub
+  // serves Radarr AND Sonarr, so each reconcile rewrites it with its own *arr's terms (each read-back still holds).
+  let releaseProfiles: Array<Record<string, unknown> & { id: number }> = [];
+  let nextReleaseProfileId = 1;
+  // DESIGN-052 D-17 / D-20 — each Seerr user's watchlist sync flags (settings/main), and the Sonarr server's tags.
+  let seerrSyncFlags = new Map<number, { movies: boolean; tv: boolean }>([[1, { movies: true, tv: true }]]);
+  let seerrAnimeTags: number[] = [];
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -444,8 +460,101 @@ export async function startStubArr(): Promise<StubArrServer> {
         calls.length = 0;
         queueRecords = [];
         faultReads = false;
+        seerrWatchlistError = false;
+        seerrWatchlistOverride.clear();
+        releaseProfiles = [];
+        nextReleaseProfileId = 1;
+        seerrSyncFlags = new Map([[1, { movies: true, tv: true }]]);
+        seerrAnimeTags = [];
+        clearStubArrDeleted();
         res.writeHead(204);
         return res.end();
+      }
+      if (url.pathname === '/_stub/seerr-watchlist-error' && method === 'POST') {
+        const raw = await readBody(req);
+        const parsed = raw === '' ? {} : (JSON.parse(raw) as { on?: boolean });
+        seerrWatchlistError = parsed.on !== false;
+        res.writeHead(204);
+        return res.end();
+      }
+      if (url.pathname === '/_stub/seerr-watchlist' && method === 'POST') {
+        const raw = await readBody(req);
+        const parsed = raw === '' ? {} : (JSON.parse(raw) as { userId?: number; results?: Array<Record<string, unknown>> | null });
+        const key = String(parsed.userId ?? 2);
+        if (Array.isArray(parsed.results)) seerrWatchlistOverride.set(key, parsed.results);
+        else seerrWatchlistOverride.delete(key);
+        res.writeHead(204);
+        return res.end();
+      }
+      // ADR-093 / DESIGN-052 D-02 / D-20 — Seerr's users and each user's watchlist (SEERR_URL points here; the path is
+      // normalized, so `/api/v1/user` is `/user`). Seerr user 1 is the owner, user 2 the member (a friend); the
+      // member's list holds Stub Dune, a title that is NOT in the Trash pool.
+      if (method === 'GET' && path === '/user') {
+        return json(res, 200, {
+          pageInfo: { pages: 1, pageSize: 100, results: 2, page: 1 },
+          results: [
+            { id: 1, plexId: 12874060, userType: 1 },
+            { id: 2, plexId: 77, userType: 1 },
+          ],
+        });
+      }
+      const seerrWatchlist = /^\/user\/(\d+)\/watchlist$/.exec(path);
+      if (method === 'GET' && seerrWatchlist) {
+        const page = Number(query.page ?? 1);
+        if (seerrWatchlistError) return json(res, 200, { page, totalPages: 0, totalResults: 0, results: [] });
+        const override = seerrWatchlistOverride.get(seerrWatchlist[1]!);
+        const results = override
+          ? override
+          : seerrWatchlist[1] === '2'
+            ? [{ id: 11, ratingKey: '5d776d1b0000000000000002', title: 'Stub Dune', mediaType: 'movie', tmdbId: 880020 }]
+            : [];
+        return json(res, 200, { page, totalPages: results.length > 0 ? 1 : 0, totalResults: results.length, results });
+      }
+      // ADR-093 / DESIGN-052 D-13 / D-20 — the release profile surface (kept out of the recorded `calls`, which other
+      // specs assert on), plus a read of it for specs.
+      if (url.pathname === '/_stub/release-profiles') return json(res, 200, { profiles: releaseProfiles });
+      if (path === '/releaseprofile' && method === 'GET') return json(res, 200, releaseProfiles);
+      if (path === '/releaseprofile' && method === 'POST') {
+        const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
+        const created = { ...body, id: nextReleaseProfileId++ };
+        releaseProfiles.push(created);
+        return json(res, 201, created);
+      }
+      const profilePut = /^\/releaseprofile\/(\d+)$/.exec(path);
+      if (profilePut && method === 'PUT') {
+        const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
+        const id = Number(profilePut[1]);
+        releaseProfiles = releaseProfiles.map((p) => (p.id === id ? { ...body, id } : p));
+        return json(res, 202, { ...body, id });
+      }
+      // DESIGN-052 D-17 / D-20 — Seerr settings/main (the watchlist sync flags; POST echoes) and the Sonarr server list
+      // the anime-tags preflight reads and PUTs.
+      const seerrSettings = /^\/user\/(\d+)\/settings\/main$/.exec(path);
+      if (seerrSettings) {
+        const id = Number(seerrSettings[1]);
+        if (method === 'POST') {
+          const body = JSON.parse(await readBody(req)) as { watchlistSyncMovies?: boolean; watchlistSyncTv?: boolean };
+          seerrSyncFlags.set(id, { movies: body.watchlistSyncMovies === true, tv: body.watchlistSyncTv === true });
+        }
+        const flags = seerrSyncFlags.get(id) ?? { movies: false, tv: false };
+        return json(res, 200, {
+          username: `Stub User ${id}`,
+          locale: 'en',
+          discoverRegion: 'US',
+          streamingRegion: 'US',
+          watchlistSyncMovies: flags.movies,
+          watchlistSyncTv: flags.tv,
+        });
+      }
+      const seerrSonarr = { id: 0, name: 'Stub Sonarr', is4k: false, isDefault: true, tags: [1], animeTags: seerrAnimeTags };
+      if (path === '/settings/sonarr' && method === 'GET') return json(res, 200, [seerrSonarr]);
+      if (path === '/settings/sonarr/0' && method === 'PUT') {
+        const body = JSON.parse(await readBody(req)) as { animeTags?: number[] };
+        seerrAnimeTags = Array.isArray(body.animeTags) ? body.animeTags : [];
+        return json(res, 200, { ...seerrSonarr, animeTags: seerrAnimeTags });
+      }
+      if ((path === '/exclusions/paged' || path === '/importlistexclusion/paged') && method === 'GET') {
+        return json(res, 200, { page: 1, pageSize: 1, totalRecords: 0, records: [] });
       }
       // PLAN-015 / D-20 — stage the download queue for the Action Feedback progress derivation.
       if (url.pathname === '/_stub/queue' && method === 'POST') {
@@ -527,9 +636,24 @@ export async function startStubArr(): Promise<StubArrServer> {
         const movieById = /^\/movie\/(\d+)$/.exec(path);
         if (movieById) {
           const id = Number(movieById[1]);
+          // ADR-093 / DESIGN-052 D-14 — after a stub Maintainerr delete the movie is gone (404).
+          if (id === STUB_MOVIE_ID && stubArrDeleted.tmdb.has(STUB_MOVIE_TMDB_ID)) {
+            return json(res, 404, { message: `stub-arr: movie ${id} was deleted` });
+          }
           if (id === STUB_MOVIE_ID) return json(res, 200, movieResource(STUB_MOVIE_ID));
+          if (id === STUB_VANISHED_ID && stubArrDeleted.tmdb.has(STUB_VANISHED_TMDB_ID)) {
+            return json(res, 404, { message: `stub-arr: movie ${id} was deleted` });
+          }
           if (id === STUB_VANISHED_ID) return json(res, 200, vanishedMovieResource());
           return json(res, 404, { message: `stub-arr: no movie ${id}` });
+        }
+        const seriesById = /^\/series\/(\d+)$/.exec(path);
+        if (seriesById) {
+          const id = Number(seriesById[1]);
+          if (id === STUB_SERIES_ID && !stubArrDeleted.tvdb.has(STUB_SERIES_TVDB_ID)) {
+            return json(res, 200, seriesResource(STUB_SERIES_ID));
+          }
+          return json(res, 404, { message: `stub-arr: no series ${id}` });
         }
       }
 
@@ -617,9 +741,32 @@ export async function startStubArr(): Promise<StubArrServer> {
               id: e.episodeFileId,
               seriesId: STUB_SERIES_ID,
               quality: { quality: { id: 4, name: 'WEBDL-1080p', resolution: 1080 } },
+              // ADR-093 / DESIGN-052 D-11 — the identity fields the Release Block records before a delete.
+              seasonNumber: e.seasonNumber,
+              relativePath: `Season ${e.seasonNumber}/Breaking Prod - S0${e.seasonNumber}E${String(e.episodeNumber).padStart(2, '0')} [WEBDL-1080p]-STUB.mkv`,
+              sceneName: `Breaking.Prod.S0${e.seasonNumber}E${String(e.episodeNumber).padStart(2, '0')}.1080p.WEB-DL.DDP5.1.H.264-STUB`,
+              releaseGroup: 'STUB',
+              size: 1_073_741_824,
             }));
           return json(res, 200, files);
         }
+        case '/moviefile': {
+          // ADR-093 / DESIGN-052 D-11 — The Fixture's file, with the identity the Release Block records.
+          if (Number(query.movieId) !== STUB_MOVIE_ID) return json(res, 200, []);
+          return json(res, 200, [
+            {
+              id: 9601,
+              movieId: STUB_MOVIE_ID,
+              relativePath: 'The Fixture (2022) {imdb-tt8800010} [WEBDL-1080p][EAC3 5.1][h264]-STUB.mkv',
+              sceneName: 'The.Fixture.2022.1080p.WEB-DL.DDP5.1.H.264-STUB',
+              releaseGroup: 'STUB',
+              quality: { quality: { id: 4, name: 'WEBDL-1080p', resolution: 1080, source: 'web', modifier: 'none' } },
+              size: 4_294_967_296,
+            },
+          ]);
+        }
+        case '/history/series':
+          return json(res, 200, []);
         case '/album': {
           // Lidarr album picker (D-06): the seeded artist 701 has one on-disk album so its
           // detail offers Fix — used to assert Music offers no 'Missing subtitles' radio

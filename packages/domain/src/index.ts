@@ -221,3 +221,16 @@ export * from './collection-builder';
 // oauth_audit in-tx) and the shared-table fixed-window rate limiter the /oauth/* routes use (D-10).
 export * from './oauth';
 export * from './rate-limit';
+// ADR-093 / DESIGN-052 (PLAN-072) — the Watchlist Registry (refresh, per-source state machine, Registry Gate, typed
+// snapshot, matching, the Watchlists card summary), its read sources, and the structured-log seam.
+export * from './domain-logger';
+export * from './watchlist-registry';
+export * from './watchlist-registry-sources';
+// ADR-093 C-07..C-11 / DESIGN-052 D-11..D-17 / D-23 (PLAN-072 S2 part 2) — the Deleted-Release Record, the Release
+// Block (terms, the confined profile writer, the re-add check), the backfill seed and the Seerr watchlist enrollment.
+export * from './release-terms';
+export * from './release-block';
+export * from './release-block-seed';
+export * from './release-block-pool';
+export * from './release-block-static';
+export * from './seerr-enroll';

@@ -20,7 +20,12 @@ import {
   getBatchSaveStats,
   getPoolRefreshCadence,
   getTrashOverview,
+  getTrashSweepStatus,
   getTuningReport,
+  getReleaseBlockSummary,
+  getSeerrEnrollSummary,
+  getWatchlistRegistrySummary,
+  TrashSweepPausedError,
   greenlightBatch,
   isLeavingSoonCollectionTitle,
   listBatches,
@@ -49,6 +54,7 @@ import {
   mapDomainErrors,
   resolveArrBundle,
   resolveMaintainerrBundle,
+  resolveReleaseBlockArr,
   router,
   type TRPCContext,
 } from '../trpc';
@@ -90,9 +96,39 @@ export const trashRouter = router({
    * The UX surfaces this as the safety banner; the destructive procedures re-run it server-side.
    */
   status: sectionProcedure('trash', 'read_only').query(async ({ ctx }) => {
-    return mapDomainErrors(() =>
-      auditMaintainerr({ maintainerr: resolveMaintainerrBundle(ctx) }),
-    );
+    return mapDomainErrors(async () => {
+      const [audit, sweep] = await Promise.all([
+        auditMaintainerr({ maintainerr: resolveMaintainerrBundle(ctx) }),
+        getTrashSweepStatus({ db: ctx.db }),
+      ]);
+      // ADR-093 / DESIGN-052 D-10 — the paused banner's reason, set only once no scheduled sweep of a due batch has
+      // succeeded for 6 hours (any reason); a shorter pause shows nothing. Counts and reasons only.
+      return { ...audit, sweepPause: sweep.banner };
+    });
+  }),
+
+  /**
+   * ADR-093 / DESIGN-052 D-10 — the Trash settings' read-only "Watchlists" card (admins): when the newest registry
+   * check finished, how many accounts were read and how many cannot be, and the per-class / per-status counts; the
+   * Release Block's term counts, the import-list exclusion counts and the re-adds of the last 30 days (D-23); and the
+   * Seerr enrollment counts (D-17). Never a name or a title (ADR-093 C-06).
+   */
+  watchlists: adminProcedure.query(async ({ ctx }) => {
+    return mapDomainErrors(async () => {
+      // D-23 — the exclusion counts are read live; an *arr that does not answer (or is not configured) shows none.
+      let arr: ReturnType<typeof resolveReleaseBlockArr> | null = null;
+      try {
+        arr = resolveReleaseBlockArr(ctx);
+      } catch {
+        arr = null;
+      }
+      const [registry, releaseBlock, enrollment] = await Promise.all([
+        getWatchlistRegistrySummary({ db: ctx.db }),
+        getReleaseBlockSummary({ db: ctx.db, arr }),
+        getSeerrEnrollSummary({ db: ctx.db }),
+      ]);
+      return { ...registry, releaseBlock, enrollment };
+    });
   }),
 
   /**
@@ -336,6 +372,8 @@ export const trashRouter = router({
         const res = await expediteDeletion({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
+          // ADR-093 / DESIGN-052 D-14 — the release is recorded and blocked before the handle.
+          arr: resolveReleaseBlockArr(ctx),
           scope: 'item',
           media: input.media,
           actorId: ctx.user.id,
@@ -371,6 +409,7 @@ export const trashRouter = router({
         const res = await expediteDeletion({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
+          arr: resolveReleaseBlockArr(ctx),
           scope: 'all',
           media: input.media,
           actorId: ctx.user.id,
@@ -583,15 +622,22 @@ export const trashRouter = router({
     expire: trashActionProcedure('manage_batches')
       .input(z.object({ batchId: z.uuid(), forceOverride: z.boolean().optional() }))
       .mutation(async ({ ctx, input }) => {
-        return mapDomainErrors(() =>
-          sweepExpiredBatches({
+        return mapDomainErrors(async () => {
+          // ADR-093 / DESIGN-052 D-07 / D-14 (D-24d) — the web pod never refreshes the registry inline: the manual
+          // Expire now takes the Registry Gate on the CronJob's newest run (`gate-only`) and writes no status row. A
+          // paused sweep deleted nothing ⇒ PRECONDITION_FAILED with the reason.
+          const report = await sweepExpiredBatches({
             db: ctx.db,
             maintainerr: resolveMaintainerrBundle(ctx),
+            arr: resolveReleaseBlockArr(ctx),
             batchId: input.batchId,
             forceOverride: input.forceOverride,
             actorId: ctx.user.id,
-          }),
-        );
+            registry: 'gate-only',
+          });
+          if (report.paused !== null) throw new TrashSweepPausedError(report.paused.reason, report.paused.step);
+          return report;
+        });
       }),
 
     /**

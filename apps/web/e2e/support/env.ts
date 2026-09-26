@@ -73,6 +73,8 @@ export interface RuntimeEnv {
   PLEX_TV_URL: string;
   /** ADR-089 / DESIGN-049 (PLAN-068) — the plex.tv discover provider (the watchlist), also the stub Plex. */
   PLEX_DISCOVER_URL: string;
+  /** ADR-093 / DESIGN-052 D-20 — community.plex.tv GraphQL (the stub Plex serves `/api`). */
+  PLEX_COMMUNITY_URL: string;
   /** ADR-068 / ADR-088 (PLAN-068 S3) — the three Tautulli instances, all pointed at the one stub Tautulli
    *  (distinct keys tell them apart, like the Plex tokens). Consumers: the watch-history sync, the
    *  metadata-refresh harvest, and the home play scoreboard (kept hidden — see stub-tautulli.ts). */
@@ -236,6 +238,7 @@ export function composeRuntimeEnv(opts: {
     PLEX_HAYNESKUBE_TOKEN: STUB_PLEX_TOKENS.hayneskube,
     PLEX_TV_URL: opts.stubPlexBaseUrl,
     PLEX_DISCOVER_URL: opts.stubPlexBaseUrl,
+    PLEX_COMMUNITY_URL: opts.stubPlexBaseUrl,
     STUB_TAUTULLI_URL: opts.stubTautulliBaseUrl,
     TAUTULLI_URL: opts.stubTautulliBaseUrl,
     TAUTULLI_API_KEY: STUB_TAUTULLI_API_KEYS.haynesops,

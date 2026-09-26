@@ -22,6 +22,23 @@ import {
   WATCH_RECO_SOURCES,
   WATCH_SHOW_STATUSES,
   WATCH_TITLE_KINDS,
+  APP_SETTING_KEYS,
+  DELETED_RELEASE_ARR_KINDS,
+  DELETED_RELEASE_IDENTITY_SOURCES,
+  DELETED_RELEASE_ORIGINS,
+  DELETED_RELEASE_STATES,
+  DELETED_RELEASE_TERM_CONFIDENCES,
+  TRASH_KEEP_REASONS,
+  TRASH_SWEEP_OUTCOMES,
+  WATCHLIST_ACCOUNT_CLASSES,
+  WATCHLIST_ACCOUNT_STATUSES,
+  WATCHLIST_ITEM_KINDS,
+  WATCHLIST_REGISTRY_RUN_FAILURES,
+  WATCHLIST_REGISTRY_RUN_STATUSES,
+  WATCHLIST_REGISTRY_TRIGGERS,
+  WATCHLIST_SOURCE_OUTCOMES,
+  WATCHLIST_SOURCE_STATUSES,
+  WATCHLIST_SOURCES,
 } from '../src/schema/enums';
 
 // NOTE: this file exercises schema-level invariants (CHECK constraints, seed
@@ -2830,6 +2847,154 @@ describe('migrations against embedded Postgres 16', () => {
       }
     });
   });
+
+  // ADR-093 / DESIGN-052 D-05 (PLAN-072 S2 — migration 0081, journal idx 80): the Watchlist Registry, the
+  // Deleted-Release Record, the Seerr enrollments, trash_sweep_status, three new columns and two CHECK relaxes.
+  // Additive; every enumerated column's CHECK is compared against its enums.ts const array (parity both ways).
+  describe('0081 watchlist protection (ADR-093 — registry, release record, sweep status, CHECK relaxes)', () => {
+    async function checkValues(conname: string): Promise<string[]> {
+      const def = await client.query({
+        text: `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = $1`,
+        values: [conname],
+      });
+      expect(def.rows.length, conname).toBe(1);
+      return [...String(def.rows[0].def).matchAll(/'([a-z_-]+)'/g)].map((m) => m[1]!).sort();
+    }
+    async function columnsOf(table: string): Promise<Set<string>> {
+      const cols = await client.query({
+        text: `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
+        values: [table],
+      });
+      return new Set(cols.rows.map((r) => r.column_name as string));
+    }
+
+    it('creates the eight tables with the D-05 columns (no URL column on the release record)', async () => {
+      const expected: Record<string, string[]> = {
+        watchlist_registry_runs: ['id', 'trigger', 'status', 'failure', 'started_at', 'finished_at', 'counts'],
+        watchlist_registry_accounts: [
+          'plex_account_id', 'class', 'plex_uuid', 'seerr_user_id', 'status', 'first_seen_at', 'left_at',
+          'item_count', 'updated_at',
+        ],
+        watchlist_registry_sources: [
+          'plex_account_id', 'source', 'status', 'last_outcome', 'last_error_class', 'last_attempt_at',
+          'last_ok_at', 'failing_since', 'last_ok_count', 'empty_unverified', 'hidden_logged_at', 'updated_at',
+        ],
+        watchlist_registry_items: [
+          'plex_account_id', 'discover_id', 'kind', 'source', 'tmdb_id', 'tvdb_id', 'imdb_id', 'first_seen_at',
+          'last_seen_at',
+        ],
+        plex_discover_ids: ['discover_id', 'kind', 'tmdb_id', 'tvdb_id', 'imdb_id', 'resolved_at', 'not_found_at', 'attempts'],
+        trash_deleted_releases: [
+          'id', 'arr_kind', 'arr_item_id', 'media_item_id', 'batch_item_id', 'tmdb_id', 'tvdb_id', 'imdb_id', 'title',
+          'year', 'season', 'identity_source', 'release_title', 'release_group', 'quality', 'resolution',
+          'size_bytes', 'file_name', 'indexer', 'years', 'term', 'term_confidence', 'state', 'origin', 'recorded_at',
+          'activated_at', 'expires_at', 'ended_at', 'readd_seen_at', 'readd_same_release',
+        ],
+        seerr_watchlist_enrollments: [
+          'seerr_user_id', 'plex_account_id', 'enrolled_at', 'already_on', 'optout_observed_at', 'last_checked_at',
+        ],
+        trash_sweep_status: ['id', 'last_outcome', 'last_reason', 'last_at', 'paused_since', 'last_ok_at'],
+      };
+      for (const [table, cols] of Object.entries(expected)) {
+        const have = await columnsOf(table);
+        for (const c of cols) expect(have.has(c), `${table}.${c}`).toBe(true);
+        expect(have.size, `${table} has exactly the D-05 columns`).toBe(cols.length);
+      }
+      const release = await columnsOf('trash_deleted_releases');
+      expect([...release].filter((c) => c.includes('url'))).toEqual([]);
+      expect(await columnsOf('trash_batch_items')).toContain('keep_reason');
+      const candidates = await columnsOf('trash_candidates');
+      expect(candidates).toContain('plex_guid');
+      expect(candidates).toContain('rule_evaluation_failed');
+    });
+
+    it('every enumerated CHECK names exactly its enums.ts const array', async () => {
+      const pairs: Array<[string, readonly string[]]> = [
+        ['watchlist_registry_runs_trigger_enum', WATCHLIST_REGISTRY_TRIGGERS],
+        ['watchlist_registry_runs_status_enum', WATCHLIST_REGISTRY_RUN_STATUSES],
+        ['watchlist_registry_runs_failure_enum', WATCHLIST_REGISTRY_RUN_FAILURES],
+        ['watchlist_registry_accounts_class_enum', WATCHLIST_ACCOUNT_CLASSES],
+        ['watchlist_registry_accounts_status_enum', WATCHLIST_ACCOUNT_STATUSES],
+        ['watchlist_registry_sources_source_enum', WATCHLIST_SOURCES],
+        ['watchlist_registry_sources_status_enum', WATCHLIST_SOURCE_STATUSES],
+        ['watchlist_registry_sources_outcome_enum', WATCHLIST_SOURCE_OUTCOMES],
+        ['watchlist_registry_items_kind_enum', WATCHLIST_ITEM_KINDS],
+        ['watchlist_registry_items_source_enum', WATCHLIST_SOURCES],
+        ['plex_discover_ids_kind_enum', WATCHLIST_ITEM_KINDS],
+        ['trash_deleted_releases_arr_kind_enum', DELETED_RELEASE_ARR_KINDS],
+        ['trash_deleted_releases_identity_source_enum', DELETED_RELEASE_IDENTITY_SOURCES],
+        ['trash_deleted_releases_term_confidence_enum', DELETED_RELEASE_TERM_CONFIDENCES],
+        ['trash_deleted_releases_state_enum', DELETED_RELEASE_STATES],
+        ['trash_deleted_releases_origin_enum', DELETED_RELEASE_ORIGINS],
+        ['trash_sweep_status_outcome_enum', TRASH_SWEEP_OUTCOMES],
+        ['trash_batch_items_keep_reason_enum', TRASH_KEEP_REASONS],
+        ['sync_runs_run_kind_enum', SYNC_RUN_KINDS],
+        ['app_settings_key_enum', APP_SETTING_KEYS],
+      ];
+      for (const [conname, values] of pairs) {
+        expect(await checkValues(conname), conname).toEqual([...values].sort());
+      }
+      expect(SYNC_RUN_KINDS).toContain('watchlist-registry');
+      expect(APP_SETTING_KEYS).toContain('seerr_watchlist_enroll');
+    });
+
+    it('rejects a malformed discover id, a bogus status, a second sweep-status row; cascades an account', async () => {
+      const ACCT = 'test-0081-acct';
+      await client.query({
+        text: `INSERT INTO watchlist_registry_accounts (plex_account_id, class) VALUES ($1, 'friend')`,
+        values: [ACCT],
+      });
+      try {
+        await client.query({
+          text: `INSERT INTO watchlist_registry_sources (plex_account_id, source, status, last_outcome, last_attempt_at)
+                 VALUES ($1, 'community', 'read', 'ok', now())`,
+          values: [ACCT],
+        });
+        await client.query({
+          text: `INSERT INTO watchlist_registry_items (plex_account_id, discover_id, kind, source)
+                 VALUES ($1, '5d776824151a60001f24a29e', 'movie', 'community')`,
+          values: [ACCT],
+        });
+        await expect(
+          client.query({
+            text: `INSERT INTO watchlist_registry_items (plex_account_id, discover_id, kind, source)
+                   VALUES ($1, '5D776824151A60001F24A29E', 'movie', 'community')`,
+            values: [ACCT],
+          }),
+        ).rejects.toMatchObject({ code: '23514' });
+        await expect(
+          client.query({
+            text: `INSERT INTO watchlist_registry_items (plex_account_id, discover_id, kind, source)
+                   VALUES ($1, '5d776824151a60001f24a29f', 'MOVIE', 'community')`,
+            values: [ACCT],
+          }),
+        ).rejects.toMatchObject({ code: '23514' });
+        await expect(
+          client.query({
+            text: `UPDATE watchlist_registry_sources SET status = 'hidden' WHERE plex_account_id = $1`,
+            values: [ACCT],
+          }),
+        ).rejects.toMatchObject({ code: '23514' });
+      } finally {
+        await client.query({ text: `DELETE FROM watchlist_registry_accounts WHERE plex_account_id = $1`, values: [ACCT] });
+      }
+      const left = await client.query({
+        text: `SELECT (SELECT count(*)::int FROM watchlist_registry_sources WHERE plex_account_id = $1) AS s,
+                      (SELECT count(*)::int FROM watchlist_registry_items WHERE plex_account_id = $1) AS i`,
+        values: [ACCT],
+      });
+      expect(left.rows[0]).toEqual({ s: 0, i: 0 });
+
+      await client.query(`INSERT INTO trash_sweep_status (id, last_outcome, last_at) VALUES (1, 'ok', now())`);
+      try {
+        await expect(
+          client.query(`INSERT INTO trash_sweep_status (id, last_outcome, last_at) VALUES (2, 'ok', now())`),
+        ).rejects.toMatchObject({ code: '23514' });
+      } finally {
+        await client.query(`DELETE FROM trash_sweep_status`);
+      }
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -2910,6 +3075,17 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(entry!.when).toBeGreaterThan(prev!.when);
     expect(readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0080_watchlist_marks.sql'), 'utf8')).toContain(
       "'watchlist_add','watchlist_remove'",
+    );
+  });
+
+  // PLAN-072 S2 gate — the watchlist-protection migration is journaled (idx 80), strictly after 0080, and its SQL exists.
+  it('lists 0081_watchlist_protection at idx 80, strictly after 0080_watchlist_marks', () => {
+    const entry = journal.entries.find((e) => e.tag === '0081_watchlist_protection');
+    const prev = journal.entries.find((e) => e.tag === '0080_watchlist_marks');
+    expect(entry?.idx).toBe(80);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    expect(readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0081_watchlist_protection.sql'), 'utf8')).toContain(
+      'CREATE TABLE "watchlist_registry_items"',
     );
   });
 });

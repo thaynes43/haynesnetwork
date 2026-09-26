@@ -10,10 +10,13 @@ import { ledgerEvents, mediaItems, notifications } from '@hnet/db/schema';
 import {
   AGING_HORIZON_MIN_DAYS,
   LEAVING_SOON_COLLECTION_TITLES,
+  MaintainerrRuleDriftError,
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
   TrashMusicUnsupportedError,
   auditMaintainerr,
+  buildRuleGroupUpdate,
+  ruleGroupDrift,
   buildMaintainerrClientBundle,
   classifyGuardian,
   evaluateAgingInvariants,
@@ -30,8 +33,12 @@ import {
   upsertMediaItemsBatch,
   upsertMediaMetadataBatch,
   type MaintainerrClientBundle,
+  createStaticReleaseBlockArr,
 } from '../src/index';
-import { bootMigratedDb, createUser, type TestDb } from './helpers';
+import { seedVerifiedWatchlistRegistry, TEST_DELETE_SNAPSHOT, TEST_DISPLAY_SNAPSHOT, bootMigratedDb, createUser, type TestDb } from './helpers';
+
+/** ADR-093 / DESIGN-052 D-14 — the in-memory Release Block *arr (every item synthesized recordable). */
+const { arr: releaseArr } = createStaticReleaseBlockArr();
 
 interface RecordedCall {
   method: string;
@@ -65,6 +72,8 @@ interface MaintState {
   }>;
   /** rule groups GET /rules serves (the Rules tab's data). Default []. */
   rules: Array<Record<string, unknown>>;
+  /** DESIGN-052 D-16 test seam: Maintainerr "forgets" listExclusions on a PUT (the read-back must catch it). */
+  dropFlagWrites?: boolean;
   /** DESTRUCTIVE-hazard tracker: each PUT /rules that Maintainerr's `updateRules` would treat as a
    *  crucial-setting change (dataType/libraryId differs from the stored group → wipes collection media
    *  + specific exclusions + deletes the Plex collection). A correct isActive toggle produces none. */
@@ -129,6 +138,9 @@ function makeMaintainerr(state: MaintState): {
           deleteAfterDays: c.deleteAfterDays,
           arrAction: c.arrAction ?? 0,
           manualCollection: c.manualCollection ?? false,
+          // ADR-093 / DESIGN-052 D-16 — the rule pools carry both flags the aging invariant requires.
+          listExclusions: true,
+          forceSeerr: true,
           type: c.type,
           title: c.title,
           media: [],
@@ -215,6 +227,26 @@ function makeMaintainerr(state: MaintState): {
             to: { dataType: dto.dataType, libraryId: dto.libraryId },
           });
         }
+        // (4) What Maintainerr 3.29.0 `updateRules` persists (rules.service.ts): the top-level-only flags are read
+        // from the PUT body's TOP level and reset when absent; `deleteAfterDays` from the nested collection.
+        if (stored !== undefined) {
+          const put = dto as Record<string, unknown>;
+          const col = { ...((stored.collection as Record<string, unknown> | undefined) ?? {}) };
+          const nested = (put.collection as Record<string, unknown> | undefined) ?? {};
+          col.arrAction = put.arrAction ? put.arrAction : 0;
+          col.listExclusions = put.listExclusions ? true : false;
+          col.forceSeerr = put.dataType !== 'episode' && put.forceSeerr ? true : false;
+          col.tagInArr = put.tagInArr ?? false;
+          col.radarrSettingsId = put.radarrSettingsId ?? null;
+          col.sonarrSettingsId = put.sonarrSettingsId ?? null;
+          col.deleteAfterDays = nested.deleteAfterDays ?? col.deleteAfterDays ?? null;
+          if (state.dropFlagWrites) {
+            col.listExclusions = false;
+          }
+          stored.collection = col;
+          stored.isActive = put.isActive;
+          stored.useRules = put.useRules !== undefined ? put.useRules : true;
+        }
       }
       return ok({ code: 1, result: 'Success' }, method === 'POST' ? 201 : 200);
     }
@@ -283,6 +315,8 @@ describe('aging invariants (DESIGN-010 errata 2026-07-09 — Maintainerr self-de
         deleteAfterDays: 60,
         arrAction: 0,
         manualCollection: false,
+        listExclusions: true,
+        forceSeerr: true,
       },
     ]);
     expect(v).toHaveLength(1);
@@ -295,18 +329,18 @@ describe('aging invariants (DESIGN-010 errata 2026-07-09 — Maintainerr self-de
     expect(AGING_HORIZON_MIN_DAYS).toBe(3650);
     expect(
       evaluateAgingInvariants([
-        { title: 'pool', isActive: true, deleteAfterDays: 9999, arrAction: 0, manualCollection: false },
+        { title: 'pool', isActive: true, deleteAfterDays: 9999, arrAction: 0, manualCollection: false, listExclusions: true, forceSeerr: true },
       ]),
     ).toEqual([]);
     // Exactly at the threshold is safe; one day short is not.
     expect(
       evaluateAgingInvariants([
-        { title: 'pool', isActive: true, deleteAfterDays: 3650, arrAction: 0, manualCollection: false },
+        { title: 'pool', isActive: true, deleteAfterDays: 3650, arrAction: 0, manualCollection: false, listExclusions: true, forceSeerr: true },
       ]),
     ).toEqual([]);
     expect(
       evaluateAgingInvariants([
-        { title: 'pool', isActive: true, deleteAfterDays: 3649, arrAction: 0, manualCollection: false },
+        { title: 'pool', isActive: true, deleteAfterDays: 3649, arrAction: 0, manualCollection: false, listExclusions: true, forceSeerr: true },
       ]),
     ).toHaveLength(1);
   });
@@ -314,7 +348,7 @@ describe('aging invariants (DESIGN-010 errata 2026-07-09 — Maintainerr self-de
   it('reads a null/0 rule-pool horizon as imminent (no null guard in Maintainerr)', () => {
     for (const horizon of [null, 0]) {
       const v = evaluateAgingInvariants([
-        { title: 'pool', isActive: true, deleteAfterDays: horizon, arrAction: 0, manualCollection: false },
+        { title: 'pool', isActive: true, deleteAfterDays: horizon, arrAction: 0, manualCollection: false, listExclusions: true, forceSeerr: true },
       ]);
       expect(v[0]).toContain('imminently');
     }
@@ -322,7 +356,7 @@ describe('aging invariants (DESIGN-010 errata 2026-07-09 — Maintainerr self-de
 
   it('flags a rule pool whose arrAction is not DELETE/0 (app can no longer manage deletions)', () => {
     const v = evaluateAgingInvariants([
-      { title: 'pool', isActive: true, deleteAfterDays: 9999, arrAction: 3, manualCollection: false },
+      { title: 'pool', isActive: true, deleteAfterDays: 9999, arrAction: 3, manualCollection: false, listExclusions: true, forceSeerr: true },
     ]);
     expect(v.some((m) => m.includes('arrAction 3') && m.includes('must be Delete/0'))).toBe(true);
   });
@@ -359,7 +393,7 @@ describe('aging invariants (DESIGN-010 errata 2026-07-09 — Maintainerr self-de
   it('ignores inactive collections entirely', () => {
     expect(
       evaluateAgingInvariants([
-        { title: 'pool', isActive: false, deleteAfterDays: 1, arrAction: 0, manualCollection: false },
+        { title: 'pool', isActive: false, deleteAfterDays: 1, arrAction: 0, manualCollection: false, listExclusions: true, forceSeerr: true },
       ]),
     ).toEqual([]);
   });
@@ -469,6 +503,7 @@ describe('aging invariants (DESIGN-010 errata 2026-07-09 — Maintainerr self-de
     const { bundle } = makeMaintainerr(ruleColState(60));
     await expect(
       expediteDeletion({
+        arr: releaseArr,
         maintainerr: bundle,
         scope: 'all',
         media: 'movie',
@@ -485,6 +520,7 @@ describe('saveExclusion / removeExclusion (ADR-023 D-05 protective ordering)', (
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     actorId = (await createUser(t.db, { email: 'trash-save@example.com' })).id;
   });
   afterAll(async () => t?.stop());
@@ -584,6 +620,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     actorId = (await createUser(t.db, { email: 'trash-exp@example.com' })).id;
     // Two radarr rows: 8001 recently watched, 8002 cold.
     await upsertMediaItemsBatch({
@@ -646,7 +683,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
 
   it('merges Maintainerr media with our ledger + computes scheduled-delete + total size', async () => {
     const { bundle } = makeMaintainerr(pendingState());
-    const res = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie' });
+    const res = await listTrashPending({ watchlist: TEST_DISPLAY_SNAPSHOT, db: t.db, maintainerr: bundle, media: 'movie' });
     expect(res.count).toBe(2);
     expect(res.totalSizeBytes).toBe(3_000_000_000);
     const watched = res.items.find((i) => i.tmdbId === 8001)!;
@@ -667,7 +704,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
 
   it('D-12 — an ever-watched-but-not-recent item stays SWEEP-DELETABLE (info, not protection)', async () => {
     const { bundle } = makeMaintainerr(pendingState());
-    const res = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie' });
+    const res = await listTrashPending({ watchlist: TEST_DISPLAY_SNAPSHOT, db: t.db, maintainerr: bundle, media: 'movie' });
     const cold = res.items.find((i) => i.tmdbId === 8002)!;
     // It carries a last-watched signal (watched 400d ago) but is NOT recentlyWatched…
     expect(cold.lastWatchedAt).not.toBeNull();
@@ -681,7 +718,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
   it('guardRecentlyWatched auto-protects the recently-watched item, leaves the cold one expeditable', async () => {
     const state = pendingState();
     const { bundle } = makeMaintainerr(state);
-    const guard = await guardRecentlyWatched({ db: t.db, maintainerr: bundle, media: 'movie', actorId });
+    const guard = await guardRecentlyWatched({ watchlist: TEST_DELETE_SNAPSHOT, db: t.db, maintainerr: bundle, media: 'movie', actorId });
     expect(guard.protectedIds).toContain('ms-8001');
     expect(guard.expeditableIds).toContain('ms-8002');
     expect(state.exclusions.has('ms-8001')).toBe(true); // auto-whitelisted
@@ -693,6 +730,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     const { bundle } = makeMaintainerr(state);
     await expect(
       expediteDeletion({
+        arr: releaseArr,
         db: t.db,
         maintainerr: bundle,
         scope: 'all',
@@ -706,6 +744,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     const state = pendingState();
     const { bundle, calls } = makeMaintainerr(state);
     const res = await expediteDeletion({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       scope: 'item',
@@ -722,6 +761,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     const state = pendingState();
     const { bundle, calls } = makeMaintainerr(state);
     const res = await expediteDeletion({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       scope: 'item',
@@ -767,6 +807,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     const { bundle } = makeMaintainerr(state);
     await expect(
       expediteDeletion({
+        arr: releaseArr,
         db: t.db,
         maintainerr: bundle,
         scope: 'item',
@@ -791,6 +832,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     const state = pendingState();
     const { bundle, calls } = makeMaintainerr(state);
     const res = await expediteDeletion({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       scope: 'all',
@@ -815,6 +857,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     // pending set, did not find the target, skipped the guardian and DELETED it. Now the target's
     // real identity is resolved from the actual pending set and the guardian protects it.
     const res = await expediteDeletion({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       scope: 'item',
@@ -839,6 +882,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     });
     const { bundle, calls } = makeMaintainerr(state);
     const res = await expediteDeletion({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       scope: 'all',
@@ -862,6 +906,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     state.exclusions.add('ms-8002'); // saved just now; dnd tag has NOT synced (protectedByTag false)
     const { bundle, calls } = makeMaintainerr(state);
     const res = await expediteDeletion({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       scope: 'item',
@@ -879,6 +924,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     state.exclusions.add('ms-8002');
     const { bundle, calls } = makeMaintainerr(state);
     const res = await expediteDeletion({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       scope: 'all',
@@ -897,6 +943,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
     const state = pendingState(); // pending now: ms-8001 (watched), ms-8002 (cold)
     const { bundle, calls } = makeMaintainerr(state);
     const res = await expediteDeletion({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       scope: 'all',
@@ -931,6 +978,7 @@ describe('expedite deletion audit — Recently Deleted + Activity (deletion-trac
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     actorId = (await createUser(t.db, { email: 'deleter@example.com', displayName: 'Tom Haynes' })).id;
     await upsertMediaItemsBatch({
       db: t.db,
@@ -971,6 +1019,7 @@ describe('expedite deletion audit — Recently Deleted + Activity (deletion-trac
 
     const { bundle } = makeMaintainerr(coldState());
     const res = await expediteDeletion({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       scope: 'item',
@@ -1037,6 +1086,7 @@ describe('listRecentlyDeleted + restore music rejection (ADR-023 D-02 / R-87)', 
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     await upsertMediaItemsBatch({
       db: t.db,
       arrKind: 'radarr',
@@ -1115,7 +1165,7 @@ describe('upsertTrashRule — GET→PUT rule-shape reconciliation (Bug 1, live-r
   });
 
   it('PASS-AFTER: upsertTrashRule decodes ruleJson → RuleDto so the round-trip succeeds', async () => {
-    const { bundle, calls } = makeMaintainerr(baseState());
+    const { bundle, calls } = makeMaintainerr(baseState({ rules: [getShapedRule()] }));
     await expect(
       upsertTrashRule({ maintainerr: bundle, payload: { ...getShapedRule(), isActive: false } }),
     ).resolves.toBeUndefined();
@@ -1134,14 +1184,14 @@ describe('upsertTrashRule — GET→PUT rule-shape reconciliation (Bug 1, live-r
   });
 
   it('an EMPTY rules[] round-trips even undecoded (why the old rules: [] stub never caught it)', async () => {
-    const { bundle } = makeMaintainerr(baseState());
+    const { bundle } = makeMaintainerr(baseState({ rules: [getShapedRule()] }));
     await expect(
       upsertTrashRule({ maintainerr: bundle, payload: { id: 11, isActive: false, rules: [] } }),
     ).resolves.toBeUndefined();
   });
 
   it('leaves rules already in decoded RuleDto shape untouched (idempotent)', async () => {
-    const { bundle, calls } = makeMaintainerr(baseState());
+    const { bundle, calls } = makeMaintainerr(baseState({ rules: [getShapedRule()] }));
     const decoded = { operator: null, action: 0, firstVal: [0, 3], lastVal: [0, 4], section: 0 };
     await expect(
       upsertTrashRule({ maintainerr: bundle, payload: { id: 11, isActive: false, rules: [decoded] } }),
@@ -1250,6 +1300,7 @@ describe('listTrashPending — live exclusion reflected in the pending list (Bug
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     // A cold, ledger-known movie with NO dnd tag (arrTags empty) — protectedByTag stays false.
     await upsertMediaItemsBatch({
       db: t.db,
@@ -1278,7 +1329,7 @@ describe('listTrashPending — live exclusion reflected in the pending list (Bug
 
   it('protectedByExclusion is TRUE for a live-excluded item (tag not yet synced) when opted in', async () => {
     const { bundle, calls } = makeMaintainerr(oneItemState({ exclusions: new Set(['ms-9101']) }));
-    const res = await listTrashPending({
+    const res = await listTrashPending({ watchlist: TEST_DISPLAY_SNAPSHOT,
       db: t.db,
       maintainerr: bundle,
       media: 'movie',
@@ -1293,7 +1344,7 @@ describe('listTrashPending — live exclusion reflected in the pending list (Bug
 
   it('protectedByExclusion is FALSE when the item is NOT live-excluded', async () => {
     const { bundle } = makeMaintainerr(oneItemState());
-    const res = await listTrashPending({
+    const res = await listTrashPending({ watchlist: TEST_DISPLAY_SNAPSHOT,
       db: t.db,
       maintainerr: bundle,
       media: 'movie',
@@ -1304,8 +1355,116 @@ describe('listTrashPending — live exclusion reflected in the pending list (Bug
 
   it('does NOT read the exclusion list when includeLiveExclusions is off (internal expedite/guardian path)', async () => {
     const { bundle, calls } = makeMaintainerr(oneItemState({ exclusions: new Set(['ms-9101']) }));
-    const res = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie' });
+    const res = await listTrashPending({ watchlist: TEST_DISPLAY_SNAPSHOT, db: t.db, maintainerr: bundle, media: 'movie' });
     expect(res.items[0]!.protectedByExclusion).toBe(false);
     expect(calls.some((c) => c.pathname === '/rules/exclusion')).toBe(false);
+  });
+});
+
+// ADR-093 C-10 / DESIGN-052 D-16 — the Arm/Disarm defect: Maintainerr 3.29.0's updateRules reads listExclusions,
+// forceSeerr, arrAction and the server ids ONLY at the top level of the PUT, while GET /api/rules nests them under
+// `collection`, so a verbatim isActive toggle reset listExclusions and forceSeerr to false. The update now lifts them
+// from the live group, verifies them after the PUT, and the aging invariant requires both flags on every rule pool.
+describe('upsertTrashRule — Arm/Disarm keeps the top-level-only flags (DESIGN-052 D-16)', () => {
+  /** A rule pool exactly as GET /api/rules served it live (2026-09-26): the flags live under `collection`. */
+  const livePool = () => ({
+    id: 1,
+    name: 'hnet — unwatched low-value movies',
+    description: 'pool',
+    libraryId: '1',
+    isActive: true,
+    collectionId: 1,
+    useRules: true,
+    dataType: 'movie',
+    rules: [
+      {
+        id: 151,
+        ruleGroupId: 1,
+        section: 0,
+        isActive: true,
+        ruleJson: JSON.stringify({ operator: null, action: 1, firstVal: [1, 16], customVal: { ruleTypeId: 0, value: '6.0' }, section: 0 }),
+      },
+    ],
+    collection: {
+      id: 1,
+      deleteAfterDays: 9999,
+      arrAction: 0,
+      listExclusions: true,
+      forceSeerr: true,
+      tagInArr: false,
+      radarrSettingsId: 1,
+      sonarrSettingsId: null,
+      type: 'movie',
+    },
+  });
+
+  it('a Disarm toggle sends listExclusions / forceSeerr / arrAction back and Maintainerr keeps them', async () => {
+    const state = baseState({ rules: [livePool()] });
+    const { bundle, calls } = makeMaintainerr(state);
+    await upsertTrashRule({ maintainerr: bundle, payload: { ...livePool(), isActive: false } });
+    const put = calls.find((c) => c.method === 'PUT' && c.pathname === '/rules')!;
+    expect(put.body).toMatchObject({ isActive: false, listExclusions: true, forceSeerr: true, arrAction: 0, radarrSettingsId: 1 });
+    const stored = state.rules[0]!.collection as Record<string, unknown>;
+    expect(stored).toMatchObject({ listExclusions: true, forceSeerr: true, arrAction: 0 });
+    // And Arm again.
+    await upsertTrashRule({ maintainerr: bundle, payload: { ...livePool(), isActive: true } });
+    expect(state.rules[0]!.collection).toMatchObject({ listExclusions: true, forceSeerr: true });
+    expect(state.rules[0]!.isActive).toBe(true);
+  });
+
+  it('a flag the admin set at the top level wins over the live one', () => {
+    const out = buildRuleGroupUpdate({ id: 1, listExclusions: false, rules: [] }, livePool());
+    expect(out.listExclusions).toBe(false);
+    expect(out.forceSeerr).toBe(true);
+    expect(out.useRules).toBe(true); // missing ⇒ from the live group (updateRules would otherwise drop every rule)
+  });
+
+  it('refuses useRules:false with rules present (Maintainerr would delete every rule row)', async () => {
+    const { bundle, calls } = makeMaintainerr(baseState({ rules: [livePool()] }));
+    await expect(
+      upsertTrashRule({ maintainerr: bundle, payload: { ...livePool(), useRules: false } }),
+    ).rejects.toBeInstanceOf(MaintainerrUpstreamError);
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+  });
+
+  it('a read-back that lost a flag throws MaintainerrRuleDriftError naming it', async () => {
+    const { bundle } = makeMaintainerr(baseState({ rules: [livePool()], dropFlagWrites: true }));
+    const err = await upsertTrashRule({ maintainerr: bundle, payload: { ...livePool(), isActive: false } }).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(MaintainerrRuleDriftError);
+    expect((err as MaintainerrRuleDriftError).fields).toEqual(['listExclusions']);
+  });
+
+  it('ruleGroupDrift: forceSeerr is not expected on an episode pool; deleteAfterDays is compared', () => {
+    expect(
+      ruleGroupDrift(
+        { dataType: 'episode', forceSeerr: true, listExclusions: true, collection: { deleteAfterDays: 9999 } },
+        { collection: { forceSeerr: false, listExclusions: true, arrAction: 0, deleteAfterDays: 9999 } },
+      ),
+    ).toEqual([]);
+    expect(
+      ruleGroupDrift(
+        { listExclusions: true, forceSeerr: true, collection: { deleteAfterDays: 9999 } },
+        { collection: { forceSeerr: true, listExclusions: true, arrAction: 0, deleteAfterDays: 30 } },
+      ),
+    ).toEqual(['deleteAfterDays']);
+  });
+
+  it('the aging invariant refuses a rule pool with either flag off (the audit turns unsafe)', async () => {
+    const pool = { title: 'pool', isActive: true, deleteAfterDays: 9999, arrAction: 0, manualCollection: false };
+    expect(evaluateAgingInvariants([{ ...pool, listExclusions: true, forceSeerr: true }])).toEqual([]);
+    const noList = evaluateAgingInvariants([{ ...pool, listExclusions: false, forceSeerr: true }]);
+    expect(noList).toHaveLength(1);
+    expect(noList[0]).toContain('import list exclusions');
+    const noSeerr = evaluateAgingInvariants([{ ...pool, listExclusions: true, forceSeerr: null }]);
+    expect(noSeerr).toHaveLength(1);
+    expect(noSeerr[0]).toContain('Seerr');
+    // A Leaving-Soon pool is not a rule pool: the two flags are not required there.
+    expect(
+      evaluateAgingInvariants([
+        { title: LEAVING_SOON_COLLECTION_TITLES.movie, isActive: true, deleteAfterDays: 0, arrAction: 4, manualCollection: true },
+      ]),
+    ).toEqual([]);
   });
 });

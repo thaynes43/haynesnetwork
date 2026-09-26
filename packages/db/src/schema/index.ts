@@ -175,3 +175,10 @@ export * from './oauth-authorization-codes';
 export * from './oauth-refresh-tokens';
 export * from './oauth-access-tokens';
 export * from './oauth-audit';
+// ADR-093 / DESIGN-052 D-05 (PLAN-072 — watchlist protection for Trash and the Release Block, migration 0081) — the
+// Watchlist Registry (runs, accounts, per-source state, items) and the discover-id map; the Deleted-Release Record;
+// the Seerr watchlist enrollments; and the one-row trash_sweep_status. All guarded single-writer tables.
+export * from './watchlist-registry';
+export * from './trash-deleted-releases';
+export * from './seerr-watchlist-enrollments';
+export * from './trash-sweep-status';

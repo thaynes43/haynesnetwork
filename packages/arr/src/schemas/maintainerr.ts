@@ -24,6 +24,17 @@ export const maintainerrMediaSchema = z.object({
   sizeBytes: z.number().nullish(), // per-item on-disk size (bigint on the wire → number)
   image_path: z.string().nullish(),
   isManual: z.boolean().nullish(),
+  /**
+   * ADR-093 / DESIGN-052 D-06 (PLAN-072) — the item's Plex metadata: only `guid` crosses (`plex://movie/<24 hex>`, the
+   * SHOW's guid for TV; research 2026-09-26: every pool item carries one). The Trash guard matches it against the
+   * Watchlist Registry by discover id.
+   */
+  mediaData: z.object({ guid: z.string().nullish() }).nullish(),
+  /**
+   * DESIGN-052 D-09 — Maintainerr flags an already-pooled item whose rule data was transiently unavailable; its own
+   * handler skips such items, and the app's guardian now keeps them as `unevaluable` too.
+   */
+  ruleEvaluationFailed: z.boolean().nullish(),
 });
 export type MaintainerrMedia = z.infer<typeof maintainerrMediaSchema>;
 
@@ -39,6 +50,12 @@ export const maintainerrCollectionSchema = z.object({
   /** true for our app-managed Leaving-Soon collections (ADR-025); false for rule collections. */
   manualCollection: z.boolean().nullish(),
   manualCollectionName: z.string().nullish(),
+  /** ADR-093 C-10 / DESIGN-052 D-16 — a delete through this pool writes an import-list exclusion (ADR-084 E-3). The
+   *  aging invariant requires it on every active rule pool. */
+  listExclusions: z.boolean().nullish(),
+  /** DESIGN-052 D-16 — a delete through this pool also deletes the Seerr media record, so a re-request is possible.
+   *  The aging invariant requires it on every active rule pool. */
+  forceSeerr: z.boolean().nullish(),
   libraryId: z.union([z.string(), z.number()]).nullish(),
   type: z.union([z.string(), z.number()]).nullish(), // MediaItemType (movie|show|… as string OR 1..4)
   mediaCount: z.number().int().nullish(),

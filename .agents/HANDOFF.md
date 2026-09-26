@@ -4,7 +4,7 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ 2026-09-26 — Watchlists protect titles from Trash (issue #576): ADR-093 / DESIGN-052 / PLAN-072 reviewed and merged (docs); next the build; interim Saves by hand
+## ▶ 2026-09-26 — Watchlists protect titles from Trash (issue #576): S2 built on PR #595 and its code review fixed; next the `pnpm dev:local` walk, merge, release, deploy with the sweep suspended; interim Saves by hand
 
 Three owner rulings on 2026-09-26 (issue #576, and on his phone): **no Trash deletion of a title on anybody's Plex
 watchlist** ("across the server": 42 accounts; HaynesOps and HaynesTower serve the same files); **re-requests of
@@ -35,8 +35,20 @@ after 6 hours; E-4/E-5 of ADR-084 are delivered (DESIGN-052 D-23).
 movie batch `08576e59`, sweep about 2026-09-27T06:45Z) were Saved at about 15:15Z (`setBatchItemSaved`, actor null).
 **Next deadline:** the movie batch that forms after that sweep may draw Summer of 69, Influencers and The Alto
 Knights (friend-watchlisted), sweep about 2026-10-04; S0 says to cross-check every new batch against all readable
-watchlists and Save matches until S7, with a final check 1 to 2 hours before each sweep. **Next:** S2, the build
-(DESIGN-052 D-22 code map). Rollout order is binding: deploy with the sweep CronJob suspended until the read-only
+watchlists and Save matches until S7, with a final check 1 to 2 hours before each sweep.
+
+**Build (PLAN-072 S2, PR #595, branch `feat/watchlist-protection`):** migration 0081 and every D-05 table; the
+Watchlist Registry and its `watchlist-registry` mode; the Registry Gate and typed snapshot with the D-19 overlay; the
+proposal and deletion guard (`watchlisted`, `ruleEvaluationFailed`); the Deleted-Release Record, the D-12 terms and the
+Release Block writer; the two-phase sweep and Expedite (identity, record, profile write and read-back, claim, handle,
+settle by the *arr's own answer); the seed (`release-block-seed.ts`, plus the read-only `--pool` report for S6(e));
+the Arm/Disarm fix and grown invariant; Seerr enrollment, off (`seerr-watchlist.ts`); the D-10 surfaces and the D-23
+counts; CLAUDE.md hard rule 4. Rulings in DESIGN-052 D-25 (D-25ax..D-25bm are the Opus code review's, each with a
+test that fails without it). Runbook: `docs/ops/017-watchlist-protection.md` (OPS-017, Draft until S4).
+**Next:** the S2 `pnpm dev:local` walk (a watchlisted stub title kept by an expedite and a sweep, the release profile
+written before the handle, the Arm/Disarm toggle leaving the flags true), then squash-merge; S3 release; S4 deploy
+(image tag, the `sync-watchlist-registry` CronJob, the Loki alerts linking OPS-017) with
+`haynesnetwork-sync-trash-batch-sweep` suspended until S6 passes. Rollout order is binding: deploy with the sweep CronJob suspended until the read-only
 checks (S6) pass, then the guard + Release Block verified on a live sweep, then seed the block (ledger + bulk legacy
 SAB + the three titles), then the Seerr enable (preflight: Seerr's anime tags, a join of everyone's newest titles
 against unblocked deletions; one user, then all), then re-request the three titles. S6a asks the owner PRD Q-15

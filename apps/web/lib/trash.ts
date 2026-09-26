@@ -44,6 +44,12 @@ export interface GuardianPreviewInput {
   protectedByTag: boolean;
   recentlyWatched: boolean;
   requesters: readonly string[];
+  /** ADR-093 / DESIGN-052 D-06 — on a watchlist (the newest ok registry run). */
+  onWatchlist: boolean;
+  /** D-06 — false when the watchlist status could not be evaluated: the server keeps the item. */
+  watchlistEvaluable: boolean;
+  /** D-09 — Maintainerr flagged the item's rule data as unavailable: the server keeps it. */
+  ruleEvaluationFailed: boolean;
 }
 
 /**
@@ -65,15 +71,24 @@ export interface GuardianPreviewInput {
  *                       NOT the same thing as protected — surface it distinctly (ADR-023 C-07b).
  */
 export type GuardianPreview =
-  'deletable' | 'protected_tag' | 'protected_watched' | 'unverifiable';
+  | 'deletable'
+  | 'protected_tag'
+  | 'protected_watched'
+  | 'protected_watchlist'
+  | 'unverifiable';
 
 export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
   // The expedite 'all' loop skips unactionable items (no Maintainerr id) BEFORE the guardian.
   if (item.maintainerrMediaId === null) return 'unverifiable';
   if (item.protectedByTag) return 'protected_tag';
   if (item.recentlyWatched) return 'protected_watched';
-  // Fail closed: unknown to our ledger ⇒ no watch signal ⇒ kept (skipped).
-  if (item.mediaItemId === null) return 'unverifiable';
+  // ADR-093 C-03 — the Watchlist Keep: on anybody's read watchlist ⇒ kept (never auto-saved).
+  if (item.onWatchlist) return 'protected_watchlist';
+  // Fail closed: unknown to our ledger, watchlist status not evaluable, or Maintainerr's rule data unavailable ⇒
+  // kept (skipped).
+  if (item.mediaItemId === null || item.watchlistEvaluable !== true || item.ruleEvaluationFailed) {
+    return 'unverifiable';
+  }
   return 'deletable';
 }
 
@@ -82,17 +97,25 @@ export interface ExpeditePartition {
   deletable: number;
   /** Bytes freed by the deletable set (the honest "space reclaimed NOW" figure). */
   deletableBytes: number;
-  /** Items the guardian keeps deliberately (tag / watched / requested). */
+  /** Items the guardian keeps deliberately (tag / watched / on a watchlist). */
   protected: number;
   /** Items kept because they can't be verified safe — the server's skippedCount. */
   unverifiable: number;
+  /** ADR-093 D-10 — how many of `protected` are on a watchlist (a subset, for the confirm's breakdown). */
+  watchlisted: number;
 }
 
 /** Partition a pending set the way expediteDeletion scope 'all' will (preview for the Modal). */
 export function partitionForExpedite(
   items: ReadonlyArray<GuardianPreviewInput & { sizeBytes: number }>,
 ): ExpeditePartition {
-  const out: ExpeditePartition = { deletable: 0, deletableBytes: 0, protected: 0, unverifiable: 0 };
+  const out: ExpeditePartition = {
+    deletable: 0,
+    deletableBytes: 0,
+    protected: 0,
+    unverifiable: 0,
+    watchlisted: 0,
+  };
   for (const item of items) {
     const verdict = previewGuardian(item);
     if (verdict === 'deletable') {
@@ -102,6 +125,7 @@ export function partitionForExpedite(
       out.unverifiable += 1;
     } else {
       out.protected += 1;
+      if (verdict === 'protected_watchlist') out.watchlisted += 1;
     }
   }
   return out;
@@ -635,4 +659,141 @@ export function overviewBadge(kind: OverviewKindLike, now: Date = new Date()): O
     tone = days !== null && days <= 3 ? 'danger' : 'warn';
   }
   return { show, count: kind.slatedCount, tone };
+}
+
+// ── watchlist protection (ADR-093 / DESIGN-052 D-10 — copy from the driving session's UX pass) ─────────────────
+// Owner rules: no em or en dashes, no names, never whose watchlist, never how many on a tile.
+
+/** The tile note's visible label (pending wall and batch wall). */
+export const WATCHLIST_NOTE_LABEL = 'On a watchlist';
+/** The tile note's tooltip and aria-label. */
+export const WATCHLIST_NOTE_DETAIL = "On a watchlist. It won't be deleted while it stays there.";
+/** The Expedite confirm's breakdown term for the watchlisted share of the protected count. */
+export const WATCHLIST_BREAKDOWN_TERM = 'on a watchlist';
+
+/** The sweep's keep reasons (mirrors @hnet/db TRASH_KEEP_REASONS; the client never imports server packages). */
+export type TrashKeepReasonName =
+  | 'tag'
+  | 'recently_watched'
+  | 'watchlisted'
+  | 'unevaluable'
+  | 'not_in_pool'
+  | 'live_excluded'
+  | 'release_unrecorded';
+
+/** The batch wall's kept-tile tooltip, per keep reason (D-10). `tag` and `live_excluded` are both a Save. */
+export const KEPT_REASON_TOOLTIPS: Record<TrashKeepReasonName, string> = {
+  watchlisted: 'Kept: on a watchlist',
+  recently_watched: 'Kept: watched recently',
+  unevaluable: "Kept: couldn't be checked",
+  not_in_pool: 'Kept: no longer a candidate',
+  live_excluded: 'Kept: saved',
+  tag: 'Kept: saved',
+  release_unrecorded: "Kept: couldn't be removed safely",
+};
+
+/** The kept tooltip for a skipped row's reason; null for a row with no recorded reason (swept before 0081). */
+export function keptReasonTooltip(reason: string | null | undefined): string | null {
+  if (reason === null || reason === undefined) return null;
+  return (KEPT_REASON_TOOLTIPS as Record<string, string>)[reason] ?? null;
+}
+
+/** The paused banner's reason family (the server sets it only once a pause is at least 6 hours old). */
+export type TrashSweepBannerName = 'gate' | 'release_block' | 'media_apps';
+
+/** The paused banner's copy, per reason (D-10). */
+export const SWEEP_PAUSED_COPY: Record<TrashSweepBannerName, string> = {
+  gate: 'Deletions are paused until watchlists can be checked.',
+  release_block: 'Deletions are paused until removals can be done safely.',
+  media_apps: 'Deletions are paused until the media apps respond normally.',
+};
+
+/** "just now" / "6 minutes ago" / "3 hours ago" / "2 days ago" — the Watchlists card's "Checked …" time. */
+export function relativeTimeLabel(iso: string | null, now: Date = new Date()): string | null {
+  if (iso === null) return null;
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return null;
+  const minutes = Math.max(0, Math.floor((now.getTime() - at) / 60_000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+/** The Watchlists card's first line: "Checked {relative time}. {n} accounts read, {m} can't be read." */
+export function watchlistsHeadline(
+  summary: { checkedAt: string | null; accountsRead: number; accountsUnreadable: number },
+  now: Date = new Date(),
+): string {
+  const when = relativeTimeLabel(summary.checkedAt, now);
+  if (when === null) return 'Not checked yet.';
+  const n = summary.accountsRead;
+  const m = summary.accountsUnreadable;
+  return `Checked ${when}. ${n} account${n === 1 ? '' : 's'} read, ${m} can't be read.`;
+}
+
+/** The Watchlists card's small labelled numbers: per class and per status (counts only, never a name). */
+export const WATCHLIST_CLASS_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  home_full: 'Home',
+  home_managed: 'Managed',
+  friend: 'Friends',
+  seerr_only: 'Seerr only',
+};
+/**
+ * DESIGN-052 D-25bg — the "Lists" group: every account once, split the same way as the headline. `read` is the
+ * headline's "n accounts read"; the other four add up to its "m can't be read" (so none of them reuses that phrase).
+ */
+export const WATCHLIST_LIST_LABELS: Record<string, string> = {
+  read: 'Read',
+  empty: 'Empty or hidden',
+  never_read: 'Not read yet',
+  unreadable: 'Kept from an old check',
+  unresolvable: 'Not supported',
+};
+export const WATCHLIST_LIST_ORDER = ['read', 'empty', 'never_read', 'unreadable', 'unresolvable'] as const;
+
+// ── the Release Block and re-add counts on the Watchlists card (ADR-093 / DESIGN-052 D-23) ──────────────────────────
+// Counts only, never a title (ADR-093 C-06 applies to the card as a whole).
+
+/** The per-*arr row label (Radarr holds the movies, Sonarr the TV). */
+export const RELEASE_BLOCK_KIND_LABELS: Record<string, string> = { radarr: 'Movies', sonarr: 'TV' };
+
+/** "12 of 3,000" — the live blocked releases against the cap. */
+export function blockedReleasesValue(terms: number, cap: number): string {
+  return `${terms.toLocaleString('en-US')} of ${cap.toLocaleString('en-US')}`;
+}
+
+/** "4 days" / "1 day" / "today" — the oldest live block's age; null when there is none. */
+export function oldestBlockLabel(days: number | null): string | null {
+  if (days === null) return null;
+  if (days < 1) return 'today';
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
+
+/** The import-list exclusion count, or "not available" when the *arr did not answer. */
+export function exclusionCountValue(count: number | null): string {
+  return count === null ? 'not available' : count.toLocaleString('en-US');
+}
+
+/**
+ * "Re-added after Trash: 4, all with a different release." (titles, the last 30 days). DESIGN-052 D-25bh: a title
+ * re-added with no grab within 7 days is "not grabbed yet", never counted as a different release.
+ */
+export function readdSummaryLine(readds: { total: number; sameRelease: number; noGrab?: number }): string {
+  const total = readds.total;
+  if (total === 0) return 'Re-added after Trash: none in the last 30 days.';
+  const same = readds.sameRelease;
+  const noGrab = readds.noGrab ?? 0;
+  const different = Math.max(0, total - same - noGrab);
+  if (same === 0 && noGrab === 0) return `Re-added after Trash: ${total}, all with a different release.`;
+  if (noGrab === total) return `Re-added after Trash: ${total}, not grabbed yet.`;
+  const parts = [
+    ...(same > 0 ? [`${same} with the same release`] : []),
+    ...(different > 0 ? [`${different} with a different release`] : []),
+    ...(noGrab > 0 ? [`${noGrab} not grabbed yet`] : []),
+  ];
+  return `Re-added after Trash: ${total}, ${parts.join(', ')}.`;
 }

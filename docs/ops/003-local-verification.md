@@ -180,6 +180,37 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   no results). To re-run the sync against the running stack: `DATABASE_URL=<the stack's>` plus the stack's
   `PLEX_*` / `TAUTULLI_*` env, then `pnpm --filter @hnet/sync sync -- --mode=watch` (the banner prints the
   database URL). Nothing here ever reaches a real Plex server.
+- **Watchlist protection** (ADR-093 / DESIGN-052; PLAN-072 S2). Both `dev:local` and the e2e harness run the real
+  `--mode=watchlist-registry` once at boot against the stubs: stub plex.tv serves the roster (`/api/v2/user`,
+  `/api/users` with the member, a friend whose community list is empty, and a managed Home user, `/api/home/users`),
+  community.plex.tv GraphQL at `/api` (`PLEX_COMMUNITY_URL` points at the stub; upper-case `MOVIE` / `SHOW` nodes,
+  `User not found:` for the managed user) and discover metadata (`/library/metadata/<24 hex>?includeGuids=1`); the
+  stub *arr serves Seerr's `/api/v1/user` and `/api/v1/user/{id}/watchlist?page=`. No default list holds a deletable
+  Trash pool title (the owner's stub watchlist holds Stub Runner, already kept by its `dnd` tag, so its tile shows the
+  note). Expedite and Expire now take the Registry Gate, which needs a run at most 30 minutes old: re-run the
+  mode with the stack's env (`pnpm --filter @hnet/sync sync -- --mode=watchlist-registry`; the banner prints the
+  database URL). To see the Watchlist Keep, put a pool title on the member's community list, then re-run the mode:
+  `POST <stub-plex>/_stub/community {"uuid":"a1b2c3d4e5f60718","nodes":[{"id":"<its discover id>","type":"MOVIE"}]}`
+  (a pool item needs a `plex://` guid or a mapped id to match), or on the member's Seerr list, which carries the tmdb
+  id itself: `POST <stub-arr>/_stub/seerr-watchlist {"userId":2,"results":[{"id":12,"ratingKey":"5d776d1b00000000000000a4",
+  "title":"Vanished Heist","mediaType":"movie","tmdbId":880004}]}` (no `results` restores the default; the Trash e2e
+  does exactly this). `POST <stub-arr>/_stub/seerr-watchlist-error
+  {"on":true}` makes every Seerr watchlist page answer Seerr's failed-read body (HTTP 200, `totalPages: 0`), which
+  the registry must carry forward, never believe. The admin Watchlists card is on Settings, Trash, General.
+- **The Release Block** (ADR-093 C-07 / DESIGN-052 D-11..D-17; PLAN-072 S2 part 2). Every Trash delete (Expedite,
+  Expire now, the sweep) first reads the release's identity from the stub *arr (`/api/v3/movie/{id}`, `moviefile`,
+  `history/movie`, or `series/{id}`, `episodefile`, `history/series`), writes its "must not contain" term into the
+  app's release profile and reads it back, and only then calls the Maintainerr handle; afterwards the stub *arr
+  answers 404 for the deleted item, so the record turns `active`. `GET <stub-arr>/_stub/release-profiles` shows the
+  profile (one list: the stub serves Radarr and Sonarr alike); `trash_deleted_releases` holds the records. The Fixture
+  (a scene name, group `STUB`, 1080p) records a group term; Vanished Heist (no file) records a term-less `none` row.
+  The Watchlists card shows the blocked-release counts, the exclusion counts and the re-adds. The seed script runs
+  against the stack's env: `pnpm --filter @hnet/sync exec tsx src/scripts/release-block-seed.ts --dry-run` (then
+  `--apply`, optionally `--legacy-sab=<file>` and `--manual=<file>`); `--pool` prints the read-only PLAN-072 S6(e)
+  report of what the block would record for the pending pool (it also needs the stack's Maintainerr env). The Seerr switch: `… tsx
+  src/scripts/seerr-watchlist.ts --show`, `--enroll=2` (then re-run `--mode=watchlist-registry`: the stub Seerr's
+  `settings/main` flags flip), `--enroll=off`, `--anime-tags=0:1`. The Rules tab's Disarm / Arm now sends
+  `listExclusions` / `forceSeerr` back; the stub Maintainerr stores them the way Maintainerr 3.29.0 does.
 - **Public MCP connectors** (ADR-091 / DESIGN-050; PLAN-069). `POST /mcp` takes only delegated OAuth
   tokens; a local client can walk the whole flow against the stub OIDC with curl alone (verified 2026-09-23,
   port 3200 — substitute yours). Type `plex-linked-owner-id` at the `dev:local` terminal first (or `POST

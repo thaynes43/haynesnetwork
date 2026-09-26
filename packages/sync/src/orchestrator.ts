@@ -87,6 +87,19 @@ import {
   type SyncAuthentikUsersResult,
   type TrashCandidatesRefreshReport,
   type UtilizationArrBundle,
+  // ADR-093 / DESIGN-052 D-04 / D-20 (PLAN-072) — the Watchlist Registry refresh (the `watchlist-registry` mode) and
+  // its read sources, which the `trash-batch-sweep` mode also takes for its inline refresh.
+  refreshWatchlistRegistry,
+  type WatchlistRegistryRefreshReport,
+  type WatchlistRegistrySources,
+  // ADR-093 C-07 / C-11 / DESIGN-052 D-14 / D-17 / D-23 (PLAN-072 S2 part 2) — the Release Block clients the sweep
+  // records and blocks through, the hourly re-add check, and the Seerr watchlist enrollment step.
+  checkReleaseBlockReadds,
+  enrollSeerrWatchlistSync,
+  type ReaddCheckReport,
+  type ReleaseBlockArrClients,
+  type SeerrEnrollClients,
+  type SeerrEnrollReport,
 } from '@hnet/domain';
 // ADR-044 / DESIGN-022 (PLAN-021) — the read-only Open WebUI admin-API client the `ai-usage-sync` mode
 // polls; the fetched snapshot is handed to the @hnet/domain syncAiUsage single-writer (never a live
@@ -247,6 +260,16 @@ export interface RunSyncOptions {
    *  (sync/scripts builds it and the client together). Threaded into `goodreads-sync` (enrichment +
    *  the queued-fix retry pass) and `format-pairing` so their GB legs are counted + budgeted. */
   gbMeter?: GbCallMeter;
+  /** ADR-093 / DESIGN-052 D-20 — the Watchlist Registry read sources (owner-token plex.tv readers + Seerr). Required by
+   *  the `watchlist-registry` mode and by `trash-batch-sweep` (its inline refresh, D-14); tests inject in-memory ones. */
+  watchlistRegistry?: WatchlistRegistrySources;
+  /** ADR-093 C-07 / DESIGN-052 D-14 — the Radarr / Sonarr identity reads and the confined release-profile writes the
+   *  `trash-batch-sweep` mode records and blocks each deleted release through (and reads the D-23 re-add check with).
+   *  Required by that mode; built inside @hnet/domain (releaseBlockArrClientsFromEnv); tests inject stubs. */
+  releaseBlockArr?: ReleaseBlockArrClients;
+  /** ADR-093 C-11 / DESIGN-052 D-17 — the Seerr clients the `watchlist-registry` mode enrolls users through while the
+   *  `seerr_watchlist_enroll` setting is on. Optional: absent (no SEERR_API_KEY) ⇒ the step is skipped. */
+  seerrEnroll?: SeerrEnrollClients | null;
   /** Clock injection for deterministic `ai-usage-sync` tests (synced_at / created_at fallbacks). */
   now?: Date;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
@@ -344,6 +367,17 @@ export interface SyncReport {
   watch?: WatchSyncReport | null;
   /** The watch run's fatal error (no owner at all, or a thrown step) — sets totalFailure for the CLI exit. */
   watchError?: string;
+  /** ADR-093 — the `watchlist-registry` refresh report (null for every other mode / when it threw). */
+  watchlistRegistry?: WatchlistRegistryRefreshReport | null;
+  /** The watchlist-registry run's unexpected error (a thrown refresh) — sets totalFailure for the CLI exit. A clean
+   *  `failed` run (roster / owner) is NOT a job failure: it is recorded and logged `run_failed` (DESIGN-052 D-25). */
+  watchlistRegistryError?: string;
+  /** ADR-093 / DESIGN-052 D-17 — the enrollment step after the refresh (null when skipped / not this mode). A failure
+   *  is logged and never changes the job's exit. */
+  seerrEnroll?: SeerrEnrollReport | null;
+  /** DESIGN-052 D-23 — the hourly re-add check after the sweep (null when it failed / not this mode). Never changes
+   *  the job's exit. */
+  releaseBlockReadds?: ReaddCheckReport | null;
   /** ADR-064 — the `collections-sync` result (null for every other mode / when it errored). */
   collectionsSync?: (SyncPlexCollectionsReport & { stats: PlexCollectionsStats }) | null;
   /** The collections-sync run's error — sets totalFailure for the CLI exit. */
@@ -545,6 +579,58 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     };
   }
 
+  // ADR-093 / DESIGN-052 D-04 / D-20 (PLAN-072) — the `watchlist-registry` mode: one refresh of the Watchlist Registry
+  // (roster, the owner's list, community GraphQL, Seerr per user, the discover-id map), READ-ONLY against plex.tv and
+  // Seerr, written through the domain single writer. A refresh another process holds is skipped (`busy`). A clean
+  // `failed` run exits 0 (the run row and the `run_failed` line are the signal; the Loki alert fires after 8 in a
+  // row); only a thrown error fails the job. Writes NO sync_runs row — its trail is watchlist_registry_runs.
+  if (options.mode === 'watchlist-registry') {
+    const startedAt = new Date();
+    if (!options.watchlistRegistry) {
+      throw new Error(
+        'watchlist-registry requires the Watchlist Registry read sources (watchlistRegistry)',
+      );
+    }
+    let watchlistRegistry: WatchlistRegistryRefreshReport | null = null;
+    let watchlistRegistryError: string | undefined;
+    try {
+      watchlistRegistry = await refreshWatchlistRegistry({
+        db,
+        sources: options.watchlistRegistry,
+        trigger: 'schedule',
+        logger,
+        onBusy: 'skip',
+      });
+    } catch (error) {
+      watchlistRegistryError = error instanceof Error ? error.message : String(error);
+      logger.error('watchlist-registry failed', { error: watchlistRegistryError });
+    }
+    // DESIGN-052 D-17 — the Seerr enrollment step, at the end of each run while `seerr_watchlist_enroll` is on (it
+    // reads the setting itself; off ⇒ `disabled`, nothing called). A failure logs and never fails the job.
+    let seerrEnroll: SeerrEnrollReport | null = null;
+    if (options.seerrEnroll) {
+      try {
+        seerrEnroll = await enrollSeerrWatchlistSync({ db, seerr: options.seerrEnroll, logger });
+      } catch (error) {
+        logger.warn('[seerr-enroll] step_failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      watchlistRegistry,
+      seerrEnroll,
+      ...(watchlistRegistryError !== undefined ? { watchlistRegistryError } : {}),
+      totalFailure: watchlistRegistryError !== undefined,
+    };
+  }
+
   // ADR-025 / DESIGN-011 — the batch-expiry sweep is NOT a per-source loop; it drives Maintainerr
   // to delete the survivors of every expired `leaving_soon` batch (each item re-checked fresh:
   // SAFE audit + live exclusions + guardian). Its audit trail is the ledger + batch rows (never a
@@ -554,18 +640,58 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     if (!options.maintainerr) {
       throw new Error('trash-batch-sweep requires a maintainerr client bundle');
     }
+    if (!options.watchlistRegistry) {
+      // ADR-093 / DESIGN-052 D-14 — the scheduled sweep refreshes the Watchlist Registry inline before the gate.
+      throw new Error(
+        'trash-batch-sweep requires the Watchlist Registry read sources (watchlistRegistry)',
+      );
+    }
+    if (!options.releaseBlockArr) {
+      // ADR-093 C-07 / DESIGN-052 D-14 — no delete without a recorded, blocked release.
+      throw new Error(
+        'trash-batch-sweep requires the Release Block *arr clients (releaseBlockArr)',
+      );
+    }
+    const releaseBlockArr = options.releaseBlockArr;
     let sweep: SweepReport | null = null;
     let sweepError: string | undefined;
     try {
-      sweep = await sweepExpiredBatches({ db, maintainerr: options.maintainerr, actorId: null });
-      logger.info('trash batch sweep complete', {
-        batchesSwept: sweep.batchesSwept,
-        deleted: sweep.batches.reduce((n, b) => n + b.deletedCount, 0),
-        skipped: sweep.batches.reduce((n, b) => n + b.skippedCount, 0),
+      sweep = await sweepExpiredBatches({
+        db,
+        maintainerr: options.maintainerr,
+        actorId: null,
+        registry: 'refresh',
+        registrySources: options.watchlistRegistry,
+        arr: releaseBlockArr,
+        logger,
       });
+      if (sweep.paused !== null) {
+        // D-14 — a clean pause (the gate, or the Release Block): nothing was deleted, the batches stay leaving_soon and
+        // the next hourly run tries again. The job exits 0; `[trash] sweep_paused` + the 6-hour Loki page report it.
+        logger.warn('trash batch sweep paused', {
+          reason: sweep.paused.reason,
+          step: sweep.paused.step,
+          due: sweep.due,
+        });
+      } else {
+        logger.info('trash batch sweep complete', {
+          batchesSwept: sweep.batchesSwept,
+          deleted: sweep.batches.reduce((n, b) => n + b.deletedCount, 0),
+          skipped: sweep.batches.reduce((n, b) => n + b.skippedCount, 0),
+        });
+      }
     } catch (error) {
       sweepError = error instanceof Error ? error.message : String(error);
       logger.error('trash batch sweep failed', { error: sweepError });
+    }
+    // DESIGN-052 D-23 — the hourly re-add check, whether or not a batch was due; a failure is a warning only.
+    let releaseBlockReadds: ReaddCheckReport | null = null;
+    try {
+      releaseBlockReadds = await checkReleaseBlockReadds({ db, arr: releaseBlockArr.read, logger });
+    } catch (error) {
+      logger.warn('[release-block] readd_check_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     return {
       mode: options.mode,
@@ -575,6 +701,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       backfill: null,
       fixesCompleted: null,
       sweep,
+      releaseBlockReadds,
       ...(sweepError !== undefined ? { sweepError } : {}),
       totalFailure: sweepError !== undefined,
     };

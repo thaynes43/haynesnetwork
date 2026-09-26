@@ -8,11 +8,17 @@ import { eq } from 'drizzle-orm';
 import { trashBatches } from '@hnet/db/schema';
 import {
   buildMaintainerrClientBundle,
+  createBatchFromPending,
+  createStaticWatchlistSources,
+  greenlightBatch,
+  sweepExpiredBatches,
+  createStaticReleaseBlockArr,
   upsertMediaItemsBatch,
   type MaintainerrClientBundle,
 } from '@hnet/domain';
 import {
   bootMigratedDb,
+  seedWatchlistRegistry,
   caller,
   createUser,
   makeCtx,
@@ -65,7 +71,7 @@ function stubMaintainerr(): MaintainerrClientBundle {
     if (method === 'GET' && path === '/collections')
       return ok([
         // Rule pool: aging-safe horizon + DELETE arrAction (DESIGN-010 errata) so the audit permits sweeps.
-        { id: 7, isActive: true, deleteAfterDays: 9999, arrAction: 0, manualCollection: false, type: 'movie', title: 'Least watched', libraryId: 1, media: [] },
+        { id: 7, isActive: true, deleteAfterDays: 9999, arrAction: 0, manualCollection: false, listExclusions: true, forceSeerr: true, type: 'movie', title: 'Least watched', libraryId: 1, media: [] },
         ...[...manualCollections].map(([id, title]) => ({
           id,
           isActive: true,
@@ -134,6 +140,7 @@ describe('trash.batches + trash.settings (ADR-025 / DESIGN-011)', () => {
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedWatchlistRegistry(t.db);
     member = await createUser(t.db, { email: 'batch-member@example.com' });
     admin = await createUser(t.db, { email: 'batch-admin@example.com', admin: true });
     await upsertMediaItemsBatch({
@@ -312,5 +319,165 @@ describe('trash.batches + trash.settings (ADR-025 / DESIGN-011)', () => {
       trashDefaultWindowDays: 21,
       finalWarning: { enabled: true, hoursBefore: 2 },
     });
+  });
+});
+
+// ADR-093 / DESIGN-052 D-07 / D-10 / D-14 (PLAN-072 S2) — the web paths take the Registry Gate on the CronJob's
+// newest run and never refresh inline. With NO verified registry (a fresh database, no run at all) a forced Expire
+// now deletes nothing and answers PRECONDITION_FAILED; Expedite refuses the same way. The Trash status carries the
+// paused-banner reason; the Watchlists card is admin-only and counts only.
+describe('trash — the Registry Gate on the web paths (ADR-093)', () => {
+  let t: TestDb;
+  let member: Awaited<ReturnType<typeof createUser>>;
+  let admin: Awaited<ReturnType<typeof createUser>>;
+
+  beforeAll(async () => {
+    t = await bootMigratedDb(); // deliberately NO registry run
+    member = await createUser(t.db, { email: 'gate-member@example.com' });
+    admin = await createUser(t.db, { email: 'gate-admin@example.com', admin: true });
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'radarr',
+      items: [
+        { arrItemId: 81, tmdbId: 55001, title: 'A', sortTitle: 'a', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/m' },
+        { arrItemId: 82, tmdbId: 55002, title: 'B', sortTitle: 'b', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/m' },
+      ],
+    });
+  });
+  afterAll(async () => t?.stop());
+
+  const adminCall = () => caller(makeCtx(t.db, sessionUser(admin), undefined, undefined, stubMaintainerr()));
+  const memberCall = (level: 'edit' | 'read_only' | 'disabled') =>
+    caller(makeCtx(t.db, sessionUser(member, { trash: level }), undefined, undefined, stubMaintainerr()));
+
+  it('a forced Expire now with no verified registry deletes nothing: PRECONDITION_FAILED (TRASH_SWEEP_PAUSED)', async () => {
+    const admin = adminCall();
+    const { batchId } = await admin.trash.batches.create({ mediaKind: 'movie' });
+    await admin.trash.batches.greenlight({ batchId, windowDays: 21 });
+    try {
+      await admin.trash.batches.expire({ batchId, forceOverride: true });
+      throw new Error('expected a refusal');
+    } catch (err) {
+      const shape = wireShape(err, 'trash.batches.expire');
+      expect(shape.data.code).toBe('PRECONDITION_FAILED');
+      expect(shape.data.appCode).toBe('TRASH_SWEEP_PAUSED');
+      expect(shape.message).toBe('Deletions are paused until watchlists can be checked.');
+    }
+    const detail = await admin.trash.batches.get({ batchId });
+    expect(detail.state).toBe('leaving_soon');
+    expect(detail.items.every((i) => i.state === 'pending')).toBe(true);
+    await admin.trash.batches.cancel({ batchId });
+  });
+
+  it('Expedite refuses with no verified registry: PRECONDITION_FAILED (WATCHLIST_REGISTRY_UNVERIFIED)', async () => {
+    try {
+      await adminCall().trash.expediteAll({ media: 'movie', maintainerrMediaIds: ['ms-1'] });
+      throw new Error('expected a refusal');
+    } catch (err) {
+      const shape = wireShape(err, 'trash.expediteAll');
+      expect(shape.data.code).toBe('PRECONDITION_FAILED');
+      expect(shape.data.appCode).toBe('WATCHLIST_REGISTRY_UNVERIFIED');
+      expect(shape.message).toMatch(/^Deletions are paused until watchlists can be checked/);
+    }
+  });
+
+  it('status carries the paused-banner reason (none yet); the Watchlists card is admin-only and counts only', async () => {
+    const status = await memberCall('read_only').trash.status();
+    expect(status.sweepPause).toBeNull();
+    await expect(memberCall('edit').trash.watchlists()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const empty = await adminCall().trash.watchlists();
+    expect(empty).toMatchObject({ checkedAt: null, accountsRead: 0, accountsUnreadable: 0, lastRun: null });
+    await seedWatchlistRegistry(t.db, {
+      accounts: [{ plexAccountId: '101', cls: 'friend', community: { kind: 'answered', nodes: [] } }],
+    });
+    const card = await adminCall().trash.watchlists();
+    expect(card).toMatchObject({
+      checkedAt: expect.any(String),
+      accountsRead: 1,
+      accountsUnreadable: 1,
+      byClass: { owner: 1, friend: 1 },
+      lastRun: { status: 'ok', failure: null },
+      // D-23 — the Release Block counts per *arr (exclusions read live), the re-adds, and the enrollment counts.
+      releaseBlock: {
+        kinds: [
+          { arrKind: 'radarr', terms: 0, cap: 3000, oldestTermDays: null, importListExclusions: 0 },
+          { arrKind: 'sonarr', terms: 0, cap: 3000, oldestTermDays: null, importListExclusions: 0 },
+        ],
+        readds: { total: 0, sameRelease: 0, windowDays: 30 },
+      },
+      enrollment: { setting: { enabled: false, onlyUserIds: null }, enrolled: 0, alreadyOn: 0, optedOut: 0 },
+    });
+  });
+
+  it('a Release Block that cannot be written refuses: Expedite RELEASE_BLOCK_FAILED, Expire now TRASH_SWEEP_PAUSED', async () => {
+    await seedWatchlistRegistry(t.db, {});
+    const { arr } = createStaticReleaseBlockArr({ fail: new Set(['radarr:create']) });
+    const ctx = { ...makeCtx(t.db, sessionUser(admin), undefined, undefined, stubMaintainerr()), releaseBlockArr: arr };
+    try {
+      await caller(ctx).trash.expediteItem({ media: 'movie', collectionId: 7, maintainerrMediaId: 'ms-1' });
+      throw new Error('expected a refusal');
+    } catch (err) {
+      const shape = wireShape(err, 'trash.expediteItem');
+      expect(shape.data.code).toBe('PRECONDITION_FAILED');
+      expect(shape.data.appCode).toBe('RELEASE_BLOCK_FAILED');
+      expect(shape.message).toBe('Deletions are paused until removals can be done safely.');
+    }
+    const admin2 = caller(ctx);
+    const { batchId } = await admin2.trash.batches.create({ mediaKind: 'movie' });
+    await admin2.trash.batches.greenlight({ batchId, windowDays: 21 });
+    try {
+      await admin2.trash.batches.expire({ batchId, forceOverride: true });
+      throw new Error('expected a refusal');
+    } catch (err) {
+      const shape = wireShape(err, 'trash.batches.expire');
+      expect(shape.data.code).toBe('PRECONDITION_FAILED');
+      expect(shape.data.appCode).toBe('TRASH_SWEEP_PAUSED');
+      expect(shape.message).toBe('Deletions are paused until removals can be done safely.');
+    }
+    const detail = await admin2.trash.batches.get({ batchId });
+    expect(detail.items.every((i) => i.state === 'pending')).toBe(true);
+    await admin2.trash.batches.cancel({ batchId });
+  });
+});
+
+// ADR-093 / DESIGN-052 D-10 (AC-34) — the paused banner's reason reaches `trash.status` once a scheduled sweep of a
+// due batch has been paused for 6 hours or more (the domain suite pins the per-reason mapping; this pins the wiring).
+describe('trash.status — the paused banner after 6 hours (ADR-093)', () => {
+  let t: TestDb;
+  let member: Awaited<ReturnType<typeof createUser>>;
+
+  beforeAll(async () => {
+    t = await bootMigratedDb(); // no registry run: the scheduled sweep's gate refuses
+    member = await createUser(t.db, { email: 'banner-member@example.com' });
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'radarr',
+      items: [
+        { arrItemId: 81, tmdbId: 55001, title: 'A', sortTitle: 'a', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/m' },
+        { arrItemId: 82, tmdbId: 55002, title: 'B', sortTitle: 'b', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/m' },
+      ],
+    });
+  });
+  afterAll(async () => t?.stop());
+
+  it('a scheduled sweep paused on the gate 7 hours ago shows sweepPause "gate"', async () => {
+    const maintainerr = stubMaintainerr();
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr, mediaKind: 'movie', actorId: null });
+    await greenlightBatch({ db: t.db, maintainerr, batchId, windowDays: -1, actorId: null });
+    const status = () =>
+      caller(makeCtx(t.db, sessionUser(member, { trash: 'read_only' }), undefined, undefined, stubMaintainerr())).trash.status();
+    expect((await status()).sweepPause).toBeNull();
+    const sevenHoursAgo = new Date(Date.now() - 7 * 3_600_000);
+    const report = await sweepExpiredBatches({
+      db: t.db,
+      maintainerr,
+      arr: createStaticReleaseBlockArr().arr,
+      registry: 'refresh',
+      registrySources: createStaticWatchlistSources({ ownerId: '1', rosterFails: true }).sources,
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+      now: () => sevenHoursAgo,
+    });
+    expect(report).toMatchObject({ outcome: 'paused_gate', paused: { reason: 'gate' } });
+    expect(await status()).toMatchObject({ safe: true, sweepPause: 'gate' });
   });
 });

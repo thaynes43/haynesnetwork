@@ -20,14 +20,17 @@ import {
   trashBatches,
   trashCandidates,
   trashCandidatesState,
+  trashSweepStatus,
   users,
   TRASH_BATCH_OPEN_STATES,
   type DbClient,
   type TrashBatchItemState,
   type TrashBatchState,
+  type TrashKeepReason,
   type TrashMediaKind,
+  type TrashSweepOutcome,
 } from '@hnet/db';
-import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { getAppSetting, getFinalWarning } from './app-settings';
 import { inTransaction, resolveDb } from './db-client';
 // ADR-034 / DESIGN-015 (PLAN-016) — same-tx Pushover enqueue on batch lifecycle transitions.
@@ -36,11 +39,32 @@ import { enqueueOutbox } from './notify-outbox';
 import {
   MaintainerrUnsafeError,
   NotFoundError,
+  ReleaseBlockError,
   TrashBatchEmptyError,
   TrashBatchOpenError,
   TrashBatchStateError,
   TrashSaveNotOwnedError,
+  WatchlistRegistryUnverifiedError,
 } from './errors';
+import {
+  abandonReleaseRecords,
+  recordAndBlockReleases,
+  reconcileReleaseBlock,
+  settleReleaseRecords,
+  stampReleaseRecords,
+  type ReleaseBlockArrClients,
+} from './release-block';
+import { consoleDomainLogger, type DomainLogger } from './domain-logger';
+import {
+  evaluateRegistryGate,
+  evaluateWatchlist,
+  isOnLateWatchlist,
+  readDisplayWatchlistSnapshot,
+  refreshWatchlistRegistry,
+  type DeleteWatchlistSnapshot,
+  type WatchlistRegistryRefreshReport,
+  type WatchlistRegistrySources,
+} from './watchlist-registry';
 import { isPostgresUniqueViolation } from './errors';
 import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainerr-clients';
 import {
@@ -413,7 +437,10 @@ export function selectBatchCandidates(
   if (!capped) return [...actionable];
 
   const strategy = targeting?.strategy ?? 'largest';
-  const deletable = actionable.filter((p) => !p.protectedByTag);
+  // ADR-093 / DESIGN-052 D-08 — a watchlisted item is dropped with the `dnd` items: it never takes one of the slots
+  // (the sweep would keep it anyway). An item whose watchlist status cannot be evaluated is proposed normally; the
+  // sweep decides.
+  const deletable = actionable.filter((p) => !p.protectedByTag && !p.onWatchlist);
   // DESIGN-014 amendment (2026-07-09, build D) — the ranking is the SHARED compareByStrategy so the
   // pending walls' "Next up" default sort orders identically (the top of the wall = the front of the
   // deletion queue). Keep this call the single ordering seam.
@@ -462,11 +489,15 @@ export async function createBatchFromPending(input: {
   const skipGate =
     input.autoPromote === true || (await getAppSetting(input.db, 'trash_skip_admin_gate'));
 
-  // Snapshot the live pending set (mediaKind is movie|tv — music is structurally excluded, R-87).
+  // Snapshot the live pending set (mediaKind is movie|tv — music is structurally excluded, R-87). ADR-093 /
+  // DESIGN-052 D-07 — `propose` never refuses: the newest ok registry run within 24 h filters the proposal (D-08),
+  // otherwise it proposes unfiltered and the sweep's gate decides.
+  const watchlist = await evaluateRegistryGate({ db: input.db, purpose: 'propose' });
   const pending = await listTrashPending({
     db: input.db,
     maintainerr: input.maintainerr,
     media: input.mediaKind as TrashMedia,
+    watchlist,
   });
   const actionable = pending.items.filter(
     (p): p is TrashPendingItem & { maintainerrMediaId: string } => p.maintainerrMediaId !== null,
@@ -530,6 +561,11 @@ export async function createBatchFromPending(input: {
           // deleted." A requester is informational only now: a requester-carrying item snapshots per
           // its real state (pending unless tag-protected), with NO system auto-save. Its attribution
           // rides the wall meta badge; the recently-watched keep still protects it at the SWEEP.
+          //
+          // ADR-093 / DESIGN-052 D-08 (D-24k) — a WATCHLISTED item in an untargeted batch snapshots `pending`, never
+          // `protected` (that state's only control, Unprotect, removes a Maintainerr exclusion and revokes a Save
+          // Intent — neither of which a watchlist keep has): the sweep's guardian keeps it (`watchlisted`) if it is
+          // still listed then, and the wall's "On a watchlist" note comes from the registry either way.
           const state: TrashBatchItemState = p.protectedByTag ? 'protected' : 'pending';
           return {
             batchId: batch.id,
@@ -1138,18 +1174,52 @@ export interface BatchSweepResult {
   savedCount: number;
   protectedCount: number;
   handleErrors: number;
-  /** Items that changed state (typically a concurrent Save) between candidate-select and the guarded
-   *  item-write — neither deleted nor re-skipped by this sweep (F2 save-race). */
+  /** Items that changed state (typically a concurrent Save) between candidate-select and the guarded item-write — neither deleted nor re-skipped by this sweep (F2 save-race). */
   raceSkipped: number;
   /** True when the circuit breaker tripped (N consecutive handle failures): the batch was left
    *  `leaving_soon` with partial results; the next sweep resumes the remaining `pending` items (F3). */
   aborted: boolean;
+  /** DESIGN-052 D-14 / D-25 — which breaker tripped: 3 consecutive Maintainerr handle failures, or 3 consecutive *arr
+   *  identity reads (before Phase A: nothing was deleted). Null when not aborted. */
+  abortReason: 'handle_breaker' | 'arr_identity' | null;
+  /** ADR-093 / DESIGN-052 D-09 / D-21 — the items this sweep KEPT (landed `skipped`), per keep reason. */
+  keptByReason: Partial<Record<TrashKeepReason, number>>;
+}
+
+/** D-14 — why a sweep paused cleanly: the Registry Gate refused (`gate`), or the Release Block could not be written and
+ *  read back before a delete (`release_block`, D-13). `step` is the reason code. */
+export interface SweepPause {
+  reason: 'gate' | 'release_block';
+  step: string;
 }
 
 export interface SweepReport {
   batchesSwept: number;
   batches: BatchSweepResult[];
+  /** D-14 — how many batches were due. 0 ⇒ the sweep did nothing and recorded nothing. */
+  due: number;
+  /** D-14 — set when a refusal paused the sweep cleanly: nothing was deleted, the batches stay `leaving_soon`, and
+   *  the next hourly run tries again. The scheduled job exits 0 (the Loki alert pages after 6 hours). */
+  paused: SweepPause | null;
+  /** D-14 — the outcome written to trash_sweep_status (null when none was: nothing due, or a `gate-only` sweep). */
+  outcome: TrashSweepOutcome | null;
+  /** The inline registry refresh's report (`refresh` sweeps with a batch due; null otherwise). */
+  registryRefresh: WatchlistRegistryRefreshReport | null;
 }
+
+/** DESIGN-052 D-10 / D-21 — a pause shows on the Trash page and pages the owner once it is this old. */
+export const SWEEP_PAUSE_BANNER_AFTER_H = 6;
+
+/**
+ * DESIGN-052 D-14 — which registry the sweep takes (REQUIRED, D-24d):
+ * - `refresh` — the scheduled `trash-batch-sweep` job: refresh the Watchlist Registry inline first (only when a batch
+ *   is due), then the gate; it owns `trash_sweep_status`.
+ * - `gate-only` — the web `expire` mutation (the manual Expire now): the gate on the CronJob's newest run, never an
+ *   inline refresh (a tRPC mutation never runs a 42-account read), and no status row.
+ */
+export type SweepRegistryInput =
+  | { registry: 'refresh'; registrySources: WatchlistRegistrySources }
+  | { registry: 'gate-only'; registrySources?: undefined };
 
 /**
  * ADR-025 (Q-02) — the batch-expiry sweep (the `trash-batch-sweep` sync mode). Acts ONLY on
@@ -1160,40 +1230,53 @@ export interface SweepReport {
  * deletion snapshot (Q-08) + `deleted` state + `trash_expedited` intent event written same-tx BEFORE
  * the per-item handle call. The per-item state flip is a GUARDED UPDATE (`AND state='pending'`): an
  * item Saved mid-sweep loses the race and is never deleted (F2 → `raceSkipped`). Guardian-kept /
- * stale / live-excluded items land `skipped`. After 3 CONSECUTIVE handle failures the batch's sweep
- * aborts (F3 → `aborted`), leaving it `leaving_soon` for the next sweep to resume. When `batchId` is
+ * stale / live-excluded items land `skipped` with their keep reason. After 3 CONSECUTIVE handle failures the batch's
+ * sweep aborts (F3 → `aborted`), leaving it `leaving_soon` for the next sweep to resume. When `batchId` is
  * given (the manual "Expire now" trigger) only that batch is swept (and must be leaving_soon +
  * expired) — UNLESS `forceOverride` is set (DESIGN-011 amendment 2026-07-08, owner-directed): an
  * admin/`manage_batches` override may sweep a `leaving_soon` batch whose window has NOT closed yet.
  * The override bypasses ONLY the `expires_at <= now` gate — every per-item safety layer (guardian
- * keeps, live exclusions, saved items, the circuit breaker, the deletion snapshot) is unchanged. A
+ * keeps, live exclusions, saved items, the circuit breaker, the deletion snapshot, the Registry Gate) is unchanged. A
  * forced sweep is AUDITED: the batch close transition event + the `batch_swept` push carry
  * `forcedEarly: true` + the actor (`forcedBy`). `forceOverride` applies only with `batchId` (the
  * manual procedure) — the scheduled path ignores it and still only sweeps genuinely-closed windows.
+ *
+ * ADR-093 / DESIGN-052 D-14 — the order: the due batches are read first (none due ⇒ nothing is done or recorded);
+ * the Maintainerr safety audit (unsafe ⇒ throw, as before); `refresh` only: the inline Watchlist Registry refresh;
+ * the Registry Gate (`delete`) — a refusal returns a clean `paused` report, deleting nothing; then each batch with the
+ * verified snapshot, the guardian keeping watchlisted items (`watchlisted`). The scheduled (`refresh`) sweep records
+ * its outcome in trash_sweep_status.
  */
-export async function sweepExpiredBatches(input: {
-  db?: DbClient;
-  maintainerr: MaintainerrClientBundle;
-  actorId?: string | null;
-  watchWindowDays?: number;
-  batchId?: string;
-  /** Manual "Expire now" ADMIN OVERRIDE — sweep a leaving_soon batch whose window is still open
-   *  (bypasses only the expiry gate; audited `forcedEarly`). Only honored alongside `batchId`. */
-  forceOverride?: boolean;
-}): Promise<SweepReport> {
+export async function sweepExpiredBatches(
+  input: {
+    db?: DbClient;
+    maintainerr: MaintainerrClientBundle;
+    actorId?: string | null;
+    watchWindowDays?: number;
+    batchId?: string;
+    /** Manual "Expire now" ADMIN OVERRIDE — sweep a leaving_soon batch whose window is still open
+     *  (bypasses only the expiry gate; audited `forcedEarly`). Only honored alongside `batchId`. */
+    forceOverride?: boolean;
+    /** ADR-093 C-07 / DESIGN-052 D-11..D-14 — the Radarr / Sonarr reads (identity, settle) and the confined release
+     *  profile writes (the Release Block). REQUIRED: no delete without a recorded, blocked release. */
+    arr: ReleaseBlockArrClients;
+    /** D-21 log seam (defaults to the JSON-lines console logger). */
+    logger?: DomainLogger;
+    /** Clock seam for the gate and the status row (tests). */
+    now?: () => Date;
+  } & SweepRegistryInput,
+): Promise<SweepReport> {
   const actorId = input.actorId ?? null;
-  // Fail closed on an unsafe install — refuse the whole sweep (ADR-023 C-04).
-  const audit = await auditMaintainerr({ maintainerr: input.maintainerr });
-  if (!audit.safe) {
-    throw new MaintainerrUnsafeError(
-      `Maintainerr is not in a safe state to sweep expired batches (reachable=${audit.reachable}, ` +
-        `integrations ${JSON.stringify(audit.integrations)}). Refusing.`,
-      { integrations: audit.integrations as unknown as Record<string, boolean>, reachable: audit.reachable },
-    );
+  const logger = input.logger ?? consoleDomainLogger;
+  const clock = input.now ?? nowDate;
+  const scheduled = input.registry === 'refresh';
+  if (input.registry === 'refresh' && !input.registrySources) {
+    throw new Error("sweepExpiredBatches({ registry: 'refresh' }) needs the registry read sources");
   }
 
+  // D-14 — the due batches first. With none due the sweep does nothing and records nothing.
   const db = resolveDb(input.db);
-  const now = nowDate();
+  const now = clock();
   const candidates = await db
     .select({ id: trashBatches.id, mediaKind: trashBatches.mediaKind, expiresAt: trashBatches.expiresAt })
     .from(trashBatches)
@@ -1202,10 +1285,8 @@ export async function sweepExpiredBatches(input: {
         ? eq(trashBatches.id, input.batchId)
         : eq(trashBatches.state, 'leaving_soon'),
     );
-
-  const results: BatchSweepResult[] = [];
+  const due: Array<{ id: string; mediaKind: TrashMediaKind; forcedEarly: boolean }> = [];
   for (const c of candidates) {
-    let forcedEarly = false;
     if (input.batchId !== undefined) {
       // Manual trigger: validate it is genuinely a leaving_soon batch.
       const [full] = await db.select().from(trashBatches).where(eq(trashBatches.id, c.id));
@@ -1222,36 +1303,277 @@ export async function sweepExpiredBatches(input: {
         );
       }
       // The override actually did something only when the window was genuinely still open.
-      forcedEarly = windowOpen && input.forceOverride === true;
+      due.push({ id: c.id, mediaKind: c.mediaKind, forcedEarly: windowOpen && input.forceOverride === true });
     } else {
       // Scheduled: only sweep windows that have actually closed (forceOverride is ignored here).
       if (c.expiresAt === null || c.expiresAt.getTime() > now.getTime()) continue;
+      due.push({ id: c.id, mediaKind: c.mediaKind, forcedEarly: false });
     }
-    results.push(
-      await expireOneBatch({
-        db: input.db,
-        maintainerr: input.maintainerr,
-        batchId: c.id,
-        mediaKind: c.mediaKind,
-        actorId,
-        watchWindowDays: input.watchWindowDays,
-        forcedEarly,
-      }),
+  }
+  const empty: SweepReport = {
+    batchesSwept: 0,
+    batches: [],
+    due: due.length,
+    paused: null,
+    outcome: null,
+    registryRefresh: null,
+  };
+  if (due.length === 0) {
+    // D-25s / D-25bf — nothing due records nothing, except that a pause left by a batch that has since gone (cancelled,
+    // or expired by hand) ends here: no due batch means reclaim is not paused, so the banner and the next pause's
+    // `pausedForH` must not keep counting from it.
+    if (scheduled) await clearSweepPause(input.db, 'nothing_due', logger);
+    return empty;
+  }
+
+  // Fail closed on an unsafe install — refuse the whole sweep (ADR-023 C-04). The scheduled sweep records the pause.
+  const audit = await auditMaintainerr({ maintainerr: input.maintainerr });
+  if (!audit.safe) {
+    if (scheduled) await recordSweepOutcome(input.db, 'paused_audit_unsafe', 'unsafe', clock(), logger);
+    throw new MaintainerrUnsafeError(
+      `Maintainerr is not in a safe state to sweep expired batches (reachable=${audit.reachable}, ` +
+        `integrations ${JSON.stringify(audit.integrations)}). Refusing.`,
+      { integrations: audit.integrations as unknown as Record<string, boolean>, reachable: audit.reachable },
     );
   }
 
-  return { batchesSwept: results.length, batches: results };
+  // D-07 / D-14 step 2 — `refresh` only: refresh the registry inline (waiting up to 120 s for a run another process
+  // holds; reusing it if it finished ok). A failed refresh is not fatal: the gate may still pass on the CronJob's run.
+  let registryRefresh: WatchlistRegistryRefreshReport | null = null;
+  if (input.registry === 'refresh') {
+    try {
+      registryRefresh = await refreshWatchlistRegistry({
+        db: input.db,
+        sources: input.registrySources,
+        trigger: 'sweep',
+        logger,
+        onBusy: 'wait',
+        ...(input.now ? { now: input.now } : {}),
+      });
+    } catch (error) {
+      logger.warn('[trash] sweep_registry_refresh_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // The Registry Gate, purpose `delete` (D-07). Refused ⇒ a clean pause: nothing written but the status row.
+  let watchlist: DeleteWatchlistSnapshot;
+  try {
+    watchlist = await evaluateRegistryGate({ db: input.db, purpose: 'delete', now: clock(), logger });
+  } catch (error) {
+    if (!(error instanceof WatchlistRegistryUnverifiedError)) throw error;
+    const paused: SweepPause = { reason: 'gate', step: error.reason };
+    const outcome = scheduled
+      ? await recordSweepOutcome(input.db, 'paused_gate', error.reason, clock(), logger)
+      : null;
+    if (!scheduled) logger.warn('[trash] sweep_paused', { reason: 'gate', step: error.reason, pausedForH: null });
+    return { ...empty, paused, outcome, registryRefresh };
+  }
+
+  const results: BatchSweepResult[] = [];
+  for (const batch of due) {
+    try {
+      results.push(
+        await expireOneBatch({
+          db: input.db,
+          maintainerr: input.maintainerr,
+          arr: input.arr,
+          batchId: batch.id,
+          mediaKind: batch.mediaKind,
+          actorId,
+          watchWindowDays: input.watchWindowDays,
+          forcedEarly: batch.forcedEarly,
+          watchlist,
+          logger,
+        }),
+      );
+    } catch (error) {
+      // D-14 step 5 — the Release Block could not be written and read back: nothing of this batch was claimed or
+      // deleted (its records are abandoned), it stays leaving_soon, and the sweep pauses cleanly.
+      if (!(error instanceof ReleaseBlockError)) throw error;
+      const paused: SweepPause = { reason: 'release_block', step: error.step };
+      const outcome = scheduled
+        ? await recordSweepOutcome(input.db, 'paused_release_block', error.step, clock(), logger)
+        : null;
+      if (!scheduled) {
+        logger.warn('[trash] sweep_paused', { reason: 'release_block', step: error.step, pausedForH: null });
+      }
+      return {
+        batchesSwept: results.length,
+        batches: results,
+        due: due.length,
+        paused,
+        outcome,
+        registryRefresh,
+      };
+    }
+  }
+
+  // D-14 — the scheduled sweep records how it ended: `ok`, or `aborted_arr` when a breaker tripped (the media apps did
+  // not answer: 3 handle failures, or 3 *arr identity reads before Phase A; the batch stays leaving_soon for the next
+  // hourly run).
+  const abortedResult = results.find((r) => r.aborted);
+  const aborted = abortedResult !== undefined;
+  const outcome = scheduled
+    ? await recordSweepOutcome(
+        input.db,
+        aborted ? 'aborted_arr' : 'ok',
+        aborted ? (abortedResult.abortReason ?? 'handle_breaker') : null,
+        clock(),
+        logger,
+      )
+    : null;
+  // D-25bf — a manual Expire now that swept cleanly proves deletion works again: it ends a recorded pause (it still
+  // writes no outcome row; the scheduled sweep owns those).
+  if (!scheduled && !aborted) await clearSweepPause(input.db, 'manual_ok', logger);
+  logger.info('[trash] sweep_summary', {
+    batches: results.length,
+    deleted: results.reduce((n, r) => n + r.deletedCount, 0),
+    kept: mergeKept(results),
+    aborted,
+  });
+  return { batchesSwept: results.length, batches: results, due: due.length, paused: null, outcome, registryRefresh };
+}
+
+function mergeKept(results: readonly BatchSweepResult[]): Partial<Record<TrashKeepReason, number>> {
+  const out: Partial<Record<TrashKeepReason, number>> = {};
+  for (const r of results) {
+    for (const [reason, n] of Object.entries(r.keptByReason) as Array<[TrashKeepReason, number]>) {
+      out[reason] = (out[reason] ?? 0) + n;
+    }
+  }
+  return out;
+}
+
+/** The pause family a non-ok outcome belongs to (the D-10 banner and the D-21 `sweep_paused.reason`). */
+function pauseFamily(outcome: TrashSweepOutcome): 'gate' | 'release_block' | 'audit_unsafe' | 'arr' | null {
+  switch (outcome) {
+    case 'paused_gate':
+      return 'gate';
+    case 'paused_release_block':
+      return 'release_block';
+    case 'paused_audit_unsafe':
+      return 'audit_unsafe';
+    case 'aborted_arr':
+      return 'arr';
+    default:
+      return null;
+  }
+}
+
+/**
+ * DESIGN-052 D-14 — the ONLY writer of trash_sweep_status (one row, id 1): the outcome of a scheduled sweep that had
+ * a batch due. `paused_since` is set on the first non-ok outcome and cleared by the next ok one. Logs
+ * `[trash] sweep_outcome` when the outcome changes and `[trash] sweep_paused` (warn) on every paused run (D-21).
+ */
+async function recordSweepOutcome(
+  db: DbClient | undefined,
+  outcome: TrashSweepOutcome,
+  reason: string | null,
+  at: Date,
+  logger: DomainLogger,
+): Promise<TrashSweepOutcome> {
+  const prev = await inTransaction(db, async (tx) => {
+    const [row] = await tx.select().from(trashSweepStatus).where(eq(trashSweepStatus.id, 1)).for('update');
+    const pausedSince = outcome === 'ok' ? null : (row?.pausedSince ?? at);
+    const values = {
+      lastOutcome: outcome,
+      lastReason: reason,
+      lastAt: at,
+      pausedSince,
+      lastOkAt: outcome === 'ok' ? at : (row?.lastOkAt ?? null),
+    };
+    await tx
+      .insert(trashSweepStatus)
+      .values({ id: 1, ...values })
+      .onConflictDoUpdate({ target: trashSweepStatus.id, set: values });
+    return { row: row ?? null, pausedSince };
+  });
+  if (prev.row?.lastOutcome !== outcome || (prev.row?.lastReason ?? null) !== reason) {
+    logger.info('[trash] sweep_outcome', { outcome, reason });
+  }
+  const family = pauseFamily(outcome);
+  if (family !== null) {
+    const since = prev.pausedSince ?? at;
+    logger.warn('[trash] sweep_paused', {
+      reason: family,
+      step: reason,
+      pausedForH: Math.floor(((at.getTime() - since.getTime()) / 3_600_000) * 10) / 10,
+    });
+  }
+  return outcome;
+}
+
+/**
+ * DESIGN-052 D-25bf — end a recorded pause without an outcome row: one conditional UPDATE of `paused_since` (a no-op
+ * when there is none). Called when a scheduled sweep finds nothing due, and after a clean manual Expire now.
+ */
+async function clearSweepPause(
+  db: DbClient | undefined,
+  via: 'nothing_due' | 'manual_ok',
+  logger: DomainLogger,
+): Promise<void> {
+  const cleared = await resolveDb(db)
+    .update(trashSweepStatus)
+    .set({ pausedSince: null })
+    .where(and(eq(trashSweepStatus.id, 1), isNotNull(trashSweepStatus.pausedSince)))
+    .returning({ id: trashSweepStatus.id });
+  if (cleared.length > 0) logger.info('[trash] sweep_pause_cleared', { via });
+}
+
+/** DESIGN-052 D-10 — the banner's reason family: the gate, the Release Block, or the media apps (unsafe / *arr). */
+export type TrashSweepBanner = 'gate' | 'release_block' | 'media_apps';
+
+export interface TrashSweepStatusView {
+  lastOutcome: TrashSweepOutcome | null;
+  lastReason: string | null;
+  lastAt: string | null;
+  pausedSince: string | null;
+  lastOkAt: string | null;
+  /** Set only when no sweep of a due batch has succeeded for SWEEP_PAUSE_BANNER_AFTER_H hours (any reason). */
+  banner: TrashSweepBanner | null;
+}
+
+/** DESIGN-052 D-10 — the scheduled sweep's status for the Trash page (read-only). */
+export async function getTrashSweepStatus(input: { db?: DbClient; now?: Date }): Promise<TrashSweepStatusView> {
+  const [row] = await resolveDb(input.db).select().from(trashSweepStatus).where(eq(trashSweepStatus.id, 1));
+  if (!row) {
+    return { lastOutcome: null, lastReason: null, lastAt: null, pausedSince: null, lastOkAt: null, banner: null };
+  }
+  const now = (input.now ?? new Date()).getTime();
+  let banner: TrashSweepBanner | null = null;
+  if (row.pausedSince !== null && now - row.pausedSince.getTime() >= SWEEP_PAUSE_BANNER_AFTER_H * 3_600_000) {
+    banner =
+      row.lastOutcome === 'paused_gate'
+        ? 'gate'
+        : row.lastOutcome === 'paused_release_block'
+          ? 'release_block'
+          : 'media_apps';
+  }
+  return {
+    lastOutcome: row.lastOutcome,
+    lastReason: row.lastReason,
+    lastAt: row.lastAt.toISOString(),
+    pausedSince: row.pausedSince?.toISOString() ?? null,
+    lastOkAt: row.lastOkAt?.toISOString() ?? null,
+    banner,
+  };
 }
 
 async function expireOneBatch(input: {
   db?: DbClient;
   maintainerr: MaintainerrClientBundle;
+  arr: ReleaseBlockArrClients;
   batchId: string;
   mediaKind: TrashMediaKind;
   actorId: string | null;
   watchWindowDays?: number;
   /** DESIGN-011 amendment — this batch was force-expired mid-window (audited on the close event/push). */
   forcedEarly?: boolean;
+  /** ADR-093 / DESIGN-052 D-06 — the Registry Gate's verified `delete` snapshot (a delete path). */
+  watchlist: DeleteWatchlistSnapshot;
+  logger: DomainLogger;
 }): Promise<BatchSweepResult> {
   const db = resolveDb(input.db);
   // Deletion-audit attribution (Recently Deleted "By" + the Activity notification), resolved once.
@@ -1264,6 +1586,7 @@ async function expireOneBatch(input: {
     maintainerr: input.maintainerr,
     media: input.mediaKind as TrashMedia,
     watchWindowDays: input.watchWindowDays,
+    watchlist: input.watchlist,
   });
   const freshById = new Map(
     pending.items
@@ -1297,33 +1620,124 @@ async function expireOneBatch(input: {
   let raceSkipped = 0;
   let consecutiveHandleFailures = 0;
   let aborted = false;
+  const keptByReason: Partial<Record<TrashKeepReason, number>> = {};
+  const keep = async (item: { id: string; maintainerrMediaId: string; title: string }, reason: TrashKeepReason) => {
+    if (await markItemSkipped(input.db, item.id, reason)) {
+      skippedCount += 1;
+      keptByReason[reason] = (keptByReason[reason] ?? 0) + 1;
+      input.logger.info('[trash] kept', {
+        batchId: input.batchId,
+        maintainerrMediaId: item.maintainerrMediaId,
+        title: item.title,
+        reason,
+      });
+    } else {
+      raceSkipped += 1; // saved between candidate-select and skip-write — leave it 'saved'
+    }
+  };
 
+  // Pass 1 — the pre-guardian skips and the guardian (D-09): everything kept lands `skipped` with its reason.
+  type Candidate = (typeof candidates)[number];
+  const survivors: Array<{ item: Candidate; fresh: TrashPendingItem }> = [];
   for (const item of candidates) {
     const fresh = freshById.get(item.maintainerrMediaId);
     // Gone from Maintainerr's pending set, or currently live-excluded (saved/dnd synced) ⇒ keep.
-    if (!fresh || liveExcluded.has(item.maintainerrMediaId)) {
-      if (await markItemSkipped(input.db, item.id)) skippedCount += 1;
-      else raceSkipped += 1; // saved between candidate-select and skip-write — leave it 'saved'
+    if (!fresh) {
+      await keep(item, 'not_in_pool');
+      continue;
+    }
+    if (liveExcluded.has(item.maintainerrMediaId)) {
+      await keep(item, 'live_excluded');
       continue;
     }
     const verdict = classifyGuardian(fresh);
     if (verdict.keep) {
-      // dnd / recently-watched / unevaluable — never deleted (C-07b). Skip, no whitelist: a repeat
-      // next batch is the intended stronger tuning signal (Q-03), Save is the permanent lever.
+      // dnd / recently-watched / watchlisted / unevaluable — never deleted (C-07b). Skip, no whitelist: a repeat
+      // next batch is the intended stronger tuning signal (Q-03), Save is the permanent lever. A watchlisted item
+      // is never auto-saved either (ADR-093 C-03 — a watchlist is not a Save).
       //
       // ADR-025 errata (2026-07-09) — a requester is NO LONGER a keep (owner ruling — requested is
       // informational only), so a requested item is cold here and falls through to deletion below
       // unless another guard (saves/exclusions/recently-watched) protects it. The old
       // `requested_override` exception is gone (there is nothing to override any more).
-      if (await markItemSkipped(input.db, item.id)) skippedCount += 1;
-      else raceSkipped += 1;
+      await keep(item, verdict.reason);
       continue;
     }
-    // Cold + positively evaluated ⇒ delete this one item. F2 — the state flip is a GUARDED UPDATE
+    survivors.push({ item, fresh });
+  }
+
+  // D-14 steps 4..5 — through the seam Expedite shares (`recordAndBlockReleases`): the identity of each survivor's
+  // release (D-11); three consecutive *arr read failures mean the *arr is down, so the sweep aborts before Phase A
+  // (nothing recorded, nothing deleted; the batch stays leaving_soon). A single failure, or a survivor with no
+  // recordable term, is KEPT `release_unrecorded` (no term, no delete); it comes back later. Then Phase A, before any
+  // delete: every survivor recorded `in_flight`, the Release Block written and read back. A failure throws
+  // ReleaseBlockError (the records are abandoned; nothing is claimed) — the sweep pauses.
+  const byKey = new Map(survivors.map((s) => [s.item.id, s] as const));
+  const blocked = await recordAndBlockReleases({
+    db: input.db,
+    arr: input.arr,
+    survivors: survivors.map((s) => ({
+      key: s.item.id,
+      // A survivor passed the guardian, which keeps every item with no ledger row (`unevaluable`).
+      mediaItemId: s.fresh.mediaItemId as string,
+      title: s.item.title,
+    })),
+    origin: 'sweep',
+    logger: input.logger,
+    onUnrecorded: async (key) => {
+      const s = byKey.get(key);
+      if (s) await keep(s.item, 'release_unrecorded');
+    },
+  });
+  if (blocked.aborted) {
+    const counts = await countItemStates(input.db, input.batchId);
+    input.logger.warn('[trash] sweep_aborted', { batchId: input.batchId, reason: 'arr_identity' });
+    return {
+      batchId: input.batchId,
+      mediaKind: input.mediaKind,
+      deletedCount: 0,
+      skippedCount,
+      savedCount: counts.saved ?? 0,
+      protectedCount: counts.protected ?? 0,
+      handleErrors: 0,
+      raceSkipped,
+      aborted: true,
+      abortReason: 'arr_identity',
+      keptByReason,
+    };
+  }
+  const toDelete = survivors.filter((s) => blocked.recordable.has(s.item.id));
+  const recordIds = blocked.recordIds;
+  let anyAbandoned = false;
+
+  // D-14 steps 6..7 — Phase B, per item: the guarded claim, the handle, then the settle of its records.
+  for (const [index, { item, fresh }] of toDelete.entries()) {
+    const ids = recordIds.get(item.id) ?? [];
+    const arrItemId = blocked.recordable.get(item.id)?.[0]?.arrItemId ?? null;
+    // D-19 / D-25ay — the owner's Watchlist Changes made since the snapshot, re-read just before the claim: an "add it
+    // to my watchlist" made while this sweep runs protects every item the loop has not reached yet.
+    if (
+      await isOnLateWatchlist({
+        db: input.db,
+        snapshot: input.watchlist,
+        item: {
+          media: input.mediaKind === 'tv' ? 'tv' : 'movie',
+          plexGuid: fresh.plexGuid,
+          tmdbId: fresh.tmdbId,
+          tvdbId: fresh.tvdbId,
+        },
+      })
+    ) {
+      await keep(item, 'watchlisted');
+      if ((await abandonReleaseRecords({ db: input.db, recordIds: ids })) > 0) anyAbandoned = true;
+      continue;
+    }
+    // Cold + positively evaluated + recorded ⇒ delete this one item. F2 — the state flip is a GUARDED UPDATE
     // (`... AND state='pending'`): if a concurrent Save flipped the row between the candidate-select
     // above and this write, it claims 0 rows and we ABORT this item's delete (no intent event, no
     // handle) — a saved item must never be deleted. Intent event + terminal state + deletion snapshot
-    // land same-tx AFTER the claim so nothing is written when the claim loses (D-09 intent-first).
+    // land same-tx AFTER the claim so nothing is written when the claim loses (D-09 intent-first). The claim also ties
+    // the item's Deleted-Release Records to it (ADR-084 D-4's audit row).
     const claimed = await inTransaction(input.db, async (tx) => {
       const updated = await tx
         .update(trashBatchItems)
@@ -1349,8 +1763,10 @@ async function expireOneBatch(input: {
           batchId: input.batchId,
           collectionId: fresh.collectionId,
           maintainerrMediaId: item.maintainerrMediaId,
+          releaseRecordIds: ids,
         },
       });
+      await stampReleaseRecords(tx, { recordIds: ids, batchItemId: item.id });
       // Same-tx deletion audit: tombstone the media_item so Recently Deleted surfaces this swept
       // deletion (with actor) immediately, and write the app-sourced Activity notification — the batch
       // sweep deletes via the same per-item handle Maintainerr never webhooks back.
@@ -1373,6 +1789,7 @@ async function expireOneBatch(input: {
     });
     if (!claimed) {
       raceSkipped += 1; // the item was Saved just in time — never deleted, never handled
+      if ((await abandonReleaseRecords({ db: input.db, recordIds: ids })) > 0) anyAbandoned = true;
       continue;
     }
     deletedCount += 1; // the row is durably 'deleted' (intent-first) whether or not the handle lands
@@ -1380,18 +1797,55 @@ async function expireOneBatch(input: {
     reclaimedBytes += fresh.sizeBytes ?? 0;
     // The destructive per-item handle. A single failure is tolerated (intent + snapshot are durable;
     // Maintainerr reconciles a genuinely-missed delete), but N consecutive failures trip the breaker.
+    let handleError: unknown = null;
     try {
       await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
         input.maintainerr.write.handleCollectionMedia(fresh.collectionId, item.maintainerrMediaId),
       );
       consecutiveHandleFailures = 0;
-    } catch {
+    } catch (error) {
+      handleError = error ?? new Error('handle failed');
       handleErrors += 1;
       consecutiveHandleFailures += 1;
-      if (consecutiveHandleFailures >= HANDLE_FAILURE_LIMIT) {
-        aborted = true;
-        break;
-      }
+    }
+    const handled = handleError === null;
+    // D-14 step 7 / D-25ax — settled by the *arr's answer whatever the handle returned: a 404 makes the records
+    // active (a handle whose answer was lost after the delete still blocks); a present item abandons them after a 2xx
+    // or a definitive refusal, and leaves them in flight after an ambiguous failure (the stranded settle decides).
+    const settled = await settleReleaseRecords({
+      db: input.db,
+      arr: input.arr.read,
+      arrKind: sweepArrKind,
+      arrItemId,
+      recordIds: ids,
+      handleError,
+      title: item.title,
+      logger: input.logger,
+    });
+    if (settled === 'abandoned') anyAbandoned = true;
+    // D-21 / D-25az — one line per delete, after its settle (PLAN-072 S7 reads the order from these).
+    input.logger.info('[trash] deleted', {
+      batchId: input.batchId,
+      maintainerrMediaId: item.maintainerrMediaId,
+      title: item.title,
+      handled,
+      records: settled,
+    });
+    if (!handled && consecutiveHandleFailures >= HANDLE_FAILURE_LIMIT) {
+      aborted = true;
+      // The survivors not reached keep their pending state; their in-flight records must not keep blocking.
+      const rest = toDelete.slice(index + 1).flatMap((s) => recordIds.get(s.item.id) ?? []);
+      if ((await abandonReleaseRecords({ db: input.db, recordIds: rest })) > 0) anyAbandoned = true;
+      break;
+    }
+  }
+
+  // D-14 step 8 — an abandoned record's term leaves the profile now (best effort: the next reconcile also would).
+  if (anyAbandoned) {
+    try {
+      await reconcileReleaseBlock({ db: input.db, arr: input.arr, arrKind: sweepArrKind, logger: input.logger });
+    } catch {
+      // logged by the writer (`[release-block] failed`)
     }
   }
 
@@ -1413,6 +1867,8 @@ async function expireOneBatch(input: {
       handleErrors,
       raceSkipped,
       aborted: true,
+      abortReason: 'handle_breaker',
+      keptByReason,
     };
   }
 
@@ -1488,15 +1944,22 @@ async function expireOneBatch(input: {
     handleErrors,
     raceSkipped,
     aborted: false,
+    abortReason: null,
+    keptByReason,
   };
 }
 
-/** F2 — a GUARDED skip: only flips a still-`pending` item to `skipped`. Returns whether it claimed the
- *  row; false means a concurrent Save changed it mid-sweep (leave it 'saved', never overwrite). */
-async function markItemSkipped(db: DbClient | undefined, itemId: string): Promise<boolean> {
+/** F2 — a GUARDED skip: only flips a still-`pending` item to `skipped`, recording WHY (ADR-093 / DESIGN-052 D-09:
+ *  `keep_reason`, the batch wall's kept tooltip). Returns whether it claimed the row; false means a concurrent Save
+ *  changed it mid-sweep (leave it 'saved', never overwrite). */
+async function markItemSkipped(
+  db: DbClient | undefined,
+  itemId: string,
+  keepReason: TrashKeepReason,
+): Promise<boolean> {
   const updated = await resolveDb(db)
     .update(trashBatchItems)
-    .set({ state: 'skipped' })
+    .set({ state: 'skipped', keepReason })
     .where(and(eq(trashBatchItems.id, itemId), eq(trashBatchItems.state, 'pending')))
     .returning({ id: trashBatchItems.id });
   return updated.length > 0;
@@ -1698,6 +2161,14 @@ export interface BatchDetailItem {
    * LIVE pool, and an item that re-enters the pool reads as slated again on the next load.
    */
   inLivePool: boolean | null;
+  /** ADR-093 / DESIGN-052 D-10 — why the sweep kept this item (a `skipped` row), for the kept tooltip; null otherwise. */
+  keepReason: TrashKeepReason | null;
+  /**
+   * D-10 — on a watchlist per the newest ok registry run (display only; the sweep decides from the gate's own
+   * snapshot). Matched by the candidate read-model's `plex_guid` and the item's tmdb/tvdb ids. Always false for a
+   * `deleted` row.
+   */
+  onWatchlist: boolean;
 }
 
 export interface BatchDetail extends BatchSummary {
@@ -1779,6 +2250,35 @@ export async function getBatchDetail(input: {
     return livePoolIds.has(maintainerrMediaId);
   };
 
+  // ADR-093 / DESIGN-052 D-10 — the "On a watchlist" note: the newest ok registry run, matched through the candidate
+  // read-model's plex guid (joined at read time) and the frozen tmdb/tvdb ids. Two cheap reads, never a live call.
+  const watchlist = await readDisplayWatchlistSnapshot({ db: input.db });
+  const guidRows =
+    watchlist === null || rows.length === 0
+      ? []
+      : await db
+          .select({ maintainerrMediaId: trashCandidates.maintainerrMediaId, plexGuid: trashCandidates.plexGuid })
+          .from(trashCandidates)
+          .where(
+            and(
+              eq(trashCandidates.mediaKind, b.mediaKind),
+              inArray(
+                trashCandidates.maintainerrMediaId,
+                rows.map((r) => r.item.maintainerrMediaId),
+              ),
+            ),
+          );
+  const guidById = new Map(guidRows.map((r) => [r.maintainerrMediaId, r.plexGuid] as const));
+  const onWatchlistFor = (it: { state: TrashBatchItemState; maintainerrMediaId: string; tmdbId: number | null; tvdbId: number | null }): boolean =>
+    watchlist !== null &&
+    it.state !== 'deleted' &&
+    evaluateWatchlist(watchlist, {
+      media: b.mediaKind,
+      plexGuid: guidById.get(it.maintainerrMediaId) ?? null,
+      tmdbId: it.tmdbId,
+      tvdbId: it.tvdbId,
+    }).onWatchlist;
+
   const raw: Record<string, number> = {};
   let reclaimedBytes = 0;
   let pendingBytes = 0;
@@ -1826,6 +2326,8 @@ export async function getBatchDetail(input: {
       lastWatchedServer: lastWatchedServer ?? null,
       requesters: requesters ?? [],
       inLivePool: projectLivePool(it.maintainerrMediaId),
+      keepReason: it.state === 'skipped' ? (it.keepReason ?? null) : null,
+      onWatchlist: onWatchlistFor(it),
     })),
   };
 }

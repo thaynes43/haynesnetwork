@@ -20,13 +20,31 @@ import {
 import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import {
+  ArrUpstreamError,
+  MaintainerrRuleDriftError,
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
   TrashMusicUnsupportedError,
 } from './errors';
+import {
+  abandonReleaseRecords,
+  recordAndBlockReleases,
+  reconcileReleaseBlock,
+  settleReleaseRecords,
+  type ReleaseBlockArrClients,
+  type ReleaseRecordDraft,
+} from './release-block';
 import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainerr-clients';
 import { executeRestore, type ExecuteArrAddResult } from './restore-flow';
 import { openSaveIntent, revokeSaveIntent } from './trash-save-intents';
+import { consoleDomainLogger, type DomainLogger } from './domain-logger';
+import {
+  evaluateRegistryGate,
+  evaluateWatchlist,
+  isOnLateWatchlist,
+  type DeleteWatchlistSnapshot,
+  type WatchlistSnapshot,
+} from './watchlist-registry';
 
 /** The Maintainerr-managed protective tag (addendum b): enabled on Radarr/Sonarr via the settings
  *  patch (a deploy step), Maintainerr stamps it when it excludes an item and removes it on
@@ -135,6 +153,10 @@ export interface AgingCollectionView {
   deleteAfterDays: number | null | undefined;
   arrAction: number | null | undefined;
   manualCollection: boolean | null | undefined;
+  /** ADR-093 C-10 / DESIGN-052 D-16 — a rule pool's delete must write an import-list exclusion (ADR-084 E-3). */
+  listExclusions?: boolean | null | undefined;
+  /** DESIGN-052 D-16 — a rule pool's delete must also clear the Seerr media record (the re-request path). */
+  forceSeerr?: boolean | null | undefined;
 }
 
 /**
@@ -146,6 +168,10 @@ export interface AgingCollectionView {
  *   arrAction === 0 (else the app can no longer drive its deletions).
  * App-managed Leaving-Soon manual collection (title match, ADR-025):
  *   MUST have arrAction === 4 (DO_NOTHING) so Maintainerr never deletes its curated members.
+ *
+ * ADR-093 C-10 / DESIGN-052 D-16 — the invariant grows: an active rule pool MUST also have `listExclusions: true` and
+ * `forceSeerr: true`, so a drift (an Arm/Disarm save that dropped them) refuses the sweep instead of silently changing
+ * what a delete does.
  */
 export function evaluateAgingInvariants(collections: readonly AgingCollectionView[]): string[] {
   const violations: string[] = [];
@@ -173,6 +199,16 @@ export function evaluateAgingInvariants(collections: readonly AgingCollectionVie
     if (c.arrAction !== RULE_POOL_ARR_ACTION) {
       violations.push(
         `The '${label}' rule pool has arrAction ${c.arrAction ?? 'unset'} (must be Delete/0) — the app can no longer manage its deletions`,
+      );
+    }
+    if (c.listExclusions !== true) {
+      violations.push(
+        `The '${label}' rule pool no longer adds deleted titles to the import list exclusions. Turn that setting back on in Maintainerr.`,
+      );
+    }
+    if (c.forceSeerr !== true) {
+      violations.push(
+        `The '${label}' rule pool no longer clears deleted titles from Seerr. Turn that setting back on in Maintainerr.`,
       );
     }
   }
@@ -263,6 +299,8 @@ export async function auditMaintainerr(input: {
             deleteAfterDays: c.deleteAfterDays ?? null,
             arrAction: c.arrAction ?? null,
             manualCollection: c.manualCollection ?? null,
+            listExclusions: c.listExclusions ?? null,
+            forceSeerr: c.forceSeerr ?? null,
           })),
         );
         return { activeCollections, agingViolations };
@@ -336,6 +374,14 @@ export interface TrashPendingItem {
   resolution: string | null;
   imdbRating: number | null;
   tmdbRating: number | null;
+  /** ADR-093 / DESIGN-052 D-06 — Maintainerr's `mediaData.guid` (`plex://movie|show/<24 hex>`), null when absent. */
+  plexGuid: string | null;
+  /** D-09 — Maintainerr flagged this item's rule data as transiently unavailable: the guardian keeps it. */
+  ruleEvaluationFailed: boolean;
+  /** D-06 — the item is on a watchlist in the snapshot the caller evaluated with (the Watchlist Keep, T-263). */
+  onWatchlist: boolean;
+  /** D-06 — whether the snapshot could decide `onWatchlist` for this item at all; false ⇒ kept `unevaluable`. */
+  watchlistEvaluable: boolean;
 }
 
 export interface TrashPendingResult {
@@ -372,6 +418,10 @@ export interface FlatPending {
   tvdbId: number | null;
   sizeBytes: number;
   addDate: string | null;
+  /** ADR-093 / DESIGN-052 D-06 — Maintainerr's `mediaData.guid` (null when it carries none). */
+  plexGuid: string | null;
+  /** D-09 — Maintainerr's `ruleEvaluationFailed` flag. */
+  ruleEvaluationFailed: boolean;
 }
 
 /** Collection-content page size (ADR-035 live profile, 2026-07-09): Maintainerr's PER-CALL cost
@@ -427,6 +477,8 @@ export async function fetchMaintainerrPending(
           tvdbId: m.tvdbId ?? null,
           sizeBytes: m.sizeBytes ?? 0,
           addDate: m.addDate ?? null,
+          plexGuid: m.mediaData?.guid?.trim() || null,
+          ruleEvaluationFailed: m.ruleEvaluationFailed === true,
         });
       }
       seen += content.items.length;
@@ -472,6 +524,12 @@ export async function shapePendingItems(input: {
   media: TrashMedia;
   flat: readonly FlatPending[];
   watchWindowDays?: number;
+  /**
+   * ADR-093 / DESIGN-052 D-06 — REQUIRED, no default: the watchlist snapshot every item is evaluated against, carrying
+   * its purpose (`delete` from the Registry Gate, `propose`, or `display`). `null` is a MISSING snapshot and fails
+   * closed: every item reads not evaluable, so the guardian keeps it (`unevaluable`) — never "not listed, deletable".
+   */
+  watchlist: WatchlistSnapshot | null;
 }): Promise<TrashPendingResult> {
   const db = resolveDb(input.db);
   const arrKind = arrKindForTrashMedia(input.media);
@@ -558,6 +616,12 @@ export async function shapePendingItems(input: {
     const arrTags = joined?.arrTags ?? [];
     const lastViewed = joined?.lastViewedAt ?? null;
     const recentlyWatched = lastViewed !== null && now - lastViewed.getTime() <= windowMs;
+    const watch = evaluateWatchlist(input.watchlist, {
+      media: input.media,
+      plexGuid: f.plexGuid,
+      tmdbId: f.tmdbId,
+      tvdbId: f.tvdbId,
+    });
     return {
       maintainerrMediaId: f.maintainerrMediaId,
       collectionId: f.collectionId,
@@ -588,6 +652,10 @@ export async function shapePendingItems(input: {
       resolution: joined?.resolution ?? null,
       imdbRating: joined?.imdbRating ?? null,
       tmdbRating: joined?.tmdbRating ?? null,
+      plexGuid: f.plexGuid,
+      ruleEvaluationFailed: f.ruleEvaluationFailed,
+      onWatchlist: watch.onWatchlist,
+      watchlistEvaluable: watch.watchlistEvaluable,
     };
   });
 
@@ -613,6 +681,8 @@ export async function listTrashPending(input: {
    * TAB no longer uses this — it pages and cross-checks only the visible page (listTrashPendingPage).
    */
   includeLiveExclusions?: boolean;
+  /** ADR-093 / DESIGN-052 D-06 — REQUIRED (see `shapePendingItems`): every delete path passes a `delete` snapshot. */
+  watchlist: WatchlistSnapshot | null;
 }): Promise<TrashPendingResult> {
   const flat = await fetchMaintainerrPending(input.maintainerr);
   const base = await shapePendingItems({
@@ -620,6 +690,7 @@ export async function listTrashPending(input: {
     media: input.media,
     flat: bucketFlatPendingForMedia(flat, input.media),
     watchWindowDays: input.watchWindowDays,
+    watchlist: input.watchlist,
   });
   if (input.includeLiveExclusions !== true) return base;
   const liveExcludedIds = await fetchLiveExclusions(input.maintainerr, [
@@ -1069,7 +1140,7 @@ export async function removeExclusion(input: {
  * (surfaced as a wall meta badge), never an app-side overrule. See ADR-025/DESIGN-010/DESIGN-011
  * errata (2026-07-09).
  */
-export type GuardianKeepReason = 'tag' | 'recently_watched' | 'unevaluable';
+export type GuardianKeepReason = 'tag' | 'recently_watched' | 'watchlisted' | 'unevaluable';
 export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { keep: false };
 
 /** The three fields the guardian actually reads. A structural subset of `TrashPendingItem` (every
@@ -1077,7 +1148,12 @@ export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { kee
  *  compose it without an unchecked cast. */
 export type GuardianInput = Pick<
   TrashPendingItem,
-  'protectedByTag' | 'recentlyWatched' | 'mediaItemId'
+  | 'protectedByTag'
+  | 'recentlyWatched'
+  | 'mediaItemId'
+  | 'onWatchlist'
+  | 'watchlistEvaluable'
+  | 'ruleEvaluationFailed'
 >;
 
 /**
@@ -1091,8 +1167,15 @@ export type GuardianInput = Pick<
 export function classifyGuardian(item: GuardianInput): GuardianVerdict {
   if (item.protectedByTag) return { keep: true, reason: 'tag' };
   if (item.recentlyWatched) return { keep: true, reason: 'recently_watched' };
-  // Fail closed: no ledger resolution ⇒ no watch data ⇒ we cannot confirm it is safe.
-  if (item.mediaItemId === null) return { keep: true, reason: 'unevaluable' };
+  // ADR-093 C-03 / DESIGN-052 D-09 — the Watchlist Keep (T-263): on anybody's read watchlist ⇒ kept. Not a Save:
+  // when the title leaves every watchlist it is deletable again.
+  if (item.onWatchlist) return { keep: true, reason: 'watchlisted' };
+  // Fail closed: no ledger resolution ⇒ no watch data ⇒ we cannot confirm it is safe. Likewise an item whose
+  // watchlist status cannot be evaluated (no verified snapshot, or no guid while a registry title of its kind is
+  // unmapped), and an item Maintainerr flags `ruleEvaluationFailed` (its own handler skips those).
+  if (item.mediaItemId === null || item.watchlistEvaluable !== true || item.ruleEvaluationFailed) {
+    return { keep: true, reason: 'unevaluable' };
+  }
   return { keep: false };
 }
 
@@ -1113,7 +1196,11 @@ export interface ExpediteVerdictInput extends GuardianInput {
  *                         protected — surface it distinctly (ADR-023 C-07b).
  */
 export type ExpediteVerdict =
-  'deletable' | 'protected_tag' | 'protected_watched' | 'unverifiable';
+  | 'deletable'
+  | 'protected_tag'
+  | 'protected_watched'
+  | 'protected_watchlist'
+  | 'unverifiable';
 
 /**
  * ADR-086 D-11 / DESIGN-048 D-06 — THE one expedite-partition derivation. It composes the
@@ -1138,6 +1225,7 @@ export function classifyForExpedite(item: ExpediteVerdictInput): ExpediteVerdict
   if (!verdict.keep) return 'deletable';
   if (verdict.reason === 'tag') return 'protected_tag';
   if (verdict.reason === 'recently_watched') return 'protected_watched';
+  if (verdict.reason === 'watchlisted') return 'protected_watchlist';
   return 'unverifiable'; // 'unevaluable' — kept because it cannot be cleared, not whitelisted.
 }
 
@@ -1156,12 +1244,15 @@ export async function guardRecentlyWatched(input: {
   media: TrashMedia;
   actorId: string | null;
   watchWindowDays?: number;
+  /** ADR-093 / DESIGN-052 D-06 — a delete path: the Registry Gate's verified `delete` snapshot. */
+  watchlist: DeleteWatchlistSnapshot;
 }): Promise<{ protectedCount: number; protectedIds: string[]; expeditableIds: string[] }> {
   const pending = await listTrashPending({
     db: input.db,
     maintainerr: input.maintainerr,
     media: input.media,
     watchWindowDays: input.watchWindowDays,
+    watchlist: input.watchlist,
   });
   const protectedIds: string[] = [];
   const expeditableIds: string[] = [];
@@ -1180,7 +1271,8 @@ export async function guardRecentlyWatched(input: {
         });
         if (res.excluded || res.alreadyExcluded) protectedIds.push(item.maintainerrMediaId);
       } else {
-        // tag-protected (already whitelisted) or unevaluable (kept, not force-whitelisted).
+        // tag-protected (already whitelisted), watchlisted (kept, NEVER auto-saved — a watchlist is not a Save,
+        // DESIGN-052 D-09) or unevaluable (kept, not force-whitelisted).
         protectedIds.push(item.maintainerrMediaId);
       }
     } else {
@@ -1203,6 +1295,8 @@ async function resolvePendingTarget(input: {
   maintainerrMediaId: string;
   collectionId?: number;
   watchWindowDays?: number;
+  /** ADR-093 / DESIGN-052 D-06 — a delete path: the Registry Gate's verified `delete` snapshot. */
+  watchlist: DeleteWatchlistSnapshot;
 }): Promise<{ item: TrashPendingItem; media: TrashMedia } | null> {
   for (const media of ['movie', 'tv'] as const) {
     const pending = await listTrashPending({
@@ -1210,6 +1304,7 @@ async function resolvePendingTarget(input: {
       maintainerr: input.maintainerr,
       media,
       watchWindowDays: input.watchWindowDays,
+      watchlist: input.watchlist,
     });
     const item = pending.items.find(
       (p) =>
@@ -1270,6 +1365,13 @@ export interface ExpediteDeletionInput {
    * them). Omit for the legacy/internal whole-set behaviour (process the entire current pending set).
    */
   snapshotMediaIds?: string[];
+  /** ADR-093 C-07 / DESIGN-052 D-11..D-14 — the Radarr / Sonarr reads and the confined release-profile writes: every
+   *  expedited item's release is recorded and blocked before its handle (REQUIRED). */
+  arr: ReleaseBlockArrClients;
+  /** D-21 log seam for the gate line (defaults to the JSON-lines console logger). */
+  logger?: DomainLogger;
+  /** Clock seam for the Registry Gate (tests). */
+  now?: Date;
 }
 
 export interface ExpediteDeletionResult {
@@ -1289,6 +1391,9 @@ export interface ExpediteDeletionResult {
   /** ADR-035 — the Maintainerr ids actually handed to the per-item delete handler this run, so the
    *  caller can drop them from the candidate read-model without waiting for the next refresh. */
   expeditedIds: string[];
+  /** ADR-093 / DESIGN-052 D-11 — of `skippedCount`, the items kept because their release could not be recorded (no
+   *  term, no delete). */
+  unrecordedCount: number;
 }
 
 /**
@@ -1439,6 +1544,9 @@ interface ExpediteSurvivor {
   tmdbId: number | null;
   tvdbId: number | null;
   arrKind: 'radarr' | 'sonarr';
+  /** D-19 / D-25ay — the late watchlist re-read's keys: the item's kind and Maintainerr's `mediaData.guid`. */
+  media: 'movie' | 'tv';
+  plexGuid: string | null;
   // ADR-030 / DESIGN-013 (PLAN-013) — reclaim forward-capture. The direct-expedite path (unlike the
   // batch sweep, which freezes these on trash_batch_items) carried NO size/resolution into any durable
   // record. Freeze them here from the SAME live/pending row already in scope so the reclaim report can
@@ -1452,13 +1560,40 @@ interface ExpediteSurvivor {
  * Commit the `trash_expedited` intent event for one item + its deletion audit (tombstone + Activity
  * notification, `recordDeletionAudit`) in ONE transaction, THEN trigger its per-item handle. The
  * intent + audit are durable before the (lost-response-prone) destructive call — Fix D-09 discipline.
+ *
+ * D-19 / D-25ay — first, the owner's Watchlist Changes made since the gate's snapshot are re-read: an item added to
+ * the owner's watchlist while Expedite runs is kept (`watchlisted`), its records abandoned, and nothing is written.
  */
 async function expediteOneSurvivor(
-  input: Pick<ExpediteDeletionInput, 'db' | 'maintainerr' | 'actorId'>,
+  input: Pick<ExpediteDeletionInput, 'db' | 'maintainerr' | 'actorId' | 'arr' | 'logger'>,
   scope: 'item' | 'all',
   actorName: string | null,
   survivor: ExpediteSurvivor,
-): Promise<void> {
+  release: { recordIds: readonly string[]; arrItemId: number | null },
+  watchlist: DeleteWatchlistSnapshot,
+): Promise<'active' | 'abandoned' | 'in_flight' | 'none' | 'watchlisted'> {
+  const logger = input.logger ?? consoleDomainLogger;
+  if (
+    await isOnLateWatchlist({
+      db: input.db,
+      snapshot: watchlist,
+      item: {
+        media: survivor.media,
+        plexGuid: survivor.plexGuid,
+        tmdbId: survivor.tmdbId,
+        tvdbId: survivor.tvdbId,
+      },
+    })
+  ) {
+    await abandonReleaseRecords({ db: input.db, recordIds: release.recordIds });
+    logger.info('[trash] kept', {
+      scope,
+      maintainerrMediaId: survivor.maintainerrMediaId,
+      title: survivor.title,
+      reason: 'watchlisted',
+    });
+    return 'watchlisted';
+  }
   await inTransaction(input.db, async (tx) => {
     await tx.insert(ledgerEvents).values({
       mediaItemId: survivor.mediaItemId,
@@ -1475,6 +1610,8 @@ async function expediteOneSurvivor(
         resolution: survivor.resolution,
         imdbRating: survivor.imdbRating,
         tmdbRating: survivor.tmdbRating,
+        // ADR-093 C-07 — the Deleted-Release Records this deletion wrote (ADR-084 D-4's audit row).
+        releaseRecordIds: [...release.recordIds],
       },
     });
     // Same-tx deletion audit: tombstone so Recently Deleted surfaces it now (with actor), and write
@@ -1494,12 +1631,95 @@ async function expediteOneSurvivor(
       tmdbRating: survivor.tmdbRating,
     });
   });
-  await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
-    input.maintainerr.write.handleCollectionMedia(
-      survivor.collectionId,
-      survivor.maintainerrMediaId,
-    ),
-  );
+  // The destructive handle, then the settle of the item's records (DESIGN-052 D-14 step 7 / D-25ax), always by the
+  // *arr's answer: a 404 makes them active even when the handle's answer was lost; a present item abandons them after
+  // a 2xx or a definitive refusal and leaves them in flight after an ambiguous failure. A failed handle is rethrown.
+  let handleError: unknown = null;
+  try {
+    await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
+      input.maintainerr.write.handleCollectionMedia(
+        survivor.collectionId,
+        survivor.maintainerrMediaId,
+      ),
+    );
+  } catch (error) {
+    handleError = error ?? new Error('handle failed');
+  }
+  const settled = await settleReleaseRecords({
+    db: input.db,
+    arr: input.arr.read,
+    arrKind: survivor.arrKind,
+    arrItemId: release.arrItemId,
+    recordIds: release.recordIds,
+    handleError,
+    title: survivor.title,
+    logger,
+  });
+  // D-21 / D-25az — one line per delete, after its settle.
+  logger.info('[trash] expedited', {
+    scope,
+    maintainerrMediaId: survivor.maintainerrMediaId,
+    title: survivor.title,
+    handled: handleError === null,
+    records: settled,
+  });
+  if (handleError !== null) throw handleError;
+  return settled;
+}
+
+/**
+ * ADR-093 / DESIGN-052 D-14 — Expedite's identity and Phase A for its survivors, through the seam the sweep shares
+ * (`recordAndBlockReleases` in release-block.ts): identity (three consecutive *arr read failures abort with
+ * ArrUpstreamError, nothing written), the unrecordable kept, then every recordable survivor recorded `in_flight` and
+ * the Release Block written and read back (ReleaseBlockError ⇒ PRECONDITION_FAILED, nothing deleted).
+ */
+async function recordAndBlockExpediteReleases(
+  input: Pick<ExpediteDeletionInput, 'db' | 'arr' | 'logger'>,
+  survivors: readonly ExpediteSurvivor[],
+): Promise<{
+  deletable: Array<{ survivor: ExpediteSurvivor; recordIds: string[]; arrItemId: number | null }>;
+  unrecorded: ExpediteSurvivor[];
+}> {
+  const blocked = await recordAndBlockReleases({
+    db: input.db,
+    arr: input.arr,
+    survivors: survivors.map((s) => ({
+      key: s.maintainerrMediaId,
+      mediaItemId: s.mediaItemId as string,
+      title: s.title,
+    })),
+    origin: 'expedite',
+    logger: input.logger,
+  });
+  if (blocked.aborted) {
+    throw new ArrUpstreamError(
+      'Radarr or Sonarr did not answer, so nothing was deleted. Try again when the media apps respond normally.',
+    );
+  }
+  const drafts = (s: ExpediteSurvivor): ReleaseRecordDraft[] =>
+    blocked.recordable.get(s.maintainerrMediaId) ?? [];
+  return {
+    deletable: survivors
+      .filter((s) => blocked.recordable.has(s.maintainerrMediaId))
+      .map((survivor) => ({
+        survivor,
+        recordIds: blocked.recordIds.get(survivor.maintainerrMediaId) ?? [],
+        arrItemId: drafts(survivor)[0]?.arrItemId ?? null,
+      })),
+    unrecorded: survivors.filter((s) => !blocked.recordable.has(s.maintainerrMediaId)),
+  };
+}
+
+/** D-14 step 8 — after an abandoned record, reconcile so its term leaves the profile (best effort). */
+async function reconcileAfterAbandon(
+  input: Pick<ExpediteDeletionInput, 'db' | 'arr' | 'logger'>,
+  arrKind: 'radarr' | 'sonarr',
+): Promise<void> {
+  try {
+    await reconcileReleaseBlock({ db: input.db, arr: input.arr, arrKind, logger: input.logger });
+  } catch {
+    // logged by the writer; the next reconcile removes the orphan term
+  }
 }
 
 export async function expediteDeletion(
@@ -1518,6 +1738,15 @@ export async function expediteDeletion(
     );
   }
 
+  // ADR-093 C-04 / DESIGN-052 D-07 — the Registry Gate, purpose `delete`, on the CronJob's newest run (the web pod
+  // never refreshes inline). Refused ⇒ WatchlistRegistryUnverifiedError (PRECONDITION_FAILED); nothing is deleted.
+  const watchlist = await evaluateRegistryGate({
+    db: input.db,
+    purpose: 'delete',
+    ...(input.now ? { now: input.now } : {}),
+    ...(input.logger ? { logger: input.logger } : {}),
+  });
+
   // Resolve the actor's display name ONCE for the deletion-audit attribution (Recently Deleted "By" +
   // the Activity notification body). Read-only; a null/unknown actor stays unattributed.
   const actorName = await resolveActorName(input.db, input.actorId);
@@ -1533,6 +1762,7 @@ export async function expediteDeletion(
       maintainerrMediaId: item.maintainerrMediaId,
       collectionId: item.collectionId,
       watchWindowDays: input.watchWindowDays,
+      watchlist,
     });
     if (!resolved) {
       throw new MaintainerrUnsafeError(
@@ -1548,7 +1778,7 @@ export async function expediteDeletion(
     // Checked BEFORE the guardian so a just-saved cold item is never handled (closes the race).
     const liveExcluded = await fetchLiveExclusions(input.maintainerr, [targetMediaId]);
     if (liveExcluded.has(targetMediaId)) {
-      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [] };
+      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
     }
     const verdict = classifyGuardian(target);
     if (verdict.keep) {
@@ -1564,18 +1794,19 @@ export async function expediteDeletion(
           actorId: input.actorId,
           reason: 'watch_guardian',
         });
-        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [] };
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
       }
-      if (verdict.reason === 'tag') {
-        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [] };
+      if (verdict.reason === 'tag' || verdict.reason === 'watchlisted') {
+        // Already whitelisted, or on a watchlist (the Watchlist Keep — refused like a tagged item, never auto-saved).
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
       }
       // unevaluable — not deleted, not force-whitelisted.
-      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0, expeditedIds: [] };
+      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
     }
 
     // Cold + positively evaluated ⇒ delete this one item (intent-first). Use the RESOLVED
     // collectionId, not the client's (defence in depth against a mismatched request).
-    await expediteOneSurvivor(input, 'item', actorName, {
+    const survivor: ExpediteSurvivor = {
       collectionId: target.collectionId,
       maintainerrMediaId: targetMediaId,
       mediaItemId: target.mediaItemId,
@@ -1584,11 +1815,34 @@ export async function expediteDeletion(
       tmdbId: target.tmdbId,
       tvdbId: target.tvdbId,
       arrKind: arrKindForTrashMedia(resolved.media),
+      media: resolved.media === 'tv' ? 'tv' : 'movie',
+      plexGuid: target.plexGuid,
       resolution: target.resolution,
       imdbRating: target.imdbRating,
       tmdbRating: target.tmdbRating,
-    });
-    return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0, expeditedIds: [targetMediaId] };
+    };
+    // ADR-093 / DESIGN-052 D-14 — identity, then Phase A (record + Release Block + read-back), then the delete.
+    const releases = await recordAndBlockExpediteReleases(input, [survivor]);
+    const one = releases.deletable[0];
+    if (!one) {
+      // No recordable release (D-11): kept, never deleted.
+      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0, expeditedIds: [], unrecordedCount: 1 };
+    }
+    let settled: Awaited<ReturnType<typeof expediteOneSurvivor>>;
+    try {
+      settled = await expediteOneSurvivor(input, 'item', actorName, survivor, one, watchlist);
+    } catch (error) {
+      await reconcileAfterAbandon(input, survivor.arrKind);
+      throw error;
+    }
+    if (settled === 'abandoned' || settled === 'watchlisted') {
+      await reconcileAfterAbandon(input, survivor.arrKind);
+    }
+    if (settled === 'watchlisted') {
+      // Added to the owner's watchlist after the gate's snapshot (D-25ay): the Watchlist Keep, never deleted.
+      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
+    }
+    return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0, expeditedIds: [targetMediaId], unrecordedCount: 0 };
   }
 
   // scope 'all' — per-item loop over the REQUESTED kind's pending set (never /collections/handle).
@@ -1597,6 +1851,7 @@ export async function expediteDeletion(
     maintainerr: input.maintainerr,
     media: input.media,
     watchWindowDays: input.watchWindowDays,
+    watchlist,
   });
 
   // F2 — pin to the snapshot the user SAW. Only actionable pending items are eligible; when a
@@ -1665,6 +1920,8 @@ export async function expediteDeletion(
         }
       } else if (verdict.reason === 'tag') {
         protectedCount += 1; // already whitelisted by the dnd tag.
+      } else if (verdict.reason === 'watchlisted') {
+        protectedCount += 1; // the Watchlist Keep — kept, never auto-saved (a watchlist is not a Save).
       } else {
         skippedCount += 1; // unevaluable — fail closed.
       }
@@ -1679,22 +1936,61 @@ export async function expediteDeletion(
       tmdbId: p.tmdbId,
       tvdbId: p.tvdbId,
       arrKind,
+      media: input.media === 'tv' ? 'tv' : 'movie',
+      plexGuid: p.plexGuid,
       resolution: p.resolution,
       imdbRating: p.imdbRating,
       tmdbRating: p.tmdbRating,
     });
   }
 
-  // PASS 2 — delete each survivor individually (intent-first, then per-item handle).
+  // ADR-093 / DESIGN-052 D-14 — identity, then Phase A for every survivor, before any delete. An item whose release
+  // cannot be recorded is kept (skipped): no term, no delete.
+  const releases = await recordAndBlockExpediteReleases(input, survivors);
+  skippedCount += releases.unrecorded.length;
+
+  // PASS 2 — delete each survivor individually (intent-first, then per-item handle, then the settle).
   let expeditedCount = 0;
   const expeditedIds: string[] = [];
-  for (const survivor of survivors) {
-    await expediteOneSurvivor(input, 'all', actorName, survivor);
+  let anyAbandoned = false;
+  for (const [index, { survivor, recordIds, arrItemId }] of releases.deletable.entries()) {
+    try {
+      const settled = await expediteOneSurvivor(
+        input,
+        'all',
+        actorName,
+        survivor,
+        { recordIds, arrItemId },
+        watchlist,
+      );
+      if (settled === 'abandoned') anyAbandoned = true;
+      if (settled === 'watchlisted') {
+        // Added to the owner's watchlist after the gate's snapshot (D-25ay): the Watchlist Keep, never deleted.
+        anyAbandoned = true;
+        protectedCount += 1;
+        continue;
+      }
+    } catch (error) {
+      // The handle failed (the run stops, as before): the survivors not reached keep blocking nothing.
+      const rest = releases.deletable.slice(index + 1).flatMap((d) => d.recordIds);
+      await abandonReleaseRecords({ db: input.db, recordIds: rest });
+      await reconcileAfterAbandon(input, arrKind);
+      throw error;
+    }
     expeditedCount += 1;
     expeditedIds.push(survivor.maintainerrMediaId);
   }
+  if (anyAbandoned) await reconcileAfterAbandon(input, arrKind);
 
-  return { scope: 'all', protectedCount, expeditedCount, skippedCount, stalePending, expeditedIds };
+  return {
+    scope: 'all',
+    protectedCount,
+    expeditedCount,
+    skippedCount,
+    stalePending,
+    expeditedIds,
+    unrecordedCount: releases.unrecorded.length,
+  };
 }
 
 /**
@@ -1833,14 +2129,133 @@ function backfillGroupServerSelection(payload: Record<string, unknown>): Record<
 export async function upsertTrashRule(input: {
   maintainerr: MaintainerrClientBundle;
   payload: Record<string, unknown>;
+  /** D-21 seam for `[trash] rule_save_drift`. */
+  logger?: DomainLogger;
 }): Promise<void> {
-  const payload = backfillGroupServerSelection(decodeRuleGroupRules(input.payload));
-  const hasId = typeof payload.id === 'number';
-  await guardMaintainerrCall(hasId ? 'maintainerr PUT /rules' : 'maintainerr POST /rules', () =>
-    hasId
-      ? input.maintainerr.write.updateRuleGroup(payload)
-      : input.maintainerr.write.createRuleGroup(payload),
-  );
+  const decoded = backfillGroupServerSelection(decodeRuleGroupRules(input.payload));
+  const hasId = typeof decoded.id === 'number';
+  if (!hasId) {
+    await guardMaintainerrCall('maintainerr POST /rules', () =>
+      input.maintainerr.write.createRuleGroup(decoded),
+    );
+    return;
+  }
+  // ADR-093 C-10 / DESIGN-052 D-16 — the update reads the LIVE group first and lifts every top-level-only flag the
+  // payload omits from it, so an Arm/Disarm (isActive) toggle never resets listExclusions / forceSeerr / arrAction.
+  const ruleGroupId = decoded.id as number;
+  const live = await readLiveRuleGroup(input.maintainerr, ruleGroupId);
+  const payload = buildRuleGroupUpdate(decoded, live);
+  await guardMaintainerrCall('maintainerr PUT /rules', () => input.maintainerr.write.updateRuleGroup(payload));
+  // …and verifies them after: a mismatch is an error the admin sees (and the audit's invariant catches the state).
+  const after = await readLiveRuleGroup(input.maintainerr, ruleGroupId);
+  const drift = ruleGroupDrift(payload, after);
+  if (drift.length > 0) {
+    (input.logger ?? consoleDomainLogger).error('[trash] rule_save_drift', { ruleGroupId, fields: drift });
+    throw new MaintainerrRuleDriftError(ruleGroupId, drift);
+  }
+}
+
+/**
+ * DESIGN-052 D-16 — the fields Maintainerr 3.29.0's `updateRules` reads ONLY at the top level of the PUT body
+ * (`rules.service.ts`: `arrAction`, `listExclusions`, `cleanupLeftoverFolders`, `forceSeerr`,
+ * `tautulliWatchedPercentOverride`, the three `*SettingsId`, the three `*QualityProfileId`, `tagInArr`,
+ * `keepInMaintainerrOnly`), while `GET /api/rules` returns them nested under `collection`. An omitted one is reset
+ * (`params.listExclusions ? … : false`, `params.arrAction ? … : 0`, `?? null`).
+ */
+export const RULE_GROUP_TOP_LEVEL_FIELDS = [
+  'arrAction',
+  'listExclusions',
+  'forceSeerr',
+  'tagInArr',
+  'keepInMaintainerrOnly',
+  'cleanupLeftoverFolders',
+  'tautulliWatchedPercentOverride',
+  'radarrSettingsId',
+  'sonarrSettingsId',
+  'sportarrSettingsId',
+  'radarrQualityProfileId',
+  'sonarrQualityProfileId',
+  'sportarrQualityProfileId',
+] as const;
+
+async function readLiveRuleGroup(
+  maintainerr: MaintainerrClientBundle,
+  ruleGroupId: number,
+): Promise<Record<string, unknown>> {
+  const groups = await guardMaintainerrCall('maintainerr GET /rules', () => maintainerr.read.getRules());
+  const live = groups.find((g) => g.id === ruleGroupId);
+  if (!live) {
+    throw new MaintainerrUpstreamError(`Maintainerr has no rule group ${ruleGroupId} to update.`);
+  }
+  return live as Record<string, unknown>;
+}
+
+/**
+ * DESIGN-052 D-16 — the PUT body for an update: each top-level-only flag from the payload's top level when present,
+ * else from the live group's `collection`; `useRules` from the live group when missing. `useRules: false` with rules
+ * present is refused (Maintainerr would delete every rule row). `dataType`, `libraryId` and the manual-collection
+ * fields still round-trip verbatim from the payload (a change there wipes membership). Pure; exported for tests.
+ */
+export function buildRuleGroupUpdate(
+  payload: Record<string, unknown>,
+  live: Record<string, unknown>,
+): Record<string, unknown> {
+  const liveCollection =
+    live.collection !== null && typeof live.collection === 'object'
+      ? (live.collection as Record<string, unknown>)
+      : {};
+  const out: Record<string, unknown> = { ...payload };
+  for (const key of RULE_GROUP_TOP_LEVEL_FIELDS) {
+    if (out[key] === undefined && liveCollection[key] !== undefined) out[key] = liveCollection[key];
+  }
+  if (out.useRules === undefined && typeof live.useRules === 'boolean') out.useRules = live.useRules;
+  const rules = Array.isArray(out.rules) ? out.rules : [];
+  if (out.useRules === false && rules.length > 0) {
+    throw new MaintainerrUpstreamError(
+      'Refusing to save a rule group with rules but useRules off: Maintainerr would delete every rule.',
+    );
+  }
+  return out;
+}
+
+/**
+ * DESIGN-052 D-16 — after the PUT: the flags Maintainerr stores as intended? Compares `arrAction`, `listExclusions`,
+ * `forceSeerr`, `tagInArr`, the Radarr / Sonarr server ids and `collection.deleteAfterDays` (the safety-relevant set;
+ * `cleanupLeftoverFolders` and `keepInMaintainerrOnly` depend on the collection type and are not compared). Returns
+ * the drifted field names. Pure; exported for tests.
+ */
+export function ruleGroupDrift(
+  sent: Record<string, unknown>,
+  after: Record<string, unknown>,
+): string[] {
+  const got =
+    after.collection !== null && typeof after.collection === 'object'
+      ? (after.collection as Record<string, unknown>)
+      : {};
+  const sentCollection =
+    sent.collection !== null && typeof sent.collection === 'object'
+      ? (sent.collection as Record<string, unknown>)
+      : {};
+  const episode = sent.dataType === 'episode' || got.type === 'episode';
+  const intended: Record<string, unknown> = {
+    arrAction: typeof sent.arrAction === 'number' && sent.arrAction !== 0 ? sent.arrAction : 0,
+    listExclusions: sent.listExclusions === true,
+    forceSeerr: !episode && sent.forceSeerr === true,
+    tagInArr: sent.tagInArr === true,
+    radarrSettingsId: sent.radarrSettingsId ?? null,
+    sonarrSettingsId: sent.sonarrSettingsId ?? null,
+  };
+  const drift: string[] = [];
+  for (const [key, want] of Object.entries(intended)) {
+    const have =
+      typeof want === 'boolean' ? got[key] === true : key === 'arrAction' ? (got[key] ?? 0) : (got[key] ?? null);
+    if (have !== want) drift.push(key);
+  }
+  const wantDays = sentCollection.deleteAfterDays;
+  if (wantDays !== undefined && wantDays !== null && Number(got.deleteAfterDays) !== Number(wantDays)) {
+    drift.push('deleteAfterDays');
+  }
+  return drift;
 }
 
 /** ADR-023 / DESIGN-010 — delete a Maintainerr rule group (edit_rules-gated). */

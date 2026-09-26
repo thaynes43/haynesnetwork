@@ -25,6 +25,7 @@ import {
   pendingWallTappable,
   releaseNeedsConfirm,
   watchNote,
+  WATCHLIST_NOTE_DETAIL,
   type PendingWallGlyph,
 } from '@/lib/trash';
 
@@ -48,6 +49,8 @@ export interface PendingWallItem {
   posterUrl: string | null;
   imdbRating: number | null;
   tmdbRating: number | null;
+  /** ADR-093 / DESIGN-052 D-10 — on a watchlist (the newest registry check): the "On a watchlist" note. */
+  onWatchlist?: boolean;
 }
 
 const itemRating = (item: PendingWallItem): number | null =>
@@ -84,6 +87,8 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false)
   const note = watchNote(item);
   if (note !== null)
     lines.push(note.recent ? `${note.label} — the guardian keeps it at the sweep` : `${note.label} — still deletable`);
+  // ADR-093 / DESIGN-052 D-10 — the watchlist keep, in the note's own words.
+  if (item.onWatchlist === true) lines.push(WATCHLIST_NOTE_DETAIL);
   // The requester attribution is INFO ONLY now (owner ruling 2026-07-09) — it never changes the
   // corner action; it rides the tooltip + the meta-line person badge.
   if (item.requesters.length > 0) lines.push(`Requested by ${item.requesters.join(', ')}`);
@@ -238,6 +243,7 @@ function PendingTile({
       metaText={`${item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}${rating !== null ? ` · ★ ${rating}` : ''}`}
       requesters={item.requesters}
       watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
+      onWatchlist={item.onWatchlist === true}
     />
   );
 }
