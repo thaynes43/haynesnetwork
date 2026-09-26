@@ -106,8 +106,9 @@ describe('POST /mcp — the public route', () => {
       'recommend',
       'watch_status',
       'recent_history',
+      'watchlist',
     ]);
-    for (const name of ['mark_watched', 'dismiss', 'undo_last_change']) {
+    for (const name of ['mark_watched', 'dismiss', 'set_watchlist', 'undo_last_change']) {
       const res = await post(
         { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: {} } },
         'Bearer tok',

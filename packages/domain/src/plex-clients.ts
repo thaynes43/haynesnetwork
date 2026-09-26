@@ -45,6 +45,8 @@ export function buildPlexClientBundle(options: PlexBundleOptions): PlexClientBun
 export interface PlexBundleTuning {
   timeoutMs?: number;
   retryDelayMs?: number;
+  /** Retries after a GET's first attempt (default 2): DESIGN-051 D-15ab's discover reads make one attempt. */
+  getRetries?: number;
 }
 
 /**
@@ -68,6 +70,7 @@ export function plexClientBundleFromEnv(
       plexDiscoverBaseUrl: config[slug].plexDiscoverBaseUrl,
       ...(tuning.timeoutMs !== undefined ? { timeoutMs: tuning.timeoutMs } : {}),
       ...(tuning.retryDelayMs !== undefined ? { retryDelayMs: tuning.retryDelayMs } : {}),
+      ...(tuning.getRetries !== undefined ? { getRetries: tuning.getRetries } : {}),
     };
   }
   return buildPlexClientBundle(options);

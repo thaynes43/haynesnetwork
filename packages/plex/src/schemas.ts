@@ -173,6 +173,61 @@ export const watchlistContainerSchema = z.object({
 });
 export type PlexWatchlistContainer = z.infer<typeof watchlistContainerSchema>;
 
+/**
+ * ADR-092 / DESIGN-051 D-06 (PLAN-071) — one item of `GET {discover}/library/metadata/matches?type=&guid=`
+ * (verified live 2026-09-25): `ratingKey` is the DISCOVER id, `guid` its `plex://` guid, `Guid[]` the external
+ * ids; e.g. `{type:"movie",title:"The Terminator",year:1984,ratingKey:"5d776824151a60001f24a29e",
+ * guid:"plex://movie/5d776824151a60001f24a29e",Guid:[{id:"imdb://tt0088247"},{id:"tmdb://218"},{id:"tvdb://470"}]}`.
+ */
+export const discoverMatchItemSchema = z.object({
+  ratingKey: z.union([z.string(), z.number()]).transform(String),
+  type: z.string().optional(),
+  title: z.string().optional(),
+  year: z.union([z.string(), z.number()]).transform(Number).optional(),
+  guid: z.string().optional(),
+  Guid: z.array(z.object({ id: z.string() })).optional().default([]),
+});
+export type PlexDiscoverMatchItem = z.infer<typeof discoverMatchItemSchema>;
+
+/**
+ * The matches container: no match leaves `Metadata` empty or absent. Upstream clients report the item under
+ * `MediaContainer.Video` on some responses instead of `Metadata`, so both are read.
+ */
+export const discoverMatchesSchema = z.object({
+  MediaContainer: z
+    .object({
+      size: z.union([z.string(), z.number()]).transform(Number).optional(),
+      Metadata: z.array(discoverMatchItemSchema).optional().default([]),
+      Video: z.array(discoverMatchItemSchema).optional().default([]),
+    })
+    .optional(),
+});
+export type PlexDiscoverMatches = z.infer<typeof discoverMatchesSchema>;
+
+/** One `UserState`: the token account's own state of a discover title; `watchlistedAt` (epoch s) ⇔ watchlisted. */
+export const discoverUserStateItemSchema = z.object({
+  ratingKey: z.union([z.string(), z.number()]).transform(String).optional(),
+  type: z.string().optional(),
+  watchlistedAt: z.union([z.string(), z.number()]).transform(Number).nullable().optional(),
+});
+
+/**
+ * ADR-092 / DESIGN-051 D-06 — `GET {discover}/library/metadata/<id>/userState`. `UserState` arrives as an
+ * OBJECT on some responses and as a ONE-ELEMENT ARRAY on others (both seen live 2026-09-25), e.g.
+ * `[{"ratingKey":"608ae6cf5077dd002d3bb8be","type":"show","userRating":7,"viewedLeafCount":2,
+ * "watchlistedAt":1789061676}]`.
+ */
+export const discoverUserStateSchema = z.object({
+  MediaContainer: z
+    .object({
+      UserState: z
+        .union([discoverUserStateItemSchema, z.array(discoverUserStateItemSchema)])
+        .optional(),
+    })
+    .optional(),
+});
+export type PlexDiscoverUserState = z.infer<typeof discoverUserStateSchema>;
+
 // ---------------------------------------------------------------------------
 // plex.tv v1 sharing API (XML) — the read client extracts attributes into these plain
 // objects (all XML attrs are strings) and validates them here. Verified live 2026-07-06.

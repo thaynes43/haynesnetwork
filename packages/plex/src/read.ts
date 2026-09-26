@@ -7,9 +7,19 @@ import type { ZodType } from 'zod';
 import { PLEX_DISCOVER_BASE_URL, PLEX_TV_BASE_URL } from './config';
 import { PlexHttp, type QueryParams } from './http';
 import { childrenNamed, parseXml, type XmlElement } from './xml';
-import { PlexParseError } from './errors';
+import { PlexHttpError, PlexParseError } from './errors';
+import {
+  DISCOVER_TYPE,
+  discoverExternalIds,
+  isDiscoverId,
+  requireDiscoverId,
+  type DiscoverExternalIds,
+  type DiscoverKind,
+} from './discover';
 import {
   collectionsContainerSchema,
+  discoverMatchesSchema,
+  discoverUserStateSchema,
   identitySchema,
   librarySectionsSchema,
   plexAccountSchema,
@@ -44,6 +54,8 @@ export interface PlexClientOptions {
   product?: string;
   timeoutMs?: number;
   retryDelayMs?: number;
+  /** Retries after a GET's (or an idempotent write's) first attempt; default 2 (`PlexHttpOptions.getRetries`). */
+  getRetries?: number;
   /** Injectable fetch for fixture/stub-driven tests (ADR-010: no live-API tests in CI). */
   fetchImpl?: typeof fetch;
 }
@@ -91,6 +103,19 @@ export interface PlexCollectionsListing {
    * against it would tombstone everything past the cut — callers must not scope it.
    */
   truncated: boolean;
+}
+
+/** ADR-092 / DESIGN-051 D-06 — a discover title found by an external id (`matchDiscover`). */
+export interface DiscoverMatch {
+  /** The discover id (24 hex digits) — the watchlist actions' `ratingKey`. */
+  ratingKey: string;
+  /** Its `plex://movie|show/<id>` guid, when plex.tv sent one. */
+  guid: string | null;
+  kind: DiscoverKind;
+  /** plex.tv's title and year — what `set_watchlist` says back (ADR-092 C-07). */
+  title: string;
+  year: number | null;
+  ids: DiscoverExternalIds;
 }
 
 function attr(el: XmlElement, name: string): string | undefined {
@@ -430,6 +455,71 @@ export class PlexReadClient {
       opts.maxPages ?? MAX_WATCHLIST_PAGES,
       watchlistContainerSchema,
     );
+  }
+
+  /**
+   * ADR-092 / DESIGN-051 D-03 step 3 / D-06 (PLAN-071) — resolve an external id to the discover title:
+   * `GET {discover}/library/metadata/matches?type=<1 movie|2 show>&guid=<tmdb|tvdb|imdb>://<id>` (`type` is
+   * mandatory; verified live 2026-09-25). Returns the first item of the asked kind (else the first item, whose
+   * `kind` the caller checks), with its discover id, title, year and external ids; null when nothing matched
+   * (an empty or absent list, or a 404). An item without a valid discover id is not a match. Read-only.
+   */
+  async matchDiscover(input: { kind: DiscoverKind; guid: string }): Promise<DiscoverMatch | null> {
+    const guid = input.guid.trim();
+    if (!/^(tmdb|tvdb|imdb):\/\/\S+$/i.test(guid)) {
+      throw new TypeError('plex discover: matchDiscover takes a tmdb://, tvdb:// or imdb:// guid');
+    }
+    let body;
+    try {
+      body = await this.http.requestJson(
+        'GET',
+        `${this.plexDiscoverBaseUrl}/library/metadata/matches`,
+        discoverMatchesSchema,
+        { query: { type: DISCOVER_TYPE[input.kind], guid } },
+      );
+    } catch (error) {
+      if (error instanceof PlexHttpError && error.status === 404) return null;
+      throw error;
+    }
+    const mc = body.MediaContainer;
+    const items = [...(mc?.Metadata ?? []), ...(mc?.Video ?? [])].filter((i) => isDiscoverId(i.ratingKey));
+    const kindOf = (type: string | undefined): DiscoverKind | null =>
+      type === 'movie' ? 'movie' : type === 'show' ? 'show' : null;
+    const hit = items.find((i) => kindOf(i.type) === input.kind) ?? items[0];
+    const kind = kindOf(hit?.type);
+    if (!hit || !kind) return null;
+    return {
+      ratingKey: hit.ratingKey,
+      guid: hit.guid?.trim() || null,
+      kind,
+      title: hit.title?.trim() ?? '',
+      year: typeof hit.year === 'number' && Number.isFinite(hit.year) && hit.year > 0 ? hit.year : null,
+      ids: discoverExternalIds(hit.Guid),
+    };
+  }
+
+  /**
+   * ADR-092 / DESIGN-051 D-03 step 4 / D-06 — the token account's own state of one discover title:
+   * `GET {discover}/library/metadata/<id>/userState`. On the watchlist ⇔ `watchlistedAt` is present (epoch
+   * seconds). `UserState` may be an object or a one-element array (both seen live). The id is validated
+   * before the URL is built. Read-only.
+   *
+   * DESIGN-051 D-06 (review A3): only a state OF THIS TITLE counts — an element whose `ratingKey` is the requested
+   * id, or that names none. A response whose every element names another title is not an answer: it throws a
+   * PlexParseError (the caller's "unknown"), never falls back to another title's state. No `UserState` (or an
+   * empty list) is "not on the watchlist".
+   */
+  async getDiscoverUserState(id: string): Promise<{ watchlistedAt: number | null }> {
+    const key = requireDiscoverId(id);
+    const url = `${this.plexDiscoverBaseUrl}/library/metadata/${key}/userState`;
+    const body = await this.http.requestJson('GET', url, discoverUserStateSchema);
+    const state = body.MediaContainer?.UserState;
+    const all = state === undefined ? [] : Array.isArray(state) ? state : [state];
+    if (all.length === 0) return { watchlistedAt: null };
+    const one = all.find((s) => s.ratingKey === key) ?? all.find((s) => s.ratingKey === undefined);
+    if (!one) throw new PlexParseError('GET', url, ['UserState names another title']);
+    const at = one.watchlistedAt;
+    return { watchlistedAt: typeof at === 'number' && Number.isFinite(at) && at > 0 ? at : null };
   }
 
   // ---- plex.tv account read (owner identity) ----

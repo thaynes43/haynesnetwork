@@ -1,5 +1,6 @@
 // The @hnet/mcp end-to-end fixture (PLAN-068 S7): a recording fake Plex (read + the two watched-state
-// writes — NEVER a real server, PLAN-068's hard rule), an owner history seeded through the @hnet/domain
+// writes, and — PLAN-071 — plex.tv's discover catalog and the owner's watchlist with its two writes — NEVER a
+// real server, PLAN-068's hard rule), an owner history seeded through the @hnet/domain
 // single writers only (the no-direct-state-writes guard), and a tiny node:http adapter so the SDK Client
 // talks to `handleMcpRequest` over real HTTP.
 import { createServer, type IncomingHttpHeaders } from 'node:http';
@@ -82,9 +83,34 @@ const item = (x: Record<string, unknown>) => ({ Guid: [], Label: [], ...x }) as 
 const seasonKey = (s: FShow, n: number) => `${s.ratingKey}-s${n}`;
 const notFound = (key: string) => new PlexHttpError(404, 'GET', `http://fake/library/metadata/${key}`, 'not found');
 
+/** ADR-092 — a title of plex.tv's discover catalog (24-hex id, the external ids its match resolves). */
+export interface FDiscoverTitle {
+  id: string;
+  kind: 'movie' | 'show';
+  title: string;
+  year: number;
+  guids: string[];
+}
+
+/**
+ * Which bundle a call went out on (DESIGN-051 D-15, the first pass's test fixes): `short` — the 300 ms live-read
+ * bundle (`revalidatePlex`), `write` — the mark / write bundle (`markPlex`), `discover` — the one-attempt 1.5 s
+ * bundle of the catalog lookup and the re-read (`discoverPlex`, D-15ab). Recorded on the watchlist calls only.
+ */
+export type FakeBudget = 'short' | 'write' | 'discover';
+
 export class FakePlex {
-  readonly calls: Array<{ server: PlexServerSlug; op: string; key: string }> = [];
+  readonly calls: Array<{ server: PlexServerSlug; op: string; key: string; budget?: FakeBudget }> = [];
   now = NOW_S;
+  /** plex.tv's discover catalog and the owner's live watchlist (discover id → watchlistedAt). */
+  readonly catalog: FDiscoverTitle[] = [];
+  readonly watchlist = new Map<string, number>();
+  /** Discover ids whose watchlist writes fail (a 503 after the client's retries). */
+  readonly failWatchlistWrites = new Set<string>();
+  /** A failed watchlist write lands anyway (plex.tv applied it, then the answer was lost). */
+  landFailedWatchlistWrites = false;
+  /** Bundles whose discover `userState` reads get no answer (DESIGN-051 D-15b: an outcome plex.tv never confirms). */
+  readonly failUserStateReads = new Set<FakeBudget>();
 
   constructor(
     readonly shows: FShow[],
@@ -93,6 +119,58 @@ export class FakePlex {
 
   writes() {
     return this.calls.filter((c) => c.op === 'scrobble' || c.op === 'unscrobble');
+  }
+
+  /** The watchlist writes, as `op:id`. */
+  watchlistWrites(): string[] {
+    return this.calls
+      .filter((c) => c.op === 'addToWatchlist' || c.op === 'removeFromWatchlist')
+      .map((c) => `${c.op}:${c.key}`);
+  }
+
+  private matchDiscover(kind: 'movie' | 'show', guid: string) {
+    const hits = this.catalog.filter((t) => t.guids.includes(guid));
+    const hit = hits.find((t) => t.kind === kind) ?? hits[0];
+    if (!hit) return null;
+    const ids = { tmdbId: null as number | null, tvdbId: null as number | null, imdbId: null as string | null };
+    for (const g of hit.guids) {
+      const [scheme, value = ''] = g.split('://');
+      if (scheme === 'tmdb') ids.tmdbId ??= Number(value);
+      if (scheme === 'tvdb') ids.tvdbId ??= Number(value);
+      if (scheme === 'imdb') ids.imdbId ??= value;
+    }
+    return { ratingKey: hit.id, guid: `plex://${hit.kind}/${hit.id}`, kind: hit.kind, title: hit.title, year: hit.year, ids };
+  }
+
+  /** The watchlist calls as `budget:op:key`, in call order. */
+  watchlistCalls(): string[] {
+    return this.calls.filter((c) => c.budget !== undefined).map((c) => `${c.budget}:${c.op}:${c.key}`);
+  }
+
+  private watchlistWrite(
+    server: PlexServerSlug,
+    op: 'addToWatchlist' | 'removeFromWatchlist',
+    id: string,
+    budget: FakeBudget,
+  ): Promise<void> {
+    this.calls.push({ server, op, key: id, budget });
+    // A write on a read bundle is a wiring bug (the swap the budget-tagged fakes of DESIGN-051 D-15's first pass guard
+    // against): the short one and the discover one (D-15ab) only read.
+    if (budget !== 'write') return Promise.reject(new Error(`the ${budget} bundle must never write`));
+    const apply = () => {
+      if (op === 'addToWatchlist') {
+        if (!this.watchlist.has(id)) this.watchlist.set(id, this.now);
+      } else this.watchlist.delete(id);
+    };
+    if (this.failWatchlistWrites.has(id)) {
+      if (this.landFailedWatchlistWrites) apply();
+      return Promise.reject(new PlexHttpError(503, 'PUT', `https://discover.fake/actions/${op}`, 'unavailable'));
+    }
+    if (!this.catalog.some((t) => t.id === id)) {
+      return Promise.reject(new PlexHttpError(404, 'PUT', `https://discover.fake/actions/${op}`, 'Not Found'));
+    }
+    apply();
+    return Promise.resolve();
   }
 
   showItem(s: FShow) {
@@ -179,7 +257,8 @@ export class FakePlex {
     return Promise.resolve();
   }
 
-  clients(): WatchPlexClients {
+  /** The per-server clients; `budget` tags the watchlist calls (and only the `write` bundle writes). */
+  clients(budget: FakeBudget = 'write'): WatchPlexClients {
     const read: WatchPlexClients['read'] = {};
     const write: WatchPlexClients['write'] = {};
     for (const server of ['haynesops', 'haynestower', 'hayneskube'] as const) {
@@ -206,10 +285,21 @@ export class FakePlex {
             ...this.movies.filter((m) => m.server === server && m.guid === guid).map((m) => this.movieItem(m)),
           ];
         },
+        matchDiscover: async ({ kind, guid }) => {
+          this.calls.push({ server, op: 'matchDiscover', key: `${kind}:${guid}`, budget });
+          return this.matchDiscover(kind, guid);
+        },
+        getDiscoverUserState: async (id) => {
+          this.calls.push({ server, op: 'getDiscoverUserState', key: id, budget });
+          if (this.failUserStateReads.has(budget)) throw new Error('plex.tv did not answer in time');
+          return { watchlistedAt: this.watchlist.get(id) ?? null };
+        },
       };
       write[server] = {
         scrobble: (key) => this.write(server, 'scrobble', key),
         unscrobble: (key) => this.write(server, 'unscrobble', key),
+        addToWatchlist: (id) => this.watchlistWrite(server, 'addToWatchlist', id, budget),
+        removeFromWatchlist: (id) => this.watchlistWrite(server, 'removeFromWatchlist', id, budget),
       };
     }
     return { read, write };
@@ -361,8 +451,31 @@ export function ownerWorld(): FakePlex {
     { server: 'haynesops', ratingKey: 'dune84', title: 'Dune', year: 1984, guid: 'plex://movie/dune84', Guid: [{ id: 'tmdb://841' }] },
     { server: 'haynestower', ratingKey: 'arr', title: 'Arrival', year: 2016, guid: 'plex://movie/arrival', Guid: [{ id: 'tmdb://329865' }] },
   ];
-  return new FakePlex(shows, movies);
+  const fake = new FakePlex(shows, movies);
+  // plex.tv's discover catalog (ADR-092): the watchlist titles, the on-Plex library titles, a title not on Plex.
+  fake.catalog.push(
+    { id: DISCOVER.severance, kind: 'show', title: 'Severance', year: 2022, guids: ['tmdb://95396', 'tvdb://371980'] },
+    { id: DISCOVER.darkMatter, kind: 'show', title: 'Dark Matter', year: 2024, guids: ['tmdb://203744'] },
+    { id: DISCOVER.foundation, kind: 'show', title: 'Foundation', year: 2021, guids: ['tmdb://93740', 'tvdb://366972'] },
+    { id: DISCOVER.arrival, kind: 'movie', title: 'Arrival', year: 2016, guids: ['tmdb://329865'] },
+    { id: DISCOVER.andor, kind: 'show', title: 'Andor', year: 2022, guids: ['tmdb://83867'] },
+    { id: DISCOVER.silo, kind: 'show', title: 'Silo', year: 2023, guids: ['tmdb://125988', 'tvdb://403245'] },
+  );
+  // The owner's live plex.tv watchlist: what the cache below was read from.
+  fake.watchlist.set(DISCOVER.severance, NOW_S - 86_400);
+  fake.watchlist.set(DISCOVER.darkMatter, NOW_S - 2 * 86_400);
+  return fake;
 }
+
+/** Discover ids (24 hex) of the fixture's catalog titles. */
+export const DISCOVER = {
+  severance: '5d9c086c46115600200aa9b1',
+  darkMatter: '65f1c0a2b3d4e5f601234567',
+  foundation: '5d9c09e1ffd9ef001e99e1d0',
+  arrival: '5d77682e880197001ec9a3c1',
+  andor: '5d9c0874ffd9ef001e99607a',
+  silo: '5d9c0a6c2df347001e3b1b2f',
+} as const;
 
 const HISTORY_SHOWS = ['silo', 'fam', 'robot', 'lasso', 'trg', 'exp', 'bb', 'bluey'];
 const HISTORY_MOVIES = ['fix', 'run'];
@@ -578,7 +691,7 @@ export async function seedWorld(db: Database, fake: FakePlex): Promise<void> {
     source: 'watchlist',
     rows: [
       { ...none, kind: 'show', title: 'Severance', year: 2022, tmdbId: 95396, tvdbId: 371980, rank: 0 },
-      { ...none, kind: 'show', title: 'Dark Matter', year: 2024, tmdbId: 203744, rank: 1 },
+      { ...none, kind: 'show', title: 'Dark Matter', year: 2024, tmdbId: 203744, plexGuid: `plex://show/${DISCOVER.darkMatter}`, rank: 1 },
     ],
     fetchedAt: NOW,
   });

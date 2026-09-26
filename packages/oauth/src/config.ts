@@ -55,12 +55,18 @@ export const DEFAULT_SCOPES: readonly OAuthScope[] = OAUTH_SCOPES;
 
 /**
  * D-14 — one consent line per requested scope (normative copy). `watch:write` has two forms: Plex write-back is
- * owner-only (ADR-091 C-04), so the line promises a Plex change only to the server owner.
+ * owner-only (ADR-091 C-04), so the line promises a Plex change only to the server owner. ADR-092 C-11 /
+ * DESIGN-051 D-09: the owner's forms name his Plex watchlist, which `watchlist` reads and `set_watchlist` changes;
+ * since the PR #580 review `watch:read` has the same two forms (a non-owner's watchlist is not read either), and
+ * the `other` forms are unchanged.
  */
 export const SCOPE_DESCRIPTIONS = {
-  'watch:read': 'See what you have watched and what is unfinished',
+  'watch:read': {
+    owner: 'See what you have watched, what is unfinished, and your watchlist',
+    other: 'See what you have watched and what is unfinished',
+  },
   'watch:write': {
-    owner: 'Mark titles watched or dismissed, and change them in Plex',
+    owner: 'Mark titles watched or dismissed, update Plex to match, and add or remove titles on your Plex watchlist',
     other: 'Mark titles watched or dismissed in your history',
   },
   offline_access: 'Stay connected without signing in again',

@@ -89,7 +89,8 @@ test.describe('public MCP connectors (ADR-091)', () => {
     await page.getByRole('button', { name: SIGN_IN_BUTTON }).click();
     await page.waitForURL(/\/oauth\/consent\?txn=/);
 
-    // D-14, verbatim — a member is not the server owner, so watch:write promises the history only.
+    // D-14, verbatim — a member is not the server owner, so watch:write promises the history only and watch:read
+    // names no watchlist (DESIGN-051 D-09).
     await expect(page.getByRole('heading', { name: 'Connect E2E Connector' })).toBeVisible();
     await expect(
       page.getByText(
@@ -137,7 +138,19 @@ test.describe('public MCP connectors (ADR-091)', () => {
     expect(listed.status).toBe(200);
     const tools = ((await listed.json()) as { result: { tools: Array<{ name: string }> } }).result
       .tools;
-    expect(tools).toHaveLength(7);
+    // Exactly the served list (DESIGN-051: nine tools; `set_watchlist` is filtered by scope only, and a member's
+    // call is refused as "not set up" at call time).
+    expect(tools.map((t) => t.name)).toEqual([
+      'unfinished',
+      'recommend',
+      'watch_status',
+      'recent_history',
+      'watchlist',
+      'mark_watched',
+      'dismiss',
+      'set_watchlist',
+      'undo_last_change',
+    ]);
 
     // Connected apps, from the user menu.
     await page.goto('/');

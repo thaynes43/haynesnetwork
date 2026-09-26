@@ -11,7 +11,6 @@ import {
   type DbClient,
   type WatchEventRow,
   type WatchMarkRow,
-  type WatchRecoSignalRow,
   type WatchTitleRow,
 } from '@hnet/db';
 import { and, asc, desc, eq, gte, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
@@ -19,8 +18,12 @@ import { GENRE_SYNONYMS, canonicalGenre } from '../genres';
 import { titleKeyFor } from '../identity';
 import type { RecoCandidate, RecoSeed } from '../recommend';
 import type { WatchKind } from '../types';
-import { selectLiveMarks } from './marks';
+import { kindOfArr, ledgerMatchesTitle, ledgerSelect, selectLedgerByIds, type LedgerCandidate } from './ledger';
+import { selectLiveMarks, type LiveWatchMark } from './marks';
 import { selectSignals } from './signals';
+import { selectWatchlist } from './watchlist';
+import { isStatementAction } from '../watchlist';
+
 
 /**
  * The Title State columns `unfinished` ranks, filters and speaks: no episode map, Plex counters or `on_plex`
@@ -130,9 +133,23 @@ export interface RecommendInputs {
   /** Library, watchlist and TMDB-seed candidates, not yet merged or excluded. */
   candidates: RecoCandidate[];
   titles: RecoTitleRow[];
-  /** The owner's live (unreverted) marks — the same rows the library query was anti-joined on. */
-  marks: WatchMarkRow[];
+  /** The owner's live (unreverted) watch statements — the same rows the library query was anti-joined on. */
+  marks: LiveWatchMark[];
 }
+
+/** A watchlist entry or a TMDB seed row, as the candidate builder reads it. */
+type SignalLike = {
+  source: 'watchlist' | 'tmdb_seed';
+  kind: WatchKind;
+  title: string;
+  year: number | null;
+  plexGuid: string | null;
+  tmdbId: number | null;
+  tvdbId: number | null;
+  imdbId: string | null;
+  seedTitleKey: string | null;
+  seedTitle: string | null;
+};
 
 /** D-17 library pre-filter: at most this many candidates reach the scorer. */
 export const LIBRARY_CANDIDATE_LIMIT = 600;
@@ -169,45 +186,6 @@ function seconds(d: Date | string | null | undefined): number | null {
   if (!d) return null;
   const t = (d instanceof Date ? d : new Date(d)).getTime();
   return Number.isFinite(t) ? Math.floor(t / 1000) : null;
-}
-
-/** A ledger item's candidate fields. */
-export interface LedgerCandidate {
-  id: string;
-  arrKind: 'sonarr' | 'radarr' | 'lidarr';
-  title: string;
-  year: number | null;
-  tvdbId: number | null;
-  tmdbId: number | null;
-  imdbId: string | null;
-  genres: string[] | null;
-  imdbRating: string | null;
-  tmdbRating: string | null;
-  rtTomatometer: number | null;
-  onPlex: boolean;
-  addedToPlex: Date | string | null;
-}
-
-function ledgerSelect() {
-  return {
-    id: mediaItems.id,
-    arrKind: mediaItems.arrKind,
-    title: mediaItems.title,
-    year: mediaItems.year,
-    tvdbId: mediaItems.tvdbId,
-    tmdbId: mediaItems.tmdbId,
-    imdbId: mediaItems.imdbId,
-    genres: mediaMetadata.genres,
-    imdbRating: mediaMetadata.imdbRating,
-    tmdbRating: mediaMetadata.tmdbRating,
-    rtTomatometer: mediaMetadata.rtTomatometer,
-    onPlex: sql<boolean>`EXISTS (SELECT 1 FROM ${mediaPlexMatches} WHERE ${mediaPlexMatches.mediaItemId} = ${mediaItems.id})`,
-    addedToPlex: sql<Date | string | null>`(SELECT min(${mediaPlexMatches.firstSeenAt}) FROM ${mediaPlexMatches} WHERE ${mediaPlexMatches.mediaItemId} = ${mediaItems.id})`,
-  };
-}
-
-function kindOfArr(arrKind: string): WatchKind {
-  return arrKind === 'sonarr' ? 'show' : 'movie';
 }
 
 function ledgerCandidate(m: LedgerCandidate): RecoCandidate {
@@ -253,7 +231,7 @@ type ExclusionTitle = Pick<
   | 'nextResume'
   | 'resumePercent'
 >;
-type ExclusionMark = Pick<WatchMarkRow, 'kind' | 'tvdbId' | 'tmdbId' | 'imdbId' | 'revertedAt'>;
+type ExclusionMark = Pick<WatchMarkRow, 'action' | 'kind' | 'tvdbId' | 'tmdbId' | 'imdbId' | 'revertedAt'>;
 
 /**
  * The identifiers D-17 anti-joins the ledger on: from every Title State the owner started or watched (its
@@ -283,7 +261,8 @@ export function ledgerExclusions(
       (t.episodesWatched ?? 0) > 0 || t.plexWatched || t.eventWatchedEpisodes > 0 || t.nextResume || (t.resumePercent ?? 0) > 0;
     if (startedOrWatched) add(t, t.mediaItemId);
   }
-  for (const m of marks) if (!m.revertedAt) add(m, null);
+  // DESIGN-051 D-07: only watch statements exclude — a Watchlist Change never takes a title out of the picks.
+  for (const m of marks) if (!m.revertedAt && isStatementAction(m.action)) add(m, null);
   const out = (k: ReturnType<typeof empty>): ExcludedLedgerIds => ({
     mediaItemIds: [...k.mediaItemIds],
     tvdbIds: [...k.tvdbIds],
@@ -367,41 +346,6 @@ export async function selectLibraryCandidates(
     .limit(opts.limit);
 }
 
-/** Ledger items that are the given signals (same kind, a shared TMDB / TVDB / IMDb id). */
-async function selectLedgerForSignals(
-  db: DbClient,
-  signals: readonly WatchRecoSignalRow[],
-): Promise<LedgerCandidate[]> {
-  const tmdb = [...new Set(signals.flatMap((s) => (s.tmdbId ? [s.tmdbId] : [])))];
-  const tvdb = [...new Set(signals.flatMap((s) => (s.tvdbId ? [s.tvdbId] : [])))];
-  const imdb = [...new Set(signals.flatMap((s) => (s.imdbId ? [s.imdbId] : [])))];
-  const match: SQL[] = [];
-  if (tmdb.length > 0) match.push(inArray(mediaItems.tmdbId, tmdb));
-  if (tvdb.length > 0) match.push(inArray(mediaItems.tvdbId, tvdb));
-  if (imdb.length > 0) match.push(inArray(mediaItems.imdbId, imdb));
-  if (match.length === 0) return [];
-  return db
-    .select(ledgerSelect())
-    .from(mediaItems)
-    .leftJoin(mediaMetadata, eq(mediaMetadata.mediaItemId, mediaItems.id))
-    .where(
-      and(
-        inArray(mediaItems.arrKind, ['sonarr', 'radarr']),
-        isNull(mediaItems.deletedFromArrAt),
-        or(...match),
-      ),
-    );
-}
-
-function signalMatches(s: WatchRecoSignalRow, m: LedgerCandidate): boolean {
-  if (kindOfArr(m.arrKind) !== s.kind) return false;
-  return (
-    (s.tmdbId !== null && s.tmdbId === m.tmdbId) ||
-    (s.kind === 'show' && s.tvdbId !== null && s.tvdbId === m.tvdbId) ||
-    (s.imdbId !== null && s.imdbId === m.imdbId)
-  );
-}
-
 /**
  * Everything `recommend` scores (D-17): the library candidates, the watchlist (+ its ledger match, which
  * says whether it is on Plex and carries genres and ratings), the TMDB seed recommendations grouped per
@@ -411,11 +355,19 @@ function signalMatches(s: WatchRecoSignalRow, m: LedgerCandidate): boolean {
 export async function selectRecommendInputs(
   db: DbClient,
   plexAccountId: number,
-  opts: { kind?: WatchKind | 'any' | null; genre?: string | null; kids?: boolean; limit?: number } = {},
+  opts: {
+    /** Bounds the watchlist overlay's look-back when nothing is cached (DESIGN-051 D-05). */
+    now: Date;
+    kind?: WatchKind | 'any' | null;
+    genre?: string | null;
+    kids?: boolean;
+    limit?: number;
+  },
 ): Promise<RecommendInputs> {
   const kind = opts.kind ?? 'any';
   const [watchlist, seeds, titles, marks] = await Promise.all([
-    selectSignals(db, plexAccountId, 'watchlist'),
+    // DESIGN-051 D-05: the watchlist as every reader sees it — the cache with the changes since the sync.
+    selectWatchlist(db, plexAccountId, { now: opts.now }).then((w) => w.entries),
     selectSignals(db, plexAccountId, 'tmdb_seed'),
     db
       .select({
@@ -442,7 +394,10 @@ export async function selectRecommendInputs(
       .where(eq(watchTitles.plexAccountId, plexAccountId)),
     selectLiveMarks(db, plexAccountId),
   ]);
-  const signals = [...watchlist, ...seeds].filter((s) => kind === 'any' || s.kind === kind);
+  const signals: SignalLike[] = [
+    ...watchlist.map((w) => ({ ...w, source: 'watchlist' as const, seedTitleKey: null, seedTitle: null })),
+    ...seeds,
+  ].filter((s) => kind === 'any' || s.kind === kind);
   const [library, ledger] = await Promise.all([
     selectLibraryCandidates(db, {
       kind,
@@ -451,13 +406,13 @@ export async function selectRecommendInputs(
       limit: opts.limit ?? LIBRARY_CANDIDATE_LIMIT,
       exclusions: ledgerExclusions(titles, marks),
     }),
-    selectLedgerForSignals(db, signals),
+    selectLedgerByIds(db, signals),
   ]);
 
   const lastWatched = new Map(titles.map((t) => [t.titleKey, seconds(t.lastWatchedAt)]));
   const candidates: RecoCandidate[] = library.map(ledgerCandidate);
   for (const s of signals) {
-    const m = ledger.find((l) => signalMatches(s, l));
+    const m = ledger.find((l) => ledgerMatchesTitle(s, l));
     const base = m ? ledgerCandidate(m) : null;
     const ids = {
       plexGuid: s.plexGuid,

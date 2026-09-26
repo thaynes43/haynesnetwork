@@ -87,8 +87,8 @@ describe('the consent page (D-05 step 6)', () => {
       (e) => (e.props as { className?: string }).className === 'oauth-scopes__item',
     );
     expect(items.map((e) => textOf(e))).toEqual([
-      'See what you have watched and what is unfinished',
-      'Mark titles watched or dismissed, and change them in Plex',
+      'See what you have watched, what is unfinished, and your watchlist',
+      'Mark titles watched or dismissed, update Plex to match, and add or remove titles on your Plex watchlist',
       'Stay connected without signing in again',
     ]);
     expect(text).toContain('Approve');
@@ -124,15 +124,16 @@ describe('the consent page (D-05 step 6)', () => {
     for (const e of elements(page)) expect(e.props).not.toHaveProperty('dangerouslySetInnerHTML');
   });
 
-  it('for anyone else, watch:write says the history only (Plex write-back is owner-only)', async () => {
+  it('for anyone else, watch:write says the history only and watch:read names no watchlist (owner-only)', async () => {
     for (const account of [null, { plexAccountId: 7, role: 'household' }]) {
       selectWatchAccountForUser.mockResolvedValue(account);
       const items = elements(deep(await render())).filter(
         (e) => (e.props as { className?: string }).className === 'oauth-scopes__item',
       );
-      expect(items.map((e) => textOf(e))[1]).toBe(
+      expect(items.map((e) => textOf(e)).slice(0, 2)).toEqual([
+        'See what you have watched and what is unfinished',
         'Mark titles watched or dismissed in your history',
-      );
+      ]);
     }
   });
 

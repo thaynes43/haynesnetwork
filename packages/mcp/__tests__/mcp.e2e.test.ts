@@ -1,7 +1,8 @@
 // ADR-087 / DESIGN-049 D-02..D-06 (PLAN-068 S7) — the MCP endpoint end to end: the SDK `Client` over
 // `StreamableHTTPClientTransport`, through a node:http adapter, against `handleMcpRequest` with an embedded
 // Postgres 16 seeded owner history and a recording fake Plex (never a real server). Covers: stateless
-// initialize (no `Mcp-Session-Id`), every tool's happy path, the Voice Budget (tools/list ≤ 3,072 bytes,
+// initialize (no `Mcp-Session-Id`), every tool's happy path, the Voice Budget (tools/list ≤ 4,096 bytes since
+// ADR-092 C-09 / DESIGN-051 D-08,
 // default read results ≤ 1,200 characters, no structuredContent), an ambiguous title writing nothing,
 // mark → the next unfinished/recommend reflects it → undo, 401 / 503 / 405 / 413 / strict inputs, a call
 // without `arguments`, batches refused, the overall deadline (a hung call answers in time and its abandoned
@@ -32,6 +33,8 @@ let t: TestDb;
 let db: Database;
 let fake: FakePlex;
 let http: McpHttp;
+/** The handler's clock (NOW unless a test moves it — the undo replay window is 30 s, DESIGN-051 D-04). */
+let clock = NOW;
 
 function deps(): McpDeps {
   return {
@@ -39,7 +42,7 @@ function deps(): McpDeps {
     revalidatePlex: () => fake.clients(),
     markPlex: () => fake.clients(),
     tmdb: () => null,
-    now: () => NOW,
+    now: () => clock,
     log: () => {},
   };
 }
@@ -114,6 +117,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  clock = NOW;
   await http?.stop();
   await db.execute(
     sql`TRUNCATE watch_marks, watch_titles, watch_events, watch_reco_signals, watch_accounts, media_plex_matches, media_metadata, media_items, plex_libraries CASCADE`,
@@ -145,14 +149,14 @@ describe('the transport (D-02)', () => {
     await c.close();
   });
 
-  it('lists exactly the seven D-05 tools within the 3,072-byte Voice Budget', async () => {
+  it('lists exactly the nine tools within the 4,096-byte Voice Budget (DESIGN-051 D-08, AC-29)', async () => {
     const res = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
     expect(res.status).toBe(200);
     const raw = await res.text();
     const bytes = Buffer.byteLength(raw, 'utf8');
-    // Reported by PLAN-068 S7 (measured, not assumed).
+    // Reported by PLAN-068 S7 / PLAN-071 S2 (measured, not assumed).
     console.log(`[voice-budget] tools/list = ${bytes} bytes`);
-    expect(bytes).toBeLessThanOrEqual(3_072);
+    expect(bytes).toBeLessThanOrEqual(4_096);
     const { result } = JSON.parse(raw) as {
       result: { tools: Array<{ name: string; inputSchema: Record<string, unknown>; outputSchema?: unknown }> };
     };
@@ -161,8 +165,10 @@ describe('the transport (D-02)', () => {
       'recommend',
       'watch_status',
       'recent_history',
+      'watchlist',
       'mark_watched',
       'dismiss',
+      'set_watchlist',
       'undo_last_change',
     ]);
     for (const tool of result.tools) {
@@ -318,14 +324,27 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
     expect(sciFi.text).not.toContain('Severance');
   });
 
-  it('watch_status: progress, finished, not on Plex, ambiguous, not found', async () => {
+  it('watch_status: progress, finished, on Plex and on the watchlist both ways, ambiguous, not found (AC-29)', async () => {
     const expanse = await call('watch_status', { title: 'the expanse' });
-    expect(expanse.text).toBe('The Expanse (2015 show): all 23 episodes watched, finished in March 2025. On Plex.');
-    expect((await call('watch_status', { title: 'Silo' })).text).toMatch(
-      /^Silo \(2023 show\): 7 of 10 watched, next is season 1 episode 8, last watched on September 21\. On Plex\.$/,
+    expect(expanse.text).toBe(
+      'The Expanse (2015 show): all 23 episodes watched, finished in March 2025. On Plex, not on your watchlist.',
     );
-    expect((await call('watch_status', { title: 'Foundation' })).text).toBe('Foundation (2021 show): not watched yet. On Plex.');
-    expect((await call('watch_status', { title: 'dark matter' })).text).toBe('Dark Matter (2024 show): not watched yet. Not on Plex.');
+    expect((await call('watch_status', { title: 'Silo' })).text).toMatch(
+      /^Silo \(2023 show\): 7 of 10 watched, next is season 1 episode 8, last watched on September 21\. On Plex, not on your watchlist\.$/,
+    );
+    // DESIGN-051 D-02: the four availability sentences.
+    expect((await call('watch_status', { title: 'Severance' })).text).toBe(
+      'Severance (2022 show): not watched yet. On Plex and on your watchlist.',
+    );
+    expect((await call('watch_status', { title: 'Foundation' })).text).toBe(
+      'Foundation (2021 show): not watched yet. On Plex, not on your watchlist.',
+    );
+    expect((await call('watch_status', { title: 'dark matter' })).text).toBe(
+      'Dark Matter (2024 show): not watched yet. Not on Plex, but on your watchlist.',
+    );
+    expect((await call('watch_status', { title: 'andor' })).text).toBe(
+      'Andor (2022 show): not watched yet. Not on Plex or your watchlist.',
+    );
     expect((await call('watch_status', { title: 'dune' })).text).toBe(
       'More than one match for dune: Dune (2021, movie), Dune (1984, movie). Which one?',
     );
@@ -343,9 +362,10 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
 
   it('every read tool answers "not ready" before the first sync (no owner row)', async () => {
     await db.execute(sql`TRUNCATE watch_marks, watch_titles, watch_events, watch_reco_signals, watch_accounts CASCADE`);
-    for (const tool of ['unfinished', 'recommend', 'recent_history']) {
-      expect(await call(tool)).toEqual({ text: NOT_READY, isError: false });
+    for (const tool of ['unfinished', 'recommend', 'recent_history', 'watchlist']) {
+      expect(await call(tool), tool).toEqual({ text: NOT_READY, isError: false });
     }
+    expect(fake.calls).toEqual([]);
   });
 
   it('watch_status and every write tool answer "not ready" before the first sync, touching neither Plex nor marks', async () => {
@@ -354,6 +374,7 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
       ['watch_status', { title: 'Silo' }],
       ['mark_watched', { title: 'Foundation' }],
       ['dismiss', { title: 'Bluey', reason: 'not_mine' }],
+      ['set_watchlist', { title: 'Foundation', action: 'add' }],
       ['undo_last_change', {}],
     ];
     for (const [tool, args] of calls) {
@@ -362,7 +383,7 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
     expect(fake.calls).toEqual([]);
     expect(await db.select().from(watchMarks)).toEqual([]);
     const lines = toolLines();
-    expect(lines).toHaveLength(4);
+    expect(lines).toHaveLength(calls.length);
     for (const [i, [tool]] of calls.entries()) {
       expect(lines[i]).toMatch(new RegExp(`^\\[mcp\\] tool_called \\{"tool":"${tool}","consumer":"hop","ms":\\d+,"ok":true,"chars":${NOT_READY.length}\\}$`));
     }
@@ -458,8 +479,9 @@ describe('the overall deadline (D-02: under Home Assistant\'s 10 s per call)', (
       if (mark?.plexResult === 'written') break;
       await sleep(50);
     }
-    const [mark] = await db.select().from(watchMarks);
-    expect(mark?.plexResult).toBe('written');
+    const recorded = await db.select().from(watchMarks);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.plexResult).toBe('written');
     await sleep(200);
     expect(http.logs).toEqual(logged);
   });
@@ -482,7 +504,9 @@ describe('the write tools (D-12..D-15, AC-22)', () => {
     // HaynesOps holds it (the ledger's Plex match): its one season's key (never the show key — DESIGN-049
     // D-26), on that server only.
     expect(fake.writes()).toEqual([{ server: 'haynesops', op: 'scrobble', key: 'found-s1' }]);
-    const [row] = await db.select().from(watchMarks);
+    const rows = await db.select().from(watchMarks);
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
     expect(row).toMatchObject({ action: 'watched', scope: 'show', consumer: 'hop', plexResult: 'written' });
     expect(row?.flipped).toHaveLength(10);
 
@@ -493,6 +517,11 @@ describe('the write tools (D-12..D-15, AC-22)', () => {
     expect(undo.text).toBe('Undone. Foundation (2021) is back to unwatched in Plex, 10 episodes.');
     expect(fake.writes().at(-1)).toEqual({ server: 'haynesops', op: 'unscrobble', key: 'found-s1' });
     expect((await call('recommend')).text).toContain('Foundation');
+    // DESIGN-051 D-04, the undo replay guard: a retried undo repeats its answer; past 30 seconds there is nothing
+    // left to undo.
+    expect((await call('undo_last_change')).text).toBe(undo.text);
+    expect(fake.writes().filter((w) => w.op === 'unscrobble')).toHaveLength(1);
+    clock = new Date(NOW.getTime() + 31_000);
     expect((await call('undo_last_change')).text).toBe('Nothing to undo from the past day.');
   });
 
@@ -571,6 +600,7 @@ describe('the Voice Budget (T-253, R-245)', () => {
       recommend: await call('recommend'),
       watch_status: await call('watch_status', { title: 'Silo' }),
       recent_history: await call('recent_history'),
+      watchlist: await call('watchlist'),
     };
     const lengths = Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v.text.length]));
     // Reported by PLAN-068 S7 (measured).
@@ -578,7 +608,7 @@ describe('the Voice Budget (T-253, R-245)', () => {
     for (const [tool, a] of Object.entries(answers)) {
       expect(a.isError, tool).toBe(false);
       expect(a.text.length, tool).toBeLessThanOrEqual(SPOKEN_MAX_CHARS);
-      expect(a.text, tool).not.toMatch(/[*#_`]|https?:\/\//);
+      expect(a.text, tool).not.toMatch(/[*#_`\u2014\u2013]|https?:\/\//);
     }
   });
 });

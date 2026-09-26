@@ -166,16 +166,20 @@ describe('D-05 — the transaction and the consent view', () => {
 
   it('D-14 scope lines — watch:write promises Plex only to the server owner', () => {
     expect(consentScopeLines(ALL, { writesPlex: true })).toEqual([
-      { scope: 'watch:read', description: 'See what you have watched and what is unfinished' },
+      { scope: 'watch:read', description: 'See what you have watched, what is unfinished, and your watchlist' },
       {
         scope: 'watch:write',
-        description: 'Mark titles watched or dismissed, and change them in Plex',
+        description: 'Mark titles watched or dismissed, update Plex to match, and add or remove titles on your Plex watchlist',
       },
       { scope: 'offline_access', description: 'Stay connected without signing in again' },
     ]);
     expect(consentScopeLines(['offline_access', 'watch:write'], { writesPlex: false })).toEqual([
       { scope: 'watch:write', description: 'Mark titles watched or dismissed in your history' },
       { scope: 'offline_access', description: 'Stay connected without signing in again' },
+    ]);
+    // DESIGN-051 D-09, D-15h: the watchlist is the owner's only, so watch:read names it only to him.
+    expect(consentScopeLines(['watch:read'], { writesPlex: false })).toEqual([
+      { scope: 'watch:read', description: 'See what you have watched and what is unfinished' },
     ]);
   });
 

@@ -149,7 +149,7 @@ describe('the D-17 library query (anti-join on excluded-id arrays)', () => {
   });
 
   it('selectRecommendInputs serves the same library candidates and hands back the live marks it excluded', async () => {
-    const inputs = await selectRecommendInputs(db, SCALE_OWNER, { kind: 'any', genre: null, kids: false });
+    const inputs = await selectRecommendInputs(db, SCALE_OWNER, { now: new Date(), kind: 'any', genre: null, kids: false });
     const reference = await referenceLibraryCandidates(SCALE_OWNER, { kind: 'any', genre: null, kids: false, limit: 600 });
     // The fixture has no watchlist or TMDB seeds, so every candidate is a library candidate.
     expect(inputs.candidates.map((c) => c.titleKey)).toEqual(

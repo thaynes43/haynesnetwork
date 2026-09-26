@@ -1,10 +1,11 @@
 // A recording fake of the Plex surface the Watch Companion flows use (DESIGN-049 D-11/D-14/D-15): per-server
 // shows (with seasons and episodes, specials included) and movies, the owner's watched state, and the two
-// watched-state writes. Like a real PMS, scrobbling a show or season key flips every leaf under it,
+// watched-state writes; and (ADR-092 / DESIGN-051) plex.tv's discover catalog, the owner's watchlist and its two
+// writes, recorded like the rest. Like a real PMS, scrobbling a show or season key flips every leaf under it,
 // unscrobbling clears resume points too, and a ratingKey answers only on its own server (a mix-up 404s).
 // PLAN-068 hard rule: nothing in the Watch Companion work orders scrobbles a REAL server — only this fake
 // and the e2e stub.
-import { PlexHttpError, type PlexSectionItem } from '@hnet/plex';
+import { PlexHttpError, PlexTimeoutError, type PlexSectionItem } from '@hnet/plex';
 import type { PlexServerSlug } from '@hnet/db';
 import type { WatchPlexClients } from '../src/watch/plex';
 
@@ -46,8 +47,29 @@ export interface FakeMovie {
 
 export interface FakeCall {
   server: PlexServerSlug;
-  op: 'scrobble' | 'unscrobble' | 'getMetadataItem' | 'listAllLeaves' | 'findByGuid';
+  op:
+    | 'scrobble'
+    | 'unscrobble'
+    | 'getMetadataItem'
+    | 'listAllLeaves'
+    | 'findByGuid'
+    | 'matchDiscover'
+    | 'getDiscoverUserState'
+    | 'addToWatchlist'
+    | 'removeFromWatchlist';
   key: string;
+}
+
+/**
+ * ADR-092 / DESIGN-051 — a title of plex.tv's discover catalog: its 24-hex discover id and the external ids
+ * `library/metadata/matches` resolves (`tmdb://…`, `tvdb://…`, `imdb://…`).
+ */
+export interface FakeDiscoverTitle {
+  id: string;
+  kind: 'movie' | 'show';
+  title: string;
+  year: number;
+  guids: string[];
 }
 
 const seasonKey = (show: FakeShow, season: number) => `${show.ratingKey}-s${season}`;
@@ -70,6 +92,19 @@ export class FakePlex {
    */
   truncateLeavesAt: number | null = null;
   now = 1_790_000_000;
+  /** plex.tv's discover catalog (the external-id match) and the owner's watchlist: discover id → watchlistedAt. */
+  readonly catalog: FakeDiscoverTitle[] = [];
+  readonly watchlist = new Map<string, number>();
+  /** Discover ids whose watchlist writes fail with a 503 (after the client's retries), and whether they land anyway. */
+  readonly failWatchlistWrites = new Set<string>();
+  landFailedWatchlistWrites = false;
+  /**
+   * How those writes fail: a 503 (plex.tv answered every attempt), a 429 (a definitive refusal, never re-read) or a
+   * client-side timeout (the attempt went out and may still land, DESIGN-051 D-15n).
+   */
+  failWatchlistWritesWith: 503 | 429 | 'timeout' = 503;
+  /** Discover reads that fail (`matchDiscover`, `getDiscoverUserState`). */
+  readonly failDiscoverReads = new Set<'matchDiscover' | 'getDiscoverUserState'>();
 
   constructor(
     readonly shows: FakeShow[] = [],
@@ -78,6 +113,55 @@ export class FakePlex {
 
   writes(): FakeCall[] {
     return this.calls.filter((c) => c.op === 'scrobble' || c.op === 'unscrobble');
+  }
+
+  /** The watchlist writes, as `op:id`, in call order. */
+  watchlistWrites(): string[] {
+    return this.calls
+      .filter((c) => c.op === 'addToWatchlist' || c.op === 'removeFromWatchlist')
+      .map((c) => `${c.op}:${c.key}`);
+  }
+
+  /** Every Plex call of any kind (reads and writes), as `op:key`. */
+  opKeys(): string[] {
+    return this.calls.map((c) => `${c.op}:${c.key}`);
+  }
+
+  private discoverRead<T>(server: PlexServerSlug, op: 'matchDiscover' | 'getDiscoverUserState', key: string, fn: () => T): Promise<T> {
+    this.calls.push({ server, op, key });
+    if (this.failDiscoverReads.has(op)) {
+      return Promise.reject(new PlexHttpError(503, 'GET', `https://discover.fake/${op}`, 'unavailable'));
+    }
+    try {
+      return Promise.resolve(fn());
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
+  private watchlistWrite(server: PlexServerSlug, op: 'addToWatchlist' | 'removeFromWatchlist', id: string): Promise<void> {
+    if (!/^[0-9a-f]{24}$/.test(id)) return Promise.reject(new TypeError('not a discover id'));
+    this.calls.push({ server, op, key: id });
+    const apply = () => {
+      if (op === 'addToWatchlist') {
+        if (!this.watchlist.has(id)) this.watchlist.set(id, this.now);
+      } else this.watchlist.delete(id);
+    };
+    if (this.failWatchlistWrites.has(id)) {
+      if (this.landFailedWatchlistWrites) apply();
+      const url = `https://discover.fake/actions/${op}`;
+      const how = this.failWatchlistWritesWith;
+      return Promise.reject(
+        how === 'timeout'
+          ? new PlexTimeoutError('PUT', url, 800)
+          : new PlexHttpError(how, 'PUT', url, how === 429 ? 'Too Many Requests' : 'unavailable'),
+      );
+    }
+    if (!this.catalog.some((t) => t.id === id)) {
+      return Promise.reject(new PlexHttpError(404, 'PUT', `https://discover.fake/actions/${op}`, 'Not Found'));
+    }
+    apply();
+    return Promise.resolve();
   }
 
   /** The (server, ratingKey) of every watched leaf, sorted — the state an undo must restore. */
@@ -226,10 +310,31 @@ export class FakePlex {
             ...this.shows.filter((s) => s.server === server && s.guid === guid).map((s) => this.showItem(s)),
             ...this.movies.filter((m) => m.server === server && m.guid === guid).map((m) => this.movieItem(m)),
           ]),
+        matchDiscover: ({ kind, guid }: { kind: 'movie' | 'show'; guid: string }) =>
+          this.discoverRead(server, 'matchDiscover', `${kind}:${guid}`, () => {
+            const hits = this.catalog.filter((t) => t.guids.includes(guid));
+            const hit = hits.find((t) => t.kind === kind) ?? hits[0];
+            if (!hit) return null;
+            const ids = { tmdbId: null as number | null, tvdbId: null as number | null, imdbId: null as string | null };
+            for (const g of hit.guids) {
+              const [scheme, value = ''] = g.split('://');
+              if (scheme === 'tmdb') ids.tmdbId ??= Number(value);
+              if (scheme === 'tvdb') ids.tvdbId ??= Number(value);
+              if (scheme === 'imdb') ids.imdbId ??= value;
+            }
+            return { ratingKey: hit.id, guid: `plex://${hit.kind}/${hit.id}`, kind: hit.kind, title: hit.title, year: hit.year, ids };
+          }),
+        getDiscoverUserState: (id: string) =>
+          this.discoverRead(server, 'getDiscoverUserState', id, () => {
+            if (!/^[0-9a-f]{24}$/.test(id)) throw new TypeError('not a discover id');
+            return { watchlistedAt: this.watchlist.get(id) ?? null };
+          }),
       };
       write[server] = {
         scrobble: (key: string) => this.write(server, 'scrobble', key),
         unscrobble: (key: string) => this.write(server, 'unscrobble', key),
+        addToWatchlist: (id: string) => this.watchlistWrite(server, 'addToWatchlist', id),
+        removeFromWatchlist: (id: string) => this.watchlistWrite(server, 'removeFromWatchlist', id),
       };
     }
     return { read, write };

@@ -1,7 +1,7 @@
 # DESIGN-049: Watch Companion — watch history read-model, recommendations, voice reconcile marks, and the in-cluster MCP surface
 
 - **Status:** Accepted (2026-09-23; live as v0.97.0, PLAN-068 S9–S13 verified)
-- **Last updated:** 2026-09-25 (Q-02 resolved by ADR-092 / DESIGN-051: the watchlist tools extend D-05, D-13 and D-15; the `tools/list` cap is 4 KB). Prior: 2026-09-23 (Q-01 and Q-03 point at ADR-091 / DESIGN-050, the public connectors). Prior: 2026-09-23 (PLAN-068 S7–S8: D-27 records the MCP-surface and local-stack rulings —
+- **Last updated:** 2026-09-26 (DESIGN-051 D-15aa amends D-13: a TMDB call made while the pool already has an answer is a single attempt; the seventh review pass of PR #580 notes the ADR-092 amendment on the overview, the D-05 table and D-15's undo). Prior: 2026-09-26 (DESIGN-051 D-15x amends D-13: a year the query names settles same-name pool titles, a pool title of another year sends the query on to TMDB as "not found" does and TMDB's hit of that year wins, and a TMDB hit the pool knows is the pool's title; D-15y leaves D-13's order to the read and mark tools, while a `set_watchlist` add reaches TMDB past a near title). Prior: 2026-09-25 (DESIGN-051 D-15t amends the D-15 ruling row: undo never walks past a pending mark; an abandoned `watched` mark is closed and its planned keys unscrobbled). Prior: 2026-09-25 (Q-02 resolved by ADR-092 / DESIGN-051: the watchlist tools extend D-05, D-13 and D-15; the `tools/list` cap is 4 KB). Prior: 2026-09-23 (Q-01 and Q-03 point at ADR-091 / DESIGN-050, the public connectors). Prior: 2026-09-23 (PLAN-068 S7–S8: D-27 records the MCP-surface and local-stack rulings —
   `tools/list` is served from hand-written schemas, 2,712 bytes). Prior: PLAN-068 S5–S6 (D-26 records the
   domain and sync rulings; Q-05 and Q-06 ruled; `name:` keys carry the kind; D-04 corrected after the
   haynes-ops #3131 deploy). Prior: PLAN-068 S4
@@ -21,7 +21,7 @@ dev-env Claude Code / Codex ─────────────────�
                          frontend/haynesnetwork-mcp-hop :8080/mcp   (nginx; injects Bearer; CiliumNetworkPolicy)
                                                               ▼
                          haynesnetwork :3000  POST /api/mcp   (stateless Streamable HTTP, JSON responses)
-                               │  @hnet/mcp: auth → 7 tools
+                               │  @hnet/mcp: auth → 9 tools (7 here, 2 from DESIGN-051)
                                ├─ @hnet/watch: reads, progress math, resolver, scoring, spoken formatting
                                └─ @hnet/domain: Watch Marks, live revalidation ─▶ @hnet/plex/write scrobble/unscrobble
                                                               ▲
@@ -134,6 +134,12 @@ merge green and fail only at release.
 | `mark_watched` | write | Record that the user already watched a title and mark it watched in Plex: the whole show unless a season or episode is given; through=true marks everything up to that episode. | `title` (**required**); `kind`; `season` ≥1; `episode` ≥1; `through` boolean |
 | `dismiss` | write | Stop suggesting a title: reason not_interested (default) or not_mine (someone else watched it on this account). Never changes Plex. | `title` (**required**); `reason` `not_interested`\|`not_mine` |
 | `undo_last_change` | write | Undo the user's last mark_watched or dismiss from the past day. | none |
+
+_(Amended by ADR-092 / DESIGN-051 D-01, 2026-09-25: nine tools. `watchlist` (read) and `set_watchlist` (write,
+owner only) are added, and two descriptions changed: `watch_status` is served as "Whether the user has seen a title,
+how far along he is, and whether it is on Plex and on his watchlist." and `undo_last_change` as "Undo the user's last
+mark_watched, dismiss or set_watchlist from the past day." DESIGN-051 D-01 has the two new rows; `tools.ts` serves
+exactly these.)_
 
 Schema rules (Home Assistant converts schemas and fails the whole entry on one it cannot convert;
 OpenAI strips top-level `oneOf/anyOf/allOf/enum/not`): flat objects, primitive properties,
@@ -415,7 +421,15 @@ around its database rows, with Plex calls outside the transaction (D-14).
 - **Decide**: resolved when the best is at least 0.9 and no *different* title scores within 0.05 of
   it; ambiguous when the best is at least 0.6 (return up to three candidates as "Title (year, kind)");
   otherwise one TMDB `search/multi` call, accepted only on an exact normalized title match (the title
-  is then "not on Plex"); else not found.
+  is then "not on Plex"); else not found. *(Amended by DESIGN-051 D-15x, 2026-09-26: a year the query names
+  settles same-name titles: when a title it names exactly has that year (as its year or one of its own words,
+  "Blade Runner 2049"), the exact titles without it drop out. When the best title is still another year's, the
+  TMDB call runs as for "not found", and its first exact hit of the named year wins; otherwise the pool's answer
+  stands. A TMDB hit whose kind and TMDB id the pool knows is the pool's title, not "not on Plex". A
+  `set_watchlist` add weighs the pool further and never takes a TMDB hit of another year than the one named, D-15x,
+  D-15y and D-15ac. A TMDB call made while the pool already has an
+  answer is a single attempt, since the pool's answer stands if it fails and `mark_watched`'s Plex work follows it;
+  "not found" keeps the retries, DESIGN-051 D-15aa.)*
 - Ambiguous and not-found never write.
 
 ### D-14 — `mark_watched` flow
@@ -455,7 +469,12 @@ around its database rows, with Plex calls outside the transaction (D-14).
   nothing to undo it says so. Plex's unscrobble clears resume points, so an episode that was half
   watched comes back unwatched from the start (ADR-088 C-04). *Collapse rule (live incident
   2026-09-23, D-26, PR #567):* undo collapses only to a season ≥ 1 key whose every episode flipped,
-  never the show key.
+  never the show key. *(Amended by DESIGN-051, 2026-09-25/26, for every mark: an undo within 30 seconds of the
+  account's last completed undo, with no mark made since, repeats that answer and reverts nothing (the replay guard,
+  D-04; a revert stamped after the undo's own clock counts, D-15i); undos of one account run one at a time under a
+  transaction-scoped advisory lock, waiting for it at most 9 seconds (`lock_timeout`, D-15c, D-15p); a revert is
+  never stamped before the `created_at` of the change it reverts (D-15u); and undo never walks past a pending mark
+  (D-15o, D-15t; see the D-15 row of the D-26 rulings).)*
 
 ### D-16 — Taste Profile
 
@@ -585,7 +604,7 @@ left a case open. `packages/watch/README.md` lists the final signatures; the tes
 | D-09 | Show guids come from the instance's own Plex server first (`getMetadataItem` on the grandparent key: a success is authoritative, a 404 is truly gone) and from Tautulli's `get_metadata` only when Plex cannot answer — at ingest as well as in the Q-06 retry; a guid learned at ingest also fills the pair's older events. A tracked show whose counters moved on ANY server (or with no stored counters for a server, or with new events this run) is re-read on EVERY server that holds it: the stored map is pair-level, so one server's own flags cannot be recovered from it. A failed re-read keeps the stored counters, so the next run retries. A show missing from a complete show listing is gone from that server; a stored movie missing from the complete watched/in-progress listings is checked when its stored state says watched or resuming on that server (≤ 100 per run, oldest row first; the check writes its fresh state, so each is read once): 404 = gone from that server, else its fresh state (a reset). Tracked = stored, in the event log, or watched/started on Plex (movies: in those listings). Seeds (D-17): a show gone from Plex counts once three episodes are in the log (D-25's Taste Profile reading); a seed whose TMDB call fails keeps its previous rows; when every call fails nothing is replaced. The report adds `showGuids {resolved, retried, filled, skipped}` and `eventsCapped`, and splits `titles` into `upserted`, `inserted`, `updated`, `rekeyed`, `unchanged`. *Ruling (PR #563 review):* a show-guid source (the instance's Plex or Tautulli) that fails with anything but "gone" is not asked again that run (reported once, `show_guids` from `plex:<slug>` / `tautulli:<slug>`), and the Q-06 retry stops at a 60 s budget (`showGuidRetryBudgetMs`), counting the pairs it did not ask in `skipped`; a history read that stops at the page cap is listed in `eventsCapped` with a warn line; logs and `errors[]` name a slug, rating key or TMDB id (`tmdb:<kind>:<id>` for a seed), never a title (D-06). |
 | D-11 | A movie revalidates on its resume server (`next_server`) when it has one, else the preferred holder. A show re-reads `allLeaves` on the revalidated server only and keeps its other servers from the stored map (the next sync re-reads every holder). A truncated `allLeaves` is a failed read: the snapshot answers. |
 | D-14 | Targets: the most preferred MATCHED holder (view-state sync carries it) plus every `local://` holder (not synced) — so a title whose preferred copy is local is also written on its matched copy. Only writes that flip something are issued: an already-watched title makes no write and answers "was already watched". A whole-show mark's `flipped` includes unwatched specials (the show scrobble marks them too); `through` covers seasons 1…S−1, never specials. A season or episode Plex does not have is recorded `not_on_plex` (history only). An episode without its season writes nothing and asks for it (`formatNeedSeason`). A title new to the owner's history takes its identity from the Plex item read for the before-state, before the mark is inserted. The write-through keeps the stored `plex_counts`, so the next sync re-reads the title fully. The replay rule (step 7) covers dismissals too. A failed before-state read counts as a failed write (`partial` / `failed`), and so does a truncated `allLeaves` (no write on that server). |
-| D-15 | Undo reads the show's live `allLeaves` on each flipped server to collapse (the show key when every current leaf is in `flipped`, else each season key whose every leaf is), so an episode added after the mark is never touched; a failed or truncated read, or a leaf without its season key, unscrobbles each flipped key. An unscrobble answering 404 counts as done (nothing is left to put back). A dismissal's undo has `revertResult: null` in its view. *Ruling (PR #563 review):* undo never picks a `pending` mark (in flight or crashed, its `flipped` is only the plan); only a `written` or `none` revert stamps `reverted_at` — a `failed` / `partial` one records `revert_result` and leaves the mark live, so the next undo retries the same mark (unscrobble is idempotent), never an older one. |
+| D-15 | Undo reads the show's live `allLeaves` on each flipped server to collapse (the show key when every current leaf is in `flipped`, else each season key whose every leaf is), so an episode added after the mark is never touched; a failed or truncated read, or a leaf without its season key, unscrobbles each flipped key. An unscrobble answering 404 counts as done (nothing is left to put back). A dismissal's undo has `revertResult: null` in its view. *Ruling (PR #563 review):* undo never picks a `pending` mark (in flight or crashed, its `flipped` is only the plan) _(amended by DESIGN-051 D-15o and D-15t, 2026-09-25: a pending mark is picked and never walked past, since the next-older mark can be a watchlist remove whose undo downloads; under ten minutes old a pending `watched` mark is answered as in progress and nothing is reverted, older it is closed `failed` `unknown: never finalized` and its planned keys, each unwatched before the mark, are unscrobbled)_; only a `written` or `none` revert stamps `reverted_at` — a `failed` / `partial` one records `revert_result` and leaves the mark live, so the next undo retries the same mark (unscrobble is idempotent), never an older one. |
 | D-14 / D-15 | *Ruling (live incident 2026-09-23; supersedes the D-14 row's specials sentence and the D-15 row's show-key collapse):* a whole-show mark of The Expanse (all 62 episodes watched) scrobbled the show key: it flipped 7 specials, and Plex also bumped `viewCount` and re-stamped `lastViewedAt` on every already-watched episode under the key. So season 0 never takes part in a mark (before-state, `flipped`, writes; a season below 1 asks for one), the show key is never scrobbled or unscrobbled, and a season key is scrobbled only when every leaf under it is unwatched, else each unwatched episode key. Nothing unwatched in seasons ≥ 1 ⇒ no write (`written`, `flipped = []`, "was already watched …, all N episodes"). A show Plex lists with specials only is recorded `none` (`flipped = []`, no write) and answers "Noted <title> (<year>) as watched. Plex only lists specials for it, so nothing changed there." — not `not_on_plex`, which would be false. A whole-show mark of a scattered show (one the children watched at random) sends one write per unwatched episode, 6 at a time, so on a slow Plex it can run into the 9 s deadline (D-27): the mark still finishes, and the answer is then the D-06 error text. Undo collapses only to a season ≥ 1 key whose every leaf is in `flipped`. |
 | D-14 / D-15 / D-09 | *Ruling (live incident 2026-09-23; supersedes the D-14 row's `plex_counts` sentence):* after a mark or an undo that sent a write, a show's `plex_counts` entries for those servers are dropped, so the next sync (and revalidation) re-reads its leaves there even when Plex's counters end where they started; a movie's written servers take the applied state instead, so the absent-movie check catches a Plex that disagrees. Dates are not nulled: with no write re-stamping a watched leaf, the undo's live read already carries the pre-mark dates (except a flipped episode that was in progress: its unscrobble also clears its `lastViewedAt`, Plex's real state, ADR-088 C-04), and a re-read recomputes them from Plex leaves and events alone (no stored date, writer maximum or mark takes part). The Expanse's "finished today" is Plex's own data (HaynesOps' 62 re-stamped episodes), which no Plex API can backdate. |
 
@@ -627,7 +646,7 @@ left a case open. `packages/watch/README.md` lists the final signatures; the tes
   per-source degradation, change-detected `allLeaves` re-reads, watchlist replace, seed refresh
   cadence).
 - `@hnet/mcp`: the SDK client end to end against the handler with a seeded database: initialize
-  (no session id), `tools/list` ≤ 3,072 bytes, each tool's happy path and budget, 401/503/405,
+  (no session id), `tools/list` ≤ 3,072 bytes (4,096 since ADR-092 C-09), each tool's happy path and budget, 401/503/405,
   scope checks, strict inputs.
 - `apps/web`: the route adapter test (mocks `@hnet/mcp`, like the webhook route test).
 - `@hnet/arr`: an error-message test proving `apikey`/`api_key`/`token`/`X-Plex-Token` values never appear in `ArrHttpError`,

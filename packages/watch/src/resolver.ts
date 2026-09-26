@@ -19,21 +19,33 @@ export interface ResolverCandidate {
   ids?: ExternalIds;
 }
 
+/**
+ * How far the pool's best title settles the query (DESIGN-051 D-15x, D-15y), on `resolved` and `ambiguous`.
+ * `exact`: one of its entries matches the query exactly before any bonus (1.0, or 0.95 once one side's trailing tag
+ * is dropped), not by a prefix or a fuzzy score. `yearUnmatched`: the query names a year the title does not have
+ * (not its year, not one of its own words as in "Blade Runner 2049") while its year is known, so the title meant may
+ * not be in the pool at all.
+ */
+export interface ResolveFit {
+  exact: boolean;
+  yearUnmatched: boolean;
+}
+
 export type ResolveResult =
-  | {
+  | ({
       status: 'resolved';
       /** The best-matching pool entry of the winning title (an in-history entry wins a tie). */
       candidate: ResolverCandidate;
       score: number;
       /** Every pool entry that is the same title (shares an identity key), best first. */
       sameTitle: ResolverCandidate[];
-    }
-  | {
+    } & ResolveFit)
+  | ({
       status: 'ambiguous';
       /** Up to three distinct titles, best first — one representative entry each. */
       options: ResolverCandidate[];
       best: number;
-    }
+    } & ResolveFit)
   | { status: 'not_found'; best: number };
 
 /** Resolved needs at least this score… */
@@ -42,6 +54,11 @@ export const RESOLVE_MIN_SCORE = 0.9;
 export const RESOLVE_MARGIN = 0.05;
 /** Below this the resolver answers not found (and the caller may try TMDB). */
 export const AMBIGUOUS_MIN_SCORE = 0.6;
+/**
+ * A title named exactly (DESIGN-051 D-15y): 1.0, or 0.95 once one side's trailing country or year tag is dropped. A
+ * prefix (0.85), a fuzzy score (under 0.9) or the whole-word prefix (0.7) is a near title, not an exact one.
+ */
+export const EXACT_TITLE_SCORE = 0.95;
 const HISTORY_BONUS = 0.05;
 const YEAR_BONUS = 0.05;
 const MAX_OPTIONS = 3;
@@ -132,6 +149,55 @@ export function titleMatchScore(
   return Math.max(fuzzy, wordPrefix ? WORD_PREFIX_SCORE : 0);
 }
 
+/** A title's own year: its `year`, else a year its title carries ("Dune (2021)"); null when neither is known. */
+function knownYear(c: Pick<ResolverCandidate, 'title' | 'year'>): number | null {
+  return c.year ?? normalizeTitle(c.title).year;
+}
+
+/**
+ * DESIGN-051 D-15x — `c` has the year `query` names: as its year (or its title's parenthesized year), or as one of
+ * its title's own words ("Blade Runner 2049", a 2017 film, has 2049). False when the query names no year.
+ */
+export function hasNamedYear(
+  query: string | NormalizedTitle,
+  c: Pick<ResolverCandidate, 'title' | 'year'>,
+): boolean {
+  const q = typeof query === 'string' ? normalizeTitle(query) : query;
+  if (q.year === null) return false;
+  const norm = normalizeTitle(c.title);
+  return c.year === q.year || norm.year === q.year || norm.norm.split(' ').includes(String(q.year));
+}
+
+/** One title's grouping keys, as {@link resolveTitle} groups pool entries (kind-scoped, so a show never merges a movie). */
+function groupKeys(c: ResolverCandidate): string[] {
+  return kindScopedKeys(
+    c.kind,
+    keysOf({ ...c.ids, kind: c.kind, title: c.title, year: c.year, titleKey: c.titleKey }),
+  );
+}
+
+/**
+ * DESIGN-051 D-15x — the pool's own title for a TMDB hit: the entries of `kind` that `resolveTitle` would group with
+ * an entry carrying `tmdbId`, in-history first. Empty when no entry carries it, or when the group also carries another
+ * TMDB id (two titles merged by one name and year), so a hit never takes another title's identity.
+ */
+export function poolTitleOf<C extends ResolverCandidate>(pool: readonly C[], kind: WatchKind, tmdbId: number): C[] {
+  const eligible = pool.filter((c) => c.kind === kind);
+  if (!eligible.some((c) => c.ids?.tmdbId === tmdbId)) return [];
+  const group = groupByKeys(eligible, groupKeys).find((g) => g.some((c) => c.ids?.tmdbId === tmdbId)) ?? [];
+  const other = group.some((c) => {
+    const id = c.ids?.tmdbId;
+    return id !== null && id !== undefined && id !== tmdbId;
+  });
+  if (other) return [];
+  return [...group].sort(
+    (a, b) =>
+      Number(b.inHistory) - Number(a.inHistory) ||
+      titleKeyRank(a.titleKey) - titleKeyRank(b.titleKey) ||
+      compareText(a.titleKey, b.titleKey),
+  );
+}
+
 interface Scored {
   c: ResolverCandidate;
   base: number;
@@ -172,6 +238,11 @@ function compareTitles(a: RankedTitle, b: RankedTitle): number {
  * score is its best entry's match + 0.05 when the query's year hint equals the entry's year, + 0.05
  * when any of its entries is in the owner's history; bonuses never lift a zero match.
  *
+ * A year the query names settles same-name titles (DESIGN-051 D-15x, as D-15v settles TMDB's hits): when one of the
+ * titles it names exactly has that year, the exact titles without it drop out ("Shōgun (2024)" is never asked
+ * between the 2024 and the 1980 show); near titles stay. Each non-`not_found` result says how far its best title fits
+ * the query ({@link ResolveFit}), which the caller weighs before it trusts the pool (DESIGN-051 D-15x, D-15y).
+ *
  * Resolved when the best is at least 0.9 and the runner-up title is at least 0.05 below it;
  * ambiguous when the best is at least 0.6 (up to three titles); otherwise not found.
  */
@@ -190,18 +261,7 @@ export function resolveTitle(
     const yearBonus = base > 0 && q.year !== null && year === q.year ? YEAR_BONUS : 0;
     return { c, base, match: base + yearBonus };
   });
-  const titles: RankedTitle[] = groupByKeys(scored, (s) =>
-    kindScopedKeys(
-      s.c.kind,
-      keysOf({
-        ...s.c.ids,
-        kind: s.c.kind,
-        title: s.c.title,
-        year: s.c.year,
-        titleKey: s.c.titleKey,
-      }),
-    ),
-  )
+  let titles: RankedTitle[] = groupByKeys(scored, (s) => groupKeys(s.c))
     .map((group) => {
       const members = [...group].sort(compareMembers);
       const inHistory = group.some((s) => s.c.inHistory);
@@ -212,9 +272,20 @@ export function resolveTitle(
     .filter((t) => t.score > 0)
     .sort(compareTitles);
 
+  const isExact = (t: RankedTitle) => t.members.some((m) => m.base >= EXACT_TITLE_SCORE - EPSILON);
+  const named = (t: RankedTitle) => t.members.some((m) => hasNamedYear(q, m.c));
+  // DESIGN-051 D-15x: the named year settles the titles named exactly; near titles are other titles and stay.
+  if (q.year !== null && titles.some((t) => isExact(t) && named(t))) {
+    titles = titles.filter((t) => !isExact(t) || named(t));
+  }
+
   const best = titles[0];
   const top = best?.members[0];
   if (!best || !top) return { status: 'not_found', best: 0 };
+  const fit: ResolveFit = {
+    exact: isExact(best),
+    yearUnmatched: q.year !== null && !named(best) && best.members.some((m) => knownYear(m.c) !== null),
+  };
   const runnerUp = titles[1];
   const clear = !runnerUp || best.score - runnerUp.score >= RESOLVE_MARGIN - EPSILON;
   if (best.score >= RESOLVE_MIN_SCORE - EPSILON && clear) {
@@ -223,6 +294,7 @@ export function resolveTitle(
       candidate: top.c,
       score: best.score,
       sameTitle: best.members.map((m) => m.c),
+      ...fit,
     };
   }
   if (best.score >= AMBIGUOUS_MIN_SCORE - EPSILON) {
@@ -230,7 +302,7 @@ export function resolveTitle(
       .slice(0, MAX_OPTIONS)
       .map((t) => t.members[0]?.c)
       .filter((c): c is ResolverCandidate => c !== undefined);
-    return { status: 'ambiguous', options, best: best.score };
+    return { status: 'ambiguous', options, best: best.score, ...fit };
   }
   return { status: 'not_found', best: best.score };
 }

@@ -280,7 +280,8 @@ export function pickSeeds(
 ): WatchTitleRow[] {
   const dismissed = new Set<string>();
   for (const m of marks) {
-    if (m.action === 'watched') continue;
+    // Only a dismissal drops a seed — never `watched`, and never a Watchlist Change (ADR-092 / DESIGN-051 D-07).
+    if (m.action !== 'not_interested' && m.action !== 'not_mine') continue;
     for (const k of keysOf(m)) dismissed.add(`${m.kind}|${k}`);
   }
   const nowSec = Math.floor(now.getTime() / 1000);

@@ -669,6 +669,19 @@ describe('formatDismissResult / formatUndoResult (D-15)', () => {
       'Undone. Bluey (2018) counts as your viewing again.',
     );
   });
+
+  it('says a mark still going through is in progress, and undoes nothing (DESIGN-051 D-15t)', () => {
+    const sev = { undone: true as const, kind: 'show' as const, title: 'Severance', year: 2022, action: 'watched' as const };
+    expect(formatUndoResult({ ...sev, scope: 'show', revertResult: null, inProgress: true })).toBe(
+      'Plex is still working on your last change, marking Severance (2022) as watched. Say undo again in a moment.',
+    );
+    expect(formatUndoResult({ ...sev, scope: 'season', season: 2, inProgress: true })).toBe(
+      'Plex is still working on your last change, marking season 2 of Severance (2022) as watched. Say undo again in a moment.',
+    );
+    expect(formatUndoResult({ ...sev, scope: 'through', season: 2, episode: 3, inProgress: true })).toBe(
+      'Plex is still working on your last change, marking Severance (2022) as watched through season 2 episode 3. Say undo again in a moment.',
+    );
+  });
 });
 
 describe('resolver outcomes and fixed answers', () => {
@@ -702,7 +715,7 @@ describe('resolver outcomes and fixed answers', () => {
   });
 });
 
-describe('spoken hygiene (no markdown, bullets, emoji or URLs)', () => {
+describe('spoken hygiene (no markdown, bullets, emoji, URLs or em and en dashes)', () => {
   const nasty = [
     'M*A*S*H',
     '[REC]',
@@ -710,6 +723,10 @@ describe('spoken hygiene (no markdown, bullets, emoji or URLs)', () => {
     'Watch https://example.com now',
     '#Alive',
     'Under_score `code`',
+    // DESIGN-051 D-02: no em or en dashes, from a title either (Plex and plex.tv pass them through verbatim).
+    'Mission: Impossible \u2013 Dead Reckoning Part One',
+    'Mission: Impossible \u2014 Fallout',
+    'Spider\u2013Man\u2014Across',
   ];
 
   it('cleans titles', () => {
@@ -720,6 +737,10 @@ describe('spoken hygiene (no markdown, bullets, emoji or URLs)', () => {
       'Watch now',
       'Alive',
       'Underscore code',
+      // A spaced dash is said as a spaced hyphen, an unspaced one as a hyphen.
+      'Mission: Impossible - Dead Reckoning Part One',
+      'Mission: Impossible - Fallout',
+      'Spider-Man-Across',
     ]);
   });
 
@@ -785,6 +806,7 @@ describe('spoken hygiene (no markdown, bullets, emoji or URLs)', () => {
       expect(text).not.toMatch(/https?:|www\./i);
       expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
       expect(text).not.toMatch(/\n|^\s*[-•]/);
+      expect(text).not.toMatch(/[\u2012-\u2015]/);
       expect(text.length).toBeLessThanOrEqual(SPOKEN_MAX_CHARS);
       expect(text).toMatch(/[.?]$/);
     }

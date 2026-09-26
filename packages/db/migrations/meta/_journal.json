@@ -554,6 +554,13 @@
       "when": 1783903304000,
       "tag": "0079_haynes_quest_catalog_card",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1783903364000,
+      "tag": "0080_watchlist_marks",
+      "breakpoints": true
     }
   ]
 }

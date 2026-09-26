@@ -52,10 +52,22 @@ in a URL, query string, or error message. All four typed errors (`errors.ts`) in
 only method + URL + status/snippet, and `ArrConfigError` names missing env variables but
 never their values. Do not break this: no `apikey=` query params, no logging the key.
 
-Retries: `request()` retries **GETs only** (idempotent), up to 2 retries / 3 attempts, on
-502/503/504, timeouts, and network errors. Writes (POST/PUT/DELETE) are attempted exactly
+Retries: `request()` retries **GETs only** (idempotent), by default up to 2 retries / 3 attempts,
+on 502/503/504, timeouts, and network errors. Writes (POST/PUT/DELETE) are attempted exactly
 once — a failed write never silently repeats. Per-attempt timeout defaults to 30s and
-aborts via `AbortController` into an `ArrTimeoutError`.
+aborts via `AbortController` into an `ArrTimeoutError`. By default that timer covers the
+response headers only: a body that stalls after them is bounded by undici's 300 s body timeout.
+Two options size a latency-bound caller (DESIGN-051 D-15g, D-15p):
+
+- `getRetries` (default 2): the GET retries after the first attempt; `0` is a single attempt
+  (the MCP's `tmdbOnce`, `set_watchlist`'s TMDB fallback, which must answer inside the 9 s deadline, and every
+  tool's TMDB check made while the pool already has an answer, D-15aa). `@hnet/plex`'s `PlexHttp` has the same
+  option (D-15ab).
+- `timeoutCoversBody` (default off): the per-attempt timer also covers the 2xx body, which is
+  buffered under it and handed back as a new `Response`, so a stalled body is an `ArrTimeoutError`
+  at the attempt's bound. The MCP's TMDB searches turn it on. It is not the default because the
+  syncs read unpaged list bodies (Sonarr `/series`, Radarr `/movie`) that may stream longer than
+  their 30 s per-attempt timeout; see `.agents/plans/TODO.md` ("Header-only per-attempt timers").
 
 Error taxonomy (all extend `ArrError`): `ArrConfigError` (missing env), `ArrHttpError`
 (non-2xx), `ArrTimeoutError` (aborted), `ArrParseError` (2xx body failed its zod schema =

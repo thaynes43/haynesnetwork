@@ -128,8 +128,16 @@ export function plural(n: number, noun: string): string {
 }
 
 /**
+ * The dashes an answer never says (DESIGN-051 D-02: no em or en dashes): the figure, en and em dashes, the horizontal
+ * bar, the two- and three-em dashes and the small em dash.
+ */
+const DASHES = /\s*[\u2012-\u2015\u2e3a\u2e3b\ufe58]\s*/gu;
+
+/**
  * Make a title safe to speak and display: drop URLs, emoji and markdown characters ("M*A*S*H" →
- * "MASH", "[REC]" → "REC"), fold whitespace. Letters, digits and ordinary punctuation stay.
+ * "MASH", "[REC]" → "REC"), say a dash as a hyphen (spaced as the title spaced it: "Mission: Impossible –
+ * Fallout" → "Mission: Impossible - Fallout", DESIGN-051 D-02), fold whitespace. Letters, digits and ordinary
+ * punctuation stay.
  */
 export function spokenTitle(title: string): string {
   return title
@@ -137,6 +145,7 @@ export function spokenTitle(title: string): string {
     .replace(/\p{Extended_Pictographic}/gu, '')
     .replace(/‍|️/g, '')
     .replace(/[*_`#|~<>[\]{}\\]/g, '')
+    .replace(DASHES, (dash) => (/\s/.test(dash) ? ' - ' : '-'))
     .replace(/\s+/g, ' ')
     .trim();
 }

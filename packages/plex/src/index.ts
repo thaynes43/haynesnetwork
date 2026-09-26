@@ -9,4 +9,5 @@
 export * from './errors';
 export * from './config';
 export * from './schemas';
+export * from './discover';
 export { parseXml, childrenNamed, type XmlElement } from './xml';

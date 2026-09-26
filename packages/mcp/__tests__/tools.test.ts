@@ -1,5 +1,5 @@
-// ADR-087 / DESIGN-049 D-02 / D-03 / D-05 (PLAN-068 S7) — the tool contract without a database: the exact
-// D-05 names and descriptions, the D-02 instructions, the hand-written `tools/list` schemas pinned to the zod
+// ADR-087 / DESIGN-049 D-02 / D-03 / D-05 (PLAN-068 S7; DESIGN-051 D-01, PLAN-071) — the tool contract without a
+// database: the exact D-05 names and descriptions, the D-02 instructions, the hand-written `tools/list` schemas pinned to the zod
 // schemas that validate every call, the static list, consumer auth (401 / 503 / constant-time match),
 // scopes as configuration (a read-only consumer sees and runs only the read tools), and the D-02 deadline's
 // two halves: the runner logs an aborted call once, and the late answer's shape.
@@ -14,10 +14,10 @@ import { buildServer, runTool, toolList } from '../src/server';
 import { INSTRUCTIONS, SERVER_NAME, WATCH_TOOLS } from '../src/tools';
 
 describe('the D-05 contract', () => {
-  it('serves exactly the seven tools with the D-05 descriptions, and the D-02 name and instructions', () => {
+  it('serves exactly the nine tools with the D-05 / DESIGN-051 D-01 descriptions, and the D-02 name and instructions', () => {
     expect(SERVER_NAME).toBe('Watch history');
     expect(INSTRUCTIONS).toBe(
-      "Watch history for the owner's Plex account across HaynesOps, HaynesKube and HaynesTower. Every result is short plain text meant to be read aloud. unfinished: shows started and not finished. recommend: never-watched picks with reasons (pass offset for more). watch_status: one title. recent_history: recent plays. mark_watched writes to Plex; dismiss never does; undo_last_change reverses the last change.",
+      "Watch history for the owner's Plex account across HaynesOps, HaynesKube and HaynesTower. Every result is short plain text meant to be read aloud. unfinished: shows started and not finished. recommend: never-watched picks with reasons (pass offset for more). watch_status: one title. recent_history: recent plays. watchlist: the Plex watchlist. set_watchlist adds or removes; adding a title not on Plex makes Seerr download it. mark_watched writes to Plex; dismiss never does; undo_last_change reverses the last change.",
     );
     expect(INSTRUCTIONS.length).toBeLessThanOrEqual(600);
     expect(WATCH_TOOLS.map((t) => [t.name, t.scope, t.description])).toEqual([
@@ -34,9 +34,14 @@ describe('the D-05 contract', () => {
       [
         'watch_status',
         'watch:read',
-        'Whether the user has seen a title, how far along he is, and whether it is on Plex.',
+        'Whether the user has seen a title, how far along he is, and whether it is on Plex and on his watchlist.',
       ],
       ['recent_history', 'watch:read', 'What the user watched recently.'],
+      [
+        'watchlist',
+        'watch:read',
+        "The user's Plex watchlist, newest first, each title with whether it is on Plex; pass offset for more.",
+      ],
       [
         'mark_watched',
         'watch:write',
@@ -48,9 +53,14 @@ describe('the D-05 contract', () => {
         'Stop suggesting a title: reason not_interested (default) or not_mine (someone else watched it on this account). Never changes Plex.',
       ],
       [
+        'set_watchlist',
+        'watch:write',
+        "Add a title to the user's Plex watchlist or remove it; says back the title it found. Adding a title not on Plex makes Seerr download it.",
+      ],
+      [
         'undo_last_change',
         'watch:write',
-        "Undo the user's last mark_watched or dismiss from the past day.",
+        "Undo the user's last mark_watched, dismiss or set_watchlist from the past day.",
       ],
     ]);
     expect(Object.fromEntries(WATCH_TOOLS.map((t) => [t.name, t.annotations]))).toEqual({
@@ -58,8 +68,10 @@ describe('the D-05 contract', () => {
       recommend: { readOnlyHint: true },
       watch_status: { readOnlyHint: true },
       recent_history: { readOnlyHint: true },
+      watchlist: { readOnlyHint: true },
       mark_watched: { destructiveHint: false, idempotentHint: true },
       dismiss: { destructiveHint: false },
+      set_watchlist: { destructiveHint: false, idempotentHint: true },
       undo_last_change: { destructiveHint: false },
     });
   });
@@ -154,6 +166,7 @@ describe('consumer auth (D-03)', () => {
       'recommend',
       'watch_status',
       'recent_history',
+      'watchlist',
     ]);
     const logs: string[] = [];
     const mark = WATCH_TOOLS.find((t) => t.name === 'mark_watched');
@@ -188,6 +201,13 @@ describe('consumer auth (D-03)', () => {
         'recommend',
         'watch_status',
         'recent_history',
+        'watchlist',
+      ]);
+      // DESIGN-051 D-01: a watch:read-only token sees `watchlist` but never `set_watchlist`.
+      const change = await client.callTool({ name: 'set_watchlist', arguments: { title: 'x', action: 'add' } });
+      expect(change.isError).toBe(true);
+      expect(change.content).toEqual([
+        { type: 'text', text: expect.stringMatching(/Tool set_watchlist not found/) },
       ]);
       const out = await client.callTool({ name: 'mark_watched', arguments: { title: 'x' } });
       expect(out.isError).toBe(true);

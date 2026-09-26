@@ -2,11 +2,13 @@
 // the inputs of the spoken formatters. Pure — the MCP layer reads (queries), revalidates (the domain), then
 // builds its answer here and formats it (format.ts).
 import type { WatchEventRow, WatchMarkRow, WatchTitleRow } from '@hnet/db';
-import type { RecentEntry, UnfinishedItem, WatchStatusView } from './format';
+import type { RecentEntry, UnfinishedItem, WatchlistItemView, WatchStatusView } from './format';
 import { keysOf, nameKey } from './identity';
 import { normalizeTitle } from './normalize';
 import { compareUnfinished, movieState, showState } from './progress';
 import type { RecommendInputs, RecoTitleRow, UnfinishedRow } from './queries/answers';
+import { ledgerMatchesTitle } from './queries/ledger';
+import type { TitleFacts, TitleFactsRow } from './queries/watchlist';
 import {
   buildExclusions,
   buildTasteProfile,
@@ -16,11 +18,13 @@ import {
   type Dismissal,
   type HistoryFacts,
   type LiveMark,
+  type MarkAction,
   type ProfileTitle,
   type Recommendations,
 } from './recommend';
 import type { TitleIds, WatchKind } from './types';
 import { validTime } from './util';
+import { sameWatchlistTitle, statementMarks, type WatchlistEntry } from './watchlist';
 
 const sec = (d: Date | null | undefined): number | null => (d ? Math.floor(d.getTime() / 1000) : null);
 
@@ -49,7 +53,8 @@ export function indexMarks(marks: readonly WatchMarkRow[]): MarkIndex {
   const notInterested = new Set<string>();
   const notMine = new Set<string>();
   const notMineShowNames = new Set<string>();
-  for (const m of marks) {
+  // DESIGN-051 D-07: a Watchlist Change is not a watch statement (never Ever Watched, never a dismissal).
+  for (const m of statementMarks(marks)) {
     if (m.revertedAt) continue;
     const set = m.action === 'watched' ? watched : m.action === 'not_interested' ? notInterested : notMine;
     for (const k of keysOf(m)) {
@@ -204,8 +209,8 @@ export function historyFacts(row: RecoTitleRow): HistoryFacts {
   };
 }
 
-/** A live mark as the exclusion input (D-18). */
-export function liveMark(m: WatchMarkRow): LiveMark {
+/** A live mark as the exclusion input (D-18) — a watch statement only (DESIGN-051 D-07: see `statementMarks`). */
+export function liveMark(m: WatchMarkRow & { action: MarkAction }): LiveMark {
   return {
     titleKey: m.titleKey,
     kind: m.kind,
@@ -228,7 +233,8 @@ export function recommendations(
   marks: readonly WatchMarkRow[],
   opts: { kind?: WatchKind | 'any' | null; genre?: string | null; kids?: boolean; now: number },
 ): Recommendations {
-  const live = marks.filter((m) => !m.revertedAt);
+  // DESIGN-051 D-07: Watchlist Changes never change recommendations — only watch statements count.
+  const live = statementMarks(marks).filter((m) => !m.revertedAt);
   const index = indexMarks(live);
   const exclusions = buildExclusions(inputs.titles.map(historyFacts), live.map(liveMark));
   const profileTitles: ProfileTitle[] = inputs.titles.map((t) => {
@@ -269,9 +275,12 @@ export function watchStatusView(input: {
   marks: MarkIndex;
   onPlexElsewhere: boolean;
   now: number;
+  /** DESIGN-051 D-02: on the owner's overlaid watchlist; null when the principal's watchlist is not read. */
+  onWatchlist?: boolean | null;
 }): WatchStatusView {
   const { row } = input;
   const m = marksFor(input.marks, row ?? input.title);
+  const onWatchlist = input.onWatchlist ?? null;
   if (!row) {
     return {
       kind: input.title.kind,
@@ -282,6 +291,7 @@ export function watchStatusView(input: {
       everWatched: m.watched && m.dismissed !== 'not_mine',
       lastWatchedAt: null,
       dismissed: m.dismissed,
+      onWatchlist,
     };
   }
   const lastWatchedAt = sec(row.lastWatchedAt);
@@ -314,5 +324,72 @@ export function watchStatusView(input: {
     resumePercent: row.resumePercent,
     lastWatchedAt,
     dismissed: m.dismissed,
+    onWatchlist,
   };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// The watchlist (ADR-092 / DESIGN-051 D-02)
+
+type FactsIds = TitleIds & { titleKey?: string | null };
+
+/**
+ * DESIGN-051 D-02 "on Plex" (recommend's DESIGN-049 D-17 rule; ADR-092 C-03, D-13): a live ledger item with a
+ * shared external id and a `media_plex_matches` row, or the owner's Title State of the title with `on_plex`.
+ */
+export function onPlexFor(t: FactsIds, facts: TitleFacts): boolean {
+  if (facts.ledger.some((l) => l.onPlex && ledgerMatchesTitle(t, l))) return true;
+  return facts.titles.some((r) => r.onPlex.length > 0 && sameWatchlistTitle(r, t));
+}
+
+/** The owner's Title State of a title among the facts: the exact key first. */
+function titleRowFor(t: FactsIds, facts: TitleFacts): TitleFactsRow | null {
+  const rows = facts.titles.filter((r) => sameWatchlistTitle(r, t));
+  return rows.find((r) => r.titleKey === t.titleKey) ?? rows[0] ?? null;
+}
+
+/**
+ * The `watchlist` answer's items (DESIGN-051 D-02): each entry with its year and kind as plex.tv lists them, the
+ * D-02 "on Plex" rule, and `started` when its Title State is in progress or stalled, `watched` when it is Ever
+ * Watched (T-247: Plex ∪ events ∪ a live `watched` mark) and not unfinished. A title marked `not_mine` is
+ * someone else's viewing, so it is neither.
+ */
+export function watchlistItems(
+  entries: readonly WatchlistEntry[],
+  facts: TitleFacts,
+  marks: MarkIndex,
+  now: number,
+): WatchlistItemView[] {
+  return entries.map((e) => {
+    const row = titleRowFor(e, facts);
+    const m = marksFor(marks, row ?? e);
+    let progress: WatchlistItemView['progress'] = null;
+    if (m.dismissed !== 'not_mine') {
+      if (row) {
+        const lastWatchedAt = sec(row.lastWatchedAt);
+        const next =
+          row.nextSeason !== null && row.nextEpisode !== null
+            ? { season: row.nextSeason, episode: row.nextEpisode, resume: row.nextResume }
+            : null;
+        const state =
+          row.kind === 'show'
+            ? showState(
+                { episodesWatched: row.episodesWatched ?? 0, episodesTotal: row.episodesTotal ?? 0, next, lastWatchedAt },
+                { showStatus: row.showStatus, now },
+              )
+            : movieState({ plexWatched: row.plexWatched, resumePercent: row.resumePercent, lastWatchedAt }, { now });
+        if (state === 'in_progress' || state === 'stalled' || state === 'taster') progress = 'started';
+        else if (
+          isEverWatched(
+            { episodesWatched: row.episodesWatched, plexWatched: row.plexWatched, eventWatched: row.eventWatchedEpisodes > 0 },
+            { watched: m.watched },
+          )
+        )
+          progress = 'watched';
+      } else if (m.watched) {
+        progress = 'watched';
+      }
+    }
+    return { kind: e.kind, title: e.title, year: e.year, onPlex: onPlexFor(e, facts), progress };
+  });
 }

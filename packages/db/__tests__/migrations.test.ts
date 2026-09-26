@@ -2786,6 +2786,50 @@ describe('migrations against embedded Postgres 16', () => {
       });
     });
   });
+
+  // ADR-092 / DESIGN-051 D-07 (PLAN-071 S2 — migration 0080, journal idx 79): watch_marks.action admits the two
+  // Watchlist Change actions, built from WATCH_MARK_ACTIONS; nothing else about the table changes.
+  describe('0080 watchlist marks (ADR-092 — the action CHECK admits watchlist_add / watchlist_remove)', () => {
+    const OWNER = 12874061;
+
+    it('admits both new actions with the D-03 row shape, still refuses a bogus action, and matches enums.ts', async () => {
+      await client.query({
+        text: `INSERT INTO watch_accounts (plex_account_id, username, role) VALUES ($1, 'owner-0080', 'household')`,
+        values: [OWNER],
+      });
+      try {
+        const insert = (action: string, plexResult = 'pending') =>
+          client.query({
+            text: `INSERT INTO watch_marks (plex_account_id, action, scope, title_key, kind, title, plex_guid, query,
+                                            consumer, plex_result)
+                   VALUES ($1, $2, 'movie', 'plex:plex://movie/5d776824151a60001f24a29e', 'movie', 'The Terminator',
+                           'plex://movie/5d776824151a60001f24a29e', 'add the terminator', 'hop', $3)
+                   RETURNING flipped`,
+            values: [OWNER, action, plexResult],
+          });
+        for (const action of ['watchlist_add', 'watchlist_remove']) {
+          expect(WATCH_MARK_ACTIONS).toContain(action);
+          for (const plexResult of ['pending', 'written', 'failed']) {
+            const r = await insert(action, plexResult);
+            expect(r.rows[0].flipped).toEqual([]);
+          }
+        }
+        for (const action of WATCH_MARK_ACTIONS) await insert(action);
+        await expect(insert('watchlist')).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('watchlist_clear')).rejects.toMatchObject({ code: '23514' });
+
+        // The live CHECK names exactly WATCH_MARK_ACTIONS (parity both ways).
+        const def = await client.query(
+          `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'watch_marks_action_enum'`,
+        );
+        const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+        expect(listed.sort()).toEqual([...WATCH_MARK_ACTIONS].sort());
+      } finally {
+        await client.query({ text: `DELETE FROM watch_marks WHERE plex_account_id = $1`, values: [OWNER] });
+        await client.query({ text: `DELETE FROM watch_accounts WHERE plex_account_id = $1`, values: [OWNER] });
+      }
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -2856,5 +2900,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(
       readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0079_haynes_quest_catalog_card.sql'), 'utf8'),
     ).toContain('INSERT INTO role_app_grants');
+  });
+
+  // PLAN-071 S2 gate — the watchlist-marks migration is journaled (idx 79), strictly after 0079, and its SQL exists.
+  it('lists 0080_watchlist_marks at idx 79, strictly after 0079_haynes_quest_catalog_card', () => {
+    const entry = journal.entries.find((e) => e.tag === '0080_watchlist_marks');
+    const prev = journal.entries.find((e) => e.tag === '0079_haynes_quest_catalog_card');
+    expect(entry?.idx).toBe(79);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    expect(readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0080_watchlist_marks.sql'), 'utf8')).toContain(
+      "'watchlist_add','watchlist_remove'",
+    );
   });
 });

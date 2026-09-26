@@ -156,13 +156,26 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   call() { curl -s "${H[@]}" $U -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":${2:-{\}}}}"; }
   call unfinished; call recommend; call watch_status '{"title":"stub expanse"}'
   call mark_watched '{"title":"stub severance"}'; call undo_last_change
+  call watchlist; call set_watchlist '{"title":"stub expanse","action":"add"}'
+  call watchlist; call undo_last_change
   ```
 
-  Expect: no `Mcp-Session-Id` header on initialize; `tools/list` 2,712 bytes; "One unfinished show.
-  Breaking Prod: 4 of 5 watched, next is season 2 episode 2, …"; "One pick on Plex. Stub Severance, a 2022
-  show, on your watchlist. Not on Plex yet: Stub Dune, …"; the mark answers "Marked Stub Severance (2022) as
-  watched in Plex, all 3 episodes." and `GET <stub-plex>/_stub/calls` records `/:/scrobble` key 506 on
-  haynestower, the undo `/:/unscrobble` key 506. GET / DELETE on `/api/mcp` answer 405; a missing or wrong
+  Expect: no `Mcp-Session-Id` header on initialize; `tools/list` 3,633 bytes (nine tools; the cap is 4,096,
+  DESIGN-051); "One unfinished show. Breaking Prod: 4 of 5 watched, next is season 2 episode 2, …"; "One pick
+  on Plex. Stub Severance, a 2022 show, on your watchlist. Not on Plex yet: Stub Dune, …"; "Stub Expanse (2015
+  show): all 4 episodes watched, caught up, … On Plex, not on your watchlist."; the mark answers "Marked Stub
+  Severance (2022) as watched in Plex, all 3 episodes." and `GET <stub-plex>/_stub/calls` records `/:/scrobble`
+  key 5061 (Stub Severance's season 1: a mark collapses to season keys, never the show key) on haynestower,
+  the undo `/:/unscrobble` key 5061. The watchlist (ADR-092 / DESIGN-051, the stub's in-memory plex.tv
+  watchlist): "Your watchlist has three titles. Newest first: Stub Severance, a 2022 show, on Plex. Stub Dune,
+  a 2021 movie, not on Plex yet. Stub Runner, a 2020 movie, on Plex, started."; the add answers "Added Stub
+  Expanse (2015 show) to your watchlist. It's on Plex." and the next list has four titles, Stub Expanse first
+  ("on Plex, watched"); the undo answers "Removed Stub Expanse (2015 show) from your watchlist again."
+  `/_stub/calls` records `PUT /actions/addToWatchlist` then `PUT /actions/removeFromWatchlist`, both with
+  `ratingKey` 5d9c086c46115600200a0003 (Stub Expanse's discover id). Test adds with a title on Plex: an add of
+  one that is not (Stub Dune) says Seerr will request it, which against a real plex.tv means a download
+  (nothing here reaches one). `POST <stub-plex>/_stub/reset` restores the seeded watchlist too. GET / DELETE
+  on `/api/mcp` answer 405; a missing or wrong
   bearer 401 with `WWW-Authenticate: Bearer`. Every call logs one `[mcp] tool_called` line (no arguments,
   no results). To re-run the sync against the running stack: `DATABASE_URL=<the stack's>` plus the stack's
   `PLEX_*` / `TAUTULLI_*` env, then `pnpm --filter @hnet/sync sync -- --mode=watch` (the banner prints the
@@ -197,14 +210,14 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   read from `consent.html`) as multipart to `$CONSENT` with `-H "origin: $APP"`; the answer is a 303 to
   `http://127.0.0.1:8765/callback?code=…&state=s1`. Then exchange the code at `/oauth/token`
   (`grant_type=authorization_code`, `code`, `code_verifier=$VER`, `client_id=$CID`) and call
-  `POST $APP/mcp` with `Authorization: Bearer <access_token>`. Expect: `tools/list` 2,712 bytes; `unfinished`
+  `POST $APP/mcp` with `Authorization: Bearer <access_token>`. Expect: `tools/list` 3,633 bytes; `unfinished`
   "One unfinished show. Breaking Prod: 4 of 5 watched, …"; `/mcp` without a token 401 with
   `WWW-Authenticate: Bearer resource_metadata="<app>/.well-known/oauth-protected-resource"` (a presented but refused
   token adds `error="invalid_token"`); GET `/mcp` 405; the OAuth token at `/api/mcp` 401 (`WWW-Authenticate:
   Bearer`) and the hop token at `/mcp` 401; an authorize request with a parameter error (say
   `code_challenge_method=plain`) goes to `/login?next=` when signed out and renders the bad-request page when signed
   in — never a redirect to the client; a refresh
-  narrowed to `watch:read offline_access` lists four tools and a `mark_watched` call answers 403
+  narrowed to `watch:read offline_access` lists five tools (`watchlist` is a read) and a `mark_watched` call answers 403
   `insufficient_scope` with `scope="watch:write"`; replaying the spent refresh token is `invalid_grant` and kills the family (the newest
   access token turns 401); the eleventh registration from one IP in an hour is 429 with `Retry-After` and
   `{"error":"rate_limited"}`. The dev server logs one `[auth] <event> {…}` line per step and never a token,
