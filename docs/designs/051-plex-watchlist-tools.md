@@ -1,7 +1,10 @@
 # DESIGN-051: Plex watchlist tools — `watchlist`, `set_watchlist`, "on your watchlist" in `watch_status`, and undoable watchlist changes
 
-- **Status:** Accepted (2026-09-26; live as v0.100.0, PLAN-071 S5–S6 verified)
-- **Last updated:** 2026-09-26 (D-15 records the rulings from the PR #580 code review, folded into D-02..D-12 and
+- **Status:** Accepted (2026-09-26; live as v0.100.0; PLAN-071 S5 and S6's Movie Room checks and nine-tool bench
+  verified; the owner's ChatGPT connector check (D-15ad) is still open in PLAN-071)
+- **Last updated:** 2026-09-26 (PLAN-071 S6 close-out: D-12 corrected, since Home Assistant loads an MCP server's
+  tool list once at entry setup and needs an entry reload after a tool change, and it cites the prompt line as
+  applied (hass-sandbox #197); Status → Accepted; Q-01 and Q-02 now name their issues, #593 and #589). Prior: 2026-09-26 (D-15 records the rulings from the PR #580 code review, folded into D-02..D-12 and
   D-14, D-15i/D-15j those of its second pass: the undo replay guard across clocks, and the Seerr sentence on a
   repeated or unconfirmed add, and D-15k..D-15p those of its third: an unsettled change when plex.tv cannot be
   read, several watchlist titles under one name, a failed clear, a write that may still land, a pending change
@@ -350,12 +353,15 @@ The Movie Room agent does NOT see new tools by itself (corrected at PLAN-071 S6)
 `tools/list` after each tool call, but the list HA hands the LLM is the `mcp` integration's
 `ModelContextProtocolCoordinator` data, loaded once at entry setup. Its 30-minute `UPDATE_INTERVAL` never fires,
 because a `DataUpdateCoordinator` schedules refreshes only while it has listeners and the `mcp` integration adds
-none (HA 2026.9). Text tests at 08:39Z and 09:06Z, 6 and 33 minutes after the rollout, still answered "I can't
+none (HA 2026.9). Text tests at 08:39Z and 09:06Z, 4 and 31 minutes after the rollout, still answered "I can't
 add titles to a watchlist"; after `homeassistant.reload_config_entry` on the "Watch history" entry
-(`01M381GTWER1BG9K4MWG3GDEGR`) at 09:08Z the agent added and undid The Matrix through `set_watchlist`. So any
-deploy that changes the tool list reloads that entry (OPS-015 §8). hass-sandbox's WATCH HISTORY prompt block gains one line (use `watchlist` / `set_watchlist`
-for the Plex watchlist; adding a title not on Plex downloads it) through its own short PR, and the
-attach helper's byte-identical copy with it. ChatGPT does not pick the change up by itself (corrected by
+(`01M381GTWER1BG9K4MWG3GDEGR`) at about 09:07Z the agent added and undid The Matrix through `set_watchlist`. So any
+deploy that adds, removes or changes a tool (its name, description or parameters) reloads that entry (OPS-015 §8).
+hass-sandbox's WATCH HISTORY prompt block gained one line through hass-sandbox #197, applied to the live agent
+with the attach helper's `ACTION=update` (the helper holds the block byte for byte): "His Plex watchlist: use
+watchlist to list it (not recommend) and set_watchlist to add or remove a title, and say back the title and year it
+names. If set_watchlist or undo_last_change says Seerr will or may request a title, always tell him it will
+download." ChatGPT does not pick the change up by itself (corrected by
 D-15ad): it caches a connector's tools, their descriptions and the server `instructions`, and a chat keeps the
 schemas it started with (DESIGN-050 D-12, OPS-016 §7). So after the deploy the owner refreshes the haynesnetwork
 connector in ChatGPT's settings and starts a new chat; until he does, his connector serves the seven tools and the
@@ -574,5 +580,5 @@ beside em dashes); and the `@hnet/watch` README ("started" includes a Taster).
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | Should a household member's connector see their own watchlist? | Deferred with PLAN-070: it needs each person's plex.tv token (research note §5 item 5); until then D-02's non-owner answer. |
-| Q-02 | Should `recommend` weight the owner's Plex star ratings (`userState.userRating`)? | Open follow-up (research note §5 item 3); not part of this design. |
+| Q-01 | Should a household member's connector see their own watchlist? | Deferred with PLAN-070: it needs each person's plex.tv token (research note §5 item 5, parked as issue #593); until then D-02's non-owner answer. |
+| Q-02 | Should `recommend` weight the owner's Plex star ratings (`userState.userRating`)? | Open follow-up (research note §5 item 3), tracked in issue #589; not part of this design. |

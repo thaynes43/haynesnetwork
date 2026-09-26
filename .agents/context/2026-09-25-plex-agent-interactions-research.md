@@ -11,6 +11,23 @@ it, or say from `watch_status` whether a title is on it. ChatGPT proposed `list_
 of a title that is not on Plex **goes ahead and says it downloads** (it does, see §2). The other
 opportunities are ranked in §5 with what each needs.
 
+**2026-09-26 update (PLAN-071 close-out).** The watchlist leg (§5 item 1) is **live in haynesnetwork v0.100.0**
+(haynes-ops #3205; PLAN-071 S5 and S6 verified it through the hop and on the Movie Room agent). All three §4 bullets
+are superseded:
+
+- **Movie Room voice does not get new tools by itself.** The trailing `tools/list` after each call is the MCP
+  client's own; the tool list HA hands the LLM is loaded once at entry setup (the `mcp` coordinator has no
+  listeners, so its refresh never runs). A tool change needs `homeassistant.reload_config_entry` on the "Watch
+  history" entry: DESIGN-051 D-12, OPS-015 §8.
+- **ChatGPT keeps a connector's old tools** (names, descriptions, the server instructions) until the owner
+  refreshes the connector in its settings and starts a new chat: DESIGN-051 D-15ad, OPS-016 §7. The
+  `watch:write` consent line did change (DESIGN-051 D-09).
+- **dev-env did need a change:** its GitOps `CLAUDE.md` lists the `haynesnetwork` tools by name, so it gains
+  `watchlist`, `set_watchlist` and a warning never to test an add with a title not on Plex (haynes-ops #3192, a
+  held draft the owner merges; DESIGN-051 D-15, D-12).
+
+§5 items 2–6 are now tracked as issues (§6).
+
 Method: three read-only research passes (the codebase, Plex's APIs from primary sources, the live Home
 Assistant and Seerr configuration), then live probes from a `haynesnetwork-main` pod with its own owner
 token (no token printed): the read endpoints, and one add/remove round trip on The Matrix (1999,
@@ -80,6 +97,8 @@ minutes) with no incident. Watchlist writes use the same headers; DESIGN-051 kee
 
 ## 4. Where each agent stands
 
+_(As written on 2026-09-25; all three bullets are corrected by the 2026-09-26 update at the top.)_
+
 - **Movie Room voice** (HA `conversation.chatgpt_5`, attached through the hop): gets new tools
   automatically, because HA re-reads `tools/list` on every call. Its WATCH HISTORY prompt block lives in
   hass-sandbox (`agent-docs/voice-agent-prompts.md`, `scripts/voice-bench/attach_watch_history.py`).
@@ -90,7 +109,8 @@ minutes) with no incident. Watchlist writes use the same headers; DESIGN-051 kee
 
 ## 5. Opportunities, ranked
 
-1. **Watchlist: list, add, remove, and "on your watchlist" in `watch_status`** (building: ADR-092).
+1. **Watchlist: list, add, remove, and "on your watchlist" in `watch_status`** (live in v0.100.0, 2026-09-26:
+   ADR-092, DESIGN-051, PLAN-071).
    Low risk: plex.tv state only, idempotent, reversible by undo (except a Seerr request already made).
 2. **"Play the next episode of X in the Movie Room."** Home Assistant has **no Plex integration**
    today; the Movie Room plays through `media_player.movie_room_shield` (Android TV Remote) and the LG
@@ -114,8 +134,14 @@ minutes) with no incident. Watchlist writes use the same headers; DESIGN-051 kee
    playlists (`POST /playlists`) for "queue these up"; On Deck / Continue Watching reads to answer
    "what's up next" exactly as Plex shows it.
 
-None of 2–6 is started. 2, 4 and 5 each need an owner decision; 3 and 6 are ordinary follow-ups.
+None of 2–6 is started. 2, 4 and 5 each need an owner decision and are parked as decision issues (#591, #592,
+#593); 3 and 6 are ordinary follow-ups (#589, #590). See §6.
 
 ## 6. Follow-ups filed
 
 - The Seerr re-request of deleted-but-watchlisted titles (§2): https://github.com/thaynes43/haynesnetwork/issues/576 (options: exclude watchlisted titles from Trash, drop them from the watchlist on Trash, or accept).
+- §5 item 2, playing a title in the Movie Room (owner decision): https://github.com/thaynes43/haynesnetwork/issues/591
+- §5 item 3, ratings as a taste signal (DESIGN-051 Q-02): https://github.com/thaynes43/haynesnetwork/issues/589
+- §5 item 4, `dismiss` clearing Continue Watching (owner decision): https://github.com/thaynes43/haynesnetwork/issues/592
+- §5 item 5, household watchlists (owner decision, after PLAN-070; DESIGN-051 Q-01): https://github.com/thaynes43/haynesnetwork/issues/593
+- §5 item 6, voice search fallback, playlists, On Deck reads: https://github.com/thaynes43/haynesnetwork/issues/590

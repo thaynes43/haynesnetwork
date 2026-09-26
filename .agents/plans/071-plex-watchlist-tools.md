@@ -1,8 +1,12 @@
 # PLAN-071: Plex watchlist tools (`watchlist`, `set_watchlist`, "on your watchlist"): build, deploy, live-verify
 
-- **Status:** Live (v0.100.0, 2026-09-26). S1–S5 done; S6 done except the owner's ChatGPT connector refresh
-  (he refreshes it and asks "what's on my watchlist?"; the driver checks the `oauth:` `watchlist` call in the web
-  log), then this plan moves to `completed/`.
+- **Status:** Live (v0.100.0, 2026-09-26). S1–S5 done. S6: the hass-sandbox prompt line (#197) and the nine-tool
+  voice bench (re-run 10:40Z after the HA entry reload, within R-245) done. Left, both the owner's: (1) haynes-ops
+  **#3192** held draft (owner merges; it restarts the dev-env pod, DESIGN-051 D-12); (2) he refreshes the
+  haynesnetwork connector in ChatGPT's settings, then one new chat serves this plan and PLAN-069 S8 step 3 (the
+  driver names a title first): "what's on my watchlist?" (and he confirms ChatGPT lists `set_watchlist`), then "I
+  already watched \<title\>" and "undo that"; the driver checks the `oauth:` `watchlist` call, the first
+  `token_refreshed` and the zero-flip mark and its undo in the web log. Then this plan moves to `completed/`.
 - **ADRs:** ADR-092 (Accepted 2026-09-26) · **Design:** DESIGN-051 · **PRD:** R-252, R-253,
   R-245 (amended), US-15, AC-29..AC-31, Q-13 resolved · **Glossary:** T-260, T-248 and T-253 amended
 - **Owner:** whoever holds the session; this plan is the tracked owner.
@@ -10,7 +14,8 @@
   ruling on the Seerr coupling, asked on his phone: **"Add it, say it downloads"** (ADR-092 C-03).
 - **Depends on:** PLAN-068 (completed), PLAN-069 (the public connector; its live gate S8–S9 is
   independent of this plan).
-- **Cross-repo:** haynes-ops (image tag only), hass-sandbox (one prompt line, DESIGN-051 D-12).
+- **Cross-repo:** haynes-ops (image tag #3205; dev-env CLAUDE.md #3192, held draft), hass-sandbox (one prompt
+  line, #197, DESIGN-051 D-12).
 - **Research:** `.agents/context/2026-09-25-plex-agent-interactions-research.md` (live API probes,
   the Seerr finding, the ranked follow-ups).
 
@@ -124,13 +129,14 @@
   refresh it and checks that `watchlist` answers there and `set_watchlist` is listed (DESIGN-051 D-15ad). Docs
   made current: DESIGN-051's test strategy, PRD AC-31 (the live check includes ChatGPT), HANDOFF and the PR
   description.
-- 2026-09-26: S2 closed. The review loop ran nine passes in all (each finding verified by three independent
-  skeptics; 49 confirmed and fixed, DESIGN-051 D-13..D-15ad); the ninth pass's four code lenses came back clean.
+- 2026-09-26: S2 closed. The review loop ran nine passes in all (49 skeptic-verified findings in passes 2–9, plus
+  the first pass's A/B findings, all fixed; rulings DESIGN-051 D-15..D-15ad); the ninth pass's four code lenses
+  came back clean.
   PR #580 merged (c5491ab) with every required check and e2e green.
 - 2026-09-26: S3 released **v0.100.0** (#582). S4 deployed by haynes-ops **#3205**: `haynesnetwork-main` 3/3 on
-  v0.100.0 about 08:33Z, migration 0080 applied (the live `watch_marks_action_enum` names both new actions).
+  v0.100.0 at ~08:35Z (new ReplicaSet 08:34:29Z), migration 0080 applied (the live `watch_marks_action_enum` names both new actions).
 - 2026-09-26: **S5 passed live** through the hop from dev-env, every write sent just after a Seerr tick:
-  `tools/list` nine tools, 3,599 bytes of result; `watchlist` "Your watchlist has 150 titles. Newest first: Slow
+  `tools/list` nine tools, 3,599 bytes of result (3,633 with the JSON-RPC envelope, as pinned); `watchlist` "Your watchlist has 150 titles. Newest first: Slow
   Horses, a 2022 show, on Plex. …" and `kind=show` "47 shows … FROM, a 2022 show, on Plex, started";
   `watch_status` FROM "… On Plex and on your watchlist.", The Matrix "… On Plex, not on your watchlist.";
   `set_watchlist` add The Matrix "Added The Matrix (1999 movie) to your watchlist. It's on Plex." (468 ms), plex.tv
@@ -142,13 +148,13 @@
   put back by undo, still first on the list. A remove of The Matrix when it was not on the list answered "I
   couldn't find a movie called The Matrix on your watchlist." Web log: `watchlist_changed` lines with results
   `written`, `unchanged`, `not_found`, no title in any line.
-- 2026-09-26: **S6 bench passed** (hass-sandbox voice bench, `conv` mode as `conversation.chatgpt_5`, 3 reps, the
-  2026-09-23 questions): "Is it warm in the movie room?" 2.74 s median (Assist only 4.62 s), "Give me a one line
-  movie trivia fact." 1.35 s (1.87 s), "Are the movie room lights on?" 2.67 s (2.98 s). No median rose with nine
-  tools, so R-245 holds. Text tests at 08:39Z and 09:06Z still used the old seven tools ("I can't add titles to
-  a watchlist"): HA's `mcp` integration loads the tool list once at entry setup and never refreshes it (the
+- 2026-09-26: S6 bench, first run (hass-sandbox voice bench, `conv` mode as `conversation.chatgpt_5`, 3 reps, the
+  2026-09-23 questions, 08:36:23–08:36:44Z): 2.74 s, 1.35 s and 2.67 s medians. **This was a seven-tool run, not
+  the nine-tool bench:** the entry reload below had not run yet and #197's line was not live (corrected by the
+  close-out review; the nine-tool re-run is the last entry of this log). Text tests at 08:39Z and 09:06Z still
+  used the old seven tools ("I can't add titles to a watchlist"): HA's `mcp` integration loads the tool list once at entry setup and never refreshes it (the
   coordinator has no listeners), which corrects DESIGN-051 D-12. After `homeassistant.reload_config_entry` on the
-  Watch history entry (09:08Z): "Add The Matrix to my watchlist." 4.45 s, `set_watchlist` written; "Undo that."
+  Watch history entry (about 09:07Z; the call ran at 09:06:56Z, the re-test at 09:09:04Z): "Add The Matrix to my watchlist." 4.45 s, `set_watchlist` written; "Undo that."
   2.60 s, removed again; "What is on my watchlist?" 2.61 s from `watchlist`; "Is FROM on my watchlist?" 2.70 s;
   plex.tv back to 150 titles. The agent shortened the add answer (dropped "It's on Plex."), so the WATCH HISTORY
   prompt gains a line telling it to always say a Seerr download (hass-sandbox).
@@ -159,4 +165,16 @@
   backup written first; the one known side effect, `city` Leominster → Wilmington). Read-only check afterwards:
   "What is on my watchlist?" 2.80 s from `watchlist` ("Slow Horses, The Toxic Avenger, Moana, and Arcane …"),
   "Is FROM on my watchlist?" 2.24 s. ADR-092 and DESIGN-051 → Accepted; OPS-015 §8 added. Left for the owner:
-  the ChatGPT connector refresh (Status line).
+  haynes-ops #3192 and the ChatGPT connector refresh (Status line).
+- 2026-09-26: **S6 bench passed with nine tools** (re-run after the close-out review found the first run above was
+  a seven-tool run). State: the attach helper's `ACTION=status` showed #197's WATCH HISTORY block live; the tool list
+  is the one the 09:06:56Z reload loaded (HA has not restarted since 2026-09-21); and at 10:44:06Z "What is on my
+  watchlist?" went through `watchlist` (web log `[mcp] tool_called {"tool":"watchlist","consumer":"hop"}`,
+  10:44:08Z), which only the nine-tool list has. (A pre-check at 10:40:39Z, "Is FROM on my watchlist?", proves
+  nothing here: it went through `watch_status`, which the seven-tool list has too.) The bench,
+  10:40:47–10:41:08Z, with no `tool_called` line in that window (`conv`, `conversation.chatgpt_5`, 3 reps, the 2026-09-23 questions): "Is it
+  warm in the movie room?" 2.77 / 2.67 / 2.26 s, median **2.67 s** (Assist only 4.62 s, seven tools 3.12 s); "Give
+  me a one line movie trivia fact." 1.36 / 1.71 / 1.23 s, **1.36 s** (1.87 s, 1.57 s); "Are the movie room lights
+  on?" 2.43 / 3.18 / 2.89 s, **2.89 s** (2.98 s, 2.96 s). Every median is below both 2026-09-23 medians, so R-245's
+  0.5 s bound and AC-31's bench clause hold with nine tools. hass-sandbox **#198** corrects its bench table
+  (`.agents/plans/local-assist-stack.md`: the 08:36Z run becomes a seven-tool column beside this one).
