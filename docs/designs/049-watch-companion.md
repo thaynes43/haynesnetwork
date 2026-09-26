@@ -1,7 +1,7 @@
 # DESIGN-049: Watch Companion — watch history read-model, recommendations, voice reconcile marks, and the in-cluster MCP surface
 
 - **Status:** Accepted (2026-09-23; live as v0.97.0, PLAN-068 S9–S13 verified)
-- **Last updated:** 2026-09-25 (DESIGN-051 D-15t amends the D-15 ruling row: undo never walks past a pending mark; an abandoned `watched` mark is closed and its planned keys unscrobbled). Prior: 2026-09-25 (Q-02 resolved by ADR-092 / DESIGN-051: the watchlist tools extend D-05, D-13 and D-15; the `tools/list` cap is 4 KB). Prior: 2026-09-23 (Q-01 and Q-03 point at ADR-091 / DESIGN-050, the public connectors). Prior: 2026-09-23 (PLAN-068 S7–S8: D-27 records the MCP-surface and local-stack rulings —
+- **Last updated:** 2026-09-26 (DESIGN-051 D-15x amends D-13: a year the query names settles same-name pool titles, a pool title of another year sends the query on to TMDB as "not found" does and TMDB's hit of that year wins, and a TMDB hit the pool knows is the pool's title; D-15y leaves D-13's order to the read and mark tools, while a `set_watchlist` add reaches TMDB past a near title). Prior: 2026-09-25 (DESIGN-051 D-15t amends the D-15 ruling row: undo never walks past a pending mark; an abandoned `watched` mark is closed and its planned keys unscrobbled). Prior: 2026-09-25 (Q-02 resolved by ADR-092 / DESIGN-051: the watchlist tools extend D-05, D-13 and D-15; the `tools/list` cap is 4 KB). Prior: 2026-09-23 (Q-01 and Q-03 point at ADR-091 / DESIGN-050, the public connectors). Prior: 2026-09-23 (PLAN-068 S7–S8: D-27 records the MCP-surface and local-stack rulings —
   `tools/list` is served from hand-written schemas, 2,712 bytes). Prior: PLAN-068 S5–S6 (D-26 records the
   domain and sync rulings; Q-05 and Q-06 ruled; `name:` keys carry the kind; D-04 corrected after the
   haynes-ops #3131 deploy). Prior: PLAN-068 S4
@@ -415,7 +415,12 @@ around its database rows, with Plex calls outside the transaction (D-14).
 - **Decide**: resolved when the best is at least 0.9 and no *different* title scores within 0.05 of
   it; ambiguous when the best is at least 0.6 (return up to three candidates as "Title (year, kind)");
   otherwise one TMDB `search/multi` call, accepted only on an exact normalized title match (the title
-  is then "not on Plex"); else not found.
+  is then "not on Plex"); else not found. *(Amended by DESIGN-051 D-15x, 2026-09-26: a year the query names
+  settles same-name titles: when a title it names exactly has that year (as its year or one of its own words,
+  "Blade Runner 2049"), the exact titles without it drop out. When the best title is still another year's, the
+  TMDB call runs as for "not found", and its first exact hit of the named year wins; otherwise the pool's answer
+  stands. A TMDB hit whose kind and TMDB id the pool knows is the pool's title, not "not on Plex". A
+  `set_watchlist` add weighs the pool further, D-15x and D-15y.)*
 - Ambiguous and not-found never write.
 
 ### D-14 — `mark_watched` flow

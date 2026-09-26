@@ -6,9 +6,9 @@
 // Seerr line, remove, already on, not found on the watchlist, ambiguous, a year in parentheses settling an add's
 // TMDB ambiguity and TMDB titles that read the same answered without a question (D-15v, D-15w), a Plex failure), the
 // very next `watchlist` / `watch_status` answers reflecting a change the cache predates, undo, the D-10
-// `watchlist_changed` line (never a title), and which Plex bundle each watchlist call went out on (DESIGN-051 D-15,
+// `watchlist_changed` line (never a title), which Plex bundle each watchlist call went out on (DESIGN-051 D-15,
 // the first pass's test fixes: the two deps are DIFFERENT fakes, so a swap of the 300 ms and the write budget fails
-// here).
+// here), and an add that reaches TMDB past a near title or a recommendation of another year (D-15x, D-15y).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -29,6 +29,26 @@ let fake: FakePlex;
 let http: McpHttp;
 let clock = NOW;
 
+/**
+ * TMDB's `search/multi`: Andor, which the fixture knows only as a TMDB recommendation (so an add confirms it against
+ * TMDB, DESIGN-051 D-15x), and titles no pool entry is: Dune: Part Three, and the 2024 and 1980 Shōgun (D-15y).
+ */
+const tmdbSearch = {
+  searchMulti: async (q: string) => {
+    const results = /andor/i.test(q)
+      ? [{ id: 83867, media_type: 'tv', name: 'Andor', first_air_date: '2022-09-21' }]
+      : /dune/i.test(q)
+        ? [{ id: 1170608, media_type: 'movie', title: 'Dune: Part Three', release_date: '2026-12-18' }]
+        : /sh.gun/i.test(q)
+          ? [
+              { id: 126308, media_type: 'tv', name: 'Shōgun', first_air_date: '2024-02-27' },
+              { id: 1, media_type: 'tv', name: 'Shōgun', first_air_date: '1980-09-15' },
+            ]
+          : [];
+    return { page: 1, total_pages: 1, total_results: results.length, results };
+  },
+};
+
 function deps(): McpDeps {
   return {
     db,
@@ -36,7 +56,7 @@ function deps(): McpDeps {
     // budget, the PUT and its re-read on the write budget (DESIGN-051 D-14a, D-15b).
     revalidatePlex: () => fake.clients('short'),
     markPlex: () => fake.clients('write'),
-    tmdb: () => null,
+    tmdb: () => tmdbSearch,
     now: () => clock,
     log: () => {},
   };
@@ -397,6 +417,50 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(changedLines().at(-1)).toBe(
       '[mcp] watchlist_changed {"consumer":"hop","action":"add","kind":"movie","result":"ambiguous","onPlex":null}',
     );
+  });
+
+  it('an add reaches TMDB past a near title or a recommendation of another year; a near title alone is asked about (D-15x, D-15y)', async () => {
+    const DUNE3 = '64d2b1d3a8e0f2c1b0e4d3a1';
+    const SHOGUN = '6b2c3d4e5f60718293a4b5c6';
+    const SHOGUN80 = '7c3d4e5f60718293a4b5c6d7';
+    fake.catalog.push(
+      { id: DUNE3, kind: 'movie', title: 'Dune: Part Three', year: 2026, guids: ['tmdb://1170608'] },
+      { id: SHOGUN, kind: 'show', title: 'Shōgun', year: 2024, guids: ['tmdb://126308'] },
+      { id: SHOGUN80, kind: 'show', title: 'Shōgun', year: 1980, guids: ['tmdb://1'] },
+    );
+    // Two TMDB recommendations, neither on Plex: Dune: Part Two and the 1980 Shōgun.
+    const none = { tvdbId: null, imdbId: null, plexGuid: null, seedTitleKey: 'x', seedTitle: 'X' };
+    await replaceRecoSignals({
+      db,
+      plexAccountId: OWNER,
+      source: 'tmdb_seed',
+      rows: [
+        { ...none, kind: 'movie', title: 'Dune: Part Two', year: 2024, tmdbId: 693134, rank: 0 },
+        { ...none, kind: 'show', title: 'Shōgun', year: 1980, tmdbId: 1, rank: 1 },
+      ],
+      fetchedAt: NOW,
+    });
+    fake.calls.length = 0;
+    // US-15 and the D-02 example: before, this asked "Did you mean Dune: Part Two (2024, movie)?" on every retry.
+    expect(await say('set_watchlist', { title: 'Dune: Part Three', action: 'add' })).toBe(
+      "Added Dune: Part Three (2026 movie) to your watchlist. It isn't on Plex yet, so Seerr will request it.",
+    );
+    // Before, the 1980 recommendation won both (and Seerr downloaded it): the named year reaches TMDB, and a bare
+    // name TMDB lists twice asks.
+    expect(await say('set_watchlist', { title: 'Shōgun (2024)', action: 'add' })).toBe(
+      "Added Shōgun (2024 show) to your watchlist. It isn't on Plex yet, so Seerr will request it.",
+    );
+    fake.watchlist.delete(SHOGUN);
+    await db.execute(sql`TRUNCATE watch_marks`);
+    expect(await say('set_watchlist', { title: 'shogun', action: 'add' })).toBe(
+      'More than one match for shogun: Shōgun (2024, show), Shōgun (1980, show). Which one?',
+    );
+    // The Fixture (2022) is in history; "The Fixture 2" is only a prefix of it, which TMDB does not know either.
+    expect(await say('set_watchlist', { title: 'The Fixture 2', action: 'add' })).toBe(
+      'Did you mean The Fixture (2022, movie)?',
+    );
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${DUNE3}`, `addToWatchlist:${SHOGUN}`]);
+    expect(await db.select().from(watchMarks)).toEqual([]);
   });
 
   it('a Plex failure changes nothing it says it did; its undo removes the title anyway (a removal never downloads)', async () => {

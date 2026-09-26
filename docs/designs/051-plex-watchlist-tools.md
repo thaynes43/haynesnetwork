@@ -1,7 +1,7 @@
 # DESIGN-051: Plex watchlist tools — `watchlist`, `set_watchlist`, "on your watchlist" in `watch_status`, and undoable watchlist changes
 
 - **Status:** Draft
-- **Last updated:** 2026-09-25 (D-15 records the rulings from the PR #580 code review, folded into D-02..D-12 and
+- **Last updated:** 2026-09-26 (D-15 records the rulings from the PR #580 code review, folded into D-02..D-12 and
   D-14, D-15i/D-15j those of its second pass: the undo replay guard across clocks, and the Seerr sentence on a
   repeated or unconfirmed add, and D-15k..D-15p those of its third: an unsettled change when plex.tv cannot be
   read, several watchlist titles under one name, a failed clear, a write that may still land, a pending change
@@ -9,8 +9,10 @@
   pending add and every add the cache cannot have seen, an undo plex.tv never confirmed leaves its title
   unsettled, and the unsettled check reads the title's whole run of changes, and D-15t..D-15w those of its fifth:
   undo never walks past a pending `watched` mark, a revert is never stamped before its change, a named year
-  settles an add's TMDB ambiguity, and TMDB titles that read the same are not a question; D-14 the rulings made
-  while building; D-13 the rulings from the PR #577 design review, folded into D-02..D-11).
+  settles an add's TMDB ambiguity, and TMDB titles that read the same are not a question, and D-15x/D-15y those of
+  its sixth: a named year the pool's title does not have reaches TMDB, a title only a TMDB recommendation knows is
+  checked against TMDB before an add, and an add past a near title in the pool reaches TMDB (D-14f corrected); D-14
+  the rulings made while building; D-13 the rulings from the PR #577 design review, folded into D-02..D-11).
 - **Satisfies:** PRD-001 R-252, R-253, R-245 (amended), US-15, AC-29..AC-31; governed by ADR-092; extends
   DESIGN-049 (the Watch Companion: D-05 tool contract, D-12..D-15 marks and undo, D-13 resolver, D-17
   candidates) and DESIGN-050 D-07 (the principal, owner-only Plex write-back).
@@ -73,7 +75,9 @@ defaults, bounded integers) and are hand-written like the others.
   Plex adds *"It isn't on Plex yet, so Seerr will request it if it hasn't already."* (D-15j: a client
   retrying an add that landed hears this answer, not the first one). The title and year said back are
   plex.tv's (the discover match), so the agent can verify the change.
-- Ambiguous: *"Did you mean Dune (2021 movie) or Dune (2000 show)?"* (D-13's candidate list). Several
+- Ambiguous: *"Did you mean Dune (2021 movie) or Dune (2000 show)?"* (D-13's candidate list). A pool title an add
+  may not take outright and TMDB cannot settle (a near title, another year's, or one only a recommendation knows)
+  is asked about the same way: *"Did you mean The Fixture (2022 movie)?"* (D-15x, D-15y). Several
   watchlist titles under one spoken title (D-15e) are not a question, since nothing the owner can say picks one
   (D-15l): *"Your watchlist has more than one Dark Matter (2024 show), and I can't tell them apart, so I left it
   as it is. You can change it in the Plex app."* (titles that read differently are named: *"Dark Matter (2024
@@ -98,14 +102,22 @@ defaults, bounded integers) and are hand-written like the others.
 
 1. **Principal.** `assertTrackedWatchAccount`; a role other than `owner` returns the D-02 non-owner
    answer, with no row and no Plex call.
-2. **Resolve** (DESIGN-049 D-13, unchanged scoring). `add`: the normal pool, then the one TMDB
-   `search/multi` fallback. `remove`: the pool is **the overlaid watchlist** (D-05) plus the titles a
+2. **Resolve** (DESIGN-049 D-13, unchanged scoring; a named year settles same-name titles, D-15x). `add`: the
+   normal pool, then the one TMDB `search/multi` fallback. **An add takes the pool's title outright only when the
+   query names it exactly** (1.0, or 0.95 with one trailing tag dropped), **it is not another year than the one
+   named, and the owner or the library knows it** (a Title State, a ledger item or a watchlist title, not only a
+   TMDB recommendation); otherwise the TMDB fallback runs even though the pool had an answer, and TMDB's exact
+   hits decide under the rules below (a hit the pool knows resolves to the pool's title). With no exact hit, or
+   TMDB down, the pool's answer stands as a question: an ambiguous pool asks as before, and a single pool title
+   is asked about ("Did you mean The Fixture (2022 movie)?"), never taken, except a recommendation named with its
+   own year, which is the answer to that question (D-15x, D-15y). `remove`: the pool is **the overlaid watchlist** (D-05) plus the titles a
    watchlist mark removed in the last 10 minutes (so a retried remove reaches step 4 and answers "isn't
    on your watchlist"), and no TMDB fallback. Since D-15 that pool also holds the titles a `watchlist_add`
    failed to add (it may have landed) or never finalized (D-15q), for every such add the cache cannot have
    seen (made since its fetch less the D-05 margin, or in the last 10 minutes, whichever reaches further
    back), and the titles a written remove took off whose undo plex.tv never confirmed, within the undo
-   window (D-15r); plex.tv's live state (step 4) decides. `kind` filters as for marks. **An add's TMDB
+   window (D-15r); plex.tv's live state (step 4) decides. A watchlist title of another year than the one the
+   query names is not found there (D-15x). `kind` filters as for marks. **An add's TMDB
    fallback collects every exact normalized-title hit of the eligible kind(s); two or more distinct TMDB
    ids are ambiguous** (listed with their years), since an add can download (ADR-092 C-07); the fallback
    makes a single attempt (D-15). A year the title names keeps only the hits of that year whenever one has it,
@@ -342,7 +354,7 @@ during the rolling deploy is accepted (minutes, and only if the owner changes hi
 | D-14c | **Wording.** Ambiguous and not-found answers reuse the existing phrasing ("More than one match for …", "I couldn't find anything called X."); a remove that finds nothing says "I couldn't find X on your watchlist."; later pages start "Numbers 6 to 10:"; counts up to twenty are words. |
 | D-14d | **Logging.** `unconfirmed` is the D-10 result for a guid/catalog disagreement; `failed` is also logged when plex.tv is unreachable before the change could be sent (since D-15 that change is recorded too, as not sent). |
 | D-14e | **Empty watchlist.** No fetch time is recorded for an empty list (the sync writes no rows and `watch_accounts.resolved_at` is stamped before the read), so D-05's now − 24 h fallback stands. |
-| D-14f | **Same title** on the watchlist is decided by plex guid or tmdb/tvdb/imdb id, and by name and year only when one side has no id. A title known only through the watchlist leaves the resolver pool once removed, so `watch_status` then finds it through TMDB. |
+| D-14f | **Same title** on the watchlist is decided by plex guid or tmdb/tvdb/imdb id, and by name and year only when one side has no id. A title known only through the watchlist leaves the resolver pool once removed, so `watch_status` then finds it through TMDB when nothing left in the pool is close to it; a close title is offered instead ("Did you mean …?"), since the read tools keep DESIGN-049 D-13's order, TMDB only for "not found" (corrected by D-15y; a named year the pool's title does not have reaches TMDB too, D-15x). |
 | D-14g | **A Taster reads "started"** in the watchlist answer (a show tried and left is not "watched"). |
 | D-14h | **Migration 0080**, not 0079: the Haynes Quest portal card (PR #578) took 0079 first. |
 
@@ -351,9 +363,9 @@ during the rolling deploy is accepted (minutes, and only if the owner changes hi
 An Opus review of the S2 build found two blockers and a set of should-fix items; the owner-facing
 behavior ones are ruled here and folded into D-02..D-12 and D-14 above. A second pass over the fixed branch
 (findings C1..C7, each verified by independent skeptics) added D-15i and D-15j, a third (findings E1..E6,
-verified the same way) D-15k..D-15p, a fourth (findings F1..F10, verified the same way) D-15q..D-15s, and a
-fifth (findings G1..G9, verified the same way) D-15t..D-15w. Code comments cite these IDs (and D-13 for the
-design review's rulings), never a ruling number.
+verified the same way) D-15k..D-15p, a fourth (findings F1..F10, verified the same way) D-15q..D-15s, a
+fifth (findings G1..G9, verified the same way) D-15t..D-15w, and a sixth (findings H1, H2, verified the same way)
+D-15x and D-15y. Code comments cite these IDs (and D-13 for the design review's rulings), never a ruling number.
 
 | ID | Review | Ruling |
 |---|---|---|
@@ -378,8 +390,16 @@ design review's rulings), never a ruling number.
 | D-15s | F3 | **The unsettled check reads the title's whole run, not only its newest change.** D-15k looked at the latest Watchlist Change alone. A remove plex.tv never confirmed, sitting between an unsettled add and the remove that finally landed, dropped the `after unsettled:` marker, so undo re-added (and Seerr requested) a title nothing ever showed on the list. Likewise, a change that failed outright (a 429) hid an older unsettled add, so the next remove answered "isn't on" from the cache. Now the title's changes are walked newest first. A change that failed outright changed nothing and is walked past. The walk ends at the newest change still live (no undo closed it) whose own call was written or that the cache has read: undo reaches an older change only once every newer one is closed, so nothing older ran after it. A written call (a change or an undo) supersedes the older changes' own calls, but not an older change's failed undo, which may have run after it. The marker names any unsettled add in the run. |
 | D-15t | G1 | **Undo never walks past a pending `watched` mark.** D-15o stopped undo from walking past a pending Watchlist Change, but the pick still skipped a pending `watched` mark (DESIGN-049 D-15's PR #563 ruling), and since ADR-092 the next-older mark can be a watchlist remove, whose undo re-adds a title nobody asked for and Seerr requests it. A `watched` mark stays pending while its scrobbles run (a large mark can run past the 9 s MCP deadline, so its caller hears an error while it keeps going) and for good when its replica dies or its write-through or finalize fails. The pick now takes the newest unreverted mark of the window whatever its `plex_result`. A pending `watched` mark under ten minutes old answers "Plex is still working on your last change, marking X as watched. Say undo again in a moment." and reverts nothing, the older change neither. Older (its work is its reads and at most six scrobbles at once, each attempt bounded at about 0.8 s with two retries, D-15p, so minutes only for hundreds of episode keys), it is closed `failed` with `unknown: never finalized` and undone by unscrobbling its planned keys: every one was unwatched before the mark, and unscrobble is idempotent, so the state before the mark comes back whether or not each scrobble landed. `markWatched`'s finalize now updates only a row still `pending`, and writes the Title State through only then, so a late finalize never overwrites the close. Costs, accepted: a mark still running after ten minutes that an undo closes can land a scrobble after its unscrobble, leaving that episode watched while the mark reads undone (the next sync re-reads Plex); and an abandoned mark keeps undo from reaching older changes for up to ten minutes, answered as in progress. Amends DESIGN-049 D-15's "undo never picks a `pending` mark". |
 | D-15u | G2 | **A revert is never stamped before its change.** An undo reads its clock before it waits on the advisory lock (up to 9 s, D-15p), and `changeWatchlist` never takes that lock, so the undo can pick a change another consumer made while it waited and stamp `reverted_at` earlier than that change's `created_at`. The overlay (D-05) then applied the revert before the change, so the title read as off the list while plex.tv had it back (and a remove of it answered "couldn't find"), and the replay guard counted the reverted change as a mark made since its own undo, so a retried copy of the undo went on to the next-older change (for a watchlist remove, a re-add that can download: the cascade D-15c and D-15i exist to stop). Both undo branches now stamp `max(now, created_at)`: the change and its revert tie on time and sort change first (same mark id), and the guard's strict `created_at > reverted_at` no longer counts the reverted mark itself. The overlay also applies a revert no earlier than its change's `created_at`, for rows stamped before this ruling. |
-| D-15v | G3 | **A named year settles an add's TMDB ambiguity, in parentheses too.** `normalizeTitle` takes a parenthesized year out of the title ("Shōgun (2024)" is `shogun`, year 2024), so every same-name TMDB hit scored an exact 1 and the year was never weighed: "Shōgun (2024)", the agent's natural retry in the answer's own format, got the same question again on every retry, and only the bare "shogun 2024" resolved. The TMDB fallback now keeps only the hits of the named year whenever one has it; when none does (the query "Blade Runner 2049" and its 2017 film), the year belonged to the title and nothing is filtered. This holds in D-13's first-hit mode too, so `mark_watched` and `watch_status` no longer take TMDB's first hit when the owner named another year. The pool path already weighed the year (D-13's year bonus). |
+| D-15v | G3 | **A named year settles an add's TMDB ambiguity, in parentheses too.** `normalizeTitle` takes a parenthesized year out of the title ("Shōgun (2024)" is `shogun`, year 2024), so every same-name TMDB hit scored an exact 1 and the year was never weighed: "Shōgun (2024)", the agent's natural retry in the answer's own format, got the same question again on every retry, and only the bare "shogun 2024" resolved. The TMDB fallback now keeps only the hits of the named year whenever one has it; when none does (the query "Blade Runner 2049" and its 2017 film), the year belonged to the title and nothing is filtered. This holds in D-13's first-hit mode too, so `mark_watched` and `watch_status` no longer take TMDB's first hit when the owner named another year. The pool path already weighed the year (D-13's year bonus). *(Corrected by D-15x: it did so only between titles, so a lone pool title of another year still won; a named year now settles the pool too.)* |
 | D-15w | G4 | **TMDB titles that read the same are never a question.** TMDB can list different titles under one name, year and kind (two 2020 movies called "Alone"), and the add's ambiguity (ADR-092 C-07) listed them as "Alone (2020, movie), Alone (2020, movie). Which one?", which no `set_watchlist` argument can answer: D-15l's problem, on the TMDB path, and more likely once D-15v honours the year. Now the question lists each title that reads differently once, and when every hit reads the same the resolver returns `indistinct` and `changeWatchlist` its own `indistinct` status (logged `ambiguous`, D-10), answered "I found more than one Alone (2020 movie) and can't tell them apart, so I left your watchlist as it is. You can add it in the Plex app." (D-02), with no row and no Plex call. `resolveWatchTitle` is typed so that only the `'ask'` mode can return it. |
+| D-15x | H1 | **A named year and a TMDB recommendation never decide an add on the pool's word.** D-15v assumed the pool already weighed a named year, but D-13's year only adds 0.05 when choosing between titles, and a parenthesized year leaves the title's norm, so a lone pool title of another year scored an exact 1 and resolved: with the sync's TMDB recommendations (`tmdb_seed`, many of them not on Plex) in the pool, "Shōgun (2024)", "shogun 2024" and "shogun" all added the recommended 1980 show, which Seerr downloads, without ever reaching the TMDB fallback where C-07's checks live. Now: (1) in the pure resolver a year the query names settles same-name titles as it settles TMDB's hits: when a title it names exactly has that year, the exact titles without it drop out, and a year that is one of the title's own words ("Blade Runner 2049", a 2017 film) counts as its year; (2) when the best pool title is still another year's (its year known), the one TMDB call runs, in every mode, as for "not found": for an add TMDB's exact hits decide by the C-07 rules, the mark flows take TMDB's first hit of the named year and otherwise keep the pool's title, and a remove (no TMDB) answers that the title is not on the watchlist; (3) an add treats a pool title that only a TMDB recommendation knows as TMDB's, so the fallback runs and every exact hit counts ("shogun" asks between the 2024 and the 1980 show). The review's other option, leaving the recommendations out of an add's pool, was not taken: `recommend` offers them and "add that to my watchlist" is their main use, which would then fail whenever the single TMDB attempt does. A TMDB hit whose kind and TMDB id the pool knows resolves to the pool's title (its Title State, ledger items and watchlist rows), in every mode, so a year that is one off between Plex and TMDB never turns the owner's own title into one "not on Plex". Costs, accepted: an add of a recommendation, or of a title named with another year, makes the single TMDB attempt (at most one TMDB call per resolve, so D-14a's worst case is unchanged); with TMDB down such an add asks "Did you mean Shōgun (1980 show)?" instead of adding, and a recommendation named with its own year is then taken as the answer, the one case where TMDB's check is skipped; the mark flows' first-hit mode may now answer about a TMDB title of the named year where it answered about the pool's title of another year. |
+| D-15y | H2 | **An add reaches TMDB past a near title in the pool.** DESIGN-049 D-13 tries TMDB only when nothing in the pool scores 0.6, so an add of a title not on Plex (the reason `set_watchlist` add exists, and usually a sequel or a new title near one the owner has) never got there: "add Dune: Part Three" with Dune: Part Two in the pool answered "Did you mean Dune: Part Two (2024, movie)?" on every retry (the D-02 and US-15 example could not work, and a "yes" added Part Two), "Toy Story 5" asked between Toy Story 4 and 3, and "The Fixture 2" silently resolved to The Fixture (a prefix plus the history bonus reaches 0.9), which downloads if The Fixture is no longer on Plex. Now an add takes the pool's answer without TMDB only when its best title is named exactly (1.0, or 0.95 with one trailing tag dropped), resolved or ambiguous; for a near title (a prefix, a fuzzy score or the whole-word prefix), resolved or ambiguous, the single TMDB attempt runs and its exact hits decide (D-15v, D-15w, C-07). With no exact hit, or TMDB down, an ambiguous pool asks as before and a near title that resolved is asked about ("Did you mean The Fixture (2022 movie)?"), never taken (C-07 expects the resolver to ask there); the owner's "yes" names it exactly, which then resolves. The read tools keep D-13's order (TMDB only for "not found"): a spoken partial of a title the owner watched should keep reaching it, and a wrong guess there writes nothing; D-14f is corrected to say so. The mark flows keep it too (a near title they take is undoable and downloads nothing). Cost, accepted: an add of a near title makes the single TMDB attempt, and a TMDB title that is exactly the spoken words wins over the pool's near title (the read-back names it, as for any add). |
+
+Fixed with no design change in the sixth pass: a domain test that used a recommendation to stand for a title known
+only by a plex guid names its year, since an add now checks a recommendation against TMDB first (D-15x); the MCP
+watchlist e2e gives its default deps a TMDB fake that knows Andor, the recommendation its adds use. D-14f's claim
+that `watch_status` then finds a removed watchlist title through TMDB held only when nothing in the pool is close; it
+is corrected under D-15y.
 
 Fixed with no design change in the fifth pass: PLAN-071 S5 now expects "I couldn't find X on your watchlist." for a
 remove of a title that is not on the watchlist (it expected "isn't on", the answer for a title the remove pool still
@@ -454,7 +474,11 @@ beside em dashes); and the `@hnet/watch` README ("started" includes a Taster).
   older watchlist remove (in progress, no re-add; ten minutes on, closed and its planned keys unscrobbled, its own
   late finalize leaving the row alone, D-15t), an undo whose clock reads before the change it picks (stamped at the
   change, a retry replayed, D-15u), a year in parentheses settling an add's TMDB ambiguity and the first-hit mode
-  (D-15v), TMDB titles that read the same (no question, no row, no call, D-15w), and the new actions never
+  (D-15v), TMDB titles that read the same (no question, no row, no call, D-15w), a lone recommendation of another
+  year and a bare name TMDB lists twice (the named year's title added, the question asked, D-15x), TMDB down (the
+  recommendation or the other year asked about, a named own year taken), a named year no known title has (the add,
+  the first-hit mode and a remove), a TMDB hit the pool knows (the pool's title), and an add past a near title (TMDB's
+  exact title added, a near title with no TMDB hit asked about, D-15y), and the new actions never
   reaching exclusions, the Taste Profile, Unfinished, recent history or the seed pick; the migration's CHECK.
 - `@hnet/mcp` e2e: `tools/list` ≤ 4,096 bytes and the pinned exact size, nine tools, scope filtering
   (a `watch:read`-only token sees `watchlist` but not `set_watchlist`), each new tool's happy path and
@@ -464,7 +488,10 @@ beside em dashes); and the `@hnet/watch` README ("started" includes a Taster).
   unconfirmed add (D-15j), which TMDB client each tool used (D-15g, plus a `defaultDeps` unit test, which
   also proves its timer covers the body, D-15p), two watchlist titles under one name (D-15l), and an add's TMDB
   fallback settled by a year in parentheses and answering titles that read the same without a question (D-15v,
-  D-15w).
+  D-15w), and an add that reaches TMDB past a near title and a recommendation of another year (D-15x, D-15y).
+- `@hnet/watch` (unit, the resolver): a named year settling same-name titles (the history bonus notwithstanding), a
+  title's own year word ("Blade Runner 2049"), `exact` and `yearUnmatched` on each answer, and `poolTitleOf` (the
+  whole group, never another TMDB id's) (D-15x, D-15y).
 - `apps/web` stack: a Playwright-free `dev:local` smoke via the stub (D-11) is enough; no UI changes.
 - Live (PLAN-071): the hop checks, one add/undo on a title already on Plex, the voice bench.
 

@@ -328,7 +328,10 @@ export async function titleOnPlex(
  *    with no row and no Plex call (ADR-092 C-04).
  * 2. Resolve (DESIGN-049 D-13): an add uses the full pool, then TMDB — where more than one exact hit is ambiguous
  *    (D-13, ADR-092 C-07), a named year keeps only the hits of that year (D-15v), and hits that all read the same
- *    are a "can't tell them apart" answer, not a question (D-15w); a remove resolves only among the overlaid
+ *    are a "can't tell them apart" answer, not a question (D-15w). The pool's title is taken without TMDB only when
+ *    the query names it exactly, it is not another year than the one named, and it is known beyond a TMDB
+ *    recommendation; otherwise TMDB's exact hits decide, and a pool title they cannot settle is asked about, never
+ *    taken (D-15x, D-15y). A remove resolves only among the overlaid
  *    watchlist and the titles a change may have left on plex.tv's list — a written remove of the last 10 minutes
  *    (D-13) or one whose undo never confirmed (D-15r), an add that failed or never finalized which the cache cannot
  *    have seen (D-15b, D-15q) — with no TMDB. A same-name group whose watchlist titles name different discover ids

@@ -1,10 +1,14 @@
 // DESIGN-049 D-13 — resolving a spoken title: Jaro-Winkler, the tiered match score, the history and
-// year bonuses, the "different title within 0.05" rule and the kind filter.
+// year bonuses, the "different title within 0.05" rule and the kind filter; DESIGN-051 D-15x / D-15y — a named year
+// settling same-name titles, how far the best title fits the query (`exact`, `yearUnmatched`), and a TMDB hit's own
+// pool title.
 import { describe, expect, it } from 'vitest';
 import {
   RESOLVE_MIN_SCORE,
   WORD_PREFIX_SCORE,
+  hasNamedYear,
   jaroWinkler,
+  poolTitleOf,
   resolveTitle,
   titleMatchScore,
   type ResolverCandidate,
@@ -225,6 +229,106 @@ describe('resolveTitle (D-13)', () => {
     });
     expect(resolveTitle('   ', [dune2021])).toEqual({ status: 'not_found', best: 0 });
     expect(resolveTitle('dune', [])).toEqual({ status: 'not_found', best: 0 });
+  });
+
+  describe('DESIGN-051 D-15x — a named year settles same-name titles, and says when the pool has another year', () => {
+    const shogun1980 = cand('Shōgun', 1980, 'show', { inHistory: true, titleKey: 'tmdb:show:1', ids: { tmdbId: 1 } });
+    const shogun2024 = cand('Shōgun', 2024, 'show', { titleKey: 'tmdb:show:126308', ids: { tmdbId: 126308 } });
+
+    it('picks the named year among exact titles, whatever the history bonus (no question a retry cannot answer)', () => {
+      // Before: 1.0 + the history bonus tied 1.0 + the year bonus, so "Shōgun (2024)" asked between the two forever.
+      for (const query of ['Shōgun (2024)', 'shogun 2024']) {
+        const r = resolveTitle(query, [shogun1980, shogun2024]);
+        expect(r, query).toMatchObject({ status: 'resolved', candidate: shogun2024, exact: true, yearUnmatched: false });
+      }
+      // No year: the history bonus still decides, and nothing is unmatched.
+      expect(resolveTitle('shogun', [shogun1980, shogun2024])).toMatchObject({
+        status: 'resolved',
+        candidate: shogun1980,
+        yearUnmatched: false,
+      });
+    });
+
+    it('flags a lone title of another year, never a year that is one of the title\'s own words', () => {
+      for (const query of ['Shōgun (2024)', 'shogun 2024']) {
+        expect(resolveTitle(query, [shogun1980]), query).toMatchObject({
+          status: 'resolved',
+          candidate: shogun1980,
+          exact: true,
+          yearUnmatched: true,
+        });
+      }
+      const br1982 = cand('Blade Runner', 1982, 'movie', { inHistory: true });
+      const br2049 = cand('Blade Runner 2049', 2017, 'movie');
+      // The 1982 film matches only once the query's 2049 is dropped: another year, so the caller looks further.
+      expect(resolveTitle('blade runner 2049', [br1982])).toMatchObject({ status: 'resolved', yearUnmatched: true });
+      // 2049 is the sequel's own word, so it is the named year; the 1982 film drops out even with its history bonus.
+      expect(resolveTitle('blade runner 2049', [br1982, br2049])).toMatchObject({
+        status: 'resolved',
+        candidate: br2049,
+        yearUnmatched: false,
+      });
+      // A title whose year is unknown is not another year's.
+      expect(resolveTitle('Shōgun (2024)', [cand('Shōgun', null, 'show')])).toMatchObject({ yearUnmatched: false });
+      expect(hasNamedYear('blade runner 2049', br2049)).toBe(true);
+      expect(hasNamedYear('Dune (2021)', cand('Dune (2021)', null, 'movie'))).toBe(true);
+      expect(hasNamedYear('dune', dune2021)).toBe(false);
+    });
+
+    it('leaves near titles in, and flags an ambiguous answer whose titles are all another year\'s', () => {
+      // "dune 2024": Dune: Prophecy (2024) is a near title (the whole-word prefix), so the year does not drop Dune.
+      expect(resolveTitle('dune 2024', [dune2021, prophecy])).toMatchObject({
+        status: 'resolved',
+        candidate: dune2021,
+        exact: true,
+        yearUnmatched: true,
+      });
+      expect(resolveTitle('Dune (2000)', [dune2021, dune1984])).toMatchObject({
+        status: 'ambiguous',
+        options: [dune2021, dune1984],
+        exact: true,
+        yearUnmatched: true,
+      });
+    });
+  });
+
+  describe('DESIGN-051 D-15y — exact names a title; a prefix or a fuzzy score does not', () => {
+    it('is exact for 1.0 and the 0.95 tag drop, not for a prefix, a fuzzy score or the whole-word prefix', () => {
+      expect(resolveTitle('the office us', [cand('The Office', 2005, 'show', { inHistory: true })])).toMatchObject({
+        status: 'resolved',
+        exact: true,
+      });
+      const fixture = cand('The Fixture', 2022, 'movie', { inHistory: true });
+      // 0.85 + the history bonus resolves, but it is not the title the query named.
+      expect(resolveTitle('The Fixture 2', [fixture])).toMatchObject({ status: 'resolved', exact: false });
+      expect(resolveTitle('Dune: Part Three', [cand('Dune: Part Two', 2024, 'movie')])).toMatchObject({
+        status: 'ambiguous',
+        exact: false,
+      });
+      expect(resolveTitle('dune', [prophecy])).toMatchObject({ status: 'ambiguous', exact: false });
+    });
+  });
+
+  describe('DESIGN-051 D-15x — poolTitleOf: the pool\'s own title for a TMDB hit', () => {
+    it('returns the whole same-title group, in-history first; nothing for another kind or an unknown id', () => {
+      const plexRow = cand('Foundation', 2021, 'show', {
+        titleKey: 'plex:plex://show/5d9c0',
+        inHistory: true,
+        ids: { plexGuid: 'plex://show/5d9c0', tvdbId: 366972 },
+      });
+      const ledger = cand('Foundation', 2021, 'show', { titleKey: 'tvdb:366972', ids: { tvdbId: 366972, tmdbId: 93740 } });
+      const movie = cand('Foundation', 2021, 'movie', { ids: { tmdbId: 93740 } });
+      expect(poolTitleOf([ledger, movie, plexRow, dune2021], 'show', 93740)).toEqual([plexRow, ledger]);
+      expect(poolTitleOf([ledger, plexRow], 'show', 1)).toEqual([]);
+      expect(poolTitleOf([ledger, plexRow], 'movie', 93740)).toEqual([]);
+    });
+
+    it('never lends a hit another title\'s identity (two TMDB ids merged by one name and year)', () => {
+      const a = cand('Alone', 2020, 'movie', { ids: { tmdbId: 612706 } });
+      const b = cand('Alone', 2020, 'movie', { ids: { tmdbId: 614409 } });
+      expect(poolTitleOf([a, b], 'movie', 612706)).toEqual([]);
+      expect(poolTitleOf([a], 'movie', 612706)).toEqual([a]);
+    });
   });
 
   it('offers at most three distinct titles', () => {

@@ -13,7 +13,10 @@
 // a change after an undo plex.tv never confirmed, the title's whole run of changes (the marker kept, a refused change
 // never hiding an unsettled one), and the pure run walk; and from its fifth (D-15t..D-15w): a pending `watched` mark
 // never walked past to an older remove, a revert never stamped before its change, a year in parentheses settling an
-// add's TMDB ambiguity, and TMDB titles that read the same answered without a question.
+// add's TMDB ambiguity, and TMDB titles that read the same answered without a question; and from its sixth
+// (D-15x, D-15y): a named year the pool's title does not have (an add reaches TMDB, a remove finds nothing, the mark
+// flows take TMDB's hit of that year or the pool's own title), a title only a TMDB recommendation knows checked
+// against TMDB before an add, and an add past a near title in the pool.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { watchMarks, type Database, type WatchMarkRow } from '@hnet/db';
@@ -558,7 +561,8 @@ describe('changeWatchlist — add (D-03)', () => {
       rows: [{ kind: 'movie', title: 'Phantom Cut', year: 2001, tmdbId: null, tvdbId: null, imdbId: null, plexGuid: `plex://movie/${GHOST}`, rank: 0, seedTitleKey: 'x', seedTitle: 'X' }],
       fetchedAt: NOW,
     });
-    const out = await change('phantom cut', 'add');
+    // Named with its year: a title only a recommendation knows is otherwise asked about first (DESIGN-051 D-15x).
+    const out = await change('phantom cut (2001)', 'add');
     expect(out).toMatchObject({ result: 'not_in_catalog' });
     expect(await onlyMark()).toMatchObject({ plexResult: 'failed' });
   });
@@ -1465,6 +1469,215 @@ describe('the fourth review pass on PR #580 (DESIGN-051 D-15q..D-15s)', () => {
     expect(
       unsettledWatchlistRun([row(2, 20, { action: 'watchlist_remove', ...unknownAdd }), row(1, 10, unknownAdd)], since),
     ).toMatchObject({ mark: { id: 2 }, add: { id: 1 } });
+  });
+});
+
+describe('the sixth review pass on PR #580 (DESIGN-051 D-15x, D-15y)', () => {
+  const SHOGUN24 = '6b2c3d4e5f60718293a4b5c6';
+  const SHOGUN80 = '7c3d4e5f60718293a4b5c6d7';
+  const DUNE2000 = '8d4e5f60718293a4b5c6d7e8';
+  const failing: WatchTmdbSearch = {
+    searchMulti: async (q: string) => {
+      tmdbCalls.push(q);
+      throw new Error('TMDB timed out');
+    },
+  };
+  /** TMDB's "Dune" titles: the two films and the 2000 miniseries. */
+  const dunes: WatchTmdbSearch = {
+    searchMulti: async (q: string) => {
+      tmdbCalls.push(q);
+      const results = /dune/i.test(q)
+        ? [
+            { id: 438631, media_type: 'movie', title: 'Dune', release_date: '2021-10-22' },
+            { id: 841, media_type: 'movie', title: 'Dune', release_date: '1984-12-14' },
+            { id: 876, media_type: 'tv', name: 'Dune', first_air_date: '2000-12-03' },
+          ]
+        : [];
+      return { page: 1, total_pages: 1, total_results: results.length, results };
+    },
+  };
+
+  /** One TMDB recommendation: the 1980 Shōgun, which is not on Plex (the sync's step 7 keeps many such rows). */
+  async function seedShogun1980(): Promise<void> {
+    await replaceRecoSignals({
+      db,
+      plexAccountId: OWNER,
+      source: 'tmdb_seed',
+      rows: [
+        { kind: 'show', title: 'Shōgun', year: 1980, tmdbId: 1, tvdbId: null, imdbId: null, plexGuid: null, rank: 0, seedTitleKey: 'x', seedTitle: 'X' },
+      ],
+      fetchedAt: NOW,
+    });
+    fake.catalog.push(
+      { id: SHOGUN24, kind: 'show', title: 'Shōgun', year: 2024, guids: ['tmdb://126308'] },
+      { id: SHOGUN80, kind: 'show', title: 'Shōgun', year: 1980, guids: ['tmdb://1'] },
+    );
+  }
+
+  it('a lone recommendation of another year never wins an add: the named year reaches TMDB (D-15x)', async () => {
+    await seedShogun1980();
+    for (const query of ['Shōgun (2024)', 'shogun 2024']) {
+      await db.execute(sql`TRUNCATE watch_marks`);
+      fake.watchlist.delete(SHOGUN24);
+      fake.calls.length = 0;
+      const out = await change(query, 'add');
+      expect(out, query).toMatchObject({ status: 'done', result: 'written', onPlex: false });
+      expect(spoken(out)).toBe("Added Shōgun (2024 show) to your watchlist. It isn't on Plex yet, so Seerr will request it.");
+      expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${SHOGUN24}`]);
+      expect(await onlyMark()).toMatchObject({ tmdbId: 126308, year: 2024, plexResult: 'written' });
+    }
+    expect(tmdbCalls).toEqual(['Shōgun', 'shogun']);
+  });
+
+  it('a recommendation is checked against TMDB before an add: two exact titles ask, nothing written (D-15x, C-07)', async () => {
+    await seedShogun1980();
+    const out = await change('shogun', 'add');
+    expect(out).toMatchObject({ status: 'ambiguous', result: 'ambiguous' });
+    if (out.status !== 'ambiguous') throw new Error(out.status);
+    expect(out.options.map((o) => [o.title, o.year, o.kind])).toEqual([
+      ['Shōgun', 2024, 'show'],
+      ['Shōgun', 1980, 'show'],
+    ]);
+    expect(tmdbCalls).toEqual(['shogun']);
+    expect(fake.calls).toEqual([]);
+    expect(await marks()).toEqual([]);
+    // Named with its own year, TMDB confirms the recommendation, which resolves to the pool's own title.
+    const r = await resolveWatchTitle({ db, plexAccountId: OWNER, query: 'Shōgun (1980)', tmdb, tmdbAmbiguity: 'ask' });
+    expect(r).toMatchObject({ status: 'resolved', source: 'pool', year: 1980, ids: { tmdbId: 1 } });
+  });
+
+  it('with TMDB down, a recommendation or another year is asked about, and a named own year is the answer (D-15x)', async () => {
+    await seedShogun1980();
+    for (const query of ['shogun', 'Shōgun (2024)']) {
+      const out = await change(query, 'add', { tmdb: failing });
+      expect(out, query).toMatchObject({ status: 'ambiguous' });
+      if (out.status !== 'ambiguous') throw new Error(out.status);
+      // "Did you mean Shōgun (1980, show)?": a question the owner can answer, never the add itself.
+      expect(out.options.map((o) => [o.title, o.year, o.kind])).toEqual([['Shōgun', 1980, 'show']]);
+    }
+    expect(fake.calls).toEqual([]);
+    expect(await marks()).toEqual([]);
+    const yes = await change('Shōgun (1980)', 'add', { tmdb: failing });
+    expect(yes).toMatchObject({ status: 'done', result: 'written' });
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${SHOGUN80}`]);
+  });
+
+  it('a named year no known title has reaches TMDB, for an add and in the mark flows; a remove finds nothing (D-15x)', async () => {
+    // History holds the 2021 and the 1984 Dune. Before, "Dune (2000)" asked between those two on every retry, and the
+    // mark flows asked too. D-13's first-hit mode (mark_watched, watch_status) now takes TMDB's hit of the named year.
+    const first = await resolveWatchTitle({ db, plexAccountId: OWNER, query: 'Dune (2000)', tmdb: dunes });
+    expect(first).toMatchObject({ status: 'resolved', source: 'tmdb', kind: 'show', year: 2000, ids: { tmdbId: 876 } });
+    // A named year TMDB has no title of either leaves the pool's answer as it was.
+    const none = await resolveWatchTitle({ db, plexAccountId: OWNER, query: 'Dune (1999)', tmdb: dunes });
+    expect(none).toMatchObject({ status: 'ambiguous' });
+    // A year that is the title's own word is its named year: "Blade Runner 2049" is never the 1982 film, which
+    // matches only once 2049 is dropped (before, the mark flows took it).
+    await replaceRecoSignals({
+      db,
+      plexAccountId: OWNER,
+      source: 'tmdb_seed',
+      rows: [
+        { kind: 'movie', title: 'Blade Runner', year: 1982, tmdbId: 78, tvdbId: null, imdbId: null, plexGuid: null, rank: 0, seedTitleKey: 'x', seedTitle: 'X' },
+      ],
+      fetchedAt: NOW,
+    });
+    const years: WatchTmdbSearch = {
+      searchMulti: async (q: string) => {
+        const results = /blade/i.test(q)
+          ? [
+              { id: 335984, media_type: 'movie', title: 'Blade Runner 2049', release_date: '2017-10-04' },
+              { id: 78, media_type: 'movie', title: 'Blade Runner', release_date: '1982-06-25' },
+            ]
+          : /space/i.test(q)
+            ? [
+                { id: 1999, media_type: 'tv', name: 'Space: 1999', first_air_date: '1975-09-04' },
+                { id: 5, media_type: 'movie', title: 'Space', release_date: '1999-01-01' },
+              ]
+            : [];
+        return { page: 1, total_pages: 1, total_results: results.length, results };
+      },
+    };
+    const br = await resolveWatchTitle({ db, plexAccountId: OWNER, query: 'Blade Runner 2049', tmdb: years });
+    expect(br).toMatchObject({ status: 'resolved', source: 'tmdb', title: 'Blade Runner 2049', year: 2017 });
+    // Both TMDB titles have 1999, one as its year and one as its own word: neither is dropped (D-15v, D-15x).
+    const space = await resolveWatchTitle({ db, plexAccountId: OWNER, query: 'Space 1999', tmdb: years, tmdbAmbiguity: 'ask' });
+    expect(space).toMatchObject({ status: 'ambiguous' });
+    if (space.status !== 'ambiguous') throw new Error(space.status);
+    expect(space.options.map((o) => [o.title, o.year])).toEqual([
+      ['Space: 1999', 1975],
+      ['Space', 1999],
+    ]);
+
+    fake.catalog.push({ id: DUNE2000, kind: 'show', title: 'Dune', year: 2000, guids: ['tmdb://876'] });
+    const out = await change('Dune (2000)', 'add', { tmdb: dunes });
+    expect(out).toMatchObject({ status: 'done', result: 'written', kind: 'show' });
+    expect(spoken(out)).toBe("Added Dune (2000 show) to your watchlist. It isn't on Plex yet, so Seerr will request it.");
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${DUNE2000}`]);
+
+    // A remove: the watchlist's Dark Matter is the 2024 show, so "Dark Matter (2015)" is not on the watchlist.
+    fake.calls.length = 0;
+    expect(await change('Dark Matter (2015)', 'remove')).toMatchObject({ status: 'not_found', result: 'not_found' });
+    expect(fake.calls).toEqual([]);
+    expect(await change('Dark Matter (2024)', 'remove')).toMatchObject({ status: 'done', result: 'written' });
+    expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${DARK}`]);
+  });
+
+  it('a TMDB hit the pool knows is the pool\'s title (a year one off, D-15x)', async () => {
+    // TMDB dates the 2021 Dune a year later than Plex does: "Dune (2022)" names TMDB's year for the owner's title.
+    const offByOne: WatchTmdbSearch = {
+      searchMulti: async () => ({
+        page: 1,
+        total_pages: 1,
+        total_results: 1,
+        results: [{ id: 438631, media_type: 'movie', title: 'Dune', release_date: '2022-01-01' }],
+      }),
+    };
+    const r = await resolveWatchTitle({ db, plexAccountId: OWNER, query: 'Dune (2022)', tmdb: offByOne });
+    expect(r).toMatchObject({ status: 'resolved', source: 'pool', kind: 'movie', year: 2021, ids: { tmdbId: 438631 } });
+    if (r.status !== 'resolved') throw new Error(r.status);
+    expect(r.titleRowId).not.toBeNull();
+    // An add of it through TMDB is the owner's own title too: on Plex, no Seerr sentence.
+    const d21 = '5d776825880197001ec96d21';
+    fake.catalog.push({ id: d21, kind: 'movie', title: 'Dune', year: 2021, guids: ['tmdb://438631'] });
+    const out = await change('Dune (2022)', 'add', { tmdb: offByOne });
+    expect(out).toMatchObject({ status: 'done', result: 'written', onPlex: true });
+  });
+
+  it('an add past a near title in the pool reaches TMDB; with no exact hit the near title is asked about (D-15y)', async () => {
+    // Dune: Part Two is a recommendation, and "Dune: Part Three" only near it: before, the add asked "Did you mean
+    // Dune: Part Two?" on every retry and never reached TMDB.
+    await replaceRecoSignals({
+      db,
+      plexAccountId: OWNER,
+      source: 'tmdb_seed',
+      rows: [
+        { kind: 'movie', title: 'Dune: Part Two', year: 2024, tmdbId: 693134, tvdbId: null, imdbId: null, plexGuid: null, rank: 0, seedTitleKey: 'x', seedTitle: 'X' },
+      ],
+      fetchedAt: NOW,
+    });
+    const out = await change('Dune: Part Three', 'add');
+    expect(spoken(out)).toBe(
+      "Added Dune: Part Three (2026 movie) to your watchlist. It isn't on Plex yet, so Seerr will request it.",
+    );
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${DUNE3}`]);
+    // "The Matrix 5" is a prefix of The Matrix, which the history bonus lifts to 0.9: never taken for an add.
+    fake.calls.length = 0;
+    tmdbCalls.length = 0;
+    const near = await change('The Matrix 5', 'add');
+    expect(near).toMatchObject({ status: 'ambiguous' });
+    if (near.status !== 'ambiguous') throw new Error(near.status);
+    expect(near.options.map((o) => [o.title, o.year])).toEqual([['The Matrix', 1999]]);
+    expect(tmdbCalls).toEqual(['The Matrix 5']);
+    expect(fake.calls).toEqual([]);
+    expect(await marks()).toHaveLength(1);
+    // A title the owner knows, named exactly, is the pool's, with no TMDB call.
+    tmdbCalls.length = 0;
+    expect(await change('the matrix', 'add')).toMatchObject({ status: 'done', result: 'written' });
+    expect(tmdbCalls).toEqual([]);
+    // The mark flows keep D-13's order: the near title resolves, TMDB is not asked.
+    const first = await resolveWatchTitle({ db, plexAccountId: OWNER, query: 'The Matrix 5', tmdb });
+    expect(first).toMatchObject({ status: 'resolved', source: 'pool', title: 'The Matrix' });
+    expect(tmdbCalls).toEqual([]);
   });
 });
 

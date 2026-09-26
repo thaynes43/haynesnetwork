@@ -84,3 +84,12 @@
   (a remove of a title not on the watchlist answers "I couldn't find X on your watchlist."), the parked TODO entry
   on header-only timers, the `@hnet/mcp` header and README, the `@hnet/arr` README; code comments cite DESIGN-051
   IDs instead of ruling numbers.
+- 2026-09-26: sixth review pass on PR #580 (findings H1, H2, verified by independent skeptics), fixed on the
+  branch: a lone pool title of another year, and a title only a TMDB recommendation knows, no longer decide an add
+  on the pool's word (the 1980 Shōgun recommendation won "Shōgun (2024)" and "shogun", and Seerr downloaded it): a
+  named year settles same-name pool titles, a pool title of another year sends every mode on to TMDB (a remove
+  answers not found), a recommendation is checked against TMDB before an add, and a TMDB hit the pool knows is the
+  pool's title (DESIGN-051 D-15x); an add reaches TMDB past a near title in the pool, so "add Dune: Part Three"
+  works with Part Two known, and a near title TMDB cannot settle is asked about, never taken (D-15y). Docs made
+  current: DESIGN-051 D-02, D-03 step 2 and D-14f, DESIGN-049 D-13, ADR-092 C-07, PRD AC-30, the `@hnet/watch`,
+  `@hnet/domain` and `@hnet/mcp` READMEs, and HANDOFF.
