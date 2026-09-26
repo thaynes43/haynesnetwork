@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.100.0](https://github.com/thaynes43/haynesnetwork/compare/v0.99.0...v0.100.0) (2026-09-26)
+
+
+### Features
+
+* **mcp:** the owner's Plex watchlist through the watch tools (watchlist, set_watchlist, "on your watchlist", undoable changes) ([#580](https://github.com/thaynes43/haynesnetwork/issues/580)) ([c5491ab](https://github.com/thaynes43/haynesnetwork/commit/c5491ab2a3410d0623555f4fef65269dd5897ffc))
+
+
+### Documentation
+
+* **handoff:** Haynes Quest portal card live in v0.99.0 (PRD R-254) ([#581](https://github.com/thaynes43/haynesnetwork/issues/581)) ([6d02ca5](https://github.com/thaynes43/haynesnetwork/commit/6d02ca5e3c73945f254a55a7c3f78ff531f947da))
+* **janitor:** PLAN-065 ladder log — promoted to L1; the L1 audit and its follow-ups ([#583](https://github.com/thaynes43/haynesnetwork/issues/583)) ([#584](https://github.com/thaynes43/haynesnetwork/issues/584)) ([0e15153](https://github.com/thaynes43/haynesnetwork/commit/0e15153cabfabeeed1994e6dc0b06f93b350d33b))
+
 ## [0.99.0](https://github.com/thaynes43/haynesnetwork/compare/v0.98.0...v0.99.0) (2026-09-25)
 
 
