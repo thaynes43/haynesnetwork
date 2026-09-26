@@ -36,7 +36,7 @@
 | S3 | Release: merge the release-please PR. | `v0.99.0` (or the next minor) image published. |
 | S4 | Deploy: haynes-ops image tag bump (short PR). | Flux rolled `haynesnetwork-main`; migration 0080 applied (the `init-db`/`migrate` init containers succeeded). |
 | S5 | Live verify through the hop from dev-env (JSON-RPC to `haynesnetwork-mcp-hop`): `tools/list` ≤ 4,096 bytes with nine tools; `watchlist` lists the newest titles; `watch_status` "FROM" says "on your watchlist"; `set_watchlist` add on a title already on Plex and not on the watchlist (so Seerr skips it), confirmed by `watchlist` and by plex.tv `userState`; a repeat add answers "already on"; `undo_last_change` removes it; the same add and undo for a long-running show on Plex and not on the watchlist (Law & Order: Special Victims Unit or CSI, whose catalog lookup plex.tv answers in up to 1.3 s: it must answer "Added …", DESIGN-051 D-15ab); a remove of a title that is not on the watchlist (never added, or that add just undone) answers "I couldn't find X on your watchlist." with no row and no call (DESIGN-051 D-02, D-03 step 2: a remove resolves only among watchlist titles, with no TMDB fallback); a title on Plex and on the watchlist removed twice within 10 minutes answers "Removed …" and then "X isn't on your watchlist." with no second row and no second PUT, then `undo_last_change` puts it back. **Never add a title that is not on Plex in a live test** (it downloads). Web logs show `watchlist_changed` lines. | All pass; results recorded here. |
-| S6 | hass-sandbox: the WATCH HISTORY prompt line (DESIGN-051 D-12), then the voice bench on the Movie Room agent: R-245's 0.5 s bound against the 2026-09-23 "Assist only" medians. Close out: ADR-092 → Accepted, DESIGN-051 → Accepted, OPS-015 (the watch tools runbook) gains the watchlist tools, HANDOFF, this plan → `completed/`. | Bench within bound (or the regression recorded and the cap revisited); docs PR merged. |
+| S6 | hass-sandbox: the WATCH HISTORY prompt line (DESIGN-051 D-12), then the voice bench on the Movie Room agent: R-245's 0.5 s bound against the 2026-09-23 "Assist only" medians. ChatGPT (DESIGN-051 D-12, D-15ad): the owner's connector keeps the seven tools until it is refreshed, so ask him with AskUserQuestion (one question) to refresh the haynesnetwork connector in ChatGPT's settings, start a new chat and ask it what is on his watchlist; confirm from the web log a `[mcp] tool_called` line with `"tool":"watchlist"` and his ChatGPT client's `oauth:` consumer, and from him that ChatGPT lists `set_watchlist` (no `set_watchlist` call from ChatGPT: S5 covers the write). Close out: ADR-092 → Accepted, DESIGN-051 → Accepted, OPS-015 (the watch tools runbook) gains the watchlist tools, HANDOFF, this plan → `completed/`. | Bench within bound (or the regression recorded and the cap revisited); ChatGPT answered from `watchlist` in a new chat and lists `set_watchlist`, recorded in the log; docs PR merged. |
 
 ## Log
 
@@ -116,3 +116,10 @@
   change the cache has read. Docs made current: DESIGN-051 (D-03 step 2, D-15v and D-15x notes), DESIGN-049 D-13,
   ADR-092 C-07, PRD AC-30, the glossary's T-260 (D-15z), the `WatchPlexReaders` comment, the `@hnet/domain` and
   `@hnet/mcp` READMEs, the PR description, and HANDOFF.
+- 2026-09-26: ninth review pass on PR #580 (finding K1, verified by independent skeptics), fixed on the branch:
+  DESIGN-051 D-12 said ChatGPT needs nothing, but ChatGPT refreshes a connector's tools only after a refresh in its
+  settings plus a new chat, and the owner's ChatGPT connector has been live since 2026-09-25 (its registration,
+  consent to every scope and read-tool calls are in the web log). D-12 is corrected and S6 now asks the owner to
+  refresh it and checks that `watchlist` answers there and `set_watchlist` is listed (DESIGN-051 D-15ad). Docs
+  made current: DESIGN-051's test strategy, PRD AC-31 (the live check includes ChatGPT), HANDOFF and the PR
+  description.
