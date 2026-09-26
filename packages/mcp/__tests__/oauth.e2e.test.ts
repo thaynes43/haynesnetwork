@@ -393,7 +393,8 @@ describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpR
     expect(r.isError).toBe(false);
     expect(r.text).toMatch(/^Marked season 1 of Silo \(2023\) as watched in Plex/);
     expect(fake.writes().length).toBeGreaterThan(0);
-    // DESIGN-051 (PR #580 ruling 11): a Watchlist Change through the connector is attributed the same way.
+    // DESIGN-051 D-15 (the first pass's test fixes): a Watchlist Change through the connector is attributed the
+    // same way.
     expect(await call(tokens.access_token, 'set_watchlist', { title: 'Foundation', action: 'add' })).toEqual({
       text: "Added Foundation (2021 show) to your watchlist. It's on Plex.",
       isError: false,

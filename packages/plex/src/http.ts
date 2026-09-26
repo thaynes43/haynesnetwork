@@ -288,7 +288,7 @@ export class PlexHttp {
   }
 
   /**
-   * ADR-092 / DESIGN-051 D-06 (PLAN-071 ruling 4) — a PUT that is idempotent on the account's state: the plex.tv
+   * ADR-092 / DESIGN-051 D-06 (D-03 step 6, D-13) — a PUT that is idempotent on the account's state: the plex.tv
    * discover provider's `addToWatchlist` / `removeFromWatchlist` (verified live 2026-09-25: a repeat add and
    * removing an absent title both answer 200). It keeps the GET retry policy (up to 3 attempts on a timeout, a
    * network failure or a 502/503/504) — a retry after an ambiguous timeout can only re-assert the same state —

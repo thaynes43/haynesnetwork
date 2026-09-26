@@ -516,12 +516,17 @@ export type UndoView =
       episodes?: number | null;
       /** A Watchlist Change: whether the title is on Plex (the Seerr sentences, DESIGN-051 D-04). */
       onPlex?: boolean | null;
-      /** A Watchlist Change: what undoing it came to (DESIGN-051 D-04, PR #580 ruling 2). */
+      /** A Watchlist Change: what undoing it came to (DESIGN-051 D-04, D-15b). */
       watchlistOutcome?: WatchlistUndoOutcome | null;
+      /**
+       * A `watched` mark still going through (DESIGN-051 D-15t): nothing was undone, and nothing older either. A
+       * Watchlist Change says so through `watchlistOutcome: 'in_progress'` (D-15o).
+       */
+      inProgress?: boolean | null;
     };
 
 /**
- * What undoing a Watchlist Change came to (DESIGN-051 D-04, PR #580 ruling 2): `reverted` (the inverse call
+ * What undoing a Watchlist Change came to (DESIGN-051 D-04, D-15b): `reverted` (the inverse call
  * landed), `cleared` (a failed add's removal landed), `not_sent` (the change never went out: nothing to undo),
  * `left_as_is` (a failed remove: its inverse, an add, could download, so nothing was sent), `left_off` (a remove
  * sent over an add plex.tv never settled, D-15k: nothing ever showed the title on the list, so no add was sent),
@@ -550,7 +555,7 @@ const SEERR_IF_ADDED = "It isn't on Plex yet, so if it was added, Seerr will req
 const SEERR_IF_PUT_BACK = "It isn't on Plex yet, so if it was put back, Seerr will request it.";
 
 /**
- * PR #580 ruling 2 — the answer when plex.tv never confirmed a watchlist call's outcome; `seerr` is D-15j's
+ * DESIGN-051 D-15b — the answer when plex.tv never confirmed a watchlist call's outcome; `seerr` is D-15j's
  * sentence when the unconfirmed call was an add of a title not on Plex.
  */
 function unknownOutcome(label: string, seerr: string | null = null): string {
@@ -573,7 +578,7 @@ function formatWatchlistUndo(r: Extract<UndoView, { undone: true }>): string {
     (r.revertResult === 'written' ? 'reverted' : r.revertResult === 'none' ? 'not_sent' : 'failed');
   switch (outcome) {
     case 'not_sent':
-      // PLAN-071 ruling 3: the change never reached Plex, so undoing it only closes the record.
+      // D-04, D-15a: the change never reached Plex, so undoing it only closes the record.
       return capSpoken(`Your last change, ${change} your watchlist, never reached Plex, so there was nothing to undo.`);
     case 'left_as_is':
       return capSpoken(
@@ -621,6 +626,12 @@ export function formatUndoResult(r: UndoView): string {
   if (r.action === 'not_interested') return capSpoken(`Undone. ${label} can be suggested again.`);
   if (r.action === 'not_mine') return capSpoken(`Undone. ${label} counts as your viewing again.`);
   const { subject, through } = markSubject(r);
+  if (r.inProgress) {
+    // DESIGN-051 D-15t: undo neither waits for the mark nor reaches past it to an older change.
+    return capSpoken(
+      `Plex is still working on your last change, marking ${subject} as watched${through}. Say undo again in a moment.`,
+    );
+  }
   const n = r.episodes ?? 0;
   switch (r.revertResult) {
     case 'written':
@@ -680,7 +691,7 @@ export function formatWatchlist(
   if (total === 0) return kind ? `Your watchlist has no ${noun}s.` : 'Your watchlist is empty.';
   if (items.length === 0) return "That's the end of your watchlist.";
   const lead = `Your watchlist has ${total === 1 ? `one ${noun}` : `${countWord(total)} ${noun}s`}.`;
-  // PR #580 ruling 8: fit the items to the cap FIRST, then say the range and "And N more." of the items KEPT, so
+  // DESIGN-051 D-15f: fit the items to the cap FIRST, then say the range and "And N more." of the items KEPT, so
   // an agent paging by `offset` never skips a title the cap dropped.
   const header = (k: number): string => {
     const range = k === 1 ? `number ${offset + 1}` : `numbers ${offset + 1} to ${offset + k}`;
@@ -714,12 +725,12 @@ export type WatchlistChangeView =
   /** Resolved, but plex.tv's catalog has no such title. */
   | { status: 'not_in_catalog'; kind: WatchKind; title: string; year: number | null }
   /**
-   * PLAN-071 ruling 6: the title's plex guid and its external-id match named different catalog titles (or the
+   * DESIGN-051 D-03 step 3: the title's plex guid and its external-id match named different catalog titles (or the
    * match found none), so nothing was written.
    */
   | { status: 'unconfirmed'; kind: WatchKind; title: string; year: number | null }
   /**
-   * PR #580 ruling 2: the write went out but plex.tv never confirmed whether it landed. An add of a title not on
+   * DESIGN-051 D-15b: the write went out but plex.tv never confirmed whether it landed. An add of a title not on
    * Plex says Seerr will request it if it landed (DESIGN-051 D-15j).
    */
   | { status: 'unknown'; action: 'add' | 'remove'; kind: WatchKind; title: string; year: number | null; onPlex: boolean }
@@ -774,6 +785,21 @@ export function formatWatchlistDuplicates(
   const named = `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
   return capSpoken(
     `${named} on your watchlist look like the same title to me, so I left your watchlist as it is. ${change}`,
+  );
+}
+
+/**
+ * DESIGN-051 D-15w — an add whose title TMDB lists more than once under one name, year and kind (two 2020 movies
+ * called "Alone"). No `set_watchlist` argument can pick one, so this is never a question: "I found more than one
+ * Alone (2020 movie) and can't tell them apart, so I left your watchlist as it is. You can add it in the Plex app."
+ */
+export function formatWatchlistIndistinct(
+  options: readonly Pick<ResolverCandidate, 'title' | 'year' | 'kind'>[],
+): string {
+  const first = options[0];
+  const label = first ? titleYearKind(first.title, first.year, first.kind) : 'title by that name';
+  return capSpoken(
+    `I found more than one ${label} and can't tell them apart, so I left your watchlist as it is. You can add it in the Plex app.`,
   );
 }
 

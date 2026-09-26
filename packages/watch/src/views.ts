@@ -334,7 +334,7 @@ export function watchStatusView(input: {
 type FactsIds = TitleIds & { titleKey?: string | null };
 
 /**
- * DESIGN-051 D-02 "on Plex" (recommend's DESIGN-049 D-17 rule, PLAN-071 ruling 11): a live ledger item with a
+ * DESIGN-051 D-02 "on Plex" (recommend's DESIGN-049 D-17 rule; ADR-092 C-03, D-13): a live ledger item with a
  * shared external id and a `media_plex_matches` row, or the owner's Title State of the title with `on_plex`.
  */
 export function onPlexFor(t: FactsIds, facts: TitleFacts): boolean {

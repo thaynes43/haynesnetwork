@@ -13,6 +13,7 @@ import {
   formatWatchlist,
   formatWatchlistChange,
   formatWatchlistDuplicates,
+  formatWatchlistIndistinct,
   formatWatchlistNotSetUp,
   formatWatchStatus,
   type WatchlistItemView,
@@ -147,6 +148,26 @@ describe('overlayWatchlist (D-05)', () => {
     const b = mark('watchlist_add', FETCHED + 20, { title: 'Arrival', year: 2016, titleKey: 'tmdb:movie:329865', plexGuid: null, tmdbId: 329865, imdbId: null });
     expect(titles(overlayWatchlist([], [b, a], FETCHED))).toEqual(['Arrival', 'The Matrix']);
   });
+
+  it('a revert stamped before its own change still applies after it (D-15u)', () => {
+    // A remove of Severance at +12 s, undone by an undo whose clock read +11 s before it waited on the lock.
+    const removed = mark('watchlist_remove', FETCHED + 12, {
+      kind: 'show',
+      title: 'Severance',
+      year: 2022,
+      titleKey: 'plex:plex://show/5d9c086c46115600200aa9b1',
+      plexGuid: 'plex://show/5d9c086c46115600200aa9b1',
+      tmdbId: 95396,
+      imdbId: null,
+      revertedAt: at(FETCHED + 11),
+      revertResult: 'written',
+    });
+    expect(watchlistEvents([removed], FETCHED).map((e) => [e.op, e.at])).toEqual([
+      ['remove', (FETCHED + 12) * 1000],
+      ['add', (FETCHED + 12) * 1000],
+    ]);
+    expect(titles(overlayWatchlist(BASE, [removed], FETCHED))).toEqual(['Severance', 'Dark Matter']);
+  });
 });
 
 describe('the same title on the watchlist (D-05) and the statement filter (D-07)', () => {
@@ -274,7 +295,7 @@ describe('formatWatchlist (D-02)', () => {
     expect(text).not.toMatch(/[*#_`\u2014\u2013]/);
   });
 
-  it('fits the items to the cap FIRST, then says the range and the rest of the items it kept (PR #580 ruling 8)', () => {
+  it('fits the items to the cap FIRST, then says the range and the rest of the items it kept (D-15f)', () => {
     const long = Array.from({ length: 10 }, (_, i): WatchlistItemView => ({
       kind: 'movie',
       title: `An Exceptionally Long Title For A Film On The Watchlist Number ${i}, Subtitled At Considerable Length`,
@@ -385,7 +406,7 @@ describe('formatUndoResult for a Watchlist Change (D-04)', () => {
     expect(formatUndoResult({ ...base, action: 'watchlist_add', revertResult: 'none' })).toBe(
       'Your last change, adding The Matrix (1999 movie) to your watchlist, never reached Plex, so there was nothing to undo.',
     );
-    // PR #580 ruling 2: a failed add that went out is cleared anyway; a failed remove is left as it is; unknown.
+    // D-15b: a failed add that went out is cleared anyway; a failed remove is left as it is; unknown.
     expect(
       formatUndoResult({ ...base, action: 'watchlist_add', revertResult: 'written', watchlistOutcome: 'cleared', onPlex: false }),
     ).toBe(
@@ -452,6 +473,20 @@ describe('formatWatchlistDuplicates (D-15e, D-15l): one spoken title, several wa
     expect(linked).not.toMatch(/\?|[\u2014\u2013]/);
     expect(formatWatchlistDuplicates([dark, { ...dark, year: 2023 }, { ...dark, year: 2022 }])).toMatch(
       /^Dark Matter \(2024 show\), Dark Matter \(2023 show\) and Dark Matter \(2022 show\) on your watchlist/,
+    );
+  });
+});
+
+describe('formatWatchlistIndistinct (D-15w): an add whose TMDB titles read the same', () => {
+  it('is never a question, and names the title once', () => {
+    const alone = { title: 'Alone', year: 2020, kind: 'movie' as const };
+    const out = formatWatchlistIndistinct([alone, alone]);
+    expect(out).toBe(
+      "I found more than one Alone (2020 movie) and can't tell them apart, so I left your watchlist as it is. You can add it in the Plex app.",
+    );
+    expect(out).not.toMatch(/\?|Which one|[\u2014\u2013]/);
+    expect(formatWatchlistIndistinct([{ title: 'Alone', year: null, kind: 'show' }])).toBe(
+      "I found more than one Alone (show) and can't tell them apart, so I left your watchlist as it is. You can add it in the Plex app.",
     );
   });
 });

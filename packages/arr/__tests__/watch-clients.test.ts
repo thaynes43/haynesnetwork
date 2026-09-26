@@ -253,7 +253,7 @@ describe('TmdbClient — recommendations + search/multi (DESIGN-049 D-13 / D-17)
     expect((error as ArrHttpError).message).not.toContain('tmdb-v3-key');
   });
 
-  // DESIGN-051 (PR #580 ruling 9) — `set_watchlist`'s fallback: getRetries 0 is ONE attempt; the default keeps 3.
+  // DESIGN-051 D-15g — `set_watchlist`'s fallback: getRetries 0 is ONE attempt; the default keeps 3.
   it('getRetries sizes the GET retries: 0 makes a single attempt on a 503, the default three', async () => {
     const busy = () => stubFetch([{ path: '/3/search/multi', status: 503, body: { status_message: 'busy' } }]);
     const once = busy();

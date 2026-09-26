@@ -93,8 +93,8 @@ export interface FDiscoverTitle {
 }
 
 /**
- * Which bundle a call went out on (PR #580 ruling 11): `short` — the 300 ms live-read bundle (`revalidatePlex`),
- * `write` — the mark / write bundle (`markPlex`). Recorded on the watchlist calls only.
+ * Which bundle a call went out on (DESIGN-051 D-15, the first pass's test fixes): `short` — the 300 ms live-read
+ * bundle (`revalidatePlex`), `write` — the mark / write bundle (`markPlex`). Recorded on the watchlist calls only.
  */
 export type FakeBudget = 'short' | 'write';
 
@@ -153,7 +153,8 @@ export class FakePlex {
     budget: FakeBudget,
   ): Promise<void> {
     this.calls.push({ server, op, key: id, budget });
-    // A write on the short-budget bundle is a wiring bug (the swap PR #580 ruling 11 guards against).
+    // A write on the short-budget bundle is a wiring bug (the swap the budget-tagged fakes of DESIGN-051 D-15's first
+    // pass guard against).
     if (budget === 'short') return Promise.reject(new Error('the short-budget bundle must never write'));
     const apply = () => {
       if (op === 'addToWatchlist') {

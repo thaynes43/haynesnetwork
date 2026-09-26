@@ -31,6 +31,7 @@ import {
   formatWatchlist,
   formatWatchlistChange,
   formatWatchlistDuplicates,
+  formatWatchlistIndistinct,
   formatWatchlistNotSetUp,
   formatWatchStatus,
   indexMarks,
@@ -70,7 +71,7 @@ export interface McpDeps {
   db: DbClient;
   /**
    * Live reads on the short budget (D-11: 300 ms per request): the revalidation, and the plex.tv discover reads of
-   * a Watchlist Change (DESIGN-051 D-03, PLAN-071 ruling 8); null when Plex is not configured.
+   * a Watchlist Change (DESIGN-051 D-03, D-13); null when Plex is not configured.
    */
   revalidatePlex: () => WatchPlexReaders | null;
   /** Watch Mark reads and writes (≈ 800 ms per attempt, D-14's 3 s); null when Plex is not configured. */
@@ -78,7 +79,7 @@ export interface McpDeps {
   /** The resolver's last resort (D-13); null when TMDB is not configured. */
   tmdb: () => WatchTmdbSearch | null;
   /**
-   * The same search with a SINGLE attempt, for `set_watchlist` (DESIGN-051, PR #580 ruling 9: its worst case stays
+   * The same search with a SINGLE attempt, for `set_watchlist` (DESIGN-051 D-15g: its worst case stays
    * inside the 9 s deadline). Absent ⇒ `tmdb`.
    */
   tmdbOnce?: () => WatchTmdbSearch | null;
@@ -205,7 +206,7 @@ export async function answerRecommend(
 /**
  * `watch_status` (D-13, D-21): resolve, revalidate the title (D-11), answer — with DESIGN-051 D-02's availability
  * sentence: on the owner's watchlist when the resolver's matched entries include an overlaid watchlist entry
- * (PLAN-071 ruling 11). A principal that is not the Server Owner keeps DESIGN-049's sentence.
+ * (DESIGN-051 D-02). A principal that is not the Server Owner keeps DESIGN-049's sentence.
  */
 export async function answerWatchStatus(
   ctx: AnswerContext,
@@ -304,6 +305,9 @@ export async function answerSetWatchlist(
     case 'duplicate':
       // DESIGN-051 D-15l: never a question — no argument of set_watchlist can pick one of these titles.
       return formatWatchlistDuplicates(out.options);
+    case 'indistinct':
+      // DESIGN-051 D-15w: TMDB lists titles that read the same; no argument of set_watchlist can pick one either.
+      return formatWatchlistIndistinct(out.options);
     case 'not_found':
       return args.action === 'remove'
         ? formatNotOnWatchlist(args.title, { kind: args.kind ?? null })

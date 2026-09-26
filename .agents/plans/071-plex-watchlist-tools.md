@@ -1,6 +1,6 @@
 # PLAN-071: Plex watchlist tools (`watchlist`, `set_watchlist`, "on your watchlist"): build, deploy, live-verify
 
-- **Status:** In progress — S1 done (#577); S2 built on `feat/plex-watchlist-tools`, in review
+- **Status:** In progress — S1 done (#577); S2 built on `feat/plex-watchlist-tools`, in review (five passes)
 - **ADRs:** ADR-092 (Proposed; Accepted at S6) · **Design:** DESIGN-051 · **PRD:** R-252, R-253,
   R-245 (amended), US-15, AC-29..AC-31, Q-13 resolved · **Glossary:** T-260, T-248 and T-253 amended
 - **Owner:** whoever holds the session; this plan is the tracked owner.
@@ -34,7 +34,7 @@
 | S2 | Build per DESIGN-051: `@hnet/plex` (D-06), migration 0080 + enum (D-07), `@hnet/watch` overlay + formatters (D-02, D-05), `@hnet/domain` `changeWatchlist` + undo (D-03, D-04) and the action-reader audit (D-07), `@hnet/mcp` tools, instructions, budget (D-01, D-08), consent copy (D-09), logging (D-10), stubs (D-11), tests (DESIGN-051 test strategy). | PR green on `lint-and-typecheck`, `test`, `build`; an Opus review's findings fixed; squash-merged. |
 | S3 | Release: merge the release-please PR. | `v0.99.0` (or the next minor) image published. |
 | S4 | Deploy: haynes-ops image tag bump (short PR). | Flux rolled `haynesnetwork-main`; migration 0080 applied (the `init-db`/`migrate` init containers succeeded). |
-| S5 | Live verify through the hop from dev-env (JSON-RPC to `haynesnetwork-mcp-hop`): `tools/list` ≤ 4,096 bytes with nine tools; `watchlist` lists the newest titles; `watch_status` "FROM" says "on your watchlist"; `set_watchlist` add on a title already on Plex and not on the watchlist (so Seerr skips it), confirmed by `watchlist` and by plex.tv `userState`; a repeat add answers "already on"; `undo_last_change` removes it; a remove of a title not on the watchlist answers "isn't on". **Never add a title that is not on Plex in a live test** (it downloads). Web logs show `watchlist_changed` lines. | All pass; results recorded here. |
+| S5 | Live verify through the hop from dev-env (JSON-RPC to `haynesnetwork-mcp-hop`): `tools/list` ≤ 4,096 bytes with nine tools; `watchlist` lists the newest titles; `watch_status` "FROM" says "on your watchlist"; `set_watchlist` add on a title already on Plex and not on the watchlist (so Seerr skips it), confirmed by `watchlist` and by plex.tv `userState`; a repeat add answers "already on"; `undo_last_change` removes it; a remove of a title that is not on the watchlist (never added, or that add just undone) answers "I couldn't find X on your watchlist." with no row and no call (DESIGN-051 D-02, D-03 step 2: a remove resolves only among watchlist titles, with no TMDB fallback); a title on Plex and on the watchlist removed twice within 10 minutes answers "Removed …" and then "X isn't on your watchlist." with no second row and no second PUT, then `undo_last_change` puts it back. **Never add a title that is not on Plex in a live test** (it downloads). Web logs show `watchlist_changed` lines. | All pass; results recorded here. |
 | S6 | hass-sandbox: the WATCH HISTORY prompt line (DESIGN-051 D-12), then the voice bench on the Movie Room agent: R-245's 0.5 s bound against the 2026-09-23 "Assist only" medians. Close out: ADR-092 → Accepted, DESIGN-051 → Accepted, OPS-015 (the watch tools runbook) gains the watchlist tools, HANDOFF, this plan → `completed/`. | Bench within bound (or the regression recorded and the cap revisited); docs PR merged. |
 
 ## Log
@@ -74,3 +74,13 @@
   `after unsettled:` marker nor hides an older unsettled add (D-15s). Docs made current: PRD AC-23, R-244 and the
   connector intro (nine tools, 4,096 bytes), BC-06's Outbound list, DESIGN-050 D-14 (the owner's consent lines),
   the comments naming the watchlist marks' readers, and HANDOFF.
+- 2026-09-25: fifth review pass on PR #580 (findings G1..G9, verified by independent skeptics), fixed on the
+  branch: undo never walks past a pending `watched` mark to an older change (an older watchlist remove's undo
+  re-adds and downloads); under ten minutes it answers "still working", older it closes the mark and unscrobbles
+  its planned keys, and the mark's own late finalize leaves it alone (DESIGN-051 D-15t); a revert is never stamped
+  before the change it reverts, so the overlay and the replay guard see them in order (D-15u); a year in
+  parentheses settles an add's TMDB ambiguity, and the first-hit mode honours a named year too (D-15v); TMDB titles
+  that read the same are answered "can't tell them apart", never a question (D-15w). Docs made current: S5 above
+  (a remove of a title not on the watchlist answers "I couldn't find X on your watchlist."), the parked TODO entry
+  on header-only timers, the `@hnet/mcp` header and README, the `@hnet/arr` README; code comments cite DESIGN-051
+  IDs instead of ruling numbers.

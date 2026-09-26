@@ -1,7 +1,7 @@
 // @hnet/mcp — the MCP endpoint behind the in-cluster `POST /api/mcp` (ADR-087, DESIGN-049 D-02..D-06) and the
 // public `POST /mcp` (ADR-091, DESIGN-050 D-07): consumer auth (the hop bearer; a delegated OAuth token), the
-// seven watch tools, the D-06 logging, and (tests) the Voice Budget. apps/web's two routes are thin adapters over
-// `handleMcpRequest` (the public one passes `authenticateOAuth`).
+// nine watch tools (ADR-092 added `watchlist` and `set_watchlist`), the D-06 logging, and (tests) the Voice Budget.
+// apps/web's two routes are thin adapters over `handleMcpRequest` (the public one passes `authenticateOAuth`).
 export {
   handleMcpRequest,
   outOfScopeTool,

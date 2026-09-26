@@ -3,8 +3,10 @@
 // partial Plex failure with an accurate `flipped`, not-on-Plex (and the TMDB fallback), ambiguous titles
 // that write nothing, local:// copies, undo reversing EXACTLY `flipped` (collapsed to season keys, never the
 // show key), dismissals that never touch Plex, and live revalidation with its budget. PR #563 review:
-// truncated listings are failed reads, a failed undo retries the same mark, pending marks are never undone,
-// and only the current owner is served (D-03). Live incident 2026-09-23 (D-26): specials never take part in
+// truncated listings are failed reads, a failed undo retries the same mark, and only the current owner is served
+// (D-03). DESIGN-051 D-15t / D-15u (amending that review's "pending marks are never undone"): undo never walks
+// past a pending mark (in progress; ten minutes on, closed and its planned keys unscrobbled), and a revert is never
+// stamped before its mark. Live incident 2026-09-23 (D-26): specials never take part in
 // a mark, no write touches an already-watched leaf, and a mark or undo leaves the next read to Plex.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
@@ -375,8 +377,8 @@ describe('markWatched — whole show, replay, and an exact undo (D-14, D-15)', (
     expect(undone).toMatchObject({ episodesWatched: 2, nextSeason: 1, nextEpisode: 3 });
     expect(undone.plexCounts.haynesops).toBeUndefined();
 
-    // PLAN-071 ruling 5: a retried undo within 30 seconds (no mark made since) repeats its answer and reverts
-    // nothing — no Plex call, no second revert.
+    // The undo replay guard (DESIGN-051 D-04, D-13): a retried undo within 30 seconds (no mark made since) repeats
+    // its answer and reverts nothing — no Plex call, no second revert.
     fake.calls.length = 0;
     const retried = await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: new Date(NOW.getTime() + 29_000) });
     expect(retried).toMatchObject({ status: 'done', replayed: true, markId: reverted?.id });
@@ -1053,7 +1055,7 @@ describe('a failed or partial undo is retried on the SAME mark (D-15)', () => {
     expect(afterRetry[0]?.revertedAt).toBeNull();
     expect(fake.watchedState()).toEqual([...before, 'haynesops:fix'].sort());
 
-    // Only now does undo reach the older change (past the 30-second replay of the retry, PLAN-071 ruling 5).
+    // Only now does undo reach the older change (past the 30-second replay of the retry, DESIGN-051 D-04).
     const third = await undo(fake, new Date(NOW.getTime() + 31_000));
     expect(third).toMatchObject({ markId: older?.id, view: { undone: true, revertResult: 'written' } });
     expect(fake.watchedState()).toEqual(before);
@@ -1084,7 +1086,7 @@ describe('a failed or partial undo is retried on the SAME mark (D-15)', () => {
   });
 });
 
-describe('undo never picks a pending mark (D-15)', () => {
+describe('undo never walks past a pending mark (DESIGN-051 D-15t, amending D-15)', () => {
   async function insertPending(flipped: WatchMarkFlip[], createdAt: Date) {
     await db.insert(watchMarks).values({
       plexAccountId: OWNER,
@@ -1109,7 +1111,7 @@ describe('undo never picks a pending mark (D-15)', () => {
     });
   }
 
-  it('a lone pending mark (in flight or crashed) is nothing to undo — no Plex call', async () => {
+  it('a lone pending mark still in flight is said to be going through: no Plex call, nothing reverted', async () => {
     const show = silo();
     show.episodes.forEach((e) => (e.viewCount = 1));
     const fake = new FakePlex([show]);
@@ -1117,13 +1119,18 @@ describe('undo never picks a pending mark (D-15)', () => {
       show.episodes.map((e) => ({ server: 'haynesops', ratingKey: e.ratingKey })),
       new Date(NOW.getTime() - 1000),
     );
-    expect(await undo(fake)).toMatchObject({ status: 'done', view: { undone: false } });
+    const out = await undo(fake);
+    if (out.status !== 'done') throw new Error(out.status);
+    expect(out.view).toMatchObject({ undone: true, action: 'watched', title: 'Silo', inProgress: true });
+    expect(formatUndoResult(out.view)).toBe(
+      'Plex is still working on your last change, marking Silo (2023) as watched. Say undo again in a moment.',
+    );
     expect(fake.calls).toEqual([]);
     expect(fake.watchedState()).toEqual(['haynesops:silo-1-1', 'haynesops:silo-1-2']);
     expect((await marks())[0]).toMatchObject({ plexResult: 'pending', revertedAt: null, revertResult: null });
   });
 
-  it('a newer pending mark is skipped: undo reverts the newest COMPLETED change', async () => {
+  it('a newer pending mark is never walked past: the older COMPLETED change is left alone', async () => {
     const show = silo();
     const fake = new FakePlex([show], movies());
     await seedMovie(fake, fake.movies[0] as FakeMovie);
@@ -1131,10 +1138,91 @@ describe('undo never picks a pending mark (D-15)', () => {
     await insertPending([{ server: 'haynesops', ratingKey: 'silo-1-1' }], new Date(NOW.getTime() - 1000));
     fake.calls.length = 0;
     const out = await undo(fake);
-    expect(out).toMatchObject({ view: { undone: true, title: 'The Fixture', revertResult: 'written' } });
-    expect(fake.writes()).toEqual([{ server: 'haynesops', op: 'unscrobble', key: 'fix' }]);
+    expect(out).toMatchObject({ view: { undone: true, title: 'Silo', inProgress: true } });
+    expect(fake.calls).toEqual([]);
     const rows = await marks();
-    expect(rows.find((m) => m.plexResult === 'pending')).toMatchObject({ revertedAt: null });
+    expect(rows.map((m) => [m.title, m.plexResult, m.revertedAt])).toEqual([
+      ['The Fixture', 'written', null],
+      ['Silo', 'pending', null],
+    ]);
+    expect(fake.watchedState()).toContain('haynesops:fix');
+  });
+
+  it('an abandoned pending mark (ten minutes on) is closed and undone: its planned keys go back to unwatched', async () => {
+    const show = silo();
+    // Its scrobbles landed, then its replica died before the finalize.
+    show.episodes.forEach((e) => (e.viewCount = 1));
+    const fake = new FakePlex([show]);
+    await seedShow(fake, show);
+    await insertPending(
+      show.episodes.map((e) => ({ server: 'haynesops', ratingKey: e.ratingKey })),
+      new Date(NOW.getTime() - 10 * 60 * 1000 - 1000),
+    );
+    fake.calls.length = 0;
+    const out = await undo(fake);
+    expect(out).toMatchObject({ view: { undone: true, title: 'Silo', revertResult: 'written', episodes: 2 } });
+    expect(fake.writes().map((c) => `${c.op}:${c.key}`)).toEqual(['unscrobble:silo-s1']);
+    expect(fake.watchedState()).toEqual([]);
+    expect((await marks())[0]).toMatchObject({
+      plexResult: 'failed',
+      plexError: 'unknown: never finalized',
+      revertedAt: NOW,
+      revertResult: 'written',
+    });
+  });
+
+  it('a mark an undo closed as abandoned is left alone by its own finalize, should it ever run', async () => {
+    const show = silo();
+    const fake = new FakePlex([show]);
+    await seedShow(fake, show);
+    const clients = fake.clients();
+    const ops = clients.write.haynesops;
+    if (!ops) throw new Error('no haynesops writer');
+    let entered!: () => void;
+    const inWrite = new Promise<void>((r) => (entered = r));
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const stuck = {
+      read: clients.read,
+      write: {
+        haynesops: {
+          ...ops,
+          scrobble: async (key: string) => {
+            entered();
+            await held;
+            return ops.scrobble(key);
+          },
+        },
+      },
+    };
+    const stalled = markWatched({ db, plex: stuck, actor: ACTOR, consumer: 'hop', query: 'silo', now: NOW });
+    await inWrite;
+    expect((await marks())[0]).toMatchObject({ plexResult: 'pending' });
+    const late = new Date(NOW.getTime() + 11 * 60 * 1000);
+    expect(await undo(fake, late)).toMatchObject({ view: { title: 'Silo', revertResult: 'written' } });
+    release();
+    await stalled;
+    const [row] = await marks();
+    expect(row).toMatchObject({ plexResult: 'failed', plexError: 'unknown: never finalized', revertedAt: late });
+    // The Title State is not written through as watched after the undo put the keys back.
+    const [title] = await db.select().from(watchTitles);
+    expect(title?.episodesWatched ?? 0).toBe(0);
+  });
+});
+
+describe('a revert is never stamped before its change (DESIGN-051 D-15u)', () => {
+  it('an undo whose clock reads before the mark it picks stamps the mark\'s own time, so a retry is a replay', async () => {
+    const fake = new FakePlex([], movies());
+    await seedMovie(fake, fake.movies[0] as FakeMovie);
+    // The undo read its clock at +11 s, then waited on the lock while the mark (at +12 s) was made.
+    await mark(fake, 'the fixture', { now: new Date(NOW.getTime() + 12_000) });
+    fake.calls.length = 0;
+    const out = await undo(fake, new Date(NOW.getTime() + 11_000));
+    expect(out).toMatchObject({ replayed: false, view: { title: 'The Fixture', revertResult: 'written' } });
+    expect((await marks())[0]).toMatchObject({ revertedAt: new Date(NOW.getTime() + 12_000) });
+    fake.calls.length = 0;
+    expect(await undo(fake, new Date(NOW.getTime() + 13_000))).toMatchObject({ replayed: true });
+    expect(fake.calls).toEqual([]);
   });
 });
 

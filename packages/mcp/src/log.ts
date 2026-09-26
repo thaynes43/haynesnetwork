@@ -42,7 +42,7 @@ export function errorCode(error: unknown): string {
 }
 
 /**
- * ADR-092 / DESIGN-051 D-10 (PLAN-071 ruling 9) — one line per `set_watchlist` call: exactly the consumer, the
+ * ADR-092 / DESIGN-051 D-10 (and D-13) — one line per `set_watchlist` call: exactly the consumer, the
  * action, the kind, the result and whether the title is on Plex. Never a title, a query or a token (DESIGN-049
  * D-06: arguments and results are the owner's viewing history).
  */

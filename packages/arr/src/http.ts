@@ -27,7 +27,7 @@ export interface ArrHttpOptions {
   retryDelayMs?: number;
   /**
    * GET retries after the first attempt. Default GET_RETRIES (2). A caller answering inside a hard deadline sizes
-   * it down (DESIGN-051: `set_watchlist`'s TMDB fallback makes a single attempt, PR #580 ruling 9).
+   * it down (DESIGN-051: `set_watchlist`'s TMDB fallback makes a single attempt, D-15g).
    */
   getRetries?: number;
   /**

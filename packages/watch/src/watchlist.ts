@@ -74,8 +74,8 @@ export type WatchlistMarkLike = Pick<
  */
 export const WATCHLIST_OVERLAY_MARGIN_SECONDS = 5 * 60;
 /**
- * PLAN-071 ruling 7 — a `set_watchlist` remove also resolves among the titles a written remove took off this
- * recently, so a retried remove (Home Assistant's trailing `tools/list` failure, DESIGN-049 D-05) finds its
+ * DESIGN-051 D-03 step 2, D-13 — a `set_watchlist` remove also resolves among the titles a written remove took off
+ * this recently, so a retried remove (Home Assistant's trailing `tools/list` failure, DESIGN-049 D-05) finds its
  * title and answers "isn't on your watchlist" instead of "couldn't find".
  */
 export const WATCHLIST_REMOVE_REPLAY_SECONDS = 10 * 60;
@@ -151,7 +151,10 @@ export function watchlistEvents(marks: readonly WatchlistMarkLike[], fetchedAt: 
     if (m.plexResult === 'written' && created !== null && created > since) {
       out.push({ op, at: created, markId: m.id, order: 0, mark: m });
     }
-    const reverted = ms(m.revertedAt);
+    // A revert never precedes its change (D-15u): a row stamped before its own `created_at` (an undo that read its
+    // clock before it waited on the lock, then picked a change made meanwhile) is applied at the change's time.
+    const stamped = ms(m.revertedAt);
+    const reverted = stamped === null ? null : Math.max(stamped, created ?? stamped);
     if (m.revertResult === 'written' && reverted !== null && reverted > since) {
       out.push({ op: op === 'add' ? 'remove' : 'add', at: reverted, markId: m.id, order: 1, mark: m });
     }

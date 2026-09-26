@@ -64,7 +64,7 @@ export function defaultDeps(): McpDeps {
       plexClientBundleFromEnv(process.env, { timeoutMs: MARK_TIMEOUT_MS, retryDelayMs: MARK_RETRY_DELAY_MS }),
     ),
     tmdb: lazy(() => tmdbSearchFromEnv(process.env, { once: false })),
-    // DESIGN-051 D-15g (PR #580 ruling 9): `set_watchlist`'s fallback makes ONE attempt, so its worst case (with the
+    // DESIGN-051 D-15g: `set_watchlist`'s fallback makes ONE attempt, so its worst case (with the
     // discover reads, the PUT and its re-read) stays inside the 9 s deadline.
     tmdbOnce: lazy(() => tmdbSearchFromEnv(process.env, { once: true })),
     now: () => new Date(),

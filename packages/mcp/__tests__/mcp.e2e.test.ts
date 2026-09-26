@@ -33,7 +33,7 @@ let t: TestDb;
 let db: Database;
 let fake: FakePlex;
 let http: McpHttp;
-/** The handler's clock (NOW unless a test moves it — the undo replay window is 30 s, PLAN-071 ruling 5). */
+/** The handler's clock (NOW unless a test moves it — the undo replay window is 30 s, DESIGN-051 D-04). */
 let clock = NOW;
 
 function deps(): McpDeps {
@@ -517,7 +517,8 @@ describe('the write tools (D-12..D-15, AC-22)', () => {
     expect(undo.text).toBe('Undone. Foundation (2021) is back to unwatched in Plex, 10 episodes.');
     expect(fake.writes().at(-1)).toEqual({ server: 'haynesops', op: 'unscrobble', key: 'found-s1' });
     expect((await call('recommend')).text).toContain('Foundation');
-    // PLAN-071 ruling 5: a retried undo repeats its answer; past 30 seconds there is nothing left to undo.
+    // DESIGN-051 D-04, the undo replay guard: a retried undo repeats its answer; past 30 seconds there is nothing
+    // left to undo.
     expect((await call('undo_last_change')).text).toBe(undo.text);
     expect(fake.writes().filter((w) => w.op === 'unscrobble')).toHaveLength(1);
     clock = new Date(NOW.getTime() + 31_000);

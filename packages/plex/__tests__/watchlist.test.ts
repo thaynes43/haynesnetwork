@@ -147,7 +147,7 @@ describe('getDiscoverUserState — GET {discover}/library/metadata/<id>/userStat
     expect(await reader(absent).getDiscoverUserState(TERMINATOR)).toEqual({ watchlistedAt: null });
   });
 
-  it('never reads another title\'s state (PR #580 ruling 3): only the requested id, or an element naming none', async () => {
+  it('never reads another title\'s state (DESIGN-051 D-06, review A3): only the requested id, or an element naming none', async () => {
     const other = { ratingKey: SHOW_ID, type: 'show', watchlistedAt: 1789061676 };
     const foreign = plexStub([{ path: /userState$/, body: { MediaContainer: { UserState: [other] } } }]);
     await expect(reader(foreign).getDiscoverUserState(TERMINATOR)).rejects.toBeInstanceOf(PlexParseError);
@@ -205,7 +205,7 @@ describe('addToWatchlist / removeFromWatchlist — PUT {discover}/actions/…?ra
     expect((err as PlexHttpError).status).toBe(404);
   });
 
-  it('is idempotent, so it keeps the GET retry policy (ruling 4): a transient 503 is retried, a lasting one fails typed', async () => {
+  it('is idempotent, so it keeps the GET retry policy (DESIGN-051 D-03 step 6, D-06): a transient 503 is retried, a lasting one fails typed', async () => {
     let n = 0;
     const flaky = plexStub([{ method: 'PUT', path: '/actions/removeFromWatchlist', status: 503, body: 'busy' }]);
     const once = (async (input: unknown, init?: RequestInit) => {

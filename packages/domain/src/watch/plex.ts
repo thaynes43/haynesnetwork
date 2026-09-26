@@ -26,7 +26,7 @@ export interface WatchPlexClients {
 
 /**
  * A read-only view on the SHORT live-read budget (DESIGN-049 D-11: ≈ 300 ms per attempt): the revalidation
- * reads, and the discover reads of a Watchlist Change (DESIGN-051 D-03; PLAN-071 ruling 8).
+ * reads, and the discover reads of a Watchlist Change (DESIGN-051 D-03, D-13).
  */
 export interface WatchPlexReaders {
   read: Partial<Record<PlexServerSlug, Pick<PlexReadClient, 'getMetadataItem' | 'listAllLeaves'> & Partial<WatchDiscoverRead>>>;

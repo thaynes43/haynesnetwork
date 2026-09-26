@@ -502,7 +502,7 @@ export class PlexReadClient {
    * seconds). `UserState` may be an object or a one-element array (both seen live). The id is validated
    * before the URL is built. Read-only.
    *
-   * PR #580 review ruling 3: only a state OF THIS TITLE counts — an element whose `ratingKey` is the requested
+   * DESIGN-051 D-06 (review A3): only a state OF THIS TITLE counts — an element whose `ratingKey` is the requested
    * id, or that names none. A response whose every element names another title is not an answer: it throws a
    * PlexParseError (the caller's "unknown"), never falls back to another title's state. No `UserState` (or an
    * empty list) is "not on the watchlist".

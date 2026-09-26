@@ -90,8 +90,11 @@ the 401 / 403 challenges, the stamp, the user-aware principal incl. a household 
 the Voice Budget and D-06 lines, the watchlist tools' non-owner answers, and the two paths kept apart),
 `watchlist.e2e.test.ts` (DESIGN-051: `watchlist` newest first / kind / offset / past the end / started and watched /
 the cap and paging past it, `set_watchlist` add on Plex, add not on Plex with the Seerr line, remove, already on,
-not found on the watchlist, ambiguous, a Plex failure and its undo, the very next answers reflecting a change the
-cache predates, undo, a watchlist change leaving Unfinished / recent history / progress untouched, the exact
-`watchlist_changed` lines, and the bundle each watchlist call used: `revalidatePlex` and `markPlex` are different
-fakes, so a budget swap fails) and `import-guard.test.ts` (D-01: `@hnet/watch` imports `@hnet/db`, drizzle-orm and zod only; the MCP SDK
-only here).
+not found on the watchlist, ambiguous, a year in parentheses settling an add's TMDB ambiguity and TMDB titles
+that read the same answered without a question (D-15v, D-15w), a Plex failure and its undo, the very next answers
+reflecting a change the cache predates, undo, a watchlist change leaving Unfinished / recent history / progress
+untouched, the exact `watchlist_changed` lines, and the bundle each watchlist call used: `revalidatePlex` and
+`markPlex` are different fakes, so a budget swap fails), `deps.test.ts` (the production wiring: `tmdbSearchFromEnv`
+and `defaultDeps` build `tmdb` with the client's GET retries and `tmdbOnce` with one attempt, and each attempt's
+timer covers a body that stalls after its headers; DESIGN-051 D-15g, D-15p) and `import-guard.test.ts` (D-01:
+`@hnet/watch` imports `@hnet/db`, drizzle-orm and zod only; the MCP SDK only here).

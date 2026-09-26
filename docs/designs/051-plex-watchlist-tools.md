@@ -7,8 +7,10 @@
   read, several watchlist titles under one name, a failed clear, a write that may still land, a pending change
   in undo, and a per-attempt timer that covers the body, and D-15q..D-15s those of its fourth: a remove finds a
   pending add and every add the cache cannot have seen, an undo plex.tv never confirmed leaves its title
-  unsettled, and the unsettled check reads the title's whole run of changes; D-14 the rulings made while
-  building; D-13 the rulings from the PR #577 design review, folded into D-02..D-11).
+  unsettled, and the unsettled check reads the title's whole run of changes, and D-15t..D-15w those of its fifth:
+  undo never walks past a pending `watched` mark, a revert is never stamped before its change, a named year
+  settles an add's TMDB ambiguity, and TMDB titles that read the same are not a question; D-14 the rulings made
+  while building; D-13 the rulings from the PR #577 design review, folded into D-02..D-11).
 - **Satisfies:** PRD-001 R-252, R-253, R-245 (amended), US-15, AC-29..AC-31; governed by ADR-092; extends
   DESIGN-049 (the Watch Companion: D-05 tool contract, D-12..D-15 marks and undo, D-13 resolver, D-17
   candidates) and DESIGN-050 D-07 (the principal, owner-only Plex write-back).
@@ -76,7 +78,8 @@ defaults, bounded integers) and are hand-written like the others.
   (D-15l): *"Your watchlist has more than one Dark Matter (2024 show), and I can't tell them apart, so I left it
   as it is. You can change it in the Plex app."* (titles that read differently are named: *"Dark Matter (2024
   show) and Dark Matter (2023 show) on your watchlist look like the same title to me, so I left your watchlist as
-  it is. …"*). Not found
+  it is. …"*). The same holds for an add whose TMDB titles all read the same (D-15w): *"I found more than one Alone (2020
+  movie) and can't tell them apart, so I left your watchlist as it is. You can add it in the Plex app."* Not found
   (for a remove, not found **on the watchlist**): *"I couldn't find X on your watchlist."* / *"I couldn't
   find X."* A title with no discover match: *"I found X (year) but not in Plex's catalog, so your
   watchlist didn't change."* A guid that disagrees with the external-id match: *"I couldn't confirm X in
@@ -105,7 +108,10 @@ defaults, bounded integers) and are hand-written like the others.
    window (D-15r); plex.tv's live state (step 4) decides. `kind` filters as for marks. **An add's TMDB
    fallback collects every exact normalized-title hit of the eligible kind(s); two or more distinct TMDB
    ids are ambiguous** (listed with their years), since an add can download (ADR-092 C-07); the fallback
-   makes a single attempt (D-15). A
+   makes a single attempt (D-15). A year the title names keeps only the hits of that year whenever one has it,
+   the parenthesized form ("Shōgun (2024)") included, in D-13's first-hit mode too (D-15v). The question lists
+   each title that reads differently once; hits that all read the same (one name, year and kind) are answered
+   that it can't tell them apart, never a question (D-15w). A
    same-name group whose watchlist titles carry **different discover ids** writes nothing either and answers
    that it can't tell them apart (D-15e, D-15l).
    Ambiguous and not-found never write: no row, no Plex call.
@@ -174,11 +180,14 @@ depends on the change (D-15):
   nothing ever showed the title on the list and an add could download it, `revert_result = 'none'`: *"Your
   last change, removing X from your watchlist, came after an add Plex never confirmed, so I left it off your
   watchlist. To put it back, ask me to add it."* (D-15k);
-- a change still **`pending`** is picked too (its row carries its whole plan; a pending `watched` mark still
-  is not, DESIGN-049 D-15). Under a minute old it is going through: *"Plex is still working on your last
-  change, adding X to your watchlist. Say undo again in a moment."*, and nothing is reverted, the older change
-  neither. Older, its replica died or its finalize failed: it is closed `failed` with `unknown: never
-  finalized` and undone like any unconfirmed change (D-15o).
+- a change still **`pending`** is picked too (its row carries its whole plan), and so is a pending `watched`
+  mark: undo never walks past a pending mark to an older one (D-15o, D-15t). A Watchlist Change under a minute
+  old is going through: *"Plex is still working on your last change, adding X to your watchlist. Say undo again
+  in a moment."*, and nothing is reverted, the older change neither. Older, its replica died or its finalize
+  failed: it is closed `failed` with `unknown: never finalized` and undone like any unconfirmed change (D-15o). A
+  `watched` mark is going through for ten minutes (*"Plex is still working on your last change, marking X as
+  watched. Say undo again in a moment."*); older, it is closed the same way and its planned keys are unscrobbled,
+  and its own finalize, should it ever run, leaves the closed row and the Title State alone (D-15t).
 
 Otherwise it applies the inverse call (`removeFromWatchlist` for an add, `addToWatchlist` for a remove) and records
 `revert_result` `written` | `failed`. Answers: *"Removed The Matrix (1999 movie) from your watchlist
@@ -205,7 +214,9 @@ deadline, `lock_timeout`); one still queued then errors instead of running after
 so the one that takes the lock first may stamp its revert later than the other's clock reads: a completed undo
 stamped after the call's own clock is a replay too (D-15i). A call that changed nothing and wrote no row (a
 replayed `mark_watched`, an "already on" `set_watchlist`) inside the 30 seconds leaves the guard as it is:
-the next undo still repeats the last answer (accepted, D-15).
+the next undo still repeats the last answer (accepted, D-15). A revert is stamped at the undo's clock, but never
+before the `created_at` of the change it reverts (D-15u): the undo read its clock before it waited on the lock, so
+the change it picks may have been made while it waited.
 
 ### D-05 — The watchlist overlay (read time, pure)
 
@@ -218,7 +229,8 @@ candidates) goes through one query, `selectWatchlist(db, plexAccountId)`, which 
   if one is recorded, else now − 24 h.
 - **Events:** the account's watchlist marks with `plex_result = 'written'` and `created_at > fetchedAt −
   5 min` (an add or remove at `created_at`), and those with `revert_result = 'written'` and
-  `reverted_at > fetchedAt − 5 min` (the inverse at `reverted_at`), applied oldest first (ties by mark id). Pending and failed marks never apply.
+  `reverted_at > fetchedAt − 5 min` (the inverse at `reverted_at`, never before the change's `created_at`, D-15u),
+  applied oldest first (ties by mark id, a change before its own revert). Pending and failed marks never apply.
 - **Apply:** an add of a title not present puts a synthetic row (the mark's identity) at the top; a
   remove drops the row with the same identity (plex guid, else tmdb/tvdb/imdb id). Both are set
   operations, so re-applying an event the sync already saw changes nothing, which is why the 5-minute
@@ -283,7 +295,7 @@ and the connections e2e) move with it.
 
 `set_watchlist` logs exactly `[mcp] watchlist_changed {consumer, action, kind, result, onPlex}` with
 `result` one of `written`, `failed`, `unchanged`, `not_found`, `ambiguous` (also several watchlist titles
-under one name, D-15l), `not_in_catalog`,
+under one name, D-15l, and an add's TMDB titles that read the same, D-15w), `not_in_catalog`,
 `unconfirmed`, `unknown` (the write's outcome plex.tv never confirmed, D-15), `not_owner`. No title, no
 query, no token (DESIGN-049 D-06: arguments and results are never logged).
 
@@ -339,7 +351,9 @@ during the rolling deploy is accepted (minutes, and only if the owner changes hi
 An Opus review of the S2 build found two blockers and a set of should-fix items; the owner-facing
 behavior ones are ruled here and folded into D-02..D-12 and D-14 above. A second pass over the fixed branch
 (findings C1..C7, each verified by independent skeptics) added D-15i and D-15j, a third (findings E1..E6,
-verified the same way) D-15k..D-15p, and a fourth (findings F1..F10, verified the same way) D-15q..D-15s.
+verified the same way) D-15k..D-15p, a fourth (findings F1..F10, verified the same way) D-15q..D-15s, and a
+fifth (findings G1..G9, verified the same way) D-15t..D-15w. Code comments cite these IDs (and D-13 for the
+design review's rulings), never a ruling number.
 
 | ID | Review | Ruling |
 |---|---|---|
@@ -362,6 +376,19 @@ verified the same way) D-15k..D-15p, and a fourth (findings F1..F10, verified th
 | D-15q | F1, F4, F5 | **A remove finds every add the cache cannot have seen.** The remove pool (D-03 step 2) held only `failed` adds of the last 10 minutes. An add left `pending` after its PUT landed (its replica died before the finalize, D-15o), or an unconfirmed add older than 10 minutes that the cache was read just before, answered "I couldn't find X on your watchlist." with no Plex call while plex.tv listed it for Seerr to request. The pool now takes adds that are `failed` or `pending`, made since the cache's fetch less the D-05 margin or in the last 10 minutes, whichever reaches further back; plex.tv's live state then decides (unreadable, D-15k's check, which treats `pending` as unsettled). Cost, accepted: while nothing is cached (the now − 24 h fallback of D-05), a failed add of the last day is in the pool, so a remove of it costs one userState read and answers "isn't on" instead of "couldn't find". |
 | D-15r | F2, F4 | **An undo plex.tv never confirmed leaves its title unsettled.** The undo of a written change whose inverse call fails records only `revert_result = 'failed'` (the change stays live), and the overlay ignores a failed undo, so the cache still shows the original change. With userState unreadable, "remove X" after an unconfirmed undo of a remove answered "isn't on your watchlist" (the undo's add may have landed, and Seerr requests it), and "add X" after an unconfirmed undo of an add a false "already on". Now a failed undo is an unsettled call, since the row cannot tell a definitive failure from an unknown one and the asked write is idempotent. That holds for a change the cache has read too, since an undo can run up to a day after its change: the check looks back one undo window before the cache's fetch. The remove pool also holds a written remove whose undo failed, within the undo window, so a remove finds its title after the 10-minute replay window too. A remove sent over such an undo is not `after unsettled:` (the undo put back a title the owner had), so its own undo puts the title back. Cost, accepted: when that undo's call failed outright (nothing landed), a later change of the title while userState is unreadable sends its idempotent write instead of the cache's "isn't on" / "already on", until a later written change settles it or the change leaves the undo window. |
 | D-15s | F3 | **The unsettled check reads the title's whole run, not only its newest change.** D-15k looked at the latest Watchlist Change alone. A remove plex.tv never confirmed, sitting between an unsettled add and the remove that finally landed, dropped the `after unsettled:` marker, so undo re-added (and Seerr requested) a title nothing ever showed on the list. Likewise, a change that failed outright (a 429) hid an older unsettled add, so the next remove answered "isn't on" from the cache. Now the title's changes are walked newest first. A change that failed outright changed nothing and is walked past. The walk ends at the newest change still live (no undo closed it) whose own call was written or that the cache has read: undo reaches an older change only once every newer one is closed, so nothing older ran after it. A written call (a change or an undo) supersedes the older changes' own calls, but not an older change's failed undo, which may have run after it. The marker names any unsettled add in the run. |
+| D-15t | G1 | **Undo never walks past a pending `watched` mark.** D-15o stopped undo from walking past a pending Watchlist Change, but the pick still skipped a pending `watched` mark (DESIGN-049 D-15's PR #563 ruling), and since ADR-092 the next-older mark can be a watchlist remove, whose undo re-adds a title nobody asked for and Seerr requests it. A `watched` mark stays pending while its scrobbles run (a large mark can run past the 9 s MCP deadline, so its caller hears an error while it keeps going) and for good when its replica dies or its write-through or finalize fails. The pick now takes the newest unreverted mark of the window whatever its `plex_result`. A pending `watched` mark under ten minutes old answers "Plex is still working on your last change, marking X as watched. Say undo again in a moment." and reverts nothing, the older change neither. Older (its work is its reads and at most six scrobbles at once, each attempt bounded at about 0.8 s with two retries, D-15p, so minutes only for hundreds of episode keys), it is closed `failed` with `unknown: never finalized` and undone by unscrobbling its planned keys: every one was unwatched before the mark, and unscrobble is idempotent, so the state before the mark comes back whether or not each scrobble landed. `markWatched`'s finalize now updates only a row still `pending`, and writes the Title State through only then, so a late finalize never overwrites the close. Costs, accepted: a mark still running after ten minutes that an undo closes can land a scrobble after its unscrobble, leaving that episode watched while the mark reads undone (the next sync re-reads Plex); and an abandoned mark keeps undo from reaching older changes for up to ten minutes, answered as in progress. Amends DESIGN-049 D-15's "undo never picks a `pending` mark". |
+| D-15u | G2 | **A revert is never stamped before its change.** An undo reads its clock before it waits on the advisory lock (up to 9 s, D-15p), and `changeWatchlist` never takes that lock, so the undo can pick a change another consumer made while it waited and stamp `reverted_at` earlier than that change's `created_at`. The overlay (D-05) then applied the revert before the change, so the title read as off the list while plex.tv had it back (and a remove of it answered "couldn't find"), and the replay guard counted the reverted change as a mark made since its own undo, so a retried copy of the undo went on to the next-older change (for a watchlist remove, a re-add that can download: the cascade D-15c and D-15i exist to stop). Both undo branches now stamp `max(now, created_at)`: the change and its revert tie on time and sort change first (same mark id), and the guard's strict `created_at > reverted_at` no longer counts the reverted mark itself. The overlay also applies a revert no earlier than its change's `created_at`, for rows stamped before this ruling. |
+| D-15v | G3 | **A named year settles an add's TMDB ambiguity, in parentheses too.** `normalizeTitle` takes a parenthesized year out of the title ("Shōgun (2024)" is `shogun`, year 2024), so every same-name TMDB hit scored an exact 1 and the year was never weighed: "Shōgun (2024)", the agent's natural retry in the answer's own format, got the same question again on every retry, and only the bare "shogun 2024" resolved. The TMDB fallback now keeps only the hits of the named year whenever one has it; when none does (the query "Blade Runner 2049" and its 2017 film), the year belonged to the title and nothing is filtered. This holds in D-13's first-hit mode too, so `mark_watched` and `watch_status` no longer take TMDB's first hit when the owner named another year. The pool path already weighed the year (D-13's year bonus). |
+| D-15w | G4 | **TMDB titles that read the same are never a question.** TMDB can list different titles under one name, year and kind (two 2020 movies called "Alone"), and the add's ambiguity (ADR-092 C-07) listed them as "Alone (2020, movie), Alone (2020, movie). Which one?", which no `set_watchlist` argument can answer: D-15l's problem, on the TMDB path, and more likely once D-15v honours the year. Now the question lists each title that reads differently once, and when every hit reads the same the resolver returns `indistinct` and `changeWatchlist` its own `indistinct` status (logged `ambiguous`, D-10), answered "I found more than one Alone (2020 movie) and can't tell them apart, so I left your watchlist as it is. You can add it in the Plex app." (D-02), with no row and no Plex call. `resolveWatchTitle` is typed so that only the `'ask'` mode can return it. |
+
+Fixed with no design change in the fifth pass: PLAN-071 S5 now expects "I couldn't find X on your watchlist." for a
+remove of a title that is not on the watchlist (it expected "isn't on", the answer for a title the remove pool still
+finds, such as a retried remove) and walks the retried remove as well (G5); the parked `.agents/plans/TODO.md` entry on header-only timers no longer lists
+`packages/sync/src/openwebui.ts` (its body is read under the timer), says `PlexHttp`'s list reads are paged and
+already body-bounded, and points the `AbortSignal` item at `runTool` in `server.ts` (G6); the code comments that cited
+"PLAN-071 ruling N" or "PR #580 ruling N", a numbering no doc defined whose numbers the two sets reused, cite the
+DESIGN-051 IDs instead (G7); the `@hnet/mcp` header names nine tools and its README lists `deps.test.ts` (G8); and
+the `@hnet/arr` README documents `getRetries` and `timeoutCoversBody` (G9).
 
 Fixed with no design change in the fourth pass: the PRD's AC-23, R-244 and the connector intro now carry the
 ADR-092 amendment (nine tools, 4,096 bytes; review F6); DDD-002 BC-06's Outbound list names the watchlist writes
@@ -396,7 +423,8 @@ beside em dashes); and the `@hnet/watch` README ("started" includes a Taster).
 ## Test strategy
 
 - `@hnet/watch` (unit): the overlay (add, remove, revert, an event the base already reflects, the
-  5-minute margin, no base rows); the watchlist formatter (entries, kind, started/watched, empty, past
+  5-minute margin, no base rows, a revert stamped before its change, D-15u); the in-progress undo of a `watched`
+  mark and the indistinct TMDB answer (D-15t, D-15w); the watchlist formatter (entries, kind, started/watched, empty, past
   the end, cap); the new `watch_status` availability sentence (four cases).
 - `@hnet/plex` (fixtures): `matchDiscover` (type param, empty result, `Video` vs `Metadata`),
   `getDiscoverUserState` (object and array forms, absent `watchlistedAt`), the two writes (2xx, 404,
@@ -422,7 +450,11 @@ beside em dashes); and the `@hnet/watch` README ("started" includes a Taster).
   anyway) and of a failed remove (no call), an unconfirmed undo of a remove (the Seerr sentence), the
   30-second undo replay guard, two undos at once (also when the copy that takes the lock read its clock
   later, D-15i), a failed clear (D-15m), a remove over an unsettled add (no re-add, D-15k), a pending change
-  (in progress, then closed and undone, D-15o), the undo lock's bound (D-15p), and the new actions never
+  (in progress, then closed and undone, D-15o), the undo lock's bound (D-15p), a pending `watched` mark after an
+  older watchlist remove (in progress, no re-add; ten minutes on, closed and its planned keys unscrobbled, its own
+  late finalize leaving the row alone, D-15t), an undo whose clock reads before the change it picks (stamped at the
+  change, a retry replayed, D-15u), a year in parentheses settling an add's TMDB ambiguity and the first-hit mode
+  (D-15v), TMDB titles that read the same (no question, no row, no call, D-15w), and the new actions never
   reaching exclusions, the Taste Profile, Unfinished, recent history or the seed pick; the migration's CHECK.
 - `@hnet/mcp` e2e: `tools/list` ≤ 4,096 bytes and the pinned exact size, nine tools, scope filtering
   (a `watch:read`-only token sees `watchlist` but not `set_watchlist`), each new tool's happy path and
@@ -430,7 +462,9 @@ beside em dashes); and the `@hnet/watch` README ("started" includes a Taster).
   attributing a change to `oauth:<client_id>` and its user, "not ready" before the first sync, which
   bundle each watchlist call used (the short and write budgets are different fakes), a repeated and an
   unconfirmed add (D-15j), which TMDB client each tool used (D-15g, plus a `defaultDeps` unit test, which
-  also proves its timer covers the body, D-15p), and two watchlist titles under one name (D-15l).
+  also proves its timer covers the body, D-15p), two watchlist titles under one name (D-15l), and an add's TMDB
+  fallback settled by a year in parentheses and answering titles that read the same without a question (D-15v,
+  D-15w).
 - `apps/web` stack: a Playwright-free `dev:local` smoke via the stub (D-11) is enough; no UI changes.
 - Live (PLAN-071): the hop checks, one add/undo on a title already on Plex, the voice bench.
 

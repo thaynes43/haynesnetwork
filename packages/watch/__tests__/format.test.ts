@@ -669,6 +669,19 @@ describe('formatDismissResult / formatUndoResult (D-15)', () => {
       'Undone. Bluey (2018) counts as your viewing again.',
     );
   });
+
+  it('says a mark still going through is in progress, and undoes nothing (DESIGN-051 D-15t)', () => {
+    const sev = { undone: true as const, kind: 'show' as const, title: 'Severance', year: 2022, action: 'watched' as const };
+    expect(formatUndoResult({ ...sev, scope: 'show', revertResult: null, inProgress: true })).toBe(
+      'Plex is still working on your last change, marking Severance (2022) as watched. Say undo again in a moment.',
+    );
+    expect(formatUndoResult({ ...sev, scope: 'season', season: 2, inProgress: true })).toBe(
+      'Plex is still working on your last change, marking season 2 of Severance (2022) as watched. Say undo again in a moment.',
+    );
+    expect(formatUndoResult({ ...sev, scope: 'through', season: 2, episode: 3, inProgress: true })).toBe(
+      'Plex is still working on your last change, marking Severance (2022) as watched through season 2 episode 3. Say undo again in a moment.',
+    );
+  });
 });
 
 describe('resolver outcomes and fixed answers', () => {

@@ -25,10 +25,10 @@ import type { WatchKind } from '../types';
 
 /**
  * Where a pool entry came from. `tmdb` is never in the pool itself: it names a TMDB-fallback hit offered as an
- * option of an ambiguous `set_watchlist` add (DESIGN-051, PLAN-071 ruling 1). `watchlist_recent` is a title a
+ * option of an ambiguous `set_watchlist` add (DESIGN-051 D-03 step 2, ADR-092 C-07). `watchlist_recent` is a title a
  * Watchlist Change touched without it being on the (overlaid) list now — a written remove of the last 10 minutes,
  * a written remove whose undo plex.tv never confirmed, or an add that failed or never finalized which the cache
- * cannot have seen (PR #580 ruling 2, DESIGN-051 D-15q, D-15r) — only in the pool of a `set_watchlist` remove,
+ * cannot have seen (DESIGN-051 D-15b, D-15q, D-15r) — only in the pool of a `set_watchlist` remove,
  * where plex.tv's live state decides.
  */
 export type PoolSource = 'title' | WatchLedgerSource | WatchRecoSource | 'tmdb' | 'watchlist_recent';
@@ -91,10 +91,10 @@ async function watchlistPool(
  * only, D-05) does not show their title (DESIGN-051 D-03 step 2):
  *
  * - a written, unreverted remove of the last {@link WATCHLIST_REMOVE_REPLAY_SECONDS}: a retried remove finds its
- *   title and answers "isn't on" (PLAN-071 ruling 7);
+ *   title and answers "isn't on" (DESIGN-051 D-03 step 2, D-13);
  * - a written remove whose undo plex.tv never confirmed (`revert_result = 'failed'`, still live), within the undo
  *   window: that undo's add may have put the title back after the cache's read (D-15r);
- * - an add that `failed` (it may have landed, PR #580 ruling 2) or is still `pending` (in flight, or its replica
+ * - an add that `failed` (it may have landed, D-15b) or is still `pending` (in flight, or its replica
  *   died after the PUT, D-15q), made since the cache's fetch less the overlay margin — every add the cache cannot
  *   have seen — or within the replay window, whichever reaches further back (reverted or not: plex.tv's live state
  *   decides either way).

@@ -21,7 +21,7 @@ export interface TmdbClientOptions extends TmdbConfig {
   baseUrl?: string;
   timeoutMs?: number;
   retryDelayMs?: number;
-  /** GET retries after the first attempt (default 2); 0 = a single attempt (DESIGN-051, PR #580 ruling 9). */
+  /** GET retries after the first attempt (default 2); 0 = a single attempt (DESIGN-051 D-15g). */
   getRetries?: number;
   /** The per-attempt timeout covers the body too (DESIGN-051 D-15p; the MCP's searches). Default off. */
   timeoutCoversBody?: boolean;

@@ -120,7 +120,7 @@ export class PlexWriteClient {
    * Verified live 2026-09-25: 200 `{"MediaContainer":{"size":0}}` whether or not anything changed (a repeat add
    * is 200), and 404 for an id plex.tv does not know. The id is validated (24 hex digits) before the URL is
    * built. Idempotent on the watchlist, so it is RETRIED like a GET on a timeout / network failure / 502–504
-   * (PLAN-071 ruling 4: `requestIdempotentPut`; the domain re-reads userState if the last attempt still fails).
+   * (DESIGN-051 D-03 step 6: `requestIdempotentPut`; the domain re-reads userState if the last attempt still fails).
    * Reached only from an owner-issued Watchlist Change or the undo of a remove (changeWatchlist / undoLastChange
    * in @hnet/domain — ADR-017 C-10).
    * Seerr auto-requests the owner's newest watchlist titles, so an add of a title not on Plex downloads it.

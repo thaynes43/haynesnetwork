@@ -1,4 +1,4 @@
-// DESIGN-051 D-15g (PR #580 ruling 9) — the production wiring of the two TMDB searches: `set_watchlist`'s fallback
+// DESIGN-051 D-15g — the production wiring of the two TMDB searches: `set_watchlist`'s fallback
 // (`tmdbOnce`) makes a SINGLE attempt, every other tool's (`tmdb`) keeps the client's GET retries. The watchlist e2e
 // proves which one each tool uses; this proves `defaultDeps` builds them that way (a stalled TMDB with three
 // attempts would push an add past the 9 s MCP deadline), and that each attempt's timer covers the body (D-15p).

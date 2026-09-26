@@ -3,10 +3,12 @@
 // watchlist cache of Severance and Dark Matter) and a RECORDING FAKE plex.tv (never the real one — a live add of
 // a title not on Plex downloads it). Covers: `watchlist` (newest first, kind, offset, past the end, started /
 // watched, the 1,200-character cap and paging past it), `set_watchlist` (add on Plex, add not on Plex with the
-// Seerr line, remove, already on, not found on the watchlist, ambiguous, a Plex failure), the very next
-// `watchlist` / `watch_status` answers reflecting a change the cache predates, undo, the D-10 `watchlist_changed`
-// line (never a title), and which Plex bundle each watchlist call went out on (PR #580 ruling 11: the two deps
-// are DIFFERENT fakes, so a swap of the 300 ms and the write budget fails here).
+// Seerr line, remove, already on, not found on the watchlist, ambiguous, a year in parentheses settling an add's
+// TMDB ambiguity and TMDB titles that read the same answered without a question (D-15v, D-15w), a Plex failure), the
+// very next `watchlist` / `watch_status` answers reflecting a change the cache predates, undo, the D-10
+// `watchlist_changed` line (never a title), and which Plex bundle each watchlist call went out on (DESIGN-051 D-15,
+// the first pass's test fixes: the two deps are DIFFERENT fakes, so a swap of the 300 ms and the write budget fails
+// here).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -31,7 +33,7 @@ function deps(): McpDeps {
   return {
     db,
     // Tagged per bundle (the short one refuses to write): the discover reads before a change go out on the short
-    // budget, the PUT and its re-read on the write budget (DESIGN-051 D-14a, PR #580 ruling 2).
+    // budget, the PUT and its re-read on the write budget (DESIGN-051 D-14a, D-15b).
     revalidatePlex: () => fake.clients('short'),
     markPlex: () => fake.clients('write'),
     tmdb: () => null,
@@ -124,7 +126,7 @@ describe('watchlist (DESIGN-051 D-02, AC-29)', () => {
     expect(await say('watchlist', { limit: 2 })).toBe(
       'Your watchlist has 152 titles. Newest first: Silo, a 2023 show, on Plex, started. The Expanse, a 2015 show, on Plex, watched. And 150 more.',
     );
-    // PR #580 ruling 8: ten long titles do not fit in 1,200 characters, so the page keeps fewer, and the range and
+    // DESIGN-051 D-15f: ten long titles do not fit in 1,200 characters, so the page keeps fewer, and the range and
     // "And N more." name exactly the titles it kept: paging on from the range's end skips none.
     const long = await say('watchlist', { limit: 10, offset: 2 });
     const range = /^Your watchlist has 152 titles\. Numbers 3 to (\d+): /.exec(long);
@@ -352,12 +354,57 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     );
   });
 
+  it("an add's TMDB fallback: a year in parentheses settles it, and titles that read the same are no question (D-15v, D-15w)", async () => {
+    const SHOGUN = '6b2c3d4e5f60718293a4b5c6';
+    fake.catalog.push({ id: SHOGUN, kind: 'show', title: 'Shōgun', year: 2024, guids: ['tmdb://126308'] });
+    const search = {
+      searchMulti: async (q: string) => {
+        const results = /sh.gun/i.test(q)
+          ? [
+              { id: 126308, media_type: 'tv', name: 'Shōgun', first_air_date: '2024-02-27' },
+              { id: 1, media_type: 'tv', name: 'Shōgun', first_air_date: '1980-09-15' },
+            ]
+          : /alone/i.test(q)
+            ? [
+                { id: 612706, media_type: 'movie', title: 'Alone', release_date: '2020-09-18' },
+                { id: 614409, media_type: 'movie', title: 'Alone', release_date: '2020-06-12' },
+                { id: 62941, media_type: 'tv', name: 'Alone', first_air_date: '2015-06-18' },
+              ]
+            : [];
+        return { page: 1, total_pages: 1, total_results: results.length, results };
+      },
+    };
+    await http.stop();
+    http = await serveMcp({ ...deps(), tmdb: () => search, tmdbOnce: () => search }, ENV);
+    expect(await say('set_watchlist', { title: 'Shōgun', action: 'add' })).toBe(
+      'More than one match for Shōgun: Shōgun (2024, show), Shōgun (1980, show). Which one?',
+    );
+    // The agent's natural retry puts the year in the title, in the answer's own format.
+    expect(await say('set_watchlist', { title: 'Shōgun (2024)', action: 'add', kind: 'show' })).toBe(
+      "Added Shōgun (2024 show) to your watchlist. It isn't on Plex yet, so Seerr will request it.",
+    );
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${SHOGUN}`]);
+    // Two different 2020 movies called Alone: the question names each title that reads differently once, and the
+    // answer to it ("the 2020 movie") is not asked again, since nothing set_watchlist takes can split the two.
+    expect(await say('set_watchlist', { title: 'Alone', action: 'add' })).toBe(
+      'More than one match for Alone: Alone (2020, movie), Alone (2015, show). Which one?',
+    );
+    expect(await say('set_watchlist', { title: 'Alone (2020)', action: 'add', kind: 'movie' })).toBe(
+      "I found more than one Alone (2020 movie) and can't tell them apart, so I left your watchlist as it is. You can add it in the Plex app.",
+    );
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${SHOGUN}`]);
+    expect(await db.select().from(watchMarks)).toHaveLength(1);
+    expect(changedLines().at(-1)).toBe(
+      '[mcp] watchlist_changed {"consumer":"hop","action":"add","kind":"movie","result":"ambiguous","onPlex":null}',
+    );
+  });
+
   it('a Plex failure changes nothing it says it did; its undo removes the title anyway (a removal never downloads)', async () => {
     fake.failWatchlistWrites.add(DISCOVER.arrival);
     expect(await say('set_watchlist', { title: 'arrival', action: 'add', kind: 'movie' })).toBe(
       "I couldn't reach Plex, so your watchlist didn't change.",
     );
-    // PR #580 ruling 2: the failed PUT's userState re-read went out on the WRITE budget, not the 300 ms one.
+    // DESIGN-051 D-15b: the failed PUT's userState re-read went out on the WRITE budget, not the 300 ms one.
     expect(fake.watchlistCalls().slice(-2)).toEqual([
       `write:addToWatchlist:${DISCOVER.arrival}`,
       `write:getDiscoverUserState:${DISCOVER.arrival}`,
