@@ -76,7 +76,7 @@ kubectl exec -n database "$REPLICA" -c postgres -- psql -d haynesnetwork -c "
   ORDER BY last_used DESC NULLS LAST;"
 ```
 
-The query lists a client once it holds a refresh token (every client so far asked for
+The query lists a client once it holds a refresh token (every client that consented so far asked for
 `offline_access`); a registration that never reached consent shows only in the "never used" read below.
 
 Other useful reads (same exec):
@@ -91,6 +91,9 @@ against `packages/db/src/schema/oauth-*.ts` and run on a replica on 2026-09-26: 
 refers to its client by the public `client_id` (text: a foreign key to `oauth_clients.client_id`, or
 in `oauth_audit` no key at all, so the trail outlives a pruned client), never by `oauth_clients.id` (a
 uuid), and `user_id` is `users.id`.
+
+The replicas' `TimeZone` is `America/New_York`, so a bare date literal such as `'2026-09-24'` is local
+midnight (04:00Z); write a time cutoff with a `Z` (`'2026-09-24T00:00Z'`).
 
 ## 4. Revoke by hand
 
@@ -120,20 +123,20 @@ The hop's consumer token is separate and rotates per OPS-015 §4.
 
 ## 7. Troubleshooting
 
-| Symptom                                                            | Look at                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| ChatGPT still shows old tools, or keeps using old endpoint paths   | ChatGPT caches the authorization-server metadata and the tool schemas. Refresh the connector in ChatGPT's settings, then start a **new chat** (an old chat keeps its old schemas). The paths themselves never change (ADR-091 C-12)                                                                                      |
-| A client loops on 401                                              | `[auth]` lines for that client: `refresh_reuse_detected` (the family was revoked; it must consent again), `audience_mismatch` (a token bound to another resource), or no `token_refreshed` at all (the client is not refreshing; reconnect it). Check the Delegated Token has not expired past the 60-day refresh window |
-| Registration refused                                               | `rate_limited` on `/oauth/register`: more than 10 an hour from one IP (`CF-Connecting-IP`). Wait an hour; a client that registers on every attempt is misbehaving                                                                                                                                                        |
-| Token calls refused in bursts                                      | `rate_limited` on `/oauth/token` (60 a minute per IP)                                                                                                                                                                                                                                                                    |
-| "Something is off with this connection request"                    | `authorize_rejected`: an unknown `client_id` (the client's registration was pruned or it never registered) or a redirect URI that was not registered. Remove and re-add the connector in the client                                                                                                                      |
-| "This request expired"                                             | more than 10 minutes on the consent page, or a consent link opened in another user's session. Start again from the app                                                                                                                                                                                                   |
-| Consent approved but the client says it failed                     | the code lives 60 seconds: a slow paste or a callback that never reached the client (a loopback URL opened on another device) answers `invalid_grant`                                                                                                                                                                    |
-| Every answer is "Watch history isn't set up for your account yet." | the signed-in user has no Plex Account Map row, or their account is not tracked (everyone but the owner until PLAN-070). For the owner: check `user_account_map` maps his Plex id 12874060 to his app user                                                                                                               |
-| A tool call answers "Invalid arguments for \<tool\>: …"            | the client sent arguments outside the tool's schema (the text names the field; the values are never logged). ChatGPT's and Codex's first calls did this once and retried (§9). A client that keeps doing it may hold stale tool schemas: for ChatGPT, see the first row                                                  |
-| A mark "did not change Plex"                                       | expected for anyone but the owner (history only, `plex_result = 'none'`)                                                                                                                                                                                                                                                 |
-| A dev-env CLI cannot connect                                       | egress (the dev-env policy's HTTPS rule must list `haynesnetwork.com`) or IPv6: set `NODE_OPTIONS=--dns-result-order=ipv4first`                                                                                                                                                                                          |
-| The Loki alert fired                                               | `refresh_reuse_detected`: a refresh token was replayed (a leaked token, or a client bug); see which client and user in the line and §3. A burst of `authorize_rejected` / `rate_limited`: someone probing the endpoints; check the IPs, and turn it off (§5) if it persists                                              |
+| Symptom                                                            | Look at                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ChatGPT still shows old tools, or keeps using old endpoint paths   | ChatGPT caches the authorization-server metadata and the tool schemas. Refresh the connector in ChatGPT's settings, then start a **new chat** (an old chat keeps its old schemas). The paths themselves never change (ADR-091 C-12)                                                                                                                                             |
+| A client loops on 401                                              | `[auth]` lines for that client: `refresh_reuse_detected` (the family was revoked; it must consent again), `audience_mismatch` (a token bound to another resource), or no `token_refreshed` at all (the client is not refreshing; reconnect it). Check the Delegated Token has not expired past the 60-day refresh window                                                        |
+| Registration refused                                               | `rate_limited` on `/oauth/register`: more than 10 an hour from one IP (`CF-Connecting-IP`). Wait an hour; a client that registers on every attempt is misbehaving                                                                                                                                                                                                               |
+| Token calls refused in bursts                                      | `rate_limited` on `/oauth/token` (60 a minute per IP)                                                                                                                                                                                                                                                                                                                           |
+| "Something is off with this connection request"                    | `authorize_rejected`: an unknown `client_id` (the client's registration was pruned or it never registered) or a redirect URI that was not registered. Remove and re-add the connector in the client                                                                                                                                                                             |
+| "This request expired"                                             | more than 10 minutes on the consent page, or a consent link opened in another user's session. Start again from the app                                                                                                                                                                                                                                                          |
+| Consent approved but the client says it failed                     | the code lives 60 seconds: a slow paste or a callback that never reached the client (a loopback URL opened on another device) answers `invalid_grant`                                                                                                                                                                                                                           |
+| Every answer is "Watch history isn't set up for your account yet." | the signed-in user has no Plex Account Map row, or their account is not tracked (everyone but the owner until PLAN-070). For the owner: check `user_account_map` maps his Plex id 12874060 to his app user                                                                                                                                                                      |
+| A tool call answers "Invalid arguments for \<tool\>: …"            | the client sent arguments outside the tool's schema (the text names the field; the values are never logged). In their first sessions ChatGPT had three calls refused (its first call of each of three tools) and Codex one (its third call, a `recommend`); each retry succeeded (§9). A client that keeps doing it may hold stale tool schemas: for ChatGPT, see the first row |
+| A mark "did not change Plex"                                       | expected for anyone but the owner (history only, `plex_result = 'none'`)                                                                                                                                                                                                                                                                                                        |
+| A dev-env CLI cannot connect                                       | egress (the dev-env policy's HTTPS rule must list `haynesnetwork.com`) or IPv6: set `NODE_OPTIONS=--dns-result-order=ipv4first`                                                                                                                                                                                                                                                 |
+| The Loki alert fired                                               | `refresh_reuse_detected`: a refresh token was replayed (a leaked token, or a client bug); see which client and user in the line and §3. A burst of `authorize_rejected` / `rate_limited`: someone probing the endpoints; check the IPs, and turn it off (§5) if it persists                                                                                                     |
 
 ## 8. Data
 
@@ -160,19 +163,22 @@ From the owner's first connects on 2026-09-25, audited read-only on 2026-09-26 (
   `codex-mcp-client/<version>`).
 - It registers without a `scope`; its authorization then covered all three scopes. It reads the
   root `/.well-known/oauth-protected-resource`, not the `/mcp` variant.
-- It never sends `GET /mcp`, so the 405 does not affect it (ADR-091 C-13).
+- It did not send `GET /mcp` in its first session (2026-09-25), so the 405 did not affect it (ADR-091
+  C-13).
 - Right after the code exchange, a `POST /mcp` from its backend (`aiohttp`) answered 401, apparently
   sent without the new bearer; then its first `POST /mcp` from `openai-mcp/1.0.0` answered 400 and its
   retry 0.2 s later 200 (the cause of the 400 is not logged: `[mcp]` logs tool calls only). The connect
   completed; neither needed action.
-- **Its first tool calls ask for more than a limit allows, then retry.** Its first `recent_history`,
-  `unfinished` and `recommend` calls were refused as `invalid_args`, and it retried each successfully
-  about 11 s later. Each issue text is 43 characters, exactly the length of zod's
-  `limit: Too big: expected number to be <=10.` (`<=20` for `recent_history`); arguments are never
-  logged, so which argument it was is an inference.
+- **Its first calls of three tools were refused, then retried successfully.** Its first
+  `recent_history`, `unfinished` and `recommend` calls were refused as `invalid_args`, and it retried
+  each successfully 12 to 13 s later. Each issue text is 43 characters. That fits a limit over the
+  maximum (`limit: Too big: expected number to be <=10.`, `<=20` for `recent_history`), but also an
+  11-character unrecognized key (`arguments: Unrecognized key: "max_results".`) or, for
+  `recent_history`, `days: Too big: expected number to be <=365.`; arguments are never logged, so the
+  cause is not known.
   One such refusal followed by a success is normal. Refusals that never turn into a success may mean
   stale tool schemas: refresh the connector and start a new chat (§7).
-- The owner spent 3.5 minutes on the consent page; the transaction lives 10 minutes (§7).
+- The owner spent 3 min 37 s on the consent page; the transaction lives 10 minutes (§7).
 - Refresh: not yet seen live (PLAN-069 S8).
 
 **Codex CLI** (the owner's own install, client name `Codex`, redirect `127.0.0.1:<port>`):
