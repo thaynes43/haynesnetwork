@@ -10,6 +10,7 @@ import {
   countdownCopy,
   forceExpireConfirmMatches,
   previewTargetSelection,
+  sweepAbortCopy,
   sweepReportRows,
   tileTappable,
   wallCounts,
@@ -318,6 +319,34 @@ describe('sweepReportRows — the Expire report (D-05 SweepReport)', () => {
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
     expect(byKey.raceSkipped).toMatchObject({ count: 1, tone: 'ok', label: 'saved mid-run' });
     expect(byKey.handleErrors).toMatchObject({ count: 2, tone: 'warn' });
+  });
+});
+
+describe('sweepAbortCopy — the Expire report`s abort banner by reason (DESIGN-052 D-25bw)', () => {
+  const base = {
+    deletedCount: 0,
+    skippedCount: 0,
+    savedCount: 0,
+    protectedCount: 0,
+    handleErrors: 0,
+    raceSkipped: 0,
+  };
+  it('none when the batch finished', () => {
+    expect(sweepAbortCopy({ ...base, aborted: false, abortReason: null })).toBeNull();
+  });
+  it('an *arr identity abort names Radarr or Sonarr, never Maintainerr, and has no dash', () => {
+    const copy = sweepAbortCopy({ ...base, aborted: true, abortReason: 'arr_identity' })!;
+    expect(`${copy.lead} ${copy.detail}`).toBe(
+      'Nothing was deleted: Radarr or Sonarr did not answer. The batch stays in Leaving Soon and will try again on the next sweep.',
+    );
+    expect(`${copy.lead} ${copy.detail}`).not.toMatch(/Maintainerr|—|–/);
+  });
+  it('the handle breaker (and a reason-less abort) keeps the Maintainerr wording', () => {
+    for (const abortReason of ['handle_breaker', null, undefined] as const) {
+      const copy = sweepAbortCopy({ ...base, handleErrors: 3, aborted: true, abortReason })!;
+      expect(copy.lead).toBe('Batch not finished');
+      expect(copy.detail).toMatch(/Maintainerr failed mid-run/);
+    }
   });
 });
 

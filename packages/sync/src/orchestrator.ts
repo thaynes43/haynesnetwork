@@ -96,7 +96,9 @@ import {
   // records and blocks through, the hourly re-add check, and the Seerr watchlist enrollment step.
   checkReleaseBlockReadds,
   enrollSeerrWatchlistSync,
+  reconcileReleaseBlockIfDue,
   type ReaddCheckReport,
+  type ReleaseBlockUpkeepKind,
   type ReleaseBlockArrClients,
   type SeerrEnrollClients,
   type SeerrEnrollReport,
@@ -378,6 +380,9 @@ export interface SyncReport {
   /** DESIGN-052 D-23 — the hourly re-add check after the sweep (null when it failed / not this mode). Never changes
    *  the job's exit. */
   releaseBlockReadds?: ReaddCheckReport | null;
+  /** DESIGN-052 D-25br — the hourly Release Block upkeep after the sweep (the stranded in-flight settle and the term
+   *  expiry, per *arr, only when due). Best effort: never changes the job's exit. */
+  releaseBlockUpkeep?: ReleaseBlockUpkeepKind[] | null;
   /** ADR-064 — the `collections-sync` result (null for every other mode / when it errored). */
   collectionsSync?: (SyncPlexCollectionsReport & { stats: PlexCollectionsStats }) | null;
   /** The collections-sync run's error — sets totalFailure for the CLI exit. */
@@ -684,6 +689,16 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       sweepError = error instanceof Error ? error.message : String(error);
       logger.error('trash batch sweep failed', { error: sweepError });
     }
+    // DESIGN-052 D-25br — the D-13 step 1 settle and expiry on schedule, whether or not a batch was due (before the
+    // re-add check, so a stranded record whose delete did happen is active when the check looks). Best effort.
+    let releaseBlockUpkeep: ReleaseBlockUpkeepKind[] | null = null;
+    try {
+      releaseBlockUpkeep = await reconcileReleaseBlockIfDue({ db, arr: releaseBlockArr, logger });
+    } catch (error) {
+      logger.warn('[release-block] upkeep_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     // DESIGN-052 D-23 — the hourly re-add check, whether or not a batch was due; a failure is a warning only.
     let releaseBlockReadds: ReaddCheckReport | null = null;
     try {
@@ -701,6 +716,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       backfill: null,
       fixesCompleted: null,
       sweep,
+      releaseBlockUpkeep,
       releaseBlockReadds,
       ...(sweepError !== undefined ? { sweepError } : {}),
       totalFailure: sweepError !== undefined,

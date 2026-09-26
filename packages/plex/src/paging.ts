@@ -28,6 +28,12 @@ export type PagedContainer = {
  * `start >= totalSize`; without it only an empty or short page ends it; anything else (the cap, or an
  * empty page that contradicts totalSize) returns `truncated: true`. The returned-page `size` is never
  * mistaken for the grand total.
+ *
+ * A listing that CHANGES between page reads is not believed (DESIGN-052 D-25bn): the first page's
+ * `totalSize` is the listing's total, and a later page reporting a different one means the list shifted
+ * under the offsets (a title removed from the pages already read moves an unread title back across the
+ * page boundary, where no offset ever reads it). The whole read is repeated once from `start=0`; a second
+ * inconsistent read returns `truncated: true` — a PARTIAL view, never a silently shorter "complete" one.
  */
 export async function readAllContainerPages(
   http: PlexHttp,
@@ -37,6 +43,21 @@ export async function readAllContainerPages(
   maxPages: number,
   schema: ZodType<PagedContainer>,
 ): Promise<PlexPagedListing<PlexSectionItem>> {
+  const first = await readPass(http, url, query, pageSize, maxPages, schema);
+  if (!first.shifted) return first.listing;
+  const second = await readPass(http, url, query, pageSize, maxPages, schema);
+  return second.shifted ? { ...second.listing, truncated: true } : second.listing;
+}
+
+/** One pass of the paging loop; `shifted` = a later page's totalSize differed from the first page's. */
+async function readPass(
+  http: PlexHttp,
+  url: string,
+  query: QueryParams,
+  pageSize: number,
+  maxPages: number,
+  schema: ZodType<PagedContainer>,
+): Promise<{ listing: PlexPagedListing<PlexSectionItem>; shifted: boolean }> {
   const items: PlexSectionItem[] = [];
   let start = 0;
   let totalSize: number | null = null;
@@ -46,9 +67,11 @@ export async function readAllContainerPages(
       query: { ...query, 'X-Plex-Container-Start': start, 'X-Plex-Container-Size': pageSize },
     });
     const mc = body.MediaContainer;
+    const pageTotal = mc.totalSize ?? null;
+    if (page === 0) totalSize = pageTotal;
+    else if (pageTotal !== totalSize) return { listing: { items, totalSize, truncated: true }, shifted: true };
     items.push(...mc.Metadata);
     start += mc.Metadata.length;
-    totalSize = mc.totalSize ?? null;
     if (totalSize !== null) {
       if (start >= totalSize) {
         truncated = false;
@@ -60,5 +83,5 @@ export async function readAllContainerPages(
       break;
     }
   }
-  return { items, totalSize, truncated };
+  return { listing: { items, totalSize, truncated }, shifted: false };
 }

@@ -252,11 +252,14 @@ export class TrashMusicUnsupportedError extends Error {
  *  current account is `never_read` or has been failing past its 24-hour carry. */
 export type RegistryGateRefusal = 'stale' | 'account_unverified';
 
+/** The Registry Gate refusal's user-facing wording (the Trash banner's `gate` copy, D-10 / D-25u). */
+export const WATCHLIST_GATE_PAUSED_MESSAGE = 'Deletions are paused until watchlists can be checked.';
+
 /**
  * ADR-093 C-04 / DESIGN-052 D-07: a destructive Trash path (the batch sweep, the manual Expire now, Expedite item and
  * all) asked the Registry Gate for a `delete` snapshot and the watchlists could not be verified. Nothing is deleted.
  * The scheduled sweep catches it and returns a clean `paused` report (D-14); every other path surfaces it as
- * PRECONDITION_FAILED with the reason. `blocking` counts the sources that blocked (`account_unverified`); `ageMin` is
+ * PRECONDITION_FAILED with the banner's wording (the reason stays on the error and the gate's log line). `blocking` counts the sources that blocked (`account_unverified`); `ageMin` is
  * the newest ok refresh's age (null when there is none). Never carries a name or a title.
  */
 export class WatchlistRegistryUnverifiedError extends Error {
@@ -265,15 +268,25 @@ export class WatchlistRegistryUnverifiedError extends Error {
     readonly reason: RegistryGateRefusal,
     readonly detail: { ageMin: number | null; blocking: number },
   ) {
-    super(
-      reason === 'stale'
-        ? `Deletions are paused until watchlists can be checked (no watchlist check within the last 30 minutes${
-            detail.ageMin === null ? '' : `; the newest is ${detail.ageMin} minutes old`
-          }).`
-        : `Deletions are paused until watchlists can be checked (${detail.blocking} watchlist source${
-            detail.blocking === 1 ? '' : 's'
-          } could not be read recently enough).`,
-    );
+    // D-25u / D-25bv — the message IS the banner's wording, nothing more: the reason and its detail ride on the error's
+    // fields and on the gate's own log line (`[watchlist-registry] gate {reason, ageMin, blocking}`), never in the copy.
+    super(WATCHLIST_GATE_PAUSED_MESSAGE);
+  }
+}
+
+/** D-25av — Expedite's *arr-down refusal, the copy the user sees. */
+export const RELEASE_IDENTITY_UNAVAILABLE_MESSAGE =
+  'Radarr or Sonarr did not answer, so nothing was deleted. Try again when the media apps respond normally.';
+
+/**
+ * ADR-093 C-07 / DESIGN-052 D-14 / D-25ai / D-25bu: Expedite's identity reads failed three times in a row (Radarr or
+ * Sonarr did not answer), so nothing was recorded, blocked or deleted. Its own appCode (never the Fix path's
+ * ARR_UPSTREAM_UNAVAILABLE, whose copy says a request "was recorded as failed"); BAD_GATEWAY on the wire.
+ */
+export class ReleaseIdentityUnavailableError extends Error {
+  readonly code = 'RELEASE_BLOCK_ARR_UNAVAILABLE' as const;
+  constructor() {
+    super(RELEASE_IDENTITY_UNAVAILABLE_MESSAGE);
   }
 }
 
@@ -291,7 +304,7 @@ export class TrashSweepPausedError extends Error {
   ) {
     super(
       reason === 'gate'
-        ? 'Deletions are paused until watchlists can be checked.'
+        ? WATCHLIST_GATE_PAUSED_MESSAGE
         : 'Deletions are paused until removals can be done safely.',
     );
   }

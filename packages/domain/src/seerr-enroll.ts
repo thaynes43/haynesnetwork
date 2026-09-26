@@ -6,8 +6,10 @@
 //   notes a user who turned sync off (`optout_observed_at`, logged once) and leaves them off.
 // - The Seerr write echoes the user's whole settings body (Seerr 3.4.1 assigns name, locale, regions and quotas from
 //   the body), through the confined `SeerrWriteClient` (@hnet/arr/write, packages/domain only; hard rule 4 amended by
-//   ADR-093 C-08). The row is written only after the external write succeeded and its response shows both flags on
-//   (the Authentik-apply precedent, ADR-045).
+//   ADR-093 C-08). The enrollment counts only once both flags are SEEN on (the Authentik-apply precedent, ADR-045):
+//   the row is inserted PENDING (`confirmed_at` null) before the write and confirmed from the write's response, or,
+//   when that answer was lost, by the next run's read (D-25bs). The attribution (`already_on` false: the app turned it
+//   on) therefore survives a timeout or a failed insert after the write.
 // - The anime-tags preflight (D-17, PLAN-072 S9 step 1): Seerr tags a Sonarr add with its `animeTags` for an anime
 //   series, empty on this install; `setSeerrSonarrAnimeTags` sets them (one PUT echoing the whole server object, read
 //   back), run once by the coordinator through the `seerr-watchlist` script.
@@ -22,7 +24,7 @@ import {
 import { SeerrClient } from '@hnet/arr/read';
 import { SeerrWriteClient } from '@hnet/arr/write';
 import { seerrWatchlistEnrollments, type DbClient } from '@hnet/db';
-import { and, eq, isNull, lt } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lt } from 'drizzle-orm';
 import { getAppSetting, setAppSetting, type SeerrWatchlistEnrollSetting } from './app-settings';
 import { resolveDb } from './db-client';
 import { consoleDomainLogger, type DomainLogger } from './domain-logger';
@@ -105,6 +107,8 @@ export interface SeerrEnrollReport {
   failed: number;
   optoutsObserved: number;
   rechecked: number;
+  /** D-25bs — pending enrollments (a write attempted earlier whose answer was lost) confirmed this run by a read. */
+  confirmed: number;
 }
 
 const statusOf = (error: unknown): number | string =>
@@ -112,10 +116,14 @@ const statusOf = (error: unknown): number | string =>
 
 /**
  * D-17 — the enrollment step, run at the end of each `watchlist-registry` run while the setting is on. For every Seerr
- * Plex user (`userType` 1) with no enrollment row (and in `onlyUserIds` when set): read the flags; both on ⇒ insert the
- * row `already_on`; otherwise write both on (echoing the whole body) and insert the row only when the response shows
- * both on. A failure logs and is retried next run (no row). Then, once a day, re-check the enrolled users and note an
- * opt-out. Never throws for a single user.
+ * Plex user (`userType` 1) with no confirmed enrollment row (and in `onlyUserIds` when set): read the flags.
+ * - No row, both on ⇒ insert the row `already_on`, confirmed.
+ * - A PENDING row (the app wrote before and never saw the answer, D-25bs), both on ⇒ confirm it, `already_on` false:
+ *   the app's write took.
+ * - Otherwise insert the row pending (`already_on` false, `confirmed_at` null) BEFORE the write, write both on
+ *   (echoing the whole body), and confirm it when the response shows both on. A failure logs and is retried next run
+ *   (the pending row stays, so a lost answer is never mistaken for `already_on`).
+ * Then, once a day, re-check the confirmed users and note an opt-out. Never throws for a single user.
  */
 export async function enrollSeerrWatchlistSync(input: {
   db?: DbClient;
@@ -133,6 +141,7 @@ export async function enrollSeerrWatchlistSync(input: {
     failed: 0,
     optoutsObserved: 0,
     rechecked: 0,
+    confirmed: 0,
   };
   const setting = await getSeerrWatchlistEnroll({ db: input.db });
   if (!setting.enabled) return { ...report, status: 'disabled' };
@@ -145,37 +154,66 @@ export async function enrollSeerrWatchlistSync(input: {
     return { ...report, status: 'users_failed' };
   }
   const rows = await db.select().from(seerrWatchlistEnrollments);
-  const known = new Set(rows.map((r) => r.seerrUserId));
+  const confirmed = new Set(rows.filter((r) => r.confirmedAt !== null).map((r) => r.seerrUserId));
+  const pending = new Set(rows.filter((r) => r.confirmedAt === null).map((r) => r.seerrUserId));
   const only = setting.onlyUserIds === null ? null : new Set(setting.onlyUserIds);
+  const confirm = (seerrUserId: number) =>
+    db
+      .update(seerrWatchlistEnrollments)
+      .set({ confirmedAt: now, lastCheckedAt: now })
+      .where(eq(seerrWatchlistEnrollments.seerrUserId, seerrUserId));
   for (const user of users) {
-    if (user.userType !== 1 || known.has(user.id)) continue;
+    if (user.userType !== 1 || confirmed.has(user.id)) continue;
     if (only !== null && !only.has(user.id)) continue;
     try {
       const flags = await input.seerr.read.getUserWatchlistSync(user.id);
-      let alreadyOn = false;
       if (flags.movies && flags.tv) {
-        alreadyOn = true;
-      } else {
-        const after = await input.seerr.write.setWatchlistSync(user.id, { movies: true, tv: true });
-        if (!after.movies || !after.tv) {
-          report.failed += 1;
-          logger.warn('[seerr-enroll] failed', { seerrUserId: user.id, status: 'not_applied' });
+        if (pending.has(user.id)) {
+          // The app's earlier write took; its answer was lost (D-25bs). Still the app's enrollment, never `already_on`.
+          await confirm(user.id);
+          report.enrolled += 1;
+          report.confirmed += 1;
+          logger.info('[seerr-enroll] enrolled', { seerrUserId: user.id, alreadyOn: false });
           continue;
         }
+        await db
+          .insert(seerrWatchlistEnrollments)
+          .values({
+            seerrUserId: user.id,
+            plexAccountId: user.plexId,
+            enrolledAt: now,
+            alreadyOn: true,
+            lastCheckedAt: now,
+            confirmedAt: now,
+          })
+          .onConflictDoNothing();
+        report.alreadyOn += 1;
+        logger.info('[seerr-enroll] enrolled', { seerrUserId: user.id, alreadyOn: true });
+        continue;
       }
-      await db
-        .insert(seerrWatchlistEnrollments)
-        .values({
-          seerrUserId: user.id,
-          plexAccountId: user.plexId,
-          enrolledAt: now,
-          alreadyOn,
-          lastCheckedAt: now,
-        })
-        .onConflictDoNothing();
-      if (alreadyOn) report.alreadyOn += 1;
-      else report.enrolled += 1;
-      logger.info('[seerr-enroll] enrolled', { seerrUserId: user.id, alreadyOn });
+      // Record the attempt BEFORE the write: whatever happens to the answer, the row says the app turned it on.
+      if (!pending.has(user.id)) {
+        await db
+          .insert(seerrWatchlistEnrollments)
+          .values({
+            seerrUserId: user.id,
+            plexAccountId: user.plexId,
+            enrolledAt: now,
+            alreadyOn: false,
+            lastCheckedAt: now,
+            confirmedAt: null,
+          })
+          .onConflictDoNothing();
+      }
+      const after = await input.seerr.write.setWatchlistSync(user.id, { movies: true, tv: true });
+      if (!after.movies || !after.tv) {
+        report.failed += 1;
+        logger.warn('[seerr-enroll] failed', { seerrUserId: user.id, status: 'not_applied' });
+        continue;
+      }
+      await confirm(user.id);
+      report.enrolled += 1;
+      logger.info('[seerr-enroll] enrolled', { seerrUserId: user.id, alreadyOn: false });
     } catch (error) {
       report.failed += 1;
       logger.warn('[seerr-enroll] failed', { seerrUserId: user.id, status: statusOf(error) });
@@ -189,6 +227,7 @@ export async function enrollSeerrWatchlistSync(input: {
     .where(
       and(
         isNull(seerrWatchlistEnrollments.optoutObservedAt),
+        isNotNull(seerrWatchlistEnrollments.confirmedAt), // a pending row is decided by the loop above
         lt(
           seerrWatchlistEnrollments.lastCheckedAt,
           new Date(now.getTime() - SEERR_ENROLL_RECHECK_H * 3_600_000),
@@ -218,7 +257,7 @@ export async function enrollSeerrWatchlistSync(input: {
   return report;
 }
 
-/** D-17 / D-10 — the enrollment counts for the Watchlists card (never a name). */
+/** D-17 / D-10 — the enrollment counts (never a name). `pending` = writes whose answer is not confirmed yet (D-25bs). */
 export async function getSeerrEnrollSummary(input: {
   db?: DbClient;
 }): Promise<{
@@ -226,19 +265,23 @@ export async function getSeerrEnrollSummary(input: {
   enrolled: number;
   alreadyOn: number;
   optedOut: number;
+  pending: number;
 }> {
   const db = resolveDb(input.db);
   const rows = await db
     .select({
       alreadyOn: seerrWatchlistEnrollments.alreadyOn,
       optout: seerrWatchlistEnrollments.optoutObservedAt,
+      confirmedAt: seerrWatchlistEnrollments.confirmedAt,
     })
     .from(seerrWatchlistEnrollments);
+  const done = rows.filter((r) => r.confirmedAt !== null);
   return {
     setting: await getSeerrWatchlistEnroll({ db: input.db }),
-    enrolled: rows.filter((r) => !r.alreadyOn).length,
-    alreadyOn: rows.filter((r) => r.alreadyOn).length,
-    optedOut: rows.filter((r) => r.optout !== null).length,
+    enrolled: done.filter((r) => !r.alreadyOn).length,
+    alreadyOn: done.filter((r) => r.alreadyOn).length,
+    optedOut: done.filter((r) => r.optout !== null).length,
+    pending: rows.length - done.length,
   };
 }
 

@@ -5,7 +5,7 @@
 - **Scope:** operating the Watchlist Registry (`--mode=watchlist-registry` and its CronJob), the Registry Gate and the
   paused sweep, the Release Block (the app-owned Radarr / Sonarr release profile), the re-add page, and the three
   operator scripts: the S6(e) pool report, the S8 seed and the S9 Seerr enrollment.
-- **Normative basis:** ADR-093, DESIGN-052 (D-07, D-13, D-14, D-15, D-17, D-20, D-21, D-25), PLAN-072.
+- **Normative basis:** ADR-093, DESIGN-052 (D-04, D-07, D-13, D-14, D-15, D-17, D-20, D-21, D-23, D-25), PLAN-072.
 - **Repos:** this app; haynes-ops (`kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`: the CronJobs
   and the image tag; the Loki alert rules).
 
@@ -19,7 +19,7 @@ accounts only as their class and `acct:<8 hex>` (D-21).
 | Piece | Where | Notes |
 |---|---|---|
 | Registry refresh | CronJob `haynesnetwork-sync-watchlist-registry`, `14,29,44,59 * * * *`, `concurrencyPolicy: Forbid` | `tsx /sync/src/scripts/sync.ts --mode=watchlist-registry`; exit 0 for a clean `failed` run and for `busy` (D-25t) |
-| Sweep | CronJob `haynesnetwork-sync-trash-batch-sweep` (hourly at `:45`) | refreshes the registry inline, then the gate, then the two-phase delete (D-14) |
+| Sweep | CronJob `haynesnetwork-sync-trash-batch-sweep` (hourly at `:45`) | refreshes the registry inline, then the gate, then the two-phase delete (D-14); then, every hour whether or not a batch was due, the Release Block upkeep (the stranded in-flight settle and the 365-day expiry, only when due, D-25br) and the re-add check (D-23) |
 | Gate on the web paths | `trash.expediteItem`, `trash.expediteAll`, `trash.batches.expire` | the CronJob's newest run, never an inline refresh; a refusal is `PRECONDITION_FAILED` |
 | Release Block | one profile per *arr, `haynesnetwork: deleted releases (managed, do not edit)` | written and read back before any delete; never edit it by hand while an image that reconciles it runs |
 | Status | `trash_sweep_status` (one row) | the banner reads it; `paused_since` is the first non-ok outcome's time |
@@ -42,12 +42,21 @@ A run that finds another holding the lock answers `busy` and exits 0.
 The admin view is the Watchlists card (Settings, Trash, General): when watchlists were last checked, accounts read and
 not, the blocked-release counts per *arr, the import-list exclusions and the re-adds.
 
+The Release Block upkeep logs `[release-block] reconciled {…, expired, settled}` when it had something to do, and
+`[release-block] upkeep_failed {arrKind, stranded, expiring, error}` (warn) when Radarr or Sonarr did not answer; it
+tries again the next hour and never fails the job (D-25br).
+
 ## 3. `sweep_paused` pages (6 hours or more, any reason)
 
 The sweep logs `[trash] sweep_paused {reason, step, pausedForH}` on every run with a batch due while paused, and the
 Trash page shows the banner once the pause is 6 hours old. Nothing was deleted: the batch waits in `leaving_soon`. The
 pause ends with the next ok sweep, or as soon as no batch is due (a cancelled or expired batch, D-25bf), which logs
 `[trash] sweep_pause_cleared {via}`.
+
+`reason` in the log is one of `gate`, `release_block`, `audit_unsafe` or `arr` (`sweep_outcome` carries the outcome:
+`paused_gate`, `paused_release_block`, `paused_audit_unsafe`, `aborted_arr`). The banner groups `audit_unsafe` and
+`arr` as one line, "until the media apps respond normally"; the table below uses the log's values, which are what
+the alert rule (PLAN-072 S4) matches.
 
 | reason | step | What it means | Remedy |
 |---|---|---|---|
@@ -57,9 +66,9 @@ pause ends with the next ok sweep, or as soon as no batch is due (a cancelled or
 | `release_block` | `put` | Radarr or Sonarr refused the profile write, or did not answer. | Check the *arr is up and its key valid (`RADARR_API_KEY` / `SONARR_API_KEY` in `haynesnetwork-secret`). The next hourly sweep retries. |
 | `release_block` | `read_back` | The write answered but the profile read back without every term, or disabled. | Someone or something edited the profile. Look at it (`GET /api/v3/releaseprofile`); the next sweep rewrites it. If it keeps drifting, find the writer before resuming. |
 | `release_block` | `duplicate_profile` | Two profiles carry the managed name (a copy, or a restore). | In the *arr, delete the one that is not the older (lower id) profile, or merge their terms into it first if the copy holds terms the other lacks. The next sweep reconciles the survivor. |
-| `media_apps` | `unsafe` | The Maintainerr safety audit failed (`paused_audit_unsafe`; the job also fails, as before ADR-093). | The Trash page's safety banner names the integration or the flag (`listExclusions`, `forceSeerr`, `arrAction`, the aging horizon). Fix it in Maintainerr through the app's rule editor, never by hand. |
-| `media_apps` | `handle_breaker` | Three Maintainerr handles in a row failed (`aborted_arr`). | Maintainerr is down or its executor is stuck. Items already handled carry `[trash] deleted {…, records}` lines; the rest wait. |
-| `media_apps` | `arr_identity` | Three *arr identity reads in a row failed before Phase A (`aborted_arr`); nothing was written. | Radarr or Sonarr is down. The next hourly sweep retries. |
+| `audit_unsafe` | `unsafe` | The Maintainerr safety audit failed (`paused_audit_unsafe`; the job also fails, as before ADR-093). | The Trash page's safety banner names the integration or the pool and its setting. For a rule pool's setting (`listExclusions`, `forceSeerr`, `arrAction` Delete, or the delete-after horizon), turn that setting back on in Maintainerr's own rule editor for that pool (its UI saves the whole rule), then re-run the sweep. The app's Rules tab only arms, disarms or deletes a rule and carries these settings over unchanged, so it cannot fix them. An episode pool is not held to `forceSeerr` (Maintainerr never stores it there, D-25bt). |
+| `arr` | `handle_breaker` | Three Maintainerr handles in a row failed (`aborted_arr`). | Maintainerr is down or its executor is stuck. Items already handled carry `[trash] deleted {…, records}` lines; the rest wait. |
+| `arr` | `arr_identity` | Three *arr identity reads in a row failed before Phase A (`aborted_arr`); nothing was written. | Radarr or Sonarr is down. The next hourly sweep retries. A manual Expire now reports "Nothing was deleted: Radarr or Sonarr did not answer." and Expedite refuses with the same cause (`RELEASE_BLOCK_ARR_UNAVAILABLE`, D-25bu). |
 
 To re-run the sweep once the cause is fixed rather than wait for `:45`:
 `kubectl create job -n frontend --from=cronjob/haynesnetwork-sync-trash-batch-sweep sweep-manual-$(date +%s)`
@@ -75,7 +84,44 @@ term that does not match the grabbed name is a derivation gap (a PR to the D-12 
 a matching term that did not reject means the profile was not in place (look for `release_block` pauses or a
 `read_back` failure around the grab). The Watchlists card's re-add line counts titles over 30 days (D-25bh).
 
-## 5. The operator scripts (in-cluster)
+## 5. The `account_unreadable` notice (once per source)
+
+`[watchlist-registry] account_unreadable {class, source, acct, failingSinceH}` (warn, logged once per source when it
+happens) means one account's source (`community`: the friend's plex.tv list; `seerr`: that user's Seerr watchlist)
+has failed for 72 hours, or its community list went empty or hidden while its Seerr list still read titles (settled at
+once, D-04). The source is frozen `unreadable`: its last-read titles **still protect** (they stay in the registry), but
+it no longer blocks the gate, so deletions go on without its newer additions. Coverage is lost, not safety; this is a
+notice, not a page.
+
+Tell the cause apart from the source's earlier `account_failed {class, source, errorClass, acct}` lines (same `acct`):
+
+| `errorClass` | Likely cause | What fixes it |
+|---|---|---|
+| `empty_after_titles`, `not_found_after_titles` (community; also an `account_hidden` line) | The friend hid their watchlist, emptied it, or left the Plex share; indistinguishable (ADR-093 C-05). | Nothing on our side. If Seerr still reads them, their Seerr list keeps protecting. Ask them to share the list again if it matters. |
+| `http_401`, `http_403` (seerr) | The Seerr API key was rotated or revoked. | Update `SEERR_API_KEY` in 1Password (`haynesnetwork-secret`), let the ExternalSecret refresh, and let the next CronJob run read it. |
+| `seerr_users`, `seerr_unconfigured` (seerr) | Seerr's user list failed, or Seerr is not configured for the job. | Check Seerr is up and `SEERR_URL` / `SEERR_API_KEY` are set; every Seerr source fails together in this case. |
+| `inconsistent`, `empty_after_titles` (seerr) | Seerr's paging answered differently between pages, or it answered empty after titles (its watchlist fetch from plex.tv failed, DESIGN-052 Q-03). | Usually passes; if it persists, read the Seerr log for `Failed to retrieve watchlist items` at the same time. |
+| `http_429`, `http_5xx`, `timeout`, `network` | plex.tv or Seerr was down or throttled for 72 hours. | Check the upstream and the pod's egress; one ok read later turns the source back to `read`. |
+
+A source leaves `unreadable` by itself on its next ok read with titles; nothing needs clearing.
+
+## 6. The `run_failed` streak (8 runs in a row, 2 hours)
+
+`[watchlist-registry] run_failed {trigger, failure}` means a whole registry run failed before it wrote any account:
+the job still exits 0 (a clean failed run is not a job failure, D-25t), so only this alert says so. Eight in a row is
+2 hours of no fresh check; the sweep's gate pauses once the newest ok run is 30 minutes old, and the `sweep_paused`
+page follows at 6 hours, so this notice is the early warning.
+
+| `failure` | What failed | What fixes it |
+|---|---|---|
+| `roster` | plex.tv's user lists (`/api/v2/user`, `/api/users`, `/api/home/users`) with the owner token. | Check plex.tv is up and the owner tokens in `haynesnetwork-secret` (`PLEX_HAYNESOPS_TOKEN`, `PLEX_HAYNESTOWER_TOKEN`) still work (a 401 means one was revoked). |
+| `owner` | The owner's discover watchlist read failed on every server's token. | Same as `roster`, for `discover.provider.plex.tv`; check the pod can reach it (egress). |
+| `owner_truncated` | The owner's list could not be read to a proven end: the page cap, a page that contradicted the total, or a list that changed between pages twice in a row (D-25bn). | Usually the owner was editing the list during the read; the next run succeeds. If it persists, the list is past the 20-page cap (2,000 titles) or the provider is misbehaving. |
+| `error` | Anything else thrown during the run (a database error). | Read the job's log around the `run_failed` line. |
+
+Run it by hand once fixed (section 2); a `busy` answer means another run holds the lock.
+
+## 7. The operator scripts (in-cluster)
 
 All three run in the web pod, which holds the same secret and the `/sync` tree (OPS-004 §4). Each prints counts and
 library titles only.
@@ -91,19 +137,24 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/seerr-watchlist.ts
 ```
 
 - **`--pool`** prints, per kind, the pool size, the items recordable and their records by shape (`group` / `exact` /
-  `none`), confidence and identity source, the records with no release group (Q-12), and the items D-11 would keep
-  `release_unrecorded` with their reasons and share (`unrecordedShare`, Q-13). It needs `MAINTAINERR_API_KEY` too.
+  `none`), confidence and identity source, the records with no release group (Q-12), the fold-only terms (`foldOnly`
+  and `foldOnlyShare`: a real release name with an apostrophe, an accent or `&` that the term matches only when folded,
+  which Radarr and Sonarr will not block, D-25bq), and the items D-11 would keep `release_unrecorded` with their
+  reasons and share (`unrecordedShare`, Q-13). It needs `MAINTAINERR_API_KEY` too.
 - **The legacy SAB file** (`--legacy-sab`) holds release names from the HaynesTower SABnzbd histories. It is never
   committed. Copy it into the pod for the run and delete it after:
   `kubectl -n frontend cp ./sab.tsv <pod>:/tmp/sab.tsv -c app`, run with `--legacy-sab=/tmp/sab.tsv`, then
   `kubectl -n frontend exec <pod> -c app -- rm /tmp/sab.tsv`. The same holds for a `--manual` file.
 - **`seerr-watchlist.ts`**: `--enroll=<id>` for the canary, `--enroll=all` after it, `--enroll=off` to stop new
   enrollments (it never turns a user's sync off); `--anime-tags=<serverId>:<tagIds>` once, read back. Every
-  `--enroll` is an audited setting write.
+  `--enroll` is an audited setting write. `--show` prints `enrolled`, `alreadyOn`, `optedOut` and `pending` (a write
+  whose answer was lost; the next registry run confirms it by reading the flags, D-25bs).
 
-## 6. Rollback
+## 8. Rollback
 
-PLAN-072's Rollback section is the order. In short: suspend the sweep CronJob first; turn enrollment off if S9 ran;
+PLAN-072's Rollback section is the order. In short: suspend the sweep CronJob first; turn enrollment off if S9 ran
+(the users the app turned on are the `seerr_watchlist_enrollments` rows with `already_on` false, pending rows
+included);
 then, in the haynes-ops change that reverts the image tag, also remove (or first suspend) the
 `haynesnetwork-sync-watchlist-registry` CronJob, since the older image rejects `--mode=watchlist-registry` (exit 2) and
 would fail a Job every 15 minutes, and remove the D-21 Loki alerts, which go silent with the older image. Leave the

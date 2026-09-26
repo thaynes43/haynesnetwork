@@ -3,7 +3,8 @@
 //
 // For each kind (movies, TV) it reads the pending pool (Maintainerr + the ledger join) and runs the same identity and
 // term derivation the sweep runs before a delete (`identifyRelease`, D-11 / D-12), then counts: records by shape
-// (group / exact / none), by confidence (verified / low_confidence) and by identity source; records whose release
+// (group / exact / none), by confidence (verified / low_confidence), the fold-only terms (D-25bq: a real name matched
+// only folded, which the *arr will not block) and by identity source; records whose release
 // group is unknown (Q-12); and the items D-11 would keep `release_unrecorded`, by reason, with their titles (our own
 // library's titles, fine to print, D-21). The share of kept items is what Q-13 turns on.
 //
@@ -35,6 +36,11 @@ export interface PoolReleaseKindReport {
   /** Records by shape: `exact` counts the D-12 self-check falling back from the group form (or no group at all). */
   shape: { group: number; exact: number; none: number };
   confidence: { verified: number; low_confidence: number };
+  /** D-25ad / D-25bq — records whose term matches a real release name of the record only in folded form (an
+   *  apostrophe, an accent or `&`): the *arr tests the raw title, so that name is NOT blocked. Counted within
+   *  `confidence.low_confidence`; `foldOnlyShare` is its share of the records with a term (0..1). */
+  foldOnly: number;
+  foldOnlyShare: number;
   identitySource: Record<string, number>;
   /** Records with no release group (Q-12): only an exact name, or nothing, can block these. */
   nullGroup: number;
@@ -73,6 +79,8 @@ export async function reportPoolReleaseIdentity(input: {
       unrecordedShare: 0,
       shape: { group: 0, exact: 0, none: 0 },
       confidence: { verified: 0, low_confidence: 0 },
+      foldOnly: 0,
+      foldOnlyShare: 0,
       identitySource: {},
       nullGroup: 0,
       unrecorded: [],
@@ -105,12 +113,15 @@ export async function reportPoolReleaseIdentity(input: {
       for (const d of identity.drafts) {
         report.shape[d.shape] += 1;
         if (d.termConfidence !== null) report.confidence[d.termConfidence] += 1;
+        if (d.foldOnly === true) report.foldOnly += 1;
         report.identitySource[d.identitySource] = (report.identitySource[d.identitySource] ?? 0) + 1;
         if (d.shape !== 'none' && d.releaseGroup === null) report.nullGroup += 1;
       }
     }
     const kept = report.unrecordable.no_term + report.unrecordable.gone;
     report.unrecordedShare = report.pool === 0 ? 0 : Math.round((kept / report.pool) * 1000) / 1000;
+    const withTerm = report.shape.group + report.shape.exact;
+    report.foldOnlyShare = withTerm === 0 ? 0 : Math.round((report.foldOnly / withTerm) * 1000) / 1000;
     kinds.push(report);
   }
   return { kinds };

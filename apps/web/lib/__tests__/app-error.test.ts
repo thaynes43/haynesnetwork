@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { appCodeOf, describeMutationError } from '../app-error';
+import { expediteErrorAction } from '../trash';
 
 describe('appCode error surfacing (DESIGN-003 D-13)', () => {
   it('reads the appCode the errorFormatter attaches', () => {
@@ -26,6 +27,21 @@ describe('appCode error surfacing (DESIGN-003 D-13)', () => {
     expect(
       describeMutationError({ message: 'raw', data: { appCode: 'REORDER_SET_MISMATCH' } }),
     ).toMatch(/refresh/);
+  });
+
+  it('D-25bu: Expedite`s *arr-down refusal shows the D-25av sentence, never the Fix copy', () => {
+    const err = {
+      message: 'Radarr or Sonarr did not answer, so nothing was deleted. Try again when the media apps respond normally.',
+      data: { appCode: 'RELEASE_BLOCK_ARR_UNAVAILABLE' },
+    };
+    const shown = expediteErrorAction(appCodeOf(err), describeMutationError(err));
+    expect(shown).toEqual({
+      invalidate: true,
+      stale: false,
+      message:
+        'Radarr or Sonarr did not answer, so nothing was deleted. Try again when the media apps respond normally.',
+    });
+    expect(shown.message).not.toMatch(/recorded as failed|—/);
   });
 
   it('falls back to the message, then to generic copy', () => {

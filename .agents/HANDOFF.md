@@ -43,8 +43,10 @@ proposal and deletion guard (`watchlisted`, `ruleEvaluationFailed`); the Deleted
 Release Block writer; the two-phase sweep and Expedite (identity, record, profile write and read-back, claim, handle,
 settle by the *arr's own answer); the seed (`release-block-seed.ts`, plus the read-only `--pool` report for S6(e));
 the Arm/Disarm fix and grown invariant; Seerr enrollment, off (`seerr-watchlist.ts`); the D-10 surfaces and the D-23
-counts; CLAUDE.md hard rule 4. Rulings in DESIGN-052 D-25 (D-25ax..D-25bm are the Opus code review's, each with a
-test that fails without it). Runbook: `docs/ops/017-watchlist-protection.md` (OPS-017, Draft until S4).
+counts; CLAUDE.md hard rule 4. Rulings in DESIGN-052 D-25 (D-25ax..D-25bm are the Opus code review's and
+D-25bn..D-25bz its second pass's, each with a test that fails without it; the second pass added the hourly Release
+Block upkeep in the sweep job, a pending Seerr enrollment row via a `confirmed_at` column in 0081, and per-name terms
+for a movie's exact fallback). Runbook: `docs/ops/017-watchlist-protection.md` (OPS-017, Draft until S4).
 **Next:** the S2 `pnpm dev:local` walk (a watchlisted stub title kept by an expedite and a sweep, the release profile
 written before the handle, the Arm/Disarm toggle leaving the flags true), then squash-merge; S3 release; S4 deploy
 (image tag, the `sync-watchlist-registry` CronJob, the Loki alerts linking OPS-017) with

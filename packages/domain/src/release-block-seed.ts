@@ -186,6 +186,7 @@ function legacyDraft(
     term: derived.term,
     termConfidence: derived.confidence,
     shape: derived.shape,
+    foldOnly: derived.foldOnly,
   };
 }
 

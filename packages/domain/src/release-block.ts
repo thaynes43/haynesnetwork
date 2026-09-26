@@ -32,7 +32,7 @@ import {
 } from '@hnet/arr';
 import { RadarrClient, SonarrClient } from '@hnet/arr/read';
 import { RadarrWriteClient, SonarrWriteClient } from '@hnet/arr/write';
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import { ReleaseBlockError, type ReleaseBlockStep } from './errors';
@@ -40,6 +40,7 @@ import {
   RELEASE_BLOCK_PROFILE_NAME,
   RELEASE_BLOCK_SENTINEL,
   deriveTerm,
+  deriveTermsPerName,
   isGrammarTerm,
   looksLikeRelease,
   parseReleaseName,
@@ -147,6 +148,8 @@ export interface ReleaseRecordDraft {
   termConfidence: DeletedReleaseTermConfidence | null;
   /** D-21 `recorded.shape`: `none` when the item has no file (nothing to re-fetch). */
   shape: 'group' | 'exact' | 'none';
+  /** D-25bq — a real release name matched the term only folded (the *arr will not block it); counted by S6(e). */
+  foldOnly?: boolean;
 }
 
 export type ReleaseIdentity =
@@ -405,6 +408,7 @@ function ledgerDraft(
     term: derived.term,
     termConfidence: derived.confidence,
     shape: derived.shape,
+    foldOnly: derived.foldOnly,
   };
 }
 
@@ -423,8 +427,20 @@ async function ledgerDrafts(
   const arrYears = [s.year];
   if (kind === 'radarr') {
     const [ledger] = await ledgerReleases(db, mediaItemId, before, 1);
-    const draft = ledger ? ledgerDraft('radarr', mediaItemId, s, ledger, arrYears, null) : null;
-    return draft ? [draft] : null;
+    if (!ledger) return null;
+    const draft = ledgerDraft('radarr', mediaItemId, s, ledger, arrYears, null);
+    if (draft === null) return null;
+    // D-25bp — the import and its grab can name the release differently; an exact fallback blocks only the first
+    // name, so each distinct name then gets its own record, and a name with no term keeps the movie.
+    const names = distinct(ledger.sourceTitles);
+    if (draft.shape !== 'exact' || names.length <= 1) return [draft];
+    const drafts: ReleaseRecordDraft[] = [];
+    for (const name of names) {
+      const one = ledgerDraft('radarr', mediaItemId, s, { ...ledger, sourceTitles: [name] }, arrYears, null);
+      if (one === null) return null;
+      drafts.push(one);
+    }
+    return drafts;
   }
   const ledger = await ledgerReleases(db, mediaItemId, before, 200);
   // D-25bc — every import of a (season, group, resolution) key counts, never only the newest: the key's group term
@@ -569,9 +585,12 @@ async function identifyMovie(
     ledger !== undefined &&
     ledger.sourceTitles.length > 0 &&
     ledgerAgreesWithFile(ledger, fileGroup, resolution);
-  const names = useLedger ? ledger!.sourceTitles : arrNames;
+  const names = useLedger ? distinct(ledger!.sourceTitles) : arrNames;
   const releaseGroup = fileGroup ?? (useLedger ? ledger!.releaseGroup : null);
-  const derived = deriveTerm({
+  // D-25bp — every real name of the file must be blocked: the grab title, the scene name and the original file name
+  // can each name the release differently, and the exact fallback blocks only the first. `deriveTermsPerName` gives
+  // one record per name then, or null when a name yields no term (the movie is kept `release_unrecorded`).
+  const derivations = deriveTermsPerName({
     kind: 'movie',
     arrTitle: movie.title,
     arrYears,
@@ -581,7 +600,7 @@ async function identifyMovie(
     resolution,
     remux: isRemuxQuality(q?.name, q?.modifier),
   });
-  if (!derived) return { status: 'unrecordable', reason: 'no_term' };
+  if (!derivations) return { status: 'unrecordable', reason: 'no_term' };
   const identitySource: DeletedReleaseIdentitySource = grab?.sourceTitle
     ? 'arr_grab_history'
     : useLedger
@@ -589,28 +608,27 @@ async function identifyMovie(
       : 'arr_file';
   return {
     status: 'recordable',
-    drafts: [
-      {
-        ...baseDraft('radarr', mediaItemId, s),
-        title: movie.title,
-        year: movie.year,
-        tmdbId: movie.tmdbId ?? s.tmdbId,
-        imdbId: movie.imdbId ?? s.imdbId,
-        season: null,
-        identitySource,
-        releaseTitle: names[0] ?? null,
-        releaseGroup,
-        quality: q?.name ?? null,
-        resolution: q?.resolution ?? resolution,
-        sizeBytes: file.size ?? null,
-        fileName: file.relativePath ?? null,
-        indexer: grab?.indexer ?? (useLedger ? ledger!.indexer : null),
-        years: derived.years,
-        term: derived.term,
-        termConfidence: derived.confidence,
-        shape: derived.shape,
-      },
-    ],
+    drafts: derivations.map(({ name, derived }) => ({
+      ...baseDraft('radarr', mediaItemId, s),
+      title: movie.title,
+      year: movie.year,
+      tmdbId: movie.tmdbId ?? s.tmdbId,
+      imdbId: movie.imdbId ?? s.imdbId,
+      season: null,
+      identitySource,
+      releaseTitle: name ?? names[0] ?? null,
+      releaseGroup,
+      quality: q?.name ?? null,
+      resolution: q?.resolution ?? resolution,
+      sizeBytes: file.size ?? null,
+      fileName: file.relativePath ?? null,
+      indexer: grab?.indexer ?? (useLedger ? ledger!.indexer : null),
+      years: derived.years,
+      term: derived.term,
+      termConfidence: derived.confidence,
+      shape: derived.shape,
+      foldOnly: derived.foldOnly,
+    })),
   };
 }
 
@@ -769,6 +787,7 @@ async function identifySeries(
         term: d.derived.term,
         termConfidence: d.derived.confidence,
         shape: d.derived.shape,
+        foldOnly: d.derived.foldOnly,
       });
     }
   }
@@ -1211,6 +1230,69 @@ export async function reconcileReleaseBlock(input: {
 
 export type { ReleaseBlockStep };
 
+export interface ReleaseBlockUpkeepKind {
+  arrKind: ReleaseArrKind;
+  /** `in_flight` records older than the settle age, and `active` records past `expires_at`, when the upkeep looked. */
+  stranded: number;
+  expiring: number;
+  /** The reconcile's report (null when nothing was due, or when it failed). */
+  report: ReleaseBlockReconcileReport | null;
+  error: string | null;
+}
+
+/**
+ * D-13 step 1 on schedule (D-25br) — the hourly upkeep the `trash-batch-sweep` job runs after the sweep, whether or not
+ * a batch was due: for each *arr with an `in_flight` record older than the settle age (an ambiguous handle failure
+ * left it stranded) or an `active` record past `expires_at`, it runs `reconcileReleaseBlock`, which settles the
+ * stranded records by presence (404 ⇒ `active`, present ⇒ `abandoned`, unreachable ⇒ left) and drops expired terms.
+ * Otherwise the settle and the expiry ran only inside a delete path's reconcile, so "an hour later" (D-14 step 7) meant
+ * the next batch of that kind. Best effort: nothing due makes no *arr call; a failure is a warning, never the job's
+ * exit, and never pauses the sweep (the next hour tries again).
+ */
+export async function reconcileReleaseBlockIfDue(input: {
+  db?: DbClient;
+  arr: ReleaseBlockArrClients;
+  logger?: DomainLogger;
+  now?: Date;
+}): Promise<ReleaseBlockUpkeepKind[]> {
+  const db = resolveDb(input.db);
+  const logger = input.logger ?? consoleDomainLogger;
+  const now = input.now ?? new Date();
+  const t = trashDeletedReleases;
+  const out: ReleaseBlockUpkeepKind[] = [];
+  for (const kind of ['radarr', 'sonarr'] as const) {
+    const [due] = await db
+      .select({
+        stranded: sql<number>`count(*) filter (where ${t.state} = 'in_flight' and ${t.recordedAt} < ${new Date(now.getTime() - RELEASE_IN_FLIGHT_SETTLE_AFTER_MS).toISOString()}::timestamptz)::int`,
+        expiring: sql<number>`count(*) filter (where ${t.state} = 'active' and ${t.expiresAt} <= ${now.toISOString()}::timestamptz)::int`,
+      })
+      .from(t)
+      .where(eq(t.arrKind, kind));
+    const entry: ReleaseBlockUpkeepKind = {
+      arrKind: kind,
+      stranded: due?.stranded ?? 0,
+      expiring: due?.expiring ?? 0,
+      report: null,
+      error: null,
+    };
+    if (entry.stranded > 0 || entry.expiring > 0) {
+      try {
+        entry.report = await reconcileReleaseBlock({ db, arr: input.arr, arrKind: kind, logger, now });
+      } catch (error) {
+        entry.error = error instanceof Error ? error.message : String(error);
+        logger.warn('[release-block] upkeep_failed', {
+          arrKind: kind,
+          stranded: entry.stranded,
+          expiring: entry.expiring,
+          error: entry.error,
+        });
+      }
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Survivor identity for a delete path (D-14 step 4) — shared by the sweep and Expedite
 // ---------------------------------------------------------------------------
@@ -1341,11 +1423,14 @@ export interface ReaddCheckReport {
 }
 
 /**
- * D-23 (ADR-084 E-5) — the hourly re-add check: records `active` / `expired` with no `readd_seen_at` whose title is live
+ * D-23 (ADR-084 E-5) — the hourly re-add check: records `active` / `expired` with no verdict yet whose title is live
  * again in the ledger under a NEW *arr id (same tmdb id for a movie, tvdb id for a series). Reads that item's grabs from
- * the *arr and tests each release name against the record's term; stamps `readd_seen_at` and `readd_same_release`
- * (true when any grab matches — ruling 2 breached, logged at error). A re-add with no grab yet is re-checked each hour
- * for at most 7 days (then stamped with no verdict). A failure is a warning and never changes the job's exit.
+ * the *arr and tests each release name against the record's term; stamps `readd_same_release` (true when any grab
+ * matches — ruling 2 breached, logged at error). The 7-day window runs from the CHECK'S OWN first sighting
+ * (`readd_seen_at`, D-25bo), never from the ledger row's `first_seen_at`: the media sync re-matches a re-added title
+ * onto its old row, whose `first_seen_at` is the original sync. A re-add with no grab yet is stamped
+ * `readd_seen_at = now` (verdict null) on first sight and re-checked each hour until a grab gives the verdict or the 7
+ * days pass (then it stays "seen, no verdict"). A failure is a warning and never changes the job's exit.
  */
 export async function checkReleaseBlockReadds(input: {
   db?: DbClient;
@@ -1367,7 +1452,7 @@ export async function checkReleaseBlockReadds(input: {
       title: t.title,
       term: t.term,
       liveArrItemId: mediaItems.arrItemId,
-      liveFirstSeenAt: mediaItems.firstSeenAt,
+      readdSeenAt: t.readdSeenAt,
     })
     .from(t)
     .innerJoin(
@@ -1379,7 +1464,19 @@ export async function checkReleaseBlockReadds(input: {
         sql`((${t.arrKind} = 'radarr' AND ${mediaItems.tmdbId} = ${t.tmdbId}) OR (${t.arrKind} = 'sonarr' AND ${mediaItems.tvdbId} = ${t.tvdbId}))`,
       ),
     )
-    .where(and(inArray(t.state, ['active', 'expired']), isNull(t.readdSeenAt)));
+    .where(
+      and(
+        inArray(t.state, ['active', 'expired']),
+        // Never seen, or seen with no grab yet and still inside the window that sighting opened (D-25bo).
+        or(
+          isNull(t.readdSeenAt),
+          and(
+            isNull(t.readdSameRelease),
+            gt(t.readdSeenAt, new Date(now.getTime() - RELEASE_READD_WINDOW_DAYS * DAY_MS)),
+          ),
+        ),
+      ),
+    );
   const report: ReaddCheckReport = { checked: 0, stamped: 0, sameRelease: 0, failed: 0 };
   for (const r of rows) {
     report.checked += 1;
@@ -1401,13 +1498,25 @@ export async function checkReleaseBlockReadds(input: {
       });
       continue;
     }
-    const expiredWindow =
-      now.getTime() - r.liveFirstSeenAt.getTime() > RELEASE_READD_WINDOW_DAYS * DAY_MS;
-    if (grabs.length === 0 && !expiredWindow) continue; // no grab yet: look again next hour
+    if (grabs.length === 0) {
+      // No grab yet. The first sighting opens the 7-day window (readd_seen_at, verdict null); later hours look again.
+      if (r.readdSeenAt !== null) continue;
+      await db.update(t).set({ readdSeenAt: now, readdSameRelease: null }).where(eq(t.id, r.id));
+      report.stamped += 1;
+      logger.info('[release-block] readd', {
+        arrKind: r.arrKind,
+        recordId: r.id,
+        title: r.title,
+        grabs: 0,
+        sameRelease: null,
+      });
+      continue;
+    }
     const same = r.term !== null && grabs.some((g) => termMatches(r.term as string, g));
+    // The verdict. A first sighting that already has grabs is stamped now; a later one keeps its sighting time.
     await db
       .update(t)
-      .set({ readdSeenAt: now, readdSameRelease: grabs.length === 0 ? null : same })
+      .set({ readdSeenAt: r.readdSeenAt ?? now, readdSameRelease: same })
       .where(eq(t.id, r.id));
     report.stamped += 1;
     if (same) report.sameRelease += 1;
@@ -1416,7 +1525,7 @@ export async function checkReleaseBlockReadds(input: {
       recordId: r.id,
       title: r.title,
       grabs: grabs.length,
-      sameRelease: grabs.length === 0 ? null : same,
+      sameRelease: same,
     };
     if (same) logger.error('[release-block] readd', fields);
     else logger.info('[release-block] readd', fields);

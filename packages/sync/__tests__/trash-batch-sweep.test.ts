@@ -19,7 +19,12 @@ import {
   greenlightBatch,
   upsertMediaItemsBatch,
   type MaintainerrClientBundle,
+  RELEASE_BLOCK_PROFILE_NAME,
+  RELEASE_BLOCK_SENTINEL,
+  insertReleaseRecords,
+  silentDomainLogger,
 } from '@hnet/domain';
+import { trashDeletedReleases } from '@hnet/db/schema';
 import { runSync } from '../src/orchestrator';
 import { bootMigratedDb, type TestDb } from './helpers';
 
@@ -199,6 +204,85 @@ describe('runSync — trash-batch-sweep mode (ADR-025, ADR-093)', () => {
     expect(report.releaseBlockReadds).toMatchObject({ checked: expect.any(Number), failed: 0 });
     expect(report.totalFailure).toBe(false);
     expect(fixture.calls.every((c) => !c.includes('create') && !c.includes('update'))).toBe(true);
+    // Nothing stranded or expiring: the upkeep made no *arr call at all.
+    expect(report.releaseBlockUpkeep).toEqual([
+      { arrKind: 'radarr', stranded: 0, expiring: 0, report: null, error: null },
+      { arrKind: 'sonarr', stranded: 0, expiring: 0, report: null, error: null },
+    ]);
+    expect(fixture.calls.filter((c) => c.endsWith(' list'))).toEqual([]);
+  });
+
+  it('D-25br: a nothing-due sweep job settles a record an ambiguous handle stranded, and drops its term', async () => {
+    const { sources } = createStaticWatchlistSources({ ownerId: '1' });
+    const { arr, fixture } = createStaticReleaseBlockArr();
+    const term = (n: number) =>
+      `/^stub[^a-z0-9]+movie[^a-z0-9]+${n}[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]stub(?:[^a-z0-9]|$)/i`;
+    const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+    // Radarr 5: a 502 handle left it in flight, and Radarr still has it. Radarr 6: the answer was lost after the delete.
+    fixture.gone.radarr.add(6);
+    // Recorded through the domain writer (in flight, two hours ago), as the sweep's Phase A would have.
+    await insertReleaseRecords({
+      db: t.db,
+      origin: 'sweep',
+      state: 'in_flight',
+      recordedAt: twoHoursAgo,
+      logger: silentDomainLogger,
+      items: [5, 6].map((id) => ({
+        key: `ms-${id}`,
+        drafts: [
+          {
+            arrKind: 'radarr' as const,
+            arrItemId: id,
+            mediaItemId: null,
+            tmdbId: null,
+            tvdbId: null,
+            imdbId: null,
+            title: `Stub Movie ${id}`,
+            year: 2020,
+            season: null,
+            identitySource: 'arr_grab_history' as const,
+            releaseTitle: null,
+            releaseGroup: 'STUB',
+            quality: null,
+            resolution: 1080,
+            sizeBytes: null,
+            fileName: null,
+            indexer: null,
+            years: [2020],
+            term: term(id),
+            termConfidence: 'verified' as const,
+            shape: 'group' as const,
+          },
+        ],
+      })),
+    });
+    fixture.profiles.radarr.push({
+      id: 1,
+      name: RELEASE_BLOCK_PROFILE_NAME,
+      enabled: true,
+      required: [],
+      ignored: [RELEASE_BLOCK_SENTINEL, term(5), term(6)],
+      indexerId: 0,
+      tags: [],
+    });
+    const report = await runSync({
+      mode: 'trash-batch-sweep',
+      clients: {},
+      maintainerr: stubMaintainerr(freshState()),
+      watchlistRegistry: sources,
+      releaseBlockArr: arr,
+      db: t.db,
+    });
+    expect(report.sweep).toMatchObject({ due: 0 });
+    expect(report.totalFailure).toBe(false);
+    expect(report.releaseBlockUpkeep?.[0]).toMatchObject({ arrKind: 'radarr', stranded: 2, report: { settled: 2 } });
+    const states = Object.fromEntries(
+      (await t.db.select().from(trashDeletedReleases))
+        .filter((r) => r.arrItemId === 5 || r.arrItemId === 6)
+        .map((r) => [r.arrItemId, r.state]),
+    );
+    expect(states).toEqual({ 5: 'abandoned', 6: 'active' });
+    expect(fixture.profiles.radarr[0]!.ignored.sort()).toEqual([RELEASE_BLOCK_SENTINEL, term(6)].sort());
   });
 });
 

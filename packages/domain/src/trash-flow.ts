@@ -20,10 +20,10 @@ import {
 import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import {
-  ArrUpstreamError,
   MaintainerrRuleDriftError,
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
+  ReleaseIdentityUnavailableError,
   TrashMusicUnsupportedError,
 } from './errors';
 import {
@@ -157,6 +157,9 @@ export interface AgingCollectionView {
   listExclusions?: boolean | null | undefined;
   /** DESIGN-052 D-16 — a rule pool's delete must also clear the Seerr media record (the re-request path). */
   forceSeerr?: boolean | null | undefined;
+  /** The collection's media type (`movie` | `show` | `season` | `episode`, or Maintainerr's 1..4). Maintainerr never
+   *  stores `forceSeerr` on an episode collection, so an episode pool is not held to it (D-25bt, as `ruleGroupDrift`). */
+  type?: string | number | null | undefined;
 }
 
 /**
@@ -171,7 +174,9 @@ export interface AgingCollectionView {
  *
  * ADR-093 C-10 / DESIGN-052 D-16 — the invariant grows: an active rule pool MUST also have `listExclusions: true` and
  * `forceSeerr: true`, so a drift (an Arm/Disarm save that dropped them) refuses the sweep instead of silently changing
- * what a delete does.
+ * what a delete does. An EPISODE pool is exempt from `forceSeerr` (D-25bt): Maintainerr 3.29.0 stores it only when
+ * `collectionType !== 'episode'`, so nothing could ever satisfy it there (an episode delete leaves the series and its
+ * Seerr record in place anyway).
  */
 export function evaluateAgingInvariants(collections: readonly AgingCollectionView[]): string[] {
   const violations: string[] = [];
@@ -206,7 +211,8 @@ export function evaluateAgingInvariants(collections: readonly AgingCollectionVie
         `The '${label}' rule pool no longer adds deleted titles to the import list exclusions. Turn that setting back on in Maintainerr.`,
       );
     }
-    if (c.forceSeerr !== true) {
+    const episodePool = c.type === 'episode' || c.type === 4;
+    if (c.forceSeerr !== true && !episodePool) {
       violations.push(
         `The '${label}' rule pool no longer clears deleted titles from Seerr. Turn that setting back on in Maintainerr.`,
       );
@@ -301,6 +307,7 @@ export async function auditMaintainerr(input: {
             manualCollection: c.manualCollection ?? null,
             listExclusions: c.listExclusions ?? null,
             forceSeerr: c.forceSeerr ?? null,
+            type: c.type ?? null,
           })),
         );
         return { activeCollections, agingViolations };
@@ -1670,7 +1677,7 @@ async function expediteOneSurvivor(
 /**
  * ADR-093 / DESIGN-052 D-14 — Expedite's identity and Phase A for its survivors, through the seam the sweep shares
  * (`recordAndBlockReleases` in release-block.ts): identity (three consecutive *arr read failures abort with
- * ArrUpstreamError, nothing written), the unrecordable kept, then every recordable survivor recorded `in_flight` and
+ * ReleaseIdentityUnavailableError, nothing written, D-25bu), the unrecordable kept, then every recordable survivor recorded `in_flight` and
  * the Release Block written and read back (ReleaseBlockError ⇒ PRECONDITION_FAILED, nothing deleted).
  */
 async function recordAndBlockExpediteReleases(
@@ -1691,11 +1698,7 @@ async function recordAndBlockExpediteReleases(
     origin: 'expedite',
     logger: input.logger,
   });
-  if (blocked.aborted) {
-    throw new ArrUpstreamError(
-      'Radarr or Sonarr did not answer, so nothing was deleted. Try again when the media apps respond normally.',
-    );
-  }
+  if (blocked.aborted) throw new ReleaseIdentityUnavailableError();
   const drafts = (s: ExpediteSurvivor): ReleaseRecordDraft[] =>
     blocked.recordable.get(s.maintainerrMediaId) ?? [];
   return {

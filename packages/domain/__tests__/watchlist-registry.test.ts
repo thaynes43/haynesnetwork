@@ -42,6 +42,7 @@ import {
   type WatchlistSnapshot,
 } from '../src/index';
 import { SeerrClient } from '@hnet/arr/read';
+import { PlexRegistryClient } from '@hnet/plex/read';
 import { bootMigratedDb, type TestDb } from './helpers';
 
 const HOUR = 3_600_000;
@@ -652,6 +653,88 @@ describe('refreshWatchlistRegistry + evaluateRegistryGate (embedded PG16)', () =
       status: 'carried',
       lastErrorClass: 'inconsistent',
     });
+  });
+
+  it('D-25bn: through the real PlexRegistryClient, an owner list that shifts between pages never drops a title still on it', async () => {
+    // 150 titles, newest first; read as 2 pages of 100. Run 1 is a clean read of all of them.
+    const hex = (n: number) => n.toString(16).padStart(24, '0');
+    const titles = Array.from({ length: 150 }, (_, i) => hex(i + 1));
+    const owner = titles.map((discoverId, i) => ({ discoverId, kind: 'movie' as const, tmdbId: 5000 + i + 1 }));
+    const s = createStaticWatchlistSources({ ...baseFixture(), owner, accounts: [] });
+    expect((await refresh(s, T0)).status).toBe('ok');
+    const ownerIds = async () =>
+      (await itemsOf('1')).filter((k) => k.startsWith('discover:')).map((k) => k.slice('discover:'.length));
+    expect(await ownerIds()).toHaveLength(150);
+
+    // The owner removes titles while a read is between pages: each entry of `drops` is taken off after that
+    // many page requests were served (#11 sits on page 1, so its removal moves #101 back onto page 1).
+    let list = [...titles];
+    let served = 0;
+    let drops = new Map<number, string>();
+    const client = new PlexRegistryClient({
+      token: 'owner-token',
+      plexTvBaseUrl: 'https://plex.test',
+      plexDiscoverBaseUrl: 'https://discover.test',
+      plexCommunityBaseUrl: 'https://community.test',
+      retryBackoffMs: () => 0,
+      communityPauseMs: 0,
+      fetchImpl: (async (input: unknown) => {
+        const url = new URL(String(input));
+        expect(url.pathname).toBe('/library/sections/watchlist/all');
+        const start = Number(url.searchParams.get('X-Plex-Container-Start'));
+        const size = Number(url.searchParams.get('X-Plex-Container-Size'));
+        const body = {
+          MediaContainer: {
+            totalSize: list.length,
+            Metadata: list.slice(start, start + size).map((id) => ({
+              ratingKey: id,
+              type: 'movie',
+              title: 'x',
+              guid: `plex://movie/${id}`,
+              Guid: [{ id: `tmdb://${5000 + parseInt(id, 16)}` }],
+            })),
+          },
+        };
+        served += 1;
+        const drop = drops.get(served);
+        if (drop) list = list.filter((id) => id !== drop);
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }) as typeof fetch,
+    });
+    const real = { ...s.sources.plex[0]!, getOwnerWatchlist: () => client.getOwnerWatchlist() };
+    const run = (now: Date) =>
+      refreshWatchlistRegistry({
+        db: t.db,
+        sources: { plex: [real], seerr: s.sources.seerr },
+        trigger: 'sweep',
+        logger,
+        now: () => now,
+        sleep: noSleep,
+      });
+
+    // Run 2: #11 leaves after page 1. The shifted read is repeated, and the repeat is consistent.
+    drops = new Map([[1, hex(11)]]);
+    expect((await run(at(0.25))).status).toBe('ok');
+    expect(served).toBe(4);
+    const afterRun2 = await ownerIds();
+    expect(afterRun2).toHaveLength(149);
+    expect(afterRun2).toContain(hex(101)); // still on the owner's list, so still protected
+    expect(afterRun2).not.toContain(hex(11)); // actually removed
+    const snap = await gate(at(0.26));
+    expect(snap.verified).toBe(true);
+    expect(snap.keys.movie.discover.has(hex(101))).toBe(true);
+
+    // Run 3: the list shifts during the repeat read too. The run fails `owner_truncated` and keeps the stored list.
+    served = 0;
+    drops = new Map([
+      [1, hex(12)],
+      [3, hex(13)],
+    ]);
+    expect(await run(at(0.5))).toMatchObject({ status: 'failed', failure: 'owner_truncated' });
+    expect(await ownerIds()).toEqual(afterRun2);
   });
 
   it('a Seerr ok read with titles settles a community transition at once (unreadable, not blocking)', async () => {

@@ -10,7 +10,8 @@
 //
 // `--pool` (PLAN-072 S6(e), before the sweep resumes) is a separate, READ-ONLY report: it runs the D-11 / D-12
 // derivation over the pending Trash pool (movies and TV) and prints the records by shape, confidence and identity
-// source, the records with no release group (Q-12), and the items D-11 would keep `release_unrecorded` with their
+// source, the records with no release group (Q-12), the fold-only terms (D-25bq: a real name the *arr will not match
+// raw), and the items D-11 would keep `release_unrecorded` with their
 // reasons and share (Q-13). It writes nothing; it needs MAINTAINERR_URL / MAINTAINERR_API_KEY besides the *arr keys.
 //
 // Files (never committed; they hold no URL):

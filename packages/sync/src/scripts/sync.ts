@@ -904,6 +904,7 @@ async function main(): Promise<number> {
       ? { watchlistRegistryError: report.watchlistRegistryError }
       : {}),
     ...(report.seerrEnroll ? { seerrEnroll: report.seerrEnroll } : {}),
+    ...(report.releaseBlockUpkeep ? { releaseBlockUpkeep: report.releaseBlockUpkeep } : {}),
     ...(report.releaseBlockReadds ? { releaseBlockReadds: report.releaseBlockReadds } : {}),
     ...(report.formatPairing ? { formatPairing: report.formatPairing } : {}),
     ...(report.formatPairingError !== undefined

@@ -50,6 +50,7 @@ import {
   countdownCopy,
   forceExpireConfirmMatches,
   previewTargetSelection,
+  sweepAbortCopy,
   sweepReportRows,
   tileTappable,
   wallCounts,
@@ -594,6 +595,7 @@ interface SweepBatchWire {
   handleErrors: number;
   raceSkipped: number;
   aborted: boolean;
+  abortReason?: 'handle_breaker' | 'arr_identity' | null;
 }
 
 function ExpireModal({
@@ -659,6 +661,8 @@ function ExpireModal({
   const sweepLabel = sweepTimeLabel(batch.expiresAt);
   // Mid-window force ⇒ require a TYPED confirmation (the word DELETE or the delete count) before arming.
   const typedOk = !windowOpen || forceExpireConfirmMatches(typed, willDelete);
+  // D-25bw — what stopped an aborted batch (Maintainerr's handle breaker, or Radarr / Sonarr before any delete).
+  const abortCopy = result !== null ? sweepAbortCopy(result) : null;
 
   return (
     <Modal
@@ -693,11 +697,9 @@ function ExpireModal({
         </div>
       ) : result !== null ? (
         <div className="trash-confirm" data-testid="batch-expire-report">
-          {result.aborted ? (
+          {abortCopy !== null ? (
             <p className="alert" data-testid="batch-expire-aborted">
-              <strong>Batch not finished</strong> — Maintainerr failed mid-run, so the sweep stopped
-              early with the partial results below. The batch stays in Leaving Soon and will resume
-              on the next sweep.
+              <strong>{abortCopy.lead}</strong> {abortCopy.detail}
             </p>
           ) : null}
           <p className="ledger-report__summary" data-testid="batch-expire-summary">

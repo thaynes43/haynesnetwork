@@ -14,6 +14,7 @@ import { trpc } from '@/lib/trpc-client';
 import {
   expediteErrorAction,
   previewGuardian,
+  unverifiableReason,
   type GuardianPreviewInput,
 } from '@/lib/trash';
 
@@ -68,9 +69,9 @@ export function ExpediteItemConfirm({
           This item is on a watchlist, so it won&apos;t be deleted while it stays there. Nothing will be deleted.
         </p>
       ) : verdict === 'unverifiable' ? (
-        <p className="status-note status-note--warn">
-          This item can’t be verified safe (it isn’t in our ledger), so the server will{' '}
-          <strong>keep it</strong> — nothing will be deleted.
+        <p className="status-note status-note--warn" data-testid="trash-expedite-item-unverifiable">
+          This item can’t be verified safe ({unverifiableReason(item)}), so the server will{' '}
+          <strong>keep it</strong>. Nothing will be deleted.
         </p>
       ) : (
         <p className="status-note">

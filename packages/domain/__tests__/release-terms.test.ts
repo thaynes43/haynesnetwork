@@ -6,12 +6,14 @@ import {
   RELEASE_BLOCK_SENTINEL,
   compileTerm,
   deriveTerm,
+  deriveTermsPerName,
   isGrammarTerm,
   parseReleaseGroup,
   parseReleaseName,
   releaseTokens,
   renderTerm,
   termMatches,
+  termMatchesRaw,
   type TermDerivationInput,
 } from '../src/index';
 
@@ -74,6 +76,7 @@ describe('deriveTerm — movies (D-12)', () => {
       shape: 'group',
       confidence: 'verified',
       years: [2024],
+      foldOnly: false,
     });
   });
 
@@ -249,6 +252,103 @@ describe('deriveTerm — movies (D-12)', () => {
     )!;
     expect(d.shape).toBe('exact');
     expect(termMatches(d.term, 'Babygirl.2024.2160p.UHD.BluRay.REMUX-FraMeSToR')).toBe(true);
+  });
+});
+
+describe('deriveTermsPerName — a record with several real names (D-25bp)', () => {
+  it('an exact fallback from the first name gives every other name its own term, so the scene name is blocked too', () => {
+    // The grab title carries no resolution token, so the 2160p group term fails its self-check and deriveTerm falls
+    // back to the grab title's exact form, which never matches the file's scene name.
+    const names = ['Movie.Title.2020.UHD.BluRay.x265-GRP', 'Movie.Title.2020.2160p.UHD.BluRay.x265-GRP'];
+    const input = movie({
+      arrTitle: 'Movie Title',
+      arrYears: [2020],
+      releaseNames: names,
+      releaseGroup: 'GRP',
+      resolution: 2160,
+    });
+    const combined = deriveTerm(input)!;
+    expect(combined.shape).toBe('exact');
+    expect(termMatches(combined.term, names[1]!)).toBe(false);
+    const per = deriveTermsPerName(input)!;
+    expect(per.map((p) => p.name)).toEqual(names);
+    for (const name of names) {
+      expect(per.some((p) => termMatchesRaw(p.derived.term, name))).toBe(true);
+    }
+    expect(per.map((p) => p.derived.shape)).toEqual(['exact', 'group']);
+  });
+
+  it('one entry when the group term covers every name, or when there is a single name', () => {
+    const names = [
+      'Babygirl.2024.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR',
+      'Babygirl.2024.2160p.UHD.BluRay.REMUX.HEVC-FraMeSToR',
+    ];
+    const both = deriveTermsPerName(
+      movie({ releaseNames: names, releaseGroup: 'FraMeSToR', resolution: 2160, remux: true }),
+    )!;
+    expect(both).toHaveLength(1);
+    expect(both[0]!.derived.shape).toBe('group');
+    const single = deriveTermsPerName(movie({ releaseNames: ['Babygirl.2024.2160p.UHD.BluRay.x265'] }))!;
+    expect(single).toHaveLength(1);
+    expect(single[0]!.derived.shape).toBe('exact');
+  });
+
+  it('a name that yields no term keeps the whole record unrecordable (null)', () => {
+    // The second name is a bare "Title (Year)": no exact term exists for it (D-25ae).
+    expect(
+      deriveTermsPerName(
+        movie({ releaseNames: ['Babygirl.2024.2160p.UHD.BluRay.x265', 'Babygirl (2024)'], resolution: 2160 }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('fold-only self-check (D-25bq): the *arr tests the raw title', () => {
+  const cases: Array<[string, Partial<TermDerivationInput>]> = [
+    [
+      "Harry Potter and the Sorcerer's Stone (2001) (1080p BluRay x265 HEVC 10bit AAC 7.1 Tigole)",
+      { arrTitle: "Harry Potter and the Philosopher's Stone", arrYears: [2001], releaseGroup: 'Tigole', resolution: 1080 },
+    ],
+    [
+      'Fast & Furious 6 (2013) (1080p BluRay x265 HEVC 10bit AAC 7.1 Tigole)',
+      { arrTitle: 'Fast & Furious 6', arrYears: [2013], releaseGroup: 'Tigole', resolution: 1080 },
+    ],
+    ['Amélie.2001.1080p.BluRay.x264-GRP', { arrTitle: 'Amélie', arrYears: [2001], releaseGroup: 'GRP', resolution: 1080 }],
+  ];
+
+  it.each(cases)('%s: matched only folded, so the term is low_confidence and foldOnly', (name, over) => {
+    const d = deriveTerm(movie({ ...over, releaseNames: [name] }))!;
+    expect(termMatches(d.term, name)).toBe(true); // the self-check still accepts it (folded) …
+    expect(termMatchesRaw(d.term, name)).toBe(false); // … but Radarr / Sonarr would not block that name
+    expect(d).toMatchObject({ confidence: 'low_confidence', foldOnly: true });
+  });
+
+  it('a scene name without those characters stays verified; a renamed file alone is low_confidence but not foldOnly', () => {
+    const scene = deriveTerm(
+      movie({
+        arrTitle: "Don't Look Up",
+        arrYears: [2021],
+        releaseNames: ['Dont.Look.Up.2021.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.H.265-FLUX'],
+        releaseGroup: 'FLUX',
+        resolution: 2160,
+      }),
+    )!;
+    expect(scene).toMatchObject({ confidence: 'verified', foldOnly: false });
+    const renamed = deriveTerm(
+      movie({
+        arrTitle: "Don't Look Up",
+        arrYears: [2021],
+        renamedFileName: "Don't Look Up (2021) [WEBDL-2160p][EAC3 Atmos 5.1][h265]-FLUX.mkv",
+        releaseGroup: 'FLUX',
+        resolution: 2160,
+      }),
+    )!;
+    expect(renamed).toMatchObject({ confidence: 'low_confidence', foldOnly: false });
+  });
+
+  it('the exact form is judged the same way', () => {
+    const d = deriveTerm(movie({ arrTitle: 'Amélie', arrYears: [2001], releaseNames: ['Amélie.2001.1080p.BluRay.x264'] }))!;
+    expect(d).toMatchObject({ shape: 'exact', confidence: 'low_confidence', foldOnly: true });
   });
 });
 

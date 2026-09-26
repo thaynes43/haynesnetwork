@@ -41,6 +41,9 @@ import {
   keptReasonTooltip,
   relativeTimeLabel,
   watchlistsHeadline,
+  watchlistsLastFailedNote,
+  unverifiableReason,
+  EXPEDITE_UNVERIFIABLE_REASON,
   blockedReleasesValue,
   exclusionCountValue,
   oldestBlockLabel,
@@ -91,6 +94,29 @@ describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail clos
   it('ADR-093 — not watchlist-evaluable, or ruleEvaluationFailed ⇒ unverifiable (kept)', () => {
     expect(previewGuardian({ ...base, watchlistEvaluable: false })).toBe('unverifiable');
     expect(previewGuardian({ ...base, ruleEvaluationFailed: true })).toBe('unverifiable');
+  });
+  it('D-25by — the item confirm names WHY it is unverifiable; the all confirm names every cause', () => {
+    expect(unverifiableReason({ ...base, mediaItemId: null })).toBe("it isn't in our ledger");
+    expect(unverifiableReason({ ...base, maintainerrMediaId: null })).toBe("it isn't in our ledger");
+    expect(unverifiableReason({ ...base, watchlistEvaluable: false })).toBe(
+      "its watchlists can't be checked right now",
+    );
+    expect(unverifiableReason({ ...base, ruleEvaluationFailed: true })).toBe(
+      "Maintainerr couldn't check its rules",
+    );
+    // A ledger-known item with no registry run yet is NOT "not in our ledger".
+    expect(unverifiableReason({ ...base, watchlistEvaluable: false })).not.toMatch(/ledger/);
+    expect(EXPEDITE_UNVERIFIABLE_REASON).toMatch(/ledger/);
+    expect(EXPEDITE_UNVERIFIABLE_REASON).toMatch(/watchlists/);
+    expect(EXPEDITE_UNVERIFIABLE_REASON).toMatch(/Maintainerr/);
+    for (const text of [
+      EXPEDITE_UNVERIFIABLE_REASON,
+      unverifiableReason({ ...base, mediaItemId: null }),
+      unverifiableReason({ ...base, watchlistEvaluable: false }),
+      unverifiableReason({ ...base, ruleEvaluationFailed: true }),
+    ]) {
+      expect(text).not.toMatch(/—|–/);
+    }
   });
 });
 
@@ -208,6 +234,17 @@ describe('watchlist protection copy (D-10)', () => {
     expect(watchlistsHeadline({ checkedAt: null, accountsRead: 0, accountsUnreadable: 0 }, now)).toBe(
       'Not checked yet.',
     );
+    // D-25bx — no ok check yet and the latest run failed: one line, never "from the one before".
+    const firstFailed = { checkedAt: null, accountsRead: 0, accountsUnreadable: 0, lastRun: { status: 'failed' } };
+    expect(watchlistsHeadline(firstFailed, now)).toBe("The watchlist check hasn't finished yet.");
+    expect(watchlistsLastFailedNote(firstFailed)).toBeNull();
+    const laterFailed = { ...firstFailed, checkedAt: '2026-09-26T11:00:00Z', accountsRead: 3 };
+    expect(watchlistsHeadline(laterFailed, now)).toBe("Checked 1 hour ago. 3 accounts read, 0 can't be read.");
+    expect(watchlistsLastFailedNote(laterFailed)).toBe(
+      "The latest check didn't finish. The counts are from the one before.",
+    );
+    expect(watchlistsLastFailedNote({ ...laterFailed, lastRun: { status: 'ok' } })).toBeNull();
+    noDashes(watchlistsHeadline(firstFailed, now));
     expect(relativeTimeLabel('2026-09-26T09:00:00Z', now)).toBe('3 hours ago');
     expect(relativeTimeLabel('2026-09-23T09:00:00Z', now)).toBe('3 days ago');
     for (const text of [...Object.values(WATCHLIST_CLASS_LABELS), ...Object.values(WATCHLIST_LIST_LABELS)]) {

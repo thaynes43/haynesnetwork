@@ -14,8 +14,11 @@ import {
   sweepExpiredBatches,
   createStaticReleaseBlockArr,
   upsertMediaItemsBatch,
+  ReleaseIdentityUnavailableError,
+  WatchlistRegistryUnverifiedError,
   type MaintainerrClientBundle,
 } from '@hnet/domain';
+import { mapDomainErrors } from '../src/trpc';
 import {
   bootMigratedDb,
   seedWatchlistRegistry,
@@ -377,7 +380,30 @@ describe('trash — the Registry Gate on the web paths (ADR-093)', () => {
       const shape = wireShape(err, 'trash.expediteAll');
       expect(shape.data.code).toBe('PRECONDITION_FAILED');
       expect(shape.data.appCode).toBe('WATCHLIST_REGISTRY_UNVERIFIED');
-      expect(shape.message).toMatch(/^Deletions are paused until watchlists can be checked/);
+      // D-25u / D-25bv — exactly the banner's wording (the reason and its detail are logged, never shown).
+      expect(shape.message).toBe('Deletions are paused until watchlists can be checked.');
+    }
+  });
+
+  it('D-25bu / D-25bv: the Release Block identity abort and the gate refusal on the wire (appCode, code, exact copy)', async () => {
+    const wire = async (err: Error) => {
+      const thrown = await mapDomainErrors(async () => {
+        throw err;
+      }).catch((e: unknown) => e);
+      return wireShape(thrown, 'trash.expediteAll');
+    };
+    const arrDown = await wire(new ReleaseIdentityUnavailableError());
+    expect(arrDown.data).toMatchObject({ code: 'BAD_GATEWAY', appCode: 'RELEASE_BLOCK_ARR_UNAVAILABLE' });
+    expect(arrDown.message).toBe(
+      'Radarr or Sonarr did not answer, so nothing was deleted. Try again when the media apps respond normally.',
+    );
+    for (const err of [
+      new WatchlistRegistryUnverifiedError('stale', { ageMin: 45, blocking: 0 }),
+      new WatchlistRegistryUnverifiedError('account_unverified', { ageMin: 3, blocking: 3 }),
+    ]) {
+      const gate = await wire(err);
+      expect(gate.data).toMatchObject({ code: 'PRECONDITION_FAILED', appCode: 'WATCHLIST_REGISTRY_UNVERIFIED' });
+      expect(gate.message).toBe('Deletions are paused until watchlists can be checked.');
     }
   });
 

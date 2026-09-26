@@ -142,7 +142,8 @@ CREATE TABLE "seerr_watchlist_enrollments" (
 	"enrolled_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"already_on" boolean DEFAULT false NOT NULL,
 	"optout_observed_at" timestamp with time zone,
-	"last_checked_at" timestamp with time zone DEFAULT now() NOT NULL
+	"last_checked_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"confirmed_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE "trash_sweep_status" (

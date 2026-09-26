@@ -330,6 +330,59 @@ describe('owner discover watchlist + discover metadata (D-02, D-03)', () => {
     expect(stub.calls[0]!.url.searchParams.get('includeGuids')).toBe('1');
   });
 
+  // D-25bn: a list that changes between page reads is never believed as a shorter "complete" list.
+  const hex = (n: number) => n.toString(16).padStart(24, '0');
+  const shiftingOwnerList = (dropAfterCalls: (calls: number) => number | null) => {
+    let list = Array.from({ length: 150 }, (_, i) => hex(i + 1));
+    let calls = 0;
+    return plexStub([
+      {
+        path: '/library/sections/watchlist/all',
+        body: (url: URL) => {
+          calls += 1;
+          const start = Number(url.searchParams.get('X-Plex-Container-Start'));
+          const size = Number(url.searchParams.get('X-Plex-Container-Size'));
+          const body = {
+            MediaContainer: {
+              totalSize: list.length,
+              Metadata: list.slice(start, start + size).map((id) => ({
+                ratingKey: id,
+                type: 'movie',
+                title: 'T',
+                guid: `plex://movie/${id}`,
+                Guid: [],
+              })),
+            },
+          };
+          const drop = dropAfterCalls(calls);
+          if (drop !== null) list = list.filter((id) => id !== hex(drop));
+          return body;
+        },
+      },
+    ]);
+  };
+
+  it('a title removed from page 1 before page 2 is read: the read is repeated, never short and "complete"', async () => {
+    // Title #11 leaves the list after page 1 is served, which moves #101 back across the page boundary.
+    const stub = shiftingOwnerList((calls) => (calls === 1 ? 11 : null));
+    const listing = await client(stub).getOwnerWatchlist();
+    const ids = new Set(listing.items.map((i) => i.ratingKey));
+    expect(listing.truncated).toBe(false);
+    expect(listing.totalSize).toBe(149);
+    expect(listing.items).toHaveLength(149);
+    expect(ids.has(hex(101))).toBe(true); // still on the list, so still read
+    expect(ids.has(hex(11))).toBe(false);
+    expect(stub.calls).toHaveLength(4); // 2 pages, inconsistent; then 2 pages again from start=0
+    expect(stub.calls[2]!.url.searchParams.get('X-Plex-Container-Start')).toBe('0');
+  });
+
+  it('a list that shifts again during the repeat read is truncated (a failed owner read, D-04)', async () => {
+    const stub = shiftingOwnerList((calls) => (calls === 1 ? 11 : calls === 3 ? 12 : null));
+    const listing = await client(stub).getOwnerWatchlist();
+    expect(listing.truncated).toBe(true);
+    expect(stub.calls).toHaveLength(4);
+  });
+
   it('maps a discover id to its external ids; 404 ⇒ null; other failures throw', async () => {
     const stub = plexStub([
       {

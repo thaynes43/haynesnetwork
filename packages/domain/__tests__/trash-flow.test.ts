@@ -60,6 +60,8 @@ interface MaintState {
     arrAction?: number;
     /** true for app-managed Leaving-Soon manual collections; default false (rule collection). */
     manualCollection?: boolean;
+    /** What Maintainerr stored for forceSeerr (default true; 3.29.0 never stores it on an episode pool). */
+    forceSeerr?: boolean;
     type: string;
     title: string;
     items: Array<{
@@ -140,7 +142,7 @@ function makeMaintainerr(state: MaintState): {
           manualCollection: c.manualCollection ?? false,
           // ADR-093 / DESIGN-052 D-16 — the rule pools carry both flags the aging invariant requires.
           listExclusions: true,
-          forceSeerr: true,
+          forceSeerr: c.forceSeerr ?? true,
           type: c.type,
           title: c.title,
           media: [],
@@ -278,6 +280,24 @@ const baseState = (over: Partial<MaintState> = {}): MaintState => ({
 });
 
 describe('auditMaintainerr (ADR-023 D-04)', () => {
+  it('D-25bt: an armed episode rule pool (forceSeerr never stored) keeps the audit SAFE; a show pool without it does not', async () => {
+    const episode = baseState();
+    episode.collections = [
+      { id: 3, isActive: true, deleteAfterDays: 9999, type: 'episode', title: 'old episodes', forceSeerr: false, items: [] },
+    ];
+    expect(await auditMaintainerr({ maintainerr: makeMaintainerr(episode).bundle })).toMatchObject({
+      safe: true,
+      agingViolations: [],
+    });
+    const show = baseState();
+    show.collections = [
+      { id: 3, isActive: true, deleteAfterDays: 9999, type: 'show', title: 'old shows', forceSeerr: false, items: [] },
+    ];
+    const audit = await auditMaintainerr({ maintainerr: makeMaintainerr(show).bundle });
+    expect(audit.safe).toBe(false);
+    expect(audit.agingViolations).toHaveLength(1);
+  });
+
   it('SAFE when reachable + Plex OK + every required integration configured', async () => {
     const { bundle } = makeMaintainerr(baseState());
     const audit = await auditMaintainerr({ maintainerr: bundle });
@@ -323,6 +343,34 @@ describe('aging invariants (DESIGN-010 errata 2026-07-09 — Maintainerr self-de
     expect(v[0]).toContain("Maintainerr would self-delete the 'hnet — unwatched low-value movies' pool");
     expect(v[0]).toContain('in 60 days');
     expect(v[0]).toContain('raise its delete-after horizon');
+  });
+
+  it('D-25bt: an armed episode pool is not held to forceSeerr (Maintainerr never stores it there); listExclusions still is', () => {
+    const episodePool = {
+      title: 'episodes',
+      isActive: true,
+      deleteAfterDays: 9999,
+      arrAction: 0,
+      manualCollection: false,
+      listExclusions: true,
+      forceSeerr: false,
+    };
+    expect(evaluateAgingInvariants([{ ...episodePool, type: 'episode' }])).toEqual([]);
+    expect(evaluateAgingInvariants([{ ...episodePool, type: 4 }])).toEqual([]);
+    // The same stored pool is no drift for the save either (the two checks agree).
+    expect(
+      ruleGroupDrift(
+        { dataType: 'episode', arrAction: 0, listExclusions: true, forceSeerr: true, collection: {} },
+        { collection: { type: 'episode', arrAction: 0, listExclusions: true, forceSeerr: false } },
+      ),
+    ).toEqual([]);
+    // A movie or show pool still is; and an episode pool still needs listExclusions.
+    for (const type of ['movie', 'show', 1, 2, null]) {
+      expect(evaluateAgingInvariants([{ ...episodePool, type }])).toHaveLength(1);
+    }
+    expect(
+      evaluateAgingInvariants([{ ...episodePool, type: 'episode', listExclusions: false }]),
+    ).toHaveLength(1);
   });
 
   it('is clean once the rule pool horizon reaches AGING_HORIZON_MIN_DAYS (9999 >= 3650)', () => {

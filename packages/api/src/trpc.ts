@@ -72,6 +72,7 @@ import {
   TrashSweepPausedError,
   WatchlistRegistryUnverifiedError,
   ReleaseBlockError,
+  ReleaseIdentityUnavailableError,
   MaintainerrRuleDriftError,
   type ArrClientBundle,
   type ReleaseBlockArrClients,
@@ -482,6 +483,7 @@ const APP_CODED_ERRORS = [
   WatchlistRegistryUnverifiedError,
   TrashSweepPausedError,
   ReleaseBlockError,
+  ReleaseIdentityUnavailableError,
   MaintainerrRuleDriftError,
   AuthentikGroupNotOwnedError,
   AuthentikUnavailableError,
@@ -556,6 +558,7 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | WatchlistRegistryUnverified | WATCHLIST_REGISTRY_UNVERIFIED | PRECONDITION_FAILED |
  * | TrashSweepPausedError       | TRASH_SWEEP_PAUSED          | PRECONDITION_FAILED   |
  * | ReleaseBlockError           | RELEASE_BLOCK_FAILED        | PRECONDITION_FAILED   |
+ * | ReleaseIdentityUnavailable  | RELEASE_BLOCK_ARR_UNAVAILABLE | BAD_GATEWAY         |
  * | MaintainerrRuleDriftError   | MAINTAINERR_RULE_DRIFT      | BAD_GATEWAY           |
  * | InvalidTicketTransitionError| TICKET_INVALID_TRANSITION   | CONFLICT              |
  * | NotFoundError               | —                           | NOT_FOUND             |
@@ -679,6 +682,10 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       // written and read back, or the manual Expire now paused: nothing was deleted; the message is the banner's
       // wording, never a name or a title.
       throw new TRPCError({ code: 'PRECONDITION_FAILED', message: err.message, cause: err });
+    }
+    if (err instanceof ReleaseIdentityUnavailableError) {
+      // DESIGN-052 D-25bu — Expedite's identity reads tripped the three-failure breaker: nothing recorded or deleted.
+      throw new TRPCError({ code: 'BAD_GATEWAY', message: err.message, cause: err });
     }
     if (err instanceof MaintainerrRuleDriftError) {
       // DESIGN-052 D-16 — a rule save's read-back found a safety flag not as intended.

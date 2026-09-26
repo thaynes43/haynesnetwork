@@ -66,8 +66,9 @@ export interface GuardianPreviewInput {
  *                       is deletable now (owner ruling 2026-07-09 — requested is informational only,
  *                       never an app-side keep); its requester rides the meta badge, not the verdict.
  * - `protected_*`     — kept deliberately (whitelist / watch guardian).
- * - `unverifiable`    — kept because it CANNOT be verified safe (no Maintainerr id, or unknown
- *                       to our ledger) ⇒ the server counts it as SKIPPED, never deleted.
+ * - `unverifiable`    — kept because it CANNOT be verified safe (no Maintainerr id, unknown to our
+ *                       ledger, watchlist status not evaluable, or Maintainerr's rule data unavailable;
+ *                       `unverifiableReason` names which) ⇒ the server counts it as SKIPPED, never deleted.
  *                       NOT the same thing as protected — surface it distinctly (ADR-023 C-07b).
  */
 export type GuardianPreview =
@@ -91,6 +92,22 @@ export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
   }
   return 'deletable';
 }
+
+/**
+ * DESIGN-052 D-25by — WHY an item can't be verified safe, for the single-item confirm. `previewGuardian` keeps an item
+ * `unverifiable` for three causes since ADR-093 (not in the ledger, its watchlist status not evaluable, Maintainerr's
+ * rule data unavailable), so "it isn't in our ledger" alone is no longer true for every such item.
+ */
+export function unverifiableReason(item: GuardianPreviewInput): string {
+  if (item.maintainerrMediaId === null || item.mediaItemId === null) return "it isn't in our ledger";
+  if (item.watchlistEvaluable !== true) return "its watchlists can't be checked right now";
+  if (item.ruleEvaluationFailed) return "Maintainerr couldn't check its rules";
+  return "it can't be checked right now";
+}
+
+/** D-25by — the Expedite-all confirm's line for the unverifiable count (every cause, one sentence). */
+export const EXPEDITE_UNVERIFIABLE_REASON =
+  "not in our ledger, their watchlists can't be checked right now, or Maintainerr couldn't check their rules, so they are skipped, never deleted.";
 
 export interface ExpeditePartition {
   /** Items the server will hand to Maintainerr's per-item delete handler. */
@@ -722,16 +739,40 @@ export function relativeTimeLabel(iso: string | null, now: Date = new Date()): s
   return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
-/** The Watchlists card's first line: "Checked {relative time}. {n} accounts read, {m} can't be read." */
+/** The card's view of the newest registry run (any status) — only whether it failed matters here. */
+interface WatchlistsLastRun {
+  lastRun?: { status: string } | null;
+}
+
+/**
+ * The Watchlists card's first line: "Checked {relative time}. {n} accounts read, {m} can't be read." With no ok check
+ * ever: "Not checked yet.", or, when checks have run and the latest failed, "The watchlist check hasn't finished yet."
+ * (D-25bx: the card never says both "not checked" and "the counts are from the one before").
+ */
 export function watchlistsHeadline(
-  summary: { checkedAt: string | null; accountsRead: number; accountsUnreadable: number },
+  summary: { checkedAt: string | null; accountsRead: number; accountsUnreadable: number } & WatchlistsLastRun,
   now: Date = new Date(),
 ): string {
   const when = relativeTimeLabel(summary.checkedAt, now);
-  if (when === null) return 'Not checked yet.';
+  if (when === null) {
+    return summary.lastRun?.status === 'failed'
+      ? "The watchlist check hasn't finished yet."
+      : 'Not checked yet.';
+  }
   const n = summary.accountsRead;
   const m = summary.accountsUnreadable;
   return `Checked ${when}. ${n} account${n === 1 ? '' : 's'} read, ${m} can't be read.`;
+}
+
+/**
+ * D-25bx — the "latest check didn't finish" note, only when there IS an earlier ok check whose counts the card shows
+ * (null otherwise: with no ok check at all the headline says so on its own).
+ */
+export function watchlistsLastFailedNote(
+  summary: { checkedAt: string | null } & WatchlistsLastRun,
+): string | null {
+  if (summary.lastRun?.status !== 'failed' || summary.checkedAt === null) return null;
+  return "The latest check didn't finish. The counts are from the one before.";
 }
 
 /** The Watchlists card's small labelled numbers: per class and per status (counts only, never a name). */

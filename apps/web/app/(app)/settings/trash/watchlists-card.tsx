@@ -16,6 +16,7 @@ import {
   oldestBlockLabel,
   readdSummaryLine,
   watchlistsHeadline,
+  watchlistsLastFailedNote,
 } from '@/lib/trash';
 
 /** The order the labelled numbers read in (known keys first; an unknown key renders last, verbatim). */
@@ -61,8 +62,8 @@ function Counts({
 export function WatchlistsCard() {
   const summary = trpc.trash.watchlists.useQuery(undefined, { refetchInterval: 60_000 });
   const data = summary.data;
-  const lastFailed =
-    data?.lastRun !== null && data?.lastRun !== undefined && data.lastRun.status === 'failed';
+  // D-25bx — only when an earlier ok check exists (else the headline says the check hasn't finished).
+  const lastFailedNote = data ? watchlistsLastFailedNote(data) : null;
   return (
     <section className="card batch-settings watchlists-card" data-testid="trash-watchlists">
       <h2 className="batch-settings__head">Watchlists</h2>
@@ -88,9 +89,9 @@ export function WatchlistsCard() {
             labels={WATCHLIST_LIST_LABELS}
             testId="watchlists-by-status"
           />
-          {lastFailed ? (
+          {lastFailedNote !== null ? (
             <p className="muted watchlists-card__note" data-testid="watchlists-last-failed">
-              The latest check didn&apos;t finish. The counts are from the one before.
+              {lastFailedNote}
             </p>
           ) : null}
           <Counts

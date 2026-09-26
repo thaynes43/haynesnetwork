@@ -1,7 +1,12 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Draft
-- **Last updated:** 2026-09-26 (D-25ax..D-25bm record the rulings from the PR #595 code review: a handle's lost
+- **Last updated:** 2026-09-26 (D-25bn..D-25bz record the second review pass of PR #595: an owner list that shifts
+  between pages, the re-add window from its own sighting, a record per name for a movie's exact fallback, fold-only
+  terms counted, the hourly Release Block upkeep, a pending enrollment row, the episode pool invariant, the Expedite
+  and gate refusal copy, the Expire report's abort reason, the card's first-failed headline, the unverifiable reasons
+  and OPS-017's alerts; folded into D-02, D-05, D-12, D-13, D-14, D-16, D-17, D-22 and D-23). Prior: 2026-09-26
+  (D-25ax..D-25bm record the rulings from the PR #595 code review: a handle's lost
   answer settled by the *arr's own answer, the D-19 margin and late re-read, the per-delete log line, `seerr_only`
   accounts while Seerr's user list fails, every name of a series key and of a ledger key, a stale ledger import, the
   short exact name, a pause that ends when its batch leaves, the card's "Lists" split, re-adds counted by title, the
@@ -82,7 +87,9 @@ the app's existing `X-Plex-Client-Identifier` and `X-Plex-Product`, never `X-Ple
 call has a 10 s timeout and up to 3 attempts on 429, 5xx or a network error, backing off 2 s times the attempt.
 
 **Owner.** The existing `@hnet/plex` `getWatchlist()` (discover provider, `includeGuids`, 100 per page, at most 20
-pages; a truncated read is a failure). Rows carry the discover id (the `plex://` guid suffix) and tmdb/tvdb/imdb.
+pages; a truncated read is a failure). Rows carry the discover id (the `plex://` guid suffix) and tmdb/tvdb/imdb. The
+list is paged by offset, so a later page whose `totalSize` differs from the first page's means the list changed
+between pages; the whole read is repeated once from the start, and a second inconsistent read is truncated (D-25bn).
 
 **Friends and full Home members: community.plex.tv GraphQL**, as an HTTP GET:
 
@@ -283,7 +290,8 @@ adds one. New tables, all written only by `@hnet/domain` single-writers (added t
   `(media_item_id)`, `(tmdb_id)`, `(tvdb_id)`. **No URL is ever stored** (NZB and download URLs carry indexer API
   keys).
 - **`seerr_watchlist_enrollments`**: `seerr_user_id` int pk, `plex_account_id` text null, `enrolled_at`,
-  `already_on` bool, `optout_observed_at` null, `last_checked_at`.
+  `already_on` bool, `optout_observed_at` null, `last_checked_at`, `confirmed_at` null (null = pending: inserted
+  before the app's write, confirmed once both flags are seen on, D-25bs).
 - **`trash_sweep_status`** (one row, `id` smallint pk CHECK = 1; D-14): `last_outcome` (CHECK ok / paused_gate /
   paused_release_block / paused_audit_unsafe / aborted_arr), `last_reason` text null (a reason code, e.g. `stale`,
   `account_unverified`, `validate`, `read_back`, `duplicate_profile`), `last_at`, `paused_since` null (set on the
@@ -537,10 +545,15 @@ re-checks every desired term against this grammar before any POST or PUT (D-13) 
 
 **Self-check before recording:** the term is compiled in the app and must match every release name of its record;
 a group term that fails falls back to the exact form, and a term that matches nothing it came from is not recorded
-(no term, so the item is kept, D-11). A record whose only name is Radarr's renamed `relativePath` cannot validate
-its term, because that path is built from the same Radarr title and year the term is: its term is written with
-`term_confidence = 'low_confidence'` (otherwise `verified`) and reported in PLAN-072 S6(e)'s dry run, so the share
-that blocks nothing real is known before S7.
+(no term, so the item is kept, D-11). The exact form is one name's own prefix, so a record with several distinct real
+names whose term falls back to exact gets one record per name, each with its own term, and a name that yields no
+term keeps the item (D-25bp for movies and a movie's ledger names; D-25bb and D-25bc for series). A record whose only
+name is Radarr's renamed `relativePath` cannot validate its term, because that path is built from the same Radarr
+title and year the term is: its term is written with `term_confidence = 'low_confidence'` (otherwise `verified`) and
+reported in PLAN-072 S6(e)'s dry run, so the share that blocks nothing real is known before S7. A real release name
+the term matches only in its folded form (an apostrophe, an accent or `&` in the name) is a release Radarr and Sonarr
+will not block, since they test the raw title: that term is `low_confidence` too, and the S6(e) report counts it
+(`foldOnly`, D-25bq).
 
 ### D-13 — The Release Block writer
 
@@ -571,6 +584,11 @@ that blocks nothing real is known before S7.
      `read_back`).
 - **Idempotent:** a set comparison, so a repeat does nothing; two deletions that derive the same term share it. A
   hand edit is overwritten on the next reconcile, and a deleted profile is re-created.
+- **On schedule (D-25br):** besides the delete paths' reconciles, the `trash-batch-sweep` job runs
+  `reconcileReleaseBlockIfDue` every hour after the sweep, whether or not a batch was due: for each *arr with an
+  `in_flight` record older than the hour or an `active` record past `expires_at`, one reconcile, so step 1's settle
+  and expiry never wait for the next batch of that kind. Nothing due makes no *arr call; a failure logs
+  `[release-block] upkeep_failed` (warn), never fails the job and never pauses the sweep.
 - **Growth:** a term lives **365 days** from its record (`expires_at`, extended when the same term is recorded
   again); at about 50 movie deletions a week the profile settles near 2,600 movie terms. The cost of that many regex
   terms per release decision is Q-04.
@@ -617,7 +635,8 @@ D-25bf):
    term must never block the current release of a title that is still in the *arr. The item stays in the pool and
    comes back in a later batch, where it is recorded again. After an ambiguous failure an item still present leaves
    the records `in_flight` (the delete may still be running), and so does a `GET` that cannot be answered: their
-   terms stay and the stranded settle decides by presence an hour later (D-13 step 1). One `[trash] deleted` line per
+   terms stay and the stranded settle decides by presence an hour later (D-13 step 1, run hourly by the sweep job's
+   upkeep, D-25br). One `[trash] deleted` line per
    delete follows the settle (D-21, D-25az).
 8. After the loop, if any record was abandoned, reconcile again so the orphan terms leave the profile.
 
@@ -637,7 +656,9 @@ owns it).
 
 Expedite (both scopes) runs the same order per call: audit, gate (without an inline refresh), guardian, identity,
 Phase A, the late watchlist re-read, claim, handle, settle. It throws instead of pausing:
-`WatchlistRegistryUnverifiedError` and `ReleaseBlockError` map to `PRECONDITION_FAILED`. The write paths share one
+`WatchlistRegistryUnverifiedError` and `ReleaseBlockError` map to `PRECONDITION_FAILED` (the gate's message is the
+banner's wording exactly, D-25bv), and three failed identity reads throw `ReleaseIdentityUnavailableError`
+(`RELEASE_BLOCK_ARR_UNAVAILABLE`, `BAD_GATEWAY`, D-25bu). The write paths share one
 helper, `recordAndBlockReleases` in `release-block.ts` (identity, the unrecordable survivors handed back before Phase
 A, then Phase A), and one settle, `settleReleaseRecords`, so they cannot drift (D-25bl).
 
@@ -705,19 +726,23 @@ depends on it.
 - **The aging invariant grows** (`evaluateAgingInvariants`, ADR-036): an active rule pool must also have
   `listExclusions: true` and `forceSeerr: true` (the ADR-084 E-3 ruling and this design's re-request path). A
   violation makes the audit unsafe, so sweeps and Expedite refuse until it is fixed. `maintainerrCollectionSchema`
-  gains the two fields (present in `GET /api/collections`).
+  gains the two fields (present in `GET /api/collections`). An episode pool is not held to `forceSeerr` (D-25bt):
+  Maintainerr 3.29.0 never stores it on an episode collection, which the drift check already accounts for.
 
 ### D-17 — Everyone's Seerr watchlist: enrollment
 
 - **Setting:** `seerr_watchlist_enroll` = `{ enabled, onlyUserIds }`, off until PLAN-072 S9. `onlyUserIds` limits a
   canary.
 - **Step:** at the end of each `watchlist-registry` run while enabled, for every Seerr user of type Plex (`userType`
-  1) with no `seerr_watchlist_enrollments` row (and in `onlyUserIds` when set):
+  1) with no confirmed `seerr_watchlist_enrollments` row (and in `onlyUserIds` when set):
   1. `GET /api/v1/user/{id}/settings/main` → the settings body;
-  2. both `watchlistSyncMovies` and `watchlistSyncTv` already true: insert the row with `already_on` (the owner);
-  3. otherwise `POST /api/v1/user/{id}/settings/main` with **the whole GET body echoed** plus
-     `watchlistSyncMovies: true, watchlistSyncTv: true`; the response must show both true; then insert the row. A
-     failure logs and retries next run (no row).
+  2. both `watchlistSyncMovies` and `watchlistSyncTv` already true: insert the row with `already_on` (the owner),
+     confirmed; a PENDING row (the app wrote before and never saw the answer) is confirmed instead, `already_on`
+     false (D-25bs);
+  3. otherwise insert the row pending (`already_on` false, `confirmed_at` null) BEFORE the write, then
+     `POST /api/v1/user/{id}/settings/main` with **the whole GET body echoed** plus
+     `watchlistSyncMovies: true, watchlistSyncTv: true`; the response must show both true; then confirm the row. A
+     failure logs and retries next run (the pending row stays, so a lost answer is never read back as `already_on`).
 - **Enroll once, respect an opt-out** (driver decision, Q-08; the driver's reading of ruling 3, which names whose
   lists request, not whether a user may later turn theirs off): an enrolled user is re-checked once a day; if their
   flags are off, `optout_observed_at` is set and logged once, and the app never turns them back on.
@@ -734,8 +759,9 @@ depends on it.
   row Seerr creates one (`new UserSettings({ user: req.user, … })`); Q-09 checks it lands on the target user, which
   the canary and the read-back prove.
 - **Confined surface:** `@hnet/arr/write` gains `SeerrWriteClient.setWatchlistSync(userId, { movies, tv })`,
-  import-confined to `packages/domain`; the domain writer `enrollSeerrWatchlistSync` records the row after the
-  external write succeeds (the Authentik-apply precedent, ADR-045).
+  import-confined to `packages/domain`; the domain writer `enrollSeerrWatchlistSync` counts the enrollment only once
+  both flags are seen on (the Authentik-apply precedent, ADR-045), from the write's response or, when that answer was
+  lost, from the next run's read of the pending row's user (D-25bs).
 - **Why in the app:** a Plex user who signs in to Seerr later (`newPlexLogin` is on) is enrolled within 15 minutes,
   which "Everyone's" implies; a one-shot script would miss them.
 - **Expected first-enable volume:** Seerr reads each user's 20 newest titles, so at most about 34 movies and 48 shows
@@ -844,8 +870,8 @@ fine.
 | `@hnet/plex` | roster reads (`getAccount`, `listUsers`, `listHomeUsers`), `communityWatchlist(uuid)` (upper-case `type` mapped, any `errors` entry failed), `discoverMetadata(id)`; the switch call behind a flag (Q-01) |
 | `@hnet/arr` | `maintainerrMediaSchema` + `mediaData.guid`, `ruleEvaluationFailed`; collection schema + `listExclusions`, `forceSeerr`; Seerr read `listUsers`, `userWatchlist` (the D-02 content rules); Radarr/Sonarr reads `movieFiles`/`episodeFiles` (with `originalFilePath`), history with event types 1 and 3, the item GET by id, the import-list exclusion count; `/write`: release-profile methods on Radarr/Sonarr, `SeerrWriteClient` |
 | `@hnet/domain` | `watchlist-registry.ts` (refresh, per-source outcomes, gate, typed snapshot), `release-block.ts` (identity, terms and grammar, reconcile with settle and validate, `checkReleaseBlockReadds`), `seerr-enroll.ts`; `trash-flow.ts` (guardian, pending shape with the required snapshot, `upsertTrashRule`, invariant); `trash-batches.ts` (proposal filter, sweep phases and settle, the `registry` input, the paused report and `trash_sweep_status`, keep reasons); `trash-candidates.ts` (`plex_guid`, `rule_evaluation_failed`); `space-policy.ts` (`minCandidates`) |
-| `@hnet/sync` | the `watchlist-registry` mode; the sweep's client wiring, `registry: 'refresh'`, a paused report exits 0; the D-23 re-add check after the sweep; `release-block-seed.ts` (`--legacy-sab`, `--manual`, and the read-only `--pool` report of `release-block-pool.ts`, D-25bj) |
-| `@hnet/api` | `expediteItem`, `expediteAll` and `expire` take `resolveArrBundle(ctx)` besides the Maintainerr bundle; `expire` passes `registry: 'gate-only'`; `WatchlistRegistryUnverifiedError`, `ReleaseBlockError` and a paused sweep report map to `PRECONDITION_FAILED`; Trash status gains the registry summary, the sweep status and the D-23 counts |
+| `@hnet/sync` | the `watchlist-registry` mode; the sweep's client wiring, `registry: 'refresh'`, a paused report exits 0; the hourly Release Block upkeep (D-25br) and the D-23 re-add check after the sweep; `release-block-seed.ts` (`--legacy-sab`, `--manual`, and the read-only `--pool` report of `release-block-pool.ts`, D-25bj) |
+| `@hnet/api` | `expediteItem`, `expediteAll` and `expire` take `resolveArrBundle(ctx)` besides the Maintainerr bundle; `expire` passes `registry: 'gate-only'`; `WatchlistRegistryUnverifiedError`, `ReleaseBlockError` and a paused sweep report map to `PRECONDITION_FAILED`; `ReleaseIdentityUnavailableError` maps to `BAD_GATEWAY` (`RELEASE_BLOCK_ARR_UNAVAILABLE`, D-25bu); Trash status gains the registry summary, the sweep status and the D-23 counts |
 | `apps/web` | `previewGuardian` mirror, the wall note, skip-reason tooltips, the paused banner (from the sweep status), the Watchlists card |
 | haynes-ops | the CronJob, the Loki alerts, the image tag |
 | CLAUDE.md | hard rule 4 (ADR-093 C-08) |
@@ -858,15 +884,18 @@ they are delivered here. E-5's signal is also the standing evidence that ruling 
 
 - **The re-add check (E-5).** `checkReleaseBlockReadds` runs hourly in the `trash-batch-sweep` mode after the sweep,
   whether or not a batch was due; a failure is a warning and never changes the job's exit.
-  1. It finds records in state `active` or `expired` with `readd_seen_at` null whose title is live again in the
-     ledger: a `media_items` row with `deleted_from_arr_at` null, the record's `arr_kind`, the same tmdb id (movies)
-     or tvdb id (series), and an `arr_item_id` other than the record's (a re-add is always a new *arr id, whether
-     the ledger inserts a row or re-matches the old one by external id).
+  1. It finds records in state `active` or `expired` with no verdict yet (`readd_seen_at` null, or seen with
+     `readd_same_release` null within the last 7 days) whose title is live again in the ledger: a `media_items` row
+     with `deleted_from_arr_at` null, the record's `arr_kind`, the same tmdb id (movies) or tvdb id (series), and an
+     `arr_item_id` other than the record's (a re-add is always a new *arr id, whether the ledger inserts a row or
+     re-matches the old one by external id).
   2. It reads that item's grabs from the *arr (`history/movie` or `history/series`, event type 1), because the
      ledger does not reliably receive a re-added id's grab events (E-5).
   3. It tests each grab's `sourceTitle` against the record's term (the self-check's compiled regex) and stamps
-     `readd_seen_at` and `readd_same_release` (true when any grab matches). A re-added title with no grab yet is
-     checked again each hour, for at most 7 days.
+     `readd_same_release` (true when any grab matches). A re-added title with no grab yet is stamped `readd_seen_at`
+     at the check's first sighting (no verdict) and checked again each hour for 7 days from that sighting (D-25bo),
+     never from the ledger row's `first_seen_at`, which the sync keeps from the title's original first sync when it
+     re-matches the re-add onto the old row.
   4. It logs `[release-block] readd` (D-21); `sameRelease=true` means the block failed and pages at once.
 - **Visibility (E-4; driver decision: the "at least visibility" floor).** The Watchlists card (D-10) shows, per
   *arr, the Release Block's live term count against its cap and the oldest term's age; the import-list exclusion
@@ -918,7 +947,8 @@ Deleted-Release Record and its terms (D-11, D-12), the Release Block writer (D-1
 (D-14), the seed script (D-15), the Arm/Disarm fix and the grown invariant (D-16), the Seerr enrollment and the
 anime-tags preflight (D-17), the D-21 lines, the D-23 re-add check and counts, and the *arr and Seerr half of the D-20
 stubs, with no further migration. The rulings below were made while building; none changes a D-24 ruling. Rows
-D-25ax..D-25bm record the rulings of the PR #595 code review (each with a test that fails without it).
+D-25ax..D-25bm record the rulings of the PR #595 code review (each with a test that fails without it), and rows
+D-25bn..D-25bz those of its second review pass (the same way).
 
 | ID | Question | Ruling |
 |----|----------|--------|
@@ -942,7 +972,7 @@ D-25ax..D-25bm record the rulings of the PR #595 code review (each with a test t
 | D-25r | Which `trash_sweep_status` outcome the existing handle breaker records (3 consecutive Maintainerr handle failures). | `aborted_arr` with reason `handle_breaker`: the media apps did not answer, and the banner reads "the media apps". Part 2's *arr identity breaker records the same outcome. |
 | D-25s | The scheduled sweep with nothing due. | It does nothing at all: no audit, no registry refresh, no status row (D-14). Before, an unsafe audit failed the job every hour even with nothing due. |
 | D-25t | The `watchlist-registry` job's exit code. | 0 for a clean `failed` run (roster, owner) and for `busy`; only a thrown error fails the Job. The run row and `run_failed` (the Loki alert after 8 in a row) are the signal, so a plex.tv outage does not fire the job-failure alert every 15 minutes. |
-| D-25u | How the web paths surface a refusal. | Expedite's gate refusal is `WatchlistRegistryUnverifiedError` (appCode `WATCHLIST_REGISTRY_UNVERIFIED`); a manual Expire now that paused throws `TrashSweepPausedError` (appCode `TRASH_SWEEP_PAUSED`); both are PRECONDITION_FAILED and their messages are the banner's wording. |
+| D-25u | How the web paths surface a refusal. | Expedite's gate refusal is `WatchlistRegistryUnverifiedError` (appCode `WATCHLIST_REGISTRY_UNVERIFIED`); a manual Expire now that paused throws `TrashSweepPausedError` (appCode `TRASH_SWEEP_PAUSED`); both are PRECONDITION_FAILED and their messages are the banner's wording. _(D-25bv: exactly the wording; the gate's reason and detail are logged, never appended to the message.)_ |
 | D-25v | Where the paused banner lives (D-10). | Inside the Maintainerr safety banner's reserved row, recoloured to warn (ADR-015: no new row under the page), shown only while Maintainerr itself checks out (its own warnings take precedence). `trash.status` carries `sweepPause`, set only once the pause is 6 hours old. |
 | D-25w | The "On a watchlist" note's footprint. | A bookmark and the short visible label on the tile's meta line, the long wording in the tooltip and aria-label; the size and rating text ellipsizes first, so the tile's geometry is unchanged. On the batch wall the note shows on every row except `deleted`. |
 | D-25x | The space policy's reported candidate count (D-08). | It now reports the deletable candidates `minCandidates` is compared against (not `dnd`, not on a watchlist). |
@@ -951,18 +981,18 @@ D-25ax..D-25bm record the rulings of the PR #595 code review (each with a test t
 | D-25aa | The copy of D-10. | The driving session's UX pass supersedes the proposed copy: the note "On a watchlist" (tooltip "On a watchlist. It won't be deleted while it stays there."); kept tooltips "Kept: on a watchlist / watched recently / couldn't be checked / no longer a candidate / saved / couldn't be removed safely" (`tag` and `live_excluded` both read "saved"); the confirm's term "on a watchlist"; the banner "Deletions are paused until watchlists can be checked." / "… until removals can be done safely." / "… until the media apps respond normally."; the card's "Checked {relative time}. {n} accounts read, {m} can't be read." |
 | D-25ab | The retry policy of D-02 on the existing clients. | `PlexHttp` and `ArrHttp` gained `retryStatus` and `retryBackoffMs` options (defaults unchanged); the registry's plex.tv and Seerr clients use 10 s, 3 attempts on 429 / 5xx / network, 2 s × attempt. The owner's discover list is read by the registry client with that policy, through the paging loop `getWatchlist` uses (extracted, unchanged). |
 | D-25ac | `pnpm dev:local` and e2e with a gate that needs a fresh run. | The stubs gained the registry half of D-20 (the plex.tv roster with a hidden-empty friend and a `User not found:` managed user, community GraphQL with upper-case `MOVIE` / `SHOW`, discover metadata, Seerr users and watchlist pages with the error-body switch); the stack runs the `watchlist-registry` mode at boot and the Trash spec re-runs it before it deletes. No default stub list holds a deletable Trash pool title (the owner's holds Stub Runner, already kept by its `dnd` tag); `POST /_stub/seerr-watchlist` puts one on the member's Seerr list (the Trash e2e, D-25bi). The *arr and Seerr settings stubs are part 2's. |
-| D-25ad | What the D-12 self-check compares a term against. | Each release name as it is and folded the way the tokens are (accents and apostrophes removed, `&` read as `and`): scene names carry neither, while Radarr's renamed file keeps them ("Don't Look Up (2021) …"), so a raw-only check would reject every such title's term and keep it forever. A release posted with an apostrophe in its name is not matched by the group term (counted by S6(e)). A renamed file is checked by its own name: a Sonarr relative path carries its season folder (`Season 03/…`), which the anchored term never matches. |
+| D-25ad | What the D-12 self-check compares a term against. | Each release name as it is and folded the way the tokens are (accents and apostrophes removed, `&` read as `and`): scene names carry neither, while Radarr's renamed file keeps them ("Don't Look Up (2021) …"), so a raw-only check would reject every such title's term and keep it forever. A release posted with an apostrophe in its name is not matched by the group term (counted by S6(e)). A renamed file is checked by its own name: a Sonarr relative path carries its season folder (`Season 03/…`), which the anchored term never matches. _(D-25bq: such a real name now makes the term `low_confidence`, and the S6(e) report counts it as `foldOnly`.)_ |
 | D-25ae | What counts as a release name (`originalFilePath`, the exact form). | A name that names a RELEASE: title tokens, a year or a season, and a resolution or a group. `originalFilePath` gives its last segment when that is one, else the folder above it (an obfuscated file inside a release folder must not defeat the self-check), else nothing. The exact form is built only from such a name: the exact form of a bare "Babygirl (2024)" would block every release of the title. |
 | D-25af | When the ledger's names join a record whose file the *arr still has. | Only when the *arr has no release name for the file (no grab, no `sceneName`, no usable `originalFilePath`); otherwise a stale ledger import could push the group term into its exact fallback. The ledger alone identifies an item the *arr no longer has before the delete. |
 | D-25ag | An item with nothing to re-fetch, and one already gone. | A movie with no file (a series with no file in a season ≥ 1) is deletable with a term-less `none` record, kept as evidence. A movie or series the *arr answers 404 for before the delete is identified from the ledger (`ledger_grab`), else kept `release_unrecorded` (`gone`). |
 | D-25ah | A series (season, resolution) whose files name no group. | One exact record per distinct release name of that key; if any file of it has no release name, the whole series is kept (a delete removes every season). The legacy SAB seed matches movies only: a series is many downloads, so the size rule does not apply; series the ledger cannot identify are counted unblockable. |
-| D-25ai | How identity failures count (D-14 step 4). | Consecutively, per survivor, in the order read; three in a row abort the batch before Phase A with nothing written (the batch stays `leaving_soon`), outcome `aborted_arr`, reason `arr_identity`. A single failure between successes keeps that item `release_unrecorded`, written only after the loop completes without tripping. Expedite throws `ArrUpstreamError` (BAD_GATEWAY) on the breaker and counts every unrecordable item as skipped (`unrecordedCount`, part of `skippedCount`). |
+| D-25ai | How identity failures count (D-14 step 4). | Consecutively, per survivor, in the order read; three in a row abort the batch before Phase A with nothing written (the batch stays `leaving_soon`), outcome `aborted_arr`, reason `arr_identity`. A single failure between successes keeps that item `release_unrecorded`, written only after the loop completes without tripping. Expedite throws `ArrUpstreamError` (BAD_GATEWAY) on the breaker and counts every unrecordable item as skipped (`unrecordedCount`, part of `skippedCount`). _(D-25bu: Expedite now throws `ReleaseIdentityUnavailableError`, its own appCode, instead of `ArrUpstreamError`.)_ |
 | D-25aj | Expedite `all` and a failed handle. | Phase A covers every survivor before the first handle. A failed handle still stops the run and rethrows, as before; the survivors not reached have their in-flight records abandoned and the profile reconciled, so no term blocks a title that is still there. |
 | D-25ak | The sweep's handle breaker (3 failed handles) and the survivors it did not reach. | Their in-flight records are abandoned (they stay `pending` and come back next run), and the final reconcile removes their terms. |
 | D-25al | A Phase A failure after one *arr already took its terms (a sweep or Expedite touching both). | Every record of the call is abandoned and the *arr that succeeded is reconciled again, best effort, so no term of an item that was not deleted stays in its profile. |
 | D-25am | The reconcile's transaction, and what counts as "no write". | The advisory lock, the expiry, the stranded in-flight settle and the cap prune share one transaction, so a failed write rolls them back too (the next reconcile repeats them). The profile is rewritten whenever it differs from the desired shape (disabled, a `required` term, an indexer, a tag, or another `ignored` set), not only on a different `ignored` set. |
 | D-25an | How a record is tied to its deletion (ADR-084 D-4). | The claim transaction stamps `batch_item_id` on the sweep's records, and the `trash_expedited` event of both paths carries `releaseRecordIds` (Expedite has no batch item). |
-| D-25ao | The re-add check's 7 days (D-23). | They run from the re-added ledger row's `first_seen_at`. With no grab by then the record is stamped with `readd_same_release` null (seen, no verdict) and not checked again. |
+| D-25ao | The re-add check's 7 days (D-23). | They run from the re-added ledger row's `first_seen_at`. With no grab by then the record is stamped with `readd_same_release` null (seen, no verdict) and not checked again. _(Superseded by D-25bo: the ledger row is re-matched, so its `first_seen_at` is the original sync; the window now runs from the check's own first sighting.)_ |
 | D-25ap | What the Watchlists card counts (D-23). | Per *arr: the distinct live terms (in flight or active) against the cap, the oldest live term's age in days, and the import-list exclusion count read live (Radarr `exclusions/paged`, Sonarr `importlistexclusion/paged`; "not available" when it does not answer); the re-adds stamped in the last 30 days and how many matched a blocked release. No enrollment UI: the script's `--show` covers PLAN-072 S9. |
 | D-25aq | What the D-16 read-back compares. | `arrAction`, `listExclusions`, `forceSeerr` (not expected on an episode pool), `tagInArr`, the Radarr and Sonarr server ids, and `collection.deleteAfterDays`. `cleanupLeftoverFolders` and `keepInMaintainerrOnly` are lifted but not compared (Maintainerr stores them only for some collection types). A rule group the live read does not have refuses the save before any PUT. |
 | D-25ar | How the coordinator turns enrollment on and sets the anime tags (PLAN-072 S9). | A one-off script, `packages/sync/src/scripts/seerr-watchlist.ts` (`--show`, `--enroll=off\|all\|<ids>`, `--anime-tags=<server>:<tags>`); the setting write is audited through `setAppSetting` with actor null. The enrollment step reads Seerr Plex users only (`userType` 1); the daily re-check covers every enrolled user, not only the canary. |
@@ -984,9 +1014,22 @@ D-25ax..D-25bm record the rulings of the PR #595 code review (each with a test t
 | D-25bh | The re-add line counted records (a series, or a remediated movie, has several) and read a no-grab stamp as "a different release". | It counts re-added titles (distinct kind and tmdb or tvdb id) over 30 days, and a title whose every stamp has no grab is "not grabbed yet". The line reads "Re-added after Trash: {n}, all with a different release." or "{n}, not grabbed yet." when one kind covers them all, else the parts that apply in this order: "{n}, {s} with the same release, {d} with a different release, {g} not grabbed yet." |
 | D-25bi | The "On a watchlist" note on a phone: the ~76 px label beside the eye and requester chips squeezed the size text to nothing on the 3-column wall and pushed the meta line past the tile at 375 px and narrower. | At 480 px and narrower the note is the bookmark alone (the label is hidden; the tooltip and aria-label carry the words), so D-25w's "the tile's geometry is unchanged" holds at 320 px. An e2e step checks every meta-line chip stays inside its tile at 390, 360 and 320 px. |
 | D-25bj | PLAN-072 S6(e) needs a read-only run of the D-11 / D-12 derivation over the pending pool before the sweep resumes; the seed's dry run reads only past deletions. | `release-block-seed.ts --pool` (`reportPoolReleaseIdentity`, `release-block-pool.ts`) reads each kind's pending pool and runs `identifyRelease` as the sweep would, then prints counts by shape, confidence and identity source, the records with no group (Q-12), and the items D-11 would keep with their reasons and share (Q-13). It writes nothing (no record, profile, batch item or status row). |
-| D-25bk | User-visible copy added or changed by the review (for the driving session's copy pass; no em dashes). | The Expedite confirm's protected line "{n} protected: recently watched, whitelisted, or on a watchlist; they are kept." (a watchlisted item is kept by the app, never by Maintainerr, and a request is no keep) with "Includes {n} on a watchlist."; "{n} will be deleted NOW: immediate and permanent, …"; "{n} kept, can't be verified safe: unknown to the ledger, …"; the report's "Deleted:", "Protected: kept on purpose because it was recently watched, is on a watchlist, or is whitelisted or saved (…)", "Skipped:", "No longer pending:"; the "Lists" labels of D-25bg; the re-add lines of D-25bh. Already in the build and listed here for the same review: the item confirm's "This item is on a watchlist, so it won't be deleted while it stays there. Nothing will be deleted."; the card's "Accounts", "Lists", "Not checked yet.", "Couldn't load the watchlist check." and "The latest check didn't finish. The counts are from the one before." |
+| D-25bk | User-visible copy added or changed by the review (for the driving session's copy pass; no em dashes). | The Expedite confirm's protected line "{n} protected: recently watched, whitelisted, or on a watchlist; they are kept." (a watchlisted item is kept by the app, never by Maintainerr, and a request is no keep) with "Includes {n} on a watchlist."; "{n} will be deleted NOW: immediate and permanent, …"; "{n} kept, can't be verified safe: unknown to the ledger, …"; the report's "Deleted:", "Protected: kept on purpose because it was recently watched, is on a watchlist, or is whitelisted or saved (…)", "Skipped:", "No longer pending:"; the "Lists" labels of D-25bg; the re-add lines of D-25bh. Already in the build and listed here for the same review: the item confirm's "This item is on a watchlist, so it won't be deleted while it stays there. Nothing will be deleted."; the card's "Accounts", "Lists", "Not checked yet.", "Couldn't load the watchlist check." and "The latest check didn't finish. The counts are from the one before." _(D-25by replaces "unknown to the ledger" and the item confirm's "it isn't in our ledger"; D-25bx adds "The watchlist check hasn't finished yet.")_ |
 | D-25bl | D-14's shared helper was an Expedite-only private function; the sweep composed identity and Phase A itself. | `recordAndBlockReleases` (exported from `release-block.ts`) is the one seam: identity with the three-failure abort, each unrecordable survivor handed back before Phase A (`onUnrecorded`), then Phase A for every recordable survivor. The sweep's `expireOneBatch` and Expedite (through a thin `recordAndBlockExpediteReleases` that maps the abort to `ArrUpstreamError`) both call it; T-264 names it. |
-| D-25bm | How an operator runs and answers the new pieces (the CronJob, the paging alerts, the in-cluster scripts). | OPS-017 (`docs/ops/017-watchlist-protection.md`) is the runbook: the `sync-watchlist-registry` CronJob and a manual run, each `sweep_paused` reason and step with its remedy, the `readd` page, the S6(e) pool report, the S8 seed with its never-committed legacy SAB file, the S9 enrollment script, and the rollback with the CronJob suspended first. |
+| D-25bm | How an operator runs and answers the new pieces (the CronJob, the paging alerts, the in-cluster scripts). | OPS-017 (`docs/ops/017-watchlist-protection.md`) is the runbook: the `sync-watchlist-registry` CronJob and a manual run, each `sweep_paused` reason and step with its remedy, the `readd` page, the S6(e) pool report, the S8 seed with its never-committed legacy SAB file, the S9 enrollment script, and the rollback with the CronJob suspended first. _(D-25bz: its reason column now uses the logged values, and it gains the `account_unreadable` and `run_failed` sections.)_ |
+| D-25bn | The owner's discover list is paged by offset, and `readAllContainerPages` believed each page's `totalSize`: a title removed from the pages already read moved an unread title back across the page boundary, the read ended short with `truncated: false`, and the registry replaced the owner's list without a title still on it. | The first page's `totalSize` is the listing's total; a later page reporting another one means the list shifted. The whole read is repeated once from `start=0`, and a second inconsistent read returns `truncated: true`, which fails the run `owner_truncated` and keeps the stored list (D-02, D-04). The rule lives in the shared helper, so the Watch Companion's `getWatchlist` and `listAllLeaves` get it too (harmless there). |
+| D-25bo | The re-add check's window started at the ledger row's `first_seen_at`, but the media sync re-matches a re-added title onto its old row (updating `arr_item_id`, keeping `first_seen_at`), so a re-add with no grab yet was closed on its first check and a later grab of the same release was never seen. | The window runs from the check's own first sighting: with no grab, the first match stamps `readd_seen_at` (verdict null); the check selects records never seen, or seen with no verdict within the last 7 days, and stamps the verdict (`readd_same_release`) once a grab appears, keeping the sighting time. No migration; the card's "not grabbed yet" reads the same rows. Supersedes D-25ao. |
+| D-25bp | A movie's exact fallback: `deriveTerm` builds it from the FIRST real name and checks it against that name only, so a grab title and a different scene name (or a ledger grab and import name) left the file's own name unblocked, the "same title, different index" case of ruling 2. | `deriveTermsPerName`: when the combined derivation comes back `exact` and the record has more than one distinct real name, each name gets its own derivation (its own group term when it carries a group and passes the self-check, else its own exact form), one record each; a name that yields no term keeps the movie `release_unrecorded`. `identifyMovie` and the Radarr branch of the ledger path use it; the series path keeps D-25bb and D-25bc. |
+| D-25bq | The self-check accepted a real release name that matches only when folded (an apostrophe, an accent or `&`), labelled the term `verified`, and the S6(e) count D-25ad relied on did not exist, although Radarr and Sonarr test the raw title. | A real name (not the renamed file, which is what the fold is for) that the term matches only folded makes the term `low_confidence` (`foldOnly` on the derivation and the draft). The S6(e) pool report counts `foldOnly` and `foldOnlyShare` per kind. The grammar is unchanged: an accent or `&` cannot be matched by the D-12 templates, and joining an apostrophe-split word would need a template change (ADR-093 C-19), so the share is measured instead. |
+| D-25br | The stranded settle and the 365-day expiry (D-13 step 1) ran only inside a delete path's reconcile, so after an ambiguous handle failure "an hour later" (D-14 step 7) meant the next batch of that kind, and a still-present title's current release stayed blocked for days. | `reconcileReleaseBlockIfDue` runs in the `trash-batch-sweep` job every hour after the sweep, before the re-add check, whether or not a batch was due: for each *arr with an `in_flight` record older than the settle age or an `active` record past `expires_at`, one reconcile. Nothing due makes no *arr call; a failure logs `[release-block] upkeep_failed` (warn), never changes the exit and never pauses the sweep. The job report carries `releaseBlockUpkeep`. |
+| D-25bs | An enrollment whose POST answer was lost (a 10 s timeout; POSTs are not retried) or whose row insert failed after the POST left no row, so the next run read both flags on and recorded the app's own enrollment `already_on`; a rollback that turns off `already_on = false` users would miss them. | The row is inserted PENDING (`already_on` false, `confirmed_at` null, a new column in 0081) BEFORE the write and confirmed from the response; a pending user whose flags read on at the next run is confirmed as the app's enrollment, never `already_on`, and one still off is written again. The daily re-check reads confirmed rows only; the summary reports `pending` separately. |
+| D-25bt | The grown invariant required `forceSeerr` on every armed rule pool, but Maintainerr 3.29.0 never stores it on an episode collection (`rules.service.ts`), so an armed episode pool would keep the audit unsafe forever while the save's drift check expects it off. | An episode pool (`type` `episode` or 4) is exempt from the `forceSeerr` requirement, like `ruleGroupDrift`; it is still held to `listExclusions`, `arrAction` Delete and the horizon. An episode delete leaves the series and its Seerr record in place, so the re-request path is not involved. |
+| D-25bu | Expedite's *arr-down refusal was an `ArrUpstreamError`, whose appCode `ARR_UPSTREAM_UNAVAILABLE` maps to the Fix path's copy ("… recorded as failed …"), so the D-25av sentence never reached the user. | `ReleaseIdentityUnavailableError` (appCode `RELEASE_BLOCK_ARR_UNAVAILABLE`, `BAD_GATEWAY`) carries the D-25av sentence as its message, and the web copy maps the code to the same sentence. |
+| D-25bv | Expedite's gate refusal appended a technical clause ("no watchlist check within the last 30 minutes; the newest is 45 minutes old") to the banner's wording, against D-25u, and the API test only matched a prefix. | The message is exactly "Deletions are paused until watchlists can be checked."; the reason and detail stay on the error and on the gate's own log line. The API tests assert the exact string. |
+| D-25bw | The manual Expire now report blamed Maintainerr for every abort, including the *arr identity abort (D-25ai), which happens before any delete. | The wire and client types carry `abortReason`; `arr_identity` reads "Nothing was deleted: Radarr or Sonarr did not answer. The batch stays in Leaving Soon and will try again on the next sweep." and `handle_breaker` keeps the Maintainerr wording (`sweepAbortCopy`). |
+| D-25bx | With no ok run yet and a failed latest run, the Watchlists card said "Not checked yet." and "The counts are from the one before." together. | The "from the one before" note shows only when an earlier ok check exists; with none, the headline is one line, "The watchlist check hasn't finished yet." (no run at all stays "Not checked yet."). |
+| D-25by | The Expedite confirms gave "unknown to the ledger" as the reason for every unverifiable item, though since ADR-093 an item is also kept when its watchlist status is not evaluable or Maintainerr flags `ruleEvaluationFailed`. | The item confirm names its cause (`unverifiableReason`: "it isn't in our ledger", "its watchlists can't be checked right now", "Maintainerr couldn't check its rules"), and the all confirm reads "{n} kept, can't be verified safe: not in our ledger, their watchlists can't be checked right now, or Maintainerr couldn't check their rules, so they are skipped, never deleted." For the driving session's copy pass, with D-25bw and D-25bx. |
+| D-25bz | OPS-017's `sweep_paused` table named a reason `media_apps` that the log never carries (it logs `audit_unsafe` or `arr`), sent the unsafe remedy to an app control that cannot change those flags, and had no section for two of D-21's four alerts. | The table uses the logged reasons (`gate`, `release_block`, `audit_unsafe`, `arr`) and notes the banner groups the last two as "the media apps"; the unsafe remedy is Maintainerr's own rule editor; new sections cover `account_unreadable` (the source frozen, its titles still protecting; the `errorClass` that tells a hidden list from a revoked Seerr key) and the `run_failed` streak (each `failure` value and its remedy). PLAN-072 S4 links each alert to its section. |
 
 ## Alternatives considered
 
@@ -1035,7 +1078,12 @@ D-25ax..D-25bm record the rulings of the PR #595 code review (each with a test t
   `downloadId` → grab, the `importedPath` and `sceneName` fallbacks, an upgraded file picking the latest import); the
   reconcile set diff, sentinel, cap, expiry and the `in_flight` settle (404 → active, live → abandoned, unreachable →
   kept); the Arm/Disarm payload builder (the live 3.29.0 GET shape in, a PUT with the top-level flags out; `useRules`
-  rules); the re-add check (a new *arr id with a same-release grab, with a different release, with no grab yet).
+  rules); the re-add check (a new *arr id with a same-release grab, with a different release, with no grab yet); the
+  second review pass (D-25bn..D-25bz): an owner list that loses a title between page reads is read again and never
+  returned short and "complete", a second shift is truncated; a movie whose grab title and scene name differ gets a
+  term per name; a Tigole-style name with an apostrophe, `&` or an accent is `low_confidence` and `foldOnly`; an
+  episode pool is not held to `forceSeerr`; the Expire report's abort copy per reason; the card's first-failed
+  headline; the unverifiable reason per cause.
 - **Integration (embedded Postgres, stub HTTP):** migration 0081 applies and replays; the refresh writes and carries
   forward; a Seerr stub that answers 200-empty after a non-empty read, and one whose page 2 answers the error body,
   leave the registry's items for that user unchanged; a community friend going hidden keeps their items; a sweep with
@@ -1052,7 +1100,13 @@ D-25ax..D-25bm record the rulings of the PR #595 code review (each with a test t
   Arm/Disarm toggle sends `listExclusions`/`forceSeerr` back unchanged; the invariant refuses a pool with either
   false; enrollment echoes the GET body, skips `already_on`, never re-enables an opt-out, honours `onlyUserIds`; the
   seed script's dry run writes nothing, skips a deleted row whose *arr record still exists, and matches a legacy SAB
-  row by title, year and size.
+  row by title, year and size. The second review pass adds: the real `PlexRegistryClient` over a list that shifts
+  between pages never drops a title still on it (D-25bn); a re-add the sync re-matches onto its old ledger row is
+  watched 7 days from its first sighting (D-25bo); a TV pool whose shows are listed by discover id and by tvdb id is
+  kept by the sweep and by Expedite (AC-33); the note is matched through `trash_candidates.plex_guid` for a title
+  known only by discover id, and a deleted row never carries it (D-10, D-25w); a nothing-due sweep job settles a
+  stranded record and drops an expired term (D-25br); a lost enrollment answer is confirmed as the app's (D-25bs);
+  the identity abort and the gate refusal on the wire (D-25bu, D-25bv).
 - **Web:** the `previewGuardian` parity test with the new cases, a `ruleEvaluationFailed` item among them; the tile
   note and tooltip render without moving neighbours (ADR-015); the paused banner appears only after 6 hours and
   names its reason. Built as render tests (`lib/__tests__/trash-watchlist-render.test.ts`: the banner per reason and

@@ -11,7 +11,8 @@ single-writers (`upsertMediaItemsBatch`, `tombstoneMissingItems`, `ingestLedgerE
 writes drizzle tables directly and never touches `@hnet/arr/write`. Every write-back to the
 *arrs and Seerr lives in `packages/domain` (Hard Rule 4 lists them; ADR-008): Fix / Restore /
 Force-Search, the ADR-083 queue janitor, and ADR-093's Release Block (the app's Radarr / Sonarr
-release profile, written by the `trash-batch-sweep` mode through `sweepExpiredBatches`) and Seerr
+release profile, written by the `trash-batch-sweep` mode through `sweepExpiredBatches` and its hourly
+`reconcileReleaseBlockIfDue`) and Seerr
 watchlist enrollment (the `watchlist-registry` mode's enrollment step, `enrollSeerrWatchlistSync`).
 A sync mode reaches them only through those domain orchestrators, never here.
 
@@ -24,6 +25,8 @@ A sync mode reaches them only through those domain orchestrators, never here.
 | File | Role |
 | --- | --- |
 | `scripts/sync.ts` | CLI entry / CronJob command. Parses flags, builds clients, calls `runSync`, exits nonzero only on total failure. |
+| `scripts/release-block-seed.ts` | ADR-093 / DESIGN-052 D-15 (PLAN-072 S8) — the one-off Release Block seed, run in-cluster (not a sync mode): `--dry-run` / `--apply` with `--legacy-sab=<file>` and `--manual=<file>` (never committed), writing only through the domain's `seedReleaseBlock` (records, then the profile reconcile and read-back). `--pool` (PLAN-072 S6(e)) is a separate read-only report of what the sweep would record for the pending pool (`reportPoolReleaseIdentity`; writes nothing). Runbook: OPS-017 §7. |
+| `scripts/seerr-watchlist.ts` | ADR-093 / DESIGN-052 D-17 (PLAN-072 S9) — the Seerr enrollment switch: `--show` (read-only counts and the Sonarr servers), `--enroll=off\|all\|<ids>` (the audited `seerr_watchlist_enroll` setting write; the next `watchlist-registry` run enrolls), `--anime-tags=<serverId>:<tagIds>` (one read-back PUT through the domain's `setSeerrSonarrAnimeTags`). Runbook: OPS-017 §7. |
 | `orchestrator.ts` | `runSync` — brackets each source in one `sync_runs` row (`startSyncRun`/`finishSyncRun`), isolates per-source failure, then runs the two post-steps. |
 | `arr-full.ts` | `runArrFullSync` — unpaged item-list fetch → batched `upsertMediaItemsBatch` (500/tx) → tombstone pass behind the mass-tombstone guard. |
 | `arr-incremental.ts` | `runArrIncrementalSync` — `/history/since` cursor poll (or a bounded newest-first paged bootstrap walk) → normalize → `ingestLedgerEvents`. |

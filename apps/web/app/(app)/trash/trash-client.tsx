@@ -71,6 +71,7 @@ import { RESOLUTION_LABELS, formatBytes, formatDay, formatWhen } from '@/lib/med
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
 import {
   candidatesAsOfLabel,
+  EXPEDITE_UNVERIFIABLE_REASON,
   expediteErrorAction,
   overviewBadge,
   reclaimLabel,
@@ -644,8 +645,8 @@ function PendingTab({
                 ) : null}
               </li>
               <li>
-                <strong>{partition.unverifiable} kept, can’t be verified safe:</strong> unknown to
-                the ledger, so they are skipped, never deleted.
+                <strong>{partition.unverifiable} kept, can’t be verified safe:</strong>{' '}
+                {EXPEDITE_UNVERIFIABLE_REASON}
               </li>
             </ul>
             {partition.deletable === 0 ? (

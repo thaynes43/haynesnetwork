@@ -397,6 +397,29 @@ export interface SweepBatchResult {
   handleErrors: number;
   raceSkipped: number;
   aborted: boolean;
+  /** Why an aborted batch stopped (DESIGN-052 D-25r / D-25ai): Maintainerr's handle breaker, or the Release Block's
+   *  Radarr / Sonarr identity reads (before anything was deleted). Null when it finished. */
+  abortReason?: 'handle_breaker' | 'arr_identity' | null;
+}
+
+/**
+ * DESIGN-052 D-25bw — the Expire report's "not finished" banner, by what stopped the batch (null when it finished).
+ * An `arr_identity` abort happens BEFORE any delete and never involves Maintainerr, so it must not blame it.
+ */
+export function sweepAbortCopy(result: SweepBatchResult): { lead: string; detail: string } | null {
+  if (!result.aborted) return null;
+  if (result.abortReason === 'arr_identity') {
+    return {
+      lead: 'Nothing was deleted:',
+      detail:
+        'Radarr or Sonarr did not answer. The batch stays in Leaving Soon and will try again on the next sweep.',
+    };
+  }
+  return {
+    lead: 'Batch not finished',
+    detail:
+      '— Maintainerr failed mid-run, so the sweep stopped early with the partial results below. The batch stays in Leaving Soon and will resume on the next sweep.',
+  };
 }
 
 export interface SweepReportRow {

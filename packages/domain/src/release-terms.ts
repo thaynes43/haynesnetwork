@@ -307,6 +307,15 @@ export function termMatches(term: string, releaseName: string): boolean {
   return re.test(releaseName) || re.test(foldReleaseName(releaseName));
 }
 
+/**
+ * Does the term match this release name AS IT IS — what Radarr and Sonarr test (`ReleaseRestrictionsSpecification`
+ * runs the term against the raw release title; nothing folds accents, apostrophes or `&`)? D-25bq.
+ */
+export function termMatchesRaw(term: string, releaseName: string): boolean {
+  const re = compileTerm(term);
+  return re !== null && re.test(releaseName);
+}
+
 // ---------------------------------------------------------------------------
 // Deriving a record's term (D-11 / D-12)
 // ---------------------------------------------------------------------------
@@ -336,14 +345,19 @@ export interface DerivedTerm {
   shape: 'group' | 'exact';
   confidence: TermConfidence;
   years: number[];
+  /** D-25bq — a REAL release name of the record matched the term only in its folded form (an apostrophe, an accent or
+   *  `&` in the name): the *arr, which tests the raw title, will not match that name. The term is `low_confidence`. */
+  foldOnly: boolean;
 }
 
 /**
  * D-12 — the term for one record, or null when none can block its release (the item is then kept,
  * `release_unrecorded`). Group form when the group and resolution are known; it must match every real release name of
- * the record (self-check), else it falls back to the exact form of the first name. A record whose only name is the
- * *arr's renamed file cannot validate its term against a real release: its term is `low_confidence` and its year
- * window is widened by one on each side.
+ * the record (self-check), else it falls back to the exact form of the FIRST name, which is checked against that name
+ * only: a record with several real names whose term comes back `exact` needs `deriveTermsPerName` (D-25bp). A record
+ * whose only name is the *arr's renamed file cannot validate its term against a real release: its term is
+ * `low_confidence` and its year window is widened by one on each side. A real name the term matches only when folded
+ * makes the term `low_confidence` too (D-25bq): the *arr tests the raw name.
  */
 export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
   const names = input.releaseNames.filter((n) => n.trim().length > 0);
@@ -379,7 +393,13 @@ export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
   const remux = input.remux || primary?.remux === true;
   // A Sonarr relative path carries its season folder (`Season 03/…`): the self-check reads the file's own name.
   const checkNames = renamedOnly ? [releaseBaseName(input.renamedFileName as string)] : names;
-  const confidence: TermConfidence = renamedOnly ? 'low_confidence' : 'verified';
+  // D-25bq — the fold exists for the renamed file (Radarr keeps "Don't" in it); a REAL name matched only when folded is
+  // a release the *arr will not block, so the term is not verified.
+  const judge = (term: string, real: readonly string[]) => {
+    const foldOnly = real.some((n) => !termMatchesRaw(term, n));
+    const confidence: TermConfidence = renamedOnly || foldOnly ? 'low_confidence' : 'verified';
+    return { foldOnly, confidence };
+  };
 
   if (group.length > 0 && resolution !== null && titleTokens.length > 0 && yearList.length > 0) {
     let term: string | null = null;
@@ -414,7 +434,7 @@ export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
       isGrammarTerm(term) &&
       checkNames.every((n) => termMatches(term as string, n))
     ) {
-      return { term, shape: 'group', confidence, years: yearList };
+      return { term, shape: 'group', ...judge(term, names), years: yearList };
     }
   }
 
@@ -435,5 +455,29 @@ export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
     return null;
   }
   if (!isGrammarTerm(exact) || !termMatches(exact, names[0] as string)) return null;
-  return { term: exact, shape: 'exact', confidence: 'verified', years: yearList };
+  return { term: exact, shape: 'exact', ...judge(exact, [names[0] as string]), years: yearList };
+}
+
+/**
+ * D-25bp — every term a record with several real release names needs. `deriveTerm`'s exact fallback is the FIRST
+ * name's exact form and blocks only that name, so when the combined derivation comes back `exact` and the record has
+ * more than one distinct real name, each name gets its own derivation (its own group term when that name carries a
+ * group and passes the self-check, else its own exact form). Null when any name yields no term: the item is then kept
+ * `release_unrecorded` rather than deleted with one of its names unblocked. One entry (the combined term) otherwise.
+ * The series path does the same per (season, group, resolution) key with its nameless-file rule (D-25bb).
+ */
+export function deriveTermsPerName(
+  input: TermDerivationInput,
+): Array<{ name: string | null; derived: DerivedTerm }> | null {
+  const combined = deriveTerm(input);
+  if (combined === null) return null;
+  const names = [...new Set(input.releaseNames.map((n) => n.trim()).filter((n) => n.length > 0))];
+  if (combined.shape === 'group' || names.length <= 1) return [{ name: names[0] ?? null, derived: combined }];
+  const out: Array<{ name: string | null; derived: DerivedTerm }> = [];
+  for (const name of names) {
+    const derived = deriveTerm({ ...input, releaseNames: [name], releaseGroup: null, renamedFileName: null });
+    if (derived === null) return null;
+    out.push({ name, derived });
+  }
+  return out;
 }

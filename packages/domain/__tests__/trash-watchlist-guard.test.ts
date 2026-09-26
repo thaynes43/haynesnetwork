@@ -9,7 +9,9 @@
 //   manual Expire now deletes nothing; an ok run clears the pause (D-14);
 // - Expedite: item and all refuse on a stale registry; a watchlisted target is kept and never auto-saved (D-09);
 // - the typed snapshot: no snapshot ⇒ every item unevaluable (D-06, D-24e);
-// - the batch wall: the "On a watchlist" note and the keep reason (D-10).
+// - the batch wall: the "On a watchlist" note and the keep reason (D-10), matched through the candidate read-model's
+//   plex guid (a title known only by discover id), never on a deleted row (D-25w);
+// - AC-33: a TV pool, a show listed by its discover id or by its tvdb id, kept by the sweep and by Expedite.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
@@ -34,6 +36,7 @@ import {
   getBatchDetail,
   getTrashSweepStatus,
   listTrashPending,
+  listTrashPendingPage,
   refreshTrashCandidates,
   setAppSetting,
   silentDomainLogger,
@@ -46,7 +49,13 @@ import {
   type StaticWatchlistFixture,
   createStaticReleaseBlockArr,
 } from '../src/index';
-import { baseState, makeMaintainerr, movieCollection, type MaintState } from './maintainerr-stub';
+import {
+  baseState,
+  makeMaintainerr,
+  movieCollection,
+  tvCollection,
+  type MaintState,
+} from './maintainerr-stub';
 import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, type TestDb } from './helpers';
 
 /** ADR-093 / DESIGN-052 D-14 — the in-memory Release Block *arr (every item synthesized recordable). */
@@ -128,6 +137,21 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
         rootFolder: '/movies',
       })),
     });
+    // AC-33 — a TV pool (three shows) for the series cases.
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'sonarr',
+      items: [8001, 8002, 8003].map((tvdbId, i) => ({
+        arrItemId: i + 1,
+        tvdbId,
+        title: `Show ${tvdbId}`,
+        sortTitle: `show ${tvdbId}`,
+        monitored: true,
+        qualityProfileId: 1,
+        qualityProfileName: 'Any',
+        rootFolder: '/tv',
+      })),
+    });
     const [watched] = await t.db.select().from(mediaItems).where(eq(mediaItems.tmdbId, 9004));
     await upsertMediaMetadataBatch({
       db: t.db,
@@ -169,12 +193,16 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
   }
 
   /** Create a leaving_soon batch of the whole pool and close its window. */
-  async function expiredBatch(state: MaintState, targeting?: { maxItems: number }) {
+  async function expiredBatch(
+    state: MaintState,
+    targeting?: { maxItems: number },
+    mediaKind: 'movie' | 'tv' = 'movie',
+  ) {
     const { bundle } = makeMaintainerr(state);
     const created = await createBatchFromPending({
       db: t.db,
       maintainerr: bundle,
-      mediaKind: 'movie',
+      mediaKind,
       actorId: admin,
       ...(targeting ? { targeting } : {}),
     });
@@ -653,6 +681,134 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     expect(kept).toMatchObject({ state: 'skipped', keepReason: 'watchlisted', onWatchlist: true });
     const gone = detail.items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
     expect(gone).toMatchObject({ state: 'deleted', keepReason: null, onWatchlist: false });
+
+    // D-25w — a DELETED row never carries the note, even once its own title is on a list again (G1 listed now);
+    // a kept row of the same listing still does.
+    await seedVerifiedWatchlistRegistry(t.db, {
+      ownerId: '1',
+      owner: [
+        { discoverId: G1, kind: 'movie', tmdbId: 9001 },
+        { discoverId: G2, kind: 'movie', tmdbId: 9002 },
+      ],
+    });
+    detail = await getBatchDetail({ db: t.db, batchId });
+    const byId = Object.fromEntries(detail.items.map((i) => [i.maintainerrMediaId, i]));
+    expect(byId['ms-9001']).toMatchObject({ state: 'deleted', onWatchlist: false });
+    expect(byId['ms-9002']).toMatchObject({ state: 'skipped', onWatchlist: true });
+  });
+
+  it('D-10: the note is matched through the candidate read-model`s plex guid (a title known only by discover id)', async () => {
+    // G2 is listed by discover id ONLY (no tmdb id, its discover lookup 404s), next to another unmapped title: the
+    // plex guid joined from trash_candidates is the only way to match ms-9002, and without it every item turns not
+    // evaluable (an unmapped entry of the kind, D-06).
+    const GX = '5d776824151a60001f24ffff';
+    await seedVerifiedWatchlistRegistry(t.db, {
+      ownerId: '1',
+      owner: [
+        { discoverId: G2, kind: 'movie' },
+        { discoverId: GX, kind: 'movie' },
+      ],
+    });
+    const state = baseState({ collections: [pool()] });
+    const { bundle } = makeMaintainerr(state);
+    await refreshTrashCandidates({ db: t.db, maintainerr: bundle });
+
+    // The pending wall, the Expedite preview (materializeSnapshotPending → readCandidateSnapshot).
+    const page = await listTrashPendingPage({ db: t.db, maintainerr: bundle, media: 'movie', limit: 10, offset: 0 });
+    const byId = Object.fromEntries(page.items.map((i) => [i.maintainerrMediaId, i]));
+    expect(byId['ms-9002']).toMatchObject({ onWatchlist: true, watchlistEvaluable: true });
+    expect(byId['ms-9001']).toMatchObject({ onWatchlist: false, watchlistEvaluable: true });
+    expect(page.expeditePreview).toMatchObject({ watchlisted: 1, unverifiable: 0 });
+
+    // The batch wall (getBatchDetail's own join).
+    const batchId = await expiredBatch(state);
+    const detail = await getBatchDetail({ db: t.db, batchId });
+    expect(
+      Object.fromEntries(detail.items.map((i) => [i.maintainerrMediaId, i.onWatchlist])),
+    ).toMatchObject({ 'ms-9001': false, 'ms-9002': true, 'ms-9003': false });
+  });
+
+  // AC-33 — "a show on a list keeps its series": the TV pool, matched by the show's discover id and by its tvdb id.
+  describe('a TV pool (AC-33)', () => {
+    const S1 = '5d9c086fe9d5a1001f4d0001';
+    const S2 = '5d9c086fe9d5a1001f4d0002';
+    const S3 = '5d9c086fe9d5a1001f4d0003';
+    const SX = '5d9c086fe9d5a1001f4d00ff';
+    const tvPool = () =>
+      tvCollection({
+        items: [
+          { mediaServerId: 'ms-8001', tvdbId: 8001, sizeBytes: 6_000, addDate: '2026-06-01T00:00:00Z', mediaData: { guid: `plex://show/${S1}` } },
+          { mediaServerId: 'ms-8002', tvdbId: 8002, sizeBytes: 5_000, addDate: '2026-06-01T00:00:00Z', mediaData: { guid: `plex://show/${S2}` } },
+          { mediaServerId: 'ms-8003', tvdbId: 8003, sizeBytes: 4_000, addDate: '2026-06-01T00:00:00Z', mediaData: { guid: `plex://show/${S3}` } },
+        ],
+      });
+    /** ms-8001 listed by its discover id (the list's tvdb id differs); ms-8002 by its tvdb id only (another id). */
+    const showListing = (): StaticWatchlistFixture => ({
+      ownerId: '1',
+      owner: [
+        { discoverId: S1, kind: 'show', tvdbId: 7777 },
+        { discoverId: SX, kind: 'show', tvdbId: 8002 },
+      ],
+    });
+    const handledIds = (calls: Array<{ method: string; pathname: string; body: unknown }>) =>
+      calls
+        .filter((c) => c.method === 'POST' && c.pathname === '/collections/media/handle')
+        .map((c) => (c.body as { mediaId: string }).mediaId);
+
+    it('the sweep keeps both listed shows (`watchlisted`) and deletes only the unlisted one', async () => {
+      const state = baseState({ collections: [tvPool()] });
+      const batchId = await expiredBatch(state, undefined, 'tv');
+      const { bundle, calls } = makeMaintainerr(state);
+      const report = await sweepExpiredBatches({
+        arr: releaseArr,
+        db: t.db,
+        maintainerr: bundle,
+        registry: 'refresh',
+        registrySources: createStaticWatchlistSources(showListing()).sources,
+        logger,
+      });
+      expect(report.outcome).toBe('ok');
+      expect(await itemStates(batchId)).toEqual({
+        'ms-8001': { state: 'skipped', keepReason: 'watchlisted' },
+        'ms-8002': { state: 'skipped', keepReason: 'watchlisted' },
+        'ms-8003': { state: 'deleted', keepReason: null },
+      });
+      expect(handledIds(calls)).toEqual(['ms-8003']);
+    });
+
+    it('Expedite item and all protect both listed shows; the pending wall notes them', async () => {
+      await seedVerifiedWatchlistRegistry(t.db, showListing());
+      const state = baseState({ collections: [tvPool()] });
+      const { bundle, calls } = makeMaintainerr(state);
+      await refreshTrashCandidates({ db: t.db, maintainerr: bundle });
+      const page = await listTrashPendingPage({ db: t.db, maintainerr: bundle, media: 'tv', limit: 10, offset: 0 });
+      expect(
+        Object.fromEntries(page.items.map((i) => [i.maintainerrMediaId, i.onWatchlist])),
+      ).toEqual({ 'ms-8001': true, 'ms-8002': true, 'ms-8003': false });
+      const one = await expediteDeletion({
+        arr: releaseArr,
+        db: t.db,
+        maintainerr: bundle,
+        scope: 'item',
+        media: 'tv',
+        actorId: admin,
+        item: { collectionId: 8, maintainerrMediaId: 'ms-8001' },
+        logger: silentDomainLogger,
+      });
+      expect(one).toMatchObject({ protectedCount: 1, expeditedCount: 0 });
+      const all = await expediteDeletion({
+        arr: releaseArr,
+        db: t.db,
+        maintainerr: bundle,
+        scope: 'all',
+        media: 'tv',
+        actorId: admin,
+        snapshotMediaIds: ['ms-8001', 'ms-8002', 'ms-8003'],
+        logger: silentDomainLogger,
+      });
+      expect(all).toMatchObject({ protectedCount: 2, expeditedIds: ['ms-8003'] });
+      expect(handledIds(calls)).toEqual(['ms-8003']);
+    });
   });
 
   it('D-08: the space policy counts deletable candidates only (not watchlisted, not dnd)', async () => {
