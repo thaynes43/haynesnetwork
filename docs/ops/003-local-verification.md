@@ -180,6 +180,19 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   no results). To re-run the sync against the running stack: `DATABASE_URL=<the stack's>` plus the stack's
   `PLEX_*` / `TAUTULLI_*` env, then `pnpm --filter @hnet/sync sync -- --mode=watch` (the banner prints the
   database URL). Nothing here ever reaches a real Plex server.
+- **Watchlist protection** (ADR-093 / DESIGN-052; PLAN-072 S2). Both `dev:local` and the e2e harness run the real
+  `--mode=watchlist-registry` once at boot against the stubs: stub plex.tv serves the roster (`/api/v2/user`,
+  `/api/users` with the member, a friend whose community list is empty, and a managed Home user, `/api/home/users`),
+  community.plex.tv GraphQL at `/api` (`PLEX_COMMUNITY_URL` points at the stub; upper-case `MOVIE` / `SHOW` nodes,
+  `User not found:` for the managed user) and discover metadata (`/library/metadata/<24 hex>?includeGuids=1`); the
+  stub *arr serves Seerr's `/api/v1/user` and `/api/v1/user/{id}/watchlist?page=`. No default list holds a Trash
+  pool title. Expedite and Expire now take the Registry Gate, which needs a run at most 30 minutes old: re-run the
+  mode with the stack's env (`pnpm --filter @hnet/sync sync -- --mode=watchlist-registry`; the banner prints the
+  database URL). To see the Watchlist Keep, put a pool title on the member's community list, then re-run the mode:
+  `POST <stub-plex>/_stub/community {"uuid":"a1b2c3d4e5f60718","nodes":[{"id":"<its discover id>","type":"MOVIE"}]}`
+  (a pool item needs a `plex://` guid or a mapped id to match). `POST <stub-arr>/_stub/seerr-watchlist-error
+  {"on":true}` makes every Seerr watchlist page answer Seerr's failed-read body (HTTP 200, `totalPages: 0`), which
+  the registry must carry forward, never believe. The admin Watchlists card is on Settings, Trash, General.
 - **Public MCP connectors** (ADR-091 / DESIGN-050; PLAN-069). `POST /mcp` takes only delegated OAuth
   tokens; a local client can walk the whole flow against the stub OIDC with curl alone (verified 2026-09-23,
   port 3200 — substitute yours). Type `plex-linked-owner-id` at the `dev:local` terminal first (or `POST
