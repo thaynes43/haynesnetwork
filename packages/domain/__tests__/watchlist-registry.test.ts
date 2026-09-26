@@ -748,6 +748,28 @@ describe('refreshWatchlistRegistry + evaluateRegistryGate (embedded PG16)', () =
     expect(again[D]?.attempts).toBe(1);
   });
 
+  it('the discover map resolves a Seerr show (tmdb only) to its tvdb id, so the show counts as mapped', async () => {
+    const f = baseFixture();
+    f.accounts![1]!.seerr!.answer = {
+      kind: 'ok',
+      totalResults: 1,
+      items: [{ discoverId: E, kind: 'show', tmdbId: 1399 }],
+    };
+    f.discover = {
+      [B]: { kind: 'show', ids: { tmdbId: 1399, tvdbId: 121361, imdbId: null } },
+      [E]: { kind: 'show', ids: { tmdbId: 1399, tvdbId: 121361, imdbId: null } },
+    };
+    await refresh(f, T0);
+    const [row] = await t.db
+      .select()
+      .from(plexDiscoverIds)
+      .where(eq(plexDiscoverIds.discoverId, E));
+    expect(row).toMatchObject({ tvdbId: 121361, resolvedAt: T0 });
+    const snap = await readDisplayWatchlistSnapshot({ db: t.db });
+    expect(snap?.keys.show.unmapped).toBe(0);
+    expect(snap?.keys.show.tvdb.has(121361)).toBe(true);
+  });
+
   it('seerr_only accounts; a failed Seerr user list keeps links and fails every Seerr source', async () => {
     const f = baseFixture();
     f.seerrOnly = [

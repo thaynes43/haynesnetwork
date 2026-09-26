@@ -1035,8 +1035,12 @@ async function mapDiscoverIds(
     .leftJoin(plexDiscoverIds, eq(plexDiscoverIds.discoverId, watchlistRegistryItems.discoverId))
     .where(
       and(
-        isNull(watchlistRegistryItems.tmdbId),
-        isNull(watchlistRegistryItems.tvdbId),
+        // A title needs mapping when it lacks its kind's key (D-25k): a movie its tmdb id, a show its tvdb id (a
+        // Seerr show carries only a tmdb id).
+        or(
+          and(eq(watchlistRegistryItems.kind, 'movie'), isNull(watchlistRegistryItems.tmdbId)),
+          and(eq(watchlistRegistryItems.kind, 'show'), isNull(watchlistRegistryItems.tvdbId)),
+        ),
         or(
           isNull(plexDiscoverIds.discoverId),
           and(
