@@ -45,7 +45,7 @@ deletions (earliest 2026-10-02) plus the Q-01 Lidarr decision; fix the season-pa
 (issue #583 item 1) before flipping L2. Issue #583 also holds the L3 criterion rewrite and the dead
 Fireman Sam packs.
 
-## ▶ 2026-09-25 — Plex watchlist tools (PLAN-071): S1 merged, S2 built and reviewed (#580), release next
+## ▶ 2026-09-26 — Plex watchlist tools LIVE (v0.100.0): the hop and the Movie Room agent verified; two owner steps left
 
 Owner request 2026-09-25: the agents (ChatGPT, the Movie Room voice agent, dev-env) should add and remove
 titles on his Plex watchlist; ChatGPT had asked for `list_watchlist`, `set_watchlist` and `onWatchlist`
@@ -60,22 +60,21 @@ which does not exist today; ratings as a taste signal; Continue Watching hygiene
 watchlists). Issue **#576**: Seerr re-requests a Trashed title still among the owner's 20 newest
 watchlist titles (low exposure, needs a decision).
 
-**Status:** S1 merged (#577). S2 is built on `feat/plex-watchlist-tools` as PR **#580** and went through
-nine review passes; every finding is fixed on the branch and the rulings are DESIGN-051 D-13..D-15ad (the
-PLAN-071 log has one line per pass). The seventh also changed the MCP's Plex wiring: a third bundle,
-`discoverPlex` (one 1.5 s attempt), serves plex.tv's catalog lookup and the re-read after a failed PUT, since the
-lookup takes up to 1.3 s for a long-running show (D-15ab); S5 now adds and undoes one such show live. The eighth
-made an add never take a TMDB title of another year than the one named (it asks), and count the pool's own title
-when TMDB's page leaves it out (D-15ac). The ninth corrected D-12: the owner's ChatGPT connector (live since
-2026-09-25) keeps the seven tools until he refreshes it in ChatGPT's settings and starts a new chat (D-15ad). Code comments cite those D-IDs, never a "ruling N" number. **Next:** merge #580 once its required checks are green → S3 release
-(the release-please PR) → S4 haynes-ops image tag bump (migration 0080) → S5 live verify through the hop →
-S6 the hass-sandbox prompt line, the voice bench, the ChatGPT refresh (ask the owner, then check that `watchlist`
-answers there and `set_watchlist` is listed) and close-out. **Waiting on the owner:** haynes-ops
-**#3192**, a held draft that gives dev-env's GitOps `CLAUDE.md` the two new tools and a warning never to test
-`set_watchlist` with a title not on Plex; merging it restarts the dev-env pod, so the owner merges it at a
-natural break. **Parked (needs a design call):** the header-only per-attempt timers of the other HTTP
-wrappers, and passing the MCP deadline's `AbortSignal` into the domain calls, in `.agents/plans/TODO.md`
-(DESIGN-051 D-15p).
+**Status (2026-09-26):** live as **v0.100.0** (#580 → release #582 → haynes-ops **#3205**, migration 0080).
+PR #580 went through nine review passes (49 skeptic-verified findings fixed; DESIGN-051 D-13..D-15ad). PLAN-071
+S5 passed through the hop (adds, repeat add, undo, the undo replay guard, a long-running show, remove twice, all
+confirmed by plex.tv `userState` and restored), and S6's bench passed R-245 with nine tools (no median rose).
+**Found live:** Home Assistant loads an MCP server's tool list once, at entry setup, and never refreshes it (the
+`mcp` coordinator has no listeners), so the Movie Room agent needed `homeassistant.reload_config_entry` on the
+Watch history entry before it saw the new tools (done 09:08Z; OPS-015 §8 makes it a deploy step). The WATCH
+HISTORY prompt gained a line so the agent always says a Seerr download (hass-sandbox #197, applied with the
+attach helper's new `ACTION=update`). ADR-092 and DESIGN-051
+are Accepted. **Waiting on the owner, both in the morning:** (1) merge haynes-ops **#3192** (dev-env's
+`CLAUDE.md` gains the two tools and the Seerr test warning; it restarts the dev-env pod); (2) refresh the
+haynesnetwork connector in ChatGPT's settings, start a new chat and ask "what's on my watchlist?" (ChatGPT keeps
+a connector's old tool list until refreshed). That same ChatGPT question also logs the first OAuth token refresh
+PLAN-069 S8 still needs. Then PLAN-071 moves to `completed/`. Follow-up issues: **#576** (Seerr re-requests a
+Trashed title still on the watchlist), **#585** (ChatGPT's first calls exceed a tool's `limit`).
 
 ## ▶ 2026-09-24 — Public MCP connector LIVE (v0.98.0): the owner's ChatGPT connect is the last gate
 

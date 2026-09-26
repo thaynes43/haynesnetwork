@@ -1,6 +1,6 @@
 # DESIGN-051: Plex watchlist tools — `watchlist`, `set_watchlist`, "on your watchlist" in `watch_status`, and undoable watchlist changes
 
-- **Status:** Draft
+- **Status:** Accepted (2026-09-26; live as v0.100.0, PLAN-071 S5–S6 verified)
 - **Last updated:** 2026-09-26 (D-15 records the rulings from the PR #580 code review, folded into D-02..D-12 and
   D-14, D-15i/D-15j those of its second pass: the undo replay guard across clocks, and the Seerr sentence on a
   repeated or unconfirmed add, and D-15k..D-15p those of its third: an unsettled change when plex.tv cannot be
@@ -346,8 +346,14 @@ undo. The seeded watchlist keeps its current items.
 
 ### D-12 — Home Assistant and the other consumers
 
-HA re-reads `tools/list` on every call, so the Movie Room agent sees the tools after the deploy with no
-HA change. hass-sandbox's WATCH HISTORY prompt block gains one line (use `watchlist` / `set_watchlist`
+The Movie Room agent does NOT see new tools by itself (corrected at PLAN-071 S6): the MCP client calls
+`tools/list` after each tool call, but the list HA hands the LLM is the `mcp` integration's
+`ModelContextProtocolCoordinator` data, loaded once at entry setup. Its 30-minute `UPDATE_INTERVAL` never fires,
+because a `DataUpdateCoordinator` schedules refreshes only while it has listeners and the `mcp` integration adds
+none (HA 2026.9). Text tests at 08:39Z and 09:06Z, 6 and 33 minutes after the rollout, still answered "I can't
+add titles to a watchlist"; after `homeassistant.reload_config_entry` on the "Watch history" entry
+(`01M381GTWER1BG9K4MWG3GDEGR`) at 09:08Z the agent added and undid The Matrix through `set_watchlist`. So any
+deploy that changes the tool list reloads that entry (OPS-015 §8). hass-sandbox's WATCH HISTORY prompt block gains one line (use `watchlist` / `set_watchlist`
 for the Plex watchlist; adding a title not on Plex downloads it) through its own short PR, and the
 attach helper's byte-identical copy with it. ChatGPT does not pick the change up by itself (corrected by
 D-15ad): it caches a connector's tools, their descriptions and the server `instructions`, and a chat keeps the
