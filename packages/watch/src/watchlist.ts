@@ -80,6 +80,12 @@ export const WATCHLIST_OVERLAY_MARGIN_SECONDS = 5 * 60;
  */
 export const WATCHLIST_REMOVE_REPLAY_SECONDS = 10 * 60;
 /**
+ * DESIGN-049 D-15 — how far back `undo_last_change` reaches (`UNDO_WINDOW_SECONDS` in `@hnet/domain` is this
+ * value). An undo's inverse call can therefore run at most this long after its change was made, which bounds how
+ * far back a change whose undo plex.tv never confirmed can matter (DESIGN-051 D-15r).
+ */
+export const WATCH_UNDO_WINDOW_SECONDS = 24 * 60 * 60;
+/**
  * D-05: with no cached rows at all, the overlay replays the changes of the last day. (Nothing records a
  * watchlist fetch that found no titles — the sync's replace leaves no row, and `watch_accounts.resolved_at` is
  * stamped before the watchlist read, even when that read fails — so the look-back is the fallback.)

@@ -5,8 +5,10 @@
   D-14, D-15i/D-15j those of its second pass: the undo replay guard across clocks, and the Seerr sentence on a
   repeated or unconfirmed add, and D-15k..D-15p those of its third: an unsettled change when plex.tv cannot be
   read, several watchlist titles under one name, a failed clear, a write that may still land, a pending change
-  in undo, and a per-attempt timer that covers the body; D-14 the rulings made while building; D-13 the rulings
-  from the PR #577 design review, folded into D-02..D-11).
+  in undo, and a per-attempt timer that covers the body, and D-15q..D-15s those of its fourth: a remove finds a
+  pending add and every add the cache cannot have seen, an undo plex.tv never confirmed leaves its title
+  unsettled, and the unsettled check reads the title's whole run of changes; D-14 the rulings made while
+  building; D-13 the rulings from the PR #577 design review, folded into D-02..D-11).
 - **Satisfies:** PRD-001 R-252, R-253, R-245 (amended), US-15, AC-29..AC-31; governed by ADR-092; extends
   DESIGN-049 (the Watch Companion: D-05 tool contract, D-12..D-15 marks and undo, D-13 resolver, D-17
   candidates) and DESIGN-050 D-07 (the principal, owner-only Plex write-back).
@@ -96,11 +98,14 @@ defaults, bounded integers) and are hand-written like the others.
 2. **Resolve** (DESIGN-049 D-13, unchanged scoring). `add`: the normal pool, then the one TMDB
    `search/multi` fallback. `remove`: the pool is **the overlaid watchlist** (D-05) plus the titles a
    watchlist mark removed in the last 10 minutes (so a retried remove reaches step 4 and answers "isn't
-   on your watchlist"), and no TMDB fallback. Since D-15 that retry pool also holds the titles a
-   `watchlist_add` of the last 10 minutes failed to add (it may have landed), and plex.tv's live state
-   (step 4) decides. `kind` filters as for marks. **An add's TMDB fallback collects every exact
-   normalized-title hit of the eligible kind(s); two or more distinct TMDB ids are ambiguous** (listed with
-   their years), since an add can download (ADR-092 C-07); the fallback makes a single attempt (D-15). A
+   on your watchlist"), and no TMDB fallback. Since D-15 that pool also holds the titles a `watchlist_add`
+   failed to add (it may have landed) or never finalized (D-15q), for every such add the cache cannot have
+   seen (made since its fetch less the D-05 margin, or in the last 10 minutes, whichever reaches further
+   back), and the titles a written remove took off whose undo plex.tv never confirmed, within the undo
+   window (D-15r); plex.tv's live state (step 4) decides. `kind` filters as for marks. **An add's TMDB
+   fallback collects every exact normalized-title hit of the eligible kind(s); two or more distinct TMDB
+   ids are ambiguous** (listed with their years), since an add can download (ADR-092 C-07); the fallback
+   makes a single attempt (D-15). A
    same-name group whose watchlist titles carry **different discover ids** writes nothing either and answers
    that it can't tell them apart (D-15e, D-15l).
    Ambiguous and not-found never write: no row, no Plex call.
@@ -120,10 +125,13 @@ defaults, bounded integers) and are hand-written like the others.
    wanted state already holds, answer "already on" / "isn't on" with **no row and no write**; so a
    retried call (HA's trailing `tools/list` failure, DESIGN-049 D-05) is a truthful no-op and never
    becomes the "last change". If the userState read fails, the overlaid cache decides instead, unless the
-   title's latest Watchlist Change since the cache's fetch (less the D-05 margin) is one plex.tv never settled
-   (`pending`, or `failed` with an `unknown:` error, and not cleared by a written undo): the cache cannot show
-   such a change, so the write goes out (both calls are idempotent). A remove sent that way over an unsettled
-   **add** is finalized `written` with a `plex_error` starting `after unsettled:` (D-15k).
+   title's changes end in a call plex.tv never settled: a change since the cache's fetch (less the D-05
+   margin) that is `pending`, or `failed` with an `unknown:` error, and not cleared by a written undo
+   (D-15k), or a change whose undo failed (D-15r). The title's changes are walked newest first, past those
+   that failed definitively, back to the newest one still live whose own call was written or that the cache
+   has read (D-15s). The cache cannot show such a call, so the write goes out (both calls are idempotent). A
+   remove sent that way over a run holding an unsettled **add** is finalized `written` with a `plex_error`
+   starting `after unsettled:` (D-15k, D-15s).
 5. **Row.** Insert a Watch Mark: `action` `watchlist_add` | `watchlist_remove`, `scope` = the kind
    (`movie` | `show`), the resolved identity with `plex_guid = plex://<kind>/<id>` and `title_key`
    recomputed from it (`titleKeyFor`, as `withPlexIdentity` does), plex.tv's title and year, `query`,
@@ -249,8 +257,9 @@ read plex.tv just before a change cannot erase it from the answers.
   action other than `watched` as a dismissal (`indexMarks` falls through to `notMine`,
   `ledgerExclusions` takes every live mark). So the new actions never reach exclusions, the Taste
   Profile, Unfinished, Ever Watched, `recent_history`, `watch_status`'s dismissal wording, the replay
-  rule, or the sync's TMDB seed pick (`pickSeeds`). Only the overlay and undo read watchlist marks, each
-  with its own query.
+  rule, or the sync's TMDB seed pick (`pickSeeds`). Watchlist marks are read only by their own queries:
+  the overlay (`selectWatchlist`), undo and its replay guard, the remove pool (`selectResolverPool`'s
+  `watchlist_recent`, D-03 step 2) and the unsettled check (D-03 step 4).
 - `watch_reco_signals` is unchanged; the sync is unchanged.
 
 ### D-08 — Voice Budget
@@ -329,13 +338,13 @@ during the rolling deploy is accepted (minutes, and only if the owner changes hi
 
 An Opus review of the S2 build found two blockers and a set of should-fix items; the owner-facing
 behavior ones are ruled here and folded into D-02..D-12 and D-14 above. A second pass over the fixed branch
-(findings C1..C7, each verified by independent skeptics) added D-15i and D-15j, and a third (findings E1..E6,
-verified the same way) D-15k..D-15p.
+(findings C1..C7, each verified by independent skeptics) added D-15i and D-15j, a third (findings E1..E6,
+verified the same way) D-15k..D-15p, and a fourth (findings F1..F10, verified the same way) D-15q..D-15s.
 
 | ID | Review | Ruling |
 |---|---|---|
 | D-15a | A1 | **A change that could not be sent is still a Watch Mark.** When the title resolved but the catalog lookup failed (either path of D-03 step 3) or no Plex client is configured, a `watchlist_add` / `watchlist_remove` row is inserted `failed`, with no plex guid and a `plex_error` starting `not sent:`. Before, nothing was recorded, so "undo that" after the failure reverted the previous, unrelated change (for an older remove: a re-add that can download). Its undo makes no call and says the change never reached Plex. |
-| D-15b | A2 | **Unknown outcomes are said, and undo is shaped by what a call can do.** The re-read after a failed PUT goes out on the write budget, not the 300 ms one (a slow plex.tv answers the re-read too late on the short budget, turning a landed write into a false "didn't change"). If it still gets no answer, the mark is `failed` with an `unknown:` error, the D-10 result is `unknown`, and the answer is "Plex didn't answer in time, so I can't tell whether X changed." Undo of any failed `watchlist_add` that went out sends `removeFromWatchlist` anyway (idempotent; a removal never downloads) and answers from that call; undo of a failed `watchlist_remove` makes no call (its inverse is an add, which could download) and says the change never confirmed with Plex, so the watchlist was left as it is. A failed add of the last 10 minutes joins the remove pool (D-03 step 2) so a remove finds it and plex.tv's live state decides. An undo whose inverse call cannot be confirmed uses the same unknown-outcome words. |
+| D-15b | A2 | **Unknown outcomes are said, and undo is shaped by what a call can do.** The re-read after a failed PUT goes out on the write budget, not the 300 ms one (a slow plex.tv answers the re-read too late on the short budget, turning a landed write into a false "didn't change"). If it still gets no answer, the mark is `failed` with an `unknown:` error, the D-10 result is `unknown`, and the answer is "Plex didn't answer in time, so I can't tell whether X changed." Undo of any failed `watchlist_add` that went out sends `removeFromWatchlist` anyway (idempotent; a removal never downloads) and answers from that call; undo of a failed `watchlist_remove` makes no call (its inverse is an add, which could download) and says the change never confirmed with Plex, so the watchlist was left as it is. A failed add of the last 10 minutes joins the remove pool (D-03 step 2) so a remove finds it and plex.tv's live state decides (widened by D-15q to every failed or pending add the cache cannot have seen). An undo whose inverse call cannot be confirmed uses the same unknown-outcome words. |
 | D-15c | A4 | **Undos of one account are serialized.** `undoLastChange` runs in a transaction that first takes `pg_advisory_xact_lock(hashtext('watch_undo'), hashtext(<plex account id>))`, so the replay guard, the pick, the Plex call and the revert happen one undo at a time across replicas; a second copy of a retried undo waits, then sees the first one's revert and repeats its answer. The review's suggested variant (a conditional final UPDATE that re-runs the guard when another mark was reverted meanwhile) was not taken: the losing undo would already have sent its Plex call for the next-older mark, which for a watchlist remove is an add that can download. The lock stops it before any call. Costs: the transaction holds one database connection while the undo's Plex calls run (for a Watchlist Change about 5.2 s at worst, D-14a), and a crash mid-undo rolls the revert record back, so the next undo retries the same mark, whose inverse call is idempotent. |
 | D-15d | A5 | **Accepted:** a call that changed nothing writes no row (a replayed `mark_watched`, D-14 step 7 of DESIGN-049; an "already on" `set_watchlist`), so inside the 30 seconds after an undo it does not reset the guard, and the next undo repeats the last answer instead of reverting an older mark. Nothing changed, so there is nothing new to undo; after 30 seconds undo works as usual. |
 | D-15e | A6 | **One name, several watchlist titles, asks** (the answer is no longer a question since D-15l). When the resolved same-name group holds watchlist entries with different discover ids (two titles plex.tv lists under one name and year), `set_watchlist` answers ambiguous with those titles and writes nothing, checked before anything else (no row, no Plex call, even with no Plex client). Before, the first one was changed silently. |
@@ -350,6 +359,15 @@ verified the same way) D-15k..D-15p.
 | D-15n | E4 | **A write that may still land is never "didn't change".** After a timed-out PUT, plex.tv may still apply the aborted attempt after the re-read (verified with a fake that applies it 2.7 s after the first attempt: the re-read saw the old state, and the write landed 0.4 s later), so the old state on the re-read proves nothing. D-03 step 6 now reads "the other state ⇒ `failed`" only when plex.tv answered every attempt (a 5xx other than 504); after a timeout, a dropped connection or a 504 on any attempt (`PlexError.mayStillLand`, set by `PlexHttp` across the retries, so an earlier timeout counts even when the last attempt got a 503 or a 429) the outcome is unknown, answered with the unknown-outcome words and, for an add not on Plex, the Seerr sentence. Undo uses the same rule. Connection-refused errors count as "may still land" too (which side of sending they failed on is not known); the cost is an honest "can't tell" where "didn't change" was true. |
 | D-15o | E5 | **Undo never walks past a pending Watchlist Change.** DESIGN-049 D-15 never picks a `pending` mark, which for a Watchlist Change whose finalize never ran (its replica died mid-call, the finalize UPDATE failed, or a stalled body held it) made "undo that" revert the older change instead (for an older remove: a re-add that can download), and the row could never be picked later. A pending Watchlist Change is now picked (its row carries its plan: guid and action). Under 60 seconds old (the change's own work is bounded at about 5.2 s, D-15p) it answers that Plex is still working on it and reverts nothing; older, it is closed `failed` with `unknown: never finalized` and undone like an unconfirmed change. The change's own finalize only updates a row still `pending`, so it never overwrites that close. Taking the undo lock inside `changeWatchlist` was not done: the pending row must commit before the PUT, or a crash would leave no record at all (D-15a). |
 | D-15p | E6 | **Each attempt's timer covers the body.** `PlexHttp` cleared its timer once the headers arrived, so a response whose body then stalled (a half-open connection) held the watchlist PUT, the userState and match reads for undici's 300 s body timeout: a mark stayed `pending` for minutes, an undo held its advisory lock and a pooled connection, and a stalled read let a change's PUT go out minutes after its caller was answered. The timer now runs until the body has been read (a write's 2xx stands if only its body stalls; a read's stalled body is a timeout, retried like one). The MCP's TMDB searches opt into the same bound on the shared `ArrHttp` (`timeoutCoversBody`); the other `ArrHttp` callers keep today's behaviour (the syncs read list bodies that may stream past their per-attempt timeout), parked in `.agents/plans/TODO.md` with the other HTTP wrappers. An undo also waits for the lock at most 9 s (`lock_timeout`, the MCP deadline), so a stuck holder cannot queue the rest. |
+| D-15q | F1, F4, F5 | **A remove finds every add the cache cannot have seen.** The remove pool (D-03 step 2) held only `failed` adds of the last 10 minutes. An add left `pending` after its PUT landed (its replica died before the finalize, D-15o), or an unconfirmed add older than 10 minutes that the cache was read just before, answered "I couldn't find X on your watchlist." with no Plex call while plex.tv listed it for Seerr to request. The pool now takes adds that are `failed` or `pending`, made since the cache's fetch less the D-05 margin or in the last 10 minutes, whichever reaches further back; plex.tv's live state then decides (unreadable, D-15k's check, which treats `pending` as unsettled). Cost, accepted: while nothing is cached (the now − 24 h fallback of D-05), a failed add of the last day is in the pool, so a remove of it costs one userState read and answers "isn't on" instead of "couldn't find". |
+| D-15r | F2, F4 | **An undo plex.tv never confirmed leaves its title unsettled.** The undo of a written change whose inverse call fails records only `revert_result = 'failed'` (the change stays live), and the overlay ignores a failed undo, so the cache still shows the original change. With userState unreadable, "remove X" after an unconfirmed undo of a remove answered "isn't on your watchlist" (the undo's add may have landed, and Seerr requests it), and "add X" after an unconfirmed undo of an add a false "already on". Now a failed undo is an unsettled call, since the row cannot tell a definitive failure from an unknown one and the asked write is idempotent. That holds for a change the cache has read too, since an undo can run up to a day after its change: the check looks back one undo window before the cache's fetch. The remove pool also holds a written remove whose undo failed, within the undo window, so a remove finds its title after the 10-minute replay window too. A remove sent over such an undo is not `after unsettled:` (the undo put back a title the owner had), so its own undo puts the title back. Cost, accepted: when that undo's call failed outright (nothing landed), a later change of the title while userState is unreadable sends its idempotent write instead of the cache's "isn't on" / "already on", until a later written change settles it or the change leaves the undo window. |
+| D-15s | F3 | **The unsettled check reads the title's whole run, not only its newest change.** D-15k looked at the latest Watchlist Change alone. A remove plex.tv never confirmed, sitting between an unsettled add and the remove that finally landed, dropped the `after unsettled:` marker, so undo re-added (and Seerr requested) a title nothing ever showed on the list. Likewise, a change that failed outright (a 429) hid an older unsettled add, so the next remove answered "isn't on" from the cache. Now the title's changes are walked newest first. A change that failed outright changed nothing and is walked past. The walk ends at the newest change still live (no undo closed it) whose own call was written or that the cache has read: undo reaches an older change only once every newer one is closed, so nothing older ran after it. A written call (a change or an undo) supersedes the older changes' own calls, but not an older change's failed undo, which may have run after it. The marker names any unsettled add in the run. |
+
+Fixed with no design change in the fourth pass: the PRD's AC-23, R-244 and the connector intro now carry the
+ADR-092 amendment (nine tools, 4,096 bytes; review F6); DDD-002 BC-06's Outbound list names the watchlist writes
+(F7); DESIGN-050 D-14 points to D-09 for the owner's consent lines (F8); the comments that said only the overlay
+and undo read watchlist marks, or that undo skips a failed Watchlist Change, list the real readers and follow
+D-04 (F9); and the HANDOFF entry for PLAN-071 is current (F10). F1 and F5 were one defect (D-15q).
 
 Fixed with no design change in the second pass: a test proves `set_watchlist` resolves through the
 single-attempt TMDB client and every other tool through the retrying one, and that `defaultDeps` builds them that
@@ -394,6 +412,11 @@ beside em dashes); and the `@hnet/watch` README ("started" includes a Taster).
   two watchlist titles of one name (no question, D-15l), non-owner (no row, no call); with userState unreadable,
   a remove after an unconfirmed add and an add after an unconfirmed remove (the write goes out, D-15k; the cache
   decides again once a sync has read plex.tv), a timed-out PUT the re-read cannot settle (unknown, D-15n);
+  a remove after an add left pending once its PUT landed, and after an unconfirmed add more than 10 minutes
+  old that the cache read just before (both found and sent, D-15q; a failed add the cache has read since
+  leaves the pool); a remove and an add after an undo plex.tv never confirmed, also once the cache has read
+  the change (sent, D-15r); an unconfirmed remove between an unsettled add and the remove that lands, and a
+  refused remove after an unsettled add (the marker kept, the removal sent, D-15s), and the run walk itself;
   undo of an add, of a remove,
   of a change never sent (`none`, no call, the older change untouched), of a failed add (the removal sent
   anyway) and of a failed remove (no call), an unconfirmed undo of a remove (the Seerr sentence), the

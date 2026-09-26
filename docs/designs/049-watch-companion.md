@@ -627,7 +627,7 @@ left a case open. `packages/watch/README.md` lists the final signatures; the tes
   per-source degradation, change-detected `allLeaves` re-reads, watchlist replace, seed refresh
   cadence).
 - `@hnet/mcp`: the SDK client end to end against the handler with a seeded database: initialize
-  (no session id), `tools/list` ≤ 3,072 bytes, each tool's happy path and budget, 401/503/405,
+  (no session id), `tools/list` ≤ 3,072 bytes (4,096 since ADR-092 C-09), each tool's happy path and budget, 401/503/405,
   scope checks, strict inputs.
 - `apps/web`: the route adapter test (mocks `@hnet/mcp`, like the webhook route test).
 - `@hnet/arr`: an error-message test proving `apikey`/`api_key`/`token`/`X-Plex-Token` values never appear in `ArrHttpError`,

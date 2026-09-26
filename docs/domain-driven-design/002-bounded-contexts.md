@@ -1,7 +1,7 @@
 # DDD-002: Bounded Contexts
 
 - **Status:** Accepted
-- **Last updated:** 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
+- **Last updated:** 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
 - **Related:** PRD-001, DDD-001
 
 Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs as
@@ -177,7 +177,9 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
   Token** (T-258), answering for its user's **Tracked Account** (T-259); consent from a signed-in
   BC-01 user.
 - **Outbound:** Plex `scrobble`/`unscrobble` for `watched` Watch Marks only (owner ruling
-  2026-09-23), through the import-confined `@hnet/plex/write`. Nothing else is written anywhere.
+  2026-09-23), and the owner's plex.tv watchlist (`addToWatchlist` / `removeFromWatchlist`) for an
+  owner-issued Watchlist Change and its undo (ADR-092; Seerr auto-requests what it adds), both through
+  the import-confined `@hnet/plex/write`. Nothing else is written anywhere.
 - **Reuse, not reinvention:** the Server Owner comes from BC-04's owner recognition (ADR-029); the
   Tautulli trio from the ADR-068 env contract; ratings, genres and availability from BC-03's
   ledger (`media_metadata`, `media_plex_matches`). BC-06 reads them and owns none of them.

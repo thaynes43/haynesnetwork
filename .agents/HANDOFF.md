@@ -45,7 +45,7 @@ deletions (earliest 2026-10-02) plus the Q-01 Lidarr decision; fix the season-pa
 (issue #583 item 1) before flipping L2. Issue #583 also holds the L3 criterion rewrite and the dead
 Fireman Sam packs.
 
-## ▶ 2026-09-25 — Plex watchlist tools (PLAN-071): researched, owner-ruled, docs on branch, build next
+## ▶ 2026-09-25 — Plex watchlist tools (PLAN-071): S1 merged, S2 built and reviewed (#580), release next
 
 Owner request 2026-09-25: the agents (ChatGPT, the Movie Room voice agent, dev-env) should add and remove
 titles on his Plex watchlist; ChatGPT had asked for `list_watchlist`, `set_watchlist` and `onWatchlist`
@@ -58,7 +58,18 @@ ADR-088 C-03 in part), **DESIGN-051**, **PLAN-071**, PRD R-252..R-253 / US-15 / 
 T-260. Follow-ups ranked in the research note §5 (play in the Movie Room needs HA's Plex integration,
 which does not exist today; ratings as a taste signal; Continue Watching hygiene; household
 watchlists). Issue **#576**: Seerr re-requests a Trashed title still among the owner's 20 newest
-watchlist titles (low exposure, needs a decision). **Next:** PLAN-071 S1 merge → S2 build → S3–S6.
+watchlist titles (low exposure, needs a decision).
+
+**Status:** S1 merged (#577). S2 is built on `feat/plex-watchlist-tools` as PR **#580** and went through
+four review passes; every finding is fixed on the branch and the rulings are DESIGN-051 D-13..D-15s (the
+PLAN-071 log has one line per pass). **Next:** merge #580 once its required checks are green → S3 release
+(the release-please PR) → S4 haynes-ops image tag bump (migration 0080) → S5 live verify through the hop →
+S6 the hass-sandbox prompt line, the voice bench and close-out. **Waiting on the owner:** haynes-ops
+**#3192**, a held draft that gives dev-env's GitOps `CLAUDE.md` the two new tools and a warning never to test
+`set_watchlist` with a title not on Plex; merging it restarts the dev-env pod, so the owner merges it at a
+natural break. **Parked (needs a design call):** the header-only per-attempt timers of the other HTTP
+wrappers, and passing the MCP deadline's `AbortSignal` into the domain calls, in `.agents/plans/TODO.md`
+(DESIGN-051 D-15p).
 
 ## ▶ 2026-09-24 — Public MCP connector LIVE (v0.98.0): the owner's ChatGPT connect is the last gate
 

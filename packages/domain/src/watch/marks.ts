@@ -59,6 +59,7 @@ import {
   type UndoView,
   type WatchKind,
   type WatchlistUndoOutcome,
+  WATCH_UNDO_WINDOW_SECONDS,
 } from '@hnet/watch';
 import { and, desc, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from '../db-client';
@@ -106,8 +107,8 @@ export type WatchPhases = Partial<Record<'resolve' | 'revalidate' | 'plex_write'
 
 /** D-14 step 7: a repeat of the same mark within this window that would flip nothing is a replay. */
 export const MARK_REPLAY_SECONDS = 10 * 60;
-/** D-15: undo reaches back this far. */
-export const UNDO_WINDOW_SECONDS = 24 * 60 * 60;
+/** D-15: undo reaches back this far (one value with `@hnet/watch`'s, which the watchlist reads bound by it). */
+export const UNDO_WINDOW_SECONDS = WATCH_UNDO_WINDOW_SECONDS;
 /**
  * PLAN-071 ruling 5 (all marks): an undo this soon after the account's last COMPLETED undo, with no mark made
  * since, is a retry of that undo (Home Assistant's trailing `tools/list` failure, a ChatGPT retry): it repeats the

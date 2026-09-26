@@ -151,8 +151,9 @@ function tmdbOption(t: ResolvedWatchTitle): PoolEntry {
  *
  * ADR-092 / DESIGN-051 (PLAN-071):
  * - `pool: 'watchlist'` — a `set_watchlist` remove: the pool is only the overlaid watchlist plus the titles a
- *   Watchlist Change of the last 10 minutes removed, or tried and failed to add (so a retried remove finds the
- *   title and plex.tv's live state answers), and there is no TMDB fallback (D-03 step 2).
+ *   Watchlist Change may have left on plex.tv's list (a written remove of the last 10 minutes or one whose undo
+ *   never confirmed, an add that failed or never finalized which the cache cannot have seen: D-15q, D-15r), so a
+ *   retried remove finds the title and plex.tv's live state answers; there is no TMDB fallback (D-03 step 2).
  * - `tmdbAmbiguity: 'ask'` — a `set_watchlist` add, which can download the title (ADR-092 C-07): EVERY exact TMDB
  *   hit of the eligible kind(s) counts, and more than one distinct title is ambiguous (listed with their years),
  *   never the first hit. The mark flows keep D-13's first exact hit.

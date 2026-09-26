@@ -1,7 +1,7 @@
 # DESIGN-050: Public connectors for the MCP surface — the in-app OAuth 2.1 authorization server, the public `/mcp`, and the Connected apps page
 
 - **Status:** Draft
-- **Last updated:** 2026-09-24 (D-15: the build and review rulings from PR #572 — no error redirects, rotation checked before revocation, used clients never pruned, framing denied)
+- **Last updated:** 2026-09-25 (D-14's owner consent lines amended by ADR-092 / DESIGN-051 D-09, D-15h: the owner's `watch:read` and `watch:write` lines name his Plex watchlist; D-13 and the overview note the nine tools). Prior: 2026-09-24 (D-15: the build and review rulings from PR #572 — no error redirects, rotation checked before revocation, used clients never pruned, framing denied)
 - **Satisfies:** PRD-001 R-247..R-251, US-14, AC-25..AC-28; governed by ADR-091 (this surface),
   ADR-087 (the in-cluster surface it sits beside), ADR-088 (the watch read-model), ADR-014
   (inline two-step confirm), ADR-015 (no re-orientation on interaction).
@@ -17,7 +17,7 @@ ChatGPT / claude.ai / Claude Code / Codex ──▶ https://haynesnetwork.com/.w
         │  browser ──▶ GET /oauth/authorize ──▶ (no session) /login?next=… ──▶ Authentik ──▶ back
         │                                   ──▶ /oauth/consent?txn=… (any signed-in user) ──▶ code ──▶ client
         │  POST /oauth/token (code + PKCE verifier | refresh rotation) ──▶ opaque access + refresh tokens
-        └─ POST /mcp  Authorization: Bearer <access token> ──▶ @hnet/mcp (OAuth consumer) ──▶ the seven tools
+        └─ POST /mcp  Authorization: Bearer <access token> ──▶ @hnet/mcp (OAuth consumer) ──▶ the watch tools
 Home Assistant / dev-env ──▶ hop ──▶ POST /api/mcp  (unchanged, ADR-087; never routed publicly)
 ```
 
@@ -218,7 +218,9 @@ the routes already forward `PathPrefix(/)` and keep `!PathPrefix(/api/mcp)`.
 ### D-13 — What does not change
 
 The hop, `/api/mcp`, the seven tools and their budgets, the Movie Room agent, dev-env's `mcp.json`
-(the hop entry in haynes-ops #3140), ADR-087's IngressRoute exclusions.
+(the hop entry in haynes-ops #3140), ADR-087's IngressRoute exclusions. _(ADR-092 / DESIGN-051 later added
+`watchlist` and `set_watchlist`, nine tools, and raised the `tools/list` cap to 4,096 bytes; this surface
+serves the same tools.)_
 
 ### D-14 — User-facing copy (normative; the owner copy rules apply)
 
@@ -228,6 +230,10 @@ Redirect line: `Sends you back to <redirect host>.` Scope lines: `watch:read` �
 watched and what is unfinished`; `watch:write` → for the server owner `Mark titles watched or
 dismissed, and change them in Plex`, for anyone else `Mark titles watched or dismissed in your
 history`; `offline_access` → `Stay connected without signing in again`. Buttons: `Approve`, `Deny`.
+_(Amended by ADR-092 / DESIGN-051 D-09, D-15h, 2026-09-25: for the server owner, `watch:read` is `See what
+you have watched, what is unfinished, and your watchlist` and `watch:write` is `Mark titles watched or
+dismissed, update Plex to match, and add or remove titles on your Plex watchlist`; everyone else's lines are
+unchanged. `SCOPE_DESCRIPTIONS` in `packages/oauth/src/config.ts` is the served copy.)_
 
 **Expired request** — title: `This request expired`. Body: `Start the connection again from
 <client name>.` (or `from your app` when the client is unknown).

@@ -1297,7 +1297,8 @@ export type WatchShowStatus = (typeof WATCH_SHOW_STATUSES)[number];
 // children watch on the owner account and an un-mark would erase their progress (ADR-088).
 // ADR-092 / DESIGN-051 D-07 (PLAN-071, migration 0080) — `watchlist_add` / `watchlist_remove`: a Watchlist
 // Change (T-260), the owner's plex.tv watchlist changed through `set_watchlist` (never view state, never a
-// library). They are NOT watch statements: only the watchlist overlay and undo read them, and every reader of
+// library). They are NOT watch statements: only their own queries read them (the watchlist overlay, undo and
+// its replay guard, the `set_watchlist` remove pool, the unsettled check; DESIGN-051 D-07), and every reader of
 // the statements (Ever Watched, exclusions, the Taste Profile, dismissals, Unfinished, seeds) ignores them.
 export const WATCH_STATEMENT_ACTIONS = ['watched', 'not_interested', 'not_mine'] as const;
 export type WatchStatementAction = (typeof WATCH_STATEMENT_ACTIONS)[number];
@@ -1314,7 +1315,9 @@ export type WatchMarkScope = (typeof WATCH_MARK_SCOPES)[number];
 // watch_marks.plex_result — the Plex write-back outcome (D-14 steps 4/6): inserted `pending` before any
 // write, finalized `written` / `partial` / `failed`, or `not_on_plex` (no holding server — history only).
 // `none` = a mark that never writes Plex (`not_interested` / `not_mine`). A Watchlist Change (ADR-092) is
-// `pending` → `written` | `failed` (a `failed` one changed nothing: the overlay and undo skip it).
+// `pending` → `written` | `failed`: a `failed` one whose `plex_error` starts `not sent:` never went out, one that
+// starts `unknown:` may have landed. The overlay skips a failed change; undo still picks it (DESIGN-051 D-04: a
+// failed add is removed anyway, a failed remove is left as it is).
 export const WATCH_MARK_PLEX_RESULTS = [
   'pending',
   'written',

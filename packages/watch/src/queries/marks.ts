@@ -4,7 +4,9 @@
 // ADR-092 / DESIGN-051 D-07 — the live WATCH STATEMENTS only (`watched`, `not_interested`, `not_mine`): a
 // Watchlist Change (`watchlist_add` / `watchlist_remove`) says nothing about viewing, so Ever Watched, the
 // exclusions, the Taste Profile, the dismissed flag, Unfinished, recent history and the seed picker — every
-// caller of this query — never see one. Only the watchlist overlay (`selectWatchlist`) and undo read them.
+// caller of this query — never see one. Only their own queries read them: the watchlist overlay
+// (`selectWatchlist`), undo and its replay guard, the `set_watchlist` remove pool (`selectResolverPool`) and the
+// unsettled check (`@hnet/domain`'s `selectUnsettledWatchlistRun`).
 import {
   WATCH_STATEMENT_ACTIONS,
   watchMarks,

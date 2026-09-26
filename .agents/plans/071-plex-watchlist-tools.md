@@ -66,3 +66,11 @@
   older change (D-15o); each attempt's timer in `PlexHttp` covers the body, the MCP's TMDB searches opt in on
   `ArrHttp`, and an undo waits for the lock at most 9 s (D-15p). The other HTTP wrappers' header-only timers
   are parked in `.agents/plans/TODO.md`.
+- 2026-09-25: fourth review pass on PR #580 (findings F1..F10, verified by independent skeptics), fixed on the
+  branch: a remove finds an add left `pending` after its PUT landed and every failed or pending add the cache
+  cannot have seen, not only the failed adds of the last 10 minutes (DESIGN-051 D-15q); an undo plex.tv never
+  confirmed leaves its title unsettled, and a remove finds a title whose undo may have put it back (D-15r); the
+  unsettled check walks the title's whole run of changes, so a change in between neither drops the
+  `after unsettled:` marker nor hides an older unsettled add (D-15s). Docs made current: PRD AC-23, R-244 and the
+  connector intro (nine tools, 4,096 bytes), BC-06's Outbound list, DESIGN-050 D-14 (the owner's consent lines),
+  the comments naming the watchlist marks' readers, and HANDOFF.

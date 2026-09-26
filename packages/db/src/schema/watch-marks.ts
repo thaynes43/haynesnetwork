@@ -52,7 +52,8 @@ export interface WatchMarkFlip {
  * - ADR-092 / DESIGN-051 D-07 (migration 0080) — `watchlist_add` / `watchlist_remove`, a Watchlist Change
  *   (T-260): the owner's plex.tv watchlist changed by `set_watchlist` (`scope` = the kind, `plex_guid` =
  *   `plex://<kind>/<discover id>`, `flipped = []`, `plex_result` `pending` → `written` | `failed`). Not a watch
- *   statement: only the watchlist overlay and undo read them.
+ *   statement: only their own queries read them (the watchlist overlay, undo and its replay guard, the
+ *   `set_watchlist` remove pool, the unsettled check; DESIGN-051 D-07).
  *
  * The row carries the resolved identity (`title_key` plus the external ids) so a later re-key of the
  * watch_titles row cannot orphan it. `query` is what was asked, trimmed to 200 characters by the writer.
