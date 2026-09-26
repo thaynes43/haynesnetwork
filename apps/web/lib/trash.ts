@@ -742,13 +742,18 @@ export const WATCHLIST_CLASS_LABELS: Record<string, string> = {
   friend: 'Friends',
   seerr_only: 'Seerr only',
 };
-export const WATCHLIST_STATUS_LABELS: Record<string, string> = {
+/**
+ * DESIGN-052 D-25bg — the "Lists" group: every account once, split the same way as the headline. `read` is the
+ * headline's "n accounts read"; the other four add up to its "m can't be read" (so none of them reuses that phrase).
+ */
+export const WATCHLIST_LIST_LABELS: Record<string, string> = {
   read: 'Read',
-  carried: 'Kept from last check',
+  empty: 'Empty or hidden',
   never_read: 'Not read yet',
   unreadable: 'Kept from an old check',
-  unresolvable: "Can't be read",
+  unresolvable: 'Not supported',
 };
+export const WATCHLIST_LIST_ORDER = ['read', 'empty', 'never_read', 'unreadable', 'unresolvable'] as const;
 
 // ── the Release Block and re-add counts on the Watchlists card (ADR-093 / DESIGN-052 D-23) ──────────────────────────
 // Counts only, never a title (ADR-093 C-06 applies to the card as a whole).
@@ -773,9 +778,22 @@ export function exclusionCountValue(count: number | null): string {
   return count === null ? 'not available' : count.toLocaleString('en-US');
 }
 
-/** "Re-added after Trash: 4, all with a different release." (the last 30 days). */
-export function readdSummaryLine(readds: { total: number; sameRelease: number }): string {
-  if (readds.total === 0) return 'Re-added after Trash: none in the last 30 days.';
-  if (readds.sameRelease === 0) return `Re-added after Trash: ${readds.total}, all with a different release.`;
-  return `Re-added after Trash: ${readds.total}, ${readds.sameRelease} with the same release.`;
+/**
+ * "Re-added after Trash: 4, all with a different release." (titles, the last 30 days). DESIGN-052 D-25bh: a title
+ * re-added with no grab within 7 days is "not grabbed yet", never counted as a different release.
+ */
+export function readdSummaryLine(readds: { total: number; sameRelease: number; noGrab?: number }): string {
+  const total = readds.total;
+  if (total === 0) return 'Re-added after Trash: none in the last 30 days.';
+  const same = readds.sameRelease;
+  const noGrab = readds.noGrab ?? 0;
+  const different = Math.max(0, total - same - noGrab);
+  if (same === 0 && noGrab === 0) return `Re-added after Trash: ${total}, all with a different release.`;
+  if (noGrab === total) return `Re-added after Trash: ${total}, not grabbed yet.`;
+  const parts = [
+    ...(same > 0 ? [`${same} with the same release`] : []),
+    ...(different > 0 ? [`${different} with a different release`] : []),
+    ...(noGrab > 0 ? [`${noGrab} not grabbed yet`] : []),
+  ];
+  return `Re-added after Trash: ${total}, ${parts.join(', ')}.`;
 }

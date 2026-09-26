@@ -625,13 +625,13 @@ function PendingTab({
             <ul className="ledger-confirm__outcomes">
               <li>
                 <strong className="trash-danger-text">
-                  {partition.deletable} will be deleted NOW
+                  {partition.deletable} will be deleted NOW:
                 </strong>{' '}
-                — immediate and permanent, freeing {formatBytes(partition.deletableBytes)}.
+                immediate and permanent, freeing {formatBytes(partition.deletableBytes)}.
               </li>
               <li>
-                <strong>{partition.protected} protected</strong> — recently watched, requested, or
-                whitelisted; Maintainerr keeps them.
+                <strong>{partition.protected} protected:</strong> recently watched, whitelisted, or on
+                a watchlist; they are kept.
                 {watchlistedCount > 0 ? (
                   <>
                     {' '}
@@ -644,7 +644,7 @@ function PendingTab({
                 ) : null}
               </li>
               <li>
-                <strong>{partition.unverifiable} kept — can’t be verified safe</strong> — unknown to
+                <strong>{partition.unverifiable} kept, can’t be verified safe:</strong> unknown to
                 the ledger, so they are skipped, never deleted.
               </li>
             </ul>

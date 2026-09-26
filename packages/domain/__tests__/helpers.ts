@@ -81,6 +81,7 @@ export const TEST_DELETE_SNAPSHOT: DeleteWatchlistSnapshot = {
   verified: true,
   keys: EMPTY_WATCHLIST_KEYS,
   runId: 'test',
+  overlaySince: new Date(0),
 };
 
 /** Record a verified registry run now (default: the owner, nothing listed). */

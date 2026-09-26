@@ -52,7 +52,8 @@ export const STUB_PLEX_OWNER = { id: '12874060', email: 'plex-owner@example.test
  * ADR-093 / DESIGN-052 D-20 (PLAN-072) — the Watchlist Registry's roster fixture: the member (a friend whose
  * community list answers one title), a friend whose community list reads EMPTY (hidden and empty look alike), and a
  * MANAGED Home user community answers `User not found:` for. Uuids ride the roster `thumb`, as live. None of these
- * lists holds a Trash pool title by default (existing specs keep their expedite partitions); `POST /_stub/community`
+ * lists holds a Trash pool title by default (existing specs keep their expedite partitions; the owner's discover
+ * watchlist holds Stub Runner, which its `dnd` tag already keeps); `POST /_stub/community`
  * sets a list, e.g. for the `pnpm dev:local` walk.
  */
 export const STUB_REGISTRY_ACCOUNTS = {

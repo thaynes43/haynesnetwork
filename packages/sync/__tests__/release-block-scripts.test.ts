@@ -5,11 +5,17 @@ import { parseSeedArgs } from '../src/scripts/release-block-seed';
 import { parseSeerrWatchlistArgs } from '../src/scripts/seerr-watchlist';
 
 describe('release-block-seed arguments', () => {
-  it('needs exactly one of --dry-run and --apply; the files are optional', () => {
-    expect(parseSeedArgs(['--dry-run'])).toEqual({ apply: false, legacySab: null, manual: null });
+  it('needs exactly one of --dry-run, --apply and --pool; the files are optional (and refused with --pool)', () => {
+    expect(parseSeedArgs(['--dry-run'])).toEqual({
+      apply: false,
+      pool: false,
+      legacySab: null,
+      manual: null,
+    });
     expect(parseSeedArgs(['--apply', '--legacy-sab=/tmp/sab.tsv', '--manual=/tmp/m.json'])).toEqual(
       {
         apply: true,
+        pool: false,
         legacySab: '/tmp/sab.tsv',
         manual: '/tmp/m.json',
       },
@@ -18,12 +24,22 @@ describe('release-block-seed arguments', () => {
       parseSeedArgs(['--dry-run', '--legacy-sab', '/tmp/sab.tsv', '--manual', '/tmp/m.json']),
     ).toEqual({
       apply: false,
+      pool: false,
       legacySab: '/tmp/sab.tsv',
       manual: '/tmp/m.json',
     });
+    // PLAN-072 S6(e) — the read-only pool report.
+    expect(parseSeedArgs(['--pool'])).toEqual({
+      apply: false,
+      pool: true,
+      legacySab: null,
+      manual: null,
+    });
+    expect(() => parseSeedArgs(['--pool', '--apply'])).toThrow(/exclusive/);
+    expect(() => parseSeedArgs(['--pool', '--manual=/tmp/m.json'])).toThrow(/read-only/);
     expect(() => parseSeedArgs(['--dry-run', '--manual'])).toThrow(/needs a file/);
     expect(parseSeedArgs(['--help'])).toBe('help');
-    expect(() => parseSeedArgs([])).toThrow(/--dry-run or --apply/);
+    expect(() => parseSeedArgs([])).toThrow(/--dry-run, --apply or --pool/);
     expect(() => parseSeedArgs(['--dry-run', '--apply'])).toThrow(/exclusive/);
     expect(() => parseSeedArgs(['--dry-run', '--nope'])).toThrow(/unknown/);
   });

@@ -231,5 +231,6 @@ export * from './watchlist-registry-sources';
 export * from './release-terms';
 export * from './release-block';
 export * from './release-block-seed';
+export * from './release-block-pool';
 export * from './release-block-static';
 export * from './seerr-enroll';

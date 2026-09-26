@@ -50,6 +50,7 @@ import type {
 } from '@hnet/plex/read';
 import type { SeerrUserSummary } from '@hnet/arr';
 import type { SeerrWatchlistAnswer } from '@hnet/arr/read';
+import { WATCHLIST_OVERLAY_MARGIN_SECONDS } from '@hnet/watch';
 import { inTransaction, resolveDb } from './db-client';
 import { accountTag, consoleDomainLogger, type DomainLogger } from './domain-logger';
 import { WatchlistRegistryUnverifiedError, type RegistryGateRefusal } from './errors';
@@ -80,6 +81,13 @@ export const REGISTRY_RUN_RETENTION_DAYS = 7;
 export const REGISTRY_LOCK_WAIT_MS = 120_000;
 /** The poll interval while waiting for the lock. */
 export const REGISTRY_LOCK_POLL_MS = 2_000;
+/**
+ * D-19 / D-25ay — the owner's Watchlist Changes count from this long BEFORE the run started (DESIGN-051 D-05's
+ * margin): `set_watchlist` inserts its mark before the plex.tv write lands, and the mark's `created_at` is the
+ * database's clock while `started_at` is the job pod's, so a change made just before a run that the run's discover
+ * read did not see yet still protects. The overlay only ever adds protection, so the margin cannot remove any.
+ */
+export const REGISTRY_OVERLAY_MARGIN_MS = WATCHLIST_OVERLAY_MARGIN_SECONDS * 1000;
 
 const HOUR_MS = 3_600_000;
 const MINUTE_MS = 60_000;
@@ -317,6 +325,24 @@ export function deriveAccountStatus(
   return 'read';
 }
 
+/** D-25bg — one account's place in the Watchlists card's "Lists" group. */
+export type WatchlistListState = 'read' | 'empty' | 'never_read' | 'unreadable' | 'unresolvable';
+
+/**
+ * D-25bg — the account-level split behind the card's "Lists" group, the same split as the headline (D-25q): `read`
+ * when a source holds a verified list; otherwise `empty` when a source answered only empty and unverified (read or
+ * carried), else the account's own status (`never_read`, `unreadable`, anything else `unresolvable`).
+ */
+export function accountListState(
+  status: WatchlistAccountStatus,
+  sources: ReadonlyArray<{ status: WatchlistSourceStatus; emptyUnverified: boolean }>,
+): WatchlistListState {
+  if (accountIsRead(sources)) return 'read';
+  if (sources.some((s) => (s.status === 'read' || s.status === 'carried') && s.emptyUnverified)) return 'empty';
+  if (status === 'never_read' || status === 'unreadable') return status;
+  return 'unresolvable';
+}
+
 /** The Watchlists card's headline split: an account is READ when one of its sources holds a verified list. */
 export function accountIsRead(
   sources: ReadonlyArray<{ status: WatchlistSourceStatus; emptyUnverified: boolean }>,
@@ -408,6 +434,9 @@ export interface WatchlistRegistryCounts {
   accountHidden: number;
   accountsRead: number;
   accountsUnreadable: number;
+  /** D-25bg — the Watchlists card's "Lists" group: every current account once, split the way the headline is
+   *  (`read` = accountsRead; the other keys sum to accountsUnreadable). */
+  byList: Record<WatchlistListState, number>;
   communityWithTitles: number;
   ownerSkipped: number;
   entries: number;
@@ -782,7 +811,6 @@ async function refreshBody(
     if (!rosterIds.has(plexId))
       current.push({ plexAccountId: plexId, cls: 'seerr_only', uuid: null });
   }
-  const currentIds = new Set(current.map((e) => e.plexAccountId));
 
   // 3 — accounts: upsert the current ones; stamp the missing ones `left_at`; delete those gone for 24 h (cascade).
   const stored = await db
@@ -794,6 +822,17 @@ async function refreshBody(
     })
     .from(watchlistRegistryAccounts);
   const storedById = new Map(stored.map((s) => [s.plexAccountId, s] as const));
+  // D-25j / D-25ba — with no Seerr user list (it failed, or Seerr is not configured) a stored `seerr_only` account
+  // stays CURRENT: it is not marked left, and its Seerr source is decided as failed (`seerr_users` /
+  // `seerr_unconfigured`) on every run, so it carries, blocks after 24 h and freezes `unreadable` at 72 h exactly like
+  // a roster-linked Seerr source, instead of never being re-decided.
+  if (seerrUsers === null) {
+    for (const s of stored) {
+      if (s.class !== 'seerr_only' || s.leftAt !== null || rosterIds.has(s.plexAccountId)) continue;
+      current.push({ plexAccountId: s.plexAccountId, cls: 'seerr_only', uuid: null });
+    }
+  }
+  const currentIds = new Set(current.map((e) => e.plexAccountId));
   const seerrIdFor = (id: string): number | null =>
     seerrUsers !== null
       ? (seerrByPlexId.get(id) ?? null)
@@ -814,9 +853,9 @@ async function refreshBody(
         .onConflictDoUpdate({ target: watchlistRegistryAccounts.plexAccountId, set: values });
     }
     for (const s of stored) {
+      // A seerr_only account is only "gone" when a successful Seerr user list no longer has it (it is current above
+      // while there is no list).
       if (currentIds.has(s.plexAccountId) || s.leftAt !== null) continue;
-      // A seerr_only account is only "gone" when a successful Seerr user list no longer has it.
-      if (s.class === 'seerr_only' && seerrUsers === null) continue;
       await tx
         .update(watchlistRegistryAccounts)
         .set({ leftAt: at, updatedAt: at })
@@ -1129,6 +1168,13 @@ async function computeCounts(
   let accountsRead = 0;
   let emptyUnverified = 0;
   let communityWithTitles = 0;
+  const byList: Record<WatchlistListState, number> = {
+    read: 0,
+    empty: 0,
+    never_read: 0,
+    unreadable: 0,
+    unresolvable: 0,
+  };
   for (const a of accounts) {
     if (a.leftAt !== null) {
       left += 1;
@@ -1139,6 +1185,7 @@ async function computeCounts(
     byStatus[a.status] = (byStatus[a.status] ?? 0) + 1;
     const own = sourcesByAccount.get(a.plexAccountId) ?? [];
     if (accountIsRead(own)) accountsRead += 1;
+    byList[accountListState(a.status, own)] += 1;
     for (const s of own) {
       if (s.emptyUnverified && (s.status === 'read' || s.status === 'carried'))
         emptyUnverified += 1;
@@ -1170,6 +1217,7 @@ async function computeCounts(
     accountHidden: extra.accountHidden,
     accountsRead,
     accountsUnreadable: roster - accountsRead,
+    byList,
     communityWithTitles,
     ownerSkipped: extra.ownerSkipped,
     entries: items?.entries ?? 0,
@@ -1204,7 +1252,15 @@ export interface WatchlistKeys {
  * evaluates nothing; `display` is the newest ok run of any age (walls, previews).
  */
 export type WatchlistSnapshot =
-  | { purpose: 'delete'; verified: true; keys: WatchlistKeys; runId: string }
+  | {
+      purpose: 'delete';
+      verified: true;
+      keys: WatchlistKeys;
+      runId: string;
+      /** D-25ay — the owner's `watchlist_add` changes made since this instant are in `keys`; a delete re-reads them
+       *  just before each claim (`isOnLateWatchlist`), so a change made after the snapshot still protects. */
+      overlaySince: Date;
+    }
   | { purpose: 'propose'; filtered: boolean; keys: WatchlistKeys; runId: string | null }
   | { purpose: 'display'; keys: WatchlistKeys; runId: string };
 
@@ -1268,33 +1324,79 @@ export async function loadRegistryKeys(
   for (const r of rows) add(r.kind, r.discoverId, r.tmdbId, r.tvdbId);
 
   if (overlaySince !== null) {
-    const marks = await exec
-      .select({
-        kind: watchMarks.kind,
-        plexGuid: watchMarks.plexGuid,
-        tmdbId: watchMarks.tmdbId,
-        tvdbId: watchMarks.tvdbId,
-      })
-      .from(watchMarks)
-      .where(
-        and(
-          eq(watchMarks.action, 'watchlist_add'),
-          inArray(watchMarks.plexResult, ['written', 'pending']),
-          isNull(watchMarks.revertedAt),
-          gte(watchMarks.createdAt, overlaySince),
-        ),
-      );
-    for (const m of marks) {
-      const kind: WatchlistItemKind = m.kind === 'show' ? 'show' : 'movie';
-      const discoverId = discoverIdFromGuid(m.plexGuid, kind);
-      add(kind, discoverId, m.tmdbId, kind === 'show' ? m.tvdbId : null);
-    }
+    for (const m of await readOverlayMarks(exec, overlaySince)) add(m.kind, m.discoverId, m.tmdbId, m.tvdbId);
   }
   const finish = (kind: WatchlistItemKind): WatchlistKindKeys => ({
     ...build[kind],
     unmapped: [...allIds[kind]].filter((id) => !mappedIds[kind].has(id)).length,
   });
   return { movie: finish('movie'), show: finish('show') };
+}
+
+/** D-19 — the owner's live `watchlist_add` Watchlist Changes (`pending` or `written`, not reverted) made at or after
+ *  `since`, as registry keys. A `watchlist_remove` never subtracts (fail closed). */
+async function readOverlayMarks(
+  exec: ReturnType<typeof resolveDb>,
+  since: Date,
+): Promise<
+  Array<{ kind: WatchlistItemKind; discoverId: string | null; tmdbId: number | null; tvdbId: number | null }>
+> {
+  const marks = await exec
+    .select({
+      kind: watchMarks.kind,
+      plexGuid: watchMarks.plexGuid,
+      tmdbId: watchMarks.tmdbId,
+      tvdbId: watchMarks.tvdbId,
+    })
+    .from(watchMarks)
+    .where(
+      and(
+        eq(watchMarks.action, 'watchlist_add'),
+        inArray(watchMarks.plexResult, ['written', 'pending']),
+        isNull(watchMarks.revertedAt),
+        gte(watchMarks.createdAt, since),
+      ),
+    );
+  return marks.map((m) => {
+    const kind: WatchlistItemKind = m.kind === 'show' ? 'show' : 'movie';
+    return {
+      kind,
+      discoverId: discoverIdFromGuid(m.plexGuid, kind),
+      tmdbId: m.tmdbId,
+      tvdbId: kind === 'show' ? m.tvdbId : null,
+    };
+  });
+}
+
+/** D-25ay — where a snapshot's overlay starts: the run's start less REGISTRY_OVERLAY_MARGIN_MS. */
+export function overlayStartFor(runStartedAt: Date): Date {
+  return new Date(runStartedAt.getTime() - REGISTRY_OVERLAY_MARGIN_MS);
+}
+
+/**
+ * D-19 / D-25ay — the late re-read: is this item on the owner's watchlist through a Watchlist Change made since the
+ * delete snapshot's overlay start? The sweep and Expedite call it just before each claim, so "add it to my
+ * watchlist" made while a sweep is running still protects every item the loop has not reached yet.
+ */
+export async function isOnLateWatchlist(input: {
+  db?: DbClient;
+  snapshot: DeleteWatchlistSnapshot;
+  item: WatchlistMatchInput;
+}): Promise<boolean> {
+  const marks = await readOverlayMarks(resolveDb(input.db), input.snapshot.overlaySince);
+  if (marks.length === 0) return false;
+  const build = { movie: emptyMutable(), show: emptyMutable() };
+  for (const m of marks) {
+    const k = build[m.kind];
+    if (m.discoverId !== null) k.discover.add(m.discoverId);
+    if (m.tmdbId !== null) k.tmdb.add(Number(m.tmdbId));
+    if (m.tvdbId !== null) k.tvdb.add(Number(m.tvdbId));
+  }
+  const keys: WatchlistKeys = {
+    movie: { ...build.movie, unmapped: 0 },
+    show: { ...build.show, unmapped: 0 },
+  };
+  return evaluateWatchlist({ purpose: 'display', keys, runId: input.snapshot.runId }, input.item).onWatchlist;
 }
 
 function emptyMutable(): { discover: Set<string>; tmdb: Set<number>; tvdb: Set<number> } {
@@ -1404,7 +1506,7 @@ async function gateSnapshot(
     return {
       purpose: 'propose',
       filtered: true,
-      keys: await loadRegistryKeys(input.db, run.startedAt),
+      keys: await loadRegistryKeys(input.db, overlayStartFor(run.startedAt)),
       runId: run.id,
     };
   }
@@ -1428,11 +1530,13 @@ async function gateSnapshot(
   if (refusal !== null || run === null) {
     throw new WatchlistRegistryUnverifiedError(refusal ?? 'stale', { ageMin, blocking });
   }
+  const overlaySince = overlayStartFor(run.startedAt);
   return {
     purpose: 'delete',
     verified: true,
-    keys: await loadRegistryKeys(input.db, run.startedAt),
+    keys: await loadRegistryKeys(input.db, overlaySince),
     runId: run.id,
+    overlaySince,
   };
 }
 
@@ -1444,7 +1548,7 @@ export async function readDisplayWatchlistSnapshot(input: {
   if (run === null) return null;
   return {
     purpose: 'display',
-    keys: await loadRegistryKeys(input.db, run.startedAt),
+    keys: await loadRegistryKeys(input.db, overlayStartFor(run.startedAt)),
     runId: run.id,
   };
 }
@@ -1512,6 +1616,9 @@ export interface WatchlistRegistrySummary {
   accountsUnreadable: number;
   byClass: Record<string, number>;
   byStatus: Record<string, number>;
+  /** D-25bg — the "Lists" group: every current account once, split like the headline (empty before the first run
+   *  that recorded it). */
+  byList: Record<string, number>;
   emptyUnverified: number;
   /** The newest run of any status, for "the last check failed" (null: none). */
   lastRun: { status: string; failure: string | null; finishedAt: string | null } | null;
@@ -1552,6 +1659,7 @@ export async function getWatchlistRegistrySummary(input: {
     accountsUnreadable: num(counts.accountsUnreadable),
     byClass: record(counts.byClass),
     byStatus: record(counts.byStatus),
+    byList: record(counts.byList),
     emptyUnverified: num(counts.emptyUnverified),
     lastRun: last
       ? {

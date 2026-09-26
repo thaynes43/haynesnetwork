@@ -23,7 +23,13 @@ import {
   type DeletedReleaseTermConfidence,
   type Transaction,
 } from '@hnet/db';
-import { ARR_CLUSTER_URL_DEFAULTS, ArrConfigError, type ArrReleaseHistoryRecord } from '@hnet/arr';
+import {
+  ARR_CLUSTER_URL_DEFAULTS,
+  ArrConfigError,
+  ArrHttpError,
+  MaintainerrWriteFailedError,
+  type ArrReleaseHistoryRecord,
+} from '@hnet/arr';
 import { RadarrClient, SonarrClient } from '@hnet/arr/read';
 import { RadarrWriteClient, SonarrWriteClient } from '@hnet/arr/write';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, sql } from 'drizzle-orm';
@@ -38,6 +44,7 @@ import {
   looksLikeRelease,
   parseReleaseName,
   releaseBaseName,
+  releaseTokens,
   resolutionFromQualityName,
   termMatches,
   toTermResolution,
@@ -420,17 +427,52 @@ async function ledgerDrafts(
     return draft ? [draft] : null;
   }
   const ledger = await ledgerReleases(db, mediaItemId, before, 200);
-  const drafts: ReleaseRecordDraft[] = [];
-  const seen = new Set<string>();
+  // D-25bc — every import of a (season, group, resolution) key counts, never only the newest: the key's group term
+  // must match every import name of the key (one record), else each distinct release name gets its own record, and a
+  // key where any name yields no term fails the whole series closed (it is kept, or counted unblockable by the seed).
+  const byKey = new Map<string, { season: number; imports: LedgerRelease[] }>();
   for (const l of ledger) {
     const parsed = parseReleaseName(l.sourceTitles[0] ?? '');
     if (parsed.season === null || parsed.season < 1) continue;
     const key = `${parsed.season}|${(l.releaseGroup ?? parsed.group ?? '').toLowerCase()}|${resolutionFromQualityName(l.quality) ?? parsed.resolution}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const draft = ledgerDraft('sonarr', mediaItemId, s, l, arrYears, parsed.season);
-    if (!draft) return null;
-    drafts.push(draft);
+    const entry = byKey.get(key) ?? { season: parsed.season, imports: [] };
+    entry.imports.push(l);
+    byKey.set(key, entry);
+  }
+  const drafts: ReleaseRecordDraft[] = [];
+  for (const { season, imports } of byKey.values()) {
+    const newest = imports[0] as LedgerRelease;
+    const names = distinct(imports.flatMap((i) => i.sourceTitles));
+    const combined = ledgerDraft(
+      'sonarr',
+      mediaItemId,
+      s,
+      { ...newest, sourceTitles: names },
+      arrYears,
+      season,
+    );
+    if (
+      combined !== null &&
+      combined.shape === 'group' &&
+      combined.term !== null &&
+      names.every((n) => termMatches(combined.term as string, n))
+    ) {
+      drafts.push(combined);
+      continue;
+    }
+    for (const name of names) {
+      const from = imports.find((i) => i.sourceTitles.includes(name)) ?? newest;
+      const draft = ledgerDraft(
+        'sonarr',
+        mediaItemId,
+        s,
+        { ...from, sourceTitles: [name] },
+        arrYears,
+        season,
+      );
+      if (!draft || draft.term === null) return null;
+      drafts.push(draft);
+    }
   }
   return drafts.length > 0 ? drafts : null;
 }
@@ -444,6 +486,25 @@ export async function identifyFromLedger(input: {
   const subject = await loadSubject(input.db, input.mediaItemId);
   if (!subject || (subject.arrKind !== 'radarr' && subject.arrKind !== 'sonarr')) return null;
   return ledgerDrafts(input.db, subject.arrKind, input.mediaItemId, subject, input.before);
+}
+
+/** D-25bd — does the ledger's latest import describe the file the *arr has? Unknown on either side never disagrees. */
+function ledgerAgreesWithFile(
+  ledger: LedgerRelease,
+  fileGroup: string | null,
+  fileResolution: TermResolution | null,
+): boolean {
+  const parsed = parseReleaseName(ledger.sourceTitles[0] ?? '');
+  const ledgerGroup = ledger.releaseGroup ?? parsed.group;
+  if (
+    fileGroup !== null &&
+    ledgerGroup !== null &&
+    releaseTokens(fileGroup).join('') !== releaseTokens(ledgerGroup).join('')
+  ) {
+    return false;
+  }
+  const ledgerResolution = resolutionFromQualityName(ledger.quality) ?? parsed.resolution;
+  return fileResolution === null || ledgerResolution === null || fileResolution === ledgerResolution;
 }
 
 async function identifyMovie(
@@ -495,16 +556,21 @@ async function identifyMovie(
     file.sceneName,
     nameFromOriginalPath(file.originalFilePath),
   ]);
-  const useLedger = arrNames.length === 0 && ledger !== undefined && ledger.sourceTitles.length > 0;
-  const names = useLedger ? ledger!.sourceTitles : arrNames;
   const q = file.quality?.quality;
-  const releaseGroup =
-    file.releaseGroup ??
-    grab?.releaseGroup ??
-    imported?.releaseGroup ??
-    (useLedger ? ledger!.releaseGroup : null);
+  const fileGroup = file.releaseGroup ?? grab?.releaseGroup ?? imported?.releaseGroup ?? null;
   const resolution: TermResolution | null =
     toTermResolution(q?.resolution) ?? resolutionFromQualityName(q?.name);
+  // D-25af / D-25bd — the ledger's names join only when the *arr has no name for the file AND the ledger's latest
+  // import agrees with the file (the same group, when both name one; the same resolution, when both carry one). A file
+  // replaced outside the *arr's history (a disk copy, a rescan) must not take a stale import's name: its term would
+  // block that old release and not the file being deleted, which then gets the renamed-file group term instead.
+  const useLedger =
+    arrNames.length === 0 &&
+    ledger !== undefined &&
+    ledger.sourceTitles.length > 0 &&
+    ledgerAgreesWithFile(ledger, fileGroup, resolution);
+  const names = useLedger ? ledger!.sourceTitles : arrNames;
+  const releaseGroup = fileGroup ?? (useLedger ? ledger!.releaseGroup : null);
   const derived = deriveTerm({
     kind: 'movie',
     arrTitle: movie.title,
@@ -675,8 +741,11 @@ async function identifySeries(
         remux: first.remux,
         season: first.season,
       });
+      // D-25bb — whenever the group term fell back to the exact form, EVERY name of the key needs its own exact record
+      // and a nameless file of the key keeps the series (D-25ah), however many names happen to be known: one exact
+      // record for the only named file would leave a nameless sibling's release unblocked.
       derivations =
-        derived !== null && derived.shape === 'exact' && names.length > 1
+        derived !== null && derived.shape === 'exact'
           ? exactPerName()
           : [{ name: names[0] ?? null, derived }];
     }
@@ -872,9 +941,33 @@ export async function blockReleases(input: {
 }
 
 /**
- * D-14 step 7 — settle one item's records after its handle. A 2xx handle followed by an *arr 404 flips them `active`;
- * a failed handle, or an item the *arr still has, flips them `abandoned` (`handle_not_effective`); a GET that cannot be
- * answered leaves them `in_flight` with their terms in place (the next reconcile settles them).
+ * DESIGN-052 D-14 step 7 / D-25ax — how a failed Maintainerr handle is read. `refused`: Maintainerr answered and
+ * did not delete (an HTTP 4xx such as the 409 its executor lock gives, or a `code: 0` ReturnStatus). `ambiguous`:
+ * the answer was lost (a client timeout, a dropped socket, a 5xx, anything else) and the delete may have run or may
+ * still be running, since `handleMedia` deletes the *arr item first and only then does the rest.
+ */
+export function classifyHandleFailure(error: unknown): 'refused' | 'ambiguous' {
+  const seen = new Set<unknown>();
+  let cur: unknown = error;
+  while (cur !== null && cur !== undefined && !seen.has(cur)) {
+    seen.add(cur);
+    if (cur instanceof ArrHttpError) {
+      return cur.status >= 400 && cur.status < 500 ? 'refused' : 'ambiguous';
+    }
+    if (cur instanceof MaintainerrWriteFailedError) return 'refused';
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return 'ambiguous';
+}
+
+/**
+ * D-14 step 7 — settle one item's records after its handle, ALWAYS by the *arr's own answer (D-25ax): whatever the
+ * handle returned, a `GET` of the item follows. A 404 flips the records `active` (the delete happened, even when the
+ * handle's answer was lost). An item the *arr still has flips them `abandoned` (`handle_not_effective`) after a 2xx
+ * handle or a definitive refusal (`classifyHandleFailure` → `refused`); after an ambiguous failure (a timeout, a
+ * dropped socket, a 5xx) they stay `in_flight`, terms in place, because the delete may still be running: the
+ * stranded settle (D-13 step 1) decides by presence an hour later. A `GET` that cannot be answered, or an item with
+ * no *arr id, leaves them `in_flight` too (fail closed).
  */
 export async function settleReleaseRecords(input: {
   db?: DbClient;
@@ -882,7 +975,8 @@ export async function settleReleaseRecords(input: {
   arrKind: ReleaseArrKind;
   arrItemId: number | null;
   recordIds: readonly string[];
-  handled: boolean;
+  /** null: the handle answered 2xx; otherwise what it threw. */
+  handleError: unknown;
   title: string;
   logger?: DomainLogger;
   now?: Date;
@@ -899,7 +993,6 @@ export async function settleReleaseRecords(input: {
     });
     return 'abandoned' as const;
   };
-  if (!input.handled) return notEffective();
   if (input.arrItemId === null) return 'in_flight';
   let present: unknown;
   try {
@@ -910,7 +1003,10 @@ export async function settleReleaseRecords(input: {
   } catch {
     return 'in_flight';
   }
-  if (present !== null) return notEffective();
+  if (present !== null) {
+    if (input.handleError === null || input.handleError === undefined) return notEffective();
+    return classifyHandleFailure(input.handleError) === 'refused' ? notEffective() : 'in_flight';
+  }
   await resolveDb(input.db)
     .update(trashDeletedReleases)
     .set({ state: 'active', activatedAt: at })
@@ -1130,7 +1226,7 @@ export interface SurvivorIdentityResult {
   /** Survivors with records to write (a no-file item has one term-less record). */
   recordable: Map<string, ReleaseRecordDraft[]>;
   /** Survivors to keep `release_unrecorded`: no term (D-11) or a single failed *arr read between successes. */
-  unrecorded: Map<string, 'no_term' | 'gone' | 'no_ledger_item' | 'read_failed'>;
+  unrecorded: Map<string, UnrecordedReason>;
   /** Three consecutive *arr read failures: the *arr is down; abort before Phase A, nothing deleted. */
   aborted: boolean;
 }
@@ -1147,7 +1243,7 @@ export async function identifySurvivors(input: {
 }): Promise<SurvivorIdentityResult> {
   const logger = input.logger ?? consoleDomainLogger;
   const recordable = new Map<string, ReleaseRecordDraft[]>();
-  const unrecorded = new Map<string, 'no_term' | 'gone' | 'no_ledger_item' | 'read_failed'>();
+  const unrecorded = new Map<string, UnrecordedReason>();
   let consecutive = 0;
   for (const s of input.survivors) {
     let identity: ReleaseIdentity;
@@ -1172,6 +1268,65 @@ export async function identifySurvivors(input: {
     else unrecorded.set(s.key, identity.reason);
   }
   return { recordable, unrecorded, aborted: false };
+}
+
+export type UnrecordedReason = 'no_term' | 'gone' | 'no_ledger_item' | 'read_failed';
+
+export type RecordAndBlockResult =
+  | { aborted: true }
+  | {
+      aborted: false;
+      /** Survivors with records (keyed by the caller's key), in the order given. */
+      recordable: Map<string, ReleaseRecordDraft[]>;
+      /** Survivors kept `release_unrecorded` (D-11): no term, no delete. */
+      unrecorded: Map<string, UnrecordedReason>;
+      /** The `in_flight` record ids written for each recordable survivor. */
+      recordIds: Map<string, string[]>;
+    };
+
+/**
+ * DESIGN-052 D-14 steps 4..5 — THE shared seam of the two delete paths (the sweep and Expedite), so they cannot
+ * drift: each survivor's identity (three consecutive *arr read failures ⇒ `aborted`, nothing written), each
+ * unrecordable survivor handed to `onUnrecorded` BEFORE Phase A, then Phase A for every recordable survivor (records
+ * `in_flight`, the Release Block written and read back). A Phase A failure throws ReleaseBlockError (the records are
+ * abandoned); the caller pauses (the sweep) or refuses (Expedite).
+ */
+export async function recordAndBlockReleases(input: {
+  db?: DbClient;
+  arr: ReleaseBlockArrClients;
+  survivors: readonly ReleaseSurvivor[];
+  origin: Extract<DeletedReleaseOrigin, 'sweep' | 'expedite'>;
+  logger?: DomainLogger;
+  onUnrecorded?: (key: string, reason: UnrecordedReason) => Promise<void>;
+}): Promise<RecordAndBlockResult> {
+  const identity = await identifySurvivors({
+    db: input.db,
+    arr: input.arr.read,
+    survivors: input.survivors,
+    logger: input.logger,
+  });
+  if (identity.aborted) return { aborted: true };
+  for (const s of input.survivors) {
+    const reason = identity.unrecorded.get(s.key);
+    if (reason !== undefined) await input.onUnrecorded?.(s.key, reason);
+  }
+  const recordable = input.survivors.filter((s) => identity.recordable.has(s.key));
+  const recordIds =
+    recordable.length > 0
+      ? await blockReleases({
+          db: input.db,
+          arr: input.arr,
+          items: recordable.map((s) => ({ key: s.key, drafts: identity.recordable.get(s.key) ?? [] })),
+          origin: input.origin,
+          logger: input.logger,
+        })
+      : new Map<string, string[]>();
+  return {
+    aborted: false,
+    recordable: identity.recordable,
+    unrecorded: identity.unrecorded,
+    recordIds,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1282,8 +1437,10 @@ export interface ReleaseBlockKindSummary {
 
 export interface ReleaseBlockSummary {
   kinds: ReleaseBlockKindSummary[];
-  /** D-23 — re-adds seen over the last 30 days, and how many fetched a blocked release. */
-  readds: { total: number; sameRelease: number; windowDays: number };
+  /** D-23 / D-25bh — TITLES re-added over the last 30 days (a series or a remediated movie has several records; a title
+   *  counts once), how many fetched a blocked release, and how many had no grab within the 7-day window (seen, no
+   *  verdict). The rest fetched a different release. */
+  readds: { total: number; sameRelease: number; noGrab: number; windowDays: number };
 }
 
 /** D-23 — the Watchlists card's Release Block and re-add counts (never a title). */
@@ -1327,18 +1484,32 @@ export async function getReleaseBlockSummary(input: {
     });
   }
   const since = new Date(now.getTime() - RELEASE_READD_REPORT_DAYS * DAY_MS);
+  // One row per re-added TITLE (the record's kind and its tmdb id for a movie, tvdb id for a series).
+  const titles = db
+    .select({
+      same: sql<boolean>`coalesce(bool_or(${t.readdSameRelease} IS TRUE), false)`.as('same'),
+      noGrab: sql<boolean>`bool_and(${t.readdSameRelease} IS NULL)`.as('no_grab'),
+    })
+    .from(t)
+    .where(and(isNotNull(t.readdSeenAt), gte(t.readdSeenAt, since)))
+    .groupBy(
+      t.arrKind,
+      sql`coalesce((CASE WHEN ${t.arrKind} = 'radarr' THEN ${t.tmdbId} ELSE ${t.tvdbId} END)::text, ${t.id}::text)`,
+    )
+    .as('titles');
   const [readd] = await db
     .select({
       total: sql<number>`count(*)::int`,
-      same: sql<number>`count(*) filter (where ${t.readdSameRelease} = true)::int`,
+      same: sql<number>`count(*) filter (where ${titles.same})::int`,
+      noGrab: sql<number>`count(*) filter (where ${titles.noGrab} AND NOT ${titles.same})::int`,
     })
-    .from(t)
-    .where(and(isNotNull(t.readdSeenAt), gte(t.readdSeenAt, since)));
+    .from(titles);
   return {
     kinds,
     readds: {
       total: readd?.total ?? 0,
       sameRelease: readd?.same ?? 0,
+      noGrab: readd?.noGrab ?? 0,
       windowDays: RELEASE_READD_REPORT_DAYS,
     },
   };

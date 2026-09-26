@@ -129,22 +129,22 @@ export function ExpediteReport({
       </p>
       <ul className="ledger-confirm__outcomes">
         <li>
-          <strong>Deleted</strong> — handed to Maintainerr’s per-item delete handler; the files are
+          <strong>Deleted:</strong> handed to Maintainerr’s per-item delete handler; the files are
           being removed now.
         </li>
         <li>
-          <strong>Protected</strong> — deliberately kept: recently watched, on a watchlist, or
-          whitelisted/saved (watched items were auto-whitelisted during this run).
+          <strong>Protected:</strong> kept on purpose because it was recently watched, is on a
+          watchlist, or is whitelisted or saved (watched items were auto-whitelisted during this run).
         </li>
         <li>
-          <strong>Skipped</strong> — could not be verified safe, couldn&apos;t be removed safely,{' '}
+          <strong>Skipped:</strong> could not be verified safe, couldn&apos;t be removed safely,{' '}
           <em>or</em> its protection could not be applied, so it was <em>kept, never deleted</em>.
           Not the same as protected: these items could not be cleared, so they are never deleted
           blind.
         </li>
         {outcome.stalePending > 0 ? (
           <li>
-            <strong>No longer pending</strong> — you saw these when you opened the dialog, but
+            <strong>No longer pending:</strong> you saw these when you opened the dialog, but
             Maintainerr’s pending set changed before the run, so they were left untouched.
           </li>
         ) : null}

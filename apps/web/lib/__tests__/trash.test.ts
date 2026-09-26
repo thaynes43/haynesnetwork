@@ -36,7 +36,8 @@ import {
   WATCHLIST_CLASS_LABELS,
   WATCHLIST_NOTE_DETAIL,
   WATCHLIST_NOTE_LABEL,
-  WATCHLIST_STATUS_LABELS,
+  WATCHLIST_LIST_LABELS,
+  WATCHLIST_LIST_ORDER,
   keptReasonTooltip,
   relativeTimeLabel,
   watchlistsHeadline,
@@ -209,8 +210,16 @@ describe('watchlist protection copy (D-10)', () => {
     );
     expect(relativeTimeLabel('2026-09-26T09:00:00Z', now)).toBe('3 hours ago');
     expect(relativeTimeLabel('2026-09-23T09:00:00Z', now)).toBe('3 days ago');
-    for (const text of [...Object.values(WATCHLIST_CLASS_LABELS), ...Object.values(WATCHLIST_STATUS_LABELS)]) {
+    for (const text of [...Object.values(WATCHLIST_CLASS_LABELS), ...Object.values(WATCHLIST_LIST_LABELS)]) {
       noDashes(text);
+    }
+  });
+
+  it('D-25bg: the "Lists" group labels every list state once and never reuses the headline`s "can\'t be read"', () => {
+    expect([...WATCHLIST_LIST_ORDER].sort()).toEqual(Object.keys(WATCHLIST_LIST_LABELS).sort());
+    expect(WATCHLIST_LIST_LABELS.read).toBe('Read');
+    for (const [key, label] of Object.entries(WATCHLIST_LIST_LABELS)) {
+      if (key !== 'read') expect(label.toLowerCase()).not.toContain("can't be read");
     }
   });
 });
@@ -677,7 +686,17 @@ describe('the Release Block counts on the Watchlists card (D-23)', () => {
   it('reads the re-adds of the last 30 days in one plain line', () => {
     expect(readdSummaryLine({ total: 0, sameRelease: 0 })).toBe('Re-added after Trash: none in the last 30 days.');
     expect(readdSummaryLine({ total: 4, sameRelease: 0 })).toBe('Re-added after Trash: 4, all with a different release.');
-    expect(readdSummaryLine({ total: 4, sameRelease: 1 })).toBe('Re-added after Trash: 4, 1 with the same release.');
+    expect(readdSummaryLine({ total: 4, sameRelease: 1 })).toBe(
+      'Re-added after Trash: 4, 1 with the same release, 3 with a different release.',
+    );
+    // D-25bh — a re-add with no grab in 7 days is "not grabbed yet", never "a different release".
+    expect(readdSummaryLine({ total: 3, sameRelease: 0, noGrab: 1 })).toBe(
+      'Re-added after Trash: 3, 2 with a different release, 1 not grabbed yet.',
+    );
+    expect(readdSummaryLine({ total: 1, sameRelease: 0, noGrab: 1 })).toBe('Re-added after Trash: 1, not grabbed yet.');
+    expect(readdSummaryLine({ total: 2, sameRelease: 1, noGrab: 1 })).toBe(
+      'Re-added after Trash: 2, 1 with the same release, 1 not grabbed yet.',
+    );
     for (const line of [readdSummaryLine({ total: 2, sameRelease: 1 }), blockedReleasesValue(1, 3000)]) {
       expect(line).not.toMatch(/[\u2013\u2014]/); // owner rule: no en or em dashes
     }

@@ -197,6 +197,46 @@ describe('SeerrClient registry reads', () => {
     expect(calls).toEqual(['/api/v1/user?take=100&skip=0']);
   });
 
+  it('reads every page by its `page` query (a consistent two-page list), and fails a page 2 answering the error body', async () => {
+    const serve = (page2: (page: number) => SeerrWatchlistPage) => {
+      const pages: number[] = [];
+      const client = new SeerrClient({
+        baseUrl: 'http://seerr.test',
+        apiKey: 'k',
+        fetchImpl: (async (input: unknown) => {
+          const url = new URL(String(input));
+          expect(url.pathname).toBe('/api/v1/user/7/watchlist');
+          const page = Number(url.searchParams.get('page'));
+          pages.push(page);
+          const body = page === 1 ? pageOf(1, 2, 3, [item(A), item(B, 'tv')]) : page2(page);
+          return new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }) as typeof fetch,
+      });
+      return { client, pages };
+    };
+    const ok = serve((page) => pageOf(page, 2, 3, [item(C)]));
+    await expect(ok.client.readUserWatchlist(7, noSleep)).resolves.toEqual({
+      kind: 'ok',
+      totalResults: 3,
+      items: [
+        { discoverId: A, kind: 'movie', tmdbId: 1 },
+        { discoverId: B, kind: 'show', tmdbId: 1 },
+        { discoverId: C, kind: 'movie', tmdbId: 1 },
+      ],
+    });
+    expect(ok.pages).toEqual([1, 2]);
+    // Seerr's failed plex.tv read, on page 2: 200 {totalPages: 0, totalResults: 0, results: []} — twice ⇒ failed.
+    const broken = serve((page) => ERROR_BODY(page));
+    await expect(broken.client.readUserWatchlist(7, noSleep)).resolves.toEqual({
+      kind: 'failed',
+      errorClass: 'inconsistent',
+    });
+    expect(broken.pages).toEqual([1, 2, 1, 2]);
+  });
+
   it('reads /user/{id}/watchlist?page= and retries 429/5xx under the registry policy', async () => {
     let n = 0;
     const client = new SeerrClient({

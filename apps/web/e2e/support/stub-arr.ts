@@ -17,6 +17,8 @@
 //                        deterministically (queued → downloading with a shrinking sizeleft →
 //                        importing → empty-after-import). GET /queue serves the staged records,
 //                        server-side filtered by seriesIds/movieIds/artistIds like the real *arrs.
+//   POST /_stub/seerr-watchlist → 204; body { userId, results? } — ADR-093: that Seerr user's watchlist
+//                        (Seerr result rows: ratingKey, title, mediaType, tmdbId); no `results` restores the default.
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { clearStubArrDeleted, stubArrDeleted } from './stub-arr-state';
 
@@ -431,6 +433,9 @@ export async function startStubArr(): Promise<StubArrServer> {
   // ADR-093 / DESIGN-052 D-20 — Seerr's watchlist error switch: when on, every `/user/{id}/watchlist` page answers
   // Seerr 3.4.1's failed-read body (HTTP 200, `totalPages: 0`, `totalResults: 0`, no results). Cleared by reset.
   let seerrWatchlistError = false;
+  // ADR-093 / DESIGN-052 D-10 — a spec-set Seerr watchlist per user id (`POST /_stub/seerr-watchlist`), in place of the
+  // default (the member's Stub Dune). Cleared by reset, or per user by posting no `results`.
+  const seerrWatchlistOverride = new Map<string, Array<Record<string, unknown>>>();
   // ADR-093 / DESIGN-052 D-13 / D-20 — the app-owned "must not contain" release profile. One list: this one stub
   // serves Radarr AND Sonarr, so each reconcile rewrites it with its own *arr's terms (each read-back still holds).
   let releaseProfiles: Array<Record<string, unknown> & { id: number }> = [];
@@ -456,6 +461,7 @@ export async function startStubArr(): Promise<StubArrServer> {
         queueRecords = [];
         faultReads = false;
         seerrWatchlistError = false;
+        seerrWatchlistOverride.clear();
         releaseProfiles = [];
         nextReleaseProfileId = 1;
         seerrSyncFlags = new Map([[1, { movies: true, tv: true }]]);
@@ -468,6 +474,15 @@ export async function startStubArr(): Promise<StubArrServer> {
         const raw = await readBody(req);
         const parsed = raw === '' ? {} : (JSON.parse(raw) as { on?: boolean });
         seerrWatchlistError = parsed.on !== false;
+        res.writeHead(204);
+        return res.end();
+      }
+      if (url.pathname === '/_stub/seerr-watchlist' && method === 'POST') {
+        const raw = await readBody(req);
+        const parsed = raw === '' ? {} : (JSON.parse(raw) as { userId?: number; results?: Array<Record<string, unknown>> | null });
+        const key = String(parsed.userId ?? 2);
+        if (Array.isArray(parsed.results)) seerrWatchlistOverride.set(key, parsed.results);
+        else seerrWatchlistOverride.delete(key);
         res.writeHead(204);
         return res.end();
       }
@@ -487,8 +502,10 @@ export async function startStubArr(): Promise<StubArrServer> {
       if (method === 'GET' && seerrWatchlist) {
         const page = Number(query.page ?? 1);
         if (seerrWatchlistError) return json(res, 200, { page, totalPages: 0, totalResults: 0, results: [] });
-        const results =
-          seerrWatchlist[1] === '2'
+        const override = seerrWatchlistOverride.get(seerrWatchlist[1]!);
+        const results = override
+          ? override
+          : seerrWatchlist[1] === '2'
             ? [{ id: 11, ratingKey: '5d776d1b0000000000000002', title: 'Stub Dune', mediaType: 'movie', tmdbId: 880020 }]
             : [];
         return json(res, 200, { page, totalPages: results.length > 0 ? 1 : 0, totalResults: results.length, results });

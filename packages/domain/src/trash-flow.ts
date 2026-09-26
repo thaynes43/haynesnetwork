@@ -28,8 +28,7 @@ import {
 } from './errors';
 import {
   abandonReleaseRecords,
-  blockReleases,
-  identifySurvivors,
+  recordAndBlockReleases,
   reconcileReleaseBlock,
   settleReleaseRecords,
   type ReleaseBlockArrClients,
@@ -42,6 +41,7 @@ import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import {
   evaluateRegistryGate,
   evaluateWatchlist,
+  isOnLateWatchlist,
   type DeleteWatchlistSnapshot,
   type WatchlistSnapshot,
 } from './watchlist-registry';
@@ -1544,6 +1544,9 @@ interface ExpediteSurvivor {
   tmdbId: number | null;
   tvdbId: number | null;
   arrKind: 'radarr' | 'sonarr';
+  /** D-19 / D-25ay — the late watchlist re-read's keys: the item's kind and Maintainerr's `mediaData.guid`. */
+  media: 'movie' | 'tv';
+  plexGuid: string | null;
   // ADR-030 / DESIGN-013 (PLAN-013) — reclaim forward-capture. The direct-expedite path (unlike the
   // batch sweep, which freezes these on trash_batch_items) carried NO size/resolution into any durable
   // record. Freeze them here from the SAME live/pending row already in scope so the reclaim report can
@@ -1557,6 +1560,9 @@ interface ExpediteSurvivor {
  * Commit the `trash_expedited` intent event for one item + its deletion audit (tombstone + Activity
  * notification, `recordDeletionAudit`) in ONE transaction, THEN trigger its per-item handle. The
  * intent + audit are durable before the (lost-response-prone) destructive call — Fix D-09 discipline.
+ *
+ * D-19 / D-25ay — first, the owner's Watchlist Changes made since the gate's snapshot are re-read: an item added to
+ * the owner's watchlist while Expedite runs is kept (`watchlisted`), its records abandoned, and nothing is written.
  */
 async function expediteOneSurvivor(
   input: Pick<ExpediteDeletionInput, 'db' | 'maintainerr' | 'actorId' | 'arr' | 'logger'>,
@@ -1564,7 +1570,30 @@ async function expediteOneSurvivor(
   actorName: string | null,
   survivor: ExpediteSurvivor,
   release: { recordIds: readonly string[]; arrItemId: number | null },
-): Promise<'active' | 'abandoned' | 'in_flight' | 'none'> {
+  watchlist: DeleteWatchlistSnapshot,
+): Promise<'active' | 'abandoned' | 'in_flight' | 'none' | 'watchlisted'> {
+  const logger = input.logger ?? consoleDomainLogger;
+  if (
+    await isOnLateWatchlist({
+      db: input.db,
+      snapshot: watchlist,
+      item: {
+        media: survivor.media,
+        plexGuid: survivor.plexGuid,
+        tmdbId: survivor.tmdbId,
+        tvdbId: survivor.tvdbId,
+      },
+    })
+  ) {
+    await abandonReleaseRecords({ db: input.db, recordIds: release.recordIds });
+    logger.info('[trash] kept', {
+      scope,
+      maintainerrMediaId: survivor.maintainerrMediaId,
+      title: survivor.title,
+      reason: 'watchlisted',
+    });
+    return 'watchlisted';
+  }
   await inTransaction(input.db, async (tx) => {
     await tx.insert(ledgerEvents).values({
       mediaItemId: survivor.mediaItemId,
@@ -1602,8 +1631,9 @@ async function expediteOneSurvivor(
       tmdbRating: survivor.tmdbRating,
     });
   });
-  // The destructive handle, then the settle of the item's records (DESIGN-052 D-14 step 7): an *arr 404 makes them
-  // active; a failed handle (rethrown, as before) or an item the *arr still has abandons them.
+  // The destructive handle, then the settle of the item's records (DESIGN-052 D-14 step 7 / D-25ax), always by the
+  // *arr's answer: a 404 makes them active even when the handle's answer was lost; a present item abandons them after
+  // a 2xx or a definitive refusal and leaves them in flight after an ambiguous failure. A failed handle is rethrown.
   let handleError: unknown = null;
   try {
     await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
@@ -1613,7 +1643,7 @@ async function expediteOneSurvivor(
       ),
     );
   } catch (error) {
-    handleError = error;
+    handleError = error ?? new Error('handle failed');
   }
   const settled = await settleReleaseRecords({
     db: input.db,
@@ -1621,62 +1651,62 @@ async function expediteOneSurvivor(
     arrKind: survivor.arrKind,
     arrItemId: release.arrItemId,
     recordIds: release.recordIds,
-    handled: handleError === null,
+    handleError,
     title: survivor.title,
-    logger: input.logger,
+    logger,
+  });
+  // D-21 / D-25az — one line per delete, after its settle.
+  logger.info('[trash] expedited', {
+    scope,
+    maintainerrMediaId: survivor.maintainerrMediaId,
+    title: survivor.title,
+    handled: handleError === null,
+    records: settled,
   });
   if (handleError !== null) throw handleError;
   return settled;
 }
 
 /**
- * ADR-093 / DESIGN-052 D-14 — Expedite's identity and Phase A for its survivors (the same order as the sweep, through
- * the same helpers): identity (three consecutive *arr read failures abort with ArrUpstreamError, nothing written), the
- * unrecordable kept, then every recordable survivor recorded `in_flight` and the Release Block written and read back
- * (ReleaseBlockError ⇒ PRECONDITION_FAILED, nothing deleted).
+ * ADR-093 / DESIGN-052 D-14 — Expedite's identity and Phase A for its survivors, through the seam the sweep shares
+ * (`recordAndBlockReleases` in release-block.ts): identity (three consecutive *arr read failures abort with
+ * ArrUpstreamError, nothing written), the unrecordable kept, then every recordable survivor recorded `in_flight` and
+ * the Release Block written and read back (ReleaseBlockError ⇒ PRECONDITION_FAILED, nothing deleted).
  */
-async function recordAndBlockReleases(
+async function recordAndBlockExpediteReleases(
   input: Pick<ExpediteDeletionInput, 'db' | 'arr' | 'logger'>,
   survivors: readonly ExpediteSurvivor[],
 ): Promise<{
   deletable: Array<{ survivor: ExpediteSurvivor; recordIds: string[]; arrItemId: number | null }>;
   unrecorded: ExpediteSurvivor[];
 }> {
-  const identity = await identifySurvivors({
+  const blocked = await recordAndBlockReleases({
     db: input.db,
-    arr: input.arr.read,
+    arr: input.arr,
     survivors: survivors.map((s) => ({
       key: s.maintainerrMediaId,
       mediaItemId: s.mediaItemId as string,
       title: s.title,
     })),
+    origin: 'expedite',
     logger: input.logger,
   });
-  if (identity.aborted) {
+  if (blocked.aborted) {
     throw new ArrUpstreamError(
       'Radarr or Sonarr did not answer, so nothing was deleted. Try again when the media apps respond normally.',
     );
   }
-  const recordable = survivors.filter((s) => identity.recordable.has(s.maintainerrMediaId));
-  const unrecorded = survivors.filter((s) => !identity.recordable.has(s.maintainerrMediaId));
-  const drafts = (s: ExpediteSurvivor): ReleaseRecordDraft[] => identity.recordable.get(s.maintainerrMediaId) ?? [];
-  const ids =
-    recordable.length > 0
-      ? await blockReleases({
-          db: input.db,
-          arr: input.arr,
-          items: recordable.map((s) => ({ key: s.maintainerrMediaId, drafts: drafts(s) })),
-          origin: 'expedite',
-          logger: input.logger,
-        })
-      : new Map<string, string[]>();
+  const drafts = (s: ExpediteSurvivor): ReleaseRecordDraft[] =>
+    blocked.recordable.get(s.maintainerrMediaId) ?? [];
   return {
-    deletable: recordable.map((survivor) => ({
-      survivor,
-      recordIds: ids.get(survivor.maintainerrMediaId) ?? [],
-      arrItemId: drafts(survivor)[0]?.arrItemId ?? null,
-    })),
-    unrecorded,
+    deletable: survivors
+      .filter((s) => blocked.recordable.has(s.maintainerrMediaId))
+      .map((survivor) => ({
+        survivor,
+        recordIds: blocked.recordIds.get(survivor.maintainerrMediaId) ?? [],
+        arrItemId: drafts(survivor)[0]?.arrItemId ?? null,
+      })),
+    unrecorded: survivors.filter((s) => !blocked.recordable.has(s.maintainerrMediaId)),
   };
 }
 
@@ -1785,12 +1815,14 @@ export async function expediteDeletion(
       tmdbId: target.tmdbId,
       tvdbId: target.tvdbId,
       arrKind: arrKindForTrashMedia(resolved.media),
+      media: resolved.media === 'tv' ? 'tv' : 'movie',
+      plexGuid: target.plexGuid,
       resolution: target.resolution,
       imdbRating: target.imdbRating,
       tmdbRating: target.tmdbRating,
     };
     // ADR-093 / DESIGN-052 D-14 — identity, then Phase A (record + Release Block + read-back), then the delete.
-    const releases = await recordAndBlockReleases(input, [survivor]);
+    const releases = await recordAndBlockExpediteReleases(input, [survivor]);
     const one = releases.deletable[0];
     if (!one) {
       // No recordable release (D-11): kept, never deleted.
@@ -1798,12 +1830,18 @@ export async function expediteDeletion(
     }
     let settled: Awaited<ReturnType<typeof expediteOneSurvivor>>;
     try {
-      settled = await expediteOneSurvivor(input, 'item', actorName, survivor, one);
+      settled = await expediteOneSurvivor(input, 'item', actorName, survivor, one, watchlist);
     } catch (error) {
       await reconcileAfterAbandon(input, survivor.arrKind);
       throw error;
     }
-    if (settled === 'abandoned') await reconcileAfterAbandon(input, survivor.arrKind);
+    if (settled === 'abandoned' || settled === 'watchlisted') {
+      await reconcileAfterAbandon(input, survivor.arrKind);
+    }
+    if (settled === 'watchlisted') {
+      // Added to the owner's watchlist after the gate's snapshot (D-25ay): the Watchlist Keep, never deleted.
+      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
+    }
     return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0, expeditedIds: [targetMediaId], unrecordedCount: 0 };
   }
 
@@ -1898,6 +1936,8 @@ export async function expediteDeletion(
       tmdbId: p.tmdbId,
       tvdbId: p.tvdbId,
       arrKind,
+      media: input.media === 'tv' ? 'tv' : 'movie',
+      plexGuid: p.plexGuid,
       resolution: p.resolution,
       imdbRating: p.imdbRating,
       tmdbRating: p.tmdbRating,
@@ -1906,7 +1946,7 @@ export async function expediteDeletion(
 
   // ADR-093 / DESIGN-052 D-14 — identity, then Phase A for every survivor, before any delete. An item whose release
   // cannot be recorded is kept (skipped): no term, no delete.
-  const releases = await recordAndBlockReleases(input, survivors);
+  const releases = await recordAndBlockExpediteReleases(input, survivors);
   skippedCount += releases.unrecorded.length;
 
   // PASS 2 — delete each survivor individually (intent-first, then per-item handle, then the settle).
@@ -1915,8 +1955,21 @@ export async function expediteDeletion(
   let anyAbandoned = false;
   for (const [index, { survivor, recordIds, arrItemId }] of releases.deletable.entries()) {
     try {
-      const settled = await expediteOneSurvivor(input, 'all', actorName, survivor, { recordIds, arrItemId });
+      const settled = await expediteOneSurvivor(
+        input,
+        'all',
+        actorName,
+        survivor,
+        { recordIds, arrItemId },
+        watchlist,
+      );
       if (settled === 'abandoned') anyAbandoned = true;
+      if (settled === 'watchlisted') {
+        // Added to the owner's watchlist after the gate's snapshot (D-25ay): the Watchlist Keep, never deleted.
+        anyAbandoned = true;
+        protectedCount += 1;
+        continue;
+      }
     } catch (error) {
       // The handle failed (the run stops, as before): the survivors not reached keep blocking nothing.
       const rest = releases.deletable.slice(index + 1).flatMap((d) => d.recordIds);

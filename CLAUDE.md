@@ -59,8 +59,9 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    written and read back before a Trash delete (never library files, quality profiles or custom
    formats; D-13); and the **Seerr watchlist enrollment**, one `settings/main` write per Seerr user
    turning watchlist sync on, behind the audited `seerr_watchlist_enroll` setting (D-17), plus the
-   one-off Sonarr `animeTags` preflight. Both go through `@hnet/arr/write` from `packages/domain`
-   only.
+   one-off `animeTags` preflight on **Seerr's** Sonarr-server settings (`PUT /api/v1/settings/sonarr/{id}`
+   on Seerr, the whole server object echoed and read back; the app never writes Sonarr's own settings).
+   Both go through `@hnet/arr/write` from `packages/domain` only.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see

@@ -4948,6 +4948,12 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
   .bwall-section__note {
     margin-bottom: 6px;
   }
+  /* ADR-093 / DESIGN-052 D-25bi — on a phone the "On a watchlist" note is the bookmark alone (the tooltip and
+     aria-label carry the words): the ~76px label beside the eye and requester chips squeezed the size text to
+     nothing on a 3-column wall and pushed the meta line past the tile at 375px and below. */
+  .bwall-watchlisted__label {
+    display: none;
+  }
 }
 
 /* Green-light / settings inputs. */

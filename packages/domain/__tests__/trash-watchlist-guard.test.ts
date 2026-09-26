@@ -16,12 +16,16 @@ import {
   mediaItems,
   trashBatchItems,
   trashBatches,
+  trashDeletedReleases,
   trashSweepStatus,
+  watchAccounts,
+  watchMarks,
   watchlistRegistryAccounts,
   watchlistRegistryRuns,
 } from '@hnet/db/schema';
 import {
   WatchlistRegistryUnverifiedError,
+  cancelBatch,
   classifyGuardian,
   createBatchFromPending,
   createStaticWatchlistSources,
@@ -137,8 +141,32 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     await t.db.delete(trashSweepStatus);
     await t.db.delete(watchlistRegistryAccounts);
     await t.db.delete(watchlistRegistryRuns);
+    await t.db.delete(watchMarks);
+    await t.db.delete(watchAccounts);
+    await t.db.delete(trashDeletedReleases);
     await setAppSetting({ db: t.db, key: 'trash_skip_admin_gate', value: true, actorId: admin });
   });
+
+  /** D-19 — the owner says "add it to my watchlist" (a Watchlist Change, ADR-092), at `at`. */
+  async function ownerAdds(guid: string, at = new Date()) {
+    await t.db
+      .insert(watchAccounts)
+      .values({ plexAccountId: 1, username: 'owner', role: 'owner' })
+      .onConflictDoNothing();
+    await t.db.insert(watchMarks).values({
+      plexAccountId: 1,
+      action: 'watchlist_add',
+      scope: 'movie',
+      titleKey: `plex:plex://movie/${guid}`,
+      kind: 'movie',
+      title: 'x',
+      plexGuid: `plex://movie/${guid}`,
+      query: 'q',
+      consumer: 'hop',
+      plexResult: 'pending',
+      createdAt: at,
+    });
+  }
 
   /** Create a leaving_soon batch of the whole pool and close its window. */
   async function expiredBatch(state: MaintState, targeting?: { maxItems: number }) {
@@ -300,6 +328,173 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     });
     expect(await getTrashSweepStatus({ db: t.db })).toMatchObject({
       lastOutcome: 'ok',
+      pausedSince: null,
+      banner: null,
+    });
+  });
+
+  it('D-19 / D-25ay: a watchlist add made WHILE the sweep runs keeps every item the loop has not reached yet', async () => {
+    await seedVerifiedWatchlistRegistry(t.db);
+    const state = baseState({ collections: [pool()] });
+    const batchId = await expiredBatch(state);
+    // The owner adds ms-9003 (G3) to his watchlist while ms-9001 is being deleted: after the gate's snapshot.
+    state.onHandle = async (ms) => {
+      if (ms === 'ms-9001') await ownerAdds(G3);
+    };
+    const { bundle, calls } = makeMaintainerr(state);
+    const { arr, fixture } = createStaticReleaseBlockArr();
+    const report = await sweepExpiredBatches({
+      arr,
+      db: t.db,
+      maintainerr: bundle,
+      registry: 'gate-only',
+      logger,
+    });
+    expect(await itemStates(batchId)).toMatchObject({
+      'ms-9001': { state: 'deleted' },
+      'ms-9002': { state: 'deleted' },
+      'ms-9003': { state: 'skipped', keepReason: 'watchlisted' },
+    });
+    expect(
+      calls
+        .filter((c) => c.pathname === '/collections/media/handle')
+        .map((c) => (c.body as { mediaId: string }).mediaId),
+    ).toEqual(['ms-9001', 'ms-9002']);
+    expect(report.batches[0]!.keptByReason).toMatchObject({ watchlisted: 1 });
+    // Its release record is abandoned and its term leaves the profile (it was never deleted).
+    const recs = await t.db.select().from(trashDeletedReleases);
+    const kept = recs.find((r) => r.arrItemId === 3)!;
+    expect(kept.state).toBe('abandoned');
+    expect(fixture.profiles.radarr[0]!.ignored).not.toContain(kept.term);
+  });
+
+  it('D-19 / D-25ay: Expedite all re-reads the owner`s watchlist adds before each delete', async () => {
+    await seedVerifiedWatchlistRegistry(t.db);
+    const state = baseState({ collections: [pool()] });
+    state.onHandle = async (ms) => {
+      if (ms === 'ms-9001') await ownerAdds(G2);
+    };
+    const { bundle } = makeMaintainerr(state);
+    const res = await expediteDeletion({
+      arr: createStaticReleaseBlockArr().arr,
+      db: t.db,
+      maintainerr: bundle,
+      scope: 'all',
+      media: 'movie',
+      actorId: admin,
+      snapshotMediaIds: ['ms-9001', 'ms-9002', 'ms-9003'],
+      logger,
+    });
+    expect(res).toMatchObject({ expeditedIds: ['ms-9001', 'ms-9003'], protectedCount: 1 });
+    expect(logs.some((l) => l.msg === '[trash] kept' && l.fields?.reason === 'watchlisted')).toBe(true);
+  });
+
+  it('D-10 / D-25v: after 6 hours the banner names each reason (the Release Block; an unsafe audit or a down *arr read "the media apps")', async () => {
+    const t0 = new Date();
+    const at6h = new Date(t0.getTime() + 6 * 3_600_000);
+    const scheduled = async (arr: ReturnType<typeof createStaticReleaseBlockArr>['arr'], state: MaintState) =>
+      sweepExpiredBatches({
+        arr,
+        db: t.db,
+        maintainerr: makeMaintainerr(state).bundle,
+        registry: 'refresh',
+        registrySources: createStaticWatchlistSources({ ownerId: '1' }).sources,
+        logger,
+        now: () => t0,
+      });
+    const reset = async () => {
+      await t.db.delete(trashBatches);
+      await t.db.delete(trashSweepStatus);
+      await t.db.delete(trashDeletedReleases);
+    };
+
+    // The Release Block could not be written.
+    let state = baseState({ collections: [pool()] });
+    await expiredBatch(state);
+    const failingWrite = createStaticReleaseBlockArr({ fail: new Set(['radarr:create']) }).arr;
+    expect((await scheduled(failingWrite, state)).outcome).toBe('paused_release_block');
+    expect((await getTrashSweepStatus({ db: t.db, now: at6h })).banner).toBe('release_block');
+    await reset();
+
+    // Radarr did not answer three identity reads in a row.
+    state = baseState({ collections: [pool()] });
+    await expiredBatch(state);
+    const downArr = createStaticReleaseBlockArr({ fail: new Set(['radarr:find']) }).arr;
+    expect((await scheduled(downArr, state)).outcome).toBe('aborted_arr');
+    expect((await getTrashSweepStatus({ db: t.db, now: at6h })).banner).toBe('media_apps');
+    await reset();
+
+    // Maintainerr's audit is unsafe.
+    state = baseState({ collections: [pool()] });
+    await expiredBatch(state);
+    state.integrations.seerr = false;
+    await expect(scheduled(releaseArr, state)).rejects.toThrow(/not in a safe state/);
+    const unsafe = await getTrashSweepStatus({ db: t.db, now: at6h });
+    expect(unsafe).toMatchObject({ lastOutcome: 'paused_audit_unsafe', banner: 'media_apps' });
+    // …and never before 6 hours.
+    expect((await getTrashSweepStatus({ db: t.db, now: new Date(at6h.getTime() - 60_000) })).banner).toBeNull();
+  });
+
+  it('D-25bf: a pause ends when its batch leaves another way (cancelled), and after a clean manual Expire now', async () => {
+    const state = baseState({ collections: [pool()] });
+    const batchId = await expiredBatch(state);
+    const { bundle } = makeMaintainerr(state);
+    const t0 = new Date();
+    await sweepExpiredBatches({
+      arr: releaseArr,
+      db: t.db,
+      maintainerr: bundle,
+      registry: 'refresh',
+      registrySources: createStaticWatchlistSources({ ownerId: '1', rosterFails: true }).sources,
+      logger,
+      now: () => t0,
+    });
+    expect((await getTrashSweepStatus({ db: t.db, now: new Date(t0.getTime() + 7 * 3_600_000) })).banner).toBe(
+      'gate',
+    );
+    await cancelBatch({ db: t.db, maintainerr: bundle, batchId, actorId: admin });
+    const { sources, calls } = createStaticWatchlistSources({ ownerId: '1' });
+    const nothing = await sweepExpiredBatches({
+      arr: releaseArr,
+      db: t.db,
+      maintainerr: bundle,
+      registry: 'refresh',
+      registrySources: sources,
+      logger,
+      now: () => new Date(t0.getTime() + 7 * 3_600_000),
+    });
+    expect(nothing).toMatchObject({ due: 0, outcome: null });
+    expect(calls.roster).toBeUndefined(); // still nothing else is done
+    const later = await getTrashSweepStatus({ db: t.db, now: new Date(t0.getTime() + 30 * 86_400_000) });
+    expect(later).toMatchObject({ lastOutcome: 'paused_gate', pausedSince: null, banner: null });
+    expect(logs.some((l) => l.msg === '[trash] sweep_pause_cleared' && l.fields?.via === 'nothing_due')).toBe(
+      true,
+    );
+
+    // Paused again; then an admin's Expire now of that batch succeeds (gate-only): the pause ends too.
+    const second = await expiredBatch(state);
+    await sweepExpiredBatches({
+      arr: releaseArr,
+      db: t.db,
+      maintainerr: bundle,
+      registry: 'refresh',
+      registrySources: createStaticWatchlistSources({ ownerId: '1', rosterFails: true }).sources,
+      logger,
+      now: () => t0,
+    });
+    expect((await getTrashSweepStatus({ db: t.db })).pausedSince).not.toBeNull();
+    await seedVerifiedWatchlistRegistry(t.db);
+    const manual = await sweepExpiredBatches({
+      arr: releaseArr,
+      db: t.db,
+      maintainerr: bundle,
+      registry: 'gate-only',
+      batchId: second,
+      actorId: admin,
+      logger,
+    });
+    expect(manual.paused).toBeNull();
+    expect(await getTrashSweepStatus({ db: t.db, now: new Date(t0.getTime() + 30 * 86_400_000) })).toMatchObject({
       pausedSince: null,
       banner: null,
     });

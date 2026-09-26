@@ -201,6 +201,34 @@ describe('deriveTerm — movies (D-12)', () => {
     ).toBe('exact');
   });
 
+  it('D-25be: a short name (title, year, resolution, nothing else) yields no exact term: it would block every 1080p release', () => {
+    const trap = (name: string) => deriveTerm(movie({ arrTitle: 'Trap', releaseNames: [name] }));
+    expect(trap('Trap.2024.1080p')).toBeNull();
+    expect(trap('Trap (2024) 1080p')).toBeNull();
+    // A group makes it a group term (that group's release only); any token past the resolution makes the exact prefix
+    // specific enough.
+    const withGroup = trap('Trap.2024.1080p-FLUX')!;
+    expect(withGroup.shape).toBe('group');
+    expect(termMatches(withGroup.term, 'Trap 2024 1080p BluRay x264-SPARKS')).toBe(false);
+    const withSource = trap('Trap.2024.1080p.BluRay')!;
+    expect(withSource.shape).toBe('exact');
+    expect(termMatches(withSource.term, 'Trap 2024 1080p WEBRip x265-RARBG')).toBe(false);
+    // A show: the season marker counts like the year.
+    expect(
+      deriveTerm({
+        kind: 'show',
+        arrTitle: 'Some Show',
+        arrYears: [2010],
+        releaseNames: ['Some.Show.S01.720p'],
+        renamedFileName: null,
+        releaseGroup: null,
+        resolution: null,
+        remux: false,
+        season: 1,
+      }),
+    ).toBeNull();
+  });
+
   it('nothing known (no group, no name): no term', () => {
     expect(deriveTerm(movie({}))).toBeNull();
   });

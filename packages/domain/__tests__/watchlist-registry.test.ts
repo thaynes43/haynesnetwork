@@ -31,6 +31,8 @@ import {
   evaluateRegistryGate,
   evaluateWatchlist,
   getWatchlistRegistrySummary,
+  isOnLateWatchlist,
+  seerrReaderFrom,
   readDisplayWatchlistSnapshot,
   refreshWatchlistRegistry,
   type DomainLogger,
@@ -39,6 +41,7 @@ import {
   type WatchlistKeys,
   type WatchlistSnapshot,
 } from '../src/index';
+import { SeerrClient } from '@hnet/arr/read';
 import { bootMigratedDb, type TestDb } from './helpers';
 
 const HOUR = 3_600_000;
@@ -379,7 +382,13 @@ describe('evaluateWatchlist (D-06)', () => {
     ).toBe(true);
     expect(
       evaluateWatchlist(
-        { purpose: 'delete', verified: true, keys: EMPTY_WATCHLIST_KEYS, runId: 'r' },
+        {
+          purpose: 'delete',
+          verified: true,
+          keys: EMPTY_WATCHLIST_KEYS,
+          runId: 'r',
+          overlaySince: new Date(0),
+        },
         hit,
       ),
     ).toEqual({
@@ -564,7 +573,7 @@ describe('refreshWatchlistRegistry + evaluateRegistryGate (embedded PG16)', () =
     expect(await itemsOf('101')).toEqual([`community:${D}`]);
   });
 
-  it('Seerr answering 200-empty after a non-empty read, or its error body on page 2, leaves the items unchanged', async () => {
+  it('Seerr answering 200-empty after a non-empty read, or an inconsistent read (classified answers), leaves the items unchanged', async () => {
     const s = createStaticWatchlistSources(baseFixture());
     await refresh(s, T0);
     s.fixture.accounts![1]!.seerr!.answer = { kind: 'empty' };
@@ -584,6 +593,61 @@ describe('refreshWatchlistRegistry + evaluateRegistryGate (embedded PG16)', () =
     s.fixture.accounts![1]!.seerr!.answer = { kind: 'failed', errorClass: 'inconsistent' };
     await refresh(s, at(2));
     expect(await itemsOf('102')).toEqual([`seerr:${C}`]);
+    expect(await sourceRow('102', 'seerr')).toMatchObject({
+      status: 'carried',
+      lastErrorClass: 'inconsistent',
+    });
+  });
+
+  it('through the real SeerrClient (HTTP stub): a two-page list is read whole, and a page 2 answering the error body leaves the items unchanged', async () => {
+    let page2Broken = false;
+    const pagesRead: number[] = [];
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    const seerr = seerrReaderFrom(
+      new SeerrClient({
+        baseUrl: 'http://seerr.test',
+        apiKey: 'k',
+        fetchImpl: (async (input: unknown) => {
+          const url = new URL(String(input));
+          if (url.pathname === '/api/v1/user') {
+            return json({
+              pageInfo: { pages: 1, pageSize: 100, results: 1, page: 1 },
+              results: [{ id: 5, plexId: 102, userType: 1 }],
+            });
+          }
+          expect(url.pathname).toBe('/api/v1/user/5/watchlist');
+          const page = Number(url.searchParams.get('page'));
+          pagesRead.push(page);
+          const row = (ratingKey: string) => ({ id: 1, ratingKey, title: 'x', mediaType: 'movie', tmdbId: 1 });
+          if (page === 1) return json({ page: 1, totalPages: 2, totalResults: 2, results: [row(C)] });
+          return json(
+            page2Broken
+              ? { page: 2, totalPages: 0, totalResults: 0, results: [] }
+              : { page: 2, totalPages: 2, totalResults: 2, results: [row(D)] },
+          );
+        }) as typeof fetch,
+      }),
+    );
+    const plex = createStaticWatchlistSources(baseFixture()).sources.plex;
+    const run = (now: Date) =>
+      refreshWatchlistRegistry({
+        db: t.db,
+        sources: { plex, seerr },
+        trigger: 'schedule',
+        logger,
+        now: () => now,
+        sleep: noSleep,
+      });
+    expect((await run(T0)).status).toBe('ok');
+    expect(pagesRead).toEqual([1, 2]);
+    const both = [`seerr:${C}`, `seerr:${D}`].sort();
+    expect(await itemsOf('102')).toEqual(both);
+    page2Broken = true;
+    pagesRead.length = 0;
+    expect((await run(at(1))).status).toBe('ok');
+    expect(pagesRead).toEqual([1, 2, 1, 2]); // inconsistent, read again once, then failed
+    expect(await itemsOf('102')).toEqual(both);
     expect(await sourceRow('102', 'seerr')).toMatchObject({
       status: 'carried',
       lastErrorClass: 'inconsistent',
@@ -802,6 +866,106 @@ describe('refreshWatchlistRegistry + evaluateRegistryGate (embedded PG16)', () =
       .where(eq(watchlistRegistryAccounts.plexAccountId, '900'));
     expect(still?.leftAt).toBeNull();
     expect(await itemsOf('900')).toEqual([`seerr:${E}`]);
+  });
+
+  it('D-25ba: while the Seerr user list fails, a seerr_only account is re-decided each run: carried, blocking after 24 h, unreadable at 72 h', async () => {
+    const s = createStaticWatchlistSources({
+      ownerId: '1',
+      owner: [{ discoverId: A, kind: 'movie', tmdbId: 218 }],
+      seerrOnly: [
+        {
+          plexId: '900',
+          userId: 9,
+          answer: { kind: 'ok', totalResults: 1, items: [{ discoverId: E, kind: 'movie', tmdbId: 5 }] },
+        },
+      ],
+    });
+    await refresh(s, T0);
+    expect(await sourceRow('900', 'seerr')).toMatchObject({ status: 'read' });
+    s.fixture.seerrUsersFail = true;
+    await refresh(s, at(1));
+    expect(await sourceRow('900', 'seerr')).toMatchObject({
+      status: 'carried',
+      lastErrorClass: 'seerr_users',
+    });
+    // Past 24 h the carried source blocks the gate, like any carried Seerr source.
+    await refresh(s, at(26));
+    await expect(gate(at(26.1))).rejects.toMatchObject({ reason: 'account_unverified' });
+    // At 72 h it freezes `unreadable`: its titles still protect, and it no longer blocks.
+    await refresh(s, at(74));
+    expect(await sourceRow('900', 'seerr')).toMatchObject({ status: 'unreadable' });
+    const snap = await gate(at(74.1));
+    expect(snap.keys.movie.discover.has(E)).toBe(true);
+    const [acct] = await t.db
+      .select()
+      .from(watchlistRegistryAccounts)
+      .where(eq(watchlistRegistryAccounts.plexAccountId, '900'));
+    expect(acct).toMatchObject({ class: 'seerr_only', leftAt: null, status: 'unreadable' });
+    // Seerr not configured behaves the same (`seerr_unconfigured`): still current, still decided.
+    s.fixture.seerrUsersFail = false;
+    s.fixture.noSeerr = true;
+    await refresh(s, at(74.5));
+    expect(await sourceRow('900', 'seerr')).toMatchObject({
+      status: 'unreadable',
+      lastErrorClass: 'seerr_unconfigured',
+    });
+    // A successful user list that no longer has it marks it left.
+    s.fixture.noSeerr = false;
+    s.fixture.seerrOnly = [];
+    await refresh(s, at(75));
+    const [gone] = await t.db
+      .select()
+      .from(watchlistRegistryAccounts)
+      .where(eq(watchlistRegistryAccounts.plexAccountId, '900'));
+    expect(gone?.leftAt).toEqual(at(75));
+  });
+
+  it('D-25ay: a change made within 5 minutes before the run started counts; one made after the snapshot is re-read late', async () => {
+    await refresh(baseFixture(), T0);
+    await t.db.insert(watchAccounts).values({ plexAccountId: 1, username: 'owner', role: 'owner' });
+    const mark = (id: string, createdAt: Date, plexResult: 'pending' | 'written' = 'pending') =>
+      t.db.insert(watchMarks).values({
+        plexAccountId: 1,
+        action: 'watchlist_add',
+        scope: 'movie',
+        titleKey: `plex:plex://movie/${id}`,
+        kind: 'movie',
+        title: 'x',
+        plexGuid: `plex://movie/${id}`,
+        query: 'q',
+        consumer: 'hop',
+        plexResult,
+        createdAt,
+      });
+    // `pending` just before the run: plex.tv had not taken it when the run read the owner's list.
+    await mark(D, new Date(T0.getTime() - 2 * 60_000));
+    await mark(E, new Date(T0.getTime() - 10 * 60_000), 'written'); // outside the margin: the run's read had it
+    const snap = await gate(at(0.1));
+    expect(snap.overlaySince).toEqual(new Date(T0.getTime() - 5 * 60_000));
+    expect(snap.keys.movie.discover.has(D)).toBe(true);
+    expect(snap.keys.movie.discover.has(E)).toBe(false);
+    const item = (id: string) => ({ media: 'movie' as const, plexGuid: `plex://movie/${id}`, tmdbId: null, tvdbId: null });
+    expect(await isOnLateWatchlist({ db: t.db, snapshot: snap, item: item(C) })).toBe(false);
+    await mark(C, at(0.2)); // after the snapshot was taken
+    expect(await isOnLateWatchlist({ db: t.db, snapshot: snap, item: item(C) })).toBe(true);
+    expect(await isOnLateWatchlist({ db: t.db, snapshot: snap, item: item(E) })).toBe(false);
+  });
+
+  it('D-25bg: the card`s "Lists" split counts every current account once, the same way as the headline', async () => {
+    const f = baseFixture();
+    f.accounts!.push(
+      { plexAccountId: '104', cls: 'friend', community: { kind: 'answered', nodes: [] } },
+      { plexAccountId: '105', cls: 'friend', community: { kind: 'answered', nodes: [] } },
+    );
+    const report = await refresh(f, T0);
+    const c = report.counts!;
+    // 1 owner + 101 (titles) + 102 (a Seerr list) are read; 104/105 answered only empty and unverified; 103 managed.
+    expect(c.byList).toEqual({ read: 3, empty: 2, never_read: 0, unreadable: 0, unresolvable: 1 });
+    expect(Object.values(c.byList).reduce((a, b) => a + b, 0)).toBe(c.roster);
+    expect(c.byList.read).toBe(c.accountsRead);
+    expect(c.roster - c.byList.read).toBe(c.accountsUnreadable);
+    const summary = await getWatchlistRegistrySummary({ db: t.db });
+    expect(summary.byList).toEqual(c.byList);
   });
 
   it('the lock: a second refresh while one holds it is `busy` (the CronJob skips)', async () => {

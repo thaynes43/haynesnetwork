@@ -8,6 +8,10 @@ import { eq } from 'drizzle-orm';
 import { trashBatches } from '@hnet/db/schema';
 import {
   buildMaintainerrClientBundle,
+  createBatchFromPending,
+  createStaticWatchlistSources,
+  greenlightBatch,
+  sweepExpiredBatches,
   createStaticReleaseBlockArr,
   upsertMediaItemsBatch,
   type MaintainerrClientBundle,
@@ -433,5 +437,47 @@ describe('trash — the Registry Gate on the web paths (ADR-093)', () => {
     const detail = await admin2.trash.batches.get({ batchId });
     expect(detail.items.every((i) => i.state === 'pending')).toBe(true);
     await admin2.trash.batches.cancel({ batchId });
+  });
+});
+
+// ADR-093 / DESIGN-052 D-10 (AC-34) — the paused banner's reason reaches `trash.status` once a scheduled sweep of a
+// due batch has been paused for 6 hours or more (the domain suite pins the per-reason mapping; this pins the wiring).
+describe('trash.status — the paused banner after 6 hours (ADR-093)', () => {
+  let t: TestDb;
+  let member: Awaited<ReturnType<typeof createUser>>;
+
+  beforeAll(async () => {
+    t = await bootMigratedDb(); // no registry run: the scheduled sweep's gate refuses
+    member = await createUser(t.db, { email: 'banner-member@example.com' });
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'radarr',
+      items: [
+        { arrItemId: 81, tmdbId: 55001, title: 'A', sortTitle: 'a', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/m' },
+        { arrItemId: 82, tmdbId: 55002, title: 'B', sortTitle: 'b', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/m' },
+      ],
+    });
+  });
+  afterAll(async () => t?.stop());
+
+  it('a scheduled sweep paused on the gate 7 hours ago shows sweepPause "gate"', async () => {
+    const maintainerr = stubMaintainerr();
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr, mediaKind: 'movie', actorId: null });
+    await greenlightBatch({ db: t.db, maintainerr, batchId, windowDays: -1, actorId: null });
+    const status = () =>
+      caller(makeCtx(t.db, sessionUser(member, { trash: 'read_only' }), undefined, undefined, stubMaintainerr())).trash.status();
+    expect((await status()).sweepPause).toBeNull();
+    const sevenHoursAgo = new Date(Date.now() - 7 * 3_600_000);
+    const report = await sweepExpiredBatches({
+      db: t.db,
+      maintainerr,
+      arr: createStaticReleaseBlockArr().arr,
+      registry: 'refresh',
+      registrySources: createStaticWatchlistSources({ ownerId: '1', rosterFails: true }).sources,
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+      now: () => sevenHoursAgo,
+    });
+    expect(report).toMatchObject({ outcome: 'paused_gate', paused: { reason: 'gate' } });
+    expect(await status()).toMatchObject({ safe: true, sweepPause: 'gate' });
   });
 });

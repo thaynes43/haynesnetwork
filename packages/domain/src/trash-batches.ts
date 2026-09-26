@@ -30,7 +30,7 @@ import {
   type TrashMediaKind,
   type TrashSweepOutcome,
 } from '@hnet/db';
-import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { getAppSetting, getFinalWarning } from './app-settings';
 import { inTransaction, resolveDb } from './db-client';
 // ADR-034 / DESIGN-015 (PLAN-016) — same-tx Pushover enqueue on batch lifecycle transitions.
@@ -48,8 +48,7 @@ import {
 } from './errors';
 import {
   abandonReleaseRecords,
-  blockReleases,
-  identifySurvivors,
+  recordAndBlockReleases,
   reconcileReleaseBlock,
   settleReleaseRecords,
   stampReleaseRecords,
@@ -59,6 +58,7 @@ import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import {
   evaluateRegistryGate,
   evaluateWatchlist,
+  isOnLateWatchlist,
   readDisplayWatchlistSnapshot,
   refreshWatchlistRegistry,
   type DeleteWatchlistSnapshot,
@@ -1318,7 +1318,13 @@ export async function sweepExpiredBatches(
     outcome: null,
     registryRefresh: null,
   };
-  if (due.length === 0) return empty;
+  if (due.length === 0) {
+    // D-25s / D-25bf — nothing due records nothing, except that a pause left by a batch that has since gone (cancelled,
+    // or expired by hand) ends here: no due batch means reclaim is not paused, so the banner and the next pause's
+    // `pausedForH` must not keep counting from it.
+    if (scheduled) await clearSweepPause(input.db, 'nothing_due', logger);
+    return empty;
+  }
 
   // Fail closed on an unsafe install — refuse the whole sweep (ADR-023 C-04). The scheduled sweep records the pause.
   const audit = await auditMaintainerr({ maintainerr: input.maintainerr });
@@ -1418,6 +1424,9 @@ export async function sweepExpiredBatches(
         logger,
       )
     : null;
+  // D-25bf — a manual Expire now that swept cleanly proves deletion works again: it ends a recorded pause (it still
+  // writes no outcome row; the scheduled sweep owns those).
+  if (!scheduled && !aborted) await clearSweepPause(input.db, 'manual_ok', logger);
   logger.info('[trash] sweep_summary', {
     batches: results.length,
     deleted: results.reduce((n, r) => n + r.deletedCount, 0),
@@ -1494,6 +1503,23 @@ async function recordSweepOutcome(
     });
   }
   return outcome;
+}
+
+/**
+ * DESIGN-052 D-25bf — end a recorded pause without an outcome row: one conditional UPDATE of `paused_since` (a no-op
+ * when there is none). Called when a scheduled sweep finds nothing due, and after a clean manual Expire now.
+ */
+async function clearSweepPause(
+  db: DbClient | undefined,
+  via: 'nothing_due' | 'manual_ok',
+  logger: DomainLogger,
+): Promise<void> {
+  const cleared = await resolveDb(db)
+    .update(trashSweepStatus)
+    .set({ pausedSince: null })
+    .where(and(eq(trashSweepStatus.id, 1), isNotNull(trashSweepStatus.pausedSince)))
+    .returning({ id: trashSweepStatus.id });
+  if (cleared.length > 0) logger.info('[trash] sweep_pause_cleared', { via });
 }
 
 /** DESIGN-052 D-10 — the banner's reason family: the gate, the Release Block, or the media apps (unsafe / *arr). */
@@ -1640,21 +1666,30 @@ async function expireOneBatch(input: {
     survivors.push({ item, fresh });
   }
 
-  // D-14 step 4 — the identity of each survivor's release (D-11). Three consecutive *arr read failures mean the *arr
-  // is down: abort before Phase A (nothing recorded, nothing deleted; the batch stays leaving_soon). A single failure,
-  // or a survivor with no recordable term, is KEPT `release_unrecorded` (no term, no delete); it comes back later.
-  const identity = await identifySurvivors({
+  // D-14 steps 4..5 — through the seam Expedite shares (`recordAndBlockReleases`): the identity of each survivor's
+  // release (D-11); three consecutive *arr read failures mean the *arr is down, so the sweep aborts before Phase A
+  // (nothing recorded, nothing deleted; the batch stays leaving_soon). A single failure, or a survivor with no
+  // recordable term, is KEPT `release_unrecorded` (no term, no delete); it comes back later. Then Phase A, before any
+  // delete: every survivor recorded `in_flight`, the Release Block written and read back. A failure throws
+  // ReleaseBlockError (the records are abandoned; nothing is claimed) — the sweep pauses.
+  const byKey = new Map(survivors.map((s) => [s.item.id, s] as const));
+  const blocked = await recordAndBlockReleases({
     db: input.db,
-    arr: input.arr.read,
+    arr: input.arr,
     survivors: survivors.map((s) => ({
       key: s.item.id,
       // A survivor passed the guardian, which keeps every item with no ledger row (`unevaluable`).
       mediaItemId: s.fresh.mediaItemId as string,
       title: s.item.title,
     })),
+    origin: 'sweep',
     logger: input.logger,
+    onUnrecorded: async (key) => {
+      const s = byKey.get(key);
+      if (s) await keep(s.item, 'release_unrecorded');
+    },
   });
-  if (identity.aborted) {
+  if (blocked.aborted) {
     const counts = await countItemStates(input.db, input.batchId);
     input.logger.warn('[trash] sweep_aborted', { batchId: input.batchId, reason: 'arr_identity' });
     return {
@@ -1671,29 +1706,32 @@ async function expireOneBatch(input: {
       keptByReason,
     };
   }
-  for (const s of survivors) {
-    if (identity.unrecorded.has(s.item.id)) await keep(s.item, 'release_unrecorded');
-  }
-  const toDelete = survivors.filter((s) => identity.recordable.has(s.item.id));
-
-  // D-14 step 5 — Phase A, before any delete: every survivor recorded `in_flight`, then the Release Block written and
-  // read back. A failure throws ReleaseBlockError (the records are abandoned; nothing is claimed) — the sweep pauses.
-  const recordIds =
-    toDelete.length > 0
-      ? await blockReleases({
-          db: input.db,
-          arr: input.arr,
-          items: toDelete.map((s) => ({ key: s.item.id, drafts: identity.recordable.get(s.item.id) ?? [] })),
-          origin: 'sweep',
-          logger: input.logger,
-        })
-      : new Map<string, string[]>();
+  const toDelete = survivors.filter((s) => blocked.recordable.has(s.item.id));
+  const recordIds = blocked.recordIds;
   let anyAbandoned = false;
 
   // D-14 steps 6..7 — Phase B, per item: the guarded claim, the handle, then the settle of its records.
   for (const [index, { item, fresh }] of toDelete.entries()) {
     const ids = recordIds.get(item.id) ?? [];
-    const arrItemId = identity.recordable.get(item.id)?.[0]?.arrItemId ?? null;
+    const arrItemId = blocked.recordable.get(item.id)?.[0]?.arrItemId ?? null;
+    // D-19 / D-25ay — the owner's Watchlist Changes made since the snapshot, re-read just before the claim: an "add it
+    // to my watchlist" made while this sweep runs protects every item the loop has not reached yet.
+    if (
+      await isOnLateWatchlist({
+        db: input.db,
+        snapshot: input.watchlist,
+        item: {
+          media: input.mediaKind === 'tv' ? 'tv' : 'movie',
+          plexGuid: fresh.plexGuid,
+          tmdbId: fresh.tmdbId,
+          tvdbId: fresh.tvdbId,
+        },
+      })
+    ) {
+      await keep(item, 'watchlisted');
+      if ((await abandonReleaseRecords({ db: input.db, recordIds: ids })) > 0) anyAbandoned = true;
+      continue;
+    }
     // Cold + positively evaluated + recorded ⇒ delete this one item. F2 — the state flip is a GUARDED UPDATE
     // (`... AND state='pending'`): if a concurrent Save flipped the row between the candidate-select
     // above and this write, it claims 0 rows and we ABORT this item's delete (no intent event, no
@@ -1759,29 +1797,40 @@ async function expireOneBatch(input: {
     reclaimedBytes += fresh.sizeBytes ?? 0;
     // The destructive per-item handle. A single failure is tolerated (intent + snapshot are durable;
     // Maintainerr reconciles a genuinely-missed delete), but N consecutive failures trip the breaker.
-    let handled = false;
+    let handleError: unknown = null;
     try {
       await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
         input.maintainerr.write.handleCollectionMedia(fresh.collectionId, item.maintainerrMediaId),
       );
-      handled = true;
       consecutiveHandleFailures = 0;
-    } catch {
+    } catch (error) {
+      handleError = error ?? new Error('handle failed');
       handleErrors += 1;
       consecutiveHandleFailures += 1;
     }
-    // D-14 step 7 — an *arr 404 makes the records active; a failed handle or a present item abandons them.
+    const handled = handleError === null;
+    // D-14 step 7 / D-25ax — settled by the *arr's answer whatever the handle returned: a 404 makes the records
+    // active (a handle whose answer was lost after the delete still blocks); a present item abandons them after a 2xx
+    // or a definitive refusal, and leaves them in flight after an ambiguous failure (the stranded settle decides).
     const settled = await settleReleaseRecords({
       db: input.db,
       arr: input.arr.read,
       arrKind: sweepArrKind,
       arrItemId,
       recordIds: ids,
-      handled,
+      handleError,
       title: item.title,
       logger: input.logger,
     });
     if (settled === 'abandoned') anyAbandoned = true;
+    // D-21 / D-25az — one line per delete, after its settle (PLAN-072 S7 reads the order from these).
+    input.logger.info('[trash] deleted', {
+      batchId: input.batchId,
+      maintainerrMediaId: item.maintainerrMediaId,
+      title: item.title,
+      handled,
+      records: settled,
+    });
     if (!handled && consecutiveHandleFailures >= HANDLE_FAILURE_LIMIT) {
       aborted = true;
       // The survivors not reached keep their pending state; their in-flight records must not keep blocking.

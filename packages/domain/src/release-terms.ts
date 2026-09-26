@@ -188,6 +188,17 @@ export function looksLikeRelease(p: ParsedReleaseName): boolean {
   );
 }
 
+/** D-25be — does the name carry a token besides its title, its year, its season marker and its resolution? */
+export function hasTokenBeyondRelease(p: ParsedReleaseName): boolean {
+  const rest = p.tokens.slice(p.titleTokens.length);
+  return rest.some(
+    (t) =>
+      !(p.year !== null && t === String(p.year)) &&
+      !/^s\d{1,3}(?:e\d+)*$/.test(t) &&
+      !/^(2160|1080|720|480)p$/.test(t),
+  );
+}
+
 /** An *arr quality resolution as a term resolution, or null (576, 0, unknown). */
 export function toTermResolution(value: number | null | undefined): TermResolution | null {
   return (TERM_RESOLUTIONS as readonly number[]).includes(value ?? -1)
@@ -411,6 +422,10 @@ export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
   // names a release (a resolution or a group): the exact form of a bare "Title (Year)" would block every release.
   if (renamedOnly || primary === undefined) return null;
   if (!looksLikeRelease(primary)) return null;
+  // D-25be — the exact form is a PREFIX match, so it must carry something past the title, the year / season and the
+  // resolution: a group, or at least one other token (a source, a codec …). The exact form of "Trap.2024.1080p" would
+  // block every 1080p release of the title, as the bare "Title (Year)" of D-25ae would block every release.
+  if (primary.group === null && !hasTokenBeyondRelease(primary)) return null;
   const tokens = primary.tokens;
   if (tokens.length === 0) return null;
   let exact: string;

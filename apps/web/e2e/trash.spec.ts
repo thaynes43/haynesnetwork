@@ -155,6 +155,101 @@ async function releaseTile(tile: Locator, tap: Locator, glyph: 'shield' | 'check
   await tap.click();
 }
 
+/** ADR-093 — set the stub Seerr member's watchlist (Seerr result rows); `null` restores the default (Stub Dune). */
+async function setSeerrMemberWatchlist(page: Page, results: Array<Record<string, unknown>> | null): Promise<void> {
+  await page.request.post(`${env().STUB_ARR_URL}/_stub/seerr-watchlist`, {
+    data: results === null ? { userId: 2 } : { userId: 2, results },
+  });
+}
+
+/** ADR-015 / DESIGN-052 D-25bi — every meta-line child of every pending tile stays inside its tile. */
+async function expectMetaInsideTiles(page: Page): Promise<Array<{ title: string; textWidth: number }>> {
+  const measured = await page.getByTestId('trash-tile').evaluateAll((tiles) =>
+    tiles.map((tile) => {
+      const box = tile.getBoundingClientRect();
+      const meta = tile.querySelector('.bwall-meta');
+      const children = meta ? [...meta.children].map((c) => c.getBoundingClientRect()) : [];
+      const text = tile.querySelector('.bwall-meta-text')?.getBoundingClientRect();
+      return {
+        title: tile.querySelector('.bwall-caption')?.textContent ?? '',
+        left: box.left,
+        right: box.right,
+        children: children.map((c) => ({ left: c.left, right: c.right })),
+        textWidth: text ? text.width : 0,
+      };
+    }),
+  );
+  for (const tile of measured) {
+    for (const child of tile.children) {
+      expect(child.left, `${tile.title}: a meta chip starts before its tile`).toBeGreaterThanOrEqual(tile.left - 0.5);
+      expect(child.right, `${tile.title}: a meta chip runs past its tile`).toBeLessThanOrEqual(tile.right + 0.5);
+    }
+  }
+  return measured.map((m) => ({ title: m.title, textWidth: m.textWidth }));
+}
+
+// ADR-093 / DESIGN-052 D-10 (AC-34; the test strategy's "Web" line) — the watchlist surfaces on the real page. A cold
+// pool title put on the member's Seerr watchlist (then the real registry mode re-run) wears the "On a watchlist" note
+// with its tooltip; on a phone the note is the bookmark alone and every meta-line chip stays inside its tile at
+// 390 / 360 / 320 (D-25bi); Expedite all counts it among the protected; the admin Watchlists card reads its headline
+// and the "Lists" group. Runs first, on the untouched stub pool, and restores the default list afterwards.
+test.describe('trash — watchlist protection on the page (ADR-093)', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  test('the "On a watchlist" note, its phone geometry, the Expedite breakdown and the Watchlists card', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await setSeerrMemberWatchlist(page, [
+      { id: 12, ratingKey: '5d776d1b00000000000000a4', title: 'Vanished Heist', mediaType: 'movie', tmdbId: 880004 },
+    ]);
+    refreshWatchlists();
+    try {
+      await signIn(page, 'admin');
+      await openTrashMovies(page);
+      const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
+      const note = vanished.getByTestId('wall-watchlisted');
+      await expect(note).toBeVisible();
+      await expect(note).toHaveAttribute('title', "On a watchlist. It won't be deleted while it stays there.");
+      await expect(note).toHaveAttribute('aria-label', "On a watchlist. It won't be deleted while it stays there.");
+      await expect(note.locator('.bwall-watchlisted__label')).toBeVisible();
+      await expectMetaInsideTiles(page);
+
+      for (const width of [390, 360, 320]) {
+        await page.setViewportSize({ width, height: 844 });
+        await expect(note).toBeVisible();
+        await expect(note.locator('.bwall-watchlisted__label')).toBeHidden();
+        const texts = await expectMetaInsideTiles(page);
+        // The size text keeps room beside the chips (it ellipsizes; it never collapses to nothing).
+        for (const t of texts) expect(t.textWidth, `${t.title} at ${width}px`).toBeGreaterThan(12);
+        await expectViewportFit(page);
+      }
+      await page.setViewportSize({ width: 1280, height: 800 });
+
+      // Expedite all: the watchlisted title is protected, never deleted, and the confirm says so.
+      await page.getByTestId('trash-expedite-all').click();
+      const confirm = page.getByTestId('trash-expedite-all-confirm');
+      await expect(confirm).toContainText('0 will be deleted NOW');
+      await expect(confirm).toContainText('3 protected');
+      await expect(page.getByTestId('trash-expedite-watchlisted')).toHaveText('1 on a watchlist');
+      await expect(page.getByTestId('trash-expedite-all-submit')).toBeDisabled();
+      await confirm.getByRole('button', { name: 'Cancel' }).click();
+      expect((await maintainerrCalls(page)).some((c) => c.path === '/collections/media/handle')).toBe(false);
+
+      // The admin Watchlists card: the headline and the "Lists" group (every account once, D-25bg).
+      await page.goto('/settings/trash');
+      await expect(page.getByTestId('trash-watchlists')).toBeVisible();
+      await expect(page.getByTestId('watchlists-headline')).toContainText(/Checked .*\d+ accounts? read, \d+ can't be read\./);
+      await expect(page.getByTestId('watchlists-by-status')).toContainText('Read');
+      await expect(page.getByTestId('watchlists-by-status')).not.toContainText("Can't be read");
+    } finally {
+      await setSeerrMemberWatchlist(page, null);
+      refreshWatchlists();
+      await page.setViewportSize({ width: 1280, height: 800 });
+    }
+  });
+});
+
 test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
   test.describe.configure({ mode: 'serial' });
 
@@ -678,7 +773,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(confirm).toContainText('4 items');
     await expect(confirm).toContainText('1 will be deleted NOW');
     await expect(confirm).toContainText('2 protected');
-    await expect(confirm).toContainText('1 kept — can’t be verified safe');
+    await expect(confirm).toContainText('1 kept, can’t be verified safe');
 
     // Fire — this is the real per-item deletion of Vanished (feeds Recently Deleted).
     await page.getByTestId('trash-expedite-all-submit').click();

@@ -14,6 +14,7 @@
 // - the re-add check and the Watchlists card counts (D-23).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
+import { ArrHttpError, ArrTimeoutError } from '@hnet/arr';
 import {
   ledgerEvents,
   mediaItems,
@@ -28,12 +29,14 @@ import {
   RELEASE_BLOCK_TERM_CAP,
   ReleaseBlockError,
   checkReleaseBlockReadds,
+  classifyHandleFailure,
   createBatchFromPending,
   createStaticReleaseBlockArr,
   expediteDeletion,
   getReleaseBlockSummary,
   identifyRelease,
   reconcileReleaseBlock,
+  reportPoolReleaseIdentity,
   termMatches,
   setAppSetting,
   sweepExpiredBatches,
@@ -461,6 +464,161 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
     ).toBe('recordable');
   });
 
+  it('D-25bb: an SD series key with one named file and one nameless file keeps the series (the nameless release would go unblocked)', async () => {
+    const f = (n: number, sceneName: string | null) => ({
+      seriesId: 50,
+      seasonNumber: 1,
+      relativePath: `Season 01/The Office (US) - S01E0${n} - Ep [SDTV]-LOL.mkv`,
+      sceneName,
+      originalFilePath: null,
+      releaseGroup: 'LOL',
+      quality: { quality: { name: 'SDTV', resolution: 480 } },
+      size: 1,
+    });
+    const series = (files: ReturnType<typeof f>[]) =>
+      createStaticReleaseBlockArr({
+        series: new Map([[50, { title: 'The Office (US)', year: 2005, tvdbId: 8050, files, history: [] }]]),
+      }).arr;
+    const mid = await mediaItemId('sonarr', 50);
+    // One named file + one nameless file of the same (season, group, resolution): the group term needs `480p`, which
+    // SD scene names never carry, so it falls back to exact — and the nameless file's release has no name to block.
+    expect(
+      await identifyRelease({
+        db: t.db,
+        arr: series([f(1, 'The.Office.US.S01E01.HDTV.x264-LOL'), f(2, null)]).read,
+        mediaItemId: mid,
+      }),
+    ).toEqual({ status: 'unrecordable', reason: 'no_term' });
+    // The same shape with every file named: one exact record per name, each blocking its own release.
+    const named = await identifyRelease({
+      db: t.db,
+      arr: series([f(1, 'The.Office.US.S01E01.HDTV.x264-LOL'), f(2, 'The.Office.US.S01E02.HDTV.x264-LOL')]).read,
+      mediaItemId: mid,
+    });
+    const drafts = named.status === 'recordable' ? named.drafts : [];
+    expect(drafts.map((d) => d.shape)).toEqual(['exact', 'exact']);
+    for (const n of ['The.Office.US.S01E01.HDTV.x264-LOL', 'The.Office.US.S01E02.HDTV.x264-LOL']) {
+      expect(drafts.some((d) => termMatches(d.term!, n))).toBe(true);
+    }
+  });
+
+  it('D-25bc: a series gone from Sonarr records every import of a key whose term fell back to exact (never only the newest)', async () => {
+    const mid = await mediaItemId('sonarr', 50);
+    const ev = (n: number, h: number, group = 'LOL', quality = 'SDTV') => [
+      {
+        mediaItemId: mid,
+        eventType: 'grabbed' as const,
+        source: 'sonarr' as const,
+        sourceEventId: `bc-g${n}`,
+        occurredAt: new Date(Date.UTC(2025, 0, 1, h)),
+        payload: {
+          sourceTitle: `The.Office.US.S01E0${n}.HDTV.x264-${group}`,
+          downloadId: `BC${n}`,
+          releaseGroup: group,
+          quality,
+        },
+      },
+      {
+        mediaItemId: mid,
+        eventType: 'imported' as const,
+        source: 'sonarr' as const,
+        sourceEventId: `bc-i${n}`,
+        occurredAt: new Date(Date.UTC(2025, 0, 1, h, 30)),
+        payload: { sourceTitle: `The.Office.US.S01E0${n}.HDTV.x264-${group}`, downloadId: `BC${n}`, quality },
+      },
+    ];
+    await t.db.insert(ledgerEvents).values([...ev(1, 1), ...ev(2, 2)]);
+    try {
+      const { arr, fixture } = createStaticReleaseBlockArr();
+      fixture.gone.sonarr.add(50);
+      const id = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: mid });
+      const drafts = id.status === 'recordable' ? id.drafts : [];
+      expect(drafts.map((d) => [d.identitySource, d.shape])).toEqual([
+        ['ledger_grab', 'exact'],
+        ['ledger_grab', 'exact'],
+      ]);
+      for (const n of ['The.Office.US.S01E01.HDTV.x264-LOL', 'The.Office.US.S01E02.HDTV.x264-LOL']) {
+        expect(drafts.some((d) => termMatches(d.term!, n))).toBe(true);
+      }
+      // A 1080p key whose group term matches every import stays ONE group record.
+      await t.db.delete(ledgerEvents).where(eq(ledgerEvents.mediaItemId, mid));
+      const hd = (n: number, h: number) =>
+        ev(n, h, 'NTb', 'WEBDL-1080p').map((e) => ({
+          ...e,
+          sourceEventId: `${e.sourceEventId}-hd`,
+          payload: {
+            ...e.payload,
+            sourceTitle: `The.Office.US.S01E0${n}.1080p.WEB-DL.x264-NTb`,
+          },
+        }));
+      await t.db.insert(ledgerEvents).values([...hd(1, 3), ...hd(2, 4)]);
+      const one = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: mid });
+      expect(one.status === 'recordable' && one.drafts.map((d) => d.shape)).toEqual(['group']);
+    } finally {
+      await t.db.delete(ledgerEvents).where(eq(ledgerEvents.mediaItemId, mid));
+    }
+  });
+
+  it('D-25bd: a stale ledger import (another group / resolution) never names a disk-imported file; an agreeing one still does', async () => {
+    const mid = await mediaItemId('radarr', 3);
+    const ledgerImport = async (name: string, group: string, quality: string) =>
+      t.db.insert(ledgerEvents).values([
+        {
+          mediaItemId: mid,
+          eventType: 'grabbed',
+          source: 'radarr',
+          sourceEventId: `bd-g-${group}`,
+          occurredAt: new Date('2025-01-01T00:00:00Z'),
+          payload: { sourceTitle: name, downloadId: `BD-${group}`, releaseGroup: group, quality },
+        },
+        {
+          mediaItemId: mid,
+          eventType: 'imported',
+          source: 'radarr',
+          sourceEventId: `bd-i-${group}`,
+          occurredAt: new Date('2025-01-01T01:00:00Z'),
+          payload: { sourceTitle: name, downloadId: `BD-${group}`, quality },
+        },
+      ]);
+    const diskImported: StaticArrMovie = {
+      title: 'Movie 9003',
+      year: 2024,
+      tmdbId: 9003,
+      file: {
+        movieId: 3,
+        relativePath: 'Movie 9003 (2024) [Bluray-1080p][x264]-NEWGRP.mkv',
+        sceneName: null,
+        originalFilePath: null,
+        releaseGroup: 'NEWGRP',
+        quality: {
+          quality: { id: 7, name: 'Bluray-1080p', resolution: 1080, source: 'bluray', modifier: 'none' },
+        },
+        size: 9_000_000_000,
+      },
+      history: [],
+    };
+    const { arr } = createStaticReleaseBlockArr({ movies: new Map([[3, diskImported]]) });
+    try {
+      await ledgerImport('Movie.9003.2024.720p.WEB-DL.DDP5.1.H.264-OLDGRP', 'OLDGRP', 'WEBDL-720p');
+      const stale = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: mid });
+      const d = stale.status === 'recordable' ? stale.drafts[0]! : null;
+      expect(d).toMatchObject({ identitySource: 'arr_file', shape: 'group', termConfidence: 'low_confidence' });
+      expect(termMatches(d!.term!, 'Movie.9003.2024.1080p.BluRay.x264-NEWGRP')).toBe(true);
+      expect(termMatches(d!.term!, 'Movie.9003.2024.720p.WEB-DL.DDP5.1.H.264-OLDGRP')).toBe(false);
+
+      await t.db.delete(ledgerEvents).where(eq(ledgerEvents.mediaItemId, mid));
+      await ledgerImport('Movie.9003.2024.1080p.BluRay.x264-NEWGRP', 'NEWGRP', 'Bluray-1080p');
+      const agrees = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: mid });
+      expect(agrees.status === 'recordable' && agrees.drafts[0]).toMatchObject({
+        identitySource: 'ledger_grab',
+        releaseTitle: 'Movie.9003.2024.1080p.BluRay.x264-NEWGRP',
+        termConfidence: 'verified',
+      });
+    } finally {
+      await t.db.delete(ledgerEvents).where(eq(ledgerEvents.mediaItemId, mid));
+    }
+  });
+
   // -------------------------------------------------------------------------------------------------------------
   describe('the writer (D-13)', () => {
     const insertActive = async (
@@ -796,7 +954,10 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       const { bundle } = makeMaintainerr(state);
       const orig = bundle.write.handleCollectionMedia.bind(bundle.write);
       bundle.write.handleCollectionMedia = async (c: number, ms: string) => {
-        if (ms === 'ms-9001') throw new Error('409 Collection handling is already running');
+        if (ms === 'ms-9001') {
+          // Maintainerr's executor lock: a definitive refusal (it answered, and did not delete).
+          throw new ArrHttpError(409, 'POST', 'http://maintainerr/api/collections/media/handle');
+        }
         return orig(c, ms);
       };
       const report = await sweepExpiredBatches({
@@ -815,6 +976,72 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       );
       expect(logs.filter((l) => l.msg === '[release-block] handle_not_effective')).toHaveLength(2);
       expect((await itemStates(batchId))['ms-9003']!.state).toBe('deleted');
+    });
+
+    it('D-25ax: a handle whose answer is lost AFTER Maintainerr deleted the item keeps the block (active, term stays)', async () => {
+      const state = baseState({
+        collections: [movieCollection({ items: movieCollection().items.slice(0, 2) })],
+      });
+      const batchId = await expiredBatch(state);
+      const { arr, fixture } = createStaticReleaseBlockArr();
+      const { bundle } = makeMaintainerr(state);
+      bundle.write.handleCollectionMedia = async (_c: number, ms: string) => {
+        if (ms === 'ms-9001') {
+          fixture.gone.radarr.add(1); // Maintainerr's handleMedia deleted the Radarr movie first…
+          throw new ArrTimeoutError('POST', 'http://maintainerr/api/collections/media/handle', 30_000); // …the client gave up
+        }
+        // ms-9002: the socket drops before anything ran (the item is still there) — a 5xx-like ambiguous failure.
+        throw new ArrHttpError(502, 'POST', 'http://maintainerr/api/collections/media/handle');
+      };
+      const report = await sweepExpiredBatches({
+        db: t.db,
+        maintainerr: bundle,
+        arr,
+        registry: 'gate-only',
+        logger,
+      });
+      expect(report.batches[0]).toMatchObject({ deletedCount: 2, handleErrors: 2 });
+      const byItem = Object.fromEntries((await records()).map((r) => [r.arrItemId, r.state]));
+      // 1: the *arr 404s ⇒ active (the delete happened). 2: present after an ambiguous failure ⇒ still in flight.
+      expect(byItem).toEqual({ 1: 'active', 2: 'in_flight' });
+      const terms = (await records()).map((r) => r.term!);
+      expect(fixture.profiles.radarr[0]!.ignored.sort()).toEqual([RELEASE_BLOCK_SENTINEL, ...terms].sort());
+      expect(termMatches(terms[0]!, 'Stub.Movie.1.2020.1080p.BluRay.x264-STUB')).toBe(true);
+      expect(logs.filter((l) => l.msg === '[release-block] handle_not_effective')).toHaveLength(0);
+      // D-21 / D-25az — one `[trash] deleted` line per delete, after its settle.
+      expect(
+        logs
+          .filter((l) => l.msg === '[trash] deleted')
+          .map((l) => [l.fields?.maintainerrMediaId, l.fields?.handled, l.fields?.records]),
+      ).toEqual([
+        ['ms-9001', false, 'active'],
+        ['ms-9002', false, 'in_flight'],
+      ]);
+      expect((await itemStates(batchId))['ms-9001']!.state).toBe('deleted');
+      // An hour later the stranded settle decides the ambiguous one by presence: still there ⇒ abandoned, term gone.
+      await reconcileReleaseBlock({
+        db: t.db,
+        arr,
+        arrKind: 'radarr',
+        logger,
+        now: new Date(Date.now() + 2 * 3_600_000),
+      });
+      const after = Object.fromEntries((await records()).map((r) => [r.arrItemId, r.state]));
+      expect(after).toEqual({ 1: 'active', 2: 'abandoned' });
+      expect(fixture.profiles.radarr[0]!.ignored).not.toContain(
+        (await records()).find((r) => r.arrItemId === 2)!.term,
+      );
+    });
+
+    it('classifyHandleFailure: a 4xx or a code-0 ReturnStatus is a refusal; a timeout, a 5xx or anything else is ambiguous', () => {
+      const url = 'http://maintainerr/api/collections/media/handle';
+      const wrap = (cause: unknown) => Object.assign(new Error('maintainerr POST failed'), { cause });
+      expect(classifyHandleFailure(wrap(new ArrHttpError(409, 'POST', url)))).toBe('refused');
+      expect(classifyHandleFailure(new ArrHttpError(404, 'POST', url))).toBe('refused');
+      expect(classifyHandleFailure(wrap(new ArrHttpError(500, 'POST', url)))).toBe('ambiguous');
+      expect(classifyHandleFailure(wrap(new ArrTimeoutError('POST', url, 30_000)))).toBe('ambiguous');
+      expect(classifyHandleFailure(new TypeError('fetch failed'))).toBe('ambiguous');
+      expect(classifyHandleFailure(null)).toBe('ambiguous');
     });
 
     it('a claim lost to a Save between Phase A and the claim abandons that record', async () => {
@@ -1009,6 +1236,33 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       expect((await records()).every((r) => r.state === 'abandoned')).toBe(true);
     });
 
+    it('D-25ax: item — a handle that times out after the delete still leaves the record active and rethrows', async () => {
+      const state = baseState({ collections: [movieCollection()] });
+      const { arr, fixture } = createStaticReleaseBlockArr();
+      const { bundle } = makeMaintainerr(state);
+      bundle.write.handleCollectionMedia = async () => {
+        fixture.gone.radarr.add(1);
+        throw new ArrTimeoutError('POST', 'http://maintainerr/api/collections/media/handle', 30_000);
+      };
+      const err = await expediteDeletion({
+        db: t.db,
+        maintainerr: bundle,
+        arr,
+        scope: 'item',
+        media: 'movie',
+        actorId: admin,
+        item: { collectionId: 7, maintainerrMediaId: 'ms-9001' },
+        logger,
+      }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      const [rec] = await records();
+      expect(rec!.state).toBe('active');
+      expect(fixture.profiles.radarr[0]!.ignored).toContain(rec!.term);
+      expect(
+        logs.find((l) => l.msg === '[trash] expedited')?.fields,
+      ).toMatchObject({ scope: 'item', maintainerrMediaId: 'ms-9001', handled: false, records: 'active' });
+    });
+
     it('all: records every survivor before the first handle, then settles each', async () => {
       const state = baseState({ collections: [movieCollection()] });
       const { arr, fixture } = createStaticReleaseBlockArr();
@@ -1036,7 +1290,76 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
   });
 
   // -------------------------------------------------------------------------------------------------------------
+  describe('the read-only pool report (PLAN-072 S6(e))', () => {
+    it('counts what the sweep would record for the pending pool, per shape, confidence and reason, and writes nothing', async () => {
+      const bare = grabbedMovie(2, { history: [] });
+      bare.file = { ...bare.file!, releaseGroup: null, relativePath: 'Movie (2024).mkv' };
+      const renamedOnly = grabbedMovie(3, { history: [] });
+      const { arr, fixture } = createStaticReleaseBlockArr({
+        movies: new Map([
+          [1, grabbedMovie(1)],
+          [2, bare],
+          [3, renamedOnly],
+        ]),
+      });
+      const { bundle, calls } = makeMaintainerr(baseState());
+      const report = await reportPoolReleaseIdentity({ db: t.db, maintainerr: bundle, arr: arr.read, logger });
+      const movies = report.kinds.find((k) => k.media === 'movie')!;
+      expect(movies).toMatchObject({
+        pool: 3,
+        recordable: 2,
+        unrecordable: { no_term: 1, gone: 0, no_ledger_item: 0, read_failed: 0 },
+        unrecordedShare: 0.333,
+        shape: { group: 2, exact: 0, none: 0 },
+        confidence: { verified: 1, low_confidence: 1 },
+        identitySource: { arr_grab_history: 1, arr_file: 1 },
+        nullGroup: 0,
+      });
+      expect(movies.unrecorded).toEqual([{ title: expect.any(String), reason: 'no_term' }]);
+      expect(report.kinds.find((k) => k.media === 'tv')!.pool).toBe(0);
+      // Read-only: no record, no profile call, no Maintainerr write.
+      expect(await records()).toEqual([]);
+      expect(fixture.calls.filter((c) => / (list|create|update)$/.test(c))).toEqual([]);
+      expect(calls.filter((c) => c.method !== 'GET')).toEqual([]);
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------------------------
   describe('re-adds and the card counts (D-23)', () => {
+    it('D-25bh: counts re-added TITLES (a title with two records once) and a no-grab stamp separately', async () => {
+      const stamped = (over: Record<string, unknown>) => ({
+        arrKind: 'radarr' as const,
+        arrItemId: 1,
+        title: 't',
+        identitySource: 'arr_grab_history' as const,
+        term: '/^t[^a-z0-9]*x(?:[^a-z0-9]|$)/i',
+        state: 'active' as const,
+        origin: 'backfill' as const,
+        expiresAt: new Date(Date.now() + 86_400_000),
+        readdSeenAt: new Date(),
+        ...over,
+      });
+      await t.db.insert(trashDeletedReleases).values([
+        // One title (tmdb 1), two records (the FLUX and Kitsune releases): one matched the grab.
+        stamped({ tmdbId: 1, readdSameRelease: true }),
+        stamped({ tmdbId: 1, readdSameRelease: false }),
+        // tmdb 2: a different release.
+        stamped({ tmdbId: 2, arrItemId: 2, readdSameRelease: false }),
+        // tmdb 3: no grab within 7 days (seen, no verdict).
+        stamped({ tmdbId: 3, arrItemId: 3, readdSameRelease: null }),
+        // a series (tvdb 50), two seasons, a different release.
+        stamped({ arrKind: 'sonarr', arrItemId: 50, tvdbId: 50, season: 1, readdSameRelease: false }),
+        stamped({ arrKind: 'sonarr', arrItemId: 50, tvdbId: 50, season: 2, readdSameRelease: false }),
+      ]);
+      const { arr } = createStaticReleaseBlockArr();
+      expect((await getReleaseBlockSummary({ db: t.db, arr })).readds).toEqual({
+        total: 4,
+        sameRelease: 1,
+        noGrab: 1,
+        windowDays: 30,
+      });
+    });
+
     it('stamps a re-add: the same release is an error, a different one is not, no grab waits (then 7 days)', async () => {
       const { arr, fixture } = createStaticReleaseBlockArr();
       const term =
@@ -1094,7 +1417,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         .where(and(eq(mediaItems.arrKind, 'radarr'), eq(mediaItems.tmdbId, 9003)));
 
       const summary = await getReleaseBlockSummary({ db: t.db, arr });
-      expect(summary.readds).toEqual({ total: 1, sameRelease: 1, windowDays: 30 });
+      expect(summary.readds).toEqual({ total: 1, sameRelease: 1, noGrab: 0, windowDays: 30 });
       expect(summary.kinds[0]).toMatchObject({
         arrKind: 'radarr',
         terms: 1,

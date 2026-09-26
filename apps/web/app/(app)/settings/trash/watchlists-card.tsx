@@ -9,7 +9,8 @@ import { trpc } from '@/lib/trpc-client';
 import {
   RELEASE_BLOCK_KIND_LABELS,
   WATCHLIST_CLASS_LABELS,
-  WATCHLIST_STATUS_LABELS,
+  WATCHLIST_LIST_LABELS,
+  WATCHLIST_LIST_ORDER,
   blockedReleasesValue,
   exclusionCountValue,
   oldestBlockLabel,
@@ -19,7 +20,6 @@ import {
 
 /** The order the labelled numbers read in (known keys first; an unknown key renders last, verbatim). */
 const CLASS_ORDER = ['owner', 'home_full', 'home_managed', 'friend', 'seerr_only'];
-const STATUS_ORDER = ['read', 'carried', 'never_read', 'unreadable', 'unresolvable'];
 
 function ordered(
   counts: Record<string, number>,
@@ -81,16 +81,11 @@ export function WatchlistsCard() {
             labels={WATCHLIST_CLASS_LABELS}
             testId="watchlists-by-class"
           />
+          {/* D-25bg — every account once, split the same way as the headline (Read = its n; the rest = its m). */}
           <Counts
             label="Lists"
-            entries={ordered(
-              {
-                ...data.byStatus,
-                ...(data.emptyUnverified > 0 ? { empty: data.emptyUnverified } : {}),
-              },
-              [...STATUS_ORDER, 'empty'],
-            )}
-            labels={{ ...WATCHLIST_STATUS_LABELS, empty: 'Empty or hidden' }}
+            entries={ordered(data.byList, WATCHLIST_LIST_ORDER)}
+            labels={WATCHLIST_LIST_LABELS}
             testId="watchlists-by-status"
           />
           {lastFailed ? (
