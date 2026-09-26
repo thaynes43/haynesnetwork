@@ -4875,6 +4875,25 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
   width: 13px;
   height: 13px;
 }
+/* ADR-093 / DESIGN-052 D-10 — the "On a watchlist" note: a bookmark + a short label pinned on the meta line (info
+   tone). A watchlisted title is kept by the sweep while it stays listed (not a Save). The label never wraps; the
+   size · rating text ellipsizes before it does. Fixed size ⇒ the tile never reflows (ADR-015); the full meaning
+   rides the tooltip / aria. */
+.bwall-watchlisted {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-info);
+  white-space: nowrap;
+}
+.bwall-watchlisted svg {
+  width: 12px;
+  height: 12px;
+}
+.bwall-watchlisted__label {
+  font-size: 10px;
+}
 /* ADR-025 / DESIGN-011 errata (2026-07-09) — the requester INFO chip: a small person icon pinned on
    the meta line, co-existing with the watch eye. Requested is informational only now (it changes no
    actionability); the accent tone reads it as "a person is attached", distinct from the info-tone
@@ -5140,6 +5159,40 @@ button.bwall-tap:hover .bwall-overlay[data-armed='true'] {
 .batch-settings .confirm-btn,
 .batch-settings .btn {
   flex: none;
+}
+
+/* ADR-093 / DESIGN-052 D-10 — the read-only Watchlists card: a headline, then small labelled numbers (counts only).
+   Tokens only; wraps at 320px. */
+.watchlists-card__headline {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.watchlists-card__group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
+}
+.watchlists-card__label {
+  flex: none;
+  min-width: 72px;
+  font-weight: 600;
+}
+.watchlists-card__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-variant-numeric: tabular-nums;
+}
+.watchlists-card__note {
+  margin: 6px 0 0;
+  font-size: 12px;
 }
 
 /* Batch policy sub-section (DESIGN-014 amendment 2026-07-09, build A). */

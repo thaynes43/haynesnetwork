@@ -44,7 +44,7 @@ import {
   type MaintainerrClientBundle,
   type TrashPendingItem,
 } from '../src/index';
-import { bootMigratedDb, createUser, type TestDb } from './helpers';
+import { seedVerifiedWatchlistRegistry, bootMigratedDb, createUser, type TestDb } from './helpers';
 
 // ---------------------------------------------------------------------------
 // Maintainerr stub — the 006 makeMaintainerr, extended with the collection surface.
@@ -439,6 +439,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     actorId = (await createUser(t.db, { email: 'batch-admin@example.com' })).id;
     await upsertMediaItemsBatch({
       db: t.db,
@@ -660,7 +661,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const { bundle, calls } = makeMaintainerr(baseState());
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId }); // expired
-    const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    const report = await sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId });
 
     const after = await itemsOf(batchId);
     // 9004 (requested, unsaved) is deleted alongside 9001 (cold) — the requester keep is gone.
@@ -681,7 +682,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     // A human deliberately rescues the requested item — an ordinary save, kept by its save at sweep.
     await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: req.id, saved: true, actorId });
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
-    await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    await sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId });
     const saved = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
     expect(saved.state).toBe('saved');
     expect(saved.savedBy).toBe(actorId); // a real human rescue, not a system 'requested' auto-save
@@ -767,7 +768,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
 
     // Expire the window and sweep — the freed, unsaved item is DELETED (the owner's goal).
     await t.db.update(trashBatches).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(trashBatches.id, batchId));
-    const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    const report = await sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId });
     const after = await itemsOf(batchId);
     expect(after.find((i) => i.maintainerrMediaId === 'ms-9004')!.state).toBe('deleted');
     const handled = calls
@@ -822,7 +823,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId }); // already expired
     state.integrations.sonarr = false; // required integration down
     await expect(
-      sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId }),
+      sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId }),
     ).rejects.toBeInstanceOf(MaintainerrUnsafeError);
     const [row] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
     expect(row!.state).toBe('leaving_soon'); // untouched
@@ -832,7 +833,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const { bundle, calls } = makeMaintainerr(baseState());
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
-    const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    const report = await sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId });
 
     expect(report.batchesSwept).toBe(1);
     const r = report.batches[0]!;
@@ -876,7 +877,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     // Save the cold item (leaves the batch as 'saved') before green-light.
     await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: items.find((i) => i.maintainerrMediaId === 'ms-9001')!.id, saved: true, actorId });
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
-    const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    const report = await sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId });
 
     // 9001 (human-saved) is untouched; 9004 (requested but UNSAVED) is now cold and deletes — a
     // requester is no longer a keep. Exactly one handle fires, and never for the saved item.
@@ -895,7 +896,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 21, actorId }); // future
     await expect(
-      sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId, batchId }),
+      sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId, batchId }),
     ).rejects.toBeInstanceOf(TrashBatchStateError);
   });
 
@@ -912,11 +913,11 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
 
     // Without the override, the manual expire still refuses (window not closed).
     await expect(
-      sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId, batchId }),
+      sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId, batchId }),
     ).rejects.toBeInstanceOf(TrashBatchStateError);
 
     // WITH the override it sweeps now — every safety layer still runs.
-    const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId, batchId, forceOverride: true });
+    const report = await sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId, batchId, forceOverride: true });
     const r = report.batches[0]!;
     expect(r.deletedCount).toBe(1); // only 9001 (cold) deletes
     expect(r.savedCount).toBe(1); // 9004 was saved — untouched
@@ -1178,7 +1179,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
       sizeBytes: 0,
       addDate: '2026-06-01T00:00:00Z',
     });
-    await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    await sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId });
     const [row] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
     expect(row!.state).toBe('deleted');
     const rolling = state.collections.find((c) => c.id === 600)!;
@@ -1204,7 +1205,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
           .where(eq(trashBatchItems.id, cold.id));
       }
     };
-    const report = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    const report = await sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId });
     const r = report.batches[0]!;
     // 9001 was saved mid-sweep ⇒ raceSkipped, never handled. 9004 (requested, unsaved) is cold and
     // deletes — a requester is no longer a keep, so it is the one honest deletion here.
@@ -1269,7 +1270,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
     await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
 
-    const first = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    const first = await sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId });
     const r = first.batches[0]!;
     expect(r.aborted).toBe(true);
     expect(r.handleErrors).toBe(3); // stopped at the 3rd consecutive failure
@@ -1282,7 +1283,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
 
     // Next sweep with the handle healthy resumes the remaining pending item and closes the batch.
     state.fail.delete('POST /collections/media/handle');
-    const second = await sweepExpiredBatches({ db: t.db, maintainerr: bundle, actorId });
+    const second = await sweepExpiredBatches({ registry: 'gate-only', db: t.db, maintainerr: bundle, actorId });
     expect(second.batches[0]!.aborted).toBe(false);
     expect(second.batches[0]!.deletedCount).toBe(1);
     const [done] = await t.db.select().from(trashBatches).where(eq(trashBatches.id, batchId));
@@ -1636,6 +1637,7 @@ describe('app_settings single-writer (ADR-025 C-06)', () => {
   let actorId: string;
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     actorId = (await createUser(t.db, { email: 'settings@example.com' })).id;
   });
   afterAll(async () => t?.stop());

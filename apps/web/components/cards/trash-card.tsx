@@ -9,7 +9,8 @@
 // candidates wall and the batch curation/terminal wall). Pixel-neutral with the pre-refit markup:
 // same classes, same DOM, same fixed heights (ADR-015 — a state flip recolors, never reflows).
 import Link from 'next/link';
-import { EyeGlyph, LibraryLinkGlyph, PersonGlyph, WallGlyphSvg } from '../trash-shield';
+import { BookmarkGlyph, EyeGlyph, LibraryLinkGlyph, PersonGlyph, WallGlyphSvg } from '../trash-shield';
+import { WATCHLIST_NOTE_DETAIL, WATCHLIST_NOTE_LABEL } from '@/lib/trash';
 import { MediaPoster } from './media-poster';
 
 /** The unified wall glyph set (ADR-033 — keep in lockstep with lib/trash-batches.ts WallGlyph
@@ -99,6 +100,26 @@ function WatchNoteBadge({ label, tone }: { label: string; tone: 'info' | 'muted'
   );
 }
 
+/** ADR-093 / DESIGN-052 D-10 — the "On a watchlist" meta-line note: a bookmark + the short label (info tone); the
+ *  tooltip and aria-label say what it means. Never whose watchlist, never how many. Fixed size, pinned like its
+ *  siblings, so a tile with the note keeps the same geometry (ADR-015). */
+function WatchlistNoteBadge() {
+  return (
+    <span
+      className="bwall-watchlisted"
+      data-testid="wall-watchlisted"
+      role="img"
+      aria-label={WATCHLIST_NOTE_DETAIL}
+      title={WATCHLIST_NOTE_DETAIL}
+    >
+      <BookmarkGlyph />
+      <span className="bwall-watchlisted__label" aria-hidden="true">
+        {WATCHLIST_NOTE_LABEL}
+      </span>
+    </span>
+  );
+}
+
 export function TrashCard({
   glyph,
   posterUrl,
@@ -110,6 +131,7 @@ export function TrashCard({
   metaText,
   requesters,
   watchNote,
+  onWatchlist = false,
   pwall = false,
   testId,
 }: {
@@ -126,6 +148,8 @@ export function TrashCard({
   metaText: string;
   requesters: readonly string[];
   watchNote: { label: string; tone: 'info' | 'muted' } | null;
+  /** ADR-093 / DESIGN-052 D-10 — the title is on a watchlist (the "On a watchlist" note). */
+  onWatchlist?: boolean;
   /** The pending walls' tile marker class (same geometry; kept for selector parity). */
   pwall?: boolean;
   /** data-testid on the tile ('trash-tile' pending / 'wall-tile' batch). */
@@ -202,6 +226,7 @@ export function TrashCard({
         <span className="bwall-meta-text">{metaText}</span>
         <RequestedByBadge requesters={requesters} />
         {watchNote !== null ? <WatchNoteBadge label={watchNote.label} tone={watchNote.tone} /> : null}
+        {onWatchlist ? <WatchlistNoteBadge /> : null}
       </span>
     </li>
   );

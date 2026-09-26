@@ -76,6 +76,7 @@ import {
   reclaimLabel,
   sweepTimeLabel,
   windowClosed,
+  WATCHLIST_BREAKDOWN_TERM,
 } from '@/lib/trash';
 
 export type { TrashAccess };
@@ -375,7 +376,10 @@ function PendingTab({
     deletableBytes: 0,
     protected: 0,
     unverifiable: 0,
+    watchlisted: 0,
   };
+  // ADR-093 / DESIGN-052 D-10 — the watchlisted share of `protected` (an older server omits it ⇒ 0).
+  const watchlistedCount = (partition as { watchlisted?: number }).watchlisted ?? 0;
 
   // ── the sort bar (shared nextSort/arrowFor cycle over SORT_COLUMNS) ──
   const clickCycle = Object.fromEntries(
@@ -628,6 +632,16 @@ function PendingTab({
               <li>
                 <strong>{partition.protected} protected</strong> — recently watched, requested, or
                 whitelisted; Maintainerr keeps them.
+                {watchlistedCount > 0 ? (
+                  <>
+                    {' '}
+                    Includes{' '}
+                    <strong data-testid="trash-expedite-watchlisted">
+                      {watchlistedCount} {WATCHLIST_BREAKDOWN_TERM}
+                    </strong>
+                    .
+                  </>
+                ) : null}
               </li>
               <li>
                 <strong>{partition.unverifiable} kept — can’t be verified safe</strong> — unknown to

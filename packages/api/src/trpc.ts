@@ -69,6 +69,8 @@ import {
   TrashBatchStateError,
   TrashMusicUnsupportedError,
   TrashSaveNotOwnedError,
+  TrashSweepPausedError,
+  WatchlistRegistryUnverifiedError,
   type ArrClientBundle,
   type AuthentikPortalBundle,
   type MaintainerrClientBundle,
@@ -460,6 +462,8 @@ const APP_CODED_ERRORS = [
   TrashBatchOpenError,
   TrashBatchEmptyError,
   TrashSaveNotOwnedError,
+  WatchlistRegistryUnverifiedError,
+  TrashSweepPausedError,
   AuthentikGroupNotOwnedError,
   AuthentikUnavailableError,
   OwuiUnavailableError,
@@ -530,6 +534,8 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | TrashBatchOpenError         | TRASH_BATCH_ALREADY_OPEN    | CONFLICT              |
  * | TrashBatchEmptyError        | TRASH_BATCH_EMPTY           | UNPROCESSABLE_CONTENT |
  * | TrashSaveNotOwnedError      | TRASH_SAVE_NOT_OWNED        | FORBIDDEN             |
+ * | WatchlistRegistryUnverified | WATCHLIST_REGISTRY_UNVERIFIED | PRECONDITION_FAILED |
+ * | TrashSweepPausedError       | TRASH_SWEEP_PAUSED          | PRECONDITION_FAILED   |
  * | InvalidTicketTransitionError| TICKET_INVALID_TRANSITION   | CONFLICT              |
  * | NotFoundError               | —                           | NOT_FOUND             |
  */
@@ -642,6 +648,11 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof TrashSaveNotOwnedError) {
       throw new TRPCError({ code: 'FORBIDDEN', message: err.message, cause: err });
+    }
+    if (err instanceof WatchlistRegistryUnverifiedError || err instanceof TrashSweepPausedError) {
+      // ADR-093 / DESIGN-052 D-07 / D-14 — the Registry Gate refused (Expedite), or the manual Expire now paused:
+      // nothing was deleted; the message is the banner's wording, never a name or a title.
+      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: err.message, cause: err });
     }
     if (err instanceof InvalidTicketTransitionError) {
       throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });

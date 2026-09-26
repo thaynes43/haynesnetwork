@@ -48,6 +48,24 @@ export const STUB_PLEX_MEMBER = { id: '77', email: 'member@example.test', userna
  */
 export const STUB_PLEX_OWNER = { id: '12874060', email: 'plex-owner@example.test', username: 'plexowner' };
 
+/**
+ * ADR-093 / DESIGN-052 D-20 (PLAN-072) — the Watchlist Registry's roster fixture: the member (a friend whose
+ * community list answers one title), a friend whose community list reads EMPTY (hidden and empty look alike), and a
+ * MANAGED Home user community answers `User not found:` for. Uuids ride the roster `thumb`, as live. None of these
+ * lists holds a Trash pool title by default (existing specs keep their expedite partitions); `POST /_stub/community`
+ * sets a list, e.g. for the `pnpm dev:local` walk.
+ */
+export const STUB_REGISTRY_ACCOUNTS = {
+  member: { id: STUB_PLEX_MEMBER.id, uuid: 'a1b2c3d4e5f60718' },
+  hiddenFriend: { id: '78', uuid: 'b2c3d4e5f6071829' },
+  managed: { id: '79', uuid: 'c3d4e5f60718293a' },
+} as const;
+
+/** The discover ids of the stub's default community lists (Stub Dune — a watchlist title that is not on Plex). */
+export const STUB_COMMUNITY_DEFAULT_NODES: Array<{ id: string; type: 'MOVIE' | 'SHOW' }> = [
+  { id: '5d776d1b0000000000000002', type: 'MOVIE' },
+];
+
 type Slug = keyof typeof STUB_PLEX_TOKENS;
 
 interface StubSection {
@@ -697,6 +715,13 @@ export async function startStubPlex(): Promise<StubPlexServer> {
     const now = Math.floor(Date.now() / 1000);
     watchlist.forEach((item, i) => watchlistedAt.set(item.ratingKey, now - (i + 1) * 86_400));
   };
+  // ADR-093 / DESIGN-052 D-20 — community lists by account uuid (the managed user is absent ⇒ `User not found:`).
+  const communityLists = new Map<string, Array<{ id: string; type: 'MOVIE' | 'SHOW' }>>();
+  const seedCommunity = () => {
+    communityLists.clear();
+    communityLists.set(STUB_REGISTRY_ACCOUNTS.member.uuid, STUB_COMMUNITY_DEFAULT_NODES.map((n) => ({ ...n })));
+    communityLists.set(STUB_REGISTRY_ACCOUNTS.hiddenFriend.uuid, []);
+  };
   const resetState = () => {
     calls.length = 0;
     shares.clear();
@@ -704,10 +729,12 @@ export async function startStubPlex(): Promise<StubPlexServer> {
     seedFixtures();
     seedWatch();
     seedWatchlist();
+    seedCommunity();
   };
   seedFixtures();
   seedWatch();
   seedWatchlist();
+  seedCommunity();
 
   /**
    * Overlay the watch map the way Plex reports it: a leaf (movie/episode) gains viewCount only once
@@ -770,11 +797,22 @@ export async function startStubPlex(): Promise<StubPlexServer> {
     return { size: Metadata.length, totalSize: items.length, offset: start, Metadata };
   };
 
+  const thumb = (uuid: string) => `https://plex.tv/users/${uuid}/avatar?c=1700000000`;
   const usersXml = () =>
-    `<MediaContainer friendlyName="StubPlex" identifier="com.plexapp.plugins.myplex" size="1">` +
-    `<User id="${STUB_PLEX_MEMBER.id}" title="Marge Member" username="${STUB_PLEX_MEMBER.username}" email="${esc(STUB_PLEX_MEMBER.email)}" home="0" restricted="0">` +
+    `<MediaContainer friendlyName="StubPlex" identifier="com.plexapp.plugins.myplex" size="3">` +
+    `<User id="${STUB_PLEX_MEMBER.id}" title="Marge Member" username="${STUB_PLEX_MEMBER.username}" email="${esc(STUB_PLEX_MEMBER.email)}" thumb="${thumb(STUB_REGISTRY_ACCOUNTS.member.uuid)}" home="0" restricted="0">` +
     `<Server id="900" machineIdentifier="${STUB_PLEX_MACHINE_IDS.haynestower}" name="HaynesTower" owned="0" allLibraries="0" numLibraries="2"/>` +
-    `</User></MediaContainer>`;
+    `</User>` +
+    // ADR-093 / DESIGN-052 D-20 — the registry fixture's hidden-empty friend and managed Home user (no email, as
+    // managed users have none; they match no persona, so the sharing specs are unchanged).
+    `<User id="${STUB_REGISTRY_ACCOUNTS.hiddenFriend.id}" title="Quiet Friend" username="quietfriend" thumb="${thumb(STUB_REGISTRY_ACCOUNTS.hiddenFriend.uuid)}" home="0" restricted="0"/>` +
+    `<User id="${STUB_REGISTRY_ACCOUNTS.managed.id}" title="Little One" thumb="${thumb(STUB_REGISTRY_ACCOUNTS.managed.uuid)}" home="1" restricted="1"/>` +
+    `</MediaContainer>`;
+  const homeUsersXml = () =>
+    `<MediaContainer friendlyName="StubPlex" size="2">` +
+    `<User id="${STUB_PLEX_OWNER.id}" admin="1" restricted="0" guest="0" title="Stub Owner"/>` +
+    `<User id="${STUB_REGISTRY_ACCOUNTS.managed.id}" admin="0" restricted="1" guest="0" title="Little One" thumb="${thumb(STUB_REGISTRY_ACCOUNTS.managed.uuid)}"/>` +
+    `</MediaContainer>`;
 
   const serverSectionsXml = (slug: Slug) =>
     `<MediaContainer size="1"><Server name="${slug}" machineIdentifier="${STUB_PLEX_MACHINE_IDS[slug]}">` +
@@ -829,6 +867,42 @@ export async function startStubPlex(): Promise<StubPlexServer> {
         res.writeHead(204);
         return res.end();
       }
+
+      // ADR-093 / DESIGN-052 D-20 — set one account's community list (`{ uuid, nodes }`), e.g. for the dev walk.
+      if (path === '/_stub/community' && method === 'POST') {
+        const raw = await readBody(req);
+        const b = raw === '' ? {} : (JSON.parse(raw) as { uuid?: string; nodes?: Array<{ id: string; type: 'MOVIE' | 'SHOW' }> });
+        if (b.uuid) communityLists.set(b.uuid, b.nodes ?? []);
+        res.writeHead(204);
+        return res.end();
+      }
+      // ADR-093 / DESIGN-052 D-02 — community.plex.tv GraphQL (PLEX_COMMUNITY_URL points here): `user(id:$uuid)
+      // .watchlist` as an HTTP GET, answered by content like the live API: data for a readable account (the
+      // upper-case MOVIE / SHOW enum), an empty list for the hidden friend, `User not found:` otherwise.
+      if (path === '/api' && method === 'GET') {
+        if (!tokenStr || !SLUG_BY_TOKEN.has(tokenStr)) return json(res, 401, { errors: [{ message: 'unauthorized' }] });
+        let vars: { uuid?: string; first?: number; after?: string | null } = {};
+        try {
+          vars = JSON.parse(url.searchParams.get('variables') ?? '{}') as typeof vars;
+        } catch {
+          return json(res, 400, { errors: [{ message: 'bad variables' }] });
+        }
+        const nodes = communityLists.get(vars.uuid ?? '');
+        if (nodes === undefined) {
+          return json(res, 200, { data: { user: null }, errors: [{ message: 'User not found: Data loader item not found' }] });
+        }
+        return json(res, 200, {
+          data: {
+            user: {
+              watchlist: {
+                nodes: nodes.map((n) => ({ ...n, guid: `plex://${n.type === 'MOVIE' ? 'movie' : 'show'}/${n.id}`, title: 'x', year: 2021 })),
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        });
+      }
+      if (path === '/api/home/users') return xml(res, 200, homeUsersXml());
 
       // ---- plex.tv account read (owner identity — ADR-029) ----
       if (path === '/api/v2/user') {
@@ -1051,6 +1125,16 @@ export async function startStubPlex(): Promise<StubPlexServer> {
             librarySectionID: sectionId ? Number(sectionId) : undefined,
           },
         });
+      }
+      // ADR-093 / DESIGN-052 D-03 — the discover provider's per-title metadata (`includeGuids`), the registry's
+      // discover-id → external-id map. Only a 24-hex discover id the catalog knows; PMS keys are numeric.
+      const discoverMeta = path.match(/^\/library\/metadata\/([0-9a-f]{24})$/);
+      if (discoverMeta && url.searchParams.get('includeGuids') === '1') {
+        const item = catalog.find((c) => c.ratingKey === discoverMeta[1]);
+        if (item) {
+          return json(res, 200, { MediaContainer: { size: 1, Metadata: [{ type: item.type, Guid: item.Guid ?? [] }] } });
+        }
+        return json(res, 404, { Error: { error: 'Not Found', statusCode: 404 } });
       }
       // DESIGN-017 D-09 — one metadata item (the drill-in head), with librarySectionID on the item.
       const metaMatch = path.match(/^\/library\/metadata\/([^/]+)$/);

@@ -1,4 +1,14 @@
-import { pgTable, uuid, text, integer, bigint, timestamp, check, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  bigint,
+  boolean,
+  timestamp,
+  check,
+  index,
+} from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { TRASH_MEDIA_KINDS, type TrashMediaKind } from './enums';
 
@@ -41,6 +51,13 @@ export const trashCandidates = pgTable(
     /** Crawl order within the refresh (collections order, then page order) — reads ORDER BY this so
      *  the snapshot serves rows exactly as a live crawl would have. */
     ord: integer('ord').notNull().default(0),
+    /** ADR-093 / DESIGN-052 D-05 / D-06 (migration 0081) — Maintainerr's `mediaData.guid` (`plex://movie|show/<24 hex>`,
+     *  the show's guid for TV): the key the Trash walls match against the Watchlist Registry. Null when Maintainerr
+     *  carries none (a legacy-agent library). */
+    plexGuid: text('plex_guid'),
+    /** D-05 / D-09 (D-24i) — Maintainerr flagged the item's rule data as transiently unavailable; the guardian keeps
+     *  such an item as `unevaluable`, so the Expedite preview must see the flag too (ADR-086 D-11 parity). */
+    ruleEvaluationFailed: boolean('rule_evaluation_failed').notNull().default(false),
   },
   (t) => [
     index('trash_candidates_kind_idx').on(t.mediaKind),

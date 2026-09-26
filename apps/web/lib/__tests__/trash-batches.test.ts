@@ -351,6 +351,12 @@ describe('previewTargetSelection — the Start-a-batch client preview (mirrors s
     expect(p).toMatchObject({ count: 2, bytes: 7e9, poolCount: 3, poolBytes: 8e9 });
   });
 
+  it('ADR-093 D-08 — a watchlisted candidate takes no slot in a targeted pick, yet an untargeted batch snapshots it', () => {
+    const listed = [c(4e9, { onWatchlist: true }), c(3e9), c(2e9, { protectedByTag: true }), c(1e9)];
+    expect(previewTargetSelection(listed, {})).toMatchObject({ count: 3, bytes: 8e9, poolCount: 2, poolBytes: 4e9 });
+    expect(previewTargetSelection(listed, { maxItems: 1, strategy: 'largest' })).toMatchObject({ count: 1, bytes: 3e9 });
+  });
+
   it('maxItems caps; a target under the first item still yields one', () => {
     expect(previewTargetSelection(pool, { maxItems: 1 })).toMatchObject({ count: 1, bytes: 4e9 });
     expect(previewTargetSelection(pool, { targetBytes: 1 })).toMatchObject({ count: 1, bytes: 4e9 });

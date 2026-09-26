@@ -1,7 +1,9 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Draft
-- **Last updated:** 2026-09-26 (D-24 records the rulings from the PR #594 design review, folded into D-01..D-22
+- **Last updated:** 2026-09-26 (D-25 records the rulings made while building PLAN-072 S2 part 1: the registry, the
+  gate and snapshot, the guard and the D-10 surfaces). Prior: 2026-09-26 (D-24 records the rulings from the PR #594
+  design review, folded into D-01..D-22
   and the test strategy: Seerr answers are classified by content, per-source read states, the manual Expire path,
   a required watchlist snapshot, the year alternation and a whitelist grammar for terms, records activated only
   after a verified delete, a bulk legacy SAB seed, items with no recordable term kept, a sweep that pauses cleanly;
@@ -877,6 +879,47 @@ two reviewers proposed different fixes, the ruling says which was taken and why.
 | D-24u | ADR-025, ADR-036, DESIGN-010 and DESIGN-014 lacked the status lines this change owes them. | Status-only "Amended by: ADR-093" (ADR-025 C-03, ADR-036 C-10) and "Extended by: DESIGN-052" lines are added; S11 turns all of them to "in effect since". |
 | D-24v | Three driver decisions in ADR-093 were not marked. | C-06, C-10 and C-11 carry "(driver decision)"; C-11 states that the opt-out rule is the driver's reading of ruling 3 (Q-08). |
 | D-24w | Nits: DESIGN-048's "Extended by" cited a D-11 it does not have; Q-01 and PRD Q-15 said "unreadable" for what D-04 calls `unresolvable`. | DESIGN-048 cites "D-06 here (ADR-086 D-11)"; Q-01 and Q-15 say `unresolvable`. |
+
+### D-25 — Rulings made while building (PLAN-072 S2)
+
+PLAN-072 S2 part 1 built migration 0081 and every table of D-05, the registry readers and state machine (D-01..D-04),
+the `watchlist-registry` mode, the gate and the typed snapshot (D-06, D-07, D-19), the proposal and deletion guard
+with keep reasons and `ruleEvaluationFailed` (D-08, D-09), the sweep's `registry` input and `trash_sweep_status`
+(D-14, as it concerns the gate), the D-10 surfaces, and the registry half of the D-20 stubs. Part 2 (the Deleted-Release
+Record, the Release Block, the backfill, the Arm/Disarm fix, the Seerr enrollment and the D-23 counts) needs no further
+migration. The rulings below were made while building; none changes a D-24 ruling.
+
+| ID | Question | Ruling |
+|----|----------|--------|
+| D-25a | D-05 said the `seerr_watchlist_enroll` setting needs no DDL, but `app_settings.key` has a CHECK. | 0081 rebuilds `app_settings_key_enum` with the key (and `sync_runs_run_kind_enum` with `watchlist-registry`), so part 2 needs no migration. The setting's code default is `{ enabled: false, onlyUserIds: null }`. |
+| D-25b | A refresh that throws after its run row was inserted would leave a `running` row. | `watchlist_registry_runs.failure` also admits `error`: the run is closed `failed` / `error` and the error rethrown. |
+| D-25c | How the `watchlist-registry` advisory lock is held across a refresh of many transactions. | A transaction-scoped `pg_try_advisory_xact_lock` held by a transaction that stays open for the refresh (it takes no row lock and writes nothing); every registry write runs in its own transaction on another pool connection. The CronJob answers `busy` and exits 0; the sweep polls every 2 s for up to 120 s and reuses a run that finished `ok` while it waited. |
+| D-25d | A roster account with no uuid (no `thumb`, none in the Home list). | Its community source is `not_applicable` (`no_uuid`): it cannot be read, so it never blocks (like a managed user), and a stored list is kept. |
+| D-25e | Which Seerr users the registry reads. | Plex users with a plex id only: a local Seerr user (type 2) has no Plex watchlist. A plex id outside the roster is a `seerr_only` account keyed by that id. The owner's Seerr link is recorded, but the owner reads only through discover (D-04's "every other account"). |
+| D-25f | A Seerr read with `totalResults > 0` whose every item Seerr dropped (no tmdb guid, a metadata 404). | Empty for the D-04 rules: it lists nothing, so it removes nothing, and after a list with titles it is a failed read. |
+| D-25g | Does an ok read that lists nothing remove stored titles? | No (D-04: a title leaves only when an ok read no longer lists it while still listing something), with one exception: the owner's discover read replaces even when empty, since discover reports its own failures and answers the owner's whole list. |
+| D-25h | A stored source an account no longer reads (a Seerr link removed, a class change). | It turns `not_applicable` (`not_linked`) and keeps its items. |
+| D-25i | Does a frozen (`unreadable`) source fall back to `carried` when it fails again? | No: `unreadable` holds until an ok read, for the 72-hour rule and the community exception alike. Otherwise a community source frozen by a Seerr read would fall back to blocking the first run Seerr failed. A Seerr source failing after that still blocks through its own carry, as D-24b says. |
+| D-25j | `seerr_only` accounts and a failed Seerr user list. | A `seerr_only` account is marked left only when a successful user list no longer has it. A failed user list keeps every stored link and reads every Seerr source as failed (`seerr_users`); Seerr not configured does too (`seerr_unconfigured`), so both carry and then block. |
+| D-25k | What "unmapped" means for the evaluable rule (D-06). | A movie counts as mapped with a tmdb id, a show with a tvdb id (each kind's key in the pool); a show known only by tmdb id is unmapped (fail closed). |
+| D-25l | A pool item whose `plex://` guid names the other kind. | It is not a discover key; the item is still matched by its external ids and is evaluable only if nothing of its kind is unmapped. |
+| D-25m | The D-19 overlay's keys. | A `watchlist_add` mark with result `pending` or `written`, not reverted, made since the newest ok run started, adds its discover id and also its tmdb / tvdb ids (only ever adding protection). |
+| D-25n | An owner discover row with no valid discover id (neither the `plex://` suffix nor a 24-hex ratingKey). | Skipped and counted (`ownerSkipped`), not a run failure; discover has not been seen to serve one. |
+| D-25o | Pruning runs older than 7 days. | The newest ok run is never pruned, so the Watchlists card can always say when watchlists were last checked. |
+| D-25p | When `community_mass_empty` logs (D-04). | When the previous ok run had at least 2 community sources with titles and this run has half as many or fewer. |
+| D-25q | The Watchlists card's "n accounts read, m can't be read". | An account is read when one of its sources holds a verified list (`read` or `carried`, not `empty_unverified`); every other current account can't be read (unresolvable, unreadable, not read yet, or answering only empty and unverified). This reproduces the research's 22 / 20 split. |
+| D-25r | Which `trash_sweep_status` outcome the existing handle breaker records (3 consecutive Maintainerr handle failures). | `aborted_arr` with reason `handle_breaker`: the media apps did not answer, and the banner reads "the media apps". Part 2's *arr identity breaker records the same outcome. |
+| D-25s | The scheduled sweep with nothing due. | It does nothing at all: no audit, no registry refresh, no status row (D-14). Before, an unsafe audit failed the job every hour even with nothing due. |
+| D-25t | The `watchlist-registry` job's exit code. | 0 for a clean `failed` run (roster, owner) and for `busy`; only a thrown error fails the Job. The run row and `run_failed` (the Loki alert after 8 in a row) are the signal, so a plex.tv outage does not fire the job-failure alert every 15 minutes. |
+| D-25u | How the web paths surface a refusal. | Expedite's gate refusal is `WatchlistRegistryUnverifiedError` (appCode `WATCHLIST_REGISTRY_UNVERIFIED`); a manual Expire now that paused throws `TrashSweepPausedError` (appCode `TRASH_SWEEP_PAUSED`); both are PRECONDITION_FAILED and their messages are the banner's wording. |
+| D-25v | Where the paused banner lives (D-10). | Inside the Maintainerr safety banner's reserved row, recoloured to warn (ADR-015: no new row under the page), shown only while Maintainerr itself checks out (its own warnings take precedence). `trash.status` carries `sweepPause`, set only once the pause is 6 hours old. |
+| D-25w | The "On a watchlist" note's footprint. | A bookmark and the short visible label on the tile's meta line, the long wording in the tooltip and aria-label; the size and rating text ellipsizes first, so the tile's geometry is unchanged. On the batch wall the note shows on every row except `deleted`. |
+| D-25x | The space policy's reported candidate count (D-08). | It now reports the deletable candidates `minCandidates` is compared against (not `dnd`, not on a watchlist). |
+| D-25y | The Start-a-batch preview (the client mirror of `selectBatchCandidates`). | A targeted pick leaves watchlisted candidates out; an untargeted count includes them, since they are snapshotted `pending`. |
+| D-25z | The managed-user Home switch (D-02, Q-01). | Not built until Q-01 is answered: the `switch` source is always `not_applicable` (`switch_disabled`), so managed users are `unresolvable`. |
+| D-25aa | The copy of D-10. | The driving session's UX pass supersedes the proposed copy: the note "On a watchlist" (tooltip "On a watchlist. It won't be deleted while it stays there."); kept tooltips "Kept: on a watchlist / watched recently / couldn't be checked / no longer a candidate / saved / couldn't be removed safely" (`tag` and `live_excluded` both read "saved"); the confirm's term "on a watchlist"; the banner "Deletions are paused until watchlists can be checked." / "… until removals can be done safely." / "… until the media apps respond normally."; the card's "Checked {relative time}. {n} accounts read, {m} can't be read." |
+| D-25ab | The retry policy of D-02 on the existing clients. | `PlexHttp` and `ArrHttp` gained `retryStatus` and `retryBackoffMs` options (defaults unchanged); the registry's plex.tv and Seerr clients use 10 s, 3 attempts on 429 / 5xx / network, 2 s × attempt. The owner's discover list is read by the registry client with that policy, through the paging loop `getWatchlist` uses (extracted, unchanged). |
+| D-25ac | `pnpm dev:local` and e2e with a gate that needs a fresh run. | The stubs gained the registry half of D-20 (the plex.tv roster with a hidden-empty friend and a `User not found:` managed user, community GraphQL with upper-case `MOVIE` / `SHOW`, discover metadata, Seerr users and watchlist pages with the error-body switch); the stack runs the `watchlist-registry` mode at boot and the Trash spec re-runs it before it deletes. No default stub list holds a Trash pool title. The *arr and Seerr settings stubs are part 2's. |
 
 ## Alternatives considered
 

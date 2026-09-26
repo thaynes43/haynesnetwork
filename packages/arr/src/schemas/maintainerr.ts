@@ -24,6 +24,17 @@ export const maintainerrMediaSchema = z.object({
   sizeBytes: z.number().nullish(), // per-item on-disk size (bigint on the wire → number)
   image_path: z.string().nullish(),
   isManual: z.boolean().nullish(),
+  /**
+   * ADR-093 / DESIGN-052 D-06 (PLAN-072) — the item's Plex metadata: only `guid` crosses (`plex://movie/<24 hex>`, the
+   * SHOW's guid for TV; research 2026-09-26: every pool item carries one). The Trash guard matches it against the
+   * Watchlist Registry by discover id.
+   */
+  mediaData: z.object({ guid: z.string().nullish() }).nullish(),
+  /**
+   * DESIGN-052 D-09 — Maintainerr flags an already-pooled item whose rule data was transiently unavailable; its own
+   * handler skips such items, and the app's guardian now keeps them as `unevaluable` too.
+   */
+  ruleEvaluationFailed: z.boolean().nullish(),
 });
 export type MaintainerrMedia = z.infer<typeof maintainerrMediaSchema>;
 

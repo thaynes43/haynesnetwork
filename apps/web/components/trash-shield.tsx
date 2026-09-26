@@ -143,6 +143,27 @@ export function EyeGlyph() {
   );
 }
 
+/** ADR-093 / DESIGN-052 D-10 — the watchlist BOOKMARK: the title is on a watchlist, so the sweep keeps it while it
+ *  stays there (the Watchlist Keep; not a Save). INFO on the tile meta line, never the action corner. Same 16×16 box
+ *  + stroke weight as its siblings. */
+export function BookmarkGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6.5 3.5h11v17l-5.5-4-5.5 4z" />
+    </svg>
+  );
+}
+
 /** The SKIP ⊘ — the sweep kept it (unverifiable / guardian at sweep time); kept, NOT saved
  *  (skipped ≠ protected, ADR-023 C-07b). Terminal-batch glyph. */
 export function SkipGlyph() {
@@ -462,6 +483,10 @@ export function TrashPendingNotice({
             protectedByTag: item.protectedByTag,
             recentlyWatched: item.recentlyWatched,
             requesters: item.requesters,
+            // ADR-093 / DESIGN-052 D-09 — the guardian mirror's watchlist inputs (the confirm predicts the keep).
+            onWatchlist: item.onWatchlist,
+            watchlistEvaluable: item.watchlistEvaluable,
+            ruleEvaluationFailed: item.ruleEvaluationFailed,
           }}
           safe={safe}
           onClose={() => setExpediteOpen(false)}

@@ -93,6 +93,22 @@ function greenlightExpired(kind: 'movie' | 'tv'): void {
   if (res.status !== 0) throw new Error(`greenlight-expired failed:\n${res.stdout}\n${res.stderr}`);
 }
 
+/**
+ * ADR-093 / DESIGN-052 D-07 — Expedite and Expire now take the Registry Gate on the newest Watchlist Registry run,
+ * which must be at most 30 minutes old: re-record one by RUNNING the real watchlist-registry mode against the stubs
+ * (the stack seeded one at boot; a long suite can outlive it).
+ */
+function refreshWatchlists(): void {
+  const res = spawnSync(
+    join(process.cwd(), 'node_modules', '.bin', 'tsx'),
+    [join(process.cwd(), '..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'), '--mode=watchlist-registry'],
+    { env: { ...process.env, ...env() }, encoding: 'utf8' },
+  );
+  if (res.status !== 0) throw new Error(`watchlist-registry failed:\n${res.stdout}\n${res.stderr}`);
+}
+
+test.beforeAll(() => refreshWatchlists());
+
 /** Start a batch via the target-picker Modal, taking the default "All current candidates". */
 async function startBatchAll(page: Page): Promise<void> {
   await page.getByTestId('batch-start').click();

@@ -311,6 +311,8 @@ export interface TargetCandidate {
   imdbRating: number | null;
   tmdbRating: number | null;
   protectedByTag: boolean;
+  /** ADR-093 / DESIGN-052 D-08 — on a watchlist: a TARGETED batch leaves it out (it takes no slot). */
+  onWatchlist?: boolean;
 }
 
 export interface TargetPreview {
@@ -338,11 +340,20 @@ export function previewTargetSelection(
   candidates: readonly TargetCandidate[],
   spec: TargetSpec,
 ): TargetPreview {
-  const deletable = candidates.filter((c) => !c.protectedByTag);
+  // An untargeted batch snapshots every non-`dnd` candidate as pending (a watchlisted one too — the sweep keeps
+  // it); a targeted batch picks only from the candidates that can free space: not `dnd`, not on a watchlist
+  // (mirrors selectBatchCandidates, DESIGN-052 D-08).
+  const pending = candidates.filter((c) => !c.protectedByTag);
+  const deletable = pending.filter((c) => c.onWatchlist !== true);
   const poolBytes = deletable.reduce((n, c) => n + c.sizeBytes, 0);
   const capped = spec.targetBytes !== undefined || spec.maxItems !== undefined;
   if (!capped) {
-    return { count: deletable.length, bytes: poolBytes, poolCount: deletable.length, poolBytes };
+    return {
+      count: pending.length,
+      bytes: pending.reduce((n, c) => n + c.sizeBytes, 0),
+      poolCount: deletable.length,
+      poolBytes,
+    };
   }
   const strategy = spec.strategy ?? 'largest';
   const ranked = [...deletable].sort((a, b) => {

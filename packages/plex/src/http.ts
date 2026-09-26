@@ -36,9 +36,23 @@ export interface PlexHttpOptions {
    * retry on the same endpoint would not beat, makes a single longer attempt).
    */
   getRetries?: number;
+  /**
+   * ADR-093 / DESIGN-052 D-02 — which HTTP statuses a retryable request retries. Default: the gateway statuses
+   * 502/503/504. The Watchlist Registry reads also retry 429 and every 5xx (`registryRetryStatus`).
+   */
+  retryStatus?: (status: number) => boolean;
+  /**
+   * The wait before retry `attempt` (1-based: the wait before the second try is attempt 1). Default: `retryDelayMs`
+   * every time. The Watchlist Registry reads back off 2 s times the attempt (DESIGN-052 D-02).
+   */
+  retryBackoffMs?: (attempt: number) => number;
   /** Injectable fetch — tests pass a stub; production uses global fetch. */
   fetchImpl?: typeof fetch;
 }
+
+/** DESIGN-052 D-02 — the Watchlist Registry's retryable statuses: 429 and every 5xx. */
+export const registryRetryStatus = (status: number): boolean =>
+  status === 429 || (status >= 500 && status <= 599);
 
 export interface PlexRequestOptions {
   query?: QueryParams;
@@ -83,6 +97,8 @@ export class PlexHttp {
   private readonly timeoutMs: number;
   private readonly retryDelayMs: number;
   private readonly getRetries: number;
+  private readonly retryStatus: (status: number) => boolean;
+  private readonly retryBackoffMs: (attempt: number) => number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: PlexHttpOptions) {
@@ -92,6 +108,9 @@ export class PlexHttp {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     this.getRetries = Math.max(0, Math.floor(options.getRetries ?? GET_RETRIES));
+    this.retryStatus = options.retryStatus ?? ((status) => RETRYABLE_STATUSES.has(status));
+    const retryDelayMs = this.retryDelayMs;
+    this.retryBackoffMs = options.retryBackoffMs ?? (() => retryDelayMs);
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -184,7 +203,7 @@ export class PlexHttp {
     let lastError: unknown;
     let inFlight = false;
     for (let i = 0; i < attempts; i++) {
-      if (i > 0) await sleep(this.retryDelayMs);
+      if (i > 0) await sleep(this.retryBackoffMs(i));
       try {
         return await this.attempt(method, url, options, read);
       } catch (error) {
@@ -192,7 +211,7 @@ export class PlexHttp {
         const retryable =
           error instanceof PlexTimeoutError ||
           error instanceof PlexNetworkError || // transient DNS/connection failure
-          (error instanceof PlexHttpError && RETRYABLE_STATUSES.has(error.status));
+          (error instanceof PlexHttpError && this.retryStatus(error.status));
         if (!retryable || i === attempts - 1) {
           if (inFlight && error instanceof PlexError) error.mayStillLand = true;
           throw error;

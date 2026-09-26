@@ -30,6 +30,16 @@ import {
   watchServerLabel,
   type GuardianPreviewInput,
   type OverviewBatchLike,
+  KEPT_REASON_TOOLTIPS,
+  SWEEP_PAUSED_COPY,
+  WATCHLIST_BREAKDOWN_TERM,
+  WATCHLIST_CLASS_LABELS,
+  WATCHLIST_NOTE_DETAIL,
+  WATCHLIST_NOTE_LABEL,
+  WATCHLIST_STATUS_LABELS,
+  keptReasonTooltip,
+  relativeTimeLabel,
+  watchlistsHeadline,
 } from '../trash';
 
 const base: GuardianPreviewInput = {
@@ -38,6 +48,9 @@ const base: GuardianPreviewInput = {
   protectedByTag: false,
   recentlyWatched: false,
   requesters: [],
+  onWatchlist: false,
+  watchlistEvaluable: true,
+  ruleEvaluationFailed: false,
 };
 
 describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail closed)', () => {
@@ -64,6 +77,16 @@ describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail clos
   it('unknown to the ledger ⇒ unverifiable (never deletable)', () => {
     expect(previewGuardian({ ...base, mediaItemId: null })).toBe('unverifiable');
   });
+  it('ADR-093 — on a watchlist ⇒ protected_watchlist; after the tag and the watch keep', () => {
+    expect(previewGuardian({ ...base, onWatchlist: true })).toBe('protected_watchlist');
+    expect(previewGuardian({ ...base, onWatchlist: true, protectedByTag: true })).toBe('protected_tag');
+    expect(previewGuardian({ ...base, onWatchlist: true, recentlyWatched: true })).toBe('protected_watched');
+    expect(previewGuardian({ ...base, onWatchlist: true, watchlistEvaluable: false })).toBe('protected_watchlist');
+  });
+  it('ADR-093 — not watchlist-evaluable, or ruleEvaluationFailed ⇒ unverifiable (kept)', () => {
+    expect(previewGuardian({ ...base, watchlistEvaluable: false })).toBe('unverifiable');
+    expect(previewGuardian({ ...base, ruleEvaluationFailed: true })).toBe('unverifiable');
+  });
 });
 
 // ADR-086 D-11 / DESIGN-048 D-06 — the drift that caused the bug: three hand-synced copies of the
@@ -80,18 +103,29 @@ describe('previewGuardian parity with @hnet/domain classifyForExpedite (ADR-086 
         for (const protectedByTag of [false, true]) {
           for (const recentlyWatched of [false, true]) {
             for (const requesters of [[], ['manofoz']]) {
-              const item: GuardianPreviewInput = {
-                maintainerrMediaId,
-                mediaItemId,
-                protectedByTag,
-                recentlyWatched,
-                requesters,
-              };
-              // Compared as objects so a failure prints WHICH input diverged.
-              expect({ ...item, verdict: previewGuardian(item) }).toEqual({
-                ...item,
-                verdict: classifyForExpedite(item),
-              });
+              // ADR-093 / DESIGN-052 D-09 — the watchlist keep, the evaluable rule and Maintainerr's
+              // ruleEvaluationFailed flag (D-24i) join the matrix.
+              for (const onWatchlist of [false, true]) {
+                for (const watchlistEvaluable of [true, false]) {
+                  for (const ruleEvaluationFailed of [false, true]) {
+                    const item: GuardianPreviewInput = {
+                      maintainerrMediaId,
+                      mediaItemId,
+                      protectedByTag,
+                      recentlyWatched,
+                      requesters,
+                      onWatchlist,
+                      watchlistEvaluable,
+                      ruleEvaluationFailed,
+                    };
+                    // Compared as objects so a failure prints WHICH input diverged.
+                    expect({ ...item, verdict: previewGuardian(item) }).toEqual({
+                      ...item,
+                      verdict: classifyForExpedite(item),
+                    });
+                  }
+                }
+              }
             }
           }
         }
@@ -114,13 +148,66 @@ describe('partitionForExpedite', () => {
       { ...base, protectedByTag: true, sizeBytes: 10 }, // protected
       { ...base, mediaItemId: null, sizeBytes: 10 }, // unverifiable (skipped)
       { ...base, maintainerrMediaId: null, sizeBytes: 10 }, // unverifiable (unactionable)
+      { ...base, onWatchlist: true, sizeBytes: 10 }, // protected — on a watchlist (ADR-093)
     ]);
     expect(partition).toEqual({
       deletable: 1,
       deletableBytes: 100,
-      protected: 2,
+      protected: 3,
       unverifiable: 2,
+      watchlisted: 1,
     });
+  });
+});
+
+// ADR-093 / DESIGN-052 D-10 — the watchlist copy (the driving session's UX pass, verbatim; owner rules: no em or en
+// dashes, no names, never whose watchlist, never how many on a tile).
+describe('watchlist protection copy (D-10)', () => {
+  const noDashes = (s: string) => expect(s).not.toMatch(/[\u2013\u2014]/);
+
+  it('the tile note and its tooltip', () => {
+    expect(WATCHLIST_NOTE_LABEL).toBe('On a watchlist');
+    expect(WATCHLIST_NOTE_DETAIL).toBe("On a watchlist. It won't be deleted while it stays there.");
+    expect(WATCHLIST_BREAKDOWN_TERM).toBe('on a watchlist');
+  });
+
+  it('the kept tooltips name every keep reason (tag and live_excluded are both a Save)', () => {
+    expect(keptReasonTooltip('watchlisted')).toBe('Kept: on a watchlist');
+    expect(keptReasonTooltip('recently_watched')).toBe('Kept: watched recently');
+    expect(keptReasonTooltip('unevaluable')).toBe("Kept: couldn't be checked");
+    expect(keptReasonTooltip('not_in_pool')).toBe('Kept: no longer a candidate');
+    expect(keptReasonTooltip('live_excluded')).toBe('Kept: saved');
+    expect(keptReasonTooltip('tag')).toBe('Kept: saved');
+    expect(keptReasonTooltip('release_unrecorded')).toBe("Kept: couldn't be removed safely");
+    expect(keptReasonTooltip(null)).toBeNull();
+    expect(keptReasonTooltip('something_new')).toBeNull();
+    for (const text of Object.values(KEPT_REASON_TOOLTIPS)) noDashes(text);
+  });
+
+  it('the paused banner, per reason', () => {
+    expect(SWEEP_PAUSED_COPY).toEqual({
+      gate: 'Deletions are paused until watchlists can be checked.',
+      release_block: 'Deletions are paused until removals can be done safely.',
+      media_apps: 'Deletions are paused until the media apps respond normally.',
+    });
+  });
+
+  it('the Watchlists card headline', () => {
+    const now = new Date('2026-09-26T12:06:00Z');
+    expect(
+      watchlistsHeadline({ checkedAt: '2026-09-26T12:00:00Z', accountsRead: 22, accountsUnreadable: 20 }, now),
+    ).toBe("Checked 6 minutes ago. 22 accounts read, 20 can't be read.");
+    expect(
+      watchlistsHeadline({ checkedAt: '2026-09-26T12:05:30Z', accountsRead: 1, accountsUnreadable: 0 }, now),
+    ).toBe("Checked just now. 1 account read, 0 can't be read.");
+    expect(watchlistsHeadline({ checkedAt: null, accountsRead: 0, accountsUnreadable: 0 }, now)).toBe(
+      'Not checked yet.',
+    );
+    expect(relativeTimeLabel('2026-09-26T09:00:00Z', now)).toBe('3 hours ago');
+    expect(relativeTimeLabel('2026-09-23T09:00:00Z', now)).toBe('3 days ago');
+    for (const text of [...Object.values(WATCHLIST_CLASS_LABELS), ...Object.values(WATCHLIST_STATUS_LABELS)]) {
+      noDashes(text);
+    }
   });
 });
 

@@ -31,7 +31,7 @@ import {
   upsertMediaMetadataBatch,
   type MaintainerrClientBundle,
 } from '../src/index';
-import { bootMigratedDb, createUser, type TestDb } from './helpers';
+import { seedVerifiedWatchlistRegistry, TEST_DELETE_SNAPSHOT, TEST_DISPLAY_SNAPSHOT, bootMigratedDb, createUser, type TestDb } from './helpers';
 
 interface RecordedCall {
   method: string;
@@ -485,6 +485,7 @@ describe('saveExclusion / removeExclusion (ADR-023 D-05 protective ordering)', (
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     actorId = (await createUser(t.db, { email: 'trash-save@example.com' })).id;
   });
   afterAll(async () => t?.stop());
@@ -584,6 +585,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     actorId = (await createUser(t.db, { email: 'trash-exp@example.com' })).id;
     // Two radarr rows: 8001 recently watched, 8002 cold.
     await upsertMediaItemsBatch({
@@ -646,7 +648,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
 
   it('merges Maintainerr media with our ledger + computes scheduled-delete + total size', async () => {
     const { bundle } = makeMaintainerr(pendingState());
-    const res = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie' });
+    const res = await listTrashPending({ watchlist: TEST_DISPLAY_SNAPSHOT, db: t.db, maintainerr: bundle, media: 'movie' });
     expect(res.count).toBe(2);
     expect(res.totalSizeBytes).toBe(3_000_000_000);
     const watched = res.items.find((i) => i.tmdbId === 8001)!;
@@ -667,7 +669,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
 
   it('D-12 — an ever-watched-but-not-recent item stays SWEEP-DELETABLE (info, not protection)', async () => {
     const { bundle } = makeMaintainerr(pendingState());
-    const res = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie' });
+    const res = await listTrashPending({ watchlist: TEST_DISPLAY_SNAPSHOT, db: t.db, maintainerr: bundle, media: 'movie' });
     const cold = res.items.find((i) => i.tmdbId === 8002)!;
     // It carries a last-watched signal (watched 400d ago) but is NOT recentlyWatched…
     expect(cold.lastWatchedAt).not.toBeNull();
@@ -681,7 +683,7 @@ describe('listTrashPending + guardian + expedite (ADR-023 D-02/D-04/D-05)', () =
   it('guardRecentlyWatched auto-protects the recently-watched item, leaves the cold one expeditable', async () => {
     const state = pendingState();
     const { bundle } = makeMaintainerr(state);
-    const guard = await guardRecentlyWatched({ db: t.db, maintainerr: bundle, media: 'movie', actorId });
+    const guard = await guardRecentlyWatched({ watchlist: TEST_DELETE_SNAPSHOT, db: t.db, maintainerr: bundle, media: 'movie', actorId });
     expect(guard.protectedIds).toContain('ms-8001');
     expect(guard.expeditableIds).toContain('ms-8002');
     expect(state.exclusions.has('ms-8001')).toBe(true); // auto-whitelisted
@@ -931,6 +933,7 @@ describe('expedite deletion audit — Recently Deleted + Activity (deletion-trac
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     actorId = (await createUser(t.db, { email: 'deleter@example.com', displayName: 'Tom Haynes' })).id;
     await upsertMediaItemsBatch({
       db: t.db,
@@ -1037,6 +1040,7 @@ describe('listRecentlyDeleted + restore music rejection (ADR-023 D-02 / R-87)', 
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     await upsertMediaItemsBatch({
       db: t.db,
       arrKind: 'radarr',
@@ -1250,6 +1254,7 @@ describe('listTrashPending — live exclusion reflected in the pending list (Bug
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedVerifiedWatchlistRegistry(t.db);
     // A cold, ledger-known movie with NO dnd tag (arrTags empty) — protectedByTag stays false.
     await upsertMediaItemsBatch({
       db: t.db,
@@ -1278,7 +1283,7 @@ describe('listTrashPending — live exclusion reflected in the pending list (Bug
 
   it('protectedByExclusion is TRUE for a live-excluded item (tag not yet synced) when opted in', async () => {
     const { bundle, calls } = makeMaintainerr(oneItemState({ exclusions: new Set(['ms-9101']) }));
-    const res = await listTrashPending({
+    const res = await listTrashPending({ watchlist: TEST_DISPLAY_SNAPSHOT,
       db: t.db,
       maintainerr: bundle,
       media: 'movie',
@@ -1293,7 +1298,7 @@ describe('listTrashPending — live exclusion reflected in the pending list (Bug
 
   it('protectedByExclusion is FALSE when the item is NOT live-excluded', async () => {
     const { bundle } = makeMaintainerr(oneItemState());
-    const res = await listTrashPending({
+    const res = await listTrashPending({ watchlist: TEST_DISPLAY_SNAPSHOT,
       db: t.db,
       maintainerr: bundle,
       media: 'movie',
@@ -1304,7 +1309,7 @@ describe('listTrashPending — live exclusion reflected in the pending list (Bug
 
   it('does NOT read the exclusion list when includeLiveExclusions is off (internal expedite/guardian path)', async () => {
     const { bundle, calls } = makeMaintainerr(oneItemState({ exclusions: new Set(['ms-9101']) }));
-    const res = await listTrashPending({ db: t.db, maintainerr: bundle, media: 'movie' });
+    const res = await listTrashPending({ watchlist: TEST_DISPLAY_SNAPSHOT, db: t.db, maintainerr: bundle, media: 'movie' });
     expect(res.items[0]!.protectedByExclusion).toBe(false);
     expect(calls.some((c) => c.pathname === '/rules/exclusion')).toBe(false);
   });

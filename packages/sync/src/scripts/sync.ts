@@ -28,6 +28,7 @@ import {
   maintainerrClientBundleFromEnv,
   mamGovernorBundleFromEnv,
   plexClientBundleFromEnv,
+  watchlistRegistrySourcesFromEnv,
   resolveArrBaseUrls,
   resolveGovernorConfig,
   resolveKapowarrBaseUrl,
@@ -71,7 +72,11 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
                            (ADR-053), then writes per-user watch rows (user_media_watch) for them
   --mode=trash-batch-sweep delete the survivors of every EXPIRED Leaving-Soon batch, one guarded
                            item at a time (ADR-025 — SAFE audit + live exclusions + guardian re-run).
-                           Drives Maintainerr; needs MAINTAINERR_URL/MAINTAINERR_API_KEY. No --source.
+                           ADR-093: when a batch is due it first refreshes the Watchlist Registry inline
+                           and takes the Registry Gate; a refusal pauses the sweep cleanly (nothing
+                           deleted, exit 0). Drives Maintainerr; needs MAINTAINERR_URL/MAINTAINERR_API_KEY
+                           plus PLEX_HAYNESOPS_TOKEN / PLEX_HAYNESTOWER_TOKEN (at least one) and
+                           SEERR_API_KEY. No --source.
   --mode=space-policy      PROPOSE (never delete) a draft batch for each media array over its space
                            target (ADR-031 — reads *arr /diskspace + createBatchFromPending; admin gate
                            stays the human check). Needs SONARR/RADARR/LIDARR_URL/_API_KEY +
@@ -209,6 +214,15 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
                            TAUTULLI_K8PLEX_API_KEY / TAUTULLI_HAYNESTOWER_API_KEY (+ _URL) and
                            TMDB_API_READ_ACCESS_TOKEN (or TMDB_API_KEY) are optional, each skip-if-absent.
                            No --source. Writes no sync_runs row.
+  --mode=watchlist-registry
+                           the WATCHLIST REGISTRY (ADR-093 / DESIGN-052 D-04): read every watchlist the
+                           app can reach — the owner's discover list, community.plex.tv for friends and
+                           full Home members, Seerr per user (their own stored tokens) — into the per-
+                           (account, source) registry the Registry Gate and the Watchlist Keep read. A
+                           failed read never removes a title. READ-ONLY against plex.tv and Seerr. Needs
+                           PLEX_HAYNESOPS_TOKEN / PLEX_HAYNESTOWER_TOKEN (at least one); SEERR_API_KEY is
+                           optional (absent ⇒ every Seerr source reads as failed). A refresh another run
+                           holds is skipped. No --source. Writes no sync_runs row.
   --source=NAME           limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -277,7 +291,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'queue-cleanup' ||
       mode === 'goodreads-sync' ||
       mode === 'format-pairing' ||
-      mode === 'watch') &&
+      mode === 'watch' ||
+      mode === 'watchlist-registry') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
@@ -302,7 +317,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'queue-cleanup' ||
     mode === 'goodreads-sync' ||
     mode === 'format-pairing' ||
-    mode === 'watch'
+    mode === 'watch' ||
+    mode === 'watchlist-registry'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -478,6 +494,13 @@ async function main(): Promise<number> {
     args.mode === 'collections-sync' ||
     args.mode === 'watch'
       ? plexClientBundleFromEnv()
+      : undefined;
+  // ADR-093 / DESIGN-052 D-20 — the Watchlist Registry's read sources (owner-token plex.tv readers for HaynesOps then
+  // HaynesTower, plus Seerr with the D-02 retry policy). The `watchlist-registry` mode reads them; the
+  // `trash-batch-sweep` mode refreshes inline with them before the Registry Gate (D-14). Read-only everywhere.
+  const watchlistRegistry =
+    args.mode === 'watchlist-registry' || args.mode === 'trash-batch-sweep'
+      ? watchlistRegistrySourcesFromEnv()
       : undefined;
   // ADR-068 / DESIGN-049 D-09 — the `watch` mode's Tautulli instances (each skip-if-unconfigured: a missing
   // key just leaves that server's history out of this run) and the OPTIONAL TMDB client for the daily seeds.
@@ -659,6 +682,7 @@ async function main(): Promise<number> {
     ...(arrActivityAdapter ? { arrActivityAdapter } : {}),
     ...(kapowarrActivityAdapter ? { kapowarrActivityAdapter } : {}),
     ...(plex ? { plex } : {}),
+    ...(watchlistRegistry ? { watchlistRegistry } : {}),
     ...(collectionsRadarr ? { collectionsRadarr } : {}),
     ...(openWebUi ? { openWebUi } : {}),
     ...(authentik ? { authentik } : {}),
@@ -701,7 +725,15 @@ async function main(): Promise<number> {
       : {}),
     ...(report.poolRefreshError !== undefined ? { poolRefreshError: report.poolRefreshError } : {}),
     ...(report.sweep
-      ? { sweep: { batchesSwept: report.sweep.batchesSwept, batches: report.sweep.batches } }
+      ? {
+          sweep: {
+            batchesSwept: report.sweep.batchesSwept,
+            batches: report.sweep.batches,
+            due: report.sweep.due,
+            paused: report.sweep.paused,
+            outcome: report.sweep.outcome,
+          },
+        }
       : {}),
     ...(report.sweepError !== undefined ? { sweepError: report.sweepError } : {}),
     ...(report.spacePolicy
@@ -844,6 +876,18 @@ async function main(): Promise<number> {
         }
       : {}),
     ...(report.watchError !== undefined ? { watchError: report.watchError } : {}),
+    ...(report.watchlistRegistry
+      ? {
+          watchlistRegistry: {
+            status: report.watchlistRegistry.status,
+            failure: report.watchlistRegistry.failure,
+            durationMs: report.watchlistRegistry.durationMs,
+          },
+        }
+      : {}),
+    ...(report.watchlistRegistryError !== undefined
+      ? { watchlistRegistryError: report.watchlistRegistryError }
+      : {}),
     ...(report.formatPairing ? { formatPairing: report.formatPairing } : {}),
     ...(report.formatPairingError !== undefined
       ? { formatPairingError: report.formatPairingError }

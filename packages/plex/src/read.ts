@@ -6,6 +6,7 @@
 import type { ZodType } from 'zod';
 import { PLEX_DISCOVER_BASE_URL, PLEX_TV_BASE_URL } from './config';
 import { PlexHttp, type QueryParams } from './http';
+import { readAllContainerPages, type PagedContainer, type PlexPagedListing } from './paging';
 import { childrenNamed, parseXml, type XmlElement } from './xml';
 import { PlexHttpError, PlexParseError } from './errors';
 import {
@@ -56,6 +57,10 @@ export interface PlexClientOptions {
   retryDelayMs?: number;
   /** Retries after a GET's (or an idempotent write's) first attempt; default 2 (`PlexHttpOptions.getRetries`). */
   getRetries?: number;
+  /** Which statuses a retry fires on (`PlexHttpOptions.retryStatus`; default 502/503/504). */
+  retryStatus?: (status: number) => boolean;
+  /** The wait before retry `attempt` (`PlexHttpOptions.retryBackoffMs`; default `retryDelayMs`). */
+  retryBackoffMs?: (attempt: number) => number;
   /** Injectable fetch for fixture/stub-driven tests (ADR-010: no live-API tests in CI). */
   fetchImpl?: typeof fetch;
 }
@@ -79,20 +84,7 @@ export const WATCHLIST_PAGE_SIZE = 100;
 /** … under a safety cap (2,000 titles). */
 export const MAX_WATCHLIST_PAGES = 20;
 
-/**
- * A fully paged Plex listing plus its completeness flag. `truncated` = the read ended WITHOUT proof of
- * completion (the page cap, or a page that contradicted the server's own totalSize): the items are a
- * PARTIAL view — a caller must not treat an absent item as absent from Plex.
- */
-export interface PlexPagedListing<T> {
-  items: T[];
-  /** The server's own total, when it sent one. */
-  totalSize: number | null;
-  truncated: boolean;
-}
-
-/** The `MediaContainer` subset every paged metadata listing shares. */
-type PagedContainer = { MediaContainer: { totalSize?: number; Metadata: PlexSectionItem[] } };
+export type { PlexPagedListing } from './paging';
 
 /** ADR-064 — a section's paged /collections listing plus its completeness flag. */
 export interface PlexCollectionsListing {
@@ -139,44 +131,15 @@ export class PlexReadClient {
     this.machineIdentifier = options.machineIdentifier;
   }
 
-  /**
-   * Page a container-bounded listing to completion with the X-Plex-Container-Start/-Size loop, under a
-   * page cap. Termination follows listCollections exactly: with `totalSize` on the wire the loop ends at
-   * `start >= totalSize`; without it only an empty or short page ends it; anything else (the cap, or an
-   * empty page that contradicts totalSize) returns `truncated: true`. The returned-page `size` is never
-   * mistaken for the grand total.
-   */
-  private async readAllPages(
+  /** Page a container-bounded listing to completion under a page cap (see `readAllContainerPages`). */
+  private readAllPages(
     url: string,
     query: QueryParams,
     pageSize: number,
     maxPages: number,
     schema: ZodType<PagedContainer>,
   ): Promise<PlexPagedListing<PlexSectionItem>> {
-    const items: PlexSectionItem[] = [];
-    let start = 0;
-    let totalSize: number | null = null;
-    let truncated = true; // proven complete only by a terminating condition below
-    for (let page = 0; page < maxPages; page += 1) {
-      const body = await this.http.requestJson('GET', url, schema, {
-        query: { ...query, 'X-Plex-Container-Start': start, 'X-Plex-Container-Size': pageSize },
-      });
-      const mc = body.MediaContainer;
-      items.push(...mc.Metadata);
-      start += mc.Metadata.length;
-      totalSize = mc.totalSize ?? null;
-      if (totalSize !== null) {
-        if (start >= totalSize) {
-          truncated = false;
-          break;
-        }
-        if (mc.Metadata.length === 0) break; // under-delivered against its own totalSize — PARTIAL
-      } else if (mc.Metadata.length < pageSize) {
-        truncated = false; // no totalSize: an empty/short page is the only honest completion signal
-        break;
-      }
-    }
-    return { items, totalSize, truncated };
+    return readAllContainerPages(this.http, url, query, pageSize, maxPages, schema);
   }
 
   // ---- PMS reads (registry refresh) ----
@@ -680,3 +643,6 @@ export type {
   PlexSharedServer,
   PlexLibrarySection,
 };
+
+// ADR-093 / DESIGN-052 D-01..D-03 (PLAN-072) — the Watchlist Registry's owner-token plex.tv reads.
+export * from './registry';

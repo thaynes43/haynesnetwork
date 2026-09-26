@@ -13,6 +13,7 @@ import {
 } from '@hnet/domain';
 import {
   bootMigratedDb,
+  seedWatchlistRegistry,
   caller,
   createUser,
   makeCtx,
@@ -134,6 +135,7 @@ describe('trash.batches + trash.settings (ADR-025 / DESIGN-011)', () => {
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedWatchlistRegistry(t.db);
     member = await createUser(t.db, { email: 'batch-member@example.com' });
     admin = await createUser(t.db, { email: 'batch-admin@example.com', admin: true });
     await upsertMediaItemsBatch({
@@ -311,6 +313,85 @@ describe('trash.batches + trash.settings (ADR-025 / DESIGN-011)', () => {
       trashSkipAdminGate: false,
       trashDefaultWindowDays: 21,
       finalWarning: { enabled: true, hoursBefore: 2 },
+    });
+  });
+});
+
+// ADR-093 / DESIGN-052 D-07 / D-10 / D-14 (PLAN-072 S2) — the web paths take the Registry Gate on the CronJob's
+// newest run and never refresh inline. With NO verified registry (a fresh database, no run at all) a forced Expire
+// now deletes nothing and answers PRECONDITION_FAILED; Expedite refuses the same way. The Trash status carries the
+// paused-banner reason; the Watchlists card is admin-only and counts only.
+describe('trash — the Registry Gate on the web paths (ADR-093)', () => {
+  let t: TestDb;
+  let member: Awaited<ReturnType<typeof createUser>>;
+  let admin: Awaited<ReturnType<typeof createUser>>;
+
+  beforeAll(async () => {
+    t = await bootMigratedDb(); // deliberately NO registry run
+    member = await createUser(t.db, { email: 'gate-member@example.com' });
+    admin = await createUser(t.db, { email: 'gate-admin@example.com', admin: true });
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'radarr',
+      items: [
+        { arrItemId: 81, tmdbId: 55001, title: 'A', sortTitle: 'a', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/m' },
+        { arrItemId: 82, tmdbId: 55002, title: 'B', sortTitle: 'b', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/m' },
+      ],
+    });
+  });
+  afterAll(async () => t?.stop());
+
+  const adminCall = () => caller(makeCtx(t.db, sessionUser(admin), undefined, undefined, stubMaintainerr()));
+  const memberCall = (level: 'edit' | 'read_only' | 'disabled') =>
+    caller(makeCtx(t.db, sessionUser(member, { trash: level }), undefined, undefined, stubMaintainerr()));
+
+  it('a forced Expire now with no verified registry deletes nothing: PRECONDITION_FAILED (TRASH_SWEEP_PAUSED)', async () => {
+    const admin = adminCall();
+    const { batchId } = await admin.trash.batches.create({ mediaKind: 'movie' });
+    await admin.trash.batches.greenlight({ batchId, windowDays: 21 });
+    try {
+      await admin.trash.batches.expire({ batchId, forceOverride: true });
+      throw new Error('expected a refusal');
+    } catch (err) {
+      const shape = wireShape(err, 'trash.batches.expire');
+      expect(shape.data.code).toBe('PRECONDITION_FAILED');
+      expect(shape.data.appCode).toBe('TRASH_SWEEP_PAUSED');
+      expect(shape.message).toBe('Deletions are paused until watchlists can be checked.');
+    }
+    const detail = await admin.trash.batches.get({ batchId });
+    expect(detail.state).toBe('leaving_soon');
+    expect(detail.items.every((i) => i.state === 'pending')).toBe(true);
+    await admin.trash.batches.cancel({ batchId });
+  });
+
+  it('Expedite refuses with no verified registry: PRECONDITION_FAILED (WATCHLIST_REGISTRY_UNVERIFIED)', async () => {
+    try {
+      await adminCall().trash.expediteAll({ media: 'movie', maintainerrMediaIds: ['ms-1'] });
+      throw new Error('expected a refusal');
+    } catch (err) {
+      const shape = wireShape(err, 'trash.expediteAll');
+      expect(shape.data.code).toBe('PRECONDITION_FAILED');
+      expect(shape.data.appCode).toBe('WATCHLIST_REGISTRY_UNVERIFIED');
+      expect(shape.message).toMatch(/^Deletions are paused until watchlists can be checked/);
+    }
+  });
+
+  it('status carries the paused-banner reason (none yet); the Watchlists card is admin-only and counts only', async () => {
+    const status = await memberCall('read_only').trash.status();
+    expect(status.sweepPause).toBeNull();
+    await expect(memberCall('edit').trash.watchlists()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const empty = await adminCall().trash.watchlists();
+    expect(empty).toMatchObject({ checkedAt: null, accountsRead: 0, accountsUnreadable: 0, lastRun: null });
+    await seedWatchlistRegistry(t.db, {
+      accounts: [{ plexAccountId: '101', cls: 'friend', community: { kind: 'answered', nodes: [] } }],
+    });
+    const card = await adminCall().trash.watchlists();
+    expect(card).toMatchObject({
+      checkedAt: expect.any(String),
+      accountsRead: 1,
+      accountsUnreadable: 1,
+      byClass: { owner: 1, friend: 1 },
+      lastRun: { status: 'ok', failure: null },
     });
   });
 });

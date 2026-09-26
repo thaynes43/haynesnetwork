@@ -15,9 +15,15 @@ import { sql } from 'drizzle-orm';
 import { users } from './users';
 import { mediaItems } from './media-items';
 import { trashBatches } from './trash-batches';
-import { TRASH_BATCH_ITEM_STATES, type TrashBatchItemState } from './enums';
+import {
+  TRASH_BATCH_ITEM_STATES,
+  TRASH_KEEP_REASONS,
+  type TrashBatchItemState,
+  type TrashKeepReason,
+} from './enums';
 
 const TRASH_BATCH_ITEM_STATES_SQL_LIST = TRASH_BATCH_ITEM_STATES.map((s) => `'${s}'`).join(',');
+const TRASH_KEEP_REASONS_SQL_LIST = TRASH_KEEP_REASONS.map((r) => `'${r}'`).join(',');
 
 /**
  * ADR-025 / DESIGN-011 — one row per proposed-deletion item in a batch. Snapshot columns
@@ -67,12 +73,21 @@ export const trashBatchItems = pgTable(
     deletedResolution: text('deleted_resolution'), // media_metadata.resolution tier (PLAN-004)
     deletedImdbRating: numeric('deleted_imdb_rating'),
     deletedTmdbRating: numeric('deleted_tmdb_rating'),
+    // ADR-093 / DESIGN-052 D-05 / D-09 (migration 0081) — why the sweep KEPT this item (it landed `skipped`):
+    // the guardian's reason (tag / recently_watched / watchlisted / unevaluable), a pre-guardian skip
+    // (not_in_pool / live_excluded), or release_unrecorded (D-11). Null on rows the sweep never skipped, and on
+    // rows skipped before 0081. The batch wall's kept tooltip names it (D-10).
+    keepReason: text('keep_reason').$type<TrashKeepReason>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     check(
       'trash_batch_items_state_enum',
       sql`${t.state} = ANY (ARRAY[${sql.raw(TRASH_BATCH_ITEM_STATES_SQL_LIST)}])`,
+    ),
+    check(
+      'trash_batch_items_keep_reason_enum',
+      sql`${t.keepReason} IS NULL OR ${t.keepReason} = ANY (ARRAY[${sql.raw(TRASH_KEEP_REASONS_SQL_LIST)}])`,
     ),
     // One row per (batch, Maintainerr item) — the snapshot is deduped.
     uniqueIndex('trash_batch_items_batch_media_unique').on(t.batchId, t.maintainerrMediaId),

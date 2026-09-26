@@ -62,6 +62,11 @@ export function ExpediteItemConfirm({
           This deletes the files <strong>NOW</strong> — immediate and permanent. It is not the
           scheduled cleanup; there is no undo beyond a re-download via Restore.
         </p>
+      ) : verdict === 'protected_watchlist' ? (
+        // ADR-093 / DESIGN-052 D-09 — the Watchlist Keep: refused like a whitelisted item, never auto-saved.
+        <p className="status-note" data-testid="trash-expedite-item-watchlisted">
+          This item is on a watchlist, so it won&apos;t be deleted while it stays there. Nothing will be deleted.
+        </p>
       ) : verdict === 'unverifiable' ? (
         <p className="status-note status-note--warn">
           This item can’t be verified safe (it isn’t in our ledger), so the server will{' '}
@@ -128,8 +133,8 @@ export function ExpediteReport({
           being removed now.
         </li>
         <li>
-          <strong>Protected</strong> — deliberately kept: recently watched or whitelisted/saved
-          (watched items were auto-whitelisted during this run).
+          <strong>Protected</strong> — deliberately kept: recently watched, on a watchlist, or
+          whitelisted/saved (watched items were auto-whitelisted during this run).
         </li>
         <li>
           <strong>Skipped</strong> — could not be verified safe <em>or</em> its protection could not

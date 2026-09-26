@@ -51,3 +51,50 @@ export const seerrRequestPageSchema = z.object({
   results: z.array(seerrRequestSchema),
 });
 export type SeerrRequestPage = z.infer<typeof seerrRequestPageSchema>;
+
+// ---------------------------------------------------------------------------
+// ADR-093 / DESIGN-052 D-02 (PLAN-072) — the Watchlist Registry's Seerr reads (strip mode; nothing but ids crosses
+// this boundary). `GET /api/v1/user?take=&skip=` pages the users; `GET /api/v1/user/{id}/watchlist?page=` answers a
+// user's Plex watchlist read with THAT USER's own stored token (Seerr 3.4.1). The content rules (Seerr answers a
+// failed plex.tv read as HTTP 200 with an empty list) live in ../seerr-watchlist.ts, not here.
+// ---------------------------------------------------------------------------
+
+/** One Seerr user, as the registry needs it: its id, its plex.tv account id and its type (1 = Plex, 2 = local). */
+export const seerrUserSummarySchema = z.object({
+  id: z.number().int(),
+  plexId: z
+    .union([z.number().int(), z.string()])
+    .nullish()
+    .transform((v) =>
+      v === null || v === undefined || String(v).trim() === '' ? null : String(v).trim(),
+    ),
+  userType: z.number().int().nullish(),
+});
+export type SeerrUserSummary = z.infer<typeof seerrUserSummarySchema>;
+
+/** `GET /api/v1/user?take=&skip=` envelope. */
+export const seerrUserPageSchema = z.object({
+  pageInfo: z.object({
+    pages: z.number().int(),
+    pageSize: z.number().int(),
+    results: z.number().int(),
+    page: z.number().int(),
+  }),
+  results: z.array(seerrUserSummarySchema),
+});
+export type SeerrUserPage = z.infer<typeof seerrUserPageSchema>;
+
+/**
+ * `GET /api/v1/user/{id}/watchlist?page=` (20 per page): `{page, totalPages, totalResults, results[{id, ratingKey,
+ * title, mediaType, tmdbId}]}`. `ratingKey` is the plex.tv discover id; `mediaType` is `movie` or `tv`. Item fields are
+ * validated by the content rules (a bad one fails the read), so they are `unknown` here.
+ */
+export const seerrWatchlistPageSchema = z.object({
+  page: z.number().int(),
+  totalPages: z.number().int(),
+  totalResults: z.number().int(),
+  results: z.array(
+    z.object({ ratingKey: z.unknown(), mediaType: z.unknown(), tmdbId: z.unknown() }).passthrough(),
+  ),
+});
+export type SeerrWatchlistPage = z.infer<typeof seerrWatchlistPageSchema>;

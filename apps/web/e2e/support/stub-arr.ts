@@ -427,6 +427,9 @@ export async function startStubArr(): Promise<StubArrServer> {
   // throws. Exercises per-source failure isolation (one source down → the OTHERS still flow + a
   // per-source `unavailable` marker). Toggled via `POST /_stub/fault {on}`; cleared by reset.
   let faultReads = false;
+  // ADR-093 / DESIGN-052 D-20 — Seerr's watchlist error switch: when on, every `/user/{id}/watchlist` page answers
+  // Seerr 3.4.1's failed-read body (HTTP 200, `totalPages: 0`, `totalResults: 0`, no results). Cleared by reset.
+  let seerrWatchlistError = false;
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -444,8 +447,38 @@ export async function startStubArr(): Promise<StubArrServer> {
         calls.length = 0;
         queueRecords = [];
         faultReads = false;
+        seerrWatchlistError = false;
         res.writeHead(204);
         return res.end();
+      }
+      if (url.pathname === '/_stub/seerr-watchlist-error' && method === 'POST') {
+        const raw = await readBody(req);
+        const parsed = raw === '' ? {} : (JSON.parse(raw) as { on?: boolean });
+        seerrWatchlistError = parsed.on !== false;
+        res.writeHead(204);
+        return res.end();
+      }
+      // ADR-093 / DESIGN-052 D-02 / D-20 — Seerr's users and each user's watchlist (SEERR_URL points here; the path is
+      // normalized, so `/api/v1/user` is `/user`). Seerr user 1 is the owner, user 2 the member (a friend); the
+      // member's list holds Stub Dune, a title that is NOT in the Trash pool.
+      if (method === 'GET' && path === '/user') {
+        return json(res, 200, {
+          pageInfo: { pages: 1, pageSize: 100, results: 2, page: 1 },
+          results: [
+            { id: 1, plexId: 12874060, userType: 1 },
+            { id: 2, plexId: 77, userType: 1 },
+          ],
+        });
+      }
+      const seerrWatchlist = /^\/user\/(\d+)\/watchlist$/.exec(path);
+      if (method === 'GET' && seerrWatchlist) {
+        const page = Number(query.page ?? 1);
+        if (seerrWatchlistError) return json(res, 200, { page, totalPages: 0, totalResults: 0, results: [] });
+        const results =
+          seerrWatchlist[1] === '2'
+            ? [{ id: 11, ratingKey: '5d776d1b0000000000000002', title: 'Stub Dune', mediaType: 'movie', tmdbId: 880020 }]
+            : [];
+        return json(res, 200, { page, totalPages: results.length > 0 ? 1 : 0, totalResults: results.length, results });
       }
       // PLAN-015 / D-20 — stage the download queue for the Action Feedback progress derivation.
       if (url.pathname === '/_stub/queue' && method === 'POST') {

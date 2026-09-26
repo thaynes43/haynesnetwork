@@ -20,7 +20,10 @@ import {
   getBatchSaveStats,
   getPoolRefreshCadence,
   getTrashOverview,
+  getTrashSweepStatus,
   getTuningReport,
+  getWatchlistRegistrySummary,
+  TrashSweepPausedError,
   greenlightBatch,
   isLeavingSoonCollectionTitle,
   listBatches,
@@ -90,9 +93,24 @@ export const trashRouter = router({
    * The UX surfaces this as the safety banner; the destructive procedures re-run it server-side.
    */
   status: sectionProcedure('trash', 'read_only').query(async ({ ctx }) => {
-    return mapDomainErrors(() =>
-      auditMaintainerr({ maintainerr: resolveMaintainerrBundle(ctx) }),
-    );
+    return mapDomainErrors(async () => {
+      const [audit, sweep] = await Promise.all([
+        auditMaintainerr({ maintainerr: resolveMaintainerrBundle(ctx) }),
+        getTrashSweepStatus({ db: ctx.db }),
+      ]);
+      // ADR-093 / DESIGN-052 D-10 — the paused banner's reason, set only once no scheduled sweep of a due batch has
+      // succeeded for 6 hours (any reason); a shorter pause shows nothing. Counts and reasons only.
+      return { ...audit, sweepPause: sweep.banner };
+    });
+  }),
+
+  /**
+   * ADR-093 / DESIGN-052 D-10 — the Trash settings' read-only "Watchlists" card (admins): when the newest registry
+   * check finished, how many accounts were read and how many cannot be, and the per-class / per-status counts. Never a
+   * name or a title (ADR-093 C-06). PLAN-072 S2 part 2 adds the Release Block and re-add counts (D-23).
+   */
+  watchlists: adminProcedure.query(async ({ ctx }) => {
+    return mapDomainErrors(() => getWatchlistRegistrySummary({ db: ctx.db }));
   }),
 
   /**
@@ -583,15 +601,21 @@ export const trashRouter = router({
     expire: trashActionProcedure('manage_batches')
       .input(z.object({ batchId: z.uuid(), forceOverride: z.boolean().optional() }))
       .mutation(async ({ ctx, input }) => {
-        return mapDomainErrors(() =>
-          sweepExpiredBatches({
+        return mapDomainErrors(async () => {
+          // ADR-093 / DESIGN-052 D-07 / D-14 (D-24d) — the web pod never refreshes the registry inline: the manual
+          // Expire now takes the Registry Gate on the CronJob's newest run (`gate-only`) and writes no status row. A
+          // paused sweep deleted nothing ⇒ PRECONDITION_FAILED with the reason.
+          const report = await sweepExpiredBatches({
             db: ctx.db,
             maintainerr: resolveMaintainerrBundle(ctx),
             batchId: input.batchId,
             forceOverride: input.forceOverride,
             actorId: ctx.user.id,
-          }),
-        );
+            registry: 'gate-only',
+          });
+          if (report.paused !== null) throw new TrashSweepPausedError(report.paused.reason, report.paused.step);
+          return report;
+        });
       }),
 
     /**

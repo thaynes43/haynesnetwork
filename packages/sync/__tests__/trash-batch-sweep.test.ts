@@ -2,50 +2,207 @@
 // sweepExpiredBatches through the injected Maintainerr bundle, returns a `sweep` report (never a
 // per-source loop / sync_runs row), and surfaces an unsafe-install refusal as sweepError +
 // totalFailure. The guarded per-item deletion itself is covered by the domain suite.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildMaintainerrClientBundle, type MaintainerrClientBundle } from '@hnet/domain';
+//
+// ADR-093 / DESIGN-052 D-14 (PLAN-072) — the mode now refreshes the Watchlist Registry inline (only when a batch is
+// due) and takes the Registry Gate: a refusal is a clean `paused` report and the job exits 0 (totalFailure false),
+// with trash_sweep_status recording `paused_gate`. With nothing due the sweep does nothing at all (no audit, no
+// refresh, no status row).
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  buildMaintainerrClientBundle,
+  createBatchFromPending,
+  createStaticWatchlistSources,
+  getTrashSweepStatus,
+  greenlightBatch,
+  upsertMediaItemsBatch,
+  type MaintainerrClientBundle,
+} from '@hnet/domain';
 import { runSync } from '../src/orchestrator';
 import { bootMigratedDb, type TestDb } from './helpers';
 
-function stubMaintainerr(safe: boolean): MaintainerrClientBundle {
+interface StubState {
+  safe: boolean;
+  collections: Array<{ id: number; title: string; arrAction: number; deleteAfterDays: number; type: string; items: string[] }>;
+  handled: string[];
+}
+
+/** A small stateful Maintainerr: one rule pool, the Leaving-Soon shell, membership writes and the per-item handle. */
+function stubMaintainerr(state: StubState): MaintainerrClientBundle {
   const fetchImpl = (async (input: unknown, init: RequestInit = {}) => {
     const url = new URL(String(input));
     const method = init.method ?? 'GET';
     const path = url.pathname.replace(/^\/api/, '');
-    const ok = (b: unknown) =>
-      new Response(JSON.stringify(b), { status: 200, headers: { 'content-type': 'application/json' } });
-    if (method === 'GET' && path === '/app/status') return ok({ status: 'ok', version: '3.17.0' });
-    if (method === 'GET' && path === '/settings/test/plex') return ok({ status: safe ? 'OK' : 'NOK', code: 1 });
+    const body = typeof init.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+    const ok = (b: unknown, status = 200) =>
+      new Response(b === undefined ? null : JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
+    if (method === 'GET' && path === '/app/status') return ok({ status: 'ok', version: '3.29.0' });
+    if (method === 'GET' && path === '/settings/test/plex') return ok({ status: state.safe ? 'OK' : 'NOK', code: 1 });
     if (method === 'GET' && path === '/rules/constants')
-      return ok({ applications: safe ? [{ name: 'Radarr' }, { name: 'Sonarr' }, { name: 'Tautulli' }, { name: 'Overseerr' }] : [{ name: 'Sonarr' }] });
+      return ok({
+        applications: state.safe
+          ? [{ name: 'Radarr' }, { name: 'Sonarr' }, { name: 'Tautulli' }, { name: 'Overseerr' }]
+          : [{ name: 'Sonarr' }],
+      });
     if (method === 'GET' && path === '/rules') return ok([]);
-    if (method === 'GET' && path === '/collections') return ok([]);
-    return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    if (method === 'GET' && path === '/collections')
+      return ok(
+        state.collections.map((c) => ({
+          id: c.id,
+          isActive: true,
+          title: c.title,
+          deleteAfterDays: c.deleteAfterDays,
+          arrAction: c.arrAction,
+          type: c.type,
+          libraryId: 1,
+          media: [],
+        })),
+      );
+    const content = /^\/collections\/media\/(\d+)\/content\/\d+$/.exec(path);
+    if (method === 'GET' && content) {
+      const col = state.collections.find((c) => c.id === Number(content[1]));
+      const items = (col?.items ?? [])
+        .filter((id) => !state.handled.includes(id))
+        .map((id) => ({ mediaServerId: id, tmdbId: Number(id.replace(/\D/g, '')), sizeBytes: 1000, addDate: '2026-06-01T00:00:00Z' }));
+      return ok({ totalSize: items.length, items });
+    }
+    if (method === 'GET' && path === '/rules/exclusion') return ok([]);
+    if (method === 'POST' && path === '/rules') {
+      state.collections.push({ id: 99, title: String(body.name), arrAction: 4, deleteAfterDays: 0, type: 'movie', items: [] });
+      return ok({ code: 1, result: 'Success' }, 201);
+    }
+    if (method === 'POST' && (path === '/collections/add' || path === '/collections/remove')) return ok(null, 201);
+    if (method === 'POST' && path === '/collections/media/handle') {
+      state.handled.push(String(body.mediaId));
+      return ok(null, 201);
+    }
+    return ok({});
   }) as typeof fetch;
   return buildMaintainerrClientBundle({ baseUrl: 'http://maintainerr.test:6246', apiKey: 'k', retryDelayMs: 0, fetchImpl });
 }
 
-describe('runSync — trash-batch-sweep mode (ADR-025)', () => {
+const freshState = (): StubState => ({
+  safe: true,
+  collections: [{ id: 7, title: 'Least watched movies', arrAction: 0, deleteAfterDays: 9999, type: 'movie', items: ['ms-1'] }],
+  handled: [],
+});
+
+describe('runSync — trash-batch-sweep mode (ADR-025, ADR-093)', () => {
+  let t: TestDb;
+  beforeAll(async () => {
+    t = await bootMigratedDb();
+    // The pool item is known to the ledger (else the guardian keeps it `unevaluable`).
+    await upsertMediaItemsBatch({
+      db: t.db,
+      arrKind: 'radarr',
+      items: [
+        { arrItemId: 1, tmdbId: 1, title: 'One', sortTitle: 'one', monitored: true, qualityProfileId: 1, qualityProfileName: 'Any', rootFolder: '/movies' },
+      ],
+    });
+  });
+  afterAll(async () => t?.stop());
+
+  /** An expired leaving_soon movie batch (green-lit with a -1 day window, the e2e time-travel idiom). */
+  async function dueBatch(bundle: MaintainerrClientBundle): Promise<void> {
+    const created = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId: null });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId: created.batchId, windowDays: -1, actorId: null });
+  }
+
+  it('nothing due ⇒ no audit, no refresh, no status row; no per-source rows', async () => {
+    const { sources, calls } = createStaticWatchlistSources({ ownerId: '1' });
+    const report = await runSync({
+      mode: 'trash-batch-sweep',
+      clients: {},
+      maintainerr: stubMaintainerr({ ...freshState(), safe: false }),
+      watchlistRegistry: sources,
+      db: t.db,
+    });
+    expect(report.mode).toBe('trash-batch-sweep');
+    expect(report.sources).toEqual([]);
+    expect(report.sweep).toMatchObject({ batchesSwept: 0, due: 0, paused: null, outcome: null });
+    expect(report.totalFailure).toBe(false);
+    expect(calls.roster).toBeUndefined();
+  });
+
+  describe('with a batch due', () => {
+    let state: StubState;
+    let bundle: MaintainerrClientBundle;
+    beforeEach(async () => {
+      state = freshState();
+      bundle = stubMaintainerr(state);
+      await dueBatch(bundle);
+    });
+
+    it('a stale registry pauses cleanly: nothing handled, paused_gate recorded, the job exits 0', async () => {
+      const failing = createStaticWatchlistSources({ ownerId: '1', rosterFails: true });
+      const report = await runSync({
+        mode: 'trash-batch-sweep',
+        clients: {},
+        maintainerr: bundle,
+        watchlistRegistry: failing.sources,
+        db: t.db,
+      });
+      expect(report.sweep).toMatchObject({ paused: { reason: 'gate', step: 'stale' }, outcome: 'paused_gate' });
+      expect(report.totalFailure).toBe(false);
+      expect(state.handled).toEqual([]);
+      expect((await getTrashSweepStatus({ db: t.db })).lastOutcome).toBe('paused_gate');
+
+      // The next run with a readable registry refreshes inline, passes the gate and sweeps.
+      const ok = createStaticWatchlistSources({ ownerId: '1' });
+      const swept = await runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: bundle, watchlistRegistry: ok.sources, db: t.db });
+      expect(swept.sweep).toMatchObject({ batchesSwept: 1, paused: null, outcome: 'ok' });
+      expect(state.handled).toEqual(['ms-1']);
+    });
+
+    it('an unsafe Maintainerr install fails the sweep (sweepError + totalFailure)', async () => {
+      state.safe = false;
+      const { sources } = createStaticWatchlistSources({ ownerId: '1' });
+      const report = await runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: bundle, watchlistRegistry: sources, db: t.db });
+      expect(report.sweep).toBeNull();
+      expect(report.sweepError).toBeDefined();
+      expect(report.totalFailure).toBe(true);
+      // Leave nothing due for the next case.
+      state.safe = true;
+      await runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: bundle, watchlistRegistry: sources, db: t.db });
+    });
+  });
+
+  it('requires a maintainerr bundle and the registry sources', async () => {
+    await expect(runSync({ mode: 'trash-batch-sweep', clients: {}, db: t.db })).rejects.toThrow(/maintainerr/);
+    await expect(
+      runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: stubMaintainerr(freshState()), db: t.db }),
+    ).rejects.toThrow(/Watchlist Registry/);
+  });
+});
+
+describe('runSync — watchlist-registry mode (ADR-093 / DESIGN-052 D-20)', () => {
   let t: TestDb;
   beforeAll(async () => (t = await bootMigratedDb()));
   afterAll(async () => t?.stop());
 
-  it('runs the sweep (no expired batches ⇒ batchesSwept 0), no per-source rows', async () => {
-    const report = await runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: stubMaintainerr(true), db: t.db });
-    expect(report.mode).toBe('trash-batch-sweep');
-    expect(report.sources).toEqual([]);
-    expect(report.sweep).toMatchObject({ batchesSwept: 0 });
-    expect(report.totalFailure).toBe(false);
+  it('refreshes the registry (no sync_runs row); a clean failed run exits 0; a thrown one fails the job', async () => {
+    const { sources } = createStaticWatchlistSources({ ownerId: '1', owner: [{ discoverId: '5d776824151a60001f24a29e', kind: 'movie' }] });
+    const ok = await runSync({ mode: 'watchlist-registry', clients: {}, watchlistRegistry: sources, db: t.db });
+    expect(ok.watchlistRegistry).toMatchObject({ status: 'ok' });
+    expect(ok.sources).toEqual([]);
+    expect(ok.totalFailure).toBe(false);
+
+    const failing = createStaticWatchlistSources({ ownerId: '1', ownerFailure: 'throw' });
+    const failed = await runSync({ mode: 'watchlist-registry', clients: {}, watchlistRegistry: failing.sources, db: t.db });
+    expect(failed.watchlistRegistry).toMatchObject({ status: 'failed', failure: 'owner' });
+    expect(failed.totalFailure).toBe(false);
+
+    const broken = {
+      ...sources,
+      get plex(): never {
+        throw new Error('reader construction exploded');
+      },
+    };
+    const thrown = await runSync({ mode: 'watchlist-registry', clients: {}, watchlistRegistry: broken, db: t.db });
+    expect(thrown.watchlistRegistryError).toMatch(/exploded/);
+    expect(thrown.totalFailure).toBe(true);
   });
 
-  it('an unsafe Maintainerr install fails the sweep (sweepError + totalFailure)', async () => {
-    const report = await runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: stubMaintainerr(false), db: t.db });
-    expect(report.sweep).toBeNull();
-    expect(report.sweepError).toBeDefined();
-    expect(report.totalFailure).toBe(true);
-  });
-
-  it('requires a maintainerr bundle', async () => {
-    await expect(runSync({ mode: 'trash-batch-sweep', clients: {}, db: t.db })).rejects.toThrow(/maintainerr/);
+  it('requires the registry sources', async () => {
+    await expect(runSync({ mode: 'watchlist-registry', clients: {}, db: t.db })).rejects.toThrow(/Watchlist Registry/);
   });
 });

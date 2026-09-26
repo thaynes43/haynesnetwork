@@ -245,6 +245,59 @@ export class TrashMusicUnsupportedError extends Error {
 }
 
 // ---------------------------------------------------------------------------
+// ADR-093 / DESIGN-052 D-07 (PLAN-072) — the Registry Gate refused a deletion.
+// ---------------------------------------------------------------------------
+
+/** Why the Registry Gate refused a `delete` (D-07): no ok refresh within 30 minutes, or a readable source of a
+ *  current account is `never_read` or has been failing past its 24-hour carry. */
+export type RegistryGateRefusal = 'stale' | 'account_unverified';
+
+/**
+ * ADR-093 C-04 / DESIGN-052 D-07: a destructive Trash path (the batch sweep, the manual Expire now, Expedite item and
+ * all) asked the Registry Gate for a `delete` snapshot and the watchlists could not be verified. Nothing is deleted.
+ * The scheduled sweep catches it and returns a clean `paused` report (D-14); every other path surfaces it as
+ * PRECONDITION_FAILED with the reason. `blocking` counts the sources that blocked (`account_unverified`); `ageMin` is
+ * the newest ok refresh's age (null when there is none). Never carries a name or a title.
+ */
+export class WatchlistRegistryUnverifiedError extends Error {
+  readonly code = 'WATCHLIST_REGISTRY_UNVERIFIED' as const;
+  constructor(
+    readonly reason: RegistryGateRefusal,
+    readonly detail: { ageMin: number | null; blocking: number },
+  ) {
+    super(
+      reason === 'stale'
+        ? `Deletions are paused until watchlists can be checked (no watchlist check within the last 30 minutes${
+            detail.ageMin === null ? '' : `; the newest is ${detail.ageMin} minutes old`
+          }).`
+        : `Deletions are paused until watchlists can be checked (${detail.blocking} watchlist source${
+            detail.blocking === 1 ? '' : 's'
+          } could not be read recently enough).`,
+    );
+  }
+}
+
+/**
+ * DESIGN-052 D-14 — the web `expire` mutation (the manual Expire now) ran a sweep that PAUSED cleanly: the Registry
+ * Gate refused (`gate`), or — PLAN-072 S2 part 2 — the Release Block could not be written and read back
+ * (`release_block`). Nothing was deleted and no status row was written (the scheduled sweep owns it). Surfaced as
+ * PRECONDITION_FAILED with the banner's wording; `step` is the reason code.
+ */
+export class TrashSweepPausedError extends Error {
+  readonly code = 'TRASH_SWEEP_PAUSED' as const;
+  constructor(
+    readonly reason: 'gate' | 'release_block',
+    readonly step: string,
+  ) {
+    super(
+      reason === 'gate'
+        ? 'Deletions are paused until watchlists can be checked.'
+        : 'Deletions are paused until removals can be done safely.',
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ADR-025 / DESIGN-011 — Trash curation pipeline (batch state machine) errors.
 // ---------------------------------------------------------------------------
 

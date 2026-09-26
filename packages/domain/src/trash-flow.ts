@@ -27,6 +27,13 @@ import {
 import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainerr-clients';
 import { executeRestore, type ExecuteArrAddResult } from './restore-flow';
 import { openSaveIntent, revokeSaveIntent } from './trash-save-intents';
+import type { DomainLogger } from './domain-logger';
+import {
+  evaluateRegistryGate,
+  evaluateWatchlist,
+  type DeleteWatchlistSnapshot,
+  type WatchlistSnapshot,
+} from './watchlist-registry';
 
 /** The Maintainerr-managed protective tag (addendum b): enabled on Radarr/Sonarr via the settings
  *  patch (a deploy step), Maintainerr stamps it when it excludes an item and removes it on
@@ -336,6 +343,14 @@ export interface TrashPendingItem {
   resolution: string | null;
   imdbRating: number | null;
   tmdbRating: number | null;
+  /** ADR-093 / DESIGN-052 D-06 — Maintainerr's `mediaData.guid` (`plex://movie|show/<24 hex>`), null when absent. */
+  plexGuid: string | null;
+  /** D-09 — Maintainerr flagged this item's rule data as transiently unavailable: the guardian keeps it. */
+  ruleEvaluationFailed: boolean;
+  /** D-06 — the item is on a watchlist in the snapshot the caller evaluated with (the Watchlist Keep, T-263). */
+  onWatchlist: boolean;
+  /** D-06 — whether the snapshot could decide `onWatchlist` for this item at all; false ⇒ kept `unevaluable`. */
+  watchlistEvaluable: boolean;
 }
 
 export interface TrashPendingResult {
@@ -372,6 +387,10 @@ export interface FlatPending {
   tvdbId: number | null;
   sizeBytes: number;
   addDate: string | null;
+  /** ADR-093 / DESIGN-052 D-06 — Maintainerr's `mediaData.guid` (null when it carries none). */
+  plexGuid: string | null;
+  /** D-09 — Maintainerr's `ruleEvaluationFailed` flag. */
+  ruleEvaluationFailed: boolean;
 }
 
 /** Collection-content page size (ADR-035 live profile, 2026-07-09): Maintainerr's PER-CALL cost
@@ -427,6 +446,8 @@ export async function fetchMaintainerrPending(
           tvdbId: m.tvdbId ?? null,
           sizeBytes: m.sizeBytes ?? 0,
           addDate: m.addDate ?? null,
+          plexGuid: m.mediaData?.guid?.trim() || null,
+          ruleEvaluationFailed: m.ruleEvaluationFailed === true,
         });
       }
       seen += content.items.length;
@@ -472,6 +493,12 @@ export async function shapePendingItems(input: {
   media: TrashMedia;
   flat: readonly FlatPending[];
   watchWindowDays?: number;
+  /**
+   * ADR-093 / DESIGN-052 D-06 — REQUIRED, no default: the watchlist snapshot every item is evaluated against, carrying
+   * its purpose (`delete` from the Registry Gate, `propose`, or `display`). `null` is a MISSING snapshot and fails
+   * closed: every item reads not evaluable, so the guardian keeps it (`unevaluable`) — never "not listed, deletable".
+   */
+  watchlist: WatchlistSnapshot | null;
 }): Promise<TrashPendingResult> {
   const db = resolveDb(input.db);
   const arrKind = arrKindForTrashMedia(input.media);
@@ -558,6 +585,12 @@ export async function shapePendingItems(input: {
     const arrTags = joined?.arrTags ?? [];
     const lastViewed = joined?.lastViewedAt ?? null;
     const recentlyWatched = lastViewed !== null && now - lastViewed.getTime() <= windowMs;
+    const watch = evaluateWatchlist(input.watchlist, {
+      media: input.media,
+      plexGuid: f.plexGuid,
+      tmdbId: f.tmdbId,
+      tvdbId: f.tvdbId,
+    });
     return {
       maintainerrMediaId: f.maintainerrMediaId,
       collectionId: f.collectionId,
@@ -588,6 +621,10 @@ export async function shapePendingItems(input: {
       resolution: joined?.resolution ?? null,
       imdbRating: joined?.imdbRating ?? null,
       tmdbRating: joined?.tmdbRating ?? null,
+      plexGuid: f.plexGuid,
+      ruleEvaluationFailed: f.ruleEvaluationFailed,
+      onWatchlist: watch.onWatchlist,
+      watchlistEvaluable: watch.watchlistEvaluable,
     };
   });
 
@@ -613,6 +650,8 @@ export async function listTrashPending(input: {
    * TAB no longer uses this — it pages and cross-checks only the visible page (listTrashPendingPage).
    */
   includeLiveExclusions?: boolean;
+  /** ADR-093 / DESIGN-052 D-06 — REQUIRED (see `shapePendingItems`): every delete path passes a `delete` snapshot. */
+  watchlist: WatchlistSnapshot | null;
 }): Promise<TrashPendingResult> {
   const flat = await fetchMaintainerrPending(input.maintainerr);
   const base = await shapePendingItems({
@@ -620,6 +659,7 @@ export async function listTrashPending(input: {
     media: input.media,
     flat: bucketFlatPendingForMedia(flat, input.media),
     watchWindowDays: input.watchWindowDays,
+    watchlist: input.watchlist,
   });
   if (input.includeLiveExclusions !== true) return base;
   const liveExcludedIds = await fetchLiveExclusions(input.maintainerr, [
@@ -1069,7 +1109,7 @@ export async function removeExclusion(input: {
  * (surfaced as a wall meta badge), never an app-side overrule. See ADR-025/DESIGN-010/DESIGN-011
  * errata (2026-07-09).
  */
-export type GuardianKeepReason = 'tag' | 'recently_watched' | 'unevaluable';
+export type GuardianKeepReason = 'tag' | 'recently_watched' | 'watchlisted' | 'unevaluable';
 export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { keep: false };
 
 /** The three fields the guardian actually reads. A structural subset of `TrashPendingItem` (every
@@ -1077,7 +1117,12 @@ export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { kee
  *  compose it without an unchecked cast. */
 export type GuardianInput = Pick<
   TrashPendingItem,
-  'protectedByTag' | 'recentlyWatched' | 'mediaItemId'
+  | 'protectedByTag'
+  | 'recentlyWatched'
+  | 'mediaItemId'
+  | 'onWatchlist'
+  | 'watchlistEvaluable'
+  | 'ruleEvaluationFailed'
 >;
 
 /**
@@ -1091,8 +1136,15 @@ export type GuardianInput = Pick<
 export function classifyGuardian(item: GuardianInput): GuardianVerdict {
   if (item.protectedByTag) return { keep: true, reason: 'tag' };
   if (item.recentlyWatched) return { keep: true, reason: 'recently_watched' };
-  // Fail closed: no ledger resolution ⇒ no watch data ⇒ we cannot confirm it is safe.
-  if (item.mediaItemId === null) return { keep: true, reason: 'unevaluable' };
+  // ADR-093 C-03 / DESIGN-052 D-09 — the Watchlist Keep (T-263): on anybody's read watchlist ⇒ kept. Not a Save:
+  // when the title leaves every watchlist it is deletable again.
+  if (item.onWatchlist) return { keep: true, reason: 'watchlisted' };
+  // Fail closed: no ledger resolution ⇒ no watch data ⇒ we cannot confirm it is safe. Likewise an item whose
+  // watchlist status cannot be evaluated (no verified snapshot, or no guid while a registry title of its kind is
+  // unmapped), and an item Maintainerr flags `ruleEvaluationFailed` (its own handler skips those).
+  if (item.mediaItemId === null || item.watchlistEvaluable !== true || item.ruleEvaluationFailed) {
+    return { keep: true, reason: 'unevaluable' };
+  }
   return { keep: false };
 }
 
@@ -1113,7 +1165,11 @@ export interface ExpediteVerdictInput extends GuardianInput {
  *                         protected — surface it distinctly (ADR-023 C-07b).
  */
 export type ExpediteVerdict =
-  'deletable' | 'protected_tag' | 'protected_watched' | 'unverifiable';
+  | 'deletable'
+  | 'protected_tag'
+  | 'protected_watched'
+  | 'protected_watchlist'
+  | 'unverifiable';
 
 /**
  * ADR-086 D-11 / DESIGN-048 D-06 — THE one expedite-partition derivation. It composes the
@@ -1138,6 +1194,7 @@ export function classifyForExpedite(item: ExpediteVerdictInput): ExpediteVerdict
   if (!verdict.keep) return 'deletable';
   if (verdict.reason === 'tag') return 'protected_tag';
   if (verdict.reason === 'recently_watched') return 'protected_watched';
+  if (verdict.reason === 'watchlisted') return 'protected_watchlist';
   return 'unverifiable'; // 'unevaluable' — kept because it cannot be cleared, not whitelisted.
 }
 
@@ -1156,12 +1213,15 @@ export async function guardRecentlyWatched(input: {
   media: TrashMedia;
   actorId: string | null;
   watchWindowDays?: number;
+  /** ADR-093 / DESIGN-052 D-06 — a delete path: the Registry Gate's verified `delete` snapshot. */
+  watchlist: DeleteWatchlistSnapshot;
 }): Promise<{ protectedCount: number; protectedIds: string[]; expeditableIds: string[] }> {
   const pending = await listTrashPending({
     db: input.db,
     maintainerr: input.maintainerr,
     media: input.media,
     watchWindowDays: input.watchWindowDays,
+    watchlist: input.watchlist,
   });
   const protectedIds: string[] = [];
   const expeditableIds: string[] = [];
@@ -1180,7 +1240,8 @@ export async function guardRecentlyWatched(input: {
         });
         if (res.excluded || res.alreadyExcluded) protectedIds.push(item.maintainerrMediaId);
       } else {
-        // tag-protected (already whitelisted) or unevaluable (kept, not force-whitelisted).
+        // tag-protected (already whitelisted), watchlisted (kept, NEVER auto-saved — a watchlist is not a Save,
+        // DESIGN-052 D-09) or unevaluable (kept, not force-whitelisted).
         protectedIds.push(item.maintainerrMediaId);
       }
     } else {
@@ -1203,6 +1264,8 @@ async function resolvePendingTarget(input: {
   maintainerrMediaId: string;
   collectionId?: number;
   watchWindowDays?: number;
+  /** ADR-093 / DESIGN-052 D-06 — a delete path: the Registry Gate's verified `delete` snapshot. */
+  watchlist: DeleteWatchlistSnapshot;
 }): Promise<{ item: TrashPendingItem; media: TrashMedia } | null> {
   for (const media of ['movie', 'tv'] as const) {
     const pending = await listTrashPending({
@@ -1210,6 +1273,7 @@ async function resolvePendingTarget(input: {
       maintainerr: input.maintainerr,
       media,
       watchWindowDays: input.watchWindowDays,
+      watchlist: input.watchlist,
     });
     const item = pending.items.find(
       (p) =>
@@ -1270,6 +1334,10 @@ export interface ExpediteDeletionInput {
    * them). Omit for the legacy/internal whole-set behaviour (process the entire current pending set).
    */
   snapshotMediaIds?: string[];
+  /** D-21 log seam for the gate line (defaults to the JSON-lines console logger). */
+  logger?: DomainLogger;
+  /** Clock seam for the Registry Gate (tests). */
+  now?: Date;
 }
 
 export interface ExpediteDeletionResult {
@@ -1518,6 +1586,15 @@ export async function expediteDeletion(
     );
   }
 
+  // ADR-093 C-04 / DESIGN-052 D-07 — the Registry Gate, purpose `delete`, on the CronJob's newest run (the web pod
+  // never refreshes inline). Refused ⇒ WatchlistRegistryUnverifiedError (PRECONDITION_FAILED); nothing is deleted.
+  const watchlist = await evaluateRegistryGate({
+    db: input.db,
+    purpose: 'delete',
+    ...(input.now ? { now: input.now } : {}),
+    ...(input.logger ? { logger: input.logger } : {}),
+  });
+
   // Resolve the actor's display name ONCE for the deletion-audit attribution (Recently Deleted "By" +
   // the Activity notification body). Read-only; a null/unknown actor stays unattributed.
   const actorName = await resolveActorName(input.db, input.actorId);
@@ -1533,6 +1610,7 @@ export async function expediteDeletion(
       maintainerrMediaId: item.maintainerrMediaId,
       collectionId: item.collectionId,
       watchWindowDays: input.watchWindowDays,
+      watchlist,
     });
     if (!resolved) {
       throw new MaintainerrUnsafeError(
@@ -1566,7 +1644,8 @@ export async function expediteDeletion(
         });
         return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [] };
       }
-      if (verdict.reason === 'tag') {
+      if (verdict.reason === 'tag' || verdict.reason === 'watchlisted') {
+        // Already whitelisted, or on a watchlist (the Watchlist Keep — refused like a tagged item, never auto-saved).
         return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [] };
       }
       // unevaluable — not deleted, not force-whitelisted.
@@ -1597,6 +1676,7 @@ export async function expediteDeletion(
     maintainerr: input.maintainerr,
     media: input.media,
     watchWindowDays: input.watchWindowDays,
+    watchlist,
   });
 
   // F2 — pin to the snapshot the user SAW. Only actionable pending items are eligible; when a
@@ -1665,6 +1745,8 @@ export async function expediteDeletion(
         }
       } else if (verdict.reason === 'tag') {
         protectedCount += 1; // already whitelisted by the dnd tag.
+      } else if (verdict.reason === 'watchlisted') {
+        protectedCount += 1; // the Watchlist Keep — kept, never auto-saved (a watchlist is not a Save).
       } else {
         skippedCount += 1; // unevaluable — fail closed.
       }

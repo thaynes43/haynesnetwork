@@ -14,6 +14,10 @@ import {
   type MaintainerrClientBundle,
   type MediaItemSyncFields,
   type PlexClientBundle,
+  createStaticWatchlistSources,
+  refreshWatchlistRegistry,
+  silentDomainLogger,
+  type StaticWatchlistFixture,
 } from '@hnet/domain';
 import {
   SEEDED_ROLE_IDS,
@@ -285,4 +289,24 @@ export function wireShape(
     input: undefined,
     ctx: undefined,
   }) as { message: string; data: { code: string; appCode?: string } };
+}
+
+/**
+ * ADR-093 / DESIGN-052 D-07 — every Trash delete path now takes the Registry Gate, and the walls evaluate against the
+ * newest ok registry run. Record a verified run through the real domain single writer over in-memory sources (the
+ * owner with an empty list: nothing watchlisted, every pool item evaluable; no live API, ADR-010).
+ */
+export async function seedWatchlistRegistry(
+  db: Database,
+  fixture: Partial<StaticWatchlistFixture> = {},
+): Promise<void> {
+  const { sources } = createStaticWatchlistSources({ ownerId: '1', ...fixture });
+  const report = await refreshWatchlistRegistry({
+    db,
+    sources,
+    trigger: 'manual',
+    logger: silentDomainLogger,
+    sleep: async () => {},
+  });
+  if (report.status !== 'ok') throw new Error(`seed registry run failed: ${report.status}`);
 }

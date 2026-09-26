@@ -1,7 +1,10 @@
 # PLAN-072: Watchlists protect titles from Trash, and a re-request never re-fetches the deleted release: build, deploy, live-verify, enable, remediate
 
 - **Status:** S0 running (interim protection by hand); S1 done (docs PR #594: the design review's findings ruled
-  into DESIGN-052 D-24). Next: S2, the build. Nothing built yet.
+  into DESIGN-052 D-24). S2 in progress on `feat/watchlist-protection` (draft PR): part 1 built (migration 0081,
+  the registry and its mode, the gate and snapshot, the guard, the D-10 surfaces; rulings in DESIGN-052 D-25);
+  part 2 next (the Deleted-Release Record, the Release Block, the seed script, the Arm/Disarm fix, Seerr enrollment,
+  the D-23 counts, CLAUDE.md hard rule 4).
 - **ADRs:** ADR-093 (Proposed) · **Design:** DESIGN-052 · **PRD:** R-255..R-259, US-16, AC-33..AC-37, Q-15..Q-16
   (R-86 and R-92 annotated) · **Glossary:** T-261..T-266, T-70 and T-74 amended · **DDD-002:** BC-03 notes.
 - **Owner:** whoever holds the session; this plan is the tracked owner.
@@ -79,3 +82,9 @@ Migration 0081 is additive and stays; the older image ignores its tables and col
   255 identifiable deleted releases unblocked), and the should-fix items and nits, all ruled into DESIGN-052 D-24 and
   folded into D-02..D-22, ADR-093 (C-21 added), the PRD and this plan (S0 final check, S4 holds the sweep until S6,
   S6a added, S8 bulk legacy seed, S9 preflight, ordered rollback). Docs PR #594 merged.
+- 2026-09-26: S2 part 1 built on `feat/watchlist-protection` (draft PR): migration 0081 with every D-05 table and
+  column; the Watchlist Registry (roster, discover, community GraphQL, Seerr content rules, per-source state machine,
+  discover-id map) and its `watchlist-registry` mode; the Registry Gate and the typed snapshot with the D-19 overlay;
+  the proposal and deletion guard with keep reasons, `ruleEvaluationFailed` and the sweep's required `registry`
+  input and `trash_sweep_status`; the wall note, kept tooltips, Expedite breakdown, paused banner and Watchlists card
+  (copy from the driving session's UX pass); the registry half of the D-20 stubs. Rulings in DESIGN-052 D-25.

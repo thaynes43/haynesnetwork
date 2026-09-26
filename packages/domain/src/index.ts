@@ -221,3 +221,8 @@ export * from './collection-builder';
 // oauth_audit in-tx) and the shared-table fixed-window rate limiter the /oauth/* routes use (D-10).
 export * from './oauth';
 export * from './rate-limit';
+// ADR-093 / DESIGN-052 (PLAN-072) — the Watchlist Registry (refresh, per-source state machine, Registry Gate, typed
+// snapshot, matching, the Watchlists card summary), its read sources, and the structured-log seam.
+export * from './domain-logger';
+export * from './watchlist-registry';
+export * from './watchlist-registry-sources';

@@ -5,6 +5,11 @@ import { z } from 'zod';
 import { ARR_CLUSTER_URL_DEFAULTS, assertArrEnv, type ArrEnvConfig } from './config';
 import { ArrHttp, type QueryParams } from './http';
 import {
+  readSeerrUserWatchlist,
+  type ReadSeerrWatchlistOptions,
+  type SeerrWatchlistAnswer,
+} from './seerr-watchlist';
+import {
   diskSpaceSchema,
   pagedSchema,
   qualityProfileSchema,
@@ -68,6 +73,10 @@ import {
   seerrMainSettingsSchema,
   seerrRequestPageSchema,
   seerrStatusSchema,
+  seerrUserPageSchema,
+  seerrWatchlistPageSchema,
+  type SeerrUserSummary,
+  type SeerrWatchlistPage,
   type SeerrMainSettings,
   type SeerrRequestPage,
   type SeerrStatus,
@@ -86,6 +95,12 @@ export interface ArrClientOptions {
   apiKey: string;
   timeoutMs?: number;
   retryDelayMs?: number;
+  /** GET retries after the first attempt (`ArrHttpOptions.getRetries`; default 2). */
+  getRetries?: number;
+  /** Which statuses a GET retries (`ArrHttpOptions.retryStatus`; default 502/503/504). */
+  retryStatus?: (status: number) => boolean;
+  /** The wait before retry `attempt` (`ArrHttpOptions.retryBackoffMs`; default `retryDelayMs`). */
+  retryBackoffMs?: (attempt: number) => number;
   /** Injectable fetch for fixture-driven tests (ADR-010: no live-API tests in CI). */
   fetchImpl?: typeof fetch;
 }
@@ -497,6 +512,40 @@ export class SeerrClient {
       },
     });
   }
+
+  /**
+   * ADR-093 / DESIGN-052 D-02 — every Seerr user (id, plex.tv account id, user type), paged `take=100` to completion
+   * under a 50-page cap (a longer list throws rather than answer a partial roster).
+   */
+  async listUsers(): Promise<SeerrUserSummary[]> {
+    const out: SeerrUserSummary[] = [];
+    for (let page = 0; page < 50; page += 1) {
+      const body = await this.http.requestJson('GET', 'user', seerrUserPageSchema, {
+        query: { take: 100, skip: page * 100 },
+      });
+      out.push(...body.results);
+      if (body.results.length === 0 || out.length >= body.pageInfo.results) return out;
+    }
+    throw new Error('seerr: the user list did not end within 50 pages');
+  }
+
+  /** `GET /api/v1/user/{id}/watchlist?page=` — ONE raw page (classify with `readUserWatchlist`). */
+  getUserWatchlistPage(userId: number, page: number): Promise<SeerrWatchlistPage> {
+    return this.http.requestJson(
+      'GET',
+      `user/${encodeURIComponent(String(userId))}/watchlist`,
+      seerrWatchlistPageSchema,
+      { query: { page } },
+    );
+  }
+
+  /** A user's whole watchlist, classified by content (DESIGN-052 D-02 — see seerr-watchlist.ts). Never throws. */
+  readUserWatchlist(
+    userId: number,
+    options: ReadSeerrWatchlistOptions = {},
+  ): Promise<SeerrWatchlistAnswer> {
+    return readSeerrUserWatchlist((page) => this.getUserWatchlistPage(userId, page), options);
+  }
 }
 
 /**
@@ -577,3 +626,6 @@ export type { MaintainerrClientOptions } from './maintainerr';
 // client (current status + windowed uptime ratios for one endpoint key; no write surface).
 export { GatusClient } from './gatus';
 export type { GatusClientOptions, GatusUptimeWindow } from './gatus';
+
+// ADR-093 / DESIGN-052 D-02 (PLAN-072) — the Seerr watchlist content rules.
+export * from './seerr-watchlist';

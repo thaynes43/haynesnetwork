@@ -321,6 +321,15 @@ export interface AppSettingValueMap {
     minItemAgeHours: number;
     retryEscalateRuns: number;
   };
+  // ADR-093 C-11 / DESIGN-052 D-17 (PLAN-072) — the audited Seerr watchlist enrollment switch. An object (so the
+  // getAppSetting typeof-guard treats it like motd); off out of the box, `onlyUserIds` limits a canary (null: all).
+  seerr_watchlist_enroll: SeerrWatchlistEnrollSetting;
+}
+
+/** DESIGN-052 D-17 — the Seerr watchlist enrollment switch (off until PLAN-072 S9). */
+export interface SeerrWatchlistEnrollSetting {
+  enabled: boolean;
+  onlyUserIds: number[] | null;
 }
 
 /** DESIGN-035 D-17 — the owner-fixed default non-admin collection size cap (LISTS are the admin-only
@@ -385,6 +394,8 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
     minItemAgeHours: 2,
     retryEscalateRuns: 6,
   },
+  // ADR-093 C-11 / DESIGN-052 D-17 — enrollment ships OFF (absent key ⇒ off); PLAN-072 S9 turns it on.
+  seerr_watchlist_enroll: { enabled: false, onlyUserIds: null },
 };
 
 /**

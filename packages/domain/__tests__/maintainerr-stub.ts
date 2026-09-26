@@ -14,6 +14,10 @@ export interface StubItem {
   tvdbId?: number;
   sizeBytes: number;
   addDate: string;
+  /** ADR-093 / DESIGN-052 D-06 — the Plex metadata Maintainerr carries (`plex://movie|show/<24 hex>`). */
+  mediaData?: { guid: string };
+  /** DESIGN-052 D-09 — Maintainerr's transient rule-evaluation failure flag. */
+  ruleEvaluationFailed?: boolean;
 }
 export interface StubCollection {
   id: number;
