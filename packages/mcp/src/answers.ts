@@ -76,6 +76,11 @@ export interface McpDeps {
   markPlex: () => WatchPlexClients | null;
   /** The resolver's last resort (D-13); null when TMDB is not configured. */
   tmdb: () => WatchTmdbSearch | null;
+  /**
+   * The same search with a SINGLE attempt, for `set_watchlist` (DESIGN-051, PR #580 ruling 9: its worst case stays
+   * inside the 9 s deadline). Absent ⇒ `tmdb`.
+   */
+  tmdbOnce?: () => WatchTmdbSearch | null;
   now: () => Date;
   /** One log line (D-06: never arguments or results). */
   log: (line: string) => void;
@@ -273,7 +278,7 @@ export async function answerSetWatchlist(
     db: ctx.deps.db,
     plex: ctx.deps.markPlex() ?? NO_PLEX,
     reads: ctx.deps.revalidatePlex(),
-    tmdb: ctx.deps.tmdb(),
+    tmdb: (ctx.deps.tmdbOnce ?? ctx.deps.tmdb)(),
     actor: { plexAccountId: ctx.account.plexAccountId, appUserId: ctx.account.appUserId },
     consumer: ctx.consumer.name,
     query: args.title,

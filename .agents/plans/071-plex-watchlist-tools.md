@@ -44,3 +44,8 @@
 - 2026-09-25: S2 built (Opus): nine tools, `tools/list` 3,633 bytes, full workspace 3,292 tests green, a
   `pnpm dev:local` round trip through `/api/mcp` (list, add, list, watch_status, repeat add, undo, remove).
   Build rulings in DESIGN-051 D-14; migration renumbered 0080 (#578 took 0079).
+- 2026-09-25: S2 Opus code review of PR #580 (2 blockers, should-fix items), all ruled and fixed on the branch:
+  DESIGN-051 D-15 (a change that could not be sent is recorded; unknown outcomes said; undo shaped by what a
+  call can do; undos serialized per account; one name with several watchlist titles asks; paging never skips;
+  a single TMDB attempt; consent names the watchlist only to the owner). D-12 corrected: dev-env's CLAUDE.md
+  gains the two tools and a Seerr test warning through the held-draft haynes-ops PR #3192 (bounces the pod).

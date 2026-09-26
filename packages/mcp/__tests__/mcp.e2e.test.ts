@@ -362,9 +362,10 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
 
   it('every read tool answers "not ready" before the first sync (no owner row)', async () => {
     await db.execute(sql`TRUNCATE watch_marks, watch_titles, watch_events, watch_reco_signals, watch_accounts CASCADE`);
-    for (const tool of ['unfinished', 'recommend', 'recent_history']) {
-      expect(await call(tool)).toEqual({ text: NOT_READY, isError: false });
+    for (const tool of ['unfinished', 'recommend', 'recent_history', 'watchlist']) {
+      expect(await call(tool), tool).toEqual({ text: NOT_READY, isError: false });
     }
+    expect(fake.calls).toEqual([]);
   });
 
   it('watch_status and every write tool answer "not ready" before the first sync, touching neither Plex nor marks', async () => {
@@ -373,6 +374,7 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
       ['watch_status', { title: 'Silo' }],
       ['mark_watched', { title: 'Foundation' }],
       ['dismiss', { title: 'Bluey', reason: 'not_mine' }],
+      ['set_watchlist', { title: 'Foundation', action: 'add' }],
       ['undo_last_change', {}],
     ];
     for (const [tool, args] of calls) {
@@ -381,7 +383,7 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
     expect(fake.calls).toEqual([]);
     expect(await db.select().from(watchMarks)).toEqual([]);
     const lines = toolLines();
-    expect(lines).toHaveLength(4);
+    expect(lines).toHaveLength(calls.length);
     for (const [i, [tool]] of calls.entries()) {
       expect(lines[i]).toMatch(new RegExp(`^\\[mcp\\] tool_called \\{"tool":"${tool}","consumer":"hop","ms":\\d+,"ok":true,"chars":${NOT_READY.length}\\}$`));
     }
@@ -477,8 +479,9 @@ describe('the overall deadline (D-02: under Home Assistant\'s 10 s per call)', (
       if (mark?.plexResult === 'written') break;
       await sleep(50);
     }
-    const [mark] = await db.select().from(watchMarks);
-    expect(mark?.plexResult).toBe('written');
+    const recorded = await db.select().from(watchMarks);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.plexResult).toBe('written');
     await sleep(200);
     expect(http.logs).toEqual(logged);
   });
@@ -501,7 +504,9 @@ describe('the write tools (D-12..D-15, AC-22)', () => {
     // HaynesOps holds it (the ledger's Plex match): its one season's key (never the show key — DESIGN-049
     // D-26), on that server only.
     expect(fake.writes()).toEqual([{ server: 'haynesops', op: 'scrobble', key: 'found-s1' }]);
-    const [row] = await db.select().from(watchMarks);
+    const rows = await db.select().from(watchMarks);
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
     expect(row).toMatchObject({ action: 'watched', scope: 'show', consumer: 'hop', plexResult: 'written' });
     expect(row?.flipped).toHaveLength(10);
 
@@ -594,6 +599,7 @@ describe('the Voice Budget (T-253, R-245)', () => {
       recommend: await call('recommend'),
       watch_status: await call('watch_status', { title: 'Silo' }),
       recent_history: await call('recent_history'),
+      watchlist: await call('watchlist'),
     };
     const lengths = Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v.text.length]));
     // Reported by PLAN-068 S7 (measured).
@@ -601,7 +607,7 @@ describe('the Voice Budget (T-253, R-245)', () => {
     for (const [tool, a] of Object.entries(answers)) {
       expect(a.isError, tool).toBe(false);
       expect(a.text.length, tool).toBeLessThanOrEqual(SPOKEN_MAX_CHARS);
-      expect(a.text, tool).not.toMatch(/[*#_`]|https?:\/\//);
+      expect(a.text, tool).not.toMatch(/[*#_`\u2014\u2013]|https?:\/\//);
     }
   });
 });

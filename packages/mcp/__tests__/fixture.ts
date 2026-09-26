@@ -92,8 +92,14 @@ export interface FDiscoverTitle {
   guids: string[];
 }
 
+/**
+ * Which bundle a call went out on (PR #580 ruling 11): `short` — the 300 ms live-read bundle (`revalidatePlex`),
+ * `write` — the mark / write bundle (`markPlex`). Recorded on the watchlist calls only.
+ */
+export type FakeBudget = 'short' | 'write';
+
 export class FakePlex {
-  readonly calls: Array<{ server: PlexServerSlug; op: string; key: string }> = [];
+  readonly calls: Array<{ server: PlexServerSlug; op: string; key: string; budget?: FakeBudget }> = [];
   now = NOW_S;
   /** plex.tv's discover catalog and the owner's live watchlist (discover id → watchlistedAt). */
   readonly catalog: FDiscoverTitle[] = [];
@@ -131,8 +137,20 @@ export class FakePlex {
     return { ratingKey: hit.id, guid: `plex://${hit.kind}/${hit.id}`, kind: hit.kind, title: hit.title, year: hit.year, ids };
   }
 
-  private watchlistWrite(server: PlexServerSlug, op: 'addToWatchlist' | 'removeFromWatchlist', id: string): Promise<void> {
-    this.calls.push({ server, op, key: id });
+  /** The watchlist calls as `budget:op:key`, in call order. */
+  watchlistCalls(): string[] {
+    return this.calls.filter((c) => c.budget !== undefined).map((c) => `${c.budget}:${c.op}:${c.key}`);
+  }
+
+  private watchlistWrite(
+    server: PlexServerSlug,
+    op: 'addToWatchlist' | 'removeFromWatchlist',
+    id: string,
+    budget: FakeBudget,
+  ): Promise<void> {
+    this.calls.push({ server, op, key: id, budget });
+    // A write on the short-budget bundle is a wiring bug (the swap PR #580 ruling 11 guards against).
+    if (budget === 'short') return Promise.reject(new Error('the short-budget bundle must never write'));
     if (this.failWatchlistWrites.has(id)) {
       return Promise.reject(new PlexHttpError(503, 'PUT', `https://discover.fake/actions/${op}`, 'unavailable'));
     }
@@ -229,7 +247,8 @@ export class FakePlex {
     return Promise.resolve();
   }
 
-  clients(): WatchPlexClients {
+  /** The per-server clients; `budget` tags the watchlist calls (and a `short` bundle refuses to write). */
+  clients(budget: FakeBudget = 'write'): WatchPlexClients {
     const read: WatchPlexClients['read'] = {};
     const write: WatchPlexClients['write'] = {};
     for (const server of ['haynesops', 'haynestower', 'hayneskube'] as const) {
@@ -257,19 +276,19 @@ export class FakePlex {
           ];
         },
         matchDiscover: async ({ kind, guid }) => {
-          this.calls.push({ server, op: 'matchDiscover', key: `${kind}:${guid}` });
+          this.calls.push({ server, op: 'matchDiscover', key: `${kind}:${guid}`, budget });
           return this.matchDiscover(kind, guid);
         },
         getDiscoverUserState: async (id) => {
-          this.calls.push({ server, op: 'getDiscoverUserState', key: id });
+          this.calls.push({ server, op: 'getDiscoverUserState', key: id, budget });
           return { watchlistedAt: this.watchlist.get(id) ?? null };
         },
       };
       write[server] = {
         scrobble: (key) => this.write(server, 'scrobble', key),
         unscrobble: (key) => this.write(server, 'unscrobble', key),
-        addToWatchlist: (id) => this.watchlistWrite(server, 'addToWatchlist', id),
-        removeFromWatchlist: (id) => this.watchlistWrite(server, 'removeFromWatchlist', id),
+        addToWatchlist: (id) => this.watchlistWrite(server, 'addToWatchlist', id, budget),
+        removeFromWatchlist: (id) => this.watchlistWrite(server, 'removeFromWatchlist', id, budget),
       };
     }
     return { read, write };

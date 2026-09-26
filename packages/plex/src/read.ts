@@ -501,17 +501,22 @@ export class PlexReadClient {
    * `GET {discover}/library/metadata/<id>/userState`. On the watchlist ⇔ `watchlistedAt` is present (epoch
    * seconds). `UserState` may be an object or a one-element array (both seen live). The id is validated
    * before the URL is built. Read-only.
+   *
+   * PR #580 review ruling 3: only a state OF THIS TITLE counts — an element whose `ratingKey` is the requested
+   * id, or that names none. A response whose every element names another title is not an answer: it throws a
+   * PlexParseError (the caller's "unknown"), never falls back to another title's state. No `UserState` (or an
+   * empty list) is "not on the watchlist".
    */
   async getDiscoverUserState(id: string): Promise<{ watchlistedAt: number | null }> {
     const key = requireDiscoverId(id);
-    const body = await this.http.requestJson(
-      'GET',
-      `${this.plexDiscoverBaseUrl}/library/metadata/${key}/userState`,
-      discoverUserStateSchema,
-    );
+    const url = `${this.plexDiscoverBaseUrl}/library/metadata/${key}/userState`;
+    const body = await this.http.requestJson('GET', url, discoverUserStateSchema);
     const state = body.MediaContainer?.UserState;
-    const one = Array.isArray(state) ? (state.find((s) => s.ratingKey === key) ?? state[0]) : state;
-    const at = one?.watchlistedAt;
+    const all = state === undefined ? [] : Array.isArray(state) ? state : [state];
+    if (all.length === 0) return { watchlistedAt: null };
+    const one = all.find((s) => s.ratingKey === key) ?? all.find((s) => s.ratingKey === undefined);
+    if (!one) throw new PlexParseError('GET', url, ['UserState names another title']);
+    const at = one.watchlistedAt;
     return { watchlistedAt: typeof at === 'number' && Number.isFinite(at) && at > 0 ? at : null };
   }
 

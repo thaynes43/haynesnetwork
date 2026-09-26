@@ -44,6 +44,12 @@ export function defaultDeps(): McpDeps {
       const cfg = resolveTmdbConfig(process.env);
       return cfg ? new TmdbClient({ ...cfg, timeoutMs: TMDB_TIMEOUT_MS, retryDelayMs: 0 }) : null;
     }),
+    // DESIGN-051 (PR #580 ruling 9): `set_watchlist`'s fallback makes ONE attempt, so its worst case (with the
+    // discover reads, the PUT and its re-read) stays inside the 9 s deadline.
+    tmdbOnce: lazy(() => {
+      const cfg = resolveTmdbConfig(process.env);
+      return cfg ? new TmdbClient({ ...cfg, timeoutMs: TMDB_TIMEOUT_MS, retryDelayMs: 0, getRetries: 0 }) : null;
+    }),
     now: () => new Date(),
     log: (line) => console.log(line),
   };

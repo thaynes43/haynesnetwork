@@ -60,8 +60,9 @@ marks use an ≈ 800 ms-per-attempt bundle (D-14's 3 s).
 read time (D-05) — with the D-02 "on Plex" rule and started / watched per title; `watch_status` ends with the
 four-way availability sentence (on the watchlist ⇔ the resolver's matched entries include an overlaid watchlist
 entry). `set_watchlist` (write) runs `@hnet/domain` `changeWatchlist`: its plex.tv discover READS (the
-external-id match, userState) go out on the short 300 ms bundle (`revalidatePlex`), its two PUTs on the mark
-bundle (`markPlex`). Both answer a principal that is not the Server Owner with "Your Plex watchlist isn't set up
+external-id match, userState) go out on the short 300 ms bundle (`revalidatePlex`), its two PUTs and the
+userState re-read after a failed PUT on the mark bundle (`markPlex`), and its TMDB fallback makes a single attempt
+(`tmdbOnce`, DESIGN-051 D-15). Both answer a principal that is not the Server Owner with "Your Plex watchlist isn't set up
 for your account yet." (ADR-092 C-04); `watch_status` keeps DESIGN-049's sentence for them.
 
 ## Logging and errors (`src/log.ts`, D-06)
@@ -69,7 +70,8 @@ for your account yet." (ADR-092 C-04); `watch_status` keeps DESIGN-049's sentenc
 `[mcp] tool_called {"tool","consumer","ms","ok","chars"}` per call (+ `"code"` on failure), `[mcp] slow_call`
 with the slowest phase (resolve / revalidate / plex_write) over 2 s, `[mcp] revalidate_timeout`, and (DESIGN-051
 D-10) `[mcp] watchlist_changed {"consumer","action","kind","result","onPlex"}` per `set_watchlist` call — result
-`written` · `failed` · `unchanged` · `not_found` · `ambiguous` · `not_in_catalog` · `unconfirmed` · `not_owner`.
+`written` · `failed` · `unchanged` · `not_found` · `ambiguous` · `not_in_catalog` · `unconfirmed` · `unknown` ·
+`not_owner`.
 Both extra lines are logged by the runner's `finish`, with the call's one `tool_called` line, so abandoned work
 past the deadline never logs. Arguments and results (titles, queries) are never logged. A thrown failure becomes `isError` with "Watch history hit an error. Try again
 in a minute." — never the raw message.
@@ -87,8 +89,9 @@ to its first, OR-ed form on a ledger / history / marks fixture — `recommend-fi
 the 401 / 403 challenges, the stamp, the user-aware principal incl. a household account that never touches Plex,
 the Voice Budget and D-06 lines, the watchlist tools' non-owner answers, and the two paths kept apart),
 `watchlist.e2e.test.ts` (DESIGN-051: `watchlist` newest first / kind / offset / past the end / started and watched /
-the cap, `set_watchlist` add on Plex, add not on Plex with the Seerr line, remove, already on, not found on the
-watchlist, ambiguous, a Plex failure, the very next answers reflecting a change the cache predates, undo, a
-watchlist change leaving Unfinished / recent history / progress untouched, and the exact `watchlist_changed`
-lines) and `import-guard.test.ts` (D-01: `@hnet/watch` imports `@hnet/db`, drizzle-orm and zod only; the MCP SDK
+the cap and paging past it, `set_watchlist` add on Plex, add not on Plex with the Seerr line, remove, already on,
+not found on the watchlist, ambiguous, a Plex failure and its undo, the very next answers reflecting a change the
+cache predates, undo, a watchlist change leaving Unfinished / recent history / progress untouched, the exact
+`watchlist_changed` lines, and the bundle each watchlist call used: `revalidatePlex` and `markPlex` are different
+fakes, so a budget swap fails) and `import-guard.test.ts` (D-01: `@hnet/watch` imports `@hnet/db`, drizzle-orm and zod only; the MCP SDK
 only here).

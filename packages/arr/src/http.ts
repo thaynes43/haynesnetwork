@@ -25,6 +25,11 @@ export interface ArrHttpOptions {
   timeoutMs?: number;
   /** Delay between GET retry attempts. Default 250ms (tests use 0). */
   retryDelayMs?: number;
+  /**
+   * GET retries after the first attempt. Default GET_RETRIES (2). A caller answering inside a hard deadline sizes
+   * it down (DESIGN-051: `set_watchlist`'s TMDB fallback makes a single attempt, PR #580 ruling 9).
+   */
+  getRetries?: number;
   /** Injectable fetch — tests pass a stub; production uses global fetch. */
   fetchImpl?: typeof fetch;
 }
@@ -44,6 +49,7 @@ export class ArrHttp {
   private readonly apiKeyHeader: string;
   private readonly timeoutMs: number;
   private readonly retryDelayMs: number;
+  private readonly getRetries: number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: ArrHttpOptions) {
@@ -53,6 +59,7 @@ export class ArrHttp {
     this.apiKeyHeader = options.apiKeyHeader ?? 'X-Api-Key';
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+    this.getRetries = Math.max(0, Math.floor(options.getRetries ?? GET_RETRIES));
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -103,7 +110,7 @@ export class ArrHttp {
     options: { query?: QueryParams; body?: unknown } = {},
   ): Promise<Response> {
     const url = this.buildUrl(path, options.query);
-    const attempts = method === 'GET' ? 1 + GET_RETRIES : 1;
+    const attempts = method === 'GET' ? 1 + this.getRetries : 1;
     let lastError: unknown;
     for (let i = 0; i < attempts; i++) {
       if (i > 0) await sleep(this.retryDelayMs);

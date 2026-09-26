@@ -16,6 +16,7 @@ import {
   type WatchStatusView,
 } from '../src/format';
 import { SPOKEN_MAX_CHARS } from '../src/spoken';
+import type { TitleFactsRow } from '../src/queries/watchlist';
 import { indexMarks, onPlexFor, watchlistItems } from '../src/views';
 import {
   isOnWatchlist,
@@ -203,7 +204,7 @@ describe('the watchlist items (D-02): on Plex, started, watched', () => {
   });
 
   it('a taster (a show tried and left) reads started, not watched', () => {
-    const taster = {
+    const taster: TitleFactsRow = {
       kind: 'show' as const,
       titleKey: 'tvdb:371980',
       title: 'Severance',
@@ -212,20 +213,22 @@ describe('the watchlist items (D-02): on Plex, started, watched', () => {
       tmdbId: 95396,
       tvdbId: 371980,
       imdbId: null,
-      onPlex: true,
+      onPlex: [{ server: 'haynesops', ratingKey: 'sev', local: false }],
       episodesWatched: 1,
       episodesTotal: 19,
       eventWatchedEpisodes: 1,
       nextSeason: 1,
       nextEpisode: 2,
-      nextResume: null,
+      nextResume: false,
       resumePercent: null,
-      plexWatched: null,
+      plexWatched: false,
       lastWatchedAt: new Date((FETCHED - 400 * 86_400) * 1000),
-      showStatus: 'continuing' as const,
+      showStatus: 'continuing',
     };
     const items = watchlistItems([BASE[0]!], { ...facts, titles: [taster] }, indexMarks([]), FETCHED);
     expect(items[0]!.progress).toBe('started');
+    // A Title State with `on_plex` is on Plex by itself (no ledger match needed).
+    expect(onPlexFor(SEV, { ledger: [], titles: [taster] })).toBe(true);
   });
 });
 
@@ -265,7 +268,30 @@ describe('formatWatchlist (D-02)', () => {
     const text = formatWatchlist(long, { total: 150, offset: 0 });
     expect(text.length).toBeLessThanOrEqual(SPOKEN_MAX_CHARS);
     expect(text).toMatch(/And \d+ more\.$/);
-    expect(text).not.toMatch(/[*#_`—]/);
+    expect(text).not.toMatch(/[*#_`\u2014\u2013]/);
+  });
+
+  it('fits the items to the cap FIRST, then says the range and the rest of the items it kept (PR #580 ruling 8)', () => {
+    const long = Array.from({ length: 10 }, (_, i): WatchlistItemView => ({
+      kind: 'movie',
+      title: `An Exceptionally Long Title For A Film On The Watchlist Number ${i}, Subtitled At Considerable Length`,
+      year: 2001,
+      onPlex: true,
+      progress: null,
+    }));
+    for (const offset of [0, 20]) {
+      const text = formatWatchlist(long, { total: 150, offset });
+      expect(text.length).toBeLessThanOrEqual(SPOKEN_MAX_CHARS);
+      const range = /(?:Newest first, numbers|Numbers) (\d+) to (\d+): /.exec(text);
+      expect(range, text).not.toBeNull();
+      const [from, to] = [Number(range![1]), Number(range![2])];
+      const listed = (text.match(/Film On The Watchlist Number \d+/g) ?? []).length;
+      const more = Number(/And (\d+) more\.$/.exec(text)![1]);
+      // The range names exactly the titles said, and "more" is everything after them: paging on from `to` skips none.
+      expect([from, to - from + 1]).toEqual([offset + 1, listed]);
+      expect(listed).toBeLessThan(10);
+      expect(to + more).toBe(150);
+    }
   });
 });
 
@@ -292,6 +318,9 @@ describe('formatWatchlistChange and the not-set-up answers (D-02)', () => {
       "I couldn't confirm The Matrix (1999 movie) in Plex's catalog, so your watchlist didn't change.",
     );
     expect(formatWatchlistChange({ status: 'failed' })).toBe("I couldn't reach Plex, so your watchlist didn't change.");
+    expect(formatWatchlistChange({ status: 'unknown', ...m })).toBe(
+      "Plex didn't answer in time, so I can't tell whether The Matrix (1999 movie) changed.",
+    );
     expect(formatNotOnWatchlist('the fixture')).toBe("I couldn't find the fixture on your watchlist.");
     expect(formatNotOnWatchlist('Silo', { kind: 'show' })).toBe("I couldn't find a show called Silo on your watchlist.");
     expect(formatWatchlistNotSetUp()).toBe("Your Plex watchlist isn't set up for your account yet.");
@@ -319,6 +348,20 @@ describe('formatUndoResult for a Watchlist Change (D-04)', () => {
     expect(formatUndoResult({ ...base, action: 'watchlist_add', revertResult: 'none' })).toBe(
       'Your last change, adding The Matrix (1999 movie) to your watchlist, never reached Plex, so there was nothing to undo.',
     );
+    // PR #580 ruling 2: a failed add that went out is cleared anyway; a failed remove is left as it is; unknown.
+    expect(
+      formatUndoResult({ ...base, action: 'watchlist_add', revertResult: 'written', watchlistOutcome: 'cleared', onPlex: false }),
+    ).toBe(
+      "Your last change, adding The Matrix (1999 movie) to your watchlist, may not have reached Plex, so I made sure it's off your watchlist. Seerr may already have requested it.",
+    );
+    expect(
+      formatUndoResult({ ...base, action: 'watchlist_remove', revertResult: 'none', watchlistOutcome: 'left_as_is' }),
+    ).toBe(
+      'Your last change, removing The Matrix (1999 movie) from your watchlist, never confirmed with Plex, so I left your watchlist as it is.',
+    );
+    expect(
+      formatUndoResult({ ...base, action: 'watchlist_remove', revertResult: 'failed', watchlistOutcome: 'unknown' }),
+    ).toBe("Plex didn't answer in time, so I can't tell whether The Matrix (1999 movie) changed.");
   });
 });
 

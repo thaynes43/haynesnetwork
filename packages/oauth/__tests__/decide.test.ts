@@ -177,6 +177,10 @@ describe('D-05 — the transaction and the consent view', () => {
       { scope: 'watch:write', description: 'Mark titles watched or dismissed in your history' },
       { scope: 'offline_access', description: 'Stay connected without signing in again' },
     ]);
+    // DESIGN-051 D-09 (PR #580 ruling 10): the watchlist is the owner's only, so watch:read names it only to him.
+    expect(consentScopeLines(['watch:read'], { writesPlex: false })).toEqual([
+      { scope: 'watch:read', description: 'See what you have watched and what is unfinished' },
+    ]);
   });
 
   const txn: TransactionRecord = {

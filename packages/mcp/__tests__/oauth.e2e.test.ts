@@ -33,7 +33,7 @@ import {
 } from '@hnet/oauth';
 import { authenticateOAuth, type McpDeps } from '../src/index';
 import { insertHouseholdWatchAccount } from '../../domain/__tests__/watch-household';
-import { FakePlex, NOW, OWNER, ownerWorld, seedWorld, serveMcp, type McpHttp } from './fixture';
+import { DISCOVER, FakePlex, NOW, OWNER, ownerWorld, seedWorld, serveMcp, type McpHttp } from './fixture';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
 const ENV: OAuthEnv = { BETTER_AUTH_URL: 'https://haynesnetwork.com' };
@@ -354,6 +354,7 @@ describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpR
         ['recommend', { limit: 3 }],
         ['watch_status', { title: 'Silo' }],
         ['recent_history', {}],
+        ['watchlist', {}],
       ] as const) {
         const viaOAuth = await call(tokens.access_token, tool, args);
         const c = new Client({ name: 'vitest', version: '1.0.0' });
@@ -374,7 +375,7 @@ describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpR
       await hop.stop();
     }
     const lines = http.logs.filter((l) => l.startsWith('[mcp] tool_called '));
-    expect(lines).toHaveLength(4);
+    expect(lines).toHaveLength(5);
     for (const line of lines) {
       expect(line).toMatch(
         new RegExp(
@@ -392,13 +393,23 @@ describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpR
     expect(r.isError).toBe(false);
     expect(r.text).toMatch(/^Marked season 1 of Silo \(2023\) as watched in Plex/);
     expect(fake.writes().length).toBeGreaterThan(0);
-    const [mark] = await db.select().from(watchMarks);
-    expect(mark).toMatchObject({
-      plexAccountId: OWNER,
-      consumer: `oauth:${clientId}`,
-      actorUserId: ownerUser,
-      plexResult: 'written',
+    // DESIGN-051 (PR #580 ruling 11): a Watchlist Change through the connector is attributed the same way.
+    expect(await call(tokens.access_token, 'set_watchlist', { title: 'Foundation', action: 'add' })).toEqual({
+      text: "Added Foundation (2021 show) to your watchlist. It's on Plex.",
+      isError: false,
     });
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${DISCOVER.foundation}`]);
+    expect((await call(tokens.access_token, 'watchlist')).text).toMatch(
+      /^Your watchlist has three titles\. Newest first: Foundation, a 2021 show, on Plex\./,
+    );
+    const marks = await db.select().from(watchMarks).orderBy(watchMarks.id);
+    expect(marks).toHaveLength(2);
+    const who = { plexAccountId: OWNER, consumer: `oauth:${clientId}`, actorUserId: ownerUser, plexResult: 'written' };
+    expect(marks[0]).toMatchObject({ ...who, action: 'watched' });
+    expect(marks[1]).toMatchObject({ ...who, action: 'watchlist_add', plexGuid: `plex://show/${DISCOVER.foundation}` });
+    expect(http.logs.filter((l) => l.startsWith('[mcp] watchlist_changed '))).toEqual([
+      `[mcp] watchlist_changed {"consumer":"oauth:${clientId}","action":"add","kind":"show","result":"written","onPlex":true}`,
+    ]);
   });
 
   it('a read-only token lists only the read tools; calling a write tool is HTTP 403 insufficient_scope', async () => {
@@ -511,7 +522,9 @@ describe('the public /mcp over HTTP (D-07) — the SDK client through handleMcpR
     ]);
     expect((await call(tokens.access_token, 'watch_status', { title: 'Arrival' })).text).toMatch(/ (On|Not on) Plex\.$/);
     expect(fake.calls).toEqual([]); // not a read, not a write, not an unscrobble, not a watchlist call
-    const [row] = await db.select().from(watchMarks);
+    const rows = await db.select().from(watchMarks);
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
     expect(row).toMatchObject({
       plexAccountId: HOUSE,
       consumer: `oauth:${clientId}`,

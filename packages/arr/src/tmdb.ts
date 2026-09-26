@@ -21,6 +21,8 @@ export interface TmdbClientOptions extends TmdbConfig {
   baseUrl?: string;
   timeoutMs?: number;
   retryDelayMs?: number;
+  /** GET retries after the first attempt (default 2); 0 = a single attempt (DESIGN-051, PR #580 ruling 9). */
+  getRetries?: number;
   fetchImpl?: typeof fetch;
 }
 
@@ -39,6 +41,7 @@ export class TmdbClient {
       apiKeyHeader: options.readAccessToken ? 'Authorization' : 'X-Unused',
       timeoutMs: options.timeoutMs,
       retryDelayMs: options.retryDelayMs,
+      ...(options.getRetries !== undefined ? { getRetries: options.getRetries } : {}),
       fetchImpl: options.fetchImpl,
     });
     this.v3Key = options.readAccessToken ? undefined : options.apiKey;

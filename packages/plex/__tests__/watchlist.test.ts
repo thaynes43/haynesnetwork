@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { PLEX_DISCOVER_BASE_URL } from '../src/config';
 import { discoverExternalIds, discoverIdFromGuid, isDiscoverId, requireDiscoverId } from '../src/discover';
-import { PlexHttpError, PlexTimeoutError } from '../src/errors';
+import { PlexHttpError, PlexParseError, PlexTimeoutError } from '../src/errors';
 import { PlexReadClient } from '../src/read';
 import { PlexWriteClient } from '../src/write';
 import { plexStub, TEST_CLIENT_OPTIONS } from './helpers';
@@ -145,6 +145,22 @@ describe('getDiscoverUserState — GET {discover}/library/metadata/<id>/userStat
     expect(await reader(on).getDiscoverUserState(TERMINATOR)).toEqual({ watchlistedAt: 1789061676 });
     const absent = plexStub([{ path: `/library/metadata/${TERMINATOR}/userState`, body: { MediaContainer: { size: 0 } } }]);
     expect(await reader(absent).getDiscoverUserState(TERMINATOR)).toEqual({ watchlistedAt: null });
+  });
+
+  it('never reads another title\'s state (PR #580 ruling 3): only the requested id, or an element naming none', async () => {
+    const other = { ratingKey: SHOW_ID, type: 'show', watchlistedAt: 1789061676 };
+    const foreign = plexStub([{ path: /userState$/, body: { MediaContainer: { UserState: [other] } } }]);
+    await expect(reader(foreign).getDiscoverUserState(TERMINATOR)).rejects.toBeInstanceOf(PlexParseError);
+    const foreignObject = plexStub([{ path: /userState$/, body: { MediaContainer: { UserState: other } } }]);
+    await expect(reader(foreignObject).getDiscoverUserState(TERMINATOR)).rejects.toBeInstanceOf(PlexParseError);
+    const mixed = plexStub([
+      { path: /userState$/, body: { MediaContainer: { UserState: [other, { ratingKey: TERMINATOR, type: 'movie' }] } } },
+    ]);
+    expect(await reader(mixed).getDiscoverUserState(TERMINATOR)).toEqual({ watchlistedAt: null });
+    const unnamed = plexStub([{ path: /userState$/, body: { MediaContainer: { UserState: [{ watchlistedAt: 1789061676 }] } } }]);
+    expect(await reader(unnamed).getDiscoverUserState(TERMINATOR)).toEqual({ watchlistedAt: 1789061676 });
+    const empty = plexStub([{ path: /userState$/, body: { MediaContainer: { UserState: [] } } }]);
+    expect(await reader(empty).getDiscoverUserState(TERMINATOR)).toEqual({ watchlistedAt: null });
   });
 
   it('refuses a non-hex id before any request; a 404 is a typed error', async () => {

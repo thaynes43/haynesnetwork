@@ -6,8 +6,9 @@
 // Safety properties: only the Server Owner's watchlist is read or written (ADR-092 C-04: a non-owner gets no row
 // and no Plex call); an ambiguous, unknown or unconfirmed title writes nothing; a change that would change nothing
 // (plex.tv already shows the asked state) writes no row and sends nothing, so a retried call never becomes the
-// "last change"; the row is inserted `pending` BEFORE the write and finalized `written` / `failed` after it; every
-// discover id is validated before it is put in a URL (`@hnet/plex`'s `requireDiscoverId`).
+// "last change"; the row is inserted `pending` BEFORE the write and finalized `written` / `failed` after it, and a
+// change that could not even be sent is recorded `failed` too, so undo closes it instead of an older change
+// (DESIGN-051 D-15); every discover id is validated before it is put in a URL (`@hnet/plex`'s `requireDiscoverId`).
 import { watchMarks, type DbClient, type WatchMarkRevertResult, type WatchMarkRow } from '@hnet/db';
 import {
   DISCOVER_ID_PATTERN,
@@ -27,6 +28,7 @@ import {
   type PoolEntry,
   type WatchKind,
   type WatchlistChangeView,
+  type WatchlistUndoOutcome,
 } from '@hnet/watch';
 import { eq } from 'drizzle-orm';
 import { resolveDb } from '../db-client';
@@ -56,6 +58,8 @@ export type WatchlistChangeResult =
   | 'not_in_catalog'
   /** PLAN-071 ruling 6: the plex guid and the external-id match named different discover titles. */
   | 'unconfirmed'
+  /** PR #580 ruling 2: the PUT's outcome is unknown (plex.tv did not answer, before or after). */
+  | 'unknown'
   | 'not_owner';
 
 export type ChangeWatchlistOutcome =
@@ -80,7 +84,8 @@ export interface ChangeWatchlistInput {
   plex: WatchPlexClients;
   /**
    * The discover reads (the external-id match, userState) on the SHORT live-read budget (PLAN-071 ruling 8:
-   * DESIGN-049 D-11's ≈ 300 ms per attempt). Absent or without the discover reads ⇒ `plex.read`.
+   * DESIGN-049 D-11's ≈ 300 ms per attempt). Absent or without the discover reads ⇒ `plex.read`. The userState
+   * re-read after a failed PUT always goes out on `plex.read`, the write budget (DESIGN-051 D-15).
    */
   reads?: WatchPlexReaders | null;
   tmdb?: WatchTmdbSearch | null;
@@ -145,16 +150,32 @@ async function liveOnWatchlist(reader: WatchDiscoverRead, id: string): Promise<b
 }
 
 /**
- * Send one watchlist write (DESIGN-051 D-03 step 6 / D-04; PLAN-071 ruling 4). The client retries the idempotent
- * PUT; when the last attempt still fails with a timeout, a dropped connection or a 5xx, plex.tv's userState is
- * re-read once and decides (the write may have landed). A 404 is "not in Plex's catalog".
+ * PR #580 review ruling 2 — `plex_error` markers: a change that was never sent to plex.tv (the discover lookup
+ * failed, or no Plex client), and one whose outcome plex.tv never confirmed (the PUT's last attempt failed and
+ * the re-read could not settle it). Undo reads them: nothing is ever sent for a change that was never sent.
+ */
+export const WATCHLIST_NOT_SENT = 'not sent: ';
+export const WATCHLIST_UNKNOWN = 'unknown: ';
+
+function marked(prefix: string, error: unknown): string {
+  return plexErrorText(prefix + (error instanceof Error ? `${error.name}: ${error.message}` : String(error)));
+}
+
+/** What one watchlist write came to. `unknown` = it may or may not have landed, and plex.tv did not say. */
+export type WatchlistWriteResult = 'written' | 'failed' | 'not_found' | 'unknown';
+
+/**
+ * Send one watchlist write (DESIGN-051 D-03 step 6 / D-04; PR #580 rulings 2 and 4). The client retries the
+ * idempotent PUT; when the last attempt still fails with a timeout, a dropped connection or a 5xx, plex.tv's
+ * userState is re-read ONCE with the WRITE-budget reader (`plex.read`, the ≈ 800 ms-per-attempt bundle — not the
+ * 300 ms one) and decides: the wanted state ⇒ `written`, the other state ⇒ `failed`, no answer ⇒ `unknown`. A 404
+ * is "not in Plex's catalog".
  */
 export async function sendWatchlistWrite(input: {
   plex: WatchPlexClients;
-  reader: WatchDiscoverRead | null;
   id: string;
   add: boolean;
-}): Promise<{ result: 'written' | 'failed' | 'not_found'; error: unknown }> {
+}): Promise<{ result: WatchlistWriteResult; error: unknown }> {
   const writer = watchlistClient(input.plex.write);
   if (!writer) return { result: 'failed', error: new Error('no Plex write client for the watchlist') };
   try {
@@ -162,11 +183,11 @@ export async function sendWatchlistWrite(input: {
     return { result: 'written', error: null };
   } catch (error) {
     if (isPlexNotFound(error)) return { result: 'not_found', error };
-    if (mayHaveLanded(error) && input.reader) {
-      const on = await liveOnWatchlist(input.reader, input.id);
-      if (on === input.add) return { result: 'written', error: null };
-    }
-    return { result: 'failed', error };
+    if (!mayHaveLanded(error)) return { result: 'failed', error };
+    const reader = watchlistClient(input.plex.read);
+    const on = reader ? await liveOnWatchlist(reader, input.id) : null;
+    if (on === input.add) return { result: 'written', error: null };
+    return { result: on === null ? 'unknown' : 'failed', error };
   }
 }
 
@@ -190,17 +211,20 @@ export async function titleOnPlex(
  * 1. Principal: a tracked account (else {@link WatchNotReadyError}); anything but the `owner` answers `not_owner`
  *    with no row and no Plex call (ADR-092 C-04).
  * 2. Resolve (DESIGN-049 D-13): an add uses the full pool, then TMDB — where more than one exact hit is ambiguous
- *    (ruling 1); a remove resolves only among the overlaid watchlist and the titles removed in the last 10 minutes
- *    (ruling 7), with no TMDB. Ambiguous and not found write nothing.
+ *    (ruling 1); a remove resolves only among the overlaid watchlist and the titles a change of the last 10
+ *    minutes removed or failed to add (ruling 7, D-15), with no TMDB. A same-name group whose watchlist titles
+ *    name different discover ids is ambiguous too (D-15). Ambiguous and not found write nothing.
  * 3. Discover id: a watchlist row's `plex://` guid (its title and year are already plex.tv's, so no read-back);
  *    else the identity's `plex://` guid, CONFIRMED by the external-id match naming the same id (ruling 6: else
  *    "couldn't confirm", nothing written); else the external-id match itself (same kind, else not in the catalog).
- *    The match's ids fill the identity's missing ones, its title and year are what is said back and stored.
+ *    The match's ids fill the identity's missing ones, its title and year are what is said back and stored. A
+ *    failed lookup (or no Plex client) records a `failed` mark with no guid and a `not sent:` error (D-15).
  * 4. Live state: plex.tv's userState (the cache decides when it cannot be read); already in the asked state ⇒
  *    `unchanged`, no row, no write.
  * 5. The Watch Mark, `pending`, with `plex_guid = plex://<kind>/<id>` and the key recomputed from it.
- * 6. The PUT (idempotent retries; a final timeout / 5xx re-reads userState — ruling 4), then finalize `written`
- *    or `failed` (`plex_error` trimmed, never the token). A 404 is "not in Plex's catalog".
+ * 6. The PUT (idempotent retries; a final timeout / 5xx re-reads userState on the write budget — ruling 4,
+ *    D-15), then finalize `written` or `failed` (`plex_error` trimmed, never the token; an outcome the re-read
+ *    could not settle is `failed` with an `unknown:` error and answered as such). A 404 is "not in Plex's catalog".
  * 7. The answer, with the D-02 "on Plex" rule for the Seerr sentence (ADR-092 C-03).
  */
 export async function changeWatchlist(input: ChangeWatchlistInput): Promise<ChangeWatchlistOutcome> {
@@ -249,20 +273,67 @@ export async function changeWatchlist(input: ChangeWatchlistInput): Promise<Chan
     markId: extra.markId ?? null,
     onPlex: extra.onPlex ?? null,
   });
-  const failed = () => done('failed', { status: 'failed' });
-
+  const said0 = { kind, title: identity.title, year: identity.year };
   const plexStart = Date.now();
   const stamp = () => {
     if (input.phases) input.phases.plex_write = Date.now() - plexStart;
   };
+
+  /**
+   * PR #580 ruling 1 — the title resolved but the change could not even be sent (the discover lookup failed, or no
+   * Plex client): a `failed` Watch Mark all the same, so "undo that" closes THIS change instead of reverting an
+   * older one. No plex guid (nothing was confirmed) and a `not sent:` error, so its undo never calls Plex.
+   */
+  const notSent = async (error: unknown): Promise<ChangeWatchlistOutcome> => {
+    stamp();
+    const row = { ...identity, plexGuid: null };
+    const [mark] = await db
+      .insert(watchMarks)
+      .values({
+        plexAccountId: acct,
+        action: add ? 'watchlist_add' : 'watchlist_remove',
+        scope: kind,
+        titleKey: titleKeyFor(row),
+        kind,
+        title: row.title,
+        year: row.year,
+        plexGuid: null,
+        tmdbId: row.tmdbId,
+        tvdbId: row.tvdbId,
+        imdbId: row.imdbId,
+        season: null,
+        episode: null,
+        query: trimQuery(input.query),
+        consumer: input.consumer,
+        actorUserId: input.actor.appUserId,
+        flipped: [],
+        plexResult: 'failed',
+        plexError: marked(WATCHLIST_NOT_SENT, error),
+        createdAt: now,
+      })
+      .returning({ id: watchMarks.id });
+    return done('failed', { status: 'failed' }, { markId: mark?.id ?? null });
+  };
+
+  // PR #580 ruling 6 — one spoken title, several watchlist titles (a same-name group whose watchlist members name
+  // DIFFERENT discover ids): ask which, write nothing (no row, no Plex call — checked before anything else).
+  const listedIds = new Map<string, PoolEntry>();
+  for (const m of r.members) {
+    if (m.source !== 'watchlist' && m.source !== 'watchlist_recent') continue;
+    const mid = discoverIdFromGuid(m.ids?.plexGuid, kind);
+    if (mid && !listedIds.has(mid)) listedIds.set(mid, m);
+  }
+  if (listedIds.size > 1) return { status: 'ambiguous', result: 'ambiguous', options: [...listedIds.values()] };
+
   const reader = discoverReader(input.plex, input.reads);
-  if (!reader || !watchlistClient(input.plex.write)) return failed();
+  if (!reader || !watchlistClient(input.plex.write)) {
+    return notSent(new Error('no Plex client for the watchlist'));
+  }
 
   // Step 3 — the discover id, and plex.tv's own title and year for the read-back.
-  const listed = r.members.find(
-    (m) => (m.source === 'watchlist' || m.source === 'watchlist_removed') && discoverIdFromGuid(m.ids?.plexGuid, kind),
-  );
-  const guidId = discoverIdFromGuid(listed?.ids?.plexGuid ?? identity.plexGuid, kind);
+  const listedEntry = [...listedIds.entries()][0];
+  const listed = listedEntry?.[1];
+  const guidId = listedEntry?.[0] ?? discoverIdFromGuid(identity.plexGuid, kind);
   const external = externalGuid(identity);
   let id: string | null = guidId;
   let readBack: { title: string; year: number | null } | null = listed
@@ -274,39 +345,35 @@ export async function changeWatchlist(input: ChangeWatchlistInput): Promise<Chan
     // The guid names the id; the external-id match must name the SAME one (ruling 6). Both reads at once.
     const [m, on] = await Promise.all([
       reader.matchDiscover({ kind: kind as DiscoverKind, guid: external }).then(
-        (x) => ({ ok: true as const, x }),
-        () => ({ ok: false as const, x: null }),
+        (x) => ({ ok: true as const, x, error: null as unknown }),
+        (error: unknown) => ({ ok: false as const, x: null, error }),
       ),
       liveOnWatchlist(reader, guidId),
     ]);
-    if (!m.ok) {
-      stamp();
-      return failed();
-    }
+    if (!m.ok) return notSent(m.error);
     if (!m.x || m.x.ratingKey !== guidId || m.x.kind !== kind) {
       stamp();
-      return done('unconfirmed', { status: 'unconfirmed', kind, title: identity.title, year: identity.year });
+      return done('unconfirmed', { status: 'unconfirmed', ...said0 });
     }
     match = m.x;
     live = on;
   } else if (!guidId) {
     if (!external) {
       stamp();
-      return done('not_in_catalog', { status: 'not_in_catalog', kind, title: identity.title, year: identity.year });
+      return done('not_in_catalog', { status: 'not_in_catalog', ...said0 });
     }
     try {
       match = await reader.matchDiscover({ kind: kind as DiscoverKind, guid: external });
-    } catch {
-      stamp();
-      return failed();
+    } catch (error) {
+      return notSent(error);
     }
     if (!match || match.kind !== kind || !DISCOVER_ID_PATTERN.test(match.ratingKey)) {
       stamp();
-      return done('not_in_catalog', { status: 'not_in_catalog', kind, title: identity.title, year: identity.year });
+      return done('not_in_catalog', { status: 'not_in_catalog', ...said0 });
     }
     id = match.ratingKey;
   }
-  if (!id) return failed(); // unreachable: every path above set it or returned
+  if (!id) return notSent(new Error('no discover id')); // unreachable: every path above set it or returned
   if (match) {
     readBack = match.title ? { title: match.title, year: match.year ?? identity.year } : readBack;
     identity = {
@@ -359,46 +426,87 @@ export async function changeWatchlist(input: ChangeWatchlistInput): Promise<Chan
     .returning({ id: watchMarks.id });
   if (!pending) throw new Error('watch mark insert returned no row');
 
-  // Step 6 — the write, then finalize.
-  const sent = await sendWatchlistWrite({ plex: input.plex, reader, id, add });
+  // Step 6 — the write, then finalize. An unknown outcome is recorded `failed` with an `unknown:` error.
+  const sent = await sendWatchlistWrite({ plex: input.plex, id, add });
   stamp();
   await db
     .update(watchMarks)
     .set({
       plexResult: sent.result === 'written' ? 'written' : 'failed',
-      plexError: sent.error ? plexErrorText(sent.error) : null,
+      plexError: sent.error
+        ? sent.result === 'unknown'
+          ? marked(WATCHLIST_UNKNOWN, sent.error)
+          : plexErrorText(sent.error)
+        : null,
     })
     .where(eq(watchMarks.id, pending.id));
-  if (sent.result === 'not_found') {
-    return done('not_in_catalog', { status: 'not_in_catalog', ...said }, { markId: pending.id, onPlex });
-  }
-  if (sent.result === 'failed') return done('failed', { status: 'failed' }, { markId: pending.id, onPlex });
-  return done(
-    'written',
-    add ? { status: 'added', ...said, onPlex } : { status: 'removed', ...said },
-    { markId: pending.id, onPlex },
-  );
+  const extra = { markId: pending.id, onPlex };
+  if (sent.result === 'not_found') return done('not_in_catalog', { status: 'not_in_catalog', ...said }, extra);
+  if (sent.result === 'unknown') return done('unknown', { status: 'unknown', ...said }, extra);
+  if (sent.result === 'failed') return done('failed', { status: 'failed' }, extra);
+  return done('written', add ? { status: 'added', ...said, onPlex } : { status: 'removed', ...said }, extra);
+}
+
+/** A change that never went out to plex.tv (PR #580 ruling 1). */
+export function watchlistNotSent(mark: Pick<WatchMarkRow, 'plexResult' | 'plexError' | 'plexGuid' | 'kind'>): boolean {
+  if (mark.plexResult !== 'failed') return false;
+  return (mark.plexError ?? '').startsWith(WATCHLIST_NOT_SENT) || !discoverIdFromGuid(mark.plexGuid, mark.kind);
 }
 
 /**
- * DESIGN-051 D-04 (+ PLAN-071 ruling 3) — the Plex half of undoing a Watchlist Change: the inverse call
- * (`removeFromWatchlist` for an add, `addToWatchlist` for a remove), idempotent, so it is applied even if the owner
- * changed the watchlist in the Plex app meanwhile. A change that never reached Plex (`plex_result` `failed`) — or a
- * non-owner's row, which the owner's token never touches — makes no call and reverts as `none`. Removing a title
- * plex.tv does not know (404) leaves nothing on the watchlist, so it counts as done.
+ * The outcome of undoing a Watchlist Change, as said (DESIGN-051 D-04, PR #580 ruling 2) — reconstructable from
+ * the row for a replayed undo: `reverted` (the inverse call landed), `cleared` (a failed add's removal landed),
+ * `not_sent` (the change never went out: nothing to undo), `left_as_is` (a failed remove: its inverse, an add,
+ * could download, so nothing is sent), `failed` / `unknown` (the inverse call failed, or plex.tv never said; the
+ * change stays live for the next undo).
+ */
+export function watchlistUndoOutcome(
+  mark: Pick<WatchMarkRow, 'action' | 'plexResult' | 'plexError' | 'plexGuid' | 'kind'>,
+  revertResult: WatchMarkRevertResult,
+): WatchlistUndoOutcome {
+  if (revertResult === 'written') return mark.plexResult === 'written' ? 'reverted' : 'cleared';
+  if (revertResult === 'none') {
+    return mark.action === 'watchlist_remove' && mark.plexResult === 'failed' && !watchlistNotSent(mark)
+      ? 'left_as_is'
+      : 'not_sent';
+  }
+  return 'failed'; // a failed revert leaves the change live: it is never replayed, only retried
+}
+
+/**
+ * DESIGN-051 D-04 (+ PLAN-071 ruling 3, PR #580 ruling 2) — the Plex half of undoing a Watchlist Change:
+ *
+ * - a WRITTEN change: the inverse call (`removeFromWatchlist` for an add, `addToWatchlist` for a remove),
+ *   idempotent, so it is applied even if the owner changed the watchlist in the Plex app meanwhile;
+ * - a FAILED add that went out: `removeFromWatchlist` anyway (it may have landed; a removal is idempotent and never
+ *   downloads);
+ * - a FAILED remove: NO call (its inverse is an add, which could download) — the watchlist is left as it is;
+ * - a change never sent (ruling 1), or a non-owner's row (the owner's token never touches it): no call.
+ *
+ * Removing a title plex.tv does not know (404) leaves nothing on the watchlist, so it counts as done. An inverse
+ * call whose outcome plex.tv never confirms is `failed` with an `unknown:` marker (said as such; the change stays
+ * live for the next undo).
  */
 export async function revertWatchlistChange(input: {
   plex: WatchPlexClients;
-  reads?: WatchPlexReaders | null;
-  mark: Pick<WatchMarkRow, 'action' | 'kind' | 'plexGuid' | 'plexResult'>;
+  mark: Pick<WatchMarkRow, 'action' | 'kind' | 'plexGuid' | 'plexResult' | 'plexError'>;
   isOwner: boolean;
-}): Promise<{ revertResult: WatchMarkRevertResult; error: unknown }> {
+}): Promise<{ revertResult: WatchMarkRevertResult; outcome: WatchlistUndoOutcome; error: unknown }> {
   const { mark } = input;
-  if (!input.isOwner || mark.plexResult !== 'written') return { revertResult: 'none', error: null };
+  const none = () => ({
+    revertResult: 'none' as const,
+    outcome: watchlistUndoOutcome({ ...mark }, 'none'),
+    error: null,
+  });
+  if (!input.isOwner || mark.plexResult === 'pending') return { ...none(), outcome: 'not_sent' };
+  if (mark.plexResult === 'failed' && (mark.action === 'watchlist_remove' || watchlistNotSent(mark))) return none();
   const id = discoverIdFromGuid(mark.plexGuid, mark.kind);
-  if (!id) return { revertResult: 'failed', error: new Error('the watchlist change has no discover id') };
+  if (!id) return { ...none(), outcome: 'not_sent' };
   const add = mark.action === 'watchlist_remove'; // the inverse
-  const sent = await sendWatchlistWrite({ plex: input.plex, reader: discoverReader(input.plex, input.reads), id, add });
-  if (sent.result === 'written' || (sent.result === 'not_found' && !add)) return { revertResult: 'written', error: null };
-  return { revertResult: 'failed', error: sent.error };
+  const sent = await sendWatchlistWrite({ plex: input.plex, id, add });
+  const done = mark.plexResult === 'written' ? 'reverted' : 'cleared';
+  if (sent.result === 'written' || (sent.result === 'not_found' && !add)) {
+    return { revertResult: 'written', outcome: done, error: null };
+  }
+  return { revertResult: 'failed', outcome: sent.result === 'unknown' ? 'unknown' : 'failed', error: sent.error };
 }

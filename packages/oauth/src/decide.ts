@@ -209,18 +209,18 @@ export interface ConsentScopeLine {
 
 /**
  * D-14 — one consent line per requested scope, in the advertised order. Plex write-back is owner-only
- * (ADR-091 C-04), so `watch:write` promises a Plex change only when the signed-in user IS the server owner.
+ * (ADR-091 C-04), so `watch:write` promises a Plex change only when the signed-in user IS the server owner; the
+ * Plex watchlist is the owner's only (ADR-092 C-04), so `watch:read` names it only to him (DESIGN-051 D-09).
  */
 export function consentScopeLines(
   scopes: readonly OAuthScope[],
   opts: { writesPlex: boolean },
 ): ConsentScopeLine[] {
+  const form = opts.writesPlex ? 'owner' : 'other';
   return canonicalScopes(scopes).map((scope) => ({
     scope,
     description:
-      scope === 'watch:write'
-        ? SCOPE_DESCRIPTIONS['watch:write'][opts.writesPlex ? 'owner' : 'other']
-        : SCOPE_DESCRIPTIONS[scope],
+      scope === 'watch:write' || scope === 'watch:read' ? SCOPE_DESCRIPTIONS[scope][form] : SCOPE_DESCRIPTIONS[scope],
   }));
 }
 

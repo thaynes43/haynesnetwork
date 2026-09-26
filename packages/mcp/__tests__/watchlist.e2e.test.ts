@@ -2,9 +2,11 @@
 // HTTP against `handleMcpRequest`, an embedded Postgres 16 owner history (the PLAN-068 fixture: a 15-minute
 // watchlist cache of Severance and Dark Matter) and a RECORDING FAKE plex.tv (never the real one — a live add of
 // a title not on Plex downloads it). Covers: `watchlist` (newest first, kind, offset, past the end, started /
-// watched, the 1,200-character cap), `set_watchlist` (add on Plex, add not on Plex with the Seerr line, remove,
-// already on, not found on the watchlist, ambiguous, a Plex failure), the very next `watchlist` / `watch_status`
-// answers reflecting a change the cache predates, undo, and the D-10 `watchlist_changed` line (never a title).
+// watched, the 1,200-character cap and paging past it), `set_watchlist` (add on Plex, add not on Plex with the
+// Seerr line, remove, already on, not found on the watchlist, ambiguous, a Plex failure), the very next
+// `watchlist` / `watch_status` answers reflecting a change the cache predates, undo, the D-10 `watchlist_changed`
+// line (never a title), and which Plex bundle each watchlist call went out on (PR #580 ruling 11: the two deps
+// are DIFFERENT fakes, so a swap of the 300 ms and the write budget fails here).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -28,8 +30,10 @@ let clock = NOW;
 function deps(): McpDeps {
   return {
     db,
-    revalidatePlex: () => fake.clients(),
-    markPlex: () => fake.clients(),
+    // Tagged per bundle (the short one refuses to write): the discover reads before a change go out on the short
+    // budget, the PUT and its re-read on the write budget (DESIGN-051 D-14a, PR #580 ruling 2).
+    revalidatePlex: () => fake.clients('short'),
+    markPlex: () => fake.clients('write'),
     tmdb: () => null,
     now: () => clock,
     log: () => {},
@@ -47,8 +51,8 @@ async function call(name: string, args: Record<string, unknown> = {}) {
     expect(r.structuredContent).toBeUndefined();
     const text = content.map((x) => x.text).join('');
     expect(text.length, name).toBeLessThanOrEqual(SPOKEN_MAX_CHARS);
-    // D-02: no markdown, no URLs, no em-dashes (an argument error names the tool, underscore and all).
-    if (r.isError !== true) expect(text, name).not.toMatch(/[*#_`—]|https?:\/\//);
+    // D-02: no markdown, no URLs, no em or en dashes (an argument error names the tool, underscore and all).
+    if (r.isError !== true) expect(text, name).not.toMatch(/[*#_`\u2014\u2013]|https?:\/\//);
     return { text, isError: r.isError === true };
   } finally {
     await c.close();
@@ -120,9 +124,20 @@ describe('watchlist (DESIGN-051 D-02, AC-29)', () => {
     expect(await say('watchlist', { limit: 2 })).toBe(
       'Your watchlist has 152 titles. Newest first: Silo, a 2023 show, on Plex, started. The Expanse, a 2015 show, on Plex, watched. And 150 more.',
     );
+    // PR #580 ruling 8: ten long titles do not fit in 1,200 characters, so the page keeps fewer, and the range and
+    // "And N more." name exactly the titles it kept: paging on from the range's end skips none.
     const long = await say('watchlist', { limit: 10, offset: 2 });
-    expect(long).toMatch(/^Your watchlist has 152 titles\. Numbers 3 to 12: /);
-    expect(long).toMatch(/And \d+ more\.$/);
+    const range = /^Your watchlist has 152 titles\. Numbers 3 to (\d+): /.exec(long);
+    expect(range, long).not.toBeNull();
+    const to = Number(range![1]);
+    const kept = (long.match(/Watchlist Movie Number \d+/g) ?? []).length;
+    expect(kept).toBeLessThan(10);
+    expect(to).toBe(2 + kept);
+    expect(Number(/And (\d+) more\.$/.exec(long)![1])).toBe(152 - to);
+    // The next page starts right after the last title said.
+    expect(await say('watchlist', { limit: 1, offset: to })).toMatch(
+      new RegExp(`^Your watchlist has 152 titles\\. Number ${to + 1}: The Extraordinarily Long Title of Watchlist Movie Number ${to - 2}: `),
+    );
   });
 });
 
@@ -132,7 +147,15 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
       "Added Foundation (2021 show) to your watchlist. It's on Plex.",
     );
     expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${DISCOVER.foundation}`]);
-    const [row] = await db.select().from(watchMarks);
+    // The discover reads on the short budget, the PUT on the write budget.
+    expect(fake.watchlistCalls()).toEqual([
+      `short:matchDiscover:show:tmdb://93740`,
+      `short:getDiscoverUserState:${DISCOVER.foundation}`,
+      `write:addToWatchlist:${DISCOVER.foundation}`,
+    ]);
+    const rows = await db.select().from(watchMarks);
+    expect(rows).toHaveLength(1);
+    const [row] = rows;
     expect(row).toMatchObject({ action: 'watchlist_add', consumer: 'hop', plexResult: 'written', plexGuid: `plex://show/${DISCOVER.foundation}` });
     // The cache predates the change; the overlay puts it on top (D-05).
     expect(await say('watchlist')).toBe(
@@ -198,10 +221,10 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(await say('set_watchlist', { title: 'dark matter', action: 'remove' })).toBe(
       'Removed Dark Matter (2024 show) from your watchlist.',
     );
-    // Its cached row carries its plex guid: no read-back, just the live state and the write.
-    expect(fake.calls.map((c) => `${c.op}:${c.key}`)).toEqual([
-      `getDiscoverUserState:${DISCOVER.darkMatter}`,
-      `removeFromWatchlist:${DISCOVER.darkMatter}`,
+    // Its cached row carries its plex guid: no read-back, just the live state (short budget) and the write.
+    expect(fake.watchlistCalls()).toEqual([
+      `short:getDiscoverUserState:${DISCOVER.darkMatter}`,
+      `write:removeFromWatchlist:${DISCOVER.darkMatter}`,
     ]);
     expect(await say('watchlist')).toBe('Your watchlist has one title. Newest first: Severance, a 2022 show, on Plex.');
     expect(await say('watch_status', { title: 'dark matter' })).toBe(
@@ -232,16 +255,30 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(await db.select().from(watchMarks)).toEqual([]);
   });
 
-  it('a Plex failure changes nothing it says it did; undo then says it never reached Plex', async () => {
+  it('a Plex failure changes nothing it says it did; its undo removes the title anyway (a removal never downloads)', async () => {
     fake.failWatchlistWrites.add(DISCOVER.arrival);
     expect(await say('set_watchlist', { title: 'arrival', action: 'add', kind: 'movie' })).toBe(
       "I couldn't reach Plex, so your watchlist didn't change.",
     );
-    expect(await say('watch_status', { title: 'arrival' })).toMatch(/On Plex, not on your watchlist\.$/);
-    expect(await say('undo_last_change')).toBe(
-      'Your last change, adding Arrival (2016 movie) to your watchlist, never reached Plex, so there was nothing to undo.',
+    // PR #580 ruling 2: the failed PUT's userState re-read went out on the WRITE budget, not the 300 ms one.
+    expect(fake.watchlistCalls().slice(-2)).toEqual([
+      `write:addToWatchlist:${DISCOVER.arrival}`,
+      `write:getDiscoverUserState:${DISCOVER.arrival}`,
+    ]);
+    expect(changedLines().at(-1)).toBe(
+      '[mcp] watchlist_changed {"consumer":"hop","action":"add","kind":"movie","result":"failed","onPlex":true}',
     );
-    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${DISCOVER.arrival}`]);
+    expect(await say('watch_status', { title: 'arrival' })).toMatch(/On Plex, not on your watchlist\.$/);
+    // The add may have landed: undo sends the (idempotent) removal anyway, and plex.tv's re-read settles it.
+    fake.calls.length = 0;
+    expect(await say('undo_last_change')).toBe(
+      "Your last change, adding Arrival (2016 movie) to your watchlist, may not have reached Plex, so I made sure it's off your watchlist.",
+    );
+    expect(fake.watchlistCalls()).toEqual([
+      `write:removeFromWatchlist:${DISCOVER.arrival}`,
+      `write:getDiscoverUserState:${DISCOVER.arrival}`,
+    ]);
+    expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${DISCOVER.arrival}`]);
   });
 
   it('a watchlist change is not a watch statement: Unfinished, recent history and watch_status progress are untouched', async () => {

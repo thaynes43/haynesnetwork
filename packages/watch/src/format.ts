@@ -9,6 +9,7 @@ import type { WatchMarkAction } from '@hnet/db/schema';
 import type { Dismissal, Recommendations, ScoredPick } from './recommend';
 import type { ResolverCandidate } from './resolver';
 import {
+  SPOKEN_MAX_CHARS,
   capSpoken,
   capSpokenList,
   countWord,
@@ -515,34 +516,62 @@ export type UndoView =
       episodes?: number | null;
       /** A Watchlist Change: whether the title is on Plex (the Seerr sentences, DESIGN-051 D-04). */
       onPlex?: boolean | null;
+      /** A Watchlist Change: what undoing it came to (DESIGN-051 D-04, PR #580 ruling 2). */
+      watchlistOutcome?: WatchlistUndoOutcome | null;
     };
+
+/**
+ * What undoing a Watchlist Change came to (DESIGN-051 D-04, PR #580 ruling 2): `reverted` (the inverse call
+ * landed), `cleared` (a failed add's removal landed), `not_sent` (the change never went out: nothing to undo),
+ * `left_as_is` (a failed remove: its inverse, an add, could download, so nothing was sent), `failed` (the
+ * inverse call failed; the change stays for the next undo), `unknown` (plex.tv never said).
+ */
+export type WatchlistUndoOutcome = 'reverted' | 'cleared' | 'not_sent' | 'left_as_is' | 'failed' | 'unknown';
+
+/** PR #580 ruling 2 — the answer when plex.tv never confirmed a watchlist call's outcome. */
+function unknownOutcome(label: string): string {
+  return capSpoken(`Plex didn't answer in time, so I can't tell whether ${label} changed.`);
+}
 
 /**
  * DESIGN-051 D-04 — the undo of a Watchlist Change: "Removed The Matrix (1999 movie) from your watchlist
  * again." / "Put The Matrix (1999 movie) back on your watchlist." When the title is not on Plex, undoing an add
- * adds "Seerr may already have requested it." and undoing a remove "Seerr will request it." A failed inverse
- * call leaves the change live for the next undo.
+ * adds "Seerr may already have requested it." and undoing a remove "Seerr will request it." A failed or
+ * unconfirmed inverse call leaves the change live for the next undo.
  */
 function formatWatchlistUndo(r: Extract<UndoView, { undone: true }>): string {
   const label = titleYearKind(r.title, r.year, r.kind);
   const add = r.action === 'watchlist_add';
-  if (r.revertResult === 'none') {
-    // PLAN-071 ruling 3: the change never reached Plex (its write failed), so undoing it only closes the record.
-    return capSpoken(
-      `Your last change, ${add ? `adding ${label} to` : `removing ${label} from`} your watchlist, never reached Plex, so there was nothing to undo.`,
-    );
+  const change = add ? `adding ${label} to` : `removing ${label} from`;
+  const outcome: WatchlistUndoOutcome =
+    r.watchlistOutcome ??
+    (r.revertResult === 'written' ? 'reverted' : r.revertResult === 'none' ? 'not_sent' : 'failed');
+  switch (outcome) {
+    case 'not_sent':
+      // PLAN-071 ruling 3: the change never reached Plex, so undoing it only closes the record.
+      return capSpoken(`Your last change, ${change} your watchlist, never reached Plex, so there was nothing to undo.`);
+    case 'left_as_is':
+      return capSpoken(
+        `Your last change, ${change} your watchlist, never confirmed with Plex, so I left your watchlist as it is.`,
+      );
+    case 'cleared':
+      return capSpoken(
+        `Your last change, ${change} your watchlist, may not have reached Plex, so I made sure it's off your watchlist.${r.onPlex === false ? ' Seerr may already have requested it.' : ''}`,
+      );
+    case 'unknown':
+      return unknownOutcome(label);
+    case 'failed':
+      return capSpoken(
+        `I couldn't reach Plex, so ${label} is still ${add ? 'on' : 'off'} your watchlist. Say undo again to retry.`,
+      );
+    default:
+      if (add) {
+        return capSpoken(
+          `Removed ${label} from your watchlist again.${r.onPlex === false ? ' Seerr may already have requested it.' : ''}`,
+        );
+      }
+      return capSpoken(`Put ${label} back on your watchlist.${r.onPlex === false ? ' Seerr will request it.' : ''}`);
   }
-  if (r.revertResult !== 'written') {
-    return capSpoken(
-      `I couldn't reach Plex, so ${label} is still ${add ? 'on' : 'off'} your watchlist. Say undo again to retry.`,
-    );
-  }
-  if (add) {
-    return capSpoken(
-      `Removed ${label} from your watchlist again.${r.onPlex === false ? ' Seerr may already have requested it.' : ''}`,
-    );
-  }
-  return capSpoken(`Put ${label} back on your watchlist.${r.onPlex === false ? ' Seerr will request it.' : ''}`);
 }
 
 /** The `undo_last_change` read-back (D-15; a Watchlist Change: DESIGN-051 D-04). */
@@ -599,7 +628,7 @@ function watchlistItemSentence(it: WatchlistItemView): string {
  * `watchlist` (DESIGN-051 D-02): "Your watchlist has 150 titles. Newest first: Slow Horses, a 2022 show, on
  * Plex, started. The Toxic Avenger, a 2023 movie, not on Plex yet. … And 145 more." `items` is the page (after
  * `offset`), `total` the whole list of the asked kind. With a kind: "Your watchlist has 61 shows." Empty: "Your
- * watchlist is empty." Past the end: "That's the end of your watchlist." A later page names where it starts.
+ * watchlist is empty." Past the end: "That's the end of your watchlist." A later page, or a first page the 1,200-character cap cut short, says the range it holds ("Numbers 6 to 10:").
  */
 export function formatWatchlist(
   items: readonly WatchlistItemView[],
@@ -612,14 +641,26 @@ export function formatWatchlist(
   if (total === 0) return kind ? `Your watchlist has no ${noun}s.` : 'Your watchlist is empty.';
   if (items.length === 0) return "That's the end of your watchlist.";
   const lead = `Your watchlist has ${total === 1 ? `one ${noun}` : `${countWord(total)} ${noun}s`}.`;
-  const first =
-    offset === 0
-      ? 'Newest first: '
-      : items.length === 1
-        ? `Number ${offset + 1}: `
-        : `Numbers ${offset + 1} to ${offset + items.length}: `;
-  const sentences = items.map((it, i) => `${i === 0 ? first : ''}${watchlistItemSentence(it)}`);
-  return capSpokenList({ lead, items: sentences, more: Math.max(0, total - offset - items.length) });
+  // PR #580 ruling 8: fit the items to the cap FIRST, then say the range and "And N more." of the items KEPT, so
+  // an agent paging by `offset` never skips a title the cap dropped.
+  const header = (k: number): string => {
+    const range = k === 1 ? `number ${offset + 1}` : `numbers ${offset + 1} to ${offset + k}`;
+    if (offset > 0) return `${capitalize(range)}: `;
+    return k === items.length ? 'Newest first: ' : `Newest first, ${range}: `;
+  };
+  const render = (k: number): string => {
+    const more = Math.max(0, total - offset - k);
+    return [
+      lead,
+      ...items.slice(0, k).map((it, i) => `${i === 0 ? header(k) : ''}${watchlistItemSentence(it)}`),
+      ...(more > 0 ? [`And ${more} more.`] : []),
+    ].join(' ');
+  };
+  for (let k = items.length; k > 1; k -= 1) {
+    const text = render(k);
+    if (text.length <= SPOKEN_MAX_CHARS) return text;
+  }
+  return capSpoken(render(1));
 }
 
 /** What a `set_watchlist` call did (DESIGN-051 D-02 / D-03). */
@@ -635,6 +676,8 @@ export type WatchlistChangeView =
    * match found none), so nothing was written.
    */
   | { status: 'unconfirmed'; kind: WatchKind; title: string; year: number | null }
+  /** PR #580 ruling 2: the write went out but plex.tv never confirmed whether it landed. */
+  | { status: 'unknown'; kind: WatchKind; title: string; year: number | null }
   /** Plex could not be reached (or refused the change). */
   | { status: 'failed' };
 
@@ -659,6 +702,8 @@ export function formatWatchlistChange(v: WatchlistChangeView): string {
       );
     case 'unconfirmed':
       return capSpoken(`I couldn't confirm ${label} in Plex's catalog, so your watchlist didn't change.`);
+    case 'unknown':
+      return unknownOutcome(label);
     default:
       return capSpoken(`I found ${label} but not in Plex's catalog, so your watchlist didn't change.`);
   }

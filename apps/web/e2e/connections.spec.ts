@@ -89,7 +89,8 @@ test.describe('public MCP connectors (ADR-091)', () => {
     await page.getByRole('button', { name: SIGN_IN_BUTTON }).click();
     await page.waitForURL(/\/oauth\/consent\?txn=/);
 
-    // D-14, verbatim — a member is not the server owner, so watch:write promises the history only.
+    // D-14, verbatim — a member is not the server owner, so watch:write promises the history only and watch:read
+    // names no watchlist (DESIGN-051 D-09).
     await expect(page.getByRole('heading', { name: 'Connect E2E Connector' })).toBeVisible();
     await expect(
       page.getByText(
@@ -97,7 +98,7 @@ test.describe('public MCP connectors (ADR-091)', () => {
       ),
     ).toBeVisible();
     await expect(page.getByText('Sends you back to connector.e2e.test.')).toBeVisible();
-    await expect(page.getByText('See what you have watched, what is unfinished, and your watchlist')).toBeVisible();
+    await expect(page.getByText('See what you have watched and what is unfinished')).toBeVisible();
     await expect(page.getByText('Mark titles watched or dismissed in your history')).toBeVisible();
     await expect(page.getByText('Stay connected without signing in again')).toBeVisible();
     // ADR-015: both buttons reserve the same width.

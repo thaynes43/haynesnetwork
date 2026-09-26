@@ -252,4 +252,19 @@ describe('TmdbClient — recommendations + search/multi (DESIGN-049 D-13 / D-17)
     expect((error as ArrHttpError).status).toBe(404);
     expect((error as ArrHttpError).message).not.toContain('tmdb-v3-key');
   });
+
+  // DESIGN-051 (PR #580 ruling 9) — `set_watchlist`'s fallback: getRetries 0 is ONE attempt; the default keeps 3.
+  it('getRetries sizes the GET retries: 0 makes a single attempt on a 503, the default three', async () => {
+    const busy = () => stubFetch([{ path: '/3/search/multi', status: 503, body: { status_message: 'busy' } }]);
+    const once = busy();
+    await expect(
+      new TmdbClient({ ...V3, fetchImpl: once.fetchImpl, retryDelayMs: 0, getRetries: 0 }).searchMulti('dune'),
+    ).rejects.toBeInstanceOf(ArrHttpError);
+    expect(once.calls).toHaveLength(1);
+    const thrice = busy();
+    await expect(
+      new TmdbClient({ ...V3, fetchImpl: thrice.fetchImpl, retryDelayMs: 0 }).searchMulti('dune'),
+    ).rejects.toBeInstanceOf(ArrHttpError);
+    expect(thrice.calls).toHaveLength(3);
+  });
 });

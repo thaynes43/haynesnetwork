@@ -57,6 +57,7 @@ import {
   type ServerMovieObs,
   type UndoView,
   type WatchKind,
+  type WatchlistUndoOutcome,
 } from '@hnet/watch';
 import { and, desc, eq, gt, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from '../db-client';
@@ -70,7 +71,7 @@ import {
 } from './plex';
 import { resolveWatchTitle, type ResolvedWatchTitle, type WatchTmdbSearch } from './resolve';
 import { upsertWatchTitles, type WatchTitleWrite } from './titles';
-import { revertWatchlistChange, titleOnPlex } from './watchlist';
+import { revertWatchlistChange, titleOnPlex, watchlistUndoOutcome } from './watchlist';
 
 /**
  * Who a mark is for and who made it: the MCP principal — the owner row for the hop (D-03), the token user's own
@@ -921,20 +922,24 @@ export async function dismissTitle(input: DismissTitleInput): Promise<WatchMarkO
 export interface UndoLastChangeInput {
   db?: DbClient;
   plex: WatchPlexClients;
-  /** The discover reads on the short live-read budget, for a Watchlist Change's re-read (DESIGN-051 D-04). */
+  /**
+   * Unused by the undo itself since PR #580 ruling 2 (a Watchlist Change's re-read goes out on the WRITE budget,
+   * `plex.read`); kept so a caller may pass the same readers it passes `changeWatchlist`.
+   */
   reads?: WatchPlexReaders | null;
   actor: WatchMarkActor;
   now?: Date;
   phases?: WatchPhases;
 }
 
-/** The answer of undoing `mark` (a completed revert: its `revert_result` is `written` or `none`). */
+/** The answer of undoing `mark` (for a replay, a completed revert: its `revert_result` is `written` or `none`). */
 async function undoViewOf(
   db: DbClient,
   acct: number,
   mark: WatchMarkRow,
   revertResult: WatchMarkRevertResult,
   episodes: number,
+  outcome?: WatchlistUndoOutcome,
 ): Promise<UndoView> {
   const base = {
     undone: true as const,
@@ -948,7 +953,15 @@ async function undoViewOf(
   };
   if (isWatchlistAction(mark.action)) {
     // DESIGN-051 D-04: the Seerr sentences need the D-02 "on Plex" rule.
-    return { ...base, revertResult, episodes: 0, onPlex: revertResult === 'written' ? await titleOnPlex(db, acct, mark) : null };
+    const watchlistOutcome = outcome ?? watchlistUndoOutcome(mark, revertResult);
+    const seerr = watchlistOutcome === 'reverted' || watchlistOutcome === 'cleared';
+    return {
+      ...base,
+      revertResult,
+      episodes: 0,
+      watchlistOutcome,
+      onPlex: seerr ? await titleOnPlex(db, acct, mark) : null,
+    };
   }
   return { ...base, revertResult: mark.action === 'watched' ? revertResult : null, episodes };
 }
@@ -1025,8 +1038,10 @@ export function planReverts(
  * `undo_last_change` (D-15; a Watchlist Change: DESIGN-051 D-04): revert the owner's newest unreverted,
  * COMPLETED mark of the last 24 hours (a `pending` mark is in flight or crashed: its `flipped` is only the plan,
  * so it is never picked). A Watchlist Change is reverted by the inverse watchlist call; one that never reached
- * Plex (`failed`) is still picked, makes no call and closes as `none` (PLAN-071 ruling 3). An undo within 30
- * seconds of the last completed undo, with no mark made since, repeats that undo's answer (ruling 5). A
+ * Plex (`failed`) is still picked: a failed add that went out is removed anyway, anything else makes no call and
+ * closes as `none` (PLAN-071 ruling 3, PR #580 ruling 2). An undo within 30 seconds of the last completed undo,
+ * with no mark made since, repeats that undo's answer (ruling 5); undos of one account run one at a time (a
+ * transaction-scoped advisory lock, PR #580 ruling 4). A
  * `watched` mark unscrobbles exactly `flipped` (collapsed to season keys where `flipped` covers all of a
  * season, never to the show key — D-26) and writes the Title State through, dropping a show's counters on
  * every server an unscrobble went to, so the next sync re-reads it there even when the unscrobbles all
@@ -1039,6 +1054,18 @@ export function planReverts(
  * their undo never calls Plex either (revert `none`).
  */
 export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchMarkOutcome<UndoView>> {
+  // PR #580 review ruling 4 — one undo at a time per account, across replicas: a transaction-scoped advisory lock
+  // around the replay guard, the pick, the Plex calls and the revert. A concurrent second undo waits, then its
+  // guard sees the first one's revert and repeats that answer instead of picking the next-older change.
+  return inTransaction(input.db, async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext('watch_undo'), hashtext(${String(input.actor.plexAccountId)}))`,
+    );
+    return undoLocked({ ...input, db: tx });
+  });
+}
+
+async function undoLocked(input: UndoLastChangeInput): Promise<WatchMarkOutcome<UndoView>> {
   const now = input.now ?? new Date();
   const nowSec = Math.floor(now.getTime() / 1000);
   const db = resolveDb(input.db);
@@ -1075,8 +1102,8 @@ export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchM
   // reached Plex — PLAN-071 ruling 3 — or for a non-owner's row). No Title State is involved.
   if (isWatchlistAction(mark.action)) {
     const plexStart = Date.now();
-    const out = await revertWatchlistChange({ plex: input.plex, reads: input.reads ?? null, mark, isOwner: role === 'owner' });
-    if (input.phases && mark.plexResult === 'written') input.phases.plex_write = Date.now() - plexStart;
+    const out = await revertWatchlistChange({ plex: input.plex, mark, isOwner: role === 'owner' });
+    if (input.phases) input.phases.plex_write = Date.now() - plexStart;
     const complete = out.revertResult === 'written' || out.revertResult === 'none';
     await db
       .update(watchMarks)
@@ -1084,7 +1111,7 @@ export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchM
       .where(and(eq(watchMarks.id, mark.id), isNull(watchMarks.revertedAt)));
     return {
       status: 'done',
-      view: await undoViewOf(db, acct, mark, out.revertResult, 0),
+      view: await undoViewOf(db, acct, mark, out.revertResult, 0, out.outcome),
       markId: mark.id,
       replayed: false,
     };

@@ -9,7 +9,7 @@ import {
   type DbClient,
   type WatchRecoSource,
 } from '@hnet/db';
-import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { titleKeyFor } from '../identity';
 import {
   entryOfMark,
@@ -23,10 +23,11 @@ import type { WatchKind } from '../types';
 
 /**
  * Where a pool entry came from. `tmdb` is never in the pool itself: it names a TMDB-fallback hit offered as an
- * option of an ambiguous `set_watchlist` add (DESIGN-051, PLAN-071 ruling 1). `watchlist_removed` is a title a
- * Watchlist Change removed in the last 10 minutes — only in the pool of a `set_watchlist` remove.
+ * option of an ambiguous `set_watchlist` add (DESIGN-051, PLAN-071 ruling 1). `watchlist_recent` is a title a
+ * Watchlist Change touched in the last 10 minutes without it being on the list now — a written remove, or a failed
+ * add (PR #580 ruling 2) — only in the pool of a `set_watchlist` remove, where plex.tv's live state decides.
  */
-export type PoolSource = 'title' | WatchLedgerSource | WatchRecoSource | 'tmdb' | 'watchlist_removed';
+export type PoolSource = 'title' | WatchLedgerSource | WatchRecoSource | 'tmdb' | 'watchlist_recent';
 type WatchLedgerSource = 'ledger';
 
 /** A resolver candidate that remembers where it came from. */
@@ -41,20 +42,21 @@ export interface PoolEntry extends ResolverCandidate {
 const KIND_OF_ARR = { sonarr: 'show', radarr: 'movie' } as const;
 
 /**
- * The overlaid watchlist (DESIGN-051 D-05) as pool entries of source `watchlist`; with `recentlyRemoved`, also
- * the titles a written `watchlist_remove` took off in the last 10 minutes (and not back on since) as
- * `watchlist_removed` — the pool of a `set_watchlist` remove, so a retried remove still finds its title.
+ * The overlaid watchlist (DESIGN-051 D-05) as pool entries of source `watchlist`; with `recent`, also the titles a
+ * Watchlist Change of the last 10 minutes touched and that are not on the list now — a written `watchlist_remove`
+ * (so a retried remove still finds its title) or a FAILED `watchlist_add` (it may have landed; PR #580 ruling 2) —
+ * as `watchlist_recent`: the pool of a `set_watchlist` remove, where plex.tv's live userState then decides.
  */
 async function watchlistPool(
   db: DbClient,
   plexAccountId: number,
   kind: WatchKind | null,
   now: Date,
-  recentlyRemoved: boolean,
+  recent: boolean,
 ): Promise<PoolEntry[]> {
   const { entries } = await selectWatchlist(db, plexAccountId, { now });
-  const removed = recentlyRemoved
-    ? (await selectRecentlyRemoved(db, plexAccountId, now))
+  const removed = recent
+    ? (await selectRecentWatchlistChanges(db, plexAccountId, now))
         .map((m) => entryOfMark(m))
         .filter((e) => !isOnWatchlist(entries, e))
     : [];
@@ -77,22 +79,26 @@ async function watchlistPool(
     });
   };
   for (const e of entries) push(e, 'watchlist');
-  for (const e of removed) push(e, 'watchlist_removed');
+  for (const e of removed) push(e, 'watchlist_recent');
   return pool;
 }
 
-/** Written, unreverted `watchlist_remove` marks of the last {@link WATCHLIST_REMOVE_REPLAY_SECONDS}. */
-async function selectRecentlyRemoved(db: DbClient, plexAccountId: number, now: Date) {
+/**
+ * The Watchlist Changes of the last {@link WATCHLIST_REMOVE_REPLAY_SECONDS} a remove may be about: written,
+ * unreverted removes, and failed adds (reverted or not — plex.tv's live state decides either way).
+ */
+async function selectRecentWatchlistChanges(db: DbClient, plexAccountId: number, now: Date) {
   return db
     .select()
     .from(watchMarks)
     .where(
       and(
         eq(watchMarks.plexAccountId, plexAccountId),
-        eq(watchMarks.action, 'watchlist_remove'),
-        eq(watchMarks.plexResult, 'written'),
-        isNull(watchMarks.revertedAt),
         gt(watchMarks.createdAt, new Date(now.getTime() - WATCHLIST_REMOVE_REPLAY_SECONDS * 1000)),
+        or(
+          and(eq(watchMarks.action, 'watchlist_remove'), eq(watchMarks.plexResult, 'written'), isNull(watchMarks.revertedAt)),
+          and(eq(watchMarks.action, 'watchlist_add'), eq(watchMarks.plexResult, 'failed')),
+        ),
       ),
     )
     .orderBy(desc(watchMarks.createdAt), desc(watchMarks.id));
@@ -103,7 +109,7 @@ async function selectRecentlyRemoved(db: DbClient, plexAccountId: number, now: D
  * signals carry the ids they know, so `resolveTitle` folds a title seen by several sources into one. The
  * watchlist part is the OVERLAID watchlist (DESIGN-051 D-05: `selectWatchlist`, so a title added a moment ago
  * resolves and one just removed does not come from it); `only: 'watchlist'` is the pool of a `set_watchlist`
- * remove (DESIGN-051 D-03 step 2): nothing but the titles on the watchlist.
+ * remove (DESIGN-051 D-03 step 2): the titles on the watchlist, plus the recent ones of `watchlist_recent`.
  */
 export async function selectResolverPool(
   db: DbClient,
