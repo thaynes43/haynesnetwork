@@ -6,6 +6,10 @@
   surfaces; saving stays one tap. Prior: 2026-07-09 — Maintainerr aging-invariant safeguard,
   ADR-036 / incident; D-12 build C — watch indicators never occupy the action corner; every tile
   stays saveable)
+- **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26, Draft): Trash
+  also needs a verified Watchlist Registry before any delete, the guardian keeps a title on any read Plex watchlist,
+  the safety audit also requires `listExclusions` and `forceSeerr` on the rule pools, and the deleted release is
+  recorded and blocked in Radarr/Sonarr before each Maintainerr handle (DESIGN-052 D-07, D-09, D-14, D-16).
 - **Satisfies:** PRD-001 **R-79..R-87** + **US-10** / **AC-14..AC-16**; governed by **ADR-023**
   (Trash/Maintainerr + per-action grants + safety gate). Reuses **ADR-021** (section levels),
   **ADR-008/011** (write-back confinement), **DESIGN-005 D-16** (Restore), **DESIGN-008/009 D-09**

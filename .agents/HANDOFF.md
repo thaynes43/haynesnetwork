@@ -4,6 +4,44 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-26 — Watchlists protect titles from Trash (issue #576): ADR-093 / DESIGN-052 / PLAN-072 reviewed and merged (docs); next the build; interim Saves by hand
+
+Three owner rulings on 2026-09-26 (issue #576, and on his phone): **no Trash deletion of a title on anybody's Plex
+watchlist** ("across the server": 42 accounts; HaynesOps and HaynesTower serve the same files); **re-requests of
+deleted titles are wanted but must not re-fetch the deleted release** ("the same title, different index"); and
+**"Everyone's watchlist requests"** (Seerr watchlist sync on for all 16 Seerr users). Research (four read-only
+tracks, per-claim skeptics, a critic): `.agents/context/2026-09-26-watchlist-trash-protection-research.md`. Found:
+three titles were deleted while on a watchlist (Babygirl, Another Simple Favor, Terrifier); Maintainerr's "Is
+Watchlisted" rule sees only 4 of 42 accounts; community.plex.tv reads 39 accounts but returns hidden lists as empty;
+Seerr's per-user route sees private lists for its 16 users; no release memory survives a delete, the first search
+after a re-add grabs the same release within seconds, and a Radarr/Sonarr release profile is the only lever that
+blocks it before any fetch; the Arm/Disarm toggle would silently turn off `listExclusions`/`forceSeerr`.
+
+**Design (docs PR #594, merged after an Opus design review ruled into DESIGN-052 D-24):** ADR-093 (supersedes in part ADR-073 C-01, ADR-084 D-1/E-1, ADR-092 C-03/C-04;
+amends hard rule 4 with the Release Block), DESIGN-052 (the Watchlist Registry, a new `watchlist-registry` sync mode
+every 15 minutes plus an inline refresh before a sweep; the fail-closed Registry Gate: a registry read within 30
+minutes and no readable account unread for 24 hours; the `watchlisted` keep at proposal and in the shared guardian;
+the Deleted-Release Record and one app-owned release profile per *arr written and read back before each Maintainerr
+handle; the Arm/Disarm fix and a grown safety audit; Seerr enrollment behind an audited setting, enroll once),
+PLAN-072, PRD R-255..R-259 / US-16 / AC-33..AC-37 / Q-15..Q-16, glossary T-261..T-266, DDD-002 BC-03 notes,
+migration **0081**. The review's load-bearing rulings: Seerr answers a failed plex.tv read as HTTP 200 with an empty
+list, so its answers are classified by content and an empty answer after a list with titles is a failed read (the
+same for a community list that turns hidden); registry state is per account **and source**; a record turns active
+only after the *arr confirms the delete; an item whose release cannot be recorded is kept; the seed adds a bulk
+legacy-SAB source (ADR-093 C-21 records the ~43 deletions nothing identifies); the sweep pauses cleanly and pages
+after 6 hours; E-4/E-5 of ADR-084 are delivered (DESIGN-052 D-23).
+
+**Interim (PLAN-072 S0, standing until the guard is live):** Trap, Death of a Unicorn and The Legend of Ochi (open
+movie batch `08576e59`, sweep about 2026-09-27T06:45Z) were Saved at about 15:15Z (`setBatchItemSaved`, actor null).
+**Next deadline:** the movie batch that forms after that sweep may draw Summer of 69, Influencers and The Alto
+Knights (friend-watchlisted), sweep about 2026-10-04; S0 says to cross-check every new batch against all readable
+watchlists and Save matches until S7, with a final check 1 to 2 hours before each sweep. **Next:** S2, the build
+(DESIGN-052 D-22 code map). Rollout order is binding: deploy with the sweep CronJob suspended until the read-only
+checks (S6) pass, then the guard + Release Block verified on a live sweep, then seed the block (ledger + bulk legacy
+SAB + the three titles), then the Seerr enable (preflight: Seerr's anime tags, a join of everyone's newest titles
+against unblocked deletions; one user, then all), then re-request the three titles. S6a asks the owner PRD Q-15
+(managed-user switch).
+
 ## ▶ 2026-09-26 — Plex watchlist tools LIVE (v0.100.0): the hop and the Movie Room agent verified; two owner steps left
 
 Owner request 2026-09-25: the agents (ChatGPT, the Movie Room voice agent, dev-env) should add and remove

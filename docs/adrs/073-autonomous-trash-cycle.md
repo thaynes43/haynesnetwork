@@ -1,6 +1,11 @@
 # ADR-073: Autonomous Trash cycle — space policy promotes its own batches, no cooldown
 
 - **Status:** Accepted
+- **Superseded in part by:** [ADR-093](093-watchlists-protect-trash-and-fresh-rerequests.md) (2026-09-26, effective when ADR-093 is Accepted) — C-01: the space policy's
+  proposals leave out a title on any read Plex watchlist, and the windowed sweep deletes only after the full window
+  **and** when the Watchlist Registry is verified (the Registry Gate, ADR-093 C-02/C-04); a refused sweep waits for
+  the next hourly run. Everything else here stands. This is a status note only; the decision body below is
+  unchanged.
 - **Date:** 2026-07-18
 - **Deciders:** Tom Haynes (owner ruling 2026-07-18) · executed by an Opus autonomous run
 - **Supersedes:** [ADR-031](031-space-driven-batch-policy.md) consequences **C-02** (admin gate stays

@@ -1,6 +1,12 @@
 # ADR-092: The owner's Plex watchlist through the MCP surface — list it, add and remove titles, and say "on your watchlist"
 
 - **Status:** Accepted (2026-09-26 — live as haynesnetwork v0.100.0, haynes-ops #3205; verified through the hop (PLAN-071 S5) and on the Movie Room agent, the nine-tool voice bench within R-245 (PLAN-071 S6))
+- **Superseded in part by:** [ADR-093](093-watchlists-protect-trash-and-fresh-rerequests.md) (2026-09-26, effective when ADR-093 is Accepted) — C-03: Seerr's watchlist
+  sync is turned on for every Seerr user (owner ruling 2026-09-26, "Everyone's watchlist requests"), and "the app
+  never calls Seerr" narrows to "the watch tools never call Seerr" (the Trash section writes each user's
+  watchlist-sync flags once, ADR-093 C-11); C-04 in part: the tools stay owner-only, but the app now reads other
+  people's watchlists (community.plex.tv with the owner token, Seerr's stored tokens) as Trash guard input only
+  (ADR-093 C-12). Everything else stands.
 - **Supersedes (in part):** ADR-087 C-07 (the 3 KB `tools/list` cap, C-09 here) and
   ADR-088 C-03 (Plex written only by a `watched` mark, C-02 here).
 - **Date:** 2026-09-25
