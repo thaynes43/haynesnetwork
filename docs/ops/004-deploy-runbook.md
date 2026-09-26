@@ -179,6 +179,10 @@ kubectl -n frontend get deploy/haynesnetwork-main \
   -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
 ```
 
+**MCP tool changes:** after a deploy that adds, removes or changes any MCP tool (its name, description or
+parameters), reload Home Assistant's "Watch history" entry (OPS-015 §8: HA loads the tool list only at entry
+setup) and have the owner refresh the ChatGPT connector and start a new chat (OPS-016 §7).
+
 ## 4. Image shape (what you deployed)
 
 One multi-stage `node:22-alpine` image (repo `Dockerfile`) with `tsx` installed globally,

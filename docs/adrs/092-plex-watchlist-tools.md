@@ -1,7 +1,7 @@
 # ADR-092: The owner's Plex watchlist through the MCP surface — list it, add and remove titles, and say "on your watchlist"
 
-- **Status:** Proposed
-- **Supersedes (in part, effective when Accepted):** ADR-087 C-07 (the 3 KB `tools/list` cap, C-09 here) and
+- **Status:** Accepted (2026-09-26 — live as haynesnetwork v0.100.0, haynes-ops #3205; verified through the hop (PLAN-071 S5) and on the Movie Room agent, the nine-tool voice bench within R-245 (PLAN-071 S6))
+- **Supersedes (in part):** ADR-087 C-07 (the 3 KB `tools/list` cap, C-09 here) and
   ADR-088 C-03 (Plex written only by a `watched` mark, C-02 here).
 - **Date:** 2026-09-25
 - **Deciders:** Tom Haynes (owner request 2026-09-25: agents should *"add and remove things from my

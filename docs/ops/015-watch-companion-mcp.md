@@ -3,7 +3,7 @@
 - **Status:** Active (2026-09-23) — the operating record since PLAN-068 S12 passed live (haynesnetwork v0.97.0, haynes-ops #3139).
 - **Scope:** operating the in-cluster MCP surface (`/api/mcp`), its hop, its generated token, the
   `sync-watch` CronJob, and the Movie Room agent that consumes it.
-- **Normative basis:** ADR-087, ADR-088, ADR-089, DESIGN-049, PLAN-068.
+- **Normative basis:** ADR-087, ADR-088, ADR-089, DESIGN-049, PLAN-068; the watchlist tools ADR-092, DESIGN-051, PLAN-071 (§8).
 - **Repos:** this app; haynes-ops (`kubernetes/main/apps/frontend/haynesnetwork/`,
   `kubernetes/main/apps/frontend/haynesnetwork-mcp-hop/`, dev-env `mcp.json`); hass-sandbox (the
   agent prompt backup and voice bench).
@@ -23,8 +23,8 @@
 
 ## 2. Is it healthy?
 
-From the Home Assistant pod (it is admitted by the hop's policy; the dev-env pod is too once its
-`mcp.json` PR is merged):
+From the Home Assistant pod (it is admitted by the hop's policy; so is the dev-env pod, whose `mcp.json` entry
+landed with haynes-ops #3140 on 2026-09-24, and PLAN-071 S5 ran from there):
 
 ```bash
 kubectl exec -n home-automation deploy/home-assistant -- python3 -c '
@@ -101,3 +101,35 @@ named the key `HOP_TOKEN`.)*
 | `watch_events` | yes, from Tautulli, as far back as each Tautulli remembers |
 | `watch_accounts` | yes, next run |
 | `watch_marks` | **no** — the owner's corrections and the undo record; never truncate |
+
+## 8. The watchlist tools (ADR-092 / DESIGN-051, live since v0.100.0, 2026-09-26)
+
+`watchlist` (read) lists the owner's plex.tv watchlist; `set_watchlist` (write, owner only) adds or removes one
+title on plex.tv (`PUT discover.provider.plex.tv/actions/{add,remove}ToWatchlist`, the discover id being the
+`plex://` guid suffix); `watch_status` ends with whether the title is on Plex and on the watchlist. A change is a
+Watch Mark (`watchlist_add` / `watchlist_remove`) and `undo_last_change` reverses it.
+
+- **Seerr downloads what is added.** Seerr auto-requests the owner's 20 newest watchlist titles every 3 minutes,
+  auto-approved; undo cannot cancel a request already made (ADR-092 C-03, C-07). **A live test uses only a title
+  already on Plex**, sent right after a Seerr tick (minutes divisible by 3, a few seconds past) and away from the
+  `sync-watch` minutes, then undone. PLAN-071 S5 used The Matrix, Law & Order: SVU and Slow Horses.
+- **Log line:** `[mcp] watchlist_changed {consumer, action, kind, result, onPlex}` (never a title); `result` is
+  one of `written`, `failed`, `unchanged`, `not_found`, `ambiguous`, `not_in_catalog`, `unconfirmed`,
+  `unknown` (plex.tv never confirmed the write's outcome, D-15b), `not_owner` (DESIGN-051 D-10).
+- **After a deploy that adds, removes or changes a tool (name, description or parameters), reload the HA
+  entry.** Home Assistant loads the Movie Room agent's tool list, descriptions and parameters included, once,
+  when the "Watch history" `mcp` entry is set up, and never again (its coordinator has no listeners, so the
+  30-minute refresh never runs). Call `homeassistant.reload_config_entry` with
+  `entry_id: 01M381GTWER1BG9K4MWG3GDEGR` (or restart HA); it reloads only that entry. ChatGPT keeps a
+  connector's old tool list until the owner refreshes the connector in its settings and starts a new chat
+  (DESIGN-051 D-12, OPS-016 §7). Claude Code and Codex list tools when a session starts. OPS-004 §3 and the
+  `@hnet/mcp` README point here.
+- **plex.tv's own view:** `GET discover.provider.plex.tv/library/metadata/<id>/userState` (`watchlistedAt`
+  present when on the watchlist), with an owner server token from inside a `haynesnetwork-main` pod; never
+  print the token.
+
+| Symptom | Look at |
+|---|---|
+| "I couldn't reach Plex, so your watchlist didn't change." | plex.tv discover reachability from the web pods; `watchlist_changed` `failed` |
+| "Plex didn't answer in time, so I can't tell whether X changed." | `watchlist_changed` `unknown`; the write may still land, so plex.tv `userState` for the title decides; undo of such an add removes it anyway (DESIGN-051 D-15n; undo: D-04, D-15b) |
+| An add named the wrong title | `undo_last_change` at once; if the title was not on Plex, cancel the Seerr request in Seerr (undo cannot) |

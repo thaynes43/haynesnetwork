@@ -46,7 +46,9 @@ found". `tools/list` is served from **hand-written JSON Schemas** through the
 low-level handler: the SDK-generated list (a `$schema` URL and `execution` on every tool) measured 3,475
 bytes, over the 3,072-byte budget; the served list was 2,712 bytes with seven tools and is **3,633 bytes** with
 nine (the cap is 4,096 since ADR-092 C-09; `oauth.e2e.test.ts` pins the exact size), and a test pins each
-hand-written schema to its zod schema. Every answer is `@hnet/watch`-formatted plain text — no `structuredContent`, no
+hand-written schema to its zod schema. **Changing a tool's name, description or parameters is a deploy step
+too:** after the deploy, reload Home Assistant's "Watch history" entry (OPS-015 §8; HA loads the tool list only
+at entry setup) and have the owner refresh the ChatGPT connector and start a new chat (OPS-016 §7). Every answer is `@hnet/watch`-formatted plain text — no `structuredContent`, no
 `outputSchema`. Principal (`resolvePrincipal`): the hop acts as THE `owner` row (none yet ⇒ "Watch history isn't
 ready yet."); an OAuth consumer acts as its user's own tracked account — `users.id` → the ADR-053 Plex Account
 Map → `watch_accounts` with `tracked = true` (none ⇒ "Watch history isn't set up for your account yet.", an

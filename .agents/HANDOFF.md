@@ -4,6 +4,44 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-26 — Plex watchlist tools LIVE (v0.100.0): the hop and the Movie Room agent verified; two owner steps left
+
+Owner request 2026-09-25: the agents (ChatGPT, the Movie Room voice agent, dev-env) should add and remove
+titles on his Plex watchlist; ChatGPT had asked for `list_watchlist`, `set_watchlist` and `onWatchlist`
+in `watch_status`. Research + live probes: `.agents/context/2026-09-25-plex-agent-interactions-research.md`
+(plex.tv discover add/remove/match/userState verified from a web pod; one add/remove round trip on The
+Matrix, watchlist restored). **Seerr auto-requests the owner's watchlist** (every 3 min, 20 newest,
+auto-approved), so an add of a title not on Plex downloads it; owner ruling on his phone: **"Add it, say
+it downloads"** (settles PRD Q-13). Docs: **ADR-092** (supersedes ADR-087 C-07's 3 KB cap → 4 KB and
+ADR-088 C-03 in part), **DESIGN-051**, **PLAN-071**, PRD R-252..R-253 / US-15 / AC-29..AC-31, glossary
+T-260. Follow-ups ranked in the research note §5 (play in the Movie Room needs HA's Plex integration,
+which does not exist today; ratings as a taste signal; Continue Watching hygiene; household
+watchlists). Issue **#576**: Seerr re-requests a Trashed title still among the owner's 20 newest
+watchlist titles (low exposure, needs a decision).
+
+**Status (2026-09-26):** live as **v0.100.0** (#580 → release #582 → haynes-ops **#3205**, migration 0080).
+PR #580 went through nine review passes (49 skeptic-verified findings in passes 2–9, plus the first pass's A/B
+findings; rulings DESIGN-051 D-15..D-15ad). PLAN-071 S5 passed through the hop (adds, repeat add, undo, the undo
+replay guard, a long-running show, remove twice; The Matrix add and the Slow Horses remove and put-back confirmed
+by plex.tv `userState`; every change restored). **Found live:** Home Assistant loads an MCP server's tool list
+once, at entry setup, and never refreshes it (the `mcp` coordinator has no listeners), so the Movie Room agent
+needed `homeassistant.reload_config_entry` on the Watch history entry before it saw the new tools (done about
+09:07Z; OPS-015 §8 makes it a deploy step, and OPS-004 §3 and the `@hnet/mcp` README point to it). The WATCH
+HISTORY prompt gained a line so the agent always says a Seerr download (hass-sandbox #197, applied with the attach
+helper's new `ACTION=update`). S6's voice bench: the first run (08:36Z) was taken before that reload, so it measured
+seven tools; the nine-tool re-run (10:40Z; a `watchlist` call at 10:44Z confirmed the nine-tool list) has medians 2.67 /
+1.36 / 2.89 s against Assist only 4.62 / 1.87 / 2.98 s, within R-245 (hass-sandbox #198 fixes its table). ADR-092
+and DESIGN-051 are Accepted. **Waiting on the owner:** (1) merge haynes-ops **#3192**, a held draft (dev-env's
+`CLAUDE.md` gains the two tools and the Seerr test warning; it restarts the dev-env pod); (2) refresh the
+haynesnetwork connector in ChatGPT's settings, then one new ChatGPT chat serves PLAN-071 S6 and **PLAN-069 S8 step
+3** together (the driver names a title first): "what's on my watchlist?", then "I already watched \<title\>" and
+"undo that"; the driver checks the `oauth:` `watchlist` call, the first `token_refreshed` and the zero-flip mark and
+its undo. Then PLAN-071 moves to `completed/`. **Parked:** `.agents/plans/TODO.md` (DESIGN-051 D-15p: header-only
+timers in the other HTTP wrappers, the MCP deadline's `AbortSignal`). **Issues:** #576 (Seerr re-requests a Trashed
+title still on the watchlist), #585 (ChatGPT's first calls exceed a tool's `limit`); the research note's §5
+follow-ups #589 (ratings), #590 (voice search, playlists, On Deck) and the owner decisions #591 (play in the Movie
+Room), #592 (`dismiss` and Continue Watching), #593 (household watchlists).
+
 ## ▶ 2026-09-25 — Haynes Quest portal card LIVE (v0.99.0; PRD R-254, DESIGN-004 D-26)
 
 Owner directive (haynes-quest PRD-004 R-03, its work order WO110): a Portal card for the family game.
@@ -45,38 +83,6 @@ deletions (earliest 2026-10-02) plus the Q-01 Lidarr decision; fix the season-pa
 (issue #583 item 1) before flipping L2. Issue #583 also holds the L3 criterion rewrite and the dead
 Fireman Sam packs.
 
-## ▶ 2026-09-25 — Plex watchlist tools (PLAN-071): S1 merged, S2 built and reviewed (#580), release next
-
-Owner request 2026-09-25: the agents (ChatGPT, the Movie Room voice agent, dev-env) should add and remove
-titles on his Plex watchlist; ChatGPT had asked for `list_watchlist`, `set_watchlist` and `onWatchlist`
-in `watch_status`. Research + live probes: `.agents/context/2026-09-25-plex-agent-interactions-research.md`
-(plex.tv discover add/remove/match/userState verified from a web pod; one add/remove round trip on The
-Matrix, watchlist restored). **Seerr auto-requests the owner's watchlist** (every 3 min, 20 newest,
-auto-approved), so an add of a title not on Plex downloads it; owner ruling on his phone: **"Add it, say
-it downloads"** (settles PRD Q-13). Docs: **ADR-092** (supersedes ADR-087 C-07's 3 KB cap → 4 KB and
-ADR-088 C-03 in part), **DESIGN-051**, **PLAN-071**, PRD R-252..R-253 / US-15 / AC-29..AC-31, glossary
-T-260. Follow-ups ranked in the research note §5 (play in the Movie Room needs HA's Plex integration,
-which does not exist today; ratings as a taste signal; Continue Watching hygiene; household
-watchlists). Issue **#576**: Seerr re-requests a Trashed title still among the owner's 20 newest
-watchlist titles (low exposure, needs a decision).
-
-**Status:** S1 merged (#577). S2 is built on `feat/plex-watchlist-tools` as PR **#580** and went through
-nine review passes; every finding is fixed on the branch and the rulings are DESIGN-051 D-13..D-15ad (the
-PLAN-071 log has one line per pass). The seventh also changed the MCP's Plex wiring: a third bundle,
-`discoverPlex` (one 1.5 s attempt), serves plex.tv's catalog lookup and the re-read after a failed PUT, since the
-lookup takes up to 1.3 s for a long-running show (D-15ab); S5 now adds and undoes one such show live. The eighth
-made an add never take a TMDB title of another year than the one named (it asks), and count the pool's own title
-when TMDB's page leaves it out (D-15ac). The ninth corrected D-12: the owner's ChatGPT connector (live since
-2026-09-25) keeps the seven tools until he refreshes it in ChatGPT's settings and starts a new chat (D-15ad). Code comments cite those D-IDs, never a "ruling N" number. **Next:** merge #580 once its required checks are green → S3 release
-(the release-please PR) → S4 haynes-ops image tag bump (migration 0080) → S5 live verify through the hop →
-S6 the hass-sandbox prompt line, the voice bench, the ChatGPT refresh (ask the owner, then check that `watchlist`
-answers there and `set_watchlist` is listed) and close-out. **Waiting on the owner:** haynes-ops
-**#3192**, a held draft that gives dev-env's GitOps `CLAUDE.md` the two new tools and a warning never to test
-`set_watchlist` with a title not on Plex; merging it restarts the dev-env pod, so the owner merges it at a
-natural break. **Parked (needs a design call):** the header-only per-attempt timers of the other HTTP
-wrappers, and passing the MCP deadline's `AbortSignal` into the domain calls, in `.agents/plans/TODO.md`
-(DESIGN-051 D-15p).
-
 ## ▶ 2026-09-24 — Public MCP connector LIVE (v0.98.0): the owner's ChatGPT connect is the last gate
 
 ADR-091 / DESIGN-050 shipped as **haynesnetwork v0.98.0** (#572 → release #570; two Opus reviews, every
@@ -87,15 +93,14 @@ challenge, `GET /mcp` 405, public `/api/mcp` still 404, DCR 201, a signed-out au
 with a bad parameter) → our own `/login?next=` and never the client; both Gatus probes green on the
 first run after the rollout. Movie Room voice and dev-env are untouched (the hop, `/api/mcp`).
 
-**What is left (PLAN-069 S8–S9):** consent needs a real browser sign-in through Authentik, so the
-owner adds haynesnetwork as a ChatGPT connector (`https://haynesnetwork.com/mcp`), signs in, approves,
-and asks a question; the driver verifies from the web log (`client_registered` → `consent_granted` →
-`token_issued` → `[mcp] tool_called {"consumer":"oauth:<client_id>"}`) and from `/settings/connections`.
-Then ADR-091 → Accepted, OPS-016 → Active, PLAN-069 → `completed/`. Claude Code / Codex / claude.ai
-connects are unverified until someone approves one (DESIGN-050 Q-01). PLAN-070 (household accounts
-in the `watch` sync) is queued: until it lands, a non-owner connector gets "Watch history isn't set up
-for your account yet." haynes-ops #3140 (dev-env `mcp.json`, held draft) is still the owner's to
-merge.
+**What is left (PLAN-069 S8–S9), as of 2026-09-26:** the owner connected Codex and ChatGPT on 2026-09-25
+and both answered watch questions (the web-log audit is PLAN-069's _Evidence (S8 live audit)_). Still open in S8:
+a token refresh from each, ChatGPT's zero-flip mark and undo (S8 step 3, one chat with PLAN-071's watchlist
+check), a Claude Code connect, a non-owner consent (AC-27) and a Disconnect (AC-28); then S9: ADR-091 → Accepted,
+OPS-016 → Active, PLAN-069 → `completed/`. claude.ai stays unverified until someone approves one (DESIGN-050
+Q-01). PLAN-070 (household accounts in the `watch` sync) is queued: until it lands, a non-owner connector gets
+"Watch history isn't set up for your account yet." haynes-ops #3140 (dev-env `mcp.json`) merged
+2026-09-24T11:19Z.
 
 ## ▶ 2026-09-23 — Public MCP connector (ChatGPT) — docs on branch, build in progress
 

@@ -1,7 +1,7 @@
 # DESIGN-049: Watch Companion — watch history read-model, recommendations, voice reconcile marks, and the in-cluster MCP surface
 
 - **Status:** Accepted (2026-09-23; live as v0.97.0, PLAN-068 S9–S13 verified)
-- **Last updated:** 2026-09-26 (DESIGN-051 D-15aa amends D-13: a TMDB call made while the pool already has an answer is a single attempt; the seventh review pass of PR #580 notes the ADR-092 amendment on the overview, the D-05 table and D-15's undo). Prior: 2026-09-26 (DESIGN-051 D-15x amends D-13: a year the query names settles same-name pool titles, a pool title of another year sends the query on to TMDB as "not found" does and TMDB's hit of that year wins, and a TMDB hit the pool knows is the pool's title; D-15y leaves D-13's order to the read and mark tools, while a `set_watchlist` add reaches TMDB past a near title). Prior: 2026-09-25 (DESIGN-051 D-15t amends the D-15 ruling row: undo never walks past a pending mark; an abandoned `watched` mark is closed and its planned keys unscrobbled). Prior: 2026-09-25 (Q-02 resolved by ADR-092 / DESIGN-051: the watchlist tools extend D-05, D-13 and D-15; the `tools/list` cap is 4 KB). Prior: 2026-09-23 (Q-01 and Q-03 point at ADR-091 / DESIGN-050, the public connectors). Prior: 2026-09-23 (PLAN-068 S7–S8: D-27 records the MCP-surface and local-stack rulings —
+- **Last updated:** 2026-09-26 (PLAN-071 close-out annotates D-05's four-POST note: the trailing `tools/list` is the MCP client's own, and the tool list Home Assistant hands the LLM is loaded once at entry setup, DESIGN-051 D-12). Prior: 2026-09-26 (DESIGN-051 D-15aa amends D-13: a TMDB call made while the pool already has an answer is a single attempt; the seventh review pass of PR #580 notes the ADR-092 amendment on the overview, the D-05 table and D-15's undo). Prior: 2026-09-26 (DESIGN-051 D-15x amends D-13: a year the query names settles same-name pool titles, a pool title of another year sends the query on to TMDB as "not found" does and TMDB's hit of that year wins, and a TMDB hit the pool knows is the pool's title; D-15y leaves D-13's order to the read and mark tools, while a `set_watchlist` add reaches TMDB past a near title). Prior: 2026-09-25 (DESIGN-051 D-15t amends the D-15 ruling row: undo never walks past a pending mark; an abandoned `watched` mark is closed and its planned keys unscrobbled). Prior: 2026-09-25 (Q-02 resolved by ADR-092 / DESIGN-051: the watchlist tools extend D-05, D-13 and D-15; the `tools/list` cap is 4 KB). Prior: 2026-09-23 (Q-01 and Q-03 point at ADR-091 / DESIGN-050, the public connectors). Prior: 2026-09-23 (PLAN-068 S7–S8: D-27 records the MCP-surface and local-stack rulings —
   `tools/list` is served from hand-written schemas, 2,712 bytes). Prior: PLAN-068 S5–S6 (D-26 records the
   domain and sync rulings; Q-05 and Q-06 ruled; `name:` keys carry the kind; D-04 corrected after the
   haynes-ops #3131 deploy). Prior: PLAN-068 S4
@@ -150,7 +150,9 @@ Every Home Assistant tool call is four POSTs: `initialize`, `notifications/initi
 `tools/call`, then `tools/list` (the client refreshes its tool list on each new session). So the list is
 paid on every call and must be static and cheap. If that trailing `tools/list` fails after a
 successful `mark_watched`, HA reports a failure for a change that happened: one more reason marks
-must be idempotent (D-14).
+must be idempotent (D-14). _(The trailing `tools/list` is the MCP client's own; the tool list Home Assistant
+hands the LLM is loaded once at entry setup and needs an entry reload after a tool change: DESIGN-051 D-12,
+OPS-015 §8.)_
 
 **Voice Budget (T-253), enforced by `@hnet/mcp` tests:** the serialized `tools/list` result is at
 most **3,072 bytes** _(4,096 bytes since ADR-092 C-09 / DESIGN-051 D-08)_; a default call to each read tool over the seeded fixture returns at most
