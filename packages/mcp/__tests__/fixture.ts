@@ -94,9 +94,10 @@ export interface FDiscoverTitle {
 
 /**
  * Which bundle a call went out on (DESIGN-051 D-15, the first pass's test fixes): `short` — the 300 ms live-read
- * bundle (`revalidatePlex`), `write` — the mark / write bundle (`markPlex`). Recorded on the watchlist calls only.
+ * bundle (`revalidatePlex`), `write` — the mark / write bundle (`markPlex`), `discover` — the one-attempt 1.5 s
+ * bundle of the catalog lookup and the re-read (`discoverPlex`, D-15ab). Recorded on the watchlist calls only.
  */
-export type FakeBudget = 'short' | 'write';
+export type FakeBudget = 'short' | 'write' | 'discover';
 
 export class FakePlex {
   readonly calls: Array<{ server: PlexServerSlug; op: string; key: string; budget?: FakeBudget }> = [];
@@ -153,9 +154,9 @@ export class FakePlex {
     budget: FakeBudget,
   ): Promise<void> {
     this.calls.push({ server, op, key: id, budget });
-    // A write on the short-budget bundle is a wiring bug (the swap the budget-tagged fakes of DESIGN-051 D-15's first
-    // pass guard against).
-    if (budget === 'short') return Promise.reject(new Error('the short-budget bundle must never write'));
+    // A write on a read bundle is a wiring bug (the swap the budget-tagged fakes of DESIGN-051 D-15's first pass guard
+    // against): the short one and the discover one (D-15ab) only read.
+    if (budget !== 'write') return Promise.reject(new Error(`the ${budget} bundle must never write`));
     const apply = () => {
       if (op === 'addToWatchlist') {
         if (!this.watchlist.has(id)) this.watchlist.set(id, this.now);
@@ -256,7 +257,7 @@ export class FakePlex {
     return Promise.resolve();
   }
 
-  /** The per-server clients; `budget` tags the watchlist calls (and a `short` bundle refuses to write). */
+  /** The per-server clients; `budget` tags the watchlist calls (and only the `write` bundle writes). */
   clients(budget: FakeBudget = 'write'): WatchPlexClients {
     const read: WatchPlexClients['read'] = {};
     const write: WatchPlexClients['write'] = {};

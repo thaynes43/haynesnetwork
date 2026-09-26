@@ -16,7 +16,9 @@
 // add's TMDB ambiguity, and TMDB titles that read the same answered without a question; and from its sixth
 // (D-15x, D-15y): a named year the pool's title does not have (an add reaches TMDB, a remove finds nothing, the mark
 // flows take TMDB's hit of that year or the pool's own title), a title only a TMDB recommendation knows checked
-// against TMDB before an add, and an add past a near title in the pool.
+// against TMDB before an add, and an add past a near title in the pool; and from its seventh (D-15z): with userState
+// unreadable, a remove after a refused or cache-read add whose undo failed too is the cache's to decide, and the run
+// walk counts a failed undo only for the asked action.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { watchMarks, type Database, type WatchMarkRow } from '@hnet/db';
@@ -1447,27 +1449,43 @@ describe('the fourth review pass on PR #580 (DESIGN-051 D-15q..D-15s)', () => {
     const unknownAdd = { plexResult: 'failed', plexError: 'unknown: PlexTimeoutError' } as const;
     const refused = { plexResult: 'failed', plexError: 'PlexHttpError: 429' } as const;
     // Newest first. A live written change ends the walk: nothing older ran after it.
-    expect(unsettledWatchlistRun([row(2, 20), row(1, 10, unknownAdd)], since)).toBeNull();
+    expect(unsettledWatchlistRun([row(2, 20), row(1, 10, unknownAdd)], since, 'remove')).toBeNull();
     // A pending change, and one plex.tv never confirmed, are unsettled; a refused one is walked past.
-    expect(unsettledWatchlistRun([row(1, 10, { plexResult: 'pending' })], since)?.mark.id).toBe(1);
+    expect(unsettledWatchlistRun([row(1, 10, { plexResult: 'pending' })], since, 'remove')?.mark.id).toBe(1);
     expect(
-      unsettledWatchlistRun([row(2, 20, { action: 'watchlist_remove', ...refused }), row(1, 10, unknownAdd)], since),
+      unsettledWatchlistRun([row(2, 20, { action: 'watchlist_remove', ...refused }), row(1, 10, unknownAdd)], since, 'remove'),
     ).toMatchObject({ mark: { id: 1 }, add: { id: 1 } });
     // A written undo clears its own change…
-    expect(unsettledWatchlistRun([row(1, 10, { ...unknownAdd, revertedAt: later(20), revertResult: 'written' })], since)).toBeNull();
-    // …but a failed undo is unsettled, even on a change the cache has read (an undo can run a day later).
-    expect(unsettledWatchlistRun([row(1, -600, { revertResult: 'failed' })], since)).toMatchObject({ mark: { id: 1 }, add: null });
-    expect(unsettledWatchlistRun([row(1, -600, unknownAdd)], since)).toBeNull();
-    // A newer change's written undo supersedes the older changes' own calls, not an older change's failed undo
-    // (that undo ran after it: undo reaches the older change only once the newer one is closed).
-    const newerUndone = row(2, 20, { revertedAt: later(30), revertResult: 'written' });
-    expect(unsettledWatchlistRun([newerUndone, row(1, 10, unknownAdd)], since)).toBeNull();
     expect(
-      unsettledWatchlistRun([newerUndone, row(1, 10, { action: 'watchlist_remove', revertResult: 'failed' })], since),
-    ).toMatchObject({ mark: { id: 1 }, add: null });
+      unsettledWatchlistRun([row(1, 10, { ...unknownAdd, revertedAt: later(20), revertResult: 'written' })], since, 'remove'),
+    ).toBeNull();
+    // …but a failed undo is unsettled, even on a change the cache has read (an undo can run a day later), when its
+    // inverse may have moved the title away from the asked state (D-15z): the undo of an add (a removal) for an add…
+    const addUndoFailed = row(1, -600, { revertResult: 'failed' });
+    expect(unsettledWatchlistRun([addUndoFailed], since, 'add')).toMatchObject({ mark: { id: 1 }, add: null });
+    // …never for a remove: a removal can only take the title off, so the cache decides.
+    expect(unsettledWatchlistRun([addUndoFailed], since, 'remove')).toBeNull();
+    expect(unsettledWatchlistRun([row(1, 10, { ...refused, revertResult: 'failed' })], since, 'remove')).toBeNull();
+    // An unsettled add whose undo failed is still the remove's marker (its own call may have landed).
+    expect(unsettledWatchlistRun([row(1, 10, { ...unknownAdd, revertResult: 'failed' })], since, 'remove')).toMatchObject({
+      mark: { id: 1 },
+      add: { id: 1 },
+    });
+    expect(unsettledWatchlistRun([row(1, -600, unknownAdd)], since, 'remove')).toBeNull();
+    // A newer change's written undo supersedes the older changes' own calls, not an older change's failed undo
+    // (that undo ran after it: undo reaches the older change only once the newer one is closed). The undo of a
+    // remove (an add) counts for a remove, not for an add.
+    const newerUndone = row(2, 20, { revertedAt: later(30), revertResult: 'written' });
+    expect(unsettledWatchlistRun([newerUndone, row(1, 10, unknownAdd)], since, 'remove')).toBeNull();
+    const removeUndoFailed = row(1, 10, { action: 'watchlist_remove', revertResult: 'failed' });
+    expect(unsettledWatchlistRun([newerUndone, removeUndoFailed], since, 'remove')).toMatchObject({
+      mark: { id: 1 },
+      add: null,
+    });
+    expect(unsettledWatchlistRun([newerUndone, removeUndoFailed], since, 'add')).toBeNull();
     // The marker's add: any unsettled add of the run, not only the newest change.
     expect(
-      unsettledWatchlistRun([row(2, 20, { action: 'watchlist_remove', ...unknownAdd }), row(1, 10, unknownAdd)], since),
+      unsettledWatchlistRun([row(2, 20, { action: 'watchlist_remove', ...unknownAdd }), row(1, 10, unknownAdd)], since, 'remove'),
     ).toMatchObject({ mark: { id: 2 }, add: { id: 1 } });
   });
 });
@@ -1678,6 +1696,73 @@ describe('the sixth review pass on PR #580 (DESIGN-051 D-15x, D-15y)', () => {
     const first = await resolveWatchTitle({ db, plexAccountId: OWNER, query: 'The Matrix 5', tmdb });
     expect(first).toMatchObject({ status: 'resolved', source: 'pool', title: 'The Matrix' });
     expect(tmdbCalls).toEqual([]);
+  });
+});
+
+describe('the seventh review pass on PR #580 (DESIGN-051 D-15z)', () => {
+  it('a failed undo of an add that never landed leaves a later remove to the cache: never sent, never re-added (D-15z)', async () => {
+    // 1. The add is refused outright (a 429 on the first attempt): nothing landed.
+    fake.failWatchlistWrites.add(DUNE3);
+    fake.failWatchlistWritesWith = 429;
+    const added = await change('dune: part three', 'add');
+    expect(spoken(added)).toBe("I couldn't reach Plex, so your watchlist didn't change.");
+    // 2. "Undo that": its removal is refused too (the undo failed).
+    const u1 = await undo(later(5));
+    expect(u1).toMatchObject({ view: { revertResult: 'failed', watchlistOutcome: 'clear_failed' } });
+    // 3. plex.tv takes writes again, but its userState cannot be read: the remove is the cache's to decide (a
+    //    failed undo of an add can only have taken the title off), so it is "isn't on", with no row and no call.
+    fake.failWatchlistWrites.clear();
+    fake.failDiscoverReads.add('getDiscoverUserState');
+    fake.calls.length = 0;
+    const removed = await change('dune: part three', 'remove', { now: later(60) });
+    expect(removed).toMatchObject({ status: 'done', result: 'unchanged' });
+    expect(spoken(removed)).toBe("Dune: Part Three (2026 movie) isn't on your watchlist.");
+    expect(fake.watchlistWrites()).toEqual([]);
+    expect(await marks()).toHaveLength(1);
+    // 4. The next undo is still the add's: its removal goes out again, and nothing ever adds the title.
+    fake.failDiscoverReads.clear();
+    fake.calls.length = 0;
+    const u2 = await undo(later(120));
+    expect(u2).toMatchObject({ view: { revertResult: 'written', watchlistOutcome: 'cleared' } });
+    expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${DUNE3}`]);
+    expect(fake.watchlist.has(DUNE3)).toBe(false);
+  });
+
+  it('the same after an unconfirmed add the cache has since read as off (D-15z)', async () => {
+    // 1. The add times out on every attempt and does not land; the re-read cannot answer: unknown.
+    fake.failWatchlistWrites.add(DUNE3);
+    fake.failWatchlistWritesWith = 'timeout';
+    fake.failDiscoverReads.add('getDiscoverUserState');
+    expect(await change('dune: part three', 'add')).toMatchObject({ result: 'unknown' });
+    fake.failDiscoverReads.clear();
+    // 2. The sync reads plex.tv six and a half minutes later: Dune: Part Three is not there.
+    await replaceRecoSignals({
+      db,
+      plexAccountId: OWNER,
+      source: 'watchlist',
+      rows: [
+        { kind: 'show', title: 'Severance', year: 2022, tmdbId: 95396, tvdbId: 371980, imdbId: null, plexGuid: `plex://show/${SEV}`, rank: 0 },
+        { kind: 'show', title: 'Dark Matter', year: 2024, tmdbId: 203744, tvdbId: null, imdbId: null, plexGuid: `plex://show/${DARK}`, rank: 1 },
+      ],
+      fetchedAt: later(390),
+    });
+    // 3. "Undo that": its removal is refused outright.
+    fake.failWatchlistWritesWith = 429;
+    expect(await undo(later(420))).toMatchObject({ view: { revertResult: 'failed', watchlistOutcome: 'clear_failed' } });
+    // 4. A remove with userState unreadable: the cache has read the add, and the failed undo could only have taken
+    //    the title off, so "isn't on", with nothing sent.
+    fake.failWatchlistWrites.clear();
+    fake.failDiscoverReads.add('getDiscoverUserState');
+    fake.calls.length = 0;
+    const removed = await change('dune: part three', 'remove', { now: later(480) });
+    expect(spoken(removed)).toBe("Dune: Part Three (2026 movie) isn't on your watchlist.");
+    expect(fake.watchlistWrites()).toEqual([]);
+    // 5. Undo reaches the add again and clears it: no `addToWatchlist`, so Seerr downloads nothing.
+    fake.failDiscoverReads.clear();
+    fake.calls.length = 0;
+    expect(await undo(later(540))).toMatchObject({ view: { watchlistOutcome: 'cleared' } });
+    expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${DUNE3}`]);
+    expect(fake.watchlist.has(DUNE3)).toBe(false);
   });
 });
 

@@ -11,6 +11,7 @@ import {
   resolveWatchTitle,
   revalidateTitles,
   undoLastChange,
+  type WatchDiscoverReaders,
   type WatchlistChangeResult,
   type WatchPhases,
   type WatchPlexClients,
@@ -70,17 +71,23 @@ import type {
 export interface McpDeps {
   db: DbClient;
   /**
-   * Live reads on the short budget (D-11: 300 ms per request): the revalidation, and the plex.tv discover reads of
+   * Live reads on the short budget (D-11: 300 ms per request): the revalidation, and the live `userState` read before
    * a Watchlist Change (DESIGN-051 D-03, D-13); null when Plex is not configured.
    */
   revalidatePlex: () => WatchPlexReaders | null;
   /** Watch Mark reads and writes (≈ 800 ms per attempt, D-14's 3 s); null when Plex is not configured. */
   markPlex: () => WatchPlexClients | null;
+  /**
+   * The plex.tv discover reads a Watchlist Change must not cut short, on their own budget (DESIGN-051 D-15ab: one
+   * attempt of about 1.5 s): the catalog lookup and the `userState` re-read after a failed PUT. Absent ⇒ `markPlex`.
+   */
+  discoverPlex?: () => WatchDiscoverReaders | null;
   /** The resolver's last resort (D-13); null when TMDB is not configured. */
   tmdb: () => WatchTmdbSearch | null;
   /**
-   * The same search with a SINGLE attempt, for `set_watchlist` (DESIGN-051 D-15g: its worst case stays
-   * inside the 9 s deadline). Absent ⇒ `tmdb`.
+   * The same search with a SINGLE attempt: `set_watchlist`'s only one (DESIGN-051 D-15g: its worst case stays inside
+   * the 9 s deadline), and every other tool's for a TMDB call made while the pool already has an answer (D-15aa: a
+   * named year the pool's title does not have), which `mark_watched`'s Plex work follows. Absent ⇒ `tmdb`.
    */
   tmdbOnce?: () => WatchTmdbSearch | null;
   now: () => Date;
@@ -219,6 +226,7 @@ export async function answerWatchStatus(
     query: args.title,
     kind: args.kind ?? null,
     tmdb: ctx.deps.tmdb(),
+    tmdbOnce: ctx.deps.tmdbOnce?.() ?? null,
     now: ctx.deps.now(),
   });
   ctx.phases.resolve = Date.now() - started;
@@ -280,6 +288,7 @@ export async function answerSetWatchlist(
     db: ctx.deps.db,
     plex: ctx.deps.markPlex() ?? NO_PLEX,
     reads: ctx.deps.revalidatePlex(),
+    discover: ctx.deps.discoverPlex?.() ?? null,
     tmdb: (ctx.deps.tmdbOnce ?? ctx.deps.tmdb)(),
     actor: { plexAccountId: ctx.account.plexAccountId, appUserId: ctx.account.appUserId },
     consumer: ctx.consumer.name,
@@ -345,6 +354,8 @@ export async function answerMarkWatched(
     db: ctx.deps.db,
     plex: ctx.deps.markPlex() ?? NO_PLEX,
     tmdb: ctx.deps.tmdb(),
+    // DESIGN-051 D-15aa: a TMDB call made with the pool's answer in hand is one attempt, since Plex work follows.
+    tmdbOnce: ctx.deps.tmdbOnce?.() ?? null,
     actor: { plexAccountId: ctx.account.plexAccountId, appUserId: ctx.account.appUserId },
     consumer: ctx.consumer.name,
     query: args.title,
@@ -375,6 +386,7 @@ export async function answerDismiss(
   const out = await dismissTitle({
     db: ctx.deps.db,
     tmdb: ctx.deps.tmdb(),
+    tmdbOnce: ctx.deps.tmdbOnce?.() ?? null,
     actor: { plexAccountId: ctx.account.plexAccountId, appUserId: ctx.account.appUserId },
     consumer: ctx.consumer.name,
     query: args.title,
@@ -393,6 +405,7 @@ export async function answerUndo(ctx: AnswerContext): Promise<string> {
     db: ctx.deps.db,
     plex: ctx.deps.markPlex() ?? NO_PLEX,
     reads: ctx.deps.revalidatePlex(),
+    discover: ctx.deps.discoverPlex?.() ?? null,
     actor: { plexAccountId: ctx.account.plexAccountId, appUserId: ctx.account.appUserId },
     now: ctx.deps.now(),
     phases: ctx.phases,

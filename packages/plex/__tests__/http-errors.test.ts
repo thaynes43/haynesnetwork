@@ -49,6 +49,17 @@ describe('PlexNetworkError (network-level failure wrapping)', () => {
     expect(count()).toBe(3); // 1 + GET_RETRIES(2)
   });
 
+  it('`getRetries` sizes the GET retries: 0 is a single attempt (DESIGN-051 D-15ab), and it bounds an idempotent PUT too', async () => {
+    const once = rejectingFetch(new TypeError('fetch failed'));
+    const client = new PlexReadClient({ ...TEST_CLIENT_OPTIONS, fetchImpl: once.fetchImpl, getRetries: 0 });
+    await expect(client.matchDiscover({ kind: 'show', guid: 'tmdb://2734' })).rejects.toBeInstanceOf(PlexNetworkError);
+    expect(once.count()).toBe(1);
+    const twice = rejectingFetch(new TypeError('fetch failed'));
+    const writer = new PlexWriteClient({ ...TEST_CLIENT_OPTIONS, fetchImpl: twice.fetchImpl, getRetries: 1 });
+    await expect(writer.addToWatchlist('5d776825880197001ec967c0')).rejects.toBeInstanceOf(PlexNetworkError);
+    expect(twice.count()).toBe(2);
+  });
+
   it('NEVER retries a network failure on a write — a POST is attempted exactly once', async () => {
     const { fetchImpl, count } = rejectingFetch(new TypeError('fetch failed'));
     const client = new PlexWriteClient({ ...TEST_CLIENT_OPTIONS, fetchImpl });

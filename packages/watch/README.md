@@ -79,7 +79,8 @@ out, never toward repeating a watched title.
 
 ## Spoken answers (D-14, D-15, D-20, D-21) — `src/format.ts`, `src/spoken.ts`
 
-Plain sentences, no markdown, bullets, emoji or URLs (titles pass through `spokenTitle`); the count
+Plain sentences, no markdown, bullets, emoji, URLs or em and en dashes (titles and the spoken query pass through
+`spokenTitle`, which says a dash as a hyphen, DESIGN-051 D-02); the count
 leads; episodes are "season 3 episode 1"; at most `limit` items, then "And N more."; never more than
 `SPOKEN_MAX_CHARS` (1,200), cut at a sentence boundary.
 

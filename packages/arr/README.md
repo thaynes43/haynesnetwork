@@ -60,7 +60,9 @@ response headers only: a body that stalls after them is bounded by undici's 300 
 Two options size a latency-bound caller (DESIGN-051 D-15g, D-15p):
 
 - `getRetries` (default 2): the GET retries after the first attempt; `0` is a single attempt
-  (the MCP's `tmdbOnce`, `set_watchlist`'s TMDB fallback, which must answer inside the 9 s deadline).
+  (the MCP's `tmdbOnce`, `set_watchlist`'s TMDB fallback, which must answer inside the 9 s deadline, and every
+  tool's TMDB check made while the pool already has an answer, D-15aa). `@hnet/plex`'s `PlexHttp` has the same
+  option (D-15ab).
 - `timeoutCoversBody` (default off): the per-attempt timer also covers the 2xx body, which is
   buffered under it and handed back as a new `Response`, so a stalled body is an `ArrTimeoutError`
   at the attempt's bound. The MCP's TMDB searches turn it on. It is not the default because the

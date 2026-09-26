@@ -1,6 +1,7 @@
 # PLAN-071: Plex watchlist tools (`watchlist`, `set_watchlist`, "on your watchlist"): build, deploy, live-verify
 
-- **Status:** In progress — S1 done (#577); S2 built on `feat/plex-watchlist-tools`, in review (five passes)
+- **Status:** In progress — S1 done (#577); S2 built on `feat/plex-watchlist-tools`, in review (each pass is in
+  the log below)
 - **ADRs:** ADR-092 (Proposed; Accepted at S6) · **Design:** DESIGN-051 · **PRD:** R-252, R-253,
   R-245 (amended), US-15, AC-29..AC-31, Q-13 resolved · **Glossary:** T-260, T-248 and T-253 amended
 - **Owner:** whoever holds the session; this plan is the tracked owner.
@@ -34,7 +35,7 @@
 | S2 | Build per DESIGN-051: `@hnet/plex` (D-06), migration 0080 + enum (D-07), `@hnet/watch` overlay + formatters (D-02, D-05), `@hnet/domain` `changeWatchlist` + undo (D-03, D-04) and the action-reader audit (D-07), `@hnet/mcp` tools, instructions, budget (D-01, D-08), consent copy (D-09), logging (D-10), stubs (D-11), tests (DESIGN-051 test strategy). | PR green on `lint-and-typecheck`, `test`, `build`; an Opus review's findings fixed; squash-merged. |
 | S3 | Release: merge the release-please PR. | `v0.99.0` (or the next minor) image published. |
 | S4 | Deploy: haynes-ops image tag bump (short PR). | Flux rolled `haynesnetwork-main`; migration 0080 applied (the `init-db`/`migrate` init containers succeeded). |
-| S5 | Live verify through the hop from dev-env (JSON-RPC to `haynesnetwork-mcp-hop`): `tools/list` ≤ 4,096 bytes with nine tools; `watchlist` lists the newest titles; `watch_status` "FROM" says "on your watchlist"; `set_watchlist` add on a title already on Plex and not on the watchlist (so Seerr skips it), confirmed by `watchlist` and by plex.tv `userState`; a repeat add answers "already on"; `undo_last_change` removes it; a remove of a title that is not on the watchlist (never added, or that add just undone) answers "I couldn't find X on your watchlist." with no row and no call (DESIGN-051 D-02, D-03 step 2: a remove resolves only among watchlist titles, with no TMDB fallback); a title on Plex and on the watchlist removed twice within 10 minutes answers "Removed …" and then "X isn't on your watchlist." with no second row and no second PUT, then `undo_last_change` puts it back. **Never add a title that is not on Plex in a live test** (it downloads). Web logs show `watchlist_changed` lines. | All pass; results recorded here. |
+| S5 | Live verify through the hop from dev-env (JSON-RPC to `haynesnetwork-mcp-hop`): `tools/list` ≤ 4,096 bytes with nine tools; `watchlist` lists the newest titles; `watch_status` "FROM" says "on your watchlist"; `set_watchlist` add on a title already on Plex and not on the watchlist (so Seerr skips it), confirmed by `watchlist` and by plex.tv `userState`; a repeat add answers "already on"; `undo_last_change` removes it; the same add and undo for a long-running show on Plex and not on the watchlist (Law & Order: Special Victims Unit or CSI, whose catalog lookup plex.tv answers in up to 1.3 s: it must answer "Added …", DESIGN-051 D-15ab); a remove of a title that is not on the watchlist (never added, or that add just undone) answers "I couldn't find X on your watchlist." with no row and no call (DESIGN-051 D-02, D-03 step 2: a remove resolves only among watchlist titles, with no TMDB fallback); a title on Plex and on the watchlist removed twice within 10 minutes answers "Removed …" and then "X isn't on your watchlist." with no second row and no second PUT, then `undo_last_change` puts it back. **Never add a title that is not on Plex in a live test** (it downloads). Web logs show `watchlist_changed` lines. | All pass; results recorded here. |
 | S6 | hass-sandbox: the WATCH HISTORY prompt line (DESIGN-051 D-12), then the voice bench on the Movie Room agent: R-245's 0.5 s bound against the 2026-09-23 "Assist only" medians. Close out: ADR-092 → Accepted, DESIGN-051 → Accepted, OPS-015 (the watch tools runbook) gains the watchlist tools, HANDOFF, this plan → `completed/`. | Bench within bound (or the regression recorded and the cap revisited); docs PR merged. |
 
 ## Log
@@ -93,3 +94,15 @@
   works with Part Two known, and a near title TMDB cannot settle is asked about, never taken (D-15y). Docs made
   current: DESIGN-051 D-02, D-03 step 2 and D-14f, DESIGN-049 D-13, ADR-092 C-07, PRD AC-30, the `@hnet/watch`,
   `@hnet/domain` and `@hnet/mcp` READMEs, and HANDOFF.
+- 2026-09-26: seventh review pass on PR #580 (findings I1..I7, verified by independent skeptics), fixed on the
+  branch: a failed undo counts toward the unsettled check only when it may have moved the title away from the
+  asked state, so a remove after a refused add whose undo also failed is the cache's "isn't on" and is never
+  re-added by undo (DESIGN-051 D-15z); a TMDB check made with the pool's answer in hand is one attempt, so a
+  `mark_watched` of a named year no longer spends TMDB's retries before its Plex work (D-15aa); plex.tv's catalog
+  lookup, which takes up to 1.3 s for a long-running show and so always missed the 300 ms budget ("add Law & Order
+  SVU" always failed), and the re-read after a failed PUT get one 1.5 s attempt on a discover bundle of their own
+  (`PlexHttp` `getRetries`; D-14a re-derived: 8.0 s worst case, D-15ab); a dash in a title or query is said as a
+  hyphen. Docs made current: DESIGN-051 (D-02, D-03, D-06, D-14a, D-15b/c/g/o/r, the quoted ambiguity answers),
+  DESIGN-049 (the ADR-092 amendment on its overview, D-05 table, D-13 and D-15 undo text), ADR-092's context, PRD
+  AC-30, the `@hnet/mcp`, `@hnet/domain`, `@hnet/arr` and `@hnet/watch` READMEs, this plan's status line and S5
+  (a long-running show's add), and HANDOFF.

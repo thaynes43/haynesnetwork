@@ -1,7 +1,7 @@
 # DESIGN-049: Watch Companion — watch history read-model, recommendations, voice reconcile marks, and the in-cluster MCP surface
 
 - **Status:** Accepted (2026-09-23; live as v0.97.0, PLAN-068 S9–S13 verified)
-- **Last updated:** 2026-09-26 (DESIGN-051 D-15x amends D-13: a year the query names settles same-name pool titles, a pool title of another year sends the query on to TMDB as "not found" does and TMDB's hit of that year wins, and a TMDB hit the pool knows is the pool's title; D-15y leaves D-13's order to the read and mark tools, while a `set_watchlist` add reaches TMDB past a near title). Prior: 2026-09-25 (DESIGN-051 D-15t amends the D-15 ruling row: undo never walks past a pending mark; an abandoned `watched` mark is closed and its planned keys unscrobbled). Prior: 2026-09-25 (Q-02 resolved by ADR-092 / DESIGN-051: the watchlist tools extend D-05, D-13 and D-15; the `tools/list` cap is 4 KB). Prior: 2026-09-23 (Q-01 and Q-03 point at ADR-091 / DESIGN-050, the public connectors). Prior: 2026-09-23 (PLAN-068 S7–S8: D-27 records the MCP-surface and local-stack rulings —
+- **Last updated:** 2026-09-26 (DESIGN-051 D-15aa amends D-13: a TMDB call made while the pool already has an answer is a single attempt; the seventh review pass of PR #580 notes the ADR-092 amendment on the overview, the D-05 table and D-15's undo). Prior: 2026-09-26 (DESIGN-051 D-15x amends D-13: a year the query names settles same-name pool titles, a pool title of another year sends the query on to TMDB as "not found" does and TMDB's hit of that year wins, and a TMDB hit the pool knows is the pool's title; D-15y leaves D-13's order to the read and mark tools, while a `set_watchlist` add reaches TMDB past a near title). Prior: 2026-09-25 (DESIGN-051 D-15t amends the D-15 ruling row: undo never walks past a pending mark; an abandoned `watched` mark is closed and its planned keys unscrobbled). Prior: 2026-09-25 (Q-02 resolved by ADR-092 / DESIGN-051: the watchlist tools extend D-05, D-13 and D-15; the `tools/list` cap is 4 KB). Prior: 2026-09-23 (Q-01 and Q-03 point at ADR-091 / DESIGN-050, the public connectors). Prior: 2026-09-23 (PLAN-068 S7–S8: D-27 records the MCP-surface and local-stack rulings —
   `tools/list` is served from hand-written schemas, 2,712 bytes). Prior: PLAN-068 S5–S6 (D-26 records the
   domain and sync rulings; Q-05 and Q-06 ruled; `name:` keys carry the kind; D-04 corrected after the
   haynes-ops #3131 deploy). Prior: PLAN-068 S4
@@ -21,7 +21,7 @@ dev-env Claude Code / Codex ─────────────────�
                          frontend/haynesnetwork-mcp-hop :8080/mcp   (nginx; injects Bearer; CiliumNetworkPolicy)
                                                               ▼
                          haynesnetwork :3000  POST /api/mcp   (stateless Streamable HTTP, JSON responses)
-                               │  @hnet/mcp: auth → 7 tools
+                               │  @hnet/mcp: auth → 9 tools (7 here, 2 from DESIGN-051)
                                ├─ @hnet/watch: reads, progress math, resolver, scoring, spoken formatting
                                └─ @hnet/domain: Watch Marks, live revalidation ─▶ @hnet/plex/write scrobble/unscrobble
                                                               ▲
@@ -134,6 +134,12 @@ merge green and fail only at release.
 | `mark_watched` | write | Record that the user already watched a title and mark it watched in Plex: the whole show unless a season or episode is given; through=true marks everything up to that episode. | `title` (**required**); `kind`; `season` ≥1; `episode` ≥1; `through` boolean |
 | `dismiss` | write | Stop suggesting a title: reason not_interested (default) or not_mine (someone else watched it on this account). Never changes Plex. | `title` (**required**); `reason` `not_interested`\|`not_mine` |
 | `undo_last_change` | write | Undo the user's last mark_watched or dismiss from the past day. | none |
+
+_(Amended by ADR-092 / DESIGN-051 D-01, 2026-09-25: nine tools. `watchlist` (read) and `set_watchlist` (write,
+owner only) are added, and two descriptions changed: `watch_status` is served as "Whether the user has seen a title,
+how far along he is, and whether it is on Plex and on his watchlist." and `undo_last_change` as "Undo the user's last
+mark_watched, dismiss or set_watchlist from the past day." DESIGN-051 D-01 has the two new rows; `tools.ts` serves
+exactly these.)_
 
 Schema rules (Home Assistant converts schemas and fails the whole entry on one it cannot convert;
 OpenAI strips top-level `oneOf/anyOf/allOf/enum/not`): flat objects, primitive properties,
@@ -420,7 +426,9 @@ around its database rows, with Plex calls outside the transaction (D-14).
   "Blade Runner 2049"), the exact titles without it drop out. When the best title is still another year's, the
   TMDB call runs as for "not found", and its first exact hit of the named year wins; otherwise the pool's answer
   stands. A TMDB hit whose kind and TMDB id the pool knows is the pool's title, not "not on Plex". A
-  `set_watchlist` add weighs the pool further, D-15x and D-15y.)*
+  `set_watchlist` add weighs the pool further, D-15x and D-15y. A TMDB call made while the pool already has an
+  answer is a single attempt, since the pool's answer stands if it fails and `mark_watched`'s Plex work follows it;
+  "not found" keeps the retries, DESIGN-051 D-15aa.)*
 - Ambiguous and not-found never write.
 
 ### D-14 — `mark_watched` flow
@@ -460,7 +468,12 @@ around its database rows, with Plex calls outside the transaction (D-14).
   nothing to undo it says so. Plex's unscrobble clears resume points, so an episode that was half
   watched comes back unwatched from the start (ADR-088 C-04). *Collapse rule (live incident
   2026-09-23, D-26, PR #567):* undo collapses only to a season ≥ 1 key whose every episode flipped,
-  never the show key.
+  never the show key. *(Amended by DESIGN-051, 2026-09-25/26, for every mark: an undo within 30 seconds of the
+  account's last completed undo, with no mark made since, repeats that answer and reverts nothing (the replay guard,
+  D-04; a revert stamped after the undo's own clock counts, D-15i); undos of one account run one at a time under a
+  transaction-scoped advisory lock, waiting for it at most 9 seconds (`lock_timeout`, D-15c, D-15p); a revert is
+  never stamped before the `created_at` of the change it reverts (D-15u); and undo never walks past a pending mark
+  (D-15o, D-15t; see the D-15 row of the D-26 rulings).)*
 
 ### D-16 — Taste Profile
 

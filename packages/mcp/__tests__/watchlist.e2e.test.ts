@@ -8,14 +8,19 @@
 // very next `watchlist` / `watch_status` answers reflecting a change the cache predates, undo, the D-10
 // `watchlist_changed` line (never a title), which Plex bundle each watchlist call went out on (DESIGN-051 D-15,
 // the first pass's test fixes: the two deps are DIFFERENT fakes, so a swap of the 300 ms and the write budget fails
-// here), and an add that reaches TMDB past a near title or a recommendation of another year (D-15x, D-15y).
+// here), and an add that reaches TMDB past a near title or a recommendation of another year (D-15x, D-15y); and from
+// the seventh pass: a TMDB check made with the pool's answer in hand is one attempt, in real time before a mark's
+// Plex work (D-15aa), and an add whose catalog lookup plex.tv answers in a second, through real clients on the
+// discover bundle's production tuning (D-15ab).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { TmdbClient } from '@hnet/arr/read';
 import { watchMarks, type Database } from '@hnet/db';
-import { replaceRecoSignals } from '@hnet/domain';
+import { buildPlexClientBundle, replaceRecoSignals, type PlexBundleOptions, type WatchPlexClients } from '@hnet/domain';
 import { SPOKEN_MAX_CHARS } from '@hnet/watch';
+import { DISCOVER_PLEX_TUNING } from '../src/deps';
 import type { McpDeps } from '../src/index';
 import { DISCOVER, FakePlex, NOW, OWNER, ownerWorld, seedWorld, serveMcp, type McpHttp } from './fixture';
 import { bootMigratedDb, type TestDb } from './helpers';
@@ -52,10 +57,12 @@ const tmdbSearch = {
 function deps(): McpDeps {
   return {
     db,
-    // Tagged per bundle (the short one refuses to write): the discover reads before a change go out on the short
-    // budget, the PUT and its re-read on the write budget (DESIGN-051 D-14a, D-15b).
+    // Tagged per bundle (only the write one writes): the live userState before a change goes out on the short
+    // budget, the catalog lookup and the re-read after a failed PUT on the discover budget, the PUT on the write
+    // budget (DESIGN-051 D-14a, D-15b, D-15ab).
     revalidatePlex: () => fake.clients('short'),
     markPlex: () => fake.clients('write'),
+    discoverPlex: () => fake.clients('discover'),
     tmdb: () => tmdbSearch,
     now: () => clock,
     log: () => {},
@@ -169,9 +176,9 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
       "Added Foundation (2021 show) to your watchlist. It's on Plex.",
     );
     expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${DISCOVER.foundation}`]);
-    // The discover reads on the short budget, the PUT on the write budget.
+    // The catalog lookup on the discover budget (D-15ab), the live state on the short one, the PUT on the write one.
     expect(fake.watchlistCalls()).toEqual([
-      `short:matchDiscover:show:tmdb://93740`,
+      `discover:matchDiscover:show:tmdb://93740`,
       `short:getDiscoverUserState:${DISCOVER.foundation}`,
       `write:addToWatchlist:${DISCOVER.foundation}`,
     ]);
@@ -242,13 +249,13 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
   it('an add plex.tv never confirmed (the PUT failed, its re-read got no answer) says it may download (D-15j)', async () => {
     fake.failWatchlistWrites.add(DISCOVER.andor);
     fake.landFailedWatchlistWrites = true; // it did land…
-    fake.failUserStateReads.add('write'); // …but the write-budget re-read could not tell
+    fake.failUserStateReads.add('discover'); // …but the re-read (discover budget, D-15ab) could not tell
     expect(await say('set_watchlist', { title: 'Andor', action: 'add' })).toBe(
       "Plex didn't answer in time, so I can't tell whether Andor (2022 show) changed. It isn't on Plex yet, so if it was added, Seerr will request it.",
     );
     expect(fake.watchlistCalls().slice(-2)).toEqual([
       `write:addToWatchlist:${DISCOVER.andor}`,
-      `write:getDiscoverUserState:${DISCOVER.andor}`,
+      `discover:getDiscoverUserState:${DISCOVER.andor}`,
     ]);
     expect(fake.watchlist.has(DISCOVER.andor)).toBe(true);
     const rows = await db.select().from(watchMarks);
@@ -468,10 +475,11 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(await say('set_watchlist', { title: 'arrival', action: 'add', kind: 'movie' })).toBe(
       "I couldn't reach Plex, so your watchlist didn't change.",
     );
-    // DESIGN-051 D-15b: the failed PUT's userState re-read went out on the WRITE budget, not the 300 ms one.
+    // DESIGN-051 D-15b, D-15ab: the failed PUT's userState re-read went out on the discover budget (one 1.5 s
+    // attempt), never the 300 ms one.
     expect(fake.watchlistCalls().slice(-2)).toEqual([
       `write:addToWatchlist:${DISCOVER.arrival}`,
-      `write:getDiscoverUserState:${DISCOVER.arrival}`,
+      `discover:getDiscoverUserState:${DISCOVER.arrival}`,
     ]);
     expect(changedLines().at(-1)).toBe(
       '[mcp] watchlist_changed {"consumer":"hop","action":"add","kind":"movie","result":"failed","onPlex":true}',
@@ -482,9 +490,10 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(await say('undo_last_change')).toBe(
       "Your last change, adding Arrival (2016 movie) to your watchlist, may not have reached Plex, so I made sure it's off your watchlist.",
     );
+    // The undo's re-read on the discover budget too (D-15ab).
     expect(fake.watchlistCalls()).toEqual([
       `write:removeFromWatchlist:${DISCOVER.arrival}`,
-      `write:getDiscoverUserState:${DISCOVER.arrival}`,
+      `discover:getDiscoverUserState:${DISCOVER.arrival}`,
     ]);
     expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${DISCOVER.arrival}`]);
   });
@@ -514,5 +523,128 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(r.isError).toBe(true);
     expect(r.text).toMatch(/^Invalid arguments for set_watchlist: action: /);
     expect(fake.calls).toEqual([]);
+  });
+});
+
+/** Resolves after `ms`, or rejects as an aborted fetch does when `signal` fires first. */
+function waitOrAbort(ms: number, signal?: AbortSignal | null): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+    });
+  });
+}
+
+describe('the seventh review pass on PR #580 (DESIGN-051 D-15aa, D-15ab)', () => {
+  it("every tool's TMDB check with the pool's answer in hand goes through the single-attempt client; not found keeps the retries (D-15aa)", async () => {
+    const retrying: string[] = [];
+    const once: string[] = [];
+    const search = (calls: string[]) => ({
+      searchMulti: async (q: string) => {
+        calls.push(q);
+        return { page: 1, total_pages: 1, total_results: 0, results: [] };
+      },
+    });
+    await http.stop();
+    http = await serveMcp({ ...deps(), tmdb: () => search(retrying), tmdbOnce: () => search(once) }, ENV);
+    // Foundation is the pool's (2021); a named 2020 sends the query on to TMDB, whose miss leaves the pool's title.
+    expect(await say('watch_status', { title: 'Foundation 2020' })).toMatch(/^Foundation \(2021 show\): /);
+    expect(await say('mark_watched', { title: 'Foundation 2020', season: 1 })).toBe(
+      'Marked season 1 of Foundation (2021) as watched in Plex, 10 episodes.',
+    );
+    expect(await say('dismiss', { title: 'Foundation 2020' })).toMatch(/Foundation \(2021/);
+    // The search term drops the trailing year (DESIGN-049 D-13).
+    expect(once).toEqual(['Foundation', 'Foundation', 'Foundation']);
+    expect(retrying).toEqual([]);
+    // "Not found" is D-13's own last resort: the retrying client, as on main.
+    expect(await say('watch_status', { title: 'Nosferatu' })).toBe("I couldn't find anything called Nosferatu.");
+    expect(retrying).toEqual(['Nosferatu']);
+  });
+
+  it("mark_watched with a year the pool's title does not have answers inside the deadline while TMDB stalls (D-15aa)", async () => {
+    // Scaled down 1:4 from production: TMDB never answers and each attempt times out at 400 ms (1.5 s live), the
+    // real client; Plex answers each of the mark's calls in 250 ms; the deadline is 1.6 s. Three TMDB attempts (1.2 s)
+    // before the mark's reads and scrobble would miss it, which is what a live `Foundation 2020` did at 9 s.
+    const tmdbRequests: string[] = [];
+    const stalled = ((input: string | URL | Request, init?: RequestInit) => {
+      tmdbRequests.push(String(input instanceof Request ? input.url : input));
+      return waitOrAbort(60_000, init?.signal).then(() => new Response('{}'));
+    }) as typeof fetch;
+    const tmdbClient = (getRetries: number) =>
+      new TmdbClient({ apiKey: 'test-tmdb-key', timeoutMs: 400, retryDelayMs: 0, timeoutCoversBody: true, getRetries, fetchImpl: stalled });
+    const slowMark = (): WatchPlexClients => {
+      const clients = fake.clients();
+      for (const [server, read] of Object.entries(clients.read)) {
+        if (!read) continue;
+        clients.read[server as keyof typeof clients.read] = {
+          ...read,
+          listAllLeaves: async (key) => {
+            await waitOrAbort(250);
+            return read.listAllLeaves(key);
+          },
+        };
+      }
+      for (const [server, write] of Object.entries(clients.write)) {
+        if (!write) continue;
+        clients.write[server as keyof typeof clients.write] = {
+          ...write,
+          scrobble: async (key) => {
+            await waitOrAbort(250);
+            return write.scrobble(key);
+          },
+        };
+      }
+      return clients;
+    };
+    await http.stop();
+    http = await serveMcp(
+      { ...deps(), markPlex: slowMark, tmdb: () => tmdbClient(2), tmdbOnce: () => tmdbClient(0) },
+      ENV,
+      { deadlineMs: 1_600 },
+    );
+    expect(await call('mark_watched', { title: 'Foundation 2020', season: 1 })).toEqual({
+      text: 'Marked season 1 of Foundation (2021) as watched in Plex, 10 episodes.',
+      isError: false,
+    });
+    expect(tmdbRequests).toHaveLength(1);
+    expect(tmdbRequests[0]).toContain('/3/search/multi');
+  });
+
+  it("an add whose catalog lookup plex.tv answers in a second is written, on the discover bundle's own budget (D-15ab)", async () => {
+    // plex.tv's `matches` takes a second for Foundation (a long-running show's lookup, measured up to 1.3 s live):
+    // real Plex clients on the production tuning of the discover bundle, where the 300 ms bundle timed out.
+    const lookups: string[] = [];
+    const slowMatches = (async (input: string | URL | Request, init?: RequestInit) => {
+      lookups.push(String(input instanceof Request ? input.url : input));
+      await waitOrAbort(1_000, init?.signal);
+      const foundation = { ratingKey: DISCOVER.foundation, type: 'show', title: 'Foundation', year: 2021, Guid: [{ id: 'tmdb://93740' }] };
+      return new Response(JSON.stringify({ MediaContainer: { size: 1, Metadata: [foundation] } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+    const server = {
+      baseUrl: 'http://plex.test',
+      token: 'test-plex-token',
+      machineIdentifier: 'test-machine',
+      plexDiscoverBaseUrl: 'https://discover.test',
+      fetchImpl: slowMatches,
+      ...DISCOVER_PLEX_TUNING,
+    };
+    const options: PlexBundleOptions = { haynestower: server, haynesops: server, hayneskube: server };
+    const discover = buildPlexClientBundle(options);
+    await http.stop();
+    http = await serveMcp({ ...deps(), discoverPlex: () => discover }, ENV);
+    expect(await say('set_watchlist', { title: 'Foundation', action: 'add' })).toBe(
+      "Added Foundation (2021 show) to your watchlist. It's on Plex.",
+    );
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0]).toContain('/library/metadata/matches');
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${DISCOVER.foundation}`]);
+    const rows = await db.select().from(watchMarks);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ action: 'watchlist_add', plexResult: 'written' });
   });
 });

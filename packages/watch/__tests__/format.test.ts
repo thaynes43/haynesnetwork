@@ -715,7 +715,7 @@ describe('resolver outcomes and fixed answers', () => {
   });
 });
 
-describe('spoken hygiene (no markdown, bullets, emoji or URLs)', () => {
+describe('spoken hygiene (no markdown, bullets, emoji, URLs or em and en dashes)', () => {
   const nasty = [
     'M*A*S*H',
     '[REC]',
@@ -723,6 +723,10 @@ describe('spoken hygiene (no markdown, bullets, emoji or URLs)', () => {
     'Watch https://example.com now',
     '#Alive',
     'Under_score `code`',
+    // DESIGN-051 D-02: no em or en dashes, from a title either (Plex and plex.tv pass them through verbatim).
+    'Mission: Impossible \u2013 Dead Reckoning Part One',
+    'Mission: Impossible \u2014 Fallout',
+    'Spider\u2013Man\u2014Across',
   ];
 
   it('cleans titles', () => {
@@ -733,6 +737,10 @@ describe('spoken hygiene (no markdown, bullets, emoji or URLs)', () => {
       'Watch now',
       'Alive',
       'Underscore code',
+      // A spaced dash is said as a spaced hyphen, an unspaced one as a hyphen.
+      'Mission: Impossible - Dead Reckoning Part One',
+      'Mission: Impossible - Fallout',
+      'Spider-Man-Across',
     ]);
   });
 
@@ -798,6 +806,7 @@ describe('spoken hygiene (no markdown, bullets, emoji or URLs)', () => {
       expect(text).not.toMatch(/https?:|www\./i);
       expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
       expect(text).not.toMatch(/\n|^\s*[-•]/);
+      expect(text).not.toMatch(/[\u2012-\u2015]/);
       expect(text.length).toBeLessThanOrEqual(SPOKEN_MAX_CHARS);
       expect(text).toMatch(/[.?]$/);
     }

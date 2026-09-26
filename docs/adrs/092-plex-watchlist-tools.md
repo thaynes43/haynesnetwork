@@ -25,8 +25,9 @@ things. The owner wants every agent to be able to add and remove watchlist title
 
 Verified live on 2026-09-25 (research note §3): plex.tv's discover provider adds and removes a title
 with one idempotent `PUT` keyed by the title's discover id (the suffix of its `plex://` guid), resolves
-an external id to that discover id, and reports per-title watchlist state, each in under 300 ms, with
-the owner server token the app already uses for the watchlist read.
+an external id to that discover id, and reports per-title watchlist state, each in under 300 ms for the
+titles tried then (DESIGN-051 D-15ab later measured the external-id match at 0.3 to 1.3 s for a long-running
+show), with the owner server token the app already uses for the watchlist read.
 
 Also verified live (research note §2): **Seerr auto-requests the owner's watchlist.** Every 3 minutes it
 reads his 20 newest watchlist titles and requests, auto-approved, any that are not available or already

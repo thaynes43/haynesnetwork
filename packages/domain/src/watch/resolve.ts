@@ -182,7 +182,15 @@ export interface ResolveWatchTitleInput {
   plexAccountId: number;
   query: string;
   kind?: WatchKind | null;
+  /** The TMDB search (D-13's last resort, for "not found"); null or absent ⇒ no TMDB call at all. */
   tmdb?: WatchTmdbSearch | null;
+  /**
+   * DESIGN-051 D-15aa — the same search with a SINGLE attempt, for a TMDB call made while the pool already has an
+   * answer (a named year the pool's title does not have, an add's near or unconfirmed title, D-15x, D-15y): the
+   * pool's answer stands if it fails, so retries buy little, and `mark_watched`'s Plex work follows it. Absent ⇒
+   * `tmdb`.
+   */
+  tmdbOnce?: WatchTmdbSearch | null;
   /** Bounds the watchlist overlay's look-back when nothing is cached (DESIGN-051 D-05). Default: the clock. */
   now?: Date;
   pool?: 'all' | 'watchlist';
@@ -192,7 +200,8 @@ export interface ResolveWatchTitleInput {
 /**
  * Resolve `query` for the owner (D-13). The TMDB fallback runs for "not found" (and, below, when the pool's answer
  * does not settle the query), only when a client is given, at most once; a TMDB failure leaves the pool's answer
- * ("not found" when the pool had none): the voice turn must not fail on it.
+ * ("not found" when the pool had none): the voice turn must not fail on it. When the pool had an answer, the call
+ * goes through `tmdbOnce` when one is given (a single attempt, DESIGN-051 D-15aa).
  *
  * Every mode (DESIGN-051 D-15x): a year the query names settles the pool's same-name titles as it settles TMDB's
  * hits (D-15v). When the pool's title is another year's ("Shōgun (2024)" and only the 1980 show is known), the TMDB
@@ -262,10 +271,12 @@ async function resolveAny(input: ResolveWatchTitleInput): Promise<WatchResolutio
     fallback = { status: 'not_found' };
   }
   if (!input.tmdb || watchlistOnly) return fallback;
+  // D-15aa: with the pool's answer in hand, the call that may beat it makes one attempt.
+  const search = r.status === 'not_found' ? input.tmdb : (input.tmdbOnce ?? input.tmdb);
 
   let hits: ResolvedWatchTitle[];
   try {
-    hits = await fromTmdb(input.tmdb, input.query, kind);
+    hits = await fromTmdb(search, input.query, kind);
   } catch {
     // TMDB down or unconfigured upstream: the pool's answer stands.
     return fallback;

@@ -33,6 +33,15 @@ export interface WatchPlexReaders {
 }
 
 /**
+ * DESIGN-051 D-15ab — the plex.tv discover reads a Watchlist Change must not cut short, on their own budget (one
+ * attempt of about 1.5 s): the catalog lookup (`matchDiscover`, which plex.tv answers in 0.3 to 1.3 s for a
+ * long-running show, cold or warm) and the `userState` re-read after a failed PUT. A `PlexClientBundle` is assignable.
+ */
+export interface WatchDiscoverReaders {
+  read: Partial<Record<PlexServerSlug, Partial<WatchDiscoverRead>>>;
+}
+
+/**
  * ADR-092 / DESIGN-051 D-03 step 6 — the owner token a watchlist call goes out with: HaynesOps, else HaynesTower
  * (the `watch` sync's order for the watchlist read). The watchlist is the owner's plex.tv account's, not a
  * server's, so any owner token reaches it; the first configured one is used (no fail-over on an error).

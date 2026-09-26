@@ -4,7 +4,7 @@
 // `set_watchlist` answers (entries, kind, started / watched, empty, past the end, a later page, the cap), the
 // undo answers with their Seerr sentences (and, since the third review pass on PR #580, a failed clear, a remove
 // left off, a change still going through, DESIGN-051 D-15k/m/o), the "can't tell them apart" answer (D-15l), and
-// `watch_status`'s four availability sentences.
+// `watch_status`'s four availability sentences; and (the seventh pass, D-02) a title or query with an en or em dash.
 import { describe, expect, it } from 'vitest';
 import type { WatchMarkRow } from '@hnet/db';
 import {
@@ -253,6 +253,22 @@ describe('the watchlist items (D-02): on Plex, started, watched', () => {
     expect(items[0]!.progress).toBe('started');
     // A Title State with `on_plex` is on Plex by itself (no ledger match needed).
     expect(onPlexFor(SEV, { ledger: [], titles: [taster] })).toBe(true);
+  });
+});
+
+describe('a title or query with an en or em dash is said without it (DESIGN-051 D-02)', () => {
+  it('the watchlist, a change and a remove that finds nothing (the query too)', () => {
+    const reckoning = 'Mission: Impossible \u2013 Dead Reckoning Part One';
+    const fallout = 'Mission: Impossible \u2014 Fallout';
+    expect(
+      formatWatchlist([{ kind: 'movie', title: reckoning, year: 2023, onPlex: true, progress: null }], { total: 1, offset: 0 }),
+    ).toBe('Your watchlist has one title. Newest first: Mission: Impossible - Dead Reckoning Part One, a 2023 movie, on Plex.');
+    expect(formatWatchlistChange({ status: 'added', kind: 'movie', title: fallout, year: 2018, onPlex: true })).toBe(
+      "Added Mission: Impossible - Fallout (2018 movie) to your watchlist. It's on Plex.",
+    );
+    expect(formatNotOnWatchlist(`${fallout} \u2014 the sequel`)).toBe(
+      "I couldn't find Mission: Impossible - Fallout - the sequel on your watchlist.",
+    );
   });
 });
 

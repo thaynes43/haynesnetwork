@@ -59,10 +59,13 @@ marks use an ≈ 800 ms-per-attempt bundle (D-14's 3 s).
 `@hnet/watch`'s `selectWatchlist` — the 15-minute cache with the Watchlist Changes since that sync overlaid at
 read time (D-05) — with the D-02 "on Plex" rule and started / watched per title; `watch_status` ends with the
 four-way availability sentence (on the watchlist ⇔ the resolver's matched entries include an overlaid watchlist
-entry). `set_watchlist` (write) runs `@hnet/domain` `changeWatchlist`: its plex.tv discover READS (the
-external-id match, userState) go out on the short 300 ms bundle (`revalidatePlex`), its two PUTs and the
-userState re-read after a failed PUT on the mark bundle (`markPlex`), and its TMDB fallback makes a single attempt
-(`tmdbOnce`, DESIGN-051 D-15). Both answer a principal that is not the Server Owner with "Your Plex watchlist isn't set up
+entry). `set_watchlist` (write) runs `@hnet/domain` `changeWatchlist`: its live userState read before the write goes out
+on the short 300 ms bundle (`revalidatePlex`), its catalog lookup (the external-id match) and the userState re-read
+after a failed PUT on the discover bundle (`discoverPlex`: one 1.5 s attempt, since plex.tv takes up to 1.3 s to
+match a long-running show, DESIGN-051 D-15ab), its two PUTs on the mark bundle (`markPlex`), and its TMDB fallback
+makes a single attempt (`tmdbOnce`, DESIGN-051 D-15g). Every tool's TMDB check made while the pool already has an
+answer (a named year the pool's title does not have) goes through `tmdbOnce` too, since `mark_watched`'s Plex work
+follows it; "not found" keeps the retrying `tmdb` (D-15aa). Both answer a principal that is not the Server Owner with "Your Plex watchlist isn't set up
 for your account yet." (ADR-092 C-04); `watch_status` keeps DESIGN-049's sentence for them.
 
 ## Logging and errors (`src/log.ts`, D-06)
@@ -94,8 +97,12 @@ not found on the watchlist, ambiguous, a year in parentheses settling an add's T
 that read the same answered without a question (D-15v, D-15w), an add reaching TMDB past a near title and a
 recommendation of another year (D-15x, D-15y), a Plex failure and its undo, the very next answers
 reflecting a change the cache predates, undo, a watchlist change leaving Unfinished / recent history / progress
-untouched, the exact `watchlist_changed` lines, and the bundle each watchlist call used: `revalidatePlex` and
-`markPlex` are different fakes, so a budget swap fails), `deps.test.ts` (the production wiring: `tmdbSearchFromEnv`
+untouched, the exact `watchlist_changed` lines, and the bundle each watchlist call used: `revalidatePlex`,
+`markPlex` and `discoverPlex` are different fakes, so a budget swap fails; and from the seventh review pass an add
+whose catalog lookup takes a second through real clients on the discover bundle's production tuning, each tool's
+TMDB check with the pool's answer through `tmdbOnce`, and a `mark_watched` of a named year answering inside a
+scaled deadline while TMDB stalls, D-15aa, D-15ab), `deps.test.ts` (the production wiring: `tmdbSearchFromEnv`
 and `defaultDeps` build `tmdb` with the client's GET retries and `tmdbOnce` with one attempt, and each attempt's
-timer covers a body that stalls after its headers; DESIGN-051 D-15g, D-15p) and `import-guard.test.ts` (D-01:
+timer covers a body that stalls after its headers; `discoverPlex` makes one 1.5 s attempt, so a one-second
+`matches` answer arrives where the 300 ms bundle times out; DESIGN-051 D-15g, D-15p, D-15ab) and `import-guard.test.ts` (D-01:
 `@hnet/watch` imports `@hnet/db`, drizzle-orm and zod only; the MCP SDK only here).

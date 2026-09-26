@@ -30,6 +30,12 @@ export interface PlexHttpOptions {
   timeoutMs?: number;
   /** Delay between GET retry attempts. Default 250ms (tests use 0). */
   retryDelayMs?: number;
+  /**
+   * Retries after the first attempt, for a GET and an idempotent write. Default GET_RETRIES (2). A caller answering
+   * inside a hard deadline sizes it down (DESIGN-051 D-15ab: plex.tv's catalog lookup, whose one slow answer a
+   * retry on the same endpoint would not beat, makes a single longer attempt).
+   */
+  getRetries?: number;
   /** Injectable fetch — tests pass a stub; production uses global fetch. */
   fetchImpl?: typeof fetch;
 }
@@ -76,6 +82,7 @@ export class PlexHttp {
   private readonly product: string;
   private readonly timeoutMs: number;
   private readonly retryDelayMs: number;
+  private readonly getRetries: number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: PlexHttpOptions) {
@@ -84,6 +91,7 @@ export class PlexHttp {
     this.product = options.product ?? DEFAULT_PRODUCT;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+    this.getRetries = Math.max(0, Math.floor(options.getRetries ?? GET_RETRIES));
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -172,7 +180,7 @@ export class PlexHttp {
     read: BodyReader<T>,
   ): Promise<T> {
     const url = this.buildUrl(base, options.query);
-    const attempts = method === 'GET' || idempotent ? 1 + GET_RETRIES : 1;
+    const attempts = method === 'GET' || idempotent ? 1 + this.getRetries : 1;
     let lastError: unknown;
     let inFlight = false;
     for (let i = 0; i < attempts; i++) {
@@ -280,8 +288,8 @@ export class PlexHttp {
    * an unwatched item leaves it unwatched. So a retry after an ambiguous timeout can never flip an item the
    * caller did not ask about, whereas giving up on the first timeout would record a failed Watch Mark for a
    * write that very likely landed. TIME BUDGET: `timeoutMs` bounds EACH attempt, so the worst case is
-   * 3 × timeoutMs + 2 × retryDelayMs — a caller with a total budget sizes the client for it (D-14's 3 s mark
-   * budget needs a per-attempt timeout of about 0.8 s or less).
+   * 3 × timeoutMs + 2 × retryDelayMs with the default `getRetries` — a caller with a total budget sizes the client
+   * for it (D-14's 3 s mark budget needs a per-attempt timeout of about 0.8 s or less).
    */
   async requestIdempotentGet(base: string, options: PlexRequestOptions = {}): Promise<void> {
     await this.send('GET', base, options, false, drain); // PMS answers an empty 200

@@ -61,8 +61,10 @@ watchlists). Issue **#576**: Seerr re-requests a Trashed title still among the o
 watchlist titles (low exposure, needs a decision).
 
 **Status:** S1 merged (#577). S2 is built on `feat/plex-watchlist-tools` as PR **#580** and went through
-six review passes; every finding is fixed on the branch and the rulings are DESIGN-051 D-13..D-15y (the
-PLAN-071 log has one line per pass). Code comments cite those D-IDs, never a "ruling N" number. **Next:** merge #580 once its required checks are green → S3 release
+seven review passes; every finding is fixed on the branch and the rulings are DESIGN-051 D-13..D-15ab (the
+PLAN-071 log has one line per pass). The seventh also changed the MCP's Plex wiring: a third bundle,
+`discoverPlex` (one 1.5 s attempt), serves plex.tv's catalog lookup and the re-read after a failed PUT, since the
+lookup takes up to 1.3 s for a long-running show (D-15ab); S5 now adds and undoes one such show live. Code comments cite those D-IDs, never a "ruling N" number. **Next:** merge #580 once its required checks are green → S3 release
 (the release-please PR) → S4 haynes-ops image tag bump (migration 0080) → S5 live verify through the hop →
 S6 the hass-sandbox prompt line, the voice bench and close-out. **Waiting on the owner:** haynes-ops
 **#3192**, a held draft that gives dev-env's GitOps `CLAUDE.md` the two new tools and a warning never to test

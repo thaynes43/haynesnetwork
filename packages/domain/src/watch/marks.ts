@@ -67,6 +67,7 @@ import {
   isPlexNotFound,
   plexErrorText,
   settleLimited,
+  type WatchDiscoverReaders,
   type WatchPlexClients,
   type WatchPlexReaders,
 } from './plex';
@@ -223,6 +224,11 @@ export interface MarkWatchedInput {
   db?: DbClient;
   plex: WatchPlexClients;
   tmdb?: WatchTmdbSearch | null;
+  /**
+   * The single-attempt TMDB search for a call made while the pool already has an answer (DESIGN-051 D-15aa): the
+   * mark's Plex work follows the resolve, so a stalled TMDB must not spend three attempts first. Absent ⇒ `tmdb`.
+   */
+  tmdbOnce?: WatchTmdbSearch | null;
   actor: WatchMarkActor;
   /** The MCP consumer name (`hop`). */
   consumer: string;
@@ -545,6 +551,7 @@ export async function markWatched(input: MarkWatchedInput): Promise<WatchMarkOut
     query: input.query,
     kind: input.kind ?? null,
     tmdb: input.tmdb ?? null,
+    tmdbOnce: input.tmdbOnce ?? null,
     now,
   });
   if (input.phases) input.phases.resolve = Date.now() - resolveStart;
@@ -863,6 +870,8 @@ async function prepareWriteThrough(
 export interface DismissTitleInput {
   db?: DbClient;
   tmdb?: WatchTmdbSearch | null;
+  /** The single-attempt TMDB search for a call made while the pool already has an answer (DESIGN-051 D-15aa). */
+  tmdbOnce?: WatchTmdbSearch | null;
   actor: WatchMarkActor;
   consumer: string;
   query: string;
@@ -899,6 +908,7 @@ export async function dismissTitle(input: DismissTitleInput): Promise<WatchMarkO
     query: input.query,
     kind: input.kind ?? null,
     tmdb: input.tmdb ?? null,
+    tmdbOnce: input.tmdbOnce ?? null,
     now,
   });
   if (input.phases) input.phases.resolve = Date.now() - resolveStart;
@@ -947,10 +957,15 @@ export interface UndoLastChangeInput {
   db?: DbClient;
   plex: WatchPlexClients;
   /**
-   * Unused by the undo itself since DESIGN-051 D-15b (a Watchlist Change's re-read goes out on the WRITE budget,
-   * `plex.read`); kept so a caller may pass the same readers it passes `changeWatchlist`.
+   * Unused by the undo itself since DESIGN-051 D-15b (a Watchlist Change's re-read never goes out on the 300 ms
+   * budget); kept so a caller may pass the same readers it passes `changeWatchlist`.
    */
   reads?: WatchPlexReaders | null;
+  /**
+   * The discover reads' own budget (DESIGN-051 D-15ab: one attempt of about 1.5 s): an undone Watchlist Change's
+   * `userState` re-read after its inverse PUT failed. Absent ⇒ `plex.read`.
+   */
+  discover?: WatchDiscoverReaders | null;
   actor: WatchMarkActor;
   now?: Date;
   phases?: WatchPhases;
@@ -1187,7 +1202,12 @@ async function undoLocked(input: UndoLastChangeInput): Promise<WatchMarkOutcome<
   // reached Plex, D-13 and D-15a, or for a non-owner's row). No Title State is involved.
   if (isWatchlistAction(mark.action)) {
     const plexStart = Date.now();
-    const out = await revertWatchlistChange({ plex: input.plex, mark, isOwner: role === 'owner' });
+    const out = await revertWatchlistChange({
+      plex: input.plex,
+      discover: input.discover,
+      mark,
+      isOwner: role === 'owner',
+    });
     if (input.phases) input.phases.plex_write = Date.now() - plexStart;
     const complete = out.revertResult === 'written' || out.revertResult === 'none';
     await db

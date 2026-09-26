@@ -54,6 +54,8 @@ export interface PlexClientOptions {
   product?: string;
   timeoutMs?: number;
   retryDelayMs?: number;
+  /** Retries after a GET's (or an idempotent write's) first attempt; default 2 (`PlexHttpOptions.getRetries`). */
+  getRetries?: number;
   /** Injectable fetch for fixture/stub-driven tests (ADR-010: no live-API tests in CI). */
   fetchImpl?: typeof fetch;
 }
