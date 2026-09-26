@@ -53,7 +53,14 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    errored *grabs* — queue-item remove/blocklist/retry/re-search only, never library files;
    census-first, per-class enforcement config, see DESIGN-046). **The janitor is in CENSUS
    (observe-only) rollout until PLAN-065 records L3** — check `.agents/HANDOFF.md` for the
-   current ladder level; advancing it is a standing obligation, not optional.
+   current ladder level; advancing it is a standing obligation, not optional. **ADR-093 adds two
+   more** (DESIGN-052): the **Release Block**, one app-owned release profile per Radarr and Sonarr
+   (`haynesnetwork: deleted releases (managed, do not edit)`) holding "must not contain" terms only,
+   written and read back before a Trash delete (never library files, quality profiles or custom
+   formats; D-13); and the **Seerr watchlist enrollment**, one `settings/main` write per Seerr user
+   turning watchlist sync on, behind the audited `seerr_watchlist_enroll` setting (D-17), plus the
+   one-off Sonarr `animeTags` preflight. Both go through `@hnet/arr/write` from `packages/domain`
+   only.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see

@@ -92,6 +92,14 @@ import {
   refreshWatchlistRegistry,
   type WatchlistRegistryRefreshReport,
   type WatchlistRegistrySources,
+  // ADR-093 C-07 / C-11 / DESIGN-052 D-14 / D-17 / D-23 (PLAN-072 S2 part 2) — the Release Block clients the sweep
+  // records and blocks through, the hourly re-add check, and the Seerr watchlist enrollment step.
+  checkReleaseBlockReadds,
+  enrollSeerrWatchlistSync,
+  type ReaddCheckReport,
+  type ReleaseBlockArrClients,
+  type SeerrEnrollClients,
+  type SeerrEnrollReport,
 } from '@hnet/domain';
 // ADR-044 / DESIGN-022 (PLAN-021) — the read-only Open WebUI admin-API client the `ai-usage-sync` mode
 // polls; the fetched snapshot is handed to the @hnet/domain syncAiUsage single-writer (never a live
@@ -255,6 +263,13 @@ export interface RunSyncOptions {
   /** ADR-093 / DESIGN-052 D-20 — the Watchlist Registry read sources (owner-token plex.tv readers + Seerr). Required by
    *  the `watchlist-registry` mode and by `trash-batch-sweep` (its inline refresh, D-14); tests inject in-memory ones. */
   watchlistRegistry?: WatchlistRegistrySources;
+  /** ADR-093 C-07 / DESIGN-052 D-14 — the Radarr / Sonarr identity reads and the confined release-profile writes the
+   *  `trash-batch-sweep` mode records and blocks each deleted release through (and reads the D-23 re-add check with).
+   *  Required by that mode; built inside @hnet/domain (releaseBlockArrClientsFromEnv); tests inject stubs. */
+  releaseBlockArr?: ReleaseBlockArrClients;
+  /** ADR-093 C-11 / DESIGN-052 D-17 — the Seerr clients the `watchlist-registry` mode enrolls users through while the
+   *  `seerr_watchlist_enroll` setting is on. Optional: absent (no SEERR_API_KEY) ⇒ the step is skipped. */
+  seerrEnroll?: SeerrEnrollClients | null;
   /** Clock injection for deterministic `ai-usage-sync` tests (synced_at / created_at fallbacks). */
   now?: Date;
   /** Injected DB (tests); defaults to the lazy @hnet/db client. */
@@ -357,6 +372,12 @@ export interface SyncReport {
   /** The watchlist-registry run's unexpected error (a thrown refresh) — sets totalFailure for the CLI exit. A clean
    *  `failed` run (roster / owner) is NOT a job failure: it is recorded and logged `run_failed` (DESIGN-052 D-25). */
   watchlistRegistryError?: string;
+  /** ADR-093 / DESIGN-052 D-17 — the enrollment step after the refresh (null when skipped / not this mode). A failure
+   *  is logged and never changes the job's exit. */
+  seerrEnroll?: SeerrEnrollReport | null;
+  /** DESIGN-052 D-23 — the hourly re-add check after the sweep (null when it failed / not this mode). Never changes
+   *  the job's exit. */
+  releaseBlockReadds?: ReaddCheckReport | null;
   /** ADR-064 — the `collections-sync` result (null for every other mode / when it errored). */
   collectionsSync?: (SyncPlexCollectionsReport & { stats: PlexCollectionsStats }) | null;
   /** The collections-sync run's error — sets totalFailure for the CLI exit. */
@@ -584,6 +605,18 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       watchlistRegistryError = error instanceof Error ? error.message : String(error);
       logger.error('watchlist-registry failed', { error: watchlistRegistryError });
     }
+    // DESIGN-052 D-17 — the Seerr enrollment step, at the end of each run while `seerr_watchlist_enroll` is on (it
+    // reads the setting itself; off ⇒ `disabled`, nothing called). A failure logs and never fails the job.
+    let seerrEnroll: SeerrEnrollReport | null = null;
+    if (options.seerrEnroll) {
+      try {
+        seerrEnroll = await enrollSeerrWatchlistSync({ db, seerr: options.seerrEnroll, logger });
+      } catch (error) {
+        logger.warn('[seerr-enroll] step_failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     return {
       mode: options.mode,
       startedAt,
@@ -592,6 +625,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       backfill: null,
       fixesCompleted: null,
       watchlistRegistry,
+      seerrEnroll,
       ...(watchlistRegistryError !== undefined ? { watchlistRegistryError } : {}),
       totalFailure: watchlistRegistryError !== undefined,
     };
@@ -612,6 +646,13 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         'trash-batch-sweep requires the Watchlist Registry read sources (watchlistRegistry)',
       );
     }
+    if (!options.releaseBlockArr) {
+      // ADR-093 C-07 / DESIGN-052 D-14 — no delete without a recorded, blocked release.
+      throw new Error(
+        'trash-batch-sweep requires the Release Block *arr clients (releaseBlockArr)',
+      );
+    }
+    const releaseBlockArr = options.releaseBlockArr;
     let sweep: SweepReport | null = null;
     let sweepError: string | undefined;
     try {
@@ -621,6 +662,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         actorId: null,
         registry: 'refresh',
         registrySources: options.watchlistRegistry,
+        arr: releaseBlockArr,
         logger,
       });
       if (sweep.paused !== null) {
@@ -642,6 +684,15 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       sweepError = error instanceof Error ? error.message : String(error);
       logger.error('trash batch sweep failed', { error: sweepError });
     }
+    // DESIGN-052 D-23 — the hourly re-add check, whether or not a batch was due; a failure is a warning only.
+    let releaseBlockReadds: ReaddCheckReport | null = null;
+    try {
+      releaseBlockReadds = await checkReleaseBlockReadds({ db, arr: releaseBlockArr.read, logger });
+    } catch (error) {
+      logger.warn('[release-block] readd_check_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     return {
       mode: options.mode,
       startedAt,
@@ -650,6 +701,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       backfill: null,
       fixesCompleted: null,
       sweep,
+      releaseBlockReadds,
       ...(sweepError !== undefined ? { sweepError } : {}),
       totalFailure: sweepError !== undefined,
     };

@@ -28,6 +28,9 @@ export interface StubCollection {
   arrAction?: number;
   /** true for app-managed Leaving-Soon manual collections; default false (rule collection). */
   manualCollection?: boolean;
+  /** ADR-093 / DESIGN-052 D-16 — the two flags the aging invariant requires on a rule pool (default true). */
+  listExclusions?: boolean;
+  forceSeerr?: boolean;
   type: string;
   title: string;
   libraryId: number;
@@ -59,6 +62,9 @@ export interface MaintState {
   fail: Set<string>;
   /** Test seam: fired on every GET /rules/exclusion. */
   onExclusionCheck?: (mediaServerId: string) => Promise<void> | void;
+  /** ADR-093 / DESIGN-052 D-14 test seam: fired on every per-item handle, before it answers (a test marks the *arr
+   *  item gone here, or asserts what the database holds at the moment of the delete). */
+  onHandle?: (mediaServerId: string) => Promise<void> | void;
 }
 
 /**
@@ -165,6 +171,8 @@ export function makeMaintainerr(state: MaintState): {
           deleteAfterDays: c.deleteAfterDays,
           arrAction: c.arrAction ?? 0,
           manualCollection: c.manualCollection ?? false,
+          listExclusions: c.listExclusions ?? true,
+          forceSeerr: c.forceSeerr ?? true,
           type: c.type,
           title: c.title,
           libraryId: c.libraryId,
@@ -273,7 +281,9 @@ export function makeMaintainerr(state: MaintState): {
     }
     // writes — per-item delete
     if (method === 'POST' && path === '/collections/media/handle') {
-      state.handled.add(String((body as { mediaId: string }).mediaId));
+      const mediaId = String((body as { mediaId: string }).mediaId);
+      await state.onHandle?.(mediaId);
+      state.handled.add(mediaId);
       return ok(null, 201);
     }
     // writes — the Leaving-Soon manual collection surface (v3.17.0 contracts enforced).

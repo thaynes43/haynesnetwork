@@ -28,6 +28,8 @@ import {
   maintainerrClientBundleFromEnv,
   mamGovernorBundleFromEnv,
   plexClientBundleFromEnv,
+  releaseBlockArrClientsFromEnv,
+  seerrEnrollClientsFromEnv,
   watchlistRegistrySourcesFromEnv,
   resolveArrBaseUrls,
   resolveGovernorConfig,
@@ -74,9 +76,12 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
                            item at a time (ADR-025 — SAFE audit + live exclusions + guardian re-run).
                            ADR-093: when a batch is due it first refreshes the Watchlist Registry inline
                            and takes the Registry Gate; a refusal pauses the sweep cleanly (nothing
-                           deleted, exit 0). Drives Maintainerr; needs MAINTAINERR_URL/MAINTAINERR_API_KEY
-                           plus PLEX_HAYNESOPS_TOKEN / PLEX_HAYNESTOWER_TOKEN (at least one) and
-                           SEERR_API_KEY. No --source.
+                           deleted, exit 0). Every survivor's release is recorded and written into the
+                           app's Radarr/Sonarr release profile (read back) BEFORE its delete; a failed
+                           write also pauses cleanly. Then the hourly re-add check (D-23). Drives
+                           Maintainerr; needs MAINTAINERR_URL/MAINTAINERR_API_KEY, RADARR_/SONARR_API_KEY,
+                           PLEX_HAYNESOPS_TOKEN / PLEX_HAYNESTOWER_TOKEN (at least one) and SEERR_API_KEY.
+                           No --source.
   --mode=space-policy      PROPOSE (never delete) a draft batch for each media array over its space
                            target (ADR-031 — reads *arr /diskspace + createBatchFromPending; admin gate
                            stays the human check). Needs SONARR/RADARR/LIDARR_URL/_API_KEY +
@@ -222,7 +227,9 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
                            failed read never removes a title. READ-ONLY against plex.tv and Seerr. Needs
                            PLEX_HAYNESOPS_TOKEN / PLEX_HAYNESTOWER_TOKEN (at least one); SEERR_API_KEY is
                            optional (absent ⇒ every Seerr source reads as failed). A refresh another run
-                           holds is skipped. No --source. Writes no sync_runs row.
+                           holds is skipped. While the audited seerr_watchlist_enroll setting is on, it
+                           then turns on Seerr watchlist sync for each not-yet-enrolled user (ADR-093
+                           C-11, once per user). No --source. Writes no sync_runs row.
   --source=NAME           limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -502,6 +509,12 @@ async function main(): Promise<number> {
     args.mode === 'watchlist-registry' || args.mode === 'trash-batch-sweep'
       ? watchlistRegistrySourcesFromEnv()
       : undefined;
+  // ADR-093 C-07 / DESIGN-052 D-14 — the Release Block's Radarr/Sonarr clients (the identity reads + the confined
+  // release-profile writes), built INSIDE @hnet/domain so the *arr write surface stays confined. Throws one ArrConfigError
+  // naming a missing RADARR_/SONARR_API_KEY: the sweep never deletes without recording and blocking the release.
+  const releaseBlockArr = args.mode === 'trash-batch-sweep' ? releaseBlockArrClientsFromEnv() : undefined;
+  // ADR-093 C-11 / DESIGN-052 D-17 — the Seerr enrollment clients (null without SEERR_API_KEY ⇒ the step is skipped).
+  const seerrEnroll = args.mode === 'watchlist-registry' ? seerrEnrollClientsFromEnv() : undefined;
   // ADR-068 / DESIGN-049 D-09 — the `watch` mode's Tautulli instances (each skip-if-unconfigured: a missing
   // key just leaves that server's history out of this run) and the OPTIONAL TMDB client for the daily seeds.
   const watchTautulli: WatchTautulliSource[] | undefined =
@@ -683,6 +696,8 @@ async function main(): Promise<number> {
     ...(kapowarrActivityAdapter ? { kapowarrActivityAdapter } : {}),
     ...(plex ? { plex } : {}),
     ...(watchlistRegistry ? { watchlistRegistry } : {}),
+    ...(releaseBlockArr ? { releaseBlockArr } : {}),
+    ...(seerrEnroll ? { seerrEnroll } : {}),
     ...(collectionsRadarr ? { collectionsRadarr } : {}),
     ...(openWebUi ? { openWebUi } : {}),
     ...(authentik ? { authentik } : {}),
@@ -888,6 +903,8 @@ async function main(): Promise<number> {
     ...(report.watchlistRegistryError !== undefined
       ? { watchlistRegistryError: report.watchlistRegistryError }
       : {}),
+    ...(report.seerrEnroll ? { seerrEnroll: report.seerrEnroll } : {}),
+    ...(report.releaseBlockReadds ? { releaseBlockReadds: report.releaseBlockReadds } : {}),
     ...(report.formatPairing ? { formatPairing: report.formatPairing } : {}),
     ...(report.formatPairingError !== undefined
       ? { formatPairingError: report.formatPairingError }

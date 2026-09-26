@@ -22,6 +22,8 @@ import {
   getTrashOverview,
   getTrashSweepStatus,
   getTuningReport,
+  getReleaseBlockSummary,
+  getSeerrEnrollSummary,
   getWatchlistRegistrySummary,
   TrashSweepPausedError,
   greenlightBatch,
@@ -52,6 +54,7 @@ import {
   mapDomainErrors,
   resolveArrBundle,
   resolveMaintainerrBundle,
+  resolveReleaseBlockArr,
   router,
   type TRPCContext,
 } from '../trpc';
@@ -106,11 +109,26 @@ export const trashRouter = router({
 
   /**
    * ADR-093 / DESIGN-052 D-10 — the Trash settings' read-only "Watchlists" card (admins): when the newest registry
-   * check finished, how many accounts were read and how many cannot be, and the per-class / per-status counts. Never a
-   * name or a title (ADR-093 C-06). PLAN-072 S2 part 2 adds the Release Block and re-add counts (D-23).
+   * check finished, how many accounts were read and how many cannot be, and the per-class / per-status counts; the
+   * Release Block's term counts, the import-list exclusion counts and the re-adds of the last 30 days (D-23); and the
+   * Seerr enrollment counts (D-17). Never a name or a title (ADR-093 C-06).
    */
   watchlists: adminProcedure.query(async ({ ctx }) => {
-    return mapDomainErrors(() => getWatchlistRegistrySummary({ db: ctx.db }));
+    return mapDomainErrors(async () => {
+      // D-23 — the exclusion counts are read live; an *arr that does not answer (or is not configured) shows none.
+      let arr: ReturnType<typeof resolveReleaseBlockArr> | null = null;
+      try {
+        arr = resolveReleaseBlockArr(ctx);
+      } catch {
+        arr = null;
+      }
+      const [registry, releaseBlock, enrollment] = await Promise.all([
+        getWatchlistRegistrySummary({ db: ctx.db }),
+        getReleaseBlockSummary({ db: ctx.db, arr }),
+        getSeerrEnrollSummary({ db: ctx.db }),
+      ]);
+      return { ...registry, releaseBlock, enrollment };
+    });
   }),
 
   /**
@@ -354,6 +372,8 @@ export const trashRouter = router({
         const res = await expediteDeletion({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
+          // ADR-093 / DESIGN-052 D-14 — the release is recorded and blocked before the handle.
+          arr: resolveReleaseBlockArr(ctx),
           scope: 'item',
           media: input.media,
           actorId: ctx.user.id,
@@ -389,6 +409,7 @@ export const trashRouter = router({
         const res = await expediteDeletion({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
+          arr: resolveReleaseBlockArr(ctx),
           scope: 'all',
           media: input.media,
           actorId: ctx.user.id,
@@ -608,6 +629,7 @@ export const trashRouter = router({
           const report = await sweepExpiredBatches({
             db: ctx.db,
             maintainerr: resolveMaintainerrBundle(ctx),
+            arr: resolveReleaseBlockArr(ctx),
             batchId: input.batchId,
             forceOverride: input.forceOverride,
             actorId: ctx.user.id,

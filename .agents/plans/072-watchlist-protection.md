@@ -1,10 +1,11 @@
 # PLAN-072: Watchlists protect titles from Trash, and a re-request never re-fetches the deleted release: build, deploy, live-verify, enable, remediate
 
 - **Status:** S0 running (interim protection by hand); S1 done (docs PR #594: the design review's findings ruled
-  into DESIGN-052 D-24). S2 in progress on `feat/watchlist-protection` (draft PR): part 1 built (migration 0081,
-  the registry and its mode, the gate and snapshot, the guard, the D-10 surfaces; rulings in DESIGN-052 D-25);
-  part 2 next (the Deleted-Release Record, the Release Block, the seed script, the Arm/Disarm fix, Seerr enrollment,
-  the D-23 counts, CLAUDE.md hard rule 4).
+  into DESIGN-052 D-24). S2 built on `feat/watchlist-protection` (PR #595, ready for review): part 1 (migration 0081,
+  the registry and its mode, the gate and snapshot, the guard, the D-10 surfaces) and part 2 (the Deleted-Release
+  Record, the Release Block writer and the two-phase sweep and Expedite, the seed script, the Arm/Disarm fix and the
+  grown invariant, Seerr enrollment off behind its setting, the D-23 counts, CLAUDE.md hard rule 4); rulings in
+  DESIGN-052 D-25. Next: the S2 Opus code review, then the `pnpm dev:local` walk and the merge.
 - **ADRs:** ADR-093 (Proposed) · **Design:** DESIGN-052 · **PRD:** R-255..R-259, US-16, AC-33..AC-37, Q-15..Q-16
   (R-86 and R-92 annotated) · **Glossary:** T-261..T-266, T-70 and T-74 amended · **DDD-002:** BC-03 notes.
 - **Owner:** whoever holds the session; this plan is the tracked owner.
@@ -88,3 +89,12 @@ Migration 0081 is additive and stays; the older image ignores its tables and col
   the proposal and deletion guard with keep reasons, `ruleEvaluationFailed` and the sweep's required `registry`
   input and `trash_sweep_status`; the wall note, kept tooltips, Expedite breakdown, paused banner and Watchlists card
   (copy from the driving session's UX pass); the registry half of the D-20 stubs. Rulings in DESIGN-052 D-25.
+- 2026-09-26: S2 part 2 built on `feat/watchlist-protection`: the Deleted-Release Record and D-12 terms (whitelist
+  grammar, self-check, year alternation, low-confidence renamed-only records), the Release Block writer (one app-owned
+  profile per *arr, validate, create or PUT, read-back, expiry, the 3,000 cap, the stranded in-flight settle) and the
+  two-phase sweep and Expedite (identity → record → profile write and read-back → claim → handle → *arr GET → active;
+  a failed write pauses cleanly, a failed handle or a present item abandons, no term keeps `release_unrecorded`), the
+  seed script (`release-block-seed.ts`: ledger, `--legacy-sab`, `--manual`, `--dry-run`), the Arm/Disarm fix and the
+  invariant requiring `listExclusions` and `forceSeerr`, Seerr enrollment (off; the `seerr-watchlist.ts` switch and the
+  anime-tags preflight), the D-23 re-add check and card counts, the *arr and Seerr half of the D-20 stubs, and CLAUDE.md
+  hard rule 4. Rulings in DESIGN-052 D-25ad..D-25aw.

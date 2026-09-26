@@ -40,9 +40,13 @@ import {
   defaultPerKind,
   type DomainLogger,
   type StaticWatchlistFixture,
+  createStaticReleaseBlockArr,
 } from '../src/index';
 import { baseState, makeMaintainerr, movieCollection, type MaintState } from './maintainerr-stub';
 import { bootMigratedDb, createUser, seedVerifiedWatchlistRegistry, type TestDb } from './helpers';
+
+/** ADR-093 / DESIGN-052 D-14 — the in-memory Release Block *arr (every item synthesized recordable). */
+const { arr: releaseArr } = createStaticReleaseBlockArr();
 
 const G1 = '5d776824151a60001f240001';
 const G2 = '5d776824151a60001f240002';
@@ -183,6 +187,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     const { bundle, calls } = makeMaintainerr(state);
     const { sources, calls: reads } = createStaticWatchlistSources(listingG2());
     const report = await sweepExpiredBatches({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       registry: 'refresh',
@@ -224,7 +229,13 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     );
     state.exclusions.add('ms-9003');
     const { bundle } = makeMaintainerr(state);
-    await sweepExpiredBatches({ db: t.db, maintainerr: bundle, registry: 'gate-only', logger });
+    await sweepExpiredBatches({
+      arr: releaseArr,
+      db: t.db,
+      maintainerr: bundle,
+      registry: 'gate-only',
+      logger,
+    });
     const states = await itemStates(batchId);
     expect(states['ms-9001']).toEqual({ state: 'skipped', keepReason: 'not_in_pool' });
     expect(states['ms-9003']).toEqual({ state: 'skipped', keepReason: 'live_excluded' });
@@ -238,6 +249,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     const failing = createStaticWatchlistSources({ ownerId: '1', rosterFails: true });
     const t0 = new Date();
     const report = await sweepExpiredBatches({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       registry: 'refresh',
@@ -261,6 +273,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     // A second paused run keeps paused_since; the banner shows only once the pause is 6 hours old.
     const t1 = new Date(t0.getTime() + 5 * 3_600_000);
     await sweepExpiredBatches({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       registry: 'refresh',
@@ -278,6 +291,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     // The next ok sweep clears the pause.
     const ok = createStaticWatchlistSources({ ownerId: '1' });
     await sweepExpiredBatches({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       registry: 'refresh',
@@ -301,6 +315,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
       actorId: admin,
     });
     const report = await sweepExpiredBatches({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       registry: 'gate-only',
@@ -320,6 +335,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     const { sources, calls } = createStaticWatchlistSources({ ownerId: '1' });
     const { bundle } = makeMaintainerr(baseState({ collections: [pool()] }));
     const report = await sweepExpiredBatches({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       registry: 'refresh',
@@ -339,6 +355,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     const { sources } = createStaticWatchlistSources({ ownerId: '1' });
     await expect(
       sweepExpiredBatches({
+        arr: releaseArr,
         db: t.db,
         maintainerr: bundle,
         registry: 'refresh',
@@ -354,6 +371,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     const { bundle, calls } = makeMaintainerr(state);
     await expect(
       expediteDeletion({
+        arr: releaseArr,
         db: t.db,
         maintainerr: bundle,
         scope: 'all',
@@ -367,6 +385,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
 
     await seedVerifiedWatchlistRegistry(t.db, listingG2());
     const item = await expediteDeletion({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       scope: 'item',
@@ -377,6 +396,7 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     });
     expect(item).toMatchObject({ protectedCount: 1, expeditedCount: 0 });
     const all = await expediteDeletion({
+      arr: releaseArr,
       db: t.db,
       maintainerr: bundle,
       scope: 'all',
@@ -426,7 +446,13 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
       'ms-9003': false,
       'ms-9004': false,
     });
-    await sweepExpiredBatches({ db: t.db, maintainerr: bundle, registry: 'gate-only', logger });
+    await sweepExpiredBatches({
+      arr: releaseArr,
+      db: t.db,
+      maintainerr: bundle,
+      registry: 'gate-only',
+      logger,
+    });
     detail = await getBatchDetail({ db: t.db, batchId });
     const kept = detail.items.find((i) => i.maintainerrMediaId === 'ms-9002')!;
     expect(kept).toMatchObject({ state: 'skipped', keepReason: 'watchlisted', onWatchlist: true });

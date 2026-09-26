@@ -297,6 +297,43 @@ export class TrashSweepPausedError extends Error {
   }
 }
 
+/** DESIGN-052 D-13 / D-21 — where the Release Block writer failed: a term outside the grammar (`validate`), the
+ *  profile write (`put`, including its GET), the read-back (`read_back`), or a copied profile (`duplicate_profile`). */
+export type ReleaseBlockStep = 'validate' | 'put' | 'read_back' | 'duplicate_profile';
+
+/**
+ * ADR-093 C-07 / DESIGN-052 D-13 / D-14: the Release Block (the app's "must not contain" release profile on Radarr or
+ * Sonarr) could not be written and read back before a delete. Nothing is deleted this time: the in-flight records turn
+ * `abandoned`. The scheduled sweep returns a clean `paused_release_block` report; Expedite and the manual Expire now
+ * answer PRECONDITION_FAILED with the banner's wording. Carries the *arr and the step, never a term or a title.
+ */
+export class ReleaseBlockError extends Error {
+  readonly code = 'RELEASE_BLOCK_FAILED' as const;
+  constructor(
+    readonly arrKind: 'radarr' | 'sonarr',
+    readonly step: ReleaseBlockStep,
+    options?: { cause?: unknown },
+  ) {
+    super('Deletions are paused until removals can be done safely.', options);
+  }
+}
+
+/**
+ * ADR-093 C-10 / DESIGN-052 D-16: after a rule-group save, a read-back of the group found the safety-relevant flags
+ * (`listExclusions`, `forceSeerr`, `arrAction`, the server ids, `deleteAfterDays`) not as intended. The save may have
+ * landed partly; the admin sees the failure and the Maintainerr safety audit catches the state. Surfaced as
+ * BAD_GATEWAY. `fields` names the drifted flags (never a value).
+ */
+export class MaintainerrRuleDriftError extends Error {
+  readonly code = 'MAINTAINERR_RULE_DRIFT' as const;
+  constructor(
+    readonly ruleGroupId: number,
+    readonly fields: string[],
+  ) {
+    super(`The rule was saved, but Maintainerr did not keep these settings: ${fields.join(', ')}.`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // ADR-025 / DESIGN-011 — Trash curation pipeline (batch state machine) errors.
 // ---------------------------------------------------------------------------

@@ -40,6 +40,10 @@ import {
   keptReasonTooltip,
   relativeTimeLabel,
   watchlistsHeadline,
+  blockedReleasesValue,
+  exclusionCountValue,
+  oldestBlockLabel,
+  readdSummaryLine,
 } from '../trash';
 
 const base: GuardianPreviewInput = {
@@ -655,5 +659,27 @@ describe('nextSweepSlot / sweepTimeLabel — the honest sweep time (hourly at :S
   it('is null on a garbage / absent deadline (caller falls back to vague copy)', () => {
     expect(sweepTimeLabel(null)).toBeNull();
     expect(sweepTimeLabel('not-a-date')).toBeNull();
+  });
+});
+
+// ADR-093 / DESIGN-052 D-23 — the Watchlists card's Release Block and re-add counts (counts only, never a title).
+describe('the Release Block counts on the Watchlists card (D-23)', () => {
+  it('formats the blocked releases against the cap, the oldest block, and the exclusion counts', () => {
+    expect(blockedReleasesValue(12, 3000)).toBe('12 of 3,000');
+    expect(oldestBlockLabel(null)).toBeNull();
+    expect(oldestBlockLabel(0)).toBe('today');
+    expect(oldestBlockLabel(1)).toBe('1 day');
+    expect(oldestBlockLabel(40)).toBe('40 days');
+    expect(exclusionCountValue(1234)).toBe('1,234');
+    expect(exclusionCountValue(null)).toBe('not available');
+  });
+
+  it('reads the re-adds of the last 30 days in one plain line', () => {
+    expect(readdSummaryLine({ total: 0, sameRelease: 0 })).toBe('Re-added after Trash: none in the last 30 days.');
+    expect(readdSummaryLine({ total: 4, sameRelease: 0 })).toBe('Re-added after Trash: 4, all with a different release.');
+    expect(readdSummaryLine({ total: 4, sameRelease: 1 })).toBe('Re-added after Trash: 4, 1 with the same release.');
+    for (const line of [readdSummaryLine({ total: 2, sameRelease: 1 }), blockedReleasesValue(1, 3000)]) {
+      expect(line).not.toMatch(/[\u2013\u2014]/); // owner rule: no en or em dashes
+    }
   });
 });

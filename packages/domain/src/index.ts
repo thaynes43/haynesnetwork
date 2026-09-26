@@ -226,3 +226,10 @@ export * from './rate-limit';
 export * from './domain-logger';
 export * from './watchlist-registry';
 export * from './watchlist-registry-sources';
+// ADR-093 C-07..C-11 / DESIGN-052 D-11..D-17 / D-23 (PLAN-072 S2 part 2) — the Deleted-Release Record, the Release
+// Block (terms, the confined profile writer, the re-add check), the backfill seed and the Seerr watchlist enrollment.
+export * from './release-terms';
+export * from './release-block';
+export * from './release-block-seed';
+export * from './release-block-static';
+export * from './seerr-enroll';

@@ -20,14 +20,25 @@ import {
 import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import {
+  ArrUpstreamError,
+  MaintainerrRuleDriftError,
   MaintainerrUnsafeError,
   MaintainerrUpstreamError,
   TrashMusicUnsupportedError,
 } from './errors';
+import {
+  abandonReleaseRecords,
+  blockReleases,
+  identifySurvivors,
+  reconcileReleaseBlock,
+  settleReleaseRecords,
+  type ReleaseBlockArrClients,
+  type ReleaseRecordDraft,
+} from './release-block';
 import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainerr-clients';
 import { executeRestore, type ExecuteArrAddResult } from './restore-flow';
 import { openSaveIntent, revokeSaveIntent } from './trash-save-intents';
-import type { DomainLogger } from './domain-logger';
+import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import {
   evaluateRegistryGate,
   evaluateWatchlist,
@@ -142,6 +153,10 @@ export interface AgingCollectionView {
   deleteAfterDays: number | null | undefined;
   arrAction: number | null | undefined;
   manualCollection: boolean | null | undefined;
+  /** ADR-093 C-10 / DESIGN-052 D-16 — a rule pool's delete must write an import-list exclusion (ADR-084 E-3). */
+  listExclusions?: boolean | null | undefined;
+  /** DESIGN-052 D-16 — a rule pool's delete must also clear the Seerr media record (the re-request path). */
+  forceSeerr?: boolean | null | undefined;
 }
 
 /**
@@ -153,6 +168,10 @@ export interface AgingCollectionView {
  *   arrAction === 0 (else the app can no longer drive its deletions).
  * App-managed Leaving-Soon manual collection (title match, ADR-025):
  *   MUST have arrAction === 4 (DO_NOTHING) so Maintainerr never deletes its curated members.
+ *
+ * ADR-093 C-10 / DESIGN-052 D-16 — the invariant grows: an active rule pool MUST also have `listExclusions: true` and
+ * `forceSeerr: true`, so a drift (an Arm/Disarm save that dropped them) refuses the sweep instead of silently changing
+ * what a delete does.
  */
 export function evaluateAgingInvariants(collections: readonly AgingCollectionView[]): string[] {
   const violations: string[] = [];
@@ -180,6 +199,16 @@ export function evaluateAgingInvariants(collections: readonly AgingCollectionVie
     if (c.arrAction !== RULE_POOL_ARR_ACTION) {
       violations.push(
         `The '${label}' rule pool has arrAction ${c.arrAction ?? 'unset'} (must be Delete/0) — the app can no longer manage its deletions`,
+      );
+    }
+    if (c.listExclusions !== true) {
+      violations.push(
+        `The '${label}' rule pool no longer adds deleted titles to the import list exclusions. Turn that setting back on in Maintainerr.`,
+      );
+    }
+    if (c.forceSeerr !== true) {
+      violations.push(
+        `The '${label}' rule pool no longer clears deleted titles from Seerr. Turn that setting back on in Maintainerr.`,
       );
     }
   }
@@ -270,6 +299,8 @@ export async function auditMaintainerr(input: {
             deleteAfterDays: c.deleteAfterDays ?? null,
             arrAction: c.arrAction ?? null,
             manualCollection: c.manualCollection ?? null,
+            listExclusions: c.listExclusions ?? null,
+            forceSeerr: c.forceSeerr ?? null,
           })),
         );
         return { activeCollections, agingViolations };
@@ -1334,6 +1365,9 @@ export interface ExpediteDeletionInput {
    * them). Omit for the legacy/internal whole-set behaviour (process the entire current pending set).
    */
   snapshotMediaIds?: string[];
+  /** ADR-093 C-07 / DESIGN-052 D-11..D-14 — the Radarr / Sonarr reads and the confined release-profile writes: every
+   *  expedited item's release is recorded and blocked before its handle (REQUIRED). */
+  arr: ReleaseBlockArrClients;
   /** D-21 log seam for the gate line (defaults to the JSON-lines console logger). */
   logger?: DomainLogger;
   /** Clock seam for the Registry Gate (tests). */
@@ -1357,6 +1391,9 @@ export interface ExpediteDeletionResult {
   /** ADR-035 — the Maintainerr ids actually handed to the per-item delete handler this run, so the
    *  caller can drop them from the candidate read-model without waiting for the next refresh. */
   expeditedIds: string[];
+  /** ADR-093 / DESIGN-052 D-11 — of `skippedCount`, the items kept because their release could not be recorded (no
+   *  term, no delete). */
+  unrecordedCount: number;
 }
 
 /**
@@ -1522,11 +1559,12 @@ interface ExpediteSurvivor {
  * intent + audit are durable before the (lost-response-prone) destructive call — Fix D-09 discipline.
  */
 async function expediteOneSurvivor(
-  input: Pick<ExpediteDeletionInput, 'db' | 'maintainerr' | 'actorId'>,
+  input: Pick<ExpediteDeletionInput, 'db' | 'maintainerr' | 'actorId' | 'arr' | 'logger'>,
   scope: 'item' | 'all',
   actorName: string | null,
   survivor: ExpediteSurvivor,
-): Promise<void> {
+  release: { recordIds: readonly string[]; arrItemId: number | null },
+): Promise<'active' | 'abandoned' | 'in_flight' | 'none'> {
   await inTransaction(input.db, async (tx) => {
     await tx.insert(ledgerEvents).values({
       mediaItemId: survivor.mediaItemId,
@@ -1543,6 +1581,8 @@ async function expediteOneSurvivor(
         resolution: survivor.resolution,
         imdbRating: survivor.imdbRating,
         tmdbRating: survivor.tmdbRating,
+        // ADR-093 C-07 — the Deleted-Release Records this deletion wrote (ADR-084 D-4's audit row).
+        releaseRecordIds: [...release.recordIds],
       },
     });
     // Same-tx deletion audit: tombstone so Recently Deleted surfaces it now (with actor), and write
@@ -1562,12 +1602,94 @@ async function expediteOneSurvivor(
       tmdbRating: survivor.tmdbRating,
     });
   });
-  await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
-    input.maintainerr.write.handleCollectionMedia(
-      survivor.collectionId,
-      survivor.maintainerrMediaId,
-    ),
-  );
+  // The destructive handle, then the settle of the item's records (DESIGN-052 D-14 step 7): an *arr 404 makes them
+  // active; a failed handle (rethrown, as before) or an item the *arr still has abandons them.
+  let handleError: unknown = null;
+  try {
+    await guardMaintainerrCall('maintainerr POST /collections/media/handle', () =>
+      input.maintainerr.write.handleCollectionMedia(
+        survivor.collectionId,
+        survivor.maintainerrMediaId,
+      ),
+    );
+  } catch (error) {
+    handleError = error;
+  }
+  const settled = await settleReleaseRecords({
+    db: input.db,
+    arr: input.arr.read,
+    arrKind: survivor.arrKind,
+    arrItemId: release.arrItemId,
+    recordIds: release.recordIds,
+    handled: handleError === null,
+    title: survivor.title,
+    logger: input.logger,
+  });
+  if (handleError !== null) throw handleError;
+  return settled;
+}
+
+/**
+ * ADR-093 / DESIGN-052 D-14 — Expedite's identity and Phase A for its survivors (the same order as the sweep, through
+ * the same helpers): identity (three consecutive *arr read failures abort with ArrUpstreamError, nothing written), the
+ * unrecordable kept, then every recordable survivor recorded `in_flight` and the Release Block written and read back
+ * (ReleaseBlockError ⇒ PRECONDITION_FAILED, nothing deleted).
+ */
+async function recordAndBlockReleases(
+  input: Pick<ExpediteDeletionInput, 'db' | 'arr' | 'logger'>,
+  survivors: readonly ExpediteSurvivor[],
+): Promise<{
+  deletable: Array<{ survivor: ExpediteSurvivor; recordIds: string[]; arrItemId: number | null }>;
+  unrecorded: ExpediteSurvivor[];
+}> {
+  const identity = await identifySurvivors({
+    db: input.db,
+    arr: input.arr.read,
+    survivors: survivors.map((s) => ({
+      key: s.maintainerrMediaId,
+      mediaItemId: s.mediaItemId as string,
+      title: s.title,
+    })),
+    logger: input.logger,
+  });
+  if (identity.aborted) {
+    throw new ArrUpstreamError(
+      'Radarr or Sonarr did not answer, so nothing was deleted. Try again when the media apps respond normally.',
+    );
+  }
+  const recordable = survivors.filter((s) => identity.recordable.has(s.maintainerrMediaId));
+  const unrecorded = survivors.filter((s) => !identity.recordable.has(s.maintainerrMediaId));
+  const drafts = (s: ExpediteSurvivor): ReleaseRecordDraft[] => identity.recordable.get(s.maintainerrMediaId) ?? [];
+  const ids =
+    recordable.length > 0
+      ? await blockReleases({
+          db: input.db,
+          arr: input.arr,
+          items: recordable.map((s) => ({ key: s.maintainerrMediaId, drafts: drafts(s) })),
+          origin: 'expedite',
+          logger: input.logger,
+        })
+      : new Map<string, string[]>();
+  return {
+    deletable: recordable.map((survivor) => ({
+      survivor,
+      recordIds: ids.get(survivor.maintainerrMediaId) ?? [],
+      arrItemId: drafts(survivor)[0]?.arrItemId ?? null,
+    })),
+    unrecorded,
+  };
+}
+
+/** D-14 step 8 — after an abandoned record, reconcile so its term leaves the profile (best effort). */
+async function reconcileAfterAbandon(
+  input: Pick<ExpediteDeletionInput, 'db' | 'arr' | 'logger'>,
+  arrKind: 'radarr' | 'sonarr',
+): Promise<void> {
+  try {
+    await reconcileReleaseBlock({ db: input.db, arr: input.arr, arrKind, logger: input.logger });
+  } catch {
+    // logged by the writer; the next reconcile removes the orphan term
+  }
 }
 
 export async function expediteDeletion(
@@ -1626,7 +1748,7 @@ export async function expediteDeletion(
     // Checked BEFORE the guardian so a just-saved cold item is never handled (closes the race).
     const liveExcluded = await fetchLiveExclusions(input.maintainerr, [targetMediaId]);
     if (liveExcluded.has(targetMediaId)) {
-      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [] };
+      return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
     }
     const verdict = classifyGuardian(target);
     if (verdict.keep) {
@@ -1642,19 +1764,19 @@ export async function expediteDeletion(
           actorId: input.actorId,
           reason: 'watch_guardian',
         });
-        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [] };
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
       }
       if (verdict.reason === 'tag' || verdict.reason === 'watchlisted') {
         // Already whitelisted, or on a watchlist (the Watchlist Keep — refused like a tagged item, never auto-saved).
-        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [] };
+        return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
       }
       // unevaluable — not deleted, not force-whitelisted.
-      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0, expeditedIds: [] };
+      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
     }
 
     // Cold + positively evaluated ⇒ delete this one item (intent-first). Use the RESOLVED
     // collectionId, not the client's (defence in depth against a mismatched request).
-    await expediteOneSurvivor(input, 'item', actorName, {
+    const survivor: ExpediteSurvivor = {
       collectionId: target.collectionId,
       maintainerrMediaId: targetMediaId,
       mediaItemId: target.mediaItemId,
@@ -1666,8 +1788,23 @@ export async function expediteDeletion(
       resolution: target.resolution,
       imdbRating: target.imdbRating,
       tmdbRating: target.tmdbRating,
-    });
-    return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0, expeditedIds: [targetMediaId] };
+    };
+    // ADR-093 / DESIGN-052 D-14 — identity, then Phase A (record + Release Block + read-back), then the delete.
+    const releases = await recordAndBlockReleases(input, [survivor]);
+    const one = releases.deletable[0];
+    if (!one) {
+      // No recordable release (D-11): kept, never deleted.
+      return { scope: 'item', protectedCount: 0, expeditedCount: 0, skippedCount: 1, stalePending: 0, expeditedIds: [], unrecordedCount: 1 };
+    }
+    let settled: Awaited<ReturnType<typeof expediteOneSurvivor>>;
+    try {
+      settled = await expediteOneSurvivor(input, 'item', actorName, survivor, one);
+    } catch (error) {
+      await reconcileAfterAbandon(input, survivor.arrKind);
+      throw error;
+    }
+    if (settled === 'abandoned') await reconcileAfterAbandon(input, survivor.arrKind);
+    return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0, expeditedIds: [targetMediaId], unrecordedCount: 0 };
   }
 
   // scope 'all' — per-item loop over the REQUESTED kind's pending set (never /collections/handle).
@@ -1767,16 +1904,40 @@ export async function expediteDeletion(
     });
   }
 
-  // PASS 2 — delete each survivor individually (intent-first, then per-item handle).
+  // ADR-093 / DESIGN-052 D-14 — identity, then Phase A for every survivor, before any delete. An item whose release
+  // cannot be recorded is kept (skipped): no term, no delete.
+  const releases = await recordAndBlockReleases(input, survivors);
+  skippedCount += releases.unrecorded.length;
+
+  // PASS 2 — delete each survivor individually (intent-first, then per-item handle, then the settle).
   let expeditedCount = 0;
   const expeditedIds: string[] = [];
-  for (const survivor of survivors) {
-    await expediteOneSurvivor(input, 'all', actorName, survivor);
+  let anyAbandoned = false;
+  for (const [index, { survivor, recordIds, arrItemId }] of releases.deletable.entries()) {
+    try {
+      const settled = await expediteOneSurvivor(input, 'all', actorName, survivor, { recordIds, arrItemId });
+      if (settled === 'abandoned') anyAbandoned = true;
+    } catch (error) {
+      // The handle failed (the run stops, as before): the survivors not reached keep blocking nothing.
+      const rest = releases.deletable.slice(index + 1).flatMap((d) => d.recordIds);
+      await abandonReleaseRecords({ db: input.db, recordIds: rest });
+      await reconcileAfterAbandon(input, arrKind);
+      throw error;
+    }
     expeditedCount += 1;
     expeditedIds.push(survivor.maintainerrMediaId);
   }
+  if (anyAbandoned) await reconcileAfterAbandon(input, arrKind);
 
-  return { scope: 'all', protectedCount, expeditedCount, skippedCount, stalePending, expeditedIds };
+  return {
+    scope: 'all',
+    protectedCount,
+    expeditedCount,
+    skippedCount,
+    stalePending,
+    expeditedIds,
+    unrecordedCount: releases.unrecorded.length,
+  };
 }
 
 /**
@@ -1915,14 +2076,133 @@ function backfillGroupServerSelection(payload: Record<string, unknown>): Record<
 export async function upsertTrashRule(input: {
   maintainerr: MaintainerrClientBundle;
   payload: Record<string, unknown>;
+  /** D-21 seam for `[trash] rule_save_drift`. */
+  logger?: DomainLogger;
 }): Promise<void> {
-  const payload = backfillGroupServerSelection(decodeRuleGroupRules(input.payload));
-  const hasId = typeof payload.id === 'number';
-  await guardMaintainerrCall(hasId ? 'maintainerr PUT /rules' : 'maintainerr POST /rules', () =>
-    hasId
-      ? input.maintainerr.write.updateRuleGroup(payload)
-      : input.maintainerr.write.createRuleGroup(payload),
-  );
+  const decoded = backfillGroupServerSelection(decodeRuleGroupRules(input.payload));
+  const hasId = typeof decoded.id === 'number';
+  if (!hasId) {
+    await guardMaintainerrCall('maintainerr POST /rules', () =>
+      input.maintainerr.write.createRuleGroup(decoded),
+    );
+    return;
+  }
+  // ADR-093 C-10 / DESIGN-052 D-16 — the update reads the LIVE group first and lifts every top-level-only flag the
+  // payload omits from it, so an Arm/Disarm (isActive) toggle never resets listExclusions / forceSeerr / arrAction.
+  const ruleGroupId = decoded.id as number;
+  const live = await readLiveRuleGroup(input.maintainerr, ruleGroupId);
+  const payload = buildRuleGroupUpdate(decoded, live);
+  await guardMaintainerrCall('maintainerr PUT /rules', () => input.maintainerr.write.updateRuleGroup(payload));
+  // …and verifies them after: a mismatch is an error the admin sees (and the audit's invariant catches the state).
+  const after = await readLiveRuleGroup(input.maintainerr, ruleGroupId);
+  const drift = ruleGroupDrift(payload, after);
+  if (drift.length > 0) {
+    (input.logger ?? consoleDomainLogger).error('[trash] rule_save_drift', { ruleGroupId, fields: drift });
+    throw new MaintainerrRuleDriftError(ruleGroupId, drift);
+  }
+}
+
+/**
+ * DESIGN-052 D-16 — the fields Maintainerr 3.29.0's `updateRules` reads ONLY at the top level of the PUT body
+ * (`rules.service.ts`: `arrAction`, `listExclusions`, `cleanupLeftoverFolders`, `forceSeerr`,
+ * `tautulliWatchedPercentOverride`, the three `*SettingsId`, the three `*QualityProfileId`, `tagInArr`,
+ * `keepInMaintainerrOnly`), while `GET /api/rules` returns them nested under `collection`. An omitted one is reset
+ * (`params.listExclusions ? … : false`, `params.arrAction ? … : 0`, `?? null`).
+ */
+export const RULE_GROUP_TOP_LEVEL_FIELDS = [
+  'arrAction',
+  'listExclusions',
+  'forceSeerr',
+  'tagInArr',
+  'keepInMaintainerrOnly',
+  'cleanupLeftoverFolders',
+  'tautulliWatchedPercentOverride',
+  'radarrSettingsId',
+  'sonarrSettingsId',
+  'sportarrSettingsId',
+  'radarrQualityProfileId',
+  'sonarrQualityProfileId',
+  'sportarrQualityProfileId',
+] as const;
+
+async function readLiveRuleGroup(
+  maintainerr: MaintainerrClientBundle,
+  ruleGroupId: number,
+): Promise<Record<string, unknown>> {
+  const groups = await guardMaintainerrCall('maintainerr GET /rules', () => maintainerr.read.getRules());
+  const live = groups.find((g) => g.id === ruleGroupId);
+  if (!live) {
+    throw new MaintainerrUpstreamError(`Maintainerr has no rule group ${ruleGroupId} to update.`);
+  }
+  return live as Record<string, unknown>;
+}
+
+/**
+ * DESIGN-052 D-16 — the PUT body for an update: each top-level-only flag from the payload's top level when present,
+ * else from the live group's `collection`; `useRules` from the live group when missing. `useRules: false` with rules
+ * present is refused (Maintainerr would delete every rule row). `dataType`, `libraryId` and the manual-collection
+ * fields still round-trip verbatim from the payload (a change there wipes membership). Pure; exported for tests.
+ */
+export function buildRuleGroupUpdate(
+  payload: Record<string, unknown>,
+  live: Record<string, unknown>,
+): Record<string, unknown> {
+  const liveCollection =
+    live.collection !== null && typeof live.collection === 'object'
+      ? (live.collection as Record<string, unknown>)
+      : {};
+  const out: Record<string, unknown> = { ...payload };
+  for (const key of RULE_GROUP_TOP_LEVEL_FIELDS) {
+    if (out[key] === undefined && liveCollection[key] !== undefined) out[key] = liveCollection[key];
+  }
+  if (out.useRules === undefined && typeof live.useRules === 'boolean') out.useRules = live.useRules;
+  const rules = Array.isArray(out.rules) ? out.rules : [];
+  if (out.useRules === false && rules.length > 0) {
+    throw new MaintainerrUpstreamError(
+      'Refusing to save a rule group with rules but useRules off: Maintainerr would delete every rule.',
+    );
+  }
+  return out;
+}
+
+/**
+ * DESIGN-052 D-16 — after the PUT: the flags Maintainerr stores as intended? Compares `arrAction`, `listExclusions`,
+ * `forceSeerr`, `tagInArr`, the Radarr / Sonarr server ids and `collection.deleteAfterDays` (the safety-relevant set;
+ * `cleanupLeftoverFolders` and `keepInMaintainerrOnly` depend on the collection type and are not compared). Returns
+ * the drifted field names. Pure; exported for tests.
+ */
+export function ruleGroupDrift(
+  sent: Record<string, unknown>,
+  after: Record<string, unknown>,
+): string[] {
+  const got =
+    after.collection !== null && typeof after.collection === 'object'
+      ? (after.collection as Record<string, unknown>)
+      : {};
+  const sentCollection =
+    sent.collection !== null && typeof sent.collection === 'object'
+      ? (sent.collection as Record<string, unknown>)
+      : {};
+  const episode = sent.dataType === 'episode' || got.type === 'episode';
+  const intended: Record<string, unknown> = {
+    arrAction: typeof sent.arrAction === 'number' && sent.arrAction !== 0 ? sent.arrAction : 0,
+    listExclusions: sent.listExclusions === true,
+    forceSeerr: !episode && sent.forceSeerr === true,
+    tagInArr: sent.tagInArr === true,
+    radarrSettingsId: sent.radarrSettingsId ?? null,
+    sonarrSettingsId: sent.sonarrSettingsId ?? null,
+  };
+  const drift: string[] = [];
+  for (const [key, want] of Object.entries(intended)) {
+    const have =
+      typeof want === 'boolean' ? got[key] === true : key === 'arrAction' ? (got[key] ?? 0) : (got[key] ?? null);
+    if (have !== want) drift.push(key);
+  }
+  const wantDays = sentCollection.deleteAfterDays;
+  if (wantDays !== undefined && wantDays !== null && Number(got.deleteAfterDays) !== Number(wantDays)) {
+    drift.push('deleteAfterDays');
+  }
+  return drift;
 }
 
 /** ADR-023 / DESIGN-010 — delete a Maintainerr rule group (edit_rules-gated). */

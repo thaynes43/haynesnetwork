@@ -1,16 +1,26 @@
 // @hnet/arr/write — the WRITE surface (DESIGN-005 D-03 write table, D-18 entrypoint
 // split). ADR-008: the ONLY sanctioned *arr write-backs are Fix (mark-failed / delete /
-// search) and Restore (add-item / create-tag). This entrypoint may be imported ONLY by
-// the packages/domain fix/restore writers — enforced by the D-12 guard test that lands
-// with those writers. Exercised exclusively via fetch stubs in tests; never in sync.
+// search) and Restore (add-item / create-tag), plus the later ruled additions (the ADR-083 queue janitor; the
+// ADR-093 Release Block profile and Seerr watchlist enrollment). This entrypoint may be imported ONLY by
+// packages/domain — enforced by the D-12 guard test. Exercised exclusively via fetch stubs in tests.
 import { assertArrEnv, type ArrEnvConfig } from './config';
 import { MaintainerrWriteFailedError } from './errors';
 import { ArrHttp, type QueryParams } from './http';
 import { maintainerrReturnStatusSchema } from './schemas/maintainerr';
+import {
+  arrReleaseProfileSchema,
+  seerrSonarrServerSummarySchema,
+  seerrUserWatchlistSyncSchema,
+  type ArrReleaseProfile,
+  type ArrReleaseProfileInput,
+  type SeerrSonarrServerSummary,
+  type SeerrUserWatchlistSync,
+} from './schemas/release-block';
 import { commandResponseSchema, tagSchema, type ArrCommandResponse, type ArrTag } from './schemas/common';
 import { sonarrSeriesSchema, type SonarrSeries } from './schemas/sonarr';
 import { radarrMovieSchema, type RadarrMovie } from './schemas/radarr';
 import { lidarrArtistSchema, type LidarrArtist } from './schemas/lidarr';
+import { z } from 'zod';
 import type { ArrClientOptions } from './read';
 
 // ---------- add-item payloads (D-16 step 2: Restore re-adds with searches OFF) ----------
@@ -143,8 +153,36 @@ abstract class ArrWriteClientBase {
   }
 }
 
+/**
+ * ADR-093 C-07 / C-08 / DESIGN-052 D-13 (PLAN-072) — the RELEASE BLOCK surface, identical on Radarr 6.4.4 and Sonarr
+ * 4.0.20 (`ReleaseProfileController`): `GET /releaseprofile`, `POST /releaseprofile`, `PUT /releaseprofile/{id}` with
+ * `{id, name, enabled, required, ignored, indexerId, tags}`. The *arr validates only that a profile has a term and that
+ * no term is blank; it never compiles a regex term on write, so the domain writer re-validates every term against the
+ * D-12 grammar before calling these. Hard rule 4: the app writes ONE app-owned profile per *arr, "must not contain"
+ * terms only; it never touches library files, quality profiles or custom formats.
+ */
+abstract class ReleaseProfileWriteClient extends ArrWriteClientBase {
+  /** `GET /releaseprofile` — every release profile (the writer finds its own by exact name). */
+  listReleaseProfiles(): Promise<ArrReleaseProfile[]> {
+    return this.http.requestJson('GET', 'releaseprofile', z.array(arrReleaseProfileSchema));
+  }
+
+  /** `POST /releaseprofile` — create the app's profile (the *arr answers 201 with the created resource). */
+  createReleaseProfile(profile: ArrReleaseProfileInput): Promise<ArrReleaseProfile> {
+    const { id: _id, ...body } = profile;
+    return this.http.requestJson('POST', 'releaseprofile', arrReleaseProfileSchema, { body });
+  }
+
+  /** `PUT /releaseprofile/{id}` — replace the whole profile (the *arr answers 202 with the resource). */
+  updateReleaseProfile(profile: ArrReleaseProfileInput & { id: number }): Promise<ArrReleaseProfile> {
+    return this.http.requestJson('PUT', `releaseprofile/${profile.id}`, arrReleaseProfileSchema, {
+      body: profile,
+    });
+  }
+}
+
 /** Sonarr v3 write client. */
-export class SonarrWriteClient extends ArrWriteClientBase {
+export class SonarrWriteClient extends ReleaseProfileWriteClient {
   constructor(options: ArrClientOptions) {
     super(options, '/api/v3');
   }
@@ -190,7 +228,7 @@ export class SonarrWriteClient extends ArrWriteClientBase {
 }
 
 /** Radarr v3 write client. */
-export class RadarrWriteClient extends ArrWriteClientBase {
+export class RadarrWriteClient extends ReleaseProfileWriteClient {
   constructor(options: ArrClientOptions) {
     super(options, '/api/v3');
   }
@@ -490,6 +528,60 @@ export class MaintainerrWriteClient {
     return this.http.requestVoid('POST', 'collections/removeCollection', {
       body: { collectionId },
     });
+  }
+}
+
+/**
+ * ADR-093 C-11 / DESIGN-052 D-17 (PLAN-072) — the Seerr WRITE client (base path `/api/v1`, `X-Api-Key`; the key acts as
+ * Seerr user 1). Two writes, both confined to packages/domain like every other write client:
+ *
+ * - `setWatchlistSync(userId, {movies, tv})` — `GET /user/{id}/settings/main`, then `POST` the SAME body with the two
+ *   flags set. Seerr 3.4.1's POST assigns `username`, `locale`, `discoverRegion`, `streamingRegion`,
+ *   `originalLanguage` and (for a target without MANAGE_USERS) the four quota fields straight from the body, so the
+ *   whole GET body is echoed back; a partial body would blank them. Returns the flags the response carries.
+ * - `setSonarrAnimeTags(serverId, animeTags)` — `GET /settings/sonarr`, then `PUT /settings/sonarr/{id}` with the SAME
+ *   server object and `animeTags` replaced (Seerr's PUT replaces the whole object), then a read-back. The object holds
+ *   the Sonarr API key: it is echoed to Seerr and never returned, logged or stored.
+ *
+ * Neither body ever leaves this class; callers get flags and ids only.
+ */
+export class SeerrWriteClient {
+  private readonly http: ArrHttp;
+
+  constructor(options: ArrClientOptions) {
+    this.http = new ArrHttp({ ...options, apiBasePath: '/api/v1' });
+  }
+
+  async setWatchlistSync(
+    userId: number,
+    flags: { movies: boolean; tv: boolean },
+  ): Promise<SeerrUserWatchlistSync> {
+    const path = `user/${encodeURIComponent(String(userId))}/settings/main`;
+    const body = await this.http.requestJson('GET', path, z.record(z.string(), z.unknown()));
+    return this.http.requestJson('POST', path, seerrUserWatchlistSyncSchema, {
+      body: { ...body, watchlistSyncMovies: flags.movies, watchlistSyncTv: flags.tv },
+    });
+  }
+
+  async setSonarrAnimeTags(serverId: number, animeTags: number[]): Promise<SeerrSonarrServerSummary> {
+    const servers = await this.http.requestJson(
+      'GET',
+      'settings/sonarr',
+      z.array(z.object({ id: z.number().int() }).passthrough()),
+    );
+    const server = servers.find((s) => s.id === serverId);
+    if (!server) throw new Error(`seerr: no Sonarr server with id ${serverId}`);
+    await this.http.requestJson('PUT', `settings/sonarr/${serverId}`, z.unknown(), {
+      body: { ...server, animeTags },
+    });
+    const after = await this.http.requestJson(
+      'GET',
+      'settings/sonarr',
+      z.array(seerrSonarrServerSummarySchema),
+    );
+    const saved = after.find((s) => s.id === serverId);
+    if (!saved) throw new Error(`seerr: Sonarr server ${serverId} missing after the write`);
+    return saved;
   }
 }
 

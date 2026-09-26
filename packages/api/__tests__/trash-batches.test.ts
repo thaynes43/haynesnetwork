@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 import { trashBatches } from '@hnet/db/schema';
 import {
   buildMaintainerrClientBundle,
+  createStaticReleaseBlockArr,
   upsertMediaItemsBatch,
   type MaintainerrClientBundle,
 } from '@hnet/domain';
@@ -66,7 +67,7 @@ function stubMaintainerr(): MaintainerrClientBundle {
     if (method === 'GET' && path === '/collections')
       return ok([
         // Rule pool: aging-safe horizon + DELETE arrAction (DESIGN-010 errata) so the audit permits sweeps.
-        { id: 7, isActive: true, deleteAfterDays: 9999, arrAction: 0, manualCollection: false, type: 'movie', title: 'Least watched', libraryId: 1, media: [] },
+        { id: 7, isActive: true, deleteAfterDays: 9999, arrAction: 0, manualCollection: false, listExclusions: true, forceSeerr: true, type: 'movie', title: 'Least watched', libraryId: 1, media: [] },
         ...[...manualCollections].map(([id, title]) => ({
           id,
           isActive: true,
@@ -392,6 +393,45 @@ describe('trash — the Registry Gate on the web paths (ADR-093)', () => {
       accountsUnreadable: 1,
       byClass: { owner: 1, friend: 1 },
       lastRun: { status: 'ok', failure: null },
+      // D-23 — the Release Block counts per *arr (exclusions read live), the re-adds, and the enrollment counts.
+      releaseBlock: {
+        kinds: [
+          { arrKind: 'radarr', terms: 0, cap: 3000, oldestTermDays: null, importListExclusions: 0 },
+          { arrKind: 'sonarr', terms: 0, cap: 3000, oldestTermDays: null, importListExclusions: 0 },
+        ],
+        readds: { total: 0, sameRelease: 0, windowDays: 30 },
+      },
+      enrollment: { setting: { enabled: false, onlyUserIds: null }, enrolled: 0, alreadyOn: 0, optedOut: 0 },
     });
+  });
+
+  it('a Release Block that cannot be written refuses: Expedite RELEASE_BLOCK_FAILED, Expire now TRASH_SWEEP_PAUSED', async () => {
+    await seedWatchlistRegistry(t.db, {});
+    const { arr } = createStaticReleaseBlockArr({ fail: new Set(['radarr:create']) });
+    const ctx = { ...makeCtx(t.db, sessionUser(admin), undefined, undefined, stubMaintainerr()), releaseBlockArr: arr };
+    try {
+      await caller(ctx).trash.expediteItem({ media: 'movie', collectionId: 7, maintainerrMediaId: 'ms-1' });
+      throw new Error('expected a refusal');
+    } catch (err) {
+      const shape = wireShape(err, 'trash.expediteItem');
+      expect(shape.data.code).toBe('PRECONDITION_FAILED');
+      expect(shape.data.appCode).toBe('RELEASE_BLOCK_FAILED');
+      expect(shape.message).toBe('Deletions are paused until removals can be done safely.');
+    }
+    const admin2 = caller(ctx);
+    const { batchId } = await admin2.trash.batches.create({ mediaKind: 'movie' });
+    await admin2.trash.batches.greenlight({ batchId, windowDays: 21 });
+    try {
+      await admin2.trash.batches.expire({ batchId, forceOverride: true });
+      throw new Error('expected a refusal');
+    } catch (err) {
+      const shape = wireShape(err, 'trash.batches.expire');
+      expect(shape.data.code).toBe('PRECONDITION_FAILED');
+      expect(shape.data.appCode).toBe('TRASH_SWEEP_PAUSED');
+      expect(shape.message).toBe('Deletions are paused until removals can be done safely.');
+    }
+    const detail = await admin2.trash.batches.get({ batchId });
+    expect(detail.items.every((i) => i.state === 'pending')).toBe(true);
+    await admin2.trash.batches.cancel({ batchId });
   });
 });

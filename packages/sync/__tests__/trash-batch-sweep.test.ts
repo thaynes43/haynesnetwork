@@ -11,7 +11,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildMaintainerrClientBundle,
   createBatchFromPending,
+  createStaticReleaseBlockArr,
   createStaticWatchlistSources,
+  setSeerrWatchlistEnroll,
+  type SeerrEnrollClients,
   getTrashSweepStatus,
   greenlightBatch,
   upsertMediaItemsBatch,
@@ -52,6 +55,9 @@ function stubMaintainerr(state: StubState): MaintainerrClientBundle {
           title: c.title,
           deleteAfterDays: c.deleteAfterDays,
           arrAction: c.arrAction,
+          // ADR-093 / DESIGN-052 D-16 — the invariant requires both flags on a rule pool.
+          listExclusions: true,
+          forceSeerr: true,
           type: c.type,
           libraryId: 1,
           media: [],
@@ -114,6 +120,7 @@ describe('runSync — trash-batch-sweep mode (ADR-025, ADR-093)', () => {
       clients: {},
       maintainerr: stubMaintainerr({ ...freshState(), safe: false }),
       watchlistRegistry: sources,
+      releaseBlockArr: createStaticReleaseBlockArr().arr,
       db: t.db,
     });
     expect(report.mode).toBe('trash-batch-sweep');
@@ -139,6 +146,7 @@ describe('runSync — trash-batch-sweep mode (ADR-025, ADR-093)', () => {
         clients: {},
         maintainerr: bundle,
         watchlistRegistry: failing.sources,
+        releaseBlockArr: createStaticReleaseBlockArr().arr,
         db: t.db,
       });
       expect(report.sweep).toMatchObject({ paused: { reason: 'gate', step: 'stale' }, outcome: 'paused_gate' });
@@ -148,7 +156,7 @@ describe('runSync — trash-batch-sweep mode (ADR-025, ADR-093)', () => {
 
       // The next run with a readable registry refreshes inline, passes the gate and sweeps.
       const ok = createStaticWatchlistSources({ ownerId: '1' });
-      const swept = await runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: bundle, watchlistRegistry: ok.sources, db: t.db });
+      const swept = await runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: bundle, watchlistRegistry: ok.sources, releaseBlockArr: createStaticReleaseBlockArr().arr, db: t.db });
       expect(swept.sweep).toMatchObject({ batchesSwept: 1, paused: null, outcome: 'ok' });
       expect(state.handled).toEqual(['ms-1']);
     });
@@ -156,21 +164,41 @@ describe('runSync — trash-batch-sweep mode (ADR-025, ADR-093)', () => {
     it('an unsafe Maintainerr install fails the sweep (sweepError + totalFailure)', async () => {
       state.safe = false;
       const { sources } = createStaticWatchlistSources({ ownerId: '1' });
-      const report = await runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: bundle, watchlistRegistry: sources, db: t.db });
+      const report = await runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: bundle, watchlistRegistry: sources, releaseBlockArr: createStaticReleaseBlockArr().arr, db: t.db });
       expect(report.sweep).toBeNull();
       expect(report.sweepError).toBeDefined();
       expect(report.totalFailure).toBe(true);
       // Leave nothing due for the next case.
       state.safe = true;
-      await runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: bundle, watchlistRegistry: sources, db: t.db });
+      await runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: bundle, watchlistRegistry: sources, releaseBlockArr: createStaticReleaseBlockArr().arr, db: t.db });
     });
   });
 
-  it('requires a maintainerr bundle and the registry sources', async () => {
+  it('requires a maintainerr bundle, the registry sources and the Release Block clients', async () => {
     await expect(runSync({ mode: 'trash-batch-sweep', clients: {}, db: t.db })).rejects.toThrow(/maintainerr/);
     await expect(
       runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: stubMaintainerr(freshState()), db: t.db }),
     ).rejects.toThrow(/Watchlist Registry/);
+    const { sources } = createStaticWatchlistSources({ ownerId: '1' });
+    await expect(
+      runSync({ mode: 'trash-batch-sweep', clients: {}, maintainerr: stubMaintainerr(freshState()), watchlistRegistry: sources, db: t.db }),
+    ).rejects.toThrow(/Release Block/);
+  });
+
+  it('runs the hourly re-add check after the sweep, whether or not a batch was due (D-23)', async () => {
+    const { sources } = createStaticWatchlistSources({ ownerId: '1' });
+    const { arr, fixture } = createStaticReleaseBlockArr();
+    const report = await runSync({
+      mode: 'trash-batch-sweep',
+      clients: {},
+      maintainerr: stubMaintainerr(freshState()),
+      watchlistRegistry: sources,
+      releaseBlockArr: arr,
+      db: t.db,
+    });
+    expect(report.releaseBlockReadds).toMatchObject({ checked: expect.any(Number), failed: 0 });
+    expect(report.totalFailure).toBe(false);
+    expect(fixture.calls.every((c) => !c.includes('create') && !c.includes('update'))).toBe(true);
   });
 });
 
@@ -204,5 +232,33 @@ describe('runSync — watchlist-registry mode (ADR-093 / DESIGN-052 D-20)', () =
 
   it('requires the registry sources', async () => {
     await expect(runSync({ mode: 'watchlist-registry', clients: {}, db: t.db })).rejects.toThrow(/Watchlist Registry/);
+  });
+
+  it('runs the Seerr enrollment step after the refresh while the setting is on (D-17); off does nothing', async () => {
+    const writes: number[] = [];
+    const seerrEnroll: SeerrEnrollClients = {
+      read: {
+        listUsers: async () => [{ id: 2, plexId: '200', userType: 1 }],
+        getUserWatchlistSync: async () => ({ movies: false, tv: false }),
+        listSonarrServers: async () => [],
+      },
+      write: {
+        setWatchlistSync: async (id: number) => {
+          writes.push(id);
+          return { movies: true, tv: true };
+        },
+        setSonarrAnimeTags: async () => {
+          throw new Error('not used');
+        },
+      },
+    };
+    const { sources } = createStaticWatchlistSources({ ownerId: '1' });
+    const off = await runSync({ mode: 'watchlist-registry', clients: {}, watchlistRegistry: sources, seerrEnroll, db: t.db });
+    expect(off.seerrEnroll).toMatchObject({ status: 'disabled' });
+    await setSeerrWatchlistEnroll({ db: t.db, value: { enabled: true, onlyUserIds: [2] }, actorId: null });
+    const on = await runSync({ mode: 'watchlist-registry', clients: {}, watchlistRegistry: sources, seerrEnroll, db: t.db });
+    expect(on.seerrEnroll).toMatchObject({ status: 'ok', enrolled: 1 });
+    expect(writes).toEqual([2]);
+    expect(on.totalFailure).toBe(false);
   });
 });

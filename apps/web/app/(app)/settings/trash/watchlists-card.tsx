@@ -3,9 +3,19 @@
 // ADR-093 / DESIGN-052 D-10 (PLAN-072) — the READ-ONLY "Watchlists" card on the Trash settings General tab (admins).
 // It says when the Watchlist Registry last checked everyone's watchlists and how many accounts could be read, then the
 // per-class and per-status counts as small labelled numbers. Counts only: never a name, never a title, never whose
-// watchlist (ADR-093 C-06). PLAN-072 S2 part 2 adds the Release Block and re-add counts (D-23) as a second group.
+// watchlist (ADR-093 C-06). A second part shows the Release Block (the blocked releases per *arr against the cap and
+// the oldest one's age), the import-list exclusion counts read live, and the re-adds of the last 30 days (D-23).
 import { trpc } from '@/lib/trpc-client';
-import { WATCHLIST_CLASS_LABELS, WATCHLIST_STATUS_LABELS, watchlistsHeadline } from '@/lib/trash';
+import {
+  RELEASE_BLOCK_KIND_LABELS,
+  WATCHLIST_CLASS_LABELS,
+  WATCHLIST_STATUS_LABELS,
+  blockedReleasesValue,
+  exclusionCountValue,
+  oldestBlockLabel,
+  readdSummaryLine,
+  watchlistsHeadline,
+} from '@/lib/trash';
 
 /** The order the labelled numbers read in (known keys first; an unknown key renders last, verbatim). */
 const CLASS_ORDER = ['owner', 'home_full', 'home_managed', 'friend', 'seerr_only'];
@@ -29,7 +39,7 @@ function Counts({
   testId,
 }: {
   label: string;
-  entries: Array<[string, number]>;
+  entries: Array<[string, number | string]>;
   labels: Record<string, string>;
   testId: string;
 }) {
@@ -88,6 +98,36 @@ export function WatchlistsCard() {
               The latest check didn&apos;t finish. The counts are from the one before.
             </p>
           ) : null}
+          <Counts
+            label="Blocked releases"
+            entries={data.releaseBlock.kinds.map((k) => [
+              k.arrKind,
+              blockedReleasesValue(k.terms, k.cap),
+            ])}
+            labels={RELEASE_BLOCK_KIND_LABELS}
+            testId="watchlists-release-block"
+          />
+          <Counts
+            label="Oldest block"
+            entries={data.releaseBlock.kinds.flatMap((k) => {
+              const age = oldestBlockLabel(k.oldestTermDays);
+              return age === null ? [] : [[k.arrKind, age] as [string, string]];
+            })}
+            labels={RELEASE_BLOCK_KIND_LABELS}
+            testId="watchlists-oldest-block"
+          />
+          <Counts
+            label="Import list exclusions"
+            entries={data.releaseBlock.kinds.map((k) => [
+              k.arrKind,
+              exclusionCountValue(k.importListExclusions),
+            ])}
+            labels={RELEASE_BLOCK_KIND_LABELS}
+            testId="watchlists-exclusions"
+          />
+          <p className="muted watchlists-card__note" data-testid="watchlists-readds">
+            {readdSummaryLine(data.releaseBlock.readds)}
+          </p>
         </>
       ) : null}
     </section>

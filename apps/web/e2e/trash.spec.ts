@@ -108,6 +108,10 @@ function refreshWatchlists(): void {
 }
 
 test.beforeAll(() => refreshWatchlists());
+// ADR-093 / DESIGN-052 D-20 — leave no stub item "deleted" behind for a later spec (the stub *arr 404s those).
+test.afterAll(async ({ request }) => {
+  await request.post(`${env().STUB_MAINTAINERR_URL}/_stub/reset`);
+});
 
 /** Start a batch via the target-picker Modal, taking the default "All current candidates". */
 async function startBatchAll(page: Page): Promise<void> {
@@ -1362,12 +1366,15 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     let puts = (await maintainerrCalls(page)).filter((c) => c.method === 'PUT' && c.path === '/rules');
     expect(puts).toHaveLength(1);
     expect(puts[0]!.body).toMatchObject({ id: 11, isActive: false, dataType: 'movie', libraryId: '1', radarrSettingsId: 3 });
+    // ADR-093 C-10 / DESIGN-052 D-16 — the toggle sends the pool's top-level-only flags back, so they stay on.
+    expect(puts[0]!.body).toMatchObject({ listExclusions: true, forceSeerr: true, arrAction: 0 });
     expect(await maintainerrWipes(page)).toHaveLength(0);
 
     await rule.getByTestId('trash-rule-toggle').click();
     await expect(rule.locator('.badge')).toHaveText('Armed');
     puts = (await maintainerrCalls(page)).filter((c) => c.method === 'PUT' && c.path === '/rules');
     expect(puts).toHaveLength(2);
+    expect(puts[1]!.body).toMatchObject({ isActive: true, listExclusions: true, forceSeerr: true });
     expect(await maintainerrWipes(page)).toHaveLength(0);
 
     await armAndConfirm(rule.getByTestId('trash-rule-delete'));

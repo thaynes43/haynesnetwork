@@ -137,9 +137,10 @@ export function ExpediteReport({
           whitelisted/saved (watched items were auto-whitelisted during this run).
         </li>
         <li>
-          <strong>Skipped</strong> — could not be verified safe <em>or</em> its protection could not
-          be applied, so it was <em>kept, never deleted</em>. Not the same as protected: these items
-          are unknown to the ledger (or unactionable) and are never deleted blind.
+          <strong>Skipped</strong> — could not be verified safe, couldn&apos;t be removed safely,{' '}
+          <em>or</em> its protection could not be applied, so it was <em>kept, never deleted</em>.
+          Not the same as protected: these items could not be cleared, so they are never deleted
+          blind.
         </li>
         {outcome.stalePending > 0 ? (
           <li>

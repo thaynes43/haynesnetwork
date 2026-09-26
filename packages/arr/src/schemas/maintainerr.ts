@@ -50,6 +50,12 @@ export const maintainerrCollectionSchema = z.object({
   /** true for our app-managed Leaving-Soon collections (ADR-025); false for rule collections. */
   manualCollection: z.boolean().nullish(),
   manualCollectionName: z.string().nullish(),
+  /** ADR-093 C-10 / DESIGN-052 D-16 — a delete through this pool writes an import-list exclusion (ADR-084 E-3). The
+   *  aging invariant requires it on every active rule pool. */
+  listExclusions: z.boolean().nullish(),
+  /** DESIGN-052 D-16 — a delete through this pool also deletes the Seerr media record, so a re-request is possible.
+   *  The aging invariant requires it on every active rule pool. */
+  forceSeerr: z.boolean().nullish(),
   libraryId: z.union([z.string(), z.number()]).nullish(),
   type: z.union([z.string(), z.number()]).nullish(), // MediaItemType (movie|show|… as string OR 1..4)
   mediaCount: z.number().int().nullish(),

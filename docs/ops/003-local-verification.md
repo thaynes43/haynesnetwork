@@ -193,6 +193,19 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   (a pool item needs a `plex://` guid or a mapped id to match). `POST <stub-arr>/_stub/seerr-watchlist-error
   {"on":true}` makes every Seerr watchlist page answer Seerr's failed-read body (HTTP 200, `totalPages: 0`), which
   the registry must carry forward, never believe. The admin Watchlists card is on Settings, Trash, General.
+- **The Release Block** (ADR-093 C-07 / DESIGN-052 D-11..D-17; PLAN-072 S2 part 2). Every Trash delete (Expedite,
+  Expire now, the sweep) first reads the release's identity from the stub *arr (`/api/v3/movie/{id}`, `moviefile`,
+  `history/movie`, or `series/{id}`, `episodefile`, `history/series`), writes its "must not contain" term into the
+  app's release profile and reads it back, and only then calls the Maintainerr handle; afterwards the stub *arr
+  answers 404 for the deleted item, so the record turns `active`. `GET <stub-arr>/_stub/release-profiles` shows the
+  profile (one list: the stub serves Radarr and Sonarr alike); `trash_deleted_releases` holds the records. The Fixture
+  (a scene name, group `STUB`, 1080p) records a group term; Vanished Heist (no file) records a term-less `none` row.
+  The Watchlists card shows the blocked-release counts, the exclusion counts and the re-adds. The seed script runs
+  against the stack's env: `pnpm --filter @hnet/sync exec tsx src/scripts/release-block-seed.ts --dry-run` (then
+  `--apply`, optionally `--legacy-sab=<file>` and `--manual=<file>`). The Seerr switch: `… tsx
+  src/scripts/seerr-watchlist.ts --show`, `--enroll=2` (then re-run `--mode=watchlist-registry`: the stub Seerr's
+  `settings/main` flags flip), `--enroll=off`, `--anime-tags=0:1`. The Rules tab's Disarm / Arm now sends
+  `listExclusions` / `forceSeerr` back; the stub Maintainerr stores them the way Maintainerr 3.29.0 does.
 - **Public MCP connectors** (ADR-091 / DESIGN-050; PLAN-069). `POST /mcp` takes only delegated OAuth
   tokens; a local client can walk the whole flow against the stub OIDC with curl alone (verified 2026-09-23,
   port 3200 — substitute yours). Type `plex-linked-owner-id` at the `dev:local` terminal first (or `POST

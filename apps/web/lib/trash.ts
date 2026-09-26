@@ -749,3 +749,33 @@ export const WATCHLIST_STATUS_LABELS: Record<string, string> = {
   unreadable: 'Kept from an old check',
   unresolvable: "Can't be read",
 };
+
+// ── the Release Block and re-add counts on the Watchlists card (ADR-093 / DESIGN-052 D-23) ──────────────────────────
+// Counts only, never a title (ADR-093 C-06 applies to the card as a whole).
+
+/** The per-*arr row label (Radarr holds the movies, Sonarr the TV). */
+export const RELEASE_BLOCK_KIND_LABELS: Record<string, string> = { radarr: 'Movies', sonarr: 'TV' };
+
+/** "12 of 3,000" — the live blocked releases against the cap. */
+export function blockedReleasesValue(terms: number, cap: number): string {
+  return `${terms.toLocaleString('en-US')} of ${cap.toLocaleString('en-US')}`;
+}
+
+/** "4 days" / "1 day" / "today" — the oldest live block's age; null when there is none. */
+export function oldestBlockLabel(days: number | null): string | null {
+  if (days === null) return null;
+  if (days < 1) return 'today';
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
+
+/** The import-list exclusion count, or "not available" when the *arr did not answer. */
+export function exclusionCountValue(count: number | null): string {
+  return count === null ? 'not available' : count.toLocaleString('en-US');
+}
+
+/** "Re-added after Trash: 4, all with a different release." (the last 30 days). */
+export function readdSummaryLine(readds: { total: number; sameRelease: number }): string {
+  if (readds.total === 0) return 'Re-added after Trash: none in the last 30 days.';
+  if (readds.sameRelease === 0) return `Re-added after Trash: ${readds.total}, all with a different release.`;
+  return `Re-added after Trash: ${readds.total}, ${readds.sameRelease} with the same release.`;
+}

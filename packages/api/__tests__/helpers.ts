@@ -18,6 +18,7 @@ import {
   refreshWatchlistRegistry,
   silentDomainLogger,
   type StaticWatchlistFixture,
+  createStaticReleaseBlockArr,
 } from '@hnet/domain';
 import {
   SEEDED_ROLE_IDS,
@@ -179,6 +180,9 @@ export function makeCtx(
   return {
     db,
     user,
+    // ADR-093 / DESIGN-052 D-14 — every Trash delete path records and blocks the release through the *arr; tests get
+    // the in-memory Release Block stub (every item recordable) unless they inject their own.
+    releaseBlockArr: createStaticReleaseBlockArr().arr,
     ...(arr !== undefined ? { arr } : {}),
     ...(plex !== undefined ? { plex } : {}),
     ...(maintainerr !== undefined ? { maintainerr } : {}),
