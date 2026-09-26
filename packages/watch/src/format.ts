@@ -523,10 +523,22 @@ export type UndoView =
 /**
  * What undoing a Watchlist Change came to (DESIGN-051 D-04, PR #580 ruling 2): `reverted` (the inverse call
  * landed), `cleared` (a failed add's removal landed), `not_sent` (the change never went out: nothing to undo),
- * `left_as_is` (a failed remove: its inverse, an add, could download, so nothing was sent), `failed` (the
- * inverse call failed; the change stays for the next undo), `unknown` (plex.tv never said).
+ * `left_as_is` (a failed remove: its inverse, an add, could download, so nothing was sent), `left_off` (a remove
+ * sent over an add plex.tv never settled, D-15k: nothing ever showed the title on the list, so no add was sent),
+ * `failed` (the inverse call failed; the change stays for the next undo), `clear_failed` (a failed add's removal
+ * failed, D-15m: the add never confirmed, so the title is not said to be on the list), `unknown` (plex.tv never
+ * said), `in_progress` (the change is still going through, D-15o: nothing was undone, nothing older either).
  */
-export type WatchlistUndoOutcome = 'reverted' | 'cleared' | 'not_sent' | 'left_as_is' | 'failed' | 'unknown';
+export type WatchlistUndoOutcome =
+  | 'reverted'
+  | 'cleared'
+  | 'not_sent'
+  | 'left_as_is'
+  | 'left_off'
+  | 'failed'
+  | 'clear_failed'
+  | 'unknown'
+  | 'in_progress';
 
 /**
  * DESIGN-051 D-15j — the Seerr sentence of an add whose own answer may never have been heard: an "already on" add
@@ -566,6 +578,19 @@ function formatWatchlistUndo(r: Extract<UndoView, { undone: true }>): string {
     case 'left_as_is':
       return capSpoken(
         `Your last change, ${change} your watchlist, never confirmed with Plex, so I left your watchlist as it is.`,
+      );
+    case 'left_off':
+      // D-15k: the remove followed an add plex.tv never confirmed, so the title was never known to be on the list.
+      return capSpoken(
+        `Your last change, ${change} your watchlist, came after an add Plex never confirmed, so I left it off your watchlist. To put it back, ask me to add it.`,
+      );
+    case 'in_progress':
+      // D-15o: the change has not finished; undo neither waits for it nor reaches past it to an older change.
+      return capSpoken(`Plex is still working on your last change, ${change} your watchlist. Say undo again in a moment.`);
+    case 'clear_failed':
+      // D-15m: the add itself never confirmed, so the title is not said to be on the watchlist.
+      return capSpoken(
+        `I couldn't reach Plex, so I couldn't make sure ${label} is off your watchlist. Say undo again to retry.`,
       );
     case 'cleared':
       return capSpoken(
@@ -728,6 +753,28 @@ export function formatWatchlistChange(v: WatchlistChangeView): string {
     default:
       return capSpoken(`I found ${label} but not in Plex's catalog, so your watchlist didn't change.`);
   }
+}
+
+/**
+ * DESIGN-051 D-15l — one spoken title matched several watchlist titles that plex.tv keeps apart (different discover
+ * ids) but the resolver cannot: they share a name, year and kind (or an id links them). No `set_watchlist` argument
+ * can pick one, so this is never a question: "Your watchlist has more than one Dark Matter (2024 show), and I can't
+ * tell them apart, so I left it as it is. You can change it in the Plex app." Titles that read differently are named.
+ */
+export function formatWatchlistDuplicates(
+  options: readonly Pick<ResolverCandidate, 'title' | 'year' | 'kind'>[],
+): string {
+  const labels = [...new Set(options.map((o) => titleYearKind(o.title, o.year, o.kind)))].slice(0, 3);
+  const change = 'You can change it in the Plex app.';
+  if (labels.length <= 1) {
+    return capSpoken(
+      `Your watchlist has more than one ${labels[0] ?? 'title by that name'}, and I can't tell them apart, so I left it as it is. ${change}`,
+    );
+  }
+  const named = `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+  return capSpoken(
+    `${named} on your watchlist look like the same title to me, so I left your watchlist as it is. ${change}`,
+  );
 }
 
 /**

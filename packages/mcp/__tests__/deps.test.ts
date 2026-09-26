@@ -1,7 +1,7 @@
 // DESIGN-051 D-15g (PR #580 ruling 9) — the production wiring of the two TMDB searches: `set_watchlist`'s fallback
 // (`tmdbOnce`) makes a SINGLE attempt, every other tool's (`tmdb`) keeps the client's GET retries. The watchlist e2e
 // proves which one each tool uses; this proves `defaultDeps` builds them that way (a stalled TMDB with three
-// attempts would push an add past the 9 s MCP deadline).
+// attempts would push an add past the 9 s MCP deadline), and that each attempt's timer covers the body (D-15p).
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultDeps, tmdbSearchFromEnv } from '../src/deps';
 
@@ -35,6 +35,26 @@ describe('the TMDB searches of the MCP deps (DESIGN-051 D-15g)', () => {
     ).rejects.toThrow();
     expect(three.calls).toHaveLength(3);
     expect(tmdbSearchFromEnv({}, { once: true })).toBeNull();
+  });
+
+  it('each attempt\'s timer covers the body (D-15p): a TMDB body that stalls after its headers ends at the bound', async () => {
+    const stalling = ((_input: unknown, init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"page":1,'));
+              init?.signal?.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )) as typeof fetch;
+    const start = Date.now();
+    const search = tmdbSearchFromEnv({ TMDB_API_KEY: 'test-tmdb-key' }, { once: true, fetchImpl: stalling });
+    await expect(search?.searchMulti('dune')).rejects.toThrow(/timed out/);
+    // One 1.5 s attempt, not undici's 300 s body timeout.
+    expect(Date.now() - start).toBeLessThan(4_000);
   });
 
   it('defaultDeps: `tmdbOnce` (set_watchlist) is the single-attempt client, `tmdb` keeps the retries', async () => {

@@ -2,7 +2,9 @@
 // overlay (an add, a remove, a revert, an event the cache already reflects, the 5-minute margin, no cached rows,
 // events ordered by time then mark id), the same-title rule, the statement filter, the `watchlist` and
 // `set_watchlist` answers (entries, kind, started / watched, empty, past the end, a later page, the cap), the
-// undo answers with their Seerr sentences, and `watch_status`'s four availability sentences.
+// undo answers with their Seerr sentences (and, since the third review pass on PR #580, a failed clear, a remove
+// left off, a change still going through, DESIGN-051 D-15k/m/o), the "can't tell them apart" answer (D-15l), and
+// `watch_status`'s four availability sentences.
 import { describe, expect, it } from 'vitest';
 import type { WatchMarkRow } from '@hnet/db';
 import {
@@ -10,6 +12,7 @@ import {
   formatUndoResult,
   formatWatchlist,
   formatWatchlistChange,
+  formatWatchlistDuplicates,
   formatWatchlistNotSetUp,
   formatWatchStatus,
   type WatchlistItemView,
@@ -396,6 +399,60 @@ describe('formatUndoResult for a Watchlist Change (D-04)', () => {
     expect(
       formatUndoResult({ ...base, action: 'watchlist_remove', revertResult: 'failed', watchlistOutcome: 'unknown' }),
     ).toBe("Plex didn't answer in time, so I can't tell whether The Matrix (1999 movie) changed.");
+  });
+
+  // The third review pass on PR #580 (DESIGN-051 D-15k, D-15m, D-15o).
+  it('a failed clear, a remove left off, a change still going through: none says more than is known', () => {
+    // D-15m: the add never confirmed, so a failed removal of it never says the title "is still on" the watchlist.
+    const clearFailed = formatUndoResult({
+      ...base,
+      action: 'watchlist_add',
+      revertResult: 'failed',
+      watchlistOutcome: 'clear_failed',
+    });
+    expect(clearFailed).toBe(
+      "I couldn't reach Plex, so I couldn't make sure The Matrix (1999 movie) is off your watchlist. Say undo again to retry.",
+    );
+    // A written add's failed inverse still says it is on (that one is known).
+    expect(formatUndoResult({ ...base, action: 'watchlist_add', revertResult: 'failed', watchlistOutcome: 'failed' })).toBe(
+      "I couldn't reach Plex, so The Matrix (1999 movie) is still on your watchlist. Say undo again to retry.",
+    );
+    // D-15k: a remove sent over an add plex.tv never settled is not re-added.
+    const leftOff = formatUndoResult({
+      ...base,
+      action: 'watchlist_remove',
+      revertResult: 'none',
+      watchlistOutcome: 'left_off',
+    });
+    expect(leftOff).toBe(
+      'Your last change, removing The Matrix (1999 movie) from your watchlist, came after an add Plex never confirmed, so I left it off your watchlist. To put it back, ask me to add it.',
+    );
+    // D-15o: still pending.
+    const inProgress = formatUndoResult({ ...base, action: 'watchlist_add', revertResult: null, watchlistOutcome: 'in_progress' });
+    expect(inProgress).toBe(
+      'Plex is still working on your last change, adding The Matrix (1999 movie) to your watchlist. Say undo again in a moment.',
+    );
+    for (const text of [clearFailed, leftOff, inProgress]) expect(text).not.toMatch(/[\u2014\u2013]/);
+  });
+});
+
+describe('formatWatchlistDuplicates (D-15e, D-15l): one spoken title, several watchlist titles', () => {
+  it('is never a question: nothing the owner can say picks one of them', () => {
+    const dark = { title: 'Dark Matter', year: 2024, kind: 'show' as const };
+    const same = formatWatchlistDuplicates([dark, dark]);
+    expect(same).toBe(
+      "Your watchlist has more than one Dark Matter (2024 show), and I can't tell them apart, so I left it as it is. You can change it in the Plex app.",
+    );
+    expect(same).not.toMatch(/\?|Which one/);
+    // Titles an id linked but that read differently are named.
+    const linked = formatWatchlistDuplicates([dark, { ...dark, year: 2023 }]);
+    expect(linked).toBe(
+      "Dark Matter (2024 show) and Dark Matter (2023 show) on your watchlist look like the same title to me, so I left your watchlist as it is. You can change it in the Plex app.",
+    );
+    expect(linked).not.toMatch(/\?|[\u2014\u2013]/);
+    expect(formatWatchlistDuplicates([dark, { ...dark, year: 2023 }, { ...dark, year: 2022 }])).toMatch(
+      /^Dark Matter \(2024 show\), Dark Matter \(2023 show\) and Dark Matter \(2022 show\) on your watchlist/,
+    );
   });
 });
 

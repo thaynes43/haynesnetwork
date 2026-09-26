@@ -4,6 +4,15 @@
 
 /** Base class — lets callers `catch (e) { if (e instanceof PlexError) … }`. */
 export class PlexError extends Error {
+  /**
+   * DESIGN-051 D-15n (PR #580 review) — whether the request that failed may still be applied by the server: this
+   * attempt, or an earlier attempt of the same retried request (`PlexHttp` sets it on the error it finally
+   * throws), was aborted by our timeout after it went out, lost its connection, or met a gateway timeout (504).
+   * A caller that re-reads the server's state afterwards can then trust only a re-read showing the change, never
+   * one showing the old state: the aborted attempt may land a moment later.
+   */
+  mayStillLand = false;
+
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = new.target.name;
@@ -28,6 +37,8 @@ export class PlexHttpError extends PlexError {
     readonly bodySnippet?: string,
   ) {
     super(`${method} ${url} → HTTP ${status}${bodySnippet ? ` — ${bodySnippet}` : ''}`);
+    // A gateway timeout: the upstream may still be working on the request.
+    this.mayStillLand = status === 504;
   }
 }
 
@@ -48,6 +59,8 @@ export class PlexNetworkError extends PlexError {
     options?: { cause?: unknown },
   ) {
     super(`${method} ${url} → network request failed (host unreachable, refused, or DNS)`, options);
+    // Which side of sending the connection failed on is not known: the request may have gone out.
+    this.mayStillLand = true;
   }
 }
 
@@ -60,6 +73,8 @@ export class PlexTimeoutError extends PlexError {
     readonly timeoutMs: number,
   ) {
     super(`${method} ${url} → timed out after ${timeoutMs}ms`);
+    // Our own abort: the request went out, and the server may still apply it.
+    this.mayStillLand = true;
   }
 }
 

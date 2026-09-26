@@ -321,6 +321,37 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(await db.select().from(watchMarks)).toEqual([]);
   });
 
+  it('two watchlist titles under one name: no question nothing can answer, nothing changed (D-15e, D-15l)', async () => {
+    const OTHER = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+    fake.catalog.push({ id: OTHER, kind: 'show', title: 'Dark Matter', year: 2024, guids: ['tmdb://999001'] });
+    fake.watchlist.set(OTHER, 0);
+    const none = { tvdbId: null, imdbId: null };
+    await replaceRecoSignals({
+      db,
+      plexAccountId: OWNER,
+      source: 'watchlist',
+      rows: [
+        { ...none, kind: 'show', title: 'Severance', year: 2022, tmdbId: 95396, tvdbId: 371980, plexGuid: null, rank: 0 },
+        { ...none, kind: 'show', title: 'Dark Matter', year: 2024, tmdbId: 203744, plexGuid: `plex://show/${DISCOVER.darkMatter}`, rank: 1 },
+        { ...none, kind: 'show', title: 'Dark Matter', year: 2024, tmdbId: 999001, plexGuid: `plex://show/${OTHER}`, rank: 2 },
+      ],
+      fetchedAt: NOW,
+    });
+    fake.calls.length = 0;
+    const answer =
+      "Your watchlist has more than one Dark Matter (2024 show), and I can't tell them apart, so I left it as it is. You can change it in the Plex app.";
+    // Every retry would land here again (a year only scores, it never splits the group), so it is never a question.
+    for (const title of ['dark matter', 'Dark Matter 2024']) {
+      expect(await say('set_watchlist', { title, action: 'remove' })).toBe(answer);
+    }
+    expect(await say('set_watchlist', { title: 'dark matter', action: 'add', kind: 'show' })).toBe(answer);
+    expect(fake.calls).toEqual([]);
+    expect(await db.select().from(watchMarks)).toEqual([]);
+    expect(changedLines().at(-1)).toBe(
+      '[mcp] watchlist_changed {"consumer":"hop","action":"add","kind":"show","result":"ambiguous","onPlex":null}',
+    );
+  });
+
   it('a Plex failure changes nothing it says it did; its undo removes the title anyway (a removal never downloads)', async () => {
     fake.failWatchlistWrites.add(DISCOVER.arrival);
     expect(await say('set_watchlist', { title: 'arrival', action: 'add', kind: 'movie' })).toBe(

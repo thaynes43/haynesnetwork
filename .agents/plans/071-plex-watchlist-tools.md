@@ -56,3 +56,13 @@
   (D-15j); tests pin which TMDB client `set_watchlist` uses and that `defaultDeps` builds it single-attempt;
   the web e2e asserts the exact nine tools (it expected seven, which failed the e2e job); OPS-003 and OPS-015
   give the 3,633-byte list, and OPS-003 walks a watchlist add, list and undo on `dev:local` (verified).
+- 2026-09-25: third review pass on PR #580 (findings E1..E6, verified by independent skeptics), fixed on the
+  branch: with plex.tv's state unreadable, a change after one plex.tv never settled goes out instead of a false
+  "isn't on" / "already on" from the cache, and a remove sent so over an unsettled add is never re-added by undo
+  (DESIGN-051 D-15k); several watchlist titles under one name answer "can't tell them apart", not a question
+  nothing can answer (D-15l); a failed clear is not "still on" (D-15m); a write that may still land (a timeout,
+  a dropped connection or a 504 on any attempt) is never "didn't change" (D-15n); undo picks a pending
+  Watchlist Change (under a minute: "still working on it"; older: closed and undone) instead of reverting the
+  older change (D-15o); each attempt's timer in `PlexHttp` covers the body, the MCP's TMDB searches opt in on
+  `ArrHttp`, and an undo waits for the lock at most 9 s (D-15p). The other HTTP wrappers' header-only timers
+  are parked in `.agents/plans/TODO.md`.

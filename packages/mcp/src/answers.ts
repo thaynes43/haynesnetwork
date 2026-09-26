@@ -30,6 +30,7 @@ import {
   formatUnfinished,
   formatWatchlist,
   formatWatchlistChange,
+  formatWatchlistDuplicates,
   formatWatchlistNotSetUp,
   formatWatchStatus,
   indexMarks,
@@ -300,6 +301,9 @@ export async function answerSetWatchlist(
       return formatWatchlistNotSetUp();
     case 'ambiguous':
       return formatAmbiguous(args.title, out.options);
+    case 'duplicate':
+      // DESIGN-051 D-15l: never a question — no argument of set_watchlist can pick one of these titles.
+      return formatWatchlistDuplicates(out.options);
     case 'not_found':
       return args.action === 'remove'
         ? formatNotOnWatchlist(args.title, { kind: args.kind ?? null })

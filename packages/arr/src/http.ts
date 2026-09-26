@@ -30,6 +30,13 @@ export interface ArrHttpOptions {
    * it down (DESIGN-051: `set_watchlist`'s TMDB fallback makes a single attempt, PR #580 ruling 9).
    */
   getRetries?: number;
+  /**
+   * Keep each attempt's timer armed until its body has been read (DESIGN-051 D-15p). Off by default: the syncs read
+   * list bodies that may stream for longer than their per-attempt timeout. A caller answering inside a hard deadline
+   * (the MCP's TMDB searches) turns it on, so a body that stalls after the headers ends at the attempt's bound
+   * instead of undici's 300 s body timeout.
+   */
+  timeoutCoversBody?: boolean;
   /** Injectable fetch — tests pass a stub; production uses global fetch. */
   fetchImpl?: typeof fetch;
 }
@@ -37,6 +44,8 @@ export interface ArrHttpOptions {
 /** GETs are idempotent → up to 2 retries (3 attempts) on transient failures (D-18). */
 const GET_RETRIES = 2;
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+/** Statuses a Response may not carry a body with (the buffered copy of `timeoutCoversBody`). */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RETRY_DELAY_MS = 250;
 
@@ -50,6 +59,7 @@ export class ArrHttp {
   private readonly timeoutMs: number;
   private readonly retryDelayMs: number;
   private readonly getRetries: number;
+  private readonly timeoutCoversBody: boolean;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: ArrHttpOptions) {
@@ -60,6 +70,7 @@ export class ArrHttp {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     this.getRetries = Math.max(0, Math.floor(options.getRetries ?? GET_RETRIES));
+    this.timeoutCoversBody = options.timeoutCoversBody ?? false;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -71,36 +82,53 @@ export class ArrHttp {
     return url.toString();
   }
 
-  /** One attempt: fetch with timeout. Throws ArrTimeoutError / ArrHttpError / network errors. */
+  /**
+   * One attempt: fetch with timeout. Throws ArrTimeoutError / ArrHttpError / network errors. The error snippet is
+   * read under the timer; with `timeoutCoversBody` a 2xx body is too (buffered, then handed back as a new Response).
+   */
   private async attempt(method: string, url: string, body?: unknown): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    let response: Response;
     try {
-      response = await this.fetchImpl(url, {
-        method,
-        headers: {
-          [this.apiKeyHeader]: this.apiKey,
-          Accept: 'application/json',
-          ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-        },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      });
-    } catch (error) {
-      if (controller.signal.aborted) throw new ArrTimeoutError(method, url, this.timeoutMs);
-      throw error;
+      let response: Response;
+      try {
+        response = await this.fetchImpl(url, {
+          method,
+          headers: {
+            [this.apiKeyHeader]: this.apiKey,
+            Accept: 'application/json',
+            ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+          },
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) throw new ArrTimeoutError(method, url, this.timeoutMs);
+        throw error;
+      }
+      if (!response.ok) {
+        // Redact BEFORE cutting the snippet: a limit that lands inside a credential value would otherwise
+        // leave a prefix of it the patterns can no longer recognise.
+        const text = await response.text().catch(() => '');
+        const snippet = redactSecrets(text.slice(0, 4000)).slice(0, 300);
+        throw new ArrHttpError(response.status, method, url, snippet || undefined);
+      }
+      if (!this.timeoutCoversBody) return response;
+      try {
+        const bytes = await response.arrayBuffer();
+        const empty = NULL_BODY_STATUSES.has(response.status);
+        return new Response(empty ? null : bytes, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) throw new ArrTimeoutError(method, url, this.timeoutMs);
+        throw error; // the connection dropped mid-body: a network error (retried like one)
+      }
     } finally {
       clearTimeout(timer);
     }
-    if (!response.ok) {
-      // Redact BEFORE cutting the snippet: a limit that lands inside a credential value would otherwise
-      // leave a prefix of it the patterns can no longer recognise.
-      const body = await response.text().catch(() => '');
-      const snippet = redactSecrets(body.slice(0, 4000)).slice(0, 300);
-      throw new ArrHttpError(response.status, method, url, snippet || undefined);
-    }
-    return response;
   }
 
   /** Fetch with GET-only retries on transient failures (5xx gateway statuses, timeouts, network errors). */

@@ -5,7 +5,7 @@
 // unscrobbling clears resume points too, and a ratingKey answers only on its own server (a mix-up 404s).
 // PLAN-068 hard rule: nothing in the Watch Companion work orders scrobbles a REAL server — only this fake
 // and the e2e stub.
-import { PlexHttpError, type PlexSectionItem } from '@hnet/plex';
+import { PlexHttpError, PlexTimeoutError, type PlexSectionItem } from '@hnet/plex';
 import type { PlexServerSlug } from '@hnet/db';
 import type { WatchPlexClients } from '../src/watch/plex';
 
@@ -98,6 +98,11 @@ export class FakePlex {
   /** Discover ids whose watchlist writes fail with a 503 (after the client's retries), and whether they land anyway. */
   readonly failWatchlistWrites = new Set<string>();
   landFailedWatchlistWrites = false;
+  /**
+   * How those writes fail: a 503 (plex.tv answered every attempt), a 429 (a definitive refusal, never re-read) or a
+   * client-side timeout (the attempt went out and may still land, DESIGN-051 D-15n).
+   */
+  failWatchlistWritesWith: 503 | 429 | 'timeout' = 503;
   /** Discover reads that fail (`matchDiscover`, `getDiscoverUserState`). */
   readonly failDiscoverReads = new Set<'matchDiscover' | 'getDiscoverUserState'>();
 
@@ -144,7 +149,13 @@ export class FakePlex {
     };
     if (this.failWatchlistWrites.has(id)) {
       if (this.landFailedWatchlistWrites) apply();
-      return Promise.reject(new PlexHttpError(503, 'PUT', `https://discover.fake/actions/${op}`, 'unavailable'));
+      const url = `https://discover.fake/actions/${op}`;
+      const how = this.failWatchlistWritesWith;
+      return Promise.reject(
+        how === 'timeout'
+          ? new PlexTimeoutError('PUT', url, 800)
+          : new PlexHttpError(how, 'PUT', url, how === 429 ? 'Too Many Requests' : 'unavailable'),
+      );
     }
     if (!this.catalog.some((t) => t.id === id)) {
       return Promise.reject(new PlexHttpError(404, 'PUT', `https://discover.fake/actions/${op}`, 'Not Found'));

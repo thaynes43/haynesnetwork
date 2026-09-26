@@ -1,7 +1,7 @@
 // ADR-088 / ADR-089 / DESIGN-049 (PLAN-068 S3) — the Tautulli and TMDB reads the Watch Companion adds,
 // offline against recorded fixtures (sanitized recordings of the 2026-09-23 live reads; no network).
 import { describe, expect, it } from 'vitest';
-import { ArrHttpError, ArrParseError } from '../src/errors';
+import { ArrHttpError, ArrParseError, ArrTimeoutError } from '../src/errors';
 import { TautulliClient } from '../src/tautulli';
 import { TmdbClient } from '../src/tmdb';
 import { fixture, stubFetch, stubFetchSequence } from './helpers';
@@ -266,5 +266,40 @@ describe('TmdbClient — recommendations + search/multi (DESIGN-049 D-13 / D-17)
       new TmdbClient({ ...V3, fetchImpl: thrice.fetchImpl, retryDelayMs: 0 }).searchMulti('dune'),
     ).rejects.toBeInstanceOf(ArrHttpError);
     expect(thrice.calls).toHaveLength(3);
+  });
+
+  // DESIGN-051 D-15p (PR #580 review) — the MCP's searches: the per-attempt timer covers the body, so a 200 whose
+  // body stalls after its headers ends at the attempt's bound instead of undici's 300 s body timeout.
+  it('timeoutCoversBody: a body that stalls after its headers is a timeout at the attempt bound', async () => {
+    let calls = 0;
+    const stalling = ((_input: unknown, init?: RequestInit) => {
+      calls += 1;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"page":1,'));
+          // …and the rest never comes, until our own timer aborts the request.
+          init?.signal?.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')));
+        },
+      });
+      return Promise.resolve(new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }));
+    }) as typeof fetch;
+    const start = Date.now();
+    const client = new TmdbClient({
+      ...V3,
+      fetchImpl: stalling,
+      timeoutMs: 50,
+      getRetries: 0,
+      timeoutCoversBody: true,
+    });
+    const error = await client.searchMulti('dune').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ArrTimeoutError);
+    expect((error as Error).message).not.toContain('tmdb-v3-key');
+    expect(Date.now() - start).toBeLessThan(2_000);
+    expect(calls).toBe(1);
+    // A whole body still parses as before (the buffered copy).
+    const ok = stubFetch([{ path: '/3/search/multi', body: { page: 1, total_pages: 1, total_results: 0, results: [] } }]);
+    await expect(
+      new TmdbClient({ ...V3, fetchImpl: ok.fetchImpl, timeoutCoversBody: true }).searchMulti('dune'),
+    ).resolves.toMatchObject({ page: 1, results: [] });
   });
 });

@@ -53,6 +53,23 @@ We need to make sure everything is in 1Password for Fable 5 before tomorrow. Thi
   the next `fix:` touching `trash-save-intents.ts`; also correct the `sameKeyCensus` docstring — it
   counts fresh saves awaiting Maintainerr's next rule run, not lapses.
 
+## Parked 2026-09-25 (needs a design call; cold-start context in DESIGN-051 D-15p, PR #580 third review pass)
+
+- **Header-only per-attempt timers in the other HTTP wrappers.** `PlexHttp` now keeps each attempt's abort
+  timer armed until the body is read (a body that stalls after its headers is a timeout at the attempt bound,
+  not undici's 300 s `bodyTimeout`). `ArrHttp` got the same bound only as an opt-in (`timeoutCoversBody`,
+  turned on for the MCP's TMDB searches in `packages/mcp/src/deps.ts`); its default, and the wrappers in
+  `packages/{authentik,kapowarr,openwebui,goodreads,books,haynesops,libretto,lazylibrarian}/src/http.ts` and
+  `packages/sync/src/openwebui.ts`, still clear the timer once the headers arrive (`clearTimeout` in the fetch's
+  `finally`), so a stalled body holds the caller up to about 5 minutes. Not flipped blindly: the syncs read list
+  bodies (Sonarr `/series`, Radarr `/movie`, a PMS section) that may stream longer than their 30 s per-attempt
+  timeout, so a whole-attempt bound needs either a separate, longer body timeout or per-caller sizing. Decide:
+  (a) a `bodyTimeoutMs` per wrapper (default ~ `timeoutMs` × N), or (b) opt-in per latency-bound caller only.
+  Related: the MCP's 9 s deadline (`packages/mcp/src/http.ts` `runTool`) answers the caller but passes no
+  `AbortSignal` into the domain call, so abandoned work keeps running; threading a signal through
+  `changeWatchlist` / `markWatched` / `undoLastChange` into the Plex and TMDB clients would stop a write from
+  going out after its caller was answered.
+
 ## Smaller backlog items
 
 - **Global collection totals (from PLAN-053 owner review, 2026-07-17).** The per-chip Type

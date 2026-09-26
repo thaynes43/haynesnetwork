@@ -32,7 +32,9 @@ function lazy<T>(build: () => T | null): () => T | null {
 /**
  * The TMDB search built from env, or null when TMDB is not configured. The resolver's last resort (DESIGN-049 D-13)
  * keeps the client's GET retries; `once` makes a single attempt, for `set_watchlist` (DESIGN-051 D-15g: with the
- * discover reads, the PUT and its re-read, the add's worst case stays inside the 9 s deadline).
+ * discover reads, the PUT and its re-read, the add's worst case stays inside the 9 s deadline). Each attempt's
+ * timer covers the response body too (D-15p): a body that stalled after its headers otherwise held the call, and
+ * the write it leads to, for undici's 300 s body timeout, long after the caller was answered.
  */
 export function tmdbSearchFromEnv(
   env: Record<string, string | undefined>,
@@ -44,6 +46,7 @@ export function tmdbSearchFromEnv(
     ...cfg,
     timeoutMs: TMDB_TIMEOUT_MS,
     retryDelayMs: 0,
+    timeoutCoversBody: true,
     ...(opts.once ? { getRetries: 0 } : {}),
     ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
   });

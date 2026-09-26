@@ -6,7 +6,10 @@
 // failed remove as it is), a change that could not even be sent (still recorded, so undo closes IT), an outcome
 // plex.tv never confirms (`unknown:`), a write that landed despite its error, a non-owner (no row, no call), a
 // retried remove, undo of an add and of a remove (exactly the inverse call), the undo replay, two undos at once,
-// and the new actions ignored by every reader of the watch statements (DESIGN-051 D-15: the PR #580 rulings).
+// and the new actions ignored by every reader of the watch statements (DESIGN-051 D-15: the PR #580 rulings); and
+// from its third pass (D-15k..D-15p): a change after one plex.tv never settled while userState is unreadable, a
+// PUT that timed out (unknown, never "didn't change"), a failed clear, a pending change in undo, the undo lock's
+// bound.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { watchMarks, type Database, type WatchMarkRow } from '@hnet/db';
@@ -14,6 +17,7 @@ import {
   computeMovieProgress,
   formatUndoResult,
   formatWatchlistChange,
+  formatWatchlistDuplicates,
   indexMarks,
   isOnWatchlist,
   ledgerExclusions,
@@ -510,7 +514,7 @@ describe('changeWatchlist — add (D-03)', () => {
 });
 
 describe('changeWatchlist — remove (D-03 step 2: only titles on the watchlist)', () => {
-  it('one spoken title, two watchlist titles with different discover ids: ambiguous, nothing written (ruling 6)', async () => {
+  it('one spoken title, two watchlist titles with different discover ids: nothing written, and no question it cannot answer (ruling 6, D-15l)', async () => {
     const OTHER = 'aaaaaaaaaaaaaaaaaaaaaaaa';
     fake.catalog.push({ id: OTHER, kind: 'show', title: 'Dark Matter', year: 2024, guids: ['tmdb://999001'] });
     fake.watchlist.set(OTHER, fake.now);
@@ -524,13 +528,20 @@ describe('changeWatchlist — remove (D-03 step 2: only titles on the watchlist)
       ],
       fetchedAt: later(-600),
     });
-    for (const action of ['remove', 'add'] as const) {
-      const out = await change('dark matter', action);
-      expect(out, action).toMatchObject({ status: 'ambiguous', result: 'ambiguous' });
-      if (out.status === 'ambiguous') expect(out.options).toHaveLength(2);
+    for (const query of ['dark matter', 'dark matter 2024']) {
+      for (const action of ['remove', 'add'] as const) {
+        const out = await change(query, action);
+        // Logged as ambiguous (D-10), but answered as two titles nothing the owner can say tells apart (D-15l).
+        expect(out, `${action} ${query}`).toMatchObject({ status: 'duplicate', result: 'ambiguous' });
+        if (out.status !== 'duplicate') throw new Error(out.status);
+        expect(out.options.map((o) => o.ids?.plexGuid).sort()).toEqual([`plex://show/${DARK}`, `plex://show/${OTHER}`].sort());
+        expect(formatWatchlistDuplicates(out.options)).toBe(
+          "Your watchlist has more than one Dark Matter (2024 show), and I can't tell them apart, so I left it as it is. You can change it in the Plex app.",
+        );
+      }
     }
-    // Asked before anything else: even with no Plex client, no "not sent" row is written for a guess.
-    expect(await change('dark matter', 'remove', { plex: { read: {}, write: {} } })).toMatchObject({ status: 'ambiguous' });
+    // Checked before anything else: even with no Plex client, no "not sent" row is written for a guess.
+    expect(await change('dark matter', 'remove', { plex: { read: {}, write: {} } })).toMatchObject({ status: 'duplicate' });
     expect(fake.calls).toEqual([]);
     expect(await marks()).toEqual([]);
   });
@@ -749,6 +760,275 @@ describe('undo of a Watchlist Change (D-04)', () => {
     );
     expect(await onlyMark()).toMatchObject({ revertedAt: null, revertResult: 'failed' });
     fake.failWatchlistWrites.clear();
+    expect(await undo(later(10))).toMatchObject({ view: { revertResult: 'written' } });
+  });
+});
+
+describe('the third review pass on PR #580 (DESIGN-051 D-15k..D-15p)', () => {
+  it('a remove after an add plex.tv never confirmed, with userState still unreadable, sends the removal (D-15k)', async () => {
+    fake.failWatchlistWrites.add(DUNE3);
+    fake.landFailedWatchlistWrites = true; // the add DID land…
+    fake.failDiscoverReads.add('getDiscoverUserState'); // …and plex.tv's state cannot be read, then or now
+    expect(await change('dune: part three', 'add')).toMatchObject({ result: 'unknown', onPlex: false });
+    expect(fake.watchlist.has(DUNE3)).toBe(true);
+    fake.failWatchlistWrites.clear();
+    fake.calls.length = 0;
+    const out = await change('dune: part three', 'remove', { now: later(60) });
+    // Not "isn't on your watchlist" from a cache that cannot show that add: the idempotent removal goes out.
+    expect(out).toMatchObject({ status: 'done', result: 'written' });
+    expect(spoken(out)).toBe('Removed Dune: Part Three (2026 movie) from your watchlist.');
+    expect(fake.opKeys()).toEqual([`getDiscoverUserState:${DUNE3}`, `removeFromWatchlist:${DUNE3}`]);
+    expect(fake.watchlist.has(DUNE3)).toBe(false);
+    const rows = await marks();
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({
+      action: 'watchlist_remove',
+      plexResult: 'written',
+      plexError: `after unsettled: mark ${rows[0]?.id}`,
+    });
+    expect(await listed(later(60))).toEqual(['Severance', 'Dark Matter']);
+
+    // Its undo never re-adds: nothing ever showed the title on the list, and an add would download it.
+    fake.calls.length = 0;
+    const u = await undo(later(90));
+    expect(fake.calls).toEqual([]);
+    if (u.status !== 'done') throw new Error(u.status);
+    expect(u).toMatchObject({ markId: rows[1]?.id, view: { revertResult: 'none', watchlistOutcome: 'left_off' } });
+    expect(formatUndoResult(u.view)).toBe(
+      'Your last change, removing Dune: Part Three (2026 movie) from your watchlist, came after an add Plex never confirmed, so I left it off your watchlist. To put it back, ask me to add it.',
+    );
+    // A retried undo repeats that answer (rebuilt from the row) and still sends nothing.
+    const again = await undo(later(95));
+    expect(again).toMatchObject({ replayed: true });
+    if (again.status === 'done') expect(formatUndoResult(again.view)).toBe(formatUndoResult(u.view));
+    expect(fake.calls).toEqual([]);
+    expect(fake.watchlist.has(DUNE3)).toBe(false);
+  });
+
+  it('an add after a remove plex.tv never confirmed, with userState unreadable, sends the add, not a false "already on" (D-15k)', async () => {
+    fake.failWatchlistWrites.add(SEV);
+    fake.landFailedWatchlistWrites = true; // the remove DID land
+    fake.failDiscoverReads.add('getDiscoverUserState');
+    expect(await change('severance', 'remove')).toMatchObject({ result: 'unknown' });
+    expect(fake.watchlist.has(SEV)).toBe(false);
+    fake.failWatchlistWrites.clear();
+    fake.calls.length = 0;
+    const out = await change('severance', 'add', { now: later(60) });
+    expect(out).toMatchObject({ status: 'done', result: 'written', onPlex: false });
+    expect(spoken(out)).toBe(
+      "Added Severance (2022 show) to your watchlist. It isn't on Plex yet, so Seerr will request it.",
+    );
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${SEV}`]);
+    expect(fake.watchlist.has(SEV)).toBe(true);
+    const rows = await marks();
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({ action: 'watchlist_add', plexResult: 'written', plexError: null });
+    // An ordinary add: its undo is the removal, which never downloads.
+    fake.calls.length = 0;
+    expect(await undo(later(90))).toMatchObject({ view: { watchlistOutcome: 'reverted' } });
+    expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${SEV}`]);
+  });
+
+  it('once a sync has read plex.tv after that change, the cache decides again (D-15k)', async () => {
+    fake.failWatchlistWrites.add(MATRIX);
+    fake.landFailedWatchlistWrites = true;
+    fake.failDiscoverReads.add('getDiscoverUserState');
+    expect(await change('the matrix', 'add')).toMatchObject({ result: 'unknown' });
+    fake.failWatchlistWrites.clear();
+    // The 15-minute sync ran six minutes later and saw the add had landed.
+    await replaceRecoSignals({
+      db,
+      plexAccountId: OWNER,
+      source: 'watchlist',
+      rows: [
+        { kind: 'movie', title: 'The Matrix', year: 1999, tmdbId: 603, tvdbId: null, imdbId: 'tt0133093', plexGuid: `plex://movie/${MATRIX}`, rank: 0 },
+        { kind: 'show', title: 'Severance', year: 2022, tmdbId: 95396, tvdbId: 371980, imdbId: null, plexGuid: `plex://show/${SEV}`, rank: 1 },
+      ],
+      fetchedAt: later(6 * 60),
+    });
+    // userState is still unreadable: the cache shows the title, so an add is "already on" with no write…
+    fake.calls.length = 0;
+    expect(await change('the matrix', 'add', { now: later(7 * 60) })).toMatchObject({ result: 'unchanged' });
+    expect(fake.watchlistWrites()).toEqual([]);
+    // …and a remove is an ordinary one (its undo puts the title back), with no marker.
+    expect(await change('the matrix', 'remove', { now: later(7 * 60 + 5) })).toMatchObject({ result: 'written' });
+    const rows = await marks();
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({ action: 'watchlist_remove', plexResult: 'written', plexError: null });
+  });
+
+  it('a PUT that timed out is never "didn\'t change" on a re-read of the old state: it may still land (D-15n)', async () => {
+    fake.failWatchlistWrites.add(DUNE3);
+    fake.failWatchlistWritesWith = 'timeout'; // the attempts went out; plex.tv has not applied them (yet)
+    const out = await change('dune: part three', 'add');
+    expect(out).toMatchObject({ status: 'done', result: 'unknown', onPlex: false });
+    expect(spoken(out)).toBe(
+      "Plex didn't answer in time, so I can't tell whether Dune: Part Three (2026 movie) changed. It isn't on Plex yet, so if it was added, Seerr will request it.",
+    );
+    // The re-read ran (on the write budget) and showed the old state, which proves nothing while an attempt may land.
+    expect(fake.opKeys().filter((k) => k.startsWith('getDiscoverUserState'))).toHaveLength(2);
+    expect(fake.watchlist.has(DUNE3)).toBe(false);
+    const row = await onlyMark();
+    expect(row.plexResult).toBe('failed');
+    expect(row.plexError).toMatch(/^unknown: PlexTimeoutError/);
+
+    // The same holds for undo: an inverse call that timed out is "can't tell", never "still on your watchlist".
+    await db.execute(sql`TRUNCATE watch_marks`);
+    fake.failWatchlistWrites.clear();
+    expect(await change('the matrix', 'add', { now: later(60) })).toMatchObject({ result: 'written' });
+    fake.failWatchlistWrites.add(MATRIX);
+    const u = await undo(later(65));
+    if (u.status !== 'done') throw new Error(u.status);
+    expect(u.view).toMatchObject({ revertResult: 'failed', watchlistOutcome: 'unknown' });
+    expect(formatUndoResult(u.view)).toBe("Plex didn't answer in time, so I can't tell whether The Matrix (1999 movie) changed.");
+  });
+
+  it('a failed undo of a failed add never says the title is still on the watchlist (D-15m)', async () => {
+    fake.failWatchlistWrites.add(MATRIX);
+    fake.failWatchlistWritesWith = 429; // a definitive refusal (rate limited): not re-read
+    const out = await change('the matrix', 'add');
+    expect(out).toMatchObject({ status: 'done', result: 'failed' });
+    expect(spoken(out)).toBe("I couldn't reach Plex, so your watchlist didn't change.");
+    expect(fake.opKeys().filter((k) => k.startsWith('getDiscoverUserState'))).toHaveLength(1);
+    const u = await undo(later(5));
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${MATRIX}`, `removeFromWatchlist:${MATRIX}`]);
+    if (u.status !== 'done') throw new Error(u.status);
+    expect(u.view).toMatchObject({ revertResult: 'failed', watchlistOutcome: 'clear_failed' });
+    expect(formatUndoResult(u.view)).toBe(
+      "I couldn't reach Plex, so I couldn't make sure The Matrix (1999 movie) is off your watchlist. Say undo again to retry.",
+    );
+    expect(fake.watchlist.has(MATRIX)).toBe(false);
+    expect(await onlyMark()).toMatchObject({ revertedAt: null, revertResult: 'failed' });
+    // Once plex.tv takes it, the retry clears it.
+    fake.failWatchlistWrites.clear();
+    expect(await undo(later(10))).toMatchObject({ view: { revertResult: 'written', watchlistOutcome: 'cleared' } });
+  });
+
+  it('undo never walks past a pending Watchlist Change: in flight it says so, abandoned it closes and undoes it (D-15o)', async () => {
+    // An older change, whose undo would re-add (and download) the title.
+    expect(await change('dark matter', 'remove')).toMatchObject({ result: 'written' });
+    // An add whose PUT never comes back (its replica died mid-call, or plex.tv stalls).
+    const clients = fake.clients();
+    const ops = clients.write.haynesops;
+    if (!ops) throw new Error('no haynesops writer');
+    let entered!: () => void;
+    const inPut = new Promise<void>((r) => (entered = r));
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const stuck: WatchPlexClients = {
+      read: clients.read,
+      write: {
+        haynesops: {
+          ...ops,
+          addToWatchlist: async (id: string) => {
+            entered();
+            await held;
+            return ops.addToWatchlist(id);
+          },
+        },
+      },
+    };
+    const stalled = change('the matrix', 'add', { plex: stuck, now: later(60) });
+    await inPut;
+    const rows = await marks();
+    expect(rows.map((m) => [m.action, m.plexResult])).toEqual([
+      ['watchlist_remove', 'written'],
+      ['watchlist_add', 'pending'],
+    ]);
+    fake.calls.length = 0;
+
+    // Seconds later it is still going through: nothing is undone, and not the older remove either.
+    const early = await undo(later(70));
+    expect(fake.calls).toEqual([]);
+    if (early.status !== 'done') throw new Error(early.status);
+    expect(early).toMatchObject({ markId: rows[1]?.id, replayed: false });
+    expect(early.view).toMatchObject({ undone: true, action: 'watchlist_add', watchlistOutcome: 'in_progress' });
+    expect(formatUndoResult(early.view)).toBe(
+      'Plex is still working on your last change, adding The Matrix (1999 movie) to your watchlist. Say undo again in a moment.',
+    );
+    expect((await marks()).map((m) => m.revertedAt)).toEqual([null, null]);
+
+    // A minute on it is abandoned: closed as an unconfirmed add, whose undo removes the title anyway.
+    const late = await undo(later(125));
+    expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${MATRIX}`]);
+    expect(late).toMatchObject({ markId: rows[1]?.id, view: { watchlistOutcome: 'cleared' } });
+    const after = await marks();
+    expect(after[1]).toMatchObject({
+      plexResult: 'failed',
+      plexError: 'unknown: never finalized',
+      revertedAt: later(125),
+      revertResult: 'written',
+    });
+    // The older remove was never touched: no re-add, no download.
+    expect(after[0]).toMatchObject({ revertedAt: null });
+    expect(fake.watchlist.has(DARK)).toBe(false);
+
+    // Should the stalled call ever finish, its finalize leaves the closed row alone.
+    release();
+    await stalled;
+    expect((await marks())[1]).toMatchObject({ plexResult: 'failed', plexError: 'unknown: never finalized' });
+  });
+
+  it('an abandoned pending remove is closed and left as it is: no add is sent (D-15o)', async () => {
+    const clients = fake.clients();
+    const ops = clients.write.haynesops;
+    if (!ops) throw new Error('no haynesops writer');
+    let entered!: () => void;
+    const inPut = new Promise<void>((r) => (entered = r));
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const stuck: WatchPlexClients = {
+      read: clients.read,
+      write: {
+        haynesops: {
+          ...ops,
+          removeFromWatchlist: async (id: string) => {
+            entered();
+            await held;
+            return ops.removeFromWatchlist(id);
+          },
+        },
+      },
+    };
+    const stalled = change('severance', 'remove', { plex: stuck });
+    await inPut;
+    fake.calls.length = 0;
+    const u = await undo(later(90));
+    expect(fake.calls).toEqual([]);
+    if (u.status !== 'done') throw new Error(u.status);
+    expect(u.view).toMatchObject({ revertResult: 'none', watchlistOutcome: 'left_as_is' });
+    expect(await onlyMark()).toMatchObject({ plexResult: 'failed', revertedAt: later(90), revertResult: 'none' });
+    release();
+    await stalled;
+  });
+
+  it('an undo waits for another undo of the account only so long (D-15p): a stuck one never queues the rest', async () => {
+    await change('the matrix', 'add');
+    let locked!: () => void;
+    const holding = new Promise<void>((r) => (locked = r));
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    // Another undo of the account holds the lock (its Plex call stalled).
+    const holder = db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('watch_undo'), hashtext(${String(OWNER)}))`);
+      locked();
+      await held;
+    });
+    await holding;
+    fake.calls.length = 0;
+    const start = Date.now();
+    const err = await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: later(5), lockTimeoutMs: 200 }).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(Date.now() - start).toBeLessThan(5_000);
+    const cause = (err as { cause?: { code?: string } } | null)?.cause ?? err;
+    expect((cause as { code?: string }).code).toBe('55P03'); // lock_not_available
+    expect(fake.calls).toEqual([]);
+    release();
+    await holder;
+    expect(await onlyMark()).toMatchObject({ revertedAt: null });
+    // Unblocked, the undo runs as usual.
     expect(await undo(later(10))).toMatchObject({ view: { revertResult: 'written' } });
   });
 });
