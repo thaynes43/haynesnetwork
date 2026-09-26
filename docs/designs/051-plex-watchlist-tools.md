@@ -2,8 +2,9 @@
 
 - **Status:** Draft
 - **Last updated:** 2026-09-25 (D-15 records the rulings from the PR #580 code review, folded into D-02..D-12 and
-  D-14; D-14 the rulings made while building; D-13 the rulings from the PR #577 design review, folded into
-  D-02..D-11).
+  D-14, and D-15i/D-15j those of its second pass: the undo replay guard across clocks, and the Seerr sentence on a
+  repeated or unconfirmed add; D-14 the rulings made while building; D-13 the rulings from the PR #577 design
+  review, folded into D-02..D-11).
 - **Satisfies:** PRD-001 R-252, R-253, R-245 (amended), US-15, AC-29..AC-31; governed by ADR-092; extends
   DESIGN-049 (the Watch Companion: D-05 tool contract, D-12..D-15 marks and undo, D-13 resolver, D-17
   candidates) and DESIGN-050 D-07 (the principal, owner-only Plex write-back).
@@ -62,7 +63,9 @@ defaults, bounded integers) and are hand-written like the others.
 - `set_watchlist` add: *"Added The Matrix (1999 movie) to your watchlist. It's on Plex."* / *"Added
   Dune: Part Three (2026 movie) to your watchlist. It isn't on Plex yet, so Seerr will request it."*
   Remove: *"Removed The Matrix (1999 movie) from your watchlist."* No change: *"The Matrix (1999 movie)
-  is already on your watchlist."* / *"… isn't on your watchlist."* The title and year said back are
+  is already on your watchlist."* / *"… isn't on your watchlist."* An "already on" add of a title not on
+  Plex adds *"It isn't on Plex yet, so Seerr will request it if it hasn't already."* (D-15j: a client
+  retrying an add that landed hears this answer, not the first one). The title and year said back are
   plex.tv's (the discover match), so the agent can verify the change.
 - Ambiguous: *"Did you mean Dune (2021 movie) or Dune (2000 show)?"* (D-13's candidate list). Not found
   (for a remove, not found **on the watchlist**): *"I couldn't find X on your watchlist."* / *"I couldn't
@@ -70,7 +73,8 @@ defaults, bounded integers) and are hand-written like the others.
   watchlist didn't change."* A guid that disagrees with the external-id match: *"I couldn't confirm X in
   Plex's catalog, so your watchlist didn't change."* Plex failure: *"I couldn't reach Plex, so your
   watchlist didn't change."* A write plex.tv never confirmed either way (D-03 step 6): *"Plex didn't answer
-  in time, so I can't tell whether X changed."*
+  in time, so I can't tell whether X changed."*, plus, for an add of a title not on Plex, *"It isn't on
+  Plex yet, so if it was added, Seerr will request it."* (D-15j).
 - `watch_status` ends with one availability sentence instead of today's "On Plex." / "Not on Plex.":
   "On Plex and on your watchlist." · "On Plex, not on your watchlist." · "Not on Plex, but on your
   watchlist." · "Not on Plex or your watchlist." Explicit both ways, so an agent never has to infer.
@@ -151,7 +155,9 @@ an add adds "Seerr may already have requested it." and undoing a remove adds "Se
 The inverse is idempotent, so it is applied even if the owner changed the watchlist in the Plex app
 meanwhile. An inverse call that fails leaves the change live for the next undo; one whose outcome plex.tv
 never confirms (D-03 step 6's re-read gets no answer) says *"Plex didn't answer in time, so I can't tell
-whether X changed."* and leaves it live too.
+whether X changed."* and leaves it live too. When that unconfirmed call is the add that undoes a remove and
+the title is not on Plex, it adds *"It isn't on Plex yet, so if it was put back, Seerr will request it."*
+(D-15j).
 
 **Undo replay guard (all marks).** An undo within 30 seconds of the account's last completed undo, with
 no mark created since, repeats that undo's answer and reverts nothing. A client retry (HA's trailing
@@ -159,7 +165,9 @@ no mark created since, repeats that undo's answer and reverts nothing. A client 
 which for a watchlist remove can re-add and download. A person asking twice within 30 seconds waits
 that long for the second undo. Undos of one account run one at a time across replicas (a
 transaction-scoped advisory lock around the guard, the pick, the Plex call and the revert, D-15), so two
-copies of one retried undo cannot both pass the guard. A call that changed nothing and wrote no row (a
+copies of one retried undo cannot both pass the guard. Each copy reads its clock before it waits on the lock,
+so the one that takes the lock first may stamp its revert later than the other's clock reads: a completed undo
+stamped after the call's own clock is a replay too (D-15i). A call that changed nothing and wrote no row (a
 replayed `mark_watched`, an "already on" `set_watchlist`) inside the 30 seconds leaves the guard as it is:
 the next undo still repeats the last answer (accepted, D-15).
 
@@ -287,7 +295,8 @@ during the rolling deploy is accepted (minutes, and only if the owner changes hi
 ### D-15 — Rulings from the PR #580 code review (2026-09-25)
 
 An Opus review of the S2 build found two blockers and a set of should-fix items; the owner-facing
-behavior ones are ruled here and folded into D-02..D-12 and D-14 above.
+behavior ones are ruled here and folded into D-02..D-12 and D-14 above. A second pass over the fixed branch
+(findings C1..C7, each verified by independent skeptics) added D-15i and D-15j.
 
 | ID | Review | Ruling |
 |---|---|---|
@@ -297,8 +306,16 @@ behavior ones are ruled here and folded into D-02..D-12 and D-14 above.
 | D-15d | A5 | **Accepted:** a call that changed nothing writes no row (a replayed `mark_watched`, D-14 step 7 of DESIGN-049; an "already on" `set_watchlist`), so inside the 30 seconds after an undo it does not reset the guard, and the next undo repeats the last answer instead of reverting an older mark. Nothing changed, so there is nothing new to undo; after 30 seconds undo works as usual. |
 | D-15e | A6 | **One name, several watchlist titles, asks.** When the resolved same-name group holds watchlist entries with different discover ids (two titles plex.tv lists under one name and year), `set_watchlist` answers ambiguous with those titles and writes nothing, checked before anything else (no row, no Plex call, even with no Plex client). Before, the first one was changed silently. |
 | D-15f | B8 | **Paging never skips a title.** `formatWatchlist` fits the items to the 1,200-character cap first, then builds the range ("Numbers A to B:", or "Newest first, numbers 1 to B:" on a first page the cap cut short) and "And N more." from the items it kept. Before, the range named the requested page and the cap dropped titles silently, so an agent paging on by `offset` skipped them. |
-| D-15g | B9 | **The add's TMDB fallback makes one attempt** (a TMDB client with no GET retries, `tmdbOnce`), so the worst case of an add that needs it (8.5 s, D-14a) stays inside the 9 s MCP deadline. With the three attempts the other tools keep, it was about 9.8 s. |
+| D-15g | B9 | **The add's TMDB fallback makes one attempt** (a TMDB client with no GET retries, `tmdbOnce`), so the worst case of an add that needs it (8.5 s, D-14a) stays inside the 9 s MCP deadline. With the three attempts the other tools keep, it was about 11.5 s (three 1.5 s attempts; corrected from 9.8 s in the second pass). |
 | D-15h | B10 | **Consent names the watchlist only to the owner.** `watch:read` has an owner form and an other form like `watch:write` (D-09): a household member's connector does not read a watchlist, so its consent line does not offer one. |
+| D-15i | C1 | **The undo replay guard trusts a revert stamped after its own clock.** An undo reads its clock (`now`) before it waits on the advisory lock (D-15c). Of two copies of one undo, the one that read its clock a few ms later, or on a replica whose clock runs ahead, can take the lock first and stamp its revert after the waiting copy's `now`. The guard rejected that stamp as "from the future", so the waiting copy went on to the next-older change: for a watchlist remove, a re-add that can download. The guard's only bound is now the age, `now − reverted_at < 30 s`, with a negative age counted as recent. Cost, accepted like D-15d: within the clock skew between replicas (milliseconds), a mark made on a replica whose clock lags that stamp is not seen as "made since", so an undo until 30 seconds after the stamp repeats the last answer instead of reverting it (nothing is written; saying undo again after that works as usual). Reading the guard's clock after the lock was not added: across replicas it still depends on their clocks, and the age rule alone covers both cases. |
+| D-15j | C4 | **An add that may download says so even when its own answer is lost.** When Home Assistant's trailing `tools/list` fails after a landed add (DESIGN-049 D-05), the model retries and the owner hears only the retry's answer, "already on"; an add plex.tv never confirmed may have landed too. So, for a title not on Plex (the D-02 rule): an "already on" add adds "It isn't on Plex yet, so Seerr will request it if it hasn't already." ("if it hasn't already" because a title put on the watchlist long ago has likely been requested); an unconfirmed add adds "It isn't on Plex yet, so if it was added, Seerr will request it."; an unconfirmed undo of a remove (its inverse call is an add) adds "It isn't on Plex yet, so if it was put back, Seerr will request it." Removals and titles on Plex answer as before. The `unchanged` and `unknown` views carry `onPlex` (and `unknown` the action) for this. |
+
+Fixed with no design change in the second pass: a test proves `set_watchlist` resolves through the
+single-attempt TMDB client and every other tool through the retrying one, and that `defaultDeps` builds them that
+way (D-15g, review C5); the web e2e asserts the exact nine tools a member's connector lists (review C3); OPS-003
+and OPS-015 give the nine-tool `tools/list` size, and OPS-003 walks a watchlist add, list and undo (review C6).
+C1, C2 and C7 were one defect (D-15i).
 
 Fixed with no design change: the discover `userState` read accepts only the asked title's element (D-06,
 review A3); the tests (a typed Taster fixture with `onPlexFor`, row counts asserted wherever a row is
@@ -330,17 +347,20 @@ beside em dashes); and the `@hnet/watch` README ("started" includes a Taster).
   remove, already-on and already-off (no row, no write), ambiguous (pool and two exact TMDB hits),
   remove of a title not on the watchlist, a retried remove, no catalog match, a guid/match mismatch, a
   timed-out PUT that landed (`written`) and one that did not (`failed`), an outcome plex.tv never
-  confirms (`unknown:`, re-read on the write budget), a change that could not be sent (still recorded),
+  confirms (`unknown:`, re-read on the write budget), a repeated and an unconfirmed add of a title not on
+  Plex (the Seerr sentence, D-15j), a change that could not be sent (still recorded),
   two watchlist titles of one name (ambiguous), non-owner (no row, no call); undo of an add, of a remove,
   of a change never sent (`none`, no call, the older change untouched), of a failed add (the removal sent
-  anyway) and of a failed remove (no call), the 30-second undo replay guard, two undos at once, and the
-  new actions never reaching exclusions, the Taste Profile, Unfinished, recent history or the seed pick;
-  the migration's CHECK.
+  anyway) and of a failed remove (no call), an unconfirmed undo of a remove (the Seerr sentence), the
+  30-second undo replay guard, two undos at once (also when the copy that takes the lock read its clock
+  later, D-15i), and the new actions never reaching exclusions, the Taste Profile, Unfinished, recent
+  history or the seed pick; the migration's CHECK.
 - `@hnet/mcp` e2e: `tools/list` ≤ 4,096 bytes and the pinned exact size, nine tools, scope filtering
   (a `watch:read`-only token sees `watchlist` but not `set_watchlist`), each new tool's happy path and
   1,200-character cap (and paging past it), the non-owner connector answers, the owner's connector
-  attributing a change to `oauth:<client_id>` and its user, "not ready" before the first sync, and which
-  bundle each watchlist call used (the short and write budgets are different fakes).
+  attributing a change to `oauth:<client_id>` and its user, "not ready" before the first sync, which
+  bundle each watchlist call used (the short and write budgets are different fakes), a repeated and an
+  unconfirmed add (D-15j), and which TMDB client each tool used (D-15g, plus a `defaultDeps` unit test).
 - `apps/web` stack: a Playwright-free `dev:local` smoke via the stub (D-11) is enough; no UI changes.
 - Live (PLAN-071): the hop checks, one add/undo on a title already on Plex, the voice bench.
 

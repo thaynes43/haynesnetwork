@@ -20,7 +20,7 @@
 // Control endpoints:
 //   GET  /_stub/calls  → { calls: [{method, path, machineId, body}] } (sharing writes, poster uploads,
 //                         scrobble/unscrobble)
-//   POST /_stub/reset  → 204 (clears recorded calls AND resets shares AND the watch map)
+//   POST /_stub/reset  → 204 (clears recorded calls AND resets shares, the watch map AND the watchlist)
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 
 export const STUB_PLEX_TOKENS = {

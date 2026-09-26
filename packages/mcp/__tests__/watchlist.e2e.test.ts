@@ -201,6 +201,72 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     );
   });
 
+  it('a retried add of a title not on Plex hears "already on" and still the Seerr sentence (D-15j)', async () => {
+    expect(await say('set_watchlist', { title: 'Andor', action: 'add' })).toBe(
+      "Added Andor (2022 show) to your watchlist. It isn't on Plex yet, so Seerr will request it.",
+    );
+    // HA's trailing tools/list failed after the write (DESIGN-049 D-05), so the model retries the add: the first
+    // answer never reached anyone, and the retry is the one the owner hears.
+    expect(await say('set_watchlist', { title: 'Andor', action: 'add' })).toBe(
+      "Andor (2022 show) is already on your watchlist. It isn't on Plex yet, so Seerr will request it if it hasn't already.",
+    );
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${DISCOVER.andor}`]);
+    expect(await db.select().from(watchMarks)).toHaveLength(1);
+    expect(changedLines().at(-1)).toBe(
+      '[mcp] watchlist_changed {"consumer":"hop","action":"add","kind":"show","result":"unchanged","onPlex":false}',
+    );
+  });
+
+  it('an add plex.tv never confirmed (the PUT failed, its re-read got no answer) says it may download (D-15j)', async () => {
+    fake.failWatchlistWrites.add(DISCOVER.andor);
+    fake.landFailedWatchlistWrites = true; // it did land…
+    fake.failUserStateReads.add('write'); // …but the write-budget re-read could not tell
+    expect(await say('set_watchlist', { title: 'Andor', action: 'add' })).toBe(
+      "Plex didn't answer in time, so I can't tell whether Andor (2022 show) changed. It isn't on Plex yet, so if it was added, Seerr will request it.",
+    );
+    expect(fake.watchlistCalls().slice(-2)).toEqual([
+      `write:addToWatchlist:${DISCOVER.andor}`,
+      `write:getDiscoverUserState:${DISCOVER.andor}`,
+    ]);
+    expect(fake.watchlist.has(DISCOVER.andor)).toBe(true);
+    const rows = await db.select().from(watchMarks);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.plexError).toMatch(/^unknown: /);
+    expect(changedLines().at(-1)).toBe(
+      '[mcp] watchlist_changed {"consumer":"hop","action":"add","kind":"show","result":"unknown","onPlex":false}',
+    );
+  });
+
+  it("the add's TMDB fallback goes through the single-attempt client; other tools keep the retrying one (D-15g)", async () => {
+    const BRUTALIST = '6a1b2c3d4e5f60718293a4b5';
+    fake.catalog.push({ id: BRUTALIST, kind: 'movie', title: 'The Brutalist', year: 2024, guids: ['tmdb://549509'] });
+    const retrying: string[] = [];
+    const once: string[] = [];
+    const search = (calls: string[]) => ({
+      searchMulti: async (q: string) => {
+        calls.push(q);
+        const results = /brutalist/i.test(q)
+          ? [{ id: 549509, media_type: 'movie', title: 'The Brutalist', release_date: '2024-12-20' }]
+          : [];
+        return { page: 1, total_pages: 1, total_results: results.length, results };
+      },
+    });
+    await http.stop();
+    http = await serveMcp({ ...deps(), tmdb: () => search(retrying), tmdbOnce: () => search(once) }, ENV);
+    // Known to nothing but TMDB: `set_watchlist` resolves it through `tmdbOnce` (no GET retries, so the add's worst
+    // case stays inside the 9 s deadline) and never through the retrying client.
+    expect(await say('set_watchlist', { title: 'The Brutalist', action: 'add' })).toBe(
+      "Added The Brutalist (2024 movie) to your watchlist. It isn't on Plex yet, so Seerr will request it.",
+    );
+    expect(once).toEqual(['The Brutalist']);
+    expect(retrying).toEqual([]);
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${BRUTALIST}`]);
+    // `watch_status` (and every other tool) keeps the retrying client.
+    expect(await say('watch_status', { title: 'Nosferatu' })).toBe("I couldn't find anything called Nosferatu.");
+    expect(retrying).toEqual(['Nosferatu']);
+    expect(once).toEqual(['The Brutalist']);
+  });
+
   it('remove: the next answers drop it at once; undo puts it back (not on Plex ⇒ Seerr will request it)', async () => {
     // Dark Matter is known only through the watchlist: once it is off, only TMDB still knows the name.
     await http.stop();

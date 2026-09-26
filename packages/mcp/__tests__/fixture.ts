@@ -106,6 +106,10 @@ export class FakePlex {
   readonly watchlist = new Map<string, number>();
   /** Discover ids whose watchlist writes fail (a 503 after the client's retries). */
   readonly failWatchlistWrites = new Set<string>();
+  /** A failed watchlist write lands anyway (plex.tv applied it, then the answer was lost). */
+  landFailedWatchlistWrites = false;
+  /** Bundles whose discover `userState` reads get no answer (DESIGN-051 D-15b: an outcome plex.tv never confirms). */
+  readonly failUserStateReads = new Set<FakeBudget>();
 
   constructor(
     readonly shows: FShow[],
@@ -151,15 +155,19 @@ export class FakePlex {
     this.calls.push({ server, op, key: id, budget });
     // A write on the short-budget bundle is a wiring bug (the swap PR #580 ruling 11 guards against).
     if (budget === 'short') return Promise.reject(new Error('the short-budget bundle must never write'));
+    const apply = () => {
+      if (op === 'addToWatchlist') {
+        if (!this.watchlist.has(id)) this.watchlist.set(id, this.now);
+      } else this.watchlist.delete(id);
+    };
     if (this.failWatchlistWrites.has(id)) {
+      if (this.landFailedWatchlistWrites) apply();
       return Promise.reject(new PlexHttpError(503, 'PUT', `https://discover.fake/actions/${op}`, 'unavailable'));
     }
     if (!this.catalog.some((t) => t.id === id)) {
       return Promise.reject(new PlexHttpError(404, 'PUT', `https://discover.fake/actions/${op}`, 'Not Found'));
     }
-    if (op === 'addToWatchlist') {
-      if (!this.watchlist.has(id)) this.watchlist.set(id, this.now);
-    } else this.watchlist.delete(id);
+    apply();
     return Promise.resolve();
   }
 
@@ -281,6 +289,7 @@ export class FakePlex {
         },
         getDiscoverUserState: async (id) => {
           this.calls.push({ server, op: 'getDiscoverUserState', key: id, budget });
+          if (this.failUserStateReads.has(budget)) throw new Error('plex.tv did not answer in time');
           return { watchlistedAt: this.watchlist.get(id) ?? null };
         },
       };

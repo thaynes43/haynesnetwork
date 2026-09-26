@@ -952,9 +952,13 @@ async function undoViewOf(
     episode: mark.episode,
   };
   if (isWatchlistAction(mark.action)) {
-    // DESIGN-051 D-04: the Seerr sentences need the D-02 "on Plex" rule.
+    // DESIGN-051 D-04: the Seerr sentences need the D-02 "on Plex" rule — and so does an unconfirmed undo of a
+    // remove, whose inverse call is an add that downloads a title not on Plex if it landed (D-15j).
     const watchlistOutcome = outcome ?? watchlistUndoOutcome(mark, revertResult);
-    const seerr = watchlistOutcome === 'reverted' || watchlistOutcome === 'cleared';
+    const seerr =
+      watchlistOutcome === 'reverted' ||
+      watchlistOutcome === 'cleared' ||
+      (watchlistOutcome === 'unknown' && mark.action === 'watchlist_remove');
     return {
       ...base,
       revertResult,
@@ -969,6 +973,11 @@ async function undoViewOf(
 /**
  * PLAN-071 ruling 5 — the replay of a retried undo: the account's last completed undo, when it is under
  * {@link UNDO_REPLAY_SECONDS} old and no mark was made since. Null otherwise.
+ *
+ * A completed undo stamped LATER than this call's clock is a replay too (DESIGN-051 D-15i): `now` is read before
+ * the advisory lock, so a concurrent copy that read its clock a few ms later (or on a replica whose clock runs
+ * ahead) can take the lock first and stamp its revert after this call's `now`. Rejecting that stamp as "from the
+ * future" sent the waiting copy on to the next-older change: for a watchlist remove, a re-add that can download.
  */
 async function findUndoReplay(db: DbClient, acct: number, now: Date): Promise<WatchMarkRow | null> {
   const [last] = await db
@@ -978,7 +987,8 @@ async function findUndoReplay(db: DbClient, acct: number, now: Date): Promise<Wa
     .orderBy(desc(watchMarks.revertedAt), desc(watchMarks.id))
     .limit(1);
   const at = last?.revertedAt?.getTime();
-  if (!last || at === undefined || now.getTime() - at >= UNDO_REPLAY_SECONDS * 1000 || at > now.getTime()) return null;
+  // A negative age (a stamp after `now`) is recent, never "too old".
+  if (!last || at === undefined || now.getTime() - at >= UNDO_REPLAY_SECONDS * 1000) return null;
   const [newer] = await db
     .select({ id: watchMarks.id })
     .from(watchMarks)
@@ -1056,7 +1066,8 @@ export function planReverts(
 export async function undoLastChange(input: UndoLastChangeInput): Promise<WatchMarkOutcome<UndoView>> {
   // PR #580 review ruling 4 — one undo at a time per account, across replicas: a transaction-scoped advisory lock
   // around the replay guard, the pick, the Plex calls and the revert. A concurrent second undo waits, then its
-  // guard sees the first one's revert and repeats that answer instead of picking the next-older change.
+  // guard sees the first one's revert and repeats that answer instead of picking the next-older change, whichever
+  // of the two read its clock first (the first one's stamp may be later than the waiter's `now`: DESIGN-051 D-15i).
   return inTransaction(input.db, async (tx) => {
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtext('watch_undo'), hashtext(${String(input.actor.plexAccountId)}))`,

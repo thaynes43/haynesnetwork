@@ -49,3 +49,10 @@
   call can do; undos serialized per account; one name with several watchlist titles asks; paging never skips;
   a single TMDB attempt; consent names the watchlist only to the owner). D-12 corrected: dev-env's CLAUDE.md
   gains the two tools and a Seerr test warning through the held-draft haynes-ops PR #3192 (bounces the pod).
+- 2026-09-25: second review pass on PR #580 (findings verified by independent skeptics), fixed on the branch:
+  the undo replay guard now counts a revert stamped after the call's own clock as a replay (two copies of one
+  undo on two replicas no longer walk back to the older change, DESIGN-051 D-15i); a repeated ("already on")
+  or unconfirmed add of a title not on Plex, and an unconfirmed undo of a remove, carry the Seerr sentence
+  (D-15j); tests pin which TMDB client `set_watchlist` uses and that `defaultDeps` builds it single-attempt;
+  the web e2e asserts the exact nine tools (it expected seven, which failed the e2e job); OPS-003 and OPS-015
+  give the 3,633-byte list, and OPS-003 walks a watchlist add, list and undo on `dev:local` (verified).

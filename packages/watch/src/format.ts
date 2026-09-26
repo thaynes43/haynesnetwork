@@ -528,16 +528,29 @@ export type UndoView =
  */
 export type WatchlistUndoOutcome = 'reverted' | 'cleared' | 'not_sent' | 'left_as_is' | 'failed' | 'unknown';
 
-/** PR #580 ruling 2 — the answer when plex.tv never confirmed a watchlist call's outcome. */
-function unknownOutcome(label: string): string {
-  return capSpoken(`Plex didn't answer in time, so I can't tell whether ${label} changed.`);
+/**
+ * DESIGN-051 D-15j — the Seerr sentence of an add whose own answer may never have been heard: an "already on" add
+ * (a client retrying an add that landed) and an add plex.tv never confirmed. The title is not on Plex, so it may
+ * download either way (ADR-092 C-03: an add that will download says so).
+ */
+const SEERR_ALREADY_ON = "It isn't on Plex yet, so Seerr will request it if it hasn't already.";
+const SEERR_IF_ADDED = "It isn't on Plex yet, so if it was added, Seerr will request it.";
+const SEERR_IF_PUT_BACK = "It isn't on Plex yet, so if it was put back, Seerr will request it.";
+
+/**
+ * PR #580 ruling 2 — the answer when plex.tv never confirmed a watchlist call's outcome; `seerr` is D-15j's
+ * sentence when the unconfirmed call was an add of a title not on Plex.
+ */
+function unknownOutcome(label: string, seerr: string | null = null): string {
+  return capSpoken(`Plex didn't answer in time, so I can't tell whether ${label} changed.${seerr ? ` ${seerr}` : ''}`);
 }
 
 /**
  * DESIGN-051 D-04 — the undo of a Watchlist Change: "Removed The Matrix (1999 movie) from your watchlist
  * again." / "Put The Matrix (1999 movie) back on your watchlist." When the title is not on Plex, undoing an add
  * adds "Seerr may already have requested it." and undoing a remove "Seerr will request it." A failed or
- * unconfirmed inverse call leaves the change live for the next undo.
+ * unconfirmed inverse call leaves the change live for the next undo; an unconfirmed undo of a remove (its inverse
+ * is an add) of a title not on Plex says Seerr will request it if it was put back (D-15j).
  */
 function formatWatchlistUndo(r: Extract<UndoView, { undone: true }>): string {
   const label = titleYearKind(r.title, r.year, r.kind);
@@ -559,7 +572,8 @@ function formatWatchlistUndo(r: Extract<UndoView, { undone: true }>): string {
         `Your last change, ${change} your watchlist, may not have reached Plex, so I made sure it's off your watchlist.${r.onPlex === false ? ' Seerr may already have requested it.' : ''}`,
       );
     case 'unknown':
-      return unknownOutcome(label);
+      // D-15j: undoing a remove sends an add, which downloads a title not on Plex if it landed.
+      return unknownOutcome(label, !add && r.onPlex === false ? SEERR_IF_PUT_BACK : null);
     case 'failed':
       return capSpoken(
         `I couldn't reach Plex, so ${label} is still ${add ? 'on' : 'off'} your watchlist. Say undo again to retry.`,
@@ -667,8 +681,11 @@ export function formatWatchlist(
 export type WatchlistChangeView =
   | { status: 'added'; kind: WatchKind; title: string; year: number | null; onPlex: boolean }
   | { status: 'removed'; kind: WatchKind; title: string; year: number | null }
-  /** The title was already in the asked state: nothing written, nothing sent. */
-  | { status: 'unchanged'; action: 'add' | 'remove'; kind: WatchKind; title: string; year: number | null }
+  /**
+   * The title was already in the asked state: nothing written, nothing sent. `onPlex` feeds the Seerr sentence of an
+   * "already on" add (DESIGN-051 D-15j: a retried add lands here, and its first answer may never have been heard).
+   */
+  | { status: 'unchanged'; action: 'add' | 'remove'; kind: WatchKind; title: string; year: number | null; onPlex: boolean }
   /** Resolved, but plex.tv's catalog has no such title. */
   | { status: 'not_in_catalog'; kind: WatchKind; title: string; year: number | null }
   /**
@@ -676,15 +693,20 @@ export type WatchlistChangeView =
    * match found none), so nothing was written.
    */
   | { status: 'unconfirmed'; kind: WatchKind; title: string; year: number | null }
-  /** PR #580 ruling 2: the write went out but plex.tv never confirmed whether it landed. */
-  | { status: 'unknown'; kind: WatchKind; title: string; year: number | null }
+  /**
+   * PR #580 ruling 2: the write went out but plex.tv never confirmed whether it landed. An add of a title not on
+   * Plex says Seerr will request it if it landed (DESIGN-051 D-15j).
+   */
+  | { status: 'unknown'; action: 'add' | 'remove'; kind: WatchKind; title: string; year: number | null; onPlex: boolean }
   /** Plex could not be reached (or refused the change). */
   | { status: 'failed' };
 
 /**
  * The `set_watchlist` read-back (DESIGN-051 D-02). The title and year are plex.tv's (the discover match), so
  * the agent can check the change: "Added The Matrix (1999 movie) to your watchlist. It's on Plex." / "Added Dune:
- * Part Three (2026 movie) to your watchlist. It isn't on Plex yet, so Seerr will request it." (ADR-092 C-03).
+ * Part Three (2026 movie) to your watchlist. It isn't on Plex yet, so Seerr will request it." (ADR-092 C-03). An
+ * "already on" add and an unconfirmed add of a title not on Plex carry a Seerr sentence too (D-15j): a client that
+ * retries an add which landed hears "already on", and the first answer may never have reached anyone.
  */
 export function formatWatchlistChange(v: WatchlistChangeView): string {
   if (v.status === 'failed') return "I couldn't reach Plex, so your watchlist didn't change.";
@@ -697,13 +719,12 @@ export function formatWatchlistChange(v: WatchlistChangeView): string {
     case 'removed':
       return capSpoken(`Removed ${label} from your watchlist.`);
     case 'unchanged':
-      return capSpoken(
-        v.action === 'add' ? `${label} is already on your watchlist.` : `${label} isn't on your watchlist.`,
-      );
+      if (v.action === 'remove') return capSpoken(`${label} isn't on your watchlist.`);
+      return capSpoken(`${label} is already on your watchlist.${v.onPlex ? '' : ` ${SEERR_ALREADY_ON}`}`);
     case 'unconfirmed':
       return capSpoken(`I couldn't confirm ${label} in Plex's catalog, so your watchlist didn't change.`);
     case 'unknown':
-      return unknownOutcome(label);
+      return unknownOutcome(label, v.action === 'add' && !v.onPlex ? SEERR_IF_ADDED : null);
     default:
       return capSpoken(`I found ${label} but not in Plex's catalog, so your watchlist didn't change.`);
   }

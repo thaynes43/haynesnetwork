@@ -138,7 +138,19 @@ test.describe('public MCP connectors (ADR-091)', () => {
     expect(listed.status).toBe(200);
     const tools = ((await listed.json()) as { result: { tools: Array<{ name: string }> } }).result
       .tools;
-    expect(tools).toHaveLength(7);
+    // Exactly the served list (DESIGN-051: nine tools; `set_watchlist` is filtered by scope only, and a member's
+    // call is refused as "not set up" at call time).
+    expect(tools.map((t) => t.name)).toEqual([
+      'unfinished',
+      'recommend',
+      'watch_status',
+      'recent_history',
+      'watchlist',
+      'mark_watched',
+      'dismiss',
+      'set_watchlist',
+      'undo_last_change',
+    ]);
 
     // Connected apps, from the user menu.
     await page.goto('/');

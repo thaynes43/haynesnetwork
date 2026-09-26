@@ -305,10 +305,13 @@ describe('formatWatchlistChange and the not-set-up answers (D-02)', () => {
       "Added Dune: Part Three (2026 movie) to your watchlist. It isn't on Plex yet, so Seerr will request it.",
     );
     expect(formatWatchlistChange({ status: 'removed', ...m })).toBe('Removed The Matrix (1999 movie) from your watchlist.');
-    expect(formatWatchlistChange({ status: 'unchanged', action: 'add', ...m })).toBe(
+    expect(formatWatchlistChange({ status: 'unchanged', action: 'add', ...m, onPlex: true })).toBe(
       'The Matrix (1999 movie) is already on your watchlist.',
     );
-    expect(formatWatchlistChange({ status: 'unchanged', action: 'remove', ...m })).toBe(
+    expect(formatWatchlistChange({ status: 'unchanged', action: 'remove', ...m, onPlex: true })).toBe(
+      "The Matrix (1999 movie) isn't on your watchlist.",
+    );
+    expect(formatWatchlistChange({ status: 'unchanged', action: 'remove', ...m, onPlex: false })).toBe(
       "The Matrix (1999 movie) isn't on your watchlist.",
     );
     expect(formatWatchlistChange({ status: 'not_in_catalog', ...m })).toBe(
@@ -318,12 +321,43 @@ describe('formatWatchlistChange and the not-set-up answers (D-02)', () => {
       "I couldn't confirm The Matrix (1999 movie) in Plex's catalog, so your watchlist didn't change.",
     );
     expect(formatWatchlistChange({ status: 'failed' })).toBe("I couldn't reach Plex, so your watchlist didn't change.");
-    expect(formatWatchlistChange({ status: 'unknown', ...m })).toBe(
+    expect(formatWatchlistChange({ status: 'unknown', action: 'add', ...m, onPlex: true })).toBe(
+      "Plex didn't answer in time, so I can't tell whether The Matrix (1999 movie) changed.",
+    );
+    expect(formatWatchlistChange({ status: 'unknown', action: 'remove', ...m, onPlex: false })).toBe(
       "Plex didn't answer in time, so I can't tell whether The Matrix (1999 movie) changed.",
     );
     expect(formatNotOnWatchlist('the fixture')).toBe("I couldn't find the fixture on your watchlist.");
     expect(formatNotOnWatchlist('Silo', { kind: 'show' })).toBe("I couldn't find a show called Silo on your watchlist.");
     expect(formatWatchlistNotSetUp()).toBe("Your Plex watchlist isn't set up for your account yet.");
+  });
+
+  // D-15j: a retried add that landed answers "already on", and an unconfirmed add may have landed: when the title is
+  // not on Plex, both still say Seerr will request it (the first answer may never have been heard).
+  it('an "already on" or unconfirmed add of a title not on Plex still carries the Seerr sentence', () => {
+    const d = { kind: 'movie' as const, title: 'Dune: Part Three', year: 2026, onPlex: false };
+    expect(formatWatchlistChange({ status: 'unchanged', action: 'add', ...d })).toBe(
+      "Dune: Part Three (2026 movie) is already on your watchlist. It isn't on Plex yet, so Seerr will request it if it hasn't already.",
+    );
+    expect(formatWatchlistChange({ status: 'unknown', action: 'add', ...d })).toBe(
+      "Plex didn't answer in time, so I can't tell whether Dune: Part Three (2026 movie) changed. It isn't on Plex yet, so if it was added, Seerr will request it.",
+    );
+    const u = { undone: true as const, kind: 'movie' as const, title: 'Dune: Part Three', year: 2026 };
+    expect(
+      formatUndoResult({ ...u, action: 'watchlist_remove', revertResult: 'failed', watchlistOutcome: 'unknown', onPlex: false }),
+    ).toBe(
+      "Plex didn't answer in time, so I can't tell whether Dune: Part Three (2026 movie) changed. It isn't on Plex yet, so if it was put back, Seerr will request it.",
+    );
+    // Undoing an add sends a removal, which never downloads: no sentence.
+    expect(
+      formatUndoResult({ ...u, action: 'watchlist_add', revertResult: 'failed', watchlistOutcome: 'unknown', onPlex: false }),
+    ).toBe("Plex didn't answer in time, so I can't tell whether Dune: Part Three (2026 movie) changed.");
+    for (const text of [
+      formatWatchlistChange({ status: 'unchanged', action: 'add', ...d }),
+      formatWatchlistChange({ status: 'unknown', action: 'add', ...d }),
+    ]) {
+      expect(text).not.toMatch(/[\u2014\u2013]/);
+    }
   });
 });
 

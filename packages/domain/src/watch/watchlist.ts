@@ -225,7 +225,8 @@ export async function titleOnPlex(
  * 6. The PUT (idempotent retries; a final timeout / 5xx re-reads userState on the write budget — ruling 4,
  *    D-15), then finalize `written` or `failed` (`plex_error` trimmed, never the token; an outcome the re-read
  *    could not settle is `failed` with an `unknown:` error and answered as such). A 404 is "not in Plex's catalog".
- * 7. The answer, with the D-02 "on Plex" rule for the Seerr sentence (ADR-092 C-03).
+ * 7. The answer, with the D-02 "on Plex" rule for the Seerr sentence (ADR-092 C-03) — also on an "already on" add
+ *    and an unconfirmed one (D-15j).
  */
 export async function changeWatchlist(input: ChangeWatchlistInput): Promise<ChangeWatchlistOutcome> {
   const now = input.now ?? new Date();
@@ -396,7 +397,8 @@ export async function changeWatchlist(input: ChangeWatchlistInput): Promise<Chan
   const onPlex = await titleOnPlex(db, acct, identity);
   if (on === add) {
     stamp();
-    return done('unchanged', { status: 'unchanged', action: input.action, ...said }, { onPlex });
+    // D-15j: an "already on" add of a title not on Plex still says Seerr will request it (a retried add lands here).
+    return done('unchanged', { status: 'unchanged', action: input.action, ...said, onPlex }, { onPlex });
   }
 
   // Step 5 — the pending row, BEFORE the write.
@@ -442,7 +444,9 @@ export async function changeWatchlist(input: ChangeWatchlistInput): Promise<Chan
     .where(eq(watchMarks.id, pending.id));
   const extra = { markId: pending.id, onPlex };
   if (sent.result === 'not_found') return done('not_in_catalog', { status: 'not_in_catalog', ...said }, extra);
-  if (sent.result === 'unknown') return done('unknown', { status: 'unknown', ...said }, extra);
+  if (sent.result === 'unknown') {
+    return done('unknown', { status: 'unknown', action: input.action, ...said, onPlex }, extra);
+  }
   if (sent.result === 'failed') return done('failed', { status: 'failed' }, extra);
   return done('written', add ? { status: 'added', ...said, onPlex } : { status: 'removed', ...said }, extra);
 }

@@ -29,6 +29,26 @@ function lazy<T>(build: () => T | null): () => T | null {
   };
 }
 
+/**
+ * The TMDB search built from env, or null when TMDB is not configured. The resolver's last resort (DESIGN-049 D-13)
+ * keeps the client's GET retries; `once` makes a single attempt, for `set_watchlist` (DESIGN-051 D-15g: with the
+ * discover reads, the PUT and its re-read, the add's worst case stays inside the 9 s deadline).
+ */
+export function tmdbSearchFromEnv(
+  env: Record<string, string | undefined>,
+  opts: { once: boolean; fetchImpl?: typeof fetch },
+): TmdbClient | null {
+  const cfg = resolveTmdbConfig(env);
+  if (!cfg) return null;
+  return new TmdbClient({
+    ...cfg,
+    timeoutMs: TMDB_TIMEOUT_MS,
+    retryDelayMs: 0,
+    ...(opts.once ? { getRetries: 0 } : {}),
+    ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+  });
+}
+
 let cached: McpDeps | undefined;
 
 export function defaultDeps(): McpDeps {
@@ -40,16 +60,10 @@ export function defaultDeps(): McpDeps {
     markPlex: lazy<PlexClientBundle>(() =>
       plexClientBundleFromEnv(process.env, { timeoutMs: MARK_TIMEOUT_MS, retryDelayMs: MARK_RETRY_DELAY_MS }),
     ),
-    tmdb: lazy(() => {
-      const cfg = resolveTmdbConfig(process.env);
-      return cfg ? new TmdbClient({ ...cfg, timeoutMs: TMDB_TIMEOUT_MS, retryDelayMs: 0 }) : null;
-    }),
-    // DESIGN-051 (PR #580 ruling 9): `set_watchlist`'s fallback makes ONE attempt, so its worst case (with the
+    tmdb: lazy(() => tmdbSearchFromEnv(process.env, { once: false })),
+    // DESIGN-051 D-15g (PR #580 ruling 9): `set_watchlist`'s fallback makes ONE attempt, so its worst case (with the
     // discover reads, the PUT and its re-read) stays inside the 9 s deadline.
-    tmdbOnce: lazy(() => {
-      const cfg = resolveTmdbConfig(process.env);
-      return cfg ? new TmdbClient({ ...cfg, timeoutMs: TMDB_TIMEOUT_MS, retryDelayMs: 0, getRetries: 0 }) : null;
-    }),
+    tmdbOnce: lazy(() => tmdbSearchFromEnv(process.env, { once: true })),
     now: () => new Date(),
     log: (line) => console.log(line),
   };

@@ -268,11 +268,43 @@ describe('changeWatchlist — add (D-03)', () => {
 
   it('already on the watchlist (plex.tv says so): no row, no write, and it says so', async () => {
     const out = await change('severance', 'add');
-    expect(out).toMatchObject({ status: 'done', result: 'unchanged', markId: null });
-    expect(spoken(out)).toBe('Severance (2022 show) is already on your watchlist.');
+    expect(out).toMatchObject({ status: 'done', result: 'unchanged', markId: null, onPlex: false });
+    // Severance is not on Plex here, so the Seerr sentence rides along (D-15j).
+    expect(spoken(out)).toBe(
+      "Severance (2022 show) is already on your watchlist. It isn't on Plex yet, so Seerr will request it if it hasn't already.",
+    );
     // The watchlist row's own title and plex guid: no read-back, just the live state.
     expect(fake.opKeys()).toEqual([`getDiscoverUserState:${SEV}`]);
     expect(await marks()).toEqual([]);
+    // A title on Plex: just "already on".
+    fake.watchlist.set(MATRIX, fake.now);
+    expect(spoken(await change('the matrix', 'add'))).toBe('The Matrix (1999 movie) is already on your watchlist.');
+  });
+
+  it('a retried add of a title not on Plex, and one plex.tv never confirmed, still say Seerr will request it (D-15j)', async () => {
+    // The first add landed, but its answer was lost (HA's trailing tools/list failed): the retry hears "already on".
+    expect(await change('dune: part three', 'add')).toMatchObject({ result: 'written', onPlex: false });
+    const retry = await change('dune: part three', 'add', { now: later(5) });
+    expect(retry).toMatchObject({ status: 'done', result: 'unchanged', onPlex: false, markId: null });
+    expect(spoken(retry)).toBe(
+      "Dune: Part Three (2026 movie) is already on your watchlist. It isn't on Plex yet, so Seerr will request it if it hasn't already.",
+    );
+    expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${DUNE3}`]);
+    expect(await marks()).toHaveLength(1);
+
+    // An add plex.tv never confirmed may have landed, and may download.
+    await db.execute(sql`TRUNCATE watch_marks`);
+    fake.watchlist.delete(DUNE3);
+    fake.failWatchlistWrites.add(DUNE3);
+    fake.landFailedWatchlistWrites = true;
+    const shortRead = { ...fake.clients().read.haynesops, getDiscoverUserState: async () => ({ watchlistedAt: null }) };
+    fake.failDiscoverReads.add('getDiscoverUserState'); // the write-budget re-read gets no answer
+    const unknown = await change('dune: part three', 'add', { now: later(60), reads: { read: { haynesops: shortRead } } });
+    expect(unknown).toMatchObject({ status: 'done', result: 'unknown', onPlex: false });
+    expect(spoken(unknown)).toBe(
+      "Plex didn't answer in time, so I can't tell whether Dune: Part Three (2026 movie) changed. It isn't on Plex yet, so if it was added, Seerr will request it.",
+    );
+    expect(fake.watchlist.has(DUNE3)).toBe(true); // it did land
   });
 
   it('when userState cannot be read, the overlaid cache decides', async () => {
@@ -634,6 +666,77 @@ describe('undo of a Watchlist Change (D-04)', () => {
     // The older change (Severance's remove) was never touched: no re-add, no download.
     expect(after[0]).toMatchObject({ revertedAt: null });
     expect(fake.watchlist.has(SEV)).toBe(false);
+  });
+
+  it('two undos at once where the lock winner read its clock LATER: the waiter still repeats its answer (D-15i)', async () => {
+    await change('severance', 'remove');
+    await change('the matrix', 'add', { now: later(10) });
+    // plex.tv holds the winner's inverse call until the second undo is waiting on the lock.
+    const clients = fake.clients();
+    const ops = clients.write.haynesops;
+    if (!ops) throw new Error('no haynesops writer');
+    let entered!: () => void;
+    const inPlex = new Promise<void>((r) => (entered = r));
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const gated: WatchPlexClients = {
+      read: clients.read,
+      write: {
+        haynesops: {
+          ...ops,
+          removeFromWatchlist: async (id: string) => {
+            entered();
+            await held;
+            return ops.removeFromWatchlist(id);
+          },
+          addToWatchlist: async (id: string) => {
+            entered();
+            await held;
+            return ops.addToWatchlist(id);
+          },
+        },
+      },
+    };
+    fake.calls.length = 0;
+    // Two copies of one undo, a few ms apart on two replicas: the one that reads its clock 5 ms later takes the lock
+    // first, so its revert is stamped after the waiting copy's `now`.
+    const late = new Date(later(20).getTime() + 5);
+    const first = undoLastChange({ db, plex: gated, actor: ACTOR, now: late });
+    await inPlex; // the first copy holds the lock and is inside its Plex call
+    const second = undoLastChange({ db, plex: gated, actor: ACTOR, now: later(20) });
+    await new Promise((r) => setTimeout(r, 100)); // …and the second is queued on the lock
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    expect([a, b].map((x) => (x.status === 'done' ? x.replayed : null))).toEqual([false, true]);
+    expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${MATRIX}`]);
+    if (a.status === 'done' && b.status === 'done') expect(formatUndoResult(b.view)).toBe(formatUndoResult(a.view));
+    const after = await marks();
+    expect(after[1]).toMatchObject({ revertedAt: late, revertResult: 'written' });
+    // Severance's remove is untouched: no re-add, so no Seerr download.
+    expect(after[0]).toMatchObject({ revertedAt: null });
+    expect(fake.watchlist.has(SEV)).toBe(false);
+
+    // Clock skew alone does it too: a retry on a replica whose clock runs 5 ms behind the stamp still replays.
+    fake.calls.length = 0;
+    const skewed = await undoLastChange({ db, plex: fake.clients(), actor: ACTOR, now: new Date(late.getTime() - 5) });
+    expect(skewed).toMatchObject({ replayed: true, markId: after[1]?.id });
+    expect(fake.calls).toEqual([]);
+    expect(fake.watchlist.has(SEV)).toBe(false);
+  });
+
+  it('an unconfirmed undo of a remove (its inverse is an add) of a title not on Plex says Seerr may request it (D-15j)', async () => {
+    expect(await change('dark matter', 'remove')).toMatchObject({ result: 'written' });
+    fake.failWatchlistWrites.add(DARK);
+    fake.landFailedWatchlistWrites = true;
+    fake.failDiscoverReads.add('getDiscoverUserState');
+    const u = await undo(later(5));
+    if (u.status !== 'done') throw new Error(u.status);
+    expect(u.view).toMatchObject({ revertResult: 'failed', watchlistOutcome: 'unknown', onPlex: false });
+    expect(formatUndoResult(u.view)).toBe(
+      "Plex didn't answer in time, so I can't tell whether Dark Matter (2024 show) changed. It isn't on Plex yet, so if it was put back, Seerr will request it.",
+    );
+    expect(fake.watchlist.has(DARK)).toBe(true);
+    expect(await onlyMark()).toMatchObject({ revertedAt: null, revertResult: 'failed' });
   });
 
   it('a failed inverse call leaves the change live for the next undo', async () => {
