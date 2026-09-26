@@ -3,6 +3,10 @@
 - **Status:** Accepted
 - **Date:** 2026-07-07
 - **Author:** Fable 5 (autonomous run, PLAN-012)
+- **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26, Draft): the
+  sweep first needs a verified Watchlist Registry, the guardian keeps a watchlisted title (`keep_reason`), and the
+  deleted release is recorded and blocked in Radarr/Sonarr before each Maintainerr handle (DESIGN-052 D-07, D-09,
+  D-14).
 - **Implements:** ADR-025 (curation pipeline). Extends DESIGN-010 (Trash/Maintainerr — D-02 REST
   mapping, D-05 guardian, D-08 wire contracts). Relates ADR-014/015 (confirm + no-reorient),
   ADR-019 (poster proxy).

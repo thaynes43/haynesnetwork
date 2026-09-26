@@ -1,7 +1,7 @@
 # DDD-002: Bounded Contexts
 
 - **Status:** Accepted
-- **Last updated:** 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
+- **Last updated:** 2026-09-26 (BC-03 gains watchlist protection for Trash: the Watchlist Registry, the Release Block write-back and a Seerr settings write — ADR-093, DESIGN-052; the "Seerr is read-only" rule is amended). Prior: 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
 - **Related:** PRD-001, DDD-001
 
 Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs as
@@ -113,6 +113,16 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
   permission *mutation* is BC-02 Entitlements (audited); the Trash actions themselves are BC-03.
 - **Does NOT own:** media lists — the *arrs are the **Source of Truth**; this is a mirror
   plus attribution/audit.
+- **Watchlist protection (ADR-093 / DESIGN-052, PLAN-072):** the Trash section owns the **Watchlist Registry**
+  (T-261; `watchlist_registry_*`, `plex_discover_ids`) and the **Deleted-Release Record** (T-264;
+  `trash_deleted_releases`). New inbound: the `watchlist-registry` sync mode reads the plex.tv account roster, the
+  owner's discover watchlist, community.plex.tv watchlists (owner token) and Seerr's per-user watchlists (Seerr's
+  stored tokens), as Trash guard input only; other people's lists are never displayed or exposed. New outbound, both
+  through the import-confined `@hnet/arr/write`: the **Release Block** (T-265), one app-owned Radarr and Sonarr
+  release profile of "must not contain" terms written before each Trash delete (hard rule 4 amended, ADR-093 C-08),
+  and **Seerr Watchlist Enrollment** (T-266), the per-user watchlist-sync flags in Seerr, behind an audited setting
+  (ADR-093 C-11). BC-03 reads BC-06's owner Watchlist Changes (`watch_marks`) so an owner add protects a title at
+  once; it does not reuse BC-06's `watch_reco_signals`.
 
 ### BC-04 — Plex Sharing (Phase 3 — **built**: ADR-017 / DESIGN-007)
 
@@ -193,10 +203,10 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
   enforcement start (PRD Non-goals; Authentik-side enforcement is follow-on R-30).
 - **BC-01 is upstream of everything:** contexts read (user, role); none mutates identity.
 - **The *arrs are upstream of BC-03** (conformist behind the ACL): sync is strictly
-  *arr → app; the only writes back are Fix and Restore, both narrow and audited (R-52).
+  *arr → app; the only writes back are Fix and Restore, both narrow and audited (R-52). _(The list has grown by ADR: Trash via Maintainerr (ADR-023), the queue janitor (ADR-083) and, with ADR-093, the Release Block; each is narrow, confined to `packages/domain` and audited.)_
 - **BC-04 owns library identity; BC-02 references it** — `role_library_grants` (BC-02)
   point at `plex_libraries` `(server_id, section_key)` identities from BC-04's registry.
-- **Seerr is read-only** — attribution source and a catalog Tile; never replaced (Non-goals).
+- **Seerr is read-only** — attribution source and a catalog Tile; never replaced (Non-goals). _(Amended by ADR-093 C-11, 2026-09-26: BC-03 writes one thing in Seerr, each user's watchlist-sync flags, once per user and behind an audited setting; requests are still Seerr's own.)_
 - **BC-06 reads BC-03 and BC-04, writes only Plex watch state and the owner's plex.tv watchlist.** Its outbound writes are the owner-issued `watched` mark (ADR-088) and the owner-issued Watchlist Change (ADR-092; plex.tv only, and Seerr auto-requests what it adds); MCP consumers get watch scopes only (ADR-087 C-05). A Connector's principal is its user's Tracked Account, resolved through the ADR-053 Plex Account Map; Plex is written only when that account is the Server Owner's (ADR-091 C-04). BC-06 reads the BC-01 session at consent and never turns a Delegated Token into one (hard rule 5).
 
 ## 5. Cross-cutting (not bounded contexts)
@@ -216,3 +226,4 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
 | 2026-07-10 | Fable 5 | BC-02 Entitlements gains an **outbound apply into Authentik** — the R-30 follow-on is now built as the **Authentik Role Portal** (ADR-045 / DESIGN-023, PLAN-026): a synced-tier Role projects to an Authentik group and role assignment writes group membership (exclusive across owned tier groups) through the import-confined `@hnet/authentik/write` + `@hnet/openwebui/write`, gated by a positive owned-groups allowlist (never the admin/MFA groups or ADR-042 blueprint-owned flows/stages/brand). The BC-04 "decide here, apply externally" posture applied to identity; external writes audited after the apply (`authentik_group_audit`), local changes same-tx audited. No BC renumbering. |
 | 2026-09-23 | Opus 5.5 | Added **BC-06 Watch Companion** (ADR-087/088/089 / DESIGN-049, PLAN-068): owns Watch Event, Title State, Watch Mark, the tracked-account registry and the recommendation signal cache; reads BC-03/BC-04; one outbound write (Plex scrobble for an owner-issued `watched` mark); serves MCP consumers through the in-cluster hop. |
 | 2026-09-23 | Opus 5.5 | **BC-06 gains the public connector surface** (ADR-091 / DESIGN-050, PLAN-069): owns the five OAuth tables (OAuth Client, Authorization Transaction and codes, Refresh Family and Delegated Token stores); Connectors call the public `/mcp` and answer for their user's Tracked Account (T-259) through the ADR-053 Plex Account Map; Plex write-back stays owner-only. No new context. |
+| 2026-09-26 | Opus 5.5 | **BC-03 gains watchlist protection for Trash** (ADR-093 / DESIGN-052, PLAN-072): owns the Watchlist Registry and the Deleted-Release Record; reads plex.tv, community.plex.tv and Seerr per-user watchlists as guard input; two new confined writes (the Release Block release profiles in Radarr/Sonarr, the Seerr watchlist-sync flags). The "Seerr is read-only" rule is amended. No new context. |
