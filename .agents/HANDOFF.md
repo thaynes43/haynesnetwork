@@ -33,6 +33,18 @@ Friends. **Owner checks still open:** clicking the card from a Family account on
 `quest.haynesnetwork.com` is live (haynes-ops #3188), and the membership drift above. Nothing here needs
 an admin UI action.
 
+## ▶ 2026-09-26 — Queue janitor promoted to L1 (Sonarr + Radarr `have_better` enforcing)
+
+The standing ladder obligation moved: the owed L0→L1 spot-check was done on the owner's behalf (69/69
+`have_better` items correct), four prerequisites fixed first (#579: `skipRedownload` on removal, the
+identity-mismatch guard, message-only reasons, release-level sample; DESIGN-046 D-10), shipped as
+**v0.99.0** (haynes-ops #3191), then the two cells flipped via `setArrQueueCleanupConfig` (~23:00Z). The
+first three enforcing runs removed 26 stuck grabs with 0 errors; a read-only audit found no re-grab and
+no re-search. PLAN-065 ladder log has the detail. **Next rung:** L1 → L2 needs ≥ 7 days with zero bad
+deletions (earliest 2026-10-02) plus the Q-01 Lidarr decision; fix the season-pack double removal
+(issue #583 item 1) before flipping L2. Issue #583 also holds the L3 criterion rewrite and the dead
+Fireman Sam packs.
+
 ## ▶ 2026-09-25 — Plex watchlist tools (PLAN-071): researched, owner-ruled, docs on branch, build next
 
 Owner request 2026-09-25: the agents (ChatGPT, the Movie Room voice agent, dev-env) should add and remove
