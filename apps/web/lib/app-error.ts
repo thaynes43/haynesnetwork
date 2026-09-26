@@ -36,6 +36,10 @@ const APP_CODE_COPY: Record<string, string> = {
   // nothing was recorded or deleted. Its own code, never ARR_UPSTREAM_UNAVAILABLE (that copy is the Fix path's).
   RELEASE_BLOCK_ARR_UNAVAILABLE:
     'Radarr or Sonarr did not answer, so nothing was deleted. Try again when the media apps respond normally.',
+  // ADR-093 / DESIGN-052 D-25cc — Expedite and Expire now are held while watchlist protection is verified (PLAN-072
+  // S4..S6); nothing was deleted.
+  TRASH_WEB_DELETES_HELD:
+    'Deleting from Trash is on hold while watchlist protection is being verified. Nothing was deleted.',
   TRASH_MUSIC_UNSUPPORTED: 'Music can’t be deleted or restored through Trash.',
   // DESIGN-035 D-17 — the non-admin collection size cap. The composer catches this appCode and opens
   // the over-cap Modal (which files the admin-override ticket), so this copy is only a fallback.

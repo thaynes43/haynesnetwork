@@ -274,6 +274,28 @@ export class WatchlistRegistryUnverifiedError extends Error {
   }
 }
 
+/** D-25cc — the copy the user sees when the web delete paths are held (PLAN-072 S4..S6). */
+export const TRASH_WEB_DELETES_HELD_MESSAGE =
+  'Deleting from Trash is on hold while watchlist protection is being verified. Nothing was deleted.';
+
+/**
+ * ADR-093 / DESIGN-052 D-25cc / PLAN-072 S4: Expedite (item and all) and the manual Expire now refuse while the web pod
+ * runs with `TRASH_WEB_DELETES_HELD` set, the web half of holding every real deletion until the live verification (S6)
+ * is green; the sweep CronJob is suspended for the other half. Nothing was read or deleted. PRECONDITION_FAILED.
+ */
+export class TrashWebDeletesHeldError extends Error {
+  readonly code = 'TRASH_WEB_DELETES_HELD' as const;
+  constructor() {
+    super(TRASH_WEB_DELETES_HELD_MESSAGE);
+  }
+}
+
+/** D-25cc — `TRASH_WEB_DELETES_HELD` is on for `1`, `true` or `yes` (any case); anything else, or absent, is off. */
+export function trashWebDeletesHeldFromEnv(env: Record<string, string | undefined> = process.env): boolean {
+  const v = env.TRASH_WEB_DELETES_HELD?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
+
 /** D-25av — Expedite's *arr-down refusal, the copy the user sees. */
 export const RELEASE_IDENTITY_UNAVAILABLE_MESSAGE =
   'Radarr or Sonarr did not answer, so nothing was deleted. Try again when the media apps respond normally.';
@@ -322,12 +344,19 @@ export type ReleaseBlockStep = 'validate' | 'put' | 'read_back' | 'duplicate_pro
  */
 export class ReleaseBlockError extends Error {
   readonly code = 'RELEASE_BLOCK_FAILED' as const;
+  /**
+   * D-25cd — the profile write may have reached the *arr: a `read_back` failure (the write answered), or a `put` whose
+   * POST or PUT was sent and whose answer was lost or refused. False for `validate`, `duplicate_profile` and a `put`
+   * that failed on the profile list GET before any write was sent.
+   */
+  readonly mayHaveWritten: boolean;
   constructor(
     readonly arrKind: 'radarr' | 'sonarr',
     readonly step: ReleaseBlockStep,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; sent?: boolean },
   ) {
     super('Deletions are paused until removals can be done safely.', options);
+    this.mayHaveWritten = step === 'read_back' || (step === 'put' && options?.sent !== false);
   }
 }
 

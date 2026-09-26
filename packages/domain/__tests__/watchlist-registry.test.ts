@@ -41,7 +41,9 @@ import {
   type WatchlistKeys,
   type WatchlistSnapshot,
 } from '../src/index';
+import { ArrHttpError } from '@hnet/arr';
 import { SeerrClient } from '@hnet/arr/read';
+import { PlexHttpError } from '@hnet/plex';
 import { PlexRegistryClient } from '@hnet/plex/read';
 import { bootMigratedDb, type TestDb } from './helpers';
 
@@ -834,6 +836,39 @@ describe('refreshWatchlistRegistry + evaluateRegistryGate (embedded PG16)', () =
         .where(eq(watchlistRegistryAccounts.plexAccountId, '101')),
     ).toEqual([]);
     expect(await itemsOf('101')).toEqual([]);
+  });
+
+  it('D-25ck: the roster, owner and Seerr user-list failure lines carry the status class (http_401), not a class name', async () => {
+    const s = createStaticWatchlistSources(baseFixture());
+    const [reader] = s.sources.plex;
+    const revoked = () => {
+      throw new PlexHttpError(401, 'GET', 'https://plex.tv/api/v2/user');
+    };
+    // A revoked owner token: the roster read fails on every server.
+    const noRoster = { ...s.sources, plex: [{ ...reader!, label: 'haynesops', getOwner: async () => revoked() }] };
+    expect((await refresh({ sources: noRoster } as never, T0)).failure).toBe('roster');
+    expect(logs.find((l) => l.msg === '[watchlist-registry] roster_read_failed')?.fields).toEqual({
+      server: 'haynesops',
+      errorClass: 'http_401',
+    });
+    // The owner's list fails; a rotated Seerr key fails the user list.
+    logs.length = 0;
+    const noOwner = {
+      plex: [{ ...reader!, label: 'haynesops', getOwnerWatchlist: async () => revoked() }],
+      seerr: {
+        ...s.sources.seerr!,
+        listUsers: async () => {
+          throw new ArrHttpError(401, 'GET', 'http://seerr/api/v1/user');
+        },
+      },
+    };
+    expect((await refresh({ sources: noOwner } as never, T0)).failure).toBe('owner');
+    expect(logs.find((l) => l.msg === '[watchlist-registry] owner_read_failed')?.fields).toMatchObject({
+      errorClass: 'http_401',
+    });
+    expect(logs.find((l) => l.msg === '[watchlist-registry] seerr_users_failed')?.fields).toEqual({
+      errorClass: 'http_401',
+    });
   });
 
   it('D-19: the owner`s watchlist_add changes since the run started count at once; a remove never subtracts', async () => {

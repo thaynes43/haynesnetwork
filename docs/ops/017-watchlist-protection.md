@@ -18,10 +18,11 @@ accounts only as their class and `acct:<8 hex>` (D-21).
 
 | Piece | Where | Notes |
 |---|---|---|
-| Registry refresh | CronJob `haynesnetwork-sync-watchlist-registry`, `14,29,44,59 * * * *`, `concurrencyPolicy: Forbid` | `tsx /sync/src/scripts/sync.ts --mode=watchlist-registry`; exit 0 for a clean `failed` run and for `busy` (D-25t) |
-| Sweep | CronJob `haynesnetwork-sync-trash-batch-sweep` (hourly at `:45`) | refreshes the registry inline, then the gate, then the two-phase delete (D-14); then, every hour whether or not a batch was due, the Release Block upkeep (the stranded in-flight settle and the 365-day expiry, only when due, D-25br) and the re-add check (D-23) |
+| Registry refresh | CronJob `haynesnetwork-sync-watchlist-registry`, `14,29,44,59 * * * *`, `concurrencyPolicy: Forbid` | `tsx /sync/src/scripts/sync.ts --mode=watchlist-registry`; exit 0 for a clean `failed` run and for `busy` (D-25t); then, best effort, the Release Block upkeep (D-25cf: it keeps running while the sweep CronJob is suspended; without `RADARR_API_KEY` / `SONARR_API_KEY` it logs `[release-block] upkeep_skipped`) |
+| Sweep | CronJob `haynesnetwork-sync-trash-batch-sweep` (hourly at `:45`) | refreshes the registry inline, then the gate, then the two-phase delete (D-14); then, every hour whether or not a batch was due, the Release Block upkeep (the stranded in-flight settle, the 365-day expiry and the profile drift check, D-25br, D-25ce) and the re-add check (D-23). Suspending it stops the re-add check too; nothing is deleted meanwhile, so nothing new can be re-added |
 | Gate on the web paths | `trash.expediteItem`, `trash.expediteAll`, `trash.batches.expire` | the CronJob's newest run, never an inline refresh; a refusal is `PRECONDITION_FAILED` |
-| Release Block | one profile per *arr, `haynesnetwork: deleted releases (managed, do not edit)` | written and read back before any delete; never edit it by hand while an image that reconciles it runs |
+| Web delete hold | env `TRASH_WEB_DELETES_HELD` on the web pod (`1`, `true` or `yes`) | while set (PLAN-072 S4 until S6 is green, and the rollback), the three web paths above refuse before reading anything: `PRECONDITION_FAILED`, appCode `TRASH_WEB_DELETES_HELD`, "Deleting from Trash is on hold while watchlist protection is being verified. Nothing was deleted." (D-25cc). Set and removed through haynes-ops, never by hand |
+| Release Block | one profile per *arr, `haynesnetwork: deleted releases (managed, do not edit)` | written and read back before any delete; never edit it by hand while an image that reconciles it runs: the upkeep reads it every run and puts back a disabled, deleted or edited profile within 15 minutes (`[release-block] drift`, D-25ce) |
 | Status | `trash_sweep_status` (one row) | the banner reads it; `paused_since` is the first non-ok outcome's time |
 
 ## 2. Is it healthy?
@@ -42,9 +43,13 @@ A run that finds another holding the lock answers `busy` and exits 0.
 The admin view is the Watchlists card (Settings, Trash, General): when watchlists were last checked, accounts read and
 not, the blocked-release counts per *arr, the import-list exclusions and the re-adds.
 
-The Release Block upkeep logs `[release-block] reconciled {…, expired, settled}` when it had something to do, and
-`[release-block] upkeep_failed {arrKind, stranded, expiring, error}` (warn) when Radarr or Sonarr did not answer; it
-tries again the next hour and never fails the job (D-25br).
+The Release Block upkeep (both CronJobs) reads each profile once per run (two GETs) and logs
+`[release-block] reconciled {…, expired, settled}` when it had something to do; `[release-block] drift {arrKind,
+reason, missingTerms, extraTerms}` (warn) when the profile no longer matched the records (`missing`, `duplicate`,
+`disabled`, `edited`, or `terms`: a term left behind by an abandoned record, or one deleted by hand) and it was put
+back; and `[release-block] upkeep_failed {arrKind, stranded, expiring, drift, error}` (warn) when Radarr or Sonarr
+did not answer. It tries again on the next run and never fails either job (D-25br, D-25ce, D-25cf). A `drift` line
+that keeps coming back means something else writes the profile: find it before it matters.
 
 ## 3. `sweep_paused` pages (6 hours or more, any reason)
 
@@ -69,6 +74,7 @@ the alert rule (PLAN-072 S4) matches.
 | `audit_unsafe` | `unsafe` | The Maintainerr safety audit failed (`paused_audit_unsafe`; the job also fails, as before ADR-093). | The Trash page's safety banner names the integration or the pool and its setting. For a rule pool's setting (`listExclusions`, `forceSeerr`, `arrAction` Delete, or the delete-after horizon), turn that setting back on in Maintainerr's own rule editor for that pool (its UI saves the whole rule), then re-run the sweep. The app's Rules tab only arms, disarms or deletes a rule and carries these settings over unchanged, so it cannot fix them. An episode pool is not held to `forceSeerr` (Maintainerr never stores it there, D-25bt). |
 | `arr` | `handle_breaker` | Three Maintainerr handles in a row failed (`aborted_arr`). | Maintainerr is down or its executor is stuck. Items already handled carry `[trash] deleted {…, records}` lines; the rest wait. |
 | `arr` | `arr_identity` | Three *arr identity reads in a row failed before Phase A (`aborted_arr`); nothing was written. | Radarr or Sonarr is down. The next hourly sweep retries. A manual Expire now reports "Nothing was deleted: Radarr or Sonarr did not answer." and Expedite refuses with the same cause (`RELEASE_BLOCK_ARR_UNAVAILABLE`, D-25bu). |
+| `arr` | `error` | The sweep threw for another reason with a batch due (Maintainerr's pending read failing, a database error); the job fails too (D-25cg). | Read the job's `[trash] sweep_failed {error}` line and the `trash batch sweep failed` line: a Maintainerr error means Maintainerr is down or answering errors (check its pod and logs); a database error means the app's Postgres. The next ok sweep clears the pause. |
 
 To re-run the sweep once the cause is fixed rather than wait for `:45`:
 `kubectl create job -n frontend --from=cronjob/haynesnetwork-sync-trash-batch-sweep sweep-manual-$(date +%s)`
@@ -98,8 +104,9 @@ Tell the cause apart from the source's earlier `account_failed {class, source, e
 | `errorClass` | Likely cause | What fixes it |
 |---|---|---|
 | `empty_after_titles`, `not_found_after_titles` (community; also an `account_hidden` line) | The friend hid their watchlist, emptied it, or left the Plex share; indistinguishable (ADR-093 C-05). | Nothing on our side. If Seerr still reads them, their Seerr list keeps protecting. Ask them to share the list again if it matters. |
-| `http_401`, `http_403` (seerr) | The Seerr API key was rotated or revoked. | Update `SEERR_API_KEY` in 1Password (`haynesnetwork-secret`), let the ExternalSecret refresh, and let the next CronJob run read it. |
-| `seerr_users`, `seerr_unconfigured` (seerr) | Seerr's user list failed, or Seerr is not configured for the job. | Check Seerr is up and `SEERR_URL` / `SEERR_API_KEY` are set; every Seerr source fails together in this case. |
+| `http_401`, `http_403` (seerr) | That user's stored Plex token in Seerr no longer reads their watchlist. | Nothing on our side; it clears when the user signs in to Seerr again. |
+| `seerr_users` (seerr) | Seerr's user list failed, so every Seerr source fails together. A rotated or revoked Seerr API key shows this way: the user list is the first call. | Read the run's `[watchlist-registry] seerr_users_failed {errorClass}` line (D-25ck): `http_401` or `http_403` means the Seerr API key was rotated or revoked, so update `SEERR_API_KEY` in 1Password (`haynesnetwork-secret`), let the ExternalSecret refresh and let the next CronJob run read it; `timeout`, `network` or `http_5xx` means Seerr is down. |
+| `seerr_unconfigured` (seerr) | Seerr is not configured for the job. | Check `SEERR_URL` / `SEERR_API_KEY` are set; every Seerr source fails together in this case. |
 | `inconsistent`, `empty_after_titles` (seerr) | Seerr's paging answered differently between pages, or it answered empty after titles (its watchlist fetch from plex.tv failed, DESIGN-052 Q-03). | Usually passes; if it persists, read the Seerr log for `Failed to retrieve watchlist items` at the same time. |
 | `http_429`, `http_5xx`, `timeout`, `network` | plex.tv or Seerr was down or throttled for 72 hours. | Check the upstream and the pod's egress; one ok read later turns the source back to `read`. |
 
@@ -114,8 +121,8 @@ page follows at 6 hours, so this notice is the early warning.
 
 | `failure` | What failed | What fixes it |
 |---|---|---|
-| `roster` | plex.tv's user lists (`/api/v2/user`, `/api/users`, `/api/home/users`) with the owner token. | Check plex.tv is up and the owner tokens in `haynesnetwork-secret` (`PLEX_HAYNESOPS_TOKEN`, `PLEX_HAYNESTOWER_TOKEN`) still work (a 401 means one was revoked). |
-| `owner` | The owner's discover watchlist read failed on every server's token. | Same as `roster`, for `discover.provider.plex.tv`; check the pod can reach it (egress). |
+| `roster` | plex.tv's user lists (`/api/v2/user`, `/api/users`, `/api/home/users`) with the owner token. | The run's `[watchlist-registry] roster_read_failed {server, errorClass}` lines name each server's cause (D-25ck): `http_401` means that owner token (`PLEX_HAYNESOPS_TOKEN` or `PLEX_HAYNESTOWER_TOKEN` in `haynesnetwork-secret`) was revoked; `timeout`, `network` or `http_5xx` means plex.tv is down or unreachable. |
+| `owner` | The owner's discover watchlist read failed on every server's token. | Same as `roster`, from the `owner_read_failed {server, errorClass}` lines, for `discover.provider.plex.tv`; check the pod can reach it (egress). |
 | `owner_truncated` | The owner's list could not be read to a proven end: the page cap, a page that contradicted the total, or a list that changed between pages twice in a row (D-25bn). | Usually the owner was editing the list during the read; the next run succeeds. If it persists, the list is past the 20-page cap (2,000 titles) or the provider is misbehaving. |
 | `error` | Anything else thrown during the run (a database error). | Read the job's log around the `run_failed` line. |
 
@@ -152,9 +159,11 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/seerr-watchlist.ts
 
 ## 8. Rollback
 
-PLAN-072's Rollback section is the order. In short: suspend the sweep CronJob first; turn enrollment off if S9 ran
-(the users the app turned on are the `seerr_watchlist_enrollments` rows with `already_on` false, pending rows
-included);
+PLAN-072's Rollback section is the order. In short: suspend the sweep CronJob first and set
+`TRASH_WEB_DELETES_HELD` on the web pod (the older image ignores it, so after the revert nobody uses Expedite or
+Expire now until the guard is back); turn enrollment off if S9 ran (the users the app turned on are the
+`seerr_watchlist_enrollments` rows with `already_on` false, pending rows included; restoring a user means their own
+`movies_before` / `tv_before`, never both off, D-25cj);
 then, in the haynes-ops change that reverts the image tag, also remove (or first suspend) the
 `haynesnetwork-sync-watchlist-registry` CronJob, since the older image rejects `--mode=watchlist-registry` (exit 2) and
 would fail a Job every 15 minutes, and remove the D-21 Loki alerts, which go silent with the older image. Leave the

@@ -40,20 +40,22 @@ import {
   type DiscoverKind,
   type PlexSectionItem,
 } from '@hnet/plex';
-import type {
-  CommunityWatchlistAnswer,
-  DiscoverMetadata,
-  HomeUser,
-  PlexPagedListing,
-  RosterOwner,
-  RosterUser,
+import {
+  plexErrorClass,
+  type CommunityWatchlistAnswer,
+  type DiscoverMetadata,
+  type HomeUser,
+  type PlexPagedListing,
+  type RosterOwner,
+  type RosterUser,
 } from '@hnet/plex/read';
 import type { SeerrUserSummary } from '@hnet/arr';
-import type { SeerrWatchlistAnswer } from '@hnet/arr/read';
+import { seerrErrorClass, type SeerrWatchlistAnswer } from '@hnet/arr/read';
 import { WATCHLIST_OVERLAY_MARGIN_SECONDS } from '@hnet/watch';
 import { inTransaction, resolveDb } from './db-client';
 import { accountTag, consoleDomainLogger, type DomainLogger } from './domain-logger';
 import { WatchlistRegistryUnverifiedError, type RegistryGateRefusal } from './errors';
+import { WATCHLIST_UNKNOWN } from './watch/watchlist';
 
 // ---------------------------------------------------------------------------
 // Constants (D-07: in code, not settings)
@@ -517,9 +519,10 @@ async function readRoster(
       }
       return { reader, owner, entries: [...entries.values()] };
     } catch (error) {
+      // D-25ck — the status (`http_401`: an owner token revoked), never the class name OPS-017 cannot act on.
       logger.warn('[watchlist-registry] roster_read_failed', {
         server: reader.label,
-        errorClass: error instanceof Error ? error.name : 'error',
+        errorClass: plexErrorClass(error),
       });
     }
   }
@@ -798,7 +801,7 @@ async function refreshBody(
       seerrUsers = await input.sources.seerr.listUsers();
     } catch (error) {
       logger.warn('[watchlist-registry] seerr_users_failed', {
-        errorClass: error instanceof Error ? error.name : 'error',
+        errorClass: seerrErrorClass(error), // D-25ck — `http_401` / `http_403`: the Seerr API key was rotated
       });
     }
   }
@@ -887,7 +890,7 @@ async function refreshBody(
     } catch (error) {
       logger.warn('[watchlist-registry] owner_read_failed', {
         server: reader.label,
-        errorClass: error instanceof Error ? error.name : 'error',
+        errorClass: plexErrorClass(error),
       });
     }
   }
@@ -1281,8 +1284,9 @@ export const EMPTY_WATCHLIST_KEYS: WatchlistKeys = Object.freeze({
 
 /**
  * Every registry item (every source and status: carried, unreadable, not_applicable and left-in-grace accounts
- * included) with its own or mapped external ids, plus — when `overlaySince` is set — the owner's live `watchlist_add`
- * Watchlist Changes made since then (D-19: a change counts at once; a `watchlist_remove` never subtracts).
+ * included) with its own or mapped external ids, plus — when `overlaySince` is set — the owner's Watchlist Changes
+ * since then that may have put a title on his list (D-19, D-25ca, D-25cb: a change counts at once; a
+ * `watchlist_remove` never subtracts; see `readOverlayMarks`).
  */
 export async function loadRegistryKeys(
   db: DbClient | undefined,
@@ -1333,8 +1337,17 @@ export async function loadRegistryKeys(
   return { movie: finish('movie'), show: finish('show') };
 }
 
-/** D-19 — the owner's live `watchlist_add` Watchlist Changes (`pending` or `written`, not reverted) made at or after
- *  `since`, as registry keys. A `watchlist_remove` never subtracts (fail closed). */
+/**
+ * D-19 — the owner's Watchlist Changes that may have put a title on his watchlist at or after `since`, as registry
+ * keys (fail closed: the overlay only ever adds protection):
+ *
+ * - a `watchlist_add` not reverted, made since then, whose call went out and was not refused: `pending`, `written`,
+ *   or `failed` with an `unknown:` outcome (D-25ca: plex.tv may have applied it, DESIGN-051's unsettled call);
+ * - a `watchlist_remove` whose undo was WRITTEN since then (D-25cb): the undo sent an add, and DESIGN-051's own
+ *   overlay replays it as an add at `max(reverted_at, created_at)`.
+ *
+ * A `watchlist_remove` itself never subtracts, and a reverted `watchlist_add` never does either.
+ */
 async function readOverlayMarks(
   exec: ReturnType<typeof resolveDb>,
   since: Date,
@@ -1350,11 +1363,24 @@ async function readOverlayMarks(
     })
     .from(watchMarks)
     .where(
-      and(
-        eq(watchMarks.action, 'watchlist_add'),
-        inArray(watchMarks.plexResult, ['written', 'pending']),
-        isNull(watchMarks.revertedAt),
-        gte(watchMarks.createdAt, since),
+      or(
+        and(
+          eq(watchMarks.action, 'watchlist_add'),
+          or(
+            inArray(watchMarks.plexResult, ['written', 'pending']),
+            and(
+              eq(watchMarks.plexResult, 'failed'),
+              sql`starts_with(coalesce(${watchMarks.plexError}, ''), ${WATCHLIST_UNKNOWN})`,
+            ),
+          ),
+          isNull(watchMarks.revertedAt),
+          gte(watchMarks.createdAt, since),
+        ),
+        and(
+          eq(watchMarks.action, 'watchlist_remove'),
+          eq(watchMarks.revertResult, 'written'),
+          sql`greatest(${watchMarks.revertedAt}, ${watchMarks.createdAt}) >= ${since.toISOString()}::timestamptz`,
+        ),
       ),
     );
   return marks.map((m) => {

@@ -544,20 +544,27 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
           });
         case path === '/collections':
           return json(res, 200, [
-            ...collections.map((c) => ({
-              id: c.id,
-              title: c.title,
-              isActive: c.isActive,
-              deleteAfterDays: c.deleteAfterDays,
-              arrAction: c.arrAction ?? 0, // rule pool — DELETE (aging audit reads this)
-              manualCollection: false,
-              // ADR-093 / DESIGN-052 D-16 — the aging invariant also requires both flags on a rule pool.
-              listExclusions: true,
-              forceSeerr: true,
-              type: c.type,
-              libraryId: c.libraryId,
-              media: [], // the list serves a PREVIEW subset — content is the paged endpoint
-            })),
+            ...collections.map((c) => {
+              // ADR-093 / DESIGN-052 D-16 / D-25cp — the flags a rule PUT stored on this pool's collection (the rule group
+              // whose `collection.id` is this pool), so an Arm/Disarm that dropped one makes the dev:local safety audit
+              // unsafe, as it would the live one. A pool no rule group names keeps the seeded `true`.
+              const stored = rules.find(
+                (r) => (r.collection as { id?: unknown } | undefined)?.id === c.id,
+              )?.collection as { listExclusions?: unknown; forceSeerr?: unknown } | undefined;
+              return {
+                id: c.id,
+                title: c.title,
+                isActive: c.isActive,
+                deleteAfterDays: c.deleteAfterDays,
+                arrAction: c.arrAction ?? 0, // rule pool — DELETE (aging audit reads this)
+                manualCollection: false,
+                listExclusions: stored?.listExclusions === undefined ? true : stored.listExclusions === true,
+                forceSeerr: stored?.forceSeerr === undefined ? true : stored.forceSeerr === true,
+                type: c.type,
+                libraryId: c.libraryId,
+                media: [], // the list serves a PREVIEW subset — content is the paged endpoint
+              };
+            }),
             // ADR-025 — surface the created Leaving-Soon collections so the drive can re-read their id
             // by title (the pending derivation skips them by title, so they never inflate the tables).
             ...[...manualCollections].map(([id, mc]) => ({

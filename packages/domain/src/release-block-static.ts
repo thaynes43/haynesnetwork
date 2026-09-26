@@ -57,7 +57,7 @@ export interface StaticReleaseBlockArrFixture {
 const syntheticMovie = (id: number): StaticArrMovie => ({
   title: `Stub Movie ${id}`,
   year: 2020,
-  tmdbId: 700_000 + id,
+  tmdbId: 0, // unknown to the stub: never disagrees with the ledger's id (D-25ci)
   file: {
     movieId: id,
     relativePath: `Stub Movie ${id} (2020) [Bluray-1080p][x264]-STUB.mkv`,
@@ -81,7 +81,7 @@ const syntheticMovie = (id: number): StaticArrMovie => ({
 const syntheticSeries = (id: number): StaticArrSeries => ({
   title: `Stub Show ${id}`,
   year: 2020,
-  tvdbId: 800_000 + id,
+  tvdbId: 0, // unknown to the stub (D-25ci)
   files: [
     {
       seriesId: id,

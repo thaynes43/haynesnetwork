@@ -204,12 +204,13 @@ describe('runSync — trash-batch-sweep mode (ADR-025, ADR-093)', () => {
     expect(report.releaseBlockReadds).toMatchObject({ checked: expect.any(Number), failed: 0 });
     expect(report.totalFailure).toBe(false);
     expect(fixture.calls.every((c) => !c.includes('create') && !c.includes('update'))).toBe(true);
-    // Nothing stranded or expiring: the upkeep made no *arr call at all.
+    // Nothing stranded or expiring, no live term and no profile: the upkeep read each profile once (D-25ce) and wrote
+    // nothing.
     expect(report.releaseBlockUpkeep).toEqual([
-      { arrKind: 'radarr', stranded: 0, expiring: 0, report: null, error: null },
-      { arrKind: 'sonarr', stranded: 0, expiring: 0, report: null, error: null },
+      { arrKind: 'radarr', stranded: 0, expiring: 0, drift: null, report: null, error: null },
+      { arrKind: 'sonarr', stranded: 0, expiring: 0, drift: null, report: null, error: null },
     ]);
-    expect(fixture.calls.filter((c) => c.endsWith(' list'))).toEqual([]);
+    expect(fixture.calls.filter((c) => c.endsWith(' list'))).toEqual(['radarr list', 'sonarr list']);
   });
 
   it('D-25br: a nothing-due sweep job settles a record an ambiguous handle stranded, and drops its term', async () => {
@@ -316,6 +317,85 @@ describe('runSync — watchlist-registry mode (ADR-093 / DESIGN-052 D-20)', () =
 
   it('requires the registry sources', async () => {
     await expect(runSync({ mode: 'watchlist-registry', clients: {}, db: t.db })).rejects.toThrow(/Watchlist Registry/);
+  });
+
+  it('D-25cf: runs the Release Block upkeep at the end of every run (the sweep CronJob may be suspended)', async () => {
+    const { sources } = createStaticWatchlistSources({ ownerId: '1' });
+    const { arr, fixture } = createStaticReleaseBlockArr();
+    const term = '/^stub[^a-z0-9]+movie[^a-z0-9]+7[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]stub(?:[^a-z0-9]|$)/i';
+    // An Expedite whose handle answer was lost two hours ago left Radarr 7's record in flight; Radarr still has it.
+    await insertReleaseRecords({
+      db: t.db,
+      origin: 'expedite',
+      state: 'in_flight',
+      recordedAt: new Date(Date.now() - 2 * 3_600_000),
+      logger: silentDomainLogger,
+      items: [
+        {
+          key: 'ms-7',
+          drafts: [
+            {
+              arrKind: 'radarr' as const,
+              arrItemId: 7,
+              mediaItemId: null,
+              tmdbId: null,
+              tvdbId: null,
+              imdbId: null,
+              title: 'Stub Movie 7',
+              year: 2020,
+              season: null,
+              identitySource: 'arr_grab_history' as const,
+              releaseTitle: null,
+              releaseGroup: 'STUB',
+              quality: null,
+              resolution: 1080,
+              sizeBytes: null,
+              fileName: null,
+              indexer: null,
+              years: [2020],
+              term,
+              termConfidence: 'verified' as const,
+              shape: 'group' as const,
+            },
+          ],
+        },
+      ],
+    });
+    fixture.profiles.radarr.push({
+      id: 1,
+      name: RELEASE_BLOCK_PROFILE_NAME,
+      enabled: true,
+      required: [],
+      ignored: [RELEASE_BLOCK_SENTINEL, term],
+      indexerId: 0,
+      tags: [],
+    });
+    const report = await runSync({
+      mode: 'watchlist-registry',
+      clients: {},
+      watchlistRegistry: sources,
+      releaseBlockArr: arr,
+      db: t.db,
+    });
+    expect(report.watchlistRegistry).toMatchObject({ status: 'ok' });
+    expect(report.releaseBlockUpkeep?.[0]).toMatchObject({ arrKind: 'radarr', stranded: 1, report: { settled: 1 } });
+    const [rec] = (await t.db.select().from(trashDeletedReleases)).filter((r) => r.arrItemId === 7);
+    expect(rec?.state).toBe('abandoned');
+    expect(fixture.profiles.radarr[0]!.ignored).toEqual([RELEASE_BLOCK_SENTINEL]);
+    // A failing *arr never fails the registry job; without the clients the step is skipped.
+    fixture.fail.add('radarr:list');
+    fixture.profiles.radarr[0] = { ...fixture.profiles.radarr[0]!, enabled: false };
+    const failing = await runSync({
+      mode: 'watchlist-registry',
+      clients: {},
+      watchlistRegistry: sources,
+      releaseBlockArr: arr,
+      db: t.db,
+    });
+    expect(failing.releaseBlockUpkeep?.[0]).toMatchObject({ arrKind: 'radarr', error: expect.any(String) });
+    expect(failing.totalFailure).toBe(false);
+    const none = await runSync({ mode: 'watchlist-registry', clients: {}, watchlistRegistry: sources, db: t.db });
+    expect(none.releaseBlockUpkeep).toBeNull();
   });
 
   it('runs the Seerr enrollment step after the refresh while the setting is on (D-17); off does nothing', async () => {

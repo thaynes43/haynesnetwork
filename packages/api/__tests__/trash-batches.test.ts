@@ -15,6 +15,7 @@ import {
   createStaticReleaseBlockArr,
   upsertMediaItemsBatch,
   ReleaseIdentityUnavailableError,
+  trashWebDeletesHeldFromEnv,
   WatchlistRegistryUnverifiedError,
   type MaintainerrClientBundle,
 } from '@hnet/domain';
@@ -383,6 +384,48 @@ describe('trash — the Registry Gate on the web paths (ADR-093)', () => {
       // D-25u / D-25bv — exactly the banner's wording (the reason and its detail are logged, never shown).
       expect(shape.message).toBe('Deletions are paused until watchlists can be checked.');
     }
+  });
+
+  it('D-25cc: with TRASH_WEB_DELETES_HELD on, Expedite item and all and Expire now refuse before anything is read', async () => {
+    const maint = stubMaintainerr();
+    const held = (hold: boolean | undefined) =>
+      caller({ ...makeCtx(t.db, sessionUser(admin), undefined, undefined, maint), trashWebDeletesHeld: hold });
+    const { batchId } = await held(false).trash.batches.create({ mediaKind: 'movie' });
+    await held(false).trash.batches.greenlight({ batchId, windowDays: 21 });
+    const refusals = [
+      ['trash.expediteItem', () => held(true).trash.expediteItem({ media: 'movie', collectionId: 7, maintainerrMediaId: 'ms-1' })],
+      ['trash.expediteAll', () => held(true).trash.expediteAll({ media: 'movie', maintainerrMediaIds: ['ms-1'] })],
+      ['trash.batches.expire', () => held(true).trash.batches.expire({ batchId, forceOverride: true })],
+    ] as const;
+    for (const [path, call] of refusals) {
+      const err = await call().then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(err, path).not.toBeNull();
+      const shape = wireShape(err, path);
+      expect(shape.data).toMatchObject({ code: 'PRECONDITION_FAILED', appCode: 'TRASH_WEB_DELETES_HELD' });
+      expect(shape.message).toBe(
+        'Deleting from Trash is on hold while watchlist protection is being verified. Nothing was deleted.',
+      );
+    }
+    const detail = await held(false).trash.batches.get({ batchId });
+    expect(detail.state).toBe('leaving_soon');
+    expect(detail.items.every((i) => i.state === 'pending')).toBe(true);
+    await held(false).trash.batches.cancel({ batchId });
+    // The env flag: 1 / true / yes (any case) holds; anything else does not.
+    expect(['1', 'true', 'YES', ' yes '].map((v) => trashWebDeletesHeldFromEnv({ TRASH_WEB_DELETES_HELD: v }))).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect(['', '0', 'false', undefined].map((v) => trashWebDeletesHeldFromEnv({ TRASH_WEB_DELETES_HELD: v }))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
   });
 
   it('D-25bu / D-25bv: the Release Block identity abort and the gate refusal on the wire (appCode, code, exact copy)', async () => {

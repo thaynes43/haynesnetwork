@@ -463,6 +463,44 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
     expect((await getTrashSweepStatus({ db: t.db, now: new Date(at6h.getTime() - 60_000) })).banner).toBeNull();
   });
 
+  it('D-25cg: a scheduled sweep that throws for any other reason records aborted_arr (error), so the banner shows after 6 h', async () => {
+    const state = baseState({ collections: [pool()] });
+    const batchId = await expiredBatch(state);
+    const t0 = new Date();
+    const scheduled = (now: Date) =>
+      sweepExpiredBatches({
+        arr: releaseArr,
+        db: t.db,
+        maintainerr: makeMaintainerr(state).bundle,
+        registry: 'refresh',
+        registrySources: createStaticWatchlistSources({ ownerId: '1' }).sources,
+        logger,
+        now: () => now,
+      });
+    // Maintainerr answers the audit but its pending crawl fails every hour.
+    state.fail.add('GET /collections/media/7/content/1');
+    for (let h = 0; h < 7; h += 1) {
+      await expect(scheduled(new Date(t0.getTime() + h * 3_600_000))).rejects.toThrow();
+    }
+    const status = await getTrashSweepStatus({ db: t.db, now: new Date(t0.getTime() + 7 * 3_600_000) });
+    expect(status).toMatchObject({ lastOutcome: 'aborted_arr', lastReason: 'error', banner: 'media_apps' });
+    expect(status.pausedSince).toBe(t0.toISOString());
+    const paused = logs.filter((l) => l.msg === '[trash] sweep_paused');
+    expect(paused.at(-1)?.fields).toMatchObject({ reason: 'arr', step: 'error', pausedForH: 6 });
+    expect(logs.some((l) => l.msg === '[trash] sweep_failed')).toBe(true);
+    expect((await itemStates(batchId))['ms-9001']!.state).toBe('pending');
+    // The next ok sweep clears it.
+    state.fail.clear();
+    await seedVerifiedWatchlistRegistry(t.db);
+    const ok = await scheduled(new Date(t0.getTime() + 8 * 3_600_000));
+    expect(ok.outcome).toBe('ok');
+    expect(await getTrashSweepStatus({ db: t.db, now: new Date(t0.getTime() + 8 * 3_600_000) })).toMatchObject({
+      lastOutcome: 'ok',
+      pausedSince: null,
+      banner: null,
+    });
+  });
+
   it('D-25bf: a pause ends when its batch leaves another way (cancelled), and after a clean manual Expire now', async () => {
     const state = baseState({ collections: [pool()] });
     const batchId = await expiredBatch(state);

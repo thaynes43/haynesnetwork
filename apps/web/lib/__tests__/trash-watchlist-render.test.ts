@@ -12,6 +12,7 @@ import {
   SWEEP_PAUSED_COPY,
   WATCHLIST_NOTE_DETAIL,
   WATCHLIST_NOTE_LABEL,
+  trashNoticeText,
   type TrashSweepBannerName,
 } from '../trash';
 
@@ -139,5 +140,25 @@ describe('the Expedite copy for a watchlisted item (D-09 / D-25av)', () => {
     expect(bullets).toContain('watchlist');
     expect(bullets).not.toMatch(/Maintainerr keeps/);
     expect(bullets).not.toMatch(/[–—]/); // owner rule: no en or em dashes
+  });
+});
+
+describe('the Library item page`s Trash notice (D-10, D-25co)', () => {
+  const base = { ruleTitle: 'Old and unwatched', sizeLabel: '4.0 GB' };
+
+  it('a watchlisted pending item shows the watchlist note instead of "Save it to keep it"', () => {
+    const text = trashNoticeText({ ...base, on: false, onWatchlist: true });
+    expect(text.watchlistNote).toBe(WATCHLIST_NOTE_DETAIL);
+    expect(text.meta).not.toMatch(/Save it to keep it/);
+    expect(text.meta).toContain('Old and unwatched');
+    expect(text.meta).not.toMatch(/—/);
+  });
+
+  it('a slated item still offers the Save; a saved one keeps the save wording, with no note', () => {
+    expect(trashNoticeText({ ...base, on: false, onWatchlist: false })).toEqual({
+      meta: 'Maintainerr’s “Old and unwatched” rule flagged it — deleting frees 4.0 GB. Save it to keep it.',
+      watchlistNote: null,
+    });
+    expect(trashNoticeText({ ...base, on: true, onWatchlist: true }).watchlistNote).toBeNull();
   });
 });

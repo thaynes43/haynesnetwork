@@ -44,6 +44,15 @@ describe('appCode error surfacing (DESIGN-003 D-13)', () => {
     expect(shown.message).not.toMatch(/recorded as failed|—/);
   });
 
+  it('D-25cc: a held web delete says so and that nothing was deleted', () => {
+    const err = { message: 'x', data: { appCode: 'TRASH_WEB_DELETES_HELD' } };
+    const shown = expediteErrorAction(appCodeOf(err), describeMutationError(err));
+    expect(shown.message).toBe(
+      'Deleting from Trash is on hold while watchlist protection is being verified. Nothing was deleted.',
+    );
+    expect(shown.message).not.toMatch(/—/);
+  });
+
   it('falls back to the message, then to generic copy', () => {
     expect(describeMutationError({ message: 'NOT_FOUND: no such tag' })).toBe(
       'NOT_FOUND: no such tag',

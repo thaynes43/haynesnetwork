@@ -73,6 +73,8 @@ import {
   WatchlistRegistryUnverifiedError,
   ReleaseBlockError,
   ReleaseIdentityUnavailableError,
+  TrashWebDeletesHeldError,
+  trashWebDeletesHeldFromEnv,
   MaintainerrRuleDriftError,
   type ArrClientBundle,
   type ReleaseBlockArrClients,
@@ -221,6 +223,19 @@ export interface TRPCContext {
    * the honest unmeasured snapshot, never an error); injected fake in tests.
    */
   uptime?: UptimeSource;
+  /**
+   * ADR-093 / DESIGN-052 D-25cc (PLAN-072 S4..S6) — whether the web delete paths (Expedite item and all, the manual
+   * Expire now) are held. Production reads `TRASH_WEB_DELETES_HELD` from the pod env; tests inject it.
+   */
+  trashWebDeletesHeld?: boolean;
+}
+
+/**
+ * D-25cc — refuse a web delete path while the hold is on (TrashWebDeletesHeldError ⇒ PRECONDITION_FAILED,
+ * appCode TRASH_WEB_DELETES_HELD), before anything is read or deleted.
+ */
+export function assertTrashWebDeletesAllowed(ctx: TRPCContext): void {
+  if (ctx.trashWebDeletesHeld ?? trashWebDeletesHeldFromEnv()) throw new TrashWebDeletesHeldError();
 }
 
 let envArrBundle: ArrClientBundle | undefined;
@@ -484,6 +499,7 @@ const APP_CODED_ERRORS = [
   TrashSweepPausedError,
   ReleaseBlockError,
   ReleaseIdentityUnavailableError,
+  TrashWebDeletesHeldError,
   MaintainerrRuleDriftError,
   AuthentikGroupNotOwnedError,
   AuthentikUnavailableError,
@@ -559,6 +575,7 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | TrashSweepPausedError       | TRASH_SWEEP_PAUSED          | PRECONDITION_FAILED   |
  * | ReleaseBlockError           | RELEASE_BLOCK_FAILED        | PRECONDITION_FAILED   |
  * | ReleaseIdentityUnavailable  | RELEASE_BLOCK_ARR_UNAVAILABLE | BAD_GATEWAY         |
+ * | TrashWebDeletesHeldError    | TRASH_WEB_DELETES_HELD      | PRECONDITION_FAILED   |
  * | MaintainerrRuleDriftError   | MAINTAINERR_RULE_DRIFT      | BAD_GATEWAY           |
  * | InvalidTicketTransitionError| TICKET_INVALID_TRANSITION   | CONFLICT              |
  * | NotFoundError               | —                           | NOT_FOUND             |
@@ -676,7 +693,8 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     if (
       err instanceof WatchlistRegistryUnverifiedError ||
       err instanceof TrashSweepPausedError ||
-      err instanceof ReleaseBlockError
+      err instanceof ReleaseBlockError ||
+      err instanceof TrashWebDeletesHeldError
     ) {
       // ADR-093 / DESIGN-052 D-07 / D-13 / D-14 — the Registry Gate refused (Expedite), the Release Block could not be
       // written and read back, or the manual Expire now paused: nothing was deleted; the message is the banner's

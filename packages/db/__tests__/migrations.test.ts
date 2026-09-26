@@ -2893,6 +2893,8 @@ describe('migrations against embedded Postgres 16', () => {
         seerr_watchlist_enrollments: [
           'seerr_user_id', 'plex_account_id', 'enrolled_at', 'already_on', 'optout_observed_at', 'last_checked_at',
           'confirmed_at', // DESIGN-052 D-25bs — null = pending (inserted before the app's write)
+          'movies_before', // DESIGN-052 D-25cj — the user's own flags before the app's write (what a rollback restores)
+          'tv_before',
         ],
         trash_sweep_status: ['id', 'last_outcome', 'last_reason', 'last_at', 'paused_since', 'last_ok_at'],
       };

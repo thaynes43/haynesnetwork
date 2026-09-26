@@ -22,6 +22,8 @@ interface FakeSeerr {
   clients: SeerrEnrollClients;
   flags: Map<number, { movies: boolean; tv: boolean }>;
   writes: number[];
+  /** The write's own GET fails: nothing is sent (D-25cj). */
+  failGet: Set<number>;
   failWrite: Set<number>;
   ignoreWrite: Set<number>;
   /** Seerr saves the flags, then the answer is lost (a 10 s client timeout). */
@@ -40,6 +42,7 @@ function fakeSeerr(): FakeSeerr {
   const fake: FakeSeerr = {
     flags,
     writes: [],
+    failGet: new Set(),
     failWrite: new Set(),
     ignoreWrite: new Set(),
     loseAnswer: new Set(),
@@ -61,7 +64,14 @@ function fakeSeerr(): FakeSeerr {
       ],
     },
     write: {
-      setWatchlistSync: async (id: number, f: { movies: boolean; tv: boolean }) => {
+      // Like SeerrWriteClient: the GET, then the caller's `beforeWrite`, then the POST.
+      setWatchlistSync: async (
+        id: number,
+        f: { movies: boolean; tv: boolean },
+        options: { beforeWrite?: () => Promise<void> } = {},
+      ) => {
+        if (fake.failGet.has(id)) throw new Error('GET 503');
+        await options.beforeWrite?.();
         fake.writes.push(id);
         if (fake.failWrite.has(id)) throw new Error('500');
         if (!fake.ignoreWrite.has(id)) flags.set(id, { ...f });
@@ -191,6 +201,35 @@ describe('Seerr watchlist enrollment (ADR-093 C-11 / DESIGN-052 D-17)', () => {
     // A rollback that turns off only the app's enrollments (already_on = false) finds this user.
     const appRows = (await t.db.select().from(seerrWatchlistEnrollments)).filter((r) => !r.alreadyOn);
     expect(appRows.map((r) => r.seerrUserId)).toEqual([2]);
+  });
+
+  it('D-25cj: each row keeps the user`s own flags before the write, so a rollback restores exactly those', async () => {
+    const fake = fakeSeerr();
+    await setSeerrWatchlistEnroll({ db: t.db, value: { enabled: true, onlyUserIds: null }, actorId: null });
+    await enrollSeerrWatchlistSync({ db: t.db, seerr: fake.clients, logger });
+    const rows = await t.db.select().from(seerrWatchlistEnrollments);
+    expect(rows.map((r) => [r.seerrUserId, r.alreadyOn, r.moviesBefore, r.tvBefore]).sort()).toEqual([
+      [1, true, true, true],
+      [2, false, false, false],
+      [3, false, false, false],
+      [4, false, true, false], // movie sync was already on: a rollback leaves it on
+    ]);
+    const line = logs.find((l) => l.msg === '[seerr-enroll] enrolled' && l.fields?.seerrUserId === 4);
+    expect(line?.fields).toMatchObject({ alreadyOn: false, moviesBefore: true, tvBefore: false });
+  });
+
+  it('D-25cj: a write whose own GET failed sent nothing and records nothing; the user turning sync on later is already_on', async () => {
+    const fake = fakeSeerr();
+    fake.failGet.add(2);
+    await setSeerrWatchlistEnroll({ db: t.db, value: { enabled: true, onlyUserIds: [2] }, actorId: null });
+    expect(await enrollSeerrWatchlistSync({ db: t.db, seerr: fake.clients, logger })).toMatchObject({ failed: 1 });
+    expect(await t.db.select().from(seerrWatchlistEnrollments)).toEqual([]);
+    // The user turns watchlist sync on in Seerr before the next run: theirs, not the app's.
+    fake.flags.set(2, { movies: true, tv: true });
+    expect(await enrollSeerrWatchlistSync({ db: t.db, seerr: fake.clients, logger })).toMatchObject({ alreadyOn: 1 });
+    const [row] = await t.db.select().from(seerrWatchlistEnrollments);
+    expect(row).toMatchObject({ seerrUserId: 2, alreadyOn: true });
+    expect(fake.writes).toEqual([]);
   });
 
   it('respects a later opt-out: noted once after a day, never turned back on', async () => {

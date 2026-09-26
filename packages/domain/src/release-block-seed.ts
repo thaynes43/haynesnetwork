@@ -25,6 +25,7 @@ import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import {
   identifyFromLedger,
   insertReleaseRecords,
+  isSameArrTitle,
   reconcileReleaseBlock,
   type KeyedDrafts,
   type ReleaseArrKind,
@@ -139,6 +140,25 @@ export function matchLegacySab(
     const ratio = (item.deletedSizeBytes as number) / job.bytes;
     return ratio >= LEGACY_SAB_SIZE_MIN_RATIO && ratio <= 1;
   });
+}
+
+/**
+ * D-25ch — one draft per distinct term (per *arr and season), the first kept: the seed's sources can name one release
+ * many times (a legacy SAB history holding every fetch of a download loop, a ledger key imported twice), and a
+ * record per job would only repeat the same term.
+ */
+export function dedupeDraftsByTerm(drafts: readonly ReleaseRecordDraft[]): ReleaseRecordDraft[] {
+  const seen = new Set<string>();
+  const out: ReleaseRecordDraft[] = [];
+  for (const d of drafts) {
+    if (d.term !== null) {
+      const key = `${d.arrKind}|${d.season ?? ''}|${d.term}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    out.push(d);
+  }
+  return out;
 }
 
 function legacyDraft(
@@ -291,7 +311,8 @@ export async function seedReleaseBlock(input: {
           kind === 'radarr'
             ? await input.arr.read.radarr.findMovie(row.arrItemId)
             : await input.arr.read.sonarr.findSeries(row.arrItemId);
-        if (present !== null) {
+        // D-25ci — another title at the ledger's id (an *arr rebuild) does not make this one present.
+        if (present !== null && isSameArrTitle(kind, present, { tmdbId: row.tmdbId, tvdbId: row.tvdbId })) {
           report.skippedPresent += 1;
           continue;
         }
@@ -308,28 +329,37 @@ export async function seedReleaseBlock(input: {
         mediaItemId: row.mediaItemId,
         before: deletedAt,
       });
-      if (drafts) source = 'ledger';
+      if (drafts) {
+        drafts = dedupeDraftsByTerm(drafts);
+        source = 'ledger';
+      }
     }
     if (!drafts && kind === 'radarr' && input.legacySab && row.year !== null) {
       const jobs = matchLegacySab(
         { title: row.title, year: row.year, deletedAt, deletedSizeBytes: row.deletedSizeBytes },
         input.legacySab,
       );
-      const built = jobs
-        .map((job) =>
-          legacyDraft(
-            job,
-            {
-              arrItemId: row.arrItemId,
-              mediaItemId: row.mediaItemId,
-              tmdbId: row.tmdbId,
-              imdbId: row.imdbId,
-            },
-            row.title,
-            row.year as number,
-          ),
-        )
-        .filter((d): d is ReleaseRecordDraft => d !== null);
+      // D-25ch — the closest size first (the likeliest identity names the record), one record per distinct term: a
+      // title fetched 40 times in the #576 loop is one term per group, not 40 records.
+      const deletedBytes = row.deletedSizeBytes as number;
+      const built = dedupeDraftsByTerm(
+        [...jobs]
+          .sort((a, b) => deletedBytes / b.bytes - deletedBytes / a.bytes)
+          .map((job) =>
+            legacyDraft(
+              job,
+              {
+                arrItemId: row.arrItemId,
+                mediaItemId: row.mediaItemId,
+                tmdbId: row.tmdbId,
+                imdbId: row.imdbId,
+              },
+              row.title,
+              row.year as number,
+            ),
+          )
+          .filter((d): d is ReleaseRecordDraft => d !== null),
+      );
       if (built.length > 0) {
         drafts = built;
         source = 'legacy_sab';

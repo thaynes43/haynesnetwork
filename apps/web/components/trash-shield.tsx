@@ -23,6 +23,7 @@ import {
   daysLeftTone,
   daysUntil,
   lastWatchedLabel,
+  trashNoticeText,
   type TrashActionName,
 } from '@/lib/trash';
 import { ItemExpediteModal } from '@/components/trash-expedite';
@@ -386,6 +387,12 @@ export function TrashPendingNotice({
   // install is safe. Always the ADR-014 Modal (never one-click) — via ItemExpediteModal.
   const canExpedite = access.actions.includes('expedite_item');
   const safe = status.data?.safe === true;
+  const notice = trashNoticeText({
+    on,
+    onWatchlist: item.onWatchlist === true,
+    ruleTitle: item.collectionTitle ?? null,
+    sizeLabel: formatBytes(item.sizeBytes),
+  });
 
   return (
     <section className="card trash-panel" data-testid="trash-guard" role="status">
@@ -405,11 +412,16 @@ export function TrashPendingNotice({
             </>
           ) : null}
         </p>
-        <p className="muted trash-panel__meta">
-          {on
-            ? 'Maintainerr will keep this item — un-saving puts it back under its deletion rules.'
-            : `Maintainerr’s “${item.collectionTitle ?? 'deletion'}” rule flagged it — deleting frees ${formatBytes(item.sizeBytes)}. Save it to keep it.`}
-        </p>
+        <p className="muted trash-panel__meta">{notice.meta}</p>
+        {/* ADR-093 / DESIGN-052 D-10 / D-25co — the watchlist keep, in the tile note's words (never whose list). */}
+        {notice.watchlistNote !== null ? (
+          <p className="muted trash-panel__watchlist" data-testid="trash-watchlist-note">
+            <span className="trash-panel__watched-icon" aria-hidden="true">
+              <BookmarkGlyph />
+            </span>
+            {notice.watchlistNote}
+          </p>
+        ) : null}
         {/* DESIGN-010 D-12 — cross-server watch visibility (info, not protection): the last-watch
             line when we have one. It never gates the actions above. */}
         {(() => {

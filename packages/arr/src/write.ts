@@ -535,8 +535,8 @@ export class MaintainerrWriteClient {
  * ADR-093 C-11 / DESIGN-052 D-17 (PLAN-072) — the Seerr WRITE client (base path `/api/v1`, `X-Api-Key`; the key acts as
  * Seerr user 1). Two writes, both confined to packages/domain like every other write client:
  *
- * - `setWatchlistSync(userId, {movies, tv})` — `GET /user/{id}/settings/main`, then `POST` the SAME body with the two
- *   flags set. Seerr 3.4.1's POST assigns `username`, `locale`, `discoverRegion`, `streamingRegion`,
+ * - `setWatchlistSync(userId, {movies, tv}, {beforeWrite})` — `GET /user/{id}/settings/main`, then `beforeWrite`
+ *   (the caller records the attempt), then `POST` the SAME body with the two flags set. Seerr 3.4.1's POST assigns `username`, `locale`, `discoverRegion`, `streamingRegion`,
  *   `originalLanguage` and (for a target without MANAGE_USERS) the four quota fields straight from the body, so the
  *   whole GET body is echoed back; a partial body would blank them. Returns the flags the response carries.
  * - `setSonarrAnimeTags(serverId, animeTags)` — `GET /settings/sonarr`, then `PUT /settings/sonarr/{id}` with the SAME
@@ -555,9 +555,13 @@ export class SeerrWriteClient {
   async setWatchlistSync(
     userId: number,
     flags: { movies: boolean; tv: boolean },
+    options: { beforeWrite?: () => Promise<void> } = {},
   ): Promise<SeerrUserWatchlistSync> {
     const path = `user/${encodeURIComponent(String(userId))}/settings/main`;
     const body = await this.http.requestJson('GET', path, z.record(z.string(), z.unknown()));
+    // DESIGN-052 D-25cj — the caller's record of the attempt goes in between the GET and the POST: a GET that fails
+    // sent nothing and records nothing; a record that fails sends nothing.
+    await options.beforeWrite?.();
     return this.http.requestJson('POST', path, seerrUserWatchlistSyncSchema, {
       body: { ...body, watchlistSyncMovies: flags.movies, watchlistSyncTv: flags.tv },
     });

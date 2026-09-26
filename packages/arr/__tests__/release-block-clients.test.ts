@@ -277,6 +277,45 @@ describe('Seerr enrollment writes (D-17)', () => {
     });
   });
 
+  it('D-25cj: beforeWrite runs after the GET answered and before the POST; a failed GET never runs it', async () => {
+    const order: string[] = [];
+    const { fetchImpl, calls } = stubFetch([
+      { path: '/api/v1/user/12/settings/main', body: settingsBody },
+      {
+        method: 'POST',
+        path: '/api/v1/user/12/settings/main',
+        body: { ...settingsBody, watchlistSyncMovies: true, watchlistSyncTv: true },
+      },
+    ]);
+    await new SeerrWriteClient({ ...SEERR, fetchImpl }).setWatchlistSync(
+      12,
+      { movies: true, tv: true },
+      {
+        beforeWrite: async () => {
+          order.push(`beforeWrite after ${calls.map((c) => c.method).join(',')}`);
+        },
+      },
+    );
+    expect(order).toEqual(['beforeWrite after GET']);
+    expect(calls.map((c) => c.method)).toEqual(['GET', 'POST']);
+
+    const failing = stubFetch([{ path: '/api/v1/user/12/settings/main', status: 400, body: { message: 'no' } }]);
+    let ran = false;
+    await expect(
+      new SeerrWriteClient({ ...SEERR, fetchImpl: failing.fetchImpl }).setWatchlistSync(
+        12,
+        { movies: true, tv: true },
+        {
+          beforeWrite: async () => {
+            ran = true;
+          },
+        },
+      ),
+    ).rejects.toThrow();
+    expect(ran).toBe(false);
+    expect(failing.calls.map((c) => c.method)).toEqual(['GET']);
+  });
+
   it('setSonarrAnimeTags PUTs the whole server object with animeTags replaced, then reads it back', async () => {
     const server = {
       id: 0,

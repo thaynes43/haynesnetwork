@@ -267,7 +267,8 @@ export interface RunSyncOptions {
   watchlistRegistry?: WatchlistRegistrySources;
   /** ADR-093 C-07 / DESIGN-052 D-14 — the Radarr / Sonarr identity reads and the confined release-profile writes the
    *  `trash-batch-sweep` mode records and blocks each deleted release through (and reads the D-23 re-add check with).
-   *  Required by that mode; built inside @hnet/domain (releaseBlockArrClientsFromEnv); tests inject stubs. */
+   *  Required by that mode; optional for `watchlist-registry`, which runs the Release Block upkeep with them when
+   *  present (D-25cf). Built inside @hnet/domain (releaseBlockArrClientsFromEnv); tests inject stubs. */
   releaseBlockArr?: ReleaseBlockArrClients;
   /** ADR-093 C-11 / DESIGN-052 D-17 — the Seerr clients the `watchlist-registry` mode enrolls users through while the
    *  `seerr_watchlist_enroll` setting is on. Optional: absent (no SEERR_API_KEY) ⇒ the step is skipped. */
@@ -622,6 +623,19 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         });
       }
     }
+    // DESIGN-052 D-25cf — the Release Block upkeep (D-25br: the stranded settle and the expiry; D-25ce: the profile
+    // drift check) at the end of every registry run as well as hourly in the sweep job, so it never stops while the
+    // sweep CronJob is suspended (PLAN-072 S4..S6, rollback step 1). Best effort: it never changes the exit.
+    let releaseBlockUpkeep: ReleaseBlockUpkeepKind[] | null = null;
+    if (options.releaseBlockArr) {
+      try {
+        releaseBlockUpkeep = await reconcileReleaseBlockIfDue({ db, arr: options.releaseBlockArr, logger });
+      } catch (error) {
+        logger.warn('[release-block] upkeep_failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     return {
       mode: options.mode,
       startedAt,
@@ -631,6 +645,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       fixesCompleted: null,
       watchlistRegistry,
       seerrEnroll,
+      releaseBlockUpkeep,
       ...(watchlistRegistryError !== undefined ? { watchlistRegistryError } : {}),
       totalFailure: watchlistRegistryError !== undefined,
     };

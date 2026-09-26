@@ -157,9 +157,25 @@ export type ReleaseIdentity =
   | {
       status: 'unrecordable';
       /** `no_term`: no group and no release name (or D-12's self-check rejected every form); `gone`: the *arr no
-       *  longer has the item and the ledger cannot name its release; `no_ledger_item`: not in our ledger. */
-      reason: 'no_term' | 'gone' | 'no_ledger_item';
+       *  longer has the item and the ledger cannot name its release; `no_ledger_item`: not in our ledger;
+       *  `id_mismatch` (D-25ci): the *arr item at the ledger's id is another title (an *arr rebuild reassigned ids). */
+      reason: 'no_term' | 'gone' | 'no_ledger_item' | 'id_mismatch';
     };
+
+/**
+ * D-25ci — is the *arr item read at an `arr_item_id` the title we mean? Maintainerr deletes by tmdb (Radarr) or tvdb
+ * (Sonarr), and `media_items.arr_item_id` is not stable across an *arr rebuild until the next sync, so an identity read
+ * or a settle by id must check the external id. An id unknown on either side (null, or the *arr's 0) never disagrees.
+ */
+export function isSameArrTitle(
+  kind: ReleaseArrKind,
+  item: { tmdbId?: number | null; tvdbId?: number | null },
+  expected: { tmdbId: number | null; tvdbId: number | null },
+): boolean {
+  const known = (id: number | null | undefined): id is number => typeof id === 'number' && id > 0;
+  const [have, want] = kind === 'radarr' ? [item.tmdbId, expected.tmdbId] : [item.tvdbId, expected.tvdbId];
+  return !known(have) || !known(want) || have === want;
+}
 
 /** The ledger's view of the item's last imported release before `before` (D-11 source 3): import + its grab. */
 interface LedgerRelease {
@@ -531,6 +547,8 @@ async function identifyMovie(
   before: Date,
 ): Promise<ReleaseIdentity> {
   const movie = await radarr.findMovie(s.arrItemId);
+  // D-25ci — another title at this id: record nothing (the item is kept `release_unrecorded`), never its release.
+  if (movie !== null && !isSameArrTitle('radarr', movie, s)) return { status: 'unrecordable', reason: 'id_mismatch' };
   const arrYears = [movie?.year ?? s.year ?? null, movie?.secondaryYear ?? null];
   if (movie === null) {
     // Gone from Radarr already: only the ledger can name what a re-request would fetch.
@@ -640,6 +658,7 @@ async function identifySeries(
   before: Date,
 ): Promise<ReleaseIdentity> {
   const series = await sonarr.findSeries(s.arrItemId);
+  if (series !== null && !isSameArrTitle('sonarr', series, s)) return { status: 'unrecordable', reason: 'id_mismatch' };
   const arrYears = [series?.year ?? s.year ?? null];
   if (series === null) {
     // Gone from Sonarr already: the ledger's imports, one record per season / group / resolution they name.
@@ -909,8 +928,9 @@ export async function stampReleaseRecords(
 
 /**
  * D-14 step 5 — Phase A: record every survivor `in_flight`, then reconcile the profile of each *arr involved (at most
- * one PUT each, validated and read back). On failure the records turn `abandoned`, a best-effort reconcile removes any
- * term an earlier *arr already took, and the ReleaseBlockError is rethrown: nothing may be deleted.
+ * one PUT each, validated and read back). On failure the records turn `abandoned`, a best-effort reconcile removes
+ * their terms from every profile that may hold them (an *arr that took them, and the failing one when its write may
+ * have landed, D-25cd), and the ReleaseBlockError is rethrown: nothing may be deleted.
  */
 export async function blockReleases(input: {
   db?: DbClient;
@@ -947,16 +967,34 @@ export async function blockReleases(input: {
     }
   } catch (error) {
     await abandonReleaseRecords({ db: input.db, recordIds: [...recordIds.values()].flat() });
-    for (const kind of done) {
+    // D-25al / D-25cd — remove every term of the abandoned records from each profile that may hold them: the *arrs
+    // that took them, and the one that failed when its write may have landed (a POST or PUT whose answer was lost, or a
+    // `read_back` after a write; `mayHaveWritten`). A `validate` or `duplicate_profile` failure, or a profile list that
+    // never answered, wrote nothing. Best effort: the upkeep's drift check (D-25ce) removes whatever is left.
+    const failed = error instanceof ReleaseBlockError && error.mayHaveWritten ? error.arrKind : null;
+    for (const kind of kinds.filter((k) => done.includes(k) || k === failed)) {
       try {
         await reconcileReleaseBlock({ db: input.db, arr: input.arr, arrKind: kind, logger });
       } catch {
-        // best effort: the next reconcile removes the orphan terms
+        // best effort: the upkeep's drift check removes the orphan terms
       }
     }
     throw error;
   }
   return recordIds;
+}
+
+/** D-25ci — the external ids the records were written with (one item's records share them). */
+async function recordExternalIds(
+  db: DbClient | undefined,
+  recordIds: readonly string[],
+): Promise<{ tmdbId: number | null; tvdbId: number | null }> {
+  const [row] = await resolveDb(db)
+    .select({ tmdbId: trashDeletedReleases.tmdbId, tvdbId: trashDeletedReleases.tvdbId })
+    .from(trashDeletedReleases)
+    .where(inArray(trashDeletedReleases.id, [...recordIds]))
+    .limit(1);
+  return { tmdbId: row?.tmdbId ?? null, tvdbId: row?.tvdbId ?? null };
 }
 
 /**
@@ -1013,7 +1051,7 @@ export async function settleReleaseRecords(input: {
     return 'abandoned' as const;
   };
   if (input.arrItemId === null) return 'in_flight';
-  let present: unknown;
+  let present: { tmdbId?: number | null; tvdbId?: number | null } | null;
   try {
     present =
       input.arrKind === 'radarr'
@@ -1021,6 +1059,10 @@ export async function settleReleaseRecords(input: {
         : await input.arr.sonarr.findSeries(input.arrItemId);
   } catch {
     return 'in_flight';
+  }
+  // D-25ci — another title at the record's id (an *arr rebuild) is not the item: ours is gone.
+  if (present !== null && !isSameArrTitle(input.arrKind, present, await recordExternalIds(input.db, input.recordIds))) {
+    present = null;
   }
   if (present !== null) {
     if (input.handleError === null || input.handleError === undefined) return notEffective();
@@ -1056,6 +1098,60 @@ export interface ReleaseBlockReconcileReport {
 
 const releaseLockKey = (kind: ReleaseArrKind) => sql`hashtext(${`release-block:${kind}`})`;
 
+/** D-13 step 1 — the distinct terms of `in_flight` and `active` rows of one *arr, newest first (uncapped). */
+async function readLiveTerms(exec: DbClient, kind: ReleaseArrKind): Promise<string[]> {
+  const t = trashDeletedReleases;
+  const rows = await resolveDb(exec)
+    .select({ term: t.term, newest: sql<Date>`max(${t.recordedAt})`.as('newest') })
+    .from(t)
+    .where(and(eq(t.arrKind, kind), inArray(t.state, ['in_flight', 'active']), isNotNull(t.term)))
+    .groupBy(t.term)
+    .orderBy(sql`newest desc`);
+  return rows.map((r) => r.term as string);
+}
+
+/** How the app's profile on an *arr differs from what the records want (D-25ce). */
+export type ReleaseProfileDriftReason = 'missing' | 'duplicate' | 'disabled' | 'edited' | 'terms';
+
+export interface ReleaseProfileDrift {
+  reason: ReleaseProfileDriftReason;
+  /** Desired terms the profile lacks (the sentinel included). */
+  missingTerms: number;
+  /** Terms the profile holds that no live record wants (an abandoned record's orphan, a hand edit). */
+  extraTerms: number;
+}
+
+/**
+ * D-13 step 3 / D-25ce — compare the profiles carrying the managed name with the desired state (one profile, enabled,
+ * no required terms, every indexer, no tags, `ignored` exactly `desired` as a set). null ⇒ nothing to write.
+ */
+export function releaseProfileDrift(
+  profiles: ReadonlyArray<{
+    name?: string | null;
+    enabled?: boolean | null;
+    required?: readonly string[] | null;
+    ignored?: readonly string[] | null;
+    indexerId?: number | null;
+    tags?: readonly number[] | null;
+  }>,
+  desired: readonly string[],
+): ReleaseProfileDrift | null {
+  const ours = profiles.filter((p) => p.name === RELEASE_BLOCK_PROFILE_NAME);
+  const want = new Set(desired);
+  if (ours.length === 0) return { reason: 'missing', missingTerms: want.size, extraTerms: 0 };
+  if (ours.length > 1) return { reason: 'duplicate', missingTerms: 0, extraTerms: 0 };
+  const p = ours[0]!;
+  const have = new Set(p.ignored ?? []);
+  const missingTerms = [...want].filter((x) => !have.has(x)).length;
+  const extraTerms = [...have].filter((x) => !want.has(x)).length;
+  if (p.enabled !== true) return { reason: 'disabled', missingTerms, extraTerms };
+  if ((p.required ?? []).length > 0 || (p.indexerId ?? 0) !== 0 || (p.tags ?? []).length > 0) {
+    return { reason: 'edited', missingTerms, extraTerms };
+  }
+  if (missingTerms > 0 || extraTerms > 0) return { reason: 'terms', missingTerms, extraTerms };
+  return null;
+}
+
 /**
  * D-13 — `reconcileReleaseBlock({ arrKind })`, the single writer of the app's release profile on one *arr, under
  * `pg_advisory_xact_lock('release-block:<kind>')`:
@@ -1090,7 +1186,7 @@ export async function reconcileReleaseBlock(input: {
         .where(and(eq(t.arrKind, kind), eq(t.state, 'active'), lte(t.expiresAt, now)))
         .returning({ id: t.id });
       const stranded = await tx
-        .select({ id: t.id, arrItemId: t.arrItemId })
+        .select({ id: t.id, arrItemId: t.arrItemId, tmdbId: t.tmdbId, tvdbId: t.tvdbId })
         .from(t)
         .where(
           and(
@@ -1100,13 +1196,15 @@ export async function reconcileReleaseBlock(input: {
           ),
         );
       let settled = 0;
-      const byItem = new Map<number, string[]>();
+      const byItem = new Map<number, { ids: string[]; tmdbId: number | null; tvdbId: number | null }>();
       for (const r of stranded) {
         if (r.arrItemId === null) continue;
-        byItem.set(r.arrItemId, [...(byItem.get(r.arrItemId) ?? []), r.id]);
+        const entry = byItem.get(r.arrItemId) ?? { ids: [], tmdbId: r.tmdbId, tvdbId: r.tvdbId };
+        entry.ids.push(r.id);
+        byItem.set(r.arrItemId, entry);
       }
-      for (const [arrItemId, ids] of byItem) {
-        let present: unknown;
+      for (const [arrItemId, { ids, ...expected }] of byItem) {
+        let present: { tmdbId?: number | null; tvdbId?: number | null } | null;
         try {
           present =
             kind === 'radarr'
@@ -1115,6 +1213,8 @@ export async function reconcileReleaseBlock(input: {
         } catch {
           continue; // unreachable: leave them in flight, terms in place (fail closed)
         }
+        // D-25ci — another title at this id (an *arr rebuild) means ours is gone.
+        if (present !== null && !isSameArrTitle(kind, present, expected)) present = null;
         await tx
           .update(t)
           .set(
@@ -1125,17 +1225,10 @@ export async function reconcileReleaseBlock(input: {
           .where(and(inArray(t.id, ids), eq(t.state, 'in_flight')));
         settled += ids.length;
       }
-      const terms = await tx
-        .select({ term: t.term, newest: sql<Date>`max(${t.recordedAt})`.as('newest') })
-        .from(t)
-        .where(
-          and(eq(t.arrKind, kind), inArray(t.state, ['in_flight', 'active']), isNotNull(t.term)),
-        )
-        .groupBy(t.term)
-        .orderBy(sql`newest desc`);
+      const terms = await readLiveTerms(tx, kind);
       let pruned = 0;
       if (terms.length > RELEASE_BLOCK_TERM_CAP) {
-        const over = terms.slice(RELEASE_BLOCK_TERM_CAP).map((r) => r.term as string);
+        const over = terms.slice(RELEASE_BLOCK_TERM_CAP);
         const rows = await tx
           .update(t)
           .set({ state: 'pruned', endedAt: now })
@@ -1148,7 +1241,7 @@ export async function reconcileReleaseBlock(input: {
           records: pruned,
         });
       }
-      const live = terms.slice(0, RELEASE_BLOCK_TERM_CAP).map((r) => r.term as string);
+      const live = terms.slice(0, RELEASE_BLOCK_TERM_CAP);
       const desired = [RELEASE_BLOCK_SENTINEL, ...live];
 
       // 2 — the grammar, before any write.
@@ -1160,7 +1253,7 @@ export async function reconcileReleaseBlock(input: {
       try {
         profiles = await write.listReleaseProfiles();
       } catch (cause) {
-        throw new ReleaseBlockError(kind, 'put', { cause });
+        throw new ReleaseBlockError(kind, 'put', { cause, sent: false });
       }
       const ours = profiles.filter((p) => p.name === RELEASE_BLOCK_PROFILE_NAME);
       if (ours.length > 1) throw new ReleaseBlockError(kind, 'duplicate_profile');
@@ -1175,14 +1268,7 @@ export async function reconcileReleaseBlock(input: {
       const current = ours[0];
       const before = new Set(current?.ignored ?? []);
       const want = new Set(desired);
-      const same =
-        current !== undefined &&
-        current.enabled === true &&
-        (current.required ?? []).length === 0 &&
-        (current.indexerId ?? 0) === 0 &&
-        (current.tags ?? []).length === 0 &&
-        before.size === want.size &&
-        [...want].every((x) => before.has(x));
+      const same = releaseProfileDrift(ours, desired) === null;
       let wrote = false;
       if (!same) {
         try {
@@ -1235,19 +1321,27 @@ export interface ReleaseBlockUpkeepKind {
   /** `in_flight` records older than the settle age, and `active` records past `expires_at`, when the upkeep looked. */
   stranded: number;
   expiring: number;
+  /** D-25ce — how the profile differed from the records (null: it matched, or the records' own work was due). */
+  drift: ReleaseProfileDriftReason | 'cap' | null;
   /** The reconcile's report (null when nothing was due, or when it failed). */
   report: ReleaseBlockReconcileReport | null;
   error: string | null;
 }
 
 /**
- * D-13 step 1 on schedule (D-25br) — the hourly upkeep the `trash-batch-sweep` job runs after the sweep, whether or not
- * a batch was due: for each *arr with an `in_flight` record older than the settle age (an ambiguous handle failure
- * left it stranded) or an `active` record past `expires_at`, it runs `reconcileReleaseBlock`, which settles the
- * stranded records by presence (404 ⇒ `active`, present ⇒ `abandoned`, unreachable ⇒ left) and drops expired terms.
- * Otherwise the settle and the expiry ran only inside a delete path's reconcile, so "an hour later" (D-14 step 7) meant
- * the next batch of that kind. Best effort: nothing due makes no *arr call; a failure is a warning, never the job's
- * exit, and never pauses the sweep (the next hour tries again).
+ * D-13 step 1 on schedule (D-25br, D-25ce, D-25cf) — the upkeep the `trash-batch-sweep` job runs every hour after the
+ * sweep and the `watchlist-registry` job runs at the end of every run (every 15 minutes, so it keeps going while the
+ * sweep CronJob is suspended), whether or not a batch was due. For each *arr it runs `reconcileReleaseBlock` when:
+ *  - an `in_flight` record is older than the settle age (an ambiguous handle failure left it stranded) or an `active`
+ *    record is past `expires_at` (the stranded settle by presence, and the expiry);
+ *  - the live terms exceed the cap (the prune);
+ *  - or the profile itself drifted from the records (one `GET /releaseprofile`, D-25ce): the managed profile is
+ *    missing while a term is live, duplicated, disabled, hand-edited (required terms, an indexer, tags), or its
+ *    `ignored` set differs from the sentinel plus the live terms (an abandoned record's term left behind when a Phase A
+ *    failed after its write landed, a term deleted by hand, a restore from an older backup). Logged
+ *    `[release-block] drift {arrKind, reason, missingTerms, extraTerms}` (warn) so a hand edit is visible.
+ * With no term live and no profile, nothing is created (the first write is a delete path's). Best effort: a failure is
+ * `[release-block] upkeep_failed` (warn), never the job's exit, and never pauses the sweep (the next run tries again).
  */
 export async function reconcileReleaseBlockIfDue(input: {
   db?: DbClient;
@@ -1272,21 +1366,44 @@ export async function reconcileReleaseBlockIfDue(input: {
       arrKind: kind,
       stranded: due?.stranded ?? 0,
       expiring: due?.expiring ?? 0,
+      drift: null,
       report: null,
       error: null,
     };
-    if (entry.stranded > 0 || entry.expiring > 0) {
-      try {
-        entry.report = await reconcileReleaseBlock({ db, arr: input.arr, arrKind: kind, logger, now });
-      } catch (error) {
-        entry.error = error instanceof Error ? error.message : String(error);
-        logger.warn('[release-block] upkeep_failed', {
-          arrKind: kind,
-          stranded: entry.stranded,
-          expiring: entry.expiring,
-          error: entry.error,
-        });
+    try {
+      let run = entry.stranded > 0 || entry.expiring > 0;
+      if (!run) {
+        const live = await readLiveTerms(db, kind);
+        if (live.length > RELEASE_BLOCK_TERM_CAP) {
+          entry.drift = 'cap';
+        } else {
+          const drift = releaseProfileDrift(await input.arr.write[kind].listReleaseProfiles(), [
+            RELEASE_BLOCK_SENTINEL,
+            ...live,
+          ]);
+          // No live term and no profile: nothing to block, and nothing to create.
+          if (drift !== null && !(drift.reason === 'missing' && live.length === 0)) {
+            entry.drift = drift.reason;
+            logger.warn('[release-block] drift', {
+              arrKind: kind,
+              reason: drift.reason,
+              missingTerms: drift.missingTerms,
+              extraTerms: drift.extraTerms,
+            });
+          }
+        }
+        run = entry.drift !== null;
       }
+      if (run) entry.report = await reconcileReleaseBlock({ db, arr: input.arr, arrKind: kind, logger, now });
+    } catch (error) {
+      entry.error = error instanceof Error ? error.message : String(error);
+      logger.warn('[release-block] upkeep_failed', {
+        arrKind: kind,
+        stranded: entry.stranded,
+        expiring: entry.expiring,
+        drift: entry.drift,
+        error: entry.error,
+      });
     }
     out.push(entry);
   }
@@ -1352,7 +1469,7 @@ export async function identifySurvivors(input: {
   return { recordable, unrecorded, aborted: false };
 }
 
-export type UnrecordedReason = 'no_term' | 'gone' | 'no_ledger_item' | 'read_failed';
+export type UnrecordedReason = 'no_term' | 'gone' | 'no_ledger_item' | 'id_mismatch' | 'read_failed';
 
 export type RecordAndBlockResult =
   | { aborted: true }
@@ -1552,15 +1669,42 @@ export interface ReleaseBlockSummary {
   readds: { total: number; sameRelease: number; noGrab: number; windowDays: number };
 }
 
+/** D-25cl — the Watchlists card waits this long for each *arr's import-list exclusion count. */
+export const EXCLUSION_COUNT_DEADLINE_MS = 4_000;
+
+/** The value, or null when it fails or does not settle within `ms` (the late answer is dropped). */
+async function withinDeadline<T>(read: () => Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  try {
+    return await Promise.race([read().catch(() => null), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** D-23 — the Watchlists card's Release Block and re-add counts (never a title). */
 export async function getReleaseBlockSummary(input: {
   db?: DbClient;
   arr?: Pick<ReleaseBlockArrClients, 'read'> | null;
   now?: Date;
+  /** D-25cl — how long the card waits for each exclusion count (tests shorten it). */
+  exclusionDeadlineMs?: number;
 }): Promise<ReleaseBlockSummary> {
   const db = resolveDb(input.db);
   const now = input.now ?? new Date();
   const t = trashDeletedReleases;
+  // D-23 / D-25cl — both *arrs' exclusion counts at once, each given a few seconds: an *arr that accepts the connection
+  // and never answers reads "not available" at once instead of holding the whole card on its 30 s timeout and retries.
+  const deadline = input.exclusionDeadlineMs ?? EXCLUSION_COUNT_DEADLINE_MS;
+  const [radarrExclusions, sonarrExclusions] = input.arr
+    ? await Promise.all([
+        withinDeadline(() => input.arr!.read.radarr.countImportListExclusions(), deadline),
+        withinDeadline(() => input.arr!.read.sonarr.countImportListExclusions(), deadline),
+      ])
+    : [null, null];
   const kinds: ReleaseBlockKindSummary[] = [];
   for (const kind of ['radarr', 'sonarr'] as const) {
     const [agg] = await db
@@ -1572,17 +1716,7 @@ export async function getReleaseBlockSummary(input: {
       .where(
         and(eq(t.arrKind, kind), inArray(t.state, ['in_flight', 'active']), isNotNull(t.term)),
       );
-    let exclusions: number | null = null;
-    if (input.arr) {
-      try {
-        exclusions =
-          kind === 'radarr'
-            ? await input.arr.read.radarr.countImportListExclusions()
-            : await input.arr.read.sonarr.countImportListExclusions();
-      } catch {
-        exclusions = null;
-      }
-    }
+    const exclusions = kind === 'radarr' ? radarrExclusions : sonarrExclusions;
     const oldest = agg?.oldest ? new Date(agg.oldest) : null;
     kinds.push({
       arrKind: kind,

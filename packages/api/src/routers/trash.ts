@@ -54,6 +54,7 @@ import {
   mapDomainErrors,
   resolveArrBundle,
   resolveMaintainerrBundle,
+  assertTrashWebDeletesAllowed,
   resolveReleaseBlockArr,
   router,
   type TRPCContext,
@@ -369,6 +370,8 @@ export const trashRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
+        // ADR-093 / DESIGN-052 D-25cc — held with the sweep CronJob until PLAN-072 S6 is green.
+        assertTrashWebDeletesAllowed(ctx);
         const res = await expediteDeletion({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
@@ -406,6 +409,7 @@ export const trashRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
+        assertTrashWebDeletesAllowed(ctx); // D-25cc
         const res = await expediteDeletion({
           db: ctx.db,
           maintainerr: resolveMaintainerrBundle(ctx),
@@ -623,6 +627,7 @@ export const trashRouter = router({
       .input(z.object({ batchId: z.uuid(), forceOverride: z.boolean().optional() }))
       .mutation(async ({ ctx, input }) => {
         return mapDomainErrors(async () => {
+          assertTrashWebDeletesAllowed(ctx); // D-25cc — held with the sweep CronJob until PLAN-072 S6 is green
           // ADR-093 / DESIGN-052 D-07 / D-14 (D-24d) — the web pod never refreshes the registry inline: the manual
           // Expire now takes the Registry Gate on the CronJob's newest run (`gate-only`) and writes no status row. A
           // paused sweep deleted nothing ⇒ PRECONDITION_FAILED with the reason.

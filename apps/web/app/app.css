@@ -4130,13 +4130,15 @@ input[aria-invalid='true'] {
 }
 /* DESIGN-010 D-12 — the cross-server last-watched line on the deletion card (info, not protection):
    a muted eye + "Last watched on <server> · <Mon YYYY>". Never gates the card's actions. */
-.trash-panel__watched {
+.trash-panel__watched,
+.trash-panel__watchlist {
   margin: 6px 0 0;
   font-size: 12.5px;
   display: flex;
   align-items: center;
   gap: 5px;
 }
+/* ADR-093 / DESIGN-052 D-25co — the watchlist keep on the deletion card, in the wall note's words (same line style). */
 .trash-panel__watched-icon {
   display: inline-flex;
   align-items: center;

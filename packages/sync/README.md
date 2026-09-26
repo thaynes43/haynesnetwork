@@ -12,7 +12,8 @@ writes drizzle tables directly and never touches `@hnet/arr/write`. Every write-
 *arrs and Seerr lives in `packages/domain` (Hard Rule 4 lists them; ADR-008): Fix / Restore /
 Force-Search, the ADR-083 queue janitor, and ADR-093's Release Block (the app's Radarr / Sonarr
 release profile, written by the `trash-batch-sweep` mode through `sweepExpiredBatches` and its hourly
-`reconcileReleaseBlockIfDue`) and Seerr
+`reconcileReleaseBlockIfDue`, which the `watchlist-registry` mode also runs at the end of every run: the settle,
+the expiry and the profile drift check, DESIGN-052 D-25ce / D-25cf) and Seerr
 watchlist enrollment (the `watchlist-registry` mode's enrollment step, `enrollSeerrWatchlistSync`).
 A sync mode reaches them only through those domain orchestrators, never here.
 

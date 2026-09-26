@@ -172,6 +172,39 @@ describe('the Release Block seed (DESIGN-052 D-15)', () => {
     expect(fixture.calls.some((c) => c.includes('create') || c.includes('update'))).toBe(false);
   });
 
+  it('D-25ch: a title fetched many times (the #576 loop) gets one record per distinct term, every in-window group blocked', async () => {
+    const { arr, fixture } = arrWithPresence();
+    const flux = 'Silent.Night.2023.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX';
+    const loop = parseLegacySabFile(
+      [
+        ...[9_950_000_000, 10_000_000_000, 9_900_000_000, 10_000_000_000, 9_800_000_000].map(
+          (bytes, i) => `${flux}\t${bytes}\t2026-0${i + 2}-01T00:00:00Z`,
+        ),
+        `${flux}.mkv\t9700000000\t2026-03-02T00:00:00Z`,
+        // Another group of about the same size, fetched twice in the same loop: blocked too (ruling 2).
+        'Silent.Night.2023.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-BYNDR\t9900000000\t2026-04-01T00:00:00Z',
+        'Silent.Night.2023.2160p.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-BYNDR\t9900000000\t2026-04-02T00:00:00Z',
+      ].join('\n'),
+    );
+    const report = await seedReleaseBlock({
+      db: t.db,
+      arr,
+      apply: true,
+      legacySab: loop,
+      logger: silentDomainLogger,
+    });
+    const legacyRows = (await t.db.select().from(trashDeletedReleases)).filter(
+      (r) => r.identitySource === 'legacy_sab',
+    );
+    // Eight in-window jobs, two groups: one record each (FLUX's `.mkv` name derives the same group term).
+    expect(legacyRows.map((r) => r.releaseGroup).sort()).toEqual(['BYNDR', 'FLUX']);
+    expect(new Set(legacyRows.map((r) => r.term)).size).toBe(2);
+    expect(report.records).toBe(3); // the ledger movie's one record + the two legacy terms
+    // The closest size names the FLUX record (9.6 GB deleted: the 9.7 GB job, not a 10 GB one).
+    expect(legacyRows.find((r) => r.releaseGroup === 'FLUX')?.sizeBytes).toBe(9_700_000_000);
+    expect(fixture.profiles.radarr[0]!.ignored).toHaveLength(4); // the sentinel + the ledger term + the two legacy terms
+  });
+
   it('a presence that cannot be confirmed is skipped (never seeded blind)', async () => {
     const { arr, fixture } = arrWithPresence();
     fixture.fail.add('radarr:find');

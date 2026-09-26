@@ -18,6 +18,10 @@ export const seerrWatchlistEnrollments = pgTable('seerr_watchlist_enrollments', 
    *  write, or wrote and never saw the answer (a timeout, a failed insert after the write). The row is inserted BEFORE
    *  the write, so a lost answer can never turn the app's own enrollment into `already_on` on the next run. */
   confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  /** DESIGN-052 D-25cj — the user's own flags when the app first read them, before its write (both true for an
+   *  `already_on` row): a rollback restores exactly these, so a user who had one flag on keeps it. */
+  moviesBefore: boolean('movies_before'),
+  tvBefore: boolean('tv_before'),
 });
 
 export type SeerrWatchlistEnrollmentRow = typeof seerrWatchlistEnrollments.$inferSelect;

@@ -1326,114 +1326,131 @@ export async function sweepExpiredBatches(
     return empty;
   }
 
-  // Fail closed on an unsafe install — refuse the whole sweep (ADR-023 C-04). The scheduled sweep records the pause.
-  const audit = await auditMaintainerr({ maintainerr: input.maintainerr });
-  if (!audit.safe) {
-    if (scheduled) await recordSweepOutcome(input.db, 'paused_audit_unsafe', 'unsafe', clock(), logger);
-    throw new MaintainerrUnsafeError(
-      `Maintainerr is not in a safe state to sweep expired batches (reachable=${audit.reachable}, ` +
-        `integrations ${JSON.stringify(audit.integrations)}). Refusing.`,
-      { integrations: audit.integrations as unknown as Record<string, boolean>, reachable: audit.reachable },
-    );
-  }
-
-  // D-07 / D-14 step 2 — `refresh` only: refresh the registry inline (waiting up to 120 s for a run another process
-  // holds; reusing it if it finished ok). A failed refresh is not fatal: the gate may still pass on the CronJob's run.
-  let registryRefresh: WatchlistRegistryRefreshReport | null = null;
-  if (input.registry === 'refresh') {
-    try {
-      registryRefresh = await refreshWatchlistRegistry({
-        db: input.db,
-        sources: input.registrySources,
-        trigger: 'sweep',
-        logger,
-        onBusy: 'wait',
-        ...(input.now ? { now: input.now } : {}),
-      });
-    } catch (error) {
-      logger.warn('[trash] sweep_registry_refresh_failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  // The Registry Gate, purpose `delete` (D-07). Refused ⇒ a clean pause: nothing written but the status row.
-  let watchlist: DeleteWatchlistSnapshot;
+  // D-10 / D-24j / D-25cg — a scheduled sweep with a batch due records how it ended, whatever ended it: the outcomes
+  // below, and for any other throw (Maintainerr's pending read failing, a database error) `aborted_arr` with reason
+  // `error` before the rethrow, so the banner and the `sweep_paused` page fire after 6 hours like any other pause.
+  let recorded = false;
+  const record = (outcome: TrashSweepOutcome, reason: string | null): Promise<TrashSweepOutcome> => {
+    recorded = true;
+    return recordSweepOutcome(input.db, outcome, reason, clock(), logger);
+  };
   try {
-    watchlist = await evaluateRegistryGate({ db: input.db, purpose: 'delete', now: clock(), logger });
-  } catch (error) {
-    if (!(error instanceof WatchlistRegistryUnverifiedError)) throw error;
-    const paused: SweepPause = { reason: 'gate', step: error.reason };
-    const outcome = scheduled
-      ? await recordSweepOutcome(input.db, 'paused_gate', error.reason, clock(), logger)
-      : null;
-    if (!scheduled) logger.warn('[trash] sweep_paused', { reason: 'gate', step: error.reason, pausedForH: null });
-    return { ...empty, paused, outcome, registryRefresh };
-  }
-
-  const results: BatchSweepResult[] = [];
-  for (const batch of due) {
-    try {
-      results.push(
-        await expireOneBatch({
-          db: input.db,
-          maintainerr: input.maintainerr,
-          arr: input.arr,
-          batchId: batch.id,
-          mediaKind: batch.mediaKind,
-          actorId,
-          watchWindowDays: input.watchWindowDays,
-          forcedEarly: batch.forcedEarly,
-          watchlist,
-          logger,
-        }),
+    // Fail closed on an unsafe install — refuse the whole sweep (ADR-023 C-04). The scheduled sweep records the pause.
+    const audit = await auditMaintainerr({ maintainerr: input.maintainerr });
+    if (!audit.safe) {
+      if (scheduled) await record('paused_audit_unsafe', 'unsafe');
+      throw new MaintainerrUnsafeError(
+        `Maintainerr is not in a safe state to sweep expired batches (reachable=${audit.reachable}, ` +
+          `integrations ${JSON.stringify(audit.integrations)}). Refusing.`,
+        { integrations: audit.integrations as unknown as Record<string, boolean>, reachable: audit.reachable },
       );
-    } catch (error) {
-      // D-14 step 5 — the Release Block could not be written and read back: nothing of this batch was claimed or
-      // deleted (its records are abandoned), it stays leaving_soon, and the sweep pauses cleanly.
-      if (!(error instanceof ReleaseBlockError)) throw error;
-      const paused: SweepPause = { reason: 'release_block', step: error.step };
-      const outcome = scheduled
-        ? await recordSweepOutcome(input.db, 'paused_release_block', error.step, clock(), logger)
-        : null;
-      if (!scheduled) {
-        logger.warn('[trash] sweep_paused', { reason: 'release_block', step: error.step, pausedForH: null });
-      }
-      return {
-        batchesSwept: results.length,
-        batches: results,
-        due: due.length,
-        paused,
-        outcome,
-        registryRefresh,
-      };
     }
-  }
 
-  // D-14 — the scheduled sweep records how it ended: `ok`, or `aborted_arr` when a breaker tripped (the media apps did
-  // not answer: 3 handle failures, or 3 *arr identity reads before Phase A; the batch stays leaving_soon for the next
-  // hourly run).
-  const abortedResult = results.find((r) => r.aborted);
-  const aborted = abortedResult !== undefined;
-  const outcome = scheduled
-    ? await recordSweepOutcome(
-        input.db,
-        aborted ? 'aborted_arr' : 'ok',
-        aborted ? (abortedResult.abortReason ?? 'handle_breaker') : null,
-        clock(),
-        logger,
-      )
-    : null;
-  // D-25bf — a manual Expire now that swept cleanly proves deletion works again: it ends a recorded pause (it still
-  // writes no outcome row; the scheduled sweep owns those).
-  if (!scheduled && !aborted) await clearSweepPause(input.db, 'manual_ok', logger);
-  logger.info('[trash] sweep_summary', {
-    batches: results.length,
-    deleted: results.reduce((n, r) => n + r.deletedCount, 0),
-    kept: mergeKept(results),
-    aborted,
-  });
-  return { batchesSwept: results.length, batches: results, due: due.length, paused: null, outcome, registryRefresh };
+    // D-07 / D-14 step 2 — `refresh` only: refresh the registry inline (waiting up to 120 s for a run another process
+    // holds; reusing it if it finished ok). A failed refresh is not fatal: the gate may still pass on the CronJob's run.
+    let registryRefresh: WatchlistRegistryRefreshReport | null = null;
+    if (input.registry === 'refresh') {
+      try {
+        registryRefresh = await refreshWatchlistRegistry({
+          db: input.db,
+          sources: input.registrySources,
+          trigger: 'sweep',
+          logger,
+          onBusy: 'wait',
+          ...(input.now ? { now: input.now } : {}),
+        });
+      } catch (error) {
+        logger.warn('[trash] sweep_registry_refresh_failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // The Registry Gate, purpose `delete` (D-07). Refused ⇒ a clean pause: nothing written but the status row.
+    let watchlist: DeleteWatchlistSnapshot;
+    try {
+      watchlist = await evaluateRegistryGate({ db: input.db, purpose: 'delete', now: clock(), logger });
+    } catch (error) {
+      if (!(error instanceof WatchlistRegistryUnverifiedError)) throw error;
+      const paused: SweepPause = { reason: 'gate', step: error.reason };
+      const outcome = scheduled
+        ? await record('paused_gate', error.reason)
+        : null;
+      if (!scheduled) logger.warn('[trash] sweep_paused', { reason: 'gate', step: error.reason, pausedForH: null });
+      return { ...empty, paused, outcome, registryRefresh };
+    }
+
+    const results: BatchSweepResult[] = [];
+    for (const batch of due) {
+      try {
+        results.push(
+          await expireOneBatch({
+            db: input.db,
+            maintainerr: input.maintainerr,
+            arr: input.arr,
+            batchId: batch.id,
+            mediaKind: batch.mediaKind,
+            actorId,
+            watchWindowDays: input.watchWindowDays,
+            forcedEarly: batch.forcedEarly,
+            watchlist,
+            logger,
+          }),
+        );
+      } catch (error) {
+        // D-14 step 5 — the Release Block could not be written and read back: nothing of this batch was claimed or
+        // deleted (its records are abandoned), it stays leaving_soon, and the sweep pauses cleanly.
+        if (!(error instanceof ReleaseBlockError)) throw error;
+        const paused: SweepPause = { reason: 'release_block', step: error.step };
+        const outcome = scheduled
+          ? await record('paused_release_block', error.step)
+          : null;
+        if (!scheduled) {
+          logger.warn('[trash] sweep_paused', { reason: 'release_block', step: error.step, pausedForH: null });
+        }
+        return {
+          batchesSwept: results.length,
+          batches: results,
+          due: due.length,
+          paused,
+          outcome,
+          registryRefresh,
+        };
+      }
+    }
+
+    // D-14 — the scheduled sweep records how it ended: `ok`, or `aborted_arr` when a breaker tripped (the media apps did
+    // not answer: 3 handle failures, or 3 *arr identity reads before Phase A; the batch stays leaving_soon for the next
+    // hourly run).
+    const abortedResult = results.find((r) => r.aborted);
+    const aborted = abortedResult !== undefined;
+    const outcome = scheduled
+      ? await record(
+          aborted ? 'aborted_arr' : 'ok',
+          aborted ? (abortedResult.abortReason ?? 'handle_breaker') : null,
+        )
+      : null;
+    // D-25bf — a manual Expire now that swept cleanly proves deletion works again: it ends a recorded pause (it still
+    // writes no outcome row; the scheduled sweep owns those).
+    if (!scheduled && !aborted) await clearSweepPause(input.db, 'manual_ok', logger);
+    logger.info('[trash] sweep_summary', {
+      batches: results.length,
+      deleted: results.reduce((n, r) => n + r.deletedCount, 0),
+      kept: mergeKept(results),
+      aborted,
+    });
+    return { batchesSwept: results.length, batches: results, due: due.length, paused: null, outcome, registryRefresh };
+  } catch (error) {
+    if (scheduled && !recorded) {
+      logger.error('[trash] sweep_failed', { error: error instanceof Error ? error.message : String(error) });
+      try {
+        await record('aborted_arr', 'error');
+      } catch {
+        // the status write failed too (the database is down): the job's own failure still reports it
+      }
+    }
+    throw error;
+  }
 }
 
 function mergeKept(results: readonly BatchSweepResult[]): Partial<Record<TrashKeepReason, number>> {

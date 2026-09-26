@@ -43,14 +43,18 @@ proposal and deletion guard (`watchlisted`, `ruleEvaluationFailed`); the Deleted
 Release Block writer; the two-phase sweep and Expedite (identity, record, profile write and read-back, claim, handle,
 settle by the *arr's own answer); the seed (`release-block-seed.ts`, plus the read-only `--pool` report for S6(e));
 the Arm/Disarm fix and grown invariant; Seerr enrollment, off (`seerr-watchlist.ts`); the D-10 surfaces and the D-23
-counts; CLAUDE.md hard rule 4. Rulings in DESIGN-052 D-25 (D-25ax..D-25bm are the Opus code review's and
-D-25bn..D-25bz its second pass's, each with a test that fails without it; the second pass added the hourly Release
-Block upkeep in the sweep job, a pending Seerr enrollment row via a `confirmed_at` column in 0081, and per-name terms
-for a movie's exact fallback). Runbook: `docs/ops/017-watchlist-protection.md` (OPS-017, Draft until S4).
+counts; CLAUDE.md hard rule 4. Rulings in DESIGN-052 D-25 (D-25ax..D-25bm are the Opus code review's,
+D-25bn..D-25bz its second pass's and D-25ca..D-25cq its third's, each with a test that fails without it; the second
+pass added the hourly Release Block upkeep in the sweep job, a pending Seerr enrollment row via a `confirmed_at` column
+in 0081, and per-name terms for a movie's exact fallback; the third added **`TRASH_WEB_DELETES_HELD`** (the web pod
+env that holds Expedite and Expire now with the suspended sweep from S4 until S6, and in the rollback), the upkeep's
+profile drift check also run by the registry CronJob, `movies_before` / `tv_before` on the enrollment rows (0081; a
+rollback restores them), and the overlay's unknown-outcome adds and undone removes). Runbook: `docs/ops/017-watchlist-protection.md` (OPS-017, Draft until S4).
 **Next:** the S2 `pnpm dev:local` walk (a watchlisted stub title kept by an expedite and a sweep, the release profile
 written before the handle, the Arm/Disarm toggle leaving the flags true), then squash-merge; S3 release; S4 deploy
-(image tag, the `sync-watchlist-registry` CronJob, the Loki alerts linking OPS-017) with
-`haynesnetwork-sync-trash-batch-sweep` suspended until S6 passes. Rollout order is binding: deploy with the sweep CronJob suspended until the read-only
+(image tag, the `sync-watchlist-registry` CronJob, the Loki alerts linking OPS-017, and
+`TRASH_WEB_DELETES_HELD: "true"` on the web pod) with `haynesnetwork-sync-trash-batch-sweep` suspended until S6
+passes; S6's resume removes the env in the same haynes-ops change that resumes the sweep. Rollout order is binding: deploy with the sweep CronJob suspended until the read-only
 checks (S6) pass, then the guard + Release Block verified on a live sweep, then seed the block (ledger + bulk legacy
 SAB + the three titles), then the Seerr enable (preflight: Seerr's anime tags, a join of everyone's newest titles
 against unblocked deletions; one user, then all), then re-request the three titles. S6a asks the owner PRD Q-15

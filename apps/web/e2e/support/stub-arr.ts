@@ -835,8 +835,40 @@ export async function startStubArr(): Promise<StubArrServer> {
             records,
           });
         }
-        case '/history/movie':
-          return json(res, 200, []);
+        case '/history/movie': {
+          // ADR-093 / DESIGN-052 D-20 / D-25cp — The Fixture's grab and its import, linked by `downloadId` and the
+          // import's `data.fileId` (its file 9601), so the dev:local walk records the `arr_grab_history` identity (the
+          // grab's release name), not only the file's scene name. Every other movie has no history.
+          if (Number(query.movieId) !== STUB_MOVIE_ID) return json(res, 200, []);
+          const release = 'The.Fixture.2022.1080p.WEB-DL.DDP5.1.H.264-STUB';
+          const quality = { quality: { id: 4, name: 'WEBDL-1080p', resolution: 1080 } };
+          return json(res, 200, [
+            {
+              id: 96011,
+              movieId: STUB_MOVIE_ID,
+              eventType: 'grabbed',
+              date: '2026-01-01T00:00:00Z',
+              sourceTitle: release,
+              downloadId: 'STUBDL9601',
+              quality,
+              data: { releaseGroup: 'STUB', indexer: 'Stub Indexer (Prowlarr)' },
+            },
+            {
+              id: 96012,
+              movieId: STUB_MOVIE_ID,
+              eventType: 'downloadFolderImported',
+              date: '2026-01-01T01:00:00Z',
+              sourceTitle: release,
+              downloadId: 'STUBDL9601',
+              quality,
+              data: {
+                fileId: '9601',
+                importedPath: '/data/haynestower/Media/Movies/The Fixture/The Fixture (2022) {imdb-tt8800010} [WEBDL-1080p][EAC3 5.1][h264]-STUB.mkv',
+                releaseGroup: 'STUB',
+              },
+            },
+          ]);
+        }
         case '/qualityprofile':
           return json(res, 200, [
             { id: 7, name: 'HD-1080p' },

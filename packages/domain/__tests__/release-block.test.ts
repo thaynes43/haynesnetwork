@@ -39,6 +39,7 @@ import {
   reconcileReleaseBlock,
   reconcileReleaseBlockIfDue,
   reportPoolReleaseIdentity,
+  settleReleaseRecords,
   termMatches,
   termMatchesRaw,
   setAppSetting,
@@ -982,7 +983,8 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       expect((await records()).every((r) => r.state === 'abandoned')).toBe(true);
       const [status] = await t.db.select().from(trashSweepStatus);
       expect(status).toMatchObject({ lastOutcome: 'paused_release_block', lastReason: 'put' });
-      expect(fixture.calls.filter((c) => c.startsWith('radarr create'))).toHaveLength(1);
+      // D-25cd — the POST may have landed, so the cleanup reconciles Radarr once more (it fails the same way here).
+      expect(fixture.calls.filter((c) => c.startsWith('radarr create'))).toHaveLength(2);
     });
 
     it('a malformed stored term pauses the sweep before any write (validate)', async () => {
@@ -1090,15 +1092,16 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       ]);
       expect((await itemStates(batchId))['ms-9001']!.state).toBe('deleted');
       // D-25br — the hourly upkeep (the sweep job with nothing due) settles it on schedule, never waiting for the next
-      // batch: within the hour nothing is due (no *arr call); an hour later the stranded settle decides the ambiguous
+      // batch: within the hour nothing is due (only the D-25ce profile check); an hour later the stranded settle decides the ambiguous
       // one by presence: still there ⇒ abandoned, term gone.
       fixture.calls.length = 0;
       const early = await reconcileReleaseBlockIfDue({ db: t.db, arr, logger, now: new Date(Date.now() + 30 * 60_000) });
-      expect(early.map((k) => [k.arrKind, k.stranded, k.report])).toEqual([
-        ['radarr', 0, null],
-        ['sonarr', 0, null],
+      expect(early.map((k) => [k.arrKind, k.stranded, k.drift, k.report])).toEqual([
+        ['radarr', 0, null, null],
+        ['sonarr', 0, null, null],
       ]);
-      expect(fixture.calls).toEqual([]);
+      // D-25ce — only the profile check: one GET per *arr, the profile matching the records, nothing written.
+      expect(fixture.calls).toEqual(['radarr list', 'sonarr list']);
       const upkeep = await reconcileReleaseBlockIfDue({
         db: t.db,
         arr,
@@ -1420,6 +1423,240 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
   });
 
   // -------------------------------------------------------------------------------------------------------------
+  describe('D-25ci — an *arr id that now names another title (an *arr rebuild)', () => {
+    it('identity: the movie or series at the ledger`s id with another tmdb / tvdb id is unrecordable (kept)', async () => {
+      const other = grabbedMovie(1, { tmdbId: 5555, title: 'Another Movie' });
+      const { arr } = createStaticReleaseBlockArr({
+        movies: new Map([[1, other]]),
+        series: new Map([[50, { title: 'Another Show', year: 2010, tvdbId: 1234, files: [] }]]),
+      });
+      expect(await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: await mediaItemId('radarr', 1) })).toEqual({
+        status: 'unrecordable',
+        reason: 'id_mismatch',
+      });
+      expect(await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: await mediaItemId('sonarr', 50) })).toEqual({
+        status: 'unrecordable',
+        reason: 'id_mismatch',
+      });
+      // The same movie with its own tmdb id is recordable.
+      other.tmdbId = 9001;
+      expect((await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: await mediaItemId('radarr', 1) })).status).toBe(
+        'recordable',
+      );
+    });
+
+    it('Expedite keeps the item `release_unrecorded` and never handles it', async () => {
+      const state = baseState({ collections: [movieCollection()] });
+      const { arr, fixture } = createStaticReleaseBlockArr({
+        movies: new Map([[1, grabbedMovie(1, { tmdbId: 5555, title: 'Another Movie' })]]),
+      });
+      state.onHandle = (ms) => {
+        fixture.calls.push(`maintainerr handle ${ms}`);
+      };
+      const res = await expediteDeletion({
+        db: t.db,
+        maintainerr: makeMaintainerr(state).bundle,
+        arr,
+        scope: 'item',
+        media: 'movie',
+        actorId: admin,
+        item: { collectionId: 7, maintainerrMediaId: 'ms-9001' },
+        logger,
+      });
+      expect(res).toMatchObject({ expeditedCount: 0, skippedCount: 1, unrecordedCount: 1 });
+      expect(fixture.calls).not.toContain('maintainerr handle ms-9001');
+      expect(await records()).toEqual([]);
+    });
+
+    it('the settle and the stranded settle read another title at the record`s id as gone (the record turns active)', async () => {
+      const exactTerm = '/^movie9001(?:[^a-z0-9]|$)/i';
+      const insert = (recordedAt: Date) =>
+        t.db
+          .insert(trashDeletedReleases)
+          .values({
+            arrKind: 'radarr',
+            arrItemId: 1,
+            tmdbId: 9001,
+            title: 'Movie 9001',
+            identitySource: 'arr_file',
+            term: exactTerm,
+            state: 'in_flight',
+            origin: 'sweep',
+            recordedAt,
+            expiresAt: new Date(Date.now() + 86_400_000),
+          })
+          .returning({ id: trashDeletedReleases.id });
+      const { arr } = createStaticReleaseBlockArr({
+        movies: new Map([[1, grabbedMovie(1, { tmdbId: 5555, title: 'Another Movie' })]]),
+      });
+      const [fresh] = await insert(new Date());
+      expect(
+        await settleReleaseRecords({
+          db: t.db,
+          arr: arr.read,
+          arrKind: 'radarr',
+          arrItemId: 1,
+          recordIds: [fresh!.id],
+          handleError: null,
+          title: 'Movie 9001',
+          logger,
+        }),
+      ).toBe('active');
+      await t.db.delete(trashDeletedReleases);
+      await insert(new Date(Date.now() - 2 * 3_600_000));
+      const report = await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger });
+      expect(report.settled).toBe(1);
+      expect((await records())[0]).toMatchObject({ state: 'active' });
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------------------------
+  describe('D-25cd — a Phase A that fails after its write landed removes the terms it left', () => {
+    const expediteAll = (arr: ReturnType<typeof createStaticReleaseBlockArr>['arr'], state: MaintState) =>
+      expediteDeletion({
+        db: t.db,
+        maintainerr: makeMaintainerr(state).bundle,
+        arr,
+        scope: 'all',
+        media: 'movie',
+        actorId: admin,
+        snapshotMediaIds: ['ms-9001', 'ms-9002', 'ms-9003'],
+        logger,
+      }).catch((e: unknown) => e);
+
+    it('a read-back that fails after the PUT landed: the failing *arr is reconciled, the abandoned terms leave it', async () => {
+      const state = baseState({ collections: [movieCollection()] });
+      const { arr, fixture } = createStaticReleaseBlockArr();
+      let lists = 0;
+      const list = arr.write.radarr.listReleaseProfiles.bind(arr.write.radarr);
+      arr.write.radarr.listReleaseProfiles = async () => {
+        lists += 1;
+        if (lists === 2) throw new Error('read-back GET failed'); // the write before it landed
+        return list();
+      };
+      const err = await expediteAll(arr, state);
+      expect(err).toBeInstanceOf(ReleaseBlockError);
+      expect((err as ReleaseBlockError).step).toBe('read_back');
+      expect((await records()).every((r) => r.state === 'abandoned')).toBe(true);
+      expect(fixture.profiles.radarr[0]!.ignored).toEqual([RELEASE_BLOCK_SENTINEL]);
+      expect(fixture.calls.some((c) => c.startsWith('maintainerr handle'))).toBe(false);
+    });
+
+    it('a POST whose answer is lost after Radarr applied it: the same cleanup', async () => {
+      const state = baseState({ collections: [movieCollection()] });
+      const { arr, fixture } = createStaticReleaseBlockArr();
+      const create = arr.write.radarr.createReleaseProfile.bind(arr.write.radarr);
+      arr.write.radarr.createReleaseProfile = async (p) => {
+        await create(p);
+        throw new ArrTimeoutError('POST', 'http://radarr/api/v3/releaseprofile', 30_000);
+      };
+      const err = await expediteAll(arr, state);
+      expect((err as ReleaseBlockError).step).toBe('put');
+      expect((err as ReleaseBlockError).mayHaveWritten).toBe(true);
+      expect(fixture.profiles.radarr).toHaveLength(1);
+      expect(fixture.profiles.radarr[0]!.ignored).toEqual([RELEASE_BLOCK_SENTINEL]);
+    });
+
+    it('a profile list that never answered sent nothing: that *arr is not written again', async () => {
+      const state = baseState({ collections: [movieCollection()] });
+      const { arr, fixture } = createStaticReleaseBlockArr({ fail: new Set(['radarr:list']) });
+      const err = await expediteAll(arr, state);
+      expect((err as ReleaseBlockError).step).toBe('put');
+      expect((err as ReleaseBlockError).mayHaveWritten).toBe(false);
+      expect(fixture.calls.filter((c) => c === 'radarr list')).toHaveLength(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------------------------
+  describe('D-25ce — the upkeep checks the profile itself every run', () => {
+    const exact = (tok: string) => `/^${tok}(?:[^a-z0-9]|$)/i`;
+    const active = (term: string, state: 'active' | 'abandoned' = 'active') =>
+      t.db.insert(trashDeletedReleases).values({
+        arrKind: 'radarr',
+        arrItemId: 88,
+        title: 'Some Movie',
+        identitySource: 'arr_file',
+        term,
+        state,
+        origin: 'sweep',
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+    const drifts = () => logs.filter((l) => l.msg === '[release-block] drift').map((l) => l.fields?.reason);
+
+    it('in sync: one profile GET per *arr and no write; nothing live and no profile: nothing created', async () => {
+      const { arr, fixture } = createStaticReleaseBlockArr();
+      await active(exact('insync'));
+      await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger });
+      fixture.calls.length = 0;
+      const out = await reconcileReleaseBlockIfDue({ db: t.db, arr, logger });
+      expect(out.map((k) => [k.arrKind, k.drift, k.report])).toEqual([
+        ['radarr', null, null],
+        ['sonarr', null, null],
+      ]);
+      expect(fixture.calls).toEqual(['radarr list', 'sonarr list']);
+      expect(fixture.profiles.sonarr).toEqual([]);
+    });
+
+    it('a hand-disabled profile is re-enabled, a deleted one re-created, a hand edit overwritten, each logged', async () => {
+      const { arr, fixture } = createStaticReleaseBlockArr();
+      await active(exact('keepme'));
+      await reconcileReleaseBlock({ db: t.db, arr, arrKind: 'radarr', logger });
+      fixture.profiles.radarr[0] = { ...fixture.profiles.radarr[0]!, enabled: false };
+      expect((await reconcileReleaseBlockIfDue({ db: t.db, arr, logger }))[0]).toMatchObject({
+        drift: 'disabled',
+        report: { wrote: true },
+      });
+      expect(fixture.profiles.radarr[0]!.enabled).toBe(true);
+      fixture.profiles.radarr = [];
+      expect((await reconcileReleaseBlockIfDue({ db: t.db, arr, logger }))[0]).toMatchObject({
+        drift: 'missing',
+        report: { wrote: true },
+      });
+      expect(fixture.profiles.radarr[0]!.ignored).toContain(exact('keepme'));
+      fixture.profiles.radarr[0] = { ...fixture.profiles.radarr[0]!, ignored: [RELEASE_BLOCK_SENTINEL] };
+      expect((await reconcileReleaseBlockIfDue({ db: t.db, arr, logger }))[0]).toMatchObject({ drift: 'terms' });
+      expect(fixture.profiles.radarr[0]!.ignored).toContain(exact('keepme'));
+      fixture.profiles.radarr[0] = { ...fixture.profiles.radarr[0]!, tags: [3] };
+      expect((await reconcileReleaseBlockIfDue({ db: t.db, arr, logger }))[0]).toMatchObject({ drift: 'edited' });
+      expect(fixture.profiles.radarr[0]!.tags).toEqual([]);
+      expect(drifts()).toEqual(['disabled', 'missing', 'terms', 'edited']);
+      expect(logs.filter((l) => l.msg === '[release-block] drift').every((l) => l.level === 'warn')).toBe(true);
+    });
+
+    it('an abandoned record`s term left in the profile (both Phase A cleanups failed) is removed', async () => {
+      const { arr, fixture } = createStaticReleaseBlockArr();
+      await active(exact('orphan'), 'abandoned');
+      fixture.profiles.radarr = [
+        {
+          id: 1,
+          name: RELEASE_BLOCK_PROFILE_NAME,
+          enabled: true,
+          required: [],
+          ignored: [RELEASE_BLOCK_SENTINEL, exact('orphan')],
+          indexerId: 0,
+          tags: [],
+        },
+      ];
+      const [radarr] = await reconcileReleaseBlockIfDue({ db: t.db, arr, logger });
+      expect(radarr).toMatchObject({ drift: 'terms', report: { removed: 1 }, error: null });
+      expect(fixture.profiles.radarr[0]!.ignored).toEqual([RELEASE_BLOCK_SENTINEL]);
+      expect(logs.find((l) => l.msg === '[release-block] drift')?.fields).toMatchObject({
+        arrKind: 'radarr',
+        reason: 'terms',
+        missingTerms: 0,
+        extraTerms: 1,
+      });
+    });
+
+    it('a profile GET that fails is a warning, never a throw', async () => {
+      const { arr } = createStaticReleaseBlockArr({ fail: new Set(['sonarr:list']) });
+      const out = await reconcileReleaseBlockIfDue({ db: t.db, arr, logger });
+      expect(out[1]).toMatchObject({ arrKind: 'sonarr', report: null, error: expect.any(String) });
+      expect(logs.some((l) => l.msg === '[release-block] upkeep_failed' && l.fields?.arrKind === 'sonarr')).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------------------------
   describe('the read-only pool report (PLAN-072 S6(e))', () => {
     it('counts what the sweep would record for the pending pool, per shape, confidence and reason, and writes nothing', async () => {
       const bare = grabbedMovie(2, { history: [] });
@@ -1656,6 +1893,29 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       expect(
         (await getReleaseBlockSummary({ db: t.db, arr })).kinds[1]!.importListExclusions,
       ).toBeNull();
+    });
+
+    it('D-25cl: an *arr that never answers the exclusion count reads "not available" after the deadline, not its timeout', async () => {
+      const { arr } = createStaticReleaseBlockArr({ exclusions: { radarr: 12, sonarr: 7 } });
+      let started = 0;
+      const hang = () => {
+        started += 1;
+        return new Promise<number>(() => {}); // accepts the connection, never answers
+      };
+      arr.read.radarr.countImportListExclusions = hang;
+      arr.read.sonarr.countImportListExclusions = hang;
+      const t0 = Date.now();
+      const summary = await getReleaseBlockSummary({ db: t.db, arr, exclusionDeadlineMs: 300 });
+      const took = Date.now() - t0;
+      expect(summary.kinds.map((k) => k.importListExclusions)).toEqual([null, null]);
+      expect(started).toBe(2);
+      // Both read at once: one deadline (300 ms), not two in a row (600 ms).
+      expect(took).toBeLessThan(560);
+      // One hung, one answering: the answer still shows.
+      const { arr: half } = createStaticReleaseBlockArr({ exclusions: { radarr: 12, sonarr: 7 } });
+      half.read.radarr.countImportListExclusions = hang;
+      const mixed = await getReleaseBlockSummary({ db: t.db, arr: half, exclusionDeadlineMs: 300 });
+      expect(mixed.kinds.map((k) => k.importListExclusions)).toEqual([null, 7]);
     });
   });
 });

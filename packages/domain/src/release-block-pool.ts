@@ -75,7 +75,7 @@ export async function reportPoolReleaseIdentity(input: {
       media,
       pool: pending.items.length,
       recordable: 0,
-      unrecordable: { no_term: 0, gone: 0, no_ledger_item: 0, read_failed: 0 },
+      unrecordable: { no_term: 0, gone: 0, no_ledger_item: 0, id_mismatch: 0, read_failed: 0 },
       unrecordedShare: 0,
       shape: { group: 0, exact: 0, none: 0 },
       confidence: { verified: 0, low_confidence: 0 },

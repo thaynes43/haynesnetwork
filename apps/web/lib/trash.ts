@@ -688,6 +688,31 @@ export const WATCHLIST_NOTE_DETAIL = "On a watchlist. It won't be deleted while 
 /** The Expedite confirm's breakdown term for the watchlisted share of the protected count. */
 export const WATCHLIST_BREAKDOWN_TERM = 'on a watchlist';
 
+/**
+ * DESIGN-052 D-10 / D-25co — the Library item page's Trash notice text for a pending item. A saved item keeps the save
+ * wording; a watchlisted one says the watchlist keeps it (the sweep and Expedite keep it while it stays listed, so
+ * "Save it to keep it" would be untrue) with the tile's note; a slated one offers the Save. Copy for the driving
+ * session's pass.
+ */
+export function trashNoticeText(input: {
+  on: boolean;
+  onWatchlist: boolean;
+  ruleTitle: string | null;
+  sizeLabel: string;
+}): { meta: string; watchlistNote: string | null } {
+  const rule = input.ruleTitle ?? 'deletion';
+  if (input.on) {
+    return { meta: 'Maintainerr will keep this item — un-saving puts it back under its deletion rules.', watchlistNote: null };
+  }
+  if (input.onWatchlist) {
+    return { meta: `Maintainerr’s “${rule}” rule flagged it.`, watchlistNote: WATCHLIST_NOTE_DETAIL };
+  }
+  return {
+    meta: `Maintainerr’s “${rule}” rule flagged it — deleting frees ${input.sizeLabel}. Save it to keep it.`,
+    watchlistNote: null,
+  };
+}
+
 /** The sweep's keep reasons (mirrors @hnet/db TRASH_KEEP_REASONS; the client never imports server packages). */
 export type TrashKeepReasonName =
   | 'tag'

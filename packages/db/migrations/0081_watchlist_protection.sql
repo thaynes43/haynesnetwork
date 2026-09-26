@@ -143,7 +143,9 @@ CREATE TABLE "seerr_watchlist_enrollments" (
 	"already_on" boolean DEFAULT false NOT NULL,
 	"optout_observed_at" timestamp with time zone,
 	"last_checked_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"confirmed_at" timestamp with time zone
+	"confirmed_at" timestamp with time zone,
+	"movies_before" boolean,
+	"tv_before" boolean
 );
 --> statement-breakpoint
 CREATE TABLE "trash_sweep_status" (

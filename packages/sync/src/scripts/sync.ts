@@ -229,7 +229,9 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
                            optional (absent ⇒ every Seerr source reads as failed). A refresh another run
                            holds is skipped. While the audited seerr_watchlist_enroll setting is on, it
                            then turns on Seerr watchlist sync for each not-yet-enrolled user (ADR-093
-                           C-11, once per user). No --source. Writes no sync_runs row.
+                           C-11, once per user), and runs the Release Block upkeep (the stranded settle,
+                           the expiry and the profile drift check; RADARR_/SONARR_API_KEY, skipped when
+                           absent). No --source. Writes no sync_runs row.
   --source=NAME           limit the run to one source (repeatable; default: all sources; for
                            metadata-refresh the default is the three *arr kinds)
   --force-tombstones       override the mass-tombstone guard (DESIGN-005 D-14/Q-03)
@@ -512,7 +514,21 @@ async function main(): Promise<number> {
   // ADR-093 C-07 / DESIGN-052 D-14 — the Release Block's Radarr/Sonarr clients (the identity reads + the confined
   // release-profile writes), built INSIDE @hnet/domain so the *arr write surface stays confined. Throws one ArrConfigError
   // naming a missing RADARR_/SONARR_API_KEY: the sweep never deletes without recording and blocking the release.
-  const releaseBlockArr = args.mode === 'trash-batch-sweep' ? releaseBlockArrClientsFromEnv() : undefined;
+  // DESIGN-052 D-25cf — the `watchlist-registry` mode runs the Release Block upkeep at the end of every run too (so it
+  // keeps going while PLAN-072 holds the sweep CronJob suspended). Best effort there: a missing key skips the upkeep,
+  // never the registry.
+  let releaseBlockArr: ReturnType<typeof releaseBlockArrClientsFromEnv> | undefined;
+  if (args.mode === 'trash-batch-sweep') {
+    releaseBlockArr = releaseBlockArrClientsFromEnv();
+  } else if (args.mode === 'watchlist-registry') {
+    try {
+      releaseBlockArr = releaseBlockArrClientsFromEnv();
+    } catch (error) {
+      logger.warn('[release-block] upkeep_skipped', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
   // ADR-093 C-11 / DESIGN-052 D-17 — the Seerr enrollment clients (null without SEERR_API_KEY ⇒ the step is skipped).
   const seerrEnroll = args.mode === 'watchlist-registry' ? seerrEnrollClientsFromEnv() : undefined;
   // ADR-068 / DESIGN-049 D-09 — the `watch` mode's Tautulli instances (each skip-if-unconfigured: a missing

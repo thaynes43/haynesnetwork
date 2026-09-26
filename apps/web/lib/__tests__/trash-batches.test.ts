@@ -7,7 +7,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   batchStateTone,
+  batchTileView,
   countdownCopy,
+  EXPIRE_KEPT_REASONS,
+  expirePreview,
   forceExpireConfirmMatches,
   previewTargetSelection,
   sweepAbortCopy,
@@ -416,5 +419,102 @@ describe('forceExpireConfirmMatches — the mid-window force-expire typed gate',
     expect(forceExpireConfirmMatches('', 3)).toBe(false);
     expect(forceExpireConfirmMatches('nope', 3)).toBe(false);
     expect(forceExpireConfirmMatches('2', 3)).toBe(false);
+  });
+});
+
+describe('the Expire now preview (DESIGN-011 D-07 (c), DESIGN-052 D-25cm)', () => {
+  const row = (over: Partial<Parameters<typeof expirePreview>[0][number]> = {}) => ({
+    state: 'pending' as const,
+    recentlyWatched: false,
+    mediaItemId: 'm',
+    inLivePool: true,
+    ...over,
+  });
+
+  it('a watchlisted pending row is a certain keep: out of "up to N", into "at least K" and the typed count', () => {
+    const items = [
+      row(),
+      row(),
+      row(),
+      row({ onWatchlist: true }),
+      row({ onWatchlist: true }),
+      row({ state: 'saved' }),
+    ];
+    expect(expirePreview(items)).toEqual({ willDelete: 3, willKeep: 2 });
+    expect(forceExpireConfirmMatches('3', expirePreview(items).willDelete)).toBe(true);
+    expect(forceExpireConfirmMatches('5', expirePreview(items).willDelete)).toBe(false);
+  });
+
+  it('keeps the other certain keeps; unknown reads as slated; an older server (no onWatchlist) counts it', () => {
+    expect(
+      expirePreview([
+        row({ recentlyWatched: true }),
+        row({ mediaItemId: null }),
+        row({ inLivePool: false }),
+        row({ inLivePool: null }),
+        row({ onWatchlist: false }),
+        row(),
+      ]),
+    ).toEqual({ willDelete: 3, willKeep: 3 });
+  });
+
+  it('the kept line names the watchlist reason', () => {
+    expect(EXPIRE_KEPT_REASONS).toContain('on a watchlist');
+    expect(EXPIRE_KEPT_REASONS).not.toMatch(/—/);
+  });
+});
+
+describe('a batch-wall tile`s label, kept tooltip and watchlist note (DESIGN-052 D-10, D-25w, D-25cn)', () => {
+  const base = { tappable: false, savedByName: null, armed: false };
+
+  it('a swept `watchlisted` row: "Kept: on a watchlist" as its hover title and in its label', () => {
+    const view = batchTileView({
+      ...base,
+      item: { title: 'Trap', state: 'skipped', keepReason: 'watchlisted', onWatchlist: true },
+      glyph: 'skip',
+      projectedSkip: false,
+    });
+    expect(view.keptTooltip).toBe('Kept: on a watchlist');
+    expect(view.title).toBe('Kept: on a watchlist');
+    expect(view.label).toBe('Trap. Kept: on a watchlist');
+    expect(view.onWatchlist).toBe(true);
+  });
+
+  it('a projected skip never carries a kept tooltip (the sweep never ran on it)', () => {
+    const view = batchTileView({
+      ...base,
+      item: { title: 'Trap', state: 'pending', keepReason: 'watchlisted' },
+      glyph: 'skip',
+      projectedSkip: true,
+    });
+    expect(view.keptTooltip).toBeNull();
+    expect(view.label).toBe(`Trap ${PROJECTED_SKIP_MEANING}`);
+    expect(view.title).toBe(view.label);
+  });
+
+  it('the note rides every row that is on a watchlist except a deleted one; a slated tile keeps its own label', () => {
+    const pending = batchTileView({
+      ...base,
+      tappable: true,
+      item: { title: 'Trap', state: 'pending', onWatchlist: true },
+      glyph: 'trash',
+      projectedSkip: false,
+    });
+    expect(pending).toMatchObject({ onWatchlist: true, keptTooltip: null, label: 'Trap is slated to delete — tap to save it' });
+    const deleted = batchTileView({
+      ...base,
+      item: { title: 'Trap', state: 'deleted', onWatchlist: true },
+      glyph: 'gone',
+      projectedSkip: false,
+    });
+    expect(deleted.onWatchlist).toBe(false);
+    const older = batchTileView({
+      ...base,
+      item: { title: 'Trap', state: 'skipped', keepReason: null },
+      glyph: 'skip',
+      projectedSkip: false,
+    });
+    expect(older.keptTooltip).toBeNull();
+    expect(older.label).toMatch(/was kept/);
   });
 });

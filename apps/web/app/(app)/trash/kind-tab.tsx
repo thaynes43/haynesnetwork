@@ -35,7 +35,6 @@ import {
   candidatesAsOfLabel,
   daysUntil,
   deadlineCountdown,
-  keptReasonTooltip,
   releaseNeedsConfirm,
   sweepTimeLabel,
   watchNote,
@@ -47,7 +46,10 @@ import {
   TARGET_STRATEGIES,
   TARGET_STRATEGY_LABELS,
   batchStateTone,
+  batchTileView,
   countdownCopy,
+  EXPIRE_KEPT_REASONS,
+  expirePreview,
   forceExpireConfirmMatches,
   previewTargetSelection,
   sweepAbortCopy,
@@ -57,7 +59,6 @@ import {
   wallGlyph,
   wallInteractive,
   wallSection,
-  PROJECTED_SKIP_MEANING,
   type BatchItemStateName,
   type BatchStateName,
   type TargetCandidate,
@@ -155,48 +156,6 @@ const windowStillOpen = (expiresAt: string | null): boolean =>
 /** The kind → `?from=` key so a poster-nav returns to THIS tab (Part 2). */
 const fromKeyFor = (kind: 'movie' | 'tv'): string => (kind === 'movie' ? 'trash-movies' : 'trash-tv');
 
-function tileLabel(
-  title: string,
-  glyph: WallGlyph,
-  tappable: boolean,
-  savedByName: string | null,
-  armed = false,
-  projectedSkip = false,
-  keptTooltip: string | null = null,
-): string {
-  // A PROJECTED skip (a still-`pending` row the live pool no longer holds) announces a different
-  // fact from a row the sweep actually skipped — the sweep never ran on it (amendment (b)).
-  if (projectedSkip) return `${title} ${PROJECTED_SKIP_MEANING}`;
-  // ADR-014 (2026-09-14) — an ARMED tile is mid-release: say what the second tap does and what it
-  // costs. Both release glyphs land the title back in the deletion pool, so the consequence clause
-  // is identical; only the verb differs (un-save your own save vs un-protect a live exclusion).
-  if (armed)
-    return glyph === 'check'
-      ? `Tap again to un-protect ${title} — it goes back on the deletion list`
-      : `Tap again to un-save ${title} — it goes back on the deletion list`;
-  switch (glyph) {
-    case 'trash':
-      return tappable
-        ? `${title} is slated to delete — tap to save it`
-        : `${title} is slated to delete`;
-    case 'shield':
-      if (tappable) return `${title} is saved — tap to un-save it`;
-      return savedByName !== null ? `${title} — saved by ${savedByName}` : `${title} is saved`;
-    case 'check':
-      // ADR-025 errata — a protected batch item is held by a live exclusion; tap un-protects it (removes
-      // the exclusion, then re-classifies to pending). Inert copy is kept for read-only phases.
-      return tappable
-        ? `${title} is protected — tap to un-protect it`
-        : `${title} is protected — already safe from deletion`;
-    case 'skip':
-      // ADR-093 / DESIGN-052 D-10 — a swept `skipped` row names why the sweep kept it.
-      if (keptTooltip !== null) return `${title}. ${keptTooltip}`;
-      return `${title} was kept — it couldn’t be verified safe, so it was never deleted`;
-    case 'gone':
-      return `${title} was deleted`;
-  }
-}
-
 /**
  * One batch-wall tile. It exists as a component (rather than inline in the wall's map) because it
  * owns a hook: the ADR-014 two-step that guards a protection RELEASE (2026-09-14, owner-reported
@@ -237,9 +196,9 @@ function BatchTile({
   }, [needsConfirm]);
   const armed = release.armed && needsConfirm;
   const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
-  // ADR-093 / DESIGN-052 D-10 — a kept (swept `skipped`) tile's tooltip names the reason ("Kept: on a watchlist").
-  const keptTooltip = glyph === 'skip' && !projectedSkip ? keptReasonTooltip(item.keepReason) : null;
-  const label = tileLabel(item.title, glyph, tappable, savedByName, armed, projectedSkip, keptTooltip);
+  // ADR-093 / DESIGN-052 D-10 / D-25cn — the label, the kept tooltip ("Kept: on a watchlist") and the watchlist note,
+  // derived in lib/trash-batches (unit-tested) so the tile only renders them.
+  const view = batchTileView({ item, glyph, projectedSkip, tappable, savedByName, armed });
   const rating = formatRating(ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating));
   // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone (recently watched) or muted
   // (watched a while ago); null with no watch signal. NEVER in the action corner.
@@ -258,8 +217,8 @@ function BatchTile({
         tappable,
         // A saved/protected tile reads "pressed" (kept); a slated pending tile is not pressed.
         pressed: glyph === 'shield' || glyph === 'check',
-        label,
-        title: keptTooltip ?? label,
+        label: view.label,
+        title: view.title,
         busy,
         armed,
         onTap: needsConfirm ? release.trigger : () => onTap(item),
@@ -277,7 +236,7 @@ function BatchTile({
       metaText={`${item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}${rating !== null ? ` · ★ ${rating}` : ''}`}
       requesters={item.requesters}
       watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
-      onWatchlist={item.onWatchlist === true}
+      onWatchlist={view.onWatchlist}
     />
   );
 }
@@ -649,11 +608,9 @@ function ExpireModal({
   // be skipped (the sweep's own `!fresh` branch), so it leaves "up to N delete", joins "at least K
   // skipped", and leaves the typed-confirm count with them. `null`/`true` stay countable: unknown
   // always reads as slated, the conservative side.
-  const pending = items.filter((i) => i.state === 'pending');
-  const willDelete = pending.filter(
-    (i) => !i.recentlyWatched && i.mediaItemId !== null && i.inLivePool !== false,
-  ).length;
-  const willKeep = pending.length - willDelete;
+  // DESIGN-052 D-25cm — a watchlisted row is a certain keep too (the Watchlist Keep); the derivation lives in
+  // lib/trash-batches (`expirePreview`, unit-tested).
+  const { willDelete, willKeep } = expirePreview(items);
   const savedCount = batch.counts.saved;
   const daysLeft = daysUntil(batch.expiresAt);
   // DESIGN-011 amendment (2026-07-09) — the concrete next-sweep time, so the closed-window submit tooltip
@@ -768,8 +725,7 @@ function ExpireModal({
               — a save is permanent protection.
             </li>
             <li>
-              <strong>At least {willKeep} will be kept (skipped)</strong> — recently watched, no
-              longer in the trash pool, unverifiable, or guardian-protected at sweep time.
+              <strong>At least {willKeep} will be kept (skipped)</strong> — {EXPIRE_KEPT_REASONS}
             </li>
           </ul>
           {windowOpen ? (

@@ -120,7 +120,8 @@ const statusOf = (error: unknown): number | string =>
  * - No row, both on ⇒ insert the row `already_on`, confirmed.
  * - A PENDING row (the app wrote before and never saw the answer, D-25bs), both on ⇒ confirm it, `already_on` false:
  *   the app's write took.
- * - Otherwise insert the row pending (`already_on` false, `confirmed_at` null) BEFORE the write, write both on
+ * - Otherwise insert the row pending (`already_on` false, `confirmed_at` null, the user's flags before the write in
+ *   `movies_before` / `tv_before`, D-25cj) BEFORE the POST and after the write's own GET answered, write both on
  *   (echoing the whole body), and confirm it when the response shows both on. A failure logs and is retried next run
  *   (the pending row stays, so a lost answer is never mistaken for `already_on`).
  * Then, once a day, re-check the confirmed users and note an opt-out. Never throws for a single user.
@@ -162,6 +163,17 @@ export async function enrollSeerrWatchlistSync(input: {
       .update(seerrWatchlistEnrollments)
       .set({ confirmedAt: now, lastCheckedAt: now })
       .where(eq(seerrWatchlistEnrollments.seerrUserId, seerrUserId));
+  /** D-25cj — the row as the app's pending attempt, with the user's own flags before it (what a rollback restores). */
+  const pendingRow = (user: SeerrUserSummary, before: { movies: boolean; tv: boolean }) => ({
+    seerrUserId: user.id,
+    plexAccountId: user.plexId,
+    enrolledAt: now,
+    alreadyOn: false,
+    lastCheckedAt: now,
+    confirmedAt: null,
+    moviesBefore: before.movies,
+    tvBefore: before.tv,
+  });
   for (const user of users) {
     if (user.userType !== 1 || confirmed.has(user.id)) continue;
     if (only !== null && !only.has(user.id)) continue;
@@ -185,35 +197,54 @@ export async function enrollSeerrWatchlistSync(input: {
             alreadyOn: true,
             lastCheckedAt: now,
             confirmedAt: now,
+            moviesBefore: true,
+            tvBefore: true,
           })
           .onConflictDoNothing();
         report.alreadyOn += 1;
-        logger.info('[seerr-enroll] enrolled', { seerrUserId: user.id, alreadyOn: true });
+        logger.info('[seerr-enroll] enrolled', {
+          seerrUserId: user.id,
+          alreadyOn: true,
+          moviesBefore: true,
+          tvBefore: true,
+        });
         continue;
       }
-      // Record the attempt BEFORE the write: whatever happens to the answer, the row says the app turned it on.
-      if (!pending.has(user.id)) {
-        await db
-          .insert(seerrWatchlistEnrollments)
-          .values({
-            seerrUserId: user.id,
-            plexAccountId: user.plexId,
-            enrolledAt: now,
-            alreadyOn: false,
-            lastCheckedAt: now,
-            confirmedAt: null,
-          })
-          .onConflictDoNothing();
-      }
-      const after = await input.seerr.write.setWatchlistSync(user.id, { movies: true, tv: true });
+      // Record the attempt BEFORE the POST (D-25bs), and only once the write's own GET answered, so a write that never
+      // went out records nothing (D-25cj): whatever happens to the answer, the row says the app turned it on, and it
+      // carries the user's flags before the write. A pending row from an earlier run keeps its first flags.
+      const row = pendingRow(user, flags);
+      const after = await input.seerr.write.setWatchlistSync(
+        user.id,
+        { movies: true, tv: true },
+        {
+          beforeWrite: async () => {
+            if (!pending.has(user.id)) {
+              await db.insert(seerrWatchlistEnrollments).values(row).onConflictDoNothing();
+            }
+          },
+        },
+      );
       if (!after.movies || !after.tv) {
         report.failed += 1;
         logger.warn('[seerr-enroll] failed', { seerrUserId: user.id, status: 'not_applied' });
         continue;
       }
-      await confirm(user.id);
+      // Confirm the row (an upsert, so a write client that never called `beforeWrite` still leaves the attribution).
+      await db
+        .insert(seerrWatchlistEnrollments)
+        .values({ ...row, confirmedAt: now })
+        .onConflictDoUpdate({
+          target: seerrWatchlistEnrollments.seerrUserId,
+          set: { confirmedAt: now, lastCheckedAt: now },
+        });
       report.enrolled += 1;
-      logger.info('[seerr-enroll] enrolled', { seerrUserId: user.id, alreadyOn: false });
+      logger.info('[seerr-enroll] enrolled', {
+        seerrUserId: user.id,
+        alreadyOn: false,
+        moviesBefore: flags.movies,
+        tvBefore: flags.tv,
+      });
     } catch (error) {
       report.failed += 1;
       logger.warn('[seerr-enroll] failed', { seerrUserId: user.id, status: statusOf(error) });
