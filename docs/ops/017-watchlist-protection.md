@@ -1,7 +1,8 @@
 # OPS-017 — Watchlist protection: the registry CronJob, the paused sweep, the Release Block and its scripts
 
-- **Status:** Draft (2026-09-26) — written with PLAN-072 S2 (PR #595); it becomes the operating record once PLAN-072
-  S4 deploys the CronJob and the Loki alerts, and S6..S9 fill in the live evidence.
+- **Status:** Active (2026-09-26) — the operating record from PLAN-072 S4 on (haynesnetwork v0.101.0, haynes-ops
+  #3223: the registry CronJob, the held sweep and web delete paths, the Loki alerts); S6..S9 fill in the live
+  evidence. Written with PLAN-072 S2 (PR #595).
 - **Scope:** operating the Watchlist Registry (`--mode=watchlist-registry` and its CronJob), the Registry Gate and the
   paused sweep, the Release Block (the app-owned Radarr / Sonarr release profile), the re-add page, and the three
   operator scripts: the S6(e) pool report, the S8 seed and the S9 Seerr enrollment.
@@ -18,8 +19,8 @@ accounts only as their class and `acct:<8 hex>` (D-21).
 
 | Piece | Where | Notes |
 |---|---|---|
-| Registry refresh | CronJob `haynesnetwork-sync-watchlist-registry`, `14,29,44,59 * * * *`, `concurrencyPolicy: Forbid` | `tsx /sync/src/scripts/sync.ts --mode=watchlist-registry`; exit 0 for a clean `failed` run and for `busy` (D-25t); then, best effort, the Release Block upkeep (D-25cf: it keeps running while the sweep CronJob is suspended; without `RADARR_API_KEY` / `SONARR_API_KEY` it logs `[release-block] upkeep_skipped`) |
-| Sweep | CronJob `haynesnetwork-sync-trash-batch-sweep` (hourly at `:45`) | refreshes the registry inline, then the gate, then the two-phase delete (D-14); then, every hour whether or not a batch was due, the Release Block upkeep (the stranded in-flight settle, the 365-day expiry and the profile drift check, D-25br, D-25ce) and the re-add check (D-23). Suspending it stops the re-add check too; nothing is deleted meanwhile, so nothing new can be re-added |
+| Registry refresh | CronJob `haynesnetwork-sync-watchlist-registry`, `14,29,44,59 * * * *`, `concurrencyPolicy: Forbid`, `backoffLimit: 0` | `tsx /sync/src/scripts/sync.ts --mode=watchlist-registry`; exit 0 for a clean `failed` run and for `busy` (D-25t); a run that throws exits 1 and is not retried in its slot, so each slot logs at most one scheduled `run_failed` (D-25dc); then, best effort, the Release Block upkeep (D-25cf: it keeps running while the sweep CronJob is suspended; without `RADARR_API_KEY` / `SONARR_API_KEY` it logs `[release-block] upkeep_skipped`) |
+| Sweep | CronJob `haynesnetwork-sync-trash-batch-sweep` (hourly at `:45`) | refreshes the registry inline, then the gate, then the two-phase delete (D-14); then, every hour whether or not a batch was due, the Release Block upkeep (the stranded in-flight settle, the 365-day expiry and the profile drift check, D-25br, D-25ce) and the re-add check (D-23). Suspending it stops the re-add check too; nothing is deleted meanwhile, so nothing new can be re-added. Its `suspend` lives in haynes-ops git (`cronjob.suspend` on `sync-trash-batch-sweep`): suspend and resume it only there, never with `kubectl`. The chart renders `suspend` on every CronJob, so each Helm upgrade puts a hand-set value back to git's; a hand resume is re-suspended by the next release without a sound (no alert watches a suspended CronJob), and a hand suspend is lifted by the next upgrade (D-25db) |
 | Gate on the web paths | `trash.expediteItem`, `trash.expediteAll`, `trash.batches.expire` | the CronJob's newest run, never an inline refresh; a refusal is `PRECONDITION_FAILED` |
 | Web delete hold | env `TRASH_WEB_DELETES_HELD` on the web pod (`1`, `true` or `yes`) | while set (PLAN-072 S4 until S6 is green, and the rollback), the three web paths above refuse before reading anything: `PRECONDITION_FAILED`, appCode `TRASH_WEB_DELETES_HELD`, "Deleting from Trash is on hold while watchlist protection is being verified. Nothing was deleted." (D-25cc). Set and removed through haynes-ops, never by hand |
 | Release Block | one profile per *arr, `haynesnetwork: deleted releases (managed, do not edit)` | written and read back before any delete; never edit it by hand while an image that reconciles it runs: the upkeep reads it every run and puts back a disabled, deleted or edited profile within 15 minutes (`[release-block] drift`, D-25ce) |
@@ -115,9 +116,10 @@ A source leaves `unreadable` by itself on its next ok read with titles; nothing 
 ## 6. The `run_failed` streak (8 runs in a row, 2 hours)
 
 `[watchlist-registry] run_failed {trigger, failure}` means a whole registry run failed before it wrote any account:
-the job still exits 0 (a clean failed run is not a job failure, D-25t), so only this alert says so. Eight in a row is
-2 hours of no fresh check; the sweep's gate pauses once the newest ok run is 30 minutes old, and the `sweep_paused`
-page follows at 6 hours, so this notice is the early warning.
+the job still exits 0 (a clean failed run is not a job failure, D-25t), so only this alert says so. A run that throws
+(`failure: error`) exits 1, and the CronJob's `backoffLimit: 0` keeps it to one line per slot (D-25dc), so eight in a
+row is 2 hours of no fresh check (a Job run by hand, section 2, counts as one more); the sweep's gate pauses once the
+newest ok run is 30 minutes old, and the `sweep_paused` page follows at 6 hours, so this notice is the early warning.
 
 | `failure` | What failed | What fixes it |
 |---|---|---|
@@ -161,16 +163,22 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/seerr-watchlist.ts
 
 ## 8. Rollback
 
-PLAN-072's Rollback section is the order. In short: suspend the sweep CronJob first and set
-`TRASH_WEB_DELETES_HELD` on the web pod (the older image ignores it, so after the revert nobody uses Expedite or
-Expire now until the guard is back); turn enrollment off if S9 ran (the users the app turned on are the
+PLAN-072's Rollback section is the order. Every CronJob suspend and resume in it goes through haynes-ops git, never
+`kubectl` (section 1: a Helm upgrade puts a hand-set `suspend` back to git's, D-25db). In short: first, in one
+haynes-ops PR, set `suspend: true` on the sweep CronJob and `TRASH_WEB_DELETES_HELD` on the web pod (the older image
+ignores the env, so after the revert nobody uses Expedite or Expire now until the guard is back); it lands before the
+image revert, or at the latest in the same change. A `kubectl` suspend instead would be undone by that PR's or the
+revert's Helm upgrade once git says `suspend: false`, and the older image would then delete watchlisted titles without
+recording or blocking the release. Turn enrollment off if S9 ran (the users the app turned on are the
 `seerr_watchlist_enrollments` rows with `already_on` false, pending rows included; restoring a user means their own
 `movies_before` / `tv_before`, never both off, D-25cj);
-then, in the haynes-ops change that reverts the image tag, also remove (or first suspend) the
-`haynesnetwork-sync-watchlist-registry` CronJob, since the older image rejects `--mode=watchlist-registry` (exit 2) and
-would fail a Job every 15 minutes, and remove the D-21 Loki alerts, which go silent with the older image. Leave the
+then, in the haynes-ops change that reverts the image tag, keep the sweep's `suspend: true` (edit the tag, never a
+wholesale `git revert` of the S4 change), remove the `haynesnetwork-sync-watchlist-registry` CronJob (or set its
+`suspend: true` in an earlier change), since the older image rejects `--mode=watchlist-registry` (exit 2) and would
+fail a Job every 15 minutes, and remove the D-21 Loki alerts, which go silent with the older image. Leave the
 release profiles in place unless the block itself is the problem, and delete them only once no running image
-reconciles them.
+reconciles them. Resume the sweep, when PLAN-072 step 6 allows it, with a haynes-ops PR that sets its
+`suspend: false`.
 
 While the older image runs, arm or disarm a Trash rule only in Maintainerr's own rule editor, never from the app's
 Rules tab: the older toggle saves the rule without `listExclusions`, `forceSeerr` and `arrAction`, so Maintainerr
