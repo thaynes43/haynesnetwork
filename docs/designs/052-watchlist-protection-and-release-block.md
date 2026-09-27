@@ -1,7 +1,10 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Draft
-- **Last updated:** 2026-09-26 (D-25cr..D-25da record the fourth review pass of PR #595: a renamed-only term's
+- **Last updated:** 2026-09-26 (D-25db and D-25dc record the review of the PLAN-072 S4 deploy, haynes-ops #3223:
+  every sweep and registry CronJob suspend and resume in the rollout goes through haynes-ops git, never `kubectl`,
+  and the registry CronJob runs `backoffLimit: 0`; folded into D-20). Prior: 2026-09-26 (D-25cr..D-25da record the
+  fourth review pass of PR #595: a renamed-only term's
   widened years leave out a namesake's year, the `--manual` seed's term takes the *arr's years, a season-less ledger
   import is blocked by its exact name or keeps the series, the rollback forbids the older image's Rules-tab Arm/Disarm,
   the Library notice keeps the watchlist note on Save, the Start-a-batch preview counts only freeable bytes and
@@ -879,7 +882,8 @@ ChatGPT protects a Leaving Soon title from that moment.
   so the CLI accepts it (the CHECK rebuild in 0081).
 - haynes-ops: a `sync-watchlist-registry` CronJob in `kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`,
   schedule `14,29,44,59 * * * *` (free minutes; `:44` lands a minute before the sweep, `:14` three before the space
-  policy), `concurrencyPolicy: Forbid`, the `sync-watch` resources, `envFrom` `haynesnetwork-secret`.
+  policy), `concurrencyPolicy: Forbid`, `backoffLimit: 0` (D-25dc), the `sync-watch` resources, `envFrom`
+  `haynesnetwork-secret`. Its `suspend`, and the sweep CronJob's, is set only in haynes-ops git (D-25db).
 - Credentials already in `haynesnetwork-secret` (verified in `externalsecret.yaml`): `PLEX_HAYNESOPS_TOKEN`,
   `PLEX_HAYNESTOWER_TOKEN`, `SEERR_API_KEY`, `RADARR_API_KEY`, `SONARR_API_KEY`, `MAINTAINERR_API_KEY`. The sweep job
   mounts the same secret; it now also builds the Plex read, Seerr read and Radarr/Sonarr read and write clients.
@@ -1029,7 +1033,9 @@ Deleted-Release Record and its terms (D-11, D-12), the Release Block writer (D-1
 anime-tags preflight (D-17), the D-21 lines, the D-23 re-add check and counts, and the *arr and Seerr half of the D-20
 stubs, with no further migration. The rulings below were made while building; none changes a D-24 ruling. Rows
 D-25ax..D-25bm record the rulings of the PR #595 code review (each with a test that fails without it), rows
-D-25bn..D-25bz those of its second review pass, and rows D-25ca..D-25cq those of its third (the same way).
+D-25bn..D-25bz those of its second review pass, rows D-25ca..D-25cq those of its third and rows D-25cr..D-25da
+those of its fourth (the same way). Rows D-25db and D-25dc record the review of the PLAN-072 S4 deploy (haynes-ops
+#3223).
 
 | ID | Question | Ruling |
 |----|----------|--------|
@@ -1138,6 +1144,8 @@ D-25bn..D-25bz those of its second review pass, and rows D-25ca..D-25cq those of
 | D-25cy | D-25bk's Expedite-all protected line had no test that failed without it: the "report never credits Maintainerr" assertion ran against a report that never said so, and no test rendered the confirm. | The line is `EXPEDITE_PROTECTED_REASON` (lib/trash), unit-tested (names the watchlist, "they are kept", no Maintainerr, no request, no dash), and the Trash e2e asserts the rendered confirm; the vacuous report assertion is dropped. |
 | D-25cz | The Expire now confirm's kept line, rewritten by D-25cm, still rendered "(skipped) — …" (the no-dash test covered only the constant), and its two sibling lines kept their dashes, while the Expedite-all confirm uses colons. | `expireConfirmLines` (lib/trash-batches) renders all three labels with a colon ("1 rescued item is untouched:" singular), unit-tested on the rendered text; the Trash e2e asserts no dash in the list. For the driving session's copy pass. |
 | D-25da | The dev:local / e2e stack points Radarr and Sonarr at one stub with one key, and the stub kept one release profile list, so since D-25ce / D-25cf every upkeep run's Sonarr pass read the Radarr term as drift and rewrote it away (and back), logging drift every run. | The stack gives Radarr and Sonarr their own stub keys and the stub keeps a list per key; `/_stub/release-profiles` answers `{radarr, sonarr}` (OPS-003). A stub smoke test on embedded PG runs the upkeep twice after a Radarr write: the term stays, no drift. |
+| D-25db | PLAN-072 suspended the sweep CronJob with `kubectl` at S4 (with a declaration and a daily check that it stayed suspended), resumed it the same way at S6, and suspended it and the registry CronJob by hand in the rollback. The chart renders `suspend` on every CronJob and a Helm upgrade patches the live value back to the rendered one, so the S4 deploy itself would lift a hand-set suspend; in a rollback after S6 (git says `suspend: false`) the hold PR's or the image revert's upgrade would lift it and the older image would delete watchlisted titles without recording or blocking the release; and a hand resume while git says `true` is re-suspended by the next release with no alert (CronJobNotSucceeding skips a suspended CronJob, and a sweep that never runs logs no `sweep_paused`). Found in the haynes-ops #3223 review. | Every sweep and registry CronJob suspend and resume goes through haynes-ops git (`cronjob.suspend`), never `kubectl`: S4 sets the sweep's `suspend: true` in the deploy PR; S6 sets `suspend: false` in the PR that removes `TRASH_WEB_DELETES_HELD`; the rollback's suspend lands before the image revert or in it, the revert keeps it (the tag is edited, the S4 change never reverted wholesale), and the registry CronJob is removed in the revert's change (the same Helm upgrade) or suspended in git before it; the rollback's resume is a PR too. With nothing hand-set, S4 needs no declaration and no daily check. PLAN-072 S4, S6 and Rollback steps 1, 3, 4 and 6 and OPS-017 §1 and §8 say so. |
+| D-25dc | A registry run that throws logs `run_failed` (`failure: error`) and exits 1; with `backoffLimit: 1` the Job retried in the same slot and logged a second scheduled `run_failed`, so the 8-line `WatchlistRegistryRunsFailing` streak (D-21: 8 runs, 2 hours) could fill in 4 slots, about 1 hour. | The `sync-watchlist-registry` CronJob runs `backoffLimit: 0` (D-20): the next slot is 15 minutes away, so each slot logs at most one scheduled `run_failed` and 8 lines are 8 slots. A Job run by hand from the CronJob (OPS-017 §2) logs trigger `schedule` too and counts as one more. |
 
 ## Alternatives considered
 

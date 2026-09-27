@@ -4,7 +4,7 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ 2026-09-26 — Watchlists protect titles from Trash (issue #576): S2 built on PR #595 and its code review fixed; next the `pnpm dev:local` walk, merge, release, deploy with the sweep suspended; interim Saves by hand
+## ▶ 2026-09-26 — Watchlists protect titles from Trash (issue #576): S2 merged (PR #595) and released as v0.101.0; S4 deploy is haynes-ops #3223, the sweep suspended in git; interim Saves by hand
 
 Three owner rulings on 2026-09-26 (issue #576, and on his phone): **no Trash deletion of a title on anybody's Plex
 watchlist** ("across the server": 42 accounts; HaynesOps and HaynesTower serve the same files); **re-requests of
@@ -53,12 +53,14 @@ profile drift check also run by the registry CronJob, `movies_before` / `tv_befo
 rollback restores them), and the overlay's unknown-outcome adds and undone removes; the fourth keeps a disk-imported
 title's widened year window off a namesake's year (The Killer 2024 / 2023; S6(e)'s `--pool` report counts
 `namesakeNarrowed`), gives the `--manual` Terrifier term Radarr's 2018, and forbids the older image's Rules-tab
-Arm/Disarm in the rollback). Runbook: `docs/ops/017-watchlist-protection.md` (OPS-017, Draft until S4).
-**Next:** the S2 `pnpm dev:local` walk (a watchlisted stub title kept by an expedite and a sweep, the release profile
-written before the handle, the Arm/Disarm toggle leaving the flags true), then squash-merge; S3 release; S4 deploy
-(image tag, the `sync-watchlist-registry` CronJob, the Loki alerts linking OPS-017, and
-`TRASH_WEB_DELETES_HELD: "true"` on the web pod) with `haynesnetwork-sync-trash-batch-sweep` suspended until S6
-passes; S6's resume removes the env in the same haynes-ops change that resumes the sweep. Rollout order is binding: deploy with the sweep CronJob suspended until the read-only
+Arm/Disarm in the rollback). Runbook: `docs/ops/017-watchlist-protection.md` (OPS-017, Active from S4).
+**Where it stands:** S2 merged (PR #595); S3 released v0.101.0 (release PR #587; image and cosign `.sig` in GHCR).
+**Next:** S4 deploy, haynes-ops #3223 (image tag, the `sync-watchlist-registry` CronJob with `backoffLimit: 0`, the
+Loki alerts linking OPS-017, `TRASH_WEB_DELETES_HELD: "true"` on the web pod and `suspend: true` on
+`sync-trash-batch-sweep`), holding every deletion until S6 passes; S6's resume is one haynes-ops PR that sets the
+sweep's `suspend: false` and removes the env. **Every CronJob suspend and resume in the rollout goes through
+haynes-ops git, never `kubectl`**: the chart renders `suspend` on every CronJob, so a Helm upgrade puts a hand-set
+value back (DESIGN-052 D-25db; PLAN-072 S4, S6 and Rollback; OPS-017 §1, §8). Rollout order is binding: deploy with the sweep CronJob suspended until the read-only
 checks (S6) pass, then the guard + Release Block verified on a live sweep, then seed the block (ledger + bulk legacy
 SAB + the three titles), then the Seerr enable (preflight: Seerr's anime tags, a join of everyone's newest titles
 against unblocked deletions; one user, then all), then re-request the three titles. S6a asks the owner PRD Q-15
