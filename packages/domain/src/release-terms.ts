@@ -16,12 +16,14 @@
 //
 // A title word (T is its words joined by SEP+; the exact form's words are joined by SEP*) is folded letters and digits,
 // written so the term matches the RAW title Radarr and Sonarr test as well as its folded form (DESIGN-052 D-25dd):
-//   - an apostrophe a raw name has inside the word is an optional separator: `SEP?` in T (`bob[^a-z0-9]?s` matches
-//     "Bob's" and "Bobs"), `SEP*` in the exact form (a word boundary like any other);
+//   - an apostrophe a raw name has inside the word is an optional separator or apostrophe entity: `(?:SEP|&(?:#39|apos);)?`
+//     in T (`bob(?:[^a-z0-9]|&(?:#39|apos);)?s` matches "Bob's", "Bobs" and "Bob&#39;s"), `(?:SEP|&(?:#39|apos);)*` in
+//     the exact form (a word boundary like any other);
 //   - an accented letter a raw name has is an alternation of the folded letter and the accented ones, `(?:u|ü)`, each
 //     accented letter one character in U+00C0..U+024F or U+1E00..U+1EFF that folds to that letter;
-//   - an `and` that is neither the first nor the last word may be absent, `(?:andSEP+)?` (`(?:andSEP*)?` in the exact
-//     form): the fold reads `&` as `and`, and a raw `&` is a separator.
+//   - an `and` that is neither the first nor the last word may be absent, `(?:(?:and|amp)SEP+)?`
+//     (`(?:(?:and|amp)SEP*)?` in the exact form): the fold reads `&` as `and`, a raw `&` is a separator, and a
+//     double-escaped `&amp;` is a separator around `amp` (D-25di).
 
 /** The plain term that keeps the app's profile valid when it holds no live term (an *arr refuses an empty profile). */
 export const RELEASE_BLOCK_SENTINEL = 'hnet-release-block-sentinel';
@@ -34,9 +36,15 @@ export type TermResolution = (typeof TERM_RESOLUTIONS)[number];
 const SEP = '[^a-z0-9]';
 const REMUX_LOOKAHEAD = '(?=.*(?<![a-z0-9])remux(?![a-z0-9]))';
 const resolutionLookahead = (r: TermResolution) => `(?=.*(?<![a-z0-9])${r}p(?![a-z0-9]))`;
-/** D-25dd — an `and` word that may be absent, in the title (words joined by SEP+) and in the exact form (SEP*). */
-const OPTIONAL_AND_TITLE = `(?:and${SEP}+)?`;
-const OPTIONAL_AND_EXACT = `(?:and${SEP}*)?`;
+/** D-25dd / D-25di — an `and` word that may be absent, or be the `amp` of a double-escaped `&amp;`, in the title
+ *  (words joined by SEP+) and in the exact form (SEP*). */
+const OPTIONAL_AND_TITLE = `(?:(?:and|amp)${SEP}+)?`;
+const OPTIONAL_AND_EXACT = `(?:(?:and|amp)${SEP}*)?`;
+/** D-25dd / D-25di — where a raw name has an apostrophe inside a word: a separator or an apostrophe entity, at most
+ *  one in the title, any number in the exact form (where it is a word boundary like any other). */
+const APOS_ENTITY = '&(?:#39|apos);';
+const JOIN_TITLE = `(?:${SEP}|${APOS_ENTITY})?`;
+const JOIN_EXACT = `(?:${SEP}|${APOS_ENTITY})*`;
 /** D-25dd — the accented letters a term may carry: Latin-1 Supplement and Latin Extended-A / B / Additional letters. */
 const ACCENT_RANGES = '\\u00c0-\\u00d6\\u00d8-\\u00f6\\u00f8-\\u024f\\u1e00-\\u1eff';
 const ACCENT_LETTER = new RegExp(`^[${ACCENT_RANGES}]$`);
@@ -50,7 +58,8 @@ export interface TermWord {
   text: string;
   /** Offsets inside `text` (1 .. length − 1) where a raw name has an apostrophe. */
   joins?: readonly number[];
-  /** Offset → the accented letters (lower case, one character each) a raw name has there; each folds to that letter. */
+  /** Offset → the accented letters (one character each, lower case unless that is two characters, as for `İ`) a raw
+   *  name has there; each folds to that letter. */
   accents?: Readonly<Record<number, readonly string[]>>;
 }
 export type TermToken = string | TermWord;
@@ -80,13 +89,33 @@ export type TermParts =
 // the raw name's apostrophes and accented letters (`termWords`, D-25dd).
 // ---------------------------------------------------------------------------
 
-const APOSTROPHES = /['‘’ʼ`´]/g;
+const APOSTROPHE_CHARS = "'‘’ʼ`´";
+const APOSTROPHES = new RegExp(`[${APOSTROPHE_CHARS}]`, 'g');
+const APOSTROPHE = new RegExp(`^[${APOSTROPHE_CHARS}]$`);
+const COMBINING_MARKS = /[\u0300-\u036f]/g;
 
-/** Fold a name the way the tokens are built: accents and apostrophes removed, `&` read as `and`, lower case. */
+/**
+ * D-25di — the HTML entities an indexer's double-escaped title carries, read as their character in one pass:
+ * `&amp;` as `&`, `&#39;` and `&apos;` as an apostrophe. The term writes each of them back (`OPTIONAL_AND_*`,
+ * `JOIN_*`), so a term built from either spelling matches both. Any other entity stays as it is written.
+ */
+const ENTITIES = /&(amp|#39|apos);/gi;
+const decodeEntities = (value: string) =>
+  value.replace(ENTITIES, (_, e: string) => (e.toLowerCase() === 'amp' ? '&' : "'"));
+
+/**
+ * Fold a name the way the tokens are built: entities decoded, accents and apostrophes removed, `&` read as `and`,
+ * lower case. Apostrophes are removed before NFKD as well as after it: NFKD turns `´` into a space and an accent, so
+ * removed only after it the fold would read "d´Amélie" as two words where `termWords` reads one (D-25di); after it, a
+ * letter whose decomposition carries one (`ŉ`, a fullwidth apostrophe) loses it too. `termWords` folds each character
+ * with this same function, so the two readings agree.
+ */
 export function foldReleaseName(value: string): string {
-  return value
+  return decodeEntities(value)
+    .normalize('NFC')
+    .replace(APOSTROPHES, '')
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(COMBINING_MARKS, '')
     .replace(APOSTROPHES, '')
     .replace(/&/g, ' and ')
     .toLowerCase();
@@ -98,11 +127,8 @@ export function releaseTokens(value: string): string[] {
     .filter((t) => t.length > 0);
 }
 
-const APOSTROPHE = /^['‘’ʼ`´]$/;
-const COMBINING_MARKS = /[\u0300-\u036f]/g;
-
-/** What one character folds to (as `foldReleaseName` folds it: NFKD, combining marks removed, lower case). */
-const foldChar = (ch: string) => ch.normalize('NFKD').replace(COMBINING_MARKS, '').toLowerCase();
+/** What one character folds to: exactly what `foldReleaseName` makes of it. */
+const foldChar = (ch: string) => foldReleaseName(ch);
 
 interface MutableWord {
   text: string;
@@ -118,8 +144,10 @@ const toTermWord = (w: MutableWord): TermWord => ({
 
 /**
  * D-25dd — a name's words as its RAW characters show them: `releaseTokens(value)` word for word, each with the
- * apostrophes the name has inside it and the accented letters it has. When the two readings disagree (a character the
- * fold reads another way) the plain tokens are returned, so a term is never built from words the fold did not give.
+ * apostrophes the name has inside it and the accented letters it has. Each character is folded by `foldReleaseName`
+ * itself, so the words are the tokens; should a word still differ from its token, that word alone is the plain token
+ * (D-25di: a disagreement never drops the other words' apostrophes and accents), and when the counts differ the plain
+ * tokens are returned, so a term is never built from words the fold did not give.
  */
 export function termWords(value: string): TermWord[] {
   const words: MutableWord[] = [];
@@ -130,18 +158,13 @@ export function termWords(value: string): TermWord[] {
     current = null;
     apostrophe = false;
   };
-  for (const ch of value.normalize('NFC')) {
-    if (APOSTROPHE.test(ch)) {
+  for (const ch of decodeEntities(value).normalize('NFC')) {
+    const folded = foldChar(ch);
+    if (folded === '' && (APOSTROPHE.test(ch) || APOSTROPHE.test(ch.normalize('NFKD')))) {
       // Inside a word it may join two parts ("Bob's"); after a separator it is nothing ("Rock 'n' Roll").
       apostrophe = current !== null;
       continue;
     }
-    if (ch === '&') {
-      end();
-      words.push({ text: 'and', joins: [], accents: {} });
-      continue;
-    }
-    const folded = foldChar(ch);
     for (const c of folded) {
       if (!/[a-z0-9]/.test(c)) {
         end();
@@ -150,18 +173,19 @@ export function termWords(value: string): TermWord[] {
       const word: MutableWord = current ?? { text: '', joins: [], accents: {} };
       if (current !== null && apostrophe) word.joins.push(word.text.length);
       apostrophe = false;
+      // The accented letter in lower case; `İ` stays itself (its lower case is two characters, `i` and a dot).
       const lower = ch.toLowerCase();
-      if (folded.length === 1 && lower !== c && ACCENT_LETTER.test(lower)) word.accents[word.text.length] = [lower];
+      const letter = lower.length === 1 ? lower : ch;
+      if (folded.length === 1 && letter !== c && ACCENT_LETTER.test(letter))
+        word.accents[word.text.length] = [letter];
       word.text += c;
       current = word;
     }
   }
   end();
   const plain = releaseTokens(value);
-  if (words.length !== plain.length || words.some((w, i) => w.text !== plain[i])) {
-    return plain.map((text) => ({ text }));
-  }
-  return words.map(toTermWord);
+  if (words.length !== plain.length) return plain.map((text) => ({ text }));
+  return words.map((w, i) => (w.text === plain[i] ? toTermWord(w) : { text: plain[i] as string }));
 }
 
 /**
@@ -344,7 +368,8 @@ const asWord = (t: TermToken): TermWord => (typeof t === 'string' ? { text: t } 
 function okWord(t: TermToken): boolean {
   const w = asWord(t);
   if (!/^[a-z0-9]+$/.test(w.text)) return false;
-  if (!(w.joins ?? []).every((j) => Number.isInteger(j) && j >= 1 && j < w.text.length)) return false;
+  if (!(w.joins ?? []).every((j) => Number.isInteger(j) && j >= 1 && j < w.text.length))
+    return false;
   return Object.entries(w.accents ?? {}).every(([k, letters]) => {
     const at = Number(k);
     const base = w.text[at];
@@ -353,7 +378,9 @@ function okWord(t: TermToken): boolean {
       base !== undefined &&
       /[a-z]/.test(base) &&
       letters.length > 0 &&
-      letters.every((l) => l.length === 1 && ACCENT_LETTER.test(l) && l !== base && foldChar(l) === base)
+      letters.every(
+        (l) => l.length === 1 && ACCENT_LETTER.test(l) && l !== base && foldChar(l) === base,
+      )
     );
   });
 }
@@ -373,7 +400,12 @@ function renderWord(t: TermToken, join: string): string {
 }
 
 /** Words joined by `sep`; an `and` that is neither the first nor the last word may be absent (`optionalAnd`). */
-function renderWords(words: readonly TermToken[], sep: string, join: string, optionalAnd: string): string {
+function renderWords(
+  words: readonly TermToken[],
+  sep: string,
+  join: string,
+  optionalAnd: string,
+): string {
   let out = renderWord(words[0] as TermToken, join);
   let i = 1;
   while (i < words.length) {
@@ -399,7 +431,7 @@ export function renderTerm(parts: TermParts): string {
   const okGroup = (tokens: readonly string[]) =>
     tokens.length > 0 && tokens.every((t) => /^[a-z0-9]+$/.test(t));
   const title = (words: readonly TermToken[]) =>
-    renderWords(words, `${SEP}+`, `${SEP}?`, OPTIONAL_AND_TITLE);
+    renderWords(words, `${SEP}+`, JOIN_TITLE, OPTIONAL_AND_TITLE);
   switch (parts.shape) {
     case 'movie_group': {
       if (!okWords(parts.title) || !okGroup(parts.group)) throw new Error('term: bad tokens');
@@ -428,7 +460,7 @@ export function renderTerm(parts: TermParts): string {
     }
     case 'exact': {
       if (!okWords(parts.tokens)) throw new Error('term: bad tokens');
-      return `/^${renderWords(parts.tokens, `${SEP}*`, `${SEP}*`, OPTIONAL_AND_EXACT)}(?:${SEP}|$)/i`;
+      return `/^${renderWords(parts.tokens, `${SEP}*`, JOIN_EXACT, OPTIONAL_AND_EXACT)}(?:${SEP}|$)/i`;
     }
   }
 }
@@ -438,11 +470,11 @@ const TOK = '[a-z0-9]+';
 const YEAR = '\\d{4}';
 const Y_META = `(?:${YEAR}|${esc('(?:')}${YEAR}(?:${esc('|')}${YEAR})+${esc(')')})`;
 const RES_META = `${esc('(?=.*(?<![a-z0-9])')}(?:2160|1080|720|480)${esc('p(?![a-z0-9]))')}`;
-// D-25dd — a letter or digit, or an accented alternation `(?:u|ü)`; a word's parts joined by `SEP?` (an apostrophe);
-// title words joined by `SEP+`, each after the first possibly behind an optional `and`.
+// D-25dd — a letter or digit, or an accented alternation `(?:u|ü)`; a word's parts joined by `JOIN_TITLE` (an
+// apostrophe); title words joined by `SEP+`, each after the first possibly behind an optional `and`.
 const UNIT_META = `(?:[a-z0-9]|${esc('(?:')}[a-z](?:${esc('|')}[${ACCENT_RANGES}])+${esc(')')})`;
 const PART_META = `${UNIT_META}+`;
-const WORD_META = `${PART_META}(?:${esc(`${SEP}?`)}${PART_META})*`;
+const WORD_META = `${PART_META}(?:${esc(JOIN_TITLE)}${PART_META})*`;
 const TITLE_META = `${WORD_META}(?:${esc(`${SEP}+`)}(?:${esc(OPTIONAL_AND_TITLE)})?${WORD_META})*`;
 const GROUP_META = `${TOK}(?:${esc(`${SEP}*`)}${TOK})*`;
 const TAIL_META = `${esc(`.*${SEP}`)}${GROUP_META}${esc(`(?:${SEP}|$)/i`)}`;
@@ -455,7 +487,8 @@ const SHOW_META = new RegExp(
     `${esc('s0*')}[1-9]\\d*${esc('(?:e[0-9]+)*(?![0-9a-z])')}${RES_META}${TAIL_META}$`,
 );
 const EXACT_META = new RegExp(
-  `^${esc('/^')}${PART_META}(?:${esc(`${SEP}*`)}(?:${esc(OPTIONAL_AND_EXACT)})?${PART_META})*${esc(`(?:${SEP}|$)/i`)}$`,
+  `^${esc('/^')}${PART_META}(?:(?:${esc(`${SEP}*`)}(?:${esc(OPTIONAL_AND_EXACT)})?|${esc(JOIN_EXACT)})${PART_META})*` +
+    `${esc(`(?:${SEP}|$)/i`)}$`,
 );
 
 /**
@@ -576,7 +609,10 @@ export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
         ? releaseBaseName(input.renamedFileName as string)
         : input.arrTitle;
   let titleWords: TermWord[] = termWords(titleSource).slice(0, titleTokens.length);
-  if (titleWords.length !== titleTokens.length || titleWords.some((w, i) => w.text !== titleTokens[i])) {
+  if (
+    titleWords.length !== titleTokens.length ||
+    titleWords.some((w, i) => w.text !== titleTokens[i])
+  ) {
     titleWords = titleTokens.map((text) => ({ text }));
   }
   const rawForms = [
@@ -672,7 +708,10 @@ export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
   // block every 1080p release of the title, as the bare "Title (Year)" of D-25ae would block every release.
   if (primary.group === null && !hasTokenBeyondRelease(primary)) return null;
   // D-25dd — the name's own words (its apostrophes and accented letters), the title's merged as above.
-  const tokens = [...titleWords, ...termWords(releaseBaseName(names[0] as string)).slice(titleWords.length)];
+  const tokens = [
+    ...titleWords,
+    ...termWords(releaseBaseName(names[0] as string)).slice(titleWords.length),
+  ];
   if (tokens.length === 0 || tokens.length !== primary.tokens.length) return null;
   let exact: string;
   try {
@@ -681,7 +720,13 @@ export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
     return null;
   }
   if (!isGrammarTerm(exact) || !termMatches(exact, names[0] as string)) return null;
-  return { term: exact, shape: 'exact', ...judge(exact, [names[0] as string]), years: yearList, namesakeYears };
+  return {
+    term: exact,
+    shape: 'exact',
+    ...judge(exact, [names[0] as string]),
+    years: yearList,
+    namesakeYears,
+  };
 }
 
 /**
@@ -698,10 +743,16 @@ export function deriveTermsPerName(
   const combined = deriveTerm(input);
   if (combined === null) return null;
   const names = [...new Set(input.releaseNames.map((n) => n.trim()).filter((n) => n.length > 0))];
-  if (combined.shape === 'group' || names.length <= 1) return [{ name: names[0] ?? null, derived: combined }];
+  if (combined.shape === 'group' || names.length <= 1)
+    return [{ name: names[0] ?? null, derived: combined }];
   const out: Array<{ name: string | null; derived: DerivedTerm }> = [];
   for (const name of names) {
-    const derived = deriveTerm({ ...input, releaseNames: [name], releaseGroup: null, renamedFileName: null });
+    const derived = deriveTerm({
+      ...input,
+      releaseNames: [name],
+      releaseGroup: null,
+      renamedFileName: null,
+    });
     if (derived === null) return null;
     out.push({ name, derived });
   }

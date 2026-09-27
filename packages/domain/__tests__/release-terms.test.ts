@@ -151,11 +151,13 @@ describe('deriveTerm — movies (D-12)', () => {
         resolution: 2160,
       }),
     )!;
-    expect(d.term.startsWith('/^don[^a-z0-9]?t[^a-z0-9]+look[^a-z0-9]+up')).toBe(true);
+    expect(d.term.startsWith(`/^don${'(?:[^a-z0-9]|&(?:#39|apos);)?'}t[^a-z0-9]+look[^a-z0-9]+up`)).toBe(true);
     for (const name of [
       "Don't.Look.Up.2021.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.H.265-FLUX",
       'Dont.Look.Up.2021.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.H.265-FLUX',
       'Don’t Look Up 2021 2160p NF WEB-DL DDP5 1 Atmos DV H 265-FLUX',
+      'Don´t.Look.Up.2021.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.H.265-FLUX',
+      'Don&#39;t.Look.Up.2021.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.H.265-FLUX', // D-25di: a double-escaped title
     ]) {
       expect(termMatchesRaw(d.term, name)).toBe(true);
     }
@@ -169,11 +171,12 @@ describe('deriveTerm — movies (D-12)', () => {
         resolution: 1080,
       }),
     )!;
-    expect(amp.term.startsWith('/^fast[^a-z0-9]+(?:and[^a-z0-9]+)?furious[^a-z0-9]+2009')).toBe(true);
+    expect(amp.term.startsWith('/^fast[^a-z0-9]+(?:(?:and|amp)[^a-z0-9]+)?furious[^a-z0-9]+2009')).toBe(true);
     for (const name of [
       'Fast.and.Furious.2009.1080p.BluRay.x264-SPARKS',
       'Fast & Furious 2009 1080p BluRay x264-SPARKS',
       'Fast&Furious.2009.1080p.BluRay.x264-SPARKS',
+      'Fast.&amp;.Furious.2009.1080p.BluRay.x264-SPARKS', // D-25di: a double-escaped title
     ]) {
       expect(termMatchesRaw(amp.term, name)).toBe(true);
     }
@@ -455,7 +458,7 @@ describe('the raw title (D-25bq, D-25dd): the *arr tests the name as it is', () 
         remux: true,
       }),
     )!;
-    expect(game.term.startsWith('/^the[^a-z0-9]+killer[^a-z0-9]?s[^a-z0-9]+game')).toBe(true);
+    expect(game.term.startsWith(`/^the[^a-z0-9]+killer${'(?:[^a-z0-9]|&(?:#39|apos);)?'}s[^a-z0-9]+game`)).toBe(true);
     for (const name of [
       "The.Killer's.Game.2024.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR",
       'The.Killers.Game.2024.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR',
@@ -569,6 +572,120 @@ describe('real ledger names that used to match only folded (PLAN-072 S6(e), D-25
   });
 });
 
+describe('D-25di: the review cases (´, İ, a double-escaped title)', () => {
+  const show = (over: Partial<TermDerivationInput>): TermDerivationInput => ({
+    ...movie({}),
+    kind: 'show',
+    ...over,
+  });
+
+  it('a ´ in the title is an apostrophe: the term keeps its accents and matches the raw name (Amélie)', () => {
+    const name = 'Le.Fabuleux.Destin.d´Amélie.Poulain.2001.1080p.BluRay.x264-GRP';
+    const d = deriveTerm(
+      movie({ arrTitle: 'Amélie', arrYears: [2001], releaseNames: [name], releaseGroup: 'GRP', resolution: 1080 }),
+    )!;
+    expect(d.term.startsWith('/^le[^a-z0-9]+fabuleux[^a-z0-9]+destin[^a-z0-9]+d(?:[^a-z0-9]|&(?:#39|apos);)?am(?:e|é)lie')).toBe(true);
+    expect(d).toMatchObject({ shape: 'group', confidence: 'verified', foldOnly: false });
+    for (const repost of [
+      name,
+      "Le.Fabuleux.Destin.d'Amélie.Poulain.2001.1080p.BluRay.x264-GRP",
+      'Le.Fabuleux.Destin.dAmelie.Poulain.2001.1080p.BluRay.x264-GRP',
+      'Le Fabuleux Destin d Amelie Poulain 2001 1080p BluRay x264-GRP',
+    ]) {
+      expect(termMatchesRaw(d.term, repost)).toBe(true);
+    }
+    expect(termMatchesRaw(d.term, 'Le.Fabuleux.Destin.d´Amélie.Poulain.2001.720p.BluRay.x264-GRP')).toBe(false);
+  });
+
+  it('a ´ in an episode title no longer costs the series title its accent (Élite)', () => {
+    const name = 'Élite.S01E01.Don´t.Panic.1080p.NF.WEB-DL.x264-GRP';
+    const d = deriveTerm(
+      show({ arrTitle: 'Elite', arrYears: [2018], releaseNames: [name], releaseGroup: 'GRP', resolution: 1080, season: 1 }),
+    )!;
+    expect(d.term.startsWith('/^(?:e|é)lite[^a-z0-9]+')).toBe(true);
+    expect(d).toMatchObject({ shape: 'group', confidence: 'verified', foldOnly: false });
+    for (const other of [name, 'Élite.S01E02.1080p.NF.WEB-DL.x264-GRP', 'Elite.S01E02.1080p.NF.WEB-DL.x264-GRP']) {
+      expect(termMatchesRaw(d.term, other)).toBe(true);
+    }
+    expect(termMatchesRaw(d.term, 'Élite.S02E01.1080p.NF.WEB-DL.x264-GRP')).toBe(false);
+    // The exact form, with the ´ in its tail.
+    const exactName = 'Pokémon.S01E01.Don´t.Panic.WEB-DL.1080p.AAC.x264';
+    const exact = deriveTerm(
+      show({ arrTitle: 'Pokemon', arrYears: [1997], releaseNames: [exactName], resolution: 1080, season: 1 }),
+    )!;
+    expect(exact).toMatchObject({ shape: 'exact', confidence: 'verified', foldOnly: false });
+    expect(termMatchesRaw(exact.term, exactName)).toBe(true);
+    expect(termMatchesRaw(exact.term, "Pokemon.S01E01.Don't.Panic.WEB-DL.1080p.AAC.x264")).toBe(true);
+  });
+
+  it('İ is written as itself (İstanbul)', () => {
+    const name = 'İstanbul.2021.1080p.WEB-DL.x264-GRP';
+    const d = deriveTerm(
+      movie({ arrTitle: 'Istanbul', arrYears: [2021], releaseNames: [name], releaseGroup: 'GRP', resolution: 1080 }),
+    )!;
+    expect(d.term.startsWith('/^(?:i|İ)stanbul[^a-z0-9]+2021')).toBe(true);
+    expect(isGrammarTerm(d.term)).toBe(true);
+    expect(d).toMatchObject({ confidence: 'verified', foldOnly: false });
+    for (const other of [name, 'Istanbul.2021.1080p.WEB-DL.x264-GRP', 'ISTANBUL.2021.1080p.WEB-DL.x264-GRP']) {
+      expect(termMatchesRaw(d.term, other)).toBe(true);
+    }
+  });
+
+  it('a double-escaped `&amp;` or `&` spelling blocks the other spellings of the same season, group and resolution (Lilo & Stitch)', () => {
+    const spell = (amp: string, ep: string) =>
+      `Lilo.${amp}.Stitch.The.Series.S01E${ep}.2003.1080p.DSNP.WEB-DL.AVC.AAC.2.0.25Audio-LongWeb`;
+    for (const recorded of ['&amp;', '&', 'and']) {
+      const d = deriveTerm(
+        show({
+          arrTitle: 'Lilo & Stitch: The Series',
+          arrYears: [2003],
+          releaseNames: [spell(recorded, '34')],
+          releaseGroup: 'LongWeb',
+          resolution: 1080,
+          season: 1,
+        }),
+      )!;
+      expect(d).toMatchObject({ shape: 'group', confidence: 'verified', foldOnly: false });
+      for (const other of ['&amp;', '&', 'and', '&AMP;']) {
+        expect(termMatchesRaw(d.term, spell(other, '35'))).toBe(true);
+      }
+      expect(termMatchesRaw(d.term, 'Lilo.&.Stitch.The.Series.S01E35.2003.1080p.DSNP.WEB-DL.AVC.AAC.2.0-LongWeb')).toBe(true);
+      expect(termMatchesRaw(d.term, 'Lilo.&.Stitch.The.Series.S02E01.2003.1080p.DSNP.WEB-DL.AVC.AAC.2.0-LongWeb')).toBe(false);
+      expect(termMatchesRaw(d.term, 'Lilo.&.Stitch.The.Series.S01E35.2003.720p.DSNP.WEB-DL.AVC.AAC.2.0-LongWeb')).toBe(false);
+    }
+  });
+
+  it("a double-escaped apostrophe blocks the plain spellings, and theirs blocks it (Bob's Burgers)", () => {
+    const spell = (apos: string, ep: string) => `Bob${apos}s.Burgers.S11E${ep}.1080p.DSNP.WEB-DL.DDP5.1.H.264-FLUX`;
+    for (const recorded of ['&#39;', "'", '']) {
+      const d = deriveTerm(
+        show({
+          arrTitle: "Bob's Burgers",
+          arrYears: [2011],
+          releaseNames: [spell(recorded, '01')],
+          releaseGroup: 'FLUX',
+          resolution: 1080,
+          season: 11,
+        }),
+      )!;
+      expect(d).toMatchObject({ shape: 'group', confidence: 'verified', foldOnly: false });
+      for (const other of ['&#39;', '&apos;', "'", '’', '´', '']) {
+        expect(termMatchesRaw(d.term, spell(other, '09'))).toBe(true);
+      }
+      expect(termMatchesRaw(d.term, 'Bob&#40;s.Burgers.S11E09.1080p.DSNP.WEB-DL.DDP5.1.H.264-FLUX')).toBe(false);
+      expect(termMatchesRaw(d.term, 'Bob.and.s.Burgers.S11E09.1080p.DSNP.WEB-DL.DDP5.1.H.264-FLUX')).toBe(false);
+    }
+    // The exact form (no group) takes the entity too.
+    const exactName = 'Bob&#39;s.Burgers.S11E01.Dream.a.Little.Bob.of.Bob.1080p.WEB-DL.x264';
+    const exact = deriveTerm(
+      show({ arrTitle: "Bob's Burgers", arrYears: [2011], releaseNames: [exactName], resolution: 1080, season: 11 }),
+    )!;
+    expect(exact).toMatchObject({ shape: 'exact', confidence: 'verified', foldOnly: false });
+    expect(termMatchesRaw(exact.term, exactName)).toBe(true);
+    expect(termMatchesRaw(exact.term, "Bob's.Burgers.S11E01.Dream.a.Little.Bob.of.Bob.1080p.WEB-DL.x264")).toBe(true);
+  });
+});
+
 describe('termWords and mergeTermWords (D-25dd)', () => {
   it('reads a name word for word like releaseTokens, with its apostrophes and accented letters', () => {
     expect(termWords("Bob's Burgers")).toEqual([{ text: 'bobs', joins: [3] }, { text: 'burgers' }]);
@@ -581,6 +698,40 @@ describe('termWords and mergeTermWords (D-25dd)', () => {
     for (const value of ["Amélie's Café & Bar", "Y'All.Thought", 'Straße ½ ﬁn', "O'Possum's.WEBDL-1080p"]) {
       expect(termWords(value).map((w) => w.text)).toEqual(releaseTokens(value));
     }
+  });
+
+  it('D-25di: reads ´ as an apostrophe like the fold does, keeps İ, and reads a double-escaped entity as its character', () => {
+    // NFKD turns ´ into a space and an accent: the fold now drops it first, so both readings see one word.
+    expect(foldReleaseName('d´Amélie')).toBe('damelie');
+    expect(termWords('d´Amélie')).toEqual([{ text: 'damelie', joins: [1], accents: { 3: ['é'] } }]);
+    // İ lower-cases to two characters (i and a combining dot), so the letter itself is the alternative.
+    expect(termWords('İstanbul')).toEqual([{ text: 'istanbul', accents: { 0: ['İ'] } }]);
+    expect(termWords('Lilo &amp; Stitch')).toEqual([{ text: 'lilo' }, { text: 'and' }, { text: 'stitch' }]);
+    expect(termWords('Bob&#39;s Burgers')).toEqual([{ text: 'bobs', joins: [3] }, { text: 'burgers' }]);
+    expect(termWords('Bob&APOS;s')).toEqual([{ text: 'bobs', joins: [3] }]);
+    expect(releaseTokens('Lilo.&amp;.Stitch')).toEqual(releaseTokens('Lilo.&.Stitch'));
+    // Any other entity stays as written, and `&amp;#39;` is decoded once (to `&#39;`), not twice.
+    expect(releaseTokens('Tom &quot;Jerry&quot;')).toEqual(['tom', 'and', 'quot', 'jerry', 'and', 'quot']);
+    expect(releaseTokens('Bob&amp;#39;s')).toEqual(['bob', 'and', '39', 's']);
+    // One fold for both readings: no character makes them disagree, so no word loses its apostrophes or accents.
+    for (const value of [
+      "Le.Fabuleux.Destin.d´Amélie.Poulain.2001",
+      'Élite.S01E01.Don´t.Panic.1080p',
+      'Don\uff07t Stop', // a fullwidth apostrophe (NFKD: ')
+      'ŉ Word', // NFKD: ʼn
+      'Fast \uff06 Furious', // a fullwidth ampersand (NFKD: &)
+      'x\u1ffdy', // Greek oxia, canonically ´
+      'x\u1fefy', // Greek varia, canonically `
+      'İSTANBUL İzmir',
+      "Lilo.&amp;.Stitch.Bob&#39;s.&apos;Quoted&apos;.&AMP;",
+      "O´Brien's Café ´n´ Bar&amp;Grill",
+    ]) {
+      expect(termWords(value).map((w) => w.text)).toEqual(releaseTokens(value));
+    }
+    expect(termWords("O´Brien's Café")).toEqual([
+      { text: 'obriens', joins: [1, 6] },
+      { text: 'cafe', accents: { 3: ['é'] } },
+    ]);
   });
 
   it('merges only a form that starts with the same words', () => {
@@ -683,7 +834,7 @@ describe('the grammar (D-12 / D-13 step 2)', () => {
     }
   });
 
-  it('D-25dd: renders an apostrophe as SEP? (SEP* in the exact form), an accent as an alternation, an inner `and` as optional', () => {
+  it('D-25dd / D-25di: renders an apostrophe as an optional SEP or entity (any number in the exact form), an accent as an alternation, an inner `and` (or `amp`) as optional', () => {
     expect(
       renderTerm({
         shape: 'movie_group',
@@ -694,10 +845,10 @@ describe('the grammar (D-12 / D-13 step 2)', () => {
         group: ['g'],
       }),
     ).toBe(
-      '/^bob[^a-z0-9]?s[^a-z0-9]+(?:and[^a-z0-9]+)?caf(?:e|é)[^a-z0-9]+and[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g(?:[^a-z0-9]|$)/i',
+      '/^bob(?:[^a-z0-9]|&(?:#39|apos);)?s[^a-z0-9]+(?:(?:and|amp)[^a-z0-9]+)?caf(?:e|é)[^a-z0-9]+and[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g(?:[^a-z0-9]|$)/i',
     );
     expect(renderTerm({ shape: 'exact', tokens: ['and', { text: 'dont', joins: [3] }, 'and', 'x'] })).toBe(
-      '/^and[^a-z0-9]*don[^a-z0-9]*t[^a-z0-9]*(?:and[^a-z0-9]*)?x(?:[^a-z0-9]|$)/i',
+      '/^and[^a-z0-9]*don(?:[^a-z0-9]|&(?:#39|apos);)*t[^a-z0-9]*(?:(?:and|amp)[^a-z0-9]*)?x(?:[^a-z0-9]|$)/i',
     );
   });
 
@@ -712,9 +863,14 @@ describe('the grammar (D-12 / D-13 step 2)', () => {
       '/^f(?:o|.)o[^a-z0-9]*bar(?:[^a-z0-9]|$)/i', // an alternation that is not an accented letter
       '/^f(?:o|ö|[)o[^a-z0-9]*bar(?:[^a-z0-9]|$)/i', // … nor a single character
       '/^f(?:o|×)o[^a-z0-9]*bar(?:[^a-z0-9]|$)/i', // … nor a letter (× is in Latin-1 but no letter)
-      '/^foo[^a-z0-9]?bar(?:[^a-z0-9]|$)/i', // an apostrophe join is a title join, never the exact form's
-      '/^foo[^a-z0-9]+(?:and[^a-z0-9]+)?2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g[^a-z0-9]?x(?:[^a-z0-9]|$)/i', // SEP? in the group
-      '/^foo[^a-z0-9]+(?:and[^a-z0-9]+)?[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g(?:[^a-z0-9]|$)/i', // `and` with no word after it
+      '/^foo(?:[^a-z0-9]|&(?:#39|apos);)?bar(?:[^a-z0-9]|$)/i', // an apostrophe join is a title join, never the exact form's
+      '/^foo[^a-z0-9]+(?:(?:and|amp)[^a-z0-9]+)?2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g(?:[^a-z0-9]|&(?:#39|apos);)?x(?:[^a-z0-9]|$)/i', // a join in the group
+      '/^foo[^a-z0-9]+(?:(?:and|amp)[^a-z0-9]+)?[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g(?:[^a-z0-9]|$)/i', // `and` with no word after it
+      // D-25di: only renderTerm's own join and optional `and` (a bare SEP? join, another entity, another word).
+      '/^bob[^a-z0-9]?s[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g(?:[^a-z0-9]|$)/i',
+      '/^bob(?:[^a-z0-9]|&(?:#40|apos);)?s[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g(?:[^a-z0-9]|$)/i',
+      '/^a[^a-z0-9]+(?:(?:and|or)[^a-z0-9]+)?b[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g(?:[^a-z0-9]|$)/i',
+      '/^a[^a-z0-9]*(?:and[^a-z0-9]*)?b(?:[^a-z0-9]|$)/i',
       'plain term', // a plain term other than the sentinel
       '',
     ]) {
