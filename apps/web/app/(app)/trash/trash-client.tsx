@@ -71,6 +71,7 @@ import { RESOLUTION_LABELS, formatBytes, formatDay, formatWhen } from '@/lib/med
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
 import {
   candidatesAsOfLabel,
+  EXPEDITE_PROTECTED_REASON,
   EXPEDITE_UNVERIFIABLE_REASON,
   expediteErrorAction,
   overviewBadge,
@@ -631,8 +632,7 @@ function PendingTab({
                 immediate and permanent, freeing {formatBytes(partition.deletableBytes)}.
               </li>
               <li>
-                <strong>{partition.protected} protected:</strong> recently watched, whitelisted, or on
-                a watchlist; they are kept.
+                <strong>{partition.protected} protected:</strong> {EXPEDITE_PROTECTED_REASON}
                 {watchlistedCount > 0 ? (
                   <>
                     {' '}

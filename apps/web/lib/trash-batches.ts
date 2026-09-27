@@ -319,9 +319,13 @@ export interface TargetCandidate {
 export interface TargetPreview {
   /** Items the greedy pick would take (server re-picks authoritatively — this is advisory). */
   count: number;
-  /** Their summed frozen size — the batch's "frees X". */
+  /** Their summed frozen size. */
   bytes: number;
-  /** Deletable candidates available to target (tag-protected items free nothing, so they're excluded). */
+  /** DESIGN-052 D-25cw — of `bytes`, what the batch can free: a watchlisted title stays while it is listed (the sweep
+   *  keeps it), so it frees nothing. The "frees X" figures read this, never `bytes`. */
+  freesBytes: number;
+  /** Candidates the pick draws from (tag-protected items free nothing, so they're excluded; so are watchlisted ones
+   *  while a batch created now is filtered by the watchlist). */
   poolCount: number;
   poolBytes: number;
 }
@@ -330,6 +334,10 @@ export interface TargetSpec {
   targetBytes?: number;
   maxItems?: number;
   strategy?: TargetStrategy;
+  /** DESIGN-052 D-25cx — would a batch created now leave watchlisted titles out (the server's `propose` gate filters
+   *  only with a registry run under 24 hours old)? When false the server's pick takes them, so the preview's does
+   *  too. Absent ⇒ filtered (an older server). */
+  watchlistFiltered?: boolean;
 }
 
 /**
@@ -343,15 +351,19 @@ export function previewTargetSelection(
 ): TargetPreview {
   // An untargeted batch snapshots every non-`dnd` candidate as pending (a watchlisted one too — the sweep keeps
   // it); a targeted batch picks only from the candidates that can free space: not `dnd`, not on a watchlist
-  // (mirrors selectBatchCandidates, DESIGN-052 D-08).
+  // (mirrors selectBatchCandidates, DESIGN-052 D-08) — unless the server's proposal is unfiltered (D-25cx).
   const pending = candidates.filter((c) => !c.protectedByTag);
-  const deletable = pending.filter((c) => c.onWatchlist !== true);
+  const filtered = spec.watchlistFiltered !== false;
+  const deletable = filtered ? pending.filter((c) => c.onWatchlist !== true) : pending;
   const poolBytes = deletable.reduce((n, c) => n + c.sizeBytes, 0);
+  const frees = (items: readonly TargetCandidate[]) =>
+    items.filter((c) => c.onWatchlist !== true).reduce((n, c) => n + c.sizeBytes, 0);
   const capped = spec.targetBytes !== undefined || spec.maxItems !== undefined;
   if (!capped) {
     return {
       count: pending.length,
       bytes: pending.reduce((n, c) => n + c.sizeBytes, 0),
+      freesBytes: frees(pending),
       poolCount: deletable.length,
       poolBytes,
     };
@@ -369,14 +381,16 @@ export function previewTargetSelection(
   });
   let count = 0;
   let bytes = 0;
+  const picked: TargetCandidate[] = [];
   for (const item of ranked) {
     count += 1;
     bytes += item.sizeBytes;
+    picked.push(item);
     const hitTarget = spec.targetBytes !== undefined && bytes >= spec.targetBytes;
     const hitCap = spec.maxItems !== undefined && count >= spec.maxItems;
     if (hitTarget || hitCap) break;
   }
-  return { count, bytes, poolCount: deletable.length, poolBytes };
+  return { count, bytes, freesBytes: frees(picked), poolCount: deletable.length, poolBytes };
 }
 
 /** The fields of a batch row the Expire now preview reads (a subset of the batch detail wire row). */
@@ -407,6 +421,39 @@ export function expirePreview(items: ReadonlyArray<ExpirePreviewItem>): { willDe
 /** D-25cm — the reasons the Expire now confirm gives for "at least K will be kept" (for the driving session's copy pass). */
 export const EXPIRE_KEPT_REASONS =
   'recently watched, on a watchlist, no longer in the trash pool, unverifiable, or guardian-protected at sweep time.';
+
+/** One outcome line of the Expire now confirm: the bold label and the sentence after it. */
+export interface ExpireConfirmLine {
+  key: 'delete' | 'rescued' | 'kept';
+  label: string;
+  detail: string;
+}
+
+/**
+ * D-25cz — the Expire now confirm's three outcome lines, rendered as they read: the label ends in a colon, never an em
+ * dash (the owner's copy rules, D-10), as the Expedite-all confirm's "will be deleted NOW:" and "protected:" do.
+ */
+export function expireConfirmLines(counts: {
+  willDelete: number;
+  savedCount: number;
+  willKeep: number;
+}): ExpireConfirmLine[] {
+  const { willDelete, savedCount, willKeep } = counts;
+  return [
+    {
+      key: 'delete',
+      label: `Up to ${willDelete} item${willDelete === 1 ? '' : 's'} will be deleted:`,
+      detail:
+        'each is re-checked fresh first (live whitelist + the watch guardian); only verified-cold items delete.',
+    },
+    {
+      key: 'rescued',
+      label: `${savedCount} rescued item${savedCount === 1 ? ' is' : 's are'} untouched:`,
+      detail: 'a save is permanent protection.',
+    },
+    { key: 'kept', label: `At least ${willKeep} will be kept (skipped):`, detail: EXPIRE_KEPT_REASONS },
+  ];
+}
 
 /** The inputs one batch-wall tile's label, tooltip and note derive from (DESIGN-011 D-07, DESIGN-052 D-10). */
 export interface BatchTileViewInput {

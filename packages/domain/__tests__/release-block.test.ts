@@ -13,7 +13,7 @@
 // - Expedite item and all follow the same order and throw instead of pausing;
 // - the re-add check and the Watchlists card counts (D-23).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { ArrHttpError, ArrTimeoutError } from '@hnet/arr';
 import {
   ledgerEvents,
@@ -255,6 +255,61 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       });
     });
 
+    it('D-25cr: a renamed-only movie`s window leaves out the year of a namesake the ledger holds (The Killer 2024 / 2023)', async () => {
+      const killer = (arrItemId: number, tmdbId: number, year: number) => ({
+        arrItemId,
+        tmdbId,
+        title: 'The Killer',
+        sortTitle: 'killer',
+        year,
+        monitored: true,
+        qualityProfileId: 1,
+        qualityProfileName: 'Any',
+        rootFolder: '/movies',
+      });
+      await upsertMediaItemsBatch({
+        db: t.db,
+        arrKind: 'radarr',
+        items: [killer(7636, 970347, 2024), killer(7635, 800158, 2023)],
+      });
+      try {
+        // Live Radarr 7636 (2026-09-26): a disk import, no scene name, no original path, no history.
+        const disk: StaticArrMovie = {
+          title: 'The Killer',
+          year: 2024,
+          tmdbId: 970347,
+          file: {
+            movieId: 7636,
+            relativePath:
+              'The Killer (2024) {imdb-tt1121948} [PCOK][WEBDL-2160p][DV HDR10][EAC3 Atmos 5.1][x265]-FLUX.mkv',
+            sceneName: null,
+            originalFilePath: null,
+            releaseGroup: 'FLUX',
+            quality: { quality: { id: 18, name: 'WEBDL-2160p', resolution: 2160, source: 'webdl', modifier: 'none' } },
+            size: 14_765_113_154,
+          },
+          history: [],
+        };
+        const { arr } = createStaticReleaseBlockArr({ movies: new Map([[7636, disk]]) });
+        const id = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: await mediaItemId('radarr', 7636) });
+        const [d] = id.status === 'recordable' ? id.drafts : [];
+        expect(d).toMatchObject({
+          identitySource: 'arr_file',
+          termConfidence: 'low_confidence',
+          years: [2024, 2025],
+          namesakeYears: [2023],
+        });
+        // Fincher's The Killer (2023) keeps its FLUX 2160p release and its repack; the deleted film's stays blocked.
+        expect(termMatches(d!.term!, 'The.Killer.2023.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX')).toBe(false);
+        expect(termMatches(d!.term!, 'The.Killer.2023.REPACK.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX')).toBe(
+          false,
+        );
+        expect(termMatches(d!.term!, 'The.Killer.2024.2160p.PCOK.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX')).toBe(true);
+      } finally {
+        await t.db.delete(mediaItems).where(inArray(mediaItems.arrItemId, [7635, 7636]));
+      }
+    });
+
     it('no group and no release name: unrecordable (the item will be kept); no file: a term-less `none` record', async () => {
       const bare = grabbedMovie(1, { history: [] });
       bare.file = { ...bare.file!, releaseGroup: null, relativePath: 'Babygirl (2024).mkv' };
@@ -467,6 +522,59 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       ]);
       expect(drafts.every((d) => d.termConfidence === 'verified')).toBe(true);
     });
+
+    it('D-25cr: a renamed-only series key leaves out a namesake series` year too', async () => {
+      const ghosts = (arrItemId: number, tvdbId: number, year: number) => ({
+        arrItemId,
+        tvdbId,
+        title: 'Ghosts',
+        sortTitle: 'ghosts',
+        year,
+        monitored: true,
+        qualityProfileId: 1,
+        qualityProfileName: 'Any',
+        rootFolder: '/tv',
+      });
+      await upsertMediaItemsBatch({
+        db: t.db,
+        arrKind: 'sonarr',
+        items: [ghosts(61, 8061, 2021), ghosts(62, 8062, 2022)],
+      });
+      try {
+        const { arr } = createStaticReleaseBlockArr({
+          series: new Map([
+            [
+              61,
+              {
+                title: 'Ghosts',
+                year: 2021,
+                tvdbId: 8061,
+                files: [
+                  {
+                    seriesId: 61,
+                    seasonNumber: 1,
+                    relativePath: 'Season 01/Ghosts (2021) - S01E01 - Pilot [WEBDL-1080p][EAC3 5.1][h264]-NTb.mkv',
+                    sceneName: null,
+                    originalFilePath: null,
+                    releaseGroup: 'NTb',
+                    quality: { quality: { name: 'WEBDL-1080p', resolution: 1080 } },
+                    size: 10,
+                  },
+                ],
+                history: [],
+              },
+            ],
+          ]),
+        });
+        const id = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: await mediaItemId('sonarr', 61) });
+        const [d] = id.status === 'recordable' ? id.drafts : [];
+        expect(d).toMatchObject({ termConfidence: 'low_confidence', years: [2020, 2021], namesakeYears: [2022] });
+        expect(termMatches(d!.term!, 'Ghosts.2022.S01E03.1080p.WEB.h264-NTb')).toBe(false);
+        expect(termMatches(d!.term!, 'Ghosts.2021.S01E03.1080p.WEB.h264-NTb')).toBe(true);
+      } finally {
+        await t.db.delete(mediaItems).where(inArray(mediaItems.arrItemId, [61, 62]));
+      }
+    });
   });
 
   it('a series group term that fails the self-check yields one exact record per release name (never only the first)', async () => {
@@ -626,6 +734,52 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       await t.db.insert(ledgerEvents).values([...hd(1, 3), ...hd(2, 4)]);
       const one = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: mid });
       expect(one.status === 'recordable' && one.drafts.map((d) => d.shape)).toEqual(['group']);
+    } finally {
+      await t.db.delete(ledgerEvents).where(eq(ledgerEvents.mediaItemId, mid));
+    }
+  });
+
+  it('D-25ct: a series gone from Sonarr blocks a season-less import (a daily episode) by its exact name, or is kept', async () => {
+    const mid = await mediaItemId('sonarr', 50);
+    const ev = (n: string, h: number, title: string | null) => [
+      {
+        mediaItemId: mid,
+        eventType: 'grabbed' as const,
+        source: 'sonarr' as const,
+        sourceEventId: `ct-g${n}`,
+        occurredAt: new Date(Date.UTC(2025, 0, 2, h)),
+        payload: { ...(title ? { sourceTitle: title } : {}), downloadId: `CT${n}`, releaseGroup: 'NTb', quality: 'WEBDL-1080p' },
+      },
+      {
+        mediaItemId: mid,
+        eventType: 'imported' as const,
+        source: 'sonarr' as const,
+        sourceEventId: `ct-i${n}`,
+        occurredAt: new Date(Date.UTC(2025, 0, 2, h, 30)),
+        payload: { ...(title ? { sourceTitle: title } : {}), downloadId: `CT${n}`, quality: 'WEBDL-1080p' },
+      },
+    ];
+    const DAILY = 'The.Office.US.2025.01.02.Guest.1080p.WEB.h264-NTb';
+    await t.db
+      .insert(ledgerEvents)
+      .values([...ev('1', 1, 'The.Office.US.S01E01.1080p.WEB.h264-NTb'), ...ev('2', 2, DAILY)]);
+    try {
+      const { arr, fixture } = createStaticReleaseBlockArr();
+      fixture.gone.sonarr.add(50);
+      const id = await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: mid });
+      const drafts = id.status === 'recordable' ? id.drafts : [];
+      expect(drafts.map((d) => [d.season, d.shape])).toEqual([
+        [null, 'exact'],
+        [1, 'group'],
+      ]);
+      expect(drafts.some((d) => termMatches(d.term!, DAILY))).toBe(true);
+      expect(drafts.some((d) => termMatches(d.term!, 'The.Office.US.S01E05.1080p.WEB.h264-NTb'))).toBe(true);
+      // A season-less import with no release name blocks nothing: the series is kept (fails closed), never half-blocked.
+      await t.db.insert(ledgerEvents).values(ev('3', 3, null));
+      expect(await identifyRelease({ db: t.db, arr: arr.read, mediaItemId: mid })).toEqual({
+        status: 'unrecordable',
+        reason: 'gone',
+      });
     } finally {
       await t.db.delete(ledgerEvents).where(eq(ledgerEvents.mediaItemId, mid));
     }
@@ -1674,8 +1828,28 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
           [3, renamedOnly],
         ]),
       });
+      // D-25cr: the ledger holds another "Babygirl" (2023), so movie 3's renamed-only window leaves 2023 out.
+      await upsertMediaItemsBatch({
+        db: t.db,
+        arrKind: 'radarr',
+        items: [
+          {
+            arrItemId: 7700,
+            tmdbId: 7700,
+            title: 'Babygirl',
+            sortTitle: 'babygirl',
+            year: 2023,
+            monitored: true,
+            qualityProfileId: 1,
+            qualityProfileName: 'Any',
+            rootFolder: '/movies',
+          },
+        ],
+      });
       const { bundle, calls } = makeMaintainerr(baseState());
-      const report = await reportPoolReleaseIdentity({ db: t.db, maintainerr: bundle, arr: arr.read, logger });
+      const report = await reportPoolReleaseIdentity({ db: t.db, maintainerr: bundle, arr: arr.read, logger }).finally(
+        () => t.db.delete(mediaItems).where(eq(mediaItems.arrItemId, 7700)),
+      );
       const movies = report.kinds.find((k) => k.media === 'movie')!;
       expect(movies).toMatchObject({
         pool: 3,
@@ -1688,6 +1862,8 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         foldOnlyShare: 0.5,
         identitySource: { arr_grab_history: 1, arr_file: 1 },
         nullGroup: 0,
+        namesakeNarrowed: 1,
+        namesakes: [{ title: expect.any(String), years: [2023] }],
       });
       expect(movies.unrecorded).toEqual([{ title: expect.any(String), reason: 'no_term' }]);
       expect(report.kinds.find((k) => k.media === 'tv')!.pool).toBe(0);

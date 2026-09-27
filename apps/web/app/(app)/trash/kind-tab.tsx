@@ -48,7 +48,7 @@ import {
   batchStateTone,
   batchTileView,
   countdownCopy,
-  EXPIRE_KEPT_REASONS,
+  expireConfirmLines,
   expirePreview,
   forceExpireConfirmMatches,
   previewTargetSelection,
@@ -711,22 +711,14 @@ function ExpireModal({
             via Restore.
           </p>
           <ul className="ledger-confirm__outcomes">
-            <li>
-              <strong className="trash-danger-text">
-                Up to {willDelete} item{willDelete === 1 ? '' : 's'} will be deleted
-              </strong>{' '}
-              — each is re-checked fresh first (live whitelist + the watch guardian); only
-              verified-cold items delete.
-            </li>
-            <li>
-              <strong>
-                {savedCount} rescued item{savedCount === 1 ? '' : 's'} are untouched
-              </strong>{' '}
-              — a save is permanent protection.
-            </li>
-            <li>
-              <strong>At least {willKeep} will be kept (skipped)</strong> — {EXPIRE_KEPT_REASONS}
-            </li>
+            {expireConfirmLines({ willDelete, savedCount, willKeep }).map((line) => (
+              <li key={line.key}>
+                <strong className={line.key === 'delete' ? 'trash-danger-text' : undefined}>
+                  {line.label}
+                </strong>{' '}
+                {line.detail}
+              </li>
+            ))}
           </ul>
           {windowOpen ? (
             <label className="form-row batch-force-confirm" data-testid="batch-expire-typed-row">
@@ -785,6 +777,7 @@ function StartBatchModal({
   kind,
   label,
   candidates,
+  watchlistFiltered,
   caps,
   onClose,
 }: {
@@ -792,6 +785,8 @@ function StartBatchModal({
   label: string;
   /** The LIVE actionable pending rows (maintainerrMediaId present) — the preview source. */
   candidates: TargetCandidate[];
+  /** DESIGN-052 D-25cx — whether the server's pick would leave watchlisted titles out (a registry run under 24 h). */
+  watchlistFiltered: boolean;
   /** The space-policy per-kind caps (DESIGN-014 amendment 2026-07-09, build A) — PRE-FILL the picker
    *  when an admin has configured them; absent ⇒ the plain defaults (all candidates / 20 GB). */
   caps?: {
@@ -830,12 +825,11 @@ function StartBatchModal({
   const targetBytes = useSize && gbValid ? Math.round(gbNum * BYTES_PER_GB) : undefined;
   const maxItems = useCount && maxValid ? maxNum : undefined;
 
-  // The default "all" batch snapshots every actionable item; only tag-unprotected items free space.
+  // The default "all" batch snapshots every actionable item; only items neither tag-protected nor on a watchlist free
+  // space (the sweep keeps a watchlisted one while it stays listed, DESIGN-052 D-25cw).
   const allCount = candidates.length;
-  const freeableBytes = candidates
-    .filter((c) => !c.protectedByTag)
-    .reduce((n, c) => n + c.sizeBytes, 0);
-  const preview = previewTargetSelection(candidates, { targetBytes, maxItems, strategy });
+  const freeableBytes = previewTargetSelection(candidates, { watchlistFiltered }).freesBytes;
+  const preview = previewTargetSelection(candidates, { targetBytes, maxItems, strategy, watchlistFiltered });
 
   const plural = (n: number) => (n === 1 ? '' : 's');
   const capsChosen = (useSize && gbValid) || (useCount && maxValid);
@@ -962,7 +956,7 @@ function StartBatchModal({
               {capsChosen
                 ? preview.poolCount === 0
                   ? 'No deletable candidates to target — everything pending is protected.'
-                  : `≈ ${preview.count} item${plural(preview.count)} · frees ${formatBytes(preview.bytes)} (of ${preview.poolCount} candidate${plural(preview.poolCount)} · ${formatBytes(preview.poolBytes)} available)`
+                  : `≈ ${preview.count} item${plural(preview.count)} · frees ${formatBytes(preview.freesBytes)} (of ${preview.poolCount} candidate${plural(preview.poolCount)} · ${formatBytes(preview.poolBytes)} available)`
                 : 'Pick a size and/or item cap (both stop at whichever hits first).'}
             </p>
           </div>
@@ -979,7 +973,7 @@ function StartBatchModal({
               ? 'Starting…'
               : mode === 'all'
                 ? `Start with ${allCount} item${plural(allCount)}`
-                : `Start — free ~${formatBytes(preview.bytes)}`}
+                : `Start — free ~${formatBytes(preview.freesBytes)}`}
           </button>
           <button type="button" className="btn" disabled={create.isPending} onClick={onClose}>
             Cancel
@@ -1560,6 +1554,7 @@ export function KindTab({
           kind={kind}
           label={label}
           candidates={pendingCandidates}
+          watchlistFiltered={candidates.data?.watchlistFiltered !== false}
           caps={kindCaps}
           onClose={() => setShowStart(false)}
         />

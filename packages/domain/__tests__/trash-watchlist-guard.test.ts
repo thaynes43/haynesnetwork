@@ -36,6 +36,7 @@ import {
   getBatchDetail,
   getTrashSweepStatus,
   listTrashPending,
+  listTrashPendingCandidates,
   listTrashPendingPage,
   refreshTrashCandidates,
   setAppSetting,
@@ -233,6 +234,26 @@ describe('the Trash watchlist guard (ADR-093 / DESIGN-052)', () => {
       'ms-9003',
       'ms-9004',
     ]);
+  });
+
+  it('D-25cx: the Start-a-batch candidates say whether a batch created now is filtered by the watchlist', async () => {
+    await seedVerifiedWatchlistRegistry(t.db, listingG2());
+    const state = baseState({ collections: [pool()] });
+    const { bundle } = makeMaintainerr(state);
+    await refreshTrashCandidates({ db: t.db, maintainerr: bundle });
+    const read = () => listTrashPendingCandidates({ db: t.db, maintainerr: bundle, media: 'movie' });
+    const fresh = await read();
+    expect(fresh.watchlistFiltered).toBe(true);
+    expect(fresh.candidates.find((c) => c.maintainerrMediaId === 'ms-9002')?.onWatchlist).toBe(true);
+
+    // The newest ok run is 30 hours old: the display snapshot still marks ms-9002, but the `propose` gate is
+    // unfiltered, so a targeted batch takes it (the preview must mirror that, never skip it).
+    await t.db.update(watchlistRegistryRuns).set({ finishedAt: new Date(Date.now() - 30 * 3_600_000) });
+    const stale = await read();
+    expect(stale.watchlistFiltered).toBe(false);
+    expect(stale.candidates.find((c) => c.maintainerrMediaId === 'ms-9002')?.onWatchlist).toBe(true);
+    const targeted = await expiredBatch(state, { maxItems: 4 });
+    expect(Object.keys(await itemStates(targeted))).toContain('ms-9002');
   });
 
   it('the scheduled sweep refreshes inline, keeps the watchlisted item (`watchlisted`) and every other keep reason', async () => {

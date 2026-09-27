@@ -150,6 +150,8 @@ export interface ReleaseRecordDraft {
   shape: 'group' | 'exact' | 'none';
   /** D-25bq — a real release name matched the term only folded (the *arr will not block it); counted by S6(e). */
   foldOnly?: boolean;
+  /** D-25cr — a renamed-only term's widened years left out because another title of the same name holds them. */
+  namesakeYears?: number[];
 }
 
 export type ReleaseIdentity =
@@ -326,6 +328,47 @@ async function loadSubject(
   return row ?? null;
 }
 
+/**
+ * D-25cr — the ledger's other titles of this *arr in the years a renamed-only term would widen to (each of the *arr's
+ * years ± 1): `deriveTerm` leaves out a widened year at which one of them has the same title tokens. The ledger mirrors
+ * the whole library (tombstones included: a deleted namesake can be re-requested), so this needs no *arr read. A row
+ * with the subject's own tmdb id (Radarr) or tvdb id (Sonarr) is the same title, never a namesake.
+ */
+async function loadNamesakes(
+  db: DbClient | undefined,
+  kind: ReleaseArrKind,
+  mediaItemId: string,
+  s: SubjectRow,
+  arrYears: ReadonlyArray<number | null>,
+): Promise<Array<{ title: string; year: number | null }>> {
+  const years = new Set<number>();
+  for (const y of arrYears) {
+    if (typeof y !== 'number') continue;
+    years.add(y - 1);
+    years.add(y + 1);
+  }
+  if (years.size === 0) return [];
+  const rows = await resolveDb(db)
+    .select({
+      title: mediaItems.title,
+      year: mediaItems.year,
+      tmdbId: mediaItems.tmdbId,
+      tvdbId: mediaItems.tvdbId,
+    })
+    .from(mediaItems)
+    .where(
+      and(
+        eq(mediaItems.arrKind, kind),
+        sql`${mediaItems.id} <> ${mediaItemId}`,
+        inArray(mediaItems.year, [...years]),
+      ),
+    );
+  const ownId = kind === 'radarr' ? s.tmdbId : s.tvdbId;
+  return rows
+    .filter((r) => ownId === null || (kind === 'radarr' ? r.tmdbId : r.tvdbId) !== ownId)
+    .map((r) => ({ title: r.title, year: r.year }));
+}
+
 const isRemuxQuality = (name: string | null | undefined, modifier: string | null | undefined) =>
   /remux/i.test(name ?? '') || (modifier ?? '').toLowerCase() === 'remux';
 
@@ -463,15 +506,28 @@ async function ledgerDrafts(
   // must match every import name of the key (one record), else each distinct release name gets its own record, and a
   // key where any name yields no term fails the whole series closed (it is kept, or counted unblockable by the seed).
   const byKey = new Map<string, { season: number; imports: LedgerRelease[] }>();
+  const drafts: ReleaseRecordDraft[] = [];
   for (const l of ledger) {
     const parsed = parseReleaseName(l.sourceTitles[0] ?? '');
-    if (parsed.season === null || parsed.season < 1) continue;
+    if (parsed.season === null) {
+      // D-25ct — an import that names no season (a daily episode, a complete-series pack) is no key's, but its release
+      // is still what a re-request would fetch: each of its names gets its own exact record (the live path's per-name
+      // fallback), and one with no name or no term fails the series closed, like a key's.
+      const names = distinct(l.sourceTitles);
+      if (names.length === 0) return null;
+      for (const name of names) {
+        const draft = ledgerDraft('sonarr', mediaItemId, s, { ...l, sourceTitles: [name] }, arrYears, null);
+        if (!draft || draft.term === null) return null;
+        drafts.push(draft);
+      }
+      continue;
+    }
+    if (parsed.season < 1) continue; // specials (season 0) are skipped, as on the live path (D-11)
     const key = `${parsed.season}|${(l.releaseGroup ?? parsed.group ?? '').toLowerCase()}|${resolutionFromQualityName(l.quality) ?? parsed.resolution}`;
     const entry = byKey.get(key) ?? { season: parsed.season, imports: [] };
     entry.imports.push(l);
     byKey.set(key, entry);
   }
-  const drafts: ReleaseRecordDraft[] = [];
   for (const { season, imports } of byKey.values()) {
     const newest = imports[0] as LedgerRelease;
     const names = distinct(imports.flatMap((i) => i.sourceTitles));
@@ -617,6 +673,8 @@ async function identifyMovie(
     releaseGroup,
     resolution,
     remux: isRemuxQuality(q?.name, q?.modifier),
+    // D-25cr — only a renamed-only term widens its years, so only it needs the namesakes.
+    namesakes: names.length === 0 ? await loadNamesakes(db, 'radarr', mediaItemId, s, arrYears) : [],
   });
   if (!derivations) return { status: 'unrecordable', reason: 'no_term' };
   const identitySource: DeletedReleaseIdentitySource = grab?.sourceTitle
@@ -646,6 +704,7 @@ async function identifyMovie(
       termConfidence: derived.confidence,
       shape: derived.shape,
       foldOnly: derived.foldOnly,
+      namesakeYears: derived.namesakeYears,
     })),
   };
 }
@@ -694,6 +753,10 @@ async function identifySeries(
     };
   }
   const history = await sonarr.getSeriesReleaseHistory(s.arrItemId);
+  // D-25cr — read once, and only when a key's term is renamed-only (the only term that widens its years).
+  let namesakes: Array<{ title: string; year: number | null }> | null = null;
+  const namesakesOnce = async () =>
+    (namesakes ??= await loadNamesakes(db, 'sonarr', mediaItemId, s, arrYears));
   interface FileFacts {
     season: number;
     names: string[];
@@ -777,6 +840,7 @@ async function identifySeries(
         resolution: first.resolution,
         remux: first.remux,
         season: first.season,
+        namesakes: names.length === 0 ? await namesakesOnce() : [],
       });
       // D-25bb — whenever the group term fell back to the exact form, EVERY name of the key needs its own exact record
       // and a nameless file of the key keeps the series (D-25ah), however many names happen to be known: one exact
@@ -807,6 +871,7 @@ async function identifySeries(
         termConfidence: d.derived.confidence,
         shape: d.derived.shape,
         foldOnly: d.derived.foldOnly,
+        namesakeYears: d.derived.namesakeYears,
       });
     }
   }

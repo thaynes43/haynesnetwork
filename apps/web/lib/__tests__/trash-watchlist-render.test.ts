@@ -9,6 +9,7 @@ import { SafetyBanner, type SafetyStatus } from '@/components/trash-safety';
 import { ExpediteItemConfirm, ExpediteReport } from '@/components/trash-expedite';
 import { TrashCard } from '@/components/cards';
 import {
+  EXPEDITE_PROTECTED_REASON,
   SWEEP_PAUSED_COPY,
   WATCHLIST_NOTE_DETAIL,
   WATCHLIST_NOTE_LABEL,
@@ -129,7 +130,7 @@ describe('the Expedite copy for a watchlisted item (D-09 / D-25av)', () => {
     expect(cold).not.toContain('trash-expedite-item-watchlisted');
   });
 
-  it('the report never credits Maintainerr with the keep, and its bullets carry no dashes', () => {
+  it('the report names the watchlist among the keeps, and its bullets carry no dashes', () => {
     const html = renderToStaticMarkup(
       createElement(ExpediteReport, {
         outcome: { protectedCount: 1, expeditedCount: 1, skippedCount: 1, stalePending: 1 },
@@ -138,8 +139,15 @@ describe('the Expedite copy for a watchlisted item (D-09 / D-25av)', () => {
     );
     const bullets = html.slice(html.indexOf('<ul'), html.indexOf('</ul>'));
     expect(bullets).toContain('watchlist');
-    expect(bullets).not.toMatch(/Maintainerr keeps/);
     expect(bullets).not.toMatch(/[–—]/); // owner rule: no en or em dashes
+  });
+
+  it('D-25bk / D-25cy: the Expedite-all confirm`s protected line says the app keeps them, never Maintainerr or a request', () => {
+    expect(EXPEDITE_PROTECTED_REASON).toContain('on a watchlist');
+    expect(EXPEDITE_PROTECTED_REASON).toContain('they are kept');
+    expect(EXPEDITE_PROTECTED_REASON).not.toMatch(/Maintainerr/);
+    expect(EXPEDITE_PROTECTED_REASON).not.toMatch(/request/i);
+    expect(EXPEDITE_PROTECTED_REASON).not.toMatch(/[–—]/);
   });
 });
 
@@ -159,6 +167,14 @@ describe('the Library item page`s Trash notice (D-10, D-25co)', () => {
       meta: 'Maintainerr’s “Old and unwatched” rule flagged it — deleting frees 4.0 GB. Save it to keep it.',
       watchlistNote: null,
     });
-    expect(trashNoticeText({ ...base, on: true, onWatchlist: true }).watchlistNote).toBeNull();
+    expect(trashNoticeText({ ...base, on: true, onWatchlist: false }).watchlistNote).toBeNull();
+  });
+
+  it('D-25cv: a Save keeps the watchlist note (the title is still listed; the line never unmounts on Save)', () => {
+    const slated = trashNoticeText({ ...base, on: false, onWatchlist: true });
+    const saved = trashNoticeText({ ...base, on: true, onWatchlist: true });
+    expect(saved.watchlistNote).toBe(WATCHLIST_NOTE_DETAIL);
+    expect(saved.watchlistNote).toBe(slated.watchlistNote);
+    expect(saved.meta).toMatch(/Maintainerr will keep this item/);
   });
 });

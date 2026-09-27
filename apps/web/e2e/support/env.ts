@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ADMIN_EMAIL, STUB_CLIENT_ID, STUB_CLIENT_SECRET } from './stub-oidc';
 import { STUB_BAZARR_API_KEY } from './stub-bazarr';
+import { STUB_RADARR_API_KEY, STUB_SONARR_API_KEY } from './stub-arr';
 import { STUB_PLEX_TOKENS } from './stub-plex';
 import { STUB_MAINTAINERR_API_KEY } from './stub-maintainerr';
 import { STUB_GATUS_ENDPOINT_KEY } from './stub-gatus';
@@ -221,8 +222,9 @@ export function composeRuntimeEnv(opts: {
     RADARR_URL: opts.stubArrBaseUrl,
     LIDARR_URL: opts.stubArrBaseUrl,
     SEERR_URL: opts.stubArrBaseUrl,
-    SONARR_API_KEY: STUB_ARR_API_KEY,
-    RADARR_API_KEY: STUB_ARR_API_KEY,
+    // DESIGN-052 D-25da — Radarr and Sonarr get their own keys, so the one stub keeps a release profile per *arr.
+    SONARR_API_KEY: STUB_SONARR_API_KEY,
+    RADARR_API_KEY: STUB_RADARR_API_KEY,
     LIDARR_API_KEY: STUB_ARR_API_KEY,
     SEERR_API_KEY: STUB_ARR_API_KEY,
     BAZARR_URL: opts.stubBazarrBaseUrl,

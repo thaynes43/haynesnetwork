@@ -4,7 +4,8 @@
 // For each kind (movies, TV) it reads the pending pool (Maintainerr + the ledger join) and runs the same identity and
 // term derivation the sweep runs before a delete (`identifyRelease`, D-11 / D-12), then counts: records by shape
 // (group / exact / none), by confidence (verified / low_confidence), the fold-only terms (D-25bq: a real name matched
-// only folded, which the *arr will not block) and by identity source; records whose release
+// only folded, which the *arr will not block), the renamed-only terms whose year window left out a namesake's year
+// (D-25cr) and by identity source; records whose release
 // group is unknown (Q-12); and the items D-11 would keep `release_unrecorded`, by reason, with their titles (our own
 // library's titles, fine to print, D-21). The share of kept items is what Q-13 turns on.
 //
@@ -41,6 +42,10 @@ export interface PoolReleaseKindReport {
    *  `confidence.low_confidence`; `foldOnlyShare` is its share of the records with a term (0..1). */
   foldOnly: number;
   foldOnlyShare: number;
+  /** D-25cr — renamed-only records whose widened year window left out a year another title of the same name holds
+   *  (The Killer 2024 next to The Killer 2023), with the titles and the years left out. */
+  namesakeNarrowed: number;
+  namesakes: Array<{ title: string; years: number[] }>;
   identitySource: Record<string, number>;
   /** Records with no release group (Q-12): only an exact name, or nothing, can block these. */
   nullGroup: number;
@@ -81,6 +86,8 @@ export async function reportPoolReleaseIdentity(input: {
       confidence: { verified: 0, low_confidence: 0 },
       foldOnly: 0,
       foldOnlyShare: 0,
+      namesakeNarrowed: 0,
+      namesakes: [],
       identitySource: {},
       nullGroup: 0,
       unrecorded: [],
@@ -114,6 +121,10 @@ export async function reportPoolReleaseIdentity(input: {
         report.shape[d.shape] += 1;
         if (d.termConfidence !== null) report.confidence[d.termConfidence] += 1;
         if (d.foldOnly === true) report.foldOnly += 1;
+        if (d.namesakeYears && d.namesakeYears.length > 0) {
+          report.namesakeNarrowed += 1;
+          report.namesakes.push({ title: item.title, years: d.namesakeYears });
+        }
         report.identitySource[d.identitySource] = (report.identitySource[d.identitySource] ?? 0) + 1;
         if (d.shape !== 'none' && d.releaseGroup === null) report.nullGroup += 1;
       }

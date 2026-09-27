@@ -77,6 +77,7 @@ describe('deriveTerm — movies (D-12)', () => {
       confidence: 'verified',
       years: [2024],
       foldOnly: false,
+      namesakeYears: [],
     });
   });
 
@@ -176,6 +177,46 @@ describe('deriveTerm — movies (D-12)', () => {
     expect(d.confidence).toBe('low_confidence');
     expect(d.years).toEqual([1995, 1996, 1997]);
     expect(termMatches(d.term, '101.Dalmatians.1996.1080p.WEBRip.x264-NTb')).toBe(true);
+  });
+
+  it('D-25cr: a renamed-only window never widens onto a namesake`s year (The Killer 2024 next to The Killer 2023)', () => {
+    const killer = (namesakes?: Array<{ title: string; year: number | null }>) =>
+      deriveTerm(
+        movie({
+          arrTitle: 'The Killer',
+          arrYears: [2024, null],
+          renamedFileName:
+            'The Killer (2024) {imdb-tt1121948} [PCOK][WEBDL-2160p][DV HDR10][EAC3 Atmos 5.1][x265]-FLUX.mkv',
+          releaseGroup: 'FLUX',
+          resolution: 2160,
+          ...(namesakes ? { namesakes } : {}),
+        }),
+      )!;
+    const fincher = 'The.Killer.2023.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX';
+    // Without the ledger's titles the window covers 2023, and the other film's FLUX 2160p release is blocked.
+    expect(termMatches(killer().term, fincher)).toBe(true);
+    const d = killer([
+      { title: 'The Killer', year: 2023 },
+      { title: 'Killer Joe', year: 2025 }, // another title: its year still widens
+      { title: 'The Killer', year: null },
+    ]);
+    expect(d).toMatchObject({ years: [2024, 2025], namesakeYears: [2023], confidence: 'low_confidence' });
+    expect(termMatches(d.term, fincher)).toBe(false);
+    expect(termMatches(d.term, `${fincher.replace('H.265-FLUX', 'H.265.REPACK-FLUX')}`)).toBe(false);
+    expect(termMatches(d.term, 'The.Killer.2024.2160p.PCOK.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX')).toBe(true);
+    expect(termMatches(d.term, 'The.Killer.2025.2160p.PCOK.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX')).toBe(true);
+    // The *arr's own years are never dropped, even when a namesake shares one; a real release name never widens.
+    const own = deriveTerm(
+      movie({
+        arrTitle: 'Stolen',
+        arrYears: [2024, 2023],
+        renamedFileName: 'Stolen (2024) [WEBDL-1080p]-FLUX.mkv',
+        releaseGroup: 'FLUX',
+        resolution: 1080,
+        namesakes: [{ title: 'Stolen', year: 2023 }],
+      }),
+    )!;
+    expect(own).toMatchObject({ years: [2022, 2023, 2024, 2025], namesakeYears: [] });
   });
 
   it('no group: the exact name, separator-insensitive; the renamed file alone never yields an exact term', () => {

@@ -245,6 +245,7 @@ export const trashRouter = router({
           media: input.media,
           count: result.count,
           refreshedAt: result.refreshedAt,
+          watchlistFiltered: result.watchlistFiltered,
           candidates: result.candidates.map((c) => ({
             ...c,
             posterUrl:

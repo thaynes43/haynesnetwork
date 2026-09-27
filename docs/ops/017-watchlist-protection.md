@@ -71,7 +71,7 @@ the alert rule (PLAN-072 S4) matches.
 | `release_block` | `put` | Radarr or Sonarr refused the profile write, or did not answer. | Check the *arr is up and its key valid (`RADARR_API_KEY` / `SONARR_API_KEY` in `haynesnetwork-secret`). The next hourly sweep retries. |
 | `release_block` | `read_back` | The write answered but the profile read back without every term, or disabled. | Someone or something edited the profile. Look at it (`GET /api/v3/releaseprofile`); the next sweep rewrites it. If it keeps drifting, find the writer before resuming. |
 | `release_block` | `duplicate_profile` | Two profiles carry the managed name (a copy, or a restore). | In the *arr, delete the one that is not the older (lower id) profile, or merge their terms into it first if the copy holds terms the other lacks. The next sweep reconciles the survivor. |
-| `audit_unsafe` | `unsafe` | The Maintainerr safety audit failed (`paused_audit_unsafe`; the job also fails, as before ADR-093). | The Trash page's safety banner names the integration or the pool and its setting. For a rule pool's setting (`listExclusions`, `forceSeerr`, `arrAction` Delete, or the delete-after horizon), turn that setting back on in Maintainerr's own rule editor for that pool (its UI saves the whole rule), then re-run the sweep. The app's Rules tab only arms, disarms or deletes a rule and carries these settings over unchanged, so it cannot fix them. An episode pool is not held to `forceSeerr` (Maintainerr never stores it there, D-25bt). |
+| `audit_unsafe` | `unsafe` | The Maintainerr safety audit failed (`paused_audit_unsafe`; the job also fails, as before ADR-093). | The Trash page's safety banner names the integration or the pool and its setting. For a rule pool's setting (`listExclusions`, `forceSeerr`, `arrAction` Delete, or the delete-after horizon), turn that setting back on in Maintainerr's own rule editor for that pool (its UI saves the whole rule), then re-run the sweep. The app's Rules tab only arms, disarms or deletes a rule and carries these settings over unchanged, so it cannot fix them. That holds only while an ADR-093 image runs: the older image's toggle drops `listExclusions` and `forceSeerr` (section 8). An episode pool is not held to `forceSeerr` (Maintainerr never stores it there, D-25bt). |
 | `arr` | `handle_breaker` | Three Maintainerr handles in a row failed (`aborted_arr`). | Maintainerr is down or its executor is stuck. Items already handled carry `[trash] deleted {…, records}` lines; the rest wait. |
 | `arr` | `arr_identity` | Three *arr identity reads in a row failed before Phase A (`aborted_arr`); nothing was written. | Radarr or Sonarr is down. The next hourly sweep retries. A manual Expire now reports "Nothing was deleted: Radarr or Sonarr did not answer." and Expedite refuses with the same cause (`RELEASE_BLOCK_ARR_UNAVAILABLE`, D-25bu). |
 | `arr` | `error` | The sweep threw for another reason with a batch due (Maintainerr's pending read failing, a database error); the job fails too (D-25cg). | Read the job's `[trash] sweep_failed {error}` line and the `trash batch sweep failed` line: a Maintainerr error means Maintainerr is down or answering errors (check its pod and logs); a database error means the app's Postgres. The next ok sweep clears the pause. |
@@ -146,8 +146,10 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/seerr-watchlist.ts
 - **`--pool`** prints, per kind, the pool size, the items recordable and their records by shape (`group` / `exact` /
   `none`), confidence and identity source, the records with no release group (Q-12), the fold-only terms (`foldOnly`
   and `foldOnlyShare`: a real release name with an apostrophe, an accent or `&` that the term matches only when folded,
-  which Radarr and Sonarr will not block, D-25bq), and the items D-11 would keep `release_unrecorded` with their
-  reasons and share (`unrecordedShare`, Q-13). It needs `MAINTAINERR_API_KEY` too.
+  which Radarr and Sonarr will not block, D-25bq), the renamed-only terms whose widened year window left out a year
+  another title of the same name holds (`namesakeNarrowed` and `namesakes`, titles and years: The Killer 2024 next to
+  The Killer 2023, D-25cr), and the items D-11 would keep `release_unrecorded` with their reasons and share
+  (`unrecordedShare`, Q-13). It needs `MAINTAINERR_API_KEY` too.
 - **The legacy SAB file** (`--legacy-sab`) holds release names from the HaynesTower SABnzbd histories. It is never
   committed. Copy it into the pod for the run and delete it after:
   `kubectl -n frontend cp ./sab.tsv <pod>:/tmp/sab.tsv -c app`, run with `--legacy-sab=/tmp/sab.tsv`, then
@@ -169,3 +171,10 @@ then, in the haynes-ops change that reverts the image tag, also remove (or first
 would fail a Job every 15 minutes, and remove the D-21 Loki alerts, which go silent with the older image. Leave the
 release profiles in place unless the block itself is the problem, and delete them only once no running image
 reconciles them.
+
+While the older image runs, arm or disarm a Trash rule only in Maintainerr's own rule editor, never from the app's
+Rules tab: the older toggle saves the rule without `listExclusions`, `forceSeerr` and `arrAction`, so Maintainerr
+turns the first two off, and the older safety audit does not check them, so nothing warns (DESIGN-052 D-25cu). Before
+the sweep resumes, read `GET /api/collections` on Maintainerr: every active rule pool needs `listExclusions: true`,
+`arrAction` 0 and, unless it is an episode pool, `forceSeerr: true`; Leaving Soon needs `arrAction` 4. Fix any that
+is off in Maintainerr's rule editor first.

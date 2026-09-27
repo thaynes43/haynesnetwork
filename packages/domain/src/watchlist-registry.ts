@@ -1517,8 +1517,7 @@ async function gateSnapshot(
     run === null ? null : Math.floor((now.getTime() - run.finishedAt.getTime()) / MINUTE_MS);
 
   if (input.purpose === 'propose') {
-    const filtered =
-      run !== null && now.getTime() - run.finishedAt.getTime() <= PROPOSE_MAX_AGE_H * HOUR_MS;
+    const filtered = proposeFilters(run, now);
     logger.info('[watchlist-registry] gate', {
       purpose: 'propose',
       verified: filtered,
@@ -1564,6 +1563,20 @@ async function gateSnapshot(
     runId: run.id,
     overlaySince,
   };
+}
+
+/** D-07 `propose` — the newest ok run filters a proposal only when it finished within PROPOSE_MAX_AGE_H. */
+function proposeFilters(run: { finishedAt: Date } | null, now: Date): boolean {
+  return run !== null && now.getTime() - run.finishedAt.getTime() <= PROPOSE_MAX_AGE_H * HOUR_MS;
+}
+
+/**
+ * D-25cx — would a batch proposed now be filtered by the watchlist (the `propose` gate's rule, without its snapshot or
+ * its log line)? The Start-a-batch preview reads its `onWatchlist` from the `display` snapshot, which has no age bound,
+ * so it asks this to mirror the pick: when a proposal would be unfiltered, the server takes watchlisted titles too.
+ */
+export async function isProposalWatchlistFiltered(input: { db?: DbClient; now?: Date }): Promise<boolean> {
+  return proposeFilters(await newestOkRun(input.db), input.now ?? new Date());
 }
 
 /** D-06 — the `display` snapshot: the newest ok run of any age (null when there has never been one). */

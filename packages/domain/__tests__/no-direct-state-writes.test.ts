@@ -214,8 +214,8 @@ const ALLOWED_FILES = new Set<string>([
 // plex_discover_ids — refreshWatchlistRegistry in watchlist-registry.ts is the sole writer; derived, rebuildable
 // state, so it appends no ledger/audit row — the trash_candidates exemption — and each refresh's trail is its runs
 // row), trash_deleted_releases (the Deleted-Release Record — the release-block writers), seerr_watchlist_enrollments
-// (the enrollment writer, after the Seerr write succeeded) and trash_sweep_status (the scheduled sweep's one-row
-// outcome). All eight are guarded in ALL SIX families: nothing outside the domain may add, rewrite or drop what the
+// (the enrollment writer: a pending row inserted before the Seerr POST, after its GET answered, confirmed once both
+// flags are seen on; D-25bs, D-25cj) and trash_sweep_status (the scheduled sweep's one-row outcome). All eight are guarded in ALL SIX families: nothing outside the domain may add, rewrite or drop what the
 // Registry Gate and the Watchlist Keep read, or the record a Release Block term was derived from.
 const FORBIDDEN_PATTERNS: Array<{ name: string; regex: RegExp }> = [
   {

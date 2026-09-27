@@ -21,6 +21,7 @@ import {
   parseManualSeedFile,
   seedReleaseBlock,
   silentDomainLogger,
+  termMatches,
   upsertMediaItemsBatch,
 } from '../src/index';
 import { bootMigratedDb, type TestDb } from './helpers';
@@ -205,6 +206,99 @@ describe('the Release Block seed (DESIGN-052 D-15)', () => {
     expect(fixture.profiles.radarr[0]!.ignored).toHaveLength(4); // the sentinel + the ledger term + the two legacy terms
   });
 
+  describe('D-25cs — a --manual term takes the *arr`s years too (Terrifier: the release says 2016, Radarr 2018)', () => {
+    const TERRIFIER = 'Terrifier.2016.Uncut.UHD.BluRay.2160p.DTS-HD.MA.5.1.HEVC.REMUX-FraMeSToR';
+    const REPOST = 'Terrifier.2018.2160p.UHD.BluRay.REMUX.HDR.HEVC.DTS-HD.MA.5.1-FraMeSToR';
+    const manual = parseManualSeedFile(
+      JSON.stringify([{ tmdbId: 420634, title: 'Terrifier', year: 2016, releaseNames: [TERRIFIER] }]),
+    );
+    const terrifier = async (gone: Date | null) => {
+      await upsertMediaItemsBatch({
+        db: t.db,
+        arrKind: 'radarr',
+        items: [
+          {
+            arrItemId: 777,
+            tmdbId: 420634,
+            title: 'Terrifier',
+            sortTitle: 'terrifier',
+            year: 2018,
+            monitored: true,
+            qualityProfileId: 1,
+            qualityProfileName: 'Any',
+            rootFolder: '/movies',
+          },
+        ],
+      });
+      const [mi] = await t.db.select().from(mediaItems).where(eq(mediaItems.tmdbId, 420634));
+      await t.db.update(mediaItems).set({ deletedFromArrAt: gone }).where(eq(mediaItems.id, mi!.id));
+      const [batch] = await t.db
+        .insert(trashBatches)
+        .values({ mediaKind: 'movie', state: 'deleted', deletedAt })
+        .returning();
+      // Research §5: no ledger grab or import, and the bulk legacy match rejects it (the job says 2016, the row 2018).
+      await t.db.insert(trashBatchItems).values({
+        batchId: batch!.id,
+        maintainerrMediaId: 'ms-terrifier',
+        mediaItemId: mi!.id,
+        title: 'Terrifier',
+        year: 2018,
+        tmdbId: 420634,
+        state: 'deleted',
+        deletedAt,
+        deletedSizeBytes: 40_050_865_076,
+      });
+    };
+    const cleanup = async () => {
+      await t.db.delete(trashBatches);
+      await t.db.delete(mediaItems).where(eq(mediaItems.tmdbId, 420634));
+    };
+
+    it('the remediation term blocks the 2018-named repost; the covered batch row is not unblockable', async () => {
+      await terrifier(deletedAt);
+      try {
+        const { arr } = arrWithPresence();
+        const report = await seedReleaseBlock({ db: t.db, arr, apply: true, manual, logger: silentDomainLogger });
+        const [row] = (await t.db.select().from(trashDeletedReleases)).filter((r) => r.origin === 'remediation');
+        expect(row!.years).toEqual([2016, 2018]);
+        expect(termMatches(row!.term!, TERRIFIER)).toBe(true);
+        expect(termMatches(row!.term!, REPOST)).toBe(true);
+        // Silent Night and Nobody Knows stay unblockable (no legacy file here); Terrifier is covered by --manual.
+        expect(report.manual).toEqual({ entries: 1, records: 1, skipped: 0, covered: 1 });
+        expect(report.unblockable).toEqual({ movies: 2, series: 0 });
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('Radarr`s own year and secondary year join when it still has the movie; a failed read keeps the ledger`s', async () => {
+      await terrifier(null);
+      try {
+        const { arr, fixture } = arrWithPresence();
+        fixture.movies.set(777, { title: 'Terrifier', year: 2018, secondaryYear: 2017, tmdbId: 420634, file: null });
+        await seedReleaseBlock({ db: t.db, arr, apply: true, manual, logger: silentDomainLogger });
+        const [live] = (await t.db.select().from(trashDeletedReleases)).filter((r) => r.origin === 'remediation');
+        expect(live!.years).toEqual([2016, 2017, 2018]);
+
+        await t.db.delete(trashDeletedReleases);
+        fixture.fail.add('radarr:find');
+        const warns: string[] = [];
+        await seedReleaseBlock({
+          db: t.db,
+          arr,
+          apply: true,
+          manual,
+          logger: { ...silentDomainLogger, warn: (msg) => warns.push(msg) },
+        });
+        const [failed] = (await t.db.select().from(trashDeletedReleases)).filter((r) => r.origin === 'remediation');
+        expect(failed!.years).toEqual([2016, 2018]);
+        expect(warns).toContain('[release-block] seed_manual_year_read_failed');
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
   it('a presence that cannot be confirmed is skipped (never seeded blind)', async () => {
     const { arr, fixture } = arrWithPresence();
     fixture.fail.add('radarr:find');
@@ -240,7 +334,7 @@ describe('the Release Block seed (DESIGN-052 D-15)', () => {
       manual,
       logger: silentDomainLogger,
     });
-    expect(report.manual).toEqual({ entries: 1, records: 2, skipped: 0 });
+    expect(report.manual).toEqual({ entries: 1, records: 2, skipped: 0, covered: 0 });
     const rows = await t.db.select().from(trashDeletedReleases);
     expect(rows).toHaveLength(4);
     expect(rows.every((r) => r.state === 'active')).toBe(true);

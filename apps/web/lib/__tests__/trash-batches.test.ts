@@ -10,6 +10,7 @@ import {
   batchTileView,
   countdownCopy,
   EXPIRE_KEPT_REASONS,
+  expireConfirmLines,
   expirePreview,
   forceExpireConfirmMatches,
   previewTargetSelection,
@@ -389,6 +390,29 @@ describe('previewTargetSelection — the Start-a-batch client preview (mirrors s
     expect(previewTargetSelection(listed, { maxItems: 1, strategy: 'largest' })).toMatchObject({ count: 1, bytes: 3e9 });
   });
 
+  it('D-25cw — "All current candidates" frees only what can go: a watchlisted title is kept while it stays listed', () => {
+    const listed = [c(4e9, { onWatchlist: true }), c(3e9), c(2e9, { protectedByTag: true }), c(1e9)];
+    // Three items snapshot (D-25y counts the watchlisted one), but at most 4 GB can be freed, never 8 GB.
+    expect(previewTargetSelection(listed, {})).toMatchObject({ count: 3, bytes: 8e9, freesBytes: 4e9 });
+    expect(previewTargetSelection(pool, {}).freesBytes).toBe(8e9);
+    expect(previewTargetSelection(listed, { maxItems: 2, strategy: 'largest' })).toMatchObject({ freesBytes: 4e9 });
+  });
+
+  it('D-25cx — while a batch created now is unfiltered (no registry run in 24 h) the pick takes the watchlisted title', () => {
+    const listed = [c(8e9, { onWatchlist: true }), c(3e9), c(2e9)];
+    // The server's pick: largest first, the 8 GB watchlisted title crosses a 5 GB target alone.
+    expect(
+      previewTargetSelection(listed, { targetBytes: 5e9, strategy: 'largest', watchlistFiltered: false }),
+    ).toMatchObject({ count: 1, bytes: 8e9, freesBytes: 0, poolCount: 3 });
+    // Filtered (the default): it takes no slot.
+    expect(previewTargetSelection(listed, { targetBytes: 5e9, strategy: 'largest' })).toMatchObject({
+      count: 2,
+      bytes: 5e9,
+      freesBytes: 5e9,
+      poolCount: 2,
+    });
+  });
+
   it('maxItems caps; a target under the first item still yields one', () => {
     expect(previewTargetSelection(pool, { maxItems: 1 })).toMatchObject({ count: 1, bytes: 4e9 });
     expect(previewTargetSelection(pool, { targetBytes: 1 })).toMatchObject({ count: 1, bytes: 4e9 });
@@ -461,6 +485,19 @@ describe('the Expire now preview (DESIGN-011 D-07 (c), DESIGN-052 D-25cm)', () =
   it('the kept line names the watchlist reason', () => {
     expect(EXPIRE_KEPT_REASONS).toContain('on a watchlist');
     expect(EXPIRE_KEPT_REASONS).not.toMatch(/—/);
+  });
+
+  it('D-25cz: the rendered outcome lines end their labels in a colon, never a dash', () => {
+    const lines = expireConfirmLines({ willDelete: 1, savedCount: 2, willKeep: 3 });
+    expect(lines.map((l) => `${l.label} ${l.detail}`)).toEqual([
+      'Up to 1 item will be deleted: each is re-checked fresh first (live whitelist + the watch guardian); only verified-cold items delete.',
+      '2 rescued items are untouched: a save is permanent protection.',
+      `At least 3 will be kept (skipped): ${EXPIRE_KEPT_REASONS}`,
+    ]);
+    expect(expireConfirmLines({ willDelete: 2, savedCount: 1, willKeep: 0 })[1]!.label).toBe(
+      '1 rescued item is untouched:',
+    );
+    for (const l of lines) expect(`${l.label} ${l.detail}`).not.toMatch(/[–—]/);
   });
 });
 

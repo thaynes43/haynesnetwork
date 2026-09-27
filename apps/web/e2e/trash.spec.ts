@@ -231,6 +231,10 @@ test.describe('trash — watchlist protection on the page (ADR-093)', () => {
       const confirm = page.getByTestId('trash-expedite-all-confirm');
       await expect(confirm).toContainText('0 will be deleted NOW');
       await expect(confirm).toContainText('3 protected');
+      // D-25bk / D-25cy — the app keeps them (never "Maintainerr keeps"), and a request is no keep.
+      await expect(confirm).toContainText('3 protected: recently watched, whitelisted, or on a watchlist; they are kept.');
+      await expect(confirm).not.toContainText('Maintainerr keeps');
+      await expect(confirm).not.toContainText('requested');
       await expect(page.getByTestId('trash-expedite-watchlisted')).toHaveText('1 on a watchlist');
       await expect(page.getByTestId('trash-expedite-all-submit')).toBeDisabled();
       await confirm.getByRole('button', { name: 'Cancel' }).click();
@@ -1290,6 +1294,9 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const confirm = page.getByTestId('batch-expire-confirm');
     await expect(confirm).toContainText('immediate and permanent');
     await expect(confirm).toContainText('Up to 1 item will be deleted');
+    // D-25cz — the outcome labels end in a colon; no em dash on the rendered lines (the owner's copy rules).
+    await expect(confirm).toContainText('will be kept (skipped): recently watched, on a watchlist');
+    await expect(confirm.locator('.ledger-confirm__outcomes')).not.toContainText('—');
     await page.getByTestId('batch-expire-submit').click();
 
     const report = page.getByTestId('batch-expire-report');

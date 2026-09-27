@@ -171,12 +171,16 @@ function legacyDraft(
   },
   title: string,
   year: number,
+  /** D-25cs — the term's *arr years (the record's year always among them): the manual path adds the batch row's, the
+   *  ledger's and Radarr's years, so a release posted under the *arr's year is blocked as well as the name's own. */
+  arrYears: ReadonlyArray<number | null> = [year],
 ): ReleaseRecordDraft | null {
-  const p = parseReleaseName(job.name, [year]);
+  const years = [...new Set([year, ...arrYears].filter((y): y is number => typeof y === 'number'))];
+  const p = parseReleaseName(job.name, years);
   const derived = deriveTerm({
     kind: 'movie',
     arrTitle: title,
-    arrYears: [year],
+    arrYears: years,
     releaseNames: [job.name],
     renamedFileName: null,
     releaseGroup: p.group,
@@ -210,6 +214,45 @@ function legacyDraft(
   };
 }
 
+/**
+ * D-25cs — the *arr years of a `--manual` entry: its matched batch row's year (the ledger's at the deletion), every
+ * ledger row of its tmdb id, and Radarr's `year` and `secondaryYear` when the ledger says Radarr still has it (a GET that
+ * answers the same tmdb id). A failed GET is a warning: the ledger's years still stand, only a secondary year is lost.
+ */
+async function manualArrYears(
+  db: ReturnType<typeof resolveDb>,
+  arr: ReleaseBlockArrClients,
+  entry: ManualSeedEntry,
+  batchYear: number | null,
+  logger: DomainLogger,
+): Promise<Array<number | null>> {
+  const years: Array<number | null> = [entry.year, batchYear];
+  const ledger = await db
+    .select({
+      year: mediaItems.year,
+      arrItemId: mediaItems.arrItemId,
+      gone: mediaItems.deletedFromArrAt,
+    })
+    .from(mediaItems)
+    .where(and(eq(mediaItems.arrKind, 'radarr'), eq(mediaItems.tmdbId, entry.tmdbId)));
+  for (const row of ledger) {
+    years.push(row.year);
+    if (row.gone !== null) continue;
+    try {
+      const movie = await arr.read.radarr.findMovie(row.arrItemId);
+      if (movie !== null && isSameArrTitle('radarr', movie, { tmdbId: entry.tmdbId, tvdbId: null })) {
+        years.push(movie.year ?? null, movie.secondaryYear ?? null);
+      }
+    } catch (error) {
+      logger.warn('[release-block] seed_manual_year_read_failed', {
+        title: entry.title,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return years;
+}
+
 export interface ReleaseBlockSeedReport {
   apply: boolean;
   population: number;
@@ -217,7 +260,9 @@ export interface ReleaseBlockSeedReport {
   skippedUnverified: number;
   skippedAlreadyRecorded: number;
   identified: { ledger: number; legacySab: number };
-  manual: { entries: number; records: number; skipped: number };
+  /** `covered`: batch rows no other source identified that a manual entry blocks (by tmdb id); they are not counted
+   *  in `unblockable` (D-25cs). */
+  manual: { entries: number; records: number; skipped: number; covered: number };
   records: number;
   unblockable: { movies: number; series: number };
   named: Array<{
@@ -284,7 +329,7 @@ export async function seedReleaseBlock(input: {
     skippedUnverified: 0,
     skippedAlreadyRecorded: 0,
     identified: { ledger: 0, legacySab: 0 },
-    manual: { entries: input.manual?.length ?? 0, records: 0, skipped: 0 },
+    manual: { entries: input.manual?.length ?? 0, records: 0, skipped: 0, covered: 0 },
     records: 0,
     unblockable: { movies: 0, series: 0 },
     named: SEED_NAMED_TITLES.map((title) => ({ title, batchRows: 0, matchedBy: null })),
@@ -294,6 +339,8 @@ export async function seedReleaseBlock(input: {
     report.named.find((n) => n.title.toLowerCase() === title.trim().toLowerCase()) ?? null;
   const items: KeyedDrafts[] = [];
   const deletedAtByKey = new Map<string, Date>();
+  // Rows no source identified; counted as unblockable once `--manual` has had its say (D-25cs).
+  const unidentified: Array<{ kind: ReleaseArrKind; tmdbId: number | null }> = [];
 
   for (const row of rows) {
     const kind: ReleaseArrKind = row.mediaKind === 'movie' ? 'radarr' : 'sonarr';
@@ -366,8 +413,7 @@ export async function seedReleaseBlock(input: {
       }
     }
     if (!drafts || source === null) {
-      if (kind === 'radarr') report.unblockable.movies += 1;
-      else report.unblockable.series += 1;
+      unidentified.push({ kind, tmdbId: row.tmdbId });
       continue;
     }
     if (source === 'ledger') report.identified.ledger += 1;
@@ -380,6 +426,7 @@ export async function seedReleaseBlock(input: {
 
   // --manual: the remediation titles (Babygirl, Another Simple Favor, Terrifier), each release name its own record.
   const manualItems: KeyedDrafts[] = [];
+  const coveredTmdb = new Set<number>();
   if (input.manual && input.manual.length > 0) {
     const existing = await db
       .select({ tmdbId: trashDeletedReleases.tmdbId, term: trashDeletedReleases.term })
@@ -393,7 +440,12 @@ export async function seedReleaseBlock(input: {
     const have = new Set(existing.map((e) => `${e.tmdbId}|${e.term}`));
     for (const entry of input.manual) {
       const match = rows.find((r) => r.mediaKind === 'movie' && r.tmdbId === entry.tmdbId);
+      // D-25cs — the entry's year is the release's own (Terrifier's name says 2016); the term's alternation also takes
+      // the *arr's year, or a repost under Radarr's 2018 name, which a re-request of the title searches for, is not
+      // blocked (D-12: Terrifier gets `(?:2016|2018)`).
+      const arrYears = await manualArrYears(db, input.arr, entry, match?.year ?? null, logger);
       const drafts: ReleaseRecordDraft[] = [];
+      let alreadyRecorded = false;
       for (const name of entry.releaseNames) {
         const d = legacyDraft(
           { name, bytes: 0, completedAt: new Date(0) },
@@ -405,13 +457,16 @@ export async function seedReleaseBlock(input: {
           },
           entry.title,
           entry.year,
+          arrYears,
         );
+        if (d && have.has(`${entry.tmdbId}|${d.term}`)) alreadyRecorded = true;
         if (!d || have.has(`${entry.tmdbId}|${d.term}`)) {
           report.manual.skipped += 1;
           continue;
         }
         drafts.push({ ...d, sizeBytes: null });
       }
+      if (drafts.length > 0 || alreadyRecorded) coveredTmdb.add(entry.tmdbId);
       if (drafts.length > 0) {
         const key = `manual:${entry.tmdbId}`;
         manualItems.push({ key, drafts });
@@ -423,6 +478,12 @@ export async function seedReleaseBlock(input: {
     }
   }
 
+  for (const u of unidentified) {
+    if (u.kind === 'radarr' && u.tmdbId !== null && coveredTmdb.has(u.tmdbId)) report.manual.covered += 1;
+    else if (u.kind === 'radarr') report.unblockable.movies += 1;
+    else report.unblockable.series += 1;
+  }
+
   logger.info('[release-block] seed', {
     apply: input.apply,
     population: report.population,
@@ -432,6 +493,7 @@ export async function seedReleaseBlock(input: {
     ledger: report.identified.ledger,
     legacySab: report.identified.legacySab,
     manual: report.manual.records,
+    manualCovered: report.manual.covered,
     unblockable: report.unblockable,
   });
   if (!input.apply) return report;

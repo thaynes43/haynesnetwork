@@ -338,6 +338,10 @@ export interface TermDerivationInput {
   remux: boolean;
   /** Shows: the season this record blocks. */
   season?: number | null;
+  /** D-25cr — the ledger's OTHER titles of the same *arr (title and year). A renamed-only record's widened year (y ± 1,
+   *  never one of the *arr's own years) at which one of them has the term's title tokens is dropped: that window would
+   *  block a different film or series of the same name (The Killer 2024 would block The Killer 2023). */
+  namesakes?: ReadonlyArray<{ title: string; year: number | null }>;
 }
 
 export interface DerivedTerm {
@@ -348,6 +352,8 @@ export interface DerivedTerm {
   /** D-25bq — a REAL release name of the record matched the term only in its folded form (an apostrophe, an accent or
    *  `&` in the name): the *arr, which tests the raw title, will not match that name. The term is `low_confidence`. */
   foldOnly: boolean;
+  /** D-25cr — the widened years left out because a namesake holds them (empty when none was); counted by S6(e). */
+  namesakeYears: number[];
 }
 
 /**
@@ -356,7 +362,8 @@ export interface DerivedTerm {
  * the record (self-check), else it falls back to the exact form of the FIRST name, which is checked against that name
  * only: a record with several real names whose term comes back `exact` needs `deriveTermsPerName` (D-25bp). A record
  * whose only name is the *arr's renamed file cannot validate its term against a real release: its term is
- * `low_confidence` and its year window is widened by one on each side. A real name the term matches only when folded
+ * `low_confidence` and its year window is widened by one on each side, except at a year where a namesake (another title
+ * of the *arr with the same title tokens, `namesakes`) sits (D-25cr). A real name the term matches only when folded
  * makes the term `low_confidence` too (D-25bq): the *arr tests the raw name.
  */
 export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
@@ -369,16 +376,6 @@ export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
     (y): y is number => typeof y === 'number' && y >= 1900 && y <= 2099,
   );
   const parsed = names.map((n) => parseReleaseName(n, arrYears));
-  const years = new Set<number>(arrYears);
-  for (const p of parsed) if (p.year !== null) years.add(p.year);
-  if (renamedOnly) {
-    for (const y of arrYears) {
-      years.add(y - 1);
-      years.add(y + 1);
-    }
-  }
-  const yearList = [...years].sort((a, b) => a - b);
-
   const primary = parsed[0];
   const renamed = renamedOnly ? parseReleaseName(input.renamedFileName as string, arrYears) : null;
   const titleTokens =
@@ -387,6 +384,31 @@ export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
       : renamed && renamed.titleTokens.length > 0
         ? renamed.titleTokens
         : releaseTokens(input.arrTitle);
+
+  const years = new Set<number>(arrYears);
+  for (const p of parsed) if (p.year !== null) years.add(p.year);
+  const namesakeYears: number[] = [];
+  if (renamedOnly) {
+    // D-25cr — a widened year that a namesake holds would block that other title's releases: leave it out.
+    const title = titleTokens.join(' ');
+    const held = new Set(
+      (input.namesakes ?? [])
+        .filter((n) => typeof n.year === 'number' && releaseTokens(n.title).join(' ') === title)
+        .map((n) => n.year as number),
+    );
+    for (const y of arrYears) {
+      for (const w of [y - 1, y + 1]) {
+        if (years.has(w) || arrYears.includes(w)) continue;
+        if (held.has(w)) {
+          if (!namesakeYears.includes(w)) namesakeYears.push(w);
+          continue;
+        }
+        years.add(w);
+      }
+    }
+    namesakeYears.sort((a, b) => a - b);
+  }
+  const yearList = [...years].sort((a, b) => a - b);
   const groupSource = input.releaseGroup ?? primary?.group ?? renamed?.group ?? null;
   const group = groupSource === null ? [] : releaseTokens(groupSource);
   const resolution = input.resolution ?? primary?.resolution ?? renamed?.resolution ?? null;
@@ -434,7 +456,7 @@ export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
       isGrammarTerm(term) &&
       checkNames.every((n) => termMatches(term as string, n))
     ) {
-      return { term, shape: 'group', ...judge(term, names), years: yearList };
+      return { term, shape: 'group', ...judge(term, names), years: yearList, namesakeYears };
     }
   }
 
@@ -455,7 +477,7 @@ export function deriveTerm(input: TermDerivationInput): DerivedTerm | null {
     return null;
   }
   if (!isGrammarTerm(exact) || !termMatches(exact, names[0] as string)) return null;
-  return { term: exact, shape: 'exact', ...judge(exact, [names[0] as string]), years: yearList };
+  return { term: exact, shape: 'exact', ...judge(exact, [names[0] as string]), years: yearList, namesakeYears };
 }
 
 /**

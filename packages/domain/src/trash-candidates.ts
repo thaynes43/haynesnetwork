@@ -21,7 +21,7 @@ import { inTransaction, resolveDb } from './db-client';
 import { activeBatchStrategy, getAppSetting } from './app-settings';
 import { compareByStrategy, type BatchStrategy } from './trash-strategy';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
-import { readDisplayWatchlistSnapshot } from './watchlist-registry';
+import { isProposalWatchlistFiltered, readDisplayWatchlistSnapshot } from './watchlist-registry';
 import {
   bucketFlatPendingForMedia,
   classifyForExpedite,
@@ -590,8 +590,17 @@ export async function listTrashPendingCandidates(input: {
   maintainerr: Pick<MaintainerrClientBundle, 'read'>;
   media: TrashMedia;
   watchWindowDays?: number;
-}): Promise<{ candidates: TrashPendingCandidate[]; count: number; refreshedAt: string }> {
+}): Promise<{
+  candidates: TrashPendingCandidate[];
+  count: number;
+  refreshedAt: string;
+  /** D-25cx — would a batch created now leave watchlisted titles out (the `propose` gate filters only with an ok run
+   *  under 24 hours old)? When false, the preview's pick takes them, as the server's will; `onWatchlist` still says
+   *  which ones the sweep would keep. */
+  watchlistFiltered: boolean;
+}> {
   const base = await materializeSnapshotPending(input);
+  const watchlistFiltered = await isProposalWatchlistFiltered({ db: input.db });
   const candidates = base.items
     .filter((i): i is TrashPendingItem & { maintainerrMediaId: string } => i.maintainerrMediaId !== null)
     .map((i) => ({
@@ -606,7 +615,12 @@ export async function listTrashPendingCandidates(input: {
       protectedByTag: i.protectedByTag,
       onWatchlist: i.onWatchlist,
     }));
-  return { candidates, count: candidates.length, refreshedAt: base.refreshedAt.toISOString() };
+  return {
+    candidates,
+    count: candidates.length,
+    refreshedAt: base.refreshedAt.toISOString(),
+    watchlistFiltered,
+  };
 }
 
 /**

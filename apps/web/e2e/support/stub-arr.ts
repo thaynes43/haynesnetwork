@@ -420,6 +420,14 @@ function json(res: import('node:http').ServerResponse, status: number, body: unk
   res.end(payload);
 }
 
+/**
+ * DESIGN-052 D-25da — Radarr's and Sonarr's own stub keys. One stub serves both, and the Release Block keeps one
+ * app-owned profile per *arr, so the stub keeps a profile list per `X-Api-Key` (env.ts gives the two their own keys): a
+ * shared list would make each *arr's upkeep read the other's terms as drift and rewrite them away on every run.
+ */
+export const STUB_RADARR_API_KEY = 'stub-radarr-key';
+export const STUB_SONARR_API_KEY = 'stub-sonarr-key';
+
 export async function startStubArr(): Promise<StubArrServer> {
   const calls: RecordedArrWrite[] = [];
   // PLAN-015 / D-20 — the scriptable download queue (staged via POST /_stub/queue). Empty by
@@ -436,9 +444,19 @@ export async function startStubArr(): Promise<StubArrServer> {
   // ADR-093 / DESIGN-052 D-10 — a spec-set Seerr watchlist per user id (`POST /_stub/seerr-watchlist`), in place of the
   // default (the member's Stub Dune). Cleared by reset, or per user by posting no `results`.
   const seerrWatchlistOverride = new Map<string, Array<Record<string, unknown>>>();
-  // ADR-093 / DESIGN-052 D-13 / D-20 — the app-owned "must not contain" release profile. One list: this one stub
-  // serves Radarr AND Sonarr, so each reconcile rewrites it with its own *arr's terms (each read-back still holds).
-  let releaseProfiles: Array<Record<string, unknown> & { id: number }> = [];
+  // ADR-093 / DESIGN-052 D-13 / D-20 / D-25da — the app-owned "must not contain" release profile, one list per *arr as
+  // the real ones keep it: this one stub serves Radarr AND Sonarr, told apart by the request's `X-Api-Key` (a key the
+  // stub does not know gets a list of its own).
+  const releaseProfiles = new Map<string, Array<Record<string, unknown> & { id: number }>>();
+  const profilesOf = (req: IncomingMessage) => {
+    const key = String(req.headers['x-api-key'] ?? '');
+    let list = releaseProfiles.get(key);
+    if (list === undefined) {
+      list = [];
+      releaseProfiles.set(key, list);
+    }
+    return list;
+  };
   let nextReleaseProfileId = 1;
   // DESIGN-052 D-17 / D-20 — each Seerr user's watchlist sync flags (settings/main), and the Sonarr server's tags.
   let seerrSyncFlags = new Map<number, { movies: boolean; tv: boolean }>([[1, { movies: true, tv: true }]]);
@@ -462,7 +480,7 @@ export async function startStubArr(): Promise<StubArrServer> {
         faultReads = false;
         seerrWatchlistError = false;
         seerrWatchlistOverride.clear();
-        releaseProfiles = [];
+        releaseProfiles.clear();
         nextReleaseProfileId = 1;
         seerrSyncFlags = new Map([[1, { movies: true, tv: true }]]);
         seerrAnimeTags = [];
@@ -512,19 +530,26 @@ export async function startStubArr(): Promise<StubArrServer> {
       }
       // ADR-093 / DESIGN-052 D-13 / D-20 — the release profile surface (kept out of the recorded `calls`, which other
       // specs assert on), plus a read of it for specs.
-      if (url.pathname === '/_stub/release-profiles') return json(res, 200, { profiles: releaseProfiles });
-      if (path === '/releaseprofile' && method === 'GET') return json(res, 200, releaseProfiles);
+      if (url.pathname === '/_stub/release-profiles') {
+        return json(res, 200, {
+          radarr: releaseProfiles.get(STUB_RADARR_API_KEY) ?? [],
+          sonarr: releaseProfiles.get(STUB_SONARR_API_KEY) ?? [],
+        });
+      }
+      if (path === '/releaseprofile' && method === 'GET') return json(res, 200, profilesOf(req));
       if (path === '/releaseprofile' && method === 'POST') {
         const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
         const created = { ...body, id: nextReleaseProfileId++ };
-        releaseProfiles.push(created);
+        profilesOf(req).push(created);
         return json(res, 201, created);
       }
       const profilePut = /^\/releaseprofile\/(\d+)$/.exec(path);
       if (profilePut && method === 'PUT') {
         const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
         const id = Number(profilePut[1]);
-        releaseProfiles = releaseProfiles.map((p) => (p.id === id ? { ...body, id } : p));
+        const list = profilesOf(req);
+        const at = list.findIndex((p) => p.id === id);
+        if (at >= 0) list[at] = { ...body, id };
         return json(res, 202, { ...body, id });
       }
       // DESIGN-052 D-17 / D-20 — Seerr settings/main (the watchlist sync flags; POST echoes) and the Sonarr server list

@@ -201,8 +201,10 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   Expire now, the sweep) first reads the release's identity from the stub *arr (`/api/v3/movie/{id}`, `moviefile`,
   `history/movie`, or `series/{id}`, `episodefile`, `history/series`), writes its "must not contain" term into the
   app's release profile and reads it back, and only then calls the Maintainerr handle; afterwards the stub *arr
-  answers 404 for the deleted item, so the record turns `active`. `GET <stub-arr>/_stub/release-profiles` shows the
-  profile (one list: the stub serves Radarr and Sonarr alike); `trash_deleted_releases` holds the records. The Fixture
+  answers 404 for the deleted item, so the record turns `active`. `GET <stub-arr>/_stub/release-profiles` shows each
+  *arr's profile (`{radarr, sonarr}`: the one stub keeps a list per *arr, told apart by the stub keys the stack gives
+  Radarr and Sonarr, so the upkeep in the registry and sweep jobs finds no drift, D-25da); `trash_deleted_releases`
+  holds the records. The Fixture
   (a scene name, group `STUB`, 1080p) records a group term; Vanished Heist (no file) records a term-less `none` row.
   The Watchlists card shows the blocked-release counts, the exclusion counts and the re-adds. The seed script runs
   against the stack's env: `pnpm --filter @hnet/sync exec tsx src/scripts/release-block-seed.ts --dry-run` (then

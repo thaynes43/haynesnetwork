@@ -44,12 +44,16 @@ Release Block writer; the two-phase sweep and Expedite (identity, record, profil
 settle by the *arr's own answer); the seed (`release-block-seed.ts`, plus the read-only `--pool` report for S6(e));
 the Arm/Disarm fix and grown invariant; Seerr enrollment, off (`seerr-watchlist.ts`); the D-10 surfaces and the D-23
 counts; CLAUDE.md hard rule 4. Rulings in DESIGN-052 D-25 (D-25ax..D-25bm are the Opus code review's,
-D-25bn..D-25bz its second pass's and D-25ca..D-25cq its third's, each with a test that fails without it; the second
+D-25bn..D-25bz its second pass's, D-25ca..D-25cq its third's and D-25cr..D-25da its fourth's, each with a test that
+fails without it; the second
 pass added the hourly Release Block upkeep in the sweep job, a pending Seerr enrollment row via a `confirmed_at` column
 in 0081, and per-name terms for a movie's exact fallback; the third added **`TRASH_WEB_DELETES_HELD`** (the web pod
 env that holds Expedite and Expire now with the suspended sweep from S4 until S6, and in the rollback), the upkeep's
 profile drift check also run by the registry CronJob, `movies_before` / `tv_before` on the enrollment rows (0081; a
-rollback restores them), and the overlay's unknown-outcome adds and undone removes). Runbook: `docs/ops/017-watchlist-protection.md` (OPS-017, Draft until S4).
+rollback restores them), and the overlay's unknown-outcome adds and undone removes; the fourth keeps a disk-imported
+title's widened year window off a namesake's year (The Killer 2024 / 2023; S6(e)'s `--pool` report counts
+`namesakeNarrowed`), gives the `--manual` Terrifier term Radarr's 2018, and forbids the older image's Rules-tab
+Arm/Disarm in the rollback). Runbook: `docs/ops/017-watchlist-protection.md` (OPS-017, Draft until S4).
 **Next:** the S2 `pnpm dev:local` walk (a watchlisted stub title kept by an expedite and a sweep, the release profile
 written before the handle, the Arm/Disarm toggle leaving the flags true), then squash-merge; S3 release; S4 deploy
 (image tag, the `sync-watchlist-registry` CronJob, the Loki alerts linking OPS-017, and

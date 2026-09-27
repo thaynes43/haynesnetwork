@@ -1,7 +1,14 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Draft
-- **Last updated:** 2026-09-26 (D-25ca..D-25cq record the third review pass of PR #595: the D-19 overlay takes an
+- **Last updated:** 2026-09-26 (D-25cr..D-25da record the fourth review pass of PR #595: a renamed-only term's
+  widened years leave out a namesake's year, the `--manual` seed's term takes the *arr's years, a season-less ledger
+  import is blocked by its exact name or keeps the series, the rollback forbids the older image's Rules-tab Arm/Disarm,
+  the Library notice keeps the watchlist note on Save, the Start-a-batch preview counts only freeable bytes and
+  mirrors the `propose` filter, the Expedite-all protected line and the Expire now outcome lines are pinned and
+  dash-free, and the stubs keep a release profile per *arr; folded into D-08, D-10, D-11, D-12, D-15, D-16, D-20 and
+  D-21; ADR-093 C-13 now holds the web delete paths with the sweep, per D-25cc, and glossary T-73 names the ADR-093
+  discipline). Prior: 2026-09-26 (D-25ca..D-25cq record the third review pass of PR #595: the D-19 overlay takes an
   add whose outcome plex.tv never confirmed and an undone remove, the web delete paths held with the sweep until S6,
   a failed Phase A cleans the *arr that failed, the upkeep checks the profile itself and also runs in the registry
   job, a sweep that throws records its pause, the seed records a term once, identity checks the external id, an
@@ -397,6 +404,10 @@ source blocks all deletion until it reads again or turns `unreadable` at 72 hour
   exclusion and revokes a Save Intent, neither of which a watchlist keep has.
 - The space policy's `minCandidates` counts deletable candidates only (not `dnd`, not watchlisted).
 - An item that is not `watchlistEvaluable` is proposed normally; the sweep decides.
+- The Start-a-batch preview (`previewTargetSelection`) mirrors the pick: `pendingCandidates` reports
+  `watchlistFiltered` (the `propose` rule, an ok run under 24 hours old), and while it is false the preview takes
+  watchlisted titles as the server will (D-25cx). Its "frees" figures count only what can go: a watchlisted title
+  frees nothing while it stays listed (`freesBytes`, D-25cw).
 
 ### D-09 — The guard at the deletion moment
 
@@ -436,11 +447,15 @@ All copy follows the owner's rules: no em dashes, no names, never whose watchlis
 - **A batch tile the sweep kept** keeps the existing `skip` glyph; its tooltip names the reason: "Kept: on a
   watchlist", "Kept: watched recently", "Kept: couldn't be checked", "Kept: no longer a candidate", "Kept: saved",
   "Kept: its release couldn't be recorded".
-- **Expedite confirm:** the protected count's breakdown includes "on a watchlist".
+- **Expedite confirm:** the protected count's breakdown includes "on a watchlist"; the protected line is
+  `EXPEDITE_PROTECTED_REASON` ("recently watched, whitelisted, or on a watchlist; they are kept."), never "Maintainerr
+  keeps" or "requested" (D-25bk, D-25cy).
 - **Expire now confirm** (D-25cm): a watchlisted pending row is a certain keep, like recently watched: it leaves "Up
-  to N will be deleted" and the typed override count, and the kept line names "on a watchlist".
+  to N will be deleted" and the typed override count, and the kept line names "on a watchlist". Its three outcome
+  labels end in a colon, never a dash (`expireConfirmLines`, D-25cz).
 - **The Library item page's Trash notice** (D-25co): a watchlisted pending title shows the tile note (bookmark, "On a
-  watchlist. It won't be deleted while it stays there.") in place of "Save it to keep it".
+  watchlist. It won't be deleted while it stays there.") in place of "Save it to keep it", and keeps it after a Save
+  (the title is still listed; the line never unmounts, D-25cv).
 - **Sweep paused** (`trash_sweep_status.paused_since` at least 6 hours old: no sweep of a due batch has succeeded for
   6 hours, for any reason, D-14): a warning banner on the Trash page for anyone with Trash access, worded by the
   reason: gate, "Deletions are paused until watchlists can be checked."; release block, "Deletions are paused until
@@ -495,7 +510,8 @@ came from disk in July and carry only the renamed file name, group, quality and 
 3. The ledger, as for movies.
 
 One record per distinct (season, release group, resolution) of the series' files, with a matching release name
-when one is known. Season 0 (specials) is skipped.
+when one is known. Season 0 (specials) is skipped. A ledger import whose name carries no season (a daily episode, a
+complete-series pack) gets an exact record per name, and one with no name or no term keeps the series (D-25ct).
 
 **No recordable term, no delete.** When a survivor's group and release name are both unknown, or D-12's self-check
 rejects every form, no term can block its release, and deleting it would let a later re-request fetch the same
@@ -518,8 +534,10 @@ titles, so the in-app self-check tests exactly what Radarr and Sonarr will run.
 2016, the ledger 2018), and a disk-imported movie's only name is Radarr's own renamed file, built from Radarr's year.
 `Y` is therefore `(?:y1|y2|…)` over the distinct years of: Radarr's `year`; its `secondaryYear`; and the year parsed
 from each known release name (the grab's `sourceTitle`, `sceneName`, `originalFilePath`, a ledger or legacy SAB
-name). When the record's only name is the renamed `relativePath`, the window is widened to year − 1 .. year + 1.
-The years are stored on the record (`years`).
+name). When the record's only name is the renamed `relativePath`, the window is widened to year − 1 .. year + 1, except
+at a year where the ledger holds another title of the same *arr with the same title tokens (The Killer 2024 next to
+The Killer 2023): that year is left out, so the term never blocks the namesake's releases (D-25cr; the S6(e) report
+counts these, `namesakeNarrowed`). The years are stored on the record (`years`).
 
 **Movie, release group known** (the usual case): the title, the year, the resolution, `remux` when the quality is
 a Remux, and the group:
@@ -731,7 +749,10 @@ that exists, in order:
   import (0 rows each), so only the legacy SAB can seed them; the dry run lists both explicitly, and if the bulk
   match misses either, it is added through `--manual` after the same size check.
 - **Remediation** (`--manual <file>`: tmdb id, title, the release's own year, release names): `origin`
-  `remediation`, `identity_source` `legacy_sab`. The names come from the legacy HaynesTower SABnzbd history (read-only
+  `remediation`, `identity_source` `legacy_sab`. The term's years also take the matched batch row's year, the
+  ledger's year for the tmdb id and Radarr's `year` / `secondaryYear` when it still has the movie, so Terrifier's term
+  is `(?:2016|2018)` as D-12 says; a batch row a manual entry covers is counted `manual.covered`, not unblockable
+  (D-25cs). The names come from the legacy HaynesTower SABnzbd history (read-only
   over `hw-ssh`), matched to `trash_batch_items.deleted_size_bytes` by size. The 2026-09-26 read of a copy gives:
   - Babygirl (2024, tmdb 1097549): `Babygirl.2024.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR`
     (55.01 GB downloaded, 53.31 GB deleted).
@@ -765,6 +786,9 @@ depends on it.
   violation makes the audit unsafe, so sweeps and Expedite refuse until it is fixed. `maintainerrCollectionSchema`
   gains the two fields (present in `GET /api/collections`). An episode pool is not held to `forceSeerr` (D-25bt):
   Maintainerr 3.29.0 never stores it on an episode collection, which the drift check already accounts for.
+- **Rolling back past this fix** brings the defect back: the older image's Rules tab toggle drops `listExclusions`
+  and `forceSeerr`, and the older audit does not check them. PLAN-072's rollback and OPS-017 §8 forbid Rules-tab
+  Arm/Disarm while the older image runs and check the flags before the sweep resumes (D-25cu).
 
 ### D-17 — Everyone's Seerr watchlist: enrollment
 
@@ -866,7 +890,8 @@ ChatGPT protects a Leaving Soon title from that moment.
   roster including a hidden-empty friend and a `User not found:` managed user; node `type` in the live upper-case
   `MOVIE` / `SHOW`), discover metadata, Seerr (users, watchlist pages, settings main GET/POST, and a switch that
   makes a user's watchlist answer Seerr's error body, 200 `{totalPages: 0, totalResults: 0, results: []}`, on any
-  page) and the *arrs (`releaseprofile`, `moviefile`, `episodefile`, `history/movie` with The Fixture's grab and
+  page) and the *arrs (`releaseprofile`, one list per *arr told apart by the distinct stub keys the stack gives
+  Radarr and Sonarr, D-25da; `moviefile`, `episodefile`, `history/movie` with The Fixture's grab and
   import linked by `downloadId` and `data.fileId`, `history/series` empty, and a GET that 404s a deleted item);
   stub Maintainerr's `GET /collections` carries the `listExclusions` / `forceSeerr` the last rule PUT stored on each
   pool, so a dropped flag makes the local audit unsafe (D-25cp).
@@ -891,7 +916,8 @@ fine.
   (D-25az, PLAN-072 S7); `[trash] sweep_pause_cleared {via}` when a pause ends without an ok sweep (D-25bf).
 - `[trash] sweep_paused {reason, step, pausedForH}` (warn) on every run with a batch due while paused, and
   `sweep_outcome {outcome, reason}` when the outcome changes (D-14).
-- `[release-block] pool_identity_read_failed {title, error}` (warn; the read-only S6(e) report, D-25bj).
+- `[release-block] pool_identity_read_failed {title, error}` (warn; the read-only S6(e) report, D-25bj);
+  `seed_manual_year_read_failed {title, error}` (warn; the seed's Radarr read of a `--manual` title's years, D-25cs).
 - `[release-block] recorded {arrKind, origin, identitySource, shape: group|exact|none, confidence}`; `reconciled
   {arrKind, total, added, removed, expired, pruned, settled, wrote, ms}`; `failed {arrKind, step}` (error; step
   `validate`, `put`, `read_back` or `duplicate_profile`); `handle_not_effective {arrKind, recordId, title}` (warn,
@@ -1102,6 +1128,16 @@ D-25bn..D-25bz those of its second review pass, and rows D-25ca..D-25cq those of
 | D-25co | The Library item page's Trash notice said "Save it to keep it" for a watchlisted pending title, while its wall tile said it won't be deleted. | `trashNoticeText` gives a watchlisted title the tile note (bookmark, "On a watchlist. It won't be deleted while it stays there.") in place of the Save line; the schedule line stays. For the driving session's copy pass. |
 | D-25cp | The dev:local stubs served empty `history/*`, so the walk only ever recorded `arr_file` identities, and stub Maintainerr always reported both rule-pool flags on, so an Arm/Disarm that dropped one never made the local audit unsafe. | Stub Radarr serves The Fixture's grab and import linked by `downloadId` and `data.fileId` 9601; stub Maintainerr's `GET /collections` carries the flags the last rule PUT stored on each pool; a stub smoke test (`lib/__tests__/stub-release-block.test.ts`) covers both. |
 | D-25cq | Hard rule 4's amendment named only the pre-delete write of the Release Block, while the single writer also runs after deletes, in the upkeep and from the seed; and ADR-093, its C-08 and glossary T-265 named one ADR-093 write-back where CLAUDE.md names the Release Block and two Seerr writes. ADR-093 C-10, PRD R-259 / AC-36 and T-74 still held an episode pool to `forceSeerr` after D-25bt. | Hard rule 4 lists every occasion (before each Trash delete, after deletes to remove abandoned terms, the upkeep in both jobs, the one-off seed) and both Seerr writes (the enrollment `settings/main` POST and the one-off `animeTags` PUT); ADR-093's Amends line and C-08 and T-265 name the same three; C-10, R-259, AC-36 and T-74 exempt an episode pool from `forceSeerr` (D-25bt). |
+| D-25cr | A renamed-only record (163 of the 170 pool movies are disk imports) widened its years to y − 1 .. y + 1 without looking at the library, so The Killer (2024)'s term covered 2023 and blocked the FLUX 2160p release (and its repack) of Fincher's The Killer (2023), a different film in the library, for 365 days; the live pool has two more such pairs (The Conference, Stolen). ADR-093 C-18 accepts over-blocking only for that title. | `deriveTerm` takes `namesakes` (the ledger's other titles of the *arr) and leaves out a widened year (never one of the *arr's own) at which one has the term's title tokens; `identifyMovie` and `identifySeries` read them from `media_items` (tombstones included, the subject's own tmdb / tvdb id excluded) only when a term is renamed-only. The record keeps `namesakeYears`; the S6(e) pool report counts `namesakeNarrowed` and lists the titles and years left out. ADR-093 C-18 says so. |
+| D-25cs | The `--manual` seed derived its term from the entry's year alone, which D-15 defines as the release's own year, so Terrifier (release 2016, Radarr and the ledger 2018) got `2016` only: its term missed the `Terrifier.2018…FraMeSToR` repost D-12 says it blocks, which S9's re-request could then fetch; and the run still counted Terrifier's batch row unblockable. | The manual term's years add the matched batch row's year, every ledger row's year for the tmdb id and Radarr's `year` / `secondaryYear` when the ledger says Radarr still has it (a failed read is `[release-block] seed_manual_year_read_failed`, and the ledger's years stand). A batch row no other source identified that a manual entry covers (a record written or already present) is `manual.covered`, not `unblockable`. |
+| D-25ct | The ledger path skipped any series import whose name has no season marker (a daily episode, a complete-series pack), so it never entered a key, the D-25bc fail-closed check never saw it, and the series still counted as identified while that release stayed re-fetchable; the live path blocks the same file through its per-name exact fallback. | `ledgerDrafts` (Sonarr) gives such an import one exact record per name (season null), and an import with no name or a name with no term fails the series closed (kept, or unblockable in the seed). Season 0 stays skipped, as on the live path. No deleted series in today's ledger has one (latent). |
+| D-25cu | PLAN-072's rollback reverts to an image whose Rules tab Arm/Disarm PUTs the group without its top-level flags, so Maintainerr 3.29.0 stores `listExclusions` and `forceSeerr` false, which the older audit never checks: after one toggle the resumed sweep would delete with no import-list exclusion and no Seerr clear, silently. | Rollback step 4 forbids Rules-tab Arm/Disarm while the older image runs (Maintainerr's own rule editor saves the whole rule), and step 6 resumes the sweep only after `GET /api/collections` shows the flags (and `arrAction`) on every active pool; OPS-017 §3 and §8 say the same. |
+| D-25cv | `trashNoticeText` dropped the watchlist note once the title was saved, so a Save on the Library page unmounted the line and the panel shrank (hard rule 9), while the walls keep the note whatever the glyph. | The note stays whenever the title is on a watchlist, saved or not (a Save does not take it off the list). For the driving session's copy pass. |
+| D-25cw | The Start-a-batch "All current candidates" option summed every non-`dnd` candidate into "frees X", though a watchlisted one frees nothing while it stays listed (the sweep keeps it); D-25y accepts the count, not the space. | `previewTargetSelection` returns `freesBytes` (the picked or snapshotted bytes that are not on a watchlist); the "All current candidates" figure, the targeted preview's "frees" and the Start button read it. The open batch wall's running header is left as it is: under the owner's standing ruling (2026-07-09, re-affirmed 2026-09-19) an item the sweep keeps by a signal of its own (recently watched, and now watchlisted) still counts as slated there, and the Expire now confirm's "up to N" covers the difference (D-25cm). |
+| D-25cx | The Start-a-batch preview read `onWatchlist` from the `display` snapshot (the newest ok run, any age) and always skipped listed titles, while `createBatchFromPending`'s `propose` gate stops filtering once that run is 24 hours old, so after a long registry outage the preview showed a different pick than the server made. | `listTrashPendingCandidates` (and `trash.pendingCandidates`) report `watchlistFiltered` (`isProposalWatchlistFiltered`, the `propose` rule without its snapshot); while it is false the preview's pick takes watchlisted titles as the server's will, and `freesBytes` still shows they free nothing. |
+| D-25cy | D-25bk's Expedite-all protected line had no test that failed without it: the "report never credits Maintainerr" assertion ran against a report that never said so, and no test rendered the confirm. | The line is `EXPEDITE_PROTECTED_REASON` (lib/trash), unit-tested (names the watchlist, "they are kept", no Maintainerr, no request, no dash), and the Trash e2e asserts the rendered confirm; the vacuous report assertion is dropped. |
+| D-25cz | The Expire now confirm's kept line, rewritten by D-25cm, still rendered "(skipped) — …" (the no-dash test covered only the constant), and its two sibling lines kept their dashes, while the Expedite-all confirm uses colons. | `expireConfirmLines` (lib/trash-batches) renders all three labels with a colon ("1 rescued item is untouched:" singular), unit-tested on the rendered text; the Trash e2e asserts no dash in the list. For the driving session's copy pass. |
+| D-25da | The dev:local / e2e stack points Radarr and Sonarr at one stub with one key, and the stub kept one release profile list, so since D-25ce / D-25cf every upkeep run's Sonarr pass read the Radarr term as drift and rewrote it away (and back), logging drift every run. | The stack gives Radarr and Sonarr their own stub keys and the stub keeps a list per key; `/_stub/release-profiles` answers `{radarr, sonarr}` (OPS-003). A stub smoke test on embedded PG runs the upkeep twice after a Radarr write: the term stays, no drift. |
 
 ## Alternatives considered
 
@@ -1158,7 +1194,9 @@ D-25bn..D-25bz those of its second review pass, and rows D-25ca..D-25cq those of
   headline; the unverifiable reason per cause. The third pass (D-25ca..D-25cq): the Expire now preview keeps a
   watchlisted pending row; a tile's kept tooltip, projected skip and note (`batchTileView`); the Library notice's
   watchlist keep; the seed's one record per term; `isSameArrTitle`; `releaseProfileDrift`; the card's exclusion
-  deadline; the env hold flag.
+  deadline; the env hold flag. The fourth pass (D-25cr..D-25da): a renamed-only term leaves out a namesake's year
+  (The Killer 2024 / 2023) but never the *arr's own; the Library notice keeps the watchlist note on Save; the
+  Start-a-batch `freesBytes` and the unfiltered pick; the Expedite-all protected line; the Expire now outcome lines.
 - **Integration (embedded Postgres, stub HTTP):** migration 0081 applies and replays; the refresh writes and carries
   forward; a Seerr stub that answers 200-empty after a non-empty read, and one whose page 2 answers the error body,
   leave the registry's items for that user unchanged; a community friend going hidden keeps their items; a sweep with
@@ -1189,7 +1227,12 @@ D-25bn..D-25bz those of its second review pass, and rows D-25ca..D-25cq those of
   (D-25cf); a pending crawl that fails for 7 hours shows the banner and the next ok sweep clears it (D-25cg); another
   title at the ledger's *arr id is never recorded and reads as gone at the settle (D-25ci); an enrollment keeps the
   user's own flags and a failed write GET records nothing (D-25cj); the registry failure lines carry `http_401`
-  (D-25ck); the stubs' Fixture history and stored pool flags (D-25cp).
+  (D-25ck); the stubs' Fixture history and stored pool flags (D-25cp). The fourth pass adds: identity of a
+  renamed-only movie and series next to a namesake in the ledger, and the pool report's `namesakeNarrowed` (D-25cr);
+  the `--manual` Terrifier term blocks the 2018-named repost, takes Radarr's secondary year and survives a failed read
+  (D-25cs); a season-less ledger import is blocked by its exact name, and a nameless one keeps the series (D-25ct);
+  `pendingCandidates` reports an unfiltered proposal after 24 hours (D-25cx); the dev:local stub keeps a Radarr term
+  through two upkeep runs with no drift (D-25da).
 - **Web:** the `previewGuardian` parity test with the new cases, a `ruleEvaluationFailed` item among them; the tile
   note and tooltip render without moving neighbours (ADR-015); the paused banner appears only after 6 hours and
   names its reason. Built as render tests (`lib/__tests__/trash-watchlist-render.test.ts`: the banner per reason and

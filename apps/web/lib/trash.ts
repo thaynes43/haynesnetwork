@@ -105,6 +105,13 @@ export function unverifiableReason(item: GuardianPreviewInput): string {
   return "it can't be checked right now";
 }
 
+/**
+ * D-25bk / D-25cy — the Expedite-all confirm's line for the protected count. The app keeps these (the guardian, the
+ * Watchlist Keep), not Maintainerr, and a request is no keep (informational since 2026-07-09), so the line never says
+ * "Maintainerr keeps" or "requested".
+ */
+export const EXPEDITE_PROTECTED_REASON = 'recently watched, whitelisted, or on a watchlist; they are kept.';
+
 /** D-25by — the Expedite-all confirm's line for the unverifiable count (every cause, one sentence). */
 export const EXPEDITE_UNVERIFIABLE_REASON =
   "not in our ledger, their watchlists can't be checked right now, or Maintainerr couldn't check their rules, so they are skipped, never deleted.";
@@ -691,8 +698,9 @@ export const WATCHLIST_BREAKDOWN_TERM = 'on a watchlist';
 /**
  * DESIGN-052 D-10 / D-25co — the Library item page's Trash notice text for a pending item. A saved item keeps the save
  * wording; a watchlisted one says the watchlist keeps it (the sweep and Expedite keep it while it stays listed, so
- * "Save it to keep it" would be untrue) with the tile's note; a slated one offers the Save. Copy for the driving
- * session's pass.
+ * "Save it to keep it" would be untrue) with the tile's note; a slated one offers the Save. D-25cv — the note stays on
+ * a saved watchlisted item: a Save does not take it off the watchlist, the walls keep the note whatever the glyph, and
+ * unmounting the line on Save would reflow the panel (hard rule 9). Copy for the driving session's pass.
  */
 export function trashNoticeText(input: {
   on: boolean;
@@ -701,11 +709,12 @@ export function trashNoticeText(input: {
   sizeLabel: string;
 }): { meta: string; watchlistNote: string | null } {
   const rule = input.ruleTitle ?? 'deletion';
+  const watchlistNote = input.onWatchlist ? WATCHLIST_NOTE_DETAIL : null;
   if (input.on) {
-    return { meta: 'Maintainerr will keep this item — un-saving puts it back under its deletion rules.', watchlistNote: null };
+    return { meta: 'Maintainerr will keep this item — un-saving puts it back under its deletion rules.', watchlistNote };
   }
   if (input.onWatchlist) {
-    return { meta: `Maintainerr’s “${rule}” rule flagged it.`, watchlistNote: WATCHLIST_NOTE_DETAIL };
+    return { meta: `Maintainerr’s “${rule}” rule flagged it.`, watchlistNote };
   }
   return {
     meta: `Maintainerr’s “${rule}” rule flagged it — deleting frees ${input.sizeLabel}. Save it to keep it.`,
