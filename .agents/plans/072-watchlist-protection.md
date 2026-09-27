@@ -11,8 +11,8 @@
   released (PR #587), image and cosign `.sig` in GHCR. S4 done: haynes-ops #3223 merged 2026-09-27T01:18Z, with every
   CronJob suspend and resume of the rollout in git (DESIGN-052 D-25db). **S6 (a)..(g) passed live on v0.101.0
   (2026-09-27, log below); S6(h) is open** (a day of registry runs, from 2026-09-27T01:22Z). S6(e)'s one defect (345
-  Sonarr and 3 Radarr ledger names the terms matched only folded) is fixed by DESIGN-052 D-25dd (PR "fix(trash):
-  release-block terms match apostrophes and accents; PLAN-072 S6 results"). S6a answered by the owner (D-25de).
+  Sonarr and 3 Radarr ledger names the terms matched only folded) is fixed by DESIGN-052 D-25dd (PR #599). S6a
+  answered by the owner (D-25de).
   **Before the resume PR:** S6(h) passes, S0's final cross-check of batch `08576e59` runs, and the release carrying
   D-25dd is deployed (before S7 where possible, before S8 in any case: the seed derives its terms from the ledger's
   real names).

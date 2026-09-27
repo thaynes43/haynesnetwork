@@ -13,9 +13,8 @@ roster; the gate verifies; the pool (164 movies, TV 0) holds no listed title and
 Seerr source equals a direct read (Q-03); the Maintainerr flags and audit are safe. **S6(e) found one defect:** 345 of
 19,434 Sonarr ledger names and 3 of 1,159 Radarr names keep an apostrophe, an accent or `&`, and their D-12 terms
 matched them only folded, which Sonarr and Radarr (testing the raw title) would not block. **Fix:** DESIGN-052 D-25dd,
-the PR "fix(trash): release-block terms match apostrophes and accents; PLAN-072 S6 results" (an apostrophe inside a
-word is an optional separator, an accented letter an alternation, an inner `and` optional; `foldOnly` 348 → 0 over
-the ledger, shapes unchanged; tests from real ledger names). The same PR records S6 in PLAN-072, answers DESIGN-052
+PR #599 (an apostrophe inside a word is an optional separator, an accented letter an alternation, an inner `and`
+optional; `foldOnly` 348 → 0 over the ledger, shapes unchanged; tests from real ledger names). The same PR records S6 in PLAN-072, answers DESIGN-052
 Q-01 (owner: leave managed users out, D-25de), Q-03, Q-05 and Q-12 (Q-13 not asked: 2 of 164 kept, D-25df), corrects
 D-25q's split to 21 / 21 (D-25dg) and adds ADR-093 C-22 (a renamed-only term blocks about 92% of real names, D-25dh).
 
