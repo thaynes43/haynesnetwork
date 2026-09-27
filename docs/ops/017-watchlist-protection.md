@@ -2,7 +2,7 @@
 
 - **Status:** Active (2026-09-26) — the operating record from PLAN-072 S4 on (haynesnetwork v0.101.0, haynes-ops
   #3223: the registry CronJob, the held sweep and web delete paths, the Loki alerts); S6..S9 fill in the live
-  evidence. Written with PLAN-072 S2 (PR #595).
+  evidence (S6 (a)..(g) passed 2026-09-27, PLAN-072's log). Written with PLAN-072 S2 (PR #595).
 - **Scope:** operating the Watchlist Registry (`--mode=watchlist-registry` and its CronJob), the Registry Gate and the
   paused sweep, the Release Block (the app-owned Radarr / Sonarr release profile), the re-add page, and the three
   operator scripts: the S6(e) pool report, the S8 seed and the S9 Seerr enrollment.
@@ -147,8 +147,10 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/seerr-watchlist.ts
 
 - **`--pool`** prints, per kind, the pool size, the items recordable and their records by shape (`group` / `exact` /
   `none`), confidence and identity source, the records with no release group (Q-12), the fold-only terms (`foldOnly`
-  and `foldOnlyShare`: a real release name with an apostrophe, an accent or `&` that the term matches only when folded,
-  which Radarr and Sonarr will not block, D-25bq), the renamed-only terms whose widened year window left out a year
+  and `foldOnlyShare`: a real release name the term matches only when folded, which Radarr and Sonarr will not block,
+  D-25bq; since D-25dd and D-25di the terms write the raw apostrophes, accents, `&` and the double-escaped `&amp;` and
+  `&#39;`, so a non-zero count means a character the grammar cannot write, such as a decomposed accent inside a word
+  or a doubled apostrophe), the renamed-only terms whose widened year window left out a year
   another title of the same name holds (`namesakeNarrowed` and `namesakes`, titles and years: The Killer 2024 next to
   The Killer 2023, D-25cr), and the items D-11 would keep `release_unrecorded` with their reasons and share
   (`unrecordedShare`, Q-13). It needs `MAINTAINERR_API_KEY` too.
@@ -177,7 +179,10 @@ wholesale `git revert` of the S4 change), remove the `haynesnetwork-sync-watchli
 `suspend: true` in an earlier change), since the older image rejects `--mode=watchlist-registry` (exit 2) and would
 fail a Job every 15 minutes, and remove the D-21 Loki alerts, which go silent with the older image. Leave the
 release profiles in place unless the block itself is the problem, and delete them only once no running image
-reconciles them. Resume the sweep, when PLAN-072 step 6 allows it, with a haynes-ops PR that sets its
+reconciles them. Once a record holds a D-25dd or D-25di term (from PLAN-072 S7 or the S8 seed on), never revert to
+v0.101.0, the only earlier image with the Release Block writer: its grammar check refuses those terms, so its writer
+refuses every profile write (`ReleaseBlockError` `validate`) and the block stops updating until they are gone
+(DESIGN-052 D-25di). Resume the sweep, when PLAN-072 step 6 allows it, with a haynes-ops PR that sets its
 `suspend: false`.
 
 While the older image runs, arm or disarm a Trash rule only in Maintainerr's own rule editor, never from the app's
