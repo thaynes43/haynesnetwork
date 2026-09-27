@@ -312,6 +312,18 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       'ai-usage-sync seed',
     );
 
+    // ADR-093 / DESIGN-052 D-20 — record a verified Watchlist Registry run by RUNNING the real watchlist-registry mode
+    // against the stub plex.tv / community / Seerr (roster → owner list → community + Seerr per account), so the
+    // Registry Gate verifies and Expedite / Expire now can delete. Specs that delete re-run it (it is fresh for 30
+    // minutes, the gate's bound).
+    await runToCompletion(
+      join(cwd, 'node_modules', '.bin', 'tsx'),
+      [join(cwd, '..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'), '--mode=watchlist-registry'],
+      { ...process.env, ...env },
+      cwd,
+      'watchlist-registry seed',
+    );
+
     // ADR-045 / DESIGN-023 — seed the authentik_users mirror by RUNNING the real authentik-users sync
     // against the stub Authentik (exercises client → normalizer → single-writer, exactly like prod), so
     // /admin/users renders the directory on first load without needing the Refresh button.

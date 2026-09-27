@@ -17,7 +17,7 @@ mutating surface is import-guarded (D-18, ADR-008 enforceability):
 |---|---|---|
 | `@hnet/arr` (root, `src/index.ts`) | `errors`, `config`, `schemas/*` — no HTTP client | anywhere (safe: types + env contract + error taxonomy only) |
 | `@hnet/arr/read` (`src/read.ts`) | `SonarrClient` / `RadarrClient` / `LidarrClient` / `SeerrClient`, `arrReadClientsFromEnv` | any read consumer — `@hnet/sync`, `ledger.children`, `restore.diff` |
-| `@hnet/arr/write` (`src/write.ts`) | `*WriteClient`, `arrWriteClientsFromEnv` — mark-failed, file deletes, `command` search, add-item, create-tag | **`packages/domain` ONLY** (the fix/restore orchestrators) |
+| `@hnet/arr/write` (`src/write.ts`) | `*WriteClient`, `arrWriteClientsFromEnv` — mark-failed, file deletes, `command` search, add-item, create-tag; ADR-093 (DESIGN-052 D-13, D-17): the Radarr / Sonarr release-profile methods (`listReleaseProfiles`, `createReleaseProfile`, `updateReleaseProfile`, the Release Block) and `SeerrWriteClient` (`setWatchlistSync`: one user's `settings/main`; `setSonarrAnimeTags`: Seerr's own Sonarr-server settings, the whole object echoed and read back) | **`packages/domain` ONLY** (the fix/restore orchestrators, the Release Block writer, the Seerr enrollment) |
 
 `@hnet/arr/write` being domain-only is not a convention — it is enforced by the static
 scan in `packages/domain/__tests__/arr-write-import-guard.test.ts`, which greps the whole
@@ -63,6 +63,10 @@ Two options size a latency-bound caller (DESIGN-051 D-15g, D-15p):
   (the MCP's `tmdbOnce`, `set_watchlist`'s TMDB fallback, which must answer inside the 9 s deadline, and every
   tool's TMDB check made while the pool already has an answer, D-15aa). `@hnet/plex`'s `PlexHttp` has the same
   option (D-15ab).
+- `retryStatus` (default: 502 / 503 / 504) and `retryBackoffMs` (default: `retryDelayMs` before every retry): which
+  HTTP statuses a GET retries and how long it waits before retry `attempt`. The Watchlist Registry's Seerr and
+  plex.tv reads retry 429 and every 5xx, backing off 2 s × attempt (DESIGN-052 D-25ab); `@hnet/plex`'s `PlexHttp`
+  takes the same two options.
 - `timeoutCoversBody` (default off): the per-attempt timer also covers the 2xx body, which is
   buffered under it and handed back as a new `Response`, so a stalled body is an `ArrTimeoutError`
   at the attempt's bound. The MCP's TMDB searches turn it on. It is not the default because the
@@ -127,4 +131,6 @@ URLs are non-secret and default to in-cluster service DNS
 (`ARR_CLUSTER_URL_DEFAULTS`); local dev overrides with the LAN ingresses. API keys are
 **required** (no default) and secret — a single `ArrConfigError` names every absent
 variable. `arrReadClientsFromEnv` builds all four clients; `arrWriteClientsFromEnv` builds
-three (Seerr is read-only — no write client).
+three (Sonarr, Radarr, Lidarr). Seerr's write client, `SeerrWriteClient` (ADR-093: watchlist-sync
+enrollment and the one-off `animeTags` preflight on Seerr's Sonarr-server settings), is built on
+its own by the domain's enrollment (`seerrEnrollClientsFromEnv`), never by this factory.

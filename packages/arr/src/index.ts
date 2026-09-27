@@ -10,3 +10,6 @@ export * from './errors';
 export * from './redact';
 export * from './config';
 export * from './schemas/index';
+
+// ADR-093 / DESIGN-052 D-02 — the Watchlist Registry's retryable statuses (429 and every 5xx).
+export { registryRetryStatus } from './http';

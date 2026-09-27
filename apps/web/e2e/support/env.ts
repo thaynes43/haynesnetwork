@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ADMIN_EMAIL, STUB_CLIENT_ID, STUB_CLIENT_SECRET } from './stub-oidc';
 import { STUB_BAZARR_API_KEY } from './stub-bazarr';
+import { STUB_RADARR_API_KEY, STUB_SONARR_API_KEY } from './stub-arr';
 import { STUB_PLEX_TOKENS } from './stub-plex';
 import { STUB_MAINTAINERR_API_KEY } from './stub-maintainerr';
 import { STUB_GATUS_ENDPOINT_KEY } from './stub-gatus';
@@ -73,6 +74,8 @@ export interface RuntimeEnv {
   PLEX_TV_URL: string;
   /** ADR-089 / DESIGN-049 (PLAN-068) — the plex.tv discover provider (the watchlist), also the stub Plex. */
   PLEX_DISCOVER_URL: string;
+  /** ADR-093 / DESIGN-052 D-20 — community.plex.tv GraphQL (the stub Plex serves `/api`). */
+  PLEX_COMMUNITY_URL: string;
   /** ADR-068 / ADR-088 (PLAN-068 S3) — the three Tautulli instances, all pointed at the one stub Tautulli
    *  (distinct keys tell them apart, like the Plex tokens). Consumers: the watch-history sync, the
    *  metadata-refresh harvest, and the home play scoreboard (kept hidden — see stub-tautulli.ts). */
@@ -219,8 +222,9 @@ export function composeRuntimeEnv(opts: {
     RADARR_URL: opts.stubArrBaseUrl,
     LIDARR_URL: opts.stubArrBaseUrl,
     SEERR_URL: opts.stubArrBaseUrl,
-    SONARR_API_KEY: STUB_ARR_API_KEY,
-    RADARR_API_KEY: STUB_ARR_API_KEY,
+    // DESIGN-052 D-25da — Radarr and Sonarr get their own keys, so the one stub keeps a release profile per *arr.
+    SONARR_API_KEY: STUB_SONARR_API_KEY,
+    RADARR_API_KEY: STUB_RADARR_API_KEY,
     LIDARR_API_KEY: STUB_ARR_API_KEY,
     SEERR_API_KEY: STUB_ARR_API_KEY,
     BAZARR_URL: opts.stubBazarrBaseUrl,
@@ -236,6 +240,7 @@ export function composeRuntimeEnv(opts: {
     PLEX_HAYNESKUBE_TOKEN: STUB_PLEX_TOKENS.hayneskube,
     PLEX_TV_URL: opts.stubPlexBaseUrl,
     PLEX_DISCOVER_URL: opts.stubPlexBaseUrl,
+    PLEX_COMMUNITY_URL: opts.stubPlexBaseUrl,
     STUB_TAUTULLI_URL: opts.stubTautulliBaseUrl,
     TAUTULLI_URL: opts.stubTautulliBaseUrl,
     TAUTULLI_API_KEY: STUB_TAUTULLI_API_KEYS.haynesops,

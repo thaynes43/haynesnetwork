@@ -71,11 +71,14 @@ import { RESOLUTION_LABELS, formatBytes, formatDay, formatWhen } from '@/lib/med
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
 import {
   candidatesAsOfLabel,
+  EXPEDITE_PROTECTED_REASON,
+  EXPEDITE_UNVERIFIABLE_REASON,
   expediteErrorAction,
   overviewBadge,
   reclaimLabel,
   sweepTimeLabel,
   windowClosed,
+  WATCHLIST_BREAKDOWN_TERM,
 } from '@/lib/trash';
 
 export type { TrashAccess };
@@ -375,7 +378,10 @@ function PendingTab({
     deletableBytes: 0,
     protected: 0,
     unverifiable: 0,
+    watchlisted: 0,
   };
+  // ADR-093 / DESIGN-052 D-10 — the watchlisted share of `protected` (an older server omits it ⇒ 0).
+  const watchlistedCount = (partition as { watchlisted?: number }).watchlisted ?? 0;
 
   // ── the sort bar (shared nextSort/arrowFor cycle over SORT_COLUMNS) ──
   const clickCycle = Object.fromEntries(
@@ -621,17 +627,26 @@ function PendingTab({
             <ul className="ledger-confirm__outcomes">
               <li>
                 <strong className="trash-danger-text">
-                  {partition.deletable} will be deleted NOW
+                  {partition.deletable} will be deleted NOW:
                 </strong>{' '}
-                — immediate and permanent, freeing {formatBytes(partition.deletableBytes)}.
+                immediate and permanent, freeing {formatBytes(partition.deletableBytes)}.
               </li>
               <li>
-                <strong>{partition.protected} protected</strong> — recently watched, requested, or
-                whitelisted; Maintainerr keeps them.
+                <strong>{partition.protected} protected:</strong> {EXPEDITE_PROTECTED_REASON}
+                {watchlistedCount > 0 ? (
+                  <>
+                    {' '}
+                    Includes{' '}
+                    <strong data-testid="trash-expedite-watchlisted">
+                      {watchlistedCount} {WATCHLIST_BREAKDOWN_TERM}
+                    </strong>
+                    .
+                  </>
+                ) : null}
               </li>
               <li>
-                <strong>{partition.unverifiable} kept — can’t be verified safe</strong> — unknown to
-                the ledger, so they are skipped, never deleted.
+                <strong>{partition.unverifiable} kept, can’t be verified safe:</strong>{' '}
+                {EXPEDITE_UNVERIFIABLE_REASON}
               </li>
             </ul>
             {partition.deletable === 0 ? (

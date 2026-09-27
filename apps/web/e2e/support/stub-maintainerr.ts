@@ -22,6 +22,7 @@
 //   POST /_stub/remove-pending → 204; body { mediaServerId } — drop it from its collection (empty a
 //                               kind for the Overview "nothing pending" card / suppressed-zero badge).
 import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { clearStubArrDeleted, markStubArrDeleted } from './stub-arr-state';
 
 export interface RecordedMaintainerrWrite {
   method: string;
@@ -150,7 +151,17 @@ function freshRules(): Array<Record<string, unknown>> {
       isActive: true,
       dataType: 'movie',
       libraryId: '1',
-      collection: { id: 7, libraryId: '1', deleteAfterDays: 30, radarrSettingsId: 3, sonarrSettingsId: null },
+      // ADR-093 / DESIGN-052 D-16 — the live pool's flags live under `collection` (GET /api/rules nests them).
+      collection: {
+        id: 7,
+        libraryId: '1',
+        deleteAfterDays: 30,
+        radarrSettingsId: 3,
+        sonarrSettingsId: null,
+        arrAction: 0,
+        listExclusions: true,
+        forceSeerr: true,
+      },
       rules: [
         {
           id: 1,
@@ -243,6 +254,7 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         calls.length = 0;
         exclusions.clear();
         handled.clear();
+        clearStubArrDeleted();
         disconnected.clear();
         manualCollections.clear();
         nextManualCollectionId = 900;
@@ -320,7 +332,11 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         if (method === 'POST' && path === '/collections/media/handle') {
           // The per-item delete trigger (the ONLY one expedite may use — C-07a): the item
           // leaves its collection so a pending refetch shows it gone.
-          handled.add(String((body as { mediaId?: unknown })?.mediaId ?? ''));
+          const mediaId = String((body as { mediaId?: unknown })?.mediaId ?? '');
+          handled.add(mediaId);
+          // ADR-093 / DESIGN-052 D-20 — the delete reaches the *arr: the stub *arr now 404s the item.
+          const deleted = collections.flatMap((c) => c.items).find((i) => i.mediaServerId === mediaId);
+          if (deleted) markStubArrDeleted(deleted);
           return json(res, 201, {});
         }
         if (method === 'POST' && path === '/collections/handle') {
@@ -456,10 +472,20 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
                 exclusions.clear(); // specific exclusions wiped
               }
               // Store the merge, re-encoding rules to the DB shape so a subsequent GET (re-arm) again
-              // exercises the decode.
+              // exercises the decode. (4) Like Maintainerr 3.29.0 `updateRules`, the top-level-only flags are
+              // stored on the COLLECTION from the PUT's top level, reset when absent (ADR-093 C-10 / DESIGN-052 D-16).
+              const flags = body as Record<string, unknown>;
+              const collection = {
+                ...((stored.collection as Record<string, unknown> | undefined) ?? {}),
+                arrAction: flags.arrAction ? flags.arrAction : 0,
+                listExclusions: flags.listExclusions ? true : false,
+                forceSeerr: flags.forceSeerr ? true : false,
+                radarrSettingsId: flags.radarrSettingsId ?? null,
+                sonarrSettingsId: flags.sonarrSettingsId ?? null,
+              };
               rules = rules.map((r) =>
                 r.id === dto.id
-                  ? { ...r, ...(body as object), rules: encodeRules(dto.id as number, dtoRules) }
+                  ? { ...r, ...(body as object), collection, rules: encodeRules(dto.id as number, dtoRules) }
                   : r,
               );
             }
@@ -518,17 +544,27 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
           });
         case path === '/collections':
           return json(res, 200, [
-            ...collections.map((c) => ({
-              id: c.id,
-              title: c.title,
-              isActive: c.isActive,
-              deleteAfterDays: c.deleteAfterDays,
-              arrAction: c.arrAction ?? 0, // rule pool — DELETE (aging audit reads this)
-              manualCollection: false,
-              type: c.type,
-              libraryId: c.libraryId,
-              media: [], // the list serves a PREVIEW subset — content is the paged endpoint
-            })),
+            ...collections.map((c) => {
+              // ADR-093 / DESIGN-052 D-16 / D-25cp — the flags a rule PUT stored on this pool's collection (the rule group
+              // whose `collection.id` is this pool), so an Arm/Disarm that dropped one makes the dev:local safety audit
+              // unsafe, as it would the live one. A pool no rule group names keeps the seeded `true`.
+              const stored = rules.find(
+                (r) => (r.collection as { id?: unknown } | undefined)?.id === c.id,
+              )?.collection as { listExclusions?: unknown; forceSeerr?: unknown } | undefined;
+              return {
+                id: c.id,
+                title: c.title,
+                isActive: c.isActive,
+                deleteAfterDays: c.deleteAfterDays,
+                arrAction: c.arrAction ?? 0, // rule pool — DELETE (aging audit reads this)
+                manualCollection: false,
+                listExclusions: stored?.listExclusions === undefined ? true : stored.listExclusions === true,
+                forceSeerr: stored?.forceSeerr === undefined ? true : stored.forceSeerr === true,
+                type: c.type,
+                libraryId: c.libraryId,
+                media: [], // the list serves a PREVIEW subset — content is the paged endpoint
+              };
+            }),
             // ADR-025 — surface the created Leaving-Soon collections so the drive can re-read their id
             // by title (the pending derivation skips them by title, so they never inflate the tables).
             ...[...manualCollections].map(([id, mc]) => ({

@@ -13,6 +13,7 @@ import {
 } from '@hnet/domain';
 import {
   bootMigratedDb,
+  seedWatchlistRegistry,
   caller,
   createUser,
   makeCtx,
@@ -63,7 +64,17 @@ function stubMaintainerr(state: MaintState): MaintainerrClientBundle {
     if (method === 'GET' && path === '/collections') {
       if (state.counters) state.counters.collectionsReads += 1;
       // Aging audit reads arrAction/manualCollection; default a rule collection (0 / false) unless set.
-      return ok(state.collections.map((c) => ({ arrAction: 0, manualCollection: false, ...c, media: [] })));
+      // ADR-093 / DESIGN-052 D-16 — a rule pool carries listExclusions + forceSeerr (the invariant requires both).
+      return ok(
+        state.collections.map((c) => ({
+          arrAction: 0,
+          manualCollection: false,
+          listExclusions: true,
+          forceSeerr: true,
+          ...c,
+          media: [],
+        })),
+      );
     }
     const cm = path.match(/^\/collections\/media\/(\d+)\/content\/(\d+)$/);
     if (method === 'GET' && cm) {
@@ -133,6 +144,7 @@ describe('trash router — section + per-action gating (ADR-023 C-03)', () => {
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedWatchlistRegistry(t.db);
     userRow = await createUser(t.db, { email: 'trash-gate@example.com' });
   });
   afterAll(async () => t?.stop());
@@ -231,6 +243,7 @@ describe('trash router — happy paths (ADR-023 D-02/D-04/D-05)', () => {
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedWatchlistRegistry(t.db);
     adminRow = await createUser(t.db, { email: 'trash-admin@example.com', admin: true });
     await upsertMediaItemsBatch({
       db: t.db,
@@ -416,6 +429,7 @@ describe('trash router — paginated pending wall + future-batch strip (owner-di
 
   beforeAll(async () => {
     t = await bootMigratedDb();
+    await seedWatchlistRegistry(t.db);
     adminRow = await createUser(t.db, { email: 'trash-paging@example.com', admin: true });
   });
   afterAll(async () => t?.stop());

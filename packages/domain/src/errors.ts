@@ -245,6 +245,138 @@ export class TrashMusicUnsupportedError extends Error {
 }
 
 // ---------------------------------------------------------------------------
+// ADR-093 / DESIGN-052 D-07 (PLAN-072) — the Registry Gate refused a deletion.
+// ---------------------------------------------------------------------------
+
+/** Why the Registry Gate refused a `delete` (D-07): no ok refresh within 30 minutes, or a readable source of a
+ *  current account is `never_read` or has been failing past its 24-hour carry. */
+export type RegistryGateRefusal = 'stale' | 'account_unverified';
+
+/** The Registry Gate refusal's user-facing wording (the Trash banner's `gate` copy, D-10 / D-25u). */
+export const WATCHLIST_GATE_PAUSED_MESSAGE = 'Deletions are paused until watchlists can be checked.';
+
+/**
+ * ADR-093 C-04 / DESIGN-052 D-07: a destructive Trash path (the batch sweep, the manual Expire now, Expedite item and
+ * all) asked the Registry Gate for a `delete` snapshot and the watchlists could not be verified. Nothing is deleted.
+ * The scheduled sweep catches it and returns a clean `paused` report (D-14); every other path surfaces it as
+ * PRECONDITION_FAILED with the banner's wording (the reason stays on the error and the gate's log line). `blocking` counts the sources that blocked (`account_unverified`); `ageMin` is
+ * the newest ok refresh's age (null when there is none). Never carries a name or a title.
+ */
+export class WatchlistRegistryUnverifiedError extends Error {
+  readonly code = 'WATCHLIST_REGISTRY_UNVERIFIED' as const;
+  constructor(
+    readonly reason: RegistryGateRefusal,
+    readonly detail: { ageMin: number | null; blocking: number },
+  ) {
+    // D-25u / D-25bv — the message IS the banner's wording, nothing more: the reason and its detail ride on the error's
+    // fields and on the gate's own log line (`[watchlist-registry] gate {reason, ageMin, blocking}`), never in the copy.
+    super(WATCHLIST_GATE_PAUSED_MESSAGE);
+  }
+}
+
+/** D-25cc — the copy the user sees when the web delete paths are held (PLAN-072 S4..S6). */
+export const TRASH_WEB_DELETES_HELD_MESSAGE =
+  'Deleting from Trash is on hold while watchlist protection is being verified. Nothing was deleted.';
+
+/**
+ * ADR-093 / DESIGN-052 D-25cc / PLAN-072 S4: Expedite (item and all) and the manual Expire now refuse while the web pod
+ * runs with `TRASH_WEB_DELETES_HELD` set, the web half of holding every real deletion until the live verification (S6)
+ * is green; the sweep CronJob is suspended for the other half. Nothing was read or deleted. PRECONDITION_FAILED.
+ */
+export class TrashWebDeletesHeldError extends Error {
+  readonly code = 'TRASH_WEB_DELETES_HELD' as const;
+  constructor() {
+    super(TRASH_WEB_DELETES_HELD_MESSAGE);
+  }
+}
+
+/** D-25cc — `TRASH_WEB_DELETES_HELD` is on for `1`, `true` or `yes` (any case); anything else, or absent, is off. */
+export function trashWebDeletesHeldFromEnv(env: Record<string, string | undefined> = process.env): boolean {
+  const v = env.TRASH_WEB_DELETES_HELD?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
+
+/** D-25av — Expedite's *arr-down refusal, the copy the user sees. */
+export const RELEASE_IDENTITY_UNAVAILABLE_MESSAGE =
+  'Radarr or Sonarr did not answer, so nothing was deleted. Try again when the media apps respond normally.';
+
+/**
+ * ADR-093 C-07 / DESIGN-052 D-14 / D-25ai / D-25bu: Expedite's identity reads failed three times in a row (Radarr or
+ * Sonarr did not answer), so nothing was recorded, blocked or deleted. Its own appCode (never the Fix path's
+ * ARR_UPSTREAM_UNAVAILABLE, whose copy says a request "was recorded as failed"); BAD_GATEWAY on the wire.
+ */
+export class ReleaseIdentityUnavailableError extends Error {
+  readonly code = 'RELEASE_BLOCK_ARR_UNAVAILABLE' as const;
+  constructor() {
+    super(RELEASE_IDENTITY_UNAVAILABLE_MESSAGE);
+  }
+}
+
+/**
+ * DESIGN-052 D-14 — the web `expire` mutation (the manual Expire now) ran a sweep that PAUSED cleanly: the Registry
+ * Gate refused (`gate`), or — PLAN-072 S2 part 2 — the Release Block could not be written and read back
+ * (`release_block`). Nothing was deleted and no status row was written (the scheduled sweep owns it). Surfaced as
+ * PRECONDITION_FAILED with the banner's wording; `step` is the reason code.
+ */
+export class TrashSweepPausedError extends Error {
+  readonly code = 'TRASH_SWEEP_PAUSED' as const;
+  constructor(
+    readonly reason: 'gate' | 'release_block',
+    readonly step: string,
+  ) {
+    super(
+      reason === 'gate'
+        ? WATCHLIST_GATE_PAUSED_MESSAGE
+        : 'Deletions are paused until removals can be done safely.',
+    );
+  }
+}
+
+/** DESIGN-052 D-13 / D-21 — where the Release Block writer failed: a term outside the grammar (`validate`), the
+ *  profile write (`put`, including its GET), the read-back (`read_back`), or a copied profile (`duplicate_profile`). */
+export type ReleaseBlockStep = 'validate' | 'put' | 'read_back' | 'duplicate_profile';
+
+/**
+ * ADR-093 C-07 / DESIGN-052 D-13 / D-14: the Release Block (the app's "must not contain" release profile on Radarr or
+ * Sonarr) could not be written and read back before a delete. Nothing is deleted this time: the in-flight records turn
+ * `abandoned`. The scheduled sweep returns a clean `paused_release_block` report; Expedite and the manual Expire now
+ * answer PRECONDITION_FAILED with the banner's wording. Carries the *arr and the step, never a term or a title.
+ */
+export class ReleaseBlockError extends Error {
+  readonly code = 'RELEASE_BLOCK_FAILED' as const;
+  /**
+   * D-25cd — the profile write may have reached the *arr: a `read_back` failure (the write answered), or a `put` whose
+   * POST or PUT was sent and whose answer was lost or refused. False for `validate`, `duplicate_profile` and a `put`
+   * that failed on the profile list GET before any write was sent.
+   */
+  readonly mayHaveWritten: boolean;
+  constructor(
+    readonly arrKind: 'radarr' | 'sonarr',
+    readonly step: ReleaseBlockStep,
+    options?: { cause?: unknown; sent?: boolean },
+  ) {
+    super('Deletions are paused until removals can be done safely.', options);
+    this.mayHaveWritten = step === 'read_back' || (step === 'put' && options?.sent !== false);
+  }
+}
+
+/**
+ * ADR-093 C-10 / DESIGN-052 D-16: after a rule-group save, a read-back of the group found the safety-relevant flags
+ * (`listExclusions`, `forceSeerr`, `arrAction`, the server ids, `deleteAfterDays`) not as intended. The save may have
+ * landed partly; the admin sees the failure and the Maintainerr safety audit catches the state. Surfaced as
+ * BAD_GATEWAY. `fields` names the drifted flags (never a value).
+ */
+export class MaintainerrRuleDriftError extends Error {
+  readonly code = 'MAINTAINERR_RULE_DRIFT' as const;
+  constructor(
+    readonly ruleGroupId: number,
+    readonly fields: string[],
+  ) {
+    super(`The rule was saved, but Maintainerr did not keep these settings: ${fields.join(', ')}.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ADR-025 / DESIGN-011 — Trash curation pipeline (batch state machine) errors.
 // ---------------------------------------------------------------------------
 

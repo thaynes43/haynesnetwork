@@ -46,16 +46,19 @@ import {
   TARGET_STRATEGIES,
   TARGET_STRATEGY_LABELS,
   batchStateTone,
+  batchTileView,
   countdownCopy,
+  expireConfirmLines,
+  expirePreview,
   forceExpireConfirmMatches,
   previewTargetSelection,
+  sweepAbortCopy,
   sweepReportRows,
   tileTappable,
   wallCounts,
   wallGlyph,
   wallInteractive,
   wallSection,
-  PROJECTED_SKIP_MEANING,
   type BatchItemStateName,
   type BatchStateName,
   type TargetCandidate,
@@ -117,6 +120,10 @@ interface BatchItemWire {
    * Display only. Treated as `null` when absent, so an older server keeps every tile slated.
    */
   inLivePool: boolean | null;
+  /** ADR-093 / DESIGN-052 D-10 — why the sweep kept a `skipped` row (the kept tooltip); null / absent otherwise. */
+  keepReason?: string | null;
+  /** D-10 — on a watchlist (the newest registry check): the "On a watchlist" note. Absent ⇒ false (older server). */
+  onWatchlist?: boolean;
 }
 
 /** The pending-candidate fields the new-candidates diff + the Start-a-batch target preview read (a
@@ -131,6 +138,8 @@ interface PendingCandidate {
   imdbRating: number | null;
   tmdbRating: number | null;
   protectedByTag: boolean;
+  /** ADR-093 / DESIGN-052 D-08 — a targeted batch leaves a watchlisted candidate out. */
+  onWatchlist?: boolean;
 }
 
 interface SafetyLike {
@@ -146,45 +155,6 @@ const windowStillOpen = (expiresAt: string | null): boolean =>
 
 /** The kind → `?from=` key so a poster-nav returns to THIS tab (Part 2). */
 const fromKeyFor = (kind: 'movie' | 'tv'): string => (kind === 'movie' ? 'trash-movies' : 'trash-tv');
-
-function tileLabel(
-  title: string,
-  glyph: WallGlyph,
-  tappable: boolean,
-  savedByName: string | null,
-  armed = false,
-  projectedSkip = false,
-): string {
-  // A PROJECTED skip (a still-`pending` row the live pool no longer holds) announces a different
-  // fact from a row the sweep actually skipped — the sweep never ran on it (amendment (b)).
-  if (projectedSkip) return `${title} ${PROJECTED_SKIP_MEANING}`;
-  // ADR-014 (2026-09-14) — an ARMED tile is mid-release: say what the second tap does and what it
-  // costs. Both release glyphs land the title back in the deletion pool, so the consequence clause
-  // is identical; only the verb differs (un-save your own save vs un-protect a live exclusion).
-  if (armed)
-    return glyph === 'check'
-      ? `Tap again to un-protect ${title} — it goes back on the deletion list`
-      : `Tap again to un-save ${title} — it goes back on the deletion list`;
-  switch (glyph) {
-    case 'trash':
-      return tappable
-        ? `${title} is slated to delete — tap to save it`
-        : `${title} is slated to delete`;
-    case 'shield':
-      if (tappable) return `${title} is saved — tap to un-save it`;
-      return savedByName !== null ? `${title} — saved by ${savedByName}` : `${title} is saved`;
-    case 'check':
-      // ADR-025 errata — a protected batch item is held by a live exclusion; tap un-protects it (removes
-      // the exclusion, then re-classifies to pending). Inert copy is kept for read-only phases.
-      return tappable
-        ? `${title} is protected — tap to un-protect it`
-        : `${title} is protected — already safe from deletion`;
-    case 'skip':
-      return `${title} was kept — it couldn’t be verified safe, so it was never deleted`;
-    case 'gone':
-      return `${title} was deleted`;
-  }
-}
 
 /**
  * One batch-wall tile. It exists as a component (rather than inline in the wall's map) because it
@@ -226,7 +196,9 @@ function BatchTile({
   }, [needsConfirm]);
   const armed = release.armed && needsConfirm;
   const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
-  const label = tileLabel(item.title, glyph, tappable, savedByName, armed, projectedSkip);
+  // ADR-093 / DESIGN-052 D-10 / D-25cn — the label, the kept tooltip ("Kept: on a watchlist") and the watchlist note,
+  // derived in lib/trash-batches (unit-tested) so the tile only renders them.
+  const view = batchTileView({ item, glyph, projectedSkip, tappable, savedByName, armed });
   const rating = formatRating(ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating));
   // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone (recently watched) or muted
   // (watched a while ago); null with no watch signal. NEVER in the action corner.
@@ -245,8 +217,8 @@ function BatchTile({
         tappable,
         // A saved/protected tile reads "pressed" (kept); a slated pending tile is not pressed.
         pressed: glyph === 'shield' || glyph === 'check',
-        label,
-        title: label,
+        label: view.label,
+        title: view.title,
         busy,
         armed,
         onTap: needsConfirm ? release.trigger : () => onTap(item),
@@ -264,6 +236,7 @@ function BatchTile({
       metaText={`${item.sizeBytes > 0 ? formatBytes(item.sizeBytes) : '—'}${rating !== null ? ` · ★ ${rating}` : ''}`}
       requesters={item.requesters}
       watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
+      onWatchlist={view.onWatchlist}
     />
   );
 }
@@ -581,6 +554,7 @@ interface SweepBatchWire {
   handleErrors: number;
   raceSkipped: number;
   aborted: boolean;
+  abortReason?: 'handle_breaker' | 'arr_identity' | null;
 }
 
 function ExpireModal({
@@ -634,11 +608,9 @@ function ExpireModal({
   // be skipped (the sweep's own `!fresh` branch), so it leaves "up to N delete", joins "at least K
   // skipped", and leaves the typed-confirm count with them. `null`/`true` stay countable: unknown
   // always reads as slated, the conservative side.
-  const pending = items.filter((i) => i.state === 'pending');
-  const willDelete = pending.filter(
-    (i) => !i.recentlyWatched && i.mediaItemId !== null && i.inLivePool !== false,
-  ).length;
-  const willKeep = pending.length - willDelete;
+  // DESIGN-052 D-25cm — a watchlisted row is a certain keep too (the Watchlist Keep); the derivation lives in
+  // lib/trash-batches (`expirePreview`, unit-tested).
+  const { willDelete, willKeep } = expirePreview(items);
   const savedCount = batch.counts.saved;
   const daysLeft = daysUntil(batch.expiresAt);
   // DESIGN-011 amendment (2026-07-09) — the concrete next-sweep time, so the closed-window submit tooltip
@@ -646,6 +618,8 @@ function ExpireModal({
   const sweepLabel = sweepTimeLabel(batch.expiresAt);
   // Mid-window force ⇒ require a TYPED confirmation (the word DELETE or the delete count) before arming.
   const typedOk = !windowOpen || forceExpireConfirmMatches(typed, willDelete);
+  // D-25bw — what stopped an aborted batch (Maintainerr's handle breaker, or Radarr / Sonarr before any delete).
+  const abortCopy = result !== null ? sweepAbortCopy(result) : null;
 
   return (
     <Modal
@@ -680,11 +654,9 @@ function ExpireModal({
         </div>
       ) : result !== null ? (
         <div className="trash-confirm" data-testid="batch-expire-report">
-          {result.aborted ? (
+          {abortCopy !== null ? (
             <p className="alert" data-testid="batch-expire-aborted">
-              <strong>Batch not finished</strong> — Maintainerr failed mid-run, so the sweep stopped
-              early with the partial results below. The batch stays in Leaving Soon and will resume
-              on the next sweep.
+              <strong>{abortCopy.lead}</strong> {abortCopy.detail}
             </p>
           ) : null}
           <p className="ledger-report__summary" data-testid="batch-expire-summary">
@@ -739,23 +711,14 @@ function ExpireModal({
             via Restore.
           </p>
           <ul className="ledger-confirm__outcomes">
-            <li>
-              <strong className="trash-danger-text">
-                Up to {willDelete} item{willDelete === 1 ? '' : 's'} will be deleted
-              </strong>{' '}
-              — each is re-checked fresh first (live whitelist + the watch guardian); only
-              verified-cold items delete.
-            </li>
-            <li>
-              <strong>
-                {savedCount} rescued item{savedCount === 1 ? '' : 's'} are untouched
-              </strong>{' '}
-              — a save is permanent protection.
-            </li>
-            <li>
-              <strong>At least {willKeep} will be kept (skipped)</strong> — recently watched, no
-              longer in the trash pool, unverifiable, or guardian-protected at sweep time.
-            </li>
+            {expireConfirmLines({ willDelete, savedCount, willKeep }).map((line) => (
+              <li key={line.key}>
+                <strong className={line.key === 'delete' ? 'trash-danger-text' : undefined}>
+                  {line.label}
+                </strong>{' '}
+                {line.detail}
+              </li>
+            ))}
           </ul>
           {windowOpen ? (
             <label className="form-row batch-force-confirm" data-testid="batch-expire-typed-row">
@@ -814,6 +777,7 @@ function StartBatchModal({
   kind,
   label,
   candidates,
+  watchlistFiltered,
   caps,
   onClose,
 }: {
@@ -821,6 +785,8 @@ function StartBatchModal({
   label: string;
   /** The LIVE actionable pending rows (maintainerrMediaId present) — the preview source. */
   candidates: TargetCandidate[];
+  /** DESIGN-052 D-25cx — whether the server's pick would leave watchlisted titles out (a registry run under 24 h). */
+  watchlistFiltered: boolean;
   /** The space-policy per-kind caps (DESIGN-014 amendment 2026-07-09, build A) — PRE-FILL the picker
    *  when an admin has configured them; absent ⇒ the plain defaults (all candidates / 20 GB). */
   caps?: {
@@ -859,12 +825,11 @@ function StartBatchModal({
   const targetBytes = useSize && gbValid ? Math.round(gbNum * BYTES_PER_GB) : undefined;
   const maxItems = useCount && maxValid ? maxNum : undefined;
 
-  // The default "all" batch snapshots every actionable item; only tag-unprotected items free space.
+  // The default "all" batch snapshots every actionable item; only items neither tag-protected nor on a watchlist free
+  // space (the sweep keeps a watchlisted one while it stays listed, DESIGN-052 D-25cw).
   const allCount = candidates.length;
-  const freeableBytes = candidates
-    .filter((c) => !c.protectedByTag)
-    .reduce((n, c) => n + c.sizeBytes, 0);
-  const preview = previewTargetSelection(candidates, { targetBytes, maxItems, strategy });
+  const freeableBytes = previewTargetSelection(candidates, { watchlistFiltered }).freesBytes;
+  const preview = previewTargetSelection(candidates, { targetBytes, maxItems, strategy, watchlistFiltered });
 
   const plural = (n: number) => (n === 1 ? '' : 's');
   const capsChosen = (useSize && gbValid) || (useCount && maxValid);
@@ -991,7 +956,7 @@ function StartBatchModal({
               {capsChosen
                 ? preview.poolCount === 0
                   ? 'No deletable candidates to target — everything pending is protected.'
-                  : `≈ ${preview.count} item${plural(preview.count)} · frees ${formatBytes(preview.bytes)} (of ${preview.poolCount} candidate${plural(preview.poolCount)} · ${formatBytes(preview.poolBytes)} available)`
+                  : `≈ ${preview.count} item${plural(preview.count)} · frees ${formatBytes(preview.freesBytes)} (of ${preview.poolCount} candidate${plural(preview.poolCount)} · ${formatBytes(preview.poolBytes)} available)`
                 : 'Pick a size and/or item cap (both stop at whichever hits first).'}
             </p>
           </div>
@@ -1008,7 +973,7 @@ function StartBatchModal({
               ? 'Starting…'
               : mode === 'all'
                 ? `Start with ${allCount} item${plural(allCount)}`
-                : `Start — free ~${formatBytes(preview.bytes)}`}
+                : `Start — free ~${formatBytes(preview.freesBytes)}`}
           </button>
           <button type="button" className="btn" disabled={create.isPending} onClick={onClose}>
             Cancel
@@ -1513,6 +1478,7 @@ export function KindTab({
     imdbRating: p.imdbRating,
     tmdbRating: p.tmdbRating,
     protectedByTag: p.protectedByTag,
+    onWatchlist: p.onWatchlist === true,
   }));
 
   const kindNoun = kind === 'movie' ? 'movie' : 'TV';
@@ -1588,6 +1554,7 @@ export function KindTab({
           kind={kind}
           label={label}
           candidates={pendingCandidates}
+          watchlistFiltered={candidates.data?.watchlistFiltered !== false}
           caps={kindCaps}
           onClose={() => setShowStart(false)}
         />

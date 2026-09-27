@@ -3,6 +3,7 @@
 // safety-critical parts of the wall are unit-testable exactly like lib/trash.ts is for the
 // pending walls. The server verdict is always authoritative — these mirror the wire contract
 // (trash.batches.*), never re-implement it.
+import { keptReasonTooltip } from './trash';
 
 /** Mirrors @hnet/db TRASH_BATCH_STATES (keep in lockstep — the client can't import server pkgs). */
 export const BATCH_STATES = [
@@ -311,14 +312,20 @@ export interface TargetCandidate {
   imdbRating: number | null;
   tmdbRating: number | null;
   protectedByTag: boolean;
+  /** ADR-093 / DESIGN-052 D-08 — on a watchlist: a TARGETED batch leaves it out (it takes no slot). */
+  onWatchlist?: boolean;
 }
 
 export interface TargetPreview {
   /** Items the greedy pick would take (server re-picks authoritatively — this is advisory). */
   count: number;
-  /** Their summed frozen size — the batch's "frees X". */
+  /** Their summed frozen size. */
   bytes: number;
-  /** Deletable candidates available to target (tag-protected items free nothing, so they're excluded). */
+  /** DESIGN-052 D-25cw — of `bytes`, what the batch can free: a watchlisted title stays while it is listed (the sweep
+   *  keeps it), so it frees nothing. The "frees X" figures read this, never `bytes`. */
+  freesBytes: number;
+  /** Candidates the pick draws from (tag-protected items free nothing, so they're excluded; so are watchlisted ones
+   *  while a batch created now is filtered by the watchlist). */
   poolCount: number;
   poolBytes: number;
 }
@@ -327,6 +334,10 @@ export interface TargetSpec {
   targetBytes?: number;
   maxItems?: number;
   strategy?: TargetStrategy;
+  /** DESIGN-052 D-25cx — would a batch created now leave watchlisted titles out (the server's `propose` gate filters
+   *  only with a registry run under 24 hours old)? When false the server's pick takes them, so the preview's does
+   *  too. Absent ⇒ filtered (an older server). */
+  watchlistFiltered?: boolean;
 }
 
 /**
@@ -338,11 +349,24 @@ export function previewTargetSelection(
   candidates: readonly TargetCandidate[],
   spec: TargetSpec,
 ): TargetPreview {
-  const deletable = candidates.filter((c) => !c.protectedByTag);
+  // An untargeted batch snapshots every non-`dnd` candidate as pending (a watchlisted one too — the sweep keeps
+  // it); a targeted batch picks only from the candidates that can free space: not `dnd`, not on a watchlist
+  // (mirrors selectBatchCandidates, DESIGN-052 D-08) — unless the server's proposal is unfiltered (D-25cx).
+  const pending = candidates.filter((c) => !c.protectedByTag);
+  const filtered = spec.watchlistFiltered !== false;
+  const deletable = filtered ? pending.filter((c) => c.onWatchlist !== true) : pending;
   const poolBytes = deletable.reduce((n, c) => n + c.sizeBytes, 0);
+  const frees = (items: readonly TargetCandidate[]) =>
+    items.filter((c) => c.onWatchlist !== true).reduce((n, c) => n + c.sizeBytes, 0);
   const capped = spec.targetBytes !== undefined || spec.maxItems !== undefined;
   if (!capped) {
-    return { count: deletable.length, bytes: poolBytes, poolCount: deletable.length, poolBytes };
+    return {
+      count: pending.length,
+      bytes: pending.reduce((n, c) => n + c.sizeBytes, 0),
+      freesBytes: frees(pending),
+      poolCount: deletable.length,
+      poolBytes,
+    };
   }
   const strategy = spec.strategy ?? 'largest';
   const ranked = [...deletable].sort((a, b) => {
@@ -357,14 +381,162 @@ export function previewTargetSelection(
   });
   let count = 0;
   let bytes = 0;
+  const picked: TargetCandidate[] = [];
   for (const item of ranked) {
     count += 1;
     bytes += item.sizeBytes;
+    picked.push(item);
     const hitTarget = spec.targetBytes !== undefined && bytes >= spec.targetBytes;
     const hitCap = spec.maxItems !== undefined && count >= spec.maxItems;
     if (hitTarget || hitCap) break;
   }
-  return { count, bytes, poolCount: deletable.length, poolBytes };
+  return { count, bytes, freesBytes: frees(picked), poolCount: deletable.length, poolBytes };
+}
+
+/** The fields of a batch row the Expire now preview reads (a subset of the batch detail wire row). */
+export interface ExpirePreviewItem {
+  state: BatchItemStateName;
+  recentlyWatched: boolean;
+  mediaItemId: string | null;
+  inLivePool?: boolean | null;
+  /** ADR-093 / DESIGN-052 D-10 — on a watchlist at the newest registry check (absent ⇒ false, an older server). */
+  onWatchlist?: boolean;
+}
+
+/**
+ * DESIGN-011 D-07 amendment (c) / DESIGN-052 D-25cm — the Expire now confirm's honest preview over the batch's
+ * remaining `pending` rows (the sweep's only candidates): the rows the sweep is certain to keep leave "up to N will be
+ * deleted", join "at least K will be kept", and leave the typed-confirm count with them. Certain keeps: recently
+ * watched (the guardian), not in our ledger (unverifiable), known absent from the live pool, and on a watchlist (the
+ * Watchlist Keep). Unknown always reads as slated, the conservative side.
+ */
+export function expirePreview(items: ReadonlyArray<ExpirePreviewItem>): { willDelete: number; willKeep: number } {
+  const pending = items.filter((i) => i.state === 'pending');
+  const willDelete = pending.filter(
+    (i) => !i.recentlyWatched && i.mediaItemId !== null && i.inLivePool !== false && i.onWatchlist !== true,
+  ).length;
+  return { willDelete, willKeep: pending.length - willDelete };
+}
+
+/** D-25cm — the reasons the Expire now confirm gives for "at least K will be kept" (for the driving session's copy pass). */
+export const EXPIRE_KEPT_REASONS =
+  'recently watched, on a watchlist, no longer in the trash pool, unverifiable, or guardian-protected at sweep time.';
+
+/** One outcome line of the Expire now confirm: the bold label and the sentence after it. */
+export interface ExpireConfirmLine {
+  key: 'delete' | 'rescued' | 'kept';
+  label: string;
+  detail: string;
+}
+
+/**
+ * D-25cz — the Expire now confirm's three outcome lines, rendered as they read: the label ends in a colon, never an em
+ * dash (the owner's copy rules, D-10), as the Expedite-all confirm's "will be deleted NOW:" and "protected:" do.
+ */
+export function expireConfirmLines(counts: {
+  willDelete: number;
+  savedCount: number;
+  willKeep: number;
+}): ExpireConfirmLine[] {
+  const { willDelete, savedCount, willKeep } = counts;
+  return [
+    {
+      key: 'delete',
+      label: `Up to ${willDelete} item${willDelete === 1 ? '' : 's'} will be deleted:`,
+      detail:
+        'each is re-checked fresh first (live whitelist + the watch guardian); only verified-cold items delete.',
+    },
+    {
+      key: 'rescued',
+      label: `${savedCount} rescued item${savedCount === 1 ? ' is' : 's are'} untouched:`,
+      detail: 'a save is permanent protection.',
+    },
+    { key: 'kept', label: `At least ${willKeep} will be kept (skipped):`, detail: EXPIRE_KEPT_REASONS },
+  ];
+}
+
+/** The inputs one batch-wall tile's label, tooltip and note derive from (DESIGN-011 D-07, DESIGN-052 D-10). */
+export interface BatchTileViewInput {
+  item: { title: string; state: BatchItemStateName; keepReason?: string | null; onWatchlist?: boolean };
+  glyph: WallGlyph;
+  /** This `skip` is the pool PROJECTION over a still-`pending` row, not a swept `skipped` row. */
+  projectedSkip: boolean;
+  tappable: boolean;
+  savedByName: string | null;
+  armed: boolean;
+}
+
+/**
+ * DESIGN-052 D-10 / D-25aa / D-25w / D-25cn — what one batch-wall tile says: its aria label, its hover title (a swept
+ * `skipped` row's "Kept: …" reason, never a projected skip's), and whether it carries the "On a watchlist" note (every
+ * row but a deleted one).
+ */
+export function batchTileView(input: BatchTileViewInput): {
+  label: string;
+  title: string;
+  keptTooltip: string | null;
+  onWatchlist: boolean;
+} {
+  const { item, glyph, projectedSkip } = input;
+  const keptTooltip = glyph === 'skip' && !projectedSkip ? keptReasonTooltip(item.keepReason) : null;
+  const label = batchTileLabel(
+    item.title,
+    glyph,
+    input.tappable,
+    input.savedByName,
+    input.armed,
+    projectedSkip,
+    keptTooltip,
+  );
+  return {
+    label,
+    title: keptTooltip ?? label,
+    keptTooltip,
+    onWatchlist: item.onWatchlist === true && item.state !== 'deleted',
+  };
+}
+
+/** One batch-wall tile's aria label (the glyph's meaning for this title, this viewer and this phase). */
+export function batchTileLabel(
+  title: string,
+  glyph: WallGlyph,
+  tappable: boolean,
+  savedByName: string | null,
+  armed = false,
+  projectedSkip = false,
+  keptTooltip: string | null = null,
+): string {
+  // A PROJECTED skip (a still-`pending` row the live pool no longer holds) announces a different
+  // fact from a row the sweep actually skipped — the sweep never ran on it (amendment (b)).
+  if (projectedSkip) return `${title} ${PROJECTED_SKIP_MEANING}`;
+  // ADR-014 (2026-09-14) — an ARMED tile is mid-release: say what the second tap does and what it
+  // costs. Both release glyphs land the title back in the deletion pool, so the consequence clause
+  // is identical; only the verb differs (un-save your own save vs un-protect a live exclusion).
+  if (armed)
+    return glyph === 'check'
+      ? `Tap again to un-protect ${title} — it goes back on the deletion list`
+      : `Tap again to un-save ${title} — it goes back on the deletion list`;
+  switch (glyph) {
+    case 'trash':
+      return tappable
+        ? `${title} is slated to delete — tap to save it`
+        : `${title} is slated to delete`;
+    case 'shield':
+      if (tappable) return `${title} is saved — tap to un-save it`;
+      return savedByName !== null ? `${title} — saved by ${savedByName}` : `${title} is saved`;
+    case 'check':
+      // ADR-025 errata — a protected batch item is held by a live exclusion; tap un-protects it (removes
+      // the exclusion, then re-classifies to pending). Inert copy is kept for read-only phases.
+      return tappable
+        ? `${title} is protected — tap to un-protect it`
+        : `${title} is protected — already safe from deletion`;
+    case 'skip':
+      // ADR-093 / DESIGN-052 D-10 — a swept `skipped` row names why the sweep kept it.
+      if (keptTooltip !== null) return `${title}. ${keptTooltip}`;
+      return `${title} was kept — it couldn’t be verified safe, so it was never deleted`;
+    case 'gone':
+      return `${title} was deleted`;
+  }
 }
 
 /**
@@ -386,6 +558,29 @@ export interface SweepBatchResult {
   handleErrors: number;
   raceSkipped: number;
   aborted: boolean;
+  /** Why an aborted batch stopped (DESIGN-052 D-25r / D-25ai): Maintainerr's handle breaker, or the Release Block's
+   *  Radarr / Sonarr identity reads (before anything was deleted). Null when it finished. */
+  abortReason?: 'handle_breaker' | 'arr_identity' | null;
+}
+
+/**
+ * DESIGN-052 D-25bw — the Expire report's "not finished" banner, by what stopped the batch (null when it finished).
+ * An `arr_identity` abort happens BEFORE any delete and never involves Maintainerr, so it must not blame it.
+ */
+export function sweepAbortCopy(result: SweepBatchResult): { lead: string; detail: string } | null {
+  if (!result.aborted) return null;
+  if (result.abortReason === 'arr_identity') {
+    return {
+      lead: 'Nothing was deleted:',
+      detail:
+        'Radarr or Sonarr did not answer. The batch stays in Leaving Soon and will try again on the next sweep.',
+    };
+  }
+  return {
+    lead: 'Batch not finished',
+    detail:
+      '— Maintainerr failed mid-run, so the sweep stopped early with the partial results below. The batch stays in Leaving Soon and will resume on the next sweep.',
+  };
 }
 
 export interface SweepReportRow {

@@ -425,6 +425,13 @@ export const SYNC_RUN_KINDS = [
   // It joins SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0077 rebuilds the
   // sync_runs.run_kind CHECK for parity).
   'watch',
+  // ADR-093 / DESIGN-052 D-20 (PLAN-072 — watchlist protection) — 'watchlist-registry' reads every watchlist the app
+  // can reach (the owner's discover list, community.plex.tv for friends and full Home members, Seerr per user) into
+  // the Watchlist Registry the Registry Gate and the Watchlist Keep read. READ-ONLY against plex.tv and Seerr.
+  // Standalone mode: no --source, writes NO sync_runs row (its trail is watchlist_registry_runs). It joins
+  // SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0081 rebuilds the sync_runs.run_kind
+  // CHECK for parity).
+  'watchlist-registry',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -811,6 +818,10 @@ export const APP_SETTING_KEYS = [
   // invariants first). No env tier (unlike the governor there is no pre-existing env contract). migration
   // 0075 relaxes the CHECK.
   'arr_queue_cleanup_config',
+  // ADR-093 C-11 / DESIGN-052 D-17 (PLAN-072) — the audited Seerr watchlist enrollment switch (jsonb object:
+  // { enabled, onlyUserIds }). Absent ⇒ off. Read by the watchlist-registry mode's enrollment step; written only
+  // through setAppSetting. migration 0081 relaxes the CHECK.
+  'seerr_watchlist_enroll',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 
@@ -1384,3 +1395,115 @@ export const OAUTH_AUDIT_EVENTS = [
   'family_revoked_on_reuse',
 ] as const;
 export type OAuthAuditEvent = (typeof OAUTH_AUDIT_EVENTS)[number];
+
+// ---------------------------------------------------------------------------
+// ADR-093 / DESIGN-052 D-05 (PLAN-072 — watchlist protection for Trash and the Release Block, migration 0081).
+// Each const array is the single source of truth for its TS type AND its SQL CHECK (DESIGN-001 D-02).
+// ---------------------------------------------------------------------------
+
+/** watchlist_registry_runs.trigger — who started a refresh (D-04, D-07): the CronJob, the sweep's inline refresh,
+ *  or a person running the mode by hand. */
+export const WATCHLIST_REGISTRY_TRIGGERS = ['schedule', 'sweep', 'manual'] as const;
+export type WatchlistRegistryTrigger = (typeof WATCHLIST_REGISTRY_TRIGGERS)[number];
+
+/** watchlist_registry_runs.status (D-04). Only an `ok` run can verify the Registry Gate (D-07). */
+export const WATCHLIST_REGISTRY_RUN_STATUSES = ['running', 'ok', 'failed'] as const;
+export type WatchlistRegistryRunStatus = (typeof WATCHLIST_REGISTRY_RUN_STATUSES)[number];
+
+/** watchlist_registry_runs.failure (D-04): the roster read failed, the owner's list failed or was truncated, or an
+ *  unexpected error ended the run (`error`, DESIGN-052 D-25). */
+export const WATCHLIST_REGISTRY_RUN_FAILURES = ['roster', 'owner', 'owner_truncated', 'error'] as const;
+export type WatchlistRegistryRunFailure = (typeof WATCHLIST_REGISTRY_RUN_FAILURES)[number];
+
+/** watchlist_registry_accounts.class (D-01). */
+export const WATCHLIST_ACCOUNT_CLASSES = [
+  'owner',
+  'home_full',
+  'home_managed',
+  'friend',
+  'seerr_only',
+] as const;
+export type WatchlistAccountClass = (typeof WATCHLIST_ACCOUNT_CLASSES)[number];
+
+/** watchlist_registry_accounts.status — derived from the account's sources (D-04). */
+export const WATCHLIST_ACCOUNT_STATUSES = [
+  'never_read',
+  'read',
+  'carried',
+  'unresolvable',
+  'unreadable',
+] as const;
+export type WatchlistAccountStatus = (typeof WATCHLIST_ACCOUNT_STATUSES)[number];
+
+/** The read paths of D-02 (`switch` is the managed-user Home switch, disabled until Q-01). */
+export const WATCHLIST_SOURCES = ['discover', 'community', 'seerr', 'switch'] as const;
+export type WatchlistSource = (typeof WATCHLIST_SOURCES)[number];
+
+/** watchlist_registry_sources.status — the per-(account, source) state machine (D-04). */
+export const WATCHLIST_SOURCE_STATUSES = [
+  'never_read',
+  'read',
+  'carried',
+  'unreadable',
+  'not_applicable',
+] as const;
+export type WatchlistSourceStatus = (typeof WATCHLIST_SOURCE_STATUSES)[number];
+
+/** watchlist_registry_sources.last_outcome — what one read of one source came to (D-04 outcome rules). */
+export const WATCHLIST_SOURCE_OUTCOMES = ['ok', 'failed', 'not_applicable'] as const;
+export type WatchlistSourceOutcome = (typeof WATCHLIST_SOURCE_OUTCOMES)[number];
+
+/** The two title kinds a watchlist holds (the discover provider's `movie` / `show`). */
+export const WATCHLIST_ITEM_KINDS = ['movie', 'show'] as const;
+export type WatchlistItemKind = (typeof WATCHLIST_ITEM_KINDS)[number];
+
+/** trash_batch_items.keep_reason — why the sweep kept a batch item (D-05, D-09, D-14). The guardian's four
+ *  reasons, the two pre-guardian skips, and the release that could not be recorded (D-11). */
+export const TRASH_KEEP_REASONS = [
+  'tag',
+  'recently_watched',
+  'watchlisted',
+  'unevaluable',
+  'not_in_pool',
+  'live_excluded',
+  'release_unrecorded',
+] as const;
+export type TrashKeepReason = (typeof TRASH_KEEP_REASONS)[number];
+
+/** trash_deleted_releases.arr_kind — the Release Block covers Radarr and Sonarr only (D-13). */
+export const DELETED_RELEASE_ARR_KINDS = ['radarr', 'sonarr'] as const;
+export type DeletedReleaseArrKind = (typeof DELETED_RELEASE_ARR_KINDS)[number];
+
+/** trash_deleted_releases.identity_source — where a Deleted-Release Record's identity came from (D-11, D-15). */
+export const DELETED_RELEASE_IDENTITY_SOURCES = [
+  'arr_grab_history',
+  'arr_file',
+  'ledger_grab',
+  'legacy_sab',
+  'none',
+] as const;
+export type DeletedReleaseIdentitySource = (typeof DELETED_RELEASE_IDENTITY_SOURCES)[number];
+
+/** trash_deleted_releases.term_confidence (D-12): `low_confidence` when the only name was the *arr's own renamed
+ *  file, so the self-check cannot validate the term. */
+export const DELETED_RELEASE_TERM_CONFIDENCES = ['verified', 'low_confidence'] as const;
+export type DeletedReleaseTermConfidence = (typeof DELETED_RELEASE_TERM_CONFIDENCES)[number];
+
+/** trash_deleted_releases.state (D-13, D-14): recorded before the delete (`in_flight`), `active` once the *arr no
+ *  longer has the item, `abandoned` when the delete did not happen, `expired` / `pruned` when it ages out. */
+export const DELETED_RELEASE_STATES = ['in_flight', 'active', 'abandoned', 'expired', 'pruned'] as const;
+export type DeletedReleaseState = (typeof DELETED_RELEASE_STATES)[number];
+
+/** trash_deleted_releases.origin (D-11, D-15). */
+export const DELETED_RELEASE_ORIGINS = ['sweep', 'expedite', 'backfill', 'remediation'] as const;
+export type DeletedReleaseOrigin = (typeof DELETED_RELEASE_ORIGINS)[number];
+
+/** trash_sweep_status.last_outcome — how the scheduled sweep of a due batch ended (D-14). */
+export const TRASH_SWEEP_OUTCOMES = [
+  'ok',
+  'paused_gate',
+  'paused_release_block',
+  'paused_audit_unsafe',
+  'aborted_arr',
+] as const;
+export type TrashSweepOutcome = (typeof TRASH_SWEEP_OUTCOMES)[number];

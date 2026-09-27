@@ -30,6 +30,9 @@ export const radarrMovieSchema = z.object({
   title: z.string(),
   sortTitle: z.string(),
   year: z.number().int(),
+  /** ADR-093 / DESIGN-052 D-12 — Radarr's alternative year (21 of the 170 pool movies carry one); the Release Block's
+   *  term takes it into its year alternation. */
+  secondaryYear: z.number().int().nullish(),
   tmdbId: z.number().int(), // always set (D-02 external-id identity)
   imdbId: z.string().optional(),
   monitored: z.boolean(),

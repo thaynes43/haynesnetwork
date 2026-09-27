@@ -21,6 +21,7 @@ import { inTransaction, resolveDb } from './db-client';
 import { activeBatchStrategy, getAppSetting } from './app-settings';
 import { compareByStrategy, type BatchStrategy } from './trash-strategy';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
+import { isProposalWatchlistFiltered, readDisplayWatchlistSnapshot } from './watchlist-registry';
 import {
   bucketFlatPendingForMedia,
   classifyForExpedite,
@@ -107,6 +108,8 @@ export async function refreshTrashCandidates(input: {
             tvdbId: f.tvdbId,
             sizeBytes: f.sizeBytes,
             addDate: f.addDate,
+            plexGuid: f.plexGuid,
+            ruleEvaluationFailed: f.ruleEvaluationFailed,
           })),
         );
       }
@@ -235,6 +238,8 @@ export async function readCandidateSnapshot(input: {
       tvdbId: r.tvdbId,
       sizeBytes: r.sizeBytes,
       addDate: r.addDate,
+      plexGuid: r.plexGuid,
+      ruleEvaluationFailed: r.ruleEvaluationFailed,
     })),
   };
 }
@@ -282,6 +287,9 @@ export interface TrashExpeditePreview {
   deletableBytes: number;
   protected: number;
   unverifiable: number;
+  /** ADR-093 / DESIGN-052 D-10 — how many of `protected` are kept because they are on a watchlist (the confirm's
+   *  "on a watchlist" breakdown). A subset of `protected`, never added to it. */
+  watchlisted: number;
 }
 
 export interface TrashPendingPage {
@@ -425,7 +433,13 @@ function pendingFacets(items: readonly TrashPendingItem[]): TrashPendingFacets {
 export function partitionPendingForExpedite(
   items: readonly TrashPendingItem[],
 ): TrashExpeditePreview {
-  const out: TrashExpeditePreview = { deletable: 0, deletableBytes: 0, protected: 0, unverifiable: 0 };
+  const out: TrashExpeditePreview = {
+    deletable: 0,
+    deletableBytes: 0,
+    protected: 0,
+    unverifiable: 0,
+    watchlisted: 0,
+  };
   for (const i of items) {
     const verdict = classifyForExpedite(i);
     if (verdict === 'deletable') {
@@ -435,6 +449,7 @@ export function partitionPendingForExpedite(
       out.unverifiable += 1;
     } else {
       out.protected += 1;
+      if (verdict === 'protected_watchlist') out.watchlisted += 1;
     }
   }
   return out;
@@ -454,6 +469,9 @@ async function materializeSnapshotPending(input: {
     media: input.media,
     flat: snap.flat,
     watchWindowDays: input.watchWindowDays,
+    // ADR-093 / DESIGN-052 D-06 / D-10 — the walls and the Expedite preview evaluate against the newest ok registry
+    // run (`display`); with none at all every item reads not evaluable (the preview counts it kept, never deletable).
+    watchlist: await readDisplayWatchlistSnapshot({ db: input.db }),
   });
   return { ...shaped, refreshedAt: snap.refreshedAt };
 }
@@ -555,6 +573,9 @@ export interface TrashPendingCandidate {
   imdbRating: number | null;
   tmdbRating: number | null;
   protectedByTag: boolean;
+  /** ADR-093 / DESIGN-052 D-08 — on a watchlist (the newest ok registry run): a targeted batch leaves it out, so the
+   *  Start-a-batch preview does too. */
+  onWatchlist: boolean;
 }
 
 /**
@@ -569,8 +590,17 @@ export async function listTrashPendingCandidates(input: {
   maintainerr: Pick<MaintainerrClientBundle, 'read'>;
   media: TrashMedia;
   watchWindowDays?: number;
-}): Promise<{ candidates: TrashPendingCandidate[]; count: number; refreshedAt: string }> {
+}): Promise<{
+  candidates: TrashPendingCandidate[];
+  count: number;
+  refreshedAt: string;
+  /** D-25cx — would a batch created now leave watchlisted titles out (the `propose` gate filters only with an ok run
+   *  under 24 hours old)? When false, the preview's pick takes them, as the server's will; `onWatchlist` still says
+   *  which ones the sweep would keep. */
+  watchlistFiltered: boolean;
+}> {
   const base = await materializeSnapshotPending(input);
+  const watchlistFiltered = await isProposalWatchlistFiltered({ db: input.db });
   const candidates = base.items
     .filter((i): i is TrashPendingItem & { maintainerrMediaId: string } => i.maintainerrMediaId !== null)
     .map((i) => ({
@@ -583,8 +613,14 @@ export async function listTrashPendingCandidates(input: {
       imdbRating: i.imdbRating,
       tmdbRating: i.tmdbRating,
       protectedByTag: i.protectedByTag,
+      onWatchlist: i.onWatchlist,
     }));
-  return { candidates, count: candidates.length, refreshedAt: base.refreshedAt.toISOString() };
+  return {
+    candidates,
+    count: candidates.length,
+    refreshedAt: base.refreshedAt.toISOString(),
+    watchlistFiltered,
+  };
 }
 
 /**

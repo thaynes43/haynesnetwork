@@ -5,6 +5,7 @@
 // them out of the Trash tabs). Reserved height in every state (ADR-015): the banner
 // recolors between loading/safe/warn/down, it never appears/disappears under the page.
 import type { ReactNode } from 'react';
+import { SWEEP_PAUSED_COPY, type TrashSweepBannerName } from '@/lib/trash';
 
 /** Structural mirror of the trash.status wire shape (DESIGN-010 D-08) — the client
  *  never imports server packages. */
@@ -18,6 +19,9 @@ export interface SafetyStatus {
   /** DESIGN-010 errata (2026-07-09) — human reasons Maintainerr could self-delete a pool outside
    *  the app pipeline (short delete-after horizon / wrong arrAction). Non-empty ⇒ unsafe. */
   agingViolations?: string[];
+  /** ADR-093 / DESIGN-052 D-10 — set only when no scheduled sweep of a due batch has succeeded for 6 hours: why
+   *  deletions are paused. Absent / null ⇒ no banner (a shorter pause is routine). */
+  sweepPause?: TrashSweepBannerName | null;
 }
 
 const INTEGRATION_LABELS: Record<string, string> = {
@@ -75,6 +79,15 @@ export function SafetyBanner({
         </span>
       );
     }
+  } else if (status.sweepPause) {
+    // ADR-093 / DESIGN-052 D-10 — deletions have been paused for 6 hours or more. Shown in the banner's own reserved
+    // row (a recolor, never a new row under the page — ADR-015); Maintainerr trouble above takes precedence.
+    state = 'warn';
+    body = (
+      <span data-testid="trash-sweep-paused" data-reason={status.sweepPause}>
+        <strong>{SWEEP_PAUSED_COPY[status.sweepPause]}</strong>
+      </span>
+    );
   } else {
     state = 'safe';
     body = (

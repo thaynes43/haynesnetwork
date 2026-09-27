@@ -23,6 +23,7 @@ import {
   daysLeftTone,
   daysUntil,
   lastWatchedLabel,
+  trashNoticeText,
   type TrashActionName,
 } from '@/lib/trash';
 import { ItemExpediteModal } from '@/components/trash-expedite';
@@ -139,6 +140,27 @@ export function EyeGlyph() {
     >
       <path d="M3 12s3.2-5.5 9-5.5S21 12 21 12s-3.2 5.5-9 5.5S3 12 3 12Z" />
       <circle cx="12" cy="12" r="2.4" />
+    </svg>
+  );
+}
+
+/** ADR-093 / DESIGN-052 D-10 — the watchlist BOOKMARK: the title is on a watchlist, so the sweep keeps it while it
+ *  stays there (the Watchlist Keep; not a Save). INFO on the tile meta line, never the action corner. Same 16×16 box
+ *  + stroke weight as its siblings. */
+export function BookmarkGlyph() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6.5 3.5h11v17l-5.5-4-5.5 4z" />
     </svg>
   );
 }
@@ -365,6 +387,12 @@ export function TrashPendingNotice({
   // install is safe. Always the ADR-014 Modal (never one-click) — via ItemExpediteModal.
   const canExpedite = access.actions.includes('expedite_item');
   const safe = status.data?.safe === true;
+  const notice = trashNoticeText({
+    on,
+    onWatchlist: item.onWatchlist === true,
+    ruleTitle: item.collectionTitle ?? null,
+    sizeLabel: formatBytes(item.sizeBytes),
+  });
 
   return (
     <section className="card trash-panel" data-testid="trash-guard" role="status">
@@ -384,11 +412,16 @@ export function TrashPendingNotice({
             </>
           ) : null}
         </p>
-        <p className="muted trash-panel__meta">
-          {on
-            ? 'Maintainerr will keep this item — un-saving puts it back under its deletion rules.'
-            : `Maintainerr’s “${item.collectionTitle ?? 'deletion'}” rule flagged it — deleting frees ${formatBytes(item.sizeBytes)}. Save it to keep it.`}
-        </p>
+        <p className="muted trash-panel__meta">{notice.meta}</p>
+        {/* ADR-093 / DESIGN-052 D-10 / D-25co — the watchlist keep, in the tile note's words (never whose list). */}
+        {notice.watchlistNote !== null ? (
+          <p className="muted trash-panel__watchlist" data-testid="trash-watchlist-note">
+            <span className="trash-panel__watched-icon" aria-hidden="true">
+              <BookmarkGlyph />
+            </span>
+            {notice.watchlistNote}
+          </p>
+        ) : null}
         {/* DESIGN-010 D-12 — cross-server watch visibility (info, not protection): the last-watch
             line when we have one. It never gates the actions above. */}
         {(() => {
@@ -462,6 +495,10 @@ export function TrashPendingNotice({
             protectedByTag: item.protectedByTag,
             recentlyWatched: item.recentlyWatched,
             requesters: item.requesters,
+            // ADR-093 / DESIGN-052 D-09 — the guardian mirror's watchlist inputs (the confirm predicts the keep).
+            onWatchlist: item.onWatchlist,
+            watchlistEvaluable: item.watchlistEvaluable,
+            ruleEvaluationFailed: item.ruleEvaluationFailed,
           }}
           safe={safe}
           onClose={() => setExpediteOpen(false)}

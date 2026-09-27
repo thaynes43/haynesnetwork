@@ -90,6 +90,10 @@ async function main(): Promise<void> {
              re-sync: DATABASE_URL=${stack.env.DATABASE_URL} … tsx packages/sync/src/scripts/sync.ts --mode=watch
              (docs/ops/003-local-verification.md — "Watch Companion MCP")
 
+  Watchlists (ADR-093): the stack ran --mode=watchlist-registry once at boot; Expedite and Expire now
+             need a run at most 30 minutes old. Re-run: DATABASE_URL=${stack.env.DATABASE_URL} … tsx
+             packages/sync/src/scripts/sync.ts --mode=watchlist-registry
+
   Connectors (ADR-091, the public OAuth path — POST ${stack.appUrl}/mcp takes only OAuth tokens):
              metadata: ${stack.appUrl}/.well-known/oauth-authorization-server
              register: POST ${stack.appUrl}/oauth/register, then send the browser to /oauth/authorize

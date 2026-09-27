@@ -7,9 +7,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   batchStateTone,
+  batchTileView,
   countdownCopy,
+  EXPIRE_KEPT_REASONS,
+  expireConfirmLines,
+  expirePreview,
   forceExpireConfirmMatches,
   previewTargetSelection,
+  sweepAbortCopy,
   sweepReportRows,
   tileTappable,
   wallCounts,
@@ -321,6 +326,34 @@ describe('sweepReportRows — the Expire report (D-05 SweepReport)', () => {
   });
 });
 
+describe('sweepAbortCopy — the Expire report`s abort banner by reason (DESIGN-052 D-25bw)', () => {
+  const base = {
+    deletedCount: 0,
+    skippedCount: 0,
+    savedCount: 0,
+    protectedCount: 0,
+    handleErrors: 0,
+    raceSkipped: 0,
+  };
+  it('none when the batch finished', () => {
+    expect(sweepAbortCopy({ ...base, aborted: false, abortReason: null })).toBeNull();
+  });
+  it('an *arr identity abort names Radarr or Sonarr, never Maintainerr, and has no dash', () => {
+    const copy = sweepAbortCopy({ ...base, aborted: true, abortReason: 'arr_identity' })!;
+    expect(`${copy.lead} ${copy.detail}`).toBe(
+      'Nothing was deleted: Radarr or Sonarr did not answer. The batch stays in Leaving Soon and will try again on the next sweep.',
+    );
+    expect(`${copy.lead} ${copy.detail}`).not.toMatch(/Maintainerr|—|–/);
+  });
+  it('the handle breaker (and a reason-less abort) keeps the Maintainerr wording', () => {
+    for (const abortReason of ['handle_breaker', null, undefined] as const) {
+      const copy = sweepAbortCopy({ ...base, handleErrors: 3, aborted: true, abortReason })!;
+      expect(copy.lead).toBe('Batch not finished');
+      expect(copy.detail).toMatch(/Maintainerr failed mid-run/);
+    }
+  });
+});
+
 describe('batchStateTone', () => {
   it('leaving_soon warns, deleted is danger, cancelled/draft muted', () => {
     expect(batchStateTone('admin_review')).toBe('info');
@@ -349,6 +382,35 @@ describe('previewTargetSelection — the Start-a-batch client preview (mirrors s
   it('targetBytes largest ⇒ crossing item included; poolCount/Bytes describe the deletable pool', () => {
     const p = previewTargetSelection(pool, { targetBytes: 6e9, strategy: 'largest' });
     expect(p).toMatchObject({ count: 2, bytes: 7e9, poolCount: 3, poolBytes: 8e9 });
+  });
+
+  it('ADR-093 D-08 — a watchlisted candidate takes no slot in a targeted pick, yet an untargeted batch snapshots it', () => {
+    const listed = [c(4e9, { onWatchlist: true }), c(3e9), c(2e9, { protectedByTag: true }), c(1e9)];
+    expect(previewTargetSelection(listed, {})).toMatchObject({ count: 3, bytes: 8e9, poolCount: 2, poolBytes: 4e9 });
+    expect(previewTargetSelection(listed, { maxItems: 1, strategy: 'largest' })).toMatchObject({ count: 1, bytes: 3e9 });
+  });
+
+  it('D-25cw — "All current candidates" frees only what can go: a watchlisted title is kept while it stays listed', () => {
+    const listed = [c(4e9, { onWatchlist: true }), c(3e9), c(2e9, { protectedByTag: true }), c(1e9)];
+    // Three items snapshot (D-25y counts the watchlisted one), but at most 4 GB can be freed, never 8 GB.
+    expect(previewTargetSelection(listed, {})).toMatchObject({ count: 3, bytes: 8e9, freesBytes: 4e9 });
+    expect(previewTargetSelection(pool, {}).freesBytes).toBe(8e9);
+    expect(previewTargetSelection(listed, { maxItems: 2, strategy: 'largest' })).toMatchObject({ freesBytes: 4e9 });
+  });
+
+  it('D-25cx — while a batch created now is unfiltered (no registry run in 24 h) the pick takes the watchlisted title', () => {
+    const listed = [c(8e9, { onWatchlist: true }), c(3e9), c(2e9)];
+    // The server's pick: largest first, the 8 GB watchlisted title crosses a 5 GB target alone.
+    expect(
+      previewTargetSelection(listed, { targetBytes: 5e9, strategy: 'largest', watchlistFiltered: false }),
+    ).toMatchObject({ count: 1, bytes: 8e9, freesBytes: 0, poolCount: 3 });
+    // Filtered (the default): it takes no slot.
+    expect(previewTargetSelection(listed, { targetBytes: 5e9, strategy: 'largest' })).toMatchObject({
+      count: 2,
+      bytes: 5e9,
+      freesBytes: 5e9,
+      poolCount: 2,
+    });
   });
 
   it('maxItems caps; a target under the first item still yields one', () => {
@@ -381,5 +443,115 @@ describe('forceExpireConfirmMatches — the mid-window force-expire typed gate',
     expect(forceExpireConfirmMatches('', 3)).toBe(false);
     expect(forceExpireConfirmMatches('nope', 3)).toBe(false);
     expect(forceExpireConfirmMatches('2', 3)).toBe(false);
+  });
+});
+
+describe('the Expire now preview (DESIGN-011 D-07 (c), DESIGN-052 D-25cm)', () => {
+  const row = (over: Partial<Parameters<typeof expirePreview>[0][number]> = {}) => ({
+    state: 'pending' as const,
+    recentlyWatched: false,
+    mediaItemId: 'm',
+    inLivePool: true,
+    ...over,
+  });
+
+  it('a watchlisted pending row is a certain keep: out of "up to N", into "at least K" and the typed count', () => {
+    const items = [
+      row(),
+      row(),
+      row(),
+      row({ onWatchlist: true }),
+      row({ onWatchlist: true }),
+      row({ state: 'saved' }),
+    ];
+    expect(expirePreview(items)).toEqual({ willDelete: 3, willKeep: 2 });
+    expect(forceExpireConfirmMatches('3', expirePreview(items).willDelete)).toBe(true);
+    expect(forceExpireConfirmMatches('5', expirePreview(items).willDelete)).toBe(false);
+  });
+
+  it('keeps the other certain keeps; unknown reads as slated; an older server (no onWatchlist) counts it', () => {
+    expect(
+      expirePreview([
+        row({ recentlyWatched: true }),
+        row({ mediaItemId: null }),
+        row({ inLivePool: false }),
+        row({ inLivePool: null }),
+        row({ onWatchlist: false }),
+        row(),
+      ]),
+    ).toEqual({ willDelete: 3, willKeep: 3 });
+  });
+
+  it('the kept line names the watchlist reason', () => {
+    expect(EXPIRE_KEPT_REASONS).toContain('on a watchlist');
+    expect(EXPIRE_KEPT_REASONS).not.toMatch(/—/);
+  });
+
+  it('D-25cz: the rendered outcome lines end their labels in a colon, never a dash', () => {
+    const lines = expireConfirmLines({ willDelete: 1, savedCount: 2, willKeep: 3 });
+    expect(lines.map((l) => `${l.label} ${l.detail}`)).toEqual([
+      'Up to 1 item will be deleted: each is re-checked fresh first (live whitelist + the watch guardian); only verified-cold items delete.',
+      '2 rescued items are untouched: a save is permanent protection.',
+      `At least 3 will be kept (skipped): ${EXPIRE_KEPT_REASONS}`,
+    ]);
+    expect(expireConfirmLines({ willDelete: 2, savedCount: 1, willKeep: 0 })[1]!.label).toBe(
+      '1 rescued item is untouched:',
+    );
+    for (const l of lines) expect(`${l.label} ${l.detail}`).not.toMatch(/[–—]/);
+  });
+});
+
+describe('a batch-wall tile`s label, kept tooltip and watchlist note (DESIGN-052 D-10, D-25w, D-25cn)', () => {
+  const base = { tappable: false, savedByName: null, armed: false };
+
+  it('a swept `watchlisted` row: "Kept: on a watchlist" as its hover title and in its label', () => {
+    const view = batchTileView({
+      ...base,
+      item: { title: 'Trap', state: 'skipped', keepReason: 'watchlisted', onWatchlist: true },
+      glyph: 'skip',
+      projectedSkip: false,
+    });
+    expect(view.keptTooltip).toBe('Kept: on a watchlist');
+    expect(view.title).toBe('Kept: on a watchlist');
+    expect(view.label).toBe('Trap. Kept: on a watchlist');
+    expect(view.onWatchlist).toBe(true);
+  });
+
+  it('a projected skip never carries a kept tooltip (the sweep never ran on it)', () => {
+    const view = batchTileView({
+      ...base,
+      item: { title: 'Trap', state: 'pending', keepReason: 'watchlisted' },
+      glyph: 'skip',
+      projectedSkip: true,
+    });
+    expect(view.keptTooltip).toBeNull();
+    expect(view.label).toBe(`Trap ${PROJECTED_SKIP_MEANING}`);
+    expect(view.title).toBe(view.label);
+  });
+
+  it('the note rides every row that is on a watchlist except a deleted one; a slated tile keeps its own label', () => {
+    const pending = batchTileView({
+      ...base,
+      tappable: true,
+      item: { title: 'Trap', state: 'pending', onWatchlist: true },
+      glyph: 'trash',
+      projectedSkip: false,
+    });
+    expect(pending).toMatchObject({ onWatchlist: true, keptTooltip: null, label: 'Trap is slated to delete — tap to save it' });
+    const deleted = batchTileView({
+      ...base,
+      item: { title: 'Trap', state: 'deleted', onWatchlist: true },
+      glyph: 'gone',
+      projectedSkip: false,
+    });
+    expect(deleted.onWatchlist).toBe(false);
+    const older = batchTileView({
+      ...base,
+      item: { title: 'Trap', state: 'skipped', keepReason: null },
+      glyph: 'skip',
+      projectedSkip: false,
+    });
+    expect(older.keptTooltip).toBeNull();
+    expect(older.label).toMatch(/was kept/);
   });
 });

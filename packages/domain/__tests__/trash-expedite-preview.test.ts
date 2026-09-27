@@ -48,6 +48,10 @@ function pendingItem(over: Partial<TrashPendingItem> = {}): TrashPendingItem {
     resolution: null,
     imdbRating: null,
     tmdbRating: null,
+    plexGuid: 'plex://movie/5d776824151a60001f24a29e',
+    ruleEvaluationFailed: false,
+    onWatchlist: false,
+    watchlistEvaluable: true,
     ...over,
   };
 }
@@ -77,6 +81,36 @@ describe('classifyForExpedite (the ONE shared derivation — ADR-086 D-11)', () 
     expect(classifyForExpedite(pendingItem({ mediaItemId: null }))).toBe('unverifiable');
   });
 
+  it('ADR-093 D-09 — on a watchlist ⇒ protected_watchlist (the Watchlist Keep), even when not evaluable', () => {
+    expect(classifyForExpedite(pendingItem({ onWatchlist: true }))).toBe('protected_watchlist');
+    expect(classifyGuardian(pendingItem({ onWatchlist: true }))).toEqual({
+      keep: true,
+      reason: 'watchlisted',
+    });
+    // Order: tag and recently-watched still win (already whitelisted / auto-whitelisted).
+    expect(classifyGuardian(pendingItem({ onWatchlist: true, protectedByTag: true }))).toEqual({
+      keep: true,
+      reason: 'tag',
+    });
+    expect(classifyGuardian(pendingItem({ onWatchlist: true, recentlyWatched: true }))).toEqual({
+      keep: true,
+      reason: 'recently_watched',
+    });
+  });
+
+  it('ADR-093 D-06 / D-09 — not watchlist-evaluable, or ruleEvaluationFailed ⇒ unevaluable (kept, unverifiable)', () => {
+    expect(classifyGuardian(pendingItem({ watchlistEvaluable: false }))).toEqual({
+      keep: true,
+      reason: 'unevaluable',
+    });
+    expect(classifyForExpedite(pendingItem({ watchlistEvaluable: false }))).toBe('unverifiable');
+    expect(classifyGuardian(pendingItem({ ruleEvaluationFailed: true }))).toEqual({
+      keep: true,
+      reason: 'unevaluable',
+    });
+    expect(classifyForExpedite(pendingItem({ ruleEvaluationFailed: true }))).toBe('unverifiable');
+  });
+
   it('THE D-11 FIX — a requester is NOT a keep; a requested cold item is DELETABLE', () => {
     // Owner ruling 2026-07-09: "Maintainerr rules decide what gets promoted; the app controls how
     // much and when it's deleted." classifyGuardian has deleted requested items since; the preview
@@ -91,12 +125,26 @@ describe('classifyForExpedite (the ONE shared derivation — ADR-086 D-11)', () 
       for (const recentlyWatched of [false, true]) {
         for (const mediaItemId of ['uuid-1', null]) {
           for (const requesters of [[], ['manofoz']]) {
-            const item = pendingItem({ protectedByTag, recentlyWatched, mediaItemId, requesters });
-            const verdict = classifyForExpedite(item);
-            expect({ ...item, kept: verdict !== 'deletable' }).toEqual({
-              ...item,
-              kept: classifyGuardian(item).keep,
-            });
+            for (const onWatchlist of [false, true]) {
+              for (const watchlistEvaluable of [true, false]) {
+                for (const ruleEvaluationFailed of [false, true]) {
+                  const item = pendingItem({
+                    protectedByTag,
+                    recentlyWatched,
+                    mediaItemId,
+                    requesters,
+                    onWatchlist,
+                    watchlistEvaluable,
+                    ruleEvaluationFailed,
+                  });
+                  const verdict = classifyForExpedite(item);
+                  expect({ ...item, kept: verdict !== 'deletable' }).toEqual({
+                    ...item,
+                    kept: classifyGuardian(item).keep,
+                  });
+                }
+              }
+            }
           }
         }
       }
@@ -113,8 +161,10 @@ describe('partitionPendingForExpedite (the server preview the confirm consumes)'
         pendingItem({ protectedByTag: true, sizeBytes: 10 }), // protected
         pendingItem({ mediaItemId: null, sizeBytes: 10 }), // unverifiable (skipped)
         pendingItem({ maintainerrMediaId: null, sizeBytes: 10 }), // unverifiable (unactionable)
+        pendingItem({ onWatchlist: true, sizeBytes: 10 }), // protected — on a watchlist
+        pendingItem({ ruleEvaluationFailed: true, sizeBytes: 10 }), // unverifiable (D-24i)
       ]),
-    ).toEqual({ deletable: 1, deletableBytes: 100, protected: 2, unverifiable: 2 });
+    ).toEqual({ deletable: 1, deletableBytes: 100, protected: 3, unverifiable: 3, watchlisted: 1 });
   });
 
   it('ADR-086 D-11 regression — a requested item counts as DELETABLE, not protected', () => {
@@ -122,6 +172,6 @@ describe('partitionPendingForExpedite (the server preview the confirm consumes)'
     // owner nothing would be deleted while the server went on to delete it.
     expect(
       partitionPendingForExpedite([pendingItem({ requesters: ['manofoz'], sizeBytes: 500 })]),
-    ).toEqual({ deletable: 1, deletableBytes: 500, protected: 0, unverifiable: 0 });
+    ).toEqual({ deletable: 1, deletableBytes: 500, protected: 0, unverifiable: 0, watchlisted: 0 });
   });
 });

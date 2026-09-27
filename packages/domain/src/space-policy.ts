@@ -51,6 +51,7 @@ import type { MaintainerrClientBundle } from './maintainerr-clients';
 import { getUtilization, STORAGE_ARRAYS, type UtilizationArrBundle } from './storage-metrics';
 import { recordNotification } from './notifications';
 import { listTrashPending, type TrashMedia, type TrashPendingItem } from './trash-flow';
+import { evaluateRegistryGate } from './watchlist-registry';
 
 const OPEN_STATES = TRASH_BATCH_OPEN_STATES as readonly TrashBatchState[];
 
@@ -457,13 +458,19 @@ async function proposeForKind(input: {
   //    set once for the count + total bytes (createBatchFromPending re-snapshots fresh when it runs).
   let actionable: Array<TrashPendingItem & { maintainerrMediaId: string }> = [];
   try {
+    // ADR-093 / DESIGN-052 D-07 / D-08 — `propose` never refuses: filtered with the newest ok registry run (≤ 24 h),
+    // otherwise unfiltered (the sweep's gate is where deletion is enforced).
+    const watchlist = await evaluateRegistryGate({ db: input.db, purpose: 'propose' });
     const pending = await listTrashPending({
       db: input.db,
       maintainerr: input.maintainerr,
       media: input.mediaKind as TrashMedia,
+      watchlist,
     });
+    // D-08 — minCandidates counts DELETABLE candidates only: not `dnd`, not on a watchlist (neither frees space).
     actionable = pending.items.filter(
-      (p): p is TrashPendingItem & { maintainerrMediaId: string } => p.maintainerrMediaId !== null,
+      (p): p is TrashPendingItem & { maintainerrMediaId: string } =>
+        p.maintainerrMediaId !== null && !p.protectedByTag && !p.onWatchlist,
     );
   } catch (err) {
     return {
@@ -479,7 +486,7 @@ async function proposeForKind(input: {
     return {
       ...base,
       outcome: actionable.length === 0 ? 'skipped_empty' : 'skipped_min_candidates',
-      reason: `Only ${actionable.length} actionable ${input.mediaKind} pending (min ${input.minCandidates}).`,
+      reason: `Only ${actionable.length} deletable ${input.mediaKind} pending (min ${input.minCandidates}).`,
     };
   }
 

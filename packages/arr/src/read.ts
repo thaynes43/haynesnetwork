@@ -3,7 +3,13 @@
 // the write surface lives in `@hnet/arr/write` and is import-guarded to packages/domain.
 import { z } from 'zod';
 import { ARR_CLUSTER_URL_DEFAULTS, assertArrEnv, type ArrEnvConfig } from './config';
+import { ArrHttpError } from './errors';
 import { ArrHttp, type QueryParams } from './http';
+import {
+  readSeerrUserWatchlist,
+  type ReadSeerrWatchlistOptions,
+  type SeerrWatchlistAnswer,
+} from './seerr-watchlist';
 import {
   diskSpaceSchema,
   pagedSchema,
@@ -68,10 +74,27 @@ import {
   seerrMainSettingsSchema,
   seerrRequestPageSchema,
   seerrStatusSchema,
+  seerrUserPageSchema,
+  seerrWatchlistPageSchema,
+  type SeerrUserSummary,
+  type SeerrWatchlistPage,
   type SeerrMainSettings,
   type SeerrRequestPage,
   type SeerrStatus,
 } from './schemas/seerr';
+import {
+  arrPagedCountSchema,
+  arrReleaseHistoryRecordSchema,
+  radarrMovieFileSchema,
+  seerrSonarrServerSummarySchema,
+  seerrUserWatchlistSyncSchema,
+  sonarrEpisodeFileReleaseSchema,
+  type ArrReleaseHistoryRecord,
+  type RadarrMovieFile,
+  type SeerrSonarrServerSummary,
+  type SeerrUserWatchlistSync,
+  type SonarrEpisodeFileRelease,
+} from './schemas/release-block';
 import {
   bazarrEnvelopeSchema,
   bazarrEpisodeSubtitleSchema,
@@ -86,6 +109,12 @@ export interface ArrClientOptions {
   apiKey: string;
   timeoutMs?: number;
   retryDelayMs?: number;
+  /** GET retries after the first attempt (`ArrHttpOptions.getRetries`; default 2). */
+  getRetries?: number;
+  /** Which statuses a GET retries (`ArrHttpOptions.retryStatus`; default 502/503/504). */
+  retryStatus?: (status: number) => boolean;
+  /** The wait before retry `attempt` (`ArrHttpOptions.retryBackoffMs`; default `retryDelayMs`). */
+  retryBackoffMs?: (attempt: number) => number;
   /** Injectable fetch for fixture-driven tests (ADR-010: no live-API tests in CI). */
   fetchImpl?: typeof fetch;
 }
@@ -122,6 +151,16 @@ const QUEUE_PAGE_SIZE = 200;
 const QUEUE_ALL_PAGE_SIZE = 250;
 
 const toIso = (value: string | Date) => (value instanceof Date ? value.toISOString() : value);
+
+/** ADR-093 / DESIGN-052 D-14 — a GET whose 404 means "the *arr no longer has it" (null), every other failure thrown. */
+async function orNullOn404<T>(read: () => Promise<T>): Promise<T | null> {
+  try {
+    return await read();
+  } catch (error) {
+    if (error instanceof ArrHttpError && error.status === 404) return null;
+    throw error;
+  }
+}
 
 /** Read endpoints shared verbatim by Sonarr/Radarr/Lidarr (D-03). */
 abstract class ArrReadClientBase {
@@ -281,6 +320,40 @@ export class SonarrClient extends ArrReadClientBase {
   getQueueAll(): Promise<SonarrQueueRecord[]> {
     return this.getQueueAllRecords(sonarrQueueRecordSchema);
   }
+
+  // ---------- ADR-093 / DESIGN-052 D-11 / D-14 / D-23 (PLAN-072) — the Release Block's identity reads ----------
+
+  /** `GET /episodefile?seriesId=` with the identity fields (release name, group, quality, size) — D-11. */
+  listEpisodeFileReleases(seriesId: number): Promise<SonarrEpisodeFileRelease[]> {
+    return this.http.requestJson('GET', 'episodefile', z.array(sonarrEpisodeFileReleaseSchema), {
+      query: { seriesId },
+    });
+  }
+
+  /** `GET /history/series?seriesId=` — every history record of one series (the grab ⇄ import join filters). */
+  getSeriesReleaseHistory(seriesId: number): Promise<ArrReleaseHistoryRecord[]> {
+    return this.http.requestJson('GET', 'history/series', z.array(arrReleaseHistoryRecordSchema), {
+      query: { seriesId },
+    });
+  }
+
+  /** `GET /series/{id}`, or null when Sonarr answers 404 (the series is gone — D-14 step 7's settle). */
+  findSeries(id: number): Promise<SonarrSeries | null> {
+    return orNullOn404(() => this.getSeriesById(id));
+  }
+
+  /** `GET /importlistexclusion/paged?pageSize=1` — the import-list exclusion count (D-23 visibility). */
+  async countImportListExclusions(): Promise<number> {
+    const page = await this.http.requestJson(
+      'GET',
+      'importlistexclusion/paged',
+      arrPagedCountSchema,
+      {
+        query: { page: 1, pageSize: 1 },
+      },
+    );
+    return page.totalRecords;
+  }
 }
 
 /** Radarr v3 read client (D-01: live 6.0.x, `/api/v3`). */
@@ -359,6 +432,35 @@ export class RadarrClient extends ArrReadClientBase {
   /** DESIGN-046 D-02 (PLAN-065) — the WHOLE Radarr queue, paged (the janitor reads every errored grab). */
   getQueueAll(): Promise<RadarrQueueRecord[]> {
     return this.getQueueAllRecords(radarrQueueRecordSchema);
+  }
+
+  // ---------- ADR-093 / DESIGN-052 D-11 / D-14 / D-23 (PLAN-072) — the Release Block's identity reads ----------
+
+  /** `GET /moviefile?movieId=` — the movie's file(s) with the identity fields (D-11). */
+  listMovieFiles(movieId: number): Promise<RadarrMovieFile[]> {
+    return this.http.requestJson('GET', 'moviefile', z.array(radarrMovieFileSchema), {
+      query: { movieId },
+    });
+  }
+
+  /** `GET /history/movie?movieId=` — every history record of one movie (the grab ⇄ import join filters). */
+  getMovieReleaseHistory(movieId: number): Promise<ArrReleaseHistoryRecord[]> {
+    return this.http.requestJson('GET', 'history/movie', z.array(arrReleaseHistoryRecordSchema), {
+      query: { movieId },
+    });
+  }
+
+  /** `GET /movie/{id}`, or null when Radarr answers 404 (the movie is gone — D-14 step 7's settle). */
+  findMovie(id: number): Promise<RadarrMovie | null> {
+    return orNullOn404(() => this.getMovieById(id));
+  }
+
+  /** `GET /exclusions/paged?pageSize=1` — the import-list exclusion count (D-23 visibility). */
+  async countImportListExclusions(): Promise<number> {
+    const page = await this.http.requestJson('GET', 'exclusions/paged', arrPagedCountSchema, {
+      query: { page: 1, pageSize: 1 },
+    });
+    return page.totalRecords;
   }
 }
 
@@ -497,6 +599,57 @@ export class SeerrClient {
       },
     });
   }
+
+  /**
+   * ADR-093 / DESIGN-052 D-02 — every Seerr user (id, plex.tv account id, user type), paged `take=100` to completion
+   * under a 50-page cap (a longer list throws rather than answer a partial roster).
+   */
+  async listUsers(): Promise<SeerrUserSummary[]> {
+    const out: SeerrUserSummary[] = [];
+    for (let page = 0; page < 50; page += 1) {
+      const body = await this.http.requestJson('GET', 'user', seerrUserPageSchema, {
+        query: { take: 100, skip: page * 100 },
+      });
+      out.push(...body.results);
+      if (body.results.length === 0 || out.length >= body.pageInfo.results) return out;
+    }
+    throw new Error('seerr: the user list did not end within 50 pages');
+  }
+
+  /** `GET /api/v1/user/{id}/watchlist?page=` — ONE raw page (classify with `readUserWatchlist`). */
+  getUserWatchlistPage(userId: number, page: number): Promise<SeerrWatchlistPage> {
+    return this.http.requestJson(
+      'GET',
+      `user/${encodeURIComponent(String(userId))}/watchlist`,
+      seerrWatchlistPageSchema,
+      { query: { page } },
+    );
+  }
+
+  /** A user's whole watchlist, classified by content (DESIGN-052 D-02 — see seerr-watchlist.ts). Never throws. */
+  readUserWatchlist(
+    userId: number,
+    options: ReadSeerrWatchlistOptions = {},
+  ): Promise<SeerrWatchlistAnswer> {
+    return readSeerrUserWatchlist((page) => this.getUserWatchlistPage(userId, page), options);
+  }
+
+  /**
+   * ADR-093 C-11 / DESIGN-052 D-17 — a user's two watchlist sync flags (`GET /api/v1/user/{id}/settings/main`; a
+   * missing flag reads false). Only the flags cross this boundary: the body also carries the user's name and email.
+   */
+  getUserWatchlistSync(userId: number): Promise<SeerrUserWatchlistSync> {
+    return this.http.requestJson(
+      'GET',
+      `user/${encodeURIComponent(String(userId))}/settings/main`,
+      seerrUserWatchlistSyncSchema,
+    );
+  }
+
+  /** DESIGN-052 D-17 — Seerr's Sonarr servers (`GET /api/v1/settings/sonarr`): ids, names, `tags`, `animeTags` only. */
+  listSonarrServers(): Promise<SeerrSonarrServerSummary[]> {
+    return this.http.requestJson('GET', 'settings/sonarr', z.array(seerrSonarrServerSummarySchema));
+  }
 }
 
 /**
@@ -577,3 +730,6 @@ export type { MaintainerrClientOptions } from './maintainerr';
 // client (current status + windowed uptime ratios for one endpoint key; no write surface).
 export { GatusClient } from './gatus';
 export type { GatusClientOptions, GatusUptimeWindow } from './gatus';
+
+// ADR-093 / DESIGN-052 D-02 (PLAN-072) — the Seerr watchlist content rules.
+export * from './seerr-watchlist';

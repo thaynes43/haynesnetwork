@@ -21,6 +21,7 @@ import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
 import { NOTIFY_TZ_OPTIONS, describeWindow, isValidWindow } from '@/lib/notify-window';
 import { BatchPolicyCard } from './batch-policy-card';
+import { WatchlistsCard } from './watchlists-card';
 
 interface GeneralDraft {
   windowDays: string;
@@ -420,6 +421,9 @@ export function GeneralTab() {
 
       {/* Batch policy — its own single-Save card, a sibling of the consolidated form above (build C). */}
       <BatchPolicyCard />
+
+      {/* ADR-093 / DESIGN-052 D-10 — the read-only Watchlists card (counts only). */}
+      <WatchlistsCard />
     </>
   );
 }
