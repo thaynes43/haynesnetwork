@@ -1816,11 +1816,13 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
       const bare = grabbedMovie(2, { history: [] });
       bare.file = { ...bare.file!, releaseGroup: null, relativePath: 'Movie (2024).mkv' };
       const renamedOnly = grabbedMovie(3, { history: [] });
-      // D-25bq: movie 1's grab title carries an apostrophe (a P2P name); the *arr tests it raw, so its term is fold-only.
-      const apostrophe = "Babygirl's.Cut.2024.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR";
+      // D-25bq: movie 1's grab title carries a DECOMPOSED accent inside a word (e + U+0301), which the D-25dd grammar
+      // cannot write; the *arr tests the name raw, so its term is fold-only. (An apostrophe, a composed accent or `&` is
+      // matched raw since D-25dd and would count nothing here.)
+      const decomposed = 'Babygirl.Ame\u0301lie.2024.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR';
       const foldOnly = grabbedMovie(1);
-      foldOnly.title = "Babygirl's Cut";
-      foldOnly.history = foldOnly.history!.map((h) => ({ ...h, sourceTitle: apostrophe }));
+      foldOnly.title = 'Babygirl Amélie';
+      foldOnly.history = foldOnly.history!.map((h) => ({ ...h, sourceTitle: decomposed }));
       const { arr, fixture } = createStaticReleaseBlockArr({
         movies: new Map([
           [1, foldOnly],

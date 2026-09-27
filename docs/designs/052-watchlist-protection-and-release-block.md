@@ -1,7 +1,14 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Draft
-- **Last updated:** 2026-09-26 (D-25db and D-25dc record the review of the PLAN-072 S4 deploy, haynes-ops #3223:
+- **Last updated:** 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
+  the rulings they needed: a term now matches the raw release title Radarr and Sonarr test (an apostrophe inside a word
+  is an optional separator, an accented letter an alternation, an inner `and` optional), because S6(e) found 345 of
+  19,434 Sonarr names and 3 of 1,159 Radarr names the *arr would not have blocked; the owner leaves managed Home users
+  out (Q-01, PRD Q-15); 2 of 164 pool items kept `release_unrecorded` is not material (Q-12; Q-13 not asked); Q-03 and
+  Q-05 answered; D-25q's split is 21 / 21 live; a renamed-only term's reach is an accepted limit (ADR-093 C-22); folded
+  into the overview, D-02, D-12, the test strategy and the open questions). Prior: 2026-09-26 (D-25db and D-25dc
+  record the review of the PLAN-072 S4 deploy, haynes-ops #3223:
   every sweep and registry CronJob suspend and resume in the rollout goes through haynes-ops git, never `kubectl`,
   and the registry CronJob runs `backoffLimit: 0`; folded into D-20). Prior: 2026-09-26 (D-25cr..D-25da record the
   fourth review pass of PR #595: a renamed-only term's
@@ -57,7 +64,7 @@ sync-watchlist-registry  14,29,44,59 * * * *      (and inline, first thing in a 
    friends,    community.plex.tv GraphQL  user(id:uuid).watchlist          (owner token; hidden = empty)
    full Home
    Seerr users seerr /api/v1/user/{id}/watchlist?page=N                     (API key; each user's own token)
-   managed     plex.tv home switch token, only once Q-01 proves it safe
+   managed     not read: the owner left them out (Q-01, D-25de), so they are unresolvable
         │  per account and source: ok | failed | not applicable   (a failed read never removes a title;
         │  an empty answer after a list with titles is a failed read, D-04)
         ▼
@@ -135,7 +142,8 @@ Nodes give `id` (24-hex discover id), `type`, `title`, `year`. `type` is the upp
 any other value fails the account's read, never a silent skip. No external id is available (research §2); D-03
 maps them.
 
-**Seerr users** (all 16 today, including the owner):
+**Seerr users** (16 at authoring, including the owner; 17 Plex users at PLAN-072 S6, 2026-09-27, the owner among
+them, whose link is recorded but read through discover, D-25e, so 16 Seerr sources):
 
 ```
 GET http://seerr.media.svc.cluster.local:5055/api/v1/user?take=100&skip=<n>      → results[{id, plexId, userType}]
@@ -171,13 +179,18 @@ already shows these errors from the owner-only sync (2 in one day, one a plex.tv
    of the Plex list. None exist today (research §2); S5 re-checks, and it is a coverage limit too (C-05).
 
 A user with no stored token answers an empty list. All 16 have a stored token; the 15 that answered with titles
-prove theirs works, and the one that answered 0 is unverified, because 0 is also the error answer (research §2).
+prove theirs works, and the one that answered 0 is unverified, because 0 is also the error answer (research §2). At
+PLAN-072 S6 (2026-09-27) the 16 Seerr sources (2 full Home members, 14 friends) all read `ok`, 15 with titles and one
+with 0 (`empty_unverified`), and each equalled a direct sequential Seerr read in two runs (Q-03).
 
 **Managed Home users.** `POST https://plex.tv/api/home/users/{id}/switch` returns an `authenticationToken` for the
 managed user, which could read that user's discover watchlist like the owner path. It is a POST that mints a token
-and a session and is **disabled until Q-01 is answered** (PRD Q-15). When enabled, the token lives in memory for one
-refresh, is never stored or logged, and a failed switch is **failed** for that source. Until then a managed user's
-only source is `not_applicable`, so the account is `unresolvable` (D-04). PLAN-072 S6a puts Q-01 to the owner.
+and a session, and it stays **off**: the owner answered Q-01 (PRD Q-15) on 2026-09-26, "Leave them out", and is moving
+everyone on Plex Home to their own account linked with the server (D-25de). A managed user's only source is
+`not_applicable`, so the account is `unresolvable` (D-04) and never blocks. A member who moves to their own account
+appears in the roster at the next refresh (D-01) and is read like any other account. (Had the switch been enabled,
+its token would have lived in memory for one refresh, never stored or logged, and a failed switch would have been
+**failed** for that source.)
 
 ### D-03 — Title identity: discover id first, external ids mapped
 
@@ -533,6 +546,23 @@ the release title; research §5). `SEP` below is `[^a-z0-9]`, not `[\W_]`: .NET'
 JavaScript's (without `u`) is ASCII-only, while `[^a-z0-9]` under `/i` matches identically in both on release
 titles, so the in-app self-check tests exactly what Radarr and Sonarr will run.
 
+**A term is written from the raw names (D-25dd).** The tokens decide what a name's title, year and season are, but
+Radarr and Sonarr test a term against the release title as it is, so each title word (and each word of the exact
+form) is written back with what the raw names show there:
+
+- an apostrophe inside a word is an optional separator: `SEP?` in the title (`bob[^a-z0-9]?s` matches "Bob's",
+  "Bob’s" and "Bobs"), `SEP*` in the exact form (one more word boundary);
+- an accented letter is an alternation of the folded letter and the accented ones (`pok(?:e|é)mon`), each a single
+  letter in U+00C0..U+024F or U+1E00..U+1EFF that folds to that letter;
+- an `and` that is neither the first nor the last word may be absent (`(?:and[^a-z0-9]+)?`, `(?:and[^a-z0-9]*)?` in
+  the exact form): the fold reads `&` as `and`, and a raw `&` is a separator, so "Fast & Furious", "Fast.and.Furious"
+  and "Fast&Furious" all match.
+
+The apostrophes and accents come from the name the title tokens came from and from every other raw form that starts
+with the same words: the record's other release names, its renamed file and the *arr's title (Radarr's renamed file
+writes "Fools Gold" and "Vita and Virginia", its title "Fool's Gold" and "Vita & Virginia"). A term therefore only
+ever matches more spellings of the same words than the folded tokens alone would.
+
 **The year is an alternation.** Release names often carry another year than the *arr (the Terrifier release says
 2016, the ledger 2018), and a disk-imported movie's only name is Radarr's own renamed file, built from Radarr's year.
 `Y` is therefore `(?:y1|y2|…)` over the distinct years of: Radarr's `year`; its `secondaryYear`; and the year parsed
@@ -547,7 +577,7 @@ a Remux, and the group:
 
 ```
 /^{T}SEP+{Y}SEP(?=.*(?<![a-z0-9]){R}p(?![a-z0-9])){X}.*SEP{G}(?:SEP|$)/i
-   T = title tokens joined by SEP+     Y = one year, or (?:y1|y2|…)     R = 2160 | 1080 | 720 | 480
+   T = title words joined by SEP+ (written as above)     Y = one year, or (?:y1|y2|…)     R = 2160 | 1080 | 720 | 480
    X = (?=.*(?<![a-z0-9])remux(?![a-z0-9]))  only for a Remux quality     G = group tokens joined by SEP*
 ```
 
@@ -559,7 +589,7 @@ of that group's release at that resolution: "the same title, different index" (r
 Terrifier (Radarr year 2018, release name `Terrifier.2016.Uncut…REMUX-FraMeSToR`) gets `Y = (?:2016|2018)`.
 
 **Movie, no group but a release name:** the exact name, separator-insensitive:
-`/^{all tokens of the name joined by SEP*}(?:SEP|$)/i`.
+`/^{all words of the name, written as above, joined by SEP*}(?:SEP|$)/i`.
 
 **Show, per (season, group, resolution):**
 
@@ -576,9 +606,13 @@ are not covered (documented; Q-05).
 `DecisionError` rejection of that release. The profile applies to every title on every indexer, so **one term that
 does not compile in .NET rejects every release of every movie or series on that *arr** and stops all grabs, visible
 only in an error log (ADR-093 C-19). So a term is stored and written only when it equals `renderTerm(parts)` for
-parts that are exactly the templates above: every title, year and group token matches `^[a-z0-9]+$`, `R` is one of
-2160 / 1080 / 720 / 480, `S` is digits, and the only flag is `i`. The sentinel is the one plain term. The writer
-re-checks every desired term against this grammar before any POST or PUT (D-13) and refuses the write otherwise.
+parts that are exactly the templates above: every year and group token matches `^[a-z0-9]+$`; every title word and
+exact-form word is letters and digits, an accented position being `(?:x|é…)` (one ASCII letter, then single letters
+from the ranges above), with `SEP?` only inside a title word and an optional `and` only before a following word
+(D-25dd); `R` is one of 2160 / 1080 / 720 / 480, `S` is digits, and the only flag is `i`. None of the D-25dd
+constructs can fail to compile: a literal letter, an optional character class and an optional literal group. The
+sentinel is the one plain term. The writer re-checks every desired term against this grammar before any POST or PUT
+(D-13) and refuses the write otherwise.
 
 **Self-check before recording:** the term is compiled in the app and must match every release name of its record;
 a group term that fails falls back to the exact form, and a term that matches nothing it came from is not recorded
@@ -588,9 +622,10 @@ term keeps the item (D-25bp for movies and a movie's ledger names; D-25bb and D-
 name is Radarr's renamed `relativePath` cannot validate its term, because that path is built from the same Radarr
 title and year the term is: its term is written with `term_confidence = 'low_confidence'` (otherwise `verified`) and
 reported in PLAN-072 S6(e)'s dry run, so the share that blocks nothing real is known before S7. A real release name
-the term matches only in its folded form (an apostrophe, an accent or `&` in the name) is a release Radarr and Sonarr
-will not block, since they test the raw title: that term is `low_confidence` too, and the S6(e) report counts it
-(`foldOnly`, D-25bq).
+the term matches only in its folded form is a release Radarr and Sonarr will not block, since they test the raw
+title: that term is `low_confidence` too, and the S6(e) report counts it (`foldOnly`, D-25bq). Since D-25dd the words
+carry the raw apostrophes, accents and `&`, so only what the grammar cannot write is left (a decomposed accent inside a
+word, a doubled apostrophe); over the ledger's 20,594 real names that is none (348 before).
 
 ### D-13 — The Release Block writer
 
@@ -1035,7 +1070,7 @@ stubs, with no further migration. The rulings below were made while building; no
 D-25ax..D-25bm record the rulings of the PR #595 code review (each with a test that fails without it), rows
 D-25bn..D-25bz those of its second review pass, rows D-25ca..D-25cq those of its third and rows D-25cr..D-25da
 those of its fourth (the same way). Rows D-25db and D-25dc record the review of the PLAN-072 S4 deploy (haynes-ops
-#3223).
+#3223). Rows D-25dd..D-25dh record PLAN-072 S6's results (2026-09-27, v0.101.0) and the rulings they needed.
 
 | ID | Question | Ruling |
 |----|----------|--------|
@@ -1055,7 +1090,7 @@ those of its fourth (the same way). Rows D-25db and D-25dc record the review of 
 | D-25n | An owner discover row with no valid discover id (neither the `plex://` suffix nor a 24-hex ratingKey). | Skipped and counted (`ownerSkipped`), not a run failure; discover has not been seen to serve one. |
 | D-25o | Pruning runs older than 7 days. | The newest ok run is never pruned, so the Watchlists card can always say when watchlists were last checked. |
 | D-25p | When `community_mass_empty` logs (D-04). | When the previous ok run had at least 2 community sources with titles and this run has half as many or fewer. |
-| D-25q | The Watchlists card's "n accounts read, m can't be read". | An account is read when one of its sources holds a verified list (`read` or `carried`, not `empty_unverified`); every other current account can't be read (unresolvable, unreadable, not read yet, or answering only empty and unverified). This reproduces the research's 22 / 20 split. |
+| D-25q | The Watchlists card's "n accounts read, m can't be read". | An account is read when one of its sources holds a verified list (`read` or `carried`, not `empty_unverified`); every other current account can't be read (unresolvable, unreadable, not read yet, or answering only empty and unverified). This reproduces the research's 22 / 20 split. _(D-25dg: it does not; live it gives 21 / 21, and the rule stands.)_ |
 | D-25r | Which `trash_sweep_status` outcome the existing handle breaker records (3 consecutive Maintainerr handle failures). | `aborted_arr` with reason `handle_breaker`: the media apps did not answer, and the banner reads "the media apps". Part 2's *arr identity breaker records the same outcome. |
 | D-25s | The scheduled sweep with nothing due. | It does nothing at all: no audit, no registry refresh, no status row (D-14). Before, an unsafe audit failed the job every hour even with nothing due. |
 | D-25t | The `watchlist-registry` job's exit code. | 0 for a clean `failed` run (roster, owner) and for `busy`; only a thrown error fails the Job. The run row and `run_failed` (the Loki alert after 8 in a row) are the signal, so a plex.tv outage does not fire the job-failure alert every 15 minutes. |
@@ -1064,11 +1099,11 @@ those of its fourth (the same way). Rows D-25db and D-25dc record the review of 
 | D-25w | The "On a watchlist" note's footprint. | A bookmark and the short visible label on the tile's meta line, the long wording in the tooltip and aria-label; the size and rating text ellipsizes first, so the tile's geometry is unchanged. On the batch wall the note shows on every row except `deleted`. |
 | D-25x | The space policy's reported candidate count (D-08). | It now reports the deletable candidates `minCandidates` is compared against (not `dnd`, not on a watchlist). |
 | D-25y | The Start-a-batch preview (the client mirror of `selectBatchCandidates`). | A targeted pick leaves watchlisted candidates out; an untargeted count includes them, since they are snapshotted `pending`. |
-| D-25z | The managed-user Home switch (D-02, Q-01). | Not built until Q-01 is answered: the `switch` source is always `not_applicable` (`switch_disabled`), so managed users are `unresolvable`. |
+| D-25z | The managed-user Home switch (D-02, Q-01). | Not built until Q-01 is answered: the `switch` source is always `not_applicable` (`switch_disabled`), so managed users are `unresolvable`. _(D-25de: answered, "Leave them out"; it is never built.)_ |
 | D-25aa | The copy of D-10. | The driving session's UX pass supersedes the proposed copy: the note "On a watchlist" (tooltip "On a watchlist. It won't be deleted while it stays there."); kept tooltips "Kept: on a watchlist / watched recently / couldn't be checked / no longer a candidate / saved / couldn't be removed safely" (`tag` and `live_excluded` both read "saved"); the confirm's term "on a watchlist"; the banner "Deletions are paused until watchlists can be checked." / "… until removals can be done safely." / "… until the media apps respond normally."; the card's "Checked {relative time}. {n} accounts read, {m} can't be read." |
 | D-25ab | The retry policy of D-02 on the existing clients. | `PlexHttp` and `ArrHttp` gained `retryStatus` and `retryBackoffMs` options (defaults unchanged); the registry's plex.tv and Seerr clients use 10 s, 3 attempts on 429 / 5xx / network, 2 s × attempt. The owner's discover list is read by the registry client with that policy, through the paging loop `getWatchlist` uses (extracted, unchanged). |
 | D-25ac | `pnpm dev:local` and e2e with a gate that needs a fresh run. | The stubs gained the registry half of D-20 (the plex.tv roster with a hidden-empty friend and a `User not found:` managed user, community GraphQL with upper-case `MOVIE` / `SHOW`, discover metadata, Seerr users and watchlist pages with the error-body switch); the stack runs the `watchlist-registry` mode at boot and the Trash spec re-runs it before it deletes. No default stub list holds a deletable Trash pool title (the owner's holds Stub Runner, already kept by its `dnd` tag); `POST /_stub/seerr-watchlist` puts one on the member's Seerr list (the Trash e2e, D-25bi). The *arr and Seerr settings stubs are part 2's. |
-| D-25ad | What the D-12 self-check compares a term against. | Each release name as it is and folded the way the tokens are (accents and apostrophes removed, `&` read as `and`): scene names carry neither, while Radarr's renamed file keeps them ("Don't Look Up (2021) …"), so a raw-only check would reject every such title's term and keep it forever. A release posted with an apostrophe in its name is not matched by the group term (counted by S6(e)). A renamed file is checked by its own name: a Sonarr relative path carries its season folder (`Season 03/…`), which the anchored term never matches. _(D-25bq: such a real name now makes the term `low_confidence`, and the S6(e) report counts it as `foldOnly`.)_ |
+| D-25ad | What the D-12 self-check compares a term against. | Each release name as it is and folded the way the tokens are (accents and apostrophes removed, `&` read as `and`): scene names carry neither, while Radarr's renamed file keeps them ("Don't Look Up (2021) …"), so a raw-only check would reject every such title's term and keep it forever. A release posted with an apostrophe in its name is not matched by the group term (counted by S6(e)). A renamed file is checked by its own name: a Sonarr relative path carries its season folder (`Season 03/…`), which the anchored term never matches. _(D-25bq: such a real name now makes the term `low_confidence`, and the S6(e) report counts it as `foldOnly`.)_ _(D-25dd: the group term now matches it: the term writes the raw apostrophe.)_ |
 | D-25ae | What counts as a release name (`originalFilePath`, the exact form). | A name that names a RELEASE: title tokens, a year or a season, and a resolution or a group. `originalFilePath` gives its last segment when that is one, else the folder above it (an obfuscated file inside a release folder must not defeat the self-check), else nothing. The exact form is built only from such a name: the exact form of a bare "Babygirl (2024)" would block every release of the title. |
 | D-25af | When the ledger's names join a record whose file the *arr still has. | Only when the *arr has no release name for the file (no grab, no `sceneName`, no usable `originalFilePath`); otherwise a stale ledger import could push the group term into its exact fallback. The ledger alone identifies an item the *arr no longer has before the delete. |
 | D-25ag | An item with nothing to re-fetch, and one already gone. | A movie with no file (a series with no file in a season ≥ 1) is deletable with a term-less `none` record, kept as evidence. A movie or series the *arr answers 404 for before the delete is identified from the ledger (`ledger_grab`), else kept `release_unrecorded` (`gone`). |
@@ -1107,7 +1142,7 @@ those of its fourth (the same way). Rows D-25db and D-25dc record the review of 
 | D-25bn | The owner's discover list is paged by offset, and `readAllContainerPages` believed each page's `totalSize`: a title removed from the pages already read moved an unread title back across the page boundary, the read ended short with `truncated: false`, and the registry replaced the owner's list without a title still on it. | The first page's `totalSize` is the listing's total; a later page reporting another one means the list shifted. The whole read is repeated once from `start=0`, and a second inconsistent read returns `truncated: true`, which fails the run `owner_truncated` and keeps the stored list (D-02, D-04). The rule lives in the shared helper, so the Watch Companion's `getWatchlist` and `listAllLeaves` get it too (harmless there). |
 | D-25bo | The re-add check's window started at the ledger row's `first_seen_at`, but the media sync re-matches a re-added title onto its old row (updating `arr_item_id`, keeping `first_seen_at`), so a re-add with no grab yet was closed on its first check and a later grab of the same release was never seen. | The window runs from the check's own first sighting: with no grab, the first match stamps `readd_seen_at` (verdict null); the check selects records never seen, or seen with no verdict within the last 7 days, and stamps the verdict (`readd_same_release`) once a grab appears, keeping the sighting time. No migration; the card's "not grabbed yet" reads the same rows. Supersedes D-25ao. |
 | D-25bp | A movie's exact fallback: `deriveTerm` builds it from the FIRST real name and checks it against that name only, so a grab title and a different scene name (or a ledger grab and import name) left the file's own name unblocked, the "same title, different index" case of ruling 2. | `deriveTermsPerName`: when the combined derivation comes back `exact` and the record has more than one distinct real name, each name gets its own derivation (its own group term when it carries a group and passes the self-check, else its own exact form), one record each; a name that yields no term keeps the movie `release_unrecorded`. `identifyMovie` and the Radarr branch of the ledger path use it; the series path keeps D-25bb and D-25bc. |
-| D-25bq | The self-check accepted a real release name that matches only when folded (an apostrophe, an accent or `&`), labelled the term `verified`, and the S6(e) count D-25ad relied on did not exist, although Radarr and Sonarr test the raw title. | A real name (not the renamed file, which is what the fold is for) that the term matches only folded makes the term `low_confidence` (`foldOnly` on the derivation and the draft). The S6(e) pool report counts `foldOnly` and `foldOnlyShare` per kind. The grammar is unchanged: an accent or `&` cannot be matched by the D-12 templates, and joining an apostrophe-split word would need a template change (ADR-093 C-19), so the share is measured instead. |
+| D-25bq | The self-check accepted a real release name that matches only when folded (an apostrophe, an accent or `&`), labelled the term `verified`, and the S6(e) count D-25ad relied on did not exist, although Radarr and Sonarr test the raw title. | A real name (not the renamed file, which is what the fold is for) that the term matches only folded makes the term `low_confidence` (`foldOnly` on the derivation and the draft). The S6(e) pool report counts `foldOnly` and `foldOnlyShare` per kind. The grammar is unchanged: an accent or `&` cannot be matched by the D-12 templates, and joining an apostrophe-split word would need a template change (ADR-093 C-19), so the share is measured instead. _(D-25dd: S6(e) measured it at 1.8% of Sonarr's names, and the templates now write the raw apostrophes, accents and `&`; `foldOnly` counts only what they cannot write.)_ |
 | D-25br | The stranded settle and the 365-day expiry (D-13 step 1) ran only inside a delete path's reconcile, so after an ambiguous handle failure "an hour later" (D-14 step 7) meant the next batch of that kind, and a still-present title's current release stayed blocked for days. | `reconcileReleaseBlockIfDue` runs in the `trash-batch-sweep` job every hour after the sweep, before the re-add check, whether or not a batch was due: for each *arr with an `in_flight` record older than the settle age or an `active` record past `expires_at`, one reconcile. Nothing due makes no *arr call; a failure logs `[release-block] upkeep_failed` (warn), never changes the exit and never pauses the sweep. The job report carries `releaseBlockUpkeep`. |
 | D-25bs | An enrollment whose POST answer was lost (a 10 s timeout; POSTs are not retried) or whose row insert failed after the POST left no row, so the next run read both flags on and recorded the app's own enrollment `already_on`; a rollback that turns off `already_on = false` users would miss them. | The row is inserted PENDING (`already_on` false, `confirmed_at` null, a new column in 0081) BEFORE the write and confirmed from the response; a pending user whose flags read on at the next run is confirmed as the app's enrollment, never `already_on`, and one still off is written again. The daily re-check reads confirmed rows only; the summary reports `pending` separately. |
 | D-25bt | The grown invariant required `forceSeerr` on every armed rule pool, but Maintainerr 3.29.0 never stores it on an episode collection (`rules.service.ts`), so an armed episode pool would keep the audit unsafe forever while the save's drift check expects it off. | An episode pool (`type` `episode` or 4) is exempt from the `forceSeerr` requirement, like `ruleGroupDrift`; it is still held to `listExclusions`, `arrAction` Delete and the horizon. An episode delete leaves the series and its Seerr record in place, so the re-request path is not involved. |
@@ -1146,6 +1181,11 @@ those of its fourth (the same way). Rows D-25db and D-25dc record the review of 
 | D-25da | The dev:local / e2e stack points Radarr and Sonarr at one stub with one key, and the stub kept one release profile list, so since D-25ce / D-25cf every upkeep run's Sonarr pass read the Radarr term as drift and rewrote it away (and back), logging drift every run. | The stack gives Radarr and Sonarr their own stub keys and the stub keeps a list per key; `/_stub/release-profiles` answers `{radarr, sonarr}` (OPS-003). A stub smoke test on embedded PG runs the upkeep twice after a Radarr write: the term stays, no drift. |
 | D-25db | PLAN-072 suspended the sweep CronJob with `kubectl` at S4 (with a declaration and a daily check that it stayed suspended), resumed it the same way at S6, and suspended it and the registry CronJob by hand in the rollback. The chart renders `suspend` on every CronJob and a Helm upgrade patches the live value back to the rendered one, so the S4 deploy itself would lift a hand-set suspend; in a rollback after S6 (git says `suspend: false`) the hold PR's or the image revert's upgrade would lift it and the older image would delete watchlisted titles without recording or blocking the release; and a hand resume while git says `true` is re-suspended by the next release with no alert (CronJobNotSucceeding skips a suspended CronJob, and a sweep that never runs logs no `sweep_paused`). Found in the haynes-ops #3223 review. | Every sweep and registry CronJob suspend and resume goes through haynes-ops git (`cronjob.suspend`), never `kubectl`: S4 sets the sweep's `suspend: true` in the deploy PR; S6 sets `suspend: false` in the PR that removes `TRASH_WEB_DELETES_HELD`; the rollback's suspend lands before the image revert or in it, the revert keeps it (the tag is edited, the S4 change never reverted wholesale), and the registry CronJob is removed in the revert's change (the same Helm upgrade) or suspended in git before it; the rollback's resume is a PR too. With nothing hand-set, S4 needs no declaration and no daily check. PLAN-072 S4, S6 and Rollback steps 1, 3, 4 and 6 and OPS-017 §1 and §8 say so. |
 | D-25dc | A registry run that throws logs `run_failed` (`failure: error`) and exits 1; with `backoffLimit: 1` the Job retried in the same slot and logged a second scheduled `run_failed`, so the 8-line `WatchlistRegistryRunsFailing` streak (D-21: 8 runs, 2 hours) could fill in 4 slots, about 1 hour. | The `sync-watchlist-registry` CronJob runs `backoffLimit: 0` (D-20): the next slot is 15 minutes away, so each slot logs at most one scheduled `run_failed` and 8 lines are 8 slots. A Job run by hand from the CronJob (OPS-017 §2) logs trigger `schedule` too and counts as one more. |
+| D-25dd | PLAN-072 S6(e) (2026-09-27, v0.101.0): over the ledger's real grabbed and imported names, 345 of 19,434 Sonarr names (1.8%) and 3 of 1,159 Radarr names keep an apostrophe, an accent or `&` (Bob's Burgers, It's Always Sunny in Philadelphia, Los Pingüinos de Madagascar, Lilo & Stitch, episode titles such as "Don't Ruin the Basketball Game"), so their D-12 term matched them only folded (`foldOnly`) and Radarr and Sonarr, which test the raw title, would not have blocked them. D-25bq had measured that share rather than change the grammar. | The terms are written from the raw names (D-12): an apostrophe inside a word is `SEP?` (`SEP*` in the exact form), an accented letter an alternation of the folded letter and the accented ones (single letters in U+00C0..U+024F and U+1E00..U+1EFF that fold to it), an `and` between two words optional; the apostrophes and accents come from the record's names, its renamed file and the *arr's title when they start with the same words (`termWords`, `mergeTermWords`). The whitelist grows by exactly these three constructs, none of which can fail to compile (ADR-093 C-19); `isGrammarTerm`, the self-check and the fold-tolerant `termMatches` are otherwise unchanged. A term only ever matches more spellings of the same words, so no term is lost: re-run off-cluster over a read-only dump of the same ledger (20,594 names on 2026-09-27), the shapes are unchanged (Radarr group 1,110, exact 40, none 10; Sonarr 17,466, 1,763, 205) and `foldOnly` falls from 348 to 0; over the 164 pool movies (their D-11 inputs dumped read-only, the old derivation reproducing all 164 live identities) the counts are unchanged (162 group: 6 verified, 156 `low_confidence`; 2 `no_term`; 3 namesake-narrowed; 0 `foldOnly`), and 12 renamed-only terms now also match their title's own spelling ("The Killer's Game", "Vita & Virginia"). `foldOnly` stays as the backstop for what the grammar cannot write (a decomposed accent inside a word). Tested with 35 of the real fold-only ledger names (one or two per title, every character class), the new accepts and refusals of the grammar, and the pool report's `foldOnly` count on a decomposed accent. |
+| D-25de | Q-01 / PRD Q-15: may the app sign in as a managed Home user (the switch token) to read their watchlist for the Trash guard? | Owner, 2026-09-26: "Leave them out just make sure to automatically pickup new users. I'll move everyone on Plex Home to their own account linked with the server." The switch path is never built (D-25z) and the three managed users stay `unresolvable`: they never block. New users are picked up with no change: every run re-reads the roster from plex.tv `/api/users` and `/api/home/users` (D-01), so a new account (a member moved to their own account, a new friend) is in the registry at the next run, starting `never_read` (D-04); once enrollment is on (PLAN-072 S9), every run enrolls each Seerr Plex user without a confirmed row (D-17), so a person gets auto-requests once they have signed in to Seerr once. PLAN-072 S6a is done with this answer. |
+| D-25df | Q-12 / Q-13: is the share of pool items PLAN-072 S6(e) keeps `release_unrecorded` material? | No (driver ruling). 2 of 164 pool movies (1.2%) have no term: Whaledreamers (2006, `aAF`) and The Specials (2000, `HANDJOB`), DVD files whose renamed name carries no resolution token, so the 480p group term fails its self-check, and a renamed file gets no exact form. The 158 disk imports in the pool have no null group (Q-12). The two stay kept (D-11) and come back in later batches; Q-13 is not put to the owner. |
+| D-25dg | D-25q said the Watchlists card's headline reproduces the research's 22 / 20 split. | Live at PLAN-072 S6 the rule gives 21 read and 21 can't be read (`byList`: read 21, empty 18, unresolvable 3): the friend whose community read is empty and whose Seerr list answers 0 is `empty_unverified`, where the research counted that friend as read. The rule stands (0 is also Seerr's error answer, D-02); the count is corrected. Seerr now has 17 Plex users (user 17, the second full Home member, joined 2026-09-26T18:27Z); the owner's link is recorded but read through discover (D-25e), so there are still 16 Seerr sources. |
+| D-25dh | Q-05's remaining limit: a renamed-only term (156 of the 164 pool terms) is built from Radarr's title, year, quality and group, never from a real release name, so it cannot be verified. | Accepted and recorded in ADR-093 (C-22). Simulated over the ledger's real Radarr names (each name's renamed-only term built as the pool's are, then tested raw against that real name): 1,027 of 1,123 blocked (91.5%) at S6; with D-25dd, 1,035 of 1,124 (92.1%) over the next dump (one more name), where the old derivation still blocks 1,028. The 89 misses left: a different title (an alternate or foreign title, or a mis-grab; 43), an edition or cut between the title and the year (15), a release title shorter than the *arr's (12), another resolution token (1080i, none, or a mislabelled quality; 12), a year outside the window (5), a Remux with no `remux` token (1), and a name that opens with a quotation mark (1). A re-request of such a title could fetch the deleted release; D-23's re-add check reports it (`readd_same_release`). |
 
 ## Alternatives considered
 
@@ -1197,7 +1237,8 @@ those of its fourth (the same way). Rows D-25db and D-25dc record the review of 
   rules); the re-add check (a new *arr id with a same-release grab, with a different release, with no grab yet); the
   second review pass (D-25bn..D-25bz): an owner list that loses a title between page reads is read again and never
   returned short and "complete", a second shift is truncated; a movie whose grab title and scene name differ gets a
-  term per name; a Tigole-style name with an apostrophe, `&` or an accent is `low_confidence` and `foldOnly`; an
+  term per name; a Tigole-style name with an apostrophe, `&` or an accent is `low_confidence` and `foldOnly` (verified
+  since D-25dd); an
   episode pool is not held to `forceSeerr`; the Expire report's abort copy per reason; the card's first-failed
   headline; the unverifiable reason per cause. The third pass (D-25ca..D-25cq): the Expire now preview keeps a
   watchlisted pending row; a tile's kept tooltip, projected skip and note (`batchTileView`); the Library notice's
@@ -1205,6 +1246,12 @@ those of its fourth (the same way). Rows D-25db and D-25dc record the review of 
   deadline; the env hold flag. The fourth pass (D-25cr..D-25da): a renamed-only term leaves out a namesake's year
   (The Killer 2024 / 2023) but never the *arr's own; the Library notice keeps the watchlist note on Save; the
   Start-a-batch `freesBytes` and the unfiltered pick; the Expedite-all protected line; the Expire now outcome lines.
+  PLAN-072 S6 (D-25dd): 35 real ledger names that used to match only folded (apostrophes, accents, `&`, `&amp;`, in
+  group and exact terms) each get a verified term that matches the raw name and its folded spelling, and the ledger
+  pass over them counts no fold-only term; a group term still blocks only its season, resolution and group; a
+  renamed-only pool term matches its title's own apostrophe and `&`; the grammar accepts the apostrophe join, the
+  accented alternation and the optional `and` and refuses any other alternation, a join in a group, an `and` with no
+  word after it; a decomposed accent inside a word is still `foldOnly` (the report counts it).
 - **Integration (embedded Postgres, stub HTTP):** migration 0081 applies and replays; the refresh writes and carries
   forward; a Seerr stub that answers 200-empty after a non-empty read, and one whose page 2 answers the error body,
   leave the registry's items for that user unchanged; a community friend going hidden keeps their items; a sweep with
@@ -1258,16 +1305,16 @@ those of its fourth (the same way). Rows D-25db and D-25dc record the review of 
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | Managed Home users: does `POST plex.tv/api/home/users/{id}/switch` with the owner token work without side effects (a new device or session record, disturbing the owner token), and do managed users have a discover watchlist at all? | (open; PRD Q-15, owner's call because it signs in as a managed user) Disabled until answered; managed users are `unresolvable` (D-04) and do not block. PLAN-072 S6a asks the owner and, on a yes, tests the switch on one managed user; the ruling is recorded here as a D-NN. |
+| Q-01 | Managed Home users: does `POST plex.tv/api/home/users/{id}/switch` with the owner token work without side effects (a new device or session record, disturbing the owner token), and do managed users have a discover watchlist at all? | **Answered by the owner, 2026-09-26 (D-25de):** "Leave them out just make sure to automatically pickup new users. I'll move everyone on Plex Home to their own account linked with the server." The switch is never built or probed; managed users stay `unresolvable` (D-04) and do not block; new accounts are read from the next run. PRD Q-15. |
 | Q-02 | May the guard use friends' **private** watchlists read through Seerr's stored tokens? | **Resolved by the driver decision recorded in ADR-093 C-01/C-06:** yes, as guard input only, never shown or logged. |
-| Q-03 | Seerr caches one watchlist response per token with its ETag, whatever the offset. Can our sequential page reads interleave badly with Seerr's own 3-minute sync of the same user (a 304 answered with another page's cached body)? Only sequential reads were tested. | (open) D-02 now detects the symptom (a page repeating an earlier page's `ratingKey` is inconsistent, read again once, then failed). PLAN-072 S6 compares a registry read of each Seerr user with a direct read, compares registry runs with Seerr's `Failed to retrieve watchlist items` log lines, and watches Seerr's sync logs for errors after enrollment. |
+| Q-03 | Seerr caches one watchlist response per token with its ETag, whatever the offset. Can our sequential page reads interleave badly with Seerr's own 3-minute sync of the same user (a 304 answered with another page's cached body)? Only sequential reads were tested. | **Answered for today's load (PLAN-072 S6(d), 2026-09-27):** after two registry runs (01:29Z and 01:44Z), each of the 16 Seerr sources equalled a direct sequential Seerr read (the same `ratingKey` sets; the owner's Seerr list equalled the discover list, 151 titles), no page was inconsistent, and Seerr logged no `Failed to retrieve watchlist items` after the registry started (its last two, 2026-09-26 02:30Z and 05:18Z, came from the owner-only sync). Still open: S6(h) lines a day of registry runs up with Seerr's error lines, and real contention only begins at S9, when Seerr syncs every enrolled user every 3 minutes; D-02 keeps detecting the symptom. |
 | Q-04 | What does a release profile with about 2,600 regex terms cost Radarr and Sonarr per release decision (RSS sync, a search)? | (open) PLAN-072 S7 records Radarr's RSS-sync and search durations before and after; the 3,000 cap is lowered if it hurts. |
-| Q-05 | Do the derived terms match real release names: title normalization (apostrophes, `&`, punctuation), the year alternation, remux detection, TV season naming? Anime absolute and daily numbering are out of scope. | (open) PLAN-072 S6 runs the derivation over the 170 pool movies and the ledger's grabbed names read-only and reports the self-check misses and the `low_confidence` share. |
+| Q-05 | Do the derived terms match real release names: title normalization (apostrophes, `&`, punctuation), the year alternation, remux detection, TV season naming? Anime absolute and daily numbering are out of scope. | **Answered (PLAN-072 S6(e), 2026-09-27):** all 162 pool terms match their own names (0 self-check misses), the 6 verified ones their real names raw. Over the ledger's 20,593 real names, a known group fell back to the exact form 13 times (Radarr) and 164 (Sonarr), 10 and 205 names got no term, and 85 Sonarr names carry no season (exact terms, D-25ct). Names with an apostrophe, an accent or `&` (1.8% of Sonarr's) matched only folded: fixed by D-25dd (none left). A renamed-only term blocks about 92% of real names in simulation, an accepted limit (D-25dh, ADR-093 C-22). |
 | Q-06 | "Index" read as the release (all posts and indexers of one group's release at one resolution), not one NZB post or one indexer. | Driver interpretation (ADR-093 C-07); it matches "the same title, different index". |
 | Q-07 | Is a 365-day term life right, or should a block last as long as the title exists anywhere? | (open; PRD Q-16) 365 days bounds the profile; the owner may lengthen it. |
 | Q-08 | Should a user's own later opt-out of Seerr watchlist sync be respected? | Driver decision: yes (enroll once). Revisit if the owner wants it enforced. |
 | Q-09 | Seerr 3.4.1 creates a missing settings row with `user: req.user` (the API key's user 1). Does TypeORM's cascade from the target user still link it to the target? | (open) The S9 canary targets a user with no settings row and reads the settings back, and user 1's settings are checked unchanged. |
 | Q-10 | Do Seerr's default quotas hold back first-enable auto-requests (a `QuotaRestrictedError` is logged only at debug)? | (open) S9 reads `GET /api/v1/settings/main` `defaultQuotas` before the enable. |
 | Q-11 | The remediation releases were inferred by size from a copy of the legacy HaynesTower SAB history; Terrifier's ledger year (2018) differs from its release's (2016). | (open) S8 re-reads the live history read-only and confirms each name and the Radarr ids before writing terms. |
-| Q-12 | What does `releaseGroup` look like for the 163 disk-imported pool movies (how many are null, so only an exact name or nothing can be blocked)? | (open) Measured by the S6 dry run; a null group with no name is counted `unblockable` and kept (D-11). |
-| Q-13 | If many pool items have no recordable term, may they be deleted unblocked (a re-request would then fetch the same release), or do they stay kept? | (open; asked only if S6(e) shows a material share) Until the owner answers they are kept (`release_unrecorded`, D-11, D-24g). |
+| Q-12 | What does `releaseGroup` look like for the 163 disk-imported pool movies (how many are null, so only an exact name or nothing can be blocked)? | **Answered (PLAN-072 S6(e), D-25df):** of the 164 in the pool on 2026-09-27, 158 are disk imports and none has a null group; 156 get a group term (`low_confidence`, renamed-only) and 2 none (DVD files with no resolution token), kept `release_unrecorded`. |
+| Q-13 | If many pool items have no recordable term, may they be deleted unblocked (a re-request would then fetch the same release), or do they stay kept? | **Not asked (D-25df):** S6(e) kept 2 of 164 (1.2%), not a material share, so they stay kept (`release_unrecorded`, D-11, D-24g). It is asked if a later pool shows a material share. |

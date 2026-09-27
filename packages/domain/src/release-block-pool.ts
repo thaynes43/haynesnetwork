@@ -37,9 +37,10 @@ export interface PoolReleaseKindReport {
   /** Records by shape: `exact` counts the D-12 self-check falling back from the group form (or no group at all). */
   shape: { group: number; exact: number; none: number };
   confidence: { verified: number; low_confidence: number };
-  /** D-25ad / D-25bq — records whose term matches a real release name of the record only in folded form (an
-   *  apostrophe, an accent or `&`): the *arr tests the raw title, so that name is NOT blocked. Counted within
-   *  `confidence.low_confidence`; `foldOnlyShare` is its share of the records with a term (0..1). */
+  /** D-25ad / D-25bq — records whose term matches a real release name of the record only in folded form: the *arr
+   *  tests the raw title, so that name is NOT blocked. Since D-25dd the term writes the raw apostrophes, accents and
+   *  `&`, so this counts only what the grammar cannot write (a decomposed accent inside a word, a doubled apostrophe).
+   *  Counted within `confidence.low_confidence`; `foldOnlyShare` is its share of the records with a term (0..1). */
   foldOnly: number;
   foldOnlyShare: number;
   /** D-25cr — renamed-only records whose widened year window left out a year another title of the same name holds

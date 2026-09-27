@@ -4,6 +4,31 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-27 — Watchlist protection (PLAN-072): S4 deployed, S6 (a)..(g) passed live on v0.101.0; the release-block term fix is a PR; S6(h) and the resume wait
+
+**Where it stands:** v0.101.0 runs (haynes-ops #3223 merged 2026-09-27T01:18Z): the `sync-watchlist-registry`
+CronJob reads every 15 minutes, the sweep CronJob is `suspend: true` in git and `TRASH_WEB_DELETES_HELD=true` holds
+Expedite and Expire now. **S6 (a)..(g) passed** read-only (PLAN-072 log, 2026-09-27): 42 accounts equal plex.tv's
+roster; the gate verifies; the pool (164 movies, TV 0) holds no listed title and a dry-run guardian keeps none; every
+Seerr source equals a direct read (Q-03); the Maintainerr flags and audit are safe. **S6(e) found one defect:** 345 of
+19,434 Sonarr ledger names and 3 of 1,159 Radarr names keep an apostrophe, an accent or `&`, and their D-12 terms
+matched them only folded, which Sonarr and Radarr (testing the raw title) would not block. **Fix:** DESIGN-052 D-25dd,
+the PR "fix(trash): release-block terms match apostrophes and accents; PLAN-072 S6 results" (an apostrophe inside a
+word is an optional separator, an accented letter an alternation, an inner `and` optional; `foldOnly` 348 → 0 over
+the ledger, shapes unchanged; tests from real ledger names). The same PR records S6 in PLAN-072, answers DESIGN-052
+Q-01 (owner: leave managed users out, D-25de), Q-03, Q-05 and Q-12 (Q-13 not asked: 2 of 164 kept, D-25df), corrects
+D-25q's split to 21 / 21 (D-25dg) and adds ADR-093 C-22 (a renamed-only term blocks about 92% of real names, D-25dh).
+
+**Next, in order:** (1) merge that PR, release it (release-please), deploy the image through haynes-ops; it must be
+live before S8 (the seed derives terms from the ledger's names) and should be before S7. (2) S6(h): after
+2026-09-28T01:22Z, line a day of registry runs up with Seerr's `Failed to retrieve watchlist items` lines (none since
+the registry started). (3) S0's final cross-check of batch `08576e59` (expired 2026-09-27T06:17Z, 45 pending, waiting
+in `leaving_soon` while the sweep is suspended) in the 1 to 2 hours before (4) the resume PR in haynes-ops (the sweep
+`suspend: false`, `TRASH_WEB_DELETES_HELD` removed; never `kubectl`). Then S7 (the first guarded sweep), S8 (seed),
+S9 (Seerr enable; one enrollment row per Seerr Plex user, 17 today), S10, S11. Interim Saves (S0): Trap, Death of a
+Unicorn, The Legend of Ochi (batch Saves) and Summer of 69, Influencers, The Alto Knights (pool Saves, 16:33Z on
+2026-09-26) are all Saved; S11 asks the owner whether they stay.
+
 ## ▶ 2026-09-26 — Watchlists protect titles from Trash (issue #576): S2 merged (PR #595) and released as v0.101.0; S4 deploy is haynes-ops #3223, the sweep suspended in git; interim Saves by hand
 
 Three owner rulings on 2026-09-26 (issue #576, and on his phone): **no Trash deletion of a title on anybody's Plex

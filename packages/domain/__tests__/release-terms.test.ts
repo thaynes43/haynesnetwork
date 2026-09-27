@@ -7,13 +7,17 @@ import {
   compileTerm,
   deriveTerm,
   deriveTermsPerName,
+  foldReleaseName,
   isGrammarTerm,
+  mergeTermWords,
   parseReleaseGroup,
   parseReleaseName,
   releaseTokens,
   renderTerm,
+  resolutionFromQualityName,
   termMatches,
   termMatchesRaw,
+  termWords,
   type TermDerivationInput,
 } from '../src/index';
 
@@ -137,7 +141,7 @@ describe('deriveTerm — movies (D-12)', () => {
     ).toBe(true);
   });
 
-  it('apostrophes and & fold the same way in the term and in a scene name', () => {
+  it('D-25dd: an apostrophe is an optional separator and an `and` may be a raw `&`, so the raw names match too', () => {
     const d = deriveTerm(
       movie({
         arrTitle: "Don't Look Up",
@@ -147,10 +151,15 @@ describe('deriveTerm — movies (D-12)', () => {
         resolution: 2160,
       }),
     )!;
-    expect(d.term.startsWith('/^dont[^a-z0-9]+look[^a-z0-9]+up')).toBe(true);
-    expect(
-      termMatches(d.term, 'Dont.Look.Up.2021.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.H.265-FLUX'),
-    ).toBe(true);
+    expect(d.term.startsWith('/^don[^a-z0-9]?t[^a-z0-9]+look[^a-z0-9]+up')).toBe(true);
+    for (const name of [
+      "Don't.Look.Up.2021.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.H.265-FLUX",
+      'Dont.Look.Up.2021.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.H.265-FLUX',
+      'Don’t Look Up 2021 2160p NF WEB-DL DDP5 1 Atmos DV H 265-FLUX',
+    ]) {
+      expect(termMatchesRaw(d.term, name)).toBe(true);
+    }
+    expect(d).toMatchObject({ confidence: 'verified', foldOnly: false });
     const amp = deriveTerm(
       movie({
         arrTitle: 'Fast & Furious',
@@ -160,7 +169,16 @@ describe('deriveTerm — movies (D-12)', () => {
         resolution: 1080,
       }),
     )!;
-    expect(termMatches(amp.term, 'Fast & Furious 2009 1080p BluRay x264-SPARKS')).toBe(true);
+    expect(amp.term.startsWith('/^fast[^a-z0-9]+(?:and[^a-z0-9]+)?furious[^a-z0-9]+2009')).toBe(true);
+    for (const name of [
+      'Fast.and.Furious.2009.1080p.BluRay.x264-SPARKS',
+      'Fast & Furious 2009 1080p BluRay x264-SPARKS',
+      'Fast&Furious.2009.1080p.BluRay.x264-SPARKS',
+    ]) {
+      expect(termMatchesRaw(amp.term, name)).toBe(true);
+    }
+    // Still that title only: another film of the group and year is not blocked.
+    expect(termMatchesRaw(amp.term, 'Fast.Five.2009.1080p.BluRay.x264-SPARKS')).toBe(false);
   });
 
   it('a renamed file as the only name: low confidence, year window widened by one each side', () => {
@@ -344,7 +362,7 @@ describe('deriveTermsPerName — a record with several real names (D-25bp)', () 
   });
 });
 
-describe('fold-only self-check (D-25bq): the *arr tests the raw title', () => {
+describe('the raw title (D-25bq, D-25dd): the *arr tests the name as it is', () => {
   const cases: Array<[string, Partial<TermDerivationInput>]> = [
     [
       "Harry Potter and the Sorcerer's Stone (2001) (1080p BluRay x265 HEVC 10bit AAC 7.1 Tigole)",
@@ -357,11 +375,40 @@ describe('fold-only self-check (D-25bq): the *arr tests the raw title', () => {
     ['Amélie.2001.1080p.BluRay.x264-GRP', { arrTitle: 'Amélie', arrYears: [2001], releaseGroup: 'GRP', resolution: 1080 }],
   ];
 
-  it.each(cases)('%s: matched only folded, so the term is low_confidence and foldOnly', (name, over) => {
+  it.each(cases)('%s: the term matches the raw name, so it is verified', (name, over) => {
     const d = deriveTerm(movie({ ...over, releaseNames: [name] }))!;
-    expect(termMatches(d.term, name)).toBe(true); // the self-check still accepts it (folded) …
-    expect(termMatchesRaw(d.term, name)).toBe(false); // … but Radarr / Sonarr would not block that name
-    expect(d).toMatchObject({ confidence: 'low_confidence', foldOnly: true });
+    expect(termMatchesRaw(d.term, name)).toBe(true);
+    expect(termMatchesRaw(d.term, foldReleaseName(name))).toBe(true); // … and the folded spelling of it
+    expect(d).toMatchObject({ confidence: 'verified', foldOnly: false });
+  });
+
+  it('an accented letter matches both spellings, and the *arr title adds its own (Léon, the release says Leon)', () => {
+    const d = deriveTerm(
+      movie({
+        arrTitle: 'Léon: The Professional',
+        arrYears: [1994],
+        releaseNames: ['Leon.1994.Theatrical.Cut.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.HYBRID.REMUX-FraMeSToR'],
+        releaseGroup: 'FraMeSToR',
+        resolution: 2160,
+        remux: true,
+      }),
+    )!;
+    expect(d.term.startsWith('/^l(?:e|é)on[^a-z0-9]+1994')).toBe(true);
+    expect(termMatchesRaw(d.term, 'Léon.1994.Theatrical.Cut.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.HYBRID.REMUX-FraMeSToR')).toBe(true);
+    expect(termMatchesRaw(d.term, 'LÉON.1994.UHD.BluRay.2160p.REMUX-FraMeSToR')).toBe(true);
+    expect(termMatchesRaw(d.term, 'Lion.1994.UHD.BluRay.2160p.REMUX-FraMeSToR')).toBe(false);
+  });
+
+  it('a name the grammar still cannot write (a decomposed accent inside a word) is matched only folded: low_confidence, foldOnly', () => {
+    // NFD: "e" followed by U+0301. The term's `(?:e|é)` matches the composed letter or the bare one, not the pair, and
+    // Radarr and Sonarr test the name as it is; the self-check still accepts it folded, so it is counted, not hidden.
+    const name = 'Ame\u0301lie.2001.1080p.BluRay.x264-GRP';
+    const d = deriveTerm(movie({ arrTitle: 'Amélie', arrYears: [2001], releaseGroup: 'GRP', resolution: 1080, releaseNames: [name] }))!;
+    expect(termMatches(d.term, name)).toBe(true);
+    expect(termMatchesRaw(d.term, name)).toBe(false);
+    expect(d).toMatchObject({ shape: 'group', confidence: 'low_confidence', foldOnly: true });
+    const exact = deriveTerm(movie({ arrTitle: 'Amélie', arrYears: [2001], releaseNames: ['Ame\u0301lie.2001.1080p.BluRay.x264'] }))!;
+    expect(exact).toMatchObject({ shape: 'exact', confidence: 'low_confidence', foldOnly: true });
   });
 
   it('a scene name without those characters stays verified; a renamed file alone is low_confidence but not foldOnly', () => {
@@ -375,6 +422,8 @@ describe('fold-only self-check (D-25bq): the *arr tests the raw title', () => {
       }),
     )!;
     expect(scene).toMatchObject({ confidence: 'verified', foldOnly: false });
+    // The *arr title's apostrophe is merged in: a repost that keeps it is blocked too.
+    expect(termMatchesRaw(scene.term, "Don't.Look.Up.2021.2160p.NF.WEB-DL.DDP5.1.Atmos.DV.H.265-FLUX")).toBe(true);
     const renamed = deriveTerm(
       movie({
         arrTitle: "Don't Look Up",
@@ -389,7 +438,159 @@ describe('fold-only self-check (D-25bq): the *arr tests the raw title', () => {
 
   it('the exact form is judged the same way', () => {
     const d = deriveTerm(movie({ arrTitle: 'Amélie', arrYears: [2001], releaseNames: ['Amélie.2001.1080p.BluRay.x264'] }))!;
-    expect(d).toMatchObject({ shape: 'exact', confidence: 'low_confidence', foldOnly: true });
+    expect(d).toMatchObject({ shape: 'exact', confidence: 'verified', foldOnly: false });
+    expect(termMatchesRaw(d.term, 'Amelie 2001 1080p BluRay x264')).toBe(true);
+  });
+
+  it('D-25dd, the PLAN-072 S6 pool: a renamed-only term blocks the scene spelling and the title`s own (apostrophe, &)', () => {
+    // Radarr's renamed files drop the apostrophe and write `&` as "and"; the *arr title keeps both.
+    const game = deriveTerm(
+      movie({
+        arrTitle: "The Killer's Game",
+        arrYears: [2024, null],
+        renamedFileName:
+          'The Killers Game (2024) {imdb-tt0327785} [Remux-2160p][DV HDR10][TrueHD Atmos 7.1][HEVC]-FraMeSToR.mkv',
+        releaseGroup: 'FraMeSToR',
+        resolution: 2160,
+        remux: true,
+      }),
+    )!;
+    expect(game.term.startsWith('/^the[^a-z0-9]+killer[^a-z0-9]?s[^a-z0-9]+game')).toBe(true);
+    for (const name of [
+      "The.Killer's.Game.2024.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR",
+      'The.Killers.Game.2024.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HEVC.REMUX-FraMeSToR',
+    ]) {
+      expect(termMatchesRaw(game.term, name)).toBe(true);
+    }
+    const vita = deriveTerm(
+      movie({
+        arrTitle: 'Vita & Virginia',
+        arrYears: [2019, 2018],
+        renamedFileName: 'Vita and Virginia (2019) {imdb-tt5859882} [Remux-1080p][DTS-HD MA 5.1][AVC]-KRaLiMaRKo.mkv',
+        releaseGroup: 'KRaLiMaRKo',
+        resolution: 1080,
+        remux: true,
+      }),
+    )!;
+    for (const name of [
+      'Vita.&.Virginia.2018.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-KRaLiMaRKo',
+      'Vita.and.Virginia.2018.1080p.BluRay.REMUX.AVC.DTS-HD.MA.5.1-KRaLiMaRKo',
+    ]) {
+      expect(termMatchesRaw(vita.term, name)).toBe(true);
+    }
+    expect(vita).toMatchObject({ confidence: 'low_confidence', foldOnly: false });
+  });
+});
+
+describe('real ledger names that used to match only folded (PLAN-072 S6(e), D-25dd)', () => {
+  // [arr, *arr title, year, release name, release group, quality]: grabbed and imported names from the ledger whose
+  // term, before D-25dd, matched only the folded name (345 of 19,434 Sonarr names and 3 of 1,159 Radarr names on
+  // 2026-09-27), one or two per title, every character class. Each row is derived exactly as the S6(e) ledger pass does.
+  const rows: Array<[string, string, number, string, string | null, string]> = [
+    ["radarr", "Kiki's Delivery Service", 1989, "Kiki's.Delivery.Service.1989.1080p.Bluray.Remux.AVC.DTS-MA", null, "Remux-1080p"],
+    ["radarr", "I'm Thinking of Ending Things", 2020, "I'm.Thinking.of.Ending.Things.2020.2160p.NF.WEB-DL.DD+5.1.Atmos.H.265-playWEB", "playWEB", "WEBDL-2160p"],
+    ["radarr", "The Sorcerer's Apprentice", 2010, "The.Sorcerer's.Apprentice.2010.BluRay.1080p.DTS-HD.MA.5.1.AVC.REMUX-FraMeSToR", "FraMeSToR", "Remux-1080p"],
+    ["sonarr", "American Dad!", 2005, "American Dad! - S02E12 - It's Good to be the Queen[WEBDL-1080p.AC3.h264.PiTBULL]", null, "WEBDL-1080p"],
+    ["sonarr", "Marvel's Daredevil", 2015, "Marvel's.Daredevil.S03E05.The.Perfect.Game.2160p.DSNP.WEB-DL.DDP.5.1.Atmos.DoVi.HDR.HEVC-SiC", "SiC", "WEBDL-2160p"],
+    ["sonarr", "9-1-1", 2018, "9-1-1 - S06E02 - Crash & Learn[WEBDL-1080p.AC3.h264.alfaHD]", null, "WEBDL-1080p"],
+    ["sonarr", "Arthur", 1996, "Arthur - S17E01-02 - Show Off + Dog's Best Friend.WEBDL-1080p.AAC.x264.TVSmash", null, "WEBDL-1080p"],
+    ["sonarr", "It's Always Sunny in Philadelphia", 2005, "It's Always Sunny in Philadelphia (2005) S09E02 Silah Ilgisi_ Halen Sicak 1080p DSNP WEBDL H264 [TRSub] AAC 0 @TSRG", null, "WEBDL-1080p"],
+    ["sonarr", "It's Always Sunny in Philadelphia", 2005, "It's Always Sunny in Philadelphia (2005) S09E03 Cete Umutsuzca Odul Kazanmaya Calisiyor 1080p DSNP WEBDL H264 [TRSub] AAC 0 @TSRG", null, "WEBDL-1080p"],
+    ["sonarr", "Be Cool, Scooby-Doo!", 2015, "Be.Cool.Scooby-Doo! - S02E26 - Pizza O'Possum's.WEBDL-1080p.AAC.h264.Beards", null, "WEBDL-1080p"],
+    ["sonarr", "Skull Island", 2023, "Skull Island - S01E07 - You're Not a King You're Just a Stupid Animal - [x264-WEBDL-1080p EAC3 Atmos-5.1]", null, "WEBDL-1080p"],
+    ["sonarr", "Bob's Burgers", 2011, "Bob's Burgers (2011) - S11E01 - Dream a Little Bob of Bob [DSNP][WEBDL-1080p][EAC3 5.1][h264]-FLUX", "FLUX", "WEBDL-1080p"],
+    ["sonarr", "Bob's Burgers", 2011, "Bob's Burgers (2011) - S11E02 - Worms of In-Rear-ment [DSNP][WEBDL-1080p][EAC3 5.1][h264]-FLUX", "FLUX", "WEBDL-1080p"],
+    ["sonarr", "#RichKids of Beverly Hills", 2014, "RichKids of Beverly Hills - S02E07 - Pride&Prada[WEBDL-1080p.AAC.h264.OnlyWEB]", null, "WEBDL-1080p"],
+    ["sonarr", "American Greed", 2007, "American Greed - S14E07 - Inside El Chapo's Empire[WEBDL-1080p.AAC.x264.FFG]", null, "WEBDL-1080p"],
+    ["sonarr", "Bering Sea Gold", 2012, "Bering.Sea.Gold.S02E09.Don't.Tell.Me.to.Chillax!.CAFFEiNE.WEB.DL.1080p.WEB-DL.AAC.x264", null, "WEBDL-1080p"],
+    ["sonarr", "Big Mouth", 2017, "Big.Mouth.S01E09.I.Survived.Jessi's.Bat.Mitzvah.SiGMA.WEB.DL.1080p.WEB-DL.AAC.x264", null, "WEBDL-1080p"],
+    ["sonarr", "Alaskan Bush People", 2014, "Alaskan Bush People - S12E08 - Faith & Fury[WEBDL-1080p.AAC.h264.BurCyg]", null, "WEBDL-1080p"],
+    ["sonarr", "Lilo & Stitch: The Series", 2003, "Lilo.&.Stitch.The.Series.S01E34.2003.1080p.DSNP.WEB-DL.AVC.AAC.2.0.25Audio-LongWeb", "LongWeb", "WEBDL-1080p"],
+    ["sonarr", "Lilo & Stitch: The Series", 2003, "Lilo.&amp;.Stitch.The.Series.S01E34.2003.1080p.DSNP.WEB-DL.AVC.AAC.2.0.25Audio-LongWeb", "LongWeb", "WEBDL-1080p"],
+    ["sonarr", "Marvel's Jessica Jones", 2015, "Marvel's.Jessica.Jones.S02E06.AKA.Facetime.2160p.DSNP.WEB-DL.DDP.5.1.Atmos.DoVi.HDR.HEVC-SiC", "SiC", "WEBDL-2160p"],
+    ["sonarr", "Batman: The Animated Series", 1992, "Batman.The.Animated.Series.1992.S01E47.Harley.&.Ivy.1080p.HMAX.WEB-DL.MULTi.DDP2.0.H.264-FUZEER", "FUZEER", "WEBDL-720p"],
+    ["sonarr", "American Chopper", 2003, "American Chopper - S03E01 - Junior's Dream Bike 1[WEBDL-1080p.AAC.h264.POWER]", null, "WEBDL-1080p"],
+    ["sonarr", "black-ish", 2014, "black.ish.S04E07.Please.Don't.Feed.the.Animals.WEB.DL.1080p.WEB-DL.AAC.x264", null, "WEBDL-1080p"],
+    ["sonarr", "The Penguins of Madagascar", 2008, "Los.Pingüinos.de.Madagascar.S01E01.Pánico.con.palomitas.Desaparecido.2021.MULTI.1080p.PMTP.WEB-DL.DD5.1.H.264-AndreMor", "AndreMor", "WEBDL-1080p"],
+    ["sonarr", "The Penguins of Madagascar", 2008, "Los.Pingüinos.de.Madagascar.S01E02.Enredados.en.la.red.Los.tontos.de.la.corona.2021.MULTI.1080p.PMTP.WEB-DL.DD5.1.H.264-AndreMor", "AndreMor", "WEBDL-1080p"],
+    ["sonarr", "Ben 10 (2016)", 2016, "Ben.10.2016 - S01E20 - Don't Let the Bass Drop.WEBDL-1080p.AAC.h264.YFN", null, "WEBDL-1080p"],
+    ["sonarr", "Marvel's The Punisher", 2017, "Marvel's.The.Punisher.S01E04.Resupply.2160p.NF.WEB-DL.DDP.5.1.Atmos.DoVi.HDR.HEVC-SiC", "SiC", "WEBDL-2160p"],
+    ["sonarr", "The Amazing Race", 2001, "The Amazing Race - S18E05 - Don't Ruin the Basketball Game[WEBDL-1080p.AAC.h264.Rmp4L]", null, "WEBDL-1080p"],
+    ["sonarr", "The Amazing Race", 2001, "The Amazing Race - S18E07 - You Don't Get Paid Unless You Win[WEBDL-1080p.AAC.h264.Rmp4L]", null, "WEBDL-1080p"],
+    ["sonarr", "Billy the Kid", 2022, "Billy.the.Kid.S03E04.The.Shepherd's.Hut.WEB.DL.1080p.WEB-DL.AC3.x264", null, "WEBDL-1080p"],
+    ["sonarr", "America's Got Talent", 2006, "Americas Got Talent - S17E06 - Simon's Favorite Golden Buzzers[WEBDL-1080p.AAC.x264.KOGi]", null, "WEBDL-1080p"],
+    ["sonarr", "60 Days In", 2016, "60.Days.In.S05E03.It's.About.to.Get.Ugly.TrollHD.WEB.DL.1080p.WEB-DL.AAC.x264", null, "WEBDL-1080p"],
+    ["sonarr", "Clarence (2014)", 2014, "Clarence.2014 - S01E05-06 - Clarence's Millions + Clarence Gets a Girlfriend.WEBDL-1080p.AAC.h264.ROWSDOWER", null, "WEBDL-1080p"],
+    ["sonarr", "Batwoman", 2019, "Batwoman.S02E07.It's.Best.You.Stop.Digging[.NOCTURNALFEMALE.1080p.BluRay.AAC.x264", null, "Bluray-1080p"],
+  ];
+
+  const derive = ([arr, title, year, name, grp, quality]: (typeof rows)[number]) => {
+    const parsed = parseReleaseName(name, [year]);
+    return deriveTerm({
+      kind: arr === 'radarr' ? 'movie' : 'show',
+      arrTitle: title,
+      arrYears: [year],
+      releaseNames: [name],
+      renamedFileName: null,
+      releaseGroup: grp,
+      resolution: resolutionFromQualityName(quality) ?? parsed.resolution,
+      remux: /remux/i.test(quality) || parsed.remux,
+      season: arr === 'sonarr' ? parsed.season : null,
+    });
+  };
+
+  it.each(rows)('%s %s: %s', (...row) => {
+    const d = derive(row);
+    const name = row[3];
+    expect(d).not.toBeNull();
+    expect(isGrammarTerm(d!.term)).toBe(true);
+    expect(termMatchesRaw(d!.term, name)).toBe(true); // what Radarr / Sonarr test
+    expect(termMatchesRaw(d!.term, foldReleaseName(name))).toBe(true); // a repost without the apostrophe or accent
+    expect(d).toMatchObject({ confidence: 'verified', foldOnly: false });
+  });
+
+  it('the ledger pass over them counts no fold-only term (it counted every one before)', () => {
+    const derived = rows.map(derive);
+    expect(derived.filter((d) => d === null)).toHaveLength(0);
+    expect(derived.filter((d) => d!.foldOnly)).toHaveLength(0);
+  });
+
+  it('a group term still blocks only that season, resolution and group', () => {
+    const bob = derive(rows.find((r) => r[1] === "Bob's Burgers")!)!;
+    expect(bob.shape).toBe('group');
+    expect(termMatchesRaw(bob.term, "Bob's.Burgers.S11E09.1080p.DSNP.WEB-DL.DDP5.1.H.264-FLUX")).toBe(true);
+    expect(termMatchesRaw(bob.term, 'Bobs.Burgers.S11E09.1080p.DSNP.WEB-DL.DDP5.1.H.264-FLUX')).toBe(true);
+    expect(termMatchesRaw(bob.term, "Bob's.Burgers.S12E09.1080p.DSNP.WEB-DL.DDP5.1.H.264-FLUX")).toBe(false);
+    expect(termMatchesRaw(bob.term, "Bob's.Burgers.S11E09.2160p.DSNP.WEB-DL.DDP5.1.H.265-FLUX")).toBe(false);
+    expect(termMatchesRaw(bob.term, "Bob's.Burgers.S11E09.1080p.DSNP.WEB-DL.DDP5.1.H.264-NTb")).toBe(false);
+    const penguins = derive(rows.find((r) => r[3].startsWith('Los.Pingüinos'))!)!;
+    expect(termMatchesRaw(penguins.term, 'Los.Pinguinos.de.Madagascar.S01E07.2021.MULTI.1080p.PMTP.WEB-DL.DD5.1.H.264-AndreMor')).toBe(true);
+    expect(termMatchesRaw(penguins.term, 'Los.Pingüinos.de.Madagascar.S02E07.2021.MULTI.1080p.PMTP.WEB-DL.DD5.1.H.264-AndreMor')).toBe(false);
+  });
+});
+
+describe('termWords and mergeTermWords (D-25dd)', () => {
+  it('reads a name word for word like releaseTokens, with its apostrophes and accented letters', () => {
+    expect(termWords("Bob's Burgers")).toEqual([{ text: 'bobs', joins: [3] }, { text: 'burgers' }]);
+    expect(termWords('Los.Pingüinos.de')).toEqual([{ text: 'los' }, { text: 'pinguinos', accents: { 4: ['ü'] } }, { text: 'de' }]);
+    expect(termWords('LÉON')).toEqual([{ text: 'leon', accents: { 1: ['é'] } }]);
+    expect(termWords('Lilo & Stitch')).toEqual([{ text: 'lilo' }, { text: 'and' }, { text: 'stitch' }]);
+    expect(termWords("Rock 'n' Roll")).toEqual([{ text: 'rock' }, { text: 'n' }, { text: 'roll' }]);
+    expect(termWords("Rock'n'Roll")).toEqual([{ text: 'rocknroll', joins: [4, 5] }]);
+    expect(termWords('Ame\u0301lie')).toEqual([{ text: 'amelie', accents: { 2: ['é'] } }]); // composed first
+    for (const value of ["Amélie's Café & Bar", "Y'All.Thought", 'Straße ½ ﬁn', "O'Possum's.WEBDL-1080p"]) {
+      expect(termWords(value).map((w) => w.text)).toEqual(releaseTokens(value));
+    }
+  });
+
+  it('merges only a form that starts with the same words', () => {
+    const release = termWords('Greys.Anatomy.S01');
+    const title = termWords("Grey's Anatomy");
+    expect(mergeTermWords(release.slice(0, 2), title)).toEqual([{ text: 'greys', joins: [4] }, { text: 'anatomy' }]);
+    expect(mergeTermWords(release.slice(0, 2), termWords("Grey's"))).toEqual(release.slice(0, 2));
+    expect(mergeTermWords(termWords('Pokemon'), termWords('Pokémon Ranger'))).toEqual([
+      { text: 'pokemon', accents: { 3: ['é'] } },
+    ]);
   });
 });
 
@@ -459,9 +660,45 @@ describe('the grammar (D-12 / D-13 step 2)', () => {
         group: ['g'],
       },
       { shape: 'exact', tokens: ['a', 'b', '2020'] },
+      // D-25dd: apostrophe joins, accented alternations and an optional `and`, in every form.
+      {
+        shape: 'movie_group',
+        title: [{ text: 'bobs', joins: [3] }, 'and', { text: 'pokemon', accents: { 3: ['é', 'è'] } }],
+        years: [2020],
+        resolution: 1080,
+        remux: false,
+        group: ['g'],
+      },
+      {
+        shape: 'show_group',
+        title: ['lilo', 'and', 'stitch', { text: 'shogun', accents: { 2: ['ō'] }, joins: [4] }],
+        years: [2003],
+        season: 1,
+        resolution: 1080,
+        group: ['longweb'],
+      },
+      { shape: 'exact', tokens: [{ text: 'dont', joins: [3] }, 'and', { text: 'cafe', accents: { 3: ['é'] } }, 'x264'] },
     ] as unknown as Array<Parameters<typeof renderTerm>[0]>) {
       expect(isGrammarTerm(renderTerm(parts))).toBe(true);
     }
+  });
+
+  it('D-25dd: renders an apostrophe as SEP? (SEP* in the exact form), an accent as an alternation, an inner `and` as optional', () => {
+    expect(
+      renderTerm({
+        shape: 'movie_group',
+        title: [{ text: 'bobs', joins: [3] }, 'and', { text: 'cafe', accents: { 3: ['é'] } }, 'and'],
+        years: [2020],
+        resolution: 1080,
+        remux: false,
+        group: ['g'],
+      }),
+    ).toBe(
+      '/^bob[^a-z0-9]?s[^a-z0-9]+(?:and[^a-z0-9]+)?caf(?:e|é)[^a-z0-9]+and[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g(?:[^a-z0-9]|$)/i',
+    );
+    expect(renderTerm({ shape: 'exact', tokens: ['and', { text: 'dont', joins: [3] }, 'and', 'x'] })).toBe(
+      '/^and[^a-z0-9]*don[^a-z0-9]*t[^a-z0-9]*(?:and[^a-z0-9]*)?x(?:[^a-z0-9]|$)/i',
+    );
   });
 
   it('refuses anything outside the templates before any write', () => {
@@ -472,6 +709,12 @@ describe('the grammar (D-12 / D-13 step 2)', () => {
       '/^fo(o[^a-z0-9]*bar(?:[^a-z0-9]|$)/i', // does not compile
       '/^foo[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1440p(?![a-z0-9])).*[^a-z0-9]grp(?:[^a-z0-9]|$)/i', // bad R
       '/^fo-o[^a-z0-9]*bar(?:[^a-z0-9]|$)/i', // a non-alphanumeric token
+      '/^f(?:o|.)o[^a-z0-9]*bar(?:[^a-z0-9]|$)/i', // an alternation that is not an accented letter
+      '/^f(?:o|ö|[)o[^a-z0-9]*bar(?:[^a-z0-9]|$)/i', // … nor a single character
+      '/^f(?:o|×)o[^a-z0-9]*bar(?:[^a-z0-9]|$)/i', // … nor a letter (× is in Latin-1 but no letter)
+      '/^foo[^a-z0-9]?bar(?:[^a-z0-9]|$)/i', // an apostrophe join is a title join, never the exact form's
+      '/^foo[^a-z0-9]+(?:and[^a-z0-9]+)?2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g[^a-z0-9]?x(?:[^a-z0-9]|$)/i', // SEP? in the group
+      '/^foo[^a-z0-9]+(?:and[^a-z0-9]+)?[^a-z0-9]+2020[^a-z0-9](?=.*(?<![a-z0-9])1080p(?![a-z0-9])).*[^a-z0-9]g(?:[^a-z0-9]|$)/i', // `and` with no word after it
       'plain term', // a plain term other than the sentinel
       '',
     ]) {
@@ -481,6 +724,14 @@ describe('the grammar (D-12 / D-13 step 2)', () => {
 
   it('renderTerm refuses parts outside the grammar', () => {
     expect(() => renderTerm({ shape: 'exact', tokens: ['a-b'] })).toThrow();
+    // D-25dd: a join at a word's edge, an accent that does not fold to its letter, a non-letter, two characters.
+    expect(() => renderTerm({ shape: 'exact', tokens: [{ text: 'ab', joins: [0] }] })).toThrow();
+    expect(() => renderTerm({ shape: 'exact', tokens: [{ text: 'ab', joins: [2] }] })).toThrow();
+    expect(() => renderTerm({ shape: 'exact', tokens: [{ text: 'ab', accents: { 0: ['é'] } }] })).toThrow();
+    expect(() => renderTerm({ shape: 'exact', tokens: [{ text: 'ab', accents: { 0: ['.'] } }] })).toThrow();
+    expect(() => renderTerm({ shape: 'exact', tokens: [{ text: 'ab', accents: { 0: ['ää'] } }] })).toThrow();
+    expect(() => renderTerm({ shape: 'exact', tokens: [{ text: '1b', accents: { 0: ['¹'] } }] })).toThrow();
+    expect(() => renderTerm({ shape: 'exact', tokens: [{ text: 'ab', accents: { 5: ['á'] } }] })).toThrow();
     expect(() =>
       renderTerm({
         shape: 'movie_group',
