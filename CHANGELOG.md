@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.101.1](https://github.com/thaynes43/haynesnetwork/compare/v0.101.0...v0.101.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **trash:** release-block terms match apostrophes and accents; PLAN-072 S6 results ([#599](https://github.com/thaynes43/haynesnetwork/issues/599)) ([18586f0](https://github.com/thaynes43/haynesnetwork/commit/18586f07620bd4e048d3853bddb01512d7a2d938))
+
+
+### Documentation
+
+* **trash:** PLAN-072 rollout suspends and resumes CronJobs only in haynes-ops git; registry CronJob backoffLimit 0; OPS-017 Active ([#596](https://github.com/thaynes43/haynesnetwork/issues/596)) ([b14fbc0](https://github.com/thaynes43/haynesnetwork/commit/b14fbc0081e70b887840d4d5b07fa4789c47849f))
+
 ## [0.101.0](https://github.com/thaynes43/haynesnetwork/compare/v0.100.0...v0.101.0) (2026-09-27)
 
 
