@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.101.0](https://github.com/thaynes43/haynesnetwork/compare/v0.100.0...v0.101.0) (2026-09-27)
+
+
+### Features
+
+* **trash:** watchlists protect titles from Trash; a re-request never re-fetches the deleted release (PLAN-072 S2) ([#595](https://github.com/thaynes43/haynesnetwork/issues/595)) ([8791bfa](https://github.com/thaynes43/haynesnetwork/commit/8791bfa33aabf59f9d8dcc217e4ea09a2f12f94b))
+
+
+### Documentation
+
+* **mcp:** PLAN-069 S8 evidence — ChatGPT and Codex connected; OPS-016 runbook fixes ([#586](https://github.com/thaynes43/haynesnetwork/issues/586)) ([a2750b2](https://github.com/thaynes43/haynesnetwork/commit/a2750b21a2776763cebd00173bdb44c764ff3eab))
+* **mcp:** PLAN-071 S3–S6 — watchlist tools live; ADR-092 / DESIGN-051 Accepted ([#588](https://github.com/thaynes43/haynesnetwork/issues/588)) ([baba734](https://github.com/thaynes43/haynesnetwork/commit/baba7341e1dd1d1e0d25a4b87acbc99ea70d7e10))
+* **trash:** ADR-093 / DESIGN-052 / PLAN-072 — watchlists protect titles from Trash; a re-request never re-fetches the deleted release ([#594](https://github.com/thaynes43/haynesnetwork/issues/594)) ([738161f](https://github.com/thaynes43/haynesnetwork/commit/738161f0e9be3f949e21a9819965cf639e87de5b))
+
 ## [0.100.0](https://github.com/thaynes43/haynesnetwork/compare/v0.99.0...v0.100.0) (2026-09-26)
 
 
