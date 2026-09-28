@@ -297,3 +297,9 @@ Migration 0081 is additive and stays; the older image ignores its tables and col
 - 2026-09-28: **S11:** ADR-093 and DESIGN-052 Accepted; the ADR-025/036/073/084/092 notes and the DESIGN-010/011/014/048
   "Extended by" lines read in effect; the `setSonarrAnimeTags` `id` fix; issue #576 closed; plan to `completed/`. Open for
   the owner: whether the S0 interim Saves stay permanent (asked at close-out).
+- 2026-09-28: **Owner ruling on the S0 interim Saves** (asked at close-out): "Remove the Saves". All six (Trap, Death of a
+  Unicorn, The Legend of Ochi, Summer of 69, Influencers, The Alto Knights) un-saved through `removeExclusion` (actor
+  null): the first run removed the Maintainerr exclusions but failed before its DB write (the script closed the shared
+  pool too early), so the rerun took the no-exclusion branch and revoked each open intent, audited with reason `lapsed`
+  rather than a plain un-save; 0 open intents remain. They return to Maintainerr's pool at its next rule run, and the
+  Watchlist Keep holds each one while it is on a watchlist.
