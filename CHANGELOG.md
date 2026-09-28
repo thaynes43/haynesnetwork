@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.101.2](https://github.com/thaynes43/haynesnetwork/compare/v0.101.1...v0.101.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* **trash:** Seerr's Sonarr settings PUT omits the read-only id; PLAN-072 S8–S11 close-out (ADR-093 / DESIGN-052 Accepted) ([#603](https://github.com/thaynes43/haynesnetwork/issues/603)) ([20e3baa](https://github.com/thaynes43/haynesnetwork/commit/20e3baab0bdfe5fdbd8f129733d4c042e2e39b40))
+
+
+### Documentation
+
+* **trash:** PLAN-072 S6(h) passed, S0 final check, the sweep resumed (haynes-ops [#3227](https://github.com/thaynes43/haynesnetwork/issues/3227)) ([#600](https://github.com/thaynes43/haynesnetwork/issues/600)) ([0b4686a](https://github.com/thaynes43/haynesnetwork/commit/0b4686ac9a13603debb886064c0c4d25bb679b92))
+* **trash:** PLAN-072 S7 passed, the first guarded sweep ([#602](https://github.com/thaynes43/haynesnetwork/issues/602)) ([16f0a21](https://github.com/thaynes43/haynesnetwork/commit/16f0a21d79488ff107148a8885965e97a3bcd90a))
+
 ## [0.101.1](https://github.com/thaynes43/haynesnetwork/compare/v0.101.0...v0.101.1) (2026-09-27)
 
 
