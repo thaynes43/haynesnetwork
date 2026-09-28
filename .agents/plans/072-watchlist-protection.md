@@ -267,3 +267,9 @@ Migration 0081 is additive and stays; the older image ignores its tables and col
   Death of a Unicorn, The Toxic Avenger Unrated). v0.101.1 3/3; the registry CronJob last ran ok 01:44Z. **Resumed:**
   haynes-ops #3227 (sweep `suspend: false`, `TRASH_WEB_DELETES_HELD` removed), Flux applied 01:52Z, the sweep CronJob
   shows `suspend=false` and the web pods no longer carry the hold. S6 done; S7 is the 02:45Z sweep of `08576e59`.
+- 2026-09-28: **S7 passed**, the first guarded sweep (job `haynesnetwork-sync-trash-batch-sweep-29842725`, 02:45Z) of batch
+  `08576e59`: gate verified (run 0 min old); The Specials kept `release_unrecorded` (as S6(e) predicted); 44 `[release-block]
+  recorded` (42 `arr_file` low_confidence, 2 `arr_grab_history` verified, all `group` shape); one `[release-block]
+  reconciled {arrKind: radarr, total: 44, added: 44, wrote: true}` before the handles; 44 `[trash] deleted` with records
+  `active` (each *arr GET 404 after its handle); no warn or error line; `sweep_outcome ok`. Next: S8 (seed the Release
+  Block from the legacy HaynesTower SAB histories), S9 (Seerr enable), S10 (the three re-requests), S11 (close-out).
