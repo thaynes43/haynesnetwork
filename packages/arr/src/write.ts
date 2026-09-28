@@ -575,8 +575,11 @@ export class SeerrWriteClient {
     );
     const server = servers.find((s) => s.id === serverId);
     if (!server) throw new Error(`seerr: no Sonarr server with id ${serverId}`);
+    // Seerr 3.4.1's OpenAPI validator rejects `id` in the body ("request/body/id is read-only", 400), so the echoed
+    // server object goes back without it; every other field is sent as read (PLAN-072 S9, 2026-09-28).
+    const { id: _readOnlyId, ...echoed } = server;
     await this.http.requestJson('PUT', `settings/sonarr/${serverId}`, z.unknown(), {
-      body: { ...server, animeTags },
+      body: { ...echoed, animeTags },
     });
     const after = await this.http.requestJson(
       'GET',

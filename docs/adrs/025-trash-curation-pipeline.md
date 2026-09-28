@@ -1,8 +1,7 @@
 # ADR-025: Trash curation pipeline — batches, human-curation gate, Leaving Soon, windowed deletion
 
 - **Status:** Accepted
-- **Amended by:** [ADR-093](093-watchlists-protect-trash-and-fresh-rerequests.md) (2026-09-26, effective when ADR-093
-  is Accepted), C-03: the 2026-07-09 errata principle that the app never overrules the Maintainerr rules on *what* is
+- **Amended by:** [ADR-093](093-watchlists-protect-trash-and-fresh-rerequests.md) (2026-09-26; in effect since ADR-093 was Accepted, 2026-09-28), C-03: the 2026-07-09 errata principle that the app never overrules the Maintainerr rules on *what* is
   deleted gains one owner-ruled exception, the Watchlist Keep (a title on any read Plex watchlist is kept). Status
   note only; the decision body below is unchanged.
 - **Date:** 2026-07-07

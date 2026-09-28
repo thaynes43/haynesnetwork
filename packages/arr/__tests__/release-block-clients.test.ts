@@ -316,7 +316,7 @@ describe('Seerr enrollment writes (D-17)', () => {
     expect(failing.calls.map((c) => c.method)).toEqual(['GET']);
   });
 
-  it('setSonarrAnimeTags PUTs the whole server object with animeTags replaced, then reads it back', async () => {
+  it('setSonarrAnimeTags PUTs the whole server object (minus the read-only id) with animeTags replaced, then reads it back', async () => {
     const server = {
       id: 0,
       name: 'Sonarr',
@@ -336,13 +336,17 @@ describe('Seerr enrollment writes (D-17)', () => {
       const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
       calls.push({ method, body });
       expect(new URL(String(input)).pathname).toMatch(/^\/api\/v1\/settings\/sonarr(\/0)?$/);
-      if (method === 'PUT') saved = body;
+      // Seerr 3.4.1 answers a body carrying the read-only `id` with 400 (seen live, PLAN-072 S9).
+      if (method === 'PUT' && body && typeof body === 'object' && 'id' in body)
+        return new Response(JSON.stringify({ message: 'request/body/id is read-only' }), { status: 400 });
+      if (method === 'PUT') saved = { ...body, id: 0 };
       return new Response(JSON.stringify(method === 'PUT' ? saved : [saved]), { status: 200 });
     }) as typeof fetch;
     const res = await new SeerrWriteClient({ ...SEERR, fetchImpl }).setSonarrAnimeTags(0, [1]);
     expect(res).toMatchObject({ id: 0, tags: [1], animeTags: [1] });
     expect(res).not.toHaveProperty('apiKey');
     expect(calls.map((c) => c.method)).toEqual(['GET', 'PUT', 'GET']);
-    expect(calls[1]!.body).toEqual({ ...server, animeTags: [1] });
+    const { id: _id, ...withoutId } = server;
+    expect(calls[1]!.body).toEqual({ ...withoutId, animeTags: [1] });
   });
 });

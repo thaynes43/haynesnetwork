@@ -1,6 +1,6 @@
 # PLAN-072: Watchlists protect titles from Trash, and a re-request never re-fetches the deleted release: build, deploy, live-verify, enable, remediate
 
-- **Status:** S0 running (interim protection by hand); S1 done (docs PR #594: the design review's findings ruled
+- **Status:** Completed 2026-09-28 (S0–S11; see the log).
   into DESIGN-052 D-24). S2 built on `feat/watchlist-protection` (PR #595): part 1 (migration 0081,
   the registry and its mode, the gate and snapshot, the guard, the D-10 surfaces) and part 2 (the Deleted-Release
   Record, the Release Block writer and the two-phase sweep and Expedite, the seed script, the Arm/Disarm fix and the
@@ -273,3 +273,27 @@ Migration 0081 is additive and stays; the older image ignores its tables and col
   reconciled {arrKind: radarr, total: 44, added: 44, wrote: true}` before the handles; 44 `[trash] deleted` with records
   `active` (each *arr GET 404 after its handle); no warn or error line; `sweep_outcome ok`. Next: S8 (seed the Release
   Block from the legacy HaynesTower SAB histories), S9 (Seerr enable), S10 (the three re-requests), S11 (close-out).
+- 2026-09-28: **S8 done.** Both legacy HaynesTower SABnzbd histories exported read-only (`sqlite3 -readonly`, completed jobs,
+  name/bytes/completed only, no URL; 49,199 + 25,847 = 75,046 jobs; scratchpad only, never committed). The first dry run
+  matched 0 legacy rows: the copy piped into the pod had arrived truncated (2,115 lines); re-copied gzipped, checksum equal,
+  75,046 lines. Dry run then `--apply` with `--legacy-sab` and `--manual` (Babygirl FraMeSToR, Terrifier FraMeSToR with
+  the *arr's years, Another Simple Favor FLUX/Kitsune/BYNDR; names confirmed by size at 0.969 of the download): population
+  473, 5 skipped present, 44 already recorded (S7), identified 80 ledger + 290 legacy SAB, manual 3 entries / 5 records /
+  1 covered (Terrifier), 469 records; unblockable 47 movies and 6 series (ADR-093 C-21). The Unholy Trinity matched by
+  legacy SAB; Silent Night (2023) has no release in any of the five HaynesTower SAB histories and stays unblockable.
+  Reconciled with read-back: Radarr 436 terms (392 added), Sonarr 63; an independent `GET /api/v3/releaseprofile` shows one
+  enabled untagged profile each, 437 and 64 ignored terms. Q-11 answered (names by size, tmdb 1097549 / 420634 / 974573).
+- 2026-09-28: **S9 done.** Seerr's Sonarr `animeTags` set to `[1]` (the PUT must omit the read-only `id`, D-25di; read back,
+  no other field changed). Preflight join: 18 Seerr Plex users' 20 newest (181 distinct titles) against 456 deleted
+  titles: one match, Another Simple Favor, already blocked. Canary user 2 (no settings row before): enrolled, both flags
+  true, user 1 unchanged (Q-09 answered). Seerr's next sync requested Strays (a Radarr title with no file, tagged
+  `mediarequests`; grabbed a FLUX 2160p release on SABnzbd-Fast). Then everyone: 16 enrolled + 1 already on + the canary,
+  18 of 18 with both flags, 0 failed. The first full cycle created 15 requests (one, Ash (2025), failed to add because
+  Radarr already has it); **Another Simple Favor was re-requested from a watchlist and grabbed a HONE release**, outside
+  its three blocked groups.
+- 2026-09-28: **S10 done.** Babygirl and Terrifier requested through Seerr (requests 117, 118, auto-approved; Another
+  Simple Favor already requested in S9). Babygirl grabbed CiNEPHiLES (not FraMeSToR; its import-list exclusion did not
+  block the direct add), Terrifier grabbed UnKn0wn (not FraMeSToR); both downloading on SABnzbd-Fast.
+- 2026-09-28: **S11:** ADR-093 and DESIGN-052 Accepted; the ADR-025/036/073/084/092 notes and the DESIGN-010/011/014/048
+  "Extended by" lines read in effect; the `setSonarrAnimeTags` `id` fix; issue #576 closed; plan to `completed/`. Open for
+  the owner: whether the S0 interim Saves stay permanent (asked at close-out).
