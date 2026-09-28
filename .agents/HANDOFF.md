@@ -12,9 +12,8 @@ them to their own linked accounts, which the roster picks up automatically). Eve
 blocked in a managed Radarr/Sonarr release profile before the delete (437 / 64 terms after the S8 seed; 47 old
 movies and 6 series stay unblockable, ADR-093 C-21). Seerr watchlist sync is on for all 18 Seerr Plex users (a new
 Seerr user is enrolled within 15 minutes of first signing in). Babygirl, Another Simple Favor and Terrifier were
-re-requested and each grabbed a release outside its blocked terms. Runbook: OPS-017. Open for the owner: whether
-the six S0 interim Saves stay permanent (asked at close-out; if not, un-save them in the app once the guard covers
-them). The plan is `.agents/plans/completed/072-watchlist-protection.md`.
+re-requested and each grabbed a release outside its blocked terms. Runbook: OPS-017. The six S0 interim Saves were removed on the owner's ruling
+("Remove the Saves"); the guard keeps them while they are on a watchlist. The plan is `.agents/plans/completed/072-watchlist-protection.md`.
 
 ## ▶ 2026-09-27 — Watchlist protection (PLAN-072): S4 deployed, S6 (a)..(g) passed live on v0.101.0; the release-block term fix is a PR; S6(h) and the resume wait
 
