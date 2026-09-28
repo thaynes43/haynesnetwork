@@ -2,7 +2,7 @@
 
 - **Status:** Draft
 - **Last updated:** 2026-08-29
-- **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26, Draft): the one
+- **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): the one
   expedite derivation (`classifyGuardian` / `classifyForExpedite` and the `previewGuardian` mirror; D-06 here,
   ADR-086 D-11) gains the `watchlisted` keep and the `protected_watchlist` verdict (DESIGN-052 D-09). A Watchlist Keep never
   opens a Save Intent.

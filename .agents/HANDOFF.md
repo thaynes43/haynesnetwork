@@ -4,6 +4,18 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-28 — Watchlist protection DONE (PLAN-072 completed; issue #576 closed)
+
+ADR-093 / DESIGN-052 are Accepted and live (v0.101.x). No Trash sweep deletes a title on any readable watchlist (42
+accounts rostered every 15 minutes; the 3 managed Home users stay unread by the owner's ruling, and he is moving
+them to their own linked accounts, which the roster picks up automatically). Every deleted release is recorded and
+blocked in a managed Radarr/Sonarr release profile before the delete (437 / 64 terms after the S8 seed; 47 old
+movies and 6 series stay unblockable, ADR-093 C-21). Seerr watchlist sync is on for all 18 Seerr Plex users (a new
+Seerr user is enrolled within 15 minutes of first signing in). Babygirl, Another Simple Favor and Terrifier were
+re-requested and each grabbed a release outside its blocked terms. Runbook: OPS-017. Open for the owner: whether
+the six S0 interim Saves stay permanent (asked at close-out; if not, un-save them in the app once the guard covers
+them). The plan is `.agents/plans/completed/072-watchlist-protection.md`.
+
 ## ▶ 2026-09-27 — Watchlist protection (PLAN-072): S4 deployed, S6 (a)..(g) passed live on v0.101.0; the release-block term fix is a PR; S6(h) and the resume wait
 
 **Where it stands:** v0.101.0 runs (haynes-ops #3223 merged 2026-09-27T01:18Z): the `sync-watchlist-registry`

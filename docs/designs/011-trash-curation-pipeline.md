@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-07
 - **Author:** Fable 5 (autonomous run, PLAN-012)
-- **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26, Draft): the
+- **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): the
   sweep first needs a verified Watchlist Registry, the guardian keeps a watchlisted title (`keep_reason`), and the
   deleted release is recorded and blocked in Radarr/Sonarr before each Maintainerr handle (DESIGN-052 D-07, D-09,
   D-14).

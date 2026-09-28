@@ -1,7 +1,7 @@
 # ADR-084: Trash deletes write back unmonitor + blocklist; removal tombstones add import-list exclusions
 
 - **Status:** Proposed
-- **Superseded in part by:** [ADR-093](093-watchlists-protect-trash-and-fresh-rerequests.md) (2026-09-26, effective when ADR-093 is Accepted) — D-1 ("unmonitor and
+- **Superseded in part by:** [ADR-093](093-watchlists-protect-trash-and-fresh-rerequests.md) (2026-09-26; in effect since ADR-093 was Accepted, 2026-09-28) — D-1 ("unmonitor and
   blocklist the exact deleted release") and errata E-1 ("re-apply the blocklist when the sync observes the re-add"):
   the release memory is the Deleted-Release Record plus the **Release Block**, a Radarr/Sonarr release profile of
   "must not contain" terms written and read back before the Maintainerr handle (ADR-093 C-07); the unmonitor half is
