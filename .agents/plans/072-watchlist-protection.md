@@ -254,3 +254,16 @@ Migration 0081 is additive and stays; the older image ignores its tables and col
     the owner-only sync). Then S0's final cross-check of batch `08576e59` (45 pending), in the 1 to 2 hours before the
     resume PR merges, since the first sweep after the resume closes it. The resume PR (haynes-ops: the sweep's
     `suspend: false`, `TRASH_WEB_DELETES_HELD` removed) waits on both and on the D-25dd release's deploy.
+- 2026-09-28: **S6(h) passed.** 99 `[watchlist-registry] run_complete` lines from 2026-09-27T01:22Z to 2026-09-28T01:47Z,
+  every one `status=ok`; `entries` 929 to 930 (one new Seerr user's title), `distinctTitles` 549 throughout,
+  `accountHidden` 0, `seerr:ok` 16 then 17, `community:ok` 38; no `account_failed`, `account_hidden`, `run_failed`,
+  `community_mass_empty` or `account_unreadable` line. Seerr logged two "Failed to retrieve watchlist items" (plex.tv
+  503) at 07:44:08Z and 18:59:12Z. Both fall inside registry runs (:44, :59; Seerr's own sync runs on minutes divisible by
+  3), and both runs kept identical totals, which fits the one Seerr user whose list is empty (an error and an empty answer
+  look the same there, and nothing can be lost; a titled user's empty answer is `failed` by D-02). No ok read shrank a
+  list. **S0 final cross-check** (01:48Z): delete gate verified (run 4 min old, 357 movie and 192 show keys, 0
+  unmapped); the one open batch `08576e59` (expired 2026-09-27T06:17Z, held) has 45 pending items, all with a discover
+  id, none on any watchlist; its Saved items that are listed are exactly the watchlisted ones (Trap, The Legend of Ochi,
+  Death of a Unicorn, The Toxic Avenger Unrated). v0.101.1 3/3; the registry CronJob last ran ok 01:44Z. **Resumed:**
+  haynes-ops #3227 (sweep `suspend: false`, `TRASH_WEB_DELETES_HELD` removed), Flux applied 01:52Z, the sweep CronJob
+  shows `suspend=false` and the web pods no longer carry the hold. S6 done; S7 is the 02:45Z sweep of `08576e59`.
