@@ -447,10 +447,12 @@ export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
  * *arr already holds equal/better quality (remove + blocklist, no re-search); `retry_import` — a stuck/
  * transient import (bounded ProcessMonitoredDownloads); `bad_release` — an unparseable/failed/defective grab
  * (blocklist + re-search where still monitored); `manual_match` — Lidarr could not match the downloaded files
- * to an album with confidence, so only a person can decide (DESIGN-046 D-12, Q-01; report only, NEVER acted
- * on, no enforce cell); `unknown` — everything else, NEVER acted on (ADR-083, normative — reported only).
- * Classification patterns live in versioned code; enforcement scope lives in config. `manual_match` joined in
- * migration 0083 (the class CHECK is rebuilt from this list).
+ * to an album with confidence (DESIGN-046 D-12, Q-01). D-12 made it report only; since D-13 (owner ruling
+ * 2026-09-29) it has ONE enforce cell, on Lidarr: remove + blocklist, then an album search only when the album is
+ * monitored and not complete, behind the loop guard (`skipped_loop`). Census by default. `unknown` — everything
+ * else, NEVER acted on (ADR-083, normative — reported only). Classification patterns live in versioned code;
+ * enforcement scope lives in config. `manual_match` joined in migration 0083 (the class CHECK is rebuilt from
+ * this list).
  */
 export const QUEUE_CLEANUP_ACTION_CLASSES = [
   'have_better',
@@ -461,9 +463,9 @@ export const QUEUE_CLEANUP_ACTION_CLASSES = [
 ] as const;
 export type QueueCleanupActionClass = (typeof QUEUE_CLEANUP_ACTION_CLASSES)[number];
 
-/** Per class×instance enforcement mode (DESIGN-046 D-05, T-240 cells). Ships all-census; `unknown` and
- *  `manual_match` have no enforce state by construction (neither is ever a config cell). The SPACE_POLICY_MODES
- *  idiom. */
+/** Per class×instance enforcement mode (DESIGN-046 D-05, T-240 cells). Ships all-census; `unknown` has no
+ *  enforce state by construction (never a config cell), and `manual_match` has one cell only, on Lidarr
+ *  (D-13). The SPACE_POLICY_MODES idiom. */
 export const QUEUE_CLEANUP_MODES = ['census', 'enforce'] as const;
 export type QueueCleanupMode = (typeof QUEUE_CLEANUP_MODES)[number];
 
@@ -476,7 +478,13 @@ export type QueueCleanupMode = (typeof QUEUE_CLEANUP_MODES)[number];
  * per-run mutation cap was already spent. D-11 (migration 0082): `skipped_mixed` — the record would qualify on
  * its own, but the other records of its download do not all qualify for the same action, so the download is
  * left alone; `skipped_gone` — the removal answered 404 (the *arr no longer tracked the download; nothing was
- * removed or blocklisted by the janitor, and it is not an error).
+ * removed or blocklisted by the janitor, and it is not an error). D-13 (migration 0084): `skipped_loop` — the
+ * loop guard: an enforced Lidarr `manual_match` record whose album the janitor has already removed as
+ * `manual_match` on MANUAL_MATCH_LOOP_LIMIT earlier downloads, each followed by another match failure, so the
+ * download is left for a person (reported, not acted on). D-14 (migration 0084): `skipped_unblockable` — an enforced
+ * `manual_match` download whose release name the janitor cannot block safely (no release title, or a title that does
+ * not name the artist, so a term would block other artists' releases), so it is left alone: the janitor never
+ * removes a manual_match download without blocking its name first (ADR-094).
  */
 export const QUEUE_CLEANUP_ACTIONS = [
   'none',
@@ -487,6 +495,8 @@ export const QUEUE_CLEANUP_ACTIONS = [
   'skipped_cap',
   'skipped_mixed',
   'skipped_gone',
+  'skipped_loop',
+  'skipped_unblockable',
 ] as const;
 export type QueueCleanupAction = (typeof QUEUE_CLEANUP_ACTIONS)[number];
 

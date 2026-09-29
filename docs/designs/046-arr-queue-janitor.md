@@ -1,14 +1,17 @@
 # DESIGN-046: Arr queue janitor — classifier, census, promotion ladder
 
 - **Status:** Accepted
-- **Last updated:** 2026-09-28 (D-12: Q-01 answered from Lidarr's live queue and its census since 2026-08-01. Lidarr's
+- **Last updated:** 2026-09-29 (D-13: owner ruling, `manual_match` acts on Lidarr through a census-default enforce
+  cell, with a loop guard (`skipped_loop`) and loop signals in the digest and the logs; D-14, ADR-094: the failing
+  release's name is blocked in a janitor-owned Lidarr release profile, written and read back before the removal;
+  migration 0084). Prior: 2026-09-28 (D-12: Q-01 answered from Lidarr's live queue and its census since 2026-08-01. Lidarr's
   match rejections become the report-only class `manual_match`; nothing Lidarr shows graduates into an acting
   class; migration 0083). Prior: 2026-09-28 (D-11: one action per download, so a season pack is removed once,
   not once per episode; a removal that answers 404 is `skipped_gone`, not an error; retry escalation counts
   runs, not rows; issue #583 item 1, before L2). Prior: 2026-09-25 (D-10: four classifier/action fixes from the L0→L1
   census spot-check, made before any cell enforces: `skipRedownload` on every removal, the identity-mismatch
   guard, message-only reasons, release-level-only release-defect signals). Prior: 2026-08-01.
-- **Satisfies:** governed by ADR-083; extends ADR-007 (Fix / `markHistoryFailed`), ADR-059 /
+- **Satisfies:** governed by ADR-083 (superseded in part by ADR-094 for `manual_match`); extends ADR-007 (Fix / `markHistoryFailed`), ADR-059 /
   DESIGN-030 (queue read model), ADR-082 (audited config precedent). Build plan: PLAN-065.
 
 ## Overview
@@ -57,7 +60,7 @@ schema.
 | `have_better` | `importBlocked`/`importPending` + a `statusMessages` message matching the *arr's own already-satisfied rejections: "Not an upgrade for existing …", "Not a Custom Format upgrade …", "…quality cutoff … already met…". The *arr already compared against the library — the janitor trusts its verdict rather than re-deriving (the *arrs are the source of truth, hard rule 4). Since D-10, not when the item also carries an identity mismatch (then `unknown`). |
 | `bad_release` | `trackedDownloadStatus: 'error'`; or messages matching "Unable to parse…", "…sample…", "…archive…/…password…/…executable…" (release defects); or `status: 'failed'`. Since D-10 the release-defect patterns read release-level messages only ("Sample" and "Found archive file…" verbatim). |
 | `retry_import` | `importBlocked`/`importPending` with an empty/transient message set ("Waiting to import…", no messages at all) — the stuck-import class `ProcessMonitoredDownloads` exists for. |
-| `manual_match` | Since D-12: one of Lidarr's own match rejections ("Album match is not close enough…", "Worst track match…", "Has missing tracks", "Has unmatched tracks", "Couldn't find similar album for…", "Unable to import automatically, found multiple artists…"). Lidarr could not match the files to an album with confidence, so only a person can decide. **Report only**: no enforce cell, never acted on, like `unknown`. Also takes a `have_better` match that carries one of these messages. |
+| `manual_match` | Since D-12: one of Lidarr's own match rejections ("Album match is not close enough…", "Worst track match…", "Has missing tracks", "Has unmatched tracks", "Couldn't find similar album for…", "Unable to import automatically, found multiple artists…"). Lidarr could not match the files to an album with confidence, so only a person can decide. **Report only**: no enforce cell, never acted on, like `unknown`. Also takes a `have_better` match that carries one of these messages. Since D-13 (owner ruling 2026-09-29) it has one enforce cell, on Lidarr, census by default. |
 | `unknown` | Everything else. Lidarr's match-ambiguity messages started here and left for `manual_match` once census evidence answered Q-01 (D-12). |
 
 Anything not matched with confidence falls to `unknown`. Items younger than
@@ -79,7 +82,12 @@ Executed only for `enforce` cells, in `evaluateQueueCleanup` (single writer, `@h
   if** the target is still monitored (checked via the read client); unmonitored targets get
   the blocklist only.
 - `unknown` → never acted on (ADR-083, normative). `manual_match` → never acted on either (D-12); it has no
-  enforce cell.
+  enforce cell. **Since D-13 / D-14 (ADR-094):** where Lidarr's `manual_match` cell is enforced, the failing
+  release's name is blocked in the janitor's Lidarr release profile (written and read back), then
+  `deleteQueueItem(id, {removeFromClient:true, blocklist:true, skipRedownload:true})`, then one `AlbumSearch` for the
+  albums that are monitored and still missing tracks; the loop guard holds an album already removed on two earlier
+  downloads (`skipped_loop`), and a name that cannot be blocked safely leaves the download alone
+  (`skipped_unblockable`).
 
 Rails (all levels): per-instance per-run mutation cap `maxActionsPerRun` (default 10);
 `minItemAgeHours` (default 2) so freshly-completed items get their organic import window; a
@@ -112,7 +120,8 @@ One `app_settings` jsonb key (migration 0075 rebuilds the key CHECK), ADR-082 sh
 
 - `QUEUE_CLEANUP_MODES = ['census','enforce'] as const` (`SPACE_POLICY_MODES` idiom); no
   `unknown` cell — it has no enforce state by construction. The same holds for `manual_match` (D-12): the
-  modes matrix is unchanged, so a stored config stays valid.
+  modes matrix is unchanged, so a stored config stays valid. Since D-13, Lidarr has a fourth cell,
+  `modes.lidarr.manual_match` (census by default; a stored config without it reads as census, so it stays valid).
 - Resolution **DB row → code default** (all-census); typeof-guarded reads fail safe to
   census. No env tier: unlike the governor there is no pre-existing env contract to honor.
 - Writer `setArrQueueCleanupConfig({db?, config, actorId})` validates
@@ -130,7 +139,8 @@ Append-only; the census record AND the action audit in one table:
 `actionClass` (CHECK on `QUEUE_CLEANUP_ACTION_CLASSES`; D-12 adds `manual_match`, migration 0083), `mode`
 (`census|enforce`), `action`
 (`none|removed_blocklisted|retried_import|blocklisted_searched|skipped_young|skipped_cap`; D-11 adds
-`skipped_mixed|skipped_gone`, migration 0082),
+`skipped_mixed|skipped_gone`, migration 0082; D-13 / D-14 add `skipped_loop|skipped_unblockable` and the `targetId`
+column, migration 0084),
 `outcome` (`observed|done|error`), `reason` (the driving or most informative message, ≤500 chars;
 never a release or file name, D-10), `error`,
 `createdAt`. Indexed `(createdAt desc)` and `(instance, downloadId, createdAt desc)` — the
@@ -151,7 +161,8 @@ ledger no longer suppresses janitor visibility.
 
 ### D-08 — /admin surface
 
-`/admin/janitor`, modeled on `/admin/governor` (ADR-082 C-05): a 3×3 mode grid
+`/admin/janitor`, modeled on `/admin/governor` (ADR-082 C-05): a 3×3 mode grid (since D-13 a fourth row,
+`manual_match`, with a toggle for Lidarr only and "Not used" for Sonarr and Radarr)
 (class × instance, `census|enforce` toggle cells — the books-actions grant-grid shape), the
 three numeric knobs, ladder level + age readout, and a last-7-days census/action summary
 table read from D-06. `adminProcedure` only; ConfirmButton two-step on any census→enforce
@@ -212,6 +223,10 @@ pattern changes, so the census of a run with no packs is unchanged.
 
 ### D-12 — Lidarr's classification, Q-01 answered (2026-09-28, before L2)
 
+_Superseded in part by D-13 (2026-09-29, owner ruling): rule 1's "report only, no enforce cell" and rule 5 no longer
+hold for `manual_match`, which acts on Lidarr where its cell is enforced (with D-14's release-name block). The
+classification below stands._
+
 Q-01 asked which Lidarr reasons leave `unknown`, and for which class. The evidence is read-only: Lidarr's live
 queue (`GET /api/v1/queue?includeUnknownArtistItems=true`, 62 records), the album each record is for (`GET
 /api/v1/album`), the download folders of the undecided shapes (file listing only), the census (every Lidarr row
@@ -256,6 +271,58 @@ level is unchanged. ADR-083 needs no successor: its class D is "never acted on, 
 `manual_match` is a named part of that class, with no new write-back. Glossary: T-267 Manual Match added,
 T-239 Action Class amended.
 
+### D-13 — `manual_match` acts on Lidarr, behind a loop guard (2026-09-29, owner ruling)
+
+**Owner ruling (Tom, 2026-09-29):** `manual_match` gets an enforcing action, with no waiting period: it ships and is
+enabled as soon as it is deployed. The action is the one the owner approved by hand twice that day, with about half
+the albums importing: remove from the client with blocklist and `skipRedownload=true`, then an explicit album search
+for the record's album, the `bad_release` pattern. A second ruling the same day: "You can monitor for loops." This
+**supersedes D-12 rule 1 in part** ("report only, no enforce cell") and D-12 rule 5 for this class; D-12's
+classification (the patterns, the precedence, rule 2's `have_better` guard, rules 3 and 4) stands. D-14 adds the
+release-name block that runs before the removal. Each row is pinned by tests (`queue-cleanup.test.ts`,
+`migrations.test.ts`).
+
+| # | Ruling | Reason |
+|---|---|---|
+| 1 | **One enforce cell, `modes.lidarr.manual_match`, census by default.** It lives in the audited config beside the other cells and is flipped the same way (`setArrQueueCleanupConfig`, or the /admin grid's Lidarr toggle, which is the only toggle in the row: Sonarr and Radarr show "Not used"). A config stored before D-13 has no such key and reads as census, so the live L1 config stays valid and the deploy is inert until the cell is flipped. `modes.sonarr.manual_match` or `modes.radarr.manual_match` is an unknown class (refused). The ladder counts the cell: L2 now means every cell enforced, this one included. | Only Lidarr produces the class (its patterns are Lidarr's own messages), and the action ends in an album search. Absent-as-census is the D-05 fail-safe applied to a new cell. |
+| 2 | **The action, per download (D-11):** block the release name (D-14), remove with `removeFromClient`, `blocklist` and `skipRedownload`, then one `AlbumSearch` for the download's records whose album is **monitored and still missing tracks** (Lidarr's `statistics.trackFileCount < trackCount`). An album that is unmonitored, complete, or whose counts Lidarr does not report is removed and blocklisted, not searched. The age rail, the cap and D-11's grouping apply unchanged. | The owner-approved action, with the completeness check the work order asked for: searching a complete album would only chase an upgrade the owner did not ask for. Unknown counts fail safe (no search). |
+| 3 | **A record with no album (no `albumId`) is removed and blocklisted, never searched.** No completeness check is asked for it, and the search never falls back to an artist-wide `ArtistSearch` (which the `bad_release` path uses for a record without a child id). | The owner's action is scoped to one album. With no album there is nothing to search that is not wider than the approval: an artist search would search every monitored album of the artist. The removal is still right: Lidarr could not tie the files to any album, so nothing in the library depends on the download, and the name block (D-14) keeps the same release from coming back. Such records are rare: the janitor does not read unknown-artist records (issue #583 item 4). |
+| 4 | **The loop guard.** An enforced `manual_match` record whose album the janitor has already removed as `manual_match` on `MANUAL_MATCH_LOOP_LIMIT` (2) **earlier downloads** is `skipped_loop`: reported (`mode: enforce`, `outcome: observed`), nothing sent. Earlier removals are rows of the same instance with `action_class = manual_match`, `outcome = done`, `action` `removed_blocklisted` or `blocklisted_searched`, the same `target_id` (the album) and another `download_id`. Each of them was followed by another match failure for the album (the next removed download, and for the last one this record), so the rule is exactly "the last K janitor actions were each followed by another failure". It does not expire: the album then needs a person. A `skipped_loop` record in a multi-album download holds the whole download (its siblings are `skipped_mixed`, D-11 rule 3). If the guard's read fails, no `manual_match` download is acted on that run. | The action can loop: a search can grab another release that fails the same way (the coordinator's hand sweep saw up to 10 grabs for one album). Two tries is the owner-approved budget; after that the janitor stops spending the album. Removals that errored, 404s (`skipped_gone`) and census rows are not tries. |
+| 5 | **Loop signals** (the second ruling). Every loop event is one warn line with the stable message **`[queue-cleanup] loop_detected`** (alert on it in Loki): `kind: 'skipped_loop'` once per held download per run (`downloadId`, `title`, `targetIds`, `priorRemovals`), and `kind: 'repeat_search'` when a janitor search covers a target the janitor also searched on an earlier run within 7 days, any class (`targets: [{targetId, searches7d}]`). The nightly digest's janitor section lists every download the guard held in the last 24h (with the runs it was held on) and every target searched on 2 or more runs in the last 7 days, and the subject gains **`[janitor: loop detected]`** when either list is non-empty (beside `[janitor: promotion due]`). | Loops must be visible without reading the database. The repeat-search signal fires on the second search, before the guard holds the album, so a loop shows up one step early. |
+| 6 | **`target_id` on every row.** Each action row records the record's search target: Sonarr the `episodeId`, Radarr the `movieId`, Lidarr the `albumId` (null when the record has none, and on every row before D-13). A partial index covers the rows that landed, per target. | The guard and the repeat-search list key on the album, which no earlier column held (a new download has a new `download_id`). |
+
+Schema: migration 0084 (with D-14) widens the `action` CHECK to admit `skipped_loop`, adds `target_id` and the partial
+index `arr_queue_cleanup_actions_target_done_idx (instance, target_id, created_at) WHERE outcome = 'done' AND
+target_id IS NOT NULL`. Additive; the previous image never writes either. Glossary: T-268 Loop Guard added; T-267
+and T-239 amended.
+
+### D-14 — The janitor release block: the failing name is blocked before the removal (2026-09-29, ADR-094)
+
+The coordinator's hand sweep of 2026-09-29 ran D-13's action on 74 records: 55 of 66 albums got a grab, 22 imported,
+27 were stuck again, and **18 albums grabbed a same-titled re-post of the release that had just failed**: Lidarr's
+blocklist blocks one posting (indexer and guid), not the title. The coordinator ruled, by default under the owner's
+direction, that the action block the failing release **name** by reusing the ADR-093 Release Block pattern. ADR-094
+records the decision and amends hard rule 4. The mechanics follow; each row is pinned by tests (`queue-cleanup.test.ts`,
+`release-block-clients.test.ts`, `migrations.test.ts`). Upstream references are Lidarr v3.1.6.5078.
+
+| # | Ruling | Reason |
+|---|---|---|
+| 1 | **Order.** For an enforced `manual_match` download: read the release identity, derive the term, write it into the janitor's profile and read it back, then remove (D-13 rule 2), then search. If the term cannot be derived the download is `skipped_unblockable` (observed, no write, no cap slot, logged `queue-cleanup: release name cannot be blocked, download left alone` with the reason). If the identity read fails, or the profile write or read-back fails, nothing is removed: the rows are `action: none, outcome: error` (the error names the step, never a term) and the next run tries again. The profile write counts against the cap; a failed read does not. | The removal is what lets a re-post in; the block has to be in place first, exactly as the Release Block precedes a Trash delete (ADR-093 C-07). |
+| 2 | **The release name is the grab's own title.** `GET /api/v1/history?downloadId=…&eventType=1` (the download's grab, newest first) gives `sourceTitle`, the title as the indexer posted it, which is what Lidarr tests a term against (`ReleaseRestrictionsSpecification`: the raw `Release.Title`). The queue title (SABnzbd's job name, built by `CleanFileName`) is the fallback when no grab is recorded. The artist's name comes from `GET /api/v1/artist/{id}`. | A term built from the job name could differ from the posted title (a torrent's internal name certainly does). No URL-bearing history field is read. |
+| 3 | **The term is the whole name.** `/^SEP*{words joined by SEP*}SEP*$/i` (`renderWholeNameTerm`, `release-terms.ts`), SEP `[^a-z0-9]`, each word written from the raw title with its apostrophes, accented letters and `&` as DESIGN-052 D-25dd / D-25di write them. It matches the same title posted again with any separators and nothing with a word more or a word less. It is a separate template from the Release Block's: `isGrammarTerm` never accepts it, and the janitor's writer accepts only it (`isWholeNameTerm`) and its sentinel. The term must match its own title raw. | The Release Block's exact form is a prefix match (it blocks every longer title that starts with the name), guarded by video-only signals (a resolution or a group). Music titles are short and carry neither, so only a whole-name match is safe. |
+| 4 | **The title must name the artist.** The artist's words (a leading "The" optional) must appear as a run of the title's whole words, and the title must carry at least one more word. Otherwise the refusal is `artist_not_named` or `title_is_artist` (also `no_title`, `no_artist`, `grammar`), and the download is `skipped_unblockable`. | The profile has no tags, so it applies to every artist. A title without the artist ("Greatest Hits (2001)") would block that title for every artist. With the artist in it, a whole-name term blocks only that artist's release of that name. |
+| 5 | **The profile.** One per *arr the janitor blocks on (`JANITOR_BLOCK_KINDS`, Lidarr only), `{enabled: true, required: [], ignored: [sentinel, …terms], indexerId: 0, tags: []}`. Lidarr's `ReleaseProfileResource` has no `name`, so the profile is found by its sentinel term `haynesnetwork-janitor-managed-do-not-edit` (a plain term, a case-insensitive "contains" no title carries), which also keeps the profile valid with no live term. Other profiles are never touched. | The Release Block finds its profile by name; Lidarr leaves the sentinel as the only marker a person also sees in Lidarr's UI. |
+| 6 | **The single writer**, `reconcileJanitorReleaseBlock` (`janitor-release-block.ts`), under `pg_advisory_xact_lock('janitor-block:<instance>')` in one transaction: (1) every new term passes the whole-name grammar, and its row is inserted with `expires_at` 365 days on; (2) desired = the sentinel + the distinct live terms, newest block first, capped at 3,000, all re-validated; (3) the profile found by its sentinel: none ⇒ POST, one ⇒ PUT only when it drifted, more than one ⇒ `duplicate_profile`; (4) a read-back GET must show exactly one enabled profile holding every desired term. Any failure throws `JanitorReleaseBlockError` (step `validate`, `put`, `read_back` or `duplicate_profile`) and rolls the rows back, so a row exists only for a confirmed term. | ADR-093's writer, step for step, so the same guarantees hold: a malformed term is never written, a hand edit is overwritten, a deleted profile is re-created. |
+| 7 | **Records and expiry.** `arr_queue_cleanup_block_terms` (migration 0084): one append-only row per block (`instance`, `term`, `release_title`, `download_id`, `target_id`, `created_at`, `expires_at`). A term is live while any of its rows has `expires_at` ahead, so a later block of the same term keeps it a year from then. Nothing deletes a row. At most 3,000 live terms per *arr (the oldest left out, logged `[queue-cleanup] block_pruned`). | The owner's Release Block ruling (365 days) and ADR-093 C-09's cap, on a simpler lifecycle: a janitor term is not tied to a library item that can come back, so it needs no in-flight or abandoned state. |
+| 8 | **The hourly upkeep.** At the start of each janitor pass over an instance in `JANITOR_BLOCK_KINDS`, whatever its cells say: once the janitor has ever blocked a release there, one `GET /releaseprofile` compares the profile with the records, and any drift (an expired term still present, a hand edit, a disabled, deleted or copied profile, the cap) runs the writer, logged `[queue-cleanup] block_drift` (warn). Before any block, nothing is read or created. A failure is `[queue-cleanup] block_upkeep_failed` (warn), never the run's failure. | Expiry and drift repair have to run even when no new block is written, and even if the cell goes back to census. |
+| 9 | **Digest.** The janitor section gains one line per *arr with a block: `Release names blocked on lidarr: N in the last 24h, M blocked now.` | Owner visibility of a new write-back, next to the loop lists (D-13 rule 5). |
+| 10 | **Loops stay watched.** D-13 rules 4 and 5 are unchanged: a re-post under a different title escapes the term, and the guard and the loop signals catch it. | The term closes the same-name loop; the guard remains the backstop. |
+
+Schema: migration 0084 also admits `skipped_unblockable` in the `action` CHECK and creates
+`arr_queue_cleanup_block_terms` (instance CHECK, `(instance, expires_at)` index); the no-direct-state-writes guard covers
+it. Client surface: `LidarrWriteClient.listReleaseProfiles / createReleaseProfile / updateReleaseProfile` (v1, no
+`name`) and `LidarrClient.getDownloadGrabs`. Glossary: T-269 Janitor Release Block added; T-237 amended.
+
 ## Alternatives considered
 
 Covered in ADR-083 (off-the-shelf janitor, agentic cron, status quo). Within this design:
@@ -274,3 +341,4 @@ See D-09.
 | Q-01 | Which Lidarr `importPending` reason strings graduate out of `unknown`, and into which class? The 59-item pile is likely match-ambiguity from the soularr/slskd path; some may deserve a dedicated "manual match" class rather than A/B/C. | **Answered 2026-09-28 (D-12).** Evidence: Lidarr's live queue (62 records), the albums they are for, and the census since 2026-08-01 (234 downloads). The pile is SABnzbd and qBittorrent, not soularr/slskd, and mostly `importFailed`, not `importPending`. Lidarr's match rejections (52 of 62 records: "Album match is not close enough", "Has missing/unmatched tracks", "Couldn't find similar album", "Worst track match", "found multiple artists") become the new report-only class `manual_match`: no enforce cell, never acted on. "No files found are eligible for import" (9) and Lidarr's `importFailed` "Not an upgrade…" (1) stay `unknown`. Nothing graduates into A/B/C. Recorded in the PLAN-065 ladder log; migration 0083. |
 | Q-02 | Retention sweep for `arr_queue_cleanup_actions` (append-only forever vs. 90-day prune)? | (open — revisit at L3; volume is small: ≤ queue size per hour) |
 | Q-03 | Should classifier patterns graduate to DB config for release-free tuning once stable? | (open — only if post-L3 tuning cadence demands it) |
+| Q-04 | Should the janitor release block (D-14) also cover `bad_release` on Lidarr, or other sources as the janitor extends to the suite (books, comics)? | (open — each needs its own evidence of a same-name loop, and each new source is a new write-back under hard rule 4, ADR-094 C-08) |

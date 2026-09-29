@@ -11,20 +11,24 @@ import { adminProcedure } from '../middleware/role';
 
 const modeSchema = z.enum(['census', 'enforce']);
 
-/** The 3 enforce cells for one instance (unknown has no cell — ADR-083 normative). */
+/** The 3 enforce cells every instance has (unknown has no cell — ADR-083 normative). */
 const cellSchema = z.object({
   have_better: modeSchema,
   retry_import: modeSchema,
   bad_release: modeSchema,
 });
 
+/** Lidarr's cells: the shared three plus `manual_match` (DESIGN-046 D-13). Absent reads as census, so a client
+ *  that predates the cell can never enforce it by omission. */
+const lidarrCellSchema = cellSchema.extend({ manual_match: modeSchema.default('census') });
+
 /**
- * The zod mirror of `queueCleanupConfigError` (defense in depth — the domain writer re-validates). The 3×3
- * mode grid plus the three numeric rails, each range-checked exactly like the domain invariant (caps 1..100,
- * age 0..168, escalate 1..48).
+ * The zod mirror of `queueCleanupConfigError` (defense in depth — the domain writer re-validates). The mode
+ * grid (3 cells per instance, plus Lidarr's manual_match) plus the three numeric rails, each range-checked
+ * exactly like the domain invariant (caps 1..100, age 0..168, escalate 1..48).
  */
 export const QueueCleanupConfigInput = z.object({
-  modes: z.object({ sonarr: cellSchema, radarr: cellSchema, lidarr: cellSchema }),
+  modes: z.object({ sonarr: cellSchema, radarr: cellSchema, lidarr: lidarrCellSchema }),
   maxActionsPerRun: z.number().int().min(1).max(100),
   minItemAgeHours: z.number().int().min(0).max(168),
   retryEscalateRuns: z.number().int().min(1).max(48),

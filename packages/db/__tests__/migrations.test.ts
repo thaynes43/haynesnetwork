@@ -3057,6 +3057,67 @@ describe('migrations against embedded Postgres 16', () => {
       }
     });
   });
+
+  // ADR-094 / DESIGN-046 D-13 + D-14 (PLAN-065 — migration 0084, journal idx 83): the action CHECK admits `skipped_loop`
+  // and `skipped_unblockable`; arr_queue_cleanup_actions gains `target_id` and a partial index on the rows that landed;
+  // arr_queue_cleanup_block_terms holds the janitor release block's term records. Additive.
+  describe('0084 janitor manual_match enforce (DESIGN-046 D-13 + D-14)', () => {
+    it('admits the new actions, stores target_id, indexes landed rows per target, and matches enums.ts', async () => {
+      const insert = (action: string, outcome = 'observed', targetId: number | null = null) =>
+        client.query({
+          text: `INSERT INTO arr_queue_cleanup_actions (instance, queue_item_id, download_id, action_class, mode, action, outcome, target_id)
+                 VALUES ('lidarr', 1, 'dl-0084', 'manual_match', 'enforce', $1, $2, $3)`,
+          values: [action, outcome, targetId],
+        });
+      try {
+        expect(QUEUE_CLEANUP_ACTIONS).toContain('skipped_loop');
+        expect(QUEUE_CLEANUP_ACTIONS).toContain('skipped_unblockable');
+        for (const action of QUEUE_CLEANUP_ACTIONS) await insert(action);
+        await insert('blocklisted_searched', 'done', 5440);
+        await expect(insert('skipped_forever')).rejects.toMatchObject({ code: '23514' });
+        const stored = await client.query(
+          `SELECT target_id FROM arr_queue_cleanup_actions WHERE download_id = 'dl-0084' AND target_id IS NOT NULL`,
+        );
+        expect(stored.rows).toEqual([{ target_id: 5440 }]);
+
+        const def = await client.query(
+          `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'arr_queue_cleanup_actions_action_enum'`,
+        );
+        const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+        expect(listed.sort()).toEqual([...QUEUE_CLEANUP_ACTIONS].sort());
+
+        const idx = await client.query(
+          `SELECT indexdef FROM pg_indexes WHERE indexname = 'arr_queue_cleanup_actions_target_done_idx'`,
+        );
+        expect(String(idx.rows[0].indexdef)).toMatch(/WHERE \(\(outcome = 'done'::text\) AND \(target_id IS NOT NULL\)\)/);
+      } finally {
+        await client.query(`DELETE FROM arr_queue_cleanup_actions WHERE download_id = 'dl-0084'`);
+      }
+    });
+
+    it('creates arr_queue_cleanup_block_terms: an instance CHECK, a required term and expiry, the live index', async () => {
+      const insert = (instance: string, term: string | null = '/^[^a-z0-9]*a[^a-z0-9]*$/i') =>
+        client.query({
+          text: `INSERT INTO arr_queue_cleanup_block_terms (instance, term, release_title, download_id, target_id, expires_at)
+                 VALUES ($1, $2, 'A', 'dl-0084', 1, now() + interval '365 days')`,
+          values: [instance, term],
+        });
+      try {
+        await insert('lidarr');
+        await expect(insert('plex')).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('lidarr', null)).rejects.toMatchObject({ code: '23502' });
+        const idx = await client.query(
+          `SELECT indexname FROM pg_indexes WHERE tablename = 'arr_queue_cleanup_block_terms'`,
+        );
+        expect(idx.rows.map((r) => r.indexname).sort()).toEqual([
+          'arr_queue_cleanup_block_terms_live_idx',
+          'arr_queue_cleanup_block_terms_pkey',
+        ]);
+      } finally {
+        await client.query(`DELETE FROM arr_queue_cleanup_block_terms WHERE download_id = 'dl-0084'`);
+      }
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -3171,5 +3232,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0083_janitor_manual_match.sql'), 'utf8')).toContain(
       "'bad_release','manual_match','unknown'",
     );
+  });
+
+  // PLAN-065 / DESIGN-046 D-13 + D-14 gate — the janitor manual_match enforce migration is journaled (idx 83), after 0083.
+  it('lists 0084_janitor_manual_match_enforce at idx 83, strictly after 0083_janitor_manual_match', () => {
+    const entry = journal.entries.find((e) => e.tag === '0084_janitor_manual_match_enforce');
+    const prev = journal.entries.find((e) => e.tag === '0083_janitor_manual_match');
+    expect(entry?.idx).toBe(83);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0084_janitor_manual_match_enforce.sql'), 'utf8');
+    expect(sqlText).toContain("'skipped_gone','skipped_loop','skipped_unblockable'");
+    expect(sqlText).toContain('CREATE TABLE "arr_queue_cleanup_block_terms"');
   });
 });

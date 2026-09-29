@@ -170,7 +170,8 @@ export function erroredArrQueueFixture(): Record<string, unknown>[] {
       title: 'Vanished.Heist.2018.1080p.WEB-DL',
       statusMessages: [{ title: 'Waiting', messages: ['Waiting to import...'] }],
     },
-    // manual_match — Lidarr could not match the files to the album (DESIGN-046 D-12; reported, never acted on).
+    // manual_match — Lidarr could not match the files to the album (DESIGN-046 D-12; acted on only where Lidarr's
+    // manual_match cell is enforced, D-13, and dev:local stays census).
     // Lidarr's multi-file shape: the header, then one entry per rejected file.
     {
       id: 91004,

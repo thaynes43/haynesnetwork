@@ -1,6 +1,12 @@
 # ADR-083: Automated *arr queue janitor — census-first cleanup of errored grabs
 
 - **Status:** Accepted
+- **Superseded in part by:** [ADR-094](094-janitor-manual-match-release-name-block.md) (2026-09-29) — class D's
+  "never acted on, reported only" now means `unknown` alone: Lidarr's `manual_match` (DESIGN-046 D-12) acts where its
+  cell is enforced, taking class C's action shape (blocklist, then re-search only where monitored) with the failing
+  release's name blocked first in a janitor-owned Lidarr release profile, and C-04's write-back list gains that
+  profile (ADR-094 C-02, C-03). Everything else here stands. This is a status note only; the decision body below is
+  unchanged.
 - **Date:** 2026-08-01
 - **Deciders:** Tom Haynes
 

@@ -64,8 +64,13 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    enrollment, one `settings/main` write per Seerr user turning watchlist sync on, behind the audited
    `seerr_watchlist_enroll` setting (D-17), plus the one-off `animeTags` preflight on **Seerr's**
    Sonarr-server settings (`PUT /api/v1/settings/sonarr/{id}` on Seerr, the whole server object
-   echoed and read back; the app never writes Sonarr's own settings). All go through
-   `@hnet/arr/write` from `packages/domain` only.
+   echoed and read back; the app never writes Sonarr's own settings). **ADR-094 adds the janitor
+   release block** (DESIGN-046 D-14): one app-owned release profile on Lidarr, marked by its sentinel
+   term `haynesnetwork-janitor-managed-do-not-edit` (Lidarr's profiles have no name), holding whole-name
+   "must not contain" terms only, written only by its single writer (`reconcileJanitorReleaseBlock`),
+   which runs before each enforced `manual_match` removal (written and read back first) and in the
+   janitor's hourly upkeep (drift repair, 365-day expiry); a term is written only for a release title
+   that names the album's artist. All go through `@hnet/arr/write` from `packages/domain` only.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see

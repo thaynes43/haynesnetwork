@@ -352,11 +352,35 @@ export type OutboxEmailSender = (mail: OutboxEmail) => Promise<void>;
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
+/** The search target a janitor loop names, by instance (DESIGN-046 D-13). */
+const LOOP_TARGET_NOUN: Record<string, string> = { lidarr: 'album', sonarr: 'episode', radarr: 'movie' };
+
+/** The two D-13 loop lists of a stored janitor payload (typeof-guarded; absent on a pre-D-13 payload). */
+function queueCleanupLoops(qc: Record<string, unknown> | null): {
+  skipped: Array<Record<string, unknown>>;
+  repeatSearches: Array<Record<string, unknown>>;
+} {
+  const loops =
+    qc?.loops && typeof qc.loops === 'object' ? (qc.loops as Record<string, unknown>) : null;
+  const list = (v: unknown) => (Array.isArray(v) ? (v as Array<Record<string, unknown>>) : []);
+  return { skipped: list(loops?.skipped), repeatSearches: list(loops?.repeatSearches) };
+}
+
+/** One loop line: ` • lidarr album 123: <release> (<runs> <unit>)`. */
+function renderLoopLine(l: Record<string, unknown>, unit: string): string {
+  const instance = str(l.instance) || 'unknown';
+  const noun = LOOP_TARGET_NOUN[instance] ?? 'target';
+  const target = typeof l.targetId === 'number' ? `${noun} ${l.targetId}` : `no ${noun}`;
+  const title = str(l.title) !== '' ? `: ${str(l.title)}` : '';
+  return ` • ${instance} ${target}${title} (${num(l.runs)} ${unit})`;
+}
+
 /**
  * ADR-083 / DESIGN-046 D-07 — render the queue-janitor rollup section of the nightly digest from its
  * (jsonb) payload object. Defensive (typeof-guarded) since it reads a stored payload: per instance × class
- * counts (census vs enforced) with the top-3 reasons, the actions total, and the ladder line (level + age +
- * next criteria). Plain text, matching the digest's owner-facing style.
+ * counts (census vs enforced) with the top-3 reasons, the actions total, the loops (D-13: every download the loop
+ * guard held in 24h and every target searched on 2+ runs in 7 days), and the ladder line (level + age + next
+ * criteria). Plain text, matching the digest's owner-facing style.
  */
 function renderQueueCleanupSection(qc: Record<string, unknown>): string {
   const observed = num(qc.observed);
@@ -380,6 +404,22 @@ function renderQueueCleanupSection(qc: Record<string, unknown>): string {
         if (reason !== '') lines.push(`     – ${reason} ×${num(r.count)}`);
       }
     }
+  }
+  const loops = queueCleanupLoops(qc);
+  if (loops.skipped.length > 0) {
+    lines.push('\nLoops held for a person (the janitor stopped acting on these, last 24h):');
+    for (const l of loops.skipped) lines.push(renderLoopLine(l, 'runs held'));
+  }
+  if (loops.repeatSearches.length > 0) {
+    lines.push('\nSearched again on 2 or more runs (last 7 days):');
+    for (const l of loops.repeatSearches) lines.push(renderLoopLine(l, 'searches'));
+  }
+  // DESIGN-046 D-14 — the janitor release block: release names blocked in 24h and the terms live now, per *arr.
+  const blocks = Array.isArray(qc.releaseBlock) ? (qc.releaseBlock as Array<Record<string, unknown>>) : [];
+  for (const b of blocks) {
+    lines.push(
+      `\nRelease names blocked on ${str(b.instance) || 'unknown'}: ${num(b.blocked24h)} in the last 24h, ${num(b.live)} blocked now.`,
+    );
   }
   const ladder =
     qc.ladder && typeof qc.ladder === 'object' ? (qc.ladder as Record<string, unknown>) : null;
@@ -438,7 +478,8 @@ export function renderOutboxEmail(row: {
     // ADR-060 follow-up (PLAN-048 tail) — the nightly OPEN-failures digest (one row per run). ADR-083 /
     // DESIGN-046 D-07 folds the queue-janitor rollup into the SAME row: the digest now also fires on a clean
     // ledger when the janitor observed anything in 24h, and the subject gains `[janitor: promotion due]` when
-    // a promotion criterion is met (or the ladder has stagnated > 14 days at a level).
+    // a promotion criterion is met (or the ladder has stagnated > 14 days at a level), and `[janitor: loop
+    // detected]` when the loop guard held a download in 24h or a target was searched on 2+ runs in 7 days (D-13).
     case 'activity_failure_digest': {
       const count = typeof p.count === 'number' ? p.count : 0;
       const items = Array.isArray(p.items) ? (p.items as Array<Record<string, unknown>>) : [];
@@ -452,13 +493,16 @@ export function renderOutboxEmail(row: {
           ? (p.queueCleanup as Record<string, unknown>)
           : null;
       const promotionDue = qc?.promotionDue === true;
+      const loops = queueCleanupLoops(qc);
+      const loopDetected = loops.skipped.length > 0 || loops.repeatSearches.length > 0;
 
       const subject =
         `[haynesnetwork] ` +
         (count > 0
           ? `${count} stuck import${count === 1 ? '' : 's'} need attention`
           : `Queue janitor census — ${num(qc?.observed)} observed (24h)`) +
-        (promotionDue ? ' [janitor: promotion due]' : '');
+        (promotionDue ? ' [janitor: promotion due]' : '') +
+        (loopDetected ? ' [janitor: loop detected]' : '');
 
       const failureBlock =
         count > 0

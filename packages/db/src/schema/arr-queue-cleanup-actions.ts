@@ -46,11 +46,19 @@ export const arrQueueCleanupActions = pgTable(
     downloadId: text('download_id'),
     /** The queue item's release title (display only). */
     title: text('title'),
+    /**
+     * DESIGN-046 D-13 (migration 0084) — the record's search target, the id the owning *arr searches by: Sonarr
+     * the episodeId, Radarr the movieId, Lidarr the albumId. Null when the record carries none (an unknown-artist
+     * Lidarr record) and on every row written before D-13. Keys the manual_match loop guard (prior removals of
+     * the same album) and the digest's repeat-search list (the same target searched on 2+ runs in 7 days).
+     */
+    targetId: integer('target_id'),
     /** The Action Class the classifier assigned (T-239). */
     actionClass: text('action_class').$type<QueueCleanupActionClass>().notNull(),
     /** The class×instance mode in effect this run (census | enforce). */
     mode: text('mode').$type<QueueCleanupMode>().notNull(),
-    /** What the janitor did (none | removed_blocklisted | retried_import | blocklisted_searched | skipped_*). */
+    /** What the janitor did (none | removed_blocklisted | retried_import | blocklisted_searched | skipped_*;
+     *  `skipped_loop` since D-13). */
     action: text('action').$type<QueueCleanupAction>().notNull(),
     /** observed | done | error. */
     outcome: text('outcome').$type<QueueCleanupOutcome>().notNull(),
@@ -65,6 +73,11 @@ export const arrQueueCleanupActions = pgTable(
     index('arr_queue_cleanup_actions_created_idx').on(t.createdAt),
     // Retry-escalation counting + "seen before" dedup: the per-download history, newest first.
     index('arr_queue_cleanup_actions_download_idx').on(t.instance, t.downloadId, t.createdAt),
+    // D-13 loop guard + repeat-search lookups: the actions that LANDED, per search target. Partial, so it holds
+    // only the few rows the janitor acted on, not the hourly census.
+    index('arr_queue_cleanup_actions_target_done_idx')
+      .on(t.instance, t.targetId, t.createdAt)
+      .where(sql`${t.outcome} = 'done' AND ${t.targetId} IS NOT NULL`),
     check('arr_queue_cleanup_actions_instance_enum', sql`${t.instance} = ANY (ARRAY[${sql.raw(ARR_KINDS_SQL_LIST)}])`),
     check(
       'arr_queue_cleanup_actions_class_enum',

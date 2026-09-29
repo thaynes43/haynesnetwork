@@ -8,14 +8,15 @@
 //   echoing the whole server object and reading it back;
 // - the Maintainerr collection schema carries `listExclusions` / `forceSeerr`; Radarr's `secondaryYear`.
 import { describe, expect, it } from 'vitest';
-import { RadarrClient, SeerrClient, SonarrClient } from '../src/read';
-import { RadarrWriteClient, SeerrWriteClient, SonarrWriteClient } from '../src/write';
+import { LidarrClient, RadarrClient, SeerrClient, SonarrClient } from '../src/read';
+import { LidarrWriteClient, RadarrWriteClient, SeerrWriteClient, SonarrWriteClient } from '../src/write';
 import { maintainerrCollectionSchema, radarrMovieSchema } from '../src/schemas';
 import { stubFetch, TEST_OPTS } from './helpers';
 
 const RADARR = { ...TEST_OPTS, baseUrl: 'http://radarr.test:7878' };
 const SONARR = { ...TEST_OPTS, baseUrl: 'http://sonarr.test:8989' };
 const SEERR = { ...TEST_OPTS, baseUrl: 'http://seerr.test:5055' };
+const LIDARR = { ...TEST_OPTS, baseUrl: 'http://lidarr.test:8686' };
 
 const profile = {
   id: 4,
@@ -68,6 +69,73 @@ describe('release profiles (D-13)', () => {
     ]);
     const [p] = await new RadarrWriteClient({ ...RADARR, fetchImpl }).listReleaseProfiles();
     expect(p!.ignored).toEqual(['a', 'b']);
+  });
+});
+
+// ADR-094 / DESIGN-046 D-14 — the janitor release block on Lidarr (v1): no `name` on the resource, and the grab's own
+// release title from the download's history.
+describe('Lidarr release profiles + grab history (ADR-094 / DESIGN-046 D-14)', () => {
+  const lidarrProfile = {
+    id: 5,
+    enabled: true,
+    required: [],
+    ignored: ['haynesnetwork-janitor-managed-do-not-edit', '/^[^a-z0-9]*a[^a-z0-9]*b[^a-z0-9]*$/i'],
+    indexerId: 0,
+    tags: [],
+  };
+
+  it('lists, creates (no id, no name) and updates (PUT /api/v1/releaseprofile/{id})', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      { path: '/api/v1/releaseprofile', body: [lidarrProfile, { ...lidarrProfile, id: 6, ignored: 'x, y' }] },
+      { method: 'POST', path: '/api/v1/releaseprofile', status: 201, body: lidarrProfile },
+      { method: 'PUT', path: '/api/v1/releaseprofile/5', status: 202, body: lidarrProfile },
+    ]);
+    const client = new LidarrWriteClient({ ...LIDARR, fetchImpl });
+    const listed = await client.listReleaseProfiles();
+    expect(listed[0]).toEqual(lidarrProfile);
+    expect(listed[1]!.ignored).toEqual(['x', 'y']);
+    const input = { enabled: true, required: [], ignored: lidarrProfile.ignored, indexerId: 0, tags: [] };
+    await client.createReleaseProfile({ ...input, id: 99 });
+    await client.updateReleaseProfile({ ...input, id: 5 });
+    expect(calls.map((c) => `${c.method} ${c.url.pathname}`)).toEqual([
+      'GET /api/v1/releaseprofile',
+      'POST /api/v1/releaseprofile',
+      'PUT /api/v1/releaseprofile/5',
+    ]);
+    expect(calls[1]!.body).toEqual(input); // never an id on create, never a name
+    expect(calls[2]!.body).toEqual({ ...input, id: 5 });
+  });
+
+  it('getDownloadGrabs reads /api/v1/history filtered to the download and the grabbed event (integer 1)', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      {
+        path: '/api/v1/history',
+        body: {
+          page: 1,
+          pageSize: 10,
+          totalRecords: 1,
+          records: [
+            {
+              id: 1,
+              eventType: 'grabbed',
+              date: '2026-09-29T00:00:00Z',
+              sourceTitle: 'Artist - Album (2019) [FLAC]',
+              downloadId: 'SABnzbd_nzo_1',
+              albumId: 71,
+              artistId: 7,
+              data: { downloadUrl: 'https://indexer.test/?apikey=secret' },
+            },
+          ],
+        },
+      },
+    ]);
+    const page = await new LidarrClient({ ...LIDARR, fetchImpl }).getDownloadGrabs('SABnzbd_nzo_1');
+    expect(page.records[0]!.sourceTitle).toBe('Artist - Album (2019) [FLAC]');
+    const q = calls[0]!.url.searchParams;
+    expect(q.get('downloadId')).toBe('SABnzbd_nzo_1');
+    expect(q.get('eventType')).toBe('1');
+    expect(q.get('pageSize')).toBe('10');
+    expect(q.get('sortDirection')).toBe('descending');
   });
 });
 
