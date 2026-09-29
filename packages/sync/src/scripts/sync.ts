@@ -205,8 +205,13 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
                            the class×instance cell is switched to enforce (the DB-backed audited
                            arr_queue_cleanup_config; ships ALL-CENSUS), execute the cleanup (remove-from-client
                            + blocklist / ProcessMonitoredDownloads / blocklist + re-search) behind the safety
-                           rails. Needs SONARR/RADARR/LIDARR_URL/_API_KEY (URLs default in-cluster). No
-                           --source. Writes no sync_runs row.
+                           rails. Needs SONARR/RADARR/LIDARR_URL/_API_KEY (URLs default in-cluster). Since
+                           ADR-095 it also covers LazyLibrarian (with SABnzbd: retry_import / bad_release /
+                           leftover, fail_loop report only) and Kapowarr (bad_release) through the source adapters;
+                           a source whose LAZYLIBRARIAN / SABNZBD / KAPOWARR_API_KEY is missing reads as a failed
+                           read, never the run's failure. The leftover census needs the JANITOR_LL_DOWNLOAD_ROOT
+                           and JANITOR_LL_LIBRARY_ROOTS mounts (off without them). No --source. Writes no sync_runs
+                           row.
   --mode=watch             the WATCH COMPANION read-model (ADR-088 / ADR-089 / DESIGN-049 D-09): resolve the
                            Server Owner (plex.tv, HaynesOps then HaynesTower), page each configured Tautulli's
                            history for the owner into the append-only watch_events log (insert-or-ignore on
@@ -805,6 +810,7 @@ async function main(): Promise<number> {
               observed: i.itemsObserved,
               actionsTaken: i.actionsTaken,
               errors: i.errors,
+              ...(i.readError !== undefined ? { readError: i.readError } : {}),
             })),
           },
         }

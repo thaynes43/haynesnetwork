@@ -13,6 +13,7 @@ import {
   OAUTH_TOKEN_ENDPOINT_AUTH_METHODS,
   PLEX_SERVER_SLUGS,
   QUEUE_CLEANUP_ACTION_CLASSES,
+  QUEUE_CLEANUP_INSTANCES,
   QUEUE_CLEANUP_ACTIONS,
   SYNC_RUN_KINDS,
   WATCH_ACCOUNT_ROLES,
@@ -3118,6 +3119,61 @@ describe('migrations against embedded Postgres 16', () => {
       }
     });
   });
+
+  // ADR-095 / DESIGN-046 D-15..D-20 (PLAN-065 — migration 0085, journal idx 84): the janitor covers the download suite.
+  // The instance CHECK admits lazylibrarian + kapowarr, queue_item_id is nullable, item_ref + attempts are new, the
+  // class and action CHECKs admit leftover / fail_loop and removed_leftover / skipped_seeding. Additive.
+  describe('0085 janitor suite sources (DESIGN-046 D-15..D-20)', () => {
+    it('admits the new instances, classes and actions, a null queue_item_id with an item_ref, and matches enums.ts', async () => {
+      const insert = (
+        instance: string,
+        actionClass: string,
+        action = 'none',
+        queueItemId: number | null = null,
+        itemRef: string | null = 'bk1/ebook',
+        attempts: number | null = null,
+      ) =>
+        client.query({
+          text: `INSERT INTO arr_queue_cleanup_actions (instance, queue_item_id, item_ref, attempts, download_id, action_class, mode, action, outcome)
+                 VALUES ($1, $2, $3, $4, 'dl-0085', $5, 'census', $6, 'observed')`,
+          values: [instance, queueItemId, itemRef, attempts, actionClass, action],
+        });
+      try {
+        expect(QUEUE_CLEANUP_INSTANCES).toEqual(['sonarr', 'radarr', 'lidarr', 'lazylibrarian', 'kapowarr']);
+        for (const instance of QUEUE_CLEANUP_INSTANCES) await insert(instance, 'unknown', 'none', 7);
+        for (const actionClass of QUEUE_CLEANUP_ACTION_CLASSES) await insert('lazylibrarian', actionClass);
+        for (const action of QUEUE_CLEANUP_ACTIONS) await insert('lazylibrarian', 'leftover', action);
+        await insert('lazylibrarian', 'fail_loop', 'none', null, 'bk2/audiobook', 173);
+        await expect(insert('bazarr', 'unknown')).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('lazylibrarian', 'looping')).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('lazylibrarian', 'leftover', 'deleted_everything')).rejects.toMatchObject({ code: '23514' });
+        const stored = await client.query(
+          `SELECT queue_item_id, item_ref, attempts FROM arr_queue_cleanup_actions WHERE download_id = 'dl-0085' AND attempts IS NOT NULL`,
+        );
+        expect(stored.rows).toEqual([{ queue_item_id: null, item_ref: 'bk2/audiobook', attempts: 173 }]);
+
+        // Every live CHECK names exactly its enums.ts list (parity both ways).
+        for (const [name, values] of [
+          ['arr_queue_cleanup_actions_instance_enum', QUEUE_CLEANUP_INSTANCES],
+          ['arr_queue_cleanup_actions_class_enum', QUEUE_CLEANUP_ACTION_CLASSES],
+          ['arr_queue_cleanup_actions_action_enum', QUEUE_CLEANUP_ACTIONS],
+        ] as const) {
+          const def = await client.query(`SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = $1`, [
+            name,
+          ]);
+          const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+          expect(listed.sort()).toEqual([...values].sort());
+        }
+
+        const idx = await client.query(
+          `SELECT indexdef FROM pg_indexes WHERE indexname = 'arr_queue_cleanup_actions_item_ref_idx'`,
+        );
+        expect(String(idx.rows[0].indexdef)).toMatch(/\(instance, item_ref, created_at\) WHERE \(item_ref IS NOT NULL\)/);
+      } finally {
+        await client.query(`DELETE FROM arr_queue_cleanup_actions WHERE download_id = 'dl-0085'`);
+      }
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -3243,5 +3299,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0084_janitor_manual_match_enforce.sql'), 'utf8');
     expect(sqlText).toContain("'skipped_gone','skipped_loop','skipped_unblockable'");
     expect(sqlText).toContain('CREATE TABLE "arr_queue_cleanup_block_terms"');
+  });
+
+  // PLAN-065 / DESIGN-046 D-15..D-20 gate — the janitor suite-sources migration is journaled (idx 84), after 0084.
+  it('lists 0085_janitor_suite_sources at idx 84, strictly after 0084_janitor_manual_match_enforce', () => {
+    const entry = journal.entries.find((e) => e.tag === '0085_janitor_suite_sources');
+    const prev = journal.entries.find((e) => e.tag === '0084_janitor_manual_match_enforce');
+    expect(entry?.idx).toBe(84);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0085_janitor_suite_sources.sql'), 'utf8');
+    expect(sqlText).toContain("'sonarr','radarr','lidarr','lazylibrarian','kapowarr'");
+    expect(sqlText).toContain('ALTER COLUMN "queue_item_id" DROP NOT NULL');
   });
 });

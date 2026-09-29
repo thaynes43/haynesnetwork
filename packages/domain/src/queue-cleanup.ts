@@ -4,6 +4,8 @@
 // *arr client bundle (built INSIDE this package so @hnet/arr/write stays domain-only — the arr-write import
 // guard), the /admin status read + promotion-ladder derivation (D-08), and the nightly digest section (D-07).
 // D-13 gives Lidarr's `manual_match` an enforce cell, with a loop guard and a loop signal in the log and digest.
+// ADR-095 (D-15..D-20) extends it to the download suite: LazyLibrarian and Kapowarr through the source adapter seam
+// (./queue-cleanup-sources), the same rails and rows, a config that stays valid without them, and a ladder per family.
 //
 // The *arrs are the source of truth (hard rule 4, amended by ADR-083 C-04): the janitor only removes FAILED
 // TRANSFER STATE (a stuck queue item + a blocklist entry), never library files. Its whole trail is the
@@ -12,7 +14,9 @@
 // enforcement arrives through the Promotion Ladder (T-240) as audited config flips, not releases.
 import {
   ARR_KINDS,
+  QUEUE_CLEANUP_INSTANCES,
   QUEUE_CLEANUP_MODES,
+  QUEUE_CLEANUP_SOURCE_INSTANCES,
   appSettings,
   arrQueueCleanupActions,
   permissionAudit,
@@ -21,8 +25,10 @@ import {
   type DbClient,
   type QueueCleanupAction,
   type QueueCleanupActionClass,
+  type QueueCleanupInstance,
   type QueueCleanupMode,
   type QueueCleanupOutcome,
+  type QueueCleanupSourceInstance,
 } from '@hnet/db';
 import { LidarrClient, RadarrClient, SonarrClient } from '@hnet/arr/read';
 import { LidarrWriteClient, RadarrWriteClient, SonarrWriteClient } from '@hnet/arr/write';
@@ -34,7 +40,7 @@ import {
   type RadarrQueueRecord,
   type SonarrQueueRecord,
 } from '@hnet/arr';
-import { and, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import { setAppSetting } from './app-settings';
 import { resolveDb } from './db-client';
 import { QueueCleanupConfigInvalidError } from './errors';
@@ -47,6 +53,12 @@ import {
   type JanitorBlockTerm,
   type JanitorReleaseProfileClient,
 } from './janitor-release-block';
+import {
+  QueueCleanupItemGoneError,
+  queueCleanupSourceAdaptersFromEnv,
+  type QueueCleanupSourceAdapter,
+  type QueueCleanupSourceItem,
+} from './queue-cleanup-sources';
 
 // ---------------------------------------------------------------------------
 // Classifier (D-03) — pure, exhaustively tested; patterns in versioned code.
@@ -282,21 +294,47 @@ export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClas
 export const QUEUE_CLEANUP_SHARED_CLASSES = ['have_better', 'retry_import', 'bad_release'] as const;
 export type QueueCleanupSharedClass = (typeof QUEUE_CLEANUP_SHARED_CLASSES)[number];
 
-/** The classes that have an enforce cell on SOME instance. `unknown` never does (ADR-083 normative). `manual_match`
- *  was report only (D-12) and since D-13 has one cell, on Lidarr only. */
-export const QUEUE_CLEANUP_ENFORCEABLE_CLASSES = [...QUEUE_CLEANUP_SHARED_CLASSES, 'manual_match'] as const;
+/** The classes that have an enforce cell on SOME instance. `unknown` never does (ADR-083 normative), nor does
+ *  `fail_loop` (D-18, report only). `manual_match` was report only (D-12) and since D-13 has one cell, on Lidarr only;
+ *  `leftover` has one, on LazyLibrarian only (D-18). */
+export const QUEUE_CLEANUP_ENFORCEABLE_CLASSES = [...QUEUE_CLEANUP_SHARED_CLASSES, 'manual_match', 'leftover'] as const;
 export type QueueCleanupEnforceableClass = (typeof QUEUE_CLEANUP_ENFORCEABLE_CLASSES)[number];
 
+/** LazyLibrarian's cells (D-18): retry (forceProcess), bad_release (the SABnzbd job delete), leftover (the folder). */
+export const QUEUE_CLEANUP_LAZYLIBRARIAN_CLASSES = ['retry_import', 'bad_release', 'leftover'] as const;
+/** Kapowarr's one cell (D-19): bad_release (the queue removal with blocklist, then the volume search). */
+export const QUEUE_CLEANUP_KAPOWARR_CLASSES = ['bad_release'] as const;
+
 /**
- * The cells each instance has (D-05, D-13): the shared three everywhere, plus `manual_match` on Lidarr. Lidarr's
- * match rejections are the only source of the class, and its action ends in an album search, so Sonarr and
- * Radarr have no such cell (a stored `modes.sonarr.manual_match` is an unknown class).
+ * The cells each instance has (D-05, D-13, D-16): the shared three on every *arr, plus `manual_match` on Lidarr;
+ * LazyLibrarian's three and Kapowarr's one (D-18, D-19). A class an instance has no cell for is refused in its
+ * stored modes (a `modes.sonarr.manual_match` is an unknown class) and always reads census.
  */
-export const QUEUE_CLEANUP_INSTANCE_CLASSES: { readonly [K in ArrKind]: readonly QueueCleanupEnforceableClass[] } = {
+export const QUEUE_CLEANUP_INSTANCE_CLASSES: {
+  readonly [K in QueueCleanupInstance]: readonly QueueCleanupEnforceableClass[];
+} = {
   sonarr: QUEUE_CLEANUP_SHARED_CLASSES,
   radarr: QUEUE_CLEANUP_SHARED_CLASSES,
-  lidarr: QUEUE_CLEANUP_ENFORCEABLE_CLASSES,
+  lidarr: [...QUEUE_CLEANUP_SHARED_CLASSES, 'manual_match'],
+  lazylibrarian: QUEUE_CLEANUP_LAZYLIBRARIAN_CLASSES,
+  kapowarr: QUEUE_CLEANUP_KAPOWARR_CLASSES,
 };
+
+const SOURCE_INSTANCE_SET: ReadonlySet<string> = new Set(QUEUE_CLEANUP_SOURCE_INSTANCES);
+
+/** True for a suite source (D-16), false for a *arr. */
+export function isQueueCleanupSourceInstance(instance: string): instance is QueueCleanupSourceInstance {
+  return SOURCE_INSTANCE_SET.has(instance);
+}
+
+/**
+ * D-13 / D-16 — a cell a stored config may lack: added after its instance was first stored, so an absent value reads
+ * as census and never invalidates the rest. Lidarr's `manual_match` (D-13) and every suite-source cell (D-16); a
+ * missing suite instance reads as census on all its cells. The nine shared *arr cells stay required.
+ */
+function isOptionalCell(instance: QueueCleanupInstance, klass: QueueCleanupEnforceableClass): boolean {
+  return (instance === 'lidarr' && klass === 'manual_match') || isQueueCleanupSourceInstance(instance);
+}
 
 const ENFORCEABLE_CLASS_SET: ReadonlySet<string> = new Set(QUEUE_CLEANUP_ENFORCEABLE_CLASSES);
 
@@ -314,14 +352,26 @@ export type QueueCleanupModeCells = Record<QueueCleanupSharedClass, QueueCleanup
 /** Lidarr's cells: the shared three plus `manual_match` (D-13). */
 export type LidarrQueueCleanupModeCells = QueueCleanupModeCells & { manual_match: QueueCleanupMode };
 
+/** LazyLibrarian's cells (D-18). */
+export type LazyLibrarianQueueCleanupModeCells = Record<
+  (typeof QUEUE_CLEANUP_LAZYLIBRARIAN_CLASSES)[number],
+  QueueCleanupMode
+>;
+
+/** Kapowarr's cells (D-19). */
+export type KapowarrQueueCleanupModeCells = Record<(typeof QUEUE_CLEANUP_KAPOWARR_CLASSES)[number], QueueCleanupMode>;
+
 export interface ArrQueueCleanupConfig {
-  /** T-240 cells: per instance × the classes that instance has a cell for (QUEUE_CLEANUP_INSTANCE_CLASSES). */
+  /** T-240 cells: per instance × the classes that instance has a cell for (QUEUE_CLEANUP_INSTANCE_CLASSES). The
+   *  resolved config always carries all five instances; a STORED config may lack the suite sources (D-16). */
   modes: {
     sonarr: QueueCleanupModeCells;
     radarr: QueueCleanupModeCells;
     lidarr: LidarrQueueCleanupModeCells;
+    lazylibrarian: LazyLibrarianQueueCleanupModeCells;
+    kapowarr: KapowarrQueueCleanupModeCells;
   };
-  /** Per-instance per-run mutation cap (1..100). */
+  /** Per-instance per-run mutation cap (1..100), each suite source included. */
   maxActionsPerRun: number;
   /** Minimum item age before any action (0..168 hours) — the organic-import window. */
   minItemAgeHours: number;
@@ -334,12 +384,15 @@ function allCensusCells(): QueueCleanupModeCells {
 }
 
 /** The code default — ALL-CENSUS (observe-only), caps 10 / 2h / 6-run (DESIGN-046 D-05). Lidarr's `manual_match`
- *  cell is census too (D-13), so the deploy that adds it is inert until the cell is flipped. */
+ *  cell is census too (D-13), and so is every suite-source cell (D-16), so a deploy that adds a cell is inert until
+ *  the cell is flipped. */
 export const ARR_QUEUE_CLEANUP_CONFIG_DEFAULT: ArrQueueCleanupConfig = {
   modes: {
     sonarr: allCensusCells(),
     radarr: allCensusCells(),
     lidarr: { ...allCensusCells(), manual_match: 'census' },
+    lazylibrarian: { retry_import: 'census', bad_release: 'census', leftover: 'census' },
+    kapowarr: { bad_release: 'census' },
   },
   maxActionsPerRun: 10,
   minItemAgeHours: 2,
@@ -347,18 +400,20 @@ export const ARR_QUEUE_CLEANUP_CONFIG_DEFAULT: ArrQueueCleanupConfig = {
 };
 
 /**
- * The mode of one class×instance cell. `census` for a class the instance has no cell for (`unknown` anywhere,
- * `manual_match` off Lidarr) and for a cell a config lacks: a config stored before D-13 has no `manual_match`
- * cell, and it reads as census (fail safe, never enforce by omission).
+ * The mode of one class×instance cell. `census` for a class the instance has no cell for (`unknown` and `fail_loop`
+ * anywhere, `manual_match` off Lidarr, `leftover` off LazyLibrarian) and for a cell or instance a config lacks: a
+ * config stored before D-13 has no `manual_match` cell and one stored before D-16 no suite source, and they read as
+ * census (fail safe, never enforce by omission).
  */
 export function queueCleanupCellMode(
   config: ArrQueueCleanupConfig,
-  instance: ArrKind,
+  instance: QueueCleanupInstance,
   actionClass: QueueCleanupActionClass,
 ): QueueCleanupMode {
   if (!isEnforceableQueueCleanupClass(actionClass)) return 'census';
   if (!QUEUE_CLEANUP_INSTANCE_CLASSES[instance].includes(actionClass)) return 'census';
-  const cells = config.modes[instance] as Partial<Record<QueueCleanupEnforceableClass, unknown>> | undefined;
+  const modes = config.modes as Partial<Record<QueueCleanupInstance, unknown>> | undefined;
+  const cells = modes?.[instance] as Partial<Record<QueueCleanupEnforceableClass, unknown>> | undefined;
   return cells?.[actionClass] === 'enforce' ? 'enforce' : 'census';
 }
 
@@ -374,13 +429,16 @@ export function queueCleanupConfigError(cfg: unknown): string | null {
   const modes = c.modes;
   if (typeof modes !== 'object' || modes === null) return 'modes must be an object.';
   const m = modes as Record<string, unknown>;
-  const allowedInstances = new Set<string>(ARR_KINDS);
+  const allowedInstances = new Set<string>(QUEUE_CLEANUP_INSTANCES);
   for (const key of Object.keys(m)) {
     if (!allowedInstances.has(key)) return `Unknown instance '${key}' in modes.`;
   }
   const allowedModes = new Set<string>(QUEUE_CLEANUP_MODES);
-  for (const instance of ARR_KINDS) {
+  for (const instance of QUEUE_CLEANUP_INSTANCES) {
     const cell = m[instance];
+    // D-16: a config stored before the suite sources existed lacks them; an absent source reads as census on every
+    // cell and never invalidates the rest. The three *arrs stay required.
+    if (cell === undefined && isQueueCleanupSourceInstance(instance)) continue;
     if (typeof cell !== 'object' || cell === null) return `modes.${instance} must be an object.`;
     const cc = cell as Record<string, unknown>;
     const allowedClasses = new Set<string>(QUEUE_CLEANUP_INSTANCE_CLASSES[instance]);
@@ -388,8 +446,8 @@ export function queueCleanupConfigError(cfg: unknown): string | null {
       if (!allowedClasses.has(key)) return `Unknown class '${key}' in modes.${instance}.`;
     }
     for (const klass of QUEUE_CLEANUP_INSTANCE_CLASSES[instance]) {
-      // D-13: a config stored before Lidarr's manual_match cell existed lacks it; absent reads as census.
-      if (klass === 'manual_match' && cc[klass] === undefined) continue;
+      // D-13 / D-16: a cell added after its instance was first stored may be absent; absent reads as census.
+      if (cc[klass] === undefined && isOptionalCell(instance, klass)) continue;
       if (!allowedModes.has(cc[klass] as string)) {
         return `modes.${instance}.${klass} must be 'census' or 'enforce'.`;
       }
@@ -410,27 +468,52 @@ export function queueCleanupConfigError(cfg: unknown): string | null {
   return null;
 }
 
-/** The canonical shape of a validated config: every cell present (Lidarr's `manual_match` filled as census
- *  when a pre-D-13 config lacks it), stray keys dropped. Used for storing AND for reading back. */
+/** The canonical shape of a validated config: every instance and cell present (Lidarr's `manual_match` and every
+ *  suite-source cell filled as census when an older config lacks them, D-13 / D-16), stray keys dropped. Used for
+ *  storing AND for reading back. */
 function canonicalConfig(config: ArrQueueCleanupConfig): ArrQueueCleanupConfig {
   const cell = (c: QueueCleanupModeCells): QueueCleanupModeCells => ({
     have_better: c.have_better,
     retry_import: c.retry_import,
     bad_release: c.bad_release,
   });
+  const mode = (instance: QueueCleanupInstance, klass: QueueCleanupEnforceableClass) =>
+    queueCleanupCellMode(config, instance, klass);
   return {
     modes: {
       sonarr: cell(config.modes.sonarr),
       radarr: cell(config.modes.radarr),
       lidarr: {
         ...cell(config.modes.lidarr),
-        manual_match: queueCleanupCellMode(config, 'lidarr', 'manual_match'),
+        manual_match: mode('lidarr', 'manual_match'),
       },
+      lazylibrarian: {
+        retry_import: mode('lazylibrarian', 'retry_import'),
+        bad_release: mode('lazylibrarian', 'bad_release'),
+        leftover: mode('lazylibrarian', 'leftover'),
+      },
+      kapowarr: { bad_release: mode('kapowarr', 'bad_release') },
     },
     maxActionsPerRun: config.maxActionsPerRun,
     minItemAgeHours: config.minItemAgeHours,
     retryEscalateRuns: config.retryEscalateRuns,
   };
+}
+
+/**
+ * ADR-095 / DESIGN-046 D-16 rule 4 — the shape the writer STORES: the canonical config without a suite instance whose
+ * cells are all census (absent reads as census, so nothing changes on read). Until a books or comics cell is enforced,
+ * the stored row is exactly what the image before ADR-095 accepts, so a rollback keeps the *arr cells enforcing.
+ */
+function storableConfig(config: ArrQueueCleanupConfig): Omit<ArrQueueCleanupConfig, 'modes'> & {
+  modes: Record<string, Record<string, QueueCleanupMode>>;
+} {
+  const canonical = canonicalConfig(config);
+  const modes: Record<string, Record<string, QueueCleanupMode>> = { ...canonical.modes };
+  for (const instance of QUEUE_CLEANUP_SOURCE_INSTANCES) {
+    if (Object.values(canonical.modes[instance]).every((m) => m === 'census')) delete modes[instance];
+  }
+  return { ...canonical, modes };
 }
 
 /**
@@ -468,7 +551,7 @@ export async function setArrQueueCleanupConfig(input: {
   const res = await setAppSetting({
     db: input.db,
     key: 'arr_queue_cleanup_config',
-    value: canonicalConfig(input.config),
+    value: storableConfig(input.config),
     actorId: input.actorId,
   });
   return { changed: res.changed };
@@ -544,7 +627,12 @@ export function isLidarrAlbumMissing(album: {
   return stats.trackCount > 0 && stats.trackFileCount < stats.trackCount;
 }
 
-export type QueueCleanupClients = Record<ArrKind, QueueCleanupInstanceClient>;
+/**
+ * The janitor's client bundle: the three *arr clients (their own path, D-02..D-14) and, since ADR-095, the suite
+ * source adapters (D-15). A source left out is not read at all (tests that predate D-15 pass the *arrs only).
+ */
+export type QueueCleanupClients = Record<ArrKind, QueueCleanupInstanceClient> &
+  Partial<Record<QueueCleanupSourceInstance, QueueCleanupSourceAdapter>>;
 
 interface QueueTargetIds {
   parentId: number | null;
@@ -776,10 +864,11 @@ export function buildQueueCleanupClients(clients: {
 
 /**
  * Build the janitor's confined client bundle from the D-18 env contract (`SONARR_URL`/`SONARR_API_KEY` +
- * RADARR_/LIDARR_; URLs default to the in-cluster service DNS). Missing keys throw one ArrConfigError naming
- * every absent variable (values are never echoed). Bazarr/Seerr are NOT part of the bundle — the janitor only
- * talks to the three *arrs. The write clients are constructed HERE (inside @hnet/domain), so @hnet/sync never
- * imports @hnet/arr/write (the ADR-008 guard).
+ * RADARR_/LIDARR_; URLs default to the in-cluster service DNS). Missing *arr keys throw one ArrConfigError naming
+ * every absent variable (values are never echoed). Since ADR-095 the bundle also carries the suite source adapters
+ * (LazyLibrarian with SABnzbd, Kapowarr; `queueCleanupSourceAdaptersFromEnv`): a source whose key is missing reads as
+ * a failed read, never as the run's failure. Bazarr/Seerr/Prowlarr are NOT part of the bundle. The write clients
+ * are constructed HERE (inside @hnet/domain), so @hnet/sync never imports a `/write` entry (the ADR-008 guard).
  */
 export function arrQueueCleanupClientsFromEnv(
   env: Record<string, string | undefined> = process.env,
@@ -794,7 +883,7 @@ export function arrQueueCleanupClientsFromEnv(
     opts[kind] = { baseUrl, apiKey };
   }
   if (missing.length > 0) throw new ArrConfigError(missing);
-  return buildQueueCleanupClients({
+  const arrs = buildQueueCleanupClients({
     read: {
       sonarr: new SonarrClient(opts.sonarr),
       radarr: new RadarrClient(opts.radarr),
@@ -806,6 +895,7 @@ export function arrQueueCleanupClientsFromEnv(
       lidarr: new LidarrWriteClient(opts.lidarr),
     },
   });
+  return { ...arrs, ...queueCleanupSourceAdaptersFromEnv(env) };
 }
 
 // ---------------------------------------------------------------------------
@@ -813,7 +903,7 @@ export function arrQueueCleanupClientsFromEnv(
 // ---------------------------------------------------------------------------
 
 export interface QueueCleanupInstanceReport {
-  instance: ArrKind;
+  instance: QueueCleanupInstance;
   /** Whether the instance queue was read this run (false ⇒ a read failure, no rows written). */
   read: boolean;
   /** Census rows written for this instance (= queue size read). */
@@ -848,6 +938,8 @@ function emptyByClass(): Record<QueueCleanupActionClass, { observed: number; enf
     retry_import: { observed: 0, enforced: 0 },
     bad_release: { observed: 0, enforced: 0 },
     manual_match: { observed: 0, enforced: 0 },
+    leftover: { observed: 0, enforced: 0 },
+    fail_loop: { observed: 0, enforced: 0 },
     unknown: { observed: 0, enforced: 0 },
   };
 }
@@ -893,7 +985,7 @@ export function groupQueueRecordsByDownload<T extends { downloadId: string | nul
  */
 async function priorRetryImportRuns(
   db: ReturnType<typeof resolveDb>,
-  instance: ArrKind,
+  instance: QueueCleanupInstance,
   downloadId: string | null,
 ): Promise<number> {
   if (!downloadId) return 0;
@@ -968,7 +1060,7 @@ async function priorManualMatchRemovals(
 /** D-13 — the runs on which the janitor searched each target within the repeat-search window, before this run. */
 async function priorSearchRuns(
   db: ReturnType<typeof resolveDb>,
-  instance: ArrKind,
+  instance: QueueCleanupInstance,
   targetIds: number[],
   since: Date,
 ): Promise<Map<number, number>> {
@@ -1040,8 +1132,465 @@ async function manualMatchSearchTargets(
 /** A removal the *arr answered with 404: it no longer tracks the download (D-11 rule 5). */
 const isGone = (err: unknown): boolean => err instanceof ArrHttpError && err.status === 404;
 
+// ---------------------------------------------------------------------------
+// The suite sources (D-15..D-20, ADR-095) — one shared path for every source adapter.
+// ---------------------------------------------------------------------------
+
+/** D-15 — the source classes that remove a download from its client, so a non-removable item (a qBittorrent torrent,
+ *  which keeps seeding) is `skipped_seeding` for them. */
+const SOURCE_REMOVING_CLASSES: ReadonlySet<QueueCleanupActionClass> = new Set(['bad_release', 'leftover']);
+
+/** D-20 — the source classes the loop guard covers: a removal after which the source searches again, so the same
+ *  target can come back stuck. A leftover is never re-grabbed. */
+const SOURCE_LOOP_GUARDED_CLASSES: ReadonlySet<QueueCleanupActionClass> = new Set(['bad_release']);
+
+/** D-20 — the loop guard's K on the suite sources: a book format or volume the janitor already removed on this many
+ *  earlier downloads is held (`skipped_loop`). The owner-approved budget of D-13, applied to every source. */
+export const QUEUE_CLEANUP_SOURCE_LOOP_LIMIT = 2;
+
+/** D-20 — what the loop guard and the fail-loop signal key a source item on: its string reference (LazyLibrarian's
+ *  book format), else its target (Kapowarr's volume). Null: the item cannot loop through the janitor. */
+function sourceLoopKey(item: { itemRef: string | null; targetId: number | null }): string | null {
+  if (item.itemRef !== null) return `ref:${item.itemRef}`;
+  if (item.targetId !== null) return `target:${item.targetId}`;
+  return null;
+}
+
+/** D-15 — the janitor's first sighting of each download IN EACH CLASS (its earliest row of that class), the age rail's
+ *  fallback for a source that gives no timestamp (Kapowarr): how long the download has been stuck the way it is now,
+ *  not how long it was in flight before. Keyed `<downloadId>\u0000<class>`. */
+async function firstSightings(
+  db: ReturnType<typeof resolveDb>,
+  instance: QueueCleanupInstance,
+  downloadIds: string[],
+): Promise<Map<string, Date>> {
+  const out = new Map<string, Date>();
+  if (downloadIds.length === 0) return out;
+  const rows = await db
+    .select({
+      downloadId: arrQueueCleanupActions.downloadId,
+      actionClass: arrQueueCleanupActions.actionClass,
+      first: sql<Date>`min(${arrQueueCleanupActions.createdAt})`,
+    })
+    .from(arrQueueCleanupActions)
+    .where(
+      and(eq(arrQueueCleanupActions.instance, instance), inArray(arrQueueCleanupActions.downloadId, downloadIds)),
+    )
+    .groupBy(arrQueueCleanupActions.downloadId, arrQueueCleanupActions.actionClass);
+  for (const r of rows) {
+    if (r.downloadId !== null && r.first) out.set(`${r.downloadId}\u0000${r.actionClass}`, new Date(r.first));
+  }
+  return out;
+}
+
+/** D-20 — for each loop key, the earlier downloads the janitor removed (removals that landed, `outcome: 'done'`). */
+async function priorSourceRemovals(
+  db: ReturnType<typeof resolveDb>,
+  instance: QueueCleanupInstance,
+  keys: string[],
+): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  const refs = keys.filter((k) => k.startsWith('ref:')).map((k) => k.slice(4));
+  const targets = keys.filter((k) => k.startsWith('target:')).map((k) => Number(k.slice(7)));
+  if (refs.length === 0 && targets.length === 0) return out;
+  const match = [
+    ...(refs.length > 0 ? [inArray(arrQueueCleanupActions.itemRef, refs)] : []),
+    ...(targets.length > 0 ? [inArray(arrQueueCleanupActions.targetId, targets)] : []),
+  ];
+  const rows = await db
+    .select({
+      itemRef: arrQueueCleanupActions.itemRef,
+      targetId: arrQueueCleanupActions.targetId,
+      downloadId: arrQueueCleanupActions.downloadId,
+      createdAt: arrQueueCleanupActions.createdAt,
+    })
+    .from(arrQueueCleanupActions)
+    .where(
+      and(
+        eq(arrQueueCleanupActions.instance, instance),
+        eq(arrQueueCleanupActions.outcome, 'done'),
+        inArray(arrQueueCleanupActions.action, ['removed_blocklisted', 'blocklisted_searched']),
+        or(...match),
+      ),
+    );
+  for (const r of rows) {
+    const key = sourceLoopKey({ itemRef: r.itemRef, targetId: r.targetId });
+    if (key === null) continue;
+    const downloads = out.get(key) ?? new Set<string>();
+    downloads.add(nonEmpty(r.downloadId) ?? `run:${r.createdAt.toISOString()}`);
+    out.set(key, downloads);
+  }
+  return out;
+}
+
+/** D-20 — how far back the fail-loop signal looks for a loop's previous row: a loop unseen for longer logs as new. The
+ *  bound keeps the hourly read from growing with the table. */
+const FAIL_LOOP_LOOKBACK_MS = 48 * 60 * 60 * 1000;
+
+/** D-20 — each fail loop's attempts on its latest earlier row within FAIL_LOOP_LOOKBACK_MS (the fail-loop signal
+ *  fires when the count grew). */
+async function priorFailLoopAttempts(
+  db: ReturnType<typeof resolveDb>,
+  instance: QueueCleanupInstance,
+  refs: string[],
+  before: Date,
+): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
+  if (refs.length === 0) return out;
+  const rows = await db
+    .select({
+      itemRef: arrQueueCleanupActions.itemRef,
+      attempts: arrQueueCleanupActions.attempts,
+      createdAt: arrQueueCleanupActions.createdAt,
+    })
+    .from(arrQueueCleanupActions)
+    .where(
+      and(
+        eq(arrQueueCleanupActions.instance, instance),
+        eq(arrQueueCleanupActions.actionClass, 'fail_loop'),
+        inArray(arrQueueCleanupActions.itemRef, refs),
+        lt(arrQueueCleanupActions.createdAt, before),
+        gte(arrQueueCleanupActions.createdAt, new Date(before.getTime() - FAIL_LOOP_LOOKBACK_MS)),
+      ),
+    )
+    .orderBy(desc(arrQueueCleanupActions.createdAt));
+  for (const r of rows) {
+    if (r.itemRef !== null && !out.has(r.itemRef)) out.set(r.itemRef, r.attempts);
+  }
+  return out;
+}
+
+/** One source item's own verdict, before its download is considered (D-15). */
+interface SourceVerdict {
+  item: QueueCleanupSourceItem;
+  actionClass: QueueCleanupActionClass;
+  mode: QueueCleanupMode;
+  young: boolean;
+  /** The class removes the download, but the download must keep seeding (D-15). */
+  seeding: boolean;
+  wants: QueueCleanupEnforceableClass | null;
+  loop: boolean;
+  priorRemovals: number;
+}
+
 /**
- * Run one janitor pass over Sonarr/Radarr/Lidarr. Census rows are written ALWAYS (one per queue record — the
+ * D-15 — one janitor pass over ONE suite source, through its adapter, with every ADR-083 rail: the class×instance
+ * cells; the age rail (a class with a cell on the instance, census included, so the census shows what would happen;
+ * the source's own time, else the janitor's first sighting); the per-run cap; one action per download (D-11: records
+ * sharing a downloadId act once or not at all, `skipped_mixed`); retry escalation by prior runs; a removing class on a
+ * download that must keep seeding is `skipped_seeding`; the loop guard (D-20) and the loop signals. Report-only
+ * classes (`unknown`, `fail_loop`) are always `none`. Rows go to `rows`; the caller inserts them with the *arr rows.
+ * Never throws for a source failure: an unreadable source reports `read: false`.
+ */
+async function evaluateSourceInstance(input: {
+  db: ReturnType<typeof resolveDb>;
+  adapter: QueueCleanupSourceAdapter;
+  config: ArrQueueCleanupConfig;
+  now: Date;
+  logger?: QueueCleanupLogger;
+  rows: ArrQueueCleanupActionInsert[];
+}): Promise<QueueCleanupInstanceReport> {
+  const { db, adapter, config, now, logger } = input;
+  const instance = adapter.instance;
+  const report: QueueCleanupInstanceReport = {
+    instance,
+    read: false,
+    itemsObserved: 0,
+    actionsTaken: 0,
+    covered: 0,
+    errors: 0,
+    byClass: emptyByClass(),
+  };
+  let items: QueueCleanupSourceItem[];
+  try {
+    items = await adapter.observe({ logger });
+  } catch (err) {
+    report.readError = errMsg(err);
+    logger?.warn?.('queue-cleanup: queue read failed', { instance, error: report.readError });
+    return report;
+  }
+  report.read = true;
+
+  const minAgeMs = config.minItemAgeHours * 60 * 60 * 1000;
+  const cellClasses = QUEUE_CLEANUP_INSTANCE_CLASSES[instance];
+  const hasCell = (c: QueueCleanupActionClass): c is QueueCleanupEnforceableClass =>
+    isEnforceableQueueCleanupClass(c) && cellClasses.includes(c);
+
+  // 1. Each item's own verdict. The first-sighting fallback is read only for items a cell could act on.
+  const firstSeen = await firstSightings(db, instance, [
+    ...new Set(
+      items
+        .filter((i) => i.addedAt === null && hasCell(i.actionClass))
+        .map((i) => nonEmpty(i.downloadId))
+        .filter((id): id is string => id !== null),
+    ),
+  ]);
+  const verdicts = new Map<QueueCleanupSourceItem, SourceVerdict>();
+  const priorRuns = new Map<string, Promise<number>>();
+  for (const item of items) {
+    let actionClass = item.actionClass;
+    // Escalation: a download still retry_import after `retryEscalateRuns` prior runs is handled as bad_release.
+    if (actionClass === 'retry_import' && nonEmpty(item.downloadId) !== null) {
+      const id = nonEmpty(item.downloadId)!;
+      let prior = priorRuns.get(id);
+      if (!prior) {
+        prior = priorRetryImportRuns(db, instance, id);
+        priorRuns.set(id, prior);
+      }
+      if ((await prior) >= config.retryEscalateRuns && hasCell('bad_release')) actionClass = 'bad_release';
+    }
+    const mode = queueCleanupCellMode(config, instance, actionClass);
+    const celled = hasCell(actionClass);
+    const addedAt =
+      item.addedAt ?? firstSeen.get(`${nonEmpty(item.downloadId) ?? ''}\u0000${item.actionClass}`) ?? null;
+    const young =
+      celled && config.minItemAgeHours > 0 && (addedAt === null || now.getTime() - addedAt.getTime() < minAgeMs);
+    const seeding = celled && SOURCE_REMOVING_CLASSES.has(actionClass) && !item.removable;
+    const wants = mode === 'enforce' && celled && !young && !seeding ? (actionClass as QueueCleanupEnforceableClass) : null;
+    verdicts.set(item, { item, actionClass, mode, young, seeding, wants, loop: false, priorRemovals: 0 });
+  }
+
+  // 1b. The loop guard (D-20): a target the janitor already removed on QUEUE_CLEANUP_SOURCE_LOOP_LIMIT earlier
+  //     downloads is held for a person. A failed read holds every candidate this run (fail safe).
+  const loopCandidates = [...verdicts.values()].filter(
+    (v) => v.wants !== null && SOURCE_LOOP_GUARDED_CLASSES.has(v.wants) && sourceLoopKey(v.item) !== null,
+  );
+  if (loopCandidates.length > 0) {
+    try {
+      const prior = await priorSourceRemovals(db, instance, [
+        ...new Set(loopCandidates.map((v) => sourceLoopKey(v.item)!)),
+      ]);
+      for (const v of loopCandidates) {
+        const own = nonEmpty(v.item.downloadId);
+        const earlier = [...(prior.get(sourceLoopKey(v.item)!) ?? [])].filter((d) => d !== own).length;
+        if (earlier >= QUEUE_CLEANUP_SOURCE_LOOP_LIMIT) {
+          v.loop = true;
+          v.priorRemovals = earlier;
+          v.wants = null;
+        }
+      }
+    } catch (err) {
+      for (const v of loopCandidates) v.wants = null;
+      logger?.warn?.('queue-cleanup: loop-guard read failed, removals not acted on this run', {
+        instance,
+        error: errMsg(err),
+      });
+    }
+  }
+
+  // 2. One decision per download (D-11), in first-seen order — the cap is spent per download.
+  const results = new Map<QueueCleanupSourceItem, RecordResult>();
+  let actionsTaken = 0;
+  let retryCommandRan = false;
+  const searchedDownloads: QueueCleanupSourceItem[][] = [];
+  for (const group of groupQueueRecordsByDownload(items)) {
+    const members = group.map((item) => verdicts.get(item)!);
+    const wanted = members[0]!.wants;
+    const setAll = (r: RecordResult) => {
+      for (const m of members) results.set(m.item, r);
+    };
+
+    if (wanted === null || members.some((m) => m.wants !== wanted)) {
+      const mixed = members.some((m) => m.wants !== null);
+      for (const m of members) {
+        results.set(
+          m.item,
+          m.young
+            ? result('skipped_young')
+            : m.loop
+              ? result('skipped_loop')
+              : m.seeding
+                ? result('skipped_seeding')
+                : m.wants
+                  ? result('skipped_mixed')
+                  : result('none'),
+        );
+      }
+      const looping = members.filter((m) => m.loop);
+      if (looping.length > 0) {
+        logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, {
+          kind: 'skipped_loop',
+          instance,
+          downloadId: members[0]!.item.downloadId,
+          title: members[0]!.item.title,
+          itemRef: looping[0]!.item.itemRef,
+          targetIds: distinctIds(looping.map((m) => m.item.targetId)),
+          priorRemovals: Math.max(...looping.map((m) => m.priorRemovals)),
+        });
+      }
+      if (mixed) {
+        logger?.warn?.('queue-cleanup: mixed download left alone', {
+          instance,
+          downloadId: members[0]!.item.downloadId,
+          records: members.length,
+          classes: [...new Set(members.map((m) => m.actionClass))],
+        });
+      }
+      continue;
+    }
+
+    if (wanted === 'retry_import') {
+      if (retryCommandRan) {
+        setAll(result('retried_import', 'done'));
+        report.covered += members.length;
+      } else if (actionsTaken >= config.maxActionsPerRun) {
+        setAll(result('skipped_cap'));
+      } else {
+        actionsTaken += 1;
+        try {
+          if (!adapter.retryImports) throw new Error(`${instance} has no retry verb`);
+          await adapter.retryImports();
+          retryCommandRan = true;
+          setAll(result('retried_import', 'done'));
+        } catch (err) {
+          setAll(result('none', 'error', errMsg(err)));
+          report.errors += 1;
+        }
+        report.covered += members.length - 1;
+      }
+      continue;
+    }
+
+    if (wanted !== 'bad_release' && wanted !== 'leftover') {
+      // A class the source path does not carry out (never reached: the source cells are retry_import, bad_release
+      // and leftover). Fail safe: observe only.
+      setAll(result('none'));
+      continue;
+    }
+    if (actionsTaken >= config.maxActionsPerRun) {
+      setAll(result('skipped_cap'));
+      continue;
+    }
+    actionsTaken += 1;
+    report.covered += members.length - 1;
+    const memberItems = members.map((m) => m.item);
+    try {
+      const done = await adapter.act(wanted, memberItems);
+      if (wanted === 'leftover') {
+        setAll(result('removed_leftover', 'done'));
+        continue;
+      }
+      const searched = new Set(done.searched);
+      if (searched.size > 0) searchedDownloads.push(memberItems.filter((i) => searched.has(i)));
+      if (done.followUpError !== undefined) {
+        setAll(result('removed_blocklisted', 'error', done.followUpError));
+        report.errors += 1;
+      } else {
+        for (const m of members) {
+          results.set(m.item, result(searched.has(m.item) ? 'blocklisted_searched' : 'removed_blocklisted', 'done'));
+        }
+      }
+    } catch (err) {
+      if (err instanceof QueueCleanupItemGoneError) {
+        setAll(result('skipped_gone'));
+        logger?.warn?.('queue-cleanup: removal found the download already gone', {
+          instance,
+          downloadId: members[0]!.item.downloadId,
+        });
+      } else {
+        setAll(result('none', 'error', errMsg(err)));
+        report.errors += 1;
+      }
+    }
+  }
+
+  // 2b. The repeat-search signal (D-13, D-20): a target this run searched that the janitor also searched on an
+  //     earlier run within 7 days. Read-only; a failed read never fails the run.
+  if (searchedDownloads.length > 0) {
+    try {
+      const prior = await priorSearchRuns(
+        db,
+        instance,
+        distinctIds(searchedDownloads.flat().map((i) => i.targetId)),
+        new Date(now.getTime() - REPEAT_SEARCH_WINDOW_MS),
+      );
+      for (const searched of searchedDownloads) {
+        const repeats = distinctIds(searched.map((i) => i.targetId))
+          .filter((id) => (prior.get(id) ?? 0) >= 1)
+          .map((targetId) => ({ targetId, searches7d: (prior.get(targetId) ?? 0) + 1 }));
+        if (repeats.length === 0) continue;
+        logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, {
+          kind: 'repeat_search',
+          instance,
+          downloadId: searched[0]!.downloadId,
+          title: searched[0]!.title,
+          actionClass: verdicts.get(searched[0]!)!.actionClass,
+          targets: repeats,
+        });
+      }
+    } catch (err) {
+      logger?.warn?.('queue-cleanup: repeat-search read failed', { instance, error: errMsg(err) });
+    }
+  }
+
+  // 2c. The fail-loop signal (D-20): a source's own grab-fail loop (report only) is logged when first seen and
+  //     whenever its failure count grew since the last run, i.e. while it is still spinning.
+  const loops = items.filter((i) => i.actionClass === 'fail_loop' && i.itemRef !== null);
+  if (loops.length > 0) {
+    try {
+      const prior = await priorFailLoopAttempts(
+        db,
+        instance,
+        loops.map((i) => i.itemRef!),
+        now,
+      );
+      for (const item of loops) {
+        const before = prior.get(item.itemRef!);
+        if (before !== undefined && (item.attempts ?? 0) <= (before ?? 0)) continue;
+        logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, {
+          kind: 'fail_loop',
+          instance,
+          itemRef: item.itemRef,
+          title: item.title,
+          attempts: item.attempts,
+          previousAttempts: before ?? null,
+          reason: item.reason,
+        });
+      }
+    } catch (err) {
+      logger?.warn?.('queue-cleanup: fail-loop read failed', { instance, error: errMsg(err) });
+    }
+  }
+
+  // 3. One row per item, in observed order.
+  for (const item of items) {
+    const v = verdicts.get(item)!;
+    const r = results.get(item)!;
+    input.rows.push({
+      instance,
+      queueItemId: item.queueItemId,
+      itemRef: item.itemRef,
+      downloadId: item.downloadId,
+      title: item.title,
+      targetId: item.targetId,
+      attempts: item.attempts,
+      actionClass: v.actionClass,
+      mode: v.mode,
+      action: r.action,
+      outcome: r.outcome,
+      reason: item.reason,
+      error: r.error,
+      createdAt: now,
+    });
+    report.itemsObserved += 1;
+    report.byClass[v.actionClass].observed += 1;
+    if (r.outcome === 'done') report.byClass[v.actionClass].enforced += 1;
+  }
+  report.actionsTaken = actionsTaken;
+  logger?.info?.('queue-cleanup evaluated', {
+    instance,
+    observed: report.itemsObserved,
+    actionsTaken,
+    covered: report.covered,
+    errors: report.errors,
+    byClass: report.byClass,
+  });
+  return report;
+}
+
+/**
+ * Run one janitor pass over Sonarr/Radarr/Lidarr, then (ADR-095, D-15) over every suite source the bundle carries
+ * (LazyLibrarian, Kapowarr) through its adapter, with the same rails. Census rows are written ALWAYS (one per queue record — the
  * observation of record); enforce actions fire ONLY where the class×instance cell is `enforce`, behind the
  * rails (D-04): per-instance per-run cap `maxActionsPerRun`; `minItemAgeHours` before any action; a monitored
  * target check before a bad_release re-search; retry escalation via the persisted action-row lookback (counted
@@ -1447,27 +1996,73 @@ export async function evaluateQueueCleanup(input: {
     instances.push(report);
   }
 
-  // Append the census + action rows — the single writer's whole trail (append-only, no audit coupling).
+  // Append the *arr census + action rows — the single writer's whole trail (append-only, no audit coupling). Written
+  // BEFORE the suite sources run, so nothing a source does can cost the *arrs their trail (D-15 rule 4).
+  let rowsWritten = rows.length;
   if (rows.length > 0) await db.insert(arrQueueCleanupActions).values(rows);
-
+  // `totalFailure` (the CLI's nonzero exit) keeps its pre-ADR-095 meaning: every *arr failed to read. A suite source
+  // that cannot be read reports `read: false` and never fails the job on its own (D-15 rule 4).
   const totalFailure = instances.length > 0 && !anyRead;
-  return { instances, rowsWritten: rows.length, totalFailure };
+
+  // The suite sources (D-15, ADR-095): the same rails through each source adapter the bundle carries, each with its
+  // own rows. A source that throws is reported and logged; the run goes on.
+  for (const instance of QUEUE_CLEANUP_SOURCE_INSTANCES) {
+    const adapter = input.clients[instance];
+    if (!adapter) continue;
+    const sourceRows: ArrQueueCleanupActionInsert[] = [];
+    try {
+      const report = await evaluateSourceInstance({ db, adapter, config, now, logger: input.logger, rows: sourceRows });
+      instances.push(report);
+      if (sourceRows.length > 0) await db.insert(arrQueueCleanupActions).values(sourceRows);
+      rowsWritten += sourceRows.length;
+    } catch (err) {
+      input.logger?.error?.('queue-cleanup: source evaluation failed', { instance, error: errMsg(err) });
+      instances.push({
+        instance,
+        read: false,
+        itemsObserved: 0,
+        actionsTaken: 0,
+        covered: 0,
+        errors: 1,
+        byClass: emptyByClass(),
+        readError: errMsg(err),
+      });
+    }
+  }
+
+  return { instances, rowsWritten, totalFailure };
 }
 
 // ---------------------------------------------------------------------------
-// Promotion ladder (D-05/D-07) + /admin status read (D-08) + digest section (D-07).
+// Promotion ladder (D-05/D-07, one per family since D-17) + /admin status read (D-08) + digest section (D-07).
 // ---------------------------------------------------------------------------
 
 /**
- * Derive the ladder level from the modes matrix (D-05). L0 = all census; L2 = every cell enforced, Lidarr's
- * `manual_match` included since D-13 (L3 is human-only, set via the plan — never derived above L2); L1 = any
- * partial enforcement (the modes matrix, exposed alongside, shows exactly which cells). Kept deliberately
- * simple + documented.
+ * D-17 (ADR-095 C-05) — the ladder families. Each family has its own level, age, criteria and nag, derived from its
+ * own cells only: `arr` is PLAN-065's ladder (Sonarr, Radarr, Lidarr), unchanged; `books` is LazyLibrarian; `comics`
+ * is Kapowarr. A new cell in one family never moves another family's level.
  */
-export function deriveQueueCleanupLadderLevel(config: ArrQueueCleanupConfig): number {
+export const QUEUE_CLEANUP_FAMILIES = ['arr', 'books', 'comics'] as const;
+export type QueueCleanupFamily = (typeof QUEUE_CLEANUP_FAMILIES)[number];
+
+export const QUEUE_CLEANUP_FAMILY_INSTANCES: { readonly [F in QueueCleanupFamily]: readonly QueueCleanupInstance[] } = {
+  arr: ARR_KINDS,
+  books: ['lazylibrarian'],
+  comics: ['kapowarr'],
+};
+
+/**
+ * Derive a family's ladder level from its cells (D-05, D-17). L0 = all census; L2 = every cell of the family enforced
+ * (for `arr`, Lidarr's `manual_match` included since D-13); L1 = any partial enforcement. L3 is human-only, set via
+ * the plan — never derived above L2. The family defaults to `arr`, PLAN-065's ladder.
+ */
+export function deriveQueueCleanupLadderLevel(
+  config: ArrQueueCleanupConfig,
+  family: QueueCleanupFamily = 'arr',
+): number {
   let anyEnforce = false;
   let allEnforce = true;
-  for (const instance of ARR_KINDS) {
+  for (const instance of QUEUE_CLEANUP_FAMILY_INSTANCES[family]) {
     for (const klass of QUEUE_CLEANUP_INSTANCE_CLASSES[instance]) {
       if (queueCleanupCellMode(config, instance, klass) === 'enforce') anyEnforce = true;
       else allEnforce = false;
@@ -1484,22 +2079,65 @@ const LADDER_NEXT_CRITERIA: Record<number, string> = {
   2: 'L2→L3 (steady state): ≥14 days at L2 with the queues near zero and the unknown residue characterized — humans set L3 via the plan.',
 };
 
+/** D-17 — the books and comics ladders wait on evidence, never on a calendar (owner direction 2026-09-29). */
+const SOURCE_LADDER_NEXT_CRITERIA: Record<number, string> = {
+  0: 'L0→L1: enforce a cell as soon as the coordinator has spot-checked its census rows (≥90% judged correct, zero would-be bad removals). No calendar wait.',
+  1: 'L1→L2: enforce the remaining cells once the enforced cells’ first actions are audited clean (nothing wanted removed, no library file touched, loops watched).',
+  2: 'L2→L3 (steady state): the source holds near zero stuck items and its loops are characterized — humans set L3 via the plan.',
+};
+
 export interface QueueCleanupLadder {
   level: number;
-  /** Days since the config was last written (the latest update_app_setting audit for the key), or null. */
+  /** Days since the family's cells (or a shared knob) last changed (the audited writes of the key), or null. */
   ageDays: number | null;
   nextCriteria: string;
-  /** The stagnation nag: age > 14 days, OR (at L0) census data spanning ≥3 distinct days (the ≥3-digests proxy). */
+  /** The stagnation nag. `arr`: age > 14 days, OR (at L0) census data spanning ≥3 distinct days. `books`/`comics`
+   *  (D-17): below L2 with census evidence for one of the family's cells in the last 24h, OR age > 14 days. */
   promotionDue: boolean;
 }
 
-/** Days since the config key was last audited-written, or null when it has never been written. */
+/** One family's ladder (D-17), as the /admin page and the digest show it. */
+export interface QueueCleanupFamilyLadder extends QueueCleanupLadder {
+  family: QueueCleanupFamily;
+  instances: QueueCleanupInstance[];
+}
+
+/** A config value from an audit row's before/after, resolved the way the evaluator reads it (garbage ⇒ default). */
+function auditedConfig(value: unknown): ArrQueueCleanupConfig {
+  if (value == null || queueCleanupConfigError(value) !== null) return ARR_QUEUE_CLEANUP_CONFIG_DEFAULT;
+  return canonicalConfig(value as ArrQueueCleanupConfig);
+}
+
+/** Whether a config write changed a family: one of its cells, or a knob every family shares (D-17). */
+function familyChanged(before: unknown, after: unknown, family: QueueCleanupFamily): boolean {
+  const b = auditedConfig(before);
+  const a = auditedConfig(after);
+  if (
+    b.maxActionsPerRun !== a.maxActionsPerRun ||
+    b.minItemAgeHours !== a.minItemAgeHours ||
+    b.retryEscalateRuns !== a.retryEscalateRuns
+  ) {
+    return true;
+  }
+  return QUEUE_CLEANUP_FAMILY_INSTANCES[family].some((instance) =>
+    QUEUE_CLEANUP_INSTANCE_CLASSES[instance].some(
+      (klass) => queueCleanupCellMode(b, instance, klass) !== queueCleanupCellMode(a, instance, klass),
+    ),
+  );
+}
+
+/**
+ * Days since the family last changed (D-17): the newest audited write of the key that changed one of the family's
+ * cells or a shared knob. Null when no write ever did. A write that changes only another family's cells does not
+ * reset this family's age, so enabling a books cell cannot hide the *arr ladder's stagnation.
+ */
 async function queueCleanupConfigAgeDays(
   db: ReturnType<typeof resolveDb>,
   now: Date,
+  family: QueueCleanupFamily,
 ): Promise<number | null> {
-  const [row] = await db
-    .select({ at: permissionAudit.createdAt })
+  const rows = await db
+    .select({ at: permissionAudit.createdAt, detail: permissionAudit.detail })
     .from(permissionAudit)
     .where(
       and(
@@ -1508,36 +2146,100 @@ async function queueCleanupConfigAgeDays(
       ),
     )
     .orderBy(desc(permissionAudit.createdAt))
-    .limit(1);
-  if (!row?.at) return null;
-  return Math.max(0, Math.floor((now.getTime() - row.at.getTime()) / (24 * 60 * 60 * 1000)));
+    .limit(500);
+  for (const row of rows) {
+    const detail = (row.detail ?? {}) as { before?: unknown; after?: unknown };
+    if (!familyChanged(detail.before, detail.after, family)) continue;
+    if (!row.at) return null;
+    return Math.max(0, Math.floor((now.getTime() - row.at.getTime()) / (24 * 60 * 60 * 1000)));
+  }
+  return null;
 }
 
-/** Count distinct calendar days that carry census rows (the "≥3 digests of census data" proxy for L0→L1). */
-async function distinctCensusDays(db: ReturnType<typeof resolveDb>): Promise<number> {
+/** Count distinct calendar days that carry census rows of the family's instances (the "≥3 digests" proxy, L0→L1). */
+async function distinctCensusDays(
+  db: ReturnType<typeof resolveDb>,
+  family: QueueCleanupFamily,
+): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(distinct (${arrQueueCleanupActions.createdAt})::date)` })
-    .from(arrQueueCleanupActions);
+    .from(arrQueueCleanupActions)
+    .where(inArray(arrQueueCleanupActions.instance, [...QUEUE_CLEANUP_FAMILY_INSTANCES[family]]));
   return Number(row?.n ?? 0);
 }
 
-/** Resolve the promotion ladder (level + age + next criteria + the stagnation nag). */
+/** D-17 — whether the family's census holds evidence to promote on: a census row in the last 24h for a class that has
+ *  a cell on its instance. */
+async function hasCensusEvidence(
+  db: ReturnType<typeof resolveDb>,
+  family: QueueCleanupFamily,
+  now: Date,
+): Promise<boolean> {
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  for (const instance of QUEUE_CLEANUP_FAMILY_INSTANCES[family]) {
+    const [row] = await db
+      .select({ n: sql<number>`count(*)` })
+      .from(arrQueueCleanupActions)
+      .where(
+        and(
+          eq(arrQueueCleanupActions.instance, instance),
+          eq(arrQueueCleanupActions.mode, 'census'),
+          inArray(arrQueueCleanupActions.actionClass, [...QUEUE_CLEANUP_INSTANCE_CLASSES[instance]]),
+          gte(arrQueueCleanupActions.createdAt, since),
+        ),
+      );
+    if (Number(row?.n ?? 0) > 0) return true;
+  }
+  return false;
+}
+
+/** Resolve one family's promotion ladder (level + age + next criteria + the stagnation nag). Default family `arr`. */
 export async function getQueueCleanupLadder(input: {
   db?: DbClient;
   config: ArrQueueCleanupConfig;
   now?: Date;
+  family?: QueueCleanupFamily;
 }): Promise<QueueCleanupLadder> {
   const db = resolveDb(input.db);
   const now = input.now ?? new Date();
-  const level = deriveQueueCleanupLadderLevel(input.config);
-  const ageDays = await queueCleanupConfigAgeDays(db, now);
-  const days = level === 0 ? await distinctCensusDays(db) : 0;
-  const promotionDue = (ageDays !== null && ageDays > 14) || (level === 0 && days >= 3);
-  return { level, ageDays, nextCriteria: LADDER_NEXT_CRITERIA[level] ?? '', promotionDue };
+  const family = input.family ?? 'arr';
+  const level = deriveQueueCleanupLadderLevel(input.config, family);
+  const ageDays = await queueCleanupConfigAgeDays(db, now, family);
+  const stale = ageDays !== null && ageDays > 14;
+  if (family === 'arr') {
+    const days = level === 0 ? await distinctCensusDays(db, family) : 0;
+    return {
+      level,
+      ageDays,
+      nextCriteria: LADDER_NEXT_CRITERIA[level] ?? '',
+      promotionDue: stale || (level === 0 && days >= 3),
+    };
+  }
+  const evidence = level < 2 ? await hasCensusEvidence(db, family, now) : false;
+  return {
+    level,
+    ageDays,
+    nextCriteria: SOURCE_LADDER_NEXT_CRITERIA[level] ?? '',
+    promotionDue: stale || evidence,
+  };
+}
+
+/** Every family's ladder (D-17), in QUEUE_CLEANUP_FAMILIES order. */
+export async function getQueueCleanupLadders(input: {
+  db?: DbClient;
+  config: ArrQueueCleanupConfig;
+  now?: Date;
+}): Promise<QueueCleanupFamilyLadder[]> {
+  const out: QueueCleanupFamilyLadder[] = [];
+  for (const family of QUEUE_CLEANUP_FAMILIES) {
+    const ladder = await getQueueCleanupLadder({ ...input, family });
+    out.push({ family, instances: [...QUEUE_CLEANUP_FAMILY_INSTANCES[family]], ...ladder });
+  }
+  return out;
 }
 
 export interface QueueCleanupSummaryCell {
-  instance: ArrKind;
+  instance: QueueCleanupInstance;
   actionClass: QueueCleanupActionClass;
   /** Rows observed (any outcome) in the window. */
   observed: number;
@@ -1549,12 +2251,15 @@ export interface ArrQueueCleanupStatus {
   config: ArrQueueCleanupConfig;
   /** Where the resolved config came from (a stored row vs the all-census default). */
   source: 'db' | 'default';
+  /** The `arr` family's ladder (PLAN-065), as before D-17. */
   ladder: QueueCleanupLadder;
+  /** Every family's ladder (D-17): arr, books, comics. */
+  ladders: QueueCleanupFamilyLadder[];
   /** The last-7-days census/action summary (D-08 table). */
   summary: QueueCleanupSummaryCell[];
 }
 
-/** The /admin/janitor read (D-08): resolved config + ladder readout + a last-7-days census/action summary. */
+/** The /admin/janitor read (D-08): resolved config + ladder readouts + a last-7-days census/action summary. */
 export async function getArrQueueCleanupStatus(input?: {
   db?: DbClient;
   now?: Date;
@@ -1563,34 +2268,37 @@ export async function getArrQueueCleanupStatus(input?: {
   const now = input?.now ?? new Date();
   const stored = await getArrQueueCleanupConfig(db);
   const config = stored ?? ARR_QUEUE_CLEANUP_CONFIG_DEFAULT;
-  const ladder = await getQueueCleanupLadder({ db, config, now });
+  const ladders = await getQueueCleanupLadders({ db, config, now });
+  const arr = ladders.find((l) => l.family === 'arr')!;
 
+  // Counted in SQL: the suite census alone is hundreds of rows an hour (ADR-095), too many to sum in JS per read.
   const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const recent = await db
     .select({
       instance: arrQueueCleanupActions.instance,
       actionClass: arrQueueCleanupActions.actionClass,
-      outcome: arrQueueCleanupActions.outcome,
+      observed: sql<number>`count(*)::int`,
+      enforced: sql<number>`(count(*) filter (where ${arrQueueCleanupActions.outcome} = 'done'))::int`,
     })
     .from(arrQueueCleanupActions)
-    .where(gte(arrQueueCleanupActions.createdAt, since));
+    .where(gte(arrQueueCleanupActions.createdAt, since))
+    .groupBy(arrQueueCleanupActions.instance, arrQueueCleanupActions.actionClass);
 
   const byCell = new Map<string, QueueCleanupSummaryCell>();
   for (const r of recent) {
-    const key = `${r.instance}:${r.actionClass}`;
-    let cell = byCell.get(key);
-    if (!cell) {
-      cell = { instance: r.instance, actionClass: r.actionClass, observed: 0, enforced: 0 };
-      byCell.set(key, cell);
-    }
-    cell.observed += 1;
-    if (r.outcome === 'done') cell.enforced += 1;
+    byCell.set(`${r.instance}:${r.actionClass}`, {
+      instance: r.instance,
+      actionClass: r.actionClass,
+      observed: Number(r.observed),
+      enforced: Number(r.enforced),
+    });
   }
 
   return {
     config,
     source: stored ? 'db' : 'default',
-    ladder,
+    ladder: { level: arr.level, ageDays: arr.ageDays, nextCriteria: arr.nextCriteria, promotionDue: arr.promotionDue },
+    ladders,
     summary: [...byCell.values()],
   };
 }
@@ -1610,15 +2318,17 @@ export interface QueueCleanupDigestClass {
 }
 
 export interface QueueCleanupDigestInstance {
-  instance: ArrKind;
+  instance: QueueCleanupInstance;
   classes: QueueCleanupDigestClass[];
 }
 
-/** One loop the digest names (D-13): a download the loop guard held, or a target searched again and again. */
+/** One loop the digest names (D-13, D-20): a download the loop guard held, or a target searched again and again. */
 export interface QueueCleanupDigestLoop {
-  instance: ArrKind;
-  /** The search target (Lidarr album id, Sonarr episode id, Radarr movie id), or null when the record had none. */
+  instance: QueueCleanupInstance;
+  /** The search target (Lidarr album id, Sonarr episode id, Radarr movie id, Kapowarr volume id), or null. */
   targetId: number | null;
+  /** The source's string reference (LazyLibrarian `<bookId>/<format>`), or null (D-15). */
+  itemRef?: string | null;
   downloadId: string | null;
   /** The release name of the latest row. */
   title: string | null;
@@ -1626,11 +2336,26 @@ export interface QueueCleanupDigestLoop {
   runs: number;
 }
 
+/** One source fail loop the digest lists (D-20): a book format failing again and again in its source's own searches. */
+export interface QueueCleanupDigestFailLoop {
+  instance: QueueCleanupInstance;
+  itemRef: string | null;
+  /** `<book> (<format>)`. */
+  title: string | null;
+  /** The failed grabs the source recorded, on the latest row. */
+  attempts: number | null;
+  /** The most frequent failure. */
+  reason: string | null;
+}
+
 export interface QueueCleanupDigestLoops {
   /** Every download the loop guard held (`skipped_loop`) in the last 24h. */
   skipped: QueueCleanupDigestLoop[];
   /** Every target the janitor searched on 2+ runs in the last 7 days, any class (downloadId: the latest). */
   repeatSearches: QueueCleanupDigestLoop[];
+  /** D-20: every source fail loop seen in the last 24h, most failures first. Report only: it does NOT set
+   *  `loopDetected` (those are the source's own loops, not the janitor's). */
+  failLoops?: QueueCleanupDigestFailLoop[];
 }
 
 export interface QueueCleanupDigestSection {
@@ -1639,9 +2364,21 @@ export interface QueueCleanupDigestSection {
   /** Total rows the janitor enforced (outcome 'done') in the last 24h. */
   actions: number;
   instances: QueueCleanupDigestInstance[];
+  /** The `arr` family's ladder (as before D-17). */
   ladder: { level: number; ageDays: number | null; nextCriteria: string };
+  /** The `arr` family's nag, as before D-17 (the subject's `[janitor: promotion due]`); each family's own is on
+   *  `ladders` (the renderer adds `[janitor: books promotion due]` and `[janitor: comics promotion due]`). */
+  /** D-17: every family's ladder line. */
+  ladders: Array<{
+    family: QueueCleanupFamily;
+    level: number;
+    ageDays: number | null;
+    nextCriteria: string;
+    promotionDue: boolean;
+  }>;
   promotionDue: boolean;
-  /** D-13 loop visibility: the subject gains `[janitor: loop detected]` when either list is non-empty. */
+  /** D-13 loop visibility: the subject gains `[janitor: loop detected]` when `skipped` or `repeatSearches` is
+   *  non-empty. */
   loops: QueueCleanupDigestLoops;
   loopDetected: boolean;
   /** D-14: per *arr with a janitor release block, the names blocked in 24h and the live terms (empty: none). */
@@ -1649,9 +2386,9 @@ export interface QueueCleanupDigestSection {
 }
 
 /**
- * D-13 — the digest's loop lists: every download the loop guard held in the last 24h (one entry per instance,
- * target and download, with the runs it was held on), and every target the janitor searched on 2+ distinct runs
- * in the last 7 days (whatever the class).
+ * D-13 / D-20 — the digest's loop lists: every download the loop guard held in the last 24h (one entry per instance,
+ * target or reference, and download, with the runs it was held on), every target the janitor searched on 2+ distinct
+ * runs in the last 7 days (whatever the class), and every source fail loop seen in the last 24h.
  */
 async function buildQueueCleanupDigestLoops(
   db: ReturnType<typeof resolveDb>,
@@ -1662,6 +2399,7 @@ async function buildQueueCleanupDigestLoops(
     .select({
       instance: arrQueueCleanupActions.instance,
       targetId: arrQueueCleanupActions.targetId,
+      itemRef: arrQueueCleanupActions.itemRef,
       downloadId: arrQueueCleanupActions.downloadId,
       title: arrQueueCleanupActions.title,
       createdAt: arrQueueCleanupActions.createdAt,
@@ -1676,12 +2414,19 @@ async function buildQueueCleanupDigestLoops(
     .orderBy(desc(arrQueueCleanupActions.createdAt));
   const held = new Map<string, { loop: QueueCleanupDigestLoop; runs: Set<number> }>();
   for (const r of heldRows) {
-    const key = `${r.instance}:${r.targetId ?? ''}:${r.downloadId ?? ''}`;
+    const key = `${r.instance}:${r.targetId ?? ''}:${r.itemRef ?? ''}:${r.downloadId ?? ''}`;
     let acc = held.get(key);
     if (!acc) {
       // Rows come newest first, so the first one seen carries the latest title.
       acc = {
-        loop: { instance: r.instance, targetId: r.targetId, downloadId: r.downloadId, title: r.title, runs: 0 },
+        loop: {
+          instance: r.instance,
+          targetId: r.targetId,
+          itemRef: r.itemRef,
+          downloadId: r.downloadId,
+          title: r.title,
+          runs: 0,
+        },
         runs: new Set(),
       };
       held.set(key, acc);
@@ -1727,15 +2472,43 @@ async function buildQueueCleanupDigestLoops(
       (a, b) =>
         b.runs - a.runs || a.instance.localeCompare(b.instance) || (a.targetId ?? 0) - (b.targetId ?? 0),
     );
-  return { skipped, repeatSearches };
+
+  // D-20 — the source fail loops of the last 24h, latest row per loop, most failures first.
+  const failRows = await db
+    .select({
+      instance: arrQueueCleanupActions.instance,
+      itemRef: arrQueueCleanupActions.itemRef,
+      title: arrQueueCleanupActions.title,
+      attempts: arrQueueCleanupActions.attempts,
+      reason: arrQueueCleanupActions.reason,
+    })
+    .from(arrQueueCleanupActions)
+    .where(
+      and(
+        eq(arrQueueCleanupActions.actionClass, 'fail_loop'),
+        gte(arrQueueCleanupActions.createdAt, since24h),
+      ),
+    )
+    .orderBy(desc(arrQueueCleanupActions.createdAt));
+  const failLoops = new Map<string, QueueCleanupDigestFailLoop>();
+  for (const r of failRows) {
+    const key = `${r.instance}:${r.itemRef ?? ''}`;
+    if (!failLoops.has(key)) failLoops.set(key, { ...r });
+  }
+  return {
+    skipped,
+    repeatSearches,
+    failLoops: [...failLoops.values()].sort(
+      (a, b) => (b.attempts ?? 0) - (a.attempts ?? 0) || (a.itemRef ?? '').localeCompare(b.itemRef ?? ''),
+    ),
+  };
 }
 
 /**
  * Build the nightly digest's janitor rollup (D-07) from the last-24h arr_queue_cleanup_actions rows: per
- * instance × class counts (census vs enforced), the top-3 distinct reasons per class with counts, and the
- * ladder line (level + age + next criteria) with the stagnation nag, and the loop lists (D-13). Returns null when
- * the janitor observed NOTHING in 24h (so a run that saw no queue items adds no section and does not force a
- * digest).
+ * instance × class counts (census vs enforced), the top-3 distinct reasons per class with counts, every family's
+ * ladder line (D-17) with the stagnation nag, and the loop lists (D-13, D-20). Returns null when the janitor observed
+ * NOTHING in 24h (so a run that saw no queue items adds no section and does not force a digest).
  */
 export async function buildQueueCleanupDigestSection(input: {
   db?: DbClient;
@@ -1745,6 +2518,8 @@ export async function buildQueueCleanupDigestSection(input: {
   const now = input.now ?? new Date();
   const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
+  // Counted in SQL, one row per instance × class × mode × outcome × reason (ADR-095: the suite census is hundreds of
+  // rows an hour, too many to pull row by row).
   const recent = await db
     .select({
       instance: arrQueueCleanupActions.instance,
@@ -1752,9 +2527,17 @@ export async function buildQueueCleanupDigestSection(input: {
       mode: arrQueueCleanupActions.mode,
       outcome: arrQueueCleanupActions.outcome,
       reason: arrQueueCleanupActions.reason,
+      n: sql<number>`count(*)::int`,
     })
     .from(arrQueueCleanupActions)
-    .where(gte(arrQueueCleanupActions.createdAt, since));
+    .where(gte(arrQueueCleanupActions.createdAt, since))
+    .groupBy(
+      arrQueueCleanupActions.instance,
+      arrQueueCleanupActions.actionClass,
+      arrQueueCleanupActions.mode,
+      arrQueueCleanupActions.outcome,
+      arrQueueCleanupActions.reason,
+    );
 
   if (recent.length === 0) return null;
 
@@ -1765,21 +2548,24 @@ export async function buildQueueCleanupDigestSection(input: {
   }
   const byCell = new Map<string, Acc>();
   let actions = 0;
+  let observed = 0;
   for (const r of recent) {
-    if (r.outcome === 'done') actions += 1;
+    const n = Number(r.n);
+    observed += n;
+    if (r.outcome === 'done') actions += n;
     const key = `${r.instance}:${r.actionClass}`;
     let acc = byCell.get(key);
     if (!acc) {
       acc = { census: 0, enforced: 0, reasons: new Map() };
       byCell.set(key, acc);
     }
-    if (r.mode === 'census') acc.census += 1;
-    if (r.outcome === 'done') acc.enforced += 1;
-    if (r.reason && r.reason.trim() !== '') acc.reasons.set(r.reason, (acc.reasons.get(r.reason) ?? 0) + 1);
+    if (r.mode === 'census') acc.census += n;
+    if (r.outcome === 'done') acc.enforced += n;
+    if (r.reason && r.reason.trim() !== '') acc.reasons.set(r.reason, (acc.reasons.get(r.reason) ?? 0) + n);
   }
 
   const instances: QueueCleanupDigestInstance[] = [];
-  for (const instance of ARR_KINDS) {
+  for (const instance of QUEUE_CLEANUP_INSTANCES) {
     const classes: QueueCleanupDigestClass[] = [];
     for (const key of Object.keys(emptyByClass()) as QueueCleanupActionClass[]) {
       const acc = byCell.get(`${instance}:${key}`);
@@ -1794,16 +2580,24 @@ export async function buildQueueCleanupDigestSection(input: {
   }
 
   const config = await resolveArrQueueCleanupConfig(db);
-  const ladder = await getQueueCleanupLadder({ db, config, now });
+  const ladders = await getQueueCleanupLadders({ db, config, now });
+  const arr = ladders.find((l) => l.family === 'arr')!;
   const loops = await buildQueueCleanupDigestLoops(db, now);
   const releaseBlock = await janitorBlockDigest({ db, now });
 
   return {
-    observed: recent.length,
+    observed,
     actions,
     instances,
-    ladder: { level: ladder.level, ageDays: ladder.ageDays, nextCriteria: ladder.nextCriteria },
-    promotionDue: ladder.promotionDue,
+    ladder: { level: arr.level, ageDays: arr.ageDays, nextCriteria: arr.nextCriteria },
+    ladders: ladders.map((l) => ({
+      family: l.family,
+      level: l.level,
+      ageDays: l.ageDays,
+      nextCriteria: l.nextCriteria,
+      promotionDue: l.promotionDue,
+    })),
+    promotionDue: arr.promotionDue,
     loops,
     loopDetected: loops.skipped.length > 0 || loops.repeatSearches.length > 0,
     releaseBlock,

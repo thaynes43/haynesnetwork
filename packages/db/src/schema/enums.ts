@@ -128,6 +128,22 @@ export type AuthentikUserType = (typeof AUTHENTIK_USER_TYPES)[number];
 export const ARR_KINDS = ['sonarr', 'radarr', 'lidarr'] as const; // DDD-001 T-22
 export type ArrKind = (typeof ARR_KINDS)[number];
 
+/**
+ * ADR-095 / DESIGN-046 D-16 — the SOURCES the queue janitor reads beyond the three *arrs, through the source adapter
+ * seam (D-15): LazyLibrarian (books and audiobooks, via its grab log and SABnzbd) and Kapowarr (comics). Bazarr,
+ * Prowlarr, Seerr, slskd/soularr, goodreads-sync and ytdrivarr have no stuck download queue and are out of scope.
+ */
+export const QUEUE_CLEANUP_SOURCE_INSTANCES = ['lazylibrarian', 'kapowarr'] as const;
+export type QueueCleanupSourceInstance = (typeof QUEUE_CLEANUP_SOURCE_INSTANCES)[number];
+
+/**
+ * ADR-095 / DESIGN-046 D-16 — every instance the queue janitor reads, in report order: the three *arrs (their own
+ * path, D-02..D-14) then the suite sources. The arr_queue_cleanup_actions.instance CHECK is built from this list
+ * (migration 0085). `ArrKind` stays the key of the *arr-only surfaces (the janitor release block, the *arr env).
+ */
+export const QUEUE_CLEANUP_INSTANCES = [...ARR_KINDS, ...QUEUE_CLEANUP_SOURCE_INSTANCES] as const;
+export type QueueCleanupInstance = (typeof QUEUE_CLEANUP_INSTANCES)[number];
+
 // ---------------------------------------------------------------------------
 // ADR-046 / DESIGN-024 (PLAN-023 — Books & Audiobooks) — the books ledger enums. Books are a
 // SEPARATE ledger from the *arr media_items (they have no monitored/quality/root-folder/Fix
@@ -459,6 +475,12 @@ export const QUEUE_CLEANUP_ACTION_CLASSES = [
   'retry_import',
   'bad_release',
   'manual_match',
+  // ADR-095 / DESIGN-046 D-18 (migration 0085): `leftover` — the completed SABnzbd folder of a download LazyLibrarian
+  // Processed (it copies, never moves), deleted only after every library copy it recorded is confirmed on disk;
+  // `fail_loop` — a LazyLibrarian book format with FAIL_LOOP_MIN_FAILURES or more failed grabs that is still Wanted,
+  // REPORT ONLY (no enforce cell anywhere; listed in the digest).
+  'leftover',
+  'fail_loop',
   'unknown',
 ] as const;
 export type QueueCleanupActionClass = (typeof QUEUE_CLEANUP_ACTION_CLASSES)[number];
@@ -497,6 +519,11 @@ export const QUEUE_CLEANUP_ACTIONS = [
   'skipped_gone',
   'skipped_loop',
   'skipped_unblockable',
+  // ADR-095 / DESIGN-046 D-15 + D-18 (migration 0085): `removed_leftover` — a `leftover` folder was deleted (nothing
+  // blocklisted, nothing searched); `skipped_seeding` — the item's class would remove its download, but the download
+  // is a qBittorrent torrent (MAM) that must keep seeding, so the janitor never removes it (report only).
+  'removed_leftover',
+  'skipped_seeding',
 ] as const;
 export type QueueCleanupAction = (typeof QUEUE_CLEANUP_ACTIONS)[number];
 

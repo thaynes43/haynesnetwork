@@ -18,6 +18,9 @@ export type LazyLibrarianClientOptions = LazyLibrarianHttpOptions;
 /** A book's raw LL per-format status (the strings LL reports; the domain maps them). */
 export interface LlBookStatus {
   bookId: string;
+  /** The book's display title (`BookName`), or null when LL omits it. Read by the queue janitor's fail-loop rows
+   *  (ADR-095 / DESIGN-046 D-18). Optional so structural stubs of this type stay valid. */
+  title?: string | null;
   /** The EBOOK status string (LL `Status`) — null when LL omits it. */
   ebookStatus: string | null;
   /** The AUDIOBOOK status string (LL `AudioStatus`) — null when LL omits it. */
@@ -71,6 +74,12 @@ export interface LlHistoryEntry {
   format: 'ebook' | 'audiobook' | null;
   /** The failure text (`DLResult`) on a Failed row — markup stripped, keys redacted; null otherwise/empty. */
   dlResult: string | null;
+  /**
+   * ADR-095 / DESIGN-046 D-18 — the recorded library destination: `DLResult` on a Processed or Seeding row, RAW (only
+   * trimmed) and only when it is an absolute path, so the queue janitor can check the file on disk. The sanitized
+   * `dlResult` collapses whitespace and cuts long values, which would miss real paths. Null otherwise.
+   */
+  destination?: string | null;
   /** When the grab was snatched (`NZBdate`, LL-local `YYYY-MM-DD HH:MM:SS`); null if absent. */
   snatchedAt: string | null;
   /** When the download finished (`Completed` epoch seconds → ISO); null while unfinished (`0`). */
@@ -107,6 +116,7 @@ export class LazyLibrarianReadClient {
       const bookId = String(row.BookID);
       byId.set(bookId, {
         bookId,
+        title: blankToNull(row.BookName),
         ebookStatus: row.Status ?? null,
         audioStatus: row.AudioStatus ?? null,
         ebookLibrary: blankToNull(row.BookLibrary),
@@ -174,6 +184,7 @@ export class LazyLibrarianReadClient {
           r.DownloadID != null && String(r.DownloadID) !== '' ? String(r.DownloadID) : null,
         format: mapAuxFormat(r.AuxInfo),
         dlResult: sanitizeLlResult(r.DLResult),
+        destination: rawDestination(r.Status, r.DLResult),
         snatchedAt: blankToNull(r.NZBdate),
         completedAt:
           Number.isFinite(completed) && completed > 0
@@ -199,6 +210,14 @@ export function sanitizeLlResult(raw: string | null | undefined): string | null 
     .trim();
   if (s === '') return null;
   return s.length > 300 ? `${s.slice(0, 297)}...` : s;
+}
+
+/** A Processed / Seeding row's `DLResult` when it is an absolute path (the recorded destination), else null. */
+function rawDestination(status: string | null | undefined, raw: string | null | undefined): string | null {
+  const st = (status ?? '').trim().toLowerCase();
+  if (st !== 'processed' && st !== 'seeding') return null;
+  const s = (raw ?? '').trim();
+  return s.startsWith('/') ? s : null;
 }
 
 /** LL serves absent per-format file/library fields as `null`, `''` or `'None'` depending on the row age. */

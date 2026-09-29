@@ -90,8 +90,8 @@ describe('KapowarrReadClient — Activity reads (ADR-059 / DESIGN-030 D-08)', ()
     const client = new KapowarrReadClient(OPTS(fetchImpl));
     const q = await client.getQueue();
     expect(q).toEqual([
-      { id: 1, volumeId: 701, issueId: 11, status: 'downloading', progress: 42.6, title: 'Scott.Pilgrim.01', source: 'GetComics (direct)' },
-      { id: 2, volumeId: 702, issueId: null, status: 'failed', progress: null, title: 'Dead.Grab', source: null },
+      { id: 1, volumeId: 701, issueId: 11, status: 'downloading', progress: 42.6, title: 'Scott.Pilgrim.01', source: 'GetComics (direct)', webLink: null },
+      { id: 2, volumeId: 702, issueId: null, status: 'failed', progress: null, title: 'Dead.Grab', source: null, webLink: null },
     ]);
     expect(calls[0]!.url).toContain('api_key=k-secret');
   });
@@ -225,5 +225,25 @@ describe('envelope + error handling', () => {
     const client = new KapowarrReadClient(OPTS(fetchImpl));
     expect(await client.listVolumes()).toEqual([]);
     expect(n).toBe(2);
+  });
+});
+
+describe('KapowarrWriteClient.deleteQueueItem (ADR-095 / DESIGN-046 D-19 — the queue janitor removal)', () => {
+  it('DELETEs the queue entry with the blocklist flag in the JSON body', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      { match: (u, m) => m === 'DELETE' && u.includes('/api/activity/queue/7'), body: { error: null, result: {} } },
+    ]);
+    await new KapowarrWriteClient(OPTS(fetchImpl)).deleteQueueItem(7, { blocklist: true });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: 'DELETE', body: { blocklist: true } });
+    expect(calls[0]!.url).toContain('/api/activity/queue/7?api_key=k-secret');
+  });
+
+  it('an id Kapowarr no longer holds is a 404 KapowarrHttpError (the janitor reads it as gone), key redacted', async () => {
+    const { fetchImpl } = stubFetch([]);
+    const err = await new KapowarrWriteClient(OPTS(fetchImpl)).deleteQueueItem(9, { blocklist: true }).catch((e) => e);
+    expect(err).toBeInstanceOf(KapowarrHttpError);
+    expect((err as KapowarrHttpError).status).toBe(404);
+    expect(String((err as Error).message)).not.toContain('k-secret');
   });
 });

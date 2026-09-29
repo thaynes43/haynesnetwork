@@ -229,6 +229,8 @@ const sabHistorySlotSchema = z
     category: z.string().optional(),
     storage: z.string().optional(),
     fail_message: z.string().optional(),
+    /** When the job finished (unix epoch SECONDS). Read by the queue janitor's age rail (DESIGN-046 D-18). */
+    completed: z.number().optional(),
   })
   .passthrough();
 const sabHistorySchema = z
@@ -256,6 +258,27 @@ export interface SabHistorySlot {
   failMessage: string | null;
 }
 
+/** ADR-095 / DESIGN-046 D-18 — a SAB history slot as the queue janitor reads it: the slot plus when it finished. */
+export interface SabJanitorHistorySlot extends SabHistorySlot {
+  /** When the job finished (from SAB's `completed`, epoch seconds), or null when SAB does not say. */
+  completedAt: Date | null;
+}
+
+/** ADR-095 / DESIGN-046 D-18 — the filters of one `mode=history` read (SAB 5.x `_api_history_default`). */
+export interface SabHistoryQuery {
+  /** SAB keeps finished jobs in a separate ARCHIVE view: `true` reads the archive, `false` the live history. A job is
+   *  in exactly one of the two, so a complete read takes both. */
+  archive: boolean;
+  /** Only these categories (`cat=`). */
+  category?: string;
+  /** Only these job statuses (`status=`, e.g. `Completed`). */
+  status?: string;
+  /** Only these jobs (`nzo_ids=`). An empty list reads nothing (no request). */
+  nzoIds?: string[];
+  /** Page size (default 10,000: one read covers a category's whole history). */
+  limit?: number;
+}
+
 export interface SabnzbdReadClientOptions {
   baseUrl: string;
   /** SAB's API key — required (query param `apikey`). Never echoed in errors. */
@@ -278,10 +301,10 @@ function toPct(v: string | number | undefined): number {
  * whole read.
  */
 export class SabnzbdReadClient {
-  private readonly base: string;
-  private readonly apiKey: string;
-  private readonly fetchImpl: typeof fetch;
-  private readonly timeoutMs: number;
+  protected readonly base: string;
+  protected readonly apiKey: string;
+  protected readonly fetchImpl: typeof fetch;
+  protected readonly timeoutMs: number;
 
   constructor(options: SabnzbdReadClientOptions) {
     this.base = options.baseUrl.replace(/\/+$/, '');
@@ -290,7 +313,7 @@ export class SabnzbdReadClient {
     this.timeoutMs = options.timeoutMs ?? 10_000;
   }
 
-  private buildUrl(params: Record<string, string | number | undefined>): { url: string; redacted: string } {
+  protected buildUrl(params: Record<string, string | number | undefined>): { url: string; redacted: string } {
     const q = new URLSearchParams();
     q.set('output', 'json');
     for (const [k, v] of Object.entries(params)) {
@@ -301,7 +324,7 @@ export class SabnzbdReadClient {
     return { url: `${this.base}/api?${withKey.toString()}`, redacted: `${this.base}/api?${q.toString()}&apikey=REDACTED` };
   }
 
-  private async getJson<S extends z.ZodType>(
+  protected async getJson<S extends z.ZodType>(
     params: Record<string, string | number | undefined>,
     schema: S,
   ): Promise<z.infer<S>> {
@@ -333,6 +356,38 @@ export class SabnzbdReadClient {
     }));
   }
 
+  /**
+   * ADR-095 / DESIGN-046 D-18 — one filtered `mode=history` read for the queue janitor: one archive view (`archive`),
+   * narrowed by category, status and/or job ids, with each slot's finish time. Read-only. SAB answers an unknown id
+   * with no slot, so a job absent from both views is gone.
+   */
+  async listHistory(query: SabHistoryQuery): Promise<SabJanitorHistorySlot[]> {
+    if (query.nzoIds !== undefined && query.nzoIds.length === 0) return [];
+    const data = await this.getJson(
+      {
+        mode: 'history',
+        archive: query.archive ? 1 : 0,
+        cat: query.category,
+        status: query.status,
+        nzo_ids: query.nzoIds?.join(','),
+        limit: query.limit ?? 10_000,
+      },
+      sabHistorySchema,
+    );
+    return (data.history.slots ?? []).map((s) => ({
+      nzoId: s.nzo_id,
+      name: s.name ?? '',
+      status: s.status ?? '',
+      category: s.category ?? null,
+      storage: s.storage ?? null,
+      failMessage: s.fail_message ?? null,
+      completedAt:
+        typeof s.completed === 'number' && Number.isFinite(s.completed) && s.completed > 0
+          ? new Date(s.completed * 1000)
+          : null,
+    }));
+  }
+
   /** `mode=history` (archive included) — the terminal Completed/Failed slots. `limit` bounds the read. */
   async getHistory(opts?: { limit?: number }): Promise<SabHistorySlot[]> {
     const data = await this.getJson(
@@ -349,3 +404,16 @@ export class SabnzbdReadClient {
     }));
   }
 }
+
+// ADR-095 / DESIGN-046 D-18 — the read-only path checks behind the janitor's `leftover` class (the delete is ./write).
+export {
+  DownloadPathProbe,
+  LL_DOWNLOAD_ROOT_DEFAULT,
+  LL_LIBRARY_ROOTS_DEFAULT,
+  isDirectChildOf,
+  isStrictlyUnder,
+  llJanitorPathsFromEnv,
+  nodeDownloadPathFs,
+  type DownloadPathFs,
+  type LlJanitorPaths,
+} from './paths';

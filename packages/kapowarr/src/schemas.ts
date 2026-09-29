@@ -86,6 +86,8 @@ export const kapowarrQueueEntrySchema = z
     size: z.number().nullish(),
     title: z.string().nullish(),
     web_title: z.string().nullish(),
+    /** The page link the download came from (ADR-095 / DESIGN-046 D-19: part of the janitor's download identity). */
+    web_link: z.string().nullish(),
     source: z.string().nullish(),
   })
   .passthrough();

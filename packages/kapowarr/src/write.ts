@@ -1,7 +1,8 @@
 // @hnet/kapowarr/write — the WRITE surface (ADR-056, read/write split). The ONLY sanctioned Kapowarr
 // write-backs are the PLAN-046 comic-acquisition actions: add a volume by its resolved ComicVine id
 // (monitored), toggle its monitored flag, and trigger a force-search (the `auto_search` task — the *arr
-// Force-Search analog: search + grab). This entrypoint may be imported ONLY by the packages/domain comic
+// Force-Search analog: search + grab); plus, since ADR-095, the queue janitor's removal of a failed download
+// with blocklist (deleteQueueItem). This entrypoint may be imported ONLY by the packages/domain comic
 // orchestrator and by packages/kapowarr itself — enforced by the arr-write-import-guard test (extended for
 // @hnet/kapowarr/write). Kapowarr acquires from ITS OWN sources (GetComics DDL) — this surface is NEVER
 // wired to MAM/qBittorrent/Prowlarr/the compliance governor (PLAN-046 hard constraint).
@@ -62,6 +63,16 @@ export class KapowarrWriteClient {
    */
   async searchVolume(id: number): Promise<void> {
     await this.http.json('POST', '/system/tasks', z.unknown(), {}, { cmd: 'auto_search', volume_id: id });
+  }
+
+  /**
+   * ADR-095 / DESIGN-046 D-19 — `DELETE /api/activity/queue/{id}` with `{ blocklist }`: remove one download from
+   * Kapowarr's queue and, with `blocklist: true`, add its page link to Kapowarr's blocklist so the same link is never
+   * grabbed again (Kapowarr `frontend/api.py`, `DownloadHandler.remove`). The queue janitor's `bad_release` removal.
+   * An id Kapowarr does not hold answers 404 (`DownloadQueueEntryNotFound`), which the janitor reads as gone.
+   */
+  async deleteQueueItem(id: number, opts: { blocklist: boolean }): Promise<void> {
+    await this.http.json('DELETE', `/activity/queue/${id}`, z.unknown(), {}, { blocklist: opts.blocklist });
   }
 }
 

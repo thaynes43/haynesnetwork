@@ -60,6 +60,7 @@ export * from './mam-clients';
 // /admin status read, and the confined *arr client bundle (@hnet/arr/write stays in this package — the
 // arr-write import guard). The nightly digest section is composed here + rendered by notify-outbox.
 export * from './queue-cleanup';
+export * from './queue-cleanup-sources';
 export * from './janitor-release-block';
 // DESIGN-010 amendment — the Trash Overview landing aggregate (composes the reads above)
 export * from './trash-overview';

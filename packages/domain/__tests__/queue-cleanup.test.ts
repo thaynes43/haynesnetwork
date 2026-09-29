@@ -849,7 +849,13 @@ function cell(o: Partial<QueueCleanupModeCells> = {}): QueueCleanupModeCells {
 /** A fresh config (deep-cloned so a test can mutate cells without leaking). minItemAgeHours 0 unless set. */
 function clone(o: Partial<ArrQueueCleanupConfig> = {}): ArrQueueCleanupConfig {
   return {
-    modes: { sonarr: cell(), radarr: cell(), lidarr: { ...cell(), manual_match: 'census' } },
+    modes: {
+      sonarr: cell(),
+      radarr: cell(),
+      lidarr: { ...cell(), manual_match: 'census' },
+      lazylibrarian: { retry_import: 'census', bad_release: 'census', leftover: 'census' },
+      kapowarr: { bad_release: 'census' },
+    },
     maxActionsPerRun: 10,
     minItemAgeHours: 0,
     retryEscalateRuns: 6,
@@ -2310,8 +2316,9 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     // The digest shows the held download (2 runs held) and the album searched on 2 runs, and flags the loop.
     const section = await buildQueueCleanupDigestSection({ db: t.db, now: new Date(t0.getTime() + 4 * hour) });
     expect(section!.loops).toEqual({
-      skipped: [{ instance: 'lidarr', targetId: 5440, downloadId: 'dl-3', title, runs: 2 }],
+      skipped: [{ instance: 'lidarr', targetId: 5440, itemRef: null, downloadId: 'dl-3', title, runs: 2 }],
       repeatSearches: [{ instance: 'lidarr', targetId: 5440, downloadId: 'dl-2', title, runs: 2 }],
+      failLoops: [],
     });
     expect(section!.loopDetected).toBe(true);
     const mail = renderOutboxEmail({
@@ -2331,7 +2338,7 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     const lidarr = makeInstanceStub([manualMatchItem(460)]);
     await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: lidarr.client }), config: mmCfg() });
     const section = await buildQueueCleanupDigestSection({ db: t.db });
-    expect(section!.loops).toEqual({ skipped: [], repeatSearches: [] });
+    expect(section!.loops).toEqual({ skipped: [], repeatSearches: [], failLoops: [] });
     expect(section!.loopDetected).toBe(false);
     const mail = renderOutboxEmail({
       eventType: 'activity_failure_digest',

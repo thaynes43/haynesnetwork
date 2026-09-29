@@ -3,6 +3,7 @@
 // transition, so a push is neither lost nor phantom (ADR-034 C-01). The `notify-outbox` sync mode calls
 // `deliverOutbox` to send DUE rows to Pushover; it no-ops cleanly when `PUSHOVER_*` env is absent
 // (disabled-safe — C-03). DISTINCT from `notifications` (ADR-026 — that is the inbound in-app feed).
+import { FAIL_LOOP_MIN_FAILURES } from './queue-cleanup-sources';
 import {
   notificationOutbox,
   type DbClient,
@@ -352,25 +353,51 @@ export type OutboxEmailSender = (mail: OutboxEmail) => Promise<void>;
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
-/** The search target a janitor loop names, by instance (DESIGN-046 D-13). */
-const LOOP_TARGET_NOUN: Record<string, string> = { lidarr: 'album', sonarr: 'episode', radarr: 'movie' };
+/** The search target a janitor loop names, by instance (DESIGN-046 D-13, D-20). */
+const LOOP_TARGET_NOUN: Record<string, string> = {
+  lidarr: 'album',
+  sonarr: 'episode',
+  radarr: 'movie',
+  lazylibrarian: 'book',
+  kapowarr: 'volume',
+};
 
-/** The two D-13 loop lists of a stored janitor payload (typeof-guarded; absent on a pre-D-13 payload). */
+/** The ladder families' names in the digest (DESIGN-046 D-17). */
+const LADDER_FAMILY_LABEL: Record<string, string> = {
+  arr: 'Sonarr, Radarr and Lidarr',
+  books: 'LazyLibrarian',
+  comics: 'Kapowarr',
+};
+
+/** How many source fail loops the digest lists by name (D-20); the rest are counted. */
+const FAIL_LOOP_LINES = 10;
+
+/** The loop lists of a stored janitor payload (typeof-guarded; absent on a pre-D-13 or pre-D-20 payload). */
 function queueCleanupLoops(qc: Record<string, unknown> | null): {
   skipped: Array<Record<string, unknown>>;
   repeatSearches: Array<Record<string, unknown>>;
+  failLoops: Array<Record<string, unknown>>;
 } {
   const loops =
     qc?.loops && typeof qc.loops === 'object' ? (qc.loops as Record<string, unknown>) : null;
   const list = (v: unknown) => (Array.isArray(v) ? (v as Array<Record<string, unknown>>) : []);
-  return { skipped: list(loops?.skipped), repeatSearches: list(loops?.repeatSearches) };
+  return {
+    skipped: list(loops?.skipped),
+    repeatSearches: list(loops?.repeatSearches),
+    failLoops: list(loops?.failLoops),
+  };
 }
 
-/** One loop line: ` • lidarr album 123: <release> (<runs> <unit>)`. */
+/** One loop line: ` • lidarr album 123: <release> (<runs> <unit>)`; a LazyLibrarian loop names its book reference. */
 function renderLoopLine(l: Record<string, unknown>, unit: string): string {
   const instance = str(l.instance) || 'unknown';
   const noun = LOOP_TARGET_NOUN[instance] ?? 'target';
-  const target = typeof l.targetId === 'number' ? `${noun} ${l.targetId}` : `no ${noun}`;
+  const target =
+    typeof l.targetId === 'number'
+      ? `${noun} ${l.targetId}`
+      : str(l.itemRef) !== ''
+        ? `${noun} ${str(l.itemRef)}`
+        : `no ${noun}`;
   const title = str(l.title) !== '' ? `: ${str(l.title)}` : '';
   return ` • ${instance} ${target}${title} (${num(l.runs)} ${unit})`;
 }
@@ -414,6 +441,19 @@ function renderQueueCleanupSection(qc: Record<string, unknown>): string {
     lines.push('\nSearched again on 2 or more runs (last 7 days):');
     for (const l of loops.repeatSearches) lines.push(renderLoopLine(l, 'searches'));
   }
+  // DESIGN-046 D-20 — the sources' own grab-fail loops (report only): still wanted, failing again and again.
+  if (loops.failLoops.length > 0) {
+    lines.push(
+      `\nStill wanted after ${FAIL_LOOP_MIN_FAILURES} or more failed grabs, report only (${loops.failLoops.length}):`,
+    );
+    for (const l of loops.failLoops.slice(0, FAIL_LOOP_LINES)) {
+      const reason = str(l.reason) !== '' ? `, mostly ${str(l.reason)}` : '';
+      lines.push(` • ${str(l.instance) || 'unknown'} ${str(l.title) || str(l.itemRef) || 'unknown'}: ${num(l.attempts)} failed grabs${reason}`);
+    }
+    if (loops.failLoops.length > FAIL_LOOP_LINES) {
+      lines.push(` • …and ${loops.failLoops.length - FAIL_LOOP_LINES} more on /admin/janitor.`);
+    }
+  }
   // DESIGN-046 D-14 — the janitor release block: release names blocked in 24h and the terms live now, per *arr.
   const blocks = Array.isArray(qc.releaseBlock) ? (qc.releaseBlock as Array<Record<string, unknown>>) : [];
   for (const b of blocks) {
@@ -421,9 +461,18 @@ function renderQueueCleanupSection(qc: Record<string, unknown>): string {
       `\nRelease names blocked on ${str(b.instance) || 'unknown'}: ${num(b.blocked24h)} in the last 24h, ${num(b.live)} blocked now.`,
     );
   }
+  // DESIGN-046 D-17 — one ladder line per family; a payload from before D-17 carries only `ladder`.
+  const ladders = Array.isArray(qc.ladders) ? (qc.ladders as Array<Record<string, unknown>>) : null;
   const ladder =
     qc.ladder && typeof qc.ladder === 'object' ? (qc.ladder as Record<string, unknown>) : null;
-  if (ladder) {
+  if (ladders && ladders.length > 0) {
+    for (const l of ladders) {
+      const age = l.ageDays == null ? 'unset' : `${num(l.ageDays)}d at level`;
+      const label = LADDER_FAMILY_LABEL[str(l.family)] ?? (str(l.family) || 'unknown');
+      lines.push(`\nLadder, ${label}: L${num(l.level)} (${age})${l.promotionDue === true ? ', promotion due' : ''}.`);
+      if (str(l.nextCriteria) !== '') lines.push(`Next: ${str(l.nextCriteria)}`);
+    }
+  } else if (ladder) {
     const age = ladder.ageDays == null ? 'unset' : `${num(ladder.ageDays)}d at level`;
     lines.push(`\nLadder: L${num(ladder.level)} (${age}).`);
     if (str(ladder.nextCriteria) !== '') lines.push(`Next: ${str(ladder.nextCriteria)}`);
@@ -492,7 +541,17 @@ export function renderOutboxEmail(row: {
         p.queueCleanup && typeof p.queueCleanup === 'object'
           ? (p.queueCleanup as Record<string, unknown>)
           : null;
-      const promotionDue = qc?.promotionDue === true;
+      // DESIGN-046 D-17 / D-20 — one promotion tag per family, so the books and comics nags never dilute the *arr
+      // one; a payload from before D-17 carries only `promotionDue` (the *arr ladder's).
+      const familyLadders = Array.isArray(qc?.ladders) ? (qc!.ladders as Array<Record<string, unknown>>) : null;
+      const promotionTags = familyLadders
+        ? familyLadders
+            .filter((l) => l.promotionDue === true)
+            .map((l) => (str(l.family) === 'arr' ? ' [janitor: promotion due]' : ` [janitor: ${str(l.family)} promotion due]`))
+            .join('')
+        : qc?.promotionDue === true
+          ? ' [janitor: promotion due]'
+          : '';
       const loops = queueCleanupLoops(qc);
       const loopDetected = loops.skipped.length > 0 || loops.repeatSearches.length > 0;
 
@@ -501,7 +560,7 @@ export function renderOutboxEmail(row: {
         (count > 0
           ? `${count} stuck import${count === 1 ? '' : 's'} need attention`
           : `Queue janitor census — ${num(qc?.observed)} observed (24h)`) +
-        (promotionDue ? ' [janitor: promotion due]' : '') +
+        promotionTags +
         (loopDetected ? ' [janitor: loop detected]' : '');
 
       const failureBlock =

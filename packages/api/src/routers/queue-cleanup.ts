@@ -22,13 +22,29 @@ const cellSchema = z.object({
  *  that predates the cell can never enforce it by omission. */
 const lidarrCellSchema = cellSchema.extend({ manual_match: modeSchema.default('census') });
 
+/** LazyLibrarian's cells (DESIGN-046 D-18) and Kapowarr's (D-19). REQUIRED here, unlike in a stored config (D-16):
+ *  a page that predates them cannot save without them, so it can never reset an enforced cell to census by omission. */
+const lazylibrarianCellSchema = z.object({
+  retry_import: modeSchema,
+  bad_release: modeSchema,
+  leftover: modeSchema,
+});
+const kapowarrCellSchema = z.object({ bad_release: modeSchema });
+
 /**
  * The zod mirror of `queueCleanupConfigError` (defense in depth — the domain writer re-validates). The mode
- * grid (3 cells per instance, plus Lidarr's manual_match) plus the three numeric rails, each range-checked
- * exactly like the domain invariant (caps 1..100, age 0..168, escalate 1..48).
+ * grid (3 cells per *arr, plus Lidarr's manual_match; LazyLibrarian's three and Kapowarr's one since ADR-095) plus
+ * the three numeric rails, each range-checked exactly like the domain invariant (caps 1..100, age 0..168, escalate
+ * 1..48).
  */
 export const QueueCleanupConfigInput = z.object({
-  modes: z.object({ sonarr: cellSchema, radarr: cellSchema, lidarr: lidarrCellSchema }),
+  modes: z.object({
+    sonarr: cellSchema,
+    radarr: cellSchema,
+    lidarr: lidarrCellSchema,
+    lazylibrarian: lazylibrarianCellSchema,
+    kapowarr: kapowarrCellSchema,
+  }),
   maxActionsPerRun: z.number().int().min(1).max(100),
   minItemAgeHours: z.number().int().min(0).max(168),
   retryEscalateRuns: z.number().int().min(1).max(48),
