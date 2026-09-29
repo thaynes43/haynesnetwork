@@ -444,21 +444,25 @@ state — the archive quirk only bit the already-stranded backlog.
 
 ### 11.4 REJECT_WORDS / REJECT_AUDIO matching semantics (language guard)
 
-`resultlist.py` rejects a search result when `word in get_list(result_title.lower())` — LL tokenizes the
-release name on **whitespace** (`get_list` folds commas/plus to spaces, then splits) and tests
-**word-membership, NOT substring**. Implications for the German/abridged reject list (added in RUN 3):
+_Corrected 2026-09-29 (DESIGN-046 D-21 rule 7; the 2026-07-14 reading covered only the search filter)._ LazyLibrarian
+applies the reject lists **twice, two different ways**:
 
-- `und` is **safe** — it matches only a standalone `und` token (German "Air **und** Darkness"), never
-  inside `Foundation` / `Thunder` / `Sound` (each a single token). Verified live 2026-07-14, so the
-  substring-danger concern does **not** apply to this LL; keep `und`.
-- A marker glued to punctuation (`[ungekrzt]`) does **not** match — keep the bare token forms too.
-- Dot-separated scene names are a **single token**, so reject words don't filter them
-  (`Foundation.German.Ungekuerzt` is one token) — a known blind spot, not a correctness bug.
+- **The search filter** (`resultlist.py`) rejects a result when a reject word equals a whole word of the release name
+  after LazyLibrarian's clean-up (brackets, parentheses and quotes stripped, dots and dashes turned into spaces), and
+  skips a word that also appears in the wanted book's title or author. So `[ungekrzt]` and
+  `Foundation.German.Ungekuerzt` DO match (`ungekrzt`, `german`), `Foundation` does not match `und`, and `french`
+  would not reject "The French Lieutenant's Woman" here.
+- **The torrent re-check** (`downloadmethods.py::tor_dl_method`), after a torrent has been added to qBittorrent,
+  rejects when a reject word appears **anywhere as a substring** of the torrent's real name, with no title or author
+  exemption, and then **deletes the torrent it just added** (`DEL_FAILED`, on by default). `und` rejected
+  "Foundation Trilogy", "Underland Chronicles", "Arcanum Unbounded", "The Scoundrel Christ" and "Must Love
+  Hellhounds" this way. All 14 torrent re-check rejections in LazyLibrarian's log were `und`, 12 of them inside
+  English titles (the other 2 were Spanish "Mundodisco" titles).
 
-The current list (`hörbuch/hoerbuch/hörverlag/lesung/ungekürzt/gekürzt/deutsch/german/dunklen/mächte/
-entscheidung/erzählt/wüstenplanet/goldener/zorn/doppelgängerin/und` + their ascii folds; defaults
-`audiobook,mp3` / `epub,mobi` preserved) is word-boundary-safe as-is — no substring-danger entries, no
-change needed.
+So a reject word is safe only if it cannot occur inside an English title. `und` was removed from both lists on
+2026-09-29 and `mp4` added to `reject_words` (old values in `.agents/context/2026-09-29-ll-fail-loops.md`). Language
+tags (`french`, `ita`, `fre`, `spa`) are **not** safe in the re-check and were not added. A safe language filter needs
+whole-word matching in the re-check (an upstream LazyLibrarian change).
 
 ---
 

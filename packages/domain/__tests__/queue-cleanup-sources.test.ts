@@ -916,6 +916,12 @@ describe('the suite on embedded Postgres (D-15..D-20)', () => {
     expect(log.loops()).toEqual([
       expect.objectContaining({ kind: 'skipped_loop', instance: 'lazylibrarian', itemRef: 'bk2/ebook', downloadId: 'nzo-2', priorRemovals: 2 }),
     ]);
+
+    // D-21: the same download still held on the next run is a standing loop, recorded but not logged again.
+    n = 2;
+    await evaluateQueueCleanup({ db: t.db, clients: clients({ lazylibrarian: ll.adapter }), config: cfg, now: new Date(t0.getTime() + 3 * hour), logger: log.logger });
+    expect((await rows()).filter((r) => r.downloadId === 'nzo-2').map((r) => r.action)).toEqual(['skipped_loop', 'skipped_loop']);
+    expect(log.loops()).toHaveLength(1);
   });
 
   it('REPEAT SEARCH (D-20): a Kapowarr volume searched on a second run is logged', async () => {
@@ -938,23 +944,64 @@ describe('the suite on embedded Postgres (D-15..D-20)', () => {
     expect(section!.loopDetected).toBe(true);
   });
 
-  it('FAIL LOOP signal (D-20): logged when first seen and when the count grows, not while it holds still', async () => {
+  it('FAIL LOOP signal (D-21): logged once when new, not while it stands (even as its count grows), again after it clears', async () => {
     const hour = 3_600_000;
     const t0 = new Date('2026-09-20T00:00:00Z');
     let attempts = 170;
+    let looping = true;
     const ll = fakeSource('lazylibrarian', () => [
-      srcItem({ actionClass: 'fail_loop', itemRef: 'bk4/ebook', attempts, title: 'Book Four (eBook)', reason: 'Duplicate NZB', addedAt: null }),
+      ...(looping
+        ? [srcItem({ actionClass: 'fail_loop', itemRef: 'bk4/ebook', attempts, title: 'Book Four (eBook)', reason: 'Duplicate NZB', addedAt: null })]
+        : []),
+      srcItem({ actionClass: 'unknown', itemRef: 'bk9/ebook', downloadId: 'nzo-9', title: 'In flight' }),
     ]);
     const log = captureLog();
     const run = (h: number) =>
       evaluateQueueCleanup({ db: t.db, clients: clients({ lazylibrarian: ll.adapter }), config: suiteCfg({}), now: new Date(t0.getTime() + h * hour), logger: log.logger });
-    await run(0);
-    await run(1);
+    await run(0); // new: logs
+    await run(1); // standing: quiet
     attempts = 173;
-    await run(2);
-    expect(log.loops().map((m) => [m.kind, m.attempts, m.previousAttempts])).toEqual([
-      ['fail_loop', 170, null],
-      ['fail_loop', 173, 170],
+    await run(2); // still standing though it grew: quiet (the digest carries it)
+    looping = false;
+    await run(3); // cleared (the format left Wanted)
+    looping = true;
+    await run(4); // back after clearing: logs again
+    expect(log.loops().map((m) => [m.kind, m.itemRef, m.attempts])).toEqual([
+      ['fail_loop', 'bk4/ebook', 170],
+      ['fail_loop', 'bk4/ebook', 173],
+    ]);
+    expect(log.loops()[0]).not.toHaveProperty('previousAttempts');
+    // Every run still writes the loop's census row: the digest reads those.
+    expect((await rows()).filter((r) => r.actionClass === 'fail_loop').sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).map((r) => r.attempts)).toEqual([170, 170, 173, 173]);
+  });
+
+  it('FAIL LOOP signal (D-21): a run that could not read the source is no state change; a previous run older than 48 h is', async () => {
+    const hour = 3_600_000;
+    const t0 = new Date('2026-09-20T00:00:00Z');
+    let readable = true;
+    const good = fakeSource('lazylibrarian', () => [
+      srcItem({ actionClass: 'fail_loop', itemRef: 'bk5/audiobook', attempts: 7, title: 'Book Five (audiobook)', reason: 'Failed to send torrent', addedAt: null }),
+    ]);
+    const adapter: QueueCleanupSourceAdapter = {
+      instance: 'lazylibrarian',
+      observe: async (ctx) => {
+        if (!readable) throw new Error('HTTP 503');
+        return good.adapter.observe(ctx);
+      },
+      act: (klass, its) => good.adapter.act(klass, its),
+    };
+    const log = captureLog();
+    const run = (h: number) =>
+      evaluateQueueCleanup({ db: t.db, clients: clients({ lazylibrarian: adapter }), config: suiteCfg({}), now: new Date(t0.getTime() + h * hour), logger: log.logger });
+    await run(0); // new: logs
+    readable = false;
+    await run(1); // unreadable: no rows, no lines
+    readable = true;
+    await run(2); // its previous run is hour 0, where the loop already was: quiet
+    await run(60); // the previous run is 58 h back, past the lookback: logs as new
+    expect(log.loops().map((m) => [m.kind, m.itemRef])).toEqual([
+      ['fail_loop', 'bk5/audiobook'],
+      ['fail_loop', 'bk5/audiobook'],
     ]);
   });
 
