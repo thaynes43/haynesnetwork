@@ -26,8 +26,10 @@ janitor must cover the whole download suite; monitor for loops; decide reversibl
   race fixed (#626). **Library scan bug** (`librarysync.py` carries the previous file's book id): patched in place
   by haynes-ops #3273 (pinned to image `version-40a389ea`; re-check on every LL image bump), 1,274 bad sidecars and
   56 wrong rows repaired, wrong-volume books fixed (Wild Cards I, The Last Olympian, the German Chroniken der
-  Unterwelt set, His Dark Materials). #631 close-out and the upstream bug-report issue are in flight or done
-  (see the context file).
+  Unterwelt set, His Dark Materials). **#631 is closed** (context file section 9): 12 of the 13 `.ll_ignore` eBook
+  folders resolved (8 new rows, 2 linked to existing rows, 2 duplicates quarantined; the Hogwarts guide stays ignored
+  because Google Books has no volume for it), the multi-release audiobooks sorted (Graphic Audio A Court of Mist and Fury
+  kept as its own item), Midnight Sun relinked. The upstream report is unfiled (pod cannot reach gitlab.com): #637.
 - **ytdrivarr:** Peloton and YouTube Music flow; **YouTube's cookies lapsed** (about 8k "confirm your age" errors
   a day). It needs the owner's Google login; he will open a session for it. Stale failed Jobs were deleted.
 - **CI:** the embedded-Postgres port race behind the flaky `test` check is fixed (#634).

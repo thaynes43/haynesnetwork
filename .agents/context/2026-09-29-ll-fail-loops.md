@@ -390,3 +390,87 @@ multi-release audiobook items (§6: which release to keep is a person's call). (
 `gb_id` with no file evidence either way (A Column of Fire, Locked On, Fooled by Randomness), each with a same-title
 duplicate. They are harmless as they stand. (4) The Midnight Sun audiobook row links a file named "Twilight Saga 01"; that folder was
 not checked.
+
+## 9. #631 close-out: the `.ll_ignore` folders, multi-release audiobooks, Midnight Sun (2026-09-29, ops)
+
+Every left-open item of #631 is done or documented. Database copies taken first: `/config/lazylibrarian.db.pre-631-item2-20260929`
+(audio) and `…pre-631-item1-20260929` (eBooks). Every move is in `books/quarantine/audit-631-2026-09-29/manifest.jsonl`
+(kind `quarantine` or `rehome`, sha256, reason). Nothing was deleted, and no torrent seeds from the library.
+
+**Item 1, the 13 `.ll_ignore` eBook folders** (10 own books, 2 duplicates, 1 left). LazyLibrarian's Google Books key was still
+at its daily limit (429 from the API), so `addBook` could not run. The rows were written into `books` with the same fields
+`gb.add_bookid_to_db` writes, and the volume data came from Google Books' legacy public feed
+(`www.google.com/books/feeds/volumes`, not on the API quota). The volume ids were picked by ISBN, publisher and date against
+the embedded metadata. Each folder got a sidecar naming the id, `.ll_ignore` was removed, and `forceLibraryScan&dir=` linked it.
+
+| Folder | Result |
+|---|---|
+| Destination - Void | own row `wRo_0AEACAAJ` (WordFire 2012), linked |
+| La Belle Sauvage | own row `yrsIDgAAQBAJ` (Random House Children's, 2017), linked |
+| The Hidden Oracle | own row `1xgCzwEACAAJ` (Disney-Hyperion, 2016), linked |
+| Esio Trot | own row `mLYUYhKSlrMC` (Puffin), linked |
+| Allegiant | own row `mFMG1eUXyfcC` (HarperCollins 2013, ISBN matches the epub), linked; the stale sidecar naming the Divergent companion was replaced |
+| Busted Flush | own row `VCwDrmYcqLMC` (Tor/Macmillan 2008), linked |
+| Jokers Wild | own row `71fbLwEACAAJ` (plain title), linked. First tried `pIZWAgAAQBAJ` ("Wild Cards III. Jokers Wild"): the next full scan fuzzy-matched the One-Eyed Jacks file to it and stamped its sidecar. A row title with the "Wild Cards" prefix attracts every other Wild Cards volume without a row, so it was replaced (the stamp is in `opf-stamps-2026-09-29/phase3/`) |
+| The Science Of Discworld | own row `Sv_GAgAAQBAJ` (Anchor 2014, ISBN matches the epub), linked |
+| The Lost Herondale | the epub is **The Bane Chronicles** (ISBN 9781442495661), mislabelled. Re-homed to `Cassandra Clare/The Bane Chronicles/`, linked to the row that already existed (`zksuBQAAQBAJ`); the extra row added for the other edition was deleted |
+| The Enormous Crocodile | the row already existed (`H85VDwAAQBAJ`, no file). A sidecar naming it linked the pdf |
+| Inheritance - Book Four | the azw3 is **Brisingr Deluxe Edition** (embedded title), and Brisingr is already held as epub and azw3: quarantined |
+| The Last Hero - A Discworld Fable | the pdf is byte-identical to `The Last Hero/…pdf`: quarantined |
+| Hogwarts - An Incomplete and Unreliable Guide | **left, `.ll_ignore` stays.** It is a real, separate ebook (Pottermore Kindle Single, 2016) but Google Books has no volume for it (searched by title, publisher and ISBN), so there is no id to give a row. Its text is also inside the `The Hogwarts Collection` epub. Give it a row once a source has one |
+
+After the rows were in, two full eBook scans: the second changed only one link (below). LazyLibrarian's own rescan also added 10 rows
+for files that already had sidecars naming a Google id (Adams, Pullman, Lewis and the Adams anthologies); those are correct. **One
+side effect:** `So Long, and Thanks for All the Fish` now has two rows for the same title, one per folder (the comma and no-comma
+folders hold the same book as mobi and epub), and a scan moves the link between them. Both point at a real file; harmless.
+
+**Item 2, the items that held more than one release.** The ruling applied: keep the complete, unabridged release, then the higher
+bitrate; quarantine the rest; two complete releases with different casts stay as separate items. "Same recording" was checked by
+total runtime and, where the split differed, by matching the loudness envelope of a 90 s stretch (correlation 1.000 for the
+Wild Cards sets, 0.97 for Jokers Wild, 0.92 for Twilight).
+
+| Item | Kept | Quarantined |
+|---|---|---|
+| Mistborn | 22-part "NN of 22" set (the row's link) | the "NN The Final Empire" twin (same sizes and runtime, 22 files) |
+| Throne of Glass | 2 parts, 12.81 h (the row's link) | 55-chapter web rip of the same recording |
+| A Court of Mist and Fury | **both, as separate items.** The single mp3 is a straight reading (23.3 h, 64k). The two m4b parts are a **Graphic Audio dramatization** ("(P)2022 Graphic Audio LLC", 16.8 h, 127k), a different cast, though tagged "Unabridged". The m4b parts moved to `A Court of Mist and Fury (Graphic Audio)/` with an `.ll_ignore`, so LazyLibrarian keeps its row on the reading | nothing |
+| Grey | 15 parts, 64k | 2-file 59k copy (same 18.9 h) |
+| Twilight | 159 tracks, 128k (the row's link) | the byte-identical 159-track twin; the 14-file CD set (same recording, 2.6 min shorter, junk tags) |
+| Nemesis Games | 34 parts, 64k (all forms are 16.75 h) | 56k and 31k single files, the 63k m4b, a 24-minute sample |
+| Fifty Shades Freed | 3 parts, 80k (highest of six forms, 21 h) | 27 files: the 17-part 64k set, the byte-identical 80k twin, the 3-part and single-file 64k copies |
+| Wild Cards I | 22 story-level files, 19.0 h. The "Wild Cards (Volume 1)" and "Wild Cards" 17-part sets are the same recording | both 17-part sets |
+| Eclipse (same defect, not on the list) | 166 tracks, the row's link | a byte-identical twin set (ABS showed 332 chapters) |
+
+The rest of the Wild Cards I folder was other volumes and is now sorted: the 12 Aces High chapter files moved into
+`Wild Cards II - Aces High` (which held the other 10 chapters; now 22 chapters, 14.84 h, and the LazyLibrarian row that was
+`Wanted` is linked), the 13-file disc split of the same Aces High recording was quarantined, the complete 19-part Aces Abroad
+(23.6 h) replaced the 13 parts that folder held (they are the same audio, a subset), the Jokers Wild III copy was quarantined
+(the 192k copy in its own folder is the same recording), and the 6 German files went per the F10 English-only ruling.
+
+**Audiobookshelf.** The touched items were rescanned after their `metadata.json` (the item's and, for 4 items, the old in-folder
+one) was renamed to `metadata.json.pre-631-item2-20260929`, and 7 titles were reset. Every rebuilt item was checked by track list
+and durations: tracks ascend with no duplicates, the chapters are contiguous and end at the file total, and no listener had
+progress on any of them. One chapter list had to be reset by hand (A Court of Mist and Fury kept the 40 h chapter table of the old
+three-file item, now one chapter of 23.3 h). Two new items appeared (Graphic Audio, Bree Tanner). The chapter titles that repeat in
+the Graphic Audio and Aces Abroad items are the recordings' own embedded chapter names, not doubled audio.
+
+**Item 3, Midnight Sun.** The row linked `Twilight Saga 01 - Twilight.m4b`, and that file really was Twilight (771.8 min): the folder
+held the whole Twilight Saga set. Kept `Midnight Sun (Twilight #5) (Unabridged).m4b` (Hachette Audio UK, 25.8 h, 126k); quarantined
+a Dutch edition (Van Goor, read by Lykele Muus: F10), an 80k mp3, a byte-size twin of the kept file, and five other saga books
+whose own folders already hold them (Twilight, New Moon, Eclipse, Breaking Dawn and the Life and Death dual edition). The Bree
+Tanner audiobook had no folder and was re-homed to `Stephenie Meyer/The Short Second Life of Bree Tanner/`. The scan then linked the
+row to the right file, and ABS shows Midnight Sun as one 25.8 h file with 30 chapters.
+
+**Item 4, the three `BookID ≠ gb_id` rows.** Checked: A Column of Fire, Locked On and Fooled by Randomness each have a same-title
+row, but both rows of each pair point at the same file (none is empty), so nothing was removed. Left as they were.
+
+**Item 5, upstream.** Still unfiled, because the pod cannot reach gitlab.com. It is tracked as #637 with the report text, the
+`version-40a389ea` pin of the local patch, and the note to re-check the patch on every LazyLibrarian image bump.
+
+**Left, and why.** (1) Hogwarts guide: no Google Books volume (above). (2) The `Brandon Sanderson/Mistborn - The Final Empire`
+item (29 files, 12.6 h of a 24.7 h book, from 2023) is a separate, partial older copy in its own folder; it was not part of a
+multi-release item, so it was left. (3) 33 stale "missing" items remain in Audiobookshelf from earlier quarantines (removing
+them is an Audiobookshelf-side cleanup that drops their listening history). (4) The audiobook row for Wonderful Alexander and the
+Catwings (Le Guin) points at a folder with no audio files; it pre-dates this work. (5) The Google Books key resets at 07:00 UTC;
+the next `forceLibraryScan` after that can refresh the hand-written rows (descriptions, covers) through the API.
+
