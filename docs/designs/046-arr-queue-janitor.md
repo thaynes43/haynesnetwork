@@ -1,9 +1,11 @@
 # DESIGN-046: Arr queue janitor — classifier, census, promotion ladder
 
 - **Status:** Accepted
-- **Last updated:** 2026-09-25 (D-10: four classifier/action fixes from the L0→L1 census spot-check, made
-  before any cell enforces: `skipRedownload` on every removal, the identity-mismatch guard, message-only
-  reasons, release-level-only release-defect signals). Prior: 2026-08-01.
+- **Last updated:** 2026-09-28 (D-11: one action per download, so a season pack is removed once, not once
+  per episode; a removal that answers 404 is `skipped_gone`, not an error; retry escalation counts runs, not
+  rows; issue #583 item 1, before L2). Prior: 2026-09-25 (D-10: four classifier/action fixes from the L0→L1
+  census spot-check, made before any cell enforces: `skipRedownload` on every removal, the identity-mismatch
+  guard, message-only reasons, release-level-only release-defect signals). Prior: 2026-08-01.
 - **Satisfies:** governed by ADR-083; extends ADR-007 (Fix / `markHistoryFailed`), ADR-059 /
   DESIGN-030 (queue read model), ADR-082 (audited config precedent). Build plan: PLAN-065.
 
@@ -79,7 +81,9 @@ Rails (all levels): per-instance per-run mutation cap `maxActionsPerRun` (defaul
 `minItemAgeHours` (default 2) so freshly-completed items get their organic import window; a
 failed *arr write logs + records `outcome:'error'` and counts against the cap; the whole run
 is idempotent (an item already handled disappears from the next queue read; blocklist makes
-re-grab of the same release impossible).
+re-grab of the same release impossible). Since D-11 the janitor acts once per download, not once
+per queue record, and the cap counts downloads; a removal the *arr answers with 404 is
+`skipped_gone`, not an error.
 
 **Write confinement:** `@hnet/sync` keeps importing only `@hnet/arr/read`. The write bundle is
 built inside `@hnet/domain` (the `arrClientBundleFromEnv` pattern) and injected opaque; the
@@ -119,7 +123,8 @@ Append-only; the census record AND the action audit in one table:
 
 `id`, `instance` (`sonarr|radarr|lidarr`, CHECK), `queueItemId`, `downloadId`, `title`,
 `actionClass` (CHECK on `QUEUE_CLEANUP_ACTION_CLASSES`), `mode` (`census|enforce`), `action`
-(`none|removed_blocklisted|retried_import|blocklisted_searched|skipped_young|skipped_cap`),
+(`none|removed_blocklisted|retried_import|blocklisted_searched|skipped_young|skipped_cap`; D-11 adds
+`skipped_mixed|skipped_gone`, migration 0082),
 `outcome` (`observed|done|error`), `reason` (the driving or most informative message, ≤500 chars;
 never a release or file name, D-10), `error`,
 `createdAt`. Indexed `(createdAt desc)` and `(instance, downloadId, createdAt desc)` — the
@@ -174,6 +179,30 @@ v6.4.4.10685, Lidarr v3.1.6.5078.
 | 4 | **Release-defect patterns read release-level messages only.** Release level means `errorMessage`, the messages of the entry titled with the download itself, and title-borne messages outside a multi-file set. It never includes a per-file entry: anything after the multi-file header, or a title that is a media file name other than the download's own title. "Sample" matches only the upstream `NotSampleSpecification` rejection verbatim; "Unable to determine if file is a sample" is not a verdict. "archive" matches only the upstream "Found archive file, might need to be extracted". | Per-file "…-sample.mkv" titles inside otherwise good releases (The Gentlemen, Star Wars Visions) were briefly classed `bad_release`; at L2 that would blocklist good releases. The same fault reached `\barchive\b`, because upstream embeds release names and paths in other messages ("Archive 81", "…not found in the grabbed release: <release>", "…eligible for import in <path>"), and it reached per-file rejections such as an unparseable featurette. Every change moves items toward `unknown` (report only), never toward an action. |
 
 Ladder bookkeeping (the spot-check entry and the L1 flip) lives in PLAN-065's ladder log, not here.
+
+### D-11 — One action per download (2026-09-28, before L2)
+
+Sonarr lists a season pack as one queue record per episode: upstream `QueueService` maps one tracked
+download to one record per episode, each with the download's own `downloadId`, status, `statusMessages`
+and `added`. Lidarr does the same per album. Before this ruling the evaluator acted per record, so an
+enforced pack sent one DELETE per episode. The first removed the whole download and every later one
+answered 404, because the *arr no longer tracked it. Each 404 was an `error` row and used up the per-run
+cap (issue #583 item 1, found by the L1 audit; no such pack had been enforced yet). Each row below is
+pinned by tests (`queue-cleanup.test.ts`, `migrations.test.ts`).
+
+| # | Ruling | Reason |
+|---|---|---|
+| 1 | **Records group by download.** Within one instance, records that share a non-empty `downloadId` form one group, decided at its first record in queue order. A record with a null, empty or blank `downloadId` (a pending release, for one) is never grouped: it stands alone, as before. | The download is what a removal acts on. Grouping on a missing id would tie unrelated records together. |
+| 2 | **One call per download, and the cap counts downloads.** A group acts only when every record in it would act on its own for the same effective class (after escalation): the class is not `unknown`, its cell is `enforce`, and no record is younger than `minItemAgeHours`. Then the janitor makes exactly one call (the DELETE targets the first record's queue id, and the *arr removes and blocklists the whole download) and it costs the cap once. Every record of the download gets that call's result as its row: the same `action`, `outcome` and `error`. The other records are *covered* by it, the way `retried_import` rows are covered by the run's one `ProcessMonitoredDownloads`. | A second DELETE for the same download can only answer 404, so none is sent: a 404 from a sibling is impossible by construction. The rows still say what happened to each record's download. |
+| 3 | **A mixed download is left alone.** When the records of one download do not all qualify for the same action (a different class, `unknown`, a census cell, or a record still too young), nothing is sent for it. Each record that would have qualified on its own is recorded `skipped_mixed`; the others keep their own verdict (`none` or `skipped_young`). | One removal removes and blocklists every record of the download, so every record has to agree. A record the janitor would not touch vetoes the rest, which fails safe toward observation, like every D-10 change. Records of one download carry the same messages and `added`, so a mixed download is not expected; this rule is the guard, and `skipped_mixed` makes one visible in the census if it ever appears. |
+| 4 | **A `bad_release` download is searched once for all its monitored targets.** After the one removal, the monitored check runs over all the download's records (one episode list per series, one album list per artist), and one search command covers every monitored target (`EpisodeSearch` and `AlbumSearch` take id lists, as does `MoviesSearch`). Each row records its own result: `blocklisted_searched` when its target is monitored, `removed_blocklisted` when it is not. When the removal landed but the monitored check or the search failed, the row keeps `removed_blocklisted` with `outcome: 'error'` (it was `none`). | Acting through the first record alone would re-search only the first episode of a pack and leave the rest missing. A failed search after a removal must not hide that the removal happened. |
+| 5 | **A removal that answers 404 is `skipped_gone`.** `outcome: 'observed'`, no `error`, no search, not counted in the run's `errors`; it still counts against the cap. Any other failure stays `outcome: 'error'`. | After rule 2 the janitor never sends a second DELETE for a download, so a 404 now means the *arr dropped the record between the queue read and the removal: someone removed it, or a newer download pushed it out of the download client's history window (issue #583 item 2). Nothing failed, and the janitor removed and blocklisted nothing, so neither `error` nor `done` is true. If the record comes back, the next run sees it again. It costs the cap because the cap bounds the write calls a run makes, and a 404 was one. |
+| 6 | **Retry escalation counts runs, not rows.** The lookback counts the distinct run timestamps of a download's prior `retry_import` rows (every row of one run carries the run's `createdAt`). | A pack writes one row per episode per run, so counting rows escalated a 10-episode pack to `bad_release` after a single run instead of after `retryEscalateRuns` runs. |
+
+Schema: migration 0082 widens the `arr_queue_cleanup_actions.action` CHECK to admit `skipped_mixed` and
+`skipped_gone`. It is additive; the previous image never writes either value. The per-instance report and
+its log line gain `covered`, the count of records handled by another record's call. No config, class or
+pattern changes, so the census of a run with no packs is unchanged.
 
 ## Alternatives considered
 

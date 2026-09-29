@@ -28,11 +28,12 @@ import { LidarrWriteClient, RadarrWriteClient, SonarrWriteClient } from '@hnet/a
 import {
   ARR_CLUSTER_URL_DEFAULTS,
   ArrConfigError,
+  ArrHttpError,
   type LidarrQueueRecord,
   type RadarrQueueRecord,
   type SonarrQueueRecord,
 } from '@hnet/arr';
-import { and, count, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { setAppSetting } from './app-settings';
 import { resolveDb } from './db-client';
 import { QueueCleanupConfigInvalidError } from './errors';
@@ -393,10 +394,12 @@ export interface QueueCleanupInstanceClient {
   ): Promise<void>;
   /** POST /command ProcessMonitoredDownloads — estate-wide (at most once per instance per run). */
   processMonitoredDownloads(): Promise<void>;
-  /** Whether the item's re-search target is still monitored (re-search only where genuinely wanted). */
-  isTargetMonitored(item: QueueCleanupQueueItem): Promise<boolean>;
-  /** Trigger the owning *arr's search command for the item's target. */
-  searchTarget(item: QueueCleanupQueueItem): Promise<void>;
+  /** The given records (one download's) whose re-search target is still monitored, so a re-search goes only
+   *  where it is genuinely wanted. Batched (D-11): a season pack reads its series' episode list once. */
+  monitoredTargets(items: QueueCleanupQueueItem[]): Promise<QueueCleanupQueueItem[]>;
+  /** Trigger the owning *arr's search for the given records' targets, one command per download where the *arr
+   *  takes an id list (EpisodeSearch / MoviesSearch / AlbumSearch — D-11). */
+  searchTargets(items: QueueCleanupQueueItem[]): Promise<void>;
 }
 
 export type QueueCleanupClients = Record<ArrKind, QueueCleanupInstanceClient>;
@@ -405,6 +408,24 @@ interface QueueTargetIds {
   parentId: number | null;
   childId: number | null;
 }
+
+/** Memoize an async lookup for the length of one call, so a download's records share one read per parent. */
+function memoized<K, V>(load: (key: K) => Promise<V>): (key: K) => Promise<V> {
+  const cache = new Map<K, Promise<V>>();
+  return (key) => {
+    let hit = cache.get(key);
+    if (!hit) {
+      hit = load(key);
+      cache.set(key, hit);
+    }
+    return hit;
+  };
+}
+
+/** The distinct non-null ids, in first-seen order. */
+const distinctIds = (ids: Array<number | null | undefined>): number[] => [
+  ...new Set(ids.filter((id): id is number => id != null)),
+];
 
 /** Map a raw Sonarr/Radarr/Lidarr queue record to the normalized item (parent/child kept internal below). */
 function normalizeItem(raw: {
@@ -435,7 +456,9 @@ function normalizeItem(raw: {
 /**
  * Wire the real *arr read + write clients into the three per-instance surfaces. The monitored-check uses the
  * finest cheap granularity the read client exposes: Radarr the movie; Sonarr the episode (via listEpisodes,
- * else the series); Lidarr the album (via listAlbums, else the artist). Re-search targets the same level.
+ * else the series); Lidarr the album (via listAlbums, else the artist). Re-search targets the same level. Both
+ * take a download's records together (D-11): one list read per parent, and one search command for every
+ * monitored episode / movie / album (the series / artist search only for a record with no child id).
  */
 export function buildQueueCleanupClients(clients: {
   read: { sonarr: SonarrClient; radarr: RadarrClient; lidarr: LidarrClient };
@@ -459,19 +482,37 @@ export function buildQueueCleanupClients(clients: {
       processMonitoredDownloads: async () => {
         await clients.write.sonarr.processMonitoredDownloads();
       },
-      async isTargetMonitored(item) {
-        const t = targetsByItem.get(item);
-        if (t?.childId != null && t.parentId != null) {
-          const episodes = await clients.read.sonarr.listEpisodes(t.parentId);
-          return episodes.find((e) => e.id === t.childId)?.monitored ?? false;
+      async monitoredTargets(items) {
+        const episodesOf = memoized((seriesId: number) =>
+          clients.read.sonarr.listEpisodes(seriesId),
+        );
+        const seriesOf = memoized((seriesId: number) =>
+          clients.read.sonarr.getSeriesById(seriesId),
+        );
+        const monitored: QueueCleanupQueueItem[] = [];
+        for (const item of items) {
+          const t = targetsByItem.get(item);
+          let isMonitored = false;
+          if (t?.childId != null && t.parentId != null) {
+            const childId = t.childId;
+            isMonitored =
+              (await episodesOf(t.parentId)).find((e) => e.id === childId)?.monitored ?? false;
+          } else if (t?.parentId != null) {
+            isMonitored = (await seriesOf(t.parentId)).monitored;
+          }
+          if (isMonitored) monitored.push(item);
         }
-        if (t?.parentId != null) return (await clients.read.sonarr.getSeriesById(t.parentId)).monitored;
-        return false;
+        return monitored;
       },
-      async searchTarget(item) {
-        const t = targetsByItem.get(item);
-        if (t?.childId != null) await clients.write.sonarr.searchEpisodes([t.childId]);
-        else if (t?.parentId != null) await clients.write.sonarr.searchSeries(t.parentId);
+      async searchTargets(items) {
+        const targets = items.map((item) => targetsByItem.get(item));
+        const episodeIds = distinctIds(targets.map((t) => t?.childId));
+        if (episodeIds.length > 0) await clients.write.sonarr.searchEpisodes(episodeIds);
+        for (const seriesId of distinctIds(
+          targets.filter((t) => t?.childId == null).map((t) => t?.parentId),
+        )) {
+          await clients.write.sonarr.searchSeries(seriesId);
+        }
       },
     },
     radarr: {
@@ -485,14 +526,18 @@ export function buildQueueCleanupClients(clients: {
       processMonitoredDownloads: async () => {
         await clients.write.radarr.processMonitoredDownloads();
       },
-      async isTargetMonitored(item) {
-        const t = targetsByItem.get(item);
-        if (t?.parentId != null) return (await clients.read.radarr.getMovieById(t.parentId)).monitored;
-        return false;
+      async monitoredTargets(items) {
+        const movieOf = memoized((movieId: number) => clients.read.radarr.getMovieById(movieId));
+        const monitored: QueueCleanupQueueItem[] = [];
+        for (const item of items) {
+          const t = targetsByItem.get(item);
+          if (t?.parentId != null && (await movieOf(t.parentId)).monitored) monitored.push(item);
+        }
+        return monitored;
       },
-      async searchTarget(item) {
-        const t = targetsByItem.get(item);
-        if (t?.parentId != null) await clients.write.radarr.searchMovies([t.parentId]);
+      async searchTargets(items) {
+        const movieIds = distinctIds(items.map((item) => targetsByItem.get(item)?.parentId));
+        if (movieIds.length > 0) await clients.write.radarr.searchMovies(movieIds);
       },
     },
     lidarr: {
@@ -506,19 +551,35 @@ export function buildQueueCleanupClients(clients: {
       processMonitoredDownloads: async () => {
         await clients.write.lidarr.processMonitoredDownloads();
       },
-      async isTargetMonitored(item) {
-        const t = targetsByItem.get(item);
-        if (t?.childId != null && t.parentId != null) {
-          const albums = await clients.read.lidarr.listAlbums(t.parentId);
-          return albums.find((a) => a.id === t.childId)?.monitored ?? false;
+      async monitoredTargets(items) {
+        const albumsOf = memoized((artistId: number) => clients.read.lidarr.listAlbums(artistId));
+        const artistOf = memoized((artistId: number) =>
+          clients.read.lidarr.getArtistById(artistId),
+        );
+        const monitored: QueueCleanupQueueItem[] = [];
+        for (const item of items) {
+          const t = targetsByItem.get(item);
+          let isMonitored = false;
+          if (t?.childId != null && t.parentId != null) {
+            const childId = t.childId;
+            isMonitored =
+              (await albumsOf(t.parentId)).find((a) => a.id === childId)?.monitored ?? false;
+          } else if (t?.parentId != null) {
+            isMonitored = (await artistOf(t.parentId)).monitored;
+          }
+          if (isMonitored) monitored.push(item);
         }
-        if (t?.parentId != null) return (await clients.read.lidarr.getArtistById(t.parentId)).monitored;
-        return false;
+        return monitored;
       },
-      async searchTarget(item) {
-        const t = targetsByItem.get(item);
-        if (t?.childId != null) await clients.write.lidarr.searchAlbums([t.childId]);
-        else if (t?.parentId != null) await clients.write.lidarr.searchArtist(t.parentId);
+      async searchTargets(items) {
+        const targets = items.map((item) => targetsByItem.get(item));
+        const albumIds = distinctIds(targets.map((t) => t?.childId));
+        if (albumIds.length > 0) await clients.write.lidarr.searchAlbums(albumIds);
+        for (const artistId of distinctIds(
+          targets.filter((t) => t?.childId == null).map((t) => t?.parentId),
+        )) {
+          await clients.write.lidarr.searchArtist(artistId);
+        }
       },
     },
   };
@@ -568,9 +629,12 @@ export interface QueueCleanupInstanceReport {
   read: boolean;
   /** Census rows written for this instance (= queue size read). */
   itemsObserved: number;
-  /** Enforce actions attempted this run (each counts against maxActionsPerRun). */
+  /** Enforce actions attempted this run (each counts against maxActionsPerRun). One per download (D-11). */
   actionsTaken: number;
-  /** *arr write failures (outcome:'error'). */
+  /** Records handled by a call made for another record: the rest of a download's records (D-11), and
+   *  retry_import records covered by the run's one ProcessMonitoredDownloads. */
+  covered: number;
+  /** *arr write failures (outcome:'error'), one per failed call, not per record. */
   errors: number;
   byClass: Record<QueueCleanupActionClass, { observed: number; enforced: number }>;
   readError?: string;
@@ -604,7 +668,39 @@ const errMsg = (err: unknown): string => (err instanceof Error ? err.message : S
  *  automatic re-search by the *arr. */
 const JANITOR_REMOVAL = { removeFromClient: true, blocklist: true, skipRedownload: true } as const;
 
-/** Count the item's prior retry_import rows (the escalation lookback via the (instance, downloadId) index). */
+/**
+ * Group one instance's queue records by download (DESIGN-046 D-11). Records that share a non-empty `downloadId`
+ * form one group, in first-seen queue order (Sonarr lists a season pack as one record per episode; Lidarr a
+ * multi-album download as one per album). A record with a null, empty or blank `downloadId` is never grouped:
+ * it stands alone. Pure.
+ */
+export function groupQueueRecordsByDownload<T extends { downloadId: string | null }>(
+  items: readonly T[],
+): T[][] {
+  const groups: T[][] = [];
+  const byDownload = new Map<string, T[]>();
+  for (const item of items) {
+    const key = nonEmpty(item.downloadId);
+    if (key === null) {
+      groups.push([item]);
+      continue;
+    }
+    let group = byDownload.get(key);
+    if (!group) {
+      group = [];
+      byDownload.set(key, group);
+      groups.push(group);
+    }
+    group.push(item);
+  }
+  return groups;
+}
+
+/**
+ * Count the download's prior retry_import RUNS (the escalation lookback via the (instance, downloadId) index).
+ * Every row of one run carries that run's `createdAt`, so distinct timestamps are runs; counting rows would let a
+ * season pack (one row per episode per run) escalate after a single run (D-11).
+ */
 async function priorRetryImportRuns(
   db: ReturnType<typeof resolveDb>,
   instance: ArrKind,
@@ -612,7 +708,7 @@ async function priorRetryImportRuns(
 ): Promise<number> {
   if (!downloadId) return 0;
   const [row] = await db
-    .select({ n: count() })
+    .select({ n: sql<number>`count(distinct ${arrQueueCleanupActions.createdAt})` })
     .from(arrQueueCleanupActions)
     .where(
       and(
@@ -624,14 +720,47 @@ async function priorRetryImportRuns(
   return Number(row?.n ?? 0);
 }
 
+/** One record's own verdict, before its download is considered (D-11). */
+interface RecordVerdict {
+  item: QueueCleanupQueueItem;
+  actionClass: QueueCleanupActionClass;
+  mode: QueueCleanupMode;
+  reason: string | null;
+  young: boolean;
+  /** The class this record would enforce if it stood alone; null when it would only be observed (census cell,
+   *  `unknown`, or too young). */
+  wants: QueueCleanupEnforceableClass | null;
+}
+
+/** What one record's row says happened (action + outcome + the *arr error, if any). */
+interface RecordResult {
+  action: QueueCleanupAction;
+  outcome: QueueCleanupOutcome;
+  error: string | null;
+}
+
+const result = (
+  action: QueueCleanupAction,
+  outcome: QueueCleanupOutcome = 'observed',
+  error: string | null = null,
+): RecordResult => ({ action, outcome, error });
+
+/** A removal the *arr answered with 404: it no longer tracks the download (D-11 rule 5). */
+const isGone = (err: unknown): boolean => err instanceof ArrHttpError && err.status === 404;
+
 /**
- * Run one janitor pass over Sonarr/Radarr/Lidarr. Census rows are written ALWAYS (one per queue item — the
+ * Run one janitor pass over Sonarr/Radarr/Lidarr. Census rows are written ALWAYS (one per queue record — the
  * observation of record); enforce actions fire ONLY where the class×instance cell is `enforce`, behind the
  * rails (D-04): per-instance per-run cap `maxActionsPerRun`; `minItemAgeHours` before any action; a monitored
- * target check before a bad_release re-search; retry escalation via the persisted action-row lookback;
- * ProcessMonitoredDownloads at most once per instance per run; a failed *arr write → outcome 'error' (logged,
- * counts against the cap) + continue. `unknown` is NEVER acted on. The table is the single writer's whole
- * audit trail — no permission_audit / ledger coupling (append-only). Never throws for a per-instance failure.
+ * target check before a bad_release re-search; retry escalation via the persisted action-row lookback (counted
+ * in runs); ProcessMonitoredDownloads at most once per instance per run; a failed *arr write → outcome 'error'
+ * (logged, counts against the cap) + continue. `unknown` is NEVER acted on.
+ *
+ * The janitor acts once per DOWNLOAD, not once per record (D-11): records sharing a downloadId (a season pack's
+ * episodes) get one call, which costs the cap once, and every one of them records that call's result; a
+ * download whose records do not all qualify for the same action is left alone (`skipped_mixed`); a removal
+ * the *arr answers with 404 is `skipped_gone`, not an error. The table is the single writer's whole audit
+ * trail — no permission_audit / ledger coupling (append-only). Never throws for a per-instance failure.
  */
 export async function evaluateQueueCleanup(input: {
   db?: DbClient;
@@ -656,6 +785,7 @@ export async function evaluateQueueCleanup(input: {
       read: false,
       itemsObserved: 0,
       actionsTaken: 0,
+      covered: 0,
       errors: 0,
       byClass: emptyByClass(),
     };
@@ -672,17 +802,21 @@ export async function evaluateQueueCleanup(input: {
     report.read = true;
     anyRead = true;
 
-    let actionsTaken = 0;
-    let retryCommandRan = false;
-
+    // 1. Each record's own verdict: class (with escalation), the mode in effect, the age rail, and what it wants.
+    const verdicts = new Map<QueueCleanupQueueItem, RecordVerdict>();
+    const priorRuns = new Map<string, Promise<number>>();
     for (const item of items) {
       const classified = classifyQueueItem(item);
       let actionClass: QueueCleanupActionClass = classified.class;
 
-      // Escalation: an item still retry_import after `retryEscalateRuns` prior runs → bad_release handling.
-      if (actionClass === 'retry_import') {
-        const prior = await priorRetryImportRuns(db, instance, item.downloadId);
-        if (prior >= config.retryEscalateRuns) actionClass = 'bad_release';
+      // Escalation: a download still retry_import after `retryEscalateRuns` prior runs → bad_release handling.
+      if (actionClass === 'retry_import' && item.downloadId) {
+        let prior = priorRuns.get(item.downloadId);
+        if (!prior) {
+          prior = priorRetryImportRuns(db, instance, item.downloadId);
+          priorRuns.set(item.downloadId, prior);
+        }
+        if ((await prior) >= config.retryEscalateRuns) actionClass = 'bad_release';
       }
 
       // unknown has no config cell (never enforced); every other class reads its instance cell.
@@ -692,82 +826,141 @@ export async function evaluateQueueCleanup(input: {
       const young =
         config.minItemAgeHours > 0 &&
         (item.addedAt === null || now.getTime() - item.addedAt.getTime() < minAgeMs);
+      const wants = !young && mode === 'enforce' && actionClass !== 'unknown' ? actionClass : null;
+      verdicts.set(item, { item, actionClass, mode, reason: classified.reason, young, wants });
+    }
 
-      let action: QueueCleanupAction = 'none';
-      let outcome: QueueCleanupOutcome = 'observed';
-      let error: string | null = null;
+    // 2. One decision per download (D-11), in first-seen queue order — the cap is spent per download.
+    const results = new Map<QueueCleanupQueueItem, RecordResult>();
+    let actionsTaken = 0;
+    let retryCommandRan = false;
 
-      if (young) {
-        action = 'skipped_young';
-      } else if (mode === 'enforce' && actionClass !== 'unknown') {
-        if (actionClass === 'retry_import') {
-          if (retryCommandRan) {
-            // The estate-wide command already ran this instance — this item is covered, no cap cost.
-            action = 'retried_import';
-            outcome = 'done';
-          } else if (actionsTaken >= config.maxActionsPerRun) {
-            action = 'skipped_cap';
-          } else {
-            try {
-              await client.processMonitoredDownloads();
-              retryCommandRan = true;
-              action = 'retried_import';
-              outcome = 'done';
-            } catch (err) {
-              error = errMsg(err);
-              outcome = 'error';
-              report.errors += 1;
-            }
-            actionsTaken += 1;
-          }
-        } else if (actionsTaken >= config.maxActionsPerRun) {
-          action = 'skipped_cap';
-        } else {
-          try {
-            // Every janitor removal passes skipRedownload (D-10): with the *arr's "Redownload Failed" on, a
-            // blocklisting removal would otherwise re-search by itself — have_better must never re-search, and
-            // bad_release re-searches only through its own monitored-checked search below.
-            if (actionClass === 'have_better') {
-              await client.deleteQueueItem(item, JANITOR_REMOVAL);
-              action = 'removed_blocklisted';
-              outcome = 'done';
-            } else {
-              // bad_release — blocklist, then re-search ONLY if the target is still monitored.
-              await client.deleteQueueItem(item, JANITOR_REMOVAL);
-              const monitored = await client.isTargetMonitored(item);
-              if (monitored) {
-                await client.searchTarget(item);
-                action = 'blocklisted_searched';
-              } else {
-                action = 'removed_blocklisted';
-              }
-              outcome = 'done';
-            }
-          } catch (err) {
-            error = errMsg(err);
-            outcome = 'error';
-            report.errors += 1;
-          }
-          actionsTaken += 1;
+    for (const group of groupQueueRecordsByDownload(items)) {
+      const members = group.map((item) => verdicts.get(item)!);
+      const wanted = members[0]!.wants;
+      const setAll = (r: RecordResult) => {
+        for (const m of members) results.set(m.item, r);
+      };
+
+      // Nothing to enforce, or a mixed download: no call. A record that would have acted on its own records
+      // `skipped_mixed`; the rest keep their own verdict (rule 3).
+      if (wanted === null || members.some((m) => m.wants !== wanted)) {
+        const mixed = members.some((m) => m.wants !== null);
+        for (const m of members) {
+          results.set(
+            m.item,
+            m.young ? result('skipped_young') : m.wants ? result('skipped_mixed') : result('none'),
+          );
         }
+        if (mixed) {
+          input.logger?.warn?.('queue-cleanup: mixed download left alone', {
+            instance,
+            downloadId: members[0]!.item.downloadId,
+            records: members.length,
+            classes: [...new Set(members.map((m) => m.actionClass))],
+          });
+        }
+        continue;
       }
 
+      const primary = members[0]!.item;
+      if (wanted === 'retry_import') {
+        if (retryCommandRan) {
+          // The estate-wide command already ran this instance — the whole download is covered, no cap cost.
+          setAll(result('retried_import', 'done'));
+          report.covered += members.length;
+        } else if (actionsTaken >= config.maxActionsPerRun) {
+          setAll(result('skipped_cap'));
+        } else {
+          actionsTaken += 1;
+          try {
+            await client.processMonitoredDownloads();
+            retryCommandRan = true;
+            setAll(result('retried_import', 'done'));
+          } catch (err) {
+            setAll(result('none', 'error', errMsg(err)));
+            report.errors += 1;
+          }
+          report.covered += members.length - 1;
+        }
+        continue;
+      }
+
+      if (actionsTaken >= config.maxActionsPerRun) {
+        setAll(result('skipped_cap'));
+        continue;
+      }
+
+      // have_better / bad_release: ONE removal for the whole download, through its first record — the *arr
+      // removes and blocklists the download, so a second DELETE could only answer 404 (rule 2). Every janitor
+      // removal passes skipRedownload (D-10): with the *arr's "Redownload Failed" on, a blocklisting removal
+      // would otherwise re-search by itself — have_better must never re-search, and bad_release re-searches
+      // only through its own monitored-checked search below.
+      actionsTaken += 1;
+      report.covered += members.length - 1;
+      try {
+        await client.deleteQueueItem(primary, JANITOR_REMOVAL);
+      } catch (err) {
+        if (isGone(err)) {
+          // Rule 5: the *arr no longer tracks the download — nothing removed or blocklisted, and not an error.
+          setAll(result('skipped_gone'));
+          input.logger?.warn?.('queue-cleanup: removal answered 404, download already gone', {
+            instance,
+            queueItemId: primary.queueItemId,
+            downloadId: primary.downloadId,
+          });
+        } else {
+          setAll(result('none', 'error', errMsg(err)));
+          report.errors += 1;
+        }
+        continue;
+      }
+
+      if (wanted === 'have_better') {
+        setAll(result('removed_blocklisted', 'done'));
+        continue;
+      }
+
+      // bad_release — re-search every record whose target is still monitored, in one command (rule 4).
+      try {
+        const monitored = new Set(await client.monitoredTargets(members.map((m) => m.item)));
+        if (monitored.size > 0)
+          await client.searchTargets(
+            members.filter((m) => monitored.has(m.item)).map((m) => m.item),
+          );
+        for (const m of members) {
+          results.set(
+            m.item,
+            result(monitored.has(m.item) ? 'blocklisted_searched' : 'removed_blocklisted', 'done'),
+          );
+        }
+      } catch (err) {
+        // The removal landed; only the check or the search failed — the row must not hide the removal.
+        setAll(result('removed_blocklisted', 'error', errMsg(err)));
+        report.errors += 1;
+      }
+    }
+
+    // 3. One row per record, in queue order.
+    for (const item of items) {
+      const v = verdicts.get(item)!;
+      const r = results.get(item)!;
       rows.push({
         instance,
         queueItemId: item.queueItemId,
         downloadId: item.downloadId,
         title: item.title,
-        actionClass,
-        mode,
-        action,
-        outcome,
-        reason: classified.reason,
-        error,
+        actionClass: v.actionClass,
+        mode: v.mode,
+        action: r.action,
+        outcome: r.outcome,
+        reason: v.reason,
+        error: r.error,
         createdAt: now,
       });
       report.itemsObserved += 1;
-      report.byClass[actionClass].observed += 1;
-      if (outcome === 'done') report.byClass[actionClass].enforced += 1;
+      report.byClass[v.actionClass].observed += 1;
+      if (r.outcome === 'done') report.byClass[v.actionClass].enforced += 1;
     }
 
     report.actionsTaken = actionsTaken;
@@ -775,6 +968,7 @@ export async function evaluateQueueCleanup(input: {
       instance,
       observed: report.itemsObserved,
       actionsTaken,
+      covered: report.covered,
       errors: report.errors,
       byClass: report.byClass,
     });
