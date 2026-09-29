@@ -307,3 +307,84 @@ the Inheritance and Twilight NZBs were deleted so the duplicate check let them t
 `<folder>.unpack` beside it; a failed import flips the book to `Wanted` (run `unqueueBook`). A book that already holds a correct
 sibling file (Dark Talent had its original epub) only needs its link fixed, not a download. The duplicate rows in #630 and
 #621 are victims of mechanism 1, not stray grabs.
+
+## 8. The scan bug: fixed at the source, and the #631 damage repaired (2026-09-29, ops)
+
+Coordinator default for this work: suspend the scheduled scan unless something important depends on it. Something does, so
+the bug was patched instead and the CronJob was suspended only for the repair window.
+
+**The bug, verified in the running image** (`linuxserver/lazylibrarian:version-40a389ea`, LazyLibrarian commit `40a389ea`,
+pyproject `2026.05.25`; unmodified `librarysync.py` sha256 `b05018db…41933e9`). In `library_scan`, the per-file block
+(lines 812 to 821) resets `isbn`, `book`, `author`, `bookid` and the rest, but not `gr_id`, `gb_id`, `ol_id`, `hc_id` or
+`dnb_id`. Lines 875 to 889 assign them only when the file carries that id, and line 998 (`bookid = eval(this_source['book_key'])`,
+`gb_id` for Google Books) and line 1046 read them for every file. The `except NameError` covers only the files before the first
+one that has an id.
+
+It did more damage than the stamped sidecars. When the stale id was **not** in the database but the file's title matched a
+row by the same author, the "title matches" branch (around line 1009) ran `UPDATE … SET BookID=<stale id>` on books, member,
+wanted, failedsearch, genrebooks and bookauthors. So **20 rows were re-keyed to another book's Google Books id.** The row's
+own id survives in its `gb_id` column and `BookLink`. Each re-keyed row then pulled in the file that legitimately embeds that id
+(The Savage Blue claimed "God Emperor of Dune", Unfair Advantage claimed "The Silmarillion"). haynesnetwork's pushes use the
+real id, so they missed the row and LazyLibrarian added duplicates (4 existed).
+
+**What triggers a scan.** (1) The `lazylibrarian-library-scan` CronJob (`forceLibraryScan` then `forceAudioBookScan`, daily
+09:10 UTC). (2) The UI's Library Scan button and the per-author scan. (3) The API commands `forceLibraryScan`,
+`forceAudioBookScan` and `includeAlternate`. (4) Post-processing only when Calibre is configured (`IMP_CALIBREDB` is empty
+here, so not in this deployment). LazyLibrarian has no scheduler entry for it, and it does not scan at startup.
+haynesnetwork never calls a scan; it uses `forceProcess` only.
+
+**What depends on it.** The scan is the only thing besides the post-processor that tells LazyLibrarian which books are on
+disk (haynes-ops #3087, OPS-013 §12). haynesnetwork's held-guard (`llFormatAlreadyHeld`) reads exactly that. Before the
+repair, 330 held books were unlinked, 26 of them `Wanted` and searched daily. ABS and Kavita read files directly and do
+not depend on it. So suspending it would have stopped the damage but also stopped LazyLibrarian from learning about files on
+disk, and the UI button would still have run the buggy code.
+
+**Chosen: patch, not suspend.** haynes-ops #3273 (merged, `aaa515b7`) mounts the image's own `librarysync.py` plus one
+line (`gr_id = gb_id = ol_id = hc_id = dnb_id = None`, line 845 of the mounted file) from the ConfigMap
+`lazylibrarian-librarysync` over that single file (`subPath`, read-only). The file's header and a comment on the image tag
+pin it to `version-40a389ea` and say what to do on a bump: re-derive the file from the new image, or drop the override if
+upstream fixed it. Renovate has never proposed a bump for this image. **CronJob:** suspended by hand at 19:50Z for the repair
+(`spec.suspend` was unset, i.e. false; Flux does not own the field), but Flux's reconcile of #3273 at 19:53Z quietly reverted it. kustomize-controller takes over fields that a `kubectl patch` sets, so a hand suspend of a Flux-managed CronJob only lasts until the next reconcile. No scheduled run fell in that window (the next is 09:10Z), and the patched code was live from 19:54Z. To hold a suspend, set `spec.suspend: true` in git. The CronJob reads `suspend: false` now, as intended.
+
+**Repair, in order** (database copies: `/config/lazylibrarian.db.pre-631-repair-20260929`, `…pre-631-phase2-20260929`,
+`…pre-631-audio-20260929`; every moved file is in a `manifest.jsonl`; scripts in `ll-library-audit/`).
+
+| Item | Done |
+|---|---|
+| (a) 37 rows pointing at another book's file | 36 re-pointed to their own file, 1 cleared (Christmas at Hogwarts, no file). The audit had marked 13 as "no own file". 11 of those do have one, named `Author - Title.epub` (the audit only looked for `Title - Author`). |
+| (b) 1,274 stamped `.opf` sidecars | Quarantined to `books/quarantine/opf-stamps-2026-09-29/` (mirrors the tree, manifest has each sha256). The fixed scan regenerated 453 sidecars through LazyLibrarian's own `create_opf`. |
+| 20 re-keyed rows (found during the repair) | 16 re-keyed back to their own id and 4 merged into the duplicate that already held the real id (the stale row is deleted, its file, status, history and authors folded into the real one). 25 own-folder sidecars had the stale id replaced in place (keeps ABS's opf metadata unchanged), and 27 sidecars were quarantined to `…/opf-stamps-2026-09-29/phase2/`: 16 in other books' folders that carried a stale id, 11 fuzzy mismatches. The other 13 `BookID ≠ gb_id` rows are LazyLibrarian re-keying a book to its own file's embedded id (their own epub carries it), which is normal. 3 have no evidence either way (A Column of Fire, Locked On, Fooled by Randomness). |
+| (c) 16 mixed audiobook folders | 15 of 16 rows fixed, in 9 of the 10 folders; Wild Cards I is left (§6 made which release to keep a person's call). 2,773 files quarantined (18.7 GB) to `books/quarantine/audit-631-2026-09-29/AudioBooks/`: 2,202 German editions (Mistborn 4 to 7, The Ragpicker King, Throne of Glass 0/2/3/4, per the F10 English-only ruling), further copies of books whose own folder already holds them (Hero of Ages, Bands of Mourning, Alloy of Law, Throne of Glass ×3, Crown of Midnight, Queen of Shadows, Sworn Sword, Fifty Shades of Grey, Darker), and 16 files of 4 unrequested books with no row in Nemesis Games. 30 files re-homed: the English Shadows of Self (was under Mistborn) into its own folder, and Camp Half-Blood Confidential out of the Percy Jackson series folder. 13 audio rows re-pointed. No torrent seeds from the library (0 of 931 have a save path under `media/books`). |
+| (d) 5 ambiguous eBooks | All resolved. Skyward: the pdf is the novel (Gollancz 2018), the epub is Skyward Flight, which was re-homed and linked to its own row. The "Terry Pratchett's Discworld" file was a second Unseen Academicals: quarantined, row cleared. The Mortal Instruments: the epub was an illustrated Shadowhunter's Codex (a 2026-09-22 wrong grab), quarantined; the row now points at the folder's mobi, which is the series omnibus. The Lord John bundle folder held the Outlander 7-book bundle: re-homed. The Lost Hero: the prose epub was on disk under `Rick Riordan/The Lost Hero/` and is now linked. |
+
+**The first fixed scan also exposed LazyLibrarian's fuzzy title matching** (mechanism 3 of §7). With no stale id to hide
+behind, 13 files matched the wrong book by the same author (Jokers Wild and Busted Flush matched Aces High, Esio Trot matched
+Dirty Beasts, and others). The 7 rows that turned `Open` on those matches were reverted, 3 of them `Wanted`. Those 13 folders now carry `.ll_ignore`
+(a LazyLibrarian-native skip) with a note inside; remove it once LazyLibrarian has an exact row for that book. 14 fuzzy
+matches that are fair (Beacon 23 parts matching Beacon 23, a Four story matching Four) were left.
+
+**Verification.** A second full eBook scan after the repair wrote no stale-id sidecar and re-keyed nothing through the
+bug; its only id changes were 5 files linking to their own embedded id. All 42 repaired rows (the 37 plus the 5 in (d)) point at
+a file that exists and whose folder matches the row title. The fixed audiobook scan (23 minutes, after the splits) re-linked 10 audio rows, all to their own title. It found no stale ids, and all 773 audiobook sidecars match their folder. A third eBook scan changed no row and wrote no sidecar, so the daily run is now idempotent. The 16 eBook sidecars that still name a different title are the 14 fair fuzzy matches, the Infernal Devices box set against Clockwork Princess, and the Charterhouse Dune folder, whose file really is The Pandora Sequence. After the scans, haynesnetwork's format-pairing reported `skippedHeld 118` (14 on 2026-09-22).
+
+**ABS.** ABS has one library, `AudioBooks`, so the eBook sidecars never reached it. Its metadata precedence puts its own
+`metadata.json` above the `.opf` and the tags, which is why the mixed folders kept their old titles and chapter lists. The 8
+reorganised items were rebuilt: their `metadata.json` was moved aside as `metadata.json.pre-631-20260929` in
+`/metadata/items/<id>/` and the item rescanned. 4 titles were then set through the API (Shadows of Self, Nemesis Games,
+Throne of Glass, A Court of Mist and Fury). The one live listen (House of Flame and Shadow) is at 25.7 h inside its m4b,
+which is track 1, so dropping the Throne of Glass tracks after it did not move her position. Spot-checked 12 items through the API (titles, file and chapter counts): Shadows of Self, Mistborn, Sword Catcher, Throne of Glass, A Court of Mist and Fury, House of Flame and Shadow, The Hedge Knight, Grey, Twilight, New Moon, Camp Half-Blood Confidential and Nemesis Games. All show the right title. Several still hold two or more releases of the same book (Mistborn, Throne of Glass, A Court of Mist and Fury, Grey, Twilight, Nemesis Games), which §6 left as a person's call. The Percy Jackson and the Olympians item now has no audio and shows as missing in ABS. Also done under (c), outside the #631 list: the Twilight audiobook folder held New Moon (212 files, now `Stephenie Meyer/New Moon/`, a new ABS item) and 4 Swedish files (quarantined). The Twilight row now links a Twilight file, which ends the Twilight audiobook fail loop from §1.
+
+**Side effect of the pod roll.** LazyLibrarian's startup check deletes authors whose `TotalBooks` is 0, and books cascade
+with them. It removed 18 authors and 11 books added by the API on 2026-09-29 that had no `bookauthors` row, including
+`Yesteryear` (`Wanted`). Any pod roll does this. If one of them is a haynesnetwork want, the next sync pushes it again.
+
+**Upstream.** Not filed: this pod cannot reach gitlab.com. LazyLibrarian's own update check says the build is 436 commits
+behind master, so a newer build may already fix it. The report text is on #631.
+
+**Left, tracked on #631.** (1) The 13 `.ll_ignore` folders need an exact LazyLibrarian row each: `findBook`, then `addBook`
+with the right Google Books id, then delete `.ll_ignore` and scan that folder. `findBook` returned nothing at 21:02Z because
+LazyLibrarian's Google Books key was exhausted by the day's scans; the key resets at 07:00 UTC. (2) Wild Cards I and the
+multi-release audiobook items (§6: which release to keep is a person's call). (3) Three rows whose `BookID` differs from
+`gb_id` with no file evidence either way (A Column of Fire, Locked On, Fooled by Randomness), each with a same-title
+duplicate. They are harmless as they stand. (4) The Midnight Sun audiobook row links a file named "Twilight Saga 01"; that folder was
+not checked.
