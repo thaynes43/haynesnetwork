@@ -744,6 +744,19 @@ describe('D-14 janitor release block term + drift (pure)', () => {
     expect(derive('Queen', 'Queen')).toEqual({ refused: 'title_is_artist' });
   });
 
+  it('refuses a title with a word the term cannot write (another script), but not a letter inside a written word', () => {
+    // SEP would stand in for the whole unwritten word, so "東京" would be blocked too.
+    expect(derive('Artist - 日本 (2019) [FLAC]', 'Artist')).toEqual({ refused: 'unwritable' });
+    expect(derive('Artist - 愛 (2019)', 'Artist')).toEqual({ refused: 'unwritable' });
+    expect(derive('Ørjan Nilsen - Album (2019)', 'Ørjan Nilsen')).toEqual({ refused: 'unwritable' });
+    // Inside a written word it stands for one character only.
+    const inside = derive('Bjørk Tribute - Straße (2019)', 'Bjørk Tribute');
+    expect('term' in inside).toBe(true);
+    const t1 = (inside as { term: string }).term;
+    expect(termMatchesRaw(t1, 'Bjørk Tribute - Straße (2019)')).toBe(true);
+    expect(termMatchesRaw(t1, 'Bjark Tribute - Straße (2019)')).toBe(false);
+  });
+
   it('janitorBlockProfileDrift: missing, duplicate, disabled, edited, terms, or null; a profile without the sentinel is not ours', () => {
     const desired = [JANITOR_BLOCK_SENTINEL, '/^[^a-z0-9]*a[^a-z0-9]*b[^a-z0-9]*$/i'];
     const ours = (o: Partial<JanitorReleaseProfile> = {}): JanitorReleaseProfile => ({

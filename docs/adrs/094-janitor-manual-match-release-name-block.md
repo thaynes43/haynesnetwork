@@ -77,9 +77,10 @@ Shape of the decision (normative; mechanics in DESIGN-046 D-13 and D-14):
 - **The term** is the release title's words anchored at both ends (`/^SEP*word SEP* word … SEP*$/i`), written with
   the raw apostrophes, accented letters and `&` as ADR-093's terms are. It blocks that exact title posted again, with
   any separators, and nothing with a word more or a word less. **The title must name the album's artist** (the
-  artist's words as a run of whole words, a leading "The" optional) and carry at least one more word; otherwise no
-  term is written and the download is left alone (`skipped_unblockable`): the janitor never removes a `manual_match`
-  download without blocking its name first.
+  artist's words as a run of whole words, a leading "The" optional) and carry at least one more word, and every word
+  must be one the term can write (a word in another script would be matched by any word); otherwise no term is
+  written and the download is left alone (`skipped_unblockable`): the janitor never removes a `manual_match` download
+  without blocking its name first.
 - **The profile:** one per *arr the janitor blocks on (Lidarr today), enabled, no required terms, every indexer, no
   tags. Lidarr's release profiles have no name, so the profile is marked by a plain sentinel term,
   `haynesnetwork-janitor-managed-do-not-edit`, which also keeps it valid with no live term. A term lives 365 days from

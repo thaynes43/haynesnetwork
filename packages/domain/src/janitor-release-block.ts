@@ -23,6 +23,7 @@ import { and, desc, eq, gt, gte, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import { JanitorReleaseBlockError } from './errors';
 import {
+  foldReleaseName,
   isWholeNameTerm,
   releaseTokens,
   renderWholeNameTerm,
@@ -79,8 +80,34 @@ export const isJanitorBlockTerm = (term: string): boolean =>
 // ---------------------------------------------------------------------------
 
 /** Why no term names only this release: no title, no artist to check against, a title that does not name the artist
- *  (as a run of whole words), a title that is only the artist's name, or a term outside the grammar. */
-export type JanitorTermRefusal = 'no_title' | 'no_artist' | 'artist_not_named' | 'title_is_artist' | 'grammar';
+ *  (as a run of whole words), a title that is only the artist's name, a title with a word the term cannot write, or a
+ *  term outside the grammar. */
+export type JanitorTermRefusal =
+  | 'no_title'
+  | 'no_artist'
+  | 'artist_not_named'
+  | 'title_is_artist'
+  | 'unwritable'
+  | 'grammar';
+
+const WRITABLE = /[a-z0-9]/;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+
+/**
+ * Does the title carry a letter or digit the term cannot write (another script, or a Latin letter that does not fold,
+ * such as `ø` or `ß`) anywhere but strictly inside a written word? The term matches such a character only through SEP,
+ * which is harmless inside a word ("Bjørk": `bj`, one non-alphanumeric, `rk`) but lets any other word stand in for a
+ * whole unwritten one ("Artist - 日本 (2019)" would also block "Artist - 東京 (2019)").
+ */
+function hasUnwritableWord(title: string): boolean {
+  const chars = [...foldReleaseName(title)];
+  return chars.some((c, i) => {
+    if (WRITABLE.test(c) || !LETTER_OR_DIGIT.test(c)) return false;
+    const prev = chars[i - 1];
+    const next = chars[i + 1];
+    return !(prev !== undefined && WRITABLE.test(prev) && next !== undefined && WRITABLE.test(next));
+  });
+}
 
 export type JanitorBlockTerm = { term: string } | { refused: JanitorTermRefusal };
 
@@ -95,7 +122,8 @@ function containsRun(tokens: readonly string[], run: readonly string[]): boolean
 
 /**
  * D-14 — the whole-name term for a failing release, or why there is none. The title must name the artist: the artist's
- * words (a leading "The" optional) as a run of the title's words, plus at least one more word. The term is built from
+ * words (a leading "The" optional) as a run of the title's words, plus at least one more word; and every word must be
+ * one the term can write (`hasUnwritableWord`). The term is built from
  * the title's raw words (apostrophes, accented letters, `&`), anchored at both ends, and must match the title as the
  * *arr tests it (raw). Pure.
  */
@@ -112,6 +140,7 @@ export function deriveJanitorBlockTerm(input: {
   const named = runs.find((run) => containsRun(tokens, run));
   if (!named) return { refused: 'artist_not_named' };
   if (tokens.length <= named.length) return { refused: 'title_is_artist' };
+  if (hasUnwritableWord(title)) return { refused: 'unwritable' };
   let term: string;
   try {
     const words = termWords(title);
