@@ -204,3 +204,58 @@ wrong grab; a Fix re-acquires.
 - Held but `Wanted` (should stay at 0 apart from open Fixes): count books whose `Status`/`AudioStatus` is `Wanted`
   and whose `BookFile`/`AudioFile` exists, from the LazyLibrarian pod, database opened read-only.
 - Loop rate: `wanted` rows with `NZBdate` in the last 7 days, grouped by `Status` and by `DLResult` shape.
+
+## 6. Follow-up: the two wrong-volume eBooks (2026-09-29, ops)
+
+Both eBooks from section 3 are fixed and verified. Only the eBook format was wrong for each; the audiobooks held the right
+title (two hand-cleaning notes below).
+
+| Book | BookID | Was | Now |
+|---|---|---|---|
+| The Last Olympian | `pcyOEAAAQBAJ` | epub tagged "The Sea of Monsters" (Percy Jackson 2) | epub 2.9 MB tagged "The Last Olympian" / Rick Riordan; text has Kronos, Thalia, Luke, not the Sea of Monsters plot |
+| Wild Cards I | `laM7DwAAQBAJ` | epub 579 KB, "The Button Man and the Murder Tree" (Wild Cards 21.3) | epub 930 KB tagged "Wild Cards 01 - Wild Cards I" (the Expanded edition); stories from volume I present (Thirty Minutes Over Broadway, Fortunato, Croyd), no Button Man |
+
+Both LazyLibrarian book rows read `Open` with the new file, and each replaced the old epub in place (one epub per folder, no
+duplicate). Kavita picks them up on its next scan.
+
+**Audit.** Both went through the audited books Fix path (`createBookFixRequest` / `runBookFixRequest` /
+`recordBookFixAction`, actor null, the same code the Fix button runs) and are `completed` in `book_fix_requests`: Last Olympian
+on the Kavita item "The Last Olympian" (fix `b44cf2e6`), Wild Cards I on the Kavita item "Wild Cards" (fix `cc597aca`; there is
+no Kavita item named "Wild Cards I", and that item's LazyLibrarian id is `laM7DwAAQBAJ`). The `actions_taken` array holds the manual steps.
+
+**What the automatic path did and why it needed a hand.**
+
+- `runBookFixRequest` calls `addBook` then `queueBook` then `searchBook` back to back. LazyLibrarian runs `addBook` in the
+  background, and it finished *after* `queueBook`, writing the book back as `Skipped/Skipped`. The search then ran on a
+  `Skipped` book and found nothing. It also flipped the Last Olympian **audiobook** row from `Open` to `Skipped` (the files are
+  untouched). `addBook` takes `&wait`; the Fix path did not use it (fixed in #626, below).
+- Even without that race, LazyLibrarian's search returned nothing usable (the Last Olympian title is searched as "The Last
+  Olympian: Percy Jackson and the Olympians: Book 5"; Wild Cards I matches any volume). So both releases were picked by hand from
+  LazyLibrarian's own manual search (`booksearch` + `snatch_book`, the page the UI uses): usenet, epub, English, sensible size.
+  Last Olympian: NZBgeek "Rick Riordan - [Percy Jackson and the Olympians 05] - The Last Olympian (US) (retail) (epub)",
+  2.8 MB. Wild Cards I: NZBgeek "George R R Martin (ed) - [Wildcards 01] - Wild Cards Expanded edition (retail) (epub)", 935 KB.
+  No torrent, nothing on MAM.
+- SABnzbd (`no_dupes` 3) refused both as `Duplicate NZB`: it keys on the NZB's articles, so re-posting the same NZB changes
+  nothing, and both had been downloaded before (the good Wild Cards I copy on 2026-08-24, the Last Olympian one 23 times in
+  July; the good epubs were later overwritten by the wrong grabs). Handling, one per book:
+  - Last Olympian: the July download was still on disk in the LazyLibrarian download directory
+    (`complete-k8s/lazylibrarian/...(epub).23`); imported it with `cmd=importBook&library=eBook&id=...&dir=...`.
+  - Wild Cards I: no copy on disk, so the one stale SABnzbd history record of that exact download (2026-08-24, plus the
+    failed duplicate stubs of today's attempts) was deleted from SABnzbd's history, which is the only thing its duplicate check
+    reads. The download then ran, and it was imported with `importBook` as well.
+- `importBook` marks every `wanted` history row of that BookID `Processed`. That rewrote the old `Failed`/`Processed` rows of
+  the Last Olympian in LazyLibrarian's history (cosmetic; the real record is section 2 and the SABnzbd history).
+
+**Left as they are on purpose (owner call, per the Fix design's stale-file rule).**
+
+- `EBooks/George R.R. Martin/Wild Cards I/Wild Cards I - George R.R. Martin.mobi` (1.5 MB, 2026-08-29) is the wrong volume:
+  "Wild Cards: Jokers Wild" (volume III), next to the correct epub. Not deleted.
+- The Wild Cards I **audiobook** folder is a mix of volumes (Aces High, Jokers Wild, Aces Abroad, German editions and volume I
+  parts in one directory of 122 files), and the Last Olympian audiobook folder holds the right book but several copies
+  interleaved (299 files: chapter files, `NN of 98` files and an m4b). Neither is a wrong-file fix; they need a hand clean.
+- The Last Olympian **audiobook** row now reads `Skipped` (was `Open`) because of the `addBook` race above; the files are intact.
+  It is one more held-but-`Skipped` format like the 127 in section 2, so it stays quiet.
+
+**Code fix.** haynesnetwork #626 makes `addBook` send `&wait=1` (LazyLibrarian only runs the add synchronously with it), so a
+Fix on an already-known book no longer ends `Skipped/Skipped` behind a "search triggered" audit row. It does not stop LazyLibrarian's
+add from resetting the book's *other* format to `Skipped`; that is LazyLibrarian's own behaviour.
