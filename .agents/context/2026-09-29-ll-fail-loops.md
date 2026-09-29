@@ -368,10 +368,12 @@ bug; its only id changes were 5 files linking to their own embedded id. All 42 r
 a file that exists and whose folder matches the row title. The fixed audiobook scan (23 minutes, after the splits) re-linked 10 audio rows, all to their own title. It found no stale ids, and all 773 audiobook sidecars match their folder. A third eBook scan changed no row and wrote no sidecar, so the daily run is now idempotent. The 16 eBook sidecars that still name a different title are the 14 fair fuzzy matches, the Infernal Devices box set against Clockwork Princess, and the Charterhouse Dune folder, whose file really is The Pandora Sequence. After the scans, haynesnetwork's format-pairing reported `skippedHeld 118` (14 on 2026-09-22).
 
 **ABS.** ABS has one library, `AudioBooks`, so the eBook sidecars never reached it. Its metadata precedence puts its own
-`metadata.json` above the `.opf` and the tags, which is why the mixed folders kept their old titles and chapter lists. The 8
-reorganised items were rebuilt: their `metadata.json` was moved aside as `metadata.json.pre-631-20260929` in
-`/metadata/items/<id>/` and the item rescanned. 4 titles were then set through the API (Shadows of Self, Nemesis Games,
-Throne of Glass, A Court of Mist and Fury). The one live listen (House of Flame and Shadow) is at 25.7 h inside its m4b,
+`metadata.json` above the `.opf` and the tags, which is why the mixed folders kept their old titles and chapter lists. For
+the reorganised items, their `metadata.json` was moved aside as `metadata.json.pre-631-20260929` in
+`/metadata/items/<id>/` and the item rescanned through the API (logged in as root with the password from the haynesnetwork
+pod's environment). That rebuilt 9 items. The 4 that ABS reported as already up to date got their `metadata.json` back.
+6 titles were then set through the API: Shadows of Self, Nemesis Games, Throne of Glass, A Court of Mist and Fury,
+Twilight and New Moon. The one live listen (House of Flame and Shadow) is at 25.7 h inside its m4b,
 which is track 1, so dropping the Throne of Glass tracks after it did not move her position. Spot-checked 12 items through the API (titles, file and chapter counts): Shadows of Self, Mistborn, Sword Catcher, Throne of Glass, A Court of Mist and Fury, House of Flame and Shadow, The Hedge Knight, Grey, Twilight, New Moon, Camp Half-Blood Confidential and Nemesis Games. All show the right title. Several still hold two or more releases of the same book (Mistborn, Throne of Glass, A Court of Mist and Fury, Grey, Twilight, Nemesis Games), which §6 left as a person's call. The Percy Jackson and the Olympians item now has no audio and shows as missing in ABS. Also done under (c), outside the #631 list: the Twilight audiobook folder held New Moon (212 files, now `Stephenie Meyer/New Moon/`, a new ABS item) and 4 Swedish files (quarantined). The Twilight row now links a Twilight file, which ends the Twilight audiobook fail loop from §1.
 
 **Side effect of the pod roll.** LazyLibrarian's startup check deletes authors whose `TotalBooks` is 0, and books cascade
