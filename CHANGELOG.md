@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.104.0](https://github.com/thaynes43/haynesnetwork/compare/v0.103.0...v0.104.0) (2026-09-29)
+
+
+### Features
+
+* **janitor:** cover the download suite: LazyLibrarian and Kapowarr through a source adapter, a ladder per family ([#620](https://github.com/thaynes43/haynesnetwork/issues/620)) ([84d9c9b](https://github.com/thaynes43/haynesnetwork/commit/84d9c9ba06ebe4a8d3fa3cb517e84d72819933fc))
+
+
+### Documentation
+
+* **janitor:** PLAN-065 — promoted to L2 (owner ruling, no calendar wait) ([#618](https://github.com/thaynes43/haynesnetwork/issues/618)) ([6178f81](https://github.com/thaynes43/haynesnetwork/commit/6178f81a2cb70cdc240f3ebe2535a680f3f68a13))
+
 ## [0.103.0](https://github.com/thaynes43/haynesnetwork/compare/v0.102.0...v0.103.0) (2026-09-29)
 
 
