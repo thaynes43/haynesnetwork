@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.102.0](https://github.com/thaynes43/haynesnetwork/compare/v0.101.3...v0.102.0) (2026-09-29)
+
+
+### Features
+
+* **janitor:** answer Q-01, Lidarr match rejections become the report-only class manual_match ([#611](https://github.com/thaynes43/haynesnetwork/issues/611)) ([7907a19](https://github.com/thaynes43/haynesnetwork/commit/7907a19fa0fe29ba90ceb155f29fcf69fd7b94e6))
+
 ## [0.101.3](https://github.com/thaynes43/haynesnetwork/compare/v0.101.2...v0.101.3) (2026-09-29)
 
 
