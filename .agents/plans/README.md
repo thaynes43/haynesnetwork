@@ -4,7 +4,7 @@ This folder is a **queue of release-sized plans**. Each `NNN-<slug>.md` is one p
 release. Fable 5 (the autonomous orchestrator) works the queue **lowest active number first**,
 takes each plan end-to-end as its own release, then moves it to `completed/` and picks up the
 next. Read `../KICKOFF.md` first — it is the entry prompt and explains autonomy, the project,
-deploy/test, and when to spin Opus subagents.
+deploy/test, and when to spin subagents.
 
 ## Rules of the queue
 
@@ -23,8 +23,8 @@ deploy/test, and when to spin Opus subagents.
 
 For each plan, in order:
 
-1. **Read** the plan doc + its cited files. Delegate the reading/exploration to **Opus
-   subagents** (see KICKOFF) — you are scarce.
+1. **Read** the plan doc + its cited files. Delegate the reading/exploration to **Sonnet 5.5
+   subagents** (see KICKOFF's two-tier dispatch rules) — you are scarce.
 2. **Author the docs-first artifacts** the plan enumerates (PRD edits, new ADR(s), DDD/glossary
    terms, new DESIGN). You may **Accept** your own ADRs (owner granted authority).
 3. **Implement the full vertical** (db → domain → client → api → ui), mirroring the Restore/Fix
