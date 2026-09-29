@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.104.1](https://github.com/thaynes43/haynesnetwork/compare/v0.104.0...v0.104.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **janitor:** a leftover folder must hold the same book files as its library copy (D-22) ([#628](https://github.com/thaynes43/haynesnetwork/issues/628)) ([fe51f75](https://github.com/thaynes43/haynesnetwork/commit/fe51f7585010353610f97ed8f58e0736a1481d06)), closes [#621](https://github.com/thaynes43/haynesnetwork/issues/621)
+* **janitor:** loop_detected logs a new loop once; LazyLibrarian fail loops characterized and cleared (D-21) ([#622](https://github.com/thaynes43/haynesnetwork/issues/622)) ([7759692](https://github.com/thaynes43/haynesnetwork/commit/77596928f51bbf380364712f1d144412f87f65c3))
+* **lazylibrarian:** addBook waits for LL to finish before queueBook ([#626](https://github.com/thaynes43/haynesnetwork/issues/626)) ([831089e](https://github.com/thaynes43/haynesnetwork/commit/831089e0fa4ead12a155c56905a05982b5d849cd))
+
+
+### Documentation
+
+* **agents:** LL fail-loops follow-up, the Wild Cards I and Last Olympian eBooks fixed ([#625](https://github.com/thaynes43/haynesnetwork/issues/625)) ([efd21df](https://github.com/thaynes43/haynesnetwork/commit/efd21df45c2d3b8b8d0cda2c34a44c6d15ba3dff))
+* **agents:** LL wrong-volumes follow-up, what was cleaned afterwards ([#629](https://github.com/thaynes43/haynesnetwork/issues/629)) ([0471f38](https://github.com/thaynes43/haynesnetwork/commit/0471f385c18746dab51f597a5bad8b446bb48422))
+* **janitor:** books/comics family spot-check and promotion ([#624](https://github.com/thaynes43/haynesnetwork/issues/624)) ([2b025c3](https://github.com/thaynes43/haynesnetwork/commit/2b025c395bd15cf9f5bd260b597efea1b8f60221))
+
 ## [0.104.0](https://github.com/thaynes43/haynesnetwork/compare/v0.103.0...v0.104.0) (2026-09-29)
 
 
