@@ -256,6 +256,8 @@ no Kavita item named "Wild Cards I", and that item's LazyLibrarian id is `laM7Dw
 - The Last Olympian **audiobook** row now reads `Skipped` (was `Open`) because of the `addBook` race above; the files are intact.
   It is one more held-but-`Skipped` format like the 127 in section 2, so it stays quiet.
 
+**Cleaned afterwards (coordinator ruling).** Deleted the wrong `Wild Cards I` `.mobi` (Jokers Wild); reset the Last Olympian audiobook row to `Open` with a `forceAudioBookScan` of its folder; in the Last Olympian audiobook folder deleted the 98 `(N).mp3` files (byte-identical to the `NN of 98` set, md5-checked); in the Wild Cards I audiobook folder deleted the 11 files with a byte-identical twin in their own volume's folder (Jokers Wild chapters). Left as is because they are different releases or unique content, not duplicates: the Last Olympian `Ch NN` set (98 files, another encoding) and the torrent-seeded m4b, and the rest of the Wild Cards I audiobook folder (volume II and IV files and other-volume chapters with no copy elsewhere, plus two non-identical volume I sets); which release to keep there is a person's call.
+
 **Code fix.** haynesnetwork #626 makes `addBook` send `&wait=1` (LazyLibrarian only runs the add synchronously with it), so a
 Fix on an already-known book no longer ends `Skipped/Skipped` behind a "search triggered" audit row. It does not stop LazyLibrarian's
 add from resetting the book's *other* format to `Skipped`; that is LazyLibrarian's own behaviour.
