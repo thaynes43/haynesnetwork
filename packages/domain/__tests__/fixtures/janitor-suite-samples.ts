@@ -123,6 +123,39 @@ export const LL_HISTORY_SAMPLE: Array<Record<string, unknown>> = [
     DLResult: `${AUDIO}/Author Seven/Book Seven/Author Seven - Book Seven - 01 of 16.mp3`,
     Completed: 1780000000,
   }),
+  // DESIGN-046 D-22 (issue #621): the two live shapes of 2026-09-29 where the destination exists but holds another
+  // book, and a good eBook shape. (a) A series LazyLibrarian tracks as ONE book: each volume's grab was imported over
+  // the same destination, which now holds volume 6, so this folder of volume 3 is the only copy (8 live folders).
+  llRow({
+    BookID: 'bkSeries0016',
+    NZBtitle: 'Author Sixteen - Series Sixteen 03 - Book Sixteen epub',
+    DownloadID: 'nzo-series-0016',
+    AuxInfo: 'eBook',
+    Status: 'Processed',
+    DLResult: `${EBOOK}/Author Sixteen/Series Sixteen/Series Sixteen - Author Sixteen.epub`,
+    Completed: 1784623261,
+  }),
+  // (b) A standalone book whose destination epub is a later grab of the three-book omnibus: the folder's azw3 is in
+  // the library byte for byte, its standalone epub is not (8 live folders).
+  llRow({
+    BookID: 'bkOmnibus017',
+    NZBtitle: 'Author Seventeen - Trilogy 03 Book Seventeen (retail) (azw3, epub)',
+    DownloadID: 'nzo-omnibus-0017',
+    AuxInfo: 'eBook',
+    Status: 'Processed',
+    DLResult: `${EBOOK}/Author Seventeen/Book Seventeen/Book Seventeen - Author Seventeen.epub`,
+    Completed: 1784637661,
+  }),
+  // (c) A good eBook leftover: LazyLibrarian renamed the epub to `<title> - <author>.epub`, the size is the folder's.
+  llRow({
+    BookID: 'bkRenamed018',
+    NZBtitle: 'Author.Eighteen.Book.Eighteen.2012.RETAiL.EPUB.eBook-GRP',
+    DownloadID: 'nzo-ebook-0018',
+    AuxInfo: 'eBook',
+    Status: 'Processed',
+    DLResult: `${EBOOK}/Author Eighteen/Book Eighteen/Book Eighteen - Author Eighteen.epub`,
+    Completed: 1784648461,
+  }),
   // A failed download whose folder SABnzbd left behind (Q-06: reported, never deleted).
   llRow({
     BookID: 'bkFailDir010',
@@ -184,6 +217,11 @@ export const LL_BOOKS_SAMPLE: Array<Record<string, unknown>> = [
   { BookID: 'bkUnder0014', BookName: 'Book Under', Status: 'Skipped', AudioStatus: 'Wanted', BookLibrary: null, AudioLibrary: null },
 ];
 
+// D-22 sample folders (SABnzbd appends `.N` when a job name repeats: the live 8 + 8 were `.1` to `.8`).
+const SERIES_FOLDER = 'Author Sixteen - Series Sixteen 03 - Book Sixteen epub.1';
+const OMNIBUS_FOLDER = 'Author Seventeen - Trilogy 03 Book Seventeen (retail) (azw3, epub).1';
+const RENAMED_FOLDER = 'Author.Eighteen.Book.Eighteen.2012.RETAiL.EPUB.eBook-GRP';
+
 /** A SABnzbd history slot (the fields the janitor reads, as SABnzbd 5.1.3 serves them) and which view holds it. */
 export interface SabSlotSample {
   slot: Record<string, unknown>;
@@ -217,6 +255,9 @@ export const SAB_HISTORY_SAMPLE: SabSlotSample[] = [
   { archive: true, slot: sabSlot({ nzo_id: 'nzo-missing-0008', name: 'Author Eight - Book Eight MP3', status: 'Completed', storage: `${DL}/Author Eight - Book Eight MP3` }) },
   { archive: true, slot: sabSlot({ nzo_id: 'nzo-swept-0009', name: 'Author Nine - Book Nine', status: 'Completed', storage: `${DL}/Author Nine - Book Nine` }) },
   { archive: true, slot: sabSlot({ nzo_id: 'nzo-faildir-0010', name: 'Author Ten - Book Ten', status: 'Completed', storage: `${DL}/Author Ten - Book Ten` }) },
+  { archive: true, slot: sabSlot({ nzo_id: 'nzo-series-0016', name: 'Author Sixteen - Series Sixteen 03 - Book Sixteen epub', status: 'Completed', storage: `${DL}/${SERIES_FOLDER}` }) },
+  { archive: true, slot: sabSlot({ nzo_id: 'nzo-omnibus-0017', name: 'Author Seventeen - Trilogy 03 Book Seventeen (retail) (azw3, epub)', status: 'Completed', storage: `${DL}/${OMNIBUS_FOLDER}` }) },
+  { archive: true, slot: sabSlot({ nzo_id: 'nzo-ebook-0018', name: 'Author.Eighteen.Book.Eighteen.2012.RETAiL.EPUB.eBook-GRP', status: 'Completed', storage: `${DL}/${RENAMED_FOLDER}` }) },
 ];
 
 /** SABnzbd `mode=queue` (the fields the janitor reads). */
@@ -234,13 +275,70 @@ export const DOWNLOAD_FOLDERS_SAMPLE = [
   'Author Seven - Book Seven (2014) MP3',
   'Author Eight - Book Eight MP3',
   'Author Ten - Book Ten',
+  SERIES_FOLDER,
+  OMNIBUS_FOLDER,
+  RENAMED_FOLDER,
 ];
 
 /** The library files on disk (Book Eight's recorded destination is gone: the 79-row shape of 2026-09-29). */
 export const LIBRARY_FILES_SAMPLE = [
   `${AUDIO}/Author Seven/Book Seven/Author Seven - Book Seven - 01 of 16.mp3`,
   `${EBOOK}/Author Nine/Book Nine/Book Nine - Author Nine.epub`,
+  `${AUDIO}/Author Seven/Book Seven/Author Seven - Book Seven - 02 of 16.mp3`,
+  `${AUDIO}/Author Seven/Book Seven/Book Seven - Author Seven.jpg`,
+  `${EBOOK}/Author Sixteen/Series Sixteen/Series Sixteen - Author Sixteen.epub`,
+  `${EBOOK}/Author Sixteen/Series Sixteen/Series Sixteen - Author Sixteen.pdf`,
+  `${EBOOK}/Author Sixteen/Series Sixteen/Series Sixteen - Author Sixteen.opf`,
+  `${EBOOK}/Author Seventeen/Book Seventeen/Book Seventeen - Author Seventeen.epub`,
+  `${EBOOK}/Author Seventeen/Book Seventeen/Book Seventeen - Author Seventeen.azw3`,
+  `${EBOOK}/Author Seventeen/Book Seventeen/Book Seventeen - Author Seventeen.mobi`,
+  `${EBOOK}/Author Seventeen/Book Seventeen/Author Seventeen - Book Seventeen.azw3`,
+  `${EBOOK}/Author Eighteen/Book Eighteen/Book Eighteen - Author Eighteen.epub`,
+  `${EBOOK}/Author Eighteen/Book Eighteen/Book Eighteen - Author Eighteen.mobi`,
+  `${EBOOK}/Author Eighteen/Book Eighteen/Book Eighteen - Author Eighteen.opf`,
 ];
+
+/** The files inside the download folders (D-22), the good shapes first. Audio keeps its names in the library;
+ *  every eBook is renamed to `<title> - <author>.<ext>`; nfo, diz, jpg and url files are never compared. */
+export const DOWNLOAD_FOLDER_FILES_SAMPLE = [
+  `${DL}/Author Seven - Book Seven (2014) MP3/Author Seven - Book Seven - 01 of 16.mp3`,
+  `${DL}/Author Seven - Book Seven (2014) MP3/Author Seven - Book Seven - 02 of 16.mp3`,
+  `${DL}/Author Seven - Book Seven (2014) MP3/cover.jpg`,
+  `${DL}/Author Seven - Book Seven (2014) MP3/Book Seven.nfo`,
+  `${DL}/${RENAMED_FOLDER}/${RENAMED_FOLDER}.epub`,
+  `${DL}/${RENAMED_FOLDER}/grp.nfo`,
+  `${DL}/${RENAMED_FOLDER}/file_id.diz`,
+  `${DL}/${SERIES_FOLDER}/Sixteen, Author - Series Sixteen 03 - Book Sixteen.epub`,
+  `${DL}/${SERIES_FOLDER}/WELCOME to the posters.pdf`,
+  `${DL}/${SERIES_FOLDER}/Community.URL`,
+  `${DL}/${OMNIBUS_FOLDER}/Author Seventeen - Trilogy 03 Book Seventeen (retail).azw3`,
+  `${DL}/${OMNIBUS_FOLDER}/Author Seventeen - Trilogy 03 Book Seventeen (retail).epub`,
+];
+
+/** Byte sizes of the sample files (the live sizes of the 2026-09-29 shapes); a file not listed is 1 byte. */
+export const SAMPLE_FILE_SIZES: Record<string, number> = {
+  // Book Seven: the same two parts, by name and size, on both sides (equal-length parts: equal sizes).
+  [`${AUDIO}/Author Seven/Book Seven/Author Seven - Book Seven - 01 of 16.mp3`]: 28_311_552,
+  [`${AUDIO}/Author Seven/Book Seven/Author Seven - Book Seven - 02 of 16.mp3`]: 28_311_552,
+  [`${DL}/Author Seven - Book Seven (2014) MP3/Author Seven - Book Seven - 01 of 16.mp3`]: 28_311_552,
+  [`${DL}/Author Seven - Book Seven (2014) MP3/Author Seven - Book Seven - 02 of 16.mp3`]: 28_311_552,
+  // Book Eighteen: renamed, same size.
+  [`${EBOOK}/Author Eighteen/Book Eighteen/Book Eighteen - Author Eighteen.epub`]: 507_854,
+  [`${EBOOK}/Author Eighteen/Book Eighteen/Book Eighteen - Author Eighteen.mobi`]: 569_082,
+  [`${DL}/${RENAMED_FOLDER}/${RENAMED_FOLDER}.epub`]: 507_854,
+  // Series Sixteen: the destination epub is volume 6; the advert pdf matches, the volume 3 epub matches nothing.
+  [`${EBOOK}/Author Sixteen/Series Sixteen/Series Sixteen - Author Sixteen.epub`]: 1_258_578,
+  [`${EBOOK}/Author Sixteen/Series Sixteen/Series Sixteen - Author Sixteen.pdf`]: 178_736,
+  [`${DL}/${SERIES_FOLDER}/Sixteen, Author - Series Sixteen 03 - Book Sixteen.epub`]: 755_982,
+  [`${DL}/${SERIES_FOLDER}/WELCOME to the posters.pdf`]: 178_736,
+  // Book Seventeen: the destination epub is the omnibus; the retail azw3 is there under the older naming.
+  [`${EBOOK}/Author Seventeen/Book Seventeen/Book Seventeen - Author Seventeen.epub`]: 3_450_352,
+  [`${EBOOK}/Author Seventeen/Book Seventeen/Book Seventeen - Author Seventeen.azw3`]: 2_094_536,
+  [`${EBOOK}/Author Seventeen/Book Seventeen/Book Seventeen - Author Seventeen.mobi`]: 638_415,
+  [`${EBOOK}/Author Seventeen/Book Seventeen/Author Seventeen - Book Seventeen.azw3`]: 549_196,
+  [`${DL}/${OMNIBUS_FOLDER}/Author Seventeen - Trilogy 03 Book Seventeen (retail).azw3`]: 549_196,
+  [`${DL}/${OMNIBUS_FOLDER}/Author Seventeen - Trilogy 03 Book Seventeen (retail).epub`]: 795_804,
+};
 
 /** Kapowarr `GET /api/activity/queue` (enveloped). A `failed` entry that stays is stuck; the rest are in flight. */
 export const KAPOWARR_QUEUE_SAMPLE = {

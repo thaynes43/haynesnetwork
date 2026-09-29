@@ -5,19 +5,27 @@
 // READ-WRITE, at the same paths LazyLibrarian and SABnzbd use, so their recorded paths resolve unchanged.
 //
 // This module is the READ half (safe everywhere): whether both mounts are present, whether a recorded library
-// destination exists as a file under a library root, and whether a SABnzbd job folder exists as a direct child of the
-// download root. The delete is the confined WRITE half (`DownloadFolderCleaner`, ./write). Every check refuses a
-// symlink and anything outside its root, so a crafted path can never reach beyond the one folder.
+// destination exists as a file under a library root, whether a SABnzbd job folder exists as a direct child of the
+// download root, and whether every book file of that folder is in its destinations' directories (DESIGN-046 D-22,
+// the comparison itself is ./coverage). The delete is the confined WRITE half (`DownloadFolderCleaner`, ./write).
+// Every check refuses a symlink and anything outside its root, so a crafted path can never reach beyond the one folder.
 import { lstat, readdir, realpath } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { compareFolderToLibrary, type FolderCoverage, type FolderFile, type LibraryFile } from './coverage';
 
 /** The filesystem calls the probe and the cleaner make (injectable for tests). */
 export interface DownloadPathFs {
-  lstat(path: string): Promise<{ isFile(): boolean; isDirectory(): boolean; isSymbolicLink(): boolean }>;
+  lstat(path: string): Promise<{ isFile(): boolean; isDirectory(): boolean; isSymbolicLink(): boolean; size: number }>;
   realpath(path: string): Promise<string>;
   /** The names of a directory's entries with their types (`readdir(path, { withFileTypes: true })`). */
-  readdir(path: string): Promise<Array<{ name: string; isDirectory(): boolean; isSymbolicLink(): boolean }>>;
+  readdir(
+    path: string,
+  ): Promise<Array<{ name: string; isFile(): boolean; isDirectory(): boolean; isSymbolicLink(): boolean }>>;
 }
+
+/** Bounds of the folder walk behind `folderCoverage` (DESIGN-046 D-22 rule 6): deeper or larger is `unreadable`. */
+export const FOLDER_COVERAGE_MAX_DEPTH = 4;
+export const FOLDER_COVERAGE_MAX_ENTRIES = 5000;
 
 export const nodeDownloadPathFs: DownloadPathFs = {
   lstat,
@@ -139,6 +147,67 @@ export class DownloadPathProbe {
   /** The absolute path of a download-root child folder by name. Pure. */
   downloadFolderPath(name: string): string {
     return join(resolve(this.paths.downloadRoot), name);
+  }
+
+  /**
+   * DESIGN-046 D-22 — whether every book file of a download folder has its counterpart in the directories of the
+   * download's recorded library destinations (the comparison is `compareFolderToLibrary`, ./coverage). The folder must
+   * be a direct child of the download root, walked without following a symlink, at most FOLDER_COVERAGE_MAX_DEPTH
+   * levels and FOLDER_COVERAGE_MAX_ENTRIES entries; each destination must pass `libraryFileExists`, and only the
+   * regular files at the top of its directory count. Anything it cannot read, or a folder over the bounds, is not
+   * covered (`gap: 'unreadable'`): the census reports it and never deletes it.
+   */
+  async folderCoverage(
+    folder: string | null | undefined,
+    destinations: Array<string | null | undefined>,
+  ): Promise<FolderCoverage> {
+    const unreadable: FolderCoverage = { covered: false, gap: 'unreadable', bookFiles: 0, unmatched: 0 };
+    if (!folder || destinations.length === 0 || !(await this.downloadFolderExists(folder))) return unreadable;
+    try {
+      const files = await this.walkFolder(resolve(folder));
+      if (files === null) return unreadable;
+      const dirs = new Set<string>();
+      for (const destination of destinations) {
+        if (!destination || !(await this.libraryFileExists(destination))) return unreadable;
+        dirs.add(dirname(resolve(destination)));
+      }
+      const library: LibraryFile[] = [];
+      for (const dir of dirs) {
+        const entries = await this.fs.readdir(dir);
+        if (entries.length > FOLDER_COVERAGE_MAX_ENTRIES) return unreadable;
+        for (const entry of entries) {
+          if (!entry.isFile() || entry.isSymbolicLink()) continue;
+          const st = await this.fs.lstat(join(dir, entry.name));
+          if (st.isFile() && !st.isSymbolicLink()) library.push({ name: entry.name, size: st.size });
+        }
+      }
+      return compareFolderToLibrary(files, library);
+    } catch {
+      return unreadable;
+    }
+  }
+
+  /** Every file under `root` (relative path, size, regular or not), or null when the walk is over its bounds. */
+  private async walkFolder(root: string): Promise<FolderFile[] | null> {
+    const out: FolderFile[] = [];
+    let seen = 0;
+    const walk = async (dir: string, depth: number): Promise<boolean> => {
+      const entries = await this.fs.readdir(dir);
+      seen += entries.length;
+      if (seen > FOLDER_COVERAGE_MAX_ENTRIES) return false;
+      for (const entry of entries) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory() && !entry.isSymbolicLink()) {
+          if (depth >= FOLDER_COVERAGE_MAX_DEPTH) return false;
+          if (!(await walk(path, depth + 1))) return false;
+          continue;
+        }
+        const st = await this.fs.lstat(path);
+        out.push({ path: relative(root, path), size: st.size, regular: st.isFile() && !st.isSymbolicLink() });
+      }
+      return true;
+    };
+    return (await walk(root, 1)) ? out : null;
   }
 
   /** A SABnzbd job folder exists: a direct child of the download root that is a real directory, not a symlink. */
