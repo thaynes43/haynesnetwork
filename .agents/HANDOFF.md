@@ -4,6 +4,35 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-29 (later) — Queue janitor at L2 and suite-wide (v0.104.1); LazyLibrarian library repaired
+
+**Owner direction (2026-09-29):** no waiting on self-imposed calendars; promote on evidence the same day; the
+janitor must cover the whole download suite; monitor for loops; decide reversible calls without asking him.
+
+- **Janitor (ADR-083/094/095, DESIGN-046 D-11..D-22, PLAN-065):** the *arr family is at **L2** (all nine
+  Sonarr/Radarr/Lidarr cells enforce, #618) plus Lidarr **`manual_match` enforce** (#617, ADR-094: the failing
+  release NAME goes into a janitor-managed Lidarr release profile before the remove, because Lidarr's blocklist
+  only blocks one posting; loop guard `skipped_loop`, `loop_detected` once per new loop #622). **LazyLibrarian and
+  Kapowarr** are janitor instances (#620, ADR-095, own per-family ladder): `retry_import`, `bad_release` (both),
+  `leftover` enforce (file-level equivalence rail D-22, #628); `fail_loop` / `unknown` report-only; qBittorrent/MAM
+  always `skipped_seeding`. The queue-cleanup CronJob mounts the books library (ro) and LL downloads (rw) as uid 1000
+  (haynes-ops #3269). Leftover drains about 10 folders a run (569 left at 16:25). Next: L3 wording (#583 item 2, the
+  SABnzbd 60-entry history window) with Sonarr's #597.
+- **Lidarr:** REETKEVER rejected (release profile id 1, API-made); hand sweeps cleared about 180 stuck or hidden
+  records and re-searched their albums (#610 closed; #583 comments).
+- **LazyLibrarian:** Activity reads `getHistory` (#616, closed #562; the indexer apikey is stripped). About 530 GB of
+  failed or processed SABnzbd leftovers deleted. Fail loops 60 → 12 (D-21: 127 already-held formats set Skipped;
+  `reject_words` += `mp4`, `und` removed; details in `.agents/context/2026-09-29-ll-fail-loops.md`). `addBook`
+  race fixed (#626). **Library scan bug** (`librarysync.py` carries the previous file's book id): patched in place
+  by haynes-ops #3273 (pinned to image `version-40a389ea`; re-check on every LL image bump), 1,274 bad sidecars and
+  56 wrong rows repaired, wrong-volume books fixed (Wild Cards I, The Last Olympian, the German Chroniken der
+  Unterwelt set, His Dark Materials). #631 close-out and the upstream bug-report issue are in flight or done
+  (see the context file).
+- **ytdrivarr:** Peloton and YouTube Music flow; **YouTube's cookies lapsed** (about 8k "confirm your age" errors
+  a day). It needs the owner's Google login; he will open a session for it. Stale failed Jobs were deleted.
+- **CI:** the embedded-Postgres port race behind the flaky `test` check is fixed (#634).
+- **Owner-held:** haynes-ops #3274 (dev-env CLAUDE.md draft; merging bounces the pod).
+
 ## ▶ 2026-09-29 — PLAN-072 close-out vetted; janitor L2 prerequisites met (pack fix, Q-01), v0.102.0 live; Lidarr cleanup
 
 A coordinator vetted the watchlist-protection close-out. Live on v0.101.2: 97 registry runs in 24 h all ok (one
