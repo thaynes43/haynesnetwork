@@ -520,6 +520,21 @@ export class LidarrClient extends ArrReadClientBase {
   }
 
   /**
+   * ADR-094 / DESIGN-046 D-14 — `GET /history?downloadId=&eventType=1` — the grab(s) of one download, newest first.
+   * The janitor reads the grab's `sourceTitle`: the release title exactly as the indexer posted it, which is what a
+   * release-profile term is tested against. Read-only; `data` URL keys are never read (only `sourceTitle`).
+   */
+  getDownloadGrabs(downloadId: string): Promise<ArrPage<LidarrHistoryRecord>> {
+    return this.http.requestJson('GET', 'history', pagedSchema(lidarrHistoryRecordSchema), {
+      query: {
+        ...this.historyQuery({ pageSize: 10 }),
+        downloadId,
+        eventType: LIDARR_GRABBED_EVENT_TYPE,
+      },
+    });
+  }
+
+  /**
    * ADR-061 / DESIGN-032 D-02 (PLAN-038) — `GET /track?albumId=` — the compose drill's music
    * LEAF list (track-level ticketing, owner ruling Q-02). Read-only, resolved live like
    * listAlbums; never synced.

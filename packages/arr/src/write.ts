@@ -1,7 +1,8 @@
 // @hnet/arr/write — the WRITE surface (DESIGN-005 D-03 write table, D-18 entrypoint
 // split). ADR-008: the ONLY sanctioned *arr write-backs are Fix (mark-failed / delete /
 // search) and Restore (add-item / create-tag), plus the later ruled additions (the ADR-083 queue janitor; the
-// ADR-093 Release Block profile and Seerr watchlist enrollment). This entrypoint may be imported ONLY by
+// ADR-093 Release Block profile and Seerr watchlist enrollment; the ADR-094 janitor release block on Lidarr). This
+// entrypoint may be imported ONLY by
 // packages/domain — enforced by the D-12 guard test. Exercised exclusively via fetch stubs in tests.
 import { assertArrEnv, type ArrEnvConfig } from './config';
 import { MaintainerrWriteFailedError } from './errors';
@@ -9,10 +10,13 @@ import { ArrHttp, type QueryParams } from './http';
 import { maintainerrReturnStatusSchema } from './schemas/maintainerr';
 import {
   arrReleaseProfileSchema,
+  lidarrReleaseProfileSchema,
   seerrSonarrServerSummarySchema,
   seerrUserWatchlistSyncSchema,
   type ArrReleaseProfile,
   type ArrReleaseProfileInput,
+  type LidarrReleaseProfile,
+  type LidarrReleaseProfileInput,
   type SeerrSonarrServerSummary,
   type SeerrUserWatchlistSync,
 } from './schemas/release-block';
@@ -293,6 +297,32 @@ export class LidarrWriteClient extends ArrWriteClientBase {
   /** `POST /artist` — Restore re-add (D-16). */
   addArtist(payload: AddArtistPayload): Promise<LidarrArtist> {
     return this.http.requestJson('POST', 'artist', lidarrArtistSchema, { body: payload });
+  }
+
+  /**
+   * ADR-094 / DESIGN-046 D-14 — the JANITOR RELEASE BLOCK surface on Lidarr 3.1.6 (`ReleaseProfileController`, v1):
+   * `GET /releaseprofile`, `POST /releaseprofile`, `PUT /releaseprofile/{id}` with `{id, enabled, required, ignored,
+   * indexerId, tags}` (no `name`). Lidarr validates only that a profile has a term; it never compiles a regex term on
+   * write, so the domain writer re-validates every term against the janitor's whole-name grammar first. Hard rule 4:
+   * the janitor writes ONE app-owned profile here, "must not contain" terms only.
+   */
+  listReleaseProfiles(): Promise<LidarrReleaseProfile[]> {
+    return this.http.requestJson('GET', 'releaseprofile', z.array(lidarrReleaseProfileSchema));
+  }
+
+  /** `POST /releaseprofile` — create the janitor's profile (Lidarr answers 201 with the created resource). */
+  createReleaseProfile(profile: LidarrReleaseProfileInput): Promise<LidarrReleaseProfile> {
+    const { id: _id, ...body } = profile;
+    return this.http.requestJson('POST', 'releaseprofile', lidarrReleaseProfileSchema, { body });
+  }
+
+  /** `PUT /releaseprofile/{id}` — replace the whole profile (Lidarr answers 202 with the resource). */
+  updateReleaseProfile(
+    profile: LidarrReleaseProfileInput & { id: number },
+  ): Promise<LidarrReleaseProfile> {
+    return this.http.requestJson('PUT', `releaseprofile/${profile.id}`, lidarrReleaseProfileSchema, {
+      body: profile,
+    });
   }
 }
 

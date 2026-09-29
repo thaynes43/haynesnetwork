@@ -200,7 +200,7 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
   --mode=queue-cleanup     the *arr QUEUE JANITOR (ADR-083 — census-first cleanup of errored grabs): read the
                            WHOLE download queue of Sonarr/Radarr/Lidarr READ-ONLY, classify every errored grab
                            into an Action Class (have_better / retry_import / bad_release / manual_match /
-                           unknown; the last two are report only), and write
+                           unknown; unknown is report only, manual_match acts on Lidarr only), and write
                            one append-only census row per item into arr_queue_cleanup_actions — and, ONLY where
                            the class×instance cell is switched to enforce (the DB-backed audited
                            arr_queue_cleanup_config; ships ALL-CENSUS), execute the cleanup (remove-from-client

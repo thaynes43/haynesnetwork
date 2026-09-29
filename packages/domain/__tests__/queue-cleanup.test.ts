@@ -1,13 +1,29 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { appSettings, arrQueueCleanupActions, notificationOutbox, permissionAudit } from '@hnet/db';
+import {
+  appSettings,
+  arrQueueCleanupActions,
+  arrQueueCleanupBlockTerms,
+  notificationOutbox,
+  permissionAudit,
+} from '@hnet/db';
 import { ArrHttpError } from '@hnet/arr';
 import type { SonarrClient, RadarrClient, LidarrClient } from '@hnet/arr/read';
 import type { SonarrWriteClient, RadarrWriteClient, LidarrWriteClient } from '@hnet/arr/write';
 import { bootMigratedDb, type TestDb } from './helpers';
 import { runFailureDigest } from '../src/activity/digest';
 import { renderOutboxEmail } from '../src/notify-outbox';
-import { QueueCleanupConfigInvalidError } from '../src/errors';
+import { JanitorReleaseBlockError, QueueCleanupConfigInvalidError } from '../src/errors';
+import {
+  JANITOR_BLOCK_SENTINEL,
+  deriveJanitorBlockTerm,
+  janitorBlockProfileDrift,
+  reconcileJanitorReleaseBlock,
+  reconcileJanitorReleaseBlockIfDue,
+  type JanitorReleaseProfile,
+  type JanitorReleaseProfileClient,
+} from '../src/janitor-release-block';
+import { isGrammarTerm, isWholeNameTerm, renderTerm, termMatchesRaw } from '../src/release-terms';
 import {
   ARR_QUEUE_CLEANUP_CONFIG_DEFAULT,
   buildQueueCleanupClients,
@@ -19,6 +35,10 @@ import {
   getArrQueueCleanupStatus,
   getQueueCleanupLadder,
   groupQueueRecordsByDownload,
+  isLidarrAlbumMissing,
+  MANUAL_MATCH_LOOP_LIMIT,
+  QUEUE_CLEANUP_LOOP_LOG,
+  queueCleanupCellMode,
   queueCleanupConfigError,
   resolveArrQueueCleanupConfig,
   setArrQueueCleanupConfig,
@@ -452,7 +472,7 @@ describe('classifyQueueItem (D-03, pure)', () => {
 
   // --- DESIGN-046 D-12 (Q-01, 2026-09-28) — Lidarr's queue, fixtures from the live queue and census strings ---
 
-  describe('D-12 Lidarr match rejections → manual_match (report only); everything else keeps its class', () => {
+  describe('D-12 Lidarr match rejections → manual_match (its Lidarr enforce cell is D-13); everything else keeps its class', () => {
     const HEADER = 'One or more tracks expected in this release were not imported or missing from the release';
     /** Lidarr's multi-file shape: the header, then one entry per rejected file, titled with the file name. */
     const lidarrFailed = (title: string, perFile: Array<[string, string[]]>): ClassifiableQueueItem => ({
@@ -636,12 +656,185 @@ describe('deriveQueueCleanupLadderLevel (D-05, pure)', () => {
     cfg.modes.radarr.have_better = 'enforce';
     expect(deriveQueueCleanupLadderLevel(cfg)).toBe(1);
   });
-  it('L2 when every enforceable cell is enforce', () => {
+  it('L2 when every cell is enforce, Lidarr manual_match included (D-13)', () => {
     const cfg = clone();
-    for (const inst of ['sonarr', 'radarr', 'lidarr'] as const) {
+    for (const inst of ['sonarr', 'radarr'] as const) {
       cfg.modes[inst] = { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' };
     }
+    cfg.modes.lidarr = { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce', manual_match: 'census' };
+    // The nine shared cells alone are partial now: Lidarr's manual_match cell is still census.
+    expect(deriveQueueCleanupLadderLevel(cfg)).toBe(1);
+    cfg.modes.lidarr.manual_match = 'enforce';
     expect(deriveQueueCleanupLadderLevel(cfg)).toBe(2);
+  });
+  it('D-13: the stored L2 config from before D-13 (nine shared cells enforced, no manual_match key) reads L1 until the cell is enforced', () => {
+    const stored = {
+      modes: {
+        sonarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' },
+        radarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' },
+        lidarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' },
+      },
+      maxActionsPerRun: 10,
+      minItemAgeHours: 2,
+      retryEscalateRuns: 6,
+    };
+    expect(queueCleanupConfigError(stored)).toBeNull();
+    const cfg = stored as unknown as ArrQueueCleanupConfig;
+    expect(queueCleanupCellMode(cfg, 'lidarr', 'manual_match')).toBe('census');
+    expect(deriveQueueCleanupLadderLevel(cfg)).toBe(1);
+    const flipped = { ...cfg, modes: { ...cfg.modes, lidarr: { ...cfg.modes.lidarr, manual_match: 'enforce' as const } } };
+    expect(deriveQueueCleanupLadderLevel(flipped)).toBe(2);
+  });
+  it('L1 when only Lidarr manual_match enforces (D-13: the owner-ruled flip on its own)', () => {
+    const cfg = clone();
+    cfg.modes.lidarr.manual_match = 'enforce';
+    expect(deriveQueueCleanupLadderLevel(cfg)).toBe(1);
+  });
+});
+
+describe('D-14 janitor release block term + drift (pure)', () => {
+  const derive = (releaseTitle: string | null, artistName: string | null) =>
+    deriveJanitorBlockTerm({ releaseTitle, artistName });
+  const term = (title: string, artist: string) => {
+    const d = derive(title, artist);
+    if (!('term' in d)) throw new Error(`refused: ${d.refused}`);
+    return d.term;
+  };
+
+  it('the whole-name term matches the same title re-posted (any separators) and nothing longer, shorter or other', () => {
+    const t1 = term('Artist - Album (2019) [FLAC]', 'Artist');
+    expect(t1.startsWith('/^[^a-z0-9]*artist')).toBe(true);
+    expect(t1.endsWith('[^a-z0-9]*$/i')).toBe(true);
+    expect(isWholeNameTerm(t1)).toBe(true);
+    expect(isGrammarTerm(t1)).toBe(false); // never a Release Block term
+    for (const same of ['Artist - Album (2019) [FLAC]', 'Artist.-.Album.(2019).[FLAC]', 'artist_album_2019_flac', '[Artist - Album (2019) [FLAC]]']) {
+      expect(termMatchesRaw(t1, same)).toBe(true);
+    }
+    for (const other of [
+      'Artist - Album (2019) [FLAC] [24bit]', // a word more
+      'Artist - Album (2019)', // a word less
+      'Artist - Album (2019) [MP3]',
+      'Other Artist - Album (2019) [FLAC]',
+      'Artist - Album (2019) [FLAC]-GRP',
+    ]) {
+      expect(termMatchesRaw(t1, other)).toBe(false);
+    }
+  });
+
+  it('writes raw accents, apostrophes and "&" so the raw re-post matches, as the Release Block terms do', () => {
+    const t1 = term('Björk - Début (1993) [FLAC]', 'Björk');
+    expect(termMatchesRaw(t1, 'Björk - Début (1993) [FLAC]')).toBe(true);
+    expect(termMatchesRaw(t1, 'Bjork - Debut (1993) [FLAC]')).toBe(true);
+    const t2 = term("Guns N' Roses - Appetite for Destruction (1987)", "Guns N' Roses");
+    expect(termMatchesRaw(t2, "Guns N' Roses - Appetite for Destruction (1987)")).toBe(true);
+    const t3 = term('Simon & Garfunkel - Bookends (1968)', 'Simon & Garfunkel');
+    expect(termMatchesRaw(t3, 'Simon & Garfunkel - Bookends (1968)')).toBe(true);
+    expect(termMatchesRaw(t3, 'Simon and Garfunkel - Bookends (1968)')).toBe(true);
+  });
+
+  it('the title must name the artist (a leading "The" optional) and say more than the artist, else no term', () => {
+    expect('term' in derive('Beatles - 1 (2000) [FLAC]', 'The Beatles')).toBe(true);
+    expect('term' in derive('AC/DC - Back in Black (1980)', 'AC/DC')).toBe(true);
+    expect(derive(null, 'Artist')).toEqual({ refused: 'no_title' });
+    expect(derive('  ', 'Artist')).toEqual({ refused: 'no_title' });
+    expect(derive('Artist - Album', null)).toEqual({ refused: 'no_artist' });
+    // A title without the artist's name would block every artist's release of that name.
+    expect(derive('Greatest Hits (2001) [FLAC]', 'Queen')).toEqual({ refused: 'artist_not_named' });
+    expect(derive('Queens of the Stone Age - Era Vulgaris', 'Queen')).toEqual({ refused: 'artist_not_named' });
+    expect(derive('Queen', 'Queen')).toEqual({ refused: 'title_is_artist' });
+  });
+
+  it('refuses a title with a word the term cannot write (another script), but not a letter inside a written word', () => {
+    // SEP would stand in for the whole unwritten word, so "東京" would be blocked too.
+    expect(derive('Artist - 日本 (2019) [FLAC]', 'Artist')).toEqual({ refused: 'unwritable' });
+    expect(derive('Artist - 愛 (2019)', 'Artist')).toEqual({ refused: 'unwritable' });
+    expect(derive('Ørjan Nilsen - Album (2019)', 'Ørjan Nilsen')).toEqual({ refused: 'unwritable' });
+    // A symbol that names the album is a word the term cannot write either (÷ would block ×, +, or nothing at all).
+    expect(derive('Ed Sheeran - ÷ [FLAC]', 'Ed Sheeran')).toEqual({ refused: 'unwritable' });
+    expect(derive('Prince - ♥ (1994) [MP3 320]', 'Prince')).toEqual({ refused: 'unwritable' });
+    expect('term' in derive('Ke$ha - Animal (2010) [FLAC]', 'Ke$ha')).toBe(true); // inside a word
+    // Inside a written word it stands for one character only.
+    const inside = derive('Bjørk Tribute - Straße (2019)', 'Bjørk Tribute');
+    expect('term' in inside).toBe(true);
+    const t1 = (inside as { term: string }).term;
+    expect(termMatchesRaw(t1, 'Bjørk Tribute - Straße (2019)')).toBe(true);
+    expect(termMatchesRaw(t1, 'Bjark Tribute - Straße (2019)')).toBe(false);
+  });
+
+  it('janitorBlockProfileDrift: missing, duplicate, disabled, edited, terms, or null; a profile without the sentinel is not ours', () => {
+    const desired = [JANITOR_BLOCK_SENTINEL, '/^[^a-z0-9]*a[^a-z0-9]*b[^a-z0-9]*$/i'];
+    const ours = (o: Partial<JanitorReleaseProfile> = {}): JanitorReleaseProfile => ({
+      id: 1,
+      enabled: true,
+      required: [],
+      ignored: [...desired],
+      indexerId: 0,
+      tags: [],
+      ...o,
+    });
+    const foreign: JanitorReleaseProfile = { id: 9, enabled: true, required: [], ignored: ['x'], indexerId: 0, tags: [] };
+    expect(janitorBlockProfileDrift([foreign], desired)).toEqual({ reason: 'missing', missingTerms: 2, extraTerms: 0 });
+    expect(janitorBlockProfileDrift([ours(), ours({ id: 2 })], desired)?.reason).toBe('duplicate');
+    expect(janitorBlockProfileDrift([ours({ enabled: false })], desired)?.reason).toBe('disabled');
+    expect(janitorBlockProfileDrift([ours({ tags: [4] })], desired)?.reason).toBe('edited');
+    expect(janitorBlockProfileDrift([ours({ required: ['y'] })], desired)?.reason).toBe('edited');
+    expect(janitorBlockProfileDrift([ours({ ignored: [JANITOR_BLOCK_SENTINEL] })], desired)).toEqual({
+      reason: 'terms',
+      missingTerms: 1,
+      extraTerms: 0,
+    });
+    expect(janitorBlockProfileDrift([ours(), foreign], desired)).toBeNull();
+  });
+});
+
+describe('D-13 config: Lidarr manual_match cell (pure)', () => {
+  it('accepts lidarr.manual_match census or enforce, and a pre-D-13 config that lacks the cell', () => {
+    const cfg = clone();
+    cfg.modes.lidarr.manual_match = 'enforce';
+    expect(queueCleanupConfigError(cfg)).toBeNull();
+    const legacy = clone();
+    delete (legacy.modes.lidarr as Partial<typeof legacy.modes.lidarr>).manual_match;
+    expect(queueCleanupConfigError(legacy)).toBeNull();
+  });
+  it('rejects a manual_match cell on Sonarr or Radarr (Lidarr only), and a bad manual_match mode', () => {
+    const sonarr = clone();
+    (sonarr.modes.sonarr as Record<string, unknown>).manual_match = 'census';
+    expect(queueCleanupConfigError(sonarr)).toBe("Unknown class 'manual_match' in modes.sonarr.");
+    const radarr = clone();
+    (radarr.modes.radarr as Record<string, unknown>).manual_match = 'enforce';
+    expect(queueCleanupConfigError(radarr)).toBe("Unknown class 'manual_match' in modes.radarr.");
+    const bad = clone();
+    (bad.modes.lidarr as Record<string, unknown>).manual_match = 'on';
+    expect(queueCleanupConfigError(bad)).toBe("modes.lidarr.manual_match must be 'census' or 'enforce'.");
+    // `unknown` is never a cell.
+    const unknownCell = clone();
+    (unknownCell.modes.lidarr as Record<string, unknown>).unknown = 'enforce';
+    expect(queueCleanupConfigError(unknownCell)).toMatch(/Unknown class 'unknown'/);
+  });
+  it('queueCleanupCellMode: census off Lidarr, for unknown, and for an absent cell; enforce only when set', () => {
+    const cfg = clone();
+    expect(queueCleanupCellMode(cfg, 'lidarr', 'manual_match')).toBe('census');
+    cfg.modes.lidarr.manual_match = 'enforce';
+    expect(queueCleanupCellMode(cfg, 'lidarr', 'manual_match')).toBe('enforce');
+    expect(queueCleanupCellMode(cfg, 'sonarr', 'manual_match')).toBe('census');
+    expect(queueCleanupCellMode(cfg, 'radarr', 'manual_match')).toBe('census');
+    expect(queueCleanupCellMode(cfg, 'lidarr', 'unknown')).toBe('census');
+    delete (cfg.modes.lidarr as Partial<typeof cfg.modes.lidarr>).manual_match;
+    expect(queueCleanupCellMode(cfg, 'lidarr', 'manual_match')).toBe('census');
+    // The code default ships the cell census (the deploy is inert).
+    expect(ARR_QUEUE_CLEANUP_CONFIG_DEFAULT.modes.lidarr.manual_match).toBe('census');
+  });
+  it('isLidarrAlbumMissing: only Lidarr counts that show fewer track files than tracks', () => {
+    const album = (trackFileCount: number, trackCount: number) => ({
+      statistics: { trackFileCount, trackCount },
+    });
+    expect(isLidarrAlbumMissing(album(0, 12))).toBe(true);
+    expect(isLidarrAlbumMissing(album(11, 12))).toBe(true);
+    expect(isLidarrAlbumMissing(album(12, 12))).toBe(false); // complete
+    expect(isLidarrAlbumMissing(album(13, 12))).toBe(false);
+    expect(isLidarrAlbumMissing(album(0, 0))).toBe(false); // no tracks known: cannot tell
+    expect(isLidarrAlbumMissing({})).toBe(false); // no statistics: cannot tell
+    expect(isLidarrAlbumMissing({ statistics: null })).toBe(false);
   });
 });
 
@@ -656,7 +849,7 @@ function cell(o: Partial<QueueCleanupModeCells> = {}): QueueCleanupModeCells {
 /** A fresh config (deep-cloned so a test can mutate cells without leaking). minItemAgeHours 0 unless set. */
 function clone(o: Partial<ArrQueueCleanupConfig> = {}): ArrQueueCleanupConfig {
   return {
-    modes: { sonarr: cell(), radarr: cell(), lidarr: cell() },
+    modes: { sonarr: cell(), radarr: cell(), lidarr: { ...cell(), manual_match: 'census' } },
     maxActionsPerRun: 10,
     minItemAgeHours: 0,
     retryEscalateRuns: 6,
@@ -709,10 +902,11 @@ const unknownItem = (id: number) =>
   });
 /** A Lidarr match rejection in Lidarr's multi-file shape (D-12): report only, like unknown. */
 const MANUAL_MATCH_TEXT = 'Album match is not close enough: 75.6 % vs 80 % [album, year, missing tracks]';
-const manualMatchItem = (id: number, downloadId?: string) =>
+const manualMatchItem = (id: number, downloadId?: string, albumId: number | null = 5000 + id) =>
   item({
     queueItemId: id,
     downloadId: downloadId ?? `dl-${id}`,
+    targetId: albumId,
     status: 'completed',
     trackedDownloadStatus: 'warning',
     trackedDownloadState: 'importFailed',
@@ -722,8 +916,50 @@ const manualMatchItem = (id: number, downloadId?: string) =>
     ],
   });
 
+/**
+ * D-14 — a fake *arr release-profile store (Lidarr's shape: no name). `fail.list` / `fail.put` make those calls throw;
+ * `fail.dropWrites` makes a write answer but not land (so the read-back fails). Every call is logged in order.
+ */
+function makeProfileStore(initial: JanitorReleaseProfile[] = [], order?: string[]) {
+  const profiles: JanitorReleaseProfile[] = initial.map((p) => ({ ...p, ignored: [...(p.ignored ?? [])] }));
+  const log: string[] = [];
+  const writes: Array<{ method: 'POST' | 'PUT'; body: Record<string, unknown> }> = [];
+  const fail: { list?: boolean; put?: boolean; dropWrites?: boolean; explode?: boolean } = {};
+  let nextId = 100;
+  const note = (entry: string) => {
+    log.push(entry);
+    order?.push(`profile:${entry}`);
+  };
+  const client: JanitorReleaseProfileClient = {
+    async listReleaseProfiles() {
+      note('GET');
+      if (fail.list) throw new Error('profile list failed');
+      return profiles.map((p) => ({ ...p, ignored: [...(p.ignored ?? [])] }));
+    },
+    async createReleaseProfile(body) {
+      note('POST');
+      if (fail.explode) throw new Error('census must never write');
+      writes.push({ method: 'POST', body: { ...body } });
+      if (fail.put) throw new Error('profile write failed');
+      if (!fail.dropWrites) profiles.push({ id: nextId++, ...body, ignored: [...body.ignored] });
+    },
+    async updateReleaseProfile(body) {
+      note('PUT');
+      if (fail.explode) throw new Error('census must never write');
+      writes.push({ method: 'PUT', body: { ...body } });
+      if (fail.put) throw new Error('profile write failed');
+      if (fail.dropWrites) return;
+      const i = profiles.findIndex((p) => p.id === body.id);
+      if (i >= 0) profiles[i] = { ...body, ignored: [...body.ignored] };
+    },
+  };
+  return { client, profiles, log, writes, fail };
+}
+type ProfileStore = ReturnType<typeof makeProfileStore>;
+
 interface InstanceStub {
   client: QueueCleanupInstanceClient;
+  profiles: ProfileStore;
   calls: {
     deletes: Array<{ id: number; removeFromClient: boolean; blocklist: boolean; skipRedownload: boolean }>;
     processMonitored: number;
@@ -732,6 +968,12 @@ interface InstanceStub {
     /** One entry per search command: the queue ids it covered. */
     searchCalls: number[][];
     monitoredChecks: number;
+    /** D-13: one entry per missing-album check, the queue ids it was asked about. */
+    missingChecks: number[][];
+    /** D-14: the queue ids whose release identity was read. */
+    identityReads: number[];
+    /** Every write-side call in order: `profile:GET|POST|PUT`, `delete:<id>`, `search:<ids>`. */
+    order: string[];
   };
 }
 
@@ -749,6 +991,13 @@ function makeInstanceStub(
     gone?: boolean;
     searchError?: boolean;
     explodeOnWrite?: boolean;
+    /** D-13: whether a record's album is monitored AND still missing tracks (default: every album is). */
+    missing?: boolean | ((qi: QueueCleanupQueueItem) => boolean);
+    /** D-14: the release identity (default: the queue title, else `Artist - Album <id> (2019) [FLAC]`, artist
+     *  "Artist"); a thrown error is a failed read. */
+    identity?: (qi: QueueCleanupQueueItem) => { releaseTitle: string | null; artistName: string | null };
+    /** D-14: the release-profile store (default: an empty one). */
+    profiles?: ProfileStore;
   } = {},
 ): InstanceStub {
   const calls: InstanceStub['calls'] = {
@@ -757,12 +1006,18 @@ function makeInstanceStub(
     searches: [],
     searchCalls: [],
     monitoredChecks: 0,
+    missingChecks: [],
+    identityReads: [],
+    order: [],
   };
+  const profiles = opts.profiles ?? makeProfileStore([], calls.order);
+  if (opts.explodeOnWrite) profiles.fail.explode = true;
   const removed = new Set<string>();
   const notFound = (id: number) =>
     new ArrHttpError(404, 'DELETE', `http://arr.test/api/v3/queue/${id}`);
   return {
     calls,
+    profiles,
     client: {
       async getQueueAll() {
         if (opts.readError) throw new Error('queue read failed');
@@ -777,6 +1032,7 @@ function makeInstanceStub(
           blocklist: o.blocklist,
           skipRedownload: o.skipRedownload,
         });
+        calls.order.push(`delete:${qi.queueItemId}`);
         if (opts.gone) throw notFound(qi.queueItemId);
         if (qi.downloadId) {
           if (removed.has(qi.downloadId)) throw notFound(qi.queueItemId);
@@ -797,7 +1053,22 @@ function makeInstanceStub(
         if (opts.searchError) throw new Error('search failed');
         calls.searchCalls.push(qis.map((qi) => qi.queueItemId));
         calls.searches.push(...qis.map((qi) => qi.queueItemId));
+        calls.order.push(`search:${qis.map((qi) => qi.queueItemId).join(',')}`);
       },
+      async missingMonitoredTargets(qis) {
+        calls.missingChecks.push(qis.map((qi) => qi.queueItemId));
+        const m = opts.missing ?? true;
+        return qis.filter((qi) => (typeof m === 'function' ? m(qi) : m));
+      },
+      async releaseIdentity(qi) {
+        calls.identityReads.push(qi.queueItemId);
+        if (opts.identity) return opts.identity(qi);
+        return {
+          releaseTitle: qi.title ?? `Artist - Album ${qi.queueItemId} (2019) [FLAC]`,
+          artistName: 'Artist',
+        };
+      },
+      releaseProfiles: profiles.client,
     },
   };
 }
@@ -866,6 +1137,7 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
   });
   beforeEach(async () => {
     await t.db.delete(arrQueueCleanupActions);
+    await t.db.delete(arrQueueCleanupBlockTerms);
     await t.db.delete(notificationOutbox);
     await t.db.delete(permissionAudit);
     await t.db.delete(appSettings);
@@ -949,9 +1221,9 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     );
   });
 
-  it('REPORT ONLY (D-12): manual_match is never acted on, even with every Lidarr cell enforced', async () => {
+  it('CENSUS DEFAULT (D-13): manual_match is not acted on while its cell is census, even with every other Lidarr cell enforced', async () => {
     const cfg = clone();
-    cfg.modes.lidarr = { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' };
+    cfg.modes.lidarr = { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce', manual_match: 'census' };
     // Two albums of one download (Lidarr lists one record per album) and a lone one, all old enough to act on.
     const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const lidarr = makeInstanceStub(
@@ -1753,6 +2025,698 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     const ladder2 = await getQueueCleanupLadder({ db: t.db, config: clone(), now });
     expect(ladder2.promotionDue).toBe(false);
   });
+
+  // --- D-13: Lidarr manual_match enforce cell, loop guard, loop signal ---
+
+  /** Lidarr's manual_match cell enforced, every other cell census, no age rail. */
+  const mmCfg = (): ArrQueueCleanupConfig => {
+    const cfg = clone();
+    cfg.modes.lidarr.manual_match = 'enforce';
+    return cfg;
+  };
+  const lidarrReport = (r: Awaited<ReturnType<typeof evaluateQueueCleanup>>) =>
+    r.instances.find((i) => i.instance === 'lidarr')!;
+  const lidarrRows = () =>
+    t.db.select().from(arrQueueCleanupActions).orderBy(arrQueueCleanupActions.createdAt, arrQueueCleanupActions.queueItemId);
+  /** A captured logger: every line, and the D-13 loop lines by their stable message. */
+  const captureLogger = () => {
+    const lines: Array<{ level: string; msg: string; meta?: Record<string, unknown> }> = [];
+    const push = (level: string) => (msg: string, meta?: Record<string, unknown>) => {
+      lines.push({ level, msg, meta });
+    };
+    return {
+      logger: { info: push('info'), warn: push('warn'), error: push('error') },
+      loops: () => lines.filter((l) => l.msg === QUEUE_CLEANUP_LOOP_LOG),
+    };
+  };
+  /** A janitor row from an earlier run for one album (default: a landed manual_match removal + search). */
+  const priorRow = (
+    albumId: number,
+    downloadId: string,
+    o: { action?: 'removed_blocklisted' | 'blocklisted_searched' | 'skipped_gone' | 'none'; outcome?: 'done' | 'error' | 'observed'; actionClass?: 'manual_match' | 'bad_release'; createdAt?: Date } = {},
+  ) => ({
+    instance: 'lidarr' as const,
+    queueItemId: 1,
+    downloadId,
+    title: 'An earlier grab',
+    targetId: albumId,
+    actionClass: o.actionClass ?? ('manual_match' as const),
+    mode: 'enforce' as const,
+    action: o.action ?? ('blocklisted_searched' as const),
+    outcome: o.outcome ?? ('done' as const),
+    createdAt: o.createdAt ?? new Date('2026-09-20T00:25:00Z'),
+  });
+
+  it('ENFORCE manual_match (D-13): removes + blocklists with skipRedownload, then ONE album search for a monitored, still-missing album', async () => {
+    const lidarr = makeInstanceStub([manualMatchItem(400)]);
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ lidarr: lidarr.client }),
+      config: mmCfg(),
+    });
+    expect(lidarr.calls.deletes).toEqual([{ id: 400, removeFromClient: true, blocklist: true, skipRedownload: true }]);
+    expect(lidarr.calls.missingChecks).toEqual([[400]]);
+    expect(lidarr.calls.searchCalls).toEqual([[400]]);
+    expect(lidarr.calls.monitoredChecks).toBe(0); // the bad_release check is not the manual_match one
+    expect(lidarrReport(report)).toMatchObject({ actionsTaken: 1, covered: 0, errors: 0 });
+    expect(lidarrReport(report).byClass.manual_match).toEqual({ observed: 1, enforced: 1 });
+    const [row] = await lidarrRows();
+    expect(row).toMatchObject({
+      instance: 'lidarr',
+      actionClass: 'manual_match',
+      mode: 'enforce',
+      action: 'blocklisted_searched',
+      outcome: 'done',
+      targetId: 5400,
+      reason: MANUAL_MATCH_TEXT,
+    });
+  });
+
+  it('ENFORCE manual_match (D-13): an unmonitored or complete album is removed + blocklisted, never searched', async () => {
+    const lidarr = makeInstanceStub([manualMatchItem(401)], { missing: false });
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: lidarr.client }), config: mmCfg() });
+    expect(lidarr.calls.deletes).toHaveLength(1);
+    expect(lidarr.calls.missingChecks).toEqual([[401]]);
+    expect(lidarr.calls.searches).toEqual([]);
+    const [row] = await lidarrRows();
+    expect(row).toMatchObject({ action: 'removed_blocklisted', outcome: 'done', targetId: 5401 });
+  });
+
+  it('ENFORCE manual_match (D-13): a record with no album is removed + blocklisted; no album check, no search', async () => {
+    const lidarr = makeInstanceStub([manualMatchItem(402, undefined, null)]);
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: lidarr.client }), config: mmCfg() });
+    expect(lidarr.calls.deletes).toEqual([{ id: 402, removeFromClient: true, blocklist: true, skipRedownload: true }]);
+    expect(lidarr.calls.missingChecks).toEqual([]);
+    expect(lidarr.calls.searches).toEqual([]);
+    const [row] = await lidarrRows();
+    expect(row).toMatchObject({ action: 'removed_blocklisted', outcome: 'done', targetId: null });
+  });
+
+  it('ENFORCE manual_match (D-11 + D-13): a multi-album download gets one removal and one search for its missing albums only', async () => {
+    const lidarr = makeInstanceStub(
+      [manualMatchItem(410, 'dl-multi'), manualMatchItem(411, 'dl-multi'), manualMatchItem(412, 'dl-multi', null)],
+      { missing: (qi) => qi.queueItemId === 410 },
+    );
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ lidarr: lidarr.client }),
+      config: mmCfg(),
+    });
+    expect(lidarr.calls.deletes.map((d) => d.id)).toEqual([410]);
+    expect(lidarr.calls.missingChecks).toEqual([[410, 411]]); // the album-less record is never asked about
+    expect(lidarr.calls.searchCalls).toEqual([[410]]);
+    expect(lidarrReport(report)).toMatchObject({ actionsTaken: 1, covered: 2, errors: 0 });
+    const rows = await lidarrRows();
+    expect(rows.map((r) => [r.queueItemId, r.action, r.outcome, r.targetId])).toEqual([
+      [410, 'blocklisted_searched', 'done', 5410],
+      [411, 'removed_blocklisted', 'done', 5411],
+      [412, 'removed_blocklisted', 'done', null],
+    ]);
+  });
+
+  it('ENFORCE manual_match (D-13): the age rail and the per-run cap still apply', async () => {
+    const now = new Date('2026-09-29T12:00:00Z');
+    const lidarr = makeInstanceStub([
+      { ...manualMatchItem(415), addedAt: new Date('2026-09-29T11:30:00Z') }, // 30 minutes old
+      { ...manualMatchItem(416), addedAt: new Date('2026-09-20T00:00:00Z') },
+      { ...manualMatchItem(417), addedAt: new Date('2026-09-20T00:00:00Z') },
+    ]);
+    await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ lidarr: lidarr.client }),
+      config: { ...mmCfg(), minItemAgeHours: 2, maxActionsPerRun: 1 },
+      now,
+    });
+    expect(lidarr.calls.deletes.map((d) => d.id)).toEqual([416]);
+    const rows = await lidarrRows();
+    expect(rows.map((r) => [r.queueItemId, r.action])).toEqual([
+      [415, 'skipped_young'],
+      [416, 'blocklisted_searched'],
+      [417, 'skipped_cap'],
+    ]);
+  });
+
+  it('LOOP GUARD (D-13): an album removed as manual_match on 2 earlier downloads is skipped_loop, nothing is sent, one loop_detected line', async () => {
+    expect(MANUAL_MATCH_LOOP_LIMIT).toBe(2);
+    await t.db.insert(arrQueueCleanupActions).values([priorRow(5420, 'dl-a'), priorRow(5420, 'dl-b')]);
+    const log = captureLogger();
+    const lidarr = makeInstanceStub([{ ...manualMatchItem(420, 'dl-c', 5420), title: 'Artist - Album (2019)' }], {
+      explodeOnWrite: true,
+    });
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ lidarr: lidarr.client }),
+      config: mmCfg(),
+      logger: log.logger,
+    });
+    expect(lidarr.calls.deletes).toHaveLength(0);
+    expect(lidarr.calls.missingChecks).toEqual([[420]]); // the guard asks whether a search would follow
+    expect(lidarr.profiles.log).toEqual([]);
+    expect(lidarrReport(report)).toMatchObject({ actionsTaken: 0, errors: 0 });
+    const current = (await lidarrRows()).filter((r) => r.downloadId === 'dl-c');
+    expect(current).toHaveLength(1);
+    expect(current[0]).toMatchObject({ mode: 'enforce', action: 'skipped_loop', outcome: 'observed', targetId: 5420 });
+    expect(log.loops()).toEqual([
+      {
+        level: 'warn',
+        msg: '[queue-cleanup] loop_detected',
+        meta: {
+          kind: 'skipped_loop',
+          instance: 'lidarr',
+          downloadId: 'dl-c',
+          title: 'Artist - Album (2019)',
+          targetIds: [5420],
+          priorRemovals: 2,
+        },
+      },
+    ]);
+  });
+
+  it('LOOP GUARD (D-13): an album no longer missing tracks is not held (no search would follow); a failed check holds', async () => {
+    await t.db.insert(arrQueueCleanupActions).values([priorRow(5425, 'dl-a'), priorRow(5425, 'dl-b')]);
+    // The album imported since (a later upgrade grab failed): removed and blocked, not searched, not held.
+    const complete = makeInstanceStub([manualMatchItem(425, 'dl-upgrade', 5425)], { missing: false });
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: complete.client }), config: mmCfg() });
+    expect(complete.calls.deletes.map((d) => d.id)).toEqual([425]);
+    expect(complete.calls.searches).toEqual([]);
+    let [row] = (await lidarrRows()).filter((r) => r.queueItemId === 425);
+    expect(row).toMatchObject({ action: 'removed_blocklisted', outcome: 'done' });
+
+    // The completeness read fails: the guard cannot tell, so nothing manual_match is acted on this run.
+    await t.db.delete(arrQueueCleanupActions);
+    await t.db.insert(arrQueueCleanupActions).values([priorRow(5426, 'dl-a'), priorRow(5426, 'dl-b')]);
+    const failing = makeInstanceStub([manualMatchItem(426, 'dl-c', 5426)], { explodeOnWrite: true });
+    failing.client.missingMonitoredTargets = async () => {
+      throw new Error('album read failed');
+    };
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: failing.client }), config: mmCfg() });
+    expect(failing.calls.deletes).toEqual([]);
+    [row] = (await lidarrRows()).filter((r) => r.queueItemId === 426);
+    expect(row).toMatchObject({ mode: 'enforce', action: 'none', outcome: 'observed' });
+  });
+
+  it('LOOP GUARD (D-13): counts only landed manual_match removals of the same album on OTHER downloads', async () => {
+    await t.db.insert(arrQueueCleanupActions).values([
+      priorRow(5430, 'dl-a'), // counts
+      priorRow(5430, 'dl-this'), // the record's own download: not an earlier one
+      priorRow(5430, 'dl-b', { action: 'removed_blocklisted', outcome: 'error' }), // the search failed: not counted
+      priorRow(5430, 'dl-c', { action: 'skipped_gone', outcome: 'observed' }), // nothing was removed
+      priorRow(5430, 'dl-d', { action: 'none', outcome: 'observed' }), // census
+      priorRow(5430, 'dl-e', { actionClass: 'bad_release' }), // another class
+      priorRow(9999, 'dl-f'), // another album
+      priorRow(9999, 'dl-g'),
+    ]);
+    const lidarr = makeInstanceStub([manualMatchItem(430, 'dl-this', 5430)]);
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: lidarr.client }), config: mmCfg() });
+    expect(lidarr.calls.deletes.map((d) => d.id)).toEqual([430]);
+    const [row] = (await lidarrRows()).filter((r) => r.queueItemId === 430);
+    expect(row).toMatchObject({ action: 'blocklisted_searched', outcome: 'done' });
+  });
+
+  it('LOOP GUARD (D-13): a looping album in a multi-album download holds the whole download (skipped_loop + skipped_mixed)', async () => {
+    await t.db.insert(arrQueueCleanupActions).values([priorRow(5450, 'dl-a'), priorRow(5450, 'dl-b')]);
+    const log = captureLogger();
+    const lidarr = makeInstanceStub(
+      [manualMatchItem(450, 'dl-pair', 5450), manualMatchItem(451, 'dl-pair', 5451)],
+      { explodeOnWrite: true },
+    );
+    await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ lidarr: lidarr.client }),
+      config: mmCfg(),
+      logger: log.logger,
+    });
+    expect(lidarr.calls.deletes).toHaveLength(0);
+    const rows = (await lidarrRows()).filter((r) => r.downloadId === 'dl-pair');
+    expect(rows.map((r) => [r.queueItemId, r.action])).toEqual([
+      [450, 'skipped_loop'],
+      [451, 'skipped_mixed'],
+    ]);
+    expect(log.loops().map((l) => l.meta)).toEqual([
+      expect.objectContaining({ kind: 'skipped_loop', downloadId: 'dl-pair', targetIds: [5450] }),
+    ]);
+  });
+
+  it('LOOP over runs (D-13): two remove-and-search runs, the 2nd logs repeat_search, the 3rd and later hold the album; the digest names both', async () => {
+    const t0 = new Date('2026-09-29T10:25:00Z');
+    const hour = 60 * 60 * 1000;
+    const title = 'Artist - Album (2019)';
+    const run = async (queueItemId: number, downloadId: string, at: Date) => {
+      const log = captureLogger();
+      const lidarr = makeInstanceStub([{ ...manualMatchItem(queueItemId, downloadId, 5440), title }]);
+      await evaluateQueueCleanup({
+        db: t.db,
+        clients: makeClients({ lidarr: lidarr.client }),
+        config: mmCfg(),
+        now: at,
+        logger: log.logger,
+      });
+      return { calls: lidarr.calls, loops: log.loops() };
+    };
+
+    const r1 = await run(441, 'dl-1', t0);
+    expect(r1.calls.searchCalls).toEqual([[441]]);
+    expect(r1.loops).toEqual([]);
+
+    const r2 = await run(442, 'dl-2', new Date(t0.getTime() + hour));
+    expect(r2.calls.searchCalls).toEqual([[442]]);
+    expect(r2.loops.map((l) => l.meta)).toEqual([
+      {
+        kind: 'repeat_search',
+        instance: 'lidarr',
+        downloadId: 'dl-2',
+        title,
+        actionClass: 'manual_match',
+        targets: [{ targetId: 5440, searches7d: 2 }],
+      },
+    ]);
+
+    const r3 = await run(443, 'dl-3', new Date(t0.getTime() + 2 * hour));
+    expect(r3.calls.deletes).toEqual([]);
+    expect(r3.loops.map((l) => l.meta)).toEqual([
+      expect.objectContaining({ kind: 'skipped_loop', downloadId: 'dl-3', targetIds: [5440], priorRemovals: 2 }),
+    ]);
+    const r4 = await run(443, 'dl-3', new Date(t0.getTime() + 3 * hour));
+    expect(r4.calls.deletes).toEqual([]);
+
+    const rows = await lidarrRows();
+    expect(rows.map((r) => [r.downloadId, r.action])).toEqual([
+      ['dl-1', 'blocklisted_searched'],
+      ['dl-2', 'blocklisted_searched'],
+      ['dl-3', 'skipped_loop'],
+      ['dl-3', 'skipped_loop'],
+    ]);
+
+    // The digest shows the held download (2 runs held) and the album searched on 2 runs, and flags the loop.
+    const section = await buildQueueCleanupDigestSection({ db: t.db, now: new Date(t0.getTime() + 4 * hour) });
+    expect(section!.loops).toEqual({
+      skipped: [{ instance: 'lidarr', targetId: 5440, downloadId: 'dl-3', title, runs: 2 }],
+      repeatSearches: [{ instance: 'lidarr', targetId: 5440, downloadId: 'dl-2', title, runs: 2 }],
+    });
+    expect(section!.loopDetected).toBe(true);
+    const mail = renderOutboxEmail({
+      eventType: 'activity_failure_digest',
+      payload: { to: 'admin@example.test', count: 0, queueCleanup: JSON.parse(JSON.stringify(section)) },
+    });
+    expect(mail!.subject).toContain('[janitor: loop detected]');
+    expect(mail!.text).toContain(` • lidarr album 5440: ${title} (2 runs held)`);
+    expect(mail!.text).toContain(` • lidarr album 5440: ${title} (2 searches)`);
+
+    // Outside the windows the lists are empty: held rows age out after 24h, searches after 7 days.
+    const later = await buildQueueCleanupDigestSection({ db: t.db, now: new Date(t0.getTime() + 8 * 24 * hour) });
+    expect(later).toBeNull(); // nothing observed in 24h, so no section at all
+  });
+
+  it('DIGEST (D-13): no loop, no loop tag; a search on one run only is not a repeat', async () => {
+    const lidarr = makeInstanceStub([manualMatchItem(460)]);
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: lidarr.client }), config: mmCfg() });
+    const section = await buildQueueCleanupDigestSection({ db: t.db });
+    expect(section!.loops).toEqual({ skipped: [], repeatSearches: [] });
+    expect(section!.loopDetected).toBe(false);
+    const mail = renderOutboxEmail({
+      eventType: 'activity_failure_digest',
+      payload: { to: 'admin@example.test', count: 0, queueCleanup: JSON.parse(JSON.stringify(section)) },
+    });
+    expect(mail!.subject).not.toContain('loop');
+    expect(mail!.text).not.toContain('Loops held');
+  });
+
+  it('CENSUS DEFAULT (D-13): the stored L1 config from before D-13 (no manual_match key) stays valid and never acts on manual_match', async () => {
+    const l1 = clone({ minItemAgeHours: 2 });
+    l1.modes.sonarr.have_better = 'enforce';
+    l1.modes.radarr.have_better = 'enforce';
+    await setArrQueueCleanupConfig({ db: t.db, config: l1, actorId: null });
+    // Rewrite the row to the exact pre-D-13 shape (three cells per instance), as it is stored live.
+    await t.db
+      .update(appSettings)
+      .set({
+        value: {
+          modes: {
+            sonarr: { have_better: 'enforce', retry_import: 'census', bad_release: 'census' },
+            radarr: { have_better: 'enforce', retry_import: 'census', bad_release: 'census' },
+            lidarr: { have_better: 'census', retry_import: 'census', bad_release: 'census' },
+          },
+          maxActionsPerRun: 10,
+          minItemAgeHours: 2,
+          retryEscalateRuns: 6,
+        },
+      })
+      .where(eq(appSettings.key, 'arr_queue_cleanup_config'));
+    const resolved = await resolveArrQueueCleanupConfig(t.db);
+    expect(resolved.modes.sonarr.have_better).toBe('enforce'); // still read, not reset to the default
+    expect(resolved.modes.lidarr.manual_match).toBe('census');
+    expect(deriveQueueCleanupLadderLevel(resolved)).toBe(1);
+
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const lidarr = makeInstanceStub([{ ...manualMatchItem(470), addedAt: old }], { explodeOnWrite: true });
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: lidarr.client }), config: resolved });
+    const [row] = await lidarrRows();
+    expect(row).toMatchObject({ actionClass: 'manual_match', mode: 'census', action: 'none', outcome: 'observed' });
+  });
+
+  it('setArrQueueCleanupConfig (D-13): stores and audits the Lidarr manual_match flip', async () => {
+    const cfg = mmCfg();
+    await setArrQueueCleanupConfig({ db: t.db, config: cfg, actorId: null });
+    const stored = await getArrQueueCleanupConfig(t.db);
+    expect(stored?.modes.lidarr.manual_match).toBe('enforce');
+    const [audit] = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.action, 'update_app_setting'));
+    const detail = audit!.detail as { key: string; after: { modes: { lidarr: Record<string, string> } } };
+    expect(detail.key).toBe('arr_queue_cleanup_config');
+    expect(detail.after.modes.lidarr.manual_match).toBe('enforce');
+    // A stray manual_match cell on Sonarr is refused at the writer.
+    const bad = mmCfg();
+    (bad.modes.sonarr as Record<string, unknown>).manual_match = 'enforce';
+    await expect(setArrQueueCleanupConfig({ db: t.db, config: bad, actorId: null })).rejects.toBeInstanceOf(
+      QueueCleanupConfigInvalidError,
+    );
+  });
+
+  it('REAL BUNDLE (D-13 + D-14): Lidarr blocks the grab title first, then removes, then searches only the monitored missing album', async () => {
+    // The queue title is SABnzbd's job name; the grab history carries the indexer's own title, which the term is built from.
+    const release = 'Artist - Box Set (2019) [FLAC] (job name)';
+    const grabbed = 'Artist - Box Set (2019) [FLAC]';
+    const HEADER = 'One or more tracks expected in this release were not imported or missing from the release';
+    const raw = (id: number, albumId: number | null) => ({
+      id,
+      downloadId: 'SABnzbd_nzo_box',
+      title: release,
+      added: '2026-09-01T00:00:00Z',
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importFailed',
+      errorMessage: null,
+      statusMessages: [
+        { title: HEADER, messages: [] },
+        { title: '01 - Opening.flac', messages: [MANUAL_MATCH_TEXT, 'Has missing tracks'] },
+      ],
+      artistId: 7,
+      albumId,
+    });
+    const log = {
+      listAlbums: [] as number[],
+      deletes: [] as number[],
+      searchAlbums: [] as number[][],
+      searchArtist: [] as number[],
+      grabs: [] as string[],
+      order: [] as string[],
+    };
+    const lidarrProfiles: Array<Record<string, unknown>> = [
+      { id: 3, enabled: true, required: [], ignored: ['someone else'], indexerId: 0, tags: [] },
+    ];
+    const emptyQueue = { getQueueAll: async () => [] };
+    const clients = buildQueueCleanupClients({
+      read: {
+        sonarr: emptyQueue as unknown as SonarrClient,
+        radarr: emptyQueue as unknown as RadarrClient,
+        lidarr: {
+          getQueueAll: async () => [raw(700, 71), raw(701, 72), raw(702, 73), raw(703, null)],
+          listAlbums: async (artistId: number) => {
+            log.listAlbums.push(artistId);
+            return [
+              { id: 71, monitored: true, statistics: { trackFileCount: 0, trackCount: 10, totalTrackCount: 10, sizeOnDisk: 0 } },
+              { id: 72, monitored: true, statistics: { trackFileCount: 10, trackCount: 10, totalTrackCount: 10, sizeOnDisk: 1 } },
+              { id: 73, monitored: false, statistics: { trackFileCount: 0, trackCount: 10, totalTrackCount: 10, sizeOnDisk: 0 } },
+            ];
+          },
+          getArtistById: async () => ({ monitored: true, artistName: 'Artist' }),
+          getDownloadGrabs: async (downloadId: string) => {
+            log.grabs.push(downloadId);
+            return { page: 1, pageSize: 10, totalRecords: 1, records: [{ sourceTitle: grabbed }] };
+          },
+        } as unknown as LidarrClient,
+      },
+      write: {
+        sonarr: {} as unknown as SonarrWriteClient,
+        radarr: {} as unknown as RadarrWriteClient,
+        lidarr: {
+          deleteQueueItem: async (id: number) => {
+            log.deletes.push(id);
+            log.order.push('delete');
+          },
+          processMonitoredDownloads: async () => ({}),
+          searchAlbums: async (ids: number[]) => {
+            log.searchAlbums.push(ids);
+            log.order.push('search');
+            return {};
+          },
+          listReleaseProfiles: async () => {
+            log.order.push('profile:GET');
+            return lidarrProfiles.map((p) => ({ ...p }));
+          },
+          createReleaseProfile: async (body: Record<string, unknown>) => {
+            log.order.push('profile:POST');
+            lidarrProfiles.push({ ...body, id: 9 });
+            return { ...body, id: 9 };
+          },
+          updateReleaseProfile: async () => {
+            throw new Error('no PUT expected');
+          },
+          searchArtist: async (id: number) => {
+            log.searchArtist.push(id);
+            return {};
+          },
+        } as unknown as LidarrWriteClient,
+      },
+    });
+    const report = await evaluateQueueCleanup({ db: t.db, clients, config: mmCfg() });
+
+    expect(log.grabs).toEqual(['SABnzbd_nzo_box']);
+    expect(log.order).toEqual(['profile:GET', 'profile:POST', 'profile:GET', 'delete', 'search']);
+    const ours = lidarrProfiles.find((p) => p.id === 9)!;
+    expect(ours).not.toHaveProperty('name'); // Lidarr's profile has no name
+    expect(ours).toMatchObject({ enabled: true, required: [], indexerId: 0, tags: [] });
+    const [sentinel, term] = ours.ignored as string[];
+    expect(sentinel).toBe(JANITOR_BLOCK_SENTINEL);
+    expect(termMatchesRaw(term!, grabbed)).toBe(true);
+    expect(termMatchesRaw(term!, release)).toBe(false); // built from the grab's title, not the job name
+    expect(lidarrProfiles.find((p) => p.id === 3)!.ignored).toEqual(['someone else']); // other profiles untouched
+    const [blockRow] = await t.db.select().from(arrQueueCleanupBlockTerms);
+    expect(blockRow).toMatchObject({ instance: 'lidarr', term, releaseTitle: grabbed, downloadId: 'SABnzbd_nzo_box', targetId: 71 });
+    expect(log.deletes).toEqual([700]);
+    expect(log.listAlbums).toEqual([7]); // one read for the whole download
+    expect(log.searchAlbums).toEqual([[71]]); // monitored and missing only
+    expect(log.searchArtist).toEqual([]); // never an artist-wide search, even for the album-less record
+    expect(lidarrReport(report)).toMatchObject({ actionsTaken: 1, covered: 3, errors: 0 });
+    const rows = await lidarrRows();
+    expect(rows.map((r) => [r.queueItemId, r.action, r.outcome, r.targetId])).toEqual([
+      [700, 'blocklisted_searched', 'done', 71],
+      [701, 'removed_blocklisted', 'done', 72], // complete
+      [702, 'removed_blocklisted', 'done', 73], // unmonitored
+      [703, 'removed_blocklisted', 'done', null], // no album
+    ]);
+  });
+
+  // --- D-14: the janitor release block ---
+
+  const TERM_TITLE = 'Artist - Album (2019) [FLAC]';
+  const termOf = (title: string, artist = 'Artist') => {
+    const d = deriveJanitorBlockTerm({ releaseTitle: title, artistName: artist });
+    if (!('term' in d)) throw new Error(`no term: ${d.refused}`);
+    return d.term;
+  };
+  const entry = (title: string, downloadId = 'dl-x') => ({
+    term: termOf(title),
+    releaseTitle: title,
+    downloadId,
+    targetId: 77,
+  });
+
+  it('BLOCK (D-14): the first block creates the profile (sentinel + term), reads it back, and records the term for 365 days', async () => {
+    const store = makeProfileStore([{ id: 3, enabled: true, required: [], ignored: ['keep me'], indexerId: 0, tags: [] }]);
+    const now = new Date('2026-09-29T12:00:00Z');
+    const report = await reconcileJanitorReleaseBlock({
+      db: t.db,
+      instance: 'lidarr',
+      profiles: store.client,
+      add: [entry(TERM_TITLE)],
+      now,
+    });
+    expect(store.log).toEqual(['GET', 'POST', 'GET']);
+    expect(store.writes[0]!.body).toEqual({
+      enabled: true,
+      required: [],
+      ignored: [JANITOR_BLOCK_SENTINEL, termOf(TERM_TITLE)],
+      indexerId: 0,
+      tags: [],
+    });
+    expect(store.profiles.find((p) => p.id === 3)!.ignored).toEqual(['keep me']);
+    expect(report).toMatchObject({ instance: 'lidarr', total: 1, added: 1, removed: 0, pruned: 0, wrote: true });
+    const [row] = await t.db.select().from(arrQueueCleanupBlockTerms);
+    expect(row).toMatchObject({ instance: 'lidarr', term: termOf(TERM_TITLE), releaseTitle: TERM_TITLE, downloadId: 'dl-x', targetId: 77 });
+    expect(row!.expiresAt.getTime() - now.getTime()).toBe(365 * 86_400_000);
+  });
+
+  it('BLOCK (D-14): a second term is PUT beside the first; the same term again writes nothing but refreshes its life', async () => {
+    const store = makeProfileStore();
+    const t0 = new Date('2026-09-29T12:00:00Z');
+    await reconcileJanitorReleaseBlock({ db: t.db, instance: 'lidarr', profiles: store.client, add: [entry(TERM_TITLE)], now: t0 });
+    const other = 'Artist - Other Album (2020) [MP3]';
+    await reconcileJanitorReleaseBlock({ db: t.db, instance: 'lidarr', profiles: store.client, add: [entry(other)], now: t0 });
+    expect(store.log).toEqual(['GET', 'POST', 'GET', 'GET', 'PUT', 'GET']);
+    expect(new Set(store.profiles[0]!.ignored)).toEqual(
+      new Set([JANITOR_BLOCK_SENTINEL, termOf(TERM_TITLE), termOf(other)]),
+    );
+    const later = new Date(t0.getTime() + 100 * 86_400_000);
+    const again = await reconcileJanitorReleaseBlock({ db: t.db, instance: 'lidarr', profiles: store.client, add: [entry(TERM_TITLE)], now: later });
+    expect(again.wrote).toBe(false);
+    expect(store.log.slice(6)).toEqual(['GET', 'GET']);
+    const rows = await t.db.select().from(arrQueueCleanupBlockTerms);
+    expect(rows.filter((r) => r.term === termOf(TERM_TITLE))).toHaveLength(2); // append-only: one row per block
+  });
+
+  it('BLOCK (D-14): a failed write or read-back throws, and no term row is kept (the transaction rolls back)', async () => {
+    for (const fail of [{ put: true }, { dropWrites: true }, { list: true }] as const) {
+      const store = makeProfileStore();
+      Object.assign(store.fail, fail);
+      const err = await reconcileJanitorReleaseBlock({ db: t.db, instance: 'lidarr', profiles: store.client, add: [entry(TERM_TITLE)] }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(JanitorReleaseBlockError);
+      expect((err as JanitorReleaseBlockError).step).toBe('dropWrites' in fail ? 'read_back' : 'put');
+      expect(await t.db.select().from(arrQueueCleanupBlockTerms)).toHaveLength(0);
+    }
+  });
+
+  it('BLOCK (D-14): two profiles carrying the sentinel refuse (duplicate_profile); a term outside the grammar refuses (validate)', async () => {
+    const two = makeProfileStore([
+      { id: 1, enabled: true, required: [], ignored: [JANITOR_BLOCK_SENTINEL], indexerId: 0, tags: [] },
+      { id: 2, enabled: true, required: [], ignored: [JANITOR_BLOCK_SENTINEL], indexerId: 0, tags: [] },
+    ]);
+    await expect(
+      reconcileJanitorReleaseBlock({ db: t.db, instance: 'lidarr', profiles: two.client, add: [entry(TERM_TITLE)] }),
+    ).rejects.toMatchObject({ step: 'duplicate_profile' });
+    expect(two.writes).toEqual([]);
+
+    const store = makeProfileStore();
+    const exact = renderTerm({ shape: 'exact', tokens: ['artist', 'album', '2019', 'flac'] }); // a prefix term: refused
+    await expect(
+      reconcileJanitorReleaseBlock({
+        db: t.db,
+        instance: 'lidarr',
+        profiles: store.client,
+        add: [{ term: exact, releaseTitle: null, downloadId: null, targetId: null }],
+      }),
+    ).rejects.toMatchObject({ step: 'validate' });
+    expect(store.log).toEqual([]);
+    expect(await t.db.select().from(arrQueueCleanupBlockTerms)).toHaveLength(0);
+  });
+
+  it('UPKEEP (D-14): nothing at all until the janitor has blocked; then drift (a hand edit, an expired term) is reconciled', async () => {
+    const store = makeProfileStore();
+    const logs: string[] = [];
+    const logger = { warn: (m: string) => logs.push(m), info: (m: string) => logs.push(m) };
+    const idle = await reconcileJanitorReleaseBlockIfDue({ db: t.db, instance: 'lidarr', profiles: store.client, logger });
+    expect(idle).toEqual({ instance: 'lidarr', drift: null, report: null, error: null });
+    expect(store.log).toEqual([]); // never blocked here: not even a GET
+
+    const t0 = new Date('2026-09-29T12:00:00Z');
+    await reconcileJanitorReleaseBlock({ db: t.db, instance: 'lidarr', profiles: store.client, add: [entry(TERM_TITLE)], now: t0 });
+    // In step: one GET, no write.
+    store.log.length = 0;
+    const clean = await reconcileJanitorReleaseBlockIfDue({ db: t.db, instance: 'lidarr', profiles: store.client, now: t0 });
+    expect(clean.drift).toBeNull();
+    expect(store.log).toEqual(['GET']);
+
+    // A hand edit removed the term and disabled the profile: restored.
+    store.profiles[0]!.ignored = [JANITOR_BLOCK_SENTINEL];
+    store.profiles[0]!.enabled = false;
+    const fixed = await reconcileJanitorReleaseBlockIfDue({ db: t.db, instance: 'lidarr', profiles: store.client, now: t0, logger });
+    expect(fixed.drift).toBe('disabled');
+    expect(fixed.report).toMatchObject({ wrote: true, added: 1 });
+    expect(store.profiles[0]).toMatchObject({ enabled: true, ignored: [JANITOR_BLOCK_SENTINEL, termOf(TERM_TITLE)] });
+    expect(logs).toContain('[queue-cleanup] block_drift');
+
+    // 366 days on, the term has expired: it leaves the profile; the sentinel stays.
+    const expired = await reconcileJanitorReleaseBlockIfDue({
+      db: t.db,
+      instance: 'lidarr',
+      profiles: store.client,
+      now: new Date(t0.getTime() + 366 * 86_400_000),
+    });
+    expect(expired.drift).toBe('terms');
+    expect(expired.report).toMatchObject({ removed: 1, total: 0 });
+    expect(store.profiles[0]!.ignored).toEqual([JANITOR_BLOCK_SENTINEL]);
+
+    // A failing upkeep never throws.
+    store.fail.list = true;
+    const failed = await reconcileJanitorReleaseBlockIfDue({ db: t.db, instance: 'lidarr', profiles: store.client, now: t0 });
+    expect(failed.error).toMatch(/profile list failed/);
+  });
+
+  it('ENFORCE manual_match (D-14): the name is blocked and read back BEFORE the removal, then the album is searched', async () => {
+    const lidarr = makeInstanceStub([{ ...manualMatchItem(480), title: TERM_TITLE }]);
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: lidarr.client }), config: mmCfg() });
+    expect(lidarr.calls.identityReads).toEqual([480]);
+    expect(lidarr.calls.order).toEqual(['profile:GET', 'profile:POST', 'profile:GET', 'delete:480', 'search:480']);
+    expect(lidarr.profiles.profiles[0]!.ignored).toEqual([JANITOR_BLOCK_SENTINEL, termOf(TERM_TITLE)]);
+    const [row] = await t.db.select().from(arrQueueCleanupBlockTerms);
+    expect(row).toMatchObject({ term: termOf(TERM_TITLE), downloadId: 'dl-480', targetId: 5480 });
+  });
+
+  it('UNBLOCKABLE (D-14): a title that does not name the artist is skipped_unblockable: no write, no removal, no cap slot', async () => {
+    const lidarr = makeInstanceStub(
+      [
+        { ...manualMatchItem(481), title: 'Greatest Hits (2001) [FLAC]' },
+        { ...manualMatchItem(482), title: TERM_TITLE },
+      ],
+      { identity: (qi) => ({ releaseTitle: qi.title, artistName: 'Artist' }) },
+    );
+    const logs: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ lidarr: lidarr.client }),
+      config: { ...mmCfg(), maxActionsPerRun: 1 },
+      logger: { warn: (msg, meta) => logs.push({ msg, meta }) },
+    });
+    expect(lidarr.calls.deletes.map((d) => d.id)).toEqual([482]); // the cap slot went to the blockable one
+    expect(lidarrReport(report)).toMatchObject({ actionsTaken: 1, errors: 0 });
+    const rows = await lidarrRows();
+    expect(rows.map((r) => [r.queueItemId, r.action, r.outcome])).toEqual([
+      [481, 'skipped_unblockable', 'observed'],
+      [482, 'blocklisted_searched', 'done'],
+    ]);
+    expect(logs.find((l) => l.meta?.reason === 'artist_not_named')?.msg).toBe(
+      'queue-cleanup: release name cannot be blocked, download left alone',
+    );
+  });
+
+  it('BLOCK FAILURE (D-14): a failed profile write or a failed identity read removes nothing; the next run tries again', async () => {
+    const store = makeProfileStore();
+    store.fail.put = true;
+    const failing = makeInstanceStub([{ ...manualMatchItem(483), title: TERM_TITLE }], { profiles: store });
+    const r1 = await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: failing.client }), config: mmCfg() });
+    expect(failing.calls.deletes).toEqual([]);
+    expect(lidarrReport(r1)).toMatchObject({ actionsTaken: 1, errors: 1 });
+    let [row] = await lidarrRows();
+    expect(row).toMatchObject({ action: 'none', outcome: 'error', error: 'release block put failed on lidarr' });
+    expect(await t.db.select().from(arrQueueCleanupBlockTerms)).toHaveLength(0);
+
+    await t.db.delete(arrQueueCleanupActions);
+    const unreadable = makeInstanceStub([manualMatchItem(484)], {
+      identity: () => {
+        throw new Error('history read failed');
+      },
+    });
+    const r2 = await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: unreadable.client }), config: mmCfg() });
+    expect(unreadable.calls.deletes).toEqual([]);
+    expect(unreadable.profiles.log).toEqual([]);
+    expect(lidarrReport(r2)).toMatchObject({ actionsTaken: 0, errors: 1 });
+    [row] = await lidarrRows();
+    expect(row).toMatchObject({ action: 'none', outcome: 'error', error: 'release identity: history read failed' });
+  });
+
+  it('DIGEST (D-14): the section names the release names blocked in 24h and the terms live now', async () => {
+    const lidarr = makeInstanceStub([{ ...manualMatchItem(485), title: TERM_TITLE }]);
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: lidarr.client }), config: mmCfg() });
+    const section = await buildQueueCleanupDigestSection({ db: t.db });
+    expect(section!.releaseBlock).toEqual([{ instance: 'lidarr', blocked24h: 1, live: 1 }]);
+    const mail = renderOutboxEmail({
+      eventType: 'activity_failure_digest',
+      payload: { to: 'admin@example.test', count: 0, queueCleanup: JSON.parse(JSON.stringify(section)) },
+    });
+    expect(mail!.text).toContain('Release names blocked on lidarr: 1 in the last 24h, 1 blocked now.');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1803,5 +2767,44 @@ describe('renderOutboxEmail — activity_failure_digest janitor section (D-07)',
     // Both blocks present.
     expect(mail!.text).toContain('Open import failures at digest time');
     expect(mail!.text).toContain('Queue janitor (last 24h)');
+  });
+
+  it('D-13: a payload without loops (written before D-13) renders no loop tag or list', () => {
+    const mail = renderOutboxEmail({
+      eventType: 'activity_failure_digest',
+      payload: { to: 'admin@example.test', count: 0, queueCleanup: section },
+    });
+    expect(mail!.subject).not.toContain('loop');
+    expect(mail!.text).not.toContain('Loops held');
+    expect(mail!.text).not.toContain('Searched again');
+  });
+
+  it('D-13: loops render in the body and tag the subject, alongside the promotion nag', () => {
+    const mail = renderOutboxEmail({
+      eventType: 'activity_failure_digest',
+      payload: {
+        to: 'admin@example.test',
+        count: 0,
+        queueCleanup: {
+          ...section,
+          promotionDue: true,
+          loops: {
+            skipped: [{ instance: 'lidarr', targetId: 12, downloadId: 'd1', title: 'Artist - Album', runs: 5 }],
+            repeatSearches: [
+              { instance: 'lidarr', targetId: 12, downloadId: 'd0', title: 'Artist - Album', runs: 2 },
+              { instance: 'sonarr', targetId: 99, downloadId: 'd2', title: null, runs: 3 },
+            ],
+          },
+          loopDetected: true,
+        },
+      },
+    });
+    expect(mail!.subject).toContain('[janitor: promotion due] [janitor: loop detected]');
+    expect(mail!.text).toContain('Loops held for a person (the janitor stopped acting on these, last 24h):');
+    expect(mail!.text).toContain(' • lidarr album 12: Artist - Album (5 runs held)');
+    expect(mail!.text).toContain('Searched again on 2 or more runs (last 7 days):');
+    expect(mail!.text).toContain(' • lidarr album 12: Artist - Album (2 searches)');
+    expect(mail!.text).toContain(' • sonarr episode 99 (3 searches)');
+    expect(mail!.text).not.toContain('—');
   });
 });

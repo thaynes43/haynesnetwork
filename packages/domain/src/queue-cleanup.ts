@@ -3,6 +3,7 @@
 // switched to `enforce`, behind the safety rails — D-04), the DB-backed audited config (D-05), the confined
 // *arr client bundle (built INSIDE this package so @hnet/arr/write stays domain-only — the arr-write import
 // guard), the /admin status read + promotion-ladder derivation (D-08), and the nightly digest section (D-07).
+// D-13 gives Lidarr's `manual_match` an enforce cell, with a loop guard and a loop signal in the log and digest.
 //
 // The *arrs are the source of truth (hard rule 4, amended by ADR-083 C-04): the janitor only removes FAILED
 // TRANSFER STATE (a stuck queue item + a blocklist entry), never library files. Its whole trail is the
@@ -33,10 +34,19 @@ import {
   type RadarrQueueRecord,
   type SonarrQueueRecord,
 } from '@hnet/arr';
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import { setAppSetting } from './app-settings';
 import { resolveDb } from './db-client';
 import { QueueCleanupConfigInvalidError } from './errors';
+import {
+  JANITOR_BLOCK_KINDS,
+  deriveJanitorBlockTerm,
+  janitorBlockDigest,
+  reconcileJanitorReleaseBlock,
+  reconcileJanitorReleaseBlockIfDue,
+  type JanitorBlockTerm,
+  type JanitorReleaseProfileClient,
+} from './janitor-release-block';
 
 // ---------------------------------------------------------------------------
 // Classifier (D-03) — pure, exhaustively tested; patterns in versioned code.
@@ -119,8 +129,9 @@ const MEDIA_FILE_NAME =
 const RETRY_TRANSIENT_PATTERNS = [/waiting to import/i];
 
 /**
- * Lidarr's match rejections (D-12, Q-01): the downloaded files could not be matched to an album with confidence,
- * so only a person can decide (a manual import against a chosen release, or a removal). Upstream strings at the
+ * Lidarr's match rejections (D-12, Q-01): the downloaded files could not be matched to an album with confidence.
+ * D-12 left the choice to a person; D-13 (owner ruling 2026-09-29) lets the janitor remove, blocklist and search the
+ * album again where Lidarr's cell is enforced, behind a loop guard. Upstream strings at the
  * running tag (Lidarr v3.1.6.5078): CloseAlbumMatchSpecification "Album match is not close enough: …", "Worst
  * track match: …", "No tracks matched"; CloseTrackMatchSpecification "Track match is not close enough: …";
  * NoMissingOrUnmatchedTracksSpecification "Has missing tracks" / "Has unmatched tracks"; ImportDecisionMaker
@@ -203,8 +214,9 @@ function collectMessages(item: ClassifiableQueueItem): QueueItemMessages {
  * retry_import → manual_match → unknown). Pure. Patterns read MESSAGES, never a statusMessage title that names
  * the release or a file; release-defect patterns read only the release-level ones; a have_better match that
  * also carries an identity mismatch goes to `unknown` (all D-10). Lidarr's match rejections ("Album match is not
- * close enough…", "Has missing tracks", "Couldn't find similar album…") are `manual_match`: report only, never
- * acted on, no enforce cell (D-12, Q-01). A have_better match that also carries one goes to `manual_match` too,
+ * close enough…", "Has missing tracks", "Couldn't find similar album…") are `manual_match` (D-12, Q-01), which
+ * acts only where Lidarr's manual_match cell is enforced (D-13). A have_better match that also carries one goes to
+ * `manual_match` too,
  * because its "already have it" may be about a different album. Lidarr's `importFailed` is deliberately NOT a
  * stuck import here: Lidarr sets it when any file of the release was rejected and never retries it, and its
  * "Not an upgrade for existing track file(s)" has been seen about another album's files (D-12).
@@ -254,7 +266,8 @@ export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClas
     }
   }
 
-  // 4. manual_match — Lidarr could not match the files to an album with confidence (D-12). Reported, never acted on.
+  // 4. manual_match — Lidarr could not match the files to an album with confidence (D-12). Acted on only where
+  //    Lidarr's manual_match cell is enforced (D-13).
   if (manualMatch) return { class: 'manual_match', reason: truncate(manualMatch), confidence: 'high' };
 
   // 5. unknown — everything else. Reported, never acted on.
@@ -265,26 +278,49 @@ export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClas
 // Config (D-05) — the audited app_settings key `arr_queue_cleanup_config`.
 // ---------------------------------------------------------------------------
 
-/** The classes that HAVE an enforce cell. `unknown` never does (ADR-083 normative), and neither does
- *  `manual_match` (D-12): both are report only, by construction. */
-export const QUEUE_CLEANUP_ENFORCEABLE_CLASSES = ['have_better', 'retry_import', 'bad_release'] as const;
+/** The classes every instance has an enforce cell for (D-05). */
+export const QUEUE_CLEANUP_SHARED_CLASSES = ['have_better', 'retry_import', 'bad_release'] as const;
+export type QueueCleanupSharedClass = (typeof QUEUE_CLEANUP_SHARED_CLASSES)[number];
+
+/** The classes that have an enforce cell on SOME instance. `unknown` never does (ADR-083 normative). `manual_match`
+ *  was report only (D-12) and since D-13 has one cell, on Lidarr only. */
+export const QUEUE_CLEANUP_ENFORCEABLE_CLASSES = [...QUEUE_CLEANUP_SHARED_CLASSES, 'manual_match'] as const;
 export type QueueCleanupEnforceableClass = (typeof QUEUE_CLEANUP_ENFORCEABLE_CLASSES)[number];
+
+/**
+ * The cells each instance has (D-05, D-13): the shared three everywhere, plus `manual_match` on Lidarr. Lidarr's
+ * match rejections are the only source of the class, and its action ends in an album search, so Sonarr and
+ * Radarr have no such cell (a stored `modes.sonarr.manual_match` is an unknown class).
+ */
+export const QUEUE_CLEANUP_INSTANCE_CLASSES: { readonly [K in ArrKind]: readonly QueueCleanupEnforceableClass[] } = {
+  sonarr: QUEUE_CLEANUP_SHARED_CLASSES,
+  radarr: QUEUE_CLEANUP_SHARED_CLASSES,
+  lidarr: QUEUE_CLEANUP_ENFORCEABLE_CLASSES,
+};
 
 const ENFORCEABLE_CLASS_SET: ReadonlySet<string> = new Set(QUEUE_CLEANUP_ENFORCEABLE_CLASSES);
 
-/** True for a class that has an enforce cell; false for the report-only classes (`manual_match`, `unknown`). */
+/** True for a class that has an enforce cell on some instance; false for the report-only class `unknown`. Which
+ *  instance has the cell is `QUEUE_CLEANUP_INSTANCE_CLASSES`. */
 export function isEnforceableQueueCleanupClass(
   actionClass: QueueCleanupActionClass,
 ): actionClass is QueueCleanupEnforceableClass {
   return ENFORCEABLE_CLASS_SET.has(actionClass);
 }
 
-/** The 3 mode cells for one instance (class → 'census'|'enforce'). */
-export type QueueCleanupModeCells = Record<QueueCleanupEnforceableClass, QueueCleanupMode>;
+/** The 3 shared mode cells for one instance (class → 'census'|'enforce'). */
+export type QueueCleanupModeCells = Record<QueueCleanupSharedClass, QueueCleanupMode>;
+
+/** Lidarr's cells: the shared three plus `manual_match` (D-13). */
+export type LidarrQueueCleanupModeCells = QueueCleanupModeCells & { manual_match: QueueCleanupMode };
 
 export interface ArrQueueCleanupConfig {
-  /** T-240 cells: per instance × enforceable class. */
-  modes: Record<ArrKind, QueueCleanupModeCells>;
+  /** T-240 cells: per instance × the classes that instance has a cell for (QUEUE_CLEANUP_INSTANCE_CLASSES). */
+  modes: {
+    sonarr: QueueCleanupModeCells;
+    radarr: QueueCleanupModeCells;
+    lidarr: LidarrQueueCleanupModeCells;
+  };
   /** Per-instance per-run mutation cap (1..100). */
   maxActionsPerRun: number;
   /** Minimum item age before any action (0..168 hours) — the organic-import window. */
@@ -297,13 +333,34 @@ function allCensusCells(): QueueCleanupModeCells {
   return { have_better: 'census', retry_import: 'census', bad_release: 'census' };
 }
 
-/** The code default — ALL-CENSUS (observe-only), caps 10 / 2h / 6-run (DESIGN-046 D-05). */
+/** The code default — ALL-CENSUS (observe-only), caps 10 / 2h / 6-run (DESIGN-046 D-05). Lidarr's `manual_match`
+ *  cell is census too (D-13), so the deploy that adds it is inert until the cell is flipped. */
 export const ARR_QUEUE_CLEANUP_CONFIG_DEFAULT: ArrQueueCleanupConfig = {
-  modes: { sonarr: allCensusCells(), radarr: allCensusCells(), lidarr: allCensusCells() },
+  modes: {
+    sonarr: allCensusCells(),
+    radarr: allCensusCells(),
+    lidarr: { ...allCensusCells(), manual_match: 'census' },
+  },
   maxActionsPerRun: 10,
   minItemAgeHours: 2,
   retryEscalateRuns: 6,
 };
+
+/**
+ * The mode of one class×instance cell. `census` for a class the instance has no cell for (`unknown` anywhere,
+ * `manual_match` off Lidarr) and for a cell a config lacks: a config stored before D-13 has no `manual_match`
+ * cell, and it reads as census (fail safe, never enforce by omission).
+ */
+export function queueCleanupCellMode(
+  config: ArrQueueCleanupConfig,
+  instance: ArrKind,
+  actionClass: QueueCleanupActionClass,
+): QueueCleanupMode {
+  if (!isEnforceableQueueCleanupClass(actionClass)) return 'census';
+  if (!QUEUE_CLEANUP_INSTANCE_CLASSES[instance].includes(actionClass)) return 'census';
+  const cells = config.modes[instance] as Partial<Record<QueueCleanupEnforceableClass, unknown>> | undefined;
+  return cells?.[actionClass] === 'enforce' ? 'enforce' : 'census';
+}
 
 /**
  * ADR-083 C-04 analog — validate a janitor config. Returns a human-readable message for the FIRST violated
@@ -321,16 +378,18 @@ export function queueCleanupConfigError(cfg: unknown): string | null {
   for (const key of Object.keys(m)) {
     if (!allowedInstances.has(key)) return `Unknown instance '${key}' in modes.`;
   }
-  const allowedClasses = new Set<string>(QUEUE_CLEANUP_ENFORCEABLE_CLASSES);
   const allowedModes = new Set<string>(QUEUE_CLEANUP_MODES);
   for (const instance of ARR_KINDS) {
     const cell = m[instance];
     if (typeof cell !== 'object' || cell === null) return `modes.${instance} must be an object.`;
     const cc = cell as Record<string, unknown>;
+    const allowedClasses = new Set<string>(QUEUE_CLEANUP_INSTANCE_CLASSES[instance]);
     for (const key of Object.keys(cc)) {
       if (!allowedClasses.has(key)) return `Unknown class '${key}' in modes.${instance}.`;
     }
-    for (const klass of QUEUE_CLEANUP_ENFORCEABLE_CLASSES) {
+    for (const klass of QUEUE_CLEANUP_INSTANCE_CLASSES[instance]) {
+      // D-13: a config stored before Lidarr's manual_match cell existed lacks it; absent reads as census.
+      if (klass === 'manual_match' && cc[klass] === undefined) continue;
       if (!allowedModes.has(cc[klass] as string)) {
         return `modes.${instance}.${klass} must be 'census' or 'enforce'.`;
       }
@@ -351,9 +410,10 @@ export function queueCleanupConfigError(cfg: unknown): string | null {
   return null;
 }
 
-/** Build a canonical, storable value from a validated config (drops any stray keys). */
-function toStorable(config: ArrQueueCleanupConfig) {
-  const cell = (c: QueueCleanupModeCells) => ({
+/** The canonical shape of a validated config: every cell present (Lidarr's `manual_match` filled as census
+ *  when a pre-D-13 config lacks it), stray keys dropped. Used for storing AND for reading back. */
+function canonicalConfig(config: ArrQueueCleanupConfig): ArrQueueCleanupConfig {
+  const cell = (c: QueueCleanupModeCells): QueueCleanupModeCells => ({
     have_better: c.have_better,
     retry_import: c.retry_import,
     bad_release: c.bad_release,
@@ -362,7 +422,10 @@ function toStorable(config: ArrQueueCleanupConfig) {
     modes: {
       sonarr: cell(config.modes.sonarr),
       radarr: cell(config.modes.radarr),
-      lidarr: cell(config.modes.lidarr),
+      lidarr: {
+        ...cell(config.modes.lidarr),
+        manual_match: queueCleanupCellMode(config, 'lidarr', 'manual_match'),
+      },
     },
     maxActionsPerRun: config.maxActionsPerRun,
     minItemAgeHours: config.minItemAgeHours,
@@ -382,7 +445,7 @@ export async function getArrQueueCleanupConfig(db?: DbClient): Promise<ArrQueueC
     .where(eq(appSettings.key, 'arr_queue_cleanup_config'));
   if (!row) return null;
   if (queueCleanupConfigError(row.value) !== null) return null;
-  return row.value as ArrQueueCleanupConfig;
+  return canonicalConfig(row.value as ArrQueueCleanupConfig);
 }
 
 /** Resolution DB row → code default (all-census). The evaluator + status read call this each run. */
@@ -405,7 +468,7 @@ export async function setArrQueueCleanupConfig(input: {
   const res = await setAppSetting({
     db: input.db,
     key: 'arr_queue_cleanup_config',
-    value: toStorable(input.config),
+    value: canonicalConfig(input.config),
     actorId: input.actorId,
   });
   return { changed: res.changed };
@@ -426,6 +489,10 @@ export interface QueueCleanupQueueItem {
   trackedDownloadState: string | null;
   errorMessage: string | null;
   statusMessages: Array<{ title?: string | null; messages?: (string | null)[] | null }> | null;
+  /** The record's search target (D-13): Sonarr the episodeId, Radarr the movieId, Lidarr the albumId. Null or
+   *  absent when the record carries none (an unknown-artist Lidarr record). Persisted as the row's `targetId`;
+   *  keys the manual_match loop guard and the digest's repeat-search list. */
+  targetId?: number | null;
 }
 
 /** The per-instance surface the evaluator drives. Tests inject a stub; prod wires the real *arr clients. */
@@ -446,6 +513,35 @@ export interface QueueCleanupInstanceClient {
   /** Trigger the owning *arr's search for the given records' targets, one command per download where the *arr
    *  takes an id list (EpisodeSearch / MoviesSearch / AlbumSearch — D-11). */
   searchTargets(items: QueueCleanupQueueItem[]): Promise<void>;
+  /**
+   * D-13 (manual_match): the given records whose album is monitored AND still missing tracks, so an album search
+   * can only go where it is wanted and not yet satisfied. A record with no album, an album the read cannot find,
+   * and an album whose track counts Lidarr does not report are left out (no search). Lidarr only: an instance
+   * without it never searches for manual_match.
+   */
+  missingMonitoredTargets?(items: QueueCleanupQueueItem[]): Promise<QueueCleanupQueueItem[]>;
+  /**
+   * D-14 (ADR-094): what the janitor release block needs to name a download's release: the grab's raw indexer title
+   * (Lidarr: the newest grab of the download in its history, else the queue title) and the artist's name. Lidarr only.
+   */
+  releaseIdentity?(
+    item: QueueCleanupQueueItem,
+  ): Promise<{ releaseTitle: string | null; artistName: string | null }>;
+  /** D-14 (ADR-094): the *arr's release-profile surface for the janitor release block. Lidarr only. */
+  releaseProfiles?: JanitorReleaseProfileClient;
+}
+
+/**
+ * D-13: true only when Lidarr's own counts say the album still lacks files: fewer track files than tracks in
+ * its selected release. An album without statistics, or with no tracks, cannot be told apart from a complete one,
+ * so it is not "missing" (fail safe: no search). Pure.
+ */
+export function isLidarrAlbumMissing(album: {
+  statistics?: { trackFileCount: number; trackCount: number } | null;
+}): boolean {
+  const stats = album.statistics;
+  if (!stats) return false;
+  return stats.trackCount > 0 && stats.trackFileCount < stats.trackCount;
 }
 
 export type QueueCleanupClients = Record<ArrKind, QueueCleanupInstanceClient>;
@@ -484,7 +580,7 @@ function normalizeItem(raw: {
   trackedDownloadState?: string | null;
   errorMessage?: string | null;
   statusMessages?: Array<{ title?: string | null; messages?: (string | null)[] | null }> | null;
-}): QueueCleanupQueueItem {
+}, targetId: number | null): QueueCleanupQueueItem {
   const added = typeof raw.added === 'string' ? new Date(raw.added) : null;
   return {
     queueItemId: raw.id,
@@ -496,6 +592,7 @@ function normalizeItem(raw: {
     trackedDownloadState: raw.trackedDownloadState ?? null,
     errorMessage: raw.errorMessage ?? null,
     statusMessages: raw.statusMessages ?? null,
+    targetId,
   };
 }
 
@@ -504,7 +601,8 @@ function normalizeItem(raw: {
  * finest cheap granularity the read client exposes: Radarr the movie; Sonarr the episode (via listEpisodes,
  * else the series); Lidarr the album (via listAlbums, else the artist). Re-search targets the same level. Both
  * take a download's records together (D-11): one list read per parent, and one search command for every
- * monitored episode / movie / album (the series / artist search only for a record with no child id).
+ * monitored episode / movie / album (the series / artist search only for a record with no child id). Lidarr also
+ * answers which albums are monitored and still missing tracks (D-13, manual_match), from the same album list.
  */
 export function buildQueueCleanupClients(clients: {
   read: { sonarr: SonarrClient; radarr: RadarrClient; lidarr: LidarrClient };
@@ -521,7 +619,10 @@ export function buildQueueCleanupClients(clients: {
       async getQueueAll() {
         const records = await clients.read.sonarr.getQueueAll();
         return records.map((r: SonarrQueueRecord) =>
-          remember(normalizeItem(r), { parentId: r.seriesId ?? null, childId: r.episodeId ?? null }),
+          remember(normalizeItem(r, r.episodeId ?? null), {
+            parentId: r.seriesId ?? null,
+            childId: r.episodeId ?? null,
+          }),
         );
       },
       deleteQueueItem: (item, opts) => clients.write.sonarr.deleteQueueItem(item.queueItemId, opts),
@@ -565,7 +666,10 @@ export function buildQueueCleanupClients(clients: {
       async getQueueAll() {
         const records = await clients.read.radarr.getQueueAll();
         return records.map((r: RadarrQueueRecord) =>
-          remember(normalizeItem(r), { parentId: r.movieId ?? null, childId: r.movieId ?? null }),
+          remember(normalizeItem(r, r.movieId ?? null), {
+            parentId: r.movieId ?? null,
+            childId: r.movieId ?? null,
+          }),
         );
       },
       deleteQueueItem: (item, opts) => clients.write.radarr.deleteQueueItem(item.queueItemId, opts),
@@ -590,7 +694,10 @@ export function buildQueueCleanupClients(clients: {
       async getQueueAll() {
         const records = await clients.read.lidarr.getQueueAll();
         return records.map((r: LidarrQueueRecord) =>
-          remember(normalizeItem(r), { parentId: r.artistId ?? null, childId: r.albumId ?? null }),
+          remember(normalizeItem(r, r.albumId ?? null), {
+            parentId: r.artistId ?? null,
+            childId: r.albumId ?? null,
+          }),
         );
       },
       deleteQueueItem: (item, opts) => clients.write.lidarr.deleteQueueItem(item.queueItemId, opts),
@@ -626,6 +733,42 @@ export function buildQueueCleanupClients(clients: {
         )) {
           await clients.write.lidarr.searchArtist(artistId);
         }
+      },
+      // D-14: the grab's own title (what a release-profile term is tested against), else the queue title; and the
+      // artist's name, which the term must contain so it never blocks another artist's release.
+      async releaseIdentity(item) {
+        const t = targetsByItem.get(item);
+        const downloadId = nonEmpty(item.downloadId);
+        let releaseTitle: string | null = null;
+        if (downloadId !== null) {
+          const grabs = await clients.read.lidarr.getDownloadGrabs(downloadId);
+          releaseTitle = grabs.records.map((r) => nonEmpty(r.sourceTitle)).find((x) => x !== null) ?? null;
+        }
+        releaseTitle ??= nonEmpty(item.title);
+        const artistName =
+          t?.parentId != null
+            ? nonEmpty((await clients.read.lidarr.getArtistById(t.parentId)).artistName)
+            : null;
+        return { releaseTitle, artistName };
+      },
+      releaseProfiles: {
+        listReleaseProfiles: () => clients.write.lidarr.listReleaseProfiles(),
+        createReleaseProfile: (body) => clients.write.lidarr.createReleaseProfile(body),
+        updateReleaseProfile: (body) => clients.write.lidarr.updateReleaseProfile(body),
+      },
+      // D-13: only records WITH an album qualify, so the searchTargets call that follows never falls back to an
+      // artist-wide search for manual_match.
+      async missingMonitoredTargets(items) {
+        const albumsOf = memoized((artistId: number) => clients.read.lidarr.listAlbums(artistId));
+        const missing: QueueCleanupQueueItem[] = [];
+        for (const item of items) {
+          const t = targetsByItem.get(item);
+          if (t?.childId == null || t.parentId == null) continue;
+          const albumId = t.childId;
+          const album = (await albumsOf(t.parentId)).find((a) => a.id === albumId);
+          if (album?.monitored && isLidarrAlbumMissing(album)) missing.push(item);
+        }
+        return missing;
       },
     },
   };
@@ -767,6 +910,90 @@ async function priorRetryImportRuns(
   return Number(row?.n ?? 0);
 }
 
+/**
+ * D-13 — the loop guard's K: a Lidarr `manual_match` record whose album the janitor has already removed as
+ * `manual_match` on this many EARLIER downloads is `skipped_loop`. Each of those removals was followed by another
+ * match failure for the album (the next removed download, and for the last one this record), so the janitor's
+ * remove-and-search has failed K times in a row and a person should decide. Versioned code, not config: the
+ * owner approved the action with this bound.
+ */
+export const MANUAL_MATCH_LOOP_LIMIT = 2;
+
+/** D-13 — the window of the repeat-search signal: a target the janitor searched on 2+ runs within it is reported
+ *  (the digest) and logged (`[queue-cleanup] loop_detected`). */
+const REPEAT_SEARCH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The stable message of the loop log line (D-13). One JSON line per event; alert on it in Loki. */
+export const QUEUE_CLEANUP_LOOP_LOG = '[queue-cleanup] loop_detected';
+
+/**
+ * D-13 — for each album, the earlier downloads the janitor removed as `manual_match` (removals that landed, so
+ * `outcome: 'done'`). Keyed by download; a row with no downloadId counts once per run.
+ */
+async function priorManualMatchRemovals(
+  db: ReturnType<typeof resolveDb>,
+  instance: ArrKind,
+  targetIds: number[],
+): Promise<Map<number, Set<string>>> {
+  const out = new Map<number, Set<string>>();
+  if (targetIds.length === 0) return out;
+  const rows = await db
+    .select({
+      targetId: arrQueueCleanupActions.targetId,
+      downloadId: arrQueueCleanupActions.downloadId,
+      createdAt: arrQueueCleanupActions.createdAt,
+    })
+    .from(arrQueueCleanupActions)
+    .where(
+      and(
+        eq(arrQueueCleanupActions.instance, instance),
+        eq(arrQueueCleanupActions.actionClass, 'manual_match'),
+        eq(arrQueueCleanupActions.outcome, 'done'),
+        inArray(arrQueueCleanupActions.action, ['removed_blocklisted', 'blocklisted_searched']),
+        inArray(arrQueueCleanupActions.targetId, targetIds),
+      ),
+    );
+  for (const r of rows) {
+    if (r.targetId == null) continue;
+    let downloads = out.get(r.targetId);
+    if (!downloads) {
+      downloads = new Set();
+      out.set(r.targetId, downloads);
+    }
+    downloads.add(nonEmpty(r.downloadId) ?? `run:${r.createdAt.toISOString()}`);
+  }
+  return out;
+}
+
+/** D-13 — the runs on which the janitor searched each target within the repeat-search window, before this run. */
+async function priorSearchRuns(
+  db: ReturnType<typeof resolveDb>,
+  instance: ArrKind,
+  targetIds: number[],
+  since: Date,
+): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  if (targetIds.length === 0) return out;
+  const rows = await db
+    .select({
+      targetId: arrQueueCleanupActions.targetId,
+      runs: sql<number>`count(distinct ${arrQueueCleanupActions.createdAt})`,
+    })
+    .from(arrQueueCleanupActions)
+    .where(
+      and(
+        eq(arrQueueCleanupActions.instance, instance),
+        eq(arrQueueCleanupActions.action, 'blocklisted_searched'),
+        eq(arrQueueCleanupActions.outcome, 'done'),
+        inArray(arrQueueCleanupActions.targetId, targetIds),
+        gte(arrQueueCleanupActions.createdAt, since),
+      ),
+    )
+    .groupBy(arrQueueCleanupActions.targetId);
+  for (const r of rows) if (r.targetId != null) out.set(r.targetId, Number(r.runs));
+  return out;
+}
+
 /** One record's own verdict, before its download is considered (D-11). */
 interface RecordVerdict {
   item: QueueCleanupQueueItem;
@@ -775,8 +1002,12 @@ interface RecordVerdict {
   reason: string | null;
   young: boolean;
   /** The class this record would enforce if it stood alone; null when it would only be observed (census cell,
-   *  a report-only class, or too young). */
+   *  a report-only class, too young, or held by the loop guard). */
   wants: QueueCleanupEnforceableClass | null;
+  /** D-13: the loop guard holds this record (`skipped_loop`); `priorRemovals` is how many earlier downloads of
+   *  its album the janitor removed as manual_match. */
+  loop: boolean;
+  priorRemovals: number;
 }
 
 /** What one record's row says happened (action + outcome + the *arr error, if any). */
@@ -792,6 +1023,20 @@ const result = (
   error: string | null = null,
 ): RecordResult => ({ action, outcome, error });
 
+/**
+ * D-13 — the records of a removed manual_match download to search again: those with an album (a record without
+ * one is removed and blocklisted only) whose album the *arr reports monitored and still missing tracks. An
+ * instance without the check never searches.
+ */
+async function manualMatchSearchTargets(
+  client: QueueCleanupInstanceClient,
+  items: QueueCleanupQueueItem[],
+): Promise<QueueCleanupQueueItem[]> {
+  const withAlbum = items.filter((i) => i.targetId != null);
+  if (withAlbum.length === 0 || !client.missingMonitoredTargets) return [];
+  return (await client.missingMonitoredTargets(withAlbum)).filter((i) => i.targetId != null);
+}
+
 /** A removal the *arr answered with 404: it no longer tracks the download (D-11 rule 5). */
 const isGone = (err: unknown): boolean => err instanceof ArrHttpError && err.status === 404;
 
@@ -801,7 +1046,10 @@ const isGone = (err: unknown): boolean => err instanceof ArrHttpError && err.sta
  * rails (D-04): per-instance per-run cap `maxActionsPerRun`; `minItemAgeHours` before any action; a monitored
  * target check before a bad_release re-search; retry escalation via the persisted action-row lookback (counted
  * in runs); ProcessMonitoredDownloads at most once per instance per run; a failed *arr write → outcome 'error'
- * (logged, counts against the cap) + continue. `unknown` and `manual_match` are NEVER acted on.
+ * (logged, counts against the cap) + continue. `unknown` is NEVER acted on. `manual_match` acts only on Lidarr,
+ * where its cell is enforced (D-13): remove + blocklist, then an album search only for a monitored album still
+ * missing tracks; the loop guard holds an album already removed on MANUAL_MATCH_LOOP_LIMIT earlier downloads
+ * (`skipped_loop`), and every loop event is one `[queue-cleanup] loop_detected` log line.
  *
  * The janitor acts once per DOWNLOAD, not once per record (D-11): records sharing a downloadId (a season pack's
  * episodes) get one call, which costs the cap once, and every one of them records that call's result; a
@@ -826,7 +1074,6 @@ export async function evaluateQueueCleanup(input: {
 
   for (const instance of ARR_KINDS) {
     const client = input.clients[instance];
-    const cells = config.modes[instance];
     const report: QueueCleanupInstanceReport = {
       instance,
       read: false,
@@ -836,6 +1083,17 @@ export async function evaluateQueueCleanup(input: {
       errors: 0,
       byClass: emptyByClass(),
     };
+
+    // D-14 — the janitor release block's upkeep (drift, expiry), whatever the cells say; never fails the run.
+    if (JANITOR_BLOCK_KINDS.includes(instance) && client.releaseProfiles) {
+      await reconcileJanitorReleaseBlockIfDue({
+        db: input.db,
+        instance,
+        profiles: client.releaseProfiles,
+        now,
+        logger: input.logger,
+      });
+    }
 
     let items: QueueCleanupQueueItem[];
     try {
@@ -866,23 +1124,79 @@ export async function evaluateQueueCleanup(input: {
         if ((await prior) >= config.retryEscalateRuns) actionClass = 'bad_release';
       }
 
-      // The report-only classes (unknown, manual_match) have no config cell and are never enforced; every other
-      // class reads its instance cell.
-      const cellClass = isEnforceableQueueCleanupClass(actionClass) ? actionClass : null;
-      const mode: QueueCleanupMode = cellClass ? cells[cellClass] : 'census';
+      // `unknown` has no config cell and is never enforced; `manual_match` has a cell on Lidarr only (D-13); every
+      // other class reads its instance cell. A missing cell reads as census.
+      const mode = queueCleanupCellMode(config, instance, actionClass);
+      const cellClass = mode === 'enforce' && isEnforceableQueueCleanupClass(actionClass) ? actionClass : null;
       // Conservative age rail: unknown age (no `added`) is treated as YOUNG so a possibly-fresh item is never
       // acted on. minItemAgeHours=0 disables the rail entirely. Real *arr records always carry `added`.
       const young =
         config.minItemAgeHours > 0 &&
         (item.addedAt === null || now.getTime() - item.addedAt.getTime() < minAgeMs);
-      const wants = !young && mode === 'enforce' ? cellClass : null;
-      verdicts.set(item, { item, actionClass, mode, reason: classified.reason, young, wants });
+      const wants = !young ? cellClass : null;
+      verdicts.set(item, {
+        item,
+        actionClass,
+        mode,
+        reason: classified.reason,
+        young,
+        wants,
+        loop: false,
+        priorRemovals: 0,
+      });
+    }
+
+    // 1b. The manual_match loop guard (D-13): an album the janitor already removed as manual_match on
+    //     MANUAL_MATCH_LOOP_LIMIT earlier downloads is held (`skipped_loop`), never removed or searched again, while it
+    //     is still monitored and missing tracks. Only then would the janitor search it again, so only then can it
+    //     loop: an album that imported since (a later upgrade grab failing) or was unmonitored gets the removal and
+    //     the block, and no search. A record with no album cannot loop through the janitor: it is never searched.
+    const loopCandidates = [...verdicts.values()].filter(
+      (v) => v.wants === 'manual_match' && v.item.targetId != null,
+    );
+    if (loopCandidates.length > 0) {
+      try {
+        const prior = await priorManualMatchRemovals(
+          db,
+          instance,
+          distinctIds(loopCandidates.map((v) => v.item.targetId)),
+        );
+        const over = loopCandidates
+          .map((v) => {
+            const own = nonEmpty(v.item.downloadId);
+            const earlier = [...(prior.get(v.item.targetId!) ?? [])].filter((d) => d !== own).length;
+            return { v, earlier };
+          })
+          .filter((x) => x.earlier >= MANUAL_MATCH_LOOP_LIMIT);
+        if (over.length > 0) {
+          // Which of these albums would be searched again (monitored, still missing tracks)? No check ⇒ hold all.
+          const searchable = client.missingMonitoredTargets
+            ? new Set(await client.missingMonitoredTargets(over.map((x) => x.v.item)))
+            : null;
+          for (const { v, earlier } of over) {
+            if (searchable !== null && !searchable.has(v.item)) continue;
+            v.loop = true;
+            v.priorRemovals = earlier;
+            v.wants = null;
+          }
+        }
+      } catch (err) {
+        // The guard cannot tell which albums loop (a failed history or album read), so no manual_match download
+        // is acted on this run (fail safe); the census rows are still written.
+        for (const v of loopCandidates) v.wants = null;
+        input.logger?.warn?.('queue-cleanup: loop-guard read failed, manual_match not acted on this run', {
+          instance,
+          error: errMsg(err),
+        });
+      }
     }
 
     // 2. One decision per download (D-11), in first-seen queue order — the cap is spent per download.
     const results = new Map<QueueCleanupQueueItem, RecordResult>();
     let actionsTaken = 0;
     let retryCommandRan = false;
+    /** The records each search command covered this run, per download (the repeat-search check, D-13). */
+    const searchedDownloads: QueueCleanupQueueItem[][] = [];
 
     for (const group of groupQueueRecordsByDownload(items)) {
       const members = group.map((item) => verdicts.get(item)!);
@@ -892,14 +1206,32 @@ export async function evaluateQueueCleanup(input: {
       };
 
       // Nothing to enforce, or a mixed download: no call. A record that would have acted on its own records
-      // `skipped_mixed`; the rest keep their own verdict (rule 3).
+      // `skipped_mixed`; the rest keep their own verdict (rule 3). A record held by the loop guard is
+      // `skipped_loop`, and it holds the whole download like any other record the janitor would not touch (D-13).
       if (wanted === null || members.some((m) => m.wants !== wanted)) {
         const mixed = members.some((m) => m.wants !== null);
         for (const m of members) {
           results.set(
             m.item,
-            m.young ? result('skipped_young') : m.wants ? result('skipped_mixed') : result('none'),
+            m.young
+              ? result('skipped_young')
+              : m.loop
+                ? result('skipped_loop')
+                : m.wants
+                  ? result('skipped_mixed')
+                  : result('none'),
           );
+        }
+        const looping = members.filter((m) => m.loop);
+        if (looping.length > 0) {
+          input.logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, {
+            kind: 'skipped_loop',
+            instance,
+            downloadId: members[0]!.item.downloadId,
+            title: members[0]!.item.title,
+            targetIds: distinctIds(looping.map((m) => m.item.targetId)),
+            priorRemovals: Math.max(...looping.map((m) => m.priorRemovals)),
+          });
         }
         if (mixed) {
           input.logger?.warn?.('queue-cleanup: mixed download left alone', {
@@ -940,12 +1272,66 @@ export async function evaluateQueueCleanup(input: {
         continue;
       }
 
-      // have_better / bad_release: ONE removal for the whole download, through its first record — the *arr
-      // removes and blocklists the download, so a second DELETE could only answer 404 (rule 2). Every janitor
-      // removal passes skipRedownload (D-10): with the *arr's "Redownload Failed" on, a blocklisting removal
-      // would otherwise re-search by itself — have_better must never re-search, and bad_release re-searches
-      // only through its own monitored-checked search below.
-      actionsTaken += 1;
+      // manual_match (D-14, ADR-094) — the release NAME is blocked first: a whole-name term in the janitor's release
+      // profile, written and read back. A name that cannot be blocked safely leaves the download alone.
+      if (wanted === 'manual_match') {
+        let term: JanitorBlockTerm;
+        let releaseTitle: string | null = null;
+        try {
+          if (!client.releaseIdentity || !client.releaseProfiles) {
+            throw new Error(`no janitor release block on ${instance}`);
+          }
+          const identity = await client.releaseIdentity(primary);
+          releaseTitle = identity.releaseTitle;
+          term = deriveJanitorBlockTerm(identity);
+        } catch (err) {
+          // A read failed: nothing was written, so it costs no cap slot; the next run tries again.
+          setAll(result('none', 'error', `release identity: ${errMsg(err)}`));
+          report.errors += 1;
+          continue;
+        }
+        if ('refused' in term) {
+          setAll(result('skipped_unblockable'));
+          input.logger?.warn?.('queue-cleanup: release name cannot be blocked, download left alone', {
+            instance,
+            downloadId: primary.downloadId,
+            reason: term.refused,
+          });
+          continue;
+        }
+        actionsTaken += 1;
+        try {
+          await reconcileJanitorReleaseBlock({
+            db: input.db,
+            instance,
+            profiles: client.releaseProfiles,
+            add: [
+              {
+                term: term.term,
+                releaseTitle,
+                downloadId: primary.downloadId,
+                targetId: primary.targetId ?? null,
+              },
+            ],
+            now,
+            logger: input.logger,
+          });
+        } catch (err) {
+          // Not blocked, so not removed (ADR-094): the next run tries again.
+          setAll(result('none', 'error', errMsg(err)));
+          report.errors += 1;
+          report.covered += members.length - 1;
+          continue;
+        }
+      } else {
+        actionsTaken += 1;
+      }
+
+      // have_better / bad_release / manual_match: ONE removal for the whole download, through its first record —
+      // the *arr removes and blocklists the download, so a second DELETE could only answer 404 (rule 2). Every
+      // janitor removal passes skipRedownload (D-10): with the *arr's "Redownload Failed" on, a blocklisting
+      // removal would otherwise re-search by itself — have_better must never re-search, and bad_release and
+      // manual_match re-search only through their own checked search below.
       report.covered += members.length - 1;
       try {
         await client.deleteQueueItem(primary, JANITOR_REMOVAL);
@@ -971,22 +1357,58 @@ export async function evaluateQueueCleanup(input: {
       }
 
       // bad_release — re-search every record whose target is still monitored, in one command (rule 4).
+      // manual_match (D-13) — search only the albums that are monitored AND still missing tracks, in one
+      // AlbumSearch; a record with no album is removed and blocklisted, never searched (no artist-wide search).
       try {
-        const monitored = new Set(await client.monitoredTargets(members.map((m) => m.item)));
-        if (monitored.size > 0)
-          await client.searchTargets(
-            members.filter((m) => monitored.has(m.item)).map((m) => m.item),
-          );
+        const searchable = new Set(
+          wanted === 'manual_match'
+            ? await manualMatchSearchTargets(client, members.map((m) => m.item))
+            : await client.monitoredTargets(members.map((m) => m.item)),
+        );
+        if (searchable.size > 0) {
+          const toSearch = members.filter((m) => searchable.has(m.item)).map((m) => m.item);
+          await client.searchTargets(toSearch);
+          searchedDownloads.push(toSearch);
+        }
         for (const m of members) {
           results.set(
             m.item,
-            result(monitored.has(m.item) ? 'blocklisted_searched' : 'removed_blocklisted', 'done'),
+            result(searchable.has(m.item) ? 'blocklisted_searched' : 'removed_blocklisted', 'done'),
           );
         }
       } catch (err) {
         // The removal landed; only the check or the search failed — the row must not hide the removal.
         setAll(result('removed_blocklisted', 'error', errMsg(err)));
         report.errors += 1;
+      }
+    }
+
+    // 2b. The repeat-search signal (D-13): a target this run searched that the janitor also searched on an earlier
+    //     run within 7 days is logged, whatever the class. Read-only; a failed read never fails the run.
+    if (searchedDownloads.length > 0) {
+      try {
+        const prior = await priorSearchRuns(
+          db,
+          instance,
+          distinctIds(searchedDownloads.flat().map((i) => i.targetId)),
+          new Date(now.getTime() - REPEAT_SEARCH_WINDOW_MS),
+        );
+        for (const searched of searchedDownloads) {
+          const repeats = distinctIds(searched.map((i) => i.targetId))
+            .filter((id) => (prior.get(id) ?? 0) >= 1)
+            .map((targetId) => ({ targetId, searches7d: (prior.get(targetId) ?? 0) + 1 }));
+          if (repeats.length === 0) continue;
+          input.logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, {
+            kind: 'repeat_search',
+            instance,
+            downloadId: searched[0]!.downloadId,
+            title: searched[0]!.title,
+            actionClass: verdicts.get(searched[0]!)!.actionClass,
+            targets: repeats,
+          });
+        }
+      } catch (err) {
+        input.logger?.warn?.('queue-cleanup: repeat-search read failed', { instance, error: errMsg(err) });
       }
     }
 
@@ -999,6 +1421,7 @@ export async function evaluateQueueCleanup(input: {
         queueItemId: item.queueItemId,
         downloadId: item.downloadId,
         title: item.title,
+        targetId: item.targetId ?? null,
         actionClass: v.actionClass,
         mode: v.mode,
         action: r.action,
@@ -1036,16 +1459,17 @@ export async function evaluateQueueCleanup(input: {
 // ---------------------------------------------------------------------------
 
 /**
- * Derive the ladder level from the modes matrix (D-05). L0 = all census; L2 = every enforceable cell enforced
- * (L3 is human-only, set via the plan — never derived above L2); L1 = any partial enforcement (the modes
- * matrix, exposed alongside, shows exactly which cells). Kept deliberately simple + documented.
+ * Derive the ladder level from the modes matrix (D-05). L0 = all census; L2 = every cell enforced, Lidarr's
+ * `manual_match` included since D-13 (L3 is human-only, set via the plan — never derived above L2); L1 = any
+ * partial enforcement (the modes matrix, exposed alongside, shows exactly which cells). Kept deliberately
+ * simple + documented.
  */
 export function deriveQueueCleanupLadderLevel(config: ArrQueueCleanupConfig): number {
   let anyEnforce = false;
   let allEnforce = true;
   for (const instance of ARR_KINDS) {
-    for (const klass of QUEUE_CLEANUP_ENFORCEABLE_CLASSES) {
-      if (config.modes[instance][klass] === 'enforce') anyEnforce = true;
+    for (const klass of QUEUE_CLEANUP_INSTANCE_CLASSES[instance]) {
+      if (queueCleanupCellMode(config, instance, klass) === 'enforce') anyEnforce = true;
       else allEnforce = false;
     }
   }
@@ -1190,6 +1614,25 @@ export interface QueueCleanupDigestInstance {
   classes: QueueCleanupDigestClass[];
 }
 
+/** One loop the digest names (D-13): a download the loop guard held, or a target searched again and again. */
+export interface QueueCleanupDigestLoop {
+  instance: ArrKind;
+  /** The search target (Lidarr album id, Sonarr episode id, Radarr movie id), or null when the record had none. */
+  targetId: number | null;
+  downloadId: string | null;
+  /** The release name of the latest row. */
+  title: string | null;
+  /** `skipped`: the runs in 24h the guard held it on. `repeatSearches`: the runs in 7 days it was searched on. */
+  runs: number;
+}
+
+export interface QueueCleanupDigestLoops {
+  /** Every download the loop guard held (`skipped_loop`) in the last 24h. */
+  skipped: QueueCleanupDigestLoop[];
+  /** Every target the janitor searched on 2+ runs in the last 7 days, any class (downloadId: the latest). */
+  repeatSearches: QueueCleanupDigestLoop[];
+}
+
 export interface QueueCleanupDigestSection {
   /** Total rows observed in the last 24h. */
   observed: number;
@@ -1198,13 +1641,101 @@ export interface QueueCleanupDigestSection {
   instances: QueueCleanupDigestInstance[];
   ladder: { level: number; ageDays: number | null; nextCriteria: string };
   promotionDue: boolean;
+  /** D-13 loop visibility: the subject gains `[janitor: loop detected]` when either list is non-empty. */
+  loops: QueueCleanupDigestLoops;
+  loopDetected: boolean;
+  /** D-14: per *arr with a janitor release block, the names blocked in 24h and the live terms (empty: none). */
+  releaseBlock: Array<{ instance: ArrKind; blocked24h: number; live: number }>;
+}
+
+/**
+ * D-13 — the digest's loop lists: every download the loop guard held in the last 24h (one entry per instance,
+ * target and download, with the runs it was held on), and every target the janitor searched on 2+ distinct runs
+ * in the last 7 days (whatever the class).
+ */
+async function buildQueueCleanupDigestLoops(
+  db: ReturnType<typeof resolveDb>,
+  now: Date,
+): Promise<QueueCleanupDigestLoops> {
+  const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const heldRows = await db
+    .select({
+      instance: arrQueueCleanupActions.instance,
+      targetId: arrQueueCleanupActions.targetId,
+      downloadId: arrQueueCleanupActions.downloadId,
+      title: arrQueueCleanupActions.title,
+      createdAt: arrQueueCleanupActions.createdAt,
+    })
+    .from(arrQueueCleanupActions)
+    .where(
+      and(
+        eq(arrQueueCleanupActions.action, 'skipped_loop'),
+        gte(arrQueueCleanupActions.createdAt, since24h),
+      ),
+    )
+    .orderBy(desc(arrQueueCleanupActions.createdAt));
+  const held = new Map<string, { loop: QueueCleanupDigestLoop; runs: Set<number> }>();
+  for (const r of heldRows) {
+    const key = `${r.instance}:${r.targetId ?? ''}:${r.downloadId ?? ''}`;
+    let acc = held.get(key);
+    if (!acc) {
+      // Rows come newest first, so the first one seen carries the latest title.
+      acc = {
+        loop: { instance: r.instance, targetId: r.targetId, downloadId: r.downloadId, title: r.title, runs: 0 },
+        runs: new Set(),
+      };
+      held.set(key, acc);
+    }
+    acc.runs.add(r.createdAt.getTime());
+  }
+  const skipped = [...held.values()].map(({ loop, runs }) => ({ ...loop, runs: runs.size }));
+
+  const since7d = new Date(now.getTime() - REPEAT_SEARCH_WINDOW_MS);
+  const runs = sql<number>`count(distinct ${arrQueueCleanupActions.createdAt})`;
+  const repeatRows = await db
+    .select({
+      instance: arrQueueCleanupActions.instance,
+      targetId: arrQueueCleanupActions.targetId,
+      runs,
+      title: sql<
+        string | null
+      >`(array_agg(${arrQueueCleanupActions.title} ORDER BY ${arrQueueCleanupActions.createdAt} DESC))[1]`,
+      downloadId: sql<
+        string | null
+      >`(array_agg(${arrQueueCleanupActions.downloadId} ORDER BY ${arrQueueCleanupActions.createdAt} DESC))[1]`,
+    })
+    .from(arrQueueCleanupActions)
+    .where(
+      and(
+        eq(arrQueueCleanupActions.action, 'blocklisted_searched'),
+        eq(arrQueueCleanupActions.outcome, 'done'),
+        isNotNull(arrQueueCleanupActions.targetId),
+        gte(arrQueueCleanupActions.createdAt, since7d),
+      ),
+    )
+    .groupBy(arrQueueCleanupActions.instance, arrQueueCleanupActions.targetId)
+    .having(sql`count(distinct ${arrQueueCleanupActions.createdAt}) >= 2`);
+  const repeatSearches = repeatRows
+    .map((r) => ({
+      instance: r.instance,
+      targetId: r.targetId,
+      downloadId: r.downloadId,
+      title: r.title,
+      runs: Number(r.runs),
+    }))
+    .sort(
+      (a, b) =>
+        b.runs - a.runs || a.instance.localeCompare(b.instance) || (a.targetId ?? 0) - (b.targetId ?? 0),
+    );
+  return { skipped, repeatSearches };
 }
 
 /**
  * Build the nightly digest's janitor rollup (D-07) from the last-24h arr_queue_cleanup_actions rows: per
  * instance × class counts (census vs enforced), the top-3 distinct reasons per class with counts, and the
- * ladder line (level + age + next criteria) with the stagnation nag. Returns null when the janitor observed
- * NOTHING in 24h (so a run that saw no queue items adds no section and does not force a digest).
+ * ladder line (level + age + next criteria) with the stagnation nag, and the loop lists (D-13). Returns null when
+ * the janitor observed NOTHING in 24h (so a run that saw no queue items adds no section and does not force a
+ * digest).
  */
 export async function buildQueueCleanupDigestSection(input: {
   db?: DbClient;
@@ -1264,6 +1795,8 @@ export async function buildQueueCleanupDigestSection(input: {
 
   const config = await resolveArrQueueCleanupConfig(db);
   const ladder = await getQueueCleanupLadder({ db, config, now });
+  const loops = await buildQueueCleanupDigestLoops(db, now);
+  const releaseBlock = await janitorBlockDigest({ db, now });
 
   return {
     observed: recent.length,
@@ -1271,5 +1804,8 @@ export async function buildQueueCleanupDigestSection(input: {
     instances,
     ladder: { level: ladder.level, ageDays: ladder.ageDays, nextCriteria: ladder.nextCriteria },
     promotionDue: ladder.promotionDue,
+    loops,
+    loopDetected: loops.skipped.length > 0 || loops.repeatSearches.length > 0,
+    releaseBlock,
   };
 }

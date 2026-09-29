@@ -492,6 +492,31 @@ const EXACT_META = new RegExp(
 );
 
 /**
+ * ADR-094 / DESIGN-046 D-14 — the janitor's WHOLE-NAME term: `/^SEP*{words joined by SEP*}SEP*$/i`. The exact form
+ * above is a prefix match (it blocks every longer title that starts with the name); this one is anchored at both ends,
+ * so it matches the release title as posted again (any separators, its raw apostrophes, accented letters and `&`, the
+ * way `termWords` writes them) and no title with a word more or a word less. A separate grammar from the Release
+ * Block's: `isGrammarTerm` never accepts it, and `isWholeNameTerm` accepts nothing else.
+ */
+export function renderWholeNameTerm(words: readonly TermToken[]): string {
+  if (words.length === 0 || !words.every(okWord)) throw new Error('term: bad tokens');
+  return `/^${SEP}*${renderWords(words, `${SEP}*`, JOIN_EXACT, OPTIONAL_AND_EXACT)}${SEP}*$/i`;
+}
+
+const WHOLE_META = new RegExp(
+  `^${esc('/^')}${esc(`${SEP}*`)}${PART_META}(?:(?:${esc(`${SEP}*`)}(?:${esc(OPTIONAL_AND_EXACT)})?|${esc(JOIN_EXACT)})${PART_META})*` +
+    `${esc(`${SEP}*$/i`)}$`,
+);
+
+/** ADR-094 / DESIGN-046 D-14 — is this exactly the whole-name template, and does it compile? The janitor's writer
+ *  refuses to POST / PUT a profile holding any other term (its sentinel aside). */
+export function isWholeNameTerm(term: string): boolean {
+  if (term.length > 1_000) return false;
+  if (!WHOLE_META.test(term)) return false;
+  return compileTerm(term) !== null;
+}
+
+/**
  * DESIGN-052 D-12 / D-13 step 2 — is this exactly one of the three templates (or the sentinel), and does it compile?
  * The writer refuses to POST / PUT a profile holding any term for which this is false.
  */

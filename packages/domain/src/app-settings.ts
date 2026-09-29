@@ -388,7 +388,7 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
     modes: {
       sonarr: { have_better: 'census', retry_import: 'census', bad_release: 'census' },
       radarr: { have_better: 'census', retry_import: 'census', bad_release: 'census' },
-      lidarr: { have_better: 'census', retry_import: 'census', bad_release: 'census' },
+      lidarr: { have_better: 'census', retry_import: 'census', bad_release: 'census', manual_match: 'census' },
     },
     maxActionsPerRun: 10,
     minItemAgeHours: 2,

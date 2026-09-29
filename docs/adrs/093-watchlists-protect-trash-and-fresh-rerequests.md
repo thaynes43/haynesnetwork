@@ -1,6 +1,10 @@
 # ADR-093: Watchlists protect titles from Trash, and a re-request never re-fetches the deleted release
 
 - **Status:** Accepted (2026-09-28 — live since v0.101.0; the first guarded sweep, the Release Block seed, everyone's Seerr watchlist sync and the three re-requests verified, PLAN-072 S7–S10)
+- **Superseded in part by:** [ADR-094](094-janitor-manual-match-release-name-block.md) (2026-09-29) — C-08's
+  "a single app-owned release profile per Radarr and Sonarr": the queue janitor also owns one release profile on
+  Lidarr (the janitor release block, a separate profile with its own writer and term grammar; ADR-094 C-03). The
+  Release Block itself is unchanged. This is a status note only; the decision body below is unchanged.
 - **Date:** 2026-09-26
 - **Revised:** 2026-09-26, while Proposed, by the PR #594 design review (DESIGN-052 D-24): C-04, C-05, C-07, C-11,
   C-13, C-15 and C-19 revised, C-21 added, C-06, C-10 and C-11 marked as driver decisions. Revised again the same

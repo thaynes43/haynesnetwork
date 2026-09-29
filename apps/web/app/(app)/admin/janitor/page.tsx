@@ -18,13 +18,33 @@ import { describeMutationError } from '@/lib/app-error';
 
 const INSTANCES = ['sonarr', 'radarr', 'lidarr'] as const;
 type Instance = (typeof INSTANCES)[number];
-const CLASSES = ['have_better', 'retry_import', 'bad_release'] as const;
+/** The classes every app has a cell for. */
+const SHARED_CLASSES = ['have_better', 'retry_import', 'bad_release'] as const;
+type SharedClass = (typeof SHARED_CLASSES)[number];
+/** Every class with a cell somewhere: `manual_match` has one on Lidarr only (DESIGN-046 D-13). */
+const CLASSES = [...SHARED_CLASSES, 'manual_match'] as const;
 type EnforceableClass = (typeof CLASSES)[number];
-/** The report-only classes (DESIGN-046 D-12): no enforce cell, never acted on. */
-const REPORT_ONLY_CLASSES = ['manual_match', 'unknown'] as const;
+/** The cells each app has, mirroring QUEUE_CLEANUP_INSTANCE_CLASSES in @hnet/domain. */
+const INSTANCE_CLASSES: Record<Instance, readonly EnforceableClass[]> = {
+  sonarr: SHARED_CLASSES,
+  radarr: SHARED_CLASSES,
+  lidarr: CLASSES,
+};
+/** The report-only class: no enforce cell, never acted on. */
+const REPORT_ONLY_CLASSES = ['unknown'] as const;
 type ReportOnlyClass = (typeof REPORT_ONLY_CLASSES)[number];
 type Mode = 'census' | 'enforce';
-type ModeMatrix = Record<Instance, Record<EnforceableClass, Mode>>;
+interface ModeMatrix {
+  sonarr: Record<SharedClass, Mode>;
+  radarr: Record<SharedClass, Mode>;
+  lidarr: Record<EnforceableClass, Mode>;
+}
+
+/** One cell's mode, or null when the app has no cell for the class. */
+function cellMode(m: ModeMatrix, instance: Instance, klass: EnforceableClass): Mode | null {
+  if (!INSTANCE_CLASSES[instance].includes(klass)) return null;
+  return (m[instance] as Partial<Record<EnforceableClass, Mode>>)[klass] ?? 'census';
+}
 
 const INSTANCE_LABEL: Record<Instance, string> = {
   sonarr: 'Sonarr',
@@ -45,7 +65,7 @@ const CLASS_HINT: Record<EnforceableClass | ReportOnlyClass, string> = {
   retry_import: 'A completed download stuck short of importing. Enforcing asks the app to re-run its import pass, then escalates if it stays stuck.',
   bad_release: 'A failed or defective release. Enforcing blocklists it and searches for a replacement while the item is still monitored.',
   manual_match:
-    'Report only. Lidarr could not match the downloaded files to the album closely enough to import them. Import it by hand in Lidarr, or remove it there.',
+    'Lidarr could not match the downloaded files to the album closely enough to import them. Enforcing blocks that release name in Lidarr, removes the download and searches for the album again while it is monitored and still missing tracks. An album that fails this way after two removals is left for a manual import and listed in the nightly digest.',
   unknown: 'Report only. The janitor never acts on a reason it does not recognize.',
 };
 
@@ -61,7 +81,11 @@ function cloneMatrix(m: ModeMatrix): ModeMatrix {
   return {
     sonarr: { ...m.sonarr },
     radarr: { ...m.radarr },
-    lidarr: { ...m.lidarr },
+    // A config saved before Lidarr's manual_match cell existed reads as census (the domain fills it too).
+    lidarr: {
+      ...m.lidarr,
+      manual_match: (m.lidarr as Partial<Record<EnforceableClass, Mode>>).manual_match ?? 'census',
+    },
   };
 }
 
@@ -98,7 +122,7 @@ export default function AdminJanitorPage() {
 
   const data = status.data;
   const cfg = data?.config;
-  const serverModes: ModeMatrix | null = cfg ? (cfg.modes as ModeMatrix) : null;
+  const serverModes: ModeMatrix | null = cfg ? cloneMatrix(cfg.modes as ModeMatrix) : null;
   const serverKnobs: KnobDraft | null = cfg
     ? {
         maxActionsPerRun: String(cfg.maxActionsPerRun),
@@ -111,9 +135,11 @@ export default function AdminJanitorPage() {
 
   const toggleCell = (instance: Instance, klass: EnforceableClass) => {
     if (!modes) return;
+    const current = cellMode(modes, instance, klass);
+    if (current === null) return;
     setSaved(false);
     const next = cloneMatrix(modes);
-    next[instance][klass] = next[instance][klass] === 'census' ? 'enforce' : 'census';
+    (next[instance] as Record<EnforceableClass, Mode>)[klass] = current === 'census' ? 'enforce' : 'census';
     setModesDraft(next);
   };
 
@@ -143,8 +169,11 @@ export default function AdminJanitorPage() {
   const escalations: string[] = [];
   if (modes && serverModes) {
     for (const instance of INSTANCES) {
-      for (const klass of CLASSES) {
-        if (serverModes[instance][klass] === 'census' && modes[instance][klass] === 'enforce') {
+      for (const klass of INSTANCE_CLASSES[instance]) {
+        if (
+          cellMode(serverModes, instance, klass) === 'census' &&
+          cellMode(modes, instance, klass) === 'enforce'
+        ) {
           escalations.push(`${INSTANCE_LABEL[instance]}: ${CLASS_LABEL[klass]}`);
         }
       }
@@ -243,7 +272,15 @@ export default function AdminJanitorPage() {
                       <span className="field-hint">{CLASS_HINT[klass]}</span>
                     </th>
                     {INSTANCES.map((instance) => {
-                      const mode = modes[instance][klass];
+                      const mode = cellMode(modes, instance, klass);
+                      if (mode === null) {
+                        // Only Lidarr reports this class, so the other apps have no cell for it.
+                        return (
+                          <td key={instance}>
+                            <span className="janitor-mode janitor-mode--fixed">Not used</span>
+                          </td>
+                        );
+                      }
                       return (
                         <td key={instance}>
                           <button
@@ -336,7 +373,7 @@ export default function AdminJanitorPage() {
                 disabled={!canSave}
                 label={save.isPending ? 'Saving…' : 'Save'}
                 confirmLabel={`Enforce ${escalations.length} ${escalations.length === 1 ? 'cell' : 'cells'}?`}
-                restingAriaLabel={`Save janitor config, enabling enforcement for ${escalations.join(', ')} — click twice to confirm`}
+                restingAriaLabel={`Save janitor config, enabling enforcement for ${escalations.join(', ')}. Click twice to confirm.`}
                 confirmAriaLabel={`Confirm: enable enforcement for ${escalations.join(', ')}`}
                 onConfirm={doSave}
               />

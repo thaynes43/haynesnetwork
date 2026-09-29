@@ -332,6 +332,23 @@ export class TrashSweepPausedError extends Error {
   }
 }
 
+/**
+ * ADR-094 / DESIGN-046 D-14: the queue janitor could not write and read back its release block (the "must not contain"
+ * profile on Lidarr) before a `manual_match` removal. Nothing is removed for that download this run; the next run tries
+ * again. `step` as for the Release Block. Internal to the janitor run (never surfaced over tRPC); carries the instance
+ * and the step, never a term or a title.
+ */
+export class JanitorReleaseBlockError extends Error {
+  readonly code = 'JANITOR_RELEASE_BLOCK_FAILED' as const;
+  constructor(
+    readonly instance: 'sonarr' | 'radarr' | 'lidarr',
+    readonly step: ReleaseBlockStep,
+    options?: { cause?: unknown },
+  ) {
+    super(`release block ${step} failed on ${instance}`, options);
+  }
+}
+
 /** DESIGN-052 D-13 / D-21 — where the Release Block writer failed: a term outside the grammar (`validate`), the
  *  profile write (`put`, including its GET), the read-back (`read_back`), or a copied profile (`duplicate_profile`). */
 export type ReleaseBlockStep = 'validate' | 'put' | 'read_back' | 'duplicate_profile';

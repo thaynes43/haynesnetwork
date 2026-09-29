@@ -44,6 +44,37 @@ export interface ArrReleaseProfileInput {
   tags: number[];
 }
 
+/**
+ * ADR-094 / DESIGN-046 D-14 — a Lidarr release profile (`/api/v1/releaseprofile`, Lidarr 3.1.6 ReleaseProfileResource):
+ * `{id, enabled, required, ignored, indexerId, tags}`. Unlike Radarr and Sonarr it has NO `name`, so the janitor finds
+ * its own profile by its sentinel term, not by name. Terms may come back as one comma-separated string, as on the others.
+ */
+export const lidarrReleaseProfileSchema = z.object({
+  id: z.number().int(),
+  enabled: z.boolean().nullish(),
+  required: z
+    .union([z.array(z.string()), z.string()])
+    .nullish()
+    .transform(splitTerms),
+  ignored: z
+    .union([z.array(z.string()), z.string()])
+    .nullish()
+    .transform(splitTerms),
+  indexerId: z.number().int().nullish(),
+  tags: z.array(z.number().int()).nullish(),
+});
+export type LidarrReleaseProfile = z.infer<typeof lidarrReleaseProfileSchema>;
+
+/** The body the janitor POSTs / PUTs to Lidarr (`id` only on a PUT; no `name`, which Lidarr does not have). */
+export interface LidarrReleaseProfileInput {
+  id?: number;
+  enabled: boolean;
+  required: string[];
+  ignored: string[];
+  indexerId: number;
+  tags: number[];
+}
+
 function splitTerms(value: string[] | string | null | undefined): string[] {
   if (value === null || value === undefined) return [];
   if (Array.isArray(value)) return value;
