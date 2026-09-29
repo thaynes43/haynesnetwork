@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,6 +19,34 @@ const PG_USER = 'postgres';
 const PG_PASSWORD = 'postgres';
 const PG_DATABASE = 'hnet_test';
 const START_ATTEMPTS = 3;
+const STOP_DEADLINE_MS = 15_000;
+
+/**
+ * Stop an embedded server without ever hanging. `EmbeddedPostgres.stop()` sends SIGINT and then waits
+ * for the child's `exit` event, but if the postgres process has ALREADY exited (the classic case: the
+ * free port picked by `getFreePort` was taken by a sibling test process before postgres bound it, so
+ * postgres died at startup and `start()` rejected) that event has already fired and `stop()` awaits it
+ * forever. That turned one lost port race into a 60 s test / 240 s hook timeout instead of the retry
+ * below. So: skip `stop()` for a dead process, and put a deadline on a live one.
+ */
+async function stopQuietly(pg: EmbeddedPostgres): Promise<void> {
+  const proc = (pg as unknown as { process?: ChildProcess }).process;
+  if (!proc || proc.exitCode !== null || proc.signalCode !== null) return;
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      pg.stop(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          proc.kill('SIGKILL');
+          resolve();
+        }, STOP_DEADLINE_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -65,7 +94,7 @@ export async function startPostgres(): Promise<StartedPostgres> {
         stop: async () => {
           if (stopped) return;
           stopped = true;
-          await pg.stop();
+          await stopQuietly(pg);
           await rm(dataDir, { recursive: true, force: true });
         },
       };
@@ -73,7 +102,7 @@ export async function startPostgres(): Promise<StartedPostgres> {
       // Port race or startup hiccup — clean up and retry on a fresh port/data dir.
       lastError = err;
       try {
-        await pg.stop();
+        await stopQuietly(pg);
       } catch {
         // best effort — the server may never have started
       }
