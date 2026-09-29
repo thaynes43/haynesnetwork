@@ -26,6 +26,9 @@
 - **Amended 2026-09-23 (issue #556 — ADR-090):** D-07a (the per-failure outbox row is retired; the nightly
   digest is the only failure notification; `notifiedAt` retired) and D-08c (the *arr adapter reads each
   WHOLE queue). Together they make `activity-scan` safe to schedule — it had never been scheduled.
+- **Amended 2026-09-29 (issue #615):** D-11 (the books adapter reads LazyLibrarian's `getHistory`, the
+  grab table, not `getWanted`, the book list). Since PLAN-048 the adapter could never see a Snatched or
+  Failed grab.
 
 ## D-01 — Library → Activity sub-tab (R1, the Trash→Activity idiom)
 
@@ -250,6 +253,62 @@ closing failures on a partial read. The live `activity.list` read uses the same 
 tab shows the whole queue too. `@hnet/arr`'s single-page `getQueue` now requires its parent id, so the
 truncating unfiltered call cannot be written again.
 
+### D-11 — the books adapter reads `getHistory`, not `getWanted` (2026-09-29, issue #615)
+
+**The defect.** The books adapter read LazyLibrarian's `cmd=getWanted` and parsed it as a grab table
+(`NZBtitle`, `DownloadID`, `AuxInfo`, `NZBdate`). It is not one. `getWanted` is the **book list filtered to
+`Status: Wanted`**: one row per book (`BookID`, `BookName`, `Status`, `AudioStatus`, `BookAdded`, ...).
+Live on 2026-09-29 it held 211 rows, all Wanted. So no Snatched, Failed or Processed row ever reached
+the adapter: `activity_import_failures` had 0 `books` rows while 10 usenet audiobooks and 2 torrents sat
+snatched and never imported, and every wanted book rendered as an "Untitled" Searching tile. The e2e stub
+served the same wrong shape, so the tests passed against a payload the real service never returns.
+
+**The real shapes** (read-only GETs of the live service; fixtures in `packages/lazylibrarian/__tests__/fixtures/`):
+
+- `getHistory` is the snatch log, **one row per grab attempt, never pruned** (8,508 rows: Failed 4,511,
+  Processed 3,283, Seeding 702, Snatched 12). Keys: `BookID`, `NZBtitle`, `NZBdate` (`YYYY-MM-DD HH:MM:SS`,
+  LL-local), `NZBurl`, `NZBmode`, `Source` (`SABNZBD` / `QBITTORRENT` / `DIRECT` / null), `DownloadID` (SAB
+  `nzo_id` / torrent hash / null), `AuxInfo` (`eBook` / `AudioBook` / null), `Status`, `DLResult`,
+  `Completed` (unix epoch seconds, `0` while unfinished).
+- `NZBurl` carries the indexer `apikey`, and a Failed row's `DLResult` can embed the same URL inside an
+  HTML anchor ("Failed to send nzb to @ <a href=...apikey=...>SABNZBD</a>"). The read client never reads
+  `NZBurl` and sanitises `DLResult` (markup stripped, key-shaped params redacted, 300 chars) before it can
+  reach `failureReason`, the failure ledger or the UI.
+
+**The semantics.** `getHistory` is a log, so the normalizer first reduces it to the **latest grab per
+(book, format)** (newest `NZBdate`; on a tie the later row wins), dropping LL's own `Duplicate NZB`
+rejections first (SAB dupe mode Fail; the earlier attempt decides the state). Then:
+
+| latest row | stage |
+|---|---|
+| `Snatched` + SAB queue slot | `downloading` (SAB %) |
+| `Snatched` + SAB history `Failed` | `failed` / `download_failed` |
+| `Snatched` + SAB history `Completed`, or a SAB grab SAB no longer reports | `importing` while fresh, `failed` / `stranded_import` once the finish time is past the horizon (30 min) |
+| `Snatched`, torrent / direct | `downloading` (no percentage) until LL records a `Completed` time, then `importing`; never a fabricated failure |
+| `Failed`, no copy ever landed, within 7 days | `failed`: `download_failed` when the text says nothing was downloaded (send / fetch / abort / repair / reject), else `postprocess_failed` |
+| `Processed` / `Seeding`, inside the 15-minute horizon | `completed` |
+| a wanted book with no live or fresh-failed grab | `searching`, one tile per wanted format (`getWanted`, `Status` / `AudioStatus`) |
+
+The **finish time** for a Snatched grab is LL's own `Completed` epoch when set, else `NZBdate`. That is
+the timestamp that decides "stale", so a slow download is not a strand.
+
+**Why two windows.** LL's history is never pruned, so 4.5k historical Failed rows are not 4.5k incidents.
+A Failed grab shows for 7 days (`DEFAULT_BOOKS_FAILED_WINDOW_MS`) and only when no copy of that book and
+format ever landed; then the book returns to `searching` while it is still wanted. A Snatched strand does
+not age out: it stays until it is imported or re-searched.
+
+**Issue #562 (books leg) is closed by this.** SAB history is a bounded, purgeable window, and 9 of the 10
+live stranded usenet grabs were in neither SAB's queue nor its 16k-slot history (SAB's
+`mode=history&nzo_ids=` also returns nothing once a job archives, OPS-013 §11.3, so a targeted lookup would
+not have found them either). LL's own `Completed` epoch is the signal that survives, so a usenet grab SAB
+no longer reports is judged stranded from it instead of reading `importing` forever. The *arr half of the
+family is unaffected.
+
+**Cost.** `getHistory` takes no filter and returns the whole log (about 8.5 MB live), once per
+`activity.list` / `activity-scan` read, next to the SAB reads. It shares LL's 30 s timeout and 3 retries.
+If that ever bites, the answer is a cheaper LL-side view, not a truncated read of a log whose newest rows
+matter.
+
 ## D-09 — click-through EVERYWHERE (owner ruling 2026-07-14 — "I can't click on anything in Activity")
 
 Every Activity tile navigates — not just failures. The aggregator (`resolveActivityHrefs`, the seam that
@@ -320,6 +379,7 @@ card, which then wears (and updates) the live stage badge.
 | D-08c | The *arr adapter reads each WHOLE queue (`getQueueAll`, paged to `totalRecords`); the single 200-record page dropped Sonarr's tail and made those failures flap (issue #556). `@hnet/arr` `getQueue` now requires its parent id. |
 | D-09 | Click-through EVERYWHERE (owner ruling): the aggregator fills `href` for every item — failed → failure detail; non-failed *arr → ledger detail (`media_items` join); book/comic want → Wanted detail (`book_requests` join); all `?from=activity` (new back-link key). Join miss → inert (honest). Whole-face target (#264); the Activity stage/kind filters moved to the URL so Back restores the tab AND its filters. |
 | D-10 | LIVE progress, the Fix feel: adaptive `activity.list` poll (2.5 s while any item downloads, else 5 s); the shared in-flight badge gained typed `pulse` + `progressPct` cues (a pulsing dot + filling mini-meter — the Fix `PhaseChip` vocabulary, a typed-prop+gallery ADR-058 extension, NOT a new slot); a just-landed tile flashes a one-shot accent before aging out; the failure + Wanted detail poll a lean new `activity.itemStatus` after a fire and render a reserved-slot stage chip that walks failed → … → done; the books walls now consume `activity.wallStages` (`books.wanted` exposes the join keys). Same DOM node updates in place (no remount). |
+| D-11 | The books adapter reads LazyLibrarian `getHistory` (the grab log), not `getWanted` (the Wanted book list): latest grab per (book, format), `Duplicate NZB` dropped, Failed shown for 7 days and only if no copy landed, Snatched strands never age out, LL's `Completed` epoch is the finish time (closes #562 for books), `DLResult` sanitised (it embeds the indexer apikey). `getWanted` now only feeds `searching`, from the real book shape. Stub fixed to the real shapes (issue #615). |
 
 ## Open questions
 

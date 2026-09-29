@@ -5,8 +5,10 @@
 import { LazyLibrarianHttp, type LazyLibrarianHttpOptions } from './http';
 import {
   llGetAllBooksResponseSchema,
+  llGetHistoryResponseSchema,
   llGetWantedResponseSchema,
   type LlBook,
+  type LlHistoryRow,
   type LlWantedRow,
 } from './schemas';
 
@@ -35,25 +37,44 @@ export interface LlBookStatus {
 }
 
 /**
- * ADR-059 / DESIGN-030 (PLAN-048) — a normalized LazyLibrarian wanted-table row (the acquisition worklist).
- * Raw status/source strings ride through; the domain owns the status → Activity stage mapping.
+ * ADR-059 / DESIGN-030 D-11 — a wanted BOOK (`cmd=getWanted` is the book list filtered to Wanted, not a
+ * grab table). Feeds the Activity `searching` stage only.
  */
-export interface LlWantedEntry {
+export interface LlWantedBook {
   bookId: string;
-  /** The release/NZB title (display fallback). */
+  /** The book's display title (`BookName`); '' when absent. */
   title: string;
-  /** The per-grab wanted status (Wanted / Snatched / Processed / Failed). */
+  /** The EBOOK status string (`Status`) — 'Wanted' for every row `getWanted` returns. */
+  ebookStatus: string | null;
+  /** The AUDIOBOOK status string (`AudioStatus`) — 'Wanted' when the audio format is wanted too. */
+  audioStatus: string | null;
+  /** When LL added the book (`BookAdded`); null if absent. */
+  addedAt: string | null;
+}
+
+/**
+ * ADR-059 / DESIGN-030 D-11 — a normalized LazyLibrarian HISTORY row (`cmd=getHistory`: one row per grab
+ * attempt). Raw status/source strings ride through; the domain owns the status → Activity stage mapping.
+ * `NZBurl` is deliberately never read (it embeds the indexer apikey) and `DLResult` is sanitised.
+ */
+export interface LlHistoryEntry {
+  bookId: string;
+  /** The release/NZB title (display). */
+  title: string;
+  /** The per-grab status (Snatched / Failed / Processed / Seeding). */
   status: string;
-  /** The download client the grab routed to (SABNZBD / NZB / TORRENT / DIRECT), lowercased; null if absent. */
+  /** The download client the grab routed to (sabnzbd / qbittorrent / direct), lowercased; null if absent. */
   source: string | null;
   /** The client-side id — the SAB `nzo_id` / torrent hash (the join key to SAB); null if absent. */
   downloadId: string | null;
   /** The format the grab is for ('ebook' | 'audiobook'), mapped from `AuxInfo`; null if unmapped. */
   format: 'ebook' | 'audiobook' | null;
-  /** The LL post-process failure text (`DLResult`), when the grab failed. */
+  /** The failure text (`DLResult`) on a Failed row — markup stripped, keys redacted; null otherwise/empty. */
   dlResult: string | null;
-  /** When the grab was snatched (`NZBdate`) — the staleness signal for strand detection; null if absent. */
+  /** When the grab was snatched (`NZBdate`, LL-local `YYYY-MM-DD HH:MM:SS`); null if absent. */
   snatchedAt: string | null;
+  /** When the download finished (`Completed` epoch seconds → ISO); null while unfinished (`0`). */
+  completedAt: string | null;
 }
 
 export class LazyLibrarianReadClient {
@@ -98,29 +119,86 @@ export class LazyLibrarianReadClient {
   }
 
   /**
-   * ADR-059 / DESIGN-030 (PLAN-048) — `cmd=getWanted` — the wanted-table worklist (the Activity books
-   * adapter's LL half). Returns every current grab attempt with its status/source/DownloadID/format, so the
-   * domain can pair a `Snatched` row to its SAB job (via `downloadId`) and detect strands. Tolerant of LL's
-   * array / `{ data }` / error-string shapes (→ [] on an unknown/error response). Format from `AuxInfo`.
+   * ADR-059 / DESIGN-030 D-11 — `cmd=getWanted` — the books LL currently wants (the Activity `searching`
+   * stage). NOT a grab table: one BOOK row per book with `Status` Wanted. Tolerant of LL's array /
+   * `{ data }` / error-string shapes (→ [] on an unknown/error response).
    */
-  async getWanted(): Promise<LlWantedEntry[]> {
+  async getWanted(): Promise<LlWantedBook[]> {
     const raw = await this.http.commandJson('getWanted', llGetWantedResponseSchema);
     const rows: LlWantedRow[] = Array.isArray(raw)
       ? raw
       : raw != null && typeof raw === 'object' && 'data' in raw
         ? raw.data
         : [];
-    return rows.map((r) => ({
-      bookId: r.BookID != null ? String(r.BookID) : '',
-      title: r.NZBtitle ?? '',
-      status: (r.Status ?? '').trim(),
-      source: r.Source != null ? String(r.Source).trim().toLowerCase() : null,
-      downloadId: r.DownloadID != null && String(r.DownloadID) !== '' ? String(r.DownloadID) : null,
-      format: mapAuxFormat(r.AuxInfo),
-      dlResult: r.DLResult != null && r.DLResult !== '' ? r.DLResult : null,
-      snatchedAt: r.NZBdate != null && r.NZBdate !== '' ? r.NZBdate : null,
-    }));
+    const out: LlWantedBook[] = [];
+    for (const r of rows) {
+      if (r.BookID == null || String(r.BookID) === '') continue;
+      out.push({
+        bookId: String(r.BookID),
+        title: (r.BookName ?? '').trim(),
+        ebookStatus: r.Status ?? null,
+        audioStatus: r.AudioStatus ?? null,
+        addedAt: blankToNull(r.BookAdded),
+      });
+    }
+    return out;
   }
+
+  /**
+   * ADR-059 / DESIGN-030 D-11 — `cmd=getHistory` — the snatch table, one row per grab attempt with
+   * Snatched / Failed / Processed / Seeding status, source, `DownloadID`, format (`AuxInfo`), failure text
+   * and completion time. The full log (it is never pruned and takes no filter), so callers reduce it to the
+   * latest row per book+format. Tolerant of array / `{ data }` / error-string shapes (→ []). Rows without
+   * a `BookID` are dropped.
+   */
+  async getHistory(): Promise<LlHistoryEntry[]> {
+    const raw = await this.http.commandJson('getHistory', llGetHistoryResponseSchema);
+    const rows: LlHistoryRow[] = Array.isArray(raw)
+      ? raw
+      : raw != null && typeof raw === 'object' && 'data' in raw
+        ? raw.data
+        : [];
+    const out: LlHistoryEntry[] = [];
+    for (const r of rows) {
+      if (r.BookID == null || String(r.BookID) === '') continue;
+      const completed = Number(r.Completed ?? 0);
+      out.push({
+        bookId: String(r.BookID),
+        title: r.NZBtitle ?? '',
+        status: (r.Status ?? '').trim(),
+        source:
+          r.Source != null && String(r.Source).trim() !== ''
+            ? String(r.Source).trim().toLowerCase()
+            : null,
+        downloadId:
+          r.DownloadID != null && String(r.DownloadID) !== '' ? String(r.DownloadID) : null,
+        format: mapAuxFormat(r.AuxInfo),
+        dlResult: sanitizeLlResult(r.DLResult),
+        snatchedAt: blankToNull(r.NZBdate),
+        completedAt:
+          Number.isFinite(completed) && completed > 0
+            ? new Date(completed * 1000).toISOString()
+            : null,
+      });
+    }
+    return out;
+  }
+}
+
+/**
+ * LL's `DLResult` on a Failed row can embed the Prowlarr download URL — inside an HTML anchor, with its
+ * `apikey=` — ("Failed to send nzb to @ <a href="...apikey=…">SABNZBD</a>"). It ends up in the failure
+ * ledger and the UI, so strip markup, redact any key-shaped query parameter and bound the length.
+ */
+export function sanitizeLlResult(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const s = raw
+    .replace(/<[^>]*>/g, '')
+    .replace(/((?:api[_-]?key|apikey|token|passkey)=)[^&\s"'<>]*/gi, '$1REDACTED')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (s === '') return null;
+  return s.length > 300 ? `${s.slice(0, 297)}...` : s;
 }
 
 /** LL serves absent per-format file/library fields as `null`, `''` or `'None'` depending on the row age. */

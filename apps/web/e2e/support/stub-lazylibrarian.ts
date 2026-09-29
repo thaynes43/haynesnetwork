@@ -51,49 +51,86 @@ function bookStatus(id: string): StubBookRow {
 /** Every book id the stub "knows" — the `getAllBooks` universe (comics never reach LL). */
 const KNOWN_BOOK_IDS = ['gb-rpo', 'gb-tog', 'gb-martian', 'gb-hyp', 'gb-phm'];
 
-// ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the wanted-table fixture the Activity books
-// adapter reads (`cmd=getWanted`). It spans every in-flight stage + the incident: a searching row, a
-// SAB-downloading row (paired to the SAB queue slot), the STRANDED import (Snatched + SAB-Completed but
-// aged past the horizon — the OPS-013 §11 42-book class), an LL post-process failure, and a dead usenet
-// download (Snatched + SAB-Failed). The DownloadIDs join to the SAB stub's queue/history nzo_ids.
+// ADR-059 / DESIGN-030 D-11 — the Activity books fixtures, in the REAL LazyLibrarian shapes (verified against
+// the live service 2026-09-29; the stub used to serve a grab-shaped `getWanted`, a shape the real service
+// never returns — issue #615):
+//   • `cmd=getWanted`  → one BOOK row per book whose ebook status is Wanted (`BookID`, `BookName`, `Status`,
+//                        `AudioStatus`, `BookAdded`, ...) — feeds the `searching` stage.
+//   • `cmd=getHistory` → the snatch log, one row per grab attempt (`BookID`, `NZBtitle`, `NZBdate`, `Status`
+//                        Snatched/Failed/Processed/Seeding, `Source`, `DownloadID`, `AuxInfo`, `DLResult`,
+//                        `Completed` epoch) — feeds every other stage.
+// Together they span every in-flight stage + the incident: a searching book, a SAB-downloading row (paired to
+// the SAB queue slot), the STRANDED import (Snatched + SAB-Completed but aged past the horizon — the OPS-013
+// §11 42-book class), an LL post-process failure, and a dead usenet download (Snatched + SAB-Failed). The
+// DownloadIDs join to the SAB stub's queue/history nzo_ids.
 const AGED = '2020-01-01 00:00:00'; // well past the strand horizon → the SAB-Completed row reads as stranded
+
+/** LL's `NZBdate` shape (`YYYY-MM-DD HH:MM:SS`), an hour ago — a Failed row must sit inside the 7-day window. */
+function recentNzbDate(): string {
+  return new Date(Date.now() - 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+}
+
 function wantedRows(): Array<Record<string, string>> {
   return [
-    { BookID: 'act-search', NZBtitle: 'A Book Still Searching', Status: 'Wanted', AuxInfo: 'eBook' },
+    {
+      BookID: 'act-search',
+      BookName: 'A Book Still Searching',
+      Status: 'Wanted',
+      AudioStatus: 'Skipped',
+      BookAdded: '2026-07-12T00:00:00Z',
+    },
+  ];
+}
+
+function historyRows(): Array<Record<string, string | number | null>> {
+  return [
     {
       BookID: 'act-dl',
       NZBtitle: 'A Book Downloading Now',
+      NZBdate: AGED,
       Status: 'Snatched',
       Source: 'SABNZBD',
       DownloadID: 'sab-dl-1',
       AuxInfo: 'eBook',
-      NZBdate: AGED,
+      NZBmode: 'nzb',
+      DLResult: null,
+      Completed: 0,
     },
     {
       BookID: 'act-strand',
       NZBtitle: 'The Stranded Import',
+      NZBdate: AGED,
       Status: 'Snatched',
       Source: 'SABNZBD',
       DownloadID: 'sab-strand-1',
       AuxInfo: 'eBook',
-      NZBdate: AGED,
+      NZBmode: 'nzb',
+      DLResult: null,
+      Completed: 0,
     },
     {
       BookID: 'act-ppfail',
       NZBtitle: 'A Book That Failed To Import',
+      NZBdate: recentNzbDate(),
       Status: 'Failed',
+      Source: null,
+      DownloadID: null,
       AuxInfo: 'AudioBook',
+      NZBmode: 'nzb',
       DLResult: 'Postprocessing failed — Progress: 0%',
-      NZBdate: AGED,
+      Completed: 0,
     },
     {
       BookID: 'act-dlfail',
       NZBtitle: 'A Dead Usenet Download',
+      NZBdate: AGED,
       Status: 'Snatched',
       Source: 'SABNZBD',
       DownloadID: 'sab-dead-1',
       AuxInfo: 'eBook',
-      NZBdate: AGED,
+      NZBmode: 'nzb',
+      DLResult: null,
+      Completed: 0,
     },
   ];
 }
@@ -143,6 +180,11 @@ export async function startStubLazyLibrarian(): Promise<StubLazyLibrarianServer>
       if (cmd === 'getWanted') {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(wantedRows()));
+        return;
+      }
+      if (cmd === 'getHistory') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(historyRows()));
         return;
       }
       res.writeHead(200, { 'content-type': 'text/plain' });

@@ -1,5 +1,5 @@
 // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the BOOKS activity client bundle: the LL read
-// (wanted table) + SAB read (queue/history) that feed the pure normalizer, plus the confined LL write
+// (grab history + wanted books) + SAB read (queue/history) that feed the pure normalizer, plus the confined LL write
 // (`forceProcess`/`searchBook`) the Admin actions fire. `@hnet/lazylibrarian/write` is import-guarded to
 // packages/domain (the arr-write-import-guard); the API/sync layers receive this bundle as an opaque type
 // and inject fetch-stubbed clients in tests — the plex-clients / mam-clients precedent.
@@ -13,7 +13,7 @@ import type { ActivitySourceAdapter } from './contract';
 
 /** The read clients the books adapter reads through (tests inject fetch-stubbed instances). */
 export interface BooksActivityReadClients {
-  ll: Pick<LazyLibrarianReadClient, 'getWanted'>;
+  ll: Pick<LazyLibrarianReadClient, 'getWanted' | 'getHistory'>;
   sab: Pick<SabnzbdReadClient, 'getQueue' | 'getHistory'>;
 }
 
@@ -25,7 +25,7 @@ export interface BooksActivityAdapterOptions {
 }
 
 /**
- * Build the books ActivitySourceAdapter — its `list()` reads the LL wanted table + the SAB queue/history
+ * Build the books ActivitySourceAdapter — its `list()` reads the LL grab history + wanted books + the SAB queue/history
  * LIVE and folds them through the pure normalizer. A read failure propagates so the aggregator can degrade
  * the books source without failing the whole read.
  */
@@ -36,13 +36,14 @@ export function buildBooksActivityAdapter(
   return {
     source: BOOKS_ACTIVITY_SOURCE,
     async list() {
-      const [llWanted, sabQueue, sabHistory] = await Promise.all([
+      const [llWanted, llHistory, sabQueue, sabHistory] = await Promise.all([
         clients.ll.getWanted(),
+        clients.ll.getHistory(),
         clients.sab.getQueue(),
         clients.sab.getHistory(),
       ]);
       return buildBooksActivity(
-        { llWanted, sabQueue, sabHistory },
+        { llWanted, llHistory, sabQueue, sabHistory },
         {
           now: (opts.now ?? (() => new Date()))(),
           ...(opts.strandHorizonMs !== undefined ? { strandHorizonMs: opts.strandHorizonMs } : {}),

@@ -56,23 +56,19 @@ export const llGetAllBooksResponseSchema = z.union([
 export type LlGetAllBooksResponse = z.infer<typeof llGetAllBooksResponseSchema>;
 
 /**
- * ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — a LazyLibrarian WANTED-TABLE row (`cmd=getWanted`).
- * The wanted table is the acquisition worklist: one row per grab attempt, carrying the per-grab `Status`
- * (Wanted / Snatched / Processed / Failed), the download `Source` (SABNZBD / NZB / TORRENT / DIRECT) + the
- * `DownloadID` (the SAB `nzo_id` / torrent hash — the join key to SAB), the `AuxInfo` format tag, the
- * `DLResult` failure text, and `NZBtitle`/`NZBdate` (display + staleness). Kept tolerant (LL's shapes vary
- * by build); the domain owns the status → stage mapping (the mapLlStatus precedent). Capitalized keys.
+ * ADR-059 / DESIGN-030 D-11 — a `cmd=getWanted` row. Despite the name this is NOT a grab table: LL answers
+ * with one BOOK row per book whose ebook status is Wanted (same capitalized keys as `getAllBooks`:
+ * `BookID`, `BookName`, `Status`, `AudioStatus`, `BookAdded`, ...). Verified against the live service
+ * 2026-09-29 (211 rows, every `Status: Wanted`). The grab state lives in `getHistory` (below); this read
+ * only feeds the Activity `searching` stage. Kept tolerant + passthrough.
  */
 export const llWantedRowSchema = z
   .object({
     BookID: z.union([z.string(), z.number()]).optional(),
-    NZBtitle: z.string().nullish(),
+    BookName: z.string().nullish(),
     Status: z.string().nullish(),
-    Source: z.string().nullish(),
-    DownloadID: z.union([z.string(), z.number()]).nullish(),
-    AuxInfo: z.string().nullish(),
-    DLResult: z.string().nullish(),
-    NZBdate: z.string().nullish(),
+    AudioStatus: z.string().nullish(),
+    BookAdded: z.string().nullish(),
   })
   .passthrough();
 
@@ -87,3 +83,40 @@ export const llGetWantedResponseSchema = z.union([
 ]);
 
 export type LlGetWantedResponse = z.infer<typeof llGetWantedResponseSchema>;
+
+/**
+ * ADR-059 / DESIGN-030 D-11 — a `cmd=getHistory` row: the snatch table, ONE ROW PER GRAB ATTEMPT, never
+ * pruned (8,508 rows live 2026-09-29). Verified keys: `BookID`, `NZBtitle`, `NZBdate` (`YYYY-MM-DD
+ * HH:MM:SS`, LL-local time), `NZBprov`, `NZBurl` (carries the indexer `apikey` — never read, never
+ * surfaced), `NZBsize`, `NZBmode` (`nzb` / `torznab` / `direct`), `Source` (`SABNZBD` / `QBITTORRENT` /
+ * `DIRECT` / null), `DownloadID` (the SAB `nzo_id` / torrent hash / null), `AuxInfo` (`eBook` / `AudioBook`
+ * / null), `Status` (`Snatched` / `Failed` / `Processed` / `Seeding`), `DLResult` (failure text — may
+ * embed a Prowlarr URL with its apikey inside an HTML anchor — or the imported file path), `Completed`
+ * (unix epoch seconds the download finished, `0` while unfinished; set on Snatched usenet rows whose
+ * import never ran) and `Label`. Capitalized keys; tolerant + passthrough.
+ */
+export const llHistoryRowSchema = z
+  .object({
+    BookID: z.union([z.string(), z.number()]).nullish(),
+    NZBtitle: z.string().nullish(),
+    NZBdate: z.string().nullish(),
+    Status: z.string().nullish(),
+    Source: z.string().nullish(),
+    DownloadID: z.union([z.string(), z.number()]).nullish(),
+    AuxInfo: z.string().nullish(),
+    DLResult: z.string().nullish(),
+    Completed: z.union([z.number(), z.string()]).nullish(),
+  })
+  .passthrough();
+
+export type LlHistoryRow = z.infer<typeof llHistoryRowSchema>;
+
+/** `getHistory` returns an array, `{ data: [...] }`, or an error string/empty — all tolerated. */
+export const llGetHistoryResponseSchema = z.union([
+  z.array(llHistoryRowSchema),
+  z.object({ data: z.array(llHistoryRowSchema) }).passthrough(),
+  z.string(),
+  z.null(),
+]);
+
+export type LlGetHistoryResponse = z.infer<typeof llGetHistoryResponseSchema>;
