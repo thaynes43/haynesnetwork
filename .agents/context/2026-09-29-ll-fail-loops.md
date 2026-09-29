@@ -30,7 +30,7 @@ Unchanged and checked: `blacklist_failed` 1, `blacklist_processed` off, `del_fai
 
 Rollback: `cmd=writeCFG&group=General&name=reject_words&value=<Before>` (and the same for `reject_audio`).
 
-The cleanup, about 16:50Z: `cmd=unqueueBook&id=<BookID>&type=<eBook|AudioBook>` for every format that read `Wanted`
+The cleanup, about 16:43Z: `cmd=unqueueBook&id=<BookID>&type=<eBook|AudioBook>` for every format that read `Wanted`
 and whose recorded file exists on disk, **127 formats (114 eBook, 13 audiobook), all now `Skipped`**. Excluded: the
 open haynesnetwork Fix requests (`book_fix_requests` in `pending`/`queued`/`search_triggered`: `Rlf2vQAACAAJ`,
 `GrYsEAAAQBAJ`; neither was in the set), since a Fix is the one sanctioned way to make LazyLibrarian re-acquire a
