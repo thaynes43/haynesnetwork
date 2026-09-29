@@ -91,18 +91,20 @@ export type JanitorTermRefusal =
   | 'grammar';
 
 const WRITABLE = /[a-z0-9]/;
-const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+/** A letter, a digit or a symbol: a character that can carry a word's meaning (`÷`, `♥`, `★` name albums). */
+const MEANINGFUL = /[\p{L}\p{N}\p{S}]/u;
 
 /**
- * Does the title carry a letter or digit the term cannot write (another script, or a Latin letter that does not fold,
- * such as `ø` or `ß`) anywhere but strictly inside a written word? The term matches such a character only through SEP,
- * which is harmless inside a word ("Bjørk": `bj`, one non-alphanumeric, `rk`) but lets any other word stand in for a
- * whole unwritten one ("Artist - 日本 (2019)" would also block "Artist - 東京 (2019)").
+ * Does the title carry a letter, digit or symbol the term cannot write (another script, a Latin letter that does not
+ * fold such as `ø` or `ß`, a symbol such as `÷` or `♥`) anywhere but strictly inside a written word? The term matches
+ * such a character only through SEP, which is harmless inside a word ("Bjørk": `bj`, one non-alphanumeric, `rk`;
+ * "Ke$ha") but lets any other word stand in for a whole unwritten one ("Artist - 日本 (2019)" would also block
+ * "Artist - 東京 (2019)", and "Ed Sheeran - ÷ [FLAC]" would block "Ed Sheeran - × [FLAC]").
  */
 function hasUnwritableWord(title: string): boolean {
   const chars = [...foldReleaseName(title)];
   return chars.some((c, i) => {
-    if (WRITABLE.test(c) || !LETTER_OR_DIGIT.test(c)) return false;
+    if (WRITABLE.test(c) || !MEANINGFUL.test(c)) return false;
     const prev = chars[i - 1];
     const next = chars[i + 1];
     return !(prev !== undefined && WRITABLE.test(prev) && next !== undefined && WRITABLE.test(next));

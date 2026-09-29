@@ -1147,8 +1147,10 @@ export async function evaluateQueueCleanup(input: {
     }
 
     // 1b. The manual_match loop guard (D-13): an album the janitor already removed as manual_match on
-    //     MANUAL_MATCH_LOOP_LIMIT earlier downloads is held (`skipped_loop`), never removed or searched again. A
-    //     record with no album cannot loop through the janitor: it is never searched (below).
+    //     MANUAL_MATCH_LOOP_LIMIT earlier downloads is held (`skipped_loop`), never removed or searched again, while it
+    //     is still monitored and missing tracks. Only then would the janitor search it again, so only then can it
+    //     loop: an album that imported since (a later upgrade grab failing) or was unmonitored gets the removal and
+    //     the block, and no search. A record with no album cannot loop through the janitor: it is never searched.
     const loopCandidates = [...verdicts.values()].filter(
       (v) => v.wants === 'manual_match' && v.item.targetId != null,
     );
@@ -1159,18 +1161,28 @@ export async function evaluateQueueCleanup(input: {
           instance,
           distinctIds(loopCandidates.map((v) => v.item.targetId)),
         );
-        for (const v of loopCandidates) {
-          const own = nonEmpty(v.item.downloadId);
-          const earlier = [...(prior.get(v.item.targetId!) ?? [])].filter((d) => d !== own).length;
-          if (earlier >= MANUAL_MATCH_LOOP_LIMIT) {
+        const over = loopCandidates
+          .map((v) => {
+            const own = nonEmpty(v.item.downloadId);
+            const earlier = [...(prior.get(v.item.targetId!) ?? [])].filter((d) => d !== own).length;
+            return { v, earlier };
+          })
+          .filter((x) => x.earlier >= MANUAL_MATCH_LOOP_LIMIT);
+        if (over.length > 0) {
+          // Which of these albums would be searched again (monitored, still missing tracks)? No check ⇒ hold all.
+          const searchable = client.missingMonitoredTargets
+            ? new Set(await client.missingMonitoredTargets(over.map((x) => x.v.item)))
+            : null;
+          for (const { v, earlier } of over) {
+            if (searchable !== null && !searchable.has(v.item)) continue;
             v.loop = true;
             v.priorRemovals = earlier;
             v.wants = null;
           }
         }
       } catch (err) {
-        // The guard cannot tell which albums loop, so no manual_match download is acted on this run (fail safe);
-        // the census rows are still written.
+        // The guard cannot tell which albums loop (a failed history or album read), so no manual_match download
+        // is acted on this run (fail safe); the census rows are still written.
         for (const v of loopCandidates) v.wants = null;
         input.logger?.warn?.('queue-cleanup: loop-guard read failed, manual_match not acted on this run', {
           instance,

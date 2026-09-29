@@ -78,7 +78,8 @@ Shape of the decision (normative; mechanics in DESIGN-046 D-13 and D-14):
   the raw apostrophes, accented letters and `&` as ADR-093's terms are. It blocks that exact title posted again, with
   any separators, and nothing with a word more or a word less. **The title must name the album's artist** (the
   artist's words as a run of whole words, a leading "The" optional) and carry at least one more word, and every word
-  must be one the term can write (a word in another script would be matched by any word); otherwise no term is
+  must be one the term can write (a word in another script, or a symbol such as `÷`, would be matched by any word);
+  otherwise no term is
   written and the download is left alone (`skipped_unblockable`): the janitor never removes a `manual_match` download
   without blocking its name first.
 - **The profile:** one per *arr the janitor blocks on (Lidarr today), enabled, no required terms, every indexer, no
@@ -88,7 +89,8 @@ Shape of the decision (normative; mechanics in DESIGN-046 D-13 and D-14):
   One writer, `reconcileJanitorReleaseBlock`, under an advisory lock; every term passes the whole-name grammar before
   any write; the janitor's hourly run repairs drift and drops expired terms.
 - **Loops stay watched.** A re-post under a different title escapes the term. The loop guard holds an album the
-  janitor has already removed as `manual_match` on two earlier downloads (`skipped_loop`); every held download and
+  janitor has already removed as `manual_match` on two earlier downloads, while it is still monitored and missing
+  tracks, so the janitor would search it again (`skipped_loop`); every held download and
   every target the janitor searched on two or more runs in seven days is listed in the nightly digest and logged as
   `[queue-cleanup] loop_detected`.
 

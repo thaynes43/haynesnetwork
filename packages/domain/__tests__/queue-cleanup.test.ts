@@ -749,6 +749,10 @@ describe('D-14 janitor release block term + drift (pure)', () => {
     expect(derive('Artist - 日本 (2019) [FLAC]', 'Artist')).toEqual({ refused: 'unwritable' });
     expect(derive('Artist - 愛 (2019)', 'Artist')).toEqual({ refused: 'unwritable' });
     expect(derive('Ørjan Nilsen - Album (2019)', 'Ørjan Nilsen')).toEqual({ refused: 'unwritable' });
+    // A symbol that names the album is a word the term cannot write either (÷ would block ×, +, or nothing at all).
+    expect(derive('Ed Sheeran - ÷ [FLAC]', 'Ed Sheeran')).toEqual({ refused: 'unwritable' });
+    expect(derive('Prince - ♥ (1994) [MP3 320]', 'Prince')).toEqual({ refused: 'unwritable' });
+    expect('term' in derive('Ke$ha - Animal (2010) [FLAC]', 'Ke$ha')).toBe(true); // inside a word
     // Inside a written word it stands for one character only.
     const inside = derive('Bjørk Tribute - Straße (2019)', 'Bjørk Tribute');
     expect('term' in inside).toBe(true);
@@ -2166,7 +2170,8 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
       logger: log.logger,
     });
     expect(lidarr.calls.deletes).toHaveLength(0);
-    expect(lidarr.calls.missingChecks).toHaveLength(0);
+    expect(lidarr.calls.missingChecks).toEqual([[420]]); // the guard asks whether a search would follow
+    expect(lidarr.profiles.log).toEqual([]);
     expect(lidarrReport(report)).toMatchObject({ actionsTaken: 0, errors: 0 });
     const current = (await lidarrRows()).filter((r) => r.downloadId === 'dl-c');
     expect(current).toHaveLength(1);
@@ -2185,6 +2190,29 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
         },
       },
     ]);
+  });
+
+  it('LOOP GUARD (D-13): an album no longer missing tracks is not held (no search would follow); a failed check holds', async () => {
+    await t.db.insert(arrQueueCleanupActions).values([priorRow(5425, 'dl-a'), priorRow(5425, 'dl-b')]);
+    // The album imported since (a later upgrade grab failed): removed and blocked, not searched, not held.
+    const complete = makeInstanceStub([manualMatchItem(425, 'dl-upgrade', 5425)], { missing: false });
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: complete.client }), config: mmCfg() });
+    expect(complete.calls.deletes.map((d) => d.id)).toEqual([425]);
+    expect(complete.calls.searches).toEqual([]);
+    let [row] = (await lidarrRows()).filter((r) => r.queueItemId === 425);
+    expect(row).toMatchObject({ action: 'removed_blocklisted', outcome: 'done' });
+
+    // The completeness read fails: the guard cannot tell, so nothing manual_match is acted on this run.
+    await t.db.delete(arrQueueCleanupActions);
+    await t.db.insert(arrQueueCleanupActions).values([priorRow(5426, 'dl-a'), priorRow(5426, 'dl-b')]);
+    const failing = makeInstanceStub([manualMatchItem(426, 'dl-c', 5426)], { explodeOnWrite: true });
+    failing.client.missingMonitoredTargets = async () => {
+      throw new Error('album read failed');
+    };
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: failing.client }), config: mmCfg() });
+    expect(failing.calls.deletes).toEqual([]);
+    [row] = (await lidarrRows()).filter((r) => r.queueItemId === 426);
+    expect(row).toMatchObject({ mode: 'enforce', action: 'none', outcome: 'observed' });
   });
 
   it('LOOP GUARD (D-13): counts only landed manual_match removals of the same album on OTHER downloads', async () => {
