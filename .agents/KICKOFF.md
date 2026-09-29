@@ -116,17 +116,20 @@ web e2e`, :3100), each plan lists the **live journeys** to run against real stag
 its live journeys pass. Secrets come from 1Password via the existing env/ExternalSecret contract
 — reference names only, never commit values.
 
-## When to spin Opus subagents (you are scarce — default to Opus)
+## When to spin subagents (you are scarce — default to a subagent)
 
 **Finishing the whole queue before your Fable usage limit is hit is a first-class goal — as
 important as the code quality.** Your Fable budget is a hard, scarce resource and **you cannot
 see how much of it remains**, so treat it as always nearly-exhausted: **default every unit of
-work to an Opus subagent, and keep a task for yourself ONLY when a Fable-level mind is genuinely
+work to a subagent, and keep a task for yourself ONLY when a Fable-level mind is genuinely
 required** — the architecture, the ADR call you ratify, the subtle domain/algorithm code,
-cross-plan coherence, and the final review. When you are unsure whether a task needs you, it does
-not — hand it to Opus. A plan finished by Opus subagents under your direction counts fully; a plan
-left half-done because you spent Fable budget on exploration, boilerplate, or running the test
-suite does not. Concretely, delegate to Opus:
+cross-plan coherence, and the final review. Subagents are two tiers — Sonnet 5.5 (`sonnet-worker`)
+for routine work, Opus 5.5 (`opus-worker`) for hard or user-visible work — per the pod-wide dev-env
+`CLAUDE.md` "Subagent dispatch rules," which is authoritative. When you are unsure whether a task
+needs you, it does not — hand it to Sonnet 5.5, and re-dispatch to Opus if the result comes back
+wrong or shallow. A plan finished by subagents under your direction counts fully; a plan left
+half-done because you spent Fable budget on exploration, boilerplate, or running the test suite
+does not. Concretely, delegate to Sonnet 5.5 — it's all routine work:
 
 - **Exploration / research** — "map how the roles vertical is wired," "find every call site of X,"
   reading a subsystem or a sibling repo.
