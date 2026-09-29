@@ -4,6 +4,21 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-09-29 — PLAN-072 close-out vetted; janitor pack fix (#583 item 1) merged, L2 prerequisites
+
+A coordinator vetted the watchlist-protection close-out. Live on v0.101.2: 97 registry runs in 24 h all ok (one
+plex.tv 503 failed closed and cleared), every hourly sweep complete, the sweep gate verified. PR #607 recorded the
+missing S5 entry (Q-10: Seerr default quotas are unlimited), the S7 cost measurement (Q-04: 437 Radarr terms add
+about 18% to the decision phase, about 2 s per RSS pass at the 3,000 cap, so the cap stays), and the C-19 evidence
+(15 Radarr grabs after the seed). **Owner ruling (Q-07 / PRD Q-16): keep the 365-day Release Block term life.**
+The haynesnetwork MCP watchlist tools passed a live round trip (add, remove, undo on titles already on Plex).
+
+**Queue janitor:** PR #608 fixed issue #583 item 1 (DESIGN-046 D-11, migration 0082): one action per download id,
+siblings `covered`, a mixed-class pack gets `skipped_mixed`, a 404 is `skipped_gone`; a `bad_release` pack searches
+all its episodes and retry escalation counts runs. **Next rung:** L1 → L2 needs 7 days with zero bad deletions
+(earliest 2026-10-02) and the Q-01 Lidarr classification (an agent decision from census data, DESIGN-046 Q-01).
+PLAN-065 has the ladder log.
+
 ## ▶ 2026-09-28 — Watchlist protection DONE (PLAN-072 completed; issue #576 closed)
 
 ADR-093 / DESIGN-052 are Accepted and live (v0.101.x). No Trash sweep deletes a title on any readable watchlist (42
