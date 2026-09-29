@@ -4,7 +4,7 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ 2026-09-29 — PLAN-072 close-out vetted; janitor pack fix (#583 item 1) merged, L2 prerequisites
+## ▶ 2026-09-29 — PLAN-072 close-out vetted; janitor L2 prerequisites met (pack fix, Q-01), v0.102.0 live; Lidarr cleanup
 
 A coordinator vetted the watchlist-protection close-out. Live on v0.101.2: 97 registry runs in 24 h all ok (one
 plex.tv 503 failed closed and cleared), every hourly sweep complete, the sweep gate verified. PR #607 recorded the
@@ -18,6 +18,17 @@ siblings `covered`, a mixed-class pack gets `skipped_mixed`, a 404 is `skipped_g
 all its episodes and retry escalation counts runs. **Next rung:** L1 → L2 needs 7 days with zero bad deletions
 (earliest 2026-10-02) and the Q-01 Lidarr classification (an agent decision from census data, DESIGN-046 Q-01).
 PLAN-065 has the ladder log.
+
+**Later the same day:** #608 shipped as **v0.101.3** (haynes-ops #3254; migration 0082). **Q-01 answered** (PR #611,
+DESIGN-046 D-12; migration 0083): Lidarr's match rejections are a new report-only class `manual_match` (53 on the
+first v0.102.0 run), "No files found" and "Not an upgrade" stay `unknown`, nothing moves into an acting class;
+shipped as **v0.102.0** (haynes-ops #3263). So the only L2 gate left is the calendar (7 clean days, earliest
+2026-10-02). Owner rulings on Lidarr (issue #610, closed): a Lidarr release profile (id 1, API-made; Lidarr's
+profiles are not in git) rejects the uploader `REETKEVER` (unimportable `.wvp` / one-file-per-side vinyl rips); every
+REETKEVER rip and the three junk records were removed and their albums re-searched. A one-off sweep cleared 90
+never-imported SABnzbd `lidarr` entries hidden beyond Lidarr's 60-entry history window and re-searched 85 albums (78
+grabbed, 41 imported at once). The window slides back as leftovers accumulate (15 hidden again right after); that
+structural problem is issue #583 item 2 (with Sonarr's #597), still open.
 
 ## ▶ 2026-09-28 — Watchlist protection DONE (PLAN-072 completed; issue #576 closed)
 
