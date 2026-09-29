@@ -59,6 +59,9 @@ export interface KapowarrQueueEntry {
   progress: number | null;
   title: string | null;
   source: string | null;
+  /** The page link the download came from, or null. ADR-095 / DESIGN-046 D-19: Kapowarr's queue ids are SQLite rowids
+   *  (`INTEGER PRIMARY KEY`, reused once the queue drains), so the janitor keys a download on id AND link. */
+  webLink?: string | null;
 }
 
 /** A normalized completed-download history row (the Activity adapter's `completed`-recent signal). */
@@ -141,6 +144,7 @@ export class KapowarrReadClient {
       progress: r.progress ?? null,
       title: r.web_title ?? r.title ?? null,
       source: r.source ?? null,
+      webLink: r.web_link ?? null,
     }));
   }
 

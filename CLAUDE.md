@@ -71,6 +71,14 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    which runs before each enforced `manual_match` removal (written and read back first) and in the
    janitor's hourly upkeep (drift repair, 365-day expiry); a term is written only for a release title
    that names the album's artist. All go through `@hnet/arr/write` from `packages/domain` only.
+   **ADR-095 extends the janitor to the download suite** (DESIGN-046 D-15..D-20), LazyLibrarian and
+   Kapowarr, each cell census until the coordinator flips it: LazyLibrarian `forceProcess` (retry, once
+   per run); the SABnzbd history-job delete that lets LazyLibrarian abort a stuck snatch (SABnzbd
+   downloads only, never a qBittorrent/MAM torrent); the delete of a Processed download's completed
+   SABnzbd folder, only after every library copy it recorded is confirmed on disk, confined to direct
+   children of the LazyLibrarian category's completed folder (never library files); and the Kapowarr
+   queue removal with blocklist plus its `auto_search`. They go through `@hnet/downloads/write`,
+   `@hnet/lazylibrarian/write` and `@hnet/kapowarr/write` from `packages/domain` only.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see

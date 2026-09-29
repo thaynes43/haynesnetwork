@@ -27,3 +27,19 @@ export class DownloadsHttpError extends Error {
     this.url = url;
   }
 }
+
+/**
+ * ADR-095 / DESIGN-046 D-18 — a download-folder operation was refused before it touched anything: the path is not a
+ * direct child of the configured download root, is a symlink, is not a directory, or the root itself is absent. The
+ * message names the rule, never file contents.
+ */
+export class DownloadsPathError extends Error {
+  readonly path: string;
+  constructor(path: string, rule: string) {
+    // The path stays on `.path`, out of the message: a folder name is a release name, and the message lands in the
+    // janitor's `error` column (D-10: never a name).
+    super(`download folder refused (${rule})`);
+    this.name = 'DownloadsPathError';
+    this.path = path;
+  }
+}

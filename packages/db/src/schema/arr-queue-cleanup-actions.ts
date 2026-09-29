@@ -1,20 +1,20 @@
 import { pgTable, uuid, text, integer, timestamp, check, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import {
-  ARR_KINDS,
   QUEUE_CLEANUP_ACTION_CLASSES,
   QUEUE_CLEANUP_ACTIONS,
+  QUEUE_CLEANUP_INSTANCES,
   QUEUE_CLEANUP_MODES,
   QUEUE_CLEANUP_OUTCOMES,
-  type ArrKind,
   type QueueCleanupAction,
   type QueueCleanupActionClass,
+  type QueueCleanupInstance,
   type QueueCleanupMode,
   type QueueCleanupOutcome,
 } from './enums';
 
 const sqlList = (values: readonly string[]) => values.map((v) => `'${v}'`).join(',');
-const ARR_KINDS_SQL_LIST = sqlList(ARR_KINDS);
+const INSTANCES_SQL_LIST = sqlList(QUEUE_CLEANUP_INSTANCES);
 const ACTION_CLASSES_SQL_LIST = sqlList(QUEUE_CLEANUP_ACTION_CLASSES);
 const MODES_SQL_LIST = sqlList(QUEUE_CLEANUP_MODES);
 const ACTIONS_SQL_LIST = sqlList(QUEUE_CLEANUP_ACTIONS);
@@ -38,10 +38,13 @@ export const arrQueueCleanupActions = pgTable(
   'arr_queue_cleanup_actions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    /** The *arr instance the queue item came from (sonarr|radarr|lidarr). */
-    instance: text('instance').$type<ArrKind>().notNull(),
-    /** The *arr queue record id (`queue[].id`) — NOT stable across runs (an item re-queued gets a new id). */
-    queueItemId: integer('queue_item_id').notNull(),
+    /** The instance the item came from: sonarr|radarr|lidarr, and since ADR-095 (migration 0085) the suite sources
+     *  lazylibrarian|kapowarr (QUEUE_CLEANUP_INSTANCES). */
+    instance: text('instance').$type<QueueCleanupInstance>().notNull(),
+    /** The queue record id (`queue[].id`; Kapowarr's queue entry id) — NOT stable across runs (an item re-queued gets
+     *  a new id). Nullable since migration 0085 (DESIGN-046 D-15): LazyLibrarian has no queue, so its rows carry
+     *  `itemRef` instead. */
+    queueItemId: integer('queue_item_id'),
     /** The download-client id (`queue[].downloadId`) — stable across runs, the retry-escalation / dedup key. */
     downloadId: text('download_id'),
     /** The queue item's release title (display only). */
@@ -53,6 +56,16 @@ export const arrQueueCleanupActions = pgTable(
      * the same album) and the digest's repeat-search list (the same target searched on 2+ runs in 7 days).
      */
     targetId: integer('target_id'),
+    /**
+     * DESIGN-046 D-15 (migration 0085) — the source's own string reference for what the row is about, where it is not
+     * an integer: LazyLibrarian `<bookId>/<ebook|audiobook>` (the book format a grab, a leftover or a fail loop is
+     * for). Null on every *arr and Kapowarr row. Keys the loop guard and the fail-loop signal for LazyLibrarian (the
+     * way `targetId` keys them for the rest).
+     */
+    itemRef: text('item_ref'),
+    /** DESIGN-046 D-18 (migration 0085) — `fail_loop` rows: the failed grabs the source recorded for the item. Null on
+     *  every other row. */
+    attempts: integer('attempts'),
     /** The Action Class the classifier assigned (T-239). */
     actionClass: text('action_class').$type<QueueCleanupActionClass>().notNull(),
     /** The class×instance mode in effect this run (census | enforce). */
@@ -78,7 +91,12 @@ export const arrQueueCleanupActions = pgTable(
     index('arr_queue_cleanup_actions_target_done_idx')
       .on(t.instance, t.targetId, t.createdAt)
       .where(sql`${t.outcome} = 'done' AND ${t.targetId} IS NOT NULL`),
-    check('arr_queue_cleanup_actions_instance_enum', sql`${t.instance} = ANY (ARRAY[${sql.raw(ARR_KINDS_SQL_LIST)}])`),
+    // D-15 loop guard + fail-loop lookups for sources keyed by a string reference (LazyLibrarian). Partial, so it
+    // holds only the source rows that carry one, not the *arr census.
+    index('arr_queue_cleanup_actions_item_ref_idx')
+      .on(t.instance, t.itemRef, t.createdAt)
+      .where(sql`${t.itemRef} IS NOT NULL`),
+    check('arr_queue_cleanup_actions_instance_enum', sql`${t.instance} = ANY (ARRAY[${sql.raw(INSTANCES_SQL_LIST)}])`),
     check(
       'arr_queue_cleanup_actions_class_enum',
       sql`${t.actionClass} = ANY (ARRAY[${sql.raw(ACTION_CLASSES_SQL_LIST)}])`,

@@ -16,9 +16,17 @@
 // GET-then-PUT discipline (owner ruling 2026-07-11 (d)): the toggle GETs the FULL indexer object and PUTs
 // it back with ONLY `enable` changed — it never rewrites priority/fields/categories (Prowlarr indexer
 // priority is owner-tuned to 50 to pin usenet-first via the LL dlpriority = 51 − priority mapping).
+import { rm } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
-import { DownloadsHttpError } from './errors';
-import { ProwlarrReadClient, type ProwlarrReadClientOptions } from './read';
+import { DownloadsHttpError, DownloadsPathError } from './errors';
+import { isDirectChildOf, nodeDownloadPathFs, type DownloadPathFs } from './paths';
+import {
+  ProwlarrReadClient,
+  SabnzbdReadClient,
+  type ProwlarrReadClientOptions,
+  type SabnzbdReadClientOptions,
+} from './read';
 
 /** Prowlarr's PUT echoes the updated indexer; we only assert `enable` came back as requested. */
 const prowlarrPutEchoSchema = z.object({ enable: z.boolean().optional() }).passthrough();
@@ -75,5 +83,76 @@ export class ProwlarrWriteClient extends ProwlarrReadClient {
         );
       }
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ADR-095 / DESIGN-046 D-18 — the queue janitor's LazyLibrarian write-backs on the downloads stack. Confined to
+// packages/domain like every @hnet/downloads/write export (the arr-write-import-guard test).
+// ---------------------------------------------------------------------------
+
+/** SAB's answer to a history delete: `{ status: true }` (it says true for an unknown id too). */
+const sabStatusSchema = z.object({ status: z.boolean().optional() }).passthrough();
+
+/**
+ * The confined SABnzbd WRITE client. Its ONE method deletes a job from SABnzbd's history (`mode=history&name=delete
+ * &value=<nzo_id>`), which SABnzbd archives (its default). That is the janitor's LazyLibrarian `bad_release`: once
+ * SABnzbd no longer shows the job, LazyLibrarian reads the snatch as 0% and aborts it after its task age (Failed, the
+ * format Wanted again). It never passes `del_files` and never touches a completed folder (SABnzbd 5.1.3 would only
+ * remove the incomplete one anyway); the folder is the `leftover` class's business.
+ */
+export class SabnzbdWriteClient extends SabnzbdReadClient {
+  constructor(options: SabnzbdReadClientOptions) {
+    super(options);
+  }
+
+  async deleteHistoryJob(nzoId: string): Promise<void> {
+    const id = nzoId.trim();
+    if (id === '') throw new DownloadsHttpError(`${this.base}/api?mode=history&name=delete`, undefined, 'empty job id');
+    const data = await this.getJson({ mode: 'history', name: 'delete', value: id }, sabStatusSchema);
+    if (data.status === false) {
+      throw new DownloadsHttpError(`${this.base}/api?mode=history&name=delete`, undefined, 'SABnzbd refused the delete');
+    }
+  }
+}
+
+/** The filesystem calls the cleaner makes: the probe's reads plus the recursive remove (injectable for tests). */
+export interface DownloadFolderFs extends DownloadPathFs {
+  rm(path: string, options: { recursive: true; force: false }): Promise<void>;
+}
+
+const nodeDownloadFolderFs: DownloadFolderFs = { ...nodeDownloadPathFs, rm };
+
+/**
+ * The confined delete behind the janitor's LazyLibrarian `leftover` class: remove ONE completed SABnzbd job folder.
+ * It re-checks, immediately before the remove, that the folder is a direct child of the configured download root
+ * (lexically and by real path), a real directory and not a symlink; anything else throws DownloadsPathError and
+ * nothing is touched. The caller (packages/domain) has already confirmed every library copy the download recorded.
+ * `rm` removes symlinks inside the folder as links, never their targets.
+ */
+export class DownloadFolderCleaner {
+  private readonly fs: DownloadFolderFs;
+
+  constructor(
+    readonly downloadRoot: string,
+    fs: DownloadFolderFs = nodeDownloadFolderFs,
+  ) {
+    this.fs = fs;
+  }
+
+  async removeFolder(path: string): Promise<void> {
+    if (!isDirectChildOf(path, this.downloadRoot)) throw new DownloadsPathError(path, 'not a direct child of the root');
+    const target = resolve(path);
+    let st: Awaited<ReturnType<DownloadPathFs['lstat']>>;
+    try {
+      st = await this.fs.lstat(target);
+    } catch {
+      throw new DownloadsPathError(path, 'missing');
+    }
+    if (st.isSymbolicLink()) throw new DownloadsPathError(path, 'a symlink');
+    if (!st.isDirectory()) throw new DownloadsPathError(path, 'not a directory');
+    const [realTarget, realRoot] = await Promise.all([this.fs.realpath(target), this.fs.realpath(this.downloadRoot)]);
+    if (dirname(realTarget) !== realRoot) throw new DownloadsPathError(path, 'resolves outside the root');
+    await this.fs.rm(realTarget, { recursive: true, force: false });
   }
 }

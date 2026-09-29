@@ -9,7 +9,7 @@ const OPTS = { baseUrl: 'http://ll:5299', apiKey: 'secret-key', backoffMs: 1, sl
 describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
   it('parses the array and {data} shapes into a BookID-keyed map, skipping id-less rows', async () => {
     const rows = [
-      { BookID: 'b1', Status: 'Wanted', AudioStatus: 'Open', AudioLibrary: '2026-07-11T23:38:10Z' },
+      { BookID: 'b1', BookName: ' Book One ', Status: 'Wanted', AudioStatus: 'Open', AudioLibrary: '2026-07-11T23:38:10Z' },
       { BookID: 'b2', Status: 'Skipped' },
       { Status: 'Orphan' }, // no BookID — unaddressable, dropped
     ];
@@ -18,8 +18,10 @@ describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
     const map = await client.getAllBookStatuses();
     expect(map.size).toBe(2);
     // ADR-055 amend (2026-09-22) — the per-format library/file fields ride through for the push guard.
+    // ADR-095 / DESIGN-046 D-18 — the title rides through for the queue janitor's fail-loop rows (trimmed).
     expect(map.get('b1')).toEqual({
       bookId: 'b1',
+      title: 'Book One',
       ebookStatus: 'Wanted',
       audioStatus: 'Open',
       ebookLibrary: null,
@@ -29,6 +31,7 @@ describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
     });
     expect(map.get('b2')).toEqual({
       bookId: 'b2',
+      title: null,
       ebookStatus: 'Skipped',
       audioStatus: null,
       ebookLibrary: null,
@@ -64,6 +67,7 @@ describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
     });
     expect((await client.getAllBookStatuses()).get('b3')).toEqual({
       bookId: 'b3',
+      title: null,
       ebookStatus: 'Wanted',
       audioStatus: 'Wanted',
       ebookLibrary: null,
@@ -171,6 +175,29 @@ describe('LazyLibrarianReadClient.getHistory (cmd=getHistory — the snatch tabl
     const rows = await new LazyLibrarianReadClient({ ...OPTS, fetchImpl: serving(fixture('get-history.json')) }).getHistory();
     const failed = rows.find((r) => r.dlResult?.startsWith('Failed to send nzb'))!;
     expect(failed.dlResult).toBe('Failed to send nzb to @ SABNZBD');
+  });
+
+  // ADR-095 / DESIGN-046 D-18 — the queue janitor checks a Processed row's recorded destination on disk, so it gets
+  // the RAW path (the sanitized dlResult collapses whitespace and cuts long values); never a failure text.
+  it('carries the raw recorded destination of a Processed / Seeding row only', async () => {
+    const path = '/data/cephfs-hdd/data/media/books/AudioBooks/A  B/Title/01  Title.mp3';
+    const rows = await new LazyLibrarianReadClient({
+      ...OPTS,
+      fetchImpl: serving(
+        JSON.stringify([
+          { BookID: 'p', Status: 'Processed', DLResult: `  ${path}  ` },
+          { BookID: 's', Status: 'Seeding', DLResult: '/data/cephfs-hdd/data/media/books/EBooks/x.epub' },
+          { BookID: 'f', Status: 'Failed', DLResult: '/data/whatever' },
+          { BookID: 'q', Status: 'Processed', DLResult: 'not a path' },
+        ]),
+      ),
+    }).getHistory();
+    expect(rows.map((r) => [r.bookId, r.destination])).toEqual([
+      ['p', path],
+      ['s', '/data/cephfs-hdd/data/media/books/EBooks/x.epub'],
+      ['f', null],
+      ['q', null],
+    ]);
   });
 
   it('tolerates the {data} wrapper, drops id-less rows, and reads an error string as empty', async () => {

@@ -8226,3 +8226,23 @@ button.builder-card:hover {
 .janitor-grid__enforced {
   color: var(--color-accent);
 }
+/* ADR-095 / DESIGN-046 D-17 — one ladder block per family, and one grid block per family group (the *arrs; books
+   and comics), stacked with a hairline between them. */
+.janitor-ladder + .janitor-ladder {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+.janitor-ladder h3,
+.janitor-grid-block h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text);
+}
+.janitor-grid-block {
+  margin-top: 16px;
+}
+.janitor-grid-block + .janitor-grid-block {
+  margin-top: 24px;
+}

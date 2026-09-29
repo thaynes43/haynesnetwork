@@ -1,6 +1,10 @@
 # ADR-083: Automated *arr queue janitor — census-first cleanup of errored grabs
 
 - **Status:** Accepted
+- **Superseded in part by:** [ADR-095](095-janitor-covers-the-download-suite.md) (2026-09-29): the scope ("the
+  Sonarr/Radarr/Lidarr download queues") and C-04's write-back list now reach LazyLibrarian and Kapowarr through a
+  source adapter, and the single promotion ladder becomes one ladder per instance family (`arr`, `books`, `comics`),
+  the `arr` ladder unchanged (ADR-095 C-01, C-03, C-05). This is a status note only.
 - **Superseded in part by:** [ADR-094](094-janitor-manual-match-release-name-block.md) (2026-09-29) — class D's
   "never acted on, reported only" now means `unknown` alone: Lidarr's `manual_match` (DESIGN-046 D-12) acts where its
   cell is enforced, taking class C's action shape (blocklist, then re-search only where monitored) with the failing

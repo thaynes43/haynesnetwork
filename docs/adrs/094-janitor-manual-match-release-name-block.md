@@ -2,6 +2,10 @@
 
 - **Status:** Accepted (2026-09-29; ships with the Lidarr `manual_match` cell in census, flipped by the coordinator
   after deploy)
+- **Superseded in part by:** [ADR-095](095-janitor-covers-the-download-suite.md) (2026-09-29): C-08's "each new
+  source is a new write-back and needs its own ruling under hard rule 4" is answered for LazyLibrarian and Kapowarr,
+  and the loop guard (C-07) extends to their `bad_release` removals, keyed by book format or volume (ADR-095 C-03,
+  C-08). The janitor release block stays Lidarr only. This is a status note only.
 - **Date:** 2026-09-29
 - **Deciders:** Tom Haynes (two owner rulings, 2026-09-29: `manual_match` acts, with no waiting period, and is enabled
   as soon as it is deployed; "You can monitor for loops"). The release-name block is a **coordinator ruling by
