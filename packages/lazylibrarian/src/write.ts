@@ -27,9 +27,13 @@ export class LazyLibrarianWriteClient {
    * `cmd=addBook&id=<bookId>` — add a book to LL by its resolved id (the Google-Books volume id the
    * goodreads-sync enrichment derived). addBook ALONE lands the book `Skipped` — the caller MUST follow
    * with queueBook to reach `Wanted` (the F-10 field lesson, R2). Returns the ack text.
+   *
+   * Sends `&wait=1`: without it LL runs the add in the background and can finish AFTER the caller's queueBook,
+   * writing the book back as `Skipped/Skipped` (seen on a books Fix of an already-known book, 2026-09-29, which
+   * then searched a Skipped book and also reset the audiobook format from Open to Skipped).
    */
   async addBook(bookId: string): Promise<string> {
-    return this.http.commandText('addBook', { id: bookId });
+    return this.http.commandText('addBook', { id: bookId, wait: 1 });
   }
 
   /**
