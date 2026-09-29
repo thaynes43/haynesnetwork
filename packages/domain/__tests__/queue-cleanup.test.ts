@@ -1,12 +1,16 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { appSettings, arrQueueCleanupActions, notificationOutbox, permissionAudit } from '@hnet/db';
+import { ArrHttpError } from '@hnet/arr';
+import type { SonarrClient, RadarrClient, LidarrClient } from '@hnet/arr/read';
+import type { SonarrWriteClient, RadarrWriteClient, LidarrWriteClient } from '@hnet/arr/write';
 import { bootMigratedDb, type TestDb } from './helpers';
 import { runFailureDigest } from '../src/activity/digest';
 import { renderOutboxEmail } from '../src/notify-outbox';
 import { QueueCleanupConfigInvalidError } from '../src/errors';
 import {
   ARR_QUEUE_CLEANUP_CONFIG_DEFAULT,
+  buildQueueCleanupClients,
   buildQueueCleanupDigestSection,
   classifyQueueItem,
   deriveQueueCleanupLadderLevel,
@@ -14,6 +18,7 @@ import {
   getArrQueueCleanupConfig,
   getArrQueueCleanupStatus,
   getQueueCleanupLadder,
+  groupQueueRecordsByDownload,
   queueCleanupConfigError,
   resolveArrQueueCleanupConfig,
   setArrQueueCleanupConfig,
@@ -571,16 +576,40 @@ interface InstanceStub {
   calls: {
     deletes: Array<{ id: number; removeFromClient: boolean; blocklist: boolean; skipRedownload: boolean }>;
     processMonitored: number;
+    /** Queue ids of every searched record, flattened across calls. */
     searches: number[];
+    /** One entry per search command: the queue ids it covered. */
+    searchCalls: number[][];
     monitoredChecks: number;
   };
 }
 
+/**
+ * A stub *arr instance. Like the real *arrs, a removal takes the WHOLE download off the queue: a later DELETE
+ * for any record of a removed download answers 404 (ArrHttpError), which is what a season pack did per episode
+ * before D-11. `gone` makes every DELETE answer 404 (the download dropped between read and removal).
+ */
 function makeInstanceStub(
   items: QueueCleanupQueueItem[],
-  opts: { readError?: boolean; monitored?: boolean; deleteError?: boolean; explodeOnWrite?: boolean } = {},
+  opts: {
+    readError?: boolean;
+    monitored?: boolean | ((qi: QueueCleanupQueueItem) => boolean);
+    deleteError?: boolean;
+    gone?: boolean;
+    searchError?: boolean;
+    explodeOnWrite?: boolean;
+  } = {},
 ): InstanceStub {
-  const calls = { deletes: [] as InstanceStub['calls']['deletes'], processMonitored: 0, searches: [] as number[], monitoredChecks: 0 };
+  const calls: InstanceStub['calls'] = {
+    deletes: [],
+    processMonitored: 0,
+    searches: [],
+    searchCalls: [],
+    monitoredChecks: 0,
+  };
+  const removed = new Set<string>();
+  const notFound = (id: number) =>
+    new ArrHttpError(404, 'DELETE', `http://arr.test/api/v3/queue/${id}`);
   return {
     calls,
     client: {
@@ -597,18 +626,26 @@ function makeInstanceStub(
           blocklist: o.blocklist,
           skipRedownload: o.skipRedownload,
         });
+        if (opts.gone) throw notFound(qi.queueItemId);
+        if (qi.downloadId) {
+          if (removed.has(qi.downloadId)) throw notFound(qi.queueItemId);
+          removed.add(qi.downloadId);
+        }
       },
       async processMonitoredDownloads() {
         if (opts.explodeOnWrite) throw new Error('census must never write');
         calls.processMonitored += 1;
       },
-      async isTargetMonitored() {
+      async monitoredTargets(qis) {
         calls.monitoredChecks += 1;
-        return opts.monitored ?? false;
+        const m = opts.monitored ?? false;
+        return qis.filter((qi) => (typeof m === 'function' ? m(qi) : m));
       },
-      async searchTarget(qi) {
+      async searchTargets(qis) {
         if (opts.explodeOnWrite) throw new Error('census must never write');
-        calls.searches.push(qi.queueItemId);
+        if (opts.searchError) throw new Error('search failed');
+        calls.searchCalls.push(qis.map((qi) => qi.queueItemId));
+        calls.searches.push(...qis.map((qi) => qi.queueItemId));
       },
     },
   };
@@ -622,6 +659,47 @@ function makeClients(map: Partial<Record<'sonarr' | 'radarr' | 'lidarr', QueueCl
     lidarr: map.lidarr ?? empty(),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Grouping by download (D-11) — pure.
+// ---------------------------------------------------------------------------
+
+describe('groupQueueRecordsByDownload (D-11) — pure', () => {
+  const r = (queueItemId: number, downloadId: string | null) => ({ queueItemId, downloadId });
+
+  it('groups records sharing a downloadId in first-seen order; null, empty and blank ids are never grouped', () => {
+    const groups = groupQueueRecordsByDownload([
+      r(1, 'a'),
+      r(2, 'b'),
+      r(3, 'a'),
+      r(4, null),
+      r(5, null),
+      r(6, ''),
+      r(7, '  '),
+      r(8, 'a'),
+      r(9, 'b'),
+      r(10, '  '),
+    ]);
+    expect(groups.map((g) => g.map((x) => x.queueItemId))).toEqual([
+      [1, 3, 8],
+      [2, 9],
+      [4],
+      [5],
+      [6],
+      [7],
+      [10],
+    ]);
+  });
+
+  it('a queue of distinct downloads is one group per record, in queue order; an empty queue has no groups', () => {
+    expect(groupQueueRecordsByDownload([r(1, 'x'), r(2, 'y'), r(3, 'z')])).toEqual([
+      [r(1, 'x')],
+      [r(2, 'y')],
+      [r(3, 'z')],
+    ]);
+    expect(groupQueueRecordsByDownload([])).toEqual([]);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Evaluator + config resolution + digest (embedded Postgres).
@@ -808,11 +886,29 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
   it('ESCALATION: a retry_import at/over retryEscalateRuns prior runs is handled as bad_release', async () => {
     const cfg = clone({ retryEscalateRuns: 2 });
     cfg.modes.sonarr.bad_release = 'enforce';
-    // Seed 2 prior retry_import observations for (sonarr, dl-esc) — the escalation lookback (test dir is
-    // exempt from the single-writer guard).
+    // Seed 2 prior retry_import RUNS for (sonarr, dl-esc) — the escalation lookback (test dir is exempt from the
+    // single-writer guard). Each run stamps its rows with its own createdAt (D-11 counts runs, not rows).
     await t.db.insert(arrQueueCleanupActions).values([
-      { instance: 'sonarr', queueItemId: 1, downloadId: 'dl-esc', actionClass: 'retry_import', mode: 'census', action: 'none', outcome: 'observed' },
-      { instance: 'sonarr', queueItemId: 1, downloadId: 'dl-esc', actionClass: 'retry_import', mode: 'census', action: 'none', outcome: 'observed' },
+      {
+        instance: 'sonarr',
+        queueItemId: 1,
+        downloadId: 'dl-esc',
+        actionClass: 'retry_import',
+        mode: 'census',
+        action: 'none',
+        outcome: 'observed',
+        createdAt: new Date('2026-09-27T10:25:00Z'),
+      },
+      {
+        instance: 'sonarr',
+        queueItemId: 1,
+        downloadId: 'dl-esc',
+        actionClass: 'retry_import',
+        mode: 'census',
+        action: 'none',
+        outcome: 'observed',
+        createdAt: new Date('2026-09-27T11:25:00Z'),
+      },
     ]);
     const sonarr = makeInstanceStub([retryImport(70, 'dl-esc')], { monitored: false });
     await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: sonarr.client }), config: cfg });
@@ -947,6 +1043,457 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     expect(row!.actionClass).toBe('unknown');
     expect(row!.action).toBe('none');
     expect(row!.outcome).toBe('observed');
+  });
+
+  // --- one action per download (D-11, issue #583 item 1) ---
+
+  /** A season pack: one queue record per episode, all sharing the download's id. */
+  const pack = (ids: number[], downloadId: string, make: typeof haveBetter = haveBetter) =>
+    ids.map((id) => make(id, downloadId));
+  const sonarrReport = (r: Awaited<ReturnType<typeof evaluateQueueCleanup>>) =>
+    r.instances.find((i) => i.instance === 'sonarr')!;
+  const rowsByQueueId = () =>
+    t.db.select().from(arrQueueCleanupActions).orderBy(arrQueueCleanupActions.queueItemId);
+
+  it('PACK (D-11): a have_better season pack gets ONE removal; the other records are covered, never 404 errors', async () => {
+    const cfg = clone();
+    cfg.modes.sonarr.have_better = 'enforce';
+    // The stub removes the whole download on the first DELETE and answers 404 to any later one, as Sonarr does.
+    const sonarr = makeInstanceStub(pack([200, 201, 202, 203], 'dl-pack'));
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: cfg,
+    });
+
+    expect(sonarr.calls.deletes).toEqual([
+      { id: 200, removeFromClient: true, blocklist: true, skipRedownload: true },
+    ]);
+    const s = sonarrReport(report);
+    expect(s).toMatchObject({ itemsObserved: 4, actionsTaken: 1, covered: 3, errors: 0 });
+    expect(s.byClass.have_better).toEqual({ observed: 4, enforced: 4 });
+    const rows = await rowsByQueueId();
+    expect(rows.map((r) => [r.queueItemId, r.downloadId, r.action, r.outcome, r.error])).toEqual([
+      [200, 'dl-pack', 'removed_blocklisted', 'done', null],
+      [201, 'dl-pack', 'removed_blocklisted', 'done', null],
+      [202, 'dl-pack', 'removed_blocklisted', 'done', null],
+      [203, 'dl-pack', 'removed_blocklisted', 'done', null],
+    ]);
+  });
+
+  it('CAP (D-11): the per-run cap counts downloads, not records (records of one pack need not be adjacent)', async () => {
+    const cfg = clone({ maxActionsPerRun: 2 });
+    cfg.modes.sonarr.have_better = 'enforce';
+    const [a1, a2, a3] = pack([210, 211, 212], 'dl-a');
+    const [b1, b2] = pack([213, 214], 'dl-b');
+    const sonarr = makeInstanceStub([a1!, b1!, a2!, b2!, a3!, haveBetter(215)]);
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: cfg,
+    });
+
+    expect(sonarr.calls.deletes.map((d) => d.id)).toEqual([210, 213]); // two downloads, two calls
+    expect(sonarrReport(report)).toMatchObject({ actionsTaken: 2, covered: 3, errors: 0 });
+    const rows = await rowsByQueueId();
+    expect(rows.map((r) => [r.queueItemId, r.action])).toEqual([
+      [210, 'removed_blocklisted'],
+      [211, 'removed_blocklisted'],
+      [212, 'removed_blocklisted'],
+      [213, 'removed_blocklisted'],
+      [214, 'removed_blocklisted'],
+      [215, 'skipped_cap'],
+    ]);
+  });
+
+  it('CAP (D-11): a pack that meets a spent cap is skipped_cap on every record', async () => {
+    const cfg = clone({ maxActionsPerRun: 1 });
+    cfg.modes.radarr.have_better = 'enforce';
+    const radarr = makeInstanceStub([haveBetter(216), ...pack([217, 218], 'dl-late')]);
+    await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ radarr: radarr.client }),
+      config: cfg,
+    });
+    expect(radarr.calls.deletes.map((d) => d.id)).toEqual([216]);
+    const rows = await rowsByQueueId();
+    expect(rows.map((r) => [r.queueItemId, r.action, r.outcome])).toEqual([
+      [216, 'removed_blocklisted', 'done'],
+      [217, 'skipped_cap', 'observed'],
+      [218, 'skipped_cap', 'observed'],
+    ]);
+  });
+
+  it('MIXED (D-11): an unknown record in a pack holds the whole download (skipped_mixed), nothing is sent', async () => {
+    const cfg = clone();
+    cfg.modes.sonarr.have_better = 'enforce';
+    // Same download, but this record also carries an identity mismatch, so it classifies unknown (D-10).
+    const doubtful = item({
+      queueItemId: 222,
+      downloadId: 'dl-mixed',
+      trackedDownloadState: 'importBlocked',
+      statusMessages: [
+        {
+          title: 'x',
+          messages: [
+            'Episode 1x03 was not found in the grabbed release: Some.Show.S01.1080p',
+            'Not an upgrade for existing episode file(s)',
+          ],
+        },
+      ],
+    });
+    const sonarr = makeInstanceStub(
+      [haveBetter(220, 'dl-mixed'), haveBetter(221, 'dl-mixed'), doubtful],
+      {
+        explodeOnWrite: true,
+      },
+    );
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: cfg,
+    });
+
+    expect(sonarr.calls.deletes).toHaveLength(0);
+    expect(sonarrReport(report)).toMatchObject({ actionsTaken: 0, covered: 0, errors: 0 });
+    const rows = await rowsByQueueId();
+    expect(rows.map((r) => [r.queueItemId, r.actionClass, r.mode, r.action, r.outcome])).toEqual([
+      [220, 'have_better', 'enforce', 'skipped_mixed', 'observed'],
+      [221, 'have_better', 'enforce', 'skipped_mixed', 'observed'],
+      [222, 'unknown', 'census', 'none', 'observed'],
+    ]);
+  });
+
+  it('MIXED (D-11): a different class (census or enforced) or a record still too young also holds the download', async () => {
+    const now = new Date('2026-09-28T12:00:00Z');
+    const aged = (qi: QueueCleanupQueueItem): QueueCleanupQueueItem => ({
+      ...qi,
+      addedAt: new Date(now.getTime() - 5 * 60 * 60 * 1000),
+    });
+    const cfg = clone({ minItemAgeHours: 2 });
+    cfg.modes.sonarr.have_better = 'enforce'; // sonarr bad_release stays census
+    cfg.modes.radarr.have_better = 'enforce';
+    cfg.modes.radarr.bad_release = 'enforce';
+    const fresh = haveBetter(233, 'dl-age');
+    fresh.addedAt = new Date(now.getTime() - 30 * 60 * 1000);
+    const sonarr = makeInstanceStub(
+      [
+        aged(haveBetter(230, 'dl-census')),
+        aged(badRelease(231, 'dl-census')),
+        aged(haveBetter(232, 'dl-age')),
+        fresh,
+      ],
+      { explodeOnWrite: true },
+    );
+    // Both classes enforced, but they are different actions: still one download, still left alone.
+    const radarr = makeInstanceStub(
+      [aged(haveBetter(234, 'dl-two')), aged(badRelease(235, 'dl-two'))],
+      {
+        explodeOnWrite: true,
+      },
+    );
+    await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client, radarr: radarr.client }),
+      config: cfg,
+      now,
+    });
+
+    expect(sonarr.calls.deletes).toHaveLength(0);
+    expect(radarr.calls.deletes).toHaveLength(0);
+    const rows = await rowsByQueueId();
+    expect(rows.map((r) => [r.queueItemId, r.actionClass, r.action])).toEqual([
+      [230, 'have_better', 'skipped_mixed'],
+      [231, 'bad_release', 'none'],
+      [232, 'have_better', 'skipped_mixed'],
+      [233, 'have_better', 'skipped_young'],
+      [234, 'have_better', 'skipped_mixed'],
+      [235, 'bad_release', 'skipped_mixed'],
+    ]);
+  });
+
+  it('NO DOWNLOAD ID (D-11): records with a null, empty or blank downloadId are never grouped', async () => {
+    const cfg = clone();
+    cfg.modes.sonarr.have_better = 'enforce';
+    const loose = [240, 241, 242, 243].map((id) => haveBetter(id));
+    loose[0]!.downloadId = null;
+    loose[1]!.downloadId = null;
+    loose[2]!.downloadId = '';
+    loose[3]!.downloadId = '   ';
+    const sonarr = makeInstanceStub(loose);
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: cfg,
+    });
+
+    expect(sonarr.calls.deletes.map((d) => d.id)).toEqual([240, 241, 242, 243]); // each stands alone
+    expect(sonarrReport(report)).toMatchObject({ actionsTaken: 4, covered: 0, errors: 0 });
+    const rows = await rowsByQueueId();
+    expect(rows.every((r) => r.action === 'removed_blocklisted' && r.outcome === 'done')).toBe(
+      true,
+    );
+  });
+
+  it('GONE (D-11): a removal answering 404 is skipped_gone (observed, no error, no search) and still counts the cap', async () => {
+    const cfg = clone({ maxActionsPerRun: 2 });
+    cfg.modes.radarr.have_better = 'enforce';
+    cfg.modes.sonarr.bad_release = 'enforce';
+    const radarr = makeInstanceStub([haveBetter(250), haveBetter(251), haveBetter(252)], {
+      gone: true,
+    });
+    const sonarr = makeInstanceStub(pack([253, 254], 'dl-gone', badRelease), {
+      gone: true,
+      monitored: true,
+    });
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ radarr: radarr.client, sonarr: sonarr.client }),
+      config: cfg,
+    });
+
+    expect(radarr.calls.deletes.map((d) => d.id)).toEqual([250, 251]); // the third is past the cap
+    expect(report.instances.find((i) => i.instance === 'radarr')).toMatchObject({
+      actionsTaken: 2,
+      errors: 0,
+    });
+    expect(sonarr.calls.deletes.map((d) => d.id)).toEqual([253]);
+    expect(sonarr.calls.monitoredChecks).toBe(0);
+    expect(sonarr.calls.searches).toHaveLength(0); // nothing was removed, so nothing is re-searched
+    expect(sonarrReport(report)).toMatchObject({ actionsTaken: 1, covered: 1, errors: 0 });
+    const rows = await rowsByQueueId();
+    expect(rows.map((r) => [r.queueItemId, r.action, r.outcome, r.error])).toEqual([
+      [250, 'skipped_gone', 'observed', null],
+      [251, 'skipped_gone', 'observed', null],
+      [252, 'skipped_cap', 'observed', null],
+      [253, 'skipped_gone', 'observed', null],
+      [254, 'skipped_gone', 'observed', null],
+    ]);
+  });
+
+  it('ERROR (D-11): a failed pack removal is ONE error, and every record of the download carries it', async () => {
+    const cfg = clone();
+    cfg.modes.sonarr.have_better = 'enforce';
+    const sonarr = makeInstanceStub(pack([260, 261, 262], 'dl-err'), { deleteError: true });
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: cfg,
+    });
+
+    expect(sonarrReport(report)).toMatchObject({ actionsTaken: 1, covered: 2, errors: 1 });
+    const rows = await rowsByQueueId();
+    expect(rows.map((r) => [r.queueItemId, r.action, r.outcome, r.error])).toEqual([
+      [260, 'none', 'error', 'delete failed'],
+      [261, 'none', 'error', 'delete failed'],
+      [262, 'none', 'error', 'delete failed'],
+    ]);
+  });
+
+  it('bad_release PACK (D-11): one removal, one search for the monitored episodes only, per-record actions', async () => {
+    const cfg = clone();
+    cfg.modes.sonarr.bad_release = 'enforce';
+    const sonarr = makeInstanceStub(pack([263, 264, 265], 'dl-bad', badRelease), {
+      monitored: (qi) => qi.queueItemId !== 264,
+    });
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: cfg,
+    });
+
+    expect(sonarr.calls.deletes.map((d) => d.id)).toEqual([263]);
+    expect(sonarr.calls.monitoredChecks).toBe(1);
+    expect(sonarr.calls.searchCalls).toEqual([[263, 265]]);
+    expect(sonarrReport(report)).toMatchObject({ actionsTaken: 1, covered: 2, errors: 0 });
+    const rows = await rowsByQueueId();
+    expect(rows.map((r) => [r.queueItemId, r.action, r.outcome])).toEqual([
+      [263, 'blocklisted_searched', 'done'],
+      [264, 'removed_blocklisted', 'done'],
+      [265, 'blocklisted_searched', 'done'],
+    ]);
+  });
+
+  it('SEARCH FAILURE (D-11): the removal landed, so the row keeps removed_blocklisted with outcome error', async () => {
+    const cfg = clone();
+    cfg.modes.sonarr.bad_release = 'enforce';
+    const sonarr = makeInstanceStub([badRelease(270)], { monitored: true, searchError: true });
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: cfg,
+    });
+
+    expect(sonarr.calls.deletes.map((d) => d.id)).toEqual([270]);
+    expect(sonarrReport(report).errors).toBe(1);
+    const [row] = await rowsByQueueId();
+    expect([row!.action, row!.outcome, row!.error]).toEqual([
+      'removed_blocklisted',
+      'error',
+      'search failed',
+    ]);
+  });
+
+  it('RETRY PACK (D-11): one ProcessMonitoredDownloads for the download, the other records covered', async () => {
+    const cfg = clone();
+    cfg.modes.radarr.retry_import = 'enforce';
+    const radarr = makeInstanceStub([
+      ...pack([275, 276, 277], 'dl-retry', retryImport),
+      retryImport(278),
+    ]);
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ radarr: radarr.client }),
+      config: cfg,
+    });
+
+    expect(radarr.calls.processMonitored).toBe(1);
+    // The pack spends the one call (2 covered); the later download is covered by the same estate-wide command.
+    expect(report.instances.find((i) => i.instance === 'radarr')).toMatchObject({
+      actionsTaken: 1,
+      covered: 3,
+    });
+    const rows = await rowsByQueueId();
+    expect(rows.every((r) => r.action === 'retried_import' && r.outcome === 'done')).toBe(true);
+  });
+
+  it('ESCALATION (D-11): counts prior RUNS, not rows, so a pack does not escalate after a single run', async () => {
+    const cfg = clone({ retryEscalateRuns: 2 });
+    cfg.modes.sonarr.bad_release = 'enforce';
+    // One prior run of a 3-episode pack: three rows, one run timestamp. Counting rows would read 3 ≥ 2.
+    const priorRun = new Date('2026-09-27T10:25:00Z');
+    await t.db.insert(arrQueueCleanupActions).values(
+      [280, 281, 282].map((queueItemId) => ({
+        instance: 'sonarr' as const,
+        queueItemId,
+        downloadId: 'dl-retry-pack',
+        actionClass: 'retry_import' as const,
+        mode: 'census' as const,
+        action: 'none' as const,
+        outcome: 'observed' as const,
+        createdAt: priorRun,
+      })),
+    );
+    const now = new Date('2026-09-27T11:25:00Z');
+    const sonarr = makeInstanceStub(pack([280, 281, 282], 'dl-retry-pack', retryImport), {
+      explodeOnWrite: true,
+    });
+    await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: cfg,
+      now,
+    });
+    expect(sonarr.calls.deletes).toHaveLength(0);
+    const second = await t.db
+      .select()
+      .from(arrQueueCleanupActions)
+      .where(eq(arrQueueCleanupActions.createdAt, now));
+    expect(second.map((r) => r.actionClass)).toEqual([
+      'retry_import',
+      'retry_import',
+      'retry_import',
+    ]);
+
+    // Two prior runs now: the third run escalates the whole pack together, and removes it once.
+    const escalating = makeInstanceStub(pack([280, 281, 282], 'dl-retry-pack', retryImport), {
+      monitored: false,
+    });
+    const later = new Date('2026-09-27T12:25:00Z');
+    await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: escalating.client }),
+      config: cfg,
+      now: later,
+    });
+    expect(escalating.calls.deletes.map((d) => d.id)).toEqual([280]);
+    const third = await t.db
+      .select()
+      .from(arrQueueCleanupActions)
+      .where(eq(arrQueueCleanupActions.createdAt, later));
+    expect(
+      third.every((r) => r.actionClass === 'bad_release' && r.action === 'removed_blocklisted'),
+    ).toBe(true);
+  });
+
+  it('REAL BUNDLE (D-11): a Sonarr bad_release pack reads the episode list once and searches its monitored episodes in one command', async () => {
+    const release = 'Some.Show.S01.1080p.WEB.h264-GRP';
+    const sonarrRaw = [101, 102, 103].map((episodeId, i) => ({
+      id: 9000 + i,
+      downloadId: 'SABnzbd_nzo_pack',
+      title: release,
+      added: '2026-09-01T00:00:00Z',
+      status: 'completed',
+      trackedDownloadStatus: 'error',
+      trackedDownloadState: 'importFailed',
+      errorMessage: null,
+      statusMessages: [{ title: release, messages: ['Unable to parse the release title'] }],
+      seriesId: 7,
+      episodeId,
+    }));
+    const log = {
+      listEpisodes: [] as number[],
+      getSeriesById: 0,
+      deletes: [] as number[],
+      searchEpisodes: [] as number[][],
+      searchSeries: [] as number[],
+    };
+    const emptyQueue = { getQueueAll: async () => [] };
+    const clients = buildQueueCleanupClients({
+      read: {
+        sonarr: {
+          getQueueAll: async () => sonarrRaw,
+          listEpisodes: async (seriesId: number) => {
+            log.listEpisodes.push(seriesId);
+            return [
+              { id: 101, monitored: true },
+              { id: 102, monitored: false },
+              { id: 103, monitored: true },
+            ];
+          },
+          getSeriesById: async () => {
+            log.getSeriesById += 1;
+            return { monitored: true };
+          },
+        } as unknown as SonarrClient,
+        radarr: emptyQueue as unknown as RadarrClient,
+        lidarr: emptyQueue as unknown as LidarrClient,
+      },
+      write: {
+        sonarr: {
+          deleteQueueItem: async (id: number) => {
+            log.deletes.push(id);
+          },
+          processMonitoredDownloads: async () => ({}),
+          searchEpisodes: async (ids: number[]) => {
+            log.searchEpisodes.push(ids);
+            return {};
+          },
+          searchSeries: async (id: number) => {
+            log.searchSeries.push(id);
+            return {};
+          },
+        } as unknown as SonarrWriteClient,
+        radarr: {} as unknown as RadarrWriteClient,
+        lidarr: {} as unknown as LidarrWriteClient,
+      },
+    });
+    const cfg = clone();
+    cfg.modes.sonarr.bad_release = 'enforce';
+    const report = await evaluateQueueCleanup({ db: t.db, clients, config: cfg });
+
+    expect(log.deletes).toEqual([9000]);
+    expect(log.listEpisodes).toEqual([7]); // one read for the whole pack
+    expect(log.getSeriesById).toBe(0);
+    expect(log.searchEpisodes).toEqual([[101, 103]]); // one EpisodeSearch, monitored episodes only
+    expect(log.searchSeries).toEqual([]);
+    expect(sonarrReport(report)).toMatchObject({ actionsTaken: 1, covered: 2, errors: 0 });
+    const rows = await rowsByQueueId();
+    expect(rows.map((r) => [r.queueItemId, r.action, r.outcome])).toEqual([
+      [9000, 'blocklisted_searched', 'done'],
+      [9001, 'removed_blocklisted', 'done'],
+      [9002, 'blocklisted_searched', 'done'],
+    ]);
   });
 
   it('LADDER nag: promotionDue when census data spans ≥3 distinct days at L0', async () => {

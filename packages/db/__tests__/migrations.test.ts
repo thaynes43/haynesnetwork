@@ -12,6 +12,7 @@ import {
   OAUTH_AUDIT_EVENTS,
   OAUTH_TOKEN_ENDPOINT_AUTH_METHODS,
   PLEX_SERVER_SLUGS,
+  QUEUE_CLEANUP_ACTIONS,
   SYNC_RUN_KINDS,
   WATCH_ACCOUNT_ROLES,
   WATCH_EVENT_KINDS,
@@ -2998,6 +2999,35 @@ describe('migrations against embedded Postgres 16', () => {
       }
     });
   });
+
+  // ADR-083 / DESIGN-046 D-11 (PLAN-065, issue #583 item 1 — migration 0082, journal idx 81): the janitor acts once
+  // per download, so arr_queue_cleanup_actions.action admits `skipped_mixed` and `skipped_gone`. Additive.
+  describe('0082 janitor download actions (DESIGN-046 D-11 — the action CHECK admits skipped_mixed / skipped_gone)', () => {
+    it('admits both new actions, still refuses a bogus action, and matches enums.ts', async () => {
+      const insert = (action: string) =>
+        client.query({
+          text: `INSERT INTO arr_queue_cleanup_actions (instance, queue_item_id, download_id, action_class, mode, action, outcome)
+                 VALUES ('sonarr', 1, 'dl-0082', 'have_better', 'enforce', $1, 'observed')`,
+          values: [action],
+        });
+      try {
+        expect(QUEUE_CLEANUP_ACTIONS).toContain('skipped_mixed');
+        expect(QUEUE_CLEANUP_ACTIONS).toContain('skipped_gone');
+        for (const action of QUEUE_CLEANUP_ACTIONS) await insert(action);
+        await expect(insert('skipped_pack')).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('covered')).rejects.toMatchObject({ code: '23514' });
+
+        // The live CHECK names exactly QUEUE_CLEANUP_ACTIONS (parity both ways).
+        const def = await client.query(
+          `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'arr_queue_cleanup_actions_action_enum'`,
+        );
+        const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+        expect(listed.sort()).toEqual([...QUEUE_CLEANUP_ACTIONS].sort());
+      } finally {
+        await client.query(`DELETE FROM arr_queue_cleanup_actions WHERE download_id = 'dl-0082'`);
+      }
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -3090,5 +3120,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0081_watchlist_protection.sql'), 'utf8')).toContain(
       'CREATE TABLE "watchlist_registry_items"',
     );
+  });
+
+  // PLAN-065 / DESIGN-046 D-11 gate — the janitor download-actions migration is journaled (idx 81), strictly after 0081.
+  it('lists 0082_janitor_download_actions at idx 81, strictly after 0081_watchlist_protection', () => {
+    const entry = journal.entries.find((e) => e.tag === '0082_janitor_download_actions');
+    const prev = journal.entries.find((e) => e.tag === '0081_watchlist_protection');
+    expect(entry?.idx).toBe(81);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    expect(
+      readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0082_janitor_download_actions.sql'), 'utf8'),
+    ).toContain("'skipped_mixed','skipped_gone'");
   });
 });

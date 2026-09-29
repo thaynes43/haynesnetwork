@@ -568,6 +568,13 @@
       "when": 1783903424000,
       "tag": "0081_watchlist_protection",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1783903484000,
+      "tag": "0082_janitor_download_actions",
+      "breakpoints": true
     }
   ]
 }

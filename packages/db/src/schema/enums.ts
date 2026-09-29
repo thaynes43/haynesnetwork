@@ -468,7 +468,10 @@ export type QueueCleanupMode = (typeof QUEUE_CLEANUP_MODES)[number];
  * re-search (have_better, or an unmonitored bad_release); `retried_import` — covered by this run's single
  * ProcessMonitoredDownloads; `blocklisted_searched` — blocklisted + re-searched (a monitored bad_release);
  * `skipped_young` — younger than minItemAgeHours (classified, never acted); `skipped_cap` — the per-instance
- * per-run mutation cap was already spent.
+ * per-run mutation cap was already spent. D-11 (migration 0082): `skipped_mixed` — the record would qualify on
+ * its own, but the other records of its download do not all qualify for the same action, so the download is
+ * left alone; `skipped_gone` — the removal answered 404 (the *arr no longer tracked the download; nothing was
+ * removed or blocklisted by the janitor, and it is not an error).
  */
 export const QUEUE_CLEANUP_ACTIONS = [
   'none',
@@ -477,6 +480,8 @@ export const QUEUE_CLEANUP_ACTIONS = [
   'blocklisted_searched',
   'skipped_young',
   'skipped_cap',
+  'skipped_mixed',
+  'skipped_gone',
 ] as const;
 export type QueueCleanupAction = (typeof QUEUE_CLEANUP_ACTIONS)[number];
 
