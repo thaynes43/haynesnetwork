@@ -667,6 +667,24 @@ describe('deriveQueueCleanupLadderLevel (D-05, pure)', () => {
     cfg.modes.lidarr.manual_match = 'enforce';
     expect(deriveQueueCleanupLadderLevel(cfg)).toBe(2);
   });
+  it('D-13: the stored L2 config from before D-13 (nine shared cells enforced, no manual_match key) reads L1 until the cell is enforced', () => {
+    const stored = {
+      modes: {
+        sonarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' },
+        radarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' },
+        lidarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' },
+      },
+      maxActionsPerRun: 10,
+      minItemAgeHours: 2,
+      retryEscalateRuns: 6,
+    };
+    expect(queueCleanupConfigError(stored)).toBeNull();
+    const cfg = stored as unknown as ArrQueueCleanupConfig;
+    expect(queueCleanupCellMode(cfg, 'lidarr', 'manual_match')).toBe('census');
+    expect(deriveQueueCleanupLadderLevel(cfg)).toBe(1);
+    const flipped = { ...cfg, modes: { ...cfg.modes, lidarr: { ...cfg.modes.lidarr, manual_match: 'enforce' as const } } };
+    expect(deriveQueueCleanupLadderLevel(flipped)).toBe(2);
+  });
   it('L1 when only Lidarr manual_match enforces (D-13: the owner-ruled flip on its own)', () => {
     const cfg = clone();
     cfg.modes.lidarr.manual_match = 'enforce';
