@@ -1,0 +1,206 @@
+# 2026-09-29 — LazyLibrarian fail loops: evidence, the changes made, the rollback list
+
+Companion to DESIGN-046 D-21 (the rulings live there; this note holds the record). Everything below was read
+read-only from LazyLibrarian's database (`/config/lazylibrarian.db`, opened `mode=ro`), its API, SABnzbd's API,
+qBittorrent's API and Loki, except the two changes in §2, which went through LazyLibrarian's own API.
+
+## 1. The loop rate before
+
+- The 60 `fail_loop` pairs of the janitor's first books census (v0.104.0, 16:25Z run): 25 grabs in the 7 days to
+  2026-09-29 12:30 local, **3.6 a day, every one failed**: 16 "Failed to send torrent to QBITTORRENT", 7 "Duplicate
+  NZB" (all Cibola Burn eBook, one a day), 2 "Unable to locate a valid filetype" (Twilight audiobook).
+- LazyLibrarian as a whole: 179 grabs in the same 7 days (25.6 a day), 77 failed.
+- 48 of the 60 pairs were books LazyLibrarian already held (file on disk, library date) with the format reading
+  `Wanted`. Across all books there were 127 such formats (114 eBook, 13 audiobook), plus one with a library date
+  but no file (the Twilight audiobook), none with a library date after 2026-09-22 06:00. The 2026-09-22 note measured 292 → 168 that evening; the daily library scan has not moved the
+  rest (still `Wanted` after the 2026-09-29 09:10Z scan).
+
+## 2. The changes (reversible)
+
+LazyLibrarian settings, through `cmd=writeCFG` (group `General`), about 16:42Z. LazyLibrarian kept its own
+`config.ini.bak`, but that holds the state between the two writes, so the old values are here.
+
+| Setting | Before | After |
+|---|---|---|
+| `reject_words` | `audiobook, mp3, m4b, m4a, flac, hörbuch, hoerbuch, hörverlag, hoerverlag, lesung, ungekrzt, ungekürzt, ungekurzt, gekrzt, gekürzt, gekurzt, deutsch, german, dunklen, mächte, mchte, entscheidung, erzaehlt, erzählt, wustenplanet, wüstenplanet, goldener, zorn, doppelgangerin, doppelgängerin, und` | the same with `mp4` added after `flac` and `und` removed |
+| `reject_audio` | `epub, mobi, azw3, azw, pdf, hörbuch, hoerbuch, hörverlag, hoerverlag, lesung, ungekrzt, ungekürzt, ungekurzt, gekrzt, gekürzt, gekurzt, deutsch, german, dunklen, mächte, mchte, entscheidung, erzaehlt, erzählt, wustenplanet, wüstenplanet, goldener, zorn, doppelgangerin, doppelgängerin, und` | the same with `und` removed |
+
+Unchanged and checked: `blacklist_failed` 1, `blacklist_processed` off, `del_failed` 1, `notfound_status` Skipped,
+`found_status` Open, `search_bookinterval` 1440. SABnzbd `no_dupes` stays 3 (Fail); it was only read.
+
+Rollback: `cmd=writeCFG&group=General&name=reject_words&value=<Before>` (and the same for `reject_audio`).
+
+The cleanup, about 16:43Z: `cmd=unqueueBook&id=<BookID>&type=<eBook|AudioBook>` for every format that read `Wanted`
+and whose recorded file exists on disk, **127 formats (114 eBook, 13 audiobook), all now `Skipped`**. Excluded: the
+open haynesnetwork Fix requests (`book_fix_requests` in `pending`/`queued`/`search_triggered`: `Rlf2vQAACAAJ`,
+`GrYsEAAAQBAJ`; neither was in the set), since a Fix is the one sanctioned way to make LazyLibrarian re-acquire a
+held format; and the one format with a library date but no file (it stays `Wanted`). No search was sent. Fail loops
+after: **12**, none of them held.
+
+Rollback for one format: `cmd=queueBook&id=<BookID>&type=<eBook|AudioBook>`. The list:
+
+| BookID | Format | Book |
+|---|---|---|
+| `njs6CQAAQBAJ` | AudioBook | Alcatraz vs. the Evil Librarians |
+| `jVyVzQEACAAJ` | AudioBook | Blood Grove |
+| `R7lwacBA53QC` | AudioBook | Confessions of an Ugly Stepsister |
+| `emvqDwAAQBAJ` | AudioBook | Ghosts of the Shadow Market |
+| `_66cporIROcC` | AudioBook | Gone Fishin' |
+| `ybmToyCGzycC` | AudioBook | Mariel of Redwall |
+| `TAEjw0IM50YC` | AudioBook | Mossflower |
+| `8IhkAgAACAAJ` | AudioBook | The Hedge Knight |
+| `YqfWwAEACAAJ` | AudioBook | The Last Hero |
+| `gqpSPwAACAAJ` | AudioBook | The Last Hero |
+| `d2eNPwAACAAJ` | AudioBook | The Viscount who Loved Me |
+| `Iest_zZHolAC` | AudioBook | The Voyage of the Dawn Treader (full color) |
+| `yBNRDwAAQBAJ` | AudioBook | Walkin' the Dog |
+| `ec5mEQAAQBAJ` | eBook | A Bone to Pick |
+| `XaZaPgAACAAJ` | eBook | A Fisherman of the Inland Sea |
+| `fdBmEQAAQBAJ` | eBook | A Fool and His Honey |
+| `Cv6FBPQlIAEC` | eBook | A Place Called Freedom |
+| `DHiItwAACAAJ` | eBook | Aces Abroad |
+| `RzIuCwAAQBAJ` | eBook | Alcatraz Vs. the Evil Librarians |
+| `BN2JDQAAQBAJ` | eBook | All the Pretty Horses |
+| `cxT4Hz7kNnsC` | eBook | Always Outnumbered, Always Outgunned |
+| `w2zOAAAACAAJ` | eBook | An Offer from a Gentleman |
+| `6uv-CwAAQBAJ` | eBook | Arcanum Unbounded. The Cosmere Collection |
+| `mNzNCHhqFwcC` | eBook | Artemis Fowl and the Atlantis Complex |
+| `0nbw0AEACAAJ` | eBook | Babylon's Ashes |
+| `zKZXjwEACAAJ` | eBook | Beacon 23 |
+| `p01LDwAAQBAJ` | eBook | Binti |
+| `UMlFHF0JOyEC` | eBook | Blonde Faith |
+| `x5Q308_4S3kC` | eBook | Boomerang |
+| `tXGRBgwxAHIC` | eBook | Caliban's War |
+| `8dfLywEACAAJ` | eBook | Changing Planes |
+| `9g9UDwAAQBAJ` | eBook | Children of Virtue and Vengeance |
+| `ik6xzgEACAAJ` | eBook | Chroniken der Unterwelt |
+| `Hn41AgAAQBAJ` | eBook | Cibola Burn |
+| `GVPGAAAAQBAJ` | eBook | City of Ashes |
+| `LRpCrgEACAAJ` | eBook | City of Fallen Angels |
+| `HP9wCgAAQBAJ` | eBook | Clockwork Prince |
+| `1L_kBQAAQBAJ` | eBook | Dangerous Women 1 |
+| `jRgrtAEACAAJ` | eBook | Dark Prophecy |
+| `69wLTeKBPeEC` | eBook | Dead and Alive (Dean Koontz’s Frankenstein, Book 3) |
+| `KFuLDQAAQBAJ` | eBook | Dead in the Family |
+| `D59dwgEACAAJ` | eBook | Dean Koontz's Frankenstein |
+| `cW_aCwAAQBAJ` | eBook | Debbie Doesn't Do It Anymore |
+| `EjOH1Np0uy0C` | eBook | Demon Seed |
+| `AApXQwAACAAJ` | eBook | Down & Dirty |
+| `fpV0DVDxLqkC` | eBook | Eclipse |
+| `W6mabRTiDjYC` | eBook | Fear of the Dark |
+| `XgtGPgAACAAJ` | eBook | Four Ways to Forgiveness |
+| `QEtj-cZIog8C` | eBook | Frankenstein. Prodigal Son |
+| `VIKLDQAAQBAJ` | eBook | Frankenstein. The Dead Town |
+| `mUoBfC4z_sMC` | eBook | Gone Fishin' |
+| `1IiNEAAAQBAJ` | eBook | Grave Secret |
+| `h_tTnwEACAAJ` | eBook | High Rhulain |
+| `A8dV8dbPzuIC` | eBook | His Dark Materials. The Golden Compass (Book 1) |
+| `6BPTCwAAQBAJ` | eBook | Honor Among Thieves |
+| `KLJPEAAAQBAJ` | eBook | Hooked |
+| `VkMUrgEACAAJ` | eBook | How to Stop Worrying and Start Living |
+| `MPu0xhrYqqUC` | eBook | It's in His Kiss |
+| `GOhLAQAACAAJ` | eBook | Karma |
+| `iSnJmAEACAAJ` | eBook | Last Scene Alive |
+| `hGyDBQAAQBAJ` | eBook | Legion. Skin Deep |
+| `Zng8PgAACAAJ` | eBook | Liar's Poker |
+| `Mf4TnAEACAAJ` | eBook | Loamhedge |
+| `YhpSHnWjG3AC` | eBook | Lord John and the Brotherhood of the Blade |
+| `96KNEAAAQBAJ` | eBook | Mariel of Redwall |
+| `ybmToyCGzycC` | eBook | Mariel of Redwall |
+| `TAEjw0IM50YC` | eBook | Mossflower |
+| `sA-TEAAAQBAJ` | eBook | Mr. Murder |
+| `hN-yEAAAQBAJ` | eBook | Murtagh - Eine dunkle Bedrohung |
+| `ENRSDwAAQBAJ` | eBook | Nightflyers & Other Stories |
+| `Ye9ftAEACAAJ` | eBook | No One Writes to the Colonel and Other Stories |
+| `7XUkBQAAQBAJ` | eBook | Odd Thomas. You Are Destined to Be Together Forever (Short Story) |
+| `nCmuEQAAQBAJ` | eBook | Percy Jackson and the Olympians. The Lightning Thief Illustrated Edition |
+| `8yWqlAEACAAJ` | eBook | Percy Jackson and the Sea of Monsters |
+| `K8ETEAAAQBAJ` | eBook | Queen of Air and Darkness |
+| `NVvtwAEACAAJ` | eBook | Queen of Air and Darkness |
+| `C9-NmQLA64gC` | eBook | Rakkety Tam |
+| `IA6TEAAAQBAJ` | eBook | Red Rabbit |
+| `wZ-CDwAAQBAJ` | eBook | Reveal Me |
+| `aS9CPgAACAAJ` | eBook | Rocannon's World |
+| `pxY_EAAAQBAJ` | eBook | Sauron Defeated. The End Of The Third Age |
+| `elABCwAAQBAJ` | eBook | Shakespeare's Champion |
+| `j8tmEQAAQBAJ` | eBook | Shakespeare's Christmas |
+| `UB6E-h0wS84C` | eBook | Shatter Me |
+| `giXxsgEACAAJ` | eBook | Shatter Me |
+| `L04eDgAAQBAJ` | eBook | Sleep Like a Baby |
+| `k7Tkl7ACkwcC` | eBook | Surprised by Joy |
+| `SMiJCwAAQBAJ` | eBook | Tales from the Shadowhunter Academy |
+| `alZJ6--uhyUC` | eBook | The Amber Spyglass |
+| `Ivg5DwAAQBAJ` | eBook | The Crooked Staircase |
+| `eC1MDwAAQBAJ` | eBook | The Dark Talent |
+| `sfi_DwAAQBAJ` | eBook | The Evening and the Morning |
+| `ZVX4DwAAQBAJ` | eBook | The Evening and the Morning |
+| `xFr92V2k3PIC` | eBook | The Fellowship of the Ring (The Lord of the Rings, Book 1) |
+| `y_SO_GJi81MC` | eBook | The Good Guy |
+| `fJaCEAAAQBAJ` | eBook | The Great Divorce |
+| `IaMpAAAACAAJ` | eBook | The Hedge Knight |
+| `2CKuEQAAQBAJ` | eBook | The Heroes of Olympus, Book One. The Lost Hero |
+| `7XjgswEACAAJ` | eBook | The House of Hades |
+| `4KJuMAEACAAJ` | eBook | The Infernal Devices (Boxed Set) |
+| `ws2LNcOIubEC` | eBook | The Jesus Incident |
+| `5ffYzQEACAAJ` | eBook | The Julius House |
+| `hJGWuxd1a_IC` | eBook | The Key to Midnight |
+| `VDs6CQAAQBAJ` | eBook | The Knights of Crystallia |
+| `gqpSPwAACAAJ` | eBook | The Last Hero |
+| `pcyOEAAAQBAJ` | eBook | The Last Olympian |
+| `HeKxxAIzXI4C` | eBook | The Long Fall |
+| `odqk4bsjdKAC` | eBook | The New New Thing |
+| `xl0-XHoXrvYC` | eBook | The Science of Discworld II |
+| `w48kmK8CrvEC` | eBook | The Screwtape Letters |
+| `hupYCwAAQBAJ` | eBook | The Scrivener's Bones |
+| `oTw6CQAAQBAJ` | eBook | The Shattered Lens |
+| `aFy9AQAACAAJ` | eBook | The Subtle Art Of Not Giving A F*Ck |
+| `HJIaZMnrcVgC` | eBook | The Sunset Limited |
+| `Obm7DmrDsroC` | eBook | The Tempest Tales |
+| `9LoxEAAAQBAJ` | eBook | The Treason Of Isengard |
+| `YN-HSCwta5IC` | eBook | The Voyage of the Dawn Treader (adult) |
+| `Iest_zZHolAC` | eBook | The Voyage of the Dawn Treader (full color) |
+| `gqQjEQAAQBAJ` | eBook | The Wave |
+| `xgyREAAAQBAJ` | eBook | The Witch's Vacuum Cleaner And Other Stories |
+| `PyRvEAAAQBAJ` | eBook | These Infinite Threads |
+| `Ec5mEQAAQBAJ` | eBook | Three Bedrooms, One Corpse |
+| `ZYK4q11X1UoC` | eBook | Tom Clancy SSN |
+| `cjZOBQAAQBAJ` | eBook | Triple |
+| `NyZ7Wp2jkqMC` | eBook | Whispers |
+| `laM7DwAAQBAJ` | eBook | Wild Cards I |
+| `6Y3CLykbEAAC` | eBook | Written in My Own Heart's Blood |
+
+## 3. Library copies that are the wrong book (for a person: the books Fix)
+
+An epub title check of the 114 held eBooks against the book's name flagged these (the first two are certainly wrong,
+the last two need a look). They are `Skipped` now like the rest, so LazyLibrarian will not replace them with another
+wrong grab; a Fix re-acquires.
+
+| Book (eBook) | BookID | What the file is |
+|---|---|---|
+| Wild Cards I | `laM7DwAAQBAJ` | "The Button Man and the Murder Tree" (Wild Cards 21.3). About 50 different Wild Cards volumes were imported as Wild Cards I in August: its title is a token subset of every volume's, so LazyLibrarian's fuzzy match accepts any of them. A Fix will likely grab another volume the same way; it needs a hand-picked release. |
+| The Last Olympian | `pcyOEAAAQBAJ` | "The Sea of Monsters" (Percy Jackson 2, not 5) |
+| The Dark Talent | `eC1MDwAAQBAJ` | titled "Alcatraz Versus the Evil Librarians" (series book 1, not 5); worth a look |
+| The Infernal Devices (Boxed Set) | `4KJuMAEACAAJ` | titled "Clockwork Princess" (book 3 only); worth a look |
+
+## 4. The 12 fail loops left (still `Wanted`, nothing on disk)
+
+| Book | Format | Failed grabs | Why |
+|---|---|---|---|
+| Twilight | AudioBook | 39 | Only whole-saga bundles match (490 and 380 mp3 in per-book folders); LazyLibrarian finds no audiobook file at the top. Two bundles seed in qBittorrent. |
+| The Hedge Knight (`gXIAoQEACAAJ`) | eBook | 17 | Usenet posts incomplete ("Aborted, cannot be completed") |
+| A Bone to Pick | eBook | 15 | Articles gone from the provider ("Not on your server") |
+| Eragon - Die Weisheit des Feuers | eBook | 11 | The wanted entry is the German edition; English releases do not match it |
+| Rebel Island | eBook | 10 | Wrong-type downloads, NZB fetch failures in July |
+| Conan The Magnificent | eBook | 9 | Wrong-type downloads |
+| The Inheritance Cycle | AudioBook | 7 | The wanted entry is the 4-book set; the set's torrent seeds, but its files sit in per-book folders |
+| Hornet Flight | eBook | 7 | Wrong-type downloads (last 2026-07-18) |
+| The Pandora Sequence | AudioBook | 5 | Incomplete posts |
+| The Man from St. Petersburg | eBook | 5 | Wrong-type downloads (last 2026-07-18) |
+| Kingdom of Ash | eBook | 5 | Repair failures, wrong-type downloads |
+| Defy Me | AudioBook | 5 | Two complete copies seed in qBittorrent as bare files; the imports failed on a stale folder in the old `books-mam.unpack` directory (gone since 2026-09-22), and re-grabs are refused as duplicate torrents. A manual import in LazyLibrarian lands it. |
+
+## 5. How to re-run the checks
+
+- Held but `Wanted` (should stay at 0 apart from open Fixes): count books whose `Status`/`AudioStatus` is `Wanted`
+  and whose `BookFile`/`AudioFile` exists, from the LazyLibrarian pod, database opened read-only.
+- Loop rate: `wanted` rows with `NZBdate` in the last 7 days, grouped by `Status` and by `DLResult` shape.

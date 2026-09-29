@@ -2304,6 +2304,8 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     ]);
     const r4 = await run(443, 'dl-3', new Date(t0.getTime() + 3 * hour));
     expect(r4.calls.deletes).toEqual([]);
+    // D-21: still held on the next run is a standing loop: recorded (below) and in the digest, not logged again.
+    expect(r4.loops).toEqual([]);
 
     const rows = await lidarrRows();
     expect(rows.map((r) => [r.downloadId, r.action])).toEqual([

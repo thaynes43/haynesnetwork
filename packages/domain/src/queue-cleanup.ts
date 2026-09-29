@@ -1223,41 +1223,93 @@ async function priorSourceRemovals(
   return out;
 }
 
-/** D-20 — how far back the fail-loop signal looks for a loop's previous row: a loop unseen for longer logs as new. The
- *  bound keeps the hourly read from growing with the table. */
-const FAIL_LOOP_LOOKBACK_MS = 48 * 60 * 60 * 1000;
+/** D-21 — how far back the loop signals look for the instance's previous run. A previous run older than this reads as
+ *  none, so every loop then logs as new; the bound keeps the read on the newest rows. */
+const LOOP_STATE_LOOKBACK_MS = 48 * 60 * 60 * 1000;
 
-/** D-20 — each fail loop's attempts on its latest earlier row within FAIL_LOOP_LOOKBACK_MS (the fail-loop signal
- *  fires when the count grew). */
-async function priorFailLoopAttempts(
+/** D-21 — the loops an instance was in on its previous run: the `fail_loop` item references, and the downloads held as
+ *  `skipped_loop` (keyed by `heldLoopKey`). */
+interface PreviousRunLoops {
+  failLoops: Set<string>;
+  held: Set<string>;
+}
+
+/** D-21 — what a held download is keyed on from run to run: its download id, else its item reference. Null: it cannot
+ *  be matched to an earlier run, so it always logs. */
+function heldLoopKey(item: { downloadId: string | null; itemRef: string | null }): string | null {
+  return nonEmpty(item.downloadId) ?? nonEmpty(item.itemRef);
+}
+
+/**
+ * D-21 — the loops the instance was already in on its previous run: its latest earlier rows (one run writes all of its
+ * rows with the same `now`), looked for within LOOP_STATE_LOOKBACK_MS. A loop that is not in them is new (first seen,
+ * or back after it cleared) and logs `[queue-cleanup] loop_detected`; a loop that is in them is standing, and only the
+ * digest shows it. A run that could not read the instance wrote no rows for it, so it is not a state change either.
+ */
+async function previousRunLoops(
   db: ReturnType<typeof resolveDb>,
   instance: QueueCleanupInstance,
-  refs: string[],
-  before: Date,
-): Promise<Map<string, number | null>> {
-  const out = new Map<string, number | null>();
-  if (refs.length === 0) return out;
+  now: Date,
+): Promise<PreviousRunLoops> {
+  const out: PreviousRunLoops = { failLoops: new Set(), held: new Set() };
+  const [latest] = await db
+    .select({ createdAt: arrQueueCleanupActions.createdAt })
+    .from(arrQueueCleanupActions)
+    .where(
+      and(
+        eq(arrQueueCleanupActions.instance, instance),
+        lt(arrQueueCleanupActions.createdAt, now),
+        gte(arrQueueCleanupActions.createdAt, new Date(now.getTime() - LOOP_STATE_LOOKBACK_MS)),
+      ),
+    )
+    .orderBy(desc(arrQueueCleanupActions.createdAt))
+    .limit(1);
+  if (!latest) return out;
+  // The 1 ms window takes the whole run whatever precision the column keeps beyond the millisecond.
+  const at = latest.createdAt;
   const rows = await db
     .select({
       itemRef: arrQueueCleanupActions.itemRef,
-      attempts: arrQueueCleanupActions.attempts,
-      createdAt: arrQueueCleanupActions.createdAt,
+      downloadId: arrQueueCleanupActions.downloadId,
+      actionClass: arrQueueCleanupActions.actionClass,
+      action: arrQueueCleanupActions.action,
     })
     .from(arrQueueCleanupActions)
     .where(
       and(
         eq(arrQueueCleanupActions.instance, instance),
-        eq(arrQueueCleanupActions.actionClass, 'fail_loop'),
-        inArray(arrQueueCleanupActions.itemRef, refs),
-        lt(arrQueueCleanupActions.createdAt, before),
-        gte(arrQueueCleanupActions.createdAt, new Date(before.getTime() - FAIL_LOOP_LOOKBACK_MS)),
+        gte(arrQueueCleanupActions.createdAt, at),
+        lt(arrQueueCleanupActions.createdAt, new Date(at.getTime() + 1)),
+        or(eq(arrQueueCleanupActions.actionClass, 'fail_loop'), eq(arrQueueCleanupActions.action, 'skipped_loop')),
       ),
-    )
-    .orderBy(desc(arrQueueCleanupActions.createdAt));
+    );
   for (const r of rows) {
-    if (r.itemRef !== null && !out.has(r.itemRef)) out.set(r.itemRef, r.attempts);
+    if (r.actionClass === 'fail_loop' && r.itemRef !== null) out.failLoops.add(r.itemRef);
+    if (r.action === 'skipped_loop') {
+      const key = heldLoopKey(r);
+      if (key !== null) out.held.add(key);
+    }
   }
   return out;
+}
+
+/** D-21 — `previousRunLoops`, read at most once per instance per run and only when there is a loop to log. A failed
+ *  read logs every loop as new that run (an alert may repeat once; it is never lost). */
+function previousRunLoopsOnce(
+  db: ReturnType<typeof resolveDb>,
+  instance: QueueCleanupInstance,
+  now: Date,
+  logger: QueueCleanupLogger | undefined,
+): () => Promise<PreviousRunLoops> {
+  let read: Promise<PreviousRunLoops> | null = null;
+  return () =>
+    (read ??= previousRunLoops(db, instance, now).catch((err: unknown) => {
+      logger?.warn?.('queue-cleanup: loop-state read failed, every loop logs as new this run', {
+        instance,
+        error: errMsg(err),
+      });
+      return { failLoops: new Set<string>(), held: new Set<string>() };
+    }));
 }
 
 /** One source item's own verdict, before its download is considered (D-15). */
@@ -1383,6 +1435,9 @@ async function evaluateSourceInstance(input: {
   let actionsTaken = 0;
   let retryCommandRan = false;
   const searchedDownloads: QueueCleanupSourceItem[][] = [];
+  /** The downloads the loop guard held this run, logged after the loop only when new (D-21). */
+  const heldDownloads: Array<{ key: string | null; meta: Record<string, unknown> }> = [];
+  const previousLoops = previousRunLoopsOnce(db, instance, now, logger);
   for (const group of groupQueueRecordsByDownload(items)) {
     const members = group.map((item) => verdicts.get(item)!);
     const wanted = members[0]!.wants;
@@ -1408,14 +1463,17 @@ async function evaluateSourceInstance(input: {
       }
       const looping = members.filter((m) => m.loop);
       if (looping.length > 0) {
-        logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, {
-          kind: 'skipped_loop',
-          instance,
-          downloadId: members[0]!.item.downloadId,
-          title: members[0]!.item.title,
-          itemRef: looping[0]!.item.itemRef,
-          targetIds: distinctIds(looping.map((m) => m.item.targetId)),
-          priorRemovals: Math.max(...looping.map((m) => m.priorRemovals)),
+        heldDownloads.push({
+          key: heldLoopKey(members[0]!.item),
+          meta: {
+            kind: 'skipped_loop',
+            instance,
+            downloadId: members[0]!.item.downloadId,
+            title: members[0]!.item.title,
+            itemRef: looping[0]!.item.itemRef,
+            targetIds: distinctIds(looping.map((m) => m.item.targetId)),
+            priorRemovals: Math.max(...looping.map((m) => m.priorRemovals)),
+          },
         });
       }
       if (mixed) {
@@ -1494,6 +1552,16 @@ async function evaluateSourceInstance(input: {
     }
   }
 
+  // 2a. The held-download signal (D-13, D-20, D-21): a download the loop guard holds logs when it is new this run, not
+  //     on every run it stays held (the digest lists the standing ones).
+  if (heldDownloads.length > 0) {
+    const previous = await previousLoops();
+    for (const held of heldDownloads) {
+      if (held.key !== null && previous.held.has(held.key)) continue;
+      logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, held.meta);
+    }
+  }
+
   // 2b. The repeat-search signal (D-13, D-20): a target this run searched that the janitor also searched on an
   //     earlier run within 7 days. Read-only; a failed read never fails the run.
   if (searchedDownloads.length > 0) {
@@ -1523,32 +1591,22 @@ async function evaluateSourceInstance(input: {
     }
   }
 
-  // 2c. The fail-loop signal (D-20): a source's own grab-fail loop (report only) is logged when first seen and
-  //     whenever its failure count grew since the last run, i.e. while it is still spinning.
+  // 2c. The fail-loop signal (D-20, D-21): a source's own grab-fail loop (report only) logs when it is new: first seen,
+  //     or back after a run without it. A standing loop does not log again, however its count grows; the digest
+  //     lists it.
   const loops = items.filter((i) => i.actionClass === 'fail_loop' && i.itemRef !== null);
   if (loops.length > 0) {
-    try {
-      const prior = await priorFailLoopAttempts(
-        db,
+    const previous = await previousLoops();
+    for (const item of loops) {
+      if (previous.failLoops.has(item.itemRef!)) continue;
+      logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, {
+        kind: 'fail_loop',
         instance,
-        loops.map((i) => i.itemRef!),
-        now,
-      );
-      for (const item of loops) {
-        const before = prior.get(item.itemRef!);
-        if (before !== undefined && (item.attempts ?? 0) <= (before ?? 0)) continue;
-        logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, {
-          kind: 'fail_loop',
-          instance,
-          itemRef: item.itemRef,
-          title: item.title,
-          attempts: item.attempts,
-          previousAttempts: before ?? null,
-          reason: item.reason,
-        });
-      }
-    } catch (err) {
-      logger?.warn?.('queue-cleanup: fail-loop read failed', { instance, error: errMsg(err) });
+        itemRef: item.itemRef,
+        title: item.title,
+        attempts: item.attempts,
+        reason: item.reason,
+      });
     }
   }
 
@@ -1746,6 +1804,8 @@ export async function evaluateQueueCleanup(input: {
     let retryCommandRan = false;
     /** The records each search command covered this run, per download (the repeat-search check, D-13). */
     const searchedDownloads: QueueCleanupQueueItem[][] = [];
+    /** The downloads the loop guard held this run, logged after the loop only when new (D-21). */
+    const heldDownloads: Array<{ key: string | null; meta: Record<string, unknown> }> = [];
 
     for (const group of groupQueueRecordsByDownload(items)) {
       const members = group.map((item) => verdicts.get(item)!);
@@ -1773,13 +1833,16 @@ export async function evaluateQueueCleanup(input: {
         }
         const looping = members.filter((m) => m.loop);
         if (looping.length > 0) {
-          input.logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, {
-            kind: 'skipped_loop',
-            instance,
-            downloadId: members[0]!.item.downloadId,
-            title: members[0]!.item.title,
-            targetIds: distinctIds(looping.map((m) => m.item.targetId)),
-            priorRemovals: Math.max(...looping.map((m) => m.priorRemovals)),
+          heldDownloads.push({
+            key: heldLoopKey({ downloadId: members[0]!.item.downloadId, itemRef: null }),
+            meta: {
+              kind: 'skipped_loop',
+              instance,
+              downloadId: members[0]!.item.downloadId,
+              title: members[0]!.item.title,
+              targetIds: distinctIds(looping.map((m) => m.item.targetId)),
+              priorRemovals: Math.max(...looping.map((m) => m.priorRemovals)),
+            },
           });
         }
         if (mixed) {
@@ -1929,6 +1992,16 @@ export async function evaluateQueueCleanup(input: {
         // The removal landed; only the check or the search failed — the row must not hide the removal.
         setAll(result('removed_blocklisted', 'error', errMsg(err)));
         report.errors += 1;
+      }
+    }
+
+    // 2a. The held-download signal (D-13, D-21): a download the loop guard holds logs when it is new this run, not on
+    //     every run it stays held (the digest lists the standing ones).
+    if (heldDownloads.length > 0) {
+      const previous = await previousRunLoopsOnce(db, instance, now, input.logger)();
+      for (const held of heldDownloads) {
+        if (held.key !== null && previous.held.has(held.key)) continue;
+        input.logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, held.meta);
       }
     }
 
