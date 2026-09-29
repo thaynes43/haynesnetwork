@@ -2,7 +2,16 @@ import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DownloadPathProbe, SabnzbdReadClient, llJanitorPathsFromEnv, LL_DOWNLOAD_ROOT_DEFAULT } from '../src/read';
+import {
+  DownloadPathProbe,
+  SabnzbdReadClient,
+  bookFileKind,
+  compareFolderToLibrary,
+  llJanitorPathsFromEnv,
+  LL_DOWNLOAD_ROOT_DEFAULT,
+  type FolderFile,
+  type LibraryFile,
+} from '../src/read';
 import { DownloadFolderCleaner, SabnzbdWriteClient } from '../src/write';
 import { DownloadsHttpError, DownloadsPathError } from '../src/errors';
 
@@ -124,5 +133,172 @@ describe('the janitor paths on a real filesystem', () => {
   it('llJanitorPathsFromEnv: live defaults; overrides keep absolute paths only', () => {
     expect(llJanitorPathsFromEnv({}).downloadRoot).toBe(LL_DOWNLOAD_ROOT_DEFAULT);
     expect(llJanitorPathsFromEnv({ JANITOR_LL_LIBRARY_ROOTS: '/a:relative:/b' }).libraryRoots).toEqual(['/a', '/b']);
+  });
+});
+
+// DESIGN-046 D-22 (issue #621): a folder is a leftover only when every book file in it has its counterpart among
+// the files of its destinations' directories. The shapes are the live ones of 2026-09-29, anonymized.
+describe('compareFolderToLibrary (D-22, pure)', () => {
+  const f = (path: string, size: number, regular = true): FolderFile => ({ path, size, regular });
+  const l = (name: string, size: number): LibraryFile => ({ name, size });
+
+  it('book files are audio and eBook formats by extension; archives are their own kind; the rest is ignored', () => {
+    expect(['a.MP3', 'b.m4b', 'c.flac', 'd.opus'].map(bookFileKind)).toEqual(Array(4).fill('audio'));
+    expect(['a.EPUB', 'b.azw3', 'c.mobi', 'd.pdf', 'e.cbz'].map(bookFileKind)).toEqual(Array(5).fill('ebook'));
+    expect(['a.rar', 'a.r00', 'a.001', 'a.zip', 'a.7z'].map(bookFileKind)).toEqual(Array(5).fill('archive'));
+    const ignored = ['a.nfo', 'a.jpg', 'a.sfv', 'file_id.diz', 'a.URL', 'a.m3u', 'a.txt', 'a.opf', 'a.par2', 'noext'];
+    expect(ignored.map(bookFileKind)).toEqual(Array(ignored.length).fill('other'));
+  });
+
+  it('audio: the same name and size (LazyLibrarian keeps audio names), anywhere in the folder', () => {
+    const library = [l('Author - Book - 01 of 02.mp3', 28_311_552), l('Author - Book - 02 of 02.mp3', 28_311_552)];
+    const folder = [
+      f('Author - Book - 01 of 02.mp3', 28_311_552),
+      f('CD2/Author - Book - 02 of 02.mp3', 28_311_552),
+      f('cover.jpg', 5),
+      f('book.nfo', 1),
+    ];
+    expect(compareFolderToLibrary(folder, library)).toEqual({ covered: true, bookFiles: 2 });
+    // Size alone is no identity for audio: equal-length parts of another book have the same size.
+    expect(compareFolderToLibrary([f('Other - Book - 01 of 02.mp3', 28_311_552)], library)).toEqual({
+      covered: false,
+      gap: 'not_matched',
+      bookFiles: 1,
+      unmatched: 1,
+    });
+    // The same name at another size is another file.
+    expect(compareFolderToLibrary([f('Author - Book - 01 of 02.mp3', 28_311_553)], library).covered).toBe(false);
+  });
+
+  it('eBook: the same extension and size under any name (LazyLibrarian renames every eBook file)', () => {
+    const library = [l('Book - Author.epub', 507_854), l('Book - Author.mobi', 569_082), l('Book - Author.opf', 1_465)];
+    const folder = [f('Author.Book.2012.RETAiL.EPUB.eBook-GRP.EPUB', 507_854), f('grp.nfo', 2_008)];
+    expect(compareFolderToLibrary(folder, library)).toEqual({ covered: true, bookFiles: 1 });
+    // The same size under another extension is not a counterpart.
+    expect(compareFolderToLibrary([f('x.azw3', 507_854)], library).covered).toBe(false);
+  });
+
+  it('issue #621 (a): a series tracked as one book, the destination holds volume 6, the folder volume 3', () => {
+    const library = [
+      l('Series - Author.epub', 1_258_578),
+      l('Series - Author.pdf', 178_736),
+      l('Series - Author.jpg', 2_997_475),
+      l('Series - Author.opf', 850),
+    ];
+    const folder = [f('Author - Series 03 - Book.epub', 755_982), f('WELCOME advert.pdf', 178_736), f('Community.URL', 214)];
+    expect(compareFolderToLibrary(folder, library)).toEqual({
+      covered: false,
+      gap: 'not_matched',
+      bookFiles: 2,
+      unmatched: 1,
+    });
+  });
+
+  it('issue #621 (b): the destination epub is the omnibus; the azw3 is there byte for byte, the epub is not', () => {
+    const library = [
+      l('Book - Author.epub', 3_450_352),
+      l('Book - Author.azw3', 2_094_536),
+      l('Book - Author.mobi', 638_415),
+      l('Author - Book.azw3', 549_196),
+    ];
+    const folder = [f('Author - Trilogy 03 Book (retail).azw3', 549_196), f('Author - Trilogy 03 Book (retail).epub', 795_804)];
+    expect(compareFolderToLibrary(folder, library)).toEqual({
+      covered: false,
+      gap: 'not_matched',
+      bookFiles: 2,
+      unmatched: 1,
+    });
+  });
+
+  it('never covered: no book file, an archive left behind, a symlinked book file, an empty library', () => {
+    const library = [l('Book - Author.epub', 10)];
+    expect(compareFolderToLibrary([f('x.nfo', 1), f('file_id.diz', 1)], library)).toEqual({
+      covered: false,
+      gap: 'no_book_file',
+      bookFiles: 0,
+      unmatched: 0,
+    });
+    expect(compareFolderToLibrary([f('a.epub', 10), f('a.part01.rar', 99)], library)).toMatchObject({
+      covered: false,
+      gap: 'archive',
+    });
+    expect(compareFolderToLibrary([f('a.epub', 10, false)], library)).toMatchObject({ covered: false, gap: 'not_matched' });
+    expect(compareFolderToLibrary([f('a.epub', 10)], [])).toMatchObject({ covered: false, gap: 'not_matched' });
+  });
+});
+
+describe('DownloadPathProbe.folderCoverage (D-22) on a real filesystem', () => {
+  let base: string;
+  let downloadRoot: string;
+  let ebooks: string;
+  let audio: string;
+  let probe: DownloadPathProbe;
+  const put = async (path: string, bytes: number) => {
+    await mkdir(join(path, '..'), { recursive: true });
+    await writeFile(path, Buffer.alloc(bytes, 1));
+  };
+  beforeAll(async () => {
+    base = await mkdtemp(join(tmpdir(), 'janitor-cov-'));
+    downloadRoot = join(base, 'complete', 'lazylibrarian');
+    ebooks = join(base, 'books', 'EBooks');
+    audio = join(base, 'books', 'AudioBooks');
+    probe = new DownloadPathProbe({ downloadRoot, libraryRoots: [ebooks, audio] });
+    // A good audiobook (names kept, a nested CD folder), a good renamed eBook, and the #621 series-slot shape.
+    await put(join(downloadRoot, 'Author - Book (2014) MP3', 'CD1', '01.mp3'), 300);
+    await put(join(downloadRoot, 'Author - Book (2014) MP3', 'book.nfo'), 20);
+    await put(join(audio, 'Author', 'Book', '01.mp3'), 300);
+    await symlink(join(audio, 'Author', 'Book', '01.mp3'), join(audio, 'Author', 'Book', '02.mp3'));
+    await put(join(downloadRoot, 'Author.Ebook.RETAIL.EPUB-GRP', 'Author.Ebook.RETAIL.EPUB-GRP.epub'), 5_000);
+    await put(join(ebooks, 'Author', 'Ebook', 'Ebook - Author.epub'), 5_000);
+    await put(join(downloadRoot, 'Author - Series 03 - Book epub.1', 'Author - Series 03 - Book.epub'), 7_559);
+    await put(join(ebooks, 'Author', 'Series', 'Series - Author.epub'), 12_585);
+    // A symlinked book file inside a folder (its target is the library copy: still not the folder's own file).
+    await mkdir(join(downloadRoot, 'Author - Linked (epub)'), { recursive: true });
+    await symlink(
+      join(ebooks, 'Author', 'Ebook', 'Ebook - Author.epub'),
+      join(downloadRoot, 'Author - Linked (epub)', 'Linked.epub'),
+    );
+    // A folder nested deeper than the walk's bound.
+    await put(join(downloadRoot, 'Author - Deep', 'a', 'b', 'c', 'd', '01.mp3'), 300);
+  });
+  afterAll(async () => {
+    await rm(base, { recursive: true, force: true });
+  });
+
+  it('compares the walked folder with the regular files of the destination directory', async () => {
+    const book = join(audio, 'Author', 'Book', '01.mp3');
+    const ebook = join(ebooks, 'Author', 'Ebook', 'Ebook - Author.epub');
+    const slot = join(ebooks, 'Author', 'Series', 'Series - Author.epub');
+    expect(await probe.folderCoverage(join(downloadRoot, 'Author - Book (2014) MP3'), [book])).toEqual({
+      covered: true,
+      bookFiles: 1,
+    });
+    expect(await probe.folderCoverage(join(downloadRoot, 'Author.Ebook.RETAIL.EPUB-GRP'), [ebook])).toEqual({
+      covered: true,
+      bookFiles: 1,
+    });
+    expect(await probe.folderCoverage(join(downloadRoot, 'Author - Series 03 - Book epub.1'), [slot])).toEqual({
+      covered: false,
+      gap: 'not_matched',
+      bookFiles: 1,
+      unmatched: 1,
+    });
+    expect(await probe.folderCoverage(join(downloadRoot, 'Author - Linked (epub)'), [ebook])).toMatchObject({
+      covered: false,
+      gap: 'not_matched',
+    });
+  });
+
+  it('whatever it cannot vouch for is unreadable: over the bounds, a missing or outside destination, no folder', async () => {
+    const book = join(audio, 'Author', 'Book', '01.mp3');
+    const folder = join(downloadRoot, 'Author - Book (2014) MP3');
+    const unreadable = { covered: false, gap: 'unreadable' };
+    expect(await probe.folderCoverage(join(downloadRoot, 'Author - Deep'), [book])).toMatchObject(unreadable);
+    expect(await probe.folderCoverage(folder, [join(audio, 'Author', 'Book', 'gone.mp3')])).toMatchObject(unreadable);
+    expect(await probe.folderCoverage(folder, [join(base, 'elsewhere.mp3')])).toMatchObject(unreadable);
+    expect(await probe.folderCoverage(folder, [null])).toMatchObject(unreadable);
+    expect(await probe.folderCoverage(folder, [])).toMatchObject(unreadable);
+    expect(await probe.folderCoverage(join(downloadRoot, 'missing'), [book])).toMatchObject(unreadable);
+    expect(await probe.folderCoverage(join(folder, 'CD1'), [book])).toMatchObject(unreadable);
   });
 });
