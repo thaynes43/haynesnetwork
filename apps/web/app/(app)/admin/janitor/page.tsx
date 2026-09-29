@@ -20,6 +20,9 @@ const INSTANCES = ['sonarr', 'radarr', 'lidarr'] as const;
 type Instance = (typeof INSTANCES)[number];
 const CLASSES = ['have_better', 'retry_import', 'bad_release'] as const;
 type EnforceableClass = (typeof CLASSES)[number];
+/** The report-only classes (DESIGN-046 D-12): no enforce cell, never acted on. */
+const REPORT_ONLY_CLASSES = ['manual_match', 'unknown'] as const;
+type ReportOnlyClass = (typeof REPORT_ONLY_CLASSES)[number];
 type Mode = 'census' | 'enforce';
 type ModeMatrix = Record<Instance, Record<EnforceableClass, Mode>>;
 
@@ -29,17 +32,20 @@ const INSTANCE_LABEL: Record<Instance, string> = {
   lidarr: 'Lidarr',
 };
 
-const CLASS_LABEL: Record<EnforceableClass | 'unknown', string> = {
+const CLASS_LABEL: Record<EnforceableClass | ReportOnlyClass, string> = {
   have_better: 'Already have it',
   retry_import: 'Retry the import',
   bad_release: 'Bad release',
+  manual_match: 'Needs a manual match',
   unknown: 'Unknown reason',
 };
 
-const CLASS_HINT: Record<EnforceableClass | 'unknown', string> = {
+const CLASS_HINT: Record<EnforceableClass | ReportOnlyClass, string> = {
   have_better: 'The library already holds this at equal or better quality. Enforcing removes the download and blocklists the release. Nothing is searched again.',
   retry_import: 'A completed download stuck short of importing. Enforcing asks the app to re-run its import pass, then escalates if it stays stuck.',
   bad_release: 'A failed or defective release. Enforcing blocklists it and searches for a replacement while the item is still monitored.',
+  manual_match:
+    'Report only. Lidarr could not match the downloaded files to the album closely enough to import them. Import it by hand in Lidarr, or remove it there.',
   unknown: 'Report only. The janitor never acts on a reason it does not recognize.',
 };
 
@@ -164,7 +170,7 @@ export default function AdminJanitorPage() {
 
   const ladder = data?.ladder ?? null;
   const summary = data?.summary ?? [];
-  const summaryCell = (instance: Instance, klass: EnforceableClass | 'unknown') =>
+  const summaryCell = (instance: Instance, klass: EnforceableClass | ReportOnlyClass) =>
     summary.find((s) => s.instance === instance && s.actionClass === klass) ?? null;
 
   return (
@@ -255,17 +261,19 @@ export default function AdminJanitorPage() {
                     })}
                   </tr>
                 ))}
-                <tr>
-                  <th scope="row">
-                    <span className="janitor-grid__class">{CLASS_LABEL.unknown}</span>
-                    <span className="field-hint">{CLASS_HINT.unknown}</span>
-                  </th>
-                  {INSTANCES.map((instance) => (
-                    <td key={instance}>
-                      <span className="janitor-mode janitor-mode--fixed">Report only</span>
-                    </td>
-                  ))}
-                </tr>
+                {REPORT_ONLY_CLASSES.map((klass) => (
+                  <tr key={klass}>
+                    <th scope="row">
+                      <span className="janitor-grid__class">{CLASS_LABEL[klass]}</span>
+                      <span className="field-hint">{CLASS_HINT[klass]}</span>
+                    </th>
+                    {INSTANCES.map((instance) => (
+                      <td key={instance}>
+                        <span className="janitor-mode janitor-mode--fixed">Report only</span>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -373,7 +381,7 @@ export default function AdminJanitorPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {([...CLASSES, 'unknown'] as const).map((klass) => (
+                  {([...CLASSES, ...REPORT_ONLY_CLASSES] as const).map((klass) => (
                     <tr key={klass}>
                       <th scope="row">{CLASS_LABEL[klass]}</th>
                       {INSTANCES.map((instance) => {

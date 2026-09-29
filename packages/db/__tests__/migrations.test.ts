@@ -12,6 +12,7 @@ import {
   OAUTH_AUDIT_EVENTS,
   OAUTH_TOKEN_ENDPOINT_AUTH_METHODS,
   PLEX_SERVER_SLUGS,
+  QUEUE_CLEANUP_ACTION_CLASSES,
   QUEUE_CLEANUP_ACTIONS,
   SYNC_RUN_KINDS,
   WATCH_ACCOUNT_ROLES,
@@ -3028,6 +3029,34 @@ describe('migrations against embedded Postgres 16', () => {
       }
     });
   });
+
+  // ADR-083 / DESIGN-046 D-12 (PLAN-065, Q-01 — migration 0083, journal idx 82): Lidarr's match rejections classify
+  // as the report-only `manual_match`, so arr_queue_cleanup_actions.action_class admits it. Additive.
+  describe('0083 janitor manual match (DESIGN-046 D-12 — the class CHECK admits manual_match)', () => {
+    it('admits every class incl. manual_match, still refuses a bogus class, and matches enums.ts', async () => {
+      const insert = (actionClass: string) =>
+        client.query({
+          text: `INSERT INTO arr_queue_cleanup_actions (instance, queue_item_id, download_id, action_class, mode, action, outcome)
+                 VALUES ('lidarr', 1, 'dl-0083', $1, 'census', 'none', 'observed')`,
+          values: [actionClass],
+        });
+      try {
+        expect(QUEUE_CLEANUP_ACTION_CLASSES).toContain('manual_match');
+        for (const actionClass of QUEUE_CLEANUP_ACTION_CLASSES) await insert(actionClass);
+        await expect(insert('manual_import')).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('match')).rejects.toMatchObject({ code: '23514' });
+
+        // The live CHECK names exactly QUEUE_CLEANUP_ACTION_CLASSES (parity both ways).
+        const def = await client.query(
+          `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'arr_queue_cleanup_actions_class_enum'`,
+        );
+        const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+        expect(listed.sort()).toEqual([...QUEUE_CLEANUP_ACTION_CLASSES].sort());
+      } finally {
+        await client.query(`DELETE FROM arr_queue_cleanup_actions WHERE download_id = 'dl-0083'`);
+      }
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -3131,5 +3160,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(
       readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0082_janitor_download_actions.sql'), 'utf8'),
     ).toContain("'skipped_mixed','skipped_gone'");
+  });
+
+  // PLAN-065 / DESIGN-046 D-12 gate — the janitor manual-match migration is journaled (idx 82), strictly after 0082.
+  it('lists 0083_janitor_manual_match at idx 82, strictly after 0082_janitor_download_actions', () => {
+    const entry = journal.entries.find((e) => e.tag === '0083_janitor_manual_match');
+    const prev = journal.entries.find((e) => e.tag === '0082_janitor_download_actions');
+    expect(entry?.idx).toBe(82);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    expect(readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0083_janitor_manual_match.sql'), 'utf8')).toContain(
+      "'bad_release','manual_match','unknown'",
+    );
   });
 });

@@ -446,25 +446,30 @@ export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
  * The Action Class every queue item classifies into (DESIGN-046 D-03, first-match order). `have_better` — the
  * *arr already holds equal/better quality (remove + blocklist, no re-search); `retry_import` — a stuck/
  * transient import (bounded ProcessMonitoredDownloads); `bad_release` — an unparseable/failed/defective grab
- * (blocklist + re-search where still monitored); `unknown` — everything else, NEVER acted on (ADR-083,
- * normative — reported only). Classification patterns live in versioned code; enforcement scope lives in config.
+ * (blocklist + re-search where still monitored); `manual_match` — Lidarr could not match the downloaded files
+ * to an album with confidence, so only a person can decide (DESIGN-046 D-12, Q-01; report only, NEVER acted
+ * on, no enforce cell); `unknown` — everything else, NEVER acted on (ADR-083, normative — reported only).
+ * Classification patterns live in versioned code; enforcement scope lives in config. `manual_match` joined in
+ * migration 0083 (the class CHECK is rebuilt from this list).
  */
 export const QUEUE_CLEANUP_ACTION_CLASSES = [
   'have_better',
   'retry_import',
   'bad_release',
+  'manual_match',
   'unknown',
 ] as const;
 export type QueueCleanupActionClass = (typeof QUEUE_CLEANUP_ACTION_CLASSES)[number];
 
-/** Per class×instance enforcement mode (DESIGN-046 D-05, T-240 cells). Ships all-census; `unknown` has no
- *  enforce state by construction (it is never a config cell). The SPACE_POLICY_MODES idiom. */
+/** Per class×instance enforcement mode (DESIGN-046 D-05, T-240 cells). Ships all-census; `unknown` and
+ *  `manual_match` have no enforce state by construction (neither is ever a config cell). The SPACE_POLICY_MODES
+ *  idiom. */
 export const QUEUE_CLEANUP_MODES = ['census', 'enforce'] as const;
 export type QueueCleanupMode = (typeof QUEUE_CLEANUP_MODES)[number];
 
 /**
  * What the janitor DID to a queue item this run (arr_queue_cleanup_actions.action, DESIGN-046 D-06). `none` —
- * observed only (census, or unknown); `removed_blocklisted` — removed from the client + blocklisted, no
+ * observed only (census, `unknown` or `manual_match`); `removed_blocklisted` — removed from the client + blocklisted, no
  * re-search (have_better, or an unmonitored bad_release); `retried_import` — covered by this run's single
  * ProcessMonitoredDownloads; `blocklisted_searched` — blocklisted + re-searched (a monitored bad_release);
  * `skipped_young` — younger than minItemAgeHours (classified, never acted); `skipped_cap` — the per-instance

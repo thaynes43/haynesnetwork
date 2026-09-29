@@ -1,9 +1,11 @@
 # DESIGN-046: Arr queue janitor — classifier, census, promotion ladder
 
 - **Status:** Accepted
-- **Last updated:** 2026-09-28 (D-11: one action per download, so a season pack is removed once, not once
-  per episode; a removal that answers 404 is `skipped_gone`, not an error; retry escalation counts runs, not
-  rows; issue #583 item 1, before L2). Prior: 2026-09-25 (D-10: four classifier/action fixes from the L0→L1
+- **Last updated:** 2026-09-28 (D-12: Q-01 answered from Lidarr's live queue and its census since 2026-08-01. Lidarr's
+  match rejections become the report-only class `manual_match`; nothing Lidarr shows graduates into an acting
+  class; migration 0083). Prior: 2026-09-28 (D-11: one action per download, so a season pack is removed once,
+  not once per episode; a removal that answers 404 is `skipped_gone`, not an error; retry escalation counts
+  runs, not rows; issue #583 item 1, before L2). Prior: 2026-09-25 (D-10: four classifier/action fixes from the L0→L1
   census spot-check, made before any cell enforces: `skipRedownload` on every removal, the identity-mismatch
   guard, message-only reasons, release-level-only release-defect signals). Prior: 2026-08-01.
 - **Satisfies:** governed by ADR-083; extends ADR-007 (Fix / `markHistoryFailed`), ADR-059 /
@@ -55,7 +57,8 @@ schema.
 | `have_better` | `importBlocked`/`importPending` + a `statusMessages` message matching the *arr's own already-satisfied rejections: "Not an upgrade for existing …", "Not a Custom Format upgrade …", "…quality cutoff … already met…". The *arr already compared against the library — the janitor trusts its verdict rather than re-deriving (the *arrs are the source of truth, hard rule 4). Since D-10, not when the item also carries an identity mismatch (then `unknown`). |
 | `bad_release` | `trackedDownloadStatus: 'error'`; or messages matching "Unable to parse…", "…sample…", "…archive…/…password…/…executable…" (release defects); or `status: 'failed'`. Since D-10 the release-defect patterns read release-level messages only ("Sample" and "Found archive file…" verbatim). |
 | `retry_import` | `importBlocked`/`importPending` with an empty/transient message set ("Waiting to import…", no messages at all) — the stuck-import class `ProcessMonitoredDownloads` exists for. |
-| `unknown` | Everything else — **including, initially, Lidarr's match-ambiguity messages** ("…not close enough…", manual-import prompts): with 59 live items and unobserved message text, Lidarr's dominant class deliberately starts unclassified; census evidence graduates specific patterns into A/B/C (Q-01). |
+| `manual_match` | Since D-12: one of Lidarr's own match rejections ("Album match is not close enough…", "Worst track match…", "Has missing tracks", "Has unmatched tracks", "Couldn't find similar album for…", "Unable to import automatically, found multiple artists…"). Lidarr could not match the files to an album with confidence, so only a person can decide. **Report only**: no enforce cell, never acted on, like `unknown`. Also takes a `have_better` match that carries one of these messages. |
+| `unknown` | Everything else. Lidarr's match-ambiguity messages started here and left for `manual_match` once census evidence answered Q-01 (D-12). |
 
 Anything not matched with confidence falls to `unknown`. Items younger than
 `minItemAgeHours` (D-05) classify normally but are marked `skipped_young` and never acted on.
@@ -75,7 +78,8 @@ Executed only for `enforce` cells, in `evaluateQueueCleanup` (single writer, `@h
   owning *arr's existing search command (`EpisodeSearch`/`MoviesSearch`/`AlbumSearch`) **only
   if** the target is still monitored (checked via the read client); unmonitored targets get
   the blocklist only.
-- `unknown` → never acted on (ADR-083, normative).
+- `unknown` → never acted on (ADR-083, normative). `manual_match` → never acted on either (D-12); it has no
+  enforce cell.
 
 Rails (all levels): per-instance per-run mutation cap `maxActionsPerRun` (default 10);
 `minItemAgeHours` (default 2) so freshly-completed items get their organic import window; a
@@ -107,7 +111,8 @@ One `app_settings` jsonb key (migration 0075 rebuilds the key CHECK), ADR-082 sh
 ```
 
 - `QUEUE_CLEANUP_MODES = ['census','enforce'] as const` (`SPACE_POLICY_MODES` idiom); no
-  `unknown` cell — it has no enforce state by construction.
+  `unknown` cell — it has no enforce state by construction. The same holds for `manual_match` (D-12): the
+  modes matrix is unchanged, so a stored config stays valid.
 - Resolution **DB row → code default** (all-census); typeof-guarded reads fail safe to
   census. No env tier: unlike the governor there is no pre-existing env contract to honor.
 - Writer `setArrQueueCleanupConfig({db?, config, actorId})` validates
@@ -122,7 +127,8 @@ One `app_settings` jsonb key (migration 0075 rebuilds the key CHECK), ADR-082 sh
 Append-only; the census record AND the action audit in one table:
 
 `id`, `instance` (`sonarr|radarr|lidarr`, CHECK), `queueItemId`, `downloadId`, `title`,
-`actionClass` (CHECK on `QUEUE_CLEANUP_ACTION_CLASSES`), `mode` (`census|enforce`), `action`
+`actionClass` (CHECK on `QUEUE_CLEANUP_ACTION_CLASSES`; D-12 adds `manual_match`, migration 0083), `mode`
+(`census|enforce`), `action`
 (`none|removed_blocklisted|retried_import|blocklisted_searched|skipped_young|skipped_cap`; D-11 adds
 `skipped_mixed|skipped_gone`, migration 0082),
 `outcome` (`observed|done|error`), `reason` (the driving or most informative message, ≤500 chars;
@@ -204,6 +210,52 @@ Schema: migration 0082 widens the `arr_queue_cleanup_actions.action` CHECK to ad
 its log line gain `covered`, the count of records handled by another record's call. No config, class or
 pattern changes, so the census of a run with no packs is unchanged.
 
+### D-12 — Lidarr's classification, Q-01 answered (2026-09-28, before L2)
+
+Q-01 asked which Lidarr reasons leave `unknown`, and for which class. The evidence is read-only: Lidarr's live
+queue (`GET /api/v1/queue?includeUnknownArtistItems=true`, 62 records), the album each record is for (`GET
+/api/v1/album`), the download folders of the undecided shapes (file listing only), the census (every Lidarr row
+since 2026-08-01: 234 downloads, 1,412 runs, read on a database replica) and the hourly run logs in Loki. Upstream
+references are Lidarr v3.1.6.5078 (`CompletedDownloadService`, `TrackedDownloadService`, the import
+specifications).
+
+What the queue holds. 60 of the 62 records reach the census (the other 2 have no known artist; the janitor does
+not ask for those, issue #583 item 4). Every hourly run since 2026-09-20 put 56 to 67 Lidarr records in `unknown`
+and almost none anywhere else. The pile does not come from soularr/slskd, as Q-01 guessed: 58 records are
+SABnzbd downloads and 2 are qBittorrent, and slskd is not a Lidarr download client.
+
+| Shape (message, state) | Records | Age (days) | Album on disk | Ruling |
+|---|---|---|---|---|
+| Album match is not close enough, `importFailed` (usually with "Has missing/unmatched tracks") | 28 | 3–46 | 27 none, 1 complete | `manual_match` |
+| Has missing tracks / Has unmatched tracks alone, `importFailed` | 11 | 6–46 | none | `manual_match` |
+| Couldn't find similar album for [path], `importFailed` | 8 | 1–30 | none | `manual_match` |
+| Worst track match, `importFailed` | 3 | 8–25 | none | `manual_match` |
+| Unable to import automatically, found multiple artists, `downloading` | 2 | no `added` | not in the census | `manual_match` |
+| No files found are eligible for import in [path], `importPending` | 9 | 2–44 | none | stays `unknown` |
+| Not an upgrade for existing track file(s), `importFailed` | 1 | 38 | none (0 of 21 tracks) | stays `unknown` |
+
+Historical Lidarr classes that keep their class: `bad_release` for "Duplicate NZB" (18 downloads, cleared by Lidarr
+in hours) and "Found archive file, might need to be extracted" (8); `retry_import` with no message (53 downloads,
+each seen once, the hour between completion and Lidarr's import attempt); "The download is stalled with no
+connections" (2) stays `unknown`. Each ruling below is pinned by tests (`queue-cleanup.test.ts`,
+`migrations.test.ts`), built from the live strings.
+
+| # | Ruling | Evidence and reason |
+|---|---|---|
+| 1 | **Lidarr's match rejections are a new class, `manual_match`, and it is report only.** It has no enforce cell and is never acted on, exactly like `unknown`, so no config shape changes and no level of the ladder enforces it. First-match order becomes `have_better` → `bad_release` → `retry_import` → `manual_match` → `unknown`. When several match messages are present, the reason is the most informative (album match, worst track match, track match, similar album, multiple artists, then the bare "Has missing/unmatched tracks"). | 52 of the 62 records carry one of these messages. They are not a guess about what went wrong: they are Lidarr saying it could not tie the files to the album with confidence, and that a person must choose (a manual import against a chosen release, or a removal). No acting class fits. The albums of 49 of the 50 such records in the census have no files, and all 50 are monitored, so a removal deletes the only copy of a wanted album whose files may well be that album in another edition (seven album-match scores sit between 74.8 % and 79.4 % against the 80 % bar). The one album that is complete shows the other side: a live bootleg ("Bournemouth 1963") grabbed for the compilation "1" at 42.1 %. The score does not split right grabs from wrong ones reliably enough to act on. Naming the class takes 50 records out of `unknown`, so what stays there is small and meaningful, and it gives any future action one class to be spot-checked on its own. |
+| 2 | **A `have_better` match that also carries a match rejection is `manual_match`.** | The D-10 identity guard in Lidarr's form: when Lidarr cannot match the files to the album, its "already have it" verdict may be about a different album. |
+| 3 | **Lidarr's `importFailed` stays outside the stuck-import states**, so a Lidarr record in it is never `have_better` or `retry_import`. | Lidarr sets `importFailed` when any file of a release is rejected, "to prevent further attempts at processing"; `ProcessMonitoredDownloads` retries only `importPending`. The one live "Not an upgrade for existing track file(s)" record is for "Bête Noire", which has 0 of 21 tracks on disk, so the existing files it compares against belong to another album: removing it as `have_better` would act on the wrong target. In practice Lidarr's `have_better` cell stays empty, and its `retry_import` cell sees only the hour after a download completes. |
+| 4 | **"No files found are eligible for import" stays `unknown`.** | One message, three causes, seen in the download folders: 6 are vinyl rips from one uploader stored as WavPack with a `.wvp` extension, which Lidarr does not read (it reads `.wv`); 2 are torrents of Guitar Pro tabs and PDFs, not audio; 1 folder is gone. `bad_release` (blocklist and search again) is right for the tab packs, but for the rips a new search would likely grab the next rip in the same format. Lidarr already retries `importPending` on every pass, so `retry_import` adds nothing. The rips are a Lidarr profile question, parked as issue #610. |
+| 5 | **Nothing graduates into an acting class.** Lidarr's L2 cells enforce only what they already classify: `bad_release` for failed downloads and release defects, and `retry_import` for the empty-message hour. | A Lidarr reason may act only with strong evidence that the action is safe: no library loss and no removal of the wrong target. None of the shapes above has it. Every change in this ruling moves records from `unknown` to another report-only class and none moves one toward an action, like every D-10 and D-11 change. |
+
+Schema: migration 0083 widens the `arr_queue_cleanup_actions.action_class` CHECK to admit `manual_match`. It is
+additive; the previous image never writes the value. Rows written before D-12 keep `unknown`. The run log's
+`byClass`, the digest's per-class rollup and the /admin summary gain the class; the /admin grid shows it as a
+second report-only row. No config change: the modes matrix is the same, so a stored config stays valid and the
+level is unchanged. ADR-083 needs no successor: its class D is "never acted on, reported only", and
+`manual_match` is a named part of that class, with no new write-back. Glossary: T-267 Manual Match added,
+T-239 Action Class amended.
+
 ## Alternatives considered
 
 Covered in ADR-083 (off-the-shelf janitor, agentic cron, status quo). Within this design:
@@ -219,6 +271,6 @@ See D-09.
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | Which Lidarr `importPending` reason strings graduate out of `unknown`, and into which class? The 59-item pile is likely match-ambiguity from the soularr/slskd path; some may deserve a dedicated "manual match" class rather than A/B/C. | (open — answer with the first week of census data; decision recorded as a PLAN-065 ladder note + classifier PR) |
+| Q-01 | Which Lidarr `importPending` reason strings graduate out of `unknown`, and into which class? The 59-item pile is likely match-ambiguity from the soularr/slskd path; some may deserve a dedicated "manual match" class rather than A/B/C. | **Answered 2026-09-28 (D-12).** Evidence: Lidarr's live queue (62 records), the albums they are for, and the census since 2026-08-01 (234 downloads). The pile is SABnzbd and qBittorrent, not soularr/slskd, and mostly `importFailed`, not `importPending`. Lidarr's match rejections (52 of 62 records: "Album match is not close enough", "Has missing/unmatched tracks", "Couldn't find similar album", "Worst track match", "found multiple artists") become the new report-only class `manual_match`: no enforce cell, never acted on. "No files found are eligible for import" (9) and Lidarr's `importFailed` "Not an upgrade…" (1) stay `unknown`. Nothing graduates into A/B/C. Recorded in the PLAN-065 ladder log; migration 0083. |
 | Q-02 | Retention sweep for `arr_queue_cleanup_actions` (append-only forever vs. 90-day prune)? | (open — revisit at L3; volume is small: ≤ queue size per hour) |
 | Q-03 | Should classifier patterns graduate to DB config for release-free tuning once stable? | (open — only if post-L3 tuning cadence demands it) |

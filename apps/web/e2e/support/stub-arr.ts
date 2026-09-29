@@ -108,7 +108,7 @@ export function arrActivityQueueFixture(): Record<string, unknown>[] {
 
 /**
  * ADR-083 / DESIGN-046 D-09 (PLAN-065 — *arr queue janitor) — a canned ERRORED download queue spanning every
- * Action Class (have_better / bad_release / retry_import / unknown) with realistic statusMessages, so
+ * Action Class (have_better / bad_release / retry_import / manual_match / unknown) with realistic statusMessages, so
  * `--mode=queue-cleanup` runs end-to-end locally in census (writes arr_queue_cleanup_actions rows without
  * touching any *arr — enforcement stays off under the all-census default). `added` is deliberately old so the
  * items clear the janitor's minItemAgeHours rail. Staged via `POST /_stub/queue` (dev:local pre-stages it).
@@ -170,9 +170,34 @@ export function erroredArrQueueFixture(): Record<string, unknown>[] {
       title: 'Vanished.Heist.2018.1080p.WEB-DL',
       statusMessages: [{ title: 'Waiting', messages: ['Waiting to import...'] }],
     },
-    // unknown — Lidarr match-ambiguity (deliberately unclassified initially, Q-01; reported, never acted on).
+    // manual_match — Lidarr could not match the files to the album (DESIGN-046 D-12; reported, never acted on).
+    // Lidarr's multi-file shape: the header, then one entry per rejected file.
     {
       id: 91004,
+      artistId: STUB_ARTIST_ID,
+      albumId: STUB_ALBUM_ID,
+      downloadId: 'dl-manual-match-1',
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importFailed',
+      size,
+      sizeleft: 0,
+      added,
+      title: 'Some Artist - Some Album (2019)',
+      statusMessages: [
+        {
+          title: 'One or more tracks expected in this release were not imported or missing from the release',
+          messages: [],
+        },
+        {
+          title: '01 - Opening.flac',
+          messages: ['Album match is not close enough: 75.6 % vs 80 % [album, year, missing tracks]', 'Has missing tracks'],
+        },
+      ],
+    },
+    // unknown — a message the classifier does not recognize (reported, never acted on).
+    {
+      id: 91005,
       artistId: STUB_ARTIST_ID,
       albumId: STUB_ALBUM_ID,
       downloadId: 'dl-unknown-1',
@@ -182,11 +207,11 @@ export function erroredArrQueueFixture(): Record<string, unknown>[] {
       size,
       sizeleft: 0,
       added,
-      title: 'Some Artist - Some Album (2019)',
+      title: 'Some Artist - Another Album (2021)',
       statusMessages: [
         {
-          title: 'Manual import',
-          messages: ['Found matching artist but no album could be found that was close enough'],
+          title: 'Some Artist - Another Album (2021)',
+          messages: ['No files found are eligible for import in /downloads/music/Some Artist - Another Album (2021)'],
         },
       ],
     },
