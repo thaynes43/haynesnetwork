@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.103.0](https://github.com/thaynes43/haynesnetwork/compare/v0.102.0...v0.103.0) (2026-09-29)
+
+
+### Features
+
+* **janitor:** Lidarr manual_match acts, blocking the failing release name first, behind a loop guard ([#617](https://github.com/thaynes43/haynesnetwork/issues/617)) ([2084e0a](https://github.com/thaynes43/haynesnetwork/commit/2084e0a5cb3d2f7b5f8ca318098e9c16f48a0544))
+
+
+### Bug Fixes
+
+* **activity:** read LazyLibrarian getHistory (the grab log), not getWanted (the book list) ([#616](https://github.com/thaynes43/haynesnetwork/issues/616)) ([49d946e](https://github.com/thaynes43/haynesnetwork/commit/49d946e5efbb4315a555908ec2974e1d71f7234c)), closes [#615](https://github.com/thaynes43/haynesnetwork/issues/615) [#562](https://github.com/thaynes43/haynesnetwork/issues/562)
+
+
+### Documentation
+
+* **agents:** HANDOFF — v0.101.3/v0.102.0 live, janitor Q-01 answered, Lidarr cleanup ([#613](https://github.com/thaynes43/haynesnetwork/issues/613)) ([f989ab5](https://github.com/thaynes43/haynesnetwork/commit/f989ab566ea07a691d96dc6dcb2e294acc162c98))
+
 ## [0.102.0](https://github.com/thaynes43/haynesnetwork/compare/v0.101.3...v0.102.0) (2026-09-29)
 
 
