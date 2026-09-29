@@ -127,7 +127,8 @@ describe('classifyQueueItem (D-03, pure)', () => {
     },
     // unknown
     {
-      name: 'lidarr unknown: match ambiguity (Q-01, stays unknown initially)',
+      // D-12 graduates Lidarr's own match rejections only; a paraphrase is not one of them.
+      name: 'unknown: a wording that is not an upstream Lidarr match rejection stays unknown',
       item: {
         trackedDownloadState: 'importPending',
         ...msg('Manual import', 'Found matching artist but no album could be found that was close enough'),
@@ -279,7 +280,8 @@ describe('classifyQueueItem (D-03, pure)', () => {
         trackedDownloadState: 'importPending',
         statusMessages: [{ title: text, messages: [] }],
       });
-      expect(result.class).toBe('unknown');
+      // A Lidarr match rejection, so manual_match since D-12 (it was unknown before Q-01 was answered).
+      expect(result.class).toBe('manual_match');
       expect(result.reason).toBe(text);
     });
 
@@ -447,6 +449,141 @@ describe('classifyQueueItem (D-03, pure)', () => {
     });
     expect(result.reason).toContain('Not an upgrade');
   });
+
+  // --- DESIGN-046 D-12 (Q-01, 2026-09-28) — Lidarr's queue, fixtures from the live queue and census strings ---
+
+  describe('D-12 Lidarr match rejections → manual_match (report only); everything else keeps its class', () => {
+    const HEADER = 'One or more tracks expected in this release were not imported or missing from the release';
+    /** Lidarr's multi-file shape: the header, then one entry per rejected file, titled with the file name. */
+    const lidarrFailed = (title: string, perFile: Array<[string, string[]]>): ClassifiableQueueItem => ({
+      title,
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importFailed',
+      statusMessages: [{ title: HEADER, messages: [] }, ...perFile.map(([f, m]) => ({ title: f, messages: m }))],
+    });
+
+    it('album match not close enough + "Has missing tracks" → manual_match, the album-match message is the reason', () => {
+      const album = 'Album match is not close enough: 73.4 % vs 80 % [artist, country, missing tracks]';
+      const result = classifyQueueItem(
+        lidarrFailed('Internet_Money-WE_ALL_WE_NEEDED-16BIT-WEBFLAC-2026-Bitcoin', [
+          ['01-internet_money-intro.flac', [album, 'Has missing tracks']],
+          ['02-internet_money-track.flac', [album, 'Has missing tracks']],
+        ]),
+      );
+      expect(result).toEqual({ class: 'manual_match', reason: album, confidence: 'high' });
+    });
+
+    it('"Has missing tracks" alone, and "Has unmatched tracks" alone → manual_match', () => {
+      const missing = classifyQueueItem(
+        lidarrFailed('Some_Artist-Some_Album-WEB-2026', [
+          ['10 - World So Full Of Love (And Not Enough).mp3', ['Has missing tracks']],
+        ]),
+      );
+      expect(missing).toEqual({ class: 'manual_match', reason: 'Has missing tracks', confidence: 'high' });
+      const unmatched = classifyQueueItem(
+        lidarrFailed('Some_Artist-Some_Album-WEB-2026', [['03 - Bonus.flac', ['Has unmatched tracks']]]),
+      );
+      expect(unmatched.class).toBe('manual_match');
+      expect(unmatched.reason).toBe('Has unmatched tracks');
+    });
+
+    it('"Worst track match" → manual_match', () => {
+      const text = 'Worst track match: 53.6 % vs 60 % [track title]';
+      const result = classifyQueueItem(lidarrFailed('Some_Album-2026', [['01 - Intro.flac', [text]]]));
+      expect(result).toEqual({ class: 'manual_match', reason: text, confidence: 'high' });
+    });
+
+    it('"Couldn\'t find similar album for [path]" → manual_match (a vinyl rip with one file per side, and a zip)', () => {
+      for (const path of [
+        '/data/usenet/complete-k8s/music/[003+109] Robert_Plant-Manic_Nirvana-LP-24BIT-FLAC-1990-REETKEVER.part002.rar',
+        '/data/usenet/complete-k8s/music/Korpiklaani - Kulkija.zip',
+      ]) {
+        const text = `Couldn't find similar album for [${path}]`;
+        const result = classifyQueueItem(lidarrFailed('Some Album', [['Side A.flac', [text]]]));
+        expect(result).toEqual({ class: 'manual_match', reason: text, confidence: 'high' });
+      }
+    });
+
+    it('"found multiple artists" (a completed download Lidarr could not tie to one artist) → manual_match', () => {
+      const release = 'Turnstile-NEVER_ENOUGH_VERSIONS-16BIT-WEB-FLAC-2026-ENRiCH';
+      const text =
+        'Unable to import automatically, found multiple artists: [351bee54-3ee7-449d-b68e-c94da6798b97][Turnstile], [7b748dac-f5ce-45a7-9b95-c1d8b5b013ed][Turnstile]';
+      const result = classifyQueueItem({
+        title: release,
+        status: 'completed',
+        trackedDownloadStatus: 'warning',
+        trackedDownloadState: 'downloading',
+        statusMessages: [{ title: release, messages: [text] }],
+      });
+      expect(result).toEqual({ class: 'manual_match', reason: text, confidence: 'high' });
+    });
+
+    it('stays unknown: "No files found are eligible for import" (three causes under one message, D-12)', () => {
+      // A WavPack rip with a `.wvp` extension Lidarr does not read, a torrent of guitar tabs, and a folder that is
+      // gone all say the same thing. Not retry_import (Lidarr already retries it every pass) and not bad_release.
+      const release = '[002+114] Jeff_Beck-Blow_by_Blow-LP-32BIT-WAVPACK-1975-REETKEVER.part001.rar';
+      const text = `No files found are eligible for import in /data/usenet/complete-k8s/music/${release}`;
+      const result = classifyQueueItem({
+        title: release,
+        status: 'completed',
+        trackedDownloadStatus: 'warning',
+        trackedDownloadState: 'importPending',
+        statusMessages: [{ title: release, messages: [text] }],
+      });
+      expect(result).toEqual({ class: 'unknown', reason: text, confidence: 'low' });
+    });
+
+    it('stays unknown, NEVER have_better: Lidarr importFailed + "Not an upgrade for existing track file(s)"', () => {
+      // Live case: the album the grab was for has 0 of 21 tracks on disk, so the "existing track files" belong to
+      // another album. Lidarr sets importFailed when any file is rejected and never retries it (D-12).
+      const text = 'Not an upgrade for existing track file(s). New Quality is MP3-320';
+      const result = classifyQueueItem(
+        lidarrFailed('Bryan Ferry - Bete Noire - 01-Bryan Ferry - Limbo', [
+          ['01-Bryan Ferry - Limbo.mp3', [text]],
+          ['02-Bryan Ferry - Kiss and Tell.mp3', [text]],
+        ]),
+      );
+      expect(result).toEqual({ class: 'unknown', reason: text, confidence: 'low' });
+    });
+
+    it('have_better + a match rejection → manual_match, never have_better (its verdict may be about another album)', () => {
+      const album = 'Album match is not close enough: 42.1 % vs 80 % [album, year, country, tracks]';
+      const result = classifyQueueItem({
+        title: 'The Beatles-Bournemouth 1963 [2CD] [2025] FLAC',
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [
+          { title: HEADER, messages: [] },
+          { title: '01. Roll Over Beethoven.flac', messages: [album, 'Not an upgrade for existing track file(s)'] },
+        ],
+      });
+      expect(result).toEqual({ class: 'manual_match', reason: album, confidence: 'high' });
+    });
+
+    it('precedence: bad_release still wins over a match rejection (an errored transfer, a failed download)', () => {
+      const album = 'Album match is not close enough: 68.2 % vs 80 % [country, tracks]';
+      expect(
+        classifyQueueItem({ ...lidarrFailed('x', [['01.flac', [album]]]), trackedDownloadStatus: 'error' }).class,
+      ).toBe('bad_release');
+      expect(classifyQueueItem({ ...lidarrFailed('x', [['01.flac', [album]]]), status: 'failed' }).class).toBe(
+        'bad_release',
+      );
+    });
+
+    it('unchanged: Lidarr "Duplicate NZB" (a failed download) stays bad_release; an empty importPending stays retry_import', () => {
+      expect(
+        classifyQueueItem({
+          status: 'failed',
+          trackedDownloadStatus: 'error',
+          trackedDownloadState: 'downloadFailed',
+          errorMessage: 'Duplicate NZB',
+        }),
+      ).toEqual({ class: 'bad_release', reason: 'Duplicate NZB', confidence: 'high' });
+      expect(classifyQueueItem({ trackedDownloadState: 'importPending', statusMessages: [] }).class).toBe(
+        'retry_import',
+      );
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -568,7 +705,21 @@ const unknownItem = (id: number) =>
     queueItemId: id,
     downloadId: `dl-${id}`,
     trackedDownloadState: 'importPending',
-    statusMessages: [{ title: 'x', messages: ['no album could be found that was close enough'] }],
+    statusMessages: [{ title: 'x', messages: ['Something the classifier has never seen'] }],
+  });
+/** A Lidarr match rejection in Lidarr's multi-file shape (D-12): report only, like unknown. */
+const MANUAL_MATCH_TEXT = 'Album match is not close enough: 75.6 % vs 80 % [album, year, missing tracks]';
+const manualMatchItem = (id: number, downloadId?: string) =>
+  item({
+    queueItemId: id,
+    downloadId: downloadId ?? `dl-${id}`,
+    status: 'completed',
+    trackedDownloadStatus: 'warning',
+    trackedDownloadState: 'importFailed',
+    statusMessages: [
+      { title: 'One or more tracks expected in this release were not imported or missing from the release', messages: [] },
+      { title: '01 - Opening.flac', messages: [MANUAL_MATCH_TEXT, 'Has missing tracks'] },
+    ],
   });
 
 interface InstanceStub {
@@ -772,29 +923,107 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
   // --- evaluator (D-04/D-06) ---
 
   it('CENSUS: writes one row per item, NEVER calls an *arr write, all mode census', async () => {
-    const sonarr = makeInstanceStub([haveBetter(1), badRelease(2), retryImport(3), unknownItem(4)], {
-      explodeOnWrite: true,
-    });
+    const sonarr = makeInstanceStub(
+      [haveBetter(1), badRelease(2), retryImport(3), unknownItem(4), manualMatchItem(5)],
+      { explodeOnWrite: true },
+    );
     const report = await evaluateQueueCleanup({
       db: t.db,
       clients: makeClients({ sonarr: sonarr.client }),
       config: clone(),
     });
-    expect(report.rowsWritten).toBe(4);
+    expect(report.rowsWritten).toBe(5);
     expect(report.totalFailure).toBe(false);
     expect(sonarr.calls.deletes).toHaveLength(0);
     expect(sonarr.calls.processMonitored).toBe(0);
     expect(sonarr.calls.searches).toHaveLength(0);
 
     const rows = await t.db.select().from(arrQueueCleanupActions);
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
     expect(rows.every((r) => r.mode === 'census')).toBe(true);
     expect(rows.every((r) => r.outcome === 'observed')).toBe(true);
     expect(rows.every((r) => r.action === 'none')).toBe(true);
-    // Each class is represented (the unknown item classified unknown, never acted).
+    // Each class is represented (the report-only items classified unknown and manual_match, never acted).
     expect(new Set(rows.map((r) => r.actionClass))).toEqual(
-      new Set(['have_better', 'bad_release', 'retry_import', 'unknown']),
+      new Set(['have_better', 'bad_release', 'retry_import', 'manual_match', 'unknown']),
     );
+  });
+
+  it('REPORT ONLY (D-12): manual_match is never acted on, even with every Lidarr cell enforced', async () => {
+    const cfg = clone();
+    cfg.modes.lidarr = { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' };
+    // Two albums of one download (Lidarr lists one record per album) and a lone one, all old enough to act on.
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const lidarr = makeInstanceStub(
+      [
+        { ...manualMatchItem(300, 'dl-mm-pair'), addedAt: old },
+        { ...manualMatchItem(301, 'dl-mm-pair'), addedAt: old },
+        { ...manualMatchItem(302), addedAt: old },
+      ],
+      { explodeOnWrite: true },
+    );
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ lidarr: lidarr.client }),
+      config: { ...cfg, minItemAgeHours: 2 },
+    });
+
+    expect(lidarr.calls.deletes).toHaveLength(0);
+    expect(lidarr.calls.processMonitored).toBe(0);
+    expect(lidarr.calls.searches).toHaveLength(0);
+    const l = report.instances.find((i) => i.instance === 'lidarr')!;
+    expect(l).toMatchObject({ itemsObserved: 3, actionsTaken: 0, covered: 0, errors: 0 });
+    expect(l.byClass.manual_match).toEqual({ observed: 3, enforced: 0 });
+    expect(l.byClass.unknown).toEqual({ observed: 0, enforced: 0 });
+
+    const rows = await t.db.select().from(arrQueueCleanupActions);
+    expect(rows).toHaveLength(3);
+    for (const r of rows) {
+      expect(r).toMatchObject({
+        instance: 'lidarr',
+        actionClass: 'manual_match',
+        mode: 'census',
+        action: 'none',
+        outcome: 'observed',
+        reason: MANUAL_MATCH_TEXT,
+        error: null,
+      });
+    }
+
+    // The digest names the class and its reason.
+    const section = await buildQueueCleanupDigestSection({ db: t.db });
+    const mm = section!.instances
+      .find((i) => i.instance === 'lidarr')!
+      .classes.find((c) => c.actionClass === 'manual_match')!;
+    expect(mm).toEqual({
+      actionClass: 'manual_match',
+      census: 3,
+      enforced: 0,
+      topReasons: [{ reason: MANUAL_MATCH_TEXT, count: 3 }],
+    });
+  });
+
+  it('D-11 + D-12: a download whose records are have_better and manual_match is left alone (skipped_mixed)', async () => {
+    const cfg = clone();
+    cfg.modes.lidarr.have_better = 'enforce';
+    const lidarr = makeInstanceStub(
+      [
+        item({
+          queueItemId: 310,
+          downloadId: 'dl-mixed-mm',
+          trackedDownloadState: 'importBlocked',
+          statusMessages: [{ title: 'x', messages: ['Not an upgrade for existing track file(s)'] }],
+        }),
+        manualMatchItem(311, 'dl-mixed-mm'),
+      ],
+      { explodeOnWrite: true },
+    );
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: lidarr.client }), config: cfg });
+    expect(lidarr.calls.deletes).toHaveLength(0);
+    const rows = await t.db.select().from(arrQueueCleanupActions);
+    const byId = new Map(rows.map((r) => [r.queueItemId, r]));
+    expect(byId.get(310)).toMatchObject({ actionClass: 'have_better', action: 'skipped_mixed', outcome: 'observed' });
+    expect(byId.get(311)).toMatchObject({ actionClass: 'manual_match', action: 'none', outcome: 'observed' });
   });
 
   it('ENFORCE have_better: removes + blocklists with skipRedownload, no re-search (action removed_blocklisted)', async () => {

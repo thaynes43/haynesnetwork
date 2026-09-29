@@ -118,6 +118,27 @@ const MEDIA_FILE_NAME =
 /** The empty/transient set the stuck-import class ProcessMonitoredDownloads exists for (D-03 retry_import). */
 const RETRY_TRANSIENT_PATTERNS = [/waiting to import/i];
 
+/**
+ * Lidarr's match rejections (D-12, Q-01): the downloaded files could not be matched to an album with confidence,
+ * so only a person can decide (a manual import against a chosen release, or a removal). Upstream strings at the
+ * running tag (Lidarr v3.1.6.5078): CloseAlbumMatchSpecification "Album match is not close enough: …", "Worst
+ * track match: …", "No tracks matched"; CloseTrackMatchSpecification "Track match is not close enough: …";
+ * NoMissingOrUnmatchedTracksSpecification "Has missing tracks" / "Has unmatched tracks"; ImportDecisionMaker
+ * "Couldn't find similar album for …"; TrackedDownloadService "Unable to import automatically, found multiple
+ * artists: …". Ordered by how much each says, so the stored reason is the most informative one (a release's
+ * files usually carry an album-match message AND "Has missing tracks").
+ */
+const MANUAL_MATCH_PATTERNS = [
+  /\balbum match is not close enough\b/i,
+  /\bworst track match:/i,
+  /\btrack match is not close enough\b/i,
+  /\bcouldn['\u2019]t find similar album\b/i,
+  /\bunable to import automatically, found multiple artists\b/i,
+  /^no tracks matched\.?$/i,
+  /^has missing tracks\.?$/i,
+  /^has unmatched tracks\.?$/i,
+];
+
 const truncate = (s: string): string => (s.length > 500 ? s.slice(0, 500) : s);
 
 const nonEmpty = (s: unknown): string | null => (typeof s === 'string' && s.trim() !== '' ? s.trim() : null);
@@ -179,11 +200,14 @@ function collectMessages(item: ClassifiableQueueItem): QueueItemMessages {
 
 /**
  * Classify one queue item into exactly one Action Class (D-03, FIRST-MATCH order: have_better → bad_release →
- * retry_import → unknown). Pure. Patterns read MESSAGES, never a statusMessage title that names the release or
- * a file; release-defect patterns read only the release-level ones; a have_better match that also carries an
- * identity mismatch goes to `unknown` (all D-10). Lidarr's match-ambiguity messages ("…not close enough…",
- * manual-import prompts) deliberately fall to `unknown` initially (Q-01) — census evidence graduates specific
- * patterns later.
+ * retry_import → manual_match → unknown). Pure. Patterns read MESSAGES, never a statusMessage title that names
+ * the release or a file; release-defect patterns read only the release-level ones; a have_better match that
+ * also carries an identity mismatch goes to `unknown` (all D-10). Lidarr's match rejections ("Album match is not
+ * close enough…", "Has missing tracks", "Couldn't find similar album…") are `manual_match`: report only, never
+ * acted on, no enforce cell (D-12, Q-01). A have_better match that also carries one goes to `manual_match` too,
+ * because its "already have it" may be about a different album. Lidarr's `importFailed` is deliberately NOT a
+ * stuck import here: Lidarr sets it when any file of the release was rejected and never retries it, and its
+ * "Not an upgrade for existing track file(s)" has been seen about another album's files (D-12).
  */
 export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClassification {
   const { messages, releaseLevel } = collectMessages(item);
@@ -195,13 +219,22 @@ export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClas
   const matchIn = (patterns: RegExp[], texts: string[] = messages): string | null =>
     texts.find((m) => patterns.some((p) => p.test(m))) ?? null;
 
+  // Lidarr's match rejections, the most informative first (D-12). Report only.
+  let manualMatch: string | null = null;
+  for (const p of MANUAL_MATCH_PATTERNS) {
+    manualMatch = messages.find((m) => p.test(m)) ?? null;
+    if (manualMatch) break;
+  }
+
   // 1. have_better — import blocked/pending + an already-satisfied rejection, UNLESS the *arr also doubts the
-  //    grab's identity: then its "have better" may be about the wrong target, so report only.
+  //    grab's identity (D-10) or could not match it to the album (D-12): then its "have better" may be about the
+  //    wrong target, so report only.
   if (isImportStuck) {
     const hb = matchIn(HAVE_BETTER_PATTERNS);
     if (hb) {
       const mismatch = matchIn(IDENTITY_MISMATCH_PATTERNS);
       if (mismatch) return { class: 'unknown', reason: truncate(mismatch), confidence: 'low' };
+      if (manualMatch) return { class: 'manual_match', reason: truncate(manualMatch), confidence: 'high' };
       return { class: 'have_better', reason: truncate(hb), confidence: 'high' };
     }
   }
@@ -221,7 +254,10 @@ export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClas
     }
   }
 
-  // 4. unknown — everything else (incl. Lidarr match-ambiguity, Q-01). Reported, never acted on.
+  // 4. manual_match — Lidarr could not match the files to an album with confidence (D-12). Reported, never acted on.
+  if (manualMatch) return { class: 'manual_match', reason: truncate(manualMatch), confidence: 'high' };
+
+  // 5. unknown — everything else. Reported, never acted on.
   return { class: 'unknown', reason: bestMessage ? truncate(bestMessage) : null, confidence: 'low' };
 }
 
@@ -229,9 +265,19 @@ export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClas
 // Config (D-05) — the audited app_settings key `arr_queue_cleanup_config`.
 // ---------------------------------------------------------------------------
 
-/** The classes that HAVE an enforce cell (unknown never does — ADR-083 normative). */
+/** The classes that HAVE an enforce cell. `unknown` never does (ADR-083 normative), and neither does
+ *  `manual_match` (D-12): both are report only, by construction. */
 export const QUEUE_CLEANUP_ENFORCEABLE_CLASSES = ['have_better', 'retry_import', 'bad_release'] as const;
 export type QueueCleanupEnforceableClass = (typeof QUEUE_CLEANUP_ENFORCEABLE_CLASSES)[number];
+
+const ENFORCEABLE_CLASS_SET: ReadonlySet<string> = new Set(QUEUE_CLEANUP_ENFORCEABLE_CLASSES);
+
+/** True for a class that has an enforce cell; false for the report-only classes (`manual_match`, `unknown`). */
+export function isEnforceableQueueCleanupClass(
+  actionClass: QueueCleanupActionClass,
+): actionClass is QueueCleanupEnforceableClass {
+  return ENFORCEABLE_CLASS_SET.has(actionClass);
+}
 
 /** The 3 mode cells for one instance (class → 'census'|'enforce'). */
 export type QueueCleanupModeCells = Record<QueueCleanupEnforceableClass, QueueCleanupMode>;
@@ -658,6 +704,7 @@ function emptyByClass(): Record<QueueCleanupActionClass, { observed: number; enf
     have_better: { observed: 0, enforced: 0 },
     retry_import: { observed: 0, enforced: 0 },
     bad_release: { observed: 0, enforced: 0 },
+    manual_match: { observed: 0, enforced: 0 },
     unknown: { observed: 0, enforced: 0 },
   };
 }
@@ -728,7 +775,7 @@ interface RecordVerdict {
   reason: string | null;
   young: boolean;
   /** The class this record would enforce if it stood alone; null when it would only be observed (census cell,
-   *  `unknown`, or too young). */
+   *  a report-only class, or too young). */
   wants: QueueCleanupEnforceableClass | null;
 }
 
@@ -754,7 +801,7 @@ const isGone = (err: unknown): boolean => err instanceof ArrHttpError && err.sta
  * rails (D-04): per-instance per-run cap `maxActionsPerRun`; `minItemAgeHours` before any action; a monitored
  * target check before a bad_release re-search; retry escalation via the persisted action-row lookback (counted
  * in runs); ProcessMonitoredDownloads at most once per instance per run; a failed *arr write → outcome 'error'
- * (logged, counts against the cap) + continue. `unknown` is NEVER acted on.
+ * (logged, counts against the cap) + continue. `unknown` and `manual_match` are NEVER acted on.
  *
  * The janitor acts once per DOWNLOAD, not once per record (D-11): records sharing a downloadId (a season pack's
  * episodes) get one call, which costs the cap once, and every one of them records that call's result; a
@@ -819,14 +866,16 @@ export async function evaluateQueueCleanup(input: {
         if ((await prior) >= config.retryEscalateRuns) actionClass = 'bad_release';
       }
 
-      // unknown has no config cell (never enforced); every other class reads its instance cell.
-      const mode: QueueCleanupMode = actionClass === 'unknown' ? 'census' : cells[actionClass];
+      // The report-only classes (unknown, manual_match) have no config cell and are never enforced; every other
+      // class reads its instance cell.
+      const cellClass = isEnforceableQueueCleanupClass(actionClass) ? actionClass : null;
+      const mode: QueueCleanupMode = cellClass ? cells[cellClass] : 'census';
       // Conservative age rail: unknown age (no `added`) is treated as YOUNG so a possibly-fresh item is never
       // acted on. minItemAgeHours=0 disables the rail entirely. Real *arr records always carry `added`.
       const young =
         config.minItemAgeHours > 0 &&
         (item.addedAt === null || now.getTime() - item.addedAt.getTime() < minAgeMs);
-      const wants = !young && mode === 'enforce' && actionClass !== 'unknown' ? actionClass : null;
+      const wants = !young && mode === 'enforce' ? cellClass : null;
       verdicts.set(item, { item, actionClass, mode, reason: classified.reason, young, wants });
     }
 
