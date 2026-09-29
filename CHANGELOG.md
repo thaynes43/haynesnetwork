@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.101.3](https://github.com/thaynes43/haynesnetwork/compare/v0.101.2...v0.101.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* **janitor:** act once per download, so a season pack is removed once, not once per episode ([#608](https://github.com/thaynes43/haynesnetwork/issues/608)) ([6446de4](https://github.com/thaynes43/haynesnetwork/commit/6446de448b6c4f5e801e1d37fa4e19c057c2cd8f))
+
+
+### Documentation
+
+* **agents:** update subagent delegation to the pod's two-tier policy ([#606](https://github.com/thaynes43/haynesnetwork/issues/606)) ([087d900](https://github.com/thaynes43/haynesnetwork/commit/087d9008dd4fd5f3b41c9ea97f6b34be823230ab))
+* **trash:** owner ruling on the Release Block term life (keep 365 days); HANDOFF ([#609](https://github.com/thaynes43/haynesnetwork/issues/609)) ([b8c1518](https://github.com/thaynes43/haynesnetwork/commit/b8c1518e6791a8d2737410600deb5f93f03b787c))
+* **trash:** PLAN-072 — the owner's ruling on the interim Saves, applied ([#604](https://github.com/thaynes43/haynesnetwork/issues/604)) ([fd9989e](https://github.com/thaynes43/haynesnetwork/commit/fd9989e94ffad5b56f4879639eab7299d82df78f))
+* **trash:** PLAN-072 close-out residuals (S5, Q-04, Q-09, Q-10, Q-11) ([#607](https://github.com/thaynes43/haynesnetwork/issues/607)) ([13fb30f](https://github.com/thaynes43/haynesnetwork/commit/13fb30fc41abff31479e0ede00a07b1d73fca272))
+
 ## [0.101.2](https://github.com/thaynes43/haynesnetwork/compare/v0.101.1...v0.101.2) (2026-09-28)
 
 
