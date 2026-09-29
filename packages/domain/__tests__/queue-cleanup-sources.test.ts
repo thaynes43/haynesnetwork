@@ -12,6 +12,7 @@ import { bootMigratedDb, type TestDb } from './helpers';
 import { renderOutboxEmail } from '../src/notify-outbox';
 import {
   FAIL_LOOP_MIN_FAILURES,
+  LEFTOVER_COVERAGE_REASONS,
   QueueCleanupItemGoneError,
   buildKapowarrQueueCleanupAdapter,
   buildLazyLibrarianQueueCleanupAdapter,
@@ -41,8 +42,10 @@ import {
 } from '../src/queue-cleanup';
 import {
   DOWNLOAD_FOLDERS_SAMPLE,
+  DOWNLOAD_FOLDER_FILES_SAMPLE,
   KAPOWARR_QUEUE_SAMPLE,
   LIBRARY_FILES_SAMPLE,
+  SAMPLE_FILE_SIZES,
   LL_BOOKS_SAMPLE,
   LL_HISTORY_SAMPLE,
   SAB_HISTORY_SAMPLE,
@@ -100,35 +103,55 @@ function sabFetch(calls: URL[] = [], slots: SabSlotSample[] = SAB_HISTORY_SAMPLE
   }) as typeof fetch;
 }
 
-/** An in-memory filesystem: the given directories and files exist; realpath is the lexical path; rm is recorded. */
-function memFs(dirs: string[], files: string[], removed: string[] = []): DownloadFolderFs {
+/** An in-memory filesystem: the given directories and files exist (a file's size from `sizes`, else 1 byte);
+ *  realpath is the lexical path; rm is recorded and removes the folder with everything under it. */
+function memFs(
+  dirs: string[],
+  files: string[],
+  removed: string[] = [],
+  sizes: Record<string, number> = {},
+): DownloadFolderFs {
   const dirSet = new Set(dirs.map((d) => resolve(d)));
   const fileSet = new Set(files.map((f) => resolve(f)));
-  const stat = (kind: 'dir' | 'file') => ({
+  const sizeOf = new Map(Object.entries(sizes).map(([f, n]) => [resolve(f), n]));
+  const stat = (kind: 'dir' | 'file', size = 0) => ({
     isFile: () => kind === 'file',
     isDirectory: () => kind === 'dir',
     isSymbolicLink: () => false,
+    size,
   });
   return {
     lstat: async (p) => {
       const r = resolve(p);
       if (dirSet.has(r)) return stat('dir');
-      if (fileSet.has(r)) return stat('file');
+      if (fileSet.has(r)) return stat('file', sizeOf.get(r) ?? 1);
       throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
     },
     realpath: async (p) => resolve(p),
-    readdir: async (p) =>
-      [...dirSet]
-        .filter((d) => dirname(d) === resolve(p))
-        .map((d) => ({ name: d.slice(resolve(p).length + 1), isDirectory: () => true, isSymbolicLink: () => false })),
+    readdir: async (p) => {
+      const r = resolve(p);
+      if (!dirSet.has(r)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      const entry = (path: string, dir: boolean) => ({
+        name: path.slice(r.length + 1),
+        isFile: () => !dir,
+        isDirectory: () => dir,
+        isSymbolicLink: () => false,
+      });
+      return [
+        ...[...dirSet].filter((d) => dirname(d) === r).map((d) => entry(d, true)),
+        ...[...fileSet].filter((f) => dirname(f) === r).map((f) => entry(f, false)),
+      ];
+    },
     rm: async (p) => {
-      removed.push(resolve(p));
-      dirSet.delete(resolve(p));
+      const r = resolve(p);
+      removed.push(r);
+      for (const d of [...dirSet]) if (d === r || d.startsWith(`${r}/`)) dirSet.delete(d);
+      for (const f of [...fileSet]) if (f.startsWith(`${r}/`)) fileSet.delete(f);
     },
   };
 }
 
-function sampleFs(removed: string[] = []): DownloadFolderFs {
+function sampleFs(removed: string[] = [], sizes: Record<string, number> = SAMPLE_FILE_SIZES): DownloadFolderFs {
   const libDirs = [...new Set(LIBRARY_FILES_SAMPLE.map((f) => dirname(f)))];
   return memFs(
     [
@@ -137,8 +160,9 @@ function sampleFs(removed: string[] = []): DownloadFolderFs {
       ...libDirs,
       ...DOWNLOAD_FOLDERS_SAMPLE.map((n) => `${SAMPLE_PATHS.downloadRoot}/${n}`),
     ],
-    LIBRARY_FILES_SAMPLE,
+    [...LIBRARY_FILES_SAMPLE, ...DOWNLOAD_FOLDER_FILES_SAMPLE],
     removed,
+    sizes,
   );
 }
 
@@ -266,12 +290,13 @@ describe('classifyLazyLibrarian via the real read clients (D-18, live samples)',
     for (const i of items) expect(i.reason ?? '').not.toMatch(/apikey|FAKEKEY|\/data\//i);
   });
 
-  it('leftovers (mounts present): imported with every copy on disk is leftover; a missing copy or a failed download is reported', async () => {
+  it('leftovers (mounts present): the same book files in the library is leftover; a missing or different copy, or a failed download, is reported', async () => {
     const items = await llItems(true);
-    const left = items.filter((i) => /^nzo-(left|missing|faildir|swept|reuse)/.test(i.downloadId ?? ''));
+    const left = items.filter((i) => /^nzo-(left|missing|faildir|swept|reuse|series|omnibus|ebook)/.test(i.downloadId ?? ''));
     expect(left.map((i) => [i.downloadId, i.actionClass, i.reason])).toEqual([
       // SABnzbd reused the folder name for the strand: the old Processed job points at a folder that is not its own.
       ['nzo-reuse-0015', 'unknown', 'Download folder named by more than one SABnzbd job'],
+      // Audio keeps its names: both parts are in the library by name and size (nfo and jpg are not compared).
       ['nzo-left-0007', 'leftover', 'Imported, the download folder is still in SABnzbd'],
       [
         'nzo-missing-0008',
@@ -279,7 +304,16 @@ describe('classifyLazyLibrarian via the real read clients (D-18, live samples)',
         'Library copy not found at the recorded destination, the download folder may be the only copy',
       ],
       ['nzo-faildir-0010', 'unknown', 'Folder of a failed download left in SABnzbd'],
+      // D-22, issue #621 (a): the destination exists but holds volume 6; this folder's volume 3 is the only copy.
+      ['nzo-series-0016', 'unknown', LEFTOVER_COVERAGE_REASONS.not_matched],
+      // D-22, issue #621 (b): the destination epub is the omnibus; the azw3 matches, the standalone epub does not.
+      ['nzo-omnibus-0017', 'unknown', LEFTOVER_COVERAGE_REASONS.not_matched],
+      // D-22: an eBook LazyLibrarian renamed matches by extension and size.
+      ['nzo-ebook-0018', 'leftover', 'Imported, the download folder is still in SABnzbd'],
     ]);
+    expect(LEFTOVER_COVERAGE_REASONS.not_matched).toBe(
+      'Library copy differs from the download folder, the download folder may be the only copy',
+    );
     // Book Nine's folder is already gone (swept by hand): no row. The strand's folder stays with its snatch row.
     expect(items.filter((i) => i.downloadId === 'nzo-strand-0001')).toHaveLength(1);
   });
@@ -338,11 +372,36 @@ describe('the LazyLibrarian adapter (D-18): reads, and the only writes', () => {
     const removed: string[] = [];
     const adapter = llAdapter({ removed });
     const items = await adapter.observe();
-    const left = items.filter((i) => i.actionClass === 'leftover');
+    const left = items.filter((i) => i.downloadId === 'nzo-left-0007');
+    expect(left.map((i) => i.actionClass)).toEqual(['leftover']);
     expect(await adapter.act('leftover', left)).toEqual({ searched: [] });
     expect(removed).toEqual([`${SAMPLE_PATHS.downloadRoot}/Author Seven - Book Seven (2014) MP3`]);
     // The folder is gone now: a second attempt is skipped_gone, not an error.
     await expect(adapter.act('leftover', left)).rejects.toBeInstanceOf(QueueCleanupItemGoneError);
+  });
+
+  it('D-22: the delete compares the folder with the copies again and keeps it when a later grab overwrote a copy', async () => {
+    // The issue #621 shape arriving after the census: the destination is still a file, no longer the same one.
+    const removed: string[] = [];
+    let overwritten = false;
+    const base = sampleFs(removed);
+    const copy = resolve(`${SAMPLE_PATHS.libraryRoots[0]}/Author Eighteen/Book Eighteen/Book Eighteen - Author Eighteen.epub`);
+    const fs: DownloadFolderFs = {
+      ...base,
+      lstat: async (p) => {
+        const st = await base.lstat(p);
+        return overwritten && resolve(p) === copy ? { ...st, size: 2_389_623 } : st;
+      },
+    };
+    const adapter = llAdapter({ fs });
+    const left = (await adapter.observe()).filter((i) => i.downloadId === 'nzo-ebook-0018');
+    expect(left.map((i) => i.actionClass)).toEqual(['leftover']);
+    overwritten = true;
+    await expect(adapter.act('leftover', left)).rejects.toThrow(/no longer matches the download folder, folder kept/);
+    expect(removed).toEqual([]);
+    // And the next census reports it instead of offering it again.
+    const again = (await adapter.observe()).filter((i) => i.downloadId === 'nzo-ebook-0018');
+    expect(again.map((i) => [i.actionClass, i.reason])).toEqual([['unknown', LEFTOVER_COVERAGE_REASONS.not_matched]]);
   });
 
   it('leftover keeps the folder when a library copy vanished between the census and the delete', async () => {
@@ -391,7 +450,7 @@ describe('DownloadPathProbe + DownloadFolderCleaner (D-18): confined to the one 
     const linked = sampleFs();
     const symlinkFs: DownloadFolderFs = {
       ...linked,
-      lstat: async () => ({ isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true }),
+      lstat: async () => ({ isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true, size: 0 }),
     };
     await expect(
       new DownloadFolderCleaner(root, symlinkFs).removeFolder(`${root}/Author Seven - Book Seven (2014) MP3`),
@@ -1093,6 +1152,10 @@ describe('the suite on embedded Postgres (D-15..D-20)', () => {
         ['bkReuse00015/audiobook', 'unknown', 'none'],
         ['bkFailDir010/audiobook', 'unknown', 'none'],
         ['bkLoop00012/ebook', 'fail_loop', 'none'],
+        // D-22: the two issue #621 shapes are reported; the renamed eBook of the same size is a leftover.
+        ['bkSeries0016/ebook', 'unknown', 'none'],
+        ['bkOmnibus017/ebook', 'unknown', 'none'],
+        ['bkRenamed018/ebook', 'leftover', 'none'],
       ].sort(),
     );
 

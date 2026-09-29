@@ -9,8 +9,8 @@
 // imports @hnet/downloads/write, @hnet/lazylibrarian/write or @hnet/kapowarr/write (the arr-write-import-guard test).
 // The only writes: LazyLibrarian `forceProcess`; the SABnzbd history-job delete (a LazyLibrarian bad_release, SABnzbd
 // downloads only); the delete of a Processed download's completed SABnzbd folder after its library copies are
-// confirmed (leftover); Kapowarr's queue removal with blocklist and its `auto_search`. Never library files, never a
-// qBittorrent torrent (MAM keeps seeding).
+// confirmed to hold the folder's own book files (leftover, D-18 rule 5 and D-22); Kapowarr's queue removal with
+// blocklist and its `auto_search`. Never library files, never a qBittorrent torrent (MAM keeps seeding).
 import type { QueueCleanupActionClass, QueueCleanupSourceInstance } from '@hnet/db';
 import {
   LazyLibrarianReadClient,
@@ -27,6 +27,8 @@ import {
   DownloadPathProbe,
   SabnzbdReadClient,
   llJanitorPathsFromEnv,
+  type FolderCoverage,
+  type FolderCoverageGap,
   type SabJanitorHistorySlot,
   type SabQueueSlot,
 } from '@hnet/downloads/read';
@@ -172,7 +174,20 @@ export interface LlLeftoverCandidate {
   shared?: boolean;
   /** Every recorded library destination of the download's Processed rows, and whether it exists as a file. */
   libraryCopies: Array<{ path: string | null; exists: boolean }>;
+  /** D-22 — whether every book file of the folder has its counterpart among the files of those destinations'
+   *  directories (audio by name and size, eBook by extension and size). Checked only for a folder that passed every
+   *  other test; absent or null reads as not compared, never as a leftover. */
+  coverage?: FolderCoverage | null;
 }
+
+/** D-22 rule 5 — the report-only reason for each way a folder can fail the content check. Messages, no names. */
+export const LEFTOVER_COVERAGE_REASONS: Record<FolderCoverageGap | 'not_compared', string> = {
+  not_matched: 'Library copy differs from the download folder, the download folder may be the only copy',
+  no_book_file: 'No book file in the download folder to compare with the library copy',
+  archive: 'Download folder holds an archive, it cannot be compared with the library copy',
+  unreadable: 'Download folder could not be compared with the library copy',
+  not_compared: 'Download folder could not be compared with the library copy',
+};
 
 /** The inputs of one LazyLibrarian classification pass (D-18). */
 export interface LlClassifyInput {
@@ -200,9 +215,11 @@ const isFailedSab = (slot: SabJanitorHistorySlot): boolean =>
  *    a job SABnzbd no longer shows is `unknown` (LazyLibrarian aborts it itself). qBittorrent: a finished torrent not
  *    imported is `retry_import`, never removable (MAM keeps seeding); otherwise in flight.
  * 2. **Leftovers** (only with the mounts) — one item per SABnzbd job of LazyLibrarian's category whose completed
- *    folder is still on disk: `leftover` when every LazyLibrarian row of the download is Processed and every library
- *    copy it recorded exists; `unknown` when a copy is missing (the folder may be the only copy) or the download
- *    failed (DESIGN-046 Q-06). A job with a Snatched row is left to population 1.
+ *    folder is still on disk: `leftover` when every LazyLibrarian row of the download is Processed, every library
+ *    copy it recorded exists, and every book file of the folder has its counterpart among those copies' files (D-22:
+ *    audio by name and size, eBook by extension and size); `unknown` when a copy is missing or differs (the folder may
+ *    be the only copy), when the folder cannot be compared, or when the download failed (DESIGN-046 Q-06). A job with
+ *    a Snatched row is left to population 1.
  * 3. **Fail loops** — one item per book format with FAIL_LOOP_MIN_FAILURES or more failed grabs that is still Wanted:
  *    `fail_loop`, report only, with the failure count and the most frequent failure.
  */
@@ -305,15 +322,23 @@ export function classifyLazyLibrarian(input: LlClassifyInput): QueueCleanupSourc
       } else if ([...statuses].every((st) => st === 'processed')) {
         const allCopies =
           candidate.libraryCopies.length === rows.length && candidate.libraryCopies.every((c) => c.exists);
-        items.push(
-          allCopies
-            ? { ...base, actionClass: 'leftover', reason: 'Imported, the download folder is still in SABnzbd' }
-            : {
-                ...base,
-                actionClass: 'unknown',
-                reason: 'Library copy not found at the recorded destination, the download folder may be the only copy',
-              },
-        );
+        const coverage = candidate.coverage ?? null;
+        if (!allCopies) {
+          items.push({
+            ...base,
+            actionClass: 'unknown',
+            reason: 'Library copy not found at the recorded destination, the download folder may be the only copy',
+          });
+        } else if (coverage?.covered) {
+          items.push({ ...base, actionClass: 'leftover', reason: 'Imported, the download folder is still in SABnzbd' });
+        } else {
+          // D-22: the copy exists but is not proven to hold this folder's book files. Report only, never deleted.
+          items.push({
+            ...base,
+            actionClass: 'unknown',
+            reason: LEFTOVER_COVERAGE_REASONS[coverage ? coverage.gap : 'not_compared'],
+          });
+        }
       } else if (statuses.has('failed')) {
         items.push({ ...base, actionClass: 'unknown', reason: 'Folder of a failed download left in SABnzbd' });
       } else {
@@ -377,7 +402,12 @@ export interface LazyLibrarianQueueCleanupClients {
   /** The leftover checks; absent or unavailable ⇒ no leftover census (D-18). */
   probe?: Pick<
     DownloadPathProbe,
-    'available' | 'listDownloadFolders' | 'downloadFolderName' | 'downloadFolderExists' | 'libraryFileExists'
+    | 'available'
+    | 'listDownloadFolders'
+    | 'downloadFolderName'
+    | 'downloadFolderExists'
+    | 'libraryFileExists'
+    | 'folderCoverage'
   >;
   cleaner?: Pick<DownloadFolderCleaner, 'removeFolder'>;
   /** LazyLibrarian's SABnzbd category (default `lazylibrarian`). */
@@ -465,9 +495,8 @@ export function buildLazyLibrarianQueueCleanupAdapter(
           if (name === null || !folders.has(name) || seen.has(slot.nzoId)) continue;
           seen.add(slot.nzoId);
           if (!(await clients.probe.downloadFolderExists(slot.storage))) continue;
-          const processed = (rowsByDownload.get(slot.nzoId) ?? []).filter(
-            (r) => r.status.toLowerCase() === 'processed',
-          );
+          const rows = rowsByDownload.get(slot.nzoId) ?? [];
+          const processed = rows.filter((r) => r.status.toLowerCase() === 'processed');
           const destination = (r: LlHistoryEntry) => r.destination ?? null;
           const libraryCopies: LlLeftoverCandidate['libraryCopies'] = [];
           for (const row of processed) {
@@ -476,7 +505,15 @@ export function buildLazyLibrarianQueueCleanupAdapter(
               exists: await clients.probe.libraryFileExists(destination(row)),
             });
           }
-          leftovers.push({ slot, libraryCopies, shared: (claims.get(name)?.size ?? 0) > 1 });
+          const shared = (claims.get(name)?.size ?? 0) > 1;
+          // D-22: compare the folder's book files with the copies only when every other leftover test passed (the
+          // walk costs one lstat per file, so a folder that cannot be a leftover anyway is not walked).
+          const comparable =
+            !shared && processed.length > 0 && processed.length === rows.length && libraryCopies.every((c) => c.exists);
+          const coverage = comparable
+            ? await clients.probe.folderCoverage(slot.storage, processed.map(destination))
+            : null;
+          leftovers.push({ slot, libraryCopies, shared, coverage });
           leftoverPaths.set(slot.nzoId, {
             storage: slot.storage!,
             libraryPaths: processed.map((r) => destination(r) ?? ''),
@@ -507,7 +544,7 @@ export function buildLazyLibrarianQueueCleanupAdapter(
         await clients.sabWrite.deleteHistoryJob(downloadId);
         return { searched: [] };
       }
-      // leftover — re-check the folder and every library copy in the same call, then delete the folder.
+      // leftover — re-check the folder, every library copy and the content match in the same call, then delete.
       const plan = plans.get(primary);
       if (!plan || !clients.probe || !clients.cleaner) throw new Error('no leftover plan for this download');
       if (!(await clients.probe.downloadFolderExists(plan.storage))) {
@@ -517,6 +554,11 @@ export function buildLazyLibrarianQueueCleanupAdapter(
         if (!(await clients.probe.libraryFileExists(path))) {
           throw new Error('library copy no longer found at the recorded destination, folder kept');
         }
+      }
+      // D-22: a later grab can overwrite a destination between the census and the delete (the issue #621 shape), so
+      // the folder's book files are compared with the copies again, in the same call as the delete.
+      if (!(await clients.probe.folderCoverage(plan.storage, plan.libraryPaths)).covered) {
+        throw new Error('library copy no longer matches the download folder, folder kept');
       }
       await clients.cleaner.removeFolder(plan.storage);
       return { searched: [] };

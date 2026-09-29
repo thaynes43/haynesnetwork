@@ -408,6 +408,8 @@ export class SabnzbdReadClient {
 // ADR-095 / DESIGN-046 D-18 — the read-only path checks behind the janitor's `leftover` class (the delete is ./write).
 export {
   DownloadPathProbe,
+  FOLDER_COVERAGE_MAX_DEPTH,
+  FOLDER_COVERAGE_MAX_ENTRIES,
   LL_DOWNLOAD_ROOT_DEFAULT,
   LL_LIBRARY_ROOTS_DEFAULT,
   isDirectChildOf,
@@ -417,3 +419,15 @@ export {
   type DownloadPathFs,
   type LlJanitorPaths,
 } from './paths';
+// DESIGN-046 D-22 — the pure comparison behind `DownloadPathProbe.folderCoverage` (issue #621).
+export {
+  AUDIO_BOOK_EXTENSIONS,
+  EBOOK_EXTENSIONS,
+  bookFileKind,
+  compareFolderToLibrary,
+  type BookFileKind,
+  type FolderCoverage,
+  type FolderCoverageGap,
+  type FolderFile,
+  type LibraryFile,
+} from './coverage';
