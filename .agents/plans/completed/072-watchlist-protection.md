@@ -1,21 +1,15 @@
 # PLAN-072: Watchlists protect titles from Trash, and a re-request never re-fetches the deleted release: build, deploy, live-verify, enable, remediate
 
-- **Status:** Completed 2026-09-28 (S0–S11; see the log).
-  into DESIGN-052 D-24). S2 built on `feat/watchlist-protection` (PR #595): part 1 (migration 0081,
-  the registry and its mode, the gate and snapshot, the guard, the D-10 surfaces) and part 2 (the Deleted-Release
-  Record, the Release Block writer and the two-phase sweep and Expedite, the seed script, the Arm/Disarm fix and the
-  grown invariant, Seerr enrollment off behind its setting, the D-23 counts, CLAUDE.md hard rule 4); rulings in
-  DESIGN-052 D-25. The S2 Opus code review's findings are fixed on the PR (DESIGN-052 D-25ax..D-25bm; OPS-017 is the
-  runbook), and so are the second review pass's (D-25bn..D-25bz) and the third's (D-25ca..D-25cq: among them the web
-  delete paths held with the sweep until S6, `TRASH_WEB_DELETES_HELD`). S2 merged (PR #595); S3 done: v0.101.0
-  released (PR #587), image and cosign `.sig` in GHCR. S4 done: haynes-ops #3223 merged 2026-09-27T01:18Z, with every
-  CronJob suspend and resume of the rollout in git (DESIGN-052 D-25db). **S6 (a)..(g) passed live on v0.101.0
-  (2026-09-27, log below); S6(h) is open** (a day of registry runs, from 2026-09-27T01:22Z). S6(e)'s one defect (345
-  Sonarr and 3 Radarr ledger names the terms matched only folded) is fixed by DESIGN-052 D-25dd (PR #599; its review
-  added D-25di: `´`, `İ` and the double-escaped `&amp;` / `&#39;` spellings). S6a answered by the owner (D-25de).
-  **Before the resume PR:** S6(h) passes, S0's final cross-check of batch `08576e59` runs, and the release carrying
-  D-25dd is deployed (before S7 where possible, before S8 in any case: the seed derives its terms from the ledger's
-  real names).
+- **Status:** Completed 2026-09-28 (S0–S11; see the log). Residuals closed 2026-09-29 (the addendum at the end of
+  the log: S5's record, the Q-04 measurement, Q-09 / Q-10 / Q-11 folded into DESIGN-052). What ran: S1 docs merged
+  (PR #594, review findings folded into DESIGN-052 D-24); S2 built and merged (PR #595, review findings D-25ax..D-25cq,
+  among them the web delete paths held with the sweep until S6, `TRASH_WEB_DELETES_HELD`); S3 v0.101.0 released
+  (PR #587); S4 deployed by haynes-ops #3223 (2026-09-27T01:18Z, every CronJob suspend and resume in git, D-25db);
+  S6 (a)..(g) passed on v0.101.0 (2026-09-27) and (h) on 2026-09-28; S6(e)'s one defect (345 Sonarr and 3 Radarr
+  ledger names the terms matched only folded) was fixed by D-25dd (PR #599; D-25di adds `´`, `İ` and the double-escaped
+  `&amp;` / `&#39;` spellings) and shipped in v0.101.1; S6a answered by the owner (D-25de); the sweep resumed with
+  haynes-ops #3227; S7 (the first guarded sweep), S8 (the seed), S9 (the Seerr enable) and S10 (the re-requests) ran
+  2026-09-28; S11 closed it out and applied the owner's ruling on the interim Saves. Runbook: OPS-017.
 - **ADRs:** ADR-093 (Proposed) · **Design:** DESIGN-052 · **PRD:** R-255..R-259, US-16, AC-33..AC-37, Q-15..Q-16
   (R-86 and R-92 annotated) · **Glossary:** T-261..T-266, T-70 and T-74 amended · **DDD-002:** BC-03 notes.
 - **Owner:** whoever holds the session; this plan is the tracked owner.
@@ -303,3 +297,55 @@ Migration 0081 is additive and stays; the older image ignores its tables and col
   pool too early), so the rerun took the no-exclusion branch and revoked each open intent, audited with reason `lapsed`
   rather than a plain un-save; 0 open intents remain. They return to Maintainerr's pool at its next rule run, and the
   Watchlist Keep holds each one while it is on a watchlist.
+- 2026-09-29: **Close-out residuals (docs and read-only measurements only; no setting, profile or request was changed).**
+  - **S5, recorded late.** S5 had no log entry. Read from Seerr's settings file in its pod (`main.defaultQuotas`, a
+    read-only exec): movie `quotaLimit 0` / `quotaDays 7`, TV `quotaLimit 0` / `quotaDays 7`, and 0 means no limit, so
+    the defaults hold nothing back (DESIGN-052 Q-10 answered; a per-user override was not read, and the first full
+    cycle after the enable created 15 requests, S9). The rest of S5 is covered by other entries: the release profiles
+    by S8's read-back (one enabled untagged profile each), the canary's empty settings row by S9 (Q-09), the
+    Sonarr `animeTags` by S9's PUT. Not recorded anywhere: Seerr's local Watchlist table and Sonarr's `tags` before the
+    enable; they are not re-checkable now that the enable has run.
+  - **S6(h) correction.** The 2026-09-27 S6(d) statement "Seerr logged no `Failed to retrieve watchlist items` after
+    the registry started" held for the hours it was read and no longer holds. Over the 24 hours to 2026-09-29T02:38Z
+    Seerr logged 13 of them, all `Request failed with status code 503` from plex.tv (media/seerr, Loki). The two at
+    15:59:24Z and 15:59:26Z fall inside one registry run, whose Seerr read of one friend answered `inconsistent`
+    (`[watchlist-registry] account_failed`, class friend, `seerr:failed` 1, that account `carried`, totals unchanged: 930
+    entries, 549 titles, 0 unmapped); it failed closed and the next run (16:14Z) read all 17 Seerr sources `ok`. Six others
+    (12:33Z, 12:36Z, 18:39Z, 19:09Z, 20:39Z twice) fall on Seerr's own sync minutes, away from any registry run; five more
+    (00:45Z, 01:45Z, 07:44Z, 17:59Z, 20:45Z) overlap a registry run, and each of those
+    runs ended `ok` with identical totals and no `account_failed`, which fits Seerr's own call failing, not the registry's
+    read (or the one Seerr user whose list is empty, S6(h)). Of 97 registry
+    runs in the window, 97 are `status=ok`; that is the only `account_failed`; no `run_failed`, `account_hidden`,
+    `community_mass_empty` or `account_unreadable`.
+  - **The Registry Gate line, read.** The 02:45Z sweep of 2026-09-28 logged `[watchlist-registry] gate {purpose: delete,
+    verified: true, reason: null, ageMin: 0, blocking: 0, filtered: true}`. The hourly space-policy job logs the same
+    line with `purpose: propose` (`verified: true`, `ageMin: 2`, most recent 02:17Z on 2026-09-29). Since the resume the
+    sweep has run hourly with 0 batches due, so no other delete gate has been asked.
+  - **Q-04 measured (S7 asked for it; S7 did not record it).** From Loki, Radarr's and Sonarr's own logs, no search or
+    grab triggered. The seed ran by exec and left no Loki line, so its time is bounded: the first profile write was the S7
+    sweep at 2026-09-28T02:45:14Z (44 Radarr terms), the first S9 grab 12:15:08Z (the seed, 392 Radarr terms added, ran in between). *Before* is 2026-09-27T12:00Z to 2026-09-28T02:00Z (no terms); *after* is 2026-09-28T12:30Z to 2026-09-29T02:40Z
+    (437 Radarr, 64 Sonarr). Every RSS pass processed 400 releases (median).
+
+    | | RSS pass, wall (median, avg, max) | Decision phase per release (median) | Passes |
+    |---|---|---|---|
+    | Radarr, before | 2.29 s, 2.62 s, 6.8 s | 4.09 ms | 27 |
+    | Radarr, after (437 terms) | 2.64 s, 3.66 s, 29.9 s | 4.83 ms | 28 |
+    | Sonarr, before | 0.89 s, 3.17 s, 49.1 s | 0.93 ms | 54 |
+    | Sonarr, after (64 terms) | 1.60 s, 2.77 s, 28.1 s | 0.97 ms | 55 |
+
+    The decision phase is "Processing 400 releases" to "RSS Sync Completed". Radarr's grew 0.74 ms per release (+18%),
+    about 0.3 s per 400-release pass, for 437 terms; Sonarr's did not move (+4%) at 64. Sonarr's wall-time median grew
+    while its decision phase stayed flat, so that growth is the indexer fetch, not the terms. Both sides had multi-second
+    outliers before the terms too. A linear reading (about 1.7 microseconds per term per release) puts the 3,000-term
+    cap at roughly +5 ms per release, about +2 s per RSS pass. Interactive searches were not run (they are grabs by
+    design); they use the same decision maker per release.
+  - **ADR-093 C-19 (a term must not break every decision), organic evidence since the seed.** Radarr sent 15 reports to
+    the download client between 2026-09-28T12:15Z and 2026-09-29T00:06Z: the S9 first-cycle burst (12:15Z to 12:23Z: Strays,
+    Indie Game: The Movie, The Woman in Cabin 10, Forever My Girl, Shot Caller, High Rollers, Lost in Paradise, Star Trek:
+    Section 31, then the three re-requests: Another Simple Favor, Terrifier, Babygirl) and four later ones with no
+    request (96 at 17:56Z, CODA at 22:30Z, two PAW Patrol releases at 00:02Z and 00:06Z), so decisions still accept
+    releases at 437 terms. The re-requests grabbed HONE (Another Simple Favor; blocked: FLUX, Kitsune, BYNDR),
+    `Terrifier.2016...-UnKn0wn` (blocked: FraMeSToR, a term with a `(?:2016|2018)` year) and CiNEPHiLES (Babygirl; blocked:
+    FraMeSToR). Forever My Girl, Shot Caller and Star Trek: Section 31 were grabbed as FraMeSToR releases, which shows a
+    term blocks a group for its own title only. Sonarr sent 0 reports in the window, so it has no grab evidence; its 55
+    RSS passes processed 400 releases each without errors.
