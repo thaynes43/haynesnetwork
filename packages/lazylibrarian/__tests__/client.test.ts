@@ -101,6 +101,7 @@ describe('LazyLibrarianWriteClient', () => {
     await w.searchBook('gb-1', 'audiobook');
     expect(urls[0]).toContain('cmd=addBook');
     expect(urls[0]).toContain('id=gb-1');
+    expect(urls[0]).toContain('wait=1'); // LL must finish the add before queueBook, or it resets the book to Skipped
     expect(urls[0]).toContain('apikey=secret-key');
     expect(urls[1]).toContain('cmd=queueBook');
     expect(urls[1]).toContain('type=eBook');
