@@ -111,6 +111,14 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
 - **After GATE A**: branch `<type>/<slug>` off `main` → PR → required checks
   `lint-and-typecheck`, `test`, `build` green → squash-merge. `e2e` is advisory until
   hardening. Conventional commits (`feat:`/`fix:`/`feat!:`) drive release-please versioning.
+- **Claude Code PR reviewer (advisory).** `.github/workflows/claude-code-review.yml` reviews every
+  non-draft PR (job `Claude advisory review`) and `claude.yml` answers `@claude` mentions from
+  write-access users. The review is **advisory, never a required check** (the required contexts stay
+  `lint-and-typecheck`, `test`, `build`). **Read its findings before you merge.** Fix each one, or
+  answer it on the PR with a concrete reason it is wrong; never "merging anyway". It needs two things
+  or it skips (green, no review): the Claude GitHub App has access to this repo, and the
+  `CLAUDE_CODE_OAUTH_TOKEN` repo secret exists. Fork and Dependabot/Renovate/release-please PRs are
+  skipped by design.
 - Images build to `ghcr.io/thaynes43/haynesnetwork` on `v*` tags; deployment manifests live
   in `haynes-ops` under `kubernetes/main/apps/frontend/haynesnetwork/`.
 - **Backlog/saga state must reach `main` — never left untracked** (owner rule, 2026-07-18).
