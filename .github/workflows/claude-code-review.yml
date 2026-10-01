@@ -1,0 +1,156 @@
+name: Claude Code Review
+
+# Advisory PR reviewer. NEVER a required check (ADR-009 names the required
+# contexts: lint-and-typecheck, test, build) -- do not add it to branch rules.
+#
+# Agents open PRs ready-for-review and merge their own once the required checks are
+# green, so this fires on `opened` and `synchronize` too, not just `ready_for_review`.
+# These four types are also exactly the set `track_progress` supports.
+#
+# Plain `pull_request` only (never pull_request_target): fork PRs get no secrets and
+# are skipped below. Until the CLAUDE_CODE_OAUTH_TOKEN repo secret exists the job
+# finishes green with every real step skipped.
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+permissions:
+  contents: read
+
+# Re-review on every push, but only the newest push per PR.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  claude-advisory-review:
+    name: Claude advisory review
+    if: >-
+      ${{ !github.event.pull_request.draft
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
+      && github.event.pull_request.user.login != 'renovate[bot]'
+      && !startsWith(github.event.pull_request.head.ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write # post the review + inline comments
+      id-token: write # OIDC exchange for the Claude GitHub App token
+      actions: read # read CI results for the PR
+
+    steps:
+      # Secrets cannot appear in `if:`, so surface presence as a step output.
+      - name: Check for CLAUDE_CODE_OAUTH_TOKEN
+        id: gate
+        env:
+          CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$CLAUDE_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN is not set for this repo; skipping the Claude review."
+          fi
+
+      - name: Checkout repository
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code Review
+        if: steps.gate.outputs.enabled == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_bots: "haynes-dev-bot"
+          track_progress: true
+          use_sticky_comment: true
+          # Automated surfaces pin the newest Opus explicitly -- never an alias.
+          # `--allowedTools` merges with tag mode's base set; without the Bash and
+          # inline-comment grants below Claude cannot run `gh` or post line comments.
+          claude_args: |
+            --model claude-opus-5-5
+            --max-turns 60
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
+          additional_permissions: |
+            actions: read
+          prompt: |
+            You are the automated reviewer for haynesnetwork, a pnpm monorepo (Next.js App
+            Router + tRPC web app in `apps/web`, `@hnet/*` packages in `packages/*`, Drizzle +
+            PostgreSQL 16) that is the SSO front door for the Haynes Plex ecosystem and writes
+            to Sonarr/Radarr/Lidarr/Plex/Seerr and friends. The repo is PUBLIC. The PR branch
+            is already checked out. Review PR #${{ github.event.pull_request.number }} of
+            ${{ github.repository }}.
+
+            ## Step 1 -- context
+            - `gh pr diff ${{ github.event.pull_request.number }}` for the changes
+            - `gh pr view ${{ github.event.pull_request.number }}` for intent
+            - Read `CLAUDE.md` (the Hard rules section is normative) and any ADR/design it
+              points to for the changed area. Do not repeat feedback already on the PR.
+
+            ## Step 2 -- what this repo cares about
+            **CRITICAL -- block the merge**
+            - Secrets or PII in the diff: tokens, API keys, OIDC/Plex/arr credentials, real
+              emails, Plex usernames or user ids in code, fixtures, docs or logs. Secrets
+              never land in git (`.env.local` locally; External Secrets + 1Password in the
+              cluster). Tests and docs use obvious placeholders.
+            - Auth: anything other than Authentik OIDC (no email/password, no invite tokens);
+              admin bootstrap that bypasses the `BOOTSTRAP_ADMIN_EMAILS` allowlist; a tRPC
+              procedure or route handler missing its session/role/permission check.
+            - Write-back confinement: `@hnet/arr/write`, `@hnet/plex/write`,
+              `@hnet/downloads/write`, `@hnet/lazylibrarian/write`, `@hnet/kapowarr/write`
+              and `@hnet/libretto` writes imported from anywhere but `packages/domain`. The
+              *arrs are the source of truth; the ledger is a synced copy, so new write-backs
+              beyond the documented ones (failsafe restore, fix actions, queue janitor,
+              Release Block, Seerr watchlist enrollment, janitor release block) are a
+              violation unless an ADR covers them.
+            - Role or permission mutations without an audit row written in the SAME
+              transaction (single-writer helpers in `packages/domain`).
+            - Destructive media actions: janitor/queue/library-file deletes that skip the
+              documented census/enforcement gating, or can touch library files they must
+              never touch.
+            - SQLite/MySQL substitution anywhere, including tests (PostgreSQL 16 only).
+            - Logic errors: races, unhandled null/undefined, a migration that is not
+              backward-safe or conflicts with the Drizzle journal, breaking API/export
+              changes with callers not updated.
+
+            **HIGH -- should fix**
+            - Raw hex colors outside `tokens.css` (all color via `--color-*` tokens).
+            - `window.confirm` for a destructive action (use `@hnet/ui` `ConfirmButton`, or a
+              `Modal` for multi-field confirms); UI that reflows or repositions neighbors on
+              interaction (ADR-015); layouts broken at phone width.
+            - A new `packages/<name>` with no `COPY packages/<name>/package.json` line in the
+              Dockerfile deps stage (only the release image build fails, not a required check).
+            - Behavior changed with no test change, or tests that no longer run against a real
+              embedded Postgres 16.
+            - Docs-first violations: behavior changed without the matching PRD/ADR/design
+              update in the same PR; edits to an Accepted ADR (supersede instead); a new
+              domain term missing from the glossary
+              (`docs/domain-driven-design/001-ubiquitous-language.md`); an assumption made
+              where the docs call for a `Q-NN` open question.
+            - Catalog links wrongly restricted to `*.haynesnetwork.com` (retired by ADR-013).
+            - PR title not a Conventional Commit (`feat:`/`fix:`/`feat!:`...), since
+              release-please derives versions from it.
+
+            **MEDIUM -- consider**
+            - Swallowed errors or failure paths with no logging; unchecked external API data.
+            - Agent working state (`.agents/HANDOFF.md`, `.agents/context/`, `.agents/plans/`)
+              changed in a way that contradicts the code, or left stale.
+
+            **Ignore entirely:** formatting (Prettier owns it), naming, import order, missing
+            docstrings on unchanged code, and feature suggestions beyond the PR's intent.
+
+            ## Step 3 -- report
+            - Be concise. No praise, no restating the diff.
+            - Post each line-specific finding with
+              `mcp__github_inline_comment__create_inline_comment` (`confirmed: true`),
+              prefixing the body with its severity: `CRITICAL:`, `HIGH:` or `MEDIUM:`.
+            - Then post ONE summary comment with `gh pr comment` containing a verdict
+              (`Looks good` / `Needs changes` / `Has critical issues`) and the findings
+              grouped by severity, each naming the file and line.
+            - If the diff is clean, say exactly "No findings." followed by one sentence on
+              what you checked. Never invent a finding to look thorough.
+            - Only review files changed in this PR. Post GitHub comments only -- do not
+              return the review as chat text.
