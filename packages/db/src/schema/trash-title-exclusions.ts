@@ -17,8 +17,9 @@ const sqlList = (values: readonly string[]) => values.map((v) => `'${v}'`).join(
  * deleted before the app wrote them (the backfill, D-27). An exclusion stops Kometa and the *arr's own import lists
  * from adding the title again; a person's Seerr request still can (the owner's ruling of 2026-10-03).
  *
- * The row is inserted in the transaction that wraps the *arr write and its read-back, so a row exists only for an
- * exclusion the *arr confirmed; `arr_exclusion_id` is the id the read-back found. A title the *arr already excluded
+ * The row is inserted, in the writer's transaction, as soon as the *arr acknowledges the `POST` (`arr_exclusion_id` is
+ * the id its 201 answer returned); a later failure in the same call (another POST, the read-back) still commits it, so
+ * every exclusion the app wrote keeps its row. A title the *arr already excluded
  * (Maintainerr's own `listExclusions`, or an earlier run) gets no write and no row. Nothing updates or deletes a row.
  * `ensureTitleExclusions` (@hnet/domain `title-exclusion.ts`) is the SOLE writer (the no-direct-state-writes guard
  * covers this table).

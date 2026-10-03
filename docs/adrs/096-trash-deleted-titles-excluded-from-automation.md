@@ -69,9 +69,10 @@ in DESIGN-052 D-26 and D-27):
 - **The write.** One app-owned single writer, `ensureTitleExclusions` in `packages/domain`, through `@hnet/arr/write`:
   under an advisory lock per *arr, in one transaction, it reads the *arr's exclusion list, `POST`s each missing title
   (Radarr `/api/v3/exclusions` with `{tmdbId, movieTitle, movieYear}`, Sonarr `/api/v3/importlistexclusion` with
-  `{tvdbId, title}`), reads the list back, and inserts one append-only `trash_title_exclusions` audit row per
-  confirmed write. A title already excluded (by Maintainerr, by hand, by an earlier run) gets no write and no row. It
-  never deletes or edits an exclusion.
+  `{tvdbId, title}`), inserting one append-only `trash_title_exclusions` audit row for each POST the *arr
+  acknowledges, then reads the list back as the gate for the delete. A failure part-way keeps the rows of the writes
+  that landed, so every exclusion the app wrote is audited. A title already excluded (by Maintainerr, by hand, by an
+  earlier run) gets no write and no row. It never deletes or edits an exclusion.
 - **Where it runs.** In the delete paths' shared seam (`recordAndBlockReleases`), for every survivor about to be
   deleted, **after identity and before Phase A** (the Release Block) and so before the Maintainerr handle: the sweep,
   Expedite (item and all) and the manual Expire now. A failure stops there with nothing recorded, blocked or deleted:

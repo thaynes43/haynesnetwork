@@ -1,8 +1,8 @@
 -- ADR-096 / DESIGN-052 D-26 (owner ruling 2026-10-03, "Block automation only"): a title deleted through Trash gets a
 -- Radarr or Sonarr import-list exclusion, written by the app before the delete, so Kometa and the *arrs' own import
 -- lists never add it again. Journal idx 85. ADDITIVE, one part: the append-only audit of every exclusion the app wrote,
--- trash_title_exclusions (one row per confirmed write; a title already excluded gets no row). The previous image never
--- reads or writes the table, so it runs unchanged against this schema. A down-migration drops the table.
+-- trash_title_exclusions (one row per POST the *arr acknowledged; a title already excluded gets no row). The previous
+-- image never reads or writes the table, so it runs unchanged against this schema. A down-migration drops the table.
 CREATE TABLE "trash_title_exclusions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"arr_kind" text NOT NULL,

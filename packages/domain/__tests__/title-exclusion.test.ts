@@ -188,30 +188,50 @@ describe('the Title Exclusion (ADR-096 / DESIGN-052 D-26, D-27)', () => {
       ]);
     });
 
-    it('a failed read or POST, or a POST that does not stick, throws with its step and leaves no row', async () => {
+    it('a failed read throws `read` with no row; a POST that does not stick throws `read_back` but keeps its row', async () => {
       const target = [{ externalId: 9003, title: 'Movie 9003', year: 2024 }];
-      for (const [setup, step] of [
-        [(f: ReturnType<typeof createStaticReleaseBlockArr>['fixture']) => f.fail.add('radarr:exclusion_list'), 'read'],
-        [(f: ReturnType<typeof createStaticReleaseBlockArr>['fixture']) => f.fail.add('radarr:exclusion_add'), 'write'],
-        [
-          (f: ReturnType<typeof createStaticReleaseBlockArr>['fixture']) => f.dropWrites.add('radarr:exclusion_add'),
-          'read_back',
-        ],
-      ] as const) {
-        const { arr, fixture } = createStaticReleaseBlockArr();
-        setup(fixture);
-        const err = await ensureTitleExclusions({
-          db: t.db,
-          arr,
-          arrKind: 'radarr',
-          targets: target,
-          origin: 'sweep',
-          logger,
-        }).catch((e: unknown) => e);
-        expect(err).toBeInstanceOf(TitleExclusionError);
-        expect((err as TitleExclusionError).step).toBe(step);
-      }
+      const down = createStaticReleaseBlockArr({ fail: new Set(['radarr:exclusion_list']) });
+      const err = await ensureTitleExclusions({ db: t.db, arr: down.arr, arrKind: 'radarr', targets: target, origin: 'sweep', logger }).catch(
+        (e: unknown) => e,
+      );
+      expect((err as TitleExclusionError).step).toBe('read');
       expect(await rows()).toEqual([]);
+
+      // The *arr answered the POST (201 with an id) but the list read back without it: the delete is refused, and the
+      // acknowledged write keeps its audit row.
+      const unstuck = createStaticReleaseBlockArr({ dropWrites: new Set(['radarr:exclusion_add']) });
+      const err2 = await ensureTitleExclusions({ db: t.db, arr: unstuck.arr, arrKind: 'radarr', targets: target, origin: 'sweep', logger }).catch(
+        (e: unknown) => e,
+      );
+      expect(err2).toBeInstanceOf(TitleExclusionError);
+      expect((err2 as TitleExclusionError).step).toBe('read_back');
+      expect((await rows()).map((r) => r.tmdbId)).toEqual([9003]);
+    });
+
+    it('a POST that fails partway keeps the rows of the writes that landed; the retry writes only the rest', async () => {
+      const { arr, fixture } = createStaticReleaseBlockArr();
+      const add = arr.write.radarr.addImportListExclusion;
+      let lose = true;
+      arr.write.radarr.addImportListExclusion = async (x) => {
+        if (x.tmdbId === 9002 && lose) throw new Error('socket hang up');
+        return add(x);
+      };
+      const targets = [9001, 9002, 9003].map((id) => ({ externalId: id, title: `Movie ${id}`, year: 2024 }));
+      const err = await ensureTitleExclusions({ db: t.db, arr, arrKind: 'radarr', targets, origin: 'backfill', logger }).catch(
+        (e: unknown) => e,
+      );
+      expect((err as TitleExclusionError).step).toBe('write');
+      // 9001 landed and is audited (with the id Radarr returned); 9002 failed; 9003 was never sent.
+      expect(fixture.importListExclusions.radarr.map((e) => e.tmdbId)).toEqual([9001]);
+      const first = await rows();
+      expect(first).toEqual([
+        expect.objectContaining({ tmdbId: 9001, arrExclusionId: fixture.importListExclusions.radarr[0]!.id }),
+      ]);
+
+      lose = false;
+      const again = await ensureTitleExclusions({ db: t.db, arr, arrKind: 'radarr', targets, origin: 'backfill', logger });
+      expect(again).toMatchObject({ alreadyExcluded: 1, written: 2 });
+      expect((await rows()).map((r) => r.tmdbId).sort()).toEqual([9001, 9002, 9003]);
     });
 
     it('refuses a target without the *arr key or a title (validate) before any read', async () => {

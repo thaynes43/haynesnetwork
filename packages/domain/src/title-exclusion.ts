@@ -8,10 +8,11 @@
 // 2026-09-14); the app now writes it itself, BEFORE the delete, so it no longer depends on that setting.
 //
 // Single writer: `ensureTitleExclusions`, under `pg_advisory_xact_lock('title-exclusion:<kind>')`, in one transaction:
-// read the *arr's exclusion list, `POST` each missing title, read the list back, then insert one append-only
-// `trash_title_exclusions` row per confirmed write. A title already excluded gets no write and no row (idempotent).
-// Any failure throws TitleExclusionError and rolls the rows back, so a row exists only for an exclusion the *arr
-// confirmed. It never deletes or edits an exclusion.
+// read the *arr's exclusion list, `POST` each missing title (one append-only `trash_title_exclusions` row per POST the
+// *arr acknowledges, with the id it returned), then read the list back as the gate for the delete. A title already
+// excluded gets no write and no row (idempotent). A failure throws TitleExclusionError after the transaction commits
+// the rows of the writes that landed, so every exclusion the app wrote keeps its row. It never deletes or edits an
+// exclusion.
 //
 // `backfillTitleExclusions` (D-27) is the one-off for titles Trash deleted before the app wrote exclusions: every title
 // the ledger records as deleted through Trash, except one the *arr has in its library now (a person may have
@@ -139,12 +140,13 @@ function distinctTargets(targets: readonly TitleExclusionTarget[]): TitleExclusi
 /**
  * D-26 — `ensureTitleExclusions({ arrKind, targets })`, the single writer of the app's import-list exclusions on one
  * *arr, under `pg_advisory_xact_lock('title-exclusion:<kind>')`, in one transaction:
- *  1. every target must carry the *arr's key and a title (`validate`);
+ *  1. every target must carry the *arr's key and a title (`validate`, before the transaction);
  *  2. `GET` the exclusion list (`read`); a title already on it is left alone;
- *  3. `POST` each missing title (`write`): Radarr `{tmdbId, movieTitle, movieYear}`, Sonarr `{tvdbId, title}`;
- *  4. when anything was written, `GET` the list again: every target must be on it (`read_back`); then one
- *     `trash_title_exclusions` row per written title, with the *arr's exclusion id.
- * Any failure throws TitleExclusionError and rolls the rows back. Idempotent: a second call writes nothing.
+ *  3. `POST` each missing title (`write`): Radarr `{tmdbId, movieTitle, movieYear}`, Sonarr `{tvdbId, title}`; each
+ *     POST the *arr acknowledges gets its `trash_title_exclusions` row at once, with the exclusion id it returned;
+ *  4. when anything was written, `GET` the list again: every target must be on it (`read_back`).
+ * A failure throws TitleExclusionError AFTER the transaction commits, so the rows of the writes that landed stay (a
+ * retry finds those titles excluded and writes nothing more for them). Idempotent: a second call writes nothing.
  */
 export async function ensureTitleExclusions(input: {
   db?: DbClient;
@@ -168,8 +170,12 @@ export async function ensureTitleExclusions(input: {
     written: 0,
   };
   if (targets.length === 0) return report;
+  // A failure is carried out of the transaction rather than thrown inside it, so the audit rows of the POSTs the *arr
+  // already acknowledged commit with it: an exclusion the app wrote is never left without its row (a retry would find
+  // it on the list and count it `alreadyExcluded`, never auditing it).
+  let failure: TitleExclusionError | null = null;
   try {
-    return await inTransaction(input.db, async (tx) => {
+    await inTransaction(input.db, async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${exclusionLockKey(arrKind)})`);
 
       // 2 — what the *arr already excludes.
@@ -177,69 +183,72 @@ export async function ensureTitleExclusions(input: {
       try {
         before = await listExclusions(input.arr, arrKind);
       } catch (cause) {
-        throw new TitleExclusionError(arrKind, 'read', { cause });
+        failure = new TitleExclusionError(arrKind, 'read', { cause });
+        return;
       }
       const have = new Set(before.map((e) => keyOf(arrKind, e)));
       const missing = targets.filter((t) => !have.has(t.externalId));
       report.alreadyExcluded = targets.length - missing.length;
-      if (missing.length === 0) return report;
+      if (missing.length === 0) return;
 
-      // 3 — the writes.
+      // 3 — the writes, each audited as soon as the *arr acknowledges it (its 201 carries the exclusion id).
       for (const t of missing) {
+        let created: ArrImportListExclusion;
         try {
-          if (arrKind === 'radarr') {
-            await input.arr.write.radarr.addImportListExclusion({
-              tmdbId: t.externalId,
-              title: t.title.trim(),
-              year: t.year,
-            });
-          } else {
-            await input.arr.write.sonarr.addImportListExclusion({
-              tvdbId: t.externalId,
-              title: t.title.trim(),
-            });
-          }
+          created =
+            arrKind === 'radarr'
+              ? await input.arr.write.radarr.addImportListExclusion({
+                  tmdbId: t.externalId,
+                  title: t.title.trim(),
+                  year: t.year,
+                })
+              : await input.arr.write.sonarr.addImportListExclusion({
+                  tvdbId: t.externalId,
+                  title: t.title.trim(),
+                });
         } catch (cause) {
-          throw new TitleExclusionError(arrKind, 'write', { cause });
+          failure = new TitleExclusionError(arrKind, 'write', { cause });
+          return;
         }
-      }
-
-      // 4 — the read-back, then the audit rows (only for what the *arr confirmed).
-      let after: ArrImportListExclusion[];
-      try {
-        after = await listExclusions(input.arr, arrKind);
-      } catch (cause) {
-        throw new TitleExclusionError(arrKind, 'read_back', { cause });
-      }
-      const byKey = new Map(after.map((e) => [keyOf(arrKind, e), e] as const));
-      if (!targets.every((t) => byKey.has(t.externalId))) {
-        throw new TitleExclusionError(arrKind, 'read_back');
-      }
-      await tx.insert(trashTitleExclusions).values(
-        missing.map((t) => ({
+        await tx.insert(trashTitleExclusions).values({
           arrKind,
           tmdbId: arrKind === 'radarr' ? t.externalId : null,
           tvdbId: arrKind === 'sonarr' ? t.externalId : null,
           title: t.title.trim(),
           year: arrKind === 'radarr' ? t.year : null,
-          arrExclusionId: (byKey.get(t.externalId) as ArrImportListExclusion).id,
+          arrExclusionId: created.id,
           origin,
           mediaItemId: t.mediaItemId ?? null,
           batchItemId: t.batchItemId ?? null,
-        })),
-      );
-      report.written = missing.length;
-      for (const t of missing) {
+        });
+        report.written += 1;
         logger.info('[title-exclusion] excluded', { arrKind, origin, title: t.title.trim(), year: t.year });
       }
-      return report;
+
+      // 4 — the read-back: the gate for the delete (every target on the list), not for the audit.
+      let after: ArrImportListExclusion[];
+      try {
+        after = await listExclusions(input.arr, arrKind);
+      } catch (cause) {
+        failure = new TitleExclusionError(arrKind, 'read_back', { cause });
+        return;
+      }
+      const listed = new Set(after.map((e) => keyOf(arrKind, e)));
+      if (!targets.every((t) => listed.has(t.externalId))) {
+        failure = new TitleExclusionError(arrKind, 'read_back');
+      }
     });
   } catch (error) {
-    if (error instanceof TitleExclusionError) {
-      logger.warn('[title-exclusion] failed', { arrKind, origin, step: error.step });
-    }
+    // A database error: the transaction rolled back (an acknowledged write may be left without its row).
+    logger.warn('[title-exclusion] failed', { arrKind, origin, step: 'database' });
     throw error;
   }
+  if (failure !== null) {
+    const err: TitleExclusionError = failure;
+    logger.warn('[title-exclusion] failed', { arrKind, origin, step: err.step, written: report.written });
+    throw err;
+  }
+  return report;
 }
 
 // ---------------------------------------------------------------------------

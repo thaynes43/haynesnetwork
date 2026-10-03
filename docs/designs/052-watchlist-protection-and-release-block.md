@@ -979,7 +979,8 @@ fine.
   disabled, edited or terms); `upkeep_failed {arrKind, stranded, expiring, drift, error}` (warn);
   `upkeep_skipped {error}` (warn: the registry job has no *arr key, D-25cf).
 - `[title-exclusion] excluded {arrKind, origin, title, year}` per exclusion written (D-26); `failed {arrKind,
-  origin, step}` (warn; step `validate`, `read`, `write` or `read_back`); `backfill {apply, radarr, sonarr}` and
+  origin, step, written}` (warn; step `validate`, `read`, `write`, `read_back`, or `database` when the audit insert
+  itself failed); `backfill {apply, radarr, sonarr}` and
   `backfill_done {radarr, sonarr}` from the one-off backfill (D-27). On the delete paths a failure also surfaces as
   `[trash] sweep_paused {reason: release_block, step: exclusion}`, so the existing `sweep_paused` alert covers it.
 - `[trash] sweep_failed {error}` (error) when a scheduled sweep with a batch due throws for any other reason, before
@@ -1231,12 +1232,16 @@ only after the delete, and only while that setting holds; the app now writes it 
 - **The writer** (`ensureTitleExclusions({ arrKind, targets, origin })`, `title-exclusion.ts`, the only writer): every
   target needs a positive key and a non-blank title (`validate`). Under `pg_advisory_xact_lock('title-exclusion:<kind>')`,
   in one transaction: read the list (`read`); `POST` each target not on it, one at a time (`write`; POSTs are never
-  retried); when anything was written, read the list again and require every target on it (`read_back`); then insert
-  one `trash_title_exclusions` row per written title (key, title, year, the *arr's exclusion id from the read-back,
-  `origin` `sweep` / `expedite` / `backfill`, the media item, the batch item when there is one). A failure throws
-  `TitleExclusionError(arrKind, step)` and rolls the rows back, so a row exists only for an exclusion the *arr
-  confirmed. A title already excluded gets no `POST` and no row; a second call with the same titles reads once and
-  writes nothing. It never deletes or edits an exclusion; removing one stays a person's act in Radarr or Sonarr (D-23).
+  retried), and insert its `trash_title_exclusions` row as soon as the *arr acknowledges it (key, title, year, the
+  exclusion id from the 201 answer, `origin` `sweep` / `expedite` / `backfill`, the media item, the batch item when
+  there is one); when anything was written, read the list again and require every target on it (`read_back`). The
+  read-back is the gate for the delete, not for the audit: a failure throws `TitleExclusionError(arrKind, step)`
+  only after the transaction commits the rows of the writes that landed, so every exclusion the app wrote keeps its
+  row (a retry finds those titles excluded and writes only the rest; review of PR #643). The one gap is a POST whose
+  answer was lost after Radarr or Sonarr applied it: no id came back, so no row, and the retry counts it
+  `alreadyExcluded`. A database error rolls the transaction back (logged `step: database`). A title already excluded
+  gets no `POST` and no row; a second call with the same titles reads once and writes nothing. It never deletes or
+  edits an exclusion; removing one stays a person's act in Radarr or Sonarr (D-23).
 - **Its place in the delete paths** (D-14 step 5, the shared seam `recordAndBlockReleases`, so the sweep, Expedite
   item and all, and the manual Expire now cannot drift): after identity and the hand-back of the unrecordable
   survivors, and before Phase A. The target of each recordable survivor comes from its records (the *arr's title and
@@ -1403,9 +1408,10 @@ already excluded 0, **to exclude 13**; no row without a key.
   POST thrown. `@hnet/db`: migration 0086, its kind and origin CHECKs matching `enums.ts` and the key CHECK (a tmdb id
   on Radarr, a tvdb id on Sonarr, never null). `@hnet/domain` on embedded Postgres with the in-memory *arr
   (`title-exclusion.test.ts`): the writer POSTs each missing title, reads it back and writes one audit row; an
-  existing exclusion is a no-op (no POST, no row) and a second call writes nothing; a failed read, a failed POST and a
-  POST that does not stick throw `read`, `write` and `read_back` with no row; an invalid target is refused before any
-  read. The sweep writes every exclusion before Phase A and the handle (the call order), its rows naming the batch
+  existing exclusion is a no-op (no POST, no row) and a second call writes nothing; a failed read throws `read` with
+  no row; a POST that fails part-way throws `write` and keeps the rows of the writes that landed, and the retry writes
+  only the rest; a POST that does not stick throws `read_back` and keeps its row; an invalid target is refused before
+  any read. The sweep writes every exclusion before Phase A and the handle (the call order), its rows naming the batch
   items; an exclusion Maintainerr already wrote changes nothing and the delete goes on; a failed exclusion pauses the
   sweep with step `exclusion` and nothing recorded, blocked or deleted; Expedite writes it first (origin `expedite`)
   and refuses with `ReleaseBlockError` `exclusion` when it cannot; a show gets its Sonarr exclusion by tvdb id. The
