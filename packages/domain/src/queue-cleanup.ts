@@ -4,6 +4,8 @@
 // *arr client bundle (built INSIDE this package so @hnet/arr/write stays domain-only — the arr-write import
 // guard), the /admin status read + promotion-ladder derivation (D-08), and the nightly digest section (D-07).
 // D-13 gives Lidarr's `manual_match` an enforce cell, with a loop guard and a loop signal in the log and digest.
+// D-23 extends the loop guard to every janitor search; ADR-098 (D-24) makes the janitor the one retrier of a failed
+// Sonarr or Radarr download, once per failure, within the same budget.
 // ADR-095 (D-15..D-20) extends it to the download suite: LazyLibrarian and Kapowarr through the source adapter seam
 // (./queue-cleanup-sources), the same rails and rows, a config that stays valid without them, and a ladder per family.
 //
@@ -40,7 +42,7 @@ import {
   type RadarrQueueRecord,
   type SonarrQueueRecord,
 } from '@hnet/arr';
-import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { setAppSetting } from './app-settings';
 import { resolveDb } from './db-client';
 import { QueueCleanupConfigInvalidError } from './errors';
@@ -612,6 +614,42 @@ export interface QueueCleanupInstanceClient {
   ): Promise<{ releaseTitle: string | null; artistName: string | null }>;
   /** D-14 (ADR-094): the *arr's release-profile surface for the janitor release block. Lidarr only. */
   releaseProfiles?: JanitorReleaseProfileClient;
+  /** D-24 (ADR-098): the *arr's failed downloads, for the failed-download retry. Sonarr and Radarr only. */
+  failedDownloads?: QueueCleanupFailedDownloadSource;
+}
+
+/**
+ * D-24 (ADR-098) — one failed download as the *arr's history records it (`downloadFailed`), one entry per target: Sonarr
+ * writes one record per episode of the download. Data only; the evaluator decides what to do with it.
+ */
+export interface QueueCleanupFailedDownload {
+  /** The *arr history record id. */
+  historyId: number;
+  downloadId: string | null;
+  /** The release title (`sourceTitle`), display only. */
+  title: string | null;
+  failedAt: Date;
+  /** The *arr's failure message (`data.message`): the download client's own ("Aborted, cannot be completed …"), or
+   *  `Manually marked as failed` for a removal through the queue or history API (the janitor's, a Fix, a person's). */
+  message: string | null;
+  /** The search target: Sonarr the episodeId, Radarr the movieId. */
+  targetId: number;
+  /** The target's parent, which the monitored check reads: Sonarr the seriesId, Radarr the movieId. */
+  parentId: number;
+  /** The *arr grabbed the same target again after this failure (any search, RSS, or a person). */
+  regrabbed: boolean;
+}
+
+/** D-24 (ADR-098) — the failed-download surface of one *arr. Read-only, except `search`. */
+export interface QueueCleanupFailedDownloadSource {
+  /** `GET /config/downloadclient` → `autoRedownloadFailed`: true while the *arr searches again after a failure itself. */
+  redownloadFailed(): Promise<boolean>;
+  /** The `downloadFailed` history since `since`, with `regrabbed` from the `grabbed` history since then. */
+  failedSince(since: Date): Promise<QueueCleanupFailedDownload[]>;
+  /** The given failures whose target the *arr still monitors. */
+  monitored(failures: QueueCleanupFailedDownload[]): Promise<QueueCleanupFailedDownload[]>;
+  /** ONE search command for the given failures' targets (EpisodeSearch / MoviesSearch take id lists). */
+  search(failures: QueueCleanupFailedDownload[]): Promise<void>;
 }
 
 /**
@@ -684,6 +722,44 @@ function normalizeItem(raw: {
   };
 }
 
+/** D-24 — the newest grab time per target, from the *arr's `grabbed` history. */
+function latestGrabByTarget(grabs: Array<{ targetId: number; date: string }>): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const g of grabs) {
+    const at = Date.parse(g.date);
+    if (Number.isNaN(at)) continue;
+    if (at > (out.get(g.targetId) ?? Number.NEGATIVE_INFINITY)) out.set(g.targetId, at);
+  }
+  return out;
+}
+
+/** D-24 — one `downloadFailed` history record as a failed download (null when its date does not parse). */
+function toFailedDownload(
+  record: {
+    id: number;
+    date: string;
+    sourceTitle?: string | null;
+    downloadId?: string | null;
+    data?: Record<string, unknown>;
+  },
+  targetId: number,
+  parentId: number,
+  lastGrab: Map<number, number>,
+): QueueCleanupFailedDownload | null {
+  const failedAt = Date.parse(record.date);
+  if (Number.isNaN(failedAt)) return null;
+  return {
+    historyId: record.id,
+    downloadId: nonEmpty(record.downloadId),
+    title: nonEmpty(record.sourceTitle),
+    failedAt: new Date(failedAt),
+    message: nonEmpty(record.data?.message),
+    targetId,
+    parentId,
+    regrabbed: (lastGrab.get(targetId) ?? Number.NEGATIVE_INFINITY) > failedAt,
+  };
+}
+
 /**
  * Wire the real *arr read + write clients into the three per-instance surfaces. The monitored-check uses the
  * finest cheap granularity the read client exposes: Radarr the movie; Sonarr the episode (via listEpisodes,
@@ -749,6 +825,36 @@ export function buildQueueCleanupClients(clients: {
           await clients.write.sonarr.searchSeries(seriesId);
         }
       },
+      // D-24 (ADR-098): the failed-download retry's reads, and its one EpisodeSearch per download.
+      failedDownloads: {
+        redownloadFailed: async () => (await clients.read.sonarr.getDownloadClientConfig()).autoRedownloadFailed,
+        async failedSince(since) {
+          const [failed, grabbed] = await Promise.all([
+            clients.read.sonarr.getHistorySince(since, 'downloadFailed'),
+            clients.read.sonarr.getHistorySince(since, 'grabbed'),
+          ]);
+          const lastGrab = latestGrabByTarget(
+            grabbed.filter((g) => g.eventType === 'grabbed').map((g) => ({ targetId: g.episodeId, date: g.date })),
+          );
+          return failed
+            .filter((r) => r.eventType === 'downloadFailed')
+            .map((r) => toFailedDownload(r, r.episodeId, r.seriesId, lastGrab))
+            .filter((f): f is QueueCleanupFailedDownload => f !== null);
+        },
+        async monitored(failures) {
+          const episodesOf = memoized((seriesId: number) => clients.read.sonarr.listEpisodes(seriesId));
+          const out: QueueCleanupFailedDownload[] = [];
+          for (const f of failures) {
+            const episode = (await episodesOf(f.parentId)).find((e) => e.id === f.targetId);
+            if (episode?.monitored) out.push(f);
+          }
+          return out;
+        },
+        async search(failures) {
+          const episodeIds = distinctIds(failures.map((f) => f.targetId));
+          if (episodeIds.length > 0) await clients.write.sonarr.searchEpisodes(episodeIds);
+        },
+      },
     },
     radarr: {
       async getQueueAll() {
@@ -776,6 +882,33 @@ export function buildQueueCleanupClients(clients: {
       async searchTargets(items) {
         const movieIds = distinctIds(items.map((item) => targetsByItem.get(item)?.parentId));
         if (movieIds.length > 0) await clients.write.radarr.searchMovies(movieIds);
+      },
+      // D-24 (ADR-098): the failed-download retry's reads, and its one MoviesSearch per download.
+      failedDownloads: {
+        redownloadFailed: async () => (await clients.read.radarr.getDownloadClientConfig()).autoRedownloadFailed,
+        async failedSince(since) {
+          const [failed, grabbed] = await Promise.all([
+            clients.read.radarr.getHistorySince(since, 'downloadFailed'),
+            clients.read.radarr.getHistorySince(since, 'grabbed'),
+          ]);
+          const lastGrab = latestGrabByTarget(
+            grabbed.filter((g) => g.eventType === 'grabbed').map((g) => ({ targetId: g.movieId, date: g.date })),
+          );
+          return failed
+            .filter((r) => r.eventType === 'downloadFailed')
+            .map((r) => toFailedDownload(r, r.movieId, r.movieId, lastGrab))
+            .filter((f): f is QueueCleanupFailedDownload => f !== null);
+        },
+        async monitored(failures) {
+          const movieOf = memoized((movieId: number) => clients.read.radarr.getMovieById(movieId));
+          const out: QueueCleanupFailedDownload[] = [];
+          for (const f of failures) if ((await movieOf(f.parentId)).monitored) out.push(f);
+          return out;
+        },
+        async search(failures) {
+          const movieIds = distinctIds(failures.map((f) => f.targetId));
+          if (movieIds.length > 0) await clients.write.radarr.searchMovies(movieIds);
+        },
       },
     },
     lidarr: {
@@ -1003,13 +1136,31 @@ async function priorRetryImportRuns(
 }
 
 /**
- * D-13 — the loop guard's K: a Lidarr `manual_match` record whose album the janitor has already removed as
- * `manual_match` on this many EARLIER downloads is `skipped_loop`. Each of those removals was followed by another
- * match failure for the album (the next removed download, and for the last one this record), so the janitor's
- * remove-and-search has failed K times in a row and a person should decide. Versioned code, not config: the
- * owner approved the action with this bound.
+ * D-13, D-23 — the loop guard's K, one budget for every janitor search of a target: a record whose target (Sonarr the
+ * episode, Radarr the movie, Lidarr the album) the janitor already tried on this many EARLIER downloads within
+ * QUEUE_CLEANUP_LOOP_WINDOW_MS is `skipped_loop`, and so is a failed download (D-24) whose target it already tried that
+ * often. A try is a removal in a searching class that landed, or a failed-download retry that searched; each was
+ * followed by another failure of the target (the next download, and for the last one this record), so the janitor has
+ * failed K times in a row and a person should decide. Versioned code, not config: the owner approved the actions with
+ * this bound.
  */
-export const MANUAL_MATCH_LOOP_LIMIT = 2;
+export const QUEUE_CLEANUP_LOOP_LIMIT = 2;
+
+/**
+ * D-23 rule 7 (owner ruling 2026-10-03, Q-08, "Reset after 30 days") — the loop guard's window: at most
+ * QUEUE_CLEANUP_LOOP_LIMIT automatic janitor tries per title in any rolling 30 days. A try older than this no longer
+ * counts, so a held title is tried again once its oldest counted try is 30 days old. Every guard shares it: the *arrs'
+ * searching classes, the failed-download retry and the suite sources (D-20). Supersedes D-13 rule 4's "does not expire".
+ */
+export const QUEUE_CLEANUP_LOOP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** The D-13 name of QUEUE_CLEANUP_LOOP_LIMIT (Lidarr's `manual_match`), kept for its readers. */
+export const MANUAL_MATCH_LOOP_LIMIT = QUEUE_CLEANUP_LOOP_LIMIT;
+
+/** D-23 — the *arr classes whose action ends in a janitor search, so the loop guard covers them: `bad_release` on all
+ *  three *arrs (and the failed-download retry, which records its rows in that class, D-24) and Lidarr's `manual_match`.
+ *  `have_better` never searches and `retry_import` never removes. */
+const ARR_SEARCHING_CLASSES: readonly QueueCleanupActionClass[] = ['bad_release', 'manual_match'];
 
 /** D-13 — the window of the repeat-search signal: a target the janitor searched on 2+ runs within it is reported
  *  (the digest) and logged (`[queue-cleanup] loop_detected`). */
@@ -1019,13 +1170,17 @@ const REPEAT_SEARCH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const QUEUE_CLEANUP_LOOP_LOG = '[queue-cleanup] loop_detected';
 
 /**
- * D-13 — for each album, the earlier downloads the janitor removed as `manual_match` (removals that landed, so
- * `outcome: 'done'`). Keyed by download; a row with no downloadId counts once per run.
+ * D-13, D-23 — for each target, the earlier downloads the janitor tried since `since` (now minus
+ * QUEUE_CLEANUP_LOOP_WINDOW_MS, D-23 rule 7): rows in a searching class that landed (`outcome: 'done'`,
+ * `removed_blocklisted` or `blocklisted_searched`). Any class counts toward the one budget, so an album removed once as
+ * `bad_release` and once as `manual_match` has had two tries. Keyed by download; a row with no downloadId counts once
+ * per run.
  */
-async function priorManualMatchRemovals(
+async function priorJanitorTries(
   db: ReturnType<typeof resolveDb>,
   instance: ArrKind,
   targetIds: number[],
+  since: Date,
 ): Promise<Map<number, Set<string>>> {
   const out = new Map<number, Set<string>>();
   if (targetIds.length === 0) return out;
@@ -1039,10 +1194,11 @@ async function priorManualMatchRemovals(
     .where(
       and(
         eq(arrQueueCleanupActions.instance, instance),
-        eq(arrQueueCleanupActions.actionClass, 'manual_match'),
+        inArray(arrQueueCleanupActions.actionClass, [...ARR_SEARCHING_CLASSES]),
         eq(arrQueueCleanupActions.outcome, 'done'),
         inArray(arrQueueCleanupActions.action, ['removed_blocklisted', 'blocklisted_searched']),
         inArray(arrQueueCleanupActions.targetId, targetIds),
+        gte(arrQueueCleanupActions.createdAt, since),
       ),
     );
   for (const r of rows) {
@@ -1055,6 +1211,25 @@ async function priorManualMatchRemovals(
     downloads.add(nonEmpty(r.downloadId) ?? `run:${r.createdAt.toISOString()}`);
   }
   return out;
+}
+
+/** D-13 — how many of a target's earlier tries were on another download than `ownDownloadId`. */
+function earlierTries(prior: Map<number, Set<string>>, targetId: number, ownDownloadId: string | null): number {
+  const own = nonEmpty(ownDownloadId);
+  return [...(prior.get(targetId) ?? [])].filter((d) => d !== own).length;
+}
+
+/**
+ * D-23 — the *arr has taken the download's failure itself: its failed-download handling marked it failed (Sonarr and
+ * Radarr `failed`, Lidarr `downloadFailed`), or is about to (`failedPending`, `downloadFailedPending`). That handling
+ * has already blocklisted it and, with the *arr's Redownload Failed on, searched again; with it off, the failed-download
+ * retry (D-24) searches once. Either way the queue path never searches for it, so a failure is searched exactly once.
+ */
+function arrFailureState(item: { trackedDownloadState: string | null }): 'failed' | 'pending' | null {
+  const state = (item.trackedDownloadState ?? '').toLowerCase();
+  if (state === 'failedpending' || state === 'downloadfailedpending') return 'pending';
+  if (state === 'failed' || state === 'downloadfailed') return 'failed';
+  return null;
 }
 
 /** D-13 — the runs on which the janitor searched each target within the repeat-search window, before this run. */
@@ -1129,6 +1304,20 @@ async function manualMatchSearchTargets(
   return (await client.missingMonitoredTargets(withAlbum)).filter((i) => i.targetId != null);
 }
 
+/**
+ * D-23 — the records of a removed `bad_release` download to search again: those whose target the *arr still monitors,
+ * leaving out a failure the *arr has taken itself (`arrFailureState`), which its own handling or the failed-download
+ * retry searches (D-24). With no record left there is no monitored read.
+ */
+async function badReleaseSearchTargets(
+  client: QueueCleanupInstanceClient,
+  items: QueueCleanupQueueItem[],
+): Promise<QueueCleanupQueueItem[]> {
+  const open = items.filter((i) => arrFailureState(i) === null);
+  if (open.length === 0) return [];
+  return client.monitoredTargets(open);
+}
+
 /** A removal the *arr answered with 404: it no longer tracks the download (D-11 rule 5). */
 const isGone = (err: unknown): boolean => err instanceof ArrHttpError && err.status === 404;
 
@@ -1146,7 +1335,7 @@ const SOURCE_LOOP_GUARDED_CLASSES: ReadonlySet<QueueCleanupActionClass> = new Se
 
 /** D-20 — the loop guard's K on the suite sources: a book format or volume the janitor already removed on this many
  *  earlier downloads is held (`skipped_loop`). The owner-approved budget of D-13, applied to every source. */
-export const QUEUE_CLEANUP_SOURCE_LOOP_LIMIT = 2;
+export const QUEUE_CLEANUP_SOURCE_LOOP_LIMIT = QUEUE_CLEANUP_LOOP_LIMIT;
 
 /** D-20 — what the loop guard and the fail-loop signal key a source item on: its string reference (LazyLibrarian's
  *  book format), else its target (Kapowarr's volume). Null: the item cannot loop through the janitor. */
@@ -1183,11 +1372,13 @@ async function firstSightings(
   return out;
 }
 
-/** D-20 — for each loop key, the earlier downloads the janitor removed (removals that landed, `outcome: 'done'`). */
+/** D-20 — for each loop key, the earlier downloads the janitor removed since `since` (removals that landed, `outcome:
+ *  'done'`; the window is QUEUE_CLEANUP_LOOP_WINDOW_MS, D-23 rule 7). */
 async function priorSourceRemovals(
   db: ReturnType<typeof resolveDb>,
   instance: QueueCleanupInstance,
   keys: string[],
+  since: Date,
 ): Promise<Map<string, Set<string>>> {
   const out = new Map<string, Set<string>>();
   const refs = keys.filter((k) => k.startsWith('ref:')).map((k) => k.slice(4));
@@ -1211,6 +1402,7 @@ async function priorSourceRemovals(
         eq(arrQueueCleanupActions.outcome, 'done'),
         inArray(arrQueueCleanupActions.action, ['removed_blocklisted', 'blocklisted_searched']),
         or(...match),
+        gte(arrQueueCleanupActions.createdAt, since),
       ),
     );
   for (const r of rows) {
@@ -1403,15 +1595,19 @@ async function evaluateSourceInstance(input: {
   }
 
   // 1b. The loop guard (D-20): a target the janitor already removed on QUEUE_CLEANUP_SOURCE_LOOP_LIMIT earlier
-  //     downloads is held for a person. A failed read holds every candidate this run (fail safe).
+  //     downloads in the last 30 days (QUEUE_CLEANUP_LOOP_WINDOW_MS, D-23 rule 7) is held for a person. A failed read
+  //     holds every candidate this run (fail safe).
   const loopCandidates = [...verdicts.values()].filter(
     (v) => v.wants !== null && SOURCE_LOOP_GUARDED_CLASSES.has(v.wants) && sourceLoopKey(v.item) !== null,
   );
   if (loopCandidates.length > 0) {
     try {
-      const prior = await priorSourceRemovals(db, instance, [
-        ...new Set(loopCandidates.map((v) => sourceLoopKey(v.item)!)),
-      ]);
+      const prior = await priorSourceRemovals(
+        db,
+        instance,
+        [...new Set(loopCandidates.map((v) => sourceLoopKey(v.item)!))],
+        new Date(now.getTime() - QUEUE_CLEANUP_LOOP_WINDOW_MS),
+      );
       for (const v of loopCandidates) {
         const own = nonEmpty(v.item.downloadId);
         const earlier = [...(prior.get(sourceLoopKey(v.item)!) ?? [])].filter((d) => d !== own).length;
@@ -1646,6 +1842,245 @@ async function evaluateSourceInstance(input: {
   return report;
 }
 
+/** What one search command covered this run, per download (the repeat-search check, D-13). */
+interface SearchedDownload {
+  downloadId: string | null;
+  title: string | null;
+  actionClass: QueueCleanupActionClass;
+  targetIds: number[];
+}
+
+/** A download the loop guard held this run, logged after the instance's pass only when it is new (D-21). */
+interface HeldDownload {
+  key: string | null;
+  meta: Record<string, unknown>;
+}
+
+/** D-24 — how far back each run reads the *arr's failed downloads. Missed hourly runs are covered; a failure older than
+ *  this is left alone. Each failure is recorded once, so overlapping reads never search twice. */
+const FAILED_RETRY_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
+/** D-24 — the failure message the *arr records for a removal through its queue or history API: the janitor's own
+ *  removals, a Fix, a person's. Never a failure the janitor retries (upstream `FailedDownloadService.MarkAsFailed`, the
+ *  same text on all three *arrs). */
+export const ARR_MANUAL_FAILURE_MESSAGE = 'Manually marked as failed';
+
+/** D-24 — a failed download's key: its download and its target. */
+const failureKey = (f: { downloadId: string | null; targetId: number | null }): string =>
+  `${f.downloadId ?? ''}\u0000${f.targetId ?? ''}`;
+
+/**
+ * D-24 — the failures the janitor has already recorded for good: its retry rows (an *arr row with no queue item id,
+ * class `bad_release`), except `skipped_cap` and `error` rows, which the next run tries again. Keyed by `failureKey`.
+ */
+async function recordedFailures(
+  db: ReturnType<typeof resolveDb>,
+  instance: ArrKind,
+  downloadIds: string[],
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (downloadIds.length === 0) return out;
+  const rows = await db
+    .select({ downloadId: arrQueueCleanupActions.downloadId, targetId: arrQueueCleanupActions.targetId })
+    .from(arrQueueCleanupActions)
+    .where(
+      and(
+        eq(arrQueueCleanupActions.instance, instance),
+        isNull(arrQueueCleanupActions.queueItemId),
+        eq(arrQueueCleanupActions.actionClass, 'bad_release'),
+        inArray(arrQueueCleanupActions.downloadId, downloadIds),
+        ne(arrQueueCleanupActions.action, 'skipped_cap'),
+        ne(arrQueueCleanupActions.outcome, 'error'),
+      ),
+    );
+  for (const r of rows) out.add(failureKey(r));
+  return out;
+}
+
+/** D-24 — what the failed-download retry did on one instance this run. */
+interface FailedRetryOutcome {
+  rows: ArrQueueCleanupActionInsert[];
+  /** Search commands sent (each counts against maxActionsPerRun). */
+  actionsTaken: number;
+  errors: number;
+  enforced: number;
+  held: HeldDownload[];
+  searched: SearchedDownload[];
+}
+
+/**
+ * D-24 (ADR-098, owner ruling 2026-10-03) — the failed-download retry: the janitor, not the *arr, searches again after
+ * a Sonarr or Radarr download fails, once per failure and within the loop guard's budget.
+ *
+ * It reads the *arr's `downloadFailed` history of the last FAILED_RETRY_LOOKBACK_MS and leaves out: a removal through
+ * the *arr's API (`Manually marked as failed`: the janitor's own removals search by themselves, a Fix searches by
+ * itself, and a person chose), a failure already recorded, and a failure whose download is still in the queue (the
+ * queue path removes it first; the next run retries it). Each failure left gets one row in class `bad_release` (its
+ * cell decides census or enforce) with no queue item id. Nothing is searched while the cell is census or while the
+ * *arr's own Redownload Failed is on (the *arr searched already): `none`. Otherwise, per download (D-11), a target that
+ * was grabbed again since, has another download in the queue, or was searched this run is `none`; an unmonitored one is
+ * `none`; one the janitor already tried on QUEUE_CLEANUP_LOOP_LIMIT earlier downloads is `skipped_loop`; the rest get
+ * ONE search command (`blocklisted_searched`: the *arr blocklisted the release when it failed), which costs the per-run
+ * cap once (`skipped_cap` when it is spent). A failed read writes nothing and the next run tries again; a failed
+ * monitored check or search is `none` with outcome `error`, also tried again.
+ */
+async function retryFailedDownloads(ctx: {
+  db: ReturnType<typeof resolveDb>;
+  instance: ArrKind;
+  source: QueueCleanupFailedDownloadSource;
+  mode: QueueCleanupMode;
+  now: Date;
+  /** Action slots left this run (maxActionsPerRun minus the queue path's). */
+  slots: number;
+  /** Queue records still in the queue after this run's removals. */
+  queued: Array<{ downloadId: string | null; targetId: number | null }>;
+  /** Targets searched this run (the queue path's, then this pass's): never searched twice in one run. */
+  searchedTargets: Set<number>;
+  logger?: QueueCleanupLogger;
+}): Promise<FailedRetryOutcome> {
+  const { db, instance, source, mode, now } = ctx;
+  const out: FailedRetryOutcome = { rows: [], actionsTaken: 0, errors: 0, enforced: 0, held: [], searched: [] };
+  const warn = (msg: string, err: unknown) =>
+    ctx.logger?.warn?.(`queue-cleanup: ${msg}, failed downloads not retried this run`, { instance, error: errMsg(err) });
+
+  let failures: QueueCleanupFailedDownload[];
+  try {
+    failures = await source.failedSince(new Date(now.getTime() - FAILED_RETRY_LOOKBACK_MS));
+  } catch (err) {
+    warn('failed-download read failed', err);
+    return out;
+  }
+  // One entry per (download, target), the newest record; removals through the *arr's API are not failures to retry.
+  const byKey = new Map<string, QueueCleanupFailedDownload>();
+  for (const f of failures) {
+    if (f.downloadId === null || f.message === ARR_MANUAL_FAILURE_MESSAGE || f.failedAt > now) continue;
+    const seen = byKey.get(failureKey(f));
+    if (!seen || seen.failedAt < f.failedAt) byKey.set(failureKey(f), f);
+  }
+  if (byKey.size === 0) return out;
+
+  const queuedDownloads = new Set(ctx.queued.map((q) => nonEmpty(q.downloadId)).filter((d) => d !== null));
+  const queuedTargets = new Set(distinctIds(ctx.queued.map((q) => q.targetId)));
+  let recorded: Set<string>;
+  try {
+    recorded = await recordedFailures(db, instance, [...new Set([...byKey.values()].map((f) => f.downloadId!))]);
+  } catch (err) {
+    warn('failed-download record read failed', err);
+    return out;
+  }
+  const fresh = [...byKey.values()]
+    .filter((f) => !recorded.has(failureKey(f)) && !queuedDownloads.has(f.downloadId!))
+    .sort((a, b) => a.failedAt.getTime() - b.failedAt.getTime() || a.historyId - b.historyId);
+  if (fresh.length === 0) return out;
+
+  let arrRetries: boolean;
+  try {
+    arrRetries = await source.redownloadFailed();
+  } catch (err) {
+    warn('Redownload Failed read failed', err);
+    return out;
+  }
+  const acting = mode === 'enforce' && !arrRetries;
+  let prior = new Map<number, Set<string>>();
+  if (acting) {
+    try {
+      prior = await priorJanitorTries(
+        db,
+        instance,
+        distinctIds(fresh.map((f) => f.targetId)),
+        new Date(now.getTime() - QUEUE_CLEANUP_LOOP_WINDOW_MS),
+      );
+    } catch (err) {
+      warn('loop-guard read failed', err);
+      return out;
+    }
+  }
+
+  for (const group of groupQueueRecordsByDownload(fresh)) {
+    const results = new Map<QueueCleanupFailedDownload, RecordResult>();
+    for (const f of group) results.set(f, result('none'));
+    let open = acting
+      ? group.filter((f) => !f.regrabbed && !queuedTargets.has(f.targetId) && !ctx.searchedTargets.has(f.targetId))
+      : [];
+    if (open.length > 0) {
+      try {
+        const monitored = new Set(await source.monitored(open));
+        open = open.filter((f) => monitored.has(f));
+      } catch (err) {
+        for (const f of open) results.set(f, result('none', 'error', errMsg(err)));
+        out.errors += 1;
+        open = [];
+      }
+    }
+    const held = open.filter((f) => earlierTries(prior, f.targetId, f.downloadId) >= QUEUE_CLEANUP_LOOP_LIMIT);
+    for (const f of held) results.set(f, result('skipped_loop'));
+    if (held.length > 0) {
+      out.held.push({
+        key: heldLoopKey({ downloadId: group[0]!.downloadId, itemRef: null }),
+        meta: {
+          kind: 'skipped_loop',
+          instance,
+          downloadId: group[0]!.downloadId,
+          title: group[0]!.title,
+          targetIds: distinctIds(held.map((f) => f.targetId)),
+          priorRemovals: Math.max(...held.map((f) => earlierTries(prior, f.targetId, f.downloadId))),
+        },
+      });
+    }
+    const toSearch = open.filter((f) => !held.includes(f));
+    if (toSearch.length > 0) {
+      if (out.actionsTaken >= ctx.slots) {
+        for (const f of toSearch) results.set(f, result('skipped_cap'));
+      } else {
+        out.actionsTaken += 1;
+        try {
+          await source.search(toSearch);
+          for (const f of toSearch) {
+            results.set(f, result('blocklisted_searched', 'done'));
+            ctx.searchedTargets.add(f.targetId);
+          }
+          out.searched.push({
+            downloadId: toSearch[0]!.downloadId,
+            title: toSearch[0]!.title,
+            actionClass: 'bad_release',
+            targetIds: distinctIds(toSearch.map((f) => f.targetId)),
+          });
+        } catch (err) {
+          for (const f of toSearch) results.set(f, result('none', 'error', errMsg(err)));
+          out.errors += 1;
+        }
+      }
+    }
+    for (const f of group) {
+      const r = results.get(f)!;
+      if (r.outcome === 'done') out.enforced += 1;
+      out.rows.push({
+        instance,
+        queueItemId: null,
+        downloadId: f.downloadId,
+        title: f.title,
+        targetId: f.targetId,
+        actionClass: 'bad_release',
+        mode,
+        action: r.action,
+        outcome: r.outcome,
+        reason: f.message ? truncate(f.message) : null,
+        error: r.error,
+        createdAt: now,
+      });
+    }
+  }
+  ctx.logger?.info?.('queue-cleanup failed downloads', {
+    instance,
+    failures: fresh.length,
+    arrRetries,
+    searched: out.searched.length,
+    held: out.held.length,
+    errors: out.errors,
+  });
+  return out;
+}
+
 /**
  * Run one janitor pass over Sonarr/Radarr/Lidarr, then (ADR-095, D-15) over every suite source the bundle carries
  * (LazyLibrarian, Kapowarr) through its adapter, with the same rails. Census rows are written ALWAYS (one per queue record — the
@@ -1655,8 +2090,11 @@ async function evaluateSourceInstance(input: {
  * in runs); ProcessMonitoredDownloads at most once per instance per run; a failed *arr write → outcome 'error'
  * (logged, counts against the cap) + continue. `unknown` is NEVER acted on. `manual_match` acts only on Lidarr,
  * where its cell is enforced (D-13): remove + blocklist, then an album search only for a monitored album still
- * missing tracks; the loop guard holds an album already removed on MANUAL_MATCH_LOOP_LIMIT earlier downloads
- * (`skipped_loop`), and every loop event is one `[queue-cleanup] loop_detected` log line.
+ * missing tracks. The loop guard (D-13, D-23) holds a target the janitor already tried on QUEUE_CLEANUP_LOOP_LIMIT
+ * earlier downloads in any searching class (`skipped_loop`), and every loop event is one `[queue-cleanup] loop_detected`
+ * log line. A target is searched at most once per run, and never for a failure the *arr took itself (D-23). Then, on
+ * Sonarr and Radarr, the failed-download retry (ADR-098, D-24) searches once after each failed download the *arr
+ * recorded, under the instance's bad_release cell, within the same budget.
  *
  * The janitor acts once per DOWNLOAD, not once per record (D-11): records sharing a downloadId (a season pack's
  * episodes) get one call, which costs the cap once, and every one of them records that call's result; a
@@ -1740,7 +2178,10 @@ export async function evaluateQueueCleanup(input: {
       const young =
         config.minItemAgeHours > 0 &&
         (item.addedAt === null || now.getTime() - item.addedAt.getTime() < minAgeMs);
-      const wants = !young ? cellClass : null;
+      // D-23: a bad release the *arr is failing right now (`failedPending`) is its own handling's this run; the next
+      // run sees it failed (removed without a search, the failed-download retry searches once) or gone.
+      const pending = actionClass === 'bad_release' && arrFailureState(item) === 'pending';
+      const wants = !young && !pending ? cellClass : null;
       verdicts.set(item, {
         item,
         actionClass,
@@ -1753,45 +2194,52 @@ export async function evaluateQueueCleanup(input: {
       });
     }
 
-    // 1b. The manual_match loop guard (D-13): an album the janitor already removed as manual_match on
-    //     MANUAL_MATCH_LOOP_LIMIT earlier downloads is held (`skipped_loop`), never removed or searched again, while it
-    //     is still monitored and missing tracks. Only then would the janitor search it again, so only then can it
-    //     loop: an album that imported since (a later upgrade grab failing) or was unmonitored gets the removal and
-    //     the block, and no search. A record with no album cannot loop through the janitor: it is never searched.
+    // 1b. The loop guard (D-13, D-23): a record whose target the janitor already tried on QUEUE_CLEANUP_LOOP_LIMIT
+    //     earlier downloads in the last 30 days (QUEUE_CLEANUP_LOOP_WINDOW_MS), in any searching class, is held (`skipped_loop`), never removed or searched again, while
+    //     the janitor would search it again: a manual_match album still monitored and missing tracks, a bad_release
+    //     target still monitored. A target that would not be searched (imported since, unmonitored, a failure the
+    //     *arr took itself) gets the removal and no search, so it cannot loop. A record with no target cannot loop
+    //     through the janitor's guard: manual_match never searches it; bad_release falls back to the parent's search
+    //     (D-11 rule 4), which no live record has needed since target_id landed.
     const loopCandidates = [...verdicts.values()].filter(
-      (v) => v.wants === 'manual_match' && v.item.targetId != null,
+      (v) =>
+        v.wants !== null &&
+        ARR_SEARCHING_CLASSES.includes(v.wants) &&
+        v.item.targetId != null &&
+        !(v.wants === 'bad_release' && arrFailureState(v.item) !== null),
     );
     if (loopCandidates.length > 0) {
       try {
-        const prior = await priorManualMatchRemovals(
+        const prior = await priorJanitorTries(
           db,
           instance,
           distinctIds(loopCandidates.map((v) => v.item.targetId)),
+          new Date(now.getTime() - QUEUE_CLEANUP_LOOP_WINDOW_MS),
         );
         const over = loopCandidates
-          .map((v) => {
-            const own = nonEmpty(v.item.downloadId);
-            const earlier = [...(prior.get(v.item.targetId!) ?? [])].filter((d) => d !== own).length;
-            return { v, earlier };
-          })
-          .filter((x) => x.earlier >= MANUAL_MATCH_LOOP_LIMIT);
+          .map((v) => ({ v, earlier: earlierTries(prior, v.item.targetId!, v.item.downloadId) }))
+          .filter((x) => x.earlier >= QUEUE_CLEANUP_LOOP_LIMIT);
         if (over.length > 0) {
-          // Which of these albums would be searched again (monitored, still missing tracks)? No check ⇒ hold all.
-          const searchable = client.missingMonitoredTargets
-            ? new Set(await client.missingMonitoredTargets(over.map((x) => x.v.item)))
-            : null;
+          // Which of these targets would be searched again? manual_match: monitored and still missing tracks (no
+          // check on the instance ⇒ hold all); bad_release: monitored.
+          const mm = over.filter((x) => x.v.wants === 'manual_match').map((x) => x.v.item);
+          const br = over.filter((x) => x.v.wants === 'bad_release').map((x) => x.v.item);
+          const searchable = new Set<QueueCleanupQueueItem>([
+            ...(mm.length === 0 ? [] : client.missingMonitoredTargets ? await client.missingMonitoredTargets(mm) : mm),
+            ...(br.length === 0 ? [] : await client.monitoredTargets(br)),
+          ]);
           for (const { v, earlier } of over) {
-            if (searchable !== null && !searchable.has(v.item)) continue;
+            if (!searchable.has(v.item)) continue;
             v.loop = true;
             v.priorRemovals = earlier;
             v.wants = null;
           }
         }
       } catch (err) {
-        // The guard cannot tell which albums loop (a failed history or album read), so no manual_match download
-        // is acted on this run (fail safe); the census rows are still written.
+        // The guard cannot tell which targets loop (a failed history, album or episode read), so no download of a
+        // searching class is acted on this run (fail safe); the census rows are still written.
         for (const v of loopCandidates) v.wants = null;
-        input.logger?.warn?.('queue-cleanup: loop-guard read failed, manual_match not acted on this run', {
+        input.logger?.warn?.('queue-cleanup: loop-guard read failed, searching classes not acted on this run', {
           instance,
           error: errMsg(err),
         });
@@ -1802,10 +2250,12 @@ export async function evaluateQueueCleanup(input: {
     const results = new Map<QueueCleanupQueueItem, RecordResult>();
     let actionsTaken = 0;
     let retryCommandRan = false;
-    /** The records each search command covered this run, per download (the repeat-search check, D-13). */
-    const searchedDownloads: QueueCleanupQueueItem[][] = [];
+    /** What each search command covered this run, per download (the repeat-search check, D-13). */
+    const searchedDownloads: SearchedDownload[] = [];
+    /** D-23: the targets searched this run. A target is searched at most once per run, whichever download asks. */
+    const searchedTargets = new Set<number>();
     /** The downloads the loop guard held this run, logged after the loop only when new (D-21). */
-    const heldDownloads: Array<{ key: string | null; meta: Record<string, unknown> }> = [];
+    const heldDownloads: HeldDownload[] = [];
 
     for (const group of groupQueueRecordsByDownload(items)) {
       const members = group.map((item) => verdicts.get(item)!);
@@ -1968,31 +2418,71 @@ export async function evaluateQueueCleanup(input: {
         continue;
       }
 
-      // bad_release — re-search every record whose target is still monitored, in one command (rule 4).
+      // bad_release — re-search every record whose target is still monitored, in one command (rule 4), except a
+      // failure the *arr took itself (D-23: its own handling or the failed-download retry searches it, once).
       // manual_match (D-13) — search only the albums that are monitored AND still missing tracks, in one
       // AlbumSearch; a record with no album is removed and blocklisted, never searched (no artist-wide search).
+      // Either way a target this run already searched is not searched again (D-23).
       try {
         const searchable = new Set(
           wanted === 'manual_match'
             ? await manualMatchSearchTargets(client, members.map((m) => m.item))
-            : await client.monitoredTargets(members.map((m) => m.item)),
+            : await badReleaseSearchTargets(client, members.map((m) => m.item)),
         );
-        if (searchable.size > 0) {
-          const toSearch = members.filter((m) => searchable.has(m.item)).map((m) => m.item);
+        const toSearch = members
+          .map((m) => m.item)
+          .filter((i) => searchable.has(i) && !(i.targetId != null && searchedTargets.has(i.targetId)));
+        if (toSearch.length > 0) {
           await client.searchTargets(toSearch);
-          searchedDownloads.push(toSearch);
+          for (const i of toSearch) if (i.targetId != null) searchedTargets.add(i.targetId);
+          searchedDownloads.push({
+            downloadId: toSearch[0]!.downloadId,
+            title: toSearch[0]!.title,
+            actionClass: members[0]!.actionClass,
+            targetIds: distinctIds(toSearch.map((i) => i.targetId)),
+          });
         }
+        const searched = new Set(toSearch);
         for (const m of members) {
-          results.set(
-            m.item,
-            result(searchable.has(m.item) ? 'blocklisted_searched' : 'removed_blocklisted', 'done'),
-          );
+          results.set(m.item, result(searched.has(m.item) ? 'blocklisted_searched' : 'removed_blocklisted', 'done'));
         }
       } catch (err) {
         // The removal landed; only the check or the search failed — the row must not hide the removal.
         setAll(result('removed_blocklisted', 'error', errMsg(err)));
         report.errors += 1;
       }
+    }
+
+    // 2c. The failed-download retry (ADR-098, D-24): Sonarr's and Radarr's failed downloads, searched once each by the
+    //     janitor within the loop guard's budget, under the instance's bad_release cell. Its rows follow the queue's.
+    const retry = client.failedDownloads
+      ? await retryFailedDownloads({
+          db,
+          instance,
+          source: client.failedDownloads,
+          mode: queueCleanupCellMode(config, instance, 'bad_release'),
+          now,
+          slots: Math.max(0, config.maxActionsPerRun - actionsTaken),
+          queued: items
+            .filter((i) => {
+              const r = results.get(i);
+              const removed =
+                r !== undefined &&
+                (r.action === 'skipped_gone' ||
+                  ((r.action === 'removed_blocklisted' || r.action === 'blocklisted_searched') &&
+                    (r.outcome === 'done' || r.outcome === 'error')));
+              return !removed;
+            })
+            .map((i) => ({ downloadId: i.downloadId, targetId: i.targetId ?? null })),
+          searchedTargets,
+          logger: input.logger,
+        })
+      : null;
+    if (retry) {
+      actionsTaken += retry.actionsTaken;
+      report.errors += retry.errors;
+      heldDownloads.push(...retry.held);
+      searchedDownloads.push(...retry.searched);
     }
 
     // 2a. The held-download signal (D-13, D-21): a download the loop guard holds logs when it is new this run, not on
@@ -2012,20 +2502,20 @@ export async function evaluateQueueCleanup(input: {
         const prior = await priorSearchRuns(
           db,
           instance,
-          distinctIds(searchedDownloads.flat().map((i) => i.targetId)),
+          distinctIds(searchedDownloads.flatMap((d) => d.targetIds)),
           new Date(now.getTime() - REPEAT_SEARCH_WINDOW_MS),
         );
         for (const searched of searchedDownloads) {
-          const repeats = distinctIds(searched.map((i) => i.targetId))
+          const repeats = searched.targetIds
             .filter((id) => (prior.get(id) ?? 0) >= 1)
             .map((targetId) => ({ targetId, searches7d: (prior.get(targetId) ?? 0) + 1 }));
           if (repeats.length === 0) continue;
           input.logger?.warn?.(QUEUE_CLEANUP_LOOP_LOG, {
             kind: 'repeat_search',
             instance,
-            downloadId: searched[0]!.downloadId,
-            title: searched[0]!.title,
-            actionClass: verdicts.get(searched[0]!)!.actionClass,
+            downloadId: searched.downloadId,
+            title: searched.title,
+            actionClass: searched.actionClass,
             targets: repeats,
           });
         }
@@ -2055,6 +2545,13 @@ export async function evaluateQueueCleanup(input: {
       report.itemsObserved += 1;
       report.byClass[v.actionClass].observed += 1;
       if (r.outcome === 'done') report.byClass[v.actionClass].enforced += 1;
+    }
+    // 3a. One row per failed download the retry recorded (D-24), after the queue's.
+    if (retry) {
+      rows.push(...retry.rows);
+      report.itemsObserved += retry.rows.length;
+      report.byClass.bad_release.observed += retry.rows.length;
+      report.byClass.bad_release.enforced += retry.enforced;
     }
 
     report.actionsTaken = actionsTaken;

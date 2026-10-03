@@ -6,6 +6,11 @@
   source is a new write-back and needs its own ruling under hard rule 4" is answered for LazyLibrarian and Kapowarr,
   and the loop guard (C-07) extends to their `bad_release` removals, keyed by book format or volume (ADR-095 C-03,
   C-08). The janitor release block stays Lidarr only. This is a status note only.
+- **Superseded in part by:** [ADR-098](098-janitor-retries-failed-downloads-capped.md) (2026-10-03): the loop guard
+  (C-07) counts one budget of two tries per title across every janitor search (`bad_release` on all three *arrs,
+  `manual_match`, and the failed-download retry), so an earlier `bad_release` removal of an album counts toward its
+  `manual_match` hold, and tries count for a rolling 30 days, so the hold no longer lasts for ever (ADR-098 C-02).
+  This is a status note only.
 - **Date:** 2026-09-29
 - **Deciders:** Tom Haynes (two owner rulings, 2026-09-29: `manual_match` acts, with no waiting period, and is enabled
   as soon as it is deployed; "You can monitor for loops"). The release-name block is a **coordinator ruling by
