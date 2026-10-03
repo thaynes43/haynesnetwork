@@ -2,8 +2,10 @@
 
 - **Status:** Draft (backend vertical shipped; **UX shipped 2026-07-06** — D-09 records the
   as-built; **pending tables → poster walls 2026-07-07**, see the D-09 amendment)
-- **Last updated:** 2026-09-14 (errata — releasing protection is the ADR-014 two-step on all three
-  surfaces; saving stays one tap. Prior: 2026-07-09 — Maintainerr aging-invariant safeguard,
+- **Last updated:** 2026-10-03 (ADR-096 — the wall tap-toggle flips only on the server's answer,
+  shows a busy ring meanwhile and marks a failed tap on the tile; D-09 amendment. Prior: 2026-09-14
+  errata — releasing protection is the ADR-014 two-step on all three surfaces; saving stays one tap.
+  Earlier: 2026-07-09 — Maintainerr aging-invariant safeguard,
   ADR-036 / incident; D-12 build C — watch indicators never occupy the action corner; every tile
   stays saveable)
 - **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): Trash
@@ -273,13 +275,20 @@ session's `sectionPermissions.trash ≠ disabled` (no-row default is _disabled_ 
   > **Movies · TV · Recently Deleted · Activity** (Batches folded into the kind tabs — ADR-033).
   > **Further amended 2026-07-08 (D-10):** a leading **Overview** tab is prepended and becomes the
   > **default landing** (superseding default-Movies); Movies/TV gain count badges.
+  >
+  > **Amended 2026-10-03 (ADR-096, owner report):** the tap-toggle is no longer optimistic on any
+  > wall. `usePendingSaves` (`components/pending-wall.tsx`) records 'saved'/'unsaved' only from a
+  > successful `saveExclusion`/`removeExclusion`; while the request is out the tile keeps its glyph
+  > and shows the busy ring ("Saving <title>…"), and a failed tap keeps the glyph, gets the danger
+  > ring and the "Not saved" / "Still saved" meta note, and the wall's error line names the title.
+  > Same pure rules as the batch wall (`lib/wall-taps.ts`, DESIGN-011 D-07 amendment 2026-10-03).
 - **Shield (Save/whitelist, R-83):** a plain accent toggle (protective + reversible — ADR-014's
   two-step is reserved for destructive), constant footprint both states (ADR-015). The `dnd` tag only
   lands on the next *arr sync, but the pending read now ORs the LIVE Maintainerr exclusion set into
   `protectedByExclusion` (2026-07-06 live fix), so an exclusion made in ANY session — or outside the
   app entirely — reads Protected immediately; there is no cross-session lag to paper over. The
-  session-local shield override remains only as an instant optimistic echo of the current click (the
-  refetch confirms it); `protectedByTag`/`protectedByExclusion` are the durable signals. **Q-02
+  session-local shield override remains only as the echo of the current click once the server has
+  confirmed it (ADR-096, 2026-10-03; it was an instant optimistic echo before); `protectedByTag`/`protectedByExclusion` are the durable signals. **Q-02
   resolved — protect-in-context:**
   the `/library/[id]` guard panel (scheduled-delete warning + shield) renders ONLY while the
   item is in the actual pending set — `saveExclusion` needs the Maintainerr mediaServerId (a

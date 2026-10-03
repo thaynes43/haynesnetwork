@@ -1,6 +1,9 @@
 # ADR-033: Fold the Batches tab into the per-kind tabs (a batch is a property of Movies/TV)
 
 - **Status:** Accepted
+- **Superseded in part by:** [ADR-096](096-trash-walls-show-only-confirmed-saves.md) (2026-10-03) — the tap-toggle
+  is no longer "optimistic": a tile flips only on the server's answer, shows a busy ring while the request is out,
+  and marks a failed tap on the tile. Everything else here stands. This is a status note only.
 - **Date:** 2026-07-07
 - **Deciders:** Tom Haynes (owner-directed UX restructure, 2026-07-07 evening) · built by Fable 5
 

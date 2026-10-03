@@ -32,6 +32,19 @@ import {
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
 import {
+  beginWallTap,
+  confirmWallTap,
+  emptyWallTaps,
+  failWallTap,
+  shownState,
+  tapInFlight,
+  wallTapBusyLabel,
+  wallTapFailedLabel,
+  wallTapFailedNote,
+  type WallTapAction,
+  type WallTaps,
+} from '@/lib/wall-taps';
+import {
   candidatesAsOfLabel,
   daysUntil,
   deadlineCountdown,
@@ -161,7 +174,8 @@ const fromKeyFor = (kind: 'movie' | 'tv'): string => (kind === 'movie' ? 'trash-
  * owns a hook: the ADR-014 two-step that guards a protection RELEASE (2026-09-14, owner-reported
  * phantom un-save). Saving a slated `trash` tile stays ONE tap — protective and fast. Releasing —
  * `shield` (un-save) or `check` (un-protect, which removes the live exclusion) — arms first and
- * fires on a second tap inside the 3s window. `onTap` keeps PosterWall's inFlight guard.
+ * fires on a second tap inside the 3s window. `onTap` keeps PosterWall's in-flight guard, and a busy
+ * tile ignores taps until the server answers (ADR-096).
  */
 function BatchTile({
   item,
@@ -171,7 +185,8 @@ function BatchTile({
   ctx,
   fromKey,
   saverNames,
-  busy,
+  busyAction,
+  failedAction,
   onTap,
 }: {
   item: BatchItemWire;
@@ -182,23 +197,34 @@ function BatchTile({
   ctx: WallTapContext;
   fromKey: string;
   saverNames: ReadonlyMap<string, string>;
-  busy: boolean;
+  /** ADR-096 — the request this tile is waiting on (undefined = none). Its glyph holds meanwhile. */
+  busyAction: WallTapAction | undefined;
+  /** ADR-096 — what this tile's last tap tried, when it failed (undefined = no failure). */
+  failedAction: WallTapAction | undefined;
   onTap: (item: BatchItemWire) => void;
 }) {
   const tappable = tileTappable(ctx, glyph, item.savedBy);
   const release = useConfirm({ onConfirm: () => onTap(item) });
   const needsConfirm = releaseNeedsConfirm(glyph);
+  const busy = busyAction !== undefined;
   // Disarm as soon as the glyph leaves shield/check (the release landed, or the refetch reclassified
-  // the row) so a stale arm can never ride onto a tile that now SAVES on tap.
+  // the row) so a stale arm can never ride onto a tile that now SAVES on tap — and while a request is
+  // out (the glyph holds until the server answers, so it must not read as armed meanwhile).
   useEffect(() => {
-    if (!needsConfirm) release.disarm();
+    if (!needsConfirm || busy) release.disarm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needsConfirm]);
-  const armed = release.armed && needsConfirm;
+  }, [needsConfirm, busy]);
+  const armed = release.armed && needsConfirm && !busy;
   const savedByName = item.savedBy !== null ? (saverNames.get(item.savedBy) ?? null) : null;
   // ADR-093 / DESIGN-052 D-10 / D-25cn — the label, the kept tooltip ("Kept: on a watchlist") and the watchlist note,
   // derived in lib/trash-batches (unit-tested) so the tile only renders them.
   const view = batchTileView({ item, glyph, projectedSkip, tappable, savedByName, armed });
+  // ADR-096 — while a request is out the tile says so; after a failure it says what did not happen.
+  const label = busy
+    ? wallTapBusyLabel(busyAction, item.title)
+    : failedAction !== undefined
+      ? wallTapFailedLabel(failedAction, view.label)
+      : view.label;
   const rating = formatRating(ratingOrNull(item.imdbRating) ?? ratingOrNull(item.tmdbRating));
   // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone (recently watched) or muted
   // (watched a while ago); null with no watch signal. NEVER in the action corner.
@@ -217,8 +243,8 @@ function BatchTile({
         tappable,
         // A saved/protected tile reads "pressed" (kept); a slated pending tile is not pressed.
         pressed: glyph === 'shield' || glyph === 'check',
-        label: view.label,
-        title: view.title,
+        label,
+        title: label === view.label ? view.title : label,
         busy,
         armed,
         onTap: needsConfirm ? release.trigger : () => onTap(item),
@@ -237,6 +263,7 @@ function BatchTile({
       requesters={item.requesters}
       watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
       onWatchlist={view.onWatchlist}
+      failedNote={failedAction !== undefined ? wallTapFailedNote(failedAction) : null}
     />
   );
 }
@@ -253,8 +280,8 @@ interface WallRow {
   projectedSkip: boolean;
 }
 
-/** The section an item is pinned to — always from its SERVER state + pool answer, never from an
- *  optimistic override (an override must flip the glyph in place, never re-home the tile). */
+/** The section an item is pinned to — always from its SERVER state + pool answer at first sight,
+ *  never from a tap's confirmed answer (a tap flips the glyph in place, never re-homes the tile). */
 const serverSection = (item: BatchItemWire): WallSection =>
   wallSection(wallGlyph(item.state, item.inLivePool ?? null));
 
@@ -274,13 +301,12 @@ function PosterWall({
   saverNames: ReadonlyMap<string, string>;
 }) {
   const utils = trpc.useUtils();
-  // Optimistic per-tile state, reconciled with every server response (component is keyed by
-  // batchId upstream, so switching batches resets this cleanly).
-  const [overrides, setOverrides] = useState<ReadonlyMap<string, BatchItemStateName>>(
-    () => new Map(),
-  );
-  const [inFlight, setInFlight] = useState<ReadonlySet<string>>(() => new Set());
-  const [wallError, setWallError] = useState<string | null>(null);
+  // ADR-096 — per-tile tap bookkeeping (lib/wall-taps, unit-tested): the server-CONFIRMED state of
+  // each tile this session tapped, which tiles have a request out, which last tap failed, and the
+  // error line. A tile never shows a state the server has not confirmed: an in-flight save keeps
+  // the slated glyph (with the busy ring) and stays counted under Deleting until the answer lands.
+  // The component is keyed by batchId upstream, so switching batches resets this cleanly.
+  const [taps, setTaps] = useState<WallTaps<BatchItemStateName>>(() => emptyWallTaps());
   // ── PINNED section membership (DESIGN-011 D-07 amendment (a) 2026-09-19) ────────────────────
   // Each item's group is decided the FIRST time this mounted wall sees its id and is then frozen
   // for the life of the mount. Nothing downstream may recompute it: not the optimistic override,
@@ -310,61 +336,53 @@ function PosterWall({
   const unprotect = trpc.trash.batches.unprotectItem.useMutation();
   const fromKey = fromKeyFor(kind);
 
-  const effectiveState = (item: BatchItemWire): BatchItemStateName =>
-    overrides.get(item.id) ?? item.state;
-
   const tap = (item: BatchItemWire) => {
-    if (inFlight.has(item.id)) return; // one flip at a time per tile — no queued double-toggles
-    const current = effectiveState(item);
-    setInFlight((prev) => new Set(prev).add(item.id));
-    setWallError(null);
-    // Shared reconcile — the server verdict is authoritative. On an INERT tap (changed:false) `state`
-    // is the item's REAL current state; the refetch reconciles the exact server verdict.
-    const handlers = {
-      onSuccess: (res: { state: BatchItemStateName }) => {
-        setOverrides((prev) => new Map(prev).set(item.id, res.state));
-        void utils.trash.batches.get.invalidate({ batchId });
-        void utils.trash.batches.list.invalidate();
-        void utils.trash.batches.saveStats.invalidate({ batchId });
-      },
-      onError: (err: unknown) => {
-        setOverrides((prev) => {
-          const next = new Map(prev);
-          next.delete(item.id); // revert the optimistic flip
-          return next;
-        });
-        setWallError(describeMutationError(err));
-      },
-      onSettled: () => {
-        setInFlight((prev) => {
-          const next = new Set(prev);
-          next.delete(item.id);
-          return next;
-        });
-      },
-    };
+    if (tapInFlight(taps, item.id)) return; // one request at a time per tile — no queued double-toggles
+    const current = shownState(taps, item.id, item.state);
+    const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
+    // Shared settle — the server verdict is authoritative. On an INERT tap (changed:false) `state`
+    // is the item's REAL current state; the refetch reconciles the rest of the wall.
+    //
+    // Settled through the PROMISE (`mutateAsync`), never through callbacks passed to `mutate()`: the
+    // wall shares ONE mutation observer across all its tiles, and TanStack Query drops the previous
+    // call's mutate()-level callbacks the moment the next mutate() starts. Before ADR-096 a second tap
+    // while the first tile's request was out meant the first tile's answer was never applied: a failed
+    // save stayed green with no error, a successful one never confirmed. Each promise settles its own
+    // tile regardless.
+    const settle = (request: Promise<{ state: BatchItemStateName }>) =>
+      request.then(
+        (res) => {
+          setTaps((t) => confirmWallTap(t, item.id, res.state));
+          void utils.trash.batches.get.invalidate({ batchId });
+          void utils.trash.batches.list.invalidate();
+          void utils.trash.batches.saveStats.invalidate({ batchId });
+        },
+        // Nothing to roll back: the tile never left its confirmed state. Mark it and say so.
+        (err: unknown) =>
+          setTaps((t) => failWallTap(t, item.id, titleYear, describeMutationError(err))),
+      );
 
     // A `protected` (check) tile UN-PROTECTS: the server removes the live exclusion and re-classifies
     // the freed row to the slated 'pending' (owner ruling 2026-07-09 — a requester no longer lands it
-    // saved; requested is informational only). The refetch reconciles the exact verdict.
+    // saved; requested is informational only).
     if (current === 'protected') {
-      setOverrides((prev) => new Map(prev).set(item.id, 'pending'));
-      unprotect.mutate({ batchId, itemId: item.id }, handlers);
+      setTaps((t) => beginWallTap(t, item.id, 'unprotect'));
+      void settle(unprotect.mutateAsync({ batchId, itemId: item.id }));
       return;
     }
 
     const desired = current !== 'saved';
-    setOverrides((prev) => new Map(prev).set(item.id, desired ? 'saved' : 'pending'));
-    setSaved.mutate({ batchId, itemId: item.id, saved: desired }, handlers);
+    setTaps((t) => beginWallTap(t, item.id, desired ? 'save' : 'unsave'));
+    void settle(setSaved.mutateAsync({ batchId, itemId: item.id, saved: desired }));
   };
 
   const rows: WallRow[] = items.map((item) => {
-    const override = overrides.get(item.id);
-    const state = override ?? item.state;
-    // Amendment (b), last clause: an in-session optimistic override WINS over the pool projection.
+    const confirmed = taps.confirmed.has(item.id);
+    const state = shownState(taps, item.id, item.state);
+    // Amendment (b), last clause: this session's CONFIRMED tap answer wins over the pool projection.
     // A just-un-saved or just-un-protected tile must read as the slated trash-can it now is —
     // never as an inert `skip` the viewer can't tap back. `null` = "unknown", which reads slated.
-    const inLivePool = override !== undefined ? null : (item.inLivePool ?? null);
+    const inLivePool = confirmed ? null : (item.inLivePool ?? null);
     const glyph = wallGlyph(state, inLivePool);
     return {
       item,
@@ -395,7 +413,8 @@ function PosterWall({
       ctx={ctx}
       fromKey={fromKey}
       saverNames={saverNames}
-      busy={inFlight.has(row.item.id)}
+      busyAction={taps.inFlight.get(row.item.id)}
+      failedAction={taps.failed.get(row.item.id)}
       onTap={tap}
     />
   );
@@ -415,8 +434,13 @@ function PosterWall({
         {headline}
       </div>
       {/* Fixed-height error slot — an error appearing recolors the line, never shifts the wall. */}
-      <p className="bwall-error" role="alert" data-testid="wall-error">
-        {wallError ?? ''}
+      <p
+        className="bwall-error"
+        role="alert"
+        data-testid="wall-error"
+        title={taps.error ?? undefined}
+      >
+        {taps.error ?? ''}
       </p>
       {/* `batch-wall` is THE grid in both wall shapes: the slated group when the batch is open, and
           the whole untouched single grid when it is terminal (the Past-batches final report keeps
@@ -1029,7 +1053,7 @@ function FutureCandidatesWall({
   const asOf = candidatesAsOfLabel(pages[0]?.refreshedAt ?? null);
   const refreshing = q.isPlaceholderData && q.isFetching;
 
-  const { overrides, busy, error, toggle } = usePendingSaves(kind);
+  const { overrides, busy, failed, error, toggle } = usePendingSaves(kind);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const canLoadMore = q.hasNextPage === true && !q.isFetchingNextPage && !q.isPlaceholderData;
   useInfiniteScroll(sentinelRef, canLoadMore, () => void q.fetchNextPage());
@@ -1044,7 +1068,12 @@ function FutureCandidatesWall({
         Potential in future batches ({total}) — eligible for the next batch
         {canSave ? '; tap a poster to save it out' : ''}.{asOf !== null ? ` ${asOf}.` : ''}
       </p>
-      <p className="bwall-error" role="alert" data-testid="future-wall-error">
+      <p
+        className="bwall-error"
+        role="alert"
+        data-testid="future-wall-error"
+        title={error ?? undefined}
+      >
         {error ?? ''}
       </p>
       <PendingWall
@@ -1053,6 +1082,7 @@ function FutureCandidatesWall({
         fromKey={fromKey}
         overrides={overrides}
         busy={busy}
+        failed={failed}
         canSave={canSave}
         canUnsave={canUnsave}
         onToggle={toggle}
