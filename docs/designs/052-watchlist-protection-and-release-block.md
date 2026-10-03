@@ -1255,6 +1255,9 @@ clear    otherwise (a title no Plex library is matched to is judged on its impor
 - **The batch wall:** a kept row's tooltip names the reason in the D-10 language, "Kept: added or upgraded recently".
   No new UI.
 - **Expedite is not covered** (both scopes): an admin's deliberate delete still runs the guardian only. Q-14.
+- **The pending walls are unchanged:** a recent title is still in the Maintainerr pool, so the kind tab's pending
+  wall and its "future batches" strip still list it; only proposal and deletion skip it. Q-14 asks about the walls
+  together with Expedite.
 - **The Maintainerr rules stay as they are** (requirement 3 of the ruling's work order, optional): Maintainerr reads
   only HaynesOps' date added, and its Radarr dates carry the rebuild, so no rule clause can express the guard
   without emptying the pool. The app check is the guarantee.
@@ -1410,4 +1413,4 @@ carried and re-stamped.
 | Q-11 | The remediation releases were inferred by size from a copy of the legacy HaynesTower SAB history; Terrifier's ledger year (2018) differs from its release's (2016). | **Answered (PLAN-072 S8, 2026-09-28):** the live legacy SAB histories were re-read read-only and the names confirmed by size (0.969 of the download) with tmdb 1097549 (Babygirl), 420634 (Terrifier) and 974573 (Another Simple Favor); the manual terms took the *arr's years too (Terrifier `(?:2016|2018)`). Silent Night (2023) has no release in any of the five histories and stays unblockable. |
 | Q-12 | What does `releaseGroup` look like for the 163 disk-imported pool movies (how many are null, so only an exact name or nothing can be blocked)? | **Answered (PLAN-072 S6(e), D-25df):** of the 164 in the pool on 2026-09-27, 158 are disk imports and none has a null group; 156 get a group term (`low_confidence`, renamed-only) and 2 none (DVD files with no resolution token), kept `release_unrecorded`. |
 | Q-13 | If many pool items have no recordable term, may they be deleted unblocked (a re-request would then fetch the same release), or do they stay kept? | **Not asked (D-25df):** S6(e) kept 2 of 164 (1.2%), not a material share, so they stay kept (`release_unrecorded`, D-11, D-24g). It is asked if a later pool shows a material share. |
-| Q-14 | Should Expedite (item and all) honor the Age Guard (D-26)? The 2026-10-03 work order scoped it to batch build and the sweep; Expedite is an admin's deliberate delete, and covering it means a new `ExpediteVerdict`, the client mirror `previewGuardian`, its parity test and the Expedite confirm copy. | **Open**, for the owner. Until answered, Expedite runs the guardian only. |
+| Q-14 | Should Expedite (item and all) honor the Age Guard (D-26), and should the pending walls mark or hide a title inside the window? The 2026-10-03 work order scoped the guard to batch build and the sweep; Expedite is an admin's deliberate delete, and covering it means a new `ExpediteVerdict`, the client mirror `previewGuardian`, its parity test and the Expedite confirm copy; a wall note is new UI. | **Open**, for the owner. Until answered, Expedite runs the guardian only. |
