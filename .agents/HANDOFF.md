@@ -4,6 +4,36 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-03 (evening) — v0.105.0 and v0.105.1 live; the post-deploy steps are done
+
+- **v0.105.0** (age guard #641 / migration 0086, title exclusions #643 / 0087, janitor retry #647, plus #640, #645,
+  #648, #649) deployed by haynes-ops #3326; **v0.105.1** (#650 Expedite and pending walls honor the Age Guard, #651 a
+  Fix makes one search, #652 durable Trash saves / ADR-099 / 0088) by haynes-ops #3327. 3/3 pods on v0.105.1, no
+  restarts, 88 migrations applied, `/api/health` 200.
+- **Age Guard prerequisite (DESIGN-052 D-26):** a manual plex-match run stamped every row
+  (`plex_added_at` null: 0 of 16,817). A read query with D-26's rules over the open movie batch (expires 2026-10-04
+  23:17 EDT) gives exactly four `recent`: Troll, The Babysitter: Killer Queen, Ponyboi, Fool's Gold; 46 `clear`.
+- **Title-exclusion backfill (D-28):** done, totals in the ADR-097 entry below.
+- **Redownload off (OPS-018 §2):** Sonarr and Radarr `autoRedownloadFailed` true → false at 21:25:26Z, right after
+  the 21:25 janitor run (the rest of each config object unchanged; Lidarr still true). The 21:25 run (Redownload still
+  on) recorded one Radarr failure with `arrRetries: true`, `searched: 0`; Radarr's own redownload re-grabbed and
+  imported it. The 22:25 run had no new Sonarr/Radarr failure, so it read nothing and logged no
+  `failed downloads` line (the setting is read only when there is a fresh failure).
+  **Owed:** check the first real retry after a natural failure: Loki
+  `{namespace="frontend", app="haynesnetwork"} |= "queue-cleanup failed downloads"` must show `"arrRetries":false`
+  and `searched` ≤ the failures; the retry row (OPS-018 §3 SQL) is `blocklisted_searched` / `done`, at most one per
+  title per run. Record it in PLAN-065's ladder log.
+- **Durable saves (ADR-099):** every open save intent is stamped confirmed by 0088 (130 of 130, 0 pending). The 22:15
+  incremental run's keeper relink stage logged `scanned: 1, failed: 0`; it printed no `trash save keeper` line,
+  which it does only when a save is pending or a poster was tidied. How Stella Got Her Groove Back (Maintainerr
+  9565) is still `saved` in the open batch, its intent is open, and Maintainerr holds its global exclusion
+  (`ruleGroupId: null`).
+- **Fix with Redownload off (DESIGN-005 D-25):** with `autoRedownloadFailed` false, `arrSearchesAfterMarkFailed`
+  returns false, so a Sonarr/Radarr Fix sends its own one search (covered by `fix.test.ts`). Verified by reading
+  the code; no Fix has run since 2026-07-29.
+- **e2e:** the v0.105.1 release PR's advisory e2e failed in `trash.spec` (Green-light stayed on "Admin review").
+  The same code passed e2e on both main pushes. Tracked as issue #654.
+
 ## ▶ 2026-10-03 — Janitor: one search budget per title; the failed-download retry (ADR-098)
 
 **Owner ruling (2026-10-03, "App retries, capped"):** hitting an indexer twice for the same thing is very bad. Sonarr's
@@ -14,8 +44,8 @@ tries per title in any 30 days, hourly. Evidence: the 2026-10-02 Paw Patrol run 
   `bad_release` on all three *arrs, with one budget across every janitor search; one search per target per run; the
   queue path never searches a download the *arr failed itself; the failed-download retry on Sonarr and Radarr rides
   their `bad_release` cells (no new cell, no migration, ladder stays L2).
-- **Coordinator, after the deploy:** turn off Redownload in Sonarr and Radarr right after a janitor run (OPS-018 §2),
-  then log it in PLAN-065's ladder log. Until then the retry only observes.
+- **Done 2026-10-03 (v0.105.0):** Redownload turned off in Sonarr and Radarr at 21:25:26Z, 19 s after the 21:25 janitor
+  run finished (OPS-018 §2; Lidarr left on). Logged in PLAN-065's ladder log.
 - **Q-08 answered (owner, "Reset after 30 days"):** two tries per title in any rolling 30 days, every loop guard (D-23
   rule 7). Issue #646 (a Fix searched twice) is closed by DESIGN-005 D-25: a Fix reads Redownload Failed and
   searches only when the *arr will not.
@@ -31,9 +61,10 @@ no special Trash handling.
   Radarr's (tmdb id) or Sonarr's (tvdb id) import-list exclusion list, read back and audited
   (`trash_title_exclusions`, migration 0087), after identity and before Phase A of every Trash delete; a failure
   pauses the sweep (`release_block` / `exclusion`) and nothing is deleted. ADR-097, DESIGN-052 D-27 / D-28, PRD R-260.
-- **Open until done: the one-off backfill** (DESIGN-052 D-28, OPS-017 §7), after the release that carries it is
-  deployed: `title-exclusion-backfill.ts --dry-run`, compare with the 2026-10-03 counts (Radarr: to exclude 324, 33
-  present left out, 86 already excluded; Sonarr: to exclude 13), then `--apply`, then record the written totals here.
+- **Backfill done 2026-10-03 on v0.105.0** (DESIGN-052 D-28, OPS-017 §7): the dry run matched the PR's counts exactly
+  (Radarr 443 / 33 present / 86 already excluded / 324 to exclude; Sonarr 13 to exclude), `--apply` wrote **324 Radarr
+  + 13 Sonarr**, 0 failures. Read back: Radarr's exclusion list 88 → 412, Sonarr's 55 → 68, `trash_title_exclusions`
+  337 rows (`origin = 'backfill'`); a second dry run shows 0 to exclude on both.
 
 ## ▶ 2026-09-29 (later) — Queue janitor at L2 and suite-wide (v0.104.1); LazyLibrarian library repaired
 
