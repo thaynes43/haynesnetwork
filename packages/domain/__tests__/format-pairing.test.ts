@@ -688,6 +688,38 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
       expect(want!.lastSearchedAt).not.toBeNull();
     });
 
+    it('searches per FORMAT within a run: a second want flipping the OTHER format of the same book is still searched', async () => {
+      // Two distinct anchors (an ebook and an audiobook of different works) that both reuse llBookId gb-x.
+      await seedItem({ title: 'Alpha Saga', author: 'Ann Author', mediaKind: 'book' });
+      await seedItem({ title: 'Beta Tale', author: 'Bob Writer', mediaKind: 'audiobook' });
+      const user = await createUser(t.db);
+      const [integ] = await t.db
+        .insert(userIntegrations)
+        .values({ userId: user.id, provider: 'goodreads', externalUserId: '1', status: 'linked' })
+        .returning({ id: userIntegrations.id });
+      for (const [i, [title, author]] of (
+        [
+          ['Alpha Saga', 'Ann Author'],
+          ['Beta Tale', 'Bob Writer'],
+        ] as const
+      ).entries()) {
+        const [shelf] = await t.db
+          .insert(integrationShelfItems)
+          .values({ integrationId: integ!.id, shelf: 'to-read', externalBookId: `gr-${i}`, title })
+          .returning({ id: integrationShelfItems.id });
+        await t.db
+          .insert(bookRequests)
+          .values({ integrationId: integ!.id, shelfItemId: shelf!.id, title, author, llBookId: 'gb-x' });
+      }
+      const ll = stubLl(() => null);
+      const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
+      expect(run.pushed).toBe(2);
+      expect(ll.calls.filter((c) => c.cmd === 'searchBook').map((c) => c.format).sort()).toEqual([
+        'audiobook',
+        'ebook',
+      ]);
+    });
+
     it('searches normally when the earlier search is older than the hour window', async () => {
       await seedShelfRequestSearched(minutesAgo(180));
       const ll = stubLl((id) => (id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: 'Wanted' } : null));

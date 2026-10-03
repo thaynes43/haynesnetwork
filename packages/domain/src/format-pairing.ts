@@ -760,6 +760,13 @@ export async function mintPairingWants(
         await input.ll.write.searchBook(llBookId, missing);
         input.onSearched?.(llBookId, missing);
         await stampRequestsSearched(input.db, [row.id], now);
+      } else {
+        log.info?.('ll_search_skipped_covered', {
+          site: 'format-pairing.mint-push',
+          requestId: row.id,
+          llBookId,
+          formats: [missing],
+        });
       }
       await markPairingWantPushed({
         db: input.db,
@@ -855,12 +862,18 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
   // wants on one llBookId); `recent` is what OTHER jobs searched within the hour (their `last_searched_at`
   // stamps — goodreads-sync, collection force-search run as separate cron jobs). A recent search only
   // covers a format LL already shows as Wanted: a format we are about to flip is always searched.
-  const searchedThisRun = new Set<string>();
+  const searchedThisRun = new Map<string, Set<'ebook' | 'audiobook'>>();
   const recent = input.ll ? await recentlySearchedLlBookIds(input.db, now) : new Set<string>();
   const shouldSearch = (llBookId: string, format: 'ebook' | 'audiobook'): boolean =>
-    !searchedThisRun.has(llBookId) &&
+    // Per FORMAT: a search this run covered only the formats that were queued when it fired, so a different
+    // format flipped to Wanted afterwards (a second want, or the Skipped sweep) is still searched.
+    !searchedThisRun.get(llBookId)?.has(format) &&
     !llRecentSearchCovers(recent, llBookId, seatedMap?.get(llBookId), [format]);
-  const onSearched = (llBookId: string): void => void searchedThisRun.add(llBookId);
+  const onSearched = (llBookId: string, format: 'ebook' | 'audiobook'): void => {
+    const covered = searchedThisRun.get(llBookId) ?? new Set<'ebook' | 'audiobook'>();
+    covered.add(format);
+    searchedThisRun.set(llBookId, covered);
+  };
 
   const mint = await mintPairingWants({
     ...input,
@@ -917,7 +930,14 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
           await input.ll.write.queueBook(want.llBookId!, missing);
           if (shouldSearch(want.llBookId!, missing)) {
             await input.ll.write.searchBook(want.llBookId!, missing);
-            onSearched(want.llBookId!);
+            onSearched(want.llBookId!, missing);
+          } else {
+            log.info?.('ll_search_skipped_covered', {
+              site: 'format-pairing.skipped-sweep',
+              requestId: want.id,
+              llBookId: want.llBookId,
+              formats: [missing],
+            });
           }
           await stampRequestsSearched(input.db, [want.id], now);
           await markRequestFormatsRequeued({

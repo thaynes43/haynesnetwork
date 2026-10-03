@@ -203,7 +203,14 @@ export async function syncGoodreadsIntegration(
     status?: LlHeldSignals,
   ): Promise<void> => {
     if (!needsSearch(llBookId, formats)) return;
-    if (llRecentSearchCovers(recentSearched, llBookId, status, formats)) return;
+    if (llRecentSearchCovers(recentSearched, llBookId, status, formats)) {
+      log.info?.('ll_search_skipped_covered', {
+        site: 'goodreads-sync.recent-search',
+        llBookId,
+        formats: [...formats],
+      });
+      return;
+    }
     // `type` is ignored by LL (see above); the first format rides along only to keep the wire shape.
     await ll.write.searchBook(llBookId, formats[0]!);
     const covered = searchCovered.get(llBookId) ?? new Set();

@@ -250,7 +250,7 @@ goodreads shelf request**, and `format-pairing` is its own cron job, so the same
 searched here minutes after goodreads-sync or the collection force-search searched it.
 
 The mint push and the Skipped sweep now ask `shouldSearch(llBookId, format)` before `searchBook`: false when
-the book was already searched this run (a shared set across the mint and the sweep), or when any request row
+the book was already searched this run (a shared per-format map across the mint and the sweep), or when any request row
 for it has a `last_searched_at` within the hour **and** the pre-run `getAllBooks` snapshot already shows the
 missing format as `Wanted` (the recent search covered it). A format the push is flipping from `Requested` is
 always searched. `queueBook` is unchanged. Every search the pairing leg fires stamps `last_searched_at` on

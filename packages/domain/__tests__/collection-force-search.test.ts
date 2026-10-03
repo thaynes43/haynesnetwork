@@ -277,11 +277,16 @@ describe('forceSearchFindMissingCollections — the cron acquisition leg', () =>
       ll: ll2.bundle,
       pacer: noPace,
     });
-    expect(report.searched).toBe(1);
+    expect(report).toMatchObject({ searched: 0, skippedRecent: 1, failed: 0 });
     expect(ll2.calls.filter((c) => c.step === 'searchBook')).toHaveLength(0);
-    // The row is still stamped and audited — its cooldown and intent record are unchanged.
+    // The row is stamped (the cooldown settles it) but NOT audited: nothing was asked of LL by this pass.
     const rows = await t.db.select().from(bookRequests).where(eq(bookRequests.collectionId, second));
     expect(rows[0]!.lastSearchedAt).not.toBeNull();
+    const audits = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.action, 'request_book_search'));
+    expect(audits).toHaveLength(1); // only the first run's real search
   });
 
   it('is IDEMPOTENT via the cooldown — a want searched within the window is skipped next run', async () => {

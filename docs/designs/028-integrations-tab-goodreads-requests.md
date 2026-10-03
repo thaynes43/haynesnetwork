@@ -382,8 +382,12 @@ cannot share the in-memory coverage map above. They share `book_requests.last_se
   would search as raw `Wanted`. That condition is what makes the skip safe: a search covers exactly the
   formats that were `Wanted` when it ran, so a format the leg is about to flip to `Wanted` (the common
   pairing case, where the missing format is `Requested`) is never skipped. The on-demand collection Force
-  Search never skips — the caller asked for the search now.
-- **`format-pairing`** also shares a per-run set between the mint push and the Skipped sweep (one search per
-  book per run, including two wants that reuse one `llBookId`).
+  Search never skips — the caller asked for the search now. A skip is logged as `ll_search_skipped_covered`.
+  In the collection force-search the rows a recent search covered are stamped (the cooldown settles them)
+  but **not audited and not counted as `searched`** — nothing was asked of LL by that pass — and are
+  reported as `skippedRecent`.
+- **`format-pairing`** also shares a per-run, per-format coverage map between the mint push and the Skipped
+  sweep (one search per book and format per run, including two wants that reuse one `llBookId`; a second
+  want flipping the OTHER format is still searched).
 - An LL read failure leaves the status map empty, so nothing is ever treated as covered: the rule may only
   remove a call, never add one.
