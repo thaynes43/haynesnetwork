@@ -1686,9 +1686,11 @@ async function expireOneBatch(input: {
   // D-14 steps 4..5 — through the seam Expedite shares (`recordAndBlockReleases`): the identity of each survivor's
   // release (D-11); three consecutive *arr read failures mean the *arr is down, so the sweep aborts before Phase A
   // (nothing recorded, nothing deleted; the batch stays leaving_soon). A single failure, or a survivor with no
-  // recordable term, is KEPT `release_unrecorded` (no term, no delete); it comes back later. Then Phase A, before any
-  // delete: every survivor recorded `in_flight`, the Release Block written and read back. A failure throws
-  // ReleaseBlockError (the records are abandoned; nothing is claimed) — the sweep pauses.
+  // recordable term, is KEPT `release_unrecorded` (no term, no delete); it comes back later. Then the Title Exclusion
+  // (ADR-096 / D-26: each survivor's title on the *arr's import-list exclusion list, read back) and Phase A, before any
+  // delete: every survivor recorded `in_flight`, the Release Block written and read back. A failure of either throws
+  // ReleaseBlockError (step `exclusion`, or the profile's step with the records abandoned; nothing is claimed) — the
+  // sweep pauses.
   const byKey = new Map(survivors.map((s) => [s.item.id, s] as const));
   const blocked = await recordAndBlockReleases({
     db: input.db,
@@ -1698,6 +1700,8 @@ async function expireOneBatch(input: {
       // A survivor passed the guardian, which keeps every item with no ledger row (`unevaluable`).
       mediaItemId: s.fresh.mediaItemId as string,
       title: s.item.title,
+      // ADR-096 / D-26 — the Title Exclusion's audit row names the batch item it was written for.
+      batchItemId: s.item.id,
     })),
     origin: 'sweep',
     logger: input.logger,

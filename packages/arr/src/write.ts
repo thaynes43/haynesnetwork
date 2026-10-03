@@ -1,7 +1,8 @@
 // @hnet/arr/write — the WRITE surface (DESIGN-005 D-03 write table, D-18 entrypoint
 // split). ADR-008: the ONLY sanctioned *arr write-backs are Fix (mark-failed / delete /
 // search) and Restore (add-item / create-tag), plus the later ruled additions (the ADR-083 queue janitor; the
-// ADR-093 Release Block profile and Seerr watchlist enrollment; the ADR-094 janitor release block on Lidarr). This
+// ADR-093 Release Block profile and Seerr watchlist enrollment; the ADR-094 janitor release block on Lidarr; the ADR-096
+// title exclusion on Radarr and Sonarr). This
 // entrypoint may be imported ONLY by
 // packages/domain — enforced by the D-12 guard test. Exercised exclusively via fetch stubs in tests.
 import { assertArrEnv, type ArrEnvConfig } from './config';
@@ -11,6 +12,9 @@ import { maintainerrReturnStatusSchema } from './schemas/maintainerr';
 import {
   arrReleaseProfileSchema,
   lidarrReleaseProfileSchema,
+  radarrImportListExclusionSchema,
+  sonarrImportListExclusionSchema,
+  type ArrImportListExclusion,
   seerrSonarrServerSummarySchema,
   seerrUserWatchlistSyncSchema,
   type ArrReleaseProfile,
@@ -229,6 +233,18 @@ export class SonarrWriteClient extends ReleaseProfileWriteClient {
   addSeries(payload: AddSeriesPayload): Promise<SonarrSeries> {
     return this.http.requestJson('POST', 'series', sonarrSeriesSchema, { body: payload });
   }
+
+  /**
+   * ADR-096 / DESIGN-052 D-26 — the TITLE EXCLUSION: `POST /importlistexclusion {tvdbId, title}` (Sonarr 4.0.20
+   * `ImportListExclusionController`, answered 201 with the created resource). Sonarr's validator refuses a tvdb id that
+   * is already excluded (400), so the domain writer reads the list first and only sends what is missing. Hard rule 4:
+   * the only exclusion write; it never deletes or edits an exclusion.
+   */
+  addImportListExclusion(input: { tvdbId: number; title: string }): Promise<ArrImportListExclusion> {
+    return this.http.requestJson('POST', 'importlistexclusion', sonarrImportListExclusionSchema, {
+      body: { tvdbId: input.tvdbId, title: input.title },
+    });
+  }
 }
 
 /** Radarr v3 write client. */
@@ -258,6 +274,23 @@ export class RadarrWriteClient extends ReleaseProfileWriteClient {
   /** `POST /movie` — Restore re-add (D-16). */
   addMovie(payload: AddMoviePayload): Promise<RadarrMovie> {
     return this.http.requestJson('POST', 'movie', radarrMovieSchema, { body: payload });
+  }
+
+  /**
+   * ADR-096 / DESIGN-052 D-26 — the TITLE EXCLUSION: `POST /exclusions {tmdbId, movieTitle, movieYear}` (Radarr 6.4.4
+   * `ImportListExclusionController`, answered 201 with the created resource; `movieYear` must be 0 or more, so an
+   * unknown year is sent as 0). Radarr's validator refuses a tmdb id that is already excluded (400), so the domain
+   * writer reads the list first and only sends what is missing. Hard rule 4: the only exclusion write; it never deletes
+   * or edits an exclusion.
+   */
+  addImportListExclusion(input: {
+    tmdbId: number;
+    title: string;
+    year: number | null;
+  }): Promise<ArrImportListExclusion> {
+    return this.http.requestJson('POST', 'exclusions', radarrImportListExclusionSchema, {
+      body: { tmdbId: input.tmdbId, movieTitle: input.title, movieYear: input.year ?? 0 },
+    });
   }
 }
 

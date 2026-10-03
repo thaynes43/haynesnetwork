@@ -213,6 +213,10 @@ e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub O
   src/scripts/seerr-watchlist.ts --show`, `--enroll=2` (then re-run `--mode=watchlist-registry`: the stub Seerr's
   `settings/main` flags flip), `--enroll=off`, `--anime-tags=0:1`. The Rules tab's Disarm / Arm now sends
   `listExclusions` / `forceSeerr` back; the stub Maintainerr stores them the way Maintainerr 3.29.0 does.
+  ADR-096 / DESIGN-052 D-26: every Expedite or sweep delete first puts the title on the stub's import-list exclusion
+  list (`GET <stub-arr>/_stub/import-list-exclusions` shows `{radarr, sonarr}`; `trash_title_exclusions` holds the
+  audit rows), and the backfill runs the same way as the seed: `… tsx src/scripts/title-exclusion-backfill.ts
+  --dry-run` (then `--apply`).
 - **Public MCP connectors** (ADR-091 / DESIGN-050; PLAN-069). `POST /mcp` takes only delegated OAuth
   tokens; a local client can walk the whole flow against the stub OIDC with curl alone (verified 2026-09-23,
   port 3200 — substitute yours). Type `plex-linked-owner-id` at the `dev:local` terminal first (or `POST

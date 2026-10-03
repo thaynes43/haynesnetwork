@@ -4,6 +4,21 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-03 — Trash-deleted titles are excluded from automation (ADR-096)
+
+**Owner rulings (2026-10-03):** "Block automation only": a title deleted through Trash must never be re-added by
+Kometa or an import list; a person's Seerr request still can, and the Release Block still stops the exact release.
+Backfill approved. The 29 Kometa re-adds and 3 Seerr re-requests already back are **kept** as fresh downloads, with
+no special Trash handling.
+
+- **Built (feat/trash-title-exclusions):** the app's own single writer `ensureTitleExclusions` puts each title on
+  Radarr's (tmdb id) or Sonarr's (tvdb id) import-list exclusion list, read back and audited
+  (`trash_title_exclusions`, migration 0086), after identity and before Phase A of every Trash delete; a failure
+  pauses the sweep (`release_block` / `exclusion`) and nothing is deleted. ADR-096, DESIGN-052 D-26 / D-27, PRD R-260.
+- **Open until done: the one-off backfill** (DESIGN-052 D-27, OPS-017 §7), after the release that carries it is
+  deployed: `title-exclusion-backfill.ts --dry-run`, compare with the 2026-10-03 counts (Radarr: to exclude 324, 33
+  present left out, 86 already excluded; Sonarr: to exclude 13), then `--apply`, then record the written totals here.
+
 ## ▶ 2026-09-29 (later) — Queue janitor at L2 and suite-wide (v0.104.1); LazyLibrarian library repaired
 
 **Owner direction (2026-09-29):** no waiting on self-imposed calendars; promote on evidence the same day; the
