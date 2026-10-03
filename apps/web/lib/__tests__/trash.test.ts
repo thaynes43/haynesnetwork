@@ -196,7 +196,7 @@ describe('previewGuardian parity with @hnet/domain classifyForExpedite (ADR-086 
   });
 
   it('both sides agree a requester is informational, never a keep (the closed drift)', () => {
-    const requested = { ...base, requesters: ['manofoz'], ageGuard: 'clear' as const };
+    const requested = { ...base, requesters: ['manofoz'], ageGuard: 'clear' as const, saveIntent: false };
     expect(previewGuardian(requested)).toBe('deletable');
     expect(classifyForExpedite(requested)).toBe('deletable');
   });
