@@ -1082,6 +1082,9 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         'radarr find 1',
         'radarr files 1',
         'radarr history 1',
+        'radarr exclusion_list', // ADR-096 / D-26: the Title Exclusion, before Phase A…
+        'radarr exclusion_add 9001',
+        'radarr exclusion_list', // …and its read-back
         'radarr list', // Phase A: the profile write…
         'radarr create',
         'radarr list', // …and its read-back
@@ -1448,6 +1451,9 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
         'radarr find 1',
         'radarr files 1',
         'radarr history 1',
+        'radarr exclusion_list', // ADR-096 / D-26: the Title Exclusion first
+        'radarr exclusion_add 9001',
+        'radarr exclusion_list',
         'radarr list',
         'radarr create',
         'radarr list',

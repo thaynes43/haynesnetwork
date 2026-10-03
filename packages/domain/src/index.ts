@@ -235,4 +235,7 @@ export * from './release-block';
 export * from './release-block-seed';
 export * from './release-block-pool';
 export * from './release-block-static';
+// ADR-096 / DESIGN-052 D-26 / D-27 — the Title Exclusion (the app-written import-list exclusion before a Trash delete)
+// and its one-off backfill.
+export * from './title-exclusion';
 export * from './seerr-enroll';

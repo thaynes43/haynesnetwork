@@ -4,9 +4,11 @@
   #3223: the registry CronJob, the held sweep and web delete paths, the Loki alerts); S6..S9 fill in the live
   evidence (S6 (a)..(g) passed 2026-09-27, PLAN-072's log). Written with PLAN-072 S2 (PR #595).
 - **Scope:** operating the Watchlist Registry (`--mode=watchlist-registry` and its CronJob), the Registry Gate and the
-  paused sweep, the Release Block (the app-owned Radarr / Sonarr release profile), the re-add page, and the three
-  operator scripts: the S6(e) pool report, the S8 seed and the S9 Seerr enrollment.
-- **Normative basis:** ADR-093, DESIGN-052 (D-04, D-07, D-13, D-14, D-15, D-17, D-20, D-21, D-23, D-25), PLAN-072.
+  paused sweep, the Release Block (the app-owned Radarr / Sonarr release profile), the Title Exclusion (ADR-096: the
+  app-written import-list exclusion before every Trash delete), the re-add page, and the four operator scripts: the
+  S6(e) pool report, the S8 seed, the S9 Seerr enrollment and the ADR-096 Title Exclusion backfill.
+- **Normative basis:** ADR-093, ADR-096, DESIGN-052 (D-04, D-07, D-13, D-14, D-15, D-17, D-20, D-21, D-23, D-25,
+  D-26, D-27), PLAN-072.
 - **Repos:** this app; haynes-ops (`kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`: the CronJobs
   and the image tag; the Loki alert rules).
 
@@ -71,6 +73,7 @@ the alert rule (PLAN-072 S4) matches.
 | `release_block` | `validate` | A term failed the D-12 grammar before any write. | A code defect: nothing was written. Find the record (`[release-block] failed {arrKind, step}` and the `recorded` lines before it) and fix the derivation in a PR. |
 | `release_block` | `put` | Radarr or Sonarr refused the profile write, or did not answer. | Check the *arr is up and its key valid (`RADARR_API_KEY` / `SONARR_API_KEY` in `haynesnetwork-secret`). The next hourly sweep retries. |
 | `release_block` | `read_back` | The write answered but the profile read back without every term, or disabled. | Someone or something edited the profile. Look at it (`GET /api/v3/releaseprofile`); the next sweep rewrites it. If it keeps drifting, find the writer before resuming. |
+| `release_block` | `exclusion` | ADR-096 / D-26: the Title Exclusion could not be written and read back on Radarr or Sonarr, before Phase A; nothing was recorded, blocked or deleted. `[title-exclusion] failed {arrKind, origin, step, written}` names the *arr and the writer's step: `read` (the exclusion list GET), `write` (a POST refused or unanswered; the `written` titles before it landed and are audited), `read_back` (the list read back without a title just written), `validate` (a target without a key: a code defect). | `read` / `write`: check the *arr is up and its key valid, as for `put`; a `write` that keeps failing on one title is Radarr's or Sonarr's validator refusing it (look at the *arr's log for the POST). `read_back`: something removed the exclusion between the write and the read; look at the list (`GET /api/v3/exclusions/paged` on Radarr, `/api/v3/importlistexclusion/paged` on Sonarr). The next hourly sweep retries. |
 | `release_block` | `duplicate_profile` | Two profiles carry the managed name (a copy, or a restore). | In the *arr, delete the one that is not the older (lower id) profile, or merge their terms into it first if the copy holds terms the other lacks. The next sweep reconciles the survivor. |
 | `audit_unsafe` | `unsafe` | The Maintainerr safety audit failed (`paused_audit_unsafe`; the job also fails, as before ADR-093). | The Trash page's safety banner names the integration or the pool and its setting. For a rule pool's setting (`listExclusions`, `forceSeerr`, `arrAction` Delete, or the delete-after horizon), turn that setting back on in Maintainerr's own rule editor for that pool (its UI saves the whole rule), then re-run the sweep. The app's Rules tab only arms, disarms or deletes a rule and carries these settings over unchanged, so it cannot fix them. That holds only while an ADR-093 image runs: the older image's toggle drops `listExclusions` and `forceSeerr` (section 8). An episode pool is not held to `forceSeerr` (Maintainerr never stores it there, D-25bt). |
 | `arr` | `handle_breaker` | Three Maintainerr handles in a row failed (`aborted_arr`). | Maintainerr is down or its executor is stuck. Items already handled carry `[trash] deleted {…, records}` lines; the rest wait. |
@@ -132,7 +135,7 @@ Run it by hand once fixed (section 2); a `busy` answer means another run holds t
 
 ## 7. The operator scripts (in-cluster)
 
-All three run in the web pod, which holds the same secret and the `/sync` tree (OPS-004 §4). Each prints counts and
+All four run in the web pod, which holds the same secret and the `/sync` tree (OPS-004 §4). Each prints counts and
 library titles only.
 
 ```bash
@@ -143,6 +146,9 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/release-block-seed
 kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/release-block-seed.ts --dry-run
 # PLAN-072 S9 — Seerr enrollment and the anime tags
 kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/seerr-watchlist.ts --show
+# ADR-096 / DESIGN-052 D-27 — the Title Exclusion backfill: always --dry-run first, then --apply
+kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/title-exclusion-backfill.ts --dry-run
+kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/title-exclusion-backfill.ts --apply
 ```
 
 - **`--pool`** prints, per kind, the pool size, the items recordable and their records by shape (`group` / `exact` /
@@ -158,6 +164,19 @@ kubectl -n frontend exec $POD -c app -- tsx /sync/src/scripts/seerr-watchlist.ts
   committed. Copy it into the pod for the run and delete it after:
   `kubectl -n frontend cp ./sab.tsv <pod>:/tmp/sab.tsv -c app`, run with `--legacy-sab=/tmp/sab.tsv`, then
   `kubectl -n frontend exec <pod> -c app -- rm /tmp/sab.tsv`. The same holds for a `--manual` file.
+- **`title-exclusion-backfill.ts`** (ADR-096, D-27; one-off, after the release that carries it is deployed) adds a
+  Radarr or Sonarr import-list exclusion for every title Trash deleted, so Kometa and the import lists never add it
+  again. It leaves out a title the *arr has in its library now (re-added since; the owner keeps those, 2026-10-03)
+  and one already excluded. `--dry-run` reads only (the database, `GET /movie`, `GET /series`, both exclusion lists)
+  and prints, per *arr, `population`, `present`, `alreadyExcluded`, `noKey` and `toExclude`, plus `presentTitles`
+  and `noKeyTitles` by name. Compare it with the counts of 2026-10-03 (Radarr: population 443, present 33, already
+  excluded 86, to exclude 324; Sonarr: population 13, to exclude 13); a much larger `toExclude` means the library read
+  came back short, so stop. Then `--apply` (it writes; `declare-activity` is not needed, nothing is deleted): 25
+  titles per transaction, each read back and audited in `trash_title_exclusions` (`origin` `backfill`). It exits 1
+  when a chunk failed (`failed` names the step, as in section 3's `exclusion` row); run it again once fixed, it
+  picks up the rest. A second complete `--apply` writes nothing. Check after: the exclusion counts on the Watchlists
+  card grow by the written totals, and `SELECT arr_kind, count(*) FROM trash_title_exclusions WHERE origin =
+  'backfill' GROUP BY 1` matches the report.
 - **`seerr-watchlist.ts`**: `--enroll=<id>` for the canary, `--enroll=all` after it, `--enroll=off` to stop new
   enrollments (it never turns a user's sync off); `--anime-tags=<serverId>:<tagIds>` once, read back. Every
   `--enroll` is an audited setting write. `--show` prints `enrolled`, `alreadyOn`, `optedOut` and `pending` (a write
@@ -191,3 +210,10 @@ turns the first two off, and the older safety audit does not check them, so noth
 the sweep resumes, read `GET /api/collections` on Maintainerr: every active rule pool needs `listExclusions: true`,
 `arrAction` 0 and, unless it is an episode pool, `forceSeerr: true`; Leaving Soon needs `arrAction` 4. Fix any that
 is off in Maintainerr's rule editor first.
+
+**ADR-096 (the Title Exclusion).** Rolling back to an image without it stops the app writing the exclusion before a
+delete; Maintainerr's own `listExclusions` still writes it after the delete (the older audit requires it too, ADR-093
+C-10), so automation stays blocked from then on, with a short window between Maintainerr's delete and its exclusion.
+Leave the exclusions in Radarr and Sonarr (the ruling is that automation never re-adds a Trash-deleted title); the
+older image never reads `trash_title_exclusions` (migration 0086 is additive; drop the table only after no running
+image writes it).

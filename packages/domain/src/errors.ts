@@ -350,8 +350,31 @@ export class JanitorReleaseBlockError extends Error {
 }
 
 /** DESIGN-052 D-13 / D-21 — where the Release Block writer failed: a term outside the grammar (`validate`), the
- *  profile write (`put`, including its GET), the read-back (`read_back`), or a copied profile (`duplicate_profile`). */
-export type ReleaseBlockStep = 'validate' | 'put' | 'read_back' | 'duplicate_profile';
+ *  profile write (`put`, including its GET), the read-back (`read_back`), or a copied profile (`duplicate_profile`).
+ *  ADR-096 / D-26 adds `exclusion`: the Title Exclusion before Phase A could not be written and read back (the
+ *  TitleExclusionError is the cause; nothing was recorded or deleted, and no profile was touched). */
+export type ReleaseBlockStep = 'validate' | 'put' | 'read_back' | 'duplicate_profile' | 'exclusion';
+
+/** ADR-096 / DESIGN-052 D-26 — where the Title Exclusion writer failed: a target without the *arr's key or a title
+ *  (`validate`), the exclusion list read (`read`), a `POST` (`write`), or the read-back (`read_back`). */
+export type TitleExclusionStep = 'validate' | 'read' | 'write' | 'read_back';
+
+/**
+ * ADR-096 / DESIGN-052 D-26: the import-list exclusion of a title Trash is about to delete could not be written and read
+ * back on Radarr or Sonarr. On the delete paths it becomes a ReleaseBlockError with step `exclusion` (the sweep pauses,
+ * Expedite refuses; nothing is deleted); the backfill stops that *arr and reports it. Carries the *arr and the step,
+ * never a title.
+ */
+export class TitleExclusionError extends Error {
+  readonly code = 'TITLE_EXCLUSION_FAILED' as const;
+  constructor(
+    readonly arrKind: 'radarr' | 'sonarr',
+    readonly step: TitleExclusionStep,
+    options?: { cause?: unknown },
+  ) {
+    super(`title exclusion ${step} failed on ${arrKind}`, options);
+  }
+}
 
 /**
  * ADR-093 C-07 / DESIGN-052 D-13 / D-14: the Release Block (the app's "must not contain" release profile on Radarr or

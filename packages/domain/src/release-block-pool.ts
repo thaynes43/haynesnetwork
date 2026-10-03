@@ -17,6 +17,7 @@ import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
 import {
   identifyRelease,
+  resolveTitleExclusionTarget,
   type ReleaseBlockArrClients,
   type UnrecordedReason,
 } from './release-block';
@@ -81,7 +82,14 @@ export async function reportPoolReleaseIdentity(input: {
       media,
       pool: pending.items.length,
       recordable: 0,
-      unrecordable: { no_term: 0, gone: 0, no_ledger_item: 0, id_mismatch: 0, read_failed: 0 },
+      unrecordable: {
+        no_term: 0,
+        gone: 0,
+        no_ledger_item: 0,
+        id_mismatch: 0,
+        read_failed: 0,
+        no_exclusion_key: 0,
+      },
       unrecordedShare: 0,
       shape: { group: 0, exact: 0, none: 0 },
       confidence: { verified: 0, low_confidence: 0 },
@@ -117,6 +125,14 @@ export async function reportPoolReleaseIdentity(input: {
         keep(item.title, identity.reason);
         continue;
       }
+      // ADR-096 / D-26 — the sweep keeps an item whose record carries no key for the Title Exclusion.
+      if (
+        (await resolveTitleExclusionTarget(input.db, identity.drafts, { mediaItemId: item.mediaItemId })) ===
+        null
+      ) {
+        keep(item.title, 'no_exclusion_key');
+        continue;
+      }
       report.recordable += 1;
       for (const d of identity.drafts) {
         report.shape[d.shape] += 1;
@@ -130,7 +146,8 @@ export async function reportPoolReleaseIdentity(input: {
         if (d.shape !== 'none' && d.releaseGroup === null) report.nullGroup += 1;
       }
     }
-    const kept = report.unrecordable.no_term + report.unrecordable.gone;
+    const kept =
+      report.unrecordable.no_term + report.unrecordable.gone + report.unrecordable.no_exclusion_key;
     report.unrecordedShare = report.pool === 0 ? 0 : Math.round((kept / report.pool) * 1000) / 1000;
     const withTerm = report.shape.group + report.shape.exact;
     report.foldOnlyShare = withTerm === 0 ? 0 : Math.round((report.foldOnly / withTerm) * 1000) / 1000;
