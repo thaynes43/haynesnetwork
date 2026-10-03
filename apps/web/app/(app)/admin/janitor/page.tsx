@@ -82,7 +82,7 @@ const GRIDS: readonly GridSpec[] = [
       retry_import:
         'A completed download stuck short of importing. Enforcing asks the app to re-run its import pass, then escalates if it stays stuck.',
       bad_release:
-        'A failed or defective release. Enforcing blocklists it and searches for a replacement while the item is still monitored.',
+        'A failed or defective release. Enforcing blocklists it and searches once for a replacement while the item is still monitored. On Sonarr and Radarr it also searches once after a download fails, as long as the app is not set to search again by itself. An item that fails after two tries is left for a person and listed in the nightly digest.',
       manual_match:
         'Lidarr could not match the downloaded files to the album closely enough to import them. Enforcing blocks that release name in Lidarr, removes the download and searches for the album again while it is monitored and still missing tracks. An album that fails this way after two removals is left for a manual import and listed in the nightly digest.',
       unknown: 'Report only. The janitor never acts on a reason it does not recognize.',
