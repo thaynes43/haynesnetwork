@@ -10,7 +10,7 @@
 and Radarr's own Redownload Failed goes off; the janitor is the only retrier, once per failed download, at most two
 tries per title, hourly. Evidence: the 2026-10-02 Paw Patrol run (DESIGN-046 D-23).
 
-- **Shipped in the `fix/janitor-research-cap` PR (DESIGN-046 D-23 + D-24, ADR-096, OPS-018):** the loop guard covers
+- **PR #647 (DESIGN-046 D-23 + D-24, ADR-096, OPS-018):** the loop guard covers
   `bad_release` on all three *arrs, with one budget across every janitor search; one search per target per run; the
   queue path never searches a download the *arr failed itself; the failed-download retry on Sonarr and Radarr rides
   their `bad_release` cells (no new cell, no migration, ladder stays L2).
