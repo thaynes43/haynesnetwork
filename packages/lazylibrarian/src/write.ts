@@ -50,6 +50,10 @@ export class LazyLibrarianWriteClient {
    * (usenet-first via LL's own dlpriority + the PLAN-039 governor at the Prowlarr seam — this app never
    * bypasses provider selection). This is the write the manual "Search again" fires (R3 / AC-04) and the
    * final step of the initial push. `searchItem` is NOT a title search — this is the id-keyed search.
+   *
+   * **LL IGNORES `type`** (issue #644): `api.py::_searchbook` only forwards it to a log line, and the search
+   * covers EVERY format of the book whose Status/AudioStatus is `Wanted`. Call this ONCE per book per run,
+   * after queueing every format you need — a call per format just searches the same book twice.
    */
   async searchBook(bookId: string, format: LlFormat): Promise<string> {
     return this.http.commandText('searchBook', { id: bookId, type: llTypeParam(format) });

@@ -31,12 +31,16 @@ beforeEach(async () => {
 });
 
 /** Seed a Libretto-managed mirror collection and return its local id. */
-async function seedCollection(externalId: string, recipeId: string): Promise<string> {
+async function seedCollection(
+  externalId: string,
+  recipeId: string,
+  source: 'kavita' | 'audiobookshelf' = 'kavita',
+): Promise<string> {
   await syncBooksCollections({
     db: t.db,
     collections: [
       {
-        source: 'kavita',
+        source,
         externalId,
         kind: 'collection',
         libraryId: null,
@@ -170,6 +174,86 @@ describe('forceSearchFindMissingCollections — the cron acquisition leg', () =>
       .where(eq(permissionAudit.action, 'request_book_search'));
     expect(audits).toHaveLength(2);
     expect((audits[0]!.detail as { via: string }).via).toBe('find_missing_cron');
+  });
+
+  // Issue #644 — LL's searchBook ignores `type` and searches every Wanted format, so a book that is wanted
+  // by an ebook collection AND an audiobook collection (or by two collections) must cost ONE searchBook.
+  it('searches a book wanted in both formats ONCE, yet queues, stamps and audits both format rows', async () => {
+    const ebookCol = await seedCollection('e', 'recipe-e', 'kavita');
+    const audioCol = await seedCollection('a', 'recipe-a', 'audiobookshelf');
+    const ebookCol2 = await seedCollection('e2', 'recipe-e2', 'kavita');
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: ebookCol,
+      format: 'ebook',
+      members: [{ memberRef: 'isbn:1', title: 'One', author: null, llBookId: 'gb1' }],
+    });
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: audioCol,
+      format: 'audiobook',
+      members: [
+        { memberRef: 'isbn:1', title: 'One', author: null, llBookId: 'gb1' },
+        { memberRef: 'isbn:2', title: 'Two', author: null, llBookId: 'gb2' },
+      ],
+    });
+    // The same ebook in a second ebook collection — same format, third row, still one search.
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: ebookCol2,
+      format: 'ebook',
+      members: [{ memberRef: 'isbn:1', title: 'One', author: null, llBookId: 'gb1' }],
+    });
+
+    const ll = stubLl();
+    const report = await forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: stubLibretto({ 'recipe-e': true, 'recipe-a': true, 'recipe-e2': true }),
+      ll: ll.bundle,
+      pacer: noPace,
+    });
+
+    // gb1 → exactly one searchBook; gb2 → one. Never two for the same book.
+    const searches = ll.calls.filter((c) => c.step === 'searchBook').map((c) => c.id);
+    expect(searches.sort()).toEqual(['gb1', 'gb2']);
+    // The LL chain still queued BOTH formats of gb1 (once each) and added the book once.
+    const gb1 = ll.calls.filter((c) => c.id === 'gb1');
+    expect(gb1.filter((c) => c.step === 'addBook')).toHaveLength(1);
+    expect(
+      gb1
+        .filter((c) => c.step === 'queueBook')
+        .map((c) => c.format)
+        .sort(),
+    ).toEqual(['audiobook', 'ebook']);
+    // Every covered request row is counted, stamped (cooldown) and audited with its own format.
+    expect(report.searched).toBe(4);
+    expect(report.failed).toBe(0);
+    const rows = await t.db
+      .select({ llBookId: bookRequests.llBookId, lastSearchedAt: bookRequests.lastSearchedAt })
+      .from(bookRequests);
+    expect(rows).toHaveLength(4);
+    for (const r of rows) expect(r.lastSearchedAt).not.toBeNull();
+    const audits = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.action, 'request_book_search'));
+    expect(audits).toHaveLength(4);
+    const gb1Formats = audits
+      .map((a) => a.detail as { ll_book_id: string; format: string })
+      .filter((d) => d.ll_book_id === 'gb1')
+      .map((d) => d.format)
+      .sort();
+    expect(gb1Formats).toEqual(['audiobook', 'ebook', 'ebook']);
+    // The cooldown holds for every format row: an immediate second run searches nothing.
+    const again = stubLl();
+    const second = await forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: stubLibretto({ 'recipe-e': true, 'recipe-a': true, 'recipe-e2': true }),
+      ll: again.bundle,
+      pacer: noPace,
+    });
+    expect(second.candidates).toBe(0);
+    expect(again.calls).toHaveLength(0);
   });
 
   it('is IDEMPOTENT via the cooldown — a want searched within the window is skipped next run', async () => {

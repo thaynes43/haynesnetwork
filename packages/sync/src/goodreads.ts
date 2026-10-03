@@ -17,6 +17,7 @@ import {
   type EnrichedShelfItem,
   type GbCallMeter,
   type KapowarrClientBundle,
+  type LlSearchCoverage,
   type LazyLibrarianClientBundle,
   type RetryQueuedBookFixesReport,
   type SyncGoodreadsReport,
@@ -132,6 +133,8 @@ export async function runGoodreadsSync(input: {
     ...(input.now ? { now: input.now } : {}),
   });
   const perIntegration: GoodreadsSyncReport['perIntegration'] = [];
+  // Books LL has already been asked to search this run (shared by every integration — issue #644).
+  const searchCoverage: LlSearchCoverage = new Map();
   let synced = 0;
   let failed = 0;
   let transientBlips = 0;
@@ -283,6 +286,7 @@ export async function runGoodreadsSync(input: {
           ...(input.kapowarr ? { kapowarr: input.kapowarr } : {}),
           ...(input.now ? { now: input.now } : {}),
           logger,
+          searchCoverage, // one LL searchBook per book per run, across every integration (#644)
         });
         if (blipNote) {
           // Partial: the clean-sync write just cleared last_sync_error — restore the blip so it stays

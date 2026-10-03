@@ -340,3 +340,31 @@ predicate) is the single per-click read for both click sites — the same `getAl
 to one BookID, with the degrade-to-`undefined` catch in one place instead of two. `runBookItemForceSearch`
 was refactored onto it in the same change; there is no second LL call pattern, and no `getBook` (the
 deployed build answers `Unknown command`).
+
+## Amendment — 2026-10-03: ONE `searchBook` per book per run (issue #644)
+
+LazyLibrarian's `cmd=searchBook&id=<id>&type=<eBook|AudioBook>` **ignores `type`**. In LL's
+`api.py::_searchbook` the parameter only becomes the `library` argument of `searchbook.search_book`, which
+uses it for log text; the search itself covers every format of the book whose `Status` or `AudioStatus` is
+`Wanted`. Calling it once per format therefore searched a book wanted in both formats twice, and every
+indexer saw every query twice (seen live 2026-10-02: both formats of one book searched twice within two
+seconds). Hitting an indexer twice for the same thing is the owner's "very bad".
+
+The rule now, at every call site that can reach more than one format of the same book in one run:
+
+- **`syncGoodreadsIntegration`** queues every needed format first (`queueBook` per format, still mandatory),
+  then calls `searchBook` **once per `llBookId`**. The push leg and the Skipped-want sweep share one
+  per-run `LlSearchCoverage` map (llBookId → formats a search already covered), so a book the push just
+  searched is not searched again by the sweep, and a second request row for the same book (another
+  user's want) is marked pushed without a second `addBook`/`queueBook`/`searchBook`. The cron caller
+  (`syncGoodreads`, packages/sync) passes ONE map to every integration it syncs in the run, so two users
+  wanting the same book cost one search, not two.
+- **`runManualBookSearch`** (the wall puck, both formats not yet landed) fires one `searchBook` for the
+  formats it covers; its result still lists every covered format.
+- **The collection force-search** (DESIGN-043 D-14) groups its worklist by `llBookId` — see its amendment.
+
+`searchBook` keeps its `format` argument (the wire shape is unchanged and LL tolerates it); callers pass
+the first covered format and must not rely on it narrowing the search. **Bookkeeping is per format and per
+request row, unchanged:** every row a shared call covered still gets its own `last_searched_at` stamp
+(the cooldown) and its own audit row; only the LazyLibrarian call is shared. A call that fails leaves every
+row it would have covered un-stamped, so the next run retries them all.

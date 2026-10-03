@@ -38,6 +38,9 @@ export interface EnrichedShelfItem extends ShelfItemInput {
   isComic: boolean;
 }
 
+/** Per llBookId, the formats a LazyLibrarian searchBook call already covered (issue #644). */
+export type LlSearchCoverage = Map<string, Set<'ebook' | 'audiobook'>>;
+
 export interface SyncGoodreadsInput {
   db?: DbClient;
   integrationId: string;
@@ -60,6 +63,12 @@ export interface SyncGoodreadsInput {
   };
   /** Politeness pacer between LL pushes (LL/GB API paced — R3). Default sleeps ~250ms between books. */
   pacer?: (index: number) => Promise<void>;
+  /**
+   * Issue #644 — books already searched this cron run. The caller that syncs several integrations in one
+   * run passes ONE map to all of them, so a book two users both want is searched once per run, not once per
+   * integration. Omitted ⇒ a fresh map (dedupe within this integration's run only).
+   */
+  searchCoverage?: LlSearchCoverage;
 }
 
 export interface SyncGoodreadsReport {
@@ -170,6 +179,27 @@ export async function syncGoodreadsIntegration(
   let pushed = 0;
   let pushesSkippedHeld = 0;
   const BOTH_FORMATS = ['ebook', 'audiobook'] as const;
+  // ONE searchBook per book per run (issue #644). LazyLibrarian's `searchBook` IGNORES its `type`
+  // parameter: `api.py::_searchbook` only forwards it to a log line, and `searchbook.search_book` searches
+  // EVERY format of the book whose Status/AudioStatus is `Wanted`. So a call per format searched a book
+  // wanted in both formats twice, hitting every indexer twice for the same thing. This map records, per
+  // llBookId, the formats a searchBook call this run already covered (they were all `Wanted` when it
+  // fired); the push leg and the Skipped sweep both consult it so a book is never searched twice.
+  const searchCovered: LlSearchCoverage = input.searchCoverage ?? new Map();
+  const needsSearch = (llBookId: string, formats: ReadonlyArray<'ebook' | 'audiobook'>): boolean =>
+    formats.some((f) => !searchCovered.get(llBookId)?.has(f));
+  const searchOnce = async (
+    ll: LazyLibrarianClientBundle,
+    llBookId: string,
+    formats: ReadonlyArray<'ebook' | 'audiobook'>,
+  ): Promise<void> => {
+    if (!needsSearch(llBookId, formats)) return;
+    // `type` is ignored by LL (see above); the first format rides along only to keep the wire shape.
+    await ll.write.searchBook(llBookId, formats[0]!);
+    const covered = searchCovered.get(llBookId) ?? new Set();
+    for (const f of formats) covered.add(f);
+    searchCovered.set(llBookId, covered);
+  };
   if (input.ll) {
     for (let i = 0; i < toPush.length; i += 1) {
       const target = toPush[i]!;
@@ -190,9 +220,13 @@ export async function syncGoodreadsIntegration(
       }
       try {
         if (toQueue.length > 0) {
-          await input.ll.write.addBook(target.llBookId);
-          for (const format of toQueue) await input.ll.write.queueBook(target.llBookId, format);
-          for (const format of toQueue) await input.ll.write.searchBook(target.llBookId, format);
+          // A second request row for the same book (another user's want) is fully covered by the first
+          // row's chain: no second addBook/queueBook/searchBook, but it is still marked pushed below.
+          if (needsSearch(target.llBookId, toQueue)) {
+            await input.ll.write.addBook(target.llBookId);
+            for (const format of toQueue) await input.ll.write.queueBook(target.llBookId, format);
+            await searchOnce(input.ll, target.llBookId, toQueue);
+          }
         }
         await markRequestPushed({
           db: input.db,
@@ -273,8 +307,9 @@ export async function syncGoodreadsIntegration(
           await pace(requeued + 1);
           for (const format of skippedFormats) {
             await input.ll.write.queueBook(target.llBookId, format);
-            await input.ll.write.searchBook(target.llBookId, format);
           }
+          // One search covers every format just queued (and none already searched this run).
+          await searchOnce(input.ll, target.llBookId, skippedFormats);
           await markRequestFormatsRequeued({
             db: input.db,
             requestId: target.requestId,
@@ -471,7 +506,9 @@ export async function runManualBookSearch(
     return { searched: false, formats: [], reason: 'already_held' };
   }
   try {
-    for (const format of formats) await input.ll.write.searchBook(request.llBookId, format);
+    // ONE call: LazyLibrarian's searchBook ignores `type` and searches every Wanted format of the book
+    // (issue #644), so a call per format would hit the indexers twice for a book wanted in both.
+    if (formats.length > 0) await input.ll.write.searchBook(request.llBookId, formats[0]!);
   } catch (error) {
     throw new LazyLibrarianUpstreamError('LazyLibrarian search failed', { cause: error });
   }

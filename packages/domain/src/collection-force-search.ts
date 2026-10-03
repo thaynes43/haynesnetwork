@@ -192,61 +192,83 @@ async function runForceSearchWorklist(input: {
     }
   }
 
-  for (let i = 0; i < input.worklist.length; i += 1) {
-    const want = input.worklist[i]!;
-    if (llFormatAlreadyHeld(held.get(want.llBookId), want.format)) {
-      input.report.skippedHeld += 1;
-      input.log.info?.('ll_push_skipped_have', {
-        site: `collection-force-search.${input.via}`,
-        requestId: want.id,
-        llBookId: want.llBookId,
-        formats: [want.format],
-        title: want.title,
-      });
-      // Stamp last_searched_at anyway (no audit — nothing was requested of LL). The want is settled on
-      // LL's side, so the 12h cooldown should keep it out of the next run rather than re-reading it hourly.
-      await inTransaction(input.db, async (tx) => {
-        await tx
-          .update(bookRequests)
-          .set({ lastSearchedAt: input.now, updatedAt: input.now })
-          .where(eq(bookRequests.id, want.id));
-      });
-      continue;
+  // ONE LazyLibrarian searchBook per book per run (issue #644). LL's `searchBook` ignores its `type`
+  // parameter (`api.py::_searchbook` only logs it) and searches EVERY format of the book that is `Wanted`,
+  // so the worklist rows for one llBookId — an ebook and an audiobook collection both holding the book, or
+  // the book in two collections — must share a single call. Rows stay per collection and format (each keeps
+  // its own cooldown stamp and audit row); only the LL chain is shared. First-seen order is preserved.
+  const groups = new Map<string, CollectionWantWork[]>();
+  for (const want of input.worklist) {
+    const group = groups.get(want.llBookId);
+    if (group) group.push(want);
+    else groups.set(want.llBookId, [want]);
+  }
+
+  let i = 0;
+  for (const [llBookId, wants] of groups) {
+    const toSearch: CollectionWantWork[] = [];
+    for (const want of wants) {
+      if (llFormatAlreadyHeld(held.get(llBookId), want.format)) {
+        input.report.skippedHeld += 1;
+        input.log.info?.('ll_push_skipped_have', {
+          site: `collection-force-search.${input.via}`,
+          requestId: want.id,
+          llBookId,
+          formats: [want.format],
+          title: want.title,
+        });
+        // Stamp last_searched_at anyway (no audit — nothing was requested of LL). The want is settled on
+        // LL's side, so the 12h cooldown should keep it out of the next run rather than re-reading it hourly.
+        await inTransaction(input.db, async (tx) => {
+          await tx
+            .update(bookRequests)
+            .set({ lastSearchedAt: input.now, updatedAt: input.now })
+            .where(eq(bookRequests.id, want.id));
+        });
+      } else {
+        toSearch.push(want);
+      }
     }
+    if (toSearch.length === 0) continue;
     await input.pace(i);
+    i += 1;
     try {
       // The confined LazyLibrarian force-search chain — MANDATORY queueBook after addBook (else Skipped).
-      await input.ll.write.addBook(want.llBookId);
-      await input.ll.write.queueBook(want.llBookId, want.format);
-      await input.ll.write.searchBook(want.llBookId, want.format);
-      // Stamp last_searched_at + audit in ONE tx (hard rule 6).
+      // addBook once, queueBook once per distinct format, then the single searchBook that covers them all.
+      const formats = [...new Set(toSearch.map((w) => w.format))];
+      await input.ll.write.addBook(llBookId);
+      for (const format of formats) await input.ll.write.queueBook(llBookId, format);
+      await input.ll.write.searchBook(llBookId, formats[0]!);
+      // Stamp last_searched_at + audit EVERY row the call covered, in ONE tx (hard rule 6).
       await inTransaction(input.db, async (tx) => {
-        await tx
-          .update(bookRequests)
-          .set({ lastSearchedAt: input.now, updatedAt: input.now })
-          .where(eq(bookRequests.id, want.id));
-        await tx.insert(permissionAudit).values({
-          actorId: input.actorId,
-          ...(input.subjectUserId ? { subjectUserId: input.subjectUserId } : {}),
-          action: 'request_book_search',
-          detail: {
-            request_id: want.id,
-            ll_book_id: want.llBookId,
-            title: want.title,
-            format: want.format,
-            origin: 'collection',
-            ...(input.tagCollection ? { collection_id: want.collectionId } : {}),
-            via: input.via,
-          },
-        });
+        for (const want of toSearch) {
+          await tx
+            .update(bookRequests)
+            .set({ lastSearchedAt: input.now, updatedAt: input.now })
+            .where(eq(bookRequests.id, want.id));
+          await tx.insert(permissionAudit).values({
+            actorId: input.actorId,
+            ...(input.subjectUserId ? { subjectUserId: input.subjectUserId } : {}),
+            action: 'request_book_search',
+            detail: {
+              request_id: want.id,
+              ll_book_id: want.llBookId,
+              title: want.title,
+              format: want.format,
+              origin: 'collection',
+              ...(input.tagCollection ? { collection_id: want.collectionId } : {}),
+              via: input.via,
+            },
+          });
+        }
       });
-      input.report.searched += 1;
+      input.report.searched += toSearch.length;
     } catch (error) {
-      input.report.failed += 1;
+      input.report.failed += toSearch.length;
       input.log.warn?.(
         'collection-force-search: LazyLibrarian force-search failed (left for next run)',
         {
-          requestId: want.id,
+          requestIds: toSearch.map((w) => w.id),
           error: error instanceof Error ? error.message : String(error),
         },
       );

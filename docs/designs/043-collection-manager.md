@@ -454,6 +454,22 @@ invent one.
 **"Already have them"** chip instead of "Search started" — the recipe was still re-applied, but no search
 went out, and claiming one did is a lie the user cannot check.
 
+### D-17 — Amendment 2026-10-03 (issue #644) — the worklist is grouped by `llBookId`: one `searchBook` per book
+
+**Normative rule: DESIGN-028's 2026-10-03 amendment** (LazyLibrarian's `searchBook` ignores its `type`
+parameter and searches every `Wanted` format of the book). The D-14 worklist has one row per collection
+AND format, so one book held by an ebook collection and an audiobook collection, or by two collections,
+used to cost one `searchBook` per row in the same run. `runForceSearchWorklist` (both legs) now groups the
+rows by `llBookId`: **`addBook` once, `queueBook` once per distinct format, `searchBook` once**.
+
+**Bookkeeping stays per row.** Every row the shared call covered still gets its own `last_searched_at`
+stamp (so the D-14 cooldown holds for each format row) and its own `request_book_search` audit row (its own
+`format`, `collection_id` on the on-demand leg), written together in one transaction. The held-copy guard
+(D-16) still decides per row: a held ebook row is stamped without audit while the audiobook row of the
+same book still searches. `report.searched` / `failed` count request rows, not LL calls; a failed call
+fails (and leaves un-stamped) every row it would have covered, so the next run retries them all. The
+`cap` still bounds worklist rows, not calls, so a run can only issue fewer calls than before.
+
 ## Alternatives considered
 
 - **Keep propose→approve** (ADR-070). REJECTED by the owner — the affordance is being torn out.
