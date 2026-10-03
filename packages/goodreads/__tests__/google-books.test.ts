@@ -5,6 +5,7 @@ import {
   gbAuthorsMatch,
   gbQueryTitle,
   gbResolveTitleMatches,
+  gbIsOmnibusVolume,
   isComicCategory,
   isComicText,
   nextBackoffMs,
@@ -454,5 +455,52 @@ describe('GoogleBooksClient.resolveVolume', () => {
     expect(res?.volumeId).toBe('gb-sp2');
     expect(res?.isComic).toBe(true);
     expect(res?.categories).toContain('Comics & Graphic Novels / Literary');
+  });
+});
+
+describe('gbIsOmnibusVolume (the 2026-10-03 bundle-resolve guard)', () => {
+  it('rejects a bundle whose subtitle lists the queried work (Odd Interlude -> 7-Book Bundle)', () => {
+    const vol = {
+      title: 'The Odd Thomas Series 7-Book Bundle',
+      subtitle: 'Odd Thomas, Forever Odd, Brother Odd, Odd Hours, Odd Apocalypse, Odd Interlude, Deeply Odd',
+    };
+    // The coverage guard alone PASSES this (the subtitle carries both query tokens) — the omnibus guard is the stop.
+    expect(gbResolveTitleMatches('Odd Interlude #1', `${vol.title} ${vol.subtitle}`)).toBe(true);
+    expect(gbIsOmnibusVolume(vol, 'Odd Interlude #1')).toBe(true);
+  });
+
+  it('rejects a contents-list compilation (title is the author, subtitle lists works)', () => {
+    expect(gbIsOmnibusVolume({ title: 'Dean Koontz', subtitle: 'Winter Moon; Icebound' }, 'Dean R Koontz - Winter Moon')).toBe(true);
+  });
+
+  it('allows the same shapes when the query itself asks for a set', () => {
+    const boxed = { title: 'The Dark Artifices, the Complete Collection', subtitle: undefined };
+    expect(gbIsOmnibusVolume(boxed, 'The Dark Artifices, the Complete Collection')).toBe(false);
+    expect(gbIsOmnibusVolume({ title: 'Red Queen Box Set' }, 'Red Queen Box Set')).toBe(false);
+  });
+
+  it('leaves ordinary single works and normal subtitles alone', () => {
+    expect(gbIsOmnibusVolume({ title: 'Hooked', subtitle: 'How to Build Habit-Forming Products' }, 'Hooked')).toBe(false);
+    expect(gbIsOmnibusVolume({ title: 'Three Kings', subtitle: 'A Wild Cards Mosaic Novel (Book Two of the British Arc)' }, 'Three Kings')).toBe(false);
+    expect(gbIsOmnibusVolume({ title: 'Winter Moon' }, 'Dean R Koontz - Winter Moon')).toBe(false);
+    expect(gbIsOmnibusVolume({ title: 'Odd Interlude' }, 'Odd Interlude #1')).toBe(false);
+  });
+});
+
+describe('GoogleBooksClient.resolveVolume omnibus guard', () => {
+  it('title leg returns null for a bundle that lists the queried work; the ISBN leg is unguarded', async () => {
+    const bundle = {
+      id: 'qwNlBAAAQBAJ',
+      volumeInfo: {
+        title: 'The Odd Thomas Series 7-Book Bundle',
+        subtitle: 'Odd Thomas, Forever Odd, Brother Odd, Odd Hours, Odd Apocalypse, Odd Interlude, Deeply Odd',
+        authors: ['Dean Koontz'],
+      },
+    };
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ totalItems: 1, items: [bundle] }), { status: 200 }));
+    const gb = new GoogleBooksClient({ baseUrl: 'http://stub/books/v1', apiKey: 'k', fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(await gb.resolveVolume({ title: 'Odd Interlude #1', author: 'Dean Koontz' })).toBeNull();
+    // An exact ISBN hit is the book the caller named — never second-guessed.
+    expect((await gb.resolveVolume({ isbn: '9780804180733', title: 'Odd Thomas Series 7-Book Bundle' }))?.volumeId).toBe('qwNlBAAAQBAJ');
   });
 });
