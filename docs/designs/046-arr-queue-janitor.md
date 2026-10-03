@@ -519,10 +519,12 @@ normal, intended wait read as a pile of unclassified queue items.
 | 2 | **It is checked last,** after `have_better`, `bad_release`, `retry_import` and `manual_match`, before `unknown`. A record with `status: delay` that also carries an error, a failed state or a stuck-import message keeps its actionable class. | A benign class must never hide a real one. |
 | 3 | **It leaves the census whole.** The classifier returns `waiting`, which is not an Action Class: it has no `arr_queue_cleanup_actions` row (no migration, the class CHECK is unchanged), no verdict, no download group, and no count under any class, so it is never `unknown`, never `skipped_*`, and never counts toward the cap, the loop guard or the retry escalation. | "Never acted on and not counted as unknown", with nothing written about an item that is working as intended. |
 | 4 | **It stays visible in the run.** `QueueCleanupInstanceReport.waiting` counts the records left out per *arr, and the `queue-cleanup evaluated` log line carries `waiting`. `itemsObserved` is the queue size less the waiting records. | A queue that is mostly held releases is still readable from the logs. |
-| 5 | **It applies to every *arr.** Radarr and Lidarr hold releases the same way, so a delay profile on either gets the same treatment. | One classifier, one rule. |
+| 5 | **It still counts as queued for the failed-download retry (D-24 rule 5).** A held record is out of the census, but the retry is given it with the queue: a failed title whose replacement the *arr is holding on its delay profile is not searched again, so a hold costs no loop-guard try (D-23) and makes no duplicate search. | A held release IS a replacement already chosen; before D-25 it sat in the queue as `unknown` and stopped the retry the same way. |
+| 6 | **It applies to every *arr.** Radarr and Lidarr hold releases the same way, so a delay profile on either gets the same treatment. | One classifier, one rule. |
 
-Pinned by `queue-cleanup.test.ts` (the classifier cases, and the evaluator case: held records leave the census with
-every cell enforced, only the real item is acted on, the report counts them).
+Pinned by `queue-cleanup.test.ts` (the classifier cases; the evaluator case: held records leave the census with every
+cell enforced, only the real item is acted on, the report counts them; and the retry case: a failure whose replacement is
+held is not searched).
 
 ## Alternatives considered
 

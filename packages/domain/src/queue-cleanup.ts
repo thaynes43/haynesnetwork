@@ -2156,12 +2156,16 @@ export async function evaluateQueueCleanup(input: {
     }
 
     let items: QueueCleanupQueueItem[];
+    // D-25: the records the *arr holds on its delay profile. Out of the census, but still IN the queue: the
+    // failed-download retry must see them (a held replacement means the title is already being re-grabbed).
+    let waiting: QueueCleanupQueueItem[] = [];
     try {
       const queue = await client.getQueueAll();
       // D-25: a record the *arr is holding on its delay profile is benign, so it leaves the census whole: no verdict,
       // no row, no group, no count under any class (and so never `unknown`). Only its count survives, below.
-      items = queue.filter((qi) => classifyQueueItem(qi).class !== 'waiting');
-      report.waiting = queue.length - items.length;
+      waiting = queue.filter((qi) => classifyQueueItem(qi).class === 'waiting');
+      items = queue.filter((qi) => !waiting.includes(qi));
+      report.waiting = waiting.length;
     } catch (err) {
       report.readError = errMsg(err);
       input.logger?.warn?.('queue-cleanup: queue read failed', { instance, error: report.readError });
@@ -2493,6 +2497,7 @@ export async function evaluateQueueCleanup(input: {
                     (r.outcome === 'done' || r.outcome === 'error')));
               return !removed;
             })
+            .concat(waiting)
             .map((i) => ({ downloadId: i.downloadId, targetId: i.targetId ?? null })),
           searchedTargets,
           logger: input.logger,

@@ -3217,6 +3217,32 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     ]);
   });
 
+  it('RETRY (D-24) + WAITING (D-25): a replacement held on the delay profile counts as queued, so its failed title is not searched again', async () => {
+    const held = item({
+      queueItemId: 810,
+      title: 'Held.Show.S01E01.1080p-GRP',
+      status: 'delay',
+      trackedDownloadStatus: 'ok',
+      trackedDownloadState: 'downloading',
+      statusMessages: [],
+      targetId: 46420, // the replacement the *arr is waiting out its delay on
+    });
+    const stub = failedStub([
+      failure({ historyId: 1, downloadId: 'dl-a', targetId: 46420 }), // a replacement is already held: no search
+      failure({ historyId: 2, downloadId: 'dl-b', targetId: 46421 }), // nothing held: searched once
+    ]);
+    const r = await retryRun([held], stub.source);
+    expect(stub.calls.searches).toEqual([[46421]]);
+    // The held record is still left out of the census: no row of its own, nothing counted for it.
+    const rows = await rowsOf('sonarr');
+    expect(rows.filter((row) => row.queueItemId === 810)).toEqual([]);
+    expect(r.report.waiting).toBe(1);
+    expect(rows.map((row) => [row.downloadId, row.action]).sort()).toEqual([
+      ['dl-a', 'none'],
+      ['dl-b', 'blocklisted_searched'],
+    ]);
+  });
+
   it('RETRY (D-24): an unmonitored target is none; a spent cap is skipped_cap and a failed search an error, and both are tried again next run', async () => {
     const now = new Date('2026-10-02T07:25:00Z');
     const failures = [
