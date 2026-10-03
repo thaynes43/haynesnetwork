@@ -210,6 +210,8 @@ describe('watchlist protection copy (D-10)', () => {
     expect(keptReasonTooltip('live_excluded')).toBe('Kept: saved');
     expect(keptReasonTooltip('tag')).toBe('Kept: saved');
     expect(keptReasonTooltip('release_unrecorded')).toBe("Kept: couldn't be removed safely");
+    // DESIGN-052 D-26 — the Age Guard.
+    expect(keptReasonTooltip('recently_added')).toBe('Kept: added or upgraded recently');
     expect(keptReasonTooltip(null)).toBeNull();
     expect(keptReasonTooltip('something_new')).toBeNull();
     for (const text of Object.values(KEPT_REASON_TOOLTIPS)) noDashes(text);

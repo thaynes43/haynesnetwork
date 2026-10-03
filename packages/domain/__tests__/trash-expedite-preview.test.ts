@@ -52,6 +52,8 @@ function pendingItem(over: Partial<TrashPendingItem> = {}): TrashPendingItem {
     ruleEvaluationFailed: false,
     onWatchlist: false,
     watchlistEvaluable: true,
+    ageGuard: 'clear',
+    newestAddedAt: null,
     ...over,
   };
 }

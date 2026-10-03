@@ -314,6 +314,8 @@ export interface TargetCandidate {
   protectedByTag: boolean;
   /** ADR-093 / DESIGN-052 D-08 — on a watchlist: a TARGETED batch leaves it out (it takes no slot). */
   onWatchlist?: boolean;
+  /** DESIGN-052 D-26 — inside the Age Guard's 180 days: no batch takes it, targeted or not (absent ⇒ false). */
+  recentlyAdded?: boolean;
 }
 
 export interface TargetPreview {
@@ -352,7 +354,8 @@ export function previewTargetSelection(
   // An untargeted batch snapshots every non-`dnd` candidate as pending (a watchlisted one too — the sweep keeps
   // it); a targeted batch picks only from the candidates that can free space: not `dnd`, not on a watchlist
   // (mirrors selectBatchCandidates, DESIGN-052 D-08) — unless the server's proposal is unfiltered (D-25cx).
-  const pending = candidates.filter((c) => !c.protectedByTag);
+  // D-26 — a title inside the Age Guard's 180 days is never proposed, targeted or not.
+  const pending = candidates.filter((c) => !c.protectedByTag && c.recentlyAdded !== true);
   const filtered = spec.watchlistFiltered !== false;
   const deletable = filtered ? pending.filter((c) => c.onWatchlist !== true) : pending;
   const poolBytes = deletable.reduce((n, c) => n + c.sizeBytes, 0);
