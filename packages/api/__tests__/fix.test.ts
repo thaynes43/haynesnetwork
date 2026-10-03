@@ -103,9 +103,11 @@ describe('fix.create — primary path (AC-07)', () => {
     expect(row.targetArrChildId).toBe(50102);
     expect(row.reason).toBe('wrong_language');
     const steps = row.actionsTaken.map((a) => a.step);
-    expect(steps).toEqual(['created', 'resolve_grab', 'mark_failed', 'trigger_search']);
+    // D-25: Redownload Failed is read before the mark (off here, the ADR-098 state), so the Fix searches itself.
+    expect(steps).toEqual(['created', 'resolve_grab', 'redownload_check', 'mark_failed', 'trigger_search']);
     expect(row.actionsTaken[1]).toMatchObject({ grabHistoryId: 771, ok: true });
-    expect(row.actionsTaken[3]).toMatchObject({ commandId: 9001, commandName: 'EpisodeSearch' });
+    expect(row.actionsTaken[2]).toMatchObject({ autoRedownloadFailed: false, arrSearches: false });
+    expect(row.actionsTaken[4]).toMatchObject({ commandId: 9001, commandName: 'EpisodeSearch' });
 
     // Ledger events: fix_requested + fix_actioned (D-09 lifecycle markers).
     const events = await eventsFor(item.id);
@@ -141,6 +143,237 @@ describe('fix.create — primary path (AC-07)', () => {
     const shape = wireShape(err, 'fix.create');
     expect(shape.data.code).toBe('PRECONDITION_FAILED');
     expect(shape.data.appCode).toBe('LEDGER_ITEM_TOMBSTONED');
+  });
+});
+
+describe('fix.create — exactly one search per Fix (DESIGN-005 D-25, issue #646)', () => {
+  let nextArtist = 700;
+  const lidarrAlbum = (artistId: number) => ({
+    id: artistId * 10 + 1,
+    artistId,
+    foreignAlbumId: '11111111-2222-3333-4444-555555555555',
+    title: 'First Light',
+    albumType: 'Album',
+    monitored: true,
+    anyReleaseOk: true,
+    releaseDate: '2019-05-17T00:00:00Z',
+    statistics: { trackFileCount: 2, trackCount: 2, totalTrackCount: 2, sizeOnDisk: 9 },
+  });
+  /** A Lidarr album Fix whose grab came from `releaseSource`, against Lidarr's Redownload Failed settings. */
+  async function lidarrFix(
+    config: { autoRedownloadFailed: boolean; autoRedownloadFailedFromInteractiveSearch?: boolean } | 'error',
+    releaseSource = 'Search',
+  ) {
+    const member = await createUser(tdb.db);
+    const artistId = (nextArtist += 1);
+    const albumId = artistId * 10 + 1;
+    const item = await seedMediaItem(tdb.db, 'lidarr', {
+      title: `Artist ${artistId}`,
+      arrItemId: artistId,
+      rootFolder: '/data/media/music',
+    });
+    const stub = stubArrBundle([
+      { path: '/api/v1/album', body: [lidarrAlbum(artistId)] },
+      {
+        path: '/api/v1/history',
+        body: historyPage([
+          grabHistoryJson(781, '2026-07-01T10:00:00Z', {
+            albumId,
+            artistId,
+            data: { indexer: 'TestIndexer', releaseSource },
+          }),
+        ]),
+      },
+      config === 'error'
+        ? { path: '/api/v1/config/downloadclient', status: 500, body: { message: 'boom' } }
+        : { path: '/api/v1/config/downloadclient', body: { ...config, id: 1 } },
+      { method: 'POST', path: /^\/api\/v1\/history\/failed\/\d+$/, body: {} },
+      { method: 'POST', path: '/api/v1/command', status: 201, body: { id: 9004, name: 'AlbumSearch' } },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+    return { api, stub, item, albumId };
+  }
+
+  it("Lidarr with Redownload Failed on: the mark-failed is the one search trigger, the Fix sends no AlbumSearch", async () => {
+    const { api, stub, item, albumId } = await lidarrFix({ autoRedownloadFailed: true, autoRedownloadFailedFromInteractiveSearch: true });
+    const result = await api.fix.create({ mediaItemId: item.id, targetChildId: albumId, reason: 'wont_play_corrupt' });
+    expect(result).toMatchObject({ status: 'search_triggered', pathTaken: 'blocklist_search' });
+    // The setting is read BEFORE the mark, then exactly one write: the mark. No search command from the Fix.
+    const order = stub.calls.map((c) => `${c.method} ${c.url.pathname}`);
+    expect(order.indexOf('GET /api/v1/config/downloadclient')).toBeLessThan(order.indexOf('POST /api/v1/history/failed/781'));
+    expect(stub.callsFor('POST', '/api/v1/history/failed/')).toHaveLength(1);
+    expect(stub.callsFor('POST', '/api/v1/command')).toHaveLength(0);
+    const row = await fixRow(result.id);
+    expect(row.status).toBe('search_triggered');
+    expect(row.actionsTaken.map((a) => a.step)).toEqual(['created', 'resolve_grab', 'redownload_check', 'mark_failed', 'trigger_search']);
+    expect(row.actionsTaken[2]).toMatchObject({ autoRedownloadFailed: true, releaseSource: 'Search', arrSearches: true });
+    expect(row.actionsTaken[4]).toMatchObject({ ok: true, skipped: true, searchedBy: 'lidarr' });
+  });
+
+  it('Redownload Failed off: the Fix sends its one AlbumSearch', async () => {
+    const { api, stub, item, albumId } = await lidarrFix({ autoRedownloadFailed: false, autoRedownloadFailedFromInteractiveSearch: true });
+    const result = await api.fix.create({ mediaItemId: item.id, targetChildId: albumId, reason: 'wont_play_corrupt' });
+    expect(result.status).toBe('search_triggered');
+    expect(stub.callsFor('POST', '/api/v1/command').map((c) => c.body)).toEqual([{ name: 'AlbumSearch', albumIds: [albumId] }]);
+    const row = await fixRow(result.id);
+    expect(row.actionsTaken[2]).toMatchObject({ step: 'redownload_check', arrSearches: false });
+    expect(row.actionsTaken[4]).toMatchObject({ step: 'trigger_search', commandId: 9004 });
+  });
+
+  it('an interactive-search grab while its interactive twin is off: the *arr will not search, so the Fix does', async () => {
+    const { api, stub, item, albumId } = await lidarrFix(
+      { autoRedownloadFailed: true, autoRedownloadFailedFromInteractiveSearch: false },
+      'InteractiveSearch',
+    );
+    await api.fix.create({ mediaItemId: item.id, targetChildId: albumId, reason: 'wont_play_corrupt' });
+    expect(stub.callsFor('POST', '/api/v1/command')).toHaveLength(1);
+  });
+
+  it('a failed Redownload Failed read fails the Fix before anything is marked or searched', async () => {
+    const { api, stub, item, albumId } = await lidarrFix('error');
+    await expect(
+      api.fix.create({ mediaItemId: item.id, targetChildId: albumId, reason: 'wont_play_corrupt' }),
+    ).rejects.toMatchObject({ code: 'BAD_GATEWAY' });
+    expect(stub.callsFor('POST', '/api/v1/history/failed/')).toHaveLength(0);
+    expect(stub.callsFor('POST', '/api/v1/command')).toHaveLength(0);
+  });
+
+  it('Sonarr season with Redownload Failed on: the marks are the search triggers, no SeasonSearch', async () => {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'sonarr', { title: 'Season Show Two', arrItemId: 804 });
+    const stub = stubArrBundle([
+      {
+        path: '/api/v3/episode',
+        body: [episodeJson(80401, 1, 1, { seriesId: 804 }), episodeJson(80402, 1, 2, { seriesId: 804 })],
+      },
+      {
+        path: '/api/v3/history',
+        body: (url: URL) =>
+          historyPage([
+            grabHistoryJson(900_000 + Number(url.searchParams.get('episodeId')), '2026-07-01T10:00:00Z', {
+              episodeId: Number(url.searchParams.get('episodeId')),
+              seriesId: 804,
+              data: { releaseSource: 'Rss' },
+            }),
+          ]),
+      },
+      { path: '/api/v3/config/downloadclient', body: { autoRedownloadFailed: true, autoRedownloadFailedFromInteractiveSearch: true } },
+      { method: 'POST', path: /^\/api\/v3\/history\/failed\/\d+$/, body: {} },
+      { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 9101, name: 'SeasonSearch' } },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+    const result = await api.fix.create({ mediaItemId: item.id, scope: 'season', seasonNumber: 1, reason: 'wrong_version_quality' });
+    expect(result.status).toBe('search_triggered');
+    expect(stub.callsFor('POST', '/api/v3/history/failed/')).toHaveLength(2);
+    expect(stub.callsFor('POST', '/api/v3/command')).toHaveLength(0);
+    const row = await fixRow(result.id);
+    expect(row.actionsTaken.at(-1)).toMatchObject({ step: 'trigger_search', skipped: true, searchedBy: 'sonarr' });
+  });
+
+  /** A Sonarr season Fix with Redownload Failed on; `grabOf` gives each episode's grab (or none). */
+  async function seasonFixWithRedownloadOn(
+    arrItemId: number,
+    episodes: Array<{ id: number; hasFile: boolean }>,
+    grabOf: (episodeId: number) => { id: number; downloadId: string } | null,
+  ) {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'sonarr', { title: `Season Show ${arrItemId}`, arrItemId });
+    const stub = stubArrBundle([
+      {
+        path: '/api/v3/episode',
+        body: episodes.map((e, i) => episodeJson(e.id, 1, i + 1, { seriesId: arrItemId, hasFile: e.hasFile })),
+      },
+      {
+        path: '/api/v3/history',
+        body: (url: URL) => {
+          const episodeId = Number(url.searchParams.get('episodeId'));
+          const g = grabOf(episodeId);
+          return historyPage(
+            g
+              ? [grabHistoryJson(g.id, '2026-07-01T10:00:00Z', { episodeId, seriesId: arrItemId, downloadId: g.downloadId, data: { releaseSource: 'Rss' } })]
+              : [],
+          );
+        },
+      },
+      { path: '/api/v3/config/downloadclient', body: { autoRedownloadFailed: true, autoRedownloadFailedFromInteractiveSearch: true } },
+      { method: 'POST', path: /^\/api\/v3\/history\/failed\/\d+$/, body: {} },
+      { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 9103, name: 'EpisodeSearch' } },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+    const result = await api.fix.create({ mediaItemId: item.id, scope: 'season', seasonNumber: 1, reason: 'wrong_version_quality' });
+    return { stub, result };
+  }
+
+  it('a season pack is marked once (one record per download, not per episode), and its missing episode is the *arr\'s to search', async () => {
+    // E1 and E2 on disk from one pack download; E3 missing but grabbed in the same pack.
+    const { stub, result } = await seasonFixWithRedownloadOn(
+      806,
+      [
+        { id: 80601, hasFile: true },
+        { id: 80602, hasFile: true },
+        { id: 80603, hasFile: false },
+      ],
+      (episodeId) => ({ id: 960_000 + episodeId, downloadId: 'SABnzbd_nzo_pack' }),
+    );
+    expect(result.status).toBe('search_triggered');
+    expect(stub.callsFor('POST', '/api/v3/history/failed/').map((c) => c.url.pathname)).toEqual([
+      '/api/v3/history/failed/1040601',
+    ]);
+    expect(stub.callsFor('POST', '/api/v3/command')).toHaveLength(0);
+  });
+
+  it("a season's missing episode outside the re-searched downloads still gets the Fix's EpisodeSearch", async () => {
+    // E1 on disk (its download is re-searched by the *arr); E2 missing, never grabbed; E3 missing, grabbed elsewhere.
+    const { stub } = await seasonFixWithRedownloadOn(
+      807,
+      [
+        { id: 80701, hasFile: true },
+        { id: 80702, hasFile: false },
+        { id: 80703, hasFile: false },
+      ],
+      (episodeId) =>
+        episodeId === 80701
+          ? { id: 970_701, downloadId: 'SABnzbd_nzo_e1' }
+          : episodeId === 80703
+            ? { id: 970_703, downloadId: 'SABnzbd_nzo_other' }
+            : null,
+    );
+    expect(stub.callsFor('POST', '/api/v3/history/failed/')).toHaveLength(1);
+    expect(stub.callsFor('POST', '/api/v3/command').map((c) => c.body)).toEqual([
+      { name: 'EpisodeSearch', episodeIds: [80702, 80703] },
+    ]);
+  });
+
+  it('Sonarr season where the *arr re-searches only some grabs: the Fix searches only the other episodes', async () => {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'sonarr', { title: 'Season Show Three', arrItemId: 805 });
+    const stub = stubArrBundle([
+      {
+        path: '/api/v3/episode',
+        body: [episodeJson(80501, 1, 1, { seriesId: 805 }), episodeJson(80502, 1, 2, { seriesId: 805 })],
+      },
+      {
+        path: '/api/v3/history',
+        body: (url: URL) => {
+          const episodeId = Number(url.searchParams.get('episodeId'));
+          return historyPage([
+            grabHistoryJson(900_000 + episodeId, '2026-07-01T10:00:00Z', {
+              episodeId,
+              seriesId: 805,
+              data: { releaseSource: episodeId === 80502 ? 'InteractiveSearch' : 'Rss' },
+            }),
+          ]);
+        },
+      },
+      { path: '/api/v3/config/downloadclient', body: { autoRedownloadFailed: true, autoRedownloadFailedFromInteractiveSearch: false } },
+      { method: 'POST', path: /^\/api\/v3\/history\/failed\/\d+$/, body: {} },
+      { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 9102, name: 'EpisodeSearch' } },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+    await api.fix.create({ mediaItemId: item.id, scope: 'season', seasonNumber: 1, reason: 'wrong_version_quality' });
+    expect(stub.callsFor('POST', '/api/v3/command').map((c) => c.body)).toEqual([
+      { name: 'EpisodeSearch', episodeIds: [80502] },
+    ]);
   });
 });
 

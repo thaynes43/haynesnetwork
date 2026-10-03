@@ -60,6 +60,14 @@ export function stubArrBundle(routes: ArrStubRoute[]): StubbedArrBundle {
         (r.method ?? 'GET') === method &&
         (typeof r.path === 'string' ? url.pathname === r.path : r.path.test(url.pathname)),
     );
+    // DESIGN-005 D-25: every Fix reads Redownload Failed before it marks a grab failed. Default to the
+    // ADR-098 state (off, so the Fix searches itself); a test overrides it with its own route.
+    if (!route && method === 'GET' && /^\/api\/v[13]\/config\/downloadclient$/.test(url.pathname)) {
+      return new Response(
+        JSON.stringify({ autoRedownloadFailed: false, autoRedownloadFailedFromInteractiveSearch: true }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
     if (!route) {
       return new Response(JSON.stringify({ message: `no stub for ${method} ${url.pathname}` }), {
         status: 404,

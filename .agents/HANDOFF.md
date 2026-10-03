@@ -17,7 +17,8 @@ tries per title in any 30 days, hourly. Evidence: the 2026-10-02 Paw Patrol run 
 - **Coordinator, after the deploy:** turn off Redownload in Sonarr and Radarr right after a janitor run (OPS-018 §2),
   then log it in PLAN-065's ladder log. Until then the retry only observes.
 - **Q-08 answered (owner, "Reset after 30 days"):** two tries per title in any rolling 30 days, every loop guard (D-23
-  rule 7). **Open:** issue #646 (Lidarr's Fix searches twice).
+  rule 7). Issue #646 (a Fix searched twice) is closed by DESIGN-005 D-25: a Fix reads Redownload Failed and
+  searches only when the *arr will not.
 
 ## ▶ 2026-10-03 — Trash-deleted titles are excluded from automation (ADR-097)
 

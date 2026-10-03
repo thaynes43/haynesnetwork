@@ -1,7 +1,9 @@
 # DESIGN-005: *arr media ledger, Fix, and failsafe Restore — Phase 2
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-03 (**D-24** — *arr history that is ingested before its title's
+- **Last updated:** 2026-10-03 (**D-25** — a Fix makes exactly one search: when the *arr's own Redownload
+  Failed will search after the grab is marked failed, the Fix sends no search command of its own; issue #646,
+  the ADR-098 principle). Prior: 2026-10-03 (**D-24** — *arr history that is ingested before its title's
   `media_items` row exists is attached once the row appears, for every *arr and every event type, not
   only Seerr requests). Prior: 2026-07-28 (**D-23** — the flat Fix/Force-Search budget becomes a
   per-role budget, ADR-080 / PLAN-041 Gap B / PRD R-236); 2026-07-11 (**D-22** — TV season posters +
@@ -677,7 +679,7 @@ sequenceDiagram
         A-->>W: 200 (cannot blocklist — limitation recorded on the row)
         W->>D: recordFixAction → actioned, path=delete_search (+responses)
     end
-    W->>A: POST command { EpisodeSearch|MoviesSearch|AlbumSearch, ids }
+    W->>A: POST command { EpisodeSearch|MoviesSearch|AlbumSearch, ids }  (D-25: skipped when the *arr's own Redownload Failed searches after the mark)
     A-->>W: 201 (command id)
     W->>D: recordFixAction → search_triggered
     W-->>U: fix status + path taken
@@ -1384,6 +1386,45 @@ The ledger stays a synced copy of the *arrs (hard rule 4): the relink only re-re
 already reported and writes nothing back. A rebuilt *arr that reissued old internal ids could, in
 principle, attach a pre-rebuild orphan to a new title holding the same id; the ingest-time lookup has
 the same exposure, and the *arrs' ids are never reused otherwise, so no extra guard is added.
+
+### D-25 One search per Fix (2026-10-03, issue #646, the ADR-098 principle)
+
+**Problem.** The primary path (D-15, AC-07) marks the grab failed with `POST /history/failed/{id}`, then sends
+its own search command. Upstream (`HistoryController.MarkAsFailed` → `FailedDownloadService.MarkAsFailed(id)`,
+Sonarr v4.0.20, Radarr v6.4.4, Lidarr v3.1.6) that publishes the *arr's DownloadFailedEvent with
+`skipRedownload = false`, and the endpoint takes no parameter to change it. `RedownloadFailedDownloadService` then
+searches by itself unless the *arr's Redownload Failed is off, or the grab came from an interactive search
+(`data.releaseSource = InteractiveSearch`) while its interactive-search twin is off. All three *arrs ran it on, so
+every primary-path Fix searched the indexers twice. ADR-098 turns it off in Sonarr and Radarr; Lidarr keeps it on.
+
+**Decision: the Fix skips its own search when the *arr's will happen** (`arrSearchesAfterMarkFailed`, `fix-flow.ts`).
+
+- Before the mark, the Fix reads `GET /config/downloadclient` (`getDownloadClientConfig`) and records it as the step
+  `redownload_check` (`autoRedownloadFailed`, the interactive twin, the grab's `releaseSource`, and `arrSearches`).
+  A failed read fails the Fix before anything is marked or searched (`failed`, nothing changed; the person retries).
+- When the *arr will search: the mark is the one search trigger. The Fix sends no command and records
+  `trigger_search` as `skipped: true, searchedBy: <kind>`; the status still moves to `search_triggered`, because a
+  search was triggered. The *arr's search always covers the Fix's target: the grab's own episodes, movie or albums
+  (a season or an artist search when the grab was all of it).
+- When it will not: the Fix sends its one search, as before.
+- The season roll-up marks **one record per distinct download** (keyed by `downloadId`; a record without one stands
+  alone). Sonarr writes one grabbed record per episode, so a season pack's episodes have different history ids and
+  one download; marking each of them published the download's failure once per episode (a blocklist entry each, and
+  with Redownload Failed on a search each). The old "a season pack shares one id" premise was wrong.
+- Season search: if the *arr searches after none of the marks, the SeasonSearch as before. If it searches after some
+  or all, its search covers every episode of each such download (upstream: every grabbed record of the downloadId),
+  so the Fix sends one EpisodeSearch for the season's other episodes: on-disk episodes of the other downloads or with
+  no grab, and missing episodes, unless one was grabbed in a covered download (read from its grab history). Nothing
+  left: no command, recorded as skipped. A failed coverage read after the marks fails the Fix (`resolve_coverage`)
+  and searches nothing more; the *arr is already searching its part. The advisory review of PR #651 asked for the
+  missing episodes, which the old SeasonSearch covered.
+- The fallback path (no grab, D-15 AC-08) marks nothing, so it always sends its own search.
+
+**Why not the other option.** Passing `skipRedownload` and always searching from the Fix (the janitor's choice in
+ADR-098, DESIGN-046 D-23 rule 5) is not available here: only the queue removal (`DELETE /queue/{id}`) takes it, and a
+Fix acts on an imported file's grab, which is no longer in the queue. Reading the setting is the only way to get one
+search, and it keeps the Fix right whatever the setting is: Sonarr and Radarr search from the Fix once ADR-098's
+change lands, Lidarr searches from its own handling.
 
 ## Alternatives considered
 

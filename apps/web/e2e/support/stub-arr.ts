@@ -991,6 +991,9 @@ export async function startStubArr(): Promise<StubArrServer> {
           ]);
         case '/tag':
           return json(res, 200, [{ id: 1, label: 'mediarequests' }]);
+        case '/config/downloadclient':
+          // DESIGN-005 D-25 / ADR-098 — Redownload Failed off, so a Fix sends its own one search.
+          return json(res, 200, { autoRedownloadFailed: false, autoRedownloadFailedFromInteractiveSearch: true });
         case '/trackfile':
           return json(res, 200, []);
         default:

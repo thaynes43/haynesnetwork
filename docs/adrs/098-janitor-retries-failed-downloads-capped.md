@@ -13,6 +13,9 @@
   search after a failed download outside the janitor; and ADR-083 C-04's write-back list, which gains a search with no
   removal (C-03 here). DESIGN-046 D-13 rule 4 (ADR-094): the loop guard's count becomes one budget across every janitor
   search, not only `manual_match` removals (C-02 here).
+- **Status note (2026-10-03):** C-07's open item is closed by DESIGN-005 D-25 ([issue #646](https://github.com/thaynes43/haynesnetwork/issues/646)):
+  a Fix reads the *arr's Redownload Failed and sends its own search only when the *arr will not, so a Lidarr Fix
+  searches once. This is a status note only.
 - **Amends:** hard rule 4's write-back list (CLAUDE.md), as ADR-083 C-04, ADR-094 C-03 and ADR-095 C-03 did.
 
 ## Context and problem statement

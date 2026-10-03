@@ -80,9 +80,10 @@ just after a run keeps that window to a minute or two.
 - After a failed download, the next try waits for the janitor's hourly run (up to an hour). Accepted by the owner.
 - In the Sonarr or Radarr queue, removing a download with **Blocklist and Search** no longer searches: that option uses
   the same setting. Search for the episode or movie by hand after removing it.
-- The app's **Fix** is unaffected: it searches by itself. It used to search twice on Sonarr and Radarr (the *arr's own
-  search after Fix marked the grab failed, plus Fix's search); now it searches once. Lidarr's Fix still searches twice
-  ([issue #646](https://github.com/thaynes43/haynesnetwork/issues/646)).
+- The app's **Fix** searches exactly once, whatever the setting (DESIGN-005 D-25): it reads Redownload Failed before
+  it marks the grab failed, and sends its own search only when the *arr will not. With the setting off (Sonarr and
+  Radarr after this change) the Fix searches; with it on (Lidarr) the *arr's own search is the one. Before D-25 a Fix
+  searched twice ([issue #646](https://github.com/thaynes43/haynesnetwork/issues/646)).
 - A title held after two tries in 30 days (`skipped_loop`) is listed in the nightly digest under the loops, and the
   subject gains `[janitor: loop detected]`. A person can step in (an interactive search for a good release, or unmonitor
   it); otherwise the janitor tries it again once its oldest try is 30 days old.

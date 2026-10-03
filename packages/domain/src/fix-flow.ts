@@ -9,6 +9,10 @@
 //   4. primary path (AC-07): POST history/failed/{grabId} (blocklist) — or the
 //      fallback (AC-08): delete the file(s) — then recordFixAction → 'actioned';
 //   5. POST /command (EpisodeSearch | MoviesSearch | AlbumSearch) → 'search_triggered'.
+//      D-25 (ADR-098 principle, issue #646): exactly one search per Fix. `history/failed`
+//      cannot pass `skipRedownload`, so when the *arr's own Redownload Failed will search
+//      after the mark (read from GET /config/downloadclient before it), the Fix sends no
+//      search command of its own and records the skip.
 //
 // Every step's outcome (endpoint, status, response ids) is appended to
 // fix_requests.actions_taken; any *arr failure lands 'failed' + a 'fix_failed' event
@@ -38,6 +42,7 @@ import {
 import { resolveDb } from './db-client';
 import { createFixRequest, recordFixAction } from './fix-requests';
 import { arrApiBasePath, type ArrClientBundle } from './arr-clients';
+import type { ArrDownloadClientConfig } from '@hnet/arr';
 import { listMediaChildren } from './media-children';
 import { resolveFixTarget, type FixScope, type SearchScope } from './action-scope';
 
@@ -89,6 +94,48 @@ function stepFailed(step: string, endpoint: string, err: unknown): FixActionEntr
     ...(err instanceof ArrHttpError ? { status: err.status } : {}),
     error: err instanceof Error ? err.message : String(err),
   };
+}
+
+/**
+ * DESIGN-005 D-25 (issue #646, the ADR-098 principle) — whether the *arr searches again by itself
+ * after the Fix marks this grab failed. `POST /history/failed/{id}` publishes the *arr's
+ * DownloadFailedEvent with `skipRedownload = false` (the endpoint takes no such parameter), and
+ * upstream RedownloadFailedDownloadService then searches unless Redownload Failed is off, or the
+ * grab came from an interactive search while its interactive-search twin is off (the grab
+ * record's `data.releaseSource`). Its search always covers the Fix's target: the grab's own
+ * episodes / movie / albums, or the season / artist when the grab was all of it. Pure.
+ */
+export function arrSearchesAfterMarkFailed(
+  config: ArrDownloadClientConfig,
+  grab: { data?: Record<string, unknown> | null },
+): boolean {
+  if (!config.autoRedownloadFailed) return false;
+  const interactive = grab.data?.releaseSource === 'InteractiveSearch';
+  return !interactive || config.autoRedownloadFailedFromInteractiveSearch !== false;
+}
+
+/** D-25 — the audit step for the Redownload Failed read. */
+function redownloadEntry(
+  base: string,
+  config: ArrDownloadClientConfig,
+  extra: Record<string, unknown>,
+): FixActionEntry {
+  return stepOk('redownload_check', `GET ${base}/config/downloadclient`, {
+    autoRedownloadFailed: config.autoRedownloadFailed,
+    ...(config.autoRedownloadFailedFromInteractiveSearch !== undefined
+      ? { autoRedownloadFailedFromInteractiveSearch: config.autoRedownloadFailedFromInteractiveSearch }
+      : {}),
+    ...extra,
+  });
+}
+
+/** D-25 — the search step when the *arr's own Redownload Failed searches instead of the Fix. */
+function searchLeftToArr(base: string, kind: ArrKind): FixActionEntry {
+  return stepOk('trigger_search', `POST ${base}/command`, {
+    skipped: true,
+    searchedBy: kind,
+    note: `${kind} searches again by itself after the grab is marked failed (Redownload Failed is on), so the Fix sends no search of its own`,
+  });
 }
 
 export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRequestResult> {
@@ -194,22 +241,23 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
       : kind === 'radarr'
         ? `GET ${base}/history/movie?movieId=${item.arrItemId}&eventType=grabbed`
         : `GET ${base}/history?albumId=${targetChildId}&eventType=${LIDARR_GRABBED_EVENT_TYPE}`;
-  let grab: { id: number; sourceTitle: string | null } | null = null;
+  let grab: { id: number; sourceTitle: string | null; data?: Record<string, unknown> } | null = null;
+  const asGrab = (r: { id: number; sourceTitle?: string | null; data?: Record<string, unknown> }) => ({
+    id: r.id,
+    sourceTitle: r.sourceTitle ?? null,
+    data: r.data,
+  });
   try {
     if (kind === 'sonarr') {
       const page = await input.arr.read.sonarr.getEpisodeGrabHistory(targetChildId!);
-      grab = page.records[0]
-        ? { id: page.records[0].id, sourceTitle: page.records[0].sourceTitle ?? null }
-        : null;
+      grab = page.records[0] ? asGrab(page.records[0]) : null;
     } else if (kind === 'radarr') {
       const records = await input.arr.read.radarr.getMovieGrabHistory(item.arrItemId);
       const newest = records.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
-      grab = newest ? { id: newest.id, sourceTitle: newest.sourceTitle ?? null } : null;
+      grab = newest ? asGrab(newest) : null;
     } else {
       const page = await input.arr.read.lidarr.getAlbumGrabHistory(targetChildId!);
-      grab = page.records[0]
-        ? { id: page.records[0].id, sourceTitle: page.records[0].sourceTitle ?? null }
-        : null;
+      grab = page.records[0] ? asGrab(page.records[0]) : null;
     }
   } catch (err) {
     if (err instanceof ArrError) await fail(stepFailed('resolve_grab', grabEndpoint, err), err);
@@ -221,9 +269,21 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
   });
 
   let pathTaken: FixPath;
+  /** D-25: the *arr's own Redownload Failed searches after the mark, so the Fix does not. */
+  let arrSearches = false;
   if (grab !== null) {
     // ---- Primary path (AC-07): blocklist via POST history/failed/{id}. ----
     pathTaken = 'blocklist_search';
+    // D-25: read Redownload Failed BEFORE the mark, so a failed read leaves nothing changed.
+    const configEndpoint = `GET ${base}/config/downloadclient`;
+    let config: ArrDownloadClientConfig;
+    try {
+      config = await input.arr.read[kind].getDownloadClientConfig();
+    } catch (err) {
+      if (err instanceof ArrError) await fail(stepFailed('redownload_check', configEndpoint, err), err);
+      throw err;
+    }
+    arrSearches = arrSearchesAfterMarkFailed(config, grab);
     const endpoint = `POST ${base}/history/failed/${grab.id}`;
     try {
       await input.arr.write[kind].markHistoryFailed(grab.id);
@@ -236,7 +296,14 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
       fixRequestId,
       transition: 'actioned',
       pathTaken,
-      actions: [resolveEntry, stepOk('mark_failed', endpoint, { status: 200 })],
+      actions: [
+        resolveEntry,
+        redownloadEntry(base, config, {
+          ...(typeof grab.data?.releaseSource === 'string' ? { releaseSource: grab.data.releaseSource } : {}),
+          arrSearches,
+        }),
+        stepOk('mark_failed', endpoint, { status: 200 }),
+      ],
     });
   } else {
     // ---- Fallback path (AC-08): no grab history — delete the file(s) + search. The
@@ -289,7 +356,17 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
     });
   }
 
-  // ---- Step 3: trigger the search command (D-03 command names). ----
+  // ---- Step 3: trigger the search command (D-03 command names) — unless the *arr's own
+  // Redownload Failed already searches after the mark (D-25): one search per Fix, never two.
+  if (arrSearches) {
+    await recordFixAction({
+      db: input.db,
+      fixRequestId,
+      transition: 'search_triggered',
+      actions: [searchLeftToArr(base, kind)],
+    });
+    return { id: fixRequestId, status: 'search_triggered', pathTaken, targetLabel };
+  }
   const commandEndpoint = `POST ${base}/command`;
   try {
     const command =
@@ -458,9 +535,13 @@ async function runSubtitleFix(
  * resolve every ON-DISK episode's latest grab from LIVE per-episode history (reusing the
  * production-verified `GET /history?episodeId=&eventType=grabbed` per-target endpoint, so
  * this never hits the paged-history integer-eventType pitfall), blocklist each DISTINCT
- * backing grab (a season pack shares one id — the Set dedupes it), then fire ONE
- * SeasonSearch. When no on-disk episode has a grab record, fall back to deleting the
- * season's episode files (AC-08). One fix_requests row (scope 'season') is the audit.
+ * backing download ONCE (one grab record per downloadId: Sonarr writes one record per
+ * episode, so a season pack's episodes have different ids and one download — D-25), then
+ * ONE search: the SeasonSearch, or, when the *arr's own Redownload Failed searches after
+ * some marks, an EpisodeSearch for the season's episodes its search does not cover, or
+ * none when it covers them all (D-25). When no on-disk episode has a grab record, fall
+ * back to deleting the season's episode files (AC-08). One fix_requests row (scope
+ * 'season') is the audit.
  */
 async function runSeasonFix(
   input: RunFixRequestInput,
@@ -501,9 +582,19 @@ async function runSeasonFix(
     );
   };
 
-  // ---- Step 1: resolve the distinct grabs backing the on-disk episodes. ----
+  // ---- Step 1: resolve the distinct downloads backing the on-disk episodes. ----
+  // Sonarr writes one grabbed record per episode of a download (a season pack's episodes have
+  // DIFFERENT history ids, one downloadId), and marking any of them fails the whole download.
+  // So the Fix marks ONE record per distinct download (D-25): marking each episode's record
+  // would publish the download's failure once per episode, and with Redownload Failed on the
+  // *arr would search once per episode. A record with no downloadId stands alone.
   const actions: FixActionEntry[] = [];
-  const grabIds = new Set<number>();
+  const downloads = new Map<
+    string,
+    { grabId: number; data?: Record<string, unknown>; downloadId: string | null; episodes: number[] }
+  >();
+  const downloadKey = (g: { id: number; downloadId?: string | null }) =>
+    g.downloadId && g.downloadId.trim() !== '' ? `dl:${g.downloadId}` : `id:${g.id}`;
   try {
     for (const ep of onDisk) {
       const endpoint = `GET ${base}/history?episodeId=${ep.arrChildId}&eventType=grabbed`;
@@ -515,7 +606,18 @@ async function runSeasonFix(
           grabHistoryId: grab?.id ?? null,
         }),
       );
-      if (grab) grabIds.add(grab.id);
+      if (grab) {
+        const key = downloadKey(grab);
+        const known = downloads.get(key);
+        if (known) known.episodes.push(ep.arrChildId);
+        else
+          downloads.set(key, {
+            grabId: grab.id,
+            data: grab.data,
+            downloadId: grab.downloadId ?? null,
+            episodes: [ep.arrChildId],
+          });
+      }
     }
   } catch (err) {
     if (err instanceof ArrError)
@@ -524,18 +626,39 @@ async function runSeasonFix(
   }
 
   let pathTaken: FixPath;
-  if (grabIds.size > 0) {
-    // ---- Primary path (AC-07): blocklist every distinct backing grab. ----
+  /** D-25: the downloads whose mark-failed the *arr's own Redownload Failed searches after. */
+  const arrSearched = new Set<string>();
+  if (downloads.size > 0) {
+    // ---- Primary path (AC-07): blocklist every distinct backing download, once each. ----
     pathTaken = 'blocklist_search';
-    for (const grabId of grabIds) {
-      const endpoint = `POST ${base}/history/failed/${grabId}`;
+    // D-25: read Redownload Failed BEFORE any mark, so a failed read leaves nothing changed.
+    const configEndpoint = `GET ${base}/config/downloadclient`;
+    let config: ArrDownloadClientConfig;
+    try {
+      config = await input.arr.read.sonarr.getDownloadClientConfig();
+    } catch (err) {
+      if (err instanceof ArrError) await fail(stepFailed('redownload_check', configEndpoint, err), err);
+      throw err;
+    }
+    for (const [key, d] of downloads) {
+      if (arrSearchesAfterMarkFailed(config, d)) arrSearched.add(key);
+    }
+    actions.push(
+      redownloadEntry(base, config, {
+        arrSearchesGrabs: [...downloads].filter(([key]) => arrSearched.has(key)).map(([, d]) => d.grabId),
+      }),
+    );
+    for (const d of downloads.values()) {
+      const endpoint = `POST ${base}/history/failed/${d.grabId}`;
       try {
-        await input.arr.write.sonarr.markHistoryFailed(grabId);
+        await input.arr.write.sonarr.markHistoryFailed(d.grabId);
       } catch (err) {
         if (err instanceof ArrError) await fail(stepFailed('mark_failed', endpoint, err), err);
         throw err;
       }
-      actions.push(stepOk('mark_failed', endpoint, { status: 200, grabHistoryId: grabId }));
+      actions.push(
+        stepOk('mark_failed', endpoint, { status: 200, grabHistoryId: d.grabId, episodeIds: d.episodes }),
+      );
     }
   } else {
     // ---- Fallback (AC-08): no grabs to blocklist → delete the season's files. ----
@@ -564,10 +687,51 @@ async function runSeasonFix(
   }
   await recordFixAction({ db: input.db, fixRequestId, transition: 'actioned', pathTaken, actions });
 
-  // ---- Step 3: SeasonSearch for the whole season. ----
+  // ---- Step 3: SeasonSearch for the whole season — unless (D-25) the *arr's own Redownload
+  // Failed searches after some marks. Its search covers every episode of each such download
+  // (upstream: every grabbed record of the downloadId), so the Fix searches only the season's
+  // episodes it does not cover: on-disk episodes of the other downloads or with no grab, and
+  // missing episodes, unless one was grabbed in a covered download. Nothing left: no command.
+  let leftForFix: number[] = [];
+  if (arrSearched.size > 0) {
+    const covered = new Set<number>();
+    const coveredDownloadIds = new Set<string>();
+    for (const [key, d] of downloads) {
+      if (!arrSearched.has(key)) continue;
+      for (const id of d.episodes) covered.add(id);
+      if (d.downloadId) coveredDownloadIds.add(d.downloadId);
+    }
+    try {
+      for (const ep of seasonEpisodes) {
+        if (covered.has(ep.arrChildId) || ep.hasFile || coveredDownloadIds.size === 0) continue;
+        const page = await input.arr.read.sonarr.getEpisodeGrabHistory(ep.arrChildId);
+        if (page.records.some((r) => r.downloadId != null && coveredDownloadIds.has(r.downloadId))) {
+          covered.add(ep.arrChildId);
+        }
+      }
+    } catch (err) {
+      // The marks landed and the *arr is searching its part: record the failed read, search nothing more.
+      if (err instanceof ArrError)
+        await fail(stepFailed('resolve_coverage', `${base}/history (season coverage)`, err), err);
+      throw err;
+    }
+    leftForFix = seasonEpisodes.map((e) => e.arrChildId).filter((id) => !covered.has(id));
+    if (leftForFix.length === 0) {
+      await recordFixAction({
+        db: input.db,
+        fixRequestId,
+        transition: 'search_triggered',
+        actions: [searchLeftToArr(base, 'sonarr')],
+      });
+      return { id: fixRequestId, status: 'search_triggered', pathTaken, targetLabel };
+    }
+  }
   const commandEndpoint = `POST ${base}/command`;
   try {
-    const command = await input.arr.write.sonarr.searchSeason(item.arrItemId, seasonNumber);
+    const command =
+      arrSearched.size > 0
+        ? await input.arr.write.sonarr.searchEpisodes(leftForFix)
+        : await input.arr.write.sonarr.searchSeason(item.arrItemId, seasonNumber);
     await recordFixAction({
       db: input.db,
       fixRequestId,
