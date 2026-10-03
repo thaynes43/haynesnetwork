@@ -130,20 +130,23 @@ describe('classifyForExpedite (the ONE shared derivation — ADR-086 D-11)', () 
             for (const onWatchlist of [false, true]) {
               for (const watchlistEvaluable of [true, false]) {
                 for (const ruleEvaluationFailed of [false, true]) {
-                  const item = pendingItem({
-                    protectedByTag,
-                    recentlyWatched,
-                    mediaItemId,
-                    requesters,
-                    onWatchlist,
-                    watchlistEvaluable,
-                    ruleEvaluationFailed,
-                  });
-                  const verdict = classifyForExpedite(item);
-                  expect({ ...item, kept: verdict !== 'deletable' }).toEqual({
-                    ...item,
-                    kept: classifyGuardian(item).keep,
-                  });
+                  for (const ageGuard of ['clear', 'recent', 'unknown'] as const) {
+                    const item = pendingItem({
+                      protectedByTag,
+                      recentlyWatched,
+                      mediaItemId,
+                      requesters,
+                      onWatchlist,
+                      watchlistEvaluable,
+                      ruleEvaluationFailed,
+                      ageGuard,
+                    });
+                    const verdict = classifyForExpedite(item);
+                    expect({ ...item, kept: verdict !== 'deletable' }).toEqual({
+                      ...item,
+                      kept: classifyGuardian(item).keep,
+                    });
+                  }
                 }
               }
             }
@@ -165,8 +168,17 @@ describe('partitionPendingForExpedite (the server preview the confirm consumes)'
         pendingItem({ maintainerrMediaId: null, sizeBytes: 10 }), // unverifiable (unactionable)
         pendingItem({ onWatchlist: true, sizeBytes: 10 }), // protected — on a watchlist
         pendingItem({ ruleEvaluationFailed: true, sizeBytes: 10 }), // unverifiable (D-24i)
+        pendingItem({ ageGuard: 'recent', sizeBytes: 10 }), // protected — the Age Guard (D-26 / Q-14)
+        pendingItem({ ageGuard: 'unknown', sizeBytes: 10 }), // unverifiable — its dates can't be read yet
       ]),
-    ).toEqual({ deletable: 1, deletableBytes: 100, protected: 3, unverifiable: 3, watchlisted: 1 });
+    ).toEqual({
+      deletable: 1,
+      deletableBytes: 100,
+      protected: 4,
+      unverifiable: 4,
+      watchlisted: 1,
+      recentlyAdded: 1,
+    });
   });
 
   it('ADR-086 D-11 regression — a requested item counts as DELETABLE, not protected', () => {
@@ -174,6 +186,13 @@ describe('partitionPendingForExpedite (the server preview the confirm consumes)'
     // owner nothing would be deleted while the server went on to delete it.
     expect(
       partitionPendingForExpedite([pendingItem({ requesters: ['manofoz'], sizeBytes: 500 })]),
-    ).toEqual({ deletable: 1, deletableBytes: 500, protected: 0, unverifiable: 0, watchlisted: 0 });
+    ).toEqual({
+      deletable: 1,
+      deletableBytes: 500,
+      protected: 0,
+      unverifiable: 0,
+      watchlisted: 0,
+      recentlyAdded: 0,
+    });
   });
 });

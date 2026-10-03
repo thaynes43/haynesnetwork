@@ -82,7 +82,6 @@ import {
   type TrashMedia,
   type TrashPendingItem,
 } from './trash-flow';
-import { classifyAgeGuard } from './trash-age-guard';
 import { removeTrashCandidateRows } from './trash-candidates';
 import { compareByStrategy, type BatchStrategy } from './trash-strategy';
 
@@ -1672,25 +1671,11 @@ async function expireOneBatch(input: {
       continue;
     }
     const verdict = classifyGuardian(fresh);
-    // DESIGN-052 D-26 — the Age Guard, after the guardian: downloaded, upgraded or added to any Plex server in the
-    // last 180 days ⇒ kept `recently_added`; a date that cannot be told ⇒ kept `unevaluable`. Re-judged from live data
-    // here, so an item already in the batch when it was upgraded or added elsewhere is still kept.
-    const ageVerdict = verdict.keep ? verdict : classifyAgeGuard(fresh);
-    if (ageVerdict.keep && !verdict.keep) {
-      input.logger.info('[trash] age_guard', {
-        batchId: input.batchId,
-        maintainerrMediaId: item.maintainerrMediaId,
-        title: item.title,
-        ageGuard: fresh.ageGuard,
-        newestAddedAt: fresh.newestAddedAt,
-      });
-      await keep(item, ageVerdict.reason);
-      continue;
-    }
     if (verdict.keep) {
-      // dnd / recently-watched / watchlisted / unevaluable — never deleted (C-07b). Skip, no whitelist: a repeat
-      // next batch is the intended stronger tuning signal (Q-03), Save is the permanent lever. A watchlisted item
-      // is never auto-saved either (ADR-093 C-03 — a watchlist is not a Save).
+      // dnd / recently-watched / watchlisted / recently added (the Age Guard, D-26) / unevaluable — never deleted
+      // (C-07b). Skip, no whitelist: a repeat next batch is the intended stronger tuning signal (Q-03), Save is the
+      // permanent lever. A watchlisted or recently added item is never auto-saved either (ADR-093 C-03 — a
+      // watchlist is not a Save; the Age Guard lapses when the title ages out).
       //
       // ADR-025 errata (2026-07-09) — a requester is NO LONGER a keep (owner ruling — requested is
       // informational only), so a requested item is cold here and falls through to deletion below

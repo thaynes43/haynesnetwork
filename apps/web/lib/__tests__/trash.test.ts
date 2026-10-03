@@ -59,6 +59,7 @@ const base: GuardianPreviewInput = {
   onWatchlist: false,
   watchlistEvaluable: true,
   ruleEvaluationFailed: false,
+  ageGuard: 'clear',
 };
 
 describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail closed)', () => {
@@ -91,6 +92,18 @@ describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail clos
     expect(previewGuardian({ ...base, onWatchlist: true, recentlyWatched: true })).toBe('protected_watched');
     expect(previewGuardian({ ...base, onWatchlist: true, watchlistEvaluable: false })).toBe('protected_watchlist');
   });
+  it('D-26 / Q-14 — the Age Guard: recent ⇒ protected_recent after the tag, watch and watchlist keeps; unknown ⇒ unverifiable', () => {
+    expect(previewGuardian({ ...base, ageGuard: 'recent' })).toBe('protected_recent');
+    expect(previewGuardian({ ...base, ageGuard: 'recent', protectedByTag: true })).toBe('protected_tag');
+    expect(previewGuardian({ ...base, ageGuard: 'recent', recentlyWatched: true })).toBe('protected_watched');
+    expect(previewGuardian({ ...base, ageGuard: 'recent', onWatchlist: true })).toBe('protected_watchlist');
+    expect(previewGuardian({ ...base, ageGuard: 'unknown' })).toBe('unverifiable');
+    expect(unverifiableReason({ ...base, ageGuard: 'unknown' })).toBe("its dates can't be checked right now");
+    // An older server omits the field: read as clear.
+    const older: GuardianPreviewInput = { ...base };
+    delete older.ageGuard;
+    expect(previewGuardian(older)).toBe('deletable');
+  });
   it('ADR-093 — not watchlist-evaluable, or ruleEvaluationFailed ⇒ unverifiable (kept)', () => {
     expect(previewGuardian({ ...base, watchlistEvaluable: false })).toBe('unverifiable');
     expect(previewGuardian({ ...base, ruleEvaluationFailed: true })).toBe('unverifiable');
@@ -109,6 +122,7 @@ describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail clos
     expect(EXPEDITE_UNVERIFIABLE_REASON).toMatch(/ledger/);
     expect(EXPEDITE_UNVERIFIABLE_REASON).toMatch(/watchlists/);
     expect(EXPEDITE_UNVERIFIABLE_REASON).toMatch(/Maintainerr/);
+    expect(EXPEDITE_UNVERIFIABLE_REASON).toMatch(/dates/);
     for (const text of [
       EXPEDITE_UNVERIFIABLE_REASON,
       unverifiableReason({ ...base, mediaItemId: null }),
@@ -139,21 +153,25 @@ describe('previewGuardian parity with @hnet/domain classifyForExpedite (ADR-086 
               for (const onWatchlist of [false, true]) {
                 for (const watchlistEvaluable of [true, false]) {
                   for (const ruleEvaluationFailed of [false, true]) {
-                    const item: GuardianPreviewInput = {
-                      maintainerrMediaId,
-                      mediaItemId,
-                      protectedByTag,
-                      recentlyWatched,
-                      requesters,
-                      onWatchlist,
-                      watchlistEvaluable,
-                      ruleEvaluationFailed,
-                    };
-                    // Compared as objects so a failure prints WHICH input diverged.
-                    expect({ ...item, verdict: previewGuardian(item) }).toEqual({
-                      ...item,
-                      verdict: classifyForExpedite(item),
-                    });
+                    // DESIGN-052 D-26 / Q-14 — the Age Guard joins the matrix.
+                    for (const ageGuard of ['clear', 'recent', 'unknown'] as const) {
+                      const item = {
+                        maintainerrMediaId,
+                        mediaItemId,
+                        protectedByTag,
+                        recentlyWatched,
+                        requesters,
+                        onWatchlist,
+                        watchlistEvaluable,
+                        ruleEvaluationFailed,
+                        ageGuard,
+                      };
+                      // Compared as objects so a failure prints WHICH input diverged.
+                      expect({ ...item, verdict: previewGuardian(item) }).toEqual({
+                        ...item,
+                        verdict: classifyForExpedite(item),
+                      });
+                    }
                   }
                 }
               }
@@ -165,7 +183,7 @@ describe('previewGuardian parity with @hnet/domain classifyForExpedite (ADR-086 
   });
 
   it('both sides agree a requester is informational, never a keep (the closed drift)', () => {
-    const requested: GuardianPreviewInput = { ...base, requesters: ['manofoz'] };
+    const requested = { ...base, requesters: ['manofoz'], ageGuard: 'clear' as const };
     expect(previewGuardian(requested)).toBe('deletable');
     expect(classifyForExpedite(requested)).toBe('deletable');
   });
@@ -180,13 +198,16 @@ describe('partitionForExpedite', () => {
       { ...base, mediaItemId: null, sizeBytes: 10 }, // unverifiable (skipped)
       { ...base, maintainerrMediaId: null, sizeBytes: 10 }, // unverifiable (unactionable)
       { ...base, onWatchlist: true, sizeBytes: 10 }, // protected — on a watchlist (ADR-093)
+      { ...base, ageGuard: 'recent', sizeBytes: 10 }, // protected — the Age Guard (D-26 / Q-14)
+      { ...base, ageGuard: 'unknown', sizeBytes: 10 }, // unverifiable — its dates can't be read yet
     ]);
     expect(partition).toEqual({
       deletable: 1,
       deletableBytes: 100,
-      protected: 3,
-      unverifiable: 2,
+      protected: 4,
+      unverifiable: 3,
       watchlisted: 1,
+      recentlyAdded: 1,
     });
   });
 });
@@ -289,6 +310,22 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
     recentlyWatched: false,
     requesters: [] as string[],
   };
+  it('D-26 / Q-14 — a title the Age Guard keeps reads as kept (inert skip), unless an earlier keep owns the tile', () => {
+    const recent = { ...cold, ageGuard: 'recent' as const };
+    expect(pendingWallGlyph(recent, undefined)).toBe('skip');
+    expect(pendingWallTappable('skip', true, true)).toBe(false);
+    expect(pendingWallGlyph(recent, 'unsaved')).toBe('skip');
+    // A save still wins the corner; a live exclusion is the inert check.
+    expect(pendingWallGlyph(recent, 'saved')).toBe('shield');
+    expect(pendingWallGlyph({ ...recent, protectedByExclusion: true }, undefined)).toBe('check');
+    // The guardian's earlier reasons keep their own treatment: a lapsed tag stays re-savable, a recently watched or
+    // watchlisted tile keeps its note.
+    expect(pendingWallGlyph({ ...recent, protectedByTag: true }, undefined)).toBe('trash');
+    expect(pendingWallGlyph({ ...recent, recentlyWatched: true }, undefined)).toBe('trash');
+    expect(pendingWallGlyph({ ...recent, onWatchlist: true }, undefined)).toBe('trash');
+    expect(pendingWallGlyph({ ...cold, ageGuard: 'unknown' as const }, undefined)).toBe('trash');
+    expect(releaseNeedsConfirm('skip')).toBe(false);
+  });
   it('unprotected cold ⇒ trash (slated); tappable to SAVE only with save_exclude', () => {
     expect(pendingWallGlyph(cold, undefined)).toBe('trash');
     expect(pendingWallTappable('trash', true, false)).toBe(true);

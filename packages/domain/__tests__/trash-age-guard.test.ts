@@ -25,8 +25,10 @@ import {
 } from '@hnet/db/schema';
 import {
   TRASH_AGE_GUARD_DAYS,
-  classifyAgeGuard,
+  classifyForExpedite,
+  classifyGuardian,
   createBatchFromPending,
+  expediteDeletion,
   createStaticReleaseBlockArr,
   getBatchDetail,
   judgeAge,
@@ -237,9 +239,30 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     );
     // No Plex match at all: judged on imports alone.
     expect(judgeAge(ev({ plexMatches: 0 }), now).ageGuard).toBe('clear');
-    expect(classifyAgeGuard({ ageGuard: 'recent' })).toEqual({ keep: true, reason: 'recently_added' });
-    expect(classifyAgeGuard({ ageGuard: 'unknown' })).toEqual({ keep: true, reason: 'unevaluable' });
-    expect(classifyAgeGuard({ ageGuard: 'clear' })).toEqual({ keep: false });
+    // Q-14 — the guardian itself carries the Age Guard, after tag / recently watched / watchlisted.
+    const g = (o: Partial<Parameters<typeof classifyGuardian>[0]>) => ({
+      protectedByTag: false,
+      recentlyWatched: false,
+      mediaItemId: 'm-1',
+      onWatchlist: false,
+      watchlistEvaluable: true,
+      ruleEvaluationFailed: false,
+      ageGuard: 'clear' as const,
+      ...o,
+    });
+    expect(classifyGuardian(g({ ageGuard: 'recent' }))).toEqual({ keep: true, reason: 'recently_added' });
+    expect(classifyGuardian(g({ ageGuard: 'unknown' }))).toEqual({ keep: true, reason: 'unevaluable' });
+    expect(classifyGuardian(g({}))).toEqual({ keep: false });
+    expect(classifyGuardian(g({ ageGuard: 'recent', recentlyWatched: true }))).toEqual({
+      keep: true,
+      reason: 'recently_watched',
+    });
+    expect(classifyGuardian(g({ ageGuard: 'recent', onWatchlist: true }))).toEqual({
+      keep: true,
+      reason: 'watchlisted',
+    });
+    expect(classifyForExpedite({ ...g({ ageGuard: 'recent' }), maintainerrMediaId: 'ms-1' })).toBe('protected_recent');
+    expect(classifyForExpedite({ ...g({ ageGuard: 'unknown' }), maintainerrMediaId: 'ms-1' })).toBe('unverifiable');
   });
 
   it('an upgrade 60 days ago protects: no targeted slot; an untargeted batch snapshots it and the sweep keeps it', async () => {
@@ -348,5 +371,43 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
       'ms-8001': { state: 'skipped', keepReason: 'recently_added' },
       'ms-8002': { state: 'deleted', keepReason: null },
     });
+  });
+
+  it('Q-14: Expedite never deletes a title inside the Age Guard, item or all, and never auto-saves it', async () => {
+    await imported(9101, daysAgo(60)); // upgraded 60 days ago
+    await plexDates([{ ext: 9102, lib: towerMovies, at: daysAgo(30) }]); // added to a second server 30 days ago
+    const state = baseState({ collections: [pool()] });
+    const { bundle, calls } = makeMaintainerr(state);
+    const item = await expediteDeletion({
+      arr: releaseArr,
+      db: t.db,
+      maintainerr: bundle,
+      scope: 'item',
+      media: 'movie',
+      actorId: admin,
+      item: { collectionId: 7, maintainerrMediaId: 'ms-9101' },
+      logger: silentDomainLogger,
+    });
+    expect(item).toMatchObject({ protectedCount: 1, expeditedCount: 0, skippedCount: 0 });
+    const all = await expediteDeletion({
+      arr: releaseArr,
+      db: t.db,
+      maintainerr: bundle,
+      scope: 'all',
+      media: 'movie',
+      actorId: admin,
+      snapshotMediaIds: ['ms-9101', 'ms-9102', 'ms-9103', 'ms-9104'],
+      logger: silentDomainLogger,
+    });
+    expect(all).toMatchObject({ protectedCount: 2, expeditedCount: 2 });
+    expect([...all.expeditedIds].sort()).toEqual(['ms-9103', 'ms-9104']);
+    const handled = calls
+      .filter((c) => c.method === 'POST' && c.pathname === '/collections/media/handle')
+      .map((c) => (c.body as { mediaId: string }).mediaId);
+    expect(handled).not.toContain('ms-9101');
+    expect(handled).not.toContain('ms-9102');
+    // Never auto-saved: no exclusion was written for either kept title.
+    expect(state.exclusions.has('ms-9101')).toBe(false);
+    expect(state.exclusions.has('ms-9102')).toBe(false);
   });
 });

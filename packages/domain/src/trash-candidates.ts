@@ -290,6 +290,8 @@ export interface TrashExpeditePreview {
   /** ADR-093 / DESIGN-052 D-10 — how many of `protected` are kept because they are on a watchlist (the confirm's
    *  "on a watchlist" breakdown). A subset of `protected`, never added to it. */
   watchlisted: number;
+  /** DESIGN-052 D-26 / Q-14 — how many of `protected` the Age Guard keeps (added or upgraded recently). A subset. */
+  recentlyAdded: number;
 }
 
 export interface TrashPendingPage {
@@ -439,6 +441,7 @@ export function partitionPendingForExpedite(
     protected: 0,
     unverifiable: 0,
     watchlisted: 0,
+    recentlyAdded: 0,
   };
   for (const i of items) {
     const verdict = classifyForExpedite(i);
@@ -450,6 +453,7 @@ export function partitionPendingForExpedite(
     } else {
       out.protected += 1;
       if (verdict === 'protected_watchlist') out.watchlisted += 1;
+      if (verdict === 'protected_recent') out.recentlyAdded += 1;
     }
   }
   return out;

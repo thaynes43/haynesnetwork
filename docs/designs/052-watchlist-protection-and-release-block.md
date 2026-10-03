@@ -1,7 +1,7 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Accepted (2026-09-28; live since v0.101.0, PLAN-072 S6–S10 verified)
-- **Last updated:** 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
+- **Last updated:** 2026-10-03 (Q-14 answered: the Age Guard moves into `classifyGuardian`, so Expedite never deletes a title inside it, and the pending walls show such a title kept, D-26). Prior: 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
   the rulings they needed: a term now matches the raw release title Radarr and Sonarr test (an apostrophe inside a word
   is an optional separator, an accented letter an alternation, an inner `and` optional), because S6(e) found 345 of
   19,434 Sonarr names and 3 of 1,159 Radarr names the *arr would not have blocked; the owner leaves managed Home users
@@ -435,11 +435,13 @@ source blocks all deletion until it reads again or turns `unreadable` at 72 hour
 server preview use, ADR-086 D-11):
 
 ```
-GuardianInput = protectedByTag, recentlyWatched, mediaItemId, onWatchlist, watchlistEvaluable, ruleEvaluationFailed
+GuardianInput = protectedByTag, recentlyWatched, mediaItemId, onWatchlist, watchlistEvaluable, ruleEvaluationFailed,
+                ageGuard (D-26, since Q-14)
 tag              if protectedByTag
 recently_watched if recentlyWatched
 watchlisted      if onWatchlist
-unevaluable      if mediaItemId is null, or !watchlistEvaluable, or ruleEvaluationFailed
+recently_added   if ageGuard is recent                       (D-26, Q-14)
+unevaluable      if mediaItemId is null, or !watchlistEvaluable, or ruleEvaluationFailed, or ageGuard is unknown
 otherwise        not kept
 ```
 
@@ -1268,15 +1270,30 @@ clear    otherwise (a title no Plex library is matched to is judged on its impor
   (D-25cw). _(The first cut also dropped it from untargeted batches; the e2e run on PR #641 showed that diverged from
   D-08 and dropped The Fixture, re-downloaded by an earlier spec's Fix, from a manual batch the lifecycle spec walks.
   Aligned with D-08 before merge.)_
-- **Sweep** (`expireOneBatch`, pass 1, after the guardian): `recent` ⇒ kept `recently_added`, `unknown` ⇒ kept
-  `unevaluable`, each with an `[trash] age_guard` log line (title, verdict, newest date). The verdict is re-derived
-  from live data at the sweep, so a title upgraded or added to another server after its batch was built is kept.
+- **The guardian** (`classifyGuardian`, since Q-14; the first cut ran a separate check after it in the sweep only):
+  after `tag`, `recently_watched` and `watchlisted`, `recent` ⇒ keep `recently_added`; `unknown` joins the
+  `unevaluable` causes. So the sweep, both Expedite scopes and the server preview share one derivation (ADR-086 D-11).
+- **Sweep** (`expireOneBatch`, pass 1): `recent` ⇒ kept `recently_added`, `unknown` ⇒ kept `unevaluable`, each with
+  the sweep's `[trash] kept` log line. The verdict is re-derived from live data at the sweep, so a title upgraded or
+  added to another server after its batch was built is kept.
 - **The batch wall:** a kept row's tooltip names the reason in the D-10 language, "Kept: added or upgraded recently".
   No new UI.
-- **Expedite is not covered** (both scopes): an admin's deliberate delete still runs the guardian only. Q-14.
-- **The pending walls are unchanged:** a recent title is still in the Maintainerr pool, so the kind tab's pending
-  wall and its "future batches" strip still list it; only proposal and deletion skip it. Q-14 asks about the walls
-  together with Expedite.
+- **Expedite** (both scopes, Q-14 ruling): a `recently_added` keep is refused like a watchlisted one, counted
+  `protected`, never auto-saved (it lapses when the title ages out); `unknown` is skipped (`unverifiable`).
+  `ExpediteVerdict` gains `protected_recent`; the client mirror `previewGuardian` follows and the case-by-case parity
+  test grows an `ageGuard` axis. The Expedite-all confirm's protected line is "recently watched, added or upgraded
+  recently, whitelisted, or on a watchlist; they are kept." with an "added or upgraded recently" breakdown
+  (`TrashExpeditePreview.recentlyAdded`, `trash-expedite-recent`); the unverifiable line names "dates" among its
+  causes. The single-item confirm (Delete now…) says "This item was added or upgraded recently, so it won't be
+  deleted yet. Nothing will be deleted." and its report's protected line names the reason.
+- **The pending walls** (Q-14 ruling): a title the Age Guard keeps reads as the batch wall's kept row, the inert
+  `skip` glyph whose label and tooltip lead with "Kept: added or upgraded recently", never the slated trash-can or a
+  delete date. Only when the Age Guard is the guardian's FIRST keep reason (`recentlyAddedKeep`): a lapsed `dnd`
+  tile stays tappable to re-save, and a recently watched or watchlisted tile keeps its own note, so the corner never
+  contradicts the reason the sweep records. A Save stays one tap away on the title's Library page, whose Trash
+  notice carries the same line ("Kept: added or upgraded recently", `trash-recent-note`) in place of "Save it to keep
+  it", kept on a Save like the watchlist note (D-25cv). The glyph swap is the existing fixed-size corner, so nothing
+  reflows (hard rule 9); no new colors.
 - **The Maintainerr rules stay as they are** (requirement 3 of the ruling's work order, optional): Maintainerr reads
   only HaynesOps' date added, and its Radarr dates carry the rebuild, so no rule clause can express the guard
   without emptying the pool. The app check is the guarantee.
@@ -1523,4 +1540,4 @@ already excluded 0, **to exclude 13**; no row without a key.
 | Q-11 | The remediation releases were inferred by size from a copy of the legacy HaynesTower SAB history; Terrifier's ledger year (2018) differs from its release's (2016). | **Answered (PLAN-072 S8, 2026-09-28):** the live legacy SAB histories were re-read read-only and the names confirmed by size (0.969 of the download) with tmdb 1097549 (Babygirl), 420634 (Terrifier) and 974573 (Another Simple Favor); the manual terms took the *arr's years too (Terrifier `(?:2016|2018)`). Silent Night (2023) has no release in any of the five histories and stays unblockable. |
 | Q-12 | What does `releaseGroup` look like for the 163 disk-imported pool movies (how many are null, so only an exact name or nothing can be blocked)? | **Answered (PLAN-072 S6(e), D-25df):** of the 164 in the pool on 2026-09-27, 158 are disk imports and none has a null group; 156 get a group term (`low_confidence`, renamed-only) and 2 none (DVD files with no resolution token), kept `release_unrecorded`. |
 | Q-13 | If many pool items have no recordable term, may they be deleted unblocked (a re-request would then fetch the same release), or do they stay kept? | **Not asked (D-25df):** S6(e) kept 2 of 164 (1.2%), not a material share, so they stay kept (`release_unrecorded`, D-11, D-24g). It is asked if a later pool shows a material share. |
-| Q-14 | Should Expedite (item and all) honor the Age Guard (D-26), and should the pending walls mark or hide a title inside the window? The 2026-10-03 work order scoped the guard to batch build and the sweep; Expedite is an admin's deliberate delete, and covering it means a new `ExpediteVerdict`, the client mirror `previewGuardian`, its parity test and the Expedite confirm copy; a wall note is new UI. | **Open**, for the owner. Until answered, Expedite runs the guardian only. |
+| Q-14 | Should Expedite (item and all) honor the Age Guard (D-26), and should the pending walls mark or hide a title inside the window? The 2026-10-03 work order scoped the guard to batch build and the sweep; Expedite is an admin's deliberate delete, and covering it means a new `ExpediteVerdict`, the client mirror `previewGuardian`, its parity test and the Expedite confirm copy; a wall note is new UI. | **Answered (2026-10-03, by the owner's ruling itself, relayed by the coordinator):** "Trash ignores anything downloaded, upgraded or added to any server in the last 180 days", and Expedite is part of Trash. Expedite never deletes a title inside the window, and the pending walls show it kept ("Kept: added or upgraded recently") instead of offering it for deletion. Built as D-26's Expedite and pending-wall bullets. |

@@ -68,6 +68,11 @@ export function ExpediteItemConfirm({
         <p className="status-note" data-testid="trash-expedite-item-watchlisted">
           This item is on a watchlist, so it won&apos;t be deleted while it stays there. Nothing will be deleted.
         </p>
+      ) : verdict === 'protected_recent' ? (
+        // DESIGN-052 D-26 / Q-14 — the Age Guard: refused like a watchlisted item, never auto-saved.
+        <p className="status-note" data-testid="trash-expedite-item-recent">
+          This item was added or upgraded recently, so it won&apos;t be deleted yet. Nothing will be deleted.
+        </p>
       ) : verdict === 'unverifiable' ? (
         <p className="status-note status-note--warn" data-testid="trash-expedite-item-unverifiable">
           This item can’t be verified safe ({unverifiableReason(item)}), so the server will{' '}
@@ -134,8 +139,9 @@ export function ExpediteReport({
           being removed now.
         </li>
         <li>
-          <strong>Protected:</strong> kept on purpose because it was recently watched, is on a
-          watchlist, or is whitelisted or saved (watched items were auto-whitelisted during this run).
+          <strong>Protected:</strong> kept on purpose because it was recently watched, was added or
+          upgraded recently, is on a watchlist, or is whitelisted or saved (watched items were
+          auto-whitelisted during this run).
         </li>
         <li>
           <strong>Skipped:</strong> could not be verified safe, couldn&apos;t be removed safely,{' '}
