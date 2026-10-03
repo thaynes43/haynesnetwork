@@ -36,7 +36,10 @@ import {
   mapLlStatus,
   markRequestFormatsRequeued,
   normAuthor,
+  llRecentSearchCovers,
   normTitle,
+  recentlySearchedLlBookIds,
+  stampRequestsSearched,
   type LlHeldSignals,
 } from './book-requests';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
@@ -380,6 +383,16 @@ export interface MintPairingWantsInput {
    * this guard may only ever remove a write, never add one).
    */
   llHoldsFormat?: (llBookId: string, format: 'ebook' | 'audiobook') => boolean;
+  /**
+   * Issue #644 — predicate: is a `searchBook` for this book/format still NEEDED? LazyLibrarian's `searchBook`
+   * ignores `type` and searches every Wanted format of the book, so a book already searched this run (a
+   * second want on the same llBookId, or the Skipped sweep after the mint) or searched within the hour by
+   * another job (goodreads-sync / the collection force-search, via `last_searched_at`) must not be searched
+   * again. `queueBook` is unaffected. Absent ⇒ always search (the pre-#644 behaviour).
+   */
+  shouldSearch?: (llBookId: string, format: 'ebook' | 'audiobook') => boolean;
+  /** Called after a `searchBook` actually fired for this book/format (feeds the shared per-run coverage). */
+  onSearched?: (llBookId: string, format: 'ebook' | 'audiobook') => void;
   /**
    * DESIGN-039 D-21/D-23 — the daily GB CALL BUDGET meter + tracker (consumer 'pairing'). The meter is
    * wired into the GB client's http wrapper (counts every outbound GB leg); the tracker holds this
@@ -743,7 +756,11 @@ export async function mintPairingWants(
       // this push; queueBook + searchBook (neither hits GB) still drive the acquisition retry.
       if (!input.llHasSeededBook?.(llBookId)) await input.ll.write.addBook(llBookId);
       await input.ll.write.queueBook(llBookId, missing);
-      await input.ll.write.searchBook(llBookId, missing);
+      if (input.shouldSearch?.(llBookId, missing) ?? true) {
+        await input.ll.write.searchBook(llBookId, missing);
+        input.onSearched?.(llBookId, missing);
+        await stampRequestsSearched(input.db, [row.id], now);
+      }
       await markPairingWantPushed({
         db: input.db,
         requestId: row.id,
@@ -834,9 +851,22 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     ? await makeGbBudgetTracker({ db: input.db, consumer: 'pairing', now })
     : input.budget;
 
+  // Issue #644 — ONE searchBook per book. `searchedThisRun` is the in-run coverage (mint → sweep, and two
+  // wants on one llBookId); `recent` is what OTHER jobs searched within the hour (their `last_searched_at`
+  // stamps — goodreads-sync, collection force-search run as separate cron jobs). A recent search only
+  // covers a format LL already shows as Wanted: a format we are about to flip is always searched.
+  const searchedThisRun = new Set<string>();
+  const recent = input.ll ? await recentlySearchedLlBookIds(input.db, now) : new Set<string>();
+  const shouldSearch = (llBookId: string, format: 'ebook' | 'audiobook'): boolean =>
+    !searchedThisRun.has(llBookId) &&
+    !llRecentSearchCovers(recent, llBookId, seatedMap?.get(llBookId), [format]);
+  const onSearched = (llBookId: string): void => void searchedThisRun.add(llBookId);
+
   const mint = await mintPairingWants({
     ...input,
     now,
+    shouldSearch,
+    onSearched,
     ...(budget ? { budget } : {}),
     llHasSeededBook: seatedMap ? (id) => seatedMap.get(id) != null : undefined,
     llHoldsFormat: seatedMap
@@ -885,7 +915,11 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
         } else if (raw?.trim().toLowerCase() === 'skipped') {
           await pace(requeued + 1);
           await input.ll.write.queueBook(want.llBookId!, missing);
-          await input.ll.write.searchBook(want.llBookId!, missing);
+          if (shouldSearch(want.llBookId!, missing)) {
+            await input.ll.write.searchBook(want.llBookId!, missing);
+            onSearched(want.llBookId!);
+          }
+          await stampRequestsSearched(input.db, [want.id], now);
           await markRequestFormatsRequeued({
             db: input.db,
             requestId: want.id,

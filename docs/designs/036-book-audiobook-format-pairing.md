@@ -241,3 +241,17 @@ read fails, `llHoldsFormat` is absent and the guard suppresses nothing, exactly 
 **ADR-065 C-08 is intact.** The guard only ever withholds one of the three sanctioned acquisition
 writes; it adds no new surface. The C-08 governor pin (every write-surface property the run touches is
 one of `addBook`/`queueBook`/`searchBook`) still passes unchanged.
+
+## Amendment — 2026-10-03: one `searchBook` per book (issue #644)
+
+LazyLibrarian's `searchBook` ignores `type` and searches every `Wanted` format of the book (DESIGN-028's
+2026-10-03 amendment). The pairing push is single-format, but its `llBookId` is routinely **reused from a
+goodreads shelf request**, and `format-pairing` is its own cron job, so the same book could be
+searched here minutes after goodreads-sync or the collection force-search searched it.
+
+The mint push and the Skipped sweep now ask `shouldSearch(llBookId, format)` before `searchBook`: false when
+the book was already searched this run (a shared set across the mint and the sweep), or when any request row
+for it has a `last_searched_at` within the hour **and** the pre-run `getAllBooks` snapshot already shows the
+missing format as `Wanted` (the recent search covered it). A format the push is flipping from `Requested` is
+always searched. `queueBook` is unchanged. Every search the pairing leg fires stamps `last_searched_at` on
+its want, which is the signal the other jobs read. Normative detail: DESIGN-028's follow-up of the same date.

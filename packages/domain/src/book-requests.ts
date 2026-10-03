@@ -21,7 +21,7 @@ import {
   type BooksMediaKind,
   type DbClient,
 } from '@hnet/db';
-import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { KapowarrSearchCandidate, KapowarrVolume } from '@hnet/kapowarr/read';
 import { NotFoundError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
@@ -91,6 +91,66 @@ export function llFormatAlreadyHeld(
   return format === 'audiobook'
     ? nonBlank(status.audioLibrary) || nonBlank(status.audioFile)
     : nonBlank(status.ebookLibrary) || nonBlank(status.ebookFile);
+}
+
+// ---------------------------------------------------------------------------------------------------
+// One LL searchBook per book (issue #644) — the cross-JOB leg.
+//
+// LazyLibrarian's `searchBook` IGNORES its `type` parameter and searches every format of the book that is
+// `Wanted`. goodreads-sync, format-pairing and the collection force-search run as SEPARATE cron jobs, so
+// they cannot share an in-memory coverage map; they share `book_requests.last_searched_at` instead. Every
+// leg stamps the rows it searched, and each unattended leg skips ONLY the `searchBook` when the book was
+// searched within `LL_RECENT_SEARCH_WINDOW_MS` AND LazyLibrarian already shows every format the leg would
+// search as `Wanted` — i.e. the recent search covered it. A format the leg is about to FLIP to Wanted is
+// never skipped (the earlier search could not have covered it), and `queueBook` is still issued.
+// ---------------------------------------------------------------------------------------------------
+
+/** How recent another job's search must be for it to count as covering this one (same-hour rule). */
+export const LL_RECENT_SEARCH_WINDOW_MS = 60 * 60 * 1000;
+
+/** The llBookIds any request row searched within the window ending at `now` (ONE query per run). */
+export async function recentlySearchedLlBookIds(
+  db: DbClient | undefined,
+  now: Date,
+  windowMs: number = LL_RECENT_SEARCH_WINDOW_MS,
+): Promise<Set<string>> {
+  const since = new Date(now.getTime() - windowMs);
+  const rows = await resolveDb(db)
+    .selectDistinct({ llBookId: bookRequests.llBookId })
+    .from(bookRequests)
+    .where(and(isNotNull(bookRequests.llBookId), gte(bookRequests.lastSearchedAt, since)));
+  return new Set(rows.map((r) => r.llBookId!).filter(Boolean));
+}
+
+/** Stamp `last_searched_at` on every request row a searchBook call covered (unaudited — synced/derived). */
+export async function stampRequestsSearched(
+  db: DbClient | undefined,
+  requestIds: ReadonlyArray<string>,
+  now: Date,
+): Promise<void> {
+  if (requestIds.length === 0) return;
+  await resolveDb(db)
+    .update(bookRequests)
+    .set({ lastSearchedAt: now, updatedAt: now })
+    .where(inArray(bookRequests.id, [...requestIds]));
+}
+
+/**
+ * True when a search by ANOTHER job within the window already covers this book: it was searched recently
+ * AND LazyLibrarian already shows every one of `formats` as raw `Wanted` (so that search included them).
+ * An unknown book / failed LL read (`status` absent) is never covered — the guard only ever removes a call.
+ */
+export function llRecentSearchCovers(
+  recent: ReadonlySet<string>,
+  llBookId: string,
+  status: LlHeldSignals | null | undefined,
+  formats: ReadonlyArray<Extract<BookRequestFormat, 'ebook' | 'audiobook'>>,
+): boolean {
+  if (!status || formats.length === 0 || !recent.has(llBookId)) return false;
+  return formats.every((f) => {
+    const raw = f === 'audiobook' ? status.audioStatus : status.ebookStatus;
+    return raw?.trim().toLowerCase() === 'wanted';
+  });
 }
 
 /**

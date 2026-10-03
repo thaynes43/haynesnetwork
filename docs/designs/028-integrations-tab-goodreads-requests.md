@@ -368,3 +368,22 @@ the first covered format and must not rely on it narrowing the search. **Bookkee
 request row, unchanged:** every row a shared call covered still gets its own `last_searched_at` stamp
 (the cooldown) and its own audit row; only the LazyLibrarian call is shared. A call that fails leaves every
 row it would have covered un-stamped, so the next run retries them all.
+
+### Follow-up — 2026-10-03: the cross-job leg (format-pairing, and a shared `last_searched_at` signal)
+
+goodreads-sync, `format-pairing` and the collection force-search run as **separate cron jobs**, so they
+cannot share the in-memory coverage map above. They share `book_requests.last_searched_at` instead
+(`recentlySearchedLlBookIds`, `stampRequestsSearched`, `llRecentSearchCovers` in `book-requests.ts`):
+
+- **Every leg stamps the rows it searched** (goodreads push + Skipped sweep, pairing mint-push + sweep,
+  force-search as before). The stamp is unaudited, like `markRequestPushed`.
+- **Each unattended leg skips only the `searchBook`** (never `queueBook`) when the book was searched by any
+  row within `LL_RECENT_SEARCH_WINDOW_MS` (1 hour) **and** LazyLibrarian already shows every format the leg
+  would search as raw `Wanted`. That condition is what makes the skip safe: a search covers exactly the
+  formats that were `Wanted` when it ran, so a format the leg is about to flip to `Wanted` (the common
+  pairing case, where the missing format is `Requested`) is never skipped. The on-demand collection Force
+  Search never skips — the caller asked for the search now.
+- **`format-pairing`** also shares a per-run set between the mint push and the Skipped sweep (one search per
+  book per run, including two wants that reuse one `llBookId`).
+- An LL read failure leaves the status map empty, so nothing is ever treated as covered: the rule may only
+  remove a call, never add one.

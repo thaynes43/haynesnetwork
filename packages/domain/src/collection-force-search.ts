@@ -23,7 +23,13 @@ import { LibrettoUnreachableError } from '@hnet/libretto';
 import { inTransaction, resolveDb } from './db-client';
 import { NotFoundError } from './errors';
 import { loadResolvedWantRefs, resolveMissingMembers } from './collection-wants-sync';
-import { llFormatAlreadyHeld, syncCollectionWants, type LlHeldSignals } from './book-requests';
+import {
+  llFormatAlreadyHeld,
+  llRecentSearchCovers,
+  recentlySearchedLlBookIds,
+  syncCollectionWants,
+  type LlHeldSignals,
+} from './book-requests';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 
 /** The Libretto read surface this pass needs — just the recipe list (which carries acquisitionEnabled). */
@@ -204,6 +210,14 @@ async function runForceSearchWorklist(input: {
     else groups.set(want.llBookId, [want]);
   }
 
+  // Cross-JOB leg (cron only — an on-demand click asked for the search NOW and always fires): a book another
+  // job (goodreads-sync, format-pairing) searched within the hour, with every format we would search already
+  // `Wanted` in LL, was covered by that search — queueBook still runs, only the searchBook is skipped.
+  const recent =
+    input.via === 'find_missing_cron' && groups.size > 0
+      ? await recentlySearchedLlBookIds(input.db, input.now)
+      : new Set<string>();
+
   let i = 0;
   for (const [llBookId, wants] of groups) {
     const toSearch: CollectionWantWork[] = [];
@@ -238,7 +252,9 @@ async function runForceSearchWorklist(input: {
       const formats = [...new Set(toSearch.map((w) => w.format))];
       await input.ll.write.addBook(llBookId);
       for (const format of formats) await input.ll.write.queueBook(llBookId, format);
-      await input.ll.write.searchBook(llBookId, formats[0]!);
+      if (!llRecentSearchCovers(recent, llBookId, held.get(llBookId), formats)) {
+        await input.ll.write.searchBook(llBookId, formats[0]!);
+      }
       // Stamp last_searched_at + audit EVERY row the call covered, in ONE tx (hard rule 6).
       await inTransaction(input.db, async (tx) => {
         for (const want of toSearch) {
