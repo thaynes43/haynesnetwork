@@ -2,7 +2,9 @@
 
 - **Status:** Draft (backend vertical shipped; **UX shipped 2026-07-06** — D-09 records the
   as-built; **pending tables → poster walls 2026-07-07**, see the D-09 amendment)
-- **Last updated:** 2026-10-03 (ADR-096 — the wall tap-toggle flips only on the server's answer,
+- **Last updated:** 2026-10-03 (ADR-099: a person's Save is recorded first and the Maintainerr exclusion follows
+  it, under an 8 s deadline and then the 15-minute save keeper; the app's record is the protection every deletion
+  path reads; D-05 amendment. Prior: ADR-096 — the wall tap-toggle flips only on the server's answer,
   shows a busy ring meanwhile and marks a failed tap on the tile; D-09 amendment. Prior: 2026-09-14
   errata — releasing protection is the ADR-014 two-step on all three surfaces; saving stays one tap.
   Earlier: 2026-07-09 — Maintainerr aging-invariant safeguard,
@@ -128,7 +130,30 @@ reachable AND every required integration connected. `expedite*` re-run it and re
   protective, so the fail-safe direction is establish-protection-first; a phantom protective event
   (written before a failed call) is the dangerous under-protection failure, so we never write it
   first. A crash after the exclusion leaves the item genuinely protected (audit reconcilable from
-  Maintainerr's exclusion list).
+  Maintainerr's exclusion list). **Superseded for a person's Save by the amendment below (ADR-099).**
+- **Amendment 2026-10-03 (ADR-099, owner requirement "if someone clicks save it's saved forever", #642):
+  record first, enforce second.** The reasoning above assumed the exclusion was the protection. It was not
+  enough: Maintainerr holds exclusion writes while it runs its scheduled rules (00:00, 08:00, 16:00, about five
+  minutes each), so a Save in that window timed out at 30 s and was lost. Now:
+  - **The Save is recorded first.** For a person's Save (`setBatchItemSaved`, and `saveExclusion` with `reason`
+    `user`, global, on a title with a ledger identity) ONE transaction writes, before any Maintainerr call: the
+    batch row flip and its `trash_batch_saves` row, the `trash_excluded` row (only when the title has no open
+    intent) and the save intent with `exclusion_confirmed_at = NULL` (migration 0088). Committed means saved.
+  - **The exclusion follows.** The same request then writes the global exclusion, reads it back and stamps the
+    intent confirmed, and pulls the poster out of Leaving Soon, all inside `SAVE_ENFORCE_DEADLINE_MS` (8 s);
+    nothing new is sent after the deadline. It answers success either way (`exclusion: 'applied' | 'pending'`).
+    The **save keeper** (`keepTrashSaves`, the incremental post-step every 15 minutes, after the candidate refresh)
+    applies what is pending, re-applies an exclusion Maintainerr lost under any key (`relink` / `reapply`), and
+    tidies saved posters out of Leaving Soon (T-277).
+  - **The guardian reads the record.** `TrashPendingItem.saveIntent` is `classifyGuardian`'s first keep (`saved`),
+    so the sweep, both Expedite scopes and the previews keep a saved title whether or not Maintainerr holds the
+    exclusion yet; the sweep's guarded claim and Expedite's last check before a delete re-read the intent; batch
+    creation never proposes a saved title (DESIGN-011 amendment 2026-10-03).
+  - **Unchanged:** un-save (external removal first, then the revocation and the `unsave` row; it revokes even when
+    no exclusion is left, ADR-086 D-3), and the watch guardian's auto-protection, which must protect before the
+    delete it guards and so keeps the Maintainerr-first order. It no longer opens a save intent (ADR-099 D-9). A
+    Save on a title unknown to the ledger also keeps the old order; no app path can delete such a title (the
+    guardian keeps it `unevaluable`).
 - **Expedite (destructive) is PER ITEM — the estate-wide handler is deliberately never used (review
   2026-07-06, Fable — P1b/P5).** `POST /collections/handle` processes EVERY active collection (all
   media kinds, incl. items outside our ledger) and is **not scopeable**, so `expediteDeletion` never
@@ -156,7 +181,7 @@ reachable AND every required integration connected. `expedite*` re-run it and re
   toward PLAN-012's explicit batch endpoint.
 - **Guardian (`classifyGuardian`, fail closed — P3/P4):** an item is expeditable ONLY when it is
   positively evaluated (resolved to our ledger, so we hold the cross-server watch / requester signal)
-  AND cold. Kept otherwise: `tag` (already `dnd`-whitelisted), `recently_watched`/`requested`
+  AND cold. Kept otherwise: `saved` (an open save intent, checked first; ADR-099), `tag` (already `dnd`-whitelisted), `recently_watched`/`requested`
   (auto-whitelisted), or `unevaluable` (unknown to our ledger — we never delete what we cannot
   evaluate). The client-supplied `media` never steers which set is searched. Window
   `RECENTLY_WATCHED_WINDOW_DAYS = 30` (constant — **Q-01:** admin/per-role configurability deferred).

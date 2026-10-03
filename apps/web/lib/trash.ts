@@ -53,6 +53,9 @@ export interface GuardianPreviewInput {
   /** DESIGN-052 D-26 / Q-14 — the Age Guard verdict: `recent` is kept (added or upgraded recently), `unknown` cannot be
    *  checked (kept, skipped). Absent ⇒ `clear` (an older server). */
   ageGuard?: 'recent' | 'clear' | 'unknown';
+  /** ADR-099 D-4 — somebody saved it (an open save intent): the server keeps it, exclusion or not. Absent ⇒ not
+   *  saved (an older server). */
+  saveIntent?: boolean;
 }
 
 /**
@@ -76,6 +79,7 @@ export interface GuardianPreviewInput {
  */
 export type GuardianPreview =
   | 'deletable'
+  | 'protected_saved'
   | 'protected_tag'
   | 'protected_watched'
   | 'protected_watchlist'
@@ -85,6 +89,8 @@ export type GuardianPreview =
 export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
   // The expedite 'all' loop skips unactionable items (no Maintainerr id) BEFORE the guardian.
   if (item.maintainerrMediaId === null) return 'unverifiable';
+  // ADR-099 D-4 — a Save is the app's record, checked first (the server's classifyGuardian does the same).
+  if (item.saveIntent === true) return 'protected_saved';
   if (item.protectedByTag) return 'protected_tag';
   if (item.recentlyWatched) return 'protected_watched';
   // ADR-093 C-03 — the Watchlist Keep: on anybody's read watchlist ⇒ kept (never auto-saved).
@@ -123,7 +129,7 @@ export function unverifiableReason(item: GuardianPreviewInput): string {
  * "Maintainerr keeps" or "requested".
  */
 export const EXPEDITE_PROTECTED_REASON =
-  'recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.';
+  'saved, recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.';
 
 /** D-25by — the Expedite-all confirm's line for the unverifiable count (every cause, one sentence). */
 export const EXPEDITE_UNVERIFIABLE_REASON =
@@ -231,6 +237,8 @@ export function pendingWallGlyph(
     requesters: readonly string[];
     onWatchlist?: boolean;
     ageGuard?: 'recent' | 'clear' | 'unknown';
+    /** ADR-099 D-4 — an open save intent: saved, whether or not Maintainerr holds the exclusion yet. */
+    saveIntent?: boolean;
   },
   override: 'saved' | 'unsaved' | undefined,
 ): PendingWallGlyph {
@@ -250,7 +258,9 @@ export function pendingWallGlyph(
   // A requester never changes this (informational only) — a requested candidate is the ordinary
   // slated `trash` until protected. `recentlyWatched` produces no corner glyph either (the corner
   // is the action; the watch fact rides the meta line).
-  if (override !== 'unsaved' && item.protectedByExclusion) return 'check';
+  // ADR-099 D-4 — the app's own record of a Save earns the same check: a Save tapped while Maintainerr was busy is
+  // saved now, and reads saved on every later paint, before Maintainerr catches up.
+  if (override !== 'unsaved' && (item.protectedByExclusion || item.saveIntent === true)) return 'check';
   // DESIGN-052 D-26 / Q-14 — a title the Age Guard keeps is never offered for deletion: the inert `skip` (kept),
   // as on the batch wall. A Save stays one tap away on its Library page.
   if (recentlyAddedKeep(item)) return 'skip';
@@ -782,7 +792,8 @@ export type TrashKeepReasonName =
   | 'not_in_pool'
   | 'live_excluded'
   | 'release_unrecorded'
-  | 'recently_added';
+  | 'recently_added'
+  | 'saved';
 
 /** The batch wall's kept-tile tooltip, per keep reason (D-10). `tag` and `live_excluded` are both a Save. */
 export const KEPT_REASON_TOOLTIPS: Record<TrashKeepReasonName, string> = {
@@ -795,6 +806,8 @@ export const KEPT_REASON_TOOLTIPS: Record<TrashKeepReasonName, string> = {
   release_unrecorded: "Kept: couldn't be removed safely",
   // DESIGN-052 D-26 — the Age Guard: downloaded, upgraded or added to a server in the last 180 days.
   recently_added: 'Kept: added or upgraded recently',
+  // ADR-099 D-4 — saved from another surface (the pending wall, the library) while the row was still pending.
+  saved: 'Kept: saved',
 };
 
 /** The kept tooltip for a skipped row's reason; null for a row with no recorded reason (swept before 0081). */

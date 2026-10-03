@@ -3218,6 +3218,33 @@ describe('migrations against embedded Postgres 16', () => {
       }
     });
   });
+
+  // ADR-099 (migration 0088, journal idx 87): a Save is recorded first; its intent carries the enforcement state.
+  describe('0088 trash save record-first (ADR-099 — the exclusion follows the recorded Save)', () => {
+    it('adds the enforcement columns to trash_save_intents: nullable confirmation, counted attempts', async () => {
+      const cols = await client.query(
+        `SELECT column_name, is_nullable, column_default, data_type FROM information_schema.columns
+          WHERE table_name = 'trash_save_intents'
+            AND column_name IN ('exclusion_confirmed_at','apply_attempts','last_apply_attempt_at','last_apply_error')
+          ORDER BY column_name`,
+      );
+      expect(cols.rows).toEqual([
+        { column_name: 'apply_attempts', is_nullable: 'NO', column_default: '0', data_type: 'integer' },
+        { column_name: 'exclusion_confirmed_at', is_nullable: 'YES', column_default: null, data_type: 'timestamp with time zone' },
+        { column_name: 'last_apply_attempt_at', is_nullable: 'YES', column_default: null, data_type: 'timestamp with time zone' },
+        { column_name: 'last_apply_error', is_nullable: 'YES', column_default: null, data_type: 'text' },
+      ]);
+    });
+
+    it('admits keep_reason `saved` on trash_batch_items and still rejects an unknown reason', async () => {
+      const def = await client.query(
+        `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'trash_batch_items_keep_reason_enum'`,
+      );
+      const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+      expect(listed).toContain('saved');
+      expect(listed.sort()).toEqual([...TRASH_KEEP_REASONS].sort());
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -3375,5 +3402,17 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(entry!.when).toBeGreaterThan(prev!.when);
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0087_trash_title_exclusions.sql'), 'utf8');
     expect(sqlText).toContain('CREATE TABLE "trash_title_exclusions"');
+  });
+
+  // ADR-099 gate — the record-first Save migration is journaled (idx 87), after 0087.
+  it('lists 0088_trash_save_record_first at idx 87, strictly after 0087_trash_title_exclusions', () => {
+    const entry = journal.entries.find((e) => e.tag === '0088_trash_save_record_first');
+    const prev = journal.entries.find((e) => e.tag === '0087_trash_title_exclusions');
+    expect(entry?.idx).toBe(87);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0088_trash_save_record_first.sql'), 'utf8');
+    expect(sqlText).toContain('ADD COLUMN "exclusion_confirmed_at" timestamp with time zone');
+    expect(sqlText).toContain("'recently_added','saved'");
+    expect(sqlText).toContain('SET "exclusion_confirmed_at" = COALESCE("last_relinked_at", "saved_at")');
   });
 });

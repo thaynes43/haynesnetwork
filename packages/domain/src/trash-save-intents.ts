@@ -40,6 +40,13 @@ export async function openSaveIntent(
     actorId: string | null;
     /** Set when this write is a reconciler relink rather than a fresh save. */
     relink?: boolean;
+    /**
+     * ADR-099 D-2 — whether Maintainerr was just read back holding the exclusion on `maintainerrMediaId`. True on the
+     * Maintainerr-first paths (the exclusion was written or found first); false on the record-first Save path, where
+     * the keeper applies it afterwards. A false never un-confirms an open intent already confirmed on the SAME key (a
+     * re-save of a saved title); a different key resets it, so the keeper applies the exclusion on the new key.
+     */
+    exclusionConfirmed: boolean;
   },
 ): Promise<{ intentId: string } | null> {
   const [item] = await tx
@@ -50,6 +57,18 @@ export async function openSaveIntent(
   const mediaKind = trashMediaKindForArrKind(item?.arrKind ?? null);
   if (mediaKind === null) return null;
 
+  const now = new Date();
+  const confirmedOnConflict = input.exclusionConfirmed
+    ? {
+        exclusionConfirmedAt: now,
+        applyAttempts: 0,
+        lastApplyError: null,
+      }
+    : {
+        // Same key and already confirmed ⇒ stays confirmed; a new key ⇒ pending until the keeper applies it.
+        exclusionConfirmedAt: sql`CASE WHEN ${trashSaveIntents.maintainerrMediaId} = ${input.maintainerrMediaId}
+          THEN ${trashSaveIntents.exclusionConfirmedAt} ELSE NULL END`,
+      };
   const [row] = await tx
     .insert(trashSaveIntents)
     .values({
@@ -58,18 +77,20 @@ export async function openSaveIntent(
       maintainerrMediaId: input.maintainerrMediaId,
       origin: input.origin,
       savedByUserId: input.actorId,
-      ...(input.relink === true ? { relinkCount: 1, lastRelinkedAt: new Date() } : {}),
+      exclusionConfirmedAt: input.exclusionConfirmed ? now : null,
+      ...(input.relink === true ? { relinkCount: 1, lastRelinkedAt: now } : {}),
     })
     .onConflictDoUpdate({
       target: trashSaveIntents.mediaItemId,
       targetWhere: isNull(trashSaveIntents.revokedAt),
       set: {
         maintainerrMediaId: input.maintainerrMediaId,
-        updatedAt: new Date(),
+        updatedAt: now,
+        ...confirmedOnConflict,
         ...(input.relink === true
           ? {
               relinkCount: sql`${trashSaveIntents.relinkCount} + 1`,
-              lastRelinkedAt: new Date(),
+              lastRelinkedAt: now,
             }
           : {}),
       },
@@ -103,6 +124,69 @@ export async function revokeSaveIntent(
     )
     .returning({ id: trashSaveIntents.id });
   return revoked.length > 0;
+}
+
+/**
+ * ADR-099 D-2 — the keeper read Maintainerr back holding the exclusion for this intent on `maintainerrMediaId`: stamp
+ * it confirmed and re-point the intent at that key. Guarded on the intent still being OPEN — returns false when an
+ * un-save revoked it while the exclusion was being applied, so the caller can take the exclusion back off (a revoked
+ * Save must not leave an exclusion behind). No ledger row: the Save was audited when it was recorded, and this only
+ * completes it.
+ */
+export async function markSaveIntentApplied(
+  db: DbClient | undefined,
+  input: { intentId: string; maintainerrMediaId: string },
+): Promise<boolean> {
+  const now = new Date();
+  const updated = await resolveDb(db)
+    .update(trashSaveIntents)
+    .set({
+      maintainerrMediaId: input.maintainerrMediaId,
+      exclusionConfirmedAt: now,
+      applyAttempts: 0,
+      lastApplyAttemptAt: now,
+      lastApplyError: null,
+      updatedAt: now,
+    })
+    .where(and(eq(trashSaveIntents.id, input.intentId), isNull(trashSaveIntents.revokedAt)))
+    .returning({ id: trashSaveIntents.id });
+  return updated.length > 0;
+}
+
+/**
+ * ADR-099 D-3 — an attempt to apply the exclusion failed (Maintainerr busy, slow or down). Counted and kept on the
+ * intent for the keeper's report; the intent stays open and pending, so the next tick tries again. The message is
+ * truncated: it is an operator hint, never a payload.
+ */
+export async function recordSaveIntentApplyFailure(
+  db: DbClient | undefined,
+  input: { intentId: string; error: string },
+): Promise<void> {
+  const now = new Date();
+  await resolveDb(db)
+    .update(trashSaveIntents)
+    .set({
+      applyAttempts: sql`${trashSaveIntents.applyAttempts} + 1`,
+      lastApplyAttemptAt: now,
+      lastApplyError: input.error.slice(0, 500),
+      updatedAt: now,
+    })
+    .where(and(eq(trashSaveIntents.id, input.intentId), isNull(trashSaveIntents.revokedAt)));
+}
+
+/**
+ * ADR-099 D-5 — Maintainerr was read back WITHOUT the exclusion this intent last confirmed (it lost it: a re-key and
+ * the nightly prune, or a hand removal). Clear the confirmation so the keeper re-applies it; the intent itself (the
+ * Save) is untouched.
+ */
+export async function markSaveIntentLapsed(
+  db: DbClient | undefined,
+  input: { intentId: string },
+): Promise<void> {
+  await resolveDb(db)
+    .update(trashSaveIntents)
+    .set({ exclusionConfirmedAt: null, updatedAt: new Date() })
+    .where(and(eq(trashSaveIntents.id, input.intentId), isNull(trashSaveIntents.revokedAt)));
 }
 
 /** Is there an unrevoked intent for this media item? (Read-only helper for tests and reporting.) */

@@ -248,9 +248,12 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
       watchlistEvaluable: true,
       ruleEvaluationFailed: false,
       ageGuard: 'clear' as const,
+      saveIntent: false,
       ...o,
     });
     expect(classifyGuardian(g({ ageGuard: 'recent' }))).toEqual({ keep: true, reason: 'recently_added' });
+    // ADR-099 D-4 — a Save still comes first.
+    expect(classifyGuardian(g({ ageGuard: 'recent', saveIntent: true }))).toEqual({ keep: true, reason: 'saved' });
     expect(classifyGuardian(g({ ageGuard: 'unknown' }))).toEqual({ keep: true, reason: 'unevaluable' });
     expect(classifyGuardian(g({}))).toEqual({ keep: false });
     expect(classifyGuardian(g({ ageGuard: 'recent', recentlyWatched: true }))).toEqual({

@@ -11,13 +11,14 @@ import {
   trashBatchItems,
   trashBatchSaves,
   trashBatches,
+  trashSaveIntents,
   users,
   TRASH_BATCH_OPEN_STATES,
   type ArrKind,
   type DbClient,
   type Transaction,
 } from '@hnet/db';
-import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import {
   MaintainerrRuleDriftError,
@@ -36,7 +37,17 @@ import {
 } from './release-block';
 import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainerr-clients';
 import { executeRestore, type ExecuteArrAddResult } from './restore-flow';
-import { openSaveIntent, revokeSaveIntent } from './trash-save-intents';
+import {
+  hasOpenSaveIntent,
+  openSaveIntent,
+  revokeSaveIntent,
+  trashMediaKindForArrKind,
+} from './trash-save-intents';
+import {
+  applySaveIntentExclusion,
+  SAVE_ENFORCE_DEADLINE_MS,
+  withMaintainerrDeadline,
+} from './trash-save-enforcement';
 import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import { judgeAge, loadAgeEvidence, type TrashAgeGuard } from './trash-age-guard';
 import {
@@ -398,6 +409,12 @@ export interface TrashPendingItem {
   ageGuard: TrashAgeGuard;
   /** D-26 — that newest date (ISO), null when there is none. */
   newestAddedAt: string | null;
+  /**
+   * ADR-099 D-4 — the title has an OPEN save intent: somebody saved it and nobody un-saved it. The app's own record,
+   * so it is authoritative whether or not Maintainerr holds the exclusion yet: the guardian keeps it (`saved`), no
+   * batch ever proposes it, and the walls show it saved.
+   */
+  saveIntent: boolean;
 }
 
 export interface TrashPendingResult {
@@ -624,6 +641,17 @@ export async function shapePendingItems(input: {
     }
   }
 
+  // ADR-099 D-4 — which joined titles carry an open save intent (one read; the intent table is small).
+  const joinedIds = [...byExtId.values()].map((j) => j.mediaItemId);
+  const savedIds = new Set<string>();
+  if (joinedIds.length > 0) {
+    const open = await db
+      .select({ mediaItemId: trashSaveIntents.mediaItemId })
+      .from(trashSaveIntents)
+      .where(and(inArray(trashSaveIntents.mediaItemId, joinedIds), isNull(trashSaveIntents.revokedAt)));
+    for (const r of open) savedIds.add(r.mediaItemId);
+  }
+
   // DESIGN-052 D-26 — the Age Guard's evidence for every joined ledger item (two grouped reads).
   const ageEvidence = await loadAgeEvidence({
     db: input.db,
@@ -682,6 +710,7 @@ export async function shapePendingItems(input: {
       watchlistEvaluable: watch.watchlistEvaluable,
       ageGuard: age.ageGuard,
       newestAddedAt: age.newestAddedAt,
+      saveIntent: joined !== undefined && savedIds.has(joined.mediaItemId),
     };
   });
 
@@ -858,15 +887,20 @@ export async function listRecentlyDeleted(input: {
 const nowDate = () => new Date();
 
 /**
- * ADR-023 / DESIGN-010 D-05 — Save/whitelist an item so Maintainerr never deletes it. Ordering
- * decision (documented): a Save is PROTECTIVE, so the fail-safe direction is establish-protection
- * FIRST (the external Maintainerr addExclusion), THEN write the `trash_excluded` ledger event —
- * the OPPOSITE of the destructive Fix D-09 discipline. A crash after the exclusion but before the
- * event leaves the item GENUINELY protected (only the audit missing — reconcilable from
- * Maintainerr's exclusion list); a phantom "excluded" event (written before a failed call) would
- * be the dangerous under-protection failure, so we never write the event first. Idempotent: if
- * Maintainerr already excludes the item, no-op and no event. Only reachability is required (no
- * integration-health gate — that gates the DESTRUCTIVE paths).
+ * ADR-023 / DESIGN-010 D-05 (as amended by ADR-099) — Save/whitelist an item so it is never deleted.
+ *
+ * ADR-099 — a USER Save (the pending wall, the library shield; `reason` 'user' or unset) on a title our ledger knows
+ * is RECORDED FIRST: one transaction writes the `trash_excluded` audit row, opens the durable save intent (ADR-086)
+ * and flips a matching open-batch row to `saved`, and only then is Maintainerr asked for the exclusion, under a short
+ * deadline. A busy or unreachable Maintainerr no longer loses the Save: the intent is the protection every deletion
+ * path reads, and the keeper (`keepTrashSaves`) applies the exclusion on its next tick. The owner's requirement
+ * (2026-10-03): "if someone clicks save it's saved forever".
+ *
+ * The Maintainerr-first ordering (ADR-023 C-05: write the exclusion, then the ledger row) stays for the SYSTEM
+ * protections, which record no Save (`watch_guardian`, inside a destructive flow that must protect before it
+ * deletes; `relink` / `reapply`, the keeper itself), for a scoped exclusion (`collectionId`), and for an item with
+ * no durable identity (unknown to our ledger, or a non-Trash *arr kind, ADR-086 D-13). Such an item can never be
+ * deleted by the app either: every deletion path keeps an item unknown to the ledger (`unevaluable`).
  */
 export interface SaveExclusionInput {
   db?: DbClient;
@@ -880,55 +914,39 @@ export interface SaveExclusionInput {
   actorId: string | null;
   /** Attribution note for the ledger payload (e.g. 'user' | 'watch_guardian'). */
   reason?: string;
+  /** ADR-099 — how long a record-first Save waits for Maintainerr before answering (tests shorten it). */
+  enforceDeadlineMs?: number;
 }
 
-/**
- * DESIGN-011 D-07 amendment 2026-09-19 (d) — A SAVE MADE OUTSIDE THE WALL REACHES THE WALL.
- *
- * The batch poster wall is not the only place a title gets rescued: the pending wall and the library
- * shield both save through `saveExclusion`, which never touched `trash_batch_items`. The batch row
- * stayed `pending` (red trash glyph, counted in `Deleting`) even though the sweep would keep it as
- * `liveExcluded` — found while auditing the 2026-09-19 owner report (latent; no wrong deletion was
- * possible, the wall was simply dishonest about the row).
- *
- * This is the ONE writer for that cross-surface flip, and it mirrors `setBatchItemSaved`'s save
- * branch exactly: the PROTECTIVE external write (pulling the poster out of the visible Leaving-Soon
- * collection) happens FIRST, then ONE transaction flips the row to `saved` (+ `saved_by`/`saved_at`)
- * and appends the `trash_batch_saves` 'save' row (the PLAN-014 tuning dataset). The UPDATE is guarded
- * (`AND state = 'pending'`) and the save-event row is written only when it actually changed a row, so
- * a concurrent wall save loses the race instead of double-recording.
- *
- * Scope:
- *   - OPEN batches only (draft/admin_review/leaving_soon). A terminal batch's rows are history.
- *   - `pending` rows only. `saved`/`protected`/`deleted`/`skipped` are inert.
- *   - PROTECTIVE DIRECTION ONLY — there is no un-save counterpart: an un-save made outside the wall
- *     leaves the batch row `saved` (the title is kept for this batch and competes again in the next).
- *   - Identity is matched on EITHER key the two surfaces share: the Maintainerr id (Plex ratingKey)
- *     or, when the caller knows it, our stable `media_item_id` — which is what still matches after a
- *     file replacement re-keys the Plex item (ADR-086).
- *
- * The collection removal is BEST-EFFORT: a Maintainerr failure there must never undo or shadow the
- * protective exclusion the caller already established, and it must never block the row flip — the
- * flip is itself protective (a `saved` row is outside the sweep), while a stale poster in the
- * Leaving-Soon collection is cosmetic and is reconciled by the next heal/close drive. Non-upstream
- * errors still propagate.
- */
-export async function applyOpenBatchSave(input: {
-  db?: DbClient;
-  maintainerr: MaintainerrClientBundle;
-  /** The Maintainerr id (Plex ratingKey) that was just excluded. */
-  maintainerrMediaId: string;
-  /** Our stable ledger id, when known — the identity that survives a Plex re-key. */
-  mediaItemId?: string | null;
-  actorId: string | null;
-}): Promise<{ flipped: boolean; batchId: string | null; batchItemId: string | null }> {
-  const db = resolveDb(input.db);
-  const mediaItemId = input.mediaItemId ?? null;
+export interface SaveExclusionResult {
+  /** Maintainerr holds the exclusion now (written by this call, or confirmed already there on the record-first path). */
+  excluded: boolean;
+  /** Maintainerr-first path only: the exclusion was already there, nothing was written. */
+  alreadyExcluded: boolean;
+  /** ADR-099 — the Save is recorded (an open save intent): durable whatever Maintainerr answered. */
+  recorded: boolean;
+  /** ADR-099 — `pending` when Maintainerr did not take the exclusion in time; the keeper finishes it. */
+  exclusion: 'applied' | 'pending';
+}
+
+/** The open batch row a Save made outside the batch wall should flip (DESIGN-011 D-07 (d)). */
+interface OpenBatchSaveTarget {
+  itemId: string;
+  batchId: string;
+  itemMediaId: string;
+  collectionId: number | null;
+}
+
+async function findOpenBatchSaveTarget(
+  db: DbClient | undefined,
+  input: { maintainerrMediaId: string; mediaItemId: string | null },
+): Promise<OpenBatchSaveTarget | null> {
   const byMediaId = eq(trashBatchItems.maintainerrMediaId, input.maintainerrMediaId);
   const identity =
-    mediaItemId === null ? byMediaId : or(byMediaId, eq(trashBatchItems.mediaItemId, mediaItemId));
-
-  const [row] = await db
+    input.mediaItemId === null
+      ? byMediaId
+      : or(byMediaId, eq(trashBatchItems.mediaItemId, input.mediaItemId));
+  const [row] = await resolveDb(db)
     .select({
       itemId: trashBatchItems.id,
       batchId: trashBatchItems.batchId,
@@ -945,55 +963,120 @@ export async function applyOpenBatchSave(input: {
       ),
     )
     .limit(1);
+  return row ?? null;
+}
+
+/** Flip the row to `saved` and append its `trash_batch_saves` row, inside the caller's transaction. Guarded on
+ *  `state = 'pending'`: a concurrent wall save loses the race instead of double-recording. */
+async function flipOpenBatchRowSaved(
+  tx: Transaction,
+  input: { itemId: string; actorId: string | null },
+): Promise<boolean> {
+  const updated = await tx
+    .update(trashBatchItems)
+    .set({ state: 'saved', savedBy: input.actorId, savedAt: nowDate(), savedReason: null })
+    .where(and(eq(trashBatchItems.id, input.itemId), eq(trashBatchItems.state, 'pending')))
+    .returning({ id: trashBatchItems.id });
+  if (updated.length === 0) return false;
+  await tx
+    .insert(trashBatchSaves)
+    .values({ batchItemId: input.itemId, userId: input.actorId, action: 'save' });
+  return true;
+}
+
+/** Best effort: pull a saved poster out of the visible Leaving-Soon collection. A failure is cosmetic (the row is
+ *  `saved`, outside the sweep) and the keeper tidies it on its next tick (ADR-099 D-6). Both keys go when the frozen
+ *  snapshot key and the saved key differ (a re-key); removing an absent member is a tolerant no-op. */
+async function removeSavedFromLeavingSoon(input: {
+  maintainerr: MaintainerrClientBundle;
+  collectionId: number | null;
+  keys: readonly string[];
+  deadlineMs?: number;
+}): Promise<boolean> {
+  const { collectionId } = input;
+  if (collectionId === null) return true; // pre-green-light: there is no collection yet
+  const keys = [...new Set(input.keys)];
+  const call = () =>
+    guardMaintainerrCall('maintainerr POST /collections/remove', () =>
+      input.maintainerr.write.removeFromCollection(collectionId, keys),
+    );
+  try {
+    if (input.deadlineMs === undefined) await call();
+    else await withMaintainerrDeadline('maintainerr POST /collections/remove', input.deadlineMs, call);
+    return true;
+  } catch (err) {
+    if (!(err instanceof MaintainerrUpstreamError)) throw err;
+    return false;
+  }
+}
+
+/**
+ * DESIGN-011 D-07 amendment 2026-09-19 (d) — A SAVE MADE OUTSIDE THE WALL REACHES THE WALL.
+ *
+ * The batch poster wall is not the only place a title gets rescued: the pending wall and the library
+ * shield both save through `saveExclusion`, which never touched `trash_batch_items`. The batch row
+ * stayed `pending` (red trash glyph, counted in `Deleting`) even though the sweep would keep it as
+ * `liveExcluded` — found while auditing the 2026-09-19 owner report (latent; no wrong deletion was
+ * possible, the wall was simply dishonest about the row).
+ *
+ * This is the Maintainerr-first form of that cross-surface flip (a Save with no durable identity, ADR-099 keeps the
+ * old ordering there); the record-first Save flips the row inside its own transaction instead. The external write
+ * (pulling the poster out of the visible Leaving-Soon collection) happens first, then ONE transaction flips the row to
+ * `saved` (+ `saved_by`/`saved_at`) and appends the `trash_batch_saves` 'save' row (the PLAN-014 tuning dataset). The
+ * UPDATE is guarded (`AND state = 'pending'`) and the save-event row is written only when it actually changed a row,
+ * so a concurrent wall save loses the race instead of double-recording.
+ *
+ * Scope:
+ *   - OPEN batches only (draft/admin_review/leaving_soon). A terminal batch's rows are history.
+ *   - `pending` rows only. `saved`/`protected`/`deleted`/`skipped` are inert.
+ *   - PROTECTIVE DIRECTION ONLY — there is no un-save counterpart: an un-save made outside the wall
+ *     leaves the batch row `saved` (the title is kept for this batch and competes again in the next).
+ *   - Identity is matched on EITHER key the two surfaces share: the Maintainerr id (Plex ratingKey)
+ *     or, when the caller knows it, our stable `media_item_id` — which is what still matches after a
+ *     file replacement re-keys the Plex item (ADR-086).
+ *
+ * The collection removal is BEST-EFFORT: a Maintainerr failure there must never undo or shadow the
+ * protective exclusion the caller already established, and it must never block the row flip — the
+ * flip is itself protective (a `saved` row is outside the sweep), while a stale poster in the
+ * Leaving-Soon collection is cosmetic and is tidied by the keeper. Non-upstream errors still propagate.
+ */
+export async function applyOpenBatchSave(input: {
+  db?: DbClient;
+  maintainerr: MaintainerrClientBundle;
+  /** The Maintainerr id (Plex ratingKey) that was just excluded. */
+  maintainerrMediaId: string;
+  /** Our stable ledger id, when known — the identity that survives a Plex re-key. */
+  mediaItemId?: string | null;
+  actorId: string | null;
+}): Promise<{ flipped: boolean; batchId: string | null; batchItemId: string | null }> {
+  const row = await findOpenBatchSaveTarget(input.db, {
+    maintainerrMediaId: input.maintainerrMediaId,
+    mediaItemId: input.mediaItemId ?? null,
+  });
   // Not in any open batch (the common case) — a clean no-op, no transaction, no Maintainerr call.
   if (!row) return { flipped: false, batchId: null, batchItemId: null };
 
-  // 1) Protective external write FIRST (ADR-023 C-05 ordering, as in setBatchItemSaved): pull the
-  //    poster out of the visible Leaving-Soon collection. Null collection id ⇒ the batch is still
-  //    pre-green-light and has no collection yet. Both keys are sent when the frozen snapshot key
-  //    and the just-excluded key differ (a re-key): removing an absent member is a tolerant no-op.
-  const { collectionId } = row;
-  if (collectionId !== null) {
-    const keys = [...new Set([row.itemMediaId, input.maintainerrMediaId])];
-    try {
-      await guardMaintainerrCall('maintainerr POST /collections/remove', () =>
-        input.maintainerr.write.removeFromCollection(collectionId, keys),
-      );
-    } catch (err) {
-      // Best-effort (see the doc comment): the exclusion stands and the row still flips.
-      if (!(err instanceof MaintainerrUpstreamError)) throw err;
-    }
-  }
+  // 1) The external write first: pull the poster out of the visible Leaving-Soon collection.
+  await removeSavedFromLeavingSoon({
+    maintainerr: input.maintainerr,
+    collectionId: row.collectionId,
+    keys: [row.itemMediaId, input.maintainerrMediaId],
+  });
 
   // 2) Then the DB, in ONE transaction: state + holder + the append-only save-event row.
-  const flipped = await inTransaction(input.db, async (tx) => {
-    const updated = await tx
-      .update(trashBatchItems)
-      .set({ state: 'saved', savedBy: input.actorId, savedAt: nowDate(), savedReason: null })
-      .where(and(eq(trashBatchItems.id, row.itemId), eq(trashBatchItems.state, 'pending')))
-      .returning({ id: trashBatchItems.id });
-    if (updated.length === 0) return false;
-    await tx
-      .insert(trashBatchSaves)
-      .values({ batchItemId: row.itemId, userId: input.actorId, action: 'save' });
-    return true;
-  });
+  const flipped = await inTransaction(input.db, (tx) =>
+    flipOpenBatchRowSaved(tx, { itemId: row.itemId, actorId: input.actorId }),
+  );
   return { flipped, batchId: row.batchId, batchItemId: row.itemId };
 }
 
 /**
- * The (d) hook, applied on EVERY successful `saveExclusion` — including the already-excluded early
- * return, which is exactly what a retry after a transient failure hits (so the flip is recoverable).
- *
- * Gated on the save's ORIGIN so it never double-applies and never invents a human rescue:
- *   - `batch_save` — the wall path itself (`setBatchItemSaved`) calls `saveExclusion` first and then
- *     does its own heal-before-write removal + flip + save row. Running here too would write a
- *     SECOND `trash_batch_saves` row for one tap. Skipped.
- *   - `watch_guardian` / `relink` — SYSTEM protections, not rescues. `trash_batch_saves` is the
+ * The (d) hook on the Maintainerr-first path. Gated on the save's ORIGIN so it never double-applies and never invents
+ * a human rescue:
+ *   - `batch_save` — the wall path itself (`setBatchItemSaved`) records its own flip + save row.
+ *   - `watch_guardian` / `relink` / `reapply` — SYSTEM protections, not rescues. `trash_batch_saves` is the
  *     "which items get rescued, BY WHOM" tuning dataset (PLAN-014) and the batch model deliberately
  *     has no system auto-save any more (ADR-025 errata 2026-07-09), so a cron must not author one.
- *     Their honesty fix is amendment (b) instead: an excluded item leaves Maintainerr's pool, so the
- *     wall projects it `inLivePool: false` and shows it under Kept.
  *   - `user` (or unset) — the pending wall / library shield. THIS is the case (d) is about.
  */
 async function reconcileOpenBatchFromSave(input: SaveExclusionInput): Promise<void> {
@@ -1007,9 +1090,42 @@ async function reconcileOpenBatchFromSave(input: SaveExclusionInput): Promise<vo
   });
 }
 
-export async function saveExclusion(
-  input: SaveExclusionInput,
-): Promise<{ excluded: boolean; alreadyExcluded: boolean }> {
+/** The reasons whose exclusion is the enforcement of a human Save, and so carries a durable save intent. A
+ *  `watch_guardian` auto-protection never does (ADR-086 D-10; it used to open a `user` intent, which ADR-099 makes
+ *  authoritative and therefore permanent). */
+function intentOriginFor(reason: string | undefined): 'user' | 'batch_save' | 'relink' | null {
+  const r = reason ?? 'user';
+  if (r === 'user') return 'user';
+  if (r === 'batch_save') return 'batch_save';
+  if (r === 'relink' || r === 'reapply') return 'relink';
+  return null;
+}
+
+/** The Trash media kind of a ledger item, or null when it has none (unknown, or not Radarr/Sonarr). */
+async function trashKindOfMediaItem(
+  db: DbClient | undefined,
+  mediaItemId: string,
+): Promise<'movie' | 'tv' | null> {
+  const [row] = await resolveDb(db)
+    .select({ arrKind: mediaItems.arrKind })
+    .from(mediaItems)
+    .where(eq(mediaItems.id, mediaItemId))
+    .limit(1);
+  return trashMediaKindForArrKind(row?.arrKind ?? null);
+}
+
+export async function saveExclusion(input: SaveExclusionInput): Promise<SaveExclusionResult> {
+  // ADR-099 — the record-first Save: a user Save, global, on a title with a durable identity.
+  if (
+    (input.reason ?? 'user') === 'user' &&
+    input.collectionId === undefined &&
+    input.mediaItemId != null &&
+    (await trashKindOfMediaItem(input.db, input.mediaItemId)) !== null
+  ) {
+    return recordUserSave({ ...input, mediaItemId: input.mediaItemId });
+  }
+
+  const origin = intentOriginFor(input.reason);
   // Idempotency: is the item already excluded? (Maintainerr returns [] with no params, so query
   // by the item's mediaServerId.)
   const existing = await guardMaintainerrCall('maintainerr GET /rules/exclusion', () =>
@@ -1020,21 +1136,22 @@ export async function saveExclusion(
     // after a lapse hits (Maintainerr already holds the exclusion under the current key), and it is
     // the one path that historically recorded nothing at all. No duplicate ledger row: the
     // protection already exists and was already audited when it was first established.
-    if (input.mediaItemId != null) {
+    if (input.mediaItemId != null && origin !== null) {
       const mediaItemId = input.mediaItemId;
       await inTransaction(input.db, async (tx) => {
         await openSaveIntent(tx, {
           mediaItemId,
           maintainerrMediaId: input.maintainerrMediaId,
-          origin: input.reason === 'batch_save' ? 'batch_save' : 'user',
+          origin: origin === 'relink' ? 'user' : origin,
           actorId: input.actorId,
-          relink: input.reason === 'relink',
+          relink: origin === 'relink',
+          exclusionConfirmed: true,
         });
       });
     }
     // DESIGN-011 D-07 (d) — a re-save of an already-excluded title still reconciles the wall.
     await reconcileOpenBatchFromSave(input);
-    return { excluded: false, alreadyExcluded: true };
+    return { excluded: false, alreadyExcluded: true, recorded: origin !== null && input.mediaItemId != null, exclusion: 'applied' };
   }
 
   // 1) Establish the protective state FIRST (external).
@@ -1061,13 +1178,14 @@ export async function saveExclusion(
     });
     // ADR-086 D-13 — a save on an item unknown to our ledger has no durable identity to relink.
     // It is still excluded and still audited; it simply cannot be rescued after a re-key.
-    if (input.mediaItemId != null) {
+    if (input.mediaItemId != null && origin !== null) {
       await openSaveIntent(tx, {
         mediaItemId: input.mediaItemId,
         maintainerrMediaId: input.maintainerrMediaId,
-        origin: input.reason === 'batch_save' ? 'batch_save' : 'user',
+        origin: origin === 'relink' ? 'user' : origin,
         actorId: input.actorId,
-        relink: input.reason === 'relink',
+        relink: origin === 'relink',
+        exclusionConfirmed: input.collectionId === undefined,
       });
     }
   });
@@ -1076,7 +1194,79 @@ export async function saveExclusion(
   //    `pending` row of an OPEN batch to `saved` (protective Maintainerr write first, then DB).
   await reconcileOpenBatchFromSave(input);
 
-  return { excluded: true, alreadyExcluded: false };
+  return { excluded: true, alreadyExcluded: false, recorded: origin !== null && input.mediaItemId != null, exclusion: 'applied' };
+}
+
+/**
+ * ADR-099 D-1 — the record-first user Save. Transaction first: the `trash_excluded` audit row (only for a title with
+ * no open intent: a re-save of a saved title was audited when it was first saved), the save intent (pending until
+ * Maintainerr is read back holding the exclusion), and the open-batch row flip with its `trash_batch_saves` row. The
+ * Save is durable when this commits. Then, under the short deadline, the exclusion and the Leaving-Soon removal; what
+ * does not finish in time is the keeper's.
+ */
+async function recordUserSave(
+  input: SaveExclusionInput & { mediaItemId: string },
+): Promise<SaveExclusionResult> {
+  const startedAt = Date.now();
+  const deadlineMs = input.enforceDeadlineMs ?? SAVE_ENFORCE_DEADLINE_MS;
+  const recorded = await inTransaction(input.db, async (tx) => {
+    const [open] = await tx
+      .select({ id: trashSaveIntents.id })
+      .from(trashSaveIntents)
+      .where(
+        and(eq(trashSaveIntents.mediaItemId, input.mediaItemId), isNull(trashSaveIntents.revokedAt)),
+      )
+      .limit(1);
+    if (!open) {
+      await tx.insert(ledgerEvents).values({
+        mediaItemId: input.mediaItemId,
+        eventType: 'trash_excluded',
+        source: 'maintainerr',
+        occurredAt: nowDate(),
+        requestedByUserId: input.actorId ?? null,
+        payload: { action: 'save', maintainerrMediaId: input.maintainerrMediaId, reason: 'user' },
+      });
+    }
+    const intent = await openSaveIntent(tx, {
+      mediaItemId: input.mediaItemId,
+      maintainerrMediaId: input.maintainerrMediaId,
+      origin: 'user',
+      actorId: input.actorId,
+      exclusionConfirmed: false,
+    });
+    if (intent === null) throw new Error(`save intent for ${input.mediaItemId} could not be opened`);
+    const target = await findOpenBatchSaveTarget(tx, {
+      maintainerrMediaId: input.maintainerrMediaId,
+      mediaItemId: input.mediaItemId,
+    });
+    const flipped =
+      target !== null && (await flipOpenBatchRowSaved(tx, { itemId: target.itemId, actorId: input.actorId }));
+    return { intentId: intent.intentId, target: flipped ? target : null };
+  });
+
+  // Enforcement, inside the deadline. The Save above already stands whatever happens here.
+  const outcome = await applySaveIntentExclusion({
+    db: input.db,
+    maintainerr: input.maintainerr,
+    intentId: recorded.intentId,
+    maintainerrMediaId: input.maintainerrMediaId,
+    deadlineMs,
+  });
+  const left = deadlineMs - (Date.now() - startedAt);
+  if (recorded.target !== null && outcome === 'applied' && left > 0) {
+    await removeSavedFromLeavingSoon({
+      maintainerr: input.maintainerr,
+      collectionId: recorded.target.collectionId,
+      keys: [recorded.target.itemMediaId, input.maintainerrMediaId],
+      deadlineMs: left,
+    });
+  }
+  return {
+    excluded: outcome === 'applied',
+    alreadyExcluded: false,
+    recorded: true,
+    exclusion: outcome === 'applied' ? 'applied' : 'pending',
+  };
 }
 
 /**
@@ -1166,7 +1356,13 @@ export async function removeExclusion(input: {
  * (surfaced as a wall meta badge), never an app-side overrule. See ADR-025/DESIGN-010/DESIGN-011
  * errata (2026-07-09).
  */
-export type GuardianKeepReason = 'tag' | 'recently_watched' | 'watchlisted' | 'recently_added' | 'unevaluable';
+export type GuardianKeepReason =
+  | 'saved'
+  | 'tag'
+  | 'recently_watched'
+  | 'watchlisted'
+  | 'recently_added'
+  | 'unevaluable';
 export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { keep: false };
 
 /** The three fields the guardian actually reads. A structural subset of `TrashPendingItem` (every
@@ -1181,6 +1377,7 @@ export type GuardianInput = Pick<
   | 'watchlistEvaluable'
   | 'ruleEvaluationFailed'
   | 'ageGuard'
+  | 'saveIntent'
 >;
 
 /**
@@ -1192,6 +1389,9 @@ export type GuardianInput = Pick<
  * identity, never a client-declared kind.
  */
 export function classifyGuardian(item: GuardianInput): GuardianVerdict {
+  // ADR-099 D-4 — a Save is the app's record, checked first: authoritative whether or not Maintainerr holds the
+  // exclusion yet (a Save tapped while Maintainerr ran its rules is applied by the keeper minutes later).
+  if (item.saveIntent) return { keep: true, reason: 'saved' };
   if (item.protectedByTag) return { keep: true, reason: 'tag' };
   if (item.recentlyWatched) return { keep: true, reason: 'recently_watched' };
   // ADR-093 C-03 / DESIGN-052 D-09 — the Watchlist Keep (T-263): on anybody's read watchlist ⇒ kept. Not a Save:
@@ -1226,6 +1426,7 @@ export interface ExpediteVerdictInput extends GuardianInput {
  * - `deletable`         — cold + positively evaluated ⇒ the server WILL delete it. A requested item
  *                         is deletable (owner ruling 2026-07-09 — requested is informational only,
  *                         never an app-side keep); its requester rides the meta badge, not the verdict.
+ * - `protected_saved`   — kept because somebody saved it (ADR-099: the app's record, exclusion or not).
  * - `protected_tag` / `protected_watched` — kept deliberately (whitelist / watch guardian).
  * - `unverifiable`      — kept because it CANNOT be verified safe (no Maintainerr id, or unknown to
  *                         our ledger) ⇒ counted as SKIPPED, never deleted. NOT the same thing as
@@ -1233,6 +1434,7 @@ export interface ExpediteVerdictInput extends GuardianInput {
  */
 export type ExpediteVerdict =
   | 'deletable'
+  | 'protected_saved'
   | 'protected_tag'
   | 'protected_watched'
   | 'protected_watchlist'
@@ -1260,6 +1462,7 @@ export function classifyForExpedite(item: ExpediteVerdictInput): ExpediteVerdict
   if (item.maintainerrMediaId === null) return 'unverifiable';
   const verdict = classifyGuardian(item);
   if (!verdict.keep) return 'deletable';
+  if (verdict.reason === 'saved') return 'protected_saved';
   if (verdict.reason === 'tag') return 'protected_tag';
   if (verdict.reason === 'recently_watched') return 'protected_watched';
   if (verdict.reason === 'watchlisted') return 'protected_watchlist';
@@ -1609,8 +1812,20 @@ async function expediteOneSurvivor(
   survivor: ExpediteSurvivor,
   release: { recordIds: readonly string[]; arrItemId: number | null },
   watchlist: DeleteWatchlistSnapshot,
-): Promise<'active' | 'abandoned' | 'in_flight' | 'none' | 'watchlisted'> {
+): Promise<'active' | 'abandoned' | 'in_flight' | 'none' | 'watchlisted' | 'saved'> {
   const logger = input.logger ?? consoleDomainLogger;
+  // ADR-099 D-4 — a Save made after the guardian ran (a tap on the wall while this expedite runs) is re-read just
+  // before the delete: the app's record keeps the title, exclusion or not.
+  if (survivor.mediaItemId !== null && (await hasOpenSaveIntent(input.db, survivor.mediaItemId))) {
+    await abandonReleaseRecords({ db: input.db, recordIds: release.recordIds });
+    logger.info('[trash] kept', {
+      scope,
+      maintainerrMediaId: survivor.maintainerrMediaId,
+      title: survivor.title,
+      reason: 'saved',
+    });
+    return 'saved';
+  }
   if (
     await isOnLateWatchlist({
       db: input.db,
@@ -1830,9 +2045,14 @@ export async function expediteDeletion(
         });
         return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
       }
-      if (verdict.reason === 'tag' || verdict.reason === 'watchlisted' || verdict.reason === 'recently_added') {
-        // Already whitelisted, on a watchlist (the Watchlist Keep) or inside the Age Guard (D-26): refused like a
-        // tagged item, never auto-saved.
+      if (
+        verdict.reason === 'saved' ||
+        verdict.reason === 'tag' ||
+        verdict.reason === 'watchlisted' ||
+        verdict.reason === 'recently_added'
+      ) {
+        // Saved (ADR-099 D-4: the app's record; the keeper owns its exclusion), already whitelisted, on a watchlist
+        // (the Watchlist Keep) or inside the Age Guard (D-26): refused like a tagged item, never auto-saved.
         return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
       }
       // unevaluable — not deleted, not force-whitelisted.
@@ -1870,11 +2090,11 @@ export async function expediteDeletion(
       await reconcileAfterAbandon(input, survivor.arrKind);
       throw error;
     }
-    if (settled === 'abandoned' || settled === 'watchlisted') {
+    if (settled === 'abandoned' || settled === 'watchlisted' || settled === 'saved') {
       await reconcileAfterAbandon(input, survivor.arrKind);
     }
-    if (settled === 'watchlisted') {
-      // Added to the owner's watchlist after the gate's snapshot (D-25ay): the Watchlist Keep, never deleted.
+    if (settled === 'watchlisted' || settled === 'saved') {
+      // Added to the owner's watchlist after the gate's snapshot (D-25ay), or saved meanwhile (ADR-099): kept.
       return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
     }
     return { scope: 'item', protectedCount: 0, expeditedCount: 1, skippedCount: 0, stalePending: 0, expeditedIds: [targetMediaId], unrecordedCount: 0 };
@@ -1953,6 +2173,8 @@ export async function expediteDeletion(
           }
           throw err;
         }
+      } else if (verdict.reason === 'saved') {
+        protectedCount += 1; // ADR-099 D-4 — saved: the app's record keeps it, exclusion or not.
       } else if (verdict.reason === 'tag') {
         protectedCount += 1; // already whitelisted by the dnd tag.
       } else if (verdict.reason === 'watchlisted') {
@@ -2001,8 +2223,8 @@ export async function expediteDeletion(
         watchlist,
       );
       if (settled === 'abandoned') anyAbandoned = true;
-      if (settled === 'watchlisted') {
-        // Added to the owner's watchlist after the gate's snapshot (D-25ay): the Watchlist Keep, never deleted.
+      if (settled === 'watchlisted' || settled === 'saved') {
+        // Added to the owner's watchlist after the gate's snapshot (D-25ay), or saved meanwhile (ADR-099): kept.
         anyAbandoned = true;
         protectedCount += 1;
         continue;

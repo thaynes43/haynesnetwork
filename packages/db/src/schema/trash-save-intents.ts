@@ -59,6 +59,18 @@ export const trashSaveIntents = pgTable(
     /** How many times the reconciler has re-applied this intent onto a new key. */
     relinkCount: integer('relink_count').notNull().default(0),
     lastRelinkedAt: timestamp('last_relinked_at', { withTimezone: true }),
+    /**
+     * ADR-099 D-2 — when Maintainerr was last READ BACK holding the exclusion on `maintainerr_media_id`. NULL means the
+     * save is recorded but the exclusion is not applied yet (Maintainerr was busy or unreachable when the Save was
+     * tapped); the 15-minute keeper applies it. The save itself never depends on this column: every deletion path
+     * reads the open intent, not the exclusion.
+     */
+    exclusionConfirmedAt: timestamp('exclusion_confirmed_at', { withTimezone: true }),
+    /** ADR-099 D-3 — failed attempts to apply the exclusion since it was last confirmed (reset on success). */
+    applyAttempts: integer('apply_attempts').notNull().default(0),
+    lastApplyAttemptAt: timestamp('last_apply_attempt_at', { withTimezone: true }),
+    /** The last failure's message (a Maintainerr timeout or error); null once applied. Never a secret. */
+    lastApplyError: text('last_apply_error'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

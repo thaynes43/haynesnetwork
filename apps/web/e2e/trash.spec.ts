@@ -33,6 +33,21 @@ const env = () => readRuntimeEnv();
 
 async function resetMaintainerr(page: Page): Promise<void> {
   await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/reset`);
+  releaseOpenSaves();
+}
+
+/**
+ * ADR-099 — a Save is the app's own record now, not the stub's exclusion, so the stub reset alone no longer un-saves
+ * a title: release every Save an earlier test left open, through the domain un-save writer (a tsx subprocess, like
+ * the watchlist refresh). Run after the stub reset, so every un-save takes the lapsed path.
+ */
+function releaseOpenSaves(): void {
+  const res = spawnSync(
+    join(process.cwd(), 'node_modules', '.bin', 'tsx'),
+    [join(process.cwd(), 'e2e', 'support', 'reset-saves.ts')],
+    { env: { ...process.env, ...env() }, encoding: 'utf8' },
+  );
+  if (res.status !== 0) throw new Error(`reset-saves failed:\n${res.stdout}\n${res.stderr}`);
 }
 
 async function maintainerrCalls(page: Page): Promise<RecordedMaintainerrWrite[]> {
@@ -129,6 +144,7 @@ test.beforeAll(() => {
 // ADR-093 / DESIGN-052 D-20 — leave no stub item "deleted" behind for a later spec (the stub *arr 404s those).
 test.afterAll(async ({ request }) => {
   await request.post(`${env().STUB_MAINTAINERR_URL}/_stub/reset`);
+  releaseOpenSaves();
 });
 
 /** Start a batch via the target-picker Modal, taking the default "All current candidates". */
@@ -251,7 +267,7 @@ test.describe('trash — watchlist protection on the page (ADR-093)', () => {
       await expect(confirm).toContainText('3 protected');
       // D-25bk / D-25cy — the app keeps them (never "Maintainerr keeps"), and a request is no keep.
       await expect(confirm).toContainText(
-        '3 protected: recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.',
+        '3 protected: saved, recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.',
       );
       await expect(confirm).not.toContainText('Maintainerr keeps');
       await expect(confirm).not.toContainText('requested');
@@ -631,7 +647,9 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
   // ADR-096 — the pending wall shares the tap-toggle, so the same two rules hold here: a save shows
   // only once the server confirms it, and overlapping taps each settle their own tile (the wall used
   // to settle through callbacks on one shared mutation observer, which a second tap orphaned).
-  test('pending wall: overlapping saves that fail never read as saved, and both tiles say so', async ({
+  // ADR-099 — and a save tapped while Maintainerr runs its rules is SAVED: the app records it first.
+  // So the failure half now uses a failure that can still happen (the edge answering 502 itself).
+  test('pending wall: overlapping saves that fail never read as saved; a Maintainerr stall still saves both', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -642,18 +660,29 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(vanished).toHaveAttribute('data-glyph', 'trash');
     await expect(fixture).toHaveAttribute('data-glyph', 'trash');
     await page.waitForLoadState('networkidle');
-    await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclusion-fault`, {
-      data: { delayMs: 2000, status: 503 },
-    });
-    try {
+    const answers = (n: number) => {
       const statuses: number[] = [];
-      const bothAnswered = new Promise<void>((resolve) => {
-        page.on('response', (r) => {
+      return new Promise<number[]>((resolve) => {
+        const onResponse = (r: { url: () => string; status: () => number }) => {
           if (!r.url().includes('trash.saveExclusion')) return;
           statuses.push(r.status());
-          if (statuses.length === 2) resolve();
-        });
+          if (statuses.length === n) {
+            page.off('response', onResponse);
+            resolve(statuses);
+          }
+        };
+        page.on('response', onResponse);
       });
+    };
+
+    // 1) The request never reaches the app (the edge answers 502 after a wait): nothing is saved, both tiles say so.
+    const route = '**/api/trpc/trash.saveExclusion**';
+    await page.route(route, async (r) => {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await r.fulfill({ status: 502, contentType: 'text/plain', body: 'Bad Gateway' });
+    });
+    try {
+      const failed = answers(2);
       await vanished.getByTestId('trash-toggle').click();
       await page.waitForTimeout(300);
       await fixture.getByTestId('trash-toggle').click();
@@ -664,8 +693,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
         expect(await fixture.getAttribute('data-glyph')).toBe('trash');
         await page.waitForTimeout(250);
       }
-      await bothAnswered;
-      expect(statuses).toEqual([502, 502]);
+      expect(await failed).toEqual([502, 502]);
       for (const tile of [vanished, fixture]) {
         await expect(tile.getByTestId('trash-toggle')).not.toHaveAttribute('aria-busy', 'true');
         await expect(tile).toHaveAttribute('data-failed', 'true');
@@ -674,10 +702,36 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       }
       await expect(page.getByTestId('trash-wall-error')).toContainText('was not saved.');
     } finally {
+      await page.unroute(route);
+    }
+
+    // 2) ADR-099 — Maintainerr holds the exclusion writes (its rule run) and then fails them: both saves still land,
+    //    recorded by the app, and each tile flips on its own answer.
+    await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclusion-fault`, {
+      data: { delayMs: 2000, status: 503 },
+    });
+    try {
+      const saved = answers(2);
+      await vanished.getByTestId('trash-toggle').click();
+      await page.waitForTimeout(300);
+      await fixture.getByTestId('trash-toggle').click();
+      expect(await saved).toEqual([200, 200]);
+      for (const tile of [vanished, fixture]) {
+        await expect(tile.getByTestId('trash-toggle')).not.toHaveAttribute('aria-busy', 'true');
+        await expect(tile).not.toHaveAttribute('data-failed', 'true');
+        await expect(tile).toHaveAttribute('data-glyph', 'shield');
+      }
+      await expect(page.getByTestId('trash-wall-error')).toHaveText('');
+      // Maintainerr never took the exclusions: the saves are the app's record, which the next paint reads too.
+      await page.reload();
+      await expect(vanished).toHaveAttribute('data-glyph', 'check');
+      await expect(fixture).toHaveAttribute('data-glyph', 'check');
+    } finally {
       await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclusion-fault`, {
         data: { status: 0 },
       });
     }
+    await resetMaintainerr(page);
   });
 
   test('BUG FIX 2026-07-09 — a recently-watched candidate is SAVEABLE via tap (no more inert eye corner)', async ({
@@ -813,7 +867,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const confirm = page.getByTestId('trash-expedite-all-confirm');
     await expect(confirm).toContainText('0 will be deleted NOW');
     await expect(confirm).toContainText(
-      '1 protected: recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.',
+      '1 protected: saved, recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.',
     );
     await expect(page.getByTestId('trash-expedite-recent')).toHaveText('1 added or upgraded recently');
     await expect(page.getByTestId('trash-expedite-all-submit')).toBeDisabled();
@@ -1143,13 +1197,17 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
   // ADR-096 (owner report 2026-10-03) — the wall shows a save only after the server confirms it.
   // Live: a Leaving Soon tap waited on Maintainerr (busy with its scheduled rule run), timed out
   // and came back 502 after 30 s; the tile had gone green and "Rescued" had counted it the moment
-  // it was tapped, so a screenshot in that window showed a save that never happened. The stub's
-  // exclusion fault replays it: the add waits, then answers 503 without excluding anything.
+  // it was tapped, so a screenshot in that window showed a save that never happened.
+  //
+  // ADR-099 then made that exact stall SAVE: the app records the save first and answers within its
+  // 8 s enforcement deadline whatever Maintainerr does. So the failure half below uses a failure that
+  // can still happen (the edge answering 502 itself, after a wait), and the stub's exclusion fault now
+  // proves the stall saves: the add waits past the deadline, then answers 503 without excluding.
   //
   // Two tiles are tapped while the first is still out, because the wall used to settle taps through
   // callbacks on ONE shared mutation observer: the second tap orphaned the first tile's answer, so a
   // failed first save stayed green for good (and a good one never confirmed).
-  test('a save the server has not confirmed never shows as saved; a failed save says so on the tile', async ({
+  test('a save the server has not confirmed never shows as saved; a failed save says so; a Maintainerr stall still saves', async ({
     page,
   }) => {
     // On a phone, where the owner hit it: the named error message is two lines here, so this also
@@ -1188,7 +1246,11 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       });
     };
 
-    await setFault({ delayMs: 3000, status: 503 });
+    const route = '**/api/trpc/trash.batches.setItemSaved**';
+    await page.route(route, async (r) => {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await r.fulfill({ status: 502, contentType: 'text/plain', body: 'Bad Gateway' });
+    });
     try {
       const failed = saveAnswers(2);
       await vanishedTap.click();
@@ -1231,15 +1293,20 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
         await expect(tap).toHaveAttribute('aria-label', /^Not saved, the last try failed\. /);
       }
       await expect(page.getByTestId('wall-error')).toHaveText(
-        /^(Vanished Heist \(2018\)|The Fixture \(2022\)) was not saved\. Maintainerr didn’t respond\. Nothing changed — try again in a bit\.$/,
+        /^(Vanished Heist \(2018\)|The Fixture \(2022\)) was not saved\. .+$/,
       );
       await expect(counts).toHaveText(countsBefore);
       // Recolors and a text swap in fixed slots: neither tile moved (ADR-015).
       expectSameBox(vanishedBefore, await vanished.boundingBox());
       expectSameBox(fixtureBefore, await fixture.boundingBox());
+    } finally {
+      await page.unroute(route);
+    }
 
-      // A slow SUCCESS on both, again overlapping: each tile flips on its own answer, the first too.
-      await setFault({ delayMs: 1500, status: 201 });
+    // ADR-099 — the incident itself: Maintainerr holds the exclusion writes past the save's 8 s deadline (its rule
+    // run), then fails them. Both saves land anyway, overlapping, each tile flipping on its own answer.
+    await setFault({ delayMs: 10_000, status: 503 });
+    try {
       const succeeded = saveAnswers(2);
       await vanishedTap.click();
       await page.waitForTimeout(300);
@@ -1252,6 +1319,11 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       await expect(fixture).toHaveAttribute('data-glyph', 'shield');
       await expect(vanishedTap).not.toHaveAttribute('aria-busy', 'true');
       await expect(counts).toContainText('Rescued 2');
+      // Saved by the app's record alone: the stub holds no exclusion for either title.
+      for (const id of [STUB_MAINT_VANISHED_ID, STUB_MAINT_FIXTURE_ID]) {
+        const res = await page.request.get(`${env().STUB_MAINTAINERR_URL}/api/rules/exclusion?mediaServerId=${id}`);
+        expect(await res.json(), `${id} must not be excluded`).toEqual([]);
+      }
     } finally {
       await setFault({ status: 0 });
     }

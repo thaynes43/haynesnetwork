@@ -66,6 +66,8 @@ export interface PendingWallItem {
   onWatchlist?: boolean;
   /** DESIGN-052 D-26 / Q-14 — the Age Guard verdict; `recent` shows as kept (absent ⇒ clear, an older server). */
   ageGuard?: 'recent' | 'clear' | 'unknown';
+  /** ADR-099 D-4 — somebody saved it (an open save intent): saved, whether or not Maintainerr has caught up. */
+  saveIntent?: boolean;
 }
 
 const itemRating = (item: PendingWallItem): number | null =>
@@ -86,6 +88,7 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false)
         : 'No scheduled delete date',
   ];
   if (glyph === 'shield') lines.push('Saved by you — protected from deletion');
+  else if (glyph === 'check' && item.saveIntent === true) lines.push("Saved, so it won't be deleted");
   else if (glyph === 'check') lines.push('Protected — excluded in Maintainerr');
   // ADR-086 D-5 — the `dnd` tag is INFORMATION here, never a protection claim. It can outlive the
   // exclusion that created it (a file replacement re-keys the Plex item; Maintainerr's nightly
@@ -94,7 +97,7 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false)
   // keep (D-6), so the note says what the tag IS without asserting the item is safe.
   if (item.protectedByTag)
     lines.push(
-      item.protectedByExclusion
+      item.protectedByExclusion || item.saveIntent === true
         ? 'Carries the dnd tag'
         : 'Carries the dnd tag, but no live Maintainerr exclusion — save it to protect it',
     );

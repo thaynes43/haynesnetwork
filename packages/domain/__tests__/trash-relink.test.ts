@@ -124,20 +124,39 @@ describe('relinkSaveIntents (ADR-086 D-4)', () => {
     expect(intent!.lastRelinkedAt).not.toBeNull();
   });
 
+  it('ADR-099 — a spent time budget starts no new candidate and reports it (cooperative, never a race)', async () => {
+    const { state, bundle, calls } = await lapseAfterRekey();
+    const report = await relinkSaveIntents({ db: t.db, maintainerr: bundle, deadlineAt: Date.now() - 1 });
+    expect(report.stoppedEarly).toBe(true);
+    expect(report.relinked).toBe(0);
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    expect(state.exclusions.has('ms-9101')).toBe(false);
+    // The next tick, with time to spare, finishes it.
+    const next = await relinkSaveIntents({ db: t.db, maintainerr: bundle, deadlineAt: Date.now() + 60_000 });
+    expect(next).toMatchObject({ stoppedEarly: false, relinked: 1 });
+    expect(state.exclusions.has('ms-9101')).toBe(true);
+  });
+
   it('is idempotent — a second pass finds nothing left to do', async () => {
-    const { bundle } = await lapseAfterRekey();
+    const { state, bundle } = await lapseAfterRekey();
     await relinkSaveIntents({ db: t.db, maintainerr: bundle });
 
-    const second = await relinkSaveIntents({ db: t.db, maintainerr: bundle });
-    expect(second.scanned).toBe(0);
+    // The snapshot still lists the title (Maintainerr has not re-run its rules), now under the key the intent holds,
+    // and Maintainerr holds the exclusion there: read, nothing written.
+    const again = makeMaintainerr(state);
+    const second = await relinkSaveIntents({ db: t.db, maintainerr: again.bundle });
     expect(second.relinked).toBe(0);
+    expect(second.reapplied).toBe(0);
+    expect(second.failed).toBe(0);
+    expect(again.calls.some((c) => c.method === 'POST')).toBe(false);
   });
 
   /**
-   * ADR-086 D-4 — the carve-out. An item pooled under the SAME key we already excluded, with the
-   * exclusion gone, means a human removed it in Maintainerr's own UI. Re-applying would fight them.
+   * ADR-099 D-5 supersedes ADR-086 D-4's carve-out. The owner's ruling: a Save is forever ("if someone clicks save
+   * it's saved forever"), and the app's un-save is the release. An exclusion Maintainerr lost under the SAME key is
+   * re-applied, audited as `reapply`.
    */
-  it('does NOT relink a same-key lapse — that is a human un-exclusion, and it is censused instead', async () => {
+  it('re-applies a same-key lapse (ADR-099 D-5), audited as a reapply', async () => {
     const state = baseState({ collections: [movieCollection()] });
     const first = makeMaintainerr(state);
     await saveExclusion({
@@ -155,14 +174,14 @@ describe('relinkSaveIntents (ADR-086 D-4)', () => {
 
     const report = await relinkSaveIntents({ db: t.db, maintainerr: next.bundle });
 
-    expect(report.scanned).toBe(0);
-    expect(report.relinked).toBe(0);
+    expect(report.scanned).toBe(1);
     expect(report.sameKeyCensus).toBe(1);
-    // Crucially: we did NOT put the exclusion back.
-    expect(state.exclusions.has('ms-9001')).toBe(false);
-    expect(next.calls.some((c) => c.method === 'POST' && c.pathname.includes('exclusion'))).toBe(
-      false,
-    );
+    expect(report.relinked).toBe(0);
+    expect(report.reapplied).toBe(1);
+    // The Save holds: the exclusion is back on the key it was saved on.
+    expect(state.exclusions.has('ms-9001')).toBe(true);
+    const events = await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.eventType, 'trash_excluded'));
+    expect(events.filter((e) => (e.payload as { reason?: string }).reason === 'reapply')).toHaveLength(1);
   });
 
   /** ADR-086 D-3 / C-10 — the brake. A revoked intent is never resurrected. */

@@ -1,6 +1,9 @@
 # ADR-086: Durable Trash save intent — relink on re-key, and an honest protected badge
 
 - **Status:** Proposed
+- **Superseded in part by:** [ADR-099](099-trash-save-recorded-first.md) (2026-10-03): D-4's same-key carve-out
+  (the reconciler now re-applies a lost exclusion under the same key too, `reason: 'reapply'`), and the save intent
+  becomes the protection every deletion path reads. This is a status note only.
 - **Date:** 2026-08-29
 - **Deciders:** Tom Haynes (owner ruling 2026-08-29, AskUserQuestion: "fix both halves")
 - **Amends:** [ADR-023](023-trash-and-maintainerr.md) — the ownership of exclusion *intent* (narrow,

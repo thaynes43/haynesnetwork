@@ -7,6 +7,9 @@
   sweep first needs a verified Watchlist Registry, the guardian keeps a watchlisted title (`keep_reason`), and the
   deleted release is recorded and blocked in Radarr/Sonarr before each Maintainerr handle (DESIGN-052 D-07, D-09,
   D-14).
+- **Amended by:** [ADR-099](../adrs/099-trash-save-recorded-first.md) (2026-10-03): a Save is recorded before
+  Maintainerr is called and the exclusion follows it (an 8 s try, then the 15-minute save keeper); the sweep keeps a
+  saved title by its save intent, and batch creation never proposes one (D-04, D-05 and D-07 amendments 2026-10-03).
 - **Amended by:** [ADR-096](../adrs/096-trash-walls-show-only-confirmed-saves.md) (2026-10-03): the batch wall
   shows a tap's result only once the server confirms it (busy ring meanwhile, failure marked on the tile; D-07
   amendment 2026-10-03).
@@ -156,6 +159,14 @@ sequenceDiagram
 Intent-first: the event + terminal state + snapshot commit BEFORE the per-item handle; a failed
 handle is tolerated per-item (intent durable, Maintainerr reconciles) and never aborts the batch.
 
+> **Amended 2026-10-03 (ADR-099).** The guardian's first keep is now `saved`: a still-`pending` row whose title
+> carries an open save intent (saved on the pending wall or the library while Maintainerr was busy, or under a key
+> the row does not carry) is kept, `keep_reason 'saved'`, whether or not Maintainerr holds the exclusion. The
+> per-item claim (`state = 'pending'`) also requires no open intent for the title, in the same statement; a row that
+> loses the claim that way is kept `saved` too, so the close never strands it `pending`. Batch creation
+> (`createBatchFromPending`) leaves out every title with an open intent, targeted or not: a Save outlives the batch
+> it was made in, and a saved title never re-enters a later one.
+
 ---
 
 ## D-05 — Wire contracts (tRPC `trash.batches.*` + `trash.settings.*`)
@@ -222,7 +233,12 @@ trash.batches.setItemSaved // in: { batchId: uuid, itemId: uuid, saved: boolean 
 //   The API passes `callerCanManage = hasTrashAction(role, 'manage_batches')` (admin ⇒ true) down to
 //   the writer. admin_review un-saves are already manage_batches-gated, so the manager rules there are
 //   unchanged. (Save, and un-saving your own, are unaffected.)
-// out: { changed: boolean, state: TrashBatchItemState }
+// out: { changed: boolean, state: TrashBatchItemState, exclusion?: 'applied' | 'pending' }
+//   ADR-099 (2026-10-03): a save is RECORDED before Maintainerr is called (the row, its trash_batch_saves row,
+//   the trash_excluded row and the open save intent, one transaction), then the exclusion and the Leaving-Soon
+//   removal are tried for up to 8 s. `exclusion` says whether Maintainerr held the exclusion when this answered;
+//   'pending' is still SAVED (the save keeper applies it within a tick). A Maintainerr stall or outage no longer
+//   fails a save; only a database fault, a closed window or a moved row does.
 //   On an ACTIVE flip: changed:true, state 'saved' (save) | 'pending' (un-save). On an INERT flip
 //   (redundant save, or the item is already 'protected'/'skipped'/'deleted'): changed:false and
 //   state is the item's ACTUAL current state — so callers must accept the full item-state union.
@@ -407,6 +423,14 @@ running counts → **the wall** → save-stats → history → settings.
 >   never through callbacks passed to `mutate()` on the wall's shared mutation hook. TanStack Query
 >   keeps only the latest `mutate()` call's callbacks, so a second tap while the first was out used to
 >   orphan the first tile's answer (a failed save stayed green for good). Same in `usePendingSaves`.
+
+> **Amended 2026-10-03 (ADR-099, owner requirement "if someone clicks save it's saved forever").** A save tapped
+> while Maintainerr runs its rules no longer fails: the server records it first and answers within about 8 s
+> whatever Maintainerr does, so the tile flips to the saved shield and the header counts it. The busy ring and the
+> failure marking above stay for what can still fail (a dropped connection, an expired session, a window that
+> closed, an un-save while Maintainerr is down). The pending wall and the library shield read the open save intent
+> (`saveIntent` on the wire) as saved too, so a save made while Maintainerr was busy reads saved on every later
+> paint, before Maintainerr catches up. The e2e that expected "Not saved" during a stall now expects the save.
 
 ---
 
