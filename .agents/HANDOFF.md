@@ -4,6 +4,21 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-03 — Janitor: one search budget per title; the failed-download retry (ADR-098)
+
+**Owner ruling (2026-10-03, "App retries, capped"):** hitting an indexer twice for the same thing is very bad. Sonarr's
+and Radarr's own Redownload Failed goes off; the janitor is the only retrier, once per failed download, at most two
+tries per title in any 30 days, hourly. Evidence: the 2026-10-02 Paw Patrol run (DESIGN-046 D-23).
+
+- **PR #647 (DESIGN-046 D-23 + D-24, ADR-098, OPS-018):** the loop guard covers
+  `bad_release` on all three *arrs, with one budget across every janitor search; one search per target per run; the
+  queue path never searches a download the *arr failed itself; the failed-download retry on Sonarr and Radarr rides
+  their `bad_release` cells (no new cell, no migration, ladder stays L2).
+- **Coordinator, after the deploy:** turn off Redownload in Sonarr and Radarr right after a janitor run (OPS-018 §2),
+  then log it in PLAN-065's ladder log. Until then the retry only observes.
+- **Q-08 answered (owner, "Reset after 30 days"):** two tries per title in any rolling 30 days, every loop guard (D-23
+  rule 7). **Open:** issue #646 (Lidarr's Fix searches twice).
+
 ## ▶ 2026-10-03 — Trash-deleted titles are excluded from automation (ADR-097)
 
 **Owner rulings (2026-10-03):** "Block automation only": a title deleted through Trash must never be re-added by

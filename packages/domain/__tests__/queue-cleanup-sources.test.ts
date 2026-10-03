@@ -983,6 +983,27 @@ describe('the suite on embedded Postgres (D-15..D-20)', () => {
     expect(log.loops()).toHaveLength(1);
   });
 
+  it('LOOP GUARD WINDOW (D-20, D-23 rule 7): a book format held after two removals is tried again once the first is 30 days old', async () => {
+    const day = 86_400_000;
+    const t0 = new Date('2026-09-20T00:00:00Z');
+    let n = 0;
+    const ll = fakeSource('lazylibrarian', () => [
+      srcItem({ actionClass: 'bad_release', itemRef: 'bk3/ebook', downloadId: `nzo-${n}`, title: 'Author - Book (Retail)' }),
+    ]);
+    const cfg = suiteCfg({ lazylibrarian: { bad_release: 'enforce' } });
+    const at = [0, 1, 29, 31];
+    for (n = 0; n < at.length; n += 1) {
+      await evaluateQueueCleanup({ db: t.db, clients: clients({ lazylibrarian: ll.adapter }), config: cfg, now: new Date(t0.getTime() + at[n]! * day) });
+    }
+    expect(ll.acts.map((a) => a.downloadIds[0])).toEqual(['nzo-0', 'nzo-1', 'nzo-3']);
+    expect((await rows()).map((r) => [r.downloadId, r.action])).toEqual(
+      expect.arrayContaining([
+        ['nzo-2', 'skipped_loop'],
+        ['nzo-3', 'removed_blocklisted'],
+      ]),
+    );
+  });
+
   it('REPEAT SEARCH (D-20): a Kapowarr volume searched on a second run is logged', async () => {
     const hour = 3_600_000;
     const t0 = new Date('2026-09-20T00:00:00Z');

@@ -50,6 +50,18 @@ export const diskSpaceSchema = z.object({
 });
 export type ArrDiskSpace = z.infer<typeof diskSpaceSchema>;
 
+/**
+ * ADR-098 / DESIGN-046 D-24 (PLAN-065) — `GET /config/downloadclient`: the *arr's failed-download handling settings,
+ * shared verbatim by Sonarr, Radarr and Lidarr (`DownloadClientConfigResource`). Only the two fields the janitor reads:
+ * `autoRedownloadFailed` (Settings > Download Clients > Failed Download Handling > Redownload: the *arr searches again
+ * itself after a failed download) and its interactive-search twin. Strip mode, like every shape here.
+ */
+export const downloadClientConfigSchema = z.object({
+  autoRedownloadFailed: z.boolean(),
+  autoRedownloadFailedFromInteractiveSearch: z.boolean().optional(),
+});
+export type ArrDownloadClientConfig = z.infer<typeof downloadClientConfigSchema>;
+
 /** Paged *arr envelope (`/history`, `/wanted/missing`, …). */
 export const pagedSchema = <T extends z.ZodType>(record: T) =>
   z.object({

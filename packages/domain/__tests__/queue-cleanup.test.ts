@@ -36,8 +36,11 @@ import {
   getQueueCleanupLadder,
   groupQueueRecordsByDownload,
   isLidarrAlbumMissing,
+  ARR_MANUAL_FAILURE_MESSAGE,
   MANUAL_MATCH_LOOP_LIMIT,
+  QUEUE_CLEANUP_LOOP_LIMIT,
   QUEUE_CLEANUP_LOOP_LOG,
+  QUEUE_CLEANUP_LOOP_WINDOW_MS,
   queueCleanupCellMode,
   queueCleanupConfigError,
   resolveArrQueueCleanupConfig,
@@ -45,6 +48,8 @@ import {
   type ArrQueueCleanupConfig,
   type ClassifiableQueueItem,
   type QueueCleanupClients,
+  type QueueCleanupFailedDownload,
+  type QueueCleanupFailedDownloadSource,
   type QueueCleanupInstanceClient,
   type QueueCleanupModeCells,
   type QueueCleanupQueueItem,
@@ -2059,7 +2064,7 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
   const priorRow = (
     albumId: number,
     downloadId: string,
-    o: { action?: 'removed_blocklisted' | 'blocklisted_searched' | 'skipped_gone' | 'none'; outcome?: 'done' | 'error' | 'observed'; actionClass?: 'manual_match' | 'bad_release'; createdAt?: Date } = {},
+    o: { action?: 'removed_blocklisted' | 'blocklisted_searched' | 'skipped_gone' | 'none'; outcome?: 'done' | 'error' | 'observed'; actionClass?: 'manual_match' | 'bad_release' | 'have_better'; createdAt?: Date } = {},
   ) => ({
     instance: 'lidarr' as const,
     queueItemId: 1,
@@ -2070,7 +2075,8 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     mode: 'enforce' as const,
     action: o.action ?? ('blocklisted_searched' as const),
     outcome: o.outcome ?? ('done' as const),
-    createdAt: o.createdAt ?? new Date('2026-09-20T00:25:00Z'),
+    // Relative to the clock: a run without `now` uses the real time, and the guard counts the last 30 days (D-23 rule 7).
+    createdAt: o.createdAt ?? new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
   });
 
   it('ENFORCE manual_match (D-13): removes + blocklists with skipRedownload, then ONE album search for a monitored, still-missing album', async () => {
@@ -2221,14 +2227,14 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     expect(row).toMatchObject({ mode: 'enforce', action: 'none', outcome: 'observed' });
   });
 
-  it('LOOP GUARD (D-13): counts only landed manual_match removals of the same album on OTHER downloads', async () => {
+  it('LOOP GUARD (D-13, D-23): counts only landed tries (a searching class) for the same album on OTHER downloads', async () => {
     await t.db.insert(arrQueueCleanupActions).values([
       priorRow(5430, 'dl-a'), // counts
       priorRow(5430, 'dl-this'), // the record's own download: not an earlier one
       priorRow(5430, 'dl-b', { action: 'removed_blocklisted', outcome: 'error' }), // the search failed: not counted
       priorRow(5430, 'dl-c', { action: 'skipped_gone', outcome: 'observed' }), // nothing was removed
       priorRow(5430, 'dl-d', { action: 'none', outcome: 'observed' }), // census
-      priorRow(5430, 'dl-e', { actionClass: 'bad_release' }), // another class
+      priorRow(5430, 'dl-e', { actionClass: 'have_better', action: 'removed_blocklisted' }), // never searches: not a try
       priorRow(9999, 'dl-f'), // another album
       priorRow(9999, 'dl-g'),
     ]);
@@ -2725,6 +2731,508 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
       payload: { to: 'admin@example.test', count: 0, queueCleanup: JSON.parse(JSON.stringify(section)) },
     });
     expect(mail!.text).toContain('Release names blocked on lidarr: 1 in the last 24h, 1 blocked now.');
+  });
+
+  // --- D-23 / D-24 (ADR-098): one budget for every janitor search; the failed-download retry ---
+
+  const ARCHIVE = 'Found archive file, might need to be extracted';
+  const ABORTED = 'Aborted, cannot be completed - https://sabnzbd.org/not-complete';
+  const HOUR = 60 * 60 * 1000;
+  /** A bad release of one target (Sonarr's episode, Radarr's movie, Lidarr's album), in the Paw Patrol shape. */
+  const targetRelease = (id: number, downloadId: string, targetId: number, o: Partial<QueueCleanupQueueItem> = {}) => {
+    const title = 'PAW.Patrol.S05E26.MULTI.1080p.WEB-DL.AAC2.0.x264-GRP';
+    return item({
+      queueItemId: id,
+      downloadId,
+      title,
+      targetId,
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importBlocked',
+      statusMessages: [{ title, messages: [ARCHIVE] }],
+      ...o,
+    });
+  };
+  /** bad_release enforced on one instance, every other cell census, no age rail. */
+  const brCfg = (instance: 'sonarr' | 'radarr' | 'lidarr' = 'sonarr'): ArrQueueCleanupConfig => {
+    const cfg = clone();
+    cfg.modes[instance].bad_release = 'enforce';
+    return cfg;
+  };
+  const only = (instance: 'sonarr' | 'radarr' | 'lidarr', client: QueueCleanupInstanceClient) =>
+    makeClients(
+      instance === 'sonarr' ? { sonarr: client } : instance === 'radarr' ? { radarr: client } : { lidarr: client },
+    );
+  /** A janitor row from an earlier run (default: a landed bad_release removal + search from the queue path). */
+  const triedRow = (
+    instance: 'sonarr' | 'radarr' | 'lidarr',
+    targetId: number,
+    downloadId: string,
+    o: { action?: 'removed_blocklisted' | 'blocklisted_searched' | 'skipped_loop'; outcome?: 'done' | 'observed'; queueItemId?: number | null; createdAt?: Date } = {},
+  ) => ({
+    instance,
+    queueItemId: o.queueItemId === undefined ? 1 : o.queueItemId,
+    downloadId,
+    title: 'An earlier grab',
+    targetId,
+    actionClass: 'bad_release' as const,
+    mode: 'enforce' as const,
+    action: o.action ?? ('blocklisted_searched' as const),
+    outcome: o.outcome ?? ('done' as const),
+    reason: ARCHIVE,
+    createdAt: o.createdAt ?? new Date(Date.now() - 3 * 24 * HOUR),
+  });
+  const rowsOf = (instance: 'sonarr' | 'radarr' | 'lidarr') =>
+    t.db
+      .select()
+      .from(arrQueueCleanupActions)
+      .where(eq(arrQueueCleanupActions.instance, instance))
+      .orderBy(arrQueueCleanupActions.createdAt, arrQueueCleanupActions.queueItemId, arrQueueCleanupActions.downloadId);
+  const reportOf = (r: Awaited<ReturnType<typeof evaluateQueueCleanup>>, instance: string) =>
+    r.instances.find((i) => i.instance === instance)!;
+
+  it.each(['sonarr', 'radarr', 'lidarr'] as const)(
+    'LOOP GUARD (D-23): a %s target the janitor already tried on 2 earlier downloads is held: no removal, no search, one loop_detected line',
+    async (instance) => {
+      expect(QUEUE_CLEANUP_LOOP_LIMIT).toBe(2);
+      await t.db
+        .insert(arrQueueCleanupActions)
+        .values([triedRow(instance, 46388, 'dl-a'), triedRow(instance, 46388, 'dl-b', { action: 'removed_blocklisted' })]);
+      const log = captureLogger();
+      const stub = makeInstanceStub([targetRelease(500, 'dl-c', 46388)], { monitored: true, explodeOnWrite: true });
+      const report = await evaluateQueueCleanup({
+        db: t.db,
+        clients: only(instance, stub.client),
+        config: brCfg(instance),
+        logger: log.logger,
+      });
+      expect(stub.calls.deletes).toEqual([]);
+      expect(stub.calls.searches).toEqual([]);
+      expect(stub.calls.monitoredChecks).toBe(1); // the guard asks whether a search would follow
+      expect(reportOf(report, instance)).toMatchObject({ actionsTaken: 0, errors: 0 });
+      const [row] = (await rowsOf(instance)).filter((r) => r.downloadId === 'dl-c');
+      expect(row).toMatchObject({ mode: 'enforce', action: 'skipped_loop', outcome: 'observed', targetId: 46388 });
+      expect(log.loops().map((l) => l.meta)).toEqual([
+        expect.objectContaining({ kind: 'skipped_loop', instance, downloadId: 'dl-c', targetIds: [46388], priorRemovals: 2 }),
+      ]);
+    },
+  );
+
+  it('LOOP over runs (D-23): the Paw Patrol shape, one episode bad again and again: two removals with one search each, the third removal is never sent and nothing is searched', async () => {
+    const t0 = new Date('2026-10-02T06:25:00Z');
+    const run = async (n: number) => {
+      const log = captureLogger();
+      const sonarr = makeInstanceStub([targetRelease(600 + n, `dl-${n}`, 46388)], { monitored: true });
+      await evaluateQueueCleanup({
+        db: t.db,
+        clients: makeClients({ sonarr: sonarr.client }),
+        config: brCfg(),
+        now: new Date(t0.getTime() + n * HOUR),
+        logger: log.logger,
+      });
+      return { calls: sonarr.calls, loops: log.loops() };
+    };
+    const r1 = await run(1);
+    expect(r1.calls.deletes).toEqual([{ id: 601, removeFromClient: true, blocklist: true, skipRedownload: true }]);
+    expect(r1.calls.searchCalls).toEqual([[601]]);
+    const r2 = await run(2);
+    expect(r2.calls.searchCalls).toEqual([[602]]);
+    expect(r2.loops.map((l) => l.meta)).toEqual([
+      expect.objectContaining({ kind: 'repeat_search', downloadId: 'dl-2', targets: [{ targetId: 46388, searches7d: 2 }] }),
+    ]);
+    const r3 = await run(3);
+    expect(r3.calls.deletes).toEqual([]);
+    expect(r3.calls.searchCalls).toEqual([]);
+    expect(r3.loops.map((l) => l.meta)).toEqual([
+      expect.objectContaining({ kind: 'skipped_loop', downloadId: 'dl-3', targetIds: [46388], priorRemovals: 2 }),
+    ]);
+    expect((await rowsOf('sonarr')).map((r) => [r.downloadId, r.action])).toEqual([
+      ['dl-1', 'blocklisted_searched'],
+      ['dl-2', 'blocklisted_searched'],
+      ['dl-3', 'skipped_loop'],
+    ]);
+  });
+
+  it('WINDOW (D-23 rule 7, Q-08): two tries count for 30 days, so a third try 31 days after the first is allowed, and two in any 30 days hold the next', async () => {
+    expect(QUEUE_CLEANUP_LOOP_WINDOW_MS).toBe(30 * 24 * HOUR);
+    const day = 24 * HOUR;
+    const t0 = new Date('2026-10-02T06:25:00Z');
+    const run = async (n: number, at: Date) => {
+      const sonarr = makeInstanceStub([targetRelease(650 + n, `dl-${n}`, 46500)], { monitored: true });
+      await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: sonarr.client }), config: brCfg(), now: at });
+      return sonarr.calls;
+    };
+    expect((await run(1, t0)).searchCalls).toEqual([[651]]);
+    expect((await run(2, new Date(t0.getTime() + day))).searchCalls).toEqual([[652]]);
+    // Day 29: both tries are inside the window, so the third is held.
+    const held = await run(3, new Date(t0.getTime() + 29 * day));
+    expect(held.deletes).toEqual([]);
+    // Day 31: the first try has aged out (one try in 30 days), so the janitor removes and searches once more.
+    const third = await run(4, new Date(t0.getTime() + 31 * day));
+    expect(third.deletes.map((d) => d.id)).toEqual([654]);
+    expect(third.searchCalls).toEqual([[654]]);
+    // Day 32: the day-1 try has aged out too (only day 31 counts), so one more try; day 33: days 31 and 32 count, held.
+    expect((await run(5, new Date(t0.getTime() + 32 * day))).searchCalls).toEqual([[655]]);
+    expect((await run(6, new Date(t0.getTime() + 33 * day))).deletes).toEqual([]);
+    expect((await rowsOf('sonarr')).map((r) => [r.downloadId, r.action])).toEqual([
+      ['dl-1', 'blocklisted_searched'],
+      ['dl-2', 'blocklisted_searched'],
+      ['dl-3', 'skipped_loop'],
+      ['dl-4', 'blocklisted_searched'],
+      ['dl-5', 'blocklisted_searched'],
+      ['dl-6', 'skipped_loop'],
+    ]);
+  });
+
+  it('WINDOW (D-23 rule 7): the Lidarr manual_match hold and the failed-download retry share the 30-day window', async () => {
+    const now = new Date('2026-10-03T07:25:00Z');
+    const old = new Date(now.getTime() - 31 * 24 * HOUR);
+    // manual_match: one try 31 days ago and one 2 days ago is one try in the window, so the album is tried again.
+    await t.db
+      .insert(arrQueueCleanupActions)
+      .values([priorRow(5480, 'dl-old', { createdAt: old }), priorRow(5480, 'dl-new', { createdAt: new Date(now.getTime() - 2 * 24 * HOUR) })]);
+    const lidarr = makeInstanceStub([manualMatchItem(480, 'dl-c', 5480)]);
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: lidarr.client }), config: mmCfg(), now });
+    expect(lidarr.calls.deletes.map((d) => d.id)).toEqual([480]);
+    expect(lidarr.calls.searchCalls).toEqual([[480]]);
+
+    // The retry: two old tries for the episode no longer count, so the failure is searched once.
+    await t.db
+      .insert(arrQueueCleanupActions)
+      .values([triedRow('sonarr', 46501, 'dl-a', { createdAt: old }), triedRow('sonarr', 46501, 'dl-b', { createdAt: old })]);
+    const stub = failedStub([failure({ downloadId: 'dl-c', targetId: 46501, failedAt: new Date(now.getTime() - HOUR) })]);
+    await retryRun([], stub.source, { now });
+    expect(stub.calls.searches).toEqual([[46501]]);
+  });
+
+  it('LOOP GUARD (D-23): an unmonitored target over the budget is removed and blocklisted, not held (no search would follow)', async () => {
+    await t.db.insert(arrQueueCleanupActions).values([triedRow('sonarr', 46389, 'dl-a'), triedRow('sonarr', 46389, 'dl-b')]);
+    const sonarr = makeInstanceStub([targetRelease(510, 'dl-c', 46389)], { monitored: false });
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: sonarr.client }), config: brCfg() });
+    expect(sonarr.calls.deletes.map((d) => d.id)).toEqual([510]);
+    expect(sonarr.calls.searches).toEqual([]);
+    const [row] = (await rowsOf('sonarr')).filter((r) => r.downloadId === 'dl-c');
+    expect(row).toMatchObject({ action: 'removed_blocklisted', outcome: 'done' });
+  });
+
+  it('LOOP GUARD (D-23): one budget across classes, so a bad_release try and a manual_match try hold a Lidarr album', async () => {
+    await t.db
+      .insert(arrQueueCleanupActions)
+      .values([priorRow(5470, 'dl-a', { actionClass: 'bad_release' }), priorRow(5470, 'dl-b')]);
+    const lidarr = makeInstanceStub([manualMatchItem(470, 'dl-c', 5470)], { explodeOnWrite: true });
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ lidarr: lidarr.client }), config: mmCfg() });
+    expect(lidarr.calls.deletes).toEqual([]);
+    const [row] = (await lidarrRows()).filter((r) => r.downloadId === 'dl-c');
+    expect(row).toMatchObject({ action: 'skipped_loop', outcome: 'observed' });
+  });
+
+  it('ONE SEARCH (D-23): each removal sends skipRedownload and one search; a second download of an episode already searched this run is removed, not searched again', async () => {
+    // The 2026-10-02 shape: an S05E03E04 pack and an S05E04 single both stuck for the same episode.
+    const sonarr = makeInstanceStub(
+      [targetRelease(700, 'dl-pack', 103), targetRelease(701, 'dl-pack', 104), targetRelease(702, 'dl-single', 104)],
+      { monitored: true },
+    );
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: sonarr.client }), config: brCfg() });
+    expect(sonarr.calls.deletes).toEqual([
+      { id: 700, removeFromClient: true, blocklist: true, skipRedownload: true },
+      { id: 702, removeFromClient: true, blocklist: true, skipRedownload: true },
+    ]);
+    expect(sonarr.calls.searchCalls).toEqual([[700, 701]]);
+    expect((await rowsOf('sonarr')).map((r) => [r.queueItemId, r.action, r.outcome])).toEqual([
+      [700, 'blocklisted_searched', 'done'],
+      [701, 'blocklisted_searched', 'done'],
+      [702, 'removed_blocklisted', 'done'],
+    ]);
+  });
+
+  it('*ARR FAILURE (D-23): a download the *arr marked failed is removed and blocklisted with no search; one it is failing right now (failedPending) waits a run', async () => {
+    const sonarr = makeInstanceStub(
+      [
+        item({ queueItemId: 710, downloadId: 'dl-failed', targetId: 46390, status: 'failed', trackedDownloadState: 'failed' }),
+        item({ queueItemId: 711, downloadId: 'dl-pending', targetId: 46391, status: 'failed', trackedDownloadState: 'failedPending' }),
+      ],
+      { monitored: true },
+    );
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: sonarr.client }), config: brCfg() });
+    expect(sonarr.calls.deletes).toEqual([{ id: 710, removeFromClient: true, blocklist: true, skipRedownload: true }]);
+    expect(sonarr.calls.monitoredChecks).toBe(0);
+    expect(sonarr.calls.searches).toEqual([]);
+    expect((await rowsOf('sonarr')).map((r) => [r.queueItemId, r.actionClass, r.mode, r.action])).toEqual([
+      [710, 'bad_release', 'enforce', 'removed_blocklisted'],
+      [711, 'bad_release', 'enforce', 'none'],
+    ]);
+  });
+
+  /** A failed download as the *arr's history records it (default: SABnzbd aborted it, 2026-10-02 06:26Z). */
+  const failure = (
+    o: Partial<QueueCleanupFailedDownload> & { downloadId: string; targetId: number },
+  ): QueueCleanupFailedDownload => ({
+    historyId: 1,
+    title: 'PAW.Patrol.S05E16.1080p.SKST.WEB-DL.DD+5.1.H.264-GRP',
+    failedAt: new Date('2026-10-02T06:26:22Z'),
+    message: ABORTED,
+    parentId: 77,
+    regrabbed: false,
+    ...o,
+  });
+  /** A stub failed-download source: Redownload Failed off and every target monitored unless told otherwise. */
+  const failedStub = (
+    failures: QueueCleanupFailedDownload[],
+    o: { redownload?: boolean; monitored?: boolean | ((f: QueueCleanupFailedDownload) => boolean); searchError?: boolean } = {},
+  ) => {
+    const calls = { reads: [] as Date[], configReads: 0, monitoredChecks: [] as number[][], searches: [] as number[][] };
+    const source: QueueCleanupFailedDownloadSource = {
+      async redownloadFailed() {
+        calls.configReads += 1;
+        return o.redownload ?? false;
+      },
+      async failedSince(since) {
+        calls.reads.push(since);
+        return failures;
+      },
+      async monitored(fs) {
+        calls.monitoredChecks.push(fs.map((f) => f.targetId));
+        const m = o.monitored ?? true;
+        return fs.filter((f) => (typeof m === 'function' ? m(f) : m));
+      },
+      async search(fs) {
+        if (o.searchError) throw new Error('search failed');
+        calls.searches.push(fs.map((f) => f.targetId));
+      },
+    };
+    return { source, calls };
+  };
+  /** One janitor run on Sonarr with a queue and a failed-download source. */
+  const retryRun = async (
+    queue: QueueCleanupQueueItem[],
+    source: QueueCleanupFailedDownloadSource,
+    o: { now?: Date; config?: ArrQueueCleanupConfig; monitored?: boolean } = {},
+  ) => {
+    const log = captureLogger();
+    const sonarr = makeInstanceStub(queue, { monitored: o.monitored ?? true });
+    sonarr.client.failedDownloads = source;
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: o.config ?? brCfg(),
+      now: o.now ?? new Date('2026-10-02T07:25:00Z'),
+      logger: log.logger,
+    });
+    return { report: reportOf(report, 'sonarr'), calls: sonarr.calls, loops: log.loops() };
+  };
+
+  it('RETRY (D-24): one failed download gets exactly one search, recorded once with no queue id; later runs that read it again do nothing', async () => {
+    const now = new Date('2026-10-02T07:25:00Z');
+    const f = failure({ historyId: 11, downloadId: 'dl-f1', targetId: 46380 });
+    const first = failedStub([f]);
+    const r1 = await retryRun([], first.source, { now });
+    expect(first.calls.reads).toEqual([new Date(now.getTime() - 24 * HOUR)]);
+    expect(first.calls.searches).toEqual([[46380]]);
+    expect(r1.report).toMatchObject({ actionsTaken: 1, errors: 0, itemsObserved: 1 });
+    expect(r1.report.byClass.bad_release).toEqual({ observed: 1, enforced: 1 });
+    const rows = await rowsOf('sonarr');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      queueItemId: null,
+      downloadId: 'dl-f1',
+      targetId: 46380,
+      actionClass: 'bad_release',
+      mode: 'enforce',
+      action: 'blocklisted_searched',
+      outcome: 'done',
+      reason: ABORTED,
+    });
+    // The next run's 24-hour read still holds the failure: it is recorded, so nothing is searched or written again.
+    const second = failedStub([f]);
+    const r2 = await retryRun([], second.source, { now: new Date(now.getTime() + HOUR) });
+    expect(second.calls.searches).toEqual([]);
+    expect(second.calls.configReads).toBe(0);
+    expect(r2.report).toMatchObject({ actionsTaken: 0, itemsObserved: 0 });
+    expect(await rowsOf('sonarr')).toHaveLength(1);
+  });
+
+  it('RETRY (D-24): the third failure of one episode is not searched (two retries, then held, one loop_detected line)', async () => {
+    const t0 = new Date('2026-10-02T06:25:00Z');
+    const failures: QueueCleanupFailedDownload[] = [];
+    const run = async (n: number) => {
+      const at = new Date(t0.getTime() + n * HOUR);
+      failures.push(failure({ historyId: n, downloadId: `dl-${n}`, targetId: 46395, failedAt: new Date(at.getTime() - 30 * 60 * 1000) }));
+      const stub = failedStub([...failures]);
+      const r = await retryRun([], stub.source, { now: at });
+      return { searches: stub.calls.searches, loops: r.loops };
+    };
+    expect((await run(1)).searches).toEqual([[46395]]);
+    const r2 = await run(2);
+    expect(r2.searches).toEqual([[46395]]);
+    expect(r2.loops.map((l) => l.meta)).toEqual([
+      expect.objectContaining({ kind: 'repeat_search', downloadId: 'dl-2', actionClass: 'bad_release' }),
+    ]);
+    const r3 = await run(3);
+    expect(r3.searches).toEqual([]);
+    expect(r3.loops.map((l) => l.meta)).toEqual([
+      expect.objectContaining({ kind: 'skipped_loop', instance: 'sonarr', downloadId: 'dl-3', targetIds: [46395], priorRemovals: 2 }),
+    ]);
+    expect((await rowsOf('sonarr')).map((r) => [r.downloadId, r.action, r.outcome])).toEqual([
+      ['dl-1', 'blocklisted_searched', 'done'],
+      ['dl-2', 'blocklisted_searched', 'done'],
+      ['dl-3', 'skipped_loop', 'observed'],
+    ]);
+  });
+
+  it('RETRY (D-24): the queue path and the retry share one budget (one removal + one retry, then the next failure is held)', async () => {
+    await t.db
+      .insert(arrQueueCleanupActions)
+      .values([triedRow('sonarr', 46396, 'dl-a'), triedRow('sonarr', 46396, 'dl-b', { queueItemId: null })]);
+    const stub = failedStub([failure({ downloadId: 'dl-c', targetId: 46396 })]);
+    await retryRun([], stub.source);
+    expect(stub.calls.searches).toEqual([]);
+    const [row] = (await rowsOf('sonarr')).filter((r) => r.downloadId === 'dl-c');
+    expect(row).toMatchObject({ queueItemId: null, action: 'skipped_loop', outcome: 'observed' });
+  });
+
+  it("RETRY (D-24): nothing is searched while the *arr's own Redownload Failed is on or the cell is census; a removal through the *arr's API is never a failure to retry", async () => {
+    const arrOn = failedStub([failure({ downloadId: 'dl-on', targetId: 46381 })], { redownload: true });
+    await retryRun([], arrOn.source);
+    expect(arrOn.calls.configReads).toBe(1);
+    expect(arrOn.calls.monitoredChecks).toEqual([]);
+    expect(arrOn.calls.searches).toEqual([]);
+
+    const census = failedStub([failure({ downloadId: 'dl-census', targetId: 46382 })]);
+    await retryRun([], census.source, { config: clone() });
+    expect(census.calls.searches).toEqual([]);
+
+    const manual = failedStub([failure({ downloadId: 'dl-manual', targetId: 46383, message: ARR_MANUAL_FAILURE_MESSAGE })]);
+    await retryRun([], manual.source);
+    expect(manual.calls.configReads).toBe(0);
+    expect(manual.calls.searches).toEqual([]);
+
+    expect((await rowsOf('sonarr')).map((r) => [r.downloadId, r.mode, r.action, r.outcome])).toEqual([
+      ['dl-census', 'census', 'none', 'observed'],
+      ['dl-on', 'enforce', 'none', 'observed'],
+    ]);
+  });
+
+  it("RETRY (D-24): a target grabbed again, with another download queued, or searched this run is not searched; a failure whose own download is still queued waits for its removal", async () => {
+    const queue = [
+      targetRelease(800, 'dl-q', 46400), // the queue path removes it and searches 46400 this run
+      { ...unknownItem(801), targetId: 46401 }, // another download of 46401 is still in flight
+      { ...unknownItem(802), downloadId: 'dl-own', targetId: 46403 }, // the failure's own download, not removed yet
+    ];
+    const stub = failedStub([
+      failure({ historyId: 1, downloadId: 'dl-x', targetId: 46400 }),
+      failure({ historyId: 2, downloadId: 'dl-y', targetId: 46401 }),
+      failure({ historyId: 3, downloadId: 'dl-z', targetId: 46402, regrabbed: true }),
+      failure({ historyId: 4, downloadId: 'dl-own', targetId: 46403 }),
+    ]);
+    const r = await retryRun(queue, stub.source);
+    expect(r.calls.searchCalls).toEqual([[800]]); // the queue path's one search
+    expect(stub.calls.monitoredChecks).toEqual([]);
+    expect(stub.calls.searches).toEqual([]);
+    const retryRows = (await rowsOf('sonarr')).filter((row) => row.queueItemId === null);
+    expect(retryRows.map((row) => [row.downloadId, row.action, row.outcome])).toEqual([
+      ['dl-x', 'none', 'observed'],
+      ['dl-y', 'none', 'observed'],
+      ['dl-z', 'none', 'observed'],
+    ]);
+  });
+
+  it('RETRY (D-24): an unmonitored target is none; a spent cap is skipped_cap and a failed search an error, and both are tried again next run', async () => {
+    const now = new Date('2026-10-02T07:25:00Z');
+    const failures = [
+      failure({ historyId: 1, downloadId: 'dl-1', targetId: 46411, failedAt: new Date('2026-10-02T06:10:00Z') }),
+      failure({ historyId: 2, downloadId: 'dl-2', targetId: 46412, failedAt: new Date('2026-10-02T06:20:00Z') }),
+      failure({ historyId: 3, downloadId: 'dl-3', targetId: 46413, failedAt: new Date('2026-10-02T06:30:00Z') }),
+    ];
+    const cfg = brCfg();
+    cfg.maxActionsPerRun = 1;
+    const first = failedStub(failures, { monitored: (f) => f.targetId !== 46413 });
+    const r1 = await retryRun([], first.source, { now, config: cfg });
+    expect(first.calls.searches).toEqual([[46411]]);
+    expect(r1.report.actionsTaken).toBe(1);
+
+    const second = failedStub(failures, { searchError: true });
+    const r2 = await retryRun([], second.source, { now: new Date(now.getTime() + HOUR), config: cfg });
+    expect(r2.report.errors).toBe(1);
+
+    const third = failedStub(failures);
+    await retryRun([], third.source, { now: new Date(now.getTime() + 2 * HOUR), config: cfg });
+    expect(third.calls.searches).toEqual([[46412]]);
+
+    expect((await rowsOf('sonarr')).map((r) => [r.downloadId, r.action, r.outcome])).toEqual([
+      ['dl-1', 'blocklisted_searched', 'done'],
+      ['dl-2', 'skipped_cap', 'observed'],
+      ['dl-3', 'none', 'observed'],
+      ['dl-2', 'none', 'error'],
+      ['dl-2', 'blocklisted_searched', 'done'],
+    ]);
+  });
+
+  it('REAL BUNDLE (D-24): Sonarr reads Redownload Failed and its failed + grabbed history, then sends ONE EpisodeSearch for the failed download\'s monitored episodes', async () => {
+    const now = new Date('2026-10-02T07:25:00Z');
+    const failedRecord = (id: number, downloadId: string, episodeId: number, message: string, date = '2026-10-02T06:26:22Z') => ({
+      id,
+      eventType: 'downloadFailed',
+      date,
+      sourceTitle: 'Paw.Patrol.S05E19E20.1080p.NICK.WEBRip.AAC2.0.x264-GRP',
+      downloadId,
+      data: { message },
+      episodeId,
+      seriesId: 7,
+    });
+    const log = { history: [] as Array<[string, string | undefined]>, listEpisodes: [] as number[], searchEpisodes: [] as number[][] };
+    const emptyQueue = { getQueueAll: async () => [] };
+    const clients = buildQueueCleanupClients({
+      read: {
+        sonarr: {
+          getQueueAll: async () => [],
+          getDownloadClientConfig: async () => ({ autoRedownloadFailed: false }),
+          getHistorySince: async (since: Date, eventType?: string) => {
+            log.history.push([since.toISOString(), eventType]);
+            return eventType === 'downloadFailed'
+              ? [
+                  failedRecord(1, 'SABnzbd_nzo_a', 46390, ABORTED),
+                  failedRecord(2, 'SABnzbd_nzo_a', 46391, ABORTED),
+                  failedRecord(3, 'SABnzbd_nzo_b', 46392, ARR_MANUAL_FAILURE_MESSAGE),
+                  failedRecord(4, 'SABnzbd_nzo_c', 46393, ABORTED),
+                ]
+              : [{ id: 9, eventType: 'grabbed', date: '2026-10-02T06:27:00Z', downloadId: 'SABnzbd_nzo_d', episodeId: 46393, seriesId: 7 }];
+          },
+          listEpisodes: async (seriesId: number) => {
+            log.listEpisodes.push(seriesId);
+            return [
+              { id: 46390, monitored: true },
+              { id: 46391, monitored: false },
+              { id: 46393, monitored: true },
+            ];
+          },
+        } as unknown as SonarrClient,
+        radarr: emptyQueue as unknown as RadarrClient,
+        lidarr: emptyQueue as unknown as LidarrClient,
+      },
+      write: {
+        sonarr: {
+          searchEpisodes: async (ids: number[]) => {
+            log.searchEpisodes.push(ids);
+            return {};
+          },
+        } as unknown as SonarrWriteClient,
+        radarr: {} as unknown as RadarrWriteClient,
+        lidarr: {} as unknown as LidarrWriteClient,
+      },
+    });
+    await evaluateQueueCleanup({ db: t.db, clients, config: brCfg(), now });
+    const since = new Date(now.getTime() - 24 * HOUR).toISOString();
+    expect(log.history).toEqual([
+      [since, 'downloadFailed'],
+      [since, 'grabbed'],
+    ]);
+    expect(log.listEpisodes).toEqual([7]);
+    expect(log.searchEpisodes).toEqual([[46390]]);
+    expect((await rowsOf('sonarr')).map((r) => [r.downloadId, r.targetId, r.action, r.outcome])).toEqual([
+      ['SABnzbd_nzo_a', 46390, 'blocklisted_searched', 'done'],
+      ['SABnzbd_nzo_a', 46391, 'none', 'observed'],
+      ['SABnzbd_nzo_c', 46393, 'none', 'observed'],
+    ]);
   });
 });
 
