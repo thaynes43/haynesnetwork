@@ -19,6 +19,8 @@
 //                        server-side filtered by seriesIds/movieIds/artistIds like the real *arrs.
 //   POST /_stub/seerr-watchlist → 204; body { userId, results? } — ADR-093: that Seerr user's watchlist
 //                        (Seerr result rows: ratingKey, title, mediaType, tmdbId); no `results` restores the default.
+//   GET  /_stub/import-list-exclusions → { radarr: [...], sonarr: [...] } — ADR-097: the exclusion lists the Trash
+//                        delete paths write (Radarr `/exclusions`, Sonarr `/importlistexclusion`; cleared by reset).
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { clearStubArrDeleted, stubArrDeleted } from './stub-arr-state';
 
@@ -484,6 +486,14 @@ export async function startStubArr(): Promise<StubArrServer> {
     return list;
   };
   let nextReleaseProfileId = 1;
+  // ADR-097 / DESIGN-052 D-27 — each *arr's import-list exclusion list (Radarr `/exclusions`, Sonarr
+  // `/importlistexclusion`; the paths tell them apart). Kept out of the recorded `calls`; a key already excluded is
+  // refused with 400, as the *arr's validator does.
+  let importListExclusions: Record<'radarr' | 'sonarr', Array<Record<string, unknown> & { id: number }>> = {
+    radarr: [],
+    sonarr: [],
+  };
+  let nextExclusionId = 1;
   // DESIGN-052 D-17 / D-20 — each Seerr user's watchlist sync flags (settings/main), and the Sonarr server's tags.
   let seerrSyncFlags = new Map<number, { movies: boolean; tv: boolean }>([[1, { movies: true, tv: true }]]);
   let seerrAnimeTags: number[] = [];
@@ -508,6 +518,8 @@ export async function startStubArr(): Promise<StubArrServer> {
         seerrWatchlistOverride.clear();
         releaseProfiles.clear();
         nextReleaseProfileId = 1;
+        importListExclusions = { radarr: [], sonarr: [] };
+        nextExclusionId = 1;
         seerrSyncFlags = new Map([[1, { movies: true, tv: true }]]);
         seerrAnimeTags = [];
         clearStubArrDeleted();
@@ -604,8 +616,31 @@ export async function startStubArr(): Promise<StubArrServer> {
         seerrAnimeTags = Array.isArray(body.animeTags) ? body.animeTags : [];
         return json(res, 200, { ...seerrSonarr, animeTags: seerrAnimeTags });
       }
-      if ((path === '/exclusions/paged' || path === '/importlistexclusion/paged') && method === 'GET') {
-        return json(res, 200, { page: 1, pageSize: 1, totalRecords: 0, records: [] });
+      // ADR-097 / DESIGN-052 D-27 — the exclusion lists (paged GET, POST), plus a read of both for specs.
+      if (url.pathname === '/_stub/import-list-exclusions') return json(res, 200, importListExclusions);
+      const exclusionKind =
+        path === '/exclusions' || path === '/exclusions/paged'
+          ? 'radarr'
+          : path === '/importlistexclusion' || path === '/importlistexclusion/paged'
+            ? 'sonarr'
+            : null;
+      if (exclusionKind !== null && path.endsWith('/paged') && method === 'GET') {
+        const list = importListExclusions[exclusionKind];
+        const page = Math.max(1, Number(query.page ?? 1));
+        const pageSize = Math.max(1, Number(query.pageSize ?? 10));
+        const records = list.slice((page - 1) * pageSize, page * pageSize);
+        return json(res, 200, { page, pageSize, totalRecords: list.length, records });
+      }
+      if (exclusionKind !== null && !path.endsWith('/paged') && method === 'POST') {
+        const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
+        const keyField = exclusionKind === 'radarr' ? 'tmdbId' : 'tvdbId';
+        const list = importListExclusions[exclusionKind];
+        if (list.some((e) => e[keyField] === body[keyField])) {
+          return json(res, 400, [{ propertyName: keyField, errorMessage: 'This exclusion has already been added.' }]);
+        }
+        const created = { ...body, id: nextExclusionId++ };
+        list.push(created);
+        return json(res, 201, created);
       }
       // PLAN-015 / D-20 — stage the download queue for the Action Feedback progress derivation.
       if (url.pathname === '/_stub/queue' && method === 'POST') {

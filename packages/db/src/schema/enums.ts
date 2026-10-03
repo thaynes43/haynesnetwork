@@ -1557,3 +1557,12 @@ export const TRASH_SWEEP_OUTCOMES = [
   'aborted_arr',
 ] as const;
 export type TrashSweepOutcome = (typeof TRASH_SWEEP_OUTCOMES)[number];
+
+/** trash_title_exclusions.arr_kind — a Title Exclusion is written on Radarr or Sonarr (ADR-097 / DESIGN-052 D-27). */
+export const TITLE_EXCLUSION_ARR_KINDS = ['radarr', 'sonarr'] as const;
+export type TitleExclusionArrKind = (typeof TITLE_EXCLUSION_ARR_KINDS)[number];
+
+/** trash_title_exclusions.origin — which path wrote it: the sweep or Expedite before a delete, or the one-off backfill
+ *  for titles Trash deleted before the app wrote exclusions (ADR-097 / DESIGN-052 D-27, D-28). */
+export const TITLE_EXCLUSION_ORIGINS = ['sweep', 'expedite', 'backfill'] as const;
+export type TitleExclusionOrigin = (typeof TITLE_EXCLUSION_ORIGINS)[number];

@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseSeedArgs } from '../src/scripts/release-block-seed';
 import { parseSeerrWatchlistArgs } from '../src/scripts/seerr-watchlist';
+import { parseTitleExclusionBackfillArgs } from '../src/scripts/title-exclusion-backfill';
 
 describe('release-block-seed arguments', () => {
   it('needs exactly one of --dry-run, --apply and --pool; the files are optional (and refused with --pool)', () => {
@@ -71,5 +72,18 @@ describe('seerr-watchlist arguments', () => {
     expect(() => parseSeerrWatchlistArgs(['--enroll=x'])).toThrow();
     expect(() => parseSeerrWatchlistArgs(['--anime-tags=1'])).toThrow();
     expect(() => parseSeerrWatchlistArgs(['--show', '--enroll=all'])).toThrow(/exactly one/);
+  });
+});
+
+// ADR-097 / DESIGN-052 D-28 — the Title Exclusion backfill takes exactly one of --dry-run / --apply.
+describe('title-exclusion-backfill arguments', () => {
+  it('needs exactly one of --dry-run and --apply, and nothing else', () => {
+    expect(parseTitleExclusionBackfillArgs(['--dry-run'])).toEqual({ apply: false });
+    expect(parseTitleExclusionBackfillArgs(['--apply'])).toEqual({ apply: true });
+    expect(parseTitleExclusionBackfillArgs(['--apply', '--apply'])).toEqual({ apply: true });
+    expect(parseTitleExclusionBackfillArgs(['--help'])).toBe('help');
+    expect(() => parseTitleExclusionBackfillArgs([])).toThrow(/required/);
+    expect(() => parseTitleExclusionBackfillArgs(['--dry-run', '--apply'])).toThrow(/exclusive/);
+    expect(() => parseTitleExclusionBackfillArgs(['--force'])).toThrow(/unknown argument/);
   });
 });

@@ -5,6 +5,11 @@
   "a single app-owned release profile per Radarr and Sonarr": the queue janitor also owns one release profile on
   Lidarr (the janitor release block, a separate profile with its own writer and term grammar; ADR-094 C-03). The
   Release Block itself is unchanged. This is a status note only; the decision body below is unchanged.
+- **Extended by:** [ADR-097](097-trash-deleted-titles-excluded-from-automation.md) (2026-10-03, owner ruling "Block
+  automation only"): before the delete, the app also puts the title on Radarr's or Sonarr's import-list exclusion list,
+  so Kometa and the *arrs' import lists never add it again (C-07's "a Kometa re-add" no longer happens for a title
+  Trash deleted). Ruling 2 stands: a person's Seerr request still adds it, and the Release Block still stops the
+  deleted release. This is a status note only; the decision body below is unchanged.
 - **Date:** 2026-09-26
 - **Revised:** 2026-09-26, while Proposed, by the PR #594 design review (DESIGN-052 D-24): C-04, C-05, C-07, C-11,
   C-13, C-15 and C-19 revised, C-21 added, C-06, C-10 and C-11 marked as driver decisions. Revised again the same

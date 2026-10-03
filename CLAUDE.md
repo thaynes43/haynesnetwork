@@ -79,6 +79,13 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    children of the LazyLibrarian category's completed folder (never library files); and the Kapowarr
    queue removal with blocklist plus its `auto_search`. They go through `@hnet/downloads/write`,
    `@hnet/lazylibrarian/write` and `@hnet/kapowarr/write` from `packages/domain` only.
+   **ADR-097 adds the Title Exclusion** (DESIGN-052 D-27, D-28; owner ruling "Block automation only", 2026-10-03): one
+   Radarr (by tmdb id) or Sonarr (by tvdb id) import-list exclusion per title Trash deletes, so Kometa and the *arrs'
+   import lists never add it again (a person's Seerr request still can). Written only by its single writer
+   (`ensureTitleExclusions`: read the list, `POST` what is missing, read it back, audit row in the same transaction),
+   before each Trash delete (the sweep, Expedite, Expire now; after identity, before the Release Block) and from the
+   one-off backfill (`title-exclusion-backfill.ts`, never a title the *arr has now); it never deletes or edits an
+   exclusion. Through `@hnet/arr/write` from `packages/domain` only.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see

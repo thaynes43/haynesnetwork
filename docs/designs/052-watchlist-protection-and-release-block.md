@@ -1,7 +1,7 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Accepted (2026-09-28; live since v0.101.0, PLAN-072 S6–S10 verified)
-- **Last updated:** 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
+- **Last updated:** 2026-10-03 (ADR-097, owner ruling "Block automation only": D-27 adds the Title Exclusion, an import-list exclusion the app writes on Radarr or Sonarr for every title Trash is about to delete, after identity and before Phase A; D-28 adds its one-off backfill for the titles deleted before; D-14, D-21, D-22, D-23, the overview and the test strategy updated). Prior: 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
   the rulings they needed: a term now matches the raw release title Radarr and Sonarr test (an apostrophe inside a word
   is an optional separator, an accented letter an alternation, an inner `and` optional), because S6(e) found 345 of
   19,434 Sonarr names and 3 of 1,159 Radarr names the *arr would not have blocked; the owner leaves managed Home users
@@ -73,13 +73,15 @@ sync-watchlist-registry  14,29,44,59 * * * *      (and inline, first thing in a 
    watchlist_registry_accounts / _sources / _items  (+ plex_discover_ids)  ──►  Registry Gate (D-07)
                                                                                      │
  space-policy :17 ─ proposal leaves watchlisted titles out (D-08) ◄──────────────────┤
- sweep :45 ─ refresh ─ gate ─ guardian keeps `watchlisted` (D-09) ─ record release ─ Release Block PUT
-            + read-back ─ claim ─ Maintainerr handle ─ *arr GET ─ record active (D-14)  │
+ sweep :45 ─ refresh ─ gate ─ guardian keeps `watchlisted` (D-09) ─ identity ─ Title Exclusion POST
+            + read-back (D-27) ─ record release ─ Release Block PUT + read-back ─ claim  │
+            ─ Maintainerr handle ─ *arr GET ─ record active (D-14)                     │
             (a refusal is a clean `paused` outcome, trash_sweep_status)                 │
  Expedite, manual Expire now ─ same gate (no refresh), guardian and release steps       │
  Trash wall ─ "On a watchlist" (D-10)  ◄───────────────────────────────────────────────┘
 
- Radarr / Sonarr   one app-owned release profile each: "must not contain" terms (D-12, D-13)
+ Radarr / Sonarr   one app-owned release profile each: "must not contain" terms (D-12, D-13); an import-list
+                   exclusion per title Trash deleted, so Kometa and import lists never add it again (D-27, D-28)
  Seerr             watchlist sync on for every user, once, behind an audited setting (D-17)
 ```
 
@@ -702,7 +704,11 @@ D-25bf):
    deleted; outcome `aborted_arr`). A single failure between successes skips only that item (`skipped`,
    `release_unrecorded`); it comes back in a later batch. So does a survivor with no recordable term (D-11). An item
    never loses protection for want of a record: no term, no delete.
-5. **Phase A, before any delete:** one transaction inserts `in_flight` records for every survivor; then
+5. **The Title Exclusion, then Phase A, before any delete** (ADR-097, D-27): each recordable survivor's title is
+   put on its *arr's import-list exclusion list and read back, one writer call per *arr; a failure stops here with
+   nothing recorded or deleted and no profile touched (`ReleaseBlockError`, step `exclusion`; outcome
+   `paused_release_block`), and a survivor with no tmdb or tvdb id is kept `release_unrecorded`. Then Phase A:
+   one transaction inserts `in_flight` records for every survivor; then
    `reconcileReleaseBlock` for each *arr involved (at most one PUT each) with its validation and read-back. Failure:
    the `in_flight` rows become `abandoned`, no item is claimed, the batch stays `leaving_soon`, the run logs
    `release-block failed`; outcome `paused_release_block` (reason = the step). A best-effort reconcile then removes
@@ -756,7 +762,8 @@ Phase A, the late watchlist re-read, claim, handle, settle. It throws instead of
 banner's wording exactly, D-25bv), and three failed identity reads throw `ReleaseIdentityUnavailableError`
 (`RELEASE_BLOCK_ARR_UNAVAILABLE`, `BAD_GATEWAY`, D-25bu). The write paths share one
 helper, `recordAndBlockReleases` in `release-block.ts` (identity, the unrecordable survivors handed back before Phase
-A, then Phase A), and one settle, `settleReleaseRecords`, so they cannot drift (D-25bl).
+A, then the Title Exclusion, D-27, then Phase A), and one settle, `settleReleaseRecords`, so they cannot drift
+(D-25bl).
 
 Ordering guarantee (ADR-084 E-6): the term is in the *arr's profile, read back, before the handle that deletes the
 record, and it stays there (`in_flight`, then `active`) unless the item is proven still present, whatever the
@@ -971,6 +978,11 @@ fine.
 - `[release-block] drift {arrKind, reason, missingTerms, extraTerms}` (warn, D-25ce; `reason` missing, duplicate,
   disabled, edited or terms); `upkeep_failed {arrKind, stranded, expiring, drift, error}` (warn);
   `upkeep_skipped {error}` (warn: the registry job has no *arr key, D-25cf).
+- `[title-exclusion] excluded {arrKind, origin, title, year}` per exclusion written (D-27); `failed {arrKind,
+  origin, step, written}` (warn; step `validate`, `read`, `write`, `read_back`, or `database` when the audit insert
+  itself failed); `backfill {apply, radarr, sonarr}` and
+  `backfill_done {radarr, sonarr}` from the one-off backfill (D-28). On the delete paths a failure also surfaces as
+  `[trash] sweep_paused {reason: release_block, step: exclusion}`, so the existing `sweep_paused` alert covers it.
 - `[trash] sweep_failed {error}` (error) when a scheduled sweep with a batch due throws for any other reason, before
   its `aborted_arr` / `error` outcome (D-25cg).
 - `[watchlist-registry] roster_read_failed {server, errorClass}`, `owner_read_failed {server, errorClass}` and
@@ -1000,6 +1012,7 @@ fine.
 | `apps/web` | `previewGuardian` mirror, the wall note, skip-reason tooltips (`batchTileView`, D-25cn), the Expire now preview (`expirePreview`, D-25cm), the Library notice's watchlist keep (`trashNoticeText`, D-25co), the paused banner (from the sweep status), the Watchlists card |
 | haynes-ops | the CronJob, the Loki alerts, the image tag |
 | CLAUDE.md | hard rule 4 (ADR-093 C-08) |
+| ADR-097 (D-27, D-28) | `@hnet/arr`: the exclusion schemas, `listImportListExclusions` on the Radarr and Sonarr read clients (every page of `exclusions/paged` / `importlistexclusion/paged`, oldest id first) and `addImportListExclusion` on their write clients. `@hnet/db`: migration 0087, `trash_title_exclusions` and its enums. `@hnet/domain`: `title-exclusion.ts` (`ensureTitleExclusions`, `backfillTitleExclusions`, `titleExclusionArrClientsFromEnv`), `TitleExclusionError` and the `exclusion` step, `ReleaseBlockArrClients` grown by the two methods, `recordAndBlockReleases` and `resolveTitleExclusionTarget`, the `no_exclusion_key` reason (also counted by the `--pool` report), the in-memory *arr's exclusion lists and library lists; the single-writer guard covers the table. `@hnet/sync`: `title-exclusion-backfill.ts`. `apps/web` e2e stub-arr: the two exclusion lists. CLAUDE.md: hard rule 4. |
 
 ### D-23 — Re-add evidence and exclusion visibility (ADR-084 E-4, E-5)
 
@@ -1029,7 +1042,9 @@ they are delivered here. E-5's signal is also the standing evidence that ruling 
   available" when the *arr does not answer in time, D-25cl); and the
   re-adds of the last 30 days ("Re-added after Trash: 4, all with a different release"). No prune surface is built:
   exclusions stop only Kometa and list re-adds, a Seerr request ignores them (ADR-084 D-3), and an admin who needs
-  one removed does it in Radarr or Sonarr.
+  one removed does it in Radarr or Sonarr. Since ADR-097 the app writes the exclusion itself before every Trash
+  delete (D-27) and audits each one in `trash_title_exclusions`; the re-add check still runs, and a re-add it reports
+  is a person's request (or a title excluded by hand and then un-excluded).
 
 ### D-24 — Rulings from the design review (PR #594, 2026-09-26)
 
@@ -1283,6 +1298,81 @@ sweep keeps it, and the Start-a-batch wire says so; a title already in a batch w
 episode import protects the series; `judgeAge` at the window's edges. The plex-match sync test asserts the date is
 carried and re-stamped.
 
+### D-27 — The Title Exclusion (ADR-097)
+
+The owner's ruling of 2026-10-03, **"Block automation only"**: a title deleted through Trash must never be added again
+by automation. Kometa and the *arrs' own import lists skip a title on the *arr's import-list exclusion list (Kometa's
+ArrAPI client respects it on every add, for Radarr and Sonarr); a person's Seerr request still adds it (Seerr's `POST
+/movie` / `POST /series` never reads the list; ruling 2 of 2026-09-26 stands), and the Release Block still stops the
+deleted release. Maintainerr writes the exclusion on its own delete while its pools carry `listExclusions` (D-16), but
+only after the delete, and only while that setting holds; the app now writes it itself, first.
+
+- **The surface** (`@hnet/arr`; Radarr 6.4.4 and Sonarr 4.0.20 `ImportListExclusionController`): Radarr `GET
+  /api/v3/exclusions/paged` and `POST /api/v3/exclusions {tmdbId, movieTitle, movieYear}` (`movieYear` 0 or more; an
+  unknown year is sent as 0); Sonarr `GET /api/v3/importlistexclusion/paged` and `POST /api/v3/importlistexclusion
+  {tvdbId, title}`. The list is read page by page (1,000 per page, `sortKey=id`, oldest first, so an exclusion added
+  during the read lands on a later page; more than 50 pages throws rather than act on a partial list). Both POSTs
+  answer 201 with the created resource; both validators refuse a key that is already excluded (400), so the writer
+  reads first. The list GET is on the read clients, the POST on the write clients (import-confined to
+  `packages/domain`).
+- **The writer** (`ensureTitleExclusions({ arrKind, targets, origin })`, `title-exclusion.ts`, the only writer): every
+  target needs a positive key and a non-blank title (`validate`). Under `pg_advisory_xact_lock('title-exclusion:<kind>')`,
+  in one transaction: read the list (`read`); `POST` each target not on it, one at a time (`write`; POSTs are never
+  retried), and insert its `trash_title_exclusions` row as soon as the *arr acknowledges it (key, title, year, the
+  exclusion id from the 201 answer, `origin` `sweep` / `expedite` / `backfill`, the media item, the batch item when
+  there is one); when anything was written, read the list again and require every target on it (`read_back`). The
+  read-back is the gate for the delete, not for the audit: a failure throws `TitleExclusionError(arrKind, step)`
+  only after the transaction commits the rows of the writes that landed, so every exclusion the app wrote keeps its
+  row (a retry finds those titles excluded and writes only the rest; review of PR #643). The one gap is a POST whose
+  answer was lost after Radarr or Sonarr applied it: no id came back, so no row, and the retry counts it
+  `alreadyExcluded`. A database error rolls the transaction back (logged `step: database`). A title already excluded
+  gets no `POST` and no row; a second call with the same titles reads once and writes nothing. It never deletes or
+  edits an exclusion; removing one stays a person's act in Radarr or Sonarr (D-23).
+- **Its place in the delete paths** (D-14 step 5, the shared seam `recordAndBlockReleases`, so the sweep, Expedite
+  item and all, and the manual Expire now cannot drift): after identity and the hand-back of the unrecordable
+  survivors, and before Phase A. The target of each recordable survivor comes from its records (the *arr's title and
+  year, its tmdb id on Radarr or tvdb id on Sonarr), the ledger's key where the *arr answered none
+  (`resolveTitleExclusionTarget`); a survivor with neither is kept `release_unrecorded` (internal reason
+  `no_exclusion_key`, counted by the `--pool` report). One writer call per *arr per batch. A `TitleExclusionError`
+  becomes `ReleaseBlockError(arrKind, 'exclusion')` with `mayHaveWritten` false: nothing was recorded, no profile was
+  touched, nothing is claimed or deleted; the sweep pauses (`paused_release_block`, reason `exclusion`), Expedite and
+  Expire now answer `PRECONDITION_FAILED` with the banner's wording.
+- **Ordering guarantee:** the title is on the exclusion list, read back, before the Release Block's records and
+  profile write and before the handle; a Kometa run during or right after the delete finds it excluded.
+- **What stays** after a delete that does not happen (the Release Block fails after the exclusion, a late watchlist
+  add keeps the item, a refused or failed handle): the exclusion. It is inert while the title is in the library, and
+  Trash writes the same one on a later delete (no write, no row). ADR-097 C-06 accepts it.
+- **Maintainerr's `listExclusions` stays required** by the safety audit (D-16, ADR-093 C-10). Both write the same
+  fact; Radarr's and Sonarr's delete handlers skip a title already excluded, so Maintainerr's delete never conflicts
+  with the app's exclusion.
+- **TV:** Trash's TV pool is a whole-show pool (live, 2026-10-03: Maintainerr's TV rule pool is type `show`), so the
+  series exclusion matches the delete, as the Release Block's series identity does. A season or episode pool would
+  leave the series in place with an inert exclusion; revisit before arming one (ADR-097 C-07).
+
+### D-28 — The Title Exclusion backfill
+
+A one-off script, `packages/sync/src/scripts/title-exclusion-backfill.ts` (not a sync mode), run in the web pod like
+the D-15 seed (OPS-017 §7), with `--dry-run` (reads only) and `--apply`. `backfillTitleExclusions`:
+
+1. **Population:** every `trash_batch_items` row in state `deleted` with a `deleted_at`, one per title: a movie by its
+   tmdb id, a show by its tvdb id; the newest deletion names it (title, year, media item and batch item for the audit
+   row). A row with no key is counted `noKey` and listed by name.
+2. **Every read before any write:** Radarr's library (`GET /movie`) and Sonarr's (`GET /series`), and each exclusion
+   list. A title whose key is in the library now is **left out** (`present`, listed by name): it was added again
+   since, by Kometa or by a person, and the owner ruled on 2026-10-03 that those are kept as fresh downloads with no
+   special handling; Trash writes its exclusion when it deletes it again. A title already excluded is counted
+   `alreadyExcluded`. A failed read throws before anything is written.
+3. `--dry-run` stops here and prints, per *arr, `population`, `present`, `alreadyExcluded`, `noKey` and `toExclude`,
+   and the present and no-key titles by name.
+4. `--apply` writes the rest through `ensureTitleExclusions` (origin `backfill`), 25 titles per transaction, Radarr
+   then Sonarr. A failed chunk stops that *arr (`failed` names the step, the script exits 1) and keeps what earlier
+   chunks wrote; running it again picks up the rest. A second complete run writes nothing.
+
+The dry run of 2026-10-03, computed with the same rules from the database replica and Radarr's and Sonarr's own lists
+(read-only): Radarr population 443, present 33 (the 32 titles re-added since their delete, and The Devil's Mouth,
+whose 2026-08 delete never happened, D-15), already excluded 86, **to exclude 324**; Sonarr population 13, present 0,
+already excluded 0, **to exclude 13**; no row without a key.
+
 ## Alternatives considered
 
 - **Maintainerr's "Is Watchlisted" rule as the guard, or as defence in depth** (ADR-093 option A1): 4 of 42 accounts,
@@ -1399,6 +1489,22 @@ carried and re-stamped.
   (D-06).
 - **Live (PLAN-072 S6..S10):** read-only checks, the first guarded sweep, the seed, the canary and the re-requests,
   each with its evidence in the plan log.
+- **The Title Exclusion (ADR-097, D-27, D-28)** — `@hnet/arr` against fetch stubs: every page of the Radarr list read
+  oldest first and normalized, the Sonarr paging query, the two POST bodies (Radarr's unknown year as 0), a refused
+  POST thrown. `@hnet/db`: migration 0087, its kind and origin CHECKs matching `enums.ts` and the key CHECK (a tmdb id
+  on Radarr, a tvdb id on Sonarr, never null). `@hnet/domain` on embedded Postgres with the in-memory *arr
+  (`title-exclusion.test.ts`): the writer POSTs each missing title, reads it back and writes one audit row; an
+  existing exclusion is a no-op (no POST, no row) and a second call writes nothing; a failed read throws `read` with
+  no row; a POST that fails part-way throws `write` and keeps the rows of the writes that landed, and the retry writes
+  only the rest; a POST that does not stick throws `read_back` and keeps its row; an invalid target is refused before
+  any read. The sweep writes every exclusion before Phase A and the handle (the call order), its rows naming the batch
+  items; an exclusion Maintainerr already wrote changes nothing and the delete goes on; a failed exclusion pauses the
+  sweep with step `exclusion` and nothing recorded, blocked or deleted; Expedite writes it first (origin `expedite`)
+  and refuses with `ReleaseBlockError` `exclusion` when it cannot; a show gets its Sonarr exclusion by tvdb id. The
+  backfill: the dry run writes nothing; a title in the library now is left out and listed; a title deleted twice
+  counts once; a row with no key is counted; `--apply` writes the rest, and a second run writes nothing; a failed
+  library read writes nothing; a failed chunk stops that *arr only. The D-14 call-order tests in
+  `release-block.test.ts` include the exclusion's three calls. `@hnet/sync`: the script's arguments.
 
 ## Open questions
 
