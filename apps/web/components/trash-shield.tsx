@@ -378,7 +378,11 @@ export function TrashPendingNotice({
   // way back. No keep-signal moves (D-6): the server still refuses to expedite a tag-protected
   // item (trash-flow classifyGuardian ⇒ keep 'tag'), so "Delete now…" on such an item runs the
   // honest ItemExpediteModal copy ("nothing deletes — Maintainerr will protect it").
-  const on = override === 'saved' || (item.protectedByExclusion && override !== 'unsaved');
+  // ADR-099 D-4 — the app's record of a Save (an open save intent) is protection on its own: a Save tapped while
+  // Maintainerr was busy reads protected here at once, before Maintainerr catches up.
+  const on =
+    override === 'saved' ||
+    ((item.protectedByExclusion || item.saveIntent === true) && override !== 'unsaved');
   const days = daysUntil(item.scheduledDeleteAt);
   const canSave = access.actions.includes('save_exclude');
   const canUnsave = access.actions.includes('remove_exclude');
@@ -508,6 +512,7 @@ export function TrashPendingNotice({
             ruleEvaluationFailed: item.ruleEvaluationFailed,
             // DESIGN-052 D-26 / Q-14 — the Age Guard input (the confirm predicts the keep).
             ageGuard: item.ageGuard,
+            saveIntent: item.saveIntent === true,
           }}
           safe={safe}
           onClose={() => setExpediteOpen(false)}

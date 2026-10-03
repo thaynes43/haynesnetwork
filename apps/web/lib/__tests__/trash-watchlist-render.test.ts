@@ -106,6 +106,7 @@ describe('the Expedite copy for a watchlisted item (D-09 / D-25av)', () => {
     onWatchlist: true,
     watchlistEvaluable: true,
     ruleEvaluationFailed: false,
+    saveIntent: false,
     title: 'Vanished Heist',
     year: 2021,
     sizeBytes: 0,
@@ -128,6 +129,18 @@ describe('the Expedite copy for a watchlisted item (D-09 / D-25av)', () => {
       }),
     );
     expect(cold).not.toContain('trash-expedite-item-watchlisted');
+    // ADR-099 D-4 — a saved item: the server keeps it, and the confirm says so plainly.
+    const saved = renderToStaticMarkup(
+      createElement(ExpediteItemConfirm, {
+        item: { ...item, saveIntent: true },
+        busy: false,
+        onCancel: noop,
+        onConfirm: noop,
+      }),
+    );
+    expect(saved).toContain('data-testid="trash-expedite-item-saved"');
+    expect(saved).toContain('This item is saved, so it won&#x27;t be deleted. Nothing will be deleted.');
+    expect(saved).not.toMatch(/[–—]/);
   });
 
   it('the report names the watchlist among the keeps, and its bullets carry no dashes', () => {

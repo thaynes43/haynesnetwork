@@ -610,6 +610,13 @@
       "when": 1791001607721,
       "tag": "0087_trash_title_exclusions",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1791001667721,
+      "tag": "0088_trash_save_record_first",
+      "breakpoints": true
     }
   ]
 }

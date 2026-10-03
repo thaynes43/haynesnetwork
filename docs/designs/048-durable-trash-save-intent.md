@@ -1,7 +1,20 @@
 # DESIGN-048: Durable Trash save intent — schema, relink reconciler, honest badge
 
 - **Status:** Draft
-- **Last updated:** 2026-08-29
+- **Last updated:** 2026-10-03 (ADR-099 amendment, below the header). Prior: 2026-08-29.
+- **Amended by:** [ADR-099](../adrs/099-trash-save-recorded-first.md) (2026-10-03, owner requirement "if someone clicks
+  save it's saved forever"). The intent becomes the Save itself and the protection every deletion path reads:
+  - A person's Save opens the intent FIRST, in one transaction with its audit rows, before Maintainerr is called; the
+    intent records its enforcement state (`exclusion_confirmed_at`, NULL until Maintainerr is read back holding the
+    exclusion, plus `apply_attempts` / `last_apply_attempt_at` / `last_apply_error`; migration 0088).
+  - The relink reconciler (D-03, D-04) becomes the second stage of the **save keeper** (`keepTrashSaves`), after a
+    first stage that applies pending intents and before a Leaving-Soon tidy. It now acts on **any** key: the
+    same-key carve-out is superseded (a lost exclusion under the same key is re-applied, `reason: 'reapply'`), and it
+    reads confirmed intents only (a pending one is the first stage's). The census field `sameKeyCensus` now counts
+    the same-key lapses it re-applies.
+  - `classifyGuardian` (D-06) keeps a title with an open intent first, reason `saved` (`ExpediteVerdict
+    'protected_saved'`, mirrored by `previewGuardian`), and batch creation never proposes one.
+  - A `watch_guardian` exclusion no longer opens an intent (it used to open a `user` one, against ADR-086 D-10).
 - **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): the one
   expedite derivation (`classifyGuardian` / `classifyForExpedite` and the `previewGuardian` mirror; D-06 here,
   ADR-086 D-11) gains the `watchlisted` keep and the `protected_watchlist` verdict (DESIGN-052 D-09). A Watchlist Keep never

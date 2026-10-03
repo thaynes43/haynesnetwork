@@ -22,7 +22,7 @@ import {
   completeFixRequests,
   relinkArrHistoryEvents,
   drainDuePoolRefreshes,
-  relinkSaveIntents,
+  keepTrashSaves,
   expireStaleFixRequests,
   deliverOutbox,
   runFailureDigest,
@@ -50,6 +50,7 @@ import {
   type ForceSearchCollectionsReport,
   type DrainPoolRefreshResult,
   type TrashRelinkReport,
+  type TrashSaveKeeperReport,
   type RelinkArrHistoryEventsResult,
   type FormatPairingReport,
   type GbCallMeter,
@@ -431,6 +432,8 @@ export interface SyncReport {
   relink?: TrashRelinkReport | null;
   /** The relink reconciler's error. NEVER sets totalFailure — protection is re-asserted next tick. */
   relinkError?: string;
+  /** ADR-099 D-3 — the save keeper's report (pending Saves applied, lost exclusions repaired, Leaving Soon tidied). */
+  saveKeeper?: TrashSaveKeeperReport | null;
   /** ADR-053 / DESIGN-026 D-07 — the metadata-refresh PRE-STEP: the Plex Account Map reconcile that maps
    *  every app user whose stored id_token carries a plex.tv id (absent for every other mode; null when
    *  the reconcile errored — see plexAccountMapError). */
@@ -1787,39 +1790,63 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     }
   }
 
-  // ADR-086 / DESIGN-048 D-04 (PLAN-067) — the SAVE-INTENT RELINK reconciler. Runs LAST on purpose:
-  // it joins against the trash_candidates snapshot the step above just rebuilt, so reading a
-  // pre-refresh snapshot would double its staleness bound (ADR-086 C-07). Needs the WRITE bundle
-  // (it re-applies exclusions), so it is modelled on the pool-refresh backstop rather than the
-  // read-only candidate refresh. Isolated the same way: a Maintainerr outage logs, records the
-  // error, and never fails the sync run.
+  // ADR-099 D-3 — the SAVE KEEPER (it subsumes ADR-086's relink reconciler as its second stage). Runs LAST on purpose:
+  // it joins against the trash_candidates snapshot the step above just rebuilt, so reading a pre-refresh snapshot
+  // would double its staleness bound (ADR-086 C-07). Applies every Save whose Maintainerr exclusion is still pending
+  // (a Save tapped while Maintainerr ran its rules), re-applies an exclusion Maintainerr lost, and pulls saved
+  // posters out of Leaving Soon. Needs the WRITE bundle, so it is modelled on the pool-refresh backstop. Isolated the
+  // same way: each stage catches its own failure, and nothing here fails the sync run (the Saves are recorded and
+  // protected already; enforcement is re-asserted next tick).
+  let saveKeeper: TrashSaveKeeperReport | null = null;
   let relink: TrashRelinkReport | null = null;
   let relinkError: string | undefined;
   if (options.maintainerr !== undefined) {
     try {
-      relink = await relinkSaveIntents({ db, maintainerr: options.maintainerr });
+      saveKeeper = await keepTrashSaves({ db, maintainerr: options.maintainerr });
+      relink = saveKeeper.relink;
+      relinkError = saveKeeper.relinkError;
       if (
-        relink.scanned > 0 ||
-        relink.sameKeyCensus > 0 ||
-        relink.staleTagCensus > 0 ||
-        relink.unlinkedSaves > 0
+        saveKeeper.pending > 0 ||
+        (saveKeeper.leavingSoonRemoved ?? 0) > 0 ||
+        saveKeeper.applyError !== undefined ||
+        saveKeeper.tidyError !== undefined
+      ) {
+        logger.info('trash save keeper', {
+          pending: saveKeeper.pending,
+          applied: saveKeeper.applied,
+          revoked: saveKeeper.revoked,
+          stillPending: saveKeeper.stillPending,
+          busy: saveKeeper.busy,
+          samples: saveKeeper.pendingSamples,
+          leavingSoonRemoved: saveKeeper.leavingSoonRemoved,
+          ...(saveKeeper.applyError !== undefined ? { applyError: saveKeeper.applyError } : {}),
+          ...(saveKeeper.tidyError !== undefined ? { tidyError: saveKeeper.tidyError } : {}),
+        });
+      }
+      if (
+        relink !== null &&
+        (relink.scanned > 0 || relink.staleTagCensus > 0 || relink.unlinkedSaves > 0)
       ) {
         logger.info('trash save-intent relink', {
           enforced: relink.enforced,
           scanned: relink.scanned,
           relinked: relink.relinked,
+          reapplied: relink.reapplied,
           alreadyExcluded: relink.alreadyExcluded,
           failed: relink.failed,
-          // Census channels (ADR-086 D-4/D-8/D-13) — observed, deliberately not acted on.
           sameKeyCensus: relink.sameKeyCensus,
+          // Census channels (ADR-086 D-8/D-13) — observed, deliberately not acted on.
           staleTagCensus: relink.staleTagCensus,
           unlinkedSaves: relink.unlinkedSaves,
           samples: relink.samples,
         });
       }
+      if (relinkError !== undefined) {
+        logger.error('trash save-intent relink failed', { error: relinkError });
+      }
     } catch (error) {
       relinkError = error instanceof Error ? error.message : String(error);
-      logger.error('trash save-intent relink failed', { error: relinkError });
+      logger.error('trash save keeper failed', { error: relinkError });
     }
   }
 
@@ -1836,6 +1863,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     candidateRefresh,
     poolRefresh,
     relink,
+    saveKeeper,
     ...(backfillError !== undefined ? { backfillError } : {}),
     ...(historyRelinkError !== undefined ? { historyRelinkError } : {}),
     ...(fixCompletionError !== undefined ? { fixCompletionError } : {}),

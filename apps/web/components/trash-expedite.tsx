@@ -63,6 +63,11 @@ export function ExpediteItemConfirm({
           This deletes the files <strong>NOW</strong> — immediate and permanent. It is not the
           scheduled cleanup; there is no undo beyond a re-download via Restore.
         </p>
+      ) : verdict === 'protected_saved' ? (
+        // ADR-099 D-4 — saved: the app's record keeps it, whether or not Maintainerr has the exclusion yet.
+        <p className="status-note" data-testid="trash-expedite-item-saved">
+          This item is saved, so it won&apos;t be deleted. Nothing will be deleted.
+        </p>
       ) : verdict === 'protected_watchlist' ? (
         // ADR-093 / DESIGN-052 D-09 — the Watchlist Keep: refused like a whitelisted item, never auto-saved.
         <p className="status-note" data-testid="trash-expedite-item-watchlisted">

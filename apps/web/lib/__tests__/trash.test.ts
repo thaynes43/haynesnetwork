@@ -60,6 +60,7 @@ const base: GuardianPreviewInput = {
   watchlistEvaluable: true,
   ruleEvaluationFailed: false,
   ageGuard: 'clear',
+  saveIntent: false,
 };
 
 describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail closed)', () => {
@@ -108,6 +109,15 @@ describe('previewGuardian (mirrors classifyGuardian — ADR-023 C-07b, fail clos
     expect(previewGuardian({ ...base, watchlistEvaluable: false })).toBe('unverifiable');
     expect(previewGuardian({ ...base, ruleEvaluationFailed: true })).toBe('unverifiable');
   });
+  it('ADR-099 — saved (an open save intent) ⇒ protected_saved, before every other keep; never past the id check', () => {
+    expect(previewGuardian({ ...base, saveIntent: true })).toBe('protected_saved');
+    expect(previewGuardian({ ...base, saveIntent: true, protectedByTag: true, onWatchlist: true })).toBe(
+      'protected_saved',
+    );
+    // Unknown to the ledger or not evaluable: still kept, and kept as saved.
+    expect(previewGuardian({ ...base, saveIntent: true, watchlistEvaluable: false })).toBe('protected_saved');
+    expect(previewGuardian({ ...base, saveIntent: true, maintainerrMediaId: null })).toBe('unverifiable');
+  });
   it('D-25by — the item confirm names WHY it is unverifiable; the all confirm names every cause', () => {
     expect(unverifiableReason({ ...base, mediaItemId: null })).toBe("it isn't in our ledger");
     expect(unverifiableReason({ ...base, maintainerrMediaId: null })).toBe("it isn't in our ledger");
@@ -153,24 +163,27 @@ describe('previewGuardian parity with @hnet/domain classifyForExpedite (ADR-086 
               for (const onWatchlist of [false, true]) {
                 for (const watchlistEvaluable of [true, false]) {
                   for (const ruleEvaluationFailed of [false, true]) {
-                    // DESIGN-052 D-26 / Q-14 — the Age Guard joins the matrix.
+                    // DESIGN-052 D-26 / Q-14 — the Age Guard joins the matrix; ADR-099 D-4 — and the save intent.
                     for (const ageGuard of ['clear', 'recent', 'unknown'] as const) {
-                      const item = {
-                        maintainerrMediaId,
-                        mediaItemId,
-                        protectedByTag,
-                        recentlyWatched,
-                        requesters,
-                        onWatchlist,
-                        watchlistEvaluable,
-                        ruleEvaluationFailed,
-                        ageGuard,
-                      };
-                      // Compared as objects so a failure prints WHICH input diverged.
-                      expect({ ...item, verdict: previewGuardian(item) }).toEqual({
-                        ...item,
-                        verdict: classifyForExpedite(item),
-                      });
+                      for (const saveIntent of [false, true]) {
+                        const item = {
+                          maintainerrMediaId,
+                          mediaItemId,
+                          protectedByTag,
+                          recentlyWatched,
+                          requesters,
+                          onWatchlist,
+                          watchlistEvaluable,
+                          ruleEvaluationFailed,
+                          ageGuard,
+                          saveIntent,
+                        };
+                        // Compared as objects so a failure prints WHICH input diverged.
+                        expect({ ...item, verdict: previewGuardian(item) }).toEqual({
+                          ...item,
+                          verdict: classifyForExpedite(item),
+                        });
+                      }
                     }
                   }
                 }
@@ -233,6 +246,8 @@ describe('watchlist protection copy (D-10)', () => {
     expect(keptReasonTooltip('release_unrecorded')).toBe("Kept: couldn't be removed safely");
     // DESIGN-052 D-26 — the Age Guard.
     expect(keptReasonTooltip('recently_added')).toBe('Kept: added or upgraded recently');
+    // ADR-099 D-4 — saved from another surface while the batch row was still pending.
+    expect(keptReasonTooltip('saved')).toBe('Kept: saved');
     expect(keptReasonTooltip(null)).toBeNull();
     expect(keptReasonTooltip('something_new')).toBeNull();
     for (const text of Object.values(KEPT_REASON_TOOLTIPS)) noDashes(text);
@@ -344,6 +359,13 @@ describe('pendingWallGlyph / pendingWallTappable (the pending WALL tap-toggle �
   it('a LIVE exclusion made elsewhere ⇒ the inert check (never tappable)', () => {
     expect(pendingWallGlyph({ ...cold, protectedByExclusion: true }, undefined)).toBe('check');
     expect(pendingWallTappable('check', true, true)).toBe(false);
+  });
+  it('ADR-099 D-4 — a recorded Save (an open intent) reads saved before Maintainerr catches up', () => {
+    // The Save was tapped while Maintainerr ran its rules: no exclusion yet, but the app recorded it.
+    expect(pendingWallGlyph({ ...cold, saveIntent: true }, undefined)).toBe('check');
+    expect(pendingWallGlyph({ ...cold, saveIntent: true }, 'saved')).toBe('shield');
+    // An in-session un-save wins until the refetch lands (the intent is revoked by then).
+    expect(pendingWallGlyph({ ...cold, saveIntent: true }, 'unsaved')).toBe('trash');
   });
 
   // ADR-086 D-5 (the 2026-08-29 save-lapse incident) — a bare `dnd` tag is a keep-SIGNAL, never a

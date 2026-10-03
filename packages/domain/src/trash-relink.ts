@@ -1,4 +1,4 @@
-import { and, eq, isNull, isNotNull, ne, or, sql } from 'drizzle-orm';
+import { and, eq, isNull, isNotNull, or, sql } from 'drizzle-orm';
 import {
   mediaItems,
   trashCandidates,
@@ -12,34 +12,40 @@ import { requestPoolRefreshAfterSave } from './pool-refresh';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
 
 /**
- * ADR-086 / DESIGN-048 D-03 — the RELINK RECONCILER.
+ * ADR-086 / DESIGN-048 D-03 — the RELINK RECONCILER, widened by ADR-099 D-5 into the keeper's
+ * lost-exclusion repair.
  *
  * A Maintainerr exclusion is keyed on the Plex ratingKey. When a title's file is replaced, Plex
  * re-keys the item and Maintainerr's nightly `removeLeftoverExclusions()` deletes the dangling
- * exclusion, silently erasing the owner's Save. This reconciler notices that an open save intent
- * now points at a stale key, and re-applies the exclusion onto the key the title actually has.
+ * exclusion, silently erasing the owner's Save. This reconciler notices a saved title back in a
+ * Trash pool without its exclusion and re-applies it onto the key the title actually has.
  *
- * Three properties that are load-bearing and must not be "simplified" away:
+ * Properties that are load-bearing and must not be "simplified" away:
  *
- *  1. **Changed-key ONLY** (ADR-086 D-4). An item pooled under the very key we already excluded,
- *     with the exclusion gone, is essentially only reachable by a human removing it in
- *     Maintainerr's own UI. Re-applying there would fight a deliberate action, so those are
- *     COUNTED and reported, never acted on.
- *  2. **Open intents only.** Revocation is explicit (`revoked_at`); a title the owner un-saved is
- *     never resurrected.
+ *  1. **Any key** (ADR-099 D-5, superseding ADR-086 D-4's changed-key-only carve-out). The owner's
+ *     ruling is that a Save is forever ("if someone clicks save it's saved forever"): an exclusion
+ *     Maintainerr lost under the SAME key is re-applied too (`reason: 'reapply'`), and the app's
+ *     un-save is the one way to release a Save. A changed key is still recorded as `relink`.
+ *  2. **Open, confirmed intents only.** Revocation is explicit (`revoked_at`); a title the owner
+ *     un-saved is never resurrected. An intent whose exclusion was never applied yet is the keeper's
+ *     first stage (`keepTrashSaves`), not a lapse.
  *  3. **Protective and idempotent.** Every write it makes is an exclusion the owner already asked
  *     for. That is why this ships enforcing rather than census-first (ADR-086 D-9) — but it still
- *     carries a kill switch, and it still reports what it would have done.
+ *     carries a kill switch, and it still reports what it would have done. The switch never gates a
+ *     fresh Save's first application, and no deletion path waits on it: they read the intent.
  */
 export interface TrashRelinkReport {
-  /** Open intents whose pooled key differs from the recorded key (the relink candidate set). */
+  /** Open, confirmed intents whose title is in a Trash pool (the lapse candidate set). */
   scanned: number;
   /** Exclusions re-applied onto a new key. */
   relinked: number;
-  /** Already excluded under the new key — intent re-pointed, no Maintainerr write needed. */
+  /** ADR-099 D-5 — exclusions Maintainerr lost under the SAME key, re-applied. */
+  reapplied: number;
+  /** Already excluded under the pooled key — intent re-pointed when the key changed, no Maintainerr write needed. */
   alreadyExcluded: number;
   failed: number;
-  /** ADR-086 D-4 — open intents pooled under the SAME key with no exclusion: human un-exclusions. */
+  /** ADR-099 D-5 — of `scanned`, how many were pooled under the same key they were saved on (a lapse to re-apply, no
+   *  longer only a census: ADR-086 D-4's carve-out is superseded). */
   sameKeyCensus: number;
   /** ADR-086 D-8 — `dnd`-tagged pool members with no open intent: stale tags, observed not swept. */
   staleTagCensus: number;
@@ -81,6 +87,7 @@ export async function relinkSaveIntents(input: {
   const report: TrashRelinkReport = {
     scanned: 0,
     relinked: 0,
+    reapplied: 0,
     alreadyExcluded: 0,
     failed: 0,
     sameKeyCensus: 0,
@@ -106,21 +113,21 @@ export async function relinkSaveIntents(input: {
     .where(
       and(
         isNull(trashSaveIntents.revokedAt),
+        // ADR-099 D-5 — confirmed intents only; one never applied yet is the keeper's first stage. And ANY key: the
+        // same-key carve-out of ADR-086 D-4 is superseded (a Save is forever; un-save is the release).
+        isNotNull(trashSaveIntents.exclusionConfirmedAt),
         isNotNull(trashCandidates.maintainerrMediaId),
-        // ADR-086 D-4 — THIS clause is the same-key carve-out. Removing it turns the reconciler
-        // into something that overrides deliberate human un-exclusions.
-        ne(trashCandidates.maintainerrMediaId, trashSaveIntents.maintainerrMediaId),
       ),
     );
 
   report.scanned = candidates.length;
-  report.sameKeyCensus = await countSameKeyLapses(db);
+  report.sameKeyCensus = candidates.filter((c) => c.poolKey === c.savedKey).length;
   report.staleTagCensus = await countStaleTags(db);
   report.unlinkedSaves = await countUnlinkedSaves(db);
 
   if (candidates.length === 0) return report;
 
-  // ---- Stage 2: verify live. Only the differing set pays a Maintainerr read. ----
+  // ---- Stage 2: verify live. Only saved titles in a pool pay a Maintainerr read. ----
   const poolKeys = candidates
     .map((c) => c.poolKey)
     .filter((k): k is string => k !== null);
@@ -131,9 +138,18 @@ export async function relinkSaveIntents(input: {
   for (const c of candidates) {
     if (c.poolKey === null) continue;
     const already = liveExcluded.has(c.poolKey);
+    const sameKey = c.poolKey === c.savedKey;
+    // Same key and still excluded: Maintainerr simply has not re-run its rules since the Save. Nothing to do.
+    if (sameKey && already) continue;
 
     if (!enforced) {
-      pushSample(report, c.title, c.savedKey, c.poolKey, already ? 'would-repoint' : 'would-relink');
+      pushSample(
+        report,
+        c.title,
+        c.savedKey,
+        c.poolKey,
+        already ? 'would-repoint' : sameKey ? 'would-reapply' : 'would-relink',
+      );
       continue;
     }
 
@@ -147,11 +163,15 @@ export async function relinkSaveIntents(input: {
         maintainerrMediaId: c.poolKey,
         mediaItemId: c.mediaItemId,
         actorId: null,
-        reason: 'relink',
+        reason: sameKey ? 'reapply' : 'relink',
       });
       if (res.alreadyExcluded) {
         report.alreadyExcluded += 1;
         pushSample(report, c.title, c.savedKey, c.poolKey, 'repointed');
+      } else if (sameKey) {
+        report.reapplied += 1;
+        kindsTouched.add(c.mediaKind);
+        pushSample(report, c.title, c.savedKey, c.poolKey, 'reapplied');
       } else {
         report.relinked += 1;
         kindsTouched.add(c.mediaKind);
@@ -194,27 +214,6 @@ function pushSample(
   if (report.samples.length < SAMPLE_CAP) {
     report.samples.push({ title, savedKey, poolKey, outcome });
   }
-}
-
-/**
- * ADR-086 D-4 census — open intents whose pooled key MATCHES the recorded key. If such an item is
- * on the wall at all, its exclusion is gone, and since the app only ever removes an exclusion
- * through an audited un-save (which also revokes the intent), a human did it in Maintainerr. We
- * report the count so the owner can decide whether that shape is worth handling; we do not act.
- */
-async function countSameKeyLapses(db: ReturnType<typeof resolveDb>): Promise<number> {
-  const rows = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(trashSaveIntents)
-    .innerJoin(mediaItems, eq(mediaItems.id, trashSaveIntents.mediaItemId))
-    .innerJoin(trashCandidates, identityJoin)
-    .where(
-      and(
-        isNull(trashSaveIntents.revokedAt),
-        eq(trashCandidates.maintainerrMediaId, trashSaveIntents.maintainerrMediaId),
-      ),
-    );
-  return rows[0]?.n ?? 0;
 }
 
 /**

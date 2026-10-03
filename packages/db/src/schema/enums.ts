@@ -765,8 +765,9 @@ export type TrashSaveIntentOrigin = (typeof TRASH_SAVE_INTENT_ORIGINS)[number];
 
 // ADR-086 D-3 — the `reason` recorded on a `trash_excluded` save event. 'relink' is written ONLY by
 // the reconciler re-applying a lapsed intent onto the title's current key; attribution stays honest
-// (a relink is never recorded as a fresh user save).
-export const TRASH_EXCLUDED_REASONS = ['user', 'batch_save', 'watch_guardian', 'relink'] as const;
+// (a relink is never recorded as a fresh user save). ADR-099 D-5 adds 'reapply': the keeper re-applying
+// an exclusion Maintainerr lost under the SAME key (ADR-086 D-4's same-key carve-out is superseded).
+export const TRASH_EXCLUDED_REASONS = ['user', 'batch_save', 'watch_guardian', 'relink', 'reapply'] as const;
 export type TrashExcludedReason = (typeof TRASH_EXCLUDED_REASONS)[number];
 
 // ---------------------------------------------------------------------------
@@ -1517,6 +1518,9 @@ export const TRASH_KEEP_REASONS = [
   'live_excluded',
   'release_unrecorded',
   'recently_added',
+  // ADR-099 D-4 — an open save intent (a Save the app recorded). Authoritative whether or not Maintainerr holds the
+  // exclusion yet.
+  'saved',
 ] as const;
 export type TrashKeepReason = (typeof TRASH_KEEP_REASONS)[number];
 

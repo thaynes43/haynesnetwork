@@ -6,7 +6,7 @@
 // exclusions + SAFE audit with Q-08 deletion snapshots. Reuses the hostile-stub patterns from the
 // 006 trash-flow tests.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import {
   ledgerEvents,
   mediaItems,
@@ -16,6 +16,7 @@ import {
   trashBatches,
   trashCandidates,
   trashCandidatesState,
+  trashSaveIntents,
 } from '@hnet/db/schema';
 import {
   MaintainerrUnsafeError,
@@ -26,6 +27,8 @@ import {
   buildMaintainerrClientBundle,
   cancelBatch,
   createBatchFromPending,
+  expediteDeletion,
+  keepTrashSaves,
   getAppSetting,
   getBatchDetail,
   getBatchSaveStats,
@@ -102,6 +105,9 @@ interface MaintState {
   /** Test seam (F2): fired on every GET /rules/exclusion — lets a test land a concurrent DB write
    *  (e.g. a Save) in the sweep's window between candidate-select and the guarded item-write. */
   onExclusionCheck?: (mediaServerId: string) => Promise<void> | void;
+  /** ADR-099 test seam: requests whose `METHOD /path` is in `keys` wait on `gate` before they are served — Maintainerr
+   *  holding exclusion writes while it runs its scheduled rules (#642). Resolve the gate to let them through. */
+  stall?: { keys: Set<string>; gate: Promise<void> };
 }
 
 /** Mirror of Maintainerr's nightly RuleMaintenanceService.removeCollectionsWithoutRule (cron
@@ -134,6 +140,7 @@ function makeMaintainerr(state: MaintState): {
     calls.push({ method, pathname: path, query, body });
     if (!state.reachable) return new Response('unreachable', { status: 502 });
     const key = `${method} ${path}`;
+    if (state.stall?.keys.has(key)) await state.stall.gate;
     if (state.fail.has(key)) return new Response('{"message":"forced"}', { status: 500 });
     const ok = (b: unknown, status = 200) =>
       new Response(b === undefined ? null : JSON.stringify(b), {
@@ -483,6 +490,9 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
       for (const b of open) await cancelBatch({ db: t.db, maintainerr: bundle, batchId: b.id, actorId });
     }
     await setAppSetting({ db: t.db, key: 'trash_skip_admin_gate', value: false, actorId });
+    // ADR-099 D-7 — a Save outlives its batch (an open intent keeps the title out of every later batch), so each test
+    // starts with no Saves left over from the one before it.
+    await t.db.delete(trashSaveIntents);
   });
 
   const itemsOf = (batchId: string) =>
@@ -586,7 +596,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const cold = items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
 
     const saved = await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: cold.id, saved: true, actorId });
-    expect(saved).toEqual({ changed: true, state: 'saved' });
+    expect(saved).toEqual({ changed: true, state: 'saved', exclusion: 'applied' });
     const [afterSave] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, cold.id));
     expect(afterSave!.state).toBe('saved');
     expect(afterSave!.savedBy).toBe(actorId);
@@ -619,7 +629,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const savedA = await setBatchItemSaved({
       db: t.db, maintainerr: bundle, batchId, itemId: itemA.id, saved: true, actorId: memberA, callerCanManage: false,
     });
-    expect(savedA).toEqual({ changed: true, state: 'saved' });
+    expect(savedA).toEqual({ changed: true, state: 'saved', exclusion: 'applied' });
     const [rowA] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, itemA.id));
     expect(rowA!.savedBy).toBe(memberA);
 
@@ -1455,7 +1465,8 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
       mediaItemId: cold.mediaItemId,
       actorId,
     });
-    expect(res).toEqual({ excluded: true, alreadyExcluded: false });
+    // ADR-099 D-1 — the record-first Save: recorded, and the exclusion applied inside the deadline.
+    expect(res).toEqual({ excluded: true, alreadyExcluded: false, recorded: true, exclusion: 'applied' });
 
     const [row] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, cold.id));
     expect(row!.state).toBe('saved');
@@ -1508,7 +1519,7 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     // 2) A title in NO batch at all is a clean no-op (and never throws).
     await expect(
       saveExclusion({ db: t.db, maintainerr: bundle, maintainerrMediaId: 'ms-not-batched', actorId }),
-    ).resolves.toEqual({ excluded: true, alreadyExcluded: false });
+    ).resolves.toEqual({ excluded: true, alreadyExcluded: false, recorded: false, exclusion: 'applied' });
 
     // 3) A TERMINAL batch's rows are history — cancelling closes the batch, the row stays pending.
     const cold = items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
@@ -1535,6 +1546,276 @@ describe('trash curation pipeline (ADR-025 / DESIGN-011)', () => {
     const [row] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, watched.id));
     expect(row!.state).toBe('pending'); // the tuning dataset stays a record of HUMAN rescues
     expect(await savesOf(watched.id)).toHaveLength(0);
+  });
+
+  // ── ADR-099 — a Save is recorded first; the Maintainerr exclusion follows it (#642) ────────────────────────────
+  // The owner's requirement (2026-10-03): "if someone clicks save it's saved forever". Maintainerr holds exclusion
+  // writes while it runs its scheduled rules, so a Save in that window used to time out and be lost. These tests stall
+  // Maintainerr past the Save's deadline and prove the Save still stands everywhere it matters.
+
+  const openIntentOf = async (mediaItemId: string) => {
+    const [row] = await t.db
+      .select()
+      .from(trashSaveIntents)
+      .where(and(eq(trashSaveIntents.mediaItemId, mediaItemId), isNull(trashSaveIntents.revokedAt)));
+    return row;
+  };
+  const stalled = (keys: string[]) => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    return { stall: { keys: new Set(keys), gate }, release };
+  };
+  const EXCLUSION_KEYS = ['GET /rules/exclusion', 'POST /rules/exclusion'];
+
+  it('ADR-099 — Maintainerr stalls past the deadline: the wall Save is still recorded, answered, kept by the sweep, then applied by the keeper', async () => {
+    const state = baseState({ nextCollectionId: 812 });
+    const { bundle, calls } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 14, actorId });
+    const cold = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    const inLeavingSoon = () =>
+      state.collections.find((c) => c.id === 812)!.items.some((i) => i.mediaServerId === 'ms-9001');
+    expect(inLeavingSoon()).toBe(true);
+
+    // Maintainerr is running its rules: every exclusion call hangs.
+    const { stall, release } = stalled(EXCLUSION_KEYS);
+    state.stall = stall;
+    const startedAt = Date.now();
+    const res = await setBatchItemSaved({
+      db: t.db, maintainerr: bundle, batchId, itemId: cold.id, saved: true, actorId, enforceDeadlineMs: 150,
+    });
+    // Answered at the deadline, not at the 30 s HTTP timeout, and SAVED.
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect(res).toEqual({ changed: true, state: 'saved', exclusion: 'pending' });
+
+    // The record: the row, its save event, the audit row and the open intent, exclusion still pending.
+    const [row] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, cold.id));
+    expect(row).toMatchObject({ state: 'saved', savedBy: actorId });
+    expect((await savesOf(cold.id)).filter((r) => r.action === 'save')).toHaveLength(1);
+    const audit = (await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.mediaItemId, cold.mediaItemId!)))
+      .filter((e) => e.eventType === 'trash_excluded');
+    expect(audit.map((e) => e.payload)).toContainEqual(
+      expect.objectContaining({ action: 'save', reason: 'batch_save', maintainerrMediaId: 'ms-9001' }),
+    );
+    expect(audit.find((e) => (e.payload as { reason?: string }).reason === 'batch_save')!.requestedByUserId).toBe(actorId);
+    const intent = await openIntentOf(cold.mediaItemId!);
+    expect(intent).toMatchObject({ origin: 'batch_save', savedByUserId: actorId, exclusionConfirmedAt: null, applyAttempts: 1 });
+    expect(intent!.lastApplyError).toMatch(/did not answer/);
+    expect(state.exclusions.has('ms-9001')).toBe(false);
+    expect(inLeavingSoon()).toBe(true); // the poster removal is deferred too
+
+    // The rules finish for new requests (the one that timed out is still parked); the window closes early.
+    state.stall = undefined;
+    const report = await sweepExpiredBatches({
+      arr: releaseArr, registry: 'gate-only', db: t.db, maintainerr: bundle, actorId, batchId, forceOverride: true,
+    });
+    expect(report.batches[0]!.savedCount).toBe(1);
+    const handled = calls.filter((c) => c.pathname === '/collections/media/handle').map((c) => (c.body as { mediaId: string }).mediaId);
+    expect(handled).not.toContain('ms-9001');
+    expect((await itemsOf(batchId)).find((i) => i.id === cold.id)!.state).toBe('saved');
+
+    // The keeper's next tick: Maintainerr answers now, so the exclusion is written, read back and confirmed.
+    const keeper = await keepTrashSaves({ db: t.db, maintainerr: bundle });
+    expect(keeper).toMatchObject({ pending: 1, applied: 1, stillPending: 0, busy: false });
+    expect(state.exclusions.has('ms-9001')).toBe(true);
+    const confirmed = await openIntentOf(cold.mediaItemId!);
+    expect(confirmed!.exclusionConfirmedAt).not.toBeNull();
+    expect(confirmed).toMatchObject({ applyAttempts: 0, lastApplyError: null, maintainerrMediaId: 'ms-9001' });
+    // A second tick has nothing left to apply.
+    expect((await keepTrashSaves({ db: t.db, maintainerr: bundle })).pending).toBe(0);
+
+    // The parked request finally gets through: it was aborted at the deadline, so it writes nothing more.
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.filter((c) => c.method === 'POST' && c.pathname === '/rules/exclusion')).toHaveLength(1);
+  });
+
+  it('ADR-099 — the keeper pulls a saved poster out of Leaving Soon when the Save could not', async () => {
+    const state = baseState({ nextCollectionId: 813 });
+    const { bundle } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: 14, actorId });
+    const cold = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    state.stall = stalled(EXCLUSION_KEYS).stall;
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: cold.id, saved: true, actorId, enforceDeadlineMs: 100 });
+    state.stall = undefined;
+    const members = () => state.collections.find((c) => c.id === 813)!.items.map((i) => i.mediaServerId);
+    expect(members()).toContain('ms-9001');
+
+    const keeper = await keepTrashSaves({ db: t.db, maintainerr: bundle });
+    expect(keeper.leavingSoonRemoved).toBe(1);
+    expect(members()).not.toContain('ms-9001');
+    // Remove only: every still-pending member stays on the wall.
+    expect(members()).toEqual(expect.arrayContaining(['ms-9004']));
+    expect((await keepTrashSaves({ db: t.db, maintainerr: bundle })).leavingSoonRemoved).toBe(0);
+  });
+
+  it('ADR-099 — a pending-wall Save during a stall is recorded, flips the open batch row, and the keeper applies it', async () => {
+    const since = new Date();
+    const state = baseState();
+    const { bundle } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const cold = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    state.stall = stalled(EXCLUSION_KEYS).stall;
+    const res = await saveExclusion({
+      db: t.db, maintainerr: bundle, maintainerrMediaId: 'ms-9001', mediaItemId: cold.mediaItemId, actorId, enforceDeadlineMs: 100,
+    });
+    expect(res).toEqual({ excluded: false, alreadyExcluded: false, recorded: true, exclusion: 'pending' });
+    const [row] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, cold.id));
+    expect(row).toMatchObject({ state: 'saved', savedBy: actorId });
+    expect((await savesOf(cold.id)).filter((r) => r.action === 'save')).toHaveLength(1);
+    expect((await openIntentOf(cold.mediaItemId!))!.exclusionConfirmedAt).toBeNull();
+
+    // A second tap while it is still pending neither double-audits nor double-counts.
+    await saveExclusion({
+      db: t.db, maintainerr: bundle, maintainerrMediaId: 'ms-9001', mediaItemId: cold.mediaItemId, actorId, enforceDeadlineMs: 50,
+    });
+    const audit = (await t.db.select().from(ledgerEvents).where(eq(ledgerEvents.mediaItemId, cold.mediaItemId!)))
+      .filter(
+        (e) =>
+          e.eventType === 'trash_excluded' &&
+          (e.payload as { action?: string }).action === 'save' &&
+          e.occurredAt.getTime() >= since.getTime(),
+      );
+    expect(audit).toHaveLength(1);
+    expect((await savesOf(cold.id)).filter((r) => r.action === 'save')).toHaveLength(1);
+
+    state.stall = undefined;
+    expect(await keepTrashSaves({ db: t.db, maintainerr: bundle })).toMatchObject({ applied: 1, stillPending: 0 });
+    expect(state.exclusions.has('ms-9001')).toBe(true);
+  });
+
+  it('ADR-099 — a busy Maintainerr ends the keeper tick early; the Save stays pending and the next tick applies it', async () => {
+    const state = baseState();
+    const { bundle } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const items = await itemsOf(batchId);
+    state.stall = stalled(EXCLUSION_KEYS).stall;
+    for (const id of ['ms-9001', 'ms-9004']) {
+      const it = items.find((i) => i.maintainerrMediaId === id)!;
+      await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: it.id, saved: true, actorId, enforceDeadlineMs: 50 });
+    }
+    // Still running its rules at the keeper's tick: one call times out and the tick stops queueing more.
+    const busy = await keepTrashSaves({ db: t.db, maintainerr: bundle, applyDeadlineMs: 50 });
+    expect(busy).toMatchObject({ pending: 2, applied: 0, stillPending: 2, busy: true });
+    expect(busy.pendingSamples).toHaveLength(1);
+    state.stall = undefined;
+    const next = await keepTrashSaves({ db: t.db, maintainerr: bundle });
+    expect(next).toMatchObject({ pending: 2, applied: 2, stillPending: 0, busy: false });
+    expect(state.exclusions.has('ms-9001') && state.exclusions.has('ms-9004')).toBe(true);
+  });
+
+  it('ADR-099 — a saved title never re-enters a later batch, even while Maintainerr still pools it', async () => {
+    const state = baseState();
+    const { bundle } = makeMaintainerr(state);
+    const first = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const cold = (await itemsOf(first.batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    // Saved during a stall: no exclusion, so Maintainerr keeps listing it in its pool.
+    state.stall = stalled(EXCLUSION_KEYS).stall;
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId: first.batchId, itemId: cold.id, saved: true, actorId, enforceDeadlineMs: 50 });
+    state.stall = undefined;
+    await cancelBatch({ db: t.db, maintainerr: bundle, batchId: first.batchId, actorId });
+    expect(state.collections[0]!.items.some((i) => i.mediaServerId === 'ms-9001')).toBe(true);
+
+    // Untargeted: every candidate except the saved one.
+    const second = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    expect((await itemsOf(second.batchId)).map((i) => i.maintainerrMediaId)).not.toContain('ms-9001');
+    await cancelBatch({ db: t.db, maintainerr: bundle, batchId: second.batchId, actorId });
+
+    // Targeted (the space policy's shape): the saved title is the largest, and it is still never taken.
+    const third = await createBatchFromPending({
+      db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId, targeting: { maxItems: 1, strategy: 'largest' },
+    });
+    expect((await itemsOf(third.batchId)).map((i) => i.maintainerrMediaId)).not.toContain('ms-9001');
+
+    // Even after Maintainerr loses the exclusion (applied, then pruned), the Save holds.
+    await cancelBatch({ db: t.db, maintainerr: bundle, batchId: third.batchId, actorId });
+    await keepTrashSaves({ db: t.db, maintainerr: bundle });
+    state.exclusions.delete('ms-9001');
+    const fourth = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    expect((await itemsOf(fourth.batchId)).map((i) => i.maintainerrMediaId)).not.toContain('ms-9001');
+  });
+
+  it('ADR-099 — an exclusion Maintainerr lost is re-applied by the keeper (same key)', async () => {
+    const state = baseState();
+    const { bundle } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const cold = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: cold.id, saved: true, actorId });
+    expect(state.exclusions.has('ms-9001')).toBe(true);
+    // Maintainerr drops it (its nightly prune, or a hand removal); the title is back in its pool.
+    state.exclusions.delete('ms-9001');
+    await refreshTrashCandidates({ db: t.db, maintainerr: bundle });
+    const keeper = await keepTrashSaves({ db: t.db, maintainerr: bundle });
+    expect(keeper.relink).toMatchObject({ reapplied: 1, failed: 0 });
+    expect(state.exclusions.has('ms-9001')).toBe(true);
+  });
+
+  it('ADR-099 — a sweep keeps a pending row whose title was saved on another surface (open intent, no exclusion)', async () => {
+    const state = baseState();
+    const { bundle, calls } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    await greenlightBatch({ db: t.db, maintainerr: bundle, batchId, windowDays: -1, actorId });
+    const requested = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9004')!;
+    // Saved from the library during a stall, under a key the batch row does not carry (a re-key): the row stays
+    // pending, but the intent is open.
+    state.stall = stalled(EXCLUSION_KEYS).stall;
+    await saveExclusion({
+      db: t.db, maintainerr: bundle, maintainerrMediaId: 'ms-9904', mediaItemId: requested.mediaItemId, actorId, enforceDeadlineMs: 50,
+    });
+    state.stall = undefined;
+    await t.db.update(trashBatchItems).set({ state: 'pending', savedBy: null, savedAt: null }).where(eq(trashBatchItems.id, requested.id));
+
+    const report = await sweepExpiredBatches({ arr: releaseArr, registry: 'gate-only', db: t.db, maintainerr: bundle, actorId });
+    const handled = calls.filter((c) => c.pathname === '/collections/media/handle').map((c) => (c.body as { mediaId: string }).mediaId);
+    expect(handled).not.toContain('ms-9004');
+    const [row] = await t.db.select().from(trashBatchItems).where(eq(trashBatchItems.id, requested.id));
+    expect(row).toMatchObject({ state: 'skipped', keepReason: 'saved' });
+    expect(report.batches[0]!.keptByReason.saved).toBe(1);
+  });
+
+  it('ADR-099 — un-save removes both: the exclusion and the intent; a never-applied Save is simply revoked', async () => {
+    const state = baseState();
+    const { bundle } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const items = await itemsOf(batchId);
+    const cold = items.find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    const requested = items.find((i) => i.maintainerrMediaId === 'ms-9004')!;
+
+    // Applied Save → un-save: both gone.
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: cold.id, saved: true, actorId });
+    expect(state.exclusions.has('ms-9001')).toBe(true);
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: cold.id, saved: false, actorId });
+    expect(state.exclusions.has('ms-9001')).toBe(false);
+    expect(await openIntentOf(cold.mediaItemId!)).toBeUndefined();
+    expect((await itemsOf(batchId)).find((i) => i.id === cold.id)!.state).toBe('pending');
+
+    // A Save still pending (stalled) → un-save: revoked, and the keeper never applies it afterwards.
+    state.stall = stalled(EXCLUSION_KEYS).stall;
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: requested.id, saved: true, actorId, enforceDeadlineMs: 50 });
+    state.stall = undefined;
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: requested.id, saved: false, actorId });
+    expect(await openIntentOf(requested.mediaItemId!)).toBeUndefined();
+    expect((await keepTrashSaves({ db: t.db, maintainerr: bundle })).pending).toBe(0);
+    expect(state.exclusions.has('ms-9004')).toBe(false);
+  });
+
+  it('ADR-099 — Expedite keeps a saved title whose exclusion is not applied yet', async () => {
+    const state = baseState();
+    const { bundle, calls } = makeMaintainerr(state);
+    const { batchId } = await createBatchFromPending({ db: t.db, maintainerr: bundle, mediaKind: 'movie', actorId });
+    const cold = (await itemsOf(batchId)).find((i) => i.maintainerrMediaId === 'ms-9001')!;
+    state.stall = stalled(EXCLUSION_KEYS).stall;
+    await setBatchItemSaved({ db: t.db, maintainerr: bundle, batchId, itemId: cold.id, saved: true, actorId, enforceDeadlineMs: 50 });
+    state.stall = undefined;
+    await cancelBatch({ db: t.db, maintainerr: bundle, batchId, actorId });
+
+    const res = await expediteDeletion({
+      db: t.db, maintainerr: bundle, arr: releaseArr, scope: 'item', media: 'movie', actorId,
+      item: { collectionId: 7, maintainerrMediaId: 'ms-9001' },
+    });
+    expect(res).toMatchObject({ protectedCount: 1, expeditedCount: 0 });
+    expect(calls.some((c) => c.pathname === '/collections/media/handle')).toBe(false);
   });
 });
 

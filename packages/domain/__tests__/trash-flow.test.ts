@@ -584,7 +584,7 @@ describe('saveExclusion / removeExclusion (ADR-023 D-05 protective ordering)', (
       maintainerrMediaId: '5001',
       actorId,
     });
-    expect(res).toEqual({ excluded: true, alreadyExcluded: false });
+    expect(res).toEqual({ excluded: true, alreadyExcluded: false, recorded: false, exclusion: 'applied' });
     expect(calls.some((c) => c.method === 'POST' && c.pathname === '/rules/exclusion')).toBe(true);
     const events = await excludeEvents();
     expect(events).toHaveLength(1);
@@ -601,7 +601,7 @@ describe('saveExclusion / removeExclusion (ADR-023 D-05 protective ordering)', (
       maintainerrMediaId: '9999',
       actorId,
     });
-    expect(res).toEqual({ excluded: false, alreadyExcluded: true });
+    expect(res).toEqual({ excluded: false, alreadyExcluded: true, recorded: false, exclusion: 'applied' });
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
     // Still just the one event from the previous test.
     expect(await excludeEvents()).toHaveLength(1);

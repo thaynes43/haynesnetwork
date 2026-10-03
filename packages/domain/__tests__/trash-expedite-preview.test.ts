@@ -54,6 +54,7 @@ function pendingItem(over: Partial<TrashPendingItem> = {}): TrashPendingItem {
     watchlistEvaluable: true,
     ageGuard: 'clear',
     newestAddedAt: null,
+    saveIntent: false,
     ...over,
   };
 }
@@ -73,6 +74,24 @@ describe('classifyForExpedite (the ONE shared derivation — ADR-086 D-11)', () 
 
   it('the dnd tag ⇒ protected_tag (unchanged keep-signal — ADR-086 D-6)', () => {
     expect(classifyForExpedite(pendingItem({ protectedByTag: true }))).toBe('protected_tag');
+  });
+
+  it('ADR-099 D-4 — an open save intent ⇒ protected_saved, ahead of every other keep', () => {
+    expect(classifyForExpedite(pendingItem({ saveIntent: true }))).toBe('protected_saved');
+    expect(classifyGuardian(pendingItem({ saveIntent: true, protectedByTag: true, recentlyWatched: true }))).toEqual({
+      keep: true,
+      reason: 'saved',
+    });
+    // A saved title the guardian could not otherwise evaluate is still kept as SAVED (the app's own record).
+    expect(classifyGuardian(pendingItem({ saveIntent: true, watchlistEvaluable: false }))).toEqual({
+      keep: true,
+      reason: 'saved',
+    });
+    expect(partitionPendingForExpedite([pendingItem({ saveIntent: true, sizeBytes: 9 })])).toMatchObject({
+      deletable: 0,
+      deletableBytes: 0,
+      protected: 1,
+    });
   });
 
   it('recently watched ⇒ protected_watched', () => {

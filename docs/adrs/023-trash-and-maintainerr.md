@@ -1,6 +1,10 @@
 # ADR-023: Trash section — Maintainerr integration, per-action grants, and the safety gate
 
 - **Status:** Accepted
+- **Superseded in part by:** [ADR-099](099-trash-save-recorded-first.md) (2026-10-03): C-05's Maintainerr-first
+  ordering no longer applies to a person's Save, which the app records first and enforces afterwards. System
+  protections (the watch guardian) and un-save keep this ordering. Everything else here stands. This is a status
+  note only.
 - **Date:** 2026-07-06
 - **Deciders:** Tom Haynes (owner) · authored AND ratified by Fable 5 (autonomous run, PLAN-006
   KICKOFF mandate + the 2026-07-06 live-recon Decisions of Record)
