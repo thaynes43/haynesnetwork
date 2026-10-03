@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.105.1](https://github.com/thaynes43/haynesnetwork/compare/v0.105.0...v0.105.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* **fix:** a Fix makes exactly one search (skip its own when the *arr's Redownload Failed will search) ([#651](https://github.com/thaynes43/haynesnetwork/issues/651)) ([181f26d](https://github.com/thaynes43/haynesnetwork/commit/181f26df407be2969778636a0cf42b66a2ed9464)), closes [#646](https://github.com/thaynes43/haynesnetwork/issues/646)
+* **trash:** a Save is recorded first and the Maintainerr exclusion follows it (ADR-099) ([#652](https://github.com/thaynes43/haynesnetwork/issues/652)) ([1e75f3e](https://github.com/thaynes43/haynesnetwork/commit/1e75f3ee93dfcb2d71477c1957542ef49981ae8e))
+* **trash:** Expedite and the pending walls honor the Age Guard (Q-14) ([#650](https://github.com/thaynes43/haynesnetwork/issues/650)) ([77e875a](https://github.com/thaynes43/haynesnetwork/commit/77e875a784363814e3bab0d4f3d322e66efa568c))
+
 ## [0.105.0](https://github.com/thaynes43/haynesnetwork/compare/v0.104.1...v0.105.0) (2026-10-03)
 
 
