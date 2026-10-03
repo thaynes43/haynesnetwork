@@ -1,7 +1,8 @@
 # DESIGN-046: Arr queue janitor — classifier, census, promotion ladder
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-03 (D-23, D-24, ADR-098, owner ruling: one search budget per title across every janitor
+- **Last updated:** 2026-10-03 (D-25: a release the *arr holds on its delay profile is `waiting`, left out of the census
+  instead of counted as `unknown`, after the owner's 120-minute Usenet delay profile on Sonarr). Prior: 2026-10-03 (D-23, D-24, ADR-098, owner ruling: one search budget per title across every janitor
   search, the loop guard on `bad_release` for all three *arrs, one search per failure, and the failed-download retry on
   Sonarr and Radarr once their own Redownload Failed is off; Q-08 answered: at most two tries per title in any
   rolling 30 days, for every loop guard, D-23 rule 7). Prior: 2026-09-29 (D-22, issue #621: a `leftover` folder must hold the same book files as its library
@@ -75,6 +76,7 @@ schema.
 | `bad_release` | `trackedDownloadStatus: 'error'`; or messages matching "Unable to parse…", "…sample…", "…archive…/…password…/…executable…" (release defects); or `status: 'failed'`. Since D-10 the release-defect patterns read release-level messages only ("Sample" and "Found archive file…" verbatim). |
 | `retry_import` | `importBlocked`/`importPending` with an empty/transient message set ("Waiting to import…", no messages at all) — the stuck-import class `ProcessMonitoredDownloads` exists for. |
 | `manual_match` | Since D-12: one of Lidarr's own match rejections ("Album match is not close enough…", "Worst track match…", "Has missing tracks", "Has unmatched tracks", "Couldn't find similar album for…", "Unable to import automatically, found multiple artists…"). Lidarr could not match the files to an album with confidence, so only a person can decide. **Report only**: no enforce cell, never acted on, like `unknown`. Also takes a `have_better` match that carries one of these messages. Since D-13 (owner ruling 2026-09-29) it has one enforce cell, on Lidarr, census by default. |
+| `waiting` | Since D-25: `status: delay`, a release the *arr is holding back on purpose (its delay profile) and has not sent to a download client yet. Not a ledger class: it gets no row and no count, and is never acted on. Checked after every class above, so it never masks one. |
 | `unknown` | Everything else. Lidarr's match-ambiguity messages started here and left for `manual_match` once census evidence answered Q-01 (D-12). |
 
 Anything not matched with confidence falls to `unknown`. Items younger than
@@ -501,6 +503,28 @@ taking up to an hour longer is accepted; cascades must be impossible. Each row i
 | 6 | **Rails.** The search costs one slot of `maxActionsPerRun`, after the queue path's; a spent cap is `skipped_cap`, tried again next run. No age rail: the failure has already happened. A failed history, record, setting or guard read writes nothing and logs one warning (the next run tries again). A failed monitored check or search is `none` with `outcome: 'error'`, counted in the run's errors and tried again next run (while the failure is within 24 hours). | Same rails as the queue path, applied to what can go wrong here. |
 | 7 | **Signals.** A held failure logs `[queue-cleanup] loop_detected` (`kind: 'skipped_loop'`) once, since it is recorded once (D-21), and appears in the digest's held list; a retry search of a target the janitor searched on an earlier run within 7 days logs `kind: 'repeat_search'`. One info line per instance with fresh failures: `queue-cleanup failed downloads` (`failures`, `arrRetries`, `searched`, `held`, `errors`). The census, the /admin summary and the digest count the retry rows under `bad_release`. | Visible without reading the database, like D-13 rule 5. |
 | 8 | **Rollout.** No new cell, no config change, no migration: the derived ladder stays L2. The coordinator turns Redownload Failed off in Sonarr and Radarr after the deploy, right after a janitor run (OPS-018). | A failure in the minutes between the last run and the change was already searched by the *arr; the retry skips it if that search grabbed something and searches once more if it did not. Changing the setting just after a run makes that window a minute or two. |
+
+### D-25 — A delay-profile hold is `waiting`, not `unknown` (2026-10-03)
+
+**Why.** The owner put a 120-minute Usenet delay on Sonarr's delay profile (2026-10-03, so a better release can turn up
+before one is grabbed). The *arr keeps each release it is holding in the queue as a pending release: `status: delay`,
+`trackedDownloadStatus: ok`, no messages, nothing sent to SABnzbd. None of D-03's signals match it, so every held release
+fell through to `unknown` and was written as an `unknown` census row on each hourly run, then counted in the /admin
+summary and the nightly digest. Nothing was ever acted on (`unknown` has no enforce cell), so the cost was noise: a
+normal, intended wait read as a pile of unclassified queue items.
+
+| # | Ruling | Reason |
+|---|---|---|
+| 1 | **The signal is `status: delay`, nothing else.** Any casing. `pending` is not an *arr queue status; `importPending` and `failedPending` are download states with their own handling (`retry_import`, D-23 rule 5), so they do not match. `downloadClientUnavailable` (a client that is down) is a fault someone should see, so it stays `unknown`. | Only the delay hold is a wait that fixes itself. |
+| 2 | **It is checked last,** after `have_better`, `bad_release`, `retry_import` and `manual_match`, before `unknown`. A record with `status: delay` that also carries an error, a failed state or a stuck-import message keeps its actionable class. | A benign class must never hide a real one. |
+| 3 | **It leaves the census whole.** The classifier returns `waiting`, which is not an Action Class: it has no `arr_queue_cleanup_actions` row (no migration, the class CHECK is unchanged), no verdict, no download group, and no count under any class, so it is never `unknown`, never `skipped_*`, and never counts toward the cap, the loop guard or the retry escalation. | "Never acted on and not counted as unknown", with nothing written about an item that is working as intended. |
+| 4 | **It stays visible in the run.** `QueueCleanupInstanceReport.waiting` counts the records left out per *arr, and the `queue-cleanup evaluated` log line carries `waiting`. `itemsObserved` is the queue size less the waiting records. | A queue that is mostly held releases is still readable from the logs. |
+| 5 | **It still counts as queued for the failed-download retry (D-24 rule 5).** A held record is out of the census, but the retry is given it with the queue: a failed title whose replacement the *arr is holding on its delay profile is not searched again, so a hold costs no loop-guard try (D-23) and makes no duplicate search. | A held release IS a replacement already chosen; before D-25 it sat in the queue as `unknown` and stopped the retry the same way. |
+| 6 | **It applies to every *arr.** Radarr and Lidarr hold releases the same way, so a delay profile on either gets the same treatment. | One classifier, one rule. |
+
+Pinned by `queue-cleanup.test.ts` (the classifier cases; the evaluator case: held records leave the census with every
+cell enforced, only the real item is acted on, the report counts them; and the retry case: a failure whose replacement is
+held is not searched).
 
 ## Alternatives considered
 
