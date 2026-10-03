@@ -35,7 +35,13 @@ import { RadarrWriteClient, SonarrWriteClient } from '@hnet/arr/write';
 import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import { consoleDomainLogger, type DomainLogger } from './domain-logger';
-import { ReleaseBlockError, type ReleaseBlockStep } from './errors';
+import { ReleaseBlockError, TitleExclusionError, type ReleaseBlockStep } from './errors';
+import {
+  ensureTitleExclusions,
+  isTitleExclusionTarget,
+  type TitleExclusionArrClients,
+  type TitleExclusionTarget,
+} from './title-exclusion';
 import {
   RELEASE_BLOCK_PROFILE_NAME,
   RELEASE_BLOCK_SENTINEL,
@@ -71,11 +77,15 @@ export type ReleaseArrKind = 'radarr' | 'sonarr';
 // The *arr seam: the identity reads and the confined profile writes. ArrClientBundle satisfies it structurally.
 // ---------------------------------------------------------------------------
 
-export interface ReleaseBlockArrClients {
+export interface ReleaseBlockArrClients extends TitleExclusionArrClients {
   read: {
     radarr: Pick<
       RadarrClient,
-      'findMovie' | 'listMovieFiles' | 'getMovieReleaseHistory' | 'countImportListExclusions'
+      | 'findMovie'
+      | 'listMovieFiles'
+      | 'getMovieReleaseHistory'
+      | 'countImportListExclusions'
+      | 'listImportListExclusions'
     >;
     sonarr: Pick<
       SonarrClient,
@@ -83,16 +93,18 @@ export interface ReleaseBlockArrClients {
       | 'listEpisodeFileReleases'
       | 'getSeriesReleaseHistory'
       | 'countImportListExclusions'
+      | 'listImportListExclusions'
     >;
   };
+  /** ADR-097 / D-27 — `addImportListExclusion` is the Title Exclusion write the delete paths run before Phase A. */
   write: {
     radarr: Pick<
       RadarrWriteClient,
-      'listReleaseProfiles' | 'createReleaseProfile' | 'updateReleaseProfile'
+      'listReleaseProfiles' | 'createReleaseProfile' | 'updateReleaseProfile' | 'addImportListExclusion'
     >;
     sonarr: Pick<
       SonarrWriteClient,
-      'listReleaseProfiles' | 'createReleaseProfile' | 'updateReleaseProfile'
+      'listReleaseProfiles' | 'createReleaseProfile' | 'updateReleaseProfile' | 'addImportListExclusion'
     >;
   };
 }
@@ -1484,6 +1496,8 @@ export interface ReleaseSurvivor {
   key: string;
   mediaItemId: string;
   title: string;
+  /** ADR-097 / D-27 — the Trash batch item being deleted (the sweep), for the Title Exclusion's audit row. */
+  batchItemId?: string | null;
 }
 
 export interface SurvivorIdentityResult {
@@ -1534,7 +1548,15 @@ export async function identifySurvivors(input: {
   return { recordable, unrecorded, aborted: false };
 }
 
-export type UnrecordedReason = 'no_term' | 'gone' | 'no_ledger_item' | 'id_mismatch' | 'read_failed';
+/** `no_exclusion_key` (ADR-097 / D-27): the record carries no tmdb id (Radarr) or tvdb id (Sonarr), or no title, so
+ *  the Title Exclusion cannot be written; the item is kept like any other unrecordable one. */
+export type UnrecordedReason =
+  | 'no_term'
+  | 'gone'
+  | 'no_ledger_item'
+  | 'id_mismatch'
+  | 'read_failed'
+  | 'no_exclusion_key';
 
 export type RecordAndBlockResult =
   | { aborted: true }
@@ -1549,11 +1571,48 @@ export type RecordAndBlockResult =
     };
 
 /**
+ * ADR-097 / D-27 — the Title Exclusion target of a recordable survivor: the *arr's key (tmdb id on Radarr, tvdb id on
+ * Sonarr), title and year of its records (one item's records share them), the ledger's where the *arr answered none
+ * (an id of 0). Null when no key or no title is known (the item is kept `no_exclusion_key`).
+ */
+export async function resolveTitleExclusionTarget(
+  db: DbClient | undefined,
+  drafts: readonly ReleaseRecordDraft[],
+  survivor: Pick<ReleaseSurvivor, 'mediaItemId' | 'batchItemId'>,
+): Promise<{ arrKind: ReleaseArrKind; target: TitleExclusionTarget } | null> {
+  const d = drafts[0];
+  if (!d) return null;
+  const positive = (n: number | null | undefined): number | null => (typeof n === 'number' && n > 0 ? n : null);
+  let externalId = positive(d.arrKind === 'radarr' ? d.tmdbId : d.tvdbId);
+  let title = d.title?.trim() ? d.title : null;
+  let year = d.year;
+  if (externalId === null || title === null) {
+    const ledger = await loadSubject(db, survivor.mediaItemId);
+    if (ledger && ledger.arrKind === d.arrKind) {
+      externalId ??= positive(d.arrKind === 'radarr' ? ledger.tmdbId : ledger.tvdbId);
+      title ??= ledger.title?.trim() ? ledger.title : null;
+      year ??= ledger.year;
+    }
+  }
+  const candidate = {
+    externalId,
+    title,
+    year: d.arrKind === 'radarr' ? year : null,
+    mediaItemId: survivor.mediaItemId,
+    batchItemId: survivor.batchItemId ?? null,
+  };
+  return isTitleExclusionTarget(candidate) ? { arrKind: d.arrKind, target: candidate } : null;
+}
+
+/**
  * DESIGN-052 D-14 steps 4..5 — THE shared seam of the two delete paths (the sweep and Expedite), so they cannot
  * drift: each survivor's identity (three consecutive *arr read failures ⇒ `aborted`, nothing written), each
- * unrecordable survivor handed to `onUnrecorded` BEFORE Phase A, then Phase A for every recordable survivor (records
- * `in_flight`, the Release Block written and read back). A Phase A failure throws ReleaseBlockError (the records are
- * abandoned); the caller pauses (the sweep) or refuses (Expedite).
+ * unrecordable survivor handed to `onUnrecorded` BEFORE Phase A, then the Title Exclusion of every recordable survivor
+ * (ADR-097 / D-27: written and read back on Radarr or Sonarr; a survivor without the *arr's key is kept
+ * `no_exclusion_key`), then Phase A for every recordable survivor (records `in_flight`, the Release Block written and
+ * read back). A Title Exclusion failure throws ReleaseBlockError with step `exclusion` (nothing recorded, no profile
+ * touched); a Phase A failure throws ReleaseBlockError (the records are abandoned); the caller pauses (the sweep) or
+ * refuses (Expedite). Nothing is deleted in either case.
  */
 export async function recordAndBlockReleases(input: {
   db?: DbClient;
@@ -1570,9 +1629,42 @@ export async function recordAndBlockReleases(input: {
     logger: input.logger,
   });
   if (identity.aborted) return { aborted: true };
+  // ADR-097 / D-27 — the Title Exclusion target of each recordable survivor; one without the *arr's key is kept.
+  const exclusions: Record<ReleaseArrKind, TitleExclusionTarget[]> = { radarr: [], sonarr: [] };
+  for (const s of input.survivors) {
+    const drafts = identity.recordable.get(s.key);
+    if (!drafts) continue;
+    const excl = await resolveTitleExclusionTarget(input.db, drafts, s);
+    if (excl === null) {
+      identity.recordable.delete(s.key);
+      identity.unrecorded.set(s.key, 'no_exclusion_key');
+      continue;
+    }
+    exclusions[excl.arrKind].push(excl.target);
+  }
   for (const s of input.survivors) {
     const reason = identity.unrecorded.get(s.key);
     if (reason !== undefined) await input.onUnrecorded?.(s.key, reason);
+  }
+  // ADR-097 / D-27 — before Phase A and before any delete: the title is on the *arr's exclusion list, read back, so
+  // neither Kometa nor an import list can add it again. A failure stops here: nothing recorded, deleted or blocked.
+  for (const kind of ['radarr', 'sonarr'] as const) {
+    if (exclusions[kind].length === 0) continue;
+    try {
+      await ensureTitleExclusions({
+        db: input.db,
+        arr: input.arr,
+        arrKind: kind,
+        targets: exclusions[kind],
+        origin: input.origin,
+        logger: input.logger,
+      });
+    } catch (error) {
+      if (error instanceof TitleExclusionError) {
+        throw new ReleaseBlockError(kind, 'exclusion', { cause: error, sent: false });
+      }
+      throw error;
+    }
   }
   const recordable = input.survivors.filter((s) => identity.recordable.has(s.key));
   const recordIds =

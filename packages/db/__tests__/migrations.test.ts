@@ -28,6 +28,8 @@ import {
   APP_SETTING_KEYS,
   DELETED_RELEASE_ARR_KINDS,
   DELETED_RELEASE_IDENTITY_SOURCES,
+  TITLE_EXCLUSION_ARR_KINDS,
+  TITLE_EXCLUSION_ORIGINS,
   DELETED_RELEASE_ORIGINS,
   DELETED_RELEASE_STATES,
   DELETED_RELEASE_TERM_CONFIDENCES,
@@ -3174,6 +3176,48 @@ describe('migrations against embedded Postgres 16', () => {
       }
     });
   });
+
+  // ADR-097 / DESIGN-052 D-27 (migration 0087, journal idx 86): the Title Exclusion audit table. Additive.
+  describe('0087 trash title exclusions (ADR-097 — the app-written import-list exclusion audit)', () => {
+    it('creates trash_title_exclusions: kind and origin CHECKs matching enums.ts, the key CHECK, the index', async () => {
+      const insert = (kind: string, origin: string, tmdbId: number | null, tvdbId: number | null) =>
+        client.query({
+          text: `INSERT INTO trash_title_exclusions (arr_kind, tmdb_id, tvdb_id, title, year, arr_exclusion_id, origin)
+                 VALUES ($1, $2, $3, 'T-0087', 2024, 1, $4)`,
+          values: [kind, tmdbId, tvdbId, origin],
+        });
+      try {
+        for (const origin of TITLE_EXCLUSION_ORIGINS) await insert('radarr', origin, 420634, null);
+        await insert('sonarr', 'sweep', null, 81189);
+        await expect(insert('lidarr', 'sweep', 1, 1)).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('radarr', 'seerr', 1, null)).rejects.toMatchObject({ code: '23514' });
+        // the *arr's own key is required: a tmdb id on Radarr, a tvdb id on Sonarr
+        await expect(insert('radarr', 'sweep', null, 81189)).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('sonarr', 'sweep', 420634, null)).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('radarr', 'sweep', 0, null)).rejects.toMatchObject({ code: '23514' });
+        for (const [name, values] of [
+          ['trash_title_exclusions_arr_kind_enum', TITLE_EXCLUSION_ARR_KINDS],
+          ['trash_title_exclusions_origin_enum', TITLE_EXCLUSION_ORIGINS],
+        ] as const) {
+          const def = await client.query(
+            `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = $1`,
+            [name],
+          );
+          const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+          expect(listed.sort()).toEqual([...values].sort());
+        }
+        const idx = await client.query(
+          `SELECT indexname FROM pg_indexes WHERE tablename = 'trash_title_exclusions'`,
+        );
+        expect(idx.rows.map((r) => r.indexname).sort()).toEqual([
+          'trash_title_exclusions_kind_created_idx',
+          'trash_title_exclusions_pkey',
+        ]);
+      } finally {
+        await client.query(`DELETE FROM trash_title_exclusions WHERE title = 'T-0087'`);
+      }
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -3321,5 +3365,15 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0086_trash_age_guard.sql'), 'utf8');
     expect(sqlText).toContain('ADD COLUMN "plex_added_at" timestamp with time zone');
     expect(sqlText).toContain("'release_unrecorded','recently_added'");
+  });
+
+  // ADR-097 / DESIGN-052 D-27 gate — the title-exclusion migration is journaled (idx 86), after 0086.
+  it('lists 0087_trash_title_exclusions at idx 86, strictly after 0086_trash_age_guard', () => {
+    const entry = journal.entries.find((e) => e.tag === '0087_trash_title_exclusions');
+    const prev = journal.entries.find((e) => e.tag === '0086_trash_age_guard');
+    expect(entry?.idx).toBe(86);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0087_trash_title_exclusions.sql'), 'utf8');
+    expect(sqlText).toContain('CREATE TABLE "trash_title_exclusions"');
   });
 });

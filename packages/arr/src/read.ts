@@ -84,7 +84,11 @@ import {
 } from './schemas/seerr';
 import {
   arrPagedCountSchema,
+  arrPagedExclusionsSchema,
   arrReleaseHistoryRecordSchema,
+  radarrImportListExclusionSchema,
+  sonarrImportListExclusionSchema,
+  type ArrImportListExclusion,
   radarrMovieFileSchema,
   seerrSonarrServerSummarySchema,
   seerrUserWatchlistSyncSchema,
@@ -160,6 +164,35 @@ async function orNullOn404<T>(read: () => Promise<T>): Promise<T | null> {
     if (error instanceof ArrHttpError && error.status === 404) return null;
     throw error;
   }
+}
+
+/** ADR-097 / DESIGN-052 D-27 — the exclusion list's page size and the most pages one read takes (50,000 exclusions). */
+export const IMPORT_LIST_EXCLUSION_PAGE_SIZE = 1_000;
+export const IMPORT_LIST_EXCLUSION_PAGE_LIMIT = 50;
+
+/**
+ * ADR-097 / DESIGN-052 D-27 — every import-list exclusion through the `/paged` list, oldest id first (an exclusion
+ * added while the read runs lands on a later page, never shifting one already read). A list longer than the page limit
+ * throws: the caller must not decide what is missing from a partial read.
+ */
+async function readAllImportListExclusions(
+  http: ArrHttp,
+  path: string,
+  record: typeof radarrImportListExclusionSchema | typeof sonarrImportListExclusionSchema,
+): Promise<ArrImportListExclusion[]> {
+  const out: ArrImportListExclusion[] = [];
+  for (let page = 1; page <= IMPORT_LIST_EXCLUSION_PAGE_LIMIT; page += 1) {
+    const envelope = await http.requestJson('GET', path, arrPagedExclusionsSchema(record), {
+      query: { page, pageSize: IMPORT_LIST_EXCLUSION_PAGE_SIZE, sortKey: 'id', sortDirection: 'ascending' },
+    });
+    out.push(...(envelope.records as ArrImportListExclusion[]));
+    if (envelope.records.length < IMPORT_LIST_EXCLUSION_PAGE_SIZE || out.length >= envelope.totalRecords) {
+      return out;
+    }
+  }
+  throw new Error(
+    `${path}: more than ${IMPORT_LIST_EXCLUSION_PAGE_LIMIT * IMPORT_LIST_EXCLUSION_PAGE_SIZE} exclusions`,
+  );
 }
 
 /** Read endpoints shared verbatim by Sonarr/Radarr/Lidarr (D-03). */
@@ -354,6 +387,11 @@ export class SonarrClient extends ArrReadClientBase {
     );
     return page.totalRecords;
   }
+
+  /** ADR-097 / DESIGN-052 D-27 — `GET /importlistexclusion/paged`, every page: the series import-list exclusions. */
+  listImportListExclusions(): Promise<ArrImportListExclusion[]> {
+    return readAllImportListExclusions(this.http, 'importlistexclusion/paged', sonarrImportListExclusionSchema);
+  }
 }
 
 /** Radarr v3 read client (D-01: live 6.0.x, `/api/v3`). */
@@ -461,6 +499,11 @@ export class RadarrClient extends ArrReadClientBase {
       query: { page: 1, pageSize: 1 },
     });
     return page.totalRecords;
+  }
+
+  /** ADR-097 / DESIGN-052 D-27 — `GET /exclusions/paged`, every page: the movie import-list exclusions. */
+  listImportListExclusions(): Promise<ArrImportListExclusion[]> {
+    return readAllImportListExclusions(this.http, 'exclusions/paged', radarrImportListExclusionSchema);
   }
 }
 

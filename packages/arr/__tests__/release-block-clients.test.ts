@@ -418,3 +418,95 @@ describe('Seerr enrollment writes (D-17)', () => {
     expect(calls[1]!.body).toEqual({ ...withoutId, animeTags: [1] });
   });
 });
+
+// ADR-097 / DESIGN-052 D-27 — the title exclusion surface: Radarr `exclusions`, Sonarr `importlistexclusion`.
+describe('import-list exclusions (ADR-097 / D-27)', () => {
+  it('lists every page of Radarr exclusions, oldest id first, normalized', async () => {
+    const page1 = Array.from({ length: 1000 }, (_, i) => ({
+      id: i + 1,
+      tmdbId: 10_000 + i,
+      movieTitle: `Movie ${i}`,
+      movieYear: 2020,
+    }));
+    const page2 = [{ id: 1001, tmdbId: 1097549, movieTitle: 'Babygirl', movieYear: 2024 }];
+    let n = 0;
+    const fetchImpl = (async (input: unknown) => {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe('/api/v3/exclusions/paged');
+      n += 1;
+      const records = url.searchParams.get('page') === '1' ? page1 : page2;
+      return new Response(JSON.stringify({ page: n, pageSize: 1000, totalRecords: 1001, records }), {
+        status: 200,
+      });
+    }) as typeof fetch;
+    const radarr = new RadarrClient({ ...RADARR, fetchImpl });
+    const all = await radarr.listImportListExclusions();
+    expect(all).toHaveLength(1001);
+    expect(all[1000]).toEqual({ id: 1001, tmdbId: 1097549, tvdbId: null, title: 'Babygirl', year: 2024 });
+    expect(n).toBe(2);
+  });
+
+  it('sends the paging and sort query, and stops on a short page (Sonarr)', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      {
+        path: '/api/v3/importlistexclusion/paged',
+        body: { page: 1, pageSize: 1000, totalRecords: 1, records: [{ id: 7, tvdbId: 81189, title: 'Breaking Bad' }] },
+      },
+    ]);
+    const sonarr = new SonarrClient({ ...SONARR, fetchImpl });
+    expect(await sonarr.listImportListExclusions()).toEqual([
+      { id: 7, tmdbId: null, tvdbId: 81189, title: 'Breaking Bad', year: null },
+    ]);
+    expect(calls).toHaveLength(1);
+    expect(Object.fromEntries(calls[0]!.url.searchParams)).toEqual({
+      page: '1',
+      pageSize: '1000',
+      sortKey: 'id',
+      sortDirection: 'ascending',
+    });
+  });
+
+  it('adds one exclusion: Radarr {tmdbId, movieTitle, movieYear} (an unknown year as 0), Sonarr {tvdbId, title}', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      {
+        method: 'POST',
+        path: '/api/v3/exclusions',
+        status: 201,
+        body: { id: 89, tmdbId: 420634, movieTitle: 'Terrifier', movieYear: 2018 },
+      },
+      {
+        method: 'POST',
+        path: '/api/v3/importlistexclusion',
+        status: 201,
+        body: { id: 3, tvdbId: 81189, title: 'Breaking Bad' },
+      },
+    ]);
+    const radarr = new RadarrWriteClient({ ...RADARR, fetchImpl });
+    const sonarr = new SonarrWriteClient({ ...SONARR, fetchImpl });
+    expect(await radarr.addImportListExclusion({ tmdbId: 420634, title: 'Terrifier', year: 2018 })).toEqual({
+      id: 89,
+      tmdbId: 420634,
+      tvdbId: null,
+      title: 'Terrifier',
+      year: 2018,
+    });
+    await radarr.addImportListExclusion({ tmdbId: 420634, title: 'Terrifier', year: null });
+    expect(await sonarr.addImportListExclusion({ tvdbId: 81189, title: 'Breaking Bad' })).toMatchObject({
+      id: 3,
+      tvdbId: 81189,
+    });
+    expect(calls.map((c) => [c.method, c.url.pathname, c.body])).toEqual([
+      ['POST', '/api/v3/exclusions', { tmdbId: 420634, movieTitle: 'Terrifier', movieYear: 2018 }],
+      ['POST', '/api/v3/exclusions', { tmdbId: 420634, movieTitle: 'Terrifier', movieYear: 0 }],
+      ['POST', '/api/v3/importlistexclusion', { tvdbId: 81189, title: 'Breaking Bad' }],
+    ]);
+  });
+
+  it('a refused POST (already excluded: 400) throws, never a phantom success', async () => {
+    const { fetchImpl } = stubFetch([
+      { method: 'POST', path: '/api/v3/exclusions', status: 400, body: [{ errorMessage: 'This exclusion has already been added.' }] },
+    ]);
+    const radarr = new RadarrWriteClient({ ...RADARR, fetchImpl });
+    await expect(radarr.addImportListExclusion({ tmdbId: 1, title: 'X', year: 2020 })).rejects.toThrow();
+  });
+});

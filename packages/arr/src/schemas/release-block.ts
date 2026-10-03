@@ -11,6 +11,9 @@
 // - History records carry `data` as a camel-cased string dictionary: an import's `fileId` / `importedPath`, a grab's
 //   `indexer` / `releaseGroup`. A grab's `data` ALSO carries `downloadUrl` / `nzbInfoUrl` (indexer API keys): only the
 //   named keys are ever read, and no URL is stored or logged (D-05).
+// - ADR-097 / DESIGN-052 D-27: Radarr `GET/POST /api/v3/exclusions` (`{id, tmdbId, movieTitle, movieYear}`; the POST
+//   validator refuses a tmdb id that is already excluded) and Sonarr `GET/POST /api/v3/importlistexclusion`
+//   (`{id, tvdbId, title}`; the same refusal), each with a `/paged` list.
 // - Seerr `GET /api/v1/user/{id}/settings/main` (UserSettingsGeneralResponse) — read here for the two watchlist sync
 //   flags only; the write client echoes the whole body (D-17).
 import { z } from 'zod';
@@ -175,6 +178,59 @@ export type ArrReleaseHistoryRecord = z.infer<typeof arrReleaseHistoryRecordSche
 
 /** A paged list envelope's record count (`/exclusions/paged`, `/importlistexclusion/paged`). */
 export const arrPagedCountSchema = z.object({ totalRecords: z.number().int() });
+
+/**
+ * ADR-097 / DESIGN-052 D-27 — one import-list exclusion, normalized across the two *arrs: Radarr 6.4.4's
+ * `ImportListExclusionResource` (`/api/v3/exclusions`: `{id, tmdbId, movieTitle, movieYear}`) and Sonarr 4.0.20's
+ * (`/api/v3/importlistexclusion`: `{id, tvdbId, title}`). An exclusion stops the *arr's own import lists and Kometa from
+ * adding the title; a person's request (Seerr, `POST /movie` / `POST /series`) is not checked against it.
+ */
+export interface ArrImportListExclusion {
+  id: number;
+  tmdbId: number | null;
+  tvdbId: number | null;
+  title: string | null;
+  year: number | null;
+}
+
+/** Radarr's exclusion resource (`GET /exclusions/paged` records, the `POST /exclusions` answer). */
+export const radarrImportListExclusionSchema = z
+  .object({
+    id: z.number().int(),
+    tmdbId: z.number().int(),
+    movieTitle: z.string().nullish(),
+    movieYear: z.number().int().nullish(),
+  })
+  .transform(
+    (e): ArrImportListExclusion => ({
+      id: e.id,
+      tmdbId: e.tmdbId,
+      tvdbId: null,
+      title: e.movieTitle ?? null,
+      year: e.movieYear ?? null,
+    }),
+  );
+
+/** Sonarr's exclusion resource (`GET /importlistexclusion/paged` records, the `POST /importlistexclusion` answer). */
+export const sonarrImportListExclusionSchema = z
+  .object({
+    id: z.number().int(),
+    tvdbId: z.number().int(),
+    title: z.string().nullish(),
+  })
+  .transform(
+    (e): ArrImportListExclusion => ({
+      id: e.id,
+      tmdbId: null,
+      tvdbId: e.tvdbId,
+      title: e.title ?? null,
+      year: null,
+    }),
+  );
+
+/** A paged exclusion envelope (`{page, pageSize, totalRecords, records}`), the records parsed by `record`. */
+export const arrPagedExclusionsSchema = <T extends z.ZodTypeAny>(record: T) =>
+  z.object({ totalRecords: z.number().int(), records: z.array(record) });
 
 /** DESIGN-052 D-17 — a Seerr user's two watchlist sync flags (`GET /api/v1/user/{id}/settings/main`). */
 export const seerrUserWatchlistSyncSchema = z
