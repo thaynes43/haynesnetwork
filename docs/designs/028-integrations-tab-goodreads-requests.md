@@ -385,7 +385,11 @@ cannot share the in-memory coverage map above. They share `book_requests.last_se
   Search never skips — the caller asked for the search now. A skip is logged as `ll_search_skipped_covered`.
   In the collection force-search the rows a recent search covered are stamped (the cooldown settles them)
   but **not audited and not counted as `searched`** — nothing was asked of LL by that pass — and are
-  reported as `skippedRecent`.
+  reported as `skippedRecent`. That cooldown stamp is also read as search recency, so one chained skip can
+  extend the same-hour window to at most about two hours after the last real `searchBook` (bounded, one link
+  only: the pairing and goodreads legs stamp only rows they actually searched). It errs toward fewer
+  indexer hits, which is the safe direction, and the stamp cannot be separated from the cooldown without a
+  new column.
 - **`format-pairing`** also shares a per-run, per-format coverage map between the mint push and the Skipped
   sweep (one search per book and format per run, including two wants that reuse one `llBookId`; a second
   want flipping the OTHER format is still searched).
