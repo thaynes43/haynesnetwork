@@ -81,6 +81,25 @@ import {
   type WallTapContext,
 } from '@/lib/trash-batches';
 
+type TrpcUtils = ReturnType<typeof trpc.useUtils>;
+
+/**
+ * Refetch the batch reads AFTER a mutation, even when a first read is still in flight (issue #654).
+ * TanStack Query dedupes `invalidate()` into a fetch that is already running when the query has no data yet,
+ * and the tab shows Green-light from the batch LIST before the batch DETAIL (`trash.batches.get`) has landed.
+ * An admin who clicked fast therefore got the detail read taken BEFORE the mutation committed, with no refetch
+ * behind it, and that stale detail (still "Admin review") outranked the fresh list until a reload. Cancelling
+ * the in-flight reads first makes the invalidate start a fresh one that sees the committed state.
+ */
+async function refreshBatches(utils: TrpcUtils): Promise<void> {
+  await Promise.all([
+    utils.trash.batches.list.cancel(),
+    utils.trash.batches.get.cancel(),
+    utils.trash.batches.saveStats.cancel(),
+  ]);
+  await utils.trash.batches.invalidate();
+}
+
 // ── wire-shape aliases (structural mirrors of the D-05 contracts; the client never imports
 //    server packages — same pattern as trash-client.tsx) ─────────────────────────────────
 interface BatchCountsWire {
@@ -355,9 +374,7 @@ function PosterWall({
       request.then(
         (res) => {
           setTaps((t) => confirmWallTap(t, item.id, res.state));
-          void utils.trash.batches.get.invalidate({ batchId });
-          void utils.trash.batches.list.invalidate();
-          void utils.trash.batches.saveStats.invalidate({ batchId });
+          void refreshBatches(utils);
         },
         // Nothing to roll back: the tile never left its confirmed state. Mark it and say so.
         (err: unknown) =>
@@ -489,7 +506,7 @@ function GreenlightModal({
   const greenlight = trpc.trash.batches.greenlight.useMutation({
     onSuccess: () => {
       setError(null);
-      void utils.trash.batches.invalidate();
+      void refreshBatches(utils);
       onClose();
     },
     onError: (err: unknown) => setError(describeMutationError(err)),
@@ -612,7 +629,7 @@ function ExpireModal({
     onError: (err: unknown) => {
       // Always refetch — a partial/failed run can leave the batch counts stale (same F3
       // discipline as the Expedite modal).
-      void utils.trash.batches.invalidate();
+      void refreshBatches(utils);
       if (appCodeOf(err) === 'MAINTAINERR_UNSAFE') setStale(true);
       else setError(describeMutationError(err));
     },
@@ -622,7 +639,7 @@ function ExpireModal({
     if (expire.isPending) return;
     // Now reconcile: a completed sweep flips the batch terminal ⇒ the tab returns to the pending
     // wall + the Past-batches strip (where the final report re-opens).
-    if (result !== null) void utils.trash.batches.invalidate();
+    if (result !== null) void refreshBatches(utils);
     onClose();
   };
 
@@ -838,7 +855,7 @@ function StartBatchModal({
   const create = trpc.trash.batches.create.useMutation({
     onSuccess: () => {
       setError(null);
-      void utils.trash.batches.invalidate();
+      void refreshBatches(utils);
       onClose();
     },
     onError: (err: unknown) => setError(describeMutationError(err)),
@@ -1159,7 +1176,7 @@ function LifecycleView({
     try {
       await cancel.mutateAsync({ batchId: batch.id });
       setActionError(null);
-      void utils.trash.batches.invalidate();
+      void refreshBatches(utils);
       return 'ok';
     } catch (err) {
       setActionError(describeMutationError(err));

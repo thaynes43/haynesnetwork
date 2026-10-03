@@ -78,8 +78,14 @@ export interface ClassifiableQueueItem {
   statusMessages?: Array<{ title?: string | null; messages?: (string | null)[] | null }> | null;
 }
 
+/**
+ * The classifier's verdict classes: the Action Classes the ledger stores, plus `waiting` (D-25), which is not one.
+ * A `waiting` item is never acted on, never reported as `unknown` and never gets a ledger row.
+ */
+export type QueueCleanupVerdictClass = QueueCleanupActionClass | 'waiting';
+
 export interface QueueCleanupClassification {
-  class: QueueCleanupActionClass;
+  class: QueueCleanupVerdictClass;
   /** The MESSAGE that drove the class (≤500 chars), or the most informative message for the unknown fallback.
    *  Never a statusMessage title that only names the release or a file (D-10). */
   reason: string | null;
@@ -225,7 +231,7 @@ function collectMessages(item: ClassifiableQueueItem): QueueItemMessages {
 
 /**
  * Classify one queue item into exactly one Action Class (D-03, FIRST-MATCH order: have_better → bad_release →
- * retry_import → manual_match → unknown). Pure. Patterns read MESSAGES, never a statusMessage title that names
+ * retry_import → manual_match → waiting (D-25, not a ledger class) → unknown). Pure. Patterns read MESSAGES, never a statusMessage title that names
  * the release or a file; release-defect patterns read only the release-level ones; a have_better match that
  * also carries an identity mismatch goes to `unknown` (all D-10). Lidarr's match rejections ("Album match is not
  * close enough…", "Has missing tracks", "Couldn't find similar album…") are `manual_match` (D-12, Q-01), which
@@ -284,7 +290,12 @@ export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClas
   //    Lidarr's manual_match cell is enforced (D-13).
   if (manualMatch) return { class: 'manual_match', reason: truncate(manualMatch), confidence: 'high' };
 
-  // 5. unknown — everything else. Reported, never acted on.
+  // 5. waiting (D-25) — a release the *arr is holding back on purpose: its delay profile has not run out, so
+  //    it sits in the queue as `status: delay` with nothing downloaded and nothing wrong. Benign, so it is
+  //    neither acted on nor counted as unknown. Checked LAST, so it can never mask an actionable class.
+  if (status === 'delay') return { class: 'waiting', reason: null, confidence: 'high' };
+
+  // 6. unknown — everything else. Reported, never acted on.
   return { class: 'unknown', reason: bestMessage ? truncate(bestMessage) : null, confidence: 'low' };
 }
 
@@ -1048,6 +1059,9 @@ export interface QueueCleanupInstanceReport {
   covered: number;
   /** *arr write failures (outcome:'error'), one per failed call, not per record. */
   errors: number;
+  /** D-25: queue records held by the *arr's delay profile (`status: delay`), left out of the census: no row, no
+   *  class, not unknown. Absent on a suite source. */
+  waiting?: number;
   byClass: Record<QueueCleanupActionClass, { observed: number; enforced: number }>;
   readError?: string;
 }
@@ -2126,6 +2140,7 @@ export async function evaluateQueueCleanup(input: {
       actionsTaken: 0,
       covered: 0,
       errors: 0,
+      waiting: 0,
       byClass: emptyByClass(),
     };
 
@@ -2141,8 +2156,16 @@ export async function evaluateQueueCleanup(input: {
     }
 
     let items: QueueCleanupQueueItem[];
+    // D-25: the records the *arr holds on its delay profile. Out of the census, but still IN the queue: the
+    // failed-download retry must see them (a held replacement means the title is already being re-grabbed).
+    let waiting: QueueCleanupQueueItem[] = [];
     try {
-      items = await client.getQueueAll();
+      const queue = await client.getQueueAll();
+      // D-25: a record the *arr is holding on its delay profile is benign, so it leaves the census whole: no verdict,
+      // no row, no group, no count under any class (and so never `unknown`). Only its count survives, below.
+      waiting = queue.filter((qi) => classifyQueueItem(qi).class === 'waiting');
+      items = queue.filter((qi) => !waiting.includes(qi));
+      report.waiting = waiting.length;
     } catch (err) {
       report.readError = errMsg(err);
       input.logger?.warn?.('queue-cleanup: queue read failed', { instance, error: report.readError });
@@ -2157,6 +2180,7 @@ export async function evaluateQueueCleanup(input: {
     const priorRuns = new Map<string, Promise<number>>();
     for (const item of items) {
       const classified = classifyQueueItem(item);
+      if (classified.class === 'waiting') continue; // already left out at the read (D-25); narrows the type
       let actionClass: QueueCleanupActionClass = classified.class;
 
       // Escalation: a download still retry_import after `retryEscalateRuns` prior runs → bad_release handling.
@@ -2473,6 +2497,7 @@ export async function evaluateQueueCleanup(input: {
                     (r.outcome === 'done' || r.outcome === 'error')));
               return !removed;
             })
+            .concat(waiting)
             .map((i) => ({ downloadId: i.downloadId, targetId: i.targetId ?? null })),
           searchedTargets,
           logger: input.logger,
@@ -2558,6 +2583,7 @@ export async function evaluateQueueCleanup(input: {
     input.logger?.info?.('queue-cleanup evaluated', {
       instance,
       observed: report.itemsObserved,
+      waiting: report.waiting,
       actionsTaken,
       covered: report.covered,
       errors: report.errors,
