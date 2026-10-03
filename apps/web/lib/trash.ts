@@ -730,7 +730,8 @@ export type TrashKeepReasonName =
   | 'unevaluable'
   | 'not_in_pool'
   | 'live_excluded'
-  | 'release_unrecorded';
+  | 'release_unrecorded'
+  | 'recently_added';
 
 /** The batch wall's kept-tile tooltip, per keep reason (D-10). `tag` and `live_excluded` are both a Save. */
 export const KEPT_REASON_TOOLTIPS: Record<TrashKeepReasonName, string> = {
@@ -741,6 +742,8 @@ export const KEPT_REASON_TOOLTIPS: Record<TrashKeepReasonName, string> = {
   live_excluded: 'Kept: saved',
   tag: 'Kept: saved',
   release_unrecorded: "Kept: couldn't be removed safely",
+  // DESIGN-052 D-26 — the Age Guard: downloaded, upgraded or added to a server in the last 180 days.
+  recently_added: 'Kept: added or upgraded recently',
 };
 
 /** The kept tooltip for a skipped row's reason; null for a row with no recorded reason (swept before 0081). */

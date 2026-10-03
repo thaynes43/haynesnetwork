@@ -15,6 +15,8 @@ export interface PlexMatchInput {
   plexLibraryId: string;
   ratingKey: string;
   matchedVia: PlexMatchGuidSource;
+  /** DESIGN-052 D-26 — the title's Plex `addedAt` in this library; null when Plex omits it (absent ⇒ null). */
+  plexAddedAt?: Date | null;
 }
 
 export interface SyncPlexMatchesInput {
@@ -49,6 +51,7 @@ export async function syncPlexMatches(input: SyncPlexMatchesInput): Promise<Sync
     plexLibraryId: m.plexLibraryId,
     ratingKey: m.ratingKey,
     matchedVia: m.matchedVia,
+    plexAddedAt: m.plexAddedAt ?? null,
     firstSeenAt: runStart,
     lastSeenAt: runStart,
     updatedAt: runStart,
@@ -67,6 +70,8 @@ export async function syncPlexMatches(input: SyncPlexMatchesInput): Promise<Sync
           set: {
             ratingKey: sql`excluded.rating_key`,
             matchedVia: sql`excluded.matched_via`,
+            // DESIGN-052 D-26 — re-stamped every run: a re-keyed title (a replaced file) carries its new date added.
+            plexAddedAt: sql`excluded.plex_added_at`,
             lastSeenAt: sql`excluded.last_seen_at`,
             updatedAt: sql`excluded.updated_at`,
             // firstSeenAt / createdAt keep their original values (not in the set).

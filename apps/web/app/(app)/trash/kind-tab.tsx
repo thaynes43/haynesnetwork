@@ -140,6 +140,8 @@ interface PendingCandidate {
   protectedByTag: boolean;
   /** ADR-093 / DESIGN-052 D-08 — a targeted batch leaves a watchlisted candidate out. */
   onWatchlist?: boolean;
+  /** DESIGN-052 D-26 — inside the Age Guard's 180 days: no batch takes it. Absent ⇒ false (older server). */
+  recentlyAdded?: boolean;
 }
 
 interface SafetyLike {
@@ -1479,6 +1481,7 @@ export function KindTab({
     tmdbRating: p.tmdbRating,
     protectedByTag: p.protectedByTag,
     onWatchlist: p.onWatchlist === true,
+    recentlyAdded: p.recentlyAdded === true,
   }));
 
   const kindNoun = kind === 'movie' ? 'movie' : 'TV';

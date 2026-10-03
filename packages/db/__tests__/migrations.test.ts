@@ -3311,4 +3311,15 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(sqlText).toContain("'sonarr','radarr','lidarr','lazylibrarian','kapowarr'");
     expect(sqlText).toContain('ALTER COLUMN "queue_item_id" DROP NOT NULL');
   });
+
+  // DESIGN-052 D-26 gate — the Trash Age Guard migration is journaled (idx 85), after 0085.
+  it('lists 0086_trash_age_guard at idx 85, strictly after 0085_janitor_suite_sources', () => {
+    const entry = journal.entries.find((e) => e.tag === '0086_trash_age_guard');
+    const prev = journal.entries.find((e) => e.tag === '0085_janitor_suite_sources');
+    expect(entry?.idx).toBe(85);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0086_trash_age_guard.sql'), 'utf8');
+    expect(sqlText).toContain('ADD COLUMN "plex_added_at" timestamp with time zone');
+    expect(sqlText).toContain("'release_unrecorded','recently_added'");
+  });
 });

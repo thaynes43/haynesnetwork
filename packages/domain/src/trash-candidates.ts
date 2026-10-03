@@ -576,6 +576,8 @@ export interface TrashPendingCandidate {
   /** ADR-093 / DESIGN-052 D-08 — on a watchlist (the newest ok registry run): a targeted batch leaves it out, so the
    *  Start-a-batch preview does too. */
   onWatchlist: boolean;
+  /** DESIGN-052 D-26 — inside the Age Guard's 180 days: no batch takes it, so the preview leaves it out too. */
+  recentlyAdded: boolean;
 }
 
 /**
@@ -614,6 +616,7 @@ export async function listTrashPendingCandidates(input: {
       tmdbRating: i.tmdbRating,
       protectedByTag: i.protectedByTag,
       onWatchlist: i.onWatchlist,
+      recentlyAdded: i.ageGuard === 'recent',
     }));
   return {
     candidates,

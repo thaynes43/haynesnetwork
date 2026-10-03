@@ -38,6 +38,7 @@ import { guardMaintainerrCall, type MaintainerrClientBundle } from './maintainer
 import { executeRestore, type ExecuteArrAddResult } from './restore-flow';
 import { openSaveIntent, revokeSaveIntent } from './trash-save-intents';
 import { consoleDomainLogger, type DomainLogger } from './domain-logger';
+import { judgeAge, loadAgeEvidence, type TrashAgeGuard } from './trash-age-guard';
 import {
   evaluateRegistryGate,
   evaluateWatchlist,
@@ -389,6 +390,14 @@ export interface TrashPendingItem {
   onWatchlist: boolean;
   /** D-06 — whether the snapshot could decide `onWatchlist` for this item at all; false ⇒ kept `unevaluable`. */
   watchlistEvaluable: boolean;
+  /**
+   * DESIGN-052 D-26 — the Age Guard: `recent` when the newest of its last download import (new or upgrade) and its
+   * date added on every Plex server holding it is inside 180 days (never proposed, kept `recently_added` at the
+   * sweep); `unknown` when that cannot be told (kept `unevaluable` at the sweep); `clear` otherwise.
+   */
+  ageGuard: TrashAgeGuard;
+  /** D-26 — that newest date (ISO), null when there is none. */
+  newestAddedAt: string | null;
 }
 
 export interface TrashPendingResult {
@@ -615,10 +624,18 @@ export async function shapePendingItems(input: {
     }
   }
 
+  // DESIGN-052 D-26 — the Age Guard's evidence for every joined ledger item (two grouped reads).
+  const ageEvidence = await loadAgeEvidence({
+    db: input.db,
+    arrKind,
+    mediaItemIds: [...byExtId.values()].map((j) => j.mediaItemId),
+  });
+
   let totalSizeBytes = 0;
   const items: TrashPendingItem[] = forMedia.map((f) => {
     const ext = input.media === 'movie' ? f.tmdbId : f.tvdbId;
     const joined = ext !== null ? byExtId.get(ext) : undefined;
+    const age = judgeAge(joined ? ageEvidence.get(joined.mediaItemId) : undefined, now);
     totalSizeBytes += f.sizeBytes;
     const arrTags = joined?.arrTags ?? [];
     const lastViewed = joined?.lastViewedAt ?? null;
@@ -663,6 +680,8 @@ export async function shapePendingItems(input: {
       ruleEvaluationFailed: f.ruleEvaluationFailed,
       onWatchlist: watch.onWatchlist,
       watchlistEvaluable: watch.watchlistEvaluable,
+      ageGuard: age.ageGuard,
+      newestAddedAt: age.newestAddedAt,
     };
   });
 
