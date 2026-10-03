@@ -163,14 +163,20 @@ export function gbResolveTitleMatches(queryTitle: string, resolvedTitle: string 
  * tokens and resolves to the whole bundle. That bundle id then became the want's LL `addBook` key and LL
  * hunted a 7-book duplicate of books already owned individually (Odd Interlude #1/#2), and a want for
  * "Dean R Koontz - Winter Moon" was pinned to a junk compilation row. Two signals, either rejects:
- *   - a packaging marker in the volume's title/subtitle (bundle, omnibus, box/boxed set, collection,
- *     trilogy, compendium, starter pack, "N-Book"), or
+ *   - a packaging marker: bundle, omnibus, box/boxed set, compendium, starter pack or "N-Book" in the title
+ *     or subtitle, or "collection"/"trilogy" in the TITLE only (a single novel's subtitle often reads "The
+ *     Grisha Trilogy, Book 1"), or
  *   - a contents-list subtitle (a `;`, or four-plus comma-separated parts),
  * unless the QUERY itself carries the same signal (a wanted "Complete Collection" boxed set resolves to a
  * boxed set — that is the ask). Null (an honest gap) is strictly better than the wrong volume.
  */
-const OMNIBUS_MARKER =
-  /\b(bundle|omnibus|box(?:ed)? ?set|collection|trilogy|compendium|starter pack|\d+[- ]books?|(?:two|three|four|five|six|seven|eight|nine|ten)[- ]books?)\b/i;
+// STRONG markers name a packaged set wherever they appear (title or subtitle). WEAK markers ("trilogy",
+// "collection") also appear in the subtitle of an ordinary single book ("The Grisha Trilogy, Book 1",
+// "A Collection of Stories"), so they count only in the TITLE.
+const OMNIBUS_STRONG =
+  /\b(bundle|omnibus|box(?:ed)? ?set|compendium|starter pack|\d+[- ]books?|(?:two|three|four|five|six|seven|eight|nine|ten)[- ]books?)\b/i;
+const OMNIBUS_WEAK = /\b(collection|trilogy)\b/i;
+const anyMarker = (s: string): boolean => OMNIBUS_STRONG.test(s) || OMNIBUS_WEAK.test(s);
 
 function hasContentsList(text: string): boolean {
   return text.includes(';') || text.split(',').length >= 4;
@@ -180,10 +186,14 @@ export function gbIsOmnibusVolume(
   volume: { title?: string | undefined; subtitle?: string | undefined },
   ...queryTitles: ReadonlyArray<string>
 ): boolean {
-  const query = queryTitles.join(' ');
+  // The query side is tested PER title (callers pass the raw and the de-noised title, usually the same text
+  // twice) - joining them would double the commas and fake a contents list.
+  const queryAsksForSet = queryTitles.some(anyMarker);
   const volumeText = [volume.title, volume.subtitle].filter(Boolean).join(' ');
-  if (OMNIBUS_MARKER.test(volumeText) && !OMNIBUS_MARKER.test(query)) return true;
-  if (volume.subtitle && hasContentsList(volume.subtitle) && !hasContentsList(query)) return true;
+  if (!queryAsksForSet && (OMNIBUS_STRONG.test(volumeText) || OMNIBUS_WEAK.test(volume.title ?? ''))) {
+    return true;
+  }
+  if (volume.subtitle && hasContentsList(volume.subtitle) && !queryTitles.some(hasContentsList)) return true;
   return false;
 }
 

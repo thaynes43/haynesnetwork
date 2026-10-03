@@ -479,6 +479,14 @@ describe('gbIsOmnibusVolume (the 2026-10-03 bundle-resolve guard)', () => {
     expect(gbIsOmnibusVolume({ title: 'Red Queen Box Set' }, 'Red Queen Box Set')).toBe(false);
   });
 
+  it('keeps single books whose subtitle carries series positioning; tests the query per title', () => {
+    expect(gbIsOmnibusVolume({ title: 'Shadow and Bone', subtitle: 'The Grisha Trilogy, Book 1' }, 'Shadow and Bone')).toBe(false);
+    expect(gbIsOmnibusVolume({ title: 'Night Shift', subtitle: 'A Collection of Stories' }, 'Night Shift')).toBe(false);
+    // Two commas in the query must not double into a fake contents list when passed twice.
+    expect(gbIsOmnibusVolume({ title: 'Eat, Pray, Love', subtitle: 'Eat, Pray, Love; Committed' }, 'Eat, Pray, Love', 'Eat, Pray, Love')).toBe(true);
+    expect(gbIsOmnibusVolume({ title: 'The Silo Series Collection' }, 'Wool')).toBe(true);
+  });
+
   it('leaves ordinary single works and normal subtitles alone', () => {
     expect(gbIsOmnibusVolume({ title: 'Hooked', subtitle: 'How to Build Habit-Forming Products' }, 'Hooked')).toBe(false);
     expect(gbIsOmnibusVolume({ title: 'Three Kings', subtitle: 'A Wild Cards Mosaic Novel (Book Two of the British Arc)' }, 'Three Kings')).toBe(false);

@@ -408,8 +408,9 @@ subtitle "Winter Moon; Icebound", and Libretto's resolve broker shares the same 
 
 **The guard.** `gbIsOmnibusVolume` (`@hnet/goodreads`) runs in the TITLE leg of `resolveVolume` only (an
 exact ISBN hit is never second-guessed) and returns null (an honest gap, retried next sync) when the resolved
-volume carries a packaging marker (bundle, omnibus, box/boxed set, collection, trilogy, compendium, starter
-pack, "N-Book") or a contents-list subtitle (a `;`, or four or more comma-separated parts), **unless the query
+volume carries a packaging marker (bundle, omnibus, box/boxed set, compendium, starter
+pack or "N-Book" in the title or subtitle; "collection" or "trilogy" in the title only, because a single
+novel's subtitle often reads "The Grisha Trilogy, Book 1") or a contents-list subtitle (a `;`, or four or more comma-separated parts), **unless the query
 itself carries the same signal** — a want for a "Complete Collection" boxed set must still resolve to one.
 Libretto's resolve broker got the identical guard in its own repo.
 
