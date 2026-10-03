@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.105.0](https://github.com/thaynes43/haynesnetwork/compare/v0.104.1...v0.105.0) (2026-10-03)
+
+
+### Features
+
+* exclude Trash-deleted titles from automation (ADR-097) ([#643](https://github.com/thaynes43/haynesnetwork/issues/643)) ([440634a](https://github.com/thaynes43/haynesnetwork/commit/440634a14c24f1148611d350c185b6a880a70ff1))
+
+
+### Bug Fixes
+
+* format-pairing searches once per book, and jobs share search coverage ([#649](https://github.com/thaynes43/haynesnetwork/issues/649)) ([b638205](https://github.com/thaynes43/haynesnetwork/commit/b63820596fb6459a429a0439fb0225cbb655ccec))
+* **janitor:** one search budget per title (two tries in any 30 days); the janitor retries failed Sonarr/Radarr downloads once (ADR-098) ([#647](https://github.com/thaynes43/haynesnetwork/issues/647)) ([8df6f8d](https://github.com/thaynes43/haynesnetwork/commit/8df6f8d90d64273cfe43e958f4157009eba9cd9c))
+* one LazyLibrarian searchBook per book per run (searchBook ignores type) ([#648](https://github.com/thaynes43/haynesnetwork/issues/648)) ([8e09dcc](https://github.com/thaynes43/haynesnetwork/commit/8e09dcc025984493244a86152bb3a832d848af99)), closes [#644](https://github.com/thaynes43/haynesnetwork/issues/644)
+* **sync:** attach *arr history that was ingested before its title row ([#640](https://github.com/thaynes43/haynesnetwork/issues/640)) ([c363e67](https://github.com/thaynes43/haynesnetwork/commit/c363e67218a3f4f3a0850e5b35474631f663de6e))
+* **test:** startPostgres no longer hangs when a boot loses the port race ([#634](https://github.com/thaynes43/haynesnetwork/issues/634)) ([272a9a7](https://github.com/thaynes43/haynesnetwork/commit/272a9a7ac22fd8ae2078a3f7f0945ce3d812c0c7))
+* **trash:** Age Guard keeps anything downloaded, upgraded or added in 180 days ([#641](https://github.com/thaynes43/haynesnetwork/issues/641)) ([2878e5b](https://github.com/thaynes43/haynesnetwork/commit/2878e5b4fb70d6b04207ecbc7d60e70d8b10a915))
+* **trash:** show a wall save only after the server confirms it ([#645](https://github.com/thaynes43/haynesnetwork/issues/645)) ([c19263c](https://github.com/thaynes43/haynesnetwork/commit/c19263cdc10021e5e64c5b537fbf5026a09e6558))
+
+
+### Documentation
+
+* **agents:** [#631](https://github.com/thaynes43/haynesnetwork/issues/631) close-out record (LL eBook rows, multi-release audiobooks, Midnight Sun) ([#638](https://github.com/thaynes43/haynesnetwork/issues/638)) ([103a892](https://github.com/thaynes43/haynesnetwork/commit/103a892d0d927f79c89601fe1ba16109608c4ab2))
+* **agents:** HANDOFF — janitor L2 + suite-wide, LazyLibrarian repair ([#636](https://github.com/thaynes43/haynesnetwork/issues/636)) ([59423f4](https://github.com/thaynes43/haynesnetwork/commit/59423f40e9dc4717bccb1a54f8026c1256bf6229))
+* **agents:** LazyLibrarian scan bug fixed at the source, [#631](https://github.com/thaynes43/haynesnetwork/issues/631) damage repaired ([#635](https://github.com/thaynes43/haynesnetwork/issues/635)) ([075d7f0](https://github.com/thaynes43/haynesnetwork/commit/075d7f0a066b660e7cfbdec31e374b59d67b1d98))
+* **agents:** LL library audit, wrong-book files across every held book ([#632](https://github.com/thaynes43/haynesnetwork/issues/632)) ([a12884c](https://github.com/thaynes43/haynesnetwork/commit/a12884ce1a2b0751c572fd07bb54b61c92a22683))
+
 ## [0.104.1](https://github.com/thaynes43/haynesnetwork/compare/v0.104.0...v0.104.1) (2026-09-29)
 
 
