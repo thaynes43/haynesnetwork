@@ -50,6 +50,9 @@ export interface GuardianPreviewInput {
   watchlistEvaluable: boolean;
   /** D-09 — Maintainerr flagged the item's rule data as unavailable: the server keeps it. */
   ruleEvaluationFailed: boolean;
+  /** DESIGN-052 D-26 / Q-14 — the Age Guard verdict: `recent` is kept (added or upgraded recently), `unknown` cannot be
+   *  checked (kept, skipped). Absent ⇒ `clear` (an older server). */
+  ageGuard?: 'recent' | 'clear' | 'unknown';
 }
 
 /**
@@ -76,6 +79,7 @@ export type GuardianPreview =
   | 'protected_tag'
   | 'protected_watched'
   | 'protected_watchlist'
+  | 'protected_recent'
   | 'unverifiable';
 
 export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
@@ -85,9 +89,16 @@ export function previewGuardian(item: GuardianPreviewInput): GuardianPreview {
   if (item.recentlyWatched) return 'protected_watched';
   // ADR-093 C-03 — the Watchlist Keep: on anybody's read watchlist ⇒ kept (never auto-saved).
   if (item.onWatchlist) return 'protected_watchlist';
-  // Fail closed: unknown to our ledger, watchlist status not evaluable, or Maintainerr's rule data unavailable ⇒
-  // kept (skipped).
-  if (item.mediaItemId === null || item.watchlistEvaluable !== true || item.ruleEvaluationFailed) {
+  // DESIGN-052 D-26 / Q-14 — the Age Guard: added or upgraded recently ⇒ kept (never auto-saved).
+  if (item.ageGuard === 'recent') return 'protected_recent';
+  // Fail closed: unknown to our ledger, watchlist status not evaluable, Maintainerr's rule data unavailable, or the
+  // title's dates not readable yet ⇒ kept (skipped).
+  if (
+    item.mediaItemId === null ||
+    item.watchlistEvaluable !== true ||
+    item.ruleEvaluationFailed ||
+    item.ageGuard === 'unknown'
+  ) {
     return 'unverifiable';
   }
   return 'deletable';
@@ -102,6 +113,7 @@ export function unverifiableReason(item: GuardianPreviewInput): string {
   if (item.maintainerrMediaId === null || item.mediaItemId === null) return "it isn't in our ledger";
   if (item.watchlistEvaluable !== true) return "its watchlists can't be checked right now";
   if (item.ruleEvaluationFailed) return "Maintainerr couldn't check its rules";
+  if (item.ageGuard === 'unknown') return "its dates can't be checked right now";
   return "it can't be checked right now";
 }
 
@@ -110,23 +122,26 @@ export function unverifiableReason(item: GuardianPreviewInput): string {
  * Watchlist Keep), not Maintainerr, and a request is no keep (informational since 2026-07-09), so the line never says
  * "Maintainerr keeps" or "requested".
  */
-export const EXPEDITE_PROTECTED_REASON = 'recently watched, whitelisted, or on a watchlist; they are kept.';
+export const EXPEDITE_PROTECTED_REASON =
+  'recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.';
 
 /** D-25by — the Expedite-all confirm's line for the unverifiable count (every cause, one sentence). */
 export const EXPEDITE_UNVERIFIABLE_REASON =
-  "not in our ledger, their watchlists can't be checked right now, or Maintainerr couldn't check their rules, so they are skipped, never deleted.";
+  "not in our ledger, their watchlists or dates can't be checked right now, or Maintainerr couldn't check their rules, so they are skipped, never deleted.";
 
 export interface ExpeditePartition {
   /** Items the server will hand to Maintainerr's per-item delete handler. */
   deletable: number;
   /** Bytes freed by the deletable set (the honest "space reclaimed NOW" figure). */
   deletableBytes: number;
-  /** Items the guardian keeps deliberately (tag / watched / on a watchlist). */
+  /** Items the guardian keeps deliberately (tag / watched / on a watchlist / added or upgraded recently). */
   protected: number;
   /** Items kept because they can't be verified safe — the server's skippedCount. */
   unverifiable: number;
   /** ADR-093 D-10 — how many of `protected` are on a watchlist (a subset, for the confirm's breakdown). */
   watchlisted: number;
+  /** DESIGN-052 D-26 / Q-14 — how many of `protected` the Age Guard keeps (a subset, for the confirm's breakdown). */
+  recentlyAdded: number;
 }
 
 /** Partition a pending set the way expediteDeletion scope 'all' will (preview for the Modal). */
@@ -139,6 +154,7 @@ export function partitionForExpedite(
     protected: 0,
     unverifiable: 0,
     watchlisted: 0,
+    recentlyAdded: 0,
   };
   for (const item of items) {
     const verdict = previewGuardian(item);
@@ -150,6 +166,7 @@ export function partitionForExpedite(
     } else {
       out.protected += 1;
       if (verdict === 'protected_watchlist') out.watchlisted += 1;
+      if (verdict === 'protected_recent') out.recentlyAdded += 1;
     }
   }
   return out;
@@ -204,7 +221,7 @@ export function expediteErrorAction(
  * the watch fact rides the meta line (see `watchNote`). Slating a recently-watched item stays honest
  * — the guardian still keeps it at the SWEEP (a sweep-time protection).
  */
-export type PendingWallGlyph = 'trash' | 'shield' | 'check';
+export type PendingWallGlyph = 'trash' | 'shield' | 'check' | 'skip';
 
 export function pendingWallGlyph(
   item: {
@@ -212,6 +229,8 @@ export function pendingWallGlyph(
     protectedByExclusion: boolean;
     recentlyWatched: boolean;
     requesters: readonly string[];
+    onWatchlist?: boolean;
+    ageGuard?: 'recent' | 'clear' | 'unknown';
   },
   override: 'saved' | 'unsaved' | undefined,
 ): PendingWallGlyph {
@@ -232,6 +251,9 @@ export function pendingWallGlyph(
   // slated `trash` until protected. `recentlyWatched` produces no corner glyph either (the corner
   // is the action; the watch fact rides the meta line).
   if (override !== 'unsaved' && item.protectedByExclusion) return 'check';
+  // DESIGN-052 D-26 / Q-14 — a title the Age Guard keeps is never offered for deletion: the inert `skip` (kept),
+  // as on the batch wall. A Save stays one tap away on its Library page.
+  if (recentlyAddedKeep(item)) return 'skip';
   return 'trash';
 }
 
@@ -695,6 +717,25 @@ export const WATCHLIST_NOTE_DETAIL = "On a watchlist. It won't be deleted while 
 /** The Expedite confirm's breakdown term for the watchlisted share of the protected count. */
 export const WATCHLIST_BREAKDOWN_TERM = 'on a watchlist';
 
+/** DESIGN-052 D-26 / Q-14 — the Expedite-all confirm's breakdown term for the Age Guard's share of `protected`. */
+export const RECENT_BREAKDOWN_TERM = 'added or upgraded recently';
+
+/**
+ * DESIGN-052 D-26 / Q-14 — the pending walls show a title the Age Guard keeps as the batch wall shows a kept row: the
+ * inert `skip` glyph with its "Kept: …" reason, never the slated trash can. Only when the Age Guard is the guardian's
+ * FIRST keep reason (classifyGuardian's order: tag, recently watched, watchlisted, recently added): a lapsed `dnd` tile
+ * stays tappable to re-save, and a recently watched or watchlisted tile keeps its own note, so the corner never
+ * contradicts the reason the sweep would record.
+ */
+export function recentlyAddedKeep(item: {
+  ageGuard?: 'recent' | 'clear' | 'unknown';
+  protectedByTag: boolean;
+  recentlyWatched: boolean;
+  onWatchlist?: boolean;
+}): boolean {
+  return item.ageGuard === 'recent' && !item.protectedByTag && !item.recentlyWatched && item.onWatchlist !== true;
+}
+
 /**
  * DESIGN-052 D-10 / D-25co — the Library item page's Trash notice text for a pending item. A saved item keeps the save
  * wording; a watchlisted one says the watchlist keeps it (the sweep and Expedite keep it while it stays listed, so
@@ -707,18 +748,28 @@ export function trashNoticeText(input: {
   onWatchlist: boolean;
   ruleTitle: string | null;
   sizeLabel: string;
-}): { meta: string; watchlistNote: string | null } {
+  /** DESIGN-052 D-26 / Q-14 — the Age Guard keeps it (downloaded, upgraded or added in the last 180 days). */
+  recentlyAdded?: boolean;
+}): { meta: string; watchlistNote: string | null; recentNote: string | null } {
   const rule = input.ruleTitle ?? 'deletion';
   const watchlistNote = input.onWatchlist ? WATCHLIST_NOTE_DETAIL : null;
+  // D-26 / Q-14 — the batch wall's kept reason, on its own line. Like the watchlist note it stays on a Save (the title
+  // is still new; unmounting the line on Save would reflow the panel, hard rule 9).
+  const recentNote = input.recentlyAdded === true ? KEPT_REASON_TOOLTIPS.recently_added : null;
   if (input.on) {
-    return { meta: 'Maintainerr will keep this item — un-saving puts it back under its deletion rules.', watchlistNote };
+    return {
+      meta: 'Maintainerr will keep this item — un-saving puts it back under its deletion rules.',
+      watchlistNote,
+      recentNote,
+    };
   }
-  if (input.onWatchlist) {
-    return { meta: `Maintainerr’s “${rule}” rule flagged it.`, watchlistNote };
+  if (input.onWatchlist || recentNote !== null) {
+    return { meta: `Maintainerr’s “${rule}” rule flagged it.`, watchlistNote, recentNote };
   }
   return {
     meta: `Maintainerr’s “${rule}” rule flagged it — deleting frees ${input.sizeLabel}. Save it to keep it.`,
     watchlistNote: null,
+    recentNote: null,
   };
 }
 

@@ -1166,7 +1166,7 @@ export async function removeExclusion(input: {
  * (surfaced as a wall meta badge), never an app-side overrule. See ADR-025/DESIGN-010/DESIGN-011
  * errata (2026-07-09).
  */
-export type GuardianKeepReason = 'tag' | 'recently_watched' | 'watchlisted' | 'unevaluable';
+export type GuardianKeepReason = 'tag' | 'recently_watched' | 'watchlisted' | 'recently_added' | 'unevaluable';
 export type GuardianVerdict = { keep: true; reason: GuardianKeepReason } | { keep: false };
 
 /** The three fields the guardian actually reads. A structural subset of `TrashPendingItem` (every
@@ -1180,6 +1180,7 @@ export type GuardianInput = Pick<
   | 'onWatchlist'
   | 'watchlistEvaluable'
   | 'ruleEvaluationFailed'
+  | 'ageGuard'
 >;
 
 /**
@@ -1196,10 +1197,19 @@ export function classifyGuardian(item: GuardianInput): GuardianVerdict {
   // ADR-093 C-03 / DESIGN-052 D-09 — the Watchlist Keep (T-263): on anybody's read watchlist ⇒ kept. Not a Save:
   // when the title leaves every watchlist it is deletable again.
   if (item.onWatchlist) return { keep: true, reason: 'watchlisted' };
+  // DESIGN-052 D-26 / Q-14 — the Age Guard: downloaded, upgraded or added to any Plex server in the last 180 days ⇒
+  // kept on every delete path (the sweep and both Expedite scopes). Not a Save: it lapses when the title ages out.
+  if (item.ageGuard === 'recent') return { keep: true, reason: 'recently_added' };
   // Fail closed: no ledger resolution ⇒ no watch data ⇒ we cannot confirm it is safe. Likewise an item whose
   // watchlist status cannot be evaluated (no verified snapshot, or no guid while a registry title of its kind is
-  // unmapped), and an item Maintainerr flags `ruleEvaluationFailed` (its own handler skips those).
-  if (item.mediaItemId === null || item.watchlistEvaluable !== true || item.ruleEvaluationFailed) {
+  // unmapped), an item Maintainerr flags `ruleEvaluationFailed` (its own handler skips those), and an item whose
+  // age cannot be told (a Plex match not dated yet, D-26).
+  if (
+    item.mediaItemId === null ||
+    item.watchlistEvaluable !== true ||
+    item.ruleEvaluationFailed ||
+    item.ageGuard === 'unknown'
+  ) {
     return { keep: true, reason: 'unevaluable' };
   }
   return { keep: false };
@@ -1226,6 +1236,7 @@ export type ExpediteVerdict =
   | 'protected_tag'
   | 'protected_watched'
   | 'protected_watchlist'
+  | 'protected_recent'
   | 'unverifiable';
 
 /**
@@ -1252,6 +1263,7 @@ export function classifyForExpedite(item: ExpediteVerdictInput): ExpediteVerdict
   if (verdict.reason === 'tag') return 'protected_tag';
   if (verdict.reason === 'recently_watched') return 'protected_watched';
   if (verdict.reason === 'watchlisted') return 'protected_watchlist';
+  if (verdict.reason === 'recently_added') return 'protected_recent';
   return 'unverifiable'; // 'unevaluable' — kept because it cannot be cleared, not whitelisted.
 }
 
@@ -1818,8 +1830,9 @@ export async function expediteDeletion(
         });
         return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
       }
-      if (verdict.reason === 'tag' || verdict.reason === 'watchlisted') {
-        // Already whitelisted, or on a watchlist (the Watchlist Keep — refused like a tagged item, never auto-saved).
+      if (verdict.reason === 'tag' || verdict.reason === 'watchlisted' || verdict.reason === 'recently_added') {
+        // Already whitelisted, on a watchlist (the Watchlist Keep) or inside the Age Guard (D-26): refused like a
+        // tagged item, never auto-saved.
         return { scope: 'item', protectedCount: 1, expeditedCount: 0, skippedCount: 0, stalePending: 0, expeditedIds: [], unrecordedCount: 0 };
       }
       // unevaluable — not deleted, not force-whitelisted.
@@ -1944,6 +1957,8 @@ export async function expediteDeletion(
         protectedCount += 1; // already whitelisted by the dnd tag.
       } else if (verdict.reason === 'watchlisted') {
         protectedCount += 1; // the Watchlist Keep — kept, never auto-saved (a watchlist is not a Save).
+      } else if (verdict.reason === 'recently_added') {
+        protectedCount += 1; // the Age Guard (D-26) — kept, never auto-saved (it lapses when the title ages out).
       } else {
         skippedCount += 1; // unevaluable — fail closed.
       }

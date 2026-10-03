@@ -27,6 +27,7 @@ import {
   STUB_MAINT_VANISHED_ID,
   type RecordedMaintainerrWrite,
 } from './support/stub-maintainerr';
+import { STUB_SERIES_TVDB_ID } from './support/stub-arr';
 
 const env = () => readRuntimeEnv();
 
@@ -107,7 +108,24 @@ function refreshWatchlists(): void {
   if (res.status !== 0) throw new Error(`watchlist-registry failed:\n${res.stdout}\n${res.stderr}`);
 }
 
-test.beforeAll(() => refreshWatchlists());
+/**
+ * DESIGN-052 D-26 / Q-14 — land a download import NOW on a title (the same writer the Fix specs use), so the Age Guard
+ * keeps it whatever ran before this spec. Breaking Prod (the TV pool's only title) is the spec's recently added title:
+ * an earlier spec's Fix re-downloads it anyway, so the spec states it rather than inherits it.
+ */
+function landRecentImport(target: string, source: 'sonarr' | 'radarr'): void {
+  const res = spawnSync(
+    join(process.cwd(), 'node_modules', '.bin', 'tsx'),
+    [join(process.cwd(), 'e2e', 'support', 'ingest-import.ts'), target, source],
+    { env: { ...process.env, ...env() }, encoding: 'utf8' },
+  );
+  if (res.status !== 0) throw new Error(`ingest-import failed:\n${res.stdout}\n${res.stderr}`);
+}
+
+test.beforeAll(() => {
+  refreshWatchlists();
+  landRecentImport(`tvdb:${STUB_SERIES_TVDB_ID}`, 'sonarr');
+});
 // ADR-093 / DESIGN-052 D-20 — leave no stub item "deleted" behind for a later spec (the stub *arr 404s those).
 test.afterAll(async ({ request }) => {
   await request.post(`${env().STUB_MAINTAINERR_URL}/_stub/reset`);
@@ -232,7 +250,9 @@ test.describe('trash — watchlist protection on the page (ADR-093)', () => {
       await expect(confirm).toContainText('0 will be deleted NOW');
       await expect(confirm).toContainText('3 protected');
       // D-25bk / D-25cy — the app keeps them (never "Maintainerr keeps"), and a request is no keep.
-      await expect(confirm).toContainText('3 protected: recently watched, whitelisted, or on a watchlist; they are kept.');
+      await expect(confirm).toContainText(
+        '3 protected: recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.',
+      );
       await expect(confirm).not.toContainText('Maintainerr keeps');
       await expect(confirm).not.toContainText('requested');
       await expect(page.getByTestId('trash-expedite-watchlisted')).toHaveText('1 on a watchlist');
@@ -395,23 +415,24 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const libHref = await runner.getByTestId('wall-lib-link').getAttribute('href');
     expect(libHref).toMatch(/\/library\/[0-9a-f-]{36}\?from=trash-movies$/);
 
-    // TV is a separate tab (never combined): Breaking Prod is REQUESTED. Requested is informational
-    // only now — it is the ordinary slated trash-can (tap ⇒ SAVE = add the exclusion), with the
-    // requester attribution on a meta-line info badge (person icon + "Requested by <name>" tooltip).
+    // TV is a separate tab (never combined): Breaking Prod is REQUESTED (informational only, a meta-line info badge)
+    // and was downloaded moments ago (the spec's beforeAll), so the Age Guard keeps it (DESIGN-052 D-26 / Q-14): the
+    // corner is the inert kept `skip` with the batch wall's reason, never the slated trash-can.
     await page.getByRole('tab', { name: 'TV' }).click();
     await expect(page).toHaveURL(/\/trash\?tab=tv$/);
     const tvTile = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
     await expect(tvTile).toHaveCount(1);
-    await expect(tvTile).toHaveAttribute('data-glyph', 'trash');
-    // Tappable: the toggle is a BUTTON (a save-toggle), not an inert span.
-    await expect(tvTile.locator('button[data-testid="trash-toggle"]')).toHaveCount(1);
-    await expect(tvTile.locator('span[data-testid="trash-toggle"]')).toHaveCount(0);
+    await expect(tvTile).toHaveAttribute('data-glyph', 'skip');
+    // Inert: the toggle is a span (state), not a save button.
+    await expect(tvTile.locator('span[data-testid="trash-toggle"]')).toHaveCount(1);
+    await expect(tvTile.locator('button[data-testid="trash-toggle"]')).toHaveCount(0);
     await expect(tvTile.getByTestId('wall-requested')).toHaveAttribute('title', /Requested by /);
-    // The toggle's aria-label is the save invitation; its tooltip (info) carries the requester line.
     await expect(tvTile.getByTestId('trash-toggle')).toHaveAttribute(
       'aria-label',
-      /slated to delete — tap to save it/,
+      'Breaking Prod. Kept: added or upgraded recently',
     );
+    // The tooltip leads with the kept reason (never a delete date) and still carries the requester line.
+    await expect(tvTile.getByTestId('trash-toggle')).toHaveAttribute('title', /^Kept: added or upgraded recently\n/);
     await expect(tvTile.getByTestId('trash-toggle')).toHaveAttribute('title', /Requested by /);
     await expect(page.getByTestId('trash-total')).toHaveText('Reclaiming 20 GB across 1 item');
   });
@@ -457,11 +478,12 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await unsaved;
     await resetMaintainerr(page);
 
-    // TV: Breaking Prod is REQUESTED and also watched-long-ago — the corner is the slated trash-can,
-    // and BOTH facts ride the meta line: the requester info badge + the muted watch chip (D-12).
+    // TV: Breaking Prod is REQUESTED and also watched-long-ago — the corner is the Age Guard's kept `skip` (it was
+    // downloaded moments ago, DESIGN-052 D-26), and BOTH facts still ride the meta line: the requester info badge +
+    // the muted watch chip (D-12).
     await page.getByRole('tab', { name: 'TV' }).click();
     const tv = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
-    await expect(tv).toHaveAttribute('data-glyph', 'trash');
+    await expect(tv).toHaveAttribute('data-glyph', 'skip');
     await expect(tv.getByTestId('wall-requested')).toHaveAttribute('title', /Requested by /);
     await expect(tv.getByTestId('wall-watched')).toHaveAttribute('data-tone', 'muted');
     await expect(tv.getByTestId('wall-watched')).toHaveAttribute('title', /Last watched on HaynesTower/);
@@ -774,6 +796,45 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     expect((await maintainerrCalls(page)).some((c) => c.path === '/collections/media/handle')).toBe(false);
     await page.getByTestId('trash-expedite-stale').getByRole('button', { name: 'Close' }).click();
     await setIntegration(page, 'tautulli', true);
+  });
+
+  test('DESIGN-052 D-26 / Q-14: Expedite never deletes a title the Age Guard keeps (all and item); both confirms say why', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await page.goto('/trash?tab=tv');
+    // Breaking Prod was downloaded moments ago (the spec's beforeAll): kept, never offered for deletion.
+    const tile = page.getByTestId('trash-tile').filter({ hasText: 'Breaking Prod' });
+    await expect(tile).toHaveAttribute('data-glyph', 'skip');
+
+    // Expedite all: nothing to delete; the protected line names the Age Guard and breaks it out.
+    await page.getByTestId('trash-expedite-all').click();
+    const confirm = page.getByTestId('trash-expedite-all-confirm');
+    await expect(confirm).toContainText('0 will be deleted NOW');
+    await expect(confirm).toContainText(
+      '1 protected: recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.',
+    );
+    await expect(page.getByTestId('trash-expedite-recent')).toHaveText('1 added or upgraded recently');
+    await expect(page.getByTestId('trash-expedite-all-submit')).toBeDisabled();
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+
+    // Delete now… on its Library page: the guard card says it is kept; the confirm predicts the keep and the server
+    // keeps it (protected, never handled, never auto-saved).
+    await tile.getByTestId('wall-lib-link').click();
+    await page.waitForURL(/\/library\/[0-9a-f-]{36}\?from=trash-tv$/);
+    const guard = page.getByTestId('trash-guard');
+    await expect(guard.getByTestId('trash-recent-note')).toHaveText('Kept: added or upgraded recently');
+    await guard.getByTestId('trash-delete-now').click();
+    await expect(page.getByTestId('trash-expedite-item-recent')).toHaveText(
+      "This item was added or upgraded recently, so it won't be deleted yet. Nothing will be deleted.",
+    );
+    await page.getByTestId('trash-expedite-item-submit').click();
+    await expect(page.getByTestId('trash-expedite-summary')).toContainText('0 deleted');
+    await expect(page.getByTestId('trash-expedite-summary')).toContainText('1 protected');
+    const calls = await maintainerrCalls(page);
+    expect(calls.some((c) => c.path === '/collections/media/handle')).toBe(false);
+    expect(calls.some((c) => c.method === 'POST' && c.path.startsWith('/rules/exclusion'))).toBe(false);
   });
 
   test('a watched item, Delete now…, is PROTECTED not deleted (the guardian wins)', async ({

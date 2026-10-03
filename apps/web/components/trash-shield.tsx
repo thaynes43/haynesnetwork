@@ -390,6 +390,8 @@ export function TrashPendingNotice({
   const notice = trashNoticeText({
     on,
     onWatchlist: item.onWatchlist === true,
+    // DESIGN-052 D-26 / Q-14 — the Age Guard keeps it: the batch wall's kept reason on its own line.
+    recentlyAdded: item.ageGuard === 'recent',
     ruleTitle: item.collectionTitle ?? null,
     sizeLabel: formatBytes(item.sizeBytes),
   });
@@ -420,6 +422,11 @@ export function TrashPendingNotice({
               <BookmarkGlyph />
             </span>
             {notice.watchlistNote}
+          </p>
+        ) : null}
+        {notice.recentNote !== null ? (
+          <p className="muted trash-panel__watchlist" data-testid="trash-recent-note">
+            {notice.recentNote}
           </p>
         ) : null}
         {/* DESIGN-010 D-12 — cross-server watch visibility (info, not protection): the last-watch
@@ -499,6 +506,8 @@ export function TrashPendingNotice({
             onWatchlist: item.onWatchlist,
             watchlistEvaluable: item.watchlistEvaluable,
             ruleEvaluationFailed: item.ruleEvaluationFailed,
+            // DESIGN-052 D-26 / Q-14 — the Age Guard input (the confirm predicts the keep).
+            ageGuard: item.ageGuard,
           }}
           safe={safe}
           onClose={() => setExpediteOpen(false)}

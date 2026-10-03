@@ -136,15 +136,3 @@ export async function loadAgeEvidence(input: {
   }
   return out;
 }
-
-export type AgeGuardVerdict = { keep: true; reason: 'recently_added' | 'unevaluable' } | { keep: false };
-
-/**
- * The sweep's Age Guard verdict (D-26), checked after the guardian: `recent` keeps the item `recently_added`, `unknown`
- * keeps it `unevaluable` (we never delete what we cannot clear), `clear` lets it through.
- */
-export function classifyAgeGuard(item: { ageGuard: TrashAgeGuard }): AgeGuardVerdict {
-  if (item.ageGuard === 'recent') return { keep: true, reason: 'recently_added' };
-  if (item.ageGuard === 'unknown') return { keep: true, reason: 'unevaluable' };
-  return { keep: false };
-}

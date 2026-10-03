@@ -144,6 +144,8 @@ describe('the Expedite copy for a watchlisted item (D-09 / D-25av)', () => {
 
   it('D-25bk / D-25cy: the Expedite-all confirm`s protected line says the app keeps them, never Maintainerr or a request', () => {
     expect(EXPEDITE_PROTECTED_REASON).toContain('on a watchlist');
+    // DESIGN-052 D-26 / Q-14 — the Age Guard keeps are named too.
+    expect(EXPEDITE_PROTECTED_REASON).toContain('added or upgraded recently');
     expect(EXPEDITE_PROTECTED_REASON).toContain('they are kept');
     expect(EXPEDITE_PROTECTED_REASON).not.toMatch(/Maintainerr/);
     expect(EXPEDITE_PROTECTED_REASON).not.toMatch(/request/i);
@@ -166,6 +168,7 @@ describe('the Library item page`s Trash notice (D-10, D-25co)', () => {
     expect(trashNoticeText({ ...base, on: false, onWatchlist: false })).toEqual({
       meta: 'Maintainerr’s “Old and unwatched” rule flagged it — deleting frees 4.0 GB. Save it to keep it.',
       watchlistNote: null,
+      recentNote: null,
     });
     expect(trashNoticeText({ ...base, on: true, onWatchlist: false }).watchlistNote).toBeNull();
   });
@@ -176,5 +179,16 @@ describe('the Library item page`s Trash notice (D-10, D-25co)', () => {
     expect(saved.watchlistNote).toBe(WATCHLIST_NOTE_DETAIL);
     expect(saved.watchlistNote).toBe(slated.watchlistNote);
     expect(saved.meta).toMatch(/Maintainerr will keep this item/);
+  });
+
+  it('DESIGN-052 D-26 / Q-14: a title the Age Guard keeps says so instead of "Save it to keep it", on a Save too', () => {
+    const slated = trashNoticeText({ ...base, on: false, onWatchlist: false, recentlyAdded: true });
+    expect(slated).toEqual({
+      meta: 'Maintainerr’s “Old and unwatched” rule flagged it.',
+      watchlistNote: null,
+      recentNote: 'Kept: added or upgraded recently',
+    });
+    const saved = trashNoticeText({ ...base, on: true, onWatchlist: false, recentlyAdded: true });
+    expect(saved.recentNote).toBe(slated.recentNote);
   });
 });

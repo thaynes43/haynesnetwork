@@ -80,6 +80,7 @@ import {
   sweepTimeLabel,
   windowClosed,
   WATCHLIST_BREAKDOWN_TERM,
+  RECENT_BREAKDOWN_TERM,
 } from '@/lib/trash';
 
 export type { TrashAccess };
@@ -380,9 +381,12 @@ function PendingTab({
     protected: 0,
     unverifiable: 0,
     watchlisted: 0,
+    recentlyAdded: 0,
   };
   // ADR-093 / DESIGN-052 D-10 — the watchlisted share of `protected` (an older server omits it ⇒ 0).
   const watchlistedCount = (partition as { watchlisted?: number }).watchlisted ?? 0;
+  // DESIGN-052 D-26 / Q-14 — the Age Guard's share of `protected` (an older server omits it ⇒ 0).
+  const recentCount = (partition as { recentlyAdded?: number }).recentlyAdded ?? 0;
 
   // ── the sort bar (shared nextSort/arrowFor cycle over SORT_COLUMNS) ──
   const clickCycle = Object.fromEntries(
@@ -640,13 +644,21 @@ function PendingTab({
               </li>
               <li>
                 <strong>{partition.protected} protected:</strong> {EXPEDITE_PROTECTED_REASON}
-                {watchlistedCount > 0 ? (
+                {watchlistedCount > 0 || recentCount > 0 ? (
                   <>
                     {' '}
                     Includes{' '}
-                    <strong data-testid="trash-expedite-watchlisted">
-                      {watchlistedCount} {WATCHLIST_BREAKDOWN_TERM}
-                    </strong>
+                    {watchlistedCount > 0 ? (
+                      <strong data-testid="trash-expedite-watchlisted">
+                        {watchlistedCount} {WATCHLIST_BREAKDOWN_TERM}
+                      </strong>
+                    ) : null}
+                    {watchlistedCount > 0 && recentCount > 0 ? ' and ' : null}
+                    {recentCount > 0 ? (
+                      <strong data-testid="trash-expedite-recent">
+                        {recentCount} {RECENT_BREAKDOWN_TERM}
+                      </strong>
+                    ) : null}
                     .
                   </>
                 ) : null}

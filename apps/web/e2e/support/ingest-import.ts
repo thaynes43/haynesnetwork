@@ -7,15 +7,30 @@
 //
 //   DATABASE_URL=… tsx e2e/support/ingest-import.ts <mediaItemId> <sonarr|radarr|lidarr> [childId]
 //
+// The first argument may also be `tvdb:<id>` / `tmdb:<id>` (resolved with a read): DESIGN-052 D-26 / Q-14 — the Trash
+// spec lands a fresh download import on a title so the Age Guard keeps it, whatever ran before it.
+//
 // Deliberately goes THROUGH the @hnet/domain single-writers (ingestLedgerEvents +
 // completeFixRequests) — never a direct table write (the no-direct-state-writes guard
 // scans this file too).
 import { getPool } from '@hnet/db';
 import { completeFixRequests, ingestLedgerEvents } from '@hnet/domain';
 
+async function resolveMediaItemId(arg: string | undefined, source: string | undefined): Promise<string | undefined> {
+  const m = arg === undefined ? null : /^(tvdb|tmdb):(\d+)$/.exec(arg);
+  if (m === null) return arg;
+  const column = m[1] === 'tvdb' ? 'tvdb_id' : 'tmdb_id';
+  const { rows } = await getPool().query<{ id: string }>(
+    `SELECT id FROM media_items WHERE arr_kind = $1 AND ${column} = $2 AND deleted_from_arr_at IS NULL LIMIT 1`,
+    [source, Number(m[2])],
+  );
+  if (rows[0] === undefined) throw new Error(`no ${source} media item with ${arg}`);
+  return rows[0].id;
+}
+
 async function main(): Promise<void> {
-  const mediaItemId = process.argv[2];
   const source = process.argv[3];
+  const mediaItemId = await resolveMediaItemId(process.argv[2], source);
   const childId = process.argv[4] !== undefined ? Number(process.argv[4]) : undefined;
   if (!mediaItemId || (source !== 'sonarr' && source !== 'radarr' && source !== 'lidarr')) {
     throw new Error(

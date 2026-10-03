@@ -33,6 +33,7 @@ import {
 import {
   daysLeftLabel,
   daysUntil,
+  KEPT_REASON_TOOLTIPS,
   pendingWallGlyph,
   pendingWallTappable,
   releaseNeedsConfirm,
@@ -63,6 +64,8 @@ export interface PendingWallItem {
   tmdbRating: number | null;
   /** ADR-093 / DESIGN-052 D-10 — on a watchlist (the newest registry check): the "On a watchlist" note. */
   onWatchlist?: boolean;
+  /** DESIGN-052 D-26 / Q-14 — the Age Guard verdict; `recent` shows as kept (absent ⇒ clear, an older server). */
+  ageGuard?: 'recent' | 'clear' | 'unknown';
 }
 
 const itemRating = (item: PendingWallItem): number | null =>
@@ -75,9 +78,12 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false)
     // ADR-014 — while the release is armed the tooltip leads with the ask + the window, so a
     // pointer user sees the same thing the aria-label tells a screen-reader user.
     ...(armed ? ['Tap again to un-save — 3 seconds'] : []),
-    item.scheduledDeleteAt !== null
-      ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
-      : 'No scheduled delete date',
+    // DESIGN-052 D-26 / Q-14 — a title the Age Guard keeps leads with the batch wall's kept reason, never a date.
+    glyph === 'skip'
+      ? KEPT_REASON_TOOLTIPS.recently_added
+      : item.scheduledDeleteAt !== null
+        ? `Deletes ${formatDay(item.scheduledDeleteAt)} (${daysLeftLabel(daysUntil(item.scheduledDeleteAt))})`
+        : 'No scheduled delete date',
   ];
   if (glyph === 'shield') lines.push('Saved by you — protected from deletion');
   else if (glyph === 'check') lines.push('Protected — excluded in Maintainerr');
@@ -224,7 +230,9 @@ function PendingTile({
         : `${item.title} is saved — protected from deletion`
       : glyph === 'check'
         ? `${item.title} is protected from deletion`
-        : tappable
+        : glyph === 'skip'
+          ? `${item.title}. ${KEPT_REASON_TOOLTIPS.recently_added}`
+          : tappable
           ? `${item.title} is slated to delete — tap to save it`
           : `${item.title} is slated to delete`;
   const toggleLabel = isBusy
