@@ -1,7 +1,8 @@
 // DESIGN-005 D-14 — the sync orchestrator. One sync_runs row brackets each source
 // (startSyncRun/finishSyncRun); failures are isolated per source (one *arr down never
 // fails the whole run); the mass-tombstone guard surfaces as status 'aborted' with the
-// tombstones unwritten. After the per-source flows, backfillEventAttribution re-links
+// tombstones unwritten. After the per-source flows, relinkArrHistoryEvents attaches *arr
+// history that beat its title's media_items row (D-24), backfillEventAttribution re-links
 // Seerr events whose item/user has since appeared, and completeFixRequests closes
 // fixes whose replacement import was just ingested (ADR-007 C-06).
 import {
@@ -19,6 +20,7 @@ import {
   MassTombstoneAbortedError,
   backfillEventAttribution,
   completeFixRequests,
+  relinkArrHistoryEvents,
   drainDuePoolRefreshes,
   relinkSaveIntents,
   expireStaleFixRequests,
@@ -48,6 +50,7 @@ import {
   type ForceSearchCollectionsReport,
   type DrainPoolRefreshResult,
   type TrashRelinkReport,
+  type RelinkArrHistoryEventsResult,
   type FormatPairingReport,
   type GbCallMeter,
   type KapowarrClientBundle,
@@ -299,6 +302,11 @@ export interface SyncReport {
   sources: SourceRunReport[];
   /** Post-step results (null when the step itself errored — see backfillError). */
   backfill: { itemsLinked: number; usersLinked: number } | null;
+  /** DESIGN-005 D-24 — *arr history events attached to their title this run (full/incremental only;
+   *  null when the step errored — see historyRelinkError — and absent for every other mode). */
+  historyRelink?: RelinkArrHistoryEventsResult | null;
+  /** The history relink's error (isolated — never sets totalFailure). */
+  historyRelinkError?: string;
   fixesCompleted: number | null;
   /** Count of OPEN fixes auto-closed to 'timed_out' this run (null for modes that skip the sweep). */
   fixesTimedOut?: number | null;
@@ -1671,6 +1679,8 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
   // metadata-refresh: attribution backfill + fix completion are ledger concerns, not metadata.
   let backfill: SyncReport['backfill'] = null;
   let backfillError: string | undefined;
+  let historyRelink: RelinkArrHistoryEventsResult | null = null;
+  let historyRelinkError: string | undefined;
   let fixesCompleted: number | null = null;
   let fixCompletionError: string | undefined;
   let fixesTimedOut: number | null = null;
@@ -1689,6 +1699,19 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       totalFailure,
     };
   }
+  // DESIGN-005 D-24 — attach *arr history (grabs, imports, …) that was ingested before its title's
+  // media_items row existed. Runs before completeFixRequests so a relinked import can close a fix in
+  // the same run. Isolated like every post-step: a failure logs and never fails the sync run.
+  try {
+    historyRelink = await relinkArrHistoryEvents({ db });
+    if (historyRelink.total > 0) {
+      logger.info('arr history relinked to its titles', { ...historyRelink });
+    }
+  } catch (error) {
+    historyRelinkError = error instanceof Error ? error.message : String(error);
+    logger.error('arr history relink failed', { error: historyRelinkError });
+  }
+
   try {
     backfill = await backfillEventAttribution({ db });
     if (backfill.itemsLinked > 0 || backfill.usersLinked > 0) {
@@ -1807,12 +1830,14 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     finishedAt: new Date(),
     sources: reports,
     backfill,
+    historyRelink,
     fixesCompleted,
     fixesTimedOut,
     candidateRefresh,
     poolRefresh,
     relink,
     ...(backfillError !== undefined ? { backfillError } : {}),
+    ...(historyRelinkError !== undefined ? { historyRelinkError } : {}),
     ...(fixCompletionError !== undefined ? { fixCompletionError } : {}),
     ...(fixTimeoutError !== undefined ? { fixTimeoutError } : {}),
     ...(candidateRefreshError !== undefined ? { candidateRefreshError } : {}),

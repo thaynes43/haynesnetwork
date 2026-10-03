@@ -26,8 +26,10 @@ const EVENT_SOURCES_SQL_LIST = LEDGER_EVENT_SOURCES.map((s) => `'${s}'`).join(',
  * history, Seerr request attribution, Fix lifecycle markers, and Restore write-backs.
  * Written only by the packages/domain writers (D-12).
  *
- * - `media_item_id` is nullable: a Seerr request can precede the *arr add; sync
- *   backfills the FK when the item appears (matched by tmdb/tvdb id kept in payload).
+ * - `media_item_id` is nullable: a Seerr request can precede the *arr add, and *arr history
+ *   can precede the full sync that creates the item's row; sync backfills the FK when the
+ *   item appears (Seerr: tmdb/tvdb id kept in payload; *arr history: payload.arrInstanceId +
+ *   seriesId/movieId/artistId, DESIGN-005 D-24).
  * - The partial unique index on (source, source_event_id) makes re-ingestion of
  *   overlapping history polls idempotent (ON CONFLICT DO NOTHING).
  * - Item-level removals are not *arr history events; the tombstone pass writes a
