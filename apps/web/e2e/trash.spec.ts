@@ -867,7 +867,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     const confirm = page.getByTestId('trash-expedite-all-confirm');
     await expect(confirm).toContainText('0 will be deleted NOW');
     await expect(confirm).toContainText(
-      '1 protected: recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.',
+      '1 protected: saved, recently watched, added or upgraded recently, whitelisted, or on a watchlist; they are kept.',
     );
     await expect(page.getByTestId('trash-expedite-recent')).toHaveText('1 added or upgraded recently');
     await expect(page.getByTestId('trash-expedite-all-submit')).toBeDisabled();
