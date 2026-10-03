@@ -825,6 +825,56 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
     expect(ll.calls.filter((c) => c.cmd === 'searchBook')).toHaveLength(0);
   });
 
+  // DESIGN-036 amendment (2026-10-03) — the omnibus repair parks a pairing want whose resolve landed on a
+  // bundle (`unroutable_reason='wrong_volume'`, llBookId cleared) and sets the bundle Skipped in LL. Before
+  // this, neither the mint nor the Skipped sweep read the park: the mint re-resolved the null id and the
+  // sweep re-queued + re-searched the Skipped bundle an hour later.
+  it('never re-attempts a PARKED want (wrong_volume, null llBookId): no GB resolve, no LL write, row untouched', async () => {
+    const anchorId = await seedItem({ title: 'The Obelisk Gate', author: 'N.K. Jemisin', mediaKind: 'book' });
+    const [parked] = await t.db
+      .insert(bookRequests)
+      .values({
+        origin: 'pairing',
+        pairingBooksItemId: anchorId,
+        title: 'The Obelisk Gate',
+        author: 'N.K. Jemisin',
+        ebookStatus: 'landed',
+        audioStatus: 'wanted',
+        llBookId: null,
+        unroutableReason: 'wrong_volume',
+      })
+      .returning();
+    const gb = stubGb(() => 'gb-broken-earth-trilogy');
+    const ll = stubLl(() => ({ ebookStatus: 'Skipped', audioStatus: 'Skipped' }));
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+
+    expect(run).toMatchObject({ attempted: 0, minted: 0, pushed: 0, requeued: 0 });
+    expect(gb.calls).toHaveLength(0);
+    expect(ll.calls).toHaveLength(0);
+    const [after] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, parked!.id));
+    expect(after).toMatchObject({ llBookId: null, unroutableReason: 'wrong_volume', audioStatus: 'wanted' });
+    expect(after!.updatedAt.getTime()).toBe(parked!.updatedAt.getTime());
+  });
+
+  it('keeps a PARKED want that still carries an llBookId out of the Skipped sweep (no re-queue, no re-search)', async () => {
+    const anchorId = await seedItem({ title: 'Code to Zero', author: 'Ken Follett', mediaKind: 'book' });
+    await t.db.insert(bookRequests).values({
+      origin: 'pairing',
+      pairingBooksItemId: anchorId,
+      title: 'Code to Zero',
+      author: 'Ken Follett',
+      ebookStatus: 'landed',
+      audioStatus: 'wanted',
+      llBookId: 'gb-two-in-one',
+      unroutableReason: 'wrong_volume',
+    });
+    const ll = stubLl((id) => (id === 'gb-two-in-one' ? { ebookStatus: 'Open', audioStatus: 'Skipped' } : null));
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
+
+    expect(run).toMatchObject({ reconciled: 0, requeued: 0 });
+    expect(ll.calls).toHaveLength(0);
+  });
+
   it('degrades honestly with NO LL bundle: pairs + mints, pushes nothing, statuses stay requested', async () => {
     await seedItem({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'book' });
     const report = await runFormatPairing({

@@ -617,6 +617,9 @@ export async function mintPairingWants(
     .filter((i) => {
       const w = wantByAnchor.get(i.id);
       if (!w) return true; // fresh — never yet minted
+      // A PARKED want (`unroutable_reason` set, e.g. 'wrong_volume' after an omnibus repair) is never
+      // re-attempted: re-resolving it would refill llBookId and hand it back to the Skipped sweep.
+      if (w.unroutableReason !== null) return false;
       return w.llBookId === null || statusOfFormat(w, missingFormatFor(i.mediaKind)) === 'requested';
     })
     .sort(
@@ -895,6 +898,9 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
       (w) =>
         w.llBookId !== null &&
         w.pairingBooksItemId !== null &&
+        // A parked want is out of the reconcile and the Skipped sweep: re-queueing it would undo the park
+        // (DESIGN-036 amendment 2026-10-03 — the omnibus repair set the bundle Skipped on purpose).
+        w.unroutableReason === null &&
         (w.ebookStatus !== 'landed' || w.audioStatus !== 'landed'),
     );
     for (const want of open) {

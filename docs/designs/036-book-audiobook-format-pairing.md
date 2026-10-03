@@ -255,3 +255,15 @@ for it has a `last_searched_at` within the hour **and** the pre-run `getAllBooks
 missing format as `Wanted` (the recent search covered it). A format the push is flipping from `Requested` is
 always searched. `queueBook` is unchanged. Every search the pairing leg fires stamps `last_searched_at` on
 its want, which is the signal the other jobs read. Normative detail: DESIGN-028's follow-up of the same date.
+
+## Amendment — 2026-10-03: a parked pairing want stays parked
+
+DESIGN-028's omnibus amendment repairs a want whose resolve landed on a bundle by parking it
+(`unroutable_reason='wrong_volume'`, `ll_book_id` cleared) and setting the bundle's format `Skipped` in
+LazyLibrarian. The collection force-search and `isRequestSearchable` already honored the park, but this leg did
+not read `unroutable_reason` at all: the mint re-resolved the cleared id (it looked like an unmintable want),
+and once an id was back the Skipped sweep re-queued and re-searched the format the repair had just skipped.
+
+Both now skip a parked want. The mint never makes it a candidate (no Google Books call, no upsert, so its
+`updated_at` stays put), and the reconcile + Skipped sweep leave it out. A park is lifted only by clearing
+`unroutable_reason` by hand, after which the want is an ordinary unmintable or pushed want again.
