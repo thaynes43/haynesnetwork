@@ -99,6 +99,29 @@ describe('SonarrClient (v3)', () => {
     expect(calls[0]?.url.searchParams.get('date')).toBe(since.toISOString());
   });
 
+  it('reads the failed-download handling settings and history since a date by event type (ADR-096, D-24)', async () => {
+    const { client, calls } = sonarr([
+      {
+        path: '/api/v3/config/downloadclient',
+        // Live-shaped (Sonarr 4.0.20, 2026-10-03), with fields the ACL must strip.
+        body: {
+          enableCompletedDownloadHandling: true,
+          autoRedownloadFailed: true,
+          autoRedownloadFailedFromInteractiveSearch: true,
+          id: 1,
+        },
+      },
+      { path: '/api/v3/history/since', body: [] },
+    ]);
+    expect(await client.getDownloadClientConfig()).toEqual({
+      autoRedownloadFailed: true,
+      autoRedownloadFailedFromInteractiveSearch: true,
+    });
+    await client.getHistorySince(new Date('2026-10-02T06:20:00Z'), 'downloadFailed');
+    expect(calls[1]?.url.searchParams.get('eventType')).toBe('downloadFailed');
+    expect(calls[1]?.url.searchParams.get('date')).toBe('2026-10-02T06:20:00.000Z');
+  });
+
   it('parses wanted/missing pages as episodes', async () => {
     const { client } = sonarr([
       { path: '/api/v3/wanted/missing', body: fixture('sonarr.wanted-missing') },

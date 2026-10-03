@@ -1,6 +1,10 @@
 # ADR-083: Automated *arr queue janitor — census-first cleanup of errored grabs
 
 - **Status:** Accepted
+- **Superseded in part by:** [ADR-096](096-janitor-retries-failed-downloads-capped.md) (2026-10-03): class C's
+  re-search gains the failed-download retry (one search after each failed Sonarr or Radarr download, while their own
+  Redownload Failed is off) and one budget of two janitor tries per title, and C-04's write-back list gains that search
+  (ADR-096 C-01..C-03). This is a status note only.
 - **Superseded in part by:** [ADR-095](095-janitor-covers-the-download-suite.md) (2026-09-29): the scope ("the
   Sonarr/Radarr/Lidarr download queues") and C-04's write-back list now reach LazyLibrarian and Kapowarr through a
   source adapter, and the single promotion ladder becomes one ladder per instance family (`arr`, `books`, `comics`),

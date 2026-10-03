@@ -12,12 +12,14 @@ import {
 } from './seerr-watchlist';
 import {
   diskSpaceSchema,
+  downloadClientConfigSchema,
   pagedSchema,
   qualityProfileSchema,
   rootFolderSchema,
   systemStatusSchema,
   tagSchema,
   type ArrDiskSpace,
+  type ArrDownloadClientConfig,
   type ArrPage,
   type ArrQualityProfile,
   type ArrRootFolder,
@@ -194,6 +196,15 @@ abstract class ArrReadClientBase {
 
   listTags(): Promise<ArrTag[]> {
     return this.http.requestJson('GET', 'tag', z.array(tagSchema));
+  }
+
+  /**
+   * ADR-096 / DESIGN-046 D-24 (PLAN-065) — `GET /config/downloadclient`: whether the *arr searches again by itself
+   * after a failed download ("Redownload Failed", `autoRedownloadFailed`). The janitor retries a failed Sonarr or Radarr
+   * download only while this is off, so a failure is searched exactly once. Read-only; shared verbatim by all three.
+   */
+  getDownloadClientConfig(): Promise<ArrDownloadClientConfig> {
+    return this.http.requestJson('GET', 'config/downloadclient', downloadClientConfigSchema);
   }
 
   protected historyQuery(params: HistoryPageParams): QueryParams {

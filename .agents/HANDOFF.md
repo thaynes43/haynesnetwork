@@ -4,6 +4,20 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-03 — Janitor: one search budget per title; the failed-download retry (ADR-096)
+
+**Owner ruling (2026-10-03, "App retries, capped"):** hitting an indexer twice for the same thing is very bad. Sonarr's
+and Radarr's own Redownload Failed goes off; the janitor is the only retrier, once per failed download, at most two
+tries per title, hourly. Evidence: the 2026-10-02 Paw Patrol run (DESIGN-046 D-23).
+
+- **Shipped in the `fix/janitor-research-cap` PR (DESIGN-046 D-23 + D-24, ADR-096, OPS-018):** the loop guard covers
+  `bad_release` on all three *arrs, with one budget across every janitor search; one search per target per run; the
+  queue path never searches a download the *arr failed itself; the failed-download retry on Sonarr and Radarr rides
+  their `bad_release` cells (no new cell, no migration, ladder stays L2).
+- **Coordinator, after the deploy:** turn off Redownload in Sonarr and Radarr right after a janitor run (OPS-018 §2),
+  then log it in PLAN-065's ladder log. Until then the retry only observes.
+- **Open:** DESIGN-046 Q-08 (should the try count expire?) is with the owner; issue #646 (Lidarr's Fix searches twice).
+
 ## ▶ 2026-09-29 (later) — Queue janitor at L2 and suite-wide (v0.104.1); LazyLibrarian library repaired
 
 **Owner direction (2026-09-29):** no waiting on self-imposed calendars; promote on evidence the same day; the

@@ -79,6 +79,10 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    children of the LazyLibrarian category's completed folder (never library files); and the Kapowarr
    queue removal with blocklist plus its `auto_search`. They go through `@hnet/downloads/write`,
    `@hnet/lazylibrarian/write` and `@hnet/kapowarr/write` from `packages/domain` only.
+   **ADR-096 adds the failed-download retry** (DESIGN-046 D-24): one search command (EpisodeSearch or MoviesSearch) per
+   failed Sonarr or Radarr download, with no removal, only where the instance's `bad_release` cell is enforced and only
+   while the *arr's own Redownload Failed is off; it shares the loop guard's budget of two tries per title with every
+   other janitor search (D-23). It goes through `@hnet/arr/write` from `packages/domain` only.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see
