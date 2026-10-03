@@ -31,6 +31,7 @@ import {
   type EnrichedShelfItem,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
+  type LlSearchCoverage,
 } from '../src/index';
 import type { KapowarrSearchCandidate } from '@hnet/kapowarr/read';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
@@ -465,7 +466,8 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
       'audiobook',
       'ebook',
     ]);
-    expect(forTog.filter((c) => c.cmd === 'searchBook')).toHaveLength(2);
+    // ONE searchBook for the book: LL's searchBook ignores `type` and searches every Wanted format (#644).
+    expect(forTog.filter((c) => c.cmd === 'searchBook')).toHaveLength(1);
     // The comic never touched LazyLibrarian.
     expect(ll.calls.some((c) => c.id === 'gb-sp')).toBe(false);
 
@@ -517,7 +519,8 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
     const forTog = second.calls.filter((c) => c.id === 'gb-tog');
     expect(forTog.filter((c) => c.cmd === 'addBook')).toHaveLength(0); // already pushed — no re-add
     expect(forTog.filter((c) => c.cmd === 'queueBook').map((c) => c.format).sort()).toEqual(['audiobook', 'ebook']);
-    expect(forTog.filter((c) => c.cmd === 'searchBook').map((c) => c.format).sort()).toEqual(['audiobook', 'ebook']);
+    // Both formats re-queued, ONE search covers them (#644).
+    expect(forTog.filter((c) => c.cmd === 'searchBook')).toHaveLength(1);
 
     const requests = await getBookRequestsForIntegration({ db: t.db, integrationId: integration.id });
     const tog = requests.find((r) => r.llBookId === 'gb-tog')!;
@@ -565,6 +568,49 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
   // `UPDATE books SET Status='Wanted'`, so pushing a format LL already holds clobbers an imported book
   // back into LL's search backlog, where it is re-searched daily forever and qBittorrent rejects each
   // re-grab as a duplicate hash. These four cases pin every leg of the guard.
+  // Issue #644 — LL's searchBook ignores `type` and searches every Wanted format of the book, so a book two
+  // users both want is ONE search per cron run (the caller shares a coverage map across integrations), not
+  // one per integration and not one per format. Every request row is still marked pushed.
+  it('searches a book two integrations both want ONCE per run when they share a coverage map', async () => {
+    const { integration } = await seed();
+    const other = await createUser(t.db);
+    const { integration: integration2 } = await linkIntegration({
+      db: t.db,
+      userId: other.id,
+      provider: 'goodreads',
+      externalUserId: '999000111',
+      profileRef: '999000111',
+      actorId: other.id,
+    });
+    const ll = stubLl(() => null);
+    const searchCoverage: LlSearchCoverage = new Map();
+    const reports = [];
+    for (const integ of [integration, integration2]) {
+      reports.push(
+        await syncGoodreadsIntegration({
+          db: t.db,
+          integrationId: integ.id,
+          items,
+          syncedShelves: ['to-read'],
+          ll: ll.bundle,
+          pacer: async () => {},
+          searchCoverage,
+        }),
+      );
+    }
+    const forTog = ll.calls.filter((c) => c.id === 'gb-tog');
+    expect(forTog.filter((c) => c.cmd === 'searchBook')).toHaveLength(1);
+    expect(forTog.filter((c) => c.cmd === 'addBook')).toHaveLength(1);
+    // Both integrations' request rows are marked pushed (they carry the llBookId and will reconcile).
+    expect(reports.map((r) => r.requestsPushed)).toEqual([1, 1]);
+    const rows = await t.db.select().from(bookRequests).where(eq(bookRequests.llBookId, 'gb-tog'));
+    expect(rows).toHaveLength(2);
+    for (const r of rows) {
+      expect(r.ebookStatus).toBe('wanted');
+      expect(r.audioStatus).toBe('wanted');
+    }
+  });
+
   it('never pushes a format LazyLibrarian already holds — and still pushes the one it does not', async () => {
     const { integration } = await seed();
     // LL already has the ebook (Open + a library date); the audiobook is genuinely being searched for.
@@ -884,12 +930,8 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
 
     expect(result.searched).toBe(true);
     expect(result.formats).toEqual(['ebook', 'audiobook']);
-    expect(
-      ll.calls
-        .filter((c) => c.cmd === 'searchBook')
-        .map((c) => c.format)
-        .sort(),
-    ).toEqual(['audiobook', 'ebook']);
+    // Both formats covered, ONE searchBook (LL ignores `type` and searches every Wanted format — #644).
+    expect(ll.calls.filter((c) => c.cmd === 'searchBook')).toHaveLength(1);
   });
 
   it('getBookRequestDetail resolves shelf, owner, household attribution, cover match, and per-format status', async () => {
@@ -1247,7 +1289,7 @@ describe('all-shelves sync + acquisition (ADR-057)', () => {
         'audiobook',
         'ebook',
       ]);
-      expect(calls.filter((c) => c.cmd === 'searchBook'), id).toHaveLength(2);
+      expect(calls.filter((c) => c.cmd === 'searchBook'), id).toHaveLength(1);
     }
     // The matched read-shelf book and the comic never touched LL.
     expect(ll.calls.some((c) => c.id === 'gb-phm')).toBe(false);
