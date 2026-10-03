@@ -23,7 +23,13 @@ import { LibrettoUnreachableError } from '@hnet/libretto';
 import { inTransaction, resolveDb } from './db-client';
 import { NotFoundError } from './errors';
 import { loadResolvedWantRefs, resolveMissingMembers } from './collection-wants-sync';
-import { llFormatAlreadyHeld, syncCollectionWants, type LlHeldSignals } from './book-requests';
+import {
+  llFormatAlreadyHeld,
+  llRecentSearchCovers,
+  recentlySearchedLlBookIds,
+  syncCollectionWants,
+  type LlHeldSignals,
+} from './book-requests';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 
 /** The Libretto read surface this pass needs — just the recipe list (which carries acquisitionEnabled). */
@@ -73,6 +79,11 @@ export interface ForceSearchCollectionsReport {
    * done, not pending) so the cooldown keeps them out of the next run instead of re-checking hourly.
    */
   skippedHeld: number;
+  /**
+   * Issue #644 — wants whose search was SKIPPED because another job searched the book within the hour and
+   * LazyLibrarian already shows the format as Wanted. Stamped (cooldown) but not audited, not `searched`.
+   */
+  skippedRecent: number;
   /** True when Libretto was unreachable — the whole pass was skipped. */
   unreachable: boolean;
 }
@@ -167,7 +178,7 @@ async function runForceSearchWorklist(input: {
   subjectUserId?: string | null;
   /** Tag the audit with the single collection (on-demand path); omitted for the multi-collection cron leg. */
   tagCollection?: boolean;
-  report: { searched: number; failed: number; skippedHeld: number };
+  report: { searched: number; failed: number; skippedHeld: number; skippedRecent: number };
   log: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
     warn?: (msg: string, meta?: Record<string, unknown>) => void;
@@ -204,6 +215,14 @@ async function runForceSearchWorklist(input: {
     else groups.set(want.llBookId, [want]);
   }
 
+  // Cross-JOB leg (cron only — an on-demand click asked for the search NOW and always fires): a book another
+  // job (goodreads-sync, format-pairing) searched within the hour, with every format we would search already
+  // `Wanted` in LL, was covered by that search — queueBook still runs, only the searchBook is skipped.
+  const recent =
+    input.via === 'find_missing_cron' && groups.size > 0
+      ? await recentlySearchedLlBookIds(input.db, input.now)
+      : new Set<string>();
+
   let i = 0;
   for (const [llBookId, wants] of groups) {
     const toSearch: CollectionWantWork[] = [];
@@ -238,14 +257,26 @@ async function runForceSearchWorklist(input: {
       const formats = [...new Set(toSearch.map((w) => w.format))];
       await input.ll.write.addBook(llBookId);
       for (const format of formats) await input.ll.write.queueBook(llBookId, format);
-      await input.ll.write.searchBook(llBookId, formats[0]!);
-      // Stamp last_searched_at + audit EVERY row the call covered, in ONE tx (hard rule 6).
+      const coveredByRecent = llRecentSearchCovers(recent, llBookId, held.get(llBookId), formats);
+      if (!coveredByRecent) await input.ll.write.searchBook(llBookId, formats[0]!);
+      else {
+        input.log.info?.('ll_search_skipped_covered', {
+          site: `collection-force-search.${input.via}`,
+          llBookId,
+          requestIds: toSearch.map((w) => w.id),
+          formats,
+        });
+      }
+      // Stamp last_searched_at + audit EVERY row the call covered, in ONE tx (hard rule 6). A search another
+      // job already ran covers these rows: they are stamped (the cooldown settles them) but NOT audited
+      // and NOT counted as searched — nothing was asked of LazyLibrarian by this pass.
       await inTransaction(input.db, async (tx) => {
         for (const want of toSearch) {
           await tx
             .update(bookRequests)
             .set({ lastSearchedAt: input.now, updatedAt: input.now })
             .where(eq(bookRequests.id, want.id));
+          if (coveredByRecent) continue;
           await tx.insert(permissionAudit).values({
             actorId: input.actorId,
             ...(input.subjectUserId ? { subjectUserId: input.subjectUserId } : {}),
@@ -262,7 +293,8 @@ async function runForceSearchWorklist(input: {
           });
         }
       });
-      input.report.searched += toSearch.length;
+      if (coveredByRecent) input.report.skippedRecent += toSearch.length;
+      else input.report.searched += toSearch.length;
     } catch (error) {
       input.report.failed += toSearch.length;
       input.log.warn?.(
@@ -295,6 +327,7 @@ export async function forceSearchFindMissingCollections(
     searched: 0,
     failed: 0,
     skippedHeld: 0,
+    skippedRecent: 0,
     unreachable: false,
   };
 
@@ -355,6 +388,7 @@ export async function forceSearchFindMissingCollections(
     searched: report.searched,
     failed: report.failed,
     skippedHeld: report.skippedHeld,
+    skippedRecent: report.skippedRecent,
   });
   return report;
 }
@@ -411,6 +445,8 @@ export interface ForceSearchCollectionNowReport {
   failed: number;
   /** ADR-055 amendment (2026-09-22) — wants suppressed because LazyLibrarian already holds that format. */
   skippedHeld: number;
+  /** Issue #644 — always 0 here: an on-demand click asked for the search now, so it never defers to a recent one. */
+  skippedRecent: number;
   /** True when Libretto was unreachable — the apply/refresh could not run, so nothing was searched. */
   unreachable: boolean;
 }
@@ -436,6 +472,7 @@ export async function forceSearchCollectionNow(
     searched: 0,
     failed: 0,
     skippedHeld: 0,
+    skippedRecent: 0,
     unreachable: false,
   };
 

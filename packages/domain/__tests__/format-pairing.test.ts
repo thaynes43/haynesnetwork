@@ -642,6 +642,92 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
     expect(want!.audioStatus).toBe('wanted');
   });
 
+  // Issue #644 — LL's searchBook ignores `type` and searches every Wanted format of the book, and the
+  // pairing want reuses the llBookId of a goodreads shelf request. The two run as SEPARATE cron jobs, so they
+  // share `last_searched_at`: a search by another job within the hour covers a format LL already shows as
+  // Wanted. A format the push is about to FLIP is never covered (that search could not have included it).
+  describe('one searchBook per book across jobs (#644)', () => {
+    async function seedShelfRequestSearched(lastSearchedAt: Date | null): Promise<void> {
+      await seedItem({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'book' });
+      const user = await createUser(t.db);
+      const [integ] = await t.db
+        .insert(userIntegrations)
+        .values({ userId: user.id, provider: 'goodreads', externalUserId: '1', status: 'linked' })
+        .returning({ id: userIntegrations.id });
+      const [shelf] = await t.db
+        .insert(integrationShelfItems)
+        .values({ integrationId: integ!.id, shelf: 'to-read', externalBookId: 'gr-h', title: 'Hyperion' })
+        .returning({ id: integrationShelfItems.id });
+      await t.db.insert(bookRequests).values({
+        integrationId: integ!.id,
+        shelfItemId: shelf!.id,
+        title: 'Hyperion',
+        author: 'Dan Simmons',
+        llBookId: 'gb-hyp',
+        lastSearchedAt,
+      });
+    }
+    const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+
+    it('queues but does NOT re-search a missing format LL already has Wanted when another job searched the book in the last hour', async () => {
+      await seedShelfRequestSearched(minutesAgo(10));
+      const ll = stubLl((id) => (id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: 'Wanted' } : null));
+      const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
+      expect(run.pushed).toBe(1);
+      expect(ll.calls.filter((c) => c.cmd === 'queueBook').map((c) => c.format)).toEqual(['audiobook']);
+      expect(ll.calls.filter((c) => c.cmd === 'searchBook')).toHaveLength(0);
+    });
+
+    it('still searches a format the push is FLIPPING to Wanted (a recent search could not have covered it)', async () => {
+      await seedShelfRequestSearched(minutesAgo(10));
+      const ll = stubLl((id) => (id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: null } : null));
+      await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
+      expect(ll.calls.filter((c) => c.cmd === 'searchBook').map((c) => c.format)).toEqual(['audiobook']);
+      // The search is stamped on the pairing want — the signal the OTHER jobs read.
+      const [want] = await t.db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
+      expect(want!.lastSearchedAt).not.toBeNull();
+    });
+
+    it('searches per FORMAT within a run: a second want flipping the OTHER format of the same book is still searched', async () => {
+      // Two distinct anchors (an ebook and an audiobook of different works) that both reuse llBookId gb-x.
+      await seedItem({ title: 'Alpha Saga', author: 'Ann Author', mediaKind: 'book' });
+      await seedItem({ title: 'Beta Tale', author: 'Bob Writer', mediaKind: 'audiobook' });
+      const user = await createUser(t.db);
+      const [integ] = await t.db
+        .insert(userIntegrations)
+        .values({ userId: user.id, provider: 'goodreads', externalUserId: '1', status: 'linked' })
+        .returning({ id: userIntegrations.id });
+      for (const [i, [title, author]] of (
+        [
+          ['Alpha Saga', 'Ann Author'],
+          ['Beta Tale', 'Bob Writer'],
+        ] as const
+      ).entries()) {
+        const [shelf] = await t.db
+          .insert(integrationShelfItems)
+          .values({ integrationId: integ!.id, shelf: 'to-read', externalBookId: `gr-${i}`, title })
+          .returning({ id: integrationShelfItems.id });
+        await t.db
+          .insert(bookRequests)
+          .values({ integrationId: integ!.id, shelfItemId: shelf!.id, title, author, llBookId: 'gb-x' });
+      }
+      const ll = stubLl(() => null);
+      const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
+      expect(run.pushed).toBe(2);
+      expect(ll.calls.filter((c) => c.cmd === 'searchBook').map((c) => c.format).sort()).toEqual([
+        'audiobook',
+        'ebook',
+      ]);
+    });
+
+    it('searches normally when the earlier search is older than the hour window', async () => {
+      await seedShelfRequestSearched(minutesAgo(180));
+      const ll = stubLl((id) => (id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: 'Wanted' } : null));
+      await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
+      expect(ll.calls.filter((c) => c.cmd === 'searchBook')).toHaveLength(1);
+    });
+  });
+
   it('GOVERNOR PIN (ADR-065 C-08): the pairing path touches nothing on the confined write surface beyond the three acquisition writes', async () => {
     await seedItem({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'book' });
     await seedItem({ title: 'Piranesi', author: 'Susanna Clarke', mediaKind: 'audiobook' });

@@ -368,3 +368,30 @@ the first covered format and must not rely on it narrowing the search. **Bookkee
 request row, unchanged:** every row a shared call covered still gets its own `last_searched_at` stamp
 (the cooldown) and its own audit row; only the LazyLibrarian call is shared. A call that fails leaves every
 row it would have covered un-stamped, so the next run retries them all.
+
+### Follow-up — 2026-10-03: the cross-job leg (format-pairing, and a shared `last_searched_at` signal)
+
+goodreads-sync, `format-pairing` and the collection force-search run as **separate cron jobs**, so they
+cannot share the in-memory coverage map above. They share `book_requests.last_searched_at` instead
+(`recentlySearchedLlBookIds`, `stampRequestsSearched`, `llRecentSearchCovers` in `book-requests.ts`):
+
+- **Every leg stamps the rows it searched** (goodreads push + Skipped sweep, pairing mint-push + sweep,
+  force-search as before). The stamp is unaudited, like `markRequestPushed`.
+- **Each unattended leg skips only the `searchBook`** (never `queueBook`) when the book was searched by any
+  row within `LL_RECENT_SEARCH_WINDOW_MS` (1 hour) **and** LazyLibrarian already shows every format the leg
+  would search as raw `Wanted`. That condition is what makes the skip safe: a search covers exactly the
+  formats that were `Wanted` when it ran, so a format the leg is about to flip to `Wanted` (the common
+  pairing case, where the missing format is `Requested`) is never skipped. The on-demand collection Force
+  Search never skips — the caller asked for the search now. A skip is logged as `ll_search_skipped_covered`.
+  In the collection force-search the rows a recent search covered are stamped (the cooldown settles them)
+  but **not audited and not counted as `searched`** — nothing was asked of LL by that pass — and are
+  reported as `skippedRecent`. That cooldown stamp is also read as search recency, so one chained skip can
+  extend the same-hour window to at most about two hours after the last real `searchBook` (bounded, one link
+  only: the pairing and goodreads legs stamp only rows they actually searched). It errs toward fewer
+  indexer hits, which is the safe direction, and the stamp cannot be separated from the cooldown without a
+  new column.
+- **`format-pairing`** also shares a per-run, per-format coverage map between the mint push and the Skipped
+  sweep (one search per book and format per run, including two wants that reuse one `llBookId`; a second
+  want flipping the OTHER format is still searched).
+- An LL read failure leaves the status map empty, so nothing is ever treated as covered: the rule may only
+  remove a call, never add one.

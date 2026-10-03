@@ -256,6 +256,39 @@ describe('forceSearchFindMissingCollections — the cron acquisition leg', () =>
     expect(again.calls).toHaveLength(0);
   });
 
+  // Issue #644, the cross-JOB leg: another job (here an earlier run, standing in for goodreads-sync or
+  // format-pairing) searched the book within the hour, and LL already shows the format as Wanted, so the
+  // recent search covered it — the cron leg queues but does not search again.
+  it('skips the searchBook (not the bookkeeping) for a book another job searched within the hour', async () => {
+    const first = await seedCollection('e1', 'recipe-1');
+    const second = await seedCollection('e2', 'recipe-2');
+    const member = [{ memberRef: 'isbn:1', title: 'One', author: null, llBookId: 'gb1' }];
+    await syncCollectionWants({ db: t.db, collectionId: first, format: 'ebook', members: member });
+    const libretto = stubLibretto({ 'recipe-1': true });
+    const ll1 = stubLl();
+    await forceSearchFindMissingCollections({ db: t.db, libretto, ll: ll1.bundle, pacer: noPace });
+    expect(ll1.calls.filter((c) => c.step === 'searchBook')).toHaveLength(1);
+
+    await syncCollectionWants({ db: t.db, collectionId: second, format: 'ebook', members: member });
+    const ll2 = stubLl(() => ({ ebookStatus: 'Wanted', audioStatus: null }));
+    const report = await forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: stubLibretto({ 'recipe-1': true, 'recipe-2': true }),
+      ll: ll2.bundle,
+      pacer: noPace,
+    });
+    expect(report).toMatchObject({ searched: 0, skippedRecent: 1, failed: 0 });
+    expect(ll2.calls.filter((c) => c.step === 'searchBook')).toHaveLength(0);
+    // The row is stamped (the cooldown settles it) but NOT audited: nothing was asked of LL by this pass.
+    const rows = await t.db.select().from(bookRequests).where(eq(bookRequests.collectionId, second));
+    expect(rows[0]!.lastSearchedAt).not.toBeNull();
+    const audits = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(eq(permissionAudit.action, 'request_book_search'));
+    expect(audits).toHaveLength(1); // only the first run's real search
+  });
+
   it('is IDEMPOTENT via the cooldown — a want searched within the window is skipped next run', async () => {
     const id = await seedCollection('c', 'recipe-on');
     await syncCollectionWants({

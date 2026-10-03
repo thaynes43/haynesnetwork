@@ -22,9 +22,12 @@ import {
   markRequestFormatsRequeued,
   markRequestPushed,
   pickBestVolume,
+  llRecentSearchCovers,
   readLlHeldSignals,
+  recentlySearchedLlBookIds,
   recordManualSearch,
   searchableFormats,
+  stampRequestsSearched,
   syncShelfRequests,
   type ComicRouteTarget,
   type Coverage,
@@ -188,12 +191,26 @@ export async function syncGoodreadsIntegration(
   const searchCovered: LlSearchCoverage = input.searchCoverage ?? new Map();
   const needsSearch = (llBookId: string, formats: ReadonlyArray<'ebook' | 'audiobook'>): boolean =>
     formats.some((f) => !searchCovered.get(llBookId)?.has(f));
+  // Cross-JOB leg: books another job (format-pairing, the collection force-search) searched within the hour.
+  // A recent search only covers formats LL already shows as Wanted — a format we flip is always searched.
+  const recentSearched = input.ll
+    ? await recentlySearchedLlBookIds(input.db, now)
+    : new Set<string>();
   const searchOnce = async (
     ll: LazyLibrarianClientBundle,
     llBookId: string,
     formats: ReadonlyArray<'ebook' | 'audiobook'>,
+    status?: LlHeldSignals,
   ): Promise<void> => {
     if (!needsSearch(llBookId, formats)) return;
+    if (llRecentSearchCovers(recentSearched, llBookId, status, formats)) {
+      log.info?.('ll_search_skipped_covered', {
+        site: 'goodreads-sync.recent-search',
+        llBookId,
+        formats: [...formats],
+      });
+      return;
+    }
     // `type` is ignored by LL (see above); the first format rides along only to keep the wire shape.
     await ll.write.searchBook(llBookId, formats[0]!);
     const covered = searchCovered.get(llBookId) ?? new Set();
@@ -225,8 +242,12 @@ export async function syncGoodreadsIntegration(
           if (needsSearch(target.llBookId, toQueue)) {
             await input.ll.write.addBook(target.llBookId);
             for (const format of toQueue) await input.ll.write.queueBook(target.llBookId, format);
-            await searchOnce(input.ll, target.llBookId, toQueue);
+            await searchOnce(input.ll, target.llBookId, toQueue, held);
           }
+        }
+        // Stamp the search on this row (the cross-job coverage signal): it was searched by this run's call.
+        if (toQueue.length > 0 && searchCovered.get(target.llBookId)) {
+          await stampRequestsSearched(input.db, [target.requestId], now);
         }
         await markRequestPushed({
           db: input.db,
@@ -310,6 +331,7 @@ export async function syncGoodreadsIntegration(
           }
           // One search covers every format just queued (and none already searched this run).
           await searchOnce(input.ll, target.llBookId, skippedFormats);
+          await stampRequestsSearched(input.db, [target.requestId], now);
           await markRequestFormatsRequeued({
             db: input.db,
             requestId: target.requestId,

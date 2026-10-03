@@ -611,6 +611,51 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
     }
   });
 
+  // Issue #644, the cross-JOB leg: a push stamps `last_searched_at` on the rows it searched, and a later job
+  // (here the second integration's separate run, with its own coverage map) does not search the same book
+  // again within the hour when LL already shows the formats as Wanted.
+  it('stamps last_searched_at on searched rows and skips a book another job searched within the hour', async () => {
+    const { integration } = await seed();
+    const other = await createUser(t.db);
+    const { integration: integration2 } = await linkIntegration({
+      db: t.db,
+      userId: other.id,
+      provider: 'goodreads',
+      externalUserId: '999000111',
+      profileRef: '999000111',
+      actorId: other.id,
+    });
+    const first = stubLl(() => null);
+    await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: first.bundle,
+      pacer: async () => {},
+    });
+    expect(first.calls.filter((c) => c.cmd === 'searchBook')).toHaveLength(1);
+    const [stamped] = await t.db
+      .select()
+      .from(bookRequests)
+      .where(and(eq(bookRequests.llBookId, 'gb-tog'), eq(bookRequests.integrationId, integration.id)));
+    expect(stamped!.lastSearchedAt).not.toBeNull();
+
+    // A separate job (fresh coverage map), LL showing both formats already Wanted.
+    const second = stubLl((id) => (id === 'gb-tog' ? { ebookStatus: 'Wanted', audioStatus: 'Wanted' } : null));
+    await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration2.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: second.bundle,
+      pacer: async () => {},
+    });
+    const forTog = second.calls.filter((c) => c.id === 'gb-tog');
+    expect(forTog.filter((c) => c.cmd === 'queueBook')).toHaveLength(2);
+    expect(forTog.filter((c) => c.cmd === 'searchBook')).toHaveLength(0);
+  });
+
   it('never pushes a format LazyLibrarian already holds — and still pushes the one it does not', async () => {
     const { integration } = await seed();
     // LL already has the ebook (Open + a library date); the audiobook is genuinely being searched for.
