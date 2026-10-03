@@ -1,7 +1,7 @@
 # DESIGN-052: Watchlist protection for Trash — the Watchlist Registry, the Registry Gate, the Watchlist Keep, the Release Block, and everyone's Seerr watchlist
 
 - **Status:** Accepted (2026-09-28; live since v0.101.0, PLAN-072 S6–S10 verified)
-- **Last updated:** 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
+- **Last updated:** 2026-10-03 (D-26 — the Age Guard, owner ruling "Yes, newest date wins": Trash never deletes a title downloaded, upgraded or added to any Plex server in the last 180 days; enforced at batch build and the sweep; migration 0086; Q-14 opened for Expedite). Prior: 2026-09-28 (PLAN-072 S8–S10 done live: D-25di records the rulings; the Seerr Sonarr settings PUT must omit the read-only `id`). Prior: 2026-09-27 (PLAN-072 S6 (a)..(g) passed live on v0.101.0; D-25dd..D-25dh record its results and
   the rulings they needed: a term now matches the raw release title Radarr and Sonarr test (an apostrophe inside a word
   is an optional separator, an accented letter an alternation, an inner `and` optional), because S6(e) found 345 of
   19,434 Sonarr names and 3 of 1,159 Radarr names the *arr would not have blocked; the owner leaves managed Home users
@@ -464,7 +464,7 @@ All copy follows the owner's rules: no em dashes, no names, never whose watchlis
   through the candidate read-model (`trash_candidates.plex_guid` joined at read time).
 - **A batch tile the sweep kept** keeps the existing `skip` glyph; its tooltip names the reason: "Kept: on a
   watchlist", "Kept: watched recently", "Kept: couldn't be checked", "Kept: no longer a candidate", "Kept: saved",
-  "Kept: its release couldn't be recorded".
+  "Kept: its release couldn't be recorded", and (D-26) "Kept: added or upgraded recently".
 - **Expedite confirm:** the protected count's breakdown includes "on a watchlist"; the protected line is
   `EXPEDITE_PROTECTED_REASON` ("recently watched, whitelisted, or on a watchlist; they are kept."), never "Maintainerr
   keeps" or "requested" (D-25bk, D-25cy).
@@ -1197,6 +1197,92 @@ records the review of D-25dd's fix (PR #599).
 | D-25di | PLAN-072 S8–S10 live (2026-09-28). (a) Seerr 3.4.1's `PUT /api/v1/settings/sonarr/{id}` rejects the echoed GET body with 400 `request/body/id is read-only`, so the whole body is echoed minus `id` (the coordinator's preflight did this by hand; `SeerrWriteClient.setSonarrAnimeTags` is fixed the same way, with a fake that answers `id` with 400). The user settings route has no `id` in its body and enrolled all 18 users with the whole body echoed. (b) A file piped into a pod over `kubectl exec` stdin can arrive truncated (the legacy SAB export arrived as 2,115 of 75,046 lines and matched nothing); copy it compressed and compare a checksum before a seed. (c) Silent Night (2023, 65.3 GB) has no release in any of the five HaynesTower SABnzbd histories, so it stays unblockable (ADR-093 C-21). | Recorded; the `id` fix ships with this close-out. |
 | D-25di | The review of D-25dd's fix (PR #599): (1) NFKD turns `´` (U+00B4) into a space and an accent, so the fold, which removed apostrophes only after NFKD, read "d´Amélie" as two words where `termWords` read one, and on any disagreement `termWords` returned the plain tokens for the WHOLE name: every accent and apostrophe of a name with a `´` anywhere (an episode title's "Don´t" included) was lost and its term matched only folded. `İ` lower-cases to two characters, so it was never written. (2) A double-escaped name (the ledger holds "Lilo.&amp;.Stitch…" beside "Lilo.&.Stitch…" for the same release, so an indexer serves both) got a term that blocks only its own spelling, and a plain name's term missed the `&amp;` spelling. (3) The older image's grammar rejects every D-25dd term. | Driver rulings. (1) The fold removes apostrophes before NFKD as well as after it (so `´` is an apostrophe, as its place in the apostrophe set always meant, and a letter whose decomposition carries one, `ŉ` or a fullwidth apostrophe, loses it too), and `termWords` folds each character with `foldReleaseName` itself, so the two readings agree on every character; should a word still differ, that word alone falls back to its plain token (the whole name only when the word counts differ). `İ` is kept as itself, `(?:i\|İ)`. A name with a `´` now has one word where it had two ("d´Amélie" is `damelie`, like "d'Amélie"); the ledger holds none. (2) `&amp;`, `&#39;` and `&apos;` (any case) are read as `&` and an apostrophe, in one pass, before the tokens and the words are built, and the term writes them back: the apostrophe join is `(?:SEP\|&(?:#39\|apos);)?` (`*` in the exact form) and the optional `and` is `(?:(?:and\|amp)SEP+)?` (`SEP*` in the exact form), so a term built from any of the spellings matches all of them, and the Sonarr per-key path no longer needs two terms for one release. Any other entity stays as written (a word that matches its own spelling). (3) Recorded in OPS-017 §8 and PLAN-072's Rollback: once a record holds a D-25dd or D-25di term, never roll back to v0.101.0, the only earlier image with the Release Block writer; its writer refuses the whole profile write (`validate`) on every run. Checked off-cluster against the same ledger dump (20,594 names): against the base and against D-25dd, no term lost, none outside the grammar, no raw miss on its own name, no shape change, and no term matching another title's name that the base term did not; over 40,000 random names (accents, apostrophes, `´`, `&`, `and`), no throw and none outside the grammar, `foldOnly` left only for doubled apostrophes (743), and the only spellings a base term matched that the new one does not are 742 names with a `´` beside another separator, which the base read as two words; over 20,000 random titles written in every spelling (`'`, `’`, `´`, `&#39;`, `&apos;`, none; `&`, `&amp;`, `and`), each group and exact term matches every spelling of its title; every rendered term and the grammar check ran in under a millisecond on 5,000-character near misses. Tested with the review's Amélie, Élite and İstanbul names, both Lilo & Stitch spellings and a double-escaped Bob's Burgers, in group and exact terms. |
 
+### D-26 — The Age Guard: nothing new is deleted (owner ruling 2026-10-03)
+
+**Ruling (owner, AskUserQuestion 2026-10-03, verbatim choice "Yes, newest date wins"):** Trash never deletes a title
+that was downloaded, upgraded or added to any Plex server in the last 180 days. The guard checks the Radarr/Sonarr
+import history and every Plex server's date added, and takes the NEWEST. It must ignore the 2026-07-03 Radarr rebuild
+(8,988 movies re-added that hour from files already on disk), so the pool does not empty out. Like the Watchlist Keep
+(T-263) it is an owner-ruled exception to the 2026-07-09 principle that the app never overrules the rules on what is
+deleted.
+
+**Why.** The 2026-09-14 ruling put "Plex date added older than 180 days" into both Maintainerr rule pools, but
+Maintainerr reads one Plex server (HaynesOps), and HaynesOps sets date added from the file's mtime at first scan and
+never resets it when an upgrade replaces the file. The 2026-10-03 movie batch (expiring 2026-10-04 23:17) held four
+titles inside the window: Troll (upgraded 69 days earlier) and The Babysitter: Killer Queen (upgraded to 4K 58 days
+earlier) by import history, Ponyboi (124 days) and Fool's Gold (150 days) by HaynesTower's date added.
+
+**The dates (`packages/domain/src/trash-age-guard.ts`).** For each pending item resolved to the ledger:
+
+```
+newestImportAt    = max(ledger_events.occurred_at) where event_type = 'imported', source = the item's *arr,
+                    payload.rawEventType = 'downloadFolderImported'          (a download: new or upgrade)
+newestPlexAddedAt = max(media_plex_matches.plex_added_at) over every library holding the title (any server)
+newest            = the later of the two
+recent   if newest is younger than TRASH_AGE_GUARD_DAYS (180)
+unknown  else if the item is not in the ledger, or any of its Plex matches carries no date yet
+clear    otherwise (a title no Plex library is matched to is judged on its imports alone)
+```
+
+- **The rebuild is excluded by the data, not by a date or a title list.** The rebuild stamped Radarr's movie `added`
+  (`media_metadata.arr_added_at`) and its movie file's `dateAdded` on nearly every movie; the guard reads neither.
+  The only *arr signal is a download import: a folder import (`movieFolderImported` / `seriesFolderImported`, the
+  shape a library scan or a re-add of files already on disk takes) never counts. On 2026-10-03 the ledger held no
+  folder import at all and its Radarr download imports ran at a steady 5 to 10 an hour across the rebuild, so no
+  cutoff is needed. The ledger's synced *arr history starts 2026-07-02 (Radarr) and 2026-07-03 (Sonarr); an upgrade
+  before that is invisible to both sources, an accepted limit (the window reaches back to April).
+- **TV.** The ledger row is the series, so any episode imported in the window protects the series the pool holds (a
+  season-level pool item maps to the same series). The Plex date is the show's.
+- **Plex dates.** `media_plex_matches.plex_added_at` (migration 0086) is the title's `addedAt` in that library,
+  stamped by the hourly plex-match sync (`52 * * * *`) from the section listing it already reads, re-stamped every run
+  (a replaced file Plex re-dated is picked up). A library that could not be read keeps its last stamp.
+- **Fail closed.** `unknown` keeps the item `unevaluable` at the sweep (P4). It covers the window after migration
+  0086 until the first plex-match run stamps the existing rows, so a sweep that runs first deletes nothing it cannot
+  date. A recent date wins over an undated match: one fresh signal is enough to keep a title.
+
+**Where it is enforced (in the app, so a hand edit of the Maintainerr rules cannot loosen it):**
+
+- `shapePendingItems` adds `ageGuard` (`recent` / `clear` / `unknown`) and `newestAddedAt` to every
+  `TrashPendingItem`: two grouped reads per pending read, no *arr or Plex call.
+- **Batch build** (`selectBatchCandidates`), as D-08 treats a watchlisted title: a `recent` item never takes a slot in
+  a **targeted** batch (every space-policy batch, and the admin's "Target an amount"), whatever the registry says. An
+  untargeted ("All current candidates") batch snapshots it `pending` and the sweep keeps it `recently_added`, so the
+  wall shows it in Kept with its reason. An `unknown` item is proposed normally and the sweep decides. The space
+  policy's `minCandidates` counts a `recent` item out; `trash.pendingCandidates` carries `recentlyAdded`, and the
+  Start-a-batch preview (`previewTargetSelection`) leaves it out of a targeted pick and out of every "frees" figure
+  (D-25cw). _(The first cut also dropped it from untargeted batches; the e2e run on PR #641 showed that diverged from
+  D-08 and dropped The Fixture, re-downloaded by an earlier spec's Fix, from a manual batch the lifecycle spec walks.
+  Aligned with D-08 before merge.)_
+- **Sweep** (`expireOneBatch`, pass 1, after the guardian): `recent` ⇒ kept `recently_added`, `unknown` ⇒ kept
+  `unevaluable`, each with an `[trash] age_guard` log line (title, verdict, newest date). The verdict is re-derived
+  from live data at the sweep, so a title upgraded or added to another server after its batch was built is kept.
+- **The batch wall:** a kept row's tooltip names the reason in the D-10 language, "Kept: added or upgraded recently".
+  No new UI.
+- **Expedite is not covered** (both scopes): an admin's deliberate delete still runs the guardian only. Q-14.
+- **The pending walls are unchanged:** a recent title is still in the Maintainerr pool, so the kind tab's pending
+  wall and its "future batches" strip still list it; only proposal and deletion skip it. Q-14 asks about the walls
+  together with Expedite.
+- **The Maintainerr rules stay as they are** (requirement 3 of the ruling's work order, optional): Maintainerr reads
+  only HaynesOps' date added, and its Radarr dates carry the rebuild, so no rule clause can express the guard
+  without emptying the pool. The app check is the guarantee.
+
+**Data:** migration **0086** (`0086_trash_age_guard.sql`, journal idx 85): `media_plex_matches.plex_added_at`
+(nullable) and `trash_batch_items.keep_reason` admitting `recently_added`. The previous image runs unchanged against
+it.
+
+**Dry run (2026-10-03, read-only, the open movie batch):** of its 50 items (49 pending, 1 saved) the guard keeps
+exactly the four above: Troll and The Babysitter: Killer Queen by a download import 69 and 57 days old, Ponyboi and
+Fool's Gold by HaynesTower's date added (124 and 150 days). Of the 129 movies in the pool, 5 have a download import
+inside the window.
+
+**Tests** (`packages/domain/__tests__/trash-age-guard.test.ts`, embedded PG16, the Maintainerr stub and the
+in-memory Release Block *arr): an upgrade 60 days ago takes no targeted slot, an untargeted batch snapshots it and the
+sweep keeps it, and the Start-a-batch wire says so; a title already in a batch when it is upgraded, or added to a second server 120 days ago, is kept
+`recently_added` at the sweep and the batch detail carries the reason; a folder import 20 days ago and an *arr
+`added` 92 days ago (the rebuild's shape) do not protect; an undated Plex match keeps the title `unevaluable`; an
+episode import protects the series; `judgeAge` at the window's edges. The plex-match sync test asserts the date is
+carried and re-stamped.
+
 ## Alternatives considered
 
 - **Maintainerr's "Is Watchlisted" rule as the guard, or as defence in depth** (ADR-093 option A1): 4 of 42 accounts,
@@ -1331,3 +1417,4 @@ records the review of D-25dd's fix (PR #599).
 | Q-11 | The remediation releases were inferred by size from a copy of the legacy HaynesTower SAB history; Terrifier's ledger year (2018) differs from its release's (2016). | **Answered (PLAN-072 S8, 2026-09-28):** the live legacy SAB histories were re-read read-only and the names confirmed by size (0.969 of the download) with tmdb 1097549 (Babygirl), 420634 (Terrifier) and 974573 (Another Simple Favor); the manual terms took the *arr's years too (Terrifier `(?:2016|2018)`). Silent Night (2023) has no release in any of the five histories and stays unblockable. |
 | Q-12 | What does `releaseGroup` look like for the 163 disk-imported pool movies (how many are null, so only an exact name or nothing can be blocked)? | **Answered (PLAN-072 S6(e), D-25df):** of the 164 in the pool on 2026-09-27, 158 are disk imports and none has a null group; 156 get a group term (`low_confidence`, renamed-only) and 2 none (DVD files with no resolution token), kept `release_unrecorded`. |
 | Q-13 | If many pool items have no recordable term, may they be deleted unblocked (a re-request would then fetch the same release), or do they stay kept? | **Not asked (D-25df):** S6(e) kept 2 of 164 (1.2%), not a material share, so they stay kept (`release_unrecorded`, D-11, D-24g). It is asked if a later pool shows a material share. |
+| Q-14 | Should Expedite (item and all) honor the Age Guard (D-26), and should the pending walls mark or hide a title inside the window? The 2026-10-03 work order scoped the guard to batch build and the sweep; Expedite is an admin's deliberate delete, and covering it means a new `ExpediteVerdict`, the client mirror `previewGuardian`, its parity test and the Expedite confirm copy; a wall note is new UI. | **Open**, for the owner. Until answered, Expedite runs the guardian only. |

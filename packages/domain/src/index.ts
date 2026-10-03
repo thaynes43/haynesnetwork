@@ -25,6 +25,7 @@ export * from './tickets';
 // ADR-023 / DESIGN-010 — Trash orchestrators over Maintainerr (confined write surface — guard test)
 export * from './maintainerr-clients';
 export * from './trash-flow';
+export * from './trash-age-guard';
 // ADR-035 / DESIGN-010 amendment — the Trash candidate read-model (snapshot refresher + the
 // snapshot-backed pending page/candidates/count reads; single writer for trash_candidates*)
 export * from './trash-candidates';

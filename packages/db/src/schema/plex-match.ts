@@ -47,6 +47,13 @@ export const mediaPlexMatches = pgTable(
     ratingKey: text('rating_key').notNull(),
     /** Which shared GUID matched: 'tmdb' | 'imdb' | 'tvdb' | 'musicbrainz'. */
     matchedVia: text('matched_via').$type<PlexMatchGuidSource>().notNull(),
+    /**
+     * DESIGN-052 D-26 (migration 0086) — the Plex `addedAt` of the matched title in THIS library (the server's "date
+     * added"), stamped by the plex-match sync on every run. The Trash Age Guard takes the newest across every library
+     * holding the title. Null on rows the sync has not re-stamped since 0086, and when Plex omits the field; the Age
+     * Guard reads a null as "cannot tell" (the item is kept `unevaluable`, never deleted).
+     */
+    plexAddedAt: timestamp('plex_added_at', { withTimezone: true }),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

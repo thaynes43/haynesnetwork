@@ -31,7 +31,8 @@ describe('parsePlexGuids', () => {
  *  and one unmapped 4K section absent from the registry. */
 function fakeRead(): PlexReadClient {
   const movies: PlexSectionItem[] = [
-    { ratingKey: '9001', type: 'movie', title: 'Movie A', Guid: [{ id: 'tmdb://500501' }] },
+    // DESIGN-052 D-26 — Movie A carries its Plex `addedAt` (epoch seconds); Movie B omits it.
+    { ratingKey: '9001', type: 'movie', title: 'Movie A', addedAt: 1_780_000_000, Guid: [{ id: 'tmdb://500501' }] },
     { ratingKey: '9002', type: 'movie', title: 'Movie B', Guid: [{ id: 'imdb://tt999' }] },
   ] as unknown as PlexSectionItem[];
   return {
@@ -136,6 +137,17 @@ describe('fetchPlexMatchSnapshot + syncPlexMatches (ADR-047)', () => {
     });
     expect(report.upserted).toBe(2);
     expect(await countMatches(t.db)).toBe(2);
+
+    // DESIGN-052 D-26 — each match carries the title's Plex date added (null when Plex omits it), persisted.
+    const byKey = new Map(snap.matches.map((m) => [m.ratingKey, m.plexAddedAt]));
+    expect(byKey.get('9001')?.toISOString()).toBe(new Date(1_780_000_000 * 1000).toISOString());
+    expect(byKey.get('9002')).toBeNull();
+    const rows = await t.db
+      .select({ ratingKey: mediaPlexMatches.ratingKey, plexAddedAt: mediaPlexMatches.plexAddedAt })
+      .from(mediaPlexMatches);
+    const stored = new Map(rows.map((r) => [r.ratingKey, r.plexAddedAt]));
+    expect(stored.get('9001')?.toISOString()).toBe(new Date(1_780_000_000 * 1000).toISOString());
+    expect(stored.get('9002')).toBeNull();
   });
 
   it('reconcile removes a match whose title dropped out of a fully-read library', async () => {
@@ -146,10 +158,21 @@ describe('fetchPlexMatchSnapshot + syncPlexMatches (ADR-047)', () => {
       .where(and(eq(mediaItems.arrKind, 'radarr'), eq(mediaItems.arrItemId, 1)));
     await syncPlexMatches({
       db: t.db,
-      matches: [{ mediaItemId: movieA!.id, plexLibraryId: moviesLib, ratingKey: '9001', matchedVia: 'tmdb' }],
+      matches: [
+        {
+          mediaItemId: movieA!.id,
+          plexLibraryId: moviesLib,
+          ratingKey: '9001',
+          matchedVia: 'tmdb',
+          plexAddedAt: new Date('2026-09-01T00:00:00Z'),
+        },
+      ],
       scopedLibraryIds: [moviesLib],
     });
     expect(await countMatches(t.db)).toBe(1); // Movie B's stale match reconciled away
+    // D-26 — a re-run re-stamps the date added (a replaced file Plex re-dated is picked up).
+    const [a] = await t.db.select({ plexAddedAt: mediaPlexMatches.plexAddedAt }).from(mediaPlexMatches);
+    expect(a!.plexAddedAt?.toISOString()).toBe('2026-09-01T00:00:00.000Z');
   });
 });
 

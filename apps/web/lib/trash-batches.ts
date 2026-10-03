@@ -314,6 +314,9 @@ export interface TargetCandidate {
   protectedByTag: boolean;
   /** ADR-093 / DESIGN-052 D-08 — on a watchlist: a TARGETED batch leaves it out (it takes no slot). */
   onWatchlist?: boolean;
+  /** DESIGN-052 D-26 — inside the Age Guard's 180 days: a TARGETED batch leaves it out, and it frees nothing while it
+   *  stays inside the window (the sweep keeps it). Absent ⇒ false. */
+  recentlyAdded?: boolean;
 }
 
 export interface TargetPreview {
@@ -352,12 +355,16 @@ export function previewTargetSelection(
   // An untargeted batch snapshots every non-`dnd` candidate as pending (a watchlisted one too — the sweep keeps
   // it); a targeted batch picks only from the candidates that can free space: not `dnd`, not on a watchlist
   // (mirrors selectBatchCandidates, DESIGN-052 D-08) — unless the server's proposal is unfiltered (D-25cx).
+  // DESIGN-052 D-26 — a title inside the Age Guard's 180 days is handled like a watchlisted one: a targeted pick leaves
+  // it out (always: the age needs no registry), an untargeted batch snapshots it, and it frees nothing.
   const pending = candidates.filter((c) => !c.protectedByTag);
   const filtered = spec.watchlistFiltered !== false;
-  const deletable = filtered ? pending.filter((c) => c.onWatchlist !== true) : pending;
+  const deletable = (filtered ? pending.filter((c) => c.onWatchlist !== true) : pending).filter(
+    (c) => c.recentlyAdded !== true,
+  );
   const poolBytes = deletable.reduce((n, c) => n + c.sizeBytes, 0);
   const frees = (items: readonly TargetCandidate[]) =>
-    items.filter((c) => c.onWatchlist !== true).reduce((n, c) => n + c.sizeBytes, 0);
+    items.filter((c) => c.onWatchlist !== true && c.recentlyAdded !== true).reduce((n, c) => n + c.sizeBytes, 0);
   const capped = spec.targetBytes !== undefined || spec.maxItems !== undefined;
   if (!capped) {
     return {
