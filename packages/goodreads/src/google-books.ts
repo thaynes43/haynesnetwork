@@ -155,6 +155,51 @@ export function gbResolveTitleMatches(queryTitle: string, resolvedTitle: string 
   return covered >= Math.max(1, Math.ceil(q.length * 0.6));
 }
 
+/**
+ * OMNIBUS guard (2026-10-03 live incident) — is this resolved volume a bundle / box set / multi-work compilation
+ * the QUERY did not ask for? The 60% title-coverage guard above compares against `title + subtitle`, and an
+ * omnibus lists its contents in the subtitle ("The Odd Thomas Series 7-Book Bundle: Odd Thomas, Forever Odd, …,
+ * Odd Interlude, …", "Dean Koontz: Winter Moon; Icebound"), so a lookup for ONE member of the set covers its
+ * tokens and resolves to the whole bundle. That bundle id then became the want's LL `addBook` key and LL
+ * hunted a 7-book duplicate of books already owned individually (Odd Interlude #1/#2), and a want for
+ * "Dean R Koontz - Winter Moon" was pinned to a junk compilation row. Two signals, either rejects:
+ *   - a packaging marker: bundle, omnibus, box/boxed set, compendium, starter pack or "N-Book" in the title
+ *     or subtitle, or "collection"/"trilogy" in the TITLE only (a single novel's subtitle often reads "The
+ *     Grisha Trilogy, Book 1"), or
+ *   - a contents-list subtitle (a `;`, or four-plus comma-separated parts),
+ * unless the QUERY itself carries the same signal (a wanted "Complete Collection" boxed set resolves to a
+ * boxed set — that is the ask). Null (an honest gap) is strictly better than the wrong volume.
+ */
+// STRONG markers name a packaged set wherever they appear (title or subtitle). WEAK markers ("trilogy",
+// "collection") also appear in the subtitle of an ordinary single book ("The Grisha Trilogy, Book 1",
+// "A Collection of Stories"), so they count only in the TITLE.
+const OMNIBUS_STRONG =
+  /\b(bundle|omnibus|box(?:ed)? ?set|compendium|starter pack|\d+[- ]books?|(?:two|three|four|five|six|seven|eight|nine|ten)[- ]books?)\b/i;
+const OMNIBUS_WEAK = /\b(collection|trilogy)\b/i;
+const anyMarker = (s: string): boolean => OMNIBUS_STRONG.test(s) || OMNIBUS_WEAK.test(s);
+
+function hasContentsList(text: string): boolean {
+  return text.includes(';') || text.split(',').length >= 4;
+}
+
+export function gbIsOmnibusVolume(
+  volume: { title?: string | undefined; subtitle?: string | undefined },
+  ...queryTitles: ReadonlyArray<string>
+): boolean {
+  // The query side is tested PER title (callers pass the raw and the de-noised title, usually the same text
+  // twice) - joining them would double the commas and fake a contents list.
+  // De-noised first (gbQueryTitle drops a trailing series parenthetical): "Shadow and Bone (The Grisha Trilogy, #1)"
+  // is a request for ONE book, not for a trilogy.
+  const queries = queryTitles.map(gbQueryTitle);
+  const queryAsksForSet = queries.some(anyMarker);
+  const volumeText = [volume.title, volume.subtitle].filter(Boolean).join(' ');
+  if (!queryAsksForSet && (OMNIBUS_STRONG.test(volumeText) || OMNIBUS_WEAK.test(volume.title ?? ''))) {
+    return true;
+  }
+  if (volume.subtitle && hasContentsList(volume.subtitle) && !queries.some(hasContentsList)) return true;
+  return false;
+}
+
 /** Combined comic classification from every signal we hold: GB categories OR a text marker in title/author/publisher. */
 export function classifyComic(sig: {
   categories?: readonly string[] | undefined;
@@ -286,6 +331,8 @@ export class GoogleBooksClient {
     const resolvedTitle = [vol.volumeInfo?.title, vol.volumeInfo?.subtitle].filter(Boolean).join(' ');
     // Guard against the title we actually QUERIED (the pre-colon fallback deliberately narrows it).
     if (!gbResolveTitleMatches(queryTitle, resolvedTitle || undefined)) return null;
+    // Omnibus guard: a bundle/box set that LISTS the queried work in its subtitle passes the coverage check above.
+    if (gbIsOmnibusVolume(vol.volumeInfo ?? {}, queryTitle, input.title)) return null;
     // Author guard (the "Whispers" wrong-book incident, 2026-07-17: a title-only resolve returned a
     // DIFFERENT author's similarly-titled work): when the caller knows the author AND the resolved
     // volume carries authors, require a shared surname token — else reject as a different work.

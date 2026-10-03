@@ -395,3 +395,28 @@ cannot share the in-memory coverage map above. They share `book_requests.last_se
   want flipping the OTHER format is still searched).
 - An LL read failure leaves the status map empty, so nothing is ever treated as covered: the rule may only
   remove a call, never add one.
+
+## Amendment — 2026-10-03: the OMNIBUS guard on the title-search resolve
+
+**What happened.** The resolve-title guard above compares the query to the volume's `title + subtitle`. An
+omnibus lists its contents in the subtitle, so a lookup for ONE member of a set covers its own tokens and
+resolves to the whole bundle. Live: the Odd Thomas collection's missing "Odd Interlude #1/#2" resolved to *The
+Odd Thomas Series 7-Book Bundle* and *The Complete Odd Thomas 8-Book Bundle*, which the collection force-search
+then added to LazyLibrarian as Wanted and searched (seven books already owned individually). A format-pairing
+want for the library file "Dean R Koontz - Winter Moon" resolved to a compilation titled "Dean Koontz" with the
+subtitle "Winter Moon; Icebound", and Libretto's resolve broker shares the same guard shape.
+
+**The guard.** `gbIsOmnibusVolume` (`@hnet/goodreads`) runs in the TITLE leg of `resolveVolume` only (an
+exact ISBN hit is never second-guessed) and returns null (an honest gap, retried next sync) when the resolved
+volume carries a packaging marker (bundle, omnibus, box/boxed set, compendium, starter
+pack or "N-Book" in the title or subtitle; "collection" or "trilogy" in the title only, because a single
+novel's subtitle often reads "The Grisha Trilogy, Book 1") or a contents-list subtitle (a `;`, or four or more comma-separated parts), **unless the query
+itself carries the same signal** — a want for a "Complete Collection" boxed set must still resolve to one.
+Libretto's resolve broker got the identical guard in its own repo.
+
+**Data repair (live, 2026-10-03).** The two bundle LL rows were set Skipped (eBook); the two collection wants
+were cleared of the bundle id and parked with `unroutable_reason='wrong_volume'` (which the collection
+force-search and `isRequestSearchable` already treat as not searchable), so a stale resolve can never push
+them again. Duplicate-volume wants (Julius House, The Sea and Little Fishes, the Dark Artifices boxed set) were
+repointed to the canonical LL row, and the two pairing wants for junk-titled duplicate Kavita files were
+repointed with the audio format marked landed (the audiobook is held under the paired twin).
