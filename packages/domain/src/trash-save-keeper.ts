@@ -2,11 +2,7 @@ import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import { mediaItems, trashCandidates, trashSaveIntents, type DbClient } from '@hnet/db';
 import { resolveDb } from './db-client';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
-import {
-  applySaveIntentExclusion,
-  KEEPER_APPLY_DEADLINE_MS,
-  withMaintainerrDeadline,
-} from './trash-save-enforcement';
+import { applySaveIntentExclusion, KEEPER_APPLY_DEADLINE_MS } from './trash-save-enforcement';
 import { relinkSaveIntents, type TrashRelinkReport } from './trash-relink';
 import { tidySavedFromLeavingSoon } from './trash-batches';
 import { requestPoolRefreshAfterSave } from './pool-refresh';
@@ -55,8 +51,8 @@ export interface TrashSaveKeeperReport {
 
 /** How many pending intents one tick works through at most (a backlog clears over a few ticks). */
 const APPLY_BATCH_LIMIT = 50;
-/** The most stages 2 and 3 may each wait on Maintainerr in one tick. */
-const KEEPER_STAGE_DEADLINE_MS = 120_000;
+/** How long stages 2 and 3 may each keep starting new work in one tick. */
+const KEEPER_STAGE_BUDGET_MS = 120_000;
 const SAMPLE_CAP = 10;
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -84,19 +80,25 @@ export async function keepTrashSaves(input: {
     report.applyError = message(err);
   }
   // Stages 2 and 3 read Maintainerr per title / per page; a Maintainerr busy with its rules must not hold the sync
-  // tick for long, so each stage gets a bounded wait (it simply resumes next tick).
+  // tick for long, so each stage gets a time budget. It is cooperative, not a race: a stage starts no new title or
+  // batch once its budget is spent, and always finishes the one in hand, so an exclusion is never written without
+  // its audit row and nothing outlives the sync run. The rest resumes next tick.
   try {
-    report.relink = await withMaintainerrDeadline('save keeper relink', KEEPER_STAGE_DEADLINE_MS, () =>
-      relinkSaveIntents({ db: input.db, maintainerr: input.maintainerr }),
-    );
+    report.relink = await relinkSaveIntents({
+      db: input.db,
+      maintainerr: input.maintainerr,
+      deadlineAt: Date.now() + KEEPER_STAGE_BUDGET_MS,
+    });
   } catch (err) {
     report.relinkError = message(err);
   }
   try {
     report.leavingSoonRemoved = (
-      await withMaintainerrDeadline('save keeper Leaving-Soon tidy', KEEPER_STAGE_DEADLINE_MS, () =>
-        tidySavedFromLeavingSoon({ db: input.db, maintainerr: input.maintainerr }),
-      )
+      await tidySavedFromLeavingSoon({
+        db: input.db,
+        maintainerr: input.maintainerr,
+        deadlineAt: Date.now() + KEEPER_STAGE_BUDGET_MS,
+      })
     ).removed;
   } catch (err) {
     report.tidyError = message(err);

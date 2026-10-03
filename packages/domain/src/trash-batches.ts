@@ -387,6 +387,8 @@ export async function healBatchLeavingSoonCollection(input: {
 export async function tidySavedFromLeavingSoon(input: {
   db?: DbClient;
   maintainerr: MaintainerrClientBundle;
+  /** Epoch ms after which no further batch is started (the keeper's stage budget); unset ⇒ no budget. */
+  deadlineAt?: number;
 }): Promise<{ batches: number; removed: number }> {
   const db = resolveDb(input.db);
   const open = await db
@@ -395,6 +397,7 @@ export async function tidySavedFromLeavingSoon(input: {
     .where(and(eq(trashBatches.state, 'leaving_soon'), isNotNull(trashBatches.maintainerrCollectionId)));
   let removed = 0;
   for (const batch of open) {
+    if (input.deadlineAt !== undefined && Date.now() >= input.deadlineAt) break;
     const collectionId = batch.collectionId as number;
     const savedRows = await db
       .select({ key: trashBatchItems.maintainerrMediaId })

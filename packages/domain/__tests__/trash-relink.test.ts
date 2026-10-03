@@ -124,6 +124,19 @@ describe('relinkSaveIntents (ADR-086 D-4)', () => {
     expect(intent!.lastRelinkedAt).not.toBeNull();
   });
 
+  it('ADR-099 — a spent time budget starts no new candidate and reports it (cooperative, never a race)', async () => {
+    const { state, bundle, calls } = await lapseAfterRekey();
+    const report = await relinkSaveIntents({ db: t.db, maintainerr: bundle, deadlineAt: Date.now() - 1 });
+    expect(report.stoppedEarly).toBe(true);
+    expect(report.relinked).toBe(0);
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    expect(state.exclusions.has('ms-9101')).toBe(false);
+    // The next tick, with time to spare, finishes it.
+    const next = await relinkSaveIntents({ db: t.db, maintainerr: bundle, deadlineAt: Date.now() + 60_000 });
+    expect(next).toMatchObject({ stoppedEarly: false, relinked: 1 });
+    expect(state.exclusions.has('ms-9101')).toBe(true);
+  });
+
   it('is idempotent — a second pass finds nothing left to do', async () => {
     const { state, bundle } = await lapseAfterRekey();
     await relinkSaveIntents({ db: t.db, maintainerr: bundle });

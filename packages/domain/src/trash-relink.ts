@@ -55,6 +55,8 @@ export interface TrashRelinkReport {
   samples: Array<{ title: string; savedKey: string; poolKey: string; outcome: string }>;
   /** False when the kill switch is off — detection and census still ran, writes did not. */
   enforced: boolean;
+  /** ADR-099 — the caller's time budget ran out before every candidate was handled; the next tick resumes. */
+  stoppedEarly: boolean;
 }
 
 const SAMPLE_CAP = 10;
@@ -80,6 +82,9 @@ const identityJoin = or(
 export async function relinkSaveIntents(input: {
   db?: DbClient;
   maintainerr: MaintainerrClientBundle;
+  /** ADR-099 — epoch ms after which no new candidate is started (the keeper's stage budget). A candidate already
+   *  started always finishes, so its exclusion and its audit row are never split; unset ⇒ no budget. */
+  deadlineAt?: number;
 }): Promise<TrashRelinkReport> {
   const db = resolveDb(input.db);
   const enforced = await getAppSetting(input.db, 'trash_relink_enabled');
@@ -95,6 +100,7 @@ export async function relinkSaveIntents(input: {
     unlinkedSaves: 0,
     samples: [],
     enforced,
+    stoppedEarly: false,
   };
 
   // ---- Stage 1: detect. Pure SQL against the ADR-035 snapshot — zero Maintainerr calls. ----
@@ -137,6 +143,10 @@ export async function relinkSaveIntents(input: {
   const kindsTouched = new Set<'movie' | 'tv'>();
   for (const c of candidates) {
     if (c.poolKey === null) continue;
+    if (input.deadlineAt !== undefined && Date.now() >= input.deadlineAt) {
+      report.stoppedEarly = true;
+      break;
+    }
     const already = liveExcluded.has(c.poolKey);
     const sameKey = c.poolKey === c.savedKey;
     // Same key and still excluded: Maintainerr simply has not re-run its rules since the Save. Nothing to do.
