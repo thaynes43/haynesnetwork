@@ -21,6 +21,12 @@
 //   POST /_stub/add-pending    → 204; body { collectionId, mediaServerId, tmdb/tvdbId?, sizeBytes? }
 //   POST /_stub/remove-pending → 204; body { mediaServerId } — drop it from its collection (empty a
 //                               kind for the Overview "nothing pending" card / suppressed-zero badge).
+//   POST /_stub/exclusion-fault → 204; body { delayMs, status } — every exclusion add (POST
+//                               /rules/exclusion) now waits delayMs first (ADR-096: Maintainerr holds
+//                               exclusion writes during its scheduled rule run). A status >= 400 then
+//                               answers that status WITHOUT adding the exclusion; a status < 400 then
+//                               adds it as usual (a slow success). status 0 clears it; /_stub/reset
+//                               clears it too.
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { clearStubArrDeleted, markStubArrDeleted } from './stub-arr-state';
 
@@ -239,6 +245,8 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
   const wipes: Array<{ ruleId: number; collectionId: unknown; from: unknown; to: unknown }> = [];
   let collections = freshCollections();
   let rules = freshRules();
+  // ADR-096 — the exclusion-add fault (null = answer normally).
+  let exclusionFault: { delayMs: number; status: number } | null = null;
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -261,6 +269,14 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         wipes.length = 0;
         collections = freshCollections();
         rules = freshRules();
+        exclusionFault = null;
+        res.writeHead(204);
+        return res.end();
+      }
+      if (url.pathname === '/_stub/exclusion-fault' && method === 'POST') {
+        const body = JSON.parse(await readBody(req)) as { delayMs?: number; status?: number };
+        exclusionFault =
+          (body.status ?? 0) === 0 ? null : { delayMs: body.delayMs ?? 0, status: body.status ?? 503 };
         res.writeHead(204);
         return res.end();
       }
@@ -322,6 +338,13 @@ export async function startStubMaintainerr(): Promise<StubMaintainerrServer> {
         const body = raw === '' ? undefined : (JSON.parse(raw) as unknown);
         calls.push({ method, path, query, body });
         if (method === 'POST' && path === '/rules/exclusion') {
+          if (exclusionFault !== null) {
+            const { delayMs, status } = exclusionFault;
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            if (status >= 400) {
+              return json(res, status, { message: 'stub-maintainerr: exclusion fault (rule run in progress)' });
+            }
+          }
           exclusions.add(String((body as { mediaId?: unknown })?.mediaId ?? ''));
           return json(res, 201, { code: 1 });
         }

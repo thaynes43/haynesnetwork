@@ -18,7 +18,8 @@
 //   fixed-corner TRASH-CAN (expedite ⇒ the ADR-014 Modal). Scheduled-delete date, requesters,
 //   collection, and guardian facts move into the tile tooltip; the reclaim counts bar rides
 //   ABOVE the wall with Expedite-all.
-// - Save/whitelist is the shield corner (protective — plain optimistic toggle, ADR-014 reserves
+// - Save/whitelist is the shield corner (protective — plain one-tap toggle that flips on the server's
+//   answer, never before it (ADR-096); ADR-014 reserves
 //   two-step for destructive); Expedite ALWAYS goes through a Modal (ADR-014 — never one-click
 //   delete), whose copy predicts the guardian partition (deleted NOW / protected /
 //   skipped-unverifiable) and whose post-run report distinguishes those three outcomes
@@ -320,8 +321,8 @@ function PendingTab({
     patchParams({ q: null, genre: null, res: null, req: null, col: null, rmin: null, rmax: null });
   };
 
-  // ── save / un-save (the shared optimistic tap-toggle) + infinite scroll ──
-  const { overrides, busy: shieldBusy, error: rowError, toggle } = usePendingSaves(media);
+  // ── save / un-save (the shared tap-toggle; a tile flips only on the server's answer, ADR-096) + infinite scroll ──
+  const { overrides, busy: shieldBusy, failed, error: rowError, toggle } = usePendingSaves(media);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const canLoadMore =
     pending.hasNextPage === true && !pending.isFetchingNextPage && !pending.isPlaceholderData;
@@ -528,7 +529,12 @@ function PendingTab({
       </div>
 
       {/* Fixed-height error slot — an error appearing recolors the line, never shifts the wall. */}
-      <p className="bwall-error" role="alert" data-testid="trash-wall-error">
+      <p
+        className="bwall-error"
+        role="alert"
+        data-testid="trash-wall-error"
+        title={rowError ?? undefined}
+      >
         {rowError ?? ''}
       </p>
 
@@ -545,6 +551,7 @@ function PendingTab({
           fromKey={fromKey}
           overrides={overrides}
           busy={shieldBusy}
+          failed={failed}
           canSave={canSave}
           canUnsave={canUnsave}
           onToggle={toggle}

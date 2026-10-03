@@ -7,6 +7,9 @@
   sweep first needs a verified Watchlist Registry, the guardian keeps a watchlisted title (`keep_reason`), and the
   deleted release is recorded and blocked in Radarr/Sonarr before each Maintainerr handle (DESIGN-052 D-07, D-09,
   D-14).
+- **Amended by:** [ADR-096](../adrs/096-trash-walls-show-only-confirmed-saves.md) (2026-10-03): the batch wall
+  shows a tap's result only once the server confirms it (busy ring meanwhile, failure marked on the tile; D-07
+  amendment 2026-10-03).
 - **Implements:** ADR-025 (curation pipeline). Extends DESIGN-010 (Trash/Maintainerr — D-02 REST
   mapping, D-05 guardian, D-08 wire contracts). Relates ADR-014/015 (confirm + no-reorient),
   ADR-019 (poster proxy).
@@ -256,7 +259,8 @@ running counts → **the wall** → save-stats → history → settings.
   the guardian will keep it, so an X would be dishonest; inert), **shield** (protected — inert),
   **⊘** (skipped — kept-not-saved, ADR-023 C-07b), **trash** (deleted; poster grays out).
   **Tap toggles X ⇄ lock in place** — optimistic flip, reconciled with the `setItemSaved`
-  response; on `changed:false` the tile renders the RETURNED real state. The badge re-mount pop
+  response; on `changed:false` the tile renders the RETURNED real state. *(Superseded 2026-10-03 by
+  ADR-096: the flip waits for the server's answer; see the amendment at the end of D-07.)* The badge re-mount pop
   is transform-only; captions are fixed-height — the tile never moves/reflows (hard rule 9). No
   per-tap confirm (protective + reversible).
 - **Running counts header** — sticky, fixed-height, tabular figures, derived from the SAME glyph
@@ -372,6 +376,37 @@ running counts → **the wall** → save-stats → history → settings.
 > Protective direction only: an un-save made outside the wall leaves the batch row `saved` —
 > `saved` rows are outside the sweep, so the title is kept for this batch and competes again in
 > the next one.
+
+> **Amended 2026-10-03 (ADR-096, owner report) — a tile shows a save only after the server confirms
+> it.** The owner's Leaving Soon screenshot read `Rescued 2` with two green tiles; the second save was
+> still waiting on Maintainerr (busy with its scheduled rule run) and came back 502 thirty seconds
+> later, so it never happened. The "optimistic flip" in the bullet above is retired, on this wall and
+> on the pending walls that share the tap-toggle (DESIGN-010 D-09):
+>
+> - **Confirmed only.** A tap starts the request and marks the tile busy; the glyph, `aria-pressed`
+>   and the running header stay on the last confirmed state until the `setItemSaved` /
+>   `unprotectItem` answer lands, and then take the RETURNED state (unchanged: on `changed:false` that
+>   is the item's real state). The amendment (b) rule above now reads "this session's confirmed tap
+>   answer wins over the pool projection".
+> - **Busy.** The poster gets a dashed ring in `--color-progress` and the puck a pulsing halo (a
+>   `::after` box-shadow, so the flip-pop animation is untouched); the accessible name and tooltip
+>   read "Saving <title>…" / "Un-saving …" / "Un-protecting …"; further taps are ignored and a
+>   release cannot arm. Reduced motion stills the pulse.
+> - **Failed.** The glyph stays; the poster gets the danger ring (`data-failed`), the meta text is
+>   replaced by a short danger-tone note in the same fixed-height line ("Not saved" / "Still saved" /
+>   "Still protected", testid `wall-failed-note`), and the wall's error line names the title before
+>   the reason ("<title> (<year>) was not saved. <reason>"). The next tap on that tile clears it.
+> - **The error line holds its height** (all three trash walls share `.bwall-error`): a fixed
+>   height with the text clamped to it, one line on wide screens and two below 760 px, where it was
+>   a min-height that grew (a two-line message moved every tile 13 px at 390 px). The full text rides
+>   `title` and the `role="alert"` announcement.
+> - All of it is the pure `apps/web/lib/wall-taps.ts` (unit-tested with a replay of the incident);
+>   `PosterWall` stores one `WallTaps` value and renders from it. Recolors and a text swap in fixed
+>   slots only, so hard rule 9 / ADR-015 hold (the e2e measures the tile and its neighbour).
+> - **Each tap settles its own tile** through its request's promise (`mutateAsync().then(...)`),
+>   never through callbacks passed to `mutate()` on the wall's shared mutation hook. TanStack Query
+>   keeps only the latest `mutate()` call's callbacks, so a second tap while the first was out used to
+>   orphan the first tile's answer (a failed save stayed green for good). Same in `usePendingSaves`.
 
 ---
 

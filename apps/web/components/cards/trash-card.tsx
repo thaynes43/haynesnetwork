@@ -2,8 +2,8 @@
 
 // PLAN-047 / ADR-058 — the TRASH wall tile (ADR-023/ADR-033 / DESIGN-010/011), refit onto the card
 // family: the shared reserved 2:3 poster box with the wall's TWO fixed corner slots — the
-// state/action puck (top-right: trash · shield · check · skip · gone; a tap flips glyph + color in
-// place) and the /library nav puck (top-left, a book glyph — never a state) — over the fixed-height
+// state/action puck (top-right: trash · shield · check · skip · gone; a tap the server confirmed flips
+// glyph + color in place, ADR-096) and the /library nav puck (top-left, a book glyph — never a state) — over the fixed-height
 // caption + ONE meta row (size · ★rating text, the requester person chip, the watch eye). Every
 // slot is a typed prop (ADR-058 — no children escape hatch); serves BOTH trash walls (the pending
 // candidates wall and the batch curation/terminal wall). Pixel-neutral with the pre-refit markup:
@@ -26,6 +26,8 @@ export interface TrashCardToggle {
   label: string;
   /** The hover tooltip (the retired table columns' detail). */
   title: string;
+  /** ADR-096 — a request for this tile is out. The glyph does NOT change (nothing is confirmed
+   *  yet); the tile shows the busy ring instead (color only, ADR-015) and ignores taps. */
   busy?: boolean;
   onTap?: () => void;
   /** data-testid on the tap surface ('trash-toggle' on the pending walls; none on the batch wall). */
@@ -132,6 +134,7 @@ export function TrashCard({
   requesters,
   watchNote,
   onWatchlist = false,
+  failedNote = null,
   pwall = false,
   testId,
 }: {
@@ -150,6 +153,10 @@ export function TrashCard({
   watchNote: { label: string; tone: 'info' | 'muted' } | null;
   /** ADR-093 / DESIGN-052 D-10 — the title is on a watchlist (the "On a watchlist" note). */
   onWatchlist?: boolean;
+  /** ADR-096 — the tile's last tap failed: this short note ("Not saved") takes the meta text's
+   *  place in the danger tone and the poster gets the danger ring. Same fixed-height line, so the
+   *  tile never moves (ADR-015). Null = no failure. */
+  failedNote?: string | null;
   /** The pending walls' tile marker class (same geometry; kept for selector parity). */
   pwall?: boolean;
   /** data-testid on the tile ('trash-tile' pending / 'wall-tile' batch). */
@@ -183,6 +190,7 @@ export function TrashCard({
     <li
       className={`bwall-tile${pwall ? ' pwall-tile' : ''}`}
       data-glyph={glyph}
+      data-failed={failedNote !== null ? 'true' : undefined}
       data-testid={testId}
     >
       {toggle.tappable ? (
@@ -195,7 +203,7 @@ export function TrashCard({
           aria-label={toggle.label}
           title={toggle.title}
           aria-busy={toggle.busy || undefined}
-          onClick={toggle.onTap}
+          onClick={toggle.busy ? undefined : toggle.onTap}
         >
           {inner}
         </button>
@@ -223,7 +231,13 @@ export function TrashCard({
         {year !== null ? <span className="muted"> ({year})</span> : null}
       </span>
       <span className="bwall-meta">
-        <span className="bwall-meta-text">{metaText}</span>
+        {failedNote !== null ? (
+          <span className="bwall-meta-text bwall-meta-text--failed" data-testid="wall-failed-note">
+            {failedNote}
+          </span>
+        ) : (
+          <span className="bwall-meta-text">{metaText}</span>
+        )}
         <RequestedByBadge requesters={requesters} />
         {watchNote !== null ? <WatchNoteBadge label={watchNote.label} tone={watchNote.tone} /> : null}
         {onWatchlist ? <WatchlistNoteBadge /> : null}
