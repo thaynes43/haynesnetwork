@@ -1,9 +1,11 @@
 # DESIGN-005: *arr media ledger, Fix, and failsafe Restore — Phase 2
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-28 (**D-23** — the flat Fix/Force-Search budget becomes a per-role budget,
-  ADR-080 / PLAN-041 Gap B / PRD R-236). Prior: 2026-07-11 (**D-22** — TV season posters + episode
-  thumbnails from the matched Plex title, ADR-048 / PRD R-158, PLAN-030)
+- **Last updated:** 2026-10-03 (**D-24** — *arr history that is ingested before its title's
+  `media_items` row exists is attached once the row appears, for every *arr and every event type, not
+  only Seerr requests). Prior: 2026-07-28 (**D-23** — the flat Fix/Force-Search budget becomes a
+  per-role budget, ADR-080 / PLAN-041 Gap B / PRD R-236); 2026-07-11 (**D-22** — TV season posters +
+  episode thumbnails from the matched Plex title, ADR-048 / PRD R-158, PLAN-030)
 
 > **Amended 2026-07-05 (Library sub-tabs + My Fixes relocation):** the `/library` page is now a
 > **Movies · TV · Music · My Fixes** sub-tab shell (WAI-ARIA tablist; active tab via the `?tab=`
@@ -292,8 +294,9 @@ export const ledgerEvents = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     mediaItemId: uuid('media_item_id').references(() => mediaItems.id, { onDelete: 'cascade' }),
-      // nullable: a Seerr request can precede the *arr add; sync backfills the FK when the
-      // item appears (matched by tmdb/tvdb id kept in payload)
+      // nullable: a Seerr request can precede the *arr add, and *arr history can precede the
+      // full sync that creates the item's row; sync backfills the FK when the item appears
+      // (Seerr: tmdb/tvdb id kept in payload, D-14; *arr history: the *arr's own ids, D-24)
     eventType: text('event_type').$type<LedgerEventType>().notNull(),
     source: text('source').$type<LedgerEventSource>().notNull(),
     sourceEventId: text('source_event_id'),   // *arr history id / Seerr request id — dedupe key
@@ -543,6 +546,7 @@ The D-12 single-writer rule extends to every Phase 2 table. New writers in
 | `tombstoneMissingItems` | `media_items.deleted_from_arr_at` + `ledger_events('deleted')` | one tx; enforces the mass-tombstone guard (D-14) |
 | `ingestLedgerEvents` | `ledger_events` + `sync_state.history_cursor` | events + cursor advance in one tx; ON CONFLICT DO NOTHING on the dedupe index |
 | `backfillEventAttribution` | `ledger_events.media_item_id` / `requested_by_user_id` | resolves formerly-unmatched Seerr events after items/users appear |
+| `relinkArrHistoryEvents` | `ledger_events.media_item_id` (*arr-sourced history rows only) | one `UPDATE … FROM media_items` statement; attaches history ingested before its item's row existed (D-24) |
 | `createFixRequest` | `fix_requests` + `ledger_events('fix_requested')` | one tx; rate limit + open-fix dedupe inside (D-09) |
 | `recordFixAction` | `fix_requests.{status,path_taken,actions_taken}` + `ledger_events('fix_actioned'\|'fix_failed')` | one tx per lifecycle step |
 | `completeFixRequests` | `fix_requests.{status,completed_event_id}` + `ledger_events('fix_completed')` | invoked by sync after import ingestion |
@@ -628,6 +632,9 @@ responses synchronously).
   → `(arr_kind, arr_item_id)`; child ids and release metadata into `payload`.
 - `ingestLedgerEvents` advances `sync_state.history_cursor = max(date)` in the same
   transaction; the partial unique index makes overlap re-delivery a no-op.
+- A record whose target has no `media_items` row yet (the title was added to the *arr after
+  the last full sync) is stored with `media_item_id = NULL`; the `relinkArrHistoryEvents`
+  post-step attaches it once a later full sync creates the row (D-24).
 - After ingestion, `completeFixRequests` matches new `imported` events against open
   `search_triggered` fixes (D-09).
 
@@ -1336,6 +1343,48 @@ per-role rate limit governs** (a stricter Default is an owner act in /admin, not
   (beside Books actions; Admin shown as implicit Unlimited) writes it via `roles.setMediaActionBudget`.
   The "limit reached" copy states the role's number, not a constant (C-07; owner copy rules).
 
+### D-24 Attaching *arr history that arrived before its title row
+
+**Problem (measured on the live ledger, 2026-10-03).** The incremental poll (D-14) runs far more often
+than the full sync, which is the only writer that creates `media_items` rows. A title added to an *arr
+and grabbed between two full syncs therefore has its `grabbed` / `imported` / `download_failed` /
+file-`deleted` history ingested while no row exists, and those events land with `media_item_id =
+NULL`. Only Seerr `requested` events were ever re-resolved (`backfillEventAttribution`), so every
+other orphan stayed orphaned: 8,885 *arr history rows, among them 2,491 Sonarr, 166 Radarr and 28
+Lidarr grabs. Per-title history (`ledger.events`, the Release Block's `ledger_grab` identity source,
+anything counting re-downloads) under-counted those titles. The rows still carried everything needed
+to attach them: `payload.arrInstanceId` plus the *arr's own target id (`seriesId` / `movieId` /
+`artistId`, D-07).
+
+**Decision.** A new single-writer `relinkArrHistoryEvents` (`packages/domain`, `ledger-ingest.ts`)
+re-runs the ingest-time match once the row exists:
+
+- Match key: `(ledger_events.source, payload.arrInstanceId, payload.seriesId | movieId | artistId)`
+  → `media_items (arr_kind, arr_instance_id, arr_item_id)`, the same key `mediaItemIdsByArrItemId`
+  uses at ingest. The triple is UNIQUE (D-05), so a match is never ambiguous. Child ids (`episodeId`,
+  `albumId`) stay payload data; the FK is the parent title (D-06).
+- Scope: every *arr source (`sonarr`, `radarr`, `lidarr`), every history event type, rows with a
+  `source_event_id` (history, never the tombstone pass's always-linked `item_removed` rows), whoever
+  asked for the title. Seerr `requested` rows stay with `backfillEventAttribution`.
+- Tombstoned rows match, as they do at ingest: history may reference a title that has since left
+  the *arr. A re-added title is covered too: the full sync re-matches its row by external id and moves
+  `arr_item_id` to the new *arr id (D-14 step 3b), and the new id's orphaned grabs then attach.
+- One `UPDATE … FROM media_items` statement: atomic, and idempotent by construction (an attached row
+  no longer matches `media_item_id IS NULL`). A row whose title never reaches the ledger (added and
+  removed between two full syncs) stays NULL without error. The payload id is compared as text
+  (`arr_item_id::text = payload->>key`), so a malformed payload value can never fail the statement.
+- Runs as a sync post-step on every `full` and `incremental` run, before `backfillEventAttribution`
+  and `completeFixRequests` (so a newly attached import can close an open fix in the same run).
+  Isolated like every post-step: a failure is logged and reported (`historyRelinkError`) and never
+  fails the run. The per-kind count is reported as `SyncReport.historyRelink` and logged when non-zero.
+- No separate backfill: the first run after deploy attaches every existing orphan whose title row now
+  exists (8,883 of the 8,885 measured, in about 50 ms on the live database).
+
+The ledger stays a synced copy of the *arrs (hard rule 4): the relink only re-reads what the *arr
+already reported and writes nothing back. A rebuilt *arr that reissued old internal ids could, in
+principle, attach a pre-rebuild orphan to a new title holding the same id; the ingest-time lookup has
+the same exposure, and the *arrs' ids are never reused otherwise, so no extra guard is added.
+
 ## Alternatives considered
 
 - **Synced child table for episodes/albums** — rejected (D-06): ~100k+ rows mirroring
@@ -1381,7 +1430,9 @@ Per ADR-010 (embedded PG16, no Docker, no live-API tests in CI):
     mass-tombstone guard aborts at >20% and writes `sync_runs.status='aborted'`.
   - *Incremental:* overlapping history batches → dedupe index holds (event count stable);
     cursor advances transactionally with the batch; Seerr request before item exists →
-    NULL FK, then backfill resolves it after the item syncs.
+    NULL FK, then backfill resolves it after the item syncs; *arr history before its title
+    row exists → NULL FK, then `relinkArrHistoryEvents` attaches it after the next full sync,
+    re-runs are no-ops, other instances and never-synced titles stay NULL (D-24).
   - *Fix lifecycle:* every legal transition via the D-12 writers; illegal transitions
     throw; `reason_text` iff-other CHECK (SQLSTATE 23514 both directions); rate limit at
     25/h incl. the advisory-lock race test; open-fix dedupe; `completeFixRequests` closes

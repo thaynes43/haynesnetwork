@@ -740,6 +740,12 @@ async function main(): Promise<number> {
     durationMs: report.finishedAt.getTime() - report.startedAt.getTime(),
     totalFailure: report.totalFailure,
     backfill: report.backfill,
+    ...(report.historyRelink && report.historyRelink.total > 0
+      ? { historyRelink: report.historyRelink }
+      : {}),
+    ...(report.historyRelinkError !== undefined
+      ? { historyRelinkError: report.historyRelinkError }
+      : {}),
     fixesCompleted: report.fixesCompleted,
     // ADR-053 — the metadata-refresh Plex Account Map reconcile (only that mode carries it).
     ...(report.plexAccountMap ? { plexAccountMap: report.plexAccountMap } : {}),

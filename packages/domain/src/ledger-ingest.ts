@@ -1,8 +1,10 @@
 import {
+  ARR_KINDS,
   ledgerEvents,
   mediaItems,
   syncState,
   users,
+  type ArrKind,
   type Database,
   type DbClient,
   type LedgerEventSource,
@@ -15,7 +17,8 @@ import { inTransaction, resolveDb } from './db-client';
 
 /** One normalized event ready for the ledger (D-07 shapes; payload keeps rawEventType). */
 export interface LedgerEventInput {
-  /** Null when the item isn't in the ledger yet (Seerr request before the *arr add). */
+  /** Null when the item isn't in the ledger yet: a Seerr request before the *arr add (relinked by
+   *  backfillEventAttribution), or *arr history that beat the full sync (relinkArrHistoryEvents). */
   mediaItemId?: string | null;
   eventType: LedgerEventType;
   source: LedgerEventSource;
@@ -166,6 +169,68 @@ export async function backfillEventAttribution(
 
     return { itemsLinked, usersLinked };
   });
+}
+
+export interface RelinkArrHistoryEventsInput {
+  db?: DbClient;
+}
+
+export interface RelinkArrHistoryEventsResult {
+  /** History events whose `media_item_id` this run set, per *arr kind. */
+  linked: Record<ArrKind, number>;
+  /** Sum of `linked`. 0 on a run with nothing to attach (the steady state). */
+  total: number;
+}
+
+/**
+ * DESIGN-005 D-24 — attach *arr history events that were ingested before their title had a ledger
+ * row. The incremental poll resolves `media_item_id` from the record's own *arr id at ingest
+ * (D-14), but a title added to the *arr and grabbed/imported between two full syncs has no
+ * `media_items` row yet, so its history lands with a NULL FK. This writer re-runs that SAME match
+ * once the row exists: `(source, payload.arrInstanceId, payload.seriesId | movieId | artistId)` →
+ * `media_items (arr_kind, arr_instance_id, arr_item_id)` — the triple is UNIQUE, so a match is
+ * unambiguous. Every event type and every *arr source is covered (grabs, imports, file deletes,
+ * failed downloads), whoever asked for the title.
+ *
+ * One statement, so it is atomic on its own and idempotent: a linked event no longer matches
+ * `media_item_id IS NULL`, so a re-run is a no-op, and an event whose title never reaches the ledger
+ * (added and removed between two full syncs) simply stays NULL. Tombstoned rows match too, exactly as
+ * the ingest-time lookup does — history can still reference a title that has since left the *arr.
+ * The first run after this shipped backfills every pre-existing orphan; no separate step.
+ */
+export async function relinkArrHistoryEvents(
+  input: RelinkArrHistoryEventsInput = {},
+): Promise<RelinkArrHistoryEventsResult> {
+  const db = resolveDb(input.db);
+  // `arr_item_id::text = payload->>key` (rather than casting the payload side to int) can never
+  // raise on a malformed payload value; a non-matching value just doesn't link.
+  const result = await db.execute(sql`
+    WITH linked AS (
+      UPDATE ledger_events AS e
+         SET media_item_id = mi.id
+        FROM media_items AS mi
+       WHERE e.media_item_id IS NULL
+         AND e.source IN ('sonarr', 'radarr', 'lidarr')
+         AND e.source_event_id IS NOT NULL
+         AND mi.arr_kind = e.source
+         AND mi.arr_instance_id = e.payload->>'arrInstanceId'
+         AND mi.arr_item_id::text = e.payload->>(CASE e.source
+                                                   WHEN 'sonarr' THEN 'seriesId'
+                                                   WHEN 'radarr' THEN 'movieId'
+                                                   WHEN 'lidarr' THEN 'artistId'
+                                                 END)
+      RETURNING e.source
+    )
+    SELECT source, count(*)::int AS n FROM linked GROUP BY source
+  `);
+  const rows = (result as unknown as { rows?: Array<{ source: string; n: number }> }).rows ?? [];
+  const linked: Record<ArrKind, number> = { sonarr: 0, radarr: 0, lidarr: 0 };
+  for (const row of rows) {
+    if ((ARR_KINDS as readonly string[]).includes(row.source)) {
+      linked[row.source as ArrKind] = Number(row.n);
+    }
+  }
+  return { linked, total: linked.sonarr + linked.radarr + linked.lidarr };
 }
 
 function numberOrNull(value: unknown): number | null {
