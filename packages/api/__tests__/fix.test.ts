@@ -270,6 +270,80 @@ describe('fix.create — exactly one search per Fix (DESIGN-005 D-25, issue #646
     expect(row.actionsTaken.at(-1)).toMatchObject({ step: 'trigger_search', skipped: true, searchedBy: 'sonarr' });
   });
 
+  /** A Sonarr season Fix with Redownload Failed on; `grabOf` gives each episode's grab (or none). */
+  async function seasonFixWithRedownloadOn(
+    arrItemId: number,
+    episodes: Array<{ id: number; hasFile: boolean }>,
+    grabOf: (episodeId: number) => { id: number; downloadId: string } | null,
+  ) {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'sonarr', { title: `Season Show ${arrItemId}`, arrItemId });
+    const stub = stubArrBundle([
+      {
+        path: '/api/v3/episode',
+        body: episodes.map((e, i) => episodeJson(e.id, 1, i + 1, { seriesId: arrItemId, hasFile: e.hasFile })),
+      },
+      {
+        path: '/api/v3/history',
+        body: (url: URL) => {
+          const episodeId = Number(url.searchParams.get('episodeId'));
+          const g = grabOf(episodeId);
+          return historyPage(
+            g
+              ? [grabHistoryJson(g.id, '2026-07-01T10:00:00Z', { episodeId, seriesId: arrItemId, downloadId: g.downloadId, data: { releaseSource: 'Rss' } })]
+              : [],
+          );
+        },
+      },
+      { path: '/api/v3/config/downloadclient', body: { autoRedownloadFailed: true, autoRedownloadFailedFromInteractiveSearch: true } },
+      { method: 'POST', path: /^\/api\/v3\/history\/failed\/\d+$/, body: {} },
+      { method: 'POST', path: '/api/v3/command', status: 201, body: { id: 9103, name: 'EpisodeSearch' } },
+    ]);
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+    const result = await api.fix.create({ mediaItemId: item.id, scope: 'season', seasonNumber: 1, reason: 'wrong_version_quality' });
+    return { stub, result };
+  }
+
+  it('a season pack is marked once (one record per download, not per episode), and its missing episode is the *arr\'s to search', async () => {
+    // E1 and E2 on disk from one pack download; E3 missing but grabbed in the same pack.
+    const { stub, result } = await seasonFixWithRedownloadOn(
+      806,
+      [
+        { id: 80601, hasFile: true },
+        { id: 80602, hasFile: true },
+        { id: 80603, hasFile: false },
+      ],
+      (episodeId) => ({ id: 960_000 + episodeId, downloadId: 'SABnzbd_nzo_pack' }),
+    );
+    expect(result.status).toBe('search_triggered');
+    expect(stub.callsFor('POST', '/api/v3/history/failed/').map((c) => c.url.pathname)).toEqual([
+      '/api/v3/history/failed/1040601',
+    ]);
+    expect(stub.callsFor('POST', '/api/v3/command')).toHaveLength(0);
+  });
+
+  it("a season's missing episode outside the re-searched downloads still gets the Fix's EpisodeSearch", async () => {
+    // E1 on disk (its download is re-searched by the *arr); E2 missing, never grabbed; E3 missing, grabbed elsewhere.
+    const { stub } = await seasonFixWithRedownloadOn(
+      807,
+      [
+        { id: 80701, hasFile: true },
+        { id: 80702, hasFile: false },
+        { id: 80703, hasFile: false },
+      ],
+      (episodeId) =>
+        episodeId === 80701
+          ? { id: 970_701, downloadId: 'SABnzbd_nzo_e1' }
+          : episodeId === 80703
+            ? { id: 970_703, downloadId: 'SABnzbd_nzo_other' }
+            : null,
+    );
+    expect(stub.callsFor('POST', '/api/v3/history/failed/')).toHaveLength(1);
+    expect(stub.callsFor('POST', '/api/v3/command').map((c) => c.body)).toEqual([
+      { name: 'EpisodeSearch', episodeIds: [80702, 80703] },
+    ]);
+  });
+
   it('Sonarr season where the *arr re-searches only some grabs: the Fix searches only the other episodes', async () => {
     const member = await createUser(tdb.db);
     const item = await seedMediaItem(tdb.db, 'sonarr', { title: 'Season Show Three', arrItemId: 805 });

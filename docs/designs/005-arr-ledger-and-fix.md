@@ -1407,9 +1407,17 @@ every primary-path Fix searched the indexers twice. ADR-098 turns it off in Sona
   search was triggered. The *arr's search always covers the Fix's target: the grab's own episodes, movie or albums
   (a season or an artist search when the grab was all of it).
 - When it will not: the Fix sends its one search, as before.
-- The season roll-up marks one grab per distinct backing download: if the *arr searches after every mark, no
-  SeasonSearch; if after none, the SeasonSearch as before; if after some (an interactive grab with the twin off), one
-  EpisodeSearch for the on-disk episodes of the grabs it does not re-search.
+- The season roll-up marks **one record per distinct download** (keyed by `downloadId`; a record without one stands
+  alone). Sonarr writes one grabbed record per episode, so a season pack's episodes have different history ids and
+  one download; marking each of them published the download's failure once per episode (a blocklist entry each, and
+  with Redownload Failed on a search each). The old "a season pack shares one id" premise was wrong.
+- Season search: if the *arr searches after none of the marks, the SeasonSearch as before. If it searches after some
+  or all, its search covers every episode of each such download (upstream: every grabbed record of the downloadId),
+  so the Fix sends one EpisodeSearch for the season's other episodes: on-disk episodes of the other downloads or with
+  no grab, and missing episodes, unless one was grabbed in a covered download (read from its grab history). Nothing
+  left: no command, recorded as skipped. A failed coverage read after the marks fails the Fix (`resolve_coverage`)
+  and searches nothing more; the *arr is already searching its part. The advisory review of PR #651 asked for the
+  missing episodes, which the old SeasonSearch covered.
 - The fallback path (no grab, D-15 AC-08) marks nothing, so it always sends its own search.
 
 **Why not the other option.** Passing `skipRedownload` and always searching from the Fix (the janitor's choice in

@@ -578,12 +578,19 @@ async function runSeasonFix(
     );
   };
 
-  // ---- Step 1: resolve the distinct grabs backing the on-disk episodes. ----
+  // ---- Step 1: resolve the distinct downloads backing the on-disk episodes. ----
+  // Sonarr writes one grabbed record per episode of a download (a season pack's episodes have
+  // DIFFERENT history ids, one downloadId), and marking any of them fails the whole download.
+  // So the Fix marks ONE record per distinct download (D-25): marking each episode's record
+  // would publish the download's failure once per episode, and with Redownload Failed on the
+  // *arr would search once per episode. A record with no downloadId stands alone.
   const actions: FixActionEntry[] = [];
-  const grabIds = new Set<number>();
-  /** D-25: each distinct grab's record data (its `releaseSource`), and the episodes it backs. */
-  const grabData = new Map<number, Record<string, unknown> | undefined>();
-  const episodesByGrab = new Map<number, number[]>();
+  const downloads = new Map<
+    string,
+    { grabId: number; data?: Record<string, unknown>; downloadId: string | null; episodes: number[] }
+  >();
+  const downloadKey = (g: { id: number; downloadId?: string | null }) =>
+    g.downloadId && g.downloadId.trim() !== '' ? `dl:${g.downloadId}` : `id:${g.id}`;
   try {
     for (const ep of onDisk) {
       const endpoint = `GET ${base}/history?episodeId=${ep.arrChildId}&eventType=grabbed`;
@@ -596,9 +603,16 @@ async function runSeasonFix(
         }),
       );
       if (grab) {
-        grabIds.add(grab.id);
-        grabData.set(grab.id, grab.data);
-        episodesByGrab.set(grab.id, [...(episodesByGrab.get(grab.id) ?? []), ep.arrChildId]);
+        const key = downloadKey(grab);
+        const known = downloads.get(key);
+        if (known) known.episodes.push(ep.arrChildId);
+        else
+          downloads.set(key, {
+            grabId: grab.id,
+            data: grab.data,
+            downloadId: grab.downloadId ?? null,
+            episodes: [ep.arrChildId],
+          });
       }
     }
   } catch (err) {
@@ -608,10 +622,10 @@ async function runSeasonFix(
   }
 
   let pathTaken: FixPath;
-  /** D-25: the grabs whose mark-failed the *arr's own Redownload Failed searches after. */
-  const arrSearchedGrabs = new Set<number>();
-  if (grabIds.size > 0) {
-    // ---- Primary path (AC-07): blocklist every distinct backing grab. ----
+  /** D-25: the downloads whose mark-failed the *arr's own Redownload Failed searches after. */
+  const arrSearched = new Set<string>();
+  if (downloads.size > 0) {
+    // ---- Primary path (AC-07): blocklist every distinct backing download, once each. ----
     pathTaken = 'blocklist_search';
     // D-25: read Redownload Failed BEFORE any mark, so a failed read leaves nothing changed.
     const configEndpoint = `GET ${base}/config/downloadclient`;
@@ -622,19 +636,25 @@ async function runSeasonFix(
       if (err instanceof ArrError) await fail(stepFailed('redownload_check', configEndpoint, err), err);
       throw err;
     }
-    for (const grabId of grabIds) {
-      if (arrSearchesAfterMarkFailed(config, { data: grabData.get(grabId) })) arrSearchedGrabs.add(grabId);
+    for (const [key, d] of downloads) {
+      if (arrSearchesAfterMarkFailed(config, d)) arrSearched.add(key);
     }
-    actions.push(redownloadEntry(base, config, { arrSearchesGrabs: [...arrSearchedGrabs] }));
-    for (const grabId of grabIds) {
-      const endpoint = `POST ${base}/history/failed/${grabId}`;
+    actions.push(
+      redownloadEntry(base, config, {
+        arrSearchesGrabs: [...downloads].filter(([key]) => arrSearched.has(key)).map(([, d]) => d.grabId),
+      }),
+    );
+    for (const d of downloads.values()) {
+      const endpoint = `POST ${base}/history/failed/${d.grabId}`;
       try {
-        await input.arr.write.sonarr.markHistoryFailed(grabId);
+        await input.arr.write.sonarr.markHistoryFailed(d.grabId);
       } catch (err) {
         if (err instanceof ArrError) await fail(stepFailed('mark_failed', endpoint, err), err);
         throw err;
       }
-      actions.push(stepOk('mark_failed', endpoint, { status: 200, grabHistoryId: grabId }));
+      actions.push(
+        stepOk('mark_failed', endpoint, { status: 200, grabHistoryId: d.grabId, episodeIds: d.episodes }),
+      );
     }
   } else {
     // ---- Fallback (AC-08): no grabs to blocklist → delete the season's files. ----
@@ -663,25 +683,49 @@ async function runSeasonFix(
   }
   await recordFixAction({ db: input.db, fixRequestId, transition: 'actioned', pathTaken, actions });
 
-  // ---- Step 3: SeasonSearch for the whole season — or, D-25, nothing when the *arr's own
-  // Redownload Failed searches after every mark, and an EpisodeSearch for only the episodes
-  // whose grab it does not re-search when it searches after some of them.
-  if (arrSearchedGrabs.size > 0 && arrSearchedGrabs.size === grabIds.size) {
-    await recordFixAction({
-      db: input.db,
-      fixRequestId,
-      transition: 'search_triggered',
-      actions: [searchLeftToArr(base, 'sonarr')],
-    });
-    return { id: fixRequestId, status: 'search_triggered', pathTaken, targetLabel };
+  // ---- Step 3: SeasonSearch for the whole season — unless (D-25) the *arr's own Redownload
+  // Failed searches after some marks. Its search covers every episode of each such download
+  // (upstream: every grabbed record of the downloadId), so the Fix searches only the season's
+  // episodes it does not cover: on-disk episodes of the other downloads or with no grab, and
+  // missing episodes, unless one was grabbed in a covered download. Nothing left: no command.
+  let leftForFix: number[] = [];
+  if (arrSearched.size > 0) {
+    const covered = new Set<number>();
+    const coveredDownloadIds = new Set<string>();
+    for (const [key, d] of downloads) {
+      if (!arrSearched.has(key)) continue;
+      for (const id of d.episodes) covered.add(id);
+      if (d.downloadId) coveredDownloadIds.add(d.downloadId);
+    }
+    try {
+      for (const ep of seasonEpisodes) {
+        if (covered.has(ep.arrChildId) || ep.hasFile || coveredDownloadIds.size === 0) continue;
+        const page = await input.arr.read.sonarr.getEpisodeGrabHistory(ep.arrChildId);
+        if (page.records.some((r) => r.downloadId != null && coveredDownloadIds.has(r.downloadId))) {
+          covered.add(ep.arrChildId);
+        }
+      }
+    } catch (err) {
+      // The marks landed and the *arr is searching its part: record the failed read, search nothing more.
+      if (err instanceof ArrError)
+        await fail(stepFailed('resolve_coverage', `${base}/history (season coverage)`, err), err);
+      throw err;
+    }
+    leftForFix = seasonEpisodes.map((e) => e.arrChildId).filter((id) => !covered.has(id));
+    if (leftForFix.length === 0) {
+      await recordFixAction({
+        db: input.db,
+        fixRequestId,
+        transition: 'search_triggered',
+        actions: [searchLeftToArr(base, 'sonarr')],
+      });
+      return { id: fixRequestId, status: 'search_triggered', pathTaken, targetLabel };
+    }
   }
-  const leftForFix = [...grabIds]
-    .filter((id) => !arrSearchedGrabs.has(id))
-    .flatMap((id) => episodesByGrab.get(id) ?? []);
   const commandEndpoint = `POST ${base}/command`;
   try {
     const command =
-      arrSearchedGrabs.size > 0
+      arrSearched.size > 0
         ? await input.arr.write.sonarr.searchEpisodes(leftForFix)
         : await input.arr.write.sonarr.searchSeason(item.arrItemId, seasonNumber);
     await recordFixAction({
