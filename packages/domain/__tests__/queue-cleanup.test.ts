@@ -175,6 +175,51 @@ describe('classifyQueueItem (D-03, pure)', () => {
     });
   }
 
+  // --- DESIGN-046 D-25 — a release held back by the *arr's delay profile is `waiting`, not unknown ---
+
+  describe('D-25 waiting: a delay-profile hold is benign, never unknown', () => {
+    // The shape the *arr gives a pending release: status delay, nothing wrong, nothing downloaded.
+    const delayed = {
+      status: 'delay',
+      trackedDownloadStatus: 'ok',
+      trackedDownloadState: 'downloading',
+      statusMessages: [],
+    };
+
+    it('status delay with nothing wrong is waiting (any casing), with no reason', () => {
+      expect(classifyQueueItem(delayed)).toEqual({ class: 'waiting', reason: null, confidence: 'high' });
+      expect(classifyQueueItem({ status: 'Delay' }).class).toBe('waiting');
+      expect(classifyQueueItem({ status: 'delay', statusMessages: null }).class).toBe('waiting');
+    });
+
+    it('never masks an actionable class: an error, a failed state or a stuck import still wins', () => {
+      expect(classifyQueueItem({ ...delayed, trackedDownloadStatus: 'error' }).class).toBe('bad_release');
+      expect(classifyQueueItem({ ...delayed, trackedDownloadState: 'failed' }).class).toBe('bad_release');
+      expect(
+        classifyQueueItem({ status: 'delay', trackedDownloadState: 'importPending', statusMessages: [] }).class,
+      ).toBe('retry_import');
+      expect(
+        classifyQueueItem({
+          status: 'delay',
+          trackedDownloadState: 'importBlocked',
+          ...msg('x', 'Not an upgrade for existing movie file(s)'),
+        }).class,
+      ).toBe('have_better');
+    });
+
+    it('only `delay` is waiting: a pending state, an unavailable client and an unlisted status stay as they were', () => {
+      // `pending` is not an *arr queue status; importPending / failedPending are states and keep their own handling.
+      expect(classifyQueueItem({ status: 'pending' }).class).toBe('unknown');
+      expect(classifyQueueItem({ trackedDownloadState: 'failedPending' }).class).toBe('unknown');
+      expect(classifyQueueItem({ trackedDownloadState: 'importPending', statusMessages: [] }).class).toBe(
+        'retry_import',
+      );
+      // A download client that is down is a fault to see, not a wait to hide.
+      expect(classifyQueueItem({ status: 'downloadClientUnavailable' }).class).toBe('unknown');
+      expect(classifyQueueItem({ status: 'queued' }).class).toBe('unknown');
+    });
+  });
+
   it('precedence: have_better wins over bad_release when BOTH signals are present', () => {
     const result = classifyQueueItem({
       trackedDownloadState: 'importBlocked',
@@ -1230,6 +1275,42 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     expect(new Set(rows.map((r) => r.actionClass))).toEqual(
       new Set(['have_better', 'bad_release', 'retry_import', 'manual_match', 'unknown']),
     );
+  });
+
+  it('D-25 WAITING: delay-profile holds leave the census (no row, not unknown), are counted on the report, and are never acted on', async () => {
+    const delayed = (id: number) =>
+      item({
+        queueItemId: id,
+        title: `Held.Show.S01E0${id}.1080p-GRP`,
+        status: 'delay',
+        trackedDownloadStatus: 'ok',
+        trackedDownloadState: 'downloading',
+        statusMessages: [],
+      });
+    const cfg = clone();
+    cfg.modes.sonarr.have_better = 'enforce';
+    cfg.modes.sonarr.bad_release = 'enforce';
+    cfg.modes.sonarr.retry_import = 'enforce';
+    const sonarr = makeInstanceStub([delayed(1), delayed(2), haveBetter(3), unknownItem(4), delayed(5)]);
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: cfg,
+    });
+
+    const rows = await t.db.select().from(arrQueueCleanupActions).orderBy(arrQueueCleanupActions.queueItemId);
+    expect(rows.map((r) => [r.queueItemId, r.actionClass])).toEqual([
+      [3, 'have_better'],
+      [4, 'unknown'],
+    ]);
+    const s = report.instances.find((i) => i.instance === 'sonarr')!;
+    expect(s.waiting).toBe(3);
+    expect(s.itemsObserved).toBe(2);
+    expect(s.byClass.unknown.observed).toBe(1); // only the genuinely unknown one
+    // Only the have_better item was acted on; a held release was never removed, retried or searched.
+    expect(sonarr.calls.deletes.map((d) => d.id)).toEqual([3]);
+    expect(sonarr.calls.processMonitored).toBe(0);
+    expect(sonarr.calls.searches).toHaveLength(0);
   });
 
   it('CENSUS DEFAULT (D-13): manual_match is not acted on while its cell is census, even with every other Lidarr cell enforced', async () => {
