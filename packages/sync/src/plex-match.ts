@@ -55,10 +55,11 @@ export function parsePlexGuids(item: { guid?: string; Guid?: { id: string }[] })
   return out;
 }
 
-/** A resolved Plex title: which library it lives in + its ratingKey. */
+/** A resolved Plex title: which library it lives in + its ratingKey (+ its Plex `addedAt`, DESIGN-052 D-26). */
 interface PlexHit {
   plexLibraryId: string;
   ratingKey: string;
+  addedAt: Date | null;
 }
 
 export interface PlexMatchStats {
@@ -75,6 +76,15 @@ export interface PlexMatchSnapshot {
   matches: PlexMatchInput[];
   scopedLibraryIds: string[];
   stats: PlexMatchStats;
+}
+
+/**
+ * DESIGN-052 D-26 — Plex's `addedAt` (epoch SECONDS) as a Date; null when absent or not a positive finite number. The
+ * Trash Age Guard reads a null as "cannot tell", never as "old".
+ */
+export function plexAddedAt(epochSeconds: number | undefined): Date | null {
+  if (epochSeconds === undefined || !Number.isFinite(epochSeconds) || epochSeconds <= 0) return null;
+  return new Date(epochSeconds * 1000);
 }
 
 /** The per-kind GUID lookup order (matched_via preference). */
@@ -183,7 +193,7 @@ export async function fetchPlexMatchSnapshot(
       const hits = guidIndex.get(key) ?? guidIndex.set(key, []).get(key)!;
       // One hit per library — a section is listed once, so a duplicate library here would be a Plex dupe.
       if (!hits.some((h) => h.plexLibraryId === plexLibraryId)) {
-        hits.push({ plexLibraryId, ratingKey: it.ratingKey });
+        hits.push({ plexLibraryId, ratingKey: it.ratingKey, addedAt: plexAddedAt(it.addedAt) });
       }
     };
     add('tmdb', guids.tmdb);
@@ -202,18 +212,21 @@ export async function fetchPlexMatchSnapshot(
   };
   for (const item of items) {
     byKind[item.arrKind].total += 1;
-    const perLibrary = new Map<string, { ratingKey: string; matchedVia: PlexMatchGuidSource }>();
+    const perLibrary = new Map<
+      string,
+      { ratingKey: string; matchedVia: PlexMatchGuidSource; addedAt: Date | null }
+    >();
     for (const source of MATCH_ORDER[item.arrKind]) {
       const value = itemGuidValue(item, source);
       if (value === null) continue;
       for (const hit of guidIndex.get(indexKey(source, value)) ?? []) {
         if (!perLibrary.has(hit.plexLibraryId)) {
-          perLibrary.set(hit.plexLibraryId, { ratingKey: hit.ratingKey, matchedVia: source });
+          perLibrary.set(hit.plexLibraryId, { ratingKey: hit.ratingKey, matchedVia: source, addedAt: hit.addedAt });
         }
       }
     }
-    for (const [plexLibraryId, { ratingKey, matchedVia }] of perLibrary) {
-      matches.push({ mediaItemId: item.id, plexLibraryId, ratingKey, matchedVia });
+    for (const [plexLibraryId, { ratingKey, matchedVia, addedAt }] of perLibrary) {
+      matches.push({ mediaItemId: item.id, plexLibraryId, ratingKey, matchedVia, plexAddedAt: addedAt });
     }
     if (perLibrary.size > 0) byKind[item.arrKind].matched += 1;
   }

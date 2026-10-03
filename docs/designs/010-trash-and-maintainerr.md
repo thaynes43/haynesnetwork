@@ -6,6 +6,11 @@
   surfaces; saving stays one tap. Prior: 2026-07-09 — Maintainerr aging-invariant safeguard,
   ADR-036 / incident; D-12 build C — watch indicators never occupy the action corner; every tile
   stays saveable)
+- **Age Guard (2026-10-03):** [DESIGN-052 D-26](052-watchlist-protection-and-release-block.md#d-26--the-age-guard-nothing-new-is-deleted-owner-ruling-2026-10-03)
+  (owner ruling "Yes, newest date wins"): the app never proposes or deletes a title downloaded, upgraded or added to
+  any Plex server in the last 180 days, taking the newest of the ledger's download imports and every Plex server's
+  date added. The pools' Maintainerr "Plex date added older than 180 days" clause (2026-09-14) stays; it reads
+  HaynesOps only, so the app check is the guarantee.
 - **Extended by:** [DESIGN-052](052-watchlist-protection-and-release-block.md) (ADR-093, 2026-09-26; in effect since 2026-09-28): Trash
   also needs a verified Watchlist Registry before any delete, the guardian keeps a title on any read Plex watchlist,
   the safety audit also requires `listExclusions` and `forceSeerr` on the rule pools, and the deleted release is

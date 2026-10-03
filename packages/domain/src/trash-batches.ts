@@ -82,6 +82,7 @@ import {
   type TrashMedia,
   type TrashPendingItem,
 } from './trash-flow';
+import { classifyAgeGuard } from './trash-age-guard';
 import { removeTrashCandidateRows } from './trash-candidates';
 import { compareByStrategy, type BatchStrategy } from './trash-strategy';
 
@@ -434,13 +435,17 @@ export function selectBatchCandidates(
   const capped =
     targeting !== undefined &&
     (targeting.targetBytes !== undefined || targeting.maxItems !== undefined);
-  if (!capped) return [...actionable];
+  // DESIGN-052 D-26 — the Age Guard: a title downloaded, upgraded or added to any Plex server in the last 180 days is
+  // never proposed, targeted or not (the sweep keeps it too, should one reach a batch). An `unknown` age is proposed
+  // normally; the sweep decides (as for an unevaluable watchlist, D-08).
+  const eligible = actionable.filter((p) => p.ageGuard !== 'recent');
+  if (!capped) return eligible;
 
   const strategy = targeting?.strategy ?? 'largest';
   // ADR-093 / DESIGN-052 D-08 — a watchlisted item is dropped with the `dnd` items: it never takes one of the slots
   // (the sweep would keep it anyway). An item whose watchlist status cannot be evaluated is proposed normally; the
   // sweep decides.
-  const deletable = actionable.filter((p) => !p.protectedByTag && !p.onWatchlist);
+  const deletable = eligible.filter((p) => !p.protectedByTag && !p.onWatchlist);
   // DESIGN-014 amendment (2026-07-09, build D) — the ranking is the SHARED compareByStrategy so the
   // pending walls' "Next up" default sort orders identically (the top of the wall = the front of the
   // deletion queue). Keep this call the single ordering seam.
@@ -1668,6 +1673,21 @@ async function expireOneBatch(input: {
       continue;
     }
     const verdict = classifyGuardian(fresh);
+    // DESIGN-052 D-26 — the Age Guard, after the guardian: downloaded, upgraded or added to any Plex server in the
+    // last 180 days ⇒ kept `recently_added`; a date that cannot be told ⇒ kept `unevaluable`. Re-judged from live data
+    // here, so an item already in the batch when it was upgraded or added elsewhere is still kept.
+    const ageVerdict = verdict.keep ? verdict : classifyAgeGuard(fresh);
+    if (ageVerdict.keep && !verdict.keep) {
+      input.logger.info('[trash] age_guard', {
+        batchId: input.batchId,
+        maintainerrMediaId: item.maintainerrMediaId,
+        title: item.title,
+        ageGuard: fresh.ageGuard,
+        newestAddedAt: fresh.newestAddedAt,
+      });
+      await keep(item, ageVerdict.reason);
+      continue;
+    }
     if (verdict.keep) {
       // dnd / recently-watched / watchlisted / unevaluable — never deleted (C-07b). Skip, no whitelist: a repeat
       // next batch is the intended stronger tuning signal (Q-03), Save is the permanent lever. A watchlisted item
