@@ -477,7 +477,7 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(page.getByTestId('trash-last-watched')).toContainText('Last watched on HaynesOps');
   });
 
-  test('the poster tap-toggle saves ⇄ un-saves (optimistic, reflow-free); Maintainerr calls (stub-verified)', async ({
+  test('the poster tap-toggle saves ⇄ un-saves (on the server answer, reflow-free); Maintainerr calls (stub-verified)', async ({
     page,
   }) => {
     await resetMaintainerr(page);
@@ -493,8 +493,8 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await page.waitForLoadState('networkidle');
     await toggle.scrollIntoViewIfNeeded();
 
-    // Save: the glyph deepens to the filled shield IN PLACE — the tile and its neighbor never move
-    // on the tap (ADR-015). Measure the optimistic flip (synchronous), before the refetch lands.
+    // Save: once the server confirms (ADR-096 — never before), the glyph deepens to the filled
+    // shield IN PLACE; the tile and its neighbor never move on the tap (ADR-015).
     const before = (await vanished.boundingBox())!;
     const neighborBefore = (await fixture.boundingBox())!;
     const saveSettled = page.waitForResponse((r) => r.url().includes('trash.saveExclusion'));
@@ -604,6 +604,58 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
       'a double-tap must not release the save',
     ).toHaveLength(0);
     await resetMaintainerr(page);
+  });
+
+  // ADR-096 — the pending wall shares the tap-toggle, so the same two rules hold here: a save shows
+  // only once the server confirms it, and overlapping taps each settle their own tile (the wall used
+  // to settle through callbacks on one shared mutation observer, which a second tap orphaned).
+  test('pending wall: overlapping saves that fail never read as saved, and both tiles say so', async ({
+    page,
+  }) => {
+    await resetMaintainerr(page);
+    await signIn(page, 'admin');
+    await openTrashMovies(page);
+    const vanished = page.getByTestId('trash-tile').filter({ hasText: 'Vanished Heist' });
+    const fixture = page.getByTestId('trash-tile').filter({ hasText: 'The Fixture' });
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    await expect(fixture).toHaveAttribute('data-glyph', 'trash');
+    await page.waitForLoadState('networkidle');
+    await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclusion-fault`, {
+      data: { delayMs: 2000, status: 503 },
+    });
+    try {
+      const statuses: number[] = [];
+      const bothAnswered = new Promise<void>((resolve) => {
+        page.on('response', (r) => {
+          if (!r.url().includes('trash.saveExclusion')) return;
+          statuses.push(r.status());
+          if (statuses.length === 2) resolve();
+        });
+      });
+      await vanished.getByTestId('trash-toggle').click();
+      await page.waitForTimeout(300);
+      await fixture.getByTestId('trash-toggle').click();
+      for (let i = 0; i < 5; i++) {
+        expect(await vanished.getAttribute('data-glyph'), 'an unconfirmed save must not show the shield').toBe(
+          'trash',
+        );
+        expect(await fixture.getAttribute('data-glyph')).toBe('trash');
+        await page.waitForTimeout(250);
+      }
+      await bothAnswered;
+      expect(statuses).toEqual([502, 502]);
+      for (const tile of [vanished, fixture]) {
+        await expect(tile.getByTestId('trash-toggle')).not.toHaveAttribute('aria-busy', 'true');
+        await expect(tile).toHaveAttribute('data-failed', 'true');
+        await expect(tile).toHaveAttribute('data-glyph', 'trash');
+        await expect(tile.getByTestId('wall-failed-note')).toHaveText('Not saved');
+      }
+      await expect(page.getByTestId('trash-wall-error')).toContainText('was not saved.');
+    } finally {
+      await page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclusion-fault`, {
+        data: { status: 0 },
+      });
+    }
   });
 
   test('BUG FIX 2026-07-09 — a recently-watched candidate is SAVEABLE via tap (no more inert eye corner)', async ({
@@ -1025,6 +1077,135 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     await expect(
       page.getByTestId('future-wall').locator('button[data-testid="trash-toggle"]'),
     ).toHaveCount(1);
+  });
+
+  // ADR-096 (owner report 2026-10-03) — the wall shows a save only after the server confirms it.
+  // Live: a Leaving Soon tap waited on Maintainerr (busy with its scheduled rule run), timed out
+  // and came back 502 after 30 s; the tile had gone green and "Rescued" had counted it the moment
+  // it was tapped, so a screenshot in that window showed a save that never happened. The stub's
+  // exclusion fault replays it: the add waits, then answers 503 without excluding anything.
+  //
+  // Two tiles are tapped while the first is still out, because the wall used to settle taps through
+  // callbacks on ONE shared mutation observer: the second tap orphaned the first tile's answer, so a
+  // failed first save stayed green for good (and a good one never confirmed).
+  test('a save the server has not confirmed never shows as saved; a failed save says so on the tile', async ({
+    page,
+  }) => {
+    // On a phone, where the owner hit it: the named error message is two lines here, so this also
+    // proves the error slot holds its height (a wrapping message used to push every tile down 13 px).
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page, 'admin');
+    await page.goto('/trash?tab=movies');
+    await expect(page.getByTestId('batch-state')).toHaveText('Admin review');
+    const vanished = page.getByTestId('wall-tile').filter({ hasText: 'Vanished Heist' });
+    const fixture = page.getByTestId('wall-tile').filter({ hasText: 'The Fixture' });
+    const vanishedTap = vanished.getByRole('button');
+    const fixtureTap = fixture.getByRole('button');
+    await expect(vanished).toHaveAttribute('data-glyph', 'trash');
+    await expect(fixture).toHaveAttribute('data-glyph', 'trash');
+    const counts = page.getByTestId('wall-counts');
+    const countsBefore = (await counts.textContent()) ?? '';
+    expect(countsBefore).toContain('Rescued 0');
+    await page.waitForLoadState('networkidle');
+    await vanishedTap.scrollIntoViewIfNeeded();
+    const vanishedBefore = await vanished.boundingBox();
+    const fixtureBefore = await fixture.boundingBox();
+    const setFault = (data: { delayMs?: number; status: number }) =>
+      page.request.post(`${env().STUB_MAINTAINERR_URL}/_stub/exclusion-fault`, { data });
+    const saveAnswers = (n: number) => {
+      const statuses: number[] = [];
+      return new Promise<number[]>((resolve) => {
+        const onResponse = (r: { url: () => string; status: () => number }) => {
+          if (!r.url().includes('trash.batches.setItemSaved')) return;
+          statuses.push(r.status());
+          if (statuses.length === n) {
+            page.off('response', onResponse);
+            resolve(statuses);
+          }
+        };
+        page.on('response', onResponse);
+      });
+    };
+
+    await setFault({ delayMs: 3000, status: 503 });
+    try {
+      const failed = saveAnswers(2);
+      await vanishedTap.click();
+      await page.waitForTimeout(300);
+      await fixtureTap.click();
+      // In flight: busy, but NOT saved — the glyph, the pressed state and the header all hold.
+      await expect(vanishedTap).toHaveAttribute('aria-busy', 'true');
+      await expect(fixtureTap).toHaveAttribute('aria-busy', 'true');
+      // Sample WITHOUT auto-retrying assertions (a retrying `expect` would simply wait out the
+      // request and pass on the reverted state): across the in-flight window neither tile may read as
+      // saved and the header may not count either.
+      const seen: Array<{ glyphs: Array<string | null>; pressed: string | null; counts: string | null }> =
+        [];
+      for (let i = 0; i < 8; i++) {
+        seen.push({
+          glyphs: [await vanished.getAttribute('data-glyph'), await fixture.getAttribute('data-glyph')],
+          pressed: await vanishedTap.getAttribute('aria-pressed'),
+          counts: await counts.textContent(),
+        });
+        await page.waitForTimeout(250);
+      }
+      expect(await vanishedTap.getAttribute('aria-busy'), 'still in flight after the samples').toBe('true');
+      for (const sample of seen) {
+        expect(sample.glyphs, 'an unconfirmed save must not show the shield').toEqual(['trash', 'trash']);
+        expect(sample.pressed).toBe('false');
+        expect(sample.counts, 'an unconfirmed save must not count as rescued').toBe(countsBefore);
+      }
+      await expect(vanishedTap).toHaveAttribute('aria-label', 'Saving Vanished Heist…');
+
+      // Both failures land — the FIRST tile's too: still slated, still counted, and each says so.
+      expect(await failed).toEqual([502, 502]);
+      for (const [tile, tap] of [
+        [vanished, vanishedTap],
+        [fixture, fixtureTap],
+      ] as const) {
+        await expect(tap).not.toHaveAttribute('aria-busy', 'true');
+        await expect(tile).toHaveAttribute('data-failed', 'true');
+        await expect(tile).toHaveAttribute('data-glyph', 'trash');
+        await expect(tile.getByTestId('wall-failed-note')).toHaveText('Not saved');
+        await expect(tap).toHaveAttribute('aria-label', /^Not saved, the last try failed\. /);
+      }
+      await expect(page.getByTestId('wall-error')).toHaveText(
+        /^(Vanished Heist \(2018\)|The Fixture \(2022\)) was not saved\. Maintainerr didn’t respond\. Nothing changed — try again in a bit\.$/,
+      );
+      await expect(counts).toHaveText(countsBefore);
+      // Recolors and a text swap in fixed slots: neither tile moved (ADR-015).
+      expectSameBox(vanishedBefore, await vanished.boundingBox());
+      expectSameBox(fixtureBefore, await fixture.boundingBox());
+
+      // A slow SUCCESS on both, again overlapping: each tile flips on its own answer, the first too.
+      await setFault({ delayMs: 1500, status: 201 });
+      const succeeded = saveAnswers(2);
+      await vanishedTap.click();
+      await page.waitForTimeout(300);
+      await fixtureTap.click();
+      await expect(page.getByTestId('wall-error')).toHaveText('');
+      await expect(vanished).not.toHaveAttribute('data-failed', 'true');
+      expect(await vanished.getAttribute('data-glyph'), 'still unconfirmed').toBe('trash');
+      expect(await succeeded).toEqual([200, 200]);
+      await expect(vanished).toHaveAttribute('data-glyph', 'shield');
+      await expect(fixture).toHaveAttribute('data-glyph', 'shield');
+      await expect(vanishedTap).not.toHaveAttribute('aria-busy', 'true');
+      await expect(counts).toContainText('Rescued 2');
+    } finally {
+      await setFault({ status: 0 });
+    }
+
+    // Leave the batch as the suite found it: release both saves (the ADR-014 two-step).
+    for (const [tile, tap] of [
+      [vanished, vanishedTap],
+      [fixture, fixtureTap],
+    ] as const) {
+      const released = page.waitForResponse((r) => r.url().includes('trash.batches.setItemSaved'));
+      await releaseTile(tile, tap, 'shield');
+      await released;
+      await expect(tile).toHaveAttribute('data-glyph', 'trash');
+    }
+    await expect(counts).toHaveText(countsBefore);
   });
 
   test('Start refuses gracefully while a batch is open — the error names the blocker', async ({

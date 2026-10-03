@@ -4597,12 +4597,30 @@ input[aria-invalid='true'] {
      not a border: it adds no height, so the bar's fixed geometry is untouched. */
   box-shadow: 0 1px 0 var(--color-border);
 }
-/* Fixed-height error slot under the counts: appearing text recolors, never shifts the wall. */
+/* Fixed-height error slot under the counts: appearing text recolors, never shifts the wall. The
+   height is FIXED (not a min-height) and the text is clamped to it, so a message longer than the slot
+   ellipsizes instead of pushing the wall down (ADR-096, 2026-10-03: a named failure message wrapped to
+   two lines at 390 px and moved every tile 13 px). One line on wide screens; two below 760 px, where
+   the usual "<title> was not saved. <reason>" needs them. The full text rides the title attribute and
+   the role="alert" announcement. */
 .bwall-error {
   margin: 0 0 6px;
-  min-height: 17px;
+  height: 17px;
+  line-height: 17px;
   font-size: 12px;
   color: var(--color-danger);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
+}
+@media (max-width: 759px) {
+  .bwall-error {
+    height: 34px;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
 }
 
 /* The wall itself — the /library poster-grid density (fixed 2:3 boxes; 3-up at 390px). */
@@ -4815,6 +4833,48 @@ button.bwall-tap:focus-visible {
 .bwall-tile[data-glyph='skip'] .poster-img,
 .bwall-tile[data-glyph='skip'] .poster-fallback {
   filter: grayscale(0.5) brightness(0.85);
+}
+/* ADR-096 (2026-10-03) — a request is out for this tile. Nothing is confirmed yet, so the glyph and
+   its ring keep their last confirmed state; the poster gets a dashed progress-tone ring and the puck
+   a pulsing halo (a ::after box-shadow, so the puck's own flip-pop animation is untouched). Color
+   and shadow only, never geometry (ADR-015); the global reduced-motion rule stills the pulse and
+   the dashed ring still says "working". */
+.bwall-tile:has(.bwall-tap[aria-busy='true']) .poster-box {
+  outline: 2px dashed var(--color-progress);
+  outline-offset: -2px;
+}
+.bwall-tap[aria-busy='true'] {
+  cursor: progress;
+}
+.bwall-tap[aria-busy='true'] .bwall-overlay::after {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-progress);
+  animation: bwall-busy 1.2s ease-out infinite;
+}
+@keyframes bwall-busy {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-progress) 60%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-progress) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-progress) 0%, transparent);
+  }
+}
+/* ADR-096 — the tile's last tap FAILED: the danger ring on the poster and the short note in the meta
+   line ("Not saved"), so the failure shows where the viewer tapped even when the wall's error line
+   has scrolled away. Same outline slot and the same fixed-height line: a recolor, never a reflow. */
+.bwall-tile[data-failed='true'] .poster-box {
+  outline: 2px solid var(--color-danger);
+  outline-offset: -2px;
+}
+.bwall-meta-text--failed {
+  color: var(--color-danger);
+  font-weight: 600;
 }
 button.bwall-tap:hover .bwall-overlay[data-glyph='trash'] {
   background: color-mix(in srgb, var(--color-danger) 16%, var(--color-surface));

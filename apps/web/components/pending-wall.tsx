@@ -19,6 +19,18 @@ import { TrashCard, TrashWall, TrashWallSkeleton } from '@/components/cards';
 import { formatBytes, formatDay, formatRating, ratingOrNull } from '@/lib/media';
 import { describeMutationError } from '@/lib/app-error';
 import {
+  beginWallTap,
+  confirmWallTap,
+  emptyWallTaps,
+  failWallTap,
+  tapInFlight,
+  wallTapBusyLabel,
+  wallTapFailedLabel,
+  wallTapFailedNote,
+  type WallTapAction,
+  type WallTaps,
+} from '@/lib/wall-taps';
+import {
   daysLeftLabel,
   daysUntil,
   pendingWallGlyph,
@@ -102,56 +114,53 @@ function tileInfo(item: PendingWallItem, glyph: PendingWallGlyph, armed = false)
 }
 
 /**
- * The session-local save/un-save toggle shared by both walls. A 'saved' override is ALSO the wall's
- * "saved by YOU" signal (pending items carry no ownership), so only the save you just made renders as
- * the tappable filled shield; server-side protection (tag / a foreign exclusion) stays the inert
- * check. On success it invalidates trash.pending so the (paginated) query refetches its loaded pages.
+ * The session-local save/un-save toggle shared by both walls. A 'saved' confirmation is ALSO the
+ * wall's "saved by YOU" signal (pending items carry no ownership), so only the save you just made
+ * renders as the tappable filled shield; server-side protection (tag / a foreign exclusion) stays the
+ * inert check. On success it invalidates trash.pending so the (paginated) query refetches its loaded
+ * pages.
+ *
+ * ADR-096 — nothing flips until the server answers. A tap marks the tile busy (it keeps its glyph);
+ * the server's success is what records 'saved'/'unsaved'; a failure leaves the glyph alone, marks the
+ * tile failed and names the title in the wall's error line (lib/wall-taps, unit-tested).
  */
 export function usePendingSaves(media: 'movie' | 'tv') {
   const utils = trpc.useUtils();
-  const [overrides, setOverrides] = useState<ReadonlyMap<string, 'saved' | 'unsaved'>>(
-    () => new Map(),
-  );
-  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
-  const [error, setError] = useState<string | null>(null);
+  const [taps, setTaps] = useState<WallTaps<'saved' | 'unsaved'>>(() => emptyWallTaps());
   const save = trpc.trash.saveExclusion.useMutation();
   const unsave = trpc.trash.removeExclusion.useMutation();
 
   const toggle = (item: PendingWallItem, glyph: PendingWallGlyph) => {
     const id = item.maintainerrMediaId;
-    if (id === null || busy.has(id)) return;
+    if (id === null || tapInFlight(taps, id)) return;
     // A slated `trash` tile saves (tap ⇒ add the exclusion); only the filled `shield` un-saves.
     const saving = glyph === 'trash';
-    const prev = overrides.get(id);
-    setOverrides((m) => new Map(m).set(id, saving ? 'saved' : 'unsaved'));
-    setBusy((s) => new Set(s).add(id));
-    setError(null);
+    const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
+    setTaps((t) => beginWallTap(t, id, saving ? 'save' : 'unsave'));
     const mutation = saving ? save : unsave;
-    mutation.mutate(
+    // Settled through the PROMISE, never through callbacks passed to `mutate()`: both walls share one
+    // mutation observer per direction across all their tiles, and TanStack Query drops the previous
+    // call's mutate()-level callbacks when the next mutate() starts, so a second tap used to orphan
+    // the first tile's answer (a failed save stayed green, silently). Each promise settles its tile.
+    mutation
       // `media` drives the server's per-kind debounced pool-refresh marker (DESIGN-014 build D).
-      { media, maintainerrMediaId: id, mediaItemId: item.mediaItemId },
-      {
-        onSuccess: () => void utils.trash.pending.invalidate({ media }),
-        onError: (err: unknown) => {
-          setOverrides((m) => {
-            const next = new Map(m);
-            if (prev === undefined) next.delete(id);
-            else next.set(id, prev);
-            return next;
-          });
-          setError(describeMutationError(err));
+      .mutateAsync({ media, maintainerrMediaId: id, mediaItemId: item.mediaItemId })
+      .then(
+        () => {
+          setTaps((t) => confirmWallTap(t, id, saving ? 'saved' : 'unsaved'));
+          void utils.trash.pending.invalidate({ media });
         },
-        onSettled: () =>
-          setBusy((s) => {
-            const next = new Set(s);
-            next.delete(id);
-            return next;
-          }),
-      },
-    );
+        (err: unknown) => setTaps((t) => failWallTap(t, id, titleYear, describeMutationError(err))),
+      );
   };
 
-  return { overrides, busy, error, toggle };
+  return {
+    overrides: taps.confirmed,
+    busy: taps.inFlight,
+    failed: taps.failed,
+    error: taps.error,
+    toggle,
+  };
 }
 
 function PendingTile({
@@ -160,6 +169,7 @@ function PendingTile({
   fromKey,
   overrides,
   busy,
+  failed,
   canSave,
   canUnsave,
   onToggle,
@@ -168,7 +178,8 @@ function PendingTile({
   media: 'movie' | 'tv';
   fromKey: string;
   overrides: ReadonlyMap<string, 'saved' | 'unsaved'>;
-  busy: ReadonlySet<string>;
+  busy: ReadonlyMap<string, WallTapAction>;
+  failed: ReadonlyMap<string, WallTapAction>;
   canSave: boolean;
   canUnsave: boolean;
   onToggle: (item: PendingWallItem, glyph: PendingWallGlyph) => void;
@@ -186,19 +197,26 @@ function PendingTile({
   // from the glyph; this only gates WHEN it is called.
   const release = useConfirm({ onConfirm: () => onToggle(item, glyph) });
   const needsConfirm = releaseNeedsConfirm(glyph);
+  // ADR-096 — the request this tile is waiting on (null = none) and the last one that failed.
+  const busyAction =
+    item.maintainerrMediaId === null ? undefined : busy.get(item.maintainerrMediaId);
+  const failedAction =
+    item.maintainerrMediaId === null ? undefined : failed.get(item.maintainerrMediaId);
+  const isBusy = busyAction !== undefined;
   // Disarm whenever the glyph stops being a release (the un-save fired, or a refetch flipped it) so
-  // a stale arm can never ride onto a tile that now SAVES on tap.
+  // a stale arm can never ride onto a tile that now SAVES on tap — and while a request is out (the
+  // glyph holds until the server answers, so it must not read as armed meanwhile).
   useEffect(() => {
-    if (!needsConfirm) release.disarm();
+    if (!needsConfirm || isBusy) release.disarm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needsConfirm]);
-  const armed = release.armed && needsConfirm;
+  }, [needsConfirm, isBusy]);
+  const armed = release.armed && needsConfirm && !isBusy;
   const info = tileInfo(item, glyph, armed);
   // DESIGN-010 D-12 (build C) — the meta-line watch chip: info-tone eye (recently watched) or muted
   // eye (watched a while ago). Null when there is no watch signal. NEVER in the action corner.
   const note = watchNote(item);
   const titleYear = `${item.title}${item.year !== null ? ` (${item.year})` : ''}`;
-  const toggleLabel = armed
+  const restingLabel = armed
     ? `Tap again to un-save ${item.title} — it goes back on the deletion list`
     : glyph === 'shield'
       ? tappable
@@ -209,6 +227,11 @@ function PendingTile({
         : tappable
           ? `${item.title} is slated to delete — tap to save it`
           : `${item.title} is slated to delete`;
+  const toggleLabel = isBusy
+    ? wallTapBusyLabel(busyAction, item.title)
+    : failedAction !== undefined
+      ? wallTapFailedLabel(failedAction, restingLabel)
+      : restingLabel;
   // PLAN-047 / ADR-058 — the tile is the shared TrashCard (never bespoke bwall markup).
   return (
     <TrashCard
@@ -223,8 +246,8 @@ function PendingTile({
         tappable,
         pressed: glyph === 'shield',
         label: toggleLabel,
-        title: info,
-        busy: item.maintainerrMediaId !== null && busy.has(item.maintainerrMediaId),
+        title: isBusy ? toggleLabel : info,
+        busy: isBusy,
         armed,
         // A `trash` tile SAVES — one tap, unchanged. A `shield` tile RELEASES — arm, then confirm.
         onTap: needsConfirm ? release.trigger : () => onToggle(item, glyph),
@@ -244,6 +267,7 @@ function PendingTile({
       requesters={item.requesters}
       watchNote={note !== null ? { label: note.label, tone: note.tone } : null}
       onWatchlist={item.onWatchlist === true}
+      failedNote={failedAction !== undefined ? wallTapFailedNote(failedAction) : null}
     />
   );
 }
@@ -290,6 +314,7 @@ export function PendingWall({
   fromKey,
   overrides,
   busy,
+  failed,
   canSave,
   canUnsave,
   onToggle,
@@ -307,7 +332,10 @@ export function PendingWall({
   media: 'movie' | 'tv';
   fromKey: string;
   overrides: ReadonlyMap<string, 'saved' | 'unsaved'>;
-  busy: ReadonlySet<string>;
+  /** ADR-096 — tiles with a request out (they keep their glyph until the server answers). */
+  busy: ReadonlyMap<string, WallTapAction>;
+  /** ADR-096 — tiles whose last tap failed (the danger ring + the "Not saved" note). */
+  failed: ReadonlyMap<string, WallTapAction>;
   canSave: boolean;
   canUnsave: boolean;
   onToggle: (item: PendingWallItem, glyph: PendingWallGlyph) => void;
@@ -339,6 +367,7 @@ export function PendingWall({
               fromKey={fromKey}
               overrides={overrides}
               busy={busy}
+              failed={failed}
               canSave={canSave}
               canUnsave={canUnsave}
               onToggle={onToggle}
