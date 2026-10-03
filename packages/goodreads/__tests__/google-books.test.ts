@@ -487,6 +487,11 @@ describe('gbIsOmnibusVolume (the 2026-10-03 bundle-resolve guard)', () => {
     expect(gbIsOmnibusVolume({ title: 'The Silo Series Collection' }, 'Wool')).toBe(true);
   });
 
+  it('a raw query with a series-suffix parenthetical is not a request for a set', () => {
+    const boxed = { title: 'The Grisha Trilogy Box Set', subtitle: 'Shadow and Bone, Siege and Storm, Ruin and Rising' };
+    expect(gbIsOmnibusVolume(boxed, 'Shadow and Bone (The Grisha Trilogy, #1)', 'Shadow and Bone')).toBe(true);
+  });
+
   it('leaves ordinary single works and normal subtitles alone', () => {
     expect(gbIsOmnibusVolume({ title: 'Hooked', subtitle: 'How to Build Habit-Forming Products' }, 'Hooked')).toBe(false);
     expect(gbIsOmnibusVolume({ title: 'Three Kings', subtitle: 'A Wild Cards Mosaic Novel (Book Two of the British Arc)' }, 'Three Kings')).toBe(false);
