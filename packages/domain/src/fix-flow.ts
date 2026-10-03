@@ -535,9 +535,13 @@ async function runSubtitleFix(
  * resolve every ON-DISK episode's latest grab from LIVE per-episode history (reusing the
  * production-verified `GET /history?episodeId=&eventType=grabbed` per-target endpoint, so
  * this never hits the paged-history integer-eventType pitfall), blocklist each DISTINCT
- * backing grab (a season pack shares one id — the Set dedupes it), then fire ONE
- * SeasonSearch. When no on-disk episode has a grab record, fall back to deleting the
- * season's episode files (AC-08). One fix_requests row (scope 'season') is the audit.
+ * backing download ONCE (one grab record per downloadId: Sonarr writes one record per
+ * episode, so a season pack's episodes have different ids and one download — D-25), then
+ * ONE search: the SeasonSearch, or, when the *arr's own Redownload Failed searches after
+ * some marks, an EpisodeSearch for the season's episodes its search does not cover, or
+ * none when it covers them all (D-25). When no on-disk episode has a grab record, fall
+ * back to deleting the season's episode files (AC-08). One fix_requests row (scope
+ * 'season') is the audit.
  */
 async function runSeasonFix(
   input: RunFixRequestInput,
