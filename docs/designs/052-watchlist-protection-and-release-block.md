@@ -1244,11 +1244,15 @@ clear    otherwise (a title no Plex library is matched to is judged on its impor
 
 - `shapePendingItems` adds `ageGuard` (`recent` / `clear` / `unknown`) and `newestAddedAt` to every
   `TrashPendingItem`: two grouped reads per pending read, no *arr or Plex call.
-- **Batch build** (`selectBatchCandidates`): a `recent` item is never proposed, targeted or not (D-08 drops a
-  watchlisted one only from a targeted batch; this drops it from both). An `unknown` item is proposed normally and
-  the sweep decides, as for an unevaluable watchlist status (D-08). The space policy's `minCandidates` counts it out;
-  `trash.pendingCandidates` carries `recentlyAdded` and the Start-a-batch preview (`previewTargetSelection`) leaves it
-  out the same way.
+- **Batch build** (`selectBatchCandidates`), as D-08 treats a watchlisted title: a `recent` item never takes a slot in
+  a **targeted** batch (every space-policy batch, and the admin's "Target an amount"), whatever the registry says. An
+  untargeted ("All current candidates") batch snapshots it `pending` and the sweep keeps it `recently_added`, so the
+  wall shows it in Kept with its reason. An `unknown` item is proposed normally and the sweep decides. The space
+  policy's `minCandidates` counts a `recent` item out; `trash.pendingCandidates` carries `recentlyAdded`, and the
+  Start-a-batch preview (`previewTargetSelection`) leaves it out of a targeted pick and out of every "frees" figure
+  (D-25cw). _(The first cut also dropped it from untargeted batches; the e2e run on PR #641 showed that diverged from
+  D-08 and dropped The Fixture, re-downloaded by an earlier spec's Fix, from a manual batch the lifecycle spec walks.
+  Aligned with D-08 before merge.)_
 - **Sweep** (`expireOneBatch`, pass 1, after the guardian): `recent` ⇒ kept `recently_added`, `unknown` ⇒ kept
   `unevaluable`, each with an `[trash] age_guard` log line (title, verdict, newest date). The verdict is re-derived
   from live data at the sweep, so a title upgraded or added to another server after its batch was built is kept.
@@ -1272,8 +1276,8 @@ Fool's Gold by HaynesTower's date added (124 and 150 days). Of the 129 movies in
 inside the window.
 
 **Tests** (`packages/domain/__tests__/trash-age-guard.test.ts`, embedded PG16, the Maintainerr stub and the
-in-memory Release Block *arr): an upgrade 60 days ago is never proposed (targeted or not) and the Start-a-batch wire
-says so; a title already in a batch when it is upgraded, or added to a second server 120 days ago, is kept
+in-memory Release Block *arr): an upgrade 60 days ago takes no targeted slot, an untargeted batch snapshots it and the
+sweep keeps it, and the Start-a-batch wire says so; a title already in a batch when it is upgraded, or added to a second server 120 days ago, is kept
 `recently_added` at the sweep and the batch detail carries the reason; a folder import 20 days ago and an *arr
 `added` 92 days ago (the rebuild's shape) do not protect; an undated Plex match keeps the title `unevaluable`; an
 episode import protects the series; `judgeAge` at the window's edges. The plex-match sync test asserts the date is

@@ -1,7 +1,8 @@
 // DESIGN-052 D-26 — the Trash Age Guard (owner ruling 2026-10-03, "Yes, newest date wins"), end to end on embedded
 // PG16 with the fetch-stubbed Maintainerr, the in-memory Release Block *arr and the ledger + Plex-match tables the
 // guard reads (no live API, ADR-010):
-// - an upgrade (a download import) 60 days ago protects: never proposed, kept `recently_added` at the sweep;
+// - an upgrade (a download import) 60 days ago protects: it takes no slot in a targeted batch; an untargeted batch
+//   snapshots it `pending` (as D-08 does a watchlisted title) and the sweep keeps it `recently_added`;
 // - a newer date added on a second Plex server protects, though the first server's date is old;
 // - a rebuild-only date does not protect: a folder import (the 2026-07-03 rebuild's shape) and the *arr's own `added`
 //   date are never read, so the title is deleted;
@@ -241,7 +242,7 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     expect(classifyAgeGuard({ ageGuard: 'clear' })).toEqual({ keep: false });
   });
 
-  it('an upgrade 60 days ago protects: the pending read says recent, and no batch (targeted or not) takes it', async () => {
+  it('an upgrade 60 days ago protects: no targeted slot; an untargeted batch snapshots it and the sweep keeps it', async () => {
     await imported(9101, daysAgo(60));
     const state = baseState({ collections: [pool()] });
     const { bundle } = makeMaintainerr(state);
@@ -256,18 +257,26 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     expect(Date.parse(byId.get('ms-9101')!.newestAddedAt!)).toBeCloseTo(daysAgo(60).getTime(), -4);
     expect(byId.get('ms-9102')?.ageGuard).toBe('clear');
 
-    const untargeted = await createBatch(state);
-    expect(Object.keys(await itemStates(untargeted.batchId)).sort()).toEqual(['ms-9102', 'ms-9103', 'ms-9104']);
-    await t.db.delete(trashBatches);
-    const targeted = await createBatch(state, 'movie', 2);
-    // ms-9101 is the largest but never takes a slot.
-    expect(Object.keys(await itemStates(targeted.batchId)).sort()).toEqual(['ms-9102', 'ms-9103']);
-
     // The Start-a-batch preview's wire says so too.
     await refreshTrashCandidates({ db: t.db, maintainerr: bundle });
     const cands = await listTrashPendingCandidates({ db: t.db, maintainerr: bundle, media: 'movie' });
     expect(cands.candidates.find((c) => c.maintainerrMediaId === 'ms-9101')?.recentlyAdded).toBe(true);
     expect(cands.candidates.find((c) => c.maintainerrMediaId === 'ms-9102')?.recentlyAdded).toBe(false);
+    const targeted = await createBatch(state, 'movie', 2);
+    // ms-9101 is the largest but never takes a slot.
+    expect(Object.keys(await itemStates(targeted.batchId)).sort()).toEqual(['ms-9102', 'ms-9103']);
+    await t.db.delete(trashBatches);
+    const untargeted = await createBatch(state);
+    expect(await itemStates(untargeted.batchId)).toMatchObject({ 'ms-9101': { state: 'pending', keepReason: null } });
+    await expire(untargeted.batchId);
+    await sweep(state);
+    expect(await itemStates(untargeted.batchId)).toEqual({
+      'ms-9101': { state: 'skipped', keepReason: 'recently_added' },
+      'ms-9102': { state: 'deleted', keepReason: null },
+      'ms-9103': { state: 'deleted', keepReason: null },
+      'ms-9104': { state: 'deleted', keepReason: null },
+    });
+
   });
 
   it('a title already in a batch when it is upgraded, or added to a second server, is kept at the sweep', async () => {
@@ -328,19 +337,11 @@ describe('the Trash Age Guard (DESIGN-052 D-26)', () => {
     await imported(8001, daysAgo(30), 'downloadFolderImported', 'sonarr');
     await imported(8002, daysAgo(30), 'downloadFolderImported', 'radarr'); // wrong source: not this series' history
     const state = baseState({ collections: [tvCollection()] });
-    // An untargeted batch never proposes the protected show.
+    // A targeted batch leaves the protected show out; an untargeted one snapshots it and the sweep keeps it.
+    const targeted = await createBatch(state, 'tv', 2);
+    expect(Object.keys(await itemStates(targeted.batchId))).toEqual(['ms-8002']);
+    await t.db.delete(trashBatches);
     const { batchId } = await createBatch(state, 'tv');
-    expect(Object.keys(await itemStates(batchId))).toEqual(['ms-8002']);
-    // Snapshot it anyway (as a batch built before the import would have) and sweep.
-    await t.db.insert(trashBatchItems).values({
-      batchId,
-      maintainerrMediaId: 'ms-8001',
-      collectionId: 8,
-      mediaItemId: ids.get(8001)!,
-      title: 'Show 8001',
-      tvdbId: 8001,
-      sizeBytes: 6_000,
-    });
     await expire(batchId);
     await sweep(state);
     expect(await itemStates(batchId)).toEqual({

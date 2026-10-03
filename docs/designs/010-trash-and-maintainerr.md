@@ -9,7 +9,7 @@
   ADR-036 / incident; D-12 build C — watch indicators never occupy the action corner; every tile
   stays saveable)
 - **Age Guard (2026-10-03):** [DESIGN-052 D-26](052-watchlist-protection-and-release-block.md#d-26--the-age-guard-nothing-new-is-deleted-owner-ruling-2026-10-03)
-  (owner ruling "Yes, newest date wins"): the app never proposes or deletes a title downloaded, upgraded or added to
+  (owner ruling "Yes, newest date wins"): the app never deletes, nor proposes into a targeted batch, a title downloaded, upgraded or added to
   any Plex server in the last 180 days, taking the newest of the ledger's download imports and every Plex server's
   date added. The pools' Maintainerr "Plex date added older than 180 days" clause (2026-09-14) stays; it reads
   HaynesOps only, so the app check is the guarantee.

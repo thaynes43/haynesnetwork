@@ -435,17 +435,16 @@ export function selectBatchCandidates(
   const capped =
     targeting !== undefined &&
     (targeting.targetBytes !== undefined || targeting.maxItems !== undefined);
-  // DESIGN-052 D-26 — the Age Guard: a title downloaded, upgraded or added to any Plex server in the last 180 days is
-  // never proposed, targeted or not (the sweep keeps it too, should one reach a batch). An `unknown` age is proposed
-  // normally; the sweep decides (as for an unevaluable watchlist, D-08).
-  const eligible = actionable.filter((p) => p.ageGuard !== 'recent');
-  if (!capped) return eligible;
+  if (!capped) return [...actionable];
 
   const strategy = targeting?.strategy ?? 'largest';
   // ADR-093 / DESIGN-052 D-08 — a watchlisted item is dropped with the `dnd` items: it never takes one of the slots
   // (the sweep would keep it anyway). An item whose watchlist status cannot be evaluated is proposed normally; the
   // sweep decides.
-  const deletable = eligible.filter((p) => !p.protectedByTag && !p.onWatchlist);
+  // DESIGN-052 D-26 — likewise a title inside the Age Guard's 180 days (downloaded, upgraded or added to any Plex
+  // server): it takes no slot. An untargeted batch snapshots it `pending` and the sweep keeps it `recently_added`, as
+  // D-08 does for a watchlisted title; an `unknown` age is proposed normally and the sweep decides.
+  const deletable = actionable.filter((p) => !p.protectedByTag && !p.onWatchlist && p.ageGuard !== 'recent');
   // DESIGN-014 amendment (2026-07-09, build D) — the ranking is the SHARED compareByStrategy so the
   // pending walls' "Next up" default sort orders identically (the top of the wall = the front of the
   // deletion queue). Keep this call the single ordering seam.
