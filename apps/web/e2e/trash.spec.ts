@@ -1355,6 +1355,29 @@ test.describe('trash section — merged per-kind lifecycle (ADR-033)', () => {
     page,
   }) => {
     await signIn(page, 'admin');
+
+    // Issue #654 — the intermittent "stayed on Admin review". The tab renders Green-light from the batch LIST
+    // before the batch DETAIL (`trash.batches.get`) has landed, so an admin who clicks fast green-lights while
+    // that first detail read is still in flight; the read was taken BEFORE the green-light committed, and the
+    // post-green-light invalidate used to be deduped into it, so the stale "Admin review" detail won over the
+    // fresh list for good. A slow CI runner hit it by luck; here the first detail read is held until the
+    // green-light has answered, so the race is exercised on every run.
+    let releaseDetail: () => void = () => {};
+    const greenlightAnswered = new Promise<void>((resolve) => {
+      releaseDetail = resolve;
+    });
+    let heldOnce = false;
+    const detailRoute = /\/api\/trpc\/trash\.batches\.get[,?]/;
+    await page.route(detailRoute, async (r) => {
+      if (heldOnce) return r.continue();
+      heldOnce = true;
+      const stale = await r.fetch(); // read now: the batch is still in Admin review
+      await Promise.race([greenlightAnswered, new Promise((resolve) => setTimeout(resolve, 8000))]);
+      await r.fulfill({ response: stale });
+    });
+    page.on('response', (r) => {
+      if (r.url().includes('trash.batches.greenlight')) releaseDetail();
+    });
     await page.goto('/trash?tab=movies');
 
     await page.getByTestId('batch-greenlight').click();
