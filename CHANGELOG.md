@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.105.2](https://github.com/thaynes43/haynesnetwork/compare/v0.105.1...v0.105.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* **goodreads:** GB title resolve rejects omnibus/bundle volumes the query did not ask for ([#658](https://github.com/thaynes43/haynesnetwork/issues/658)) ([46806e9](https://github.com/thaynes43/haynesnetwork/commit/46806e94c01fabcdaf6227ed0f7977717fb05866))
+* **janitor:** a release held on the delay profile is waiting, not unknown ([#657](https://github.com/thaynes43/haynesnetwork/issues/657)) ([f5b883c](https://github.com/thaynes43/haynesnetwork/commit/f5b883c23b8544abc6bed0d35b7c464d149761cc))
+* **pairing:** a parked pairing want is never re-resolved or re-queued ([#660](https://github.com/thaynes43/haynesnetwork/issues/660)) ([26baac9](https://github.com/thaynes43/haynesnetwork/commit/26baac9dec3f17fbccca4cadce5e804bd4fbda25))
+* **trash:** a fast green-light no longer leaves the tab on a stale Admin review (closes [#654](https://github.com/thaynes43/haynesnetwork/issues/654)) ([#659](https://github.com/thaynes43/haynesnetwork/issues/659)) ([cd03d76](https://github.com/thaynes43/haynesnetwork/commit/cd03d76081b798d52075e80caa5d880c68c67230))
+
+
+### Documentation
+
+* **agents:** v0.105.0 + v0.105.1 deploy record, backfill totals, Redownload off ([#655](https://github.com/thaynes43/haynesnetwork/issues/655)) ([3f85411](https://github.com/thaynes43/haynesnetwork/commit/3f85411b27b2ea47a4391c56b46ab997cd9c2c63))
+
 ## [0.105.1](https://github.com/thaynes43/haynesnetwork/compare/v0.105.0...v0.105.1) (2026-10-03)
 
 
