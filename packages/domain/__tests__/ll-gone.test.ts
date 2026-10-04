@@ -47,10 +47,13 @@ const daysAgo = (n: number): Date => new Date(Date.now() - n * DAY);
 
 type Row = Omit<LlSnapshotRow, 'title' | 'author'> & { title?: string; author?: string };
 
+/** Like LazyLibrarian: `addBook` seats the book (`Skipped/Skipped`) unless `refuseAdd`, and `queueBook` flips that
+ *  format to `Wanted`, so a later read in the same test sees what the writes left behind. */
 function stubLl(
-  rows: Record<string, Row> = {},
-  opts: { empty?: boolean; failRead?: boolean } = {},
+  initial: Record<string, Row> = {},
+  opts: { empty?: boolean; failRead?: boolean; refuseAdd?: boolean } = {},
 ) {
+  const rows: Record<string, Row> = { ...initial };
   const calls: Array<{ cmd: string; id: string; format?: string }> = [];
   const snapshot = (): Map<string, LlSnapshotRow> => {
     if (opts.empty) return new Map();
@@ -81,9 +84,19 @@ function stubLl(
   };
   const bundle = {
     write: {
-      addBook: async (id: string) => void calls.push({ cmd: 'addBook', id }),
-      queueBook: async (id: string, format: string) =>
-        void calls.push({ cmd: 'queueBook', id, format }),
+      // LazyLibrarian answers `addBook&wait` with its add_bookid_to_db result: `true`, or `false` when it refused.
+      addBook: async (id: string) => {
+        calls.push({ cmd: 'addBook', id });
+        if (opts.refuseAdd) return 'false';
+        if (!rows[id]) rows[id] = { ebookStatus: 'Skipped', audioStatus: 'Skipped' };
+        return 'true';
+      },
+      queueBook: async (id: string, format: string) => {
+        calls.push({ cmd: 'queueBook', id, format });
+        const row = rows[id];
+        if (row)
+          rows[id] = { ...row, [format === 'audiobook' ? 'audioStatus' : 'ebookStatus']: 'Wanted' };
+      },
       searchBook: async (id: string, format: string) =>
         void calls.push({ cmd: 'searchBook', id, format }),
     },
@@ -268,6 +281,8 @@ async function seedPairingWant(opts: {
   ebookStatus?: 'landed' | 'grabbed' | 'wanted';
   audioStatus?: 'wanted' | 'grabbed' | 'requested' | 'missing';
   lastReconciledAt?: Date;
+  /** Issue #668: set to say the want already had its one re-request (so a settle stands). */
+  llRerequestedAt?: Date | null;
 }): Promise<string> {
   seq += 1;
   const [anchor] = await t.db
@@ -296,10 +311,19 @@ async function seedPairingWant(opts: {
       ebookStatus: opts.ebookStatus ?? 'landed',
       audioStatus: opts.audioStatus ?? 'wanted',
       lastReconciledAt: opts.lastReconciledAt ?? daysAgo(40),
+      llRerequestedAt: opts.llRerequestedAt ?? null,
       createdAt: daysAgo(60),
     })
     .returning({ id: bookRequests.id });
   return want!.id;
+}
+
+/** Mark a want as having had its one re-request (issue #668), so a test of the settle rule sees only the settle. */
+async function markRerequested(id: string) {
+  await t.db
+    .update(bookRequests)
+    .set({ llRerequestedAt: daysAgo(1) })
+    .where(eq(bookRequests.id, id));
 }
 
 async function getWant(id: string) {
@@ -313,6 +337,7 @@ describe('runFormatPairing — a pushed want whose LazyLibrarian book is gone', 
       title: 'Saints',
       author: 'Orson Scott Card',
       llBookId: 'gb-gone',
+      llRerequestedAt: daysAgo(1), // already had its one re-request (issue #668)
     });
     const ll = stubLl();
     const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
@@ -336,6 +361,7 @@ describe('runFormatPairing — a pushed want whose LazyLibrarian book is gone', 
       title: 'Pastwatch',
       author: 'Orson Scott Card',
       llBookId: 'gb-gone',
+      llRerequestedAt: daysAgo(1), // already had its one re-request (issue #668)
       ebookStatus: 'grabbed',
       audioStatus: 'grabbed',
     });
@@ -377,6 +403,7 @@ describe('runFormatPairing — a pushed want whose LazyLibrarian book is gone', 
       title: 'Rework',
       author: 'Jason Fried',
       llBookId: 'gb-gone',
+      llRerequestedAt: daysAgo(1), // already had its one re-request (issue #668)
       ebookStatus: 'grabbed',
       audioStatus: 'missing',
     });
@@ -435,6 +462,7 @@ describe('runFormatPairing — a pushed want whose LazyLibrarian book is gone', 
       title: 'The Road',
       author: 'Cormac McCarthy',
       llBookId: 'gb-old',
+      llRerequestedAt: daysAgo(1), // already had its one re-request (issue #668)
     });
     const rows = {
       'll-road': {
@@ -458,11 +486,13 @@ describe('runFormatPairing — a pushed want whose LazyLibrarian book is gone', 
       title: 'Saints',
       author: 'Orson Scott Card',
       llBookId: 'gb-a',
+      llRerequestedAt: daysAgo(1), // already had its one re-request (issue #668)
     });
     const fresh = await seedPairingWant({
       title: 'Heartfire',
       author: 'Orson Scott Card',
       llBookId: 'gb-b',
+      llRerequestedAt: daysAgo(1), // already had its one re-request (issue #668)
       lastReconciledAt: new Date(Date.now() - 60 * 60 * 1000),
     });
     const empty = stubLl({}, { empty: true });
@@ -500,6 +530,250 @@ describe('runFormatPairing — a pushed want whose LazyLibrarian book is gone', 
     expect(run).toMatchObject({ pushed: 1, llGoneSettled: 0 });
     const [want] = await t.db.select().from(bookRequests);
     expect(want!.audioStatus).toBe('wanted');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #668 (owner ruling 2026-10-04, "Add them all back now") — the ONE re-request of a settled want.
+// addBook (only for a book LazyLibrarian lacks) + queueBook, never a searchBook: LazyLibrarian's daily backlog search
+// looks for it. A held format lands instead; a want lost again stays missing.
+// ---------------------------------------------------------------------------
+
+describe('runFormatPairing — the one re-request of a settled want (issue #668)', () => {
+  const settled = {
+    title: 'Saints',
+    author: 'Orson Scott Card',
+    llBookId: 'gb-gone',
+    audioStatus: 'missing' as const,
+  };
+  const searches = (calls: Array<{ cmd: string }>) => calls.filter((c) => c.cmd === 'searchBook');
+
+  it('hands it back once: addBook + queueBook for its format, never a search; the next run writes nothing', async () => {
+    const id = await seedPairingWant(settled);
+    const ll = stubLl();
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({
+      llRerequested: 1,
+      llRerequestLanded: 0,
+      llRerequestNotAdded: 0,
+      pushed: 0,
+    });
+    expect(ll.calls).toEqual([
+      { cmd: 'addBook', id: 'gb-gone' },
+      { cmd: 'queueBook', id: 'gb-gone', format: 'audiobook' },
+    ]);
+    const want = await getWant(id);
+    expect(want).toMatchObject({
+      ebookStatus: 'landed',
+      audioStatus: 'wanted',
+      llBookId: 'gb-gone',
+    });
+    expect(want.llRerequestedAt).not.toBeNull();
+
+    const again = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(again).toMatchObject({ llRerequested: 0, requeued: 0, pushed: 0 });
+    expect(ll.calls).toHaveLength(2);
+    expect(searches(ll.calls)).toEqual([]);
+  });
+
+  it('a want lost again after its re-request settles missing and is never handed back again (no loop)', async () => {
+    const id = await seedPairingWant({
+      ...settled,
+      audioStatus: 'wanted',
+      llRerequestedAt: daysAgo(3),
+      lastReconciledAt: daysAgo(2),
+    });
+    const ll = stubLl();
+    const first = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(first).toMatchObject({ llGoneSettled: 1, llRerequested: 0 });
+    await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(ll.calls).toEqual([]);
+    expect((await getWant(id)).audioStatus).toBe('missing');
+  });
+
+  it('lands instead when the library holds the format (the anchor is paired now): no LL write', async () => {
+    const id = await seedPairingWant(settled);
+    seq += 1;
+    await t.db.insert(booksItems).values({
+      source: 'audiobookshelf',
+      mediaKind: 'audiobook',
+      externalId: `ext-${seq}`,
+      libraryId: '2',
+      libraryName: 'AudioBooks',
+      title: 'Saints',
+      sortTitle: 'saints',
+      author: 'Orson Scott Card',
+      deepLinkUrl: 'http://x',
+    });
+    const ll = stubLl();
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ paired: 1, llRerequestLanded: 1, llRerequested: 0 });
+    expect(ll.calls).toEqual([]);
+    expect(await getWant(id)).toMatchObject({ audioStatus: 'landed', llRerequestedAt: null });
+  });
+
+  it("lands on LazyLibrarian's row for the same book when that row holds the format: repointed, no LL write", async () => {
+    const id = await seedPairingWant(settled);
+    const ll = stubLl({
+      'll-saints': {
+        title: 'Saints',
+        author: 'Orson Scott Card',
+        ebookStatus: 'Skipped',
+        audioStatus: 'Open',
+      },
+    });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ llRerequestLanded: 1, llRerequested: 0 });
+    expect(ll.calls).toEqual([]);
+    expect(await getWant(id)).toMatchObject({ llBookId: 'll-saints', audioStatus: 'landed' });
+  });
+
+  it("queues LazyLibrarian's existing row for the same book instead of adding a second one", async () => {
+    const id = await seedPairingWant(settled);
+    const ll = stubLl({
+      'll-saints': {
+        title: 'Saints',
+        author: 'Orson Scott Card',
+        ebookStatus: 'Open',
+        audioStatus: 'Skipped',
+      },
+    });
+    await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(ll.calls).toEqual([{ cmd: 'queueBook', id: 'll-saints', format: 'audiobook' }]);
+    expect(await getWant(id)).toMatchObject({ llBookId: 'll-saints', audioStatus: 'wanted' });
+  });
+
+  it('a refused add counts a refusal (no queue); it is tried a day later, and the third refusal ends it', async () => {
+    const id = await seedPairingWant(settled);
+    const ll = stubLl({}, { refuseAdd: true });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ llRerequestNotAdded: 1, llRerequested: 0 });
+    expect(ll.calls).toEqual([{ cmd: 'addBook', id: 'gb-gone' }]);
+    let want = await getWant(id);
+    expect(want).toMatchObject({
+      audioStatus: 'missing',
+      llRerequestFailures: 1,
+      llRerequestedAt: null,
+    });
+
+    // Within the day: not tried again.
+    await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(ll.calls).toHaveLength(1);
+
+    // A day later, twice more: the third refusal ends the re-request; it stays missing and is never tried again.
+    for (const days of [1, 2]) {
+      await runFormatPairing({
+        db: t.db,
+        ll: ll.bundle,
+        pacer: noPace,
+        now: new Date(Date.now() + days * DAY),
+      });
+    }
+    want = await getWant(id);
+    expect(want).toMatchObject({ audioStatus: 'missing', llRerequestFailures: 3 });
+    expect(want.llRerequestedAt).not.toBeNull();
+    await runFormatPairing({
+      db: t.db,
+      ll: ll.bundle,
+      pacer: noPace,
+      now: new Date(Date.now() + 4 * DAY),
+    });
+    expect(ll.calls).toHaveLength(3);
+  });
+
+  it("three refused adds in a row end the pass's adds (the shared Google Books key is out of quota)", async () => {
+    for (const title of ['A One', 'B Two', 'C Three', 'D Four', 'E Five']) {
+      await seedPairingWant({ ...settled, title, llBookId: `gb-${title}` });
+    }
+    const ll = stubLl({}, { refuseAdd: true });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ llRerequestNotAdded: 3, llRerequestDeferred: 2 });
+    expect(ll.calls.filter((c) => c.cmd === 'addBook')).toHaveLength(3);
+  });
+
+  it("defers adds while the app's Google Books breaker is open; a queue on LL's own row still runs", async () => {
+    await seedPairingWant(settled);
+    const twin = await seedPairingWant({
+      ...settled,
+      title: 'The Road',
+      author: 'Cormac McCarthy',
+      llBookId: 'gb-road',
+    });
+    await t.db.insert(gbQuotaState).values({
+      id: 'gb',
+      exhaustedUntil: new Date(Date.now() + 3 * 60 * 60 * 1000),
+      tripReason: 'daily',
+    });
+    const ll = stubLl({
+      'll-road': {
+        title: 'The Road',
+        author: 'Cormac McCarthy',
+        ebookStatus: 'Open',
+        audioStatus: 'Skipped',
+      },
+    });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ llRerequested: 1, llRerequestDeferred: 1 });
+    expect(ll.calls).toEqual([{ cmd: 'queueBook', id: 'll-road', format: 'audiobook' }]);
+    expect((await getWant(twin)).llBookId).toBe('ll-road');
+  });
+
+  it("defers pairing adds while a person's re-request is still waiting (people's wants go first)", async () => {
+    await seedPairingWant(settled);
+    const user = await createUser(t.db);
+    const { integration } = await linkIntegration({
+      db: t.db,
+      userId: user.id,
+      provider: 'goodreads',
+      externalUserId: '9',
+      profileRef: '9',
+      actorId: user.id,
+    });
+    const [shelf] = await t.db
+      .insert(integrationShelfItems)
+      .values({
+        integrationId: integration.id,
+        shelf: 'to-read',
+        externalBookId: 'gr-9',
+        title: 'Waiting',
+        author: 'Some Person',
+      })
+      .returning({ id: integrationShelfItems.id });
+    await t.db.insert(bookRequests).values({
+      origin: 'goodreads',
+      integrationId: integration.id,
+      shelfItemId: shelf!.id,
+      title: 'Waiting',
+      author: 'Some Person',
+      llBookId: 'gb-person',
+      ebookStatus: 'missing',
+      audioStatus: 'missing',
+    });
+    const ll = stubLl();
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ llRerequested: 0, llRerequestDeferred: 1 });
+    expect(ll.calls).toEqual([]);
+
+    // Review finding (PR #675): a shelf no sync has read for a day cannot be reached by the goodreads leg, so it
+    // stops holding the app's adds back.
+    await t.db
+      .update(integrationShelfItems)
+      .set({ lastSeenAt: daysAgo(2) })
+      .where(eq(integrationShelfItems.id, shelf!.id));
+    const later = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(later).toMatchObject({ llRerequested: 1, llRerequestDeferred: 0 });
+  });
+
+  it('two wants on one lost book share one addBook and one queueBook', async () => {
+    await seedPairingWant(settled);
+    await seedPairingWant({ ...settled, title: 'Saints (Unabridged)' });
+    const ll = stubLl();
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run.llRerequested).toBe(2);
+    expect(ll.calls).toEqual([
+      { cmd: 'addBook', id: 'gb-gone' },
+      { cmd: 'queueBook', id: 'gb-gone', format: 'audiobook' },
+    ]);
   });
 });
 
@@ -559,6 +833,7 @@ describe('syncGoodreadsIntegration — a shelf want whose LazyLibrarian book is 
 
   it('settles both formats `missing` once the book has been gone past the grace, with no LL write', async () => {
     const { integration, wantId } = await seedPushed();
+    await markRerequested(wantId); // its one re-request is spent (issue #668)
     const ll = stubLl();
     // Inside the grace: untouched.
     const early = await syncGoodreadsIntegration({
@@ -590,8 +865,32 @@ describe('syncGoodreadsIntegration — a shelf want whose LazyLibrarian book is 
     expect(ll.calls).toEqual([]);
   });
 
+  it('the same run re-requests it once: addBook + queueBook per format, never a search (issue #668)', async () => {
+    const { integration, wantId } = await seedPushed();
+    const ll = stubLl();
+    const later = await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: ll.bundle,
+      pacer: noPace,
+      now: new Date(Date.now() + 2 * DAY),
+    });
+    expect(later).toMatchObject({ llGoneSettled: 1, llRerequested: 1, requestsPushed: 0 });
+    expect(ll.calls).toEqual([
+      { cmd: 'addBook', id: 'gb-gone' },
+      { cmd: 'queueBook', id: 'gb-gone', format: 'ebook' },
+      { cmd: 'queueBook', id: 'gb-gone', format: 'audiobook' },
+    ]);
+    const want = await getWant(wantId);
+    expect(want).toMatchObject({ ebookStatus: 'wanted', audioStatus: 'wanted' });
+    expect(want.llRerequestedAt).not.toBeNull();
+  });
+
   it('Search again re-adds the gone book (addBook, queueBook per format, ONE search) and it reads wanted again', async () => {
     const { user, integration, wantId } = await seedPushed();
+    await markRerequested(wantId); // its one re-request is spent (issue #668)
     const ll = stubLl();
     await syncGoodreadsIntegration({
       db: t.db,
@@ -618,6 +917,7 @@ describe('syncGoodreadsIntegration — a shelf want whose LazyLibrarian book is 
 
   it('Search again repoints to the row LazyLibrarian holds for the same book and queues THAT row (no addBook)', async () => {
     const { user, integration, wantId } = await seedPushed();
+    await markRerequested(wantId); // its one re-request is spent (issue #668)
     const rows = {
       'll-cm': {
         title: 'The Changed Man',
@@ -667,6 +967,7 @@ describe('syncGoodreadsIntegration — a shelf want whose LazyLibrarian book is 
   // meanwhile, the click must not queue or search a row the want no longer points at.
   it('Search again fires nothing when another writer repointed the want first', async () => {
     const { user, integration, wantId } = await seedPushed();
+    await markRerequested(wantId); // its one re-request is spent (issue #668)
     const rows = {
       'll-cm': {
         title: 'The Changed Man',
@@ -781,6 +1082,7 @@ async function seedCollectionWant(
     llBookId: string;
     lastSearchedAt: Date | null;
     ebookStatus?: 'requested' | 'missing';
+    llRerequestedAt?: Date | null;
   },
 ) {
   const [row] = await t.db
@@ -796,6 +1098,7 @@ async function seedCollectionWant(
       audioStatus: 'landed',
       lastSearchedAt: opts.lastSearchedAt,
       lastReconciledAt: new Date(),
+      llRerequestedAt: opts.llRerequestedAt ?? null,
     })
     .returning({ id: bookRequests.id });
   return row!.id;
@@ -808,12 +1111,14 @@ describe('forceSearchFindMissingCollections — a force-searched want whose Lazy
       ref: 'm1',
       title: 'Troll Bridge',
       llBookId: 'gb-due',
+      llRerequestedAt: daysAgo(1),
       lastSearchedAt: daysAgo(8),
     });
     const notDue = await seedCollectionWant(cid, {
       ref: 'm2',
       title: 'Theatre of Cruelty',
       llBookId: 'gb-notdue',
+      llRerequestedAt: daysAgo(1),
       lastSearchedAt: daysAgo(2),
     });
     const fresh = await seedCollectionWant(cid, {
@@ -862,6 +1167,7 @@ describe('forceSearchFindMissingCollections — a force-searched want whose Lazy
       ref: 'm1',
       title: 'Troll Bridge',
       llBookId: 'gb-lost',
+      llRerequestedAt: daysAgo(1),
       lastSearchedAt: new Date(Date.now() - 12.5 * 60 * 60 * 1000),
     });
     const recent = await seedCollectionWant(cid, {
@@ -903,6 +1209,33 @@ describe('forceSearchFindMissingCollections — a force-searched want whose Lazy
     });
     expect(report).toMatchObject({ searched: 1, llGoneSettled: 0 });
     expect(ll.calls.map((c) => c.cmd)).toEqual(['queueBook', 'searchBook']);
+  });
+
+  it('hands a settled collection want back once (addBook + queueBook, no search) and its cooldown keeps the cron off it', async () => {
+    const cid = await seedCollection('c6', 'recipe-6');
+    const id = await seedCollectionWant(cid, {
+      ref: 'm1',
+      title: 'Troll Bridge',
+      llBookId: 'gb-lost',
+      lastSearchedAt: daysAgo(10),
+      ebookStatus: 'missing',
+    });
+    const ll = stubLl();
+    const report = await forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: libretto('recipe-6'),
+      ll: ll.bundle,
+      pacer: noPace,
+    });
+    expect(report).toMatchObject({ llRerequested: 1, searched: 0, candidates: 0 });
+    expect(ll.calls).toEqual([
+      { cmd: 'addBook', id: 'gb-lost' },
+      { cmd: 'queueBook', id: 'gb-lost', format: 'ebook' },
+    ]);
+    const want = await getWant(id);
+    expect(want.ebookStatus).toBe('wanted');
+    expect(want.llRerequestedAt).not.toBeNull();
+    expect(Date.now() - want.lastSearchedAt!.getTime()).toBeLessThan(60_000);
   });
 
   it("a person's on-demand Force Search re-adds a settled want and returns it to `requested`", async () => {

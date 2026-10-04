@@ -4,17 +4,21 @@
 // (the goodreads-sync mode's per-integration pass) and `runManualBookSearch` (the audited manual
 // "Search again"). The @hnet/sync mode does the external READS (RSS + GB) and hands the enriched items in;
 // the confined LL WRITES happen here through the injected bundle (the poster-guard precedent).
-import { inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, or } from 'drizzle-orm';
 import { bookRequests, type BookRequestFormat, type DbClient } from '@hnet/db';
 import { resolveDb } from './db-client';
 import {
   applyLlGoneDecision,
   decideLlGoneWant,
   emptyLlGoneTally,
+  emptyLlRerequestTally,
   llSnapshotUsable,
   LlRekeyIndex,
+  llRerequestOpen,
   repointRequestLlBook,
+  runLlRerequests,
   type LlGoneTally,
+  type LlRerequestTally,
 } from './ll-gone';
 import { KapowarrUpstreamError, LazyLibrarianUpstreamError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
@@ -84,7 +88,7 @@ export interface SyncGoodreadsInput {
   searchCoverage?: LlSearchCoverage;
 }
 
-export interface SyncGoodreadsReport extends LlGoneTally {
+export interface SyncGoodreadsReport extends LlGoneTally, LlRerequestTally {
   shelfItemsUpserted: number;
   shelfItemsTombstoned: number;
   requestsMinted: number;
@@ -250,7 +254,9 @@ export async function syncGoodreadsIntegration(
           // A second request row for the same book (another user's want) is fully covered by the first
           // row's chain: no second addBook/queueBook/searchBook, but it is still marked pushed below.
           if (needsSearch(target.llBookId, toQueue)) {
-            await input.ll.write.addBook(target.llBookId);
+            // addBook only seats a book LazyLibrarian does not hold (issue #665, DESIGN-028 amendment rule 6): on a
+            // held book its upsert resets both formats to `Skipped`. A failed read leaves `held` undefined (as before).
+            if (held == null) await input.ll.write.addBook(target.llBookId);
             for (const format of toQueue) await input.ll.write.queueBook(target.llBookId, format);
             await searchOnce(input.ll, target.llBookId, toQueue, held);
           }
@@ -292,6 +298,7 @@ export async function syncGoodreadsIntegration(
   let reconciled = 0;
   let requeued = 0;
   const gone = emptyLlGoneTally();
+  let reconcileSnapshot: Map<string, LlHeldSignals> | null = null;
   if (input.ll) {
     let statuses: Map<string, LlHeldSignals>;
     try {
@@ -305,6 +312,7 @@ export async function syncGoodreadsIntegration(
     // 5-gone. Issue #665 (DESIGN-028 amendment 2026-10-04) — a pushed want whose id LazyLibrarian no longer has is
     //     re-keyed to the row LL holds for the same book, or settled `missing`. Same snapshot, no LL write; an
     //     empty snapshot decides nothing. A want pushed this run was stamped by the push, so the grace skips it.
+    reconcileSnapshot = statuses;
     const targets = [...toPush, ...toReconcile];
     const goneIndex = llSnapshotUsable(statuses) ? new LlRekeyIndex(statuses) : null;
     const goneRows = new Map<string, typeof bookRequests.$inferSelect>();
@@ -404,6 +412,45 @@ export async function syncGoodreadsIntegration(
     }
   }
 
+  // 5c. Issue #668 (owner ruling 2026-10-04, "Add them all back now") — the ONE re-request of a person's want that
+  //     the gone rule settled `missing` (LazyLibrarian lost its book): addBook + queueBook for the lost formats, never
+  //     a search (LazyLibrarian's daily backlog search looks for it); a format LazyLibrarian holds under another id
+  //     for the same book lands instead. The library match (step 2) already landed every want the library holds.
+  let rerequest = emptyLlRerequestTally();
+  if (input.ll && llSnapshotUsable(reconcileSnapshot)) {
+    const snapshot = reconcileSnapshot;
+    const ids = [...toPush, ...toReconcile]
+      .filter((t) => !snapshot.has(t.llBookId))
+      .map((t) => t.requestId);
+    if (ids.length > 0) {
+      const rows = await resolveDb(input.db)
+        .select()
+        .from(bookRequests)
+        .where(
+          and(
+            inArray(bookRequests.id, ids),
+            llRerequestOpen(now),
+            or(eq(bookRequests.ebookStatus, 'missing'), eq(bookRequests.audioStatus, 'missing')),
+          ),
+        )
+        .orderBy(
+          asc(bookRequests.llRerequestFailures),
+          asc(bookRequests.createdAt),
+          asc(bookRequests.id),
+        );
+      rerequest = await runLlRerequests({
+        db: input.db,
+        ll: input.ll,
+        candidates: rows.map((want) => ({ want })),
+        snapshot,
+        now,
+        site: 'goodreads-sync.rerequest',
+        pace,
+        log,
+      });
+    }
+  }
+
   // 5b. ADR-056 (PLAN-046) — route comics to Kapowarr (ITS OWN GetComics DDL sources; NEVER MAM/qB/Prowlarr).
   //     Un-routed comic ⇒ ComicVine search → pick the best volume → add MONITORED (auto-search) → reconcile.
   //     Already-routed comic ⇒ reconcile its Kapowarr state. A per-comic failure is logged and the request
@@ -473,6 +520,7 @@ export async function syncGoodreadsIntegration(
     requestsRequeued: requeued,
     pushesSkippedHeld,
     ...gone,
+    ...rerequest,
     comicsRouted,
     comicsReconciled,
     coverage,

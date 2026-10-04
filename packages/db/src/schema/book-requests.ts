@@ -1,4 +1,5 @@
 import {
+  integer,
   pgTable,
   uuid,
   text,
@@ -114,6 +115,16 @@ export const bookRequests = pgTable(
     lastSearchedAt: timestamp('last_searched_at', { withTimezone: true }),
     /** When the sync last reconciled LL statuses into this row. Nullable. */
     lastReconciledAt: timestamp('last_reconciled_at', { withTimezone: true }),
+    /**
+     * Issue #668 (owner ruling 2026-10-04) — when this want's ONE re-request ended: LazyLibrarian took the book back
+     * (addBook + queueBook), or refused it on three separate days. NULL = not yet. Never cleared, so a want lost
+     * again stays settled `missing`. Migration 0089.
+     */
+    llRerequestedAt: timestamp('ll_rerequested_at', { withTimezone: true }),
+    /** Issue #668 — hand-offs LazyLibrarian refused (addBook answered false / the book never appeared). */
+    llRerequestFailures: integer('ll_rerequest_failures').notNull().default(0),
+    /** Issue #668 — the last refusal; a refused want is tried again only a day later. */
+    llRerequestFailedAt: timestamp('ll_rerequest_failed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

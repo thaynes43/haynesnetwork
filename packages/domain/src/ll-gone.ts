@@ -29,15 +29,23 @@
 //   • Never a search, never an `addBook`. The only LazyLibrarian call any of this makes is the snapshot read
 //     the reconcile already took.
 // An empty snapshot (an LL error answer parses to an empty map) proves nothing, so it decides nothing.
-import { eq } from 'drizzle-orm';
-import { bookRequests, type BookRequestStatus, type DbClient } from '@hnet/db';
+import { and, eq, gt, isNotNull, isNull, lt, or } from 'drizzle-orm';
+import {
+  bookRequests,
+  integrationShelfItems,
+  userIntegrations,
+  type BookRequestStatus,
+  type DbClient,
+} from '@hnet/db';
 import {
   applyRequestReconcile,
   llFormatAlreadyHeld,
   mapLlStatus,
   type LlHeldSignals,
 } from './book-requests';
-import { inTransaction } from './db-client';
+import { inTransaction, resolveDb } from './db-client';
+import { peekGbQuotaGate } from './gb-quota-breaker';
+import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 
 /** How long LazyLibrarian must have gone without showing a want's book before it counts as gone (24 h). */
 export const LL_GONE_GRACE_MS = Number(process.env.LL_GONE_GRACE_MS ?? 24 * 60 * 60 * 1000);
@@ -375,4 +383,358 @@ export async function applyLlGoneDecision(input: {
       formats: decision.formats,
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Issue #668 (owner rulings 2026-10-04: "Add them all back now") — the ONE re-request of every settled want.
+//
+// A want the rule above settled `missing` is handed back to LazyLibrarian once: `addBook` (only for a book LL does
+// not hold) and `queueBook` for each lost format, and NOTHING ELSE. No `searchBook`: the search rides LazyLibrarian's
+// own daily backlog search (category-only, one query per wanted format per indexer, DELAYSEARCH back-off), so the
+// re-request adds no per-book search burst and no book is searched twice. Every origin, all at once, no budget.
+// A lost format the library or LazyLibrarian already holds is settled `landed` instead. `ll_rerequested_at` is
+// stamped on every attempt and never cleared: a want lost again later stays settled `missing` (no loop).
+// ---------------------------------------------------------------------------
+
+/** What the one re-request does with a want. */
+export type LlRerequestPlan =
+  | { kind: 'skip' }
+  | {
+      kind: 'rerequest';
+      /** The id the want points at afterwards: LazyLibrarian's row for the same book when it has one. */
+      toLlBookId: string;
+      /** Lost formats already held (by the library or by LazyLibrarian): settled `landed`, no LL write. */
+      land: LlFormat[];
+      /** Lost formats handed back to LazyLibrarian (`queueBook`), so its daily search looks for them. */
+      request: LlFormat[];
+    };
+
+/** The want fields the re-request plan reads. */
+export interface LlRerequestWant {
+  llBookId: string | null;
+  title: string;
+  author: string | null;
+  ebookStatus: BookRequestStatus;
+  audioStatus: BookRequestStatus;
+  unroutableReason: string | null;
+  llRerequestedAt: Date | null;
+}
+
+/**
+ * Plan one want's re-request. Pure. Eligible: never re-requested, not parked, its id absent from a non-empty
+ * snapshot, and at least one of its own `formats` settled `missing`. `libraryHolds` names the formats the library
+ * itself holds (a pairing anchor that is paired now). The re-key match (same title, agreeing author) is used
+ * whatever its status: a format it holds lands, and the rest are queued on THAT row, so LazyLibrarian's existing
+ * book is reused instead of a second one being added.
+ */
+export function planLlRerequest(input: {
+  want: LlRerequestWant;
+  snapshot: LlSnapshot | null;
+  index: LlRekeyIndex | null;
+  formats?: readonly LlFormat[];
+  libraryHolds?: readonly LlFormat[];
+}): LlRerequestPlan {
+  const { want, snapshot } = input;
+  if (want.llRerequestedAt !== null || want.unroutableReason !== null || !want.llBookId) {
+    return { kind: 'skip' };
+  }
+  if (!llSnapshotUsable(snapshot) || snapshot.has(want.llBookId)) return { kind: 'skip' };
+  const own = input.formats ?? (['ebook', 'audiobook'] as const);
+  const lost = own.filter(
+    (f) => (f === 'ebook' ? want.ebookStatus : want.audioStatus) === 'missing',
+  );
+  if (lost.length === 0) return { kind: 'skip' };
+  const match = input.index?.find(want.title, want.author) ?? null;
+  const row = match ? snapshot.get(match) : undefined;
+  const land = lost.filter((f) => input.libraryHolds?.includes(f) || llFormatAlreadyHeld(row, f));
+  const request = lost.filter((f) => !land.includes(f));
+  return { kind: 'rerequest', toLlBookId: match ?? want.llBookId, land, request };
+}
+
+/** What one pass's re-requests did (rides on each job's run report). */
+export interface LlRerequestTally {
+  /** Wants handed back to LazyLibrarian (addBook as needed + queueBook), now `wanted`. */
+  llRerequested: number;
+  /** Wants whose lost formats were already held and settled `landed` instead (no LazyLibrarian write). */
+  llRerequestLanded: number;
+  /** Hand-offs LazyLibrarian refused (addBook answered `false`, or the book never appeared): tried again a day
+   *  later, given up after three refusals. */
+  llRerequestNotAdded: number;
+  /** Wants that needed an `addBook` but were left for a later run: the shared Google Books key is out of quota (the
+   *  app's breaker is open, or three adds in a row were refused), or a person's want is still waiting first. */
+  llRerequestDeferred: number;
+}
+
+export const emptyLlRerequestTally = (): LlRerequestTally => ({
+  llRerequested: 0,
+  llRerequestLanded: 0,
+  llRerequestNotAdded: 0,
+  llRerequestDeferred: 0,
+});
+
+/** A refused hand-off is tried again only after this long (a Google Books quota-day). */
+export const LL_REREQUEST_RETRY_MS = 20 * 60 * 60 * 1000;
+/** After this many refusals the re-request ends: the want stays settled `missing`. */
+export const LL_REREQUEST_MAX_FAILURES = 3;
+/** This many refused adds in a row end a pass's adds (the shared Google Books key is most likely out of quota). */
+const LL_REREQUEST_FAIL_STREAK = 3;
+
+/**
+ * The SQL-side eligibility every caller adds to its candidate query: the one re-request has not ended, and a refused
+ * want waits out a day. Callers order by `ll_rerequest_failures` then `created_at`, so a refused want goes last.
+ */
+export function llRerequestOpen(now: Date) {
+  return and(
+    isNull(bookRequests.llRerequestedAt),
+    or(
+      isNull(bookRequests.llRerequestFailedAt),
+      lt(bookRequests.llRerequestFailedAt, new Date(now.getTime() - LL_REREQUEST_RETRY_MS)),
+    ),
+  );
+}
+
+/** One want a job hands to `runLlRerequests`. */
+export interface LlRerequestCandidate {
+  want: LlRerequestWant & { id: string; llRerequestFailures: number };
+  /** The formats this want acquires (both for goodreads, the anchor-missing one for pairing, the active one for
+   *  a collection want). */
+  formats?: readonly LlFormat[];
+  /** Formats the library itself holds (pairing: the anchor is paired now). */
+  libraryHolds?: readonly LlFormat[];
+  /** A collection want: its `last_searched_at` is stamped with the hand-off (its cooldown and 1 h grace). */
+  collection?: boolean;
+}
+
+/**
+ * Run the one re-request for a job's candidates, against the snapshot the job already read:
+ *   1. plan each; a held-only plan settles `landed` at once;
+ *   2. a want LazyLibrarian holds the book for (the re-key match) is queued there, no add;
+ *   3. a want that needs `addBook` is added unless adds are deferred (`deferAdds`: a person's want is still waiting,
+ *      or the app's Google Books breaker is open: LazyLibrarian's add looks the volume up on the SAME key). An add
+ *      answered `false` is a refusal: no queue, and three in a row end the pass's adds. Then `queueBook` once per
+ *      (book, format) unless the row already reads it `Wanted`/`Snatched`. Paced. NEVER `searchBook`;
+ *   4. one more `getAllBooks` confirms each add.
+ * An LL write that throws (LL down) leaves that want untouched for the next run.
+ */
+export async function runLlRerequests(input: {
+  db?: DbClient;
+  ll: LazyLibrarianClientBundle;
+  candidates: readonly LlRerequestCandidate[];
+  snapshot: LlSnapshot;
+  now: Date;
+  site: string;
+  /** Leave every add for a later run (a person's want comes first). Queue-only and held-only plans still run. */
+  deferAdds?: boolean;
+  pace?: (index: number) => Promise<void>;
+  log?: {
+    info?: (msg: string, meta?: Record<string, unknown>) => void;
+    error?: (msg: string, meta?: Record<string, unknown>) => void;
+  };
+}): Promise<LlRerequestTally> {
+  const tally = emptyLlRerequestTally();
+  if (!llSnapshotUsable(input.snapshot) || input.candidates.length === 0) return tally;
+  const snapshot = input.snapshot;
+  const index = new LlRekeyIndex(snapshot);
+  let addsStopped =
+    input.deferAdds === true || (await peekGbQuotaGate({ db: input.db, now: input.now })).open;
+  let failStreak = 0;
+  const verify: Array<{
+    c: LlRerequestCandidate;
+    plan: Extract<LlRerequestPlan, { kind: 'rerequest' }>;
+  }> = [];
+  const added = new Set<string>();
+  const queued = new Set<string>();
+  let i = 0;
+  for (const c of input.candidates) {
+    const plan = planLlRerequest({
+      want: c.want,
+      snapshot,
+      index,
+      ...(c.formats ? { formats: c.formats } : {}),
+      ...(c.libraryHolds ? { libraryHolds: c.libraryHolds } : {}),
+    });
+    if (plan.kind === 'skip') continue;
+    if (plan.request.length === 0) {
+      await recordLlRerequest({ ...input, c, plan, outcome: 'landed', tally });
+      continue;
+    }
+    const target = plan.toLlBookId;
+    const row = snapshot.get(target);
+    const needsAdd = row == null && !added.has(target);
+    if (needsAdd && addsStopped) {
+      tally.llRerequestDeferred += 1;
+      continue;
+    }
+    try {
+      await input.pace?.(i);
+      i += 1;
+      if (needsAdd) {
+        const answer = String((await input.ll.write.addBook(target)) ?? '')
+          .trim()
+          .toLowerCase();
+        if (answer === 'false') {
+          await recordLlRerequest({ ...input, c, plan, outcome: 'not_added', tally });
+          failStreak += 1;
+          if (failStreak >= LL_REREQUEST_FAIL_STREAK) addsStopped = true;
+          continue;
+        }
+        failStreak = 0;
+        added.add(target);
+      }
+      for (const f of plan.request) {
+        const raw = (f === 'ebook' ? row?.ebookStatus : row?.audioStatus)?.trim().toLowerCase();
+        if (raw === 'wanted' || raw === 'snatched' || queued.has(`${target}:${f}`)) continue;
+        await input.ll.write.queueBook(target, f);
+        queued.add(`${target}:${f}`);
+      }
+      if (row != null) await recordLlRerequest({ ...input, c, plan, outcome: 'requeued', tally });
+      else verify.push({ c, plan });
+    } catch (error) {
+      input.log?.error?.(`${input.site}: LL re-request failed (retried next run)`, {
+        requestId: c.want.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  if (verify.length === 0) return tally;
+  // One read after the adds: did LazyLibrarian keep each? A failed read assumes it did (the gone rule settles a
+  // want whose book never appears, and the end stamp keeps it from looping).
+  let after: Map<string, unknown> | null = null;
+  try {
+    after = await input.ll.read.getAllBookStatuses();
+  } catch {
+    after = null;
+  }
+  for (const { c, plan } of verify) {
+    const kept = !llSnapshotUsable(after) || after.has(plan.toLlBookId);
+    await recordLlRerequest({ ...input, c, plan, outcome: kept ? 'requeued' : 'not_added', tally });
+  }
+  return tally;
+}
+
+/**
+ * The single writer of a re-request (one transaction, unaudited: the markRequestPushed class). Guarded on the want
+ * still pointing at the planned id, its re-request not ended, and its planned formats still `missing`.
+ *   - `landed`: the held formats become `landed` (repointed to the plan's id); nothing is stamped.
+ *   - `requeued`: the handed formats become `wanted`, held ones `landed`, the want repointed; `ll_rerequested_at`
+ *     (the end, never cleared) and `last_reconciled_at` stamped, plus `last_searched_at` for a collection want.
+ *   - `not_added`: one more refusal (`ll_rerequest_failures`, `ll_rerequest_failed_at`); the third ends it
+ *     (`ll_rerequested_at`), and the want stays settled `missing`.
+ * Logs `ll_rerequest`.
+ */
+async function recordLlRerequest(input: {
+  db?: DbClient;
+  c: LlRerequestCandidate;
+  plan: Extract<LlRerequestPlan, { kind: 'rerequest' }>;
+  outcome: 'landed' | 'requeued' | 'not_added';
+  tally: LlRerequestTally;
+  site: string;
+  now: Date;
+  log?: { info?: (msg: string, meta?: Record<string, unknown>) => void };
+}): Promise<void> {
+  const { plan, c, outcome } = input;
+  const changed = await inTransaction(input.db, async (tx) => {
+    const [req] = await tx
+      .select({
+        id: bookRequests.id,
+        llBookId: bookRequests.llBookId,
+        ebookStatus: bookRequests.ebookStatus,
+        audioStatus: bookRequests.audioStatus,
+        llRerequestedAt: bookRequests.llRerequestedAt,
+        llRerequestFailures: bookRequests.llRerequestFailures,
+      })
+      .from(bookRequests)
+      .where(eq(bookRequests.id, c.want.id))
+      .for('update');
+    if (!req || req.llBookId !== c.want.llBookId || req.llRerequestedAt !== null) return false;
+    const statusOf = (f: LlFormat) => (f === 'ebook' ? req.ebookStatus : req.audioStatus);
+    if (![...plan.land, ...plan.request].every((f) => statusOf(f) === 'missing')) return false;
+    if (outcome === 'not_added') {
+      const failures = req.llRerequestFailures + 1;
+      await tx
+        .update(bookRequests)
+        .set({
+          llRerequestFailures: failures,
+          llRerequestFailedAt: input.now,
+          ...(failures >= LL_REREQUEST_MAX_FAILURES ? { llRerequestedAt: input.now } : {}),
+          updatedAt: input.now,
+        })
+        .where(eq(bookRequests.id, req.id));
+      return true;
+    }
+    const next = (f: LlFormat): BookRequestStatus =>
+      plan.land.includes(f)
+        ? 'landed'
+        : plan.request.includes(f) && outcome === 'requeued'
+          ? 'wanted'
+          : statusOf(f);
+    await tx
+      .update(bookRequests)
+      .set({
+        llBookId: plan.toLlBookId,
+        ebookStatus: next('ebook'),
+        audioStatus: next('audiobook'),
+        ...(outcome === 'requeued'
+          ? {
+              llRerequestedAt: input.now,
+              lastReconciledAt: input.now,
+              ...(c.collection ? { lastSearchedAt: input.now } : {}),
+            }
+          : {}),
+        updatedAt: input.now,
+      })
+      .where(eq(bookRequests.id, req.id));
+    return true;
+  });
+  if (!changed) return;
+  if (outcome === 'landed') input.tally.llRerequestLanded += 1;
+  else if (outcome === 'requeued') input.tally.llRerequested += 1;
+  else input.tally.llRerequestNotAdded += 1;
+  input.log?.info?.('ll_rerequest', {
+    site: input.site,
+    outcome,
+    requestId: c.want.id,
+    llBookId: c.want.llBookId,
+    ...(plan.toLlBookId !== c.want.llBookId ? { toLlBookId: plan.toLlBookId } : {}),
+    queued: outcome === 'requeued' ? plan.request : [],
+    landed: plan.land,
+  });
+}
+
+/**
+ * Are people's (goodreads) re-requests still waiting? While one is, the pairing and collection passes defer their
+ * adds, so on a quota-short day the shared Google Books key goes to people's wants first (the owner's order). Waiting
+ * means: its re-request is open (`llRerequestOpen`), it is on a live shelf item of a linked integration that a sync
+ * read within the last 26 hours (so the goodreads leg can reach it), it has a `missing` format, and its id is absent
+ * from the caller's snapshot.
+ */
+/** A person's want holds the app's adds back only while its shelf was read this recently. */
+const PEOPLE_FIRST_SEEN_MS = 26 * 60 * 60 * 1000;
+
+export async function peoplesRerequestsWaiting(
+  db: DbClient | undefined,
+  snapshot: LlSnapshot,
+  now: Date,
+): Promise<boolean> {
+  const rows = await resolveDb(db)
+    .select({ llBookId: bookRequests.llBookId })
+    .from(bookRequests)
+    .innerJoin(integrationShelfItems, eq(integrationShelfItems.id, bookRequests.shelfItemId))
+    .innerJoin(userIntegrations, eq(userIntegrations.id, bookRequests.integrationId))
+    .where(
+      and(
+        eq(bookRequests.origin, 'goodreads'),
+        // Only a want the goodreads leg can reach: a linked integration whose shelf was read within the last day
+        // (`last_seen_at` advances each time a sync reads the item). A shelf that keeps failing to read, or an
+        // unlinked integration, must not hold the app's adds back forever.
+        eq(userIntegrations.status, 'linked'),
+        gt(integrationShelfItems.lastSeenAt, new Date(now.getTime() - PEOPLE_FIRST_SEEN_MS)),
+        llRerequestOpen(now),
+        isNull(bookRequests.unroutableReason),
+        isNull(integrationShelfItems.deletedAt),
+        isNotNull(bookRequests.llBookId),
+        or(eq(bookRequests.ebookStatus, 'missing'), eq(bookRequests.audioStatus, 'missing')),
+      ),
+    );
+  return rows.some((r) => r.llBookId !== null && !snapshot.has(r.llBookId));
 }

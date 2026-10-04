@@ -459,9 +459,11 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
     expect(report.requestsMinted).toBe(3);
     expect(report.requestsPushed).toBe(1);
 
-    // The push queued BOTH formats and used queueBook (mandatory after addBook) + searchBook.
+    // The push queued BOTH formats and used queueBook (mandatory after addBook) + searchBook. This stub's LL
+    // already holds gb-tog (it answers Ignored), so addBook is skipped: on a held book its upsert would reset both
+    // formats (issue #665, DESIGN-028 amendment rule 6).
     const forTog = ll.calls.filter((c) => c.id === 'gb-tog');
-    expect(forTog.filter((c) => c.cmd === 'addBook')).toHaveLength(1);
+    expect(forTog.filter((c) => c.cmd === 'addBook')).toHaveLength(0);
     expect(forTog.filter((c) => c.cmd === 'queueBook').map((c) => c.format).sort()).toEqual([
       'audiobook',
       'ebook',
@@ -1329,7 +1331,8 @@ describe('all-shelves sync + acquisition (ADR-057)', () => {
     // THE acquisition assertions: the READ-shelf and CURRENTLY-READING wants hit LL with BOTH formats.
     for (const id of ['gb-hyp', 'gb-martian']) {
       const calls = ll.calls.filter((c) => c.id === id);
-      expect(calls.filter((c) => c.cmd === 'addBook'), id).toHaveLength(1);
+      // This stub's LL holds every id (Wanted/Wanted), so no addBook (issue #665 rule 6); queue + search still fire.
+      expect(calls.filter((c) => c.cmd === 'addBook'), id).toHaveLength(0);
       expect(calls.filter((c) => c.cmd === 'queueBook').map((c) => c.format).sort(), id).toEqual([
         'audiobook',
         'ebook',
