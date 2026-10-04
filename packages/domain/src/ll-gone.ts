@@ -29,7 +29,7 @@
 //   • Never a search, never an `addBook`. The only LazyLibrarian call any of this makes is the snapshot read
 //     the reconcile already took.
 // An empty snapshot (an LL error answer parses to an empty map) proves nothing, so it decides nothing.
-import { and, eq, isNotNull, isNull, lt, or } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import {
   bookRequests,
   integrationShelfItems,
@@ -704,9 +704,13 @@ async function recordLlRerequest(input: {
 /**
  * Are people's (goodreads) re-requests still waiting? While one is, the pairing and collection passes defer their
  * adds, so on a quota-short day the shared Google Books key goes to people's wants first (the owner's order). Waiting
- * means: its re-request is open (`llRerequestOpen`), it is on a live shelf item of a linked integration, it has a
- * `missing` format, and its id is absent from the caller's snapshot.
+ * means: its re-request is open (`llRerequestOpen`), it is on a live shelf item of a linked integration that a sync
+ * read within the last 26 hours (so the goodreads leg can reach it), it has a `missing` format, and its id is absent
+ * from the caller's snapshot.
  */
+/** A person's want holds the app's adds back only while its shelf was read this recently. */
+const PEOPLE_FIRST_SEEN_MS = 26 * 60 * 60 * 1000;
+
 export async function peoplesRerequestsWaiting(
   db: DbClient | undefined,
   snapshot: LlSnapshot,
@@ -720,8 +724,11 @@ export async function peoplesRerequestsWaiting(
     .where(
       and(
         eq(bookRequests.origin, 'goodreads'),
-        // Only an integration the goodreads job syncs: an unlinked one would hold the app's adds back forever.
+        // Only a want the goodreads leg can reach: a linked integration whose shelf was read within the last day
+        // (`last_seen_at` advances each time a sync reads the item). A shelf that keeps failing to read, or an
+        // unlinked integration, must not hold the app's adds back forever.
         eq(userIntegrations.status, 'linked'),
+        gt(integrationShelfItems.lastSeenAt, new Date(now.getTime() - PEOPLE_FIRST_SEEN_MS)),
         llRerequestOpen(now),
         isNull(bookRequests.unroutableReason),
         isNull(integrationShelfItems.deletedAt),

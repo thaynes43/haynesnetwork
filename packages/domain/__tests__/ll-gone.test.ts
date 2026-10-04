@@ -753,6 +753,15 @@ describe('runFormatPairing — the one re-request of a settled want (issue #668)
     const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
     expect(run).toMatchObject({ llRerequested: 0, llRerequestDeferred: 1 });
     expect(ll.calls).toEqual([]);
+
+    // Review finding (PR #675): a shelf no sync has read for a day cannot be reached by the goodreads leg, so it
+    // stops holding the app's adds back.
+    await t.db
+      .update(integrationShelfItems)
+      .set({ lastSeenAt: daysAgo(2) })
+      .where(eq(integrationShelfItems.id, shelf!.id));
+    const later = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(later).toMatchObject({ llRerequested: 1, llRerequestDeferred: 0 });
   });
 
   it('two wants on one lost book share one addBook and one queueBook', async () => {

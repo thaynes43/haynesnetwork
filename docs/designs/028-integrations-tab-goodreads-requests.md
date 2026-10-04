@@ -538,7 +538,8 @@ format-pairing run, the goodreads-sync reconcile, the collection force-search cr
    key was split, but LazyLibrarian's config carries the app's key), and the app already spends about 900 of its
    1,000 daily queries. So adds wait while the app's quota breaker is open, three refused adds in a row end a pass's
    adds, and the pairing and collection passes defer their adds while a person's (goodreads) re-request is still
-   waiting, so people's wants get the quota first. Deferred wants count in `llRerequestDeferred` and are untouched.
+   waiting (on a linked integration whose shelf a sync read within 26 hours, so a shelf that keeps failing to read
+   cannot hold them back), so people's wants get the quota first. Deferred wants count in `llRerequestDeferred` and are untouched.
    In practice the re-adds drain over several quota-days, not one run, unless LazyLibrarian gets its own key
    (issue #674, an owner decision).
 6. **A person's Search again is separate:** it still re-adds and searches on demand.
