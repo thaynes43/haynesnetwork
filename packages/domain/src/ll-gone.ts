@@ -639,7 +639,14 @@ export async function runLlRerequests(input: {
   }
   for (const { c, plan } of verify) {
     const kept = !llSnapshotUsable(after) || after.has(plan.toLlBookId);
-    await recordLlRerequest({ ...input, c, plan, outcome: kept ? 'requeued' : 'not_added', tally });
+    await recordLlRerequest({
+      ...input,
+      c,
+      plan,
+      outcome: kept ? 'requeued' : 'not_added',
+      viaAdd: true,
+      tally,
+    });
   }
   return tally;
 }
@@ -660,6 +667,8 @@ async function recordLlRerequest(input: {
   c: LlRerequestCandidate;
   plan: Extract<LlRerequestPlan, { kind: 'rerequest' }>;
   outcome: 'landed' | 'requeued' | 'not_added' | 'deferred';
+  /** A `requeued` hand-off that went through `addBook` (stamps `ll_rerequest_added_at`, the live-quota proof). */
+  viaAdd?: boolean;
   tally: LlRerequestTally;
   site: string;
   now: Date;
@@ -718,6 +727,7 @@ async function recordLlRerequest(input: {
         ...(outcome === 'requeued'
           ? {
               llRerequestedAt: input.now,
+              ...(input.viaAdd ? { llRerequestAddedAt: input.now } : {}),
               lastReconciledAt: input.now,
               ...(c.collection ? { lastSearchedAt: input.now } : {}),
             }
@@ -781,17 +791,15 @@ export async function peoplesRerequestsWaiting(
   return rows.some((r) => r.llBookId !== null && !snapshot.has(r.llBookId));
 }
 
-/** Did any re-request hand a book back during the current Google Books quota-day (so the quota was alive today)? */
+/**
+ * Did a re-request's `addBook` go through during the current Google Books quota-day (so the shared key's quota was
+ * live today)? Only a real add counts (`ll_rerequest_added_at`); a queue-only hand-back never touched the key.
+ */
 async function reAddedThisQuotaDay(db: DbClient | undefined, now: Date): Promise<boolean> {
   const [row] = await resolveDb(db)
     .select({ id: bookRequests.id })
     .from(bookRequests)
-    .where(
-      and(
-        gt(bookRequests.llRerequestedAt, gbQuotaDayStart(now)),
-        lt(bookRequests.llRerequestFailures, LL_REREQUEST_MAX_FAILURES),
-      ),
-    )
+    .where(gt(bookRequests.llRerequestAddedAt, gbQuotaDayStart(now)))
     .limit(1);
   return row !== undefined;
 }

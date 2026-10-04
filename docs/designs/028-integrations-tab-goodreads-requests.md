@@ -533,7 +533,8 @@ format-pairing run, the goodreads-sync reconcile, the collection force-search cr
 4. **Refusals are retried, a few times:** an add answered `false` (or a book that never appears) is a refusal: no
    queue, the want stays `missing`, and it is stamped (`ll_rerequest_failed_at`) to wait for the next Google Books
    quota-day (07:00 UTC). Three refusals in a row stop the pass's adds; when an add already went through that
-   quota-day they are the shared quota running out, so they are NOT counted, otherwise they count. A refusal
+   quota-day (`ll_rerequest_added_at`, migration 0090: set only by a real `addBook`, never by a queue-only hand-back)
+   they are the shared quota running out, so they are NOT counted, otherwise they count. A refusal
    followed by a successful add (or one or two trailing ones) counts (`ll_rerequest_failures`). Stamping every
    refusal keeps a few refused books from blocking the rest. The third counted refusal ends its re-request.
 5. **The Google Books key is shared, so adds are gated:** LazyLibrarian's `addBook` looks the volume up on the SAME

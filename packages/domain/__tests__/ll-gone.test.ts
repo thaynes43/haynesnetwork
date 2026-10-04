@@ -641,7 +641,12 @@ describe('runFormatPairing — the one re-request of a settled want (issue #668)
     });
     await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
     expect(ll.calls).toEqual([{ cmd: 'queueBook', id: 'll-saints', format: 'audiobook' }]);
-    expect(await getWant(id)).toMatchObject({ llBookId: 'll-saints', audioStatus: 'wanted' });
+    // A queue-only hand-back never touched Google Books, so it is no live-quota proof (PR #676 review).
+    expect(await getWant(id)).toMatchObject({
+      llBookId: 'll-saints',
+      audioStatus: 'wanted',
+      llRerequestAddedAt: null,
+    });
   });
 
   it('a refused add counts a refusal (no queue); it is tried a day later, and the third refusal ends it', async () => {
@@ -734,7 +739,9 @@ describe('runFormatPairing — the one re-request of a settled want (issue #668)
     const ll = stubLl({}, { refuseIds: ['gb-B Two', 'gb-C Three', 'gb-D Four'] });
     const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
     expect(run).toMatchObject({ llRerequested: 1, llRerequestNotAdded: 0, llRerequestDeferred: 3 });
-    expect((await getWant(takenId)).audioStatus).toBe('wanted');
+    const taken = await getWant(takenId);
+    expect(taken.audioStatus).toBe('wanted');
+    expect(taken.llRerequestAddedAt).not.toBeNull(); // the live-quota proof a later pass reads
     for (const id of wall) {
       const want = await getWant(id);
       expect(want).toMatchObject({ audioStatus: 'missing', llRerequestFailures: 0 });
