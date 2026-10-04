@@ -9,6 +9,7 @@ import { syncBooks, type BooksItemInput } from '@hnet/domain';
 import type { KavitaSeries, KavitaVolume } from '@hnet/books';
 import { runSync } from '../src/orchestrator';
 import type { BooksSyncBundle } from '../src/books';
+import type { SyncClients } from '../src/clients';
 import { bootMigratedDb, type TestDb } from './helpers';
 
 let t: TestDb;
@@ -68,7 +69,7 @@ function stubBundle() {
 describe('runSync --mode=books-sync — the held books (issue #661)', () => {
   it('reads a series once, then carries its held books forward, even for a row with no author', async () => {
     const first = stubBundle();
-    const r1 = await runSync({ mode: 'books-sync', db: t.db, books: first.bundle });
+    const r1 = await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db, books: first.bundle });
     expect(r1.totalFailure).toBe(false);
     expect(first.volumeCalls).toEqual(['457']);
     const [row] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '457'));
@@ -80,7 +81,7 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
     // The series is unchanged: the authorless row is still re-enriched (the writers fallback), but its
     // held books are carried forward, not re-read.
     const second = stubBundle();
-    await runSync({ mode: 'books-sync', db: t.db, books: second.bundle });
+    await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db, books: second.bundle });
     expect(second.metadataCalls).toEqual(['457']);
     expect(second.volumeCalls).toEqual([]);
     const [after] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '457'));
@@ -135,7 +136,7 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
       s.volumeCalls.push(id);
       return [{ name: '0.5', chapters: [{ title: '-100000', titleName: 'Fire & Blood', isbn: '9781524796280', writers: [{ name: 'George R. R. Martin' }] }] }];
     };
-    await runSync({ mode: 'books-sync', db: t.db, books: s.bundle });
+    await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db, books: s.bundle });
     expect(s.volumeCalls).toEqual(['659']);
     expect(s.metadataCalls).toEqual([]); // unchanged and enriched: the metadata gate is untouched
     const [after] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '659'));
