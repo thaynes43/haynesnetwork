@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.105.5](https://github.com/thaynes43/haynesnetwork/compare/v0.105.4...v0.105.5) (2026-10-04)
+
+
+### Bug Fixes
+
+* **pairing:** read a want's format from its anchor and land the held format ([#670](https://github.com/thaynes43/haynesnetwork/issues/670)) ([78f8382](https://github.com/thaynes43/haynesnetwork/commit/78f8382d315fdd5251691ddc97ec7b90fb78cd3c))
+
 ## [0.105.4](https://github.com/thaynes43/haynesnetwork/compare/v0.105.3...v0.105.4) (2026-10-04)
 
 
