@@ -479,8 +479,9 @@ and the collection force-search cron):
    instead and that re-key waits for a person's Search again (rule 5).
 3. **Otherwise settle.** Each such format becomes `missing`: the dead-end Missing state the walls already show,
    with Search again. This deliberately overrides the no-regress rule: a `grabbed` format whose book row is gone
-   has no row for LazyLibrarian to import into. A pairing want's anchor-held format is set `landed` in the same
-   write (a few July wants never got the ADR-065 "held format sits `landed`").
+   has no row for LazyLibrarian to import into. (Follow-up, v0.105.5: the pairing reconcile reads every open
+   want's format from its anchor's media kind and sets the anchor-held format `landed` where it was not, see
+   DESIGN-036's amendment of this date.)
 4. **No LazyLibrarian call.** Detection, re-key and settle use the snapshot the reconcile already read. The
    collection cron reads it once per run (only when a candidate exists) and hands it to its worklist, which no
    longer reads its own. It settles across every find-missing collection regardless of cooldown, so the backlog

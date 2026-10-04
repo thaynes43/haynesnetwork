@@ -340,7 +340,15 @@ run's `getAllBooks` snapshot lacked. LazyLibrarian deletes books the app added w
 counts as bookless is removed, and its books cascade), so 747 pairing wants sat `wanted` or `grabbed` on ids that
 no longer exist. The reconcile now re-keys such a want to the one row LazyLibrarian holds for the same title and
 author (when that row already holds the format or is after it), or settles its missing format `missing` once the
-book has been absent for 24 hours, with no LazyLibrarian call now or from the Skipped sweep later. The want's format is taken from its anchor's media kind (`missingFormatFor`), not from which status reads
-`landed`, and the anchor-held format is set `landed` in the same write. A settled want is never pushed again by
-the mint (it pushes only `requested`); a person's Search again re-adds the book. Report fields `llGoneRekeyed`
-and `llGoneSettled`.
+book has been absent for 24 hours, with no LazyLibrarian call now or from the Skipped sweep later. A settled want
+is never pushed again by the mint (it pushes only `requested`); a person's Search again re-adds the book. Report
+fields `llGoneRekeyed` and `llGoneSettled`.
+
+**The want's format comes from its anchor (follow-up, same day).** The reconcile guessed a want's format from which
+status read `landed` (`ebookStatus === 'landed'` ⇒ audiobook, else eBook). Three July wants never had their held
+format set `landed` (it read `grabbed`), so the guess picked the HELD format: the Skipped sweep worked it, and two of
+those books sit `Wanted` for the eBook in LazyLibrarian although the library holds it. The reconcile now reads every
+open want's anchor media kind (one query) and uses `missingFormatFor`, and sets the anchor-held format `landed`
+wherever it is not, as long as the anchor is still in the library (`deleted_at` NULL: a removed anchor no longer
+holds its format, though its media kind still names the want's format) (`landPairingHeldFormat`, report field
+`heldLanded`; ADR-065 C-03).
