@@ -724,6 +724,28 @@ async function upsertPairingWant(input: {
   });
 }
 
+/**
+ * ADR-065 C-03 — the held format IS in the library, so a pairing want's anchor-held format sits `landed`. Three
+ * July wants read `grabbed` there, which made the reconcile pick the HELD format as the one to sweep (issue #665
+ * follow-up). Sets it, guarded on it not being `landed` already. Single-writer, unaudited (the pairing sync
+ * class). Returns whether the row changed.
+ */
+export async function landPairingHeldFormat(input: {
+  db?: DbClient;
+  requestId: string;
+  format: 'ebook' | 'audiobook';
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const column = input.format === 'ebook' ? bookRequests.ebookStatus : bookRequests.audioStatus;
+  const rows = await resolveDb(input.db)
+    .update(bookRequests)
+    .set(input.format === 'ebook' ? { ebookStatus: 'landed', updatedAt: now } : { audioStatus: 'landed', updatedAt: now })
+    .where(and(eq(bookRequests.id, input.requestId), ne(column, 'landed')))
+    .returning({ id: bookRequests.id });
+  return rows.length > 0;
+}
+
 /** Advance a pushed pairing want: the missing format `requested → wanted`, llBookId + stamps set. */
 export async function markPairingWantPushed(input: {
   db?: DbClient;
@@ -1121,6 +1143,8 @@ export interface FormatPairingReport
   reconciled: number;
   /** Pairing wants whose raw-`Skipped` missing format was re-queued + re-searched this run. */
   requeued: number;
+  /** Open pairing wants whose anchor-held format did not read `landed` and was set so (ADR-065 C-03). */
+  heldLanded: number;
   /**
    * ADR-055 amendment (2026-09-22 — the push guard). Widened from `MintPairingWantsReport.skippedHeld`:
    * on the run report this is the RUN TOTAL — mint-push suppressions PLUS Skipped-sweep suppressions.
@@ -1205,6 +1229,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
   let reconciled = 0;
   let requeued = 0;
   let sweepSkippedHeld = 0;
+  let heldLanded = 0;
   const gone = emptyLlGoneTally();
   if (input.ll && seatedMap) {
     // Issue #665 (DESIGN-028 amendment 2026-10-04) — a pushed want whose id LazyLibrarian no longer has is
@@ -1212,9 +1237,10 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     // an empty snapshot decides nothing. The want pushed by THIS run's mint carries a fresh
     // `last_reconciled_at`, so the grace keeps it out (the snapshot predates its addBook).
     const goneIndex = llSnapshotUsable(seatedMap) ? new LlRekeyIndex(seatedMap) : null;
-    // The anchors of the wants LL lacks, for their media kind: the want's own format is the one its anchor
-    // misses (the loop's `missing` guess misreads the few July wants whose held format never sat `landed`).
-    const goneAnchorKind = new Map<string, BooksMediaKind>();
+    // Each open want's anchor media kind: the want's own format is the one its anchor misses, and the other one
+    // sits `landed` (ADR-065 C-03). Guessing it from which status reads `landed` misread three July wants whose
+    // held format read `grabbed`, so the Skipped sweep worked their HELD format (issue #665 follow-up).
+    const anchorKindOf = new Map<string, BooksMediaKind>();
     const open = (await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'))).filter(
       (w) =>
         w.llBookId !== null &&
@@ -1224,26 +1250,31 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
         w.unroutableReason === null &&
         (w.ebookStatus !== 'landed' || w.audioStatus !== 'landed'),
     );
-    if (goneIndex) {
-      const anchorIds = open
-        .filter((w) => !seatedMap.has(w.llBookId!))
-        .map((w) => w.pairingBooksItemId!);
-      if (anchorIds.length > 0) {
-        const anchors = await db
-          .select({ id: booksItems.id, mediaKind: booksItems.mediaKind })
-          .from(booksItems)
-          .where(inArray(booksItems.id, anchorIds));
-        for (const a of anchors) goneAnchorKind.set(a.id, a.mediaKind);
-      }
+    if (open.length > 0) {
+      const anchors = await db
+        .select({ id: booksItems.id, mediaKind: booksItems.mediaKind })
+        .from(booksItems)
+        .where(inArray(booksItems.id, [...new Set(open.map((w) => w.pairingBooksItemId!))]));
+      for (const a of anchors) anchorKindOf.set(a.id, a.mediaKind);
     }
     for (const want of open) {
       const status = seatedMap.get(want.llBookId!);
-      const missing = want.ebookStatus === 'landed' ? ('audiobook' as const) : ('ebook' as const);
+      const anchorKind = anchorKindOf.get(want.pairingBooksItemId!);
+      const missing = anchorKind
+        ? missingFormatFor(anchorKind)
+        : want.ebookStatus === 'landed'
+          ? ('audiobook' as const)
+          : ('ebook' as const);
+      const heldFormat = missing === 'ebook' ? ('audiobook' as const) : ('ebook' as const);
+      if (anchorKind && (heldFormat === 'ebook' ? want.ebookStatus : want.audioStatus) !== 'landed') {
+        if (await landPairingHeldFormat({ db: input.db, requestId: want.id, format: heldFormat, now })) {
+          heldLanded += 1;
+          if (heldFormat === 'ebook') want.ebookStatus = 'landed';
+          else want.audioStatus = 'landed';
+        }
+      }
       if (!status) {
         if (!goneIndex) continue;
-        const anchorKind = goneAnchorKind.get(want.pairingBooksItemId!);
-        const wantFormat = anchorKind ? missingFormatFor(anchorKind) : missing;
-        const heldFormat = wantFormat === 'ebook' ? ('audiobook' as const) : ('ebook' as const);
         try {
           await applyLlGoneDecision({
             db: input.db,
@@ -1254,11 +1285,10 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
               snapshot: seatedMap,
               index: goneIndex,
               now,
-              formats: [wantFormat],
+              formats: [missing],
             }),
             snapshot: seatedMap,
             reconcile: true,
-            ...(anchorKind ? { landFormats: [heldFormat] } : {}),
             tally: gone,
             site: 'format-pairing.reconcile',
             now,
@@ -1336,6 +1366,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     // The run total: mint-push suppressions + Skipped-sweep suppressions (both are held-format clobbers
     // withheld), so one number answers "how many clobbering LL writes did the guard stop this run".
     skippedHeld: mint.skippedHeld + sweepSkippedHeld,
+    heldLanded,
     ...gone,
   };
   log.info?.('format-pairing run complete', { ...report });

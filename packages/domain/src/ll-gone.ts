@@ -263,16 +263,13 @@ export async function repointRequestLlBook(input: {
 /**
  * Settle a want whose LazyLibrarian book is gone: each named format that has not landed becomes `missing`.
  * Deliberately NOT `advanceStatus` — a `grabbed` format is settled too, because the book row its grab would
- * import into no longer exists. `landFormats` (pairing only) names the format the anchor already holds: it sits
- * `landed` (the ADR-065 idiom), which a few July pairing wants never got. Guarded on the id the decision was made
- * for. Returns whether the row changed.
+ * import into no longer exists. Guarded on the id the decision was made for. Returns whether the row changed.
  */
 export async function settleRequestLlGone(input: {
   db?: DbClient;
   requestId: string;
   llBookId: string;
   formats: readonly LlFormat[];
-  landFormats?: readonly LlFormat[];
   now?: Date;
 }): Promise<boolean> {
   if (input.formats.length === 0) return false;
@@ -290,11 +287,7 @@ export async function settleRequestLlGone(input: {
       .for('update');
     if (!req || req.llBookId !== input.llBookId) return false;
     const settle = (format: LlFormat, current: BookRequestStatus): BookRequestStatus =>
-      input.landFormats?.includes(format)
-        ? 'landed'
-        : input.formats.includes(format) && current !== 'landed'
-          ? 'missing'
-          : current;
+      input.formats.includes(format) && current !== 'landed' ? 'missing' : current;
     const ebookStatus = settle('ebook', req.ebookStatus);
     const audioStatus = settle('audiobook', req.audioStatus);
     if (ebookStatus === req.ebookStatus && audioStatus === req.audioStatus) return false;
@@ -329,8 +322,6 @@ export async function applyLlGoneDecision(input: {
   snapshot: LlSnapshot;
   /** Reconcile statuses from the re-keyed row (goodreads, pairing). A collection want is never reconciled. */
   reconcile: boolean;
-  /** Pairing only: the format the anchor holds, which a settle also leaves `landed`. */
-  landFormats?: readonly LlFormat[];
   tally: LlGoneTally;
   site: string;
   now: Date;
@@ -372,7 +363,6 @@ export async function applyLlGoneDecision(input: {
       requestId: input.requestId,
       llBookId: input.llBookId,
       formats: decision.formats,
-      ...(input.landFormats ? { landFormats: input.landFormats } : {}),
       now: input.now,
     });
     if (!settled) return;

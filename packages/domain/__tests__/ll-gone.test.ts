@@ -345,6 +345,48 @@ describe('runFormatPairing — a pushed want whose LazyLibrarian book is gone', 
     expect(ll.calls).toEqual([]);
   });
 
+  // A July want whose HELD format read `grabbed` made the old format guess pick the held eBook for the Skipped
+  // sweep. The anchor's media kind decides now, and the held format is set `landed` (ADR-065 C-03).
+  it('sweeps the anchor-missing format, not a stale held one, and lands the held format', async () => {
+    const id = await seedPairingWant({
+      title: 'Grave Sight',
+      author: 'Charlaine Harris',
+      llBookId: 'll-gs',
+      ebookStatus: 'grabbed',
+      audioStatus: 'wanted',
+      lastReconciledAt: new Date(),
+    });
+    const ll = stubLl({
+      'll-gs': {
+        title: 'Grave Sight',
+        author: 'Charlaine Harris',
+        ebookStatus: 'Skipped',
+        audioStatus: 'Skipped',
+      },
+    });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ heldLanded: 1, requeued: 1 });
+    expect(ll.calls.filter((c) => c.cmd === 'queueBook').map((c) => c.format)).toEqual([
+      'audiobook',
+    ]);
+    expect(await getWant(id)).toMatchObject({ ebookStatus: 'landed', audioStatus: 'wanted' });
+  });
+
+  it('lands a stale held format on a want whose own format already settled (and touches nothing else)', async () => {
+    const id = await seedPairingWant({
+      title: 'Rework',
+      author: 'Jason Fried',
+      llBookId: 'gb-gone',
+      ebookStatus: 'grabbed',
+      audioStatus: 'missing',
+    });
+    const ll = stubLl();
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ heldLanded: 1, llGoneSettled: 0 });
+    expect(ll.calls).toEqual([]);
+    expect(await getWant(id)).toMatchObject({ ebookStatus: 'landed', audioStatus: 'missing' });
+  });
+
   it('re-keys to the row LazyLibrarian holds for the same book and reconciles from it', async () => {
     const id = await seedPairingWant({
       title: 'The Client',
