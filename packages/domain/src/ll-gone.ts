@@ -518,9 +518,10 @@ export interface LlRerequestCandidate {
  *   2. a want LazyLibrarian holds the book for (the re-key match) is queued there, no add;
  *   3. a want that needs `addBook` is added unless adds are deferred (`deferAdds`: a person's want is still waiting,
  *      or the app's Google Books breaker is open: LazyLibrarian's add looks the volume up on the SAME key). An add
- *      answered `false` is a refusal: no queue. Three in a row end the pass's adds and are NOT counted (the shared quota,
- *      not the books); a refusal followed by a successful add counts. Then `queueBook` once per
- *      (book, format) unless the row already reads it `Wanted`/`Snatched`. Paced. NEVER `searchBook`;
+ *      answered `false` is a refusal: no queue. Three in a row end the pass's adds; they are stamped to wait for the
+ *      next quota-day, and counted only when no add has gone through yet this quota-day (after one, the quota ran
+ *      out, not the books). A refusal followed by a successful add counts. Then `queueBook` once per (book, format)
+ *      unless the row already reads it `Wanted`/`Snatched`. Paced. NEVER `searchBook`;
  *   4. one more `getAllBooks` confirms each add.
  * An LL write that throws (LL down) leaves that want untouched for the next run.
  */
@@ -588,7 +589,18 @@ export async function runLlRerequests(input: {
         if (answer === 'false') {
           refused.push({ c, plan });
           if (refused.length >= LL_REREQUEST_FAIL_STREAK) {
-            tally.llRerequestDeferred += refused.length;
+            // Three in a row. If an add already went through this quota-day, the quota ran out: the three are
+            // stamped to wait for the next quota-day but NOT counted. With no add yet today they may be books
+            // LazyLibrarian really refuses, so they count. Stamped either way, so the next pass tries others.
+            const wall = added.size > 0 || (await reAddedThisQuotaDay(input.db, input.now));
+            for (const r of refused) {
+              await recordLlRerequest({
+                ...input,
+                ...r,
+                outcome: wall ? 'deferred' : 'not_added',
+                tally,
+              });
+            }
             refused = [];
             addsStopped = true;
           }
@@ -638,6 +650,7 @@ export async function runLlRerequests(input: {
  *   - `landed`: the held formats become `landed` (repointed to the plan's id); nothing is stamped.
  *   - `requeued`: the handed formats become `wanted`, held ones `landed`, the want repointed; `ll_rerequested_at`
  *     (the end, never cleared) and `last_reconciled_at` stamped, plus `last_searched_at` for a collection want.
+ *   - `deferred`: a quota-wall refusal: `ll_rerequest_failed_at` only, so it waits for the next quota-day uncounted.
  *   - `not_added`: one more refusal (`ll_rerequest_failures`, `ll_rerequest_failed_at`); the third ends it
  *     (`ll_rerequested_at`), and the want stays settled `missing`.
  * Logs `ll_rerequest`.
@@ -646,7 +659,7 @@ async function recordLlRerequest(input: {
   db?: DbClient;
   c: LlRerequestCandidate;
   plan: Extract<LlRerequestPlan, { kind: 'rerequest' }>;
-  outcome: 'landed' | 'requeued' | 'not_added';
+  outcome: 'landed' | 'requeued' | 'not_added' | 'deferred';
   tally: LlRerequestTally;
   site: string;
   now: Date;
@@ -669,6 +682,14 @@ async function recordLlRerequest(input: {
     if (!req || req.llBookId !== c.want.llBookId || req.llRerequestedAt !== null) return false;
     const statusOf = (f: LlFormat) => (f === 'ebook' ? req.ebookStatus : req.audioStatus);
     if (![...plan.land, ...plan.request].every((f) => statusOf(f) === 'missing')) return false;
+    if (outcome === 'deferred') {
+      // A quota-wall refusal: wait for the next quota-day, uncounted.
+      await tx
+        .update(bookRequests)
+        .set({ llRerequestFailedAt: input.now, updatedAt: input.now })
+        .where(eq(bookRequests.id, req.id));
+      return true;
+    }
     if (outcome === 'not_added') {
       const failures = req.llRerequestFailures + 1;
       await tx
@@ -709,6 +730,7 @@ async function recordLlRerequest(input: {
   if (!changed) return;
   if (outcome === 'landed') input.tally.llRerequestLanded += 1;
   else if (outcome === 'requeued') input.tally.llRerequested += 1;
+  else if (outcome === 'deferred') input.tally.llRerequestDeferred += 1;
   else input.tally.llRerequestNotAdded += 1;
   input.log?.info?.('ll_rerequest', {
     site: input.site,
@@ -757,4 +779,19 @@ export async function peoplesRerequestsWaiting(
       ),
     );
   return rows.some((r) => r.llBookId !== null && !snapshot.has(r.llBookId));
+}
+
+/** Did any re-request hand a book back during the current Google Books quota-day (so the quota was alive today)? */
+async function reAddedThisQuotaDay(db: DbClient | undefined, now: Date): Promise<boolean> {
+  const [row] = await resolveDb(db)
+    .select({ id: bookRequests.id })
+    .from(bookRequests)
+    .where(
+      and(
+        gt(bookRequests.llRerequestedAt, gbQuotaDayStart(now)),
+        lt(bookRequests.llRerequestFailures, LL_REREQUEST_MAX_FAILURES),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
 }

@@ -283,6 +283,7 @@ async function seedPairingWant(opts: {
   lastReconciledAt?: Date;
   /** Issue #668: set to say the want already had its one re-request (so a settle stands). */
   llRerequestedAt?: Date | null;
+  createdAt?: Date;
 }): Promise<string> {
   seq += 1;
   const [anchor] = await t.db
@@ -312,7 +313,7 @@ async function seedPairingWant(opts: {
       audioStatus: opts.audioStatus ?? 'wanted',
       lastReconciledAt: opts.lastReconciledAt ?? daysAgo(40),
       llRerequestedAt: opts.llRerequestedAt ?? null,
-      createdAt: daysAgo(60),
+      createdAt: opts.createdAt ?? daysAgo(60),
     })
     .returning({ id: bookRequests.id });
   return want!.id;
@@ -681,25 +682,73 @@ describe('runFormatPairing — the one re-request of a settled want (issue #668)
     expect(ll.calls).toHaveLength(3);
   });
 
-  it("three refused adds in a row end the pass's adds and are not counted (the shared quota, not the books)", async () => {
+  it('three refusals in a row with no add yet today count and stop the adds; the next pass moves on (no stall)', async () => {
     const ids: string[] = [];
-    for (const title of ['A One', 'B Two', 'C Three', 'D Four', 'E Five']) {
-      ids.push(await seedPairingWant({ ...settled, title, llBookId: `gb-${title}` }));
+    for (const [n, title] of ['A One', 'B Two', 'C Three', 'D Four', 'E Five'].entries()) {
+      ids.push(
+        await seedPairingWant({
+          ...settled,
+          title,
+          llBookId: `gb-${title}`,
+          createdAt: daysAgo(60 - n),
+        }),
+      );
     }
     const ll = stubLl({}, { refuseAdd: true });
     const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
-    expect(run).toMatchObject({ llRerequestNotAdded: 0, llRerequestDeferred: 5 });
-    expect(ll.calls.filter((c) => c.cmd === 'addBook')).toHaveLength(3);
-    for (const id of ids) {
-      expect(await getWant(id)).toMatchObject({
-        llRerequestFailures: 0,
-        llRerequestFailedAt: null,
-      });
+    expect(run).toMatchObject({ llRerequestNotAdded: 3, llRerequestDeferred: 2 });
+    expect(ll.calls.filter((c) => c.cmd === 'addBook').map((c) => c.id)).toEqual([
+      'gb-A One',
+      'gb-B Two',
+      'gb-C Three',
+    ]);
+    // Review finding (PR #676): the stamped three wait for the next quota-day, so the next pass tries the others.
+    const next = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(next.llRerequestNotAdded).toBe(2);
+    expect(
+      ll.calls
+        .filter((c) => c.cmd === 'addBook')
+        .map((c) => c.id)
+        .slice(3),
+    ).toEqual(['gb-D Four', 'gb-E Five']);
+  });
+
+  it('three refusals in a row after an add went through today are the quota: stamped, not counted', async () => {
+    const takenId = await seedPairingWant({
+      ...settled,
+      title: 'A Taken',
+      llBookId: 'gb-ok',
+      createdAt: daysAgo(61),
+    });
+    const wall: string[] = [];
+    for (const [n, title] of ['B Two', 'C Three', 'D Four'].entries()) {
+      wall.push(
+        await seedPairingWant({
+          ...settled,
+          title,
+          llBookId: `gb-${title}`,
+          createdAt: daysAgo(60 - n),
+        }),
+      );
+    }
+    const ll = stubLl({}, { refuseIds: ['gb-B Two', 'gb-C Three', 'gb-D Four'] });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ llRerequested: 1, llRerequestNotAdded: 0, llRerequestDeferred: 3 });
+    expect((await getWant(takenId)).audioStatus).toBe('wanted');
+    for (const id of wall) {
+      const want = await getWant(id);
+      expect(want).toMatchObject({ audioStatus: 'missing', llRerequestFailures: 0 });
+      expect(want.llRerequestFailedAt).not.toBeNull();
     }
   });
 
   it('a refusal followed by a successful add is the book: it counts', async () => {
-    const refusedId = await seedPairingWant({ ...settled, title: 'A One', llBookId: 'gb-a' });
+    const refusedId = await seedPairingWant({
+      ...settled,
+      title: 'A One',
+      llBookId: 'gb-a',
+      createdAt: daysAgo(61),
+    });
     const takenId = await seedPairingWant({ ...settled, title: 'B Two', llBookId: 'gb-b' });
     const ll = stubLl({}, { refuseIds: ['gb-a'] });
     const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
