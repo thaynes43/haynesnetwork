@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.105.3](https://github.com/thaynes43/haynesnetwork/compare/v0.105.2...v0.105.3) (2026-10-04)
+
+
+### Bug Fixes
+
+* **pairing:** a Kavita anchor pairs and is wanted as the book it holds, not its series name ([#664](https://github.com/thaynes43/haynesnetwork/issues/664)) ([4e14659](https://github.com/thaynes43/haynesnetwork/commit/4e1465930a753344ccb7d742d12db0a537a37a5f))
+
+
+### Documentation
+
+* **agents:** v0.105.2 deploy record, LL bundle audit, owed checks ([#662](https://github.com/thaynes43/haynesnetwork/issues/662)) ([fc3fb54](https://github.com/thaynes43/haynesnetwork/commit/fc3fb54ef6fbd408b3408d131d143002e5138c7d))
+
 ## [0.105.2](https://github.com/thaynes43/haynesnetwork/compare/v0.105.1...v0.105.2) (2026-10-03)
 
 
