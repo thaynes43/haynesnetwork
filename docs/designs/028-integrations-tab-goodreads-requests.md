@@ -530,14 +530,16 @@ format-pairing run, the goodreads-sync reconcile, the collection force-search cr
    `getAllBooks` confirms each add. The want reads `wanted`, and `ll_rerequested_at` (never cleared) plus
    `last_reconciled_at` are stamped; a collection want also gets `last_searched_at`, so its force-search cooldown
    keeps the cron's own `searchBook` off it.
-4. **Refusals are retried, a few times:** an add answered `false` (or a book that never appears) counts a refusal
-   (`ll_rerequest_failures`, `ll_rerequest_failed_at`): no queue, the want stays `missing`, and it is tried again
-   no sooner than 20 hours later (a Google Books quota-day). The third refusal ends its re-request.
+4. **Refusals are retried, a few times:** an add answered `false` (or a book that never appears) is a refusal: no
+   queue, the want stays `missing`. Three refusals in a row are the shared quota, not the books: they are NOT
+   counted and the pass's adds stop. A refusal followed by a successful add (or one or two trailing ones) counts
+   (`ll_rerequest_failures`, `ll_rerequest_failed_at`), and that want is tried again on the next Google Books
+   quota-day (07:00 UTC). The third counted refusal ends its re-request.
 5. **The Google Books key is shared, so adds are gated:** LazyLibrarian's `addBook` looks the volume up on the SAME
    Google Books key the app uses (verified 2026-10-04 by hash; the 2026-07-19 note in `gb-call-budget.ts` says the
    key was split, but LazyLibrarian's config carries the app's key), and the app already spends about 900 of its
    1,000 daily queries. So adds wait while the app's quota breaker is open, three refused adds in a row end a pass's
-   adds, and the pairing and collection passes defer their adds while a person's (goodreads) re-request is still
+   adds (uncounted), and the pairing and collection passes defer their adds while a person's (goodreads) re-request is still
    waiting (on a linked integration whose shelf a sync read within 26 hours, so a shelf that keeps failing to read
    cannot hold them back), so people's wants get the quota first. Deferred wants count in `llRerequestDeferred` and are untouched.
    In practice the re-adds drain over several quota-days, not one run, unless LazyLibrarian gets its own key

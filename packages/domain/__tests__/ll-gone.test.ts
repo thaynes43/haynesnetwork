@@ -51,7 +51,7 @@ type Row = Omit<LlSnapshotRow, 'title' | 'author'> & { title?: string; author?: 
  *  format to `Wanted`, so a later read in the same test sees what the writes left behind. */
 function stubLl(
   initial: Record<string, Row> = {},
-  opts: { empty?: boolean; failRead?: boolean; refuseAdd?: boolean } = {},
+  opts: { empty?: boolean; failRead?: boolean; refuseAdd?: boolean; refuseIds?: string[] } = {},
 ) {
   const rows: Record<string, Row> = { ...initial };
   const calls: Array<{ cmd: string; id: string; format?: string }> = [];
@@ -87,7 +87,7 @@ function stubLl(
       // LazyLibrarian answers `addBook&wait` with its add_bookid_to_db result: `true`, or `false` when it refused.
       addBook: async (id: string) => {
         calls.push({ cmd: 'addBook', id });
-        if (opts.refuseAdd) return 'false';
+        if (opts.refuseAdd || opts.refuseIds?.includes(id)) return 'false';
         if (!rows[id]) rows[id] = { ebookStatus: 'Skipped', audioStatus: 'Skipped' };
         return 'true';
       },
@@ -681,14 +681,34 @@ describe('runFormatPairing — the one re-request of a settled want (issue #668)
     expect(ll.calls).toHaveLength(3);
   });
 
-  it("three refused adds in a row end the pass's adds (the shared Google Books key is out of quota)", async () => {
+  it("three refused adds in a row end the pass's adds and are not counted (the shared quota, not the books)", async () => {
+    const ids: string[] = [];
     for (const title of ['A One', 'B Two', 'C Three', 'D Four', 'E Five']) {
-      await seedPairingWant({ ...settled, title, llBookId: `gb-${title}` });
+      ids.push(await seedPairingWant({ ...settled, title, llBookId: `gb-${title}` }));
     }
     const ll = stubLl({}, { refuseAdd: true });
     const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
-    expect(run).toMatchObject({ llRerequestNotAdded: 3, llRerequestDeferred: 2 });
+    expect(run).toMatchObject({ llRerequestNotAdded: 0, llRerequestDeferred: 5 });
     expect(ll.calls.filter((c) => c.cmd === 'addBook')).toHaveLength(3);
+    for (const id of ids) {
+      expect(await getWant(id)).toMatchObject({
+        llRerequestFailures: 0,
+        llRerequestFailedAt: null,
+      });
+    }
+  });
+
+  it('a refusal followed by a successful add is the book: it counts', async () => {
+    const refusedId = await seedPairingWant({ ...settled, title: 'A One', llBookId: 'gb-a' });
+    const takenId = await seedPairingWant({ ...settled, title: 'B Two', llBookId: 'gb-b' });
+    const ll = stubLl({}, { refuseIds: ['gb-a'] });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ llRerequestNotAdded: 1, llRerequested: 1 });
+    expect(await getWant(refusedId)).toMatchObject({
+      audioStatus: 'missing',
+      llRerequestFailures: 1,
+    });
+    expect(await getWant(takenId)).toMatchObject({ audioStatus: 'wanted' });
   });
 
   it("defers adds while the app's Google Books breaker is open; a queue on LL's own row still runs", async () => {

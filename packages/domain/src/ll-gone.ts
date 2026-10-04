@@ -44,7 +44,8 @@ import {
   type LlHeldSignals,
 } from './book-requests';
 import { inTransaction, resolveDb } from './db-client';
-import { peekGbQuotaGate } from './gb-quota-breaker';
+import { gbQuotaDayString } from './gb-call-budget';
+import { GB_DAILY_RESET_UTC_HOUR, peekGbQuotaGate } from './gb-quota-breaker';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 
 /** How long LazyLibrarian must have gone without showing a want's book before it counts as gone (24 h). */
@@ -457,11 +458,11 @@ export interface LlRerequestTally {
   llRerequested: number;
   /** Wants whose lost formats were already held and settled `landed` instead (no LazyLibrarian write). */
   llRerequestLanded: number;
-  /** Hand-offs LazyLibrarian refused (addBook answered `false`, or the book never appeared): tried again a day
-   *  later, given up after three refusals. */
+  /** Hand-offs LazyLibrarian refused (addBook answered `false` while other adds succeeded, or the book never
+   *  appeared): tried again on the next Google Books quota-day, given up after three. */
   llRerequestNotAdded: number;
-  /** Wants that needed an `addBook` but were left for a later run: the shared Google Books key is out of quota (the
-   *  app's breaker is open, or three adds in a row were refused), or a person's want is still waiting first. */
+  /** Wants that needed an `addBook` but were left for a later run, uncounted: the shared Google Books key is out of
+   *  quota (the app's breaker is open, or three adds in a row were refused), or a person's want is still waiting. */
   llRerequestDeferred: number;
 }
 
@@ -472,23 +473,29 @@ export const emptyLlRerequestTally = (): LlRerequestTally => ({
   llRerequestDeferred: 0,
 });
 
-/** A refused hand-off is tried again only after this long (a Google Books quota-day). */
-export const LL_REREQUEST_RETRY_MS = 20 * 60 * 60 * 1000;
-/** After this many refusals the re-request ends: the want stays settled `missing`. */
+/** After this many refusals (each on a different Google Books quota-day) the re-request ends: it stays `missing`. */
 export const LL_REREQUEST_MAX_FAILURES = 3;
 /** This many refused adds in a row end a pass's adds (the shared Google Books key is most likely out of quota). */
 const LL_REREQUEST_FAIL_STREAK = 3;
 
+/** When the Google Books quota-day `now` falls in began (the daily reset, 07:00 UTC by default). */
+export function gbQuotaDayStart(now: Date): Date {
+  return new Date(
+    Date.parse(`${gbQuotaDayString(now)}T00:00:00Z`) + GB_DAILY_RESET_UTC_HOUR * 3_600_000,
+  );
+}
+
 /**
  * The SQL-side eligibility every caller adds to its candidate query: the one re-request has not ended, and a refused
- * want waits out a day. Callers order by `ll_rerequest_failures` then `created_at`, so a refused want goes last.
+ * want waits for the next Google Books quota-day (its refusal may have been the shared key's quota). Callers order
+ * by `ll_rerequest_failures` then `created_at`, so a refused want goes last.
  */
 export function llRerequestOpen(now: Date) {
   return and(
     isNull(bookRequests.llRerequestedAt),
     or(
       isNull(bookRequests.llRerequestFailedAt),
-      lt(bookRequests.llRerequestFailedAt, new Date(now.getTime() - LL_REREQUEST_RETRY_MS)),
+      lt(bookRequests.llRerequestFailedAt, gbQuotaDayStart(now)),
     ),
   );
 }
@@ -511,7 +518,8 @@ export interface LlRerequestCandidate {
  *   2. a want LazyLibrarian holds the book for (the re-key match) is queued there, no add;
  *   3. a want that needs `addBook` is added unless adds are deferred (`deferAdds`: a person's want is still waiting,
  *      or the app's Google Books breaker is open: LazyLibrarian's add looks the volume up on the SAME key). An add
- *      answered `false` is a refusal: no queue, and three in a row end the pass's adds. Then `queueBook` once per
+ *      answered `false` is a refusal: no queue. Three in a row end the pass's adds and are NOT counted (the shared quota,
+ *      not the books); a refusal followed by a successful add counts. Then `queueBook` once per
  *      (book, format) unless the row already reads it `Wanted`/`Snatched`. Paced. NEVER `searchBook`;
  *   4. one more `getAllBooks` confirms each add.
  * An LL write that throws (LL down) leaves that want untouched for the next run.
@@ -537,7 +545,12 @@ export async function runLlRerequests(input: {
   const index = new LlRekeyIndex(snapshot);
   let addsStopped =
     input.deferAdds === true || (await peekGbQuotaGate({ db: input.db, now: input.now })).open;
-  let failStreak = 0;
+  // Refusals are held until the pass shows whether they were the BOOK (another add then succeeds: they count) or the
+  // shared quota (three in a row: they are dropped, not counted, and the pass's adds stop).
+  let refused: Array<{
+    c: LlRerequestCandidate;
+    plan: Extract<LlRerequestPlan, { kind: 'rerequest' }>;
+  }> = [];
   const verify: Array<{
     c: LlRerequestCandidate;
     plan: Extract<LlRerequestPlan, { kind: 'rerequest' }>;
@@ -573,12 +586,17 @@ export async function runLlRerequests(input: {
           .trim()
           .toLowerCase();
         if (answer === 'false') {
-          await recordLlRerequest({ ...input, c, plan, outcome: 'not_added', tally });
-          failStreak += 1;
-          if (failStreak >= LL_REREQUEST_FAIL_STREAK) addsStopped = true;
+          refused.push({ c, plan });
+          if (refused.length >= LL_REREQUEST_FAIL_STREAK) {
+            tally.llRerequestDeferred += refused.length;
+            refused = [];
+            addsStopped = true;
+          }
           continue;
         }
-        failStreak = 0;
+        for (const r of refused)
+          await recordLlRerequest({ ...input, ...r, outcome: 'not_added', tally });
+        refused = [];
         added.add(target);
       }
       for (const f of plan.request) {
@@ -596,6 +614,8 @@ export async function runLlRerequests(input: {
       });
     }
   }
+  // A refusal or two at the end of the pass, with no add after it to tell: counted (a quota wall shows as three).
+  for (const r of refused) await recordLlRerequest({ ...input, ...r, outcome: 'not_added', tally });
   if (verify.length === 0) return tally;
   // One read after the adds: did LazyLibrarian keep each? A failed read assumes it did (the gone rule settles a
   // want whose book never appears, and the end stamp keeps it from looping).
