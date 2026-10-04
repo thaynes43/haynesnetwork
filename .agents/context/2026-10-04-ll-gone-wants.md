@@ -79,8 +79,10 @@ the collection cron about 23 settled (its grace is an hour since the last force-
   `format-pairing` 04:32Z `llGoneRekeyed 27, llGoneSettled 717, pushed 0, requeued 0`; goodreads-sync 04:41Z 48
   settled. Loki `ll_book_gone` lines: 27 + 717 + 23 + 48.
 - v0.105.5 live 05:10Z. 05:32Z pairing run: `heldLanded 3, pushed 0, requeued 0, llGone 0`.
-- Gone-and-unsettled: 745 + 49 + 23 = 817 before, 1 after (a goodreads request whose shelf item was removed when the
-  book moved to the read shelf; its live twin on the read shelf settled).
+- Gone-and-unsettled: 745 + 49 + 23 = 817 before, 1 after. Pairing 745 = 27 re-keyed + 717 settled + Rework (its
+  own format was already `missing`; only its stale held `grabbed` counted, landed by v0.105.5). Goodreads 49 = 48
+  settled + the one left, a request whose shelf item was removed when the book moved to the read shelf (its live
+  twin on the read shelf settled).
 - Prowlarr `prowlarr_indexer_queries_total`, 10-minute increases from 04:30Z: 0, 0, 0, 995, 407, 0, 0. The
   04:50-05:10Z burst is LazyLibrarian's scheduled backlog search (`SEARCHALLBOOKS` 04:54-05:03Z, 226 items); LL's
   log has no `API-SEARCHBOOK` line and no "added to the books database" since the deploy.

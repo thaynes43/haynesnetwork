@@ -22,8 +22,10 @@
   settled (04:32Z), goodreads 48 settled (04:41Z); no `addBook`/`queueBook`/`searchBook` from any of it.
 - **v0.105.5** (#670, haynes-ops #3356): the pairing reconcile reads a want's format from its anchor and lands the
   anchor-held format (live anchors only). 05:32Z run: `heldLanded 3`, `pushed 0`, `requeued 0`.
-- **After:** gone-and-unsettled requests 817 → 1. The one left is a goodreads request on a removed shelf item
-  (Twisted Love moved from to-read to read); nothing reconciles removed-shelf requests, by design. Prowlarr: zero
+- **After:** gone-and-unsettled requests 817 → 1. Pairing 745 = 27 re-keyed + 717 settled + Rework, whose own
+  format was already `missing` and which counted only for a stale held `grabbed` that v0.105.5 landed. Goodreads
+  49 = 48 settled + the one left: a request on a removed shelf item (Twisted Love moved from to-read to read; its
+  live twin settled); nothing reconciles removed-shelf requests, by design. Prowlarr: zero
   queries in every 10-minute bucket from the deploy to 05:32Z except 04:50-05:10Z (≈1,400), which is LazyLibrarian's
   own scheduled backlog search (`SEARCHALLBOOKS`, 04:54-05:03Z, 226 items). LL's log shows no API-triggered search
   or add since the deploy.
