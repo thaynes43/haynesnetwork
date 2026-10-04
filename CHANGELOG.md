@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.105.4](https://github.com/thaynes43/haynesnetwork/compare/v0.105.3...v0.105.4) (2026-10-04)
+
+
+### Bug Fixes
+
+* **books:** a want whose LazyLibrarian book is gone re-keys or settles instead of hanging ([#669](https://github.com/thaynes43/haynesnetwork/issues/669)) ([90ccfc5](https://github.com/thaynes43/haynesnetwork/commit/90ccfc5025a26af1eadf8b4c64c756e86ef81584))
+
+
+### Documentation
+
+* **agents:** v0.105.3 deploy record, [#661](https://github.com/thaynes43/haynesnetwork/issues/661) pairing repair, owed check ([#666](https://github.com/thaynes43/haynesnetwork/issues/666)) ([23f4e30](https://github.com/thaynes43/haynesnetwork/commit/23f4e30067e8b806064981fba495872de64e4703))
+
 ## [0.105.3](https://github.com/thaynes43/haynesnetwork/compare/v0.105.2...v0.105.3) (2026-10-04)
 
 
