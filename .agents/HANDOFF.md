@@ -4,6 +4,34 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-04 — v0.106.0 + v0.106.1 live: every settled request handed back to LazyLibrarian once (#668); one check owed
+
+- **Owner ruling (#668, "Add them all back now"):** each request #665 settled `missing` is handed back to LazyLibrarian
+  once, all origins, no budget, add and queue only; LazyLibrarian's own daily category-only backlog search does the
+  searching. Held formats land instead; a request lost again stays `missing`. Rule: DESIGN-028 amendment "2026-10-04
+  (later)"; code `runLlRerequests` (`ll-gone.ts`); migrations 0089 + 0090.
+- **v0.106.0** (#675, haynes-ops #3358, 16:18Z) and **v0.106.1** (#676, haynes-ops #3359, 17:15Z): 3/3 pods,
+  migrations applied, `/api/health` ok. v0.106.1 stops counting quota-wall refusals and retries a refused request on the
+  next Google Books quota-day (07:00Z).
+- **Shared Google Books key (#674, owner decision open):** LazyLibrarian's `addBook` looks each volume up on the app's
+  key, which the app already spends ~900/1,000 a day. Adds wait while the app's breaker is open, stop after three
+  refusals in a row, and pairing/collection defer adds while a person's re-request is waiting. So the ~740 app-made
+  re-adds drain over several quota-days, not one run.
+- **Progress at 18:35Z:** goodreads 43 handed back + 7 refused by LazyLibrarian ("No AuthorID" for A. K. Caggiano,
+  three Asimov titles; retried tomorrow); pairing 30 handed back + 50 landed (paired anchors or LL-held), 657 waiting;
+  collection 4 handed back, 2 refused, 17 waiting. LazyLibrarian: 1,034 → 1,087 books, Wanted formats 236 → 356. The
+  re-request made **no** `searchBook`: LazyLibrarian's log shows no `API-SEARCHBOOK` from it (the three at 18:32Z are the
+  pairing mint's ordinary pushes of new wants).
+
+**Owed check (f), after LazyLibrarian's next backlog search (`cron_search_book`, 2026-10-05 04:54Z, ends ~05:05Z):**
+the extra Prowlarr queries should be about one per newly Wanted format per indexer (6 newznab), and no book searched
+twice. Grafana `prometheus`, instant at 2026-10-05T05:30Z: `sum(increase(prowlarr_indexer_queries_total[1h]))`; compare
+with 10-04's run (≈1,400 for 226 items, i.e. ~6.2 per item). LazyLibrarian's log line "Searching 6 providers ['nzb'] for N
+items" gives N; expect queries ≈ 6.2 × N and N ≈ 226 + the formats handed back by then (≈120 on 10-04). A book searched
+twice would show as two `Searching ... for 1` lines or duplicate `Best match` lines for one title in that window. The
+bulk of the app-made re-adds lands from 10-05 08:32Z on (after the people's retries at 07:41Z), so most of their
+searching happens in the 10-06 04:54Z run; repeat the same check then.
+
 ## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
 
 - **Why (#665):** LazyLibrarian deleted the books the app added. `addBook` never writes the `bookauthors` row that
