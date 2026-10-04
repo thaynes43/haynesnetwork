@@ -426,3 +426,76 @@ its want: 2 wants repointed to the single volume, 20 parked `wrong_volume`, 21 b
 includes the Dark Artifices boxed-set wants above, now parked: the recipe lists the boxed set next to its three
 novels and all three audiobooks are held, so it only duplicated held books. Parking a pairing want took a code fix
 first (DESIGN-036 amendment of the same date). Record: `.agents/context/2026-10-03-bundle-audit.md`.
+
+## Amendment — 2026-10-04: a want whose LazyLibrarian book is gone (issue #665)
+
+**What was seen.** About 900 open wants pointed at LazyLibrarian ids that `getAllBooks` does not return (747
+pairing, 103 collection, 51 goodreads on 2026-10-04). The 2026-07-15 amendment above treats a missing id as "LL
+doesn't know this book, the request stays untouched", so every reconcile skipped them: they read `wanted` or
+`grabbed` forever, and nothing pushed them again, because each mint pushes only a `requested` format.
+
+**Why the ids are gone.** `getAllBooks` is complete: it is LazyLibrarian's whole `books` table joined to
+`authors`. The ids are not in that table any more. LazyLibrarian deletes books on its own:
+
+- At every start, `dbupgrade.check_db` recounts each author with `TotalBooks = 0` (`update_totals`, which counts
+  through the `bookauthors` table) and deletes the ones still at zero ("Removing N authors with no listed books").
+  `books.AuthorID` references `authors` with `ON DELETE CASCADE`, so the author's books go with it.
+- `cmd=addBook` (`gb.py::add_bookid_to_db`, the call every app push makes) creates the author but never writes a
+  `bookauthors` row. An author LazyLibrarian knows only through books the app added therefore counts zero, and
+  the next LazyLibrarian restart deletes that author and every one of those books.
+
+Evidence (read-only, 2026-10-04): the restart at 2026-10-03 19:47Z logged "Removing 25 authors with no listed
+books"; 216 pairing wants were last found by the 2026-07-30 05:32Z pairing run and never again, 159 of them with
+LazyLibrarian snatch history under the same id (Orson Scott Card 39 wants, V.C. Andrews 27, John Grisham 23); those
+authors were re-created on 2026-09-22 holding none of the old books. Only about 60 of the 900 have a row under
+another id with the same title and author (a re-key); the rest have no row at all. Only 46 were still in the
+2026-08-09 backup. The 80 collection wants never force-searched (`last_searched_at` NULL) were never handed to
+LazyLibrarian and are not part of this. The LazyLibrarian fix (write the `bookauthors` row on `addBook`, and never
+delete an author that still owns a book) is a patched-file overlay in `haynes-ops`, like the earlier
+`librarysync.py` and `searchbook.py` fixes. Record: `.agents/context/2026-10-04-ll-gone-wants.md`.
+
+**What it cost.** The goodreads and pairing legs made no LazyLibrarian call for these wants. The collection
+force-search did: each 12-hour (now 7-day) cooldown re-added a lost book (`addBook`), queued and searched it, and
+the next LazyLibrarian restart deleted it again. Its audit rows show 276 such chains in the 7 days to 2026-10-04, on
+16 books, plus LazyLibrarian's own daily search of each while it existed.
+
+**The rule** (`packages/domain/src/ll-gone.ts`; run by the format-pairing reconcile, the goodreads-sync reconcile
+and the collection force-search cron):
+
+1. **Gone.** A want is gone when its id is absent from a **non-empty** `getAllBooks` snapshot (an LL error answer
+   parses to an empty map and decides nothing), it has a format we pushed that has not settled (`wanted` or
+   `grabbed`; for a collection want, its active format, which stays `requested` through its force-searches), and
+   LazyLibrarian has not shown it for **24 hours** (`LL_GONE_GRACE_MS`): `last_reconciled_at` (stamped by the push
+   and by each reconcile that finds the book) for goodreads and pairing wants, `last_searched_at` for a collection
+   want. A want pushed this run carries a fresh stamp, so the grace keeps it out.
+2. **Re-key first.** When the same snapshot holds exactly one row whose title matches (normalized, subtitle kept,
+   so "The Kane Chronicles: Survival Guide" never matches "The Kane Chronicles") and whose author agrees (the want
+   must have one), and that row already holds the want's format or shows it `Wanted` or `Snatched`, the want is
+   repointed to that row and reconciled from it through `applyRequestReconcile`. A matching row that holds the
+   format `Skipped` is not used here: the next Skipped sweep would queue and search it, so the want settles
+   instead and that re-key waits for a person's Search again (rule 5).
+3. **Otherwise settle.** Each such format becomes `missing`: the dead-end Missing state the walls already show,
+   with Search again. This deliberately overrides the no-regress rule: a `grabbed` format whose book row is gone
+   has no row for LazyLibrarian to import into. A pairing want's anchor-held format is set `landed` in the same
+   write (a few July wants never got the ADR-065 "held format sits `landed`").
+4. **No LazyLibrarian call.** Detection, re-key and settle use the snapshot the reconcile already read. The
+   collection cron reads it once per run (only when a candidate exists) and hands it to its worklist, which no
+   longer reads its own. It settles across every find-missing collection regardless of cooldown, so the backlog
+   settles on the first run; its gather then skips `missing` wants.
+5. **Recovery is a person's search.** `runManualBookSearch` (Search again, and the Wanted detail page's
+   per-format Force Search) used to fire `searchBook` alone, which LazyLibrarian ignores for a book it does not
+   hold. When its snapshot is non-empty and lacks the book: if LazyLibrarian holds the same book under another id
+   (the rule 2 match, whatever its status), the want is repointed and reconciled from that row, and the formats
+   that row does not hold are queued and searched there (`rekeyedTo`, no `addBook`); otherwise the book is re-added
+   (`addBook`, `queueBook` per format, the one `searchBook`, `reseated: true`). Either way the searched formats read
+   `wanted` again. A failed or empty read keeps the old search-only call. The on-demand collection Force Search re-adds a settled collection want and
+   returns its active format to `requested`.
+6. **`addBook` only seats a book LazyLibrarian does not hold, at every push site** (DESIGN-039 D-18 was pairing
+   only): `add_bookid_to_db` is an upsert that resets BOTH formats to the new-book status (`Skipped`) on a book it
+   already holds, which dropped the other format's `Wanted` (and overwrote an imported format's status). The
+   collection force-search, the books Force Search and the books Fix now skip it when their snapshot holds the
+   row; a failed read keeps the old always-`addBook`.
+
+Each run report carries `llGoneRekeyed` and `llGoneSettled`; each changed want logs `ll_book_gone` with its
+`site` and `outcome`. Re-acquiring the settled wants in bulk is not automatic: a paced re-push of hundreds of
+books is an indexer-load decision for the owner, tracked in issue #668.

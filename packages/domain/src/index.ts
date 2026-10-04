@@ -180,6 +180,8 @@ export * from './collection-provenance';
 export * from './user-integrations';
 export * from './integration-shelf-items';
 export * from './book-requests';
+// Issue #665 / DESIGN-028 amendment 2026-10-04 — a want whose LazyLibrarian book is gone (re-key or settle).
+export * from './ll-gone';
 export * from './goodreads-sync';
 // DESIGN-038 D-13 — the collection Wanted-tiles pass: Libretto-managed collections' missing members
 // minted as origin='collection' book_requests (the books-collections-sync mode's Wanted-tile step).

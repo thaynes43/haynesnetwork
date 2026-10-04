@@ -21,6 +21,9 @@ export const llBookSchema = z
   .object({
     BookID: z.union([z.string(), z.number()]).optional(),
     BookName: z.string().optional(),
+    // Issue #665 — `getAllBooks` joins `authors`, so every row carries its author's name. The domain uses
+    // it (with `BookName`) to find the row LazyLibrarian holds for a book whose id a want no longer finds.
+    AuthorName: z.string().nullish(),
     Status: z.string().nullish(),
     AudioStatus: z.string().nullish(),
     BookLibrary: z.string().nullish(),

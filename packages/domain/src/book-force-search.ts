@@ -164,13 +164,16 @@ export async function runBookItemForceSearch(
   // `Wanted`, where LL re-searches it daily and qBittorrent rejects every re-grab as a duplicate hash.
   // That is the exact defect this guard exists to stop, so a held format now returns an honest
   // `already_held` instead of a write that damages LL's state and achieves nothing.
-  const held = llFormatAlreadyHeld(await readLlHeldSignals(input.ll, llBookId!), format);
+  const signals = await readLlHeldSignals(input.ll, llBookId!);
+  const held = llFormatAlreadyHeld(signals, format);
   if (held) return { searched: false, reason: 'already_held' };
 
   try {
-    // addBook is idempotent; queueBook is MANDATORY (addBook alone lands Skipped); searchBook fires the
-    // actual re-search for the item's own format.
-    await input.ll.write.addBook(llBookId!);
+    // addBook only seats a book LazyLibrarian does not hold (DESIGN-039 D-18; issue #665): on a held book its
+    // upsert resets BOTH formats to the new-book status, dropping the other format's state. queueBook is
+    // MANDATORY (it flips this format to Wanted); searchBook fires the actual re-search. A failed read leaves
+    // `signals` undefined, so addBook still runs, as before.
+    if (signals === undefined) await input.ll.write.addBook(llBookId!);
     await input.ll.write.queueBook(llBookId!, format);
     await input.ll.write.searchBook(llBookId!, format);
   } catch (error) {

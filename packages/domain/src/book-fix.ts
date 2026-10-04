@@ -30,6 +30,7 @@ import { effectiveMediaActionBudget, mediaActionBudgetReachedMessage } from './m
 import { NotFoundError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import type { KapowarrClientBundle } from './kapowarr-clients';
+import { readLlHeldSignals } from './book-requests';
 
 // ---------------------------------------------------------------------------
 // Errors (mapped in packages/api trpc.ts: rate → TOO_MANY_REQUESTS, open-dupe → CONFLICT).
@@ -405,8 +406,13 @@ export async function runBookFixRequest(input: RunBookFixInput): Promise<{ statu
       steps.push({ step: 'gb_resolved', at: stamp(), llBookId });
     }
     const format = fix.mediaKind === 'audiobook' ? ('audiobook' as const) : ('ebook' as const);
-    await input.ll.write.addBook(llBookId);
-    steps.push({ step: 'll_add_book', at: stamp(), llBookId });
+    // addBook only seats a book LazyLibrarian does not hold (DESIGN-039 D-18; issue #665): on a held book its
+    // upsert resets BOTH formats to the new-book status, so a Fix of the eBook would drop the audiobook's state.
+    // A failed read reads as "not held", so addBook still runs, as before.
+    if ((await readLlHeldSignals(input.ll, llBookId)) === undefined) {
+      await input.ll.write.addBook(llBookId);
+      steps.push({ step: 'll_add_book', at: stamp(), llBookId });
+    }
     await input.ll.write.queueBook(llBookId, format); // MANDATORY — addBook alone lands Skipped.
     steps.push({ step: 'll_queue_book', at: stamp(), llBookId, format });
     await input.ll.write.searchBook(llBookId, format);
@@ -562,8 +568,11 @@ export async function retryQueuedBookFixes(input: {
         steps.push({ step: 'gb_resolved', at: stamp(), llBookId, via: 'retry_pass' });
       }
       const format = fix.mediaKind === 'audiobook' ? ('audiobook' as const) : ('ebook' as const);
-      await input.ll.write.addBook(llBookId);
-      steps.push({ step: 'll_add_book', at: stamp(), llBookId });
+      // addBook only seats a book LazyLibrarian does not hold (see the first-attempt path above).
+      if ((await readLlHeldSignals(input.ll, llBookId)) === undefined) {
+        await input.ll.write.addBook(llBookId);
+        steps.push({ step: 'll_add_book', at: stamp(), llBookId });
+      }
       await input.ll.write.queueBook(llBookId, format); // MANDATORY — addBook alone lands Skipped.
       steps.push({ step: 'll_queue_book', at: stamp(), llBookId, format });
       await input.ll.write.searchBook(llBookId, format);

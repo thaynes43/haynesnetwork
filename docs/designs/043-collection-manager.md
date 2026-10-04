@@ -470,6 +470,20 @@ same book still searches. `report.searched` / `failed` count request rows, not L
 fails (and leaves un-stamped) every row it would have covered, so the next run retries them all. The
 `cap` still bounds worklist rows, not calls, so a run can only issue fewer calls than before.
 
+### D-18 — Amendment 2026-10-04 (issue #665) — a force-searched want whose LazyLibrarian book is gone settles
+
+**Normative rule: DESIGN-028's 2026-10-04 amendment.** Before it gathers, the cron leg (D-14) reads
+`getAllBooks` once (only when a candidate exists) and checks every force-searched want of every find-missing
+collection, regardless of cooldown: one whose `ll_book_id` the non-empty snapshot lacks, last force-searched more
+than 24 hours ago, lost its book (LazyLibrarian deleted it on a restart, or never kept it). It is re-keyed to the
+one row LazyLibrarian holds for the same title and author (when that row already holds the format or is after it),
+or its active format is settled `missing`. The gather
+then skips `missing` wants, so the cron stops re-adding and re-searching the same lost book every cooldown (276
+such chains on 16 books in the week to 2026-10-04). The worklist reuses that snapshot instead of reading its own.
+The on-demand Force Search still includes a settled want: it re-adds the book and returns its active format to
+`requested`. Both legs now call `addBook` only for a book the snapshot lacks: on a book LazyLibrarian holds, its
+upsert resets both formats to `Skipped`. Report fields `llGoneRekeyed` and `llGoneSettled`.
+
 ## Alternatives considered
 
 - **Keep propose→approve** (ADR-070). REJECTED by the owner — the affordance is being torn out.

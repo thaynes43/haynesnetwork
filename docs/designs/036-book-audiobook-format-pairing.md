@@ -332,3 +332,15 @@ Unchanged: the omnibus guard in the Google Books resolve (DESIGN-028's 2026-10-0
 second line; a parked want stays parked (the 2026-10-03 amendment above); the confined LazyLibrarian surface
 (C-08). Wants pushed before this change keep the identity they were resolved under; the parked ones this
 defect caused are repaired by hand (`.agents/context/2026-10-04-pairing-held-book-repair.md`).
+
+## Amendment — 2026-10-04: a pushed want whose LazyLibrarian book is gone (issue #665)
+
+**Normative rule: DESIGN-028's 2026-10-04 amendment.** The reconcile used to skip a want whose `ll_book_id` the
+run's `getAllBooks` snapshot lacked. LazyLibrarian deletes books the app added when it restarts (an author it
+counts as bookless is removed, and its books cascade), so 747 pairing wants sat `wanted` or `grabbed` on ids that
+no longer exist. The reconcile now re-keys such a want to the one row LazyLibrarian holds for the same title and
+author (when that row already holds the format or is after it), or settles its missing format `missing` once the
+book has been absent for 24 hours, with no LazyLibrarian call now or from the Skipped sweep later. The want's format is taken from its anchor's media kind (`missingFormatFor`), not from which status reads
+`landed`, and the anchor-held format is set `landed` in the same write. A settled want is never pushed again by
+the mint (it pushes only `requested`); a person's Search again re-adds the book. Report fields `llGoneRekeyed`
+and `llGoneSettled`.

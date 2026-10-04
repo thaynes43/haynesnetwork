@@ -4,7 +4,18 @@
 // (the goodreads-sync mode's per-integration pass) and `runManualBookSearch` (the audited manual
 // "Search again"). The @hnet/sync mode does the external READS (RSS + GB) and hands the enriched items in;
 // the confined LL WRITES happen here through the injected bundle (the poster-guard precedent).
-import type { BookRequestFormat, DbClient } from '@hnet/db';
+import { inArray } from 'drizzle-orm';
+import { bookRequests, type BookRequestFormat, type DbClient } from '@hnet/db';
+import { resolveDb } from './db-client';
+import {
+  applyLlGoneDecision,
+  decideLlGoneWant,
+  emptyLlGoneTally,
+  llSnapshotUsable,
+  LlRekeyIndex,
+  repointRequestLlBook,
+  type LlGoneTally,
+} from './ll-gone';
 import { KapowarrUpstreamError, LazyLibrarianUpstreamError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import type { KapowarrClientBundle } from './kapowarr-clients';
@@ -23,7 +34,6 @@ import {
   markRequestPushed,
   pickBestVolume,
   llRecentSearchCovers,
-  readLlHeldSignals,
   recentlySearchedLlBookIds,
   recordManualSearch,
   searchableFormats,
@@ -74,7 +84,7 @@ export interface SyncGoodreadsInput {
   searchCoverage?: LlSearchCoverage;
 }
 
-export interface SyncGoodreadsReport {
+export interface SyncGoodreadsReport extends LlGoneTally {
   shelfItemsUpserted: number;
   shelfItemsTombstoned: number;
   requestsMinted: number;
@@ -281,6 +291,7 @@ export async function syncGoodreadsIntegration(
   //     on that date, each with a library date and a real file), and re-queueing one clobbers it.
   let reconciled = 0;
   let requeued = 0;
+  const gone = emptyLlGoneTally();
   if (input.ll) {
     let statuses: Map<string, LlHeldSignals>;
     try {
@@ -291,9 +302,53 @@ export async function syncGoodreadsIntegration(
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    for (const target of [...toPush, ...toReconcile]) {
+    // 5-gone. Issue #665 (DESIGN-028 amendment 2026-10-04) — a pushed want whose id LazyLibrarian no longer has is
+    //     re-keyed to the row LL holds for the same book, or settled `missing`. Same snapshot, no LL write; an
+    //     empty snapshot decides nothing. A want pushed this run was stamped by the push, so the grace skips it.
+    const targets = [...toPush, ...toReconcile];
+    const goneIndex = llSnapshotUsable(statuses) ? new LlRekeyIndex(statuses) : null;
+    const goneRows = new Map<string, typeof bookRequests.$inferSelect>();
+    if (goneIndex) {
+      const absentIds = targets.filter((t) => !statuses.has(t.llBookId)).map((t) => t.requestId);
+      if (absentIds.length > 0) {
+        const rows = await resolveDb(input.db)
+          .select()
+          .from(bookRequests)
+          .where(inArray(bookRequests.id, absentIds));
+        for (const row of rows) goneRows.set(row.id, row);
+      }
+    }
+    for (const target of targets) {
       const status = statuses.get(target.llBookId);
-      if (!status) continue;
+      if (!status) {
+        const row = goneRows.get(target.requestId);
+        if (!goneIndex || !row) continue;
+        try {
+          await applyLlGoneDecision({
+            db: input.db,
+            requestId: row.id,
+            llBookId: target.llBookId,
+            decision: decideLlGoneWant({
+              want: { ...row, lastSeenAt: row.lastReconciledAt ?? row.createdAt },
+              snapshot: statuses,
+              index: goneIndex,
+              now,
+            }),
+            snapshot: statuses,
+            reconcile: true,
+            tally: gone,
+            site: 'goodreads-sync.reconcile',
+            now,
+            log,
+          });
+        } catch (error) {
+          log.error?.('goodreads-sync: gone-book settle failed', {
+            requestId: target.requestId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        continue;
+      }
       try {
         await applyRequestReconcile({
           db: input.db,
@@ -417,6 +472,7 @@ export async function syncGoodreadsIntegration(
     requestsReconciled: reconciled,
     requestsRequeued: requeued,
     pushesSkippedHeld,
+    ...gone,
     comicsRouted,
     comicsReconciled,
     coverage,
@@ -486,6 +542,11 @@ export interface RunManualBookSearchResult {
   /** When false: nothing was searched — an unroutable comic, a want with no resolved LL id, or (since the
    *  2026-09-22 push guard) every candidate format is one LazyLibrarian already holds (`already_held`). */
   reason?: 'unroutable' | 'no_ll_id' | 'already_held';
+  /** Issue #665 — LazyLibrarian no longer had the book, so this search added it back first (addBook + queueBook). */
+  reseated?: boolean;
+  /** Issue #665 — LazyLibrarian no longer had the want's id but holds the same book under this one: the want was
+   *  repointed to it and its formats queued there (no addBook). */
+  rekeyedTo?: string;
 }
 
 /**
@@ -518,24 +579,93 @@ export async function runManualBookSearch(
 
   const notLanded = searchableFormats(request);
   const candidates = input.format ? notLanded.filter((f) => f === input.format) : notLanded;
-  // One `getAllBooks` per click, and only when there is something to fire (no click, no call).
-  const held =
-    candidates.length > 0 ? await readLlHeldSignals(input.ll, request.llBookId) : undefined;
+  // One `getAllBooks` per click, and only when there is something to fire (no click, no call). A failed read
+  // is not fatal: it leaves the snapshot undefined, which reads as "not held" (search everything, as before).
+  let snapshot: Map<string, LlHeldSignals> | undefined;
+  if (candidates.length > 0) {
+    try {
+      snapshot = await input.ll.read.getAllBookStatuses();
+    } catch {
+      snapshot = undefined;
+    }
+  }
+  const held = snapshot?.get(request.llBookId);
   const formats = candidates.filter((f) => !llFormatAlreadyHeld(held, f));
   // Every candidate was a format LL already has filed: an honest decline that points at Fix, never a
   // "Search fired" for a searchBook LazyLibrarian would have dropped on the floor.
   if (formats.length === 0 && candidates.length > 0) {
     return { searched: false, formats: [], reason: 'already_held' };
   }
+  // Issue #665 — LazyLibrarian no longer has the book (a usable snapshot without it): the want was settled
+  // `missing` because LL lost it. `searchBook` alone would be a silent no-op (LL searches only rows it holds as
+  // `Wanted`). Never on a failed or empty read — the guard may only ever add a call when it KNOWS the book is gone.
+  const gone = formats.length > 0 && llSnapshotUsable(snapshot) && held === undefined;
+  if (gone && snapshot) {
+    // LazyLibrarian may hold the same book under another id (the unattended reconcile leaves a row it holds as
+    // `Skipped` to this click, so it never searches on its own). Point the want at it and queue that row.
+    const rekeyedTo = new LlRekeyIndex(snapshot).find(request.title, request.author);
+    if (rekeyedTo) return rekeyManualSearch(input, request, snapshot, rekeyedTo, formats);
+  }
+  // Otherwise add it back first: addBook, queueBook per format, then the one search.
+  const reseat = gone;
   try {
+    if (reseat) {
+      await input.ll.write.addBook(request.llBookId);
+      for (const format of formats) await input.ll.write.queueBook(request.llBookId, format);
+    }
     // ONE call: LazyLibrarian's searchBook ignores `type` and searches every Wanted format of the book
     // (issue #644), so a call per format would hit the indexers twice for a book wanted in both.
     if (formats.length > 0) await input.ll.write.searchBook(request.llBookId, formats[0]!);
   } catch (error) {
     throw new LazyLibrarianUpstreamError('LazyLibrarian search failed', { cause: error });
   }
+  if (reseat) {
+    // The re-added formats are being looked for again (`missing` → `wanted`), and the stamp restarts the grace.
+    await markRequestFormatsRequeued({ db: input.db, requestId: request.id, formats });
+    return { searched: true, formats, reseated: true };
+  }
   // A per-format request whose format already landed narrows to nothing — honest "nothing fired".
   return { searched: formats.length > 0, formats };
+}
+
+/**
+ * Issue #665 — the Search-again leg for a want whose id LazyLibrarian lost but whose book it holds under another
+ * id: repoint the want, reconcile it from that row (a held format lands), then queue + search the formats that row
+ * does not hold — on LL's existing row, so no addBook and no duplicate book.
+ */
+async function rekeyManualSearch(
+  input: RunManualBookSearchInput,
+  request: { id: string; llBookId: string | null },
+  snapshot: Map<string, LlHeldSignals>,
+  rekeyedTo: string,
+  formats: Array<'ebook' | 'audiobook'>,
+): Promise<RunManualBookSearchResult> {
+  const now = new Date();
+  await repointRequestLlBook({
+    db: input.db,
+    requestId: request.id,
+    fromLlBookId: request.llBookId!,
+    toLlBookId: rekeyedTo,
+    now,
+  });
+  const row = snapshot.get(rekeyedTo);
+  await applyRequestReconcile({
+    db: input.db,
+    requestId: request.id,
+    ebookStatus: mapLlStatus(row?.ebookStatus),
+    audioStatus: mapLlStatus(row?.audioStatus),
+    now,
+  });
+  const toQueue = formats.filter((f) => !llFormatAlreadyHeld(row, f));
+  if (toQueue.length === 0) return { searched: false, formats: [], reason: 'already_held', rekeyedTo };
+  try {
+    for (const format of toQueue) await input.ll.write.queueBook(rekeyedTo, format);
+    await input.ll.write.searchBook(rekeyedTo, toQueue[0]!);
+  } catch (error) {
+    throw new LazyLibrarianUpstreamError('LazyLibrarian search failed', { cause: error });
+  }
+  await markRequestFormatsRequeued({ db: input.db, requestId: request.id, formats: toQueue, now });
+  return { searched: true, formats: toQueue, rekeyedTo };
 }
 
 // ---------------------------------------------------------------------------
