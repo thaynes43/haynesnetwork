@@ -97,6 +97,12 @@ CyAJMAEACAAJ (The Inheritance Cycle box set) or 2MFMAAAACAAJ (The Complete Histo
 it again (`unroutable_reason='wrong_volume'`, id cleared) and reopen #661. Check the LL title with `cmd=getAllBooks`
 (`BookID`, `BookName`).
 
+**(e) checked 2026-10-04 23:55Z: no box set; one want still unresolved.** Beedle the Bard → `T5AJtgEACAAJ` (LL "The Tales
+of Beedle the Bard", audio landed); The Lays of Beleriand → `KKxagxSj6jkC` (LL "The Lays of Beleriand", audio
+`wanted`). Murtagh still has a NULL id (audio `grabbed`, not parked): the pairing budget has not reached it, and
+Libretto's Google Books key went back to quota 429 at 19:27Z and stayed there (shared key, #674). Recheck Murtagh
+after the 2026-10-05 07:00Z quota reset; none of the three box-set ids appears anywhere in `book_requests`.
+
 ## ▶ 2026-10-03 (late) — v0.105.2 + Libretto sha-3309ff2 live; LL bundle rows repaired; four checks owed
 
 - **v0.105.2** (#657 janitor `waiting` verdict, #658 Google Books omnibus guard, #659 Trash batch-read race, #660 a
@@ -132,8 +138,12 @@ q() { kubectl -n frontend exec -i "$P" -c app -- node -e 'const {Client}=require
   about 1,270 Prowlarr queries. Prometheus (Grafana datasource `prometheus`), instant at 2026-10-04T07:00:00Z:
   `sum(increase(prowlarr_indexer_queries_total[3h]))`. The same window on 2026-10-03 read **4,671**; the 01:00-04:00Z
   background is about 215, so expect roughly 1,300-1,500. Per indexer: `sum by (indexer) (increase(prowlarr_indexer_queries_total[3h]))`.
+  **Checked 2026-10-04 23:55Z: passed.** The 3 h reading at 07:00Z is **1,349** (4,671 the day before).
 - **(b) The first live janitor failed-download retry with Redownload off:** unchanged, see the Loki query and
   OPS-018 §3 in the 2026-10-03 (evening) entry below.
+  **Checked 2026-10-04 23:55Z: still waiting.** The only `queue-cleanup failed downloads` line in the last 48 h is
+  the 2026-10-03 21:25Z Radarr one (`failures 1`, `arrRetries true`, `searched 0`), written before Redownload went off at
+  21:25:26Z. No Sonarr or Radarr failure has been seen since.
 - **(c) The Trash sweep after movie batch `342c0f9c-c8dc-444c-8503-289b1ebfc6b2` expires** (2026-10-05T03:17:10Z =
   2026-10-04 23:17 EDT). 50 items. Expect **44 deleted**, not 45-46: two items hold open save intents (How Stella Got
   Her Groove Back, and 101 Dalmatians, a batch save at 2026-10-03T04:02Z), and four are Age Guard keeps (Troll, The
@@ -156,6 +166,15 @@ q() { kubectl -n frontend exec -i "$P" -c app -- node -e 'const {Client}=require
   Look each non-null id up in LazyLibrarian (comma-separated BookIDs). For Odd Interlude, Silo Stories or ReDawn a
   bundle means the Libretto guard missed. All 21 Skipped bundle formats (list in the context note) must still read
   Skipped; pass their BookIDs the same way.
+  **Checked 2026-10-04 23:55Z: no violation, but the guard has not yet been exercised by a successful resolve.**
+  Quota reset worked (the 07:27Z pass resolved 8 wants), but Odd Interlude #1/#2 got Google 503s at 08:27, 10:27 and
+  18:27Z, then Libretto's key hit 429 again from 19:27Z. Odd Interlude #1/#2 and Silo Stories read `wrong_volume`, NULL id;
+  all 13 parked pairing wants read NULL id (0 of `wrong_volume` rows carry an id); the ReDawn collection want
+  (`e8e8edf2`, unparked) still has a NULL id (46 unparked collection wants wait on a resolve); the pairing ReDawn want holds
+  `yo5CEAAAQBAJ`, never `wnVOEAAAQBAJ`. All 21 Skipped bundle formats (20 books) still read Skipped in LL. The three
+  Shatter Me / Dark Artifices collection wants (`378b62d6`, `159547b2`, `83cfec28`) no longer exist (dropped by a
+  collection pass; their LL bundles read Skipped). Recheck the guard with a real resolve after the 2026-10-05 07:00Z
+  quota reset.
   ```bash
   kubectl -n frontend exec -i "$P" -c app -- node -e '(async()=>{const r=await (await fetch(`http://lazylibrarian.downloads.svc.cluster.local:5299/api?apikey=${process.env.LAZYLIBRARIAN_API_KEY}&cmd=getAllBooks`)).json();for(const b of (Array.isArray(r)?r:r.data))if(process.argv[1].split(",").includes(String(b.BookID)))console.log(b.BookID,b.BookName,b.Status,b.AudioStatus)})()' "<id>,<id>"
   ```
