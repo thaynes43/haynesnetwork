@@ -4,6 +4,69 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-03 (late) — v0.105.2 + Libretto sha-3309ff2 live; LL bundle rows repaired; three checks owed
+
+- **v0.105.2** (#657 janitor `waiting` verdict, #658 Google Books omnibus guard, #659 Trash batch-read race, #660 a
+  parked pairing want stays parked) deployed by haynes-ops #3333: 3/3 pods on v0.105.2, no restarts, no migrations,
+  `/api/health` 200 in-pod and at haynesnetwork.haynesops.com. The release PR's e2e passed (incl. `trash.spec`).
+- **Libretto `sha-3309ff2`** (libretto #17, the same omnibus guard in its resolve broker) by haynes-ops #3331, pod
+  ready. Its shared Google Books key was out of quota at deploy (`reason: quota_exhausted`), so no live resolve has
+  exercised the guard yet (owed check (d)).
+- **#660 (DESIGN-036 amendment):** `format-pairing` never read `unroutable_reason`, so parking a pairing want did
+  nothing: the mint re-resolved the cleared id and the Skipped sweep re-queued and re-searched the Skipped bundle.
+- **Bundle audit:** 2 wants repointed to the single volume, 20 parked `wrong_volume` (22 with Odd Interlude), 21 LL
+  bundle formats set Skipped (2 on orphan rows with no want). Wants whose own title names the bundle were left alone,
+  except recipe members that duplicate held single volumes: the Dark Artifices Complete Collection (all three
+  audiobooks are held) and Shatter Me Series: 1-5 were parked, reversing the earlier repair's choice for the Dark
+  Artifices. Every old value and the method: `.agents/context/2026-10-03-bundle-audit.md`. Follow-ups that need a
+  decision: haynesnetwork #661 (a Kavita anchor pairs on its series name), libretto #18 (recipes list box sets
+  next to their members).
+- **Next-pass check (00:27Z collections, 00:32Z format-pairing on v0.105.2):** none of the 19 bundle rows repaired by
+  then (the Dark Artifices came after) nor the two Odd Thomas bundles reads Wanted; all parked wants kept a NULL id
+  (the collection pass got `quota_exhausted`); no want points at a repaired bundle. The one requeue was the repointed Red Queen Novella #1 →
+  Queen Song audiobook (`Skipped` → `Wanted`, searched 00:32:03Z), the right book. The ReDawn collection want was
+  dropped at 23:27Z as a duplicate of the pairing want on the same LL id and re-minted at 00:28Z with a NULL id; it
+  should resolve to ReDawn (ISBN 0593566629, yo5CEAAAQBAJ) and drop again. Watch it in (d).
+
+**Owed checks** (SQL runs in an app pod; `ls /app/node_modules/.pnpm | grep ^pg@` if the path moved):
+
+```bash
+P=$(kubectl -n frontend get pods -l app.kubernetes.io/name=haynesnetwork,app.kubernetes.io/controller=main -o jsonpath='{.items[0].metadata.name}')
+q() { kubectl -n frontend exec -i "$P" -c app -- node -e 'const {Client}=require("/app/node_modules/.pnpm/pg@8.22.0/node_modules/pg");(async()=>{const c=new Client({connectionString:process.env.DATABASE_URL});await c.connect();for(const r of (await c.query(process.argv[1])).rows)console.log(JSON.stringify(r));await c.end()})()' "$1"; }
+```
+
+- **(a) LazyLibrarian's first category-only daily search** (haynes-ops #3328), about 04:20Z 2026-10-04: should send
+  about 1,270 Prowlarr queries. Prometheus (Grafana datasource `prometheus`), instant at 2026-10-04T07:00:00Z:
+  `sum(increase(prowlarr_indexer_queries_total[3h]))`. The same window on 2026-10-03 read **4,671**; the 01:00-04:00Z
+  background is about 215, so expect roughly 1,300-1,500. Per indexer: `sum by (indexer) (increase(prowlarr_indexer_queries_total[3h]))`.
+- **(b) The first live janitor failed-download retry with Redownload off:** unchanged, see the Loki query and
+  OPS-018 §3 in the 2026-10-03 (evening) entry below.
+- **(c) The Trash sweep after movie batch `342c0f9c-c8dc-444c-8503-289b1ebfc6b2` expires** (2026-10-05T03:17:10Z =
+  2026-10-04 23:17 EDT). 50 items. Expect **44 deleted**, not 45-46: two items hold open save intents (How Stella Got
+  Her Groove Back, and 101 Dalmatians, a batch save at 2026-10-03T04:02Z), and four are Age Guard keeps (Troll, The
+  Babysitter: Killer Queen, Ponyboi, Fool's Gold, `keep_reason='recently_added'`). Any other keep must carry a reason.
+  ```bash
+  q "select count(*) filter (where deleted_at is not null) deleted, count(*) filter (where deleted_at is null) kept from trash_batch_items where batch_id = '342c0f9c-c8dc-444c-8503-289b1ebfc6b2'"
+  q "select title, keep_reason, saved_at is not null as saved from trash_batch_items where batch_id = '342c0f9c-c8dc-444c-8503-289b1ebfc6b2' and deleted_at is null order by title"
+  ```
+- **(d) The omnibus guard on a live resolve,** after the Google Books quota resets (about 07:00Z 2026-10-04). The
+  hourly collection pass (`haynesnetwork-sync-books-collections`, :27) re-resolves the parked collection wants (Odd
+  Interlude #1/#2, Silo Stories, Shatter Me Series: 1-5, two Dark Artifices Complete Collection) through Libretto. A
+  parked want is never searched whatever it resolves to, but Odd Interlude and Silo Stories must not come back as a
+  bundle; Shatter Me and the Dark Artifices will, by ISBN, and that is expected. The unparked ReDawn want
+  (`isbn:9780593566626`) must resolve to yo5CEAAAQBAJ or nothing, never wnVOEAAAQBAJ (Skyward Flight. The Collection):
+  the find-missing cron would search that.
+  Parked pairing wants must keep a NULL id (#660). Neither kind is ever searched while parked.
+  ```bash
+  q "select origin, title, ll_book_id, updated_at from book_requests where unroutable_reason = 'wrong_volume' order by origin, title"
+  ```
+  Look each non-null id up in LazyLibrarian (comma-separated BookIDs). For Odd Interlude, Silo Stories or ReDawn a
+  bundle means the Libretto guard missed. All 21 Skipped bundle formats (list in the context note) must still read
+  Skipped; pass their BookIDs the same way.
+  ```bash
+  kubectl -n frontend exec -i "$P" -c app -- node -e '(async()=>{const r=await (await fetch(`http://lazylibrarian.downloads.svc.cluster.local:5299/api?apikey=${process.env.LAZYLIBRARIAN_API_KEY}&cmd=getAllBooks`)).json();for(const b of (Array.isArray(r)?r:r.data))if(process.argv[1].split(",").includes(String(b.BookID)))console.log(b.BookID,b.BookName,b.Status,b.AudioStatus)})()' "<id>,<id>"
+  ```
+
 ## ▶ 2026-10-03 (evening) — v0.105.0 and v0.105.1 live; the post-deploy steps are done
 
 - **v0.105.0** (age guard #641 / migration 0086, title exclusions #643 / 0087, janitor retry #647, plus #640, #645,
