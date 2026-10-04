@@ -420,3 +420,9 @@ force-search and `isRequestSearchable` already treat as not searchable), so a st
 them again. Duplicate-volume wants (Julius House, The Sea and Little Fishes, the Dark Artifices boxed set) were
 repointed to the canonical LL row, and the two pairing wants for junk-titled duplicate Kavita files were
 repointed with the audio format marked landed (the audiobook is held under the paired twin).
+
+**Bundle audit (later 2026-10-03).** Every LazyLibrarian row with a format Wanted and a bundle pattern was traced to
+its want: 2 wants repointed to the single volume, 20 parked `wrong_volume`, 21 bundle formats set Skipped. That
+includes the Dark Artifices boxed-set wants above, now parked: the recipe lists the boxed set next to its three
+novels and all three audiobooks are held, so it only duplicated held books. Parking a pairing want took a code fix
+first (DESIGN-036 amendment of the same date). Record: `.agents/context/2026-10-03-bundle-audit.md`.
