@@ -217,6 +217,32 @@ export async function startStubBooks(): Promise<StubBooksServer> {
           KAVITA_METADATA[seriesId] ?? { summary: '', genres: [], publishers: [], language: null, releaseYear: 0 },
         );
       }
+      // Issue #661 (DESIGN-024 D-03 amendment 2026-10-04) — the held-books read. Each stub book series
+      // holds one book named like the series (the live ChapterDto shape, trimmed); an unknown series
+      // holds none.
+      if (path === '/api/Series/volumes') {
+        const seriesId = Number(url.searchParams.get('seriesId') ?? '0');
+        const series = KAVITA_BOOKS.find((s) => s.id === seriesId);
+        if (!series) return json(res, 200, []);
+        const author = series.folderPath.split('/').pop() ?? null;
+        return json(res, 200, [
+          {
+            id: seriesId * 10,
+            name: '-100000',
+            chapters: [
+              {
+                id: seriesId * 100,
+                title: series.name,
+                titleName: series.name,
+                isSpecial: true,
+                isbn: '',
+                writers: author ? [{ name: author }] : [],
+                files: [{ filePath: `${series.folderPath}/${series.name}/${series.name}.epub` }],
+              },
+            ],
+          },
+        ]);
+      }
       if (path === '/api/Image/series-cover') return png(res);
 
       // --- Audiobookshelf ---

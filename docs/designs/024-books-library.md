@@ -130,8 +130,12 @@ the pairing leg decides what they mean (DESIGN-036 amendment 2026-10-04). The re
 metadata call: a series that is new or changed is read, an unchanged one carries its list forward, and a row
 with no `heldBooks` key yet is read once (the backfill, about 1,700 series on the first run). A failed read
 carries the last list forward, or leaves the key absent, and the next run retries. An absent key means "not
-read"; an empty list means the series holds no book file. No migration (`attrs` is the existing jsonb
-catch-all). Unit-proven in the same test file (the reduce, read-new, carry-forward, backfill, failure, comics).
+read"; an empty list means the series holds no book file. A book row with no author stays in the gate map
+with its `metadata_synced_at` read as null, so its metadata is still re-fetched every run (the writers
+fallback) while its held books carry forward; it used to be left out of the map, which would have re-read
+its volumes every run too. The dev:local/e2e stub Kavita answers the call (one book per series). No migration
+(`attrs` is the existing jsonb catch-all). Unit-proven in the same test file (the reduce, read-new,
+carry-forward, backfill, failure, comics) and end to end through `runSync` in `books-sync-held-books.test.ts`.
 
 ## D-04 — The Books read contract (`books.search` / `books.filterFacets`)
 

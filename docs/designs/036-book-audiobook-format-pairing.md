@@ -322,7 +322,11 @@ never pushed, because the push requires `requested`.
 every unpaired anchor whose want read `landed`, and the reconcile lands a want from LazyLibrarian's own status
 with no pair at all (the 2026-09-22 push guard made that common). On 2026-10-04 it reset 312 wants a run;
 the mint then spent its whole cap of 100 on them (each one skipped as held) and pushed nothing. A dropped
-pair whose anchor is `multi_book` or `no_book` revives nothing.
+pair whose anchor is `multi_book` or `no_book` revives nothing. The heal is one-shot by design: a pair that
+drops while its want's missing format is still in flight is not healed in a later run when that format
+lands. Accepted (PR #664 review): a pairing want's missing format lands because LazyLibrarian imported it,
+so a revived want would only be withheld again by the push guard (DESIGN-028's 2026-09-22 amendment), and
+a persisted "dropped" marker would buy nothing.
 
 Unchanged: the omnibus guard in the Google Books resolve (DESIGN-028's 2026-10-03 amendment, #658) stays the
 second line; a parked want stays parked (the 2026-10-03 amendment above); the confined LazyLibrarian surface

@@ -525,16 +525,17 @@ async function loadExistingKavitaEnrichment(
     .where(and(eq(booksItems.source, 'kavita'), isNull(booksItems.deletedAt)));
   const map = new Map<string, ExistingKavitaEnrichment>();
   for (const r of rows) {
-    // A BOOK row with no author is treated as never-enriched (omitted from the gate map) so the
-    // run re-fetches its metadata once and the writers fallback can heal it — the stored mirror
-    // columns carry no writers to carry forward (fix/pairing-author-gap 2026-07-21). Self-limiting:
-    // once the author fills, the row re-enters the gate. Comics keep their honest null quietly.
-    if (r.mediaKind === 'book' && (r.author === null || r.author.trim() === '')) continue;
+    // A BOOK row with no author is treated as never-enriched (metadataSyncedAt null) so the run
+    // re-fetches its metadata and the writers fallback can heal it — the stored mirror columns carry
+    // no writers to carry forward (fix/pairing-author-gap 2026-07-21). Self-limiting: once the author
+    // fills, the row is gated like any other. Comics keep their honest null quietly. The row stays
+    // IN the map (issue #661) so its held books still carry forward instead of being re-read every run.
+    const authorless = r.mediaKind === 'book' && (r.author === null || r.author.trim() === '');
     const language =
       ((r.attrs as Record<string, unknown> | null)?.language as string | null) ?? null;
     map.set(r.externalId, {
       sourceUpdatedAt: r.sourceUpdatedAt,
-      metadataSyncedAt: r.metadataSyncedAt,
+      metadataSyncedAt: authorless ? null : r.metadataSyncedAt,
       data: {
         summary: r.summary,
         genres: r.genres ?? [],
