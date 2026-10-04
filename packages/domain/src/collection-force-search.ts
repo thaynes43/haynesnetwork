@@ -16,8 +16,14 @@
 // IDEMPOTENT: a cooldown window on last_searched_at means a want is not re-searched every run, and a global
 // per-run cap bounds the LazyLibrarian fan-out. DEGRADING: a Libretto outage skips the whole pass (we never
 // acquire against a find-missing set we could not re-confirm); a single want's LL error fails only that want.
-import { and, asc, eq, isNull, lt, ne, or, type SQL } from 'drizzle-orm';
-import { bookRequests, booksCollections, permissionAudit, type DbClient } from '@hnet/db';
+import { and, asc, eq, inArray, isNotNull, isNull, lt, ne, or, type SQL } from 'drizzle-orm';
+import {
+  bookRequests,
+  booksCollections,
+  permissionAudit,
+  type BookRequestStatus,
+  type DbClient,
+} from '@hnet/db';
 import type { LibrettoReadClient } from '@hnet/libretto/read';
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import { inTransaction, resolveDb } from './db-client';
@@ -31,6 +37,15 @@ import {
   type LlHeldSignals,
 } from './book-requests';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
+import {
+  applyLlGoneDecision,
+  decideLlGoneWant,
+  emptyLlGoneTally,
+  LL_GONE_COLLECTION_GRACE_MS,
+  llSnapshotUsable,
+  LlRekeyIndex,
+  type LlGoneTally,
+} from './ll-gone';
 
 /** The Libretto read surface this pass needs — just the recipe list (which carries acquisitionEnabled). */
 export type FindMissingLibretto = Pick<LibrettoReadClient, 'listRecipes'>;
@@ -64,7 +79,7 @@ export interface ForceSearchCollectionsInput {
   pacer?: (index: number) => Promise<void>;
 }
 
-export interface ForceSearchCollectionsReport {
+export interface ForceSearchCollectionsReport extends LlGoneTally {
   /** Find-missing (acquisition ON) collections that have a mirror row this run. */
   findMissingCollections: number;
   /** Searchable, cooldown-eligible wants found across those collections (pre-cap). */
@@ -103,6 +118,8 @@ interface CollectionWantWork {
   format: 'ebook' | 'audiobook';
   title: string;
   collectionId: string;
+  /** The active format's status. Issue #665: an on-demand search lifts a settled `missing` back to `requested`. */
+  status: BookRequestStatus;
 }
 
 /**
@@ -132,14 +149,19 @@ async function gatherCollectionWants(
       ne(statusCol, 'landed'),
     ];
     // The cooldown filter — only the cron pass applies it; on-demand (cutoff=null) re-searches regardless.
+    // Issue #665: the cron also leaves a want settled `missing` (LazyLibrarian lost its book) alone; only a
+    // person's on-demand Force Search re-adds it.
     if (cutoff) {
       conds.push(or(isNull(bookRequests.lastSearchedAt), lt(bookRequests.lastSearchedAt, cutoff))!);
+      conds.push(ne(statusCol, 'missing'));
     }
     const rows = await resolveDb(db)
       .select({
         id: bookRequests.id,
         llBookId: bookRequests.llBookId,
         title: bookRequests.title,
+        ebookStatus: bookRequests.ebookStatus,
+        audioStatus: bookRequests.audioStatus,
       })
       .from(bookRequests)
       .where(and(...conds))
@@ -153,6 +175,7 @@ async function gatherCollectionWants(
         format,
         title: r.title,
         collectionId: collection.id,
+        status: format === 'audiobook' ? r.audioStatus : r.ebookStatus,
       });
     }
   }
@@ -178,6 +201,8 @@ async function runForceSearchWorklist(input: {
   subjectUserId?: string | null;
   /** Tag the audit with the single collection (on-demand path); omitted for the multi-collection cron leg. */
   tagCollection?: boolean;
+  /** The `getAllBooks` snapshot the caller already read this run (the cron's gone pass), so it is not read twice. */
+  snapshot?: Map<string, LlHeldSignals> | null;
   report: { searched: number; failed: number; skippedHeld: number; skippedRecent: number };
   log: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
@@ -191,8 +216,8 @@ async function runForceSearchWorklist(input: {
   // about what LazyLibrarian holds — so a want whose copy LL imported but whose row never reconciled was
   // re-clobbered to `Wanted` every 12h, forever. On a read failure the map is empty and every want pushes,
   // exactly as before: the guard may suppress a write, never invent one.
-  let held = new Map<string, LlHeldSignals>();
-  if (input.worklist.length > 0) {
+  let held = input.snapshot ?? new Map<string, LlHeldSignals>();
+  if (input.worklist.length > 0 && input.snapshot == null) {
     try {
       held = await input.ll.read.getAllBookStatuses();
     } catch (error) {
@@ -255,7 +280,11 @@ async function runForceSearchWorklist(input: {
       // The confined LazyLibrarian force-search chain — MANDATORY queueBook after addBook (else Skipped).
       // addBook once, queueBook once per distinct format, then the single searchBook that covers them all.
       const formats = [...new Set(toSearch.map((w) => w.format))];
-      await input.ll.write.addBook(llBookId);
+      // DESIGN-039 D-18, now here too (issue #665): addBook ONLY seats a book LazyLibrarian does not hold. On a
+      // book it holds, `add_bookid_to_db` re-runs its upsert, which resets BOTH formats to the new-book status
+      // (`Skipped`): the other format's `Wanted` is dropped and its import status overwritten. A failed read
+      // leaves `held` empty, so this degrades to the old always-addBook.
+      if (held.get(llBookId) == null) await input.ll.write.addBook(llBookId);
       for (const format of formats) await input.ll.write.queueBook(llBookId, format);
       const coveredByRecent = llRecentSearchCovers(recent, llBookId, held.get(llBookId), formats);
       if (!coveredByRecent) await input.ll.write.searchBook(llBookId, formats[0]!);
@@ -272,9 +301,17 @@ async function runForceSearchWorklist(input: {
       // and NOT counted as searched — nothing was asked of LazyLibrarian by this pass.
       await inTransaction(input.db, async (tx) => {
         for (const want of toSearch) {
+          // A want settled `missing` (issue #665: LazyLibrarian lost its book) that a person force-searched is
+          // back in LazyLibrarian: its active format returns to `requested`, the collection want's working state.
+          const lift =
+            want.status === 'missing'
+              ? want.format === 'audiobook'
+                ? { audioStatus: 'requested' as const }
+                : { ebookStatus: 'requested' as const }
+              : {};
           await tx
             .update(bookRequests)
-            .set({ lastSearchedAt: input.now, updatedAt: input.now })
+            .set({ lastSearchedAt: input.now, updatedAt: input.now, ...lift })
             .where(eq(bookRequests.id, want.id));
           if (coveredByRecent) continue;
           await tx.insert(permissionAudit).values({
@@ -329,6 +366,7 @@ export async function forceSearchFindMissingCollections(
     skippedHeld: 0,
     skippedRecent: 0,
     unreachable: false,
+    ...emptyLlGoneTally(),
   };
 
   // Which Libretto recipes have acquisition turned ON? (A Libretto outage skips the whole pass.)
@@ -363,11 +401,28 @@ export async function forceSearchFindMissingCollections(
   report.findMissingCollections = collections.length;
   if (collections.length === 0) return report;
 
+  // Issue #665 — settle the wants whose LazyLibrarian book is gone BEFORE gathering, across every find-missing
+  // collection regardless of cooldown (so the backlog settles on the first run, not as each want comes due).
+  const snapshot = await settleGoneCollectionWants({
+    db: input.db,
+    ll: input.ll,
+    collectionIds: collections.map((c) => c.id),
+    now,
+    cooldownMs,
+    report,
+    log,
+  });
+
   const cutoff = new Date(now.getTime() - cooldownMs);
   // Gather the searchable, cooldown-eligible wants across every find-missing collection (global cap).
   const worklist = await gatherCollectionWants(input.db, collections, cap, cutoff);
   report.candidates = worklist.length;
-  if (worklist.length === 0) return report;
+  if (worklist.length === 0) {
+    if (report.llGoneRekeyed + report.llGoneSettled > 0) {
+      log.info?.('collection-force-search complete', { ...report });
+    }
+    return report;
+  }
 
   // Ownerless system leg ⇒ actor/subject null; no per-collection tag (one worklist spans many collections).
   await runForceSearchWorklist({
@@ -380,6 +435,7 @@ export async function forceSearchFindMissingCollections(
     actorId: null,
     report,
     log,
+    ...(snapshot ? { snapshot } : {}),
   });
 
   log.info?.('collection-force-search complete', {
@@ -389,8 +445,113 @@ export async function forceSearchFindMissingCollections(
     failed: report.failed,
     skippedHeld: report.skippedHeld,
     skippedRecent: report.skippedRecent,
+    llGoneRekeyed: report.llGoneRekeyed,
+    llGoneSettled: report.llGoneSettled,
   });
   return report;
+}
+
+/**
+ * Issue #665 (DESIGN-028 amendment 2026-10-04) — the collection leg of the gone-book rule. A collection want the
+ * cron force-searched (`last_searched_at` set, older than the collection grace: 1 h, and never more than half the
+ * cooldown, since each due re-search re-stamps it) whose id the `getAllBooks` snapshot lacks
+ * lost its LazyLibrarian book: LazyLibrarian deleted it, or never kept it (`addBook` declined). Re-adding it every
+ * cooldown is the churn this stops. It is re-keyed (repointed to the one row LazyLibrarian holds for the same
+ * title and author; the next due run pushes that) or settled: its active format becomes `missing`, which the cron
+ * gather skips and a person's on-demand Force Search lifts. No LazyLibrarian write. The snapshot is read only when
+ * a candidate exists and is returned for the worklist (one `getAllBooks` per run, not two); null when there was no
+ * read or it failed.
+ */
+async function settleGoneCollectionWants(input: {
+  db?: DbClient;
+  ll: LazyLibrarianClientBundle;
+  collectionIds: string[];
+  now: Date;
+  cooldownMs: number;
+  report: LlGoneTally;
+  log: {
+    info?: (msg: string, meta?: Record<string, unknown>) => void;
+    warn?: (msg: string, meta?: Record<string, unknown>) => void;
+  };
+}): Promise<Map<string, LlHeldSignals> | null> {
+  if (input.collectionIds.length === 0) return null;
+  // The collection grace, NOT the 24 h one: every cooldown the cron re-stamps `last_searched_at`, so the grace
+  // must be shorter than the cooldown or a lost book is re-added before it can ever count as gone.
+  const graceMs = Math.min(LL_GONE_COLLECTION_GRACE_MS, input.cooldownMs / 2);
+  const graceCutoff = new Date(input.now.getTime() - graceMs);
+  const candidates = await resolveDb(input.db)
+    .select({
+      id: bookRequests.id,
+      llBookId: bookRequests.llBookId,
+      title: bookRequests.title,
+      author: bookRequests.author,
+      ebookStatus: bookRequests.ebookStatus,
+      audioStatus: bookRequests.audioStatus,
+      lastSearchedAt: bookRequests.lastSearchedAt,
+      source: booksCollections.source,
+    })
+    .from(bookRequests)
+    .innerJoin(booksCollections, eq(booksCollections.id, bookRequests.collectionId))
+    .where(
+      and(
+        eq(bookRequests.origin, 'collection'),
+        inArray(bookRequests.collectionId, input.collectionIds),
+        isNull(bookRequests.matchedBooksItemId),
+        isNull(bookRequests.unroutableReason),
+        isNotNull(bookRequests.llBookId),
+        isNotNull(bookRequests.lastSearchedAt),
+        lt(bookRequests.lastSearchedAt, graceCutoff),
+      ),
+    );
+  // Only wants whose active format is still being acquired (not landed, not already settled).
+  const open = candidates.filter((c) => {
+    const status = formatForSource(c.source) === 'audiobook' ? c.audioStatus : c.ebookStatus;
+    return status !== 'landed' && status !== 'missing';
+  });
+  if (open.length === 0) return null;
+
+  let snapshot: Map<string, LlHeldSignals>;
+  try {
+    snapshot = await input.ll.read.getAllBookStatuses();
+  } catch (error) {
+    input.log.warn?.('collection-force-search: LL getAllBooks failed — gone-book pass skipped', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+  if (!llSnapshotUsable(snapshot)) return snapshot;
+  const index = new LlRekeyIndex(snapshot);
+  for (const want of open) {
+    if (snapshot.has(want.llBookId!)) continue;
+    try {
+      await applyLlGoneDecision({
+        db: input.db,
+        requestId: want.id,
+        llBookId: want.llBookId!,
+        decision: decideLlGoneWant({
+          want: { ...want, lastSeenAt: want.lastSearchedAt },
+          snapshot,
+          index,
+          now: input.now,
+          formats: [formatForSource(want.source)],
+          collection: true,
+          graceMs,
+        }),
+        snapshot,
+        reconcile: false,
+        tally: input.report,
+        site: 'collection-force-search.find_missing_cron',
+        now: input.now,
+        log: input.log,
+      });
+    } catch (error) {
+      input.log.warn?.('collection-force-search: gone-book settle failed', {
+        requestId: want.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return snapshot;
 }
 
 // ── The ON-DEMAND collection Force Search (owner ruling 2026-07-18) ───────────────────────────────────

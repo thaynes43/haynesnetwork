@@ -58,7 +58,9 @@ async function seedBook(kind: 'book' | 'audiobook' | 'comic', title = 'Bad Copy'
   return row!.id;
 }
 
-function stubLl() {
+/** `seated` names the ids LazyLibrarian holds (its `getAllBooks`); without it the read leg is absent and the
+ *  guard degrades to "not held", as with an LL read failure. */
+function stubLl(seated?: Record<string, { ebookStatus?: string; audioStatus?: string }>) {
   const calls: { cmd: string; id: string; format?: string }[] = [];
   const bundle = {
     write: {
@@ -66,6 +68,19 @@ function stubLl() {
       queueBook: async (id: string, format: string) => void calls.push({ cmd: 'queueBook', id, format }),
       searchBook: async (id: string, format: string) => void calls.push({ cmd: 'searchBook', id, format }),
     },
+    ...(seated
+      ? {
+          read: {
+            getAllBookStatuses: async () =>
+              new Map(
+                Object.entries(seated).map(([id, s]) => [
+                  id,
+                  { bookId: id, ebookStatus: s.ebookStatus ?? null, audioStatus: s.audioStatus ?? null },
+                ]),
+              ),
+          },
+        }
+      : {}),
   } as unknown as Parameters<typeof runBookFixRequest>[0]['ll'];
   return { calls, bundle };
 }
@@ -156,6 +171,23 @@ describe('runBookFixRequest (the orchestrator)', () => {
     const [fresh] = await t.db.select().from(bookFixRequests).where(eq(bookFixRequests.id, row.id));
     expect(fresh!.status).toBe('search_triggered');
     expect(fresh!.llBookId).toBe('gb-xyz');
+  });
+
+  // Issue #665 — addBook re-runs LazyLibrarian's upsert on a book it holds, resetting BOTH formats to the new-book
+  // status (a Fix of the audiobook would drop the eBook's state), so it only seats a book LL does not have.
+  it('skips addBook when LazyLibrarian already holds the book (queueBook + searchBook still fire)', async () => {
+    const user = await createUser(t.db);
+    const id = await seedBook('audiobook');
+    const row = await createBookFixRequest({ db: t.db, requesterId: user.id, booksItemId: id, reason: 'wrong_language' });
+    const ll = stubLl({ 'gb-xyz': { ebookStatus: 'Open', audioStatus: 'Open' } });
+    const res = await runBookFixRequest({
+      db: t.db,
+      fix: row,
+      ll: ll.bundle,
+      gb: { resolveVolume: async () => ({ volumeId: 'gb-xyz' }) },
+    });
+    expect(res.status).toBe('search_triggered');
+    expect(ll.calls.map((c) => c.cmd)).toEqual(['queueBook', 'searchBook']);
   });
 
   it('LL route fails HONESTLY when GB cannot resolve and there is no request row', async () => {

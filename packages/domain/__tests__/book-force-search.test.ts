@@ -235,6 +235,24 @@ describe('runBookItemForceSearch (quick re-search, no durable row)', () => {
     expect(ll.calls).toHaveLength(0);
   });
 
+  // Issue #665 — LazyLibrarian's addBook re-runs its upsert on a book it already holds, resetting BOTH formats to
+  // the new-book status, so it only seats a book LL does not have (the DESIGN-039 D-18 rule, at every push site).
+  it('skips addBook when LazyLibrarian holds the book (another format), keeping queueBook + searchBook', async () => {
+    const user = await createUser(t.db);
+    const bookId = await seedBook('book');
+    await seedIdentity(bookId, { llBookId: 'gb-seated' });
+    const ll = stubLl((id) => (id === 'gb-seated' ? { ebookStatus: 'Skipped', audioStatus: 'Open' } : null));
+
+    const result = await runBookItemForceSearch({
+      db: t.db,
+      booksItemId: bookId,
+      requesterId: user.id,
+      ll: ll.bundle,
+    });
+    expect(result).toEqual({ searched: true });
+    expect(ll.calls.map((c) => c.cmd)).toEqual(['queueBook', 'searchBook']);
+  });
+
   it('still fires when the LL read fails — the guard may only ever remove a write, never add one', async () => {
     const user = await createUser(t.db);
     const bookId = await seedBook('book');
