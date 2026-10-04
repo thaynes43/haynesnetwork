@@ -346,8 +346,10 @@ fields `llGoneRekeyed` and `llGoneSettled`.
 
 **The want's format comes from its anchor (follow-up, same day).** The reconcile guessed a want's format from which
 status read `landed` (`ebookStatus === 'landed'` ⇒ audiobook, else eBook). Three July wants never had their held
-format set `landed` (it read `grabbed`), so the guess picked the HELD format: the Skipped sweep worked it, and two of
-those books sit `Wanted` for the eBook in LazyLibrarian although the library holds it. The reconcile now reads every
+format set `landed` (it read `grabbed`), so the guess picked the HELD format, and the Skipped sweep would have
+re-queued and searched a format the library already holds whenever LazyLibrarian showed it `Skipped`. (The two of them
+whose LazyLibrarian eBook reads `Wanted` are wanted by audiobook-anchored wants for the same books, so that status
+stays.) The reconcile now reads every
 open want's anchor media kind (one query) and uses `missingFormatFor`, and sets the anchor-held format `landed`
 wherever it is not, as long as the anchor is still in the library (`deleted_at` NULL: a removed anchor no longer
 holds its format, though its media kind still names the want's format) (`landPairingHeldFormat`, report field

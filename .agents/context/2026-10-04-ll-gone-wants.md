@@ -69,3 +69,22 @@ Expected first runs after the deploy: format-pairing `llGoneRekeyed` about 28 (t
 the Skipped sweep's search, so they settle and wait for a person's Search again); goodreads-sync about 49 settled;
 the collection cron about 23 settled (its grace is an hour since the last force-search). No
 `searchBook`, `queueBook` or `addBook` from any of it.
+
+## Result (deploy record)
+
+- LazyLibrarian overlays live 2026-10-04 03:28Z (haynes-ops #3351). Start-up check: no author removed (it logged
+  "Found 1 author with no existing or wanted books", a report-only line); `books` stayed at 1,020; John Grisham
+  and The Firm kept.
+- v0.105.4 live 03:52Z. First runs: `collection-force-search` 04:27Z `llGoneSettled 23, searched 0`;
+  `format-pairing` 04:32Z `llGoneRekeyed 27, llGoneSettled 717, pushed 0, requeued 0`; goodreads-sync 04:41Z 48
+  settled. Loki `ll_book_gone` lines: 27 + 717 + 23 + 48.
+- v0.105.5 live 05:10Z. 05:32Z pairing run: `heldLanded 3, pushed 0, requeued 0, llGone 0`.
+- Gone-and-unsettled: 745 + 49 + 23 = 817 before, 1 after. Pairing 745 = 27 re-keyed + 717 settled + Rework (its
+  own format was already `missing`; only its stale held `grabbed` counted, landed by v0.105.5). Goodreads 49 = 48
+  settled + the one left, a request whose shelf item was removed when the book moved to the read shelf (its live
+  twin on the read shelf settled).
+- Prowlarr `prowlarr_indexer_queries_total`, 10-minute increases from 04:30Z: 0, 0, 0, 995, 407, 0, 0. The
+  04:50-05:10Z burst is LazyLibrarian's scheduled backlog search (`SEARCHALLBOOKS` 04:54-05:03Z, 226 items); LL's
+  log has no `API-SEARCHBOOK` line and no "added to the books database" since the deploy.
+- Two LazyLibrarian rows (`EJ_cCwAAQBAJ`, `UZyjuQAACAAJ`) keep their eBook `Wanted`. That is right: audiobook-anchored
+  pairing wants for the same books want the eBook (their match to the Kavita copy failed on a messy file title).

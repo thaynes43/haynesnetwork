@@ -4,6 +4,37 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
+
+- **Why (#665):** LazyLibrarian deleted the books the app added. `addBook` never writes the `bookauthors` row that
+  `update_totals` counts, so LL's start-up `check_db` removed each author it counted as bookless and its books
+  cascaded. 817 open requests sat `wanted`/`grabbed` on ids `getAllBooks` no longer returns; the collection
+  force-search kept re-adding and re-searching 16 of those books (276 chains in a week). Evidence and method:
+  `.agents/context/2026-10-04-ll-gone-wants.md`; rule: DESIGN-028 amendment 2026-10-04, glossary T-279.
+- **LazyLibrarian fix** (haynes-ops #3351, live 03:28Z): `patches/gb.py` (addBook writes `bookauthors`),
+  `patches/dbupgrade.py` (`check_db` spares an author that owns a book), and the same guard in `librarysync.py`'s
+  remove-mode scan. The restart removed no author; John Grisham (The Firm), the one author the old check would
+  have deleted, is still there. All five overlays are pinned to `version-40a389ea`.
+- **v0.105.4** (#669, haynes-ops #3355): a pushed want whose id is absent from a non-empty snapshot for 24 h (1 h
+  for a collection want) re-keys to LL's one row with the same title and author when that row already tracks the
+  format, else settles `missing`. No LL call. Search again re-keys or re-adds a gone book. `addBook` only for a
+  book LL lacks, at every push site. First runs: collection 23 settled (04:27Z), pairing 27 re-keyed + 717
+  settled (04:32Z), goodreads 48 settled (04:41Z); no `addBook`/`queueBook`/`searchBook` from any of it.
+- **v0.105.5** (#670, haynes-ops #3356): the pairing reconcile reads a want's format from its anchor and lands the
+  anchor-held format (live anchors only). 05:32Z run: `heldLanded 3`, `pushed 0`, `requeued 0`.
+- **After:** gone-and-unsettled requests 817 → 1. Pairing 745 = 27 re-keyed + 717 settled + Rework, whose own
+  format was already `missing` and which counted only for a stale held `grabbed` that v0.105.5 landed. Goodreads
+  49 = 48 settled + the one left: a request on a removed shelf item (Twisted Love moved from to-read to read; its
+  live twin settled); nothing reconciles removed-shelf requests, by design. Prowlarr: zero
+  queries in every 10-minute bucket from the deploy to 05:32Z except 04:50-05:10Z (≈1,400), which is LazyLibrarian's
+  own scheduled backlog search (`SEARCHALLBOOKS`, 04:54-05:03Z, 226 items). LL's log shows no API-triggered search
+  or add since the deploy.
+- **Owed check (a) below, observed:** that scheduled search was the first category-only daily search (it moved
+  from about 04:20Z because the 03:28Z restart reset LL's scheduler): about 1,400 queries, against 4,671 the day
+  before. It still needs the 07:00Z 3-hour reading if the exact window matters.
+- **Open, needs an owner decision:** #668, whether and how fast to re-acquire the ~790 requests settled `missing`
+  (a person's Search again does it one at a time now).
+
 ## ▶ 2026-10-04 — v0.105.3 live: pairing uses the book a Kavita series holds (#661); one check owed
 
 - **v0.105.3** (#664, closes #661) deployed by haynes-ops #3340: 3/3 pods, `/api/health` ok. A Kavita
