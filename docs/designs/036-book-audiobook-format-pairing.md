@@ -349,4 +349,6 @@ status read `landed` (`ebookStatus === 'landed'` ⇒ audiobook, else eBook). Thr
 format set `landed` (it read `grabbed`), so the guess picked the HELD format: the Skipped sweep worked it, and two of
 those books sit `Wanted` for the eBook in LazyLibrarian although the library holds it. The reconcile now reads every
 open want's anchor media kind (one query) and uses `missingFormatFor`, and sets the anchor-held format `landed`
-wherever it is not (`landPairingHeldFormat`, report field `heldLanded`; ADR-065 C-03).
+wherever it is not, as long as the anchor is still in the library (`deleted_at` NULL: a removed anchor no longer
+holds its format, though its media kind still names the want's format) (`landPairingHeldFormat`, report field
+`heldLanded`; ADR-065 C-03).
