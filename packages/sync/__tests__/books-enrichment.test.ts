@@ -4,10 +4,11 @@
 // HTML-strip, the Kavita metadata reduce (title/name entities, releaseYear-0 → null), the ABS inline
 // enrichment, and the change-gate that skips unchanged series (carry-forward) but re-fetches changed ones.
 import { describe, expect, it } from 'vitest';
-import type { AbsItem, KavitaSeries, KavitaSeriesMetadata } from '@hnet/books';
+import type { AbsItem, KavitaSeries, KavitaSeriesMetadata, KavitaVolume } from '@hnet/books';
 import {
   fetchBooksSnapshot,
   kavitaEnrichmentFrom,
+  kavitaHeldBooksFrom,
   normalizeAbsItem,
   normalizeKavitaSeries,
   stripHtml,
@@ -170,11 +171,17 @@ describe('normalizeKavitaSeries — applies enrichment / stays null without it',
 // The change-gate: fetchBooksSnapshot only calls getSeriesMetadata for new/changed series.
 // ---------------------------------------------------------------------------
 
-function stubBundle(getSeriesMetadata: (id: string) => Promise<KavitaSeriesMetadata>): {
+function stubBundle(
+  getSeriesMetadata: (id: string) => Promise<KavitaSeriesMetadata>,
+  listSeriesVolumes: (id: string) => Promise<KavitaVolume[]> = async () => [],
+  libraryType = 2,
+): {
   bundle: BooksSyncBundle;
   calls: string[];
+  volumeCalls: string[];
 } {
   const calls: string[] = [];
+  const volumeCalls: string[] = [];
   const series: KavitaSeries[] = [
     { id: 102, name: 'Landlord', sortName: 'Landlord', format: 3, libraryId: 1, libraryName: 'Books', pages: 210, folderPath: '/data/EBooks/CH', lowestFolderPath: '/data/EBooks/CH/Landlord', lastChapterAddedUtc: '2026-07-09T12:00:00' } as unknown as KavitaSeries,
     { id: 103, name: 'Champion', sortName: 'Champion', format: 3, libraryId: 1, libraryName: 'Books', pages: 230, folderPath: '/data/EBooks/CH', lowestFolderPath: '/data/EBooks/CH/Champion', lastChapterAddedUtc: '2026-07-10T12:00:00' } as unknown as KavitaSeries,
@@ -183,18 +190,22 @@ function stubBundle(getSeriesMetadata: (id: string) => Promise<KavitaSeriesMetad
     kavitaPublicUrl: 'https://kavita.example',
     audiobookshelfPublicUrl: 'https://abs.example',
     kavita: {
-      listLibraries: async () => [{ id: 1, name: 'Books', type: 2 }],
+      listLibraries: async () => [{ id: 1, name: 'Books', type: libraryType }],
       listSeriesPage: async () => ({ items: series, total: series.length, hasAuthoritativeTotal: true }),
       getSeriesMetadata: async (id: string) => {
         calls.push(id);
         return getSeriesMetadata(id);
+      },
+      listSeriesVolumes: async (id: string) => {
+        volumeCalls.push(id);
+        return listSeriesVolumes(id);
       },
     },
     audiobookshelf: {
       listLibraries: async () => [],
     },
   } as unknown as BooksSyncBundle;
-  return { bundle, calls };
+  return { bundle, calls, volumeCalls };
 }
 
 describe('fetchBooksSnapshot — Kavita enrichment change-gate', () => {
@@ -234,5 +245,109 @@ describe('fetchBooksSnapshot — Kavita enrichment change-gate', () => {
     const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing });
     const by = Object.fromEntries(snap.rows.map((r) => [r.externalId, r]));
     expect(by['103']!.summary).toBe('KEEP'); // enrichment preserved on failure
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #661 — the held books: what a Kavita BOOK series actually holds (`/api/Series/volumes`).
+// ---------------------------------------------------------------------------
+
+/** Live shapes probed 2026-10-04 (trimmed): a numbered volume, a loose special, a two-copy chapter. */
+const FIRE_AND_BLOOD: KavitaVolume[] = [
+  {
+    name: '0.5',
+    chapters: [
+      { title: '-100000', titleName: 'Fire & Blood', isSpecial: false, isbn: '9781524796280', writers: [{ name: 'George R. R. Martin' }] },
+    ],
+  },
+];
+const JACK_RYAN: KavitaVolume[] = [
+  { name: '6', chapters: [{ title: '-100000', titleName: 'Without Remorse', isbn: '', writers: [{ name: 'Tom Clancy' }] }] },
+  { name: '11', chapters: [{ title: '-100000', titleName: 'Ryan 11: Red Rabbit', isbn: '9780425191187', writers: [{ name: 'Tom Clancy' }] }] },
+];
+
+describe('kavitaHeldBooksFrom — one held book per chapter', () => {
+  it('takes the chapter epub title, first writer and ISBN (blank ISBN → null)', () => {
+    expect(kavitaHeldBooksFrom(FIRE_AND_BLOOD)).toEqual([
+      { title: 'Fire & Blood', author: 'George R. R. Martin', isbn: '9781524796280' },
+    ]);
+    expect(kavitaHeldBooksFrom(JACK_RYAN)).toEqual([
+      { title: 'Without Remorse', author: 'Tom Clancy', isbn: null },
+      { title: 'Ryan 11: Red Rabbit', author: 'Tom Clancy', isbn: '9780425191187' },
+    ]);
+  });
+
+  it('falls back to a non-numeric chapter title; a numeric placeholder names no book', () => {
+    expect(
+      kavitaHeldBooksFrom([
+        { name: '-100000', chapters: [{ title: 'Kiss Kiss', titleName: '', isSpecial: true, isbn: '' }] },
+        { name: '3', chapters: [{ title: '-100000', titleName: null }] },
+        { name: '4', chapters: [{ title: '2.5' }] },
+      ]),
+    ).toEqual([
+      { title: 'Kiss Kiss', author: null, isbn: null },
+      { title: null, author: null, isbn: null },
+      { title: null, author: null, isbn: null },
+    ]);
+  });
+
+  it('an empty series holds no books', () => {
+    expect(kavitaHeldBooksFrom([])).toEqual([]);
+    expect(kavitaHeldBooksFrom([{ name: '0', chapters: null }])).toEqual([]);
+  });
+});
+
+describe('fetchBooksSnapshot — the held-books read (issue #661)', () => {
+  const meta = (): KavitaSeriesMetadata => ({ summary: 's', genres: [], publishers: [], language: 'en', releaseYear: 2000 });
+  const enriched = { summary: 'OLD', genres: [], publisher: null, language: 'en', year: null, writers: [] };
+  const heldOf = (r: { attrs: Record<string, unknown> }) => r.attrs.heldBooks;
+
+  it('reads every new BOOK series and stores attrs.heldBooks', async () => {
+    const { bundle, volumeCalls } = stubBundle(async () => meta(), async (id) => (id === '102' ? FIRE_AND_BLOOD : JACK_RYAN));
+    const snap = await fetchBooksSnapshot(bundle);
+    expect(volumeCalls.sort()).toEqual(['102', '103']);
+    const by = Object.fromEntries(snap.rows.map((r) => [r.externalId, r]));
+    expect(heldOf(by['102']!)).toEqual([{ title: 'Fire & Blood', author: 'George R. R. Martin', isbn: '9781524796280' }]);
+    expect(heldOf(by['103']!)).toHaveLength(2);
+    expect(by['102']!.attrs).toMatchObject({ format: 3, language: 'en' });
+  });
+
+  it('carries an unchanged series forward, and backfills one that was never read', async () => {
+    const carried = [{ title: 'Landlord', author: 'CH', isbn: null }];
+    const existing = new Map<string, ExistingKavitaEnrichment>([
+      // 102 unchanged and already read → no request, carried forward.
+      ['102', { sourceUpdatedAt: new Date('2026-07-09T12:00:00'), metadataSyncedAt: new Date('2026-07-16T00:00:00Z'), data: enriched, heldBooks: carried }],
+      // 103 unchanged but never read (pre-#661 row) → read once (the backfill), metadata still skipped.
+      ['103', { sourceUpdatedAt: new Date('2026-07-10T12:00:00'), metadataSyncedAt: new Date('2026-07-16T00:00:00Z'), data: enriched }],
+    ]);
+    const { bundle, calls, volumeCalls } = stubBundle(async () => meta(), async () => FIRE_AND_BLOOD);
+    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing });
+    expect(volumeCalls).toEqual(['103']);
+    expect(calls).toEqual([]); // the metadata change-gate is untouched
+    const by = Object.fromEntries(snap.rows.map((r) => [r.externalId, r]));
+    expect(heldOf(by['102']!)).toEqual(carried);
+    expect(heldOf(by['103']!)).toHaveLength(1);
+  });
+
+  it('a failed read carries the last value forward, or leaves the row unread (retried next run)', async () => {
+    const carried = [{ title: 'Champion', author: 'CH', isbn: null }];
+    const existing = new Map<string, ExistingKavitaEnrichment>([
+      ['102', { sourceUpdatedAt: new Date('2026-07-01T00:00:00'), metadataSyncedAt: null, data: enriched }],
+      ['103', { sourceUpdatedAt: new Date('2026-07-01T00:00:00'), metadataSyncedAt: null, data: enriched, heldBooks: carried }],
+    ]);
+    const { bundle } = stubBundle(async () => meta(), async () => {
+      throw new Error('kavita 500');
+    });
+    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing });
+    const by = Object.fromEntries(snap.rows.map((r) => [r.externalId, r]));
+    expect('heldBooks' in by['102']!.attrs).toBe(false); // unread, never an empty (= "holds nothing") list
+    expect(heldOf(by['103']!)).toEqual(carried);
+  });
+
+  it('never reads a comics library (comics are never paired)', async () => {
+    const { bundle, volumeCalls } = stubBundle(async () => meta(), async () => FIRE_AND_BLOOD, 1);
+    const snap = await fetchBooksSnapshot(bundle);
+    expect(volumeCalls).toEqual([]);
+    expect(snap.rows.every((r) => !('heldBooks' in r.attrs))).toBe(true);
   });
 });

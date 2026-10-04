@@ -35,9 +35,10 @@ beforeAll(async () => {
     db: t.db,
     syncedSources: ['kavita', 'audiobookshelf'],
     rows: [
-      { ...base, source: 'kavita', mediaKind: 'book', externalId: 'k-hyp', title: 'Hyperion', sortTitle: 'hyperion', author: 'Dan Simmons', deepLinkUrl: 'http://kavita/1' },
+      // A Kavita book row is a series holding one book named like it (issue #661 — attrs.heldBooks).
+      { ...base, attrs: { heldBooks: [{ title: 'Hyperion', author: 'Dan Simmons', isbn: null }] }, source: 'kavita', mediaKind: 'book', externalId: 'k-hyp', title: 'Hyperion', sortTitle: 'hyperion', author: 'Dan Simmons', deepLinkUrl: 'http://kavita/1' },
       { ...base, source: 'audiobookshelf', mediaKind: 'audiobook', externalId: 'a-hyp', title: 'Hyperion', sortTitle: 'hyperion', author: 'Dan Simmons', deepLinkUrl: 'http://abs/1' },
-      { ...base, source: 'kavita', mediaKind: 'book', externalId: 'k-solo', title: 'The Martian', sortTitle: 'martian', author: 'Andy Weir', deepLinkUrl: 'http://kavita/2' },
+      { ...base, attrs: { heldBooks: [{ title: 'The Martian', author: 'Andy Weir', isbn: null }] }, source: 'kavita', mediaKind: 'book', externalId: 'k-solo', title: 'The Martian', sortTitle: 'martian', author: 'Andy Weir', deepLinkUrl: 'http://kavita/2' },
     ],
   });
 });

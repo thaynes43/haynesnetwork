@@ -440,6 +440,56 @@ describe('collection reads (PLAN-051)', () => {
     ]);
   });
 
+  it('Kavita listSeriesVolumes parses the volume/chapter subset a series holds (issue #661 — the held books)', async () => {
+    const { fetchImpl, calls } = stubFetch([
+      kavitaLogin,
+      {
+        match: (u) => u.pathname === '/api/Series/volumes',
+        // The live shape probed 2026-10-04 (series 659 "A Song of Ice and Fire"), trimmed; extras drop.
+        body: [
+          {
+            id: 1,
+            name: '0.5',
+            minNumber: 0.5,
+            pages: 900,
+            chapters: [
+              {
+                id: 11,
+                title: '-100000',
+                titleName: 'Fire & Blood',
+                isSpecial: false,
+                isbn: '9781524796280',
+                writers: [{ id: 3, name: 'George R. R. Martin' }],
+                files: [{ id: 5, filePath: '/data/EBooks/George R.R. Martin/Fire & Blood/Fire & Blood.epub', pages: 900 }],
+                summary: 'dropped',
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    const client = new KavitaClient({ ...KAVITA_OPTS, fetchImpl });
+    const volumes = await client.listSeriesVolumes('659');
+    expect(calls.at(-1)!.url.searchParams.get('seriesId')).toBe('659');
+    expect(volumes).toEqual([
+      {
+        id: 1,
+        name: '0.5',
+        chapters: [
+          {
+            id: 11,
+            title: '-100000',
+            titleName: 'Fire & Blood',
+            isSpecial: false,
+            isbn: '9781524796280',
+            writers: [{ id: 3, name: 'George R. R. Martin' }],
+            files: [{ filePath: '/data/EBooks/George R.R. Martin/Fire & Blood/Fire & Blood.epub' }],
+          },
+        ],
+      },
+    ]);
+  });
+
   it('ABS listCollections parses the ordered books array (collectionBook.order ASC — verified)', async () => {
     const { fetchImpl, calls } = stubFetch([
       {

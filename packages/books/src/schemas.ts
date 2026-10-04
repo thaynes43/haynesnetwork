@@ -76,6 +76,38 @@ export const kavitaSeriesMetadataSchema = z.object({
 export type KavitaSeriesMetadata = z.infer<typeof kavitaSeriesMetadataSchema>;
 
 /**
+ * Issue #661 (DESIGN-024 D-01 amendment 2026-10-04 — the held books) — one chapter of a series as
+ * `GET /api/Series/volumes?seriesId=` returns it (ChapterDto, probed live 2026-10-04 against the
+ * deployed Kavita). For an EBooks library each chapter is one book file: `titleName` is the book's
+ * own title from its epub metadata, `isbn` its epub ISBN ('' when absent), `writers[]{name}` its
+ * authors. `title` is a numeric placeholder ('-100000') on a numbered volume and the book title on a
+ * loose "special". A series name is NOT a book title: Kavita groups a book under its series, so the
+ * series "A Song of Ice and Fire" can hold one file, Fire & Blood. Strip mode: extras dropped.
+ */
+export const kavitaChapterSchema = z.object({
+  id: z.number().int().optional(),
+  title: z.string().nullable().optional(),
+  titleName: z.string().nullable().optional(),
+  isSpecial: z.boolean().nullable().optional(),
+  isbn: z.string().nullable().optional(),
+  writers: z.array(kavitaNamedSchema.or(z.string())).nullable().optional(),
+  files: z
+    .array(z.object({ filePath: z.string().nullable().optional() }))
+    .nullable()
+    .optional(),
+});
+export type KavitaChapter = z.infer<typeof kavitaChapterSchema>;
+
+/** One volume of a series (VolumeDto subset): its name and the chapters it holds. */
+export const kavitaVolumeSchema = z.object({
+  id: z.number().int().optional(),
+  name: z.string().nullable().optional(),
+  chapters: z.array(kavitaChapterSchema).nullable().optional(),
+});
+export type KavitaVolume = z.infer<typeof kavitaVolumeSchema>;
+export const kavitaVolumeListSchema = z.array(kavitaVolumeSchema);
+
+/**
  * ADR-066 / DESIGN-038 D-02 (PLAN-051 — books collections mirror) — one collection from
  * `GET /api/Collection` (AppUserCollectionDto, verified against the deployed v0.9.0.2 source).
  * Subset: identity + title + the RAW itemCount (diagnostics only — the wall count is resolved).

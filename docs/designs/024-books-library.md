@@ -1,7 +1,8 @@
 # DESIGN-024: Books & Audiobooks Library — the `books_items` ledger, `books-sync`, section-gated walls + cover proxy
 
 - **Status:** Draft
-- **Last updated:** 2026-07-21 (**Kavita metadata-writers author fallback** — the live pairing-gap
+- **Last updated:** 2026-10-04 (D-03 amendment, issue #661: the books-sync reads each Kavita book
+  series' held books from `/api/Series/volumes` into `attrs.heldBooks`). Prior: 2026-07-21 (**Kavita metadata-writers author fallback** — the live pairing-gap
   diagnosis found 54 null-author ebook rows whose WRITERS sit in Kavita all along: the mirror's
   Kavita author was folder-derived ONLY (the Calibre-style author directory), so flat layouts went
   null. The enrichment reduce now carries `writers[]{name}` and `normalizeKavitaSeries` falls back
@@ -118,6 +119,23 @@ backfill and genuine changes pay. Kavita size/ISBN/file-count would need the hea
 per series (the M2 ISBN caveat: ISBNs are usually absent) - deliberately SKIPPED, so those Details rows show
 for audiobooks only (the honest gap). Unit-proven: `packages/sync/__tests__/books-enrichment.test.ts`
 (HTML-strip, the metadata reduce, ABS inline mapping, the change-gate skip/refetch/carry-forward-on-failure).
+
+**The held books (amendment 2026-10-04, issue #661).** A Kavita row is a SERIES and its `title` is the series
+name, so the mirror said nothing about which book a series holds: the series "A Song of Ice and Fire" can hold
+one file, Fire & Blood. The fetcher now also calls `GET /api/Series/volumes?seriesId=` (`listSeriesVolumes`)
+for each **book** series (never comics) and stores the result as `attrs.heldBooks`: one entry per chapter,
+which in an EBooks library is one book file, holding the chapter's own `titleName` (else a non-numeric chapter
+`title`), its first writer and its ISBN (blank is null). Values are kept raw (no cleaning, no de-duplication);
+the pairing leg decides what they mean (DESIGN-036 amendment 2026-10-04). The read is change-gated like the
+metadata call: a series that is new or changed is read, an unchanged one carries its list forward, and a row
+with no `heldBooks` key yet is read once (the backfill, about 1,700 series on the first run). A failed read
+carries the last list forward, or leaves the key absent, and the next run retries. An absent key means "not
+read"; an empty list means the series holds no book file. A book row with no author stays in the gate map
+with its `metadata_synced_at` read as null, so its metadata is still re-fetched every run (the writers
+fallback) while its held books carry forward; it used to be left out of the map, which would have re-read
+its volumes every run too. The dev:local/e2e stub Kavita answers the call (one book per series). No migration
+(`attrs` is the existing jsonb catch-all). Unit-proven in the same test file (the reduce, read-new,
+carry-forward, backfill, failure, comics) and end to end through `runSync` in `books-sync-held-books.test.ts`.
 
 ## D-04 — The Books read contract (`books.search` / `books.filterFacets`)
 

@@ -23,13 +23,17 @@ import {
   matchFormatPairs,
   mintPairingWants,
   missingFormatFor,
+  pairingIdentity,
   pairingTitleKey,
   peekGbQuotaGate,
   readGbBudgetUsage,
   recordGbCalls,
   runFormatPairing,
+  stripAuthorDecoration,
+  stripSeriesDecoration,
   syncFormatPairs,
   tripGbQuotaBreaker,
+  type HeldBook,
   type LazyLibrarianClientBundle,
   type PairableItem,
 } from '../src/index';
@@ -140,6 +144,8 @@ function pi(overrides: Partial<PairableItem> & { title: string; mediaKind: Paira
     sortTitle: overrides.sortTitle ?? overrides.title.toLowerCase(),
     author: overrides.author ?? null,
     mediaKind: overrides.mediaKind,
+    ...(overrides.isbn !== undefined ? { isbn: overrides.isbn } : {}),
+    ...(overrides.heldBooks !== undefined ? { heldBooks: overrides.heldBooks } : {}),
   };
 }
 
@@ -260,6 +266,13 @@ let extSeq = 0;
 async function seedItem(overrides: Partial<BooksItemInsert> & { title: string; mediaKind: 'book' | 'audiobook' | 'comic' }): Promise<string> {
   extSeq += 1;
   const source = overrides.mediaKind === 'audiobook' ? 'audiobookshelf' : 'kavita';
+  // A Kavita book row is a series; by default it holds one book named like the series (the common
+  // case). Issue #661 tests pass their own `attrs.heldBooks`.
+  const attrs =
+    overrides.attrs ??
+    (overrides.mediaKind === 'book'
+      ? { heldBooks: [{ title: overrides.title, author: overrides.author ?? null, isbn: null }] }
+      : {});
   const [row] = await t.db
     .insert(booksItems)
     .values({
@@ -270,6 +283,7 @@ async function seedItem(overrides: Partial<BooksItemInsert> & { title: string; m
       sortTitle: overrides.sortTitle ?? overrides.title.toLowerCase(),
       deepLinkUrl: overrides.deepLinkUrl ?? 'http://x',
       ...overrides,
+      attrs,
     })
     .returning({ id: booksItems.id });
   return row!.id;
@@ -1011,5 +1025,353 @@ describe('mintPairingWants — daily call budget skip (DESIGN-039 D-23)', () => 
     expect(gb.calls).toHaveLength(0); // identity already held ⇒ zero GB calls
     expect(report.pushed).toBe(1); // pushed the missing audiobook via the held id
     expect(report.skippedBudget).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #661 — a Kavita row is a SERIES: the anchor is the one book it holds.
+// The rows below are the live ones from the issue (Kavita series → the file it holds), 2026-10-03.
+// ---------------------------------------------------------------------------
+
+const held = (title: string | null, extra: Partial<HeldBook> = {}): HeldBook => ({
+  title,
+  author: extra.author ?? null,
+  isbn: extra.isbn ?? null,
+});
+
+/** The issue's Kavita series, as books-sync now mirrors them (series name + attrs.heldBooks). */
+const ISSUE_ROWS = {
+  fireAndBlood: {
+    title: 'A Song of Ice and Fire',
+    author: 'George R.R. Martin',
+    heldBooks: [held('Fire & Blood', { author: 'George R. R. Martin', isbn: '9781524796280' })],
+  },
+  beedle: {
+    title: 'Hogwarts Library Books',
+    author: 'J.K. Rowling',
+    heldBooks: [held('The Tales of Beedle the Bard', { author: 'J. K. Rowling' })],
+  },
+  murtagh: {
+    // The live row has no author (no author folder, no series writer); the book's writer fills it.
+    title: 'The Inheritance Cycle',
+    author: null,
+    heldBooks: [held('Murtagh', { author: 'Christopher Paolini' })],
+  },
+  ssn: {
+    title: 'Tom Clancy NF',
+    author: 'Tom Clancy',
+    heldBooks: [held('Tom Clancy NF [08] - SSN', { author: 'Martin Greenberg', isbn: '9780425173534' })],
+  },
+  lays: {
+    title: 'The History of Middle-Earth',
+    author: 'J.R.R. Tolkien',
+    heldBooks: [
+      held('The Lays of Beleriand (The History of Middle-Earth, Vol. 3)', {
+        author: 'Christopher Tolkien (Editor)',
+        isbn: '9780261102057',
+      }),
+    ],
+  },
+  jackRyan: {
+    title: 'Jack Ryan',
+    author: 'Tom Clancy',
+    heldBooks: [held('Without Remorse', { author: 'Tom Clancy' }), held('Ryan 11: Red Rabbit', { author: 'Tom Clancy', isbn: '9780425191187' })],
+  },
+} as const;
+
+describe('pairingIdentity — the anchor is the book held, never the series name (issue #661)', () => {
+  const book = (r: { title: string; author: string | null; heldBooks: readonly HeldBook[] }) =>
+    pi({ title: r.title, author: r.author, mediaKind: 'book', heldBooks: r.heldBooks });
+
+  it('a one-book series is that book: its own title, the row author, the book ISBN', () => {
+    expect(pairingIdentity(book(ISSUE_ROWS.fireAndBlood))).toEqual({
+      kind: 'one',
+      title: 'Fire & Blood',
+      author: 'George R.R. Martin',
+      isbn: '9781524796280',
+    });
+    expect(pairingIdentity(book(ISSUE_ROWS.beedle))).toMatchObject({ kind: 'one', title: 'The Tales of Beedle the Bard', author: 'J.K. Rowling' });
+  });
+
+  it("the book's writer fills a series row with no author", () => {
+    expect(pairingIdentity(book(ISSUE_ROWS.murtagh))).toEqual({
+      kind: 'one',
+      title: 'Murtagh',
+      author: 'Christopher Paolini',
+      isbn: null,
+    });
+  });
+
+  it('strips the series decoration Kavita titles carry (a numbered prefix, a trailing series bracket)', () => {
+    expect(pairingIdentity(book(ISSUE_ROWS.ssn))).toEqual({ kind: 'one', title: 'SSN', author: 'Tom Clancy', isbn: '9780425173534' });
+    expect(pairingIdentity(book(ISSUE_ROWS.lays))).toMatchObject({ kind: 'one', title: 'The Lays of Beleriand' });
+  });
+
+  it('a series holding several books is multi_book (Jack Ryan: Without Remorse + Red Rabbit)', () => {
+    expect(pairingIdentity(book(ISSUE_ROWS.jackRyan))).toEqual({ kind: 'multi_book', books: 2 });
+  });
+
+  it('two copies of the same book are one book (The Dark Artifices holds Queen of Air and Darkness twice)', () => {
+    const qoaad = 'Queen of Air and Darkness (The Dark Artifices #3)';
+    expect(
+      pairingIdentity(pi({ title: 'The Dark Artifices', author: 'Cassandra Clare', mediaKind: 'book', heldBooks: [held(qoaad), held(qoaad)] })),
+    ).toEqual({ kind: 'one', title: 'Queen of Air and Darkness', author: 'Cassandra Clare', isbn: null });
+  });
+
+  it('falls back to the series name only for ONE book with no title of its own', () => {
+    expect(pairingIdentity(pi({ title: 'Kiss Kiss', author: 'Roald Dahl', mediaKind: 'book', heldBooks: [held(null)] }))).toMatchObject({
+      kind: 'one',
+      title: 'Kiss Kiss',
+    });
+    // Several untitled books never fall back to the series name.
+    expect(pairingIdentity(pi({ title: 'Poldark', author: 'Winston Graham', mediaKind: 'book', heldBooks: [held(null), held(null)] }))).toEqual({
+      kind: 'multi_book',
+      books: 2,
+    });
+  });
+
+  it('no book file is no_book; a row never read for its books is unknown (never guessed)', () => {
+    expect(pairingIdentity(pi({ title: 'Percy Jackson', author: 'Rick Riordan', mediaKind: 'book', heldBooks: [] }))).toEqual({ kind: 'no_book' });
+    expect(pairingIdentity(pi({ title: 'Percy Jackson', author: 'Rick Riordan', mediaKind: 'book' }))).toEqual({ kind: 'unknown' });
+  });
+
+  it('an ABS audiobook is always its own one book', () => {
+    expect(pairingIdentity(pi({ title: 'Outlander', author: 'Diana Gabaldon', mediaKind: 'audiobook', isbn: '9780440212560' }))).toEqual({
+      kind: 'one',
+      title: 'Outlander',
+      author: 'Diana Gabaldon',
+      isbn: '9780440212560',
+    });
+  });
+});
+
+describe('stripSeriesDecoration', () => {
+  it('strips a leading series + number and a trailing bracket naming the series', () => {
+    expect(stripSeriesDecoration('Hainish Cycle - 07 - Four Ways to Forgiveness', 'Hainish Cycle')).toBe('Four Ways to Forgiveness');
+    expect(stripSeriesDecoration('Stormlight Archive [02] Words of Radiance', 'The Stormlight Archive')).toBe('Words of Radiance');
+    expect(stripSeriesDecoration('Cibola Burn (The Expanse)', 'The Expanse')).toBe('Cibola Burn');
+    expect(stripSeriesDecoration('The Book of Dust: La Belle Sauvage (Book of Dust, Volume 1)', 'The Book of Dust')).toBe(
+      'The Book of Dust: La Belle Sauvage',
+    );
+  });
+
+  it('keeps everything else exactly as Kavita has it', () => {
+    // Starts with the series name but no number follows: a real title, not a decoration.
+    expect(stripSeriesDecoration('Dune Messiah', 'Dune')).toBe('Dune Messiah');
+    // A bracket that does not name the series stays.
+    expect(stripSeriesDecoration('Project Hail Mary (Unabridged)', 'Project Hail Mary')).toBe('Project Hail Mary (Unabridged)');
+    expect(stripSeriesDecoration('Murtagh (The World of Eragon)', 'The Inheritance Cycle')).toBe('Murtagh (The World of Eragon)');
+    // A one-letter bracket never matches by substring.
+    expect(stripSeriesDecoration('Something (A)', 'The Dark Artifices')).toBe('Something (A)');
+    // A strip that would leave no title is not done.
+    expect(stripSeriesDecoration('Expanse 05', 'Expanse')).toBe('Expanse 05');
+    expect(stripSeriesDecoration('Fire & Blood', 'A Song of Ice and Fire')).toBe('Fire & Blood');
+  });
+});
+
+describe('stripAuthorDecoration', () => {
+  it('drops an author credit joined by a spaced dash, first or last', () => {
+    expect(stripAuthorDecoration('Dead in the Family - Charlaine Harris', 'Charlaine Harris')).toBe('Dead in the Family');
+    expect(stripAuthorDecoration('Roald Dahl - The Enormous Crocodile', 'Roald Dahl')).toBe('The Enormous Crocodile');
+    expect(stripAuthorDecoration('Dean R Koontz - Mr. Murder', 'Dean Koontz')).toBe('Mr. Murder');
+  });
+
+  it('keeps a dash that does not credit the author, and everything when the author is unknown', () => {
+    expect(stripAuthorDecoration('SSN - A Strategy Guide to Submarine Warfare', 'Tom Clancy')).toBe('SSN - A Strategy Guide to Submarine Warfare');
+    expect(stripAuthorDecoration('The Lord of the Rings - Gary Russell', 'J.R.R. Tolkien')).toBe('The Lord of the Rings - Gary Russell');
+    expect(stripAuthorDecoration('Dead in the Family - Charlaine Harris', null)).toBe('Dead in the Family - Charlaine Harris');
+    expect(stripAuthorDecoration('Spider-Man', 'Stan Lee')).toBe('Spider-Man');
+  });
+});
+
+describe('matchFormatPairs — a one-book Kavita series pairs on the book it holds (issue #661)', () => {
+  it('a series named for its book keeps its pair when a second series holds the same book', () => {
+    // Live: "Heretics of Dune" (series) and "Dune" (series) both hold Heretics of Dune; one audiobook.
+    const named = pi({ title: 'Heretics of Dune', author: 'Frank Herbert', mediaKind: 'book', heldBooks: [held('Heretics of Dune')] });
+    const other = pi({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book', heldBooks: [held('Heretics Of Dune')] });
+    const audio = pi({ title: 'Heretics of Dune', author: 'Frank Herbert', mediaKind: 'audiobook' });
+    // "dune" sorts before "heretics of dune", yet the series named for the book claims the audiobook.
+    expect(matchFormatPairs([other, named, audio])).toEqual([{ bookItemId: named.id, audioItemId: audio.id, matchedVia: 'title_author' }]);
+  });
+
+  it('pairs the held book with its audiobook, where the series name never could', () => {
+    const series = pi({ title: 'Bobiverse', author: 'Dennis E. Taylor', mediaKind: 'book', heldBooks: [held("Heaven's River")] });
+    const audio = pi({ title: "Heaven's River", author: 'Dennis E. Taylor', mediaKind: 'audiobook' });
+    expect(matchFormatPairs([series, audio])).toEqual([{ bookItemId: series.id, audioItemId: audio.id, matchedVia: 'title_author' }]);
+  });
+
+  it("no longer pairs a series with an audiobook named like the series (Dune holding Heretics of Dune is not 'Dune')", () => {
+    const series = pi({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book', heldBooks: [held('Heretics Of Dune')] });
+    const audio = pi({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'audiobook' });
+    expect(matchFormatPairs([series, audio])).toEqual([]);
+  });
+
+  it("uses the book's writer when the series row has no author (Murtagh)", () => {
+    const series = pi({ ...ISSUE_ROWS.murtagh, mediaKind: 'book' });
+    const audio = pi({ title: 'Murtagh', author: 'Christopher Paolini', mediaKind: 'audiobook' });
+    expect(matchFormatPairs([series, audio])).toHaveLength(1);
+  });
+
+  it('a multi-book or unread series keeps its row title (no change for them)', () => {
+    const multi = pi({ title: 'Dreamblood', author: 'N.K. Jemisin', mediaKind: 'book', heldBooks: [held('The Killing Moon'), held('The Shadowed Sun')] });
+    const unread = pi({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'book' });
+    const a1 = pi({ title: 'Dreamblood', author: 'N.K. Jemisin', mediaKind: 'audiobook' });
+    const a2 = pi({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'audiobook' });
+    expect(matchFormatPairs([multi, unread, a1, a2])).toHaveLength(2);
+  });
+});
+
+describe('mintPairingWants — the want describes the book held (issue #661)', () => {
+  async function seedSeries(r: { title: string; author: string | null; heldBooks?: readonly HeldBook[] }): Promise<string> {
+    return seedItem({
+      title: r.title,
+      author: r.author,
+      mediaKind: 'book',
+      attrs: r.heldBooks !== undefined ? { heldBooks: r.heldBooks } : {},
+    });
+  }
+
+  it('resolves and snapshots each issue row by its held book, and skips the two-book series', async () => {
+    const ids = {
+      fireAndBlood: await seedSeries(ISSUE_ROWS.fireAndBlood),
+      beedle: await seedSeries(ISSUE_ROWS.beedle),
+      murtagh: await seedSeries(ISSUE_ROWS.murtagh),
+      ssn: await seedSeries(ISSUE_ROWS.ssn),
+      jackRyan: await seedSeries(ISSUE_ROWS.jackRyan),
+    };
+    const ll = stubLl();
+    // The resolver answers ONLY for single-book titles; a series name would be a box set (left unanswered).
+    const volumes: Record<string, string> = {
+      'Fire & Blood': 'gb-fire-and-blood',
+      'The Tales of Beedle the Bard': 'gb-beedle',
+      Murtagh: 'gb-murtagh',
+      SSN: 'gb-ssn',
+    };
+    const gb = stubGb((title) => volumes[title] ?? null);
+
+    const report = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+
+    expect(report).toMatchObject({ attempted: 4, minted: 4, pushed: 4, unmintable: 0, skippedNotOneBook: 1, skippedUnknownHeld: 0, parked: 0 });
+    // The GB resolve saw the books, never a series name.
+    expect(gb.inputs.map((i) => i.title).sort()).toEqual(['Fire & Blood', 'Murtagh', 'SSN', 'The Tales of Beedle the Bard']);
+    expect(gb.inputs.find((i) => i.title === 'Fire & Blood')).toMatchObject({ isbn: '9781524796280', author: 'George R.R. Martin' });
+    expect(gb.inputs.find((i) => i.title === 'SSN')).toMatchObject({ isbn: '9780425173534', author: 'Tom Clancy' });
+    expect(gb.inputs.find((i) => i.title === 'Murtagh')).toMatchObject({ author: 'Christopher Paolini' });
+
+    const wants = await t.db.select().from(bookRequests);
+    const byAnchor = new Map(wants.map((w) => [w.pairingBooksItemId, w]));
+    expect(byAnchor.get(ids.fireAndBlood)).toMatchObject({ title: 'Fire & Blood', llBookId: 'gb-fire-and-blood', audioStatus: 'wanted' });
+    expect(byAnchor.get(ids.beedle)).toMatchObject({ title: 'The Tales of Beedle the Bard', llBookId: 'gb-beedle' });
+    expect(byAnchor.get(ids.murtagh)).toMatchObject({ title: 'Murtagh', author: 'Christopher Paolini', llBookId: 'gb-murtagh' });
+    expect(byAnchor.get(ids.ssn)).toMatchObject({ title: 'SSN', llBookId: 'gb-ssn' });
+    // The two-book series mints nothing and pushes nothing.
+    expect(byAnchor.has(ids.jackRyan)).toBe(false);
+    expect(ll.calls.filter((c) => c.cmd === 'queueBook').map((c) => c.id).sort()).toEqual(
+      ['gb-beedle', 'gb-fire-and-blood', 'gb-murtagh', 'gb-ssn'],
+    );
+  });
+
+  it('a series not yet read for its held books waits: no GB call, no want, no cap spent', async () => {
+    await seedSeries({ title: 'A Song of Ice and Fire', author: 'George R.R. Martin' }); // attrs {} — unread
+    const gb = stubGb(() => 'gb-box-set');
+    const report = await mintPairingWants({ db: t.db, gb: gb.gb, pacer: async () => {} });
+    expect(report).toMatchObject({ attempted: 0, minted: 0, skippedUnknownHeld: 1 });
+    expect(gb.calls).toHaveLength(0);
+    expect(await t.db.select().from(bookRequests)).toHaveLength(0);
+  });
+
+  it('parks an UNPUSHED want on a multi-book series, and leaves a pushed one to LazyLibrarian', async () => {
+    const jackRyan = await seedSeries(ISSUE_ROWS.jackRyan);
+    const dreamblood = await seedSeries({
+      title: 'Dreamblood',
+      author: 'N.K. Jemisin',
+      heldBooks: [held('The Killing Moon'), held('The Shadowed Sun')],
+    });
+    const [unpushed] = await t.db
+      .insert(bookRequests)
+      .values({ origin: 'pairing', pairingBooksItemId: jackRyan, title: 'Jack Ryan', author: 'Tom Clancy', ebookStatus: 'landed', audioStatus: 'requested' })
+      .returning();
+    const [pushed] = await t.db
+      .insert(bookRequests)
+      .values({ origin: 'pairing', pairingBooksItemId: dreamblood, title: 'Dreamblood', author: 'N.K. Jemisin', llBookId: 'gb-dreamblood', ebookStatus: 'landed', audioStatus: 'wanted' })
+      .returning();
+    const gb = stubGb(() => 'gb-jack-ryan-books-7-12');
+    const ll = stubLl();
+
+    const report = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+
+    expect(report).toMatchObject({ attempted: 0, parked: 1 });
+    expect(gb.calls).toHaveLength(0);
+    expect(ll.calls).toHaveLength(0);
+    const [a] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, unpushed!.id));
+    expect(a).toMatchObject({ unroutableReason: 'multi_book', llBookId: null, audioStatus: 'requested' });
+    const [b] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, pushed!.id));
+    expect(b).toMatchObject({ unroutableReason: null, llBookId: 'gb-dreamblood', audioStatus: 'wanted' });
+    expect(b!.updatedAt.getTime()).toBe(pushed!.updatedAt.getTime());
+  });
+
+  it('a lifted park re-resolves to the held book and pushes it (the stale status resets to requested)', async () => {
+    // The 2026-10-03 bundle audit parked this want (box set) and cleared its id; the park is lifted by
+    // clearing unroutable_reason. Its audio status still reads `grabbed` from the box set.
+    const anchor = await seedSeries(ISSUE_ROWS.murtagh);
+    const [lifted] = await t.db
+      .insert(bookRequests)
+      .values({
+        origin: 'pairing',
+        pairingBooksItemId: anchor,
+        title: 'The Inheritance Cycle',
+        author: null,
+        llBookId: null,
+        unroutableReason: null,
+        ebookStatus: 'landed',
+        audioStatus: 'grabbed',
+      })
+      .returning();
+    const gb = stubGb((title) => (title === 'Murtagh' ? 'gb-murtagh' : 'gb-inheritance-box-set'));
+    const ll = stubLl();
+
+    const report = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+
+    expect(report).toMatchObject({ attempted: 1, minted: 0, pushed: 1 });
+    expect(gb.inputs).toEqual([expect.objectContaining({ title: 'Murtagh', author: 'Christopher Paolini' })]);
+    expect(ll.calls).toEqual([
+      { cmd: 'addBook', id: 'gb-murtagh' },
+      { cmd: 'queueBook', id: 'gb-murtagh', format: 'audiobook' },
+      { cmd: 'searchBook', id: 'gb-murtagh', format: 'audiobook' },
+    ]);
+    const [after] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, lifted!.id));
+    expect(after).toMatchObject({ title: 'Murtagh', author: 'Christopher Paolini', llBookId: 'gb-murtagh', audioStatus: 'wanted', ebookStatus: 'landed' });
+  });
+});
+
+describe('syncFormatPairs — the re-vanish heals only a pair that dropped this run', () => {
+  it('never resets a landed want on an anchor that was not paired (LazyLibrarian holds the format)', async () => {
+    const anchor = await seedItem({ title: 'Lonely Book', author: 'Someone', mediaKind: 'book' });
+    const [want] = await t.db
+      .insert(bookRequests)
+      .values({ origin: 'pairing', pairingBooksItemId: anchor, title: 'Lonely Book', author: 'Someone', llBookId: 'gb-lonely', ebookStatus: 'landed', audioStatus: 'landed' })
+      .returning();
+    const report = await syncFormatPairs({ db: t.db });
+    expect(report.revived).toBe(0);
+    const [after] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, want!.id));
+    expect(after!.audioStatus).toBe('landed');
+  });
+
+  it('a pair that breaks because the series turns out to hold another book revives its want', async () => {
+    // Paired on the series name before the held books were read; once read, the series holds Heretics
+    // of Dune, the pair drops, and the landed want wants the held book's audiobook again.
+    const series = await seedItem({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book', attrs: {} });
+    await seedItem({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'audiobook' });
+    expect((await syncFormatPairs({ db: t.db })).paired).toBe(1);
+    const [want] = await t.db
+      .insert(bookRequests)
+      .values({ origin: 'pairing', pairingBooksItemId: series, title: 'Dune', author: 'Frank Herbert', llBookId: 'gb-dune', ebookStatus: 'landed', audioStatus: 'landed' })
+      .returning();
+    await t.db.update(booksItems).set({ attrs: { heldBooks: [held('Heretics Of Dune')] } }).where(eq(booksItems.id, series));
+
+    const report = await syncFormatPairs({ db: t.db });
+    expect(report).toMatchObject({ paired: 0, dropped: 1, revived: 1 });
+    const [after] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, want!.id));
+    expect(after!.audioStatus).toBe('requested');
   });
 });

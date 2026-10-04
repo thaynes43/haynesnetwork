@@ -26,7 +26,8 @@ import {
   type DbClient,
   type FormatPairMatchKind,
 } from '@hnet/db';
-import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { readHeldBooks, type HeldBook } from './books';
 import { inTransaction, resolveDb } from './db-client';
 import { guardedGbResolve } from './gb-quota-breaker';
 import { makeGbBudgetTracker, type GbBudgetTracker, type GbCallMeter } from './gb-call-budget';
@@ -69,6 +70,12 @@ export interface PairableItem {
    * path, which passes it). Optional — the matcher does not use it; only the mint's GB resolve does.
    */
   isbn?: string | null;
+  /**
+   * Issue #661 — for a Kavita book row (a SERIES), the books it holds (`attrs.heldBooks`, read by
+   * `readHeldBooks`); `undefined` = not read yet. Decides the anchor's identity (`pairingIdentity`).
+   * Ignored for ABS rows, whose title is already one book's.
+   */
+  heldBooks?: readonly HeldBook[];
 }
 
 export interface FormatPairMatch {
@@ -152,6 +159,157 @@ export function pairingTitleKey(title: string): string {
     .join(' ');
 }
 
+// ---------------------------------------------------------------------------
+// The held book (issue #661 — DESIGN-036 amendment 2026-10-04).
+// ---------------------------------------------------------------------------
+
+const ARTICLES = new Set(['the', 'a', 'an']);
+const NUMBER_MARKERS = new Set(['book', 'bk', 'vol', 'volume', 'no', 'part', 'number']);
+const isNumberToken = (t: string): boolean => /^\d+$/.test(t);
+const wordTokens = (s: string): string[] =>
+  s
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 0);
+const withoutLeadingArticle = (tokens: string[]): string[] =>
+  tokens.length > 1 && ARTICLES.has(tokens[0]!) ? tokens.slice(1) : tokens;
+
+/**
+ * A series reference with its numbering removed: "The Dark Artifices #3" → "dark artifices",
+ * "The History of Middle-Earth, Vol. 3" → "history of middle earth". A marker word ("book", "vol", …)
+ * goes only when a number follows it, so "Book of Dust, Volume 1" keeps its "book".
+ */
+function seriesRefKey(text: string): string {
+  const tokens = withoutLeadingArticle(wordTokens(text));
+  const kept = tokens.filter((t, i) => {
+    if (isNumberToken(t)) return false;
+    return !(NUMBER_MARKERS.has(t) && i + 1 < tokens.length && isNumberToken(tokens[i + 1]!));
+  });
+  return kept.join(' ');
+}
+
+/**
+ * Strip the series decoration Kavita's epub titles often carry, so the held book's title names the BOOK:
+ *
+ * - a leading `<series> <number>` ("Tom Clancy NF [08] - SSN" in the series "Tom Clancy NF" → "SSN",
+ *   "Hainish Cycle - 07 - Four Ways to Forgiveness" → "Four Ways to Forgiveness"). The number is
+ *   required, so a title that merely starts with the series name ("Dune Messiah" in "Dune") is kept;
+ * - a trailing bracket that names the series ("Queen of Air and Darkness (The Dark Artifices #3)" →
+ *   "Queen of Air and Darkness", "The Lays of Beleriand (The History of Middle-Earth, Vol. 3)").
+ *
+ * Anything else is left exactly as Kavita has it, and a strip that would leave no letters is not done.
+ */
+export function stripSeriesDecoration(title: string, series: string): string {
+  let out = title.trim();
+  const seriesTokens = withoutLeadingArticle(wordTokens(series));
+  if (seriesTokens.length === 0) return out;
+
+  const prefix = new RegExp(
+    `^\\s*(?:(?:the|a|an)[^a-z0-9]+)?${seriesTokens.join('[^a-z0-9]+')}[^a-z0-9]*` +
+      `(?:(?:book|bk|vol|volume|no|part|number)[^a-z0-9]*)?#?\\d+(?:\\.\\d+)?(?![a-z0-9])[^a-z0-9]*`,
+    'i',
+  );
+  const head = prefix.exec(out);
+  if (head) {
+    const rest = out.slice(head[0].length).trim();
+    if (/[a-z]/i.test(rest)) out = rest;
+  }
+
+  const tail = /\s*[([]([^()[\]]*)[)\]]\s*$/.exec(out);
+  if (tail) {
+    const ref = seriesRefKey(tail[1]!);
+    const seriesKey = seriesTokens.join(' ');
+    const rest = out.slice(0, tail.index).trim();
+    // Whole-word containment either way ("dark artifices" ⊂ "the dark artifices"), never a bare substring.
+    const within = (outer: string, inner: string): boolean => ` ${outer} `.includes(` ${inner} `);
+    if (ref.length > 0 && (within(seriesKey, ref) || within(ref, seriesKey)) && /[a-z]/i.test(rest)) {
+      out = rest;
+    }
+  }
+  return out;
+}
+
+/**
+ * Strip an author credit joined to a Kavita epub title by a spaced dash ("Dead in the Family - Charlaine
+ * Harris", "Roald Dahl - The Enormous Crocodile"): the first or last segment is dropped when it agrees with
+ * the anchor's author (`authorsAgree`). A segment that does not name the author stays ("SSN - A Strategy
+ * Guide to Submarine Warfare"), and so does everything when the author is unknown.
+ */
+export function stripAuthorDecoration(title: string, author: string | null): string {
+  const who = normAuthor(author);
+  if (!who) return title;
+  const parts = title.split(/\s+[-\u2013\u2014]\s+/);
+  if (parts.length < 2) return title;
+  const names = (seg: string): boolean => authorsAgree(normAuthor(seg), who);
+  if (names(parts[parts.length - 1]!)) {
+    const rest = parts.slice(0, -1).join(' - ').trim();
+    if (/[a-z]/i.test(rest)) return rest;
+  }
+  if (names(parts[0]!)) {
+    const rest = parts.slice(1).join(' - ').trim();
+    if (/[a-z]/i.test(rest)) return rest;
+  }
+  return title;
+}
+
+/**
+ * What a pairing anchor IS, for the matcher and the want (issue #661):
+ *
+ * - `one` — the anchor holds exactly one book, and this is its identity. An ABS audiobook is always one
+ *   book (its own title). A Kavita book row is a SERIES, so its identity is the one book the series holds:
+ *   that book's own title (series decoration stripped), the row's author (else the book's writer), and the
+ *   book's ISBN. The series name stands in only when Kavita has no title for that single book.
+ * - `multi_book` — the Kavita series holds several books. One pairing want per anchor (D-02) cannot
+ *   describe several books, so the anchor is not a candidate (and an unpushed want on it is parked).
+ * - `no_book` — the Kavita series holds no book file.
+ * - `unknown` — the mirror row has not been read for its held books yet (the books-sync backfill). Never
+ *   guessed from the series name: the anchor waits for the next books-sync.
+ */
+export type PairingIdentity =
+  | { kind: 'one'; title: string; author: string | null; isbn: string | null }
+  | { kind: 'multi_book'; books: number }
+  | { kind: 'no_book' }
+  | { kind: 'unknown' };
+
+export function pairingIdentity(item: PairableItem): PairingIdentity {
+  if (item.mediaKind !== 'book') {
+    return { kind: 'one', title: item.title, author: item.author, isbn: item.isbn ?? null };
+  }
+  const held = item.heldBooks;
+  if (held === undefined) return { kind: 'unknown' };
+  // One book per distinct title: two files of the same book (a duplicate copy) are still one book.
+  const books: HeldBook[] = [];
+  const byKey = new Map<string, HeldBook>();
+  for (const b of held) {
+    const key = b.title ? pairingTitleKey(b.title) : '';
+    const seen = key ? byKey.get(key) : undefined;
+    if (seen) {
+      seen.isbn ??= b.isbn;
+      seen.author ??= b.author;
+      continue;
+    }
+    const copy = { ...b };
+    books.push(copy);
+    if (key) byKey.set(key, copy);
+  }
+  if (books.length === 0) return { kind: 'no_book' };
+  if (books.length > 1) return { kind: 'multi_book', books: books.length };
+  const book = books[0]!;
+  const author = item.author && item.author.trim().length > 0 ? item.author : book.author;
+  return {
+    kind: 'one',
+    title: book.title ? stripAuthorDecoration(stripSeriesDecoration(book.title, item.title), author) : item.title,
+    author,
+    isbn: book.isbn ?? item.isbn ?? null,
+  };
+}
+
+/** The title + author the matcher keys an item on: the held book's for a one-book anchor, else the row's own. */
+function matcherIdentity(item: PairableItem): { title: string; author: string | null } {
+  const id = pairingIdentity(item);
+  return id.kind === 'one' ? { title: id.title, author: id.author } : { title: item.title, author: item.author };
+}
+
 const byDeterministicOrder = (a: PairableItem, b: PairableItem): number =>
   a.sortTitle.localeCompare(b.sortTitle) || a.id.localeCompare(b.id);
 
@@ -163,7 +321,14 @@ const byDeterministicOrder = (a: PairableItem, b: PairableItem): number =>
  * — each side lands in at most one pair (the schema uniques).
  */
 export function matchFormatPairs(items: readonly PairableItem[]): FormatPairMatch[] {
-  const books = items.filter((i) => i.mediaKind === 'book').sort(byDeterministicOrder);
+  // Issue #661 — a series whose row title already names its held book claims an audiobook before a
+  // series that only matches through its held book, so two series holding the same book (a duplicate
+  // file) keep the pair they had instead of trading it on sort order.
+  const namedAsHeld = (b: PairableItem): boolean =>
+    pairingTitleKey(matcherIdentity(b).title) === pairingTitleKey(b.title);
+  const books = items
+    .filter((i) => i.mediaKind === 'book')
+    .sort((a, b) => Number(namedAsHeld(b)) - Number(namedAsHeld(a)) || byDeterministicOrder(a, b));
   const audios = items.filter((i) => i.mediaKind === 'audiobook').sort(byDeterministicOrder);
 
   const audioByTitle = new Map<string, PairableItem[]>();
@@ -178,9 +343,12 @@ export function matchFormatPairs(items: readonly PairableItem[]): FormatPairMatc
   const taken = new Set<string>();
   const pairs: FormatPairMatch[] = [];
   for (const book of books) {
-    const key = pairingTitleKey(book.title);
+    // Issue #661 — a Kavita row is a series: a one-book series pairs on the book it holds, never on the
+    // series name (the series "Dune" holding Heretics of Dune is not the audiobook "Dune").
+    const identity = matcherIdentity(book);
+    const key = pairingTitleKey(identity.title);
     if (!key) continue;
-    const bookAuthor = normAuthor(book.author);
+    const bookAuthor = normAuthor(identity.author);
     if (!bookAuthor) continue; // null/empty author ⇒ no auto-pair, ever
     const bucket = audioByTitle.get(key);
     if (!bucket) continue;
@@ -226,16 +394,19 @@ export async function syncFormatPairs(input: {
   now?: Date;
 }): Promise<SyncFormatPairsReport> {
   const now = input.now ?? new Date();
-  const rows = await resolveDb(input.db)
-    .select({
-      id: booksItems.id,
-      title: booksItems.title,
-      sortTitle: booksItems.sortTitle,
-      author: booksItems.author,
-      mediaKind: booksItems.mediaKind,
-    })
-    .from(booksItems)
-    .where(isNull(booksItems.deletedAt));
+  const rows = (
+    await resolveDb(input.db)
+      .select({
+        id: booksItems.id,
+        title: booksItems.title,
+        sortTitle: booksItems.sortTitle,
+        author: booksItems.author,
+        mediaKind: booksItems.mediaKind,
+        attrs: booksItems.attrs,
+      })
+      .from(booksItems)
+      .where(isNull(booksItems.deletedAt))
+  ).map(({ attrs, ...r }): PairableItem => ({ ...r, heldBooks: readHeldBooks(attrs) }));
   const fresh = matchFormatPairs(rows);
   const freshByBook = new Map(fresh.map((p) => [p.bookItemId, p]));
 
@@ -292,11 +463,20 @@ export async function syncFormatPairs(input: {
     // RE-VANISH reconcile (same tx as the pair drop): a want per anchor exists for its LIFETIME —
     // when the counterpart vanishes after the want went both-landed (inert), reset the MISSING
     // format to `requested` so the estate wants it again (the mint retry queue re-pushes it).
+    // Only for a pair that dropped IN THIS RUN (DESIGN-036 amendment 2026-10-04): an unpaired anchor
+    // whose want reads `landed` because LazyLibrarian holds the format (the reconcile settles that
+    // without any pair) has nothing to heal, and resetting it every run (312 a run on 2026-10-04) spent
+    // the whole mint cap on wants LazyLibrarian already holds.
     const liveById = new Map(rows.map((r) => [r.id, r]));
     const pairedIds = new Set<string>();
     for (const p of fresh) {
       pairedIds.add(p.bookItemId);
       pairedIds.add(p.audioItemId);
+    }
+    const droppedIds = new Set<string>();
+    for (const e of stale) {
+      droppedIds.add(e.bookItemId);
+      droppedIds.add(e.audioItemId);
     }
     const pairingWants = await tx
       .select({
@@ -310,6 +490,10 @@ export async function syncFormatPairs(input: {
     for (const want of pairingWants) {
       const anchor = want.pairingBooksItemId ? liveById.get(want.pairingBooksItemId) : undefined;
       if (!anchor || anchor.mediaKind === 'comic' || pairedIds.has(anchor.id)) continue;
+      if (!droppedIds.has(anchor.id)) continue; // never paired this run → not a re-vanish
+      // A series holding several books (or none) cannot be wanted as one book (issue #661).
+      const identity = pairingIdentity(anchor);
+      if (identity.kind === 'multi_book' || identity.kind === 'no_book') continue;
       const missing = missingFormatFor(anchor.mediaKind);
       const missingStatus = missing === 'ebook' ? want.ebookStatus : want.audioStatus;
       if (missingStatus !== 'landed') continue; // still in flight / already retryable — nothing to heal
@@ -434,6 +618,15 @@ export interface MintPairingWantsReport {
    * settles the want to `landed` from LL's own status.
    */
   skippedHeld: number;
+  /**
+   * Issue #661 — Kavita anchors not yet read for their held books (the books-sync backfill): not
+   * attempted, no row touched. Never guessed from the series name.
+   */
+  skippedUnknownHeld: number;
+  /** Issue #661 — anchors holding several books or none, with no want yet: never minted. */
+  skippedNotOneBook: number;
+  /** Issue #661 — unpushed wants on such anchors parked this run (`multi_book` / `no_book`). */
+  parked: number;
 }
 
 const defaultPacer = (index: number): Promise<void> =>
@@ -451,6 +644,9 @@ const statusOfFormat = (row: BookRequestRow, format: 'ebook' | 'audiobook') =>
 async function upsertPairingWant(input: {
   db?: DbClient;
   item: PairableItem;
+  /** The want's title/author snapshot: the anchor's identity (the held book for a Kavita series — #661). */
+  title: string;
+  author: string | null;
   llBookId: string | null;
   now: Date;
 }): Promise<{ row: BookRequestRow; minted: boolean }> {
@@ -458,9 +654,22 @@ async function upsertPairingWant(input: {
   return inTransaction(input.db, async (tx) => {
     const refresh = async (existing: BookRequestRow): Promise<{ row: BookRequestRow; minted: boolean }> => {
       const llBookId = existing.llBookId ?? input.llBookId;
+      // A want that had NO LazyLibrarian identity and gets one now has never been pushed under it, so a
+      // missing-format status other than `landed` is left over from an id that was cleared (a lifted
+      // park, DESIGN-036 amendment 2026-10-04). Reset it to `requested` so this attempt pushes the chain;
+      // otherwise the want would hold the new id and never reach LazyLibrarian.
+      const freshIdentity = existing.llBookId === null && llBookId !== null;
+      const status = statusOfFormat(existing, missing);
+      const reset = freshIdentity && status !== 'landed' && status !== 'requested';
       const [row] = await tx
         .update(bookRequests)
-        .set({ title: input.item.title, author: input.item.author, llBookId, updatedAt: input.now })
+        .set({
+          title: input.title,
+          author: input.author,
+          llBookId,
+          ...(reset ? (missing === 'ebook' ? { ebookStatus: 'requested' as const } : { audioStatus: 'requested' as const }) : {}),
+          updatedAt: input.now,
+        })
         .where(eq(bookRequests.id, existing.id))
         .returning();
       return { row: row!, minted: false };
@@ -481,8 +690,8 @@ async function upsertPairingWant(input: {
       .values({
         origin: 'pairing',
         pairingBooksItemId: input.item.id,
-        title: input.item.title,
-        author: input.item.author,
+        title: input.title,
+        author: input.author,
         llBookId: input.llBookId,
         // The held format IS in the library — honest `landed`; only the missing format runs the
         // lifecycle (ADR-065 C-03).
@@ -545,6 +754,37 @@ export async function markPairingWantPushed(input: {
 }
 
 /**
+ * Issue #661 — park an UNPUSHED pairing want whose anchor does not hold exactly one book (`multi_book`,
+ * `no_book`): one want per anchor cannot describe several books or none. Single-writer, one tx, with the
+ * precondition that it is still unparked and still unpushed (`ll_book_id` NULL or the missing format
+ * `requested`), so a want LazyLibrarian is already working is never touched. Unaudited (the pairing
+ * sync-mint class). Returns whether the row was parked.
+ */
+export async function parkPairingWant(input: {
+  db?: DbClient;
+  requestId: string;
+  reason: 'multi_book' | 'no_book';
+  missing: 'ebook' | 'audiobook';
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const missingCol = input.missing === 'ebook' ? bookRequests.ebookStatus : bookRequests.audioStatus;
+  const parked = await resolveDb(input.db)
+    .update(bookRequests)
+    .set({ unroutableReason: input.reason, updatedAt: now })
+    .where(
+      and(
+        eq(bookRequests.id, input.requestId),
+        eq(bookRequests.origin, 'pairing'),
+        isNull(bookRequests.unroutableReason),
+        or(isNull(bookRequests.llBookId), eq(missingCol, 'requested')),
+      ),
+    )
+    .returning({ id: bookRequests.id });
+  return parked.length > 0;
+}
+
+/**
  * The PACED estate-wide mint (owner rulings R1/R1a): every unpaired live item lacking the other
  * format is a candidate; at most `cap` are ATTEMPTED per run — fresh candidates oldest-first
  * (first_seen_at, id), then retryable existing wants (unmintable / never-pushed) least-recently-
@@ -567,18 +807,21 @@ export async function mintPairingWants(
   const log = input.logger ?? {};
 
   // 1. The backlog: live, non-comic items with no pair on their side.
-  const items = await db
-    .select({
-      id: booksItems.id,
-      title: booksItems.title,
-      sortTitle: booksItems.sortTitle,
-      author: booksItems.author,
-      mediaKind: booksItems.mediaKind,
-      isbn: booksItems.isbn,
-      firstSeenAt: booksItems.firstSeenAt,
-    })
-    .from(booksItems)
-    .where(and(isNull(booksItems.deletedAt), ne(booksItems.mediaKind, 'comic')));
+  const items = (
+    await db
+      .select({
+        id: booksItems.id,
+        title: booksItems.title,
+        sortTitle: booksItems.sortTitle,
+        author: booksItems.author,
+        mediaKind: booksItems.mediaKind,
+        isbn: booksItems.isbn,
+        attrs: booksItems.attrs,
+        firstSeenAt: booksItems.firstSeenAt,
+      })
+      .from(booksItems)
+      .where(and(isNull(booksItems.deletedAt), ne(booksItems.mediaKind, 'comic')))
+  ).map(({ attrs, ...r }) => ({ ...r, heldBooks: readHeldBooks(attrs) }));
   const pairRows = await db
     .select({ bookItemId: booksFormatPairs.bookItemId, audioItemId: booksFormatPairs.audioItemId })
     .from(booksFormatPairs);
@@ -610,17 +853,41 @@ export async function mintPairingWants(
   //    NOT pre-capped (ADR-067 C-08): only REAL attempts consume the cap — a GB-requiring candidate met
   //    while the quota breaker is open (skippedQuota) or the daily budget is spent (skippedBudget) is
   //    skipped without burning cap, so identity-holding candidates behind it still mint.
-  const hasIsbn = (i: (typeof unpaired)[number]): boolean => Boolean(i.isbn && i.isbn.trim().length > 0);
+  //    Issue #661 — every candidate is judged by its IDENTITY (pairingIdentity): a Kavita row is a
+  //    series, so the want describes the one book the series holds. A series not yet read for its held
+  //    books waits (skippedUnknownHeld); one holding several books or none is never a candidate
+  //    (skippedNotOneBook), and an unpushed want on it is parked with that reason below.
+  const identityOf = new Map(unpaired.map((i) => [i.id, pairingIdentity(i)] as const));
+  const hasIsbn = (i: (typeof unpaired)[number]): boolean => {
+    const id = identityOf.get(i.id);
+    const isbn = id?.kind === 'one' ? id.isbn : i.isbn;
+    return Boolean(isbn && isbn.trim().length > 0);
+  };
   const lastTriedAt = (i: (typeof unpaired)[number]): number =>
     (wantByAnchor.get(i.id)?.updatedAt ?? i.firstSeenAt).getTime();
+  const isRetryable = (w: BookRequestRow, i: (typeof unpaired)[number]): boolean =>
+    w.llBookId === null || statusOfFormat(w, missingFormatFor(i.mediaKind)) === 'requested';
+  let skippedUnknownHeld = 0;
+  let skippedNotOneBook = 0;
+  const toPark: Array<{ want: BookRequestRow; item: (typeof unpaired)[number]; reason: 'multi_book' | 'no_book' }> = [];
   const candidates = unpaired
     .filter((i) => {
       const w = wantByAnchor.get(i.id);
-      if (!w) return true; // fresh — never yet minted
       // A PARKED want (`unroutable_reason` set, e.g. 'wrong_volume' after an omnibus repair) is never
       // re-attempted: re-resolving it would refill llBookId and hand it back to the Skipped sweep.
-      if (w.unroutableReason !== null) return false;
-      return w.llBookId === null || statusOfFormat(w, missingFormatFor(i.mediaKind)) === 'requested';
+      if (w && w.unroutableReason !== null) return false;
+      const identity = identityOf.get(i.id)!;
+      if (identity.kind === 'unknown') {
+        if (!w || isRetryable(w, i)) skippedUnknownHeld += 1;
+        return false;
+      }
+      if (identity.kind === 'multi_book' || identity.kind === 'no_book') {
+        if (!w) skippedNotOneBook += 1;
+        else if (isRetryable(w, i)) toPark.push({ want: w, item: i, reason: identity.kind });
+        return false;
+      }
+      if (!w) return true; // fresh — never yet minted
+      return isRetryable(w, i);
     })
     .sort(
       (a, b) =>
@@ -650,12 +917,33 @@ export async function mintPairingWants(
     bucket.push({ author: normAuthor(r.author), llBookId: r.llBookId });
     reuseByTitle.set(key, bucket);
   }
-  const reuseLlBookId = (item: PairableItem): string | null => {
-    const author = normAuthor(item.author);
+  const reuseLlBookId = (identity: { title: string; author: string | null }): string | null => {
+    const author = normAuthor(identity.author);
     if (!author) return null;
-    const bucket = reuseByTitle.get(normTitle(item.title));
+    const bucket = reuseByTitle.get(normTitle(identity.title));
     return bucket?.find((r) => authorsAgree(author, r.author))?.llBookId ?? null;
   };
+
+  // 4b. Park the unpushed wants whose anchor holds several books or none (issue #661). Not attempts: no
+  //     cap consumed, no external call.
+  let parked = 0;
+  for (const p of toPark) {
+    const done = await parkPairingWant({
+      db: input.db,
+      requestId: p.want.id,
+      reason: p.reason,
+      missing: missingFormatFor(p.item.mediaKind),
+      now,
+    });
+    if (done) {
+      parked += 1;
+      log.info?.('format-pairing: want parked, the anchor does not hold exactly one book', {
+        requestId: p.want.id,
+        title: p.item.title,
+        reason: p.reason,
+      });
+    }
+  }
 
   // 5. Attempt candidates in order, paced, until the cap of REAL attempts is spent. A candidate
   //    that would need a Google Books resolve while the breaker is open (or after it trips
@@ -674,7 +962,9 @@ export async function mintPairingWants(
   for (const item of candidates) {
     if (attempted >= cap) break;
     const missing = missingFormatFor(item.mediaKind);
-    let llBookId = wantByAnchor.get(item.id)?.llBookId ?? reuseLlBookId(item) ?? null;
+    const identity = identityOf.get(item.id)!;
+    if (identity.kind !== 'one') continue; // unreachable: the candidate filter admits only `one`
+    let llBookId = wantByAnchor.get(item.id)?.llBookId ?? reuseLlBookId(identity) ?? null;
     const needsGb = llBookId === null && input.gb != null;
     if (needsGb && quotaOpen) {
       skippedQuota += 1;
@@ -705,7 +995,8 @@ export async function mintPairingWants(
           gb: input.gb!,
           // Pass the anchor ISBN (PLAN-059): the resolver tries `isbn:` first — the exact leg that
           // makes the Goodreads path resolve ~99% — before falling back to the fuzzy file-title.
-          query: { isbn: item.isbn ?? null, title: item.title, author: item.author },
+          // Issue #661 — the held book's title/author/ISBN for a Kavita series, never the series name.
+          query: { isbn: identity.isbn, title: identity.title, author: identity.author },
         });
         // Persist the GB legs this resolve actually spent (D-21): the meter counts each outbound leg;
         // a quota_blocked outcome made ZERO calls (delta 0, no-op), a quota_tripped made one.
@@ -723,7 +1014,7 @@ export async function mintPairingWants(
         if (input.budget) await input.budget.spend((input.meter?.taken() ?? 0) - before);
         // Non-429 failure — today's semantics: an honest unmintable ATTEMPT (cap consumed below).
         log.error?.('format-pairing: GB resolve failed (want stays unmintable)', {
-          title: item.title,
+          title: identity.title,
           error: error instanceof Error ? error.message : String(error),
         });
         llBookId = null;
@@ -731,7 +1022,14 @@ export async function mintPairingWants(
     }
 
     attempted += 1;
-    const { row, minted: isNew } = await upsertPairingWant({ db: input.db, item, llBookId, now });
+    const { row, minted: isNew } = await upsertPairingWant({
+      db: input.db,
+      item,
+      title: identity.title,
+      author: identity.author,
+      llBookId,
+      now,
+    });
     if (isNew) minted += 1;
     if (llBookId === null) {
       unmintable += 1;
@@ -749,7 +1047,7 @@ export async function mintPairingWants(
         requestId: row.id,
         llBookId,
         formats: [missing],
-        title: item.title,
+        title: identity.title,
       });
       continue;
     }
@@ -782,7 +1080,7 @@ export async function mintPairingWants(
     } catch (error) {
       log.error?.('format-pairing: LL push failed (will retry next run)', {
         requestId: row.id,
-        title: item.title,
+        title: identity.title,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -797,6 +1095,9 @@ export async function mintPairingWants(
     skippedQuota,
     skippedBudget,
     skippedHeld,
+    skippedUnknownHeld,
+    skippedNotOneBook,
+    parked,
   };
 }
 

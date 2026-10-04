@@ -267,3 +267,68 @@ and once an id was back the Skipped sweep re-queued and re-searched the format t
 Both now skip a parked want. The mint never makes it a candidate (no Google Books call, no upsert, so its
 `updated_at` stays put), and the reconcile + Skipped sweep leave it out. A park is lifted only by clearing
 `unroutable_reason` by hand, after which the want is an ordinary unmintable or pushed want again.
+
+## Amendment — 2026-10-04: the anchor is the book held (issue #661)
+
+**The defect.** A Kavita `books_items` row is a series, and its `title` is the series name. The matcher (D-03)
+and the mint (D-05) keyed a Kavita anchor on that title, so a one-book series asked Google Books for its series
+name and got the box set: "A Song of Ice and Fire" (holding Fire & Blood) resolved to the GRRM audiobook bundle,
+"Hogwarts Library Books" (The Tales of Beedle the Bard) to the Hogwarts Library box set, "Tom Clancy NF" (SSN)
+to Jack Ryan Books 7-12. The same key paired a series with an audiobook named like the series: "Dune" holding
+Heretics of Dune paired with the Dune audiobook, "Twilight" holding Breaking Dawn with Twilight. The 2026-10-03
+bundle audit parked eight such wants (`.agents/context/2026-10-03-bundle-audit.md`).
+
+**The held book.** DESIGN-024's D-03 amendment of the same date mirrors what each Kavita book series holds:
+`attrs.heldBooks`, one entry per chapter (one book file) with its own title, first writer and ISBN.
+`pairingIdentity(item)` turns that into the anchor's identity, the one truth the matcher and the mint read:
+
+- **`one`**: an ABS audiobook (its own title), or a Kavita series holding exactly one book. That book's title
+  is cleaned of series decoration (`stripSeriesDecoration`: a leading `<series> <number>` such as
+  "Tom Clancy NF [08] - SSN", a trailing bracket naming the series such as "(The History of Middle-Earth,
+  Vol. 3)") and of an author credit joined by a spaced dash (`stripAuthorDecoration`: "Dead in the Family -
+  Charlaine Harris"). The author is the row's, else the book's writer (the Murtagh row has none). The ISBN is
+  the book's. Two files of the same book are one book. The series name stands in only when the series holds
+  one book and Kavita has no title for it.
+- **`multi_book`** (several books) and **`no_book`** (no book file): one want per anchor (D-02's partial
+  unique) cannot describe them. Per-book wants would need a schema change and are not built.
+- **`unknown`**: the row has not been read for its held books yet (the first books-sync after the deploy
+  reads every series once). The series name is never used as a guess.
+
+**D-03 (the matcher).** A `one` Kavita series is keyed on its held book's title and author; `multi_book`,
+`no_book` and `unknown` rows keep their row title, as before. A series whose row title already names its held
+book claims an audiobook before a series that matches only through its held book, so two series holding the
+same file keep the pair they had. Measured against the live mirror before merge: 628 pairs become 659 (36
+added, such as Bobiverse with Heaven's River and Heroes of Olympus with The House of Hades; 5 series-name
+pairs drop, such as Dune with Dune; 2 move to the right audiobook, such as Destination: Void to The Jesus
+Incident). A dropped pair revives its want (D-04), which then asks for the held book.
+
+**D-05 (the mint).** The want's title/author snapshot, the reuse lookup and the Google Books resolve (title,
+author and ISBN, so the `isbn:` leg fires first) all use the identity, never the series name. The DESIGN-039
+D-22 ISBN-first order reads the identity's ISBN. A `multi_book` or `no_book` anchor is never a candidate: a
+fresh one is not minted (`skippedNotOneBook`), and an existing want LazyLibrarian is not working yet
+(`ll_book_id` NULL, or the missing format `requested`) is parked with `unroutable_reason` set to the kind
+(`parkPairingWant`: single writer, one statement whose precondition is unparked and unpushed). A pushed want is
+left alone: LazyLibrarian already has a book for it, and parking it would only stop its reconcile. An `unknown`
+anchor is skipped with nothing written (`skippedUnknownHeld`). None of these is an attempt, so none spends the
+cap.
+
+**Lifting a park.** A want that had no `ll_book_id` and gets one on this attempt has never been pushed under
+it, so a missing-format status other than `landed` or `requested` is left over from the id that was cleared
+(the bundle a repair parked it from). The upsert resets it to `requested` and the attempt pushes the chain.
+Lifting a park is therefore only clearing `unroutable_reason`; before this, the want took the new id and was
+never pushed, because the push requires `requested`.
+
+**D-04 (the re-vanish) fires only for a pair that dropped in this run**, as D-04 always said. It fired for
+every unpaired anchor whose want read `landed`, and the reconcile lands a want from LazyLibrarian's own status
+with no pair at all (the 2026-09-22 push guard made that common). On 2026-10-04 it reset 312 wants a run;
+the mint then spent its whole cap of 100 on them (each one skipped as held) and pushed nothing. A dropped
+pair whose anchor is `multi_book` or `no_book` revives nothing. The heal is one-shot by design: a pair that
+drops while its want's missing format is still in flight is not healed in a later run when that format
+lands. Accepted (PR #664 review): a pairing want's missing format lands because LazyLibrarian imported it,
+so a revived want would only be withheld again by the push guard (DESIGN-028's 2026-09-22 amendment), and
+a persisted "dropped" marker would buy nothing.
+
+Unchanged: the omnibus guard in the Google Books resolve (DESIGN-028's 2026-10-03 amendment, #658) stays the
+second line; a parked want stays parked (the 2026-10-03 amendment above); the confined LazyLibrarian surface
+(C-08). Wants pushed before this change keep the identity they were resolved under; the parked ones this
+defect caused are repaired by hand (`.agents/context/2026-10-04-pairing-held-book-repair.md`).

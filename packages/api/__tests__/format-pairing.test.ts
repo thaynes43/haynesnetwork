@@ -100,9 +100,10 @@ beforeAll(async () => {
     db: t.db,
     syncedSources: ['kavita', 'audiobookshelf'],
     rows: [
-      { ...baseRow, source: 'kavita', mediaKind: 'book', externalId: 'k-hyp', title: 'Hyperion', sortTitle: 'hyperion', author: 'Dan Simmons', deepLinkUrl: 'https://kavita/hyperion' },
+      // A Kavita book row is a series; these each hold the one book they are named after (issue #661).
+      { ...baseRow, attrs: { heldBooks: [{ title: 'Hyperion', author: 'Dan Simmons', isbn: null }] }, source: 'kavita', mediaKind: 'book', externalId: 'k-hyp', title: 'Hyperion', sortTitle: 'hyperion', author: 'Dan Simmons', deepLinkUrl: 'https://kavita/hyperion' },
       { ...baseRow, source: 'audiobookshelf', mediaKind: 'audiobook', externalId: 'a-hyp', title: 'Hyperion', sortTitle: 'hyperion', author: 'Dan Simmons', deepLinkUrl: 'https://abs/hyperion' },
-      { ...baseRow, source: 'kavita', mediaKind: 'book', externalId: 'k-mar', title: 'The Martian', sortTitle: 'martian', author: 'Andy Weir', deepLinkUrl: 'https://kavita/martian' },
+      { ...baseRow, attrs: { heldBooks: [{ title: 'The Martian', author: 'Andy Weir', isbn: null }] }, source: 'kavita', mediaKind: 'book', externalId: 'k-mar', title: 'The Martian', sortTitle: 'martian', author: 'Andy Weir', deepLinkUrl: 'https://kavita/martian' },
       { ...baseRow, source: 'kavita', mediaKind: 'comic', externalId: 'k-saga', title: 'Saga', sortTitle: 'saga', author: 'Brian K. Vaughan', deepLinkUrl: 'https://kavita/saga' },
     ],
   });
