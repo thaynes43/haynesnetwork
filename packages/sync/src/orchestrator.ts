@@ -33,6 +33,7 @@ import {
   finishSyncRun,
   reconcilePlexUserIdMappings,
   refreshTrashCandidates,
+  readHeldBooks,
   runFormatPairing,
   runPelotonPosterGuard,
   startSyncRun,
@@ -542,6 +543,8 @@ async function loadExistingKavitaEnrichment(
         year: r.year,
         writers: [],
       },
+      // Issue #661 — carry the held books forward; undefined (never read) makes the run read them once.
+      heldBooks: readHeldBooks(r.attrs as Record<string, unknown> | null),
     });
   }
   return map;

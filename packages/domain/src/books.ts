@@ -8,6 +8,38 @@ import { booksItems, type BooksMediaKind, type BooksSource, type DbClient } from
 import { and, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { inTransaction } from './db-client';
 
+/**
+ * Issue #661 (DESIGN-024 D-01 amendment 2026-10-04) — one book a Kavita BOOK series holds: one chapter of
+ * `GET /api/Series/volumes`, i.e. one book file. The books-sync stores the list as the mirror row's
+ * `attrs.heldBooks`, because a Kavita row's `title` is its SERIES name, not a book title (the series
+ * "A Song of Ice and Fire" can hold only Fire & Blood). Raw Kavita values, no cleaning: the pairing
+ * leg decides what to make of them (DESIGN-036 amendment 2026-10-04).
+ */
+export interface HeldBook {
+  /** The book's own title (the chapter's epub title, else a non-numeric chapter title); null when Kavita has none. */
+  title: string | null;
+  /** The chapter's first writer; null when none. */
+  author: string | null;
+  /** The chapter's epub ISBN; null when absent. */
+  isbn: string | null;
+}
+
+const nullableString = (v: unknown): string | null =>
+  typeof v === 'string' && v.trim().length > 0 ? v.trim() : null;
+
+/**
+ * Read `attrs.heldBooks` back from a mirror row. `undefined` means the row was never read for its held
+ * books (an ABS or comic row, a row the books-sync has not reached yet, or one whose every fetch failed):
+ * unknown, which is not the same as an empty list (the series holds no book file).
+ */
+export function readHeldBooks(attrs: Record<string, unknown> | null | undefined): HeldBook[] | undefined {
+  const raw = attrs?.heldBooks;
+  if (!Array.isArray(raw)) return undefined;
+  return raw
+    .filter((b): b is Record<string, unknown> => typeof b === 'object' && b !== null)
+    .map((b) => ({ title: nullableString(b.title), author: nullableString(b.author), isbn: nullableString(b.isbn) }));
+}
+
 /** One Kavita series / ABS item reduced to the ledger row the mirror stores. */
 export interface BooksItemInput {
   source: BooksSource;

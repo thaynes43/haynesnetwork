@@ -3,10 +3,10 @@
 // Audiobookshelf (Audio Books) and NORMALIZES each series/item to a BooksItemInput (the wire-shape parsing
 // lives here — @hnet/sync knows the servers' shapes; the domain writer only persists). Never a live
 // cross-DB read; never a write to the book servers.
-import type { AbsItem, KavitaSeries, KavitaSeriesMetadata } from '@hnet/books';
+import type { AbsItem, KavitaSeries, KavitaSeriesMetadata, KavitaVolume } from '@hnet/books';
 import { kavitaLibraryKind, type AudiobookshelfClient, type KavitaClient } from '@hnet/books/read';
 import type { BooksSource } from '@hnet/db';
-import type { BooksItemInput } from '@hnet/domain';
+import type { BooksItemInput, HeldBook } from '@hnet/domain';
 import { noopLogger, type SyncLogger } from './logger';
 
 const KAVITA_PAGE_SIZE = 500;
@@ -124,6 +124,33 @@ export function kavitaEnrichmentFrom(meta: KavitaSeriesMetadata): KavitaEnrichme
   };
 }
 
+/** A Kavita chapter `title` that is only a number ('-100000' on a numbered volume, '3', '0.5') names no book. */
+const numericPlaceholder = (v: string): boolean => /^-?\d+(\.\d+)?$/.test(v.trim());
+
+/**
+ * Issue #661 (DESIGN-024 D-01 amendment 2026-10-04) — reduce `GET /api/Series/volumes` to the books the
+ * series holds: one HeldBook per chapter (in an EBooks library a chapter is one book file), carrying the
+ * chapter's own title (`titleName`, else a non-numeric `title`), first writer and ISBN. Raw values, no
+ * cleaning and no de-duplication (the pairing leg does both). Pure — unit-tested.
+ */
+export function kavitaHeldBooksFrom(volumes: readonly KavitaVolume[]): HeldBook[] {
+  const out: HeldBook[] = [];
+  for (const v of volumes) {
+    for (const ch of v.chapters ?? []) {
+      const titleName = (ch.titleName ?? '').trim();
+      const title = (ch.title ?? '').trim();
+      const writers = kavitaNames(ch.writers as KavitaNamed[] | null | undefined);
+      const isbn = (ch.isbn ?? '').trim();
+      out.push({
+        title: titleName || (title && !numericPlaceholder(title) ? title : null),
+        author: writers.length > 0 ? writers[0]! : null,
+        isbn: isbn.length > 0 ? isbn : null,
+      });
+    }
+  }
+  return out;
+}
+
 /**
  * ADR-051 C-05 / DESIGN-026 D-05 (PLAN-029 — Date Released) — parse the ABS `publishedDate` metadata
  * string to a Date (e.g. "2020-05-01" or a full ISO instant). Blank / unparseable ⇒ null (the item
@@ -150,6 +177,8 @@ export function normalizeKavitaSeries(
   libraryName: string,
   publicUrl: string,
   enrichment: KavitaEnrichmentApply | null = null,
+  /** Issue #661 — the books a BOOK series holds (`attrs.heldBooks`); undefined = not read (omitted). */
+  heldBooks?: HeldBook[],
 ): BooksItemInput {
   const libraryId = String(series.libraryId);
   const sort = (series.sortName || series.name || String(series.id)).trim().toLowerCase();
@@ -189,7 +218,11 @@ export function normalizeKavitaSeries(
     fileCount: null,
     metadataSyncedAt: enrichment?.metadataSyncedAt ?? null,
     // language stays in attrs (the facet reads it there); enrichment fills it for Kavita.
-    attrs: { format: series.format ?? null, language: e?.language ?? null },
+    attrs: {
+      format: series.format ?? null,
+      language: e?.language ?? null,
+      ...(heldBooks !== undefined ? { heldBooks } : {}),
+    },
     sourceAddedAt: toDate(series.created),
     sourceUpdatedAt: toDate(series.lastChapterAddedUtc),
   };
@@ -268,6 +301,11 @@ export interface ExistingKavitaEnrichment {
   sourceUpdatedAt: Date | null;
   metadataSyncedAt: Date | null;
   data: KavitaEnrichment;
+  /**
+   * Issue #661 — the held books already on the mirror row (`attrs.heldBooks`); undefined = never read, so
+   * the run reads them once (the backfill) even when the series is otherwise unchanged.
+   */
+  heldBooks?: HeldBook[];
 }
 
 export interface FetchBooksSnapshotOptions {
@@ -321,6 +359,7 @@ export async function fetchBooksSnapshot(
   const existingKavita = options.existingKavita;
   let kavitaSeries = 0;
   let kavitaEnriched = 0;
+  let kavitaHeldRead = 0;
   let absItems = 0;
 
   // --- Kavita (Books + Comics) ---
@@ -341,15 +380,35 @@ export async function fetchBooksSnapshot(
         }
         // Resolve enrichment per series (change-gated), then normalize. The metadata calls are paced.
         const applied = new Map<number, KavitaEnrichmentApply | null>();
+        const held = new Map<number, HeldBook[] | undefined>();
         await mapPaced(pageSeries, options.metadataConcurrency ?? 4, async (s) => {
           const key = String(s.id);
           const existing = existingKavita?.get(key);
           const freshUpdated = toDate(s.lastChapterAddedUtc);
-          const needsEnrich =
+          const changed =
             existingKavita === undefined ||
             existing === undefined ||
-            existing.metadataSyncedAt === null ||
             stampChanged(freshUpdated, existing.sourceUpdatedAt);
+          // Issue #661 — a BOOK series' held books (`/api/Series/volumes`): read when the series is new or
+          // changed, or was never read (the one-off backfill); otherwise carried forward. A failure carries
+          // the last value forward (or leaves it unread) and the next run retries. Comics are never paired.
+          if (kind === 'book') {
+            if (changed || existing?.heldBooks === undefined) {
+              try {
+                held.set(s.id, kavitaHeldBooksFrom(await bundle.kavita.listSeriesVolumes(key)));
+                kavitaHeldRead += 1;
+              } catch (error) {
+                logger.error('books-sync: kavita held-books read failed', {
+                  seriesId: key,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+                held.set(s.id, existing?.heldBooks);
+              }
+            } else {
+              held.set(s.id, existing?.heldBooks);
+            }
+          }
+          const needsEnrich = changed || existing === undefined || existing.metadataSyncedAt === null;
           if (!needsEnrich && existing !== undefined) {
             // Unchanged — carry the existing enrichment forward (no request).
             applied.set(s.id, { data: existing.data, metadataSyncedAt: existing.metadataSyncedAt });
@@ -376,7 +435,14 @@ export async function fetchBooksSnapshot(
         });
         for (const s of pageSeries) {
           rows.push(
-            normalizeKavitaSeries(s, kind, lib.name, bundle.kavitaPublicUrl, applied.get(s.id) ?? null),
+            normalizeKavitaSeries(
+              s,
+              kind,
+              lib.name,
+              bundle.kavitaPublicUrl,
+              applied.get(s.id) ?? null,
+              held.get(s.id),
+            ),
           );
           kavitaSeries += 1;
         }
@@ -436,6 +502,7 @@ export async function fetchBooksSnapshot(
   logger.info('books-sync: snapshot fetched', {
     kavitaSeries,
     kavitaEnriched,
+    kavitaHeldRead,
     absItems,
   });
   return { rows, syncedSources, counts: { kavitaSeries, absItems } };

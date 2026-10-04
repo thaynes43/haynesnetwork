@@ -16,6 +16,7 @@ import {
   kavitaReadingListListSchema,
   kavitaSeriesListSchema,
   kavitaSeriesMetadataSchema,
+  kavitaVolumeListSchema,
   type AbsAuthor,
   type AbsCollection,
   type AbsItem,
@@ -27,6 +28,7 @@ import {
   type KavitaReadingListItem,
   type KavitaSeries,
   type KavitaSeriesMetadata,
+  type KavitaVolume,
 } from './schemas';
 import { z } from 'zod';
 import { BooksAuthError, BooksHttpError } from './errors';
@@ -251,6 +253,19 @@ export class KavitaClient {
     const path = `/api/Series/metadata?seriesId=${encodeURIComponent(seriesId)}`;
     const response = await this.authed('GET', path);
     return parseJson(response, kavitaSeriesMetadataSchema, 'GET', path);
+  }
+
+  /**
+   * Issue #661 (DESIGN-024 D-01 amendment 2026-10-04) — the volumes and chapters a series holds
+   * (`GET /api/Series/volumes?seriesId=` — VolumeDto[] with ChapterDto[]). In an EBooks library each
+   * chapter is one book file with its own title/ISBN/writers, which the series list never carries.
+   * The books-sync calls this per new or changed BOOK series (the change-gate) and keeps the result
+   * as the mirror row's held books. Read-only.
+   */
+  async listSeriesVolumes(seriesId: string): Promise<KavitaVolume[]> {
+    const path = `/api/Series/volumes?seriesId=${encodeURIComponent(seriesId)}`;
+    const response = await this.authed('GET', path);
+    return parseJson(response, kavitaVolumeListSchema, 'GET', path);
   }
 
   /**
