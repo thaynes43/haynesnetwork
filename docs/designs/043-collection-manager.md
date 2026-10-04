@@ -475,7 +475,8 @@ fails (and leaves un-stamped) every row it would have covered, so the next run r
 **Normative rule: DESIGN-028's 2026-10-04 amendment.** Before it gathers, the cron leg (D-14) reads
 `getAllBooks` once (only when a candidate exists) and checks every force-searched want of every find-missing
 collection, regardless of cooldown: one whose `ll_book_id` the non-empty snapshot lacks, last force-searched more
-than 24 hours ago, lost its book (LazyLibrarian deleted it on a restart, or never kept it). It is re-keyed to the
+than an hour ago (the collection grace, kept under half the cooldown, since each due re-search re-stamps it), lost
+its book (LazyLibrarian deleted it on a restart, or never kept it). It is re-keyed to the
 one row LazyLibrarian holds for the same title and author (when that row already holds the format or is after it),
 or its active format is settled `missing`. The gather
 then skips `missing` wants, so the cron stops re-adding and re-searching the same lost book every cooldown (276

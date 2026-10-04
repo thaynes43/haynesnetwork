@@ -465,9 +465,12 @@ and the collection force-search cron):
 1. **Gone.** A want is gone when its id is absent from a **non-empty** `getAllBooks` snapshot (an LL error answer
    parses to an empty map and decides nothing), it has a format we pushed that has not settled (`wanted` or
    `grabbed`; for a collection want, its active format, which stays `requested` through its force-searches), and
-   LazyLibrarian has not shown it for **24 hours** (`LL_GONE_GRACE_MS`): `last_reconciled_at` (stamped by the push
-   and by each reconcile that finds the book) for goodreads and pairing wants, `last_searched_at` for a collection
-   want. A want pushed this run carries a fresh stamp, so the grace keeps it out.
+   LazyLibrarian has not shown it for **24 hours** (`LL_GONE_GRACE_MS`), measured from `last_reconciled_at`
+   (stamped by the push and by each reconcile that finds the book). A collection want has no such stamp, only
+   `last_searched_at` from its force-search, which the cron renews every cooldown, so its grace is **1 hour**
+   (`LL_GONE_COLLECTION_GRACE_MS`, and never more than half the cooldown): a longer one would never be reached and
+   the cron would keep re-adding the lost book. `addBook` runs with `wait`, so an hour is plenty. A want pushed
+   this run carries a fresh stamp, so the grace keeps it out.
 2. **Re-key first.** When the same snapshot holds exactly one row whose title matches (normalized, subtitle kept,
    so "The Kane Chronicles: Survival Guide" never matches "The Kane Chronicles") and whose author agrees (the want
    must have one), and that row already holds the want's format or shows it `Wanted` or `Snatched`, the want is

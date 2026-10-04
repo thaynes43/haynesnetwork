@@ -67,5 +67,5 @@ the image like `librarysync.py`.
 Expected first runs after the deploy: format-pairing `llGoneRekeyed` about 28 (the match holds the format
 `Open`) and `llGoneSettled` about 717 (including 29 whose match is `Skipped`: re-keying those would hand them to
 the Skipped sweep's search, so they settle and wait for a person's Search again); goodreads-sync about 49 settled;
-the collection cron about 23 settled (the ones force-searched within the last 24 hours wait out the grace). No
+the collection cron about 23 settled (its grace is an hour since the last force-search). No
 `searchBook`, `queueBook` or `addBook` from any of it.

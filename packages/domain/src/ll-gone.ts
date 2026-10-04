@@ -14,7 +14,10 @@
 //   • A want is GONE when its id is absent from a non-empty snapshot, it has a format we pushed that is not
 //     settled (`wanted`/`grabbed`; for a collection want, any active format it was force-searched for), and LL
 //     has not shown it for `LL_GONE_GRACE_MS` (24 h): `last_reconciled_at` is stamped each time a reconcile
-//     finds the book (and by the push), so it is the last time LazyLibrarian had it.
+//     finds the book (and by the push), so it is the last time LazyLibrarian had it. A collection want has no
+//     such stamp (nothing reconciles it against LL), only `last_searched_at` from its force-search, which the
+//     cron renews every cooldown; its grace is `LL_GONE_COLLECTION_GRACE_MS` (1 h), well under any cooldown,
+//     so a lost book settles before it comes due again (`addBook` runs with `wait`, so an hour is plenty).
 //   • RE-KEY first: when the snapshot holds exactly one row with the same title (normalized, subtitle kept) and
 //     an agreeing author, AND that row already settles or tracks the want's format (held, or LazyLibrarian shows
 //     it Wanted or Snatched), the want is repointed to that row and reconciled from it. No LazyLibrarian write,
@@ -38,6 +41,15 @@ import { inTransaction } from './db-client';
 
 /** How long LazyLibrarian must have gone without showing a want's book before it counts as gone (24 h). */
 export const LL_GONE_GRACE_MS = Number(process.env.LL_GONE_GRACE_MS ?? 24 * 60 * 60 * 1000);
+
+/**
+ * The collection want's grace (1 h), measured from its last force-search. It must stay under the collection
+ * cooldown: the cron re-searches a due want and re-stamps `last_searched_at`, so a grace longer than the cooldown
+ * would never be reached and the cron would keep re-adding a lost book.
+ */
+export const LL_GONE_COLLECTION_GRACE_MS = Number(
+  process.env.LL_GONE_COLLECTION_GRACE_MS ?? 60 * 60 * 1000,
+);
 
 /** One row of the `getAllBooks` snapshot as the gone-book logic reads it (a structural subset of the ACL row). */
 export interface LlSnapshotRow extends LlHeldSignals {

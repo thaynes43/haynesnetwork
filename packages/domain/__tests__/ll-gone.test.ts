@@ -602,6 +602,50 @@ describe('syncGoodreadsIntegration — a shelf want whose LazyLibrarian book is 
     });
   });
 
+  // Review finding (PR #669): the repoint is guarded on the id the click read; if another writer moved the want
+  // meanwhile, the click must not queue or search a row the want no longer points at.
+  it('Search again fires nothing when another writer repointed the want first', async () => {
+    const { user, integration, wantId } = await seedPushed();
+    const rows = {
+      'll-cm': {
+        title: 'The Changed Man',
+        author: 'Orson Scott Card',
+        ebookStatus: 'Skipped',
+        audioStatus: 'Skipped',
+      },
+    };
+    await syncGoodreadsIntegration({
+      db: t.db,
+      integrationId: integration.id,
+      items,
+      syncedShelves: ['to-read'],
+      ll: stubLl(rows).bundle,
+      pacer: noPace,
+      now: new Date(Date.now() + 2 * DAY),
+    });
+    const ll = stubLl(rows);
+    const read = ll.bundle.read.getAllBookStatuses.bind(ll.bundle.read);
+    // The race: between the click's request read and its repoint, another writer moves the want.
+    (ll.bundle.read as { getAllBookStatuses: () => Promise<unknown> }).getAllBookStatuses =
+      async () => {
+        await t.db
+          .update(bookRequests)
+          .set({ llBookId: 'gb-elsewhere' })
+          .where(eq(bookRequests.id, wantId));
+        return read();
+      };
+    const result = await runManualBookSearch({
+      db: t.db,
+      requestId: wantId,
+      userId: user.id,
+      actorId: user.id,
+      ll: ll.bundle,
+    });
+    expect(result).toEqual({ searched: false, formats: [] });
+    expect(ll.calls).toEqual([]);
+    expect((await getWant(wantId)).llBookId).toBe('gb-elsewhere');
+  });
+
   it('Search again never re-adds on a failed or empty read (only the search fires, as before)', async () => {
     const { user, wantId } = await seedPushed();
     for (const ll of [stubLl({}, { failRead: true }), stubLl({}, { empty: true })]) {
@@ -747,6 +791,36 @@ describe('forceSearchFindMissingCollections — a force-searched want whose Lazy
     });
     expect(again.llGoneSettled).toBe(1); // the fresh one, pushed 30 days earlier and still absent
     expect(ll2.calls.some((c) => c.id === 'gb-due' || c.id === 'gb-notdue')).toBe(false);
+  });
+
+  // Review finding (PR #669): the cron re-stamps `last_searched_at` every cooldown (12 h by default), so a 24 h
+  // grace could never be reached and the cron would keep re-adding a lost book. The collection grace is 1 h.
+  it('settles a lost book before it comes due again, at the default 12 h cooldown', async () => {
+    const cid = await seedCollection('c4', 'recipe-4');
+    const due = await seedCollectionWant(cid, {
+      ref: 'm1',
+      title: 'Troll Bridge',
+      llBookId: 'gb-lost',
+      lastSearchedAt: new Date(Date.now() - 12.5 * 60 * 60 * 1000),
+    });
+    const recent = await seedCollectionWant(cid, {
+      ref: 'm2',
+      title: 'Gray Dawn',
+      llBookId: 'gb-recent',
+      lastSearchedAt: new Date(Date.now() - 20 * 60 * 1000),
+    });
+    const ll = stubLl();
+    const report = await forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: libretto('recipe-4'),
+      ll: ll.bundle,
+      pacer: noPace,
+      cooldownMs: 12 * 60 * 60 * 1000,
+    });
+    expect(report).toMatchObject({ llGoneSettled: 1, searched: 0 });
+    expect((await getWant(due)).ebookStatus).toBe('missing');
+    expect((await getWant(recent)).ebookStatus).toBe('requested'); // inside the grace, and not due
+    expect(ll.calls).toEqual([]);
   });
 
   it('skips addBook for a book LazyLibrarian holds (its upsert would reset both formats to Skipped)', async () => {

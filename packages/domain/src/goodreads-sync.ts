@@ -641,13 +641,16 @@ async function rekeyManualSearch(
   formats: Array<'ebook' | 'audiobook'>,
 ): Promise<RunManualBookSearchResult> {
   const now = new Date();
-  await repointRequestLlBook({
+  const moved = await repointRequestLlBook({
     db: input.db,
     requestId: request.id,
     fromLlBookId: request.llBookId!,
     toLlBookId: rekeyedTo,
     now,
   });
+  // Another writer changed the want's id since this click read it: fire nothing on a row it may no longer
+  // point at (an honest "nothing fired"; the person can search again).
+  if (!moved) return { searched: false, formats: [] };
   const row = snapshot.get(rekeyedTo);
   await applyRequestReconcile({
     db: input.db,

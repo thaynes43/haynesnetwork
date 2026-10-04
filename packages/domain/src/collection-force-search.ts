@@ -41,7 +41,7 @@ import {
   applyLlGoneDecision,
   decideLlGoneWant,
   emptyLlGoneTally,
-  LL_GONE_GRACE_MS,
+  LL_GONE_COLLECTION_GRACE_MS,
   llSnapshotUsable,
   LlRekeyIndex,
   type LlGoneTally,
@@ -408,6 +408,7 @@ export async function forceSearchFindMissingCollections(
     ll: input.ll,
     collectionIds: collections.map((c) => c.id),
     now,
+    cooldownMs,
     report,
     log,
   });
@@ -452,7 +453,8 @@ export async function forceSearchFindMissingCollections(
 
 /**
  * Issue #665 (DESIGN-028 amendment 2026-10-04) — the collection leg of the gone-book rule. A collection want the
- * cron force-searched (`last_searched_at` set, older than the grace) whose id the `getAllBooks` snapshot lacks
+ * cron force-searched (`last_searched_at` set, older than the collection grace: 1 h, and never more than half the
+ * cooldown, since each due re-search re-stamps it) whose id the `getAllBooks` snapshot lacks
  * lost its LazyLibrarian book: LazyLibrarian deleted it, or never kept it (`addBook` declined). Re-adding it every
  * cooldown is the churn this stops. It is re-keyed (repointed to the one row LazyLibrarian holds for the same
  * title and author; the next due run pushes that) or settled: its active format becomes `missing`, which the cron
@@ -465,6 +467,7 @@ async function settleGoneCollectionWants(input: {
   ll: LazyLibrarianClientBundle;
   collectionIds: string[];
   now: Date;
+  cooldownMs: number;
   report: LlGoneTally;
   log: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
@@ -472,7 +475,10 @@ async function settleGoneCollectionWants(input: {
   };
 }): Promise<Map<string, LlHeldSignals> | null> {
   if (input.collectionIds.length === 0) return null;
-  const graceCutoff = new Date(input.now.getTime() - LL_GONE_GRACE_MS);
+  // The collection grace, NOT the 24 h one: every cooldown the cron re-stamps `last_searched_at`, so the grace
+  // must be shorter than the cooldown or a lost book is re-added before it can ever count as gone.
+  const graceMs = Math.min(LL_GONE_COLLECTION_GRACE_MS, input.cooldownMs / 2);
+  const graceCutoff = new Date(input.now.getTime() - graceMs);
   const candidates = await resolveDb(input.db)
     .select({
       id: bookRequests.id,
@@ -529,6 +535,7 @@ async function settleGoneCollectionWants(input: {
           now: input.now,
           formats: [formatForSource(want.source)],
           collection: true,
+          graceMs,
         }),
         snapshot,
         reconcile: false,
