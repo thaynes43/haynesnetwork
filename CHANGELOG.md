@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.106.1](https://github.com/thaynes43/haynesnetwork/compare/v0.106.0...v0.106.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **books:** a quota-wall refusal is not counted, and a refused re-request retries next quota-day ([#676](https://github.com/thaynes43/haynesnetwork/issues/676)) ([ac19dca](https://github.com/thaynes43/haynesnetwork/commit/ac19dca2e8e35cc4c988f2baec1600d51a9bada5))
+
 ## [0.106.0](https://github.com/thaynes43/haynesnetwork/compare/v0.105.5...v0.106.0) (2026-10-04)
 
 
