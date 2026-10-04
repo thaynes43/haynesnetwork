@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.106.0](https://github.com/thaynes43/haynesnetwork/compare/v0.105.5...v0.106.0) (2026-10-04)
+
+
+### Features
+
+* **books:** hand every settled want back to LazyLibrarian once, add and queue only ([#675](https://github.com/thaynes43/haynesnetwork/issues/675)) ([88f47d8](https://github.com/thaynes43/haynesnetwork/commit/88f47d83f889930338072533e7f0ba84c86d1acd))
+
+
+### Documentation
+
+* **agents:** v0.105.4 + v0.105.5 deploy record, [#665](https://github.com/thaynes43/haynesnetwork/issues/665) requests settled ([#672](https://github.com/thaynes43/haynesnetwork/issues/672)) ([8709c96](https://github.com/thaynes43/haynesnetwork/commit/8709c96a241722c51e756eb5125772680fa031e3))
+
 ## [0.105.5](https://github.com/thaynes43/haynesnetwork/compare/v0.105.4...v0.105.5) (2026-10-04)
 
 
