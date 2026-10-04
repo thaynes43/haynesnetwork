@@ -51,7 +51,7 @@ type Row = Omit<LlSnapshotRow, 'title' | 'author'> & { title?: string; author?: 
  *  format to `Wanted`, so a later read in the same test sees what the writes left behind. */
 function stubLl(
   initial: Record<string, Row> = {},
-  opts: { empty?: boolean; failRead?: boolean; refuseAdd?: boolean } = {},
+  opts: { empty?: boolean; failRead?: boolean; refuseAdd?: boolean; refuseIds?: string[] } = {},
 ) {
   const rows: Record<string, Row> = { ...initial };
   const calls: Array<{ cmd: string; id: string; format?: string }> = [];
@@ -87,7 +87,7 @@ function stubLl(
       // LazyLibrarian answers `addBook&wait` with its add_bookid_to_db result: `true`, or `false` when it refused.
       addBook: async (id: string) => {
         calls.push({ cmd: 'addBook', id });
-        if (opts.refuseAdd) return 'false';
+        if (opts.refuseAdd || opts.refuseIds?.includes(id)) return 'false';
         if (!rows[id]) rows[id] = { ebookStatus: 'Skipped', audioStatus: 'Skipped' };
         return 'true';
       },
@@ -283,6 +283,7 @@ async function seedPairingWant(opts: {
   lastReconciledAt?: Date;
   /** Issue #668: set to say the want already had its one re-request (so a settle stands). */
   llRerequestedAt?: Date | null;
+  createdAt?: Date;
 }): Promise<string> {
   seq += 1;
   const [anchor] = await t.db
@@ -312,7 +313,7 @@ async function seedPairingWant(opts: {
       audioStatus: opts.audioStatus ?? 'wanted',
       lastReconciledAt: opts.lastReconciledAt ?? daysAgo(40),
       llRerequestedAt: opts.llRerequestedAt ?? null,
-      createdAt: daysAgo(60),
+      createdAt: opts.createdAt ?? daysAgo(60),
     })
     .returning({ id: bookRequests.id });
   return want!.id;
@@ -640,7 +641,12 @@ describe('runFormatPairing — the one re-request of a settled want (issue #668)
     });
     await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
     expect(ll.calls).toEqual([{ cmd: 'queueBook', id: 'll-saints', format: 'audiobook' }]);
-    expect(await getWant(id)).toMatchObject({ llBookId: 'll-saints', audioStatus: 'wanted' });
+    // A queue-only hand-back never touched Google Books, so it is no live-quota proof (PR #676 review).
+    expect(await getWant(id)).toMatchObject({
+      llBookId: 'll-saints',
+      audioStatus: 'wanted',
+      llRerequestAddedAt: null,
+    });
   });
 
   it('a refused add counts a refusal (no queue); it is tried a day later, and the third refusal ends it', async () => {
@@ -681,14 +687,84 @@ describe('runFormatPairing — the one re-request of a settled want (issue #668)
     expect(ll.calls).toHaveLength(3);
   });
 
-  it("three refused adds in a row end the pass's adds (the shared Google Books key is out of quota)", async () => {
-    for (const title of ['A One', 'B Two', 'C Three', 'D Four', 'E Five']) {
-      await seedPairingWant({ ...settled, title, llBookId: `gb-${title}` });
+  it('three refusals in a row with no add yet today count and stop the adds; the next pass moves on (no stall)', async () => {
+    const ids: string[] = [];
+    for (const [n, title] of ['A One', 'B Two', 'C Three', 'D Four', 'E Five'].entries()) {
+      ids.push(
+        await seedPairingWant({
+          ...settled,
+          title,
+          llBookId: `gb-${title}`,
+          createdAt: daysAgo(60 - n),
+        }),
+      );
     }
     const ll = stubLl({}, { refuseAdd: true });
     const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
     expect(run).toMatchObject({ llRerequestNotAdded: 3, llRerequestDeferred: 2 });
-    expect(ll.calls.filter((c) => c.cmd === 'addBook')).toHaveLength(3);
+    expect(ll.calls.filter((c) => c.cmd === 'addBook').map((c) => c.id)).toEqual([
+      'gb-A One',
+      'gb-B Two',
+      'gb-C Three',
+    ]);
+    // Review finding (PR #676): the stamped three wait for the next quota-day, so the next pass tries the others.
+    const next = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(next.llRerequestNotAdded).toBe(2);
+    expect(
+      ll.calls
+        .filter((c) => c.cmd === 'addBook')
+        .map((c) => c.id)
+        .slice(3),
+    ).toEqual(['gb-D Four', 'gb-E Five']);
+  });
+
+  it('three refusals in a row after an add went through today are the quota: stamped, not counted', async () => {
+    const takenId = await seedPairingWant({
+      ...settled,
+      title: 'A Taken',
+      llBookId: 'gb-ok',
+      createdAt: daysAgo(61),
+    });
+    const wall: string[] = [];
+    for (const [n, title] of ['B Two', 'C Three', 'D Four'].entries()) {
+      wall.push(
+        await seedPairingWant({
+          ...settled,
+          title,
+          llBookId: `gb-${title}`,
+          createdAt: daysAgo(60 - n),
+        }),
+      );
+    }
+    const ll = stubLl({}, { refuseIds: ['gb-B Two', 'gb-C Three', 'gb-D Four'] });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ llRerequested: 1, llRerequestNotAdded: 0, llRerequestDeferred: 3 });
+    const taken = await getWant(takenId);
+    expect(taken.audioStatus).toBe('wanted');
+    expect(taken.llRerequestAddedAt).not.toBeNull(); // the live-quota proof a later pass reads
+    for (const id of wall) {
+      const want = await getWant(id);
+      expect(want).toMatchObject({ audioStatus: 'missing', llRerequestFailures: 0 });
+      expect(want.llRerequestFailedAt).not.toBeNull();
+    }
+  });
+
+  it('a refusal followed by a successful add is the book: it counts', async () => {
+    const refusedId = await seedPairingWant({
+      ...settled,
+      title: 'A One',
+      llBookId: 'gb-a',
+      createdAt: daysAgo(61),
+    });
+    const takenId = await seedPairingWant({ ...settled, title: 'B Two', llBookId: 'gb-b' });
+    const ll = stubLl({}, { refuseIds: ['gb-a'] });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ llRerequestNotAdded: 1, llRerequested: 1 });
+    expect(await getWant(refusedId)).toMatchObject({
+      audioStatus: 'missing',
+      llRerequestFailures: 1,
+    });
+    expect(await getWant(takenId)).toMatchObject({ audioStatus: 'wanted' });
   });
 
   it("defers adds while the app's Google Books breaker is open; a queue on LL's own row still runs", async () => {

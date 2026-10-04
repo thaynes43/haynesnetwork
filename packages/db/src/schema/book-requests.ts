@@ -123,8 +123,10 @@ export const bookRequests = pgTable(
     llRerequestedAt: timestamp('ll_rerequested_at', { withTimezone: true }),
     /** Issue #668 — hand-offs LazyLibrarian refused (addBook answered false / the book never appeared). */
     llRerequestFailures: integer('ll_rerequest_failures').notNull().default(0),
-    /** Issue #668 — the last refusal; a refused want is tried again only a day later. */
+    /** Issue #668 — the last refusal; a refused want is tried again on the next Google Books quota-day. */
     llRerequestFailedAt: timestamp('ll_rerequest_failed_at', { withTimezone: true }),
+    /** Issue #668 — when the re-request's `addBook` went through (not set by a queue-only hand-back). Migration 0090. */
+    llRerequestAddedAt: timestamp('ll_rerequest_added_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

@@ -3255,6 +3255,7 @@ describe('migrations against embedded Postgres 16', () => {
           ORDER BY column_name`,
       );
       expect(cols.rows).toEqual([
+        { column_name: 'll_rerequest_added_at', is_nullable: 'YES', column_default: null, data_type: 'timestamp with time zone' },
         { column_name: 'll_rerequest_failed_at', is_nullable: 'YES', column_default: null, data_type: 'timestamp with time zone' },
         { column_name: 'll_rerequest_failures', is_nullable: 'NO', column_default: '0', data_type: 'integer' },
         { column_name: 'll_rerequested_at', is_nullable: 'YES', column_default: null, data_type: 'timestamp with time zone' },
@@ -3421,6 +3422,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
   });
 
   // ADR-099 gate — the record-first Save migration is journaled (idx 87), after 0087.
+  // Issue #668 follow-up gate — the add-evidence column is journaled (idx 89), after 0089.
+  it('lists 0090_book_requests_ll_rerequest_added at idx 89, strictly after 0089_book_requests_ll_rerequest', () => {
+    const entry = journal.entries.find((e) => e.tag === '0090_book_requests_ll_rerequest_added');
+    const prev = journal.entries.find((e) => e.tag === '0089_book_requests_ll_rerequest');
+    expect(entry?.idx).toBe(89);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0090_book_requests_ll_rerequest_added.sql'), 'utf8');
+    expect(sqlText).toContain('ADD COLUMN "ll_rerequest_added_at" timestamp with time zone');
+  });
+
   // Issue #668 gate — the one-re-request column is journaled (idx 88), after 0088.
   it('lists 0089_book_requests_ll_rerequest at idx 88, strictly after 0088_trash_save_record_first', () => {
     const entry = journal.entries.find((e) => e.tag === '0089_book_requests_ll_rerequest');

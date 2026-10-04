@@ -436,7 +436,15 @@ export async function forceSearchFindMissingCollections(
   const worklist = await gatherCollectionWants(input.db, collections, cap, cutoff);
   report.candidates = worklist.length;
   if (worklist.length === 0) {
-    if (report.llGoneRekeyed + report.llGoneSettled + report.llRerequestLanded > 0) {
+    if (
+      report.llGoneRekeyed +
+        report.llGoneSettled +
+        report.llRerequested +
+        report.llRerequestLanded +
+        report.llRerequestNotAdded +
+        report.llRerequestDeferred >
+      0
+    ) {
       log.info?.('collection-force-search complete', { ...report });
     }
     return report;
@@ -467,6 +475,8 @@ export async function forceSearchFindMissingCollections(
     llGoneSettled: report.llGoneSettled,
     llRerequested: report.llRerequested,
     llRerequestLanded: report.llRerequestLanded,
+    llRerequestNotAdded: report.llRerequestNotAdded,
+    llRerequestDeferred: report.llRerequestDeferred,
   });
   return report;
 }

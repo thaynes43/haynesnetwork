@@ -530,9 +530,13 @@ format-pairing run, the goodreads-sync reconcile, the collection force-search cr
    `getAllBooks` confirms each add. The want reads `wanted`, and `ll_rerequested_at` (never cleared) plus
    `last_reconciled_at` are stamped; a collection want also gets `last_searched_at`, so its force-search cooldown
    keeps the cron's own `searchBook` off it.
-4. **Refusals are retried, a few times:** an add answered `false` (or a book that never appears) counts a refusal
-   (`ll_rerequest_failures`, `ll_rerequest_failed_at`): no queue, the want stays `missing`, and it is tried again
-   no sooner than 20 hours later (a Google Books quota-day). The third refusal ends its re-request.
+4. **Refusals are retried, a few times:** an add answered `false` (or a book that never appears) is a refusal: no
+   queue, the want stays `missing`, and it is stamped (`ll_rerequest_failed_at`) to wait for the next Google Books
+   quota-day (07:00 UTC). Three refusals in a row stop the pass's adds; when an add already went through that
+   quota-day (`ll_rerequest_added_at`, migration 0090: set only by a real `addBook`, never by a queue-only hand-back)
+   they are the shared quota running out, so they are NOT counted, otherwise they count. A refusal
+   followed by a successful add (or one or two trailing ones) counts (`ll_rerequest_failures`). Stamping every
+   refusal keeps a few refused books from blocking the rest. The third counted refusal ends its re-request.
 5. **The Google Books key is shared, so adds are gated:** LazyLibrarian's `addBook` looks the volume up on the SAME
    Google Books key the app uses (verified 2026-10-04 by hash; the 2026-07-19 note in `gb-call-budget.ts` says the
    key was split, but LazyLibrarian's config carries the app's key), and the app already spends about 900 of its
