@@ -502,4 +502,50 @@ and the collection force-search cron):
 
 Each run report carries `llGoneRekeyed` and `llGoneSettled`; each changed want logs `ll_book_gone` with its
 `site` and `outcome`. Re-acquiring the settled wants in bulk is not automatic: a paced re-push of hundreds of
-books is an indexer-load decision for the owner, tracked in issue #668.
+books is an indexer-load decision for the owner: ruled the same day (issue #668), next section.
+
+## Amendment — 2026-10-04 (later): re-request every settled want once (issue #668, owner ruling)
+
+**The ruling** (Tom, 2026-10-04, "Add them all back now", replacing an earlier "people's now, the rest about 20 a
+day"): every want the rule above settled `missing` is handed back to LazyLibrarian **once**, goodreads, pairing and
+collection alike, all at once, with no daily budget. The SEARCH rides LazyLibrarian's own daily backlog search
+(category-only, one query per wanted format per indexer, the DELAYSEARCH back-off; haynes-ops #3322 / #3328), never a
+per-book `searchBook` from the app. A lost format the library or LazyLibrarian already holds is settled `landed`
+instead. A want lost again after its re-request stays settled `missing`.
+
+**How** (`runLlRerequests` in `ll-gone.ts`, run last by each unattended job on the snapshot it already read: the
+format-pairing run, the goodreads-sync reconcile, the collection force-search cron):
+
+1. **Eligible:** the re-request not ended (`ll_rerequested_at` NULL, migration 0089), not parked, the id absent from
+   a non-empty snapshot, and at least one of the want's own formats `missing` (both for goodreads; the
+   anchor-missing one for pairing, on an anchor still in the library; the active one for a collection want of a
+   find-missing collection). Fewest refusals first, then oldest.
+2. **Held lands, no LL write:** a pairing anchor that is paired now (the library holds the format); a format the
+   re-key match (same title, agreeing author) holds in LazyLibrarian (the want is repointed there). A goodreads want
+   the library holds was already landed by the library match; a collection member the library holds was already
+   dropped by Libretto's missing list.
+3. **Hand back:** where LazyLibrarian holds the book (the re-key match), `queueBook` on that row, no add. Otherwise
+   `addBook` (`wait`: it answers `true`, or `false` when LazyLibrarian refused), then `queueBook` once per (book,
+   format) unless the row already reads it `Wanted` or `Snatched`. Paced; **never `searchBook`**. One more
+   `getAllBooks` confirms each add. The want reads `wanted`, and `ll_rerequested_at` (never cleared) plus
+   `last_reconciled_at` are stamped; a collection want also gets `last_searched_at`, so its force-search cooldown
+   keeps the cron's own `searchBook` off it.
+4. **Refusals are retried, a few times:** an add answered `false` (or a book that never appears) counts a refusal
+   (`ll_rerequest_failures`, `ll_rerequest_failed_at`): no queue, the want stays `missing`, and it is tried again
+   no sooner than 20 hours later (a Google Books quota-day). The third refusal ends its re-request.
+5. **The Google Books key is shared, so adds are gated:** LazyLibrarian's `addBook` looks the volume up on the SAME
+   Google Books key the app uses (verified 2026-10-04 by hash; the 2026-07-19 note in `gb-call-budget.ts` says the
+   key was split, but LazyLibrarian's config carries the app's key), and the app already spends about 900 of its
+   1,000 daily queries. So adds wait while the app's quota breaker is open, three refused adds in a row end a pass's
+   adds, and the pairing and collection passes defer their adds while a person's (goodreads) re-request is still
+   waiting, so people's wants get the quota first. Deferred wants count in `llRerequestDeferred` and are untouched.
+   In practice the re-adds drain over several quota-days, not one run, unless LazyLibrarian gets its own key
+   (issue #674, an owner decision).
+6. **A person's Search again is separate:** it still re-adds and searches on demand.
+
+**What it costs:** no app-side search. LazyLibrarian's daily backlog run searches each newly `Wanted` format like any
+other, one query per format per indexer: about 840 formats in all (716 pairing, 100 goodreads from 50 wants, 23
+collection), spread over the days the adds take. Report fields `llRerequested`, `llRerequestLanded`,
+`llRerequestNotAdded`, `llRerequestDeferred`; each changed want logs `ll_rerequest` with its `outcome`. The
+goodreads push leg also stopped calling `addBook` for a book LazyLibrarian holds (rule 6 of the amendment above, the
+site the first pass missed).

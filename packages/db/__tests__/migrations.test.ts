@@ -3245,6 +3245,22 @@ describe('migrations against embedded Postgres 16', () => {
       expect(listed.sort()).toEqual([...TRASH_KEEP_REASONS].sort());
     });
   });
+
+  // Issue #668 (migration 0089, journal idx 88): a want lost by LazyLibrarian is re-requested once.
+  describe('0089 book_requests ll_rerequested_at (issue #668 — one re-request per lost want)', () => {
+    it('adds the re-request columns to book_requests: the end stamp, the refusal count and the last refusal', async () => {
+      const cols = await client.query(
+        `SELECT column_name, is_nullable, column_default, data_type FROM information_schema.columns
+          WHERE table_name = 'book_requests' AND column_name LIKE 'll_rerequest%'
+          ORDER BY column_name`,
+      );
+      expect(cols.rows).toEqual([
+        { column_name: 'll_rerequest_failed_at', is_nullable: 'YES', column_default: null, data_type: 'timestamp with time zone' },
+        { column_name: 'll_rerequest_failures', is_nullable: 'NO', column_default: '0', data_type: 'integer' },
+        { column_name: 'll_rerequested_at', is_nullable: 'YES', column_default: null, data_type: 'timestamp with time zone' },
+      ]);
+    });
+  });
 });
 
 // REGRESSION GUARD (2026-07-18) — the drizzle node-postgres migrator applies a journaled migration
@@ -3405,6 +3421,17 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
   });
 
   // ADR-099 gate — the record-first Save migration is journaled (idx 87), after 0087.
+  // Issue #668 gate — the one-re-request column is journaled (idx 88), after 0088.
+  it('lists 0089_book_requests_ll_rerequest at idx 88, strictly after 0088_trash_save_record_first', () => {
+    const entry = journal.entries.find((e) => e.tag === '0089_book_requests_ll_rerequest');
+    const prev = journal.entries.find((e) => e.tag === '0088_trash_save_record_first');
+    expect(entry?.idx).toBe(88);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0089_book_requests_ll_rerequest.sql'), 'utf8');
+    expect(sqlText).toContain('ADD COLUMN "ll_rerequested_at" timestamp with time zone');
+    expect(sqlText).toContain('ADD COLUMN "ll_rerequest_failures" integer DEFAULT 0 NOT NULL');
+  });
+
   it('lists 0088_trash_save_record_first at idx 87, strictly after 0087_trash_title_exclusions', () => {
     const entry = journal.entries.find((e) => e.tag === '0088_trash_save_record_first');
     const prev = journal.entries.find((e) => e.tag === '0087_trash_title_exclusions');

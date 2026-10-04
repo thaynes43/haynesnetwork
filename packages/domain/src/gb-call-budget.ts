@@ -10,7 +10,9 @@
 // genuine 1,000 Queries/day, NOT ~100 — the earlier "~100" was only the APP's slice of a key that was
 // SHARED with LazyLibrarian + Libretto (all three on the same GCP project), which together saturated
 // the one 1,000/day quota daily. That key was split (each now has its own GCP-project key), so the app
-// owns its key's full ~1,000/day; prod env sets pairing 700 / goodreads 200 / bookfix 100. The
+// owns its key's full ~1,000/day; prod env sets pairing 700 / goodreads 200 / bookfix 100. CORRECTION
+// (2026-10-04, issue #674): LazyLibrarian's config still carries THIS key, so its `addBook` lookups share the
+// quota (the issue #668 re-adds gate on the breaker for that reason). The
 // mechanism below stands: a persistent per-consumer daily CALL budget, enforced BEFORE the GB call,
 // that skips GB work for the rest of the quota-day WITHOUT tripping the shared breaker (which stays the
 // hard backstop for real 429s).

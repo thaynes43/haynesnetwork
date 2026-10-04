@@ -41,10 +41,15 @@ import {
   applyLlGoneDecision,
   decideLlGoneWant,
   emptyLlGoneTally,
+  emptyLlRerequestTally,
   LL_GONE_COLLECTION_GRACE_MS,
   llSnapshotUsable,
   LlRekeyIndex,
+  llRerequestOpen,
+  peoplesRerequestsWaiting,
+  runLlRerequests,
   type LlGoneTally,
+  type LlRerequestTally,
 } from './ll-gone';
 
 /** The Libretto read surface this pass needs — just the recipe list (which carries acquisitionEnabled). */
@@ -79,7 +84,7 @@ export interface ForceSearchCollectionsInput {
   pacer?: (index: number) => Promise<void>;
 }
 
-export interface ForceSearchCollectionsReport extends LlGoneTally {
+export interface ForceSearchCollectionsReport extends LlGoneTally, LlRerequestTally {
   /** Find-missing (acquisition ON) collections that have a mirror row this run. */
   findMissingCollections: number;
   /** Searchable, cooldown-eligible wants found across those collections (pre-cap). */
@@ -367,6 +372,7 @@ export async function forceSearchFindMissingCollections(
     skippedRecent: 0,
     unreachable: false,
     ...emptyLlGoneTally(),
+    ...emptyLlRerequestTally(),
   };
 
   // Which Libretto recipes have acquisition turned ON? (A Libretto outage skips the whole pass.)
@@ -412,13 +418,25 @@ export async function forceSearchFindMissingCollections(
     report,
     log,
   });
+  // Issue #668 — the one re-request of a settled want: addBook + queueBook, no search (LazyLibrarian's daily backlog
+  // search looks for it). It stamps `last_searched_at`, so the gather below leaves it to that daily search.
+  const rerequestSnapshot = await rerequestGoneCollectionWants({
+    db: input.db,
+    ll: input.ll,
+    collectionIds: collections.map((c) => c.id),
+    now,
+    snapshot,
+    pace,
+    report,
+    log,
+  });
 
   const cutoff = new Date(now.getTime() - cooldownMs);
   // Gather the searchable, cooldown-eligible wants across every find-missing collection (global cap).
   const worklist = await gatherCollectionWants(input.db, collections, cap, cutoff);
   report.candidates = worklist.length;
   if (worklist.length === 0) {
-    if (report.llGoneRekeyed + report.llGoneSettled > 0) {
+    if (report.llGoneRekeyed + report.llGoneSettled + report.llRerequestLanded > 0) {
       log.info?.('collection-force-search complete', { ...report });
     }
     return report;
@@ -435,7 +453,7 @@ export async function forceSearchFindMissingCollections(
     actorId: null,
     report,
     log,
-    ...(snapshot ? { snapshot } : {}),
+    ...(rerequestSnapshot ? { snapshot: rerequestSnapshot } : {}),
   });
 
   log.info?.('collection-force-search complete', {
@@ -447,8 +465,88 @@ export async function forceSearchFindMissingCollections(
     skippedRecent: report.skippedRecent,
     llGoneRekeyed: report.llGoneRekeyed,
     llGoneSettled: report.llGoneSettled,
+    llRerequested: report.llRerequested,
+    llRerequestLanded: report.llRerequestLanded,
   });
   return report;
+}
+
+/**
+ * Issue #668 (DESIGN-028 amendment 2026-10-04, the owner ruling) — the collection leg of the one re-request. A
+ * collection want of a find-missing collection whose active format was settled `missing` (its LazyLibrarian book is
+ * gone) and that was never re-requested is handed back to LazyLibrarian by `runLlRerequests` (addBook + queueBook, no
+ * search), with `last_searched_at` stamped so this pass's gather does not also search it. A format LazyLibrarian
+ * holds under another id for the same title and author lands instead. Libretto decides whether the LIBRARY holds a
+ * member: a held member's want is dropped by the wants pass, so a want still here is missing from the library. Reads
+ * the snapshot only when a candidate exists and none was read yet; returns it.
+ */
+async function rerequestGoneCollectionWants(input: {
+  db?: DbClient;
+  ll: LazyLibrarianClientBundle;
+  collectionIds: string[];
+  now: Date;
+  snapshot: Map<string, LlHeldSignals> | null;
+  pace: (index: number) => Promise<void>;
+  report: LlRerequestTally;
+  log: {
+    info?: (msg: string, meta?: Record<string, unknown>) => void;
+    warn?: (msg: string, meta?: Record<string, unknown>) => void;
+  };
+}): Promise<Map<string, LlHeldSignals> | null> {
+  if (input.collectionIds.length === 0) return input.snapshot;
+  const candidates = (
+    await resolveDb(input.db)
+      .select({ want: bookRequests, source: booksCollections.source })
+      .from(bookRequests)
+      .innerJoin(booksCollections, eq(booksCollections.id, bookRequests.collectionId))
+      .where(
+        and(
+          eq(bookRequests.origin, 'collection'),
+          inArray(bookRequests.collectionId, input.collectionIds),
+          isNull(bookRequests.matchedBooksItemId),
+          isNull(bookRequests.unroutableReason),
+          llRerequestOpen(input.now),
+          isNotNull(bookRequests.llBookId),
+        ),
+      )
+      .orderBy(asc(bookRequests.llRerequestFailures), asc(bookRequests.createdAt), asc(bookRequests.id))
+  ).filter(({ want, source }) => {
+    const status = formatForSource(source) === 'audiobook' ? want.audioStatus : want.ebookStatus;
+    return status === 'missing';
+  });
+  if (candidates.length === 0) return input.snapshot;
+  let snapshot = input.snapshot;
+  if (snapshot == null) {
+    try {
+      snapshot = await input.ll.read.getAllBookStatuses();
+    } catch (error) {
+      input.log.warn?.('collection-force-search: LL getAllBooks failed — re-request pass skipped', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+  if (!llSnapshotUsable(snapshot)) return snapshot;
+  const tally = await runLlRerequests({
+    db: input.db,
+    ll: input.ll,
+    candidates: candidates.map(({ want, source }) => ({
+      want,
+      formats: [formatForSource(source)],
+      collection: true,
+    })),
+    snapshot,
+    now: input.now,
+    site: 'collection-force-search.rerequest',
+    deferAdds: await peoplesRerequestsWaiting(input.db, snapshot, input.now),
+    pace: input.pace,
+    log: { info: input.log.info, error: input.log.warn },
+  });
+  input.report.llRerequested += tally.llRerequested;
+  input.report.llRerequestLanded += tally.llRerequestLanded;
+  input.report.llRerequestNotAdded += tally.llRerequestNotAdded;
+  input.report.llRerequestDeferred += tally.llRerequestDeferred;
+  return snapshot;
 }
 
 /**

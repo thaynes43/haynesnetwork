@@ -26,7 +26,7 @@ import {
   type DbClient,
   type FormatPairMatchKind,
 } from '@hnet/db';
-import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { readHeldBooks, type HeldBook } from './books';
 import { inTransaction, resolveDb } from './db-client';
 import { guardedGbResolve } from './gb-quota-breaker';
@@ -48,9 +48,16 @@ import {
   applyLlGoneDecision,
   decideLlGoneWant,
   emptyLlGoneTally,
+  emptyLlRerequestTally,
   llSnapshotUsable,
   LlRekeyIndex,
+  llRerequestOpen,
+  peoplesRerequestsWaiting,
+  runLlRerequests,
   type LlGoneTally,
+  type LlRerequestCandidate,
+  type LlRerequestTally,
+  type LlSnapshot,
 } from './ll-gone';
 
 /**
@@ -746,6 +753,73 @@ export async function landPairingHeldFormat(input: {
   return rows.length > 0;
 }
 
+/**
+ * Issue #668 — the pairing leg of the one re-request (DESIGN-028 amendment 2026-10-04, the owner ruling). A pairing
+ * want whose missing format was settled `missing` (its LazyLibrarian book is gone) and that was never re-requested,
+ * on an anchor still in the library: if the anchor is PAIRED now the library holds the format and it lands; else
+ * `runLlRerequests` hands it back to LazyLibrarian (addBook + queueBook, no search) or lands it on LazyLibrarian's
+ * row for the same book when that row holds it. Oldest want first.
+ */
+async function rerequestGonePairingWants(input: {
+  db?: DbClient;
+  ll: LazyLibrarianClientBundle;
+  snapshot: LlSnapshot;
+  now: Date;
+  pace: (index: number) => Promise<void>;
+  log: {
+    info?: (msg: string, meta?: Record<string, unknown>) => void;
+    error?: (msg: string, meta?: Record<string, unknown>) => void;
+  };
+}): Promise<LlRerequestTally> {
+  if (!llSnapshotUsable(input.snapshot)) return emptyLlRerequestTally();
+  const snapshot = input.snapshot;
+  const db = resolveDb(input.db);
+  const rows = (
+    await db
+      .select({ want: bookRequests, mediaKind: booksItems.mediaKind, deletedAt: booksItems.deletedAt })
+      .from(bookRequests)
+      .innerJoin(booksItems, eq(booksItems.id, bookRequests.pairingBooksItemId))
+      .where(
+        and(
+          eq(bookRequests.origin, 'pairing'),
+          llRerequestOpen(input.now),
+          isNull(bookRequests.unroutableReason),
+          isNotNull(bookRequests.llBookId),
+          or(eq(bookRequests.ebookStatus, 'missing'), eq(bookRequests.audioStatus, 'missing')),
+        ),
+      )
+      .orderBy(
+        asc(bookRequests.llRerequestFailures),
+        asc(bookRequests.createdAt),
+        asc(bookRequests.id),
+      )
+  ).filter((r) => r.deletedAt === null && !snapshot.has(r.want.llBookId!));
+  if (rows.length === 0) return emptyLlRerequestTally();
+  const pairRows = await db
+    .select({ bookItemId: booksFormatPairs.bookItemId, audioItemId: booksFormatPairs.audioItemId })
+    .from(booksFormatPairs);
+  const paired = new Set(pairRows.flatMap((p) => [p.bookItemId, p.audioItemId]));
+  const candidates: LlRerequestCandidate[] = rows.map(({ want, mediaKind }) => {
+    const format = missingFormatFor(mediaKind);
+    return {
+      want,
+      formats: [format],
+      libraryHolds: paired.has(want.pairingBooksItemId!) ? [format] : [],
+    };
+  });
+  return runLlRerequests({
+    db: input.db,
+    ll: input.ll,
+    candidates,
+    snapshot,
+    now: input.now,
+    site: 'format-pairing.rerequest',
+    deferAdds: await peoplesRerequestsWaiting(input.db, snapshot, input.now),
+    pace: input.pace,
+    log: input.log,
+  });
+}
+
 /** Advance a pushed pairing want: the missing format `requested → wanted`, llBookId + stamps set. */
 export async function markPairingWantPushed(input: {
   db?: DbClient;
@@ -1138,7 +1212,8 @@ export async function mintPairingWants(
 export interface FormatPairingReport
   extends SyncFormatPairsReport,
     MintPairingWantsReport,
-    LlGoneTally {
+    LlGoneTally,
+    LlRerequestTally {
   /** Open pairing wants whose LL statuses reconciled this run. */
   reconciled: number;
   /** Pairing wants whose raw-`Skipped` missing format was re-queued + re-searched this run. */
@@ -1366,6 +1441,14 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     }
   }
 
+  // Issue #668 (owner ruling 2026-10-04, "Add them all back now") — the ONE re-request of every want settled
+  // `missing` because LazyLibrarian lost its book: addBook + queueBook only, never a search (LazyLibrarian's daily
+  // backlog search looks for them), a held format lands instead. Last, so the run's own work is done first.
+  const rerequest =
+    input.ll && seatedMap
+      ? await rerequestGonePairingWants({ db: input.db, ll: input.ll, snapshot: seatedMap, now, pace, log })
+      : emptyLlRerequestTally();
+
   const report: FormatPairingReport = {
     ...pairs,
     ...mint,
@@ -1376,6 +1459,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     skippedHeld: mint.skippedHeld + sweepSkippedHeld,
     heldLanded,
     ...gone,
+    ...rerequest,
   };
   log.info?.('format-pairing run complete', { ...report });
   return report;
