@@ -4,6 +4,40 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-04 — v0.105.3 live: pairing uses the book a Kavita series holds (#661); one check owed
+
+- **v0.105.3** (#664, closes #661) deployed by haynes-ops #3340: 3/3 pods, `/api/health` ok. A Kavita
+  `books_items` row is a series, and `format-pairing` keyed its matcher and wants on the series name, so a one-book
+  series resolved to a box set. The books-sync now mirrors each Kavita book series' held books in
+  `attrs.heldBooks` (`/api/Series/volumes`, change-gated; backfilled by a manual books-sync job at 01:43Z, 1,691
+  series in about 12 s), and `pairingIdentity` makes the anchor that book. A series holding several books gets no
+  want (an unpushed one is parked `multi_book`). The D-04 re-vanish now fires only for a pair that dropped that run:
+  it was resetting 312 held wants a run and the mint pushed nothing. DESIGN-024 D-03 and DESIGN-036 amendments,
+  glossary T-278 Held Book.
+- **First pass (02:32Z):** pairs 628 → 656, `revived 4` (was 312), `attempted 29, pushed 11` (was 0),
+  `skippedUnknownHeld 0`, 3 multi-book wants parked.
+- **Repair** (`.agents/context/2026-10-04-pairing-held-book-repair.md`, old values and method there): the park
+  lifted on the six wants this defect caused. Fire & Blood and SSN re-resolved to the single books (both audiobooks
+  already held, `landed`); Jack Ryan re-parked `multi_book`. Six pushed wants that pointed at an audiobook their
+  anchor does not hold were parked; one LL audiobook set Skipped (Secretos en Londres, a Spanish edition), the
+  others stay Wanted for wants that hold them.
+- **Filed:** haynesnetwork #665 — most open requests point at LazyLibrarian ids `getAllBooks` does not return
+  (748 of 966 open pairing wants), so their reconciles never settle them.
+
+**Owed check (e), after the Google Books quota day rolls (about 07:00Z 2026-10-04):** the three repaired wants still
+waiting on a resolve must name their held book and point at it, never a box set. In an app pod, with the `q`
+helper from the 2026-10-03 (late) entry below:
+
+```bash
+q "select left(id::text,8) id, title, author, ll_book_id, unroutable_reason, audio_status, updated_at from book_requests where id::text like any(array['4c3d07f2%','328548eb%','24e155f8%'])"
+```
+
+Expect titles `The Tales of Beedle the Bard`, `Murtagh` (author Christopher Paolini), `The Lays of Beleriand`, each
+with an `ll_book_id` once the pairing budget allows. The ids must not be Xtr3yQEACAAJ (Hogwarts Library box set),
+CyAJMAEACAAJ (The Inheritance Cycle box set) or 2MFMAAAACAAJ (The Complete History of Middle-Earth). If one is, park
+it again (`unroutable_reason='wrong_volume'`, id cleared) and reopen #661. Check the LL title with `cmd=getAllBooks`
+(`BookID`, `BookName`).
+
 ## ▶ 2026-10-03 (late) — v0.105.2 + Libretto sha-3309ff2 live; LL bundle rows repaired; four checks owed
 
 - **v0.105.2** (#657 janitor `waiting` verdict, #658 Google Books omnibus guard, #659 Trash batch-read race, #660 a
