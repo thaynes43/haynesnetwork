@@ -1241,6 +1241,8 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     // sits `landed` (ADR-065 C-03). Guessing it from which status reads `landed` misread three July wants whose
     // held format read `grabbed`, so the Skipped sweep worked their HELD format (issue #665 follow-up).
     const anchorKindOf = new Map<string, BooksMediaKind>();
+    // Anchors still in the library: only those hold their format, so only their wants' held format is landed.
+    const anchorLive = new Set<string>();
     const open = (await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'))).filter(
       (w) =>
         w.llBookId !== null &&
@@ -1252,10 +1254,13 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     );
     if (open.length > 0) {
       const anchors = await db
-        .select({ id: booksItems.id, mediaKind: booksItems.mediaKind })
+        .select({ id: booksItems.id, mediaKind: booksItems.mediaKind, deletedAt: booksItems.deletedAt })
         .from(booksItems)
         .where(inArray(booksItems.id, [...new Set(open.map((w) => w.pairingBooksItemId!))]));
-      for (const a of anchors) anchorKindOf.set(a.id, a.mediaKind);
+      for (const a of anchors) {
+        anchorKindOf.set(a.id, a.mediaKind); // the media kind never changes, so a removed anchor still names it
+        if (a.deletedAt === null) anchorLive.add(a.id);
+      }
     }
     for (const want of open) {
       const status = seatedMap.get(want.llBookId!);
@@ -1266,7 +1271,10 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
           ? ('audiobook' as const)
           : ('ebook' as const);
       const heldFormat = missing === 'ebook' ? ('audiobook' as const) : ('ebook' as const);
-      if (anchorKind && (heldFormat === 'ebook' ? want.ebookStatus : want.audioStatus) !== 'landed') {
+      if (
+        anchorLive.has(want.pairingBooksItemId!) &&
+        (heldFormat === 'ebook' ? want.ebookStatus : want.audioStatus) !== 'landed'
+      ) {
         if (await landPairingHeldFormat({ db: input.db, requestId: want.id, format: heldFormat, now })) {
           heldLanded += 1;
           if (heldFormat === 'ebook') want.ebookStatus = 'landed';

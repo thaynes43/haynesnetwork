@@ -387,6 +387,25 @@ describe('runFormatPairing — a pushed want whose LazyLibrarian book is gone', 
     expect(await getWant(id)).toMatchObject({ ebookStatus: 'landed', audioStatus: 'missing' });
   });
 
+  // Review finding (PR #670): a removed (soft-deleted) anchor no longer holds its format, so it is not landed.
+  it('never lands the held format of a want whose anchor left the library', async () => {
+    const id = await seedPairingWant({
+      title: 'Rework',
+      author: 'Jason Fried',
+      llBookId: 'gb-gone',
+      ebookStatus: 'grabbed',
+      audioStatus: 'missing',
+    });
+    const [want] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, id));
+    await t.db
+      .update(booksItems)
+      .set({ deletedAt: new Date() })
+      .where(eq(booksItems.id, want!.pairingBooksItemId!));
+    const run = await runFormatPairing({ db: t.db, ll: stubLl().bundle, pacer: noPace });
+    expect(run.heldLanded).toBe(0);
+    expect((await getWant(id)).ebookStatus).toBe('grabbed');
+  });
+
   it('re-keys to the row LazyLibrarian holds for the same book and reconciles from it', async () => {
     const id = await seedPairingWant({
       title: 'The Client',
