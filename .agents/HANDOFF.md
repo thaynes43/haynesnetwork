@@ -4,7 +4,7 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ 2026-10-03 (late) — v0.105.2 + Libretto sha-3309ff2 live; LL bundle rows repaired; three checks owed
+## ▶ 2026-10-03 (late) — v0.105.2 + Libretto sha-3309ff2 live; LL bundle rows repaired; four checks owed
 
 - **v0.105.2** (#657 janitor `waiting` verdict, #658 Google Books omnibus guard, #659 Trash batch-read race, #660 a
   parked pairing want stays parked) deployed by haynes-ops #3333: 3/3 pods on v0.105.2, no restarts, no migrations,
