@@ -1,6 +1,6 @@
 book_id	title	format	audit_rows	verdict	action	file_now	rewanted	notes
 E-kdBQAAQBAJ	A Court of Thorns and Roses	eBook	12	correct	none	EBooks/Sarah J. Maas/A Court of Thorns and Roses/ (epub x2, azw3, mobi: all book 1)	no	later correct grabs replaced the wrong ones
-E-kdBQAAQBAJ	A Court of Thorns and Roses	AudioBook	0	correct	none	AudioBooks/Sarah J. Maas/A Court of Thorns and Roses/ (16.13 h)	no	mia.xh has 0.76 h progress on this correct file
+E-kdBQAAQBAJ	A Court of Thorns and Roses	AudioBook	0	correct	none	AudioBooks/Sarah J. Maas/A Court of Thorns and Roses/ (16.13 h)	no	one listener has 0.76 h progress on this correct file
 RzIuCwAAQBAJ	Alcatraz Vs. the Evil Librarians	eBook	4	correct	none	epub/mobi/pdf all book 1	no	
 RzIuCwAAQBAJ	Alcatraz Vs. the Evil Librarians	AudioBook	0	correct	none	5 parts, 6.27 h	no	
 ik6xzgEACAAJ	Chroniken der Unterwelt (= German omnibus vols 4-6, ISBN 9783401807294)	eBook	14	wrong	held: German vol 6 epub alone + 1-page usenet advert pdf; LL eBook set Skipped, BookFile blank	none	no	German edition (F10 English-only): not re-wanted
