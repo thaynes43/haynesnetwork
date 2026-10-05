@@ -137,6 +137,13 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
   - **Left as found (not cross-volume):** Pathfinder audio holds four copies of book 1 (71 h in Audiobookshelf); The
     Infernal Devices audio holds Clockwork Angel twice; the English City of Heavenly Fire row `hf1wCgAAQBAJ` links the
     German vol-6 audio; `83SDzwEACAAJ`, a Guards! Guards! twin, is `Wanted` for both formats.
+- **2026-10-05 14:44Z, #694 fixed and live; #694 closed** (haynes-ops #3369, same `resultlist.py` marked change). A title
+  that starts with its author (`Terry Pratchett's Discworld`) is also looked for as its series alone (`Discworld 21 -
+  Jingo`, `12. Discworld - ...`). When nothing follows the volume, the title between the author and the series counts
+  (`Unseen Academicals_ Discworld, Book 37`). The record's volume releases fall from about 90 to about 40 (31 of its 32
+  grabs); the one left is *The Science of Discworld*, which has no volume number. Replay over 3,385 rows: 44 more fall
+  below 80, all cross-volume mismatches (30 this record's, plus German Mistborn/Throne of Glass volumes and others);
+  genuine Discworld books score as before. `YVfJMgEACAAJ` stays `Skipped`; #693 still owns its app rows.
 - **Owed check (l), after the 2026-10-06 04:54Z backlog run and 09:10Z library scan:** nothing was re-wanted, so none
   of the 19 records gets a grab: `select BookID, NZBtitle, Status from wanted where rowid > 9539 and BookID in (<the 19
   ids in the table>)` returns no row; `YVfJMgEACAAJ` stays `Skipped` for both formats with no file; `ik6xzgEACAAJ`
