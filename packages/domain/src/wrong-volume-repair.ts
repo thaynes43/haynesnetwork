@@ -189,6 +189,8 @@ export async function settleParkedPairingWant(input: {
   db?: DbClient;
   requestId: string;
   now?: Date;
+  /** Compute the statuses it would write, and write nothing (the repair's dry run). */
+  dryRun?: boolean;
 }): Promise<{ ebookStatus: BookRequestStatus; audioStatus: BookRequestStatus } | null> {
   const now = input.now ?? new Date();
   return inTransaction(input.db, async (tx) => {
@@ -237,6 +239,7 @@ export async function settleParkedPairingWant(input: {
     };
     if (next.ebookStatus === row.want.ebookStatus && next.audioStatus === row.want.audioStatus)
       return null;
+    if (input.dryRun) return next;
     await tx
       .update(bookRequests)
       .set({ ...next, updatedAt: now })
@@ -442,9 +445,13 @@ export async function repairWrongVolumeRequests(
       });
       continue;
     }
-    const written = input.dryRun
-      ? null
-      : await settleParkedPairingWant({ db: input.db, requestId, now });
+    // The dry run computes what it would write the same way (no write), so its listing shows each change.
+    const next = await settleParkedPairingWant({
+      db: input.db,
+      requestId,
+      now,
+      dryRun: input.dryRun,
+    });
     rows.push({
       requestId,
       origin: 'pairing',
@@ -453,10 +460,10 @@ export async function repairWrongVolumeRequests(
       title: want.title,
       llBookId: null,
       llTitle: null,
-      detail: written
-        ? `${before} → ${written.ebookStatus}/${written.audioStatus}`
-        : `${before} (checked)`,
-      applied: written !== null,
+      detail: next
+        ? `${before} → ${next.ebookStatus}/${next.audioStatus}`
+        : `${before} (already right)`,
+      applied: !input.dryRun && next !== null,
     });
   }
 

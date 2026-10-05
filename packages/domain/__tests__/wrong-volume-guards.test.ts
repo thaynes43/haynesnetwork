@@ -802,9 +802,17 @@ describe('settleParkedPairingWant (wants parked by hand)', () => {
       dryRun: true,
       parkedPairingWants: [c0],
     });
+    // The dry run shows the change it would make, and makes none.
     expect(dry.rows).toEqual([
-      expect.objectContaining({ requestId: c0, action: 'settle', applied: false }),
+      expect.objectContaining({
+        requestId: c0,
+        action: 'settle',
+        applied: false,
+        detail: 'wanted/landed → missing/landed',
+      }),
     ]);
+    const [untouched] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, c0));
+    expect(untouched!.ebookStatus).toBe('wanted');
     const applied = await repairWrongVolumeRequests({
       db: t.db,
       snapshot,
