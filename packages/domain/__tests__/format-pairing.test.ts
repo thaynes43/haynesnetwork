@@ -1671,29 +1671,46 @@ describe('mintPairingWants — the language rule (issue #700)', () => {
     expect(ll.calls.every((c) => !/chroniken|nl|es$|german/.test(c.id))).toBe(true);
   });
 
-  it('parks an UNPUSHED want on a foreign anchor (the de Audiobookshelf shape) and leaves a pushed one alone', async () => {
+  it('parks every OPEN want on a foreign anchor (the de Audiobookshelf shape), and leaves a landed one alone', async () => {
     const chroniken = await seedItem({ title: 'Chroniken der Unterwelt (4-6)', author: 'Cassandra Clare', mediaKind: 'audiobook', attrs: { language: 'de' } });
     const dutch = await seedItem({ title: 'Een Boek', author: 'Een Schrijver', mediaKind: 'book', attrs: { language: 'nl', heldBooks: [{ title: 'Een Boek', author: 'Een Schrijver', isbn: null }] } });
     const [unpushed] = await t.db
       .insert(bookRequests)
       .values({ origin: 'pairing', pairingBooksItemId: chroniken, title: 'Chroniken der Unterwelt (4-6)', author: 'Cassandra Clare', llBookId: 'ik6xzgEACAAJ', ebookStatus: 'requested', audioStatus: 'landed' })
       .returning();
+    // Pushed and in flight (LazyLibrarian is working it), and one settled `missing`: both are open, so both park.
     const [pushed] = await t.db
       .insert(bookRequests)
       .values({ origin: 'pairing', pairingBooksItemId: dutch, title: 'Een Boek', author: 'Een Schrijver', llBookId: 'gb-een-boek', ebookStatus: 'landed', audioStatus: 'wanted' })
+      .returning();
+    const gone = await seedItem({ title: 'Ein Buch', author: 'Ein Autor', mediaKind: 'book', attrs: { language: 'de', heldBooks: [{ title: 'Ein Buch', author: 'Ein Autor', isbn: null }] } });
+    const [missing] = await t.db
+      .insert(bookRequests)
+      .values({ origin: 'pairing', pairingBooksItemId: gone, title: 'Ein Buch', author: 'Ein Autor', llBookId: 'gb-ein-buch', ebookStatus: 'landed', audioStatus: 'missing' })
+      .returning();
+    // The other format already landed: nothing is wanted, so nothing to park.
+    const done = await seedItem({ title: 'Un Livre', author: 'Un Auteur', mediaKind: 'book', attrs: { language: 'fr', heldBooks: [{ title: 'Un Livre', author: 'Un Auteur', isbn: null }] } });
+    const [landed] = await t.db
+      .insert(bookRequests)
+      .values({ origin: 'pairing', pairingBooksItemId: done, title: 'Un Livre', author: 'Un Auteur', llBookId: 'gb-un-livre', ebookStatus: 'landed', audioStatus: 'landed' })
       .returning();
     const gb = stubGb(() => 'gb-should-not-resolve');
     const ll = stubLl();
 
     const report = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
 
-    expect(report).toMatchObject({ attempted: 0, minted: 0, pushed: 0, parked: 1, skippedForeign: 0 });
+    expect(report).toMatchObject({ attempted: 0, minted: 0, pushed: 0, parked: 3, skippedForeign: 0 });
     expect(gb.calls).toHaveLength(0);
     expect(ll.calls).toHaveLength(0);
     const [a] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, unpushed!.id));
     expect(a).toMatchObject({ unroutableReason: 'foreign_language', ebookStatus: 'requested' });
     const [b] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, pushed!.id));
-    expect(b).toMatchObject({ unroutableReason: null, llBookId: 'gb-een-boek', audioStatus: 'wanted' });
+    expect(b).toMatchObject({ unroutableReason: 'foreign_language', llBookId: 'gb-een-boek', audioStatus: 'wanted' });
+    const [m] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, missing!.id));
+    expect(m).toMatchObject({ unroutableReason: 'foreign_language', audioStatus: 'missing' });
+    const [l] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, landed!.id));
+    expect(l).toMatchObject({ unroutableReason: null, audioStatus: 'landed' });
+    expect(l!.updatedAt.getTime()).toBe(landed!.updatedAt.getTime());
 
     // A parked want stays parked on the next run (the park is its own decision).
     const again = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });

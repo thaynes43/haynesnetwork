@@ -444,8 +444,12 @@ missing piece is a language rule. Owner-side rulings (the coordinator's, 2026-10
 **D-05, the candidate filter.** A foreign anchor is never a candidate: with no want yet it is not minted
 (`skippedForeign`, no Google Books call, no push); an existing want LazyLibrarian is not working yet (`ll_book_id`
 NULL, or the missing format `requested`) is parked with `unroutable_reason='foreign_language'` through the same
-`parkPairingWant` as `multi_book` / `no_book`. A pushed want is left alone, as there. A parked want stays parked
-(the 2026-10-03 amendment), so lifting the park is clearing the reason.
+`parkPairingWant` as `multi_book` / `no_book`. Unlike those, every OPEN want is parked, whatever stage it reached:
+the missing format `requested`, `wanted`, `grabbed` or `missing` all park, because a want for the other format of
+a non-English item is wrong at any stage. Only a want whose missing format already `landed` is left alone. The
+park stops the app's own reconcile, Skipped sweep and re-request of the want; LazyLibrarian is not written, so a
+book it already searches keeps being searched there, and a parked want's status stops following it. A parked want
+stays parked (the 2026-10-03 amendment), so lifting the park is clearing the reason.
 
 **The push-time guard (second line).** The library field is not fully reliable: the `525913ff` anchor reads
 `English` yet held the German audio. So before `queueBook` and `searchBook`, the mint reads LazyLibrarian's own

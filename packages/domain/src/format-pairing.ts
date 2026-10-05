@@ -1150,8 +1150,11 @@ export async function markPairingWantPushed(input: {
  * `no_book`): one want per anchor cannot describe several books or none. Issue #700 — also its parking for a
  * non-English anchor or book (`foreign_language`, the F10 English-only rule). Single-writer, one tx, with the
  * precondition that it is still unparked and still unpushed (`ll_book_id` NULL or the missing format
- * `requested`), so a want LazyLibrarian is already working is never touched. Unaudited (the pairing
- * sync-mint class). Returns whether the row was parked.
+ * `requested`), so a want LazyLibrarian is already working is never touched. The one exception is
+ * `foreign_language`, which parks every OPEN want (the missing format not `landed`): a want asking for the other
+ * format of a non-English item is wrong whatever stage it reached, and the park ends the app's own reconcile,
+ * re-queue and re-request of it (LazyLibrarian is not written). Unaudited (the pairing sync-mint class). Returns
+ * whether the row was parked.
  */
 export async function parkPairingWant(input: {
   db?: DbClient;
@@ -1170,7 +1173,9 @@ export async function parkPairingWant(input: {
         eq(bookRequests.id, input.requestId),
         eq(bookRequests.origin, 'pairing'),
         isNull(bookRequests.unroutableReason),
-        or(isNull(bookRequests.llBookId), eq(missingCol, 'requested')),
+        input.reason === FOREIGN_LANGUAGE_REASON
+          ? ne(missingCol, 'landed')
+          : or(isNull(bookRequests.llBookId), eq(missingCol, 'requested')),
       ),
     )
     .returning({ id: bookRequests.id });
@@ -1293,11 +1298,13 @@ export async function mintPairingWants(
       // re-attempted: re-resolving it would refill llBookId and hand it back to the Skipped sweep.
       if (w && w.unroutableReason !== null) return false;
       // Issue #700 — the F10 English-only rule: a foreign-language anchor is never a candidate. Its other format is
-      // not wanted, so no want is minted, and an unpushed want already on it is parked. Blank/`XXX` is unknown, so
-      // it stays a candidate (the push re-checks LazyLibrarian's own language).
+      // not wanted, so no want is minted, and an open want already on it (missing format not landed) is parked.
+      // Blank/`XXX` is unknown, so it stays a candidate (the push re-checks LazyLibrarian's own language).
       if (isForeignLanguage(i.language)) {
         if (!w) skippedForeign += 1;
-        else if (isRetryable(w, i)) toPark.push({ want: w, item: i, reason: FOREIGN_LANGUAGE_REASON });
+        else if (statusOfFormat(w, missingFormatFor(i.mediaKind)) !== 'landed') {
+          toPark.push({ want: w, item: i, reason: FOREIGN_LANGUAGE_REASON });
+        }
         return false;
       }
       const identity = identityOf.get(i.id)!;
