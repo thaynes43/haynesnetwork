@@ -42,8 +42,9 @@
 
 **Check (f), done 2026-10-05 05:10Z:** LazyLibrarian's backlog search (04:54-05:04Z) ran over 352 items (226 the day
 before) and made 113 grabs (63 audiobook, 50 eBook). Prowlarr `increase(prowlarr_indexer_queries_total[20m])` at
-05:10Z: **1,059** (the day before: 1,455), about 216 per newznab indexer and 195 on MyAnonaMouse, i.e. about one query
-per searched format per indexer. From the v0.106.0 deploy to 04:00Z every hourly window held 0-16 queries: the
+05:10Z: **1,059** (the day before: 1,455), spread over the five indexers Prowlarr shows queried (four newznab at about
+216 each, MyAnonaMouse 195; LazyLibrarian's log says "6 providers"). That is at most one query per item per indexer:
+each indexer saw about 216 of the 352 items, the rest being skipped by the DELAYSEARCH back-off or already matched. From the v0.106.0 deploy to 04:00Z every hourly window held 0-16 queries: the
 re-request itself searched nothing. No book was searched twice; one grab went to the wrong book (LazyLibrarian's fuzzy
 match took the "Assistant to the Villain 03 - Accomplice to the Villain" release for the eBook of *Assistant to the
 Villain*, book 1), an LL matching issue a Fix can repair. Progress before that run: goodreads 43 handed back + 7
