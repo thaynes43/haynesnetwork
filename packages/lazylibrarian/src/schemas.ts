@@ -27,6 +27,9 @@ export const llBookSchema = z
     // Issue #665 — `getAllBooks` joins `authors`, so every row carries its author's name. The domain uses
     // it (with `BookName`) to find the row LazyLibrarian holds for a book whose id a want no longer finds.
     AuthorName: z.string().nullish(),
+    // Issue #700 — the book's language (`BookLang`, e.g. `en`, `de`, `Unknown`): the pairing push refuses a book
+    // LazyLibrarian itself labels non-English.
+    BookLang: z.string().nullish(),
     Status: z.string().nullish(),
     AudioStatus: z.string().nullish(),
     BookLibrary: z.string().nullish(),

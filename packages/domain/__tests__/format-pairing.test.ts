@@ -18,6 +18,7 @@ import {
   type BooksItemInsert,
 } from '@hnet/db';
 import {
+  classifyBookLanguage,
   createGbCallMeter,
   judgePairingWantBook,
   makeGbBudgetTracker,
@@ -1396,7 +1397,7 @@ describe('syncFormatPairs — the re-vanish heals only a pair that dropped this 
 // ---------------------------------------------------------------------------
 
 /** An LL stub whose snapshot is a REAL map with titles (the usable snapshot the identity check needs). */
-function stubLlBooks(books: Record<string, StubLlStatus & { title: string; subtitle?: string; author?: string }>) {
+function stubLlBooks(books: Record<string, StubLlStatus & { title: string; subtitle?: string; author?: string; language?: string | null }>) {
   const ll = stubLl();
   const map = new Map(
     Object.entries(books).map(([id, b]) => [
@@ -1406,6 +1407,7 @@ function stubLlBooks(books: Record<string, StubLlStatus & { title: string; subti
         title: b.title,
         subtitle: b.subtitle ?? null,
         author: b.author ?? null,
+        language: b.language ?? null,
         ebookStatus: b.ebookStatus,
         audioStatus: b.audioStatus,
         ebookLibrary: b.ebookLibrary ?? null,
@@ -1609,5 +1611,196 @@ describe('runFormatPairing — the identity check (issue #693)', () => {
     expect(report.attempted).toBe(1);
     const [want] = await t.db.select().from(bookRequests);
     expect(want).toMatchObject({ title: 'Breaking Dawn', llBookId: 'gb-breaking-dawn' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #700 — the F10 English-only rule: pairing never asks for the other format of a foreign-language item.
+// ---------------------------------------------------------------------------
+
+describe('classifyBookLanguage (issue #700)', () => {
+  it('English: en, eng, en-*, English in any case', () => {
+    for (const v of ['en', 'EN', 'eng', 'ENG', 'en-US', 'en-GB', 'English', 'english', ' English ']) {
+      expect(classifyBookLanguage(v), v).toBe('english');
+    }
+  });
+
+  it('unknown (pairing allowed): blank, null, XXX and LazyLibrarian\'s Unknown', () => {
+    for (const v of [null, undefined, '', '   ', 'XXX', 'xxx', 'Unknown']) {
+      expect(classifyBookLanguage(v), String(v)).toBe('unknown');
+    }
+  });
+
+  it('foreign: any other value, code or name', () => {
+    for (const v of ['nl', 'de', 'es', 'German', 'Dutch', 'fr-CA', 'eng-ish', 'ger']) {
+      expect(classifyBookLanguage(v), v).toBe('foreign');
+    }
+  });
+});
+
+describe('mintPairingWants — the language rule (issue #700)', () => {
+  it('mints for English and unknown anchors only; a foreign anchor (both sources) gets no want and no push', async () => {
+    const english = {
+      en: await seedItem({ title: 'Anchor En', author: 'A Writer', mediaKind: 'audiobook', attrs: { language: 'en' } }),
+      enUs: await seedItem({ title: 'Anchor EnUs', author: 'A Writer', mediaKind: 'book', attrs: { language: 'en-US', heldBooks: [{ title: 'Anchor EnUs', author: 'A Writer', isbn: null }] } }),
+      english: await seedItem({ title: 'Anchor English', author: 'A Writer', mediaKind: 'audiobook', attrs: { language: 'English' } }),
+    };
+    const unknown = {
+      blank: await seedItem({ title: 'Anchor Blank', author: 'A Writer', mediaKind: 'audiobook', attrs: { language: '' } }),
+      xxx: await seedItem({ title: 'Anchor Xxx', author: 'A Writer', mediaKind: 'audiobook', attrs: { language: 'XXX' } }),
+      none: await seedItem({ title: 'Anchor None', author: 'A Writer', mediaKind: 'audiobook', attrs: {} }),
+    };
+    const foreign = {
+      de: await seedItem({ title: 'Chroniken der Unterwelt (4-6)', author: 'Cassandra Clare', mediaKind: 'audiobook', attrs: { language: 'de' } }),
+      nl: await seedItem({ title: 'Anchor Nl', author: 'A Writer', mediaKind: 'book', attrs: { language: 'nl', heldBooks: [{ title: 'Anchor Nl', author: 'A Writer', isbn: null }] } }),
+      es: await seedItem({ title: 'Anchor Es', author: 'A Writer', mediaKind: 'book', attrs: { language: 'es', heldBooks: [{ title: 'Anchor Es', author: 'A Writer', isbn: null }] } }),
+      german: await seedItem({ title: 'Anchor German', author: 'A Writer', mediaKind: 'audiobook', attrs: { language: 'German' } }),
+    };
+    const gb = stubGb((title) => `gb-${title.replace(/\W+/g, '-').toLowerCase()}`);
+    const ll = stubLl();
+
+    const report = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+
+    expect(report).toMatchObject({ attempted: 6, minted: 6, pushed: 6, skippedForeign: 4, parked: 0 });
+    const wants = await t.db.select().from(bookRequests);
+    const anchors = new Set(wants.map((w) => w.pairingBooksItemId));
+    for (const id of [...Object.values(english), ...Object.values(unknown)]) expect(anchors.has(id)).toBe(true);
+    for (const id of Object.values(foreign)) expect(anchors.has(id)).toBe(false);
+    // Nothing was resolved or pushed for a foreign title.
+    expect(gb.calls.some((c) => /Chroniken|Nl|Es|German/.test(c))).toBe(false);
+    expect(ll.calls.every((c) => !/chroniken|nl|es$|german/.test(c.id))).toBe(true);
+  });
+
+  it('parks an UNPUSHED want on a foreign anchor (the de Audiobookshelf shape) and leaves a pushed one alone', async () => {
+    const chroniken = await seedItem({ title: 'Chroniken der Unterwelt (4-6)', author: 'Cassandra Clare', mediaKind: 'audiobook', attrs: { language: 'de' } });
+    const dutch = await seedItem({ title: 'Een Boek', author: 'Een Schrijver', mediaKind: 'book', attrs: { language: 'nl', heldBooks: [{ title: 'Een Boek', author: 'Een Schrijver', isbn: null }] } });
+    const [unpushed] = await t.db
+      .insert(bookRequests)
+      .values({ origin: 'pairing', pairingBooksItemId: chroniken, title: 'Chroniken der Unterwelt (4-6)', author: 'Cassandra Clare', llBookId: 'ik6xzgEACAAJ', ebookStatus: 'requested', audioStatus: 'landed' })
+      .returning();
+    const [pushed] = await t.db
+      .insert(bookRequests)
+      .values({ origin: 'pairing', pairingBooksItemId: dutch, title: 'Een Boek', author: 'Een Schrijver', llBookId: 'gb-een-boek', ebookStatus: 'landed', audioStatus: 'wanted' })
+      .returning();
+    const gb = stubGb(() => 'gb-should-not-resolve');
+    const ll = stubLl();
+
+    const report = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+
+    expect(report).toMatchObject({ attempted: 0, minted: 0, pushed: 0, parked: 1, skippedForeign: 0 });
+    expect(gb.calls).toHaveLength(0);
+    expect(ll.calls).toHaveLength(0);
+    const [a] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, unpushed!.id));
+    expect(a).toMatchObject({ unroutableReason: 'foreign_language', ebookStatus: 'requested' });
+    const [b] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, pushed!.id));
+    expect(b).toMatchObject({ unroutableReason: null, llBookId: 'gb-een-boek', audioStatus: 'wanted' });
+
+    // A parked want stays parked on the next run (the park is its own decision).
+    const again = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+    expect(again).toMatchObject({ attempted: 0, parked: 0 });
+    expect(ll.calls).toHaveLength(0);
+  });
+});
+
+describe("runFormatPairing — the push-time guard on LazyLibrarian's own language (issue #700)", () => {
+  /** An anchor the library reads as English (the 525913ff shape) whose LazyLibrarian book may say otherwise. */
+  async function seedEnglishAnchor(title = 'Chroniken der Unterwelt'): Promise<string> {
+    return seedItem({ title, author: 'Cassandra Clare', mediaKind: 'audiobook', attrs: { language: 'English' } });
+  }
+
+  it("a book LazyLibrarian labels German is not queued or searched: the want is parked foreign_language", async () => {
+    const anchor = await seedEnglishAnchor();
+    const ll = stubLlBooks({
+      'gb-chroniken': { title: 'Chroniken der Unterwelt', author: 'Cassandra Clare', ebookStatus: 'Skipped', audioStatus: 'Skipped', language: 'de' },
+    });
+    const gb = stubGb(() => 'gb-chroniken');
+
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+
+    expect(run).toMatchObject({ minted: 1, pushed: 0, refusedForeignBook: 1, parked: 1, requeued: 0 });
+    expect(ll.calls).toHaveLength(0); // no addBook (already seated), no queueBook, no searchBook
+    const [want] = await t.db.select().from(bookRequests).where(eq(bookRequests.pairingBooksItemId, anchor));
+    expect(want).toMatchObject({ unroutableReason: 'foreign_language', ebookStatus: 'requested' });
+
+    // Parked: a second run attempts nothing and still pushes nothing.
+    const again = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+    expect(again).toMatchObject({ attempted: 0, pushed: 0, requeued: 0 });
+    expect(ll.calls).toHaveLength(0);
+  });
+
+  it.each([
+    ['en', 'en'],
+    ['blank', null],
+    ['Unknown', 'Unknown'],
+  ])('proceeds when LazyLibrarian says %s', async (_label, language) => {
+    await seedEnglishAnchor('Plain English Book');
+    const ll = stubLlBooks({
+      'gb-plain': { title: 'Plain English Book', author: 'Cassandra Clare', ebookStatus: 'Skipped', audioStatus: 'Skipped', language },
+    });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => 'gb-plain').gb, pacer: async () => {} });
+
+    expect(run).toMatchObject({ pushed: 1, refusedForeignBook: 0, parked: 0 });
+    // The mint's own chain (the snapshot still shows Skipped, so the run's sweep queues once more after it).
+    expect(ll.calls.map((c) => c.cmd).slice(0, 2)).toEqual(['queueBook', 'searchBook']);
+    const [want] = await t.db.select().from(bookRequests);
+    expect(want).toMatchObject({ unroutableReason: null, ebookStatus: 'wanted' });
+  });
+
+  it('re-reads LazyLibrarian after an addBook that first seats the book, and refuses it when foreign', async () => {
+    await seedEnglishAnchor('Frisch Gesetzt');
+    // The run's snapshot holds another book only (so it is usable), and the book appears once addBook has run.
+    const ll = stubLlBooks({
+      'gb-other': { title: 'Another Book', author: 'Someone Else', ebookStatus: 'Open', audioStatus: 'Open' },
+    });
+    let added = false;
+    const base = await ll.bundle.read.getAllBookStatuses();
+    const withNew = new Map(base);
+    withNew.set('gb-frisch', {
+      bookId: 'gb-frisch',
+      title: 'Frisch Gesetzt',
+      subtitle: null,
+      author: 'Cassandra Clare',
+      language: 'de',
+      ebookStatus: 'Skipped',
+      audioStatus: 'Skipped',
+      ebookLibrary: null,
+      audioLibrary: null,
+      ebookFile: null,
+      audioFile: null,
+    } as never);
+    const write = ll.bundle.write as unknown as { addBook: (id: string) => Promise<string> };
+    const origAdd = write.addBook;
+    (ll.bundle.write as unknown as Record<string, unknown>).addBook = async (id: string) => {
+      added = true;
+      return origAdd(id);
+    };
+    (ll.bundle.read as { getAllBookStatuses: () => Promise<unknown> }).getAllBookStatuses = async () => (added ? withNew : base);
+
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => 'gb-frisch').gb, pacer: async () => {} });
+
+    expect(run).toMatchObject({ pushed: 0, refusedForeignBook: 1, parked: 1 });
+    expect(ll.calls.map((c) => c.cmd)).toEqual(['addBook']); // seated, never queued or searched
+    const [want] = await t.db.select().from(bookRequests);
+    expect(want).toMatchObject({ unroutableReason: 'foreign_language' });
+  });
+
+  it('the Skipped sweep never re-queues a book LazyLibrarian labels foreign', async () => {
+    const anchor = await seedEnglishAnchor();
+    await t.db.insert(bookRequests).values({
+      origin: 'pairing',
+      pairingBooksItemId: anchor,
+      title: 'Chroniken der Unterwelt',
+      author: 'Cassandra Clare',
+      llBookId: 'gb-chroniken',
+      ebookStatus: 'requested',
+      audioStatus: 'landed',
+    });
+    const ll = stubLlBooks({
+      'gb-chroniken': { title: 'Chroniken der Unterwelt', author: 'Cassandra Clare', ebookStatus: 'Skipped', audioStatus: 'Open', language: 'de' },
+    });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
+
+    expect(run).toMatchObject({ requeued: 0 });
+    expect(ll.calls.filter((c) => c.cmd === 'queueBook' || c.cmd === 'searchBook')).toHaveLength(0);
   });
 });

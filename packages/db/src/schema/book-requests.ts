@@ -109,6 +109,8 @@ export const bookRequests = pgTable(
      * blocked / no ComicVine match), so it stays PARKED in comic_status='requested'. Once Kapowarr routes it
      * (comic_status='wanted', kapowarr_volume_id set) this clears to NULL. `comic_status IS NOT NULL` — not
      * this column — is the durable "is a comic" signal (a parked comic still carries comic_status). (ADR-056.)
+     * Pairing wants park with 'wrong_volume' (omnibus repair), 'multi_book' / 'no_book' (#661) and
+     * 'foreign_language' (#700: the anchor or its LazyLibrarian book is not English — the F10 rule).
      */
     unroutableReason: text('unroutable_reason'),
     /** When a manual "Search again" last fired a real LL searchBook (audited). Nullable. */

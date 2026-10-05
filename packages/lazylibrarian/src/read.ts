@@ -28,6 +28,9 @@ export interface LlBookStatus {
    *  it. Issue #665: read with `title` to find the row LL holds for a book a want's id no longer finds.
    *  Optional so structural stubs of this type stay valid. */
   author?: string | null;
+  /** The book's language (`BookLang`: `en`, `de`, `Unknown`, ...), or null when LL omits it. Issue #700: the pairing
+   *  push refuses a book LazyLibrarian itself labels non-English. Optional so structural stubs stay valid. */
+  language?: string | null;
   /** The EBOOK status string (LL `Status`) — null when LL omits it. */
   ebookStatus: string | null;
   /** The AUDIOBOOK status string (LL `AudioStatus`) — null when LL omits it. */
@@ -126,6 +129,7 @@ export class LazyLibrarianReadClient {
         title: blankToNull(row.BookName),
         subtitle: blankToNull(row.BookSub),
         author: blankToNull(row.AuthorName),
+        language: blankToNull(row.BookLang),
         ebookStatus: row.Status ?? null,
         audioStatus: row.AudioStatus ?? null,
         ebookLibrary: blankToNull(row.BookLibrary),

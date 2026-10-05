@@ -184,6 +184,7 @@ export * from './book-requests';
 export * from './ll-gone';
 // Issue #693 / DESIGN-028 amendment 2026-10-05 — is a want's LazyLibrarian book the volume it asks for?
 export * from './ll-book-check';
+export * from './book-language';
 export * from './goodreads-sync';
 // DESIGN-038 D-13 — the collection Wanted-tiles pass: Libretto-managed collections' missing members
 // minted as origin='collection' book_requests (the books-collections-sync mode's Wanted-tile step).
