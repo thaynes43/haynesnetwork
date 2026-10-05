@@ -132,7 +132,11 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     // like the to-read want (Throne of Glass). Comics never touch LL.
     const calls = await llCalls();
     for (const id of ['gb-tog', 'gb-hyp', 'gb-phm']) {
-      expect(calls.some((c) => c.cmd === 'addBook' && c.id === id), `addBook ${id}`).toBe(true);
+      // The stub LL already holds every id (`getAllBooks` lists them), and addBook only seats a book LazyLibrarian does
+      // NOT hold: on a held book its upsert resets both formats to Skipped (issue #665, DESIGN-028 amendment rule 6).
+      // So no addBook here — the push is queueBook only. The addBook-on-an-unheld-book leg is covered in
+      // packages/domain goodreads-integration.test.ts.
+      expect(calls.some((c) => c.cmd === 'addBook' && c.id === id), `no addBook ${id}`).toBe(false);
       const queued = calls.filter((c) => c.cmd === 'queueBook' && c.id === id);
       expect(queued.some((c) => c.type === 'eBook'), `queueBook eBook ${id}`).toBe(true);
       expect(queued.some((c) => c.type === 'AudioBook'), `queueBook AudioBook ${id}`).toBe(true);
