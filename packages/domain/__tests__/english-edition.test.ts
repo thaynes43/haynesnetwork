@@ -660,6 +660,31 @@ describe('runEnglishEditionPass — pairing and collection wants', () => {
     expect(ll.calls.map((c) => `${c.cmd}:${c.id}`)).toContain('searchBook:en-azazel');
   });
 
+  it('a switched collection want is never settled `missing` by the gone pass before the English book is searched', async () => {
+    const colId = await seedCollection();
+    // The Spanish book was force-searched two hours ago: left stamped, the English id (not in LazyLibrarian yet) would
+    // read as a book LazyLibrarian lost once the 1 h collection grace ran out.
+    await t.db.update(bookRequests).set({ lastSearchedAt: new Date(NOW.getTime() - 2 * 60 * 60 * 1000) }).where(eq(bookRequests.collectionId, colId));
+    const gb = stubGb(() => AZAZEL_EN);
+    const ll = stubLl({ PitFPgAACAAJ: SPANISH_ROW });
+    await runEnglishEditionPass({ db: t.db, snapshot: ll.snapshot(), resolver: { gb: gb.gb, consumer: 'goodreads' }, now: NOW });
+    expect((await wantOf(colId)).lastSearchedAt).toBeNull();
+
+    const report = await forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: {
+        listRecipes: async () => ({ recipes: [{ id: 'recipe-asimov', builder: { type: 'x', ref: 'x' }, variables: { acquisitionEnabled: true } }], issues: [] }),
+      } as unknown as CollectionWantsLibretto,
+      ll: ll.bundle,
+      pacer: noPace,
+      now: LATER_TODAY,
+    });
+    expect(report.llGoneSettled).toBe(0);
+    expect(report.searched).toBe(1);
+    expect(await wantOf(colId)).toMatchObject({ llBookId: 'en-azazel', ebookStatus: 'requested' });
+    expect(ll.calls.map((c) => `${c.cmd}:${c.id}`)).toContain('searchBook:en-azazel');
+  });
+
   it('the collection force-search never queues a book LazyLibrarian labels non-English (before the pass has run)', async () => {
     const colId = await seedCollection();
     const ll = stubLl({ PitFPgAACAAJ: SPANISH_ROW });

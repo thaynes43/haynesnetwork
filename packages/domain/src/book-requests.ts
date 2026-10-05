@@ -1850,6 +1850,10 @@ export async function switchRequestToEnglishEdition(input: {
         ...(open.includes('audiobook') ? { audioStatus: 'requested' as const } : {}),
         unroutableReason: null,
         englishEditionTriedAt: now,
+        // A collection want's gone-book grace runs from its `last_searched_at` (nothing else marks it handed to
+        // LazyLibrarian): left as it was, the English id (which LazyLibrarian cannot hold yet) would read as a book
+        // LazyLibrarian lost and settle `missing` before the force-search ever adds it. NULL = never handed over.
+        ...(row.origin === 'collection' ? { lastSearchedAt: null } : {}),
         updatedAt: now,
       })
       .where(eq(bookRequests.id, row.id));
