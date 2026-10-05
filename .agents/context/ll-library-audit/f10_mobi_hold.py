@@ -1,4 +1,4 @@
-# F10 azw3/mobi coverage sweep, 2026-10-05 (~23:55Z): Kavita cannot read azw3/mobi, so the language sweeps never saw them.
+# F10 azw3/mobi coverage sweep, 2026-10-05 (~23:08Z): Kavita cannot read azw3/mobi, so the language sweeps never saw them.
 # All 446 azw3/mobi files under books/EBooks were read from content (mobi.extract text sample + EXTH language/publisher; PalmDOC
 # fallback for the few the unpacker rejects; the four Expanse Origins comics are page images, read by eye) and classified by
 # stopword ratio. 442 are English (0.39-0.51 English stopword share, next language <= 0.11); 2 are corrupt and unverified (That

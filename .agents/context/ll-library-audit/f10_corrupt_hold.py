@@ -1,4 +1,4 @@
-# F10 azw3/mobi coverage sweep, follow-up (2026-10-05 ~23:30Z): the two eBook files that could not be read are broken books, so
+# F10 azw3/mobi coverage sweep, follow-up (2026-10-05 ~23:28Z): the two eBook files that could not be read are broken books, so
 # they go to the cross-volume holding folder (manifest.jsonl op "hold" with md5, sort.jsonl category "corrupt", which
 # crossvolume_purge.py deletes like the other four categories). Run INSIDE the LazyLibrarian pod:
 #   kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/f10_corrupt_hold.py        # dry run

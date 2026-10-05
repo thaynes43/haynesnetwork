@@ -442,12 +442,12 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
       request reconciles through LL.
     - **Seen, not foreign:** a *Missing in Malmö* epub (English) sits in Robert Jordan's *Eye of the World* folder (wrong
       book); the *City of Fallen Angels* pdf's text is font-encoded and could not be sampled.
-  - **2026-10-05 ~23:55Z, azw3/mobi coverage** (`f10_mobi_hold.py`; no LL write): all 446 azw3/mobi files under `EBooks` (126
+  - **2026-10-05 ~23:08Z, azw3/mobi coverage** (`f10_mobi_hold.py`; no LL write): all 446 azw3/mobi files under `EBooks` (126
     in folders with no epub/pdf, 320 beside one) read from content (text sample, EXTH language; the 4 Expanse Origins comics by
     eye); 442 English, 2 German held as `foreign_f10` (the cbj mobi + azw3 of *These Infinite Threads*; the English
     HarperCollins epubs stay and LL still links one; purge dry run reads 6,579 files, OK), 2 corrupt (next line).
     Library-scan Job `hnet-f10-mobi-scan-1`.
-  - **2026-10-05 ~23:45Z, the 2 corrupt mobis held** (`f10_corrupt_hold.py`; no LL write): *That Hideous Strength* (not a valid
+  - **2026-10-05 ~23:28Z, the 2 corrupt mobis held** (`f10_corrupt_hold.py`; no LL write): *That Hideous Strength* (not a valid
     mobi, the folder's only file) and *Grave Secret* (84% zero bytes; English epubs stay) moved to the holding folder as category
     `corrupt`, which `crossvolume_purge.py` now deletes too (without it the purge refused; dry run reads 6,581 files, OK). LL
     `iLQtvgAACAAJ` already read `Wanted` with no file and `1IiNEAAAQBAJ` links the epub; Kavita reads the epubs only; the
