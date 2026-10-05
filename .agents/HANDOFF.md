@@ -4,6 +4,26 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-05 — v0.107.5 live: Kavita metadata edits reach the app, foreign_language parks lift (#712, closed)
+
+- **Why (#712).** Kavita has no change signal for a series' metadata edit (the list's `lastChapterAddedUtc` and
+  `/api/Series/metadata` carry no modified stamp or hash; probed live), so books-sync never re-read the 18 corrected
+  language tags, and a `foreign_language` park could never lift. Rule: DESIGN-024 D-03 amendment and DESIGN-036
+  amendment 2026-10-05; glossary T-184.
+- **Fix (#714, release #711, haynes-ops #3375; v0.107.6 from haynes-ops #3379 also carries it).** books-sync re-reads
+  Kavita metadata beyond the gate: series with a foreign stored language every run, then the stalest others (6h minimum
+  age) up to 150 per library per run (`selectMetadataRefresh`; about ten hourly runs per full cycle). Audiobookshelf
+  needed nothing: its language rides the list read. Pairing re-evaluates every `foreign_language` park each run
+  (`unparkForeignLanguageWant`, the single writer): the anchor reads English or unknown and LazyLibrarian's `BookLang`
+  is not foreign. No other park reason lifts. Report fields: `kavitaRefreshed`, `unparked`.
+- **Verified.** books-sync 22:22Z: `kavitaEnriched` 186 (150 of them `kavitaRefreshed`), all 18 series read `en`. Format-pairing
+  22:32Z: `unparked` 14 (12 of the 18 series plus 2 Audiobookshelf anchors that now read `English`, LazyLibrarian `en`),
+  no errors. Of the 12: 4 hold a LazyLibrarian book and resumed reconciling (1226, 655, 677 `wanted`, 837 `missing`),
+  2 still read `missing` from the park (171, 619), and 6 have no LazyLibrarian id yet (1169, 1252, 142, 1587, 439, 594):
+  the run's Google Books daily budget was spent (`skippedBudget` 277), so they mint when it frees. Nothing was
+  pushed for them in that run.
+- **Check next.** After the budget resets, confirm those 6 minted and pushed (`unroutable_reason` null, `ll_book_id` set).
+
 ## ▶ 2026-10-05 — v0.107.3 + v0.107.4 live: pairing is English only (#700, closed)
 
 - **Why (#700).** Pairing minted a want for the other format of a foreign-language item (the German *Chroniken der
