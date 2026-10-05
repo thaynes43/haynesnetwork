@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.107.0](https://github.com/thaynes43/haynesnetwork/compare/v0.106.1...v0.107.0) (2026-10-05)
+
+
+### Features
+
+* **books:** log each Google Books quota-day's usage and every quota trip ([#674](https://github.com/thaynes43/haynesnetwork/issues/674)) ([#681](https://github.com/thaynes43/haynesnetwork/issues/681)) ([07c6415](https://github.com/thaynes43/haynesnetwork/commit/07c64159613aa909d9bf793026f488a383a9f1a4))
+
+
+### Documentation
+
+* **agents:** owed checks (a) passed, (b) still waiting, (d) no violation, (e) no box set (2026-10-04) ([#680](https://github.com/thaynes43/haynesnetwork/issues/680)) ([b8717e0](https://github.com/thaynes43/haynesnetwork/commit/b8717e04f3334e7fdf053cc32683c0de496d1a9f))
+* **agents:** v0.106.0 + v0.106.1 deploy record ([#668](https://github.com/thaynes43/haynesnetwork/issues/668) re-request), owed check (f) ([#678](https://github.com/thaynes43/haynesnetwork/issues/678)) ([3c3c59d](https://github.com/thaynes43/haynesnetwork/commit/3c3c59db9af54948d176228799f4e58d4a88f515))
+
 ## [0.106.1](https://github.com/thaynes43/haynesnetwork/compare/v0.106.0...v0.106.1) (2026-10-04)
 
 
