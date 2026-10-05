@@ -346,14 +346,36 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
       Audiobookshelf item reads 9.38 h, 54 chapters, metadata as set above.
     - **Azazel:** audio `Wanted` -> `Skipped` on the Spanish record. LL has no English Azazel record, so nothing is wanted
       (the app row is #715).
-    - **Still outside (not changed):** 13 LL records with a foreign `BookLang` are `Wanted` for a format, e.g. *Eragon - Die
-      Weisheit des Feuers* `_tiYRR30oe0C` (de), *Nightflyers - Die Dunkelheit...* (de), *De silmarillion* (nl), *Bauer Giles
-      von Ham* (de); and Audiobookshelf item `316a94fa` (*Die Weisheit dea Feuers*, German Brisingr) is a ghost missing
-      since its files went to `quarantine/f10-language/` in July.
+  - **~22:07Z, the leftovers are closed** (`f10_lang_wants.py`; LL backup `/config/lazylibrarian.db.pre-f10-langwants-20261005`).
+    - **LL records with a foreign `BookLang` still `Wanted`** (12 after Azazel): 11 are real foreign editions (publisher,
+      ISBN group and description agree), so their wanted format went `Skipped` (`unqueueBook`): Roverandom (tr), Eragon -
+      Die Weisheit des Feuers, Nightflyers - Die Dunkelheit, Bauer Giles von Ham, Der Ritt nach Narnia (de), Leviathan
+      falls, Il potere della pace interiore, The Smythe-Smith Quartet (Mondadori) (it), I was born for this, Wild Cards
+      Tome 6 (fr), De silmarillion (nl). One tag was wrong: `ESS3mAEACAAJ` *Life, the Universe and Everything* is Pan/Tor
+      UK (ISBN 0330508571), so `BookLang` `iw` -> `en` and it stays `Wanted` (twins `RZYXMQAACAAJ` and `1d5JEAfTAKEC` already
+      hold the English eBook). No foreign-language record is `Wanted` now.
+    - **Where they came from:** all were added by the app's API, not by an LL author or series import. All 12 are
+      format-pairing wants (created 07-16 to 07-25; three re-added on 10-04/05 by the #668 re-request), pushed before
+      v0.107.3. Their anchors: 4 were July-F10 ghosts (Audiobookshelf items missing since their German or French audio
+      went to `quarantine/f10-language/`, still tagged `English`), 6 live Audiobookshelf items with foreign titles, and 2
+      Kavita items. The pairing title search then picked foreign Google Books volumes. v0.107.4's guard (it reads LL's
+      `BookLang` before `queueBook`) blocks new pushes like these. It does not write LL, which is why these stayed `Wanted`.
+    - **LL language preference:** `imp_preflang = en, en-GB, eng, English, en-US`, already English-only, so unchanged
+      (LL config is live on its PVC, not templated in haynes-ops). It filters author and series imports. `addBook` by id
+      only logs a warning, so the app's guard is the gate for API adds. `Unknown` is not in the list, so author imports
+      skip blank-language books.
+    - **Audiobookshelf ghosts:** `316a94fa` (German Brisingr) and the 16 other July-F10 ghosts were removed (DB only; all
+      were missing with their folders in `quarantine/f10-language/`, and no one had progress on them). The library scan
+      after that added 0 items, and books-sync tombstoned 17. Still missing and untouched: 15 non-F10 items (11 from
+      `quarantine/mam-misfile-2026-09-22/`, 1 from `audit-2026-09-29/`, 3 unplaced).
+    - **Found, not moved (German audio tagged English, live):** `AudioBooks/J.R.R. Tolkien/Bauer Giles von Ham/` (2 mp3s,
+      whisper `de`; LL `aBz-CgAAQBAJ`, a German record, has audio `Open` on it) and `AudioBooks/J.R.R. Tolkien/Roverandom/`
+      (50 mp3s, whisper `de`). *Der Ritt anc* (Narnia) and *Living a Life of Inner Peace* are English despite their titles.
 - **Owed check (p), after the 2026-10-06 04:54Z backlog run:** the Dead or Alive and Israel Potter eBook grabs are
   English (`select rowid, NZBtitle, Status from wanted where rowid > 9549 and BookID in ('BL6LDQAAQBAJ','mPGNzQEACAAJ')`,
   LL DB `mode=ro`), as is any `FOqzEAAAQBAJ` (Murtagh) audio grab; and the re-pointed or linked records keep their links (no
-  `BookFile`/`AudioFile` points at a missing file).
+  `BookFile`/`AudioFile` points at a missing file); and no foreign-language grab: every `wanted` row with rowid > 9549 belongs to
+  a book whose `BookLang` is English or unknown, and its `NZBtitle` names no foreign edition.
 
 ## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
 
