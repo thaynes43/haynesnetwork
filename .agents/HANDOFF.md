@@ -329,7 +329,7 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
 - **Owed check (m), on or after 2026-10-12: delete the holding folder.** First confirm no one has reported a missing
   book since 2026-10-05: no GitHub issue or HANDOFF note names one, and
   `select title_snapshot, created_at from book_fix_requests where created_at >= '2026-10-05'` names none of the held
-  titles. Then run the dry run, read its counts (6,579 files since the F10 sweeps below; 1,563 before), and delete:
+  titles. Then run the dry run, read its counts (6,581 files since the F10 sweeps below; 1,563 before), and delete:
   `kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/crossvolume_purge.py`
   then the same command with `python3 - --go`. It refuses if a file is unsorted or changed size, if an LL row
   points into the folder, or if a duplicate's or omnibus's counterpart title folder (listed per row in `sort.jsonl`)
@@ -442,12 +442,16 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
       request reconciles through LL.
     - **Seen, not foreign:** a *Missing in Malmö* epub (English) sits in Robert Jordan's *Eye of the World* folder (wrong
       book); the *City of Fallen Angels* pdf's text is font-encoded and could not be sampled.
-  - **2026-10-05 ~23:55Z, azw3/mobi coverage** (`f10_mobi_hold.py`; no LL write): all 446 azw3/mobi files under `EBooks` (126
+  - **2026-10-05 ~23:08Z, azw3/mobi coverage** (`f10_mobi_hold.py`; no LL write): all 446 azw3/mobi files under `EBooks` (126
     in folders with no epub/pdf, 320 beside one) read from content (text sample, EXTH language; the 4 Expanse Origins comics by
     eye); 442 English, 2 German held as `foreign_f10` (the cbj mobi + azw3 of *These Infinite Threads*; the English
-    HarperCollins epubs stay and LL still links one; purge dry run reads 6,579 files, OK), 2 unverified and left alone
-    (corrupt: *That Hideous Strength* mobi is not a valid mobi, *Grave Secret* mobi is 84% zero bytes; both have no LL link or
-    an English epub beside them). Library-scan Job `hnet-f10-mobi-scan-1`.
+    HarperCollins epubs stay and LL still links one; purge dry run reads 6,579 files, OK), 2 corrupt (next line).
+    Library-scan Job `hnet-f10-mobi-scan-1`.
+  - **2026-10-05 ~23:28Z, the 2 corrupt mobis held** (`f10_corrupt_hold.py`; no LL write): *That Hideous Strength* (not a valid
+    mobi, the folder's only file) and *Grave Secret* (84% zero bytes; English epubs stay) moved to the holding folder as category
+    `corrupt`, which `crossvolume_purge.py` now deletes too (without it the purge refused; dry run reads 6,581 files, OK). LL
+    `iLQtvgAACAAJ` already read `Wanted` with no file and `1IiNEAAAQBAJ` links the epub; Kavita reads the epubs only; the
+    pairing rows say so (That Hideous Strength eBook `wanted`, audio `landed` on the live Audiobookshelf item). Folders touched.
 - **Owed check (p), after the 2026-10-06 04:54Z backlog run:** the Dead or Alive and Israel Potter eBook grabs are
   English (`select rowid, NZBtitle, Status from wanted where rowid > 9549 and BookID in ('BL6LDQAAQBAJ','mPGNzQEACAAJ')`,
   LL DB `mode=ro`), as is any `FOqzEAAAQBAJ` (Murtagh) audio grab; and the re-pointed or linked records keep their links (no
