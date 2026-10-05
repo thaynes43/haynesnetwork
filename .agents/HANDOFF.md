@@ -13,7 +13,7 @@
   Books calls every day, and Libretto hits daily-quota 429s most evenings between 18:42Z and 22:42Z, so exhaustion
   predates the #668 re-add influx. The options on #674 wait for the readings below.
 
-**Owed checks (b), (d)-(f) and (j) from the blocks below are still pending; (c) passed 2026-10-05.** New ones:
+**Owed checks (b), (d)-(f), (j), (k) and (l) from the blocks below are still pending; (c) passed 2026-10-05.** New ones:
 
 - **(g) After the 2026-10-05 07:00Z roll**, `{namespace="frontend"} |= "gb_quota_day_closed" | json` shows exactly one
   line, for quota-day 2026-10-04.
@@ -101,6 +101,46 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
   the library. That audit is separate work. Check (k) still confirms the fix on the next backlog run. Keep rowids
   9460 and 9539: 9460 is book 1's real `Duplicate NZB` record, and 9539 is harmless while book 4 is held. Delete
   9539 (undo above) only if book 4 is ever wanted again.
+- **2026-10-05 ~14:00Z, the 19 records behind the 153 rows are audited and repaired; nothing re-wanted.** Judged per
+  record and format (38): 24 already held the right book (later grabs had replaced the wrong ones), 5 are `Skipped`
+  with no file, 9 held a wrong file. Table: `.agents/context/2026-10-05-crossvolume-repair.tsv`. LL DB backup
+  `/config/lazylibrarian.db.pre-crossvol-repair-20261005`; every move, re-home and delete (with md5) is in
+  `books/quarantine/crossvolume-2026-10-05/manifest.jsonl`. Identified by OPF/EXTH metadata, tags, durations and md5.
+  - **Re-pointed to a right file already in the folder:** the Shatter Me and Grey eBooks (each epub was an omnibus;
+    each folder's mobi is the book; twin rows `giXxsgEACAAJ` and `TJKmCQAAQBAJ` too) and the This Woven Kingdom
+    audiobook (it linked the German edition; now the English mp3). The Mistborn eBook was a Hebrew edition: the
+    English *The Final Empire* epub from the untracked `Brandon Sanderson/The Final Empire/` now sits at the same path.
+  - **Re-homed (133 files):** the Destroy Me azw3 (was in Shatter Me) into `Destroy Me/`; from the Discworld record's
+    audio folder, *The Science of Discworld* (new folder, linked to `Sv_GAgAAQBAJ`, its only audio copy) and the
+    unabridged *Guards! Guards!* (new `Guards! Guards! (Unabridged)/`, linked to `G2d_ngEACAAJ`; `Guards! Guards!/`
+    holds the BBC radio drama, now unlinked).
+  - **Held, not deleted (973 files, 7.4 GB):** 16 other Discworld audiobooks and the Making Money epub (each title's
+    own folder holds a copy of matching length), the Shatter Me Complete Collection, Fifty Shades from Christian's
+    Point of View (Grey + Darker), a Fifty Shades of Grey azw3 and a "Master of the Universe" fan-fiction pdf (LL
+    tracks none of them), the Inheritance Cycle Omnibus mobi, a second Clockwork Prince release in The Infernal
+    Devices, and German editions (F10): This Woven Kingdom audio, Chroniken vols 1-3 audio, vol 6 epub.
+    **Deleted:** only 229 byte-identical twins of files that were then held (German This Woven Kingdom and City of
+    Bones sets).
+  - **Not re-wanted, set `Skipped` with no file:** `YVfJMgEACAAJ` "Terry Pratchett's Discworld", a 1995 Prima title
+    the app resolved from "The BBC Radio Drama Collection". It took 32 Discworld grabs, and the #688 penalty does not
+    cover its title shape (#694), so a re-want would grab Discworld novels again; the app rows are #693. Also the
+    eBook of `ik6xzgEACAAJ`, which is the German omnibus *Chroniken der Unterwelt (4-6)* (F10 English-only); its
+    German vols 4-6 audio stays as the record's file.
+  - **Readers:** Audiobookshelf items rebuilt (their `metadata.json` moved aside as `metadata.json.pre-crossvol-20261005`,
+    rescanned, titles set): This Woven Kingdom (13.36 h, 44 chapters), The Infernal Devices, Chroniken der Unterwelt
+    (4-6), Guards! Guards! (Unabridged); the emptied Discworld item was removed. Kavita library scanned; the omnibus,
+    POV and German vol-6 series are gone. No listener or reader had progress on a moved file (the only progress on
+    these items is 0.76 h on A Court of Thorns and Roses, a correct file). LL's own scan of every touched folder kept
+    the new links; the whole `books` table has one dangling pointer, the Catwings row from before #631.
+  - **App rows:** several pairing and collection requests point at a different volume's LL book and read `landed`
+    (A Court of Thorns and Roses bk 2, Breaking Dawn, two Mistborn sequels, the BBC Radio Drama Collection): #693.
+  - **Left as found (not cross-volume):** Pathfinder audio holds four copies of book 1 (71 h in Audiobookshelf); The
+    Infernal Devices audio holds Clockwork Angel twice; the English City of Heavenly Fire row `hf1wCgAAQBAJ` links the
+    German vol-6 audio; `83SDzwEACAAJ`, a Guards! Guards! twin, is `Wanted` for both formats.
+- **Owed check (l), after the 2026-10-06 04:54Z backlog run and 09:10Z library scan:** nothing was re-wanted, so none
+  of the 19 records gets a grab: `select BookID, NZBtitle, Status from wanted where rowid > 9539 and BookID in (<the 19
+  ids in the table>)` returns no row; `YVfJMgEACAAJ` stays `Skipped` for both formats with no file; `ik6xzgEACAAJ`
+  eBook stays `Skipped`; and every BookFile/AudioFile of the 19 points at an existing file (LL DB opened `mode=ro`).
 
 ## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
 
