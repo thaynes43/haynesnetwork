@@ -62,6 +62,33 @@ waiting; collection 16 handed back, 4 refused, 7 waiting. LazyLibrarian Wanted f
 check (f) after each 04:54Z backlog run until `ll_rerequested_at IS NULL AND ll_rerequest_failures < 3` with a
 `missing` format is empty for pairing and collection.
 
+**2026-10-05 — the *Assistant to the Villain* wrong grab is repaired (#686; LazyLibrarian defects filed as #688).** A Fix could
+not have repaired this one: it searches straight away, and LazyLibrarian would have taken a book-4 release that scores
+106% for book 1. What happened: the book-3 release went to SABnzbd for book 3 at 04:54Z, and again for book 1 at
+04:57Z, where SABnzbd failed it as `Duplicate NZB`. LazyLibrarian's post-processor treats that failed job as ready and
+fuzzy-matched book 3's completed folder (`destination_copy` keeps it), so at 05:08Z it imported that folder as book 1
+(LL post-processor fault 1 in #688). The epub's OPF reads *Accomplice to the Villain*, and the epub, azw3 and mobi
+were byte-identical to book 3's library copy. Kavita had not scanned the folder.
+- **Changed:** the wrong `EBooks/Hannah Nicole Maehrer/Assistant to the Villain/` folder (5 files) and the leftover
+  SABnzbd folder were moved to quarantine, then deleted after an md5 check. Book 3's eBook stays where it is
+  (`Accomplice to the Villain/`, LL `Open`); both app requests for book 3 read `landed`, so no second import was needed.
+  Book 1's eBook was set to `Wanted` with `queueBook`. A direct DB write (backup
+  `/config/lazylibrarian.db.pre-atv-repair-20261005`) blanked its stale `BookFile`/`BookLibrary`, which the app's
+  `llFormatAlreadyHeld` guard was reading as held.
+- **Blocks** (LazyLibrarian's `blacklist_failed` rejects a provider and title pair with a `Failed` row, for all books):
+  rowid 9460, book 1's own `Duplicate NZB` row for the book-3 release on indexer 14, is kept as that release's block.
+  rowid 9539 was added under book 4's id for `…-[Assistant to the Villain 04]-Adversary to the Villain [azw3 epub mobi]` on
+  indexer 16, which also scores 106%. Book 4 is already held, so the row shows no Activity tile and no fail-loop.
+- **Undo:** `DELETE FROM wanted WHERE rowid=9539`; `cmd=unqueueBook&id=dGy0EAAAQBAJ&type=eBook`. The deleted files are
+  byte-copies of book 3's library files.
+- **App rows:** goodreads `d7017caf` (book 1) reads ebook `wanted` and audio `grabbed` (MAM MP3, the right book).
+  Nothing in `book_requests`, `books_items`, `book_fix_requests` or `activity_import_failures` points at the wrong file.
+  No app defect was found.
+- **Owed check (k), after the 2026-10-06 04:54Z backlog run:** book 1's eBook grab must be a book-1 release, not
+  `0N`/`[… 0N]` of a later volume:
+  `select NZBtitle, NZBprov, Status from wanted where BookID='dGy0EAAAQBAJ' and AuxInfo='eBook' order by NZBdate`
+  (LL DB opened `mode=ro`). If it is wrong again, the fix is #688 fault 2, not another per-title row.
+
 ## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
 
 - **Why (#665):** LazyLibrarian deleted the books the app added. `addBook` never writes the `bookauthors` row that
