@@ -451,6 +451,41 @@ describe('runEnglishEditionPass — rationing', () => {
   });
 });
 
+describe('runEnglishEditionPass — one lookup per work per run', () => {
+  it('a goodreads want and a pairing want for the same work share ONE Google Books lookup', async () => {
+    const goodreads = await seedGoodreadsRequest();
+    const [anchor] = await t.db
+      .insert(booksItems)
+      .values({ source: 'audiobookshelf', mediaKind: 'audiobook', externalId: `abs-${++seq}`, libraryId: '1', libraryName: 'L', title: 'Azazel', sortTitle: 'azazel', author: 'Isaac Asimov', deepLinkUrl: 'http://x' })
+      .returning({ id: booksItems.id });
+    const [pairing] = await t.db
+      .insert(bookRequests)
+      .values({ origin: 'pairing', pairingBooksItemId: anchor!.id, title: 'Azazel', author: 'Isaac Asimov', llBookId: 'PitFPgAACAAJ', ebookStatus: 'requested', audioStatus: 'landed', unroutableReason: 'foreign_language' })
+      .returning({ id: bookRequests.id });
+    const gb = stubGb(() => AZAZEL_EN);
+    const report = await runEnglishEditionPass({ db: t.db, snapshot: SPANISH_SNAPSHOT(), resolver: { gb: gb.gb, consumer: 'goodreads' }, now: NOW });
+    expect(report).toMatchObject({ due: 2, looked: 1, reused: 1, switched: 2 });
+    expect(gb.queries).toHaveLength(1);
+    expect((await getRequest(goodreads.id)).llBookId).toBe('en-azazel');
+    expect(await getRequest(pairing!.id)).toMatchObject({ llBookId: 'en-azazel', unroutableReason: null });
+  });
+
+  it('once the budget refuses, a want an answer in hand covers is still settled, the rest wait', async () => {
+    await seedGoodreadsRequest({ llBookId: 'es-a' });
+    await seedGoodreadsRequest({ llBookId: 'es-a2' });
+    await seedGoodreadsRequest({ llBookId: 'es-b', title: 'Foundation' });
+    const snap = snapshotOf({
+      'es-a': { title: 'Azazel', author: 'Isaac Asimov', language: 'es' },
+      'es-a2': { title: 'Azazel', author: 'Isaac Asimov', language: 'es' },
+      'es-b': { title: 'Fundacion', author: 'Isaac Asimov', language: 'es' },
+    });
+    const gb = stubGb(() => null);
+    const report = await runEnglishEditionPass({ db: t.db, snapshot: snap, resolver: { gb: gb.gb, consumer: 'goodreads' }, now: NOW, cap: 1 });
+    // One lookup (Azazel); the second Azazel want is answered from it; Foundation waits for the cap.
+    expect(report).toMatchObject({ due: 3, looked: 1, reused: 1, parked: 2, skippedCap: 1 });
+  });
+});
+
 describe('runEnglishEditionPass — what it leaves alone', () => {
   const run = (snapshot: Map<string, LlSnapshotRow>, gb: ReturnType<typeof stubGb>) =>
     runEnglishEditionPass({ db: t.db, snapshot, resolver: { gb: gb.gb, consumer: 'goodreads' }, now: NOW });

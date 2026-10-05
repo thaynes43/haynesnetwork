@@ -743,6 +743,9 @@ Volume Check) agrees its title names the want's volume and work. A rejected edit
   charged to the `goodreads` slice through the call meter. A budget or breaker refusal is not a lookup: nothing is stamped,
   the want is due again as soon as quota allows.
 - A per-run cap (`ENGLISH_EDITION_CAP_PER_RUN`, default 10).
+- One lookup per (title, author) per run: a goodreads want and a pairing want for the same work share it (`reused`), each
+  applying the answer through its own checks. An error or a quota refusal is not an answer and is never shared. Once the
+  cap, the budget or the breaker stops the lookups, a want an answer in hand covers is still settled; the rest wait.
 
 **The writers** (`book-requests.ts`, unaudited, the `revertLandedFormats` class, each guarded on the id the pass read):
 
@@ -772,7 +775,7 @@ Volume Check) agrees its title names the want's volume and work. A rejected edit
 in the Skipped sweep. The pass takes up exactly those parks whose anchor is not itself foreign. DESIGN-036's amendment of this
 date has the pairing side.
 
-**Report fields and logs.** `englishEditions` on the goodreads-sync report (`due`, `looked`, `switched`, `parked`, `lifted`,
+**Report fields and logs.** `englishEditions` on the goodreads-sync report (`due`, `looked`, `reused`, `switched`, `parked`, `lifted`,
 `skippedBudget`, `skippedQuota`, `skippedCap`, `failed`); logs `english_edition_switched`, `english_edition_none`,
 `english_edition_refused`, `english_edition_park_lifted`. The wall shows a parked goodreads want as `missing` with no Search
 again (`isRequestSearchable` is false for any park); it does not render the reason yet (a user-visible change, not made here).

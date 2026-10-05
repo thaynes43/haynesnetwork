@@ -37,8 +37,8 @@ import {
 } from './book-requests';
 import { guardedGbResolve, type GbQuotaGuardedResolver } from './gb-quota-breaker';
 import type { GbBudgetTracker, GbCallMeter, GbConsumer } from './gb-call-budget';
-import { gbQuotaDayStart, llSnapshotUsable, type LlSnapshot, type LlSnapshotRow } from './ll-gone';
-import { llBookMismatch } from './ll-book-check';
+import { gbQuotaDayStart, llRekeyAuthorKey, llSnapshotUsable, type LlSnapshot, type LlSnapshotRow } from './ll-gone';
+import { llBookMismatch, workTitleKey } from './ll-book-check';
 
 /** Owner-tunable per-run bound on English-edition lookups (each is at most two Google Books legs). */
 export const ENGLISH_EDITION_CAP_PER_RUN = Number(process.env.ENGLISH_EDITION_CAP_PER_RUN ?? 10);
@@ -68,6 +68,8 @@ export interface EnglishEditionReport {
   due: number;
   /** Lookups made (≤ the per-run cap). */
   looked: number;
+  /** Wants answered by a lookup this run already made for the same title and author (a goodreads and a pairing want of one work). */
+  reused: number;
   /** Wants switched to an English edition. */
   switched: number;
   /** Wants parked `no_english_edition` (no edition, or the one found was refused). */
@@ -87,6 +89,7 @@ export interface EnglishEditionReport {
 export const emptyEnglishEditionReport = (): EnglishEditionReport => ({
   due: 0,
   looked: 0,
+  reused: 0,
   switched: 0,
   parked: 0,
   lifted: 0,
@@ -221,16 +224,90 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
   }
   report.due = due.length;
 
+  // A goodreads want and a pairing want for one work ask the same question: one lookup per (title, author) per run, its
+  // answer (an edition or none) applied to each want through that want's own checks. Errors and quota refusals are not
+  // answers and are never kept.
+  const answered = new Map<string, EnglishEditionVolume | null>();
+  /** Apply one lookup's answer (an edition, or null for none) to one want: switch, or park (nothing is pushed). */
+  const settleAnswer = async (row: BookRequestRow, found: EnglishEditionVolume | null): Promise<void> => {
+    const llBookId = row.llBookId!;
+    const llLanguage = snapshot.get(llBookId)?.language ?? null;
+    if (found) {
+      const verdict = acceptEnglishEdition({ title: row.title, author: row.author, llBookId }, found);
+      if (verdict.ok) {
+        const moved = await switchRequestToEnglishEdition({
+          db: input.db,
+          requestId: row.id,
+          fromLlBookId: llBookId,
+          toLlBookId: found.volumeId,
+          now,
+        });
+        if (moved) {
+          report.switched += 1;
+          log.info?.('english_edition_switched', {
+            requestId: row.id,
+            origin: row.origin,
+            title: row.title,
+            llBookId,
+            toLlBookId: found.volumeId,
+            llLanguage,
+            gbLanguage: found.language ?? null,
+          });
+        }
+        return;
+      }
+      log.info?.('english_edition_refused', {
+        requestId: row.id,
+        title: row.title,
+        llBookId,
+        candidate: found.volumeId,
+        candidateTitle: found.title ?? null,
+        reason: verdict.reason,
+      });
+    }
+    // No English edition (or the one found is another volume or work): park, nothing is pushed for it.
+    if (await parkRequestNoEnglishEdition({ db: input.db, requestId: row.id, llBookId, now })) {
+      report.parked += 1;
+      log.info?.('english_edition_none', {
+        requestId: row.id,
+        origin: row.origin,
+        title: row.title,
+        llBookId,
+        llLanguage,
+      });
+    }
+  };
+  const keyOf = (r: BookRequestRow): string => `${workTitleKey(r.title)}|${llRekeyAuthorKey(r.author)}`;
   let budgetLogged = false;
+  // Once the cap, the budget or the breaker stops the lookups, the rest of the due wants are left for later, except those
+  // an answer already in hand covers (free: no call, no budget).
+  let halted: 'cap' | 'budget' | 'quota' | null = null;
+  const skip = (reason: 'cap' | 'budget' | 'quota'): void => {
+    if (reason === 'cap') report.skippedCap += 1;
+    else if (reason === 'budget') report.skippedBudget += 1;
+    else report.skippedQuota += 1;
+  };
   for (let i = 0; i < due.length; i += 1) {
+    const memoKey = keyOf(due[i]!);
+    if (answered.has(memoKey)) {
+      report.reused += 1;
+      await settleAnswer(due[i]!, answered.get(memoKey) ?? null);
+      continue;
+    }
+    if (halted) {
+      skip(halted);
+      continue;
+    }
     if (report.looked >= cap) {
-      report.skippedCap += due.length - i;
-      break;
+      halted = 'cap';
+      skip('cap');
+      continue;
     }
     // The daily CALL BUDGET: refuse before the call (reserve-before-commit). Not a lookup: nothing is stamped, the want
     // is due again as soon as the slice has room, and the shared breaker is not involved.
     if (resolver.budget && !resolver.budget.canSpend()) {
-      report.skippedBudget += due.length - i;
+      halted = 'budget';
+      skip('budget');
       if (!budgetLogged) {
         log.info?.('english_edition: GB daily call budget spent, lookups left for later', {
           consumer: resolver.budget.consumer,
@@ -239,11 +316,9 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
         });
         budgetLogged = true;
       }
-      break;
+      continue;
     }
     const row = due[i]!;
-    const llBookId = row.llBookId!;
-    const want = { title: row.title, author: row.author, llBookId };
     const before = resolver.meter?.taken() ?? 0;
     const spend = async (): Promise<void> => {
       if (resolver.budget) await resolver.budget.spend((resolver.meter?.taken() ?? 0) - before);
@@ -273,59 +348,18 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
     await spend();
     if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
       // The breaker is open (or just tripped): not a lookup, nothing stamped; every due want waits for quota.
-      report.skippedQuota += due.length - i;
+      halted = 'quota';
+      skip('quota');
       log.info?.('english_edition: GB quota exhausted, lookups left for later', {
         retryAfter: guarded.until.toISOString(),
         due: due.length - i,
       });
-      break;
+      continue;
     }
     report.looked += 1;
-    const llLanguage = snapshot.get(llBookId)?.language ?? null;
-    if (guarded.outcome === 'resolved') {
-      const verdict = acceptEnglishEdition(want, guarded.volume);
-      if (verdict.ok) {
-        const moved = await switchRequestToEnglishEdition({
-          db: input.db,
-          requestId: row.id,
-          fromLlBookId: llBookId,
-          toLlBookId: guarded.volume.volumeId,
-          now,
-        });
-        if (moved) {
-          report.switched += 1;
-          log.info?.('english_edition_switched', {
-            requestId: row.id,
-            origin: row.origin,
-            title: row.title,
-            llBookId,
-            toLlBookId: guarded.volume.volumeId,
-            llLanguage,
-            gbLanguage: guarded.volume.language ?? null,
-          });
-        }
-        continue;
-      }
-      log.info?.('english_edition_refused', {
-        requestId: row.id,
-        title: row.title,
-        llBookId,
-        candidate: guarded.volume.volumeId,
-        candidateTitle: guarded.volume.title ?? null,
-        reason: verdict.reason,
-      });
-    }
-    // No English edition (or the one found is another volume or work): park, nothing is pushed for it.
-    if (await parkRequestNoEnglishEdition({ db: input.db, requestId: row.id, llBookId, now })) {
-      report.parked += 1;
-      log.info?.('english_edition_none', {
-        requestId: row.id,
-        origin: row.origin,
-        title: row.title,
-        llBookId,
-        llLanguage,
-      });
-    }
+    const found = guarded.outcome === 'resolved' ? guarded.volume : null;
+    answered.set(memoKey, found);
+    await settleAnswer(row, found);
   }
   return report;
 }
