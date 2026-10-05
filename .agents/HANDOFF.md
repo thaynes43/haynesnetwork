@@ -88,6 +88,10 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
   `0N`/`[… 0N]` of a later volume:
   `select NZBtitle, NZBprov, Status from wanted where BookID='dGy0EAAAQBAJ' and AuxInfo='eBook' order by NZBdate`
   (LL DB opened `mode=ro`). If it is wrong again, the fix is #688 fault 2, not another per-title row.
+- **2026-10-05 12:43Z, #688 fault 1 fixed and live** (haynes-ops #3367, `postprocess.py` overlay): a SABnzbd job that
+  failed (`Duplicate NZB`) is no longer post-processed. **Fault 2 is not fixed**: LL has no series data (`series` and
+  `member` empty for all 1,138 books), so a series-number penalty cannot fire; the volume source needs a decision (#688
+  comment). Until then check (k) still applies, and rowids 9460 and 9539 remain the per-title blocks.
 
 ## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
 
