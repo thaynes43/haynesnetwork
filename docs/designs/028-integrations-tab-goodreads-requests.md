@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -691,10 +691,94 @@ that. A status LazyLibrarian shows that we cannot read decides nothing, and so d
   library import drops the member from Libretto's missing list and the wanted pass deletes the want. Live data on
   2026-10-05: 0 collection wants with an active format `landed`.
 
-**Not decided here.** What an Azazel-like want should ask for when its Google Books volume is a foreign edition (look
-for an English edition of the same work) is a design choice, not a status fix. It stays `missing` for now; tracked in
-https://github.com/thaynes43/haynesnetwork/issues/719.
+**Not decided here.** What an Azazel-like want should ask for when its Google Books volume is a foreign edition is
+decided in the amendment below (issue #719).
 
 **Tests:** `packages/domain/__tests__/landed-truth.test.ts` (landed stays landed while held; reverts when the file is
 gone, when the library match is gone, when the book names another volume, when LazyLibrarian lost the book, when there
 is no book; a library match is never reverted; the comic follows Kapowarr; pairing).
+
+## Amendment — 2026-10-05 (latest): a want on a non-English book asks for the English edition (issue #719)
+
+**What was seen.** After #715 the goodreads sweep refuses to queue a LazyLibrarian book labelled non-English, so *Azazel*
+(request `415e4d34`, Google Books volume `PitFPgAACAAJ`, LazyLibrarian `BookLang` `es`) sat `missing` and nothing
+looked for the English edition. The same shape can hit any request: the Google Books resolve takes the top title hit
+and does not care about its language.
+
+**Ruling (coordinator, 2026-10-05; applies to goodreads, pairing and collection wants).** When a want's LazyLibrarian book
+is non-English (the DESIGN-036 #700 table: `foreign` only, blank and `Unknown` still pass), the app looks for the English
+edition of the same work. Found: the want switches to it and flows through the existing addBook, queueBook, searchBook
+path. Not found: the want is parked `no_english_edition` and nothing is ever pushed to LazyLibrarian for it.
+
+**The English-edition pass** (`runEnglishEditionPass`, `english-edition.ts`). One pass per goodreads-sync run, over every
+non-comic request of every origin, from the run's one `getAllBooks` snapshot (an LL database read, no Google Books call).
+It runs BEFORE the shelf enrichment, so its lookups take the `goodreads` budget slice first and a switch is pushed by the
+same run. A request is due when:
+
+- it has no library match, a LazyLibrarian id, and open formats (`englishEditionOpenFormats`). A goodreads want is
+  left alone once either format has landed: a format that landed from the foreign book is a file the library holds, which
+  the F10 audit owns, and switching the book under it would make that `landed` untrue. A pairing or collection want has
+  one acquired format (the other sits `landed` by construction), so it is every format that has not landed;
+- it is unparked and the snapshot says its book is foreign; or it is a pairing want parked `foreign_language` whose
+  anchor reads English or unknown and whose book is foreign (a park on the BOOK; an anchor that is itself foreign is the
+  anchor's problem and is untouched); or it is parked `no_english_edition` and the book is still foreign or gone (the
+  retry);
+- it has not been looked at since the quota-day began (`english_edition_tried_at`, migration 0091).
+
+**The lookup** is `GoogleBooksClient.resolveVolume({ title, author, language: 'en' })` with the WANT's own title and
+author (the foreign edition's title is no evidence of what was asked for), through `guardedGbResolve` (the shared breaker).
+With a language the client: sends `langRestrict=en`; skips the ISBN leg (an ISBN names the foreign edition); skips the
+`/volumes/{id}` comic-confirm GET (the want is already known not to be a comic), so a lookup costs at most the two title
+legs; walks the five hits and takes the first whose own `volumeInfo.language` is positively `en` (or `en-*`) AND that passes
+every existing guard (title coverage, omnibus, #693's volume rule, author). The domain then checks the result again
+(`acceptEnglishEdition`): it is not the id the want already has, GB does not call it foreign, and `llBookMismatch` (#693's
+Volume Check) agrees its title names the want's volume and work. A rejected edition counts as none.
+
+**Rationing (the Google Books budget is about 900 of 1,000 a day).**
+
+- At most ONE lookup per request per Google Books quota-day (07:00 UTC), whatever the answer: `english_edition_tried_at`
+  is stamped by the switch, the park and a failed lookup alike, so a lookup that found nothing is not repeated every run.
+  The next quota-day retries a parked want once (Google Books gains editions).
+- The daily call budget: `GbBudgetTracker.canSpend()` (reserve-before-commit) is checked before each lookup and its legs are
+  charged to the `goodreads` slice through the call meter. A budget or breaker refusal is not a lookup: nothing is stamped,
+  the want is due again as soon as quota allows.
+- A per-run cap (`ENGLISH_EDITION_CAP_PER_RUN`, default 10).
+
+**The writers** (`book-requests.ts`, unaudited, the `revertLandedFormats` class, each guarded on the id the pass read):
+
+- `switchRequestToEnglishEdition`: `ll_book_id` becomes the English volume, every acquired open format returns to
+  `requested`, a `foreign_language` / `no_english_edition` park clears, the lookup is stamped. The want is then an ordinary
+  never-pushed want: the next push (this run's, for a goodreads want) runs addBook on the English id, queueBook, searchBook.
+  `syncShelfRequests` keeps an existing `ll_book_id`, so the shelf mirror's Spanish volume id does not pull it back, and
+  `LlRekeyIndex` skips a foreign row so the gone rule cannot re-key onto the Spanish book either.
+- `parkRequestNoEnglishEdition`: `unroutable_reason = 'no_english_edition'`, the lookup stamped. Every job already skips a
+  parked want (push, reconcile and Skipped sweep, gone rule, re-request, collection force-search). A goodreads want's open
+  formats settle `missing` (the honest dead end); a pairing or collection want keeps its working status, like its other
+  parks. `syncShelfRequests` preserves this park (it recomputes `unroutable_reason` every run otherwise).
+- `liftNoEnglishEditionPark`: a `no_english_edition` park whose book now reads English or unknown (fixed in LazyLibrarian)
+  clears; a goodreads want's `missing` formats return to `requested`; the stamp clears. Free: not rationed.
+- `stampEnglishEditionTried`: a lookup that failed (a Google Books error), so it is not retried every run.
+
+**Never pushed while foreign.** The pass moves a want off a foreign book, but two other places must not queue it first:
+
+- the goodreads push skips a book LazyLibrarian already holds as non-English, and re-reads the language after the push's
+  own addBook seats a new book (LazyLibrarian only labels it then): a foreign one is left as seated (`Skipped`), no
+  queueBook, no searchBook, and the want is not marked pushed. Report field `pushesSkippedForeign`, log
+  `ll_push_skipped_foreign` (site `goodreads-sync.push`);
+- the collection force-search skips a want on a foreign book (report field `skippedForeign`; `last_searched_at` stamped, no
+  audit) until the pass has switched or parked it.
+
+**Pairing.** DESIGN-036 parks a pairing want `foreign_language` when LazyLibrarian labels its book non-English at the push or
+in the Skipped sweep. The pass takes up exactly those parks whose anchor is not itself foreign. DESIGN-036's amendment of this
+date has the pairing side.
+
+**Report fields and logs.** `englishEditions` on the goodreads-sync report (`due`, `looked`, `switched`, `parked`, `lifted`,
+`skippedBudget`, `skippedQuota`, `skippedCap`, `failed`); logs `english_edition_switched`, `english_edition_none`,
+`english_edition_refused`, `english_edition_park_lifted`. The wall shows a parked goodreads want as `missing` with no Search
+again (`isRequestSearchable` is false for any park); it does not render the reason yet (a user-visible change, not made here).
+
+**Tests:** `packages/domain/__tests__/english-edition.test.ts` (English edition found and switched, then pushed on the English
+id only; none found and parked, the park surviving a sync; another volume and another work refused; once per request per
+quota-day; the budget gate; the breaker; the per-run cap; a lifted park; pairing and collection wants; the push guards;
+the re-key guard), `packages/sync/__tests__/goodreads-english-edition.test.ts` (the run end to end: Azazel),
+`packages/goodreads/__tests__/google-books.test.ts` (the language-restricted resolve).

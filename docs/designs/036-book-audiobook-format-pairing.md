@@ -1,7 +1,7 @@
 # DESIGN-036: Book ⇄ audiobook format pairing — pair cache, paced system wants, dual consume buttons
 
 - **Status:** Draft
-- **Last updated:** 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
+- **Last updated:** 2026-10-05 (a want on a non-English LazyLibrarian book asks for the English edition, issue #719; see the last amendment). Prior: 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
   see the last amendment). Prior: 2026-10-05 (a want is checked against its anchor's book, issue #693; see the
   amendment of that date). Prior: 2026-07-21 (**author-agreement tolerance** — the live pairing-gap diagnosis found the
   substring check refusing real pairs on initials spacing ("JRR Tolkien" ⇄ "J.R.R. Tolkien"),
@@ -527,3 +527,20 @@ guard still applies to the sweep).
 **Live data before the change (2026-10-05):** of 365 unpaired, unparked pairing wants on live anchors whose missing format
 read `landed`, LazyLibrarian held 358, did not hold 4 (`Skipped`) and no longer had 3.
 
+## Amendment — 2026-10-05 (latest): a want on a non-English LazyLibrarian book asks for the English edition (issue #719)
+
+**Normative rule: DESIGN-028's 2026-10-05 (latest) amendment.** The push-time and Skipped-sweep parks of #700 (the anchor
+reads English or unknown, LazyLibrarian's `BookLang` for the want's book is foreign) left the want parked
+`foreign_language` with nothing asking for the English edition. The English-edition pass (goodreads-sync, DESIGN-028) now
+takes exactly those parks: it requires the anchor's own language to be non-foreign (an anchor that is itself foreign is the
+anchor's problem, not an edition's; the mint still never pairs it) and the book to be foreign in the run's snapshot.
+
+- **Found:** the want's `ll_book_id` becomes the English volume, the missing format returns to `requested`, the park
+  clears. The next mint run reuses that id (`ownLlBookId`; no Google Books call), `addBook`s it, re-checks the language
+  (the #700 push guard still applies to the English book) and pushes the missing format through the usual chain.
+- **None:** `unroutable_reason` becomes `no_english_edition` (the status is untouched, like every pairing park). The mint
+  and the reconcile skip a parked want, so nothing is ever pushed. The pass retries once per Google Books quota-day, and
+  lifts the park when LazyLibrarian's book is fixed. `liftForeignLanguageParks` (#712) never touches a
+  `no_english_edition` park.
+- The pairing mint itself makes no extra Google Books call and needs no change: the lookup is the goodreads-sync job's,
+  charged to its `goodreads` budget slice, at most once per want per quota-day.

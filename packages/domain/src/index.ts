@@ -185,6 +185,9 @@ export * from './ll-gone';
 // Issue #693 / DESIGN-028 amendment 2026-10-05 — is a want's LazyLibrarian book the volume it asks for?
 export * from './ll-book-check';
 export * from './book-language';
+// Issue #719 — the English-edition pass: a want whose LazyLibrarian book is not English switches to the English edition
+// of the same work, or is parked `no_english_edition` (never pushed).
+export * from './english-edition';
 export * from './goodreads-sync';
 // DESIGN-038 D-13 — the collection Wanted-tiles pass: Libretto-managed collections' missing members
 // minted as origin='collection' book_requests (the books-collections-sync mode's Wanted-tile step).

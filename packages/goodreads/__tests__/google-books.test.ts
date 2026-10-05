@@ -286,6 +286,10 @@ describe('GoogleBooksClient.resolveVolume', () => {
       isbn13: '9781932664089',
       categories: ['Comics & Graphic Novels'],
       isComic: true,
+      language: null,
+      title: 'Scott Pilgrim',
+      subtitle: null,
+      authors: [],
     });
   });
 
@@ -574,5 +578,68 @@ describe('the volume guard (issue #693 — a title that names its volume resolve
     // The same volume for the book it is resolves as before.
     const res = await gb.resolveVolume({ title: 'A Court of Thorns and Roses', author: 'Sarah J. Maas' });
     expect(res?.volumeId).toBe('E-kdBQAAQBAJ');
+  });
+});
+
+describe('GoogleBooksClient.resolveVolume with a language restriction (issue #719 — the English edition)', () => {
+  const decoded = (url: string) => decodeURIComponent(url).replace(/\+/g, ' ');
+
+  it('asks for langRestrict=en by title and author, never by ISBN, and takes the first English volume that passes every guard', async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      calls.push(decoded(url));
+      return volResponse([
+        // Ranked first but Spanish: a restricted resolve walks past it.
+        { id: 'PitFPgAACAAJ', volumeInfo: { title: 'Azazel', authors: ['Isaac Asimov'], language: 'es' } },
+        { id: 'en-azazel', volumeInfo: { title: 'Azazel', authors: ['Isaac Asimov'], language: 'en', categories: ['Fiction'] } },
+      ]);
+    }) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({ baseUrl: 'http://stub/books/v1', apiKey: 'k', fetchImpl });
+
+    const res = await gb.resolveVolume({ isbn: '9788497593069', title: 'Azazel', author: 'Isaac Asimov', language: 'en' });
+
+    expect(res).toMatchObject({ volumeId: 'en-azazel', language: 'en', title: 'Azazel', authors: ['Isaac Asimov'] });
+    // One leg: no `isbn:` leg (an ISBN names the Spanish edition), and no `/volumes/{id}` comic-confirm GET.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('langRestrict=en');
+    expect(calls[0]).toContain('intitle:Azazel inauthor:Isaac Asimov');
+    expect(calls[0]).not.toContain('isbn:');
+  });
+
+  it('a volume that reports no language, or another language, is never the English edition', async () => {
+    const fetchImpl = vi.fn(async () =>
+      volResponse([
+        { id: 'no-lang', volumeInfo: { title: 'Azazel', authors: ['Isaac Asimov'] } },
+        { id: 'fr', volumeInfo: { title: 'Azazel', authors: ['Isaac Asimov'], language: 'fr' } },
+      ]),
+    ) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({ baseUrl: 'http://stub/books/v1', apiKey: 'k', fetchImpl });
+    expect(await gb.resolveVolume({ title: 'Azazel', author: 'Isaac Asimov', language: 'en' })).toBeNull();
+  });
+
+  it('keeps the volume guard: another volume of the series is not the English edition (the pre-colon fallback too)', async () => {
+    const fetchImpl = vi.fn(async () =>
+      volResponse([
+        { id: 'en-1', volumeInfo: { title: 'A Court of Thorns and Roses', authors: ['Sarah J. Maas'], language: 'en' } },
+      ]),
+    ) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({ baseUrl: 'http://stub/books/v1', apiKey: 'k', fetchImpl });
+    expect(await gb.resolveVolume({ title: 'Court of Thorns and Roses bk 2', author: 'Sarah J. Maas', language: 'en' })).toBeNull();
+    expect(await gb.resolveVolume({ title: 'Court of Thorns and Roses: Book 2', author: 'Sarah J. Maas', language: 'en' })).toBeNull();
+  });
+
+  it('a plain resolve is unchanged: no langRestrict, the ISBN leg first, only the top hit', async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      calls.push(decoded(url));
+      return volResponse([
+        { id: 'top-es', volumeInfo: { title: 'Azazel', authors: ['Isaac Asimov'], language: 'es' } },
+        { id: 'second-en', volumeInfo: { title: 'Azazel', authors: ['Isaac Asimov'], language: 'en' } },
+      ]);
+    }) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({ baseUrl: 'http://stub/books/v1', apiKey: 'k', fetchImpl });
+    const res = await gb.resolveVolume({ title: 'Azazel', author: 'Isaac Asimov' });
+    expect(res?.volumeId).toBe('top-es');
+    expect(calls[0]).not.toContain('langRestrict');
   });
 });

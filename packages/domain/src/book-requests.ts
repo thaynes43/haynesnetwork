@@ -20,12 +20,14 @@ import {
   type BookRequestStatus,
   type BooksMediaKind,
   type DbClient,
+  type Transaction,
 } from '@hnet/db';
 import { and, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { KapowarrSearchCandidate, KapowarrVolume } from '@hnet/kapowarr/read';
 import { NotFoundError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import { inTransaction, resolveDb } from './db-client';
+import { FOREIGN_LANGUAGE_REASON, NO_ENGLISH_EDITION_REASON } from './book-language';
 
 // ---------------------------------------------------------------------------
 // LL status → per-format request status (the domain owns the mapping; the client returns raw strings).
@@ -538,7 +540,10 @@ export async function syncShelfRequests(
         ebookStatus = existing?.ebookStatus ?? 'requested';
         audioStatus = existing?.audioStatus ?? 'requested';
         comicStatus = null;
-        unroutableReason = null;
+        // Issue #719 — a want parked because its LazyLibrarian book is not English and no English edition exists stays
+        // parked (the English-edition pass owns the park: it lifts it, or retries the lookup, once a quota-day).
+        unroutableReason =
+          existing?.unroutableReason === NO_ENGLISH_EDITION_REASON ? NO_ENGLISH_EDITION_REASON : null;
         llBookId = existing?.llBookId ?? item.gbVolumeId ?? null;
         // Issue #715 — nothing lands a request with no library match except the LazyLibrarian book it points at. With
         // no book to point at, a `landed` format (the library match that landed it is gone) goes back to `requested`,
@@ -1766,6 +1771,174 @@ export async function parkCollectionWant(input: {
     )
     .returning({ id: bookRequests.id });
   return rows.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Issue #719 (DESIGN-028 amendment 2026-10-05) — the ENGLISH EDITION of a want whose LazyLibrarian book is not English
+// (the F10 English-only rule). Three single-writers, one per outcome of the one Google Books lookup the pass makes
+// (`english-edition.ts`): switch the want to the English edition, park it because there is none, or just record that
+// the lookup ran. Unaudited (synced/derived state, the `revertLandedFormats` class); the pass logs each outcome.
+// ---------------------------------------------------------------------------
+
+type EnglishEditionRow = Pick<BookRequestRow, 'origin' | 'ebookStatus' | 'audioStatus'>;
+
+/**
+ * The formats an English-edition outcome may rewrite: the ones the want still asks LazyLibrarian for. A goodreads want
+ * asks for both, and is left alone once either has landed (a format that landed from the foreign book is a file the
+ * library holds, which the F10 audit owns, and switching the book under it would make that `landed` untrue). A pairing
+ * or collection want carries one acquired format (the other sits `landed` by construction), so it is every format
+ * that has not landed. Empty = nothing to do.
+ */
+export function englishEditionOpenFormats(row: EnglishEditionRow): Array<'ebook' | 'audiobook'> {
+  const open: Array<'ebook' | 'audiobook'> = [];
+  if (row.ebookStatus !== 'landed') open.push('ebook');
+  if (row.audioStatus !== 'landed') open.push('audiobook');
+  if (row.origin === 'goodreads' && open.length < 2) return [];
+  return open;
+}
+
+const ENGLISH_EDITION_REASONS = new Set<string | null>([null, FOREIGN_LANGUAGE_REASON, NO_ENGLISH_EDITION_REASON]);
+
+async function lockEnglishEditionRow(
+  tx: Transaction,
+  input: { requestId: string; llBookId: string },
+): Promise<BookRequestRow | null> {
+  const [row] = await tx
+    .select()
+    .from(bookRequests)
+    .where(eq(bookRequests.id, input.requestId))
+    .for('update');
+  if (
+    !row ||
+    row.comicStatus !== null ||
+    row.matchedBooksItemId !== null ||
+    row.llBookId !== input.llBookId ||
+    !ENGLISH_EDITION_REASONS.has(row.unroutableReason) ||
+    englishEditionOpenFormats(row).length === 0
+  ) {
+    return null;
+  }
+  return row;
+}
+
+/**
+ * Point a want at the English edition of its book: `ll_book_id` becomes the English volume's id, every format the
+ * want acquires (`englishEditionOpenFormats`) returns to `requested`, a park the foreign book put it under
+ * (`foreign_language`, `no_english_edition`) is cleared, and the lookup is stamped. The want is then an ordinary
+ * never-pushed one: the next run's push (addBook, queueBook, searchBook) takes it through the existing path. Guarded
+ * on the id the caller read, on the want still being unmatched and not a comic, and on it still having open formats.
+ * Returns whether the row changed.
+ */
+export async function switchRequestToEnglishEdition(input: {
+  db?: DbClient;
+  requestId: string;
+  fromLlBookId: string;
+  toLlBookId: string;
+  now?: Date;
+}): Promise<boolean> {
+  if (input.fromLlBookId === input.toLlBookId) return false;
+  const now = input.now ?? new Date();
+  return inTransaction(input.db, async (tx) => {
+    const row = await lockEnglishEditionRow(tx, { requestId: input.requestId, llBookId: input.fromLlBookId });
+    if (!row) return false;
+    const open = englishEditionOpenFormats(row);
+    await tx
+      .update(bookRequests)
+      .set({
+        llBookId: input.toLlBookId,
+        ...(open.includes('ebook') ? { ebookStatus: 'requested' as const } : {}),
+        ...(open.includes('audiobook') ? { audioStatus: 'requested' as const } : {}),
+        unroutableReason: null,
+        englishEditionTriedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(bookRequests.id, row.id));
+    return true;
+  });
+}
+
+/**
+ * Park a want whose LazyLibrarian book is not English because no English edition of the work exists (as far as Google
+ * Books knows): `unroutable_reason = 'no_english_edition'`, the lookup stamped. Every job already skips a parked want
+ * (the push, the reconcile and its Skipped sweep, the gone rule, the one re-request, the collection force-search), so
+ * nothing is queued or searched on the foreign book. A goodreads want's open formats also settle `missing`, the honest
+ * dead end (a pairing or collection want keeps its working status, like its other parks). Same guards as the switch.
+ * Returns whether the row changed.
+ */
+export async function parkRequestNoEnglishEdition(input: {
+  db?: DbClient;
+  requestId: string;
+  llBookId: string;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  return inTransaction(input.db, async (tx) => {
+    const row = await lockEnglishEditionRow(tx, { requestId: input.requestId, llBookId: input.llBookId });
+    if (!row) return false;
+    const open = englishEditionOpenFormats(row);
+    const settle = row.origin === 'goodreads';
+    await tx
+      .update(bookRequests)
+      .set({
+        ...(settle && open.includes('ebook') ? { ebookStatus: 'missing' as const } : {}),
+        ...(settle && open.includes('audiobook') ? { audioStatus: 'missing' as const } : {}),
+        unroutableReason: NO_ENGLISH_EDITION_REASON,
+        englishEditionTriedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(bookRequests.id, row.id));
+    return true;
+  });
+}
+
+/** Record that the English-edition lookup ran and failed (a GB error), so it is not retried every run. Returns whether it stamped. */
+export async function stampEnglishEditionTried(input: {
+  db?: DbClient;
+  requestId: string;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const rows = await resolveDb(input.db)
+    .update(bookRequests)
+    .set({ englishEditionTriedAt: now })
+    .where(eq(bookRequests.id, input.requestId))
+    .returning({ id: bookRequests.id });
+  return rows.length > 0;
+}
+
+/**
+ * Lift a `no_english_edition` park whose reason is gone: LazyLibrarian's book now reads English (or unknown), so the
+ * want is an ordinary one again. A goodreads want's `missing` formats return to `requested` (the park settled them),
+ * so the push takes them again; the lookup stamp is cleared. Clears ONLY that park (every other is a different
+ * decision), guarded on the id. Returns whether the row was lifted.
+ */
+export async function liftNoEnglishEditionPark(input: {
+  db?: DbClient;
+  requestId: string;
+  llBookId: string;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  return inTransaction(input.db, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(bookRequests)
+      .where(eq(bookRequests.id, input.requestId))
+      .for('update');
+    if (!row || row.llBookId !== input.llBookId || row.unroutableReason !== NO_ENGLISH_EDITION_REASON) return false;
+    const reopen = row.origin === 'goodreads';
+    await tx
+      .update(bookRequests)
+      .set({
+        ...(reopen && row.ebookStatus === 'missing' ? { ebookStatus: 'requested' as const } : {}),
+        ...(reopen && row.audioStatus === 'missing' ? { audioStatus: 'requested' as const } : {}),
+        unroutableReason: null,
+        englishEditionTriedAt: null,
+        updatedAt: now,
+      })
+      .where(eq(bookRequests.id, row.id));
+    return true;
+  });
 }
 
 /**

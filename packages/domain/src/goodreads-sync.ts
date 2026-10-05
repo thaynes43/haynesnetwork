@@ -113,6 +113,12 @@ export interface SyncGoodreadsReport extends LlGoneTally, LlRerequestTally {
    */
   pushesSkippedHeld: number;
   /**
+   * Issue #719 — pushes SUPPRESSED this run because LazyLibrarian labels the want's book non-English (the F10 rule): the
+   * book it already held, or the one this run's addBook just seated. Nothing is queued or searched; the English-edition
+   * pass switches the want to an English edition (or parks it) on its next run.
+   */
+  pushesSkippedForeign: number;
+  /**
    * Issue #715 (DESIGN-028 amendment 2026-10-05) — requests with a format taken OUT of `landed` this run because
    * nothing held it any more: the library match was gone and LazyLibrarian (or Kapowarr, for a comic) does not hold
    * the format, or the request no longer points at a matching LazyLibrarian book.
@@ -207,6 +213,7 @@ export async function syncGoodreadsIntegration(
   //    pushed: the request is satisfied on LL's side, and step 5 reconciles it to `landed`.
   let pushed = 0;
   let pushesSkippedHeld = 0;
+  let pushesSkippedForeign = 0;
   const BOTH_FORMATS = ['ebook', 'audiobook'] as const;
   // ONE searchBook per book per run (issue #644). LazyLibrarian's `searchBook` IGNORES its `type`
   // parameter: `api.py::_searchbook` only forwards it to a log line, and `searchbook.search_book` searches
@@ -261,6 +268,18 @@ export async function syncGoodreadsIntegration(
         });
         continue;
       }
+      // Issue #719 — never queue a book LazyLibrarian labels non-English (the F10 rule), whatever its format status. The
+      // want stays `requested` and the English-edition pass moves it to an English edition, or parks it.
+      if (held && isForeignLanguage(held.language)) {
+        pushesSkippedForeign += 1;
+        log.info?.('ll_push_skipped_foreign', {
+          site: 'goodreads-sync.push',
+          requestId: target.requestId,
+          llBookId: target.llBookId,
+          llLanguage: held.language ?? null,
+        });
+        continue;
+      }
       await pace(i);
       const toQueue = BOTH_FORMATS.filter((f) => !llFormatAlreadyHeld(held, f));
       const skipped = BOTH_FORMATS.filter((f) => !toQueue.includes(f));
@@ -282,7 +301,23 @@ export async function syncGoodreadsIntegration(
           if (needsSearch(target.llBookId, toQueue)) {
             // addBook only seats a book LazyLibrarian does not hold (issue #665, DESIGN-028 amendment rule 6): on a
             // held book its upsert resets both formats to `Skipped`. A failed read leaves `held` undefined (as before).
-            if (held == null) await input.ll.write.addBook(target.llBookId);
+            if (held == null) {
+              await input.ll.write.addBook(target.llBookId);
+              // Issue #719 — LazyLibrarian only labels a book's language once addBook has seated it, so a book it
+              // did not hold is read back before anything is queued: a non-English one is left as seated (`Skipped`,
+              // never searched) and the want stays `requested` for the English-edition pass.
+              const seatedLanguage = await readLlLanguage(input.ll, target.llBookId);
+              if (isForeignLanguage(seatedLanguage)) {
+                pushesSkippedForeign += 1;
+                log.info?.('ll_push_skipped_foreign', {
+                  site: 'goodreads-sync.push',
+                  requestId: target.requestId,
+                  llBookId: target.llBookId,
+                  llLanguage: seatedLanguage ?? null,
+                });
+                continue;
+              }
+            }
             for (const format of toQueue) await input.ll.write.queueBook(target.llBookId, format);
             await searchOnce(input.ll, target.llBookId, toQueue, held);
           }
@@ -635,6 +670,7 @@ export async function syncGoodreadsIntegration(
     reconciled,
     requeued,
     pushesSkippedHeld,
+    pushesSkippedForeign,
     landedReverted,
     comicsRouted,
     comicsReconciled,
@@ -649,6 +685,7 @@ export async function syncGoodreadsIntegration(
     requestsReconciled: reconciled,
     requestsRequeued: requeued,
     pushesSkippedHeld,
+    pushesSkippedForeign,
     requestsLandedReverted: landedReverted,
     ...gone,
     ...rerequest,
@@ -656,6 +693,19 @@ export async function syncGoodreadsIntegration(
     comicsReconciled,
     coverage,
   };
+}
+
+/**
+ * Issue #719 — LazyLibrarian's `BookLang` for one book, read fresh (a book `addBook` just seated is not in the run's
+ * earlier snapshot). A failed read, or a book LazyLibrarian does not show, is unknown (null): the push proceeds, as
+ * before, because this guard may only ever withhold a write.
+ */
+async function readLlLanguage(ll: LazyLibrarianClientBundle, llBookId: string): Promise<string | null> {
+  try {
+    return (await ll.read.getAllBookStatuses()).get(llBookId)?.language ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

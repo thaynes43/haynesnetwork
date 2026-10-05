@@ -18,6 +18,13 @@ export type BookLanguageClass = 'english' | 'unknown' | 'foreign';
 /** `unroutable_reason` of a pairing want parked because its book is not English (issue #700). */
 export const FOREIGN_LANGUAGE_REASON = 'foreign_language';
 
+/**
+ * Issue #719 — `unroutable_reason` of a want (any origin) parked because its LazyLibrarian book is not English and Google
+ * Books has no English edition of the same work to switch it to. Never pushed to LazyLibrarian while parked; the English
+ * lookup is retried at most once per Google Books quota-day (`english_edition_tried_at`).
+ */
+export const NO_ENGLISH_EDITION_REASON = 'no_english_edition';
+
 export function classifyBookLanguage(value: string | null | undefined): BookLanguageClass {
   const v = (value ?? '').trim().toLowerCase();
   if (v === '' || v === 'xxx' || v === 'unknown' || v === 'und') return 'unknown';

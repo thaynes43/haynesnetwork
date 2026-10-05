@@ -3422,6 +3422,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
   });
 
   // ADR-099 gate — the record-first Save migration is journaled (idx 87), after 0087.
+  // Issue #719 gate — the English-edition attempt stamp is journaled (idx 90), after 0090.
+  it('lists 0091_book_requests_english_edition at idx 90, strictly after 0090_book_requests_ll_rerequest_added', () => {
+    const entry = journal.entries.find((e) => e.tag === '0091_book_requests_english_edition');
+    const prev = journal.entries.find((e) => e.tag === '0090_book_requests_ll_rerequest_added');
+    expect(entry?.idx).toBe(90);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0091_book_requests_english_edition.sql'), 'utf8');
+    expect(sqlText).toContain('ADD COLUMN "english_edition_tried_at" timestamp with time zone');
+  });
+
   // Issue #668 follow-up gate — the add-evidence column is journaled (idx 89), after 0089.
   it('lists 0090_book_requests_ll_rerequest_added at idx 89, strictly after 0089_book_requests_ll_rerequest', () => {
     const entry = journal.entries.find((e) => e.tag === '0090_book_requests_ll_rerequest_added');
