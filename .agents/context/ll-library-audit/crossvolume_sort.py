@@ -10,7 +10,10 @@ def cat(src,reason,fn):
         if fn=='metadata.json': return 'off_catalog','stale 2024 in-folder Audiobookshelf metadata.json'
         if fn.lower().endswith('.mp3'): return 'duplicate','The Runaway Jury track, byte-identical to its copy in The Runaway Jury/ (the other 2 replaced corrupt copies there)'
         return None,'UNCLASSIFIED'
-    if src=='AudioBooks/John Grisham/The Runaway Jury': return 'off_catalog','corrupt copy (about 250 KB zeroed), replaced in The Runaway Jury/ by an intact copy'
+    if src=='AudioBooks/John Grisham/The Runaway Jury':
+        if fn=='metadata.json': return 'off_catalog','stale 2026-06-29 in-folder Audiobookshelf metadata.json titled The Firm'
+        if fn.lower().endswith('.mp3'): return 'off_catalog','corrupt copy (about 250 KB zeroed), replaced in The Runaway Jury/ by an intact copy'
+        return None,'UNCLASSIFIED'
     if src=='AudioBooks/John Grisham/Firm':
         if fn.lower().endswith('.mp3'): return 'duplicate','incomplete fragments (discs 10-14) of The Firm; The Firm/ holds the complete 15.0 h copy'
         return 'off_catalog','sidecar of the removed fragments folder'
