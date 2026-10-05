@@ -34,6 +34,7 @@ import {
   stripAuthorDecoration,
   stripSeriesDecoration,
   syncFormatPairs,
+  unparkForeignLanguageWant,
   tripGbQuotaBreaker,
   type HeldBook,
   type LazyLibrarianClientBundle,
@@ -1819,5 +1820,132 @@ describe("runFormatPairing — the push-time guard on LazyLibrarian's own langua
 
     expect(run).toMatchObject({ requeued: 0 });
     expect(ll.calls.filter((c) => c.cmd === 'queueBook' || c.cmd === 'searchBook')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #712 — a foreign_language park is re-evaluated every run and lifts when the language turns English.
+// ---------------------------------------------------------------------------
+
+describe('foreign_language parks are re-evaluated every run (issue #712)', () => {
+  const heldOne = (title: string) => [{ title, author: 'A Writer', isbn: null }];
+  /** A Kavita BOOK anchor (holds one book) plus its open want, parked `foreign_language` the way #700 left it. */
+  async function seedParked(opts: { title: string; language: string; llBookId?: string | null; reason?: string }) {
+    const anchor = await seedItem({
+      title: opts.title,
+      author: 'A Writer',
+      mediaKind: 'book',
+      attrs: { language: opts.language, heldBooks: heldOne(opts.title) },
+    });
+    const [want] = await t.db
+      .insert(bookRequests)
+      .values({
+        origin: 'pairing',
+        pairingBooksItemId: anchor,
+        title: opts.title,
+        author: 'A Writer',
+        llBookId: opts.llBookId === undefined ? null : opts.llBookId,
+        ebookStatus: 'landed',
+        audioStatus: 'requested',
+        unroutableReason: opts.reason ?? 'foreign_language',
+      })
+      .returning();
+    return { anchor, want: want! };
+  }
+  const setLanguage = (anchor: string, language: string, title: string) =>
+    t.db
+      .update(booksItems)
+      .set({ attrs: { language, heldBooks: heldOne(title) } })
+      .where(eq(booksItems.id, anchor));
+  const reasonOf = async (id: string) =>
+    (await t.db.select().from(bookRequests).where(eq(bookRequests.id, id)))[0]!.unroutableReason;
+
+  it('lifts the park once the anchor reads English, and the want flows through the mint in the same run', async () => {
+    const { anchor, want } = await seedParked({ title: 'Fixed In Kavita', language: 'nl' });
+    const gb = stubGb(() => 'gb-fixed');
+    const ll = stubLl();
+
+    // Still Dutch: stays parked, nothing attempted.
+    const still = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+    expect(still).toMatchObject({ unparked: 0, attempted: 0, parked: 0 });
+    expect(await reasonOf(want.id)).toBe('foreign_language');
+
+    // The language is corrected (what books-sync now carries over from Kavita): the next run lifts it and mints.
+    await setLanguage(anchor, 'en', 'Fixed In Kavita');
+    const before = (await t.db.select().from(bookRequests).where(eq(bookRequests.id, want.id)))[0]!;
+    const run = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+    expect(run).toMatchObject({ unparked: 1, attempted: 1, pushed: 1 });
+    const after = (await t.db.select().from(bookRequests).where(eq(bookRequests.id, want.id)))[0]!;
+    expect(after.unroutableReason).toBeNull();
+    expect(after.llBookId).toBe('gb-fixed');
+    expect(before.updatedAt.getTime()).toBeLessThanOrEqual(after.updatedAt.getTime());
+    expect(ll.calls.map((c) => c.cmd)).toEqual(['addBook', 'queueBook', 'searchBook']);
+  });
+
+  it('lifts for an anchor that now reads unknown (blank), too', async () => {
+    const { anchor, want } = await seedParked({ title: 'Blank Now', language: 'de' });
+    await setLanguage(anchor, '', 'Blank Now');
+    const run = await mintPairingWants({ db: t.db, gb: stubGb(() => null).gb, pacer: async () => {} });
+    expect(run.unparked).toBe(1);
+    expect(await reasonOf(want.id)).toBeNull();
+  });
+
+  it('stays parked while the anchor is still foreign (any foreign value), however often it runs', async () => {
+    const a = await seedParked({ title: 'Still Dutch', language: 'nl' });
+    const b = await seedParked({ title: 'Still German', language: 'German' });
+    const ll = stubLl();
+    for (let i = 0; i < 3; i += 1) {
+      const run = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: stubGb(() => 'gb-x').gb, pacer: async () => {} });
+      expect(run).toMatchObject({ unparked: 0, attempted: 0, parked: 0 });
+    }
+    expect(await reasonOf(a.want.id)).toBe('foreign_language');
+    expect(await reasonOf(b.want.id)).toBe('foreign_language');
+    expect(ll.calls).toHaveLength(0);
+  });
+
+  it('never lifts any other park reason, even on an English anchor', async () => {
+    const wrongVolume = await seedParked({ title: 'Omnibus Repair', language: 'en', reason: 'wrong_volume' });
+    const multi = await seedParked({ title: 'Many Books', language: 'en', reason: 'multi_book' });
+    const none = await seedParked({ title: 'No Books', language: 'en', reason: 'no_book' });
+    const ll = stubLl();
+    const run = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: stubGb(() => 'gb-x').gb, pacer: async () => {} });
+    expect(run).toMatchObject({ unparked: 0, attempted: 0 });
+    expect(await reasonOf(wrongVolume.want.id)).toBe('wrong_volume');
+    expect(await reasonOf(multi.want.id)).toBe('multi_book');
+    expect(await reasonOf(none.want.id)).toBe('no_book');
+    expect(ll.calls).toHaveLength(0);
+  });
+
+  it('the single-writer lifts only foreign_language rows', async () => {
+    const fl = await seedParked({ title: 'Writer Foreign', language: 'en' });
+    const wv = await seedParked({ title: 'Writer Wrong Volume', language: 'en', reason: 'wrong_volume' });
+    expect(await unparkForeignLanguageWant({ db: t.db, requestId: wv.want.id })).toBe(false);
+    expect(await reasonOf(wv.want.id)).toBe('wrong_volume');
+    expect(await unparkForeignLanguageWant({ db: t.db, requestId: fl.want.id })).toBe(true);
+    expect(await unparkForeignLanguageWant({ db: t.db, requestId: fl.want.id })).toBe(false); // already free
+  });
+
+  it("with LazyLibrarian's book in hand: an English anchor whose BookLang is still German stays parked; an English BookLang lifts", async () => {
+    const german = await seedParked({ title: 'Anchor English Book German', language: 'English', llBookId: 'gb-de' });
+    const english = await seedParked({ title: 'Anchor English Book English', language: 'en', llBookId: 'gb-en' });
+    const ll = stubLlBooks({
+      'gb-de': { title: 'Anchor English Book German', author: 'A Writer', ebookStatus: 'Open', audioStatus: 'Skipped', language: 'de' },
+      'gb-en': { title: 'Anchor English Book English', author: 'A Writer', ebookStatus: 'Open', audioStatus: 'Skipped', language: 'en' },
+    });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
+    expect(run.unparked).toBe(1);
+    expect(await reasonOf(german.want.id)).toBe('foreign_language'); // the push-time park (LL's own language) stands
+    expect(await reasonOf(english.want.id)).toBeNull();
+    // Nothing was queued or searched for the German book.
+    expect(ll.calls.filter((c) => c.id === 'gb-de')).toHaveLength(0);
+  });
+
+  it('a degraded run (no LazyLibrarian language read) lifts nothing it cannot verify, but a want with no LL book still lifts', async () => {
+    const withBook = await seedParked({ title: 'Has LL Book', language: 'en', llBookId: 'gb-has' });
+    const without = await seedParked({ title: 'No LL Book Yet', language: 'en' });
+    const run = await mintPairingWants({ db: t.db, gb: stubGb(() => null).gb, pacer: async () => {} });
+    expect(run.unparked).toBe(1);
+    expect(await reasonOf(withBook.want.id)).toBe('foreign_language');
+    expect(await reasonOf(without.want.id)).toBeNull();
   });
 });

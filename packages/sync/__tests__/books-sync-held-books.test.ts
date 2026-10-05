@@ -116,7 +116,8 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
       sourceAddedAt: null,
       sourceUpdatedAt: new Date(STAMP),
       summary: 'Kept',
-      metadataSyncedAt: new Date('2026-07-16T00:00:00Z'),
+      // Just read: inside the rolling-refresh minimum age (issue #712), so only the gate decides.
+      metadataSyncedAt: new Date(),
     };
     await syncBooks({ db: t.db, rows: [row], syncedSources: [] });
     const series = {

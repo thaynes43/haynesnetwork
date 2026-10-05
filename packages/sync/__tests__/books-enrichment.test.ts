@@ -11,6 +11,7 @@ import {
   kavitaHeldBooksFrom,
   normalizeAbsItem,
   normalizeKavitaSeries,
+  selectMetadataRefresh,
   stripHtml,
   type BooksSyncBundle,
   type ExistingKavitaEnrichment,
@@ -226,7 +227,7 @@ describe('fetchBooksSnapshot — Kavita enrichment change-gate', () => {
       ['103', { sourceUpdatedAt: new Date('2026-07-01T00:00:00'), metadataSyncedAt: new Date('2026-07-16T00:00:00Z'), data: { summary: 'STALE', genres: [], publisher: null, language: null, year: null, writers: [] } }],
     ]);
     const { bundle, calls } = stubBundle(async () => meta());
-    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing });
+    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing, metadataRefreshCap: 0 });
     expect(calls).toEqual(['103']); // ONLY the changed series hit the metadata endpoint
     const by = Object.fromEntries(snap.rows.map((r) => [r.externalId, r]));
     expect(by['102']!.summary).toBe('OLD'); // carried forward, no request
@@ -242,7 +243,7 @@ describe('fetchBooksSnapshot — Kavita enrichment change-gate', () => {
       if (id === '103') throw new Error('kavita 500');
       return meta();
     });
-    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing });
+    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing, metadataRefreshCap: 0 });
     const by = Object.fromEntries(snap.rows.map((r) => [r.externalId, r]));
     expect(by['103']!.summary).toBe('KEEP'); // enrichment preserved on failure
   });
@@ -321,7 +322,7 @@ describe('fetchBooksSnapshot — the held-books read (issue #661)', () => {
       ['103', { sourceUpdatedAt: new Date('2026-07-10T12:00:00'), metadataSyncedAt: new Date('2026-07-16T00:00:00Z'), data: enriched }],
     ]);
     const { bundle, calls, volumeCalls } = stubBundle(async () => meta(), async () => FIRE_AND_BLOOD);
-    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing });
+    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing, metadataRefreshCap: 0 });
     expect(volumeCalls).toEqual(['103']);
     expect(calls).toEqual([]); // the metadata change-gate is untouched
     const by = Object.fromEntries(snap.rows.map((r) => [r.externalId, r]));
@@ -338,7 +339,7 @@ describe('fetchBooksSnapshot — the held-books read (issue #661)', () => {
     const { bundle } = stubBundle(async () => meta(), async () => {
       throw new Error('kavita 500');
     });
-    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing });
+    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing, metadataRefreshCap: 0 });
     const by = Object.fromEntries(snap.rows.map((r) => [r.externalId, r]));
     expect('heldBooks' in by['102']!.attrs).toBe(false); // unread, never an empty (= "holds nothing") list
     expect(heldOf(by['103']!)).toEqual(carried);
@@ -349,5 +350,84 @@ describe('fetchBooksSnapshot — the held-books read (issue #661)', () => {
     const snap = await fetchBooksSnapshot(bundle);
     expect(volumeCalls).toEqual([]);
     expect(snap.rows.every((r) => !('heldBooks' in r.attrs))).toBe(true);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Issue #712 — Kavita has no metadata change signal, so a metadata-only edit lands via the rolling refresh.
+// ---------------------------------------------------------------------------
+
+describe('fetchBooksSnapshot — a metadata-only Kavita edit is picked up (issue #712)', () => {
+  const NOW = new Date('2026-10-05T20:00:00Z');
+  const edited = (): KavitaSeriesMetadata => ({ summary: 'NEW', genres: [], publishers: [], language: 'en', releaseYear: 2000 });
+  const row = (language: string | null, syncedAt: Date, stamp = '2026-07-09T12:00:00'): ExistingKavitaEnrichment => ({
+    // The list stamp (lastChapterAddedUtc) is UNCHANGED: Kavita does not move it when metadata is edited.
+    sourceUpdatedAt: new Date(stamp),
+    metadataSyncedAt: syncedAt,
+    data: { summary: 'OLD', genres: [], publisher: null, language, year: null, writers: [] },
+  });
+
+  it('re-reads an unchanged series whose stored language is foreign, EVERY run, even if read a minute ago', async () => {
+    const existing = new Map<string, ExistingKavitaEnrichment>([
+      ['102', row('nl', new Date(NOW.getTime() - 60_000))],
+      ['103', row('en', new Date(NOW.getTime() - 60_000), '2026-07-10T12:00:00')],
+    ]);
+    const { bundle, calls } = stubBundle(async () => edited());
+    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing, now: NOW });
+    expect(calls).toEqual(['102']); // the foreign one only; the recently-read English one is gated out
+    const by = Object.fromEntries(snap.rows.map((r) => [r.externalId, r]));
+    expect(by['102']!.attrs).toMatchObject({ language: 'en' });
+    expect(by['102']!.summary).toBe('NEW');
+    expect(by['102']!.metadataSyncedAt).toEqual(NOW);
+    expect(by['103']!.summary).toBe('OLD');
+  });
+
+  it('re-reads an unchanged English series once its last read is past the minimum age (any edit lands eventually)', async () => {
+    const existing = new Map<string, ExistingKavitaEnrichment>([
+      ['102', row('en', new Date(NOW.getTime() - 7 * 3600_000))],
+      ['103', row('en', new Date(NOW.getTime() - 5 * 3600_000), '2026-07-10T12:00:00')],
+    ]);
+    const { bundle, calls } = stubBundle(async () => edited());
+    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing, now: NOW });
+    expect(calls).toEqual(['102']);
+    expect(Object.fromEntries(snap.rows.map((r) => [r.externalId, r]))['102']!.summary).toBe('NEW');
+  });
+
+  it('metadataRefreshCap: 0 turns the rolling refresh off (the bare change-gate)', async () => {
+    const existing = new Map<string, ExistingKavitaEnrichment>([['102', row('nl', new Date('2026-07-17T00:00:00Z'))]]);
+    const { bundle, calls } = stubBundle(async () => edited());
+    await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing, now: NOW, metadataRefreshCap: 0 });
+    expect(calls).toEqual(['103']); // 103 is new to the mirror; 102 is gated out
+  });
+});
+
+describe('selectMetadataRefresh (issue #712)', () => {
+  const NOW = new Date('2026-10-05T20:00:00Z');
+  const hoursAgo = (h: number): Date => new Date(NOW.getTime() - h * 3600_000);
+  const series = (ids: number[]) => ids.map((id) => ({ id }) as unknown as KavitaSeries);
+  const row = (language: string | null, syncedAt: Date | null): ExistingKavitaEnrichment => ({
+    sourceUpdatedAt: null,
+    metadataSyncedAt: syncedAt,
+    data: { summary: null, genres: [], publisher: null, language, year: null, writers: [] },
+  });
+
+  it('puts foreign-language series first, then the stalest past the minimum age, within the cap', () => {
+    const existing = new Map<string, ExistingKavitaEnrichment>([
+      ['1', row('en', hoursAgo(10))],
+      ['2', row('en', hoursAgo(30))],
+      ['3', row('de', hoursAgo(1))],
+      ['4', row('en', hoursAgo(2))], // younger than the minimum age: never rotated in
+      ['5', row(null, hoursAgo(20))], // blank is unknown, not foreign: ordinary rotation
+      ['6', row('en', null)], // never read: the change-gate's job, not this one's
+    ]);
+    const pick = selectMetadataRefresh(series([1, 2, 3, 4, 5, 6, 7]), existing, { now: NOW, cap: 3 });
+    expect([...pick]).toEqual([3, 2, 5]);
+    expect([...selectMetadataRefresh(series([1, 2, 3, 4, 5, 6, 7]), existing, { now: NOW, cap: 10 })].sort()).toEqual([1, 2, 3, 5]);
+  });
+
+  it('selects nothing without an existing map or with cap 0', () => {
+    expect(selectMetadataRefresh(series([1]), undefined, { now: NOW }).size).toBe(0);
+    expect(selectMetadataRefresh(series([1]), new Map([['1', row('de', hoursAgo(99))]]), { now: NOW, cap: 0 }).size).toBe(0);
   });
 });
