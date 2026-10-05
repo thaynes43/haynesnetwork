@@ -621,6 +621,10 @@ books). The pairing identity check runs only on a usable snapshot (`llSnapshotUs
 - collection wants whose book mismatches: parked `wrong_volume`, the id cleared (both BBC Radio Drama Collection rows);
 - goodreads wants whose book mismatches: re-pointed to the shelf item's current Google Books volume and re-opened
   `requested` when that is another id, else settled `missing`;
-- the two Mistborn sequel wants on removed Kavita anchors: the id cleared, the missing format settled `missing`.
+- the two Mistborn sequel wants on removed Kavita anchors: the id cleared, the missing format settled `missing`;
+- (v0.107.2) the four Chroniken der Unterwelt pairing wants the cross-volume repair parked `wrong_volume` with a
+  direct write: conformed through `settleParkedPairingWant`. They stay parked with no id, and the missing format no
+  longer reads `landed`/`wanted` from the German omnibus: `missing`, or `landed` when the anchor is paired. Pairing
+  parks write no audit row; they are the unaudited sync class.
 
 Rows pointing at `ik6xzgEACAAJ`, which the cross-volume repair owns, are skipped. Record: HANDOFF, 2026-10-05.
