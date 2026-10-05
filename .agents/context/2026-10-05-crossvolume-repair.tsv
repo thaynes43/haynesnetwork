@@ -1,0 +1,39 @@
+book_id	title	format	audit_rows	verdict	action	file_now	rewanted	notes
+E-kdBQAAQBAJ	A Court of Thorns and Roses	eBook	12	correct	none	EBooks/Sarah J. Maas/A Court of Thorns and Roses/ (epub x2, azw3, mobi: all book 1)	no	later correct grabs replaced the wrong ones
+E-kdBQAAQBAJ	A Court of Thorns and Roses	AudioBook	0	correct	none	AudioBooks/Sarah J. Maas/A Court of Thorns and Roses/ (16.13 h)	no	mia.xh has 0.76 h progress on this correct file
+RzIuCwAAQBAJ	Alcatraz Vs. the Evil Librarians	eBook	4	correct	none	epub/mobi/pdf all book 1	no	
+RzIuCwAAQBAJ	Alcatraz Vs. the Evil Librarians	AudioBook	0	correct	none	5 parts, 6.27 h	no	
+ik6xzgEACAAJ	Chroniken der Unterwelt (= German omnibus vols 4-6, ISBN 9783401807294)	eBook	14	wrong	held: German vol 6 epub alone + 1-page usenet advert pdf; LL eBook set Skipped, BookFile blank	none	no	German edition (F10 English-only): not re-wanted
+ik6xzgEACAAJ	Chroniken der Unterwelt (German 4-6)	AudioBook	5	partly wrong	German vols 1-3 held (216 files); byte-identical vol 1 twin deleted (66); vols 4-6 kept as the record's audio	AudioBooks/Cassandra Clare/Chroniken der Unterwelt/ (vols 4-6, 22.85 h)	no	ABS item rebuilt and titled "Chroniken der Unterwelt (4-6)"; the record itself is German (F10), left for a person
+bg-dAQAACAAJ	Grey (German record; twin TJKmCQAAQBAJ)	eBook	1	wrong	held: Grey+Darker omnibus epub, Fifty Shades of Grey azw3 (LL does not track it), "Master of the Universe" fan-fiction pdf; BookFile re-pointed to the folder's correct Grey mobi	EBooks/E.L. James/Grey/Grey - E.L. James.mobi	no	twin record TJKmCQAAQBAJ re-pointed to the same mobi
+bg-dAQAACAAJ	Grey	AudioBook	0	correct	none	15 parts, 18.89 h	no	
+t_ZYYXZq4RgC	Mistborn	eBook	12	wrong (Hebrew edition, F10)	Hebrew epub held; English Mistborn 1 epub moved in from the untracked EBooks/Brandon Sanderson/The Final Empire/ to the same path	EBooks/Brandon Sanderson/Mistborn/Mistborn - Brandon Sanderson.epub	no	LL scan confirmed the link
+t_ZYYXZq4RgC	Mistborn	AudioBook	15	correct	none	22 parts, 24.67 h	no	
+dlfOfxkm1PoC	Mistborn	eBook	1	wrong (shares t_ZY file)	fixed by the same move	same as t_ZYYXZq4RgC	no	
+dlfOfxkm1PoC	Mistborn	AudioBook	0	correct (Skipped, shares t_ZY file)	none	same as t_ZYYXZq4RgC	no	
+UB6E-h0wS84C	Shatter Me (twin giXxsgEACAAJ)	eBook	13	wrong	held: "Shatter Me Complete Collection" omnibus epub; re-homed: Destroy Me azw3 -> EBooks/Tahereh Mafi/Destroy Me/; BookFile re-pointed to the folder's correct Shatter Me mobi	EBooks/Tahereh Mafi/Shatter Me/Shatter Me - Tahereh Mafi.mobi	no	twin giXxsgEACAAJ (Skipped) re-pointed to the same mobi
+UB6E-h0wS84C	Shatter Me	AudioBook	0	n/a (Skipped, no file)	none		no	
+SMiJCwAAQBAJ	Tales from the Shadowhunter Academy	eBook	13	correct	none	epub/azw3/mobi all the 2016 collection	no	
+SMiJCwAAQBAJ	Tales from the Shadowhunter Academy	AudioBook	0	n/a (Skipped)	none		no	
+fgCnGzN9NakC	Inheritance (book IV)	eBook	14	correct (+1 wrong extra)	held: "Inheritance Cycle Omnibus" mobi (books 1-3); the record's epub is Inheritance 04	EBooks/Christopher Paolini/Inheritance/Inheritance - Christopher Paolini.epub	no	
+fgCnGzN9NakC	Inheritance	AudioBook	0	n/a (Skipped)	none		no	
+QLnfZW-l_EwC	Pathfinder	eBook	0	correct	none	epub x2, mobi, pdf all Pathfinder	no	
+QLnfZW-l_EwC	Pathfinder	AudioBook	1	correct	none	4 copies of Pathfinder (17.7-17.9 h each); no Ruins file present	no	multi-copy item (71 h in ABS) predates this; not a cross-volume file
+RPq0DwAAQBAJ	Skyward	eBook	1	correct	none	pdf = Skyward (Gollancz 2018)	no	
+RPq0DwAAQBAJ	Skyward	AudioBook	0	correct	none	m4b 15.38 h	no	
+sal2DwAAQBAJ	Skyward	eBook	3	correct (shares RPq0 file)	none	same pdf	no	
+sal2DwAAQBAJ	Skyward	AudioBook	0	n/a (Skipped)	none		no	
+YVfJMgEACAAJ	Terry Pratchett's Discworld (Prima 1995)	eBook	0	wrong	held: Making Money epub (Making Money/ holds its own copy) + sidecars; folder removed; LL eBook Skipped, BookFile blank	none	no	not re-wanted: fixed matcher does not cover this title shape (issue filed)
+YVfJMgEACAAJ	Terry Pratchett's Discworld (Prima 1995)	AudioBook	1	wrong (32 grabs)	re-homed: The Science of Discworld (11 files, new folder, linked to Sv_GAgAAQBAJ); unabridged Guards! Guards! (120 files) to "Guards! Guards! (Unabridged)/" (linked to G2d_ngEACAAJ; Guards! Guards!/ holds the BBC radio drama); held: 559 files of 16 other novels whose own folders hold a copy of matching length; ABS item removed (no progress)	none	no	LL audio Skipped, AudioFile blank
+-fHTJV9mAnEC	The Infernal Devices (boxed set)	eBook	0	correct	none	epub = trilogy omnibus	no	
+-fHTJV9mAnEC	The Infernal Devices (boxed set)	AudioBook	1	correct (+24 wrong extras)	held: second Clockwork Prince release (24 chapter mp3s) from grab 2616	3 m4b (books 1-3) + Clockwork Angel mp3 x2	no	ABS item rebuilt and retitled "The Infernal Devices"
+UPe6zgEACAAJ	This Woven Kingdom	eBook	1	correct	none	2 epubs, both This Woven Kingdom	no	the book-3 grab did not survive
+UPe6zgEACAAJ	This Woven Kingdom	AudioBook	0	wrong (German edition linked, F10)	German set held (163); byte-identical German twin deleted (163); AudioFile re-pointed to the English mp3	AudioBooks/Tahereh Mafi/This Woven Kingdom/Tahereh Mafi - This Woven Kingdom.mp3	no	ABS item rebuilt: "This Woven Kingdom", 13.36 h, 44 chapters
+gil-EAAAQBAJ	Throne of Glass	eBook	1	correct	none	epub book 1	no	
+gil-EAAAQBAJ	Throne of Glass	AudioBook	0	correct	none	2 parts, 12.81 h	no	
+mezhxQ0twPUC	Throne of Glass	eBook	0	n/a (Skipped)	none		no	
+mezhxQ0twPUC	Throne of Glass	AudioBook	2	correct	none	same 12.81 h file	no	
+r_i4_Lr5fA4C	Throne of Glass	eBook	34	correct	none	azw3 book 1	no	
+r_i4_Lr5fA4C	Throne of Glass	AudioBook	1	correct	none	same 12.81 h file	no	
+o37NuQEACAAJ	Twilight	eBook	0	correct	none	epub Twilight	no	
+o37NuQEACAAJ	Twilight	AudioBook	3	correct	none	159 tracks, 13.14 h	no	
