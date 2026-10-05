@@ -40,14 +40,20 @@
   re-request made **no** `searchBook`: LazyLibrarian's log shows no `API-SEARCHBOOK` from it (the three at 18:32Z are the
   pairing mint's ordinary pushes of new wants).
 
-**Owed check (f), after LazyLibrarian's next backlog search (`cron_search_book`, 2026-10-05 04:54Z, ends ~05:05Z):**
-the extra Prowlarr queries should be about one per newly Wanted format per indexer (6 newznab), and no book searched
-twice. Grafana `prometheus`, instant at 2026-10-05T05:30Z: `sum(increase(prowlarr_indexer_queries_total[1h]))`; compare
-with 10-04's run (≈1,400 for 226 items, i.e. ~6.2 per item). LazyLibrarian's log line "Searching 6 providers ['nzb'] for N
-items" gives N; expect queries ≈ 6.2 × N and N ≈ 226 + the formats handed back by then (≈120 on 10-04). A book searched
-twice would show as two `Searching ... for 1` lines or duplicate `Best match` lines for one title in that window. The
-bulk of the app-made re-adds lands from 10-05 08:32Z on (after the people's retries at 07:41Z), so most of their
-searching happens in the 10-06 04:54Z run; repeat the same check then.
+**Check (f), done 2026-10-05 05:10Z:** LazyLibrarian's backlog search (04:54-05:04Z) ran over 352 items (226 the day
+before) and made 113 grabs (63 audiobook, 50 eBook). Prowlarr `increase(prowlarr_indexer_queries_total[20m])` at
+05:10Z: **1,059** (the day before: 1,455), spread over the five indexers Prowlarr shows queried (four newznab at about
+216 each, MyAnonaMouse 195; LazyLibrarian's log says "6 providers"). That is at most one query per item per indexer:
+each indexer saw about 216 of the 352 items, the rest being skipped by the DELAYSEARCH back-off or already matched. From the v0.106.0 deploy to 04:00Z every hourly window held 0-16 queries: the
+re-request itself searched nothing. No book was searched twice; one grab went to the wrong book (LazyLibrarian's fuzzy
+match took the "Assistant to the Villain 03 - Accomplice to the Villain" release for the eBook of *Assistant to the
+Villain*, book 1), an LL matching issue a Fix can repair. Progress before that run: goodreads 43 handed back + 7
+refused (retry each quota-day, max three); pairing 68 handed back (42 by `addBook`) + 50 landed + 13 refused, 619
+waiting; collection 16 handed back, 4 refused, 7 waiting. LazyLibrarian Wanted formats 236 → 406.
+
+**Owed check (g):** the rest of the ~620 app-made re-adds drain as the shared Google Books quota allows (#674); repeat
+check (f) after each 04:54Z backlog run until `ll_rerequested_at IS NULL AND ll_rerequest_failures < 3` with a
+`missing` format is empty for pairing and collection.
 
 ## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
 
