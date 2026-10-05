@@ -68,6 +68,8 @@ export interface LlSnapshotRow extends LlHeldSignals {
   subtitle?: string | null;
   /** LL's `AuthorName` (from `getAllBooks`'s join on `authors`). */
   author?: string | null;
+  /** LL's `BookLang` (issue #700: the pairing push's second language guard). */
+  language?: string | null;
 }
 
 /** The snapshot as every reconcile holds it: BookID → row. */

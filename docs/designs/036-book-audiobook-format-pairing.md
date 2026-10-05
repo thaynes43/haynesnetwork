@@ -424,3 +424,40 @@ one not yet read for its held books.
   (cap 25, the Google Books budget).
 - 22 wants re-title. One of them is c071f2dc ("Breaking Dawn" → "Twilight", whose series now holds Twilight, the book
   its id names).
+
+## Amendment — 2026-10-05: pairing is English only (issue #700)
+
+**Normative rule: the F10 English-only ruling** (`.agents/context/2026-07-13-f10-english-audit.md`). Pairing minted
+a want for the missing format of every unpaired item, whatever its language. On 2026-10-05 the Audiobookshelf item
+"Chroniken der Unterwelt (4-6)" (`attrs.language` `de`) became a candidate and pairing pushed LazyLibrarian's German
+omnibus eBook for it. The volume check (#693) passed it, because the book really was that item's other format. The
+missing piece is a language rule. Owner-side rulings (the coordinator's, 2026-10-05):
+
+**The language of an item** (`books_items.attrs.language`, both sources; `classifyBookLanguage`):
+
+| Class | Values | Pairing |
+|---|---|---|
+| English | `en`, `en-*`, `English` (any case) | allowed |
+| Unknown | blank, null, `XXX` (and LazyLibrarian's `Unknown`) | allowed (the 199 blank Audiobookshelf items are overwhelmingly English) |
+| Foreign | anything else: `nl`, `de`, `es`, `German`, ... | never |
+
+**D-05, the candidate filter.** A foreign anchor is never a candidate: with no want yet it is not minted
+(`skippedForeign`, no Google Books call, no push); an existing want LazyLibrarian is not working yet (`ll_book_id`
+NULL, or the missing format `requested`) is parked with `unroutable_reason='foreign_language'` through the same
+`parkPairingWant` as `multi_book` / `no_book`. A pushed want is left alone, as there. A parked want stays parked
+(the 2026-10-03 amendment), so lifting the park is clearing the reason.
+
+**The push-time guard (second line).** The library field is not fully reliable: the `525913ff` anchor reads
+`English` yet held the German audio. So before `queueBook` and `searchBook`, the mint reads LazyLibrarian's own
+`BookLang` (`getAllBooks`, `LlBookStatus.language`). An explicitly non-English book (same classes) is not queued or
+searched: the want is parked `foreign_language` and `refusedForeignBook` counts it. A blank, `Unknown` or missing
+language proceeds. The run's one snapshot answers for a book LazyLibrarian already holds; a book this push first
+seats with `addBook` is re-read once, because the snapshot predates it (`addBook` alone leaves the book `Skipped`,
+so it stays out of the search backlog). A degraded run without a usable snapshot checks nothing. The Skipped sweep
+applies the same guard to a book LazyLibrarian holds as foreign: no re-queue, and the want is parked when its
+state allows. The #668 re-request skips wants on foreign anchors.
+
+**Report fields:** `skippedForeign`, `refusedForeignBook`; `parked` now includes the foreign parks.
+
+Unchanged: the confined LazyLibrarian surface (C-08) and every other write. Foreign anchors still pair when both
+formats are in the library; the rule only stops pairing from asking for the other format.

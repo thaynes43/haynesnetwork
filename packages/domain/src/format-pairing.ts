@@ -29,6 +29,7 @@ import {
 import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { gbQueryTitle } from '@hnet/goodreads';
 import { readHeldBooks, type HeldBook } from './books';
+import { FOREIGN_LANGUAGE_REASON, isForeignLanguage, readItemLanguage } from './book-language';
 import { inTransaction, resolveDb } from './db-client';
 import { guardedGbResolve } from './gb-quota-breaker';
 import { makeGbBudgetTracker, type GbBudgetTracker, type GbCallMeter } from './gb-call-budget';
@@ -612,6 +613,14 @@ export interface MintPairingWantsInput {
    */
   llBookOf?: (llBookId: string) => LlBookNaming | undefined;
   /**
+   * Issue #700 — the push-time language guard: LazyLibrarian's own `BookLang` for a book id (`undefined` / null /
+   * blank when unknown). Called before `queueBook` / `searchBook`; `refresh` is true right after an `addBook` that
+   * first seated the book, when the run's snapshot cannot hold it yet. A book LazyLibrarian labels non-English is not
+   * pushed, and its want is parked (`foreign_language`). Absent ⇒ no check (a degraded run changes nothing it cannot
+   * verify).
+   */
+  llBookLanguage?: (llBookId: string, refresh: boolean) => Promise<string | null | undefined>;
+  /**
    * DESIGN-039 D-21/D-23 — the daily GB CALL BUDGET meter + tracker (consumer 'pairing'). The meter is
    * wired into the GB client's http wrapper (counts every outbound GB leg); the tracker holds this
    * consumer's remaining daily allowance. Absent ⇒ no budget enforcement + no metering (tests /
@@ -659,8 +668,12 @@ export interface MintPairingWantsReport {
   skippedUnknownHeld: number;
   /** Issue #661 — anchors holding several books or none, with no want yet: never minted. */
   skippedNotOneBook: number;
-  /** Issue #661 — unpushed wants on such anchors parked this run (`multi_book` / `no_book`). */
+  /** Issue #661 / #700 — unpushed wants parked this run (`multi_book` / `no_book` / `foreign_language`). */
   parked: number;
+  /** Issue #700 — anchors whose library language is explicitly non-English, with no want yet: never minted. */
+  skippedForeign: number;
+  /** Issue #700 — wants parked at the push because LazyLibrarian's own `BookLang` is non-English (nothing pushed). */
+  refusedForeignBook: number;
   /**
    * Issue #693 — wants whose LazyLibrarian book was another volume or work than their anchor's book: the id was
    * cleared and the missing format set `requested` (`landed` when the anchor is paired), so the mint resolves the
@@ -1040,7 +1053,12 @@ async function rerequestGonePairingWants(input: {
   const db = resolveDb(input.db);
   const rows = (
     await db
-      .select({ want: bookRequests, mediaKind: booksItems.mediaKind, deletedAt: booksItems.deletedAt })
+      .select({
+        want: bookRequests,
+        mediaKind: booksItems.mediaKind,
+        deletedAt: booksItems.deletedAt,
+        attrs: booksItems.attrs,
+      })
       .from(bookRequests)
       .innerJoin(booksItems, eq(booksItems.id, bookRequests.pairingBooksItemId))
       .where(
@@ -1057,7 +1075,13 @@ async function rerequestGonePairingWants(input: {
         asc(bookRequests.createdAt),
         asc(bookRequests.id),
       )
-  ).filter((r) => r.deletedAt === null && !snapshot.has(r.want.llBookId!));
+  ).filter(
+    // Issue #700 — a want on a non-English anchor is not handed back to LazyLibrarian (the F10 English-only rule).
+    (r) =>
+      r.deletedAt === null &&
+      !snapshot.has(r.want.llBookId!) &&
+      !isForeignLanguage(readItemLanguage(r.attrs)),
+  );
   if (rows.length === 0) return emptyLlRerequestTally();
   const pairRows = await db
     .select({ bookItemId: booksFormatPairs.bookItemId, audioItemId: booksFormatPairs.audioItemId })
@@ -1123,7 +1147,8 @@ export async function markPairingWantPushed(input: {
 
 /**
  * Issue #661 — park an UNPUSHED pairing want whose anchor does not hold exactly one book (`multi_book`,
- * `no_book`): one want per anchor cannot describe several books or none. Single-writer, one tx, with the
+ * `no_book`): one want per anchor cannot describe several books or none. Issue #700 — also its parking for a
+ * non-English anchor or book (`foreign_language`, the F10 English-only rule). Single-writer, one tx, with the
  * precondition that it is still unparked and still unpushed (`ll_book_id` NULL or the missing format
  * `requested`), so a want LazyLibrarian is already working is never touched. Unaudited (the pairing
  * sync-mint class). Returns whether the row was parked.
@@ -1131,7 +1156,7 @@ export async function markPairingWantPushed(input: {
 export async function parkPairingWant(input: {
   db?: DbClient;
   requestId: string;
-  reason: 'multi_book' | 'no_book';
+  reason: 'multi_book' | 'no_book' | typeof FOREIGN_LANGUAGE_REASON;
   missing: 'ebook' | 'audiobook';
   now?: Date;
 }): Promise<boolean> {
@@ -1189,7 +1214,7 @@ export async function mintPairingWants(
       })
       .from(booksItems)
       .where(and(isNull(booksItems.deletedAt), ne(booksItems.mediaKind, 'comic')))
-  ).map(({ attrs, ...r }) => ({ ...r, heldBooks: readHeldBooks(attrs) }));
+  ).map(({ attrs, ...r }) => ({ ...r, heldBooks: readHeldBooks(attrs), language: readItemLanguage(attrs) }));
   const pairRows = await db
     .select({ bookItemId: booksFormatPairs.bookItemId, audioItemId: booksFormatPairs.audioItemId })
     .from(booksFormatPairs);
@@ -1255,13 +1280,26 @@ export async function mintPairingWants(
     w.llBookId === null || statusOfFormat(w, missingFormatFor(i.mediaKind)) === 'requested';
   let skippedUnknownHeld = 0;
   let skippedNotOneBook = 0;
-  const toPark: Array<{ want: BookRequestRow; item: (typeof unpaired)[number]; reason: 'multi_book' | 'no_book' }> = [];
+  let skippedForeign = 0;
+  const toPark: Array<{
+    want: BookRequestRow;
+    item: (typeof unpaired)[number];
+    reason: 'multi_book' | 'no_book' | typeof FOREIGN_LANGUAGE_REASON;
+  }> = [];
   const candidates = unpaired
     .filter((i) => {
       const w = wantByAnchor.get(i.id);
       // A PARKED want (`unroutable_reason` set, e.g. 'wrong_volume' after an omnibus repair) is never
       // re-attempted: re-resolving it would refill llBookId and hand it back to the Skipped sweep.
       if (w && w.unroutableReason !== null) return false;
+      // Issue #700 — the F10 English-only rule: a foreign-language anchor is never a candidate. Its other format is
+      // not wanted, so no want is minted, and an unpushed want already on it is parked. Blank/`XXX` is unknown, so
+      // it stays a candidate (the push re-checks LazyLibrarian's own language).
+      if (isForeignLanguage(i.language)) {
+        if (!w) skippedForeign += 1;
+        else if (isRetryable(w, i)) toPark.push({ want: w, item: i, reason: FOREIGN_LANGUAGE_REASON });
+        return false;
+      }
       const identity = identityOf.get(i.id)!;
       if (identity.kind === 'unknown') {
         if (!w || isRetryable(w, i)) skippedUnknownHeld += 1;
@@ -1354,11 +1392,12 @@ export async function mintPairingWants(
     });
     if (done) {
       parked += 1;
-      log.info?.('format-pairing: want parked, the anchor does not hold exactly one book', {
-        requestId: p.want.id,
-        title: p.item.title,
-        reason: p.reason,
-      });
+      log.info?.(
+        p.reason === FOREIGN_LANGUAGE_REASON
+          ? 'format-pairing: want parked, the anchor is not English'
+          : 'format-pairing: want parked, the anchor does not hold exactly one book',
+        { requestId: p.want.id, title: p.item.title, reason: p.reason, language: p.item.language },
+      );
     }
   }
 
@@ -1372,6 +1411,7 @@ export async function mintPairingWants(
   let skippedQuota = 0;
   let skippedBudget = 0;
   let skippedHeld = 0;
+  let refusedForeignBook = 0;
   let attempted = 0;
   let paceSeq = 0;
   let quotaOpen = false;
@@ -1481,7 +1521,33 @@ export async function mintPairingWants(
       // DESIGN-039 D-18 — addBook ONLY seats a volume LL does not already hold. When LL already has
       // it (the common case for a re-pushed want), skip addBook so LL makes ZERO Google Books calls
       // this push; queueBook + searchBook (neither hits GB) still drive the acquisition retry.
-      if (!input.llHasSeededBook?.(llBookId)) await input.ll.write.addBook(llBookId);
+      const seatedNow = input.llHasSeededBook?.(llBookId) ?? false;
+      if (!seatedNow) await input.ll.write.addBook(llBookId);
+      // Issue #700 — the second language guard. The library's language field is not fully reliable (an item that
+      // read `English` held German audio), so before the book is queued or searched, LazyLibrarian's own `BookLang`
+      // is read (re-read after an addBook that first seated the book). Explicitly non-English ⇒ park, push nothing.
+      // Blank or unknown ⇒ proceed.
+      if (input.llBookLanguage) {
+        const llLanguage = await input.llBookLanguage(llBookId, !seatedNow);
+        if (isForeignLanguage(llLanguage)) {
+          refusedForeignBook += 1;
+          const done = await parkPairingWant({
+            db: input.db,
+            requestId: row.id,
+            reason: FOREIGN_LANGUAGE_REASON,
+            missing,
+            now,
+          });
+          if (done) parked += 1;
+          log.info?.('format-pairing: push refused, LazyLibrarian holds the book as non-English', {
+            requestId: row.id,
+            llBookId,
+            title: identity.title,
+            llLanguage,
+          });
+          continue;
+        }
+      }
       await input.ll.write.queueBook(llBookId, missing);
       if (input.shouldSearch?.(llBookId, missing) ?? true) {
         await input.ll.write.searchBook(llBookId, missing);
@@ -1524,6 +1590,8 @@ export async function mintPairingWants(
     skippedUnknownHeld,
     skippedNotOneBook,
     parked,
+    skippedForeign,
+    refusedForeignBook,
     reidentified,
     retitled,
     rejectedResolves,
@@ -1627,6 +1695,19 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     // Issue #693 — only a real, non-empty read: an LL error answer parses to an empty map, which would read every
     // book as absent and clear every want whose anchor was renamed.
     llBookOf: llSnapshotUsable(seatedMap) ? (id) => seatedMap.get(id) : undefined,
+    // Issue #700 — LazyLibrarian's own language for the push-time guard. A book the run's snapshot predates (first
+    // seated by this run's addBook) is read from a fresh `getAllBooks`; a failed or missing read means unknown.
+    llBookLanguage:
+      input.ll && llSnapshotUsable(seatedMap)
+        ? async (id, refresh) => {
+            if (!refresh) return seatedMap.get(id)?.language ?? null;
+            try {
+              return (await input.ll!.read.getAllBookStatuses()).get(id)?.language ?? null;
+            } catch {
+              return null;
+            }
+          }
+        : undefined,
   });
 
   let reconciled = 0;
@@ -1742,7 +1823,22 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
         // ADR-055 amendment (2026-09-22) — `Skipped` is not proof LL lacks the file: LL carries rows that
         // are Skipped yet fully imported (39 of them on that date). Re-queueing one clobbers it to
         // `Wanted`, so the sweep now consults the file/library signals before it fires.
-        if (raw?.trim().toLowerCase() === 'skipped' && llFormatAlreadyHeld(status, missing)) {
+        if (raw?.trim().toLowerCase() === 'skipped' && isForeignLanguage(status.language)) {
+          // Issue #700 — never re-queue a book LazyLibrarian itself labels non-English; park the want instead
+          // (a no-op once LazyLibrarian is already working it, which the park's precondition leaves alone).
+          await parkPairingWant({
+            db: input.db,
+            requestId: want.id,
+            reason: FOREIGN_LANGUAGE_REASON,
+            missing,
+            now,
+          });
+          log.info?.('format-pairing: Skipped sweep refused, LazyLibrarian holds the book as non-English', {
+            requestId: want.id,
+            llBookId: want.llBookId,
+            llLanguage: status.language ?? null,
+          });
+        } else if (raw?.trim().toLowerCase() === 'skipped' && llFormatAlreadyHeld(status, missing)) {
           sweepSkippedHeld += 1;
           log.info?.('ll_push_skipped_have', {
             site: 'format-pairing.skipped-sweep',
