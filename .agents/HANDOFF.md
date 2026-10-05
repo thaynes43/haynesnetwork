@@ -13,7 +13,7 @@
   Books calls every day, and Libretto hits daily-quota 429s most evenings between 18:42Z and 22:42Z, so exhaustion
   predates the #668 re-add influx. The options on #674 wait for the readings below.
 
-**Owed checks (b)-(f) from the blocks below are still pending.** New ones:
+**Owed checks (b), (d)-(f) and (j) from the blocks below are still pending; (c) passed 2026-10-05.** New ones:
 
 - **(g) After the 2026-10-05 07:00Z roll**, `{namespace="frontend"} |= "gb_quota_day_closed" | json` shows exactly one
   line, for quota-day 2026-10-04.
@@ -25,7 +25,8 @@
   `gb_quota_trip` lines, all `kind: minute` (goodreads 07:41Z; pairing 10:33Z and 11:32Z, each `retry_at` two minutes on), no daily
   trip yet. The app's key is project 841331826441 and Libretto's 429s name 585629606395, so Libretto does **not** share the app's
   key (the reading of #674's shared-key premise); recheck once a daily trip line (`kind` not `minute`) appears.
-- **(i) About a week of daily readings** during the #668 re-add drain, then revisit #674 options A/B/C.
+- **(i) About a week of daily readings** during the #668 re-add drain, then revisit #674 options A/B/C. Overlaps (j), the older
+  re-add drain check in the 2026-10-04 v0.106.0 entry below; read both.
 
 ## ▶ 2026-10-04 — v0.106.0 + v0.106.1 live: every settled request handed back to LazyLibrarian once (#668); one check owed
 
@@ -57,7 +58,7 @@ Villain*, book 1), an LL matching issue a Fix can repair. Progress before that r
 refused (retry each quota-day, max three); pairing 68 handed back (42 by `addBook`) + 50 landed + 13 refused, 619
 waiting; collection 16 handed back, 4 refused, 7 waiting. LazyLibrarian Wanted formats 236 → 406.
 
-**Owed check (g):** the rest of the ~620 app-made re-adds drain as the shared Google Books quota allows (#674); repeat
+**Owed check (j)** (overlaps (i) in the 2026-10-05 entry above; read both): the rest of the ~620 app-made re-adds drain as the shared Google Books quota allows (#674); repeat
 check (f) after each 04:54Z backlog run until `ll_rerequested_at IS NULL AND ll_rerequest_failures < 3` with a
 `missing` format is empty for pairing and collection.
 
@@ -179,7 +180,7 @@ q() { kubectl -n frontend exec -i "$P" -c app -- node -e 'const {Client}=require
   **Checked 2026-10-04 23:55Z: still waiting.** The only `queue-cleanup failed downloads` line in the last 48 h is
   the 2026-10-03 21:25Z Radarr one (`failures 1`, `arrRetries true`, `searched 0`), written before Redownload went off at
   21:25:26Z. No Sonarr or Radarr failure has been seen since.
-- **(c) The Trash sweep after movie batch `342c0f9c-c8dc-444c-8503-289b1ebfc6b2` expires** (2026-10-05T03:17:10Z =
+- **(c) DONE 2026-10-05: The Trash sweep after movie batch `342c0f9c-c8dc-444c-8503-289b1ebfc6b2` expires** (2026-10-05T03:17:10Z =
   2026-10-04 23:17 EDT). 50 items. Expect **44 deleted**, not 45-46: two items hold open save intents (How Stella Got
   Her Groove Back, and 101 Dalmatians, a batch save at 2026-10-03T04:02Z), and four are Age Guard keeps (Troll, The
   Babysitter: Killer Queen, Ponyboi, Fool's Gold, `keep_reason='recently_added'`). Any other keep must carry a reason.
@@ -187,6 +188,12 @@ q() { kubectl -n frontend exec -i "$P" -c app -- node -e 'const {Client}=require
   q "select count(*) filter (where deleted_at is not null) deleted, count(*) filter (where deleted_at is null) kept from trash_batch_items where batch_id = '342c0f9c-c8dc-444c-8503-289b1ebfc6b2'"
   q "select title, keep_reason, saved_at is not null as saved from trash_batch_items where batch_id = '342c0f9c-c8dc-444c-8503-289b1ebfc6b2' and deleted_at is null order by title"
   ```
+  **Checked 2026-10-05: passed, 42 deleted and 8 kept, not 44 and 6; both extra keeps are explained.** The
+  `trash-batch-sweep` job ran 03:45Z (deletes 03:45:23-03:46:08Z). The expected six held: 101 Dalmatians and How Stella
+  Got Her Groove Back (saved), Troll, The Babysitter: Killer Queen, Ponyboi and Fool's Gold (`recently_added`). Extra:
+  Army of the Dead (saved 2026-10-05T01:26Z, after the expectation was written; an open save intent) and The Specials
+  (`release_unrecorded`, the designed keep when a release cannot be recorded, DESIGN-052 D-11). Every keep without a
+  save carries a `keep_reason`.
 - **(d) The omnibus guard on a live resolve,** after the Google Books quota resets (about 07:00Z 2026-10-04). The
   hourly collection pass (`haynesnetwork-sync-books-collections`, :27) re-resolves the parked collection wants (Odd
   Interlude #1/#2, Silo Stories, Shatter Me Series: 1-5, two Dark Artifices Complete Collection) through Libretto. A
