@@ -4,6 +4,22 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-05 — v0.107.6 live: a landed format stays truthful (#715, closed)
+
+- **Why (#715).** Goodreads *Azazel* read `landed` for both formats after its Kavita match was removed (F10) while
+  LazyLibrarian held neither. `advanceStatus` never regresses a positive, and a both-landed request was never handed to
+  the LazyLibrarian reconcile. Rule: DESIGN-028 amendment 2026-10-05 (later), DESIGN-036 amendment, glossary T-281.
+- **v0.107.6** (#720, release #717, haynes-ops #3379, ~22:30Z). `revertLandedFormats` is the one writer out of
+  `landed`: for a request with no library match, a format LazyLibrarian does not hold reads what LazyLibrarian shows
+  (`wanted`, `grabbed`, `missing`); another volume or a gone book settles `missing`; no LazyLibrarian id goes back to
+  `requested`; a landed comic follows its Kapowarr volume. Pairing revalidates an unpaired live anchor's landed missing
+  format. The goodreads Skipped sweep refuses a non-English LazyLibrarian book. Collection has no such state. Log
+  `request_landed_reverted`; report field `requestsLandedReverted`.
+- **Verified.** Pods 3/3 Ready on v0.107.6, no error lines. 22:41Z goodreads-sync: Azazel `missing`/`missing`; 2 more
+  goodreads requests changed (Art of the Fellowship audio, one comic), 4 pairing (22:32Z run: 2 not held, 2 gone). The
+  other landed unmatched goodreads requests are held by LazyLibrarian and stay landed.
+- **Open (design call):** an English edition for a want whose Google Books volume is foreign: issue #719.
+
 ## ▶ 2026-10-05 — v0.107.5 live: Kavita metadata edits reach the app, foreign_language parks lift (#712, closed)
 
 - **Why (#712).** Kavita has no change signal for a series' metadata edit (the list's `lastChapterAddedUtc` and
