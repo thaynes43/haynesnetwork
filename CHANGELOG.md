@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.107.1](https://github.com/thaynes43/haynesnetwork/compare/v0.107.0...v0.107.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **books:** a request is never satisfied by another volume ([#693](https://github.com/thaynes43/haynesnetwork/issues/693)) ([#698](https://github.com/thaynes43/haynesnetwork/issues/698)) ([771ac08](https://github.com/thaynes43/haynesnetwork/commit/771ac080093607b405122cb0b385e168902673cc))
+
+
+### Documentation
+
+* **agents:** [#668](https://github.com/thaynes43/haynesnetwork/issues/668) search check — 1,059 Prowlarr queries for 352 items, nothing searched twice ([#684](https://github.com/thaynes43/haynesnetwork/issues/684)) ([f136b09](https://github.com/thaynes43/haynesnetwork/commit/f136b09601b202fc9583163681724fb2b7a7ff34))
+* **agents:** [#688](https://github.com/thaynes43/haynesnetwork/issues/688) fault 1 live (haynes-ops [#3367](https://github.com/thaynes43/haynesnetwork/issues/3367)), fault 2 needs a volume source ([#690](https://github.com/thaynes43/haynesnetwork/issues/690)) ([5465beb](https://github.com/thaynes43/haynesnetwork/commit/5465beb697ff47f812ca92d127e3a49b7401e832))
+* **agents:** [#688](https://github.com/thaynes43/haynesnetwork/issues/688) fault 2 live (haynes-ops [#3368](https://github.com/thaynes43/haynesnetwork/issues/3368)), issue closed ([#691](https://github.com/thaynes43/haynesnetwork/issues/691)) ([bdbdfad](https://github.com/thaynes43/haynesnetwork/commit/bdbdfad6f28c97870a1e5a45fc50b152daaa76a2))
+* **agents:** [#694](https://github.com/thaynes43/haynesnetwork/issues/694) live (haynes-ops [#3369](https://github.com/thaynes43/haynesnetwork/issues/3369)), issue closed ([#697](https://github.com/thaynes43/haynesnetwork/issues/697)) ([f1f2d69](https://github.com/thaynes43/haynesnetwork/commit/f1f2d691d78bd658e0eec80a295cc91820fae4cb))
+* **agents:** Assistant to the Villain wrong grab repaired ([#686](https://github.com/thaynes43/haynesnetwork/issues/686)), LL defects filed ([#688](https://github.com/thaynes43/haynesnetwork/issues/688)) ([#689](https://github.com/thaynes43/haynesnetwork/issues/689)) ([eff2095](https://github.com/thaynes43/haynesnetwork/commit/eff2095c75edc6c74e072277f0a7dda57316ffd6))
+* **agents:** cross-volume repair of the 19 LL records behind [#688](https://github.com/thaynes43/haynesnetwork/issues/688)'s 153 rows ([#695](https://github.com/thaynes43/haynesnetwork/issues/695)) ([e9d0bd9](https://github.com/thaynes43/haynesnetwork/commit/e9d0bd9f1418d68cd090300265280cdb5035e8d9))
+* **agents:** owed check (c) passed; rename older check (g) to (j) ([#685](https://github.com/thaynes43/haynesnetwork/issues/685)) ([fbba1ae](https://github.com/thaynes43/haynesnetwork/commit/fbba1aed47921f54a73553b829dc093fecb7a350))
+* **agents:** post-07:00Z checks (g) pass, (h) trip project_number, (d) and (e) no violation (2026-10-05) ([#687](https://github.com/thaynes43/haynesnetwork/issues/687)) ([f88c439](https://github.com/thaynes43/haynesnetwork/commit/f88c439248ec32842312606ba884a50f098909d7))
+* **agents:** say what happens to the [#688](https://github.com/thaynes43/haynesnetwork/issues/688) per-title block rows ([#692](https://github.com/thaynes43/haynesnetwork/issues/692)) ([bf9001d](https://github.com/thaynes43/haynesnetwork/commit/bf9001d3a13dae1396dc1d46f8f47484a78744f0))
+* **agents:** v0.107.0 deploy record, GB quota instrumentation ([#674](https://github.com/thaynes43/haynesnetwork/issues/674) benched) ([#682](https://github.com/thaynes43/haynesnetwork/issues/682)) ([97c9f3c](https://github.com/thaynes43/haynesnetwork/commit/97c9f3cd697495b40350044d796632ca4beb5fc6))
+
 ## [0.107.0](https://github.com/thaynes43/haynesnetwork/compare/v0.106.1...v0.107.0) (2026-10-05)
 
 
