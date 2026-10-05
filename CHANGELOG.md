@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.107.4](https://github.com/thaynes43/haynesnetwork/compare/v0.107.3...v0.107.4) (2026-10-05)
+
+
+### Bug Fixes
+
+* **books:** park every open want on a foreign-language anchor ([#700](https://github.com/thaynes43/haynesnetwork/issues/700)) ([#708](https://github.com/thaynes43/haynesnetwork/issues/708)) ([711ebfe](https://github.com/thaynes43/haynesnetwork/commit/711ebfec65aff0576d33b3977e6c0f8d44216e66))
+
 ## [0.107.3](https://github.com/thaynes43/haynesnetwork/compare/v0.107.2...v0.107.3) (2026-10-05)
 
 
