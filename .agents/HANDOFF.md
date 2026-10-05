@@ -13,7 +13,7 @@
   Books calls every day, and Libretto hits daily-quota 429s most evenings between 18:42Z and 22:42Z, so exhaustion
   predates the #668 re-add influx. The options on #674 wait for the readings below.
 
-**Owed checks (b), (d)-(f), (j), (k), (l) and (m) from the blocks below are still pending; (c) passed 2026-10-05.** New ones:
+**Owed checks (b), (d)-(f), (j), (k), (l), (m) and (n) from the blocks below are still pending; (c) passed 2026-10-05.** New ones:
 
 - **(g) After the 2026-10-05 07:00Z roll**, `{namespace="frontend"} |= "gb_quota_day_closed" | json` shows exactly one
   line, for quota-day 2026-10-04.
@@ -155,8 +155,15 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
     English volumes 4-6 are already held under their own records: City of Fallen Angels `XEouBQAAQBAJ`, City of Lost
     Souls `2I6bkQEACAAJ` (a German-titled record that links the English Walker edition) and City of Heavenly Fire
     `hf1wCgAAQBAJ`. So LazyLibrarian needed no re-point. The five app rows are stale `landed` claims (out of the
-    reconcile, so they queue nothing) and are folded into #693 with their settlement: park `wrong_volume`, an app-DB
-    write.
+    reconcile, so they queue nothing). **Correction, 14:45Z:** the 14:32Z format-pairing run minted a sixth want,
+    `c0afcc7e`, on the German Audiobookshelf item (retitled "(4-6)" by this repair and not yet marked deleted by
+    books-sync), and its Skipped sweep re-queued the eBook to `Wanted`; no release was grabbed. The eBook is
+    `Skipped` again, and all six rows were settled in one app-DB transaction with preconditions (old values in
+    #693): `c0afcc7e`, `525913ff`, `aec71b5a` and `ca08224a` parked `wrong_volume` with `ll_book_id` cleared (the
+    omnibus has no single English equivalent), and `003e1016` and `0c1ab769` re-pointed to the English City of Fallen
+    Angels `XEouBQAAQBAJ` and City of Heavenly Fire `hf1wCgAAQBAJ` (both formats held). No request points at
+    `ik6xzgEACAAJ` now. Lesson: retitling or rebuilding an Audiobookshelf item makes the next pairing run treat it as
+    a new unpaired anchor.
   - **Held under F10:** the German vols 4-6 audio (254 files with sidecars; the folder is gone and its Audiobookshelf
     item removed); the German City of Heavenly Fire audio that sat inside the English folder (78 files; `hf1wCgAAQBAJ`
     now links the English `Part 1 of 3`); and six German eBook folders (City of ashes, bones, fallen angels, glass,
@@ -172,6 +179,8 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
     record and no request, and sidecars. No held file is the only copy of a book LazyLibrarian tracks; the four that
     were (The Science of Discworld, the unabridged Guards! Guards!, the Destroy Me azw3, the English Final Empire)
     were re-homed earlier.
+- **Owed check (n), after the 2026-10-06 04:54Z backlog run:** `ik6xzgEACAAJ` reads `Skipped` for both formats with
+  no new `wanted` row (rowid > 9540), and `select count(*) from book_requests where ll_book_id='ik6xzgEACAAJ'` is 0.
 - **Owed check (m), on or after 2026-10-12: delete the holding folder.** First confirm no one has reported a missing
   book since 2026-10-05: no GitHub issue or HANDOFF note names one, and
   `select title_snapshot, created_at from book_fix_requests where created_at >= '2026-10-05'` names none of the held
