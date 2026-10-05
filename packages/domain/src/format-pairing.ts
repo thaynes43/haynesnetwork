@@ -41,7 +41,9 @@ import {
   normAuthor,
   llRecentSearchCovers,
   recentlySearchedLlBookIds,
+  revertLandedFormats,
   stampRequestsSearched,
+  unheldFormatStatus,
 } from './book-requests';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import { llBookMismatch, llBookNamesTitle, type LlBookMismatch, type LlBookNaming } from './ll-book-check';
@@ -1698,6 +1700,11 @@ export interface FormatPairingReport
   /** Open pairing wants whose anchor-held format did not read `landed` and was set so (ADR-065 C-03). */
   heldLanded: number;
   /**
+   * Issue #715 — wants whose missing format left `landed` this run because nothing holds it: LazyLibrarian does not
+   * hold the format, the book names another volume, or LazyLibrarian no longer has the book.
+   */
+  requestsLandedReverted: number;
+  /**
    * ADR-055 amendment (2026-09-22 — the push guard). Widened from `MintPairingWantsReport.skippedHeld`:
    * on the run report this is the RUN TOTAL — mint-push suppressions PLUS Skipped-sweep suppressions.
    */
@@ -1705,6 +1712,127 @@ export interface FormatPairingReport
 }
 
 export type RunFormatPairingInput = MintPairingWantsInput;
+
+/**
+ * Issue #715 (DESIGN-028 amendment 2026-10-05) — a pairing want's MISSING format reads `landed` when the library holds
+ * the other copy (the pair) or LazyLibrarian holds it. The reconcile below only ever read wants with a format still
+ * open, so a want that went both-landed was never looked at again and `advanceStatus` would not have moved it anyway:
+ * LazyLibrarian could lose the file, or the book, and the want kept reading `landed`.
+ *
+ * For every want on a live, UNPAIRED anchor whose missing format reads `landed`: a book LazyLibrarian no longer has is
+ * re-keyed or settled `missing` (the gone rule, past its grace), a book that names another volume or work settles
+ * `missing`, and a book that does not hold the format reverts to the status LazyLibrarian shows. A paired anchor is
+ * held by the library whatever LazyLibrarian says, and a want on a removed anchor is history, so neither is touched.
+ * Parked wants are out of the reconcile. Runs before the open-want reconcile, so a want it reopens is reconciled in
+ * the same run. Returns the number of wants it changed. No LazyLibrarian call.
+ */
+async function revalidateLandedPairingWants(input: {
+  db?: DbClient;
+  snapshot: LlSnapshot;
+  goneIndex: LlRekeyIndex | null;
+  now: Date;
+  gone: LlGoneTally;
+  log: NonNullable<MintPairingWantsInput['logger']>;
+}): Promise<number> {
+  if (!llSnapshotUsable(input.snapshot)) return 0;
+  const db = resolveDb(input.db);
+  const wants = (
+    await db
+      .select()
+      .from(bookRequests)
+      .where(
+        and(
+          eq(bookRequests.origin, 'pairing'),
+          isNotNull(bookRequests.llBookId),
+          isNotNull(bookRequests.pairingBooksItemId),
+          isNull(bookRequests.unroutableReason),
+        ),
+      )
+  ).filter((w) => w.ebookStatus === 'landed' || w.audioStatus === 'landed');
+  if (wants.length === 0) return 0;
+  const anchorIds = [...new Set(wants.map((w) => w.pairingBooksItemId!))];
+  const anchors = new Map(
+    (
+      await db
+        .select({ id: booksItems.id, mediaKind: booksItems.mediaKind, deletedAt: booksItems.deletedAt })
+        .from(booksItems)
+        .where(inArray(booksItems.id, anchorIds))
+    ).map((a) => [a.id, a] as const),
+  );
+  const paired = new Set<string>();
+  for (const p of await db
+    .select({ bookItemId: booksFormatPairs.bookItemId, audioItemId: booksFormatPairs.audioItemId })
+    .from(booksFormatPairs)
+    .where(or(inArray(booksFormatPairs.bookItemId, anchorIds), inArray(booksFormatPairs.audioItemId, anchorIds)))) {
+    paired.add(p.bookItemId);
+    paired.add(p.audioItemId);
+  }
+  let reverted = 0;
+  for (const want of wants) {
+    const anchor = anchors.get(want.pairingBooksItemId!);
+    if (!anchor || anchor.deletedAt !== null || anchor.mediaKind === 'comic') continue;
+    if (paired.has(anchor.id)) continue;
+    const missing = missingFormatFor(anchor.mediaKind);
+    if ((missing === 'ebook' ? want.ebookStatus : want.audioStatus) !== 'landed') continue;
+    const llBookId = want.llBookId!;
+    const row = input.snapshot.get(llBookId);
+    try {
+      if (!row) {
+        if (!input.goneIndex) continue;
+        const before = input.gone.llGoneSettled + input.gone.llGoneRekeyed;
+        await applyLlGoneDecision({
+          db: input.db,
+          requestId: want.id,
+          llBookId,
+          decision: decideLlGoneWant({
+            want: { ...want, lastSeenAt: want.lastReconciledAt ?? want.createdAt },
+            snapshot: input.snapshot,
+            index: input.goneIndex,
+            now: input.now,
+            formats: [missing],
+            includeLanded: true,
+          }),
+          snapshot: input.snapshot,
+          reconcile: true,
+          includeLanded: true,
+          tally: input.gone,
+          site: 'format-pairing.landed-check',
+          now: input.now,
+          log: input.log,
+        });
+        if (input.gone.llGoneSettled + input.gone.llGoneRekeyed > before) reverted += 1;
+        continue;
+      }
+      const mismatch = llBookMismatch(want, row);
+      const status = mismatch ? ('missing' as const) : unheldFormatStatus(row, missing);
+      const result = await revertLandedFormats({
+        db: input.db,
+        requestId: want.id,
+        llBookId,
+        ...(missing === 'ebook' ? { ebook: status } : { audio: status }),
+        now: input.now,
+      });
+      if (result.ebook || result.audio) {
+        reverted += 1;
+        input.log.info?.('request_landed_reverted', {
+          site: 'format-pairing.landed-check',
+          reason: mismatch ? 'll_book_mismatch' : 'll_not_held',
+          requestId: want.id,
+          llBookId,
+          title: want.title,
+          format: missing,
+          status,
+        });
+      }
+    } catch (error) {
+      input.log.error?.('format-pairing: landed check failed', {
+        requestId: want.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return reverted;
+}
 
 /**
  * One format-pairing run: rebuild the pair cache (syncFormatPairs), mint the paced system wants
@@ -1798,6 +1926,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
   let requeued = 0;
   let sweepSkippedHeld = 0;
   let heldLanded = 0;
+  let landedReverted = 0;
   const gone = emptyLlGoneTally();
   if (input.ll && seatedMap) {
     // Issue #665 (DESIGN-028 amendment 2026-10-04) — a pushed want whose id LazyLibrarian no longer has is
@@ -1805,6 +1934,16 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     // an empty snapshot decides nothing. The want pushed by THIS run's mint carries a fresh
     // `last_reconciled_at`, so the grace keeps it out (the snapshot predates its addBook).
     const goneIndex = llSnapshotUsable(seatedMap) ? new LlRekeyIndex(seatedMap) : null;
+    // Issue #715 — first take every `landed` missing format that nothing holds any more out of `landed`, so the
+    // want reads its truthful state (and reconciles as an open want below) in this same run.
+    landedReverted = await revalidateLandedPairingWants({
+      db: input.db,
+      snapshot: seatedMap,
+      goneIndex,
+      now,
+      gone,
+      log,
+    });
     // Each open want's anchor media kind: the want's own format is the one its anchor misses, and the other one
     // sits `landed` (ADR-065 C-03). Guessing it from which status reads `landed` misread three July wants whose
     // held format read `grabbed`, so the Skipped sweep worked their HELD format (issue #665 follow-up).
@@ -1981,6 +2120,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     // withheld), so one number answers "how many clobbering LL writes did the guard stop this run".
     skippedHeld: mint.skippedHeld + sweepSkippedHeld,
     heldLanded,
+    requestsLandedReverted: landedReverted,
     ...gone,
     ...rerequest,
   };
