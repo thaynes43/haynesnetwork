@@ -172,7 +172,7 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
     No one had progress on any of these files.
   - **Holding folder sorted** (`sort.jsonl` next to `manifest.jsonl`; classifier
     `.agents/context/ll-library-audit/crossvolume_sort.py`): 1,325 files, 9.28 GB at this point (1,562 files and
-    9.78 GB after the #694 batch below), every file in one of four delete categories. `duplicate` 580: the Discworld audio and Making Money (each title's own folder holds a copy) and
+    9.78 GB after the #694 batch below; 1,563 with the Runaway Jury `metadata.json`), every file in one of four delete categories. `duplicate` 580: the Discworld audio and Making Money (each title's own folder holds a copy) and
     the second Clockwork Prince. `foreign_f10` 733: German editions plus the Hebrew Mistborn. `omnibus_redundant` 3:
     Shatter Me Complete Collection, Grey + Darker and the Inheritance Cycle Omnibus, each with every volume held in
     English. `off_catalog` 9: the fan-fiction pdf, the usenet advert pdf, a Fifty Shades of Grey azw3 that has no LL
@@ -193,12 +193,13 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
     was rebuilt (60 tracks, 15.0 h); the fragments item was removed. Pairing want `3cd1a6d7` (anchor: the Audiobookshelf
     item The Runaway Jury, resolved to The Firm) is added to #693.
   - Nothing re-wanted: each record already had a right copy in the library.
+- **2026-10-05 16:35Z, The Runaway Jury title fixed:** the repair's 15:18Z rescan of Audiobookshelf item `3e37c3dd` picked up a stale 2026-06-29 in-folder `metadata.json` titled "The Firm", and the 15:22Z books-sync carried that title into pairing want `3cd1a6d7`. The `metadata.json` is now in the holding folder (`off_catalog`), the item reads The Runaway Jury again (genre restored), and the other 6 items rebuilt today match their files. At 16:32Z `3cd1a6d7` re-identified on its own (id cleared, paired with Kavita "Runaway Jury").
 - **Owed check (n), after the 2026-10-06 04:54Z backlog run:** `ik6xzgEACAAJ` reads `Skipped` for both formats with
   no new `wanted` row (rowid > 9540), and `select count(*) from book_requests where ll_book_id='ik6xzgEACAAJ'` is 0.
 - **Owed check (m), on or after 2026-10-12: delete the holding folder.** First confirm no one has reported a missing
   book since 2026-10-05: no GitHub issue or HANDOFF note names one, and
   `select title_snapshot, created_at from book_fix_requests where created_at >= '2026-10-05'` names none of the held
-  titles. Then run the dry run, read its counts (1,562 files), and delete:
+  titles. Then run the dry run, read its counts (1,563 files), and delete:
   `kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/crossvolume_purge.py`
   then the same command with `python3 - --go`. It refuses if a file is unsorted or changed size, if an LL row
   points into the folder, or if a duplicate's or omnibus's counterpart title folder (listed per row in `sort.jsonl`)
