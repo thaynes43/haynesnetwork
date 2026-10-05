@@ -376,6 +376,7 @@ export async function runBookFixRequest(input: RunBookFixInput): Promise<{ statu
       // no-match still fails honestly below.
       const guarded = await guardedGbResolve({
         db: input.db,
+        consumer: 'bookfix',
         gb: input.gb,
         query: {
           title: fix.titleSnapshot,
@@ -535,6 +536,7 @@ export async function retryQueuedBookFixes(input: {
         const before = input.meter?.taken() ?? 0;
         const guarded = await guardedGbResolve({
           db: input.db,
+          consumer: 'bookfix',
           gb: input.gb,
           query: {
             title: fix.titleSnapshot,

@@ -510,3 +510,41 @@ resolve can't push the slice past its budget. Transient-retry inflation beyond t
 the shared breaker's job (the hard backstop); with the enforced pairing+goodreads slices summing to 900
 of the ~1,000 cap, the remaining ~100 (the unenforced `bookfix` reserve) absorbs it — worst-case physical
 stays under 1,000.
+
+## Amendment — 2026-10-04: two log lines so quota pressure is measurable (issue #674)
+
+LazyLibrarian and the app share one Google Books key (the 2026-10-04 correction in the header of
+`gb-call-budget.ts`), and the owner benched any fix until there is data on how often the quota is hit.
+Until now there was none: the `gb_call_budget` singleton overwrites its counts at each 07:00Z quota-day
+roll, and `tripGbQuotaBreaker` left no record. **Log lines only, no migration, no behavior change.**
+
+| Line (`msg`) | Emitted by | Fields |
+|---|---|---|
+| `gb_quota_day_closed` (info) | `recordGbCalls`, the writer that rolls the day | `quota_day` (the day being closed), `pairing_calls`, `goodreads_calls`, `bookfix_calls` each with its `*_budget`, `total_calls`, `total_budget` |
+| `gb_quota_trip` (warn) | `tripGbQuotaBreaker` | `kind` (`daily` or `minute`), `retry_at` (the new `exhausted_until`, ISO), `consumer` (`pairing`, `goodreads` or `bookfix`; null if the caller did not say), `project_number` (Google's, digits only; null if the 429 body does not carry it) |
+
+- **Exactly once per quota-day.** The close line's counts are read and the day rolled in ONE transaction,
+  and the read is `SELECT … FOR UPDATE` on the singleton row. Concurrent writers serialise on that lock:
+  the first sees the stale day, rolls it and commits; every later one reads the rolled row and logs
+  nothing. The line is emitted after commit from the locked snapshot, so a rolled-back transaction never
+  logs. A first-ever write, a same-day write and a writer whose clock is behind the stored day log nothing.
+  A day on which nothing called Google Books writes no row, so a day's line arrives with the next day's
+  first call (its `quota_day` always names the day it closes). `gb-call-budget.test.ts` holds a roll open
+  in one transaction while a second writer starts, and fails if the lock is removed.
+- **"Did the breaker trip that day" is not on the close line**: the breaker's row is cleared by the next
+  successful call, so it is not knowable at the roll. Count that day's `gb_quota_trip` lines instead.
+- **`project_number`** is lifted from the 429 body (`error.details[].metadata.consumer`, `projects/<n>`, or
+  the message's `project_number:<n>`; the body is a 300-character snippet, often truncated JSON, so a text
+  scan backs the JSON read). It tells a quota drawn by this app's key from one drawn by a key that is still
+  shared (LazyLibrarian). Only the digits are logged.
+- **Never logged**: the API key, any request URL, the error message, the response body. A test feeds a
+  429 carrying `key=` and asserts none of it reaches a line.
+
+Read it in Loki (the app and its CronJobs both run in `frontend`):
+
+```logql
+{namespace="frontend"} |= "gb_quota_day_closed" | json | line_format "{{.quota_day}} total={{.total_calls}}/{{.total_budget}} pairing={{.pairing_calls}} goodreads={{.goodreads_calls}} bookfix={{.bookfix_calls}}"
+{namespace="frontend"} |= "gb_quota_trip" | json | line_format "{{.time}} {{.kind}} consumer={{.consumer}} project={{.project_number}} retry_at={{.retry_at}}"
+```
+
+How often the quota was hit is `count_over_time({namespace="frontend"} |= "gb_quota_trip" | json | kind="daily" [7d])`.

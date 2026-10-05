@@ -3,11 +3,12 @@
 // clear-on-success; the single-probe half-open claim (two consumers racing an expired window —
 // exactly one probes); and the guardedGbResolve seam's outcome matrix (open ⇒ no call; 429 ⇒ trip
 // persisted; non-429 rethrown with the breaker untouched). Embedded PG16.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { gbQuotaState } from '@hnet/db';
 import {
   GB_MINUTE_TRIP_MS,
   classifyGb429,
+  extractGbProjectNumber,
   clearGbQuotaBreaker,
   consultGbQuotaGate,
   guardedGbResolve,
@@ -201,5 +202,101 @@ describe('guardedGbResolve (THE SEAM)', () => {
       guardedGbResolve({ db: t.db, gb: spy.gb, query: { title: 'Anything' }, now }),
     ).rejects.toThrow('GB melted');
     expect((await peekGbQuotaGate({ db: t.db, now })).open).toBe(false);
+  });
+});
+
+// Issue #674 — the trip line: kind, retry_at, consumer, Google project number; never the key.
+describe('gb_quota_trip (the trip line, issue #674)', () => {
+  const now = new Date('2026-07-19T08:32:03Z');
+  const logger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+  const dailyBody =
+    `{"error":{"code":429,"message":"Quota exceeded for quota metric 'Queries' and limit 'Queries per day' ` +
+    `of service 'books.googleapis.com' for consumer 'project_number:585629606395'.","status":"RESOURCE_EXHAUSTED"`;
+
+  it('carries kind, retry_at, consumer and the project number parsed from the 429 body', async () => {
+    const log = logger();
+    const until = await tripGbQuotaBreaker({
+      db: t.db,
+      kind: 'daily',
+      now,
+      consumer: 'pairing',
+      body: dailyBody, // truncated JSON (the real 300-char snippet) — the text scan still finds it
+      logger: log,
+    });
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith('gb_quota_trip', {
+      kind: 'daily',
+      retry_at: until.toISOString(),
+      consumer: 'pairing',
+      project_number: '585629606395',
+    });
+  });
+
+  it('reads the structured error.details[].metadata.consumer form too', () => {
+    const body = JSON.stringify({
+      error: {
+        code: 429,
+        details: [{ metadata: { consumer: 'projects/123456789' } }],
+      },
+    });
+    expect(extractGbProjectNumber(body)).toBe('123456789');
+  });
+
+  it('logs project_number null (and consumer null) when the body lacks them', async () => {
+    const log = logger();
+    await tripGbQuotaBreaker({ db: t.db, kind: 'minute', now, body: '{"error":{"code":429}}', logger: log });
+    expect(log.warn).toHaveBeenCalledWith('gb_quota_trip', {
+      kind: 'minute',
+      retry_at: new Date(now.getTime() + GB_MINUTE_TRIP_MS).toISOString(),
+      consumer: null,
+      project_number: null,
+    });
+    expect(extractGbProjectNumber(undefined)).toBeNull();
+    expect(extractGbProjectNumber('')).toBeNull();
+    expect(extractGbProjectNumber('not json project_number:abc')).toBeNull();
+  });
+
+  it('through the seam: a real 429 error logs once with the consumer, and NEVER the key or URL', async () => {
+    const log = logger();
+    const err = Object.assign(
+      new Error(`GET https://www.googleapis.com/books/v1/volumes?q=isbn:1&key=SECRET-KEY-123 → HTTP 429`),
+      { status: 429, bodySnippet: `${dailyBody} key=SECRET-KEY-123` },
+    );
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const result = await guardedGbResolve({
+        db: t.db,
+        gb: {
+          resolveVolume: async () => {
+            throw err;
+          },
+        },
+        query: { title: 'Anything' },
+        now,
+        consumer: 'goodreads',
+      });
+      expect(result.outcome).toBe('quota_tripped');
+      // Default (console) logger path: one JSON line on stderr, parsed fields right, no secrets.
+      expect(spy).toHaveBeenCalledTimes(1);
+      const line = String(spy.mock.calls[0]?.[0]);
+      expect(JSON.parse(line)).toMatchObject({
+        msg: 'gb_quota_trip',
+        kind: 'daily',
+        consumer: 'goodreads',
+        project_number: '585629606395',
+      });
+      for (const out of [line, ...logSpy.mock.calls.map((c) => String(c[0]))]) {
+        expect(out).not.toContain('SECRET-KEY-123');
+        expect(out).not.toMatch(/key=/i);
+        expect(out).not.toContain('googleapis.com/books');
+      }
+    } finally {
+      spy.mockRestore();
+      logSpy.mockRestore();
+    }
+    // And the explicit-logger path stays clean as well.
+    await tripGbQuotaBreaker({ db: t.db, kind: 'daily', now, body: err.bodySnippet, logger: log });
+    expect(JSON.stringify(log.warn.mock.calls)).not.toContain('SECRET-KEY-123');
   });
 });

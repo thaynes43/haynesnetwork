@@ -12,6 +12,8 @@
 import { gbQuotaState, type DbClient } from '@hnet/db';
 import { eq, isNotNull, or } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
+import { consoleDomainLogger, type DomainLogger } from './domain-logger';
+import type { GbConsumer } from './gb-call-budget';
 
 /**
  * The UTC hour Google's daily Books quota returns (midnight Pacific — 07:00 UTC in DST, the
@@ -76,12 +78,21 @@ export function nextGbDailyReset(now: Date): Date {
  * OPEN the breaker (upsert the singleton): 'daily' ⇒ until the next 07:00 UTC; 'minute' ⇒
  * now + 2 min. Returns the new exhausted_until. Unaudited (ADR-067 C-09 — routine daily weather;
  * the trail is this row + the callers' one-line logs).
+ *
+ * Issue #674: every trip also emits ONE `gb_quota_trip` line (kind, retry_at, consumer, project_number)
+ * so quota pressure is measurable. NEVER logged: the API key, any request URL, the error message or the
+ * body (only the digits of the Google project number are lifted out of the body).
  */
 export async function tripGbQuotaBreaker(input: {
   db?: DbClient;
   kind: GbQuotaTripKind;
   detail?: string;
   now?: Date;
+  /** Which estate consumer's call tripped it (omitted by callers that do not know). */
+  consumer?: GbConsumer;
+  /** The 429's captured response body (`bodySnippet`) — parsed ONLY for the Google project number. */
+  body?: string | null;
+  logger?: DomainLogger;
 }): Promise<Date> {
   const now = input.now ?? new Date();
   const exhaustedUntil =
@@ -100,7 +111,41 @@ export async function tripGbQuotaBreaker(input: {
       target: gbQuotaState.id,
       set: { exhaustedUntil, trippedAt: now, tripReason, updatedAt: now },
     });
+  (input.logger ?? consoleDomainLogger).warn('gb_quota_trip', {
+    kind: input.kind,
+    retry_at: exhaustedUntil.toISOString(),
+    consumer: input.consumer ?? null,
+    project_number: extractGbProjectNumber(input.body),
+  });
   return exhaustedUntil;
+}
+
+/**
+ * The Google Cloud project number a quota 429 names, or null. Defensive on purpose: the body is a
+ * 300-char SNIPPET (often truncated JSON) of a shape Google may change. Tries the structured form
+ * first (`error.details[].metadata.consumer` = `projects/<digits>`), then falls back to scanning the
+ * text for the message's `project_number:<digits>` / `projects/<digits>`. Returns DIGITS ONLY (so
+ * nothing else from the body can reach a log line); anything unparseable is null.
+ */
+export function extractGbProjectNumber(body: unknown): string | null {
+  if (typeof body !== 'string' || body.length === 0) return null;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    const details = (parsed as { error?: { details?: unknown } } | null)?.error?.details;
+    if (Array.isArray(details)) {
+      for (const d of details) {
+        const consumer = (d as { metadata?: { consumer?: unknown } } | null)?.metadata?.consumer;
+        if (typeof consumer === 'string') {
+          const m = /projects\/(\d+)/.exec(consumer) ?? /project_number:(\d+)/.exec(consumer);
+          if (m) return m[1] ?? null;
+        }
+      }
+    }
+  } catch {
+    // Truncated / non-JSON body — fall through to the text scan.
+  }
+  const m = /project_number:(\d+)/i.exec(body) ?? /projects\/(\d+)/.exec(body);
+  return m?.[1] ?? null;
 }
 
 /** CLEAR the breaker — any completed GB call (a match OR an honest no-match) proves quota. */
@@ -198,6 +243,8 @@ export async function guardedGbResolve<T extends { volumeId: string }>(input: {
   gb: GbQuotaGuardedResolver<T>;
   query: { isbn?: string | null; title: string; author?: string | null };
   now?: Date;
+  /** The estate consumer making this call — carried onto the `gb_quota_trip` log line (issue #674). */
+  consumer?: GbConsumer;
 }): Promise<GuardedGbResolveResult<T>> {
   const gate = await consultGbQuotaGate({ db: input.db, ...(input.now ? { now: input.now } : {}) });
   if (gate.state === 'open') {
@@ -213,6 +260,8 @@ export async function guardedGbResolve<T extends { volumeId: string }>(input: {
       db: input.db,
       kind,
       detail: error instanceof Error ? error.message.slice(0, 200) : undefined,
+      body: (error as { bodySnippet?: unknown }).bodySnippet as string | undefined,
+      ...(input.consumer ? { consumer: input.consumer } : {}),
       ...(input.now ? { now: input.now } : {}),
     });
     return { outcome: 'quota_tripped', until, kind };
