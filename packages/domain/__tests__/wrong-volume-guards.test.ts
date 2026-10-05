@@ -22,6 +22,7 @@ import {
   parkCollectionWant,
   repairWrongVolumeRequests,
   runCollectionWantsSync,
+  settleParkedPairingWant,
   syncBooksCollections,
   syncCollectionWants,
   syncGoodreadsIntegration,
@@ -660,5 +661,165 @@ describe('repairWrongVolumeRequests', () => {
     const again = await repairWrongVolumeRequests({ ...input, dryRun: false });
     expect(again.rows.filter((r) => r.applied)).toEqual([]);
     expect(await snapshotOfRows()).toEqual(after);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The hand parks: wants another repair parked with a direct write, conformed through the writer.
+// ---------------------------------------------------------------------------
+
+describe('settleParkedPairingWant (wants parked by hand)', () => {
+  async function seedAnchor(opts: {
+    externalId: string;
+    mediaKind: 'book' | 'audiobook';
+    removed: boolean;
+  }) {
+    const [anchor] = await t.db
+      .insert(booksItems)
+      .values({
+        source: opts.mediaKind === 'book' ? 'kavita' : 'audiobookshelf',
+        mediaKind: opts.mediaKind,
+        externalId: opts.externalId,
+        libraryId: '1',
+        libraryName: 'Lib',
+        title: 'Chroniken der Unterwelt (4-6)',
+        sortTitle: 'chroniken der unterwelt (4-6)',
+        author: 'Cassandra Clare',
+        deepLinkUrl: 'http://x',
+        deletedAt: opts.removed ? new Date('2026-10-05T15:22:00Z') : null,
+        attrs: {},
+      })
+      .returning();
+    return anchor!.id;
+  }
+  async function seedWant(anchorId: string, values: Partial<typeof bookRequests.$inferInsert>) {
+    const [want] = await t.db
+      .insert(bookRequests)
+      .values({
+        origin: 'pairing',
+        pairingBooksItemId: anchorId,
+        title: 'Chroniken der Unterwelt (4-6)',
+        author: 'Cassandra Clare',
+        ebookStatus: 'landed',
+        audioStatus: 'landed',
+        ...values,
+      })
+      .returning();
+    return want!.id;
+  }
+
+  it('settles the missing format a hand park left claiming the German omnibus, and is idempotent', async () => {
+    // c0afcc7e's shape: an audiobook anchor that left the library, eBook still `wanted` from the omnibus.
+    const removed = await seedAnchor({
+      externalId: 'abs-de',
+      mediaKind: 'audiobook',
+      removed: true,
+    });
+    const c0 = await seedWant(removed, {
+      ebookStatus: 'wanted',
+      unroutableReason: 'wrong_volume',
+      llBookId: null,
+    });
+    // 525913ff's shape: a live, unpaired audiobook anchor whose eBook reads `landed` from the omnibus.
+    const live = await seedAnchor({
+      externalId: 'abs-live',
+      mediaKind: 'audiobook',
+      removed: false,
+    });
+    const w5 = await seedWant(live, { unroutableReason: 'wrong_volume', llBookId: null });
+
+    expect(await settleParkedPairingWant({ db: t.db, requestId: c0 })).toEqual({
+      ebookStatus: 'missing',
+      audioStatus: 'landed',
+    });
+    expect(await settleParkedPairingWant({ db: t.db, requestId: w5 })).toEqual({
+      ebookStatus: 'missing',
+      audioStatus: 'landed',
+    });
+    // A second run changes nothing.
+    expect(await settleParkedPairingWant({ db: t.db, requestId: c0 })).toBeNull();
+    const rows = await t.db.select().from(bookRequests);
+    for (const r of rows)
+      expect(r).toMatchObject({ unroutableReason: 'wrong_volume', llBookId: null });
+  });
+
+  it('lands the format a paired anchor holds, and leaves anything that is not a hand park alone', async () => {
+    const audio = await seedAnchor({
+      externalId: 'abs-paired',
+      mediaKind: 'audiobook',
+      removed: false,
+    });
+    const book = await seedAnchor({
+      externalId: 'kavita-paired',
+      mediaKind: 'book',
+      removed: false,
+    });
+    await t.db
+      .insert(booksFormatPairs)
+      .values({ bookItemId: book, audioItemId: audio, matchedVia: 'title_author' });
+    const paired = await seedWant(audio, {
+      ebookStatus: 'wanted',
+      unroutableReason: 'wrong_volume',
+      llBookId: null,
+    });
+    expect(await settleParkedPairingWant({ db: t.db, requestId: paired })).toEqual({
+      ebookStatus: 'landed',
+      audioStatus: 'landed',
+    });
+
+    // Still pointing at a book, or parked for another reason: not a hand park of this kind.
+    const other = await seedAnchor({
+      externalId: 'abs-other',
+      mediaKind: 'audiobook',
+      removed: false,
+    });
+    const withId = await seedWant(other, {
+      unroutableReason: 'wrong_volume',
+      llBookId: 'ik6xzgEACAAJ',
+    });
+    expect(await settleParkedPairingWant({ db: t.db, requestId: withId })).toBeNull();
+    const [kept] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, withId));
+    expect(kept).toMatchObject({ llBookId: 'ik6xzgEACAAJ', ebookStatus: 'landed' });
+  });
+
+  it('runs inside the repair for named rows only, never re-pointing a park', async () => {
+    const removed = await seedAnchor({
+      externalId: 'abs-de-2',
+      mediaKind: 'audiobook',
+      removed: true,
+    });
+    const c0 = await seedWant(removed, {
+      ebookStatus: 'wanted',
+      unroutableReason: 'wrong_volume',
+      llBookId: null,
+    });
+    const snapshot = new Map([
+      ['ik6xzgEACAAJ', { title: 'Chroniken der Unterwelt', author: 'Cassandra Clare' }],
+    ]);
+    const dry = await repairWrongVolumeRequests({
+      db: t.db,
+      snapshot,
+      dryRun: true,
+      parkedPairingWants: [c0],
+    });
+    expect(dry.rows).toEqual([
+      expect.objectContaining({ requestId: c0, action: 'settle', applied: false }),
+    ]);
+    const applied = await repairWrongVolumeRequests({
+      db: t.db,
+      snapshot,
+      dryRun: false,
+      parkedPairingWants: [c0],
+    });
+    expect(applied.rows[0]).toMatchObject({
+      applied: true,
+      detail: 'wanted/landed → missing/landed',
+    });
+    const [row] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, c0));
+    expect(row).toMatchObject({
+      llBookId: null,
+      unroutableReason: 'wrong_volume',
+      ebookStatus: 'missing',
+    });
   });
 });

@@ -6,7 +6,8 @@
 // (`repairWrongVolumeRequests`): pairing wants on a live anchor get the identity check the hourly mint now runs;
 // collection wants on another work's book are parked `wrong_volume` (the two BBC Radio Drama Collection rows that
 // could re-queue "Terry Pratchett's Discworld"); goodreads wants on another work's book are re-pointed to the shelf's
-// current volume or settled; the two Mistborn sequel wants on removed anchors are settled. `--dry-run` reads only (the
+// current volume or settled; the two Mistborn sequel wants on removed anchors are settled; the four Chroniken wants
+// another repair parked by hand are brought to the state the single writers leave a park in. `--dry-run` reads only (the
 // database and one `getAllBooks`) and prints every row it would change; `--apply` writes them. Nothing is written to
 // LazyLibrarian. Rows pointing at a `--skip-ll` id are left alone (default: ik6xzgEACAAJ, the record the 2026-10-05
 // cross-volume repair owns). Idempotent: a second `--apply` changes nothing.
@@ -38,6 +39,18 @@ const DEFAULT_SKIP_LL = ['ik6xzgEACAAJ'];
 export const REMOVED_ANCHOR_WANTS = [
   { requestId: '3d1c1aca-f4e8-4fe8-b624-ce3f324f5a72', llBookId: 't_ZYYXZq4RgC' },
   { requestId: 'f35dc888-d282-4d0b-8728-3e42e286106f', llBookId: 't_ZYYXZq4RgC' },
+] as const;
+
+/**
+ * The four Chroniken der Unterwelt pairing wants the 2026-10-05 cross-volume repair parked `wrong_volume` with a direct
+ * write (their German omnibus `ik6xzgEACAAJ`, F10 English-only). Conformed through the domain writer: still parked, no
+ * id, and a missing format that no longer reads `landed`/`wanted` from the omnibus.
+ */
+export const HAND_PARKED_WANTS = [
+  'c0afcc7e-bcdb-4cd4-af18-2a3bd7296b4a',
+  '525913ff-7199-406c-8806-3a3785d659e5',
+  'ca08224a-b1ac-4781-ae36-cfe522cea3e8',
+  'aec71b5a-3609-4470-b4e4-e728a9fa0502',
 ] as const;
 
 export interface WrongVolumeRepairArgs {
@@ -97,6 +110,7 @@ async function main(): Promise<number> {
     dryRun: !args.apply,
     skipLlBookIds: new Set(args.skipLl),
     removedAnchorWants: REMOVED_ANCHOR_WANTS,
+    parkedPairingWants: HAND_PARKED_WANTS,
     log: logger,
   });
   const counts: Record<string, number> = {};

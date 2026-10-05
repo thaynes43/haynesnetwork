@@ -12,11 +12,20 @@
 //     (`reopenWrongVolumeRequest`);
 //   • named pairing wants on an anchor that left the library (`removedAnchorWants`, each with the id it must still
 //     hold) — the id cleared and the missing format settled `missing` (`settleRemovedAnchorPairingWant`): no anchor,
-//     so nothing is held and nothing looks for it.
+//     so nothing is held and nothing looks for it;
+//   • named pairing wants a repair parked `wrong_volume` BY HAND (a direct write, outside the single writers) —
+//     brought to the state the writers leave a park in (`settleParkedPairingWant`): parked, no id, and a missing
+//     format that no longer claims the abandoned book (`missing`, or `landed` when the anchor is paired).
 //
 // No LazyLibrarian write. `skipLlBookIds` leaves alone every row pointing at those ids (records another repair owns).
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
-import { bookRequests, booksItems, integrationShelfItems, type DbClient } from '@hnet/db';
+import {
+  bookRequests,
+  booksFormatPairs,
+  booksItems,
+  integrationShelfItems,
+  type DbClient,
+} from '@hnet/db';
 import { inTransaction, resolveDb } from './db-client';
 import type { BookRequestStatus } from '@hnet/db';
 import { parkCollectionWant } from './book-requests';
@@ -36,6 +45,8 @@ export interface WrongVolumeRepairInput {
   skipLlBookIds?: ReadonlySet<string>;
   /** Pairing wants on removed anchors to settle, each with the id it must still hold. */
   removedAnchorWants?: ReadonlyArray<{ requestId: string; llBookId: string }>;
+  /** Pairing wants parked `wrong_volume` by hand, to bring to the state the single writers leave a park in. */
+  parkedPairingWants?: ReadonlyArray<string>;
   now?: Date;
   log?: { info?: (msg: string, meta?: Record<string, unknown>) => void };
 }
@@ -162,6 +173,75 @@ export async function settleRemovedAnchorPairingWant(input: {
       })
       .where(eq(bookRequests.id, row.want.id));
     return true;
+  });
+}
+
+/**
+ * Issue #693 — conform a pairing want a repair parked `wrong_volume` by hand. Guarded on the park the single writers
+ * leave (`unroutable_reason = 'wrong_volume'`, `ll_book_id` NULL); a parked want is out of the mint, the reconcile, the
+ * Skipped sweep and the re-request, so only its statuses can still be wrong. The missing format becomes `landed` when
+ * the anchor is in the library and paired (the library holds it), else `missing` if it still reads `landed`, `wanted`
+ * or `grabbed` from the abandoned book (nothing holds it and nothing looks for it); the held format is `landed` while
+ * the anchor is in the library. One transaction, unaudited (the pairing sync class, like every pairing park). Returns
+ * the statuses it wrote, or null when the row is not such a park or is already right.
+ */
+export async function settleParkedPairingWant(input: {
+  db?: DbClient;
+  requestId: string;
+  now?: Date;
+}): Promise<{ ebookStatus: BookRequestStatus; audioStatus: BookRequestStatus } | null> {
+  const now = input.now ?? new Date();
+  return inTransaction(input.db, async (tx) => {
+    const [row] = await tx
+      .select({
+        want: bookRequests,
+        mediaKind: booksItems.mediaKind,
+        deletedAt: booksItems.deletedAt,
+      })
+      .from(bookRequests)
+      .innerJoin(booksItems, eq(booksItems.id, bookRequests.pairingBooksItemId))
+      .where(eq(bookRequests.id, input.requestId))
+      .for('update', { of: bookRequests });
+    if (
+      !row ||
+      row.want.origin !== 'pairing' ||
+      row.want.unroutableReason !== 'wrong_volume' ||
+      row.want.llBookId !== null
+    ) {
+      return null;
+    }
+    const live = row.deletedAt === null;
+    const [pair] = live
+      ? await tx
+          .select({ id: booksFormatPairs.id })
+          .from(booksFormatPairs)
+          .where(
+            sql`${booksFormatPairs.bookItemId} = ${row.want.pairingBooksItemId} OR ${booksFormatPairs.audioItemId} = ${row.want.pairingBooksItemId}`,
+          )
+          .limit(1)
+      : [];
+    const missing = missingFormatFor(row.mediaKind);
+    const statusOf = (f: 'ebook' | 'audiobook'): BookRequestStatus =>
+      f === 'ebook' ? row.want.ebookStatus : row.want.audioStatus;
+    const missingNow = statusOf(missing);
+    const nextMissing: BookRequestStatus = pair
+      ? 'landed'
+      : missingNow === 'landed' || missingNow === 'wanted' || missingNow === 'grabbed'
+        ? 'missing'
+        : missingNow;
+    const held = missing === 'ebook' ? 'audiobook' : 'ebook';
+    const nextHeld: BookRequestStatus = live ? 'landed' : statusOf(held);
+    const next = {
+      ebookStatus: missing === 'ebook' ? nextMissing : nextHeld,
+      audioStatus: missing === 'audiobook' ? nextMissing : nextHeld,
+    };
+    if (next.ebookStatus === row.want.ebookStatus && next.audioStatus === row.want.audioStatus)
+      return null;
+    await tx
+      .update(bookRequests)
+      .set({ ...next, updatedAt: now })
+      .where(eq(bookRequests.id, row.want.id));
+    return next;
   });
 }
 
@@ -332,6 +412,51 @@ export async function repairWrongVolumeRequests(
       llTitle: llBookOf(named.llBookId)?.title ?? null,
       detail: 'id cleared, missing format settled missing',
       applied,
+    });
+  }
+
+  // 5. Pairing wants parked by hand: brought to the state the single writers leave a park in.
+  for (const requestId of input.parkedPairingWants ?? []) {
+    const [want] = await db
+      .select({
+        title: bookRequests.title,
+        llBookId: bookRequests.llBookId,
+        unroutableReason: bookRequests.unroutableReason,
+        ebookStatus: bookRequests.ebookStatus,
+        audioStatus: bookRequests.audioStatus,
+      })
+      .from(bookRequests)
+      .where(and(eq(bookRequests.id, requestId), eq(bookRequests.origin, 'pairing')));
+    const before = want ? `${want.ebookStatus}/${want.audioStatus}` : 'no such pairing want';
+    if (!want || want.unroutableReason !== 'wrong_volume' || want.llBookId !== null) {
+      rows.push({
+        requestId,
+        origin: 'pairing',
+        action: 'settle',
+        reason: 'not a wrong_volume park without an id: left alone',
+        title: want?.title ?? '',
+        llBookId: want?.llBookId ?? null,
+        llTitle: null,
+        detail: `skipped (${before})`,
+        applied: false,
+      });
+      continue;
+    }
+    const written = input.dryRun
+      ? null
+      : await settleParkedPairingWant({ db: input.db, requestId, now });
+    rows.push({
+      requestId,
+      origin: 'pairing',
+      action: 'settle',
+      reason: 'parked by hand',
+      title: want.title,
+      llBookId: null,
+      llTitle: null,
+      detail: written
+        ? `${before} → ${written.ebookStatus}/${written.audioStatus}`
+        : `${before} (checked)`,
+      applied: written !== null,
     });
   }
 
