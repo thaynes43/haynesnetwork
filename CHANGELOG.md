@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.107.5](https://github.com/thaynes43/haynesnetwork/compare/v0.107.4...v0.107.5) (2026-10-05)
+
+
+### Bug Fixes
+
+* **books:** re-read edited Kavita metadata and lift foreign_language parks ([#712](https://github.com/thaynes43/haynesnetwork/issues/712)) ([#714](https://github.com/thaynes43/haynesnetwork/issues/714)) ([aa098c4](https://github.com/thaynes43/haynesnetwork/commit/aa098c4ec5f857ab538d03c920b2eee278b88d9d))
+
+
+### Documentation
+
+* **agents:** library language audit, Kavita corrections not yet visible to the app ([#713](https://github.com/thaynes43/haynesnetwork/issues/713)) ([5db9704](https://github.com/thaynes43/haynesnetwork/commit/5db9704e8517bdd5b11470369f800c497fccdfdd))
+* **agents:** v0.107.3 + v0.107.4 deploy record, [#700](https://github.com/thaynes43/haynesnetwork/issues/700) closed ([#710](https://github.com/thaynes43/haynesnetwork/issues/710)) ([425d0c1](https://github.com/thaynes43/haynesnetwork/commit/425d0c19b3ca8a3bb5bdb9022e958a84493b40f9))
+
 ## [0.107.4](https://github.com/thaynes43/haynesnetwork/compare/v0.107.3...v0.107.4) (2026-10-05)
 
 
