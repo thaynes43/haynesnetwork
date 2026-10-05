@@ -19,6 +19,12 @@
   line, for quota-day 2026-10-04.
 - **(h) The first `gb_quota_trip` line carries a `project_number`.** Compare it with Libretto's 429
   `project_number:585629606395`; a match means Libretto shares the app's key, a mismatch means it does not.
+  **(g) checked 2026-10-05 12:10Z: passed.** One `gb_quota_day_closed` line (07:32Z, format-pairing pod), `quota_day` 2026-10-04:
+  pairing 697/700, goodreads 197/200, bookfix 0/100, total 894/1000. No second line, none for another day.
+  **(h) checked 2026-10-05 12:10Z: a trip line has appeared; `project_number` 841331826441, not Libretto's 585629606395.** Three
+  `gb_quota_trip` lines, all `kind: minute` (goodreads 07:41Z; pairing 10:33Z and 11:32Z, each `retry_at` two minutes on), no daily
+  trip yet. The app's key is project 841331826441 and Libretto's 429s name 585629606395, so Libretto does **not** share the app's
+  key (the reading of #674's shared-key premise); recheck once a daily trip line (`kind` not `minute`) appears.
 - **(i) About a week of daily readings** during the #668 re-add drain, then revisit #674 options A/B/C.
 
 ## ▶ 2026-10-04 — v0.106.0 + v0.106.1 live: every settled request handed back to LazyLibrarian once (#668); one check owed
@@ -126,6 +132,12 @@ of Beedle the Bard", audio landed); The Lays of Beleriand → `KKxagxSj6jkC` (LL
 Libretto's Google Books key went back to quota 429 at 19:27Z and stayed there (shared key, #674). Recheck Murtagh
 after the 2026-10-05 07:00Z quota reset; none of the three box-set ids appears anywhere in `book_requests`.
 
+**(e) rechecked 2026-10-05 12:10Z: no box set; Murtagh still NULL.** Beedle the Bard → `T5AJtgEACAAJ` (audio `landed`); The Lays of
+Beleriand → `KKxagxSj6jkC` (audio `wanted`); Murtagh (`328548eb`) NULL id, not parked, audio `grabbed`. Reason: the format-pairing
+mint tries at most 100 wants an hour and 77-94 are unmintable each run, and Google Books went `kind: minute` quota at 10:33Z and 11:32Z
+(`skippedQuota 187`), so the budget has not reached it. None of Xtr3yQEACAAJ, CyAJMAEACAAJ, 2MFMAAAACAAJ or wnVOEAAAQBAJ appears in
+`book_requests`. Recheck Murtagh once the mint budget gets through the backlog.
+
 ## ▶ 2026-10-03 (late) — v0.105.2 + Libretto sha-3309ff2 live; LL bundle rows repaired; four checks owed
 
 - **v0.105.2** (#657 janitor `waiting` verdict, #658 Google Books omnibus guard, #659 Trash batch-read race, #660 a
@@ -198,6 +210,12 @@ q() { kubectl -n frontend exec -i "$P" -c app -- node -e 'const {Client}=require
   Shatter Me / Dark Artifices collection wants (`378b62d6`, `159547b2`, `83cfec28`) no longer exist (dropped by a
   collection pass; their LL bundles read Skipped). Recheck the guard with a real resolve after the 2026-10-05 07:00Z
   quota reset.
+  **(d) rechecked 2026-10-05 12:10Z: no violation, but no want has yet been seen resolving to a bundle or to ReDawn.** The `e8e8edf2` ReDawn collection want
+  still has a NULL id (unparked; the 11:27Z pass left it NULL), the pairing ReDawn want `46120a3e` holds `yo5CEAAAQBAJ`, and no
+  `book_requests` row carries `wnVOEAAAQBAJ`. Odd Interlude #1/#2 and Silo Stories read `wrong_volume` with NULL ids (11:27Z); all 14
+  `wrong_volume` rows (3 collection, 11 pairing) have a NULL id. All 21 Skipped bundle formats read Skipped in LL (20 books; the
+  four "eBook stays Open" books keep only their audiobook Skipped). Hourly collection passes 08:27-11:28Z all log `resolved 6, reused 204,
+  minted 0, unreachable false`, yet those wants stay NULL; the guard is exercised only when one of them resolves.
   ```bash
   kubectl -n frontend exec -i "$P" -c app -- node -e '(async()=>{const r=await (await fetch(`http://lazylibrarian.downloads.svc.cluster.local:5299/api?apikey=${process.env.LAZYLIBRARIAN_API_KEY}&cmd=getAllBooks`)).json();for(const b of (Array.isArray(r)?r:r.data))if(process.argv[1].split(",").includes(String(b.BookID)))console.log(b.BookID,b.BookName,b.Status,b.AudioStatus)})()' "<id>,<id>"
   ```
