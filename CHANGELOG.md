@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.107.2](https://github.com/thaynes43/haynesnetwork/compare/v0.107.1...v0.107.2) (2026-10-05)
+
+
+### Bug Fixes
+
+* **books:** conform the wants a repair parked by hand ([#693](https://github.com/thaynes43/haynesnetwork/issues/693)) ([#701](https://github.com/thaynes43/haynesnetwork/issues/701)) ([ceeed88](https://github.com/thaynes43/haynesnetwork/commit/ceeed88eee463f66c43e20e42b1a3f36ab555b1d))
+
+
+### Documentation
+
+* **agents:** German Chroniken books out under F10; holding folder sorted, owed check (m) ([#696](https://github.com/thaynes43/haynesnetwork/issues/696)) ([9a991a0](https://github.com/thaynes43/haynesnetwork/commit/9a991a0f44bb6bbd31552fdc8919e970cb57b2c8))
+
 ## [0.107.1](https://github.com/thaynes43/haynesnetwork/compare/v0.107.0...v0.107.1) (2026-10-05)
 
 
