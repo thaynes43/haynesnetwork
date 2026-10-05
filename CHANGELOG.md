@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.107.7](https://github.com/thaynes43/haynesnetwork/compare/v0.107.6...v0.107.7) (2026-10-05)
+
+
+### Bug Fixes
+
+* **books:** a want on a non-English LazyLibrarian book asks for the English edition ([#719](https://github.com/thaynes43/haynesnetwork/issues/719)) ([#726](https://github.com/thaynes43/haynesnetwork/issues/726)) ([6be60d4](https://github.com/thaynes43/haynesnetwork/commit/6be60d426f2a2dc470475df7d77fc09dcd83abdf))
+
+
+### Documentation
+
+* **agents:** F10 azw3/mobi coverage sweep ([#727](https://github.com/thaynes43/haynesnetwork/issues/727)) ([74b8290](https://github.com/thaynes43/haynesnetwork/commit/74b82908bb1793f510a977b52a72e51f98fd0c0a))
+* **agents:** F10 leftovers closed, no foreign-language LL want left ([#721](https://github.com/thaynes43/haynesnetwork/issues/721)) ([76f3abb](https://github.com/thaynes43/haynesnetwork/commit/76f3abb844080404341ed50fdcf0642cbb027ae1))
+* **agents:** final F10 sweep of Audiobookshelf and Kavita recorded ([#725](https://github.com/thaynes43/haynesnetwork/issues/725)) ([f94ccbe](https://github.com/thaynes43/haynesnetwork/commit/f94ccbe3f2070bb5c54429776df2ce4fc63366d5))
+* **agents:** v0.107.5 deploy record, [#712](https://github.com/thaynes43/haynesnetwork/issues/712) closed ([#723](https://github.com/thaynes43/haynesnetwork/issues/723)) ([3d0ad45](https://github.com/thaynes43/haynesnetwork/commit/3d0ad45bdc935082205ea8d687751fe3c3322eef))
+* **agents:** v0.107.6 deploy record, [#715](https://github.com/thaynes43/haynesnetwork/issues/715) closed ([#724](https://github.com/thaynes43/haynesnetwork/issues/724)) ([11b3a4b](https://github.com/thaynes43/haynesnetwork/commit/11b3a4be435c6cdebde2f4aeb3d7fc5f2281b01c))
+
 ## [0.107.6](https://github.com/thaynes43/haynesnetwork/compare/v0.107.5...v0.107.6) (2026-10-05)
 
 
