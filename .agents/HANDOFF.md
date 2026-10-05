@@ -177,8 +177,9 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
   `select title_snapshot, created_at from book_fix_requests where created_at >= '2026-10-05'` names none of the held
   titles. Then run the dry run, read its counts (1,325 files), and delete:
   `kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/crossvolume_purge.py`
-  then the same command with `python3 - --go`. It refuses if a file is unsorted or changed size, or if an LL row
-  points into the folder. It keeps `manifest.jsonl` and `sort.jsonl` in the pod's `/config/crossvolume-2026-10-05/`.
+  then the same command with `python3 - --go`. It refuses if a file is unsorted or changed size, if an LL row
+  points into the folder, or if a duplicate's or omnibus's counterpart title folder (listed per row in `sort.jsonl`)
+  no longer holds a book file of that kind. It keeps `manifest.jsonl` and `sort.jsonl` in the pod's `/config/crossvolume-2026-10-05/`.
   If a book was reported missing, restore it instead: move its `dst` back to `src` from the manifest and drop its row
   from `sort.jsonl` before running the purge.
 

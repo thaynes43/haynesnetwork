@@ -21,13 +21,33 @@ def cat(src,reason,fn):
         if fn.endswith('.pdf'): return 'off_catalog','"Master of the Universe" fan fiction'
         if fn.endswith('.azw3'): return 'off_catalog','Fifty Shades of Grey eBook: no LL record and no app request (its audiobook is held)'
     return None,'UNCLASSIFIED'
+import re
+DW=[(r'Discworld Part \d+ of 136\.mp3$','Jingo'),(r'Discworld Part \d+ of 36\.mp3$','Snuff'),(r' - Pyramids\.mp3$','Pyramids'),
+    (r' - Going Postal\.mp3$','Going Postal'),(r'Witches Abroad','Witches Abroad'),(r'Light Fantastic','The Light Fantastic'),
+    (r'Small Gods','Small Gods'),(r'Maskerade','Maskerade - (Discworld Novel 18) (Discworld Novels) by Terry Pratchett'),
+    (r'Sourcery','Sourcery'),(r' Eric - ','Eric'),(r'Night Watch','Night Watch'),(r'Thud!','Thud!'),
+    (r'Unseen Academicals','Unseen Academicals'),(r'Wyrd Systers','Wyrd Sisters'),(r'Equal Rights','Equal Rites')]
+def counterparts(src,fn,c):
+    if c=='duplicate':
+        if src.startswith('AudioBooks/Terry Pratchett/'):
+            t=[f for p,f in DW if re.search(p,fn)]
+            return ['AudioBooks/Terry Pratchett/'+t[0]] if len(t)==1 else None
+        if src.startswith('EBooks/Terry Pratchett/'): return ['EBooks/Terry Pratchett/Making Money']
+        if 'The Infernal Devices' in src: return ['AudioBooks/Cassandra Clare/Clockwork Prince']
+    if c=='omnibus_redundant':
+        if 'Shatter Me' in src: return ['EBooks/Tahereh Mafi/'+x for x in ('Shatter Me','Destroy Me','Unravel Me','Fracture Me','Ignite Me')]
+        if 'Inheritance' in src: return ['EBooks/Christopher Paolini/'+x for x in ('Eragon','Eldest','Brisingr')]
+        if src.endswith('E.L. James/Grey'): return ['EBooks/E.L. James/Grey','EBooks/E.L. James/Darker']
+    return []
 rows=[]; seen=set()
 for l in open(H+'manifest.jsonl'):
     d=json.loads(l)
     if d['op']!='hold': continue
     src,fn=d['src'].rsplit('/',1)
     c,ev=cat(src,d['reason'],fn)
-    rows.append({'path':d['dst'],'size':d['size'],'md5':d['md5'],'category':c,'evidence':ev,'record':d['record']}); seen.add(d['dst'])
+    cp=counterparts(src,fn,c) if c else []
+    if cp is None: c,ev=None,'UNMAPPED duplicate: no title folder'
+    rows.append({'path':d['dst'],'size':d['size'],'md5':d['md5'],'category':c,'evidence':ev,'record':d['record'],'counterparts':cp or []}); seen.add(d['dst'])
 present=set()
 for root,ds,fs in os.walk(H):
     for f in fs: present.add(os.path.join(root,f).replace(B,''))
@@ -38,6 +58,6 @@ with open(H+'sort.jsonl','w') as f:
 os.chown(H+'sort.jsonl',1000,1000)
 c=collections.Counter(r['category'] for r in rows); s=collections.Counter()
 for r in rows: s[r['category']]+=r['size']
-print({k:(c[k],round(s[k]/1e9,2)) for k in c}, 'unclassified',sum(1 for r in rows if not r['category']),'extra',extra[:5],'missing',missing[:5])
+print({k:(c[k],round(s[k]/1e9,2)) for k in c},'with counterparts',sum(1 for r in rows if r['counterparts']), 'unclassified',sum(1 for r in rows if not r['category']),'extra',extra[:5],'missing',missing[:5])
 g=collections.Counter((r['category'],r['path'].rsplit('/',1)[0].replace('quarantine/crossvolume-2026-10-05/','')) for r in rows)
 for (k,p),n in sorted(g.items()): print('%-18s %4d  %s'%(k,n,p))
