@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -628,3 +628,73 @@ books). The pairing identity check runs only on a usable snapshot (`llSnapshotUs
   parks write no audit row; they are the unaudited sync class.
 
 Rows pointing at `ik6xzgEACAAJ`, which the cross-volume repair owns, are skipped. Record: HANDOFF, 2026-10-05.
+
+## Amendment — 2026-10-05 (later): a `landed` format stays truthful (issue #715)
+
+**What was seen.** The Goodreads request for *Azazel* read `landed` for both formats after its library match was
+removed (an Italian Kavita series, taken out under the English-only rule) and while LazyLibrarian held neither format
+(its book is a Spanish edition: eBook `Skipped`, audiobook `Wanted`, no file). The wall read "have" for a book the
+estate does not have, and nothing ever searched for it.
+
+**Why.** Two things made `landed` permanent for a want the library no longer matched:
+
+1. `advanceStatus` never moves a positive status back to a searching one, and every reconcile goes through it. So a
+   `landed` set by a library match survived the match, and a `landed` set by a LazyLibrarian `Open` survived LazyLibrarian
+   losing the file.
+2. `collectTargets` handed only wants with a format still open to the reconcile. A both-landed want was never read
+   against LazyLibrarian again, so even a correct rule would not have run on it.
+
+**The rule: `landed` is only true while something holds the format.** For a want the library does not hold
+(`matched_books_item_id` NULL), a `landed` format is true only while the LazyLibrarian book the want points at holds it
+(`llFormatAlreadyHeld`: `Open`/`Have`, or a library date or file path). Otherwise it leaves `landed` for the status that
+is true now, per format:
+
+| What is true now | The format reads |
+| --- | --- |
+| LazyLibrarian shows it `Snatched` | `grabbed` |
+| LazyLibrarian shows it `Wanted` | `wanted` |
+| `Skipped`, `Ignored`, `Matched` or no status | `missing` (the dead end that offers Search again; the Skipped sweep below may queue it again) |
+| the book names another volume or work (T-280) | `missing`, and nothing is queued on that book |
+| LazyLibrarian no longer has the book, past the gone rule's 24 hour grace | re-keyed to the row that holds it, else `missing` (the 2026-10-04 gone rule, now also for `landed`; the #668 re-request then hands it back once) |
+| the want has no LazyLibrarian id and no match | `requested`, so the push mints it once a Google Books id resolves |
+
+A want the library still holds is never touched: the match is what lands it, and nothing about LazyLibrarian can change
+that. A status LazyLibrarian shows that we cannot read decides nothing, and so does an empty `getAllBooks` read.
+
+**How.**
+
+- `syncShelfRequests` hands a both-landed want without a match to the reconcile (`collectTargets`), and moves a
+  `landed` format with no LazyLibrarian id back to `requested`.
+- The reconcile (`syncGoodreadsIntegration` step 5) calls `unheldFormatStatus` (pure) per format, before
+  `applyRequestReconcile`, and applies the answer through `revertLandedFormats`: the one writer that takes a format out
+  of `landed`. It reverts only a format that reads `landed` now, only for a want with no library match, and only while
+  the want still points at the id the decision read. It leaves `last_reconciled_at` alone, so the gone grace keeps
+  running from when LazyLibrarian last showed the book. Unaudited, like every synced or derived status write
+  (`applyRequestReconcile`, `settleRequestLlGone`); each change logs `request_landed_reverted` with its `reason`
+  (`ll_not_held`, `ll_book_mismatch`, `no_kapowarr_volume`, `kapowarr_not_held`).
+- The gone rule (`decideLlGoneWant`, `settleRequestLlGone`) takes `includeLanded` for a want the library does not hold. A
+  re-key is only taken when the new row holds every format that reads `landed`.
+- **Comics.** A landed comic with no library match is reconciled against Kapowarr every run (`toRouteComics` used to skip
+  it) and leaves `landed` when the volume no longer holds every issue; with no Kapowarr volume at all it goes back to
+  `requested`.
+- **The Skipped sweep refuses a foreign edition.** The goodreads sweep never re-queues a `Skipped` format whose
+  LazyLibrarian book is labelled non-English (`BookLang`, the DESIGN-036 #700 table: blank and unknown still pass). The
+  format stays `missing` and a person's Search again can still lift it. Without this, taking Azazel out of `landed`
+  would have queued and searched the Spanish edition.
+- Report field `requestsLandedReverted` (requests changed this run), on the goodreads-sync and format-pairing reports.
+
+**Other sources.**
+
+- **Pairing** had the same blind spot for the missing format (DESIGN-036 amendment of this date).
+- **Collection** has none. A collection want's inactive format is `landed` by construction (the pairing idiom, nothing
+  held), and its active format leaves `requested` only through the #668 re-request's held hand-back, after which the
+  library import drops the member from Libretto's missing list and the wanted pass deletes the want. Live data on
+  2026-10-05: 0 collection wants with an active format `landed`.
+
+**Not decided here.** What an Azazel-like want should ask for when its Google Books volume is a foreign edition (look
+for an English edition of the same work) is a design choice, not a status fix. It stays `missing` for now; tracked in
+https://github.com/thaynes43/haynesnetwork/issues/719.
+
+**Tests:** `packages/domain/__tests__/landed-truth.test.ts` (landed stays landed while held; reverts when the file is
+gone, when the library match is gone, when the book names another volume, when LazyLibrarian lost the book, when there
+is no book; a library match is never reverted; the comic follows Kapowarr; pairing).
