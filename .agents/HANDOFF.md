@@ -4,6 +4,62 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-05 — v0.107.1 + v0.107.2 live: a request is never satisfied by another volume (#693, closed)
+
+- **Why (#693).** Requests read `landed` from another volume's or another work's LazyLibrarian book. There were four
+  causes:
+  - The Google Books title guard dropped volume numbers ("Court of Thorns and Roses bk 2" resolved to book 1).
+  - The pairing reuse key cut subtitles (the Mistborn sequels reused *The Final Empire*'s id).
+  - A pairing want kept its id when its anchor turned out to be another book (renamed audiobooks, the #661 held
+    book).
+  - A collection resolve named another work (the BBC Radio Drama Collection on *Terry Pratchett's Discworld*,
+    `YVfJMgEACAAJ`).
+
+  Rule: DESIGN-028 amendment 2026-10-05, plus the DESIGN-036 and DESIGN-038 D-13 amendments; glossary T-280 Volume
+  Check.
+- **v0.107.1** (#698, release #683, haynes-ops #3371, ~15:30Z). One volume check (`ll-book-check.ts`) reads the title
+  LazyLibrarian holds (`BookName` + `BookSub`). It applies everywhere a request is landed or pushed:
+  - `resolveVolume` refuses another volume.
+  - format-pairing checks every want against its anchor's book before each mint (`checkPairingWantBooks`: clear or
+    re-title), with a subtitle-keeping reuse key.
+  - The collection force-search parks a want on another work's book (`wrong_volume`), and a park holds through the
+    wants pass.
+  - goodreads-sync neither lands nor pushes such a want.
+- **v0.107.2** (#701, release #699, haynes-ops #3372, ~16:10Z): `settleParkedPairingWant` for parks made by hand.
+  Both releases: 3/3 pods Ready, `/api/health` ok, no migration, no error lines in Loki.
+- **Libretto `sha-6da3451`** (libretto #20, haynes-ops #3370): the same volume guard in the resolve broker. An
+  in-cluster resolve of "Court of Thorns and Roses bk 2" answers `no_match`.
+- **Repair.** The one-off `wrong-volume-requests-repair.ts` ran as frontend Jobs (`hnet-wrong-volume-693*`, from the
+  format-pairing CronJob template, `--dry-run` then `--apply`). There was no LazyLibrarian write.
+  - **15:35Z, 103 rows:**
+    - pairing: 77 re-identified (id cleared; `requested`, or `landed` when paired) and 20 re-titled;
+    - collection: 3 parked (both BBC rows, *Violet in Bloom* on a Dutch edition);
+    - goodreads: 52b4ad15 re-pointed from *Mother of Death and Dawn* to `drNVzwEACAAJ`, *The Serpent and the Wings of
+      Night*. LazyLibrarian snatched both formats within minutes.
+    - the two Mistborn sequels (removed anchors): settled.
+  - **16:12Z:** the four Chroniken wants the cross-volume repair parked by direct write (c0afcc7e, 525913ff,
+    ca08224a, aec71b5a) were conformed. They stay parked with no id; their missing format moved from `landed`/`wanted`
+    to `missing`. Pairing parks write no audit row (the unaudited sync class).
+  - **Result:** no request points at `YVfJMgEACAAJ` or `ik6xzgEACAAJ`.
+  - **The issue's rows now read:**
+    - 7793db70 and 858a9882: re-titled to their anchors (*A Court of Mist and Fury*, *Midnight Sun*), id cleared,
+      `landed` by the pair.
+    - 9ab1d97c ("bk 2"): `requested`, with no id. Google Books now refuses book 1 for it.
+    - c071f2dc ("Breaking Dawn"), 3a9fb806 (re-titled to *Life the Universe and Everything*): `requested`, resolving
+      their own books.
+- **16:32Z format-pairing on v0.107.2:** `reidentified 1` (3cd1a6d7: its ABS item read "The Firm" from 15:18Z over
+  Runaway Jury files; once the title was fixed it re-identified to *The Runaway Jury*, paired, `landed`), `retitled 0`,
+  `rejectedResolves 0`, `attempted 29`, `pushed 10`, `skippedBudget 283`. No error, and no line naming either id.
+- **Filed:** #700, pairing wants the other format of a foreign-language item (how c0afcc7e queued the German omnibus
+  at 14:32Z; needs a decision on blank and `XXX` languages). #702, e2e red on main since 2026-10-04 (an
+  integrations.spec `addBook gb-tog` expectation; advisory, not caused by #693).
+- **Owed check (o), after the 2026-10-06 04:54Z backlog run:**
+  - LazyLibrarian's `wanted` table has no new row for `YVfJMgEACAAJ` (`rowid > 9539`).
+  - Loki `{namespace="frontend"} |= "pairing_resolve_rejected"` stays rare. A steady stream for one title means the
+    check refuses a right book: read its `llTitle`.
+  - The re-opened wants re-resolve as the pairing Google Books budget allows. On 2026-10-05 the budget was spent
+    (`skippedBudget 283`), so expect them over the next quota-days.
+
 ## ▶ 2026-10-05 — v0.107.0 live: Google Books quota instrumentation for #674; #674 benched until there is data
 
 - **v0.107.0** (#681, release #679, haynes-ops #3362, 00:48Z): the app and all sync CronJobs on the one `&mainImage` tag;
