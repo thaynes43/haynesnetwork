@@ -148,11 +148,20 @@ describe('gb_quota_day_closed (the close line, issue #674)', () => {
     expect(await readGbBudgetUsage({ db: t.db, now: nextDay })).toMatchObject({ pairing: 1, goodreads: 1 });
   });
 
-  it('a writer whose clock is BEHIND the stored day does not log a close', async () => {
+  it('a STALE writer after a forward roll keeps the counts, adds to the stored day, logs no second close', async () => {
+    // A tracker captures `now` once, so a run that started before 07:00Z spends on the OLD day after
+    // another job already rolled. It must neither wipe the new day's counts nor move quota_day back.
     const logger = capture();
-    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 5, now: nextDay, logger });
-    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 1, now: day, logger });
-    expect(logger.info).not.toHaveBeenCalled();
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 9, now: day, logger });
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 5, now: nextDay, logger }); // forward roll
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    await recordGbCalls({ db: t.db, consumer: 'goodreads', count: 2, now: day, logger }); // stale writer
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 1, now: nextDay, logger }); // next current writer
+    const [row] = await t.db.select().from(gbCallBudget);
+    expect(row).toMatchObject({ quotaDay: '2026-07-20', pairingCalls: 6, goodreadsCalls: 2 });
+    // Exactly one close line, for the day that actually closed, with its real counts.
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.info.mock.calls[0]?.[1]).toMatchObject({ quota_day: '2026-07-19', pairing_calls: 9 });
   });
 });
 

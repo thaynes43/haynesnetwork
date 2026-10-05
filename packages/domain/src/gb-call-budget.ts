@@ -138,7 +138,8 @@ export async function readGbBudgetUsage(input: { db?: DbClient; now?: Date }): P
  * Persist `count` GB calls for `consumer` against the current quota-day (single-writer upsert). The
  * ON CONFLICT clause ROLLS the day atomically: when the stored `quota_day` is stale every counter
  * resets to 0 first (only this consumer's column gets `count`), so a new quota-day starts clean
- * without a cron. A no-op when count <= 0.
+ * without a cron. A writer BEHIND the stored day never rolls it back (its calls count against the stored
+ * day). A no-op when count <= 0.
  *
  * Issue #674 (observability only): the roll overwrites the previous day's counts, so the writer that
  * performs the roll emits ONE `gb_quota_day_closed` line carrying the closed day's per-consumer counts
@@ -167,8 +168,8 @@ export async function recordGbCalls(input: {
   // value; else the day rolled — reset to just this write's increment (0 for the other consumers). The
   // existing-value ref is TABLE-QUALIFIED (`"gb_call_budget"."pairing_calls"`) so it is unambiguous
   // against the ON CONFLICT `excluded` pseudo-row.
-  const rolled = (col: AnyPgColumn, increment: number) =>
-    sql`CASE WHEN ${gbCallBudget.quotaDay} = ${today} THEN ${col} + ${increment} ELSE ${increment} END`;
+  const rolled = (col: AnyPgColumn, day: string, increment: number) =>
+    sql`CASE WHEN ${gbCallBudget.quotaDay} = ${day} THEN ${col} + ${increment} ELSE ${increment} END`;
 
   const closed = await inTransaction(input.db, async (tx) => {
     // The row lock that makes the close line exactly-once (see the doc comment).
@@ -177,11 +178,16 @@ export async function recordGbCalls(input: {
       .from(gbCallBudget)
       .where(eq(gbCallBudget.id, GB_SINGLETON_ID))
       .for('update');
+    // NEVER ROLL BACKWARD: a writer whose `now` is on an EARLIER quota-day than the stored row (a
+    // tracker captures `now` once, so a run that crosses 07:00Z spends on the old day after another job
+    // already rolled) counts against the STORED, newer day — conservative for the budget — instead of
+    // resetting that day's counters and moving `quota_day` back.
+    const day = previous && previous.quotaDay > today ? previous.quotaDay : today;
     await tx
       .insert(gbCallBudget)
       .values({
         id: GB_SINGLETON_ID,
-        quotaDay: today,
+        quotaDay: day,
         pairingCalls: inc('pairing'),
         goodreadsCalls: inc('goodreads'),
         bookfixCalls: inc('bookfix'),
@@ -190,14 +196,14 @@ export async function recordGbCalls(input: {
       .onConflictDoUpdate({
         target: gbCallBudget.id,
         set: {
-          pairingCalls: rolled(gbCallBudget.pairingCalls, inc('pairing')),
-          goodreadsCalls: rolled(gbCallBudget.goodreadsCalls, inc('goodreads')),
-          bookfixCalls: rolled(gbCallBudget.bookfixCalls, inc('bookfix')),
-          quotaDay: today,
+          pairingCalls: rolled(gbCallBudget.pairingCalls, day, inc('pairing')),
+          goodreadsCalls: rolled(gbCallBudget.goodreadsCalls, day, inc('goodreads')),
+          bookfixCalls: rolled(gbCallBudget.bookfixCalls, day, inc('bookfix')),
+          quotaDay: day,
           updatedAt: now,
         },
       });
-    // Only a FORWARD roll closes a day (a stale-clock writer behind the stored day does not).
+    // Only a FORWARD roll closes a day (a writer behind the stored day neither rolls nor logs).
     return previous && previous.quotaDay < today ? previous : null;
   });
   if (closed) {

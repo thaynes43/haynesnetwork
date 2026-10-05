@@ -527,7 +527,7 @@ roll, and `tripGbQuotaBreaker` left no record. **Log lines only, no migration, n
   and the read is `SELECT … FOR UPDATE` on the singleton row. Concurrent writers serialise on that lock:
   the first sees the stale day, rolls it and commits; every later one reads the rolled row and logs
   nothing. The line is emitted after commit from the locked snapshot, so a rolled-back transaction never
-  logs. A first-ever write, a same-day write and a writer whose clock is behind the stored day log nothing.
+  logs. A first-ever write and a same-day write log nothing. The row never rolls BACKWARD: a writer whose `now` is on an earlier quota-day than the stored row (a tracker captures `now` once, so a run that crosses 07:00Z writes on the old day) adds its calls to the stored, newer day's counters under the same lock, with no roll and no close line, so it cannot wipe the new day's counts or trigger a second close.
   A day on which nothing called Google Books writes no row, so a day's line arrives with the next day's
   first call (its `quota_day` always names the day it closes). `gb-call-budget.test.ts` holds a roll open
   in one transaction while a second writer starts, and fails if the lock is removed.
