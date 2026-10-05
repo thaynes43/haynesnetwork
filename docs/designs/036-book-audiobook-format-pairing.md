@@ -1,7 +1,8 @@
 # DESIGN-036: Book ⇄ audiobook format pairing — pair cache, paced system wants, dual consume buttons
 
 - **Status:** Draft
-- **Last updated:** 2026-07-21 (**author-agreement tolerance** — the live pairing-gap diagnosis found the
+- **Last updated:** 2026-10-05 (a want is checked against its anchor's book, issue #693; see the amendment of that
+  date). Prior: 2026-07-21 (**author-agreement tolerance** — the live pairing-gap diagnosis found the
   substring check refusing real pairs on initials spacing ("JRR Tolkien" ⇄ "J.R.R. Tolkien"),
   initials-to-full-name ("L.M." ⇄ "Lucy Maud"), middle-name insertion ("Dean Koontz" ⇄ "Dean Ray
   Koontz"), and leading co-author credits. `authorsAgree` now ALSO accepts an ordered token
@@ -354,3 +355,72 @@ open want's anchor media kind (one query) and uses `missingFormatFor`, and sets 
 wherever it is not, as long as the anchor is still in the library (`deleted_at` NULL: a removed anchor no longer
 holds its format, though its media kind still names the want's format) (`landPairingHeldFormat`, report field
 `heldLanded`; ADR-065 C-03).
+
+## Amendment — 2026-10-05: a want is checked against its anchor's book (issue #693)
+
+**Normative rule: DESIGN-028's 2026-10-05 amendment.** Pairing wants read `landed` from books that were not their
+anchor's book. Three of the causes were on this leg:
+
+- the reuse lookup (D-05) keyed on `normTitle`, which cuts the subtitle;
+- a want kept its id when its anchor turned out to be another book: the #661 held book, or an audiobook renamed by the
+  2026-09-29 library repair (the amendment above said "wants pushed before this change keep the identity they were
+  resolved under");
+- the Google Books resolve took "Court of Thorns and Roses bk 2" for book 1.
+
+**D-05, the identity check (`checkPairingWantBooks`, first in every mint).** Before any candidate is chosen, every
+unparked want on a live anchor holding one book (`pairingIdentity` → `one`) is judged against that book
+(`judgePairingWantBook`), with the title LazyLibrarian holds for the want's id:
+
+- **`retitle`.** The anchor's book changed name, and the id already names the new book (LazyLibrarian holds it under
+  exactly that title, `llBookNamesTitle`), or the want has no id. Only the title snapshot moves.
+- **`clear`.** Either the anchor's book changed and the id does not name it, or LazyLibrarian no longer holds the id
+  (`identity`), or the title is current but LazyLibrarian names the book as another volume or work (`volume` / `work`,
+  `llBookMismatch`).
+
+  `reidentifyPairingWant` writes the anchor's identity as the title, clears the id, sets the missing format
+  `requested` (or `landed` when the anchor is paired, because the library holds it), sets the held format `landed`, and
+  resets the one re-request (#668), which belonged to the old book. The want is then a candidate, and the mint resolves
+  the anchor's own book (reuse, then Google Books).
+
+Details:
+
+- The check makes no external call and is not an attempt. It runs only with a usable `getAllBooks` snapshot
+  (`llBookOf`); a degraded run checks nothing.
+- The single writer is guarded on the row being unchanged since it was read, and is unaudited (the sync-mint class).
+- LazyLibrarian is not written. The old book stays as it is there, and each change logs `pairing_want_reidentified`
+  with `abandonedLlBookId`, or `pairing_want_retitled`.
+- A want whose title is current and whose id LazyLibrarian lacks is left to the gone rule (#665).
+
+**D-05, the reuse key (`reuseTitleKey`).** The reuse lookup keys on the full pairing title once its series decoration
+is off (`gbQueryTitle`: a trailing "(The Stormlight Archive, #1)", a leading "Expanse 05 - "). It keeps the subtitle
+and any volume number:
+
+- "Mistborn: Wax & Wayne" never reuses *The Final Empire*'s id.
+- "Court of Thorns and Roses bk 2" never reuses book 1's id.
+- "Dune (Dune Chronicles, #1)" still reuses "Dune".
+- "Dune: Special Edition" no longer does. That is the conservative miss: one Google Books call, not a wrong book.
+
+Two more limits on reuse:
+
+- A want on an anchor that left the library is no reuse source, because its id is never checked again.
+- A reused or freshly resolved id is refused when LazyLibrarian already holds it as another volume or work
+  (`pairing_resolve_rejected`, report field `rejectedResolves`). The want is then resolved by Google Books, or
+  unmintable.
+
+**The upsert (defense in depth).** When the title snapshot changes, `upsertPairingWant` no longer keeps the existing
+id: it takes the attempt's. The mint takes a want's own id only while its title is the identity's, so a run without
+LazyLibrarian's titles cannot carry a stale id either. A `landed` that belonged to the old book is reset with it.
+
+**The reconcile.** It skips `applyRequestReconcile` and the Skipped sweep for a want whose book mismatches
+(`ll_book_mismatch`). The identity check already cleared those on live anchors. This guard covers a removed anchor and
+one not yet read for its held books.
+
+**Report fields:** `reidentified`, `retitled`, `rejectedResolves`.
+
+**Measured before merge** (live mirror, 2026-10-05 14:27Z), first run on the new code:
+
+- 76 wants clear: 73 `identity` and 3 `volume` (9ab1d97c and two Beacon 23 parts on the whole novel, the bundle rule).
+  27 of them are paired and settle `landed` with no id. The other 49 become `requested` and re-resolve over a few runs
+  (cap 25, the Google Books budget).
+- 22 wants re-title. One of them is c071f2dc ("Breaking Dawn" → "Twilight", whose series now holds Twilight, the book
+  its id names).

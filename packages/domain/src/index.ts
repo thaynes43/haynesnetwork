@@ -182,6 +182,8 @@ export * from './integration-shelf-items';
 export * from './book-requests';
 // Issue #665 / DESIGN-028 amendment 2026-10-04 — a want whose LazyLibrarian book is gone (re-key or settle).
 export * from './ll-gone';
+// Issue #693 / DESIGN-028 amendment 2026-10-05 — is a want's LazyLibrarian book the volume it asks for?
+export * from './ll-book-check';
 export * from './goodreads-sync';
 // DESIGN-038 D-13 — the collection Wanted-tiles pass: Libretto-managed collections' missing members
 // minted as origin='collection' book_requests (the books-collections-sync mode's Wanted-tile step).
@@ -193,6 +195,8 @@ export * from './collection-force-search';
 // books_format_pairs single-writer, and the PACED estate-wide system-want mint + run orchestrator
 // (the format-pairing sync mode's body).
 export * from './format-pairing';
+// Issue #693 — the one-off repair of requests pinned to another volume's LazyLibrarian book.
+export * from './wrong-volume-repair';
 export * from './lazylibrarian-clients';
 // ADR-056 (PLAN-046 — Kapowarr comics acquisition) — the confined Kapowarr client bundle for comic routing +
 // the comic force-search (@hnet/kapowarr/write stays in this package — the arr-write-import-guard, extended).

@@ -12,6 +12,7 @@ describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
       {
         BookID: 'b1',
         BookName: ' Book One ',
+        BookSub: ' A Subtitle ',
         AuthorName: ' Ann Author ',
         Status: 'Wanted',
         AudioStatus: 'Open',
@@ -27,9 +28,11 @@ describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
     // ADR-055 amend (2026-09-22) — the per-format library/file fields ride through for the push guard.
     // ADR-095 / DESIGN-046 D-18 — the title rides through for the queue janitor's fail-loop rows (trimmed).
     // Issue #665 — the author rides through too (the gone-book re-key match), trimmed the same way.
+    // Issue #693 — and the subtitle (the volume check reads it with the title).
     expect(map.get('b1')).toEqual({
       bookId: 'b1',
       title: 'Book One',
+      subtitle: 'A Subtitle',
       author: 'Ann Author',
       ebookStatus: 'Wanted',
       audioStatus: 'Open',
@@ -41,6 +44,7 @@ describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
     expect(map.get('b2')).toEqual({
       bookId: 'b2',
       title: null,
+      subtitle: null,
       author: null,
       ebookStatus: 'Skipped',
       audioStatus: null,
@@ -78,6 +82,7 @@ describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
     expect((await client.getAllBookStatuses()).get('b3')).toEqual({
       bookId: 'b3',
       title: null,
+      subtitle: null,
       author: null,
       ebookStatus: 'Wanted',
       audioStatus: 'Wanted',

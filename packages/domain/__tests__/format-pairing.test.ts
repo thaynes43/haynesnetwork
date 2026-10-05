@@ -19,6 +19,7 @@ import {
 } from '@hnet/db';
 import {
   createGbCallMeter,
+  judgePairingWantBook,
   makeGbBudgetTracker,
   matchFormatPairs,
   mintPairingWants,
@@ -448,19 +449,19 @@ describe('mintPairingWants (the paced estate-wide backfill)', () => {
     expect(gb.calls).toHaveLength(0);
   });
 
-  it('REUSES a prior PAIRING want llBookId (same normalized title/author) before Google Books — the quota-day GB-avoidance', async () => {
+  it('REUSES a prior PAIRING want llBookId (same work title/author) before Google Books — the quota-day GB-avoidance', async () => {
     // Run 1: a book "Dune" resolves its GB volume id and mints a pairing want.
     await seedItem({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book' });
     const ll = stubLl();
     const gb1 = stubGb(() => 'gb-dune');
     await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb1.gb, pacer: async () => {} });
 
-    // Run 2: an audiobook of the SAME work whose subtitle keeps the pairing key distinct (so it does
-    // NOT auto-pair and stays an unpaired candidate), but whose goodreads-style normalized title +
+    // Run 2: an audiobook of the SAME work whose series parenthetical keeps the pairing key distinct (so it does
+    // NOT auto-pair and stays an unpaired candidate), but whose reuse key (series decoration off, issue #693) +
     // author still match the resolved book want. It must reuse 'gb-dune' — NO fresh GB call, even
     // with the breaker otherwise starved. This is what keeps the pairing backlog draining on a
     // quota-exhausted day; before the reuse index drew from pairing wants it would have needed GB.
-    await seedItem({ title: 'Dune: Special Edition', author: 'Frank Herbert', mediaKind: 'audiobook' });
+    await seedItem({ title: 'Dune (Dune Chronicles, #1)', author: 'Frank Herbert', mediaKind: 'audiobook' });
     const gb2 = stubGb(() => {
       throw new Error('GB must not be called when a prior pairing want already resolved this work');
     });
@@ -470,6 +471,20 @@ describe('mintPairingWants (the paced estate-wide backfill)', () => {
     expect(wants).toHaveLength(2);
     expect(wants.every((w) => w.llBookId === 'gb-dune')).toBe(true);
     expect(report.pushed).toBe(1);
+  });
+
+  it('issue #693 — never REUSES the id of another work that shares the main title (the Mistborn sequels)', async () => {
+    // "Mistborn: The Final Empire" resolved first; the subtitle-cutting key used to hand its id to every "Mistborn: …".
+    await seedItem({ title: 'Mistborn: The Final Empire', author: 'Brandon Sanderson', mediaKind: 'book' });
+    const ll = stubLl();
+    await mintPairingWants({ db: t.db, ll: ll.bundle, gb: stubGb(() => 't_ZYYXZq4RgC').gb, pacer: async () => {} });
+
+    await seedItem({ title: 'Mistborn: Wax & Wayne', author: 'Brandon Sanderson', mediaKind: 'book' });
+    const gb2 = stubGb(() => 'gb-wax-and-wayne');
+    await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb2.gb, pacer: async () => {} });
+    expect(gb2.calls).toHaveLength(1); // no reuse: the sequel resolved its own volume
+    const wants = await t.db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
+    expect(wants.find((w) => w.title === 'Mistborn: Wax & Wayne')?.llBookId).toBe('gb-wax-and-wayne');
   });
 
   it('an unresolvable identity mints an honest UNMINTABLE want (no push, nothing fabricated) that a later run resolves', async () => {
@@ -1373,5 +1388,226 @@ describe('syncFormatPairs — the re-vanish heals only a pair that dropped this 
     expect(report).toMatchObject({ paired: 0, dropped: 1, revived: 1 });
     const [after] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, want!.id));
     expect(after!.audioStatus).toBe('requested');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #693 — a want is never satisfied by another volume or work (DESIGN-036 amendment 2026-10-05).
+// ---------------------------------------------------------------------------
+
+/** An LL stub whose snapshot is a REAL map with titles (the usable snapshot the identity check needs). */
+function stubLlBooks(books: Record<string, StubLlStatus & { title: string; subtitle?: string; author?: string }>) {
+  const ll = stubLl();
+  const map = new Map(
+    Object.entries(books).map(([id, b]) => [
+      id,
+      {
+        bookId: id,
+        title: b.title,
+        subtitle: b.subtitle ?? null,
+        author: b.author ?? null,
+        ebookStatus: b.ebookStatus,
+        audioStatus: b.audioStatus,
+        ebookLibrary: b.ebookLibrary ?? null,
+        audioLibrary: b.audioLibrary ?? null,
+        ebookFile: b.ebookFile ?? null,
+        audioFile: b.audioFile ?? null,
+      },
+    ]),
+  );
+  (ll.bundle.read as { getAllBookStatuses: () => Promise<unknown> }).getAllBookStatuses = async () => map;
+  return ll;
+}
+
+describe('judgePairingWantBook (issue #693)', () => {
+  it('clears a current want whose book LazyLibrarian names as another volume (ACOTAR bk 2 on book 1)', () => {
+    expect(
+      judgePairingWantBook({
+        want: { title: 'Court of Thorns and Roses bk 2', llBookId: 'E-kdBQAAQBAJ' },
+        identity: { title: 'Court of Thorns and Roses bk 2', author: 'Sarah J. Maas' },
+        book: { title: 'A Court of Thorns and Roses', author: 'Sarah J. Maas' },
+      }),
+    ).toEqual({ kind: 'clear', reason: 'volume' });
+  });
+
+  it('clears a want whose anchor now holds another book and whose id names the old one (Twilight → Breaking Dawn)', () => {
+    expect(
+      judgePairingWantBook({
+        want: { title: 'Twilight', llBookId: 'o37NuQEACAAJ' },
+        identity: { title: 'Breaking Dawn', author: 'Stephenie Meyer' },
+        book: { title: 'Twilight', author: 'Stephenie Meyer' },
+      }),
+    ).toEqual({ kind: 'clear', reason: 'identity' });
+    // An id LazyLibrarian no longer holds cannot vouch for the new book either.
+    expect(
+      judgePairingWantBook({
+        want: { title: 'Fear Street', llBookId: 'gone' },
+        identity: { title: 'The Prom Queen', author: 'R.L. Stine' },
+        book: undefined,
+      }),
+    ).toEqual({ kind: 'clear', reason: 'identity' });
+  });
+
+  it('only re-titles when the id already names the new book, and keeps a decorated match', () => {
+    expect(
+      judgePairingWantBook({
+        want: { title: 'Twilight Saga 3 - Eclipse', llBookId: 'fpV0' },
+        identity: { title: 'Eclipse', author: 'Stephenie Meyer' },
+        book: { title: 'Eclipse', author: 'Stephenie Meyer' },
+      }),
+    ).toEqual({ kind: 'retitle' });
+    expect(
+      judgePairingWantBook({
+        want: { title: "Caliban's War: The Expanse, Book 2", llBookId: 'tXG' },
+        identity: { title: "Caliban's War: The Expanse, Book 2", author: 'James S. A. Corey' },
+        book: { title: "Caliban's War", author: 'James S. A. Corey' },
+      }),
+    ).toEqual({ kind: 'keep' });
+    // A current want whose id LazyLibrarian lost is the gone rule's (#665), not this check's.
+    expect(
+      judgePairingWantBook({
+        want: { title: 'Hyperion', llBookId: 'gone' },
+        identity: { title: 'Hyperion', author: 'Dan Simmons' },
+        book: undefined,
+      }),
+    ).toEqual({ kind: 'keep' });
+  });
+});
+
+describe('runFormatPairing — the identity check (issue #693)', () => {
+  it('the Breaking Dawn shape: a series now holding another book drops the old id and wants its own book', async () => {
+    const anchor = await seedItem({
+      title: 'Twilight',
+      author: 'Stephenie Meyer',
+      mediaKind: 'book',
+      attrs: { heldBooks: [{ title: 'Breaking Dawn', author: 'Stephenie Meyer', isbn: null }] },
+    });
+    // Minted when the anchor was keyed on its series name: Twilight's id, and LazyLibrarian holds Twilight's audio.
+    await t.db.insert(bookRequests).values({
+      origin: 'pairing',
+      pairingBooksItemId: anchor,
+      title: 'Twilight',
+      author: 'Stephenie Meyer',
+      llBookId: 'o37NuQEACAAJ',
+      ebookStatus: 'landed',
+      audioStatus: 'landed',
+    });
+    const ll = stubLlBooks({
+      o37NuQEACAAJ: { title: 'Twilight', author: 'Stephenie Meyer', ebookStatus: 'Open', audioStatus: 'Open' },
+    });
+    const gb = stubGb((title) => (title === 'Breaking Dawn' ? 'gb-breaking-dawn' : null));
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+
+    expect(run).toMatchObject({ reidentified: 1, pushed: 1 });
+    const [want] = await t.db.select().from(bookRequests);
+    expect(want).toMatchObject({ title: 'Breaking Dawn', llBookId: 'gb-breaking-dawn', audioStatus: 'wanted', ebookStatus: 'landed' });
+    // LazyLibrarian was asked for Breaking Dawn only; Twilight was never queued for this want.
+    expect(ll.calls.every((c) => c.id === 'gb-breaking-dawn')).toBe(true);
+  });
+
+  it('the ACOTAR bk 2 shape: a want on book 1 re-opens, and book 1 is refused when it resolves again', async () => {
+    const anchor = await seedItem({ title: 'Court of Thorns and Roses bk 2', author: 'Sarah J. Maas', mediaKind: 'audiobook' });
+    await t.db.insert(bookRequests).values({
+      origin: 'pairing',
+      pairingBooksItemId: anchor,
+      title: 'Court of Thorns and Roses bk 2',
+      author: 'Sarah J. Maas',
+      llBookId: 'E-kdBQAAQBAJ',
+      ebookStatus: 'landed',
+      audioStatus: 'landed',
+    });
+    const ll = stubLlBooks({
+      'E-kdBQAAQBAJ': { title: 'A Court of Thorns and Roses', author: 'Sarah J. Maas', ebookStatus: 'Open', audioStatus: 'Open' },
+    });
+    // A resolver that hands book 1 back for the book-2 title (what Google Books did before its volume guard).
+    const gb = stubGb(() => 'E-kdBQAAQBAJ');
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
+
+    expect(run).toMatchObject({ reidentified: 1, rejectedResolves: 1, unmintable: 1, pushed: 0, reconciled: 0 });
+    const [want] = await t.db.select().from(bookRequests);
+    // Truthful: the book-2 eBook is wanted, not landed, and the want no longer points at book 1.
+    expect(want).toMatchObject({ llBookId: null, ebookStatus: 'requested', audioStatus: 'landed' });
+    expect(ll.calls).toHaveLength(0);
+  });
+
+  it('a renamed audiobook that now pairs keeps nothing of the old book: id cleared, format landed by the pair', async () => {
+    const audio = await seedItem({ title: 'A Court of Mist and Fury', author: 'Sarah J. Maas', mediaKind: 'audiobook' });
+    await seedItem({ title: 'A Court of Mist and Fury', author: 'Sarah J. Maas', mediaKind: 'book' });
+    await t.db.insert(bookRequests).values({
+      origin: 'pairing',
+      pairingBooksItemId: audio,
+      title: 'Court of Thorns and Roses bk 2',
+      author: 'Sarah J. Maas',
+      llBookId: 'E-kdBQAAQBAJ',
+      ebookStatus: 'landed',
+      audioStatus: 'landed',
+    });
+    const ll = stubLlBooks({
+      'E-kdBQAAQBAJ': { title: 'A Court of Thorns and Roses', author: 'Sarah J. Maas', ebookStatus: 'Open', audioStatus: 'Open' },
+    });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
+    expect(run.reidentified).toBe(1);
+    const [want] = await t.db.select().from(bookRequests).where(eq(bookRequests.pairingBooksItemId, audio));
+    expect(want).toMatchObject({ title: 'A Court of Mist and Fury', llBookId: null, ebookStatus: 'landed', audioStatus: 'landed' });
+    expect(ll.calls).toHaveLength(0);
+  });
+
+  it('only re-titles a want whose id already names the renamed book (no LazyLibrarian call, status kept)', async () => {
+    const audio = await seedItem({ title: 'Eclipse', author: 'Stephenie Meyer', mediaKind: 'audiobook' });
+    await t.db.insert(bookRequests).values({
+      origin: 'pairing',
+      pairingBooksItemId: audio,
+      title: 'Twilight Saga 3 - Eclipse',
+      author: 'Stephenie Meyer',
+      llBookId: 'fpV0',
+      ebookStatus: 'landed',
+      audioStatus: 'landed',
+    });
+    const ll = stubLlBooks({ fpV0: { title: 'Eclipse', author: 'Stephenie Meyer', ebookStatus: 'Open', audioStatus: 'Open' } });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
+    expect(run).toMatchObject({ retitled: 1, reidentified: 0 });
+    const [want] = await t.db.select().from(bookRequests);
+    expect(want).toMatchObject({ title: 'Eclipse', llBookId: 'fpV0', ebookStatus: 'landed' });
+    expect(ll.calls).toHaveLength(0);
+  });
+
+  it('decides nothing on an empty LazyLibrarian read (an error answer is not proof every book is gone)', async () => {
+    const audio = await seedItem({ title: 'A Court of Mist and Fury', author: 'Sarah J. Maas', mediaKind: 'audiobook' });
+    await t.db.insert(bookRequests).values({
+      origin: 'pairing',
+      pairingBooksItemId: audio,
+      title: 'Court of Thorns and Roses bk 2',
+      author: 'Sarah J. Maas',
+      llBookId: 'E-kdBQAAQBAJ',
+      ebookStatus: 'landed',
+      audioStatus: 'landed',
+    });
+    const run = await runFormatPairing({ db: t.db, ll: stubLlBooks({}).bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
+    expect(run).toMatchObject({ reidentified: 0, retitled: 0 });
+    const [want] = await t.db.select().from(bookRequests);
+    expect(want!.llBookId).toBe('E-kdBQAAQBAJ');
+  });
+
+  it('without the identity check (degraded run) a stale id is still never reused for the new book', async () => {
+    const anchor = await seedItem({
+      title: 'Twilight',
+      author: 'Stephenie Meyer',
+      mediaKind: 'book',
+      attrs: { heldBooks: [{ title: 'Breaking Dawn', author: 'Stephenie Meyer', isbn: null }] },
+    });
+    await t.db.insert(bookRequests).values({
+      origin: 'pairing',
+      pairingBooksItemId: anchor,
+      title: 'Twilight',
+      author: 'Stephenie Meyer',
+      llBookId: 'o37NuQEACAAJ',
+      ebookStatus: 'landed',
+      audioStatus: 'requested', // the re-vanish put it back on the retry queue
+    });
+    const gb = stubGb((title) => (title === 'Breaking Dawn' ? 'gb-breaking-dawn' : null));
+    const report = await mintPairingWants({ db: t.db, gb: gb.gb, pacer: async () => {} });
+    expect(report.attempted).toBe(1);
+    const [want] = await t.db.select().from(bookRequests);
+    expect(want).toMatchObject({ title: 'Breaking Dawn', llBookId: 'gb-breaking-dawn' });
   });
 });

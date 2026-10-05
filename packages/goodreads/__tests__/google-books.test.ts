@@ -9,6 +9,8 @@ import {
   isComicCategory,
   isComicText,
   nextBackoffMs,
+  titleVolumeNumbers,
+  volumeNumbersAgree,
 } from '../src/index';
 
 function volResponse(items: unknown[]): Response {
@@ -515,5 +517,59 @@ describe('GoogleBooksClient.resolveVolume omnibus guard', () => {
     expect(await gb.resolveVolume({ title: 'Odd Interlude #1', author: 'Dean Koontz' })).toBeNull();
     // An exact ISBN hit is the book the caller named — never second-guessed.
     expect((await gb.resolveVolume({ isbn: '9780804180733', title: 'Odd Thomas Series 7-Book Bundle' }))?.volumeId).toBe('qwNlBAAAQBAJ');
+  });
+});
+
+describe('the volume guard (issue #693 — a title that names its volume resolves to that volume)', () => {
+  it('reads the volume a title names for itself, not its series position', () => {
+    expect([...titleVolumeNumbers('Court of Thorns and Roses bk 2')]).toEqual([2]);
+    expect([...titleVolumeNumbers('Harry Potter Book Two')]).toEqual([2]);
+    expect([...titleVolumeNumbers('Beacon 23: Part Four: Company (Kindle Single)')]).toEqual([4]);
+    expect([...titleVolumeNumbers('Court of Thorns and Roses: Vol. 3')]).toEqual([3]);
+    // Series decoration: a later segment, a series parenthetical, a leading index, a "Book N of" position.
+    expect(titleVolumeNumbers("Caliban's War: The Expanse, Book 2").size).toBe(0);
+    expect(titleVolumeNumbers('A Court of Mist and Fury (A Court of Thorns and Roses, #2)').size).toBe(0);
+    expect(titleVolumeNumbers('Lily Bard #05 - Shakespeare\'s Counselor').size).toBe(0);
+    expect(titleVolumeNumbers("Caliban's War: Book Two of the Expanse series").size).toBe(0);
+    expect(titleVolumeNumbers('Wild Cards XI: Dealer\'s Choice - Book Three of the Rox Triad').size).toBe(0);
+    // Not a volume marker.
+    expect(titleVolumeNumbers('No Country for Old Men').size).toBe(0);
+    expect(titleVolumeNumbers('Catch-22').size).toBe(0);
+    expect(titleVolumeNumbers('Mostly Harmless: 5').size).toBe(0);
+  });
+
+  it('agrees only when the candidate names the same volume (or the first is unnumbered)', () => {
+    // The ACOTAR bk 2 shape: book 1 names no volume, so it is not book 2.
+    expect(volumeNumbersAgree('Court of Thorns and Roses bk 2', 'A Court of Thorns and Roses')).toBe(false);
+    expect(volumeNumbersAgree('Court of Thorns and Roses bk 2', 'A Court of Mist and Fury: A Court of Thorns and Roses, Book 2')).toBe(true);
+    expect(volumeNumbersAgree('Harry Potter Book Two', 'Harry Potter and the Chamber of Secrets (Book 2)')).toBe(true);
+    expect(volumeNumbersAgree('Court of Thorns and Roses bk 2', 'A Court of Thorns and Roses: Book 3')).toBe(false);
+    expect(volumeNumbersAgree('Wild Cards bk 2', 'Wild Cards 2: Aces High')).toBe(true);
+    // Book 1 is often unnumbered; a numbered other volume still disagrees.
+    expect(volumeNumbersAgree('Mistborn Book One', 'Mistborn: The Final Empire')).toBe(true);
+    expect(volumeNumbersAgree('Mistborn Book One', 'The Well of Ascension: Mistborn Book Two')).toBe(false);
+    // A title that names no volume agrees with anything.
+    expect(volumeNumbersAgree('A Court of Mist and Fury', 'A Court of Thorns and Roses, Book 2')).toBe(true);
+  });
+
+  it('rejects a title-search resolve of another volume, on the pre-colon fallback too', async () => {
+    const queries: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      queries.push(decodeURIComponent(url).replace(/\+/g, ' '));
+      if (url.includes('intitle')) {
+        return volResponse([
+          { id: 'E-kdBQAAQBAJ', volumeInfo: { title: 'A Court of Thorns and Roses', authors: ['Sarah J. Maas'] } },
+        ]);
+      }
+      return volResponse([]);
+    }) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({ baseUrl: 'http://stub/books/v1', apiKey: 'k', fetchImpl });
+    expect(await gb.resolveVolume({ title: 'Court of Thorns and Roses bk 2', author: 'Sarah J. Maas' })).toBeNull();
+    expect(await gb.resolveVolume({ title: 'Court of Thorns and Roses: Book 2', author: 'Sarah J. Maas' })).toBeNull();
+    // The pre-colon fallback ran ("Court of Thorns and Roses") and was still refused.
+    expect(queries.some((q) => q.includes('intitle:Court of Thorns and Roses inauthor'))).toBe(true);
+    // The same volume for the book it is resolves as before.
+    const res = await gb.resolveVolume({ title: 'A Court of Thorns and Roses', author: 'Sarah J. Maas' });
+    expect(res?.volumeId).toBe('E-kdBQAAQBAJ');
   });
 });

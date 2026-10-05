@@ -27,6 +27,7 @@ import {
   type FormatPairMatchKind,
 } from '@hnet/db';
 import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { gbQueryTitle } from '@hnet/goodreads';
 import { readHeldBooks, type HeldBook } from './books';
 import { inTransaction, resolveDb } from './db-client';
 import { guardedGbResolve } from './gb-quota-breaker';
@@ -38,12 +39,11 @@ import {
   markRequestFormatsRequeued,
   normAuthor,
   llRecentSearchCovers,
-  normTitle,
   recentlySearchedLlBookIds,
   stampRequestsSearched,
-  type LlHeldSignals,
 } from './book-requests';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
+import { llBookMismatch, llBookNamesTitle, type LlBookMismatch, type LlBookNaming } from './ll-book-check';
 import {
   applyLlGoneDecision,
   decideLlGoneWant,
@@ -58,6 +58,7 @@ import {
   type LlRerequestCandidate,
   type LlRerequestTally,
   type LlSnapshot,
+  type LlSnapshotRow,
 } from './ll-gone';
 
 /**
@@ -172,6 +173,16 @@ export function pairingTitleKey(title: string): string {
     .split(' ')
     .filter((w) => w.length > 0 && !PAIRING_NOISE_TOKENS.has(w))
     .join(' ');
+}
+
+/**
+ * Issue #693 — the reuse key: the full pairing title key once the series decoration is off (`gbQueryTitle`: the
+ * trailing "(The Stormlight Archive, #1)", a leading "Expanse 05 - "). Unlike `normTitle` it keeps the subtitle,
+ * so "Mistborn: Wax & Wayne" never reuses "Mistborn: The Final Empire"'s id, and it keeps a volume number, so
+ * "Court of Thorns and Roses bk 2" never reuses book 1's.
+ */
+export function reuseTitleKey(title: string): string {
+  return pairingTitleKey(gbQueryTitle(title));
 }
 
 // ---------------------------------------------------------------------------
@@ -593,6 +604,14 @@ export interface MintPairingWantsInput {
   /** Called after a `searchBook` actually fired for this book/format (feeds the shared per-run coverage). */
   onSearched?: (llBookId: string, format: 'ebook' | 'audiobook') => void;
   /**
+   * Issue #693 — the title LazyLibrarian holds for a book id (`BookName` + `BookSub` + `AuthorName`), from the same
+   * one `getAllBooks` read as `llHasSeededBook`; `undefined` when LazyLibrarian has no such book. With it the mint
+   * first checks every want's book against its anchor (`judgePairingWantBook`) and re-identifies a want pinned to
+   * another volume or work, and it refuses a reused or resolved id whose book LazyLibrarian names as another one.
+   * Absent ⇒ neither check runs (the degraded run changes nothing it cannot verify).
+   */
+  llBookOf?: (llBookId: string) => LlBookNaming | undefined;
+  /**
    * DESIGN-039 D-21/D-23 — the daily GB CALL BUDGET meter + tracker (consumer 'pairing'). The meter is
    * wired into the GB client's http wrapper (counts every outbound GB leg); the tracker holds this
    * consumer's remaining daily allowance. Absent ⇒ no budget enforcement + no metering (tests /
@@ -642,6 +661,16 @@ export interface MintPairingWantsReport {
   skippedNotOneBook: number;
   /** Issue #661 — unpushed wants on such anchors parked this run (`multi_book` / `no_book`). */
   parked: number;
+  /**
+   * Issue #693 — wants whose LazyLibrarian book was another volume or work than their anchor's book: the id was
+   * cleared and the missing format set `requested` (`landed` when the anchor is paired), so the mint resolves the
+   * right book. Not attempts.
+   */
+  reidentified: number;
+  /** Issue #693 — wants whose anchor's book changed name while their id names it already: the title snapshot only. */
+  retitled: number;
+  /** Issue #693 — reused or resolved ids refused because LazyLibrarian holds them as another volume or work. */
+  rejectedResolves: number;
 }
 
 const defaultPacer = (index: number): Promise<void> =>
@@ -668,14 +697,19 @@ async function upsertPairingWant(input: {
   const missing = missingFormatFor(input.item.mediaKind);
   return inTransaction(input.db, async (tx) => {
     const refresh = async (existing: BookRequestRow): Promise<{ row: BookRequestRow; minted: boolean }> => {
-      const llBookId = existing.llBookId ?? input.llBookId;
-      // A want that had NO LazyLibrarian identity and gets one now has never been pushed under it, so a
-      // missing-format status other than `landed` is left over from an id that was cleared (a lifted
-      // park, DESIGN-036 amendment 2026-10-04). Reset it to `requested` so this attempt pushes the chain;
-      // otherwise the want would hold the new id and never reach LazyLibrarian.
-      const freshIdentity = existing.llBookId === null && llBookId !== null;
+      // Issue #693 — an id is kept only for the book it was resolved for. When the anchor's book changed (a renamed
+      // audiobook, a series now holding another book) the old id names the OLD book: the Twilight series' want kept
+      // Twilight's id under the title "Breaking Dawn" and read landed from Twilight's files. Take this attempt's id.
+      const sameBook = pairingTitleKey(existing.title) === pairingTitleKey(input.title);
+      const llBookId = sameBook ? (existing.llBookId ?? input.llBookId) : input.llBookId;
+      // A want that gets an id it has never been pushed under (it had none, or its book changed) carries a
+      // missing-format status left over from before (a lifted park, DESIGN-036 amendment 2026-10-04, or the old
+      // book). Reset it to `requested` so this attempt pushes the chain; otherwise the want would hold the new id
+      // and never reach LazyLibrarian.
+      const freshIdentity = llBookId !== null && llBookId !== existing.llBookId;
       const status = statusOfFormat(existing, missing);
-      const reset = freshIdentity && status !== 'landed' && status !== 'requested';
+      // A `landed` that belonged to the old book is not this book's either.
+      const reset = freshIdentity && status !== 'requested' && (status !== 'landed' || !sameBook);
       const [row] = await tx
         .update(bookRequests)
         .set({
@@ -751,6 +785,236 @@ export async function landPairingHeldFormat(input: {
     .where(and(eq(bookRequests.id, input.requestId), ne(column, 'landed')))
     .returning({ id: bookRequests.id });
   return rows.length > 0;
+}
+
+/**
+ * What the identity check (issue #693, DESIGN-036 amendment 2026-10-05) does with one want, judged against its
+ * anchor's book (`pairingIdentity`) and the title LazyLibrarian holds for the want's id:
+ *
+ * - `keep` — nothing says the book is another one.
+ * - `retitle` — the anchor's book changed name since the want was minted, and the want's id already names the new
+ *   book (LazyLibrarian holds it under exactly that title) or the want has no id: only the title snapshot moves.
+ * - `clear` — the want's book is not its anchor's book. `identity`: the anchor's book changed (a renamed audiobook,
+ *   a series now holding another book) and LazyLibrarian does not hold the id under the new title, or no longer
+ *   holds it at all, so the id was resolved for the old book. `volume` / `work`: the title is current, but
+ *   LazyLibrarian names the book as another volume ("Court of Thorns and Roses bk 2" → "A Court of Thorns and
+ *   Roses") or another work (`llBookMismatch`).
+ *
+ * Pure. A want whose title is current and whose id LazyLibrarian lacks is `keep`: the gone rule (#665) owns it.
+ */
+export type PairingWantBookVerdict =
+  | { kind: 'keep' }
+  | { kind: 'retitle' }
+  | { kind: 'clear'; reason: 'identity' | LlBookMismatch };
+
+export function judgePairingWantBook(input: {
+  want: { title: string; llBookId: string | null };
+  identity: { title: string; author: string | null };
+  /** The book LazyLibrarian holds for `want.llBookId`; undefined when it holds none. */
+  book: LlBookNaming | undefined;
+}): PairingWantBookVerdict {
+  const { want, identity, book } = input;
+  const current = pairingTitleKey(want.title) === pairingTitleKey(identity.title);
+  if (current) {
+    if (!want.llBookId || !book) return { kind: 'keep' };
+    const mismatch = llBookMismatch(identity, book);
+    return mismatch ? { kind: 'clear', reason: mismatch } : { kind: 'keep' };
+  }
+  if (!want.llBookId || llBookNamesTitle(identity.title, book)) return { kind: 'retitle' };
+  return { kind: 'clear', reason: 'identity' };
+}
+
+/**
+ * Issue #693 — the single writer of the identity check (one statement, unaudited: the pairing sync-mint class),
+ * guarded on the want being unchanged since it was read (same title and id, still unparked), so a concurrent writer
+ * wins. Both modes write the anchor's identity as the title snapshot. `clear` also:
+ *   - clears `ll_book_id` (the mint resolves the anchor's own book next: reuse, then Google Books);
+ *   - sets the missing format `requested`, or `landed` when the anchor is paired (the library holds it);
+ *   - sets the held format `landed` (the anchor is in the library);
+ *   - resets the one re-request (#668), which belonged to the old book.
+ * LazyLibrarian is not written: the old book stays as it is there (the caller logs its id).
+ */
+export async function reidentifyPairingWant(input: {
+  db?: DbClient;
+  want: Pick<BookRequestRow, 'id' | 'title' | 'llBookId'>;
+  identity: { title: string; author: string | null };
+  mode: 'retitle' | 'clear';
+  missing: 'ebook' | 'audiobook';
+  paired: boolean;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const missingStatus = input.paired ? ('landed' as const) : ('requested' as const);
+  const rows = await resolveDb(input.db)
+    .update(bookRequests)
+    .set({
+      title: input.identity.title,
+      author: input.identity.author,
+      ...(input.mode === 'clear'
+        ? {
+            llBookId: null,
+            ebookStatus: input.missing === 'ebook' ? missingStatus : ('landed' as const),
+            audioStatus: input.missing === 'audiobook' ? missingStatus : ('landed' as const),
+            llRerequestedAt: null,
+            llRerequestFailures: 0,
+            llRerequestFailedAt: null,
+            llRerequestAddedAt: null,
+          }
+        : {}),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(bookRequests.id, input.want.id),
+        eq(bookRequests.origin, 'pairing'),
+        isNull(bookRequests.unroutableReason),
+        eq(bookRequests.title, input.want.title),
+        input.want.llBookId === null
+          ? isNull(bookRequests.llBookId)
+          : eq(bookRequests.llBookId, input.want.llBookId),
+      ),
+    )
+    .returning({ id: bookRequests.id });
+  return rows.length > 0;
+}
+
+/** One want the identity check changed (or, in a dry run, would change). */
+export interface PairingWantBookChange {
+  requestId: string;
+  kind: 'retitle' | 'clear';
+  /** Why a `clear`: the anchor's book changed (`identity`), or LazyLibrarian names another `volume` / `work`. */
+  reason: 'identity' | LlBookMismatch | null;
+  from: string;
+  to: string;
+  /** The id the want held, and the title LazyLibrarian holds it under (null: LazyLibrarian has no such book). */
+  llBookId: string | null;
+  llTitle: string | null;
+  /** The missing format's status before, and after (`requested`, or `landed` for a paired anchor). */
+  formerStatus: BookRequestRow['ebookStatus'];
+  status: BookRequestRow['ebookStatus'];
+  paired: boolean;
+}
+
+/**
+ * Issue #693 (DESIGN-036 amendment 2026-10-05) — the identity check over every unparked pairing want on a live,
+ * non-comic anchor that holds one book (`pairingIdentity`): `judgePairingWantBook`, then `reidentifyPairingWant`
+ * for each `retitle` / `clear`. The mint runs it first, with the rows it already read (and gets them back updated
+ * in place, so its candidate filter reads each want as it now is); the one-off repair runs it on its own, with
+ * `dryRun` to list what it would change. `llBookOf` must come from a real, non-empty `getAllBooks` read.
+ */
+export async function checkPairingWantBooks(input: {
+  db?: DbClient;
+  llBookOf: (llBookId: string) => LlBookNaming | undefined;
+  /** Live, non-comic library items (read here when absent). */
+  anchors?: ReadonlyArray<PairableItem>;
+  /** Item ids on either side of a pair (read here when absent). */
+  pairedIds?: ReadonlySet<string>;
+  /** The pairing wants (read here when absent); mutated in place to mirror each write. */
+  wants?: BookRequestRow[];
+  now?: Date;
+  dryRun?: boolean;
+  log?: { info?: (msg: string, meta?: Record<string, unknown>) => void };
+}): Promise<{ reidentified: number; retitled: number; changes: PairingWantBookChange[] }> {
+  const db = resolveDb(input.db);
+  const now = input.now ?? new Date();
+  const anchors =
+    input.anchors ??
+    (
+      await db
+        .select({
+          id: booksItems.id,
+          title: booksItems.title,
+          sortTitle: booksItems.sortTitle,
+          author: booksItems.author,
+          mediaKind: booksItems.mediaKind,
+          isbn: booksItems.isbn,
+          attrs: booksItems.attrs,
+        })
+        .from(booksItems)
+        .where(and(isNull(booksItems.deletedAt), ne(booksItems.mediaKind, 'comic')))
+    ).map(({ attrs, ...r }): PairableItem => ({ ...r, heldBooks: readHeldBooks(attrs) }));
+  let pairedIds = input.pairedIds;
+  if (!pairedIds) {
+    const rows = await db
+      .select({ bookItemId: booksFormatPairs.bookItemId, audioItemId: booksFormatPairs.audioItemId })
+      .from(booksFormatPairs);
+    pairedIds = new Set(rows.flatMap((p) => [p.bookItemId, p.audioItemId]));
+  }
+  const wants =
+    input.wants ?? (await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing')));
+  const liveById = new Map(anchors.map((i) => [i.id, i] as const));
+  const changes: PairingWantBookChange[] = [];
+  let reidentified = 0;
+  let retitled = 0;
+  for (const want of wants) {
+    if (want.unroutableReason !== null) continue; // a park is its own decision (#660)
+    const anchor = liveById.get(want.pairingBooksItemId!);
+    if (!anchor || anchor.mediaKind === 'comic') continue; // the anchor left the library: nothing to check against
+    const identity = pairingIdentity(anchor);
+    if (identity.kind !== 'one') continue; // unread, several books or none: the mint's park logic owns it
+    const book = want.llBookId ? input.llBookOf(want.llBookId) : undefined;
+    const verdict = judgePairingWantBook({ want, identity, book });
+    if (verdict.kind === 'keep') continue;
+    const missing = missingFormatFor(anchor.mediaKind);
+    const paired = pairedIds.has(anchor.id);
+    const formerStatus = statusOfFormat(want, missing);
+    const change: PairingWantBookChange = {
+      requestId: want.id,
+      kind: verdict.kind,
+      reason: verdict.kind === 'clear' ? verdict.reason : null,
+      from: want.title,
+      to: identity.title,
+      llBookId: want.llBookId,
+      llTitle: book?.title ?? null,
+      formerStatus,
+      status: verdict.kind === 'clear' ? (paired ? 'landed' : 'requested') : formerStatus,
+      paired,
+    };
+    if (input.dryRun) {
+      changes.push(change);
+      continue;
+    }
+    const done = await reidentifyPairingWant({
+      db: input.db,
+      want,
+      identity,
+      mode: verdict.kind,
+      missing,
+      paired,
+      now,
+    });
+    if (!done) continue;
+    changes.push(change);
+    // Mirror the write on the in-memory row, so a caller holding it reads the want as it now is.
+    want.title = identity.title;
+    want.author = identity.author;
+    want.updatedAt = now;
+    if (verdict.kind === 'retitle') {
+      retitled += 1;
+      input.log?.info?.('pairing_want_retitled', { requestId: want.id, from: change.from, to: change.to });
+      continue;
+    }
+    want.llBookId = null;
+    want.llRerequestedAt = null;
+    want.llRerequestFailures = 0;
+    want.llRerequestFailedAt = null;
+    want.llRerequestAddedAt = null;
+    want.ebookStatus = missing === 'ebook' ? change.status : 'landed';
+    want.audioStatus = missing === 'audiobook' ? change.status : 'landed';
+    reidentified += 1;
+    input.log?.info?.('pairing_want_reidentified', {
+      requestId: want.id,
+      reason: change.reason,
+      from: change.from,
+      to: change.to,
+      // The book LazyLibrarian was handed for this want stays as it is there; its id is here for the record.
+      abandonedLlBookId: change.llBookId,
+      abandonedLlTitle: change.llTitle,
+      formerStatus,
+      paired,
+    });
+  }
+  return { reidentified, retitled, changes };
 }
 
 /**
@@ -940,6 +1204,24 @@ export async function mintPairingWants(
   const wants = await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
   const wantByAnchor = new Map(wants.map((w) => [w.pairingBooksItemId!, w] as const));
 
+  // 2a. Issue #693 (DESIGN-036 amendment 2026-10-05) — every unparked want on a live anchor holding one book is
+  //     checked against that book before any candidate is chosen (`checkPairingWantBooks`): a want whose
+  //     LazyLibrarian book is another volume or work, or was resolved for the anchor's old book, gets its id cleared
+  //     and becomes a candidate below. Not attempts: no cap, no external call. Only with LazyLibrarian's titles in
+  //     hand (`llBookOf`); a degraded run checks nothing.
+  const check = input.llBookOf
+    ? await checkPairingWantBooks({
+        db: input.db,
+        llBookOf: input.llBookOf,
+        anchors: items,
+        pairedIds,
+        wants,
+        now,
+        log,
+      })
+    : { reidentified: 0, retitled: 0, changes: [] };
+  const { reidentified, retitled } = check;
+
   // 3. The ordered candidate list (DESIGN-039 D-22 — OLDEST-FIRST DRAIN, ISBN-priority). A candidate
   //    is eligible when it has no want yet (fresh) OR its want is unresolved / the missing format is
   //    still `requested`. The OLD ordering walked ALL fresh (which includes today's newest library
@@ -1001,31 +1283,62 @@ export async function mintPairingWants(
         a.id.localeCompare(b.id),
     );
 
-  // 4. The llBookId reuse index over ALREADY-RESOLVED requests (same normalized title + author
+  // 4. The llBookId reuse index over ALREADY-RESOLVED requests (same work title + author
   //    agreement). Draws from BOTH goodreads shelf requests AND prior pairing wants: a GB volume id
   //    is the same identity key on either origin, so a pairing candidate whose same-work sibling
   //    (e.g. its format twin, or a shelf request) already resolved reuses that id and needs ZERO GB
   //    calls — the GB-avoidance that lets the pairing backlog keep draining on a quota-exhausted day
   //    (the 2026-07-18 shared-key starvation: LazyLibrarian drains the per-project GB quota, so every
   //    pairing want that can resolve WITHOUT a fresh GB hop is one more that mints regardless).
+  //    Issue #693 — the key is `reuseTitleKey` (the full title, series decoration off), never `normTitle`: that one
+  //    cuts the subtitle, so "Mistborn: Wax & Wayne" and "Mistborn: Secret History" reused "Mistborn: The Final
+  //    Empire"'s id and read landed from its files. A want on an anchor that left the library is no source (its id
+  //    is never re-checked), and a reused id whose book LazyLibrarian names as another one is passed over.
+  const liveItemIds = new Set(items.map((i) => i.id));
   const reuseRows = await db
-    .select({ title: bookRequests.title, author: bookRequests.author, llBookId: bookRequests.llBookId })
+    .select({
+      origin: bookRequests.origin,
+      anchorId: bookRequests.pairingBooksItemId,
+      title: bookRequests.title,
+      author: bookRequests.author,
+      llBookId: bookRequests.llBookId,
+    })
     .from(bookRequests)
     .where(and(inArray(bookRequests.origin, ['goodreads', 'pairing']), isNotNull(bookRequests.llBookId)));
   const reuseByTitle = new Map<string, Array<{ author: string; llBookId: string }>>();
   for (const r of reuseRows) {
     if (!r.llBookId) continue;
-    const key = normTitle(r.title);
+    if (r.origin === 'pairing' && !(r.anchorId && liveItemIds.has(r.anchorId))) continue;
+    const key = reuseTitleKey(r.title);
     if (!key) continue;
     const bucket = reuseByTitle.get(key) ?? [];
     bucket.push({ author: normAuthor(r.author), llBookId: r.llBookId });
     reuseByTitle.set(key, bucket);
   }
+  let rejectedResolves = 0;
+  /** A reused or resolved id is refused when LazyLibrarian holds that book as another volume or work. */
+  const bookRefused = (identity: { title: string; author: string | null }, llBookId: string): boolean => {
+    const book = input.llBookOf?.(llBookId);
+    const mismatch = book ? llBookMismatch(identity, book) : null;
+    if (!mismatch) return false;
+    rejectedResolves += 1;
+    log.info?.('pairing_resolve_rejected', {
+      title: identity.title,
+      llBookId,
+      llTitle: book?.title ?? null,
+      reason: mismatch,
+    });
+    return true;
+  };
   const reuseLlBookId = (identity: { title: string; author: string | null }): string | null => {
     const author = normAuthor(identity.author);
     if (!author) return null;
-    const bucket = reuseByTitle.get(normTitle(identity.title));
-    return bucket?.find((r) => authorsAgree(author, r.author))?.llBookId ?? null;
+    const bucket = reuseByTitle.get(reuseTitleKey(identity.title)) ?? [];
+    for (const r of bucket) {
+      if (!authorsAgree(author, r.author)) continue;
+      if (!bookRefused(identity, r.llBookId)) return r.llBookId;
+    }
+    return null;
   };
 
   // 4b. Park the unpushed wants whose anchor holds several books or none (issue #661). Not attempts: no
@@ -1068,7 +1381,13 @@ export async function mintPairingWants(
     const missing = missingFormatFor(item.mediaKind);
     const identity = identityOf.get(item.id)!;
     if (identity.kind !== 'one') continue; // unreachable: the candidate filter admits only `one`
-    let llBookId = wantByAnchor.get(item.id)?.llBookId ?? reuseLlBookId(identity) ?? null;
+    // The want's own id was checked against this identity in 2a (an id resolved for another book was cleared there).
+    // Without LazyLibrarian's titles 2a did not run, so an id is still taken only while the title it was resolved
+    // under is this identity's (issue #693).
+    const own = wantByAnchor.get(item.id);
+    const ownLlBookId =
+      own && pairingTitleKey(own.title) === pairingTitleKey(identity.title) ? own.llBookId : null;
+    let llBookId = ownLlBookId ?? reuseLlBookId(identity) ?? null;
     const needsGb = llBookId === null && input.gb != null;
     if (needsGb && quotaOpen) {
       skippedQuota += 1;
@@ -1115,6 +1434,8 @@ export async function mintPairingWants(
           continue;
         }
         llBookId = guarded.outcome === 'resolved' ? guarded.volume.volumeId : null;
+        // Issue #693 — LazyLibrarian may already hold the resolved id under another volume's or work's title.
+        if (llBookId !== null && bookRefused(identity, llBookId)) llBookId = null;
       } catch (error) {
         if (input.budget) await input.budget.spend((input.meter?.taken() ?? 0) - before);
         // Non-429 failure — today's semantics: an honest unmintable ATTEMPT (cap consumed below).
@@ -1203,6 +1524,9 @@ export async function mintPairingWants(
     skippedUnknownHeld,
     skippedNotOneBook,
     parked,
+    reidentified,
+    retitled,
+    rejectedResolves,
   };
 }
 
@@ -1255,7 +1579,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
   // since a just-pushed want has no status to reconcile yet).
   // ADR-055 amendment (2026-09-22) — the same one read now feeds a THIRD consumer: the held-format
   // push guard (`llHoldsFormat` below and the Skipped sweep). Still one LL call per run.
-  let seated: Map<string, LlHeldSignals> | null = null;
+  let seated: Map<string, LlSnapshotRow> | null = null;
   if (input.ll) {
     try {
       seated = await input.ll.read.getAllBookStatuses();
@@ -1300,6 +1624,9 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     llHoldsFormat: seatedMap
       ? (id, format) => llFormatAlreadyHeld(seatedMap.get(id), format)
       : undefined,
+    // Issue #693 — only a real, non-empty read: an LL error answer parses to an empty map, which would read every
+    // book as absent and clear every want whose anchor was renamed.
+    llBookOf: llSnapshotUsable(seatedMap) ? (id) => seatedMap.get(id) : undefined,
   });
 
   let reconciled = 0;
@@ -1384,6 +1711,21 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
             error: error instanceof Error ? error.message : String(error),
           });
         }
+        continue;
+      }
+      // Issue #693 — a want is never landed from, nor its book re-queued on, a LazyLibrarian book that names another
+      // volume or work. The mint's identity check (2a) clears such a pointer on a live anchor; this covers the rest
+      // (an anchor that left the library, or one not yet read for its held books).
+      const mismatch = llBookMismatch(want, status);
+      if (mismatch) {
+        log.info?.('ll_book_mismatch', {
+          site: 'format-pairing.reconcile',
+          requestId: want.id,
+          llBookId: want.llBookId,
+          title: want.title,
+          llTitle: status.title ?? null,
+          reason: mismatch,
+        });
         continue;
       }
       try {

@@ -28,14 +28,15 @@ import type { LibrettoReadClient } from '@hnet/libretto/read';
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import { inTransaction, resolveDb } from './db-client';
 import { NotFoundError } from './errors';
-import { loadResolvedWantRefs, resolveMissingMembers } from './collection-wants-sync';
+import { loadParkedWantRefs, loadResolvedWantRefs, resolveMissingMembers } from './collection-wants-sync';
 import {
   llFormatAlreadyHeld,
   llRecentSearchCovers,
+  parkCollectionWant,
   recentlySearchedLlBookIds,
   syncCollectionWants,
-  type LlHeldSignals,
 } from './book-requests';
+import { llBookMismatch } from './ll-book-check';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import {
   applyLlGoneDecision,
@@ -50,6 +51,7 @@ import {
   runLlRerequests,
   type LlGoneTally,
   type LlRerequestTally,
+  type LlSnapshotRow,
 } from './ll-gone';
 
 /** The Libretto read surface this pass needs — just the recipe list (which carries acquisitionEnabled). */
@@ -104,6 +106,11 @@ export interface ForceSearchCollectionsReport extends LlGoneTally, LlRerequestTa
    * LazyLibrarian already shows the format as Wanted. Stamped (cooldown) but not audited, not `searched`.
    */
   skippedRecent: number;
+  /**
+   * Issue #693 — wants PARKED (`wrong_volume`, id cleared) instead of searched, because LazyLibrarian holds their
+   * book as another volume or work than the member (`llBookMismatch`). No LazyLibrarian write for them.
+   */
+  parkedWrongVolume: number;
   /** True when Libretto was unreachable — the whole pass was skipped. */
   unreachable: boolean;
 }
@@ -122,6 +129,8 @@ interface CollectionWantWork {
   llBookId: string;
   format: 'ebook' | 'audiobook';
   title: string;
+  /** The member's author (issue #693: read by the volume check before any LazyLibrarian write). */
+  author: string | null;
   collectionId: string;
   /** The active format's status. Issue #665: an on-demand search lifts a settled `missing` back to `requested`. */
   status: BookRequestStatus;
@@ -165,6 +174,7 @@ async function gatherCollectionWants(
         id: bookRequests.id,
         llBookId: bookRequests.llBookId,
         title: bookRequests.title,
+        author: bookRequests.author,
         ebookStatus: bookRequests.ebookStatus,
         audioStatus: bookRequests.audioStatus,
       })
@@ -179,6 +189,7 @@ async function gatherCollectionWants(
         llBookId: r.llBookId,
         format,
         title: r.title,
+        author: r.author,
         collectionId: collection.id,
         status: format === 'audiobook' ? r.audioStatus : r.ebookStatus,
       });
@@ -207,8 +218,14 @@ async function runForceSearchWorklist(input: {
   /** Tag the audit with the single collection (on-demand path); omitted for the multi-collection cron leg. */
   tagCollection?: boolean;
   /** The `getAllBooks` snapshot the caller already read this run (the cron's gone pass), so it is not read twice. */
-  snapshot?: Map<string, LlHeldSignals> | null;
-  report: { searched: number; failed: number; skippedHeld: number; skippedRecent: number };
+  snapshot?: Map<string, LlSnapshotRow> | null;
+  report: {
+    searched: number;
+    failed: number;
+    skippedHeld: number;
+    skippedRecent: number;
+    parkedWrongVolume: number;
+  };
   log: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
     warn?: (msg: string, meta?: Record<string, unknown>) => void;
@@ -221,7 +238,7 @@ async function runForceSearchWorklist(input: {
   // about what LazyLibrarian holds — so a want whose copy LL imported but whose row never reconciled was
   // re-clobbered to `Wanted` every 12h, forever. On a read failure the map is empty and every want pushes,
   // exactly as before: the guard may suppress a write, never invent one.
-  let held = input.snapshot ?? new Map<string, LlHeldSignals>();
+  let held: Map<string, LlSnapshotRow> = input.snapshot ?? new Map<string, LlSnapshotRow>();
   if (input.worklist.length > 0 && input.snapshot == null) {
     try {
       held = await input.ll.read.getAllBookStatuses();
@@ -257,6 +274,24 @@ async function runForceSearchWorklist(input: {
   for (const [llBookId, wants] of groups) {
     const toSearch: CollectionWantWork[] = [];
     for (const want of wants) {
+      // Issue #693 — never queue a book LazyLibrarian holds as another volume or work than the member: the "BBC Radio
+      // Drama Collection" want queued "Terry Pratchett's Discworld" and LazyLibrarian took 32 Discworld releases for it.
+      // The want is parked instead (id cleared), so no job pushes that book for it again.
+      const mismatch = llBookMismatch(want, held.get(llBookId));
+      if (mismatch) {
+        if (await parkCollectionWant({ db: input.db, requestId: want.id, llBookId, now: input.now })) {
+          input.report.parkedWrongVolume += 1;
+        }
+        input.log.warn?.('ll_push_skipped_wrong_volume', {
+          site: `collection-force-search.${input.via}`,
+          requestId: want.id,
+          llBookId,
+          title: want.title,
+          llTitle: held.get(llBookId)?.title ?? null,
+          reason: mismatch,
+        });
+        continue;
+      }
       if (llFormatAlreadyHeld(held.get(llBookId), want.format)) {
         input.report.skippedHeld += 1;
         input.log.info?.('ll_push_skipped_have', {
@@ -370,6 +405,7 @@ export async function forceSearchFindMissingCollections(
     failed: 0,
     skippedHeld: 0,
     skippedRecent: 0,
+    parkedWrongVolume: 0,
     unreachable: false,
     ...emptyLlGoneTally(),
     ...emptyLlRerequestTally(),
@@ -471,6 +507,7 @@ export async function forceSearchFindMissingCollections(
     failed: report.failed,
     skippedHeld: report.skippedHeld,
     skippedRecent: report.skippedRecent,
+    parkedWrongVolume: report.parkedWrongVolume,
     llGoneRekeyed: report.llGoneRekeyed,
     llGoneSettled: report.llGoneSettled,
     llRerequested: report.llRerequested,
@@ -495,14 +532,14 @@ async function rerequestGoneCollectionWants(input: {
   ll: LazyLibrarianClientBundle;
   collectionIds: string[];
   now: Date;
-  snapshot: Map<string, LlHeldSignals> | null;
+  snapshot: Map<string, LlSnapshotRow> | null;
   pace: (index: number) => Promise<void>;
   report: LlRerequestTally;
   log: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
     warn?: (msg: string, meta?: Record<string, unknown>) => void;
   };
-}): Promise<Map<string, LlHeldSignals> | null> {
+}): Promise<Map<string, LlSnapshotRow> | null> {
   if (input.collectionIds.length === 0) return input.snapshot;
   const candidates = (
     await resolveDb(input.db)
@@ -581,7 +618,7 @@ async function settleGoneCollectionWants(input: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
     warn?: (msg: string, meta?: Record<string, unknown>) => void;
   };
-}): Promise<Map<string, LlHeldSignals> | null> {
+}): Promise<Map<string, LlSnapshotRow> | null> {
   if (input.collectionIds.length === 0) return null;
   // The collection grace, NOT the 24 h one: every cooldown the cron re-stamps `last_searched_at`, so the grace
   // must be shorter than the cooldown or a lost book is re-added before it can ever count as gone.
@@ -618,7 +655,7 @@ async function settleGoneCollectionWants(input: {
   });
   if (open.length === 0) return null;
 
-  let snapshot: Map<string, LlHeldSignals>;
+  let snapshot: Map<string, LlSnapshotRow>;
   try {
     snapshot = await input.ll.read.getAllBookStatuses();
   } catch (error) {
@@ -716,6 +753,8 @@ export interface ForceSearchCollectionNowReport {
   skippedHeld: number;
   /** Issue #644 — always 0 here: an on-demand click asked for the search now, so it never defers to a recent one. */
   skippedRecent: number;
+  /** Issue #693 — wants parked (`wrong_volume`) because LazyLibrarian holds their book as another volume or work. */
+  parkedWrongVolume: number;
   /** True when Libretto was unreachable — the apply/refresh could not run, so nothing was searched. */
   unreachable: boolean;
 }
@@ -742,6 +781,7 @@ export async function forceSearchCollectionNow(
     failed: 0,
     skippedHeld: 0,
     skippedRecent: 0,
+    parkedWrongVolume: 0,
     unreachable: false,
   };
 
@@ -770,6 +810,7 @@ export async function forceSearchCollectionNow(
       input.libretto.read,
       missing.missing ?? [],
       resolvedRefs,
+      await loadParkedWantRefs(input.db, collection.id),
     );
     const synced = await syncCollectionWants({
       db: input.db,

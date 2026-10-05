@@ -58,6 +58,12 @@ export interface CollectionWantsSyncReport {
    * late-iteration collections were ever reached. This counts the saved calls (observability of the thrift).
    */
   reused: number;
+  /**
+   * Issue #693 — missing members whose want is PARKED (`unroutable_reason`, e.g. `wrong_volume`): never re-resolved,
+   * so a resolve that named another work (the BBC Radio Drama Collection → "Terry Pratchett's Discworld") cannot come
+   * back. The want stays a visible, unsearchable tile.
+   */
+  parked: number;
   /** True when Libretto was unreachable — the whole pass was skipped (nothing reconciled). */
   unreachable: boolean;
 }
@@ -88,6 +94,28 @@ export async function loadResolvedWantRefs(
     if (row.ref && row.llBookId) map.set(row.ref, row.llBookId);
   }
   return map;
+}
+
+/**
+ * Issue #693 — a collection's PARKED wants (`unroutable_reason` set) as their member refs. The wants pass never
+ * resolves them again (`resolveMissingMembers`) and `syncCollectionWants` never refills their id, so a park — the
+ * repair's answer to a resolve that named another volume or work — holds.
+ */
+export async function loadParkedWantRefs(
+  db: DbClient | undefined,
+  collectionId: string,
+): Promise<Set<string>> {
+  const rows = await resolveDb(db)
+    .select({ ref: bookRequests.collectionMemberRef })
+    .from(bookRequests)
+    .where(
+      and(
+        eq(bookRequests.collectionId, collectionId),
+        eq(bookRequests.origin, 'collection'),
+        isNotNull(bookRequests.unroutableReason),
+      ),
+    );
+  return new Set(rows.map((r) => r.ref).filter((r): r is string => Boolean(r)));
 }
 
 /**
@@ -138,16 +166,25 @@ export async function resolveMissingMembers(
     authors?: string[] | null;
   }>,
   resolvedRefs?: ReadonlyMap<string, string>,
-): Promise<{ members: CollectionWantMember[]; resolved: number; reused: number }> {
+  parkedRefs?: ReadonlySet<string>,
+): Promise<{ members: CollectionWantMember[]; resolved: number; reused: number; parked: number }> {
   const members: CollectionWantMember[] = [];
   let resolved = 0;
   let reused = 0;
+  let parked = 0;
   for (const raw of missing) {
     const ref = collectionMemberRef(raw);
     if (!ref) continue; // unkeyable — cannot mint an idempotent want
     const title = raw.title?.trim() || raw.label?.trim() || '';
     if (!title) continue; // no display title — skip (a want with no name is not renderable)
     const author = raw.authors?.[0]?.trim() || null;
+
+    // Issue #693 — a parked want is never resolved again (its id stays cleared; `syncCollectionWants` keeps it so).
+    if (parkedRefs?.has(ref)) {
+      parked += 1;
+      members.push({ memberRef: ref, title, author, llBookId: null });
+      continue;
+    }
 
     // Reuse a prior resolution — never re-spend a Google-Books call on an already-resolved want (its
     // llBookId is kept by syncCollectionWants regardless, so the re-resolve is pure quota waste).
@@ -174,7 +211,7 @@ export async function resolveMissingMembers(
 
     members.push({ memberRef: ref, title, author, llBookId });
   }
-  return { members, resolved, reused };
+  return { members, resolved, reused, parked };
 }
 
 /**
@@ -195,6 +232,7 @@ export async function runCollectionWantsSync(
     removed: 0,
     resolved: 0,
     reused: 0,
+    parked: 0,
     unreachable: false,
   };
 
@@ -240,13 +278,16 @@ export async function runCollectionWantsSync(
     // re-resolves every held member every run and exhausts Libretto's shared daily key before it reaches the
     // still-NULL members of late-iteration collections (The Expanse), so those never resolve.
     const resolvedRefs = await loadResolvedWantRefs(input.db, collection.id);
-    const { members, resolved, reused } = await resolveMissingMembers(
+    const parkedRefs = await loadParkedWantRefs(input.db, collection.id);
+    const { members, resolved, reused, parked } = await resolveMissingMembers(
       input.libretto,
       missing.missing ?? [],
       resolvedRefs,
+      parkedRefs,
     );
     report.resolved += resolved;
     report.reused += reused;
+    report.parked += parked;
 
     const result = await syncCollectionWants({
       db: input.db,
@@ -268,6 +309,7 @@ export async function runCollectionWantsSync(
     removed: report.removed,
     resolved: report.resolved,
     reused: report.reused,
+    parked: report.parked,
     unreachable: report.unreachable,
   });
   return report;

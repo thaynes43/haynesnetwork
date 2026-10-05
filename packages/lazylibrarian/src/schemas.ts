@@ -21,6 +21,9 @@ export const llBookSchema = z
   .object({
     BookID: z.union([z.string(), z.number()]).optional(),
     BookName: z.string().optional(),
+    // Issue #693 — the subtitle (`BookSub`): read with `BookName` to check that the book a want points at is the
+    // volume it asks for ("The Science of Discworld II" carries "The Globe" here).
+    BookSub: z.string().nullish(),
     // Issue #665 — `getAllBooks` joins `authors`, so every row carries its author's name. The domain uses
     // it (with `BookName`) to find the row LazyLibrarian holds for a book whose id a want no longer finds.
     AuthorName: z.string().nullish(),
