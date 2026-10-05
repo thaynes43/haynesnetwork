@@ -1619,8 +1619,8 @@ describe('runFormatPairing — the identity check (issue #693)', () => {
 // ---------------------------------------------------------------------------
 
 describe('classifyBookLanguage (issue #700)', () => {
-  it('English: en, en-*, English in any case', () => {
-    for (const v of ['en', 'EN', 'en-US', 'en-GB', 'English', 'english', ' English ']) {
+  it('English: en, eng, en-*, English in any case', () => {
+    for (const v of ['en', 'EN', 'eng', 'ENG', 'en-US', 'en-GB', 'English', 'english', ' English ']) {
       expect(classifyBookLanguage(v), v).toBe('english');
     }
   });

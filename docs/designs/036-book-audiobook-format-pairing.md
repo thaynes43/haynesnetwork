@@ -437,7 +437,7 @@ missing piece is a language rule. Owner-side rulings (the coordinator's, 2026-10
 
 | Class | Values | Pairing |
 |---|---|---|
-| English | `en`, `en-*`, `English` (any case) | allowed |
+| English | `en`, `eng` (LazyLibrarian's own spelling), `en-*`, `English` (any case) | allowed |
 | Unknown | blank, null, `XXX` (and LazyLibrarian's `Unknown`) | allowed (the 199 blank Audiobookshelf items are overwhelmingly English) |
 | Foreign | anything else: `nl`, `de`, `es`, `German`, ... | never |
 

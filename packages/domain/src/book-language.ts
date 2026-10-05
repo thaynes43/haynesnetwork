@@ -3,7 +3,8 @@
 //
 // Three classes, from the live values of `books_items.attrs.language` (Kavita: `en`, `en-US`, `en-GB`, `nl`, `de`,
 // `es`; Audiobookshelf: `English`, `en`, blank, `XXX`) and LazyLibrarian's `BookLang`:
-//   • english — `en`, `en-*`, `English` (case-insensitive);
+//   • english — `en`, `eng` (ISO 639-2; LazyLibrarian's own default list is `en, eng, en-US, en-GB`), `en-*`,
+//     `English` (case-insensitive);
 //   • unknown — blank, null, `XXX` (the ISO 639-2 "no language" code) or LazyLibrarian's own `Unknown`. Pairing is
 //     allowed: the 199 blank Audiobookshelf items are overwhelmingly English, so blocking them would break pairing
 //     broadly;
@@ -20,7 +21,7 @@ export const FOREIGN_LANGUAGE_REASON = 'foreign_language';
 export function classifyBookLanguage(value: string | null | undefined): BookLanguageClass {
   const v = (value ?? '').trim().toLowerCase();
   if (v === '' || v === 'xxx' || v === 'unknown' || v === 'und') return 'unknown';
-  if (v === 'en' || v === 'english' || v.startsWith('en-') || v.startsWith('en_')) return 'english';
+  if (v === 'en' || v === 'eng' || v === 'english' || v.startsWith('en-') || v.startsWith('en_')) return 'english';
   return 'foreign';
 }
 
