@@ -379,6 +379,9 @@ export interface SyncShelfRequestsInput {
 export interface RequestLlTarget {
   requestId: string;
   llBookId: string;
+  /** The want's title and author (issue #693: the push and the reconcile check LazyLibrarian's book against them). */
+  title: string;
+  author: string | null;
 }
 
 /**
@@ -480,7 +483,7 @@ export async function syncShelfRequests(
           })
           .where(eq(bookRequests.id, existing.id));
         requestId = existing.id;
-        collectTargets(existing.id, llBookId, ebookStatus, audioStatus, unroutableReason, existing.ebookStatus, existing.audioStatus, toPush, toReconcile);
+        collectTargets(existing.id, llBookId, ebookStatus, audioStatus, unroutableReason, existing.ebookStatus, existing.audioStatus, toPush, toReconcile, item);
       } else {
         const [row] = await tx
           .insert(bookRequests)
@@ -500,7 +503,7 @@ export async function syncShelfRequests(
         minted += 1;
         requestId = row?.id ?? '';
         if (row) {
-          collectTargets(row.id, llBookId, ebookStatus, audioStatus, unroutableReason, 'requested', 'requested', toPush, toReconcile);
+          collectTargets(row.id, llBookId, ebookStatus, audioStatus, unroutableReason, 'requested', 'requested', toPush, toReconcile, item);
         }
       }
 
@@ -524,6 +527,7 @@ function collectTargets(
   prevAudio: BookRequestStatus,
   toPush: RequestLlTarget[],
   toReconcile: RequestLlTarget[],
+  want: { title: string; author: string | null },
 ): void {
   if (unroutableReason) return; // comics never touch LL
   if (!llBookId) return; // no GB id resolved — can't push yet (honest gap)
@@ -531,9 +535,9 @@ function collectTargets(
   if (bothLanded) return;
   const neverPushed = prevEbook === 'requested' && prevAudio === 'requested';
   if (neverPushed && (ebookStatus === 'requested' || audioStatus === 'requested')) {
-    toPush.push({ requestId, llBookId });
+    toPush.push({ requestId, llBookId, title: want.title, author: want.author });
   } else {
-    toReconcile.push({ requestId, llBookId });
+    toReconcile.push({ requestId, llBookId, title: want.title, author: want.author });
   }
 }
 
@@ -1588,8 +1592,11 @@ export async function syncCollectionWants(
       const activeStatus: BookRequestStatus = priorActive ?? 'requested';
       const ebookStatus: BookRequestStatus = input.format === 'ebook' ? activeStatus : 'landed';
       const audioStatus: BookRequestStatus = input.format === 'audiobook' ? activeStatus : 'landed';
-      // Preserve a previously-resolved LL id; otherwise take this run's resolution (may still be null).
-      const llBookId = existing?.llBookId ?? m.llBookId ?? null;
+      // Preserve a previously-resolved LL id; otherwise take this run's resolution (may still be null). Issue #693:
+      // a PARKED want keeps what it has (a `wrong_volume` park cleared its id; a resolve never refills it).
+      const llBookId = existing?.unroutableReason
+        ? existing.llBookId
+        : (existing?.llBookId ?? m.llBookId ?? null);
 
       if (existing) {
         await tx
@@ -1641,6 +1648,36 @@ export async function syncCollectionWants(
   });
 
   return { minted, updated, removed };
+}
+
+/**
+ * Issue #693 (DESIGN-038 amendment 2026-10-05) — PARK a collection want whose LazyLibrarian book is another volume
+ * or work than its member (`llBookMismatch`): `unroutable_reason = 'wrong_volume'` and the id cleared, so no job
+ * queues that book for it again (the force-search, the gone rule and the one re-request all skip a park, and the
+ * wants pass never re-resolves it — `loadParkedWantRefs`). The tile stays on the drill, wanted and unsearchable.
+ * Single writer, one statement, unaudited (the derived collection-want class), guarded on the want still pointing
+ * at that id and still unparked. Returns whether it parked.
+ */
+export async function parkCollectionWant(input: {
+  db?: DbClient;
+  requestId: string;
+  llBookId: string;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const rows = await resolveDb(input.db)
+    .update(bookRequests)
+    .set({ unroutableReason: 'wrong_volume', llBookId: null, updatedAt: now })
+    .where(
+      and(
+        eq(bookRequests.id, input.requestId),
+        eq(bookRequests.origin, 'collection'),
+        isNull(bookRequests.unroutableReason),
+        eq(bookRequests.llBookId, input.llBookId),
+      ),
+    )
+    .returning({ id: bookRequests.id });
+  return rows.length > 0;
 }
 
 /**

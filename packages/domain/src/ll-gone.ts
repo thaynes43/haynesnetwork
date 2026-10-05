@@ -64,6 +64,8 @@ export const LL_GONE_COLLECTION_GRACE_MS = Number(
 export interface LlSnapshotRow extends LlHeldSignals {
   /** LL's `BookName`. */
   title?: string | null;
+  /** LL's `BookSub` (issue #693: read with the title by the volume check, `ll-book-check.ts`). */
+  subtitle?: string | null;
   /** LL's `AuthorName` (from `getAllBooks`'s join on `authors`). */
   author?: string | null;
 }

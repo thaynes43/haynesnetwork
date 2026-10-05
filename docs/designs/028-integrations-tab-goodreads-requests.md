@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-14
+- **Last updated:** 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -554,3 +554,73 @@ collection), spread over the days the adds take. Report fields `llRerequested`, 
 `llRerequestNotAdded`, `llRerequestDeferred`; each changed want logs `ll_rerequest` with its `outcome`. The
 goodreads push leg also stopped calling `addBook` for a book LazyLibrarian holds (rule 6 of the amendment above, the
 site the first pass missed).
+
+## Amendment — 2026-10-05: a request is never satisfied by another volume (issue #693)
+
+**What happened.** A want reads `landed` from the per-format status of the LazyLibrarian book its `ll_book_id` names,
+and every push site queues that book. The 2026-10-05 cross-volume repair found wants pinned to another volume or
+another work, reading `landed` for books the library does not have. Four mechanisms put them there:
+
+1. **The resolve guard ignored volume numbers.** The title-coverage guard drops numbers and the words "book", "vol" and
+   "part", so "Court of Thorns and Roses bk 2" covered *A Court of Thorns and Roses* (book 1) at 3 of 4 tokens.
+2. **The pairing reuse key cut subtitles.** `normTitle` cuts at the first `:`, so "Mistborn: Wax & Wayne" and
+   "Mistborn: Secret History" reused the id of *Mistborn: The Final Empire* (DESIGN-036 amendment of this date).
+3. **A want kept its id when its anchor became another book.** The 2026-09-29 library repair renamed audiobooks
+   ("Court of Thorns and Roses bk 2" became *A Court of Mist and Fury*, "Shadowhunter Academy" became *Midnight Sun*),
+   and #661 re-keyed Kavita series on the book they hold. The mint replaced the title snapshot but kept the id, so the
+   Twilight series' want read "Breaking Dawn" on Twilight's id. Read against the live mirror (2026-10-05 14:27Z):
+   95 pairing wants whose title no longer names their anchor's book. 73 of them hold an id that does not name the new
+   book, or one LazyLibrarian no longer has.
+4. **A collection resolve named another work.** Libretto's broker resolved the member "Terry Pratchett: The BBC Radio
+   Drama Collection" (ISBN 9781785298226) to *Terry Pratchett's Discworld* (`YVfJMgEACAAJ`). LazyLibrarian searched
+   that vague title and took 32 Discworld releases for it (repaired 2026-10-05). The broker now answers `no_match` for
+   that member.
+
+**The rule.** A want is never landed from, and its book is never queued on, a LazyLibrarian book that names another
+volume or work. One pure check (`ll-book-check.ts`) reads the title LazyLibrarian holds for the id: `BookName` and
+`BookSub` (now in the ACL row) and `AuthorName`, from the `getAllBooks` snapshot every job already takes.
+
+- **Lenient (`llBookMismatch`), for a want whose title is current.** It reports a mismatch only on clear evidence:
+  - `volume`: the want names its volume and the book names another one, or names none when the want's volume is not
+    the first (`volumeNumbersAgree`).
+  - `work`: the two titles share no distinctive word once both authors' names, stop words and numbers are set aside.
+
+  A title that differs only in decoration matches ("Caliban's War: The Expanse, Book 2" and *Caliban's War*, "The
+  Globe" and *The Science of Discworld II: The Globe*).
+- **Strict (`llBookNamesTitle`), for a want whose identity changed.** The old id is kept only when LazyLibrarian holds
+  it under exactly the new title, decoration aside.
+- **The volume a title names (`titleVolumeNumbers`, `@hnet/goodreads`).** It is a marked number in the main title
+  ("bk 2", "Book Two", "Vol. 3", "#4") or at the start of a later colon segment ("Beacon 23: Part Four: Company").
+  These are series positions, not the title's own volume, and never count: a later segment ("Caliban's War: The
+  Expanse, Book 2"), a trailing series parenthetical, a leading index ("Lily Bard #05 - "), and "Book N of …".
+  On the candidate side any marked or bare number counts, except a count after "of" ("Book 1 of 2" names volume 1).
+  Roman numerals are not read.
+
+**Where it applies.**
+
+- **The Google Books resolve (mechanism 1).** `resolveVolume`'s title leg refuses a volume whose title and subtitle
+  disagree on the volume (`volumeNumbersAgree`), read off the original title so the pre-colon fallback cannot drop the
+  number. This covers goodreads-sync, format-pairing and book-fix. An exact ISBN hit is still never second-guessed.
+- **Pairing (mechanisms 2 and 3).** See the DESIGN-036 amendment of this date: the identity check, the reuse key, the
+  resolve check, and the reconcile guard.
+- **Collection (mechanism 4).** See the DESIGN-038 D-13 amendment of this date: the force-search parks a mismatched
+  want, and a park holds through the wants pass.
+- **Goodreads.** The push skips a want whose pre-push book mismatches: no `addBook`, `queueBook` or `searchBook`, and
+  the want stays `requested`. The reconcile skips `applyRequestReconcile` and the Skipped sweep for one. Both log
+  `ll_push_skipped_wrong_volume` / `ll_book_mismatch`. No status is changed at run time. The one-off repair below
+  re-points the one goodreads want found.
+
+**An empty snapshot decides nothing.** An LazyLibrarian error answer parses to an empty map, and a book absent from
+the snapshot gives the check nothing to read, so the lenient check passes (the gone rule of 2026-10-04 owns absent
+books). The pairing identity check runs only on a usable snapshot (`llSnapshotUsable`).
+
+**The repair (one-off, `wrong-volume-requests-repair.ts`, `--dry-run` then `--apply`).** It runs
+`repairWrongVolumeRequests` (`@hnet/domain`, every write through a guarded single writer, no LazyLibrarian call):
+
+- pairing wants on a live anchor: the DESIGN-036 identity check;
+- collection wants whose book mismatches: parked `wrong_volume`, the id cleared (both BBC Radio Drama Collection rows);
+- goodreads wants whose book mismatches: re-pointed to the shelf item's current Google Books volume and re-opened
+  `requested` when that is another id, else settled `missing`;
+- the two Mistborn sequel wants on removed Kavita anchors: the id cleared, the missing format settled `missing`.
+
+Rows pointing at `ik6xzgEACAAJ`, which the cross-volume repair owns, are skipped. Record: HANDOFF, 2026-10-05.

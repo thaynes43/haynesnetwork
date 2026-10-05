@@ -1,0 +1,339 @@
+// Issue #693 — the one-off repair of requests pinned to another volume's or work's LazyLibrarian book (DESIGN-028
+// amendment 2026-10-05). Run once by `packages/sync/src/scripts/wrong-volume-requests-repair.ts`, `--dry-run` first.
+// Every write goes through a single writer guarded on the row still being what was read:
+//
+//   • pairing wants on a live anchor — the same identity check the mint now runs each hour (`checkPairingWantBooks`):
+//     re-identified (id cleared, missing format `requested`, or `landed` for a paired anchor) or re-titled;
+//   • collection wants whose book LazyLibrarian names as another volume or work (`llBookMismatch`) — parked
+//     `wrong_volume` with the id cleared (`parkCollectionWant`), so nothing queues that book for them again
+//     (the BBC Radio Drama Collection → "Terry Pratchett's Discworld" pair);
+//   • goodreads wants whose book LazyLibrarian names as another work — re-pointed to the shelf item's current Google
+//     Books volume and re-opened `requested` when that volume is another id, else settled `missing`
+//     (`reopenWrongVolumeRequest`);
+//   • named pairing wants on an anchor that left the library (`removedAnchorWants`, each with the id it must still
+//     hold) — the id cleared and the missing format settled `missing` (`settleRemovedAnchorPairingWant`): no anchor,
+//     so nothing is held and nothing looks for it.
+//
+// No LazyLibrarian write. `skipLlBookIds` leaves alone every row pointing at those ids (records another repair owns).
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { bookRequests, booksItems, integrationShelfItems, type DbClient } from '@hnet/db';
+import { inTransaction, resolveDb } from './db-client';
+import type { BookRequestStatus } from '@hnet/db';
+import { parkCollectionWant } from './book-requests';
+import { llBookMismatch, type LlBookNaming } from './ll-book-check';
+import {
+  checkPairingWantBooks,
+  missingFormatFor,
+  type PairingWantBookChange,
+} from './format-pairing';
+
+export interface WrongVolumeRepairInput {
+  db?: DbClient;
+  /** LazyLibrarian's books by id, from one real, non-empty `getAllBooks` read. */
+  snapshot: ReadonlyMap<string, LlBookNaming>;
+  dryRun: boolean;
+  /** Rows pointing at these LazyLibrarian ids are left exactly as they are. */
+  skipLlBookIds?: ReadonlySet<string>;
+  /** Pairing wants on removed anchors to settle, each with the id it must still hold. */
+  removedAnchorWants?: ReadonlyArray<{ requestId: string; llBookId: string }>;
+  now?: Date;
+  log?: { info?: (msg: string, meta?: Record<string, unknown>) => void };
+}
+
+export interface WrongVolumeRepairRow {
+  requestId: string;
+  origin: 'pairing' | 'collection' | 'goodreads';
+  action: 'reidentify' | 'retitle' | 'park' | 'repoint' | 'settle';
+  reason: string | null;
+  title: string;
+  llBookId: string | null;
+  llTitle: string | null;
+  /** What the row becomes (the new title, the new id, or the settled status), for the record. */
+  detail: string;
+  /** False in a dry run, or when the guarded write found the row changed. */
+  applied: boolean;
+}
+
+export interface WrongVolumeRepairReport {
+  dryRun: boolean;
+  rows: WrongVolumeRepairRow[];
+}
+
+/**
+ * Issue #693 — re-open (or settle) a goodreads want whose LazyLibrarian book is another work. With `toLlBookId` (the
+ * shelf item's current Google Books volume, a different id): point the want at it and set both formats `requested`, so
+ * the next goodreads sync pushes the right book; the one re-request (#668) restarts with it. Without: the formats that
+ * read `landed`, `wanted` or `grabbed` from the wrong book settle `missing`. Guarded on the id it was judged on and on
+ * the want not being matched into the library (a library match lands it on its own). Unaudited (the sync class).
+ */
+export async function reopenWrongVolumeRequest(input: {
+  db?: DbClient;
+  requestId: string;
+  fromLlBookId: string;
+  toLlBookId: string | null;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  return inTransaction(input.db, async (tx) => {
+    const [req] = await tx
+      .select()
+      .from(bookRequests)
+      .where(eq(bookRequests.id, input.requestId))
+      .for('update');
+    if (
+      !req ||
+      req.origin !== 'goodreads' ||
+      req.llBookId !== input.fromLlBookId ||
+      req.matchedBooksItemId !== null ||
+      req.unroutableReason !== null
+    ) {
+      return false;
+    }
+    const settle = (s: BookRequestStatus): BookRequestStatus =>
+      s === 'landed' || s === 'wanted' || s === 'grabbed' ? 'missing' : s;
+    await tx
+      .update(bookRequests)
+      .set(
+        input.toLlBookId
+          ? {
+              llBookId: input.toLlBookId,
+              ebookStatus: 'requested',
+              audioStatus: 'requested',
+              lastReconciledAt: null,
+              llRerequestedAt: null,
+              llRerequestFailures: 0,
+              llRerequestFailedAt: null,
+              llRerequestAddedAt: null,
+              updatedAt: now,
+            }
+          : {
+              ebookStatus: settle(req.ebookStatus),
+              audioStatus: settle(req.audioStatus),
+              updatedAt: now,
+            },
+      )
+      .where(eq(bookRequests.id, req.id));
+    return true;
+  });
+}
+
+/**
+ * Issue #693 — settle a pairing want whose anchor LEFT the library and whose id names another book (the two Mistborn
+ * sequels on "Mistborn: The Final Empire"): the id is cleared and the missing format becomes `missing` (no anchor, so
+ * the library holds neither format and nothing looks for it). Guarded on the id, on the want being unparked, and on
+ * the anchor still being removed. Unaudited (the pairing sync class).
+ */
+export async function settleRemovedAnchorPairingWant(input: {
+  db?: DbClient;
+  requestId: string;
+  llBookId: string;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  return inTransaction(input.db, async (tx) => {
+    const [row] = await tx
+      .select({
+        want: bookRequests,
+        mediaKind: booksItems.mediaKind,
+        deletedAt: booksItems.deletedAt,
+      })
+      .from(bookRequests)
+      .innerJoin(booksItems, eq(booksItems.id, bookRequests.pairingBooksItemId))
+      .where(eq(bookRequests.id, input.requestId))
+      .for('update', { of: bookRequests });
+    if (
+      !row ||
+      row.deletedAt === null ||
+      row.want.origin !== 'pairing' ||
+      row.want.llBookId !== input.llBookId ||
+      row.want.unroutableReason !== null
+    ) {
+      return false;
+    }
+    const missing = missingFormatFor(row.mediaKind);
+    await tx
+      .update(bookRequests)
+      .set({
+        llBookId: null,
+        ...(missing === 'ebook'
+          ? { ebookStatus: 'missing' as const }
+          : { audioStatus: 'missing' as const }),
+        updatedAt: now,
+      })
+      .where(eq(bookRequests.id, row.want.id));
+    return true;
+  });
+}
+
+/** Run (or, with `dryRun`, list) the repair. See the file header. */
+export async function repairWrongVolumeRequests(
+  input: WrongVolumeRepairInput,
+): Promise<WrongVolumeRepairReport> {
+  const db = resolveDb(input.db);
+  const now = input.now ?? new Date();
+  const skip = input.skipLlBookIds ?? new Set<string>();
+  const llBookOf = (id: string): LlBookNaming | undefined => input.snapshot.get(id);
+  const rows: WrongVolumeRepairRow[] = [];
+
+  // 1. Pairing wants on a live anchor: the mint's identity check.
+  const pairingWants = (
+    await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'))
+  ).filter((w) => !(w.llBookId && skip.has(w.llBookId)));
+  const pairing = await checkPairingWantBooks({
+    db: input.db,
+    llBookOf,
+    wants: pairingWants,
+    now,
+    dryRun: input.dryRun,
+    ...(input.log ? { log: input.log } : {}),
+  });
+  const pairingRow = (c: PairingWantBookChange): WrongVolumeRepairRow => ({
+    requestId: c.requestId,
+    origin: 'pairing',
+    action: c.kind === 'clear' ? 'reidentify' : 'retitle',
+    reason: c.reason,
+    title: c.from,
+    llBookId: c.llBookId,
+    llTitle: c.llTitle,
+    detail:
+      c.kind === 'clear'
+        ? `→ "${c.to}", id cleared, ${c.formerStatus} → ${c.status}`
+        : `→ "${c.to}"`,
+    applied: !input.dryRun,
+  });
+  rows.push(...pairing.changes.map(pairingRow));
+
+  // 2. Collection wants on another volume's or work's book: parked.
+  const collectionWants = await db
+    .select()
+    .from(bookRequests)
+    .where(
+      and(
+        eq(bookRequests.origin, 'collection'),
+        isNull(bookRequests.unroutableReason),
+        isNotNull(bookRequests.llBookId),
+      ),
+    );
+  for (const want of collectionWants) {
+    if (skip.has(want.llBookId!)) continue;
+    const book = llBookOf(want.llBookId!);
+    const mismatch = llBookMismatch(want, book);
+    if (!mismatch) continue;
+    const applied = input.dryRun
+      ? false
+      : await parkCollectionWant({
+          db: input.db,
+          requestId: want.id,
+          llBookId: want.llBookId!,
+          now,
+        });
+    rows.push({
+      requestId: want.id,
+      origin: 'collection',
+      action: 'park',
+      reason: mismatch,
+      title: want.title,
+      llBookId: want.llBookId,
+      llTitle: book?.title ?? null,
+      detail: `parked wrong_volume, id cleared (${want.ebookStatus}/${want.audioStatus})`,
+      applied,
+    });
+  }
+
+  // 3. Goodreads wants on another work's book: re-pointed to the shelf's current volume, else settled.
+  const goodreadsWants = await db
+    .select({ want: bookRequests, gbVolumeId: integrationShelfItems.gbVolumeId })
+    .from(bookRequests)
+    .innerJoin(integrationShelfItems, eq(integrationShelfItems.id, bookRequests.shelfItemId))
+    .where(
+      and(
+        eq(bookRequests.origin, 'goodreads'),
+        isNull(bookRequests.unroutableReason),
+        isNull(bookRequests.matchedBooksItemId),
+        isNotNull(bookRequests.llBookId),
+        isNull(integrationShelfItems.deletedAt),
+      ),
+    );
+  for (const { want, gbVolumeId } of goodreadsWants) {
+    if (skip.has(want.llBookId!)) continue;
+    const book = llBookOf(want.llBookId!);
+    const mismatch = llBookMismatch(want, book);
+    if (!mismatch) continue;
+    // The shelf's current volume, unless it is the same id or LazyLibrarian names it as another work as well.
+    const to =
+      gbVolumeId && gbVolumeId !== want.llBookId && !llBookMismatch(want, llBookOf(gbVolumeId))
+        ? gbVolumeId
+        : null;
+    const applied = input.dryRun
+      ? false
+      : await reopenWrongVolumeRequest({
+          db: input.db,
+          requestId: want.id,
+          fromLlBookId: want.llBookId!,
+          toLlBookId: to,
+          now,
+        });
+    rows.push({
+      requestId: want.id,
+      origin: 'goodreads',
+      action: to ? 'repoint' : 'settle',
+      reason: mismatch,
+      title: want.title,
+      llBookId: want.llBookId,
+      llTitle: book?.title ?? null,
+      detail: to
+        ? `→ ${to}, both formats requested`
+        : `formats settled missing (${want.ebookStatus}/${want.audioStatus})`,
+      applied,
+    });
+  }
+
+  // 4. Named pairing wants on removed anchors.
+  for (const named of input.removedAnchorWants ?? []) {
+    if (skip.has(named.llBookId)) continue;
+    const [want] = await db
+      .select({ title: bookRequests.title, llBookId: bookRequests.llBookId })
+      .from(bookRequests)
+      .where(
+        and(
+          eq(bookRequests.id, named.requestId),
+          sql`${bookRequests.pairingBooksItemId} IN (SELECT id FROM books_items WHERE deleted_at IS NOT NULL)`,
+        ),
+      );
+    if (!want || want.llBookId !== named.llBookId) {
+      rows.push({
+        requestId: named.requestId,
+        origin: 'pairing',
+        action: 'settle',
+        reason: 'not as recorded (anchor live, row gone, or id changed): left alone',
+        title: want?.title ?? '',
+        llBookId: want?.llBookId ?? null,
+        llTitle: null,
+        detail: 'skipped',
+        applied: false,
+      });
+      continue;
+    }
+    const applied = input.dryRun
+      ? false
+      : await settleRemovedAnchorPairingWant({
+          db: input.db,
+          requestId: named.requestId,
+          llBookId: named.llBookId,
+          now,
+        });
+    rows.push({
+      requestId: named.requestId,
+      origin: 'pairing',
+      action: 'settle',
+      reason: 'removed anchor',
+      title: want.title,
+      llBookId: named.llBookId,
+      llTitle: llBookOf(named.llBookId)?.title ?? null,
+      detail: 'id cleared, missing format settled missing',
+      applied,
+    });
+  }
+
+  return { dryRun: input.dryRun, rows };
+}

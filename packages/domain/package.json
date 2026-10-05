@@ -18,6 +18,7 @@
     "@hnet/authentik": "workspace:*",
     "@hnet/db": "workspace:*",
     "@hnet/downloads": "workspace:*",
+    "@hnet/goodreads": "workspace:*",
     "@hnet/haynesops": "workspace:*",
     "@hnet/kapowarr": "workspace:*",
     "@hnet/lazylibrarian": "workspace:*",

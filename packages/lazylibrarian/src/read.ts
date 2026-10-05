@@ -21,6 +21,9 @@ export interface LlBookStatus {
   /** The book's display title (`BookName`), or null when LL omits it. Read by the queue janitor's fail-loop rows
    *  (ADR-095 / DESIGN-046 D-18). Optional so structural stubs of this type stay valid. */
   title?: string | null;
+  /** The book's subtitle (`BookSub`), or null when LL omits it. Issue #693: the domain reads it with `title` to
+   *  check a want's book is the volume it asks for. Optional so structural stubs of this type stay valid. */
+  subtitle?: string | null;
   /** The author's display name (`AuthorName`, from `getAllBooks`'s join on `authors`), or null when LL omits
    *  it. Issue #665: read with `title` to find the row LL holds for a book a want's id no longer finds.
    *  Optional so structural stubs of this type stay valid. */
@@ -121,6 +124,7 @@ export class LazyLibrarianReadClient {
       byId.set(bookId, {
         bookId,
         title: blankToNull(row.BookName),
+        subtitle: blankToNull(row.BookSub),
         author: blankToNull(row.AuthorName),
         ebookStatus: row.Status ?? null,
         audioStatus: row.AudioStatus ?? null,

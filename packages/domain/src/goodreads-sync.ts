@@ -19,8 +19,10 @@ import {
   runLlRerequests,
   type LlGoneTally,
   type LlRerequestTally,
+  type LlSnapshotRow,
 } from './ll-gone';
 import { KapowarrUpstreamError, LazyLibrarianUpstreamError } from './errors';
+import { llBookMismatch } from './ll-book-check';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import type { KapowarrClientBundle } from './kapowarr-clients';
 import { markIntegrationSynced } from './user-integrations';
@@ -171,7 +173,7 @@ export async function syncGoodreadsIntegration(
   //     It costs one extra LL *database* read per integration per run (no Google Books leg, no external
   //     hop). On a read failure the map stays empty and the guard degrades to "push everything" — its
   //     only safe default, because this guard may suppress a write but must never invent one.
-  let prePush = new Map<string, LlHeldSignals>();
+  let prePush = new Map<string, LlSnapshotRow>();
   if (input.ll && toPush.length > 0) {
     try {
       prePush = await input.ll.read.getAllBookStatuses();
@@ -234,8 +236,22 @@ export async function syncGoodreadsIntegration(
   if (input.ll) {
     for (let i = 0; i < toPush.length; i += 1) {
       const target = toPush[i]!;
-      await pace(i);
       const held = prePush.get(target.llBookId);
+      // Issue #693 — never queue a book LazyLibrarian holds as another volume or work than the want. The want stays
+      // `requested` (nothing was asked of LazyLibrarian), and the reconcile below never lands it from that book.
+      const mismatch = llBookMismatch(target, held);
+      if (mismatch) {
+        log.info?.('ll_push_skipped_wrong_volume', {
+          site: 'goodreads-sync.push',
+          requestId: target.requestId,
+          llBookId: target.llBookId,
+          title: target.title,
+          llTitle: held?.title ?? null,
+          reason: mismatch,
+        });
+        continue;
+      }
+      await pace(i);
       const toQueue = BOTH_FORMATS.filter((f) => !llFormatAlreadyHeld(held, f));
       const skipped = BOTH_FORMATS.filter((f) => !toQueue.includes(f));
       if (skipped.length > 0) {
@@ -298,9 +314,9 @@ export async function syncGoodreadsIntegration(
   let reconciled = 0;
   let requeued = 0;
   const gone = emptyLlGoneTally();
-  let reconcileSnapshot: Map<string, LlHeldSignals> | null = null;
+  let reconcileSnapshot: Map<string, LlSnapshotRow> | null = null;
   if (input.ll) {
-    let statuses: Map<string, LlHeldSignals>;
+    let statuses: Map<string, LlSnapshotRow>;
     try {
       statuses = await input.ll.read.getAllBookStatuses();
     } catch (error) {
@@ -355,6 +371,20 @@ export async function syncGoodreadsIntegration(
             error: error instanceof Error ? error.message : String(error),
           });
         }
+        continue;
+      }
+      // Issue #693 — a want is never landed from, nor re-queued on, a book LazyLibrarian names as another volume or
+      // work ("The Art of the Fellowship of the Ring" on "The Lord of the Rings").
+      const mismatch = llBookMismatch(target, status);
+      if (mismatch) {
+        log.info?.('ll_book_mismatch', {
+          site: 'goodreads-sync.reconcile',
+          requestId: target.requestId,
+          llBookId: target.llBookId,
+          title: target.title,
+          llTitle: status.title ?? null,
+          reason: mismatch,
+        });
         continue;
       }
       try {

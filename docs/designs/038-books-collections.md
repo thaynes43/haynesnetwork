@@ -1,7 +1,8 @@
 # DESIGN-038: Books collections mirror — the Books/Audiobooks/Comics Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-20 (**ADR-076 — format-agnostic collections**: D-05 wall mapping → the comic
+- **Last updated:** 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
+  force-search parks a want on another work's book). Prior: 2026-07-20 (**ADR-076 — format-agnostic collections**: D-05 wall mapping → the comic
   partition (the three-way majority rule retires with the Audiobooks wall) + recipe-id twin MERGE; D-11/D-12
   the `cat=` token is now EMITTED by Libretto (L1 LIVE — recipe-authored categories; L2 agent-set stays the
   markerless fallback, COALESCE unchanged); D-13 the merged-drill dedupe + the one-active-want-per-(work,
@@ -422,6 +423,24 @@ composed-Wanted idiom, now collection-scoped.
 > want per (work, format)** across origins (collection vs pairing — a pairing want and a collection want for
 > the same missing format must not double-mint) via the existing reuse-before-resolve + ref keys (PLAN-060
 > edge E-1); the `book_requests` partial unique + the pairing anchor unique together hold it.
+
+> **Amendment 2026-10-05 (issue #693 — a parked want stays parked, and nothing queues another work).** The member
+> "Terry Pratchett: The BBC Radio Drama Collection" resolved to *Terry Pratchett's Discworld* (`YVfJMgEACAAJ`). Its two
+> wants (the Kavita and ABS twins) queued that book, and LazyLibrarian took 32 Discworld releases for it. The normative
+> rule is DESIGN-028's 2026-10-05 amendment. On this leg:
+>
+> - **The force-search parks a want on another work's book.** Before any LazyLibrarian write, `runForceSearchWorklist`
+>   (the cron leg and the on-demand Force Search) checks each want against the title LazyLibrarian holds for its id
+>   (`llBookMismatch`). A mismatch is parked: `parkCollectionWant` sets `unroutable_reason='wrong_volume'` and clears the
+>   id (a single writer, guarded on the id, unaudited). There is no `addBook`, `queueBook` or `searchBook` for it. It
+>   logs `ll_push_skipped_wrong_volume` and counts in the report field `parkedWrongVolume`. The tile stays on the drill,
+>   wanted and not searchable.
+> - **A park holds through the wants pass.** `loadParkedWantRefs` feeds `resolveMissingMembers`, which never resolves a
+>   parked member again (report field `parked`). `syncCollectionWants` keeps a parked want's id as it is, so a broker
+>   that resolves the member the same way cannot refill it. The gone rule, the one re-request and the Force Search
+>   already skipped a park. Lifting one is still clearing `unroutable_reason` by hand.
+> - **The repair.** The one-off parks both BBC Radio Drama Collection rows and *Violet in Bloom* (on the Dutch *Voor
+>   altijd en eeuwig*), so nothing can queue `YVfJMgEACAAJ` for them again.
 
 ## Alternatives considered
 
