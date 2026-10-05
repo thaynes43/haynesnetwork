@@ -3,11 +3,11 @@
 #   kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/crossvolume_purge.py          # dry run
 #   kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - --go < .agents/context/ll-library-audit/crossvolume_purge.py     # delete
 # Add --md5 to re-verify every file against the manifest first (reads ~9 GB). It refuses to delete when a file is not in
-# sort.jsonl, its size changed, its category is not one of the four, an LL book row points into the folder, or (for a
+# sort.jsonl, its size changed, its category is not one of the five, an LL book row points into the folder, or (for a
 # duplicate or redundant omnibus) a counterpart title folder named in sort.jsonl no longer holds a book file of that kind.
 import os,sys,json,hashlib,shutil,sqlite3
 B='/data/cephfs-hdd/data/media/books/'; H=B+'quarantine/crossvolume-2026-10-05/'
-DELETE={'duplicate','foreign_f10','omnibus_redundant','off_catalog'}
+DELETE={'duplicate','foreign_f10','omnibus_redundant','off_catalog','corrupt'}
 GO='--go' in sys.argv; MD5='--md5' in sys.argv
 KEEP=('manifest.jsonl','sort.jsonl')
 if not os.path.isdir(H): sys.exit('holding folder is already gone: nothing to do')
