@@ -13,7 +13,7 @@
   Books calls every day, and Libretto hits daily-quota 429s most evenings between 18:42Z and 22:42Z, so exhaustion
   predates the #668 re-add influx. The options on #674 wait for the readings below.
 
-**Owed checks (b)-(f) from the blocks below are still pending.** New ones:
+**Owed checks (b), (d)-(f) and (j) from the blocks below are still pending; (c) passed 2026-10-05.** New ones:
 
 - **(g) After the 2026-10-05 07:00Z roll**, `{namespace="frontend"} |= "gb_quota_day_closed" | json` shows exactly one
   line, for quota-day 2026-10-04.
