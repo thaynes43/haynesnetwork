@@ -27,7 +27,8 @@
 import { gbCallBudget, type DbClient } from '@hnet/db';
 import { eq, sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-import { resolveDb } from './db-client';
+import { inTransaction, resolveDb } from './db-client';
+import { consoleDomainLogger, type DomainLogger } from './domain-logger';
 import { GB_DAILY_RESET_UTC_HOUR } from './gb-quota-breaker';
 
 const GB_SINGLETON_ID = 'gb';
@@ -137,13 +138,26 @@ export async function readGbBudgetUsage(input: { db?: DbClient; now?: Date }): P
  * Persist `count` GB calls for `consumer` against the current quota-day (single-writer upsert). The
  * ON CONFLICT clause ROLLS the day atomically: when the stored `quota_day` is stale every counter
  * resets to 0 first (only this consumer's column gets `count`), so a new quota-day starts clean
- * without a cron. A no-op when count <= 0.
+ * without a cron. A writer BEHIND the stored day never rolls it back (its calls count against the stored
+ * day). A no-op when count <= 0.
+ *
+ * Issue #674 (observability only): the roll overwrites the previous day's counts, so the writer that
+ * performs the roll emits ONE `gb_quota_day_closed` line carrying the closed day's per-consumer counts
+ * (see `logGbQuotaDayClosed`). ONCE-PER-DAY GUARANTEE: the read of the old row and the upsert that
+ * overwrites it run in ONE transaction, and the read is `SELECT … FOR UPDATE` — a row lock. Concurrent
+ * writers therefore serialise on that lock; the first sees the stale day, rolls it and commits, every
+ * later one reads the already-rolled row (today's day) and logs nothing. The line is emitted AFTER
+ * commit, from the snapshot the locked read took, so a rolled-back transaction never logs and a retry
+ * cannot double-log. A first-ever write (no row) and a same-day write log nothing. A day on which
+ * nothing called GB writes no row, so the line for a day arrives at the next day's FIRST call (the
+ * line's `quota_day` names the day it closes, whenever it fires).
  */
 export async function recordGbCalls(input: {
   db?: DbClient;
   consumer: GbConsumer;
   count: number;
   now?: Date;
+  logger?: DomainLogger;
 }): Promise<void> {
   if (input.count <= 0) return;
   const now = input.now ?? new Date();
@@ -154,29 +168,73 @@ export async function recordGbCalls(input: {
   // value; else the day rolled — reset to just this write's increment (0 for the other consumers). The
   // existing-value ref is TABLE-QUALIFIED (`"gb_call_budget"."pairing_calls"`) so it is unambiguous
   // against the ON CONFLICT `excluded` pseudo-row.
-  const rolled = (col: AnyPgColumn, increment: number) =>
-    sql`CASE WHEN ${gbCallBudget.quotaDay} = ${today} THEN ${col} + ${increment} ELSE ${increment} END`;
+  const rolled = (col: AnyPgColumn, day: string, increment: number) =>
+    sql`CASE WHEN ${gbCallBudget.quotaDay} = ${day} THEN ${col} + ${increment} ELSE ${increment} END`;
 
-  await resolveDb(input.db)
-    .insert(gbCallBudget)
-    .values({
-      id: GB_SINGLETON_ID,
-      quotaDay: today,
-      pairingCalls: inc('pairing'),
-      goodreadsCalls: inc('goodreads'),
-      bookfixCalls: inc('bookfix'),
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: gbCallBudget.id,
-      set: {
-        pairingCalls: rolled(gbCallBudget.pairingCalls, inc('pairing')),
-        goodreadsCalls: rolled(gbCallBudget.goodreadsCalls, inc('goodreads')),
-        bookfixCalls: rolled(gbCallBudget.bookfixCalls, inc('bookfix')),
-        quotaDay: today,
+  const closed = await inTransaction(input.db, async (tx) => {
+    // The row lock that makes the close line exactly-once (see the doc comment).
+    const [previous] = await tx
+      .select()
+      .from(gbCallBudget)
+      .where(eq(gbCallBudget.id, GB_SINGLETON_ID))
+      .for('update');
+    // NEVER ROLL BACKWARD: a writer whose `now` is on an EARLIER quota-day than the stored row (a
+    // tracker captures `now` once, so a run that crosses 07:00Z spends on the old day after another job
+    // already rolled) counts against the STORED, newer day — conservative for the budget — instead of
+    // resetting that day's counters and moving `quota_day` back.
+    const day = previous && previous.quotaDay > today ? previous.quotaDay : today;
+    await tx
+      .insert(gbCallBudget)
+      .values({
+        id: GB_SINGLETON_ID,
+        quotaDay: day,
+        pairingCalls: inc('pairing'),
+        goodreadsCalls: inc('goodreads'),
+        bookfixCalls: inc('bookfix'),
         updatedAt: now,
-      },
+      })
+      .onConflictDoUpdate({
+        target: gbCallBudget.id,
+        set: {
+          pairingCalls: rolled(gbCallBudget.pairingCalls, day, inc('pairing')),
+          goodreadsCalls: rolled(gbCallBudget.goodreadsCalls, day, inc('goodreads')),
+          bookfixCalls: rolled(gbCallBudget.bookfixCalls, day, inc('bookfix')),
+          quotaDay: day,
+          updatedAt: now,
+        },
+      });
+    // Only a FORWARD roll closes a day (a writer behind the stored day neither rolls nor logs).
+    return previous && previous.quotaDay < today ? previous : null;
+  });
+  if (closed) {
+    logGbQuotaDayClosed(input.logger ?? consoleDomainLogger, {
+      quotaDay: closed.quotaDay,
+      pairing: closed.pairingCalls,
+      goodreads: closed.goodreadsCalls,
+      bookfix: closed.bookfixCalls,
     });
+  }
+}
+
+/**
+ * The quota-day close line (issue #674): ONE structured line per closed quota-day, counts only (no key,
+ * no URL, no titles). Loki: `{namespace="frontend"} |= "gb_quota_day_closed" | json`. The breaker's
+ * own state is cleared by the next successful call, so "did it trip that day" is NOT on this line — it
+ * is the `gb_quota_trip` lines (DESIGN-039 amendment 2026-10-04).
+ */
+function logGbQuotaDayClosed(logger: DomainLogger, usage: GbBudgetUsage): void {
+  logger.info('gb_quota_day_closed', {
+    quota_day: usage.quotaDay,
+    pairing_calls: usage.pairing,
+    pairing_budget: GB_DAILY_CALL_BUDGET.pairing,
+    goodreads_calls: usage.goodreads,
+    goodreads_budget: GB_DAILY_CALL_BUDGET.goodreads,
+    bookfix_calls: usage.bookfix,
+    bookfix_budget: GB_DAILY_CALL_BUDGET.bookfix,
+    total_calls: usage.pairing + usage.goodreads + usage.bookfix,
+    total_budget:
+      GB_DAILY_CALL_BUDGET.pairing + GB_DAILY_CALL_BUDGET.goodreads + GB_DAILY_CALL_BUDGET.bookfix,
+  });
 }
 
 /**

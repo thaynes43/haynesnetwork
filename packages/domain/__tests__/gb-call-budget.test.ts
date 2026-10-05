@@ -3,7 +3,7 @@
 // across the day boundary in one statement; the run-scoped tracker's canSpend/spend enforcement and
 // the per-consumer split; and that the unenforced 'bookfix' slice is metered but never blocked.
 // Embedded PG16.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { gbCallBudget } from '@hnet/db';
 import {
   GB_MAX_RESOLVE_LEGS,
@@ -75,6 +75,93 @@ describe('recordGbCalls / readGbBudgetUsage — durable per-consumer accounting'
     const [row] = await t.db.select().from(gbCallBudget);
     expect(row?.quotaDay).toBe('2026-07-20');
     expect(row?.goodreadsCalls).toBe(0);
+  });
+});
+
+// Issue #674 — the quota-day close line: one structured line per closed day, carrying that day's counts.
+describe('gb_quota_day_closed (the close line, issue #674)', () => {
+  const day = new Date('2026-07-19T08:00:00Z');
+  const nextDay = new Date('2026-07-20T07:30:00Z');
+  const capture = () => {
+    const info = vi.fn();
+    return { info, warn: vi.fn(), error: vi.fn() };
+  };
+
+  it('fires ONCE on the roll, with the PREVIOUS day counts, before they are overwritten', async () => {
+    const logger = capture();
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 40, now: day, logger });
+    await recordGbCalls({ db: t.db, consumer: 'goodreads', count: 20, now: day, logger });
+    await recordGbCalls({ db: t.db, consumer: 'bookfix', count: 3, now: day, logger });
+    // Same-day writes (and the very first write) log nothing.
+    expect(logger.info).not.toHaveBeenCalled();
+
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 4, now: nextDay, logger });
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith(
+      'gb_quota_day_closed',
+      expect.objectContaining({
+        quota_day: '2026-07-19',
+        pairing_calls: 40,
+        goodreads_calls: 20,
+        bookfix_calls: 3,
+        total_calls: 63,
+      }),
+    );
+    // More same-day writes on the new day never re-log.
+    await recordGbCalls({ db: t.db, consumer: 'goodreads', count: 1, now: nextDay, logger });
+    expect(logger.info).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires exactly once when several jobs race the first write of the new day', async () => {
+    const logger = capture();
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 9, now: day, logger });
+    await Promise.all([
+      recordGbCalls({ db: t.db, consumer: 'pairing', count: 1, now: nextDay, logger }),
+      recordGbCalls({ db: t.db, consumer: 'goodreads', count: 1, now: nextDay, logger }),
+      recordGbCalls({ db: t.db, consumer: 'bookfix', count: 1, now: nextDay, logger }),
+      recordGbCalls({ db: t.db, consumer: 'pairing', count: 2, now: nextDay, logger }),
+    ]);
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.info.mock.calls[0]?.[1]).toMatchObject({ quota_day: '2026-07-19', pairing_calls: 9 });
+    // Nothing was lost in the roll: the new day holds all four writes.
+    expect(await readGbBudgetUsage({ db: t.db, now: nextDay })).toMatchObject({
+      pairing: 3,
+      goodreads: 1,
+      bookfix: 1,
+    });
+  });
+
+  it('a second writer queued behind the roll (row lock held mid-transaction) does not log again', async () => {
+    // Deterministic race: writer A rolls the day inside an OPEN outer transaction; writer B starts on
+    // the pool while A's roll is uncommitted. B's locked read must block until A commits and then see
+    // the rolled row. Without the FOR UPDATE, B would read the stale day, and log a second close.
+    const logger = capture();
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 9, now: day, logger });
+    let writerB: Promise<void> = Promise.resolve();
+    await t.db.transaction(async (tx) => {
+      await recordGbCalls({ db: tx, consumer: 'pairing', count: 1, now: nextDay, logger });
+      writerB = recordGbCalls({ db: t.db, consumer: 'goodreads', count: 1, now: nextDay, logger });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    await writerB;
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(await readGbBudgetUsage({ db: t.db, now: nextDay })).toMatchObject({ pairing: 1, goodreads: 1 });
+  });
+
+  it('a STALE writer after a forward roll keeps the counts, adds to the stored day, logs no second close', async () => {
+    // A tracker captures `now` once, so a run that started before 07:00Z spends on the OLD day after
+    // another job already rolled. It must neither wipe the new day's counts nor move quota_day back.
+    const logger = capture();
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 9, now: day, logger });
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 5, now: nextDay, logger }); // forward roll
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    await recordGbCalls({ db: t.db, consumer: 'goodreads', count: 2, now: day, logger }); // stale writer
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 1, now: nextDay, logger }); // next current writer
+    const [row] = await t.db.select().from(gbCallBudget);
+    expect(row).toMatchObject({ quotaDay: '2026-07-20', pairingCalls: 6, goodreadsCalls: 2 });
+    // Exactly one close line, for the day that actually closed, with its real counts.
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.info.mock.calls[0]?.[1]).toMatchObject({ quota_day: '2026-07-19', pairing_calls: 9 });
   });
 });
 

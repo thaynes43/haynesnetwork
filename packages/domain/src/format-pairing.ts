@@ -1096,6 +1096,7 @@ export async function mintPairingWants(
       try {
         const guarded = await guardedGbResolve({
           db: input.db,
+          consumer: 'pairing',
           gb: input.gb!,
           // Pass the anchor ISBN (PLAN-059): the resolver tries `isbn:` first — the exact leg that
           // makes the Goodreads path resolve ~99% — before falling back to the fuzzy file-title.

@@ -216,6 +216,7 @@ export async function runGoodreadsSync(input: {
             try {
               const guarded = await guardedGbResolve({
                 db: input.db,
+                consumer: 'goodreads',
                 gb: input.goodreads.googleBooks,
                 query: { isbn: item.isbn, title: item.title, author: item.author },
               });
