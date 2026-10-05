@@ -358,8 +358,9 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
       format-pairing wants (created 07-16 to 07-25; three re-added on 10-04/05 by the #668 re-request), pushed before
       v0.107.3. Their anchors: 4 were July-F10 ghosts (Audiobookshelf items missing since their German or French audio
       went to `quarantine/f10-language/`, still tagged `English`), 6 live Audiobookshelf items with foreign titles, and 2
-      Kavita items. The pairing title search then picked foreign Google Books volumes. v0.107.4's guard (it reads LL's
-      `BookLang` before `queueBook`) blocks new pushes like these. It does not write LL, which is why these stayed `Wanted`.
+      Kavita items. The pairing title search then picked foreign Google Books volumes. v0.107.3's guard (#707: it reads
+      LL's `BookLang` before `queueBook`) blocks new pushes like these, and v0.107.4 parked the wants in flight. Neither
+      writes LL, which is why these stayed `Wanted`.
     - **LL language preference:** `imp_preflang = en, en-GB, eng, English, en-US`, already English-only, so unchanged
       (LL config is live on its PVC, not templated in haynes-ops). It filters author and series imports. `addBook` by id
       only logs a warning, so the app's guard is the gate for API adds. `Unknown` is not in the list, so author imports
