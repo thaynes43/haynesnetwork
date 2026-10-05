@@ -4,6 +4,23 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-05 — v0.107.0 live: Google Books quota instrumentation for #674; #674 benched until there is data
+
+- **v0.107.0** (#681, release #679, haynes-ops #3362, 00:48Z): the app and all sync CronJobs on the one `&mainImage` tag;
+  3/3 pods Ready, `/api/health` ok, no migration. It logs one `gb_quota_day_closed` line per Google Books quota-day (at
+  the 07:00Z roll) and one `gb_quota_trip` line each time Google Books refuses. Logging only; no behaviour changed.
+- **Owner ruling: #674 is benched until we have data.** Loki shows the app already spends about 900 of its ~1,000 Google
+  Books calls every day, and Libretto hits daily-quota 429s most evenings between 18:42Z and 22:42Z, so exhaustion
+  predates the #668 re-add influx. The options on #674 wait for the readings below.
+
+**Owed checks (c)-(f) from the blocks below are still pending.** New ones:
+
+- **(g) After the 2026-10-05 07:00Z roll**, `{namespace="frontend"} |= "gb_quota_day_closed" | json` shows exactly one
+  line, for quota-day 2026-10-04.
+- **(h) The first `gb_quota_trip` line carries a `project_number`.** Compare it with Libretto's 429
+  `project_number:585629606395`; a match means Libretto shares the app's key, a mismatch means it does not.
+- **(i) About a week of daily readings** during the #668 re-add drain, then revisit #674 options A/B/C.
+
 ## ▶ 2026-10-04 — v0.106.0 + v0.106.1 live: every settled request handed back to LazyLibrarian once (#668); one check owed
 
 - **Owner ruling (#668, "Add them all back now"):** each request #665 settled `missing` is handed back to LazyLibrarian
