@@ -499,3 +499,31 @@ costs no cap and no external call beyond the language read.
 **Report field:** `unparked` (log line `foreign_language park lifted`).
 
 Unchanged: parking itself, the push guard, the Skipped sweep guard and the confined LazyLibrarian surface.
+
+## Amendment — 2026-10-05 (later): a `landed` missing format stays truthful (issue #715)
+
+**Normative rule: DESIGN-028's amendment of this date, applied to the pairing want's missing format.** The missing
+format reads `landed` when the library holds the other copy (the pair) or LazyLibrarian holds it. The open-want
+reconcile only reads wants with a format still open, and `advanceStatus` never regresses a positive, so a want that went
+both-landed was never looked at again: LazyLibrarian could lose the file or the book and the want kept reading `landed`.
+
+**The check.** Each run, after the pair cache rebuilds and before the open-want reconcile
+(`revalidateLandedPairingWants`), looks at every unparked want with a LazyLibrarian id whose anchor is a live item, is
+UNPAIRED, and whose missing format reads `landed`:
+
+- the book is absent from a usable snapshot, past the gone grace: re-keyed or settled `missing` (`includeLanded`);
+- the book names another volume or work (T-280): the missing format settles `missing`. The mint's identity check
+  normally clears such a pointer first, so this is the backstop;
+- otherwise the format reads what LazyLibrarian shows if LazyLibrarian does not hold it (`wanted`, `grabbed`,
+  `missing`), through `revertLandedFormats`.
+
+A **paired** anchor is held by the library whatever LazyLibrarian says, so it is never touched. A want on a **removed**
+anchor is history and a **parked** want is out of the reconcile; neither is touched. The held format (the anchor's own)
+is not part of this: it is `landed` because the anchor is in the library (`landPairingHeldFormat`). A want the check
+reopens is reconciled and, if LazyLibrarian has the format `Skipped`, swept in the same run (the #700 English-only
+guard still applies to the sweep).
+
+**Report field:** `requestsLandedReverted`; log line `request_landed_reverted` (site `format-pairing.landed-check`).
+**Live data before the change (2026-10-05):** of 365 unpaired, unparked pairing wants on live anchors whose missing format
+read `landed`, LazyLibrarian held 358, did not hold 4 (`Skipped`) and no longer had 3.
+

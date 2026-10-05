@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.107.6](https://github.com/thaynes43/haynesnetwork/compare/v0.107.5...v0.107.6) (2026-10-05)
+
+
+### Bug Fixes
+
+* **books:** a landed format leaves landed when nothing holds it ([#715](https://github.com/thaynes43/haynesnetwork/issues/715)) ([#720](https://github.com/thaynes43/haynesnetwork/issues/720)) ([113943d](https://github.com/thaynes43/haynesnetwork/commit/113943da9045fe1f1480c92d53e07ca6b4432278))
+
+
+### Documentation
+
+* **agents:** F10 follow-up, the five out-of-list items fixed ([#718](https://github.com/thaynes43/haynesnetwork/issues/718)) ([9e10b41](https://github.com/thaynes43/haynesnetwork/commit/9e10b4159682c7cc98ff4d3dec1356e99040a061))
+* **agents:** F10 foreign editions moved to the holding folder, LL fixed ([#716](https://github.com/thaynes43/haynesnetwork/issues/716)) ([d44e116](https://github.com/thaynes43/haynesnetwork/commit/d44e1167f068e86c6c5d68a2e6044593caf7cf51))
+
 ## [0.107.5](https://github.com/thaynes43/haynesnetwork/compare/v0.107.4...v0.107.5) (2026-10-05)
 
 

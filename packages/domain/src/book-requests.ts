@@ -191,6 +191,82 @@ export function advanceStatus(
   return incoming;
 }
 
+/**
+ * Issue #715 (DESIGN-028 amendment 2026-10-05) — what a format reads when the LazyLibrarian book a request points
+ * at does NOT hold it. `null` = LazyLibrarian holds it (Open/Have, or a file/library date: `llFormatAlreadyHeld`),
+ * or its status is one we cannot read, so a `landed` format stays `landed`. Otherwise the status LazyLibrarian shows
+ * mapped through `mapLlStatus` (Snatched ⇒ grabbed, Wanted ⇒ wanted, Skipped/Ignored/Matched or none ⇒ missing),
+ * never `landed`. Pure; an absent book is the caller's (the gone rule's) business, so it also answers `null`.
+ */
+export function unheldFormatStatus(
+  row: LlHeldSignals | null | undefined,
+  format: Extract<BookRequestFormat, 'ebook' | 'audiobook'>,
+): BookRequestStatus | null {
+  if (!row) return null;
+  if (llFormatAlreadyHeld(row, format)) return null;
+  const raw = format === 'audiobook' ? row.audioStatus : row.ebookStatus;
+  if (raw == null || raw.trim() === '') return 'missing';
+  const mapped = mapLlStatus(raw);
+  return mapped === 'landed' ? null : mapped;
+}
+
+export interface RevertLandedInput {
+  db?: DbClient;
+  requestId: string;
+  /**
+   * The LazyLibrarian id the decision was read for. The write is refused when the row points elsewhere now (a
+   * concurrent repoint wins), the `settleRequestLlGone` guard. Null for a comic or a request with no id.
+   */
+  llBookId: string | null;
+  /** The status a `landed` ebook reverts to (null/absent = leave it). Never `landed`. */
+  ebook?: BookRequestStatus | null;
+  audio?: BookRequestStatus | null;
+  comic?: BookRequestStatus | null;
+  now?: Date;
+}
+
+/**
+ * Issue #715 — the ONE writer that takes a format OUT of `landed`. `advanceStatus` never regresses a positive, so
+ * a request that read `landed` (a library match, a LazyLibrarian `Open`, a Kapowarr volume with every issue) kept
+ * reading `landed` after the thing that landed it went away. Each caller decides from a fresh read (the LazyLibrarian
+ * snapshot, the Kapowarr volume, the format pairs) and names the truthful status here; this writer only applies it,
+ * and only to a format that IS `landed` now.
+ *
+ * Refused while the library holds the want (`matched_books_item_id` set: the match is what lands it) and when the
+ * request no longer points at the id the caller read. Leaves `last_reconciled_at` alone, so the gone rule's grace
+ * keeps running from when LazyLibrarian last showed the book. Unaudited (synced/derived state, the
+ * `applyRequestReconcile` class); the caller logs `request_landed_reverted`. Returns which formats changed.
+ */
+export async function revertLandedFormats(
+  input: RevertLandedInput,
+): Promise<{ ebook: boolean; audio: boolean; comic: boolean }> {
+  const none = { ebook: false, audio: false, comic: false };
+  if (!input.ebook && !input.audio && !input.comic) return none;
+  const now = input.now ?? new Date();
+  return inTransaction(input.db, async (tx) => {
+    const [req] = await tx
+      .select()
+      .from(bookRequests)
+      .where(eq(bookRequests.id, input.requestId))
+      .for('update');
+    if (!req || req.matchedBooksItemId || (req.llBookId ?? null) !== input.llBookId) return none;
+    const ebook = input.ebook && input.ebook !== 'landed' && req.ebookStatus === 'landed' ? input.ebook : null;
+    const audio = input.audio && input.audio !== 'landed' && req.audioStatus === 'landed' ? input.audio : null;
+    const comic = input.comic && input.comic !== 'landed' && req.comicStatus === 'landed' ? input.comic : null;
+    if (!ebook && !audio && !comic) return none;
+    await tx
+      .update(bookRequests)
+      .set({
+        ...(ebook ? { ebookStatus: ebook } : {}),
+        ...(audio ? { audioStatus: audio } : {}),
+        ...(comic ? { comicStatus: comic } : {}),
+        updatedAt: now,
+      })
+      .where(eq(bookRequests.id, req.id));
+    return { ebook: ebook !== null, audio: audio !== null, comic: comic !== null };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // ADR-056 (PLAN-046) — Kapowarr comic routing: the ComicVine-volume resolver + the Kapowarr-state reconcile.
 // The domain owns BOTH (the ACL returns raw candidates/volume-counts; the domain decides the pick + status —
@@ -464,6 +540,14 @@ export async function syncShelfRequests(
         comicStatus = null;
         unroutableReason = null;
         llBookId = existing?.llBookId ?? item.gbVolumeId ?? null;
+        // Issue #715 — nothing lands a request with no library match except the LazyLibrarian book it points at. With
+        // no book to point at, a `landed` format (the library match that landed it is gone) goes back to `requested`,
+        // so the push mints it once a Google Books id resolves. A request WITH an id is judged against LazyLibrarian's
+        // book by the reconcile (`collectTargets` now hands it over even when both formats read `landed`).
+        if (!llBookId) {
+          if (ebookStatus === 'landed') ebookStatus = 'requested';
+          if (audioStatus === 'landed') audioStatus = 'requested';
+        }
       }
 
       let requestId: string;
@@ -508,7 +592,9 @@ export async function syncShelfRequests(
       }
 
       // A comic that is not (yet) landed needs Kapowarr work: resolve+add (no volume id) or reconcile.
-      if (requestId && isComic && !item.matchedBooksItemId && comicStatus !== 'landed') {
+      // Issue #715: a landed comic with no library match is reconciled too, so it can leave `landed` when Kapowarr
+      // no longer holds every issue.
+      if (requestId && isComic && !item.matchedBooksItemId) {
         toRouteComics.push({ requestId, title: item.title, author: item.author, kapowarrVolumeId });
       }
     }
@@ -527,12 +613,14 @@ function collectTargets(
   prevAudio: BookRequestStatus,
   toPush: RequestLlTarget[],
   toReconcile: RequestLlTarget[],
-  want: { title: string; author: string | null },
+  want: { title: string; author: string | null; matchedBooksItemId: string | null },
 ): void {
   if (unroutableReason) return; // comics never touch LL
   if (!llBookId) return; // no GB id resolved — can't push yet (honest gap)
+  // A library match lands both formats and nothing about LazyLibrarian can change that. Without one, `landed` is
+  // only true while LazyLibrarian holds the format, so even a both-landed request is reconciled (issue #715).
   const bothLanded = ebookStatus === 'landed' && audioStatus === 'landed';
-  if (bothLanded) return;
+  if (bothLanded && want.matchedBooksItemId) return;
   const neverPushed = prevEbook === 'requested' && prevAudio === 'requested';
   if (neverPushed && (ebookStatus === 'requested' || audioStatus === 'requested')) {
     toPush.push({ requestId, llBookId, title: want.title, author: want.author });

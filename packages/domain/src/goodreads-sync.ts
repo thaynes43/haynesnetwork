@@ -5,7 +5,7 @@
 // "Search again"). The @hnet/sync mode does the external READS (RSS + GB) and hands the enriched items in;
 // the confined LL WRITES happen here through the injected bundle (the poster-guard precedent).
 import { and, asc, eq, inArray, or } from 'drizzle-orm';
-import { bookRequests, type BookRequestFormat, type DbClient } from '@hnet/db';
+import { bookRequests, type BookRequestFormat, type BookRequestStatus, type DbClient } from '@hnet/db';
 import { resolveDb } from './db-client';
 import {
   applyLlGoneDecision,
@@ -23,6 +23,7 @@ import {
 } from './ll-gone';
 import { KapowarrUpstreamError, LazyLibrarianUpstreamError } from './errors';
 import { llBookMismatch } from './ll-book-check';
+import { isForeignLanguage } from './book-language';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import type { KapowarrClientBundle } from './kapowarr-clients';
 import { markIntegrationSynced } from './user-integrations';
@@ -39,6 +40,8 @@ import {
   markRequestFormatsRequeued,
   markRequestPushed,
   pickBestVolume,
+  revertLandedFormats,
+  unheldFormatStatus,
   llRecentSearchCovers,
   recentlySearchedLlBookIds,
   recordManualSearch,
@@ -48,6 +51,7 @@ import {
   type ComicRouteTarget,
   type Coverage,
   type LlHeldSignals,
+  type RequestLlTarget,
   type RequestSyncItem,
 } from './book-requests';
 
@@ -108,6 +112,12 @@ export interface SyncGoodreadsReport extends LlGoneTally, LlRerequestTally {
    * these would have been a `queueBook` clobbering an imported book back to `Wanted`.
    */
   pushesSkippedHeld: number;
+  /**
+   * Issue #715 (DESIGN-028 amendment 2026-10-05) — requests with a format taken OUT of `landed` this run because
+   * nothing held it any more: the library match was gone and LazyLibrarian (or Kapowarr, for a comic) does not hold
+   * the format, or the request no longer points at a matching LazyLibrarian book.
+   */
+  requestsLandedReverted: number;
   /** ADR-056 — comics newly routed to Kapowarr this run (resolved + added monitored). */
   comicsRouted: number;
   /** ADR-056 — comics whose Kapowarr state was reconciled back this run (incl. the ones just routed). */
@@ -313,6 +323,7 @@ export async function syncGoodreadsIntegration(
   //     on that date, each with a library date and a real file), and re-queueing one clobbers it.
   let reconciled = 0;
   let requeued = 0;
+  let landedReverted = 0;
   const gone = emptyLlGoneTally();
   let reconcileSnapshot: Map<string, LlSnapshotRow> | null = null;
   if (input.ll) {
@@ -342,6 +353,33 @@ export async function syncGoodreadsIntegration(
         for (const row of rows) goneRows.set(row.id, row);
       }
     }
+    const revertLanded = async (
+      target: RequestLlTarget,
+      ebook: BookRequestStatus | null,
+      audio: BookRequestStatus | null,
+      reason: string,
+      site: string,
+    ): Promise<number> => {
+      const reverted = await revertLandedFormats({
+        db: input.db,
+        requestId: target.requestId,
+        llBookId: target.llBookId,
+        ebook,
+        audio,
+        now,
+      });
+      if (!reverted.ebook && !reverted.audio) return 0;
+      log.info?.('request_landed_reverted', {
+        site,
+        reason,
+        requestId: target.requestId,
+        llBookId: target.llBookId,
+        title: target.title,
+        ebook: reverted.ebook ? ebook : null,
+        audio: reverted.audio ? audio : null,
+      });
+      return 1;
+    };
     for (const target of targets) {
       const status = statuses.get(target.llBookId);
       if (!status) {
@@ -357,9 +395,13 @@ export async function syncGoodreadsIntegration(
               snapshot: statuses,
               index: goneIndex,
               now,
+              // Issue #715: every target here is a want the library does not hold, so a `landed` format is only
+              // true while LazyLibrarian holds it.
+              includeLanded: true,
             }),
             snapshot: statuses,
             reconcile: true,
+            includeLanded: true,
             tally: gone,
             site: 'goodreads-sync.reconcile',
             now,
@@ -385,9 +427,22 @@ export async function syncGoodreadsIntegration(
           llTitle: status.title ?? null,
           reason: mismatch,
         });
+        // Issue #715 — a format that reads `landed` from a book that is another volume or work is not held: it
+        // settles `missing` (the dead-end the repair uses), and nothing is queued on that book.
+        landedReverted += await revertLanded(target, 'missing', 'missing', 'll_book_mismatch', 'goodreads-sync.reconcile');
         continue;
       }
       try {
+        // Issue #715 — `landed` is only true while LazyLibrarian holds the format: a format it does not hold goes back
+        // to the status LazyLibrarian shows (wanted, grabbed, or missing). Before the reconcile below, which never
+        // regresses a positive.
+        landedReverted += await revertLanded(
+          target,
+          unheldFormatStatus(status, 'ebook'),
+          unheldFormatStatus(status, 'audiobook'),
+          'll_not_held',
+          'goodreads-sync.reconcile',
+        );
         await applyRequestReconcile({
           db: input.db,
           requestId: target.requestId,
@@ -404,7 +459,17 @@ export async function syncGoodreadsIntegration(
           // A `Skipped` row that nevertheless carries a library date / file is one LL HAS — re-queueing
           // it would clobber an imported book back to `Wanted`. Suppress, count, and log.
           if (llFormatAlreadyHeld(status, format)) heldFormats.push(format);
-          else skippedFormats.push(format);
+          else if (isForeignLanguage(status.language)) {
+            // Issue #715 / #700 — never queue a book LazyLibrarian itself labels non-English (the F10 rule): the
+            // format stays `missing`, where a person's Search again can still lift it.
+            log.info?.('ll_push_skipped_foreign', {
+              site: 'goodreads-sync.skipped-sweep',
+              requestId: target.requestId,
+              llBookId: target.llBookId,
+              format,
+              llLanguage: status.language ?? null,
+            });
+          } else skippedFormats.push(format);
         }
         if (heldFormats.length > 0) {
           pushesSkippedHeld += heldFormats.length;
@@ -495,20 +560,54 @@ export async function syncGoodreadsIntegration(
       return [];
     });
     const rootFolderId = rootFolders[0]?.id;
+    const revertComicLanded = async (
+      comic: ComicRouteTarget,
+      comicStatus: BookRequestStatus,
+      reason: string,
+    ): Promise<number> => {
+      const reverted = await revertLandedFormats({
+        db: input.db,
+        requestId: comic.requestId,
+        llBookId: null,
+        comic: comicStatus,
+        now,
+      });
+      if (!reverted.comic) return 0;
+      log.info?.('request_landed_reverted', {
+        site: 'goodreads-sync.comics',
+        reason,
+        requestId: comic.requestId,
+        title: comic.title,
+        comic: comicStatus,
+      });
+      return 1;
+    };
     for (const comic of toRouteComics) {
       try {
         const volumeId = comic.kapowarrVolumeId
           ? Number(comic.kapowarrVolumeId)
           : await routeNewComic(input.db, input.kapowarr, comic, rootFolderId, log);
-        if (volumeId == null || Number.isNaN(volumeId)) continue; // no match / no root folder — stays parked
+        if (volumeId == null || Number.isNaN(volumeId)) {
+          // No match / no root folder — stays parked. Issue #715: a parked comic with no volume holds nothing, so
+          // a `landed` it kept from a library match that is gone goes back to `requested`.
+          if (!comic.kapowarrVolumeId) {
+            landedReverted += await revertComicLanded(comic, 'requested', 'no_kapowarr_volume');
+          }
+          continue;
+        }
         if (!comic.kapowarrVolumeId) comicsRouted += 1;
         // Reconcile the (just-added or existing) volume's live state into comic_status.
         const vol = await input.kapowarr.read.getVolume(volumeId);
         if (vol) {
+          const volumeStatus = mapKapowarrVolumeStatus(vol);
+          // Issue #715: `landed` is only true while Kapowarr holds every issue (the reconcile never regresses).
+          if (volumeStatus !== 'landed') {
+            landedReverted += await revertComicLanded(comic, volumeStatus, 'kapowarr_not_held');
+          }
           await applyComicReconcile({
             db: input.db,
             requestId: comic.requestId,
-            comicStatus: mapKapowarrVolumeStatus(vol),
+            comicStatus: volumeStatus,
             now,
           });
           comicsReconciled += 1;
@@ -536,6 +635,7 @@ export async function syncGoodreadsIntegration(
     reconciled,
     requeued,
     pushesSkippedHeld,
+    landedReverted,
     comicsRouted,
     comicsReconciled,
     coverage,
@@ -549,6 +649,7 @@ export async function syncGoodreadsIntegration(
     requestsReconciled: reconciled,
     requestsRequeued: requeued,
     pushesSkippedHeld,
+    requestsLandedReverted: landedReverted,
     ...gone,
     ...rerequest,
     comicsRouted,

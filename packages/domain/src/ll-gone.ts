@@ -200,6 +200,12 @@ export function decideLlGoneWant(input: {
   formats?: readonly LlFormat[];
   collection?: boolean;
   graceMs?: number;
+  /**
+   * Issue #715 — a `landed` format of a want the library does NOT hold is only true while LazyLibrarian holds it,
+   * so a book LazyLibrarian no longer has leaves it unsettled too (re-keyed, or settled `missing`). Off for a want
+   * whose `landed` the library or a pairing owns.
+   */
+  includeLanded?: boolean;
 }): LlGoneDecision {
   const { want, snapshot } = input;
   if (!want.llBookId || !llSnapshotUsable(snapshot) || snapshot.has(want.llBookId)) {
@@ -208,7 +214,8 @@ export function decideLlGoneWant(input: {
   if (!want.lastSeenAt) return { kind: 'not_gone' };
   const grace = input.graceMs ?? LL_GONE_GRACE_MS;
   if (input.now.getTime() - want.lastSeenAt.getTime() < grace) return { kind: 'not_gone' };
-  const unsettled = input.collection ? COLLECTION_UNSETTLED : PUSHED_UNSETTLED;
+  const base = input.collection ? COLLECTION_UNSETTLED : PUSHED_UNSETTLED;
+  const unsettled = input.includeLanded ? new Set<BookRequestStatus>([...base, 'landed']) : base;
   const own = input.formats ?? (['ebook', 'audiobook'] as const);
   const formats = own.filter((f) =>
     unsettled.has(f === 'ebook' ? want.ebookStatus : want.audioStatus),
@@ -220,7 +227,15 @@ export function decideLlGoneWant(input: {
   if (
     toLlBookId &&
     toLlBookId !== want.llBookId &&
-    own.every((f) => llRowTracksFormat(snapshot.get(toLlBookId), f))
+    own.every((f) => llRowTracksFormat(snapshot.get(toLlBookId), f)) &&
+    // Issue #715: a format that reads `landed` must be one the new row HOLDS, or the want would keep a `landed` nothing
+    // holds (the re-request pass hands such a format back through the re-key match instead).
+    (!input.includeLanded ||
+      own.every(
+        (f) =>
+          (f === 'ebook' ? want.ebookStatus : want.audioStatus) !== 'landed' ||
+          llFormatAlreadyHeld(snapshot.get(toLlBookId), f),
+      ))
   ) {
     return { kind: 'rekey', toLlBookId };
   }
@@ -283,6 +298,8 @@ export async function settleRequestLlGone(input: {
   requestId: string;
   llBookId: string;
   formats: readonly LlFormat[];
+  /** Issue #715: also settle a `landed` format (a want the library does not hold). */
+  includeLanded?: boolean;
   now?: Date;
 }): Promise<boolean> {
   if (input.formats.length === 0) return false;
@@ -300,7 +317,7 @@ export async function settleRequestLlGone(input: {
       .for('update');
     if (!req || req.llBookId !== input.llBookId) return false;
     const settle = (format: LlFormat, current: BookRequestStatus): BookRequestStatus =>
-      input.formats.includes(format) && current !== 'landed' ? 'missing' : current;
+      input.formats.includes(format) && (current !== 'landed' || input.includeLanded) ? 'missing' : current;
     const ebookStatus = settle('ebook', req.ebookStatus);
     const audioStatus = settle('audiobook', req.audioStatus);
     if (ebookStatus === req.ebookStatus && audioStatus === req.audioStatus) return false;
@@ -335,6 +352,8 @@ export async function applyLlGoneDecision(input: {
   snapshot: LlSnapshot;
   /** Reconcile statuses from the re-keyed row (goodreads, pairing). A collection want is never reconciled. */
   reconcile: boolean;
+  /** Issue #715: the decision was made with `includeLanded`, so the settle takes a `landed` format too. */
+  includeLanded?: boolean;
   tally: LlGoneTally;
   site: string;
   now: Date;
@@ -376,6 +395,7 @@ export async function applyLlGoneDecision(input: {
       requestId: input.requestId,
       llBookId: input.llBookId,
       formats: decision.formats,
+      ...(input.includeLanded ? { includeLanded: true } : {}),
       now: input.now,
     });
     if (!settled) return;

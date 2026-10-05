@@ -313,13 +313,90 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
 - **Owed check (m), on or after 2026-10-12: delete the holding folder.** First confirm no one has reported a missing
   book since 2026-10-05: no GitHub issue or HANDOFF note names one, and
   `select title_snapshot, created_at from book_fix_requests where created_at >= '2026-10-05'` names none of the held
-  titles. Then run the dry run, read its counts (1,563 files), and delete:
+  titles. Then run the dry run, read its counts (2,834 files since the F10 sweep and follow-up below; 1,563 before), and delete:
   `kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/crossvolume_purge.py`
   then the same command with `python3 - --go`. It refuses if a file is unsorted or changed size, if an LL row
   points into the folder, or if a duplicate's or omnibus's counterpart title folder (listed per row in `sort.jsonl`)
   no longer holds a book file of that kind. It keeps `manifest.jsonl` and `sort.jsonl` in the pod's `/config/crossvolume-2026-10-05/`.
   If a book was reported missing, restore it instead: move its `dst` back to `src` from the manifest and drop its row
   from `sort.jsonl` before running the purge.
+- **2026-10-05 ~21:25Z, F10 sweep: the foreign editions from the language audit above are in the holding folder.**
+  611 files (4.07 GB) moved by `.agents/context/ll-library-audit/f10_foreign_hold.py`, appended to `manifest.jsonl` (md5)
+  and `sort.jsonl` as `foreign_f10`, so check (m) deletes them; its dry run reads 2,174 files, OK. Each language was
+  re-read from content (EPUB/PDF/MOBI text, ID3 album and publisher, whisper `large-v3` on sampled tracks); nothing on the
+  list was English. Moved: Brisingr epub (Dutch); Dead or Alive epub, pdf, azw3, mobi (German, all four formats); Verity
+  pdf, azw3, mobi (German dtv; the English epub stays); Fractal Noise epub (German, Kavita series 1865); Murtagh - Eine
+  dunkle Bedrohung epub and mobi; Ballad of Never After epub (German); Israel Potter and Karma epubs (Danish); Azazel epub
+  (Italian); A Breath of Snow and Ashes epub (Swedish); Well of Ascension and Hero of Ages epubs (Hebrew); the German mp3s
+  of Fractal Noise (366), Once Upon a Broken Heart (118) and The Ballad of Never After (106), the Swedish single-file mp3
+  in Once Upon a Broken Heart, and the two `playlist.ll` sidecars naming the German tracks. English m4b/mp3/eBooks in the
+  same folders stay. Destructora de Espadas was already in `quarantine/f10-language/` (July); its stale Audiobookshelf
+  item (missing since then) was removed.
+  - **LazyLibrarian** (`f10_foreign_ll.py`; backup `/config/lazylibrarian.db.pre-f10-foreign-20261005`). Re-pointed to the
+    English copy already held: Brisingr eBook (azw3), Fractal Noise eBook (the Pan Macmillan epub folder) and audio (m4b),
+    Karma eBook (mobi), Well of Ascension and Hero of Ages eBooks (the English epubs). Once Upon a Broken Heart and The
+    Ballad of Never After were `Wanted` for both formats with English copies on disk: linked (azw3, m4b) and `Open`.
+    Blanked and re-wanted (`queueBook`, English records): Dead or Alive `BL6LDQAAQBAJ` and Israel Potter `mPGNzQEACAAJ`
+    eBooks; the grabs that delivered the German and Danish files are blocked by two `Failed` rows (rowids 9548, 9549).
+    Blanked and `Skipped` (foreign-edition records): Murtagh - Eine dunkle Bedrohung `hN-yEAAAQBAJ` (de) and Azazel
+    `PitFPgAACAAJ` (es) eBooks; Destructora `CyO6zwEACAAJ` (es) eBook `Wanted` -> `Skipped`.
+  - **Readers.** Audiobookshelf: the three mixed items rescanned and set to their English metadata and the m4b's own
+    chapters (Fractal Noise, narr. Jennifer Hale; Once Upon a Broken Heart, narr. Rebecca Soler; The Ballad of Never
+    After). Kavita: 12 series gone, and its 1,860 files all exist on disk. No household user had reading or listening
+    progress on a moved file. A books-sync Job (`hnet-f10-books-sync-1`, 21:34Z) tombstoned 13 items.
+  - **App rows** (read-only SQL after the 21:41Z goodreads-sync): the pairing rows on removed anchors are history, and the
+    Verity Goodreads request re-matched the English Kavita series 1811. Goodreads `415e4d34` (Azazel) lost its match but
+    still reads `landed` for both formats while LL holds neither: filed #715.
+  - **NFS gotcha (affects every repair that moves files):** on `hdd-nfs-repl` a rename does not bump the source folder's
+    mtime, so Kavita's node kept listing the moved epubs and two scans changed nothing. Touch each source folder
+    (`os.utime(dir, None)`) after moving, then scan; a non-forced scan then removed them.
+  - **~21:57Z, follow-up: the five items found outside the list are done** (`f10_followup.py`; LL backup
+    `/config/lazylibrarian.db.pre-f10-followup-20261005`). 660 files held, 1 re-homed, two empty folders removed:
+    - **Eragon:** the Dutch epub held (`foreign_f10`); its three English records (`iVCNDQAAQBAJ`, `zKl_4L9AWccC`,
+      `nEeu0AEACAAJ`) re-pointed to the English mobi beside it. Kavita series 1836 is gone (Kavita has no Eragon epub now).
+    - **Murtagh German audiobook:** 652 mp3s (Random House Audio Deutschland, whisper `de`) and the German sidecars of both
+      folders held, folders removed, its two Audiobookshelf items (one a July ghost) removed. LL: `hN-yEAAAQBAJ` (de) audio
+      blanked and `Skipped`; the English record `FOqzEAAAQBAJ` now wants the audio; the "Murtagh. Deluxe Edition" record
+      `3-wFEQAAQBAJ` (`Wanted` since added, never grabbed) is `Skipped` so only one record searches.
+    - **Once Upon a Broken Heart epub that was The Ballad of Never After:** Ballad's folder had no epub, so it was re-homed
+      there (`op rehome`; Kavita series 1643 now reads it there). Once Upon a Broken Heart's eBook stays linked to its azw3,
+      which is book 1 (text checked).
+    - **The Ballad of Never After audio:** kept the m4b (AAC 64 kbps, the source bitrate, 54 named chapters, LL links it);
+      the single 128 kbps mp3 (a transcode of an Audible aax, same 54 chapters) held as `duplicate` of the folder. The
+      Audiobookshelf item reads 9.38 h, 54 chapters, metadata as set above.
+    - **Azazel:** audio `Wanted` -> `Skipped` on the Spanish record. LL has no English Azazel record, so nothing is wanted
+      (the app row is #715).
+  - **~22:07Z, the leftovers are closed** (`f10_lang_wants.py`; LL backup `/config/lazylibrarian.db.pre-f10-langwants-20261005`).
+    - **LL records with a foreign `BookLang` still `Wanted`** (12 after Azazel): 11 are real foreign editions (publisher,
+      ISBN group and description agree), so their wanted format went `Skipped` (`unqueueBook`): Roverandom (tr), Eragon -
+      Die Weisheit des Feuers, Nightflyers - Die Dunkelheit, Bauer Giles von Ham, Der Ritt nach Narnia (de), Leviathan
+      falls, Il potere della pace interiore, The Smythe-Smith Quartet (Mondadori) (it), I was born for this, Wild Cards
+      Tome 6 (fr), De silmarillion (nl). One tag was wrong: `ESS3mAEACAAJ` *Life, the Universe and Everything* is Pan/Tor
+      UK (ISBN 0330508571), so `BookLang` `iw` -> `en` and it stays `Wanted` (twins `RZYXMQAACAAJ` and `1d5JEAfTAKEC` already
+      hold the English eBook). No foreign-language record is `Wanted` now.
+    - **Where they came from:** all were added by the app's API, not by an LL author or series import. All 12 are
+      format-pairing wants (created 07-16 to 07-25; three re-added on 10-04/05 by the #668 re-request), pushed before
+      v0.107.3. Their anchors: 4 were July-F10 ghosts (Audiobookshelf items missing since their German or French audio
+      went to `quarantine/f10-language/`, still tagged `English`), 6 live Audiobookshelf items with foreign titles, and 2
+      Kavita items. The pairing title search then picked foreign Google Books volumes. v0.107.3's guard (#707: it reads
+      LL's `BookLang` before `queueBook`) blocks new pushes like these, and v0.107.4 parked the wants in flight. Neither
+      writes LL, which is why these stayed `Wanted`.
+    - **LL language preference:** `imp_preflang = en, en-GB, eng, English, en-US`, already English-only, so unchanged
+      (LL config is live on its PVC, not templated in haynes-ops). It filters author and series imports. `addBook` by id
+      only logs a warning, so the app's guard is the gate for API adds. `Unknown` is not in the list, so author imports
+      skip blank-language books.
+    - **Audiobookshelf ghosts:** `316a94fa` (German Brisingr) and the 16 other July-F10 ghosts were removed (DB only; all
+      were missing with their folders in `quarantine/f10-language/`, and no one had progress on them). The library scan
+      after that added 0 items, and books-sync tombstoned 17. Still missing and untouched: 15 non-F10 items (11 from
+      `quarantine/mam-misfile-2026-09-22/`, 1 from `audit-2026-09-29/`, 3 unplaced).
+    - **Found, not moved (German audio tagged English, live):** `AudioBooks/J.R.R. Tolkien/Bauer Giles von Ham/` (2 mp3s,
+      whisper `de`; LL `aBz-CgAAQBAJ`, a German record, has audio `Open` on it) and `AudioBooks/J.R.R. Tolkien/Roverandom/`
+      (50 mp3s, whisper `de`). *Der Ritt anc* (Narnia) and *Living a Life of Inner Peace* are English despite their titles.
+- **Owed check (p), after the 2026-10-06 04:54Z backlog run:** the Dead or Alive and Israel Potter eBook grabs are
+  English (`select rowid, NZBtitle, Status from wanted where rowid > 9549 and BookID in ('BL6LDQAAQBAJ','mPGNzQEACAAJ')`,
+  LL DB `mode=ro`), as is any `FOqzEAAAQBAJ` (Murtagh) audio grab; and the re-pointed or linked records keep their links (no
+  `BookFile`/`AudioFile` points at a missing file); and no foreign-language grab: every `wanted` row with rowid > 9549 belongs to
+  a book whose `BookLang` is English or unknown, and its `NZBtitle` names no foreign edition.
 
 ## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
 
