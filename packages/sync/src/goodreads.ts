@@ -13,7 +13,9 @@ import {
   noteIntegrationSyncBlip,
   peekGbQuotaGate,
   retryQueuedBookFixes,
+  runEnglishEditionPass,
   syncGoodreadsIntegration,
+  type EnglishEditionReport,
   type EnrichedShelfItem,
   type GbCallMeter,
   type KapowarrClientBundle,
@@ -87,6 +89,11 @@ export interface GoodreadsSyncReport {
    * this counter is the only signal that the guard is doing its job.
    */
   pushesSkippedHeld: number;
+  /**
+   * Issue #719 — the English-edition pass hosted in this run: wants whose LazyLibrarian book is not English, switched to
+   * an English edition or parked `no_english_edition` (absent when LazyLibrarian is, or the GB breaker is open).
+   */
+  englishEditions?: EnglishEditionReport;
   /** ADR-067 C-06 — the queued-book-fix retry pass hosted in this run (absent when LL/GB missing). */
   fixRetries?: RetryQueuedBookFixesReport;
   perIntegration: Array<{
@@ -162,6 +169,40 @@ export async function runGoodreadsSync(input: {
     : undefined;
   let skippedBudget = 0;
   let budgetLogged = false;
+
+  // Issue #719 — the English-edition pass runs BEFORE the shelf enrichment, so its few lookups (a lookup is at most two
+  // GB legs, capped per run) take the 'goodreads' slice first instead of whatever the enrichment leaves. Switching a want
+  // here also lets this run's own push take the English edition. It reads LazyLibrarian's language from one
+  // `getAllBooks` (an LL database read, never a Google Books call), and uses the same breaker + budget as the enrichment.
+  let englishEditions: EnglishEditionReport | undefined;
+  if (input.ll && !quotaOpen) {
+    try {
+      const snapshot = await input.ll.read.getAllBookStatuses();
+      englishEditions = await runEnglishEditionPass({
+        db: input.db,
+        snapshot,
+        resolver: {
+          gb: input.goodreads.googleBooks,
+          consumer: 'goodreads',
+          ...(enrichmentBudget ? { budget: enrichmentBudget } : {}),
+          ...(input.meter ? { meter: input.meter } : {}),
+        },
+        ...(input.now ? { now: input.now } : {}),
+        log: logger,
+      });
+      if (
+        englishEditions.switched + englishEditions.parked + englishEditions.lifted + englishEditions.failed > 0 ||
+        englishEditions.skippedBudget + englishEditions.skippedQuota + englishEditions.skippedCap > 0
+      ) {
+        logger.info('goodreads-sync: English-edition pass complete', { ...englishEditions });
+      }
+    } catch (error) {
+      // Never fails the run: the pass only ever changes a want it could judge, and runs again next time.
+      logger.error('goodreads-sync: English-edition pass failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
   // ADR-055 amendment (2026-09-22) — the run rollup of the per-integration LL push-guard suppressions.
   let pushesSkippedHeld = 0;
 
@@ -359,6 +400,7 @@ export async function runGoodreadsSync(input: {
     skippedEnrichment,
     skippedBudget,
     pushesSkippedHeld,
+    ...(englishEditions !== undefined ? { englishEditions } : {}),
     ...(fixRetries !== undefined ? { fixRetries } : {}),
     perIntegration,
   };

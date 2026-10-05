@@ -1,7 +1,7 @@
 # DESIGN-038: Books collections mirror — the Books/Audiobooks/Comics Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
+- **Last updated:** 2026-10-05 (D-13 amendment, issue #719: a collection want on a non-English LazyLibrarian book asks for the English edition). Prior: 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
   force-search parks a want on another work's book). Prior: 2026-07-20 (**ADR-076 — format-agnostic collections**: D-05 wall mapping → the comic
   partition (the three-way majority rule retires with the Audiobooks wall) + recipe-id twin MERGE; D-11/D-12
   the `cat=` token is now EMITTED by Libretto (L1 LIVE — recipe-authored categories; L2 agent-set stays the
@@ -502,3 +502,16 @@ composed-Wanted idiom, now collection-scoped.
 | Q-02 | Merge cross-source collections (the same series in Kavita + ABS) into one card via PLAN-050 pairing data?                                | **RESOLVED 2026-07-20 (ADR-076 — the owner saw the mirror live and ruled MERGE).** But the merge lives in **Libretto** (multi-target recipes: one recipe declares both targets), NOT app-side pairing-data linking — the app merges the mirrored TWINS by their shared `libretto_recipe_id` (D-05 amendment), members union at work grain via the pair cache. One recipe, one intent — twin drift is gone (ADR-076 C-01/C-03).                                                                                                                                                                                                                                                                 |
 | Q-03 | Kavita response shapes verified from the tagged 0.9.0.2 SOURCE + live route probes, not an authed live call (no creds in the build env). | Accepted risk, mitigated: strip-mode zod + the fixture battery; the deployed image is pinned to the exact verified tag. First staging `books-collections-sync` run validates live; any drift is a client-schema patch, not a schema migration.                                                                                                                                    |
 | Q-04 | Builder-LEVEL books provenance (the owner's "NY Times" / "Hardcover Series", not just "Libretto")?                                       | **PARTIALLY RESOLVED 2026-07-20 (ADR-076).** The CATEGORY half ships: Libretto now emits `cat=<Category>` and the recipe-authored category flows in via the L1 path (D-12 amendment) — so "Authors" and other recipe categories are live chips. Builder-level PROVENANCE DISPLAY (the muted "NY Times Builder" badge, needing the `/api/recipes` recipeId→builder.type join — a NEW sync dependency) stays DEFERRED; `BUILDER_DISPLAY` remains pre-wired for it. |
+
+> **Amendment 2026-10-05 (issue #719 — a want on a non-English LazyLibrarian book asks for the English edition).** The
+> normative rule is DESIGN-028's 2026-10-05 (latest) amendment. On this leg:
+>
+> - **The force-search never queues a book LazyLibrarian labels non-English.** `runForceSearchWorklist` skips such a want
+>   (report field `skippedForeign`, log `ll_push_skipped_foreign`), stamping `last_searched_at` (no audit) so the cooldown
+>   keeps it out of the next run.
+> - **The English-edition pass handles it.** The goodreads-sync job's pass switches the want to the English edition
+>   (`ll_book_id` becomes that volume, the active format returns to `requested`), after which this force-search queues the
+>   English book; or it parks the want `no_english_edition`. A parked want is out of the force-search and the one
+>   re-request, and the wants pass keeps its id (`loadParkedWantRefs`, as for `wrong_volume`); the tile stays on the drill.
+> - The books-collections-sync job makes no Google Books call of its own for this: the lookup is the goodreads job's, at most
+>   once per want per quota-day.

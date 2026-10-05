@@ -111,6 +111,8 @@ export const bookRequests = pgTable(
      * this column — is the durable "is a comic" signal (a parked comic still carries comic_status). (ADR-056.)
      * Pairing wants park with 'wrong_volume' (omnibus repair), 'multi_book' / 'no_book' (#661) and
      * 'foreign_language' (#700: the anchor or its LazyLibrarian book is not English — the F10 rule).
+     * Any non-comic want (goodreads, pairing, collection) parks 'no_english_edition' (#719): its LazyLibrarian book is
+     * not English and Google Books has no English edition of the same work to switch to.
      */
     unroutableReason: text('unroutable_reason'),
     /** When a manual "Search again" last fired a real LL searchBook (audited). Nullable. */
@@ -129,6 +131,13 @@ export const bookRequests = pgTable(
     llRerequestFailedAt: timestamp('ll_rerequest_failed_at', { withTimezone: true }),
     /** Issue #668 — when the re-request's `addBook` went through (not set by a queue-only hand-back). Migration 0090. */
     llRerequestAddedAt: timestamp('ll_rerequest_added_at', { withTimezone: true }),
+    /**
+     * Issue #719 (migration 0091) — when the app last looked for an ENGLISH EDITION of this want's book (its
+     * LazyLibrarian book was non-English, F10). At most one look per request per Google Books quota-day, whatever the
+     * answer, so a lookup that found nothing is not repeated every run. NULL = never looked. Set by the single writers
+     * `switchRequestToEnglishEdition` / `parkRequestNoEnglishEdition` / `stampEnglishEditionTried`.
+     */
+    englishEditionTriedAt: timestamp('english_edition_tried_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

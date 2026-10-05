@@ -37,6 +37,7 @@ import {
   syncCollectionWants,
 } from './book-requests';
 import { llBookMismatch } from './ll-book-check';
+import { isForeignLanguage } from './book-language';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import {
   applyLlGoneDecision,
@@ -111,6 +112,8 @@ export interface ForceSearchCollectionsReport extends LlGoneTally, LlRerequestTa
    * book as another volume or work than the member (`llBookMismatch`). No LazyLibrarian write for them.
    */
   parkedWrongVolume: number;
+  /** Issue #719 — wants SUPPRESSED because LazyLibrarian labels their book non-English (the English-edition pass takes them). */
+  skippedForeign: number;
   /** True when Libretto was unreachable — the whole pass was skipped. */
   unreachable: boolean;
 }
@@ -225,6 +228,7 @@ async function runForceSearchWorklist(input: {
     skippedHeld: number;
     skippedRecent: number;
     parkedWrongVolume: number;
+    skippedForeign: number;
   };
   log: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
@@ -289,6 +293,27 @@ async function runForceSearchWorklist(input: {
           title: want.title,
           llTitle: held.get(llBookId)?.title ?? null,
           reason: mismatch,
+        });
+        continue;
+      }
+      // Issue #719 — never queue a book LazyLibrarian labels non-English (the F10 rule). The want is left as it is: the
+      // English-edition pass (goodreads-sync) switches it to an English edition or parks it. `last_searched_at` is
+      // stamped (no audit: nothing was asked of LazyLibrarian) so the cooldown keeps it out of the next run's worklist.
+      if (isForeignLanguage(held.get(llBookId)?.language)) {
+        input.report.skippedForeign += 1;
+        input.log.info?.('ll_push_skipped_foreign', {
+          site: `collection-force-search.${input.via}`,
+          requestId: want.id,
+          llBookId,
+          formats: [want.format],
+          title: want.title,
+          llLanguage: held.get(llBookId)?.language ?? null,
+        });
+        await inTransaction(input.db, async (tx) => {
+          await tx
+            .update(bookRequests)
+            .set({ lastSearchedAt: input.now, updatedAt: input.now })
+            .where(eq(bookRequests.id, want.id));
         });
         continue;
       }
@@ -406,6 +431,7 @@ export async function forceSearchFindMissingCollections(
     skippedHeld: 0,
     skippedRecent: 0,
     parkedWrongVolume: 0,
+    skippedForeign: 0,
     unreachable: false,
     ...emptyLlGoneTally(),
     ...emptyLlRerequestTally(),
@@ -508,6 +534,7 @@ export async function forceSearchFindMissingCollections(
     skippedHeld: report.skippedHeld,
     skippedRecent: report.skippedRecent,
     parkedWrongVolume: report.parkedWrongVolume,
+    skippedForeign: report.skippedForeign,
     llGoneRekeyed: report.llGoneRekeyed,
     llGoneSettled: report.llGoneSettled,
     llRerequested: report.llRerequested,
@@ -755,6 +782,8 @@ export interface ForceSearchCollectionNowReport {
   skippedRecent: number;
   /** Issue #693 — wants parked (`wrong_volume`) because LazyLibrarian holds their book as another volume or work. */
   parkedWrongVolume: number;
+  /** Issue #719 — wants suppressed because LazyLibrarian labels their book non-English (the English-edition pass takes them). */
+  skippedForeign: number;
   /** True when Libretto was unreachable — the apply/refresh could not run, so nothing was searched. */
   unreachable: boolean;
 }
@@ -782,6 +811,7 @@ export async function forceSearchCollectionNow(
     skippedHeld: 0,
     skippedRecent: 0,
     parkedWrongVolume: 0,
+    skippedForeign: 0,
     unreachable: false,
   };
 

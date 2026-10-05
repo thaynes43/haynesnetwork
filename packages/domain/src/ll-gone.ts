@@ -44,6 +44,7 @@ import {
   type LlHeldSignals,
 } from './book-requests';
 import { inTransaction, resolveDb } from './db-client';
+import { isForeignLanguage } from './book-language';
 import { gbQuotaDayString } from './gb-call-budget';
 import { GB_DAILY_RESET_UTC_HOUR, peekGbQuotaGate } from './gb-quota-breaker';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
@@ -139,6 +140,9 @@ export class LlRekeyIndex {
 
   constructor(snapshot: LlSnapshot) {
     for (const [bookId, row] of snapshot) {
+      // Issue #719 — never re-key a want to a book LazyLibrarian labels non-English (the F10 rule): the English-edition
+      // pass moved the want OFF that book, and the same title and author must not pull it back.
+      if (isForeignLanguage(row.language)) continue;
       const key = llRekeyTitleKey(row.title);
       if (!key) continue;
       const rows = this.byTitle.get(key) ?? [];

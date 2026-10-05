@@ -21,6 +21,8 @@ const volumeSchema = z.object({
       publisher: z.string().optional(),
       categories: z.array(z.string()).optional(),
       printType: z.string().optional(),
+      /** ISO 639-1 language of the volume (`en`, `es`, ...). Issue #719: the English-edition resolve reads it. */
+      language: z.string().optional(),
       industryIdentifiers: z.array(industryIdentifierSchema).optional(),
     })
     .optional(),
@@ -298,6 +300,14 @@ export interface GbResolveInput {
   isbn?: string | null;
   title: string;
   author?: string | null;
+  /**
+   * Issue #719 — restrict the resolve to one language (`en`: the English edition of a work whose first resolve landed on
+   * a foreign edition). Sent as Google Books' `langRestrict`, and every candidate's own `volumeInfo.language` is checked
+   * too (the parameter is a hint, not a guarantee). The ISBN leg is skipped: an ISBN names ONE edition, the one the
+   * caller is trying to get away from. The comic-confirm GET is skipped as well (the want is already known not to be a
+   * comic), so a restricted resolve costs at most the two title legs.
+   */
+  language?: string | null;
 }
 
 export interface GbVolume {
@@ -308,6 +318,23 @@ export interface GbVolume {
   categories: string[];
   /** True when GB tags this as a comic / graphic novel (do NOT route to LazyLibrarian — Kapowarr's domain). */
   isComic: boolean;
+  /** Issue #719 — the volume's own language (ISO 639-1, as GB reports it), the title/subtitle and the authors, so a
+   *  caller can check an English-edition resolve against the want without a second GB call. */
+  language?: string | null;
+  title?: string | null;
+  subtitle?: string | null;
+  authors?: string[];
+}
+
+/**
+ * Issue #719 — does a Google Books `volumeInfo.language` (ISO 639-1: `en`, `es`; occasionally a region form `en-US`)
+ * name the wanted language? A volume that reports no language is NOT a match: the English-edition resolve only takes
+ * an edition Google Books positively says is English.
+ */
+export function gbLanguageMatches(volumeLanguage: string | undefined | null, wanted: string): boolean {
+  const have = (volumeLanguage ?? '').trim().toLowerCase();
+  const want = wanted.trim().toLowerCase();
+  return have !== '' && want !== '' && (have === want || have.startsWith(`${want}-`));
 }
 
 export interface GoogleBooksClientOptions extends GetOptions {
@@ -327,8 +354,9 @@ export class GoogleBooksClient {
     this.opts = rest;
   }
 
-  private async query(q: string): Promise<z.infer<typeof volumesResponseSchema> | null> {
+  private async query(q: string, language?: string | null): Promise<z.infer<typeof volumesResponseSchema> | null> {
     const params = new URLSearchParams({ q, maxResults: '5', country: 'US' });
+    if (language) params.set('langRestrict', language);
     if (this.apiKey) params.set('key', this.apiKey);
     const url = `${this.baseUrl}/volumes?${params.toString()}`;
     const text = await getText(url, this.opts);
@@ -382,7 +410,7 @@ export class GoogleBooksClient {
       // No key against the real GB API — the quota-free path is not reliable; skip enrichment cleanly.
       return null;
     }
-    if (input.isbn) {
+    if (input.isbn && !input.language) {
       const byIsbn = await this.query(`isbn:${input.isbn}`);
       const vol = byIsbn?.items?.[0];
       if (vol) return this.toVolume(vol, input.isbn, input);
@@ -401,9 +429,24 @@ export class GoogleBooksClient {
 
   private async resolveByTitle(queryTitle: string, input: GbResolveInput): Promise<GbVolume | null> {
     const authorPart = input.author ? `+inauthor:${input.author}` : '';
-    const byTitle = await this.query(`intitle:${queryTitle}${authorPart}`);
-    const vol = byTitle?.items?.[0];
-    if (!vol) return null;
+    const byTitle = await this.query(`intitle:${queryTitle}${authorPart}`, input.language);
+    // A plain resolve takes the top hit (and guards it). A language-restricted one (issue #719) walks the hits: the
+    // first that is in the language AND passes every guard below is the edition, so a foreign or other-volume top hit
+    // does not hide an English edition ranked second. Same one GB call either way.
+    const hits = input.language ? (byTitle?.items ?? []) : (byTitle?.items ?? []).slice(0, 1);
+    for (const vol of hits) {
+      const volume = await this.guardTitleHit(vol, queryTitle, input);
+      if (volume) return volume;
+    }
+    return null;
+  }
+
+  private async guardTitleHit(
+    vol: z.infer<typeof volumeSchema>,
+    queryTitle: string,
+    input: GbResolveInput,
+  ): Promise<GbVolume | null> {
+    if (input.language && !gbLanguageMatches(vol.volumeInfo?.language, input.language)) return null;
     // The title leg is fuzzy — reject a resolve whose own title doesn't cover the queried one (2026-07-16
     // wrong-work incident; see gbResolveTitleMatches). GB splits title/subtitle, and a Goodreads title
     // often carries the subtitle after a colon — compare against BOTH. ISBN resolves above stay guard-free.
@@ -440,7 +483,7 @@ export class GoogleBooksClient {
     });
     // Confirm a NEGATIVE against the full volume record only when the search returned a category list that
     // GB may have truncated (empty ⇒ the /volumes GET won't have them either; skip the quota spend).
-    if (!isComic && this.apiKey && categories.length > 0) {
+    if (!isComic && this.apiKey && categories.length > 0 && !input.language) {
       const full = await this.fetchVolume(vol.id).catch(() => null);
       const fullCategories = full?.volumeInfo?.categories;
       if (fullCategories && fullCategories.length > 0) {
@@ -458,6 +501,10 @@ export class GoogleBooksClient {
       isbn13: GoogleBooksClient.pickIsbn13(vol) ?? fallbackIsbn,
       categories,
       isComic,
+      language: vol.volumeInfo?.language ?? null,
+      title: vol.volumeInfo?.title ?? null,
+      subtitle: vol.volumeInfo?.subtitle ?? null,
+      authors: vol.volumeInfo?.authors ?? [],
     };
   }
 }

@@ -219,6 +219,8 @@ export interface GbQuotaGuardedResolver<T extends { volumeId: string }> {
     isbn?: string | null;
     title: string;
     author?: string | null;
+    /** Issue #719 — restrict the resolve to one language (the English-edition lookup). */
+    language?: string | null;
   }): Promise<T | null>;
 }
 
@@ -241,7 +243,7 @@ export type GuardedGbResolveResult<T extends { volumeId: string }> =
 export async function guardedGbResolve<T extends { volumeId: string }>(input: {
   db?: DbClient;
   gb: GbQuotaGuardedResolver<T>;
-  query: { isbn?: string | null; title: string; author?: string | null };
+  query: { isbn?: string | null; title: string; author?: string | null; language?: string | null };
   now?: Date;
   /** The estate consumer making this call — carried onto the `gb_quota_trip` log line (issue #674). */
   consumer?: GbConsumer;
