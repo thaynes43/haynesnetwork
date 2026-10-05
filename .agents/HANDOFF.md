@@ -329,7 +329,7 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
 - **Owed check (m), on or after 2026-10-12: delete the holding folder.** First confirm no one has reported a missing
   book since 2026-10-05: no GitHub issue or HANDOFF note names one, and
   `select title_snapshot, created_at from book_fix_requests where created_at >= '2026-10-05'` names none of the held
-  titles. Then run the dry run, read its counts (2,834 files since the F10 sweep and follow-up below; 1,563 before), and delete:
+  titles. Then run the dry run, read its counts (6,577 files since the F10 sweeps below; 1,563 before), and delete:
   `kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/crossvolume_purge.py`
   then the same command with `python3 - --go`. It refuses if a file is unsorted or changed size, if an LL row
   points into the folder, or if a duplicate's or omnibus's counterpart title folder (listed per row in `sort.jsonl`)
@@ -405,14 +405,49 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
       were missing with their folders in `quarantine/f10-language/`, and no one had progress on them). The library scan
       after that added 0 items, and books-sync tombstoned 17. Still missing and untouched: 15 non-F10 items (11 from
       `quarantine/mam-misfile-2026-09-22/`, 1 from `audit-2026-09-29/`, 3 unplaced).
-    - **Found, not moved (German audio tagged English, live):** `AudioBooks/J.R.R. Tolkien/Bauer Giles von Ham/` (2 mp3s,
-      whisper `de`; LL `aBz-CgAAQBAJ`, a German record, has audio `Open` on it) and `AudioBooks/J.R.R. Tolkien/Roverandom/`
-      (50 mp3s, whisper `de`). *Der Ritt anc* (Narnia) and *Living a Life of Inner Peace* are English despite their titles.
+  - **~23:00Z, final F10 sweep: Audiobookshelf and Kavita** (`f10_sweep_flag.py`, `f10_sweep_fix.py`,
+    `f10_sweep_kavita.py`; LL backups `…pre-f10-sweep-20261005` and `…pre-f10-sweep-kavita-20261005`).
+    - **Coverage.** All 1,179 Audiobookshelf items and all 1,711 Kavita book series. Cheap signals only: foreign stopwords
+      or diacritics in titles, folders and file names; narrators; ID3 album, publisher, language and comment; Kavita's
+      language tag and ISBN registration group. Only flagged items were checked by content: whisper on one track per
+      tag group, or a text sample. 30 audiobooks flagged, 22 confirmed foreign (8 English: their titles, narrator tags or
+      release names misled the flags). 5 Kavita series flagged, 1 confirmed (the Kavita pass found little because the
+      language audit above had already judged every non-English tag). Not swept: eBooks Kavita cannot read (azw3/mobi).
+    - **Held, 3,743 files (22 GB, `foreign_f10`).**
+      - Whole folders (also removed from disk and from Audiobookshelf):
+        - German: Roverandom, Bauer Giles von Ham, The Other Emily, The Book of Azrael, These Infinite Threads, Chain
+          of Thorns;
+        - Swedish: Queen Charlotte, Divergent, Binti 3;
+        - French: Katabasis.
+      - Foreign copies in folders that keep an English one:
+        - German: Outland, Chain of Iron, Ready Player One (three German copies), One Dark Window, Two Twisted Crowns,
+          The Big Short, Lady Midnight, Carl's Doomsday Scenario;
+        - Swedish single mp3s: Phantoms, Allegiant, Verity;
+        - Indonesian m4b: The Girl Who Kicked the Hornet's Nest.
+      - Kavita: the German dtv *Solitaire* epub (series 657 keeps the English *Nick and Charlie*).
+      - Nobody had progress on any of these.
+    - **LazyLibrarian.**
+      - Re-wanted, English records with no English copy left: audio for Queen Charlotte, Roverandom, Divergent, The Other
+        Emily, These Infinite Threads, Chain of Thorns and Katabasis; the Solitaire eBook. Each grab that delivered the
+        foreign edition is blocked by a `Failed` row (rowids 9552-9558).
+      - Re-pointed to the English copy left in the folder: Ready Player One (Wil Wheaton m4b), Two Twisted Crowns and
+        Verity (m4b).
+      - `Skipped`: Bauer Giles von Ham `aBz-CgAAQBAJ` (German record; LL has no English *Farmer Giles of Ham*), and *The
+        World of Divergent* `6s_qLDNW0kwC`, which pointed at the Swedish Divergent.
+      - No LL record linked Outland, Carl's Doomsday Scenario or Binti 3. The Book of Azrael was already `Wanted`.
+    - **Readers.** The 12 mixed Audiobookshelf items were rescanned, set to English metadata (narrator, publisher, title
+      where it was the German one) and given chapters rebuilt from the English tracks. Library scans afterwards added
+      nothing, and Kavita lists no moved file. The books-sync Job tombstoned the 10 removed items. The app rows for
+      Roverandom and Bauer Giles von Ham read as expected: the foreign anchors are parked, and the English Roverandom
+      request reconciles through LL.
+    - **Seen, not foreign:** a *Missing in Malmö* epub (English) sits in Robert Jordan's *Eye of the World* folder (wrong
+      book); the *City of Fallen Angels* pdf's text is font-encoded and could not be sampled.
 - **Owed check (p), after the 2026-10-06 04:54Z backlog run:** the Dead or Alive and Israel Potter eBook grabs are
   English (`select rowid, NZBtitle, Status from wanted where rowid > 9549 and BookID in ('BL6LDQAAQBAJ','mPGNzQEACAAJ')`,
   LL DB `mode=ro`), as is any `FOqzEAAAQBAJ` (Murtagh) audio grab; and the re-pointed or linked records keep their links (no
-  `BookFile`/`AudioFile` points at a missing file); and no foreign-language grab: every `wanted` row with rowid > 9549 belongs to
-  a book whose `BookLang` is English or unknown, and its `NZBtitle` names no foreign edition.
+  `BookFile`/`AudioFile` points at a missing file). No foreign-language grab: every `wanted` row with rowid > 9549 belongs to a
+  book whose `BookLang` is English or unknown, and its `NZBtitle` names no foreign edition. The final sweep's eight re-wanted
+  records grab English editions, and the blocked releases (rowids 9552-9558) are not grabbed again.
 
 ## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
 
