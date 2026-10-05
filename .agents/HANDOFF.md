@@ -13,7 +13,7 @@
   Books calls every day, and Libretto hits daily-quota 429s most evenings between 18:42Z and 22:42Z, so exhaustion
   predates the #668 re-add influx. The options on #674 wait for the readings below.
 
-**Owed checks (b), (d)-(f), (j), (k) and (l) from the blocks below are still pending; (c) passed 2026-10-05.** New ones:
+**Owed checks (b), (d)-(f), (j), (k), (l) and (m) from the blocks below are still pending; (c) passed 2026-10-05.** New ones:
 
 - **(g) After the 2026-10-05 07:00Z roll**, `{namespace="frontend"} |= "gb_quota_day_closed" | json` shows exactly one
   line, for quota-day 2026-10-04.
@@ -125,7 +125,7 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
     the app resolved from "The BBC Radio Drama Collection". It took 32 Discworld grabs, and the #688 penalty does not
     cover its title shape (#694), so a re-want would grab Discworld novels again; the app rows are #693. Also the
     eBook of `ik6xzgEACAAJ`, which is the German omnibus *Chroniken der Unterwelt (4-6)* (F10 English-only); its
-    German vols 4-6 audio stays as the record's file.
+    German vols 4-6 audio stayed as the record's file until the follow-up below held it under F10.
   - **Readers:** Audiobookshelf items rebuilt (their `metadata.json` moved aside as `metadata.json.pre-crossvol-20261005`,
     rescanned, titles set): This Woven Kingdom (13.36 h, 44 chapters), The Infernal Devices, Chroniken der Unterwelt
     (4-6), Guards! Guards! (Unabridged); the emptied Discworld item was removed. Kavita library scanned; the omnibus,
@@ -148,6 +148,39 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
   of the 19 records gets a grab: `select BookID, NZBtitle, Status from wanted where rowid > 9539 and BookID in (<the 19
   ids in the table>)` returns no row; `YVfJMgEACAAJ` stays `Skipped` for both formats with no file; `ik6xzgEACAAJ`
   eBook stays `Skipped`; and every BookFile/AudioFile of the 19 points at an existing file (LL DB opened `mode=ro`).
+- **2026-10-05 ~14:40Z, follow-up: the German Chroniken der Unterwelt books leave the library (F10); the holding folder
+  is sorted.**
+  - `ik6xzgEACAAJ` is the German omnibus *Chroniken der Unterwelt (4-6)* (Arena, ISBN 9783401807294). Its five wants
+    all came from **pairing** on German Kavita and Audiobookshelf items; none came from a collection or Goodreads. The
+    English volumes 4-6 are already held under their own records: City of Fallen Angels `XEouBQAAQBAJ`, City of Lost
+    Souls `2I6bkQEACAAJ` (a German-titled record that links the English Walker edition) and City of Heavenly Fire
+    `hf1wCgAAQBAJ`. So LazyLibrarian needed no re-point. The five app rows are stale `landed` claims (out of the
+    reconcile, so they queue nothing) and are folded into #693 with their settlement: park `wrong_volume`, an app-DB
+    write.
+  - **Held under F10:** the German vols 4-6 audio (254 files with sidecars; the folder is gone and its Audiobookshelf
+    item removed); the German City of Heavenly Fire audio that sat inside the English folder (78 files; `hf1wCgAAQBAJ`
+    now links the English `Part 1 of 3`); and six German eBook folders (City of ashes, bones, fallen angels, glass,
+    lost souls, and Der Schattenjäger-Codex). `ik6xzgEACAAJ`, `rEPwXwAACAAJ`, `xVVingEACAAJ` and `MI81nwEACAAJ` are
+    `Skipped` with no file; no app row points at the last three. Kavita was rescanned and shows no Chroniken series.
+    No one had progress on any of these files.
+  - **Holding folder sorted** (`sort.jsonl` next to `manifest.jsonl`; classifier
+    `.agents/context/ll-library-audit/crossvolume_sort.py`): 1,325 files, 9.28 GB, every file in one of four
+    delete categories. `duplicate` 580: the Discworld audio and Making Money (each title's own folder holds a copy) and
+    the second Clockwork Prince. `foreign_f10` 733: German editions plus the Hebrew Mistborn. `omnibus_redundant` 3:
+    Shatter Me Complete Collection, Grey + Darker and the Inheritance Cycle Omnibus, each with every volume held in
+    English. `off_catalog` 9: the fan-fiction pdf, the usenet advert pdf, a Fifty Shades of Grey azw3 that has no LL
+    record and no request, and sidecars. No held file is the only copy of a book LazyLibrarian tracks; the four that
+    were (The Science of Discworld, the unabridged Guards! Guards!, the Destroy Me azw3, the English Final Empire)
+    were re-homed earlier.
+- **Owed check (m), on or after 2026-10-12: delete the holding folder.** First confirm no one has reported a missing
+  book since 2026-10-05: no GitHub issue or HANDOFF note names one, and
+  `select title_snapshot, created_at from book_fix_requests where created_at >= '2026-10-05'` names none of the held
+  titles. Then run the dry run, read its counts (1,325 files), and delete:
+  `kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/crossvolume_purge.py`
+  then the same command with `python3 - --go`. It refuses if a file is unsorted or changed size, or if an LL row
+  points into the folder. It keeps `manifest.jsonl` and `sort.jsonl` in the pod's `/config/crossvolume-2026-10-05/`.
+  If a book was reported missing, restore it instead: move its `dst` back to `src` from the manifest and drop its row
+  from `sort.jsonl` before running the purge.
 
 ## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
 
