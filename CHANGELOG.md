@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.107.3](https://github.com/thaynes43/haynesnetwork/compare/v0.107.2...v0.107.3) (2026-10-05)
+
+
+### Bug Fixes
+
+* **books:** pairing never asks for the other format of a foreign-language item ([#700](https://github.com/thaynes43/haynesnetwork/issues/700)) ([#707](https://github.com/thaynes43/haynesnetwork/issues/707)) ([038a949](https://github.com/thaynes43/haynesnetwork/commit/038a949fdaf994605b26f592a404ed860f6a0cbc))
+
+
+### Documentation
+
+* **agents:** The Runaway Jury audiobook title restored; stale in-folder metadata held ([#704](https://github.com/thaynes43/haynesnetwork/issues/704)) ([de7f06a](https://github.com/thaynes43/haynesnetwork/commit/de7f06a4e0a818a66d7003ceed78642638b2fd0f))
+* **agents:** v0.107.1 + v0.107.2 deploy record, [#693](https://github.com/thaynes43/haynesnetwork/issues/693) repaired and closed ([#703](https://github.com/thaynes43/haynesnetwork/issues/703)) ([8575654](https://github.com/thaynes43/haynesnetwork/commit/857565491b8081c3380b2ed2ce8aea3c261f60e9))
+
 ## [0.107.2](https://github.com/thaynes43/haynesnetwork/compare/v0.107.1...v0.107.2) (2026-10-05)
 
 
