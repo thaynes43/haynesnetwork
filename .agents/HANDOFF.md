@@ -171,20 +171,32 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
     `Skipped` with no file; no app row points at the last three. Kavita was rescanned and shows no Chroniken series.
     No one had progress on any of these files.
   - **Holding folder sorted** (`sort.jsonl` next to `manifest.jsonl`; classifier
-    `.agents/context/ll-library-audit/crossvolume_sort.py`): 1,325 files, 9.28 GB, every file in one of four
-    delete categories. `duplicate` 580: the Discworld audio and Making Money (each title's own folder holds a copy) and
+    `.agents/context/ll-library-audit/crossvolume_sort.py`): 1,325 files, 9.28 GB at this point (1,562 files and
+    9.78 GB after the #694 batch below), every file in one of four delete categories. `duplicate` 580: the Discworld audio and Making Money (each title's own folder holds a copy) and
     the second Clockwork Prince. `foreign_f10` 733: German editions plus the Hebrew Mistborn. `omnibus_redundant` 3:
     Shatter Me Complete Collection, Grey + Darker and the Inheritance Cycle Omnibus, each with every volume held in
     English. `off_catalog` 9: the fan-fiction pdf, the usenet advert pdf, a Fifty Shades of Grey azw3 that has no LL
     record and no request, and sidecars. No held file is the only copy of a book LazyLibrarian tracks; the four that
     were (The Science of Discworld, the unabridged Guards! Guards!, the Destroy Me azw3, the English Final Empire)
     were re-homed earlier.
+- **2026-10-05 ~15:10Z, the #694 batch (44 more rows from the extended matcher, haynes-ops #3369).** 30 are the
+  Discworld record and 9 belong to records already repaired above (the German Mistborn and Throne of Glass audio,
+  Ruins and Defiant are not in the library now). The other two records:
+  - **Dean Koontz's Frankenstein `D59dwgEACAAJ`** (City of Night, book 2): the eBook linked "The Frankenstein Series
+    5-Book Bundle". The bundle is held, since all five volumes are in their own folders, and the record now links the
+    folder's City of Night azw3.
+  - **The Firm `LorQP-vVUT0C`**: the eBook is right. The audiobook linked four incomplete 2024 fragments (1.8 h) in
+    `Firm/`; it now links the complete 15.0 h copy in `The Firm/`. The 228 Runaway Jury files that the 2026-10-04 grab
+    put in `The Firm/` are held (226 byte-identical to `The Runaway Jury/`), and so are the fragments. Audiobookshelf
+    was rebuilt (60 tracks, 15.0 h); the fragments item was removed. Pairing want `3cd1a6d7` (anchor: the Audiobookshelf
+    item The Runaway Jury, resolved to The Firm) is added to #693.
+  - Nothing re-wanted: each record already had a right copy in the library.
 - **Owed check (n), after the 2026-10-06 04:54Z backlog run:** `ik6xzgEACAAJ` reads `Skipped` for both formats with
   no new `wanted` row (rowid > 9540), and `select count(*) from book_requests where ll_book_id='ik6xzgEACAAJ'` is 0.
 - **Owed check (m), on or after 2026-10-12: delete the holding folder.** First confirm no one has reported a missing
   book since 2026-10-05: no GitHub issue or HANDOFF note names one, and
   `select title_snapshot, created_at from book_fix_requests where created_at >= '2026-10-05'` names none of the held
-  titles. Then run the dry run, read its counts (1,325 files), and delete:
+  titles. Then run the dry run, read its counts (1,562 files), and delete:
   `kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/crossvolume_purge.py`
   then the same command with `python3 - --go`. It refuses if a file is unsorted or changed size, if an LL row
   points into the folder, or if a duplicate's or omnibus's counterpart title folder (listed per row in `sort.jsonl`)

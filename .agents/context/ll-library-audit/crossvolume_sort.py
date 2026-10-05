@@ -5,6 +5,13 @@ import json,os,collections
 B='/data/cephfs-hdd/data/media/books/'; H=B+'quarantine/crossvolume-2026-10-05/'
 def cat(src,reason,fn):
     s=src+'/'+fn
+    if src=='EBooks/Dean Koontz/Dean Koontzs Frankenstein': return 'omnibus_redundant','Frankenstein 5-Book Bundle: all five volumes held in their own folders'
+    if src=='AudioBooks/John Grisham/The Firm':
+        if fn=='metadata.json': return 'off_catalog','stale 2024 in-folder Audiobookshelf metadata.json'
+        return 'duplicate','The Runaway Jury, held in The Runaway Jury/ (226 of 228 byte-identical)'
+    if src=='AudioBooks/John Grisham/Firm':
+        if fn.lower().endswith('.mp3'): return 'duplicate','incomplete fragments (discs 10-14) of The Firm; The Firm/ holds the complete 15.0 h copy'
+        return 'off_catalog','sidecar of the removed fragments folder'
     if reason.startswith('F10') and 'Schattenj' in src: return 'foreign_f10','German edition (or its sidecar), F10; English Shadowhunter\'s Codex is its own record'
     if src.endswith('Terry Pratchetts Discworld'):
         if fn.lower().endswith(('.mp3','.epub')): return 'duplicate','own title folder holds a copy of matching length (Making Money/, and each Discworld novel\'s folder)'
@@ -34,6 +41,9 @@ def counterparts(src,fn,c):
             return ['AudioBooks/Terry Pratchett/'+t[0]] if len(t)==1 else None
         if src.startswith('EBooks/Terry Pratchett/'): return ['EBooks/Terry Pratchett/Making Money']
         if 'The Infernal Devices' in src: return ['AudioBooks/Cassandra Clare/Clockwork Prince']
+    if c=='duplicate' and src=='AudioBooks/John Grisham/The Firm': return ['AudioBooks/John Grisham/The Runaway Jury']
+    if c=='duplicate' and src=='AudioBooks/John Grisham/Firm': return ['AudioBooks/John Grisham/The Firm']
+    if c=='omnibus_redundant' and 'Dean Koontz' in src: return ['EBooks/Dean Koontz/'+x for x in ('Prodigal Son','City of Night','Dead and Alive (Dean Koontzs Frankenstein Book 3)','Lost Souls','The Dead Town')]
     if c=='omnibus_redundant':
         if 'Shatter Me' in src: return ['EBooks/Tahereh Mafi/'+x for x in ('Shatter Me','Destroy Me','Unravel Me','Fracture Me','Ignite Me')]
         if 'Inheritance' in src: return ['EBooks/Christopher Paolini/'+x for x in ('Eragon','Eldest','Brisingr')]

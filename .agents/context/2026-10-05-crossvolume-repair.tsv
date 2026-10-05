@@ -37,3 +37,8 @@ r_i4_Lr5fA4C	Throne of Glass	eBook	34	correct	none	azw3 book 1	no
 r_i4_Lr5fA4C	Throne of Glass	AudioBook	1	correct	none	same 12.81 h file	no	
 o37NuQEACAAJ	Twilight	eBook	0	correct	none	epub Twilight	no	
 o37NuQEACAAJ	Twilight	AudioBook	3	correct	none	159 tracks, 13.14 h	no	
+D59dwgEACAAJ	Dean Koontz's Frankenstein (City of Night, book 2) [#694 batch]	eBook	3	wrong	held: "The Frankenstein Series 5-Book Bundle" epub (all five volumes held in their own folders); BookFile re-pointed to the folder's City of Night azw3	EBooks/Dean Koontz/Dean Koontzs Frankenstein/Dean Koontzs Frankenstein - Dean Koontz.azw3	no	
+D59dwgEACAAJ	Dean Koontz's Frankenstein [#694 batch]	AudioBook	0	n/a (Skipped)	none		no	
+LorQP-vVUT0C	The Firm [#694 batch]	eBook	2	correct	none	The Firm (Dell), English	no	the two Exchange grabs and a Swedish one were overwritten later
+LorQP-vVUT0C	The Firm [#694 batch]	AudioBook	0	wrong	the record linked 4 incomplete 2024 fragments (1.8 h) in Firm/: held; AudioFile re-pointed to the complete 15.0 h copy in The Firm/; 228 Runaway Jury files the 2026-10-04 grab put in The Firm/ held (226 byte-identical to The Runaway Jury/)	AudioBooks/John Grisham/The Firm/John Grisham - The Firm - 01.Mp3	no	Audiobookshelf item rebuilt (60 tracks, 15.0 h); the fragments item removed
+ik6xzgEACAAJ, t_ZYYXZq4RgC, QLnfZW-l_EwC, sal2DwAAQBAJ, mezhxQ0twPUC	[#694 batch, 9 rows]	AudioBook/eBook	9	already covered	none beyond the rows above	see each record's rows	no	German Mistborn and Throne of Glass audio, Ruins and Defiant are not in the library now
