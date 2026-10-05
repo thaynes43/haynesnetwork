@@ -1,7 +1,8 @@
 # F10 azw3/mobi coverage sweep, 2026-10-05 (~23:55Z): Kavita cannot read azw3/mobi, so the language sweeps never saw them.
 # All 446 azw3/mobi files under books/EBooks were read from content (mobi.extract text sample + EXTH language/publisher; PalmDOC
 # fallback for the few the unpacker rejects; the four Expanse Origins comics are page images, read by eye) and classified by
-# stopword ratio. 444 are English (0.39-0.51 English stopword share, next language <= 0.11). Confirmed foreign: these two.
+# stopword ratio. 442 are English (0.39-0.51 English stopword share, next language <= 0.11); 2 are corrupt and unverified (That
+# Hideous Strength mobi, Grave Secret mobi; left alone). Confirmed foreign: these two.
 # Run INSIDE the LazyLibrarian pod:
 #   kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/f10_mobi_hold.py        # dry run
 #   kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - --go < .agents/context/ll-library-audit/f10_mobi_hold.py   # move
