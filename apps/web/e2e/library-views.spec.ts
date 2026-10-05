@@ -240,16 +240,20 @@ test.describe('library views + grouping (PLAN-029 / DESIGN-026)', () => {
 
     // Group cards ride the same dense 3-column grid (each card well under half the width) and the
     // stacked-cover box reserves the 2:3 space.
-    const cards = await page.locator('.group-card').all();
-    expect(cards.length).toBeGreaterThan(0);
-    const cardBox = (await cards[0]!.boundingBox())!;
-    expect(cardBox.width).toBeLessThan(150);
-    // The art box reserves the 2:3 space. Which VARIANT renders is data-dependent (group-card-art
-    // draws `__stack` for a multi/zero-cover group and `__portrait` for a single-cover one), and
-    // ADR-075's unified wall reshuffled the groups — so assert the reserved box itself, which is
-    // what ADR-015 actually cares about, rather than one variant's class.
-    const stack = (await page.locator('.group-card .poster-box').first().boundingBox())!;
-    expect(stack.height).toBeGreaterThan(stack.width * 1.3);
+    // Measured inside toPass: the wall re-renders its cards when the first refetch lands, and a bounding box read
+    // from a card that was replaced in between comes back null (the intermittent CI failure on main, #702).
+    await expect(async () => {
+      const cardBox = await page.locator('.group-card').first().boundingBox();
+      expect(cardBox, 'first group card is laid out').not.toBeNull();
+      expect(cardBox!.width).toBeLessThan(150);
+      // The art box reserves the 2:3 space. Which VARIANT renders is data-dependent (group-card-art
+      // draws `__stack` for a multi/zero-cover group and `__portrait` for a single-cover one), and
+      // ADR-075's unified wall reshuffled the groups — so assert the reserved box itself, which is
+      // what ADR-015 actually cares about, rather than one variant's class.
+      const stack = await page.locator('.group-card .poster-box').first().boundingBox();
+      expect(stack, 'first group-card art box is laid out').not.toBeNull();
+      expect(stack!.height).toBeGreaterThan(stack!.width * 1.3);
+    }).toPass({ timeout: 10_000 });
 
     // The page never scrolls horizontally (the ADR-015 portrait-safety check).
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
