@@ -672,6 +672,8 @@ export interface MintPairingWantsReport {
   parked: number;
   /** Issue #700 — anchors whose library language is explicitly non-English, with no want yet: never minted. */
   skippedForeign: number;
+  /** Issue #712 — `foreign_language` parks lifted this run because the anchor's language now reads English or unknown. */
+  unparked: number;
   /** Issue #700 — wants parked at the push because LazyLibrarian's own `BookLang` is non-English (nothing pushed). */
   refusedForeignBook: number;
   /**
@@ -1183,6 +1185,70 @@ export async function parkPairingWant(input: {
 }
 
 /**
+ * Issue #712 — the one way back out of a `foreign_language` park (the inverse of `parkPairingWant`, same
+ * single-writer class, unaudited, one statement). Clears `unroutable_reason` ONLY where it is still
+ * `foreign_language`: every other park (`wrong_volume`, `multi_book`, `no_book`) is a different decision and is
+ * never lifted here. `updated_at` is left alone (it is the retry-recency key and a lift is not an attempt), and
+ * the want's statuses and LazyLibrarian id are untouched, so it re-enters the mint exactly as it was parked.
+ * Returns whether the row was lifted.
+ */
+export async function unparkForeignLanguageWant(input: { db?: DbClient; requestId: string }): Promise<boolean> {
+  const lifted = await resolveDb(input.db)
+    .update(bookRequests)
+    .set({ unroutableReason: null })
+    .where(
+      and(
+        eq(bookRequests.id, input.requestId),
+        eq(bookRequests.origin, 'pairing'),
+        eq(bookRequests.unroutableReason, FOREIGN_LANGUAGE_REASON),
+      ),
+    )
+    .returning({ id: bookRequests.id });
+  return lifted.length > 0;
+}
+
+/**
+ * Issue #712 (DESIGN-036 amendment 2026-10-05) — re-evaluate every `foreign_language` park on every run. The park
+ * was decided from the anchor's library language and LazyLibrarian's `BookLang` at that moment; a language edited
+ * in Kavita (or Audiobookshelf) since then must free the want. A park lifts when its anchor is live, the anchor's
+ * language now reads English or unknown, and LazyLibrarian's `BookLang` for the want's book is not foreign. A want
+ * with no LazyLibrarian book has nothing to contradict the library (the push re-checks); one with a book needs
+ * `llBookLanguage` to judge it, and a run without it (degraded) lifts nothing it cannot verify. Returns the ids
+ * lifted. Only `foreign_language` is considered.
+ */
+async function liftForeignLanguageParks(input: {
+  db?: DbClient;
+  wants: readonly BookRequestRow[];
+  anchors: ReadonlyArray<{ id: string; language: string | null }>;
+  llBookLanguage?: MintPairingWantsInput['llBookLanguage'];
+  log: { info?: (message: string, fields?: Record<string, unknown>) => void };
+}): Promise<Set<string>> {
+  const lifted = new Set<string>();
+  const anchorById = new Map(input.anchors.map((a) => [a.id, a] as const));
+  for (const w of input.wants) {
+    if (w.unroutableReason !== FOREIGN_LANGUAGE_REASON || !w.pairingBooksItemId) continue;
+    const anchor = anchorById.get(w.pairingBooksItemId);
+    if (!anchor || isForeignLanguage(anchor.language)) continue;
+    let llLanguage: string | null | undefined = null;
+    if (w.llBookId !== null) {
+      if (!input.llBookLanguage) continue;
+      llLanguage = await input.llBookLanguage(w.llBookId, false);
+      if (isForeignLanguage(llLanguage)) continue;
+    }
+    if (await unparkForeignLanguageWant({ db: input.db, requestId: w.id })) {
+      lifted.add(w.id);
+      input.log.info?.('format-pairing: foreign_language park lifted, the anchor is no longer non-English', {
+        requestId: w.id,
+        title: w.title,
+        language: anchor.language,
+        llLanguage: llLanguage ?? null,
+      });
+    }
+  }
+  return lifted;
+}
+
+/**
  * The PACED estate-wide mint (owner rulings R1/R1a): every unpaired live item lacking the other
  * format is a candidate; at most `cap` are ATTEMPTED per run — fresh candidates oldest-first
  * (first_seen_at, id), then retryable existing wants (unmintable / never-pushed) least-recently-
@@ -1231,7 +1297,17 @@ export async function mintPairingWants(
   const unpaired = items.filter((i) => !pairedIds.has(i.id));
 
   // 2. Existing pairing wants by anchor (one per anchor by schema).
-  const wants = await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
+  const allWants = await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
+  // 2-pre. Issue #712 — a `foreign_language` park whose anchor now reads English (or unknown) is lifted first, so the
+  //     want is a normal candidate in this very run. No cap, no external call beyond the language read.
+  const liftedParks = await liftForeignLanguageParks({
+    db: input.db,
+    wants: allWants,
+    anchors: items,
+    llBookLanguage: input.llBookLanguage,
+    log,
+  });
+  const wants = allWants.map((w) => (liftedParks.has(w.id) ? { ...w, unroutableReason: null } : w));
   const wantByAnchor = new Map(wants.map((w) => [w.pairingBooksItemId!, w] as const));
 
   // 2a. Issue #693 (DESIGN-036 amendment 2026-10-05) — every unparked want on a live anchor holding one book is
@@ -1598,6 +1674,7 @@ export async function mintPairingWants(
     skippedNotOneBook,
     parked,
     skippedForeign,
+    unparked: liftedParks.size,
     refusedForeignBook,
     reidentified,
     retitled,

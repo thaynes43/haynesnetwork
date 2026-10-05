@@ -1,8 +1,9 @@
 # DESIGN-036: Book ⇄ audiobook format pairing — pair cache, paced system wants, dual consume buttons
 
 - **Status:** Draft
-- **Last updated:** 2026-10-05 (a want is checked against its anchor's book, issue #693; see the amendment of that
-  date). Prior: 2026-07-21 (**author-agreement tolerance** — the live pairing-gap diagnosis found the
+- **Last updated:** 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
+  see the last amendment). Prior: 2026-10-05 (a want is checked against its anchor's book, issue #693; see the
+  amendment of that date). Prior: 2026-07-21 (**author-agreement tolerance** — the live pairing-gap diagnosis found the
   substring check refusing real pairs on initials spacing ("JRR Tolkien" ⇄ "J.R.R. Tolkien"),
   initials-to-full-name ("L.M." ⇄ "Lucy Maud"), middle-name insertion ("Dean Koontz" ⇄ "Dean Ray
   Koontz"), and leading co-author credits. `authorsAgree` now ALSO accepts an ordered token
@@ -465,3 +466,36 @@ state allows. The #668 re-request skips wants on foreign anchors.
 
 Unchanged: the confined LazyLibrarian surface (C-08) and every other write. Foreign anchors still pair when both
 formats are in the library; the rule only stops pairing from asking for the other format.
+
+## Amendment — 2026-10-05: a `foreign_language` park lifts when the language is fixed (issue #712)
+
+**Normative rule: the F10 English-only ruling, read in both directions.** The #700 park was one-way (the 2026-10-03
+amendment: a park "is its own decision"), so a language corrected in the library afterwards never freed the want: on
+2026-10-05 eighteen Kavita series had their `language` corrected to `en` and eleven of them still carried a want
+parked `foreign_language`. Two halves fixed it: DESIGN-024's amendment of this date makes the correction reach
+`books_items.attrs.language`, and this one lets the park go.
+
+**The re-evaluation.** Every mint run, before the candidate list is built (D-05 step 2-pre), looks at every want
+whose `unroutable_reason` is `foreign_language` and lifts it when ALL hold:
+
+1. its anchor is still a live library item;
+2. the anchor's `attrs.language` now classifies as English or unknown (the #700 table), not foreign;
+3. LazyLibrarian's own `BookLang` for the want's `ll_book_id` is not foreign. A want with no `ll_book_id` has no
+   LazyLibrarian book to contradict the library, and the push re-checks the language anyway. A want that has one
+   needs the run's language read (`llBookLanguage`); a degraded run without it lifts nothing it cannot verify.
+
+So the push-time park (an anchor that reads `English` whose LazyLibrarian book is `de`) stays parked: only the
+anchor's language changed, not the book's. Only `foreign_language` lifts. `wrong_volume`, `multi_book` and `no_book`
+are different decisions and are never touched here.
+
+**The writer.** `unparkForeignLanguageWant` is the single writer, the inverse of `parkPairingWant` and the same
+class (unaudited, one statement): it clears `unroutable_reason` only `WHERE unroutable_reason = 'foreign_language'`
+on a pairing want. It leaves `updated_at` (the retry-recency key; a lift is not an attempt), the statuses and
+`ll_book_id` as they were, so the want re-enters the mint exactly as it was parked: a want whose missing format is
+`requested` or has no LazyLibrarian id is a normal candidate in the SAME run (resolved and pushed under the usual
+cap and guards); a want LazyLibrarian was already working simply resumes reconciling on the next pass. The lift
+costs no cap and no external call beyond the language read.
+
+**Report field:** `unparked` (log line `foreign_language park lifted`).
+
+Unchanged: parking itself, the push guard, the Skipped sweep guard and the confined LazyLibrarian surface.

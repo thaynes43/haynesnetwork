@@ -6,7 +6,7 @@
 import type { AbsItem, KavitaSeries, KavitaSeriesMetadata, KavitaVolume } from '@hnet/books';
 import { kavitaLibraryKind, type AudiobookshelfClient, type KavitaClient } from '@hnet/books/read';
 import type { BooksSource } from '@hnet/db';
-import type { BooksItemInput, HeldBook } from '@hnet/domain';
+import { isForeignLanguage, type BooksItemInput, type HeldBook } from '@hnet/domain';
 import { noopLogger, type SyncLogger } from './logger';
 
 const KAVITA_PAGE_SIZE = 500;
@@ -293,9 +293,10 @@ export function normalizeAbsItem(
  * DESIGN-024 D-01 amendment (detail-page parity) — the existing mirror enrichment the change-gate
  * compares against, keyed by Kavita series id (books_items.external_id for kavita rows). The
  * orchestrator SELECTs this once before the run; a series is re-fetched from `/api/Series/metadata`
- * ONLY when it is new to the mirror, was never enriched (`metadataSyncedAt` null), or its
- * `source_updated_at` changed since the last run — so the hourly sync issues no per-series call for
- * the ~1,400 unchanged Kavita series.
+ * when it is new to the mirror, was never enriched (`metadataSyncedAt` null), or its
+ * `source_updated_at` changed since the last run, or (issue #712) it is picked by the bounded rolling
+ * refresh (`selectMetadataRefresh`) — so the hourly sync issues at most a capped batch of per-series calls
+ * for the ~1,400 unchanged Kavita series.
  */
 export interface ExistingKavitaEnrichment {
   sourceUpdatedAt: Date | null;
@@ -308,7 +309,55 @@ export interface ExistingKavitaEnrichment {
   heldBooks?: HeldBook[];
 }
 
+/**
+ * Issue #712 — Kavita exposes NO change signal for a series' metadata: the series list (`all-v2`) carries only
+ * `created` / `lastChapterAddedUtc` (neither moves when metadata is edited) and `/api/Series/metadata` has no
+ * modified stamp or hash (probed live 2026-10-05; an edit of `language` + `languageLocked` changed nothing the
+ * list returns). So the change-gate alone can never see an edit, and the sync re-reads on a bounded ROLLING
+ * schedule as well: each run, per library, it re-reads at most `KAVITA_METADATA_REFRESH_CAP` series, the ones
+ * whose last read is oldest and at least `KAVITA_METADATA_REFRESH_MIN_AGE_MS` old. About 1,400 series at 150 a
+ * run means every series is re-read within ~10 hourly runs, so an edit always lands, at ~150 cheap GETs a run
+ * (the one-off backfill read all 1,400 in a run). Series whose stored language is explicitly non-English are
+ * re-read EVERY run, ahead of the rotation (a handful of calls, shrinking as items are fixed), so a language
+ * correction, the edit that frees a pairing want (DESIGN-036 F10), lands on the very next run.
+ */
+export const KAVITA_METADATA_REFRESH_CAP = 150;
+export const KAVITA_METADATA_REFRESH_MIN_AGE_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Pick the series (ids) whose metadata is re-read this run beyond the change-gate (pure — unit-tested): every
+ * series with a foreign stored language, then the stalest others past the minimum age, at most `cap` in all
+ * (foreign ones first and uncapped by age; a series never read is the change-gate's job, not this one's).
+ */
+export function selectMetadataRefresh(
+  series: readonly KavitaSeries[],
+  existing: Map<string, ExistingKavitaEnrichment> | undefined,
+  options: { now: Date; cap?: number; minAgeMs?: number },
+): Set<number> {
+  const cap = options.cap ?? KAVITA_METADATA_REFRESH_CAP;
+  const minAgeMs = options.minAgeMs ?? KAVITA_METADATA_REFRESH_MIN_AGE_MS;
+  if (existing === undefined || cap <= 0) return new Set();
+  const foreign: Array<{ id: number; at: number }> = [];
+  const rotation: Array<{ id: number; at: number }> = [];
+  for (const s of series) {
+    const row = existing.get(String(s.id));
+    if (row === undefined || row.metadataSyncedAt === null) continue;
+    const at = row.metadataSyncedAt.getTime();
+    if (isForeignLanguage(row.data.language)) foreign.push({ id: s.id, at });
+    else if (options.now.getTime() - at >= minAgeMs) rotation.push({ id: s.id, at });
+  }
+  const stalestFirst = (a: { id: number; at: number }, b: { id: number; at: number }): number =>
+    a.at - b.at || a.id - b.id;
+  foreign.sort(stalestFirst);
+  rotation.sort(stalestFirst);
+  return new Set([...foreign, ...rotation].slice(0, cap).map((x) => x.id));
+}
+
 export interface FetchBooksSnapshotOptions {
+  /** Issue #712 — per-library cap of rolling metadata re-reads per run (default `KAVITA_METADATA_REFRESH_CAP`; 0 = off). */
+  metadataRefreshCap?: number;
+  /** Issue #712 — a non-foreign series is rolling-re-read only when its last read is at least this old. */
+  metadataRefreshMinAgeMs?: number;
   /** Existing Kavita enrichment (external_id → row) for the change-gate. Absent ⇒ enrich every series. */
   existingKavita?: Map<string, ExistingKavitaEnrichment>;
   /** The run instant stamped on ABS rows + freshly-enriched Kavita rows (defaults to now). */
@@ -359,6 +408,7 @@ export async function fetchBooksSnapshot(
   const existingKavita = options.existingKavita;
   let kavitaSeries = 0;
   let kavitaEnriched = 0;
+  let kavitaRefreshed = 0;
   let kavitaHeldRead = 0;
   let absItems = 0;
 
@@ -379,6 +429,11 @@ export async function fetchBooksSnapshot(
           page += 1;
         }
         // Resolve enrichment per series (change-gated), then normalize. The metadata calls are paced.
+        const refreshIds = selectMetadataRefresh(pageSeries, existingKavita, {
+          now,
+          cap: options.metadataRefreshCap,
+          minAgeMs: options.metadataRefreshMinAgeMs,
+        });
         const applied = new Map<number, KavitaEnrichmentApply | null>();
         const held = new Map<number, HeldBook[] | undefined>();
         await mapPaced(pageSeries, options.metadataConcurrency ?? 4, async (s) => {
@@ -408,7 +463,10 @@ export async function fetchBooksSnapshot(
               held.set(s.id, existing?.heldBooks);
             }
           }
-          const needsEnrich = changed || existing === undefined || existing.metadataSyncedAt === null;
+          // Issue #712 — Kavita gives no metadata change signal, so the rolling refresh re-reads on top of the gate.
+          const refresh = refreshIds.has(s.id);
+          const needsEnrich =
+            changed || existing === undefined || existing.metadataSyncedAt === null || refresh;
           if (!needsEnrich && existing !== undefined) {
             // Unchanged — carry the existing enrichment forward (no request).
             applied.set(s.id, { data: existing.data, metadataSyncedAt: existing.metadataSyncedAt });
@@ -418,6 +476,7 @@ export async function fetchBooksSnapshot(
             const meta = await bundle.kavita.getSeriesMetadata(key);
             applied.set(s.id, { data: kavitaEnrichmentFrom(meta), metadataSyncedAt: now });
             kavitaEnriched += 1;
+            if (refresh && !changed) kavitaRefreshed += 1;
           } catch (error) {
             // A per-series enrichment failure is non-fatal: carry the existing enrichment forward
             // (never wipe it) and leave metadataSyncedAt as-was so the next run retries this series.
@@ -502,6 +561,7 @@ export async function fetchBooksSnapshot(
   logger.info('books-sync: snapshot fetched', {
     kavitaSeries,
     kavitaEnriched,
+    kavitaRefreshed,
     kavitaHeldRead,
     absItems,
   });

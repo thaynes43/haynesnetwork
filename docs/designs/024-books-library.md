@@ -1,7 +1,8 @@
 # DESIGN-024: Books & Audiobooks Library — the `books_items` ledger, `books-sync`, section-gated walls + cover proxy
 
 - **Status:** Draft
-- **Last updated:** 2026-10-04 (D-03 amendment, issue #661: the books-sync reads each Kavita book
+- **Last updated:** 2026-10-05 (D-03 amendment, issue #712: Kavita metadata edits reach the mirror via a bounded
+  rolling re-read). Prior: 2026-10-04 (D-03 amendment, issue #661: the books-sync reads each Kavita book
   series' held books from `/api/Series/volumes` into `attrs.heldBooks`). Prior: 2026-07-21 (**Kavita metadata-writers author fallback** — the live pairing-gap
   diagnosis found 54 null-author ebook rows whose WRITERS sit in Kavita all along: the mirror's
   Kavita author was folder-derived ONLY (the Calibre-style author directory), so flat layouts went
@@ -114,11 +115,39 @@ existing live-Kavita enrichment once (`loadExistingKavitaEnrichment` - source up
 enriched (`metadata_synced_at` null), or whose `lastChapterAddedUtc` changed since the last run; an unchanged
 series CARRIES its last enrichment forward (no request) so the upsert stays a clean full-replace. The calls are
 paced (a small concurrency pool); a per-series metadata failure is non-fatal (carry existing forward, retry
-next run). Steady state issues ZERO per-series calls for the ~1,400 unchanged Kavita series - only the initial
-backfill and genuine changes pay. Kavita size/ISBN/file-count would need the heavier `/api/Series/series-detail`
+next run). The gate alone would issue ZERO per-series calls for the ~1,400 unchanged Kavita series; since the 2026-10-05
+amendment below (issue #712) a bounded rolling re-read adds a capped batch per run, because Kavita gives no
+metadata change signal for the gate to compare. Kavita size/ISBN/file-count would need the heavier `/api/Series/series-detail`
 per series (the M2 ISBN caveat: ISBNs are usually absent) - deliberately SKIPPED, so those Details rows show
 for audiobooks only (the honest gap). Unit-proven: `packages/sync/__tests__/books-enrichment.test.ts`
 (HTML-strip, the metadata reduce, ABS inline mapping, the change-gate skip/refetch/carry-forward-on-failure).
+
+**Metadata edits reach the mirror (amendment 2026-10-05, issue #712).** The change-gate above compares
+`lastChapterAddedUtc`, and Kavita has no signal that fires when a series' METADATA is edited: the series list
+carries only `created` and `lastChapterAddedUtc`, and `/api/Series/metadata` has no modified stamp or hash (probed
+live 2026-10-05 against the deployed Kavita: correcting `language` and `languageLocked` on a series moved nothing
+the list returns). So on 2026-10-05 eighteen series whose language was corrected to `en` kept their old tags in
+`attrs.language` (`metadata_synced_at` still July) and the #700 pairing block could not clear. The fetcher now
+re-reads metadata beyond the gate, per library, in two tiers (`selectMetadataRefresh`, pure and unit-tested):
+
+1. **Foreign-language series every run.** A series whose stored `attrs.language` classifies as foreign
+   (`classifyBookLanguage`, DESIGN-036 amendment of #700) is re-read on every run, whatever its last read, so a
+   language correction lands on the very next run. This is a handful of calls today and shrinks as items are fixed.
+2. **A bounded rolling refresh of the rest.** The series whose last read is OLDEST, and at least
+   `KAVITA_METADATA_REFRESH_MIN_AGE_MS` (6 hours) old, up to `KAVITA_METADATA_REFRESH_CAP` (150) per library per
+   run, foreign ones first. About 1,400 series at 150 a run is a full cycle in roughly ten hourly runs, so ANY
+   metadata edit (summary, genres, publisher, year, writers) lands within about ten hours, at 150 cheap GETs a run
+   (the initial backfill read all of them in one run). A series never read (`metadata_synced_at` null) is the
+   gate's job, not the refresh's. Both options can be overridden per run (`metadataRefreshCap`, 0 turns it off;
+   `metadataRefreshMinAgeMs`).
+
+The run log reports `kavitaRefreshed` (re-reads the gate alone would have skipped) next to `kavitaEnriched`. The
+held-books read is untouched (a metadata edit does not change them). **Audiobookshelf has no such blind spot:** its
+language, description, publisher and ISBN ride the library-items list read, which is re-read in full every run, so
+an edit there lands on the next run (the two Audiobookshelf corrections of 2026-10-05 did). Unit-proven:
+`packages/sync/__tests__/books-enrichment.test.ts` (`selectMetadataRefresh`, the foreign and stale re-reads, the
+cap-0 gate) and `books-sync-metadata-refresh.test.ts` (end to end on embedded PG16: a metadata-only edit reaches
+`attrs.language`, then the series is gated again).
 
 **The held books (amendment 2026-10-04, issue #661).** A Kavita row is a SERIES and its `title` is the series
 name, so the mirror said nothing about which book a series holds: the series "A Song of Ice and Fire" can hold
