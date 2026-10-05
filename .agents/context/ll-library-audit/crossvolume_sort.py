@@ -8,7 +8,9 @@ def cat(src,reason,fn):
     if src=='EBooks/Dean Koontz/Dean Koontzs Frankenstein': return 'omnibus_redundant','Frankenstein 5-Book Bundle: all five volumes held in their own folders'
     if src=='AudioBooks/John Grisham/The Firm':
         if fn=='metadata.json': return 'off_catalog','stale 2024 in-folder Audiobookshelf metadata.json'
-        return 'duplicate','The Runaway Jury, held in The Runaway Jury/ (226 of 228 byte-identical)'
+        if fn.lower().endswith('.mp3'): return 'duplicate','The Runaway Jury track, byte-identical to its copy in The Runaway Jury/ (the other 2 replaced corrupt copies there)'
+        return None,'UNCLASSIFIED'
+    if src=='AudioBooks/John Grisham/The Runaway Jury': return 'off_catalog','corrupt copy (about 250 KB zeroed), replaced in The Runaway Jury/ by an intact copy'
     if src=='AudioBooks/John Grisham/Firm':
         if fn.lower().endswith('.mp3'): return 'duplicate','incomplete fragments (discs 10-14) of The Firm; The Firm/ holds the complete 15.0 h copy'
         return 'off_catalog','sidecar of the removed fragments folder'
@@ -50,9 +52,10 @@ def counterparts(src,fn,c):
         if src.endswith('E.L. James/Grey'): return ['EBooks/E.L. James/Grey','EBooks/E.L. James/Darker']
     return []
 rows=[]; seen=set()
-for l in open(H+'manifest.jsonl'):
-    d=json.loads(l)
-    if d['op']!='hold': continue
+M=[json.loads(l) for l in open(H+'manifest.jsonl')]
+moved_on={d['src'] for d in M if d['op'] in ('rehome','hold','delete')}
+for d in M:
+    if d['op']!='hold' or d['dst'] in moved_on: continue
     src,fn=d['src'].rsplit('/',1)
     c,ev=cat(src,d['reason'],fn)
     cp=counterparts(src,fn,c) if c else []

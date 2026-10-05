@@ -187,7 +187,9 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
     folder's City of Night azw3.
   - **The Firm `LorQP-vVUT0C`**: the eBook is right. The audiobook linked four incomplete 2024 fragments (1.8 h) in
     `Firm/`; it now links the complete 15.0 h copy in `The Firm/`. The 228 Runaway Jury files that the 2026-10-04 grab
-    put in `The Firm/` are held (226 byte-identical to `The Runaway Jury/`), and so are the fragments. Audiobookshelf
+    put in `The Firm/` are held, and so are the fragments. 226 are byte-identical to `The Runaway Jury/`; the other two
+    are intact copies of tracks 126 and 158, whose copies in `The Runaway Jury/` had about 250 KB zeroed, so the intact
+    ones replaced them there and the corrupt ones are held. Audiobookshelf
     was rebuilt (60 tracks, 15.0 h); the fragments item was removed. Pairing want `3cd1a6d7` (anchor: the Audiobookshelf
     item The Runaway Jury, resolved to The Firm) is added to #693.
   - Nothing re-wanted: each record already had a right copy in the library.
