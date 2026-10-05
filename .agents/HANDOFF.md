@@ -4,6 +4,26 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-05 — v0.107.3 + v0.107.4 live: pairing is English only (#700, closed)
+
+- **Why (#700).** Pairing minted a want for the other format of a foreign-language item (the German *Chroniken der
+  Unterwelt* omnibus eBook was pushed). Rule: DESIGN-036 amendment 2026-10-05; glossary T-184.
+- **v0.107.3** (#707, release #705, haynes-ops #3373, ~17:30Z). `classifyBookLanguage`: English is `en`, `eng`,
+  `en-*`, `English`; unknown (blank, null, `XXX`, LazyLibrarian `Unknown`) pairs; anything else is foreign. A foreign
+  anchor is never a candidate (`skippedForeign`). Second guard: before `queueBook`/`searchBook` the mint reads
+  LazyLibrarian's own `BookLang` (new `language` on `LlBookStatus`) and parks the want `foreign_language`
+  (`refusedForeignBook`) instead of pushing. The Skipped sweep and the #668 re-request apply the same rule.
+- **v0.107.4** (#708, release #709, haynes-ops #3374, ~17:50Z). The first release parked only unpushed wants; 20 wants
+  on foreign anchors were in flight (`wanted`, `missing`). Now every want whose missing format has not landed parks.
+  LazyLibrarian is not written, so a book it already searches keeps being searched there.
+- **Verified.** Pods 3/3 Ready on v0.107.4, no error lines in Loki. Format-pairing runs: 17:32Z (v0.107.3) parked 7,
+  18:32Z (v0.107.4) minted 1, pushed 0, parked 0, `skippedForeign` 6, `refusedForeignBook` 0, no errors. A manual run
+  at 17:53Z parked the 12 open in-flight wants. Read-only SQL at 18:32Z: 27 wants sit on foreign anchors, 19 parked
+  `foreign_language`, 8 left alone because the other format already landed, **0 open and unparked**.
+- **Known.** Some Kavita `nl` values look wrong (*Brisingr*, *Aurora Teagarden*, *The Return of the King*): a wrong
+  library language now blocks pairing for that item. Fix the language in the library; lifting a park is clearing
+  `unroutable_reason`.
+
 ## ▶ 2026-10-05 — v0.107.1 + v0.107.2 live: a request is never satisfied by another volume (#693, closed)
 
 - **Why (#693).** Requests read `landed` from another volume's or another work's LazyLibrarian book. There were four
