@@ -1,12 +1,14 @@
 # Classifier that wrote books/quarantine/crossvolume-2026-10-05/sort.jsonl (2026-10-05). Run inside the LazyLibrarian pod:
 #   kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/crossvolume_sort.py
 # Classify every file in the 2026-10-05 holding folder (one category each) and write sort.jsonl next to the manifest.
-# The F10 foreign-edition sweep (f10_foreign_hold.py, 2026-10-05 ~21:25Z) appended its own rows; this rule reproduces them.
+# The F10 foreign-edition sweep (f10_foreign_hold.py, ~21:25Z) and its follow-up (f10_followup.py, ~21:57Z) appended their own
+# rows; the two rules marked below reproduce them.
 import json,os,collections
 B='/data/cephfs-hdd/data/media/books/'; H=B+'quarantine/crossvolume-2026-10-05/'
 def cat(src,reason,fn):
     s=src+'/'+fn
     if reason.startswith('F10 2026-10-05 foreign-edition sweep: '): return 'foreign_f10',reason.split(': ',1)[1]+', F10'  # f10_foreign_hold.py
+    if reason.startswith('F10 2026-10-05 follow-up duplicate: '): return 'duplicate',reason.split(': ',1)[1]  # f10_followup.py
     if src=='EBooks/Dean Koontz/Dean Koontzs Frankenstein': return 'omnibus_redundant','Frankenstein 5-Book Bundle: all five volumes held in their own folders'
     if src=='AudioBooks/John Grisham/The Firm':
         if fn=='metadata.json': return 'off_catalog','stale 2024 in-folder Audiobookshelf metadata.json'
@@ -42,6 +44,7 @@ DW=[(r'Discworld Part \d+ of 136\.mp3$','Jingo'),(r'Discworld Part \d+ of 36\.mp
     (r'Sourcery','Sourcery'),(r' Eric - ','Eric'),(r'Night Watch','Night Watch'),(r'Thud!','Thud!'),
     (r'Unseen Academicals','Unseen Academicals'),(r'Wyrd Systers','Wyrd Sisters'),(r'Equal Rights','Equal Rites')]
 def counterparts(src,fn,c):
+    if c=='duplicate' and src=='AudioBooks/Stephanie Garber/The Ballad of Never After': return [src]  # f10_followup.py: the kept m4b
     if c=='duplicate':
         if src.startswith('AudioBooks/Terry Pratchett/'):
             t=[f for p,f in DW if re.search(p,fn)]
