@@ -98,7 +98,9 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
   106 → 56, book 1's releases keep 101/100, and book 3's keeps 106. Replay over all 3,373 Processed/Snatched/Seeding
   `wanted` rows: 153 change, all cross-volume mismatches, none a genuine grab. Those 153 rows (19 LL book records:
   Throne of Glass, Mistborn, Chroniken der Unterwelt, Inheritance, ...) are an open lead: wrong files are likely in
-  the library. That audit is separate work. Check (k) still confirms the fix on the next backlog run.
+  the library. That audit is separate work. Check (k) still confirms the fix on the next backlog run. Keep rowids
+  9460 and 9539: 9460 is book 1's real `Duplicate NZB` record, and 9539 is harmless while book 4 is held. Delete
+  9539 (undo above) only if book 4 is ever wanted again.
 
 ## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
 
