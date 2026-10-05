@@ -215,8 +215,9 @@ export function titleVolumeNumbers(title: string): Set<number> {
 /**
  * Does a candidate's text (a Google Books title + subtitle, or a LazyLibrarian book name + subtitle) name the
  * volume a wanted title names? True when the wanted title names none; when the candidate names one of its
- * numbers anywhere (marked, or a bare 1-3 digit number: "A Court of Thorns and Roses, Book 2", "Wild Cards II");
- * or when the wanted volume is 1 and the candidate names no volume at all (a first book is often unnumbered).
+ * numbers anywhere (marked, or a bare 1-3 digit number: "A Court of Thorns and Roses, Book 2", "Wild Cards 2:
+ * Aces High"), except a count after "of" ("Book 1 of 2" names volume 1, not 2); or when the wanted volume is 1 and
+ * the candidate names no volume at all (a first book is often unnumbered). Roman numerals are not read.
  */
 export function volumeNumbersAgree(wantedTitle: string, candidateText: string): boolean {
   const wanted = titleVolumeNumbers(wantedTitle);
@@ -225,7 +226,10 @@ export function volumeNumbersAgree(wantedTitle: string, candidateText: string): 
   const marked = new Set<number>();
   for (const m of text.matchAll(MARKED_NUMBER)) marked.add(toNumber(m[1]!));
   const named = new Set<number>(marked);
-  for (const w of text.split(/[^a-z0-9]+/)) if (/^\d{1,3}$/.test(w)) named.add(Number(w));
+  const tokens = text.split(/[^a-z0-9]+/);
+  tokens.forEach((w, i) => {
+    if (/^\d{1,3}$/.test(w) && tokens[i - 1] !== 'of') named.add(Number(w));
+  });
   if ([...wanted].some((n) => named.has(n))) return true;
   return [...wanted].every((n) => n === 1) && marked.size === 0;
 }

@@ -548,6 +548,9 @@ describe('the volume guard (issue #693 — a title that names its volume resolve
     // Book 1 is often unnumbered; a numbered other volume still disagrees.
     expect(volumeNumbersAgree('Mistborn Book One', 'Mistborn: The Final Empire')).toBe(true);
     expect(volumeNumbersAgree('Mistborn Book One', 'The Well of Ascension: Mistborn Book Two')).toBe(false);
+    // A count after "of" is not the volume: "Book 1 of 2" is volume 1.
+    expect(volumeNumbersAgree('Court of Thorns and Roses bk 2', 'A Court of Thorns and Roses: Book 1 of 2')).toBe(false);
+    expect(volumeNumbersAgree('Court of Thorns and Roses bk 2', 'A Court of Mist and Fury: Book 2 of 5')).toBe(true);
     // A title that names no volume agrees with anything.
     expect(volumeNumbersAgree('A Court of Mist and Fury', 'A Court of Thorns and Roses, Book 2')).toBe(true);
   });

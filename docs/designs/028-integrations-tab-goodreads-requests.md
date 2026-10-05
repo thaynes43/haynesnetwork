@@ -593,6 +593,8 @@ volume or work. One pure check (`ll-book-check.ts`) reads the title LazyLibraria
   ("bk 2", "Book Two", "Vol. 3", "#4") or at the start of a later colon segment ("Beacon 23: Part Four: Company").
   These are series positions, not the title's own volume, and never count: a later segment ("Caliban's War: The
   Expanse, Book 2"), a trailing series parenthetical, a leading index ("Lily Bard #05 - "), and "Book N of …".
+  On the candidate side any marked or bare number counts, except a count after "of" ("Book 1 of 2" names volume 1).
+  Roman numerals are not read.
 
 **Where it applies.**
 
