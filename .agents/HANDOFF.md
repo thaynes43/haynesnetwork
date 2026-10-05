@@ -92,6 +92,13 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
   failed (`Duplicate NZB`) is no longer post-processed. **Fault 2 is not fixed**: LL has no series data (`series` and
   `member` empty for all 1,138 books), so a series-number penalty cannot fire; the volume source needs a decision (#688
   comment). Until then check (k) still applies, and rowids 9460 and 9539 remain the per-title blocks.
+- **2026-10-05 13:10Z, #688 fault 2 fixed and live; #688 closed** (haynes-ops #3368, `resultlist.py` overlay; the owner
+  ruled this a bug to fix). A release reading `<wanted title> <volume N≠1> <a different title>` loses 50 points, below
+  `MATCH_RATIO` 80; it reads the release text because LL has no series data. For book 1, the book-3/4 releases drop
+  106 → 56, book 1's releases keep 101/100, and book 3's keeps 106. Replay over all 3,373 Processed/Snatched/Seeding
+  `wanted` rows: 153 change, all cross-volume mismatches, none a genuine grab. Those 153 rows (19 LL book records:
+  Throne of Glass, Mistborn, Chroniken der Unterwelt, Inheritance, ...) are an open lead: wrong files are likely in
+  the library. That audit is separate work. Check (k) still confirms the fix on the next backlog run.
 
 ## ▶ 2026-10-04 — v0.105.4 + v0.105.5 live: requests whose LazyLibrarian book is gone settle (#665); LL keeps its books
 
