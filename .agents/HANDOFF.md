@@ -23,6 +23,24 @@
 - **Known.** Some Kavita `nl` values look wrong (*Brisingr*, *Aurora Teagarden*, *The Return of the King*): a wrong
   library language now blocks pairing for that item. Fix the language in the library; lifting a park is clearing
   `unroutable_reason`.
+- **2026-10-05 language audit (31 live Kavita + 11 Audiobookshelf items with a non-English tag).** Judged from content
+  (a text page inside each EPUB or PDF; audiobook ID3 and file names). Corrected through the apps' APIs, nothing else
+  touched, no `metadata.json` involved: **Kavita 18 series** set to `en` and locked (A Grief Observed, Romancing Mr
+  Bridgerton, Aurora Teagarden 1 and 8, Shakespeare's Landlord, Grave Surprise, Dead Reckoning, Lady Whistledown,
+  Leviathan Wakes, Many Bloody Returns, Annotated Pride and Prejudice, Benjamin Button, The Living Dead 2, The Return
+  of the King and four History of Middle-earth volumes); **Audiobookshelf 2** set to `English` (Chain of Iron was `de`,
+  Game of Thrones `fr`; Game of Thrones' own `.opf` still says `fr`, recheck after a rescan). **Genuinely foreign, left
+  for F10 removal:** Kavita *Brisingr* (Dutch, series 1836; the `nl` tag was right), Dead or Alive epub + pdf (German),
+  Verity pdf (German), Fractal Noise epub (German; series 1865 also holds the English Inheritance epub), Murtagh (German),
+  Ballad of Never After epub (German), Israel Potter and Karma (Danish), Azazel (Italian), Breath of Snow and Ashes
+  (Swedish), Mistborn 2 and 3 (Hebrew); Audiobookshelf Destructora de Espadas (Spanish epub). Audiobook folders mixing an
+  English m4b with German mp3s: Fractal Noise, Once Upon a Broken Heart, The Ballad of Never After. The 5 `XXX`
+  Audiobookshelf items are English audiobooks with an unset ID3 language (Crazy Rich Asians, China Rich Girlfriend, Direct
+  Descent, Rogues, The Confession); `XXX` already pairs, so no change.
+- **Owed (#712):** the Audiobookshelf corrections synced (19:22Z) and were already paired. The Kavita ones did **not**:
+  books-sync re-reads Kavita metadata only when a series is new or changed, so the app still reads the old tags and
+  pairing minted nothing for them (19:32Z: `skippedForeign` 6, `minted` 0). Eleven of the 18 also hold a want parked
+  `foreign_language`, which stays parked until `unroutable_reason` is cleared. Fix tracked in #712.
 
 ## ▶ 2026-10-05 — v0.107.1 + v0.107.2 live: a request is never satisfied by another volume (#693, closed)
 
