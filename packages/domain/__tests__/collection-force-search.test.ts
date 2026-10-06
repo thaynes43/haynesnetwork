@@ -553,6 +553,42 @@ describe('forceSearchCollectionNow — the on-demand collection Force Search', (
     expect(ll.calls.filter((c) => c.step === 'searchBook')).toHaveLength(2);
   });
 
+  it('#759 — refreshes BOTH collections of a Kavita + Audiobookshelf recipe, each from its own target', async () => {
+    const caller = await createUser(t.db);
+    const ebooks = await seedCollection('k-multi', 'recipe-multi', 'kavita');
+    const audio = await seedCollection('a-multi', 'recipe-multi', 'audiobookshelf');
+    const libretto = {
+      read: {
+        listMissingMembers: async () => ({
+          missing: [{ isbn: '1', title: 'Ebook Gap' }],
+          targets: [
+            { server: 'kavita', libraryId: '1', missing: [{ isbn: '1', title: 'Ebook Gap' }] },
+            { server: 'abs', libraryId: 'abs-lib', missing: [{ isbn: '2', title: 'Audio Gap' }] },
+          ],
+        }),
+        resolve: async (req: { title?: string }) =>
+          ({ 'Ebook Gap': { volumeId: 'gb1' }, 'Audio Gap': { volumeId: 'gb2' } })[req.title ?? ''] ?? null,
+      },
+      write: { applyScope: async () => 'run-od' },
+    } as unknown as Parameters<typeof forceSearchCollectionNow>[0]['libretto'];
+    const ll = stubLl();
+    const report = await forceSearchCollectionNow({
+      db: t.db,
+      libretto,
+      ll: ll.bundle,
+      recipeId: 'recipe-multi',
+      actorId: caller.id,
+      pacer: noPace,
+    });
+    expect(report.minted).toBe(2);
+    const rows = await t.db
+      .select({ collectionId: bookRequests.collectionId, ref: bookRequests.collectionMemberRef })
+      .from(bookRequests);
+    expect(rows.find((r) => r.collectionId === ebooks)?.ref).toBe('isbn:1');
+    expect(rows.find((r) => r.collectionId === audio)?.ref).toBe('isbn:2');
+    expect(ll.calls.filter((c) => c.step === 'searchBook').map((c) => c.id).sort()).toEqual(['gb1', 'gb2']);
+  });
+
   it('DEGRADES on Libretto unreachable — nothing minted or searched', async () => {
     const caller = await createUser(t.db);
     await seedCollection('c', 'recipe-on');

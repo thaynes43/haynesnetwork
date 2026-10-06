@@ -151,6 +151,26 @@ export const librettoMissingMemberSchema = z
   .passthrough();
 export type LibrettoMissingMember = z.infer<typeof librettoMissingMemberSchema>;
 
+/**
+ * One target's slice of the missing read (ADR-076 C-05): the works missing FROM that target's library
+ * (`kavita` ⇒ the ebook side, `abs` ⇒ the audiobook side), or the error that target returned. Issue #759: a
+ * Kavita + Audiobookshelf recipe has a different missing list per target, and the flat top-level fields carry
+ * only the FIRST reachable target's, so a consumer reads the entry for its own target.
+ */
+export const librettoMissingTargetSchema = z
+  .object({
+    /** `kavita` | `abs`. */
+    server: z.string().nullish(),
+    libraryId: z.string().nullish(),
+    heldCount: z.number().nullish(),
+    missingCount: z.number().nullish(),
+    missing: z.array(librettoMissingMemberSchema).nullish(),
+    /** Set (and `missing` absent) when this target could not be read. */
+    error: z.string().nullish(),
+  })
+  .passthrough();
+export type LibrettoMissingTarget = z.infer<typeof librettoMissingTargetSchema>;
+
 /** `GET /api/collections/:recipeId/missing` → the recipe's missing member identities + held/missing counts. */
 export const librettoMissingResponseSchema = z
   .object({
@@ -161,7 +181,10 @@ export const librettoMissingResponseSchema = z
     total: z.number().nullish(),
     heldCount: z.number().nullish(),
     missingCount: z.number().nullish(),
+    /** The FIRST reachable target's missing members only (see `targets` for a multi-target recipe). */
     missing: z.array(librettoMissingMemberSchema).nullish(),
+    /** Per-target missing, one entry per recipe target (absent on a Libretto that predates ADR-076). */
+    targets: z.array(librettoMissingTargetSchema).nullish(),
   })
   .passthrough();
 export type LibrettoMissingResponse = z.infer<typeof librettoMissingResponseSchema>;
