@@ -1,7 +1,7 @@
 name: Claude Code Review
 
-# Advisory PR reviewer. NEVER a required check (ADR-009 + ADR-100 name the required
-# contexts: lint-and-typecheck, test, build, e2e-gate) -- do not add it to branch rules.
+# Advisory PR reviewer. NEVER a required check (ADR-009 names the required
+# contexts: lint-and-typecheck, test, build) -- do not add it to branch rules.
 #
 # Agents open PRs ready-for-review and merge their own once the required checks are
 # green, so this fires on `opened` and `synchronize` too, not just `ready_for_review`.
