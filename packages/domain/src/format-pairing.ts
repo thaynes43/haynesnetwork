@@ -89,6 +89,14 @@ export const PAIRING_MINT_CAP_PER_RUN = Number(process.env.PAIRING_MINT_CAP_PER_
  */
 export const PAIRING_MINT_BACKOFF_DAYS: readonly number[] = [1, 3, 7, 30];
 
+/**
+ * Issue #740 — the misses a want counts on its first miss when it has gone unresolved for more than
+ * `PAIRING_MINT_BACKLOG_AGE_DAYS` without ever being counted (the backlog the mint retried every hour before the backoff
+ * existed): it waits 7 days, then 30, instead of climbing from 1 day. One lookup each moves the old backlog out of the way.
+ */
+export const PAIRING_MINT_BACKLOG_MISSES = 3;
+export const PAIRING_MINT_BACKLOG_AGE_DAYS = 7;
+
 /** The identity a want's misses are counted for: a want whose anchor's title, author or ISBN changes is looked up again. */
 export function mintBackoffKey(identity: { title: string; author: string | null; isbn?: string | null }): string {
   return [pairingTitleKey(identity.title), normAuthor(identity.author ?? ''), (identity.isbn ?? '').trim()].join('|');
@@ -763,11 +771,22 @@ async function upsertPairingWant(input: {
   /** Issue #740 — the Mint Backoff columns this attempt writes: cleared once the want has an id, grown on a miss. */
   const backoffFor = (
     llBookId: string | null,
-    prior: { mintBackoffCount: number; mintBackoffKey: string | null } | null,
+    prior: Pick<BookRequestRow, 'mintBackoffCount' | 'mintBackoffKey' | 'llBookId' | 'createdAt'> | null,
   ): Partial<Pick<BookRequestRow, 'mintBackoffCount' | 'mintBackoffUntil' | 'mintBackoffKey'>> => {
     if (llBookId !== null) return { mintBackoffCount: 0, mintBackoffUntil: null, mintBackoffKey: null };
     if (!input.missKey) return {};
-    const count = prior && prior.mintBackoffKey === input.missKey ? prior.mintBackoffCount + 1 : 1;
+    // The pre-backoff backlog: unresolved for over a week and never counted, so it starts as if it had missed thrice.
+    const backlog =
+      prior !== null &&
+      prior.mintBackoffKey === null &&
+      prior.llBookId === null &&
+      prior.createdAt.getTime() <= input.now.getTime() - PAIRING_MINT_BACKLOG_AGE_DAYS * 86_400_000;
+    const count =
+      prior && prior.mintBackoffKey === input.missKey
+        ? prior.mintBackoffCount + 1
+        : backlog
+          ? PAIRING_MINT_BACKLOG_MISSES
+          : 1;
     return { mintBackoffCount: count, mintBackoffUntil: mintBackoffUntil(count, input.now), mintBackoffKey: input.missKey };
   };
   return inTransaction(input.db, async (tx) => {
@@ -1443,6 +1462,8 @@ export async function mintPairingWants(
   //    items) BEFORE any retry, so the frozen oldest cohort (the 2026-07-16 set — same first_seen,
   //    last tried days ago) never got reached while new items churned ahead of it. The NEW single
   //    order drains front-to-back regardless of fresh/retry:
+  //      0. misses ASC          — issue #740: the Mint Backoff's misses for the current identity, so a fresh or
+  //                               changed want goes before one that already missed (`missesOf`);
   //      1. first_seen_at ASC   — the oldest cohort first (ends the newest-first churn);
   //      2. ISBN-bearing first  — WITHIN the same first_seen, the anchors carrying an ISBN go first
   //                               (the `isbn:` leg is the cheap, reliable one — cheapest drain);
@@ -1466,6 +1487,14 @@ export async function mintPairingWants(
   };
   const lastTriedAt = (i: (typeof unpaired)[number]): number =>
     (wantByAnchor.get(i.id)?.updatedAt ?? i.firstSeenAt).getTime();
+  // Issue #740 — the misses counted for the candidate's CURRENT identity (0 for a fresh want or a changed identity), so
+  // new and changed wants are tried before the ones that already missed: the backoff's order, ahead of the drain's.
+  const missesOf = (i: (typeof unpaired)[number]): number => {
+    const w = wantByAnchor.get(i.id);
+    const identity = identityOf.get(i.id);
+    if (!w || identity?.kind !== 'one') return 0;
+    return w.mintBackoffKey === mintBackoffKey(identity) ? w.mintBackoffCount : 0;
+  };
   const isRetryable = (w: BookRequestRow, i: (typeof unpaired)[number]): boolean =>
     w.llBookId === null || statusOfFormat(w, missingFormatFor(i.mediaKind)) === 'requested';
   let skippedUnknownHeld = 0;
@@ -1507,6 +1536,7 @@ export async function mintPairingWants(
     })
     .sort(
       (a, b) =>
+        missesOf(a) - missesOf(b) ||
         a.firstSeenAt.getTime() - b.firstSeenAt.getTime() ||
         (hasIsbn(b) ? 1 : 0) - (hasIsbn(a) ? 1 : 0) ||
         lastTriedAt(a) - lastTriedAt(b) ||
