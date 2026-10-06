@@ -142,7 +142,8 @@ tag in the HelmRelease and committing to `haynes-ops`.
    **both** sync CronJobs, so one edit moves the whole deployment.
    In the same commit, set the same tag on the owed-check runner,
    `kubernetes/main/apps/downloads/owed-checks/app/cronjob.yaml` (DESIGN-053 D-08: it runs the app image in
-   another namespace, so the anchor cannot reach it).
+   another namespace, so the anchor cannot reach it), and on the Books Census,
+   `kubernetes/main/apps/downloads/books-census/app/cronjob.yaml` (DESIGN-028 amendment 2026-10-06, same reason).
 2. Commit and push to `haynes-ops` `main`.
 3. **Flux reconciles** (the `haynesnetwork` Kustomization polls every 30m; force it):
 
