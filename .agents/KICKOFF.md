@@ -110,7 +110,8 @@ regression. (Backlog has a real fix: `await pool.end()` before stopping embedded
 
 **e2e is a merge gate for the book pipeline (ADR-100, #742).** The required context is `e2e-gate`; it always
 reports. A PR that touches a pipeline path (`scripts/e2e-gate-paths.sh`: `packages/{domain,sync,arr,lazylibrarian,
-goodreads,books,kapowarr,downloads,libretto,db}`, `apps/web/e2e`, the integrations UI) or is the release-please PR
+goodreads,books,kapowarr,downloads,libretto,db,test-utils}`, the integrations/books/book-fix tRPC routers,
+`apps/web/e2e`, the integrations UI) or is the release-please PR
 waits about 15 minutes for the Playwright suite, and a red suite blocks the merge. Every other PR passes the gate at
 once and runs the suite as the advisory `e2e-advisory`. A red gate is a real failure until proven otherwise: read the
 failed step (`gh run view <id> --log-failed`), fix the cause, never skip or loosen the spec. Two things look like

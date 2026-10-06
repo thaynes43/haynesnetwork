@@ -122,8 +122,8 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
 - **After GATE A**: branch `<type>/<slug>` off `main` → PR → required checks
   `lint-and-typecheck`, `test`, `build`, **`e2e-gate`** green → squash-merge. **`e2e-gate` always
   reports.** It passes at once for a PR that touches no pipeline path, and mirrors the Playwright
-  suite for one that does (`packages/{domain,sync,arr,lazylibrarian,goodreads,books,kapowarr,downloads,libretto,db}`,
-  `apps/web/e2e`, the integrations UI; the list is `scripts/e2e-gate-paths.sh`) and for the release-please PR,
+  suite for one that does (`packages/{domain,sync,arr,lazylibrarian,goodreads,books,kapowarr,downloads,libretto,db,test-utils}`,
+  the integrations/books/book-fix tRPC routers, `apps/web/e2e`, the integrations UI; the list is `scripts/e2e-gate-paths.sh`) and for the release-please PR,
   so a red e2e stops a pipeline change and the release (ADR-100, #742). Every other PR still runs the
   suite as the advisory `e2e-advisory`. Conventional commits (`feat:`/`fix:`/`feat!:`) drive
   release-please versioning.

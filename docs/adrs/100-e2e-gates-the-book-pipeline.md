@@ -39,6 +39,7 @@ Chosen option: **A plus B**, in `.github/workflows/e2e.yml`.
 
 - `changes` lists the PR's files (a rename counts under both names) and runs `scripts/e2e-gate-paths.sh` over them.
   The pipeline paths are `packages/{domain,sync,arr,lazylibrarian,goodreads,books,kapowarr,downloads,libretto,db}`,
+  `packages/test-utils`, the three tRPC routers the pipeline specs drive (`packages/api/src/routers/{integrations,books,book-fix}.ts`),
   `apps/web/e2e`, `apps/web/playwright.config.ts`, `apps/web/app/(app)/integrations` and the e2e workflow files
   themselves. The list lives in that one script, with a `--self-test` that CI runs.
 - The release-please PR (head branch `release-please--*`) is always gated, whatever its files are (option B).
