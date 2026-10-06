@@ -85,7 +85,10 @@ async function instantQuery(
  * connection the server drops between queries (a standby's recovery conflict, a failover) is recorded by the `error`
  * listener instead of crashing the process; `broken()` then tells the caller to reconnect.
  */
-export async function openAppDb(databaseUrl: string): Promise<{
+export async function openAppDb(
+  databaseUrl: string,
+  applicationName = 'owed-checks',
+): Promise<{
   query(sql: string): Promise<Record<string, unknown>[]>;
   broken(): boolean;
   close(): Promise<void>;
@@ -93,7 +96,7 @@ export async function openAppDb(databaseUrl: string): Promise<{
   const client = new pg.Client({
     connectionString: databaseUrl,
     options: '-c default_transaction_read_only=on -c statement_timeout=30000',
-    application_name: 'owed-checks',
+    application_name: applicationName,
   });
   let lost: Error | null = null;
   client.on('error', (error) => {

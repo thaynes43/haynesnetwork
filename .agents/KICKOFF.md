@@ -192,6 +192,13 @@ types **and** SQL CHECK.
 - `.agents/owed-checks.yaml` — owed post-deploy checks (DESIGN-053). **At session start** read the open
   `owed-checks` GitHub issue (overdue rows) and the rows due in the next day; the runner's verdicts are the
   `owed_check` lines in Loki (`{namespace="downloads", container="main", pod=~"owed-checks-.*"}`).
+- **The Books Census (DESIGN-028 amendment 2026-10-06, T-289).** At session start on books work, read the latest
+  `books_census` line in Loki (`{namespace="downloads", container="main", pod=~"books-census-.*"}`, daily at 10:15Z):
+  a non-zero `wrongFile`, `missingFile`, `foreignHeld`, `foreignWanted` or `foreignItems` is a finding to triage (its
+  `books_census_finding` lines name each book). Repair a real one (the #781 repair is the pattern:
+  `.agents/context/ll-library-audit/fix_781.py`); for one the check misreads, add a Census Hold to
+  `.agents/books-census-holds.yaml` in a docs PR. Run it now: `kubectl -n downloads create job
+  --from=cronjob/books-census books-census-manual-$(date +%s)`.
 - `.agents/context/2026-07-05-backlog-recon.md` — consolidated backlog + the Restore explanation.
 - `.agents/plans/TODO.md` — the owner's original brain dump (source of 002–006).
 - `.agents/plans/radarr-fileless-backlog.md` — 4,008 deleted items to import into the Ledger (005).
