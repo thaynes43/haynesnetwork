@@ -1,7 +1,7 @@
 # DESIGN-038: Books collections mirror — the Books/Audiobooks/Comics Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-06 (D-13 amendment, issue #735: a collection want given up releases its LazyLibrarian book). Prior: 2026-10-05 (D-13 amendment, issue #719: a collection want on a non-English LazyLibrarian book asks for the English edition). Prior: 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
+- **Last updated:** 2026-10-06 (D-13 amendment, issue #759: each collection reads its own target's missing list). Prior: 2026-10-06 (D-13 amendment, issue #735: a collection want given up releases its LazyLibrarian book). Prior: 2026-10-05 (D-13 amendment, issue #719: a collection want on a non-English LazyLibrarian book asks for the English edition). Prior: 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
   force-search parks a want on another work's book). Prior: 2026-07-20 (**ADR-076 — format-agnostic collections**: D-05 wall mapping → the comic
   partition (the three-way majority rule retires with the Audiobooks wall) + recipe-id twin MERGE; D-11/D-12
   the `cat=` token is now EMITTED by Libretto (L1 LIVE — recipe-authored categories; L2 agent-set stays the
@@ -441,6 +441,31 @@ composed-Wanted idiom, now collection-scoped.
 >   already skipped a park. Lifting one is still clearing `unroutable_reason` by hand.
 > - **The repair.** The one-off parks both BBC Radio Drama Collection rows and *Violet in Bloom* (on the Dutch *Voor
 >   altijd en eeuwig*), so nothing can queue `YVfJMgEACAAJ` for them again.
+
+> **Amendment 2026-10-06 (issue #759 — each collection reads its own target's missing list).** 57 collection wants
+> read `requested` while LazyLibrarian held their book. The audit (`.agents/context/2026-10-06-held-collection-wants.md`)
+> found two causes that lived in code:
+>
+> - **The app read the wrong target's list (15 of the 57).** A Kavita + Audiobookshelf recipe backs two mirror
+>   collections, and Libretto answers its missing read per target (`targets[]`, DESIGN-037 D-09 amendment). The flat
+>   top-level `missing` is only the FIRST reachable target's (Kavita's), and the wants pass read it for both collections.
+>   So the audiobook collection minted the Kavita list: an audiobook already in Audiobookshelf stayed a Wanted tile
+>   whenever its ebook was missing, and an audiobook missing only from Audiobookshelf never got one. The 2026-07-20
+>   amendment above already ruled this out ("an abs target ⇒ an audiobook want"); the implementation never did it.
+>   Now `missingForCollection` (`collection-wants-sync.ts`, pure) picks the entry by server (kavita ⇒ `kavita`,
+>   audiobookshelf ⇒ `abs`) and, when the mirror row carries one, library id (Kavita rows carry none: its collections
+>   span libraries). No entry for the collection's target, an entry that reports an error, or one without a member list
+>   skips that collection with its wants untouched, the per-collection read-error rule. It never falls back to another
+>   target's list. A response without `targets[]` (a Libretto older than ADR-076) is a single-target answer, used only
+>   when its `server` is the collection's. One read per recipe per run serves both twins, so the second costs no second
+>   library listing. The on-demand Force Search (`forceSearchCollectionNow`) used to refresh one arbitrary twin; it now
+>   refreshes every collection bound to the recipe, each from its own target's entry, and searches the ones it refreshed.
+> - **Libretto's matcher missed books the library holds.** A book Kavita files as a volume of a series, the same book
+>   held twice, and a title carrying series decoration: fixed in Libretto, see the DESIGN-037 D-04 amendment of this
+>   date.
+>
+> What is left after both is read row by row in the audit note: LazyLibrarian holding a format Kavita cannot open, a
+> LazyLibrarian book that is another work, and a library title that differs from the member's in words.
 
 ## Alternatives considered
 

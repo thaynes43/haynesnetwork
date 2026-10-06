@@ -13,6 +13,7 @@ import {
   getCollectionWantedBookRequests,
   getWantedBookRequests,
   loadResolvedWantRefs,
+  missingForCollection,
   resolveMissingMembers,
   runCollectionWantsSync,
   syncBooks,
@@ -702,6 +703,84 @@ describe('collection wants (DESIGN-038 D-13 — Wanted tiles from Libretto missi
       );
     });
 
+    // Issue #759 — a Kavita + Audiobookshelf recipe backs two mirror collections, and Libretto answers one missing list
+    // per target. The flat top-level list is the FIRST target's (Kavita's): reading it for the audiobook collection kept
+    // an audiobook already in Audiobookshelf as a Wanted tile, and never minted one missing only from Audiobookshelf.
+    it('#759 — each collection of a Kavita + Audiobookshelf recipe takes its OWN target’s missing list (one read per recipe)', async () => {
+      const ebooks = await seedCollection({
+        source: 'kavita',
+        externalId: 'k-multi',
+        recipeId: 'multi',
+      });
+      const audio = await seedCollection({
+        source: 'audiobookshelf',
+        externalId: 'a-multi',
+        recipeId: 'multi',
+      });
+      let reads = 0;
+      const libretto = stubLibretto({
+        listMissingMembers: async () => {
+          reads += 1;
+          return {
+            server: 'kavita',
+            missing: [{ title: 'Ebook Gap', isbn: '111', identifiers: [] }],
+            targets: [
+              {
+                server: 'kavita',
+                libraryId: '1',
+                missing: [{ title: 'Ebook Gap', isbn: '111', identifiers: [] }],
+              },
+              {
+                server: 'abs',
+                libraryId: 'abs-lib',
+                missing: [{ title: 'Audio Gap', isbn: '222', identifiers: [] }],
+              },
+            ],
+          };
+        },
+      });
+      const report = await runCollectionWantsSync({ db: t.db, libretto });
+      expect(report.collectionsProcessed).toBe(2);
+      expect(reads).toBe(1);
+      expect((await wantRows(ebooks)).map((r) => r.memberRef)).toEqual(['isbn:111']);
+      const audioRows = await wantRows(audio);
+      expect(audioRows.map((r) => r.memberRef)).toEqual(['isbn:222']);
+      expect(audioRows[0]).toMatchObject({ audioStatus: 'requested', ebookStatus: 'landed' });
+    });
+
+    it('#759 — a collection whose target errored (or has no entry) is skipped, its wants untouched', async () => {
+      const ebooks = await seedCollection({
+        source: 'kavita',
+        externalId: 'k-err',
+        recipeId: 'err',
+      });
+      const audio = await seedCollection({
+        source: 'audiobookshelf',
+        externalId: 'a-err',
+        recipeId: 'err',
+      });
+      await syncCollectionWants({
+        db: t.db,
+        collectionId: audio,
+        format: 'audiobook',
+        members: [{ memberRef: 'isbn:prior', title: 'Prior', author: null, llBookId: null }],
+      });
+      const libretto = stubLibretto({
+        listMissingMembers: async () => ({
+          missing: [],
+          targets: [
+            { server: 'kavita', libraryId: '1', missing: [] },
+            { server: 'abs', libraryId: 'abs-lib', error: 'audiobookshelf unreachable' },
+          ],
+        }),
+      });
+      const report = await runCollectionWantsSync({ db: t.db, libretto });
+      expect(report.collectionsProcessed).toBe(1);
+      expect(report.collectionsSkipped).toBe(1);
+      expect(await wantRows(ebooks)).toHaveLength(0);
+      expect((await wantRows(audio)).map((r) => r.memberRef)).toEqual(['isbn:prior']);
+    });
+
     it('loadResolvedWantRefs returns only NON-NULL wants (a still-NULL want is retried, not skipped)', async () => {
       const id = await seedCollection({
         source: 'kavita',
@@ -720,6 +799,52 @@ describe('collection wants (DESIGN-038 D-13 — Wanted tiles from Libretto missi
       const map = await loadResolvedWantRefs(t.db, id);
       expect(map.get('isbn:done')).toBe('gbX');
       expect(map.has('isbn:pending')).toBe(false);
+    });
+  });
+
+  describe('missingForCollection — issue #759 (no DB)', () => {
+    const member = (title: string) => ({ title, identifiers: [] });
+    const response = {
+      server: 'kavita',
+      missing: [member('K')],
+      targets: [
+        { server: 'kavita', libraryId: '1', missing: [member('K')] },
+        { server: 'abs', libraryId: 'lib-a', missing: [member('A1')] },
+        { server: 'abs', libraryId: 'lib-b', missing: [member('A2')] },
+      ],
+    };
+    const titles = (sel: ReturnType<typeof missingForCollection>) =>
+      sel.ok ? sel.missing.map((m) => m.title) : sel.reason;
+
+    it('picks the entry by server, and by library id when the mirror row carries one', () => {
+      expect(titles(missingForCollection(response, { source: 'kavita', libraryId: null }))).toEqual(
+        ['K'],
+      );
+      expect(
+        titles(missingForCollection(response, { source: 'audiobookshelf', libraryId: 'lib-b' })),
+      ).toEqual(['A2']);
+      expect(
+        missingForCollection(response, { source: 'audiobookshelf', libraryId: 'lib-z' }).ok,
+      ).toBe(false);
+    });
+
+    it('never falls back to another target’s list', () => {
+      const kavitaOnly = { ...response, targets: [response.targets[0]!] };
+      expect(
+        missingForCollection(kavitaOnly, { source: 'audiobookshelf', libraryId: null }).ok,
+      ).toBe(false);
+      const legacy = { server: 'kavita', missing: [member('K')] };
+      expect(missingForCollection(legacy, { source: 'audiobookshelf', libraryId: null }).ok).toBe(
+        false,
+      );
+      expect(titles(missingForCollection(legacy, { source: 'kavita', libraryId: null }))).toEqual([
+        'K',
+      ]);
+      expect(
+        titles(
+          missingForCollection({ missing: [member('K')] }, { source: 'kavita', libraryId: null }),
+        ),
+      ).toEqual(['K']);
     });
   });
 

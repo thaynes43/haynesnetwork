@@ -14,7 +14,11 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { booksCollections, bookRequests, type DbClient } from '@hnet/db';
 import type { LibrettoReadClient } from '@hnet/libretto/read';
-import { LibrettoUnreachableError } from '@hnet/libretto';
+import {
+  LibrettoUnreachableError,
+  type LibrettoMissingMember,
+  type LibrettoMissingResponse,
+} from '@hnet/libretto';
 import { resolveDb } from './db-client';
 import { normTitle, syncCollectionWants, type CollectionWantMember } from './book-requests';
 
@@ -143,6 +147,48 @@ function formatForSource(source: string): 'ebook' | 'audiobook' {
   return source === 'audiobookshelf' ? 'audiobook' : 'ebook';
 }
 
+/** What one mirror collection reads out of its recipe's missing response (issue #759). */
+export type CollectionMissingSelection =
+  { ok: true; missing: LibrettoMissingMember[] } | { ok: false; reason: string };
+
+/**
+ * Issue #759 — the missing members of ONE mirror collection, out of its recipe's `listMissingMembers` read.
+ *
+ * A recipe can target Kavita AND Audiobookshelf (ADR-076); each target has its own missing list (the works missing
+ * FROM that library), carried per entry in `targets[]`. The flat top-level `missing` is only the FIRST reachable
+ * target's, so reading it for both mirror collections gave the audiobook collection the Kavita list: an audiobook
+ * already in Audiobookshelf stayed a Wanted tile (whenever the ebook was missing), and an audiobook missing only from
+ * Audiobookshelf never got one. The entry is chosen by server (kavita ⇒ `kavita`, audiobookshelf ⇒ `abs`) and, when
+ * the mirror row carries one, library id (Kavita collections span libraries, so their rows carry none).
+ *
+ * Fail-safe like a per-collection read error: no entry for this collection's target, an entry that reports an error,
+ * or an entry without a member list is `ok: false`, and the caller leaves the collection's wants untouched (never
+ * reconcile against a list it did not get). A response without `targets[]` (a Libretto that predates ADR-076) is a
+ * single-target answer: its flat list is used when its `server` is this collection's (or unnamed). Pure.
+ */
+export function missingForCollection(
+  response: LibrettoMissingResponse,
+  collection: { source: string; libraryId: string | null },
+): CollectionMissingSelection {
+  const server = collection.source === 'audiobookshelf' ? 'abs' : 'kavita';
+  const targets = response.targets;
+  if (targets && targets.length > 0) {
+    const sameServer = targets.filter((t) => t.server === server);
+    const entry = collection.libraryId
+      ? sameServer.find((t) => t.libraryId === collection.libraryId)
+      : sameServer[0];
+    if (!entry) return { ok: false, reason: `recipe has no ${server} target for this collection` };
+    if (entry.error) return { ok: false, reason: entry.error };
+    if (!Array.isArray(entry.missing))
+      return { ok: false, reason: `${server} entry carries no member list` };
+    return { ok: true, missing: entry.missing };
+  }
+  if (response.server && response.server !== server) {
+    return { ok: false, reason: `missing list is for ${response.server}, not ${server}` };
+  }
+  return { ok: true, missing: response.missing ?? [] };
+}
+
 /**
  * Map a recipe's raw MISSING members to keyed, resolve-enriched want members — the shared body of the cron
  * wants pass AND the on-demand collection Force Search (collection-force-search.ts). Each member is keyed by
@@ -242,19 +288,29 @@ export async function runCollectionWantsSync(
     .select({
       id: booksCollections.id,
       source: booksCollections.source,
+      libraryId: booksCollections.libraryId,
       title: booksCollections.title,
       recipeId: booksCollections.librettoRecipeId,
     })
     .from(booksCollections)
     .where(isNotNull(booksCollections.librettoRecipeId));
 
+  // Issue #759 — a Kavita + Audiobookshelf recipe backs TWO mirror collections; one read per recipe per run serves
+  // both (each takes its own target's entry), so the second collection costs no second library listing.
+  const reads = new Map<string, Promise<LibrettoMissingResponse>>();
+
   for (const collection of collections) {
     const recipeId = collection.recipeId;
     if (!recipeId) continue;
 
-    let missing: Awaited<ReturnType<CollectionWantsLibretto['listMissingMembers']>>;
+    let response: LibrettoMissingResponse;
     try {
-      missing = await input.libretto.listMissingMembers(recipeId);
+      let read = reads.get(recipeId);
+      if (!read) {
+        read = input.libretto.listMissingMembers(recipeId);
+        reads.set(recipeId, read);
+      }
+      response = await read;
     } catch (error) {
       if (error instanceof LibrettoUnreachableError) {
         // Libretto is down — abort the whole pass (never reconcile wants we cannot re-see).
@@ -274,6 +330,22 @@ export async function runCollectionWantsSync(
       continue;
     }
 
+    // Issue #759 — this collection's own target's list (the audiobook collection never reads the Kavita one).
+    const selected = missingForCollection(response, collection);
+    if (!selected.ok) {
+      report.collectionsSkipped += 1;
+      log.warn?.(
+        'collection-wants: no missing list for this collection’s target — collection skipped',
+        {
+          collectionId: collection.id,
+          recipeId,
+          source: collection.source,
+          reason: selected.reason,
+        },
+      );
+      continue;
+    }
+
     // Quota thrift — reuse already-resolved wants (skip their Google-Books resolve). Without this the pass
     // re-resolves every held member every run and exhausts Libretto's shared daily key before it reaches the
     // still-NULL members of late-iteration collections (The Expanse), so those never resolve.
@@ -281,7 +353,7 @@ export async function runCollectionWantsSync(
     const parkedRefs = await loadParkedWantRefs(input.db, collection.id);
     const { members, resolved, reused, parked } = await resolveMissingMembers(
       input.libretto,
-      missing.missing ?? [],
+      selected.missing,
       resolvedRefs,
       parkedRefs,
     );

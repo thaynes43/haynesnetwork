@@ -28,7 +28,12 @@ import type { LibrettoReadClient } from '@hnet/libretto/read';
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import { inTransaction, resolveDb } from './db-client';
 import { NotFoundError } from './errors';
-import { loadParkedWantRefs, loadResolvedWantRefs, resolveMissingMembers } from './collection-wants-sync';
+import {
+  loadParkedWantRefs,
+  loadResolvedWantRefs,
+  missingForCollection,
+  resolveMissingMembers,
+} from './collection-wants-sync';
 import {
   llFormatAlreadyHeld,
   llRecentSearchCovers,
@@ -815,42 +820,57 @@ export async function forceSearchCollectionNow(
     unreachable: false,
   };
 
-  // The mirror collection bound to this recipe (only Libretto-produced collections carry a recipe id).
-  const [collection] = await resolveDb(input.db)
+  // The mirror collections bound to this recipe (only Libretto-produced collections carry a recipe id). Issue #759: a
+  // Kavita + Audiobookshelf recipe backs one of each, and the Force Search covers both, each against its own target.
+  const collections = await resolveDb(input.db)
     .select({
       id: booksCollections.id,
       source: booksCollections.source,
-      recipeId: booksCollections.librettoRecipeId,
+      libraryId: booksCollections.libraryId,
     })
     .from(booksCollections)
-    .where(eq(booksCollections.librettoRecipeId, input.recipeId))
-    .limit(1);
-  if (!collection || !collection.recipeId) {
+    .where(eq(booksCollections.librettoRecipeId, input.recipeId));
+  if (collections.length === 0) {
     throw new NotFoundError(`No collection is bound to recipe "${input.recipeId}"`);
   }
 
   // (a) re-apply the recipe (fresh membership) + (b) refresh the missing-member wants. A Libretto outage
   // aborts BEFORE any search (we never force-search a missing set we could not re-confirm).
+  const refreshed: typeof collections = [];
   try {
     report.runId = await input.libretto.write.applyScope(input.recipeId);
-    const missing = await input.libretto.read.listMissingMembers(input.recipeId);
-    // Quota thrift (shared with the hourly pass) — reuse already-resolved wants, don't re-spend GB on them.
-    const resolvedRefs = await loadResolvedWantRefs(input.db, collection.id);
-    const { members } = await resolveMissingMembers(
-      input.libretto.read,
-      missing.missing ?? [],
-      resolvedRefs,
-      await loadParkedWantRefs(input.db, collection.id),
-    );
-    const synced = await syncCollectionWants({
-      db: input.db,
-      collectionId: collection.id,
-      format: formatForSource(collection.source),
-      members,
-      now,
-    });
-    report.minted = synced.minted;
-    report.removed = synced.removed;
+    const response = await input.libretto.read.listMissingMembers(input.recipeId);
+    for (const collection of collections) {
+      // Issue #759 — each collection reads its own target's missing list; one with none is left as it is.
+      const selected = missingForCollection(response, collection);
+      if (!selected.ok) {
+        log.warn?.('collection-force-search (on-demand): no missing list for this collection’s target', {
+          recipeId: input.recipeId,
+          collectionId: collection.id,
+          source: collection.source,
+          reason: selected.reason,
+        });
+        continue;
+      }
+      // Quota thrift (shared with the hourly pass) — reuse already-resolved wants, don't re-spend GB on them.
+      const resolvedRefs = await loadResolvedWantRefs(input.db, collection.id);
+      const { members } = await resolveMissingMembers(
+        input.libretto.read,
+        selected.missing,
+        resolvedRefs,
+        await loadParkedWantRefs(input.db, collection.id),
+      );
+      const synced = await syncCollectionWants({
+        db: input.db,
+        collectionId: collection.id,
+        format: formatForSource(collection.source),
+        members,
+        now,
+      });
+      report.minted += synced.minted;
+      report.removed += synced.removed;
+      refreshed.push(collection);
+    }
   } catch (error) {
     if (error instanceof LibrettoUnreachableError) {
       report.unreachable = true;
@@ -863,8 +883,9 @@ export async function forceSearchCollectionNow(
     throw error;
   }
 
-  // (c) force-search this collection's resolved wants NOW — cooldown BYPASSED (cutoff=null), cap honored.
-  const worklist = await gatherCollectionWants(input.db, [collection], cap, null);
+  // (c) force-search the refreshed collections' resolved wants NOW — cooldown BYPASSED (cutoff=null), cap honored.
+  // A collection whose missing list could not be read is not searched (its wants were not re-confirmed).
+  const worklist = await gatherCollectionWants(input.db, refreshed, cap, null);
   report.candidates = worklist.length;
   if (worklist.length === 0) return report;
 

@@ -8,7 +8,8 @@
   `targetLibrary` becomes **`targets[]`** (1..N; back-compat normalize to a one-entry array; a new optional
   `category` field), one recipe materializes into EVERY target, `missing[]` + the `/collections` read-back
   tag the target, and the provenance marker may carry `|cat=<Category>` (activating DESIGN-038 D-12's L1
-  path). See the dated notes in D-02/D-03/D-07/D-09/D-10.
+  path). See the dated notes in D-02/D-03/D-07/D-09/D-10. **AMENDED 2026-10-06 (issue #759):** D-04's title fallback
+  also finds a book Kavita files inside a series, the same book held twice, and a title carrying series decoration.
 - **Satisfies:** the PLAN-043 saga phase "Books collection-manager app" (owner rulings
   2026-07-16, recorded in `.agents/plans/043-integration-tab-saga.md` and restated in
   PLAN-054); governed by **ADR-064** (mirrored-only doctrine — external software is always the
@@ -159,6 +160,38 @@ there). Every builder emits **works keyed by identifiers**, and matching walks a
    never looser fuzz — and flag `matchedVia: title_author` in the run report (per-recipe
    counts + log) so the honesty survives into reads. No match ⇒ the work goes to the
    MissingReport; nothing is fabricated.
+
+> **Amendment 2026-10-06 (issue #759 — held books the library files differently).** Members the library held kept
+> reading missing, so the app kept them as Wanted tiles (DESIGN-038 D-13). A read-only replay of the live library found
+> three shapes the step 3 fallback could not see, now matched in Libretto (`src/matching/title.ts`, `src/core/match.ts`,
+> `src/target/kavita.ts`), each as conservative as before:
+>
+> - **A book inside a Kavita series.** Kavita files an epub that names its series as a volume of that series, so the
+>   series name ("Outlander") hid the book ("Written in My Own Heart's Blood", volume 8). The same
+>   `/api/Series/volumes` call that carries chapter ISBNs carries each chapter's own title, so a Kavita item now lists
+>   the books it holds, each also as "<series>: <title>" ("Mistborn: The Final Empire"). These book titles are a second
+>   tier: they are looked up only for a title no item carries as its own, so no work moves off the item it already
+>   matched. Each book of a series is its own claim, so one series can hold several members. Series grain (comics)
+>   still matches series names only.
+> - **The same book held twice.** An epub and a pdf Kavita filed as two series, or an import and a re-download in
+>   Audiobookshelf, made a title ambiguous, and ambiguity is refused. They are now one book when every pair of copies
+>   names agreeing authors (or Kavita chapter writers), or their files share a folder, and no copy carries a volume number
+>   the others do not ("Dune (Part 1)" and "Dune (Part 2)" are halves). Kavita writers only ever verify copies; they never
+>   veto a match, because epub credits are often partial.
+> - **A decorated title.** For a title the library carries nowhere, the two sides are compared with series decoration
+>   taken off: a position prefix ("Expanse 03 - Abaddon's Gate"), a subtitle that names a volume or the form ("Caliban's
+>   War: The Expanse, Book 2", "Children of Anguish and Anarchy: Legacy of Orisha 3", "The Lost Metal--A Mistborn
+>   Novel"), or the work's own series name ("Artificial Condition--The Murderbot Diaries", "Bridgerton: An Offer from a
+>   Gentleman"; `hardcover_series` works now carry `series`). A subtitle that carries the book is never dropped
+>   ("Mistborn: The Final Empire", "The Duke and I: The 2nd Epilogue"), nor one that names another thing (a graphic
+>   novel, a companion, an epilogue, a bundle). The volume a decoration names must agree with the work's series position
+>   (the #693 / #739 Volume Check lesson: another volume never satisfies a member), and two members of one list that
+>   share a stripped title at different volumes take nothing by it.
+>
+> Still no fuzz: a library title that differs in words ("The World of Divergent" for "The World of Divergent: The Path
+> to Allegiant") stays an honest miss. The replay, old matcher against new over all 75 recipes and every target, flipped
+> 52 members from missing to held, each hand-checked as the right book and volume, flipped none the other way, and took
+> no member out of any collection. Libretto PR https://github.com/thaynes43/libretto/pull/21.
 
 ### D-05 — Builders v1 (small, source-viability-ranked per research §5)
 
