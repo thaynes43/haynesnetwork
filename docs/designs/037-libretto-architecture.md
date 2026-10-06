@@ -11,7 +11,9 @@
   path). See the dated notes in D-02/D-03/D-07/D-09/D-10. **AMENDED 2026-10-06 (issue #759):** D-04's title fallback
   also finds a book Kavita files inside a series, the same book held twice, and a title carrying series decoration.
   **AMENDED 2026-10-06 (issues #771, #777):** D-04 gains member title aliases (`variables.titleAliases`); D-05's
-  `hardcover_series` members carry their authors; D-09's acquisition is author-guarded.
+  `hardcover_series` members carry their authors; D-09's acquisition is author-guarded. **AMENDED 2026-10-06
+  (thaynes43/libretto#25, #26):** D-04's Kavita series detail refreshes after a scan and within 12 hours; D-09's
+  acquisition never queues a book in a language not acquired (English here) or a format LazyLibrarian already holds.
 - **Satisfies:** the PLAN-043 saga phase "Books collection-manager app" (owner rulings
   2026-07-16, recorded in `.agents/plans/043-integration-tab-saga.md` and restated in
   PLAN-054); governed by **ADR-064** (mirrored-only doctrine — external software is always the
@@ -238,6 +240,17 @@ there). Every builder emits **works keyed by identifiers**, and matching walks a
 > members flip from missing to held, none flips back and none moves to another item. Libretto PR
 > https://github.com/thaynes43/libretto/pull/23.
 
+**AMENDED 2026-10-06 (https://github.com/thaynes43/libretto/issues/25, a Kavita metadata edit reaches the matcher the
+same day).** The Kavita library-side identity (each series' chapter ISBNs, book titles, writers and folders, one
+`volumes` call per series) was cached for 7 days under the series id and page count. A metadata edit made in Kavita (a
+chapter title fixed and locked, writers corrected) moves no field of the series listing, so the matcher kept the old
+title until the entry expired: The Last Hero's corrected title, which its member title alias above relies on, would have
+read missing for a week. The cache now holds one entry per series, reused only while the series' page count, last folder
+scan and last chapter added are unchanged, and for at most 12 hours. An edit followed by a scan of the series ("Scan
+Series") is seen at the next listing; an edit with no scan is seen within 12 hours. A full refresh is about 1,800 calls
+of about 3 ms of Kavita time each (measured 2026-10-06). Expired cache files are pruned at boot and daily. Libretto PR
+https://github.com/thaynes43/libretto/pull/28.
+
 ### D-05 — Builders v1 (small, source-viability-ranked per research §5)
 
 | type | ref | emits | notes |
@@ -372,6 +385,25 @@ LazyLibrarian's `AuthorName` and the work's authors (or, for a `hardcover_series
 same-titled book by another author is never driven for a member; its resolve is told the member's first author. A book
 or work with no author is judged on its title, as before. The app's own force-search applies the same rule to its
 collection wants (DESIGN-028 amendment of this date, the Author Check).
+
+**AMENDED 2026-10-06 (https://github.com/thaynes43/libretto/issues/26, the language and held checks).** A Discworld
+apply queued the French "Drame de troll" for the member "Troll Bridge" (it matched through a French ISBN in the Hardcover
+member's identifiers) and re-queued "The Last Hero", which LazyLibrarian held as files under a `Skipped` status. Two
+checks now gate every acquisition write:
+
+- **Language.** Acquisition only queues or adds a book in an allowed language: Libretto's
+  `LIBRETTO_ACQUISITION_LANGUAGES`, a generic list of language codes, default `en` (the estate's English-only rule, the
+  English Edition, DDD-001 T-282). The language is LazyLibrarian's own `BookLang` for a book it already has and the
+  Google Books volume's `language` for a new one, read with the app's three classes (`en`, `eng`, `en-*` and `English`
+  are English; blank, `Unknown`, `und` and `xxx` are unknown and allowed, as the app's pairing allows them). A
+  LazyLibrarian row in another language is never a match, even on an exact ISBN, and its ISBN is not used to add the
+  work; the resolve broker treats a volume in another language as a miss, so an ISBN hit on a translation falls through
+  to the title leg, and when only other-language editions turn up there is no `addBookByISBN` fallback.
+- **Held.** A format counts as held when LazyLibrarian's status reads `Open` or `Have`, or when it carries an import
+  date or file for it (`BookLibrary` / `AudioLibrary`, `BookFile` / `AudioFile`), the same signals as the app's own push
+  guard (`llFormatAlreadyHeld`). A held format is never queued.
+
+Libretto PR https://github.com/thaynes43/libretto/pull/27.
 
 ### D-10 — API surface: the five contract nouns as REST
 
