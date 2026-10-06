@@ -40,6 +40,7 @@ import {
 import {
   applyRequestReconcile,
   llFormatAlreadyHeld,
+  llReconcileStatus,
   mapLlStatus,
   type LlHeldSignals,
 } from './book-requests';
@@ -378,8 +379,8 @@ export async function applyLlGoneDecision(input: {
       await applyRequestReconcile({
         db: input.db,
         requestId: input.requestId,
-        ebookStatus: mapLlStatus(row.ebookStatus),
-        audioStatus: mapLlStatus(row.audioStatus),
+        ebookStatus: llReconcileStatus(row, 'ebook'),
+        audioStatus: llReconcileStatus(row, 'audiobook'),
         now: input.now,
       });
     }

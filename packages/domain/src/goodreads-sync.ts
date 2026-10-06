@@ -35,7 +35,7 @@ import {
   llFormatAlreadyHeld,
   loadLibraryMatcher,
   mapKapowarrVolumeStatus,
-  mapLlStatus,
+  llReconcileStatus,
   markComicRouted,
   markRequestFormatsRequeued,
   markRequestPushed,
@@ -508,8 +508,8 @@ export async function syncGoodreadsIntegration(
         await applyRequestReconcile({
           db: input.db,
           requestId: target.requestId,
-          ebookStatus: mapLlStatus(status.ebookStatus),
-          audioStatus: mapLlStatus(status.audioStatus),
+          ebookStatus: llReconcileStatus(status, 'ebook'),
+          audioStatus: llReconcileStatus(status, 'audiobook'),
           now,
         });
         reconciled += 1;
@@ -913,8 +913,8 @@ async function rekeyManualSearch(
   await applyRequestReconcile({
     db: input.db,
     requestId: request.id,
-    ebookStatus: mapLlStatus(row?.ebookStatus),
-    audioStatus: mapLlStatus(row?.audioStatus),
+    ebookStatus: llReconcileStatus(row, 'ebook'),
+    audioStatus: llReconcileStatus(row, 'audiobook'),
     now,
   });
   const toQueue = formats.filter((f) => !llFormatAlreadyHeld(row, f));

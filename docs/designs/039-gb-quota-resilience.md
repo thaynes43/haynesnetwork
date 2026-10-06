@@ -548,3 +548,19 @@ Read it in Loki (the app and its CronJobs both run in `frontend`):
 ```
 
 How often the quota was hit is `count_over_time({namespace="frontend"} |= "gb_quota_trip" | json | kind="daily" [7d])`.
+
+## Amendment — 2026-10-06: the English-edition pass may spend what the pairing mint leaves (D-23, issue #740)
+
+The pairing mint's Mint Backoff (DESIGN-036 amendment of this date) stops it spending most of its 700-call slice on lookups
+that cannot resolve. The goodreads job's English-edition pass (DESIGN-028, #719) runs on the `goodreads` slice, which the
+shelf enrichment spends by mid-day, so after that its due lookups waited for the next quota-day.
+
+**The rule.** The English-edition pass gets a budget that spends its own `goodreads` slice first and, once that cannot
+afford another lookup, the `pairing` slice (`withSpareBudget(primary, spare)`, `gb-call-budget.ts`). Each call is recorded
+against the slice that paid for it, with the same reserve-before-commit gate, so every slice still caps its consumer, the
+mint still sees its own usage, and the daily total stays inside the key's quota. The pass's own caps stay (at most
+`ENGLISH_EDITION_CAP_PER_RUN` lookups a run, one per want per quota-day). Nothing else borrows: the shelf enrichment stops
+at its own slice as before.
+
+**Tests:** `packages/domain/__tests__/gb-call-budget.test.ts` (primary first, then the spare, each call charged to the
+slice that paid).

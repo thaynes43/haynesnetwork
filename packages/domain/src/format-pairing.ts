@@ -13,7 +13,7 @@
 //     capped at PAIRING_MINT_CAP_PER_RUN attempts per run, LL identity resolved reuse-first then
 //     Google Books, the confined LL chain pushed for ONLY the missing format behind the 250ms
 //     pacer, and open pairing wants reconciled through the EXISTING status machinery
-//     (getAllBookStatuses → mapLlStatus → applyRequestReconcile — positives never regress). The
+//     (getAllBookStatuses → llReconcileStatus → applyRequestReconcile — positives never regress). The
 //     orchestrator opens no transaction of its own; external calls stay OUT of any tx (the
 //     goodreads-sync discipline). The pairing path touches nothing on the confined LL surface
 //     beyond addBook/queueBook/searchBook, plus (issue #735) the LazyLibrarian Release's unqueueBook for a format a
@@ -37,7 +37,7 @@ import { makeGbBudgetTracker, type GbBudgetTracker, type GbCallMeter } from './g
 import {
   applyRequestReconcile,
   llFormatAlreadyHeld,
-  mapLlStatus,
+  llReconcileStatus,
   markRequestFormatsRequeued,
   normAuthor,
   llRecentSearchCovers,
@@ -80,6 +80,34 @@ import {
  * ~1000-title backlog over days. Env-tunable.
  */
 export const PAIRING_MINT_CAP_PER_RUN = Number(process.env.PAIRING_MINT_CAP_PER_RUN ?? 25);
+
+/**
+ * Issue #740 (DESIGN-036 amendment 2026-10-06, glossary T-285 Mint Backoff) — how long a pairing want waits for its next
+ * Google Books lookup after the 1st, 2nd, 3rd, then every later lookup in a row that found no usable book. The mint
+ * re-tried the same ~95 unresolvable wants every hour and spent its whole daily slice on them; the wait sends the slice to
+ * new and changed wants, and leaves the shared key's quota to LazyLibrarian's adds.
+ */
+export const PAIRING_MINT_BACKOFF_DAYS: readonly number[] = [1, 3, 7, 30];
+
+/** The identity a want's misses are counted for: a want whose anchor's title, author or ISBN changes is looked up again. */
+export function mintBackoffKey(identity: { title: string; author: string | null; isbn?: string | null }): string {
+  return [pairingTitleKey(identity.title), normAuthor(identity.author ?? ''), (identity.isbn ?? '').trim()].join('|');
+}
+
+/** When the next lookup is due after `count` misses in a row. */
+export function mintBackoffUntil(count: number, now: Date): Date {
+  const days = PAIRING_MINT_BACKOFF_DAYS[Math.min(count, PAIRING_MINT_BACKOFF_DAYS.length) - 1] ?? 1;
+  return new Date(now.getTime() + days * 86_400_000);
+}
+
+/** Is this want waiting out its Mint Backoff for this identity? A changed identity (another key) is never waiting. */
+export function mintBackingOff(
+  want: { mintBackoffUntil: Date | null; mintBackoffKey: string | null },
+  key: string,
+  now: Date,
+): boolean {
+  return want.mintBackoffUntil !== null && want.mintBackoffUntil > now && want.mintBackoffKey === key;
+}
 
 // ---------------------------------------------------------------------------
 // The matcher (pure — unit-tested offline).
@@ -652,8 +680,13 @@ export interface MintPairingWantsReport {
   minted: number;
   /** Wants whose missing-format chain was pushed to LL this run. */
   pushed: number;
-  /** Attempts that ended honestly unmintable (no LL identity) — retried on later runs. */
+  /** Attempts that ended honestly unmintable (no LL identity) — retried on later runs, after the Mint Backoff. */
   unmintable: number;
+  /**
+   * Issue #740 — candidates waiting out their Mint Backoff (`mint_backoff_until` ahead, same identity): no Google Books
+   * lookup for them this run, no cap consumed. One whose book another request resolved since still mints (no lookup).
+   */
+  inBackoff: number;
   /**
    * ADR-067 C-08 (PLAN-055) — GB-requiring candidates skipped because the quota breaker was/went
    * OPEN: NOT attempts (the cap is not consumed, the want row is not touched — `updated_at`, the
@@ -719,9 +752,24 @@ async function upsertPairingWant(input: {
   title: string;
   author: string | null;
   llBookId: string | null;
+  /**
+   * Issue #740 — set when this attempt's Google Books lookup completed and found no usable book: the identity key the
+   * miss counts for (`mintBackoffKey`). The miss count grows (or restarts at 1 for a new key) and the next lookup waits.
+   */
+  missKey?: string;
   now: Date;
 }): Promise<{ row: BookRequestRow; minted: boolean }> {
   const missing = missingFormatFor(input.item.mediaKind);
+  /** Issue #740 — the Mint Backoff columns this attempt writes: cleared once the want has an id, grown on a miss. */
+  const backoffFor = (
+    llBookId: string | null,
+    prior: { mintBackoffCount: number; mintBackoffKey: string | null } | null,
+  ): Partial<Pick<BookRequestRow, 'mintBackoffCount' | 'mintBackoffUntil' | 'mintBackoffKey'>> => {
+    if (llBookId !== null) return { mintBackoffCount: 0, mintBackoffUntil: null, mintBackoffKey: null };
+    if (!input.missKey) return {};
+    const count = prior && prior.mintBackoffKey === input.missKey ? prior.mintBackoffCount + 1 : 1;
+    return { mintBackoffCount: count, mintBackoffUntil: mintBackoffUntil(count, input.now), mintBackoffKey: input.missKey };
+  };
   return inTransaction(input.db, async (tx) => {
     const refresh = async (existing: BookRequestRow): Promise<{ row: BookRequestRow; minted: boolean }> => {
       // Issue #693 — an id is kept only for the book it was resolved for. When the anchor's book changed (a renamed
@@ -744,6 +792,7 @@ async function upsertPairingWant(input: {
           author: input.author,
           llBookId,
           ...(reset ? (missing === 'ebook' ? { ebookStatus: 'requested' as const } : { audioStatus: 'requested' as const }) : {}),
+          ...backoffFor(llBookId, existing),
           updatedAt: input.now,
         })
         .where(eq(bookRequests.id, existing.id))
@@ -784,6 +833,7 @@ async function upsertPairingWant(input: {
         // lifecycle (ADR-065 C-03).
         ebookStatus: missing === 'ebook' ? 'requested' : 'landed',
         audioStatus: missing === 'audiobook' ? 'requested' : 'landed',
+        ...backoffFor(input.llBookId, null),
         createdAt: input.now,
         updatedAt: input.now,
       })
@@ -1543,6 +1593,20 @@ export async function mintPairingWants(
     }
   }
 
+  // 4c. Issue #740 — the Mint Backoff. A want whose last lookups for this same identity found nothing waits 1, 3, 7, then
+  //     30 days before Google Books is asked again (`mint_backoff_until`). It stays a candidate, so a book another
+  //     request resolved since still mints it through the reuse index (no lookup); only the lookup waits.
+  const backoffKeyOf = (item: (typeof unpaired)[number]): string | null => {
+    const identity = identityOf.get(item.id);
+    return identity?.kind === 'one' ? mintBackoffKey(identity) : null;
+  };
+  const backingOff = (item: (typeof unpaired)[number]): boolean => {
+    const w = wantByAnchor.get(item.id);
+    const key = backoffKeyOf(item);
+    return Boolean(w && key !== null && mintBackingOff(w, key, now));
+  };
+  const inBackoff = candidates.filter(backingOff).length;
+
   // 5. Attempt candidates in order, paced, until the cap of REAL attempts is spent. A candidate
   //    that would need a Google Books resolve while the breaker is open (or after it trips
   //    mid-run) is SKIPPED — no cap consumed, no upsert (updated_at is the retry-recency key and
@@ -1571,6 +1635,9 @@ export async function mintPairingWants(
       own && pairingTitleKey(own.title) === pairingTitleKey(identity.title) ? own.llBookId : null;
     let llBookId = ownLlBookId ?? reuseLlBookId(identity) ?? null;
     const needsGb = llBookId === null && input.gb != null;
+    // Issue #740 — no lookup while the want waits out its Mint Backoff: no cap consumed, no upsert.
+    if (needsGb && backingOff(item)) continue;
+    let missKey: string | undefined;
     if (needsGb && quotaOpen) {
       skippedQuota += 1;
       continue;
@@ -1618,6 +1685,8 @@ export async function mintPairingWants(
         llBookId = guarded.outcome === 'resolved' ? guarded.volume.volumeId : null;
         // Issue #693 — LazyLibrarian may already hold the resolved id under another volume's or work's title.
         if (llBookId !== null && bookRefused(identity, llBookId)) llBookId = null;
+        // Issue #740 — the lookup answered and gave no usable book: a miss (an error below is not one).
+        if (llBookId === null) missKey = mintBackoffKey(identity);
       } catch (error) {
         if (input.budget) await input.budget.spend((input.meter?.taken() ?? 0) - before);
         // Non-429 failure — today's semantics: an honest unmintable ATTEMPT (cap consumed below).
@@ -1636,6 +1705,7 @@ export async function mintPairingWants(
       title: identity.title,
       author: identity.author,
       llBookId,
+      ...(missKey ? { missKey } : {}),
       now,
     });
     if (isNew) minted += 1;
@@ -1726,6 +1796,7 @@ export async function mintPairingWants(
     minted,
     pushed,
     unmintable,
+    inBackoff,
     skippedQuota,
     skippedBudget,
     skippedHeld,
@@ -1910,7 +1981,7 @@ async function revalidateLandedPairingWants(input: {
 /**
  * One format-pairing run: rebuild the pair cache (syncFormatPairs), mint the paced system wants
  * (mintPairingWants), then reconcile every OPEN pushed pairing want against ONE getAllBookStatuses
- * read via the existing machinery — mapLlStatus → applyRequestReconcile (positives never regress),
+ * read via the existing machinery — llReconcileStatus → applyRequestReconcile (positives never regress),
  * with the goodreads-sync raw-`Skipped` sweep applied to the missing format (addBook races land
  * Skipped for pairing pushes exactly as they do for shelf pushes). Opens no transaction of its own.
  */
@@ -2137,8 +2208,8 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
         await applyRequestReconcile({
           db: input.db,
           requestId: want.id,
-          ebookStatus: mapLlStatus(status.ebookStatus),
-          audioStatus: mapLlStatus(status.audioStatus),
+          ebookStatus: llReconcileStatus(status, 'ebook'),
+          audioStatus: llReconcileStatus(status, 'audiobook'),
           now,
         });
         reconciled += 1;

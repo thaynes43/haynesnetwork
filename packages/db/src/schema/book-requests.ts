@@ -138,7 +138,20 @@ export const bookRequests = pgTable(
      * `switchRequestToEnglishEdition` / `parkRequestNoEnglishEdition` / `stampEnglishEditionTried`.
      */
     englishEditionTriedAt: timestamp('english_edition_tried_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Issue #740 (migration 0094) — the Mint Backoff of a pairing want: how many Google Books lookups in a row found no
+     * usable book for the identity in `mint_backoff_key`. Reset to 0 when a lookup resolves. Written only by the pairing
+     * mint's single writer (`upsertPairingWant`).
+     */
+    mintBackoffCount: integer('mint_backoff_count').notNull().default(0),
+    /** Issue #740 — no Google Books lookup for this want before this time (1, 3, 7, then 30 days after a miss). */
+    mintBackoffUntil: timestamp('mint_backoff_until', { withTimezone: true }),
+    /**
+     * Issue #740 — the identity the misses were counted for (title key, author, ISBN). A want whose anchor's identity no
+     * longer matches it is looked up at once, whatever `mint_backoff_until` says.
+     */
+    mintBackoffKey: text('mint_backoff_key'),
+    createdAt:timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

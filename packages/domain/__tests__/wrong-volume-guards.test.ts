@@ -108,6 +108,82 @@ describe('llBookMismatch (lenient)', () => {
   });
 });
 
+describe('llBookMismatch — a coverage rule, not one shared word (issue #739)', () => {
+  const check = (want: string, book: string, subtitle: string | null = null, author: string | null = null) =>
+    llBookMismatch({ title: want, author }, { title: book, subtitle, author });
+
+  it('the probed same-series volumes no longer pass (the #739 table)', () => {
+    expect(check('Mistborn: Secret History', 'Mistborn', 'The Final Empire', 'Brandon Sanderson')).toBe('work');
+    expect(check('Mistborn: Secret History', 'Mistborn: The Final Empire', null, 'Brandon Sanderson')).toBe('work');
+    expect(
+      check('Harry Potter and the Prisoner of Azkaban (Harry Potter, #3)', "Harry Potter and the Philosopher's Stone", null, 'J.K. Rowling'),
+    ).toBe('work');
+    // A bare number in the wanted head is its series position; the book is only the series name.
+    expect(check('Wild Cards 2: Aces High', 'Wild Cards', null, 'George R.R. Martin')).toBe('volume');
+    expect(check('Wild Cards 2', 'Wild Cards')).toBe('volume');
+    expect(check('Court of Thorns and Roses bk 2', 'A Court of Thorns and Roses', null, 'Sarah J. Maas')).toBe('volume');
+    expect(check('Terry Pratchett: The BBC Radio Drama Collection', "Terry Pratchett's Discworld", null, 'Terry Pratchett')).toBe('work');
+  });
+
+  it('series positions must agree when the book has a title of its own', () => {
+    expect(check('Dune (Dune, #1)', 'Dune Messiah', 'Dune Book 2', 'Frank Herbert')).toBe('volume');
+    // Two sources number Narnia differently; the book's title is the want's, so that is no evidence.
+    expect(
+      check('The Lion, the Witch and the Wardrobe (Chronicles of Narnia, #1)', 'The Lion, the Witch and the Wardrobe', 'The Chronicles of Narnia, Book 2'),
+    ).toBeNull();
+    // "#2.5" is a novella between volumes: no position of its own.
+    expect(check('Edgedancer (Stormlight Archive, #2.5)', 'Edgedancer')).toBeNull();
+  });
+
+  it('the same book under decoration, an alternative title or another edition still passes', () => {
+    expect(check('Wild Cards 2: Aces High', 'Aces High')).toBeNull();
+    expect(check('The Way of Kings: Book One of the Stormlight Archive', 'The Way of Kings')).toBeNull();
+    expect(check("Harry Potter and the Philosopher's Stone (Harry Potter, #1)", "Harry Potter and the Sorcerer's Stone")).toBeNull();
+    expect(check('Chroniken der Unterwelt (4): City of Fallen Angels', 'City of Fallen Angels')).toBeNull();
+    expect(check('Poldark 06 - The Four Swans', 'The Four Swans', 'A Novel of Cornwall, 1795-1797')).toBeNull();
+    expect(check('New York 2140', 'New York 2140')).toBeNull();
+    expect(check('Catch 22', 'Catch-22')).toBeNull();
+  });
+
+  it('a want whose book drops only its subtitle still passes (live, hand-checked 2026-10-06)', () => {
+    expect(check('Picasso: A Biography', 'Picasso')).toBeNull();
+    expect(check('The Hobbit, or There and Back Again', 'The Hobbit')).toBeNull();
+    expect(check('Shaman - A Novel of the Ice Age', 'Shaman')).toBeNull();
+    expect(check('Beacon 23: The Complete Novel', 'Beacon 23')).toBeNull();
+    expect(check('Aces Abroad: Wild Cards IV', 'Aces Abroad')).toBeNull();
+    expect(check('Inferno: Special Illustrated Edition (Enhanced)', 'Inferno: A Novel')).toBeNull();
+    expect(
+      check('Wind and Truth: The brand new epic Stormlight Archive novel from the international bestseller', 'Wind and Truth', 'Book Five of the Stormlight Archive'),
+    ).toBeNull();
+    expect(check('The Other Emily - Die Doppelgängerin (Ungekürzt)', 'The Other Emily')).toBeNull();
+  });
+
+  it('a subtitle that names a separate work is not dropped (live: the Bridgerton epilogues)', () => {
+    expect(check('The Duke and I: The 2nd Epilogue', 'The Duke And I', null, 'Julia Quinn')).toBe('work');
+    expect(check('An Offer From a Gentleman: the 2nd Epilogue', 'An Offer From a Gentleman', null, 'Julia Quinn')).toBe('work');
+  });
+
+  it('a series designation on either side keeps the one-shared-word rule (no work title to cover)', () => {
+    expect(check('Red Queen Novella #1', 'Queen Song')).toBeNull();
+    expect(check('Mistborn Book 1', 'The Well of Ascension')).toBe('work');
+    expect(check('Harry Potter Boxed Set, Books 1-5 (Harry Potter, #1-5)', 'Harry Potter', '5 Years of Magic, Adventure, and Mystery at Hogwarts')).toBeNull();
+    expect(check('A Court of Splintered Harmony', 'A Court of Thorns and Roses 6', null, 'Sarah J. Maas')).toBeNull();
+  });
+
+  it('other live mismatches the coverage rule found (hand-checked 2026-10-06)', () => {
+    expect(
+      check('The Heroes of Olympus: The Demigod Diaries', 'The Heroes of Olympus, Book Three The Mark of Athena (Heroes of Olympus, The Book Three)', null, 'Rick Riordan'),
+    ).toBe('work');
+    expect(check("Tolkien's World - Paintings of Middle-Earth", "Tolkien's Middle-Earth", null, 'J.R.R. Tolkien')).toBe('work');
+    expect(check('Ghosts of the Shadow Market 8', 'Ghosts of the Shadow Market', null, 'Cassandra Clare')).toBe('volume');
+  });
+
+  it('known gap: a book titled only by the series name passes a want titled "<series>: <volume title>"', () => {
+    // Textually the same shape as "Picasso: A Biography" ⇄ "Picasso"; telling them apart needs series data.
+    expect(check('Diary of a Wimpy Kid: Rodrick Rules', 'Diary of a Wimpy Kid')).toBeNull();
+  });
+});
+
 describe('llBookNamesTitle (strict)', () => {
   it('the same title is named', () => {
     expect(llBookNamesTitle('The Score', { title: 'The Score' })).toBe(true);

@@ -23,6 +23,8 @@ import {
   judgePairingWantBook,
   makeGbBudgetTracker,
   matchFormatPairs,
+  mintBackoffKey,
+  mintBackoffUntil,
   mintPairingWants,
   missingFormatFor,
   pairingIdentity,
@@ -493,16 +495,19 @@ describe('mintPairingWants (the paced estate-wide backfill)', () => {
     await seedItem({ title: 'Obscure Title', author: 'Unknown Author', mediaKind: 'book' });
     const ll = stubLl();
     const gbFail = stubGb(() => null);
-    const run1 = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gbFail.gb, pacer: async () => {} });
+    const t0 = new Date('2026-10-06T10:00:00Z');
+    const run1 = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gbFail.gb, now: t0, pacer: async () => {} });
     expect(run1).toMatchObject({ attempted: 1, minted: 1, pushed: 0, unmintable: 1 });
     expect(ll.calls).toHaveLength(0);
     const [want] = await t.db.select().from(bookRequests);
     expect(want!.llBookId).toBeNull();
     expect(want!.audioStatus).toBe('requested');
 
-    // The retry path: the next run re-attempts (backoff-by-recency), GB now resolves, the push fires.
+    // The retry path: the next run after the Mint Backoff (issue #740: a day after the first miss) re-attempts, GB now
+    // resolves, the push fires.
     const gbOk = stubGb(() => 'gb-late');
-    const run2 = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gbOk.gb, pacer: async () => {} });
+    const t1 = new Date(t0.getTime() + 86_400_000 + 60_000);
+    const run2 = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gbOk.gb, now: t1, pacer: async () => {} });
     expect(run2).toMatchObject({ attempted: 1, minted: 0, pushed: 1, unmintable: 0 });
     const [after] = await t.db.select().from(bookRequests);
     expect(after!.llBookId).toBe('gb-late');
@@ -624,7 +629,8 @@ describe('mintPairingWants (the paced estate-wide backfill)', () => {
         });
       },
     };
-    const t1 = new Date('2026-07-16T11:00:00Z');
+    // Two days on, so the two wants are past their Mint Backoff (issue #740) and need a lookup again.
+    const t1 = new Date('2026-07-18T11:00:00Z');
     const ll = stubLl();
     const run2 = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb429, now: t1, pacer: async () => {} });
     expect(run2).toMatchObject({ attempted: 0, minted: 0, pushed: 0, skippedQuota: 2 });
@@ -923,6 +929,111 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
 // ---------------------------------------------------------------------------
 // DESIGN-039 D-22 — the OLDEST-FIRST drain (ISBN-priority within the cohort).
 // ---------------------------------------------------------------------------
+
+describe('mintPairingWants — the Mint Backoff (issue #740)', () => {
+  const DAY = 86_400_000;
+  const day = (n: number) => new Date(Date.UTC(2026, 6, n));
+  const t0 = new Date('2026-10-06T07:33:00Z');
+  const at = (days: number, hours = 0): Date => new Date(t0.getTime() + days * DAY + hours * 3_600_000);
+  const wantOf = async (title: string) =>
+    (await t.db.select().from(bookRequests).where(eq(bookRequests.title, title)))[0]!;
+
+  it('a lookup that finds nothing waits 1, 3, 7, then 30 days; meanwhile no lookup is made and no cap is spent', async () => {
+    await seedItem({ title: 'Never Found', author: 'Nobody', mediaKind: 'book', firstSeenAt: day(1) });
+    await seedItem({ title: 'Fresh Arrival', author: 'Somebody', mediaKind: 'book', firstSeenAt: day(2) });
+    const gb = stubGb(() => null);
+
+    // Run 1 (cap 1): the oldest candidate is looked up and misses.
+    const run1 = await mintPairingWants({ db: t.db, gb: gb.gb, cap: 1, now: t0, pacer: async () => {} });
+    expect(run1).toMatchObject({ attempted: 1, unmintable: 1, inBackoff: 0 });
+    const miss1 = await wantOf('Never Found');
+    expect(miss1.mintBackoffCount).toBe(1);
+    expect(miss1.mintBackoffUntil?.getTime()).toBe(at(1).getTime());
+    expect(miss1.mintBackoffKey).toBe(mintBackoffKey({ title: 'Never Found', author: 'Nobody', isbn: null }));
+
+    // Run 2, an hour later (cap 1): the waiting want is skipped without a lookup, so the cap goes to the fresh one.
+    gb.calls.length = 0;
+    const run2 = await mintPairingWants({ db: t.db, gb: gb.gb, cap: 1, now: at(0, 1), pacer: async () => {} });
+    expect(run2).toMatchObject({ attempted: 1, inBackoff: 1 });
+    expect(gb.calls).toEqual(['Fresh Arrival']);
+
+    // Each later miss doubles up the wait: 3, 7, then 30 days, and 30 days from then on.
+    const waits: number[] = [];
+    let now = at(1, 1);
+    for (let i = 0; i < 4; i += 1) {
+      await mintPairingWants({ db: t.db, gb: gb.gb, now, pacer: async () => {} });
+      const w = await wantOf('Never Found');
+      waits.push(Math.round((w.mintBackoffUntil!.getTime() - now.getTime()) / DAY));
+      now = new Date(w.mintBackoffUntil!.getTime() + 60_000);
+    }
+    expect(waits).toEqual([3, 7, 30, 30]);
+    expect((await wantOf('Never Found')).mintBackoffCount).toBe(5);
+    expect(mintBackoffUntil(9, t0).getTime()).toBe(at(30).getTime());
+  });
+
+  it('a changed identity (the anchor gains an ISBN) is looked up at once, and its count starts again', async () => {
+    const id = await seedItem({ title: 'Quiet Book', author: 'Quiet Author', mediaKind: 'audiobook' });
+    const gb = stubGb(() => null);
+    await mintPairingWants({ db: t.db, gb: gb.gb, now: t0, pacer: async () => {} });
+    expect((await wantOf('Quiet Book')).mintBackoffCount).toBe(1);
+
+    await t.db.update(booksItems).set({ isbn: '9780000000001' }).where(eq(booksItems.id, id));
+    gb.calls.length = 0;
+    const run = await mintPairingWants({ db: t.db, gb: gb.gb, now: at(0, 1), pacer: async () => {} });
+    expect(run).toMatchObject({ attempted: 1, inBackoff: 0 });
+    expect(gb.calls).toEqual(['Quiet Book']);
+    const after = await wantOf('Quiet Book');
+    expect(after.mintBackoffCount).toBe(1);
+    expect(after.mintBackoffKey).toBe(mintBackoffKey({ title: 'Quiet Book', author: 'Quiet Author', isbn: '9780000000001' }));
+  });
+
+  it('a want in backoff still mints from a book another request resolved since (no lookup), and the backoff clears', async () => {
+    await seedItem({ title: 'Shared Work', author: 'Pat Writer', mediaKind: 'book' });
+    await mintPairingWants({ db: t.db, gb: stubGb(() => null).gb, now: t0, pacer: async () => {} });
+    expect((await wantOf('Shared Work')).mintBackoffCount).toBe(1);
+
+    // A person's Goodreads request for the same work resolves its id.
+    const user = await createUser(t.db);
+    const [integ] = await t.db
+      .insert(userIntegrations)
+      .values({ userId: user.id, provider: 'goodreads', externalUserId: '1', status: 'linked' })
+      .returning({ id: userIntegrations.id });
+    const [shelf] = await t.db
+      .insert(integrationShelfItems)
+      .values({ integrationId: integ!.id, shelf: 'to-read', externalBookId: 'gr-shared', title: 'Shared Work' })
+      .returning({ id: integrationShelfItems.id });
+    await t.db.insert(bookRequests).values({
+      integrationId: integ!.id,
+      shelfItemId: shelf!.id,
+      title: 'Shared Work',
+      author: 'Pat Writer',
+      llBookId: 'gb-shared',
+    });
+
+    const gb = stubGb(() => {
+      throw new Error('no lookup while the want waits');
+    });
+    const run = await mintPairingWants({ db: t.db, gb: gb.gb, now: at(0, 1), pacer: async () => {} });
+    expect(run).toMatchObject({ attempted: 1, inBackoff: 1, unmintable: 0 });
+    const [after] = await t.db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
+    expect(after!.llBookId).toBe('gb-shared');
+    expect(after!.mintBackoffCount).toBe(0);
+    expect(after!.mintBackoffUntil).toBeNull();
+    expect(after!.mintBackoffKey).toBeNull();
+  });
+
+  it('a lookup that fails (an error, not an answer) is not a miss: no backoff', async () => {
+    await seedItem({ title: 'Flaky Lookup', author: 'Net Work', mediaKind: 'book' });
+    const gb = stubGb(() => {
+      throw new Error('ECONNRESET');
+    });
+    const run = await mintPairingWants({ db: t.db, gb: gb.gb, now: t0, pacer: async () => {} });
+    expect(run).toMatchObject({ attempted: 1, unmintable: 1 });
+    const w = await wantOf('Flaky Lookup');
+    expect(w.mintBackoffCount).toBe(0);
+    expect(w.mintBackoffUntil).toBeNull();
+  });
+});
 
 describe('mintPairingWants — oldest-first drain, ISBN priority (DESIGN-039 D-22)', () => {
   const day = (n: number) => new Date(Date.UTC(2026, 6, n));

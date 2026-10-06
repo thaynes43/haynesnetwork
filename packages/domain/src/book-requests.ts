@@ -213,6 +213,23 @@ export function unheldFormatStatus(
   return mapped === 'landed' ? null : mapped;
 }
 
+/**
+ * Issue #752 (DESIGN-028 amendment 2026-10-06, glossary T-281) — the status a format reads from LazyLibrarian in a
+ * reconcile: `landed` while LazyLibrarian holds it (`llFormatAlreadyHeld`: `Open`/`Have`, or an import date or file path
+ * whatever the status says), otherwise its status mapped through `mapLlStatus`. The landing twin of `unheldFormatStatus`:
+ * one predicate lands a format and keeps it landed, so a `Skipped` format LazyLibrarian imported a file for (its library
+ * scan or post-processor filed a copy and left the status) lands, where `mapLlStatus` alone read it `missing` and the
+ * want never left `missing`/`requested`/`grabbed`. Pure; `null` for no row (leave the status alone).
+ */
+export function llReconcileStatus(
+  row: LlHeldSignals | null | undefined,
+  format: Extract<BookRequestFormat, 'ebook' | 'audiobook'>,
+): BookRequestStatus | null {
+  if (!row) return null;
+  if (llFormatAlreadyHeld(row, format)) return 'landed';
+  return mapLlStatus(format === 'audiobook' ? row.audioStatus : row.ebookStatus);
+}
+
 export interface RevertLandedInput {
   db?: DbClient;
   requestId: string;

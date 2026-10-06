@@ -3220,6 +3220,20 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  describe('0094 book_requests Mint Backoff (issue #740)', () => {
+    it('adds the three columns: the count defaults to 0, the time and key are nullable', async () => {
+      const cols = await client.query(
+        `SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns
+          WHERE table_name = 'book_requests' AND column_name LIKE 'mint_backoff_%' ORDER BY column_name`,
+      );
+      expect(cols.rows).toEqual([
+        { column_name: 'mint_backoff_count', data_type: 'integer', is_nullable: 'NO', column_default: '0' },
+        { column_name: 'mint_backoff_key', data_type: 'text', is_nullable: 'YES', column_default: null },
+        { column_name: 'mint_backoff_until', data_type: 'timestamp with time zone', is_nullable: 'YES', column_default: null },
+      ]);
+    });
+  });
+
   describe('0093 ll_format_releases (issue #735 — the LazyLibrarian Release)', () => {
     it('creates ll_format_releases: one row per (book, format), the format CHECK matching LL_RELEASE_FORMATS', async () => {
       const insert = (format: string) =>
@@ -3443,6 +3457,19 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(entry!.when).toBeGreaterThan(prev!.when);
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0087_trash_title_exclusions.sql'), 'utf8');
     expect(sqlText).toContain('CREATE TABLE "trash_title_exclusions"');
+  });
+
+  // Issue #740 gate — the Mint Backoff columns are journaled (idx 93), after 0093; additive.
+  it('lists 0094_book_requests_mint_backoff at idx 93, strictly after 0093_ll_format_releases', () => {
+    const entry = journal.entries.find((e) => e.tag === '0094_book_requests_mint_backoff');
+    const prev = journal.entries.find((e) => e.tag === '0093_ll_format_releases');
+    expect(entry?.idx).toBe(93);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0094_book_requests_mint_backoff.sql'), 'utf8');
+    expect(sqlText).toContain('ADD COLUMN "mint_backoff_count" integer DEFAULT 0 NOT NULL');
+    expect(sqlText).toContain('ADD COLUMN "mint_backoff_until" timestamp with time zone');
+    expect(sqlText).toContain('ADD COLUMN "mint_backoff_key" text');
+    expect(sqlText).not.toMatch(/DROP |UPDATE /);
   });
 
   // ADR-099 gate — the record-first Save migration is journaled (idx 87), after 0087.

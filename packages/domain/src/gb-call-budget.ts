@@ -291,3 +291,19 @@ export async function makeGbBudgetTracker(input: {
     },
   };
 }
+
+/**
+ * Issue #740 (DESIGN-039 D-23 amendment 2026-10-06) — a tracker that spends `primary`'s slice first and, once it cannot
+ * afford another resolve, `spare`'s. The goodreads job's English-edition pass gets the pairing slice as its spare: with
+ * the Mint Backoff the pairing mint stops spending most of its slice on lookups that cannot resolve, and what it leaves
+ * goes to the English-edition lookups once the goodreads enrichment has spent its own. Each call is recorded against
+ * the slice that paid for it, so every slice still caps its consumer and the daily total stays inside the key's quota.
+ */
+export function withSpareBudget(primary: GbBudgetTracker, spare: GbBudgetTracker): GbBudgetTracker {
+  return {
+    consumer: primary.consumer,
+    canSpend: () => primary.canSpend() || spare.canSpend(),
+    spend: (legs: number) => (primary.canSpend() ? primary.spend(legs) : spare.spend(legs)),
+    used: () => primary.used(),
+  };
+}
