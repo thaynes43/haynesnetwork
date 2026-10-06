@@ -1443,6 +1443,8 @@ export async function mintPairingWants(
   //    items) BEFORE any retry, so the frozen oldest cohort (the 2026-07-16 set — same first_seen,
   //    last tried days ago) never got reached while new items churned ahead of it. The NEW single
   //    order drains front-to-back regardless of fresh/retry:
+  //      0. misses ASC          — issue #740: the Mint Backoff's misses for the current identity, so a fresh or
+  //                               changed want goes before one that already missed (`missesOf`);
   //      1. first_seen_at ASC   — the oldest cohort first (ends the newest-first churn);
   //      2. ISBN-bearing first  — WITHIN the same first_seen, the anchors carrying an ISBN go first
   //                               (the `isbn:` leg is the cheap, reliable one — cheapest drain);
@@ -1466,6 +1468,14 @@ export async function mintPairingWants(
   };
   const lastTriedAt = (i: (typeof unpaired)[number]): number =>
     (wantByAnchor.get(i.id)?.updatedAt ?? i.firstSeenAt).getTime();
+  // Issue #740 — the misses counted for the candidate's CURRENT identity (0 for a fresh want or a changed identity), so
+  // new and changed wants are tried before the ones that already missed: the backoff's order, ahead of the drain's.
+  const missesOf = (i: (typeof unpaired)[number]): number => {
+    const w = wantByAnchor.get(i.id);
+    const identity = identityOf.get(i.id);
+    if (!w || identity?.kind !== 'one') return 0;
+    return w.mintBackoffKey === mintBackoffKey(identity) ? w.mintBackoffCount : 0;
+  };
   const isRetryable = (w: BookRequestRow, i: (typeof unpaired)[number]): boolean =>
     w.llBookId === null || statusOfFormat(w, missingFormatFor(i.mediaKind)) === 'requested';
   let skippedUnknownHeld = 0;
@@ -1507,6 +1517,7 @@ export async function mintPairingWants(
     })
     .sort(
       (a, b) =>
+        missesOf(a) - missesOf(b) ||
         a.firstSeenAt.getTime() - b.firstSeenAt.getTime() ||
         (hasIsbn(b) ? 1 : 0) - (hasIsbn(a) ? 1 : 0) ||
         lastTriedAt(a) - lastTriedAt(b) ||

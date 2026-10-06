@@ -624,6 +624,14 @@ from the next run `inBackoff` rises toward the unresolvable backlog (about 1,400
 changed wants plus the day's expiring backoffs. A miss on day 1 is retried on day 2, so the old cohort's second pass comes a
 day later, its third three days after that.
 
+**Order (follow-up the same day, after the first run on v0.107.10).** The first run (12:32Z) tried 50 wants before the
+day's slice ran out (`skippedBudget 215`) and backed each off a day. 265 candidates needed a lookup that run: the 167 pairing
+wants with no id (50 now counted, 117 not yet) and about 100 library items never minted at all. The drain's order (oldest
+`first_seen_at` first) put every old want, including one whose backoff had just run out, ahead of those new items, so they
+never got a lookup. The candidate order's first key is now the misses counted for the current identity (`missesOf`; 0 for a
+fresh want or a changed identity), then the drain's order: new and changed wants are tried before any retry. With 167 wants
+to back off, the slice's relief comes within about two days, as their waits lengthen (1, 3, 7, then 30 days).
+
 ### #739 on the pairing side
 
 The identity check (`checkPairingWantBooks`), the reuse and resolve refusal (`bookRefused`), the landed check and the
@@ -642,4 +650,4 @@ identity check re-identifies first. The Skipped sweep already refused to re-queu
 **Tests:** `packages/domain/__tests__/format-pairing.test.ts` (the Mint Backoff: 1, 3, 7, 30, 30 days, no lookup and no cap
 while waiting, a changed ISBN looked up at once, a reuse id minting through the backoff and clearing it, an error is not a
 miss), `packages/domain/__tests__/landed-truth.test.ts` (#752), `packages/domain/__tests__/wrong-volume-guards.test.ts`
-(#739), `packages/db/__tests__/migrations.test.ts` (0094).
+(#739), `packages/db/__tests__/migrations.test.ts` (0094); the follow-up adds a fresh want tried before a due retry.

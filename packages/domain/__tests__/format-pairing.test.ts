@@ -1022,6 +1022,20 @@ describe('mintPairingWants — the Mint Backoff (issue #740)', () => {
     expect(after!.mintBackoffKey).toBeNull();
   });
 
+  it('a fresh or changed want is tried before an older one that already missed', async () => {
+    await seedItem({ title: 'Old Miss', author: 'Old Author', mediaKind: 'book', firstSeenAt: day(1) });
+    const gb = stubGb(() => null);
+    await mintPairingWants({ db: t.db, gb: gb.gb, now: t0, pacer: async () => {} });
+    expect((await wantOf('Old Miss')).mintBackoffCount).toBe(1);
+
+    // Two days on the miss is due again, and a newer library item has arrived; with room for one lookup, the new one
+    // goes first although the drain alone (oldest first) would pick the old one.
+    await seedItem({ title: 'New Arrival', author: 'New Author', mediaKind: 'book', firstSeenAt: day(20) });
+    gb.calls.length = 0;
+    await mintPairingWants({ db: t.db, gb: gb.gb, cap: 1, now: at(2), pacer: async () => {} });
+    expect(gb.calls).toEqual(['New Arrival']);
+  });
+
   it('a lookup that fails (an error, not an answer) is not a miss: no backoff', async () => {
     await seedItem({ title: 'Flaky Lookup', author: 'Net Work', mediaKind: 'book' });
     const gb = stubGb(() => {
