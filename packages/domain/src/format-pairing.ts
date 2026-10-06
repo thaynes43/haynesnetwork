@@ -33,7 +33,7 @@ import { readHeldBooks, type HeldBook } from './books';
 import { FOREIGN_LANGUAGE_REASON, isForeignLanguage, readItemLanguage } from './book-language';
 import { inTransaction, resolveDb } from './db-client';
 import { guardedGbResolve } from './gb-quota-breaker';
-import { makeGbBudgetTracker, type GbBudgetTracker, type GbCallMeter } from './gb-call-budget';
+import { gbBudgetCanStart, makeGbBudgetTracker, type GbBudgetTracker, type GbCallMeter } from './gb-call-budget';
 import {
   applyRequestReconcile,
   llFormatAlreadyHeld,
@@ -1646,7 +1646,7 @@ export async function mintPairingWants(
     // candidates for the rest of the quota-day WITHOUT consuming the cap, upserting the want, or
     // tripping the shared breaker (this is our own pacing, not a real 429). Reuse-resolvable candidates
     // (needsGb false) still mint free.
-    if (needsGb && input.budget && !input.budget.canSpend()) {
+    if (needsGb && input.budget && !(await gbBudgetCanStart(input.budget))) {
       skippedBudget += 1;
       if (!budgetLogged) {
         log.info?.('format-pairing: GB daily call budget spent — GB-requiring mints skipped, cap preserved', {

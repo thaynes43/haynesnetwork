@@ -11,6 +11,7 @@ import {
   gbQuotaDayString,
   makeGbBudgetTracker,
   readGbBudgetUsage,
+  gbBudgetCanStart,
   recordGbCalls,
   withSpareBudget,
 } from '../src/index';
@@ -282,6 +283,19 @@ describe('withSpareBudget — the English-edition pass borrows the pairing slice
     expect(tracker.canSpend()).toBe(false); // both slices spent
     const usage = await readGbBudgetUsage({ db: t.db, now: day });
     expect(usage).toMatchObject({ goodreads: 4, pairing: 4 });
+    expect(tracker.used()).toBe(8); // the calls it charged to the spare count as its own
+  });
+
+  it('sees what another job spent from the shared slice before it starts a lookup (gbBudgetCanStart)', async () => {
+    const goodreads = await makeGbBudgetTracker({ db: t.db, consumer: 'goodreads', now: day, budgetOverride: 2, reserveOverride: 2 });
+    const pairing = await makeGbBudgetTracker({ db: t.db, consumer: 'pairing', now: day, budgetOverride: 6, reserveOverride: 2 });
+    const tracker = withSpareBudget(goodreads, pairing);
+    await tracker.spend(2); // the goodreads slice is spent
+    expect(await gbBudgetCanStart(tracker)).toBe(true); // the pairing slice reads 0 of 6
+    // The format-pairing mint, a separate job, spends 5 of the pairing slice meanwhile.
+    await recordGbCalls({ db: t.db, consumer: 'pairing', count: 5, now: day });
+    expect(tracker.canSpend()).toBe(true); // the start-of-run count alone would still say yes
+    expect(await gbBudgetCanStart(tracker)).toBe(false); // the re-read says 5 + 2 > 6
   });
 });
 

@@ -562,5 +562,12 @@ mint still sees its own usage, and the daily total stays inside the key's quota.
 `ENGLISH_EDITION_CAP_PER_RUN` lookups a run, one per want per quota-day). Nothing else borrows: the shelf enrichment stops
 at its own slice as before.
 
+**Two jobs on one slice.** A tracker reads its usage once, at the start of the run, and each slice used to have one job.
+Now the format-pairing mint and the English-edition pass can both spend the pairing slice in the same minutes, so both
+re-read its persisted count right before each lookup they start (`gbBudgetCanStart`: the local answer first, since usage
+only grows, then `refresh()` and the reserve-before-commit gate again). The overshoot left is two lookups started at the
+same instant, at most one resolve's legs (`GB_MAX_RESOLVE_LEGS`). The pass's "budget spent" log reports the calls it charged
+to either slice.
+
 **Tests:** `packages/domain/__tests__/gb-call-budget.test.ts` (primary first, then the spare, each call charged to the
-slice that paid).
+slice that paid; a lookup is refused once another job's spend, re-read, leaves no room).
