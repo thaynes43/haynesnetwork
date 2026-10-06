@@ -796,3 +796,126 @@ checks:
     links:
       issues: ['#770']
       prs: ['haynes-ops #3445', 'haynes-ops #3446']
+  - id: OC-024
+    title: Gray Dawn and Shift are resolved again with their author and searched for their own book (#771)
+    opened: 2026-10-06
+    after: |
+      haynesnetwork v0.108.2 + Libretto sha-2e77f28 live (17:07Z / 17:05Z); the 17:27Z collections sync released all 13
+      wants on another author's book (releasedWrongAuthor 13). Google Books' daily quota was spent, so the wants pass
+      resolves them again once it resets (07:00Z).
+    not_before: 2026-10-07T07:30:00Z
+    due: 2026-10-09T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      Gray Dawn (Easy Rawlins, ebook 05bc296f, audiobook bc5918a3) and Shift (Silo, caf0d2a7) each hold a new
+      ll_book_id that is not the one they gave up (wrong_author_ll_book_id), and last_searched_at is set. LazyLibrarian
+      has a Walter Mosley "Gray Dawn" row whose ebook and audiobook read Wanted, or Snatched or held. For Shift, if the
+      resolve named LazyLibrarian's own Hugh Howey "Shift" (Qw30DwAAQBAJ, which holds the file of "First Shift: Legacy"),
+      the want reads held and #781 owns it. None of the 13 took back the book it gave up. The other ten either have a
+      new id or stay unresolved where Google Books has no such book (the short stories), never another author's book.
+      By hand: the app-db query below, then `select b.BookID, b.BookName, a.AuthorName, b.Status, b.AudioStatus from
+      books b join authors a using (AuthorID) where a.AuthorName in ('Walter Mosley', 'Hugh Howey') and (b.BookName like
+      '%Gray Dawn%' or b.BookName = 'Shift')` in LazyLibrarian's database (mode=ro).
+    auto_covers: part
+    auto:
+      - name: Gray Dawn and Shift hold a new book and were searched
+        source: app-db
+        query: |
+          select count(*) as n from book_requests
+          where id in ('05bc296f-2f80-4a4e-9239-4932f287fa4e', 'bc5918a3-ef2a-447c-bb2b-e8313a8cfd18',
+                       'caf0d2a7-9f12-4c53-af7a-6608d41a764f')
+            and ll_book_id is not null and ll_book_id <> wrong_author_ll_book_id and last_searched_at is not null
+        expect: {eq: 3}
+        mismatch: wait
+      - name: LazyLibrarian wants Walter Mosley's Gray Dawn in both formats
+        source: ll-db
+        query: |
+          select b.BookID, b.Status, b.AudioStatus from books b join authors a on a.AuthorID = b.AuthorID
+          where a.AuthorName = 'Walter Mosley' and b.BookName like 'Gray Dawn%'
+            and b.Status in ('Wanted', 'Snatched', 'Open', 'Have') and b.AudioStatus in ('Wanted', 'Snatched', 'Open', 'Have')
+        expect: {min_rows: 1}
+        mismatch: wait
+      - name: none of the 13 took back the book it gave up
+        source: app-db
+        query: select count(*) as n from book_requests where origin = 'collection' and ll_book_id = wrong_author_ll_book_id
+        expect: {eq: 0}
+        mismatch: fail
+    evidence:
+      - "2026-10-06 17:27Z: collections sync logged releasedWrongAuthor 13 (13 collection_want_wrong_author_released lines), 13 releases recorded (released:wrong_author), no error lines."
+    links:
+      issues: ['#771', '#781']
+      prs: ['#780', 'thaynes43/libretto#24', 'haynes-ops #3447', 'haynes-ops #3448']
+  - id: OC-025
+    title: LazyLibrarian stops searching the other authors' books the 13 wants gave up (#771)
+    opened: 2026-10-06
+    after: the 17:27Z release (13 rows in ll_format_releases, reason released:wrong_author); format-pairing and goodreads-sync drain them hourly
+    not_before: 2026-10-06T19:00:00Z
+    due: 2026-10-07T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      The 13 releases are drained, and none of the other authors' books still reads Wanted: Paul Luckraft's
+      "Anticipating the Afterlife" (hcnj0QEACAAJ), Albert Bermel's "Artaud's Theatre of Cruelty" (ocZGswEACAAJ), Matt
+      Howarth's "Gray Dawn" (ZNTZzQEACAAJ), Sian Hayton's "The Last Flight" (FB93PQAACAAJ), Darryl K. Cooke's "After the
+      Bridge Was Crossed" (bcZHDwAAQBAJ), Mary-Jane Knight's "The Kane Chronicles" (CzwELwEACAAJ), Rick Harrison's "The
+      Infinite Extent" (A2cNEgAAQBAJ). A format another live request still asks for is kept by the drain (owned): say
+      which request. Held books (White's "The Gray Dawn", King's "Night Shift", Gatto's "Dumbing Us Down") stay as they are.
+    auto_covers: all
+    auto:
+      - name: the releases are drained
+        source: app-db
+        query: select count(*) as n from ll_format_releases where reason = 'released:wrong_author'
+        expect: {eq: 0}
+        mismatch: wait
+      - name: no other author's book is still Wanted
+        source: ll-db
+        query: |
+          select BookID, Status, AudioStatus from books
+          where (BookID in ('ocZGswEACAAJ', 'bcZHDwAAQBAJ', 'CzwELwEACAAJ') and Status = 'Wanted')
+             or (BookID in ('hcnj0QEACAAJ', 'ocZGswEACAAJ', 'ZNTZzQEACAAJ', 'FB93PQAACAAJ', 'bcZHDwAAQBAJ',
+                            'CzwELwEACAAJ', 'A2cNEgAAQBAJ') and AudioStatus = 'Wanted')
+        expect: {max_rows: 0}
+        mismatch: wait
+    links:
+      issues: ['#771']
+      prs: ['#780']
+  - id: OC-026
+    title: "The seven #777 members stay held, and The Last Hero joins them once Libretto's Kavita cache refreshes"
+    opened: 2026-10-06
+    after: |
+      Libretto sha-2e77f28 live and the seven member title aliases written (17:09Z); six read held at once (17:27Z sync
+      deleted their wants). The Last Hero's corrected Kavita chapter title reaches Libretto when its cached series detail
+      expires (2026-10-13 14:33:50Z, thaynes43/libretto#25).
+    not_before: 2026-10-13T15:30:00Z
+    due: 2026-10-14T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      No collection want remains for the seven: The World of Divergent: The Path to Allegiant, Free Four: Tobias Tells
+      the Divergent Knife-Throwing Scene (divergent), Rapport: Friendship, Solidarity, Communion, Empathy
+      (the-murderbot-diaries), The World of All Souls: A Complete Guide... (all-souls), On the Way to the Wedding
+      (bridgerton), The Last Hero (discworld, Kavita) and Camp Half-Blood Confidential (trials-of-apollo-audiobooks). By
+      hand: Libretto `GET /api/collections/discworld/missing` no longer lists "The Last Hero" in the kavita entry, and
+      Kavita chapter 3244 still reads "The Last Hero: A Discworld Fable" with titleNameLocked true.
+    auto_covers: part
+    auto:
+      - name: no want left for the seven members
+        source: app-db
+        query: |
+          select br.title, bc.source from book_requests br join books_collections bc on bc.id = br.collection_id
+          where br.origin = 'collection' and (
+            (bc.libretto_recipe_id = 'divergent' and br.title in ('The World of Divergent: The Path to Allegiant',
+              'Free Four: Tobias Tells the Divergent Knife-Throwing Scene'))
+            or (bc.libretto_recipe_id = 'the-murderbot-diaries' and br.title like 'Rapport%')
+            or (bc.libretto_recipe_id = 'all-souls' and br.title like 'The World of All Souls%')
+            or (bc.libretto_recipe_id = 'bridgerton' and br.title = 'On the Way to the Wedding')
+            or (bc.libretto_recipe_id = 'discworld' and bc.source = 'kavita' and br.title = 'The Last Hero')
+            or (bc.libretto_recipe_id = 'trials-of-apollo-audiobooks' and br.title = 'Camp Half-Blood Confidential'))
+        expect: {max_rows: 0}
+        mismatch: wait
+    evidence:
+      - "2026-10-06 17:27Z: collections sync deleted the six wants (Libretto lists them held); a replay on a fresh live dump, the deployed-before matcher against sha-2e77f28 with the aliases, flips exactly those six. The Last Hero still reads missing from the cached chapter title."
+    links:
+      issues: ['#777', 'thaynes43/libretto#25']
+      prs: ['thaynes43/libretto#23', 'haynes-ops #3447']
