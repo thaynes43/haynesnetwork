@@ -1,0 +1,63 @@
+name: Owed checks
+
+# DESIGN-053 D-06: keeps ONE open issue, labelled `owed-checks`, listing every pending row of .agents/owed-checks.yaml
+# that is past its due time. It opens the issue when a row first goes overdue, rewrites the body and comments when the
+# overdue set changes, and closes it when nothing is overdue. Timing only: it reads the tracker, never the cluster
+# (the in-cluster runner does the data checks). Not a required check.
+on:
+  schedule:
+    - cron: '7 * * * *'
+  push:
+    branches: [main]
+    paths: ['.agents/owed-checks.yaml']
+  workflow_dispatch:
+
+concurrency:
+  group: owed-checks
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  overdue-issue:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      LABEL: owed-checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @hnet/sync...
+      - name: Evaluate the tracker (timing only)
+        run: >-
+          pnpm --filter @hnet/sync exec tsx src/scripts/owed-checks.ts --no-data
+          --tracker="$GITHUB_WORKSPACE/.agents/owed-checks.yaml" --markdown="$RUNNER_TEMP/owed.md"
+      - name: Open, update or close the overdue issue
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/owed.md"
+          ids=$(head -1 "$body" | sed -n 's/^<!-- owed-checks-overdue: \(.*\) -->$/\1/p')
+          gh label create "$LABEL" --color D93F0B --description "Owed post-deploy checks past due (DESIGN-053)" \
+            >/dev/null 2>&1 || true
+          issue=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$ids" ]; then
+            if [ -z "$issue" ]; then
+              gh issue create --title "Owed checks overdue" --label "$LABEL" --body-file "$body"
+            else
+              was=$(gh issue view "$issue" --json body --jq .body | head -1 \
+                | sed -n 's/^<!-- owed-checks-overdue: \(.*\) -->$/\1/p')
+              gh issue edit "$issue" --body-file "$body" >/dev/null
+              if [ "$was" != "$ids" ]; then
+                gh issue comment "$issue" --body "Overdue now: ${ids//,/, } (was: ${was:-none})."
+              fi
+            fi
+          elif [ -n "$issue" ]; then
+            gh issue comment "$issue" --body "No owed check is overdue now; closing."
+            gh issue close "$issue"
+          fi

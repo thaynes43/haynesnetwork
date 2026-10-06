@@ -3,6 +3,10 @@
 > The single resume point for agents. A fresh session should be able to orient from **only this
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
+>
+> **Owed checks live in `.agents/owed-checks.yaml`** (DESIGN-053, since 2026-10-06), not in lettered prose. Every
+> check that was pending in the blocks below, (b) to (v) plus the v0.107.5 "6 minted", is a row there (OC-001 to
+> OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
 ## ▶ 2026-10-06 — v0.107.10 + v0.107.11 live: the Volume Check covers the title, unmintable wants back off, a held `Skipped` format lands, pairs stop flapping (#739, #740, #752, #761 closed)
 
