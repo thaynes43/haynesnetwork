@@ -10,6 +10,8 @@
   tag the target, and the provenance marker may carry `|cat=<Category>` (activating DESIGN-038 D-12's L1
   path). See the dated notes in D-02/D-03/D-07/D-09/D-10. **AMENDED 2026-10-06 (issue #759):** D-04's title fallback
   also finds a book Kavita files inside a series, the same book held twice, and a title carrying series decoration.
+  **AMENDED 2026-10-06 (issues #771, #777):** D-04 gains member title aliases (`variables.titleAliases`); D-05's
+  `hardcover_series` members carry their authors; D-09's acquisition is author-guarded.
 - **Satisfies:** the PLAN-043 saga phase "Books collection-manager app" (owner rulings
   2026-07-16, recorded in `.agents/plans/043-integration-tab-saga.md` and restated in
   PLAN-054); governed by **ADR-064** (mirrored-only doctrine — external software is always the
@@ -193,6 +195,49 @@ there). Every builder emits **works keyed by identifiers**, and matching walks a
 > 52 members from missing to held, each hand-checked as the right book and volume, flipped none the other way, and took
 > no member out of any collection. Libretto PR https://github.com/thaynes43/libretto/pull/21.
 
+> **Amendment 2026-10-06 (issue #777, coordinator ruling: member title aliases).** Seven held books carry a title that
+> differs from the member's in words, which no safe rule can pair (dropping a subtitle that carries the book is how
+> "Mistborn: Secret History" would take "Mistborn"). A recipe now names such a pairing itself, in the spirit of Kometa's
+> per-collection overrides: `variables.titleAliases` maps a member's title, as the builder lists it, to the other titles
+> a library item carries for that same book. The rules (`src/core/match.ts`, `recipeMatchOptions`):
+>
+> - An alias is an exact title (the step 3 noise stripping, nothing else), tried only for a member whose own title the
+>   library carries nowhere (an own title that was refused as ambiguous, author-vetoed or taken stays refused), before
+>   the decorated pass, through the same guards: an ambiguous title is refused, disjoint authors veto it, and an item
+>   another member took stays taken. The alias key is compared like a title, so case and punctuation never miss one.
+> - Aliases apply with `titleFallback: false` too (a person confirmed each one), at work grain only. A match through one
+>   is flagged `matchedVia: 'alias'` and counted in `matchedByTitle`. The reconciler and the missing endpoint read their
+>   options from one function, so the two can never disagree.
+> - A person writes one only after checking the library item by hand: the same work and volume, in English. Never
+>   another volume, and never another edition that is not the member's own text (a box set, a graphic adaptation).
+> - Where the library's own title is plainly wrong (garbled, or a wrong subtitle), the library metadata is fixed instead,
+>   through Kavita's or Audiobookshelf's API, and locked so a rescan keeps it. Kavita's API cannot rename a series (its
+>   name comes from the file); its chapter title and sort name can be set and locked, and Libretto reads chapter titles
+>   as the books an item holds.
+> - The app never edits aliases, and Libretto's PUT replaces the whole recipe, so every app write carries them through:
+>   the find-missing toggle re-PUTs the recipe as read (now with its `targets`, `category`, `titleFallback` and
+>   `titleAliases`, so a two-target recipe stays two-target), and an edit from the collections form keeps the recipe's
+>   `titleFallback` and `titleAliases` (`collections-manager.ts`).
+>
+> The seven (each checked against the file: OPF or pdf metadata, its ISBN against the member's Hardcover identifiers,
+> and its text or running time):
+>
+> | Recipe | Member | Library item | Evidence |
+> |---|---|---|---|
+> | `divergent` | The World of Divergent: The Path to Allegiant | Kavita "The World of Divergent" | the epub's title page reads the full title, ISBN 9780062300805 is the member's |
+> | `divergent` | Free Four: Tobias Tells the Divergent Knife-Throwing Scene | Kavita "Free Four: Tobias Tells the Story" | ISBN 9780062237422 is the member's; the publisher's later title for the same story |
+> | `the-murderbot-diaries` | Rapport: Friendship, Solidarity, Communion, Empathy | Kavita "Rapport" | the OPF carries both title parts; Kavita reads the first |
+> | `all-souls` | The World of All Souls: A Complete Guide to A Discovery of Witches, Shadow of Night and The Book of Life | Kavita "The World of All Souls" | Penguin 2018, the guide itself |
+> | `bridgerton` | On the Way to the Wedding | Kavita "On the Way to the Wedding with 2nd Epilogue" | ISBN 9780062424167 is one of the member's editions: the novel with its epilogue appended |
+> | `discworld` | The Last Hero | Kavita "The Last Hero: A Discworld Fable" | the illustrated Gollancz edition (ISBN 9780575068858, the member's). Its pdf title said "(Graphic Novel)", a wrong subtitle: the chapter title and sort name are corrected in Kavita and locked (a rescan kept them). Kavita's API cannot rename a series, so the alias names the book title |
+> | `trials-of-apollo-audiobooks` | Camp Half-Blood Confidential | Audiobookshelf "From Percy Jackson: Camp Half-Blood Confidential: Your Real Guide to the Demigod Training Camp" | the publisher's full title; 3 h 23 min, the companion book's length |
+>
+> The member "On the Way to the Wedding: 2nd Epilogue" stays missing: the standalone epilogue is its own member. The
+> replay, the deployed matcher against the new one over all 75 recipes and every target on one dump of the live libraries:
+> with no aliases nothing changes; with the seven aliases (and The Last Hero's corrected chapter title) exactly those seven
+> members flip from missing to held, none flips back and none moves to another item. Libretto PR
+> https://github.com/thaynes43/libretto/pull/23.
+
 ### D-05 — Builders v1 (small, source-viability-ranked per research §5)
 
 | type | ref | emits | notes |
@@ -226,6 +271,17 @@ true` is a schema validation **error** for this builder — comics acquisition i
 and out of Libretto's scope. Cache namespace `hardcover:comic-series:v1`. (Doc-drift honesty
 note: of the original v1 table, `wikidata_award` was never built — the live builders are
 `static_ids`, `hardcover_series`, `nyt_list`, `hardcover_comics`.)
+
+**AMENDED 2026-10-06 (issue #771, `hardcover_series` members carry their authors).** A `hardcover_series` member carried
+no author (the depth-3 cap left no room for the `contributions` relation), so its resolve ran on the title alone and
+took another author's book: "Gray Dawn" (Walter Mosley) resolved to Stewart Edward White's *The Gray Dawn*, "Shift"
+(Hugh Howey) to Stephen King's *Night Shift*, and LazyLibrarian downloaded both. The series query now reads each book's
+`cached_contributors`, a jsonb scalar that fits the cap, and the works carry the Author credits (never an illustrator,
+narrator, editor or translator) as `credits`. They name the member: the missing endpoint reports them as its `authors`,
+so the app's want carries an author and its resolve runs author-guarded. They guard acquisition (D-09). They do not
+guard the library match (D-04): a library's own author data is too uneven to veto with (Kavita filed the anthology *The
+End is Nigh* under "Veronica Roth (1)"), so no collection changes. Cache key `hardcover:series-works:v5`. Libretto PR
+https://github.com/thaynes43/libretto/pull/24.
 
 ### D-06 — Write targets and per-recipe target mapping
 
@@ -310,6 +366,12 @@ sharpens the report hnet reads. hnet's collection-wants pass mints one want per 
 format source-derived per target (kavita ⇒ ebook, abs ⇒ audiobook) and the merged drill dedupes tiles on
 `collection_member_ref` (DESIGN-038 D-13 amendment); the one-active-want-per-(work, format) invariant across
 origins (collection vs pairing) is PLAN-060 edge E-1.
+
+**AMENDED 2026-10-06 (issue #771, an author-guarded acquisition).** Acquisition's LazyLibrarian title match now reads
+LazyLibrarian's `AuthorName` and the work's authors (or, for a `hardcover_series` member, its credits, D-05), so a
+same-titled book by another author is never driven for a member; its resolve is told the member's first author. A book
+or work with no author is judged on its title, as before. The app's own force-search applies the same rule to its
+collection wants (DESIGN-028 amendment of this date, the Author Check).
 
 ### D-10 — API surface: the five contract nouns as REST
 

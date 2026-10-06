@@ -1856,6 +1856,65 @@ export async function parkCollectionWant(input: {
   });
 }
 
+/**
+ * Issue #771 (DESIGN-028 amendment 2026-10-06, the Author Check, T-286) — a collection want whose LazyLibrarian book is
+ * credited to another author than its member's gives that book up: the id is cleared and remembered in
+ * `wrong_author_ll_book_id`, `last_searched_at` is cleared so the want is due the moment it has a book again, and an active
+ * format the wrong book moved past `requested` goes back to it. The next wants pass resolves the member again with its
+ * author; a resolve that names this same book vouches for it, and the check then leaves it alone (no loop). Unlike a
+ * `wrong_volume` park the want stays open: the member's own book is still worth finding. Single writer, one
+ * transaction, unaudited (the derived collection-want class), guarded on the want still pointing at that id, unparked
+ * and unmatched. The format LazyLibrarian was searching for it is released in the same transaction (T-283), so the drain
+ * unqueues another author's book nobody else wants. Returns whether it released.
+ */
+export async function releaseWrongAuthorCollectionWant(input: {
+  db?: DbClient;
+  requestId: string;
+  llBookId: string;
+  now?: Date;
+}): Promise<boolean> {
+  const now = input.now ?? new Date();
+  return inTransaction(input.db, async (tx) => {
+    const [row] = await tx
+      .select({ want: bookRequests, source: booksCollections.source })
+      .from(bookRequests)
+      .leftJoin(booksCollections, eq(booksCollections.id, bookRequests.collectionId))
+      .where(
+        and(
+          eq(bookRequests.id, input.requestId),
+          eq(bookRequests.origin, 'collection'),
+          isNull(bookRequests.unroutableReason),
+          isNull(bookRequests.matchedBooksItemId),
+          eq(bookRequests.llBookId, input.llBookId),
+        ),
+      )
+      .for('update', { of: bookRequests });
+    if (!row) return false;
+    const format = row.source ? collectionFormatForSource(row.source) : null;
+    const reopen = (status: BookRequestStatus): BookRequestStatus =>
+      status === 'wanted' || status === 'grabbed' ? 'requested' : status;
+    await tx
+      .update(bookRequests)
+      .set({
+        llBookId: null,
+        wrongAuthorLlBookId: input.llBookId,
+        lastSearchedAt: null,
+        ...(format === 'ebook' ? { ebookStatus: reopen(row.want.ebookStatus) } : {}),
+        ...(format === 'audiobook' ? { audioStatus: reopen(row.want.audioStatus) } : {}),
+        updatedAt: now,
+      })
+      .where(eq(bookRequests.id, row.want.id));
+    await recordLlReleases(tx, {
+      llBookId: input.llBookId,
+      formats: format ? llQueuedFormats(row.want, [format]) : [],
+      reason: 'released:wrong_author',
+      requestId: row.want.id,
+      now,
+    });
+    return true;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Issue #719 (DESIGN-028 amendment 2026-10-05) — the ENGLISH EDITION of a want whose LazyLibrarian book is not English
 // (the F10 English-only rule). Three single-writers, one per outcome of the one Google Books lookup the pass makes

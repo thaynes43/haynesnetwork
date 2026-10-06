@@ -8,6 +8,73 @@
 > check that was pending in the blocks below, (b) to (v) plus the v0.107.5 "6 minted", is a row there (OC-001 to
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
+## ▶ 2026-10-06 — LazyLibrarian's .mobi/.azw3 books are converted to EPUB (#770 closed, owner ruling "Convert to EPUB")
+
+- **What.** Kavita opens epub and pdf only; 125 `EBooks` folders (57 LazyLibrarian books) held only a `.mobi`/`.azw3`.
+  haynes-ops #3445 + #3446: hourly CronJob `downloads/lazylibrarian-epub-convert` (calibre CLI pinned by digest, one book
+  at a time, CPU limit 1) converts them to an EPUB beside the original, keeps the original, never touches a folder with an
+  epub or pdf, never makes a second copy of a book a sibling folder holds, and holds (lists, never retries) a book whose
+  conversion fails or whose EPUB names another book. Census + three warning Loki rules. Design: DESIGN-028 amendment
+  "EPUB conversion", glossary T-288. Record: `.agents/context/2026-10-06-epub-conversion.md`.
+- **Backlog done 16:50-17:06Z** (declared activity): 113 EPUBs kept, 8 second copies removed again (the first pass flipped
+  Dirk Gently to missing in Libretto; #3446 is the guard), 4 held: Sand (the file is LazyLibrarian's anthology in a folder
+  named Sand), Potomu chto nas mnogo, Tree and Leaf (other books' files), Debt of Honor (broken KF8; pairing want
+  `28ec5fba` still reads its ebook `landed` without a readable file: needs a new release, outside the ruling). 0 DRM.
+  Kavita indexes all 113; Libretto: 18 members missing to held (13 from this, 5 from Libretto sha-2e77f28 live at the same
+  time), none the other way. The 17:27Z collections sync removed the six OC-021 wants (OC-021 passed). LazyLibrarian's
+  library scans left 43 of the 57 `BookFile`s on the EPUB, the rest on the original, none dangling.
+- **#782 fixed 17:40Z** (the 4 held books, ruled bugs; `held_782_fix.py`, LL DB backup `pre-782-20261006`): Debt of Honor's
+  broken mobi held `corrupt` and its eBook re-wanted (pairing want `28ec5fba` reverted to `wanted` at the 18:32Z sync); the "Sand" file is
+  The Best American SF&F 2024 and the "Potomu chto nas mnogo" file the English For We Are Many, each re-homed under the LL
+  record it is the only copy of (For We Are Many linked and Open; its Russian-titled record no longer exists) and converted;
+  the "Tree and Leaf" file is Beowulf, held `off_catalog`. Converter census `held 0`. **Owed:** OC-023 (the first automatic
+  conversion of a new import), OC-027 (Debt of Honor re-grabbed).
+
+## ▶ 2026-10-06 — v0.108.2 + Libretto sha-2e77f28 live: wants on another author's book are resolved again; member title aliases (#771, #777 closed)
+
+- **#771 root cause.** Gray Dawn and Shift were not starved by the cap or the gather order: the cron gathered 0 to 7
+  wants a run and reached them every week. Their `ll_book_id` was another author's book (Stewart Edward White's *The
+  Gray Dawn*, Stephen King's *Night Shift*), because a `hardcover_series` member carried no author and Libretto's
+  resolve ran on the title alone. LazyLibrarian downloaded both, so the push guard skipped each want as held and stamped
+  it, and the seven-day cooldown repeated that. The Volume Check passed them (the titles share their words). A replay
+  with Hardcover authors found 13 such wants, all in find-missing collections, ten with LazyLibrarian searching the
+  other author's book. None among the 1,148 goodreads and pairing wants with an author.
+- **Fix: the Author Check** (DESIGN-028 amendment, glossary T-286; #780, release #776 = v0.108.2, haynes-ops #3448, live
+  17:07Z, migration 0095 additive). A collection want whose LazyLibrarian book is credited to another author gives it
+  up (`releaseWrongAuthorCollectionWant`: id cleared and remembered in `wrong_author_ll_book_id`, due again, queued
+  format released) and the next wants pass resolves it again with its author; a resolve naming the same book vouches
+  for it. A sweep over every open want of the find-missing collections whatever its cooldown; also the push guard, the
+  on-demand Force Search and the Downloaded rule. Recipe re-PUTs now carry `targets`, `category`, `titleFallback` and
+  `titleAliases` (the find-missing toggle had been rejected for two-target recipes).
+- **Libretto** (thaynes43/libretto#23, #24; haynes-ops #3447, live 17:05Z as `sha-2e77f28`): `hardcover_series`
+  members carry their Hardcover Author credits (`credits`, reported as the missing member's `authors`; acquisition's
+  LazyLibrarian title match sets another author's row aside, then needs exactly one; cache key v5); member title
+  aliases (`variables.titleAliases`, DESIGN-037 D-04 amendment, glossary T-287), tried only for an own title the
+  library carries nowhere. Credits never guard the library match.
+- **#777, the coordinator's ruling.** Seven aliases written through Libretto's recipe API after checking each file by
+  hand (DESIGN-037 table: ISBNs against the member's Hardcover identifiers, OPF/pdf metadata, text or running time):
+  divergent (The World of Divergent, Free Four: Tobias Tells the Story), the-murderbot-diaries (Rapport), all-souls
+  (The World of All Souls), bridgerton (On the Way to the Wedding with 2nd Epilogue), discworld (The Last Hero: A
+  Discworld Fable), trials-of-apollo-audiobooks (From Percy Jackson: Camp Half-Blood Confidential: ...). One metadata
+  fix: Kavita series 954's pdf called The Last Hero a "(Graphic Novel)"; its chapter title and sort name are corrected
+  and locked (a forced rescan kept them). Kavita's API cannot rename a series. No metadata.json in the folder.
+  The six recipes were applied once (17:09Z) so their Kavita/ABS collections hold the newly matched items: removed 0
+  except Discworld ABS, which swapped Guards! Guards! to its other copy.
+- **Verified.**
+  - Replay (old matcher against new, all 75 recipes, every target): on the morning dump, no change without aliases
+    and exactly the seven with them; on a fresh live dump after deploy, exactly six (The Last Hero waits on the cache).
+  - 17:27Z collections sync: `releasedWrongAuthor` 13 (all 13 named, no error lines), 13 `released:wrong_author`
+    releases; the six aliased members' wants deleted (the run removed 27: the rest are books the library gained, e.g.
+    the mobi/azw3 conversions of haynes-ops #3445).
+  - Domain, api, libretto-ACL and db suites ran once locally on the affected files; CI green on every PR.
+- **Not yet.** Gray Dawn and Shift are released but not yet searched: Google Books' daily quota was spent (429 at
+  16:20Z), so the wants pass resolves them again after 07:00Z. The Last Hero reads held only once Libretto's cached
+  Kavita detail expires (2026-10-13 14:33Z, thaynes43/libretto#25).
+- **Follow-ups filed.** #781 (a right book with another book's file: Four: The Traitor, and Shift if it resolves to
+  LazyLibrarian's own row), thaynes43/libretto#25 (a Kavita metadata edit is not seen until the cache expires).
+- **Owed.** OC-024 (Gray Dawn and Shift searched), OC-025 (the other authors' books unqueued), OC-026 (the seven held,
+  The Last Hero after the cache refresh), in `.agents/owed-checks.yaml`.
+
 ## ▶ 2026-10-06 — v0.108.1 + Libretto sha-080237f live: held books stop reading missing on collection drills (#759 closed)
 
 - **Why.** #759: 57 (59 by 09:45Z) collection wants read `requested` while LazyLibrarian held their book. Ruled a bug

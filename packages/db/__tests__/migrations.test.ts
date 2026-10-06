@@ -3220,6 +3220,18 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  describe('0095 book_requests wrong_author_ll_book_id (issue #771 — the Author Check)', () => {
+    it('adds one nullable text column', async () => {
+      const cols = await client.query(
+        `SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns
+          WHERE table_name = 'book_requests' AND column_name = 'wrong_author_ll_book_id'`,
+      );
+      expect(cols.rows).toEqual([
+        { column_name: 'wrong_author_ll_book_id', data_type: 'text', is_nullable: 'YES', column_default: null },
+      ]);
+    });
+  });
+
   describe('0094 book_requests Mint Backoff (issue #740)', () => {
     it('adds the three columns: the count defaults to 0, the time and key are nullable', async () => {
       const cols = await client.query(
@@ -3457,6 +3469,17 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(entry!.when).toBeGreaterThan(prev!.when);
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0087_trash_title_exclusions.sql'), 'utf8');
     expect(sqlText).toContain('CREATE TABLE "trash_title_exclusions"');
+  });
+
+  // Issue #771 gate — the Author Check column is journaled (idx 94), after 0094; additive.
+  it('lists 0095_book_requests_wrong_author at idx 94, strictly after 0094_book_requests_mint_backoff', () => {
+    const entry = journal.entries.find((e) => e.tag === '0095_book_requests_wrong_author');
+    const prev = journal.entries.find((e) => e.tag === '0094_book_requests_mint_backoff');
+    expect(entry?.idx).toBe(94);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0095_book_requests_wrong_author.sql'), 'utf8');
+    expect(sqlText).toContain('ADD COLUMN "wrong_author_ll_book_id" text');
+    expect(sqlText).not.toMatch(/DROP |UPDATE /);
   });
 
   // Issue #740 gate — the Mint Backoff columns are journaled (idx 93), after 0093; additive.

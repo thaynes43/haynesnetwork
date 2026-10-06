@@ -27,7 +27,8 @@ export type LlReleaseReason =
   | 'shelf_removed'
   | 'unlinked'
   | 'repaired:wrong_volume'
-  | 'repaired:removed_anchor';
+  | 'repaired:removed_anchor'
+  | 'released:wrong_author';
 
 /** The pairing want's format: the one its anchor lacks (a `book` anchor wants the audiobook, and the reverse). */
 function pairingFormat(kind: BooksMediaKind | null | undefined): LlFormat | null {

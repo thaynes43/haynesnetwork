@@ -202,6 +202,77 @@ describe('setCollectionFindMissing — Libretto acquisition knob (PR4c / D-14)',
     ).rejects.toBeInstanceOf(NotFoundError);
     expect(recipes).toHaveLength(0);
   });
+
+  it('#777 — the re-PUT keeps what a person set in Libretto: targets, category, title fallback, member aliases', async () => {
+    const user = await createUser(t.db);
+    const { recipes, bundle } = stubLibretto();
+    // A recipe as Libretto reads it back (ADR-076 canonical targets; aliases set in Libretto, never by the app).
+    recipes.push({
+      id: 'divergent',
+      name: 'Divergent',
+      category: 'Series',
+      builder: { type: 'hardcover_series', ref: 'divergent' },
+      targets: [
+        { server: 'kavita', libraryId: '1' },
+        { server: 'abs', libraryId: 'abs-lib' },
+      ],
+      variables: {
+        syncMode: 'sync',
+        ordered: true,
+        acquisitionEnabled: false,
+        titleFallback: false,
+        titleAliases: { 'The World of Divergent: The Path to Allegiant': ['The World of Divergent'] },
+        schedule: 'manual',
+      },
+      enabled: true,
+    });
+
+    await setCollectionFindMissing({ db: t.db, libretto: bundle, actorId: user.id, id: 'divergent', on: true });
+    const last = recipes[recipes.length - 1]!;
+    expect(last).toMatchObject({
+      category: 'Series',
+      targets: [
+        { server: 'kavita', libraryId: '1' },
+        { server: 'abs', libraryId: 'abs-lib' },
+      ],
+      variables: {
+        acquisitionEnabled: true,
+        titleFallback: false,
+        titleAliases: { 'The World of Divergent: The Path to Allegiant': ['The World of Divergent'] },
+      },
+    });
+    expect(last).not.toHaveProperty('targetLibrary');
+  });
+
+  it('#777 — an edit from the form keeps the recipe’s member aliases and title fallback', async () => {
+    const user = await createUser(t.db);
+    const { recipes, bundle } = stubLibretto();
+    recipes.push({
+      ...draft(),
+      variables: {
+        syncMode: 'sync',
+        ordered: true,
+        titleFallback: true,
+        titleAliases: { Rhythm: ['Rhythm of War'] },
+      },
+    });
+    await upsertCollection({
+      db: t.db,
+      libretto: bundle,
+      actorId: user.id,
+      draft: draft({ name: 'Stormlight, renamed' }),
+      size: 5,
+      cap: 25,
+      isAdmin: false,
+    });
+    const last = recipes[recipes.length - 1]!;
+    expect(last.name).toBe('Stormlight, renamed');
+    expect(last.variables).toMatchObject({
+      titleFallback: true,
+      titleAliases: { Rhythm: ['Rhythm of War'] },
+      acquisitionEnabled: false,
+    });
+  });
 });
 
 describe('over-cap ticket → approve materializes / decline does not (D-11)', () => {

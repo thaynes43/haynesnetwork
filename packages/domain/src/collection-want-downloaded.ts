@@ -12,7 +12,8 @@
 //
 //   1. LazyLibrarian holds the format (`llFormatAlreadyHeld`: `Open`/`Have`, or an import date or file);
 //   2. its book is the member's (both Volume Checks: `llBookMismatch` finds nothing, and `llBookNamesTitle` reads the
-//      member's own title), so another work's book never says the member was downloaded;
+//      member's own title; and, issue #771, the Author Check: LazyLibrarian does not credit it to another author, unless
+//      an author-guarded resolve vouched for that book), so another work's book never says the member was downloaded;
 //   3. the library shows nothing named like LazyLibrarian's book (`libraryShowsTitle` over the live mirror of that
 //      format). When it does, the file reached the library and only the pairing failed (a title that differs in
 //      words), and "not in the library" would be false: the want stays `requested`.
@@ -25,7 +26,7 @@ import { and, eq, isNotNull, isNull, ne } from 'drizzle-orm';
 import { bookRequests, booksCollections, booksItems, type DbClient } from '@hnet/db';
 import { inTransaction, resolveDb } from './db-client';
 import { llFormatAlreadyHeld } from './book-requests';
-import { llBookMismatch, llBookNamesTitle } from './ll-book-check';
+import { llBookAuthorMismatch, llBookMismatch, llBookNamesTitle } from './ll-book-check';
 import { llSnapshotUsable, type LlSnapshotRow } from './ll-gone';
 import { collectionFormatForSource } from './ll-release-record';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
@@ -82,7 +83,12 @@ export function libraryShowsTitle(
  * `libraryKeys` are `libraryTitleKey`s of the live library items of that format.
  */
 export function collectionWantDownloaded(input: {
-  want: { title: string; author: string | null };
+  want: {
+    title: string;
+    author: string | null;
+    llBookId?: string | null;
+    wrongAuthorLlBookId?: string | null;
+  };
   book: LlSnapshotRow | undefined;
   format: BookFormat;
   libraryKeys: Iterable<string>;
@@ -90,6 +96,8 @@ export function collectionWantDownloaded(input: {
   const { want, book, format } = input;
   if (!book || !llFormatAlreadyHeld(book, format)) return false;
   if (llBookMismatch(want, book) !== null || !llBookNamesTitle(want.title, book)) return false;
+  const vouched = want.llBookId != null && want.llBookId === want.wrongAuthorLlBookId;
+  if (!vouched && llBookAuthorMismatch(want.author, book)) return false;
   return !libraryShowsTitle(book.title, input.libraryKeys);
 }
 
@@ -181,6 +189,7 @@ export async function reconcileCollectionWantsDownloaded(input: {
       title: bookRequests.title,
       author: bookRequests.author,
       llBookId: bookRequests.llBookId,
+      wrongAuthorLlBookId: bookRequests.wrongAuthorLlBookId,
       ebookStatus: bookRequests.ebookStatus,
       audioStatus: bookRequests.audioStatus,
       source: booksCollections.source,
