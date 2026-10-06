@@ -39,9 +39,10 @@ import {
   llRecentSearchCovers,
   parkCollectionWant,
   recentlySearchedLlBookIds,
+  releaseWrongAuthorCollectionWant,
   syncCollectionWants,
 } from './book-requests';
-import { llBookMismatch } from './ll-book-check';
+import { llBookAuthorMismatch, llBookMismatch } from './ll-book-check';
 import { isForeignLanguage } from './book-language';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import {
@@ -119,6 +120,11 @@ export interface ForceSearchCollectionsReport extends LlGoneTally, LlRerequestTa
   parkedWrongVolume: number;
   /** Issue #719 — wants SUPPRESSED because LazyLibrarian labels their book non-English (the English-edition pass takes them). */
   skippedForeign: number;
+  /**
+   * Issue #771 — wants whose LazyLibrarian book is credited to another author (the Author Check, T-286): the book is given
+   * up and the member resolved again with its author on the next wants pass. No LazyLibrarian write for them.
+   */
+  releasedWrongAuthor: number;
   /** True when Libretto was unreachable — the whole pass was skipped. */
   unreachable: boolean;
 }
@@ -142,6 +148,8 @@ interface CollectionWantWork {
   collectionId: string;
   /** The active format's status. Issue #665: an on-demand search lifts a settled `missing` back to `requested`. */
   status: BookRequestStatus;
+  /** Issue #771 — the book this want gave up for its author; a resolve that named it again vouched for it. */
+  wrongAuthorLlBookId: string | null;
 }
 
 /**
@@ -185,6 +193,7 @@ async function gatherCollectionWants(
         author: bookRequests.author,
         ebookStatus: bookRequests.ebookStatus,
         audioStatus: bookRequests.audioStatus,
+        wrongAuthorLlBookId: bookRequests.wrongAuthorLlBookId,
       })
       .from(bookRequests)
       .where(and(...conds))
@@ -200,6 +209,7 @@ async function gatherCollectionWants(
         author: r.author,
         collectionId: collection.id,
         status: format === 'audiobook' ? r.audioStatus : r.ebookStatus,
+        wrongAuthorLlBookId: r.wrongAuthorLlBookId,
       });
     }
   }
@@ -234,6 +244,7 @@ async function runForceSearchWorklist(input: {
     skippedRecent: number;
     parkedWrongVolume: number;
     skippedForeign: number;
+    releasedWrongAuthor: number;
   };
   log: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
@@ -283,6 +294,35 @@ async function runForceSearchWorklist(input: {
   for (const [llBookId, wants] of groups) {
     const toSearch: CollectionWantWork[] = [];
     for (const want of wants) {
+      // Issue #771 — never queue, nor count as held, a book LazyLibrarian credits to another author (the Author Check):
+      // "Gray Dawn" (Walter Mosley) sat on Stewart Edward White's "The Gray Dawn", read held, and was never searched. The
+      // book is given up and the member resolved again with its author. The sweep before the gather already released
+      // every such want it could see; this catches one whose book it could not read.
+      if (
+        want.wrongAuthorLlBookId !== llBookId &&
+        llBookAuthorMismatch(want.author, held.get(llBookId))
+      ) {
+        if (
+          await releaseWrongAuthorCollectionWant({
+            db: input.db,
+            requestId: want.id,
+            llBookId,
+            now: input.now,
+          })
+        ) {
+          input.report.releasedWrongAuthor += 1;
+        }
+        input.log.warn?.('ll_push_skipped_wrong_author', {
+          site: `collection-force-search.${input.via}`,
+          requestId: want.id,
+          llBookId,
+          title: want.title,
+          author: want.author,
+          llAuthor: held.get(llBookId)?.author ?? null,
+          llTitle: held.get(llBookId)?.title ?? null,
+        });
+        continue;
+      }
       // Issue #693 — never queue a book LazyLibrarian holds as another volume or work than the member: the "BBC Radio
       // Drama Collection" want queued "Terry Pratchett's Discworld" and LazyLibrarian took 32 Discworld releases for it.
       // The want is parked instead (id cleared), so no job pushes that book for it again.
@@ -437,6 +477,7 @@ export async function forceSearchFindMissingCollections(
     skippedRecent: 0,
     parkedWrongVolume: 0,
     skippedForeign: 0,
+    releasedWrongAuthor: 0,
     unreachable: false,
     ...emptyLlGoneTally(),
     ...emptyLlRerequestTally(),
@@ -498,6 +539,18 @@ export async function forceSearchFindMissingCollections(
     log,
   });
 
+  // Issue #771 — the Author Check sweep, across every find-missing collection regardless of cooldown, so a want held on
+  // another author's book (stamped by the held-skip, then cooled down for a week) is released on the first run.
+  const sweptSnapshot = await releaseWrongAuthorWants({
+    db: input.db,
+    ll: input.ll,
+    collectionIds: collections.map((c) => c.id),
+    now,
+    snapshot: rerequestSnapshot,
+    report,
+    log,
+  });
+
   const cutoff = new Date(now.getTime() - cooldownMs);
   // Gather the searchable, cooldown-eligible wants across every find-missing collection (global cap).
   const worklist = await gatherCollectionWants(input.db, collections, cap, cutoff);
@@ -509,7 +562,8 @@ export async function forceSearchFindMissingCollections(
         report.llRerequested +
         report.llRerequestLanded +
         report.llRerequestNotAdded +
-        report.llRerequestDeferred >
+        report.llRerequestDeferred +
+        report.releasedWrongAuthor >
       0
     ) {
       log.info?.('collection-force-search complete', { ...report });
@@ -528,7 +582,7 @@ export async function forceSearchFindMissingCollections(
     actorId: null,
     report,
     log,
-    ...(rerequestSnapshot ? { snapshot: rerequestSnapshot } : {}),
+    ...(sweptSnapshot ? { snapshot: sweptSnapshot } : {}),
   });
 
   log.info?.('collection-force-search complete', {
@@ -540,6 +594,7 @@ export async function forceSearchFindMissingCollections(
     skippedRecent: report.skippedRecent,
     parkedWrongVolume: report.parkedWrongVolume,
     skippedForeign: report.skippedForeign,
+    releasedWrongAuthor: report.releasedWrongAuthor,
     llGoneRekeyed: report.llGoneRekeyed,
     llGoneSettled: report.llGoneSettled,
     llRerequested: report.llRerequested,
@@ -548,6 +603,94 @@ export async function forceSearchFindMissingCollections(
     llRerequestDeferred: report.llRerequestDeferred,
   });
   return report;
+}
+
+/**
+ * Issue #771 (DESIGN-028 amendment 2026-10-06, the Author Check, T-286) — the sweep. Every open collection want of these
+ * collections, whatever its cooldown (unparked, unmatched, with an id and an author, its own format neither `landed` nor
+ * settled `missing`), whose LazyLibrarian book is credited to another author gives that book up
+ * (`releaseWrongAuthorCollectionWant`): the next wants pass resolves the member again with its author, and the gather
+ * then searches the book it names. A want whose book an author-guarded resolve named again (`wrong_author_ll_book_id`)
+ * is left alone. No LazyLibrarian write. Reads the snapshot only when a candidate exists and none was read yet; returns
+ * it (null when there was no read or it failed). An unusable read decides nothing.
+ */
+async function releaseWrongAuthorWants(input: {
+  db?: DbClient;
+  ll: LazyLibrarianClientBundle;
+  collectionIds: string[];
+  now: Date;
+  snapshot: Map<string, LlSnapshotRow> | null;
+  report: { releasedWrongAuthor: number };
+  log: {
+    info?: (msg: string, meta?: Record<string, unknown>) => void;
+    warn?: (msg: string, meta?: Record<string, unknown>) => void;
+  };
+}): Promise<Map<string, LlSnapshotRow> | null> {
+  if (input.collectionIds.length === 0) return input.snapshot;
+  const candidates = (
+    await resolveDb(input.db)
+      .select({
+        id: bookRequests.id,
+        title: bookRequests.title,
+        author: bookRequests.author,
+        llBookId: bookRequests.llBookId,
+        wrongAuthorLlBookId: bookRequests.wrongAuthorLlBookId,
+        ebookStatus: bookRequests.ebookStatus,
+        audioStatus: bookRequests.audioStatus,
+        source: booksCollections.source,
+      })
+      .from(bookRequests)
+      .innerJoin(booksCollections, eq(booksCollections.id, bookRequests.collectionId))
+      .where(
+        and(
+          eq(bookRequests.origin, 'collection'),
+          inArray(bookRequests.collectionId, input.collectionIds),
+          isNull(bookRequests.matchedBooksItemId),
+          isNull(bookRequests.unroutableReason),
+          isNotNull(bookRequests.llBookId),
+          isNotNull(bookRequests.author),
+        ),
+      )
+  ).filter((c) => {
+    const status = formatForSource(c.source) === 'audiobook' ? c.audioStatus : c.ebookStatus;
+    return status !== 'landed' && status !== 'missing' && c.llBookId !== c.wrongAuthorLlBookId;
+  });
+  if (candidates.length === 0) return input.snapshot;
+  let snapshot = input.snapshot;
+  if (snapshot == null) {
+    try {
+      snapshot = await input.ll.read.getAllBookStatuses();
+    } catch (error) {
+      input.log.warn?.('collection-force-search: LL getAllBooks failed — author check skipped', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+  if (!llSnapshotUsable(snapshot)) return snapshot;
+  for (const want of candidates) {
+    const book = snapshot.get(want.llBookId!);
+    if (!llBookAuthorMismatch(want.author, book)) continue;
+    if (
+      await releaseWrongAuthorCollectionWant({
+        db: input.db,
+        requestId: want.id,
+        llBookId: want.llBookId!,
+        now: input.now,
+      })
+    ) {
+      input.report.releasedWrongAuthor += 1;
+      input.log.warn?.('collection_want_wrong_author_released', {
+        requestId: want.id,
+        title: want.title,
+        author: want.author,
+        llBookId: want.llBookId,
+        llTitle: book?.title ?? null,
+        llAuthor: book?.author ?? null,
+      });
+    }
+  }
+  return snapshot;
 }
 
 /**
@@ -789,6 +932,8 @@ export interface ForceSearchCollectionNowReport {
   parkedWrongVolume: number;
   /** Issue #719 — wants suppressed because LazyLibrarian labels their book non-English (the English-edition pass takes them). */
   skippedForeign: number;
+  /** Issue #771 — wants whose book LazyLibrarian credits to another author, released and resolved again before the search. */
+  releasedWrongAuthor: number;
   /** True when Libretto was unreachable — the apply/refresh could not run, so nothing was searched. */
   unreachable: boolean;
 }
@@ -817,6 +962,7 @@ export async function forceSearchCollectionNow(
     skippedRecent: 0,
     parkedWrongVolume: 0,
     skippedForeign: 0,
+    releasedWrongAuthor: 0,
     unreachable: false,
   };
 
@@ -837,9 +983,21 @@ export async function forceSearchCollectionNow(
   // (a) re-apply the recipe (fresh membership) + (b) refresh the missing-member wants. A Libretto outage
   // aborts BEFORE any search (we never force-search a missing set we could not re-confirm).
   const refreshed: typeof collections = [];
+  let snapshot: Map<string, LlSnapshotRow> | null = null;
   try {
     report.runId = await input.libretto.write.applyScope(input.recipeId);
     const response = await input.libretto.read.listMissingMembers(input.recipeId);
+    // Issue #771 — the Author Check first, so the refresh below resolves a released want again with its author and the
+    // search that follows looks for the member's own book in this same click.
+    snapshot = await releaseWrongAuthorWants({
+      db: input.db,
+      ll: input.ll,
+      collectionIds: collections.map((c) => c.id),
+      now,
+      snapshot: null,
+      report,
+      log,
+    });
     for (const collection of collections) {
       // Issue #759 — each collection reads its own target's missing list; one with none is left as it is.
       const selected = missingForCollection(response, collection);
@@ -901,6 +1059,7 @@ export async function forceSearchCollectionNow(
     tagCollection: true,
     report,
     log,
+    ...(snapshot ? { snapshot } : {}),
   });
 
   log.info?.('collection-force-search (on-demand) complete', {

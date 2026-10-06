@@ -151,6 +151,13 @@ export const bookRequests = pgTable(
      * longer matches it is looked up at once, whatever `mint_backoff_until` says.
      */
     mintBackoffKey: text('mint_backoff_key'),
+    /**
+     * Issue #771 (migration 0095) — the LazyLibrarian book a collection want gave up because LazyLibrarian credits it to
+     * another author than the member's (the Author Check, T-286). The wants pass then resolves the member again with
+     * its author; if that resolve names this same book, the book is the member's after all (its author is written
+     * another way) and the check no longer applies to it. Written only by `releaseWrongAuthorCollectionWant`.
+     */
+    wrongAuthorLlBookId: text('wrong_author_ll_book_id'),
     createdAt:timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

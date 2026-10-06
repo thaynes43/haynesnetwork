@@ -12,7 +12,7 @@
 // admin-only. Over-cap escalates to a `collection_override` ticket (tickets.ts) that materializes on
 // approve. `find_missing` (the acquisition knob) is a per-collection grant, wired in PR4c — direct adds in
 // PR4a always write acquisition OFF.
-import { LibrettoUnreachableError } from '@hnet/libretto';
+import { LibrettoUnreachableError, librettoRecipeDraftSchema } from '@hnet/libretto';
 import type {
   LibrettoCollection,
   LibrettoIssue,
@@ -119,10 +119,19 @@ export async function upsertCollection(input: {
   isAdmin: boolean;
 }): Promise<{ id: string }> {
   assertWithinCollectionSizeCap({ size: input.size, cap: input.cap, isAdmin: input.isAdmin });
+  // Issue #777 — an edit keeps the match settings a person set in Libretto (title fallback, member title aliases): the
+  // form never carries them and Libretto's PUT replaces the whole recipe. A new recipe has none to keep.
+  const existing = (await input.libretto.read.listRecipes()).recipes.find(
+    (r) => r.id === input.draft.id,
+  );
   // Force acquisition OFF on the direct path (find_missing is the PR4c grant-gated per-collection knob).
   const draft: LibrettoRecipeDraft = {
     ...input.draft,
-    variables: { ...(input.draft.variables ?? {}), acquisitionEnabled: false },
+    variables: {
+      ...libraryMatchVariables(existing),
+      ...(input.draft.variables ?? {}),
+      acquisitionEnabled: false,
+    },
   };
   // External write BEFORE the same-tx audit stamp (crash-safe: the PUT is idempotent).
   await input.libretto.write.upsertRecipe(draft);
@@ -190,7 +199,31 @@ export async function materializeCollection(input: {
   await input.libretto.write.upsertRecipe(draft);
 }
 
-/** Convert a read recipe back into a full PUT draft (preserve builder/name/variables/target/enabled). */
+/** A read recipe's `targets`, when they parse as the draft's (ADR-076: the canonical multi-target shape). */
+function readTargets(recipe: LibrettoRecipe): LibrettoRecipeDraft['targets'] {
+  const parsed = librettoRecipeDraftSchema.shape.targets.safeParse(recipe.targets);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/**
+ * Issue #777 — the recipe settings only a person sets in Libretto (never the app's form): the title fallback switch and
+ * the member title aliases (DESIGN-037 D-04). Every re-PUT carries them, since Libretto's PUT replaces the whole file.
+ */
+function libraryMatchVariables(
+  recipe: LibrettoRecipe | undefined,
+): Pick<NonNullable<LibrettoRecipeDraft['variables']>, 'titleFallback' | 'titleAliases'> {
+  const parsed = librettoRecipeDraftSchema.shape.variables.safeParse({
+    titleFallback: recipe?.variables?.titleFallback,
+    titleAliases: recipe?.variables?.titleAliases,
+  });
+  if (!parsed.success || !parsed.data) return {};
+  return {
+    ...(parsed.data.titleFallback !== undefined ? { titleFallback: parsed.data.titleFallback } : {}),
+    ...(parsed.data.titleAliases ? { titleAliases: parsed.data.titleAliases } : {}),
+  };
+}
+
+/** Convert a read recipe back into a full PUT draft (preserve builder/name/variables/targets/category/enabled). */
 function recipeToDraft(recipe: LibrettoRecipe): LibrettoRecipeDraft {
   if (!recipe.builder?.type || !recipe.builder?.ref) {
     // A recipe with no usable builder cannot be re-PUT (the write ACL requires builder.type + ref).
@@ -200,10 +233,17 @@ function recipeToDraft(recipe: LibrettoRecipe): LibrettoRecipeDraft {
     id: recipe.id,
     ...(recipe.name ? { name: recipe.name } : {}),
     builder: { type: recipe.builder.type, ref: recipe.builder.ref },
-    ...(recipe.targetLibrary !== undefined && recipe.targetLibrary !== null
-      ? { targetLibrary: recipe.targetLibrary }
+    // The canonical `targets` when the read carries them (every recipe since ADR-076), else the legacy single target.
+    ...(readTargets(recipe)
+      ? { targets: readTargets(recipe) }
+      : recipe.targetLibrary !== undefined && recipe.targetLibrary !== null
+        ? { targetLibrary: recipe.targetLibrary }
+        : {}),
+    ...(typeof recipe.category === 'string' && recipe.category.length > 0
+      ? { category: recipe.category }
       : {}),
     variables: {
+      ...libraryMatchVariables(recipe),
       // The read ACL types syncMode as a loose string; the write draft is the closed append|sync set.
       ...(recipe.variables?.syncMode === 'append' || recipe.variables?.syncMode === 'sync'
         ? { syncMode: recipe.variables.syncMode }
