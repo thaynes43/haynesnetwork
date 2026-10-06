@@ -78,3 +78,28 @@ LazyLibrarian imports a `.mobi` / `.azw3`-only book; at the next :20 (after a 15
 logs `epub_convert` `converted`, touches the folders and queues a Kavita scan; the books-sync at :22 mirrors it; Libretto
 pairs it; the collections sync at :27 deletes a collection want on it. LazyLibrarian links its `BookFile` to the EPUB at the
 09:10Z library scan. Owed: OC-023.
+
+## The four held books, fixed (issue #782, 2026-10-06 17:40Z)
+
+Ruled bugs, not owner decisions: broken files and other books than their folders say, fixed under the cross-volume repair
+rules. Script: `.agents/context/ll-library-audit/held_782_fix.py` (dry run, then `--go`; declared activity
+act-173918-600163). Content was read first in a read-only calibre Job (ebook-meta, and ebook-convert to text: contents,
+front matter, chapter headings). LazyLibrarian DB backup: `/config/lazylibrarian.db.pre-782-20261006` (sqlite backup API,
+integrity ok).
+
+| Folder | The file is | Done |
+| --- | --- | --- |
+| Tom Clancy/Debt of Honor | broken (ebook-convert: "KF8 does not have a valid FDST record") | held `corrupt`; `igdN-TOJVEsC` pointer blanked, eBook re-wanted (`queueBook`: Wanted). Its LL opf stays for the re-grab. |
+| Hugh Howey/Sand | *The Best American Science Fiction and Fantasy 2024* (contents and foreword; ISBN 9780063315778 = the record's) | re-homed with its opf to `Hugh Howey/The Best American Science Fiction and Fantasy 2024/` under LL's naming; `Zi7wEAAAQBAJ` re-pointed. No LL record is named Sand. |
+| Dennis E. Taylor/Potomu chto nas mnogo | the English *For We Are Many* (Bobiverse 2, Worldbuilders Press 2017) | re-homed to `Dennis E. Taylor/For We Are Many/`; `DfEW0gEACAAJ` (en, was Wanted with no file, Kavita had no copy) linked and Open. The folder's own record, `ZvSiEQAAQBAJ` (it grabbed For We Are Many in July under the Russian title), is no longer in LazyLibrarian, so there was nothing to set Skipped. |
+| J.R.R. Tolkien/Tree and Leaf - Including Mythopoeia ... | *Beowulf: A Translation and Commentary* (Tolkien, 2014) | held `off_catalog`: no LL record or app request names Beowulf, Kavita has none. Tree and Leaf `t3sI0QEACAAJ` keeps its English epub in the sibling folder. |
+
+The three emptied folders were removed (manifest `rmdir`); the holds are in `quarantine/crossvolume-2026-10-05/`
+(`manifest.jsonl` + `sort.jsonl`), so the owed holding-folder purge (check (m)) takes them. The four lines left the
+converter's `held.tsv`.
+
+After: the converter's 17:57Z run converted the two re-homed books (census `unconverted 0, held 0, duplicate 8`, Kavita scan
+queued) and Kavita indexes both EPUBs; `LazyLibrarianEpubConvertHeld` cleared at 18:10Z. An eBook-only LazyLibrarian library
+scan (18:03Z) left no `BookFile` in its whole database pointing at a missing file; `igdN-TOJVEsC` reads `Wanted` with no file.
+The 18:32Z format-pairing sync moved pairing want `28ec5fba` (Debt of Honor) ebook `landed` to `wanted` through the landed
+truth (LazyLibrarian holds no file), and `02d536cd` (For We Are Many) ebook `wanted` to `landed`. The re-grab is OC-027.
