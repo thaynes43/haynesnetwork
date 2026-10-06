@@ -815,8 +815,8 @@ checks:
       the want reads held and #781 owns it. None of the 13 took back the book it gave up. The other ten either have a
       new id or stay unresolved where Google Books has no such book (the short stories), never another author's book.
       By hand: the app-db query below, then `select b.BookID, b.BookName, a.AuthorName, b.Status, b.AudioStatus from
-      books b join authors a using (AuthorID) where a.AuthorName in ('Walter Mosley', 'Hugh Howey') and b.BookName like
-      '%Gray Dawn%' or b.BookName = 'Shift'` in LazyLibrarian's database (mode=ro).
+      books b join authors a using (AuthorID) where a.AuthorName in ('Walter Mosley', 'Hugh Howey') and (b.BookName like
+      '%Gray Dawn%' or b.BookName = 'Shift')` in LazyLibrarian's database (mode=ro).
     auto_covers: part
     auto:
       - name: Gray Dawn and Shift hold a new book and were searched
@@ -881,7 +881,7 @@ checks:
       issues: ['#771']
       prs: ['#780']
   - id: OC-026
-    title: The seven #777 members stay held, and The Last Hero joins them once Libretto's Kavita cache refreshes
+    title: "The seven #777 members stay held, and The Last Hero joins them once Libretto's Kavita cache refreshes"
     opened: 2026-10-06
     after: |
       Libretto sha-2e77f28 live and the seven member title aliases written (17:09Z); six read held at once (17:27Z sync
