@@ -23,8 +23,9 @@ this documents field contracts only (CLAUDE.md rule 7).
 
 ## 1. Merge → tag (automated, in this repo)
 
-1. **PR merges to `main`.** The three required checks (`lint-and-typecheck`, `test`,
-   `build`) must be green; squash-merge only (ADR-009). `e2e` is advisory.
+1. **PR merges to `main`.** The four required checks (`lint-and-typecheck`, `test`,
+   `build`, `e2e-gate`) must be green; squash-merge only (ADR-009). `e2e-gate` passes at once unless the
+   PR touches the book pipeline (or is the release PR), when it mirrors the Playwright suite (ADR-100).
 2. **release-please opens/updates a release PR** (`.github/workflows/release-please.yml`)
    by parsing conventional commits since the last tag. It maintains `CHANGELOG.md`, bumps
    the version in `.release-please-manifest.json` (`bump-minor-pre-major` — `feat:` → minor,
@@ -255,8 +256,8 @@ Notes:
 ## 6. Branch-protection recovery (renamed required check)
 
 Required status-check contexts must equal the CI **job keys** exactly
-(`lint-and-typecheck`, `test`, `build`). Rename a job in `ci.yml` without updating branch
-protection and **every PR deadlocks** — the renamed check never reports under the old name
+(`lint-and-typecheck`, `test`, `build` from `ci.yml`, and `e2e-gate` from `e2e.yml`). Rename a job
+without updating branch protection and **every PR deadlocks** — the renamed check never reports under the old name
 (ADR-009 C-05).
 
 C-05 claims an "idempotent setup script kept in-repo." **That script does not exist** —
@@ -269,7 +270,7 @@ gh api -X PUT repos/thaynes43/haynesnetwork/branches/main/protection \
 {
   "required_status_checks": {
     "strict": true,
-    "contexts": ["lint-and-typecheck", "test", "build"]
+    "contexts": ["lint-and-typecheck", "test", "build", "e2e-gate"]
   },
   "enforce_admins": true,
   "required_pull_request_reviews": null,

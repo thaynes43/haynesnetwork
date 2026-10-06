@@ -62,7 +62,7 @@ Run these before pushing — they mirror the CI checks that gate every PR. Full 
 | `pnpm test` | `test` (Vitest, embedded Postgres 16) |
 | `pnpm build` | `build` (`next build`, standalone output) |
 
-`pnpm --filter web e2e` maps to the advisory `e2e` check (not yet a required gate).
+`pnpm --filter web e2e` maps to the `e2e-gate` required check for PRs that touch the book pipeline and the release PR (it passes at once for any other PR, which runs the suite as the advisory `e2e-advisory`; ADR-100).
 
 ## Contributing — pull-request flow
 

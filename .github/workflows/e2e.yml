@@ -1,7 +1,14 @@
 name: e2e
 
-# ADVISORY (ADR-009 / ADR-010 C-07): e2e stays out of the required status-check
-# contexts until hardening — do NOT add this job to branch protection.
+# GATE for the book pipeline (issue #742, ADR-100; amends ADR-009 C-06 / ADR-010 C-07).
+#
+# The required status-check context is `e2e-gate`. It ALWAYS reports on a pull request:
+#   - a PR that touches a pipeline path (scripts/e2e-gate-paths.sh), or is the release-please PR, runs the suite
+#     as `e2e / e2e` and `e2e-gate` mirrors it: red suite = red gate = nothing merges, nothing releases;
+#   - any other PR (docs, UI, the rest of the app) passes `e2e-gate` in seconds and still runs the suite
+#     as the ADVISORY `e2e-advisory / e2e`, exactly as before.
+# Push to main runs the suite once (the post-merge signal; no required checks apply to a push).
+# Do NOT rename the `e2e-gate` job without updating branch protection (docs/ops/004-deploy-runbook.md section 6).
 on:
   pull_request:
   push:
@@ -11,31 +18,93 @@ concurrency:
   group: e2e-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  NODE_VERSION: '22'
+permissions:
+  contents: read
 
 jobs:
-  e2e:
+  changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # list the PR's files
+    outputs:
+      pipeline: ${{ steps.decide.outputs.pipeline }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # Chromium only (the suite's single project); --with-deps pulls the system
-      # libraries the runner image may lack (CI-only — locally plain install).
-      - run: pnpm --filter web exec playwright install chromium --with-deps
-      # globalSetup boots embedded Postgres 16 + the stub OIDC + `next dev`
-      # (ADR-010 — no Docker/Testcontainers, no live Authentik).
-      - run: pnpm --filter web e2e
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: apps/web/playwright-report/
-          retention-days: 7
+      - name: Check the pipeline-path rules against their examples
+        run: bash scripts/e2e-gate-paths.sh --self-test
+      - name: Decide whether this change is gated
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != pull_request ]; then
+            echo "pipeline=true" >> "$GITHUB_OUTPUT"
+            echo "Not a pull request: the suite runs as the post-merge signal."
+            exit 0
+          fi
+          # The release PR gates the release itself: a red suite must hold the tag, whatever the PR's own files are.
+          if [[ "$HEAD_REF" == release-please--* ]]; then
+            echo "pipeline=true" >> "$GITHUB_OUTPUT"
+            echo "Release PR: e2e gates the release."
+            exit 0
+          fi
+          # Renames list both names, so moving a file OUT of a pipeline path still counts.
+          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/changed.txt"
+          echo "$(wc -l < "$RUNNER_TEMP/changed.txt") changed paths"
+          if matched=$(bash scripts/e2e-gate-paths.sh < "$RUNNER_TEMP/changed.txt"); then
+            echo "pipeline=true" >> "$GITHUB_OUTPUT"
+            echo "Pipeline paths changed, e2e gates this PR:"
+            echo "$matched"
+          else
+            echo "pipeline=false" >> "$GITHUB_OUTPUT"
+            echo "No pipeline path changed: e2e-gate passes at once, the suite runs as advisory."
+          fi
+
+  # The suite, GATING (pipeline PR, release PR) or post-merge (push to main).
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.pipeline == 'true'
+    uses: ./.github/workflows/e2e-suite.yml
+
+  # The same suite for every other PR: visible, never blocking.
+  e2e-advisory:
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.pipeline == 'false'
+    uses: ./.github/workflows/e2e-suite.yml
+
+  # THE REQUIRED CONTEXT. Fails closed: anything other than "not gated" or "suite green" is red.
+  e2e-gate:
+    needs: [changes, e2e]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mirror the suite when the PR is gated, pass when it is not
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          PIPELINE: ${{ needs.changes.outputs.pipeline }}
+          E2E: ${{ needs.e2e.result }}
+        run: |
+          set -euo pipefail
+          echo "changes=$CHANGES pipeline=$PIPELINE e2e=$E2E"
+          if [ "$CHANGES" != success ]; then
+            echo "::error::Could not decide whether this PR is gated (changes job: $CHANGES)."
+            exit 1
+          fi
+          if [ "$PIPELINE" = true ]; then
+            if [ "$E2E" = success ]; then
+              echo "Gated PR and the suite is green."
+              exit 0
+            fi
+            echo "::error::This PR touches the book pipeline (or is the release PR) and the e2e suite is $E2E."
+            exit 1
+          fi
+          echo "Not a gated PR: passing at once (the suite runs as e2e-advisory)."

@@ -39,7 +39,13 @@ function tabLabel(tab: string): string {
 
 /** Save the HaynesTower target and wait for the persisted round-trip ("Saved" status). */
 async function saveTarget(page: Page, value: string): Promise<void> {
-  await page.getByTestId('target-input-haynestower').fill(value);
+  const input = page.getByTestId('target-input-haynestower');
+  // The input is empty until the targets query lands, which also means React has hydrated the form. A fill()
+  // before that is overwritten by the hydration render (draft never set, Save stays disabled, the click then
+  // times out: the storage.spec flake of 2026-10-05), so wait for the stored value first.
+  await expect(input).not.toHaveValue('');
+  await input.fill(value);
+  await expect(page.getByTestId('target-save-haynestower')).toBeEnabled();
   await page.getByTestId('target-save-haynestower').click();
   await expect(page.getByTestId('array-haynestower').getByRole('status')).toHaveText('Saved');
 }
