@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -1206,3 +1206,80 @@ library cannot open no longer stays that way. The push guard is unchanged.
 
 **Owed:** OC-023 (the first automatic conversion of a newly imported `.mobi` / `.azw3`). Record:
 `.agents/context/2026-10-06-epub-conversion.md`.
+
+## Amendment — 2026-10-06 (Request Events): every write to a book request records a Request Event (issue #741, ADR-101)
+
+**What was missing.** Every writer of `book_requests` below was "unaudited (the sync class)": the push, the reconcile, the
+gone rule's re-point and settle, the one re-request, the Landed Truth revert, the English Edition switch and park, the
+pairing mint, re-identify and parks, the collection wants pass, the Author Check and the issue #693 repair. In the three
+days before this amendment they changed what the estate downloads thousands of times, and only Loki kept a trace.
+
+**The ruling (ADR-101; glossary T-292 Request Event).** Every mint, change and delete of a `book_requests` row records
+one append-only `book_request_events` row in the same transaction. Each "unaudited" in the amendments above now reads
+"records a Request Event"; nothing a writer decides or writes to LazyLibrarian or Kapowarr changes.
+
+- **One write path.** `packages/domain/src/book-request-events.ts` is the only domain module that writes
+  `book_requests` (`__tests__/book-request-write-paths.test.ts` fails the build otherwise; the repo-wide guard keeps
+  both tables inside the domain). `updateBookRequests(tx, audit, where, set)` reads and locks the rows `where` matches,
+  updates them under the same `where`, and records one `update` event per row whose recorded fields changed.
+  `insertBookRequest` records the `mint`, `deleteBookRequests` the `delete` (the collection wants pass dropping a want
+  no longer missing), and `recordCascadedRequestDeletes` the wants a books collection takes with it when it leaves its
+  server (`syncBooksCollections`, before its delete). `stampBookRequests` writes only the bookkeeping stamps and
+  records nothing; it refuses any other field.
+- **What an event holds.** `request_id` (no foreign key: a dropped want keeps its history), `kind` (`mint`, `update`,
+  `delete`), `reason`, `writer` (the function), `site`, `actor` (`sync`, `repair`, `user`) and `actor_user_id`,
+  `before` / `after` (the changed recorded fields by column name: `{"ll_book_id": "a"}` → `{"ll_book_id": "b"}`; a mint
+  has `before` `{}`, a delete `after` `{}`), `detail` (the writer's context) and `created_at`.
+- **Recorded fields.** The want's identity (`origin`, its keys, `title`, `author`) and state (`matched_books_item_id`,
+  `ll_book_id`, the three statuses, `kapowarr_volume_id`, `comicvine_id`, `unroutable_reason`, the four
+  `ll_rerequest_*` columns, `wrong_author_ll_book_id`). Not recorded: `last_searched_at`, `last_reconciled_at`,
+  `english_edition_tried_at`, the Mint Backoff columns, `created_at`, `updated_at`. So the hourly reconcile of a want
+  whose statuses did not move records nothing.
+- **Reasons, by writer.**
+
+  | Writer | Reason | `detail` |
+  |---|---|---|
+  | `syncShelfRequests` | `shelf_want_minted`, `shelf_want_refreshed` | |
+  | `markRequestPushed`, `markPairingWantPushed` | `ll_pushed` | |
+  | `applyRequestReconcile` | `ll_reconciled` | |
+  | `markRequestFormatsRequeued` (the Skipped sweep) | `ll_requeued` | `formats` |
+  | `markComicRouted`, `applyComicReconcile` | `comic_routed`, `comic_reconciled` | |
+  | `revertLandedFormats` | `landed_reverted` | `cause` (`ll_not_held`, `ll_book_mismatch`, …), `llBookId` |
+  | `repointRequestLlBook`, `settleRequestLlGone` | `ll_book_gone_repointed`, `ll_book_gone_settled` | settle: `llBookId`, `formats` |
+  | `recordLlRerequest` | `ll_rerequest` (every outcome) | `outcome`, `llBookId`, `toLlBookId`, `land`, `request`, `viaAdd` |
+  | `upsertPairingWant` | `pairing_want_minted`, `pairing_want_refreshed` | `statusReset` |
+  | `syncFormatPairs` (a broken pair) | `pairing_want_revived` | |
+  | `landPairingHeldFormat` | `pairing_held_format_landed` | |
+  | `reidentifyPairingWant` | `pairing_want_reidentified`, `pairing_want_retitled` | `cause` (`identity`, `volume`, `work`) |
+  | `parkPairingWant`, `parkCollectionWant`, `parkRequestNoEnglishEdition` | `parked` (`after.unroutable_reason` names the park) | `llBookId` |
+  | `unparkForeignLanguageWant`, `liftNoEnglishEditionPark` | `unparked` | |
+  | `switchRequestToEnglishEdition` | `english_edition_switched` | |
+  | `syncCollectionWants` | `collection_want_minted`, `collection_want_refreshed`, `collection_want_dropped` | |
+  | `syncBooksCollections` | `collection_removed` | |
+  | `setCollectionWantDownloaded` | `collection_want_downloaded`, `collection_want_download_reverted` | `llBookId`, `format` |
+  | `releaseWrongAuthorCollectionWant` | `wrong_author_released` | |
+  | `runForceSearchWorklist` (a `missing` want a search reopens) | `force_search_reopened` | |
+  | `reopenWrongVolumeRequest`, `settleRemovedAnchorPairingWant`, `settleParkedPairingWant` | `wrong_volume_repaired`, `removed_anchor_settled`, `parked_want_conformed` | ids |
+
+  `reason` is the `BOOK_REQUEST_EVENT_REASONS` union in `@hnet/db` enums, without a CHECK: a new writer adds its reason
+  in code. `kind` and `actor` are CHECK-enforced.
+- **Who and where.** The sync orchestrator runs each mode inside `withRequestEventScope({ actor: 'sync', site: mode })`,
+  so an event's `site` is at least its job (`goodreads-sync`, `format-pairing`, `books-collections-sync`); the gone rule,
+  the re-request, the Landed Truth revert and the force-search reopen name their leg (`format-pairing.rerequest`). The
+  issue #693 repair (`repairWrongVolumeRequests`) runs as `actor: 'repair'`, site `wrong-volume-requests-repair`; a
+  future repair script opens the same scope with its own site. A person's on-demand collection Force Search runs as
+  `actor: 'user'` with their id. The manual "Search again" only stamps, so it records no event; its
+  `request_book_search` `permission_audit` row is unchanged.
+- **Reading it.** No screen yet (issue #792 tracks a history view on the Wanted detail); the rows are read by SQL,
+  e.g. a request's history:
+  `SELECT created_at, kind, reason, writer, site, actor, before, after, detail FROM book_request_events WHERE
+  request_id = $1 ORDER BY created_at` (index `book_request_events_request_created_idx`), or one decision across the
+  estate: `WHERE reason = 'll_book_gone_repointed' AND created_at > now() - interval '1 day'`.
+- **Cost.** One extra primary-key read per recorded update and the event inserts; no retention cap (ADR-101 C-03).
+- **Not covered.** Hand-written SQL in `psql` (repairs go through a script that calls the writers), and a user
+  deletion's cascade (ADR-101 C-04, C-05).
+
+**Tests.** `packages/domain/__tests__/book-request-events.test.ts` (mint, unchanged re-run, retitle, drop, collection
+removal, re-point with site, settle / revert / park, stamps record nothing, scopes, a failed event rolls the change
+back, a lost mint conflict records nothing); `book-request-write-paths.test.ts` (the write-path guard);
+`wrong-volume-guards.test.ts` (the repair records `actor: 'repair'`, and a dry run or a second apply records nothing).

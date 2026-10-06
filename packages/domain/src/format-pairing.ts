@@ -32,6 +32,7 @@ import { gbQueryTitle } from '@hnet/goodreads';
 import { readHeldBooks, type HeldBook } from './books';
 import { FOREIGN_LANGUAGE_REASON, isForeignLanguage, readItemLanguage } from './book-language';
 import { inTransaction, resolveDb } from './db-client';
+import { insertBookRequest, updateBookRequests } from './book-request-events';
 import { guardedGbResolve } from './gb-quota-breaker';
 import { gbBudgetCanStart, makeGbBudgetTracker, type GbBudgetTracker, type GbCallMeter } from './gb-call-budget';
 import {
@@ -564,14 +565,16 @@ export async function syncFormatPairs(input: {
       const missing = missingFormatFor(anchor.mediaKind);
       const missingStatus = missing === 'ebook' ? want.ebookStatus : want.audioStatus;
       if (missingStatus !== 'landed') continue; // still in flight / already retryable — nothing to heal
-      await tx
-        .update(bookRequests)
-        .set({
+      await updateBookRequests(
+        tx,
+        { writer: 'syncFormatPairs', reason: 'pairing_want_revived' },
+        eq(bookRequests.id, want.id),
+        {
           ebookStatus: missing === 'ebook' ? 'requested' : want.ebookStatus,
           audioStatus: missing === 'audiobook' ? 'requested' : want.audioStatus,
           updatedAt: now,
-        })
-        .where(eq(bookRequests.id, want.id));
+        },
+      );
       revived += 1;
     }
   });
@@ -742,8 +745,8 @@ const statusOfFormat = (row: BookRequestRow, format: 'ebook' | 'audiobook') =>
 /**
  * Upsert ONE pairing want (single-writer, tx): insert with the held format `landed` and the missing
  * format `requested`, or refresh an existing want's snapshot + llBookId (updated_at always advances —
- * it is the retry backoff key). Unaudited (the syncShelfRequests sync-mint class). Returns the row +
- * whether it was freshly minted.
+ * it is the retry backoff key). Records a `pairing_want_minted` / `pairing_want_refreshed` Request Event (ADR-101;
+ * a refresh that changes no recorded field records none). Returns the row + whether it was freshly minted.
  */
 async function upsertPairingWant(input: {
   db?: DbClient;
@@ -785,18 +788,23 @@ async function upsertPairingWant(input: {
       const status = statusOfFormat(existing, missing);
       // A `landed` that belonged to the old book is not this book's either.
       const reset = freshIdentity && status !== 'requested' && (status !== 'landed' || !sameBook);
-      const [row] = await tx
-        .update(bookRequests)
-        .set({
+      const [row] = await updateBookRequests(
+        tx,
+        {
+          writer: 'upsertPairingWant',
+          reason: 'pairing_want_refreshed',
+          ...(reset ? { detail: { statusReset: missing } } : {}),
+        },
+        eq(bookRequests.id, existing.id),
+        {
           title: input.title,
           author: input.author,
           llBookId,
           ...(reset ? (missing === 'ebook' ? { ebookStatus: 'requested' as const } : { audioStatus: 'requested' as const }) : {}),
           ...backoffFor(llBookId, existing),
           updatedAt: input.now,
-        })
-        .where(eq(bookRequests.id, existing.id))
-        .returning();
+        },
+      );
       // Issue #735 — a want re-pointed from one LazyLibrarian book to another releases what the old one was searching
       // for it (the identity check usually clears the id first and releases there; this covers a run without it).
       if (existing.llBookId !== null && llBookId !== existing.llBookId) {
@@ -821,9 +829,10 @@ async function upsertPairingWant(input: {
     // Review finding 2 (TOCTOU): the select-then-insert races a concurrent minter — land the insert
     // ON CONFLICT DO NOTHING against the pairing partial unique so a 23505 can never abort the run,
     // and re-select (the row the rival won) when the insert returns nothing.
-    const [row] = await tx
-      .insert(bookRequests)
-      .values({
+    const row = await insertBookRequest(
+      tx,
+      { writer: 'upsertPairingWant', reason: 'pairing_want_minted' },
+      {
         origin: 'pairing',
         pairingBooksItemId: input.item.id,
         title: input.title,
@@ -836,12 +845,14 @@ async function upsertPairingWant(input: {
         ...backoffFor(input.llBookId, null),
         createdAt: input.now,
         updatedAt: input.now,
-      })
-      .onConflictDoNothing({
-        target: bookRequests.pairingBooksItemId,
-        where: sql`${bookRequests.pairingBooksItemId} IS NOT NULL`,
-      })
-      .returning();
+      },
+      {
+        onConflictDoNothing: {
+          target: bookRequests.pairingBooksItemId,
+          where: sql`${bookRequests.pairingBooksItemId} IS NOT NULL`,
+        },
+      },
+    );
     if (row) return { row, minted: true };
     const [raced] = await tx
       .select()
@@ -856,8 +867,8 @@ async function upsertPairingWant(input: {
 /**
  * ADR-065 C-03 — the held format IS in the library, so a pairing want's anchor-held format sits `landed`. Three
  * July wants read `grabbed` there, which made the reconcile pick the HELD format as the one to sweep (issue #665
- * follow-up). Sets it, guarded on it not being `landed` already. Single-writer, unaudited (the pairing sync
- * class). Returns whether the row changed.
+ * follow-up). Sets it, guarded on it not being `landed` already. Single-writer, a `pairing_held_format_landed`
+ * Request Event (ADR-101). Returns whether the row changed.
  */
 export async function landPairingHeldFormat(input: {
   db?: DbClient;
@@ -867,11 +878,14 @@ export async function landPairingHeldFormat(input: {
 }): Promise<boolean> {
   const now = input.now ?? new Date();
   const column = input.format === 'ebook' ? bookRequests.ebookStatus : bookRequests.audioStatus;
-  const rows = await resolveDb(input.db)
-    .update(bookRequests)
-    .set(input.format === 'ebook' ? { ebookStatus: 'landed', updatedAt: now } : { audioStatus: 'landed', updatedAt: now })
-    .where(and(eq(bookRequests.id, input.requestId), ne(column, 'landed')))
-    .returning({ id: bookRequests.id });
+  const rows = await inTransaction(input.db, (tx) =>
+    updateBookRequests(
+      tx,
+      { writer: 'landPairingHeldFormat', reason: 'pairing_held_format_landed' },
+      and(eq(bookRequests.id, input.requestId), ne(column, 'landed'))!,
+      input.format === 'ebook' ? { ebookStatus: 'landed', updatedAt: now } : { audioStatus: 'landed', updatedAt: now },
+    ),
+  );
   return rows.length > 0;
 }
 
@@ -913,7 +927,8 @@ export function judgePairingWantBook(input: {
 }
 
 /**
- * Issue #693 — the single writer of the identity check (unaudited: the pairing sync-mint class), guarded on the want
+ * Issue #693 — the single writer of the identity check (a `pairing_want_reidentified` / `pairing_want_retitled` Request
+ * Event, ADR-101), guarded on the want
  * being unchanged since it was read (same title and id, still unparked), so a concurrent writer wins. Both modes write
  * the anchor's identity as the title snapshot. `clear` also:
  *   - clears `ll_book_id` (the mint resolves the anchor's own book next: reuse, then Google Books);
@@ -931,6 +946,8 @@ export async function reidentifyPairingWant(input: {
   mode: 'retitle' | 'clear';
   missing: 'ebook' | 'audiobook';
   paired: boolean;
+  /** ADR-101 — why a `clear` (`identity`, `volume`, `work`), recorded on the Request Event. */
+  cause?: string | null;
   now?: Date;
 }): Promise<boolean> {
   const now = input.now ?? new Date();
@@ -952,9 +969,15 @@ export async function reidentifyPairingWant(input: {
       )
       .for('update');
     if (!row) return false;
-    await tx
-      .update(bookRequests)
-      .set({
+    await updateBookRequests(
+      tx,
+      {
+        writer: 'reidentifyPairingWant',
+        reason: input.mode === 'clear' ? 'pairing_want_reidentified' : 'pairing_want_retitled',
+        ...(input.cause ? { detail: { cause: input.cause } } : {}),
+      },
+      eq(bookRequests.id, row.id),
+      {
         title: input.identity.title,
         author: input.identity.author,
         ...(input.mode === 'clear'
@@ -969,8 +992,8 @@ export async function reidentifyPairingWant(input: {
             }
           : {}),
         updatedAt: now,
-      })
-      .where(eq(bookRequests.id, row.id));
+      },
+    );
     if (input.mode === 'clear') {
       await recordLlReleases(tx, {
         llBookId: row.llBookId,
@@ -1087,6 +1110,7 @@ export async function checkPairingWantBooks(input: {
       mode: verdict.kind,
       missing,
       paired,
+      cause: change.reason,
       now,
     });
     if (!done) continue;
@@ -1222,9 +1246,11 @@ export async function markPairingWantPushed(input: {
       .where(eq(bookRequests.id, input.requestId))
       .for('update');
     if (!req) return;
-    await tx
-      .update(bookRequests)
-      .set({
+    await updateBookRequests(
+      tx,
+      { writer: 'markPairingWantPushed', reason: 'll_pushed' },
+      eq(bookRequests.id, req.id),
+      {
         llBookId: input.llBookId,
         ebookStatus:
           input.format === 'ebook' && req.ebookStatus === 'requested' ? 'wanted' : req.ebookStatus,
@@ -1234,8 +1260,8 @@ export async function markPairingWantPushed(input: {
             : req.audioStatus,
         lastReconciledAt: now,
         updatedAt: now,
-      })
-      .where(eq(bookRequests.id, req.id));
+      },
+    );
   });
 }
 
@@ -1248,8 +1274,8 @@ export async function markPairingWantPushed(input: {
  * `foreign_language`, which parks every OPEN want (the missing format not `landed`): a want asking for the other
  * format of a non-English item is wrong whatever stage it reached, and the park ends the app's own reconcile,
  * re-queue and re-request of it. Issue #735: LazyLibrarian is told too, through a LazyLibrarian Release recorded in the
- * same transaction for a missing format it was working (`wanted`/`grabbed`). Unaudited (the pairing sync-mint class).
- * Returns whether the row was parked.
+ * same transaction for a missing format it was working (`wanted`/`grabbed`). Records a `parked` Request Event
+ * (ADR-101). Returns whether the row was parked.
  */
 export async function parkPairingWant(input: {
   db?: DbClient;
@@ -1276,10 +1302,12 @@ export async function parkPairingWant(input: {
       )
       .for('update');
     if (!row) return false;
-    await tx
-      .update(bookRequests)
-      .set({ unroutableReason: input.reason, updatedAt: now })
-      .where(eq(bookRequests.id, row.id));
+    await updateBookRequests(
+      tx,
+      { writer: 'parkPairingWant', reason: 'parked' },
+      eq(bookRequests.id, row.id),
+      { unroutableReason: input.reason, updatedAt: now },
+    );
     // Issue #735 — the park ends the app's own reconcile, re-queue and re-request of the want; a format LazyLibrarian
     // was working for it is released, so LazyLibrarian stops searching it too (unless another live request asks).
     await recordLlReleases(tx, {
@@ -1295,24 +1323,25 @@ export async function parkPairingWant(input: {
 
 /**
  * Issue #712 — the one way back out of a `foreign_language` park (the inverse of `parkPairingWant`, same
- * single-writer class, unaudited, one statement). Clears `unroutable_reason` ONLY where it is still
+ * single-writer class, an `unparked` Request Event, ADR-101). Clears `unroutable_reason` ONLY where it is still
  * `foreign_language`: every other park (`wrong_volume`, `multi_book`, `no_book`) is a different decision and is
  * never lifted here. `updated_at` is left alone (it is the retry-recency key and a lift is not an attempt), and
  * the want's statuses and LazyLibrarian id are untouched, so it re-enters the mint exactly as it was parked.
  * Returns whether the row was lifted.
  */
 export async function unparkForeignLanguageWant(input: { db?: DbClient; requestId: string }): Promise<boolean> {
-  const lifted = await resolveDb(input.db)
-    .update(bookRequests)
-    .set({ unroutableReason: null })
-    .where(
+  const lifted = await inTransaction(input.db, (tx) =>
+    updateBookRequests(
+      tx,
+      { writer: 'unparkForeignLanguageWant', reason: 'unparked' },
       and(
         eq(bookRequests.id, input.requestId),
         eq(bookRequests.origin, 'pairing'),
         eq(bookRequests.unroutableReason, FOREIGN_LANGUAGE_REASON),
-      ),
-    )
-    .returning({ id: bookRequests.id });
+      )!,
+      { unroutableReason: null },
+    ),
+  );
   return lifted.length > 0;
 }
 
@@ -1965,6 +1994,8 @@ async function revalidateLandedPairingWants(input: {
         requestId: want.id,
         llBookId,
         ...(missing === 'ebook' ? { ebook: status } : { audio: status }),
+        site: 'format-pairing.landed-check',
+        cause: mismatch ? 'll_book_mismatch' : 'll_not_held',
         now: input.now,
       });
       if (result.ebook || result.audio) {
@@ -2200,6 +2231,8 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
             requestId: want.id,
             llBookId: want.llBookId,
             ...(missing === 'ebook' ? { ebook: next } : { audio: next }),
+            site: 'format-pairing.reconcile',
+            cause: 'll_not_snatched',
             now,
           });
           if (result.fromGrabbed.length > 0) {

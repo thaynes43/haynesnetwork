@@ -122,10 +122,14 @@ export * from './user-book-progress';
 // ADR-055 / DESIGN-028 (PLAN-044 — Goodreads requests MVP) — the Integration tables: one row per
 // (user, provider) link (user_integrations), the synced shelf-RSS mirror (integration_shelf_items), and
 // the request / Missing ledger tracking both formats (book_requests). All guarded single-writer tables;
-// user link/unlink + manual re-search are audited (permission_audit), sync-driven writes are not.
+// user link/unlink + manual re-search are audited (permission_audit); every book_requests write records a Request
+// Event (ADR-101, below).
 export * from './user-integrations';
 export * from './integration-shelf-items';
 export * from './book-requests';
+// ADR-101 (issue #741, migration 0096) — the Request Event: the append-only history of every book_requests mint,
+// change and delete, written in the same transaction by the one domain module that writes book_requests.
+export * from './book-request-events';
 // Issue #735 (DESIGN-028 amendment 2026-10-06, migration 0093) — the LazyLibrarian Release: a book format the app
 // queued for a want it then gave up, pending until it is unqueued or found owned, held or gone. Guarded single-writer
 // table (ll-release.ts); derived operational state, no audit.

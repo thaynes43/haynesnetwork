@@ -666,6 +666,13 @@
       "when": 1791330000000,
       "tag": "0095_book_requests_wrong_author",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1791340000000,
+      "tag": "0096_book_request_events",
+      "breakpoints": true
     }
   ]
 }

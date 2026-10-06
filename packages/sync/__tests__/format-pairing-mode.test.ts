@@ -3,7 +3,7 @@
 // injected confined LL bundle, and degrades honestly without one. No sync_runs row is written.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
-import { bookRequests, booksFormatPairs } from '@hnet/db';
+import { bookRequestEvents, bookRequests, booksFormatPairs } from '@hnet/db';
 import { syncBooks, type LazyLibrarianClientBundle } from '@hnet/domain';
 import { runSync } from '../src/orchestrator';
 import { bootMigratedDb, type TestDb } from './helpers';
@@ -97,6 +97,19 @@ describe('runSync --mode=format-pairing', () => {
     const [want] = await t.db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
     expect(want).toMatchObject({ llBookId: 'gb-martian', ebookStatus: 'landed', audioStatus: 'wanted' });
     expect(ll.calls.filter((c) => c.cmd === 'queueBook').map((c) => c.format)).toEqual(['audiobook']);
+
+    // ADR-101 — the mint and the push each recorded a Request Event, as the sync, in the format-pairing job.
+    const events = await t.db
+      .select()
+      .from(bookRequestEvents)
+      .where(eq(bookRequestEvents.requestId, want!.id));
+    expect(events.map((e) => `${e.kind}:${e.reason}:${e.actor}:${e.site}`).sort()).toEqual([
+      'mint:pairing_want_minted:sync:format-pairing',
+      'update:ll_pushed:sync:format-pairing',
+    ]);
+    const pushed = events.find((e) => e.reason === 'll_pushed')!;
+    expect(pushed.before).toEqual({ audio_status: 'requested' });
+    expect(pushed.after).toEqual({ audio_status: 'wanted' });
 
     // Standalone: the mode writes NO sync_runs row.
     const runs = await t.db.execute(sql`SELECT count(*)::int AS n FROM sync_runs`);

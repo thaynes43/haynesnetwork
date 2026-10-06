@@ -31,6 +31,8 @@ import {
   TITLE_EXCLUSION_ARR_KINDS,
   TITLE_EXCLUSION_ORIGINS,
   LL_RELEASE_FORMATS,
+  BOOK_REQUEST_EVENT_ACTORS,
+  BOOK_REQUEST_EVENT_KINDS,
   DELETED_RELEASE_ORIGINS,
   DELETED_RELEASE_STATES,
   DELETED_RELEASE_TERM_CONFIDENCES,
@@ -3216,6 +3218,48 @@ describe('migrations against embedded Postgres 16', () => {
         ]);
       } finally {
         await client.query(`DELETE FROM trash_title_exclusions WHERE title = 'T-0087'`);
+      }
+    });
+  });
+
+  describe('0096 book_request_events (issue #741 / ADR-101 — the Request Event)', () => {
+    it('creates the append-only history: no FK on request_id, kind and actor CHECKs matching their arrays, reason free', async () => {
+      const insert = (kind: string, actor: string, reason = 'parked') =>
+        client.query({
+          text: `INSERT INTO book_request_events (request_id, kind, reason, writer, actor, before, after)
+                 VALUES ('00000000-0000-4000-8000-000000000096', $1, $3, 'test', $2, '{}', '{"ll_book_id":"x"}')`,
+          values: [kind, actor, reason],
+        });
+      try {
+        // A request id that names no book_requests row is accepted (a dropped want keeps its history).
+        for (const kind of BOOK_REQUEST_EVENT_KINDS) await insert(kind, 'sync');
+        for (const actor of BOOK_REQUEST_EVENT_ACTORS) await insert('update', actor);
+        await insert('update', 'sync', 'a_reason_added_later_in_code');
+        await expect(insert('upsert', 'sync')).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('update', 'cron')).rejects.toMatchObject({ code: '23514' });
+        for (const [name, values] of [
+          ['book_request_events_kind_enum', BOOK_REQUEST_EVENT_KINDS],
+          ['book_request_events_actor_enum', BOOK_REQUEST_EVENT_ACTORS],
+        ] as const) {
+          const def = await client.query({
+            text: `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = $1`,
+            values: [name],
+          });
+          const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+          expect(listed.sort()).toEqual([...values].sort());
+        }
+        const idx = await client.query(
+          `SELECT indexname FROM pg_indexes WHERE tablename = 'book_request_events' ORDER BY indexname`,
+        );
+        expect(idx.rows.map((r) => r.indexname)).toEqual([
+          'book_request_events_pkey',
+          'book_request_events_reason_created_idx',
+          'book_request_events_request_created_idx',
+        ]);
+      } finally {
+        await client.query(
+          `DELETE FROM book_request_events WHERE request_id = '00000000-0000-4000-8000-000000000096'`,
+        );
       }
     });
   });

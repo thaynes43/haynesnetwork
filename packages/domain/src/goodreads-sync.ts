@@ -7,6 +7,7 @@
 import { and, asc, eq, inArray, or } from 'drizzle-orm';
 import { bookRequests, type BookRequestFormat, type BookRequestStatus, type DbClient } from '@hnet/db';
 import { resolveDb } from './db-client';
+import { withRequestEventScope } from './book-request-events';
 import {
   applyLlGoneDecision,
   decideLlGoneWant,
@@ -408,6 +409,8 @@ export async function syncGoodreadsIntegration(
         llBookId: target.llBookId,
         ebook,
         audio,
+        site,
+        cause: reason,
         now,
       });
       if (!reverted.ebook && !reverted.audio) return 0;
@@ -632,6 +635,8 @@ export async function syncGoodreadsIntegration(
         requestId: comic.requestId,
         llBookId: null,
         comic: comicStatus,
+        site: 'goodreads-sync.comics',
+        cause: reason,
         now,
       });
       if (!reverted.comic) return 0;
@@ -821,8 +826,19 @@ export interface RunManualBookSearchResult {
  * reporting "Search fired" for it is a claim the user has no way to check. Same guard, same one-read budget,
  * same degradation (an LL read failure ⇒ search everything, exactly as before). The `landed` narrowing below
  * (our own row status) is unchanged and still returns the reason-less "nothing fired".
+ *
+ * ADR-101 — a person's click: the re-point, reconcile and re-queue it may write record `actor: 'user'` and their id.
  */
 export async function runManualBookSearch(
+  input: RunManualBookSearchInput,
+): Promise<RunManualBookSearchResult> {
+  return withRequestEventScope(
+    { actor: 'user', actorUserId: input.actorId, site: 'search-again' },
+    () => runManualBookSearchAs(input),
+  );
+}
+
+async function runManualBookSearchAs(
   input: RunManualBookSearchInput,
 ): Promise<RunManualBookSearchResult> {
   const { request } = await recordManualSearch({

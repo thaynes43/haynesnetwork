@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
+  bookRequestEvents,
   bookRequests,
   booksCollections,
   booksFormatPairs,
@@ -40,6 +41,7 @@ afterAll(async () => {
   await t?.stop();
 });
 beforeEach(async () => {
+  await t.db.delete(bookRequestEvents);
   await t.db.delete(bookRequests);
   await t.db.delete(booksFormatPairs);
   await t.db.delete(integrationShelfItems);
@@ -696,6 +698,9 @@ describe('repairWrongVolumeRequests', () => {
     // The skipped id is never listed.
     expect(report.rows.some((r) => r.llBookId === 'ik6xzgEACAAJ')).toBe(false);
     expect(await snapshotOfRows()).toEqual(before);
+    // ADR-101 — a dry run writes no Request Event either (the seed's mints are the only ones).
+    const events = await t.db.select().from(bookRequestEvents);
+    expect(events.every((e) => e.kind === 'mint' && e.actor === 'sync')).toBe(true);
   });
 
   it('apply parks, re-points, settles — and leaves the skipped row alone; a second apply changes nothing', async () => {
@@ -733,10 +738,28 @@ describe('repairWrongVolumeRequests', () => {
       ebookStatus: 'landed',
     });
 
+    // ADR-101 — each applied row recorded its Request Event as the repair, with what it changed.
+    const repairEvents = await t.db
+      .select()
+      .from(bookRequestEvents)
+      .where(eq(bookRequestEvents.actor, 'repair'));
+    expect(
+      repairEvents.map((e) => `${e.reason}:${e.writer}:${e.site}`).sort(),
+    ).toEqual([
+      'parked:parkCollectionWant:wrong-volume-requests-repair',
+      'removed_anchor_settled:settleRemovedAnchorPairingWant:wrong-volume-requests-repair',
+      'wrong_volume_repaired:reopenWrongVolumeRequest:wrong-volume-requests-repair',
+    ]);
+    const grEvent = repairEvents.find((e) => e.requestId === gr.id)!;
+    expect(grEvent.before).toMatchObject({ ll_book_id: 'gbMother', ebook_status: 'landed', audio_status: 'wanted' });
+    expect(grEvent.after).toMatchObject({ ll_book_id: 'gbSerpent', ebook_status: 'requested', audio_status: 'requested' });
+
     const after = await snapshotOfRows();
+    const eventCount = (await t.db.select().from(bookRequestEvents)).length;
     const again = await repairWrongVolumeRequests({ ...input, dryRun: false });
     expect(again.rows.filter((r) => r.applied)).toEqual([]);
     expect(await snapshotOfRows()).toEqual(after);
+    expect((await t.db.select().from(bookRequestEvents)).length).toBe(eventCount);
   });
 });
 

@@ -1322,6 +1322,65 @@ export type BookRequestOrigin = (typeof BOOK_REQUEST_ORIGINS)[number];
 export const LL_RELEASE_FORMATS = ['ebook', 'audiobook'] as const;
 export type LlReleaseFormat = (typeof LL_RELEASE_FORMATS)[number];
 
+// ADR-101 / DESIGN-028 amendment 2026-10-06 (issue #741, migration 0096) — the Request Event: one append-only
+// `book_request_events` row per book_requests row a single writer minted, changed or deleted, written in the same
+// transaction (`@hnet/domain` book-request-events.ts, the only domain module that writes book_requests).
+//   kind  — what the write did to the row (CHECK-enforced).
+//   actor — who made it: `sync` (a scheduled job, the default), `repair` (a one-off repair script), `user` (a person's
+//           action, with `actor_user_id`). CHECK-enforced.
+//   reason — the decision that made the write. Typed here, NOT CHECK-enforced: a new writer adds its reason without a
+//           migration (the `ll_format_releases.reason` precedent); the type keeps a writer from inventing one.
+export const BOOK_REQUEST_EVENT_KINDS = ['mint', 'update', 'delete'] as const;
+export type BookRequestEventKind = (typeof BOOK_REQUEST_EVENT_KINDS)[number];
+
+export const BOOK_REQUEST_EVENT_ACTORS = ['sync', 'repair', 'user'] as const;
+export type BookRequestEventActor = (typeof BOOK_REQUEST_EVENT_ACTORS)[number];
+
+export const BOOK_REQUEST_EVENT_REASONS = [
+  // goodreads shelf wants (syncShelfRequests)
+  'shelf_want_minted',
+  'shelf_want_refreshed',
+  // the LazyLibrarian push and reconcile (goodreads, pairing)
+  'll_pushed',
+  'll_reconciled',
+  'll_requeued',
+  // Kapowarr comics
+  'comic_routed',
+  'comic_reconciled',
+  // the Landed Truth (T-281): a format taken out of `landed` / `grabbed`
+  'landed_reverted',
+  // the Gone LazyLibrarian Book (T-279) and the one re-request (#668)
+  'll_book_gone_repointed',
+  'll_book_gone_settled',
+  'll_rerequest',
+  // pairing wants (format-pairing)
+  'pairing_want_minted',
+  'pairing_want_refreshed',
+  'pairing_want_revived',
+  'pairing_held_format_landed',
+  'pairing_want_reidentified',
+  'pairing_want_retitled',
+  // collection wants (books-collections-sync, the collection force-search)
+  'collection_want_minted',
+  'collection_want_refreshed',
+  'collection_want_dropped',
+  'collection_removed',
+  'collection_want_downloaded',
+  'collection_want_download_reverted',
+  'force_search_reopened',
+  'wrong_author_released',
+  // parks (any `unroutable_reason`; the row's after-value names which) and their lifts
+  'parked',
+  'unparked',
+  // the English Edition (T-282)
+  'english_edition_switched',
+  // the issue #693 repair
+  'wrong_volume_repaired',
+  'removed_anchor_settled',
+  'parked_want_conformed',
+] as const;
+export type BookRequestEventReason = (typeof BOOK_REQUEST_EVENT_REASONS)[number];
+
 // ADR-065 C-02 — HOW a books_format_pairs row was matched. v1 has exactly the conservative
 // normalized-title + author-agreement matcher; an identifier-backed matcher (ISBN/ASIN — DESIGN-036
 // Q-02) would join this const + relax the CHECK.

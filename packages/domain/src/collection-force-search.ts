@@ -27,6 +27,7 @@ import {
 import type { LibrettoReadClient } from '@hnet/libretto/read';
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import { inTransaction, resolveDb } from './db-client';
+import { stampBookRequests, updateBookRequests, withRequestEventScope } from './book-request-events';
 import { NotFoundError } from './errors';
 import {
   loadParkedWantRefs,
@@ -354,11 +355,9 @@ async function runForceSearchWorklist(input: {
           title: want.title,
           llLanguage: held.get(llBookId)?.language ?? null,
         });
-        await inTransaction(input.db, async (tx) => {
-          await tx
-            .update(bookRequests)
-            .set({ lastSearchedAt: input.now, updatedAt: input.now })
-            .where(eq(bookRequests.id, want.id));
+        await stampBookRequests(input.db, eq(bookRequests.id, want.id), {
+          lastSearchedAt: input.now,
+          updatedAt: input.now,
         });
         continue;
       }
@@ -373,11 +372,9 @@ async function runForceSearchWorklist(input: {
         });
         // Stamp last_searched_at anyway (no audit — nothing was requested of LL). The want is settled on
         // LL's side, so the 12h cooldown should keep it out of the next run rather than re-reading it hourly.
-        await inTransaction(input.db, async (tx) => {
-          await tx
-            .update(bookRequests)
-            .set({ lastSearchedAt: input.now, updatedAt: input.now })
-            .where(eq(bookRequests.id, want.id));
+        await stampBookRequests(input.db, eq(bookRequests.id, want.id), {
+          lastSearchedAt: input.now,
+          updatedAt: input.now,
         });
       } else {
         toSearch.push(want);
@@ -413,16 +410,30 @@ async function runForceSearchWorklist(input: {
         for (const want of toSearch) {
           // A want settled `missing` (issue #665: LazyLibrarian lost its book) that a person force-searched is
           // back in LazyLibrarian: its active format returns to `requested`, the collection want's working state.
-          const lift =
-            want.status === 'missing'
-              ? want.format === 'audiobook'
-                ? { audioStatus: 'requested' as const }
-                : { ebookStatus: 'requested' as const }
-              : {};
-          await tx
-            .update(bookRequests)
-            .set({ lastSearchedAt: input.now, updatedAt: input.now, ...lift })
-            .where(eq(bookRequests.id, want.id));
+          if (want.status === 'missing') {
+            await updateBookRequests(
+              tx,
+              {
+                writer: 'runForceSearchWorklist',
+                reason: 'force_search_reopened',
+                site: `collection-force-search.${input.via}`,
+                ...(input.actorId ? { actor: 'user' as const, actorUserId: input.actorId } : {}),
+              },
+              eq(bookRequests.id, want.id),
+              {
+                lastSearchedAt: input.now,
+                updatedAt: input.now,
+                ...(want.format === 'audiobook'
+                  ? { audioStatus: 'requested' as const }
+                  : { ebookStatus: 'requested' as const }),
+              },
+            );
+          } else {
+            await stampBookRequests(tx, eq(bookRequests.id, want.id), {
+              lastSearchedAt: input.now,
+              updatedAt: input.now,
+            });
+          }
           if (coveredByRecent) continue;
           await tx.insert(permissionAudit).values({
             actorId: input.actorId,
@@ -943,8 +954,19 @@ export interface ForceSearchCollectionNowReport {
  * header for the (a) apply → (b) refresh → (c) search contract. Throws NotFoundError when no mirror
  * collection is bound to the recipe; degrades (unreachable=true, nothing searched) on a Libretto outage;
  * never throws for a single want's LazyLibrarian error (counted into `failed`).
+ *
+ * ADR-101 — a person's click: every book_requests write it makes records `actor: 'user'` and the caller's id.
  */
 export async function forceSearchCollectionNow(
+  input: ForceSearchCollectionNowInput,
+): Promise<ForceSearchCollectionNowReport> {
+  return withRequestEventScope(
+    { actor: 'user', actorUserId: input.actorId, site: 'collection-force-search.collection_force_search' },
+    () => forceSearchCollectionNowAs(input),
+  );
+}
+
+async function forceSearchCollectionNowAs(
   input: ForceSearchCollectionNowInput,
 ): Promise<ForceSearchCollectionNowReport> {
   const now = input.now ?? new Date();
