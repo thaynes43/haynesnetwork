@@ -345,7 +345,7 @@ describe('runEnglishEditionPass — no English edition', () => {
 });
 
 describe('runEnglishEditionPass — rationing', () => {
-  it('looks once per request per quota-day, whatever the answer, and again the next quota-day', async () => {
+  it('looks once per request per quota-day, whatever the answer; a park looks again after a week of quota-days', async () => {
     const { id } = await seedGoodreadsRequest();
     const gb = stubGb(() => null);
     const run = (now: Date) =>
@@ -357,8 +357,12 @@ describe('runEnglishEditionPass — rationing', () => {
     const again = await run(LATER_TODAY);
     expect(again).toMatchObject({ due: 0, looked: 0 });
     expect(gb.queries).toHaveLength(1);
-    // The next quota-day retries the parked want once.
-    const next = await run(TOMORROW);
+    // A park does not retry the next quota-day (a work with no edition today almost never has one tomorrow): it waits a
+    // week of them, then looks once more.
+    expect(await run(TOMORROW)).toMatchObject({ due: 0, looked: 0 });
+    expect(await run(new Date(NOW.getTime() + 6 * DAY))).toMatchObject({ due: 0, looked: 0 });
+    expect(gb.queries).toHaveLength(1);
+    const next = await run(new Date(NOW.getTime() + 7 * DAY));
     expect(next).toMatchObject({ due: 1, looked: 1, parked: 1 });
     expect(gb.queries).toHaveLength(2);
     expect((await getRequest(id)).unroutableReason).toBe('no_english_edition');

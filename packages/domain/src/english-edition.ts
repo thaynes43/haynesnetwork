@@ -15,7 +15,7 @@
 // BUDGET (`GbBudgetTracker.canSpend`, reserve-before-commit) and the shared quota breaker (`guardedGbResolve`), plus a
 // small per-run cap. A budget or breaker refusal is not a lookup: it stamps nothing and the want is looked at again as
 // soon as quota allows. A park is re-evaluated each run: it lifts when LazyLibrarian's book reads English again, and
-// it retries the lookup once per quota-day (Google Books gains editions).
+// it retries the lookup after a week of quota-days (Google Books gains editions).
 //
 // Opens no transaction of its own (the Google Books calls stay out of any); every write is a `book-requests.ts`
 // single-writer. Reads LazyLibrarian only through the snapshot the caller hands in (the run's one `getAllBooks`).
@@ -40,8 +40,18 @@ import type { GbBudgetTracker, GbCallMeter, GbConsumer } from './gb-call-budget'
 import { gbQuotaDayStart, llRekeyAuthorKey, llSnapshotUsable, type LlSnapshot, type LlSnapshotRow } from './ll-gone';
 import { llBookMismatch, workTitleKey } from './ll-book-check';
 
-/** Owner-tunable per-run bound on English-edition lookups (each is at most two Google Books legs). */
+/** Owner-tunable per-run bound on English-edition lookups (each is at most four Google Books legs). */
 export const ENGLISH_EDITION_CAP_PER_RUN = Number(process.env.ENGLISH_EDITION_CAP_PER_RUN ?? 10);
+
+/**
+ * A `no_english_edition` park looks again after this many quota-days (Google Books gains editions, but a work with none
+ * today almost never has one tomorrow, and the first live run parked eight wants whose title is a foreign library title,
+ * which no English lookup by that title can answer). A want not yet parked is looked at the first quota-day it is due.
+ */
+export const ENGLISH_EDITION_PARK_RETRY_DAYS = Math.max(
+  1,
+  Math.floor(Number(process.env.ENGLISH_EDITION_PARK_RETRY_DAYS ?? 7)) || 7,
+);
 
 /** The part of a resolved Google Books volume the pass reads (a structural subset of `@hnet/goodreads`' `GbVolume`). */
 export interface EnglishEditionVolume {
@@ -154,6 +164,7 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
   const log = input.log ?? {};
   const { resolver } = input;
   const dayStart = gbQuotaDayStart(now);
+  const parkRetryStart = new Date(dayStart.getTime() - (ENGLISH_EDITION_PARK_RETRY_DAYS - 1) * 86_400_000);
 
   const rows = await resolveDb(input.db)
     .select()
@@ -219,7 +230,9 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
     } else if (!foreign || anchorIsForeign(row)) {
       continue;
     }
-    if (row.englishEditionTriedAt !== null && row.englishEditionTriedAt.getTime() >= dayStart.getTime()) continue;
+    // One lookup per quota-day at most; a park waits ENGLISH_EDITION_PARK_RETRY_DAYS of them.
+    const notBefore = reason === NO_ENGLISH_EDITION_REASON ? parkRetryStart : dayStart;
+    if (row.englishEditionTriedAt !== null && row.englishEditionTriedAt.getTime() >= notBefore.getTime()) continue;
     due.push(row);
   }
   report.due = due.length;
