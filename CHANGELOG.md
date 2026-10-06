@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.109.0](https://github.com/thaynes43/haynesnetwork/compare/v0.108.2...v0.109.0) (2026-10-06)
+
+
+### Features
+
+* **books:** every book_requests write records a Request Event ([#741](https://github.com/thaynes43/haynesnetwork/issues/741)) ([#793](https://github.com/thaynes43/haynesnetwork/issues/793)) ([6695233](https://github.com/thaynes43/haynesnetwork/commit/66952331b8f6ec16845df827ffe7968f18081a73))
+* **books:** the Books Census, a daily observe-only census of wrong files and F10 ([#744](https://github.com/thaynes43/haynesnetwork/issues/744), [#781](https://github.com/thaynes43/haynesnetwork/issues/781)) ([#791](https://github.com/thaynes43/haynesnetwork/issues/791)) ([d26ddec](https://github.com/thaynes43/haynesnetwork/commit/d26ddec8a1317788a686be3f2c14bbeafc6a4baa))
+
+
+### Documentation
+
+* **agents:** coordinator handoff 2026-10-06 (repair wave done, [#742](https://github.com/thaynes43/haynesnetwork/issues/742) in flight, queued safeguards) ([#788](https://github.com/thaynes43/haynesnetwork/issues/788)) ([653722e](https://github.com/thaynes43/haynesnetwork/commit/653722e1538b85245dc37d3a9374c24208fad5df))
+* **agents:** name the purge check by its OC id (review follow-up on [#788](https://github.com/thaynes43/haynesnetwork/issues/788)) ([#789](https://github.com/thaynes43/haynesnetwork/issues/789)) ([2a169ff](https://github.com/thaynes43/haynesnetwork/commit/2a169ffd6c03e3023f36d00ae06ead0d1fc92a79))
+* **agents:** OC-025 passed, the other authors' books are unqueued ([#786](https://github.com/thaynes43/haynesnetwork/issues/786)) ([9433c83](https://github.com/thaynes43/haynesnetwork/commit/9433c83e11793508c860402d948959b40d80083e))
+* **agents:** v0.108.2 + Libretto sha-2e77f28 deploy record, [#771](https://github.com/thaynes43/haynesnetwork/issues/771) and [#777](https://github.com/thaynes43/haynesnetwork/issues/777) closed ([#784](https://github.com/thaynes43/haynesnetwork/issues/784)) ([fe0c819](https://github.com/thaynes43/haynesnetwork/commit/fe0c819af10d3242149e01fc973b3de67f953dfd))
+* **design-037:** Libretto's language and held checks, and same-day Kavita metadata ([#790](https://github.com/thaynes43/haynesnetwork/issues/790)) ([fcc4d0f](https://github.com/thaynes43/haynesnetwork/commit/fcc4d0fabf922a1a665faee3957d418fbcf7baeb))
+* LazyLibrarian's mobi/azw3 books are converted to EPUB ([#770](https://github.com/thaynes43/haynesnetwork/issues/770)) ([#783](https://github.com/thaynes43/haynesnetwork/issues/783)) ([d39c66b](https://github.com/thaynes43/haynesnetwork/commit/d39c66b61536968c47655ee7bf84f12324ce5f83))
+* the four books the EPUB converter held are fixed ([#782](https://github.com/thaynes43/haynesnetwork/issues/782)) ([#787](https://github.com/thaynes43/haynesnetwork/issues/787)) ([0e916e5](https://github.com/thaynes43/haynesnetwork/commit/0e916e5368cea74cd524200977ba0acdcdcb2ed7))
+
 ## [0.108.2](https://github.com/thaynes43/haynesnetwork/compare/v0.108.1...v0.108.2) (2026-10-06)
 
 
