@@ -108,11 +108,22 @@ every test passes; PG is just shut down with a pooled connection still open. If 
 with that `57P01` error, re-run the job (`gh run rerun <run-id> --failed`) — it's a flake, not a
 regression. (Backlog has a real fix: `await pool.end()` before stopping embedded PG.)
 
-**Second known flake:** the `e2e` job's catalog keyboard-reorder test
-(`apps/web/e2e/admin.spec.ts:79`, ADR-015) is intermittently red (focus/timing race — `order.b=-1`
-/ a dialog that doesn't dismiss). `e2e` is **advisory** (not a merge gate), so it never blocks a
-merge — re-run if you want it green. If it recurs during real UI work, check the catalog
-drag-handle focus/persist handling; it may be a genuine intermittent race, not just a test flake.
+**e2e is a merge gate for the book pipeline (ADR-100, #742).** The required context is `e2e-gate`; it always
+reports. A PR that touches a pipeline path (`scripts/e2e-gate-paths.sh`: `packages/{domain,sync,arr,lazylibrarian,
+goodreads,books,kapowarr,downloads,libretto,db,test-utils}`, the integrations/books/book-fix tRPC routers,
+`apps/web/e2e`, the integrations UI) or is the release-please PR
+waits about 15 minutes for the Playwright suite, and a red suite blocks the merge. Every other PR passes the gate at
+once and runs the suite as the advisory `e2e-advisory`. A red gate is a real failure until proven otherwise: read the
+failed step (`gh run view <id> --log-failed`), fix the cause, never skip or loosen the spec. Two things look like
+flakes and are not specs to retry blindly: a `The runner has received a shutdown signal` is the runner, so
+`gh run rerun <id> --failed`; and a click or `fill()` that lands before React hydrates is dropped without an error,
+so wait for something only hydration produces (a stored value, an enabled button) before you act (fixed in `signIn`
+and the storage target editor, 2026-10-06). The old note about `admin.spec.ts:79` is gone: that spec has not failed
+in the 300 most recent runs.
+
+**Wait for the advisory Claude review, then read it (R-05).** `Claude advisory review` takes one to three minutes
+after the last push. Do not merge before it finishes; fix each finding or answer it on the PR with a concrete reason
+it is wrong. It is not a required check, so the wait is yours to keep.
 
 **Testing — live Playwright is the sign-off.** Beyond unit + hermetic e2e stubs (`pnpm --filter
 web e2e`, :3100), each plan lists the **live journeys** to run against real staging

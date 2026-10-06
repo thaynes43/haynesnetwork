@@ -39,8 +39,15 @@ export async function selectStubUser(persona: PersonaName): Promise<void> {
 export async function signIn(page: Page, persona: PersonaName): Promise<void> {
   await selectStubUser(persona);
   await page.goto('/login');
-  await page.getByRole('button', { name: SIGN_IN_BUTTON }).click();
-  await page.waitForURL('/');
+  // The page is server-rendered before React hydrates, and a click that lands in that window is dropped
+  // without a trace (no POST /api/auth/sign-in/oauth2, the page just stays on /login: the history-navigation
+  // flake of 2026-10-05). So click only while still on /login and retry until the round trip leaves it.
+  await expect(async () => {
+    if (new URL(page.url()).pathname === '/login') {
+      await page.getByRole('button', { name: SIGN_IN_BUTTON }).click({ timeout: 2_000 });
+    }
+    await page.waitForURL('/', { timeout: 5_000 });
+  }).toPass({ timeout: 30_000, intervals: [250, 500, 1_000] });
   await expect(page.locator('.greeting')).toBeVisible();
 }
 
