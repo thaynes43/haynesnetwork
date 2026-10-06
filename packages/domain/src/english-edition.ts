@@ -40,7 +40,7 @@ import type { GbBudgetTracker, GbCallMeter, GbConsumer } from './gb-call-budget'
 import { gbQuotaDayStart, llRekeyAuthorKey, llSnapshotUsable, type LlSnapshot, type LlSnapshotRow } from './ll-gone';
 import { llBookMismatch, workTitleKey } from './ll-book-check';
 
-/** Owner-tunable per-run bound on English-edition lookups (each is at most two Google Books legs). */
+/** Owner-tunable per-run bound on English-edition lookups (each is at most four Google Books legs). */
 export const ENGLISH_EDITION_CAP_PER_RUN = Number(process.env.ENGLISH_EDITION_CAP_PER_RUN ?? 10);
 
 /**
@@ -48,7 +48,10 @@ export const ENGLISH_EDITION_CAP_PER_RUN = Number(process.env.ENGLISH_EDITION_CA
  * today almost never has one tomorrow, and the first live run parked eight wants whose title is a foreign library title,
  * which no English lookup by that title can answer). A want not yet parked is looked at the first quota-day it is due.
  */
-export const ENGLISH_EDITION_PARK_RETRY_DAYS = Number(process.env.ENGLISH_EDITION_PARK_RETRY_DAYS ?? 7);
+export const ENGLISH_EDITION_PARK_RETRY_DAYS = Math.max(
+  1,
+  Math.floor(Number(process.env.ENGLISH_EDITION_PARK_RETRY_DAYS ?? 7)) || 7,
+);
 
 /** The part of a resolved Google Books volume the pass reads (a structural subset of `@hnet/goodreads`' `GbVolume`). */
 export interface EnglishEditionVolume {
