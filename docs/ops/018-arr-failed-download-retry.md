@@ -3,8 +3,8 @@
 - **Status:** Active (2026-10-03). Written with ADR-098 / DESIGN-046 D-23 + D-24 (PLAN-065). The settings change in §2
   is the coordinator's, after the release that carries ADR-098 is deployed.
 - **Scope:** the one *arr setting the janitor's failed-download retry depends on; how to change it, check it and roll it
-  back. Nothing here changes the janitor's config. §6 records two related Radarr changes of 2026-10-06 (the file naming
-  hint, and *Carlos* unmonitored).
+  back. Nothing here changes the janitor's config. §6 records related Radarr changes of 2026-10-06 (the file naming hint,
+  and *Carlos*, *Moses* and *Rose Red* unmonitored).
 - **Normative basis:** ADR-098, DESIGN-046 D-23 and D-24, PLAN-065 (ladder log, 2026-10-03).
 - **Repos:** this app (the janitor, `sync-queue-cleanup`); the *arr settings live in each app's own database, not in
   haynes-ops git.
@@ -124,13 +124,14 @@ with the same TMDB id.
 
 Still unmatched in Plex, not renamed:
 
-- *Moses* (1995) and *Rose Red* (2002): their Radarr records are the wrong titles. Movie 4707 is *Leningrad Cowboys
-  Meet Moses* (1994, TMDB 30366) and movie 5847 is *Unlocking Rose Red: The Diary of Ellen Rimbauer* (2002, TMDB
-  1368089), so a rename would write the wrong title and id. Both are monitored with the cutoff unmet, so an upgrade
-  could replace the file with the wrong film. Open for a person: unmonitor them, or remove the Radarr record and keep
-  the file for Plex only.
-- *Samson and Delilah* (1996) and *The Stand* (1994): not in Radarr. TMDB has no movie for their IMDb ids (they are TV),
-  so there is no movie to match them to.
+- *Moses* (1995) and *Rose Red* (2002): their Radarr records point to the wrong TMDB films. Movie 4707 is *Leningrad
+  Cowboys Meet Moses* (1994, TMDB 30366) and movie 5847 is *Unlocking Rose Red: The Diary of Ellen Rimbauer* (2002,
+  TMDB 1368089), so a rename would write the wrong title and id. With the cutoff unmet, an upgrade could have replaced
+  each file with the wrong film, so **both were unmonitored on 2026-10-06** (read back `monitored: false`; files and
+  records otherwise unchanged). **Follow-up:** they stay unmonitored until someone re-links each record to the right
+  film; until then, do not rename or search them.
+- *Samson and Delilah* (1996) and *The Stand* (1994): TV, not in Radarr. TMDB has no movie for their IMDb ids, so there
+  is no movie to match them to.
 
 ***Carlos* (Radarr 9747) is unmonitored.** Kometa added it on 2026-09-15 for its seasonal Latinx Heritage Month
 collection. The film runs 339 minutes in three parts. Its releases are three files, which Radarr cannot import
@@ -143,4 +144,4 @@ single-part names.
 
 **Rollback:** put `{imdb-{ImdbId}}` back in the Standard Movie Format (renamed files keep the TMDB hint until their
 next rename, which Plex matches either way). Monitor *Carlos* again only together with a profile whose cutoff the
-joined file meets.
+joined file meets. Monitor *Moses* and *Rose Red* again only after their records are re-linked to the right films.
