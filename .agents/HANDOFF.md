@@ -4,7 +4,7 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
-## ▶ 2026-10-06 — LazyLibrarian blocks match any spelling, and a foreign-tagged release loses the match for an English book (#755 closed, haynes-ops #3432)
+## ▶ 2026-10-06 — LazyLibrarian blocks match any spelling, and a foreign-tagged release loses the match for an English book (#755 closed, haynes-ops #3432, #3433)
 
 - **Cause (#755).** `blacklist_failed` matches a `Failed` row only by exact `NZBtitle` or exact URL. The post-processor renames
   the row to SABnzbd's job name (dots to spaces, `.par2.` dropped), and the F10 block rows copied that name. Prowlarr encrypts
@@ -34,13 +34,45 @@
   (Queen Charlotte, no progress) deleted, DB only (Job `hnet-755-abs-remove-qc`); books-sync Job `hnet-755-books-sync-1`
   tombstoned 1. Kavita had no series for the epub.
 - **Direct LL DB writes, recorded per #741:** the two blanks and the two `Failed` rows above.
-- **Hand re-wants:** `llOrphanWanted` may read up to 8 (the six below plus Queen Charlotte audio and the Atlantis Complex eBook).
-- **Seen, not changed:** rowid 9587 Divergent audio (`Veronica.Roth.The.Divergent`) completed in SABnzbd as the English
-  trilogy (three subfolders) and still reads `Snatched`; the post-processor has not imported it.
-- **Owed check (q), after the 2026-10-07 ~04:54Z backlog run** (LL DB `mode=ro`): for every `wanted` row with rowid > 9595 on a
+- **~12:00Z, the Divergent grab resolved.** Rowid 9587 (`Veronica.Roth.The.Divergent`, indexer 16) was grabbed for Divergent
+  audio (`K0UczgEACAAJ`, book 1) and is the English trilogy: `1.Divergent`, `2.Insurgent`, `3.Allegiant` subfolders
+  (HarperAudio, Emma Galvin). That is the cross-volume class: the name gives no sign of three books.
+  - **Why it sat `Snatched`.** The post-processor's first pass looks for audio only at the download folder's top level.
+    The trilogy keeps each book in a subfolder, so it found "No valid file or archives found" (logged at debug only) and
+    left the row. The queue janitor retried the import at 07:25Z, 08:25Z and 10:25Z, then at 11:25Z its `bad_release` cell
+    deleted the SABnzbd history job. At 11:28Z LazyLibrarian's 6-hour `TASK_AGE` check found the job gone (progress 0) and
+    failed the row, so 9587 now blocks the release. Not an LL defect: refusing a three-book folder as book 1 is right
+    (recursing would import a trilogy part as book 1), so the post-processor is unchanged.
+  - **Imported book 1 only** (`f10_755_divergent.py`; backup `/config/lazylibrarian.db.pre-divergent-755-20261006`). The
+    household held no Divergent audio (the Swedish copy is in F10's hold), and `1.Divergent` is a clean book 1 (tracks
+    01/39 to 39/39, about 11.2 h). It went through LL's own alternate import (a folder named `LL.(K0UczgEACAAJ)`,
+    `cmd=importAlternate`): `AudioBooks/Veronica Roth/Divergent`, 39 mp3, audio `Open`. Audiobookshelf added it; books-sync
+    upserted it. The rest is held under `f10-755/usenet/`: the import's source copy and `3.Allegiant` as `duplicate`,
+    `2.Insurgent` and covers as `off_catalog`. The purge dry run reads 6,735 files, OK. These 148 manifest rows carry an
+    absolute `src` (the download sat outside the books root every other row is relative to).
+  - **The Divergent eBook was mislinked** to the "Four Divergent Stories - Omnibus" epub. It is re-pointed to
+    `EBooks/Veronica Roth/Divergent/Veronica Roth - Divergent.pdf` (title Divergent, 381 pages; backup
+    `/config/lazylibrarian.db.pre-divergent-ebook-755-20261006`). The Four epub stays; no LL record links it.
+- **~12:00Z, one more German edition held: The Serpent and the Wings of Night audio** (`drNVzwEACAAJ`, English record;
+  `f10_755_serpent.py`, backup `/config/lazylibrarian.db.pre-serpent-755-20261006`). Rowid 9550 (2026-10-05 22:36Z) imported
+  245 tracks "Kapitel N" (album "(Ungekürzt)", Hörbuch Hamburg / TIDE exklusiv, narrator Vanida Karun); the F10 sweep missed
+  it. Whole folder (249 files) held as `foreign_f10`, audio blanked and re-wanted, release blocked by `Failed` row 9596 (9550
+  under its link's title; 9550 stores "(01"). Audiobookshelf item `66eeb568` (no progress) deleted (Job
+  `hnet-755-abs-remove-serpent`), books-sync Job `hnet-755-books-sync-2` tombstoned 1. A scan of every LL-linked mp3's ID3
+  tags for foreign-edition markers found no other.
+  - **The overlay gap it showed is fixed** (haynes-ops #3433, live ~12:10Z, `verify-deployed.sh` OK): the MP3-scene rule
+    allows a format between source and language (`-AUDiOBOOK-WEB-MP3-DE-`, as in rowid 9542), and a German edition word
+    (`Ungekürzt`, `Ungekuerzt`, `Hörbuch`, `Hörspiel`) counts as a German tag after a one-step mojibake repair
+    (`UngekÃ¼rzt` slipped past `REJECT_AUDIO`, which also lacks `ungekuerzt`). Replay over 3,988 rows: 121 more tagged, all
+    German releases of 11 books, none English.
+- **Direct LL DB writes, recorded per #741:** the two blanks and the two `Failed` rows above; the Divergent eBook re-point;
+  the Serpent audio blank and `Failed` row 9596. The Divergent audio import is LL's own API.
+- **Hand re-wants:** `llOrphanWanted` may read up to 9 (the six below plus Queen Charlotte audio, the Atlantis Complex eBook
+  and the Serpent audio). Divergent audio is no longer wanted.
+- **Owed check (q), after the 2026-10-07 ~04:54Z backlog run** (LL DB `mode=ro`): for every `wanted` row with rowid > 9596 on a
   book whose `BookLang` is `en`, `lazylibrarian.resultlist.names_language(NZBtitle, BookName, BookSub, AuthorName)` is None;
   no such row's `(NZBprov, AuxInfo, release_key(NZBtitle))` equals that of an earlier `Failed` row; and the Israel Potter,
-  Queen Charlotte audio and Atlantis Complex eBook grabs, if any, are English.
+  Queen Charlotte audio, Atlantis Complex eBook and Serpent audio grabs, if any, are English.
 
 ## ▶ 2026-10-06 — v0.107.9 live: a failed grab stops reading `grabbed`, and LazyLibrarian unqueues what the app gives up (#734, #735 closed)
 
