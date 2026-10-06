@@ -48,7 +48,8 @@
     01/39 to 39/39, about 11.2 h). It went through LL's own alternate import (a folder named `LL.(K0UczgEACAAJ)`,
     `cmd=importAlternate`): `AudioBooks/Veronica Roth/Divergent`, 39 mp3, audio `Open`. Audiobookshelf added it; books-sync
     upserted it. The rest is held under `f10-755/usenet/`: the import's source copy and `3.Allegiant` as `duplicate`,
-    `2.Insurgent` and covers as `off_catalog`. The purge dry run reads 6,735 files, OK.
+    `2.Insurgent` and covers as `off_catalog`. The purge dry run reads 6,735 files, OK. These 148 manifest rows carry an
+    absolute `src` (the download sat outside the books root every other row is relative to).
   - **The Divergent eBook was mislinked** to the "Four Divergent Stories - Omnibus" epub. It is re-pointed to
     `EBooks/Veronica Roth/Divergent/Veronica Roth - Divergent.pdf` (title Divergent, 381 pages; backup
     `/config/lazylibrarian.db.pre-divergent-ebook-755-20261006`). The Four epub stays; no LL record links it.

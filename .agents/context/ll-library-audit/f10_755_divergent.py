@@ -6,7 +6,7 @@
 # complete book 1 (tracks 01/39 to 39/39, about 11.2 h), so only that part is imported, through LL's own alternate import (a
 # folder named "LL.(<bookid>)"). The rest of the download is held in the cross-volume holding folder for owed check (m):
 # the import's source copy and 3.Allegiant as `duplicate` (the library holds both), 2.Insurgent as `off_catalog` (LL's
-# Insurgent audio is Skipped); cover images as `off_catalog`. Manifest `src` paths are relative to /data/cephfs-hdd/data/. Run INSIDE the LazyLibrarian pod:
+# Insurgent audio is Skipped); cover images as `off_catalog`. Manifest `src` paths of these rows are ABSOLUTE (they sit outside the books root that every other row is relative to; the first run wrote them relative to /data/cephfs-hdd/data/ and they were rewritten to absolute the same day, backup /config/crossvolume-manifest.pre-755-abs-src-20261006.jsonl). Run INSIDE the LazyLibrarian pod:
 #   kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - [--go] < .agents/context/ll-library-audit/f10_755_divergent.py
 # Backup first: /config/lazylibrarian.db.pre-divergent-755-20261006.
 import os, sys, json, hashlib, time, re, sqlite3, configparser, urllib.request, urllib.parse
@@ -93,7 +93,7 @@ for src, rel, cat, cp, ev in held:
         s = src + '/' + f; d = H + SUB + rel + '/' + f; z = os.path.getsize(s); m = md5(s)
         os.makedirs(os.path.dirname(d), exist_ok=True)
         os.rename(s, d)
-        man.write(json.dumps({'op': 'hold', 'src': s.replace('/data/cephfs-hdd/data/', ''), 'dst': HR + SUB + rel + '/' + f, 'md5': m,
+        man.write(json.dumps({'op': 'hold', 'src': s, 'dst': HR + SUB + rel + '/' + f, 'md5': m,
                               'size': z, 'reason': TAG + ev, 'record': REC, 'ts': ts()}) + '\n')
         audio = f.lower().endswith(('.mp3', '.m4b', '.m4a', '.flac'))  # the purge checks a duplicate's counterpart by kind
         srt.write(json.dumps({'path': HR + SUB + rel + '/' + f, 'size': z, 'md5': m, 'category': cat if audio else 'off_catalog',
@@ -101,7 +101,7 @@ for src, rel, cat, cp, ev in held:
     os.rmdir(src)
 for x in (D, os.path.dirname(S)):
     os.rmdir(x)
-    man.write(json.dumps({'op': 'rmdir', 'src': x.replace('/data/cephfs-hdd/data/', ''), 'reason': TAG + 'emptied download folder',
+    man.write(json.dumps({'op': 'rmdir', 'src': x, 'reason': TAG + 'emptied download folder',
                           'record': '', 'ts': ts()}) + '\n')
 man.close(); srt.close()
 print('held', sum(len(os.listdir(H + SUB + rel)) for _, rel, *_ in held), 'files; removed', D, 'and', os.path.dirname(S))
