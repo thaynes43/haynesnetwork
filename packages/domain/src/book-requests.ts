@@ -1017,6 +1017,12 @@ export interface BookRequestDetailView {
   llBookId: string | null;
   kapowarrVolumeId: string | null;
   lastSearchedAt: Date | null;
+  /**
+   * Issue #759 — a collection want's OWN format (its collection's source: kavita ⇒ ebook, audiobookshelf ⇒ audiobook).
+   * Its other format sits `landed` by construction and holds nothing, so the detail shows only this one. Null for a
+   * goodreads or pairing want.
+   */
+  collectionFormat: 'ebook' | 'audiobook' | null;
 }
 
 export async function getBookRequestDetail(input: {
@@ -1050,6 +1056,7 @@ export async function getBookRequestDetail(input: {
       matchedCoverRef: booksItems.coverRef,
       // DESIGN-038 D-13 — the collection this want belongs to (origin='collection'), for its attribution.
       collectionTitle: booksCollections.title,
+      collectionSource: booksCollections.source,
     })
     .from(bookRequests)
     .leftJoin(integrationShelfItems, eq(bookRequests.shelfItemId, integrationShelfItems.id))
@@ -1125,6 +1132,10 @@ export async function getBookRequestDetail(input: {
     llBookId: row.llBookId,
     kapowarrVolumeId: row.kapowarrVolumeId,
     lastSearchedAt: row.lastSearchedAt,
+    collectionFormat:
+      row.origin === 'collection' && row.collectionSource
+        ? collectionFormatForSource(row.collectionSource)
+        : null,
   };
 }
 
@@ -2078,8 +2089,9 @@ export async function getCollectionWantedBookRequests(input: {
                                                 WHERE c3.id = ${input.collectionId})))`,
         eq(bookRequests.origin, 'collection'),
         isNull(bookRequests.matchedBooksItemId),
-        // The collection's OWN format must not have landed (a landed want is held now — reconciled next run).
-        sql`CASE WHEN ${booksCollections.source} = 'audiobookshelf' THEN ${bookRequests.audioStatus} ELSE ${bookRequests.ebookStatus} END <> 'landed'`,
+        // Issue #759 — an own format that reads `landed` is NOT hidden: a collection want exists only while Libretto
+        // lists the member missing from the library, so `landed` here means LazyLibrarian downloaded it and the library
+        // cannot show it yet (`collection-want-downloaded.ts`). The tile stays, labelled Downloaded.
         // E-1 read guard — an ACTIVE pairing want for the same LL identity + format supersedes this
         // tile (its anchor already renders as a library card wearing the want on its coverage badge).
         sql`NOT EXISTS (

@@ -8,9 +8,13 @@
 //   • per-wall format legs: ebook ⇒ Books, audiobook ⇒ Audiobooks, comic ⇒ Comics; matched wants and
 //     landed formats never compose a Wanted tile.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { bookRequests, booksCollections } from '@hnet/db';
 import {
   linkIntegration,
   syncBooks,
+  syncBooksCollections,
+  syncCollectionWants,
   syncGoodreadsIntegration,
   type EnrichedShelfItem,
 } from '@hnet/domain';
@@ -283,5 +287,65 @@ describe('books.wantedDetail — the Movies/TV parity detail page surface', () =
     expect(detail.parked).toBe(true);
     expect(detail.formats.map((f) => f.format)).toEqual(['comic']);
     expect(detail.formats[0]!.searchable).toBe(false); // no Kapowarr volume ⇒ nothing to fire
+  });
+});
+
+// Issue #759 — a collection want's detail shows only its collection's format (the other sits `landed` by construction
+// and held nothing, yet read "Have it"), and a `landed` own format reads downloaded, not "Have it".
+describe('books.wantedDetail — a collection want', () => {
+  async function seedCollectionWant(ebookLanded: boolean): Promise<string> {
+    await syncBooksCollections({
+      db: t.db,
+      collections: [
+        {
+          source: 'kavita',
+          externalId: 'c-759',
+          kind: 'collection',
+          libraryId: null,
+          title: 'The Inheritance Cycle',
+          itemCount: 0,
+          ordered: false,
+          createdBy: 'libretto',
+          librettoRecipeId: 'the-inheritance-cycle',
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+      ],
+      scopedFamilies: [],
+    });
+    const [collection] = await t.db
+      .select({ id: booksCollections.id })
+      .from(booksCollections)
+      .where(eq(booksCollections.externalId, 'c-759'));
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: collection!.id,
+      format: 'ebook',
+      members: [{ memberRef: 'isbn:eragon', title: 'Eragon', author: null, llBookId: 'llEragon' }],
+    });
+    const [want] = await t.db
+      .select({ id: bookRequests.id })
+      .from(bookRequests)
+      .where(eq(bookRequests.collectionId, collection!.id));
+    await t.db
+      .update(bookRequests)
+      .set({ ebookStatus: ebookLanded ? 'landed' : 'requested' })
+      .where(eq(bookRequests.id, want!.id));
+    return want!.id;
+  }
+
+  it('lists only the collection’s format; a landed one is downloaded, not searchable', async () => {
+    const id = await seedCollectionWant(false);
+    const wanted = await ownerCaller.books.wantedDetail({ requestId: id });
+    expect(wanted.formats).toEqual([
+      { format: 'ebook', status: 'requested', searchable: true, downloaded: false },
+    ]);
+
+    await seedCollectionWant(true);
+    const downloaded = await ownerCaller.books.wantedDetail({ requestId: id });
+    expect(downloaded.formats).toEqual([
+      { format: 'ebook', status: 'landed', searchable: false, downloaded: true },
+    ]);
   });
 });

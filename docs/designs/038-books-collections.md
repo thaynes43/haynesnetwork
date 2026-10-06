@@ -1,7 +1,7 @@
 # DESIGN-038: Books collections mirror — the Books/Audiobooks/Comics Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-06 (D-13 amendment, issue #759: each collection reads its own target's missing list). Prior: 2026-10-06 (D-13 amendment, issue #735: a collection want given up releases its LazyLibrarian book). Prior: 2026-10-05 (D-13 amendment, issue #719: a collection want on a non-English LazyLibrarian book asks for the English edition). Prior: 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
+- **Last updated:** 2026-10-06 (D-13 amendment, issue #759: a downloaded want the library cannot show reads Downloaded). Prior: 2026-10-06 (D-13 amendment, issue #759: each collection reads its own target's missing list). Prior: 2026-10-06 (D-13 amendment, issue #735: a collection want given up releases its LazyLibrarian book). Prior: 2026-10-05 (D-13 amendment, issue #719: a collection want on a non-English LazyLibrarian book asks for the English edition). Prior: 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
   force-search parks a want on another work's book). Prior: 2026-07-20 (**ADR-076 — format-agnostic collections**: D-05 wall mapping → the comic
   partition (the three-way majority rule retires with the Audiobooks wall) + recipe-id twin MERGE; D-11/D-12
   the `cat=` token is now EMITTED by Libretto (L1 LIVE — recipe-authored categories; L2 agent-set stays the
@@ -466,6 +466,16 @@ composed-Wanted idiom, now collection-scoped.
 >
 > What is left after both is read row by row in the audit note: LazyLibrarian holding a format Kavita cannot open, a
 > LazyLibrarian book that is another work, and a library title that differs from the member's in words.
+
+> **Amendment 2026-10-06 (issue #759, later — Downloaded).** A collection want whose own format LazyLibrarian has
+> downloaded, but the library cannot show (Kavita opens epub and pdf only; LazyLibrarian took a `.mobi`), reads `landed`
+> (the rule is DESIGN-028's amendment of this date). The "Read + drill render" bullet above changes for it:
+> `getCollectionWantedBookRequests` no longer hides a want whose own format reads `landed`. Such a want is still missing
+> from the collection, so its tile stays, and its badge reads **Downloaded** (blue; tooltip "Downloaded, not in the
+> library yet") in place of Wanted (`wantedBadge`, the wire's `downloaded` flag). The wanted-detail page lists only the
+> collection's own format: the other one sits `landed` by construction, holds nothing, and used to read "Have it" in the
+> row and the hero. A downloaded format reads "Downloaded, not in the library yet" and the hero Downloaded. Nothing
+> searches a `landed` format, so no Force Search is offered on it.
 
 ## Alternatives considered
 
