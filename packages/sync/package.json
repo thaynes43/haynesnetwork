@@ -25,12 +25,14 @@
     "@hnet/metrics": "workspace:*",
     "@hnet/plex": "workspace:*",
     "@hnet/watch": "workspace:*",
-    "drizzle-orm": "^0.36.4"
+    "drizzle-orm": "^0.36.4",
+    "pg": "^8.22.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@hnet/test-utils": "workspace:*",
     "@types/pg": "^8.11.10",
-    "pg": "^8.13.1",
     "tsx": "^4.21.0",
     "vitest": "^4.1.6"
   }

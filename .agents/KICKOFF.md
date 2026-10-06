@@ -92,6 +92,10 @@ The app deploys via the **sibling Flux GitOps repo** `../../haynes-ops` (cluster
    "haynesnetwork" not found`; corrected 2026-09-22, it had sent every reader down that hole).
 4. Verify: `kubectl -n frontend rollout status deploy/haynesnetwork-main` (the deployment carries the
    `-main` controller suffix); health at `/api/health`.
+5. **Owed checks (DESIGN-053).** A check the deploy leaves for later is a row in `.agents/owed-checks.yaml`
+   (id `OC-NNN`, `due` in UTC, `owner`, the exact query, `auto` when it is a read-only query), added in the
+   deploy record's docs PR; the HANDOFF block names the row ids. No lettered "(x)" items in HANDOFF prose.
+   Record a result in the row (`status` + a dated `evidence` line), not only in HANDOFF.
 
 **Local merge gate (matches CI — run before every PR):**
 `pnpm lint && pnpm lint:css && pnpm typecheck && pnpm test && pnpm build`. Iterate one package
@@ -174,6 +178,9 @@ types **and** SQL CHECK.
 - `.agents/plans/README.md` — the queue mechanics + per-plan loop.
 - `.agents/plans/NNN-*.md` — the plans themselves (each self-contained + executable).
 - `.agents/HANDOFF.md` — current build state / resume point (keep it current as you finish plans).
+- `.agents/owed-checks.yaml` — owed post-deploy checks (DESIGN-053). **At session start** read the open
+  `owed-checks` GitHub issue (overdue rows) and the rows due in the next day; the runner's verdicts are the
+  `owed_check` lines in Loki (`{namespace="downloads", container="main", pod=~"owed-checks-.*"}`).
 - `.agents/context/2026-07-05-backlog-recon.md` — consolidated backlog + the Restore explanation.
 - `.agents/plans/TODO.md` — the owner's original brain dump (source of 002–006).
 - `.agents/plans/radarr-fileless-backlog.md` — 4,008 deleted items to import into the Ledger (005).

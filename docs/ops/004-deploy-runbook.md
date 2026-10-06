@@ -139,6 +139,9 @@ tag in the HelmRelease and committing to `haynes-ops`.
    `tag:` under `controllers.main.initContainers.migrate.image` (the `&mainImage` anchor) —
    e.g. `v0.3.1` → `vX.Y.Z`. The `*mainImage` alias reuses it for the `app` container and
    **both** sync CronJobs, so one edit moves the whole deployment.
+   In the same commit, set the same tag on the owed-check runner,
+   `kubernetes/main/apps/downloads/owed-checks/app/cronjob.yaml` (DESIGN-053 D-08: it runs the app image in
+   another namespace, so the anchor cannot reach it).
 2. Commit and push to `haynes-ops` `main`.
 3. **Flux reconciles** (the `haynesnetwork` Kustomization polls every 30m; force it):
 
@@ -178,6 +181,9 @@ Confirm the running image is the tag you set:
 kubectl -n frontend get deploy/haynesnetwork-main \
   -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
 ```
+
+**Owed checks:** a check this deploy leaves for later is a row in `.agents/owed-checks.yaml` (DESIGN-053 D-07),
+added with the deploy record; not a lettered item in HANDOFF.
 
 **MCP tool changes:** after a deploy that adds, removes or changes any MCP tool (its name, description or
 parameters), reload Home Assistant's "Watch history" entry (OPS-015 §8: HA loads the tool list only at entry

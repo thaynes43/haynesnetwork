@@ -1,0 +1,679 @@
+# Owed checks: the post-deploy checks a deploy record leaves for later (DESIGN-053).
+#
+# One row per check. A deploy record ADDS ROWS HERE instead of writing lettered "(x)" items into HANDOFF prose; a session
+# that runs a check RECORDS THE RESULT HERE (status + a dated evidence line) in a docs PR merged to main. Ids are stable
+# and never reused: take the next OC-NNN.
+#
+#   id, title, opened        OC-NNN; what is checked; the day the check was written
+#   legacy                   the HANDOFF letter the check had before this file, if any
+#   after, not_before        the event the check follows, in words; and the UTC instant its automated checks start
+#   due                      UTC instant the result must be recorded by. A pending row past it is OVERDUE: the GitHub
+#                            Action opens or updates the "Owed checks overdue" issue, and Loki fires OwedCheckOverdue.
+#                            A check waiting on an event that has not happened gets a review date; moving it is an
+#                            evidence line that says why.
+#   owner                    the session or agent kind that runs it
+#   status                   pending | passed | failed | waived (failed names its follow-up; non-pending needs evidence)
+#   check                    the exact check by hand: query or command and the expected result
+#   auto, auto_covers        read-only checks the in-cluster runner (CronJob owed-checks, namespace downloads) runs every
+#                            hour once not_before has passed; `all` if they cover the whole check, `part` if not.
+#                            source: app-db (Postgres replica, read-only session) | ll-db (LazyLibrarian SQLite,
+#                            mode=ro) | loki | prometheus (instant metric queries; `$SINCE` = the range since not_before,
+#                            or since the check's own `since`; `at` pins the evaluation instant). expect: rows /
+#                            min_rows / max_rows / eq / min / max / paths_exist. mismatch: fail (a defect) | wait (not
+#                            happened yet). Results are Loki lines `owed_check_result`; a fail fires OwedCheckFailing.
+#   evidence, links          dated results, newest last; prs / issues / the HANDOFF block / the follow-up
+#
+# History before 2026-10-06 (checks (a), (c), (f), (g) and earlier) stays in HANDOFF.
+version: 1
+checks:
+  - id: OC-001
+    legacy: (b)
+    title: The first janitor failed-download retry with Sonarr and Radarr Redownload off
+    opened: 2026-10-03
+    after: the first natural Sonarr or Radarr download failure after Redownload went off (2026-10-03 21:25:26Z)
+    not_before: 2026-10-03T21:26:00Z
+    due: 2026-10-13T12:00:00Z
+    owner: haynesnetwork coordinator (janitor ladder, PLAN-065)
+    status: pending
+    check: |
+      Loki {namespace="frontend", app="haynesnetwork"} |= "queue-cleanup failed downloads": the first line after a
+      natural failure shows "arrRetries":false and `searched` no more than `failures`. The retry row (OPS-018 section 3
+      SQL) is blocklisted_searched / done, at most one per title per run. Record it in PLAN-065's ladder log.
+      By hand: `searched` against `failures` on the line, and the ladder log entry.
+    auto_covers: part
+    auto:
+      - name: a retry ran with Redownload off
+        source: loki
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-queue-cleanup-.*"} |= "queue-cleanup failed downloads" |= "\"arrRetries\":false" [$SINCE]))
+        expect: {min: 1}
+        mismatch: wait
+      - name: a retry searched and finished
+        source: app-db
+        query: |
+          select count(*) as n from arr_queue_cleanup_actions
+          where queue_item_id is null and instance in ('sonarr', 'radarr')
+            and action = 'blocklisted_searched' and outcome = 'done' and created_at > '2026-10-03T21:26:00Z'
+        expect: {min: 1}
+        mismatch: wait
+      - name: at most one retry per title per run
+        source: app-db
+        query: |
+          select instance, target_id, date_trunc('hour', created_at) as run_hour, count(*) as n
+          from arr_queue_cleanup_actions
+          where queue_item_id is null and instance in ('sonarr', 'radarr')
+            and action = 'blocklisted_searched' and created_at > '2026-10-03T21:26:00Z'
+          group by 1, 2, 3 having count(*) > 1
+        expect: {rows: 0}
+    evidence:
+      - "2026-10-04 23:55Z still waiting: the only line in 48 h is the 2026-10-03 21:25Z Radarr one, written before Redownload went off."
+    links:
+      handoff: 2026-10-03 (evening) and 2026-10-03 (late) blocks
+      prs: [haynesnetwork#647]
+
+  - id: OC-002
+    legacy: (d)
+    title: The Google Books omnibus guard holds on a live resolve
+    opened: 2026-10-03
+    after: a parked collection want (Odd Interlude 1 and 2, Silo Stories) or the ReDawn want resolves
+    not_before: 2026-10-04T07:00:00Z
+    due: 2026-10-13T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      Odd Interlude 1/2 and Silo Stories never come back as a bundle; the unparked ReDawn collection want (e8e8edf2,
+      isbn:9780593566626) resolves to yo5CEAAAQBAJ or nothing, never wnVOEAAAQBAJ (Skyward Flight. The Collection);
+      parked pairing wants keep a NULL id (#660); the 21 bundle formats set Skipped on 2026-10-03 still read Skipped.
+      SQL: select origin, title, ll_book_id, updated_at from book_requests where unroutable_reason = 'wrong_volume';
+      look each non-null id up in LazyLibrarian (cmd=getAllBooks). By hand: the LazyLibrarian title of any id an Odd
+      Interlude or Silo Stories want resolves to. The ReDawn want may be dropped as a duplicate once it resolves to
+      the pairing want's yo5CEAAAQBAJ; that is a pass too.
+    auto_covers: part
+    auto:
+      - name: the 21 bundle formats still read Skipped
+        source: ll-db
+        query: |
+          select BookID, Status, AudioStatus from books
+          where (BookID in ('txDiDwAAQBAJ','IxyOAwAAQBAJ','u3AnzwEACAAJ','1t0Q0QEACAAJ','ihnjDwAAQBAJ') and Status <> 'Skipped')
+             or (BookID in ('wnVOEAAAQBAJ','y984LgEACAAJ','SqeBzwEACAAJ','muR1swEACAAJ','PgIMzwEACAAJ','Xtr3yQEACAAJ',
+                            'PcyOEAAAQBAJ','HvWkjsRHnD4C','BMgQ0QEACAAJ','pk_VsgEACAAJ','m5wG0QEACAAJ','CyAJMAEACAAJ',
+                            '2MFMAAAACAAJ','K3wuAAAACAAJ','lrQBGwAACAAJ','ihnjDwAAQBAJ') and AudioStatus <> 'Skipped')
+        expect: {rows: 0}
+      - name: no want points at Skyward Flight. The Collection
+        source: app-db
+        query: select left(id::text, 8) as id, origin, title from book_requests where ll_book_id = 'wnVOEAAAQBAJ'
+        expect: {rows: 0}
+      - name: parked wrong_volume pairing wants keep a NULL id
+        source: app-db
+        query: |
+          select left(id::text, 8) as id, title, ll_book_id from book_requests
+          where origin = 'pairing' and unroutable_reason = 'wrong_volume' and ll_book_id is not null
+        expect: {rows: 0}
+      - name: the ReDawn collection want has resolved
+        source: app-db
+        query: select ll_book_id from book_requests where id::text like 'e8e8edf2%' and ll_book_id is not null
+        expect: {min_rows: 1}
+        mismatch: wait
+      - name: the ReDawn collection want resolved to ReDawn
+        source: app-db
+        query: |
+          select ll_book_id from book_requests
+          where id::text like 'e8e8edf2%' and ll_book_id is not null and ll_book_id <> 'yo5CEAAAQBAJ'
+        expect: {rows: 0}
+    evidence:
+      - "2026-10-04 23:55Z no violation; the guard not yet exercised by a resolve (Google 503s, then Libretto 429)."
+      - "2026-10-05 12:10Z no violation; no want seen resolving to a bundle or to ReDawn; all 21 bundle formats Skipped."
+    links:
+      handoff: 2026-10-03 (late) block
+      prs: [haynesnetwork#658, libretto#17]
+      issues: [haynesnetwork#661]
+
+  - id: OC-003
+    legacy: (e)
+    title: "The three repaired #661 wants resolve to their own book, never a box set (Murtagh still unresolved)"
+    opened: 2026-10-04
+    after: the format-pairing mint reaches Murtagh (328548eb), which waits on the Mint Backoff
+    due: 2026-10-14T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      select left(id::text,8) id, title, author, ll_book_id, unroutable_reason, audio_status, updated_at from
+      book_requests where id::text like any(array['4c3d07f2%','328548eb%','24e155f8%']): The Tales of Beedle the Bard,
+      Murtagh (Christopher Paolini) and The Lays of Beleriand each hold an ll_book_id, never Xtr3yQEACAAJ (Hogwarts
+      Library box set), CyAJMAEACAAJ (Inheritance Cycle box set) or 2MFMAAAACAAJ (Complete History of Middle-earth).
+      By hand: Murtagh's LazyLibrarian title (cmd=getAllBooks) is Murtagh. A box set means park it again
+      (unroutable_reason 'wrong_volume', id cleared) and reopen #661.
+    auto_covers: part
+    auto:
+      - name: Murtagh's want holds an id
+        source: app-db
+        query: select ll_book_id from book_requests where id::text like '328548eb%' and ll_book_id is not null
+        expect: {min_rows: 1}
+        mismatch: wait
+      - name: none of the three is on a box set
+        source: app-db
+        query: |
+          select left(id::text, 8) as id, ll_book_id from book_requests
+          where id::text like any(array['4c3d07f2%', '328548eb%', '24e155f8%'])
+            and ll_book_id in ('Xtr3yQEACAAJ', 'CyAJMAEACAAJ', '2MFMAAAACAAJ')
+        expect: {rows: 0}
+    evidence:
+      - "2026-10-04 23:55Z Beedle the Bard T5AJtgEACAAJ and Lays of Beleriand KKxagxSj6jkC right; Murtagh NULL."
+      - "2026-10-05 12:10Z Murtagh still NULL (the mint budget has not reached it); no box-set id anywhere in book_requests."
+      - "2026-10-06 13:50Z Murtagh still NULL, mint_backoff_count 1 (one Google Books miss, Mint Backoff since v0.107.10)."
+    links:
+      handoff: 2026-10-04 v0.105.3 block
+      issues: [haynesnetwork#661, haynesnetwork#740]
+
+  - id: OC-004
+    legacy: (h) recheck
+    title: The first daily Google Books quota trip names the app's own project (841331826441)
+    opened: 2026-10-05
+    after: the first gb_quota_trip line whose kind is not minute
+    not_before: 2026-10-05T12:10:00Z
+    due: 2026-10-12T18:00:00Z
+    owner: "haynesnetwork coordinator (books, #674)"
+    status: pending
+    check: |
+      Loki {namespace="frontend", app="haynesnetwork"} |= "gb_quota_trip" with kind not "minute": its project_number is
+      841331826441 (the app's key), not Libretto's 585629606395. A match with Libretto's means the two share a key,
+      against the 2026-10-05 reading; note the result on #674.
+    auto_covers: all
+    auto:
+      - name: a daily trip line exists
+        source: loki
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-(format-pairing|goodreads)-.*"} |= "gb_quota_trip" != "\"kind\":\"minute\"" [$SINCE]))
+        expect: {min: 1}
+        mismatch: wait
+      - name: every daily trip names project 841331826441
+        source: loki
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-(format-pairing|goodreads)-.*"} |= "gb_quota_trip" != "\"kind\":\"minute\"" != "841331826441" [$SINCE]))
+        expect: {eq: 0}
+    evidence:
+      - "2026-10-05 12:10Z three minute trips, all project 841331826441; no daily trip yet."
+    links:
+      handoff: 2026-10-05 v0.107.0 block
+      issues: [haynesnetwork#674]
+
+  - id: OC-005
+    legacy: (i)
+    title: "A week of gb_quota_day_closed readings, then revisit #674's options A/B/C"
+    opened: 2026-10-05
+    not_before: 2026-10-12T07:40:00Z
+    due: 2026-10-12T18:00:00Z
+    owner: "haynesnetwork coordinator (books, #674)"
+    status: pending
+    check: |
+      Seven gb_quota_day_closed lines (quota-days 2026-10-04 to 2026-10-10 at least) in Loki
+      {namespace="frontend", app="haynesnetwork"} |= "gb_quota_day_closed" | json, read together with the re-add drain
+      (OC-006). Then revisit #674 options A/B/C. By hand: the revisit; a policy choice goes to the owner as a question.
+    auto_covers: part
+    auto:
+      - name: seven quota-days closed since 2026-10-05
+        source: loki
+        since: 2026-10-05T07:00:00Z
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "gb_quota_day_closed" [$SINCE]))
+        expect: {min: 7}
+        mismatch: wait
+    links:
+      handoff: 2026-10-05 v0.107.0 block
+      issues: [haynesnetwork#674]
+
+  - id: OC-006
+    legacy: (j)
+    title: "The #668 re-add drain empties (pairing and collection)"
+    opened: 2026-10-04
+    after: each 04:54Z LazyLibrarian backlog run, as the shared Google Books quota allows
+    due: 2026-10-13T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      No pairing or collection request with a `missing` format waits for its re-add (ll_rerequested_at IS NULL AND
+      ll_rerequest_failures < 3). By hand after each backlog run, check (f) of the 2026-10-04 v0.106.0 block: the run
+      searched each item at most once per indexer (Prowlarr increase(prowlarr_indexer_queries_total[20m]) at ~05:10Z
+      against the item count in LazyLibrarian's log).
+    auto_covers: part
+    auto:
+      - name: no pairing or collection want waits for its re-add
+        source: app-db
+        query: |
+          select origin, count(*) as n from book_requests
+          where origin in ('pairing', 'collection') and (ebook_status = 'missing' or audio_status = 'missing')
+            and ll_rerequested_at is null and ll_rerequest_failures < 3
+          group by origin
+        expect: {rows: 0}
+        mismatch: wait
+    evidence:
+      - "2026-10-05 pairing 619 and collection 7 waiting."
+      - "2026-10-06 09:30Z still waiting: pairing 509, collection 7 (goodreads 3)."
+      - "2026-10-06 13:50Z still waiting: pairing 484, collection 6 (goodreads 2)."
+    links:
+      handoff: 2026-10-04 v0.106.0 + v0.106.1 block
+      issues: [haynesnetwork#668, haynesnetwork#674]
+
+  - id: OC-007
+    legacy: (k)
+    title: Assistant to the Villain book 1 eBook gets a book-1 release, not a later volume
+    opened: 2026-10-05
+    after: the 2026-10-06 04:54Z LazyLibrarian backlog run
+    due: 2026-10-06T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: passed
+    check: |
+      LL DB mode=ro: select NZBtitle, NZBprov, Status from wanted where BookID='dGy0EAAAQBAJ' and AuxInfo='eBook'
+      order by NZBdate. The grab is a book-1 release, not 0N / [... 0N] of a later volume.
+    evidence:
+      - "2026-10-06 09:30Z passed: rowid 9583 \"Hannah Nicole Maehrer - Assistant to the Villain\", Processed; only other row 9460 (the old Failed block)."
+    links:
+      handoff: 2026-10-06 owed-checks run block
+      issues: [haynesnetwork#686, haynesnetwork#688, haynesnetwork#743]
+
+  - id: OC-008
+    legacy: (l)
+    title: The 19 cross-volume records get no grab; YVfJMgEACAAJ and ik6xzgEACAAJ stay Skipped; their file links resolve
+    opened: 2026-10-05
+    after: the 2026-10-06 04:54Z backlog run and 09:10Z library scan
+    due: 2026-10-06T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: passed
+    check: |
+      LL DB mode=ro: select BookID, NZBtitle, Status from wanted where rowid > 9539 and BookID in (<the ids in
+      .agents/context/2026-10-05-crossvolume-repair.tsv>) returns no row; YVfJMgEACAAJ Skipped for both formats with no
+      file; ik6xzgEACAAJ eBook Skipped; every BookFile/AudioFile of the records points at an existing file.
+    evidence:
+      - "2026-10-06 09:20Z passed: no wanted row after 9539 for the ids; both records Skipped with no file; all 32 pointers exist. The 09:10Z scan's audiobook half was cut off by a LazyLibrarian restart, so the pointers are rechecked after the next full scan (OC-020)."
+    links:
+      handoff: 2026-10-06 owed-checks run block
+      issues: [haynesnetwork#743]
+      followup: OC-020
+
+  - id: OC-009
+    legacy: (m)
+    title: Delete the cross-volume holding folder after confirming no one reported a missing book
+    opened: 2026-10-05
+    not_before: 2026-10-12T00:00:00Z
+    due: 2026-10-13T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      First confirm no missing-book report since 2026-10-05: no GitHub issue or HANDOFF note names one, and
+      select title_snapshot, created_at from book_fix_requests where created_at >= '2026-10-05' names none of the held
+      titles. Then the dry run (read its counts; 6,735 files after the #755 Divergent hold) and the delete:
+      kubectl exec -i -n downloads deploy/lazylibrarian -c app -- python3 - < .agents/context/ll-library-audit/crossvolume_purge.py
+      then the same with `python3 - --go`. If a book was reported missing, restore it from the manifest instead (HANDOFF
+      2026-10-05 block). An action, not a query: no automated check.
+    links:
+      handoff: "2026-10-04 v0.106.0 block (2026-10-05 entries) and the #755 block"
+
+  - id: OC-010
+    legacy: (n)
+    title: ik6xzgEACAAJ (German Chroniken omnibus) gets no new want and no request points at it
+    opened: 2026-10-05
+    after: the 2026-10-06 04:54Z backlog run
+    due: 2026-10-06T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: passed
+    check: |
+      LL DB mode=ro: ik6xzgEACAAJ reads Skipped for both formats with no new wanted row (rowid > 9540); app DB:
+      select count(*) from book_requests where ll_book_id = 'ik6xzgEACAAJ' is 0.
+    evidence:
+      - "2026-10-06 09:30Z passed: no wanted row after 9540, both formats Skipped, 0 requests point at it."
+    links:
+      handoff: 2026-10-06 owed-checks run block
+      issues: [haynesnetwork#693, haynesnetwork#743]
+
+  - id: OC-011
+    legacy: (o)
+    title: YVfJMgEACAAJ gets no new want; pairing_resolve_rejected stays rare
+    opened: 2026-10-05
+    after: the 2026-10-06 04:54Z backlog run
+    due: 2026-10-06T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: passed
+    check: |
+      LL DB mode=ro: no wanted row with rowid > 9539 for YVfJMgEACAAJ; Loki {namespace="frontend"} |=
+      "pairing_resolve_rejected" stays rare (a steady stream for one title means the Volume Check refuses a right book).
+    evidence:
+      - "2026-10-06 09:30Z passed: no wanted row after 9539, no request points at it; no pairing_resolve_rejected line in 24 h, rejectedResolves 0 in all 27 runs."
+    links:
+      handoff: 2026-10-06 owed-checks run block
+      issues: [haynesnetwork#693, haynesnetwork#743]
+
+  - id: OC-012
+    legacy: (p)
+    title: The F10 re-wants grab English editions; the blocked releases are not grabbed again
+    opened: 2026-10-05
+    after: the 2026-10-06 04:54Z backlog run
+    due: 2026-10-06T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: failed
+    check: |
+      LL DB mode=ro: select rowid, NZBtitle, Status from wanted where rowid > 9549 and BookID in
+      ('BL6LDQAAQBAJ','mPGNzQEACAAJ') are English, as is any FOqzEAAAQBAJ (Murtagh) audio grab; no BookFile/AudioFile
+      points at a missing file; every wanted row after 9549 is on an English or unknown BookLang and names no foreign
+      edition; the blocked releases (rowids 9552 to 9558) are not grabbed again.
+    evidence:
+      - "2026-10-06 09:30Z FAILED on Israel Potter: rowid 9590 grabbed a Danish release (DANiSH.RETAiL), SABnzbd failed it as Duplicate NZB, nothing imported. The F10 block row 9549 stored the title with spaces, the grab used dots, so blacklist_failed missed it (#755)."
+      - "2026-10-06 ~11:20Z #755 fixed (haynes-ops #3432, #3433): blocks match any spelling, a foreign-tagged release loses the match for an English book. 9588 (Murtagh, WEB-SE) and 9589 (Queen Charlotte) were Swedish grabs too; held and blocked. Rechecked by OC-013."
+    links:
+      handoff: "2026-10-06 owed-checks run block and the #755 block"
+      issues: [haynesnetwork#755, haynesnetwork#743]
+      followup: OC-013
+
+  - id: OC-013
+    legacy: (q)
+    title: "After #755, no LazyLibrarian grab on an English book names a foreign language or repeats a failed release"
+    opened: 2026-10-06
+    after: the 2026-10-07 ~04:54Z LazyLibrarian backlog run
+    not_before: 2026-10-07T05:30:00Z
+    due: 2026-10-07T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      In the LazyLibrarian pod (it imports the deployed #755 overlay; read-only, mode=ro):
+      kubectl exec -i -n downloads deploy/lazylibrarian -c app -- sh -c 'cd /app/lazylibrarian && PYTHONDONTWRITEBYTECODE=1 python3 - 9596' < .agents/context/ll-library-audit/owed_check_755_grabs.py
+      Expect exit 0: for every wanted row with rowid > 9596 on a book whose BookLang is English,
+      names_language(NZBtitle, BookName, BookSub, AuthorName) is None and (NZBprov, AuxInfo, release_key(NZBtitle))
+      matches no earlier Failed row. The Israel Potter eBook, Queen Charlotte audio, Atlantis Complex eBook and Serpent
+      audio grabs, if any, are English (the script lists them; check the files of any that imported). Manual: the
+      language rules live in the overlay, which the runner cannot import.
+    links:
+      handoff: "2026-10-06 #755 block"
+      issues: [haynesnetwork#755]
+      prs: [haynes-ops#3432, haynes-ops#3433]
+
+  - id: OC-014
+    legacy: (r)
+    title: The first format-pairing run with a fresh Google Books slice mints fresh wants first
+    opened: 2026-10-06
+    after: the 2026-10-07 07:33Z format-pairing run (the first after the 07:00Z quota roll)
+    not_before: 2026-10-07T07:45:00Z
+    due: 2026-10-07T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      The 07:3xZ format-pairing "sync finished" line: formatPairing.attempted at most 100 with fresh items first
+      (minted above 0), inBackoff at least 50, skippedQuota 0. After 12:32Z the 50 wants of 2026-10-06 are due; each
+      miss moves to mint_backoff_count 2 (3 days). By hand: the 12:32Z step (select count(*) from book_requests where
+      mint_backoff_count = 2 and mint_backoff_until > now()).
+    auto_covers: part
+    auto:
+      - name: the 07:32Z run finished
+        source: loki
+        at: 2026-10-07T07:45:00Z
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" [15m]))
+        expect: {min: 1}
+      - name: it minted fresh wants
+        source: loki
+        at: 2026-10-07T07:45:00Z
+        query: max(max_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" | json | __error__="" | unwrap formatPairing_minted [15m]))
+        expect: {min: 1}
+      - name: it attempted at most 100
+        source: loki
+        at: 2026-10-07T07:45:00Z
+        query: max(max_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" | json | __error__="" | unwrap formatPairing_attempted [15m]))
+        expect: {max: 100}
+      - name: at least 50 wants sat in the Mint Backoff
+        source: loki
+        at: 2026-10-07T07:45:00Z
+        query: min(min_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" | json | __error__="" | unwrap formatPairing_inBackoff [15m]))
+        expect: {min: 50}
+      - name: no candidate skipped for quota
+        source: loki
+        at: 2026-10-07T07:45:00Z
+        query: max(max_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" | json | __error__="" | unwrap formatPairing_skippedQuota [15m]))
+        expect: {max: 0}
+    links:
+      handoff: 2026-10-06 v0.107.10 + v0.107.11 block
+      issues: [haynesnetwork#740]
+      prs: [haynesnetwork#760, haynesnetwork#765]
+
+  - id: OC-015
+    legacy: (s)
+    title: On 2026-10-07 pairing no longer spends its whole Google Books slice, and the re-add backlog shrinks
+    opened: 2026-10-06
+    after: the 2026-10-08 07:32Z gb_quota_day_closed line for quota-day 2026-10-07
+    not_before: 2026-10-08T08:00:00Z
+    due: 2026-10-08T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      gb_quota_day_closed for quota-day 2026-10-07 shows pairing_calls well under 700 (here: at most 650; the last
+      two days read 697 of 700); the late format-pairing run (~23:32Z) shows skippedBudget 0; llRerequestDeferred falls
+      from about 456 (2026-10-06 13:32Z) below 450. If the slice is still spent, read which candidates spend it
+      (pairing_resolve_rejected, unmintable) before changing the schedule.
+    auto_covers: all
+    auto:
+      - name: one quota-day line for 2026-10-07
+        source: loki
+        at: 2026-10-08T08:00:00Z
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "gb_quota_day_closed" |= "\"quota_day\":\"2026-10-07\"" [2h]))
+        expect: {eq: 1}
+      - name: pairing used at most 650 of its 700
+        source: loki
+        at: 2026-10-08T08:00:00Z
+        query: max(max_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "gb_quota_day_closed" |= "\"quota_day\":\"2026-10-07\"" | json | __error__="" | unwrap pairing_calls [2h]))
+        expect: {max: 650}
+      - name: the late run finished
+        source: loki
+        at: 2026-10-07T23:45:00Z
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" [15m]))
+        expect: {min: 1}
+      - name: the late run skipped nothing for budget
+        source: loki
+        at: 2026-10-07T23:45:00Z
+        query: max(max_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" | json | __error__="" | unwrap formatPairing_skippedBudget [15m]))
+        expect: {max: 0}
+      - name: llRerequestDeferred fell below 450
+        source: loki
+        at: 2026-10-07T23:45:00Z
+        query: max(max_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" | json | __error__="" | unwrap formatPairing_llRerequestDeferred [15m]))
+        expect: {max: 450}
+    links:
+      handoff: 2026-10-06 v0.107.10 + v0.107.11 block
+      issues: [haynesnetwork#740, haynesnetwork#674]
+
+  - id: OC-016
+    legacy: (t)
+    title: Steel Scars (1cea3e86) is parked wrong_volume by the collection force-search
+    opened: 2026-10-06
+    after: its force-search cooldown ends (log ll_push_skipped_wrong_volume)
+    due: 2026-10-10T00:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      select unroutable_reason from book_requests where id::text like '1cea3e86%' reads wrong_volume (Google Books
+      resolved it to "Small Scars"). The three Bridgerton "2nd Epilogue" wants change only if their collections are
+      force-searched; nothing to check for them.
+    auto_covers: all
+    auto:
+      - name: Steel Scars is parked wrong_volume
+        source: app-db
+        query: select unroutable_reason from book_requests where id::text like '1cea3e86%'
+        expect: {eq: wrong_volume}
+        mismatch: wait
+    links:
+      handoff: 2026-10-06 v0.107.10 + v0.107.11 block
+      issues: [haynesnetwork#739]
+
+  - id: OC-017
+    legacy: (u)
+    title: "The #752 pairing formats on LazyLibrarian Skipped-with-file books stay landed after the library scan"
+    opened: 2026-10-06
+    after: the 2026-10-07 09:10Z LazyLibrarian library scan
+    not_before: 2026-10-07T09:05:00Z
+    due: 2026-10-07T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      After the scan, the pairing formats that read landed from a LazyLibrarian format that is Skipped but holds a file
+      (23 formats on 13 books at 2026-10-06 13:50Z; #752's 17 among them) still read landed, and their LazyLibrarian
+      rows still carry the import date (BookLibrary / AudioLibrary) and a file that exists. Any reverted one names a
+      file LazyLibrarian lost.
+    auto_covers: all
+    auto:
+      - name: the 2026-10-07 library scan completed
+        source: loki
+        query: sum(count_over_time({namespace="downloads", pod=~"lazylibrarian-library-scan-.*"} |= "eBook + audiobook library scan complete" [$SINCE]))
+        expect: {min: 1}
+        mismatch: wait
+      - name: the pairing formats still read landed
+        source: app-db
+        query: |
+          select left(id::text, 8) as id, ll_book_id, ebook_status, audio_status from book_requests
+          where origin = 'pairing' and (
+            (ll_book_id in ('aFy9AQAACAAJ','gqpSPwAACAAJ','LRpCrgEACAAJ','w2zOAAAACAAJ','Iest_zZHolAC','xl0-XHoXrvYC',
+                            'TAEjw0IM50YC','C9-NmQLA64gC') and ebook_status <> 'landed')
+            or (ll_book_id in ('njs6CQAAQBAJ','gqpSPwAACAAJ','jVyVzQEACAAJ','d2eNPwAACAAJ','_66cporIROcC','Iest_zZHolAC',
+                               'TAEjw0IM50YC','R7lwacBA53QC') and audio_status <> 'landed'))
+        expect: {rows: 0}
+      - name: their LazyLibrarian formats keep the file and the import date
+        source: ll-db
+        query: |
+          select BookID, 'eBook' as format from books
+          where BookID in ('aFy9AQAACAAJ','gqpSPwAACAAJ','LRpCrgEACAAJ','w2zOAAAACAAJ','Iest_zZHolAC','xl0-XHoXrvYC',
+                           'TAEjw0IM50YC','C9-NmQLA64gC')
+            and (ifnull(BookFile, '') = '' or ifnull(BookLibrary, '') = '')
+          union all
+          select BookID, 'AudioBook' from books
+          where BookID in ('njs6CQAAQBAJ','gqpSPwAACAAJ','jVyVzQEACAAJ','d2eNPwAACAAJ','_66cporIROcC','Iest_zZHolAC',
+                           'TAEjw0IM50YC','R7lwacBA53QC')
+            and (ifnull(AudioFile, '') = '' or ifnull(AudioLibrary, '') = '')
+        expect: {rows: 0}
+      - name: their files exist
+        source: ll-db
+        query: |
+          select BookFile from books
+          where BookID in ('aFy9AQAACAAJ','gqpSPwAACAAJ','LRpCrgEACAAJ','w2zOAAAACAAJ','Iest_zZHolAC','xl0-XHoXrvYC',
+                           'TAEjw0IM50YC','C9-NmQLA64gC')
+          union all
+          select AudioFile from books
+          where BookID in ('njs6CQAAQBAJ','gqpSPwAACAAJ','jVyVzQEACAAJ','d2eNPwAACAAJ','_66cporIROcC','Iest_zZHolAC',
+                           'TAEjw0IM50YC','R7lwacBA53QC')
+        expect: {paths_exist: true, rows: 16}
+    links:
+      handoff: 2026-10-06 v0.107.10 + v0.107.11 block
+      issues: [haynesnetwork#752]
+      prs: [haynesnetwork#760]
+
+  - id: OC-018
+    legacy: (v)
+    title: A day of format-pairing runs without pair flapping, and no authorless Kavita book series
+    opened: 2026-10-06
+    after: 24 hours of format-pairing runs on v0.107.11 (from 2026-10-06 13:32Z)
+    not_before: 2026-10-07T13:45:00Z
+    due: 2026-10-07T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      Over the 24 hours to 2026-10-07 13:45Z the format-pairing runs show dropped and revived 0 (added grows with the
+      library and is fine; a drop must be explained by a library change, and recorded here), and
+      select count(*) from books_items where source = 'kavita' and media_kind = 'book' and deleted_at is null and
+      coalesce(author, '') = '' is 0 (35 before #761, 0 after the 2026-10-06 13:22Z books-sync).
+    auto_covers: all
+    auto:
+      - name: a day of runs finished
+        source: loki
+        at: 2026-10-07T13:45:00Z
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" [24h]))
+        expect: {min: 20}
+      - name: no pair dropped
+        source: loki
+        at: 2026-10-07T13:45:00Z
+        query: sum(sum_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" | json | __error__="" | unwrap formatPairing_dropped [24h]))
+        expect: {eq: 0}
+      - name: no pair revived
+        source: loki
+        at: 2026-10-07T13:45:00Z
+        query: sum(sum_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" | json | __error__="" | unwrap formatPairing_revived [24h]))
+        expect: {eq: 0}
+      - name: no authorless Kavita book series
+        source: app-db
+        query: |
+          select count(*) as n from books_items
+          where source = 'kavita' and media_kind = 'book' and deleted_at is null and coalesce(author, '') = ''
+        expect: {eq: 0}
+    links:
+      handoff: 2026-10-06 v0.107.10 + v0.107.11 block
+      issues: [haynesnetwork#761]
+      prs: [haynesnetwork#762]
+
+  - id: OC-019
+    title: The six Kavita items whose foreign_language park lifted (v0.107.5) mint and push their missing format
+    opened: 2026-10-05
+    after: the pairing mint reaches them (Mint Backoff since v0.107.10)
+    due: 2026-10-14T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      The pairing wants on Kavita series 1169, 1252, 142, 1587, 439 and 594 each hold an ll_book_id and no format reads
+      requested (unroutable_reason null, pushed). Four have one Google Books miss (mint_backoff_count 1); their
+      library titles are mangled ("(LB2) Shakespeare's Landlord", "The History of Middle-earth Vol-10- ..."), so a
+      second miss is likely: if they stay unminted at the due date, decide (fix the library title, or waive).
+    auto_covers: all
+    auto:
+      - name: all six minted and pushed
+        source: app-db
+        query: |
+          select left(r.id::text, 8) as id, r.title, i.external_id, r.ll_book_id, r.mint_backoff_count
+          from book_requests r join books_items i on i.id = r.pairing_books_item_id
+          where r.origin = 'pairing' and i.source = 'kavita' and i.external_id in ('1169','1252','142','1587','439','594')
+            and (r.ll_book_id is null or 'requested' in (r.ebook_status, r.audio_status))
+        expect: {rows: 0}
+        mismatch: wait
+    evidence:
+      - "2026-10-06 09:30Z still waiting: only Kavita 439 (Lady Whistledown) has an ll_book_id and was searched."
+      - "2026-10-06 13:50Z unchanged: 439 VbGRQ6djr8MC audio wanted; 1252, 142, 594 mint_backoff_count 1; 1169, 1587 no id."
+    links:
+      handoff: 2026-10-05 v0.107.5 block
+      issues: [haynesnetwork#712, haynesnetwork#740]
+
+  - id: OC-020
+    legacy: (l) recheck
+    title: After a full library scan, every LazyLibrarian file link resolves (the cross-volume records and the rest)
+    opened: 2026-10-06
+    after: the 2026-10-07 09:10Z LazyLibrarian library scan (the 2026-10-06 one was cut off)
+    not_before: 2026-10-07T09:05:00Z
+    due: 2026-10-07T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LL DB mode=ro, after a scan that completed both halves: every BookFile/AudioFile of the cross-volume records
+      (.agents/context/2026-10-05-crossvolume-repair.tsv) points at an existing file, and so does every other one
+      except the known Catwings row (QGPZEAAAQBAJ, from before #631); YVfJMgEACAAJ and ik6xzgEACAAJ stay Skipped with
+      no file. On 2026-10-06 13:50Z: 1,528 pointers, the Catwings one missing.
+    auto_covers: all
+    auto:
+      - name: the 2026-10-07 library scan completed
+        source: loki
+        query: sum(count_over_time({namespace="downloads", pod=~"lazylibrarian-library-scan-.*"} |= "eBook + audiobook library scan complete" [$SINCE]))
+        expect: {min: 1}
+        mismatch: wait
+      - name: the cross-volume records' files exist
+        source: ll-db
+        query: |
+          select BookFile from books where BookID in ('-fHTJV9mAnEC','D59dwgEACAAJ','E-kdBQAAQBAJ','LorQP-vVUT0C',
+            'QLnfZW-l_EwC','RPq0DwAAQBAJ','RzIuCwAAQBAJ','SMiJCwAAQBAJ','UB6E-h0wS84C','UPe6zgEACAAJ','YVfJMgEACAAJ',
+            'bg-dAQAACAAJ','dlfOfxkm1PoC','fgCnGzN9NakC','gil-EAAAQBAJ','ik6xzgEACAAJ','mezhxQ0twPUC','o37NuQEACAAJ',
+            'r_i4_Lr5fA4C','sal2DwAAQBAJ','t_ZYYXZq4RgC')
+          union all
+          select AudioFile from books where BookID in ('-fHTJV9mAnEC','D59dwgEACAAJ','E-kdBQAAQBAJ','LorQP-vVUT0C',
+            'QLnfZW-l_EwC','RPq0DwAAQBAJ','RzIuCwAAQBAJ','SMiJCwAAQBAJ','UB6E-h0wS84C','UPe6zgEACAAJ','YVfJMgEACAAJ',
+            'bg-dAQAACAAJ','dlfOfxkm1PoC','fgCnGzN9NakC','gil-EAAAQBAJ','ik6xzgEACAAJ','mezhxQ0twPUC','o37NuQEACAAJ',
+            'r_i4_Lr5fA4C','sal2DwAAQBAJ','t_ZYYXZq4RgC')
+        expect: {paths_exist: true}
+      - name: no other file link dangles (Catwings excepted)
+        source: ll-db
+        query: |
+          select BookFile from books where ifnull(BookFile, '') <> '' and BookID <> 'QGPZEAAAQBAJ'
+          union all
+          select AudioFile from books where ifnull(AudioFile, '') <> '' and BookID <> 'QGPZEAAAQBAJ'
+        expect: {paths_exist: true, min_rows: 1000}
+      - name: YVfJMgEACAAJ and ik6xzgEACAAJ stay Skipped with no file
+        source: ll-db
+        query: |
+          select BookID, Status, AudioStatus from books where BookID in ('YVfJMgEACAAJ', 'ik6xzgEACAAJ')
+            and (Status <> 'Skipped' or AudioStatus <> 'Skipped' or ifnull(BookFile, '') <> '' or ifnull(AudioFile, '') <> '')
+        expect: {rows: 0}
+    links:
+      handoff: 2026-10-06 owed-checks run block
+      issues: [haynesnetwork#743]
