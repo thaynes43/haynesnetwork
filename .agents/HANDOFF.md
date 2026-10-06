@@ -8,6 +8,47 @@
 > check that was pending in the blocks below, (b) to (v) plus the v0.107.5 "6 minted", is a row there (OC-001 to
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
+## ▶ 2026-10-06 — v0.108.1 + Libretto sha-080237f live: held books stop reading missing on collection drills (#759 closed)
+
+- **Why.** #759: 57 (59 by 09:45Z) collection wants read `requested` while LazyLibrarian held their book. Ruled a bug
+  (root cause first). Audit, read-only: `.agents/context/2026-10-06-held-collection-wants.md`. Rules: DESIGN-038 D-13
+  amendments (per-target lists; Downloaded), DESIGN-037 D-04 amendment (matcher), DESIGN-028 amendment (Downloaded,
+  supersedes the "Collection has none" notes); glossary T-213 and T-281 amended.
+- **Causes across the 59.** 15: the app gave each Audiobookshelf collection the Kavita missing list (the flat `missing`
+  of a multi-target answer). 25: Libretto's matcher missed books the library holds (a book Kavita files inside a
+  series, the same book held twice, a decorated title). 5: LazyLibrarian holds a `.mobi` / `.azw3` Kavita cannot open.
+  7: LazyLibrarian's book is another work or edition. 7: the library holds it under a title that differs in words. No
+  library scan or path gap.
+- **Libretto** (thaynes43/libretto#21 and #22; haynes-ops #3440 live ~14:33Z as `sha-d3e4b15`, #3444 live 15:43Z as
+  `sha-080237f`): Kavita items carry their books (chapter titles, "<series>: <title>"), writers and folders (cache key
+  `kavita:series-detail:v2`); book titles are a second tier; copies verified by authors, writers or a shared folder; a
+  decorated-title pass with volume guards (bare volume subtitles, list ranks are not volumes, fractional and
+  zero-padded prefixes); `hardcover_series` works carry `series` (cache `v4`). Replayed read-only over all 75 recipes
+  each time: 52 + 5 members flip missing to held, all hand-checked, none the other way, no collection loses a member.
+- **v0.108.1** (#769, #773, release #772, haynes-ops #3442, live 15:15Z, no migration): `missingForCollection` picks
+  each collection's own `targets[]` entry (one read per recipe per run; the on-demand Force Search refreshes every
+  twin); `reconcileCollectionWantsDownloaded` lands a collection want's own format while LazyLibrarian holds it, its
+  book passes both Volume Checks and the library shows nothing like LazyLibrarian's title; the drill keeps the tile as
+  **Downloaded** ("Downloaded, not in the library yet"); the wanted-detail page lists only the collection's own format
+  (its other format had read "Have it").
+- **Verified.**
+  - 15:27Z collections sync (v0.108.1, Libretto `sha-d3e4b15`): collectionsProcessed 88, skipped 0, minted 16, removed
+    63; downloaded 6 (Four: The Transfer, Four: The Son, Four: The Traitor, We Can Be Mended, Eragon, Shatter Me),
+    reverted 0. 15:44Z run (manual, Libretto `sha-080237f`): removed 5 (the fractional and zero-padded Expanse
+    audiobooks), downloaded 0, reverted 0, no error lines.
+  - The read-only join re-run at ~15:46Z: of the 59, **40 resolved** (deleted: the library holds the member), **6 read
+    Downloaded**, **13 still read `requested` while LazyLibrarian holds the format**, none waiting on a library scan:
+    6 point at another work's book (Gray Dawn, Shift, Compulsory, three Bridgerton 2nd Epilogues: not held, `requested`
+    is true) and 7 are in the library under a title that differs in words (#777). No held-but-requested collection want
+    outside the 59.
+  - Not checked: the Downloaded badge in a browser (the drill needs an Authentik login this session has no account
+    for); covered by `books-wanted.test.ts` and the domain tests.
+- **Follow-ups filed.** #770 (LazyLibrarian takes formats Kavita cannot open: 57 books, 48 pairing wants read their
+  ebook landed on one; owner decision), #771 (three wrong-book collection wants the Volume Check cannot see), #777 (the
+  seven differently-titled held books; a recipe-level alias or a metadata fix needs a decision).
+- **Owed.** OC-021 (the six stay Downloaded, no revert), OC-022 (a day of hourly syncs with no skipped collection), in
+  `.agents/owed-checks.yaml`.
+
 ## ▶ 2026-10-06 — v0.108.0 live: owed checks are dated, owned rows with a read-only runner and an overdue alert (#743 closed)
 
 - **Why.** #743 (adversarial review #731, W-08 / R-04): owed post-deploy checks were lettered HANDOFF prose with no due
