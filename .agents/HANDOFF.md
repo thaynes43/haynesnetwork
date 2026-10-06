@@ -4,6 +4,26 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-06 — LazyLibrarian overlays: a test harness in CI, #738 and #736 closed (haynes-ops #3428, #3429, #3430)
+
+- **Harness (haynes-ops #3402, closed).** `kubernetes/main/apps/downloads/lazylibrarian/app/patches/tests/` in haynes-ops runs
+  inside the pinned LL image: each overlay's upstream sha256 plus a clean `diffs/<name>.diff`, then a behaviour test per overlay
+  (upstream's own unit-test scaffolding, network blocked, sequential) and 296 anonymised replay rows for the volume penalty.
+  `--drop all` runs the tests on the image's unpatched files (every fix's test fails). CI job `LazyLibrarian Overlays - Success`
+  (advisory; Renovate no longer auto-merges an LL image bump). No docker: `oneshot.sh` (a throwaway Job), `oneshot.sh replay
+  OUT.tsv` (read-only DB snapshot), `verify-deployed.sh` after a deploy. A bump or overlay edit follows the README there.
+- **#738 (closed), live 09:24Z.** The volume penalty now also fires on a release with only a volume number (N >= 2; not a part
+  file, not the volume the subtitle names, not a bare `<title> - N` with no author) and on one that repeats the wanted title after
+  another volume's title. Replay over 3,989 rows: 10 more under 80, all later volumes grabbed for book 1 (Mistborn 3-6 and
+  Secret History, Once Upon a Broken Heart 3, Second Shift), none genuine. Known gap: `Series - 03` with no author passes.
+- **#736 (closed), live 09:26Z.** Cause: upstream `gb.py` `add_bookid_to_db` (the API's addBook and the scan's GoogleBooks
+  rescan) never wrote `bookauthors`; fixed for new adds by haynes-ops #3351, not an app bug. The 211 legacy books got their
+  primary row (Role 1) in one transaction after a backup (`/config/lazylibrarian.db.pre-736-backfill-20261006`, ids in
+  `/config/bookauthors-backfill-736-20261006.tsv`). Upstream `check_db` on a copy, every author forced to recount: 1,234 of
+  1,234 books survive. Two restarts: 1,234 books, all 211 present. Census: `dbupgrade.py` logs `LL_UNLINKED_BOOKS <n>` at each
+  start, Loki rule `LazyLibrarianBooksWithoutAuthorLink` (warning); today "every book has a bookauthors row".
+- **Direct LL DB write, recorded per #741:** the backfill above (one `INSERT` of 211 `bookauthors` rows, no other table).
+
 ## ▶ 2026-10-06 — v0.107.7 + v0.107.8 live: a want on a non-English LazyLibrarian book asks for the English edition (#719, #737 closed)
 
 - **Why (#719).** After #715 the goodreads sweep refuses a non-English LazyLibrarian book, so Azazel (request `415e4d34`, Spanish
