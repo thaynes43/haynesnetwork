@@ -677,3 +677,68 @@ checks:
     links:
       handoff: 2026-10-06 owed-checks run block
       issues: [haynesnetwork#743]
+  - id: OC-021
+    title: "The six Downloaded collection wants of issue #759 stay Downloaded, and nothing flaps"
+    opened: 2026-10-06
+    after: haynesnetwork v0.108.1 live (2026-10-06 15:15Z) and Libretto sha-080237f (15:43Z)
+    not_before: 2026-10-06T16:00:00Z
+    due: 2026-10-08T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      The six collection wants that read Downloaded since the 15:27Z collections sync (Four: The Transfer, Four: The
+      Son, Four: The Traitor, We Can Be Mended, Eragon, Shatter Me) still read their own format `landed`, or are gone
+      because the library now holds the member; and no `collection_want_download_reverted` line has been logged since
+      (a revert is right only when LazyLibrarian lost the file or the library now shows the title: check which).
+      By hand: the app-db query below, and the drill of Divergent / Shatter Me / The Inheritance Cycle shows the
+      Downloaded badge on those tiles.
+    auto_covers: part
+    auto:
+      - name: none of the six went back to Wanted
+        source: app-db
+        query: |
+          select count(*) as n from book_requests
+          where id in ('dbe5297b-4740-4086-bb9c-678f633e5a89', '7c1ad53a-42e7-49be-af1d-038ba527ce18',
+            'a803a556-4d1d-4ff2-914b-ea46ce130538', 'd2dd37e8-9ec4-40cd-b3c1-fe77d55b088e',
+            '60699b39-1668-42eb-b0f5-c11a9f5c75e4', 'f4bfa2d9-90ea-4787-860c-802480709e7a')
+            and ebook_status <> 'landed'
+        expect: {eq: 0}
+        mismatch: fail
+      - name: no Downloaded state reverted
+        source: loki
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-books-collections-.*"} |= "collection_want_download_reverted" [$SINCE]))
+        expect: {max: 0}
+        mismatch: fail
+    evidence:
+      - "2026-10-06 15:44Z: collections sync (manual run of the CronJob) logged downloaded 0, reverted 0; the six read landed."
+    links:
+      issues: ['#759', '#770']
+      prs: ['#769', '#773', 'thaynes43/libretto#21', 'thaynes43/libretto#22', 'haynes-ops #3440', 'haynes-ops #3442', 'haynes-ops #3444']
+  - id: OC-022
+    title: Every hourly collections sync reads each collection's own missing list without skipping one
+    opened: 2026-10-06
+    after: haynesnetwork v0.108.1 live (2026-10-06 15:15Z); Libretto's Hardcover (v4) and Kavita (v2) caches rebuilt
+    not_before: 2026-10-06T16:00:00Z
+    due: 2026-10-07T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      Over a day of hourly `books-collections-sync` runs, every "collection-wants complete" line reads
+      "collectionsSkipped":0 and "unreachable":false (a skip means a recipe's own target entry was missing or errored,
+      `missingForCollection`), and no "no missing list for this collection's target" warning was logged. On
+      2026-10-06 the 15:27Z and 15:44Z runs read collectionsProcessed 88, collectionsSkipped 0.
+    auto_covers: all
+    auto:
+      - name: at least 20 runs completed
+        source: loki
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-books-collections-.*"} |= "collection-wants complete" [$SINCE]))
+        expect: {min: 20}
+        mismatch: wait
+      - name: no run skipped a collection
+        source: loki
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-books-collections-.*"} |= "collection-wants complete" != "\"collectionsSkipped\":0" [$SINCE]))
+        expect: {max: 0}
+        mismatch: fail
+    links:
+      issues: ['#759']
+      prs: ['#769']
