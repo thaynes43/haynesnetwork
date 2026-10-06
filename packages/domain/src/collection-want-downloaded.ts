@@ -149,7 +149,8 @@ export interface CollectionWantsDownloadedReport {
  */
 export async function reconcileCollectionWantsDownloaded(input: {
   db?: DbClient;
-  ll: Pick<LazyLibrarianClientBundle, 'read'>;
+  /** Only the one read this pass makes (`getAllBooks`). */
+  ll: { read: Pick<LazyLibrarianClientBundle['read'], 'getAllBookStatuses'> };
   now?: Date;
   logger?: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;

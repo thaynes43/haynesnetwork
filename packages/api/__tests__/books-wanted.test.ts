@@ -12,6 +12,7 @@ import { eq } from 'drizzle-orm';
 import { bookRequests, booksCollections } from '@hnet/db';
 import {
   linkIntegration,
+  setCollectionWantDownloaded,
   syncBooks,
   syncBooksCollections,
   syncCollectionWants,
@@ -328,10 +329,14 @@ describe('books.wantedDetail — a collection want', () => {
       .select({ id: bookRequests.id })
       .from(bookRequests)
       .where(eq(bookRequests.collectionId, collection!.id));
-    await t.db
-      .update(bookRequests)
-      .set({ ebookStatus: ebookLanded ? 'landed' : 'requested' })
-      .where(eq(bookRequests.id, want!.id));
+    // Through the domain's one writer for the downloaded state (no direct status write outside packages/domain).
+    await setCollectionWantDownloaded({
+      db: t.db,
+      requestId: want!.id,
+      llBookId: 'llEragon',
+      format: 'ebook',
+      downloaded: ebookLanded,
+    });
     return want!.id;
   }
 

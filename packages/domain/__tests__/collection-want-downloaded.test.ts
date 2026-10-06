@@ -164,8 +164,26 @@ describe('reconcileCollectionWantsDownloaded', () => {
     });
   });
 
+  // A getAllBooks stub: each row as LazyLibrarian's ACL shapes it (every signal present, unknowns null).
   const ll = (rows: Record<string, LlSnapshotRow>) => ({
-    read: { getAllBookStatuses: async () => new Map(Object.entries(rows)) },
+    read: {
+      getAllBookStatuses: async () =>
+        new Map(
+          Object.entries(rows).map(([bookId, row]) => [
+            bookId,
+            {
+              bookId,
+              ebookStatus: null,
+              audioStatus: null,
+              ebookLibrary: null,
+              audioLibrary: null,
+              ebookFile: null,
+              audioFile: null,
+              ...row,
+            },
+          ]),
+        ),
+    },
   });
   const ebookStatus = async () =>
     (
