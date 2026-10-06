@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.108.2](https://github.com/thaynes43/haynesnetwork/compare/v0.108.1...v0.108.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* **books:** a collection want on another author's book is resolved again ([#771](https://github.com/thaynes43/haynesnetwork/issues/771)) ([#780](https://github.com/thaynes43/haynesnetwork/issues/780)) ([97fc458](https://github.com/thaynes43/haynesnetwork/commit/97fc4582b5b72f1967260feb933cc05ae622742e))
+
+
+### Documentation
+
+* **agents:** v0.108.0 deploy record, owed-check tracker live ([#743](https://github.com/thaynes43/haynesnetwork/issues/743)) ([#775](https://github.com/thaynes43/haynesnetwork/issues/775)) ([2db4e01](https://github.com/thaynes43/haynesnetwork/commit/2db4e012db1273113329173793f28a32a7e3cf40))
+* **agents:** v0.108.1 + Libretto sha-080237f deploy record, [#759](https://github.com/thaynes43/haynesnetwork/issues/759) closed ([#778](https://github.com/thaynes43/haynesnetwork/issues/778)) ([d01f6e8](https://github.com/thaynes43/haynesnetwork/commit/d01f6e892cb3b8bf063ba90ea5fa04d55d7c827a))
+
 ## [0.108.1](https://github.com/thaynes43/haynesnetwork/compare/v0.108.0...v0.108.1) (2026-10-06)
 
 
