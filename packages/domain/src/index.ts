@@ -182,6 +182,9 @@ export * from './integration-shelf-items';
 export * from './book-requests';
 // Issue #665 / DESIGN-028 amendment 2026-10-04 — a want whose LazyLibrarian book is gone (re-key or settle).
 export * from './ll-gone';
+// Issue #735 (DESIGN-028 amendment 2026-10-06) — the LazyLibrarian Release (a format the app queued for a want it gave
+// up is unqueued once nothing else asks for it) and the Orphan LazyLibrarian Want census.
+export * from './ll-release';
 // Issue #693 / DESIGN-028 amendment 2026-10-05 — is a want's LazyLibrarian book the volume it asks for?
 export * from './ll-book-check';
 export * from './book-language';

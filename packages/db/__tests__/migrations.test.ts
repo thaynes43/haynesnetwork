@@ -30,6 +30,7 @@ import {
   DELETED_RELEASE_IDENTITY_SOURCES,
   TITLE_EXCLUSION_ARR_KINDS,
   TITLE_EXCLUSION_ORIGINS,
+  LL_RELEASE_FORMATS,
   DELETED_RELEASE_ORIGINS,
   DELETED_RELEASE_STATES,
   DELETED_RELEASE_TERM_CONFIDENCES,
@@ -3219,6 +3220,29 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  describe('0093 ll_format_releases (issue #735 — the LazyLibrarian Release)', () => {
+    it('creates ll_format_releases: one row per (book, format), the format CHECK matching LL_RELEASE_FORMATS', async () => {
+      const insert = (format: string) =>
+        client.query({
+          text: `INSERT INTO ll_format_releases (ll_book_id, format, reason) VALUES ('T-0093', $1, 'reidentified')`,
+          values: [format],
+        });
+      try {
+        for (const format of LL_RELEASE_FORMATS) await insert(format);
+        // One pending release per book and format.
+        await expect(insert('ebook')).rejects.toMatchObject({ code: '23505' });
+        await expect(insert('comic')).rejects.toMatchObject({ code: '23514' });
+        const def = await client.query(
+          `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'll_format_releases_format_enum'`,
+        );
+        const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+        expect(listed.sort()).toEqual([...LL_RELEASE_FORMATS].sort());
+      } finally {
+        await client.query(`DELETE FROM ll_format_releases WHERE ll_book_id = 'T-0093'`);
+      }
+    });
+  });
+
   // ADR-099 (migration 0088, journal idx 87): a Save is recorded first; its intent carries the enforcement state.
   describe('0088 trash save record-first (ADR-099 — the exclusion follows the recorded Save)', () => {
     it('adds the enforcement columns to trash_save_intents: nullable confirmation, counted attempts', async () => {
@@ -3422,6 +3446,17 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
   });
 
   // ADR-099 gate — the record-first Save migration is journaled (idx 87), after 0087.
+  // Issue #735 gate — the LazyLibrarian Release table is journaled (idx 92), after 0092; additive.
+  it('lists 0093_ll_format_releases at idx 92, strictly after 0092_book_requests_english_edition_retry', () => {
+    const entry = journal.entries.find((e) => e.tag === '0093_ll_format_releases');
+    const prev = journal.entries.find((e) => e.tag === '0092_book_requests_english_edition_retry');
+    expect(entry?.idx).toBe(92);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0093_ll_format_releases.sql'), 'utf8');
+    expect(sqlText).toContain('CREATE TABLE "ll_format_releases"');
+    expect(sqlText).not.toMatch(/ALTER TABLE|DROP /);
+  });
+
   // Issue #719 follow-up gate — the retry of the first run's parks is journaled (idx 91), after 0091; data only.
   it('lists 0092_book_requests_english_edition_retry at idx 91, strictly after 0091, and clears only the non-pairing no_english_edition stamps', () => {
     const entry = journal.entries.find((e) => e.tag === '0092_book_requests_english_edition_retry');

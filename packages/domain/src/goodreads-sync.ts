@@ -124,6 +124,12 @@ export interface SyncGoodreadsReport extends LlGoneTally, LlRerequestTally {
    * the format, or the request no longer points at a matching LazyLibrarian book.
    */
   requestsLandedReverted: number;
+  /**
+   * Issue #734 (DESIGN-028 amendment 2026-10-06) — requests with an ebook or audiobook taken OUT of `grabbed` this run
+   * because LazyLibrarian is not downloading it: the grab failed and LazyLibrarian put the format back to `Wanted`
+   * (reads `wanted`), or it reads `Skipped`/`Ignored` (reads `missing`), or the book names another volume or work.
+   */
+  requestsGrabReverted: number;
   /** ADR-056 — comics newly routed to Kapowarr this run (resolved + added monitored). */
   comicsRouted: number;
   /** ADR-056 — comics whose Kapowarr state was reconciled back this run (incl. the ones just routed). */
@@ -359,6 +365,7 @@ export async function syncGoodreadsIntegration(
   let reconciled = 0;
   let requeued = 0;
   let landedReverted = 0;
+  let grabReverted = 0;
   const gone = emptyLlGoneTally();
   let reconcileSnapshot: Map<string, LlSnapshotRow> | null = null;
   if (input.ll) {
@@ -404,14 +411,32 @@ export async function syncGoodreadsIntegration(
         now,
       });
       if (!reverted.ebook && !reverted.audio) return 0;
+      // Issue #734 — a format that left `grabbed` (LazyLibrarian is not downloading it) is its own log line and count.
+      const grabbedEbook = reverted.fromGrabbed.includes('ebook');
+      const grabbedAudio = reverted.fromGrabbed.includes('audiobook');
+      if (grabbedEbook || grabbedAudio) {
+        grabReverted += 1;
+        log.info?.('request_grab_reverted', {
+          site,
+          reason,
+          requestId: target.requestId,
+          llBookId: target.llBookId,
+          title: target.title,
+          ebook: grabbedEbook ? ebook : null,
+          audio: grabbedAudio ? audio : null,
+        });
+      }
+      const landedEbook = reverted.ebook && !grabbedEbook;
+      const landedAudio = reverted.audio && !grabbedAudio;
+      if (!landedEbook && !landedAudio) return 0;
       log.info?.('request_landed_reverted', {
         site,
         reason,
         requestId: target.requestId,
         llBookId: target.llBookId,
         title: target.title,
-        ebook: reverted.ebook ? ebook : null,
-        audio: reverted.audio ? audio : null,
+        ebook: landedEbook ? ebook : null,
+        audio: landedAudio ? audio : null,
       });
       return 1;
     };
@@ -463,14 +488,16 @@ export async function syncGoodreadsIntegration(
           reason: mismatch,
         });
         // Issue #715 — a format that reads `landed` from a book that is another volume or work is not held: it
-        // settles `missing` (the dead-end the repair uses), and nothing is queued on that book.
+        // settles `missing` (the dead-end the repair uses), and nothing is queued on that book. Issue #734: so does a
+        // `grabbed` one (a download of another work is not this want's).
         landedReverted += await revertLanded(target, 'missing', 'missing', 'll_book_mismatch', 'goodreads-sync.reconcile');
         continue;
       }
       try {
         // Issue #715 — `landed` is only true while LazyLibrarian holds the format: a format it does not hold goes back
-        // to the status LazyLibrarian shows (wanted, grabbed, or missing). Before the reconcile below, which never
-        // regresses a positive.
+        // to the status LazyLibrarian shows (wanted, grabbed, or missing). Issue #734 — and `grabbed` only while
+        // LazyLibrarian shows it `Snatched`: a failed grab LazyLibrarian put back to `Wanted` reads `wanted`. Before the
+        // reconcile below, which never regresses a positive.
         landedReverted += await revertLanded(
           target,
           unheldFormatStatus(status, 'ebook'),
@@ -672,6 +699,7 @@ export async function syncGoodreadsIntegration(
     pushesSkippedHeld,
     pushesSkippedForeign,
     landedReverted,
+    grabReverted,
     comicsRouted,
     comicsReconciled,
     coverage,
@@ -687,6 +715,7 @@ export async function syncGoodreadsIntegration(
     pushesSkippedHeld,
     pushesSkippedForeign,
     requestsLandedReverted: landedReverted,
+    requestsGrabReverted: grabReverted,
     ...gone,
     ...rerequest,
     comicsRouted,

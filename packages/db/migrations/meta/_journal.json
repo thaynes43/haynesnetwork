@@ -645,6 +645,13 @@
       "when": 1791260000000,
       "tag": "0092_book_requests_english_edition_retry",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1791290000000,
+      "tag": "0093_ll_format_releases",
+      "breakpoints": true
     }
   ]
 }

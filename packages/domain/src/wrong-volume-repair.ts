@@ -29,6 +29,7 @@ import {
 import { inTransaction, resolveDb } from './db-client';
 import type { BookRequestStatus } from '@hnet/db';
 import { parkCollectionWant } from './book-requests';
+import { llQueuedFormats, recordLlReleases } from './ll-release-record';
 import { llBookMismatch, type LlBookNaming } from './ll-book-check';
 import {
   checkPairingWantBooks,
@@ -124,6 +125,16 @@ export async function reopenWrongVolumeRequest(input: {
             },
       )
       .where(eq(bookRequests.id, req.id));
+    // Issue #735 — re-pointed off the other work's book: what LazyLibrarian was searching there for it is released.
+    if (input.toLlBookId) {
+      await recordLlReleases(tx, {
+        llBookId: input.fromLlBookId,
+        formats: llQueuedFormats(req, ['ebook', 'audiobook']),
+        reason: 'repaired:wrong_volume',
+        requestId: req.id,
+        now,
+      });
+    }
     return true;
   });
 }
@@ -172,6 +183,14 @@ export async function settleRemovedAnchorPairingWant(input: {
         updatedAt: now,
       })
       .where(eq(bookRequests.id, row.want.id));
+    // Issue #735 — the id is cleared, so what LazyLibrarian was searching on the other book for it is released.
+    await recordLlReleases(tx, {
+      llBookId: input.llBookId,
+      formats: llQueuedFormats(row.want, [missing]),
+      reason: 'repaired:removed_anchor',
+      requestId: row.want.id,
+      now,
+    });
     return true;
   });
 }

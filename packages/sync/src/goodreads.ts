@@ -6,6 +6,7 @@
 // normalize here; the single-writers + confined writes in packages/domain).
 import type { DbClient } from '@hnet/db';
 import {
+  drainLlReleases,
   guardedGbResolve,
   listIntegrationsForSync,
   makeGbBudgetTracker,
@@ -21,6 +22,7 @@ import {
   type KapowarrClientBundle,
   type LlSearchCoverage,
   type LazyLibrarianClientBundle,
+  type LlReleaseTally,
   type RetryQueuedBookFixesReport,
   type SyncGoodreadsReport,
 } from '@hnet/domain';
@@ -96,6 +98,12 @@ export interface GoodreadsSyncReport {
   englishEditions?: EnglishEditionReport;
   /** ADR-067 C-06 — the queued-book-fix retry pass hosted in this run (absent when LL/GB missing). */
   fixRetries?: RetryQueuedBookFixesReport;
+  /**
+   * Issue #735 (DESIGN-028 amendment 2026-10-06) — the LazyLibrarian Release drain hosted at the end of this run: the
+   * formats this run's shelf removals, English-edition parks and switches gave up are unqueued in LazyLibrarian unless
+   * a live request still asks for them (absent when LazyLibrarian is).
+   */
+  llReleases?: LlReleaseTally;
   perIntegration: Array<{
     integrationId: string;
     userId: string;
@@ -392,6 +400,24 @@ export async function runGoodreadsSync(input: {
     }
   }
 
+  // Issue #735 — once per run, after every integration: the formats a want gave up this run (a shelf removal, an
+  // English-edition park or switch) are unqueued in LazyLibrarian unless a live request still asks for them. The
+  // format-pairing run drains too; whichever runs first takes them. Never fails the run.
+  let llReleases: LlReleaseTally | undefined;
+  if (input.ll) {
+    try {
+      llReleases = (await drainLlReleases({ db: input.db, ll: input.ll, site: 'goodreads-sync.release', log: logger }))
+        .tally;
+      if (llReleases.llReleasesUnqueued + llReleases.llReleasesSettled + llReleases.llReleasesFailed > 0) {
+        logger.info('goodreads-sync: LazyLibrarian releases drained', { ...llReleases });
+      }
+    } catch (error) {
+      logger.error('goodreads-sync: LazyLibrarian release drain failed (kept for the next run)', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   return {
     integrations: integrations.length,
     synced,
@@ -402,6 +428,7 @@ export async function runGoodreadsSync(input: {
     pushesSkippedHeld,
     ...(englishEditions !== undefined ? { englishEditions } : {}),
     ...(fixRetries !== undefined ? { fixRetries } : {}),
+    ...(llReleases !== undefined ? { llReleases } : {}),
     perIntegration,
   };
 }

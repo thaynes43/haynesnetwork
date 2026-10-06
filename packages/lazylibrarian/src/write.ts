@@ -1,7 +1,8 @@
 // @hnet/lazylibrarian/write — the WRITE surface (ADR-055 / DESIGN-028, read/write split). The ONLY
 // sanctioned LazyLibrarian write-backs are the PLAN-044 acquisition pushes: add a book by its resolved id,
 // mark a format Wanted (queueBook — MANDATORY after addBook, which alone lands the book `Skipped`), and
-// trigger a search (searchBook). This entrypoint may be imported ONLY by the packages/domain goodreads
+// trigger a search (searchBook); plus their one inverse (issue #735, DESIGN-028 amendment 2026-10-06): mark a
+// format the app queued for a want it then abandoned, parked or re-pointed `Skipped` again (unqueueBook). This entrypoint may be imported ONLY by the packages/domain goodreads
 // orchestrator and by packages/lazylibrarian itself — enforced by the arr-write-import-guard test
 // (extended for @hnet/lazylibrarian/write). It NEVER touches LL provider config (Prowlarr fullSync owns
 // that — OPS-013 / PLAN-044 hard constraint); it only drives the per-book acquisition state machine.
@@ -43,6 +44,17 @@ export class LazyLibrarianWriteClient {
    */
   async queueBook(bookId: string, format: LlFormat): Promise<string> {
     return this.http.commandText('queueBook', { id: bookId, type: llTypeParam(format) });
+  }
+
+  /**
+   * `cmd=unqueueBook&id=<bookId>&type=<eBook|AudioBook>` — mark the given FORMAT `Skipped`, so LazyLibrarian's
+   * backlog search stops looking for it (issue #735). Like queueBook it is an UNGUARDED
+   * `UPDATE books SET Status|AudioStatus='Skipped' WHERE BookID=?` (`api.py::_unqueuebook`): it would overwrite an
+   * `Open` (imported) or `Snatched` format just as readily, so the caller (the domain's LazyLibrarian Release, the
+   * only caller) sends it only for a format a fresh read shows `Wanted` and nothing holds. Returns the ack text.
+   */
+  async unqueueBook(bookId: string, format: LlFormat): Promise<string> {
+    return this.http.commandText('unqueueBook', { id: bookId, type: llTypeParam(format) });
   }
 
   /**

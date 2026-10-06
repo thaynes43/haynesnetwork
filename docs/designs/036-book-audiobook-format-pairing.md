@@ -1,7 +1,7 @@
 # DESIGN-036: Book ⇄ audiobook format pairing — pair cache, paced system wants, dual consume buttons
 
 - **Status:** Draft
-- **Last updated:** 2026-10-05 (a want on a non-English LazyLibrarian book asks for the English edition, issue #719; see the last amendment). Prior: 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
+- **Last updated:** 2026-10-06 (the missing format's `grabbed` follows LazyLibrarian, and a given-up want releases its LazyLibrarian book, issues #734 and #735; see the last amendment). Prior: 2026-10-05 (a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
   see the last amendment). Prior: 2026-10-05 (a want is checked against its anchor's book, issue #693; see the
   amendment of that date). Prior: 2026-07-21 (**author-agreement tolerance** — the live pairing-gap diagnosis found the
   substring check refusing real pairs on initials spacing ("JRR Tolkien" ⇄ "J.R.R. Tolkien"),
@@ -544,3 +544,37 @@ anchor's problem, not an edition's; the mint still never pairs it) and the book 
   `no_english_edition` park.
 - The pairing mint itself makes no extra Google Books call and needs no change: the lookup is the goodreads-sync job's,
   charged to its `goodreads` budget slice, at most once per want per quota-day.
+
+## Amendment — 2026-10-06: the missing format's `grabbed` follows LazyLibrarian, and a given-up want releases its book (issues #734, #735)
+
+**Normative rule: DESIGN-028's amendment of this date.** On the pairing side:
+
+- **#734, `grabbed`.** 51 of the 53 failed grabs the review found were pairing wants: the open-want reconcile read
+  LazyLibrarian through `applyRequestReconcile`, which never moves `grabbed` back. Now, before that reconcile, an open want
+  whose MISSING format reads `grabbed` takes `unheldFormatStatus` for it through the widened `revertLandedFormats`:
+  `Wanted` reads `wanted`, `Skipped` reads `missing` (and the Skipped sweep below may queue it again in the same run),
+  `Snatched` or held changes nothing. The held format is never touched. A want whose book names another volume or work is
+  skipped as before (the mint's identity check clears its id). Report field `requestsGrabReverted`, log
+  `request_grab_reverted` (site `format-pairing.reconcile`).
+- **#735, the release.** Every pairing writer that ends the app's work on a book for a want records a LazyLibrarian Release
+  (T-283) for the missing format when the want had LazyLibrarian working on it (`wanted` or `grabbed`), in its own
+  transaction: `reidentifyPairingWant` in `clear` mode (the identity check, `reidentified`), `upsertPairingWant` when it
+  re-points a want to another id (`reidentified`), and `parkPairingWant` for every reason (`parked:foreign_language`,
+  `parked:multi_book`, `parked:no_book`; the last two only park unpushed wants, so they record nothing in practice). The
+  park keeps the want's statuses, as before; only LazyLibrarian changes.
+- **The drain runs in every format-pairing run,** after the mint, the reconcile and the one re-request (so a book a want
+  took this run is owned), from one fresh `getAllBooks` read when a release is pending: a park or re-identify made in the run
+  is unqueued in the same run. A pairing want owns only its anchor's missing format of its book: a live want for the other
+  format, or a goodreads or collection want, on the same id keeps that format searching.
+- **The censuses** ride the run report: `llOrphanWanted` (T-284, after the drain) and `grabbedNotSnatched`, each with a log
+  line naming its rows (`ll_orphan_wanted`, `request_grabbed_not_snatched`). Both are null when LazyLibrarian could not be
+  read.
+- **A lifted park comes back on its own.** `liftForeignLanguageParks` (#712) and the English-edition pass's lift leave the
+  want as it was parked; its book now reads `Skipped`, so the reconcile settles the format `missing` and the Skipped sweep
+  queues and searches it again in that run.
+
+**Live data before the change (2026-10-06 ~09:00Z, read-only):** 64 request formats read `grabbed`. 58 are on live,
+unparked requests with a LazyLibrarian book: 52 on a `Wanted` book (51 pairing, 1 goodreads), 5 `Snatched`, 1 `Skipped`
+with a file. The other 6 are on parked wants, a want with no book, or a goodreads want whose shelf item is gone.
+LazyLibrarian had 24 `Wanted` formats no live request asks for: 22 on books no request names, 1 on a `foreign_language`
+park (`yK8pzwEACAAJ`), 1 F10 hand re-want (`GGcbzgEACAAJ`).

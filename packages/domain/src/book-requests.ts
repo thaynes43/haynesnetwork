@@ -28,6 +28,7 @@ import { NotFoundError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import { inTransaction, resolveDb } from './db-client';
 import { FOREIGN_LANGUAGE_REASON, NO_ENGLISH_EDITION_REASON } from './book-language';
+import { collectionFormatForSource, llQueuedFormats, recordLlReleases } from './ll-release-record';
 
 // ---------------------------------------------------------------------------
 // LL status → per-format request status (the domain owns the mapping; the client returns raw strings).
@@ -220,29 +221,44 @@ export interface RevertLandedInput {
    * concurrent repoint wins), the `settleRequestLlGone` guard. Null for a comic or a request with no id.
    */
   llBookId: string | null;
-  /** The status a `landed` ebook reverts to (null/absent = leave it). Never `landed`. */
+  /**
+   * The status a `landed` ebook reverts to (null/absent = leave it). Never `landed`. Issue #734: the same answer also
+   * takes a `grabbed` ebook back to a searching or dead-end status (`wanted`, `missing`, `requested`).
+   */
   ebook?: BookRequestStatus | null;
   audio?: BookRequestStatus | null;
+  /** A `landed` comic only (a comic's `grabbed` follows its Kapowarr volume through the reconcile). */
   comic?: BookRequestStatus | null;
   now?: Date;
 }
 
+export interface RevertLandedResult {
+  ebook: boolean;
+  audio: boolean;
+  comic: boolean;
+  /** Issue #734 — the formats of `ebook`/`audio` that changed and left `grabbed` (the others left `landed`). */
+  fromGrabbed: Array<'ebook' | 'audiobook'>;
+}
+
+const UNPOSITIVE = new Set<BookRequestStatus>(['requested', 'wanted', 'missing']);
+
 /**
- * Issue #715 — the ONE writer that takes a format OUT of `landed`. `advanceStatus` never regresses a positive, so
- * a request that read `landed` (a library match, a LazyLibrarian `Open`, a Kapowarr volume with every issue) kept
+ * Issue #715 — the ONE writer that takes a format OUT of a positive status. `advanceStatus` never regresses a positive,
+ * so a request that read `landed` (a library match, a LazyLibrarian `Open`, a Kapowarr volume with every issue) kept
  * reading `landed` after the thing that landed it went away. Each caller decides from a fresh read (the LazyLibrarian
  * snapshot, the Kapowarr volume, the format pairs) and names the truthful status here; this writer only applies it,
- * and only to a format that IS `landed` now.
+ * and only to a format that IS `landed` now, or (issue #734, DESIGN-028 amendment 2026-10-06) an ebook or audiobook
+ * that reads `grabbed` while the answer is not positive: LazyLibrarian puts a failed grab back to `Wanted`, and the
+ * format kept reading `grabbed` (downloading) for months. `grabbed` → `grabbed`/`landed` is never this writer's move.
  *
  * Refused while the library holds the want (`matched_books_item_id` set: the match is what lands it) and when the
  * request no longer points at the id the caller read. Leaves `last_reconciled_at` alone, so the gone rule's grace
  * keeps running from when LazyLibrarian last showed the book. Unaudited (synced/derived state, the
- * `applyRequestReconcile` class); the caller logs `request_landed_reverted`. Returns which formats changed.
+ * `applyRequestReconcile` class); the caller logs `request_landed_reverted` / `request_grab_reverted`. Returns which
+ * formats changed.
  */
-export async function revertLandedFormats(
-  input: RevertLandedInput,
-): Promise<{ ebook: boolean; audio: boolean; comic: boolean }> {
-  const none = { ebook: false, audio: false, comic: false };
+export async function revertLandedFormats(input: RevertLandedInput): Promise<RevertLandedResult> {
+  const none: RevertLandedResult = { ebook: false, audio: false, comic: false, fromGrabbed: [] };
   if (!input.ebook && !input.audio && !input.comic) return none;
   const now = input.now ?? new Date();
   return inTransaction(input.db, async (tx) => {
@@ -252,9 +268,16 @@ export async function revertLandedFormats(
       .where(eq(bookRequests.id, input.requestId))
       .for('update');
     if (!req || req.matchedBooksItemId || (req.llBookId ?? null) !== input.llBookId) return none;
-    const ebook = input.ebook && input.ebook !== 'landed' && req.ebookStatus === 'landed' ? input.ebook : null;
-    const audio = input.audio && input.audio !== 'landed' && req.audioStatus === 'landed' ? input.audio : null;
-    const comic = input.comic && input.comic !== 'landed' && req.comicStatus === 'landed' ? input.comic : null;
+    /** The status a format moves to, or null: off `landed` to anything else; off `grabbed` (#734) to a non-positive. */
+    const target = (current: BookRequestStatus, next: BookRequestStatus | null | undefined, grabbedToo: boolean) => {
+      if (!next || next === 'landed') return null;
+      if (current === 'landed') return next;
+      if (grabbedToo && current === 'grabbed' && UNPOSITIVE.has(next)) return next;
+      return null;
+    };
+    const ebook = target(req.ebookStatus, input.ebook, true);
+    const audio = target(req.audioStatus, input.audio, true);
+    const comic = req.comicStatus ? target(req.comicStatus, input.comic, false) : null;
     if (!ebook && !audio && !comic) return none;
     await tx
       .update(bookRequests)
@@ -265,7 +288,10 @@ export async function revertLandedFormats(
         updatedAt: now,
       })
       .where(eq(bookRequests.id, req.id));
-    return { ebook: ebook !== null, audio: audio !== null, comic: comic !== null };
+    const fromGrabbed: Array<'ebook' | 'audiobook'> = [];
+    if (ebook && req.ebookStatus === 'grabbed') fromGrabbed.push('ebook');
+    if (audio && req.audioStatus === 'grabbed') fromGrabbed.push('audiobook');
+    return { ebook: ebook !== null, audio: audio !== null, comic: comic !== null, fromGrabbed };
   });
 }
 
@@ -1736,8 +1762,20 @@ export async function syncCollectionWants(
           ),
         ),
       )
-      .returning({ id: bookRequests.id });
+      .returning();
     removed = deleted.length;
+    // Issue #735 — a dropped want's book is released: the member is held now (LazyLibrarian holds it too, and the drain
+    // drops the release), or an active pairing want carries the work (it owns the book when it points at the same one).
+    for (const row of deleted) {
+      if (row.unroutableReason) continue; // a park already released what it had
+      await recordLlReleases(tx, {
+        llBookId: row.llBookId,
+        formats: llQueuedFormats(row, [input.format]),
+        reason: 'collection_want_dropped',
+        requestId: row.id,
+        now: runStart,
+      });
+    }
   });
 
   return { minted, updated, removed };
@@ -1748,8 +1786,9 @@ export async function syncCollectionWants(
  * or work than its member (`llBookMismatch`): `unroutable_reason = 'wrong_volume'` and the id cleared, so no job
  * queues that book for it again (the force-search, the gone rule and the one re-request all skip a park, and the
  * wants pass never re-resolves it — `loadParkedWantRefs`). The tile stays on the drill, wanted and unsearchable.
- * Single writer, one statement, unaudited (the derived collection-want class), guarded on the want still pointing
- * at that id and still unparked. Returns whether it parked.
+ * Single writer, one transaction, unaudited (the derived collection-want class), guarded on the want still pointing
+ * at that id and still unparked. Issue #735: a format LazyLibrarian was searching for it (force-searched, not landed) is
+ * released in the same transaction. Returns whether it parked.
  */
 export async function parkCollectionWant(input: {
   db?: DbClient;
@@ -1758,19 +1797,35 @@ export async function parkCollectionWant(input: {
   now?: Date;
 }): Promise<boolean> {
   const now = input.now ?? new Date();
-  const rows = await resolveDb(input.db)
-    .update(bookRequests)
-    .set({ unroutableReason: 'wrong_volume', llBookId: null, updatedAt: now })
-    .where(
-      and(
-        eq(bookRequests.id, input.requestId),
-        eq(bookRequests.origin, 'collection'),
-        isNull(bookRequests.unroutableReason),
-        eq(bookRequests.llBookId, input.llBookId),
-      ),
-    )
-    .returning({ id: bookRequests.id });
-  return rows.length > 0;
+  return inTransaction(input.db, async (tx) => {
+    const [row] = await tx
+      .select({ want: bookRequests, source: booksCollections.source })
+      .from(bookRequests)
+      .leftJoin(booksCollections, eq(booksCollections.id, bookRequests.collectionId))
+      .where(
+        and(
+          eq(bookRequests.id, input.requestId),
+          eq(bookRequests.origin, 'collection'),
+          isNull(bookRequests.unroutableReason),
+          eq(bookRequests.llBookId, input.llBookId),
+        ),
+      )
+      .for('update', { of: bookRequests });
+    if (!row) return false;
+    await tx
+      .update(bookRequests)
+      .set({ unroutableReason: 'wrong_volume', llBookId: null, updatedAt: now })
+      .where(eq(bookRequests.id, row.want.id));
+    // Issue #735 — the other work's book this want had LazyLibrarian searching is released.
+    await recordLlReleases(tx, {
+      llBookId: input.llBookId,
+      formats: row.source ? llQueuedFormats(row.want, [collectionFormatForSource(row.source)]) : [],
+      reason: 'parked:wrong_volume',
+      requestId: row.want.id,
+      now,
+    });
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1827,6 +1882,7 @@ async function lockEnglishEditionRow(
  * (`foreign_language`, `no_english_edition`) is cleared, and the lookup is stamped. The want is then an ordinary
  * never-pushed one: the next run's push (addBook, queueBook, searchBook) takes it through the existing path. Guarded
  * on the id the caller read, on the want still being unmatched and not a comic, and on it still having open formats.
+ * Issue #735: the formats LazyLibrarian was working on the foreign book for this want are released (same transaction).
  * Returns whether the row changed.
  */
 export async function switchRequestToEnglishEdition(input: {
@@ -1857,6 +1913,14 @@ export async function switchRequestToEnglishEdition(input: {
         updatedAt: now,
       })
       .where(eq(bookRequests.id, row.id));
+    // Issue #735 — the foreign book's formats LazyLibrarian was working for this want are released.
+    await recordLlReleases(tx, {
+      llBookId: input.fromLlBookId,
+      formats: llQueuedFormats(row, open),
+      reason: 'english_edition_switched',
+      requestId: row.id,
+      now,
+    });
     return true;
   });
 }
@@ -1867,6 +1931,7 @@ export async function switchRequestToEnglishEdition(input: {
  * (the push, the reconcile and its Skipped sweep, the gone rule, the one re-request, the collection force-search), so
  * nothing is queued or searched on the foreign book. A goodreads want's open formats also settle `missing`, the honest
  * dead end (a pairing or collection want keeps its working status, like its other parks). Same guards as the switch.
+ * Issue #735: a format LazyLibrarian was searching on the foreign book for this want is released (same transaction).
  * Returns whether the row changed.
  */
 export async function parkRequestNoEnglishEdition(input: {
@@ -1891,6 +1956,14 @@ export async function parkRequestNoEnglishEdition(input: {
         updatedAt: now,
       })
       .where(eq(bookRequests.id, row.id));
+    // Issue #735 — nothing is pushed for a parked want, and LazyLibrarian stops searching the foreign book for it too.
+    await recordLlReleases(tx, {
+      llBookId: input.llBookId,
+      formats: llQueuedFormats(row, open),
+      reason: 'parked:no_english_edition',
+      requestId: row.id,
+      now,
+    });
     return true;
   });
 }

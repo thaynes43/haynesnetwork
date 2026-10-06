@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -802,3 +802,135 @@ for it in any language. The plain-words leg above, and migration 0092 (clears th
 lookups in the first goodreads-sync run after the 07:00Z quota roll and is deferred (`skippedBudget`, nothing stamped) for
 the rest of the day: a once-a-day pass of up to 10 wants. A want that turns up mid-day waits for the next 07:41Z run. A
 reserved slice charged to the pass first is the alternative if that proves too slow; not taken, to keep the budget as ruled.
+
+## Amendment — 2026-10-06: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up (issues #734, #735)
+
+Both found by the adversarial review of the books rollout (issue #731, `.agents/context/2026-10-06-books-rollout-adversarial-review.md`,
+findings L-01 and L-02).
+
+### #734: a failed grab stopped reading `grabbed`
+
+**What was seen.** On 2026-10-06 01:55Z, 59 request formats read `grabbed`. Joined read-only against LazyLibrarian: 53
+pointed at a book whose format reads `Wanted` with a `Failed` last grab (the oldest from 2026-07-17), 4 were really
+`Snatched`, 2 `Skipped`. The wall called them downloading, some for two and a half months.
+
+**Why.** `grabbed` comes only from LazyLibrarian's `Snatched` (`mapLlStatus`). When a download fails, LazyLibrarian marks its
+`wanted` row `Failed` and puts the book's format back to `Wanted`; the app's reconcile goes through `advanceStatus`, which
+never moves a positive (`grabbed`, `landed`) back to a searching state. #715 added the one writer out of `landed` and left
+`grabbed` alone.
+
+**The rule: `grabbed` is only true while LazyLibrarian shows the format `Snatched` (or holds it).** For a request the
+library does not hold, an ebook or audiobook that reads `grabbed` reads what LazyLibrarian shows now:
+
+| LazyLibrarian shows the format | The format reads |
+| --- | --- |
+| `Snatched` | `grabbed` (unchanged) |
+| `Open`/`Have`, or a library date or file | `landed` (the reconcile, as before) |
+| `Wanted` (the grab failed, or was reset) | `wanted` |
+| `Skipped`, `Ignored`, `Matched` or no status | `missing` (the Skipped sweep may queue it again, as for any `missing`) |
+| the book names another volume or work (T-280) | `missing` (a download of another work is not this want's) |
+| LazyLibrarian no longer has the book | the gone rule (T-279), which already settles `grabbed` |
+
+**How.** No new writer: `revertLandedFormats` (the #715 writer, `book-requests.ts`) is widened. It still takes a format
+out of `landed` to any status a caller names, and now also takes an ebook or audiobook out of `grabbed` when the answer is
+`wanted`, `missing` or `requested`; never `grabbed` to `grabbed` or `landed`. Same guards (no library match, the id the
+caller read), same transaction discipline, unaudited like every synced status write. The goodreads reconcile already passed
+`unheldFormatStatus` for every format before `applyRequestReconcile`, so the widened writer fixes that path as it stands;
+the pairing open-want reconcile now does the same for its missing format (DESIGN-036 amendment of this date). Each change
+logs `request_grab_reverted` (separate from `request_landed_reverted`); report field `requestsGrabReverted` on the
+goodreads-sync and format-pairing reports. A comic's `grabbed` is untouched (Kapowarr's reconcile owns it).
+
+**No grace.** LazyLibrarian never reads `Wanted` between a snatch and its import: the format stays `Snatched` until the
+post-processor writes `Open`, and only a failure path writes `Wanted` ("reset status so we try for a different version",
+`postprocess.py` in the pinned build). A one-run flip is
+possible only when one job decides from a snapshot older than another job's newer one (the #715 class); the next run
+corrects it.
+
+**The census.** format-pairing reports `grabbedNotSnatched` every run (log `request_grabbed_not_snatched` with the rows):
+live request formats of every origin that read `grabbed` while LazyLibrarian shows them neither `Snatched` nor held.
+Expected 0 after each run's reconciles; a non-zero value names wants the reconcile could not judge (another volume, a lost
+book within its grace).
+
+### #735: LazyLibrarian is told when the app gives a want up
+
+**What was seen.** LazyLibrarian had 367 books with a format `Wanted` or `Snatched`, and 22 of them had no request pointing at
+them: books the app had queued for a want it later re-identified (79 re-identifies in three days) or parked
+(`foreign_language`, `no_english_edition`), and stopped looking at. LazyLibrarian searched each of them every day, one query
+per indexer, and could still grab the wrong work (the #686 shape). The twelve `foreign_language` parks of 2026-10-05 had to
+be unqueued by hand.
+
+**The rule: when the app gives a want up, the LazyLibrarian format it had queued for that want is unqueued, unless another
+live request still asks for that book and format.** "Gives up" is every writer that ends the app's own work on a book for a
+want:
+
+| Writer | Release reason |
+| --- | --- |
+| `reidentifyPairingWant` (`clear`), and `upsertPairingWant` re-pointing a want to another id | `reidentified` |
+| `parkPairingWant` (`foreign_language`, `multi_book`, `no_book`) | `parked:<reason>` |
+| `parkCollectionWant` | `parked:wrong_volume` |
+| `parkRequestNoEnglishEdition` | `parked:no_english_edition` |
+| `switchRequestToEnglishEdition` (the foreign book) | `english_edition_switched` |
+| `syncCollectionWants` dropping a want (member held, or a pairing want carries the work) | `collection_want_dropped` |
+| `upsertShelfItems` tombstoning a shelf item (the person took the book off the shelf) | `shelf_removed` |
+| `unlinkIntegration` | `unlinked` |
+| the #693 one-off repair writers (`reopenWrongVolumeRequest` re-pointing, `settleRemovedAnchorPairingWant`) | `repaired:*` |
+
+**"Had queued"** is the app's own evidence that it put LazyLibrarian to work for that want (`llQueuedFormats`): a goodreads or
+pairing format reading `wanted` or `grabbed` (only a push or a re-queue sets those), or a collection want's format that was
+force-searched (`last_searched_at`) and has not landed. A format the app never queued (`requested`, a settled `missing`,
+`landed`) records nothing, so a book a person queued by hand under the same id is never the app's to unqueue.
+
+**The LazyLibrarian Release (T-283).** The writer records the book and format in `ll_format_releases` (migration 0093) in
+the same transaction as the write that gives the want up (`recordLlReleases`, `ll-release-record.ts`). Each goodreads-sync
+run (once, after every integration) and each format-pairing run (after its mints, pushes and reconcile) drains the table
+(`drainLlReleases`, `ll-release.ts`) from one fresh `getAllBooks` read, taken only when a release is pending:
+
+| At drain time | Outcome |
+| --- | --- |
+| a live request asks LazyLibrarian for that book and format (the owner rule below) | dropped, nothing written (`owned`) |
+| LazyLibrarian no longer has the book | dropped (`gone`) |
+| LazyLibrarian holds the format | dropped (`held`) |
+| the format reads `Snatched` | kept pending until the download ends either way |
+| the format reads `Wanted` | `unqueueBook` (back to `Skipped`), dropped; log `ll_format_unqueued` |
+| anything else | dropped (`not_wanted`) |
+
+An empty or failed read, or a failed `unqueueBook`, decides nothing: the row stays for the next run. Report fields
+`llReleasesUnqueued`, `llReleasesSettled`, `llReleasesPending`, `llReleasesFailed` (format-pairing report; `llReleases` on
+the goodreads-sync run report); logs `ll_format_unqueued`, `ll_release_settled`.
+
+**The owner rule (`liveLlFormatOwners`) is how another person's request is never cancelled.** A live owner of a book format
+is an unparked, non-comic request pointing at that LazyLibrarian id whose formats include it: both for a goodreads want
+(while its shelf item is on the shelf and its link is not `unlinked`), the anchor's missing format for a pairing want (a
+removed anchor's want included, since the reconcile still works it), the collection's format for a collection want. It is
+read at drain time, after the run's own mints and pushes, so a want that took the same book in the meantime keeps it.
+
+**The confined write surface.** `unqueueBook` joins `@hnet/lazylibrarian/write` (`cmd=unqueueBook&id=&type=`), imported only
+by `packages/domain`. LazyLibrarian's `_unqueuebook` is, like `_queuebook`, an unguarded
+`UPDATE books SET Status|AudioStatus='Skipped' WHERE BookID=?`: it would overwrite an imported or downloading format as
+readily, which is why the drain sends it only for a format the fresh read shows `Wanted` and not held. No LazyLibrarian
+database write, only its API.
+
+**Coming back.** Every way back into a want re-queues it through paths that already exist: a lifted `foreign_language` or
+`no_english_edition` park and a re-shelved book reconcile, read `Skipped` (`missing`), and the Skipped sweep queues and
+searches the format again; a re-linked account does the same; an English-edition switch pushes the English book.
+
+**The census: the Orphan LazyLibrarian Want (T-284).** format-pairing reports `llOrphanWanted` every run, from its snapshot,
+after its drain (log `ll_orphan_wanted` with up to 50 `<id>:<format>` keys): LazyLibrarian formats that read `Wanted`, are
+not held and have no live owner. It is the measurement the review asked for (R-02). A non-zero value names books a person
+queued by hand, or a gap in the release.
+
+**The one-off repair.** The orphans that predate the release are sent back to `Skipped` by
+`packages/sync/src/scripts/ll-orphan-unqueue.ts --dry-run|--apply` (`unqueueOrphanLlWants`), run as a frontend Job from the
+format-pairing CronJob template, dry run first. Its keep list (`F10_HAND_REWANTS`, overridable with `--keep=<id>:<format>,…`)
+holds the English records the 2026-10-05 F10 sweep re-wanted by hand to replace removed foreign copies (Solitaire, Israel
+Potter, Murtagh, The Other Emily, and the rest named in that HANDOFF block): no request names some of them, so they read as
+orphans, and they stay wanted until LazyLibrarian grabs them.
+
+**Tests:** `packages/domain/__tests__/ll-release.test.ts` (#734: grabbed to wanted or missing, never to grabbed or landed,
+refused for a library match or a moved id, a comic untouched; the goodreads and pairing reconciles; the census. #735: every
+writer records its release and a never-pushed want records nothing; the drain's six outcomes; another live request owns it
+(goodreads, a pairing want's own format only), while a removed shelf item or a park does not; a park in a format-pairing run
+is unqueued in the same run; an empty read, a failed read and a failed unqueue keep the row; the census and the one-off with
+its keep list and dry run), `packages/domain/__tests__/landed-truth.test.ts`, `packages/lazylibrarian/__tests__/client.test.ts`
+(`unqueueBook`), `packages/sync/__tests__/ll-orphan-unqueue-script.test.ts`, `packages/db/__tests__/migrations.test.ts`
+(0093).

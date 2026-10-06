@@ -126,6 +126,10 @@ export * from './user-book-progress';
 export * from './user-integrations';
 export * from './integration-shelf-items';
 export * from './book-requests';
+// Issue #735 (DESIGN-028 amendment 2026-10-06, migration 0093) — the LazyLibrarian Release: a book format the app
+// queued for a want it then gave up, pending until it is unqueued or found owned, held or gone. Guarded single-writer
+// table (ll-release.ts); derived operational state, no audit.
+export * from './ll-format-releases';
 // ADR-065 / DESIGN-036 (PLAN-050 — book ⇄ audiobook pairing) — the FORMAT PAIR derived cache: one row
 // per conservatively-matched Kavita-book ⇄ ABS-audiobook pair (format-pairing mode). The dual consume
 // buttons, the coverage badge, and the pairing-want mint all read it. Guarded single-writer table
