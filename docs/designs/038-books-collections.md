@@ -1,7 +1,7 @@
 # DESIGN-038: Books collections mirror — the Books/Audiobooks/Comics Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-06 (D-13 amendment, issue #759: a downloaded want the library cannot show reads Downloaded). Prior: 2026-10-06 (D-13 amendment, issue #759: each collection reads its own target's missing list). Prior: 2026-10-06 (D-13 amendment, issue #735: a collection want given up releases its LazyLibrarian book). Prior: 2026-10-05 (D-13 amendment, issue #719: a collection want on a non-English LazyLibrarian book asks for the English edition). Prior: 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
+- **Last updated:** 2026-10-06 (D-13 amendment, issue #741: collection wants record a Request Event, ADR-101). Prior: 2026-10-06 (D-13 amendment, issue #759: a downloaded want the library cannot show reads Downloaded). Prior: 2026-10-06 (D-13 amendment, issue #759: each collection reads its own target's missing list). Prior: 2026-10-06 (D-13 amendment, issue #735: a collection want given up releases its LazyLibrarian book). Prior: 2026-10-05 (D-13 amendment, issue #719: a collection want on a non-English LazyLibrarian book asks for the English edition). Prior: 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
   force-search parks a want on another work's book). Prior: 2026-07-20 (**ADR-076 — format-agnostic collections**: D-05 wall mapping → the comic
   partition (the three-way majority rule retires with the Audiobooks wall) + recipe-id twin MERGE; D-11/D-12
   the `cat=` token is now EMITTED by Libretto (L1 LIVE — recipe-authored categories; L2 agent-set stays the
@@ -570,3 +570,15 @@ composed-Wanted idiom, now collection-scoped.
 >   and pairing wants only. The drill hides a want whose own format reads `landed`, so landing a collection want from
 >   LazyLibrarian would hide a member the library may not show. The 57 collection wants on a book LazyLibrarian holds while
 >   Libretto still lists the member missing are issue #759.
+
+## Amendment — 2026-10-06 (Request Events): collection wants record a Request Event (issue #741, ADR-101)
+
+The D-13 collection-want writers this design calls "unaudited (the derived collection-want class)" now record a
+Request Event (glossary T-292) in their transaction, through `packages/domain/src/book-request-events.ts`, the only
+`book_requests` write path: `syncCollectionWants` (`collection_want_minted` / `collection_want_refreshed` /
+`collection_want_dropped`; a re-run that only stamps `last_reconciled_at` records nothing), `parkCollectionWant`
+(`parked`), `releaseWrongAuthorCollectionWant`, `setCollectionWantDownloaded`, the force-search reopen of a `missing`
+want (`force_search_reopened`). A collection that leaves its server records `collection_removed` for each want it
+cascades away (`syncBooksCollections`, before its delete). A dropped want's events outlive its row (no foreign key).
+The on-demand collection Force Search records `actor: 'user'` with the caller's id. Nothing the wants pass decides
+changes. The full rules, reason table and queries: DESIGN-028, amendment 2026-10-06 (Request Events).

@@ -38,6 +38,7 @@ import {
   runPelotonPosterGuard,
   startSyncRun,
   sweepExpiredBatches,
+  withRequestEventScope,
   syncAiUsage,
   syncAuthentikUsers,
   syncBooks,
@@ -564,8 +565,15 @@ async function loadExistingKavitaEnrichment(
  * Run one sync pass over the requested sources. Never throws for a per-source
  * failure — inspect the report; throws only if the report itself cannot be produced
  * (e.g. the database is unreachable for every bookkeeping write).
+ *
+ * ADR-101 (issue #741) — the pass runs in a Request Event scope: every book_requests write it makes records
+ * `actor: 'sync'` and the mode as its site (`goodreads-sync`, `format-pairing`, …) unless the writer names its leg.
  */
 export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
+  return withRequestEventScope({ actor: 'sync', site: options.mode }, () => runSyncPass(options));
+}
+
+async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
   const logger = options.logger ?? noopLogger;
   const db = options.db ?? (defaultDb as DbClient);
 

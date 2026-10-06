@@ -45,6 +45,7 @@ import {
   type LlHeldSignals,
 } from './book-requests';
 import { inTransaction, resolveDb } from './db-client';
+import { updateBookRequests } from './book-request-events';
 import { isForeignLanguage } from './book-language';
 import { gbQuotaDayString } from './gb-call-budget';
 import { GB_DAILY_RESET_UTC_HOUR, peekGbQuotaGate } from './gb-quota-breaker';
@@ -263,7 +264,7 @@ export function llRowTracksFormat(row: LlSnapshotRow | undefined, format: LlForm
 }
 
 // ---------------------------------------------------------------------------
-// The two single-writers (unaudited: synced/derived state, the markRequestPushed class).
+// The two single-writers (each records a Request Event, ADR-101).
 // ---------------------------------------------------------------------------
 
 /**
@@ -275,6 +276,8 @@ export async function repointRequestLlBook(input: {
   requestId: string;
   fromLlBookId: string;
   toLlBookId: string;
+  /** ADR-101 — the job leg, recorded on the Request Event. */
+  site?: string;
   now?: Date;
 }): Promise<boolean> {
   const now = input.now ?? new Date();
@@ -285,10 +288,12 @@ export async function repointRequestLlBook(input: {
       .where(eq(bookRequests.id, input.requestId))
       .for('update');
     if (!req || req.llBookId !== input.fromLlBookId) return false;
-    await tx
-      .update(bookRequests)
-      .set({ llBookId: input.toLlBookId, updatedAt: now })
-      .where(eq(bookRequests.id, req.id));
+    await updateBookRequests(
+      tx,
+      { writer: 'repointRequestLlBook', reason: 'll_book_gone_repointed', site: input.site },
+      eq(bookRequests.id, req.id),
+      { llBookId: input.toLlBookId, updatedAt: now },
+    );
     return true;
   });
 }
@@ -305,6 +310,8 @@ export async function settleRequestLlGone(input: {
   formats: readonly LlFormat[];
   /** Issue #715: also settle a `landed` format (a want the library does not hold). */
   includeLanded?: boolean;
+  /** ADR-101 — the job leg, recorded on the Request Event. */
+  site?: string;
   now?: Date;
 }): Promise<boolean> {
   if (input.formats.length === 0) return false;
@@ -326,10 +333,17 @@ export async function settleRequestLlGone(input: {
     const ebookStatus = settle('ebook', req.ebookStatus);
     const audioStatus = settle('audiobook', req.audioStatus);
     if (ebookStatus === req.ebookStatus && audioStatus === req.audioStatus) return false;
-    await tx
-      .update(bookRequests)
-      .set({ ebookStatus, audioStatus, lastReconciledAt: now, updatedAt: now })
-      .where(eq(bookRequests.id, req.id));
+    await updateBookRequests(
+      tx,
+      {
+        writer: 'settleRequestLlGone',
+        reason: 'll_book_gone_settled',
+        site: input.site,
+        detail: { llBookId: input.llBookId, formats: [...input.formats] },
+      },
+      eq(bookRequests.id, req.id),
+      { ebookStatus, audioStatus, lastReconciledAt: now, updatedAt: now },
+    );
     return true;
   });
 }
@@ -371,6 +385,7 @@ export async function applyLlGoneDecision(input: {
       requestId: input.requestId,
       fromLlBookId: input.llBookId,
       toLlBookId: decision.toLlBookId,
+      site: input.site,
       now: input.now,
     });
     if (!moved) return;
@@ -381,6 +396,7 @@ export async function applyLlGoneDecision(input: {
         requestId: input.requestId,
         ebookStatus: llReconcileStatus(row, 'ebook'),
         audioStatus: llReconcileStatus(row, 'audiobook'),
+        site: input.site,
         now: input.now,
       });
     }
@@ -401,6 +417,7 @@ export async function applyLlGoneDecision(input: {
       llBookId: input.llBookId,
       formats: decision.formats,
       ...(input.includeLanded ? { includeLanded: true } : {}),
+      site: input.site,
       now: input.now,
     });
     if (!settled) return;
@@ -681,7 +698,7 @@ export async function runLlRerequests(input: {
 }
 
 /**
- * The single writer of a re-request (one transaction, unaudited: the markRequestPushed class). Guarded on the want
+ * The single writer of a re-request (one transaction, an `ll_rerequest` Request Event, ADR-101). Guarded on the want
  * still pointing at the planned id, its re-request not ended, and its planned formats still `missing`.
  *   - `landed`: the held formats become `landed` (repointed to the plan's id); nothing is stamped.
  *   - `requeued`: the handed formats become `wanted`, held ones `landed`, the want repointed; `ll_rerequested_at`
@@ -720,25 +737,35 @@ async function recordLlRerequest(input: {
     if (!req || req.llBookId !== c.want.llBookId || req.llRerequestedAt !== null) return false;
     const statusOf = (f: LlFormat) => (f === 'ebook' ? req.ebookStatus : req.audioStatus);
     if (![...plan.land, ...plan.request].every((f) => statusOf(f) === 'missing')) return false;
+    const audit = {
+      writer: 'recordLlRerequest',
+      reason: 'll_rerequest' as const,
+      site: input.site,
+      detail: {
+        outcome,
+        llBookId: c.want.llBookId,
+        toLlBookId: plan.toLlBookId,
+        land: plan.land,
+        request: plan.request,
+        ...(input.viaAdd ? { viaAdd: true } : {}),
+      },
+    };
     if (outcome === 'deferred') {
       // A quota-wall refusal: wait for the next quota-day, uncounted.
-      await tx
-        .update(bookRequests)
-        .set({ llRerequestFailedAt: input.now, updatedAt: input.now })
-        .where(eq(bookRequests.id, req.id));
+      await updateBookRequests(tx, audit, eq(bookRequests.id, req.id), {
+        llRerequestFailedAt: input.now,
+        updatedAt: input.now,
+      });
       return true;
     }
     if (outcome === 'not_added') {
       const failures = req.llRerequestFailures + 1;
-      await tx
-        .update(bookRequests)
-        .set({
-          llRerequestFailures: failures,
-          llRerequestFailedAt: input.now,
-          ...(failures >= LL_REREQUEST_MAX_FAILURES ? { llRerequestedAt: input.now } : {}),
-          updatedAt: input.now,
-        })
-        .where(eq(bookRequests.id, req.id));
+      await updateBookRequests(tx, audit, eq(bookRequests.id, req.id), {
+        llRerequestFailures: failures,
+        llRerequestFailedAt: input.now,
+        ...(failures >= LL_REREQUEST_MAX_FAILURES ? { llRerequestedAt: input.now } : {}),
+        updatedAt: input.now,
+      });
       return true;
     }
     const next = (f: LlFormat): BookRequestStatus =>
@@ -747,23 +774,20 @@ async function recordLlRerequest(input: {
         : plan.request.includes(f) && outcome === 'requeued'
           ? 'wanted'
           : statusOf(f);
-    await tx
-      .update(bookRequests)
-      .set({
-        llBookId: plan.toLlBookId,
-        ebookStatus: next('ebook'),
-        audioStatus: next('audiobook'),
-        ...(outcome === 'requeued'
-          ? {
-              llRerequestedAt: input.now,
-              ...(input.viaAdd ? { llRerequestAddedAt: input.now } : {}),
-              lastReconciledAt: input.now,
-              ...(c.collection ? { lastSearchedAt: input.now } : {}),
-            }
-          : {}),
-        updatedAt: input.now,
-      })
-      .where(eq(bookRequests.id, req.id));
+    await updateBookRequests(tx, audit, eq(bookRequests.id, req.id), {
+      llBookId: plan.toLlBookId,
+      ebookStatus: next('ebook'),
+      audioStatus: next('audiobook'),
+      ...(outcome === 'requeued'
+        ? {
+            llRerequestedAt: input.now,
+            ...(input.viaAdd ? { llRerequestAddedAt: input.now } : {}),
+            lastReconciledAt: input.now,
+            ...(c.collection ? { lastSearchedAt: input.now } : {}),
+          }
+        : {}),
+      updatedAt: input.now,
+    });
     return true;
   });
   if (!changed) return;

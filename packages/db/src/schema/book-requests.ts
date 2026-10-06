@@ -28,9 +28,10 @@ const REQUEST_ORIGIN_SQL_LIST = BOOK_REQUEST_ORIGINS.map((o) => `'${o}'`).join('
  * mirror when the item is (or becomes) present; `ll_book_id` is the LazyLibrarian book id the pushes used.
  *
  * ADR-046 STANDS: books_items stays a pure mirror — request/Missing state lives HERE, never bolted onto
- * the mirror. Single-writer (@hnet/domain book-requests.ts, guard-listed). The SYNC-driven mint/status
- * reconcile is NOT audited (synced/derived read-model, the media_items class). The USER-initiated manual
- * "Search again" DOES write a `permission_audit` row (request_book_search) — R3/AC-04.
+ * the mirror. Single-writer (@hnet/domain book-request-events.ts is the only write path, guard-listed). ADR-101
+ * (issue #741, superseding ADR-055's "unaudited" for this table): every mint, change and delete records a Request
+ * Event in `book_request_events`, in the same transaction; the bookkeeping stamps record none. The USER-initiated
+ * manual "Search again" also writes a `permission_audit` row (request_book_search) — R3/AC-04.
  *
  * ADR-065 / DESIGN-036 (PLAN-050 — book ⇄ audiobook pairing) widens the ledger with the SYSTEM-WANT
  * seat: `origin` discriminates who minted the row ('goodreads' = a user's shelf want, the keys above

@@ -8,6 +8,7 @@
 // Rebuildable derived cache (the plex_collections class) — no per-row audit event; the
 // no-direct-state-writes guard forbids any other module from touching the tables.
 import {
+  bookRequests,
   booksCollections,
   booksCollectionMembers,
   booksItems,
@@ -17,6 +18,7 @@ import {
 } from '@hnet/db';
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { inTransaction } from './db-client';
+import { recordCascadedRequestDeletes } from './book-request-events';
 
 /** One collection (with its raw membership) the books-collections-sync fetcher produced. */
 export interface BooksCollectionSyncInput {
@@ -238,15 +240,23 @@ export async function syncBooksCollections(
 
     // Collection reconcile — fully-read (source, kind) families only; members CASCADE.
     for (const family of input.scopedFamilies) {
+      const leaving = and(
+        eq(booksCollections.source, family.source),
+        eq(booksCollections.kind, family.kind),
+        lt(booksCollections.lastSeenAt, runStart),
+      )!;
+      // ADR-101 — the collection wants cascade away with their collection: their Request Events first.
+      await recordCascadedRequestDeletes(
+        tx,
+        { writer: 'syncBooksCollections', reason: 'collection_removed' },
+        inArray(
+          bookRequests.collectionId,
+          tx.select({ id: booksCollections.id }).from(booksCollections).where(leaving),
+        ),
+      );
       const removed = await tx
         .delete(booksCollections)
-        .where(
-          and(
-            eq(booksCollections.source, family.source),
-            eq(booksCollections.kind, family.kind),
-            lt(booksCollections.lastSeenAt, runStart),
-          ),
-        )
+        .where(leaving)
         .returning({ id: booksCollections.id });
       collectionsRemoved += removed.length;
     }

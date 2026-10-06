@@ -94,7 +94,9 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see
    `packages/domain` — single-writer helpers; `packages/domain/README.md` — pattern
-   borrowed from todos-for-dues).
+   borrowed from todos-for-dues). **Every `book_requests` write goes through
+   `packages/domain/src/book-request-events.ts`**, which records a Request Event (`book_request_events`) in the same
+   transaction (ADR-101); a repair script runs its writers inside `withRequestEventScope({ actor: 'repair', site })`.
 7. Secrets never land in git: local dev uses `.env.local` (gitignored); cluster uses
    External Secrets + 1Password (`HaynesKube` vault). See `docs/ops/`.
 8. **Destructive actions use the `@hnet/ui` `ConfirmButton` inline two-step confirm — never

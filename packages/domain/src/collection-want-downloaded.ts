@@ -19,12 +19,13 @@
 //      words), and "not in the library" would be false: the want stays `requested`.
 //
 // The drill keeps such a want as a tile (`getCollectionWantedBookRequests`) and labels it Downloaded. The force-search
-// already skips a `landed` format, so nothing searches for a book LazyLibrarian holds. Unaudited, like every synced
-// status write; one guarded writer (`setCollectionWantDownloaded`). An empty or failed `getAllBooks` read decides
+// already skips a `landed` format, so nothing searches for a book LazyLibrarian holds. Records a Request Event (ADR-101),
+// like every book_requests write; one guarded writer (`setCollectionWantDownloaded`). An empty or failed `getAllBooks` read decides
 // nothing.
 import { and, eq, isNotNull, isNull, ne } from 'drizzle-orm';
 import { bookRequests, booksCollections, booksItems, type DbClient } from '@hnet/db';
 import { inTransaction, resolveDb } from './db-client';
+import { updateBookRequests } from './book-request-events';
 import { llFormatAlreadyHeld } from './book-requests';
 import { llBookAuthorMismatch, llBookMismatch, llBookNamesTitle } from './ll-book-check';
 import { llSnapshotUsable, type LlSnapshotRow } from './ll-gone';
@@ -105,7 +106,8 @@ export function collectionWantDownloaded(input: {
  * The one writer for the downloaded state: the collection want's own format becomes `landed` (downloaded) or goes back
  * to `requested`. Guarded on the want still being an unparked, unmatched collection want on `llBookId`, and on the
  * format reading what the decision was made from (not `landed` to land it, `landed` to revert it), so a concurrent
- * change wins. Unaudited (the derived collection-want class). Returns whether it wrote.
+ * change wins. Records a `collection_want_downloaded` / `collection_want_download_reverted` Request Event (ADR-101).
+ * Returns whether it wrote.
  */
 export async function setCollectionWantDownloaded(input: {
   db?: DbClient;
@@ -118,25 +120,27 @@ export async function setCollectionWantDownloaded(input: {
   const now = input.now ?? new Date();
   const column = input.format === 'audiobook' ? bookRequests.audioStatus : bookRequests.ebookStatus;
   return inTransaction(input.db, async (tx) => {
-    const updated = await tx
-      .update(bookRequests)
-      .set({
-        ...(input.format === 'audiobook'
-          ? { audioStatus: input.downloaded ? 'landed' : 'requested' }
-          : { ebookStatus: input.downloaded ? 'landed' : 'requested' }),
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(bookRequests.id, input.requestId),
-          eq(bookRequests.origin, 'collection'),
-          isNull(bookRequests.unroutableReason),
-          isNull(bookRequests.matchedBooksItemId),
-          eq(bookRequests.llBookId, input.llBookId),
-          input.downloaded ? ne(column, 'landed') : eq(column, 'landed'),
-        ),
-      )
-      .returning({ id: bookRequests.id });
+    const updated = await updateBookRequests(
+      tx,
+      {
+        writer: 'setCollectionWantDownloaded',
+        reason: input.downloaded
+          ? 'collection_want_downloaded'
+          : 'collection_want_download_reverted',
+        detail: { llBookId: input.llBookId, format: input.format },
+      },
+      and(
+        eq(bookRequests.id, input.requestId),
+        eq(bookRequests.origin, 'collection'),
+        isNull(bookRequests.unroutableReason),
+        isNull(bookRequests.matchedBooksItemId),
+        eq(bookRequests.llBookId, input.llBookId),
+        input.downloaded ? ne(column, 'landed') : eq(column, 'landed'),
+      )!,
+      input.format === 'audiobook'
+        ? { audioStatus: input.downloaded ? 'landed' : 'requested', updatedAt: now }
+        : { ebookStatus: input.downloaded ? 'landed' : 'requested', updatedAt: now },
+    );
     return updated.length > 0;
   });
 }

@@ -180,6 +180,9 @@ export * from './collection-provenance';
 export * from './user-integrations';
 export * from './integration-shelf-items';
 export * from './book-requests';
+// ADR-101 (issue #741) — the Request Event: the only book_requests write path, recording every mint, change and delete
+// in the same transaction; `withRequestEventScope` names the actor and job of the writes inside it.
+export * from './book-request-events';
 // Issue #665 / DESIGN-028 amendment 2026-10-04 — a want whose LazyLibrarian book is gone (re-key or settle).
 export * from './ll-gone';
 // Issue #735 (DESIGN-028 amendment 2026-10-06) — the LazyLibrarian Release (a format the app queued for a want it gave

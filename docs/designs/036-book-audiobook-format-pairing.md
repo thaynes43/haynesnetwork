@@ -1,7 +1,7 @@
 # DESIGN-036: Book ⇄ audiobook format pairing — pair cache, paced system wants, dual consume buttons
 
 - **Status:** Draft
-- **Last updated:** 2026-10-06 (the missing format's `grabbed` follows LazyLibrarian, and a given-up want releases its LazyLibrarian book, issues #734 and #735; see the last amendment). Prior: 2026-10-05 (a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
+- **Last updated:** 2026-10-06 (the pairing writers record a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (the missing format's `grabbed` follows LazyLibrarian, and a given-up want releases its LazyLibrarian book, issues #734 and #735; see the last amendment). Prior: 2026-10-05 (a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
   see the last amendment). Prior: 2026-10-05 (a want is checked against its anchor's book, issue #693; see the
   amendment of that date). Prior: 2026-07-21 (**author-agreement tolerance** — the live pairing-gap diagnosis found the
   substring check refusing real pairs on initials spacing ("JRR Tolkien" ⇄ "J.R.R. Tolkien"),
@@ -651,3 +651,15 @@ identity check re-identifies first. The Skipped sweep already refused to re-queu
 while waiting, a changed ISBN looked up at once, a reuse id minting through the backoff and clearing it, an error is not a
 miss), `packages/domain/__tests__/landed-truth.test.ts` (#752), `packages/domain/__tests__/wrong-volume-guards.test.ts`
 (#739), `packages/db/__tests__/migrations.test.ts` (0094); the follow-up adds a fresh want tried before a due retry.
+
+## Amendment — 2026-10-06 (Request Events): the pairing writers record a Request Event (issue #741, ADR-101)
+
+Every pairing-want writer this design calls "unaudited (the pairing sync class)" now records a Request Event
+(glossary T-292) in its transaction, through `packages/domain/src/book-request-events.ts`, the only `book_requests`
+write path: `upsertPairingWant` (`pairing_want_minted` / `pairing_want_refreshed`), `syncFormatPairs`
+(`pairing_want_revived`), `landPairingHeldFormat`, `reidentifyPairingWant` (`pairing_want_reidentified` /
+`pairing_want_retitled`, `detail.cause`), `markPairingWantPushed` (`ll_pushed`), `parkPairingWant` and
+`unparkForeignLanguageWant` (`parked` / `unparked`), plus the shared reconcile, revert, gone and re-request writers.
+The Mint Backoff columns are bookkeeping and are not recorded. The format-pairing mode runs as `actor: 'sync'`, site
+`format-pairing` (a leg such as `format-pairing.rerequest` where the writer names it). Nothing the pass decides
+changes. The full rules, reason table and queries: DESIGN-028, amendment 2026-10-06 (Request Events).

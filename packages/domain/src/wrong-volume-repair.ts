@@ -27,6 +27,7 @@ import {
   type DbClient,
 } from '@hnet/db';
 import { inTransaction, resolveDb } from './db-client';
+import { updateBookRequests, withRequestEventScope } from './book-request-events';
 import type { BookRequestStatus } from '@hnet/db';
 import { parkCollectionWant } from './book-requests';
 import { llQueuedFormats, recordLlReleases } from './ll-release-record';
@@ -76,7 +77,8 @@ export interface WrongVolumeRepairReport {
  * shelf item's current Google Books volume, a different id): point the want at it and set both formats `requested`, so
  * the next goodreads sync pushes the right book; the one re-request (#668) restarts with it. Without: the formats that
  * read `landed`, `wanted` or `grabbed` from the wrong book settle `missing`. Guarded on the id it was judged on and on
- * the want not being matched into the library (a library match lands it on its own). Unaudited (the sync class).
+ * the want not being matched into the library (a library match lands it on its own). Records a `wrong_volume_repaired`
+ * Request Event (ADR-101).
  */
 export async function reopenWrongVolumeRequest(input: {
   db?: DbClient;
@@ -103,28 +105,32 @@ export async function reopenWrongVolumeRequest(input: {
     }
     const settle = (s: BookRequestStatus): BookRequestStatus =>
       s === 'landed' || s === 'wanted' || s === 'grabbed' ? 'missing' : s;
-    await tx
-      .update(bookRequests)
-      .set(
-        input.toLlBookId
-          ? {
-              llBookId: input.toLlBookId,
-              ebookStatus: 'requested',
-              audioStatus: 'requested',
-              lastReconciledAt: null,
-              llRerequestedAt: null,
-              llRerequestFailures: 0,
-              llRerequestFailedAt: null,
-              llRerequestAddedAt: null,
-              updatedAt: now,
-            }
-          : {
-              ebookStatus: settle(req.ebookStatus),
-              audioStatus: settle(req.audioStatus),
-              updatedAt: now,
-            },
-      )
-      .where(eq(bookRequests.id, req.id));
+    await updateBookRequests(
+      tx,
+      {
+        writer: 'reopenWrongVolumeRequest',
+        reason: 'wrong_volume_repaired',
+        detail: { fromLlBookId: input.fromLlBookId, toLlBookId: input.toLlBookId },
+      },
+      eq(bookRequests.id, req.id),
+      input.toLlBookId
+        ? {
+            llBookId: input.toLlBookId,
+            ebookStatus: 'requested',
+            audioStatus: 'requested',
+            lastReconciledAt: null,
+            llRerequestedAt: null,
+            llRerequestFailures: 0,
+            llRerequestFailedAt: null,
+            llRerequestAddedAt: null,
+            updatedAt: now,
+          }
+        : {
+            ebookStatus: settle(req.ebookStatus),
+            audioStatus: settle(req.audioStatus),
+            updatedAt: now,
+          },
+    );
     // Issue #735 — re-pointed off the other work's book: what LazyLibrarian was searching there for it is released.
     if (input.toLlBookId) {
       await recordLlReleases(tx, {
@@ -143,7 +149,7 @@ export async function reopenWrongVolumeRequest(input: {
  * Issue #693 — settle a pairing want whose anchor LEFT the library and whose id names another book (the two Mistborn
  * sequels on "Mistborn: The Final Empire"): the id is cleared and the missing format becomes `missing` (no anchor, so
  * the library holds neither format and nothing looks for it). Guarded on the id, on the want being unparked, and on
- * the anchor still being removed. Unaudited (the pairing sync class).
+ * the anchor still being removed. Records a `removed_anchor_settled` Request Event (ADR-101).
  */
 export async function settleRemovedAnchorPairingWant(input: {
   db?: DbClient;
@@ -173,16 +179,22 @@ export async function settleRemovedAnchorPairingWant(input: {
       return false;
     }
     const missing = missingFormatFor(row.mediaKind);
-    await tx
-      .update(bookRequests)
-      .set({
+    await updateBookRequests(
+      tx,
+      {
+        writer: 'settleRemovedAnchorPairingWant',
+        reason: 'removed_anchor_settled',
+        detail: { llBookId: input.llBookId },
+      },
+      eq(bookRequests.id, row.want.id),
+      {
         llBookId: null,
         ...(missing === 'ebook'
           ? { ebookStatus: 'missing' as const }
           : { audioStatus: 'missing' as const }),
         updatedAt: now,
-      })
-      .where(eq(bookRequests.id, row.want.id));
+      },
+    );
     // Issue #735 — the id is cleared, so what LazyLibrarian was searching on the other book for it is released.
     await recordLlReleases(tx, {
       llBookId: input.llBookId,
@@ -201,7 +213,7 @@ export async function settleRemovedAnchorPairingWant(input: {
  * Skipped sweep and the re-request, so only its statuses can still be wrong. The missing format becomes `landed` when
  * the anchor is in the library and paired (the library holds it), else `missing` if it still reads `landed`, `wanted`
  * or `grabbed` from the abandoned book (nothing holds it and nothing looks for it); the held format is `landed` while
- * the anchor is in the library. One transaction, unaudited (the pairing sync class, like every pairing park). Returns
+ * the anchor is in the library. One transaction, a `parked_want_conformed` Request Event (ADR-101). Returns
  * the statuses it wrote, or null when the row is not such a park or is already right.
  */
 export async function settleParkedPairingWant(input: {
@@ -259,16 +271,29 @@ export async function settleParkedPairingWant(input: {
     if (next.ebookStatus === row.want.ebookStatus && next.audioStatus === row.want.audioStatus)
       return null;
     if (input.dryRun) return next;
-    await tx
-      .update(bookRequests)
-      .set({ ...next, updatedAt: now })
-      .where(eq(bookRequests.id, row.want.id));
+    await updateBookRequests(
+      tx,
+      { writer: 'settleParkedPairingWant', reason: 'parked_want_conformed' },
+      eq(bookRequests.id, row.want.id),
+      { ...next, updatedAt: now },
+    );
     return next;
   });
 }
 
-/** Run (or, with `dryRun`, list) the repair. See the file header. */
+/** The Request Event site of this repair's writes (ADR-101: they record `actor: 'repair'`). */
+export const WRONG_VOLUME_REPAIR_SITE = 'wrong-volume-requests-repair';
+
+/** Run (or, with `dryRun`, list) the repair. See the file header. Every write records `actor: 'repair'` (ADR-101). */
 export async function repairWrongVolumeRequests(
+  input: WrongVolumeRepairInput,
+): Promise<WrongVolumeRepairReport> {
+  return withRequestEventScope({ actor: 'repair', site: WRONG_VOLUME_REPAIR_SITE }, () =>
+    runWrongVolumeRepair(input),
+  );
+}
+
+async function runWrongVolumeRepair(
   input: WrongVolumeRepairInput,
 ): Promise<WrongVolumeRepairReport> {
   const db = resolveDb(input.db);

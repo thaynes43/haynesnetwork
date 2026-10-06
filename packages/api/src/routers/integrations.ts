@@ -21,6 +21,7 @@ import {
   runComicVolumeSearch,
   runManualBookSearch,
   syncGoodreadsIntegration,
+  withRequestEventScope,
   unlinkIntegration,
   type BookRequestView,
   type EnrichedShelfItem,
@@ -105,14 +106,17 @@ async function runFirstGoodreadsSync(
     syncedShelves.push(shelf);
   }
 
-  await syncGoodreadsIntegration({
-    db: ctx.db,
-    integrationId: integration.id,
-    items: enriched,
-    syncedShelves,
-    ...(ll ? { ll } : {}),
-    ...(kapowarr ? { kapowarr } : {}),
-  });
+  // ADR-101 — the first sync's book_requests writes record their Request Events as this leg of the sync.
+  await withRequestEventScope({ actor: 'sync', site: 'goodreads-sync.first-sync' }, () =>
+    syncGoodreadsIntegration({
+      db: ctx.db,
+      integrationId: integration.id,
+      items: enriched,
+      syncedShelves,
+      ...(ll ? { ll } : {}),
+      ...(kapowarr ? { kapowarr } : {}),
+    }),
+  );
 }
 
 // NOTE: the wire shapes are intentionally NOT exported named interfaces — the helper functions return

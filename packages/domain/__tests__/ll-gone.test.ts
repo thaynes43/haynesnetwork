@@ -8,6 +8,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import {
+  bookRequestEvents,
   bookRequests,
   booksCollections,
   booksFormatPairs,
@@ -1037,6 +1038,15 @@ describe('syncGoodreadsIntegration — a shelf want whose LazyLibrarian book is 
       ebookStatus: 'wanted',
       audioStatus: 'wanted',
     });
+    // ADR-101 — the click's re-point and re-queue are recorded as the person's.
+    const events = await t.db
+      .select()
+      .from(bookRequestEvents)
+      .where(and(eq(bookRequestEvents.requestId, wantId), eq(bookRequestEvents.actor, 'user')));
+    expect(events.map((e) => `${e.reason}:${e.site}:${e.actorUserId === user.id}`).sort()).toEqual([
+      'll_book_gone_repointed:search-again:true',
+      'll_requeued:search-again:true',
+    ]);
   });
 
   // Review finding (PR #669): the repoint is guarded on the id the click read; if another writer moved the want

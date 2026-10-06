@@ -2,9 +2,10 @@
 // The goodreads-sync orchestrator hands it the live shelf items (each already matched against the library
 // mirror + comic-classified) and it upserts one request per want: matched → landed; unroutable comic →
 // parked Missing (Kapowarr's domain, never LL); routable-unmatched → minted 'requested' for the LL push.
-// The SYNC-driven mint/reconcile is UNaudited (synced/derived). The USER-initiated manual "Search again"
-// (recordManualSearch) DOES co-write a permission_audit row (request_book_search). The guard forbids any
-// other module from touching book_requests.
+// ADR-101 (issue #741): every mint, change and delete goes through book-request-events.ts, which records a Request
+// Event (book_request_events) in the same transaction; the bookkeeping stamps record none. The USER-initiated manual
+// "Search again" (recordManualSearch) also co-writes a permission_audit row (request_book_search). The guards forbid
+// any other module from touching book_requests.
 import {
   GOODREADS_SHELVES,
   bookRequests,
@@ -27,6 +28,12 @@ import type { KapowarrSearchCandidate, KapowarrVolume } from '@hnet/kapowarr/rea
 import { NotFoundError } from './errors';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import { inTransaction, resolveDb } from './db-client';
+import {
+  deleteBookRequests,
+  insertBookRequest,
+  stampBookRequests,
+  updateBookRequests,
+} from './book-request-events';
 import { FOREIGN_LANGUAGE_REASON, NO_ENGLISH_EDITION_REASON } from './book-language';
 import { collectionFormatForSource, llQueuedFormats, recordLlReleases } from './ll-release-record';
 
@@ -125,17 +132,14 @@ export async function recentlySearchedLlBookIds(
   return new Set(rows.map((r) => r.llBookId!).filter(Boolean));
 }
 
-/** Stamp `last_searched_at` on every request row a searchBook call covered (unaudited — synced/derived). */
+/** Stamp `last_searched_at` on every request row a searchBook call covered (a bookkeeping stamp: no Request Event). */
 export async function stampRequestsSearched(
   db: DbClient | undefined,
   requestIds: ReadonlyArray<string>,
   now: Date,
 ): Promise<void> {
   if (requestIds.length === 0) return;
-  await resolveDb(db)
-    .update(bookRequests)
-    .set({ lastSearchedAt: now, updatedAt: now })
-    .where(inArray(bookRequests.id, [...requestIds]));
+  await stampBookRequests(db, inArray(bookRequests.id, [...requestIds]), { lastSearchedAt: now, updatedAt: now });
 }
 
 /**
@@ -246,6 +250,9 @@ export interface RevertLandedInput {
   audio?: BookRequestStatus | null;
   /** A `landed` comic only (a comic's `grabbed` follows its Kapowarr volume through the reconcile). */
   comic?: BookRequestStatus | null;
+  /** ADR-101 — the job leg and the caller's cause (`ll_not_held`, …), recorded on the Request Event. */
+  site?: string;
+  cause?: string;
   now?: Date;
 }
 
@@ -270,9 +277,8 @@ const UNPOSITIVE = new Set<BookRequestStatus>(['requested', 'wanted', 'missing']
  *
  * Refused while the library holds the want (`matched_books_item_id` set: the match is what lands it) and when the
  * request no longer points at the id the caller read. Leaves `last_reconciled_at` alone, so the gone rule's grace
- * keeps running from when LazyLibrarian last showed the book. Unaudited (synced/derived state, the
- * `applyRequestReconcile` class); the caller logs `request_landed_reverted` / `request_grab_reverted`. Returns which
- * formats changed.
+ * keeps running from when LazyLibrarian last showed the book. Records a `landed_reverted` Request Event (ADR-101); the
+ * caller logs `request_landed_reverted` / `request_grab_reverted`. Returns which formats changed.
  */
 export async function revertLandedFormats(input: RevertLandedInput): Promise<RevertLandedResult> {
   const none: RevertLandedResult = { ebook: false, audio: false, comic: false, fromGrabbed: [] };
@@ -296,15 +302,22 @@ export async function revertLandedFormats(input: RevertLandedInput): Promise<Rev
     const audio = target(req.audioStatus, input.audio, true);
     const comic = req.comicStatus ? target(req.comicStatus, input.comic, false) : null;
     if (!ebook && !audio && !comic) return none;
-    await tx
-      .update(bookRequests)
-      .set({
+    await updateBookRequests(
+      tx,
+      {
+        writer: 'revertLandedFormats',
+        reason: 'landed_reverted',
+        site: input.site,
+        detail: { cause: input.cause ?? null, llBookId: input.llBookId },
+      },
+      eq(bookRequests.id, req.id),
+      {
         ...(ebook ? { ebookStatus: ebook } : {}),
         ...(audio ? { audioStatus: audio } : {}),
         ...(comic ? { comicStatus: comic } : {}),
         updatedAt: now,
-      })
-      .where(eq(bookRequests.id, req.id));
+      },
+    );
     const fromGrabbed: Array<'ebook' | 'audiobook'> = [];
     if (ebook && req.ebookStatus === 'grabbed') fromGrabbed.push('ebook');
     if (audio && req.audioStatus === 'grabbed') fromGrabbed.push('audiobook');
@@ -600,9 +613,11 @@ export async function syncShelfRequests(
 
       let requestId: string;
       if (existing) {
-        await tx
-          .update(bookRequests)
-          .set({
+        await updateBookRequests(
+          tx,
+          { writer: 'syncShelfRequests', reason: 'shelf_want_refreshed' },
+          eq(bookRequests.id, existing.id),
+          {
             title: item.title,
             author: item.author,
             matchedBooksItemId: item.matchedBooksItemId,
@@ -612,14 +627,15 @@ export async function syncShelfRequests(
             audioStatus,
             comicStatus,
             updatedAt: now,
-          })
-          .where(eq(bookRequests.id, existing.id));
+          },
+        );
         requestId = existing.id;
         collectTargets(existing.id, llBookId, ebookStatus, audioStatus, unroutableReason, existing.ebookStatus, existing.audioStatus, toPush, toReconcile, item);
       } else {
-        const [row] = await tx
-          .insert(bookRequests)
-          .values({
+        const row = await insertBookRequest(
+          tx,
+          { writer: 'syncShelfRequests', reason: 'shelf_want_minted' },
+          {
             integrationId: input.integrationId,
             shelfItemId: item.shelfItemId,
             matchedBooksItemId: item.matchedBooksItemId,
@@ -630,8 +646,8 @@ export async function syncShelfRequests(
             ebookStatus,
             audioStatus,
             comicStatus,
-          })
-          .returning({ id: bookRequests.id });
+          },
+        );
         minted += 1;
         requestId = row?.id ?? '';
         if (row) {
@@ -685,16 +701,15 @@ export async function markRequestPushed(input: {
   now?: Date;
 }): Promise<void> {
   const now = input.now ?? new Date();
-  await resolveDb(input.db)
-    .update(bookRequests)
-    .set({
+  await inTransaction(input.db, (tx) =>
+    updateBookRequests(tx, { writer: 'markRequestPushed', reason: 'll_pushed' }, eq(bookRequests.id, input.requestId), {
       llBookId: input.llBookId,
       ebookStatus: sql`CASE WHEN ${bookRequests.ebookStatus} = 'requested' THEN 'wanted' ELSE ${bookRequests.ebookStatus} END`,
       audioStatus: sql`CASE WHEN ${bookRequests.audioStatus} = 'requested' THEN 'wanted' ELSE ${bookRequests.audioStatus} END`,
       lastReconciledAt: now,
       updatedAt: now,
-    })
-    .where(eq(bookRequests.id, input.requestId));
+    }),
+  );
 }
 
 /** Apply an LL reconcile: advance each format's status (never regressing a positive). */
@@ -703,6 +718,8 @@ export async function applyRequestReconcile(input: {
   requestId: string;
   ebookStatus: BookRequestStatus | null;
   audioStatus: BookRequestStatus | null;
+  /** ADR-101 — the job leg, recorded on the Request Event. */
+  site?: string;
   now?: Date;
 }): Promise<void> {
   const now = input.now ?? new Date();
@@ -713,22 +730,24 @@ export async function applyRequestReconcile(input: {
       .where(eq(bookRequests.id, input.requestId))
       .for('update');
     if (!req) return;
-    await tx
-      .update(bookRequests)
-      .set({
+    await updateBookRequests(
+      tx,
+      { writer: 'applyRequestReconcile', reason: 'll_reconciled', site: input.site },
+      eq(bookRequests.id, req.id),
+      {
         ebookStatus: advanceStatus(req.ebookStatus, input.ebookStatus),
         audioStatus: advanceStatus(req.audioStatus, input.audioStatus),
         lastReconciledAt: now,
         updatedAt: now,
-      })
-      .where(eq(bookRequests.id, req.id));
+      },
+    );
   });
 }
 
 /**
  * Mark formats RE-QUEUED into LL (the Skipped-want sweep, DESIGN-028 amendment 2026-07-15): each named
  * format advances to 'wanted' — LL is now looking again — without regressing a positive (grabbed/landed).
- * Unaudited (synced/derived — the markRequestPushed class).
+ * Records an `ll_requeued` Request Event (ADR-101).
  */
 export async function markRequestFormatsRequeued(input: {
   db?: DbClient;
@@ -745,16 +764,18 @@ export async function markRequestFormatsRequeued(input: {
       .where(eq(bookRequests.id, input.requestId))
       .for('update');
     if (!req) return;
-    await tx
-      .update(bookRequests)
-      .set({
+    await updateBookRequests(
+      tx,
+      { writer: 'markRequestFormatsRequeued', reason: 'll_requeued', detail: { formats: [...input.formats] } },
+      eq(bookRequests.id, req.id),
+      {
         ebookStatus: input.formats.includes('ebook') ? advanceStatus(req.ebookStatus, 'wanted') : req.ebookStatus,
         audioStatus: input.formats.includes('audiobook') ? advanceStatus(req.audioStatus, 'wanted') : req.audioStatus,
         lastSearchedAt: now,
         lastReconciledAt: now,
         updatedAt: now,
-      })
-      .where(eq(bookRequests.id, req.id));
+      },
+    );
   });
 }
 
@@ -765,7 +786,7 @@ export async function markRequestFormatsRequeued(input: {
 /**
  * Mark a comic request ROUTED to Kapowarr: record the added volume id + ComicVine id, set comic_status
  * (default 'wanted' — monitored+searching), and CLEAR unroutable_reason (it is no longer parked). ebook/audio
- * stay whatever they were ('missing' for a comic). Unaudited (synced/derived — the markRequestPushed class).
+ * stay whatever they were ('missing' for a comic). Records a `comic_routed` Request Event (ADR-101).
  */
 export async function markComicRouted(input: {
   db?: DbClient;
@@ -776,17 +797,16 @@ export async function markComicRouted(input: {
   now?: Date;
 }): Promise<void> {
   const now = input.now ?? new Date();
-  await resolveDb(input.db)
-    .update(bookRequests)
-    .set({
+  await inTransaction(input.db, (tx) =>
+    updateBookRequests(tx, { writer: 'markComicRouted', reason: 'comic_routed' }, eq(bookRequests.id, input.requestId), {
       kapowarrVolumeId: input.kapowarrVolumeId,
       comicvineId: input.comicvineId,
       comicStatus: input.comicStatus ?? 'wanted',
       unroutableReason: null,
       lastReconciledAt: now,
       updatedAt: now,
-    })
-    .where(eq(bookRequests.id, input.requestId));
+    }),
+  );
 }
 
 /** Apply a Kapowarr reconcile: advance comic_status (never regressing a positive). */
@@ -804,14 +824,16 @@ export async function applyComicReconcile(input: {
       .where(eq(bookRequests.id, input.requestId))
       .for('update');
     if (!req) return;
-    await tx
-      .update(bookRequests)
-      .set({
+    await updateBookRequests(
+      tx,
+      { writer: 'applyComicReconcile', reason: 'comic_reconciled' },
+      eq(bookRequests.id, req.id),
+      {
         comicStatus: advanceStatus(req.comicStatus ?? 'requested', input.comicStatus),
         lastReconciledAt: now,
         updatedAt: now,
-      })
-      .where(eq(bookRequests.id, req.id));
+      },
+    );
   });
 }
 
@@ -849,10 +871,7 @@ export async function recordManualSearch(
     if (!req) throw new NotFoundError(`Book request ${input.requestId} not found`);
 
     const now = new Date();
-    await tx
-      .update(bookRequests)
-      .set({ lastSearchedAt: now, updatedAt: now })
-      .where(eq(bookRequests.id, req.id));
+    await stampBookRequests(tx, eq(bookRequests.id, req.id), { lastSearchedAt: now, updatedAt: now });
 
     await tx.insert(permissionAudit).values({
       actorId: input.actorId,
@@ -1614,7 +1633,8 @@ export async function getWantedBookRequests(input: {
 // plex_collection_members wanted-row class): the wanted pass upserts the present-missing members and
 // reconcile-DELETES the ones no longer missing (a member that became held drops out and its want resolves).
 // Ownerless system wants (the ADR-065 pairing class) — no user, no shelf; attributed to the collection.
-// Single-writer here (book_requests' own writer module), guard-listed. No audit rows (synced derived cache).
+// Single-writer here (book_requests' own writer module), guard-listed. Each mint, refresh and drop records a Request
+// Event (ADR-101).
 // ---------------------------------------------------------------------------
 
 /** The shelf slug a collection want wears on the wanted surfaces (attributed to its collection). */
@@ -1746,9 +1766,11 @@ export async function syncCollectionWants(
         : (existing?.llBookId ?? m.llBookId ?? null);
 
       if (existing) {
-        await tx
-          .update(bookRequests)
-          .set({
+        await updateBookRequests(
+          tx,
+          { writer: 'syncCollectionWants', reason: 'collection_want_refreshed' },
+          eq(bookRequests.id, existing.id),
+          {
             title: m.title,
             author: m.author,
             ebookStatus,
@@ -1756,41 +1778,41 @@ export async function syncCollectionWants(
             llBookId,
             lastReconciledAt: runStart,
             updatedAt: runStart,
-          })
-          .where(eq(bookRequests.id, existing.id));
+          },
+        );
         updated += 1;
       } else {
-        await tx.insert(bookRequests).values({
-          origin: 'collection',
-          collectionId: input.collectionId,
-          collectionMemberRef: m.memberRef,
-          title: m.title,
-          author: m.author,
-          ebookStatus,
-          audioStatus,
-          comicStatus: null,
-          llBookId,
-          lastReconciledAt: runStart,
-        });
+        await insertBookRequest(
+          tx,
+          { writer: 'syncCollectionWants', reason: 'collection_want_minted' },
+          {
+            origin: 'collection',
+            collectionId: input.collectionId,
+            collectionMemberRef: m.memberRef,
+            title: m.title,
+            author: m.author,
+            ebookStatus,
+            audioStatus,
+            comicStatus: null,
+            llBookId,
+            lastReconciledAt: runStart,
+          },
+        );
         minted += 1;
       }
     }
 
     // Reconcile — drop this collection's wants NOT re-seen this run (member no longer missing). Scoped to
     // origin='collection' + this collection, so goodreads/pairing wants are never touched.
-    const deleted = await tx
-      .delete(bookRequests)
-      .where(
-        and(
-          eq(bookRequests.collectionId, input.collectionId),
-          eq(bookRequests.origin, 'collection'),
-          or(
-            isNull(bookRequests.lastReconciledAt),
-            lt(bookRequests.lastReconciledAt, runStart),
-          ),
-        ),
-      )
-      .returning();
+    const deleted = await deleteBookRequests(
+      tx,
+      { writer: 'syncCollectionWants', reason: 'collection_want_dropped' },
+      and(
+        eq(bookRequests.collectionId, input.collectionId),
+        eq(bookRequests.origin, 'collection'),
+        or(isNull(bookRequests.lastReconciledAt), lt(bookRequests.lastReconciledAt, runStart)),
+      )!,
+    );
     removed = deleted.length;
     // Issue #735 — a dropped want's book is released: the member is held now (LazyLibrarian holds it too, and the drain
     // drops the release), or an active pairing want carries the work (it owns the book when it points at the same one).
@@ -1814,9 +1836,9 @@ export async function syncCollectionWants(
  * or work than its member (`llBookMismatch`): `unroutable_reason = 'wrong_volume'` and the id cleared, so no job
  * queues that book for it again (the force-search, the gone rule and the one re-request all skip a park, and the
  * wants pass never re-resolves it — `loadParkedWantRefs`). The tile stays on the drill, wanted and unsearchable.
- * Single writer, one transaction, unaudited (the derived collection-want class), guarded on the want still pointing
- * at that id and still unparked. Issue #735: a format LazyLibrarian was searching for it (force-searched, not landed) is
- * released in the same transaction. Returns whether it parked.
+ * Single writer, one transaction, a `parked` Request Event (ADR-101), guarded on the want still pointing at that id and
+ * still unparked. Issue #735: a format LazyLibrarian was searching for it (force-searched, not landed) is released in
+ * the same transaction. Returns whether it parked.
  */
 export async function parkCollectionWant(input: {
   db?: DbClient;
@@ -1840,10 +1862,12 @@ export async function parkCollectionWant(input: {
       )
       .for('update', { of: bookRequests });
     if (!row) return false;
-    await tx
-      .update(bookRequests)
-      .set({ unroutableReason: 'wrong_volume', llBookId: null, updatedAt: now })
-      .where(eq(bookRequests.id, row.want.id));
+    await updateBookRequests(
+      tx,
+      { writer: 'parkCollectionWant', reason: 'parked', detail: { llBookId: input.llBookId } },
+      eq(bookRequests.id, row.want.id),
+      { unroutableReason: 'wrong_volume', llBookId: null, updatedAt: now },
+    );
     // Issue #735 — the other work's book this want had LazyLibrarian searching is released.
     await recordLlReleases(tx, {
       llBookId: input.llBookId,
@@ -1863,7 +1887,7 @@ export async function parkCollectionWant(input: {
  * format the wrong book moved past `requested` goes back to it. The next wants pass resolves the member again with its
  * author; a resolve that names this same book vouches for it, and the check then leaves it alone (no loop). Unlike a
  * `wrong_volume` park the want stays open: the member's own book is still worth finding. Single writer, one
- * transaction, unaudited (the derived collection-want class), guarded on the want still pointing at that id, unparked
+ * transaction, a `wrong_author_released` Request Event (ADR-101), guarded on the want still pointing at that id, unparked
  * and unmatched. The format LazyLibrarian was searching for it is released in the same transaction (T-283), so the drain
  * unqueues another author's book nobody else wants. Returns whether it released.
  */
@@ -1893,17 +1917,19 @@ export async function releaseWrongAuthorCollectionWant(input: {
     const format = row.source ? collectionFormatForSource(row.source) : null;
     const reopen = (status: BookRequestStatus): BookRequestStatus =>
       status === 'wanted' || status === 'grabbed' ? 'requested' : status;
-    await tx
-      .update(bookRequests)
-      .set({
+    await updateBookRequests(
+      tx,
+      { writer: 'releaseWrongAuthorCollectionWant', reason: 'wrong_author_released' },
+      eq(bookRequests.id, row.want.id),
+      {
         llBookId: null,
         wrongAuthorLlBookId: input.llBookId,
         lastSearchedAt: null,
         ...(format === 'ebook' ? { ebookStatus: reopen(row.want.ebookStatus) } : {}),
         ...(format === 'audiobook' ? { audioStatus: reopen(row.want.audioStatus) } : {}),
         updatedAt: now,
-      })
-      .where(eq(bookRequests.id, row.want.id));
+      },
+    );
     await recordLlReleases(tx, {
       llBookId: input.llBookId,
       formats: format ? llQueuedFormats(row.want, [format]) : [],
@@ -1919,7 +1945,8 @@ export async function releaseWrongAuthorCollectionWant(input: {
 // Issue #719 (DESIGN-028 amendment 2026-10-05) — the ENGLISH EDITION of a want whose LazyLibrarian book is not English
 // (the F10 English-only rule). Three single-writers, one per outcome of the one Google Books lookup the pass makes
 // (`english-edition.ts`): switch the want to the English edition, park it because there is none, or just record that
-// the lookup ran. Unaudited (synced/derived state, the `revertLandedFormats` class); the pass logs each outcome.
+// the lookup ran. The switch and the park record a Request Event (ADR-101); the stamp records none. The pass logs each
+// outcome.
 // ---------------------------------------------------------------------------
 
 type EnglishEditionRow = Pick<BookRequestRow, 'origin' | 'ebookStatus' | 'audioStatus'>;
@@ -1985,9 +2012,11 @@ export async function switchRequestToEnglishEdition(input: {
     const row = await lockEnglishEditionRow(tx, { requestId: input.requestId, llBookId: input.fromLlBookId });
     if (!row) return false;
     const open = englishEditionOpenFormats(row);
-    await tx
-      .update(bookRequests)
-      .set({
+    await updateBookRequests(
+      tx,
+      { writer: 'switchRequestToEnglishEdition', reason: 'english_edition_switched' },
+      eq(bookRequests.id, row.id),
+      {
         llBookId: input.toLlBookId,
         ...(open.includes('ebook') ? { ebookStatus: 'requested' as const } : {}),
         ...(open.includes('audiobook') ? { audioStatus: 'requested' as const } : {}),
@@ -1998,8 +2027,8 @@ export async function switchRequestToEnglishEdition(input: {
         // LazyLibrarian lost and settle `missing` before the force-search ever adds it. NULL = never handed over.
         ...(row.origin === 'collection' ? { lastSearchedAt: null } : {}),
         updatedAt: now,
-      })
-      .where(eq(bookRequests.id, row.id));
+      },
+    );
     // Issue #735 — the foreign book's formats LazyLibrarian was working for this want are released.
     await recordLlReleases(tx, {
       llBookId: input.fromLlBookId,
@@ -2033,16 +2062,18 @@ export async function parkRequestNoEnglishEdition(input: {
     if (!row) return false;
     const open = englishEditionOpenFormats(row);
     const settle = row.origin === 'goodreads';
-    await tx
-      .update(bookRequests)
-      .set({
+    await updateBookRequests(
+      tx,
+      { writer: 'parkRequestNoEnglishEdition', reason: 'parked', detail: { llBookId: input.llBookId } },
+      eq(bookRequests.id, row.id),
+      {
         ...(settle && open.includes('ebook') ? { ebookStatus: 'missing' as const } : {}),
         ...(settle && open.includes('audiobook') ? { audioStatus: 'missing' as const } : {}),
         unroutableReason: NO_ENGLISH_EDITION_REASON,
         englishEditionTriedAt: now,
         updatedAt: now,
-      })
-      .where(eq(bookRequests.id, row.id));
+      },
+    );
     // Issue #735 — nothing is pushed for a parked want, and LazyLibrarian stops searching the foreign book for it too.
     await recordLlReleases(tx, {
       llBookId: input.llBookId,
@@ -2062,11 +2093,7 @@ export async function stampEnglishEditionTried(input: {
   now?: Date;
 }): Promise<boolean> {
   const now = input.now ?? new Date();
-  const rows = await resolveDb(input.db)
-    .update(bookRequests)
-    .set({ englishEditionTriedAt: now })
-    .where(eq(bookRequests.id, input.requestId))
-    .returning({ id: bookRequests.id });
+  const rows = await stampBookRequests(input.db, eq(bookRequests.id, input.requestId), { englishEditionTriedAt: now });
   return rows.length > 0;
 }
 
@@ -2091,16 +2118,18 @@ export async function liftNoEnglishEditionPark(input: {
       .for('update');
     if (!row || row.llBookId !== input.llBookId || row.unroutableReason !== NO_ENGLISH_EDITION_REASON) return false;
     const reopen = row.origin === 'goodreads';
-    await tx
-      .update(bookRequests)
-      .set({
+    await updateBookRequests(
+      tx,
+      { writer: 'liftNoEnglishEditionPark', reason: 'unparked' },
+      eq(bookRequests.id, row.id),
+      {
         ...(reopen && row.ebookStatus === 'missing' ? { ebookStatus: 'requested' as const } : {}),
         ...(reopen && row.audioStatus === 'missing' ? { audioStatus: 'requested' as const } : {}),
         unroutableReason: null,
         englishEditionTriedAt: null,
         updatedAt: now,
-      })
-      .where(eq(bookRequests.id, row.id));
+      },
+    );
     return true;
   });
 }
