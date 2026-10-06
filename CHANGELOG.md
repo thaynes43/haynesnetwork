@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.108.1](https://github.com/thaynes43/haynesnetwork/compare/v0.108.0...v0.108.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **books:** a collection want LazyLibrarian downloaded reads Downloaded, not Wanted ([#759](https://github.com/thaynes43/haynesnetwork/issues/759)) ([#773](https://github.com/thaynes43/haynesnetwork/issues/773)) ([f0e748f](https://github.com/thaynes43/haynesnetwork/commit/f0e748f95fe4467595fa00fd14b7be78bcf80c0e))
+* **books:** each collection reads its own target's missing list ([#759](https://github.com/thaynes43/haynesnetwork/issues/759)) ([#769](https://github.com/thaynes43/haynesnetwork/issues/769)) ([2c3f58b](https://github.com/thaynes43/haynesnetwork/commit/2c3f58b925c79a5c75cc2f3d39926c762652fbfb))
+
 ## [0.108.0](https://github.com/thaynes43/haynesnetwork/compare/v0.107.11...v0.108.0) (2026-10-06)
 
 
