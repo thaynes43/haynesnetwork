@@ -797,3 +797,8 @@ library title ("De Silmarillion", "Der Ritt anc"), for which no English lookup b
 are right (and why a park now waits a week). The ninth was Azazel, parked wrongly: the structured query returned no hit
 for it in any language. The plain-words leg above, and migration 0092 (clears the stamp on every non-pairing
 `no_english_edition` park, once), let the wrongly parked wants be looked at again on the next run.
+
+**Cadence (issue #737).** The `goodreads` slice is spent by the shelf enrichment by evening, so in practice the pass makes its
+lookups in the first goodreads-sync run after the 07:00Z quota roll and is deferred (`skippedBudget`, nothing stamped) for
+the rest of the day: a once-a-day pass of up to 10 wants. A want that turns up mid-day waits for the next 07:41Z run. A
+reserved slice charged to the pass first is the alternative if that proves too slow; not taken, to keep the budget as ruled.
