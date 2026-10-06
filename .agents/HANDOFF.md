@@ -8,6 +8,44 @@
 > check that was pending in the blocks below, (b) to (v) plus the v0.107.5 "6 minted", is a row there (OC-001 to
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
+
+## ▶ 2026-10-06 (evening) — Coordinator handoff: the books-rollout repair wave is done; what is next
+
+The haynesnetwork coordinator session (2026-10-04 to 10-06) is idle so the owner can merge the dev-env PRs, which restarts the pod.
+
+**Shipped since the adversarial review.** The review is #731, with the report in `.agents/context/2026-10-06-books-rollout-adversarial-review.md`.
+- App v0.107.8 to v0.108.2: #734, #735, #737, #739, #740, #752, #759, #761, #770 (EPUB conversion CronJob), #771, #777 and #782.
+- LazyLibrarian overlays: #736, #738, #755 and the foreign-language release tags. The overlay test harness is haynes-ops #3402.
+- Safeguard #743, the owed-check tracker (DESIGN-053), is live.
+
+**#742 (e2e as a gate):** PR #779 is merged, so the `e2e-gate` job now runs on every PR. One **owner step** is left: add `e2e-gate` to main's required status checks (Settings → Branches → main). The dev bot gets a 403 on branch protection. Close #742 once that is done.
+
+**Queued, owner-approved 2026-10-06 ("All four, after the bugs"), in this order:**
+1. #744: a continuous F10 census.
+2. #741: an audit trail for sync-derived request writes.
+
+**Open bugs, in priority order:**
+1. **libretto#25.** Libretto's acquisition path has no language check, so it can queue foreign books into LazyLibrarian and bypass the app's English-only guard. On 10-06 it queued the French "Troll Bridge", which has since been unqueued. It also ignores files LazyLibrarian already holds. Its 7-day Kavita cache means a Discworld recipe apply re-queues the already-held The Last Hero until 2026-10-13 14:33Z.
+2. **#781.** Shift and Four: The Traitor are the right book with the wrong file.
+3. **#733** stays parked. The owner asked for the flaky mcp test to be deleted; #733 is its timer-free replacement.
+
+**Owner-held:**
+- haynes-ops draft #3381: the dev-env CPU limit (8), the EMQX cleanup (#3418) and the CPU rule (#3403). Plus the older dev-env drafts.
+- #674 is benched (Google Books key). A week of `gb_quota_day_closed` readings is the data the owner asked for. Libretto's key is a separate Google project.
+
+**Owed checks:** all are in `.agents/owed-checks.yaml` (OC-001 to OC-027). Next due:
+- after the 2026-10-07 04:54Z LazyLibrarian backlog run: OC-013, by hand, for foreign or wrong-volume grabs;
+- the Google Books budget drop at 07:33Z;
+- OC-024 (Gray Dawn and Shift searched);
+- OC-027 (Debt of Honor re-grab);
+- OC-026 (The Last Hero, 10-13);
+- the purge check (m), on or after 10-12.
+
+**Rules from this session:**
+- No CPU burners or parallel or looped test runs in dev-env. This is now in the dev-env CLAUDE.md through #3381.
+- Bugs are fixed, not brought to the owner.
+- A policy that changes what gets downloaded (language, edition, bulk re-acquisition) is the owner's call (review R-07).
+
 ## ▶ 2026-10-06 — LazyLibrarian's .mobi/.azw3 books are converted to EPUB (#770 closed, owner ruling "Convert to EPUB")
 
 - **What.** Kavita opens epub and pdf only; 125 `EBooks` folders (57 LazyLibrarian books) held only a `.mobi`/`.azw3`.
