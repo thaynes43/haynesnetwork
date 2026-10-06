@@ -143,7 +143,7 @@ plus LazyLibrarian's `BookLang`, which is the right shape; it arrived three mont
 PR #675 changed the goodreads push to skip `addBook` for a held book and broke `apps/web/e2e/integrations.spec.ts:109`,
 the spec that exercises exactly that push. It stayed red on the heads of #675, #676, #681, #698 and #701, through six
 releases, until #706 (issue #702) on 2026-10-05 17:04Z. KICKOFF says e2e "is advisory (not a merge gate), so it never
-blocks a merge" (`.agents/KICKOFF.md:106`), and the PR bodies' verification sections name local unit suites only. Across
+blocks a merge" (`.agents/KICKOFF.md:109`), and the PR bodies' verification sections name local unit suites only. Across
 the 19 fix PRs the e2e job finished 2 to 16 minutes after the merge on 18 (PR evidence collected for this review).
 
 ### W-07 Hand writes to both databases, and nothing audited
