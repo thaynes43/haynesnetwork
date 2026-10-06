@@ -12,7 +12,7 @@
 //   - LazyLibrarian no longer has the book                              ⇒ dropped (`gone`);
 //   - LazyLibrarian holds the format (Open/Have, a library date or file) ⇒ dropped (`held`);
 //   - LazyLibrarian is downloading it (`Snatched`)                      ⇒ kept pending until the download ends;
-//   - LazyLibrarian shows it `Wanted`                                   ⇒ `unqueueBook` (back to `Skipped`), dropped;
+//   - LazyLibrarian shows it `Wanted` (read again just before the write) ⇒ `unqueueBook` (back to `Skipped`), dropped;
 //   - anything else (`Skipped`, `Ignored`, …)                           ⇒ dropped (`not_wanted`).
 // `unqueueBook` is an unguarded UPDATE in LazyLibrarian (it would overwrite an imported format as readily), which is
 // why it is only ever sent for a format the fresh read shows `Wanted` and not held. An empty read decides nothing.
@@ -140,6 +140,27 @@ export function emptyLlReleaseTally(): LlReleaseTally {
 }
 
 /**
+ * The last look before an `unqueueBook` (PR #751 review): LazyLibrarian offers no conditional update, and its backlog
+ * search can snatch a format between the drain's read and the write, which would then reset a download to `Skipped`.
+ * So the book is read once more right before each write (LazyLibrarian has no per-book read: `getAllBooks`, narrowed),
+ * and the write is only sent if that read still says `Wanted` and unheld. Returns the book's row (undefined: LazyLibrarian
+ * no longer has it), or null when the read failed or came back empty (send nothing this time). The window left is the
+ * time between this read and the write; a format snatched inside it still imports (LazyLibrarian's post-processor works
+ * from its own `wanted` row), and a failed one stays `Skipped`, which is where the release was taking it.
+ */
+async function rereadLlBook(
+  ll: LazyLibrarianClientBundle,
+  llBookId: string,
+): Promise<LlSnapshotRow | undefined | null> {
+  try {
+    const snapshot = await ll.read.getAllBookStatuses();
+    return llSnapshotUsable(snapshot) ? snapshot.get(llBookId) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Drain the pending LazyLibrarian Releases (see the file header). Reads LazyLibrarian once, and only when a release is
  * pending; a failed or empty read decides nothing (every row stays pending). Never throws for one row's LazyLibrarian
  * error: it is logged, counted and kept for the next run. Logs `ll_format_unqueued` per unqueue and `ll_release_settled`
@@ -194,11 +215,21 @@ export async function drainLlReleases(input: {
   };
   for (const row of pending) {
     const book = snapshot.get(row.llBookId);
-    const decision = decideLlRelease({
-      row: book,
-      format: row.format,
-      owned: owners.get(row.llBookId)?.has(row.format) ?? false,
-    });
+    const owned = owners.get(row.llBookId)?.has(row.format) ?? false;
+    let decision = decideLlRelease({ row: book, format: row.format, owned });
+    if (decision === 'unqueue') {
+      // The last look before the unguarded write (a backlog search may have snatched the format since the read above).
+      const fresh = await rereadLlBook(input.ll, row.llBookId);
+      if (fresh === null) {
+        log.warn?.('ll-release: LazyLibrarian re-read failed before unqueueBook, release kept for the next run', {
+          site: input.site,
+          llBookId: row.llBookId,
+          format: row.format,
+        });
+        continue;
+      }
+      decision = decideLlRelease({ row: fresh, format: row.format, owned });
+    }
     const meta = {
       site: input.site,
       llBookId: row.llBookId,
@@ -286,8 +317,10 @@ export interface UnqueueOrphanReport {
   orphans: number;
   unqueued: number;
   kept: number;
+  /** No longer `Wanted` (or unreadable) at the last look just before the write. */
+  skipped: number;
   failed: number;
-  rows: Array<OrphanLlWant & { action: 'unqueue' | 'would_unqueue' | 'keep' | 'failed'; error?: string }>;
+  rows: Array<OrphanLlWant & { action: 'unqueue' | 'would_unqueue' | 'keep' | 'skip' | 'failed'; error?: string }>;
 }
 
 /**
@@ -311,6 +344,7 @@ export async function unqueueOrphanLlWants(input: {
     orphans: orphans.length,
     unqueued: 0,
     kept: 0,
+    skipped: 0,
     failed: 0,
     rows: [],
   };
@@ -322,6 +356,13 @@ export async function unqueueOrphanLlWants(input: {
     }
     if (input.dryRun) {
       report.rows.push({ ...orphan, action: 'would_unqueue' });
+      continue;
+    }
+    // The same last look as the drain: skip a format that is no longer `Wanted` (or that the read cannot see).
+    const fresh = await rereadLlBook(input.ll, orphan.llBookId);
+    if (fresh === null || decideLlRelease({ row: fresh, format: orphan.format, owned: false }) !== 'unqueue') {
+      report.skipped += 1;
+      report.rows.push({ ...orphan, action: 'skip' });
       continue;
     }
     try {

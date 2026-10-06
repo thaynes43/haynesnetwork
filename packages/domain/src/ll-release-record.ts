@@ -77,7 +77,7 @@ export function llQueuedFormats(
 
 /**
  * The single writer that records a release: one row per (book, format), the latest reason and want winning when a
- * second want gives the same format up before the drain runs. Call it inside the transaction of the writer that gives
+ * second want gives the same format up before the drain runs (its `updated_at` always moves forward). Call it inside the transaction of the writer that gives
  * the want up, so the two commit together. No LazyLibrarian call here: the drain decides from a fresh read. Returns the
  * number of formats recorded.
  */
@@ -111,7 +111,9 @@ export async function recordLlReleases(
       set: {
         reason: sql`excluded.reason`,
         requestId: sql`excluded.request_id`,
-        updatedAt: sql`excluded.updated_at`,
+        // Strictly later than the row it replaces, whatever clock the caller ran on (a run-start `now` can be older than
+        // the stored stamp): the drain only deletes the row it read, judged by `updated_at` (PR #751 review).
+        updatedAt: sql`GREATEST(${llFormatReleases.updatedAt} + interval '1 millisecond', excluded.updated_at)`,
       },
     });
   return formats.length;

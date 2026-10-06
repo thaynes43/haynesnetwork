@@ -13,12 +13,18 @@ describe('ll-orphan-unqueue arguments', () => {
     expect(parseLlOrphanUnqueueArgs(['--help'])).toBe('help');
   });
 
-  it('takes its own keep list, each entry <id>:<ebook|audiobook>', () => {
+  it('adds --keep entries to the default keep list; only --no-default-keep drops the defaults', () => {
+    // Protecting one more book never drops the F10 hand re-wants (PR #751 review).
     expect(parseLlOrphanUnqueueArgs(['--apply', '--keep=a:ebook,b:audiobook'])).toEqual({
       apply: true,
-      keep: ['a:ebook', 'b:audiobook'],
+      keep: [...F10_HAND_REWANTS, 'a:ebook', 'b:audiobook'],
     });
-    expect(parseLlOrphanUnqueueArgs(['--dry-run', '--keep='])).toEqual({ apply: false, keep: [] });
+    expect(parseLlOrphanUnqueueArgs(['--dry-run', '--keep='])).toEqual({ apply: false, keep: [...F10_HAND_REWANTS] });
+    expect(parseLlOrphanUnqueueArgs(['--apply', '--no-default-keep', '--keep=a:ebook'])).toEqual({
+      apply: true,
+      keep: ['a:ebook'],
+    });
+    expect(parseLlOrphanUnqueueArgs(['--apply', '--no-default-keep'])).toEqual({ apply: true, keep: [] });
     expect(() => parseLlOrphanUnqueueArgs(['--apply', '--keep=a'])).toThrow(/not <id>:<ebook\|audiobook>/);
   });
 

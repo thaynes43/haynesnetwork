@@ -1,6 +1,6 @@
 // Issue #735 / DESIGN-028 amendment 2026-10-06 — the one-off ORPHAN LAZYLIBRARIAN WANT repair (not a sync mode):
 //
-//   tsx ll-orphan-unqueue.ts --dry-run|--apply [--keep=<id>:<format>[,...]]
+//   tsx ll-orphan-unqueue.ts --dry-run|--apply [--keep=<id>:<format>[,...]] [--no-default-keep]
 //
 // Before the LazyLibrarian Release existed, a want the app abandoned, parked or re-pointed left its LazyLibrarian book
 // `Wanted`, and LazyLibrarian searched it every day (22 such books on 2026-10-06). This finds every LazyLibrarian format
@@ -8,8 +8,9 @@
 // sends it back to `Skipped` through the domain's confined `unqueueBook` (`unqueueOrphanLlWants`). Nothing is written to
 // the app database and nothing to LazyLibrarian's own database: LazyLibrarian's API only.
 //
-// The keep list names books a person queued by hand on purpose (default: the English records re-wanted by the
-// 2026-10-05 F10 sweep to replace foreign copies, see `F10_HAND_REWANTS`); they are listed, never unqueued.
+// The keep list names books a person queued by hand on purpose: always the English records re-wanted by the 2026-10-05
+// F10 sweep to replace foreign copies (`F10_HAND_REWANTS`, unless `--no-default-keep`), plus any `--keep` entries; they
+// are listed, never unqueued. Each write is preceded by one more read, and skipped unless the format still reads `Wanted`.
 // `--dry-run` reads only (the database and one `getAllBooks`) and prints every format it would unqueue. Idempotent: a
 // second `--apply` finds only the kept ones.
 //
@@ -18,11 +19,12 @@ import { getPool } from '@hnet/db';
 import { lazyLibrarianBundleFromEnv, llSnapshotUsable, unqueueOrphanLlWants } from '@hnet/domain';
 import { createConsoleLogger } from '../logger';
 
-const USAGE = `Usage: ll-orphan-unqueue.ts --dry-run|--apply [--keep=<id>:<format>[,...]]
+const USAGE = `Usage: ll-orphan-unqueue.ts --dry-run|--apply [--keep=<id>:<format>[,...]] [--no-default-keep]
 
-  --dry-run   list every orphan LazyLibrarian format it would send back to Skipped (reads only)
-  --apply     send them back to Skipped (LazyLibrarian unqueueBook); a second run changes nothing
-  --keep      leave these <LazyLibrarian id>:<ebook|audiobook> alone (default: the 2026-10-05 F10 hand re-wants)
+  --dry-run          list every orphan LazyLibrarian format it would send back to Skipped (reads only)
+  --apply            send them back to Skipped (LazyLibrarian unqueueBook); a second run changes nothing
+  --keep             also leave these <LazyLibrarian id>:<ebook|audiobook> alone (ADDED to the default keep list)
+  --no-default-keep  drop the default keep list (the 2026-10-05 F10 hand re-wants); --keep entries still apply
 
 Env: DATABASE_URL, LAZYLIBRARIAN_API_KEY (LAZYLIBRARIAN_URL defaults in-cluster).`;
 
@@ -52,18 +54,24 @@ export interface LlOrphanUnqueueArgs {
 
 export function parseLlOrphanUnqueueArgs(argv: readonly string[]): LlOrphanUnqueueArgs | 'help' {
   let mode: 'dry' | 'apply' | null = null;
-  let keep: string[] = [...F10_HAND_REWANTS];
+  let defaults = true;
+  const extra: string[] = [];
   for (const arg of argv) {
     if (arg === '--help' || arg === '-h') return 'help';
+    if (arg === '--no-default-keep') {
+      defaults = false;
+      continue;
+    }
     if (arg.startsWith('--keep=')) {
-      keep = arg
+      const entries = arg
         .slice('--keep='.length)
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-      for (const k of keep) {
+      for (const k of entries) {
         if (!/^[^:\s]+:(ebook|audiobook)$/.test(k)) throw new Error(`--keep entry "${k}" is not <id>:<ebook|audiobook>`);
       }
+      extra.push(...entries);
       continue;
     }
     if (arg !== '--dry-run' && arg !== '--apply') throw new Error(`unknown argument "${arg}"`);
@@ -72,7 +80,7 @@ export function parseLlOrphanUnqueueArgs(argv: readonly string[]): LlOrphanUnque
     mode = next;
   }
   if (mode === null) throw new Error('one of --dry-run or --apply is required');
-  return { apply: mode === 'apply', keep };
+  return { apply: mode === 'apply', keep: [...new Set([...(defaults ? F10_HAND_REWANTS : []), ...extra])] };
 }
 
 async function main(): Promise<number> {

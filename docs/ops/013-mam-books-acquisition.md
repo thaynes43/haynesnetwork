@@ -586,8 +586,9 @@ kubectl -n frontend logs job/hnet-ll-orphan-735-dry   # every orphan, `would_unq
 # then the same with --apply (job hnet-ll-orphan-735-apply); a second --apply finds only the kept ones
 ```
 
-The default keep list is the English records the 2026-10-05 F10 sweep re-wanted by hand (`F10_HAND_REWANTS`); pass
-`--keep=<id>:<ebook|audiobook>,…` to replace it. The CronJob carries the sync mode in the container's `command` (no
+The keep list always holds the English records the 2026-10-05 F10 sweep re-wanted by hand (`F10_HAND_REWANTS`);
+`--keep=<id>:<ebook|audiobook>,…` adds to it, and only `--no-default-keep` drops it. Each write is preceded by one more
+read and skipped (`skip`) if the format no longer reads `Wanted`. The CronJob carries the sync mode in the container's `command` (no
 `args`), which is why the Job overrides `command`.
 
 ### 12.5 Both MAM sessions were dead — and are now watched

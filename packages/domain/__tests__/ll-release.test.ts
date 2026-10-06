@@ -526,6 +526,45 @@ describe('recordLlReleases and drainLlReleases (#735)', () => {
     expect(await releases()).toHaveLength(1);
   });
 
+  it('reads the book once more before the write, and never unqueues a format snatched since the first read', async () => {
+    await recordLlReleases(t.db, { llBookId: 'll-race', formats: ['ebook'], reason: 'reidentified', requestId: null });
+    const ll = stubLl({ 'll-race': { title: 'Race', ebookStatus: 'Wanted' } });
+    let reads = 0;
+    const racing = {
+      ...ll.bundle,
+      read: {
+        getAllBookStatuses: async () => {
+          reads += 1;
+          // LazyLibrarian's backlog search snatches the format between the drain's read and its write.
+          if (reads === 2) ll.state['ll-race'] = { title: 'Race', ebookStatus: 'Snatched' };
+          return ll.snapshot();
+        },
+      },
+    } as unknown as LazyLibrarianClientBundle;
+    const drain = await drainLlReleases({ db: t.db, ll: racing, site: 'test' });
+    expect(reads).toBe(2);
+    expect(drain.tally).toMatchObject({ llReleasesUnqueued: 0, llReleasesPending: 1 });
+    expect(unqueues(ll.calls)).toEqual([]);
+    expect(await releases()).toHaveLength(1);
+  });
+
+  it("a re-record always moves updated_at forward, so the drain never deletes a release recorded after its read", async () => {
+    const later = new Date('2026-10-06T10:00:00.000Z');
+    await recordLlReleases(t.db, { llBookId: 'll-clock', formats: ['ebook'], reason: 'reidentified', requestId: null, now: later });
+    const [first] = await releases();
+    // A second want gives the same format up, on a run that started earlier (its `now` is older than the stored stamp).
+    await recordLlReleases(t.db, {
+      llBookId: 'll-clock',
+      formats: ['ebook'],
+      reason: 'parked:foreign_language',
+      requestId: null,
+      now: new Date('2026-10-06T09:00:00.000Z'),
+    });
+    const [second] = await releases();
+    expect(second!.reason).toBe('parked:foreign_language');
+    expect(second!.updatedAt.getTime()).toBeGreaterThan(first!.updatedAt.getTime());
+  });
+
   it('nothing pending: no LazyLibrarian read at all', async () => {
     let reads = 0;
     const ll = { read: { getAllBookStatuses: async () => (reads++, new Map()) }, write: {} } as unknown as LazyLibrarianClientBundle;
@@ -683,12 +722,21 @@ describe('the Orphan LazyLibrarian Want census and the one-off repair (#735)', (
     expect(ll.calls).toEqual([]);
 
     const applied = await unqueueOrphanLlWants({ db: t.db, ll: ll.bundle, snapshot: ll.snapshot(), keep: new Set(['ll-hand:ebook']), dryRun: false });
-    expect(applied).toMatchObject({ orphans: 3, unqueued: 2, kept: 1, failed: 0 });
+    expect(applied).toMatchObject({ orphans: 3, unqueued: 2, kept: 1, skipped: 0, failed: 0 });
     expect(unqueues(ll.calls)).toEqual([
       { cmd: 'unqueueBook', id: 'll-none', format: 'ebook' },
       { cmd: 'unqueueBook', id: 'll-parked', format: 'audiobook' },
     ]);
     // Idempotent: only the kept one is left.
     expect((await findOrphanLlWants({ db: t.db, snapshot: ll.snapshot() })).map((o) => o.llBookId)).toEqual(['ll-hand']);
+  });
+
+  it('the one-off skips an orphan LazyLibrarian snatched since its read', async () => {
+    const ll = stubLl({ 'll-gone-by': { title: 'Gone By', ebookStatus: 'Wanted' } });
+    const stale = ll.snapshot();
+    ll.state['ll-gone-by'] = { title: 'Gone By', ebookStatus: 'Snatched' };
+    const report = await unqueueOrphanLlWants({ db: t.db, ll: ll.bundle, snapshot: stale, keep: new Set(), dryRun: false });
+    expect(report).toMatchObject({ orphans: 1, unqueued: 0, skipped: 1 });
+    expect(unqueues(ll.calls)).toEqual([]);
   });
 });

@@ -891,7 +891,7 @@ run (once, after every integration) and each format-pairing run (after its mints
 | LazyLibrarian no longer has the book | dropped (`gone`) |
 | LazyLibrarian holds the format | dropped (`held`) |
 | the format reads `Snatched` | kept pending until the download ends either way |
-| the format reads `Wanted` | `unqueueBook` (back to `Skipped`), dropped; log `ll_format_unqueued` |
+| the format reads `Wanted`, and still does when read again just before the write | `unqueueBook` (back to `Skipped`), dropped; log `ll_format_unqueued` |
 | anything else | dropped (`not_wanted`) |
 
 An empty or failed read, or a failed `unqueueBook`, decides nothing: the row stays for the next run. Report fields
@@ -907,8 +907,13 @@ read at drain time, after the run's own mints and pushes, so a want that took th
 **The confined write surface.** `unqueueBook` joins `@hnet/lazylibrarian/write` (`cmd=unqueueBook&id=&type=`), imported only
 by `packages/domain`. LazyLibrarian's `_unqueuebook` is, like `_queuebook`, an unguarded
 `UPDATE books SET Status|AudioStatus='Skipped' WHERE BookID=?`: it would overwrite an imported or downloading format as
-readily, which is why the drain sends it only for a format the fresh read shows `Wanted` and not held. No LazyLibrarian
-database write, only its API.
+readily, which is why the drain sends it only for a format the fresh read shows `Wanted` and not held, and reads the book
+once more right before each write (LazyLibrarian's backlog search could have snatched it meanwhile; there is no per-book
+read, so this is `getAllBooks` narrowed, one per unqueue). The window left is the time between that read and the write; a
+format snatched inside it still imports (the post-processor works from LazyLibrarian's own `wanted` row), and a failed one
+stays `Skipped`, which is where the release was taking it. A re-recorded release always moves `updated_at` forward
+(`GREATEST(old + 1 ms, now)`), so the drain, which deletes only the row it read, never drops a release recorded after its
+read. No LazyLibrarian database write, only its API.
 
 **Coming back.** Every way back into a want re-queues it through paths that already exist: a lifted `foreign_language` or
 `no_english_edition` park and a re-shelved book reconcile, read `Skipped` (`missing`), and the Skipped sweep queues and
@@ -921,10 +926,11 @@ queued by hand, or a gap in the release.
 
 **The one-off repair.** The orphans that predate the release are sent back to `Skipped` by
 `packages/sync/src/scripts/ll-orphan-unqueue.ts --dry-run|--apply` (`unqueueOrphanLlWants`), run as a frontend Job from the
-format-pairing CronJob template, dry run first. Its keep list (`F10_HAND_REWANTS`, overridable with `--keep=<id>:<format>,…`)
-holds the English records the 2026-10-05 F10 sweep re-wanted by hand to replace removed foreign copies (Solitaire, Israel
-Potter, Murtagh, The Other Emily, and the rest named in that HANDOFF block): no request names some of them, so they read as
-orphans, and they stay wanted until LazyLibrarian grabs them.
+format-pairing CronJob template, dry run first, with the same last read before each write. Its keep list always holds
+`F10_HAND_REWANTS` (`--keep=<id>:<format>,…` adds to it; only `--no-default-keep` drops it): the English records the
+2026-10-05 F10 sweep re-wanted by hand to replace removed foreign copies (Solitaire, Israel Potter, Murtagh, The Other
+Emily, and the rest named in that HANDOFF block). No request names some of them, so they read as orphans, and they stay
+wanted until LazyLibrarian grabs them.
 
 **Tests:** `packages/domain/__tests__/ll-release.test.ts` (#734: grabbed to wanted or missing, never to grabbed or landed,
 refused for a library match or a moved id, a comic untouched; the goodreads and pairing reconciles; the census. #735: every
