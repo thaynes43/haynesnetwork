@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -1155,3 +1155,54 @@ goes back to `requested`; the on-demand Force Search releases, resolves and sear
 `packages/domain/__tests__/collections.test.ts` (a re-PUT keeps targets, category, title fallback and aliases),
 `packages/db/__tests__/migrations.test.ts` (0095).
 
+## Amendment — 2026-10-06 (EPUB conversion): LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB (issue #770, owner ruling)
+
+**What was seen.** LazyLibrarian accepts `epub, mobi, pdf, azw3`; Kavita's Books library opens epub and pdf only. 57
+LazyLibrarian books held only a `.mobi` or `.azw3` (125 folders under `EBooks` in all, counting books LazyLibrarian does not
+track), so Kavita never showed them while every want on them read held: 48 pairing wants and 2 goodreads wants read their
+ebook `landed`, and 6 collection wants read Downloaded (the amendment above).
+
+**The ruling ("Convert to EPUB"; glossary T-288 EPUB Conversion).** LazyLibrarian keeps accepting `.mobi` and `.azw3`, because some books only come that
+way. They are converted to EPUB after import, beside the original; the original is kept; nothing is searched or
+downloaded again. The backlog was converted at once (113 EPUBs; 8 folders were second copies of a book Kavita already
+showed, 4 were held, none carried DRM); new ones convert on their own.
+
+**How (cluster side, haynes-ops `kubernetes/main/apps/downloads/lazylibrarian/app/`).**
+
+- **The converter** is the hourly CronJob `lazylibrarian-epub-convert` (`epub-convert/epub_convert.py`, the calibre CLI
+  image pinned by digest; the LazyLibrarian image has no calibre). It walks `EBooks`; a folder that holds any `.epub` or
+  `.pdf` is never touched; a folder holding a `.mobi` / `.azw3` and neither is converted with `ebook-convert`, one book at
+  a time (CPU limit 1, `nice`), into the pod's scratch space. One source per folder: `.azw3` before `.mobi`, then
+  LazyLibrarian's own naming (`<Title> - <Author>`), then the newest.
+- **Never a second copy.** A folder whose sibling under the same author holds the same book (the same title words, any
+  punctuation: "Dirk Gently's ..." and "Dirk Gentlys ...") as an epub or pdf is skipped and counted `duplicate`: Kavita
+  already shows the book, and Libretto refuses a member it holds twice as ambiguous (the bulk run's first pass flipped
+  "Dirk Gently's Holistic Detective Agency" to missing until the 8 second copies it wrote were removed). It converts on
+  its own if the sibling copy goes.
+- **The check before it lands.** `ebook-meta` must read a title and an author from the EPUB, and the title must name the
+  book the folder is filed under (LazyLibrarian's `$Title`: one main title contained in the other as words, or half the
+  words shared). A book with no author gets LazyLibrarian's (the author folder) written into the new EPUB; the original is
+  never edited. Only then is the EPUB copied in under a hidden name and renamed to `<original basename>.epub`, the name
+  LazyLibrarian gave the original. LazyLibrarian's library scan links the book to that file (`EBOOK_TYPE` lists epub
+  first), so LazyLibrarian and Kavita see one book; a record whose `BookFile` has another basename, or that the scan does
+  not match, keeps pointing at the original (14 of the 57). The app reads LazyLibrarian's status, never its `BookFile`.
+- **A book that fails is left as it is.** DRM, a conversion error, a timeout, an EPUB with no title or author, or a title
+  that names another book: the folder is untouched and the source is listed in `books/.epub-convert/held.tsv` (outside
+  every library root), so it is reported once and not retried hourly. Deleting its line retries it.
+- **Kavita.** The converter touches the book and author folders (on this NFS share adding a file does not reliably move
+  the folder mtime a non-forced scan compares) and queues one Kavita library scan per run that converted something.
+- **Census and alerts** (Loki ruler, `lokirule.yaml`, all warning): each run logs `epub_convert` per attempt and an
+  `epub_convert_census` line, `unconverted` (mobi/azw3-only folders the run should have converted) expected 0 after every
+  run, plus `held`, `duplicate` and `settling` (an import younger than 15 minutes). `LazyLibrarianEbooksNotConverted` fires on a
+  non-zero `unconverted`, `LazyLibrarianEpubConvertHeld` on a new held book, `LazyLibrarianEpubConvertSilent` when no run
+  finished in 3 hours.
+
+**What changes in the app.** Nothing in code. A converted book reaches Kavita, so the library mirror and Libretto see it:
+a collection want that read Downloaded is deleted by the wants pass once Libretto pairs the member (or reverts to
+`requested` for the hour between Kavita listing the title and Libretto's refresh, which the rule above allows), and the
+`landed` ebook of a pairing or goodreads want is now true in the library too. Questions 2 and 3 of #770 (search the 57
+again for an epub; stop counting a format the library cannot open as held) are moot under the ruling: the format the
+library cannot open no longer stays that way. The push guard is unchanged.
+
+**Owed:** OC-023 (the first automatic conversion of a newly imported `.mobi` / `.azw3`). Record:
+`.agents/context/2026-10-06-epub-conversion.md`.

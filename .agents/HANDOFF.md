@@ -8,6 +8,23 @@
 > check that was pending in the blocks below, (b) to (v) plus the v0.107.5 "6 minted", is a row there (OC-001 to
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
+## ▶ 2026-10-06 — LazyLibrarian's .mobi/.azw3 books are converted to EPUB (#770 closed, owner ruling "Convert to EPUB")
+
+- **What.** Kavita opens epub and pdf only; 125 `EBooks` folders (57 LazyLibrarian books) held only a `.mobi`/`.azw3`.
+  haynes-ops #3445 + #3446: hourly CronJob `downloads/lazylibrarian-epub-convert` (calibre CLI pinned by digest, one book
+  at a time, CPU limit 1) converts them to an EPUB beside the original, keeps the original, never touches a folder with an
+  epub or pdf, never makes a second copy of a book a sibling folder holds, and holds (lists, never retries) a book whose
+  conversion fails or whose EPUB names another book. Census + three warning Loki rules. Design: DESIGN-028 amendment
+  "EPUB conversion", glossary T-288. Record: `.agents/context/2026-10-06-epub-conversion.md`.
+- **Backlog done 16:50-17:06Z** (declared activity): 113 EPUBs kept, 8 second copies removed again (the first pass flipped
+  Dirk Gently to missing in Libretto; #3446 is the guard), 4 held: Sand (the file is LazyLibrarian's anthology in a folder
+  named Sand), Potomu chto nas mnogo, Tree and Leaf (other books' files), Debt of Honor (broken KF8; pairing want
+  `28ec5fba` still reads its ebook `landed` without a readable file: needs a new release, outside the ruling). 0 DRM.
+  Kavita indexes all 113; Libretto: 18 members missing to held (13 from this, 5 from Libretto sha-2e77f28 live at the same
+  time), none the other way. The 17:27Z collections sync removed the six OC-021 wants (OC-021 passed). LazyLibrarian's
+  library scans left 43 of the 57 `BookFile`s on the EPUB, the rest on the original, none dangling.
+- **Open:** the 4 held books need decisions, issue #782. **Owed:** OC-023 (the first automatic conversion of a new import).
+
 ## ▶ 2026-10-06 — v0.108.1 + Libretto sha-080237f live: held books stop reading missing on collection drills (#759 closed)
 
 - **Why.** #759: 57 (59 by 09:45Z) collection wants read `requested` while LazyLibrarian held their book. Ruled a bug
