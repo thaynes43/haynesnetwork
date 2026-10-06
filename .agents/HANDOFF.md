@@ -4,6 +4,47 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-06 — v0.107.9 live: a failed grab stops reading `grabbed`, and LazyLibrarian unqueues what the app gives up (#734, #735 closed)
+
+- **Why.** The adversarial review (#731) found 53 of 59 `grabbed` formats sitting on LazyLibrarian books back at `Wanted`
+  after a failed grab, some since July (#734), and 22 books LazyLibrarian kept searching that no request named, because a
+  re-identified, parked or re-pointed want never told LazyLibrarian (#735). Rule: DESIGN-028 amendment 2026-10-06 (with
+  DESIGN-036 and DESIGN-038 D-13 amendments), glossary T-281 amended, T-283 LazyLibrarian Release, T-284 Orphan LazyLibrarian
+  Want, OPS-013 12.4a.
+- **v0.107.9** (#751, release #750, haynes-ops #3431, ~09:58Z, migration 0093 adds `ll_format_releases`).
+  - #734: `revertLandedFormats` (the #715 writer) also takes an ebook or audiobook out of `grabbed`. LazyLibrarian
+    `Wanted` reads `wanted`, `Skipped` reads `missing`. The goodreads reconcile and the pairing open-want reconcile both
+    use it. Log `request_grab_reverted`. Report field `requestsGrabReverted`, and the census `grabbedNotSnatched` on
+    format-pairing.
+  - #735: `unqueueBook` joins the confined LazyLibrarian write surface.
+    - Every writer that gives a want up records a LazyLibrarian Release in its own transaction: pairing re-identify,
+      re-point and parks; collection park and drop; English-edition switch and park; shelf removal; unlink.
+    - goodreads-sync (once per run) and format-pairing drain it. The format is unqueued only when a fresh read shows it
+      `Wanted`, unheld, and no live request still asks for that book and format, and the book is read again right
+      before the write.
+    - The census `llOrphanWanted` runs on format-pairing, and the log `ll_orphan_wanted` names the rows.
+- **One-off** `ll-orphan-unqueue.ts` (frontend Jobs `hnet-ll-orphan-735-dry` / `-apply`, from the format-pairing
+  CronJob, `--keep=aeFZfuGryeYC:ebook,vqMStwEACAAJ:ebook`): 24 orphans, **18 unqueued**, 6 kept, 0 failed.
+- **Verified.**
+  - Pods 3/3 Ready on v0.107.9, and Loki shows no error lines (`frontend`, 90 min).
+  - The 10:32Z format-pairing run: `requestsGrabReverted` 51, `llOrphanWanted` 6.
+  - The 10:41Z goodreads-sync run reverted the last one (`cb77ec5a`).
+  - Read-only join after both runs:
+    - live request formats reading `grabbed` on a LazyLibrarian `Wanted` book: **0** (was 52);
+    - LazyLibrarian `Wanted` formats no live request owns: **6**, all deliberate hand re-wants.
+- **The six kept hand re-wants (expect `llOrphanWanted` 6, falling as LazyLibrarian grabs them):**
+  - from the 2026-10-05 F10 sweep: Solitaire ebook `-2R-EAAAQBAJ`, Israel Potter ebook `mPGNzQEACAAJ`, Murtagh audio
+    `FOqzEAAAQBAJ`, The Other Emily audio `GGcbzgEACAAJ`;
+  - from the July F10 English audit (`.agents/context/2026-07-13-f10-english-audit.md` R3.5), which the review had read
+    as abandoned ids: The Man from St. Petersburg ebook `aeFZfuGryeYC` and White-Jacket ebook `vqMStwEACAAJ`. The library
+    has neither.
+  - If one of them should go, `unqueueBook` it by hand or rerun the one-off with `--no-default-keep`. Any count above
+    the hand re-wants is a gap in the release: read `ll_orphan_wanted`.
+- **Open.** #752: 27 live formats point at a LazyLibrarian format that reads `Skipped` but has a file, so they read
+  `missing`/`requested` instead of `landed`. Check a sample on disk before landing from the file signal. Murtagh's
+  pairing want `328548eb` still has no id and reads audio `grabbed`; the mint resets it to `requested` once it resolves
+  an id (`upsertPairingWant`).
+
 ## ▶ 2026-10-06 — LazyLibrarian overlays: a test harness in CI, #738 and #736 closed (haynes-ops #3428, #3429, #3430)
 
 - **Harness (haynes-ops #3402, closed).** `kubernetes/main/apps/downloads/lazylibrarian/app/patches/tests/` in haynes-ops runs
