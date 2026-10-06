@@ -6,7 +6,7 @@
 // undo's advisory lock) waiting for undici's 300 s body timeout.
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PlexHttpError, PlexNetworkError, PlexTimeoutError } from '../src/errors';
 import { PlexReadClient } from '../src/read';
 import { PlexWriteClient } from '../src/write';
@@ -38,53 +38,98 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-const options = {
+const baseOptions = {
   ...TEST_CLIENT_OPTIONS,
-  plexDiscoverBaseUrl: base,
   timeoutMs: TIMEOUT_MS,
   retryDelayMs: 0,
 };
 
-async function timed<T>(
-  p: Promise<T>,
-): Promise<{ ms: number; value: T | undefined; error: unknown }> {
-  const start = Date.now();
+/**
+ * The attempt timer is a real `setTimeout` inside the wrapper, and a real socket decides when the headers arrive, so
+ * a short real timeout races the server's first answer: under load (CI) the headers can land AFTER the timer, the
+ * attempt times out before its body ever stalls and is retried, and the test sees an extra request. So the timer is
+ * faked (setTimeout/clearTimeout only; the sockets stay real) and the test fires it itself, once the client has HAD
+ * the headers of that attempt: the fake clock advances by exactly the attempt bound, no more, so "ends at the
+ * attempt bound" is asserted without depending on the machine's speed.
+ */
+function stallingClient(): {
+  options: typeof baseOptions & { fetchImpl: typeof fetch };
+  /** Resolves once attempt `n` (1-based) has received its response headers, i.e. its body read is under way. */
+  headersOf: (n: number) => Promise<void>;
+} {
+  const waiters = new Map<number, () => void>();
+  let seen = 0;
+  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+    const response = await fetch(input, init);
+    seen += 1;
+    waiters.get(seen)?.();
+    return response;
+  }) as typeof fetch;
+  return {
+    options: { ...baseOptions, fetchImpl },
+    headersOf: (n) =>
+      seen >= n ? Promise.resolve() : new Promise<void>((resolve) => waiters.set(n, resolve)),
+  };
+}
+
+/** Runs `call` with the attempt timer under test control: each of `attempts` is cut at the bound once it has its headers. */
+async function withStalledAttempts<T>(
+  attempts: number,
+  call: (c: ReturnType<typeof stallingClient>) => Promise<T>,
+): Promise<{ value: T | undefined; error: unknown; clockMs: number }> {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
-    const value = await p;
-    return { ms: Date.now() - start, value, error: undefined };
-  } catch (error) {
-    return { ms: Date.now() - start, value: undefined, error };
+    const c = stallingClient();
+    const settled = call(c).then(
+      (value) => ({ value, error: undefined as unknown }),
+      (error: unknown) => ({ value: undefined, error }),
+    );
+    let clockMs = 0;
+    for (let n = 1; n <= attempts; n += 1) {
+      await c.headersOf(n);
+      // One turn of the event loop: the wrapper's continuation (microtasks) has started reading the body, so the
+      // timer fires on a body that is stalled mid-read, not on a response nobody has begun to read.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      vi.advanceTimersByTime(TIMEOUT_MS);
+      clockMs += TIMEOUT_MS;
+    }
+    return { ...(await settled), clockMs };
+  } finally {
+    vi.useRealTimers();
   }
 }
 
 describe('the per-attempt timer covers the body (D-15p)', () => {
   it('a watchlist PUT whose 200 body stalls ends at the attempt bound, and the 2xx stands (one attempt)', async () => {
     hits.length = 0;
-    const client = new PlexWriteClient({ ...options, plexDiscoverBaseUrl: base });
-    const out = await timed(client.addToWatchlist(ID));
+    const out = await withStalledAttempts(1, (c) =>
+      new PlexWriteClient({ ...c.options, plexDiscoverBaseUrl: base }).addToWatchlist(ID),
+    );
     expect(out.error).toBeUndefined();
-    expect(out.ms).toBeLessThan(TIMEOUT_MS * 4);
+    expect(out.clockMs).toBe(TIMEOUT_MS); // one attempt, cut at its bound, not undici's 300 s
     expect(hits).toEqual(['PUT /actions/addToWatchlist']);
   });
 
   it('a JSON read whose body stalls is a PlexTimeoutError after the three attempts, not a 300 s wait', async () => {
     hits.length = 0;
-    const client = new PlexReadClient({ ...options, plexDiscoverBaseUrl: base });
-    const out = await timed(client.getDiscoverUserState(ID));
+    const out = await withStalledAttempts(3, (c) =>
+      new PlexReadClient({ ...c.options, plexDiscoverBaseUrl: base }).getDiscoverUserState(ID),
+    );
     expect(out.error).toBeInstanceOf(PlexTimeoutError);
     expect((out.error as PlexTimeoutError).mayStillLand).toBe(true);
-    expect(out.ms).toBeLessThan(TIMEOUT_MS * 3 + 1_000);
+    expect(out.clockMs).toBe(TIMEOUT_MS * 3); // three attempts, each cut at its own bound
     expect(hits).toHaveLength(3);
   });
 
   it('an error status whose body stalls is still a typed PlexHttpError (only the snippet is lost)', async () => {
     hits.length = 0;
     mode.set('/actions/removeFromWatchlist', 'stall-error');
-    const client = new PlexWriteClient({ ...options, plexDiscoverBaseUrl: base });
-    const out = await timed(client.removeFromWatchlist(ID));
+    const out = await withStalledAttempts(3, (c) =>
+      new PlexWriteClient({ ...c.options, plexDiscoverBaseUrl: base }).removeFromWatchlist(ID),
+    );
     expect(out.error).toBeInstanceOf(PlexHttpError);
     expect((out.error as PlexHttpError).status).toBe(503);
-    expect(out.ms).toBeLessThan(TIMEOUT_MS * 3 + 1_000);
+    expect(out.clockMs).toBe(TIMEOUT_MS * 3);
     expect(hits).toHaveLength(3); // a 503 is retried
   });
 });
