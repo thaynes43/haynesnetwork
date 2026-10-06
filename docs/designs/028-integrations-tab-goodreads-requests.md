@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -1031,3 +1031,59 @@ member missing; that needs its own decision and is issue #759.
 steps, the seven live verdicts, the known gap), `packages/domain/__tests__/landed-truth.test.ts` (`llReconcileStatus`, its
 twin property with `unheldFormatStatus`, a goodreads audiobook landing from an import date under `Skipped` and leaving
 `landed` when it goes, a pairing `missing` and a `grabbed` landing).
+
+## Amendment — 2026-10-06 (latest): a collection want LazyLibrarian downloaded reads Downloaded (issue #759)
+
+**What was seen.** 59 collection wants read `requested` ("Wanted" on the collection drill) while LazyLibrarian held
+their book. The audit (`.agents/context/2026-10-06-held-collection-wants.md`) traced each one. 40 were held by the
+library and only read missing because of two bugs, fixed where they lived: the app gave each Audiobookshelf collection the
+Kavita missing list (DESIGN-038 D-13 amendment), and Libretto's matcher missed books the library files differently
+(DESIGN-037 D-04 amendment). Of the 19 left, 5 are a real gap: LazyLibrarian holds the file and the library cannot show
+it, because Kavita's Books library opens epub and pdf only and LazyLibrarian took a `.mobi` or `.azw3` (Eragon, Shatter
+Me, We Can Be Mended, Four: The Transfer, Four: The Son). Calling those "Wanted" says the estate is still looking for a
+book it has downloaded. The other 14 stay `requested`, truthfully: 7 point at a LazyLibrarian book that is another work
+or edition, and 7 are in the library under a title that differs from the member's in words.
+
+**The rule: a collection want's own format reads `landed` while LazyLibrarian has downloaded it and the library cannot
+show it.** This supersedes the "Collection has none" note of the #715 amendment and the "Collection wants are unchanged"
+note of the #752 amendment, for the collection's own format only. A collection want still exists only while Libretto lists
+the member missing from the collection's library, and the wants pass still deletes it once the library holds the member,
+so for a collection want `landed` means exactly **downloaded, not in the library yet**. It is decided once an hour, after
+the wants pass, and the format reads `landed` while all three hold:
+
+1. LazyLibrarian holds the format (`llFormatAlreadyHeld`: `Open`/`Have`, or an import date or file);
+2. LazyLibrarian's book is the member's: the lenient Volume Check finds no mismatch and the strict one reads the member's
+   own title (`llBookMismatch`, `llBookNamesTitle`, T-280), so another work's book never says the member was downloaded;
+3. the library shows nothing named like LazyLibrarian's book (`libraryShowsTitle` over the live `books_items` of that
+   format: the same title, or one containing the other as whole words, the contained side two words or six letters
+   long). When it does, the file reached the library and only the pairing failed, and the want stays `requested`.
+
+When any of the three stops holding, the format goes back to `requested`, the collection want's resting status. An empty
+or failed `getAllBooks` read decides nothing. The force-search already skips a `landed` format, so nothing searches for a
+book LazyLibrarian holds.
+
+**How.**
+
+- `reconcileCollectionWantsDownloaded` (`collection-want-downloaded.ts`), in the `books-collections-sync` job after the
+  wants pass and before the force-search, when a LazyLibrarian client is configured. One `getAllBooks`, one read of the
+  live library titles. Report field `collectionWantsDownloaded` (`downloaded`, `reverted`, `skipped`); each change logs
+  `collection_want_downloaded` or `collection_want_download_reverted`.
+- The one writer is `setCollectionWantDownloaded`: the own format to `landed` or back to `requested`, guarded on the want
+  still being an unparked, unmatched collection want on the same LazyLibrarian id, and on the format reading what the
+  decision was made from. Unaudited, like every synced status write.
+- The drill no longer hides a collection want whose own format reads `landed` (`getCollectionWantedBookRequests`). The
+  tile's badge reads **Downloaded** (blue, the Grabbed tone; its tooltip "Downloaded, not in the library yet") in place of
+  Wanted. The want's detail page shows only the collection's own format (the other sits `landed` by construction, holds
+  nothing, and read "Have it"); a downloaded format reads "Downloaded, not in the library yet" and the hero badge
+  Downloaded, never "Have it".
+
+**Not decided here.** Whether LazyLibrarian should stop taking formats Kavita cannot open, and whether the books it holds
+only as `.mobi` or `.azw3` should be searched again for an epub, is an owner decision (57 LazyLibrarian books, and 48
+pairing wants that already read their ebook `landed` on one), issue #770. Three collection wants on another work's book
+that the Volume Check cannot see (Gray Dawn, Shift, Four: The Traitor) are issue #771.
+
+**Tests:** `packages/domain/__tests__/collection-want-downloaded.test.ts` (the library-title test on the live shapes; a held
+`.mobi` lands; another work's book, an unheld format and a title the library shows do not; a downloaded want stays on the
+drill and goes back when the library shows the book or LazyLibrarian loses the file; an empty read decides nothing; a park
+is left alone), `packages/api/__tests__/books-wanted.test.ts` (a collection want's detail lists only its format; a landed
+one is downloaded and not searchable).

@@ -44,6 +44,8 @@ import {
   syncBooksCollections,
   runCollectionWantsSync,
   forceSearchFindMissingCollections,
+  reconcileCollectionWantsDownloaded,
+  type CollectionWantsDownloadedReport,
   syncPlexMatches,
   syncPlexCollections,
   type CollectionWantsLibretto,
@@ -409,6 +411,9 @@ export interface SyncReport {
    *  find-missing (acquisition ON) collections' wants (null when no Libretto/LazyLibrarian client, or
    *  another mode). A degraded/unreachable pass returns a report, not an error. */
   collectionForceSearch?: ForceSearchCollectionsReport | null;
+  /** Issue #759 — the `books-collections-sync` downloaded pass: collection wants LazyLibrarian holds that the library
+   *  cannot show read Downloaded (null when no Libretto/LazyLibrarian client, or another mode). */
+  collectionWantsDownloaded?: CollectionWantsDownloadedReport | null;
   /** ADR-065 — the `format-pairing` result (null for every other mode / when it errored). */
   formatPairing?: FormatPairingReport | null;
   /** The format-pairing run's error — sets totalFailure for the CLI exit. */
@@ -1537,6 +1542,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
     let booksCollectionsSyncError: string | undefined;
     let collectionWantsSync: CollectionWantsSyncReport | null = null;
     let collectionForceSearch: ForceSearchCollectionsReport | null = null;
+    let collectionWantsDownloaded: CollectionWantsDownloadedReport | null = null;
     try {
       const snapshot = await fetchBooksCollectionsSnapshot({ books: options.books, logger });
       const report = await syncBooksCollections({
@@ -1579,6 +1585,21 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
         // confined LazyLibrarian bundle was supplied — absent it, the flag is set but the app pulls nothing
         // (Libretto's own apply/cron still acquires). Best-effort: a failure never fails the mirror run.
         if (options.lazyLibrarian) {
+          // Issue #759 — before the force-search, so a want LazyLibrarian already downloaded reads `landed` and is
+          // not searched again. Best-effort like the passes around it.
+          try {
+            collectionWantsDownloaded = await reconcileCollectionWantsDownloaded({
+              db,
+              ll: options.lazyLibrarian,
+              logger,
+              ...(options.now ? { now: options.now } : {}),
+            });
+            logger.info('collection-wants-downloaded complete', { ...collectionWantsDownloaded });
+          } catch (error) {
+            logger.error('collection-wants-downloaded pass failed', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
           try {
             collectionForceSearch = await forceSearchFindMissingCollections({
               db,
@@ -1614,6 +1635,7 @@ export async function runSync(options: RunSyncOptions): Promise<SyncReport> {
       booksCollectionsSync,
       collectionWantsSync,
       collectionForceSearch,
+      collectionWantsDownloaded,
       ...(booksCollectionsSyncError !== undefined ? { booksCollectionsSyncError } : {}),
       totalFailure: booksCollectionsSyncError !== undefined,
     };

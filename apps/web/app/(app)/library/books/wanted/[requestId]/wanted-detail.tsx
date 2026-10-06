@@ -50,6 +50,12 @@ const STATUS_LABEL: Record<BookRequestStatus, string> = {
   missing: 'Missing',
 };
 
+/**
+ * Issue #759 — a collection want's format LazyLibrarian downloaded that the library can't show yet. It reads
+ * `landed` but is not "Have it": the member is still missing from the collection.
+ */
+const DOWNLOADED_LABEL = 'Downloaded, not in the library yet';
+
 /** The per-format status → the shared `.badge--<tone>` accent (green have · info grabbed · amber wanted · red missing). */
 function statusTone(status: BookRequestStatus): 'ok' | 'info' | 'warn' | 'danger' {
   if (status === 'landed') return 'ok';
@@ -70,8 +76,11 @@ const FORMAT_LABEL: Record<FormatRow['format'], string> = {
 function heroBadge(
   parked: boolean,
   statuses: BookRequestStatus[],
-): { label: string; tone: 'ok' | 'warn' | 'danger' | 'muted' } {
+  downloaded = false,
+): { label: string; tone: 'ok' | 'info' | 'warn' | 'danger' | 'muted' } {
   if (parked) return { label: 'Parked', tone: 'muted' };
+  // Issue #759 — downloaded but not in the library: not "Have it" (the collection still lacks it).
+  if (downloaded) return { label: 'Downloaded', tone: 'info' };
   if (statuses.includes('landed')) return { label: 'Have it', tone: 'ok' };
   if (statuses.every((s) => s === 'missing')) return { label: 'Missing', tone: 'danger' };
   return { label: 'Wanted', tone: 'warn' };
@@ -253,7 +262,11 @@ function FormatDetailRow({
       data-live={showLive ? '' : undefined}
     >
       <span className="child-row__label">{FORMAT_LABEL[row.format]}</span>
-      {showLive ? null : (
+      {showLive ? null : row.downloaded ? (
+        <span className="badge badge--info" data-testid="format-status" data-downloaded="">
+          {DOWNLOADED_LABEL}
+        </span>
+      ) : (
         <span className={`badge badge--${statusTone(row.status)}`} data-testid="format-status">
           {STATUS_LABEL[row.status]}
         </span>
@@ -325,6 +338,7 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
   const hero = heroBadge(
     d.parked,
     d.formats.map((f) => effectiveFormatStatus(f.status, liveFor(f.format))),
+    d.formats.some((f) => f.downloaded && !formatLiveWins(f.status, liveFor(f.format))),
   );
   const refresh = () => void utils.books.wantedDetail.invalidate({ requestId });
 

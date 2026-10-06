@@ -6,7 +6,7 @@
 // tiles + "for <requester>" + a "Search again" button that looked nothing like the rest of the
 // library). A wanted item is an unmatched want by definition, so its art is the wall's standard
 // KindIcon glyph tile — never a fake cover; its caption carries title + author and exactly ONE compact
-// status badge in the Movies badge slot ("Wanted" amber / "Missing" red). There is NO force-search
+// status badge in the Movies badge slot ("Wanted" amber / "Missing" red / "Downloaded" blue). There is NO force-search
 // button and NO requester line on the card face.
 //
 // PLAN-047 (DESIGN-029 amendment-2 — owner Wanted-parity ruling) — the whole card click-throughs into
@@ -16,7 +16,7 @@
 //
 // PLAN-047 / ADR-058 — this file is the model EXTENSION: route knowledge + badge policy over the typed
 // BookCard, never bespoke card markup (the card-anatomy guard forbids it).
-import { BookCard, type InFlightBadge } from '@/components/cards';
+import { BookCard, type CardBadge, type InFlightBadge } from '@/components/cards';
 import type { RouterOutputs } from '@/lib/trpc-client';
 
 type BooksMediaKind = 'book' | 'audiobook' | 'comic';
@@ -30,8 +30,15 @@ const WALL_FROM: Record<BooksMediaKind, string> = {
   comic: 'comics',
 };
 
-/** The single caption badge for a wanted card — Missing (red) else Wanted (amber), the Movies slot. */
-export function wantedBadge(item: Pick<WantedWire, 'status'>): { label: string; tone: 'danger' | 'warn' } {
+/**
+ * The single caption badge for a wanted card — Missing (red) else Wanted (amber), the Movies slot. Issue #759: a
+ * collection want LazyLibrarian already downloaded, but the library can't show yet, reads Downloaded (blue, the
+ * "Grabbed" tone) instead of claiming it is still wanted.
+ */
+export function wantedBadge(item: Pick<WantedWire, 'status' | 'downloaded'>): CardBadge {
+  if (item.downloaded) {
+    return { label: 'Downloaded', tone: 'info', title: 'Downloaded, not in the library yet' };
+  }
   return item.status === 'missing' ? { label: 'Missing', tone: 'danger' } : { label: 'Wanted', tone: 'warn' };
 }
 

@@ -470,8 +470,13 @@ export interface BooksWantedItem {
   author: string | null;
   shelf: string;
   shelvedAt: string | null;
-  /** The WALL format's own status (requested | wanted | grabbed | missing — never landed here). */
+  /** The WALL format's own status (requested | wanted | grabbed | missing; `landed` only when `downloaded`). */
   status: BookRequestStatus;
+  /**
+   * Issue #759 — a collection want LazyLibrarian downloaded that the library cannot show yet (its own format reads
+   * `landed` while Libretto still lists the member missing). The tile reads Downloaded instead of Wanted.
+   */
+  downloaded: boolean;
   isComic: boolean;
   // PLAN-048 / ADR-059 D-03 — the activity wall-badge join keys: a book/audiobook want joins the
   // live in-flight read by its LL/GB book id; a comic want by its Kapowarr volume id.
@@ -508,6 +513,7 @@ function toWantedWireItem(
     shelf: v.shelf,
     shelvedAt: v.shelvedAt ? v.shelvedAt.toISOString() : null,
     status: v.status,
+    downloaded: v.origin === 'collection' && v.status === 'landed',
     isComic: v.isComic,
     llBookId: v.llBookId,
     kapowarrVolumeId: v.kapowarrVolumeId,
@@ -822,30 +828,37 @@ export const booksRouter = router({
       // Per-format status ROWS (the *arr per-grain idiom): a comic is the single Kapowarr leg; a
       // book/audiobook want carries BOTH LazyLibrarian legs. `searchable` = the viewer may fire it AND
       // that format is still acquirable (whole-request searchable AND this format hasn't landed).
+      // Issue #759 — a collection want shows only its collection's own format: the other sits `landed` by
+      // construction and holds nothing (it read "Have it"). A `landed` own format there is downloaded by
+      // LazyLibrarian and not in the library yet (`collection-want-downloaded.ts`), never "Have it".
+      const isCollection = view.origin === 'collection';
       const formats: Array<{
         format: 'ebook' | 'audiobook' | 'comic';
         status: BookRequestStatus;
         searchable: boolean;
+        downloaded: boolean;
       }> = view.isComic
         ? [
             {
               format: 'comic',
               status: view.comicStatus ?? 'requested',
               searchable: canSearch && requestSearchable,
+              downloaded: false,
             },
           ]
-        : [
-            {
-              format: 'ebook',
-              status: view.ebookStatus,
-              searchable: canSearch && requestSearchable && view.ebookStatus !== 'landed',
-            },
-            {
-              format: 'audiobook',
-              status: view.audioStatus,
-              searchable: canSearch && requestSearchable && view.audioStatus !== 'landed',
-            },
-          ];
+        : (
+            [
+              { format: 'ebook', status: view.ebookStatus },
+              { format: 'audiobook', status: view.audioStatus },
+            ] as const
+          )
+            .filter((row) => !isCollection || view.collectionFormat === null || row.format === view.collectionFormat)
+            .map((row) => ({
+              format: row.format,
+              status: row.status,
+              searchable: canSearch && requestSearchable && row.status !== 'landed',
+              downloaded: isCollection && row.status === 'landed' && view.matchedBooksItemId === null,
+            }));
 
       return {
         requestId: view.requestId,
