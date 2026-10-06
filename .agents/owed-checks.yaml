@@ -954,3 +954,99 @@ checks:
         mismatch: wait
     links:
       issues: ['#782', '#770']
+  - id: OC-028
+    title: "#781: Four: The Traitor's two LazyLibrarian records keep the Kindle Single, and nothing grabs a second copy"
+    opened: 2026-10-06
+    after: >-
+      #781 repair (2026-10-06 21:39Z, fix_781.py): RZZRAQAAQBAJ re-pointed and TYETAQAAQBAJ linked to
+      Veronica Roth/The Traitor/Veronica Roth - The Traitor.epub; the collection copy held. The check follows the
+      2026-10-07 09:10Z LazyLibrarian library scan and the next format-pairing run.
+    not_before: 2026-10-07T09:40:00Z
+    due: 2026-10-08T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian (mode=ro): RZZRAQAAQBAJ and TYETAQAAQBAJ both read Status Open with BookFile
+      .../EBooks/Veronica Roth/The Traitor/Veronica Roth - The Traitor.epub (the library scan kept the links), and no
+      wanted row after rowid 9597 names either. App: pairing want 0841d533 reads its ebook `landed`; no Divergent
+      collection want is titled "Four: The Traitor". Kavita shows the book once (series 1950) and no longer shows series
+      1661. The Books Census's first run (OC-030) has no wrong_file finding for either id.
+    auto_covers: part
+    auto:
+      - name: both records point at the Kindle Single
+        source: ll-db
+        query: |
+          select BookFile from books where BookID in ('RZZRAQAAQBAJ', 'TYETAQAAQBAJ') and Status = 'Open'
+            and BookFile like '%/EBooks/Veronica Roth/The Traitor/Veronica Roth - The Traitor.epub'
+        expect: {rows: 2, paths_exist: true}
+      - name: nothing grabs a second copy
+        source: ll-db
+        query: select rowid, BookID, NZBtitle from wanted where rowid > 9597 and BookID in ('RZZRAQAAQBAJ', 'TYETAQAAQBAJ')
+        expect: {max_rows: 0}
+      - name: the pairing want reads its ebook landed
+        source: app-db
+        query: select count(*) as n from book_requests where id = '0841d533-c1bb-4fd6-affd-b4da3fb3f300' and ebook_status = 'landed'
+        expect: {eq: 1}
+        mismatch: wait
+    links:
+      issues: ['#781']
+  - id: OC-029
+    title: "#781: Shift's LazyLibrarian record keeps the Shift omnibus, and the Silo collection's Shift is held"
+    opened: 2026-10-06
+    after: >-
+      #781 repair (2026-10-06 21:39Z, fix_781.py): the Shift omnibus (grab 6086) copied back to
+      Hugh Howey/Shift/Shift - Hugh Howey.epub and Qw30DwAAQBAJ re-pointed; First Shift: Legacy and the Third Shift
+      copies held. The check follows the 2026-10-07 09:10Z library scan and the next collections sync.
+    not_before: 2026-10-07T09:40:00Z
+    due: 2026-10-08T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian (mode=ro): Qw30DwAAQBAJ reads Status Open with BookFile .../EBooks/Hugh Howey/Shift/Shift - Hugh
+      Howey.epub, whose md5 is 717b3c27d3e4ba089b020ac70d52c3d0 (the omnibus; the scan kept the link), and no wanted row
+      after rowid 9597 names it. Kavita shows "Shift Omnibus Edition (Shift 1-3) (Silo Saga)" (series 2062). App: the
+      Silo collection's "Shift" want (caf0d2a7) is gone (Libretto pairs the member) or reads its ebook `landed`
+      (Downloaded: LazyLibrarian holds the book under a title Libretto does not pair); either way nothing searches for
+      it. If it stays `requested` with Libretto listing Shift missing, the member needs a title alias (T-287).
+    auto_covers: part
+    auto:
+      - name: the record points at the omnibus
+        source: ll-db
+        query: |
+          select BookFile from books where BookID = 'Qw30DwAAQBAJ' and Status = 'Open'
+            and BookFile like '%/EBooks/Hugh Howey/Shift/Shift - Hugh Howey.epub'
+        expect: {rows: 1, paths_exist: true}
+      - name: nothing grabs another Shift
+        source: ll-db
+        query: select rowid, NZBtitle from wanted where rowid > 9597 and BookID = 'Qw30DwAAQBAJ'
+        expect: {max_rows: 0}
+      - name: the Silo collection's Shift is held or Downloaded
+        source: app-db
+        query: |
+          select id, ebook_status from book_requests
+          where id = 'caf0d2a7-9f12-4c53-af7a-6608d41a764f' and ebook_status <> 'landed'
+        expect: {max_rows: 0}
+        mismatch: wait
+    links:
+      issues: ['#781']
+  - id: OC-030
+    title: The Books Census runs on its schedule and its findings are triaged
+    opened: 2026-10-06
+    after: the first scheduled books-census run (2026-10-07 10:15Z) after the CronJob is deployed
+    not_before: 2026-10-07T10:30:00Z
+    due: 2026-10-08T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      Loki {namespace="downloads", container="main", pod=~"books-census-.*"} has a `books_census` line from the
+      scheduled run (not a manual Job) with appDb "ok" and holds "ok". Each unheld finding it lists is either repaired or
+      covered by a Census Hold with a reason (.agents/books-census-holds.yaml); record the counts here.
+    auto_covers: part
+    auto:
+      - name: a scheduled run finished
+        source: loki
+        query: sum(count_over_time({namespace="downloads", container="main", pod=~"books-census-[0-9]+-.*"} |= "\"msg\":\"books_census\"" [$SINCE]))
+        expect: {min: 1}
+        mismatch: wait
+    links:
+      issues: ['#744', '#781']

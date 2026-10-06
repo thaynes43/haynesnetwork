@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -1283,3 +1283,150 @@ one append-only `book_request_events` row in the same transaction. Each "unaudit
 removal, re-point with site, settle / revert / park, stamps record nothing, scopes, a failed event rolls the change
 back, a lost mint conflict records nothing); `book-request-write-paths.test.ts` (the write-path guard);
 `wrong-volume-guards.test.ts` (the repair records `actor: 'repair'`, and a dry run or a second apply records nothing).
+
+## Amendment — 2026-10-06 (Books Census): a daily, observe-only census of wrong files and the English-only rule (issues #744, #781)
+
+**What was seen.** Two problems with no detector.
+
+- **#781: LazyLibrarian holds a book with another book's file.** "Four: The Traitor" (`RZZRAQAAQBAJ`) held the four-story
+  collection: LazyLibrarian grabbed "Four- A Divergent Story Collection (The Transfer; The Initiate; The Son; The Traitor)"
+  for it and filed it under the record's own name. "Shift" (`Qw30DwAAQBAJ`) held *First Shift: Legacy* (Silo 6). The
+  Volume Check (T-280) and the Author Check (T-286) compare a want with LazyLibrarian's record, never a record with its
+  file, so nothing saw either; every want on those books read held.
+- **#744: the English-only rule (F10) had no continuous enforcement.** The 2026-10-05 sweeps moved about 6,500 foreign
+  files out of the libraries; nothing measured the state afterwards: no count of foreign files held, of foreign books
+  LazyLibrarian wants, or of library items tagged non-English. The library tags were wrong in both directions.
+
+**The ruling.** One census for both (owner-approved queue item #744, extended with #781's detection by the coordinator). It
+is observe-only: it reads, logs and alerts; it never writes to a source and never repairs. Repairs stay with people and
+agents, under the cross-volume repair rules (the two #781 books below).
+
+### The Books Census (T-289)
+
+A daily CronJob, `books-census` (haynes-ops `kubernetes/main/apps/downloads/books-census/`, 10:15Z, after LazyLibrarian's
+09:10Z library scan), runs `packages/sync/src/scripts/books-census.ts` from the app image. Its sources are the owed-check
+runner's (DESIGN-053 D-04), opened the same read-only ways: LazyLibrarian's SQLite `mode=ro` with `PRAGMA query_only`
+(its RWO volume, so the pod is pinned to LazyLibrarian's node), the books NFS share mounted read-only at LazyLibrarian's
+own path, and the app's Postgres through `postgres16-ro` in a `default_transaction_read_only` session with every query
+`BEGIN READ ONLY`. One pass reads every LazyLibrarian `books` row, then the metadata of every file a row points at
+(`BookFile`, `AudioFile`), four at a time (the share is NFS: latency, not CPU), with positioned reads of the few blocks that
+hold it (`file-meta.ts`):
+
+| File | What is read |
+|---|---|
+| EPUB | the zip directory, then the OPF: `dc:title`, `dc:language`, the calibre or EPUB 3 series; and a text sample, the first spine documents up to 3,000 words |
+| MOBI / AZW3 | record 0: EXTH 503 (title) and 524 (language), else the full name and the header locale |
+| MP3 | ID3 v2.2 to v2.4: TALB (album), TIT2 (track title), TLAN (language) |
+| M4B / M4A | the `moov` atom (found by walking atom headers past `mdat`): `©alb`, `©nam` |
+| PDF and anything else | nothing (`unsupported`); the name side below still judges it |
+
+The first live pass (1,267 records, 981 eBook files and 569 audiobook files) took 22 to 25 seconds.
+
+**Five kinds of finding**, each with a key a Census Hold can name (`census.ts`):
+
+| Kind (key) | Finding |
+|---|---|
+| `wrong_file` (`wrong_file:<id>:<format>`) | The Held File Check (T-290, below) says the file is another book. `basis` says whether the file's own title or, when it has none worth judging, its folder and file name decided. |
+| `missing_file` (`missing_file:<id>:<format>`) | The row points at a file that is not on disk. A stale pointer makes LazyLibrarian, and the landed truth (T-281), read the format held. |
+| `foreign_held` (`foreign_held:<id>:<format>`) | The file is not English (F10), by the first signal that says anything: the text sample (an EPUB's function words, `language.ts`: foreign when a foreign language has 30 hits and three times English's, or the letters are mostly a non-Latin script), else the file's declared language, else LazyLibrarian's `BookLang` when no file of that book reads English (LazyLibrarian labels a record by the edition it resolved: Goldmann's German "Grey" holds an English file). |
+| `foreign_wanted` (`foreign_wanted:<id>`) | A book LazyLibrarian labels non-English that it reads `Wanted` in either format, or that an unparked want with an open format points at. The finding names those wants. |
+| `foreign_item` (`foreign_item:<source>:<externalId>`) | A live library item (`books_items`, not a comic) whose language tag reads non-English, counted per library. |
+
+The language classes are DESIGN-036's #700 table (`classifyBookLanguage`; blank, `und`, `XXX` and `Unknown` are not
+foreign), with ISO 639-2 `mul` and `zxx` also unknown.
+
+### The Held File Check (T-290)
+
+`heldFileNamesBook` (`ll-book-check.ts`, pure) asks whether a title the file carries names its LazyLibrarian record
+(`BookName`, with `BookSub`). LazyLibrarian writes a colon as a period ("Four. The Traitor", "Reckoners 1. Steelheart"),
+so that period is read back as a part break (`llTitleText`). Both titles are evened out first: a file extension left in
+a title, a double hyphen, bullet or underscore as a part break, "Vs." for "Versus", British "-our". Two titles that are
+one string once spaces and punctuation go are the same book. Otherwise:
+
+1. **No other volume.** The Volume Check with the record as the want and the file as the book must not say `volume`
+   ("Warriors" is not "Warriors 3"; "The Expanse Origins #2" is not "#3").
+2. **No title to judge.** A title that is only a series designation ("Redwall - 08", "Throne of Glass bk 5", "Wild Cards
+   VII", "Disc 01"), a placeholder ("Unknown", "read by Hugh Laurie") or no title at all decides nothing. Audiobook album
+   tags are often the series, so this matters there most.
+3. **The same work, either way round.** The Volume Check must find no other work with the record as the want (with its
+   subtitle or without it), or with the file as the want, unless the words the file lacks name a separate work and it
+   lacks the record's own head: "The Golden Compass" is LazyLibrarian's "His Dark Materials. The Golden Compass (Book
+   1)", "The Churn" is "The Churn. an Expanse Novella", but "Outlander" is not "A Plague of Zombies. An Outlander
+   Novella".
+4. **Nothing the record does not name** (`namesNothingElse`). The Volume Check passes a file whose title contains the
+   record's, which is exactly how a collection or another part looks ("Four Divergent Stories: The Transfer, The
+   Initiate, The Son, and The Traitor" for "Four: The Traitor"; "First Shift - Legacy" for "Shift"). So one part of the
+   file's title, its decoration and any leading series index cut ("Expanse 05 ", "[The Expanse 3.0] ", "SSQ4 ", "The
+   History of Middle-earth Vol-7- "), must have only words of the record (title, subtitle, the file's own series name),
+   packaging words aside ("Omnibus", "Edition", "Kindle Single", "Deluxe", "Box Set"), or the title must start with the
+   record's whole title of two words or more and only add a subtitle after it ("NINE TOMORROWS Tales of the Near Future").
+
+The census judges a file by its content when it can (`contentNamesBook`): the primary title (the EPUB or MOBI title, the
+album tag) decides, and the other titles can only clear it, never condemn it. An album tag is often the series
+("Shadowhunter Academy") while the track title names the book ("07 Bitter of Tongue"), and track titles are too often
+chapter names or codes ("01: High Chasaline", "WHITESAND01P04") to condemn a file. When the content cannot judge, the
+name does (`heldFileNameNamesBook`): the folder and the file name, the author and track markers cut, with rules 1 and 4
+only (a name is shorter than a title: LazyLibrarian's "The Traitor" folder holds "Four: The Traitor"). A file is
+another book when no name names the record.
+
+Known limits, held or reported rather than coded around: a record named shorter than its book ("The Knights of
+Crystallia" for "Alcatraz versus the Knights of Crystallia"), an unnumbered series album with no track title, a US and UK
+title of one book ("Philosopher's Stone", "Sorcerer's Stone").
+
+### Census Holds (T-291)
+
+`.agents/books-census-holds.yaml` lists findings a person has looked at and declared fine for now: a key, optionally the
+file the hold was declared for (a hold on a `wrong_file` stops covering it when LazyLibrarian links another file), a
+reason, an `opened` day and an optional `until` day. The CronJob reads the file from main on GitHub, so a docs PR sets or
+lifts a hold without a release; `packages/sync/__tests__/books-census.test.ts` parses the repo's file, so a malformed hold
+fails the `test` check. A held finding is still logged, `held: true` with the reason, and never counts toward an alert. An
+unreadable holds file is logged (`books_census_holds_invalid`) and the run goes on with no holds: it over-reports rather
+than hide a finding. A hold that matched nothing is listed in the run's `unusedHolds`, so it can be deleted.
+
+### What it logs, and the alerts
+
+JSON lines, namespace `downloads`, container `main`, pods `books-census-*`: one `books_census_finding` per finding (kind,
+key, held, the record, the path relative to the books root, the file's titles, the language signals, the wants on it), a
+`books_census_unreadable` warning when files could not be parsed, and one `books_census` line per run (the counts above
+per kind, the held counts, `foreignItemsBySource`, `unusedHolds`, up to five sample titles per kind, `appDb`, `holds`,
+`durationMs`). `books_census_failed` (exit 1) when LazyLibrarian's database cannot be read; an unreachable app database
+is logged (`books_census_app_db_failed`) and the LazyLibrarian side still runs (`appDb: error`). Findings are not job
+failures: the job exits 0 whatever it found.
+
+Loki rules (haynes-ops `downloads/books-census/app/lokirule.yaml`), all `severity: warning` like every estate warning (the
+owner's rule for a census: it does not page): `BooksCensusWrongFile`, `BooksCensusMissingFile`, `BooksCensusForeignHeld`,
+`BooksCensusForeignWanted` and `BooksCensusForeignItems` when the run's count of unheld findings of that kind is above
+zero (26 hours, one daily run), and `BooksCensusSilent` when no run finished in 26 hours. The human- and agent-facing
+signal is the session-start step in `.agents/KICKOFF.md`: read the latest `books_census` line and triage.
+
+**What is not built.** The monthly content-based sample #744 proposed (stopwords, diacritics, ID3, ISBN group) became
+part of the daily pass for the files LazyLibrarian holds: the EPUB text sample, the declared language of every EPUB,
+MOBI and MP3. Audiobook audio is not listened to (no speech model runs here), so an audiobook is foreign only by its
+tags or its label; the 2026-10-05 sweep's whisper checks stay a hand step. Library items LazyLibrarian does not track
+are covered by their tags only.
+
+### The two #781 books, repaired (2026-10-06 21:39Z)
+
+Under the cross-volume repair rules (the #782 precedent), by `.agents/context/ll-library-audit/fix_781.py` (dry run, then
+`--go`; declared activity act-213826-23403; LazyLibrarian backup `/config/lazylibrarian.db.pre-781-20261006`, integrity
+ok). Content was read first (OPF titles and md5s, read-only). Neither book was searched again: both right books were
+already on disk, and a search would have put a second copy in Kavita, which Libretto refuses as ambiguous.
+
+| Record | Was | Now |
+|---|---|---|
+| `RZZRAQAAQBAJ` Four. The Traitor | the four-story collection, `Four. The Traitor/` | re-pointed to the Kindle Single already in `The Traitor/` (Kavita series 1950; that folder's LazyLibrarian opf already named this record). The collection copy is held `duplicate` (the collection keeps its own folder, `Four - A Divergent Story Collection/`, Kavita series 256), its cover and opf `off_catalog`. |
+| `TYETAQAAQBAJ` The Traitor. A Divergent Story | the same book under its UK title, `Wanted` with no file for pairing want `0841d533` | linked to the same file, `Open`: a grab would have been a second copy. |
+| `Qw30DwAAQBAJ` Shift | *First Shift: Legacy* in `First Shift - Legacy/`; its own `Shift/` folder held *Third Shift: Pact* (epub) and *First Shift: Legacy* (mobi); `Wool Omnibus/` held another *Third Shift: Pact* | The right book, "Shift Omnibus Edition (Shift 1-3)", was downloaded on 2026-08-22 (grab 6086, still seeding) and imported as `Shift/Shift - Hugh Howey.epub`; grab 9282 (*Third Shift*, 2026-09-27) overwrote it under the same name. It is copied back from the torrent folder (the torrent keeps seeding) beside the folder's own opf and cover, and the record re-pointed. The four wrong books and the two stray opfs naming `Qw30DwAAQBAJ` (LazyLibrarian's library scan reads a folder's opf before the file, so each would be linked to Shift again) are held `off_catalog`: no record or request names *First Shift* or *Third Shift*, both parts of the omnibus. |
+
+Three folders emptied and removed; manifest and sort rows in `quarantine/crossvolume-2026-10-05/`, so the holding-folder
+purge (OC-009) takes them. Kavita (one user, no pages read on the series that lost a file) was rescanned for both authors:
+series 1661 (the collection copy) and 291 (*Third Shift*) are gone, series 1221 *Wool* holds only Wool again, and series
+2062 "Shift Omnibus Edition (Shift 1-3) (Silo Saga)" is new. Owed: OC-028 (The Traitor) and OC-029 (Shift).
+
+**Tests:** `packages/domain/__tests__/held-file-check.test.ts` (the #781 files and every flag and false alarm of the first
+live pass: another volume, another work, a collection; a series in front of the record's name; a series index, a
+bracket, a spelling, an edition word; designations; the name side), `packages/sync/__tests__/books-census.test.ts` (the
+readers on EPUB, MOBI, ID3 v2.3 and v2.4 and MP4 files built byte by byte, a missing file, a PDF, a broken EPUB; the
+language guess; every kind of finding on the live shapes; holds by key, file and day, and unused holds; a whole pass over a
+real SQLite file and real files, an unreadable holds file, and the app reads on the embedded Postgres 16 through a
+read-only session).

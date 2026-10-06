@@ -1,0 +1,20 @@
+# Census Holds: Books Census findings declared fine for now (DESIGN-028 amendment 2026-10-06, glossary T-291).
+#
+# The Books Census (CronJob books-census, namespace downloads, daily) logs every finding; a finding a hold covers is
+# logged with `held: true` and never counts toward its alert. The CronJob reads this file from main on GitHub, so a
+# docs PR sets or lifts a hold without a release. Take a hold only after looking: a title the Held File Check misreads
+# (the file IS the book), a book the owner keeps on purpose. A real wrong file or foreign book is repaired, not held.
+#
+#   key      the finding's key, from its books_census_finding line: wrong_file|missing_file|foreign_held:<llBookId>:
+#            <ebook|audiobook>, foreign_wanted:<llBookId>, foreign_item:<kavita|audiobookshelf>:<externalId>
+#   path     optional: the file the hold was declared for, as the finding reports it (relative to the books root).
+#            When LazyLibrarian links another file, the hold no longer covers it. Use it for wrong_file and foreign_held.
+#   title    the book, for people reading this file
+#   reason   why it is fine (what was checked, by whom)
+#   opened   YYYY-MM-DD; until: YYYY-MM-DD (optional, the hold lapses after that day)
+#   links    optional: issues, PRs
+#
+# A hold that matched nothing in a run is listed in the run's `books_census` line (`unusedHolds`): the finding is gone,
+# so delete the hold.
+version: 1
+holds: []

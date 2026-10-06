@@ -302,7 +302,21 @@ export function llBookMismatch(
 }
 
 /** Name parts that say nothing about who wrote a book. */
-const NAME_NOISE = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'dr', 'mr', 'mrs', 'ms', 'sir', 'dame', 'phd', 'md']);
+const NAME_NOISE = new Set([
+  'jr',
+  'sr',
+  'ii',
+  'iii',
+  'iv',
+  'dr',
+  'mr',
+  'mrs',
+  'ms',
+  'sir',
+  'dame',
+  'phd',
+  'md',
+]);
 
 /** The parts of an author's name that can agree with another credit: two letters or more, no title or suffix. */
 const nameTokens = (name: string): string[] =>
@@ -340,6 +354,292 @@ export function llBookAuthorMismatch(
     );
   };
   return !credits.some(agrees);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Issues #781 / #744 (DESIGN-028 amendment 2026-10-06, glossary T-290) — the Held File Check: is the file LazyLibrarian
+// holds for a book that book? LazyLibrarian imported the four-story collection as "Four: The Traitor" and linked *First
+// Shift: Legacy* as "Shift"; both share the record's words, so the lenient check alone passes them. The file's own title
+// (an EPUB's OPF `dc:title`, a MOBI's EXTH title, an audiobook's album tag) or its name is compared with the record.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Words that say how a file is packaged or sold, never which work it holds ("Shift Omnibus Edition", "(Kindle Single)").
+ * Stemmed like `distinctiveWords` ("omnibus" is "omnibu" there).
+ */
+const PACKAGING_WORDS = new Set(
+  [
+    'omnibus',
+    'edition',
+    'kindle',
+    'single',
+    'complete',
+    'ebook',
+    'epub',
+    'retail',
+    'audiobook',
+    'unabridged',
+    'abridged',
+    'deluxe',
+    'illustrated',
+    'anniversary',
+    'box',
+    'boxed',
+    'set',
+  ].map((w) => stem(w)),
+);
+
+/** A word before a period that is an abbreviation, not the end of a title part ("Mr. Mercedes", "St. Lucy"). */
+const ABBREVIATIONS = new Set([
+  'mr',
+  'mrs',
+  'ms',
+  'dr',
+  'st',
+  'jr',
+  'sr',
+  'vs',
+  'no',
+  'vol',
+  'mt',
+  'ft',
+  'lt',
+  'col',
+  'gen',
+  'capt',
+  'prof',
+  'rev',
+]);
+
+/** Titles a tool writes when it knows none ("Unknown" is calibre's), or that credit a reader: no title to judge. */
+const PLACEHOLDER_TITLES = new Set([
+  'unknown',
+  'untitled',
+  'ebook',
+  'book',
+  'audiobook',
+  'no title',
+  'title',
+]);
+const PLACEHOLDER_START = /^(?:read|narrated|performed)\s+by\b/;
+
+/**
+ * LazyLibrarian writes a title's colon as a period ("Four. The Traitor", "The World of Divergent. The Path to
+ * Allegiant", "Reckoners 1. Steelheart"), in its `BookName` and in the folder and file names it gives a book. Read that
+ * period back as the part break it was, so the subtitle is a subtitle; an abbreviation ("Mr. Mercedes") keeps its period.
+ * Pure.
+ */
+export function llTitleText(title: string): string {
+  return title.replace(
+    /(\b[A-Za-z]{2,}|\b[A-Za-z]+\s+\d{1,3})\.\s+(?=["'“‘(]?[A-Z0-9]|(?:a|an|the)\s)/g,
+    (whole, before: string) => (ABBREVIATIONS.has(before.toLowerCase()) ? whole : `${before}: `),
+  );
+}
+
+/**
+ * The spellings two titles of one book differ in, made one, for the Held File Check only: a file extension left in a
+ * title ("On Wings of Eagles.txt"), a double hyphen, bullet or underscore as a part break ("Artificial
+ * Condition--The Murderbot Diaries", "The Burning Maze • The Trials of Apollo"), "Vs." for "Versus", and British
+ * "-our" for American "-or" ("The Colour of Magic").
+ */
+function heldTitleText(title: string): string {
+  return title
+    .replace(/\.(?:txt|epub|mobi|azw3?|pdf|docx?|rtf|html?|m4b|mp3)\s*$/i, '')
+    .replace(/\s*(?:--|•|·|_)\s*/g, ' - ')
+    .replace(/\bvs\.?(?=\s)/gi, 'versus')
+    .replace(/\b([A-Za-z]{3,})our\b/g, '$1or');
+}
+
+/** A title worth judging: at least one letter, and not a placeholder. */
+export function judgeableTitle(title: string | null | undefined): boolean {
+  const key = words(title).join(' ');
+  return /[a-z]/.test(key) && !PLACEHOLDER_TITLES.has(key) && !PLACEHOLDER_START.test(key);
+}
+
+/** A title that is only a series and a number ("Redwall - 08", "Throne of Glass bk 5", "Wild Cards VII", "Disc 01"). */
+const DESIGNATION =
+  /^(?=.*[a-z])[^:]*?[\s,#–-]*(?:\b(?:book|bk|vol|volume|part|no|disc|cd|tome)\b\.?\s*)?#?\s*(?:\b\d{1,3}|\b[ivx]{1,5})\s*$/;
+
+/** Is this title only a series designation: one part, ending in its number? Its trailing parentheticals are cut first. */
+export function isSeriesDesignation(title: string): boolean {
+  let t = fold(heldTitleText(title)).trim();
+  for (
+    let m = /\s*[([][^()[\]]*[)\]]\s*$/.exec(t);
+    m && m.index > 0;
+    m = /\s*[([][^()[\]]*[)\]]\s*$/.exec(t)
+  ) {
+    t = t.slice(0, m.index).trim();
+  }
+  const flat = t.replace(/\s+[-–]\s+(?=\S+$)/, ' ');
+  return !/:|\s[-–]\s/.test(flat) && DESIGNATION.test(flat);
+}
+
+/**
+ * The Held File Check (T-290): does a held file's title name the LazyLibrarian book it is held for? `null` when the
+ * file's title cannot say: none, a placeholder, or only a series designation ("Redwall - 08", "Throne of Glass bk 5",
+ * which audiobook album tags often are) that names no other volume; the census then judges the file by its name.
+ * Otherwise all of these must hold:
+ *   1. the Volume Check (`llBookMismatch`, the record's title as the want, the file's as the book) finds no other
+ *      volume: "Warriors 3" never holds "Warriors", "Book 3" never "Book 2".
+ *   2. the Volume Check finds no other work, either way round: the record's title in the file's, or the file's title in
+ *      the record's ("The Golden Compass" for LazyLibrarian's "His Dark Materials. The Golden Compass (Book 1)"),
+ *      except when the words the file lacks name a separate work and the file lacks the record's own head ("A Plague of
+ *      Zombies. An Outlander Novella" is not "Outlander"; "The Churn. an Expanse Novella" is "The Churn"). It catches
+ *      another subtitle in one series ("Four: The Son" held as "Four: The Traitor"). Two titles that are one string
+ *      once spaces and punctuation go ("Confessions ofanUglyStepsister") are the same.
+ *   3. the file's title names nothing the record does not (`namesNothingElse`). The Volume Check passes a file whose
+ *      title CONTAINS the record's, which is how a collection ("Four Divergent Stories: The Transfer, ..., and The
+ *      Traitor") or another part ("First Shift - Legacy" for "Shift") looks.
+ * Pure.
+ */
+export function heldFileNamesBook(
+  fileTitle: string | null | undefined,
+  book: LlBookNaming,
+  options: { series?: string | null } = {},
+): boolean | null {
+  if (!fileTitle || !judgeableTitle(fileTitle)) return null;
+  const file = heldTitleText(fileTitle);
+  const recordTitle = heldTitleText(llTitleText(book.title ?? ''));
+  if (!judgeableTitle(recordTitle)) return null;
+  const subtitle = book.subtitle?.trim() ? heldTitleText(llTitleText(book.subtitle)) : null;
+  const author = book.author ?? null;
+  const squash = (t: string): string => fold(t).replace(/[^a-z0-9]/g, '');
+  if (
+    squash(file) === squash(recordTitle) ||
+    (subtitle !== null && squash(file) === squash(`${recordTitle}${subtitle}`))
+  )
+    return true;
+  const asWant = (title: string) => ({ title, author });
+  const forward = llBookMismatch(asWant(recordTitle), { title: file, author });
+  if (forward === 'volume') return false;
+  if (isSeriesDesignation(file)) return null;
+  const withSub =
+    subtitle !== null
+      ? llBookMismatch(asWant(`${recordTitle}: ${subtitle}`), { title: file, author })
+      : 'work';
+  let sameWork = forward === null || withSub === null;
+  if (!sameWork && llBookMismatch(asWant(file), { title: recordTitle, author }) === null) {
+    const authorWords = new Set(words(author));
+    const fileWords = new Set(distinctiveWords(file, authorWords));
+    const headCovered = distinctiveWords(splitTitle(recordTitle).head, authorWords).every((w) =>
+      fileWords.has(w),
+    );
+    sameWork =
+      headCovered ||
+      !distinctiveWords(recordTitle, authorWords).some(
+        (w) => !fileWords.has(w) && SEPARATE_WORK.has(w),
+      );
+  }
+  if (!sameWork) return false;
+  return namesNothingElse(file, recordTitle, subtitle, author, options.series);
+}
+
+/**
+ * Leading series indexes a part may carry before the work's own words ("Expanse 05 ", "[The Expanse 3.0] ", "SSQ4 ",
+ * "The History of Middle-earth Vol-7- ").
+ */
+const LEADING_INDEX = [
+  /^\s*\[[^\]]*\]\s*/,
+  /^[^:]{1,40}?\b\d{1,3}(?:\.\d)?\s+(?=[a-z])/,
+  /^[a-z]{2,5}\d{1,3}\s+/,
+  /^[^:]{1,60}?\bvol(?:ume)?[\s.-]*\d{1,3}\b[\s.:–-]*/,
+];
+
+/**
+ * Side 3 of the Held File Check: does `title` name nothing the record does not? True when one part of it, its decoration
+ * and any leading series index cut, has words and all of them are the record's (title, subtitle, the file's own series
+ * name), packaging words aside; or when the title starts with the record's whole title (two words or more) and only adds
+ * a subtitle after it ("NINE TOMORROWS Tales of the Near Future"). A title with no word left passes.
+ */
+function namesNothingElse(
+  title: string,
+  recordTitle: string,
+  subtitle: string | null,
+  author: string | null | undefined,
+  series: string | null | undefined,
+): boolean {
+  const authorWords = new Set(words(author));
+  const recordWords = distinctiveWords(recordTitle, authorWords);
+  const allowed = new Set([
+    ...recordWords,
+    ...(subtitle ? distinctiveWords(subtitle, authorWords) : []),
+    ...(series ? distinctiveWords(series, authorWords) : []),
+  ]);
+  const head = words(recordTitle).join(' ');
+  if (recordWords.length >= 2 && `${words(title).join(' ')} `.startsWith(`${head} `)) return true;
+  const partWords = splitTitle(title)
+    .work.flatMap((part) => [part, ...LEADING_INDEX.map((re) => part.replace(re, ''))])
+    .map((part) => distinctiveWords(part, authorWords).filter((w) => !PACKAGING_WORDS.has(w)))
+    .filter((w) => w.length > 0);
+  if (partWords.length === 0) return true;
+  return partWords.some((w) => w.every((x) => allowed.has(x)));
+}
+
+/** Audiobook part and track markers in a file name ("Part 01 of 39", "(10)", "- 01 of 34", "Chapter 56 - "). */
+const TRACK_MARKERS = [
+  /\s*[-–]?\s*\bpart\s*\d{1,4}\s*(?:of\s*\d{1,4})?\s*$/i,
+  /\s*[-–]?\s*\b\d{1,4}\s*of\s*\d{1,4}\s*$/i,
+  /\s*\(\d{1,4}\)\s*$/,
+  /\s*[-–]\s*\d{1,4}\s*$/,
+  /^\s*(?:chapter|track|disc|cd)\s*\d{1,4}\s*[-–.:]\s*/i,
+  /^\s*\d{1,4}\s*[-–.:]?\s+(?=\D)/,
+];
+
+/** A track or chapter title with its track number and part marker cut ("13 Dead Ever After Part 1" → "Dead Ever After"). */
+export function stripTrackMarkers(title: string): string {
+  let out = title;
+  for (let i = 0; i < 2; i += 1) for (const marker of TRACK_MARKERS) out = out.replace(marker, '');
+  return out.trim();
+}
+
+/** An author name in "Last, First" order as well, for a file name LazyLibrarian or a release wrote. */
+function authorSpellings(author: string | null | undefined): string[] {
+  const a = (author ?? '').trim();
+  if (!a) return [];
+  const parts = a.split(/\s+/);
+  return parts.length > 1 ? [a, `${parts.at(-1)!}, ${parts.slice(0, -1).join(' ')}`] : [a];
+}
+
+/**
+ * The titles a held file's PATH gives (T-290, the name side): its folder (LazyLibrarian files a book under `$Title`) and
+ * its name without the extension, the author ("Hugh Howey - ", " - Veronica Roth", "Howey, Hugh - ") and track markers
+ * ("Part 01 of 39", "(10)") cut. Pure.
+ */
+export function heldFileNameTitles(path: string, author: string | null | undefined): string[] {
+  const segments = path.split('/').filter((s) => s.length > 0);
+  const base = (segments.at(-1) ?? '').replace(/\.[A-Za-z0-9]{2,4}$/, '');
+  const folder = segments.at(-2) ?? '';
+  const strip = (name: string): string => {
+    let out = name;
+    for (const spelling of authorSpellings(author)) {
+      const esc = spelling.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      out = out.replace(new RegExp(`^\\s*${esc}\\s*[-–]\\s*`, 'i'), '');
+      out = out.replace(new RegExp(`\\s*[-–]\\s*${esc}\\s*$`, 'i'), '');
+    }
+    return llTitleText(stripTrackMarkers(out));
+  };
+  return [...new Set([strip(folder), strip(base)].filter((t) => judgeableTitle(t)))];
+}
+
+/**
+ * The name side of the Held File Check: false only when NO title the path gives names the book; null when there is none
+ * to judge. A name is shorter than a title (LazyLibrarian's "The Traitor" folder holds "Four: The Traitor"), so only
+ * sides 1 and 3 apply: the name names no other volume, and nothing the record does not ("First Shift - Legacy" for
+ * "Shift" does).
+ */
+export function heldFileNameNamesBook(path: string, book: LlBookNaming): boolean | null {
+  const recordTitle = heldTitleText(llTitleText(book.title ?? ''));
+  if (!judgeableTitle(recordTitle)) return null;
+  const subtitle = book.subtitle?.trim() ? heldTitleText(llTitleText(book.subtitle)) : null;
+  const titles = heldFileNameTitles(path, book.author).map((t) => heldTitleText(t));
+  if (titles.length === 0) return null;
+  return titles.some(
+    (t) =>
+      llBookMismatch(
+        { title: recordTitle, author: book.author ?? null },
+        { title: t, author: book.author ?? null },
+      ) !== 'volume' && namesNothingElse(t, recordTitle, subtitle, book.author, null),
+  );
 }
 
 const NOISE_WORDS = new Set(['a', 'an', 'the', 'novel', 'unabridged', 'abridged', 'edition']);
