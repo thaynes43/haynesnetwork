@@ -921,3 +921,36 @@ checks:
     links:
       issues: ['#777', 'thaynes43/libretto#25']
       prs: ['thaynes43/libretto#23', 'haynes-ops #3447']
+  - id: OC-027
+    title: Debt of Honor's eBook is grabbed again after its broken file was held, and its pairing want lands on the new file
+    opened: 2026-10-06
+    after: >-
+      #782 (2026-10-06 17:40Z): the broken Debt of Honor .mobi is held `corrupt`, LazyLibrarian igdN-TOJVEsC re-wanted;
+      the grab depends on LazyLibrarian's search finding a release, so `due` is a review date
+    not_before: 2026-10-06T18:00:00Z
+    due: 2026-10-20T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian igdN-TOJVEsC (Debt of Honor, en) reads its eBook Open again with a BookFile that exists and is not the
+      held file (md5 differs from the `corrupt` row in quarantine/crossvolume-2026-10-05/sort.jsonl); Kavita shows the
+      book (an epub or pdf grab directly, a .mobi/.azw3 after the converter's next :20 run, OC-023); pairing want
+      28ec5fba reads its ebook `landed` again. Until the grab it reads `wanted` (landed truth, confirmed 2026-10-06).
+      If the release search finds nothing for two weeks, record that and move `due` with the reason.
+    auto_covers: part
+    auto:
+      - name: LazyLibrarian holds a new eBook file for Debt of Honor
+        source: ll-db
+        query: |
+          select BookFile from books where BookID = 'igdN-TOJVEsC' and Status in ('Open', 'Have') and BookFile is not null
+        expect: {min_rows: 1, paths_exist: true}
+        mismatch: wait
+      - name: the pairing want's ebook reads landed on the new file
+        source: app-db
+        query: |
+          select count(*) as n from book_requests
+          where id = '28ec5fba-1661-4e8f-b9eb-b20e4b57223b' and ebook_status = 'landed'
+        expect: {eq: 1}
+        mismatch: wait
+    links:
+      issues: ['#782', '#770']

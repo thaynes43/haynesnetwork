@@ -23,7 +23,12 @@
   Kavita indexes all 113; Libretto: 18 members missing to held (13 from this, 5 from Libretto sha-2e77f28 live at the same
   time), none the other way. The 17:27Z collections sync removed the six OC-021 wants (OC-021 passed). LazyLibrarian's
   library scans left 43 of the 57 `BookFile`s on the EPUB, the rest on the original, none dangling.
-- **Open:** the 4 held books need decisions, issue #782. **Owed:** OC-023 (the first automatic conversion of a new import).
+- **#782 fixed 17:40Z** (the 4 held books, ruled bugs; `held_782_fix.py`, LL DB backup `pre-782-20261006`): Debt of Honor's
+  broken mobi held `corrupt` and its eBook re-wanted (pairing want `28ec5fba` reverted to `wanted` at the 18:32Z sync); the "Sand" file is
+  The Best American SF&F 2024 and the "Potomu chto nas mnogo" file the English For We Are Many, each re-homed under the LL
+  record it is the only copy of (For We Are Many linked and Open; its Russian-titled record no longer exists) and converted;
+  the "Tree and Leaf" file is Beowulf, held `off_catalog`. Converter census `held 0`. **Owed:** OC-023 (the first automatic
+  conversion of a new import), OC-027 (Debt of Honor re-grabbed).
 
 ## ▶ 2026-10-06 — v0.108.2 + Libretto sha-2e77f28 live: wants on another author's book are resolved again; member title aliases (#771, #777 closed)
 
