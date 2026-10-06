@@ -39,7 +39,7 @@ The haynesnetwork coordinator session (2026-10-04 to 10-06) is idle so the owner
 - OC-024 (Gray Dawn and Shift searched);
 - OC-027 (Debt of Honor re-grab);
 - OC-026 (The Last Hero, 10-13);
-- the purge check (m), on or after 10-12.
+- the purge, OC-009, on or after 10-12.
 
 **Rules from this session:**
 - No CPU burners or parallel or looped test runs in dev-env. This is now in the dev-env CLAUDE.md through #3381.
