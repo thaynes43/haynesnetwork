@@ -15,6 +15,7 @@ import { classifyDeclaredLanguage, guessTextLanguage } from '../src/books-census
 import { runCensusPass } from '../src/books-census/run';
 import type { SyncLogger } from '../src/logger';
 import { parseBooksCensusArgs } from '../src/scripts/books-census';
+import { syncBooks } from '@hnet/domain';
 import { bootMigratedDb, type TestDb } from './helpers';
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -814,17 +815,42 @@ describe('runCensusPass', () => {
       testDb = await bootMigratedDb();
       url = (testDb.pool as unknown as { options: { connectionString: string } }).options
         .connectionString;
-      await testDb.pool
-        .query(`insert into books_items (source, media_kind, external_id, library_id, library_name, title, sort_title, deep_link_url, attrs)
-        values ('kavita', 'book', '18', '1', 'Books', 'De Silmarillion', 'silmarillion', 'x', '{"language":"nl"}'),
-               ('kavita', 'comic', '77', '2', 'Comics', 'Asterix', 'asterix', 'x', '{"language":"fr"}')`);
-      const { rows } = await testDb.pool.query<{ id: string }>(
-        `insert into books_collections (source, external_id, kind, title) values ('kavita', 'c1', 'collection', 'Italia') returning id`,
-      );
-      await testDb.pool.query(
-        `insert into book_requests (origin, collection_id, collection_member_ref, title, ll_book_id) values ('collection', $1, 'm1', 'Lana', 'ital')`,
-        [rows[0]!.id],
-      );
+      // Seeded through the domain single-writer (the no-direct-state-writes guard): a Dutch-tagged book and a
+      // French-tagged comic, which the census never counts.
+      const item = (
+        externalId: string,
+        mediaKind: 'book' | 'comic',
+        title: string,
+        language: string,
+      ) => ({
+        source: 'kavita' as const,
+        mediaKind,
+        externalId,
+        libraryId: mediaKind === 'book' ? '1' : '2',
+        libraryName: mediaKind === 'book' ? 'Books' : 'Comics',
+        title,
+        sortTitle: title.toLowerCase(),
+        author: null,
+        narrator: null,
+        seriesName: null,
+        year: null,
+        releasedAt: null,
+        genres: [],
+        coverRef: null,
+        deepLinkUrl: 'x',
+        pageCount: null,
+        wordCount: null,
+        durationSeconds: null,
+        sizeBytes: null,
+        attrs: { language },
+        sourceAddedAt: null,
+        sourceUpdatedAt: null,
+      });
+      await syncBooks({
+        db: testDb.db,
+        rows: [item('18', 'book', 'De Silmarillion', 'nl'), item('77', 'comic', 'Asterix', 'fr')],
+        syncedSources: ['kavita'],
+      });
     }, 120_000);
     afterAll(async () => {
       await testDb?.stop();
@@ -840,7 +866,8 @@ describe('runCensusPass', () => {
         foreignItems: 1,
         foreignItemsBySource: { kavita: 1 },
       });
-      expect(result.findings.find((f) => f.kind === 'foreign_wanted')!.wants).toHaveLength(1);
+      // The wants query ran (no want points at the Italian book here).
+      expect(result.findings.find((f) => f.kind === 'foreign_wanted')!.wants).toEqual([]);
       expect(lines.find((l) => l.msg === 'books_census')!.fields.appDb).toBe('ok');
     });
   });
