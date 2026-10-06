@@ -24,6 +24,39 @@
   start, Loki rule `LazyLibrarianBooksWithoutAuthorLink` (warning); today "every book has a bookauthors row".
 - **Direct LL DB write, recorded per #741:** the backfill above (one `INSERT` of 211 `bookauthors` rows, no other table).
 
+## ▶ 2026-10-06 — Owed checks run after the 04:54Z backlog run and the 09:10Z scan (#743): four passed, one failed, two still waiting
+
+Read-only run at 08:50Z to 09:30Z (LazyLibrarian DB opened `mode=ro` in the pod; app DB through a read-only session; Loki).
+LazyLibrarian times are EDT, so its 01:04 to 01:25 rows are the 05:04Z to 05:25Z run. Nothing was changed.
+
+- **(k) passed.** Book 1 (`dGy0EAAAQBAJ`) eBook: rowid 9583 `Hannah Nicole Maehrer - Assistant to the Villain`, `Processed`; the only
+  other row is 9460 (the old `Failed` book-3 block). No `0N` release of a later volume.
+- **(l) passed.** `wanted` has no row after rowid 9539 for any of the 22 ids in `2026-10-05-crossvolume-repair.tsv` (max rowid is
+  9593). `YVfJMgEACAAJ` is `Skipped`/`Skipped`, no file; `ik6xzgEACAAJ` is `Skipped`/`Skipped`, no file. All 32 BookFile and
+  AudioFile pointers of those records exist (checked 08:50Z and again 09:20Z, after the eBook scan). **Caveat:** the 09:10Z scan job's eBook
+  scan finished (09:15Z) but its audiobook scan was cut off when LazyLibrarian restarted for haynes-ops #3430 (merged 09:25Z); the job
+  failed `BackoffLimitExceeded`. Recheck the pointers after the next full scan. The books table has one dangling pointer, the known
+  Catwings row (`QGPZEAAAQBAJ`, noted in the #631 block), unchanged.
+- **(n) passed.** `ik6xzgEACAAJ`: no `wanted` row after 9540, both formats `Skipped`; `book_requests` rows pointing at it: 0.
+- **(o) passed.** No `wanted` row after 9539 for `YVfJMgEACAAJ`; no `book_requests` row points at it. Loki: no
+  `pairing_resolve_rejected` line in 24 h, and none of the 27 format-pairing runs in 26 h has `rejectedResolves` above 0.
+- **(p) FAILED on Israel Potter.** Rowid 9590 (`mPGNzQEACAAJ`, eBook, 05:15Z): `Herman.Melville.Pierre.And.Israel.Potter.2014.DANiSH.RETAiL.ePub.eBOOK-DECiPHER-mqIO`
+  was sent to SABnzbd and failed `Duplicate NZB` (no file imported; the record is still `Wanted` with no file). That is a
+  foreign-language grab: LazyLibrarian matched a Danish release to the English record. Passed parts: Dead or Alive
+  (`BL6LDQAAQBAJ`) 9591 `Tom Clancy - [Jack Ryan 13] - Dead or Alive (v5.0) (mobi)`, `Processed`, English; Murtagh
+  (`FOqzEAAAQBAJ`) audio 9588 `...Murtagh-AUDiOBOOK-WEB-SE-2023-CRAViNGS iNT`, `Failed` (unpack, nothing imported; its sibling Queen Charlotte
+  release of the same group carries an `eng` ID3 comment, so `SE` is not a language tag); blocked rowids 9552 to 9558 were not
+  grabbed again (no later row carries those titles).
+  Not fixed here. Camino Island (`a9dLDwAAQBAJ`) re-grabbed the same failed release (9551, then 9585, `Failed` twice); it sits outside the
+  9552 to 9558 block.
+- **(j) still waiting.** Pairing and collection requests with a `missing` format and no re-add yet (`ll_rerequested_at IS NULL AND
+  ll_rerequest_failures < 3`): pairing 509 (498 unparked, 11 parked), collection 7, goodreads 3 (619 and 7 on 2026-10-05).
+  Re-added so far: goodreads 49, pairing 158, collection 15. The 08:33Z format-pairing run: `attempted 100`, `minted 0`,
+  `unmintable 89`, `llRerequested 0`, `llRerequestDeferred 473`.
+- **v0.107.5 "6 minted and pushed" still waiting.** Of Kavita 1169, 1252, 142, 1587, 439, 594 only 439 (Lady Whistledown) has an
+  `ll_book_id` and was searched (08:32Z). The other five have no id and read `requested`, none parked.
+- **Not yet due:** (b), (d), (e), (i), (m) (on or after 2026-10-12). The 07:41Z `englishEditions` check was discharged in the block below.
+
 ## ▶ 2026-10-06 — v0.107.7 + v0.107.8 live: a want on a non-English LazyLibrarian book asks for the English edition (#719, #737 closed)
 
 - **Why (#719).** After #715 the goodreads sweep refuses a non-English LazyLibrarian book, so Azazel (request `415e4d34`, Spanish
@@ -98,7 +131,7 @@
   2 still read `missing` from the park (171, 619), and 6 have no LazyLibrarian id yet (1169, 1252, 142, 1587, 439, 594):
   the run's Google Books daily budget was spent (`skippedBudget` 277), so they mint when it frees. Nothing was
   pushed for them in that run.
-- **Check next.** After the budget resets, confirm those 6 minted and pushed (`unroutable_reason` null, `ll_book_id` set).
+- **Check next** [CHECKED 2026-10-06 09:30Z: still waiting, 1 of 6 minted, see the top block]. After the budget resets, confirm those 6 minted and pushed (`unroutable_reason` null, `ll_book_id` set).
 
 ## ▶ 2026-10-05 — v0.107.3 + v0.107.4 live: pairing is English only (#700, closed)
 
@@ -187,7 +220,7 @@
 - **Filed:** #700, pairing wants the other format of a foreign-language item (how c0afcc7e queued the German omnibus
   at 14:32Z; needs a decision on blank and `XXX` languages). #702, e2e red on main since 2026-10-04 (an
   integrations.spec `addBook gb-tog` expectation; advisory, not caused by #693).
-- **Owed check (o), after the 2026-10-06 04:54Z backlog run:**
+- **Owed check (o) [CHECKED 2026-10-06: passed, see the top block], after the 2026-10-06 04:54Z backlog run:**
   - LazyLibrarian's `wanted` table has no new row for `YVfJMgEACAAJ` (`rowid > 9539`).
   - Loki `{namespace="frontend"} |= "pairing_resolve_rejected"` stays rare. A steady stream for one title means the
     check refuses a right book: read its `llTitle`.
@@ -248,7 +281,7 @@ Villain*, book 1), an LL matching issue a Fix can repair. Progress before that r
 refused (retry each quota-day, max three); pairing 68 handed back (42 by `addBook`) + 50 landed + 13 refused, 619
 waiting; collection 16 handed back, 4 refused, 7 waiting. LazyLibrarian Wanted formats 236 → 406.
 
-**Owed check (j)** (overlaps (i) in the 2026-10-05 entry above; read both): the rest of the ~620 app-made re-adds drain as the shared Google Books quota allows (#674); repeat
+**Owed check (j)** [CHECKED 2026-10-06: still waiting, see the top block] (overlaps (i) in the 2026-10-05 entry above; read both): the rest of the ~620 app-made re-adds drain as the shared Google Books quota allows (#674); repeat
 check (f) after each 04:54Z backlog run until `ll_rerequested_at IS NULL AND ll_rerequest_failures < 3` with a
 `missing` format is empty for pairing and collection.
 
@@ -274,7 +307,7 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
 - **App rows:** goodreads `d7017caf` (book 1) reads ebook `wanted` and audio `grabbed` (MAM MP3, the right book).
   Nothing in `book_requests`, `books_items`, `book_fix_requests` or `activity_import_failures` points at the wrong file.
   No app defect was found.
-- **Owed check (k), after the 2026-10-06 04:54Z backlog run:** book 1's eBook grab must be a book-1 release, not
+- **Owed check (k) [CHECKED 2026-10-06: passed, see the top block], after the 2026-10-06 04:54Z backlog run:** book 1's eBook grab must be a book-1 release, not
   `0N`/`[… 0N]` of a later volume:
   `select NZBtitle, NZBprov, Status from wanted where BookID='dGy0EAAAQBAJ' and AuxInfo='eBook' order by NZBdate`
   (LL DB opened `mode=ro`). If it is wrong again, the fix is #688 fault 2, not another per-title row.
@@ -334,7 +367,7 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
   grabs); the one left is *The Science of Discworld*, which has no volume number. Replay over 3,385 rows: 44 more fall
   below 80, all cross-volume mismatches (30 this record's, plus German Mistborn/Throne of Glass volumes and others);
   genuine Discworld books score as before. `YVfJMgEACAAJ` stays `Skipped`; #693 still owns its app rows.
-- **Owed check (l), after the 2026-10-06 04:54Z backlog run and 09:10Z library scan:** nothing was re-wanted, so none
+- **Owed check (l) [CHECKED 2026-10-06: passed, see the top block], after the 2026-10-06 04:54Z backlog run and 09:10Z library scan:** nothing was re-wanted, so none
   of the 19 records gets a grab: `select BookID, NZBtitle, Status from wanted where rowid > 9539 and BookID in (<the 19
   ids in the table>)` returns no row; `YVfJMgEACAAJ` stays `Skipped` for both formats with no file; `ik6xzgEACAAJ`
   eBook stays `Skipped`; and every BookFile/AudioFile of the 19 points at an existing file (LL DB opened `mode=ro`).
@@ -384,7 +417,7 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
     item The Runaway Jury, resolved to The Firm) is added to #693.
   - Nothing re-wanted: each record already had a right copy in the library.
 - **2026-10-05 16:35Z, The Runaway Jury title fixed:** the repair's 15:18Z rescan of Audiobookshelf item `3e37c3dd` picked up a stale 2026-06-29 in-folder `metadata.json` titled "The Firm", and the 15:22Z books-sync carried that title into pairing want `3cd1a6d7`. The `metadata.json` is now in the holding folder (`off_catalog`), the item reads The Runaway Jury again (genre restored), and the other 6 items rebuilt today match their files. At 16:32Z `3cd1a6d7` re-identified on its own (id cleared, paired with Kavita "Runaway Jury").
-- **Owed check (n), after the 2026-10-06 04:54Z backlog run:** `ik6xzgEACAAJ` reads `Skipped` for both formats with
+- **Owed check (n) [CHECKED 2026-10-06: passed, see the top block], after the 2026-10-06 04:54Z backlog run:** `ik6xzgEACAAJ` reads `Skipped` for both formats with
   no new `wanted` row (rowid > 9540), and `select count(*) from book_requests where ll_book_id='ik6xzgEACAAJ'` is 0.
 - **Owed check (m), on or after 2026-10-12: delete the holding folder.** First confirm no one has reported a missing
   book since 2026-10-05: no GitHub issue or HANDOFF note names one, and
@@ -512,7 +545,7 @@ were byte-identical to book 3's library copy. Kavita had not scanned the folder.
     `corrupt`, which `crossvolume_purge.py` now deletes too (without it the purge refused; dry run reads 6,581 files, OK). LL
     `iLQtvgAACAAJ` already read `Wanted` with no file and `1IiNEAAAQBAJ` links the epub; Kavita reads the epubs only; the
     pairing rows say so (That Hideous Strength eBook `wanted`, audio `landed` on the live Audiobookshelf item). Folders touched.
-- **Owed check (p), after the 2026-10-06 04:54Z backlog run:** the Dead or Alive and Israel Potter eBook grabs are
+- **Owed check (p) [CHECKED 2026-10-06: FAILED on Israel Potter, see the top block], after the 2026-10-06 04:54Z backlog run:** the Dead or Alive and Israel Potter eBook grabs are
   English (`select rowid, NZBtitle, Status from wanted where rowid > 9549 and BookID in ('BL6LDQAAQBAJ','mPGNzQEACAAJ')`,
   LL DB `mode=ro`), as is any `FOqzEAAAQBAJ` (Murtagh) audio grab; and the re-pointed or linked records keep their links (no
   `BookFile`/`AudioFile` points at a missing file). No foreign-language grab: every `wanted` row with rowid > 9549 belongs to a
