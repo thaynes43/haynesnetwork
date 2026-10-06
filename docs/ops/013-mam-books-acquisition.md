@@ -566,6 +566,31 @@ post-processor stayed invisible to LL indefinitely, which is part of why so many
 two fixes are complementary: the scan teaches LL what it already holds, and this app then refuses to
 re-queue it.
 
+### 12.4a The app unqueues what it gave up (issue #735, 2026-10-06)
+
+**Invariant: no LazyLibrarian `Wanted` format the app queued outlives the want it was queued for.** When a want is
+re-identified, re-pointed, parked, dropped, taken off a Goodreads shelf or unlinked, the app records a LazyLibrarian
+Release (`ll_format_releases`) and the next goodreads-sync or format-pairing run sends the format back to `Skipped`
+(`cmd=unqueueBook`, LL's `_unqueuebook`, as unguarded as `_queuebook`) once a fresh `getAllBooks` shows it `Wanted`, not
+held, and no live request still asks for it. Watch it in Loki: `ll_format_unqueued`, `ll_release_settled`, and the
+format-pairing run line's `llReleases*` and `llOrphanWanted` counters (`ll_orphan_wanted` names the orphans).
+
+**One-off repair of the orphans that predate it** (`packages/sync/src/scripts/ll-orphan-unqueue.ts`): a frontend Job from
+the format-pairing CronJob template, dry run first, after the release that carries it is deployed:
+
+```bash
+kubectl -n frontend create job hnet-ll-orphan-735-dry --from=cronjob/haynesnetwork-sync-format-pairing --dry-run=client -o json \
+  | jq '.spec.template.spec.containers[0].command = ["tsx","/sync/src/scripts/ll-orphan-unqueue.ts","--dry-run"]' \
+  | kubectl create -f -
+kubectl -n frontend logs job/hnet-ll-orphan-735-dry   # every orphan, `would_unqueue` or `keep`
+# then the same with --apply (job hnet-ll-orphan-735-apply); a second --apply finds only the kept ones
+```
+
+The keep list always holds the English records the 2026-10-05 F10 sweep re-wanted by hand (`F10_HAND_REWANTS`);
+`--keep=<id>:<ebook|audiobook>,…` adds to it, and only `--no-default-keep` drops it. Each write is preceded by one more
+read and skipped (`skip`) if the format no longer reads `Wanted`. The CronJob carries the sync mode in the container's `command` (no
+`args`), which is why the Job overrides `command`.
+
 ### 12.5 Both MAM sessions were dead — and are now watched
 
 A site password change invalidated **both** `mam_id` sessions (§1's two-IP model: the Prowlarr

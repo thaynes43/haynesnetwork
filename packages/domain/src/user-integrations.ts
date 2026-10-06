@@ -6,6 +6,7 @@
 // other module from touching the table.
 import {
   GOODREADS_SHELVES,
+  bookRequests,
   permissionAudit,
   userIntegrations,
   users,
@@ -14,9 +15,10 @@ import {
   type IntegrationStatus,
   type UserIntegrationRow,
 } from '@hnet/db';
-import { and, eq, lt, ne, or } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lt, ne, or } from 'drizzle-orm';
 import { InvalidGoodreadsProfileError, NotFoundError } from './errors';
 import { inTransaction, resolveDb } from './db-client';
+import { llQueuedFormats, recordLlReleases } from './ll-release-record';
 
 /**
  * Extract the numeric Goodreads user id from a profile reference WITHOUT a network call. Accepts a bare
@@ -135,8 +137,9 @@ export interface UnlinkIntegrationInput {
 
 /**
  * Unlink an account (soft — the row is retained so a re-link keeps history, and the audit trail outlives
- * the link). Sets status 'unlinked'; writes an `unlink_integration` permission_audit row same-tx. A no-op
- * on an already-unlinked / absent integration writes no audit row (returns { changed: false }).
+ * the link). Sets status 'unlinked'; writes an `unlink_integration` permission_audit row same-tx, and (issue #735) a
+ * LazyLibrarian Release for each of its wants' queued formats. A no-op on an already-unlinked / absent integration
+ * writes no audit row (returns { changed: false }).
  */
 export async function unlinkIntegration(
   input: UnlinkIntegrationInput,
@@ -165,6 +168,29 @@ export async function unlinkIntegration(
       subjectUserId: input.userId,
       detail: { provider: input.provider },
     });
+
+    // Issue #735 — an unlinked account's wants are no longer synced or shown: the LazyLibrarian formats the app had
+    // queued for them are released, so LazyLibrarian stops searching them unless another live request asks. A re-link
+    // picks the requests up again (the reconcile, then the Skipped sweep re-queues them).
+    const wants = await tx
+      .select()
+      .from(bookRequests)
+      .where(
+        and(
+          eq(bookRequests.integrationId, existing.id),
+          isNotNull(bookRequests.llBookId),
+          isNull(bookRequests.unroutableReason),
+          isNull(bookRequests.comicStatus),
+        ),
+      );
+    for (const want of wants) {
+      await recordLlReleases(tx, {
+        llBookId: want.llBookId,
+        formats: llQueuedFormats(want, ['ebook', 'audiobook']),
+        reason: 'unlinked',
+        requestId: want.id,
+      });
+    }
 
     return { changed: true };
   });

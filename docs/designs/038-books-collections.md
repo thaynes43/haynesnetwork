@@ -1,7 +1,7 @@
 # DESIGN-038: Books collections mirror — the Books/Audiobooks/Comics Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-05 (D-13 amendment, issue #719: a collection want on a non-English LazyLibrarian book asks for the English edition). Prior: 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
+- **Last updated:** 2026-10-06 (D-13 amendment, issue #735: a collection want given up releases its LazyLibrarian book). Prior: 2026-10-05 (D-13 amendment, issue #719: a collection want on a non-English LazyLibrarian book asks for the English edition). Prior: 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
   force-search parks a want on another work's book). Prior: 2026-07-20 (**ADR-076 — format-agnostic collections**: D-05 wall mapping → the comic
   partition (the three-way majority rule retires with the Audiobooks wall) + recipe-id twin MERGE; D-11/D-12
   the `cat=` token is now EMITTED by Libretto (L1 LIVE — recipe-authored categories; L2 agent-set stays the
@@ -515,3 +515,12 @@ composed-Wanted idiom, now collection-scoped.
 >   re-request, and the wants pass keeps its id (`loadParkedWantRefs`, as for `wrong_volume`); the tile stays on the drill.
 > - The books-collections-sync job makes no Google Books call of its own for this: the lookup is the goodreads job's, at most
 >   once per want per quota-day.
+
+> **Amendment 2026-10-06 (issue #735 — LazyLibrarian is told when a want is given up).** The normative rule is DESIGN-028's
+> amendment of this date. On this leg, a collection want that was force-searched (`last_searched_at`) and has not landed
+> records a LazyLibrarian Release (T-283) for its collection's format when it is parked `wrong_volume`
+> (`parkCollectionWant`, the force-search's Volume Check), parked `no_english_edition` or switched to an English edition
+> (the goodreads job's pass), or dropped by the wants pass (`syncCollectionWants`: the member is held now, or an active
+> pairing want carries the work). The goodreads-sync and format-pairing runs drain it: the format goes back to `Skipped` in
+> LazyLibrarian unless a live request (another collection's want, a pairing want or a person's request on the same book and
+> format) still asks for it. The books-collections-sync job itself makes no new LazyLibrarian call.

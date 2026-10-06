@@ -1317,6 +1317,11 @@ export type BookRequestFormat = (typeof BOOK_REQUEST_FORMATS)[number];
 export const BOOK_REQUEST_ORIGINS = ['goodreads', 'pairing', 'collection'] as const;
 export type BookRequestOrigin = (typeof BOOK_REQUEST_ORIGINS)[number];
 
+// Issue #735 (DESIGN-028 amendment 2026-10-06, migration 0093) — the two LazyLibrarian formats a LazyLibrarian Release
+// names (LazyLibrarian's Status vs AudioStatus); `ll_format_releases.format` CHECK.
+export const LL_RELEASE_FORMATS = ['ebook', 'audiobook'] as const;
+export type LlReleaseFormat = (typeof LL_RELEASE_FORMATS)[number];
+
 // ADR-065 C-02 — HOW a books_format_pairs row was matched. v1 has exactly the conservative
 // normalized-title + author-agreement matcher; an identifier-backed matcher (ISBN/ASIN — DESIGN-036
 // Q-02) would join this const + relax the CHECK.

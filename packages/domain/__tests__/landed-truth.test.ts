@@ -181,7 +181,7 @@ describe('revertLandedFormats (the single writer)', () => {
       ebook: 'missing',
       audio: 'missing',
     });
-    expect(result).toEqual({ ebook: true, audio: false, comic: false });
+    expect(result).toEqual({ ebook: true, audio: false, comic: false, fromGrabbed: [] });
     expect(await getRequest(id)).toMatchObject({ ebookStatus: 'missing', audioStatus: 'wanted' });
     // `landed` is never a revert target.
     const again = await revertLandedFormats({

@@ -16,7 +16,8 @@
 //     (getAllBookStatuses → mapLlStatus → applyRequestReconcile — positives never regress). The
 //     orchestrator opens no transaction of its own; external calls stay OUT of any tx (the
 //     goodreads-sync discipline). The pairing path touches nothing on the confined LL surface
-//     beyond addBook/queueBook/searchBook — the MAM governor is structurally untouched (C-08).
+//     beyond addBook/queueBook/searchBook, plus (issue #735) the LazyLibrarian Release's unqueueBook for a format a
+//     want gave up — the MAM governor is structurally untouched (C-08).
 import {
   bookRequests,
   booksFormatPairs,
@@ -47,6 +48,15 @@ import {
 } from './book-requests';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import { llBookMismatch, llBookNamesTitle, type LlBookMismatch, type LlBookNaming } from './ll-book-check';
+import { llQueuedFormats, recordLlReleases } from './ll-release-record';
+import {
+  drainLlReleases,
+  emptyLlReleaseTally,
+  findGrabbedNotSnatched,
+  findOrphanLlWants,
+  llReleaseKey,
+  type LlReleaseTally,
+} from './ll-release';
 import {
   applyLlGoneDecision,
   decideLlGoneWant,
@@ -738,6 +748,17 @@ async function upsertPairingWant(input: {
         })
         .where(eq(bookRequests.id, existing.id))
         .returning();
+      // Issue #735 — a want re-pointed from one LazyLibrarian book to another releases what the old one was searching
+      // for it (the identity check usually clears the id first and releases there; this covers a run without it).
+      if (existing.llBookId !== null && llBookId !== existing.llBookId) {
+        await recordLlReleases(tx, {
+          llBookId: existing.llBookId,
+          formats: llQueuedFormats(existing, [missing]),
+          reason: 'reidentified',
+          requestId: existing.id,
+          now: input.now,
+        });
+      }
       return { row: row!, minted: false };
     };
 
@@ -842,14 +863,16 @@ export function judgePairingWantBook(input: {
 }
 
 /**
- * Issue #693 — the single writer of the identity check (one statement, unaudited: the pairing sync-mint class),
- * guarded on the want being unchanged since it was read (same title and id, still unparked), so a concurrent writer
- * wins. Both modes write the anchor's identity as the title snapshot. `clear` also:
+ * Issue #693 — the single writer of the identity check (unaudited: the pairing sync-mint class), guarded on the want
+ * being unchanged since it was read (same title and id, still unparked), so a concurrent writer wins. Both modes write
+ * the anchor's identity as the title snapshot. `clear` also:
  *   - clears `ll_book_id` (the mint resolves the anchor's own book next: reuse, then Google Books);
  *   - sets the missing format `requested`, or `landed` when the anchor is paired (the library holds it);
  *   - sets the held format `landed` (the anchor is in the library);
- *   - resets the one re-request (#668), which belonged to the old book.
- * LazyLibrarian is not written: the old book stays as it is there (the caller logs its id).
+ *   - resets the one re-request (#668), which belonged to the old book;
+ *   - issue #735: records a LazyLibrarian Release for the old book's missing format when the want had LazyLibrarian
+ *     working on it (`wanted`/`grabbed`), in the same transaction, so the next drain unqueues it there unless another
+ *     live request still asks for it.
  */
 export async function reidentifyPairingWant(input: {
   db?: DbClient;
@@ -862,37 +885,53 @@ export async function reidentifyPairingWant(input: {
 }): Promise<boolean> {
   const now = input.now ?? new Date();
   const missingStatus = input.paired ? ('landed' as const) : ('requested' as const);
-  const rows = await resolveDb(input.db)
-    .update(bookRequests)
-    .set({
-      title: input.identity.title,
-      author: input.identity.author,
-      ...(input.mode === 'clear'
-        ? {
-            llBookId: null,
-            ebookStatus: input.missing === 'ebook' ? missingStatus : ('landed' as const),
-            audioStatus: input.missing === 'audiobook' ? missingStatus : ('landed' as const),
-            llRerequestedAt: null,
-            llRerequestFailures: 0,
-            llRerequestFailedAt: null,
-            llRerequestAddedAt: null,
-          }
-        : {}),
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(bookRequests.id, input.want.id),
-        eq(bookRequests.origin, 'pairing'),
-        isNull(bookRequests.unroutableReason),
-        eq(bookRequests.title, input.want.title),
-        input.want.llBookId === null
-          ? isNull(bookRequests.llBookId)
-          : eq(bookRequests.llBookId, input.want.llBookId),
-      ),
-    )
-    .returning({ id: bookRequests.id });
-  return rows.length > 0;
+  return inTransaction(input.db, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(bookRequests)
+      .where(
+        and(
+          eq(bookRequests.id, input.want.id),
+          eq(bookRequests.origin, 'pairing'),
+          isNull(bookRequests.unroutableReason),
+          eq(bookRequests.title, input.want.title),
+          input.want.llBookId === null
+            ? isNull(bookRequests.llBookId)
+            : eq(bookRequests.llBookId, input.want.llBookId),
+        ),
+      )
+      .for('update');
+    if (!row) return false;
+    await tx
+      .update(bookRequests)
+      .set({
+        title: input.identity.title,
+        author: input.identity.author,
+        ...(input.mode === 'clear'
+          ? {
+              llBookId: null,
+              ebookStatus: input.missing === 'ebook' ? missingStatus : ('landed' as const),
+              audioStatus: input.missing === 'audiobook' ? missingStatus : ('landed' as const),
+              llRerequestedAt: null,
+              llRerequestFailures: 0,
+              llRerequestFailedAt: null,
+              llRerequestAddedAt: null,
+            }
+          : {}),
+        updatedAt: now,
+      })
+      .where(eq(bookRequests.id, row.id));
+    if (input.mode === 'clear') {
+      await recordLlReleases(tx, {
+        llBookId: row.llBookId,
+        formats: llQueuedFormats(row, [input.missing]),
+        reason: 'reidentified',
+        requestId: row.id,
+        now,
+      });
+    }
+    return true;
+  });
 }
 
 /** One want the identity check changed (or, in a dry run, would change). */
@@ -1024,7 +1063,8 @@ export async function checkPairingWantBooks(input: {
       reason: change.reason,
       from: change.from,
       to: change.to,
-      // The book LazyLibrarian was handed for this want stays as it is there; its id is here for the record.
+      // The book LazyLibrarian was handed for this want is released (issue #735): the next drain unqueues the format
+      // there unless another live request still asks for it.
       abandonedLlBookId: change.llBookId,
       abandonedLlTitle: change.llTitle,
       formerStatus,
@@ -1157,8 +1197,9 @@ export async function markPairingWantPushed(input: {
  * `requested`), so a want LazyLibrarian is already working is never touched. The one exception is
  * `foreign_language`, which parks every OPEN want (the missing format not `landed`): a want asking for the other
  * format of a non-English item is wrong whatever stage it reached, and the park ends the app's own reconcile,
- * re-queue and re-request of it (LazyLibrarian is not written). Unaudited (the pairing sync-mint class). Returns
- * whether the row was parked.
+ * re-queue and re-request of it. Issue #735: LazyLibrarian is told too, through a LazyLibrarian Release recorded in the
+ * same transaction for a missing format it was working (`wanted`/`grabbed`). Unaudited (the pairing sync-mint class).
+ * Returns whether the row was parked.
  */
 export async function parkPairingWant(input: {
   db?: DbClient;
@@ -1169,21 +1210,37 @@ export async function parkPairingWant(input: {
 }): Promise<boolean> {
   const now = input.now ?? new Date();
   const missingCol = input.missing === 'ebook' ? bookRequests.ebookStatus : bookRequests.audioStatus;
-  const parked = await resolveDb(input.db)
-    .update(bookRequests)
-    .set({ unroutableReason: input.reason, updatedAt: now })
-    .where(
-      and(
-        eq(bookRequests.id, input.requestId),
-        eq(bookRequests.origin, 'pairing'),
-        isNull(bookRequests.unroutableReason),
-        input.reason === FOREIGN_LANGUAGE_REASON
-          ? ne(missingCol, 'landed')
-          : or(isNull(bookRequests.llBookId), eq(missingCol, 'requested')),
-      ),
-    )
-    .returning({ id: bookRequests.id });
-  return parked.length > 0;
+  return inTransaction(input.db, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(bookRequests)
+      .where(
+        and(
+          eq(bookRequests.id, input.requestId),
+          eq(bookRequests.origin, 'pairing'),
+          isNull(bookRequests.unroutableReason),
+          input.reason === FOREIGN_LANGUAGE_REASON
+            ? ne(missingCol, 'landed')
+            : or(isNull(bookRequests.llBookId), eq(missingCol, 'requested')),
+        ),
+      )
+      .for('update');
+    if (!row) return false;
+    await tx
+      .update(bookRequests)
+      .set({ unroutableReason: input.reason, updatedAt: now })
+      .where(eq(bookRequests.id, row.id));
+    // Issue #735 — the park ends the app's own reconcile, re-queue and re-request of the want; a format LazyLibrarian
+    // was working for it is released, so LazyLibrarian stops searching it too (unless another live request asks).
+    await recordLlReleases(tx, {
+      llBookId: row.llBookId,
+      formats: llQueuedFormats(row, [input.missing]),
+      reason: `parked:${input.reason}`,
+      requestId: row.id,
+      now,
+    });
+    return true;
+  });
 }
 
 /**
@@ -1692,7 +1749,8 @@ export interface FormatPairingReport
   extends SyncFormatPairsReport,
     MintPairingWantsReport,
     LlGoneTally,
-    LlRerequestTally {
+    LlRerequestTally,
+    LlReleaseTally {
   /** Open pairing wants whose LL statuses reconciled this run. */
   reconciled: number;
   /** Pairing wants whose raw-`Skipped` missing format was re-queued + re-searched this run. */
@@ -1704,6 +1762,21 @@ export interface FormatPairingReport
    * hold the format, the book names another volume, or LazyLibrarian no longer has the book.
    */
   requestsLandedReverted: number;
+  /**
+   * Issue #734 (DESIGN-036 amendment 2026-10-06) — open wants whose missing format left `grabbed` this run because
+   * LazyLibrarian is not downloading it (a failed grab LazyLibrarian put back to `Wanted`, or a `Skipped` format).
+   */
+  requestsGrabReverted: number;
+  /**
+   * Issue #735 — the Orphan LazyLibrarian Want census (T-284), after this run's releases: LazyLibrarian formats that
+   * read `Wanted`, are not held, and that no live request asks for. Null when LazyLibrarian could not be read.
+   */
+  llOrphanWanted: number | null;
+  /**
+   * Issue #734's census: live request formats (every origin) that read `grabbed` while LazyLibrarian shows them neither
+   * `Snatched` nor held. Expected 0 after each run's reconciles. Null when LazyLibrarian could not be read.
+   */
+  grabbedNotSnatched: number | null;
   /**
    * ADR-055 amendment (2026-09-22 — the push guard). Widened from `MintPairingWantsReport.skippedHeld`:
    * on the run report this is the RUN TOTAL — mint-push suppressions PLUS Skipped-sweep suppressions.
@@ -1927,6 +2000,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
   let sweepSkippedHeld = 0;
   let heldLanded = 0;
   let landedReverted = 0;
+  let grabReverted = 0;
   const gone = emptyLlGoneTally();
   if (input.ll && seatedMap) {
     // Issue #665 (DESIGN-028 amendment 2026-10-04) — a pushed want whose id LazyLibrarian no longer has is
@@ -2033,6 +2107,33 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
         continue;
       }
       try {
+        // Issue #734 (DESIGN-036 amendment 2026-10-06) — the missing format reads `grabbed` only while LazyLibrarian
+        // shows it `Snatched` (or holds it): a failed grab LazyLibrarian put back to `Wanted` reads `wanted`, a
+        // `Skipped` one `missing` (the sweep below may queue it again). Before the reconcile, which never regresses a
+        // positive. The held format is never touched here (the anchor holds it).
+        if (statusOfFormat(want, missing) === 'grabbed') {
+          const next = unheldFormatStatus(status, missing);
+          const result = await revertLandedFormats({
+            db: input.db,
+            requestId: want.id,
+            llBookId: want.llBookId,
+            ...(missing === 'ebook' ? { ebook: next } : { audio: next }),
+            now,
+          });
+          if (result.fromGrabbed.length > 0) {
+            grabReverted += 1;
+            log.info?.('request_grab_reverted', {
+              site: 'format-pairing.reconcile',
+              reason: 'll_not_snatched',
+              requestId: want.id,
+              llBookId: want.llBookId,
+              title: want.title,
+              format: missing,
+              status: next,
+              llStatus: (missing === 'ebook' ? status.ebookStatus : status.audioStatus) ?? null,
+            });
+          }
+        }
         await applyRequestReconcile({
           db: input.db,
           requestId: want.id,
@@ -2111,6 +2212,53 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
       ? await rerequestGonePairingWants({ db: input.db, ll: input.ll, snapshot: seatedMap, now, pace, log })
       : emptyLlRerequestTally();
 
+  // Issue #735 (DESIGN-036 amendment 2026-10-06) — the LazyLibrarian Releases: every format a want gave up (this run's
+  // re-identify and parks included, and the goodreads-side ones since the last run) is unqueued in LazyLibrarian unless
+  // a live request still asks for it. After the run's own mints and pushes, so a book a want minted this run takes is
+  // owned. One fresh `getAllBooks`, only when a release is pending.
+  let releases = emptyLlReleaseTally();
+  let unqueuedThisRun = new Set<string>();
+  if (input.ll) {
+    try {
+      const drain = await drainLlReleases({ db: input.db, ll: input.ll, site: 'format-pairing.release', log });
+      releases = drain.tally;
+      unqueuedThisRun = new Set(drain.unqueued);
+    } catch (error) {
+      log.error?.('format-pairing: LazyLibrarian release drain failed (kept for the next run)', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // The censuses (#731 R-02), from the run's snapshot: orphan `Wanted` formats (#735) and `grabbed` formats
+  // LazyLibrarian is not downloading (#734). Each logs its rows so a drift names its books.
+  let llOrphanWanted: number | null = null;
+  let grabbedNotSnatched: number | null = null;
+  if (seatedMap && llSnapshotUsable(seatedMap)) {
+    try {
+      const orphans = await findOrphanLlWants({ db: input.db, snapshot: seatedMap, exclude: unqueuedThisRun });
+      llOrphanWanted = orphans.length;
+      if (orphans.length > 0) {
+        log.info?.('ll_orphan_wanted', {
+          count: orphans.length,
+          books: orphans.slice(0, 50).map((o) => `${llReleaseKey(o.llBookId, o.format)} ${o.title ?? ''}`.trim()),
+        });
+      }
+      const grabbed = await findGrabbedNotSnatched({ db: input.db, snapshot: seatedMap });
+      grabbedNotSnatched = grabbed.length;
+      if (grabbed.length > 0) {
+        log.info?.('request_grabbed_not_snatched', {
+          count: grabbed.length,
+          requests: grabbed.slice(0, 50).map((g) => `${g.requestId} ${g.format} ${g.llStatus ?? 'none'}`),
+        });
+      }
+    } catch (error) {
+      log.error?.('format-pairing: LazyLibrarian census failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   const report: FormatPairingReport = {
     ...pairs,
     ...mint,
@@ -2121,8 +2269,12 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     skippedHeld: mint.skippedHeld + sweepSkippedHeld,
     heldLanded,
     requestsLandedReverted: landedReverted,
+    requestsGrabReverted: grabReverted,
+    llOrphanWanted,
+    grabbedNotSnatched,
     ...gone,
     ...rerequest,
+    ...releases,
   };
   log.info?.('format-pairing run complete', { ...report });
   return report;

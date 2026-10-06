@@ -1,11 +1,13 @@
 // ADR-055 / DESIGN-028 (PLAN-044) — the SINGLE WRITER for integration_shelf_items (the synced shelf-RSS
 // mirror). The goodreads-sync mode pages each linked user's PUBLIC shelf RSS read-only, the @hnet/sync
 // fetcher normalizes + GB-enriches each item, and this writer upserts the snapshot and TOMBSTONES rows a
-// fully-read shelf no longer serves — all in one transaction. Rebuildable read-model (books_items class):
+// fully-read shelf no longer serves — all in one transaction (with, since issue #735, a LazyLibrarian Release for
+// each tombstoned want's queued formats). Rebuildable read-model (books_items class):
 // no per-row audit. The guard forbids any other module from touching the table.
-import { integrationShelfItems, type DbClient, type IntegrationShelfItemRow } from '@hnet/db';
-import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { bookRequests, integrationShelfItems, type DbClient, type IntegrationShelfItemRow } from '@hnet/db';
+import { and, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
+import { llQueuedFormats, recordLlReleases } from './ll-release-record';
 
 /** One shelf RSS item (+ GB enrichment) reduced to the mirror row. */
 export interface ShelfItemInput {
@@ -101,6 +103,34 @@ export async function upsertShelfItems(
         )
         .returning({ id: integrationShelfItems.id });
       tombstoned = result.length;
+      // Issue #735 — a want taken off the shelf is no longer the app's: the LazyLibrarian formats it had queued for
+      // it are released (same transaction), so LazyLibrarian stops searching them unless another live request asks.
+      // Re-shelving the book later picks the request up again (the reconcile, then the Skipped sweep re-queues it).
+      if (result.length > 0) {
+        const wants = await tx
+          .select()
+          .from(bookRequests)
+          .where(
+            and(
+              inArray(
+                bookRequests.shelfItemId,
+                result.map((r) => r.id),
+              ),
+              isNotNull(bookRequests.llBookId),
+              isNull(bookRequests.unroutableReason),
+              isNull(bookRequests.comicStatus),
+            ),
+          );
+        for (const want of wants) {
+          await recordLlReleases(tx, {
+            llBookId: want.llBookId,
+            formats: llQueuedFormats(want, ['ebook', 'audiobook']),
+            reason: 'shelf_removed',
+            requestId: want.id,
+            now: runStart,
+          });
+        }
+      }
     }
   });
 

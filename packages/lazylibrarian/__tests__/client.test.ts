@@ -108,7 +108,7 @@ describe('LazyLibrarianReadClient.getAllBookStatuses', () => {
 });
 
 describe('LazyLibrarianWriteClient', () => {
-  it('sends addBook / queueBook / searchBook with cmd + id + type + apikey', async () => {
+  it('sends addBook / queueBook / searchBook / unqueueBook with cmd + id + type + apikey', async () => {
     const urls: string[] = [];
     const fetchImpl = (async (url: string) => {
       urls.push(url);
@@ -119,6 +119,8 @@ describe('LazyLibrarianWriteClient', () => {
     await w.queueBook('gb-1', 'ebook');
     await w.queueBook('gb-1', 'audiobook');
     await w.searchBook('gb-1', 'audiobook');
+    await w.unqueueBook('gb-1', 'audiobook');
+    await w.unqueueBook('gb-1', 'ebook');
     expect(urls[0]).toContain('cmd=addBook');
     expect(urls[0]).toContain('id=gb-1');
     expect(urls[0]).toContain('wait=1'); // LL must finish the add before queueBook, or it resets the book to Skipped
@@ -127,6 +129,11 @@ describe('LazyLibrarianWriteClient', () => {
     expect(urls[1]).toContain('type=eBook');
     expect(urls[2]).toContain('type=AudioBook');
     expect(urls[3]).toContain('cmd=searchBook');
+    // Issue #735 — the one inverse: a format back to `Skipped`, per format.
+    expect(urls[4]).toContain('cmd=unqueueBook');
+    expect(urls[4]).toContain('id=gb-1');
+    expect(urls[4]).toContain('type=AudioBook');
+    expect(urls[5]).toContain('type=eBook');
   });
 
   it('retries transient 5xx with backoff, then surfaces a REDACTED apikey in errors', async () => {
