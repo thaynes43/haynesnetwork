@@ -80,9 +80,14 @@ async function instantQuery(
   return sumInstantResult(JSON.parse(text));
 }
 
-/** Postgres, read-only three ways (the -ro service, the session default, the explicit read-only transaction). */
+/**
+ * Postgres, read-only three ways (the -ro service, the session default, the explicit read-only transaction). A
+ * connection the server drops between queries (a standby's recovery conflict, a failover) is recorded by the `error`
+ * listener instead of crashing the process; `broken()` then tells the caller to reconnect.
+ */
 export async function openAppDb(databaseUrl: string): Promise<{
   query(sql: string): Promise<Record<string, unknown>[]>;
+  broken(): boolean;
   close(): Promise<void>;
 }> {
   const client = new pg.Client({
@@ -90,23 +95,34 @@ export async function openAppDb(databaseUrl: string): Promise<{
     options: '-c default_transaction_read_only=on -c statement_timeout=30000',
     application_name: 'owed-checks',
   });
-  await client.connect();
-  const ro = await client.query<{ default_transaction_read_only: string }>(
-    'SHOW default_transaction_read_only',
-  );
-  if (ro.rows[0]?.default_transaction_read_only !== 'on') {
-    await client.end();
-    throw new Error('app-db session is not read-only; refusing to run checks');
+  let lost: Error | null = null;
+  client.on('error', (error) => {
+    lost = error;
+  });
+  try {
+    await client.connect();
+    const ro = await client.query<{ default_transaction_read_only: string }>(
+      'SHOW default_transaction_read_only',
+    );
+    if (ro.rows[0]?.default_transaction_read_only !== 'on') {
+      throw new Error('app-db session is not read-only; refusing to run checks');
+    }
+  } catch (error) {
+    await client.end().catch(() => {});
+    throw error;
   }
   return {
     async query(sql) {
+      if (lost) throw new Error(`app-db connection lost: ${(lost as Error).message}`);
       await client.query('BEGIN READ ONLY');
       try {
         return (await client.query(sql)).rows as Record<string, unknown>[];
       } finally {
-        await client.query('ROLLBACK');
+        // Never let a failed ROLLBACK (a dead connection) replace the query's own error.
+        await client.query('ROLLBACK').catch(() => {});
       }
     },
+    broken: () => lost !== null,
     close: () => client.end(),
   };
 }
@@ -135,6 +151,10 @@ export function createSources(config: SourceConfig): Sources {
         case 'app-db': {
           assertSingleSelect(req.query);
           if (!config.databaseUrl) throw new Error('source not configured in this runner');
+          if (appDb?.broken()) {
+            await appDb.close().catch(() => {});
+            appDb = null;
+          }
           appDb ??= await openAppDb(config.databaseUrl);
           return { kind: 'rows', rows: await appDb.query(req.query) };
         }

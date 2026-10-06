@@ -70,7 +70,7 @@ main on GitHub (`raw.githubusercontent.com`), so a docs PR takes effect without 
 
 | `source` | What it reads | How it cannot write |
 |---|---|---|
-| `app-db` | The app's Postgres through `postgres16-ro` (a hot standby) | The standby refuses writes; the session sets `default_transaction_read_only=on` (verified before the first query); each query runs in `BEGIN READ ONLY` … `ROLLBACK`; 30 s statement timeout. |
+| `app-db` | The app's Postgres through `postgres16-ro` (a hot standby) | The standby refuses writes; the session sets `default_transaction_read_only=on` (verified before the first query); each query runs in `BEGIN READ ONLY` … `ROLLBACK`; 30 s statement timeout. A connection the server drops is recorded, not fatal: that check reports `error` and the next one reconnects. |
 | `ll-db` | LazyLibrarian's SQLite (`/config/lazylibrarian.db`) | Opened `SQLITE_OPEN_READONLY` (`mode=ro`) plus `PRAGMA query_only`; a write is refused by SQLite (tested). |
 | `loki` | Instant LogQL metric queries (GET `/loki/api/v1/query`) | HTTP GET only. |
 | `prometheus` | Instant PromQL queries (GET `/api/v1/query`) | HTTP GET only. |
@@ -174,7 +174,9 @@ issue notifies the repository's watchers; it is not a page.
   value cut short by a YAML comment; the schema refuses duplicate ids, a closed row without evidence, a failed row
   without a follow-up, a bad timestamp, SQL-only conditions on a metric check; timing (overdue hours, `not_before`);
   `$SINCE`; every `expect` condition and `mismatch: wait`; the verdict order; the SQL guard; a real SQLite file opened
-  through `ll-db` refuses a write; Loki is queried at the pinned instant; a whole run's log lines and the issue body.
+  through `ll-db` refuses a write; `app-db` on the embedded Postgres 16 runs in a read-only session, refuses a write
+  and survives a connection the server drops (it reconnects on the next check instead of crashing); Loki is queried
+  at the pinned instant; a whole run's log lines and the issue body.
 - Live, once (2026-10-06): every SQL check run read-only against production, every Loki query shape run through
   Grafana; the deployed runner's first pass against today's rows; a dummy overdue row on a branch fires
   `OwedCheckOverdue` and opens the issue, and the issue closes again on main.

@@ -1,12 +1,14 @@
 // DESIGN-053 — the owed-check tracker and runner. The real tracker file must parse (a malformed row fails `test`, a
-// required check); the evaluator, the read-only guards and the run loop are tested on fixtures. No database server:
-// the SQL sources are stubbed, except one SQLite file opened through the real read-only ll-db source.
+// required check); the evaluator, the guards and the run loop are tested on fixtures; the read-only ll-db source on a
+// real SQLite file and app-db on the embedded Postgres 16 (read-only session, a write refused, a dropped connection).
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterAll, describe, expect, it } from 'vitest';
+import { startPostgres, type StartedPostgres } from '@hnet/test-utils';
+import pg from 'pg';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SyncLogger } from '../src/logger';
 import {
   combineResults,
@@ -19,6 +21,7 @@ import { runOwedChecks } from '../src/owed-checks/run';
 import {
   assertSingleSelect,
   createSources,
+  openAppDb,
   openLlDb,
   sumInstantResult,
   type Sources,
@@ -394,4 +397,43 @@ it('paths_exist uses the filesystem by default', () => {
   );
   expect(j.unmet).toEqual(['1 of 2 paths missing']);
   rmSync(dir, { recursive: true, force: true });
+});
+
+describe('app-db against a real Postgres', () => {
+  let server: StartedPostgres;
+  beforeAll(async () => {
+    server = await startPostgres();
+  }, 180_000);
+  afterAll(async () => {
+    await server?.stop();
+  });
+
+  async function dropRunnerConnections(): Promise<void> {
+    const admin = new pg.Client({ connectionString: server.connectionString });
+    await admin.connect();
+    await admin.query(
+      "select pg_terminate_backend(pid) from pg_stat_activity where application_name = 'owed-checks'",
+    );
+    await admin.end();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+
+  it('reads in a read-only session, refuses a write, and survives a dropped connection', async () => {
+    const db = await openAppDb(server.connectionString);
+    expect(await db.query("select current_setting('transaction_read_only') as ro")).toEqual([
+      { ro: 'on' },
+    ]);
+    await expect(db.query('create table t (a int)')).rejects.toThrow(/read-only transaction/);
+    await dropRunnerConnections();
+    expect(db.broken()).toBe(true);
+    await expect(db.query('select 1')).rejects.toThrow(/connection lost/);
+    await db.close().catch(() => {});
+
+    const sources = createSources({ databaseUrl: server.connectionString });
+    const one = { source: 'app-db' as const, query: 'select 1 as n', at: 0 };
+    expect(await sources.run(one)).toEqual({ kind: 'rows', rows: [{ n: 1 }] });
+    await dropRunnerConnections();
+    expect(await sources.run(one)).toEqual({ kind: 'rows', rows: [{ n: 1 }] });
+    await sources.close();
+  });
 });
