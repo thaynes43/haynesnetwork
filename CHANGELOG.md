@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.108.0](https://github.com/thaynes43/haynesnetwork/compare/v0.107.11...v0.108.0) (2026-10-06)
+
+
+### Features
+
+* **agents:** owed-check tracker, read-only runner and overdue alert ([#743](https://github.com/thaynes43/haynesnetwork/issues/743)) ([#768](https://github.com/thaynes43/haynesnetwork/issues/768)) ([d5c210d](https://github.com/thaynes43/haynesnetwork/commit/d5c210d3639a81fb7529d477cbf6684da50233f8))
+
+
+### Documentation
+
+* **agents:** v0.107.10 + v0.107.11 deploy record, [#739](https://github.com/thaynes43/haynesnetwork/issues/739) [#740](https://github.com/thaynes43/haynesnetwork/issues/740) [#752](https://github.com/thaynes43/haynesnetwork/issues/752) [#761](https://github.com/thaynes43/haynesnetwork/issues/761) closed ([#766](https://github.com/thaynes43/haynesnetwork/issues/766)) ([e27594b](https://github.com/thaynes43/haynesnetwork/commit/e27594b1db7d6417e8e14ddebd2392afb3746773))
+
 ## [0.107.11](https://github.com/thaynes43/haynesnetwork/compare/v0.107.10...v0.107.11) (2026-10-06)
 
 
