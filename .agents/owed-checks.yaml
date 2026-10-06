@@ -741,7 +741,8 @@ checks:
         mismatch: fail
       - name: no run found Libretto unreachable (such a run never logs "collection-wants complete")
         source: loki
-        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-books-collections-.*"} |= "collection-wants: Libretto unreachable" [$SINCE]))
+        query: |
+          sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-books-collections-.*"} |= "collection-wants: Libretto unreachable" [$SINCE]))
         expect: {max: 0}
         mismatch: fail
     links:
