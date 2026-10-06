@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.107.11](https://github.com/thaynes43/haynesnetwork/compare/v0.107.10...v0.107.11) (2026-10-06)
+
+
+### Bug Fixes
+
+* **books:** the Mint Backoff tries new and changed wants before retries ([#740](https://github.com/thaynes43/haynesnetwork/issues/740)) ([#765](https://github.com/thaynes43/haynesnetwork/issues/765)) ([76cc0c9](https://github.com/thaynes43/haynesnetwork/commit/76cc0c97c009938dc9f3506dbe937fca73b50700))
+
+
+### Documentation
+
+* **agents:** [#755](https://github.com/thaynes43/haynesnetwork/issues/755) follow-up, the Divergent trilogy grab and one more German edition ([#763](https://github.com/thaynes43/haynesnetwork/issues/763)) ([76a1e0c](https://github.com/thaynes43/haynesnetwork/commit/76a1e0cd7496b5a0c36203cd87e9fc1280dca63f))
+
 ## [0.107.10](https://github.com/thaynes43/haynesnetwork/compare/v0.107.9...v0.107.10) (2026-10-06)
 
 
