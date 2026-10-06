@@ -38,8 +38,9 @@
   - from the July F10 English audit (`.agents/context/2026-07-13-f10-english-audit.md` R3.5), which the review had read
     as abandoned ids: The Man from St. Petersburg ebook `aeFZfuGryeYC` and White-Jacket ebook `vqMStwEACAAJ`. The library
     has neither.
-  - If one of them should go, `unqueueBook` it by hand or rerun the one-off with `--no-default-keep`. Any count above
-    the hand re-wants is a gap in the release: read `ll_orphan_wanted`.
+  - If one of them should go, `unqueueBook` that one by hand. Do not rerun the one-off with `--no-default-keep` for
+    it: that drops the whole default keep list, so an `--apply` would unqueue every hand re-wanted book not passed
+    again in `--keep`. Any count above the hand re-wants is a gap in the release: read `ll_orphan_wanted`.
 - **Open.** #752: 27 live formats point at a LazyLibrarian format that reads `Skipped` but has a file, so they read
   `missing`/`requested` instead of `landed`. Check a sample on disk before landing from the file signal. Murtagh's
   pairing want `328548eb` still has no id and reads audio `grabbed`; the mint resets it to `requested` once it resolves
