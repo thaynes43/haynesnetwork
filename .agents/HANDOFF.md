@@ -4,6 +4,19 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-06 — Adversarial review of the books rollout (issue #731) is written; thirteen defects filed
+
+- **Report:** `.agents/context/2026-10-06-books-rollout-adversarial-review.md` (read-only review of v0.105.2 to v0.107.7 and
+  the 2026-10-05 dev-env CPU incident). Executive summary in the report and on #731.
+- **Defects filed, fix in severity order:** #734 (`grabbed` never regresses: 53 of 59 live are failed grabs), #735 (LazyLibrarian
+  still searches 22 books no request owns), #736 (211 LL books lack `bookauthors`), #737 (English-edition pass has made no
+  lookup; **v0.107.7 has no deploy record**, add it), #738, #739 (matcher and Volume Check gaps), #740 (pairing burns its GB
+  slice on unmintables), #741 (no audit trail for derived writes), #742 (e2e as a gate), #743 (owed-check tracker), #744
+  (F10 census); haynes-ops #3402 (overlay tests), #3403 (CPU rule and limit).
+- **Owed checks due after the 2026-10-06 04:54Z backlog run and 09:10Z scan:** (k), (l), (n), (o), (p), (j) in the blocks
+  below; plus the first 07:41Z goodreads-sync must show `englishEditions.looked` above zero (#737). Discharge them before the
+  next feature release.
+
 ## ▶ 2026-10-05 — v0.107.6 live: a landed format stays truthful (#715, closed)
 
 - **Why (#715).** Goodreads *Azazel* read `landed` for both formats after its Kavita match was removed (F10) while
