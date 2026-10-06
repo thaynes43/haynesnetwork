@@ -21,6 +21,7 @@ import {
 } from '@hnet/db';
 import {
   linkIntegration,
+  llReconcileStatus,
   revertLandedFormats,
   runFormatPairing,
   syncGoodreadsIntegration,
@@ -685,5 +686,141 @@ describe('runFormatPairing — a landed missing format stays truthful (issue #71
     expect(report.requestsLandedReverted).toBe(0);
     expect((await getRequest(gone.id)).audioStatus).toBe('landed');
     expect((await getRequest(parked.id)).audioStatus).toBe('landed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #752 (DESIGN-028 amendment 2026-10-06) — a format LazyLibrarian holds a file for but marks `Skipped` lands. The
+// reconcile read a raw `Skipped` as `missing` whatever the file signals said, while the revert above kept a `landed`
+// format on those same signals: one predicate now does both.
+// ---------------------------------------------------------------------------
+
+describe('llReconcileStatus (issue #752)', () => {
+  it('lands a format LazyLibrarian holds whatever its status: Open, or an import date or file under Skipped/Wanted/Snatched', () => {
+    expect(llReconcileStatus({ ebookStatus: 'Open', audioStatus: null }, 'ebook')).toBe('landed');
+    expect(llReconcileStatus({ ebookStatus: 'Skipped', audioStatus: 'Skipped', audioLibrary: '2026-08-23 07:37:38' }, 'audiobook')).toBe('landed');
+    expect(llReconcileStatus({ ebookStatus: 'Skipped', audioStatus: null, ebookFile: '/books/x.epub' }, 'ebook')).toBe('landed');
+    expect(llReconcileStatus({ ebookStatus: 'Wanted', audioStatus: null, ebookLibrary: '2026-07-30 04:06:35' }, 'ebook')).toBe('landed');
+  });
+
+  it('otherwise reads the status LazyLibrarian shows, and nothing for no book', () => {
+    expect(llReconcileStatus({ ebookStatus: 'Skipped', audioStatus: 'Wanted' }, 'ebook')).toBe('missing');
+    expect(llReconcileStatus({ ebookStatus: 'Skipped', audioStatus: 'Wanted' }, 'audiobook')).toBe('wanted');
+    expect(llReconcileStatus({ ebookStatus: 'Snatched', audioStatus: null, ebookLibrary: 'None' }, 'ebook')).toBe('grabbed');
+    expect(llReconcileStatus(undefined, 'ebook')).toBeNull();
+  });
+
+  it('is the twin of unheldFormatStatus: a format lands exactly when the revert would keep it landed', () => {
+    const rows: Row[] = [
+      { ebookStatus: 'Open', audioStatus: 'Skipped' },
+      { ebookStatus: 'Skipped', audioStatus: 'Skipped', audioLibrary: '2026-08-23' },
+      { ebookStatus: 'Wanted', audioStatus: 'Snatched', ebookFile: '/x.epub' },
+      { ebookStatus: 'Skipped', audioStatus: 'Ignored' },
+    ];
+    for (const row of rows) {
+      for (const format of ['ebook', 'audiobook'] as const) {
+        const signals = { ebookStatus: row.ebookStatus ?? null, audioStatus: row.audioStatus ?? null, ...row };
+        expect(llReconcileStatus(signals, format) === 'landed').toBe(unheldFormatStatus(signals, format) === null);
+      }
+    }
+  });
+});
+
+describe('the reconciles land a Skipped format LazyLibrarian holds a file for (issue #752)', () => {
+  it('goodreads: the audiobook lands from the import date under `Skipped`, and leaves landed when the file goes', async () => {
+    const user = await createUser(t.db);
+    const { integration } = await linkIntegration({
+      db: t.db,
+      userId: user.id,
+      provider: 'goodreads',
+      externalUserId: '1',
+      profileRef: '1',
+      actorId: user.id,
+    });
+    const item: EnrichedShelfItem = {
+      shelf: 'to-read',
+      externalBookId: 'gr-blood-grove',
+      title: 'Blood Grove',
+      author: 'Walter Mosley',
+      isbn: null,
+      gbVolumeId: 'll-blood-grove',
+      coverUrl: null,
+      shelvedAt: new Date(),
+      isComic: false,
+    };
+    const run = (ll: LazyLibrarianClientBundle) =>
+      syncGoodreadsIntegration({ db: t.db, integrationId: integration.id, items: [item], syncedShelves: ['to-read'], ll, pacer: noPace });
+    const book = { title: 'Blood Grove', author: 'Walter Mosley', language: 'en' };
+
+    // Run 1 pushes both formats (LazyLibrarian is after both).
+    await run(stubLl({ 'll-blood-grove': { ...book, ebookStatus: 'Wanted', audioStatus: 'Wanted' } }).bundle);
+    const [req] = await t.db.select().from(bookRequests).where(eq(bookRequests.integrationId, integration.id));
+    expect(req).toMatchObject({ ebookStatus: 'wanted', audioStatus: 'wanted' });
+
+    // Run 2: LazyLibrarian's library scan filed the audiobook and left it `Skipped` (the 27 live formats of #752).
+    const held = stubLl({
+      'll-blood-grove': { ...book, ebookStatus: 'Wanted', audioStatus: 'Skipped', audioLibrary: '2026-08-23 07:37:38' },
+    });
+    await run(held.bundle);
+    expect(await getRequest(req!.id)).toMatchObject({ ebookStatus: 'wanted', audioStatus: 'landed' });
+    expect(held.calls).toEqual([]); // the Skipped sweep never re-queues a held format
+
+    // Run 3: the import date is gone (LazyLibrarian lost the file): the same predicate takes it out of landed.
+    const lost = stubLl({ 'll-blood-grove': { ...book, ebookStatus: 'Wanted', audioStatus: 'Skipped' } });
+    const report = await run(lost.bundle);
+    expect(report.requestsLandedReverted).toBe(1);
+    expect((await getRequest(req!.id)).audioStatus).not.toBe('landed');
+  });
+
+  it('pairing: a missing, and a grabbed, audiobook land from the import date under `Skipped`', async () => {
+    const seedWant = async (title: string, llBookId: string, audioStatus: 'missing' | 'grabbed') => {
+      seq += 1;
+      const [anchor] = await t.db
+        .insert(booksItems)
+        .values({
+          source: 'kavita',
+          mediaKind: 'book',
+          externalId: `s-${seq}`,
+          libraryId: '1',
+          libraryName: 'EBooks',
+          title,
+          sortTitle: title.toLowerCase(),
+          author: 'Gregory Maguire',
+          deepLinkUrl: 'http://x',
+          attrs: { heldBooks: [{ title, author: 'Gregory Maguire', isbn: null }] },
+        })
+        .returning({ id: booksItems.id });
+      const [want] = await t.db
+        .insert(bookRequests)
+        .values({
+          origin: 'pairing',
+          pairingBooksItemId: anchor!.id,
+          title,
+          author: 'Gregory Maguire',
+          llBookId,
+          ebookStatus: 'landed',
+          audioStatus,
+          lastReconciledAt: daysAgo(1),
+          createdAt: daysAgo(60),
+        })
+        .returning({ id: bookRequests.id });
+      return want!.id;
+    };
+    const missing = await seedWant('Confessions of an Ugly Stepsister', 'll-stepsister', 'missing');
+    const grabbed = await seedWant('Wicked', 'll-wicked', 'grabbed');
+    const row = (title: string): Row => ({
+      title,
+      author: 'Gregory Maguire',
+      language: 'en',
+      ebookStatus: 'Skipped',
+      audioStatus: 'Skipped',
+      audioLibrary: '2026-07-30 21:45:07',
+    });
+    const ll = stubLl({ 'll-stepsister': row('Confessions of an Ugly Stepsister'), 'll-wicked': row('Wicked') });
+    const report = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(report.requestsLandedReverted).toBe(0);
+    expect((await getRequest(missing)).audioStatus).toBe('landed');
+    expect((await getRequest(grabbed)).audioStatus).toBe('landed');
+    expect(ll.calls.filter((c) => c.cmd === 'queueBook')).toEqual([]);
   });
 });

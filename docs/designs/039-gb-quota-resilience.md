@@ -548,3 +548,26 @@ Read it in Loki (the app and its CronJobs both run in `frontend`):
 ```
 
 How often the quota was hit is `count_over_time({namespace="frontend"} |= "gb_quota_trip" | json | kind="daily" [7d])`.
+
+## Amendment — 2026-10-06: the English-edition pass may spend what the pairing mint leaves (D-23, issue #740)
+
+The pairing mint's Mint Backoff (DESIGN-036 amendment of this date) stops it spending most of its 700-call slice on lookups
+that cannot resolve. The goodreads job's English-edition pass (DESIGN-028, #719) runs on the `goodreads` slice, which the
+shelf enrichment spends by mid-day, so after that its due lookups waited for the next quota-day.
+
+**The rule.** The English-edition pass gets a budget that spends its own `goodreads` slice first and, once that cannot
+afford another lookup, the `pairing` slice (`withSpareBudget(primary, spare)`, `gb-call-budget.ts`). Each call is recorded
+against the slice that paid for it, with the same reserve-before-commit gate, so every slice still caps its consumer, the
+mint still sees its own usage, and the daily total stays inside the key's quota. The pass's own caps stay (at most
+`ENGLISH_EDITION_CAP_PER_RUN` lookups a run, one per want per quota-day). Nothing else borrows: the shelf enrichment stops
+at its own slice as before.
+
+**Two jobs on one slice.** A tracker reads its usage once, at the start of the run, and each slice used to have one job.
+Now the format-pairing mint and the English-edition pass can both spend the pairing slice in the same minutes, so both
+re-read its persisted count right before each lookup they start (`gbBudgetCanStart`: the local answer first, since usage
+only grows, then `refresh()` and the reserve-before-commit gate again). The overshoot left is two lookups started at the
+same instant, at most one resolve's legs (`GB_MAX_RESOLVE_LEGS`). The pass's "budget spent" log reports the calls it charged
+to either slice.
+
+**Tests:** `packages/domain/__tests__/gb-call-budget.test.ts` (primary first, then the spare, each call charged to the
+slice that paid; a lookup is refused once another job's spend, re-read, leaves no room).

@@ -36,7 +36,7 @@ import {
   switchRequestToEnglishEdition,
 } from './book-requests';
 import { guardedGbResolve, type GbQuotaGuardedResolver } from './gb-quota-breaker';
-import type { GbBudgetTracker, GbCallMeter, GbConsumer } from './gb-call-budget';
+import { gbBudgetCanStart, type GbBudgetTracker, type GbCallMeter, type GbConsumer } from './gb-call-budget';
 import { gbQuotaDayStart, llRekeyAuthorKey, llSnapshotUsable, type LlSnapshot, type LlSnapshotRow } from './ll-gone';
 import { llBookMismatch, workTitleKey } from './ll-book-check';
 
@@ -318,7 +318,7 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
     }
     // The daily CALL BUDGET: refuse before the call (reserve-before-commit). Not a lookup: nothing is stamped, the want
     // is due again as soon as the slice has room, and the shared breaker is not involved.
-    if (resolver.budget && !resolver.budget.canSpend()) {
+    if (resolver.budget && !(await gbBudgetCanStart(resolver.budget))) {
       halted = 'budget';
       skip('budget');
       if (!budgetLogged) {

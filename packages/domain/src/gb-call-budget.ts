@@ -257,6 +257,23 @@ export interface GbBudgetTracker {
   spend(legs: number): Promise<void>;
   /** Calls spent by this consumer so far today (start-of-run + this run). */
   used(): number;
+  /**
+   * Issue #740 — re-read the persisted usage, so a slice two jobs spend from (the pairing slice: the mint and the
+   * English-edition pass) sees what the other job spent since this run started. Callers refresh right before they start
+   * a lookup, only when `canSpend()` still says yes (usage only grows). Optional: a stub may leave it out.
+   */
+  refresh?(): Promise<void>;
+}
+
+/**
+ * Can the tracker afford to START another resolve, by the persisted count? The local answer first (usage only grows, so
+ * a local no is final); a local yes is re-read (`refresh`) and asked again. One read per started lookup.
+ */
+export async function gbBudgetCanStart(budget: GbBudgetTracker): Promise<boolean> {
+  if (!budget.canSpend()) return false;
+  if (!budget.refresh) return true;
+  await budget.refresh();
+  return budget.canSpend();
 }
 
 const ENFORCED: Record<GbConsumer, boolean> = { pairing: true, goodreads: true, bookfix: false };
@@ -288,6 +305,39 @@ export async function makeGbBudgetTracker(input: {
       if (legs <= 0) return;
       used += legs;
       await recordGbCalls({ db: input.db, consumer: input.consumer, count: legs, now });
+    },
+    refresh: async () => {
+      // A rolled day reads 0 for every consumer; the local count never goes down.
+      used = Math.max(used, (await readGbBudgetUsage({ db: input.db, now }))[input.consumer]);
+    },
+  };
+}
+
+/**
+ * Issue #740 (DESIGN-039 D-23 amendment 2026-10-06) — a tracker that spends `primary`'s slice first and, once it cannot
+ * afford another resolve, `spare`'s. The goodreads job's English-edition pass gets the pairing slice as its spare: with
+ * the Mint Backoff the pairing mint stops spending most of its slice on lookups that cannot resolve, and what it leaves
+ * goes to the English-edition lookups once the goodreads enrichment has spent its own. Each call is recorded against
+ * the slice that paid for it, so every slice still caps its consumer and the daily total stays inside the key's quota.
+ * Two jobs then spend from the pairing slice, so both re-read its persisted count right before each lookup
+ * (`gbBudgetCanStart`): the most two lookups started at the same moment can overshoot it by is one resolve's legs.
+ */
+export function withSpareBudget(primary: GbBudgetTracker, spare: GbBudgetTracker): GbBudgetTracker {
+  let spareSpent = 0;
+  return {
+    consumer: primary.consumer,
+    canSpend: () => primary.canSpend() || spare.canSpend(),
+    spend: async (legs: number) => {
+      if (primary.canSpend()) return primary.spend(legs);
+      spareSpent += Math.max(0, legs);
+      return spare.spend(legs);
+    },
+    // What this consumer spent today, the calls it charged to the spare included.
+    used: () => primary.used() + spareSpent,
+    // Both: the spare is the slice another job spends from at the same time.
+    refresh: async () => {
+      await primary.refresh?.();
+      await spare.refresh?.();
     },
   };
 }

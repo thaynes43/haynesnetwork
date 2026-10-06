@@ -940,3 +940,94 @@ is unqueued in the same run; an empty read, a failed read and a failed unqueue k
 its keep list and dry run), `packages/domain/__tests__/landed-truth.test.ts`, `packages/lazylibrarian/__tests__/client.test.ts`
 (`unqueueBook`), `packages/sync/__tests__/ll-orphan-unqueue-script.test.ts`, `packages/db/__tests__/migrations.test.ts`
 (0093).
+
+## Amendment — 2026-10-06 (later): the Volume Check covers the title, and a held `Skipped` format lands (issues #739, #752)
+
+#739 is finding L-05 of the adversarial review (issue #731, `.agents/context/2026-10-06-books-rollout-adversarial-review.md`).
+#752 was found while fixing #734 and #735. The Google Books budget half of that review (L-06, #740) is DESIGN-036's
+amendment of this date.
+
+### #739: the lenient Volume Check is a coverage rule
+
+**What was seen.** `llBookMismatch` (T-280, lenient) called two titles the same work when they shared any one distinctive
+word, so two volumes of a series passed on the series name: "Mistborn: Secret History" ⇄ "Mistborn: The Final Empire", "Harry
+Potter and the Prisoner of Azkaban (Harry Potter, #3)" ⇄ "Harry Potter and the Philosopher's Stone", "Wild Cards 2: Aces
+High" ⇄ "Wild Cards". It is the backstop of the pairing identity check and landed check, the goodreads push and reconcile,
+the collection force-search and `acceptEnglishEdition`.
+
+**The rule.** The check now cuts each title into its work title and its series decoration, then asks, in order:
+
+| Step | Verdict |
+| --- | --- |
+| The want names its volume and the book names another, or none past the first (`volumeNumbersAgree`, unchanged). A whole title that is a series name and a bare number ("Wild Cards 2") names its volume the same way. | `volume` |
+| The want's series position and the book's disagree ("Dune (Dune, #1)" ⇄ "Dune Messiah: Dune Book 2"), unless every word of the book's title is the want's (two sources number some series differently: Narnia). A position with a decimal ("#2.5") is no position. | `volume` |
+| Either title is only a series designation ("Red Queen Novella #1", "A Court of Thorns and Roses 6", "Harry Potter Boxed Set, Books 1-5"). It names no work to cover, so one shared word is a match, as before. | match or `work` |
+| The book's title COVERS the want's work title: 60 percent of its distinctive words (the `gbResolveTitleMatches` ratio), and half of those that are not series-name words. | match |
+| The book's title is the want's without its subtitle ("Picasso: A Biography" ⇄ "Picasso", "The Hobbit, or There and Back Again" ⇄ "The Hobbit", "Beacon 23: The Complete Novel" ⇄ "Beacon 23"): the book adds no word, holds the want's whole first part and its number, and the words it lacks do not name a separate work (epilogue, prologue, novella, novelette, prequel, sequel, companion, bonus). | match |
+| Otherwise: the book's title is only the series name ("Wild Cards") | `volume` |
+| Otherwise | `work` |
+
+The decoration cut: a trailing parenthetical or bracket ("(Harry Potter, #3)"), a leading series index ("Wheel of Time [09]:
+", "Lily Bard #05 - ", "02 - "), a first part that is a series name and an index before a subtitle ("Wild Cards 2: Aces
+High", "Chroniken der Unterwelt (4): City of Fallen Angels"; not when the title names its volume elsewhere, "Beacon 23: Part
+Four: Company"), and a later part that positions the book ("The Expanse, Book 2", "Book One of the Stormlight Archive").
+Parts meet at a colon, a spaced dash or ", or". Author names, stop words, numbers and position markers are never
+distinctive; a plural and its singular are one word. The strict check (`llBookNamesTitle`) is unchanged.
+
+**Measured before shipping (2026-10-06 07:10Z, read-only).** All 1,282 non-comic requests whose `ll_book_id` LazyLibrarian
+holds were judged by both rules against LazyLibrarian's `BookName`/`BookSub`/`AuthorName`. The old rule flagged none. A
+plain 60 percent rule flagged 32, about 20 of them the same book under a subtitle LazyLibrarian lacks; the subtitle and
+designation steps above come from those. The rule as shipped flags 7, each checked by hand:
+
+| Want | Origin | LazyLibrarian book | Verdict | Hand check |
+| --- | --- | --- | --- | --- |
+| The Duke and I: The 2nd Epilogue | collection | The Duke And I | `work` | right: the epilogue is a separate novella |
+| An Offer From a Gentleman: the 2nd Epilogue | collection | An Offer From a Gentleman | `work` | right |
+| On the Way to the Wedding: 2nd Epilogue | collection | On the Way to the Wedding | `work` | right |
+| The Heroes of Olympus: The Demigod Diaries | pairing | The Heroes of Olympus, Book Three The Mark of Athena | `work` | right |
+| Tolkien's World - Paintings of Middle-Earth | pairing | Tolkien's Middle-Earth (a 44-page postcard book) | `work` | right |
+| Ghosts of the Shadow Market 8 | pairing | Ghosts of the Shadow Market (the anthology) | `volume` | right: the anthology is not the member (the omnibus rule) |
+| Steel Scars | collection | Small Scars | `work` | Google Books' title for the same novella (same date, 100 pages); the title is all the check sees |
+
+The three pairing wants are re-identified by the next format-pairing run (id cleared, re-minted, refused again if Google
+Books gives the same book, then the Mint Backoff); the four collection wants are parked `wrong_volume` by the collection
+force-search when it next reaches them. `acceptEnglishEdition` judges Google Books volumes at lookup time, so it has no
+stored population to measure; its tests run unchanged.
+
+**Known gap.** A want "<series>: <volume title>" against a book titled only by the series name ("Diary of a Wimpy Kid:
+Rodrick Rules" ⇄ "Diary of a Wimpy Kid") still passes: it is textually the "Picasso: A Biography" shape. Telling them apart
+needs series data, which neither LazyLibrarian (`series` and `member` are empty) nor the library mirror carries for most
+items (15 of 1,075 pairing anchors have a series name). No live want has that shape today.
+
+### #752: a `Skipped` format LazyLibrarian holds a file for lands
+
+**What was seen.** 27 live formats (17 pairing wants reading `missing`, 1 pairing want reading `grabbed`, 9 collection wants
+reading `requested`) pointed at a LazyLibrarian format that reads `Skipped` with an import date and a file. The revert
+(`unheldFormatStatus`) already kept a `landed` format on those signals, but the reconcile read the raw status through
+`mapLlStatus` alone, so a format that was not `landed` yet never got there.
+
+**Verified on disk first (2026-10-06, read-only in the LazyLibrarian pod).** All 27 files exist. The 15 ebooks' OPF title,
+creator and language name the want's book in English. The audiobooks' folders and ID3 tags name the want's book. Two
+exceptions, neither landed wrongly by this rule: the "Ghosts of the Shadow Market 8" audiobook is the 19-part anthology (the
+#739 rule re-identifies that want first, and a mismatched book is never landed from); and LazyLibrarian's `AudioFile` for
+"The Voyage of the Dawn Treader" points at part 1 of a Japanese edition (`ナルニア国物語5 …`) stored in the same folder as the
+English audiobook (`C.S. Lewis - The Voyage of the Dawn Treader (full color).mp3`, tagged English, and two English library
+items). The English copy is there, so the want's audiobook is held; the mixed folder is a data problem, reported on #752.
+
+**The rule: a format lands while LazyLibrarian holds it, whatever its status says.** `llReconcileStatus(row, format)`
+(`book-requests.ts`) answers `landed` when `llFormatAlreadyHeld` (`Open`/`Have`, or an import date or file), otherwise the
+status through `mapLlStatus`. It is the landing twin of `unheldFormatStatus`: one predicate lands a format and keeps it
+landed, so landing and reverting cannot disagree, and a format that lost its file leaves `landed` the next run. Every
+LazyLibrarian reconcile uses it: the goodreads-sync reconcile and the Search-again re-key, the pairing open-want reconcile,
+and the gone rule's re-key. `getAllBooks` in the pinned build serves the import dates (`booklibrary`, `audiolibrary`) and not
+the file paths (`api.py` `_getallbooks`), so the import date is the signal the app reads.
+
+**Collection wants are unchanged.** A collection want has no LazyLibrarian reconcile by design (the #715 amendment above):
+it leaves `requested` when the library holds the member and Libretto drops it from the missing list. The 9 collection rows
+of #752 are part of a wider gap, 57 collection wants whose LazyLibrarian book holds the file while Libretto still lists the
+member missing; that needs its own decision and is issue #759.
+
+**Tests:** `packages/domain/__tests__/wrong-volume-guards.test.ts` (the #739 table, positions, the subtitle and designation
+steps, the seven live verdicts, the known gap), `packages/domain/__tests__/landed-truth.test.ts` (`llReconcileStatus`, its
+twin property with `unheldFormatStatus`, a goodreads audiobook landing from an import date under `Skipped` and leaving
+`landed` when it goes, a pairing `missing` and a `grabbed` landing).

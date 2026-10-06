@@ -10,6 +10,7 @@ import {
   guardedGbResolve,
   listIntegrationsForSync,
   makeGbBudgetTracker,
+  withSpareBudget,
   markIntegrationSynced,
   noteIntegrationSyncBlip,
   peekGbQuotaGate,
@@ -182,17 +183,25 @@ export async function runGoodreadsSync(input: {
   // GB legs, capped per run) take the 'goodreads' slice first instead of whatever the enrichment leaves. Switching a want
   // here also lets this run's own push take the English edition. It reads LazyLibrarian's language from one
   // `getAllBooks` (an LL database read, never a Google Books call), and uses the same breaker + budget as the enrichment.
+  // Issue #740 — once the 'goodreads' slice cannot afford a lookup, the pass spends what the pairing mint left of its
+  // own slice (the Mint Backoff leaves most of it unspent), each call charged to the slice that paid for it.
   let englishEditions: EnglishEditionReport | undefined;
   if (input.ll && !quotaOpen) {
     try {
       const snapshot = await input.ll.read.getAllBookStatuses();
+      const englishBudget = enrichmentBudget
+        ? withSpareBudget(
+            enrichmentBudget,
+            await makeGbBudgetTracker({ db: input.db, consumer: 'pairing', ...(input.now ? { now: input.now } : {}) }),
+          )
+        : undefined;
       englishEditions = await runEnglishEditionPass({
         db: input.db,
         snapshot,
         resolver: {
           gb: input.goodreads.googleBooks,
           consumer: 'goodreads',
-          ...(enrichmentBudget ? { budget: enrichmentBudget } : {}),
+          ...(englishBudget ? { budget: englishBudget } : {}),
           ...(input.meter ? { meter: input.meter } : {}),
         },
         ...(input.now ? { now: input.now } : {}),

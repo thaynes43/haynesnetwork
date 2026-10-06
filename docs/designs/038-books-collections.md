@@ -524,3 +524,14 @@ composed-Wanted idiom, now collection-scoped.
 > pairing want carries the work). The goodreads-sync and format-pairing runs drain it: the format goes back to `Skipped` in
 > LazyLibrarian unless a live request (another collection's want, a pairing want or a person's request on the same book and
 > format) still asks for it. The books-collections-sync job itself makes no new LazyLibrarian call.
+
+> **Amendment 2026-10-06 (later) (issues #739, #752 — the coverage Volume Check, and a held `Skipped` format).** The
+> normative rules are DESIGN-028's amendment of this date. On this leg:
+>
+> - **The force-search's Volume Check is the coverage rule.** A collection want whose LazyLibrarian book does not cover its
+>   title is parked `wrong_volume` as before (`parkCollectionWant`). Measured on the live wants: four change verdict, the
+>   three Bridgerton "2nd Epilogue" members pinned to their novels and "Steel Scars" on Google Books' "Small Scars".
+> - **A collection want still has no LazyLibrarian reconcile.** #752 lands a `Skipped` format LazyLibrarian holds for goodreads
+>   and pairing wants only. The drill hides a want whose own format reads `landed`, so landing a collection want from
+>   LazyLibrarian would hide a member the library may not show. The 57 collection wants on a book LazyLibrarian holds while
+>   Libretto still lists the member missing are issue #759.

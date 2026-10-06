@@ -578,3 +578,68 @@ unparked requests with a LazyLibrarian book: 52 on a `Wanted` book (51 pairing, 
 with a file. The other 6 are on parked wants, a want with no book, or a goodreads want whose shelf item is gone.
 LazyLibrarian had 24 `Wanted` formats no live request asks for: 22 on books no request names, 1 on a `foreign_language`
 park (`yK8pzwEACAAJ`), 1 F10 hand re-want (`GGcbzgEACAAJ`).
+
+## Amendment — 2026-10-06 (later): the Mint Backoff, the coverage Volume Check, and a held `Skipped` missing format lands (issues #740, #739, #752)
+
+**Normative rules: this amendment for #740; DESIGN-028's amendment of this date for #739 and #752.**
+
+### #740: the Mint Backoff
+
+**What was seen.** The mint ordered candidates oldest first and, within one `first_seen_at`, least recently tried, so every
+run walked the same oldest wants first. About 1,460 candidates; on 2026-10-05 and 2026-10-06 the runs logged `attempted 100,
+unmintable 95` (and 97, 94, 89), tripped Google Books' per-minute quota at 10:33Z and 11:32Z (`skippedQuota` 187 to 226),
+and spent the daily slice (700 calls) by 12:32Z (`skippedBudget 279` until the 07:00Z reset). The same key serves
+LazyLibrarian's `addBook`, so the #668 re-request's adds waited (`llRerequestDeferred` about 470 each run), and the
+English-edition pass (DESIGN-028, #719) had nothing to borrow from.
+
+**The rule: a want whose lookup found nothing waits before the next one.** When a real Google Books lookup for a pairing
+want answers with no usable book (no match, or a match the Volume Check refuses), the want's Mint Backoff (T-285) grows:
+the next lookup waits 1 day after the first miss, 3 after the second, 7 after the third and 30 after every later one
+(`PAIRING_MINT_BACKOFF_DAYS`). Three columns on `book_requests` (migration 0094), written only by `upsertPairingWant`:
+
+| Column | Meaning |
+| --- | --- |
+| `mint_backoff_count` | misses in a row for the identity below (0 when none) |
+| `mint_backoff_until` | no lookup before this time |
+| `mint_backoff_key` | the identity the misses were counted for: title key, author, ISBN (`mintBackoffKey`) |
+
+- **Only the lookup waits.** A want in backoff stays a candidate, so a book another request resolved since still mints it
+  through the reuse index with no lookup. A waiting want needing a lookup is skipped with no cap consumed and no row
+  touched, so the run's cap goes to the wants behind it.
+- **A changed identity is looked up at once.** When the anchor's title, author or ISBN changes (a metadata re-read adds an
+  ISBN, the identity check retitles it), the key no longer matches, the backoff is ignored, and a new miss counts from 1.
+- **A resolve clears it.** Any id (resolved or reused) sets the count to 0 and the other two columns to null.
+- **An error is not a miss.** A lookup that throws (network, a 5xx) is an attempt as before and changes nothing; a quota
+  refusal is not an attempt at all (ADR-067 C-08).
+- **Report field `inBackoff`:** candidates waiting out their backoff this run. `attempted` and `unmintable` keep their
+  meaning, so the run line shows the ratio directly.
+
+**Where the freed calls go.** The pairing slice stays 700 and the per-run cap 100; what the mint no longer spends stays on
+the shared key's daily quota for LazyLibrarian's adds, and the goodreads job's English-edition pass may spend it once its
+own `goodreads` slice is gone (DESIGN-039 D-23 amendment of this date). Shrinking the pairing slice once the backlog drains
+is left for later evidence.
+
+**Expected after deploy.** The first run attempts up to 100 as before (no want has a backoff yet) and backs off every miss;
+from the next run `inBackoff` rises toward the unresolvable backlog (about 1,400) and `attempted` falls to the new and
+changed wants plus the day's expiring backoffs. A miss on day 1 is retried on day 2, so the old cohort's second pass comes a
+day later, its third three days after that.
+
+### #739 on the pairing side
+
+The identity check (`checkPairingWantBooks`), the reuse and resolve refusal (`bookRefused`), the landed check and the
+open-want reconcile all call `llBookMismatch`, so they apply the coverage rule as is. Measured on the live wants: three
+pairing wants change verdict (The Demigod Diaries, Tolkien's World, Ghosts of the Shadow Market 8); the next run
+re-identifies them (`reidentified` 3). A refused resolve is a miss for the Mint Backoff, so a want Google Books keeps
+answering with the same wrong book waits instead of costing a lookup every hour.
+
+### #752 on the pairing side
+
+The open-want reconcile reads each format through `llReconcileStatus`: a missing format LazyLibrarian holds under
+`Skipped` (an import date) lands. Live before the change: 17 pairing wants reading `missing` and 1 reading `grabbed` (the
+Confessions of an Ugly Stepsister audiobook); the next run lands them, except Ghosts of the Shadow Market 8, which the
+identity check re-identifies first. The Skipped sweep already refused to re-queue these (`ll_push_skipped_have`).
+
+**Tests:** `packages/domain/__tests__/format-pairing.test.ts` (the Mint Backoff: 1, 3, 7, 30, 30 days, no lookup and no cap
+while waiting, a changed ISBN looked up at once, a reuse id minting through the backoff and clearing it, an error is not a
+miss), `packages/domain/__tests__/landed-truth.test.ts` (#752), `packages/domain/__tests__/wrong-volume-guards.test.ts`
+(#739), `packages/db/__tests__/migrations.test.ts` (0094).
