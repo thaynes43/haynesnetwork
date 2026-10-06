@@ -201,17 +201,19 @@ there). Every builder emits **works keyed by identifiers**, and matching walks a
 > per-collection overrides: `variables.titleAliases` maps a member's title, as the builder lists it, to the other titles
 > a library item carries for that same book. The rules (`src/core/match.ts`, `recipeMatchOptions`):
 >
-> - An alias is an exact title (the step 3 noise stripping, nothing else), tried after the member's own title and before
+> - An alias is an exact title (the step 3 noise stripping, nothing else), tried only for a member whose own title the
+>   library carries nowhere (an own title that was refused as ambiguous, author-vetoed or taken stays refused), before
 >   the decorated pass, through the same guards: an ambiguous title is refused, disjoint authors veto it, and an item
->   another member took stays taken. A member whose own title the library holds keeps that item. The alias key is
->   compared like a title, so case and punctuation never miss one.
+>   another member took stays taken. The alias key is compared like a title, so case and punctuation never miss one.
 > - Aliases apply with `titleFallback: false` too (a person confirmed each one), at work grain only. A match through one
 >   is flagged `matchedVia: 'alias'` and counted in `matchedByTitle`. The reconciler and the missing endpoint read their
 >   options from one function, so the two can never disagree.
 > - A person writes one only after checking the library item by hand: the same work and volume, in English. Never
 >   another volume, and never another edition that is not the member's own text (a box set, a graphic adaptation).
 > - Where the library's own title is plainly wrong (garbled, or a wrong subtitle), the library metadata is fixed instead,
->   through Kavita's or Audiobookshelf's API, and locked so a rescan keeps it.
+>   through Kavita's or Audiobookshelf's API, and locked so a rescan keeps it. Kavita's API cannot rename a series (its
+>   name comes from the file); its chapter title and sort name can be set and locked, and Libretto reads chapter titles
+>   as the books an item holds.
 > - The app never edits aliases, and Libretto's PUT replaces the whole recipe, so every app write carries them through:
 >   the find-missing toggle re-PUTs the recipe as read (now with its `targets`, `category`, `titleFallback` and
 >   `titleAliases`, so a two-target recipe stays two-target), and an edit from the collections form keeps the recipe's
@@ -227,12 +229,12 @@ there). Every builder emits **works keyed by identifiers**, and matching walks a
 > | `the-murderbot-diaries` | Rapport: Friendship, Solidarity, Communion, Empathy | Kavita "Rapport" | the OPF carries both title parts; Kavita reads the first |
 > | `all-souls` | The World of All Souls: A Complete Guide to A Discovery of Witches, Shadow of Night and The Book of Life | Kavita "The World of All Souls" | Penguin 2018, the guide itself |
 > | `bridgerton` | On the Way to the Wedding | Kavita "On the Way to the Wedding with 2nd Epilogue" | ISBN 9780062424167 is one of the member's editions: the novel with its epilogue appended |
-> | `discworld` | The Last Hero | Kavita "The Last Hero: A Discworld Fable" | the illustrated Gollancz edition (ISBN 9780575068858, the member's); its pdf title said "(Graphic Novel)", a wrong subtitle, fixed in Kavita and locked |
+> | `discworld` | The Last Hero | Kavita "The Last Hero: A Discworld Fable" | the illustrated Gollancz edition (ISBN 9780575068858, the member's). Its pdf title said "(Graphic Novel)", a wrong subtitle: the chapter title and sort name are corrected in Kavita and locked (a rescan kept them). Kavita's API cannot rename a series, so the alias names the book title |
 > | `trials-of-apollo-audiobooks` | Camp Half-Blood Confidential | Audiobookshelf "From Percy Jackson: Camp Half-Blood Confidential: Your Real Guide to the Demigod Training Camp" | the publisher's full title; 3 h 23 min, the companion book's length |
 >
 > The member "On the Way to the Wedding: 2nd Epilogue" stays missing: the standalone epilogue is its own member. The
 > replay, the deployed matcher against the new one over all 75 recipes and every target on one dump of the live libraries:
-> with no aliases nothing changes; with the seven aliases (and The Last Hero's corrected title) exactly those seven
+> with no aliases nothing changes; with the seven aliases (and The Last Hero's corrected chapter title) exactly those seven
 > members flip from missing to held, none flips back and none moves to another item. Libretto PR
 > https://github.com/thaynes43/libretto/pull/23.
 
