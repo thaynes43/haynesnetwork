@@ -45,7 +45,14 @@ jobs:
           ids=$(head -1 "$body" | sed -n 's/^<!-- owed-checks-overdue: \(.*\) -->$/\1/p')
           gh label create "$LABEL" --color D93F0B --description "Owed post-deploy checks past due (DESIGN-053)" \
             >/dev/null 2>&1 || true
-          issue=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number // empty')
+          # GitHub's issue listing lags a new issue by minutes, so a run soon after another can open a second one:
+          # keep the oldest open issue and close any other.
+          read -r -a open_issues <<<"$(gh issue list --label "$LABEL" --state open --json number \
+            --jq '[.[].number] | sort | map(tostring) | join(" ")')"
+          issue="${open_issues[0]:-}"
+          for extra in "${open_issues[@]:1}"; do
+            gh issue close "$extra" --comment "Duplicate of #$issue; closing."
+          done
           if [ -n "$ids" ]; then
             if [ -z "$issue" ]; then
               gh issue create --title "Owed checks overdue" --label "$LABEL" --body-file "$body"

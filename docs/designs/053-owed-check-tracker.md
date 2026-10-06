@@ -1,7 +1,8 @@
 # DESIGN-053: The Owed Check tracker — dated, owned post-deploy checks with a runner and an overdue alert
 
 - **Status:** Accepted (2026-10-06)
-- **Last updated:** 2026-10-06
+- **Last updated:** 2026-10-06 (later: deployed in v0.108.0; the live verification, the issue de-duplication and
+  the test procedure recorded in D-06, D-08 and the test strategy)
 - **Satisfies:** issue #743 (adversarial review #731, finding W-08 and recommendation R-04,
   `.agents/context/2026-10-06-books-rollout-adversarial-review.md`); governed by the docs-first process
   (`docs/PROCESS.md`). No ADR: this is agent tooling around deploys, not app behaviour; nothing in the app changes.
@@ -124,7 +125,9 @@ A warning is visible only in Alertmanager and Grafana, so the human- and agent-f
 `.github/workflows/owed-checks.yml` runs hourly and on every push to the tracker, evaluates timing only (`--no-data`;
 GitHub cannot reach the cluster) and keeps one open issue labelled `owed-checks`: opened when a row first goes
 overdue, its body rewritten and a comment added when the overdue set changes, closed when nothing is overdue. The
-issue notifies the repository's watchers; it is not a page.
+issue notifies the repository's watchers; it is not a page. GitHub's issue listing showed a new issue only about five
+minutes after it was created (2026-10-06), so a run soon after another could open a second one: each run keeps the
+oldest open `owed-checks` issue and closes any other.
 
 ### D-07 The process hook
 
@@ -148,8 +151,13 @@ issue notifies the repository's watchers; it is not a page.
 - Run it now: `kubectl -n downloads create job --from=cronjob/owed-checks owed-checks-manual-$(date +%s)`, then
   `kubectl -n downloads logs job/<name>`. Timing only, locally: `pnpm --filter @hnet/sync exec tsx
   src/scripts/owed-checks.ts --no-data --tracker=../../.agents/owed-checks.yaml --now=<UTC instant>`.
-- A test row: point a one-off Job's `OWED_CHECKS_URL` at a branch's raw tracker, and run the Action on that branch
-  (`gh workflow run owed-checks.yml --ref <branch>`); main is untouched.
+- The runner holds LazyLibrarian's RWO volume only while a pass runs (seconds; the Job deadline is 3 minutes). A
+  LazyLibrarian pod rescheduled to another node during a pass waits in Multi-Attach until the Job ends (noted next to
+  LazyLibrarian's `config` volume in its HelmRelease).
+- A test row, without touching main: push a branch whose tracker holds the row, and run a one-off Job from the
+  CronJob with `OWED_CHECKS_URL` pointed at that branch's raw tracker. For the issue path, run the Action on the branch
+  (`gh workflow run owed-checks.yml --ref <branch>` needs `actions: write`, which the dev bot's token lacks; the
+  2026-10-06 test instead added the branch to the workflow's `push` trigger on that branch). Delete the branch after.
 
 ## Alternatives considered
 
@@ -177,9 +185,10 @@ issue notifies the repository's watchers; it is not a page.
   through `ll-db` refuses a write; `app-db` on the embedded Postgres 16 runs in a read-only session, refuses a write
   and survives a connection the server drops (it reconnects on the next check instead of crashing); Loki is queried
   at the pinned instant; a whole run's log lines and the issue body.
-- Live, once (2026-10-06): every SQL check run read-only against production, every Loki query shape run through
-  Grafana; the deployed runner's first pass against today's rows; a dummy overdue row on a branch fires
-  `OwedCheckOverdue` and opens the issue, and the issue closes again on main.
+- Live (2026-10-06, recorded in HANDOFF): every SQL check run read-only against production and every Loki query
+  shape through Grafana; the deployed runner's first pass over today's rows (7 rows evaluated, all `wait`, none
+  `fail` or `error`, 0 overdue); a dummy overdue row with a failing check, on a branch, fired `OwedCheckOverdue` and
+  `OwedCheckFailing` (Alertmanager, receiver `null`) and opened issue #774, which closed when the row was removed.
 
 ## Open questions
 
