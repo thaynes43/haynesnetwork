@@ -4,6 +4,62 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-06 — v0.107.10 + v0.107.11 live: the Volume Check covers the title, unmintable wants back off, a held `Skipped` format lands, pairs stop flapping (#739, #740, #752, #761 closed)
+
+- **Why.** Review findings L-05 (#739) and L-06 (#740) of the adversarial review (#731), #752 (found while fixing #734/#735),
+  and #761 (found while verifying #740). Rules: DESIGN-028 amendment 2026-10-06 (later), DESIGN-036 amendment 2026-10-06
+  (later), DESIGN-038 note, DESIGN-039 D-23 amendment, DESIGN-024 D-03 amendment; glossary T-280/T-281/T-184 amended, T-285
+  Mint Backoff added.
+- **v0.107.10** (#760, #762, release #756, haynes-ops #3435, live ~12:23Z, migration 0094 adds `mint_backoff_count`,
+  `mint_backoff_until`, `mint_backoff_key`).
+  - #739: `llBookMismatch` is a coverage rule (60 percent of the want's distinctive work words, half of the non-series ones;
+    positions agree; a dropped subtitle passes unless it names a separate work; a series designation keeps the old rule).
+    Measured first on all 1,282 live requests with a LazyLibrarian book: 7 changed verdict, all hand-checked (table in the
+    DESIGN-028 amendment). Known gap kept in a test: "<series>: <title>" against a book titled only by the series name.
+  - #740: the Mint Backoff (1, 3, 7, 30 days per Google Books miss, per identity; reuse still mints; errors are not misses).
+    The English-edition pass may spend the pairing slice once its own is gone (`withSpareBudget`); both jobs re-read the
+    shared slice before each lookup (`gbBudgetCanStart`).
+  - #752: the reconciles read LazyLibrarian through `llReconcileStatus` (lands what `unheldFormatStatus` keeps). All 27 files
+    checked on disk first: all exist and are the right English book, except the Dawn Treader audio pointer (a Japanese
+    edition part in the same folder as the English audiobook; the want is held, the mixed folder is reported on #752) and
+    Ghosts of the Shadow Market 8 (the anthology; #739 re-identified it). The 9 collection rows stay `requested` by design:
+    issue #759 (57 collection wants on books LazyLibrarian holds while Libretto lists the member missing) needs a decision.
+  - #761: `loadExistingKavitaEnrichment` carries the stored author forward, so flat-layout Kavita series stop losing their
+    author on alternate books-sync runs.
+- **v0.107.11** (#765, release #764, haynes-ops #3437, live ~12:59Z): the mint tries candidates with the fewest misses first,
+  so new and changed wants go before retries. The 12:32Z run showed why: 265 candidates needed a lookup, 167 pairing wants
+  with no id and about 100 library items never minted, and oldest-first kept the new ones behind every old want.
+- **Verified.**
+  - Pods 3/3 Ready on v0.107.11, 0 restarts; Loki shows no `error`/`fatal` line from the `haynesnetwork` app since the deploy
+    (75 min); goodreads-sync 12:41Z and both format-pairing runs logged none.
+  - format-pairing 12:32Z (v0.107.10): `attempted 50, unmintable 50, inBackoff 0, skippedBudget 215` (the day's slice was
+    already spent by the morning's v0.107.9 runs); `reidentified 3` (the three #739 pairing flips: Ghosts of the Shadow
+    Market 8, Tolkien's World, The Demigod Diaries), `rejectedResolves 1` (Demigod Diaries resolved to The Son of Neptune,
+    refused), `llReleasesUnqueued 1` (the postcard book's audio). 50 wants now hold `mint_backoff_count` 1 until 2026-10-07
+    12:32Z.
+  - format-pairing 13:32Z (v0.107.11): `paired 716, added 2, dropped 0, revived 0` (the flap is gone: 0 authorless Kavita
+    book series after the 13:22Z books-sync, 35 before), `inBackoff 50`, `attempted 0` (slice spent), `reidentified 2` (both
+    "Fifty Shades Darker" wants, pinned to E.L. James' "Darker", the 2017 Christian-POV book: right).
+  - #739 live total: 5 pairing wants re-identified; the 4 collection flips (Steel Scars on Google Books' "Small Scars", and
+    the three Bridgerton "2nd Epilogue" members) take the new verdict at their next force-search.
+  - #752 read-only join after the reconcile: 17 of the 18 pairing formats read `landed` (Ghosts 8 re-identified, now
+    `requested` with no id); the 9 collection formats unchanged (#759).
+- **Owed checks (dated):**
+  - **(r) 2026-10-07, after the 07:33Z format-pairing run** (the first with a fresh slice): `attempted` up to 100 with fresh
+    items first (minted above 0), `inBackoff` at least 50, no `skippedQuota`. After 12:32Z the 50 wants of 2026-10-06 are due;
+    each miss moves to `mint_backoff_count` 2 (3 days).
+  - **(s) 2026-10-08:** `gb_quota_day_closed` for 2026-10-07 shows `pairing_calls` well under 700, format-pairing
+    `skippedBudget` 0 late in the day, and `llRerequestDeferred` falling from about 460 (LazyLibrarian's adds getting quota).
+    If the slice is still spent, read which candidates spend it (`pairing_resolve_rejected`, `unmintable`) before changing
+    the schedule.
+  - **(t) by 2026-10-09:** Steel Scars (`1cea3e86`) parked `wrong_volume` by the collection force-search once its cooldown
+    ends (`ll_push_skipped_wrong_volume`); the three epilogue wants change only if their collections are force-searched.
+  - **(u) after the 2026-10-07 09:10Z library scan:** the 17 #752 pairing formats still read `landed` and their LazyLibrarian
+    rows still carry the import date; any reverted one names a file LazyLibrarian lost.
+  - **(v) 2026-10-07:** a day of format-pairing runs with `added`/`dropped`/`revived` 0 or explained by library changes (no
+    alternation), and 0 authorless Kavita book series.
+- **Open.** #759 (collection wants on books LazyLibrarian holds) needs the owner's call on the collection want lifecycle.
+
 ## ▶ 2026-10-06 — LazyLibrarian blocks match any spelling, and a foreign-tagged release loses the match for an English book (#755 closed, haynes-ops #3432, #3433)
 
 - **Cause (#755).** `blacklist_failed` matches a `Failed` row only by exact `NZBtitle` or exact URL. The post-processor renames
