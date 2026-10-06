@@ -1146,7 +1146,7 @@ same way (D-09 amendment).
 
 **Not this rule.** "Four: The Traitor" (Divergent) is on its own book, by its own author: LazyLibrarian imported the
 four-story collection as its file. "Shift" may come back the same way: LazyLibrarian's own Hugh Howey *Shift* holds the
-file of *First Shift: Legacy*. A right book with a wrong file is not a matter of identity and is tracked on its own issue.
+file of *First Shift: Legacy*. A right book with a wrong file is not a matter of identity: issue #781.
 
 **Tests:** `packages/domain/__tests__/wrong-author-wants.test.ts` (the pure check on the live names; the sweep releases a
 held want whatever its cooldown, writes nothing to LazyLibrarian for it and releases its book; the member's own book is
