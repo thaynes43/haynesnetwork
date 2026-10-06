@@ -107,6 +107,5 @@ scaled deadline while TMDB stalls, D-15aa, D-15ab; and from the eighth an undo a
 window, the cleared undo of a refused add not on Plex with its Seerr sentence, D-04, and an add of a year no TMDB
 match has asked about, D-15ac), `deps.test.ts` (the production wiring: `tmdbSearchFromEnv`
 and `defaultDeps` build `tmdb` with the client's GET retries and `tmdbOnce` with one attempt, and each attempt's
-timer covers a body that stalls after its headers; `discoverPlex` makes one 1.5 s attempt, so a one-second
-`matches` answer arrives where the 300 ms bundle times out; DESIGN-051 D-15g, D-15p, D-15ab) and `import-guard.test.ts` (D-01:
+timer covers a body that stalls after its headers; DESIGN-051 D-15g, D-15p) and `import-guard.test.ts` (D-01:
 `@hnet/watch` imports `@hnet/db`, drizzle-orm and zod only; the MCP SDK only here).
