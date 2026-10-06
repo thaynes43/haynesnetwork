@@ -606,6 +606,41 @@ describe('GoogleBooksClient.resolveVolume with a language restriction (issue #71
     expect(calls[0]).not.toContain('isbn:');
   });
 
+  it('falls back to the plain words when the structured query finds nothing (Azazel: intitle/inauthor lists no hit)', async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      const q = decoded(url);
+      calls.push(q);
+      // Google Books answers the structured query for this work with nothing, and the plain words with the book.
+      if (q.includes('intitle:')) return volResponse([]);
+      return volResponse([
+        { id: 'es', volumeInfo: { title: 'Azazel', authors: ['Isaac Asimov'], language: 'es' } },
+        { id: 'unrelated', volumeInfo: { title: 'Isaac Asimov', subtitle: 'The Foundations of Science Fiction', authors: ['James Gunn'], language: 'en' } },
+        { id: 'en-azazel', volumeInfo: { title: 'Azazel', authors: ['Isaac Asimov'], language: 'en' } },
+      ]);
+    }) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({ baseUrl: 'http://stub/books/v1', apiKey: 'k', fetchImpl });
+    const res = await gb.resolveVolume({ title: 'Azazel', author: 'Isaac Asimov', language: 'en' });
+    expect(res?.volumeId).toBe('en-azazel');
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toContain('q=Azazel Isaac Asimov');
+    expect(calls[1]).toContain('langRestrict=en');
+  });
+
+  it('the plain-words fallback is for the language-restricted lookup only, and cannot admit another work', async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      calls.push(decoded(url));
+      return volResponse([{ id: 'other', volumeInfo: { title: 'Foundation', authors: ['Isaac Asimov'], language: 'en' } }]);
+    }) as unknown as typeof fetch;
+    const gb = new GoogleBooksClient({ baseUrl: 'http://stub/books/v1', apiKey: 'k', fetchImpl });
+    expect(await gb.resolveVolume({ title: 'Azazel', author: 'Isaac Asimov', language: 'en' })).toBeNull();
+    expect(calls).toHaveLength(2); // structured, then plain words; both refused by the title guard
+    calls.length = 0;
+    expect(await gb.resolveVolume({ title: 'Azazel', author: 'Isaac Asimov' })).toBeNull();
+    expect(calls).toHaveLength(1); // a plain resolve is unchanged: one structured leg
+  });
+
   it('a volume that reports no language, or another language, is never the English edition', async () => {
     const fetchImpl = vi.fn(async () =>
       volResponse([

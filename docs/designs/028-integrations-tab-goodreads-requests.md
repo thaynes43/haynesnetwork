@@ -728,8 +728,10 @@ same run. A request is due when:
 **The lookup** is `GoogleBooksClient.resolveVolume({ title, author, language: 'en' })` with the WANT's own title and
 author (the foreign edition's title is no evidence of what was asked for), through `guardedGbResolve` (the shared breaker).
 With a language the client: sends `langRestrict=en`; skips the ISBN leg (an ISBN names the foreign edition); skips the
-`/volumes/{id}` comic-confirm GET (the want is already known not to be a comic), so a lookup costs at most the two title
-legs; walks the five hits and takes the first whose own `volumeInfo.language` is positively `en` (or `en-*`) AND that passes
+`/volumes/{id}` comic-confirm GET (the want is already known not to be a comic); tries the structured `intitle:` /
+`inauthor:` query and, when that finds nothing, the plain words (title and author), because Google Books answers the
+structured query for some works with no hit at all (live 2026-10-06: *Azazel*, where the plain words list the English
+edition first), so a lookup costs at most four legs (each for the full and the pre-colon title); walks the five hits and takes the first whose own `volumeInfo.language` is positively `en` (or `en-*`) AND that passes
 every existing guard (title coverage, omnibus, #693's volume rule, author). The domain then checks the result again
 (`acceptEnglishEdition`): it is not the id the want already has, GB does not call it foreign, and `llBookMismatch` (#693's
 Volume Check) agrees its title names the want's volume and work. A rejected edition counts as none.
@@ -738,7 +740,9 @@ Volume Check) agrees its title names the want's volume and work. A rejected edit
 
 - At most ONE lookup per request per Google Books quota-day (07:00 UTC), whatever the answer: `english_edition_tried_at`
   is stamped by the switch, the park and a failed lookup alike, so a lookup that found nothing is not repeated every run.
-  The next quota-day retries a parked want once (Google Books gains editions).
+  A parked want looks again only after seven quota-days (`ENGLISH_EDITION_PARK_RETRY_DAYS`): Google Books gains editions, but
+  a work with none today almost never has one tomorrow, and a pairing want whose title is the foreign library title can
+  never be answered by an English lookup, so a daily retry would burn the slice on them forever.
 - The daily call budget: `GbBudgetTracker.canSpend()` (reserve-before-commit) is checked before each lookup and its legs are
   charged to the `goodreads` slice through the call meter. A budget or breaker refusal is not a lookup: nothing is stamped,
   the want is due again as soon as quota allows.
@@ -785,3 +789,11 @@ id only; none found and parked, the park surviving a sync; another volume and an
 quota-day; the budget gate; the breaker; the per-run cap; a lifted park; pairing and collection wants; the push guards;
 the re-key guard), `packages/sync/__tests__/goodreads-english-edition.test.ts` (the run end to end: Azazel),
 `packages/goodreads/__tests__/google-books.test.ts` (the language-restricted resolve).
+
+**First live run (2026-10-06 07:41Z, v0.107.7) and the follow-up.** The first run looked up ten of twelve due wants (the daily
+`goodreads` slice had been spent by the enrichment the evening before, so nothing could run until the 07:00Z reset; the pass
+runs first so it gets the new day's budget). It switched one and parked nine. Eight of the nine were pairing wants whose title is the foreign
+library title ("De Silmarillion", "Der Ritt anc"), for which no English lookup by that title can succeed, so those parks
+are right (and why a park now waits a week). The ninth was Azazel, parked wrongly: the structured query returned no hit
+for it in any language. The plain-words leg above, and migration 0092 (clears the stamp on every non-pairing
+`no_english_edition` park, once), let the wrongly parked wants be looked at again on the next run.

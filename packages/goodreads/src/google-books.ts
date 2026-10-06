@@ -305,7 +305,8 @@ export interface GbResolveInput {
    * a foreign edition). Sent as Google Books' `langRestrict`, and every candidate's own `volumeInfo.language` is checked
    * too (the parameter is a hint, not a guarantee). The ISBN leg is skipped: an ISBN names ONE edition, the one the
    * caller is trying to get away from. The comic-confirm GET is skipped as well (the want is already known not to be a
-   * comic), so a restricted resolve costs at most the two title legs.
+   * comic), so a restricted resolve costs at most four legs (the structured and the plain-words query, each for the full
+   * title and the pre-colon one).
    */
   language?: string | null;
 }
@@ -429,11 +430,23 @@ export class GoogleBooksClient {
 
   private async resolveByTitle(queryTitle: string, input: GbResolveInput): Promise<GbVolume | null> {
     const authorPart = input.author ? `+inauthor:${input.author}` : '';
-    const byTitle = await this.query(`intitle:${queryTitle}${authorPart}`, input.language);
-    // A plain resolve takes the top hit (and guards it). A language-restricted one (issue #719) walks the hits: the
-    // first that is in the language AND passes every guard below is the edition, so a foreign or other-volume top hit
-    // does not hide an English edition ranked second. Same one GB call either way.
-    const hits = input.language ? (byTitle?.items ?? []) : (byTitle?.items ?? []).slice(0, 1);
+    const structured = await this.pickTitleHit(`intitle:${queryTitle}${authorPart}`, queryTitle, input);
+    if (structured || !input.language) return structured;
+    // Issue #719 — the English-edition lookup also tries the plain words. Google Books answers `intitle:Azazel
+    // inauthor:Isaac Asimov` with nothing at all, in English or not (live, 2026-10-06), while `Azazel Asimov` lists the
+    // English edition first; the first run parked nine wants that had an edition. Every hit still passes the same
+    // language, title, omnibus, volume and author guards, so a looser query cannot admit another work. One more leg,
+    // only for a language-restricted lookup that missed (at most four legs with the pre-colon fallback).
+    return this.pickTitleHit(`${queryTitle}${input.author ? ` ${input.author}` : ''}`, queryTitle, input);
+  }
+
+  /** One title-leg query: a plain resolve guards its top hit; a language-restricted one (issue #719) walks every hit. */
+  private async pickTitleHit(q: string, queryTitle: string, input: GbResolveInput): Promise<GbVolume | null> {
+    const found = await this.query(q, input.language);
+    // A plain resolve takes the top hit (and guards it). A language-restricted one walks the hits: the first that is in
+    // the language AND passes every guard is the edition, so a foreign or other-volume top hit does not hide an English
+    // edition ranked second. Same one GB call either way.
+    const hits = input.language ? (found?.items ?? []) : (found?.items ?? []).slice(0, 1);
     for (const vol of hits) {
       const volume = await this.guardTitleHit(vol, queryTitle, input);
       if (volume) return volume;
