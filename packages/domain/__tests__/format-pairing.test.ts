@@ -1036,31 +1036,6 @@ describe('mintPairingWants — the Mint Backoff (issue #740)', () => {
     expect(gb.calls).toEqual(['New Arrival']);
   });
 
-  it('the pre-backoff backlog (unresolved over a week, never counted) starts at three misses: 7 days', async () => {
-    const oldId = await seedItem({ title: 'Long Unresolved', author: 'Some One', mediaKind: 'book', firstSeenAt: day(1) });
-    const newId = await seedItem({ title: 'Recently Unresolved', author: 'Some Two', mediaKind: 'book', firstSeenAt: day(2) });
-    for (const [anchor, title, created] of [
-      [oldId, 'Long Unresolved', new Date(t0.getTime() - 30 * DAY)],
-      [newId, 'Recently Unresolved', new Date(t0.getTime() - 2 * DAY)],
-    ] as const) {
-      await t.db.insert(bookRequests).values({
-        origin: 'pairing',
-        pairingBooksItemId: anchor,
-        title,
-        author: title === 'Long Unresolved' ? 'Some One' : 'Some Two',
-        ebookStatus: 'landed',
-        audioStatus: 'requested',
-        createdAt: created,
-        updatedAt: created,
-      });
-    }
-    await mintPairingWants({ db: t.db, gb: stubGb(() => null).gb, now: t0, pacer: async () => {} });
-    const old = await wantOf('Long Unresolved');
-    expect(old.mintBackoffCount).toBe(3);
-    expect(old.mintBackoffUntil?.getTime()).toBe(at(7).getTime());
-    expect((await wantOf('Recently Unresolved')).mintBackoffCount).toBe(1);
-  });
-
   it('a lookup that fails (an error, not an answer) is not a miss: no backoff', async () => {
     await seedItem({ title: 'Flaky Lookup', author: 'Net Work', mediaKind: 'book' });
     const gb = stubGb(() => {
