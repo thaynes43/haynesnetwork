@@ -4,6 +4,33 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-06 — v0.107.7 + v0.107.8 live: a want on a non-English LazyLibrarian book asks for the English edition (#719, #737 closed)
+
+- **Why (#719).** After #715 the goodreads sweep refuses a non-English LazyLibrarian book, so Azazel (request `415e4d34`, Spanish
+  volume `PitFPgAACAAJ`) sat `missing` and nothing asked for the English edition. Rule: DESIGN-028 amendment 2026-10-05 (latest),
+  DESIGN-036 and DESIGN-038 amendments, glossary T-282.
+- **v0.107.7** (#726, release #722, haynes-ops #3380, 23:38Z 2026-10-05). `runEnglishEditionPass`, run first in every goodreads-sync
+  run over goodreads, pairing and collection wants: one Google Books lookup by the want's own title and author (`langRestrict=en`,
+  no ISBN leg), refused unless the hit is positively English and passes the title / omnibus / volume / author guards and #693's
+  Volume Check. Found: the want switches (`switchRequestToEnglishEdition`) and the usual push takes it; none: parked
+  `no_english_edition`, never pushed. One lookup per request per quota-day (`english_edition_tried_at`, migration 0091), inside the
+  `goodreads` slice, behind the breaker, 10 a run. The goodreads push and the collection force-search never queue a foreign book.
+- **First live run (07:41Z) found a bug.** Google Books answers the structured `intitle:`/`inauthor:` query for Azazel with no hit;
+  nine wants were parked, Azazel wrongly (eight were pairing wants with a foreign library title, rightly parked).
+  **v0.107.8** (#748, release #729, haynes-ops #3425, ~08:25Z): the lookup also tries the plain words; a park waits seven
+  quota-days; migration 0092 cleared the stamps on the non-pairing parks.
+- **Verified.** Pods 3/3 on v0.107.8, no error lines in Loki (`frontend`, 3 h). 08:41Z goodreads-sync: `englishEditions`
+  `{due 3, looked 3, switched 2, parked 1}`. **Azazel `415e4d34`: `ll_book_id` `YUdaAAAAMAAJ` (English), `wanted`/`wanted`,
+  pushed that run.** Other requests changed across both runs: 3 pairing wants switched (Wild Cards VI, Smythe-Smith Quartet,
+  and the 07:41Z one) and 9 pairing wants parked `no_english_edition` (foreign library titles such as De Silmarillion). No
+  collection want was due.
+- **Cadence (#737).** The goodreads budget slice (200) is spent by the shelf enrichment by evening, so the pass looks things up in
+  the first goodreads run after the 07:00Z quota roll (it runs before the enrichment, 10 a run) and is deferred (logged, nothing
+  stamped) for the rest of the day. A request that needs an English edition mid-day waits for 07:41Z. Accepted for now; a reserved
+  slice for the pass is the alternative if that proves too slow.
+- **Open.** The wall does not show the park reason (a parked goodreads want reads `missing` with no Search again): a user-visible
+  copy and layout call for Opus. The pairing Azazel want (`734b8c3c`) stays parked `foreign_language` on its foreign anchor.
+
 ## ▶ 2026-10-06 — Adversarial review of the books rollout (issue #731) is written; thirteen defects filed
 
 - **Report:** `.agents/context/2026-10-06-books-rollout-adversarial-review.md` (read-only review of v0.105.2 to v0.107.7 and
@@ -14,7 +41,7 @@
   slice on unmintables), #741 (no audit trail for derived writes), #742 (e2e as a gate), #743 (owed-check tracker), #744
   (F10 census); haynes-ops #3402 (overlay tests), #3403 (CPU rule and limit).
 - **Owed checks due after the 2026-10-06 04:54Z backlog run and 09:10Z scan:** (k), (l), (n), (o), (p), (j) in the blocks
-  below; plus the first 07:41Z goodreads-sync must show `englishEditions.looked` above zero (#737). Discharge them before the
+  below; plus the first 07:41Z goodreads-sync showed `englishEditions.looked` 10 (#737, discharged in the block above). Discharge them before the
   next feature release.
 
 ## ▶ 2026-10-05 — v0.107.6 live: a landed format stays truthful (#715, closed)
