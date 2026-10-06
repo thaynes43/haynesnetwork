@@ -4,6 +4,44 @@
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
 
+## ▶ 2026-10-06 — LazyLibrarian blocks match any spelling, and a foreign-tagged release loses the match for an English book (#755 closed, haynes-ops #3432)
+
+- **Cause (#755).** `blacklist_failed` matches a `Failed` row only by exact `NZBtitle` or exact URL. The post-processor renames
+  the row to SABnzbd's job name (dots to spaces, `.par2.` dropped), and the F10 block rows copied that name. Prowlarr encrypts
+  its download link anew per search, so the URL never matches, and no GUID is stored. No release-name language tag was read
+  (only `REJECT_WORDS`' German words).
+- **Fix, live 11:2xZ** (`resultlist.py` overlay; `verify-deployed.sh`: 7 sha ok, imports ok, 0 tracebacks):
+  - A `Failed` row of the same provider and format blocks its release under any spelling (case, and runs of dots,
+    underscores and spaces, ignored), for its stored title and for the title in its link's `file` parameter.
+  - A release with an explicit language tag (`DANiSH.RETAiL`, `WEB-SE-`, `2MP3CD-DE-`, `[GER / EPUB]`, `[French]`, `EB-NL`)
+    loses 50 points when the book's `BookLang` is English, unless the word is in the book's own title or author.
+- **Replays.** Language: 3,989 Processed/Snatched/Seeding rows, 24 moved, all tagged Swedish, Danish, German or French
+  (content foreign wherever the file could be read), none English. Blocks over the `wanted` history: about 940 more re-grabs
+  of an already failed release are blocked (each had failed again), plus 18 that had first failed for a passing reason (not
+  sent, stalled, SABnzbd duplicate) and later succeeded. That is upstream's own `BLACKLIST_FAILED` rule.
+- **Block audit.** All 18 hand-written block rows (July F10 98, 112, 120, 125, 131, 132; 9460, 9539, 9548, 9549, 9552 to
+  9558) now match the release they were written for (its link's `file` title, the indexer's spelling). Before, 7 never
+  matched: 120, 9549, 9553 to 9557.
+- **Correction to owed check (p):** `WEB-SE` in the CRAViNGS audiobook names is the MP3-scene language code (Swedish), not a
+  store region; every such grab in the history is Swedish. Rowid 9589 (Queen Charlotte audio, 05:20Z) re-imported the
+  Swedish mp3 the F10 sweep held (same md5; the sweep wrote no block for it, that copy had no `wanted` row). 9588 (Murtagh,
+  `WEB-SE`, failed unpack) was a Swedish grab too.
+- **Leaks held** (`.agents/context/ll-library-audit/f10_755_fix.py`; LL backup `/config/lazylibrarian.db.pre-f10-755-20261006`):
+  under `quarantine/crossvolume-2026-10-05/f10-755/` (manifest + sort, `foreign_f10`, so check (m) purges them): the Queen
+  Charlotte audio folder (5 files) and the Artemis Fowl and the Atlantis Complex eBook folder (3 files; Swedish epub
+  "Atlantissyndromet", OPF `sv`, linked since 07-21). LL `CQh5EAAAQBAJ` audio and `mNzNCHhqFwcC` eBook blanked and re-wanted
+  (`queueBook`); their grabs are blocked by `Failed` rows 9594 (from 9589) and 9595 (from 1989). Audiobookshelf item `f7737af7`
+  (Queen Charlotte, no progress) deleted, DB only (Job `hnet-755-abs-remove-qc`); books-sync Job `hnet-755-books-sync-1`
+  tombstoned 1. Kavita had no series for the epub.
+- **Direct LL DB writes, recorded per #741:** the two blanks and the two `Failed` rows above.
+- **Hand re-wants:** `llOrphanWanted` may read up to 8 (the six below plus Queen Charlotte audio and the Atlantis Complex eBook).
+- **Seen, not changed:** rowid 9587 Divergent audio (`Veronica.Roth.The.Divergent`) completed in SABnzbd as the English
+  trilogy (three subfolders) and still reads `Snatched`; the post-processor has not imported it.
+- **Owed check (q), after the 2026-10-07 ~04:54Z backlog run** (LL DB `mode=ro`): for every `wanted` row with rowid > 9595 on a
+  book whose `BookLang` is `en`, `lazylibrarian.resultlist.names_language(NZBtitle, BookName, BookSub, AuthorName)` is None;
+  no such row's `(NZBprov, AuxInfo, release_key(NZBtitle))` equals that of an earlier `Failed` row; and the Israel Potter,
+  Queen Charlotte audio and Atlantis Complex eBook grabs, if any, are English.
+
 ## ▶ 2026-10-06 — v0.107.9 live: a failed grab stops reading `grabbed`, and LazyLibrarian unqueues what the app gives up (#734, #735 closed)
 
 - **Why.** The adversarial review (#731) found 53 of 59 `grabbed` formats sitting on LazyLibrarian books back at `Wanted`
@@ -87,7 +125,8 @@ LazyLibrarian times are EDT, so its 01:04 to 01:25 rows are the 05:04Z to 05:25Z
   foreign-language grab: LazyLibrarian matched a Danish release to the English record. Passed parts: Dead or Alive
   (`BL6LDQAAQBAJ`) 9591 `Tom Clancy - [Jack Ryan 13] - Dead or Alive (v5.0) (mobi)`, `Processed`, English; Murtagh
   (`FOqzEAAAQBAJ`) audio 9588 `...Murtagh-AUDiOBOOK-WEB-SE-2023-CRAViNGS iNT`, `Failed` (unpack, nothing imported; its sibling Queen Charlotte
-  release of the same group carries an `eng` ID3 comment, so `SE` is not a language tag); blocked rowids 9552 to 9558 were not
+  release of the same group carries an `eng` ID3 comment, so `SE` is not a language tag; **wrong, corrected in the #755 block above:
+  `WEB-SE` is Swedish, and 9589 re-imported the Swedish Queen Charlotte**); blocked rowids 9552 to 9558 were not
   grabbed again (no later row carries those titles).
   Cause: the F10 block row 9549 stores the title with spaces and the grab uses dots, so `blacklist_failed` did not match; tracked in
   #755. Other (p) conditions: every `wanted` row after 9549 is on a record whose `BookLang` is `en` (none foreign or unknown); the BookFile
