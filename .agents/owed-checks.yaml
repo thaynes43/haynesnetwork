@@ -853,7 +853,7 @@ checks:
     not_before: 2026-10-06T19:00:00Z
     due: 2026-10-07T18:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       The 13 releases are drained, and none of the other authors' books still reads Wanted: Paul Luckraft's
       "Anticipating the Afterlife" (hcnj0QEACAAJ), Albert Bermel's "Artaud's Theatre of Cruelty" (ocZGswEACAAJ), Matt
@@ -877,6 +877,8 @@ checks:
                             'CzwELwEACAAJ', 'A2cNEgAAQBAJ') and AudioStatus = 'Wanted')
         expect: {max_rows: 0}
         mismatch: wait
+    evidence:
+      - "2026-10-06 17:45Z: ll_format_releases holds no released:wrong_author row (drained by the 17:32Z format-pairing run); all seven books read Skipped/Skipped in LazyLibrarian (A2cNEgAAQBAJ, CzwELwEACAAJ, FB93PQAACAAJ, ZNTZzQEACAAJ, bcZHDwAAQBAJ, hcnj0QEACAAJ, ocZGswEACAAJ)."
     links:
       issues: ['#771']
       prs: ['#780']
