@@ -1423,6 +1423,12 @@ purge (OC-009) takes them. Kavita (one user, no pages read on the series that lo
 series 1661 (the collection copy) and 291 (*Third Shift*) are gone, series 1221 *Wool* holds only Wool again, and series
 2062 "Shift Omnibus Edition (Shift 1-3) (Silo Saga)" is new. Owed: OC-028 (The Traitor) and OC-029 (Shift).
 
+**First live run** (v0.109.0, 2026-10-06 23:25Z, a manual Job): 1,268 records and 1,550 files in 32 seconds; 24 wrong
+files, 1 missing file, 1 foreign file held, 1 foreign book wanted, no foreign library tag. The Divergent eBook (the four-story
+collection) was repaired at once the #781 way (`fix_census_divergent.py`: re-pointed to the Divergent PDF already in its
+folder, the collection's stray opf held; OC-031). The other 23 wrong files are issue #795, the Italian Crescent City want
+issue #794. Record: `.agents/context/2026-10-06-wrong-file-census.md`.
+
 **Tests:** `packages/domain/__tests__/held-file-check.test.ts` (the #781 files and every flag and false alarm of the first
 live pass: another volume, another work, a collection; a series in front of the record's name; a series index, a
 bracket, a spelling, an edition word; designations; the name side), `packages/sync/__tests__/books-census.test.ts` (the

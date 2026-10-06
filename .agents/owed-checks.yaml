@@ -1050,3 +1050,33 @@ checks:
         mismatch: wait
     links:
       issues: ['#744', '#781']
+  - id: OC-031
+    title: "Books Census: Divergent's LazyLibrarian eBook keeps the Divergent PDF after the library scan"
+    opened: 2026-10-06
+    after: >-
+      The census's first live run found K0UczgEACAAJ holding the Four collection; fix_census_divergent.py (23:26Z)
+      re-pointed it to Veronica Roth/Divergent/Veronica Roth - Divergent.pdf and held the collection folder's opf. The
+      check follows the 2026-10-07 09:10Z library scan and the 10:15Z census.
+    not_before: 2026-10-07T10:30:00Z
+    due: 2026-10-08T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian (mode=ro): K0UczgEACAAJ reads Status Open with BookFile .../EBooks/Veronica Roth/Divergent/Veronica
+      Roth - Divergent.pdf (the scan did not link the collection back), and no wanted row after rowid 9597 names its
+      eBook. The 10:15Z books_census line has no wrong_file finding for K0UczgEACAAJ, and Kavita still shows series 256
+      (the collection) and 530 (Divergent).
+    auto_covers: part
+    auto:
+      - name: the record points at the Divergent PDF
+        source: ll-db
+        query: |
+          select BookFile from books where BookID = 'K0UczgEACAAJ' and Status = 'Open'
+            and BookFile like '%/EBooks/Veronica Roth/Divergent/Veronica Roth - Divergent.pdf'
+        expect: {rows: 1, paths_exist: true}
+      - name: no new grab of Divergent's eBook
+        source: ll-db
+        query: select rowid, NZBtitle from wanted where rowid > 9597 and BookID = 'K0UczgEACAAJ' and AuxInfo = 'eBook'
+        expect: {max_rows: 0}
+    links:
+      issues: ['#795']
