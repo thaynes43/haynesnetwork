@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.107.10](https://github.com/thaynes43/haynesnetwork/compare/v0.107.9...v0.107.10) (2026-10-06)
+
+
+### Bug Fixes
+
+* **books:** a flat-layout Kavita series keeps its author between syncs, so format pairs stop flapping ([#761](https://github.com/thaynes43/haynesnetwork/issues/761)) ([#762](https://github.com/thaynes43/haynesnetwork/issues/762)) ([7d33be8](https://github.com/thaynes43/haynesnetwork/commit/7d33be86d871d19290ac7de157222c8588f27622))
+* **books:** the Volume Check covers the title, unmintable wants back off, a held Skipped format lands ([#739](https://github.com/thaynes43/haynesnetwork/issues/739)) ([#740](https://github.com/thaynes43/haynesnetwork/issues/740)) ([#752](https://github.com/thaynes43/haynesnetwork/issues/752)) ([#760](https://github.com/thaynes43/haynesnetwork/issues/760)) ([218c069](https://github.com/thaynes43/haynesnetwork/commit/218c06984615cda21e85f4e34df988794e047318))
+
+
+### Documentation
+
+* **agents:** [#755](https://github.com/thaynes43/haynesnetwork/issues/755) closed, LazyLibrarian block and language fix live (haynes-ops [#3432](https://github.com/thaynes43/haynesnetwork/issues/3432)) ([#758](https://github.com/thaynes43/haynesnetwork/issues/758)) ([51f99fb](https://github.com/thaynes43/haynesnetwork/commit/51f99fb82fd2a7b6e86d34754b20f2f2af8b4f0f))
+* **agents:** owed checks (k) (l) (n) (o) passed, (p) failed, (j) waiting ([#754](https://github.com/thaynes43/haynesnetwork/issues/754)) ([f4973f3](https://github.com/thaynes43/haynesnetwork/commit/f4973f383e28e6c104b03aa917f7dae377430582))
+* **agents:** v0.107.9 deploy record, [#734](https://github.com/thaynes43/haynesnetwork/issues/734) and [#735](https://github.com/thaynes43/haynesnetwork/issues/735) closed ([#757](https://github.com/thaynes43/haynesnetwork/issues/757)) ([183743d](https://github.com/thaynes43/haynesnetwork/commit/183743d12b2d46523200b11ea76cd3179fa7df10))
+
 ## [0.107.9](https://github.com/thaynes43/haynesnetwork/compare/v0.107.8...v0.107.9) (2026-10-06)
 
 
