@@ -57,4 +57,22 @@ Pass 4 also: `missing_file` 1 (the Catwings audiobook, the known pre-#631 pointe
 The label-only rule went from 3 `foreign_held` to 1 once a book whose other file reads English stopped counting (Grey and
 Living to Tell the Tale: German and Spanish records holding English files).
 
-The live findings, their triage and the repairs are recorded under "First live run" below once the release is deployed.
+
+## First live run (v0.109.0, deployed 23:20Z; manual Job at 23:25Z)
+
+`books_census`: 1,268 records, 981 eBook and 569 audiobook files, 31.7 s, `appDb` ok, `holds` ok (none). `wrongFile` 24,
+`missingFile` 1, `foreignHeld` 1, `foreignWanted` 1, `foreignItems` 0. The findings are the trial's pass 4 exactly.
+
+- **Repaired the same evening: Divergent.** `K0UczgEACAAJ` held the four-story collection (`Four - A Divergent Story
+  Collection/`). `Divergent/Veronica Roth - Divergent.pdf` is Divergent (PDF Info title and author, 381 pages, and its text
+  read with pdftotext in a read-only calibre Job). `.agents/context/ll-library-audit/fix_census_divergent.py` (backup
+  `/config/lazylibrarian.db.pre-census-divergent-20261006`) re-pointed the record to the PDF and held the collection folder's
+  LazyLibrarian opf (it named `K0UczgEACAAJ`, so the library scan would link the collection back). The collection epub stays
+  as the collection's one copy (Kavita series 256). A second census run (23:27Z) read `wrongFile` 23. Owed: OC-031.
+- **Listed for repair: 23 wrong files**, issue #795 (the table is there). Most are another volume or another work; about 15
+  need the right book searched again, which is the owner's call as a bulk re-acquisition.
+- **`foreign_wanted`: Crescent City - La casa di terra e sangue** (`LgDwDwAAQBAJ`, `it`, eBook Wanted for collection want
+  `76848581`): the crescent-city recipe lists the Italian edition as a member; issue #794.
+- **`foreign_held`: Game of Thrones audiobook** (`pyj5oQEACAAJ`, labelled `fr`, album "A Game of Thrones", no language
+  tag): needs a listen; in #795.
+- **`missing_file`: the Catwings audiobook** (`QGPZEAAAQBAJ`), the known pre-#631 pointer; in #795.
