@@ -684,7 +684,7 @@ checks:
     not_before: 2026-10-06T16:00:00Z
     due: 2026-10-08T12:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       The six collection wants that read Downloaded since the 15:27Z collections sync (Four: The Transfer, Four: The
       Son, Four: The Traitor, We Can Be Mended, Eragon, Shatter Me) still read their own format `landed`, or are gone
@@ -711,9 +711,10 @@ checks:
         mismatch: fail
     evidence:
       - "2026-10-06 15:44Z: collections sync (manual run of the CronJob) logged downloaded 0, reverted 0; the six read landed."
+      - "2026-10-06 17:27Z: passed, the second way: all six are gone because the library now holds the member. Their books were .mobi/.azw3 and were converted to EPUB (#770, haynes-ops #3445/#3446, 16:50-17:06Z); Kavita indexed them and Libretto lists all six members held, so the 17:27Z collections sync's wants pass removed them (removed 27). No collection_want_download_reverted line since 16:00Z. Nothing is left to flap."
     links:
       issues: ['#759', '#770']
-      prs: ['#769', '#773', 'thaynes43/libretto#21', 'thaynes43/libretto#22', 'haynes-ops #3440', 'haynes-ops #3442', 'haynes-ops #3444']
+      prs: ['haynes-ops #3445', 'haynes-ops #3446', '#769', '#773', 'thaynes43/libretto#21', 'thaynes43/libretto#22', 'haynes-ops #3440', 'haynes-ops #3442', 'haynes-ops #3444']
   - id: OC-022
     title: Every hourly collections sync reads each collection's own missing list without skipping one
     opened: 2026-10-06
@@ -748,3 +749,50 @@ checks:
     links:
       issues: ['#759']
       prs: ['#769']
+  - id: OC-023
+    title: The EPUB converter converts the first newly imported .mobi/.azw3 book on its own, and Kavita shows it
+    opened: 2026-10-06
+    after: >-
+      the first LazyLibrarian import of a book held only as .mobi or .azw3 after the converter went live (haynes-ops
+      #3445 + #3446, backlog done 2026-10-06 17:06Z); no known time, so `due` is a review date
+    not_before: 2026-10-06T17:30:00Z
+    due: 2026-10-20T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      A scheduled run of CronJob downloads/lazylibrarian-epub-convert (hourly :20) logs an `epub_convert` line with
+      result `converted` for a book imported after not_before, and every `epub_convert_census` since reads
+      "unconverted":0. By hand, for that line's folder: the EPUB sits beside the original under its basename; Kavita
+      (Books library) lists the file; LazyLibrarian's BookFile for the book ends in .epub after the next 09:10Z library
+      scan; any app want on that LazyLibrarian book has its ebook in the library (a collection want is deleted by the
+      next collections sync). If a run logs `epub_convert` with another result, read its detail and books/.epub-convert/
+      held.tsv (DESIGN-028 amendment "EPUB conversion").
+    auto_covers: part
+    auto:
+      - name: a scheduled run converted a new book
+        source: loki
+        query: |
+          sum(count_over_time({namespace="downloads", container="epub-convert", pod=~"lazylibrarian-epub-convert-.*"} |= "\"msg\":\"epub_convert\"" | json result | result="converted" [$SINCE]))
+        expect: {min: 1}
+        mismatch: wait
+      - name: no run left a book unconverted
+        source: loki
+        query: |
+          sum(count_over_time({namespace="downloads", container="epub-convert", pod=~"lazylibrarian-epub-convert-.*"} |= "\"msg\":\"epub_convert_census\"" | json unconverted | unconverted > 0 [$SINCE]))
+        expect: {max: 0}
+        mismatch: fail
+      - name: the hourly runs keep finishing
+        source: loki
+        query: |
+          sum(count_over_time({namespace="downloads", container="epub-convert", pod=~"lazylibrarian-epub-convert-.*"} |= "\"msg\":\"epub_convert_census\"" [$SINCE]))
+        expect: {min: 1}
+        mismatch: fail
+      - name: every LazyLibrarian epub BookFile exists
+        source: ll-db
+        query: |
+          select BookFile from books where lower(BookFile) like '%.epub'
+        expect: {paths_exist: true}
+        mismatch: fail
+    links:
+      issues: ['#770']
+      prs: ['haynes-ops #3445', 'haynes-ops #3446']
