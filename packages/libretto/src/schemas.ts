@@ -321,11 +321,22 @@ export const librettoRecipeDraftSchema = z.object({
     ]),
   }),
   targetLibrary: z.unknown().optional(),
+  // ADR-076 multi-target: the canonical shape a recipe is READ back in. A read recipe re-PUT by the find-missing toggle
+  // carries its targets through unchanged (Libretto's PUT replaces the whole file, and rejects a recipe with none).
+  targets: z
+    .array(z.object({ server: z.enum(['kavita', 'abs']), libraryId: z.string().min(1) }))
+    .min(1)
+    .optional(),
+  category: z.string().min(1).optional(),
   variables: z
     .object({
       syncMode: z.enum(['append', 'sync']).optional(),
       ordered: z.boolean().optional(),
       acquisitionEnabled: z.boolean().optional(),
+      // DESIGN-037 D-04: the title fallback switch and the member title aliases (issue #777). The app never edits
+      // them; it carries them through every re-PUT so a toggle or an edit never drops what a person set in Libretto.
+      titleFallback: z.boolean().optional(),
+      titleAliases: z.record(z.string().min(1), z.array(z.string().min(1)).min(1)).optional(),
       tag: z.string().optional(),
       schedule: z.string().optional(),
     })

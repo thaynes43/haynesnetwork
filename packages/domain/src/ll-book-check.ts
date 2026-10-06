@@ -13,6 +13,8 @@
 //     name ("Mistborn: Secret History" ⇄ "Mistborn: The Final Empire"). A book whose title only drops the want's
 //     decoration or subtitle ("Caliban's War: The Expanse, Book 2" ⇄ "Caliban's War", "Picasso: A Biography" ⇄
 //     "Picasso") is still the want's book.
+//   • `llBookAuthorMismatch` — the Author Check (issue #771): LazyLibrarian credits the book to another author than the
+//     want's. Titles alone cannot see it ("Gray Dawn" ⇄ Stewart Edward White's "The Gray Dawn").
 //   • `llBookNamesTitle` — STRICT, for a want whose identity CHANGED since its id was resolved (its anchor was renamed
 //     or turned out to hold another book). The old id was resolved for the old title, so it is kept only when the book
 //     LazyLibrarian holds is named exactly like the new identity, decoration aside.
@@ -297,6 +299,47 @@ export function llBookMismatch(
     return null;
   }
   return [...held].every((w) => seriesWords.has(w)) ? 'volume' : 'work';
+}
+
+/** Name parts that say nothing about who wrote a book. */
+const NAME_NOISE = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'dr', 'mr', 'mrs', 'ms', 'sir', 'dame', 'phd', 'md']);
+
+/** The parts of an author's name that can agree with another credit: two letters or more, no title or suffix. */
+const nameTokens = (name: string): string[] =>
+  words(name).filter((w) => w.length >= 2 && !NAME_NOISE.has(w));
+
+/**
+ * Issue #771 (DESIGN-028 amendment 2026-10-06, glossary T-286) — the Author Check: does LazyLibrarian credit the want's
+ * book to another author? True only when both name an author and no credit of the want's (a comma, semicolon, "&" or
+ * "and" list) has LazyLibrarian's `AuthorName`'s surname (its last name part, a title or suffix aside), nor does either
+ * surname appear run together in the other ("Le Guin" and "LeGuin"). A shared first name is no agreement ("Rick
+ * Riordan" and "Rick Harrison"). "Gray Dawn" (Walter Mosley) on Stewart Edward White's "The Gray Dawn" is another
+ * work; "J.R.R. Tolkien" and "J. R. R. Tolkien", or "Hunters of Dune" by Brian Herbert in Frank Herbert's series, are
+ * not. No author on either side decides nothing, so a want whose member carries none is never judged by it. Pure.
+ */
+export function llBookAuthorMismatch(
+  wantAuthor: string | null | undefined,
+  book: LlBookNaming | null | undefined,
+): boolean {
+  const theirs = book?.author?.trim();
+  if (!wantAuthor?.trim() || !theirs) return false;
+  const credits = wantAuthor
+    .split(/\s*(?:[,;&]|\band\b)\s*/i)
+    .map((c) => c.trim())
+    .filter((c) => nameTokens(c).length > 0);
+  if (credits.length === 0 || nameTokens(theirs).length === 0) return false;
+  const squash = (name: string): string => nameTokens(name).join('');
+  const surname = (name: string): string => nameTokens(name).at(-1) ?? '';
+  const theirSurname = surname(theirs);
+  const agrees = (credit: string): boolean => {
+    const ours = surname(credit);
+    return (
+      ours === theirSurname ||
+      (ours.length >= 4 && squash(theirs).includes(ours)) ||
+      (theirSurname.length >= 4 && squash(credit).includes(theirSurname))
+    );
+  };
+  return !credits.some(agrees);
 }
 
 const NOISE_WORDS = new Set(['a', 'an', 'the', 'novel', 'unabridged', 'abridged', 'edition']);
