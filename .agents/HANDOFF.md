@@ -47,6 +47,10 @@ LazyLibrarian times are EDT, so its 01:04 to 01:25 rows are the 05:04Z to 05:25Z
   (`FOqzEAAAQBAJ`) audio 9588 `...Murtagh-AUDiOBOOK-WEB-SE-2023-CRAViNGS iNT`, `Failed` (unpack, nothing imported; its sibling Queen Charlotte
   release of the same group carries an `eng` ID3 comment, so `SE` is not a language tag); blocked rowids 9552 to 9558 were not
   grabbed again (no later row carries those titles).
+  Cause: the F10 block row 9549 stores the title with spaces and the grab uses dots, so `blacklist_failed` did not match; tracked in
+  #755. Other (p) conditions: every `wanted` row after 9549 is on a record whose `BookLang` is `en` (none foreign or unknown); the BookFile
+  and AudioFile link check read 1,530 pointers with one missing, the known Catwings row; "the final sweep's eight re-wanted records" cannot be
+  checked because HANDOFF never lists the eight (the F10 block names only Dead or Alive and Israel Potter), so that clause is unchecked.
   Not fixed here. Camino Island (`a9dLDwAAQBAJ`) re-grabbed the same failed release (9551, then 9585, `Failed` twice); it sits outside the
   9552 to 9558 block.
 - **(j) still waiting.** Pairing and collection requests with a `missing` format and no re-add yet (`ll_rerequested_at IS NULL AND
