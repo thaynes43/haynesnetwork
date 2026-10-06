@@ -542,7 +542,11 @@ async function loadExistingKavitaEnrichment(
         publisher: r.publisher,
         language,
         year: r.year,
-        writers: [],
+        // Issue #761 — the stored author is the writers fallback a carried-forward run rebuilds the row with. A
+        // flat-layout series (no author folder) gets its author only from the metadata writers, so `[]` here wrote it
+        // back as null on every carried-forward run; the next run re-fetched it, and the pairs of those series flapped
+        // hourly. The folder-derived author stays primary, and the rolling refresh still re-reads the writers.
+        writers: r.author && r.author.trim() !== '' ? [r.author] : [],
       },
       // Issue #661 — carry the held books forward; undefined (never read) makes the run read them once.
       heldBooks: readHeldBooks(r.attrs as Record<string, unknown> | null),

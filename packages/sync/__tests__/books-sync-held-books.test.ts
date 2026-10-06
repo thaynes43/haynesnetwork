@@ -147,3 +147,45 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
     expect(after!.summary).toBe('Kept');
   });
 });
+
+describe('runSync --mode=books-sync — a flat-layout author survives a carried-forward run (issue #761)', () => {
+  it('keeps the writers-derived author when the series is unchanged, and does not re-fetch it', async () => {
+    const series = {
+      ...flatSeries,
+      id: 761,
+      name: 'Wool',
+      folderPath: '/data/EBooks/Wool',
+      lowestFolderPath: '/data/EBooks/Wool',
+    } as unknown as KavitaSeries;
+    const bundle = () => {
+      const metadataCalls: string[] = [];
+      const b = {
+        ...stubBundle().bundle,
+        kavita: {
+          listLibraries: async () => [{ id: 1, name: 'Books', type: 2 }],
+          listSeriesPage: async () => ({ items: [series], total: 1, hasAuthoritativeTotal: true }),
+          getSeriesMetadata: async (id: string) => {
+            metadataCalls.push(id);
+            return { summary: 'A silo.', genres: [], publishers: [], writers: [{ name: 'Hugh Howey' }], language: 'en', releaseYear: 2011 };
+          },
+          listSeriesVolumes: async () => [{ name: '1', chapters: [{ title: '-100000', titleName: 'Wool', isbn: '', writers: [] }] }],
+        },
+      } as unknown as BooksSyncBundle;
+      return { b, metadataCalls };
+    };
+    const authorOf = async () => (await t.db.select().from(booksItems).where(eq(booksItems.externalId, '761')))[0]!.author;
+
+    const first = bundle();
+    await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db, books: first.b });
+    expect(first.metadataCalls).toEqual(['761']);
+    expect(await authorOf()).toBe('Hugh Howey');
+
+    // Two more runs over the unchanged series: the enrichment is carried forward (no metadata call) and the author stays.
+    for (let i = 0; i < 2; i += 1) {
+      const next = bundle();
+      await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db, books: next.b });
+      expect(next.metadataCalls).toEqual([]);
+      expect(await authorOf()).toBe('Hugh Howey');
+    }
+  });
+});

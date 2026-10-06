@@ -1,7 +1,8 @@
 # DESIGN-024: Books & Audiobooks Library — the `books_items` ledger, `books-sync`, section-gated walls + cover proxy
 
 - **Status:** Draft
-- **Last updated:** 2026-10-05 (D-03 amendment, issue #712: Kavita metadata edits reach the mirror via a bounded
+- **Last updated:** 2026-10-06 (D-03 amendment, issue #761: a carried-forward run keeps a flat-layout series'
+  writers author, so its format pairs stop flapping). Prior: 2026-10-05 (D-03 amendment, issue #712: Kavita metadata edits reach the mirror via a bounded
   rolling re-read). Prior: 2026-10-04 (D-03 amendment, issue #661: the books-sync reads each Kavita book
   series' held books from `/api/Series/volumes` into `attrs.heldBooks`). Prior: 2026-07-21 (**Kavita metadata-writers author fallback** — the live pairing-gap
   diagnosis found 54 null-author ebook rows whose WRITERS sit in Kavita all along: the mirror's
@@ -165,6 +166,16 @@ fallback) while its held books carry forward; it used to be left out of the map,
 its volumes every run too. The dev:local/e2e stub Kavita answers the call (one book per series). No migration
 (`attrs` is the existing jsonb catch-all). Unit-proven in the same test file (the reduce, read-new,
 carry-forward, backfill, failure, comics) and end to end through `runSync` in `books-sync-held-books.test.ts`.
+
+> **Amendment 2026-10-06 (issue #761 — a carried-forward run keeps the writers author).** The change gate rebuilt an
+> unchanged Kavita series' enrichment from the stored row with an empty `writers` list, so a flat-layout series (no
+> author folder, its author from the metadata writers) was written back with a null author on every carried-forward
+> run; the next run saw an authorless row and re-fetched it. About 35 series alternated hourly, and because the pair
+> matcher skips a book with no author, their format pairs dropped and came back every run (`paired` 712 then 715,
+> each `revived` re-pushing a landed pairing want). `loadExistingKavitaEnrichment` now carries the stored author as the
+> writers fallback. The folder-derived author stays primary, and the rolling refresh (issue #712) still re-reads the
+> writers, so an author edited in Kavita lands within its window. Tested end to end in `books-sync-held-books.test.ts`
+> (three runs over an unchanged flat-layout series: one metadata call, the author stays).
 
 ## D-04 — The Books read contract (`books.search` / `books.filterFacets`)
 
