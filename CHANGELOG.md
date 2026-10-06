@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.107.9](https://github.com/thaynes43/haynesnetwork/compare/v0.107.8...v0.107.9) (2026-10-06)
+
+
+### Bug Fixes
+
+* **books:** a failed grab stops reading grabbed, and LazyLibrarian unqueues what the app gives up ([#734](https://github.com/thaynes43/haynesnetwork/issues/734)) ([#735](https://github.com/thaynes43/haynesnetwork/issues/735)) ([#751](https://github.com/thaynes43/haynesnetwork/issues/751)) ([494c42d](https://github.com/thaynes43/haynesnetwork/commit/494c42dc6f7a30c02686ffd738bd1c96e1819c1f))
+
+
+### Documentation
+
+* **agents:** LazyLibrarian overlay harness live, [#738](https://github.com/thaynes43/haynesnetwork/issues/738) and [#736](https://github.com/thaynes43/haynesnetwork/issues/736) closed ([#753](https://github.com/thaynes43/haynesnetwork/issues/753)) ([27bd034](https://github.com/thaynes43/haynesnetwork/commit/27bd034a097c0b5073ff8f20bef6699f6fd4fa17))
+* **agents:** v0.107.7 + v0.107.8 deploy record, [#719](https://github.com/thaynes43/haynesnetwork/issues/719) and [#737](https://github.com/thaynes43/haynesnetwork/issues/737) closed ([#749](https://github.com/thaynes43/haynesnetwork/issues/749)) ([98b6716](https://github.com/thaynes43/haynesnetwork/commit/98b671662da1112900e7bea87eb89857ce5e022d))
+
 ## [0.107.8](https://github.com/thaynes43/haynesnetwork/compare/v0.107.7...v0.107.8) (2026-10-06)
 
 
