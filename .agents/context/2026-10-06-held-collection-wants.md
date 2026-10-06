@@ -59,3 +59,15 @@ wants are deleted.
   and never searches, so they stay `requested` until parked. The Volume Check only names 4 of them (Compulsory and the
   three epilogues), which the capped cron force-search parks when it reaches them; Gray Dawn, Shift and Four: The
   Traitor share their words with the wrong book: issue #771.
+
+## Resolved later the same day (issues #771, #777)
+
+- **#771.** The 7 "another work" wants were two problems. Gray Dawn and Shift (and 11 more, found once each member's
+  Hardcover author was known) sat on another author's book; the Author Check releases them and the member is resolved
+  again with its author (DESIGN-028 amendment, v0.108.2). Compulsory was another author's too. The three Bridgerton
+  2nd Epilogues are their own author's novels: the Volume Check parks them when reached. Four: The Traitor is its own
+  book with the wrong file: issue #781.
+- **#777.** The 7 "title that differs in words" rows are held through member title aliases written in their recipes
+  (Libretto sha-2e77f28, DESIGN-037 D-04 amendment); The Last Hero also had its wrong "(Graphic Novel)" chapter title
+  corrected in Kavita, which Libretto reads once its cache refreshes (thaynes43/libretto#25).
+
