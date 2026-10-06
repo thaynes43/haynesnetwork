@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.107.8](https://github.com/thaynes43/haynesnetwork/compare/v0.107.7...v0.107.8) (2026-10-06)
+
+
+### Bug Fixes
+
+* **agents:** hold the two corrupt azw3/mobi files ([#728](https://github.com/thaynes43/haynesnetwork/issues/728)) ([efacdde](https://github.com/thaynes43/haynesnetwork/commit/efacddee5d297cf77214538e7a3394133bb44ee5))
+* **books:** the English-edition lookup also tries the plain words ([#719](https://github.com/thaynes43/haynesnetwork/issues/719)) ([#748](https://github.com/thaynes43/haynesnetwork/issues/748)) ([4896c62](https://github.com/thaynes43/haynesnetwork/commit/4896c62ef124c7e8c5f68122906a8254e2a7f412))
+
+
+### Documentation
+
+* **agents:** adversarial review of the books rollout ([#731](https://github.com/thaynes43/haynesnetwork/issues/731)) ([#746](https://github.com/thaynes43/haynesnetwork/issues/746)) ([3bc4777](https://github.com/thaynes43/haynesnetwork/commit/3bc4777f4bf83c1b812f469c675fdb3483eb4af0))
+* **ops:** record Moses and Rose Red unmonitored in OPS-018 ([#747](https://github.com/thaynes43/haynesnetwork/issues/747)) ([25f095e](https://github.com/thaynes43/haynesnetwork/commit/25f095e6b34a5834a74f950066b53dd451cd05c9))
+* **ops:** record Radarr TMDB naming hint and Carlos unmonitor in OPS-018 ([#745](https://github.com/thaynes43/haynesnetwork/issues/745)) ([7665a9e](https://github.com/thaynes43/haynesnetwork/commit/7665a9ef9cff6d1cc32ed6d3bd295e9674b996f2))
+
 ## [0.107.7](https://github.com/thaynes43/haynesnetwork/compare/v0.107.6...v0.107.7) (2026-10-05)
 
 
