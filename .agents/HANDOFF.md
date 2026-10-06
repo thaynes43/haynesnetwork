@@ -8,6 +8,37 @@
 > check that was pending in the blocks below, (b) to (v) plus the v0.107.5 "6 minted", is a row there (OC-001 to
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
+## ▶ 2026-10-06 — v0.108.0 live: owed checks are dated, owned rows with a read-only runner and an overdue alert (#743 closed)
+
+- **Why.** #743 (adversarial review #731, W-08 / R-04): owed post-deploy checks were lettered HANDOFF prose with no due
+  time, no owner and nothing that fired when one was missed. Design: DESIGN-053.
+- **What.** `.agents/owed-checks.yaml` (one row per check: `OC-NNN`, UTC `due`, `owner`, `status`, the exact check,
+  optional read-only `auto` checks, `evidence`). Runner: CronJob `downloads/owed-checks` (hourly :50, app image,
+  `tsx /sync/src/scripts/owed-checks.ts`; Postgres via `postgres16-ro` in a read-only session, LazyLibrarian SQLite
+  `mode=ro`, books NFS read-only, Loki/Prometheus GETs). Alerts (warning, route to `null`): `OwedCheckOverdue`,
+  `OwedCheckFailing`, `OwedChecksRunnerSilent`. The visible signal: the GitHub Action `owed-checks.yml` keeps one
+  `owed-checks` issue listing overdue rows. KICKOFF and OPS-004 carry the hook: **a deploy record adds rows, a result
+  is recorded in the row; at session start read the `owed-checks` issue and the rows due within a day.**
+- **Shipped.** v0.108.0 (#768, release #767, haynes-ops #3441, live ~14:47Z, no migration; the runner's CronJob tag is
+  bumped with `&mainImage` from now on, OPS-004 section 2).
+- **Migrated** (letter → row): (b) OC-001, (d) OC-002, (e) OC-003, (h) recheck OC-004, (i) OC-005, (j) OC-006,
+  (k) OC-007 passed, (l) OC-008 passed, (m) OC-009, (n) OC-010 passed, (o) OC-011 passed, (p) OC-012 failed (#755,
+  follow-up OC-013), (q) OC-013, (r) OC-014, (s) OC-015, (t) OC-016, (u) OC-017, (v) OC-018, v0.107.5 "6 minted"
+  OC-019, (l) recheck OC-020. 20 rows: 15 pending, 4 passed, 1 failed.
+- **Verified.**
+  - Every SQL check run read-only against production first; every Loki query shape run through Grafana.
+  - First passes of the deployed runner (14:47Z manual, 14:50Z scheduled): 7 rows evaluated, all `wait` (none `fail`
+    or `error`), 6 `not_yet`, 2 manual, 0 overdue. The re-add drain (OC-006) reads pairing 482, collection 6.
+  - Alert path, with a dummy row OC-999 (overdue, one deliberately failing check) on a throwaway branch: a one-off Job
+    pointed at that branch fired `OwedCheckOverdue{id="OC-999"}` and `OwedCheckFailing{id="OC-999"}` in Alertmanager
+    (receiver `null`, 14:50Z); the Action opened #774 for it and closed #774 once the row was removed. Branch, Jobs and
+    worktrees deleted; main never carried the row.
+  - Expect stale warnings to clear by themselves: two pre-deploy test Jobs had no database secret and logged `error`
+    for every app-db check (~14:13Z), so `OwedCheckFailing` lists those checks until about 15:30Z; OC-999's two
+    alerts clear about 16:05Z.
+- **Next due** (all 2026-10-07): OC-013 (q) by hand after the 04:54Z backlog run (script in its row); OC-014 (r) runs
+  itself from 07:45Z; OC-017 (u) and OC-020 (l recheck) after the 09:10Z scan; OC-018 (v) from 13:45Z; all due 18:00Z.
+
 ## ▶ 2026-10-06 — v0.107.10 + v0.107.11 live: the Volume Check covers the title, unmintable wants back off, a held `Skipped` format lands, pairs stop flapping (#739, #740, #752, #761 closed)
 
 - **Why.** Review findings L-05 (#739) and L-06 (#740) of the adversarial review (#731), #752 (found while fixing #734/#735),
