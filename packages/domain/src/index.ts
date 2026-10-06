@@ -198,6 +198,9 @@ export * from './collection-wants-sync';
 // ADR-072 / DESIGN-043 D-14 (PLAN-052 PR4c) — the cron FORCE-SEARCH leg for the find-missing knob: the
 // app-side acquisition that drives LazyLibrarian over a find-missing collection's origin='collection' wants.
 export * from './collection-force-search';
+// Issue #759 (DESIGN-028 amendment 2026-10-06) — a collection want LazyLibrarian downloaded that the library cannot
+// show reads Downloaded (its own format `landed`) instead of Wanted.
+export * from './collection-want-downloaded';
 // ADR-065 / DESIGN-036 (PLAN-050 — book ⇄ audiobook pairing) — the conservative matcher, the
 // books_format_pairs single-writer, and the PACED estate-wide system-want mint + run orchestrator
 // (the format-pairing sync mode's body).
