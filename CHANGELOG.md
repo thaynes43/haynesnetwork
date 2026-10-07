@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.4](https://github.com/thaynes43/haynesnetwork/compare/v0.109.3...v0.109.4) (2026-10-07)
+
+
+### Documentation
+
+* **agents:** [#799](https://github.com/thaynes43/haynesnetwork/issues/799) and the Audiobookshelf cleanup shipped (v0.109.3) ([#808](https://github.com/thaynes43/haynesnetwork/issues/808)) ([edef6aa](https://github.com/thaynes43/haynesnetwork/commit/edef6aa0101eee9010e59649da6be95117fe9372))
+
 ## [0.109.3](https://github.com/thaynes43/haynesnetwork/compare/v0.109.2...v0.109.3) (2026-10-07)
 
 
