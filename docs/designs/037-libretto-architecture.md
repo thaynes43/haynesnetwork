@@ -14,6 +14,9 @@
   `hardcover_series` members carry their authors; D-09's acquisition is author-guarded. **AMENDED 2026-10-06
   (thaynes43/libretto#25, #26):** D-04's Kavita series detail refreshes after a scan and within 12 hours; D-09's
   acquisition never queues a book in a language not acquired (English here) or a format LazyLibrarian already holds.
+  **AMENDED 2026-10-07 (issue #794; thaynes43/libretto#30, owner ruling "Member, never fetched"):** D-05's
+  `hardcover_series` lists leave out unmerged duplicates and other-language books, and their other unnumbered books stay
+  collection members but are never reported missing or acquired.
 - **Satisfies:** the PLAN-043 saga phase "Books collection-manager app" (owner rulings
   2026-07-16, recorded in `.agents/plans/043-integration-tab-saga.md` and restated in
   PLAN-054); governed by **ADR-064** (mirrored-only doctrine — external software is always the
@@ -295,6 +298,46 @@ so the app's want carries an author and its resolve runs author-guarded. They gu
 guard the library match (D-04): a library's own author data is too uneven to veto with (Kavita filed the anthology *The
 End is Nigh* under "Veronica Roth (1)"), so no collection changes. Cache key `hardcover:series-works:v5`. Libretto PR
 https://github.com/thaynes43/libretto/pull/24.
+
+**AMENDED 2026-10-07 (issue #794, unmerged duplicates and other-language books leave a series list).** Hardcover keeps
+some editions as books of their own that it never merged (`canonical_id` unset) and lists them in the series with no
+position: the Crescent City series listed "Crescent City - La casa di terra e sangue", so the app wanted it and
+LazyLibrarian queued the Italian edition. A `hardcover_series` list now leaves two kinds of book out entirely
+(`leftOutSeriesBooks`): an unnumbered book whose title, as is or without its series decoration, is the title of a
+numbered book or of one of that book's editions (a numbered book is never left out this way), and a book Hardcover knows
+only in a language `LIBRETTO_ACQUISITION_LANGUAGES` does not allow (every edition with an identifier names such a
+language, and the book's own title is one of those editions' titles; an unknown language passes). On the 48 live series
+recipes this left out four books. The editions query reads each edition's title and language, and the cache key moves to
+`hardcover:series-works:v6`, which includes the language list. Libretto PR https://github.com/thaynes43/libretto/pull/29.
+
+**AMENDED 2026-10-07 (https://github.com/thaynes43/libretto/issues/30, owner ruling "Member, never fetched").** A
+`hardcover_series` list keeps one book with no series position per series: the query's `distinct_on: position` folds
+every unnumbered book into one, the most read. Of the 48 live series recipes, 25 carried one, and most are companions
+rather than books of the series: a coloring book, a guide, a pocket companion, a cookbook. Unheld, each read missing, so
+the app minted a collection want for it and asked LazyLibrarian (the A Court of Thorns and Roses and Throne of Glass
+coloring books, The Kane Chronicles Survival Guide, the Stormlight Archive pocket companion, The Great Redwall Feast).
+The ruling treats every unnumbered book the way compilation editions are treated
+(https://github.com/thaynes43/libretto/issues/18, a box set or omnibus beside the books it holds):
+
+- A held unnumbered book matches and stays in the collection.
+- An unheld one is never in `missing[]`, the missing counts or acquisition. The missing endpoint reports it apart, in
+  `unnumbered[]` (each `unnumbered: true`) with `unnumberedCount`, top level and per target; the preview flags it.
+- The ruling covers the real unnumbered reads too (Harry Potter and the Cursed Child, Hunters of Dune, Book of Nails, A
+  Fire Within The Ways, Dead but Not Forgotten). The owner accepted that.
+- A series list with no numbered member keeps its books wanted, and an unnumbered compilation stays a compilation.
+- The builder's two drops in the amendment above are unchanged: an unnumbered duplicate of a numbered book, and a book
+  Hardcover knows only in another language, both leave the list entirely.
+
+A work is unnumbered when it names its series and has no position, which the series works already carried, so the
+cache key stays `hardcover:series-works:v6`. The app needs no change: its hourly collection wants pass deletes a want
+whose member left the missing list (DESIGN-038 D-13), and that delete records the LazyLibrarian Release, which unqueues
+the format the app had queued for the want once nothing else asks for it (DESIGN-028, issue #735). Live on
+sha-e04dc83 (2026-10-07): none of the 48 series recipes lists an unnumbered book as missing on any target, the next
+collection wants pass removed the 19 wants these books held, and the next format-pairing run unqueued the one format
+LazyLibrarian still had `Wanted` for them (The Great Redwall Feast, audiobook); the rest were not `Wanted` there.
+The audiobook of The Outlandish Companion stays `Wanted`: the app asks for it because the ebook is held (format
+pairing, ADR-075), which this ruling does not cover.
+Libretto PR https://github.com/thaynes43/libretto/pull/31.
 
 ### D-06 — Write targets and per-recipe target mapping
 
