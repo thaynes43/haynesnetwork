@@ -17,4 +17,56 @@
 # A hold that matched nothing in a run is listed in the run's `books_census` line (`unusedHolds`): the finding is gone,
 # so delete the hold.
 version: 1
-holds: []
+holds:
+  - key: wrong_file:vcpmEQAAQBAJ:ebook
+    path: EBooks/Charlaine Harris/Sweet and Deadly/Sweet and Deadly - Charlaine Harris.epub
+    title: Sweet and Deadly (Charlaine Harris)
+    reason: >-
+      The epub is the two-novel omnibus "A Secret Rage & Sweet and Deadly" (OPF dc:title; grab 134), which holds Sweet and
+      Deadly complete. No standalone copy exists. Checked 2026-10-06 by the #795 repair session.
+    opened: 2026-10-06
+    links: ['#795']
+  - key: wrong_file:GCD3PwAACAAJ:audiobook
+    path: AudioBooks/Roald Dahl/Roald Dahls Dirty Beasts/Roald Dahl - Roald Dahls Dirty Beasts Part 01 of 15.mp3
+    title: Roald Dahl's Dirty Beasts (audiobook)
+    reason: >-
+      The recording is "Revolting Rhymes and Dirty Beasts" (album tag, 15 tracks, 0.9 h), which reads Dirty Beasts complete.
+      The folder's second, md5-identical set of the 15 tracks was held as a duplicate (fix_census_795.py). Checked 2026-10-06.
+    opened: 2026-10-06
+    links: ['#795']
+  - key: wrong_file:RVjQAQAAQBAJ:audiobook
+    path: AudioBooks/Dean Koontz/Wilderness/Dean Koontz - Wilderness Part 1 of 2.mp3
+    title: Wilderness (Dean Koontz, audiobook)
+    reason: >-
+      The recording is "Wilderness and Other Stories" (album tag, 2 tracks, 13.5 h; grab 9235), whose title story is the
+      novella Wilderness. Checked 2026-10-06.
+    opened: 2026-10-06
+    links: ['#795']
+  - key: wrong_file:Ai0mAAAACAAJ:ebook
+    path: EBooks/Dean Koontz/Watchers/Dean Koontz - Watchers.pdf
+    title: Dean Koontz (a LazyLibrarian record titled with the author's name)
+    reason: >-
+      The record's title is the author's name (Random House 1995-08, ISBN 0345397037), so no file can match it by name. The
+      PDF is Watchers in its own folder, and no other LazyLibrarian record holds Watchers. Checked 2026-10-06.
+    opened: 2026-10-06
+    links: ['#795']
+  - key: wrong_file:lSybHLQbZ_kC:audiobook
+    path: AudioBooks/Robert Jordan/Towers of Midnight/Robert Jordan - Towers of Midnight (2).mp3
+    title: Distinctions. Prologue to Towers of Midnight (audiobook)
+    reason: >-
+      The recording is Towers of Midnight unabridged (5 files, 38.2 h), whose prologue is "Distinctions". The prologue was never
+      released as a separate audiobook, and LazyLibrarian has no Towers of Midnight record. The eBook was re-pointed to its own
+      file (fix_census_795.py). Checked 2026-10-06.
+    opened: 2026-10-06
+    links: ['#795']
+  - key: foreign_held:pyj5oQEACAAJ:audiobook
+    path: AudioBooks/George R.R. Martin/Game of Thrones/George R.R. Martin - Game of Thrones Part 01 of 75.mp3
+    title: Game of Thrones (audiobook, labelled fr)
+    reason: >-
+      The audio is English: Roy Dotrice's unabridged A Game of Thrones. The 75 parts total 33 h 46 min (the English
+      reading is about 33 h 50 min). The ID3 tags read TALB "A Game of Thrones" and TPE2 "Roy Dotrice", and the track titles
+      are the English chapter names (Prologue, Bran, Catelyn...). Audiobookshelf reads it as English. The fr label, the ISBN
+      2364802709 and the publisher Huginn & Muninn come from a mismatched Google Books record (its opf describes the companion
+      guide), not from the audio. The library also holds a second English copy in A Game of Thrones/. Checked 2026-10-06.
+    opened: 2026-10-06
+    links: ['#795']
