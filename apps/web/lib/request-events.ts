@@ -53,9 +53,10 @@ export const REQUEST_EVENT_REASON_LABEL: Record<BookRequestEventReason, string> 
 };
 
 /**
- * A readable label per recorded field, by column name. Every field `REQUEST_EVENT_FIELDS` (`@hnet/domain`) records has
- * one; `apps/web/lib/__tests__/request-events.test.ts` fails when a recorded field is added without it. Keyed in the
- * order the history lists changes: the want's state first, then its identity.
+ * A readable label per recorded field the History shows, by column name. Every field `REQUEST_EVENT_FIELDS`
+ * (`@hnet/domain`) records is either here or in `REQUEST_EVENT_HIDDEN_FIELDS`, never neither:
+ * `apps/web/lib/__tests__/request-events.test.ts` fails when a recorded field is added to neither. Keyed in the order
+ * the history lists changes: the want's state first, then its identity.
  */
 export const REQUEST_EVENT_FIELD_LABEL: Record<string, string> = {
   ebook_status: 'Ebook',
@@ -77,9 +78,15 @@ export const REQUEST_EVENT_FIELD_LABEL: Record<string, string> = {
   pairing_books_item_id: 'Paired with',
   collection_id: 'Collection',
   collection_member_ref: 'Collection member',
-  integration_id: 'Goodreads link',
-  shelf_item_id: 'Shelf item',
 };
+
+/**
+ * Recorded fields the History does not show: the app's own row ids, which name nothing a person can read or look up
+ * (the Goodreads link and the shelf item behind a goodreads want). They stay in the record; only the screen leaves them
+ * out. (The library item and collection ids are shown, as their titles.)
+ */
+export const REQUEST_EVENT_HIDDEN_FIELDS: readonly string[] = ['integration_id', 'shelf_item_id'];
+const HIDDEN = new Set(REQUEST_EVENT_HIDDEN_FIELDS);
 
 const FIELD_ORDER = Object.keys(REQUEST_EVENT_FIELD_LABEL);
 
@@ -97,8 +104,6 @@ const ID_FIELDS = new Set([
   'wrong_author_ll_book_id',
   'collection_member_ref',
 ]);
-/** The app's own row ids: shown short (the full id is the hover title). */
-const ROW_ID_FIELDS = new Set(['integration_id', 'shelf_item_id']);
 const ITEM_FIELDS = new Set(['matched_books_item_id', 'pairing_books_item_id']);
 
 const ORIGIN_LABEL: Record<string, string> = {
@@ -181,10 +186,20 @@ export interface EventValue {
   href?: string;
   /** An id: monospace, wraps anywhere. */
   mono?: boolean;
-  /** Hover title (the full id behind a short one). */
+  /** Hover title. */
   title?: string;
-  /** An empty value ("None"): muted. */
+  /** An empty value ("Not set"): muted. */
   none?: boolean;
+}
+
+/**
+ * What the History needs to know about the want itself, so it never contradicts the Wanted detail: its origin and, for a
+ * collection want, the one format its collection uses (issue #759: the other format sits `landed` by construction and
+ * holds nothing, so the detail hides it; the own format's `landed` reads "Downloaded, not in the library yet").
+ */
+export interface RequestEventWantLike {
+  origin: string | null;
+  collectionFormat: 'ebook' | 'audiobook' | null;
 }
 
 /** One field an event set, changed or cleared. A mint has only `to`, a delete only `from`. */
@@ -195,7 +210,10 @@ export interface EventChange {
   to: EventValue | null;
 }
 
-const NONE: EventValue = { text: 'None', none: true };
+const NOT_SET: EventValue = { text: 'Not set', none: true };
+
+/** The Wanted detail's words for a collection want's own format when it reads `landed` (wanted-detail.tsx). */
+export const COLLECTION_DOWNLOADED_LABEL = 'Downloaded, not in the library yet';
 
 function isEmpty(column: string, v: unknown, kind: RequestEventLike['kind']): boolean {
   if (v === null || v === undefined || v === '') return true;
@@ -213,7 +231,7 @@ export function formatEventValue(
     if (v === null || v === undefined || v === '') return { text: 'Not parked', none: true };
     return { text: PARK_LABEL[String(v)] ?? humanize(String(v)) };
   }
-  if (v === null || v === undefined || v === '') return NONE;
+  if (v === null || v === undefined || v === '') return NOT_SET;
   const s =
     typeof v === 'string'
       ? v
@@ -227,29 +245,49 @@ export function formatEventValue(
   if (TIME_FIELDS.has(column)) return { text: formatWhen(s) };
   if (ITEM_FIELDS.has(column)) {
     const item = refs.items[s];
-    if (!item) return { text: s.slice(0, 8), mono: true, title: s };
+    if (!item) return { text: 'A title no longer in the library', none: true };
     return item.live
       ? { text: item.title, href: `/library/books/${encodeURIComponent(s)}` }
       : { text: `${item.title} (no longer in the library)` };
   }
   if (column === 'collection_id') {
     const title = refs.collections[s];
-    return title !== undefined ? { text: title } : { text: s.slice(0, 8), mono: true, title: s };
+    return title !== undefined ? { text: title } : { text: 'A removed collection', none: true };
   }
-  if (ROW_ID_FIELDS.has(column)) return { text: s.slice(0, 8), mono: true, title: s };
   if (ID_FIELDS.has(column)) return { text: s, mono: true };
   return { text: s };
 }
 
+const STATUS_COLUMN_OF: Record<'ebook' | 'audiobook', string> = {
+  ebook: 'ebook_status',
+  audiobook: 'audio_status',
+};
+
 /**
  * What an event did to the want, field by field, in the History's order: an update's changed fields before and after,
- * a mint's every field it set, a delete's every field the want held. Empty values are left out of a mint or delete.
+ * a mint's every field it set, a delete's every field the want held. Empty values are left out of a mint or delete, and
+ * hidden fields (`REQUEST_EVENT_HIDDEN_FIELDS`) always. For a collection want whose format is known (`want`), the
+ * other format's status is left out and its own format's `landed` reads as the Wanted detail says it.
  */
 export function requestEventChanges(
   e: RequestEventLike,
   refs: RequestEventRefsLike,
+  want: RequestEventWantLike | null = null,
 ): EventChange[] {
-  const columns = new Set([...Object.keys(e.before), ...Object.keys(e.after)]);
+  const collectionFormat = want?.origin === 'collection' ? want.collectionFormat : null;
+  const ownStatus = collectionFormat ? STATUS_COLUMN_OF[collectionFormat] : null;
+  const unusedStatus = collectionFormat
+    ? STATUS_COLUMN_OF[collectionFormat === 'ebook' ? 'audiobook' : 'ebook']
+    : null;
+  const value = (column: string, v: unknown): EventValue =>
+    column === ownStatus && v === 'landed'
+      ? { text: COLLECTION_DOWNLOADED_LABEL }
+      : formatEventValue(column, v, refs);
+  const columns = new Set(
+    [...Object.keys(e.before), ...Object.keys(e.after)].filter(
+      (c) => !HIDDEN.has(c) && c !== unusedStatus,
+    ),
+  );
   const ordered = [
     ...FIELD_ORDER.filter((c) => columns.has(c)),
     ...[...columns].filter((c) => !FIELD_ORDER.includes(c)).sort(),
@@ -259,16 +297,16 @@ export function requestEventChanges(
     const label = requestEventFieldLabel(column);
     if (e.kind === 'mint') {
       if (isEmpty(column, e.after[column], e.kind)) continue;
-      out.push({ column, label, from: null, to: formatEventValue(column, e.after[column], refs) });
+      out.push({ column, label, from: null, to: value(column, e.after[column]) });
     } else if (e.kind === 'delete') {
       if (isEmpty(column, e.before[column], e.kind)) continue;
-      out.push({ column, label, from: formatEventValue(column, e.before[column], refs), to: null });
+      out.push({ column, label, from: value(column, e.before[column]), to: null });
     } else {
       out.push({
         column,
         label,
-        from: formatEventValue(column, e.before[column], refs),
-        to: formatEventValue(column, e.after[column], refs),
+        from: value(column, e.before[column]),
+        to: value(column, e.after[column]),
       });
     }
   }

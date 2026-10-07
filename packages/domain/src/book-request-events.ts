@@ -32,11 +32,13 @@ import {
   type BookRequestEventKind,
   type BookRequestEventReason,
   type BookRequestInsert,
+  type BookRequestOrigin,
   type BookRequestRow,
   type DbClient,
   type Transaction,
 } from '@hnet/db';
 import { resolveDb } from './db-client';
+import { collectionFormatForSource } from './ll-release-record';
 
 // ---------------------------------------------------------------------------
 // What an event records.
@@ -366,6 +368,17 @@ export interface RequestEventRefs {
   collections: Record<string, string>;
 }
 
+/**
+ * What the history needs to know about the want itself (the same for every page): its origin and, for a collection
+ * want, the one format its collection uses (`ebook` for Kavita, `audiobook` for Audiobookshelf). The Wanted detail
+ * shows a collection want only that format (issue #759), so the history leaves the other one out too. Read from the
+ * live row, else (a deleted want) from its mint or delete event's snapshot; null where neither says.
+ */
+export interface RequestEventWant {
+  origin: BookRequestOrigin | null;
+  collectionFormat: 'ebook' | 'audiobook' | null;
+}
+
 const ITEM_REF_COLUMNS = ['matched_books_item_id', 'pairing_books_item_id'] as const;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -387,6 +400,7 @@ export async function listRequestEvents(input: {
   events: RequestEventView[];
   next: RequestEventCursor | null;
   refs: RequestEventRefs;
+  want: RequestEventWant;
 }> {
   const db = resolveDb(input.db);
   const where: SQL[] = [eq(bookRequestEvents.requestId, input.requestId)];
@@ -466,5 +480,56 @@ export async function listRequestEvents(input: {
     events,
     next: rows.length > input.limit && last !== undefined ? { at: last.at, id: last.id } : null,
     refs,
+    want: await requestEventWant(db, input.requestId),
+  };
+}
+
+async function requestEventWant(
+  db: ReturnType<typeof resolveDb>,
+  requestId: string,
+): Promise<RequestEventWant> {
+  let origin: string | null = null;
+  let collectionId: string | null = null;
+  const [live] = await db
+    .select({ origin: bookRequests.origin, collectionId: bookRequests.collectionId })
+    .from(bookRequests)
+    .where(eq(bookRequests.id, requestId));
+  if (live) {
+    origin = live.origin;
+    collectionId = live.collectionId;
+  } else {
+    // A deleted want: its mint (or its delete) holds every recorded field, the origin and collection among them.
+    const [snap] = await db
+      .select({
+        kind: bookRequestEvents.kind,
+        before: bookRequestEvents.before,
+        after: bookRequestEvents.after,
+      })
+      .from(bookRequestEvents)
+      .where(
+        and(
+          eq(bookRequestEvents.requestId, requestId),
+          inArray(bookRequestEvents.kind, ['mint', 'delete']),
+        ),
+      )
+      .limit(1);
+    const values = snap ? (snap.kind === 'mint' ? snap.after : snap.before) : {};
+    origin = typeof values.origin === 'string' ? values.origin : null;
+    collectionId =
+      typeof values.collection_id === 'string' && UUID_RE.test(values.collection_id)
+        ? values.collection_id
+        : null;
+  }
+  let collectionFormat: RequestEventWant['collectionFormat'] = null;
+  if (origin === 'collection' && collectionId !== null) {
+    const [col] = await db
+      .select({ source: booksCollections.source })
+      .from(booksCollections)
+      .where(eq(booksCollections.id, collectionId));
+    if (col) collectionFormat = collectionFormatForSource(col.source);
+  }
+  return {
+    origin: origin === null ? null : (origin as BookRequestOrigin),
+    collectionFormat,
   };
 }

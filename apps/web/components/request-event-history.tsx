@@ -19,6 +19,7 @@ import {
   requestEventSiteLabel,
   type EventValue,
   type RequestEventRefsLike,
+  type RequestEventWantLike,
 } from '@/lib/request-events';
 
 type EventsPage = RouterOutputs['books']['requestEvents'];
@@ -45,8 +46,16 @@ function Value({ value }: { value: EventValue }) {
   );
 }
 
-function EventRow({ event, refs }: { event: EventEntry; refs: RequestEventRefsLike }) {
-  const changes = requestEventChanges(event, refs);
+function EventRow({
+  event,
+  refs,
+  want,
+}: {
+  event: EventEntry;
+  refs: RequestEventRefsLike;
+  want: RequestEventWantLike | null;
+}) {
+  const changes = requestEventChanges(event, refs, want);
   const detail = requestEventDetail(event);
   const site = requestEventSiteLabel(event.site);
   const when = [formatWhen(event.createdAt), requestEventActorLabel(event), site]
@@ -119,6 +128,8 @@ export function RequestEventHistory({ requestId }: { requestId: string }) {
     Object.assign(refs.items, p.refs.items);
     Object.assign(refs.collections, p.refs.collections);
   }
+  // The same on every page: the want's origin and a collection want's one format.
+  const want: RequestEventWantLike | null = pages[0]?.want ?? null;
   const since = recordedFromLabel();
 
   if (list.length === 0) {
@@ -136,7 +147,7 @@ export function RequestEventHistory({ requestId }: { requestId: string }) {
     <>
       <ol className="timeline request-events" data-testid="request-events">
         {list.map((e) => (
-          <EventRow key={e.id} event={e} refs={refs} />
+          <EventRow key={e.id} event={e} refs={refs} want={want} />
         ))}
       </ol>
       {events.hasNextPage ? (

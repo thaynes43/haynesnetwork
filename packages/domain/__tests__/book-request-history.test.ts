@@ -126,7 +126,12 @@ describe('listRequestEvents — order and paging', () => {
       requestId: '33333333-3333-4333-8333-333333333333',
       limit: 20,
     });
-    expect(page).toEqual({ events: [], next: null, refs: { items: {}, collections: {} } });
+    expect(page).toEqual({
+      events: [],
+      next: null,
+      refs: { items: {}, collections: {} },
+      want: { origin: null, collectionFormat: null },
+    });
   });
 });
 
@@ -319,7 +324,94 @@ describe('listRequestEvents — the real writers', () => {
       before: { audio_status: 'requested', ll_book_id: null },
       after: { audio_status: 'wanted', ll_book_id: 'gb-mistborn' },
     });
+    // Gone, so the want's origin comes from its mint's snapshot; a pairing want has no collection format.
+    expect(page.want).toEqual({ origin: 'pairing', collectionFormat: null });
     // The mint names its anchor, which is live, so the read carries its title.
     expect(page.refs.items[anchor!.id]).toEqual({ title: 'Mistborn', live: true });
+  });
+});
+
+describe('listRequestEvents — the want it describes', () => {
+  async function seedCollection(
+    source: 'kavita' | 'audiobookshelf',
+    externalId: string,
+  ): Promise<string> {
+    await syncBooksCollections({
+      db: t.db,
+      collections: [
+        {
+          source,
+          externalId,
+          kind: 'collection',
+          libraryId: null,
+          title: `Collection ${externalId}`,
+          itemCount: 0,
+          ordered: false,
+          createdBy: 'libretto',
+          librettoRecipeId: `recipe-${externalId}`,
+          category: null,
+          members: [],
+          fullyRead: true,
+        },
+      ],
+      scopedFamilies: [],
+    });
+    const [row] = await t.db
+      .select({ id: booksCollections.id })
+      .from(booksCollections)
+      .where(eq(booksCollections.externalId, externalId));
+    return row!.id;
+  }
+
+  it('names a live collection want’s one format, and keeps it after the want is deleted', async () => {
+    const audioCollection = await seedCollection('audiobookshelf', 'abs-1');
+    const want = await inTransaction(t.db, (tx) =>
+      insertBookRequest(
+        tx,
+        { writer: 'syncCollectionWants', reason: 'collection_want_minted' },
+        {
+          origin: 'collection',
+          collectionId: audioCollection,
+          collectionMemberRef: 'isbn:1',
+          title: 'Oathbringer',
+          author: 'Brandon Sanderson',
+          ebookStatus: 'landed',
+          audioStatus: 'requested',
+        },
+      ),
+    );
+    let page = await listRequestEvents({ db: t.db, requestId: want!.id, limit: 20 });
+    expect(page.want).toEqual({ origin: 'collection', collectionFormat: 'audiobook' });
+
+    await inTransaction(t.db, (tx) =>
+      deleteBookRequests(
+        tx,
+        { writer: 'syncCollectionWants', reason: 'collection_want_dropped' },
+        eq(bookRequests.id, want!.id),
+      ),
+    );
+    page = await listRequestEvents({ db: t.db, requestId: want!.id, limit: 20 });
+    expect(page.want).toEqual({ origin: 'collection', collectionFormat: 'audiobook' });
+  });
+
+  it('a Kavita collection is the ebook format', async () => {
+    const ebookCollection = await seedCollection('kavita', 'kav-1');
+    const want = await inTransaction(t.db, (tx) =>
+      insertBookRequest(
+        tx,
+        { writer: 'syncCollectionWants', reason: 'collection_want_minted' },
+        {
+          origin: 'collection',
+          collectionId: ebookCollection,
+          collectionMemberRef: 'isbn:2',
+          title: 'Rhythm of War',
+          author: 'Brandon Sanderson',
+          ebookStatus: 'requested',
+          audioStatus: 'landed',
+        },
+      ),
+    );
+    const page = await listRequestEvents({ db: t.db, requestId: want!.id, limit: 20 });
+    expect(page.want).toEqual({ origin: 'collection', collectionFormat: 'ebook' });
   });
 });

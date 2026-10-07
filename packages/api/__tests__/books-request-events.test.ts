@@ -129,6 +129,7 @@ describe('books.requestEvents — admins only', () => {
     });
     expect(new Date(mint!.createdAt).toISOString()).toBe(mint!.createdAt);
     expect(page.refs).toEqual({ items: {}, collections: {} });
+    expect(page.want).toEqual({ origin: 'goodreads', collectionFormat: null });
   });
 });
 
@@ -206,6 +207,11 @@ describe('books.requestEvents — paging and odd input', () => {
     const page = await adminCaller.books.requestEvents({
       requestId: '00000000-0000-4000-8000-000000000000',
     });
-    expect(page).toEqual({ events: [], refs: { items: {}, collections: {} }, nextCursor: null });
+    expect(page).toEqual({
+      events: [],
+      refs: { items: {}, collections: {} },
+      want: { origin: null, collectionFormat: null },
+      nextCursor: null,
+    });
   });
 });

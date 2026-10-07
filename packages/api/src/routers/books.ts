@@ -226,6 +226,11 @@ export interface BookRequestEventsResult {
     items: Record<string, { title: string; live: boolean }>;
     collections: Record<string, string>;
   };
+  /** The want's origin and, for a collection want, its one format (the History hides the other, as the detail does). */
+  want: {
+    origin: BookRequestOrigin | null;
+    collectionFormat: 'ebook' | 'audiobook' | null;
+  };
   nextCursor: string | null;
 }
 
@@ -974,6 +979,7 @@ export const booksRouter = router({
           createdAt: e.createdAt.toISOString(),
         })),
         refs: page.refs,
+        want: page.want,
         nextCursor: page.next ? encodeCursor([page.next.at, page.next.id]) : null,
       };
     }),

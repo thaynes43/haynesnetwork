@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { BOOK_REQUEST_EVENT_REASONS, type BookRequestRow } from '@hnet/db';
 import { REQUEST_EVENT_FIELDS, requestEventSnapshot } from '@hnet/domain';
 import {
+  COLLECTION_DOWNLOADED_LABEL,
   REQUEST_EVENT_FIELD_LABEL,
+  REQUEST_EVENT_HIDDEN_FIELDS,
   REQUEST_EVENT_REASON_LABEL,
   humanize,
   requestEventActorLabel,
@@ -44,10 +46,43 @@ function recordedColumns(): string[] {
 const NO_EM_DASH = /—/;
 
 describe('every recorded field and every reason has words', () => {
-  it('labels every field a Request Event records, and nothing it does not', () => {
+  it('labels every recorded field or hides it by name: never neither, never both', () => {
     const columns = recordedColumns();
     expect(columns.length).toBe(REQUEST_EVENT_FIELDS.length);
-    expect(Object.keys(REQUEST_EVENT_FIELD_LABEL).sort()).toEqual([...columns].sort());
+    const labelled = Object.keys(REQUEST_EVENT_FIELD_LABEL);
+    expect([...labelled, ...REQUEST_EVENT_HIDDEN_FIELDS].sort()).toEqual([...columns].sort());
+    expect(labelled.filter((c) => REQUEST_EVENT_HIDDEN_FIELDS.includes(c))).toEqual([]);
+  });
+
+  it('hides exactly the app’s own row ids (display only)', () => {
+    expect([...REQUEST_EVENT_HIDDEN_FIELDS].sort()).toEqual(['integration_id', 'shelf_item_id']);
+    const changes = requestEventChanges(
+      ev({
+        kind: 'mint',
+        after: {
+          origin: 'goodreads',
+          integration_id: '1d8fdec4-0000-4000-8000-000000000000',
+          shelf_item_id: 'cc8ee9bd-0000-4000-8000-000000000000',
+          title: 'Hyperion',
+          author: 'Dan Simmons',
+          ll_book_id: 'kNYNtAEACAAJ',
+        },
+      }),
+      NO_REFS,
+    );
+    expect(changes.map((c) => c.label)).toEqual([
+      'LazyLibrarian book',
+      'Title',
+      'Author',
+      'Origin',
+    ]);
+    // An update that only moved a hidden field lists nothing (the reason still shows).
+    expect(
+      requestEventChanges(
+        ev({ before: { shelf_item_id: 'a' }, after: { shelf_item_id: 'b' } }),
+        NO_REFS,
+      ),
+    ).toEqual([]);
   });
 
   it('words every reason a writer records, with no em-dash', () => {
@@ -86,7 +121,7 @@ describe('what changed', () => {
     expect(changes.map((c) => [c.label, c.from?.text, c.to?.text])).toEqual([
       ['Ebook', 'Wanted', 'Have it'],
       ['Park', 'Not parked', 'No English edition'],
-      ['LazyLibrarian book', 'gb-a', 'None'],
+      ['LazyLibrarian book', 'gb-a', 'Not set'],
     ]);
     expect(changes[2]!.from).toMatchObject({ mono: true });
     expect(changes[2]!.to).toMatchObject({ none: true });
@@ -118,7 +153,7 @@ describe('what changed', () => {
     ]);
   });
 
-  it('names library titles and collections, links a live title, and shortens the app’s own row ids', () => {
+  it('names library titles and collections, links a live title, and never shows a bare row id', () => {
     const live = '162f8e3e-b0da-4bfc-ab38-718d93419630';
     const gone = 'a3782d07-2528-4335-b152-fd4de9ba3acf';
     const unknown = 'bbbbbbbb-2528-4335-b152-fd4de9ba3acf';
@@ -137,16 +172,64 @@ describe('what changed', () => {
     expect(match!.from).toEqual({ text: 'Hyperion (old copy) (no longer in the library)' });
     expect(match!.to).toEqual({ text: 'Hyperion', href: `/library/books/${live}` });
 
-    const [pairedUnknown, collection, shelfItem] = requestEventChanges(
+    const [pairedUnknown, collection] = requestEventChanges(
       ev({
         kind: 'mint',
         after: { pairing_books_item_id: unknown, collection_id: 'c1', shelf_item_id: unknown },
       }),
       refs,
     );
-    expect(pairedUnknown!.to).toEqual({ text: 'bbbbbbbb', mono: true, title: unknown });
+    expect(pairedUnknown!.to).toEqual({ text: 'A title no longer in the library', none: true });
     expect(collection!.to).toEqual({ text: 'The Stormlight Archive' });
-    expect(shelfItem!.to).toEqual({ text: 'bbbbbbbb', mono: true, title: unknown });
+    const [unknownCollection] = requestEventChanges(
+      ev({ kind: 'mint', after: { collection_id: 'c-gone' } }),
+      refs,
+    );
+    expect(unknownCollection!.to).toEqual({ text: 'A removed collection', none: true });
+  });
+
+  it('a collection want reads as its Wanted detail does: only its own format, landed as Downloaded', () => {
+    const minted = ev({
+      kind: 'mint',
+      after: { origin: 'collection', ebook_status: 'requested', audio_status: 'landed' },
+    });
+    const ebookCollection = { origin: 'collection', collectionFormat: 'ebook' as const };
+    expect(requestEventChanges(minted, NO_REFS, ebookCollection).map((c) => c.label)).toEqual([
+      'Ebook',
+      'Origin',
+    ]);
+    const downloaded = ev({
+      reason: 'collection_want_downloaded',
+      before: { ebook_status: 'requested' },
+      after: { ebook_status: 'landed' },
+    });
+    expect(
+      requestEventChanges(downloaded, NO_REFS, ebookCollection).map((c) => [
+        c.from?.text,
+        c.to?.text,
+      ]),
+    ).toEqual([['Requested', COLLECTION_DOWNLOADED_LABEL]]);
+    // An audiobook collection hides the ebook side instead.
+    expect(
+      requestEventChanges(minted, NO_REFS, {
+        origin: 'collection',
+        collectionFormat: 'audiobook',
+      }).map((c) => [c.label, c.to?.text]),
+    ).toEqual([
+      ['Audiobook', COLLECTION_DOWNLOADED_LABEL],
+      ['Origin', 'Collection'],
+    ]);
+    // Format unknown (the collection is gone), or not a collection want: both formats, as the detail shows them.
+    expect(
+      requestEventChanges(minted, NO_REFS, { origin: 'collection', collectionFormat: null }).map(
+        (c) => c.label,
+      ),
+    ).toEqual(['Ebook', 'Audiobook', 'Origin']);
+    expect(
+      requestEventChanges(minted, NO_REFS, { origin: 'pairing', collectionFormat: null }).map(
+        (c) => c.to?.text,
+      ),
+    ).toEqual(['Requested', 'Have it', 'Collection']);
   });
 
   it('a field it does not know is listed last, humanized', () => {

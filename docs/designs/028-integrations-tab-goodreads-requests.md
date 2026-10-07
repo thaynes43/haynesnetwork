@@ -1611,7 +1611,8 @@ line; no new term (the history is the Request Events of one want, shown).
 
 - **`books.requestEvents`** (`adminProcedure`: anonymous `UNAUTHORIZED`, every non-admin `FORBIDDEN`). Input `requestId`,
   an opaque `cursor`, `limit` (default 20, at most 50). Returns `events` (wire rows: `kind`, `reason`, `writer`, `site`,
-  `actor`, `actorName`, `before`, `after`, `detail`, ISO `createdAt`), `refs` and `nextCursor`. Read-only.
+  `actor`, `actorName`, `before`, `after`, `detail`, ISO `createdAt`), `refs`, `want` (below) and `nextCursor`.
+  Read-only.
 - **`listRequestEvents`** (`@hnet/domain`, book-request-events.ts, the one read of the record):
   `WHERE request_id = $1 [AND (created_at, id) < cursor] ORDER BY created_at DESC, id DESC LIMIT n + 1`, on
   `book_request_events_request_created_idx`, with a LEFT JOIN to `users` for the person's display name (a `user` event
@@ -1638,7 +1639,8 @@ one pure module, `apps/web/lib/request-events.ts`; the list is `apps/web/compone
 1. **Why**: the `reason` in plain words (the table below); the writer's function name is the hover title.
 2. **What changed**, one line per field, label then value. An `update` shows each changed field `before → after`; a
    `mint` shows each field it set; a `delete` shows each field the want held (empty fields left out of both). Field
-   labels (a recorded field added without a label fails `apps/web/lib/__tests__/request-events.test.ts`):
+   labels (every recorded field is labelled or named in the hidden list, never neither and never both;
+   `apps/web/lib/__tests__/request-events.test.ts` fails otherwise):
 
    | Column | Label | Column | Label |
    |---|---|---|---|
@@ -1651,16 +1653,25 @@ one pure module, `apps/web/lib/request-events.ts`; the list is `apps/web/compone
    | `kapowarr_volume_id` | Kapowarr volume | `origin` | Origin |
    | `comicvine_id` | ComicVine volume | `pairing_books_item_id` | Paired with |
    | `ll_rerequested_at` | Re-request ended | `collection_id` | Collection |
-   | `integration_id` | Goodreads link | `collection_member_ref` | Collection member |
-   | `shelf_item_id` | Shelf item | | |
+   | `collection_member_ref` | Collection member | | |
+
+   **Hidden** (`REQUEST_EVENT_HIDDEN_FIELDS`, display only; the record keeps them): the app's own row ids
+   `integration_id` and `shelf_item_id`, which name nothing a person can read or look up.
 
    Values: a status in the Wanted detail's words (Requested, Wanted, Grabbed, Have it, Missing); a park in words (`comic`
    Waiting on a ComicVine match, `wrong_volume` Wrong volume, `multi_book` Series holds several books, `no_book` Series
    holds no book, `foreign_language` Not in English, `no_english_edition` No English edition, none: Not parked); the
    origin (Goodreads shelf, Format pairing, Collection); a time as a date and time; a library item or collection by title
-   (a live item links to its book detail; a removed one says "no longer in the library"); a LazyLibrarian, Kapowarr or
-   ComicVine id in full, in monospace; the app's own row ids (`integration_id`, `shelf_item_id`) as their first 8
-   characters with the full id as the hover title; an empty value reads "None".
+   (a live item links to its book detail; a removed one says "no longer in the library"; one whose row is gone reads
+   "A title no longer in the library" or "A removed collection", never a bare id); a LazyLibrarian, Kapowarr or
+   ComicVine id in full, in monospace; an empty value reads "Not set".
+
+   **A collection want reads as its Wanted detail does** (issue #759): the detail shows only the format its collection
+   uses (Kavita: ebook, Audiobookshelf: audiobook) and reads that format's `landed` as "Downloaded, not in the library
+   yet". The read returns `want` (`origin`, `collectionFormat`, from the live row, else from the deleted want's mint or
+   delete snapshot and its collection), and the History leaves out the other format's status and uses the same words
+   for the own format's `landed`. Where the format is unknown (the collection is gone) both show, as on the detail.
+   (A collection want is never matched to a library item: 0 of 142 on 2026-10-07.)
 3. **The writer's context** (`detail`), "Label: value" pairs in a fixed order (Postgres `jsonb` does not keep the
    writer's key order): `outcome` (the re-request: LazyLibrarian already had it, took
    it back, refused it, waiting for the next quota day), `cause` (LazyLibrarian does not hold it, has not grabbed it,
@@ -1707,9 +1718,10 @@ read (the queries in the Request Events amendment above).
 **Tests.** `packages/domain/__tests__/book-request-history.test.ts` (newest first, one want only; paging at sizes 1, 2 and
 4 neither skips nor repeats through a shared transaction timestamp and through timestamps a microsecond apart; the cursor
 keeps microseconds; the person's name, and none once the account is gone or for a sync event; `refs`; a deleted want's
-mint, change and delete through the real writers; an unknown want is empty), `packages/api/__tests__/books-request-events.test.ts`
+mint, change and delete through the real writers; a collection want's format, live and deleted; an unknown want is
+empty), `packages/api/__tests__/books-request-events.test.ts`
 (anonymous `UNAUTHORIZED`; the requester and a household reader `FORBIDDEN`; an admin's wire rows; cursor paging; a
 malformed cursor `BAD_REQUEST`; an unknown want empty), `apps/web/lib/__tests__/request-events.test.ts` (every recorded
-field and reason has words with no em-dash; updates, mints, deletes, titles, links and short ids; the context; who and
-where), and the e2e admin journey in `apps/web/e2e/integrations.spec.ts` (the Wanted detail's History shows the shelf mint
+field labelled or hidden by name, every reason worded, no em-dash; updates, mints, deletes, titles and links, no bare
+row id; a collection want's one format; the context; who and where), and the e2e admin journey in `apps/web/e2e/integrations.spec.ts` (the Wanted detail's History shows the shelf mint
 as its oldest event in words, at 390 and 1280 px with no sideways scroll).

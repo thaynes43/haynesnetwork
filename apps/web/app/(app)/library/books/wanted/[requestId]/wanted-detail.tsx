@@ -41,7 +41,10 @@ import {
 import { effectiveFormatStatus, formatActivityId, formatLiveWins } from '@/lib/format-live-status';
 import { formatWhen } from '@/lib/media';
 import { shelfLabel } from '@/lib/goodreads-shelf-wall';
-import { BOOK_REQUEST_STATUS_LABEL as STATUS_LABEL } from '@/lib/request-events';
+import {
+  BOOK_REQUEST_STATUS_LABEL as STATUS_LABEL,
+  COLLECTION_DOWNLOADED_LABEL,
+} from '@/lib/request-events';
 import type { BookRequestStatus } from '@hnet/db';
 
 type WantedDetailWire = RouterOutputs['books']['wantedDetail'];
@@ -51,7 +54,7 @@ type FormatRow = WantedDetailWire['formats'][number];
  * Issue #759 — a collection want's format LazyLibrarian downloaded that the library can't show yet. It reads
  * `landed` but is not "Have it": the member is still missing from the collection.
  */
-const DOWNLOADED_LABEL = 'Downloaded, not in the library yet';
+const DOWNLOADED_LABEL = COLLECTION_DOWNLOADED_LABEL; // shared with the History (issue #792)
 
 /** The per-format status → the shared `.badge--<tone>` accent (green have · info grabbed · amber wanted · red missing). */
 function statusTone(status: BookRequestStatus): 'ok' | 'info' | 'warn' | 'danger' {
