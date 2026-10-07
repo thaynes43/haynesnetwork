@@ -149,6 +149,9 @@ function LinkCard() {
 
   const integration = statusQ.data?.integration;
   const linked = integration?.linked ?? false;
+  // Until the status query answers, the card claims neither state: defaulting to "Not linked" flashed the link
+  // form at a LINKED user, and a click on it landed on a form about to be replaced (issue #812).
+  const checking = statusQ.isPending;
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -157,7 +160,11 @@ function LinkCard() {
   };
 
   return (
-    <section className="card integrations-card" data-testid="integrations-link-card">
+    <section
+      className="card integrations-card"
+      data-testid="integrations-link-card"
+      aria-busy={checking || undefined}
+    >
       <header className="integrations-card__head">
         <span className="integrations-provider">
           <span className="integrations-provider__glyph" aria-hidden="true">
@@ -165,7 +172,9 @@ function LinkCard() {
           </span>
           <span className="integrations-provider__name">Goodreads</span>
         </span>
-        {linked ? (
+        {checking ? (
+          <span className="badge badge--muted">Checking…</span>
+        ) : linked ? (
           <span className="badge badge--ok" data-testid="integrations-linked">
             Linked
           </span>
@@ -174,7 +183,7 @@ function LinkCard() {
         )}
       </header>
 
-      {linked && integration ? (
+      {checking ? null : linked && integration ? (
         <div className="integrations-linked-state">
           <p className="integrations-linked-state__ref">
             {integration.profileRef ?? `Goodreads user ${integration.externalUserId}`}

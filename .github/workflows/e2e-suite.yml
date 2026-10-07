@@ -17,6 +17,9 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # ADR-103: per-spec timings, boot phases and first-hit compile estimates (e2e/support/timings-report.mjs).
+      HNET_E2E_TIMINGS_DIR: ${{ github.workspace }}/apps/web/e2e-timings
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
@@ -28,9 +31,14 @@ jobs:
       # Chromium only (the suite's single project); --with-deps pulls the system
       # libraries the runner image may lack (CI-only — locally plain install).
       - run: pnpm --filter web exec playwright install chromium --with-deps
-      # globalSetup boots embedded Postgres 16 + the stub OIDC + `next dev`
-      # (ADR-010 — no Docker/Testcontainers, no live Authentik).
+      # globalSetup boots embedded Postgres 16 + the stub OIDC + one production build of the app (ADR-010 — no
+      # Docker/Testcontainers, no live Authentik; ADR-103 — `next build` + `next start`, as locally).
       - run: pnpm --filter web e2e
+      # ADR-103: the timings as annotations + job summary (the run's logs and artifacts are not readable from the
+      # dev-env pod; annotations are, through the check-runs API).
+      - name: Report e2e timings
+        if: always()
+        run: node apps/web/e2e/support/timings-report.mjs "$HNET_E2E_TIMINGS_DIR"
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4

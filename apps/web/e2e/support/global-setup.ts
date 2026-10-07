@@ -1,5 +1,5 @@
 // Playwright globalSetup — a THIN consumer of the reusable stack harness
-// (harness.ts boots embedded PG16 + migrations + stub OIDC + stub *arr + `next dev`;
+// (harness.ts boots embedded PG16 + migrations + stub OIDC + stub *arr + the app server;
 // `pnpm dev:local` (apps/web/dev/local.ts) reuses the same modules interactively).
 //
 // The stack boots HERE, not via Playwright's `webServer` block: the webServer
@@ -21,7 +21,11 @@ const state: GlobalState = {};
 export default async function globalSetup(): Promise<void> {
   rmSync(TMP_DIR, { recursive: true, force: true });
 
-  const stack = await startStack();
+  // ADR-103: the suite serves one production build (`next build` + `next start`), locally and in CI alike.
+  // HNET_E2E_SERVER=dev runs it against `next dev` instead, for debugging with source maps and hot reload.
+  const stack = await startStack({
+    server: process.env.HNET_E2E_SERVER === 'dev' ? 'dev' : 'start',
+  });
   state.stack = stack;
 
   // Hand the composed env to the test workers: process.env for this process,
