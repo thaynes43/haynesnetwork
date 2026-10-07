@@ -24,7 +24,7 @@ cut wait and runner time, so they stay.
 
 - Do not pay a coverage cost for a saving that does not exist.
 - Keep ADR-100's gate (`e2e-gate`, the pipeline paths, the release PR always gated, fail closed) exactly as it is.
-- Do not run the same 14-minute suite twice on one PR.
+- Do not run the same suite twice on one PR.
 - Keep the label useful.
 
 ## Considered options
@@ -60,7 +60,7 @@ Chosen: **B**, with these rules.
 |----|-------------|
 | C-01 | Good: a regression in a page or router outside the pipeline paths shows on its own PR again, not first on the release PR. This replaces ADR-102 C-04. |
 | C-02 | Good: ADR-102's docs-only skips, the empty push-to-main run and the image-build filter stay, so those PRs still wait less. |
-| C-03 | Neutral: a code PR starts one more job (the advisory `changes` job, seconds) and the suite runs about 14 minutes after it. Nobody waits for it; it is advisory. |
+| C-03 | Neutral: a code PR starts one more job (the advisory `changes` job, seconds) and the suite runs for about 9 minutes after it (ADR-103). Nobody waits for it; it is advisory. |
 | C-04 | Neutral: the advisory suite and the gate use the same two hand-kept path lists, so a new kind of file is code by default and a new pipeline path is added in `e2e-gate-paths.sh` only. |
 | C-05 | Bad: the advisory run still finishes after most merges (ADR-100 measured two to sixteen minutes after). Its value is the red result a reviewer or the next agent sees, not a block. |
 
