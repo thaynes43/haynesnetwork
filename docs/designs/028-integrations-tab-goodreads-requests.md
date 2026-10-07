@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-07 (Books Census follow-up: a file whose title is the record's with words cut, issue #799). Prior: 2026-10-06 (amendment: the collection force-search and the one re-request read the language again after their own addBook, issue #794). Prior: 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-07 (Books Census follow-up, issue #799: the first live run and its repair; titles that are one string without a leading article). Prior: 2026-10-07 (Books Census follow-up: a file whose title is the record's with words cut, issue #799). Prior: 2026-10-06 (amendment: the collection force-search and the one re-request read the language again after their own addBook, issue #794). Prior: 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -1504,6 +1504,30 @@ title; one book of a record that names two; a subtitle, edition note or collecti
 character name cut off the front, with and without the author's titles; one extending title and a twin record are not a
 series; a series in front does not vouch for the kept part; a prologue in front), `books-census.test.ts` (the census passes the author's titles: Catwings is found, The Sea of
 Monsters is not).
+
+**First live run and repair (v0.109.2, deployed 2026-10-07 03:00Z; manual Job at 03:00Z).** 1,315 records, 981 eBook and
+566 audiobook files: `wrongFile` 5, the trial's pass 4 exactly (Galaxy's Edge held), nothing else. Repaired at 03:02Z by
+`.agents/context/ll-library-audit/fix_census_799.py`. It ran as a dry run first, then `--go`, under declared activity
+act-030227-269854. The LazyLibrarian backup is `/config/lazylibrarian.db.pre-799-20261007` (integrity ok). Each file was
+read first: epub OPF titles, identifiers and tables of contents, audio tags, Audiobookshelf durations, and the app's wants.
+
+| Record | Was | Now |
+|---|---|---|
+| `83Hv_EYvHgEC` Merge / Disciple (eBook) | Disciple alone | re-pointed to `Merge + Disciple - Two Short Novels from Crosstown to Oblivion/`, already on disk and linked to no record (OPF "Merge and Disciple", both title pages). Disciple stays in its own folder; its opf naming this record is held. |
+| `4bLbswEACAAJ` A Secret Rage and Sweet and Deadly (eBook) | A Secret Rage alone | re-pointed to the two-novel omnibus in `Sweet and Deadly/`, which Sweet and Deadly also links under its Census Hold. A Secret Rage stays; its opf is held. |
+| `4bLbswEACAAJ` (audiobook) | the A Secret Rage recording alone (7.85 h) | re-wanted for pairing want 6593ef4e under the owner's #795 ruling. The recording stays in `A Secret Rage/`; its opf is held. OC-038 tracks the re-download. |
+| `K3wuAAAACAAJ` Code to Zero [and] The Man from St Petersburg (eBook) | Code to Zero alone | no want asks for it, so the pointer is cleared and the format set to Skipped, as for the #795 Catwings audiobook. Code to Zero stays in its folder; its opf is held. The Man from St. Petersburg has its own record. |
+| `4m0Qj9xKksYC` The Ultimate Hitchhiker's Guide to the Galaxy (audiobook) | book 1 alone (4.96 h) | cleared and set to Skipped (no want asks for it); its opf is held. The other four books are their own Audiobookshelf items. The tracks are linked to book 1's own record, `zaynQgAACAAJ` "The Hitch Hiker's Guide to the Galaxy" (audiobook Skipped, now Open). |
+
+The rule for a format with no right copy anywhere: re-want it when an app want asks for it, otherwise clear it and set it
+to Skipped. A wrong file whose folder names it correctly stays where it is, and only the LazyLibrarian opf naming the wrong
+record is held, as in #795. Nothing was deleted. The five opfs are in `quarantine/crossvolume-2026-10-05/` (manifest and
+sort rows).
+
+The second run read 1 unheld wrong file: book 1's audiobook on `zaynQgAACAAJ`. Its track title is "Hitchhikers Guide To The
+Galaxy", against "The Hitch Hiker's Guide to the Galaxy". The comparator now treats two titles as one string when they
+match once spaces and punctuation are removed, a leading article is dropped, and the possessive "'s" is read either way. With that
+change the file passes. Owed: OC-037 (the five records keep their state after the library scan) and OC-038.
 
 ## Amendment — 2026-10-06 (language after the seat): the collection force-search and the one re-request read the language again after their own addBook (issue #794)
 

@@ -1270,3 +1270,81 @@ checks:
         mismatch: wait
     links:
       issues: ['#795']
+  - id: OC-037
+    title: "Books Census #799: the re-pointed, linked and cleared LazyLibrarian records keep their state after the library scan"
+    opened: 2026-10-07
+    after: >-
+      fix_census_799.py (2026-10-07 03:02Z; max wanted rowid 9599) re-pointed Merge / Disciple (83Hv_EYvHgEC) and A Secret Rage and Sweet and Deadly
+      (4bLbswEACAAJ) eBooks to the two-novel copies already on disk, linked book 1's audiobook to zaynQgAACAAJ, cleared the
+      Code to Zero two-novel eBook (K3wuAAAACAAJ) and the Ultimate Hitchhiker's Guide audiobook (4m0Qj9xKksYC) to Skipped,
+      and held the five LazyLibrarian opfs that named the wrong records. The check follows the 2026-10-07 09:10Z library scan
+      and the 10:15Z census.
+    not_before: 2026-10-07T10:30:00Z
+    due: 2026-10-08T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian (mode=ro): the five records still read as fix_census_799.py left them (the scan linked no held or wrong
+      file back), and no wanted row after rowid 9599 names their eBook (83Hv, 4bLb, K3wu) or audiobook
+      (4m0Q, zayn). The 10:15Z books_census line lists none of them as wrong_file. Kavita shows Merge and Disciple, Disciple,
+      A Secret Rage and Code to Zero; Audiobookshelf shows The Hitchhiker's Guide to the Galaxy and A Secret Rage.
+    auto_covers: part
+    auto:
+      - name: the five records keep their state
+        source: ll-db
+        query: |
+          select BookID from books where
+               (BookID = '83Hv_EYvHgEC' and Status = 'Open' and BookFile like '%/Merge + Disciple - Two Short Novels from Crosstown to Oblivion/%.epub')
+            or (BookID = '4bLbswEACAAJ' and Status = 'Open' and BookFile like '%/Sweet and Deadly/Sweet and Deadly - Charlaine Harris.epub')
+            or (BookID = 'zaynQgAACAAJ' and AudioStatus = 'Open' and AudioFile like '%/The Hitchhiker''s Guide to the Galaxy/Douglas Adams - The Hitchhiker''s Guide to the Galaxy (1).mp3')
+            or (BookID = 'K3wuAAAACAAJ' and Status = 'Skipped' and BookFile is null)
+            or (BookID = '4m0Qj9xKksYC' and AudioStatus = 'Skipped' and AudioFile is null)
+        expect: {rows: 5}
+      - name: the census no longer flags them
+        source: loki
+        since: 2026-10-07T03:10:00Z
+        query: sum(count_over_time({namespace="downloads", container="main", pod=~"books-census-.*"} |= "books_census_finding" |~ "wrong_file:(83Hv_EYvHgEC:ebook|4bLbswEACAAJ:ebook|K3wuAAAACAAJ|4m0Qj9xKksYC|zaynQgAACAAJ)" [$SINCE]))
+        expect: {max: 0}
+        mismatch: fail
+    links:
+      issues: ['#799']
+  - id: OC-038
+    title: "Books Census #799 re-download: A Secret Rage and Sweet and Deadly (Charlaine Harris, audiobook) lands, and is the right book"
+    opened: 2026-10-07
+    after: >-
+      Owner ruling on #795 (2026-10-06, "Yes, re-download all of them"), applied to #799's findings. fix_census_799.py
+      (2026-10-07 03:02Z): the six A Secret Rage tracks (7.85 h) that LazyLibrarian linked as the two-novel omnibus stay in A Secret
+      Rage/ (its opf naming the omnibus is held), and the audiobook is re-wanted for pairing want 6593ef4e. No grab row
+      delivered it, so nothing is blocked. The grab depends on LazyLibrarian's normal backlog search, so `due` is a review date.
+    not_before: 2026-10-07T03:10:00Z
+    due: 2026-10-21T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian 4bLbswEACAAJ reads its AudioBook Open again with an AudioFile that exists, and the audio holds both novels
+      (A Secret Rage and Sweet and Deadly), not A Secret Rage alone (the six tracks in A Secret Rage/, 7.85 h). The next
+      books_census line has no wrong_file finding for 4bLbswEACAAJ:audiobook. The two novels may never have been recorded
+      as one audiobook: if the search finds nothing in two weeks, record that here, set the audiobook Skipped the way the
+      #795 Catwings audiobook was, and close this check. A wrong book landing (A Secret Rage alone again) is a failure: hold
+      it and block that release, the #795 pattern.
+    auto_covers: part
+    auto:
+      - name: LazyLibrarian holds a new AudioBook file
+        source: ll-db
+        query: |
+          select AudioFile from books where BookID = '4bLbswEACAAJ' and AudioStatus in ('Open', 'Have') and AudioFile is not null
+        expect: {min_rows: 1, paths_exist: true}
+        mismatch: wait
+      - name: the census no longer flags it
+        source: loki
+        query: sum(count_over_time({namespace="downloads", container="main", pod=~"books-census-.*"} |= "books_census_finding" |= "wrong_file:4bLbswEACAAJ:audiobook" [$SINCE]))
+        expect: {max: 0}
+        mismatch: fail
+      - name: the app's want reads landed again
+        source: app-db
+        query: |
+          select count(*) as n from book_requests where id::text like '6593ef4e%' and audio_status = 'landed'
+        expect: {eq: 1}
+        mismatch: wait
+    links:
+      issues: ['#799']
