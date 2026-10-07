@@ -9,6 +9,45 @@
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
 
+## ▶ 2026-10-07 (night) — Coordinator wave: Libretto guards, the Books Census, Request Events; v0.109.1 live
+
+The coordinator session started 2026-10-06 21:23Z took the 10-06 evening block's queue. The block below is history for
+everything it lists as open; this block says what is open now.
+
+**Shipped (all merged, deployed and verified live):**
+- **#742 closed.** The owner added `e2e-gate` to main's required checks (from his own login; the dev bot is deliberately
+  not given Administration, which would let it lift branch protection). Required: `lint-and-typecheck`, `test`, `build`, `e2e-gate`.
+- **Libretto `sha-ba4c095`** (haynes-ops #3460): libretto#26/#27, acquisition no longer queues or adds a non-English
+  edition (`LIBRETTO_ACQUISITION_LANGUAGES=en`; unknown language allowed, as the app does) or a format LazyLibrarian already
+  holds (status `Open`/`Have`, or an import date or file). libretto#25/#28, the Kavita series-detail cache refetches when
+  page count, last folder scan or last chapter added changes, and at least every 12 h. DESIGN-037 amended (#790).
+  The old handoff's "libretto#25 = language check" was a mislabel; the language bug had no issue until #26.
+- **v0.109.0** (haynes-ops #3461): #744 + #781, the **Books Census** (DESIGN-028 amendment, T-289..T-291), a daily
+  read-only `books-census` CronJob at 10:15Z in `downloads` with five finding kinds and warning alerts; holds in
+  `.agents/books-census-holds.yaml`. #741, **Request Events** (ADR-101, T-292, migration 0096): every `book_requests` write
+  records a `book_request_events` row in the same transaction through `packages/domain/src/book-request-events.ts`.
+  #781's two books re-pointed to right files already on disk (OC-028, OC-029).
+- **v0.109.1** (haynes-ops #3472): #798, the app's find-missing cron re-reads the language before it adds and queues a book
+  (the hole behind #794's Italian Crescent City want). Libretto `sha-0f27823` (libretto#29, haynes-ops #3466): the series
+  builder drops unnumbered duplicates and foreign-only editions.
+- **#795 closed** (owner ruling 2026-10-06 "re-download all of them"): of the census's 23 wrong files, 14 re-pointed (one,
+  Magnus Chase 3, also has a Census Hold because the census misreads its title), 5 held, 4 re-wanted (Freed, Warriors 3,
+  Partners, Redwall; OC-033..OC-036). The seventh hold is Game of Thrones, a `foreign_held` finding. Game of Thrones audio is English (held; the `fr` is a
+  bad Google Books record). Catwings audio cleared to Skipped. Census after: 0 unheld findings. #794 closed.
+
+- **libretto#30 closed**, owner ruling 2026-10-07 **"Member, never fetched"** (libretto#31, `sha-e04dc83`, haynes-ops
+  #3475; DESIGN-037 amended in #804): an unnumbered `hardcover_series` book stays a member if held, is never reported missing
+  or acquired (listed under `unnumbered[]`), real reads included. The app withdrew all 19 such wants on its own syncs. The
+  Outlandish Companion audiobook is still Wanted: that is format pairing (the ebook is held), outside the ruling.
+
+**In flight at the time of writing (check the PRs before redoing):**
+- #799, the census misses a wrong file whose title the record's title contains (Catwings 1 in Catwings 3's record); plus
+  removing stale Audiobookshelf entries one at a time (API delete without `hard`), never the library-wide bulk remove.
+
+**Open:** #792 (a Request Event history view on the Wanted detail; a feature, not started). #733 parked, #674 benched
+(unchanged). Owed checks: `.agents/owed-checks.yaml` is the only list (every pending row, with its due time); the
+next due are the 2026-10-07 morning and 18:00Z rows.
+
 ## ▶ 2026-10-06 (evening) — Coordinator handoff: the books-rollout repair wave is done; what is next
 
 The haynesnetwork coordinator session (2026-10-04 to 10-06) is idle so the owner can merge the dev-env PRs, which restarts the pod.
