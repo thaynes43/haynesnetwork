@@ -1,7 +1,7 @@
 # DESIGN-039: Google Books quota resilience — the shared breaker + retryable book Fixes
 
 - **Status:** Draft
-- **Last updated:** 2026-07-19
+- **Last updated:** 2026-10-07 (amendment: the GB Call Pacer and the mint's one minute-window wait, OC-014)
 - **Satisfies:** PRD-001 R-218..R-220; governed by ADR-067 (the breaker + queued fixes),
   ADR-055 (GB client boundary), ADR-062 (books Fix contract), ADR-065 (pairing mint cap),
   hard rules 1/6 (state-table discipline), 8/9 (UI confirm/reflow).
@@ -571,3 +571,77 @@ to either slice.
 
 **Tests:** `packages/domain/__tests__/gb-call-budget.test.ts` (primary first, then the spare, each call charged to the
 slice that paid; a lookup is refused once another job's spend, re-read, leaves no room).
+
+## Amendment — 2026-10-07: requests are paced under Google's per-minute limit, and the mint waits out one minute trip (owed check OC-014)
+
+**What was seen.** Owed check OC-014 read the first format-pairing run after the 2026-10-07 07:00Z quota roll. The quota day
+had closed cleanly (`gb_quota_day_closed`, pairing 697 of 700), but at 07:33:03Z Google answered `gb_quota_trip kind=minute`,
+and the run stopped looking up after 65 of its 100 attempts (`skippedQuota` 244, which counts every candidate left behind,
+about 35 of them inside the cap). The next run (08:34Z) attempted 100 with no trip. The per-minute trips over three days:
+
+| Run | Trip | Into the run | Attempts before it |
+|---|---|---|---|
+| pairing 10-05 10:33Z, 11:32Z | 10:33:00Z, 11:32:57Z | 57 s, 55 s | 79, 81 |
+| pairing 10-06 07:33Z | 07:33:03Z | 60 s | 58 |
+| pairing 10-06 09:33Z | 09:33:00Z | 57 s | 67 |
+| pairing 10-06 11:33Z | 11:32:59Z | 56 s | 50 |
+| pairing 10-07 07:33Z | 07:33:03Z | 59 s | 65 |
+| pairing 10-07 09:33Z | 09:33:47Z | 104 s | 84 |
+| goodreads 10-05, 10-06, 10-07 07:41Z | 07:41:45Z to 07:41:47Z | about 45 s | its first run after the roll |
+
+The mint paused 250 ms between ATTEMPTS, and one attempt is one to four Google Books requests (the `isbn:` leg, the title
+leg, the pre-colon fallback, the comic confirm), each retried up to three times on a 429 or 5xx. A run with lookups to make
+therefore sent about two requests a second, and the key's per-minute quota ran out about a minute in. The rate decides it:
+the 10-05 runs at 07:33Z, 08:33Z and 09:33Z made 100 attempts in 86 to 95 seconds and did not trip, while the 10:33Z and
+11:32Z runs made about 80 in 55 to 57 seconds and did. The two
+09:33Z trips also fell inside LazyLibrarian's daily library scan (09:10Z to about 09:45Z), which looks up unmatched files on
+the same key (several hundred `gb.py` log lines a minute). Nothing else of ours shared those minutes: the collection-wants
+pass finishes by :29 and resolves through Libretto, whose key is another Google project. The trip itself cost more than the
+two-minute window: the run latched (D-07, every later lookup skipped until the next hour), and LazyLibrarian's adds on the
+key were refused while it lasted.
+
+**Rule 1: the GB Call Pacer (glossary T-293).** Each cron process that calls Google Books (the `format-pairing` and
+`goodreads-sync` modes) sends at most `GB_CALLS_PER_MINUTE` physical requests in any 60-second window (default 60; `0` turns
+pacing off). `createGbCallPacer` (`packages/domain/src/gb-call-pacer.ts`) keeps the start times of the last minute's
+requests; `beforeCall()` returns at once while there is room and otherwise sleeps until the oldest one is a minute old.
+Callers take turns, so concurrent lookups cannot share the last slot. `sync.ts` builds one pacer per process, next to the
+call meter, and hands `beforeCall` to both GB clients; `getText` (`@hnet/goodreads`) awaits it before EVERY physical request,
+retries included, and before the meter counts it. The pacer is in memory only: the two jobs run at :32 and :41, and the
+breaker stays the backstop for anyone else's burst. The web app's interactive Fix is not paced (one person, a few requests).
+
+**Why 60.** The trips came at roughly 100 to 130 requests in a run's first minute, LazyLibrarian draws on the same key, and
+Google's limit for the key is not readable from the cluster. 60 stays well under the observed ceiling and leaves room for
+LazyLibrarian's adds. A 100-attempt run at about two requests each takes a little over three minutes; the CronJob is hourly
+with `concurrencyPolicy: Forbid` and no deadline. Raise it by env only with a week of `gbCalls` lines and no trips.
+
+**Rule 2: the mint waits out one per-minute window a run.** When a lookup is refused by a per-minute window (a `minute`
+trip, or the breaker found open with a `minute` reason, such as one the goodreads job opened) that ends within
+`PAIRING_SHORT_QUOTA_WINDOW_MS` (the 2-minute trip plus 30 s), the mint sleeps until the window ends plus a second, then
+tries the same candidate again; that lookup is the half-open probe (D-03), and a success clears the breaker for everyone.
+`PAIRING_QUOTA_WAITS_PER_RUN` is 1: a second window in the same run, or any daily window (even one ending at 07:00Z in 90
+seconds), latches as before (`skippedQuota`). The wait is not an attempt and consumes no cap; it buys no budget either, so
+the daily slice is checked again after it (a candidate that can no longer start is `skippedBudget`). The report gains
+`quotaWaits`, and the wait logs `format-pairing: GB per-minute quota window — waiting it out, then continuing` with
+`retryAfter` and `waitMs`. The mint's sleep and clock are injectable (`sleep`, `clock`); the clock also stamps its breaker
+consults.
+
+**Rule 3: the run line counts the requests.** The `sync finished` line of those two modes carries
+`gbCalls: { calls, perMinute, paced, pacedMs }`: the physical requests the process sent, the ceiling, how many waited for
+room, and for how long in all. Until now no line said how many requests a run made, so a trip could not be read against
+the rate before it.
+
+**Not changed.** The breaker, its classification and its 2-minute window (D-01 to D-03); the daily slices (D-23); the
+goodreads enrichment's skip on a trip (D-06), which the pacer should no longer meet from its own burst; the order the mint
+takes candidates in (DESIGN-036, Mint Backoff amendment of 2026-10-06).
+
+**Expected after deploy.** The first format-pairing run after the 07:00Z roll shows no `gb_quota_trip` with `consumer:
+pairing`, `formatPairing.skippedQuota` 0 and `gbCalls.paced` above 0 when it sent more than 60 requests; `quotaWaits` is 0
+outside LazyLibrarian's scan window. The goodreads job's 07:41Z trip stops. A trip during LazyLibrarian's 09:10Z scan may
+still happen; the run then waits once and carries on.
+
+**Tests:** `packages/domain/__tests__/gb-call-pacer.test.ts` (fake timers: the window's ceiling, a burst of concurrent
+callers taking turns, `0` turns it off, an injected clock), `packages/goodreads/__tests__/google-books.test.ts` (`beforeCall`
+before every physical request, a 503 retry included, ahead of the meter and the fetch), and
+`packages/domain/__tests__/format-pairing.test.ts` (embedded Postgres, injected clock and sleep: a mid-run minute trip is
+waited out and the run finishes; a second window latches; a daily window near 07:00Z is never waited out; a minute window
+another job opened is waited out; the wait buys no budget).

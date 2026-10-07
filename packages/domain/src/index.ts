@@ -94,6 +94,9 @@ export * from './gb-quota-breaker';
 // single-writer + the call meter + per-consumer daily budgets that keep our own GB consumers inside the
 // shared key's low per-day cap unattended (the breaker reacts to 429s; the budget stops us reaching one).
 export * from './gb-call-budget';
+// DESIGN-039 amendment 2026-10-07 (OC-014) — the GB Call Pacer: holds a cron process's Google Books requests
+// under the key's per-MINUTE quota (in memory, wired into the GB client's http wrapper like the call meter).
+export * from './gb-call-pacer';
 // ADR-053 / DESIGN-026 D-07 (PLAN-029) — per-user watch/read-state seam: the app-user↔account mapping,
 // the per-user video watch read-model, and the per-user ABS book read-state (single-writers, no audit).
 // plex-identity is the pure id_token → Plex identity resolver the mapping's auto-fill shares with the
