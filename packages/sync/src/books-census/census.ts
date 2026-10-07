@@ -160,12 +160,17 @@ const short = (id: string): string => id.slice(0, 8);
  * the series ("Shadowhunter Academy") while the track names the book ("07 Bitter of Tongue"), and track titles are too
  * often chapter names or codes ("01: High Chasaline", "WHITESAND01P04") to condemn a file.
  */
-export function contentNamesBook(meta: FileMeta, book: LlBookNaming): boolean | null {
+export function contentNamesBook(
+  meta: FileMeta,
+  book: LlBookNaming,
+  authorTitles: readonly string[] = [],
+): boolean | null {
   if (meta.status !== 'read') return null;
-  const primary = heldFileNamesBook(meta.title, book, { series: meta.series });
+  const options = { series: meta.series, authorTitles };
+  const primary = heldFileNamesBook(meta.title, book, options);
   if (primary === true) return true;
   const cleared = meta.altTitles.some(
-    (t) => heldFileNamesBook(stripTrackMarkers(t), book, { series: meta.series }) === true,
+    (t) => heldFileNamesBook(stripTrackMarkers(t), book, options) === true,
   );
   return cleared ? true : primary;
 }
@@ -209,6 +214,15 @@ export async function runBooksCensus(input: CensusInput): Promise<CensusResult> 
     wantsByBook.set(w.ll_book_id, list);
   }
   const wantIds = (id: string): string[] => (wantsByBook.get(id) ?? []).map((w) => short(w.id));
+  // Issue #799: every title LazyLibrarian holds per author, so a cut title can tell a series name from a work's.
+  const titlesByAuthor = new Map<string, string[]>();
+  for (const b of input.llBooks) {
+    if (!b.BookName?.trim()) continue;
+    const key = (b.AuthorName ?? '').trim().toLowerCase();
+    const list = titlesByAuthor.get(key) ?? [];
+    list.push(b.BookName);
+    titlesByAuthor.set(key, list);
+  }
 
   const summary: CensusSummary = {
     llBooks: input.llBooks.length,
@@ -289,7 +303,11 @@ export async function runBooksCensus(input: CensusInput): Promise<CensusResult> 
     }
 
     // The Held File Check: the file's own title decides when it has one; its name otherwise.
-    const content = contentNamesBook(meta, naming);
+    const content = contentNamesBook(
+      meta,
+      naming,
+      titlesByAuthor.get((book.AuthorName ?? '').trim().toLowerCase()),
+    );
     const byName = content === null ? heldFileNameNamesBook(path, naming) : null;
     if (content !== null) summary.judgedContent += 1;
     else if (byName !== null) summary.judgedName += 1;

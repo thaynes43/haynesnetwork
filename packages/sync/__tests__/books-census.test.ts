@@ -529,6 +529,46 @@ describe('runBooksCensus', () => {
     });
     expect(summary).toMatchObject({ wrongFile: 4, unsupported: 1, judgedName: 1 });
   });
+  it("issue #799: a cut title is judged with the author's other LazyLibrarian titles", async () => {
+    const leGuin = 'Ursula K. Le Guin';
+    const riordan = 'Rick Riordan';
+    const books = [
+      ll({
+        BookID: 'QGPZEAAAQBAJ',
+        BookName: 'Wonderful Alexander and the Catwings',
+        AuthorName: leGuin,
+        BookFile: `${E}/${leGuin}/Catwings/${leGuin} - Catwings.epub`,
+      }),
+      ll({ BookID: 'tehanu', BookName: 'Tehanu', AuthorName: leGuin }),
+      ll({
+        BookID: '8yWqlAEACAAJ',
+        BookName: 'Percy Jackson and the Sea of Monsters',
+        AuthorName: riordan,
+        BookFile: `${E}/${riordan}/Percy Jackson and the Sea of Monsters/x.epub`,
+      }),
+      ll({
+        BookID: 'nCmuEQAAQBAJ',
+        BookName: 'Percy Jackson and the Olympians. The Lightning Thief Illustrated Edition',
+        AuthorName: riordan,
+      }),
+    ];
+    const titles: Record<string, string> = {
+      [`${E}/${leGuin}/Catwings/${leGuin} - Catwings.epub`]: 'Catwings',
+      [`${E}/${riordan}/Percy Jackson and the Sea of Monsters/x.epub`]: 'The Sea of Monsters',
+    };
+    const { findings } = await runBooksCensus({
+      llBooks: books,
+      wants: [],
+      items: [],
+      holds: [],
+      readMeta: async (path) => read(titles[path] ?? null),
+      booksRoot: ROOT,
+      now: NOW,
+    });
+    expect(findings.filter((f) => f.kind === 'wrong_file').map((f) => f.llBookId)).toEqual([
+      'QGPZEAAAQBAJ',
+    ]);
+  });
   it('a stale pointer is a missing file', async () => {
     const { findings } = await runBooksCensus({
       llBooks: SNAPSHOT,

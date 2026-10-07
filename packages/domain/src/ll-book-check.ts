@@ -490,12 +490,14 @@ export function isSeriesDesignation(title: string): boolean {
  *   3. the file's title names nothing the record does not (`namesNothingElse`). The Volume Check passes a file whose
  *      title CONTAINS the record's, which is how a collection ("Four Divergent Stories: The Transfer, ..., and The
  *      Traitor") or another part ("First Shift - Legacy" for "Shift") looks.
+ * Before 2 and 3: a file whose title is the record's with words cut is judged by `cutTitleNamesBook` alone (issue
+ * #799): "Catwings" is not "Wonderful Alexander and the Catwings", "Dune" is not "Dune Messiah".
  * Pure.
  */
 export function heldFileNamesBook(
   fileTitle: string | null | undefined,
   book: LlBookNaming,
-  options: { series?: string | null } = {},
+  options: HeldFileCheckOptions = {},
 ): boolean | null {
   if (!fileTitle || !judgeableTitle(fileTitle)) return null;
   const file = heldTitleText(fileTitle);
@@ -513,6 +515,8 @@ export function heldFileNamesBook(
   const forward = llBookMismatch(asWant(recordTitle), { title: file, author });
   if (forward === 'volume') return false;
   if (isSeriesDesignation(file)) return null;
+  const cut = cutTitleNamesBook(file, recordTitle, author, options);
+  if (cut !== null) return cut;
   const withSub =
     subtitle !== null
       ? llBookMismatch(asWant(`${recordTitle}: ${subtitle}`), { title: file, author })
@@ -532,6 +536,186 @@ export function heldFileNamesBook(
   }
   if (!sameWork) return false;
   return namesNothingElse(file, recordTitle, subtitle, author, options.series);
+}
+
+/** What the Held File Check may know besides the two titles. */
+export interface HeldFileCheckOptions {
+  /** The series name the file declares (calibre:series, belongs-to-collection). */
+  series?: string | null;
+  /**
+   * Every title LazyLibrarian holds for the record's author (its own among them is fine): a leading run of words that
+   * other titles of the author start with too is a series or character name ("Percy Jackson and the ...").
+   */
+  authorTitles?: readonly string[];
+}
+
+/**
+ * Words a cut title may drop without naming another book: how the book is packaged or sold ("LP", "Hardcover",
+ * "Sneak Peek for"), on top of `PACKAGING_WORDS`. Stemmed like `distinctiveWords`.
+ */
+const CUT_PACKAGING_WORDS = new Set([
+  ...PACKAGING_WORDS,
+  ...[
+    'lp',
+    'large',
+    'print',
+    'hardcover',
+    'paperback',
+    'mass',
+    'market',
+    'reissue',
+    'collector',
+    'special',
+    'movie',
+    'tie',
+    'sneak',
+    'peek',
+    'preview',
+    'excerpt',
+    'sample',
+    'sampler',
+    // An interlibrary-loan marker Google Books leaves in a title ("ILL/ Where the Crawdads Sing").
+    'ill',
+  ].map((w) => stem(w)),
+]);
+
+/** A title's distinctive words in order (`distinctiveWords` without the de-duplication). */
+function orderedWords(text: string, authorWords: ReadonlySet<string>): string[] {
+  return words(fold(text).replace(POSITION_MARKER, ' '))
+    .filter((w) => w.length > 1 && !STOP_WORDS.has(w) && !/^\d+$/.test(w) && !authorWords.has(w))
+    .map(stem);
+}
+
+/** A title's parts (trailing parentheticals and brackets cut off as decoration), each as its ordered words. */
+function cutParts(
+  title: string,
+  authorWords: ReadonlySet<string>,
+): { parts: string[][]; decoration: string[][] } {
+  const decoration: string[][] = [];
+  const TRAILING = /\s*[([]([^()[\]]*)[)\]]\s*$/;
+  let rest = fold(title).trim();
+  for (let m = TRAILING.exec(rest); m && m.index > 0; m = TRAILING.exec(rest)) {
+    decoration.push(orderedWords(m[1]!, authorWords));
+    rest = rest.slice(0, m.index).trim();
+  }
+  const parts = rest
+    .split(PART_BREAK)
+    .map((p) => orderedWords(p, authorWords))
+    .filter((p) => p.length > 0);
+  return { parts, decoration: decoration.filter((d) => d.length > 0) };
+}
+
+/** Does `run` start `title` (its words, decoration cut)? `longer`: and `title` goes on past it. */
+function leadsTitle(run: readonly string[], title: readonly string[], longer = false): boolean {
+  return (
+    run.length > 0 &&
+    title.length >= run.length + (longer ? 1 : 0) &&
+    run.every((w, i) => title[i] === w)
+  );
+}
+
+/**
+ * Issue #799 (DESIGN-028 "Books Census", T-290 side 2) — a file whose title is the record's with words cut. The Volume
+ * Check read either way round passes any such file, which is how Catwings (book 1) held as "Wonderful Alexander and the
+ * Catwings" (book 3) looked, and how "Dune" held as "Dune Messiah" would. `null` when the file's title is not the
+ * record's cut (it has a word the record lacks, or lacks none). Otherwise the cut words must say nothing about which
+ * book it is:
+ *   • a trailing cut is whole parts (a subtitle or edition part: "Dune" ⇄ "Dune: Deluxe Edition", "A Plague of Zombies"
+ *     ⇄ "A Plague of Zombies. An Outlander Novella"), packaging ("Just Like Heaven LP", "... - Hufflepuff Edition"), or
+ *     a collection's tail ("The Martian Way" ⇄ "The Martian Way and Other Stories");
+ *   • a leading cut is whole parts or runs across a part break (a series in front: "The Golden Compass" ⇄ "His Dark
+ *     Materials. The Golden Compass", "A Crash of Fate" ⇄ "Star Wars. Galaxy's Edge A Crash of Fate"), packaging
+ *     ("Sneak Peek for"), the file's or the record's own series name, or words other titles of the author start with
+ *     ("The Sea of Monsters" ⇄ "Percy Jackson and the Sea of Monsters" beside "Percy Jackson and the Olympians");
+ *   • nothing is cut from between the kept words but packaging.
+ * A cut inside the kept part that names its book fails: "Dune" ⇄ "Dune Messiah", "Catwings" ⇄ "Wonderful Alexander and
+ * the Catwings", "A Secret Rage" ⇄ "A Secret Rage and Sweet and Deadly". Two guards then apply: a leading cut that names
+ * a separate work ("Prologue to") fails, as before; and a file whose title is only a series name (the file's or the
+ * record's own, or words other titles of the author start with: "Wild Cards" ⇄ "Wild Cards. Lowball", "Four" ⇄ "Four.
+ * The Traitor") fails unless all the record adds is packaging ("Dune" ⇄ "Dune. Deluxe Hardcover Edition"). Pure.
+ */
+function cutTitleNamesBook(
+  file: string,
+  recordTitle: string,
+  author: string | null,
+  options: HeldFileCheckOptions,
+): boolean | null {
+  const authorWords = new Set(words(author));
+  const fileWords = new Set(
+    distinctiveWords(splitTitle(file).work.join(' : '), authorWords).filter(
+      (w) => !CUT_PACKAGING_WORDS.has(w),
+    ),
+  );
+  if (fileWords.size === 0) return null;
+  const record = cutParts(recordTitle, authorWords);
+  const seq = record.parts.flatMap((part, p) => part.map((w) => ({ w, p })));
+  if (![...fileWords].every((w) => seq.some((s) => s.w === w))) return null;
+  if (seq.every((s) => fileWords.has(s.w))) return null;
+  const packaging = (run: readonly { w: string }[]): boolean =>
+    run.every((s) => CUT_PACKAGING_WORDS.has(s.w));
+  const runWords = (run: readonly { w: string }[]): string[] => run.map((s) => s.w);
+
+  const own = fold(recordTitle).replace(/[^a-z0-9]/g, '');
+  const others = (options.authorTitles ?? [])
+    .map((t) => heldTitleText(llTitleText(t)))
+    .filter((t) => fold(t).replace(/[^a-z0-9]/g, '') !== own)
+    .map((t) => cutParts(t, authorWords).parts.flat());
+  const seriesNames = [
+    ...(options.series ? [orderedWords(options.series, authorWords)] : []),
+    ...record.decoration,
+  ].filter((s) => s.length > 0);
+  const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
+    new Set(a).size === new Set(b).size && a.every((w) => b.includes(w));
+  /**
+   * A run of words that is a series or character name: declared, in the record's decoration, or what at least `shared`
+   * other titles of the author start with and go on past (one title that extends the run can be the same book's other
+   * edition: "The Golden Compass Graphic Novel"; a twin record titled like the run is not a series either).
+   */
+  const seriesRun = (run: readonly string[], shared: number): boolean =>
+    seriesNames.some((s) => sameSet(run, s)) ||
+    others.filter((t) => leadsTitle(run, t, true)).length >= shared ||
+    (shared === 1 && others.some((t) => leadsTitle(run, t)));
+
+  /** Is the record's title, kept from `first` to `last`, cut only where a cut says nothing? */
+  const windowOk = (first: number, last: number): boolean => {
+    const lead = seq.slice(0, first);
+    const trail = seq.slice(last + 1);
+    const inside = seq.slice(first, last + 1);
+    const gap = inside.filter((s) => !fileWords.has(s.w));
+    if (!packaging(gap)) return false;
+    const trailOk =
+      trail.length === 0 ||
+      trail[0]!.p !== seq[last]!.p ||
+      packaging(trail) ||
+      (trail[0]!.w === 'other' && trail.length >= 2);
+    const leadOk =
+      lead.length === 0 ||
+      lead.at(-1)!.p !== seq[first]!.p ||
+      lead[0]!.p !== lead.at(-1)!.p ||
+      packaging(lead) ||
+      seriesRun(runWords(lead), 1);
+    if (!trailOk || !leadOk) return false;
+    const cutWords = [...lead, ...gap, ...trail];
+    if (lead.length > 0 && cutWords.some((s) => SEPARATE_WORK.has(s.w))) return false;
+    const keptWords = runWords(inside.filter((s) => fileWords.has(s.w)));
+    return !(seriesRun(keptWords, 2) && !packaging(cutWords));
+  };
+  // The kept words are the shortest stretches of the record's title holding every word of the file's (a word can come
+  // twice: "Wild Cards XII. Turn of the Cards" keeps "Turn of the Cards", not "Cards XII. Turn").
+  const windows: [number, number][] = [];
+  for (let first = 0; first < seq.length; first += 1) {
+    if (!fileWords.has(seq[first]!.w)) continue;
+    const seen = new Set<string>();
+    for (let last = first; last < seq.length; last += 1) {
+      if (fileWords.has(seq[last]!.w)) seen.add(seq[last]!.w);
+      if (seen.size === fileWords.size) {
+        windows.push([first, last]);
+        break;
+      }
+    }
+  }
+  const span = Math.min(...windows.map(([a, b]) => b - a));
+  return windows.filter(([a, b]) => b - a === span).some(([a, b]) => windowOk(a, b));
 }
 
 /**
