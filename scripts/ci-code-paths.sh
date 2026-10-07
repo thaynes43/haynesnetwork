@@ -4,7 +4,9 @@
 # skipped, which satisfies branch protection.
 #
 # Reads changed file paths on stdin, one per line (renames: list both names). Exits 0 and prints the code paths
-# when at least one path is code; exits 1 and prints nothing when every path is docs-only.
+# when at least one path is code; exits 10 and prints nothing when every path is docs-only. Any other exit status
+# is a crash (bash gives 1 under `set -e`/`set -u`), and ci.yml then runs everything: a crash is never read as
+# "docs-only".
 # `--image` instead prints the paths that can break the Docker build without breaking `pnpm build` (is_image_path),
 # with the same exit codes: only those PRs, and the release PR, run ci.yml's `build-image`.
 # `--self-test` checks the rules below against fixed examples (run it after editing either rule).
@@ -104,8 +106,8 @@ if [[ ${1:-} == --image ]]; then
       matched=1
     fi
   done
-  [[ $matched == 1 ]]
-  exit
+  [[ $matched == 1 ]] && exit 0
+  exit 10
 fi
 
 matched=0
@@ -116,4 +118,5 @@ while IFS= read -r path; do
     matched=1
   fi
 done
-[[ $matched == 1 ]]
+[[ $matched == 1 ]] && exit 0
+exit 10

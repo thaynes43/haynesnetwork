@@ -66,14 +66,16 @@ jobs:
           gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
             --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/changed.txt"
           echo "$(wc -l < "$RUNNER_TEMP/changed.txt") changed paths"
-          if matched=$(bash scripts/e2e-gate-paths.sh < "$RUNNER_TEMP/changed.txt"); then
-            echo "pipeline=true" >> "$GITHUB_OUTPUT"
-            echo "Pipeline paths changed, e2e gates this PR:"
-            echo "$matched"
-          else
-            echo "pipeline=false" >> "$GITHUB_OUTPUT"
-            echo "No pipeline path changed: e2e-gate passes at once (label the PR run-e2e for an advisory run)."
-          fi
+          # Exit 0 = gated, 10 = not gated; anything else is a crash, and failing this step makes e2e-gate red.
+          rc=0; matched=$(bash scripts/e2e-gate-paths.sh < "$RUNNER_TEMP/changed.txt") || rc=$?
+          case $rc in
+            0) echo "pipeline=true" >> "$GITHUB_OUTPUT"
+               echo "Pipeline paths changed, e2e gates this PR:"
+               echo "$matched" ;;
+            10) echo "pipeline=false" >> "$GITHUB_OUTPUT"
+                echo "No pipeline path changed: e2e-gate passes at once (label the PR run-e2e for an advisory run)." ;;
+            *) echo "::error::scripts/e2e-gate-paths.sh exited $rc: cannot decide, so e2e-gate fails closed."; exit 1 ;;
+          esac
 
   # The suite, GATING (pipeline PR, release PR) or run by hand (workflow_dispatch).
   e2e:

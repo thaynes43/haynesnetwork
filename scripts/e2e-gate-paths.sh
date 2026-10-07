@@ -2,7 +2,9 @@
 # The book-pipeline paths whose changes make the Playwright suite a MERGE GATE (issue #742, ADR-100).
 #
 # Reads changed file paths on stdin, one per line (renames: list both names). Exits 0 and prints the
-# matching paths when at least one is a pipeline path; exits 1 and prints nothing when none is.
+# matching paths when at least one is a pipeline path; exits 10 and prints nothing when none is. Any other exit
+# status is a crash (bash gives 1 under `set -e`/`set -u`), and e2e.yml fails closed on it: it is never read as
+# "not gated" (ADR-102).
 # `--self-test` checks the rules below against fixed examples (run it after editing PIPELINE_PREFIXES).
 #
 # Keep the list NARROW: it is the code whose breakage the unit suites cannot see because the e2e stubs
@@ -76,4 +78,5 @@ while IFS= read -r path; do
     matched=1
   fi
 done
-[[ $matched == 1 ]]
+[[ $matched == 1 ]] && exit 0
+exit 10

@@ -66,22 +66,26 @@ jobs:
           gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
             --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/changed.txt"
           echo "$(wc -l < "$RUNNER_TEMP/changed.txt") changed paths"
-          if matched=$(bash scripts/ci-code-paths.sh < "$RUNNER_TEMP/changed.txt"); then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            echo "Code paths changed: lint, typecheck, tests and build run."
-            echo "$matched"
-          else
-            echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "Docs-only change: lint, typecheck, tests, build and the image build are skipped."
-          fi
-          if matched=$(bash scripts/ci-code-paths.sh --image < "$RUNNER_TEMP/changed.txt"); then
-            echo "image=true" >> "$GITHUB_OUTPUT"
-            echo "Image inputs changed, build-image runs:"
-            echo "$matched"
-          else
-            echo "image=false" >> "$GITHUB_OUTPUT"
-            echo "No image input changed: build-image is skipped (the release PR builds it before any release)."
-          fi
+          # Exit 0 = matched, 10 = nothing matched; anything else is a crash, and failing this step makes every
+          # job below run (their guard is `!= 'false'`), never skip.
+          rc=0; matched=$(bash scripts/ci-code-paths.sh < "$RUNNER_TEMP/changed.txt") || rc=$?
+          case $rc in
+            0) echo "code=true" >> "$GITHUB_OUTPUT"
+               echo "Code paths changed: lint, typecheck, tests and build run."
+               echo "$matched" ;;
+            10) echo "code=false" >> "$GITHUB_OUTPUT"
+                echo "Docs-only change: lint, typecheck, tests, build and the image build are skipped." ;;
+            *) echo "::error::scripts/ci-code-paths.sh exited $rc: everything runs."; exit 1 ;;
+          esac
+          rc=0; matched=$(bash scripts/ci-code-paths.sh --image < "$RUNNER_TEMP/changed.txt") || rc=$?
+          case $rc in
+            0) echo "image=true" >> "$GITHUB_OUTPUT"
+               echo "Image inputs changed, build-image runs:"
+               echo "$matched" ;;
+            10) echo "image=false" >> "$GITHUB_OUTPUT"
+                echo "No image input changed: build-image is skipped (the release PR builds it before any release)." ;;
+            *) echo "::error::scripts/ci-code-paths.sh --image exited $rc: everything runs."; exit 1 ;;
+          esac
 
   lint-and-typecheck:
     needs: changes
