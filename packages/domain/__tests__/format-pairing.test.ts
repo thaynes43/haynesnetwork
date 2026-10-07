@@ -18,6 +18,8 @@ import {
   type BooksItemInsert,
 } from '@hnet/db';
 import {
+  GB_MINUTE_TRIP_MS,
+  PAIRING_MINT_BACKOFF_GRACE_MS,
   classifyBookLanguage,
   createGbCallMeter,
   judgePairingWantBook,
@@ -971,6 +973,31 @@ describe('mintPairingWants — the Mint Backoff (issue #740)', () => {
     expect(mintBackoffUntil(9, t0).getTime()).toBe(at(30).getTime());
   });
 
+  it('a whole-day wait ends at the same-hour run days later, even one that starts a moment early (the grace)', async () => {
+    await seedItem({ title: 'Never Found', author: 'Nobody', mediaKind: 'book', firstSeenAt: day(1) });
+    const gb = stubGb(() => null);
+    await mintPairingWants({ db: t.db, gb: gb.gb, now: t0, pacer: async () => {} });
+    expect((await wantOf('Never Found')).mintBackoffUntil?.getTime()).toBe(at(1).getTime());
+
+    // The run an hour earlier the next day still waits.
+    gb.calls.length = 0;
+    const early = await mintPairingWants({ db: t.db, gb: gb.gb, now: at(1, -1), pacer: async () => {} });
+    expect(early).toMatchObject({ attempted: 0, inBackoff: 1 });
+    expect(gb.calls).toEqual([]);
+
+    // The same-hour run a day later whose pod started 0.4 s sooner than the day before: due, looked up again.
+    const sameHour = await mintPairingWants({
+      db: t.db,
+      gb: gb.gb,
+      now: new Date(at(1).getTime() - 400),
+      pacer: async () => {},
+    });
+    expect(sameHour).toMatchObject({ attempted: 1, inBackoff: 0 });
+    expect(gb.calls).toEqual(['Never Found']);
+    expect((await wantOf('Never Found')).mintBackoffCount).toBe(2);
+    expect(PAIRING_MINT_BACKOFF_GRACE_MS).toBeLessThan(3_600_000); // never as long as the hour between runs
+  });
+
   it('a changed identity (the anchor gains an ISBN) is looked up at once, and its count starts again', async () => {
     const id = await seedItem({ title: 'Quiet Book', author: 'Quiet Author', mediaKind: 'audiobook' });
     const gb = stubGb(() => null);
@@ -1167,6 +1194,183 @@ describe('mintPairingWants — daily call budget skip (DESIGN-039 D-23)', () => 
     expect(gb.calls).toHaveLength(0); // identity already held ⇒ zero GB calls
     expect(report.pushed).toBe(1); // pushed the missing audiobook via the held id
     expect(report.skippedBudget).toBe(0);
+  });
+});
+
+describe('mintPairingWants — a per-minute quota window is waited out once (OC-014, DESIGN-039 amendment 2026-10-07)', () => {
+  const day = (n: number) => new Date(Date.UTC(2026, 6, n));
+  const minute429 = () =>
+    Object.assign(new Error("HTTP 429 — limit 'Queries per minute per user'"), {
+      status: 429,
+      bodySnippet: "Quota exceeded for quota metric 'Queries' and limit 'Queries per minute per user'",
+    });
+  const daily429 = () =>
+    Object.assign(new Error("HTTP 429 — limit 'Queries per day'"), {
+      status: 429,
+      bodySnippet: "Quota exceeded for quota metric 'Queries' and limit 'Queries per day'",
+    });
+
+  /** A test clock the injected sleep advances: no real time passes, and the breaker sees the advanced time. */
+  function fakeTime(startIso: string) {
+    let nowMs = new Date(startIso).getTime();
+    const sleeps: number[] = [];
+    return {
+      sleeps,
+      clock: () => new Date(nowMs),
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+        nowMs += ms;
+      },
+    };
+  }
+
+  /** A GB stub whose calls (1-based) listed in `failOn` throw the given 429; every other call resolves. */
+  function stubGbFailing(failOn: Record<number, () => Error>) {
+    const calls: string[] = [];
+    return {
+      calls,
+      gb: {
+        resolveVolume: async (input: { title: string }) => {
+          calls.push(input.title);
+          const fail = failOn[calls.length];
+          if (fail) throw fail();
+          return { volumeId: `gb-${input.title.slice(-1)}` };
+        },
+      },
+    };
+  }
+
+  async function seedThree(): Promise<void> {
+    for (let i = 1; i <= 3; i += 1) {
+      await seedItem({ title: `Paced Book ${i}`, author: `Paced Author ${i}`, mediaKind: 'book', firstSeenAt: day(i) });
+    }
+  }
+
+  it('waits out a mid-run per-minute trip, tries the same candidate again and finishes the run', async () => {
+    await seedThree();
+    const time = fakeTime('2026-10-07T07:32:05Z');
+    const gb = stubGbFailing({ 1: minute429 });
+    const ll = stubLl();
+
+    const report = await mintPairingWants({
+      db: t.db,
+      ll: ll.bundle,
+      gb: gb.gb,
+      now: time.clock(),
+      clock: time.clock,
+      sleep: time.sleep,
+      pacer: async () => {},
+    });
+
+    // One wait, the breaker's whole window plus the slack; then the tripped candidate and the other two resolved.
+    expect(time.sleeps).toEqual([GB_MINUTE_TRIP_MS + 1_000]);
+    expect(gb.calls).toEqual(['Paced Book 1', 'Paced Book 1', 'Paced Book 2', 'Paced Book 3']);
+    expect(report).toMatchObject({ attempted: 3, minted: 3, pushed: 3, unmintable: 0, skippedQuota: 0, quotaWaits: 1 });
+    // The resolve after the wait was the half-open probe: it succeeded, so the breaker is closed again.
+    expect((await peekGbQuotaGate({ db: t.db, now: time.clock() })).open).toBe(false);
+  });
+
+  it('waits only once a run: a second per-minute window stops the run\'s lookups as before', async () => {
+    await seedThree();
+    const time = fakeTime('2026-10-07T07:32:05Z');
+    const gb = stubGbFailing({ 1: minute429, 2: minute429 });
+
+    const report = await mintPairingWants({
+      db: t.db,
+      ll: stubLl().bundle,
+      gb: gb.gb,
+      now: time.clock(),
+      clock: time.clock,
+      sleep: time.sleep,
+      pacer: async () => {},
+    });
+
+    expect(time.sleeps).toHaveLength(1);
+    expect(gb.calls).toHaveLength(2); // the tripped call and its retry; the other two are never looked up
+    expect(report).toMatchObject({ attempted: 0, minted: 0, skippedQuota: 3, quotaWaits: 1 });
+    expect(await t.db.select().from(bookRequests)).toHaveLength(0); // skipped candidates are not touched
+  });
+
+  it('never waits out a daily window, even when the 07:00Z reset is under two minutes away', async () => {
+    await seedThree();
+    const time = fakeTime('2026-10-07T06:58:30Z'); // the daily trip's window ends at 07:00:00Z, 90s later
+    const gb = stubGbFailing({ 1: daily429 });
+
+    const report = await mintPairingWants({
+      db: t.db,
+      ll: stubLl().bundle,
+      gb: gb.gb,
+      now: time.clock(),
+      clock: time.clock,
+      sleep: time.sleep,
+      pacer: async () => {},
+    });
+
+    expect(time.sleeps).toEqual([]);
+    expect(gb.calls).toHaveLength(1);
+    expect(report).toMatchObject({ attempted: 0, skippedQuota: 3, quotaWaits: 0 });
+  });
+
+  it('waits out a per-minute window another job opened (the breaker was already open at the run start)', async () => {
+    await seedThree();
+    const time = fakeTime('2026-10-07T07:41:30Z');
+    // The goodreads job tripped the shared breaker 30 seconds before this run's first lookup.
+    await tripGbQuotaBreaker({ db: t.db, kind: 'minute', now: new Date('2026-10-07T07:41:00Z') });
+    const gb = stubGbFailing({});
+
+    const report = await mintPairingWants({
+      db: t.db,
+      ll: stubLl().bundle,
+      gb: gb.gb,
+      now: time.clock(),
+      clock: time.clock,
+      sleep: time.sleep,
+      pacer: async () => {},
+    });
+
+    expect(time.sleeps).toEqual([GB_MINUTE_TRIP_MS - 30_000 + 1_000]);
+    expect(gb.calls).toHaveLength(3);
+    expect(report).toMatchObject({ attempted: 3, minted: 3, skippedQuota: 0, quotaWaits: 1 });
+  });
+
+  it('the wait buys no budget: a candidate the day\'s slice can no longer afford after it is skipped as budget', async () => {
+    await seedThree();
+    const time = fakeTime('2026-10-07T08:00:00Z');
+    const meter = createGbCallMeter();
+    // A slice of 2 calls. The first lookup's three physical requests (two retries inside the client, then the 429)
+    // spend it, so after the wait the candidate cannot start another lookup.
+    const budget = await makeGbBudgetTracker({
+      db: t.db,
+      consumer: 'pairing',
+      now: time.clock(),
+      budgetOverride: 2,
+      reserveOverride: 1,
+    });
+    let calls = 0;
+    const gb = {
+      resolveVolume: async () => {
+        calls += 1;
+        for (let i = 0; i < 3; i += 1) meter.onCall();
+        throw minute429();
+      },
+    };
+
+    const report = await mintPairingWants({
+      db: t.db,
+      ll: stubLl().bundle,
+      gb,
+      meter,
+      budget,
+      now: time.clock(),
+      clock: time.clock,
+      sleep: time.sleep,
+      pacer: async () => {},
+    });
+
+    expect(calls).toBe(1);
+    expect(time.sleeps).toHaveLength(1);
+    expect(report).toMatchObject({ attempted: 0, skippedBudget: 3, skippedQuota: 0, quotaWaits: 1 });
+    expect((await readGbBudgetUsage({ db: t.db, now: time.clock() })).pairing).toBe(3);
   });
 });
 

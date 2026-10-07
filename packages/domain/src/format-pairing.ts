@@ -38,7 +38,7 @@ import {
 } from './book-language';
 import { inTransaction, resolveDb } from './db-client';
 import { insertBookRequest, updateBookRequests } from './book-request-events';
-import { guardedGbResolve } from './gb-quota-breaker';
+import { GB_MINUTE_TRIP_MS, guardedGbResolve, type GuardedGbResolveResult } from './gb-quota-breaker';
 import { gbBudgetCanStart, makeGbBudgetTracker, type GbBudgetTracker, type GbCallMeter } from './gb-call-budget';
 import {
   applyRequestReconcile,
@@ -106,13 +106,26 @@ export function mintBackoffUntil(count: number, now: Date): Date {
   return new Date(now.getTime() + days * 86_400_000);
 }
 
+/**
+ * DESIGN-036 amendment 2026-10-07 (OC-014 follow-up) — a Mint Backoff is a whole number of days from the run that
+ * missed, and the mint runs hourly, so `mint_backoff_until` falls on the start of the same-hour run days later, give
+ * or take the seconds a CronJob pod takes to start. Without slack, whether that run retries the want was a coin flip
+ * on sub-second jitter (10-07 07:32:03.36 + 1 day against a run starting at 07:32:03.0 or 07:32:03.9). A want is due
+ * once the run starts within this grace of its `mint_backoff_until`; far below the hour between runs.
+ */
+export const PAIRING_MINT_BACKOFF_GRACE_MS = 10 * 60_000;
+
 /** Is this want waiting out its Mint Backoff for this identity? A changed identity (another key) is never waiting. */
 export function mintBackingOff(
   want: { mintBackoffUntil: Date | null; mintBackoffKey: string | null },
   key: string,
   now: Date,
 ): boolean {
-  return want.mintBackoffUntil !== null && want.mintBackoffUntil > now && want.mintBackoffKey === key;
+  return (
+    want.mintBackoffUntil !== null &&
+    want.mintBackoffUntil.getTime() - PAIRING_MINT_BACKOFF_GRACE_MS > now.getTime() &&
+    want.mintBackoffKey === key
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -677,6 +690,39 @@ export interface MintPairingWantsInput {
    */
   meter?: GbCallMeter;
   budget?: GbBudgetTracker;
+  /**
+   * DESIGN-039 amendment 2026-10-07 (OC-014) — how a short (per-minute) Google Books quota window is waited out:
+   * `sleep` defaults to `setTimeout`, `clock` to the wall clock (it also stamps the breaker consults). Tests inject
+   * both, so no real time passes.
+   */
+  sleep?: (ms: number) => Promise<void>;
+  clock?: () => Date;
+}
+
+/**
+ * DESIGN-039 amendment 2026-10-07 (OC-014) — how many short quota windows one mint run waits out. A per-minute trip
+ * used to end every lookup for the rest of the run (the 2026-10-07 07:33Z run stopped after 65 of 100 attempts); now
+ * the run waits for the breaker's window once and carries on. A second short window in the same run, or any long
+ * (daily) one, stops the run's lookups as before.
+ */
+export const PAIRING_QUOTA_WAITS_PER_RUN = 1;
+/** A breaker window at most this long is a per-minute one (the 2-minute trip plus slack), so it is worth waiting out. */
+export const PAIRING_SHORT_QUOTA_WINDOW_MS = GB_MINUTE_TRIP_MS + 30_000;
+/** Added to the wait so the next consult finds the window over (it claims the half-open probe). */
+const PAIRING_QUOTA_WAIT_SLACK_MS = 1_000;
+
+/**
+ * Is this quota refusal a per-minute window the run may wait out? The breaker says which kind opened it (the trip's
+ * `kind`, or the `minute` / `daily` prefix of the open row's reason), and the window must be short. A daily window is
+ * never waited out, even in the minutes before the 07:00Z reset.
+ */
+function isMinuteQuotaWindow(
+  guarded: Extract<GuardedGbResolveResult<{ volumeId: string }>, { outcome: 'quota_blocked' | 'quota_tripped' }>,
+  waitMs: number,
+): boolean {
+  const minute =
+    guarded.outcome === 'quota_tripped' ? guarded.kind === 'minute' : (guarded.reason ?? '').startsWith('minute');
+  return minute && waitMs <= PAIRING_SHORT_QUOTA_WINDOW_MS;
 }
 
 export interface MintPairingWantsReport {
@@ -701,6 +747,11 @@ export interface MintPairingWantsReport {
    * retry-recency key, does not advance). Closes the PLAN-050 residual.
    */
   skippedQuota: number;
+  /**
+   * DESIGN-039 amendment 2026-10-07 (OC-014) — short (per-minute) quota windows this run waited out before carrying on
+   * (at most `PAIRING_QUOTA_WAITS_PER_RUN`). A wait is not an attempt and skips nothing.
+   */
+  quotaWaits: number;
   /**
    * DESIGN-039 D-23 — GB-requiring candidates skipped because THIS consumer's daily CALL BUDGET was
    * spent (distinct from skippedQuota, which is the shared 429 breaker). Same non-attempt discipline:
@@ -1411,6 +1462,8 @@ export async function mintPairingWants(
   const now = input.now ?? new Date();
   const cap = input.cap ?? PAIRING_MINT_CAP_PER_RUN;
   const pace = input.pacer ?? defaultPacer;
+  const sleep = input.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const clock = input.clock ?? (() => new Date());
   const log = input.logger ?? {};
 
   // 1. The backlog: live, non-comic items with no pair on their side.
@@ -1666,7 +1719,16 @@ export async function mintPairingWants(
   let attempted = 0;
   let paceSeq = 0;
   let quotaOpen = false;
+  let quotaWaits = 0;
   let budgetLogged = false;
+  const logBudgetSpent = (): void => {
+    if (budgetLogged || !input.budget) return;
+    log.info?.('format-pairing: GB daily call budget spent — GB-requiring mints skipped, cap preserved', {
+      consumer: input.budget.consumer,
+      used: input.budget.used(),
+    });
+    budgetLogged = true;
+  };
   for (const item of candidates) {
     if (attempted >= cap) break;
     const missing = missingFormatFor(item.mediaKind);
@@ -1693,53 +1755,79 @@ export async function mintPairingWants(
     // (needsGb false) still mint free.
     if (needsGb && input.budget && !(await gbBudgetCanStart(input.budget))) {
       skippedBudget += 1;
-      if (!budgetLogged) {
-        log.info?.('format-pairing: GB daily call budget spent — GB-requiring mints skipped, cap preserved', {
-          consumer: input.budget.consumer,
-          used: input.budget.used(),
-        });
-        budgetLogged = true;
-      }
+      logBudgetSpent();
       continue;
     }
     await pace(paceSeq);
     paceSeq += 1;
     if (needsGb) {
-      const before = input.meter?.taken() ?? 0;
-      try {
-        const guarded = await guardedGbResolve({
-          db: input.db,
-          consumer: 'pairing',
-          gb: input.gb!,
-          // Pass the anchor ISBN (PLAN-059): the resolver tries `isbn:` first — the exact leg that
-          // makes the Goodreads path resolve ~99% — before falling back to the fuzzy file-title.
-          // Issue #661 — the held book's title/author/ISBN for a Kavita series, never the series name.
-          query: { isbn: identity.isbn, title: identity.title, author: identity.author },
-        });
-        // Persist the GB legs this resolve actually spent (D-21): the meter counts each outbound leg;
-        // a quota_blocked outcome made ZERO calls (delta 0, no-op), a quota_tripped made one.
-        if (input.budget) await input.budget.spend((input.meter?.taken() ?? 0) - before);
-        if (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped') {
-          quotaOpen = true;
-          skippedQuota += 1;
-          log.info?.('format-pairing: GB quota exhausted — GB-requiring mints skipped, cap preserved', {
-            retryAfter: guarded.until.toISOString(),
+      let guarded: GuardedGbResolveResult<{ volumeId: string }> | null = null;
+      let failed = false;
+      let budgetSpentAfterWait = false;
+      for (;;) {
+        const before = input.meter?.taken() ?? 0;
+        guarded = null;
+        try {
+          guarded = await guardedGbResolve({
+            db: input.db,
+            consumer: 'pairing',
+            gb: input.gb!,
+            // Pass the anchor ISBN (PLAN-059): the resolver tries `isbn:` first — the exact leg that
+            // makes the Goodreads path resolve ~99% — before falling back to the fuzzy file-title.
+            // Issue #661 — the held book's title/author/ISBN for a Kavita series, never the series name.
+            query: { isbn: identity.isbn, title: identity.title, author: identity.author },
+            now: clock(),
           });
-          continue;
+        } catch (error) {
+          // Non-429 failure — today's semantics: an honest unmintable ATTEMPT (cap consumed below).
+          failed = true;
+          log.error?.('format-pairing: GB resolve failed (want stays unmintable)', {
+            title: identity.title,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        } finally {
+          // Persist the GB legs this resolve actually spent (D-21): the meter counts each outbound leg;
+          // a quota_blocked outcome made ZERO calls (delta 0, no-op), a quota_tripped made one.
+          if (input.budget) await input.budget.spend((input.meter?.taken() ?? 0) - before);
         }
+        if (failed || !guarded || (guarded.outcome !== 'quota_blocked' && guarded.outcome !== 'quota_tripped')) break;
+        // OC-014 (DESIGN-039 amendment 2026-10-07) — a short window is Google's per-minute limit, not the day's quota:
+        // wait it out once per run and try this candidate again, instead of skipping every lookup left in the run.
+        const waitMs = guarded.until.getTime() - clock().getTime();
+        if (quotaWaits >= PAIRING_QUOTA_WAITS_PER_RUN || !isMinuteQuotaWindow(guarded, waitMs)) break;
+        quotaWaits += 1;
+        log.info?.('format-pairing: GB per-minute quota window — waiting it out, then continuing', {
+          retryAfter: guarded.until.toISOString(),
+          waitMs: Math.max(0, waitMs),
+        });
+        await sleep(Math.max(0, waitMs) + PAIRING_QUOTA_WAIT_SLACK_MS);
+        // The wait buys no budget: a candidate the day's slice can no longer afford is skipped as before.
+        if (input.budget && !(await gbBudgetCanStart(input.budget))) {
+          budgetSpentAfterWait = true;
+          break;
+        }
+      }
+      if (budgetSpentAfterWait) {
+        skippedBudget += 1;
+        logBudgetSpent();
+        continue;
+      }
+      if (guarded && (guarded.outcome === 'quota_blocked' || guarded.outcome === 'quota_tripped')) {
+        quotaOpen = true;
+        skippedQuota += 1;
+        log.info?.('format-pairing: GB quota exhausted — GB-requiring mints skipped, cap preserved', {
+          retryAfter: guarded.until.toISOString(),
+        });
+        continue;
+      }
+      if (failed || !guarded) {
+        llBookId = null;
+      } else {
         llBookId = guarded.outcome === 'resolved' ? guarded.volume.volumeId : null;
         // Issue #693 — LazyLibrarian may already hold the resolved id under another volume's or work's title.
         if (llBookId !== null && bookRefused(identity, llBookId)) llBookId = null;
-        // Issue #740 — the lookup answered and gave no usable book: a miss (an error below is not one).
+        // Issue #740 — the lookup answered and gave no usable book: a miss (an error above is not one).
         if (llBookId === null) missKey = mintBackoffKey(identity);
-      } catch (error) {
-        if (input.budget) await input.budget.spend((input.meter?.taken() ?? 0) - before);
-        // Non-429 failure — today's semantics: an honest unmintable ATTEMPT (cap consumed below).
-        log.error?.('format-pairing: GB resolve failed (want stays unmintable)', {
-          title: identity.title,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        llBookId = null;
       }
     }
 
@@ -1843,6 +1931,7 @@ export async function mintPairingWants(
     unmintable,
     inBackoff,
     skippedQuota,
+    quotaWaits,
     skippedBudget,
     skippedHeld,
     skippedUnknownHeld,

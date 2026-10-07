@@ -23,6 +23,7 @@ import {
   buildKapowarrActivityAdapter,
   arrQueueCleanupClientsFromEnv,
   createGbCallMeter,
+  createGbCallPacer,
   kapowarrBundleFromEnv,
   lazyLibrarianBundleFromEnv,
   maintainerrClientBundleFromEnv,
@@ -37,6 +38,7 @@ import {
   type ActivitySourceAdapter,
   type BooksActivityBundle,
   type GbCallMeter,
+  type GbCallPacer,
   type KapowarrClientBundle,
   type LazyLibrarianClientBundle,
   type QueueCleanupClients,
@@ -624,6 +626,9 @@ async function main(): Promise<number> {
   // meter, so shelf reads are never counted).
   const gbMeter: GbCallMeter | undefined =
     args.mode === 'goodreads-sync' || args.mode === 'format-pairing' ? createGbCallMeter() : undefined;
+  // DESIGN-039 amendment 2026-10-07 (OC-014) — the GB Call Pacer: the same processes hold their Google Books
+  // requests under the key's per-minute quota (GB_CALLS_PER_MINUTE; 0 = off), awaited before every request.
+  const gbPacer: GbCallPacer | undefined = gbMeter ? createGbCallPacer() : undefined;
   const goodreads: GoodreadsSourceBundle | undefined =
     args.mode === 'goodreads-sync'
       ? (() => {
@@ -634,6 +639,7 @@ async function main(): Promise<number> {
               baseUrl: cfg.googleBooksUrl,
               ...(cfg.googleBooksApiKey ? { apiKey: cfg.googleBooksApiKey } : {}),
               ...(gbMeter ? { onCall: gbMeter.onCall } : {}),
+              ...(gbPacer ? { beforeCall: gbPacer.beforeCall } : {}),
             }),
           };
         })()
@@ -668,6 +674,7 @@ async function main(): Promise<number> {
             baseUrl: cfg.googleBooksUrl,
             ...(cfg.googleBooksApiKey ? { apiKey: cfg.googleBooksApiKey } : {}),
             ...(gbMeter ? { onCall: gbMeter.onCall } : {}),
+            ...(gbPacer ? { beforeCall: gbPacer.beforeCall } : {}),
           });
         })()
       : undefined;
@@ -747,6 +754,18 @@ async function main(): Promise<number> {
       ? { historyRelinkError: report.historyRelinkError }
       : {}),
     fixesCompleted: report.fixesCompleted,
+    // DESIGN-039 amendment 2026-10-07 (OC-014) — the run's physical Google Books requests and how many the pacer
+    // held back (`paced`, `pacedMs`), so a per-minute trip can be read against the rate that preceded it.
+    ...(gbMeter && gbPacer
+      ? {
+          gbCalls: {
+            calls: gbMeter.taken(),
+            perMinute: gbPacer.perMinute(),
+            paced: gbPacer.waits(),
+            pacedMs: gbPacer.waitedMs(),
+          },
+        }
+      : {}),
     // ADR-053 — the metadata-refresh Plex Account Map reconcile (only that mode carries it).
     ...(report.plexAccountMap ? { plexAccountMap: report.plexAccountMap } : {}),
     ...(report.plexAccountMapError !== undefined
