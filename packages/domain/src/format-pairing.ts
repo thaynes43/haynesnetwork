@@ -349,8 +349,7 @@ export function stripAuthorDecoration(title: string, author: string | null): str
  *
  * - `one` — the anchor holds exactly one book, and this is its identity. An ABS audiobook is always one
  *   book (its own title). A Kavita book row is a SERIES, so its identity is the one book the series holds:
- *   that book's own title (series decoration stripped), the row's author (else the book's writer), and the
- *   book's ISBN. The series name stands in only when Kavita has no title for that single book.
+ *   that book's own title (series decoration stripped), its writer (else the row's author), and its ISBN.
  * - `multi_book` — the Kavita series holds several books. One pairing want per anchor (D-02) cannot
  *   describe several books, so the anchor is not a candidate (and an unpushed want on it is parked).
  * - `no_book` — the Kavita series holds no book file.
@@ -363,43 +362,55 @@ export type PairingIdentity =
   | { kind: 'no_book' }
   | { kind: 'unknown' };
 
-export function pairingIdentity(item: PairableItem): PairingIdentity {
+export function pairingIdentity(
+  item: Pick<PairableItem, 'mediaKind' | 'title' | 'author' | 'isbn' | 'heldBooks'>,
+): PairingIdentity {
   if (item.mediaKind !== 'book') {
     return { kind: 'one', title: item.title, author: item.author, isbn: item.isbn ?? null };
   }
   const held = item.heldBooks;
   if (held === undefined) return { kind: 'unknown' };
-  // One book per distinct title: two files of the same book (a duplicate copy) are still one book.
+  // Equal titles alone do not prove duplicate copies: City of Bones holds both Clare and Wells.
   const books: HeldBook[] = [];
-  const byKey = new Map<string, HeldBook>();
+  const isbnKey = (isbn: string | null): string =>
+    (isbn ?? '').replace(/[^0-9x]/gi, '').toUpperCase();
   for (const b of held) {
-    const key = b.title ? pairingTitleKey(b.title) : '';
-    const seen = key ? byKey.get(key) : undefined;
+    const seen = books.find((other) => {
+      const knownAuthors = Boolean(normAuthor(other.author) && normAuthor(b.author));
+      if (knownAuthors && !pairingAuthorsAgree(other.author, b.author)) return false;
+      const isbn = isbnKey(b.isbn);
+      if (isbn && isbn === isbnKey(other.isbn)) return true;
+      const title = b.title ? pairingTitleKey(b.title) : '';
+      return Boolean(title && title === pairingTitleKey(other.title ?? '') && knownAuthors);
+    });
     if (seen) {
       seen.isbn ??= b.isbn;
-      seen.author ??= b.author;
+      if (!seen.author?.trim()) seen.author = b.author;
+      if (!seen.title?.trim()) seen.title = b.title;
       continue;
     }
-    const copy = { ...b };
-    books.push(copy);
-    if (key) byKey.set(key, copy);
+    books.push({ ...b });
   }
   if (books.length === 0) return { kind: 'no_book' };
   if (books.length > 1) return { kind: 'multi_book', books: books.length };
   const book = books[0]!;
-  const author = item.author && item.author.trim().length > 0 ? item.author : book.author;
+  if (!book.title?.trim()) return { kind: 'unknown' };
+  const author = book.author?.trim() ? book.author : item.author;
+  const title = stripAuthorDecoration(stripSeriesDecoration(book.title, item.title), author).trim();
+  if (!pairingTitleKey(title)) return { kind: 'unknown' };
   return {
     kind: 'one',
-    title: book.title ? stripAuthorDecoration(stripSeriesDecoration(book.title, item.title), author) : item.title,
+    title,
     author,
     isbn: book.isbn ?? item.isbn ?? null,
   };
 }
 
-/** The title + author the matcher keys an item on: the held book's for a one-book anchor, else the row's own. */
-function matcherIdentity(item: PairableItem): { title: string; author: string | null } {
-  const id = pairingIdentity(item);
-  return id.kind === 'one' ? { title: id.title, author: id.author } : { title: item.title, author: item.author };
+/** The same identity guard for a fresh books_items read at every pairing mutation boundary. */
+export function pairingBooksItemIdentity(
+  item: Pick<typeof booksItems.$inferSelect, 'mediaKind' | 'title' | 'author' | 'isbn' | 'attrs'>,
+): PairingIdentity {
+  return pairingIdentity({ ...item, heldBooks: readHeldBooks(item.attrs) });
 }
 
 const byDeterministicOrder = (a: PairableItem, b: PairableItem): number =>
@@ -416,10 +427,12 @@ export function matchFormatPairs(items: readonly PairableItem[]): FormatPairMatc
   // Issue #661 — a series whose row title already names its held book claims an audiobook before a
   // series that only matches through its held book, so two series holding the same book (a duplicate
   // file) keep the pair they had instead of trading it on sort order.
-  const namedAsHeld = (b: PairableItem): boolean =>
-    pairingTitleKey(matcherIdentity(b).title) === pairingTitleKey(b.title);
+  const namedAsHeld = (b: PairableItem): boolean => {
+    const identity = pairingIdentity(b);
+    return identity.kind === 'one' && pairingTitleKey(identity.title) === pairingTitleKey(b.title);
+  };
   const books = items
-    .filter((i) => i.mediaKind === 'book')
+    .filter((i) => i.mediaKind === 'book' && pairingIdentity(i).kind === 'one')
     .sort((a, b) => Number(namedAsHeld(b)) - Number(namedAsHeld(a)) || byDeterministicOrder(a, b));
   const audios = items.filter((i) => i.mediaKind === 'audiobook').sort(byDeterministicOrder);
 
@@ -437,7 +450,8 @@ export function matchFormatPairs(items: readonly PairableItem[]): FormatPairMatc
   for (const book of books) {
     // Issue #661 — a Kavita row is a series: a one-book series pairs on the book it holds, never on the
     // series name (the series "Dune" holding Heretics of Dune is not the audiobook "Dune").
-    const identity = matcherIdentity(book);
+    const identity = pairingIdentity(book);
+    if (identity.kind !== 'one') continue;
     const key = pairingTitleKey(identity.title);
     if (!key) continue;
     const bookAuthor = normAuthor(identity.author);
@@ -679,7 +693,7 @@ export interface MintPairingWantsInput {
    * another volume or work, and it refuses a reused or resolved id whose book LazyLibrarian names as another one.
    * Absent ⇒ neither check runs (the degraded run changes nothing it cannot verify).
    */
-  llBookOf?: (llBookId: string) => LlBookNaming | undefined;
+  llBookOf?: (llBookId: string) => LlSnapshotRow | undefined;
   /**
    * Issue #700 — the push-time language guard: LazyLibrarian's own `BookLang` for a book id (`undefined` / null /
    * blank when unknown). Called before `queueBook` / `searchBook`; `refresh` is true right after an `addBook` that
@@ -1237,6 +1251,9 @@ async function rerequestGonePairingWants(input: {
       .select({
         want: bookRequests,
         mediaKind: booksItems.mediaKind,
+        title: booksItems.title,
+        author: booksItems.author,
+        isbn: booksItems.isbn,
         deletedAt: booksItems.deletedAt,
         attrs: booksItems.attrs,
       })
@@ -1260,6 +1277,7 @@ async function rerequestGonePairingWants(input: {
     // Issue #700 — a want on a non-English anchor is not handed back to LazyLibrarian (the F10 English-only rule).
     (r) =>
       r.deletedAt === null &&
+      pairingBooksItemIdentity(r).kind === 'one' &&
       !snapshot.has(r.want.llBookId!) &&
       !isForeignLanguage(readItemLanguage(r.attrs)),
   );
@@ -1501,12 +1519,45 @@ export async function mintPairingWants(
 
   // 2. Existing pairing wants by anchor (one per anchor by schema).
   const allWants = await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'));
+  // A successor may inherit an already-searching format from a removed predecessor, after resolving
+  // its own fresh identity. Historical ids never serve as a resolver or general coverage source.
+  const removedAnchors = await db.select().from(booksItems).where(isNotNull(booksItems.deletedAt));
+  const removedById = new Map(removedAnchors.map((a) => [a.id, a]));
+  const predecessorOwns = (
+    llBookId: string,
+    missing: 'ebook' | 'audiobook',
+    identity: Extract<PairingIdentity, { kind: 'one' }>,
+  ): boolean =>
+    allWants.some((w) => {
+      if (w.llBookId !== llBookId || w.unroutableReason !== null || !w.pairingBooksItemId)
+        return false;
+      const anchor = removedById.get(w.pairingBooksItemId);
+      if (!anchor || missingFormatFor(anchor.mediaKind) !== missing) return false;
+      if (!['wanted', 'grabbed'].includes(statusOfFormat(w, missing))) return false;
+      if (
+        pairingTitleKey(w.title) === pairingTitleKey(identity.title) &&
+        pairingAuthorsAgree(w.author, identity.author)
+      )
+        return true;
+      const old = pairingBooksItemIdentity(anchor);
+      const isbnKey = (isbn: string | null) => (isbn ?? '').replace(/[^0-9x]/gi, '').toUpperCase();
+      return (
+        old.kind === 'one' &&
+        Boolean(isbnKey(old.isbn)) &&
+        isbnKey(old.isbn) === isbnKey(identity.isbn) &&
+        !(
+          normAuthor(old.author) &&
+          normAuthor(identity.author) &&
+          !pairingAuthorsAgree(old.author, identity.author)
+        )
+      );
+    });
   // 2-pre. Issue #712 — a `foreign_language` park whose anchor now reads English (or unknown) is lifted first, so the
   //     want is a normal candidate in this very run. No cap, no external call beyond the language read.
   const liftedParks = await liftForeignLanguageParks({
     db: input.db,
     wants: allWants,
-    anchors: items,
+    anchors: items.filter((i) => pairingIdentity(i).kind === 'one'),
     llBookLanguage: input.llBookLanguage,
     log,
   });
@@ -1869,11 +1920,37 @@ export async function mintPairingWants(
       });
       continue;
     }
+    const raw = (
+      missing === 'ebook'
+        ? input.llBookOf?.(llBookId)?.ebookStatus
+        : input.llBookOf?.(llBookId)?.audioStatus
+    )
+      ?.trim()
+      .toLowerCase();
+    if (raw === 'snatched' || (raw === 'wanted' && predecessorOwns(llBookId, missing, identity))) {
+      await applyRequestReconcile({
+        db: input.db,
+        requestId: row.id,
+        ebookStatus: missing === 'ebook' ? (raw === 'snatched' ? 'grabbed' : 'wanted') : null,
+        audioStatus: missing === 'audiobook' ? (raw === 'snatched' ? 'grabbed' : 'wanted') : null,
+        site: 'format-pairing.mint-adopt-active',
+        now,
+      });
+      log.info?.('ll_push_adopted_active', {
+        site: 'format-pairing.mint-push',
+        requestId: row.id,
+        llBookId,
+        formats: [missing],
+        rawStatus: raw,
+      });
+      continue;
+    }
     try {
       // DESIGN-039 D-18 — addBook ONLY seats a volume LL does not already hold. When LL already has
       // it (the common case for a re-pushed want), skip addBook so LL makes ZERO Google Books calls
       // this push; queueBook + searchBook (neither hits GB) still drive the acquisition retry.
-      const seatedNow = input.llHasSeededBook?.(llBookId) ?? false;
+      const seatedNow =
+        input.llBookOf?.(llBookId) !== undefined || (input.llHasSeededBook?.(llBookId) ?? false);
       if (!seatedNow) await input.ll.write.addBook(llBookId);
       // Issue #700 — the second language guard. The library's language field is not fully reliable (an item that
       // read `English` held German audio), so before the book is queued or searched, LazyLibrarian's own `BookLang`
@@ -2043,7 +2120,15 @@ async function revalidateLandedPairingWants(input: {
   const anchors = new Map(
     (
       await db
-        .select({ id: booksItems.id, mediaKind: booksItems.mediaKind, deletedAt: booksItems.deletedAt })
+        .select({
+          id: booksItems.id,
+          mediaKind: booksItems.mediaKind,
+          deletedAt: booksItems.deletedAt,
+          title: booksItems.title,
+          author: booksItems.author,
+          isbn: booksItems.isbn,
+          attrs: booksItems.attrs,
+        })
         .from(booksItems)
         .where(inArray(booksItems.id, anchorIds))
     ).map((a) => [a.id, a] as const),
@@ -2059,7 +2144,10 @@ async function revalidateLandedPairingWants(input: {
   let reverted = 0;
   for (const want of wants) {
     const anchor = anchors.get(want.pairingBooksItemId!);
-    if (!anchor || anchor.deletedAt !== null || anchor.mediaKind === 'comic') continue;
+    if (
+      !anchor || anchor.deletedAt !== null || anchor.mediaKind === 'comic' ||
+      pairingBooksItemIdentity(anchor).kind !== 'one'
+    ) continue;
     if (paired.has(anchor.id)) continue;
     const missing = missingFormatFor(anchor.mediaKind);
     if ((missing === 'ebook' ? want.ebookStatus : want.audioStatus) !== 'landed') continue;
@@ -2250,6 +2338,9 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
         .select({
           id: booksItems.id,
           mediaKind: booksItems.mediaKind,
+          title: booksItems.title,
+          author: booksItems.author,
+          isbn: booksItems.isbn,
           deletedAt: booksItems.deletedAt,
           attrs: booksItems.attrs,
         })
@@ -2257,7 +2348,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
         .where(inArray(booksItems.id, [...new Set(open.map((w) => w.pairingBooksItemId!))]));
       for (const a of anchors) {
         anchorKindOf.set(a.id, a.mediaKind); // the media kind never changes, so a removed anchor still names it
-        if (a.deletedAt === null && (a.mediaKind !== 'book' || readHeldBooks(a.attrs) !== undefined)) {
+        if (a.deletedAt === null && pairingBooksItemIdentity(a).kind === 'one') {
           anchorLive.add(a.id);
         }
       }
@@ -2360,8 +2451,8 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
         await applyRequestReconcile({
           db: input.db,
           requestId: want.id,
-          ebookStatus: llReconcileStatus(status, 'ebook'),
-          audioStatus: llReconcileStatus(status, 'audiobook'),
+          ebookStatus: missing === 'ebook' ? llReconcileStatus(status, 'ebook') : 'landed',
+          audioStatus: missing === 'audiobook' ? llReconcileStatus(status, 'audiobook') : 'landed',
           now,
         });
         reconciled += 1;

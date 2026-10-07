@@ -13,7 +13,7 @@ import {
   type DbClient,
 } from '@hnet/db';
 import { resolveDb } from './db-client';
-import { readHeldBooks } from './books';
+import { pairingBooksItemIdentity } from './format-pairing';
 import { withRequestEventScope } from './book-request-events';
 import {
   applyLlGoneDecision,
@@ -41,6 +41,7 @@ import {
   applyRequestReconcile,
   computeCoverage,
   llFormatAlreadyHeld,
+  llFormatDownloading,
   loadLibraryMatcher,
   mapKapowarrVolumeStatus,
   llReconcileStatus,
@@ -295,8 +296,10 @@ export async function syncGoodreadsIntegration(
         continue;
       }
       await pace(i);
-      const toQueue = BOTH_FORMATS.filter((f) => !llFormatAlreadyHeld(held, f));
-      const skipped = BOTH_FORMATS.filter((f) => !toQueue.includes(f));
+      const toQueue = BOTH_FORMATS.filter((f) => !llFormatAlreadyHeld(held, f) && !llFormatDownloading(held, f),
+      );
+      const downloading = BOTH_FORMATS.filter((f) => llFormatDownloading(held, f));
+      const skipped = BOTH_FORMATS.filter((f) => llFormatAlreadyHeld(held, f));
       if (skipped.length > 0) {
         pushesSkippedHeld += skipped.length;
         log.info?.('ll_push_skipped_have', {
@@ -308,6 +311,14 @@ export async function syncGoodreadsIntegration(
           audioStatus: held?.audioStatus ?? null,
         });
       }
+      if (downloading.length > 0)
+        log.info?.('ll_push_adopted_active', {
+          site: 'goodreads-sync.push',
+          requestId: target.requestId,
+          llBookId: target.llBookId,
+          formats: downloading,
+          rawStatus: 'snatched',
+        });
       try {
         if (toQueue.length > 0) {
           // A second request row for the same book (another user's want) is fully covered by the first
@@ -344,6 +355,15 @@ export async function syncGoodreadsIntegration(
           db: input.db,
           requestId: target.requestId,
           llBookId: target.llBookId,
+          now,
+        });
+        if (downloading.length > 0)
+          await applyRequestReconcile({
+            db: input.db,
+            requestId: target.requestId,
+            ebookStatus: downloading.includes('ebook') ? 'grabbed' : null,
+            audioStatus: downloading.includes('audiobook') ? 'grabbed' : null,
+            site: 'goodreads-sync.push-adopt-active',
           now,
         });
         // Only a run that actually issued writes counts as a push (an all-held want is `pushesSkippedHeld`,
@@ -849,9 +869,7 @@ async function runManualBookSearchAs(
       .where(eq(booksItems.id, request.pairingBooksItemId!));
     if (
       !anchor ||
-      anchor.deletedAt !== null ||
-      (anchor.mediaKind === 'book' && readHeldBooks(anchor.attrs) === undefined)
-    ) {
+      anchor.deletedAt !== null || pairingBooksItemIdentity(anchor).kind !== 'one') {
       return { searched: false, formats: [], reason: 'unroutable' };
     }
   }

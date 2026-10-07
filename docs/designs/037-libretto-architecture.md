@@ -644,8 +644,9 @@ Reading-list reconciliation must compare chapter membership as well as series me
 have replaced chapters, so the same ordered series ids do not prove the reading list correct. Refresh cached chapter
 identity on scanner signals and a bounded maximum age; after the backfill, reapply existing ordered recipes and prove
 that every reading-list item names a current chapter. Adding recipes for the affected series uses settled builder
-membership/order and is library-only unless an existing acquisition policy explicitly authorizes more. A metadata
-migration does not itself authorize requests for missing series members.
+membership/order. New recipes keep `acquisitionEnabled: false`: missing canonical members still appear as Wanted
+tiles under DESIGN-038 D-13, while automatic queue and search remain disabled. The metadata migration does not
+authorize acquiring missing members.
 
 
 ### Chapter membership for ordered reading lists (2026-10-07, issue #825)
@@ -655,11 +656,15 @@ include Cassandra Clare and Martha Wells in City of Bones; the owned Mortal Inst
 chapters. Recipes with `ordered: true` targeting Kavita's Books library must carry the matched canonical works for
 each target series, then select
 fresh chapters by an equal normalized ISBN, or a complete confirmed title or configured title alias with an
-agreeing author. Multiple legitimate copies of the same work may be included. Matching a series id alone never
+equal full author name after case, diacritic, punctuation, initial-spacing and explicit surname-comma-given-name
+format normalization. A shared name token or
+an expanded initial alone does not prove author agreement. Multiple legitimate copies of the same work may be included. Matching a series id alone never
 adds a chapter. Other library types retain their established membership rules.
 
-The source chapter identity reads must be complete before any membership removal. Unknown identity fields or a
-failed read preserve the existing list and report the failure. After complete identity verification, sync mode
+The source chapter identity reads must establish every membership decision before any removal. A known full title
+that differs from every canonical or confirmed title, with no matching ISBN, proves a foreign chapter even if its
+writer is absent. A missing title, a potentially matching title without author or ISBN proof, or a failed read
+preserves the existing list and reports the failure. After complete identity verification, sync mode
 removes chapters that belong to other works; append mode retains its established removal policy. This permits the
 owned Mortal Instruments list to drop the verified Wells chapter while keeping Clare's chapter, without renaming
 books or moving files. The rule is independent of the unresolved library grouping policy in issue #830.

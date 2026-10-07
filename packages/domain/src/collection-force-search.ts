@@ -37,6 +37,8 @@ import {
 } from './collection-wants-sync';
 import {
   llFormatAlreadyHeld,
+  llFormatDownloading,
+  applyRequestReconcile,
   llRecentSearchCovers,
   parkCollectionWant,
   recentlySearchedLlBookIds,
@@ -364,7 +366,23 @@ async function runForceSearchWorklist(input: {
         });
         continue;
       }
-      if (llFormatAlreadyHeld(held.get(llBookId), want.format)) {
+      if (llFormatDownloading(held.get(llBookId), want.format)) {
+        await applyRequestReconcile({
+          db: input.db,
+          requestId: want.id,
+          ebookStatus: want.format === 'ebook' ? 'grabbed' : null,
+          audioStatus: want.format === 'audiobook' ? 'grabbed' : null,
+          site: `collection-force-search.${input.via}`,
+          now: input.now,
+        });
+        input.log.info?.('ll_push_adopted_active', {
+          site: `collection-force-search.${input.via}`,
+          requestId: want.id,
+          llBookId,
+          formats: [want.format],
+          rawStatus: 'snatched',
+        });
+      } else if (llFormatAlreadyHeld(held.get(llBookId), want.format)) {
         input.report.skippedHeld += 1;
         input.log.info?.('ll_push_skipped_have', {
           site: `collection-force-search.${input.via}`,

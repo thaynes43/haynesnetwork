@@ -443,7 +443,9 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
     const { integration } = await seed();
     // The routable book comes back Ignored from LL → the DEAD-END per-format Missing entry (raw Skipped
     // now auto-requeues via the sweep — covered by its own tests below).
-    const ll = stubLl((id) => (id === 'gb-tog' ? { ebookStatus: 'Ignored', audioStatus: 'Ignored' } : null));
+    const ll = stubLl((id) =>
+      id === 'gb-tog' ? { ebookStatus: 'Ignored', audioStatus: 'Ignored' } : null,
+    );
 
     const report = await syncGoodreadsIntegration({
       db: t.db,
@@ -507,7 +509,9 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
     });
 
     // Run 2: LL now reports the want raw-Skipped → sweep re-queues + re-searches BOTH formats.
-    const second = stubLl((id) => (id === 'gb-tog' ? { ebookStatus: 'Skipped', audioStatus: 'Skipped' } : null));
+    const second = stubLl((id) =>
+      id === 'gb-tog' ? { ebookStatus: 'Skipped', audioStatus: 'Skipped' } : null,
+    );
     const report = await syncGoodreadsIntegration({
       db: t.db,
       integrationId: integration.id,
@@ -644,7 +648,9 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
     expect(stamped!.lastSearchedAt).not.toBeNull();
 
     // A separate job (fresh coverage map), LL showing both formats already Wanted.
-    const second = stubLl((id) => (id === 'gb-tog' ? { ebookStatus: 'Wanted', audioStatus: 'Wanted' } : null));
+    const second = stubLl((id) =>
+      id === 'gb-tog' ? { ebookStatus: 'Wanted', audioStatus: 'Wanted' } : null,
+    );
     await syncGoodreadsIntegration({
       db: t.db,
       integrationId: integration2.id,
@@ -690,6 +696,35 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
       integrationId: integration.id,
     });
     expect(requests.find((r) => r.llBookId === 'gb-tog')!.ebookStatus).toBe('landed');
+  });
+
+  it.each([
+    ['Open', []],
+    ['Wanted', ['ebook']],
+  ] as const)(
+    'a fresh person want preserves Snatched audio while ebook is %s',
+    async (ebookStatus, queued) => {
+      const { integration } = await seed();
+      const ll = stubLl((id) =>
+        id === 'gb-tog' ? { ebookStatus, audioStatus: 'Snatched' } : null,
+      );
+      await syncGoodreadsIntegration({
+        db: t.db,
+        integrationId: integration.id,
+        items,
+        syncedShelves: ['to-read'],
+        ll: ll.bundle,
+        pacer: async () => {},
+      });
+      const calls = ll.calls.filter((c) => c.id === 'gb-tog');
+      expect(calls.filter((c) => c.cmd === 'addBook')).toEqual([]);
+      expect(calls.filter((c) => c.cmd === 'queueBook').map((c) => c.format)).toEqual(queued);
+      expect(calls.filter((c) => c.cmd === 'searchBook').map((c) => c.format)).toEqual(queued);
+      const requests = await getBookRequestsForIntegration({
+        db: t.db,
+        integrationId: integration.id,
+      });
+      expect(requests.find((r) => r.llBookId === 'gb-tog')!.audioStatus).toBe('grabbed');
   });
 
   it('skips the push WHOLE (addBook included) when LL holds both formats, and counts it as no push', async () => {
@@ -790,7 +825,9 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
 
   it('manual re-search on a Missing request is audited and fires a real LL searchBook', async () => {
     const { user, integration } = await seed();
-    const ll = stubLl((id) => (id === 'gb-tog' ? { ebookStatus: 'Ignored', audioStatus: 'Ignored' } : null));
+    const ll = stubLl((id) =>
+      id === 'gb-tog' ? { ebookStatus: 'Ignored', audioStatus: 'Ignored' } : null,
+    );
     await syncGoodreadsIntegration({
       db: t.db,
       integrationId: integration.id,
@@ -842,7 +879,9 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
 
   it('runManualBookSearch narrows to ONE format when given (the detail page per-format button)', async () => {
     const { user, integration } = await seed();
-    const ll = stubLl((id) => (id === 'gb-tog' ? { ebookStatus: 'Ignored', audioStatus: 'Ignored' } : null));
+    const ll = stubLl((id) =>
+      id === 'gb-tog' ? { ebookStatus: 'Ignored', audioStatus: 'Ignored' } : null,
+    );
     await syncGoodreadsIntegration({
       db: t.db,
       integrationId: integration.id,
@@ -983,7 +1022,9 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
 
   it('getBookRequestDetail resolves shelf, owner, household attribution, cover match, and per-format status', async () => {
     const { user, integration } = await seed();
-    const ll = stubLl((id) => (id === 'gb-tog' ? { ebookStatus: 'Ignored', audioStatus: 'Ignored' } : null));
+    const ll = stubLl((id) =>
+      id === 'gb-tog' ? { ebookStatus: 'Ignored', audioStatus: 'Ignored' } : null,
+    );
     await syncGoodreadsIntegration({
       db: t.db,
       integrationId: integration.id,
@@ -1306,7 +1347,7 @@ describe('all-shelves sync + acquisition (ADR-057)', () => {
     // did-not-finish: ABSENT on this account (A3) — no items handed in, shelf still synced.
   ];
 
-  it('EVERY shelf\'s unmet items mint requests and push BOTH formats to LL (read/currently-reading included); comics route via Kapowarr', async () => {
+  it("EVERY shelf's unmet items mint requests and push BOTH formats to LL (read/currently-reading included); comics route via Kapowarr", async () => {
     const { integration } = await seedAllShelves();
     const ll = stubLl(() => ({ ebookStatus: 'Wanted', audioStatus: 'Wanted' }));
     const kapo = stubKapowarr({ candidates: () => SCOTT_PILGRIM_CANDIDATES });

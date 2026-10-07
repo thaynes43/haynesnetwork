@@ -185,9 +185,9 @@ matrix (books read_only OK + audited; books disabled FORBIDDEN; goodreads-origin
 
 ## Open questions
 
-| ID | Question | Resolution |
-|----|----------|------------|
-| Q-01 | Should a long-unmintable want ever alert (an outbox digest of unresolvable titles)? | (open — observe the backfill first) |
+| ID   | Question                                                                                                              | Resolution                                                                                                                                                                                                                                              |
+| ---- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q-01 | Should a long-unmintable want ever alert (an outbox digest of unresolvable titles)?                                   | (open — observe the backfill first)                                                                                                                                                                                                                     |
 | Q-02 | Identifier-backed matching (ISBN/ASIN columns on the mirror) to pair edition variants the conservative matcher skips. | (open — the known upgrade path, ADR-065 C-c; **2026-07-20 (ADR-075): now ALSO improves the unified Books wall's CARD COLLAPSE, not just the coverage badge — a true pair the conservative matcher misses renders as TWO cards until identifiers land**) |
 
 ## Amendment — 2026-07-20 (ADR-075 — the pair cache powers the unified Books wall)
@@ -288,16 +288,19 @@ bundle audit parked eight such wants (`.agents/context/2026-10-03-bundle-audit.m
   is cleaned of series decoration (`stripSeriesDecoration`: a leading `<series> <number>` such as
   "Tom Clancy NF [08] - SSN", a trailing bracket naming the series such as "(The History of Middle-Earth,
   Vol. 3)") and of an author credit joined by a spaced dash (`stripAuthorDecoration`: "Dead in the Family -
-  Charlaine Harris"). The author is the row's, else the book's writer (the Murtagh row has none). The ISBN is
-  the book's. Two files of the same book are one book. The series name stands in only when the series holds
-  one book and Kavita has no title for it.
+  Charlaine Harris"). The author is the held book's writer, else the row's author. The ISBN is
+  the book's. Duplicate files require the same full title and agreeing known authors, or the same normalized
+  ISBN; conflicting known authors never collapse, even with the same ISBN. Same-title copies without that
+  proof remain distinct books. A missing or empty held title is `unknown`, unless a proven duplicate supplies
+  the actual title; the series name never supplies a guessed book title.
 - **`multi_book`** (several books) and **`no_book`** (no book file): one want per anchor (D-02's partial
   unique) cannot describe them. Per-book wants would need a schema change and are not built.
 - **`unknown`**: the row has not been read for its held books yet (the first books-sync after the deploy
   reads every series once). The series name is never used as a guess.
 
-**D-03 (the matcher).** A `one` Kavita series is keyed on its held book's title and author; `multi_book`,
-`no_book` and `unknown` rows keep their row title, as before. A series whose row title already names its held
+**D-03 (the matcher, amended 2026-10-07).** Only a `one` Kavita series can pair, keyed on its held book's title
+and author. `multi_book`, `no_book` and `unknown` rows pair nothing; matching their series name would guess a
+book identity. A series whose row title already names its held
 book claims an audiobook before a series that matches only through its held book, so two series holding the
 same file keep the pair they had. Measured against the live mirror before merge: 628 pairs become 659 (36
 added, such as Bobiverse with Heaven's River and Heroes of Olympus with The House of Hades; 5 series-name
@@ -310,7 +313,8 @@ D-22 ISBN-first order reads the identity's ISBN. A `multi_book` or `no_book` anc
 fresh one is not minted (`skippedNotOneBook`), and an existing want LazyLibrarian is not working yet
 (`ll_book_id` NULL, or the missing format `requested`) is parked with `unroutable_reason` set to the kind
 (`parkPairingWant`: single writer, one statement whose precondition is unparked and unpushed). A pushed want is
-left alone: LazyLibrarian already has a book for it, and parking it would only stop its reconcile. An `unknown`
+left alone: LazyLibrarian already has a book for it, and its current queued format remains protected. Its
+reconcile and acquisition wait for a known one-book identity. An `unknown`
 anchor is skipped with nothing written (`skippedUnknownHeld`). None of these is an attempt, so none spends the
 cap.
 
@@ -396,7 +400,7 @@ Details:
 is off (`gbQueryTitle`: a trailing "(The Stormlight Archive, #1)", a leading "Expanse 05 - "). It keeps the subtitle
 and any volume number:
 
-- "Mistborn: Wax & Wayne" never reuses *The Final Empire*'s id.
+- "Mistborn: Wax & Wayne" never reuses _The Final Empire_'s id.
 - "Court of Thorns and Roses bk 2" never reuses book 1's id.
 - "Dune (Dune Chronicles, #1)" still reuses "Dune".
 - "Dune: Special Edition" no longer does. That is the conservative miss: one Google Books call, not a wrong book.
@@ -436,11 +440,11 @@ missing piece is a language rule. Owner-side rulings (the coordinator's, 2026-10
 
 **The language of an item** (`books_items.attrs.language`, both sources; `classifyBookLanguage`):
 
-| Class | Values | Pairing |
-|---|---|---|
-| English | `en`, `eng` (LazyLibrarian's own spelling), `en-*`, `English` (any case) | allowed |
-| Unknown | blank, null, `XXX` (and LazyLibrarian's `Unknown`) | allowed (the 199 blank Audiobookshelf items are overwhelmingly English) |
-| Foreign | anything else: `nl`, `de`, `es`, `German`, ... | never |
+| Class   | Values                                                                   | Pairing                                                                 |
+| ------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| English | `en`, `eng` (LazyLibrarian's own spelling), `en-*`, `English` (any case) | allowed                                                                 |
+| Unknown | blank, null, `XXX` (and LazyLibrarian's `Unknown`)                       | allowed (the 199 blank Audiobookshelf items are overwhelmingly English) |
+| Foreign | anything else: `nl`, `de`, `es`, `German`, ...                           | never                                                                   |
 
 **D-05, the candidate filter.** A foreign anchor is never a candidate: with no want yet it is not minted
 (`skippedForeign`, no Google Books call, no push); an existing want LazyLibrarian is not working yet (`ll_book_id`
@@ -597,11 +601,11 @@ want answers with no usable book (no match, or a match the Volume Check refuses)
 the next lookup waits 1 day after the first miss, 3 after the second, 7 after the third and 30 after every later one
 (`PAIRING_MINT_BACKOFF_DAYS`). Three columns on `book_requests` (migration 0094), written only by `upsertPairingWant`:
 
-| Column | Meaning |
-| --- | --- |
-| `mint_backoff_count` | misses in a row for the identity below (0 when none) |
-| `mint_backoff_until` | no lookup before this time |
-| `mint_backoff_key` | the identity the misses were counted for: title key, author, ISBN (`mintBackoffKey`) |
+| Column               | Meaning                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `mint_backoff_count` | misses in a row for the identity below (0 when none)                                 |
+| `mint_backoff_until` | no lookup before this time                                                           |
+| `mint_backoff_key`   | the identity the misses were counted for: title key, author, ISBN (`mintBackoffKey`) |
 
 - **Only the lookup waits.** A want in backoff stays a candidate, so a book another request resolved since still mints it
   through the reuse index with no lookup. A waiting want needing a lookup is skipped with no cap consumed and no row
@@ -690,6 +694,8 @@ Removing EPUB grouping metadata replaces a multi-book Kavita row with rows for i
 series id when its old grouping name equals a surviving book title. The mirror tombstones absent rows and keeps
 history; pairs are recomputed from live Held Book identities. Pair changes caused by replacement ids are expected
 once, with their identities and Request Events checked in the staged and full runs.
+Release-transition reads validate cached pairs against current live one-book identities; a stale
+series-name or multi-book pair cannot prove a successor already holds the missing format.
 
 A pairing want on a tombstoned anchor never enters mint, reconcile, identity repair, revival or the Skipped sweep.
 The single writer settles such a historical want as removed, clears its LazyLibrarian id, and records a Request
@@ -704,6 +710,23 @@ read remains unknown, the reservation fails closed without a time expiry: an exp
 outage could cancel a valid in-flight format. Once per format-pairing run, a structured warning names the unknown
 blocking item ids and deferred request ids, with total counts and at most 20 ids per list, so a persistent read
 outage can be diagnosed without unbounded log output.
+
+Every pairing acquisition path requires a live anchor whose identity is `one`, including re-request after a
+LazyLibrarian book disappears and the Skipped sweep. Landed-state revalidation, open-want reconcile, English-edition
+repair and manual Search again use the same identity guard. An unknown, multi-book or empty anchor cannot re-key,
+reopen or queue a prior book using its stale request snapshot, nor pair through its row title. A pushed want on such
+an anchor keeps its request state and LazyLibrarian id while the current identity is unavailable; the guard never
+cancels an existing download or lifts a park. Successful reads resume the existing retry, backoff and language rules.
+
+Every automatic mint or queue writer preserves a format LazyLibrarian already reports `Snatched`: it does not
+add, queue or search that format, and its request reconciles to `grabbed`. Queueing another missing format never
+changes the downloading format. A replacement pairing want adopts an existing `Wanted` format without queueing
+or searching only when a removed predecessor owns the same LazyLibrarian id and missing format, and full title
+plus known author agreement or a shared ISBN proves the same work. Resolution of the successor still uses its
+fresh held identity. Adoption records the existing status through the Request Event writer before the predecessor
+settles, so the release drain sees the successor owner. This scoped handoff does not change ordinary `Wanted`
+retry policy. An unavailable snapshot cannot prove an active download or handoff and retains the existing
+fail-closed reservation rules.
 
 A surviving anchor whose Held Book changes cannot carry a prior book's landed state into the new identity. If its
 want has no LazyLibrarian id, a changed identity is reidentified through the existing writer, resetting the missing

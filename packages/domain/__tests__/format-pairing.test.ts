@@ -128,7 +128,8 @@ function stubGb(resolve: (title: string) => string | null) {
     calls,
     inputs,
     gb: {
-      resolveVolume: async (input: { isbn?: string | null; title: string; author?: string | null }) => {
+      resolveVolume: async (input: { isbn?: string | null; title: string; author?: string | null;
+      }) => {
         calls.push(input.title);
         inputs.push(input);
         const v = resolve(input.title);
@@ -152,11 +153,38 @@ function pi(overrides: Partial<PairableItem> & { title: string; mediaKind: Paira
     author: overrides.author ?? null,
     mediaKind: overrides.mediaKind,
     ...(overrides.isbn !== undefined ? { isbn: overrides.isbn } : {}),
-    ...(overrides.heldBooks !== undefined ? { heldBooks: overrides.heldBooks } : {}),
+    ...(overrides.heldBooks !== undefined ? { heldBooks: overrides.heldBooks } : overrides.mediaKind === 'book'
+        ? { heldBooks: [{ title: overrides.title, author: overrides.author ?? null, isbn: null }] }
+        : {}),
   };
 }
 
 describe('matchFormatPairs (the conservative matcher)', () => {
+  it('never guesses an unknown, multi-book or empty book identity from a matching series title', () => {
+    const audio = pi({ title: 'Mockingjay', author: 'Suzanne Collins', mediaKind: 'audiobook' });
+    const unknown = pi({ title: 'Mockingjay', author: 'Suzanne Collins', mediaKind: 'book' });
+    delete unknown.heldBooks;
+    const multi = pi({
+      title: 'Mockingjay',
+      author: 'Suzanne Collins',
+      mediaKind: 'book',
+      heldBooks: [
+        { title: 'The Hunger Games', author: 'Suzanne Collins', isbn: null },
+        { title: 'Catching Fire', author: 'Suzanne Collins', isbn: null },
+      ],
+    });
+    const empty = pi({
+      title: 'Mockingjay',
+      author: 'Suzanne Collins',
+      mediaKind: 'book',
+      heldBooks: [],
+    });
+    for (const book of [unknown, multi, empty]) expect(matchFormatPairs([book, audio])).toEqual([]);
+    const known = pi({ title: 'Mockingjay', author: 'Suzanne Collins', mediaKind: 'book' });
+    expect(matchFormatPairs([known, audio])).toEqual([
+      { bookItemId: known.id, audioItemId: audio.id, matchedVia: 'title_author' },
+    ]);
+  });
   it('pairs a book with its audiobook on normalized title + author agreement', () => {
     const book = pi({ title: 'The Way of Kings', author: 'Brandon Sanderson', mediaKind: 'book' });
     const audio = pi({ title: 'Way of Kings', author: 'Sanderson', mediaKind: 'audiobook' });
@@ -270,7 +298,8 @@ beforeEach(async () => {
 });
 
 let extSeq = 0;
-async function seedItem(overrides: Partial<BooksItemInsert> & { title: string; mediaKind: 'book' | 'audiobook' | 'comic' }): Promise<string> {
+async function seedItem(overrides: Partial<BooksItemInsert> & { title: string; mediaKind: 'book' | 'audiobook' | 'comic';
+  }): Promise<string> {
   extSeq += 1;
   const source = overrides.mediaKind === 'audiobook' ? 'audiobookshelf' : 'kavita';
   // A Kavita book row is a series; by default it holds one book named like the series (the common
@@ -657,7 +686,9 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
 
     // Run 2: LL reports the audio leg Snatched — and (not knowing our library) the ebook leg Skipped.
     // advanceStatus keeps the held ebook `landed`; the audio advances to grabbed.
-    const ll2 = stubLl((id) => (id === 'gb-hyp' ? { ebookStatus: 'Skipped', audioStatus: 'Snatched' } : null));
+    const ll2 = stubLl((id) =>
+      id === 'gb-hyp' ? { ebookStatus: 'Skipped', audioStatus: 'Snatched' } : null,
+    );
     const run2 = await runFormatPairing({ db: t.db, ll: ll2.bundle, gb: gb.gb, pacer: async () => {} });
     expect(run2.reconciled).toBe(1);
     expect(run2.requeued).toBe(0); // the held format's raw Skipped is OURS to ignore — never re-queued
@@ -672,7 +703,9 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
     const gb = stubGb(() => 'gb-hyp');
     await runFormatPairing({ db: t.db, ll: stubLl(() => null).bundle, gb: gb.gb, pacer: async () => {} });
 
-    const ll = stubLl((id) => (id === 'gb-hyp' ? { ebookStatus: null, audioStatus: 'Skipped' } : null));
+    const ll = stubLl((id) =>
+      id === 'gb-hyp' ? { ebookStatus: null, audioStatus: 'Skipped' } : null,
+    );
     const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
     expect(run.requeued).toBe(1);
     expect(ll.calls.filter((c) => c.cmd === 'queueBook').map((c) => c.format)).toEqual(['audiobook']);
@@ -710,7 +743,9 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
 
     it('queues but does NOT re-search a missing format LL already has Wanted when another job searched the book in the last hour', async () => {
       await seedShelfRequestSearched(minutesAgo(10));
-      const ll = stubLl((id) => (id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: 'Wanted' } : null));
+      const ll = stubLl((id) =>
+        id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: 'Wanted' } : null,
+      );
       const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
       expect(run.pushed).toBe(1);
       expect(ll.calls.filter((c) => c.cmd === 'queueBook').map((c) => c.format)).toEqual(['audiobook']);
@@ -719,7 +754,9 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
 
     it('still searches a format the push is FLIPPING to Wanted (a recent search could not have covered it)', async () => {
       await seedShelfRequestSearched(minutesAgo(10));
-      const ll = stubLl((id) => (id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: null } : null));
+      const ll = stubLl((id) =>
+        id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: null } : null,
+      );
       await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
       expect(ll.calls.filter((c) => c.cmd === 'searchBook').map((c) => c.format)).toEqual(['audiobook']);
       // The search is stamped on the pairing want — the signal the OTHER jobs read.
@@ -761,7 +798,9 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
 
     it('searches normally when the earlier search is older than the hour window', async () => {
       await seedShelfRequestSearched(minutesAgo(180));
-      const ll = stubLl((id) => (id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: 'Wanted' } : null));
+      const ll = stubLl((id) =>
+        id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: 'Wanted' } : null,
+      );
       await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
       expect(ll.calls.filter((c) => c.cmd === 'searchBook')).toHaveLength(1);
     });
@@ -789,7 +828,9 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
     // 2. The audiobook arrives: the pair forms and LL reports both legs Open — the want goes
     //    both-landed (inert). Nothing revives while the pair stands.
     const audioId = await seedItem({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'audiobook' });
-    const llLanded = stubLl((id) => (id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: 'Open' } : null));
+    const llLanded = stubLl((id) =>
+      id === 'gb-hyp' ? { ebookStatus: 'Open', audioStatus: 'Open' } : null,
+    );
     const run2 = await runFormatPairing({ db: t.db, ll: llLanded.bundle, gb: gb.gb, pacer: async () => {} });
     expect(run2).toMatchObject({ paired: 1, added: 1, revived: 0 });
     const [landed] = await t.db.select().from(bookRequests);
@@ -907,7 +948,9 @@ describe('runFormatPairing (the mode body: pairs → mint → reconcile)', () =>
       llBookId: 'gb-two-in-one',
       unroutableReason: 'wrong_volume',
     });
-    const ll = stubLl((id) => (id === 'gb-two-in-one' ? { ebookStatus: 'Open', audioStatus: 'Skipped' } : null));
+    const ll = stubLl((id) =>
+      id === 'gb-two-in-one' ? { ebookStatus: 'Open', audioStatus: 'Skipped' } : null,
+    );
     const run = await runFormatPairing({ db: t.db, ll: ll.bundle, gb: stubGb(() => null).gb, pacer: async () => {} });
 
     expect(run).toMatchObject({ reconciled: 0, requeued: 0 });
@@ -1107,7 +1150,8 @@ function stubGbMetered(meter: { onCall: () => void }, legsPerCall: number, resol
   return {
     calls,
     gb: {
-      resolveVolume: async (input: { isbn?: string | null; title: string; author?: string | null }) => {
+      resolveVolume: async (input: { isbn?: string | null; title: string; author?: string | null;
+      }) => {
         calls.push(input.title);
         for (let i = 0; i < legsPerCall; i += 1) meter.onCall();
         const v = resolve(input.title);
@@ -1270,7 +1314,7 @@ describe('mintPairingWants — a per-minute quota window is waited out once (OC-
     expect((await peekGbQuotaGate({ db: t.db, now: time.clock() })).open).toBe(false);
   });
 
-  it('waits only once a run: a second per-minute window stops the run\'s lookups as before', async () => {
+  it("waits only once a run: a second per-minute window stops the run's lookups as before", async () => {
     await seedThree();
     const time = fakeTime('2026-10-07T07:32:05Z');
     const gb = stubGbFailing({ 1: minute429, 2: minute429 });
@@ -1333,7 +1377,7 @@ describe('mintPairingWants — a per-minute quota window is waited out once (OC-
     expect(report).toMatchObject({ attempted: 3, minted: 3, skippedQuota: 0, quotaWaits: 1 });
   });
 
-  it('the wait buys no budget: a candidate the day\'s slice can no longer afford after it is skipped as budget', async () => {
+  it("the wait buys no budget: a candidate the day's slice can no longer afford after it is skipped as budget", async () => {
     await seedThree();
     const time = fakeTime('2026-10-07T08:00:00Z');
     const meter = createGbCallMeter();
@@ -1429,14 +1473,15 @@ describe('pairingIdentity — the anchor is the book held, never the series name
   const book = (r: { title: string; author: string | null; heldBooks: readonly HeldBook[] }) =>
     pi({ title: r.title, author: r.author, mediaKind: 'book', heldBooks: r.heldBooks });
 
-  it('a one-book series is that book: its own title, the row author, the book ISBN', () => {
+  it('a one-book series is that book: its own title, held writer, and ISBN', () => {
     expect(pairingIdentity(book(ISSUE_ROWS.fireAndBlood))).toEqual({
       kind: 'one',
       title: 'Fire & Blood',
-      author: 'George R.R. Martin',
+      author: 'George R. R. Martin',
       isbn: '9781524796280',
     });
-    expect(pairingIdentity(book(ISSUE_ROWS.beedle))).toMatchObject({ kind: 'one', title: 'The Tales of Beedle the Bard', author: 'J.K. Rowling' });
+    expect(pairingIdentity(book(ISSUE_ROWS.beedle))).toMatchObject({ kind: 'one', title: 'The Tales of Beedle the Bard', author: 'J. K. Rowling',
+    });
   });
 
   it("the book's writer fills a series row with no author", () => {
@@ -1449,7 +1494,7 @@ describe('pairingIdentity — the anchor is the book held, never the series name
   });
 
   it('strips the series decoration Kavita titles carry (a numbered prefix, a trailing series bracket)', () => {
-    expect(pairingIdentity(book(ISSUE_ROWS.ssn))).toEqual({ kind: 'one', title: 'SSN', author: 'Tom Clancy', isbn: '9780425173534' });
+    expect(pairingIdentity(book(ISSUE_ROWS.ssn))).toEqual({ kind: 'one', title: 'SSN', author: 'Martin Greenberg', isbn: '9780425173534' });
     expect(pairingIdentity(book(ISSUE_ROWS.lays))).toMatchObject({ kind: 'one', title: 'The Lays of Beleriand' });
   });
 
@@ -1460,14 +1505,13 @@ describe('pairingIdentity — the anchor is the book held, never the series name
   it('two copies of the same book are one book (The Dark Artifices holds Queen of Air and Darkness twice)', () => {
     const qoaad = 'Queen of Air and Darkness (The Dark Artifices #3)';
     expect(
-      pairingIdentity(pi({ title: 'The Dark Artifices', author: 'Cassandra Clare', mediaKind: 'book', heldBooks: [held(qoaad), held(qoaad)] })),
+      pairingIdentity(pi({ title: 'The Dark Artifices', author: 'Cassandra Clare', mediaKind: 'book', heldBooks: [held(qoaad, { author: 'Cassandra Clare' }), held(qoaad, { author: 'Cassandra Clare' })] })),
     ).toEqual({ kind: 'one', title: 'Queen of Air and Darkness', author: 'Cassandra Clare', isbn: null });
   });
 
-  it('falls back to the series name only for ONE book with no title of its own', () => {
+  it('an untitled held book waits without guessing its series name', () => {
     expect(pairingIdentity(pi({ title: 'Kiss Kiss', author: 'Roald Dahl', mediaKind: 'book', heldBooks: [held(null)] }))).toMatchObject({
-      kind: 'one',
-      title: 'Kiss Kiss',
+      kind: 'unknown',
     });
     // Several untitled books never fall back to the series name.
     expect(pairingIdentity(pi({ title: 'Poldark', author: 'Winston Graham', mediaKind: 'book', heldBooks: [held(null), held(null)] }))).toEqual({
@@ -1476,9 +1520,54 @@ describe('pairingIdentity — the anchor is the book held, never the series name
     });
   });
 
+  it('same-title works by different authors never collapse, even with a conflicting shared ISBN', () => {
+    for (const isbn of [null, '9781406331417']) {
+      const row = pi({
+        title: 'City of Bones',
+        author: 'Cassandra Clare',
+        mediaKind: 'book',
+        heldBooks: [
+          held('City of Bones', { author: 'Cassandra Clare', isbn: '9781406331417' }),
+          held('City of Bones', { author: 'Martha Wells', isbn }),
+        ],
+      });
+      expect(pairingIdentity(row)).toEqual({
+      kind: 'multi_book',
+      books: 2 });
+      expect(
+        matchFormatPairs([
+          row,
+          pi({ title: 'City of Bones', author: 'Cassandra Clare', mediaKind: 'audiobook' }),
+        ]),
+      ).toEqual([]);
+    }
+  });
+
+  it('unknown same-title copies need duplicate proof; a shared normalized ISBN can supply a missing title', () => {
+    expect(pairingIdentity(pi({ title: 'Mockingjay', mediaKind: 'book', heldBooks: [held('Mockingjay'), held('Mockingjay')],
+        }),
+      ),
+    ).toEqual({ kind: 'multi_book', books: 2 });
+    expect(
+      pairingIdentity(
+        pi({ title: 'The Hunger Games', author: 'Aggregate Writer', mediaKind: 'book', heldBooks: [held(null, { isbn: '978-0-439-02352-8' }),
+            held('Mockingjay', { author: 'Suzanne Collins', isbn: '9780439023528' }),
+          ],
+        }),
+      ),
+    ).toEqual({
+      kind: 'one',
+      title: 'Mockingjay',
+      author: 'Suzanne Collins',
+      isbn: '978-0-439-02352-8',
+    });
+  });
+
   it('no book file is no_book; a row never read for its books is unknown (never guessed)', () => {
     expect(pairingIdentity(pi({ title: 'Percy Jackson', author: 'Rick Riordan', mediaKind: 'book', heldBooks: [] }))).toEqual({ kind: 'no_book' });
-    expect(pairingIdentity(pi({ title: 'Percy Jackson', author: 'Rick Riordan', mediaKind: 'book' }))).toEqual({ kind: 'unknown' });
+    const unknown = pi({ title: 'Percy Jackson', author: 'Rick Riordan', mediaKind: 'book' });
+    delete unknown.heldBooks;
+    expect(pairingIdentity(unknown)).toEqual({ kind: 'unknown' });
   });
 
   it('an ABS audiobook is always its own one book', () => {
@@ -1558,17 +1647,19 @@ describe('matchFormatPairs — a one-book Kavita series pairs on the book it hol
     expect(matchFormatPairs([series, audio])).toHaveLength(1);
   });
 
-  it('a multi-book or unread series keeps its row title (no change for them)', () => {
+  it('a multi-book or unread series never pairs through its row title', () => {
     const multi = pi({ title: 'Dreamblood', author: 'N.K. Jemisin', mediaKind: 'book', heldBooks: [held('The Killing Moon'), held('The Shadowed Sun')] });
     const unread = pi({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'book' });
+    delete unread.heldBooks;
     const a1 = pi({ title: 'Dreamblood', author: 'N.K. Jemisin', mediaKind: 'audiobook' });
     const a2 = pi({ title: 'Hyperion', author: 'Dan Simmons', mediaKind: 'audiobook' });
-    expect(matchFormatPairs([multi, unread, a1, a2])).toHaveLength(2);
+    expect(matchFormatPairs([multi, unread, a1, a2])).toEqual([]);
   });
 });
 
 describe('mintPairingWants — the want describes the book held (issue #661)', () => {
-  async function seedSeries(r: { title: string; author: string | null; heldBooks?: readonly HeldBook[] }): Promise<string> {
+  async function seedSeries(r: { title: string; author: string | null; heldBooks?: readonly HeldBook[];
+  }): Promise<string> {
     return seedItem({
       title: r.title,
       author: r.author,
@@ -1600,8 +1691,10 @@ describe('mintPairingWants — the want describes the book held (issue #661)', (
     expect(report).toMatchObject({ attempted: 4, minted: 4, pushed: 4, unmintable: 0, skippedNotOneBook: 1, skippedUnknownHeld: 0, parked: 0 });
     // The GB resolve saw the books, never a series name.
     expect(gb.inputs.map((i) => i.title).sort()).toEqual(['Fire & Blood', 'Murtagh', 'SSN', 'The Tales of Beedle the Bard']);
-    expect(gb.inputs.find((i) => i.title === 'Fire & Blood')).toMatchObject({ isbn: '9781524796280', author: 'George R.R. Martin' });
-    expect(gb.inputs.find((i) => i.title === 'SSN')).toMatchObject({ isbn: '9780425173534', author: 'Tom Clancy' });
+    expect(gb.inputs.find((i) => i.title === 'Fire & Blood')).toMatchObject({ isbn: '9781524796280', author: 'George R. R. Martin',
+    });
+    expect(gb.inputs.find((i) => i.title === 'SSN')).toMatchObject({ isbn: '9780425173534', author: 'Martin Greenberg',
+    });
     expect(gb.inputs.find((i) => i.title === 'Murtagh')).toMatchObject({ author: 'Christopher Paolini' });
 
     const wants = await t.db.select().from(bookRequests);
@@ -1704,9 +1797,9 @@ describe('syncFormatPairs — the re-vanish heals only a pair that dropped this 
   });
 
   it('a pair that breaks because the series turns out to hold another book revives its want', async () => {
-    // Paired on the series name before the held books were read; once read, the series holds Heretics
-    // of Dune, the pair drops, and the landed want wants the held book's audiobook again.
-    const series = await seedItem({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book', attrs: {} });
+    // A confirmed Dune identity paired first; a later chapter read changes it to Heretics of Dune,
+    // so the pair drops and the landed want wants the newly held book's audiobook again.
+    const series = await seedItem({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book', attrs: { heldBooks: [held('Dune')] } });
     await seedItem({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'audiobook' });
     expect((await syncFormatPairs({ db: t.db })).paired).toBe(1);
     const [want] = await t.db
@@ -1955,7 +2048,7 @@ describe('classifyBookLanguage (issue #700)', () => {
     }
   });
 
-  it('unknown (pairing allowed): blank, null, XXX and LazyLibrarian\'s Unknown', () => {
+  it("unknown (pairing allowed): blank, null, XXX and LazyLibrarian's Unknown", () => {
     for (const v of [null, undefined, '', '   ', 'XXX', 'xxx', 'Unknown']) {
       expect(classifyBookLanguage(v), String(v)).toBe('unknown');
     }
@@ -2055,7 +2148,7 @@ describe("runFormatPairing — the push-time guard on LazyLibrarian's own langua
     return seedItem({ title, author: 'Cassandra Clare', mediaKind: 'audiobook', attrs: { language: 'English' } });
   }
 
-  it("a book LazyLibrarian labels German is not queued or searched: the want is parked foreign_language", async () => {
+  it('a book LazyLibrarian labels German is not queued or searched: the want is parked foreign_language', async () => {
     const anchor = await seedEnglishAnchor();
     const ll = stubLlBooks({
       'gb-chroniken': { title: 'Chroniken der Unterwelt', author: 'Cassandra Clare', ebookStatus: 'Skipped', audioStatus: 'Skipped', language: 'de' },
@@ -2159,7 +2252,8 @@ describe("runFormatPairing — the push-time guard on LazyLibrarian's own langua
 describe('foreign_language parks are re-evaluated every run (issue #712)', () => {
   const heldOne = (title: string) => [{ title, author: 'A Writer', isbn: null }];
   /** A Kavita BOOK anchor (holds one book) plus its open want, parked `foreign_language` the way #700 left it. */
-  async function seedParked(opts: { title: string; language: string; llBookId?: string | null; reason?: string }) {
+  async function seedParked(opts: { title: string; language: string; llBookId?: string | null; reason?: string;
+  }) {
     const anchor = await seedItem({
       title: opts.title,
       author: 'A Writer',

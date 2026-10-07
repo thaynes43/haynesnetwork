@@ -21,7 +21,7 @@
 // single-writer. Reads LazyLibrarian only through the snapshot the caller hands in (the run's one `getAllBooks`).
 import { and, asc, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { bookRequests, booksItems, type BookRequestRow, type DbClient } from '@hnet/db';
-import { readHeldBooks } from './books';
+import { pairingBooksItemIdentity } from './format-pairing';
 import { resolveDb } from './db-client';
 import {
   FOREIGN_LANGUAGE_REASON,
@@ -196,13 +196,16 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
     const anchors = await resolveDb(input.db)
       .select({ id: booksItems.id, attrs: booksItems.attrs,
         mediaKind: booksItems.mediaKind,
+        title: booksItems.title,
+        author: booksItems.author,
+        isbn: booksItems.isbn,
         deletedAt: booksItems.deletedAt,
       })
       .from(booksItems)
       .where(inArray(booksItems.id, anchorIds));
     for (const a of anchors) {
       anchorLanguage.set(a.id, readItemLanguage(a.attrs));
-      if (a.deletedAt === null && (a.mediaKind !== 'book' || readHeldBooks(a.attrs) !== undefined))
+      if (a.deletedAt === null && pairingBooksItemIdentity(a).kind === 'one')
         eligibleAnchors.add(a.id);
     }
   }
