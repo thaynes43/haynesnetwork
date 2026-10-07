@@ -61,8 +61,9 @@
 # missing_file QGPZEAAAQBAJ Wonderful Alexander and the Catwings (audio): no audio exists anywhere (the two grabs were PDFs);
 # the pointer is cleared the way LazyLibrarian shows a book it does not hold and does not want (AudioFile NULL,
 # AudioStatus Skipped). Nothing searched.
-# Undo: move each manifest dst back to src (rehome: dst -> src), delete the copied Tempest Tales epub, drop the sort rows and
-# the block rows, restore the printed old pointers (or the backup with LazyLibrarian stopped).
+# Undo, in this order: FIRST delete the copied Tempest Tales epub (its path is where the Further Tales epub came from, so a
+# move-back before that would land on it), then move each manifest dst back to src (rehome: dst -> src), drop the sort rows
+# and the block rows, and restore the printed old pointers (or the backup with LazyLibrarian stopped).
 import os, re, sys, json, hashlib, time, shutil, sqlite3, zipfile, configparser, urllib.request, urllib.parse
 
 B = '/data/cephfs-hdd/data/media/books/'
