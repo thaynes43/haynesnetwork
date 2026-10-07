@@ -53,6 +53,13 @@ export interface GetOptions {
    * persists it to gb_call_budget, so the count matches what Google actually meters.
    */
   onCall?: () => void;
+  /**
+   * DESIGN-039 amendment 2026-10-07 (the GB Call Pacer, OC-014) — awaited before EVERY physical outbound
+   * request (the initial attempt and each retry, before `onCall` counts it), so a process can hold its Google
+   * Books calls under the key's per-minute quota. Wired only by the cron processes' GoogleBooksClients; absent
+   * ⇒ no wait (the web app's interactive Fix, the tests).
+   */
+  beforeCall?: () => Promise<void>;
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -76,6 +83,8 @@ export async function getText(url: string, options: GetOptions = {}): Promise<st
     // Books meters every HTTP request against the daily quota (a 503/per-minute-429 retry is a new
     // metered request). Fired here at the top of the loop so it counts once per fetchImpl call,
     // covering both the retryable-status and network/timeout retry paths below. See GetOptions.onCall.
+    // The pacer waits first, so a retry is paced like any other request (GetOptions.beforeCall).
+    if (options.beforeCall) await options.beforeCall();
     options.onCall?.();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
