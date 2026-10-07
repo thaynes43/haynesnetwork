@@ -320,8 +320,11 @@ The ruling treats every unnumbered book the way compilation editions are treated
 A work is unnumbered when it names its series and has no position, which the series works already carried, so the
 cache key stays `hardcover:series-works:v6`. The app needs no change: its hourly collection wants pass deletes a want
 whose member left the missing list (DESIGN-038 D-13), and that delete records the LazyLibrarian Release, which unqueues
-the format the app had queued for the want once nothing else asks for it (DESIGN-028, issue #735). Libretto PR
-https://github.com/thaynes43/libretto/pull/31.
+the format the app had queued for the want once nothing else asks for it (DESIGN-028, issue #735). Live on
+sha-e04dc83 (2026-10-07): none of the 48 series recipes lists an unnumbered book as missing on any target, the next
+collection wants pass removed the 19 wants these books held, and the next format-pairing run unqueued the one format
+LazyLibrarian still had `Wanted` for them (The Great Redwall Feast, audiobook); the rest were not `Wanted` there.
+Libretto PR https://github.com/thaynes43/libretto/pull/31.
 
 ### D-06 — Write targets and per-recipe target mapping
 
