@@ -25,11 +25,15 @@ this documents field contracts only (CLAUDE.md rule 7).
 
 1. **PR merges to `main`.** The four required checks (`lint-and-typecheck`, `test`,
    `build`, `e2e-gate`) must be green; squash-merge only (ADR-009). `e2e-gate` passes at once unless the
-   PR touches the book pipeline (or is the release PR), when it mirrors the Playwright suite (ADR-100).
+   PR touches the book pipeline (or is the release PR), when it mirrors the Playwright suite (ADR-100). A PR
+   that changes no code skips `lint-and-typecheck`, `test` and `build`; a skipped check satisfies protection
+   (ADR-102). Nothing runs on the push to `main`.
 2. **release-please opens/updates a release PR** (`.github/workflows/release-please.yml`)
    by parsing conventional commits since the last tag. It maintains `CHANGELOG.md`, bumps
    the version in `.release-please-manifest.json` (`bump-minor-pre-major` — `feat:` → minor,
-   `fix:` → patch pre-1.0), and titles itself `chore(main): release X.Y.Z`.
+   `fix:` → patch pre-1.0), and titles itself `chore(main): release X.Y.Z`. A commit that touches only
+   `.agents/` and `docs/` is skipped (`exclude-paths`, ADR-102): `.dockerignore` keeps both out of the image,
+   so it would release an identical image.
 3. **Merge the release PR.** That squash-merge tags **`vX.Y.Z`** on `main` and publishes a
    GitHub Release. `include-component-in-tag: false`, so the tag is a bare `v*`.
 4. **release-please publishes the image IN THAT SAME RUN** (`.github/workflows/release-please.yml`,

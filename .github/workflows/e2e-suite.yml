@@ -1,8 +1,9 @@
 name: e2e-suite
 
-# The Playwright suite as a reusable workflow, so e2e.yml can run it either as the GATING job (a PR that
-# touches the book pipeline, the release-please PR, a push to main) or as the ADVISORY job (every other PR)
-# without copying the steps. Nothing here decides whether a result blocks a merge; e2e.yml's `e2e-gate` does.
+# The Playwright suite as a reusable workflow, so e2e.yml can run it as the GATING job (a PR that touches the book
+# pipeline, the release-please PR, or by hand) and e2e-advisory.yml as the opt-in ADVISORY job (a PR labelled
+# `run-e2e`) without copying the steps. Nothing here decides whether a result blocks a merge; e2e.yml's `e2e-gate`
+# does (ADR-100, ADR-102).
 on:
   workflow_call:
 

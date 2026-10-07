@@ -34,6 +34,8 @@ PIPELINE_PREFIXES=(
 
 is_pipeline_path() {
   local path=$1 prefix
+  # Markdown never reaches the suite (a package README, say), so it never gates (ADR-102).
+  [[ $path == *.md ]] && return 1
   for prefix in "${PIPELINE_PREFIXES[@]}"; do
     [[ $path == "$prefix"* ]] && return 0
   done
@@ -62,6 +64,7 @@ if [[ ${1:-} == --self-test ]]; then
   expect no 'packages/domainx/src/a.ts' # a prefix must end at a directory boundary
   expect no 'apps/web/app/(app)/library/page.tsx'
   expect no 'CHANGELOG.md'
+  expect no 'packages/domain/README.md' # Markdown inside a pipeline package does not gate
   exit "$fail"
 fi
 

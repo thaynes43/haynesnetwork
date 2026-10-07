@@ -126,9 +126,14 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
   reports.** It passes at once for a PR that touches no pipeline path, and mirrors the Playwright
   suite for one that does (`packages/{domain,sync,arr,lazylibrarian,goodreads,books,kapowarr,downloads,libretto,db,test-utils}`,
   the integrations/books/book-fix tRPC routers, `apps/web/e2e`, the integrations UI; the list is `scripts/e2e-gate-paths.sh`) and for the release-please PR,
-  so a red e2e stops a pipeline change and the release (ADR-100, #742). Every other PR still runs the
-  suite as the advisory `e2e-advisory`. Conventional commits (`feat:`/`fix:`/`feat!:`) drive
-  release-please versioning.
+  so a red e2e stops a pipeline change and the release (ADR-100, #742). **CI spends minutes only where a change
+  can break something (ADR-102):** a PR that changes no code path (`scripts/ci-code-paths.sh`: Markdown anywhere,
+  `docs/**`, `.agents/**` except its `*.yaml`/`*.json` data files) skips lint, typecheck, tests, build and the image
+  build; those required checks report as skipped, which satisfies branch protection. The advisory suite is opt-in:
+  label a non-pipeline PR `run-e2e` when it changes something the suite drives. Nothing runs on a push to main
+  (protection is strict, so main's tree is the tree the PR tested); `gh workflow run e2e.yml --ref main` runs the
+  suite by hand. A commit touching only `.agents/` and `docs/` never opens or updates the release PR.
+  Conventional commits (`feat:`/`fix:`/`feat!:`) drive release-please versioning.
 - **Claude Code PR reviewer (advisory).** `.github/workflows/claude-code-review.yml` reviews every
   non-draft PR (job `Claude advisory review`) and `claude.yml` answers `@claude` mentions from
   write-access users. The review is **advisory, never a required check** (the required contexts stay
