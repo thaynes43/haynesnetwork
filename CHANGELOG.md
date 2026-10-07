@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.110.0](https://github.com/thaynes43/haynesnetwork/compare/v0.109.5...v0.110.0) (2026-10-07)
+
+
+### Features
+
+* **books:** admins read a want's Request Event history on its Wanted detail ([#792](https://github.com/thaynes43/haynesnetwork/issues/792)) ([#826](https://github.com/thaynes43/haynesnetwork/issues/826)) ([64524c7](https://github.com/thaynes43/haynesnetwork/commit/64524c7746b88a1bf6b29ce137422d0c0a171962))
+
 ## [0.109.5](https://github.com/thaynes43/haynesnetwork/compare/v0.109.4...v0.109.5) (2026-10-07)
 
 
