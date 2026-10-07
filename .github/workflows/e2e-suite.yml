@@ -15,18 +15,12 @@ env:
 
 jobs:
   e2e:
-    # Issue #812 MEASUREMENT (draft PR only): the same suite twice, against `next dev` (ADR-010, today's layer)
-    # and against a production `next build` + `next start` (the prototype), each writing its per-spec timings as
-    # annotations. A shipped version runs one leg.
-    strategy:
-      fail-fast: false
-      matrix:
-        server: [dev, start]
-    name: e2e (${{ matrix.server }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      HNET_E2E_SERVER: ${{ matrix.server }}
+      # Issue #812 prototype: the suite serves one production `next build` with `next start` (e2e/support/harness.ts)
+      # instead of `next dev`; the build overlaps the Postgres and seed boot. Local runs keep `next dev`.
+      HNET_E2E_SERVER: start
       HNET_E2E_TIMINGS_DIR: ${{ github.workspace }}/apps/web/e2e-timings
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +33,7 @@ jobs:
       # Chromium only (the suite's single project); --with-deps pulls the system
       # libraries the runner image may lack (CI-only — locally plain install).
       - run: pnpm --filter web exec playwright install chromium --with-deps
-      # globalSetup boots embedded Postgres 16 + the stub OIDC + `next dev`
+      # globalSetup boots embedded Postgres 16 + the stub OIDC + the app server (HNET_E2E_SERVER above)
       # (ADR-010 — no Docker/Testcontainers, no live Authentik).
       - run: pnpm --filter web e2e
       # Issue #812: per-spec durations, boot phases and first-hit compile estimates, as annotations + job summary.
@@ -50,6 +44,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-${{ matrix.server }}
+          name: playwright-report
           path: apps/web/playwright-report/
           retention-days: 7
