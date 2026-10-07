@@ -3,7 +3,8 @@
 - **Status:** Accepted (2026-10-06; the owner approved the safeguard on issue #742 after the books-rollout review,
   implemented by an agent, Accept authority per `.agents/plans/README.md`). The suite's run on a push to main and the
   advisory run on every other PR are superseded by [ADR-102](102-ci-minutes-budget.md) (no push run; the advisory run
-  is opt-in by the `run-e2e` label); the gate stands.
+  is opt-in by the `run-e2e` label); the gate stands. C-03's "about 15 minutes" is amended by
+  [ADR-103](103-e2e-serves-a-production-build.md) (the suite serves a production build; the e2e job takes about 9).
 - **Date:** 2026-10-06
 - **Deciders:** Tom Haynes (approved safeguard 2 of 4, review recommendation R-05) · drafted by Sonnet 5.5
 - **Supersedes in part:** [ADR-009](009-ci-and-pr-flow.md) C-06 and [ADR-010](010-test-strategy.md) C-07 (e2e "stays
