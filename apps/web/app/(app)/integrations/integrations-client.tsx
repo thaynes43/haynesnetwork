@@ -25,6 +25,8 @@ function GoodreadsCard() {
   });
   const data = overviewQ.data;
   const linked = data?.integration.linked ?? false;
+  // Until the overview answers, the card claims neither state (it used to flash "Not linked" at a linked user).
+  const checking = overviewQ.isPending;
   const pending = isFirstSyncPending(linked, data?.integration.lastSyncedAt ?? null);
   const shelvedTotal = data?.shelves.reduce((sum, s) => sum + s.total, 0) ?? 0;
 
@@ -42,7 +44,9 @@ function GoodreadsCard() {
           </span>
           <span className="integrations-provider__name">Goodreads</span>
         </span>
-        {linked ? (
+        {checking ? (
+          <span className="badge badge--muted">Checking…</span>
+        ) : linked ? (
           <span className="badge badge--ok">Linked</span>
         ) : (
           <span className="badge badge--muted">Not linked</span>
@@ -51,7 +55,7 @@ function GoodreadsCard() {
       {/* The stat block reserves its footprint either way (ADR-015) — the not-linked / pending /
           linked swaps recolor and re-copy, never reflow. */}
       <span className="hub-card__stats">
-        {!linked ? (
+        {checking ? null : !linked ? (
           <span className="hub-card__hint">
             Link your public shelves and we&rsquo;ll request the books you don&rsquo;t have yet.
           </span>

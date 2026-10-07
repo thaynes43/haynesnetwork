@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (2026-07-04)
 - **Feeds:** every PR (the merge gate below IS the CI contract); ADR-009 (CI jobs),
-  ADR-010 (test strategy)
+  ADR-010 (test strategy), ADR-103 (the e2e suite serves a production build)
 
 **Run this top-to-bottom before you push.** No Docker exists in this WSL distro and
 there is no live cluster on your machine — everything here runs against an embedded
@@ -24,9 +24,10 @@ deploy runbook, OPS-004) until this passes locally. Deploy is a manual image-tag
 
 ## 1. The merge gate (map 1:1 to CI)
 
-Run these five commands, in order. They reproduce exactly what the required CI checks
-enforce (ADR-009). A PR cannot merge unless all three required jobs are green;
-`main` is branch-protected (linear history, squash-merge only).
+Run these five commands, in order. They reproduce what the required CI checks
+`lint-and-typecheck`, `test` and `build` enforce (ADR-009); the fourth required check,
+`e2e-gate`, is the Playwright suite (§5). `main` is branch-protected (linear history,
+squash-merge only).
 
 ```
 pnpm lint        # ESLint 9 flat config, pnpm -r lint          ┐
@@ -36,16 +37,16 @@ pnpm test        # pnpm -r test (Vitest per package)           ── CI job: te
 pnpm build       # pnpm -r build (next build, standalone)      ── CI job: build
 ```
 
-- The three required CI checks are **`lint-and-typecheck`, `test`, `build`**. The single
+- The required CI checks are **`lint-and-typecheck`, `test`, `build`, `e2e-gate`**. The single
   `lint-and-typecheck` job runs `lint` + `lint:css` + `typecheck`; run all three locally.
 - `pnpm lint:css` is the hard-rule-2 guard: no raw hex outside
   `packages/ui/src/theme/tokens.css`. Adding a color token means editing BOTH theme blocks
   AND `REQUIRED_TOKENS` in `tokenContract.ts`, or the token-contract test fails.
-- **`e2e` is advisory, NOT a required check** (ADR-009 / ADR-010 C-07) — it does not block
-  merge and is not in the five commands above. Run it (§5) when your change touches auth,
-  routing, the dashboard/library/fix UI, or the resize matrix. It stays advisory until the
-  hardening window closes; the Phase-1 e2e gate (R-64) still blocks the public cutover
-  (OPS-005).
+- **`e2e-gate` mirrors the suite only where it gates** (ADR-100, ADR-102): on a PR that
+  touches a pipeline path (`scripts/e2e-gate-paths.sh`) and on the release-please PR, a red
+  suite blocks the merge and the release. Any other PR passes it at once; label it `run-e2e`
+  for an advisory run. Run the suite locally (§5) when your change touches a pipeline path,
+  auth, routing, the dashboard/library/fix UI, or the resize matrix.
 
 If all five pass you are clear to open the PR. Conventional-commit PR titles
 (`feat:`/`fix:`/`feat!:`) drive release-please versioning.
@@ -86,9 +87,10 @@ Run a single package while iterating, e.g. `pnpm --filter @hnet/domain test` or
 ## 3. Interactive local run (`pnpm dev:local`)
 
 The hands-on way to exercise the real UI with no Docker, no Authentik, no cluster, and no
-real credentials. `pnpm dev:local` (`apps/web/dev/local.ts`) boots the **exact stack the
-e2e suite uses** — embedded PG16 → real migrations + catalog seed → stub OIDC → stub *arr →
-`next dev` — but long-running, on **port 3000** (`http://localhost:3000`).
+real credentials. `pnpm dev:local` (`apps/web/dev/local.ts`) boots **the stack the e2e
+suite uses** — embedded PG16 → real migrations + catalog seed → stub OIDC → stub *arr →
+the app — but long-running, on **port 3000** (`http://localhost:3000`), and with the app
+under `next dev` (hot reload) where the suite serves a production build (§5, ADR-103).
 
 - **Sign in** with the normal button. Which persona the stub OIDC mints is selected by
   **typing the persona name + Enter at the terminal** (sticky until changed):
@@ -267,11 +269,12 @@ Use this to eyeball a change; use §5 to prove it deterministically.
 
 ## 4. Local merge-gate summary
 
-Green on §1's five commands = you match the required CI checks. Do §2 understanding
+Green on §1's five commands = you match `lint-and-typecheck`, `test` and `build`; §5 is
+`e2e-gate` on a gated PR. Do §2 understanding
 (embedded PG16, per-package configs) if a test misbehaves. Do §3/§5 for anything with a
 runtime UI or auth surface.
 
-## 5. e2e (`pnpm --filter web e2e`) — advisory, but run it for UI/auth changes
+## 5. e2e (`pnpm --filter web e2e`)
 
 Playwright over the same harness as `dev:local`, on **port 3100** (so it coexists with a
 `pnpm dev`/`dev:local` on 3000). `baseURL` is `http://localhost:3100`, kept in sync with
@@ -285,7 +288,8 @@ Playwright over the same harness as `dev:local`, on **port 3100** (so it coexist
   only exist once the harness has booted. `global-setup.ts` calls `startStack()`
   (`harness.ts`), which does: `startPostgres()` → migrations as a **subprocess**
   (`pnpm --filter @hnet/db migrate`) → **seed-ledger as a `tsx` subprocess**
-  (`e2e/support/seed-ledger.ts`) → stub OIDC → stub *arr → `spawn` `next dev`. Migrations
+  (`e2e/support/seed-ledger.ts`) → stub OIDC → stub *arr → `next start` on the build the
+  harness started first (below). Migrations
   and seed run out of process for the CJS-transform reason in §2 (the harness imports only
   `@hnet/test-utils/postgres`). `seed-ledger.ts` writes THROUGH the `@hnet/domain` single
   writers, never direct table writes (the no-direct-writes guard scans it too).
@@ -306,7 +310,29 @@ Playwright over the same harness as `dev:local`, on **port 3100** (so it coexist
   prod bug: if fix code sends `eventType=grabbed` again it will 400 in e2e, not in
   production.
 
-Run it: `pnpm --filter web e2e` (or `pnpm e2e` from root). First run is slow — the harness
-waits up to 180s for `next dev` and prewarms every user-facing route so first-hit compile
-lag doesn't eat a per-test timeout. If it hangs on boot, check for a stale process holding
-port 3100 or a leftover embedded-PG under the temp dir.
+- **A production build, the same locally and in CI** (ADR-103). `startStack` runs
+  `next build` before Postgres starts, so the build overlaps the migrations and the seeds
+  (about 25 to 30 s; the seeds usually finish last), then serves it with `next start`. The
+  build gets no runtime env except the harness flag below and its localhost
+  `BETTER_AUTH_URL`, and `HNET_E2E_BUILD=1` skips its TypeScript pass (the required checks
+  type-check the same tree).
+- **The harness flag, guarded.** The harness sets `HNET_E2E_HARNESS=1` on the build and the
+  server. Read only through `e2eHarnessActive()` (`@hnet/domain/e2e-harness`), it keeps the
+  four `NODE_ENV` branches the suite relies on non-production: the `/e2e/*` harness pages
+  render, the ADR-081 boot tasks stay off, Better Auth does not rate limit, and Trash
+  candidates refresh inline. It counts only when `BETTER_AUTH_URL`'s host is `localhost` or
+  `127.0.0.1`; anywhere else it is ignored and the server logs one
+  `[e2e-harness] HNET_E2E_HARNESS=1 is ignored` warning. If a harness page 404s or sign-ins
+  start returning 429 in a run, look for that warning.
+- **Timings.** With `HNET_E2E_TIMINGS_DIR=<dir>` (CI sets it), the harness writes its boot
+  phases (`stack-timings.json`) and a timestamped server log, Playwright writes
+  `results.json`, and `node apps/web/e2e/support/timings-report.mjs <dir>` prints the
+  per-spec durations (CI publishes them as annotations and the job summary).
+
+Run it: `pnpm --filter web e2e` (or `pnpm e2e` from root). One spec:
+`pnpm --filter web e2e card-gallery.spec.ts`. Each run builds the app once, which takes about 25 to 30 s
+of boot. **To debug under `next dev`** (source maps, readable React errors, hot reload, no
+build): `HNET_E2E_SERVER=dev pnpm --filter web e2e`. The harness then waits up to 180s for
+`next dev` and prewarms the user-facing routes so first-hit compile lag doesn't eat a
+per-test timeout. If it hangs on boot, check for a stale process holding port 3100 or a
+leftover embedded-PG under the temp dir.

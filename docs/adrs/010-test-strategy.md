@@ -1,6 +1,7 @@
 # ADR-010: Test strategy — Vitest with embedded Postgres, Playwright with stub OIDC, contract guards
 
-- **Status:** Accepted
+- **Status:** Accepted. The e2e layer is amended by [ADR-103](103-e2e-serves-a-production-build.md) (the suite
+  serves a production build); C-07 is superseded in part by [ADR-100](100-e2e-gates-the-book-pipeline.md).
 - **Date:** 2026-07-03
 - **Deciders:** Tom Haynes (with agent input)
 

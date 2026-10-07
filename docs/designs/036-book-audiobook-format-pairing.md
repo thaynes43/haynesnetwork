@@ -1,7 +1,7 @@
 # DESIGN-036: Book ⇄ audiobook format pairing — pair cache, paced system wants, dual consume buttons
 
 - **Status:** Draft
-- **Last updated:** 2026-10-06 (the pairing writers record a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (the missing format's `grabbed` follows LazyLibrarian, and a given-up want releases its LazyLibrarian book, issues #734 and #735; see the last amendment). Prior: 2026-10-05 (a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
+- **Last updated:** 2026-10-07 (a Mint Backoff ends at the same-hour run however its start jitters; the mint waits out one per-minute quota window, owed check OC-014). Prior: 2026-10-06 (the pairing writers record a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (the missing format's `grabbed` follows LazyLibrarian, and a given-up want releases its LazyLibrarian book, issues #734 and #735; see the last amendment). Prior: 2026-10-05 (a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
   see the last amendment). Prior: 2026-10-05 (a want is checked against its anchor's book, issue #693; see the
   amendment of that date). Prior: 2026-07-21 (**author-agreement tolerance** — the live pairing-gap diagnosis found the
   substring check refusing real pairs on initials spacing ("JRR Tolkien" ⇄ "J.R.R. Tolkien"),
@@ -663,3 +663,23 @@ write path: `upsertPairingWant` (`pairing_want_minted` / `pairing_want_refreshed
 The Mint Backoff columns are bookkeeping and are not recorded. The format-pairing mode runs as `actor: 'sync'`, site
 `format-pairing` (a leg such as `format-pairing.rerequest` where the writer names it). Nothing the pass decides
 changes. The full rules, reason table and queries: DESIGN-028, amendment 2026-10-06 (Request Events).
+
+## Amendment — 2026-10-07: a Mint Backoff ends at the same-hour run, and a per-minute quota window is waited out once (owed check OC-014)
+
+**Normative rules: this amendment for the grace; DESIGN-039's amendment of this date for the quota wait and the GB Call
+Pacer (T-293).**
+
+**The grace.** A Mint Backoff (T-285) is a whole number of days from the run that missed (`mint_backoff_until` = that run's
+`now` plus 1, 3, 7 or 30 days), and the mint runs hourly, so the wait ends at the start of the same-hour run days later,
+give or take the seconds a CronJob pod takes to start. Whether that run retried the want was decided by sub-second
+jitter: the 61 wants missed at 2026-10-07 07:32:03.36Z come due at 10-08 07:32:03.36Z, and a run whose `now` is
+07:32:03.0Z would have left them to 08:32Z. `mintBackingOff` now counts a want due once the run starts within
+`PAIRING_MINT_BACKOFF_GRACE_MS` (10 minutes) of its `mint_backoff_until`; the stored column keeps its meaning, the grace is
+far below the hour between runs, and `inBackoff` counts with the same rule.
+
+**The quota wait (pointer).** A lookup refused by a per-minute quota window is waited out once a run and the same
+candidate tried again, instead of ending the run's lookups (DESIGN-039 D-07 as amended 2026-10-07). New report field
+`quotaWaits`; the wait is not an attempt and consumes no cap.
+
+**Tests:** `packages/domain/__tests__/format-pairing.test.ts` (the run an hour early still waits; the same-hour run a day
+later that starts 0.4 s sooner looks the want up; the quota-wait cases listed in DESIGN-039).

@@ -16,6 +16,7 @@ playwright-report/
 test-results/
 blob-report/
 .playwright-tmp/
+e2e-timings/
 
 # local identity-proof screenshots (owner review artifacts, never committed)
 identity-screenshots/

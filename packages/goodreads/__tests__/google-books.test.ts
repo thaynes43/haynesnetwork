@@ -209,6 +209,42 @@ describe('GoogleBooksClient onCall meter (DESIGN-039 D-21 — the daily call-bud
     expect(calls).toBe(2); // BOTH physical requests counted — Google metered both
   });
 
+  // DESIGN-039 amendment 2026-10-07 (OC-014) — the GB Call Pacer hook: awaited before EVERY physical request
+  // (retries too), and before the meter counts it, so a held-back request is neither sent nor counted early.
+  it('awaits beforeCall before each physical request, a 503 retry included, ahead of onCall and the fetch', async () => {
+    const events: string[] = [];
+    let attempt = 0;
+    const fetchImpl = vi.fn(async () => {
+      attempt += 1;
+      events.push(`fetch${attempt}`);
+      if (attempt === 1) return new Response('backendFailed', { status: 503 });
+      return volResponse([{ id: 'gb-ok', volumeInfo: { title: 'By ISBN' } }]);
+    });
+    let release: (() => void) | undefined;
+    const gb = new GoogleBooksClient({
+      baseUrl: 'http://stub/books/v1',
+      apiKey: 'k',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      backoffMs: 0,
+      sleepImpl: async () => {},
+      beforeCall: async () => {
+        events.push('pace');
+        // Hold the second request until the test releases it: nothing may be counted or sent meanwhile.
+        if (events.filter((e) => e === 'pace').length === 2) await new Promise<void>((r) => (release = r));
+      },
+      onCall: () => {
+        events.push('count');
+      },
+    });
+    const pending = gb.resolveVolume({ isbn: '123', title: 'By ISBN' });
+    await vi.waitFor(() => expect(release).toBeDefined());
+    expect(events).toEqual(['pace', 'count', 'fetch1', 'pace']);
+    release!();
+    const res = await pending;
+    expect(res?.volumeId).toBe('gb-ok');
+    expect(events).toEqual(['pace', 'count', 'fetch1', 'pace', 'count', 'fetch2']);
+  });
+
   it('counts the secondary /volumes/{id} comic-confirm fetch as its own physical request', async () => {
     let calls = 0;
     // Title leg resolves to a volume whose (truncated) search categories are non-comic → the client
