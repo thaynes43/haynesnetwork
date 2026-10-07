@@ -391,7 +391,7 @@ checks:
     not_before: 2026-10-07T07:45:00Z
     due: 2026-10-07T18:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: failed
     check: |
       The 07:3xZ format-pairing "sync finished" line: formatPairing.attempted at most 100 with fresh items first
       (minted above 0), inBackoff at least 50, skippedQuota 0. After 12:32Z the 50 wants of 2026-10-06 are due; each
@@ -424,10 +424,14 @@ checks:
         at: 2026-10-07T07:45:00Z
         query: max(max_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-format-pairing-.*"} |= "sync finished" | json | __error__="" | unwrap formatPairing_skippedQuota [15m]))
         expect: {max: 0}
+    evidence:
+      - "2026-10-07 20:32Z FAILED on two of five numbers. The 07:32Z format-pairing run (pod haynesnetwork-sync-format-pairing-29855972-vmsqb) logged attempted 65 (ok, at most 100), minted 2 (ok, above 0), pushed 3, unmintable 61, inBackoff 49 (expected at least 50), skippedQuota 244 (expected 0). Why: the quota day 2026-10-06 closed at 07:32:04Z (pairing_calls 697 of 700) so the cap had reset, but at 07:33:03Z Google Books answered with a per-MINUTE trip (gb_quota_trip kind=minute, retry_at 07:35:03Z) and the run stopped minting after 65 attempts, skipping 244 candidates ('GB quota exhausted, GB-requiring mints skipped, cap preserved'). The next run (08:34Z) was normal: attempted 100, minted 85, pushed 36, skippedQuota 0, inBackoff 110. The per-attempt order is not logged, so 'fresh items first' cannot be confirmed; 61 of the 65 attempts were unmintable. inBackoff was 50 until 2026-10-06 18:32Z and 49 from 22:32Z on, so one want left the backoff before this run (not traced)."
+      - "2026-10-07 20:32Z the by-hand 12:32Z step passes: the 12:32Z run attempted 49, minted 0, unmintable 49, and select count(*) from book_requests where mint_backoff_count = 2 and mint_backoff_until > now() reads 49, all until 2026-10-10 12:32:03Z. 196 more wants sit at mint_backoff_count 1 with a backoff still running."
     links:
       handoff: 2026-10-06 v0.107.10 + v0.107.11 block
       issues: [haynesnetwork#740]
       prs: [haynesnetwork#760, haynesnetwork#765]
+      followup: OC-042
 
   - id: OC-015
     legacy: (s)
@@ -505,7 +509,7 @@ checks:
     not_before: 2026-10-07T09:05:00Z
     due: 2026-10-07T18:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       After the scan, the pairing formats that read landed from a LazyLibrarian format that is Skipped but holds a file
       (23 formats on 13 books at 2026-10-06 13:50Z; #752's 17 among them) still read landed, and their LazyLibrarian
@@ -552,6 +556,8 @@ checks:
           where BookID in ('njs6CQAAQBAJ','gqpSPwAACAAJ','jVyVzQEACAAJ','d2eNPwAACAAJ','_66cporIROcC','Iest_zZHolAC',
                            'TAEjw0IM50YC','R7lwacBA53QC')
         expect: {paths_exist: true, rows: 16}
+    evidence:
+      - "2026-10-07 20:32Z PASSED by hand. The scheduled library scan completed at 09:45:53Z (the 'eBook + audiobook library scan complete' line, pod lazylibrarian-library-scan-29856070-gjg48), and the manual rescan at 14:05Z completed too. App DB (replica): the 16 listed pairing formats (8 eBook, 8 audio, on 13 ll_book_ids) all read landed; the 'not landed' query returns 0 rows. LazyLibrarian (mode=ro, read in the pod): all 16 have a file and an import date (BookLibrary / AudioLibrary) and all 16 files exist on disk. The owed-checks runner agreed at 19:50Z (all four auto checks pass)."
     links:
       handoff: 2026-10-06 v0.107.10 + v0.107.11 block
       issues: [haynesnetwork#752]
@@ -565,7 +571,7 @@ checks:
     not_before: 2026-10-07T13:45:00Z
     due: 2026-10-07T18:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: failed
     check: |
       Over the 24 hours to 2026-10-07 13:45Z the format-pairing runs show dropped and revived 0 (added grows with the
       library and is fine; a drop must be explained by a library change, and recorded here), and
@@ -594,10 +600,14 @@ checks:
           select count(*) as n from books_items
           where source = 'kavita' and media_kind = 'book' and deleted_at is null and coalesce(author, '') = ''
         expect: {eq: 0}
+    evidence:
+      - "2026-10-07 20:32Z FAILED on the zero-drop expectation; the Kavita half passes. Over 2026-10-06 13:45Z to 2026-10-07 13:45Z there are 24 'sync finished' format-pairing lines (ok), but 7 of them read non-zero dropped or revived: 17:32Z dropped 2 revived 1; 18:32Z 1/1; 22:32Z 2/3; 00:33Z 1/1; 02:32Z 3/1; 04:32Z 2/3; 06:32Z 1/1. Total dropped 12, revived 11 (the runner reads the same: 12 and 11). The last one was 06:32Z: the 14 runs since (07:33Z to 20:28Z) read 0 and 0. books-sync tombstoned 0 in its 04:22Z to 07:22Z runs, and the Kavita series count moved 1882 to 1887 at 06:22Z, so a library change is plausible but not shown. Request Events (live since 00:32Z) record 6 pairing_want_revived writes: Mockingjay (5144c230, ebook, 00:32Z and 06:32Z), Percy Jackson and the Olympians (791f25b3, audio, 02:32Z), Accomplice to the Villain (57b7d6ad and e01636a7, 04:32Z), The Hunger Games (e7381e10, 04:32Z). Which pairs dropped is not recorded anywhere (books_format_pairs keeps no history)."
+      - "2026-10-07 20:32Z the authorless Kavita book series count (select count(*) from books_items where source = 'kavita' and media_kind = 'book' and deleted_at is null and coalesce(author, '') = '') reads 0."
     links:
       handoff: 2026-10-06 v0.107.10 + v0.107.11 block
       issues: [haynesnetwork#761]
       prs: [haynesnetwork#762]
+      followup: OC-043
 
   - id: OC-019
     title: The six Kavita items whose foreign_language park lifted (v0.107.5) mint and push their missing format
@@ -637,7 +647,7 @@ checks:
     not_before: 2026-10-07T09:05:00Z
     due: 2026-10-07T18:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       LL DB mode=ro, after a scan that completed both halves: every BookFile/AudioFile of the cross-volume records
       (.agents/context/2026-10-05-crossvolume-repair.tsv) points at an existing file, and so does every other one
@@ -676,6 +686,8 @@ checks:
           select BookID, Status, AudioStatus from books where BookID in ('YVfJMgEACAAJ', 'ik6xzgEACAAJ')
             and (Status <> 'Skipped' or AudioStatus <> 'Skipped' or ifnull(BookFile, '') <> '' or ifnull(AudioFile, '') <> '')
         expect: {rows: 0}
+    evidence:
+      - "2026-10-07 20:32Z PASSED by hand (LazyLibrarian DB mode=ro, files checked from the pod). Scans completed: scheduled 09:45:53Z and manual 14:05Z. The 21 cross-volume records hold 32 file pointers, all exist. Every other pointer (BookFile + AudioFile, Catwings QGPZEAAAQBAJ excluded): 1,629, 0 missing. Catwings itself now resolves too (BookFile .pdf exists; it was the one missing pointer on 2026-10-06), so all 1,630 pointers (1,043 eBook + 587 audio) point at existing files. YVfJMgEACAAJ and ik6xzgEACAAJ read Skipped / Skipped with no BookFile and no AudioFile. The owed-checks runner agreed at 19:50Z (1,629 paths, 0 missing)."
     links:
       handoff: 2026-10-06 owed-checks run block
       issues: [haynesnetwork#743]
@@ -724,7 +736,7 @@ checks:
     not_before: 2026-10-06T16:00:00Z
     due: 2026-10-07T18:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       Over a day of hourly `books-collections-sync` runs, every "collection-wants complete" line reads
       "collectionsSkipped":0 and "unreachable":false (a skip means a recipe's own target entry was missing or errored,
@@ -748,6 +760,8 @@ checks:
           sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-books-collections-.*"} |= "collection-wants: Libretto unreachable" [$SINCE]))
         expect: {max: 0}
         mismatch: fail
+    evidence:
+      - "2026-10-07 20:32Z PASSED. Loki, pods haynesnetwork-sync-books-collections-*, 29 h back from 20:35Z (from 2026-10-06 15:35Z): 31 'collection-wants complete' lines (the runner counts 29 since 16:00Z); 0 of them lack 'collectionsSkipped':0; 0 lines of 'unreachable':true, 'Libretto unreachable' or \"no missing list for this collection's target\". The newest (20:28:39Z) reads collectionsProcessed 88, collectionsSkipped 0, unreachable false, covered 29, unresolved 46."
     links:
       issues: ['#759']
       prs: ['#769']
@@ -1526,3 +1540,59 @@ checks:
     links:
       issues: ['#771', '#781']
       prs: ['#819', 'thaynes43/libretto#33', 'haynes-ops #3514', 'haynes-ops #3515']
+
+  - id: OC-042
+    title: "The first format-pairing run after the 2026-10-08 quota roll mints fresh wants without a Google Books minute trip (OC-014 recheck)"
+    opened: 2026-10-07
+    after: the 2026-10-08 07:32Z format-pairing run (the first after the 07:00Z quota roll)
+    not_before: 2026-10-08T07:45:00Z
+    due: 2026-10-08T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      OC-014 failed on 2026-10-07: the 07:32Z run hit a Google Books per-MINUTE trip (gb_quota_trip kind=minute) after 65
+      attempts and skipped 244 candidates for quota. Read the 2026-10-08 07:3xZ "sync finished" line and its
+      gb_quota_trip lines. Expect formatPairing.attempted at most 100, minted above 0, skippedQuota 0 and no
+      gb_quota_trip. A trip again means the first run after a roll fires its calls too fast: decide whether the run needs
+      a pace limit (the cause is Google's per-minute limit, not the daily cap). inBackoff reads 49 to 50 on both days
+      unless wants left the backoff; say why if it differs.
+    links:
+      issues: [haynesnetwork#740]
+
+  - id: OC-043
+    title: "Format-pairing runs show dropped and revived 0 for a day, and the 2026-10-06/07 drops are explained (OC-018 recheck)"
+    opened: 2026-10-07
+    after: 24 hours of format-pairing runs from 2026-10-07 14:00Z
+    not_before: 2026-10-08T14:00:00Z
+    due: 2026-10-08T18:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      OC-018 failed on 2026-10-07: 7 of the 24 runs from 2026-10-06 13:45Z read dropped 12 and revived 11 in total (last
+      at 06:32Z), with books-sync tombstoning nothing. Over the 24 hours to 2026-10-08 14:00Z the runs should read dropped
+      and revived 0 (Loki: sum_over_time of formatPairing_dropped and formatPairing_revived over "sync finished" lines).
+      Separately explain the earlier ones: which pairs dropped (a pair leaves books_format_pairs when matchFormatPairs
+      no longer declares it; the books_items change behind it is not logged) and which wants revived (Request Events,
+      reason pairing_want_revived: Mockingjay twice, Percy Jackson and the Olympians, Accomplice to the Villain twice,
+      The Hunger Games). A drop that no library change explains is a pairing defect: open an issue with the pair ids.
+    links:
+      issues: [haynesnetwork#761]
+
+  - id: OC-044
+    title: "Libretto's no_match cache answers repeat honest misses with no Google Books call"
+    opened: 2026-10-07
+    after: >-
+      Libretto PR #35 (libretto#34, image sha-1fdcddd via haynes-ops #3525, live 2026-10-07) and the 2026-10-08 07:27Z
+      collection-wants pass, the first after the 07:00Z Google Books quota reset, which populates the cache
+    not_before: 2026-10-08T08:30:00Z
+    due: 2026-10-08T14:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      The 08:27Z collection-wants pass logs `resolve broker: no_match answered from cache` for Compulsory and The Infinite
+      Extent (`kubectl logs -n media deploy/libretto | grep "answered from cache"`, or Loki on the libretto pods in
+      namespace media). The `cacheHits` count rises. The day's Google Books calls from Libretto for the six known misses
+      drop to about one try each (the 07:27Z pass), not one per hourly pass.
+    links:
+      issues: ['https://github.com/thaynes43/libretto/issues/34']
+      prs: ['https://github.com/thaynes43/libretto/pull/35', 'https://github.com/thaynes43/haynes-ops/pull/3525']
