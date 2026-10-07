@@ -55,6 +55,10 @@ everything it lists as open; this block says what is open now.
   release-please ignores `.agents/`/`docs/`-only commits. The release PR and `e2e-gate` pipeline PRs still run the full suite.
   The suite's own speed is #812 (needs a design decision). Private repos get self-hosted ARC runners in the cluster, owner
   ruling 2026-10-07, handed to a Codex session in haynes-ops (worktree `agent/arc-runners`); not this session's work.
+  **Correction (owner, 2026-10-07; ADR-104):** the premise above was wrong. GitHub-hosted runs of this public repo are not
+  billed, and the private repos that were billed now run on self-hosted runners, so there is no billing problem. The "11,751
+  min" were computed job durations. ADR-102's coverage cut is reversed: the advisory e2e runs on every code PR again
+  (`run-e2e` now only forces it on a PR with no code path). Its other changes stay, because they cut wait and runner time.
 
 - **2026-10-07 morning owed checks (#818) caught two bugs, both fixed (#819 v0.109.4, haynes-ops #3515; libretto#33
   `sha-71de8f2`, haynes-ops #3514; tracker #820):**

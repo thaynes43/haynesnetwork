@@ -62,7 +62,7 @@ Run these before pushing — they mirror the CI checks that gate every PR. Full 
 | `pnpm test` | `test` (Vitest, embedded Postgres 16) |
 | `pnpm build` | `build` (`next build`, standalone output) |
 
-`pnpm --filter web e2e` maps to the `e2e-gate` required check for PRs that touch the book pipeline and the release PR (it passes at once for any other PR; label one `run-e2e` for an advisory run; ADR-100, ADR-102). A PR that changes no code (docs, agent notes, Markdown; `scripts/ci-code-paths.sh`) skips the three jobs above, which report as skipped and still satisfy branch protection (ADR-102).
+`pnpm --filter web e2e` maps to the `e2e-gate` required check for PRs that touch the book pipeline and the release PR (it passes at once for any other PR; the advisory `e2e-advisory` run covers every other code PR, and the `run-e2e` label forces it on a PR with no code; ADR-100, ADR-102, ADR-104). A PR that changes no code (docs, agent notes, Markdown; `scripts/ci-code-paths.sh`) skips the three jobs above, which report as skipped and still satisfy branch protection (ADR-102).
 
 ## Contributing — pull-request flow
 
