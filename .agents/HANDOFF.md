@@ -30,8 +30,9 @@ everything it lists as open; this block says what is open now.
 - **v0.109.1** (haynes-ops #3472): #798, the app's find-missing cron re-reads the language before it adds and queues a book
   (the hole behind #794's Italian Crescent City want). Libretto `sha-0f27823` (libretto#29, haynes-ops #3466): the series
   builder drops unnumbered duplicates and foreign-only editions.
-- **#795 closed** (owner ruling 2026-10-06 "re-download all of them"): of the census's 23 wrong files, 14 re-pointed, 7 held,
-  4 re-wanted (Freed, Warriors 3, Partners, Redwall; OC-033..OC-036). Game of Thrones audio is English (held; the `fr` is a
+- **#795 closed** (owner ruling 2026-10-06 "re-download all of them"): of the census's 23 wrong files, 14 re-pointed (one,
+  Magnus Chase 3, also has a Census Hold because the census misreads its title), 5 held, 4 re-wanted (Freed, Warriors 3,
+  Partners, Redwall; OC-033..OC-036). The seventh hold is Game of Thrones, a `foreign_held` finding. Game of Thrones audio is English (held; the `fr` is a
   bad Google Books record). Catwings audio cleared to Skipped. Census after: 0 unheld findings. #794 closed.
 
 **In flight at the time of writing (check the PRs before redoing):**
@@ -43,8 +44,9 @@ everything it lists as open; this block says what is open now.
   removing stale Audiobookshelf entries one at a time (API delete without `hard`), never the library-wide bulk remove.
 
 **Open:** #792 (a Request Event history view on the Wanted detail; a feature, not started). #733 parked, #674 benched
-(unchanged). Owed checks: the 2026-10-07 morning rows (OC-013, OC-024, OC-027, OC-028..OC-031), OC-032 on 10-08, OC-026 on
-10-13, OC-009 purge on or after 10-12, OC-033..OC-036 review on 10-20.
+(unchanged). Owed checks (`.agents/owed-checks.yaml` is the source): the 2026-10-07 morning rows (OC-013, OC-024,
+OC-028..OC-031), the 10-07 18:00Z rows (OC-014, OC-017, OC-018, OC-020, OC-022), OC-032 on 10-08, OC-009 purge on or after
+10-12, OC-026 on 10-13, OC-027 and OC-033..OC-036 on 10-20.
 
 ## ▶ 2026-10-06 (evening) — Coordinator handoff: the books-rollout repair wave is done; what is next
 
