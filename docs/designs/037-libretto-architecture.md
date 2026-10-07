@@ -648,11 +648,12 @@ membership/order and is library-only unless an existing acquisition policy expli
 migration does not itself authorize requests for missing series members.
 
 
-### Ordered Books chapter membership amendment (2026-10-07, issue #825)
+### Chapter membership for ordered reading lists (2026-10-07, issue #825)
 
 A matched Kavita series id cannot prove that every chapter belongs to the source work. Existing title collisions
 include Cassandra Clare and Martha Wells in City of Bones; the owned Mortal Instruments list contained both
-chapters. Ordered Books reconciliation must carry the matched canonical works for each target series, then select
+chapters. Recipes with `ordered: true` targeting Kavita's Books library must carry the matched canonical works for
+each target series, then select
 fresh chapters by an equal normalized ISBN, or a complete confirmed title or configured title alias with an
 agreeing author. Multiple legitimate copies of the same work may be included. Matching a series id alone never
 adds a chapter. Other library types retain their established membership rules.
