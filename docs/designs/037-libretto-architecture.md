@@ -646,3 +646,19 @@ identity on scanner signals and a bounded maximum age; after the backfill, reapp
 that every reading-list item names a current chapter. Adding recipes for the affected series uses settled builder
 membership/order and is library-only unless an existing acquisition policy explicitly authorizes more. A metadata
 migration does not itself authorize requests for missing series members.
+
+
+### Ordered Books chapter membership amendment (2026-10-07, issue #825)
+
+A matched Kavita series id cannot prove that every chapter belongs to the source work. Existing title collisions
+include Cassandra Clare and Martha Wells in City of Bones; the owned Mortal Instruments list contained both
+chapters. Ordered Books reconciliation must carry the matched canonical works for each target series, then select
+fresh chapters by an equal normalized ISBN, or a complete confirmed title or configured title alias with an
+agreeing author. Multiple legitimate copies of the same work may be included. Matching a series id alone never
+adds a chapter. Other library types retain their established membership rules.
+
+The source chapter identity reads must be complete before any membership removal. Unknown identity fields or a
+failed read preserve the existing list and report the failure. After complete identity verification, sync mode
+removes chapters that belong to other works; append mode retains its established removal policy. This permits the
+owned Mortal Instruments list to drop the verified Wells chapter while keeping Clare's chapter, without renaming
+books or moving files. The rule is independent of the unresolved library grouping policy in issue #830.
