@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.110.1](https://github.com/thaynes43/haynesnetwork/compare/v0.110.0...v0.110.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **books:** guard pairing during Kavita series splits ([#833](https://github.com/thaynes43/haynesnetwork/issues/833)) ([1f9d6e0](https://github.com/thaynes43/haynesnetwork/commit/1f9d6e07e0f8a021d8db5b554cc31f68e9c3eccc))
+
 ## [0.110.0](https://github.com/thaynes43/haynesnetwork/compare/v0.109.5...v0.110.0) (2026-10-07)
 
 
