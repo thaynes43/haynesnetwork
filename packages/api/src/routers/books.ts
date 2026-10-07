@@ -20,6 +20,9 @@ import {
   type BooksItemRow,
   type BookFixReason,
   type BookFixStatus,
+  type BookRequestEventActor,
+  type BookRequestEventKind,
+  type BookRequestEventReason,
   type BookRequestOrigin,
   type BookRequestStatus,
   type Database,
@@ -34,6 +37,7 @@ import {
   getCollectionWantedBookRequests,
   getWantedBookRequests,
   isRequestSearchable,
+  listRequestEvents,
   missingFormatFor,
   provenanceDisplayName,
   runBookItemForceSearch,
@@ -48,10 +52,12 @@ import {
   router,
 } from '../trpc';
 import {
+  adminProcedure,
   booksOrIntegrationsProcedure,
   booksProcedure,
   effectiveSectionLevel,
 } from '../middleware/role';
+import { decodeCursor, encodeCursor } from '../cursor';
 import { booksCoverUrlFor } from '../books-query';
 import {
   BOOK_LENGTH_BOUNDS,
@@ -190,6 +196,42 @@ export interface BookRequestHistoryEntry {
   comicStatus: BookRequestStatus | null;
   lastSearchedAt: string | null;
   createdAt: string;
+}
+
+/**
+ * Issue #792 (DESIGN-028 amendment 2026-10-07) — one Request Event (ADR-101) as the admin-only History reads it.
+ * `before` / `after` are keyed by `book_requests` column name; the screen turns them into words.
+ */
+export interface BookRequestEventEntry {
+  id: string;
+  kind: BookRequestEventKind;
+  reason: BookRequestEventReason;
+  /** The single writer (its function name). */
+  writer: string;
+  /** The job and leg (`format-pairing.rerequest`), or null. */
+  site: string | null;
+  actor: BookRequestEventActor;
+  /** The person's display name for a `user` event whose account still exists; else null. */
+  actorName: string | null;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+/** A page of one want's Request Events, newest first, plus the titles of the items and collections they name. */
+export interface BookRequestEventsResult {
+  events: BookRequestEventEntry[];
+  refs: {
+    items: Record<string, { title: string; live: boolean }>;
+    collections: Record<string, string>;
+  };
+  /** The want's origin and, for a collection want, its one format (the History hides the other, as the detail does). */
+  want: {
+    origin: BookRequestOrigin | null;
+    collectionFormat: 'ebook' | 'audiobook' | null;
+  };
+  nextCursor: string | null;
 }
 
 /** The books detail payload (the in-app drill-in — deep-links OUT to Kavita/ABS, no *arr semantics). */
@@ -889,6 +931,56 @@ export const booksRouter = router({
         llBookId: view.llBookId,
         kapowarrVolumeId: view.kapowarrVolumeId,
         formats,
+      };
+    }),
+
+  /**
+   * Issue #792 (DESIGN-028 amendment 2026-10-07, owner ruling: admins only) — one want's Request Events (ADR-101),
+   * newest first, for the History on the Wanted detail and the book detail's linked requests. ADMIN-ONLY at this
+   * layer: everyone else, the requester included, is FORBIDDEN. Keyset on (created_at, id) desc; the cursor keeps
+   * created_at to the microsecond. The want need not exist (a deleted want keeps its events), so an unknown id is an
+   * empty page, not NOT_FOUND. Read-only.
+   */
+  requestEvents: adminProcedure
+    .input(
+      z.object({
+        requestId: z.uuid(),
+        cursor: z.string().optional(),
+        limit: z.number().int().min(1).max(50).default(20),
+      }),
+    )
+    .query(async ({ ctx, input }): Promise<BookRequestEventsResult> => {
+      let before: { at: string; id: string } | null = null;
+      if (input.cursor !== undefined) {
+        const [at, id] = decodeCursor(input.cursor, ['string', 'string']) as [string, string];
+        if (Number.isNaN(Date.parse(at)) || !z.uuid().safeParse(id).success) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'malformed cursor' });
+        }
+        before = { at, id };
+      }
+      const page = await listRequestEvents({
+        db: ctx.db,
+        requestId: input.requestId,
+        before,
+        limit: input.limit,
+      });
+      return {
+        events: page.events.map((e) => ({
+          id: e.id,
+          kind: e.kind,
+          reason: e.reason,
+          writer: e.writer,
+          site: e.site,
+          actor: e.actor,
+          actorName: e.actorName,
+          before: e.before,
+          after: e.after,
+          detail: e.detail,
+          createdAt: e.createdAt.toISOString(),
+        })),
+        refs: page.refs,
+        want: page.want,
+        nextCursor: page.next ? encodeCursor([page.next.at, page.next.id]) : null,
       };
     }),
 

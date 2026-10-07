@@ -1,7 +1,7 @@
 # DESIGN-025: Library "Watch/Listen/Read here" — the *arr→Plex match, the access gate, and the availability resolver
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-28 (D-09 added — the ADR-081 library-access bootstrap seed + registration
+- **Last updated:** 2026-10-07 (D-08: an admin opens a linked request's Request Events in the History, issue #792). Prior: 2026-07-28 (D-09 added — the ADR-081 library-access bootstrap seed + registration
   auto-grant, the boot-triggered first plex-match sync, and the honest cold-start empty-reason on the gate;
   R-237, glossary T-232..T-234)
 - **Satisfies:** PRD-001 R-157, **R-221** (D-08 — books detail-page parity), **R-237** (D-09 — bootstrap +
@@ -141,6 +141,9 @@ prose rule, tokens-only). The parity map (movie section → book equivalent → 
   the audited `book_fix_requests` trail (DESIGN-033 — reason + status + who + when, the `.fix-list` idiom) and a
   **"History"** section over the linked `book_requests` lifecycle (origin + per-format status, the `.timeline`
   idiom), both newest-first. Real owner-visible value (fixes ran the day this shipped). Empty ⇒ collapsed.
+  2026-10-07 (issue #792, DESIGN-028 amendment 2026-10-07): for an admin, each linked request row also carries a
+  "Show changes" in-place expansion (its Request Events, the same list as the Wanted detail's History) and an
+  "Open the want" link; the rows are unchanged for everyone else.
 
 The API is `books.detail` extended in place (same `booksProcedure` gate — a Disabled caller is still FORBIDDEN):
 the enriched `item`, `collections[]`, `fixes[]`, `requests[]`. All static per load — no interaction re-orients a

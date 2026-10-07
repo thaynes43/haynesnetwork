@@ -7,7 +7,8 @@
 // and gates on `books` OR `integrations` (≥ read_only) — the page is reachable by whoever can see the card
 // that links to it (the household Library-Wanted book cards are books-gated; the per-user Goodreads items
 // wall is integrations-gated). A caller with NEITHER section is bounced to /library. The per-format
-// Force-Search action keeps its own `integrations` + ownership gate inside `integrations.search`.
+// Force-Search action keeps its own `integrations` + ownership gate inside `integrations.search`. Issue #792: an admin
+// also gets the want's History (its Request Events), which the API serves to admins only.
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getServerSession } from '@hnet/auth';
@@ -33,5 +34,6 @@ export default async function WantedRequestPage({
   ) {
     redirect('/library');
   }
-  return <WantedDetail requestId={requestId} from={from} />;
+  // Issue #792 — the History (Request Events) is admin-only; `books.requestEvents` refuses everyone else.
+  return <WantedDetail requestId={requestId} from={from} canViewHistory={role.isAdmin} />;
 }
