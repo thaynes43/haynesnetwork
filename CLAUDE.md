@@ -131,8 +131,8 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
   `docs/**`, `.agents/**` except its `*.yaml`/`*.json` data files) skips lint, typecheck, tests, build and the image
   build; those required checks report as skipped, which satisfies branch protection. The advisory suite is opt-in:
   label a non-pipeline PR `run-e2e` when it changes something the suite drives. Nothing runs on a push to main
-  (protection is strict, so main's tree is the tree the PR tested). To run the suite on main's tree, label any PR
-  `run-e2e`; the bot token cannot dispatch workflows (403), the owner can (`gh workflow run e2e.yml --ref main`). A commit touching only `.agents/` and `docs/` never opens or updates the release PR.
+  (protection is strict, so main's tree is the tree the PR tested). To run the suite on main's code, label a docs-only PR
+  `run-e2e` (its merge tree has main's code); the bot token cannot dispatch workflows (403), the owner can (`gh workflow run e2e.yml --ref main`). A commit touching only `.agents/` and `docs/` never opens or updates the release PR.
   Conventional commits (`feat:`/`fix:`/`feat!:`) drive release-please versioning.
 - **Claude Code PR reviewer (advisory).** `.github/workflows/claude-code-review.yml` reviews every
   non-draft PR (job `Claude advisory review`) and `claude.yml` answers `@claude` mentions from
