@@ -1320,7 +1320,7 @@ checks:
         expect: {max: 0}
         mismatch: fail
     evidence:
-      - "2026-10-07 11:50Z FAILED: 3 of the 5 states were undone by the library scan: 83Hv_EYvHgEC eBook is on the Disciple folder (not Merge + Disciple), 4bLbswEACAAJ eBook is A Secret Rage (not Sweet and Deadly) and its audio is flagged too, K3wuAAAACAAJ is Open on Code to Zero.epub (should be Skipped, no file), 4m0Qj9xKksYC audio is Open on the Hitchhiker's mp3 (should be Skipped). zaynQgAACAAJ audio holds. The 10:15Z census lists 83Hv, 4bLb (ebook and audio), K3wu and 4m0Q unheld wrong_file (runner: 4 matches). No wanted row after 9599 names them. Kavita shows Merge and Disciple (1953), Disciple (942), A Secret Rage (1259), Code to Zero (1202); Audiobookshelf not checked. Follow-up: #799, coordinator (the scan undoes the repair)."
+      - "2026-10-07 11:50Z FAILED: 4 of the 5 states were undone by the library scan: 83Hv_EYvHgEC eBook is on the Disciple folder (not Merge + Disciple), 4bLbswEACAAJ eBook is A Secret Rage (not Sweet and Deadly) and its audio is flagged too, K3wuAAAACAAJ is Open on Code to Zero.epub (should be Skipped, no file), 4m0Qj9xKksYC audio is Open on the Hitchhiker's mp3 (should be Skipped). zaynQgAACAAJ audio holds. The 10:15Z census lists 83Hv, 4bLb (ebook and audio), K3wu and 4m0Q unheld wrong_file (runner: 4 matches). No wanted row after 9599 names them. Kavita shows Merge and Disciple (1953), Disciple (942), A Secret Rage (1259), Code to Zero (1202); Audiobookshelf not checked. Follow-up: #799, coordinator (the scan undoes the repair)."
     links:
       issues: ['#799']
   - id: OC-038
