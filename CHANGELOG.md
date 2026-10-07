@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.109.1](https://github.com/thaynes43/haynesnetwork/compare/v0.109.0...v0.109.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **books:** read the language again after the force-search's and the re-request's own addBook ([#794](https://github.com/thaynes43/haynesnetwork/issues/794)) ([#798](https://github.com/thaynes43/haynesnetwork/issues/798)) ([b0be879](https://github.com/thaynes43/haynesnetwork/commit/b0be87991c91369bcaa764ad301deae6a58b885f))
+
+
+### Documentation
+
+* **books:** the Books Census's first live run, Divergent repaired, OC-031 ([#795](https://github.com/thaynes43/haynesnetwork/issues/795), [#794](https://github.com/thaynes43/haynesnetwork/issues/794)) ([#796](https://github.com/thaynes43/haynesnetwork/issues/796)) ([c1951e4](https://github.com/thaynes43/haynesnetwork/commit/c1951e4c540b46de8b02cea115ab0a2e87579ea1))
+
 ## [0.109.0](https://github.com/thaynes43/haynesnetwork/compare/v0.108.2...v0.109.0) (2026-10-06)
 
 
