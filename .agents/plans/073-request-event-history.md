@@ -31,8 +31,8 @@ with books access, confirm the Wanted detail shows no History card.
 
 ### 2026-10-07 live verification
 
-The deployment has three Ready web pods and all 22 sync CronJobs plus books-census and owed-checks on v0.110.0.
-Both the internal and public login pages return HTTP 200 after redirects.
+At 23:05Z the v0.110.0 deployment had three Ready web pods and all 22 sync CronJobs plus books-census and owed-checks
+on the tag. Both the internal and public login pages returned HTTP 200 after redirects.
 
 - **Deployed domain + replica passed, 23:05:24Z:** PostgreSQL replica with read-only enforced; 780 events on 524
   requests, at most 6 per request. The Robert Langdon pairing want has three events including `ll_rerequest`.

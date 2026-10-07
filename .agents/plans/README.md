@@ -148,6 +148,7 @@ dispatch** (standing rule).
 | 047 | Shared card system (drift-proof base card, site-wide) | ✅ **completed/ (ratified 2026-07-15)** | One base card family in code (typed slots + lint guard + card-gallery visual-regression CI) extended per media type incl. Helpdesk; refit every wall. "The code guarantees the UX doesn't drift." |
 | 048 | Activity / In-Flight (all libraries) | ✅ **completed/ (ratified 2026-07-15; Q-03 comics-gate still open)** | Library→Activity tab + wall badges; grabbing/downloading/importing/import-FAILED visibility (*arrs + LL/SAB + Kapowarr); failures = role-gated actions (Admin acts, others read-only); post-SMTP nightly admin digest backlogged. Motivated by the 42-stranded-downloads incident. |
 | 073 | A want's Request Event history on the Wanted detail (admins only, issue #792) | **Released v0.110.0; authenticated live UI check pending** | #826, release #832, haynes-ops #3541. Read-only deployed domain/SQL, API role predicates, wording and anonymous HTTP checks passed. Successful admin HTTP and authenticated UI remain uncovered; Playwright has no session. Keep active until the plan's UI check passes, then move to `completed/`. |
+| 074 | One Kavita series per book (issue #825) | **In progress; app safeguards #833 merged** | ADR-105; converter and Libretto tracked by haynes-ops #3540. Staged metadata removal, census, backfill and hourly gate follow this plan. The existing Request Event history plan retains 073. |
 
 ### Unplanned intake (owner-gated)
 

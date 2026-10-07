@@ -33,13 +33,14 @@
   `run-e2e` forces it on a no-code PR. ADR-102 superseded in part.
 - **#792 closed by #826**, owner ruling 2026-10-07 **admins only**: History card on Wanted detail and "Show changes"
   on book detail; `books.requestEvents` admin-only, 20 per page, internal row ids hidden, "Not set" for empty sides,
-  collection wants hide their unused format. Released **v0.110.0** (#832, haynes-ops #3541): 3/3 Ready web pods,
+  collection wants hide their unused format. Released **v0.110.0** (#832, haynes-ops #3541), verified 23:05Z: 3/3 Ready web pods,
   22 sync CronJobs plus books-census and owed-checks on the tag; both ingresses answer. **PLAN-073 partial live pass:**
   deployed domain matches replica SQL, paging/empty/gone wants pass, API role predicates and re-request wording pass,
   anonymous API denied. Successful admin HTTP and authenticated admin/non-admin UI remain uncovered because
   Playwright has no session; the plan stays active. No feature defect found.
 - **#825 in progress**, Codex session `task-haynesnetwork-1007-182906` (report `/home/dev/work/hn-825-report.md`).
-  App PR #833 and haynes-ops #3540 (converter plus Libretto) are open.
+  App safeguards #833 merged; its v0.110.1 release PR is #836, handled by that task. Converter plus Libretto are
+  tracked by haynes-ops #3540. The new plan is **PLAN-074**; Request Event history keeps its existing PLAN-073.
   Kavita merges books from different folders by their EPUB series tag, flips the series at every scan, and drives
   OC-018 churn. Owner ruling 2026-10-07: **"one Kavita series per book"**. Strip the library's EPUB series tags
   (about 213 of 1,930) now and hourly in `lazylibrarian-epub-convert`; about 46 Kavita series pages go away, with series

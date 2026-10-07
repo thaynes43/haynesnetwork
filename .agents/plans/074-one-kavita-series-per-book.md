@@ -1,4 +1,4 @@
-# PLAN-073: One Kavita series per book
+# PLAN-074: One Kavita series per book
 
 - **Status:** In progress
 - **Satisfies:** issue #825, ADR-105; DESIGN-024/028/036/037 amendments dated 2026-10-07
