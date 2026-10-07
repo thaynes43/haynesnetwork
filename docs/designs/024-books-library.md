@@ -325,3 +325,25 @@ authenticates from it). Read-only against both servers.
 - **Q-03 (genre chips):** whether to add genre filter chips to the walls now (the facets endpoint ships +
   is unit-proven; the chip UI is a deferred follow-up) — mostly relevant to Audiobooks (Kavita carries no
   series genres).
+
+## Amendment: 2026-10-07, one Kavita series per book (issue #825, ADR-105)
+
+The library's EPUB converter removes grouping metadata while preserving book titles, authors and identifiers.
+Kavita groups these EPUBs by book title. The series id can survive when the old series name is a book title, or be
+replaced by new book series ids; chapters and volumes may change. Books-sync keeps its scoped tombstone semantics
+and refreshes Held Books when scanner/detail signals change. The backfill verification must prove exact file
+coverage and current Held Books for retained ids as well as replacements before pairing runs. Same-title groups
+remain a Kavita limitation. Removed anchors are history and are excluded from pairing acquisition and coverage;
+see DESIGN-036's amendment of the same date. Libretto refreshes the replaced reading-list items from live chapters.
+
+Held Book refresh must also run on the bounded rolling metadata pass and when page count, title or scanner stamp changes,
+not only when `lastChapterAddedUtc` changes. Removing a chapter can leave that stamp unchanged; rolling metadata
+refresh without the volumes read leaves the old book identity indefinitely. A detail-read failure on a known changed or forced-refresh series leaves its Held Books unread, so pairing waits
+and the next run retries. An unchanged rolling refresh may retain its last successful value. Neither failure is
+reported as an empty held-book set. Run a complete held-book refresh for
+the backfill verification before computing format pairs.
+
+Chapter rotation has its own successful-read timestamp (`attrs.heldBooksSyncedAt`), independent of metadata refresh.
+An authorless row's metadata refresh is deliberately retried, so that timestamp cannot bound chapter freshness.
+Only a successful volumes read advances the chapter timestamp; rotation remains capped per library. The one-off
+sync exposes `KAVITA_FORCE_HELD_BOOKS_REFRESH=1` to read all book series after regrouping.

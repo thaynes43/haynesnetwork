@@ -1725,3 +1725,45 @@ malformed cursor `BAD_REQUEST`; an unknown want empty), `apps/web/lib/__tests__/
 field labelled or hidden by name, every reason worded, no em-dash; updates, mints, deletes, titles and links, no bare
 row id; a collection want's one format; the context; who and where), and the e2e admin journey in `apps/web/e2e/integrations.spec.ts` (the Wanted detail's History shows the shelf mint
 as its oldest event in words, at 390 and 1280 px with no sideways scroll).
+
+## Amendment: 2026-10-07, one Kavita series per book (issue #825, ADR-105)
+
+The EPUB converter also removes grouping metadata from existing EPUBs and newly converted output. Its conversion
+eligibility rule still skips folders already holding EPUB/PDF; the metadata pass visits EPUBs independently.
+Remove `calibre:series`, `calibre:series_index`, every EPUB 3 `belongs-to-collection`, and the `collection-type` and
+`group-position` refinements of removed collections. Keep collection titles (`title-type=collection`), every
+unrelated OPF byte and every other ZIP member. Refuse a file whose edit would leave dangling refinements or require
+changing unrelated metadata. Untagged books retain their original bytes and modification times.
+
+The shared converter lock serializes both passes. Refuse unsafe paths, symlinks, hardlinks, changing or unsettled
+files and invalid archives. Backups live under `books/.epub-convert/backup/`, outside `EBooks/`, with verified
+checksums and a record of the original relative path. Retention is indefinite until an explicit owner decision;
+restore validates that backup and the current file before an atomic replacement, then scans Kavita. Write each
+candidate to a sibling temporary file, validate its ZIP (including first, stored `mimetype`), parse its OPF, prove
+only the approved metadata was removed, and atomically replace the unchanged source. A failed file stays intact
+and is reported. Touch its book/author folders and queue one Kavita scan after successful edits.
+
+Ship disabled, with read-only dry run and explicit targeted-folder mode. Before enabling: run the Held File Check
+against metadata with the series removed, repair or record a justified Census Hold for new findings, deploy pairing
+safeguards, and complete the adversarial review. Declare activity; stage the two Suzanne Collins folders first,
+verify file coverage, Request Events and pairing without unwanted pushes, then backfill all eligible EPUBs. Enable
+the hourly step only after the full run is verified. Preserve the extracted series name/index in the backfill
+inventory to restore reading order through Libretto. The next nightly scan is a dated Owed Check.
+
+**Collision preflight.** Before stripping, project the book-title grouping across the entire EPUB library. Hold a
+tagged file whose new grouping would merge books by different authors; the strip never changes a book title to
+avoid that merge. On 2026-10-07 this found Charlaine Harris's Night Shift (Midnight, Texas), whose new title grouping
+would collide with Stephen King's already untagged Night Shift. Other safe files may proceed; the held file keeps
+its original grouping pending a ruling. Report the hold in every metadata census, with its relative path and reason.
+
+**Q-05.** How should Kavita distinguish Charlaine Harris's Night Shift from Stephen King's Night Shift while keeping
+both books, titles and identifiers intact? The current rule allows stripping grouping tags only and cannot create
+that distinction. Keeping Harris's existing tag temporarily is a safety hold, not a new naming policy.
+
+Q-05 is filed as [issue #830](https://github.com/thaynes43/haynesnetwork/issues/830) with cold-start context. The Fowl
+Twins projected census warning is covered by a path-scoped hold: creator, UK EPUB ISBNs and publisher synopsis
+confirm the correct third novel, while LazyLibrarian names the US edition. No title or identifier changes are needed.
+
+**Q-06.** What policy consolidates same-title copies across book folders without losing LazyLibrarian pointers or
+reading progress? Filed as [issue #831](https://github.com/thaynes43/haynesnetwork/issues/831): 32 existing untagged
+multi-folder title groups remain, including three partial groups. This is not resolved by the metadata strip.

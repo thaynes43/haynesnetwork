@@ -21,6 +21,7 @@
 // single-writer. Reads LazyLibrarian only through the snapshot the caller hands in (the run's one `getAllBooks`).
 import { and, asc, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { bookRequests, booksItems, type BookRequestRow, type DbClient } from '@hnet/db';
+import { readHeldBooks } from './books';
 import { resolveDb } from './db-client';
 import {
   FOREIGN_LANGUAGE_REASON,
@@ -190,12 +191,20 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
     ...new Set(rows.filter((r) => r.origin === 'pairing' && r.pairingBooksItemId).map((r) => r.pairingBooksItemId!)),
   ];
   const anchorLanguage = new Map<string, string | null>();
+  const eligibleAnchors = new Set<string>();
   if (anchorIds.length > 0) {
     const anchors = await resolveDb(input.db)
-      .select({ id: booksItems.id, attrs: booksItems.attrs })
+      .select({ id: booksItems.id, attrs: booksItems.attrs,
+        mediaKind: booksItems.mediaKind,
+        deletedAt: booksItems.deletedAt,
+      })
       .from(booksItems)
       .where(inArray(booksItems.id, anchorIds));
-    for (const a of anchors) anchorLanguage.set(a.id, readItemLanguage(a.attrs));
+    for (const a of anchors) {
+      anchorLanguage.set(a.id, readItemLanguage(a.attrs));
+      if (a.deletedAt === null && (a.mediaKind !== 'book' || readHeldBooks(a.attrs) !== undefined))
+        eligibleAnchors.add(a.id);
+    }
   }
   const anchorIsForeign = (row: BookRequestRow): boolean =>
     row.origin === 'pairing' &&
@@ -204,6 +213,7 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
 
   const due: BookRequestRow[] = [];
   for (const row of rows) {
+    if (row.origin === 'pairing' && !eligibleAnchors.has(row.pairingBooksItemId!)) continue;
     if (englishEditionOpenFormats(row).length === 0) continue;
     const llBookId = row.llBookId!;
     const book = snapshot.get(llBookId);

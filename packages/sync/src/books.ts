@@ -179,6 +179,7 @@ export function normalizeKavitaSeries(
   enrichment: KavitaEnrichmentApply | null = null,
   /** Issue #661 — the books a BOOK series holds (`attrs.heldBooks`); undefined = not read (omitted). */
   heldBooks?: HeldBook[],
+  heldBooksSyncedAt?: Date | null,
 ): BooksItemInput {
   const libraryId = String(series.libraryId);
   const sort = (series.sortName || series.name || String(series.id)).trim().toLowerCase();
@@ -221,7 +222,12 @@ export function normalizeKavitaSeries(
     attrs: {
       format: series.format ?? null,
       language: e?.language ?? null,
-      ...(heldBooks !== undefined ? { heldBooks } : {}),
+      ...(heldBooks !== undefined
+        ? {
+            heldBooks,
+            ...(heldBooksSyncedAt ? { heldBooksSyncedAt: heldBooksSyncedAt.toISOString() } : {}),
+          }
+        : {}),
     },
     sourceAddedAt: toDate(series.created),
     sourceUpdatedAt: toDate(series.lastChapterAddedUtc),
@@ -299,6 +305,9 @@ export function normalizeAbsItem(
  * for the ~1,400 unchanged Kavita series.
  */
 export interface ExistingKavitaEnrichment {
+  /** Detail signals that can change while Kavita retains the series id and chapter-added stamp. */
+  title?: string;
+  pageCount?: number | null;
   sourceUpdatedAt: Date | null;
   metadataSyncedAt: Date | null;
   data: KavitaEnrichment;
@@ -307,6 +316,8 @@ export interface ExistingKavitaEnrichment {
    * the run reads them once (the backfill) even when the series is otherwise unchanged.
    */
   heldBooks?: HeldBook[];
+  /** Last successful chapter read, independent of metadata reads (authorless rows re-enrich every run). */
+  heldBooksSyncedAt?: Date | null;
 }
 
 /**
@@ -354,6 +365,8 @@ export function selectMetadataRefresh(
 }
 
 export interface FetchBooksSnapshotOptions {
+  /** Re-read every book series' chapters for a staged library regrouping census. */
+  forceHeldBooksRefresh?: boolean;
   /** Issue #712 — per-library cap of rolling metadata re-reads per run (default `KAVITA_METADATA_REFRESH_CAP`; 0 = off). */
   metadataRefreshCap?: number;
   /** Issue #712 — a non-foreign series is rolling-re-read only when its last read is at least this old. */
@@ -434,8 +447,20 @@ export async function fetchBooksSnapshot(
           cap: options.metadataRefreshCap,
           minAgeMs: options.metadataRefreshMinAgeMs,
         });
+        const heldRefreshIds = selectMetadataRefresh(
+          pageSeries,
+          existingKavita &&
+            new Map(
+              [...existingKavita].map(([key, row]) => [
+                key,
+                { ...row, metadataSyncedAt: row.heldBooksSyncedAt ?? row.metadataSyncedAt },
+              ]),
+            ),
+          { now, cap: options.metadataRefreshCap, minAgeMs: options.metadataRefreshMinAgeMs },
+        );
         const applied = new Map<number, KavitaEnrichmentApply | null>();
         const held = new Map<number, HeldBook[] | undefined>();
+        const heldReadAt = new Map<number, Date | null | undefined>();
         await mapPaced(pageSeries, options.metadataConcurrency ?? 4, async (s) => {
           const key = String(s.id);
           const existing = existingKavita?.get(key);
@@ -443,28 +468,48 @@ export async function fetchBooksSnapshot(
           const changed =
             existingKavita === undefined ||
             existing === undefined ||
-            stampChanged(freshUpdated, existing.sourceUpdatedAt);
+            stampChanged(freshUpdated, existing.sourceUpdatedAt) ||
+            (existing.title !== undefined && existing.title !== s.name) ||
+            (existing.pageCount !== undefined && existing.pageCount !== (s.pages ?? null));
           // Issue #661 — a BOOK series' held books (`/api/Series/volumes`): read when the series is new or
-          // changed, or was never read (the one-off backfill); otherwise carried forward. A failure carries
-          // the last value forward (or leaves it unread) and the next run retries. Comics are never paired.
+          // changed, never read, force-refreshed, or due in the bounded rotation; otherwise carried forward.
+          // A changed/forced read failure leaves identity unread for retry. Comics are never paired.
+          const refresh = refreshIds.has(s.id);
           if (kind === 'book') {
-            if (changed || existing?.heldBooks === undefined) {
+            if (
+              changed ||
+              heldRefreshIds.has(s.id) ||
+              options.forceHeldBooksRefresh ||
+              existing?.heldBooks === undefined
+            ) {
               try {
                 held.set(s.id, kavitaHeldBooksFrom(await bundle.kavita.listSeriesVolumes(key)));
+                heldReadAt.set(s.id, now);
                 kavitaHeldRead += 1;
               } catch (error) {
                 logger.error('books-sync: kavita held-books read failed', {
                   seriesId: key,
                   error: error instanceof Error ? error.message : String(error),
                 });
-                held.set(s.id, existing?.heldBooks);
+                // A changed series' old identity is no longer trustworthy. Leave it unread so pairing waits
+                // and the next run retries, even after the mirror advances the scanner stamp.
+                held.set(
+                  s.id,
+                  changed || options.forceHeldBooksRefresh ? undefined : existing?.heldBooks,
+                );
+                heldReadAt.set(
+                  s.id,
+                  changed || options.forceHeldBooksRefresh
+                    ? undefined
+                    : existing?.heldBooksSyncedAt,
+                );
               }
             } else {
               held.set(s.id, existing?.heldBooks);
+              heldReadAt.set(s.id, existing?.heldBooksSyncedAt);
             }
           }
           // Issue #712 — Kavita gives no metadata change signal, so the rolling refresh re-reads on top of the gate.
-          const refresh = refreshIds.has(s.id);
           const needsEnrich =
             changed || existing === undefined || existing.metadataSyncedAt === null || refresh;
           if (!needsEnrich && existing !== undefined) {
@@ -501,6 +546,7 @@ export async function fetchBooksSnapshot(
               bundle.kavitaPublicUrl,
               applied.get(s.id) ?? null,
               held.get(s.id),
+              heldReadAt.get(s.id),
             ),
           );
           kavitaSeries += 1;

@@ -2,7 +2,7 @@
 // runSync: the change-gate loader carries `attrs.heldBooks` forward for an unchanged series, including a
 // BOOK row with no author (re-enriched every run for the writers fallback, but never re-read for its held
 // books once they are stored). Embedded PG16; stub Kavita/ABS clients (no live API — ADR-010).
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { booksItems } from '@hnet/db';
 import { syncBooks, type BooksItemInput } from '@hnet/domain';
@@ -13,6 +13,9 @@ import type { SyncClients } from '../src/clients';
 import { bootMigratedDb, type TestDb } from './helpers';
 
 let t: TestDb;
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 beforeAll(async () => {
   t = await bootMigratedDb();
 });
@@ -37,7 +40,10 @@ const flatSeries = {
 } as unknown as KavitaSeries;
 
 const MURTAGH: KavitaVolume[] = [
-  { name: '5', chapters: [{ title: '-100000', titleName: 'Murtagh', isbn: '', writers: [{ name: 'Christopher Paolini' }] }] },
+  { name: '5', chapters: [{ title: '-100000', titleName: 'Murtagh', isbn: '', writers: [{ name: 'Christopher Paolini' }],
+      },
+    ],
+  },
 ];
 
 function stubBundle() {
@@ -51,7 +57,8 @@ function stubBundle() {
       listSeriesPage: async () => ({ items: [flatSeries], total: 1, hasAuthoritativeTotal: true }),
       getSeriesMetadata: async (id: string) => {
         metadataCalls.push(id);
-        return { summary: 'A dragon rider.', genres: [], publishers: [], writers: [], language: 'en', releaseYear: 2023 };
+        return { summary: 'A dragon rider.', genres: [], publishers: [], writers: [], language: 'en', releaseYear: 2023,
+        };
       },
       listSeriesVolumes: async (id: string) => {
         volumeCalls.push(id);
@@ -69,7 +76,8 @@ function stubBundle() {
 describe('runSync --mode=books-sync — the held books (issue #661)', () => {
   it('reads a series once, then carries its held books forward, even for a row with no author', async () => {
     const first = stubBundle();
-    const r1 = await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db, books: first.bundle });
+    const r1 = await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db, books: first.bundle,
+    });
     expect(r1.totalFailure).toBe(false);
     expect(first.volumeCalls).toEqual(['457']);
     const [row] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '457'));
@@ -81,7 +89,8 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
     // The series is unchanged: the authorless row is still re-enriched (the writers fallback), but its
     // held books are carried forward, not re-read.
     const second = stubBundle();
-    await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db, books: second.bundle });
+    await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db, books: second.bundle,
+    });
     expect(second.metadataCalls).toEqual(['457']);
     expect(second.volumeCalls).toEqual([]);
     const [after] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '457'));
@@ -108,7 +117,7 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
       genres: [],
       coverRef: null,
       deepLinkUrl: 'https://kavita.example/library/1/series/659',
-      pageCount: null,
+      pageCount: 700,
       wordCount: null,
       durationSeconds: null,
       sizeBytes: null,
@@ -133,9 +142,14 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
       total: 1,
       hasAuthoritativeTotal: true,
     });
-    (s.bundle.kavita as unknown as { listSeriesVolumes: unknown }).listSeriesVolumes = async (id: string) => {
+    (s.bundle.kavita as unknown as { listSeriesVolumes: unknown }).listSeriesVolumes = async (id: string,
+    ) => {
       s.volumeCalls.push(id);
-      return [{ name: '0.5', chapters: [{ title: '-100000', titleName: 'Fire & Blood', isbn: '9781524796280', writers: [{ name: 'George R. R. Martin' }] }] }];
+      return [{ name: '0.5', chapters: [{ title: '-100000', titleName: 'Fire & Blood', isbn: '9781524796280', writers: [{ name: 'George R. R. Martin' }],
+            },
+          ],
+        },
+      ];
     };
     await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db, books: s.bundle });
     expect(s.volumeCalls).toEqual(['659']);
@@ -166,9 +180,12 @@ describe('runSync --mode=books-sync — a flat-layout author survives a carried-
           listSeriesPage: async () => ({ items: [series], total: 1, hasAuthoritativeTotal: true }),
           getSeriesMetadata: async (id: string) => {
             metadataCalls.push(id);
-            return { summary: 'A silo.', genres: [], publishers: [], writers: [{ name: 'Hugh Howey' }], language: 'en', releaseYear: 2011 };
+            return { summary: 'A silo.', genres: [], publishers: [], writers: [{ name: 'Hugh Howey' }], language: 'en', releaseYear: 2011,
+            };
           },
-          listSeriesVolumes: async () => [{ name: '1', chapters: [{ title: '-100000', titleName: 'Wool', isbn: '', writers: [] }] }],
+          listSeriesVolumes: async () => [{ name: '1', chapters: [{ title: '-100000', titleName: 'Wool', isbn: '', writers: [] }],
+            },
+          ],
         },
       } as unknown as BooksSyncBundle;
       return { b, metadataCalls };
@@ -187,5 +204,171 @@ describe('runSync --mode=books-sync — a flat-layout author survives a carried-
       expect(next.metadataCalls).toEqual([]);
       expect(await authorOf()).toBe('Hugh Howey');
     }
+  });
+});
+
+describe('runSync books-sync — retained series ids after chapter changes (issue #825)', () => {
+  const nextVolumes: KavitaVolume[] = [
+    {
+      name: '1',
+      chapters: [
+        {
+          titleName: 'Eragon',
+          title: '-100000',
+          isbn: '',
+          writers: [{ name: 'Christopher Paolini' }],
+        },
+      ],
+    },
+  ];
+  const mirroredHeld = async () =>
+    (await t.db.select().from(booksItems).where(eq(booksItems.externalId, '457')))[0]!.attrs;
+  it('a page-count change re-reads chapters even if lastChapterAddedUtc stays put', async () => {
+    const first = stubBundle();
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: first.bundle,
+    });
+    const second = stubBundle();
+    (second.bundle.kavita as unknown as { listSeriesPage: unknown }).listSeriesPage = async () => ({
+      items: [{ ...flatSeries, pages: 350 }],
+      total: 1,
+      hasAuthoritativeTotal: true,
+    });
+    (second.bundle.kavita as unknown as { listSeriesVolumes: unknown }).listSeriesVolumes = async (
+      id: string,
+    ) => {
+      second.volumeCalls.push(id);
+      return nextVolumes;
+    };
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: second.bundle,
+    });
+    expect(second.volumeCalls).toEqual(['457']);
+    expect(await mirroredHeld()).toMatchObject({
+      heldBooks: [{ title: 'Eragon', author: 'Christopher Paolini', isbn: null }],
+    });
+  });
+
+  it('bounded rolling refresh sees equal-page chapter changes under the same id and stamp', async () => {
+    const first = stubBundle();
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: first.bundle,
+    });
+    const now = new Date();
+    await t.db
+      .update(booksItems)
+      .set({
+        metadataSyncedAt: new Date(now.getTime() - 7 * 3600_000),
+        attrs: {
+          ...(await mirroredHeld()),
+          heldBooksSyncedAt: new Date(now.getTime() - 7 * 3600_000).toISOString(),
+        },
+      })
+      .where(eq(booksItems.externalId, '457'));
+    const second = stubBundle();
+    (second.bundle.kavita as unknown as { listSeriesVolumes: unknown }).listSeriesVolumes = async (
+      id: string,
+    ) => {
+      second.volumeCalls.push(id);
+      return nextVolumes;
+    };
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: second.bundle,
+      now,
+    });
+    expect(second.volumeCalls).toEqual(['457']);
+    expect(await mirroredHeld()).toMatchObject({
+      heldBooks: [{ title: 'Eragon', author: 'Christopher Paolini', isbn: null }],
+    });
+  });
+
+  it('the production force-refresh environment flag reads current chapters without waiting for rotation', async () => {
+    const first = stubBundle();
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: first.bundle,
+    });
+    vi.stubEnv('KAVITA_FORCE_HELD_BOOKS_REFRESH', '1');
+    const second = stubBundle();
+    (second.bundle.kavita as unknown as { listSeriesVolumes: unknown }).listSeriesVolumes = async (
+      id: string,
+    ) => {
+      second.volumeCalls.push(id);
+      return nextVolumes;
+    };
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: second.bundle,
+    });
+    expect(second.volumeCalls).toEqual(['457']);
+    expect(await mirroredHeld()).toMatchObject({
+      heldBooks: [{ title: 'Eragon', author: 'Christopher Paolini', isbn: null }],
+    });
+  });
+
+  it('a changed-series detail failure clears stale held identity and the next unchanged-stamp run retries', async () => {
+    const first = stubBundle();
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: first.bundle,
+    });
+    const changed = { ...flatSeries, pages: 351 };
+    const failed = stubBundle();
+    (failed.bundle.kavita as unknown as { listSeriesPage: unknown }).listSeriesPage = async () => ({
+      items: [changed],
+      total: 1,
+      hasAuthoritativeTotal: true,
+    });
+    (failed.bundle.kavita as unknown as { listSeriesVolumes: unknown }).listSeriesVolumes =
+      async () => {
+        throw new Error('detail read failed');
+      };
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: failed.bundle,
+    });
+    expect(await mirroredHeld()).not.toHaveProperty('heldBooks');
+    const retry = stubBundle();
+    (retry.bundle.kavita as unknown as { listSeriesPage: unknown }).listSeriesPage = async () => ({
+      items: [changed],
+      total: 1,
+      hasAuthoritativeTotal: true,
+    });
+    (retry.bundle.kavita as unknown as { listSeriesVolumes: unknown }).listSeriesVolumes = async (
+      id: string,
+    ) => {
+      retry.volumeCalls.push(id);
+      return nextVolumes;
+    };
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: retry.bundle,
+    });
+    expect(retry.volumeCalls).toEqual(['457']);
+    expect(await mirroredHeld()).toMatchObject({
+      heldBooks: [{ title: 'Eragon', author: 'Christopher Paolini', isbn: null }],
+    });
   });
 });
