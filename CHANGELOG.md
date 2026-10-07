@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.109.2](https://github.com/thaynes43/haynesnetwork/compare/v0.109.1...v0.109.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **books:** the Books Census catches a file whose title is the record's with words cut ([#799](https://github.com/thaynes43/haynesnetwork/issues/799)) ([#805](https://github.com/thaynes43/haynesnetwork/issues/805)) ([a30e50b](https://github.com/thaynes43/haynesnetwork/commit/a30e50bd9829b0304d27f5d2752f6b0e131ebfcf))
+
+
+### Documentation
+
+* **agents:** Books Census [#795](https://github.com/thaynes43/haynesnetwork/issues/795) repaired: 14 re-points, 4 re-downloads, 6 Census Holds ([#800](https://github.com/thaynes43/haynesnetwork/issues/800)) ([89afa4c](https://github.com/thaynes43/haynesnetwork/commit/89afa4c9b7f551ad29ff20adeef014ba08581034))
+* **agents:** Census Hold for Magnus Chase 3, whose title the Held File Check misreads ([#795](https://github.com/thaynes43/haynesnetwork/issues/795)) ([#802](https://github.com/thaynes43/haynesnetwork/issues/802)) ([7c2e76b](https://github.com/thaynes43/haynesnetwork/commit/7c2e76b646e77646af407a087f548ef21c56e8d3))
+* **agents:** coordinator wave 2026-10-07 (Libretto guards, Books Census, Request Events) ([#803](https://github.com/thaynes43/haynesnetwork/issues/803)) ([dc60c93](https://github.com/thaynes43/haynesnetwork/commit/dc60c93ed6fd7b440c87328f3809371a1ca02a35))
+* **libretto:** unnumbered series books are members, never fetched (libretto[#30](https://github.com/thaynes43/haynesnetwork/issues/30)) ([#804](https://github.com/thaynes43/haynesnetwork/issues/804)) ([a56df32](https://github.com/thaynes43/haynesnetwork/commit/a56df3231fe560411d04a6b29c21151b7edfa25b))
+
 ## [0.109.1](https://github.com/thaynes43/haynesnetwork/compare/v0.109.0...v0.109.1) (2026-10-07)
 
 
