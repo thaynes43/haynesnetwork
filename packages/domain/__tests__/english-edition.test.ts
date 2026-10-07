@@ -706,6 +706,85 @@ describe('runEnglishEditionPass — pairing and collection wants', () => {
     expect((await wantOf(colId)).lastSearchedAt).not.toBeNull();
   });
 
+  // Issue #794 (DESIGN-028 amendment 2026-10-06): LazyLibrarian labels a book's language only once addBook has seated it,
+  // so a book it did not hold is read again before anything is queued. The live case: want 76848581, "Crescent City - La
+  // casa di terra e sangue", seated as LazyLibrarian `LgDwDwAAQBAJ` (`it`) and queued and searched on 2026-10-06.
+  /** A LazyLibrarian that does not hold the book until addBook seats it with `language`; `failReadAfterSeat` breaks reads after. */
+  function seatingLl(language: string | null, opts: { failReadAfterSeat?: boolean } = {}) {
+    const ll = stubLl({});
+    let seated = false;
+    const bundle = {
+      write: {
+        ...ll.bundle.write,
+        addBook: async (id: string) => {
+          seated = true;
+          return ll.bundle.write.addBook(id);
+        },
+      },
+      read: {
+        getAllBookStatuses: async () => {
+          if (seated && opts.failReadAfterSeat) throw new Error('LL down');
+          const map = ll.snapshot();
+          if (seated) {
+            map.set('PitFPgAACAAJ', { title: 'Azazel', author: 'Isaac Asimov', language, ebookStatus: 'Skipped', audioStatus: 'Skipped' });
+          }
+          return map;
+        },
+      },
+    } as unknown as LazyLibrarianClientBundle;
+    return { calls: ll.calls, bundle };
+  }
+  const findMissing = (ll: LazyLibrarianClientBundle, now: Date) =>
+    forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: {
+        listRecipes: async () => ({ recipes: [{ id: 'recipe-asimov', builder: { type: 'x', ref: 'x' }, variables: { acquisitionEnabled: true } }], issues: [] }),
+      } as unknown as CollectionWantsLibretto,
+      ll,
+      pacer: noPace,
+      now,
+    });
+  const searchAudits = () =>
+    t.db.select().from(permissionAudit).where(eq(permissionAudit.action, 'request_book_search'));
+
+  it('the collection force-search leaves a book its own addBook seats as non-English as seated: no queueBook, no searchBook', async () => {
+    const colId = await seedCollection();
+    const ll = seatingLl('it');
+    const report = await findMissing(ll.bundle, NOW);
+    expect(report).toMatchObject({ skippedForeign: 1, searched: 0, failed: 0, skippedHeld: 0 });
+    expect(ll.calls).toEqual([{ cmd: 'addBook', id: 'PitFPgAACAAJ' }]);
+    // Stamped (the cooldown keeps it out of the next run), not audited (nothing was asked of LazyLibrarian), still open.
+    expect(await wantOf(colId)).toMatchObject({ lastSearchedAt: NOW, ebookStatus: 'requested', llBookId: 'PitFPgAACAAJ' });
+    expect(await searchAudits()).toEqual([]);
+
+    // Once the cooldown has run out, the book is in the snapshot and the check before the push skips it: no second add.
+    const later = await findMissing(ll.bundle, new Date(NOW.getTime() + DAY));
+    expect(later).toMatchObject({ skippedForeign: 1, searched: 0 });
+    expect(ll.calls).toEqual([{ cmd: 'addBook', id: 'PitFPgAACAAJ' }]);
+  });
+
+  it('a book the force-search seats as English is queued and searched as before', async () => {
+    const colId = await seedCollection();
+    const ll = seatingLl('en');
+    const report = await findMissing(ll.bundle, NOW);
+    expect(report).toMatchObject({ skippedForeign: 0, searched: 1, failed: 0 });
+    expect(ll.calls).toEqual([
+      { cmd: 'addBook', id: 'PitFPgAACAAJ' },
+      { cmd: 'queueBook', id: 'PitFPgAACAAJ', format: 'ebook' },
+      { cmd: 'searchBook', id: 'PitFPgAACAAJ', format: 'ebook' },
+    ]);
+    expect((await wantOf(colId)).lastSearchedAt).toEqual(NOW);
+    expect(await searchAudits()).toHaveLength(1);
+  });
+
+  it('a failed read after the seat is unknown, so the force-search goes on (the guard only withholds a write)', async () => {
+    await seedCollection();
+    const ll = seatingLl('it', { failReadAfterSeat: true });
+    const report = await findMissing(ll.bundle, NOW);
+    expect(report).toMatchObject({ skippedForeign: 0, searched: 1, failed: 0 });
+    expect(ll.calls.map((c) => c.cmd)).toEqual(['addBook', 'queueBook', 'searchBook']);
+  });
+
   it('a parked collection want is out of the force-search', async () => {
     const colId = await seedCollection();
     const gb = stubGb(() => null);

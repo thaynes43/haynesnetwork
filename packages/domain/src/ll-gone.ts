@@ -46,7 +46,7 @@ import {
 } from './book-requests';
 import { inTransaction, resolveDb } from './db-client';
 import { updateBookRequests } from './book-request-events';
-import { isForeignLanguage } from './book-language';
+import { isForeignLanguage, readLlLanguage } from './book-language';
 import { gbQuotaDayString } from './gb-call-budget';
 import { GB_DAILY_RESET_UTC_HOUR, peekGbQuotaGate } from './gb-quota-breaker';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
@@ -510,6 +510,9 @@ export interface LlRerequestTally {
   /** Wants that needed an `addBook` but were left for a later run, uncounted: the shared Google Books key is out of
    *  quota (the app's breaker is open, or three adds in a row were refused), or a person's want is still waiting. */
   llRerequestDeferred: number;
+  /** Issue #794: wants whose book the `addBook` seated reads non-English. Not queued and not recorded: the want stays
+   *  `missing` for the English-edition pass, and the book stays as seated (`Skipped`). */
+  llRerequestSkippedForeign: number;
 }
 
 export const emptyLlRerequestTally = (): LlRerequestTally => ({
@@ -517,6 +520,7 @@ export const emptyLlRerequestTally = (): LlRerequestTally => ({
   llRerequestLanded: 0,
   llRerequestNotAdded: 0,
   llRerequestDeferred: 0,
+  llRerequestSkippedForeign: 0,
 });
 
 /** After this many refusals (each on a different Google Books quota-day) the re-request ends: it stays `missing`. */
@@ -566,8 +570,10 @@ export interface LlRerequestCandidate {
  *      or the app's Google Books breaker is open: LazyLibrarian's add looks the volume up on the SAME key). An add
  *      answered `false` is a refusal: no queue. Three in a row end the pass's adds; they are stamped to wait for the
  *      next quota-day, and counted only when no add has gone through yet this quota-day (after one, the quota ran
- *      out, not the books). A refusal followed by a successful add counts. Then `queueBook` once per (book, format)
- *      unless the row already reads it `Wanted`/`Snatched`. Paced. NEVER `searchBook`;
+ *      out, not the books). A refusal followed by a successful add counts. A book the add seated is read again for its
+ *      language (issue #794: LazyLibrarian labels it only once seated): a non-English one is not queued and its wants
+ *      are not recorded. Then `queueBook` once per (book, format) unless the row already reads it `Wanted`/`Snatched`.
+ *      Paced. NEVER `searchBook`;
  *   4. one more `getAllBooks` confirms each add.
  * An LL write that throws (LL down) leaves that want untouched for the next run.
  */
@@ -603,6 +609,8 @@ export async function runLlRerequests(input: {
     plan: Extract<LlRerequestPlan, { kind: 'rerequest' }>;
   }> = [];
   const added = new Set<string>();
+  // Issue #794: the books this pass's adds seated that LazyLibrarian labels non-English, with that language.
+  const seatedForeign = new Map<string, string>();
   const queued = new Set<string>();
   let i = 0;
   for (const c of input.candidates) {
@@ -656,6 +664,27 @@ export async function runLlRerequests(input: {
           await recordLlRerequest({ ...input, ...r, outcome: 'not_added', tally });
         refused = [];
         added.add(target);
+        // Issue #794 (DESIGN-028 amendment 2026-10-06): LazyLibrarian only labels a book's language once addBook has
+        // seated it, so the snapshot could not show it. A failed read is unknown, and the hand-back goes on.
+        const language = await readLlLanguage(input.ll, target);
+        if (language !== null && isForeignLanguage(language)) seatedForeign.set(target, language);
+      }
+      // A non-English book is left as seated (`Skipped`), never queued, and the want is not recorded: it stays `missing`,
+      // the next pass skips it (its id is in the snapshot now), and the English-edition pass switches or parks it. A row
+      // the snapshot already held is the re-key match, which never names a non-English book (`LlRekeyIndex`).
+      const foreign = row == null ? seatedForeign.get(target) : undefined;
+      if (foreign !== undefined) {
+        tally.llRerequestSkippedForeign += 1;
+        input.log?.info?.('ll_push_skipped_foreign', {
+          site: input.site,
+          requestId: c.want.id,
+          llBookId: target,
+          formats: plan.request,
+          title: c.want.title,
+          llLanguage: foreign,
+          seated: true,
+        });
+        continue;
       }
       for (const f of plan.request) {
         const raw = (f === 'ebook' ? row?.ebookStatus : row?.audioStatus)?.trim().toLowerCase();
