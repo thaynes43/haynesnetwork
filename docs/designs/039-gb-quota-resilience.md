@@ -593,9 +593,9 @@ The mint paused 250 ms between ATTEMPTS, and one attempt is one to four Google B
 leg, the pre-colon fallback, the comic confirm), each retried up to three times on a 429 or 5xx. A run with lookups to make
 therefore sent about two requests a second, and the key's per-minute quota ran out about a minute in. The rate decides it:
 the 10-05 runs at 07:33Z, 08:33Z and 09:33Z made 100 attempts in 86 to 95 seconds and did not trip, while the 10:33Z and
-11:32Z runs made about 80 in 55 to 57 seconds and did. The two
-09:33Z trips also fell inside LazyLibrarian's daily library scan (09:10Z to about 09:45Z), which looks up unmatched files on
-the same key (several hundred `gb.py` log lines a minute). Nothing else of ours shared those minutes: the collection-wants
+11:32Z runs made about 80 in 55 to 57 seconds and did. Both
+09:33Z trips came while LazyLibrarian's daily library scan (09:10Z) was running; on 10-07 that scan looked up unmatched
+files on the same key until about 09:45Z (several hundred `gb.py` log lines a minute). Nothing else of ours shared those minutes: the collection-wants
 pass finishes by :29 and resolves through Libretto, whose key is another Google project. The trip itself cost more than the
 two-minute window: the run latched (D-07, every later lookup skipped until the next hour), and LazyLibrarian's adds on the
 key were refused while it lasted.
