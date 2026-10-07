@@ -3,7 +3,8 @@
 # feature merge → release PR recompute → DANCE if checks never start → merge → artifact pair.
 set -u
 FPR="${1:?feature PR number}"
-cd /home/dev/work/about-page || { echo "FAIL: worktree missing"; exit 1; }
+# Everything below talks to GitHub with --repo, so this runs from any directory (it used to cd into a long-gone
+# worktree and fail before doing anything).
 R=thaynes43/haynesnetwork
 
 while :; do
@@ -16,12 +17,12 @@ while :; do
     echo "EVENT: PR #$FPR is BEHIND — updating the branch"
     gh api -X PUT "repos/$R/pulls/$FPR/update-branch" >/dev/null 2>&1 || echo "WARN: update-branch API refused — manual rebase needed"
   fi
-  bad=$(gh pr checks "$FPR" --repo "$R" 2>/dev/null | grep -v $'^e2e\t' | grep -c $'\tfail' || true)
+  # The opt-in e2e-advisory run never blocks (ADR-102); any other red check stops the train.
+  bad=$(gh pr checks "$FPR" --repo "$R" 2>/dev/null | grep -v '^e2e-advisory' | grep -c $'\tfail' || true)
   [ "${bad:-0}" -gt 0 ] && { echo "FAIL: PR #$FPR red:"; gh pr checks "$FPR" --repo "$R" | grep $'\tfail'; exit 1; }
   sleep 45
 done
 
-base=$(git -C /home/dev/work/about-page describe --tags --abbrev=0 origin/main 2>/dev/null || echo "")
 rp=""; ver=""
 for i in $(seq 1 30); do
   export GH_TOKEN="$(cat /creds/gh_token)"
@@ -58,7 +59,7 @@ while :; do
       danced=1
     fi
   else
-    bad=$(echo "$checks" | grep -v $'^e2e\t' | grep -c $'\tfail' || true)
+    bad=$(echo "$checks" | grep -v '^e2e-advisory' | grep -c $'\tfail' || true)
     [ "${bad:-0}" -gt 0 ] && { echo "FAIL: release PR #$rp red:"; echo "$checks" | grep $'\tfail'; exit 1; }
   fi
   sleep 60
