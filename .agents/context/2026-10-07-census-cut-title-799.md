@@ -55,3 +55,7 @@ brought none back: a folder with only sidecar files makes no item.
 | Gary Russell/The Lord of the Rings | audio quarantined by the 2026-09-29 audit (`audit-2026-09-29/`) | quarantine only |
 | Sarah J. Maas/[(Throne of Glass )] [Author - Sarah J Maas] [May-2013] | German audio, quarantined in `german-audio/` (F10) | the English Throne of Glass is its own item |
 | Charles Dickens/A Christmas Carol (Tim Curry) | a stale twin of a live item on the same folder | item e0a372d0 (6 files, untouched) |
+
+> 2026-10-07: holding the opf was not enough. The 09:10Z library scan re-matched the wrong books by title and undid these
+> repairs; the durable rule (an `.ll_ignore` in the wrong book's folder) and the redo are in
+> `2026-10-07-scan-undid-census-repairs.md`.

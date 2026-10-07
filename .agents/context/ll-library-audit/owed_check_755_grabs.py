@@ -33,7 +33,10 @@ for r in db.execute("SELECT rowid, NZBprov, AuxInfo, NZBtitle, NZBurl FROM wante
 rows = db.execute(
     "SELECT w.rowid, w.BookID, w.NZBtitle, w.NZBprov, w.AuxInfo, w.Status, b.BookName, b.BookSub, b.BookLang, "
     "a.AuthorName FROM wanted w JOIN books b ON b.BookID = w.BookID LEFT JOIN authors a ON a.AuthorID = b.AuthorID "
-    "WHERE w.rowid > ? ORDER BY w.rowid", (AFTER,)).fetchall()
+    # A block a repair script wrote by hand (the #755 pattern: a Failed copy of the release that delivered another book,
+    # DLResult 'Blocked by hand ...', e.g. rowid 9598 from fix_census_795.py) is not a grab: skip it.
+    "WHERE w.rowid > ? AND NOT (w.Status = 'Failed' AND COALESCE(w.DLResult, '') LIKE 'Blocked by hand%') "
+    "ORDER BY w.rowid", (AFTER,)).fetchall()
 broken = 0
 for r in rows:
     problems = []

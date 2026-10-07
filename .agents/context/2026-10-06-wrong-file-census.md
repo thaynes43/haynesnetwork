@@ -123,3 +123,7 @@ Nothing was deleted.
 
 Kavita folder scans (13 authors) and an Audiobookshelf library scan ran at 00:00Z. Owed: OC-032 (the re-points survive the
 library scan) and OC-033 to OC-036.
+
+> 2026-10-07: holding the opf was not enough. The 09:10Z library scan re-matched the wrong books by title and undid these
+> repairs; the durable rule (an `.ll_ignore` in the wrong book's folder) and the redo are in
+> `2026-10-07-scan-undid-census-repairs.md`.
