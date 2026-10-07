@@ -139,10 +139,7 @@ export async function stampRequestsSearched(
   now: Date,
 ): Promise<void> {
   if (requestIds.length === 0) return;
-  await stampBookRequests(db, inArray(bookRequests.id, [...requestIds]), {
-    lastSearchedAt: now,
-    updatedAt: now,
-  });
+  await stampBookRequests(db, inArray(bookRequests.id, [...requestIds]), { lastSearchedAt: now, updatedAt: now });
 }
 
 /**
@@ -295,11 +292,7 @@ export async function revertLandedFormats(input: RevertLandedInput): Promise<Rev
       .for('update');
     if (!req || req.matchedBooksItemId || (req.llBookId ?? null) !== input.llBookId) return none;
     /** The status a format moves to, or null: off `landed` to anything else; off `grabbed` (#734) to a non-positive. */
-    const target = (
-      current: BookRequestStatus,
-      next: BookRequestStatus | null | undefined,
-      grabbedToo: boolean,
-    ) => {
+    const target = (current: BookRequestStatus, next: BookRequestStatus | null | undefined, grabbedToo: boolean) => {
       if (!next || next === 'landed') return null;
       if (current === 'landed') return next;
       if (grabbedToo && current === 'grabbed' && UNPOSITIVE.has(next)) return next;
@@ -339,18 +332,7 @@ export async function revertLandedFormats(input: RevertLandedInput): Promise<Rev
 // ---------------------------------------------------------------------------
 
 const COMIC_STOP_WORDS = new Set([
-  'the',
-  'a',
-  'an',
-  'of',
-  'and',
-  'vol',
-  'volume',
-  'part',
-  'book',
-  'no',
-  'tpb',
-  'edition',
+  'the', 'a', 'an', 'of', 'and', 'vol', 'volume', 'part', 'book', 'no', 'tpb', 'edition',
 ]);
 
 /**
@@ -426,9 +408,7 @@ function compareDescKey(a: number[], b: number[]): number {
  * ⇒ grabbed (downloading/partial); monitored-but-none ⇒ wanted (the *arr Missing analog, actively searching);
  * unmonitored-and-none ⇒ missing (Kapowarr is not looking — the dead-end that offers "Search again").
  */
-export function mapKapowarrVolumeStatus(
-  vol: Pick<KapowarrVolume, 'monitored' | 'issueCount' | 'issuesDownloaded'>,
-): BookRequestStatus {
+export function mapKapowarrVolumeStatus(vol: Pick<KapowarrVolume, 'monitored' | 'issueCount' | 'issuesDownloaded'>): BookRequestStatus {
   if (vol.issueCount > 0 && vol.issuesDownloaded >= vol.issueCount) return 'landed';
   if (vol.issuesDownloaded > 0) return 'grabbed';
   if (vol.monitored) return 'wanted';
@@ -460,10 +440,7 @@ export function normTitle(t: string): string {
 
 /** The normalized-author companion (exported for the same reason — ADR-065). */
 export function normAuthor(a: string | null): string {
-  return (a ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+  return (a ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 export type LibraryMatcher = (title: string, author: string | null) => LibraryMatch | null;
@@ -499,9 +476,7 @@ export async function loadLibraryMatcher(db?: DbClient): Promise<LibraryMatcher>
     if (!bucket || bucket.length === 0) return null;
     const wantAuthor = normAuthor(author);
     const authorMatches = wantAuthor
-      ? bucket.filter(
-          (b) => b.author && (b.author.includes(wantAuthor) || wantAuthor.includes(b.author)),
-        )
+      ? bucket.filter((b) => b.author && (b.author.includes(wantAuthor) || wantAuthor.includes(b.author)))
       : [];
     const pool = authorMatches.length > 0 ? authorMatches : bucket;
     const nonComic = pool.find((b) => b.mediaKind !== 'comic');
@@ -624,9 +599,7 @@ export async function syncShelfRequests(
         // Issue #719 — a want parked because its LazyLibrarian book is not English and no English edition exists stays
         // parked (the English-edition pass owns the park: it lifts it, or retries the lookup, once a quota-day).
         unroutableReason =
-          existing?.unroutableReason === NO_ENGLISH_EDITION_REASON
-            ? NO_ENGLISH_EDITION_REASON
-            : null;
+          existing?.unroutableReason === NO_ENGLISH_EDITION_REASON ? NO_ENGLISH_EDITION_REASON : null;
         llBookId = existing?.llBookId ?? item.gbVolumeId ?? null;
         // Issue #715 — nothing lands a request with no library match except the LazyLibrarian book it points at. With
         // no book to point at, a `landed` format (the library match that landed it is gone) goes back to `requested`,
@@ -657,18 +630,7 @@ export async function syncShelfRequests(
           },
         );
         requestId = existing.id;
-        collectTargets(
-          existing.id,
-          llBookId,
-          ebookStatus,
-          audioStatus,
-          unroutableReason,
-          existing.ebookStatus,
-          existing.audioStatus,
-          toPush,
-          toReconcile,
-          item,
-        );
+        collectTargets(existing.id, llBookId, ebookStatus, audioStatus, unroutableReason, existing.ebookStatus, existing.audioStatus, toPush, toReconcile, item);
       } else {
         const row = await insertBookRequest(
           tx,
@@ -689,18 +651,7 @@ export async function syncShelfRequests(
         minted += 1;
         requestId = row?.id ?? '';
         if (row) {
-          collectTargets(
-            row.id,
-            llBookId,
-            ebookStatus,
-            audioStatus,
-            unroutableReason,
-            'requested',
-            'requested',
-            toPush,
-            toReconcile,
-            item,
-          );
+          collectTargets(row.id, llBookId, ebookStatus, audioStatus, unroutableReason, 'requested', 'requested', toPush, toReconcile, item);
         }
       }
 
@@ -751,18 +702,13 @@ export async function markRequestPushed(input: {
 }): Promise<void> {
   const now = input.now ?? new Date();
   await inTransaction(input.db, (tx) =>
-    updateBookRequests(
-      tx,
-      { writer: 'markRequestPushed', reason: 'll_pushed' },
-      eq(bookRequests.id, input.requestId),
-      {
-        llBookId: input.llBookId,
-        ebookStatus: sql`CASE WHEN ${bookRequests.ebookStatus} = 'requested' THEN 'wanted' ELSE ${bookRequests.ebookStatus} END`,
-        audioStatus: sql`CASE WHEN ${bookRequests.audioStatus} = 'requested' THEN 'wanted' ELSE ${bookRequests.audioStatus} END`,
-        lastReconciledAt: now,
-        updatedAt: now,
-      },
-    ),
+    updateBookRequests(tx, { writer: 'markRequestPushed', reason: 'll_pushed' }, eq(bookRequests.id, input.requestId), {
+      llBookId: input.llBookId,
+      ebookStatus: sql`CASE WHEN ${bookRequests.ebookStatus} = 'requested' THEN 'wanted' ELSE ${bookRequests.ebookStatus} END`,
+      audioStatus: sql`CASE WHEN ${bookRequests.audioStatus} = 'requested' THEN 'wanted' ELSE ${bookRequests.audioStatus} END`,
+      lastReconciledAt: now,
+      updatedAt: now,
+    }),
   );
 }
 
@@ -779,11 +725,7 @@ export async function applyRequestReconcile(input: {
   const now = input.now ?? new Date();
   await inTransaction(input.db, async (tx) => {
     const [req] = await tx
-      .select({
-        id: bookRequests.id,
-        ebookStatus: bookRequests.ebookStatus,
-        audioStatus: bookRequests.audioStatus,
-      })
+      .select({ id: bookRequests.id, ebookStatus: bookRequests.ebookStatus, audioStatus: bookRequests.audioStatus })
       .from(bookRequests)
       .where(eq(bookRequests.id, input.requestId))
       .for('update');
@@ -817,30 +759,18 @@ export async function markRequestFormatsRequeued(input: {
   const now = input.now ?? new Date();
   await inTransaction(input.db, async (tx) => {
     const [req] = await tx
-      .select({
-        id: bookRequests.id,
-        ebookStatus: bookRequests.ebookStatus,
-        audioStatus: bookRequests.audioStatus,
-      })
+      .select({ id: bookRequests.id, ebookStatus: bookRequests.ebookStatus, audioStatus: bookRequests.audioStatus })
       .from(bookRequests)
       .where(eq(bookRequests.id, input.requestId))
       .for('update');
     if (!req) return;
     await updateBookRequests(
       tx,
-      {
-        writer: 'markRequestFormatsRequeued',
-        reason: 'll_requeued',
-        detail: { formats: [...input.formats] },
-      },
+      { writer: 'markRequestFormatsRequeued', reason: 'll_requeued', detail: { formats: [...input.formats] } },
       eq(bookRequests.id, req.id),
       {
-        ebookStatus: input.formats.includes('ebook')
-          ? advanceStatus(req.ebookStatus, 'wanted')
-          : req.ebookStatus,
-        audioStatus: input.formats.includes('audiobook')
-          ? advanceStatus(req.audioStatus, 'wanted')
-          : req.audioStatus,
+        ebookStatus: input.formats.includes('ebook') ? advanceStatus(req.ebookStatus, 'wanted') : req.ebookStatus,
+        audioStatus: input.formats.includes('audiobook') ? advanceStatus(req.audioStatus, 'wanted') : req.audioStatus,
         lastSearchedAt: now,
         lastReconciledAt: now,
         updatedAt: now,
@@ -868,19 +798,14 @@ export async function markComicRouted(input: {
 }): Promise<void> {
   const now = input.now ?? new Date();
   await inTransaction(input.db, (tx) =>
-    updateBookRequests(
-      tx,
-      { writer: 'markComicRouted', reason: 'comic_routed' },
-      eq(bookRequests.id, input.requestId),
-      {
-        kapowarrVolumeId: input.kapowarrVolumeId,
-        comicvineId: input.comicvineId,
-        comicStatus: input.comicStatus ?? 'wanted',
-        unroutableReason: null,
-        lastReconciledAt: now,
-        updatedAt: now,
-      },
-    ),
+    updateBookRequests(tx, { writer: 'markComicRouted', reason: 'comic_routed' }, eq(bookRequests.id, input.requestId), {
+      kapowarrVolumeId: input.kapowarrVolumeId,
+      comicvineId: input.comicvineId,
+      comicStatus: input.comicStatus ?? 'wanted',
+      unroutableReason: null,
+      lastReconciledAt: now,
+      updatedAt: now,
+    }),
   );
 }
 
@@ -946,10 +871,7 @@ export async function recordManualSearch(
     if (!req) throw new NotFoundError(`Book request ${input.requestId} not found`);
 
     const now = new Date();
-    await stampBookRequests(tx, eq(bookRequests.id, req.id), {
-      lastSearchedAt: now,
-      updatedAt: now,
-    });
+    await stampBookRequests(tx, eq(bookRequests.id, req.id), { lastSearchedAt: now, updatedAt: now });
 
     await tx.insert(permissionAudit).values({
       actorId: input.actorId,
@@ -1219,11 +1141,7 @@ export async function getBookRequestDetail(input: {
     matchedBooksItemId: row.matchedBooksItemId,
     matched:
       row.matchedSource && row.matchedExternalId
-        ? {
-            source: row.matchedSource,
-            externalId: row.matchedExternalId,
-            coverRef: row.matchedCoverRef,
-          }
+        ? { source: row.matchedSource, externalId: row.matchedExternalId, coverRef: row.matchedCoverRef }
         : null,
     ebookStatus: row.ebookStatus,
     audioStatus: row.audioStatus,
@@ -1468,11 +1386,7 @@ export async function getShelfWallItems(input: {
           matchedBooksItemId: row.matchedBooksItemId,
           matched:
             row.matchedSource && row.matchedExternalId
-              ? {
-                  source: row.matchedSource,
-                  externalId: row.matchedExternalId,
-                  coverRef: row.matchedCoverRef,
-                }
+              ? { source: row.matchedSource, externalId: row.matchedExternalId, coverRef: row.matchedCoverRef }
               : null,
           ebookStatus: row.ebookStatus,
           audioStatus: row.audioStatus,
@@ -1496,11 +1410,7 @@ export async function getShelfWallItems(input: {
       existing.item.matchedBooksItemId = row.matchedBooksItemId;
       existing.item.matched =
         row.matchedSource && row.matchedExternalId
-          ? {
-              source: row.matchedSource,
-              externalId: row.matchedExternalId,
-              coverRef: row.matchedCoverRef,
-            }
+          ? { source: row.matchedSource, externalId: row.matchedExternalId, coverRef: row.matchedCoverRef }
           : null;
       existing.item.ebookStatus = row.ebookStatus;
       existing.item.audioStatus = row.audioStatus;
@@ -2071,11 +1981,7 @@ export function englishEditionOpenFormats(row: EnglishEditionRow): Array<'ebook'
   return open;
 }
 
-const ENGLISH_EDITION_REASONS = new Set<string | null>([
-  null,
-  FOREIGN_LANGUAGE_REASON,
-  NO_ENGLISH_EDITION_REASON,
-]);
+const ENGLISH_EDITION_REASONS = new Set<string | null>([null, FOREIGN_LANGUAGE_REASON, NO_ENGLISH_EDITION_REASON]);
 
 async function lockEnglishEditionRow(
   tx: Transaction,
@@ -2118,10 +2024,7 @@ export async function switchRequestToEnglishEdition(input: {
   if (input.fromLlBookId === input.toLlBookId) return false;
   const now = input.now ?? new Date();
   return inTransaction(input.db, async (tx) => {
-    const row = await lockEnglishEditionRow(tx, {
-      requestId: input.requestId,
-      llBookId: input.fromLlBookId,
-    });
+    const row = await lockEnglishEditionRow(tx, { requestId: input.requestId, llBookId: input.fromLlBookId });
     if (!row) return false;
     const open = englishEditionOpenFormats(row);
     await updateBookRequests(
@@ -2170,20 +2073,13 @@ export async function parkRequestNoEnglishEdition(input: {
 }): Promise<boolean> {
   const now = input.now ?? new Date();
   return inTransaction(input.db, async (tx) => {
-    const row = await lockEnglishEditionRow(tx, {
-      requestId: input.requestId,
-      llBookId: input.llBookId,
-    });
+    const row = await lockEnglishEditionRow(tx, { requestId: input.requestId, llBookId: input.llBookId });
     if (!row) return false;
     const open = englishEditionOpenFormats(row);
     const settle = row.origin === 'goodreads';
     await updateBookRequests(
       tx,
-      {
-        writer: 'parkRequestNoEnglishEdition',
-        reason: 'parked',
-        detail: { llBookId: input.llBookId },
-      },
+      { writer: 'parkRequestNoEnglishEdition', reason: 'parked', detail: { llBookId: input.llBookId } },
       eq(bookRequests.id, row.id),
       {
         ...(settle && open.includes('ebook') ? { ebookStatus: 'missing' as const } : {}),
@@ -2212,9 +2108,7 @@ export async function stampEnglishEditionTried(input: {
   now?: Date;
 }): Promise<boolean> {
   const now = input.now ?? new Date();
-  const rows = await stampBookRequests(input.db, eq(bookRequests.id, input.requestId), {
-    englishEditionTriedAt: now,
-  });
+  const rows = await stampBookRequests(input.db, eq(bookRequests.id, input.requestId), { englishEditionTriedAt: now });
   return rows.length > 0;
 }
 
@@ -2237,12 +2131,7 @@ export async function liftNoEnglishEditionPark(input: {
       .from(bookRequests)
       .where(eq(bookRequests.id, input.requestId))
       .for('update');
-    if (
-      !row ||
-      row.llBookId !== input.llBookId ||
-      row.unroutableReason !== NO_ENGLISH_EDITION_REASON
-    )
-      return false;
+    if (!row || row.llBookId !== input.llBookId || row.unroutableReason !== NO_ENGLISH_EDITION_REASON) return false;
     const reopen = row.origin === 'goodreads';
     await updateBookRequests(
       tx,
@@ -2333,7 +2222,8 @@ export async function getCollectionWantedBookRequests(input: {
       rank(r) < rank(prior) ||
       (rank(r) === rank(prior) &&
         (r.createdAt.getTime() < prior.createdAt.getTime() ||
-          (r.createdAt.getTime() === prior.createdAt.getTime() && r.requestId < prior.requestId)));
+          (r.createdAt.getTime() === prior.createdAt.getTime() &&
+            r.requestId < prior.requestId)));
     if (wins) byRef.set(key, r);
   }
 
