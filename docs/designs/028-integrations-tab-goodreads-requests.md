@@ -1599,7 +1599,7 @@ line; no new term (the history is the Request Events of one want, shown).
   headed "History · Admins only", for an admin only (the page wrapper passes the session's `isAdmin`; the API decides).
 - **A want that is gone.** A deleted want keeps its events (no foreign key, ADR-101). When the Wanted detail is
   `NOT_FOUND` (a collection want dropped or removed with its collection, a goodreads want whose shelf item is gone), an
-  admin sees "No longer on the list" and the History below it, so the page still says what happened. Everyone else sees
+  admin sees "Not on the wanted list" and the History below it, so the page still says what happened. Everyone else sees
   the not-found message as before. The page no longer retries a `NOT_FOUND` (it waited through three retries before
   saying so).
 - **The book detail** (`/library/books/[id]`, DESIGN-025 D-08): each linked request in its History gains, for an admin, a

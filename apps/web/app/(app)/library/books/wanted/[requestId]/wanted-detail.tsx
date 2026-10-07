@@ -19,7 +19,7 @@
 //
 // Issue #792 (DESIGN-028 amendment 2026-10-07; owner ruling: admins only) — an admin also sees the want's History:
 // its Request Events (ADR-101), newest first. A want that is gone keeps its events, so an admin opening a gone want's
-// page still gets its History under a "no longer on the list" note. Everyone else sees neither (the API refuses them).
+// page still gets its History under a "Not on the wanted list" note. Everyone else sees neither (the API refuses them).
 import { useState, type ReactNode } from 'react';
 import { trpc, type RouterOutputs } from '@/lib/trpc-client';
 import {
@@ -356,9 +356,9 @@ export function WantedDetail({
         <>
           <BackLink from={from} />
           <section className="card admin-section" data-testid="wanted-gone">
-            <h2>No longer on the list</h2>
+            <h2>Not on the wanted list</h2>
             <p className="muted">
-              This want isn’t on the wanted list any more. Its history below shows what happened to it.
+              This want isn’t on the wanted list. Its recorded history, if it has any, is below.
             </p>
           </section>
           <HistorySection requestId={requestId} />

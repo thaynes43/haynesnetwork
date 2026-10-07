@@ -367,6 +367,6 @@ so the swap stays reflow-free (ADR-015 / hard rule 9). The comic (Kapowarr) leg 
 
 The Wanted detail page (amendment 2) gains a **History** card below Details for an admin only: the want's Request Events
 (ADR-101, glossary T-292), newest first and in words, through the admin-only `books.requestEvents`. A want that is gone
-(the page's `NOT_FOUND`) still shows an admin its History under a "No longer on the list" note, since its events outlive
+(the page's `NOT_FOUND`) still shows an admin its History under a "Not on the wanted list" note, since its events outlive
 it. Everyone else, the requester included, sees the page exactly as before. The design of record (the read, the
 words, the layout and the tests) is DESIGN-028's amendment of the same date.
