@@ -24,7 +24,7 @@ import {
 } from './ll-gone';
 import { KapowarrUpstreamError, LazyLibrarianUpstreamError } from './errors';
 import { llBookMismatch } from './ll-book-check';
-import { isForeignLanguage } from './book-language';
+import { isForeignLanguage, readLlLanguage } from './book-language';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import type { KapowarrClientBundle } from './kapowarr-clients';
 import { markIntegrationSynced } from './user-integrations';
@@ -727,19 +727,6 @@ export async function syncGoodreadsIntegration(
     comicsReconciled,
     coverage,
   };
-}
-
-/**
- * Issue #719 — LazyLibrarian's `BookLang` for one book, read fresh (a book `addBook` just seated is not in the run's
- * earlier snapshot). A failed read, or a book LazyLibrarian does not show, is unknown (null): the push proceeds, as
- * before, because this guard may only ever withhold a write.
- */
-async function readLlLanguage(ll: LazyLibrarianClientBundle, llBookId: string): Promise<string | null> {
-  try {
-    return (await ll.read.getAllBookStatuses()).get(llBookId)?.language ?? null;
-  } catch {
-    return null;
-  }
 }
 
 /**

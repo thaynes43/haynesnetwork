@@ -30,7 +30,12 @@ import {
 import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { gbQueryTitle } from '@hnet/goodreads';
 import { readHeldBooks, type HeldBook } from './books';
-import { FOREIGN_LANGUAGE_REASON, isForeignLanguage, readItemLanguage } from './book-language';
+import {
+  FOREIGN_LANGUAGE_REASON,
+  isForeignLanguage,
+  readItemLanguage,
+  readLlLanguage,
+} from './book-language';
 import { inTransaction, resolveDb } from './db-client';
 import { insertBookRequest, updateBookRequests } from './book-request-events';
 import { guardedGbResolve } from './gb-quota-breaker';
@@ -2097,14 +2102,8 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     // seated by this run's addBook) is read from a fresh `getAllBooks`; a failed or missing read means unknown.
     llBookLanguage:
       input.ll && llSnapshotUsable(seatedMap)
-        ? async (id, refresh) => {
-            if (!refresh) return seatedMap.get(id)?.language ?? null;
-            try {
-              return (await input.ll!.read.getAllBookStatuses()).get(id)?.language ?? null;
-            } catch {
-              return null;
-            }
-          }
+        ? async (id, refresh) =>
+            refresh ? readLlLanguage(input.ll!, id) : (seatedMap.get(id)?.language ?? null)
         : undefined,
   });
 

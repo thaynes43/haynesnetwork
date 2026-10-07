@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-06 (amendment: the collection force-search and the one re-request read the language again after their own addBook, issue #794). Prior: 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -1436,3 +1436,57 @@ readers on EPUB, MOBI, ID3 v2.3 and v2.4 and MP4 files built byte by byte, a mis
 language guess; every kind of finding on the live shapes; holds by key, file and day, and unused holds; a whole pass over a
 real SQLite file and real files, an unreadable holds file, and the app reads on the embedded Postgres 16 through a
 read-only session).
+
+## Amendment — 2026-10-06 (language after the seat): the collection force-search and the one re-request read the language again after their own addBook (issue #794)
+
+**What was seen.** The Books Census's first live run (`foreign_wanted`) found LazyLibrarian `LgDwDwAAQBAJ`, "Crescent City -
+La casa di terra e sangue" (Sarah J. Maas, `BookLang` `it`), with its eBook `Wanted`. It came from collection want
+`76848581` in the `crescent-city` collection (Kavita), whose member is Hardcover's unmerged Italian book. The find-missing
+cron took the want at 14:28Z: LazyLibrarian did not hold the book, so the cron ran addBook, then queueBook and searchBook.
+The check before the push (the #719 amendment above, "Never pushed while foreign") reads the language from the run's
+snapshot, which cannot show a book that addBook has only just seated: LazyLibrarian labels the language during the add.
+The goodreads push already reads the language again after its own addBook; the collection force-search did not. The book
+was unqueued by hand at 23:48Z (eBook `Wanted` to `Skipped`, nothing searched;
+`.agents/context/ll-library-audit/unqueue_794.py`). The Libretto Hardcover builder that listed the Italian book as a
+member is fixed in thaynes43/libretto separately.
+
+**The rule.** Every unattended push site that seats a book with addBook reads that book's language again before it queues
+anything, through one shared read (`readLlLanguage`, `book-language.ts`, one `getAllBooks`). A book LazyLibrarian labels
+non-English (the #700 table: `foreign` only) is left as seated (`Skipped`): no queueBook, no searchBook. A failed read, or a
+book the read does not show, is unknown, and the push goes on (the guard may only withhold a write). The sites:
+
+- **The goodreads push** (unchanged, the #719 amendment): the want is not marked pushed; `pushesSkippedForeign`.
+- **The collection force-search** (`runForceSearchWorklist`, the cron and a person's on-demand Force Search alike): when
+  addBook seated the book and it reads non-English, every want of that book in the run is handled as the check before the
+  push handles a foreign book: counted in `skippedForeign`, logged `ll_push_skipped_foreign` (with `seated: true`), and
+  stamped `last_searched_at` with no `request_book_search` audit row, so the cooldown keeps it out of the next run. On that
+  next run the book is in the snapshot and the check before the push skips it; the English-edition pass switches the want
+  to the English edition or parks it. An addBook or read that throws counts the wants in `failed`, as before.
+- **The one re-request** (`runLlRerequests`, the #668 amendment above; run by format-pairing, goodreads-sync and the
+  collection force-search): after an addBook that went through (not answered `false`), the language is read again. A
+  non-English book is not queued, and no re-request outcome is recorded for the want: it stays `missing` with
+  `ll_rerequested_at` empty. The next pass skips it, because its id is now in the snapshot (`planLlRerequest` hands back
+  only a want whose id the snapshot lacks), and the English-edition pass switches or parks it (it takes every unparked
+  want whose LazyLibrarian book reads non-English, a `missing` one included). A second want on the same book in the pass is
+  skipped too, with no second add. New report field `llRerequestSkippedForeign` on every job report that carries the
+  re-request tally; log `ll_push_skipped_foreign` (site = the job's re-request site, `seated: true`). A want the re-request
+  queues on a row LazyLibrarian already holds needs no read: that row is the re-key match, which never names a non-English
+  book (`LlRekeyIndex`). The refusal streak is unchanged: a foreign seat is an add that went through.
+- **Format-pairing** already read the language after its own addBook (#700, DESIGN-036); it now uses the same shared read.
+
+**Left alone, on purpose.** These add a book only on a person's explicit action, and are not unattended pushes:
+
+- `book-force-search.ts` (a person's per-format Force Search on a library item): addBook runs only when the held read
+  failed;
+- `book-fix.ts` (a person's Fix of one library item, and the retry pass that only completes a Fix a person filed and
+  that waited on Google Books quota): the Fix records the language the person asked for (`languagePref` on a
+  `wrong_language` Fix), so a guard here would overrule the person's own request;
+- the re-seat in `recordManualSearch` / `runManualBookSearch` (a person's Search again): it re-adds the id the want already
+  had, on that person's click.
+
+**Tests:** `packages/domain/__tests__/english-edition.test.ts` (the collection force-search seats a book that reads
+non-English: one addBook, no queueBook or searchBook, `skippedForeign`, stamped, no audit, and no second add on the next
+run; a book that reads English is queued and searched as before; a failed read goes on),
+`packages/domain/__tests__/ll-gone.test.ts` (the re-request: a seat that reads non-English is not queued, not recorded and
+not tried again; two wants on that book share the one add; an English seat is queued as before; the collection leg's
+report and its next run).
