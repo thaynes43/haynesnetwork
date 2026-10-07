@@ -16,6 +16,10 @@
 // Attribution (source shelf + requesters) lives HERE — it was pulled off the card faces (amendment-1). The
 // per-format Force-Search renders only when the server says `searchable` (OWN the request + the integrations
 // section); a books-only household viewer sees the status rows read-only.
+//
+// Issue #792 (DESIGN-028 amendment 2026-10-07; owner ruling: admins only) — an admin also sees the want's History:
+// its Request Events (ADR-101), newest first. A want that is gone keeps its events, so an admin opening a gone want's
+// page still gets its History under a "no longer on the list" note. Everyone else sees neither (the API refuses them).
 import { useState, type ReactNode } from 'react';
 import { trpc, type RouterOutputs } from '@/lib/trpc-client';
 import {
@@ -28,6 +32,7 @@ import {
 } from '@hnet/ui';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
+import { RequestEventHistory } from '@/components/request-event-history';
 import {
   ActivityStageChip,
   useActivityItemStatus,
@@ -36,19 +41,11 @@ import {
 import { effectiveFormatStatus, formatActivityId, formatLiveWins } from '@/lib/format-live-status';
 import { formatWhen } from '@/lib/media';
 import { shelfLabel } from '@/lib/goodreads-shelf-wall';
+import { BOOK_REQUEST_STATUS_LABEL as STATUS_LABEL } from '@/lib/request-events';
 import type { BookRequestStatus } from '@hnet/db';
 
 type WantedDetailWire = RouterOutputs['books']['wantedDetail'];
 type FormatRow = WantedDetailWire['formats'][number];
-
-/** The per-format status label — the *arr wanted/missing idiom in book words. */
-const STATUS_LABEL: Record<BookRequestStatus, string> = {
-  requested: 'Requested',
-  wanted: 'Wanted',
-  grabbed: 'Grabbed',
-  landed: 'Have it',
-  missing: 'Missing',
-};
 
 /**
  * Issue #759 — a collection want's format LazyLibrarian downloaded that the library can't show yet. It reads
@@ -286,13 +283,40 @@ function FormatDetailRow({
   );
 }
 
-export function WantedDetail({ requestId, from }: { requestId: string; from: string | null }) {
+/** Issue #792 — the admin-only History card (the Request Events of this want). */
+function HistorySection({ requestId }: { requestId: string }) {
+  return (
+    <section className="card admin-section" data-testid="request-history">
+      <h2>
+        History<span className="muted request-history__scope"> · Admins only</span>
+      </h2>
+      <RequestEventHistory requestId={requestId} />
+    </section>
+  );
+}
+
+export function WantedDetail({
+  requestId,
+  from,
+  canViewHistory,
+}: {
+  requestId: string;
+  from: string | null;
+  /** Issue #792 — the viewer is an admin (the API's own gate decides; this only skips a refused call). */
+  canViewHistory: boolean;
+}) {
   const utils = trpc.useUtils();
   // Poll while the page is visible so a status reconcile (wanted → grabbed → landed) appears without a manual
   // reload — the same "live-update while visible" contract the Activity tab honors (D-10).
   const detail = trpc.books.wantedDetail.useQuery(
     { requestId },
-    { refetchInterval: 8000, refetchOnWindowFocus: true, placeholderData: (prev) => prev },
+    {
+      refetchInterval: 8000,
+      refetchOnWindowFocus: true,
+      placeholderData: (prev) => prev,
+      // A want that is gone stays gone: say so at once rather than after three retries (issue #792).
+      retry: (failures, error) => error.data?.code !== 'NOT_FOUND' && failures < 3,
+    },
   );
 
   // fix/live-status-precedence — poll `activity.itemStatus` per format ON MOUNT (not only post-fire) and while
@@ -325,6 +349,22 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
     );
   }
   if (detail.error) {
+    // Issue #792 — a want that is gone (dropped, removed with its collection, or its shelf item gone) keeps its
+    // Request Events: an admin still reads why it went.
+    if (canViewHistory && detail.error.data?.code === 'NOT_FOUND') {
+      return (
+        <>
+          <BackLink from={from} />
+          <section className="card admin-section" data-testid="wanted-gone">
+            <h2>No longer on the list</h2>
+            <p className="muted">
+              This want isn’t on the wanted list any more. Its history below shows what happened to it.
+            </p>
+          </section>
+          <HistorySection requestId={requestId} />
+        </>
+      );
+    }
     return (
       <>
         <BackLink from={from} />
@@ -340,7 +380,11 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
     d.formats.map((f) => effectiveFormatStatus(f.status, liveFor(f.format))),
     d.formats.some((f) => f.downloaded && !formatLiveWins(f.status, liveFor(f.format))),
   );
-  const refresh = () => void utils.books.wantedDetail.invalidate({ requestId });
+  const refresh = () => {
+    void utils.books.wantedDetail.invalidate({ requestId });
+    // A Force Search can reopen a want (a Request Event), so the History follows.
+    if (canViewHistory) void utils.books.requestEvents.invalidate({ requestId });
+  };
 
   // DESIGN-004 D-24 (ADR-071) — the hero is now the shared <MediaHero>: poster, title, typed badges,
   // the muted author meta line and the requesters attribution (the `secondary` slot) are its inputs.
@@ -432,6 +476,8 @@ export function WantedDetail({ requestId, from }: { requestId: string; from: str
           </div>
         </dl>
       </section>
+
+      {canViewHistory ? <HistorySection requestId={d.requestId} /> : null}
     </>
   );
 }

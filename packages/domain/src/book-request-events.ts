@@ -12,15 +12,21 @@
 //   recordCascadedRequestDeletes — `delete` events for the wants a parent delete is about to cascade away.
 //   stampBookRequests  — the bookkeeping stamps only (`last_searched_at`, …); no event, by design.
 //
+// And the one read of the record (issue #792, DESIGN-028 amendment 2026-10-07): `listRequestEvents`, one want's
+// history newest first, for the admin-only History on the Wanted detail. It never writes.
+//
 // Who and where: each call names its `writer` and `reason`; `site` (the job and leg) and `actor` come from the call,
 // else from the ambient scope a job or script opens with `withRequestEventScope` (the sync orchestrator opens one per
 // mode, a repair script opens `actor: 'repair'`), else `actor` is `sync` and `site` NULL.
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { and, getTableColumns, inArray, type SQL } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, sql, type SQL } from 'drizzle-orm';
 import type { PgColumn, PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import {
   bookRequestEvents,
   bookRequests,
+  booksCollections,
+  booksItems,
+  users,
   type BookRequestEventActor,
   type BookRequestEventInsert,
   type BookRequestEventKind,
@@ -322,4 +328,143 @@ export async function stampBookRequests(
     .set(set)
     .where(where)
     .returning({ id: bookRequests.id });
+}
+
+// ---------------------------------------------------------------------------
+// Reading the history (issue #792, DESIGN-028 amendment 2026-10-07).
+// ---------------------------------------------------------------------------
+
+/** Where a page of history ends: the last event's `created_at` at full (microsecond) precision, and its id. */
+export interface RequestEventCursor {
+  /** ISO 8601 with microseconds (`2026-10-07T20:32:04.069123Z`); a JS Date would drop them and skip events. */
+  at: string;
+  id: string;
+}
+
+/** One Request Event as the history reads it: the row, plus the person's display name for a `user` event. */
+export interface RequestEventView {
+  id: string;
+  requestId: string;
+  kind: BookRequestEventKind;
+  reason: BookRequestEventReason;
+  writer: string;
+  site: string | null;
+  actor: BookRequestEventActor;
+  /** The person's display name when `actor = 'user'` and the account still exists; else null. */
+  actorName: string | null;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  detail: Record<string, unknown> | null;
+  createdAt: Date;
+}
+
+/** Names for the ids a page of events holds, so the history shows titles instead of ids. */
+export interface RequestEventRefs {
+  /** `books_items` named by `matched_books_item_id` / `pairing_books_item_id`: title, and whether it is still live. */
+  items: Record<string, { title: string; live: boolean }>;
+  /** `books_collections` named by `collection_id`: title. */
+  collections: Record<string, string>;
+}
+
+const ITEM_REF_COLUMNS = ['matched_books_item_id', 'pairing_books_item_id'] as const;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The created_at text a cursor carries: UTC, microseconds. */
+const createdAtText = sql<string>`to_char(${bookRequestEvents.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
+/**
+ * One want's Request Events, newest first (`book_request_events_request_created_idx`), `limit` at a time after
+ * `before`. Events written in one transaction share its `created_at`; they are ordered by id, since their order inside
+ * the transaction is not recorded. The want need not exist: a deleted want keeps its events (no foreign key). Also
+ * returns the titles of the library items and collections the page's events name. Read-only.
+ */
+export async function listRequestEvents(input: {
+  db?: DbClient;
+  requestId: string;
+  before?: RequestEventCursor | null;
+  limit: number;
+}): Promise<{
+  events: RequestEventView[];
+  next: RequestEventCursor | null;
+  refs: RequestEventRefs;
+}> {
+  const db = resolveDb(input.db);
+  const where: SQL[] = [eq(bookRequestEvents.requestId, input.requestId)];
+  if (input.before) {
+    where.push(
+      sql`(${bookRequestEvents.createdAt}, ${bookRequestEvents.id}) < (${input.before.at}::timestamptz, ${input.before.id}::uuid)`,
+    );
+  }
+  const rows = await db
+    .select({
+      id: bookRequestEvents.id,
+      requestId: bookRequestEvents.requestId,
+      kind: bookRequestEvents.kind,
+      reason: bookRequestEvents.reason,
+      writer: bookRequestEvents.writer,
+      site: bookRequestEvents.site,
+      actor: bookRequestEvents.actor,
+      actorName: users.displayName,
+      before: bookRequestEvents.before,
+      after: bookRequestEvents.after,
+      detail: bookRequestEvents.detail,
+      createdAt: bookRequestEvents.createdAt,
+      at: createdAtText,
+    })
+    .from(bookRequestEvents)
+    .leftJoin(users, eq(users.id, bookRequestEvents.actorUserId))
+    .where(and(...where))
+    .orderBy(desc(bookRequestEvents.createdAt), desc(bookRequestEvents.id))
+    .limit(input.limit + 1);
+
+  const page = rows.slice(0, input.limit);
+  const last = page[page.length - 1];
+  const events: RequestEventView[] = page.map((e) => ({
+    id: e.id,
+    requestId: e.requestId,
+    kind: e.kind,
+    reason: e.reason,
+    writer: e.writer,
+    site: e.site,
+    actor: e.actor,
+    actorName: e.actor === 'user' ? (e.actorName ?? null) : null,
+    before: e.before,
+    after: e.after,
+    detail: e.detail ?? null,
+    createdAt: e.createdAt,
+  }));
+
+  const itemIds = new Set<string>();
+  const collectionIds = new Set<string>();
+  for (const e of events) {
+    for (const side of [e.before, e.after]) {
+      for (const col of ITEM_REF_COLUMNS) {
+        const v = side[col];
+        if (typeof v === 'string' && UUID_RE.test(v)) itemIds.add(v);
+      }
+      const c = side.collection_id;
+      if (typeof c === 'string' && UUID_RE.test(c)) collectionIds.add(c);
+    }
+  }
+  const refs: RequestEventRefs = { items: {}, collections: {} };
+  if (itemIds.size > 0) {
+    const items = await db
+      .select({ id: booksItems.id, title: booksItems.title, deletedAt: booksItems.deletedAt })
+      .from(booksItems)
+      .where(inArray(booksItems.id, [...itemIds]));
+    for (const i of items) refs.items[i.id] = { title: i.title, live: i.deletedAt === null };
+  }
+  if (collectionIds.size > 0) {
+    const cols = await db
+      .select({ id: booksCollections.id, title: booksCollections.title })
+      .from(booksCollections)
+      .where(inArray(booksCollections.id, [...collectionIds]));
+    for (const c of cols) refs.collections[c.id] = c.title;
+  }
+
+  return {
+    events,
+    next: rows.length > input.limit && last !== undefined ? { at: last.at, id: last.id } : null,
+    refs,
+  };
 }

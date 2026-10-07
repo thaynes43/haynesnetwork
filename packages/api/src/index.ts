@@ -126,6 +126,8 @@ export type {
   BooksDetailResult,
   BooksCollectionGroup,
   BooksCollectionCategoryCounts,
+  BookRequestEventEntry,
+  BookRequestEventsResult,
 } from './routers/books';
 // ADR-051 / DESIGN-026 (PLAN-029 step 2) — the engine key/facet types the client-side registry
 // type-checks its declarations against (TYPE-ONLY — erased at compile; the registry is authoritative

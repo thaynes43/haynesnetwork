@@ -202,6 +202,29 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     await expect(page).toHaveURL(/\/library\/books\/wanted\//);
     await expect(page.getByTestId('wanted-detail-head')).toContainText('Throne of Glass');
 
+    // Issue #792 — the admin-only History: the want's Request Events newest first, oldest the shelf mint, each
+    // reason and field in words (never a raw column name), and nothing scrolls sideways on a phone.
+    const history = page.getByTestId('request-history');
+    await expect(history).toContainText('Admins only');
+    const mintEvent = history.locator('[data-testid="request-event"][data-kind="mint"]');
+    await expect(mintEvent).toHaveCount(1);
+    await expect(mintEvent).toContainText('Added from a Goodreads shelf');
+    await expect(mintEvent).toContainText('Throne of Glass');
+    await expect(history.getByTestId('request-event').last()).toHaveAttribute('data-kind', 'mint');
+    await expect(history).not.toContainText('ebook_status');
+    await expect(history.getByTestId('request-events-before')).toHaveCount(0); // its whole story is recorded
+    for (const w of [390, 1280]) {
+      await page.setViewportSize({ width: w, height: 900 });
+      const hOverflow = await page.evaluate(() => {
+        const main = document.querySelector('main');
+        return main ? main.scrollWidth - main.clientWidth : 0;
+      });
+      expect(hOverflow, `no sideways scroll at ${w}px`).toBeLessThanOrEqual(1);
+      const path = testInfo.outputPath(`wanted-request-history-${w}.png`);
+      await history.screenshot({ path });
+      await testInfo.attach(`wanted-request-history-${w}`, { path, contentType: 'image/png' });
+    }
+
     // The per-format rows (Ebook + Audiobook) each carry their own status + Force-Search (the per-grain idiom).
     await resetLl();
     const ebookRow = page.getByTestId('format-row').filter({ hasText: 'Ebook' });
@@ -240,7 +263,11 @@ test.describe('Integrations hub + Goodreads sub-section', () => {
     await expect(zeroYear).toHaveAttribute('data-phase', 'parked');
     await zeroYear.click();
     await expect(page.getByTestId('wanted-detail-head')).toContainText('Zero Year');
-    await expect(page.getByText(/waiting on a ComicVine match/i)).toBeVisible();
+    // (Scoped to Formats: the admin History names the same park in the same words.)
+    const formatsSection = page
+      .locator('section.admin-section')
+      .filter({ has: page.getByRole('heading', { name: 'Formats' }) });
+    await expect(formatsSection.getByText(/waiting on a ComicVine match/i)).toBeVisible();
     await expect(page.getByTestId('format-search-btn')).toHaveCount(0);
 
     // ── fix/activity-robustness (Fix 5) — the SHELF-chip row (All / To read / Read) now wears the SAME snug

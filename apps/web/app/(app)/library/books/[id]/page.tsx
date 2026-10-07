@@ -21,5 +21,6 @@ export default async function BooksItemPage({
   const session = await getServerSession(await headers());
   if (!session) redirect('/login'); // defense in depth — the layout already gates
   if (effectiveSectionLevel(session.user.role, 'books') === 'disabled') redirect('/library');
-  return <BooksDetail id={id} from={from} />;
+  // Issue #792 — an admin can open each linked request's History (its Request Events); the API is admin-only too.
+  return <BooksDetail id={id} from={from} canViewRequestHistory={session.user.role.isAdmin} />;
 }

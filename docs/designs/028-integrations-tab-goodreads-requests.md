@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-07 (Books Census follow-up, issue #799: the first live run and its repair; titles that are one string without a leading article). Prior: 2026-10-07 (Books Census follow-up: a file whose title is the record's with words cut, issue #799). Prior: 2026-10-06 (amendment: the collection force-search and the one re-request read the language again after their own addBook, issue #794). Prior: 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-07 (amendment: admins read a want's Request Events on its Wanted detail, issue #792). Prior: 2026-10-07 (Books Census follow-up, issue #799: the first live run and its repair; titles that are one string without a leading article). Prior: 2026-10-07 (Books Census follow-up: a file whose title is the record's with words cut, issue #799). Prior: 2026-10-06 (amendment: the collection force-search and the one re-request read the language again after their own addBook, issue #794). Prior: 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -1270,8 +1270,8 @@ one append-only `book_request_events` row in the same transaction. Each "unaudit
   future repair script opens the same scope with its own site. A person's on-demand collection Force Search runs as
   `actor: 'user'` with their id. The manual "Search again" only stamps, so it records no event; its
   `request_book_search` `permission_audit` row is unchanged.
-- **Reading it.** No screen yet (issue #792 tracks a history view on the Wanted detail); the rows are read by SQL,
-  e.g. a request's history:
+- **Reading it.** Admins read one want's history on its Wanted detail (the 2026-10-07 amendment below, issue #792); the
+  rows are also read by SQL, e.g. a request's history:
   `SELECT created_at, kind, reason, writer, site, actor, before, after, detail FROM book_request_events WHERE
   request_id = $1 ORDER BY created_at` (index `book_request_events_request_created_idx`), or one decision across the
   estate: `WHERE reason = 'll_book_gone_repointed' AND created_at > now() - interval '1 day'`.
@@ -1582,3 +1582,134 @@ run; a book that reads English is queued and searched as before; a failed read g
 `packages/domain/__tests__/ll-gone.test.ts` (the re-request: a seat that reads non-English is not queued, not recorded and
 not tried again; two wants on that book share the one add; an English seat is queued as before; the collection leg's
 report and its next run).
+
+## Amendment — 2026-10-07 (Request Event history): admins read a want's Request Events on its Wanted detail (issue #792, owner ruling)
+
+**What was missing.** The Request Events amendment above records every write to a book request, and the rows were read by
+SQL only. No screen showed why a want changed: a reviewer had to query `book_request_events` to learn that a want was
+re-pointed, parked or re-requested.
+
+**The ruling (owner, 2026-10-07: "admins only").** Admins see a want's history. Nobody else does, the person who shelved
+the want included: the API refuses them, so a row never reaches their browser. Glossary T-292 (Request Event) gains the
+line; no new term (the history is the Request Events of one want, shown).
+
+### Where it shows
+
+- **The Wanted detail** (`/library/books/wanted/[requestId]`, DESIGN-029 amendment 2): a **History** card below Details,
+  headed "History · Admins only", for an admin only (the page wrapper passes the session's `isAdmin`; the API decides).
+- **A want that is gone.** A deleted want keeps its events (no foreign key, ADR-101). When the Wanted detail is
+  `NOT_FOUND` (a collection want dropped or removed with its collection, a goodreads want whose shelf item is gone), an
+  admin sees "No longer on the list" and the History below it, so the page still says what happened. Everyone else sees
+  the not-found message as before. The page no longer retries a `NOT_FOUND` (it waited through three retries before
+  saying so).
+- **The book detail** (`/library/books/[id]`, DESIGN-025 D-08): each linked request in its History gains, for an admin, a
+  "Show changes" toggle that opens the same list in place (the ADR-015 in-place expansion: it grows its own row only) and
+  an "Open the want" link to the Wanted detail. The list loads only when opened. The rows are unchanged for everyone else
+  (one fix rides along: a collection want's row read the raw `collection`; it now reads "Collection").
+
+### The read
+
+- **`books.requestEvents`** (`adminProcedure`: anonymous `UNAUTHORIZED`, every non-admin `FORBIDDEN`). Input `requestId`,
+  an opaque `cursor`, `limit` (default 20, at most 50). Returns `events` (wire rows: `kind`, `reason`, `writer`, `site`,
+  `actor`, `actorName`, `before`, `after`, `detail`, ISO `createdAt`), `refs` and `nextCursor`. Read-only.
+- **`listRequestEvents`** (`@hnet/domain`, book-request-events.ts, the one read of the record):
+  `WHERE request_id = $1 [AND (created_at, id) < cursor] ORDER BY created_at DESC, id DESC LIMIT n + 1`, on
+  `book_request_events_request_created_idx`, with a LEFT JOIN to `users` for the person's display name (a `user` event
+  only; null once the account is gone). The want need not exist: an unknown or deleted id is an empty page, not
+  `NOT_FOUND`.
+- **The cursor keeps microseconds.** `created_at` is a `timestamptz` to the microsecond; a cursor holding a JS `Date`
+  would round to the millisecond and skip an older event inside the same millisecond. The cursor carries the text
+  `to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')` and the id. A malformed cursor is
+  `BAD_REQUEST`.
+- **Order inside a transaction.** Every event one transaction writes shares its `created_at` (Postgres `now()` is the
+  transaction's start), so those are ordered by id: their order inside the transaction is not recorded.
+- **`refs`.** The titles of the library items (`matched_books_item_id`, `pairing_books_item_id`) and books collections
+  (`collection_id`) the page's events name, with whether each item is still live, so the screen shows titles, not ids.
+- **Sizing.** On 2026-10-07, read-only on a replica: 749 events on 495 requests in the record's first day, at most 6 on
+  one request (median 1, p95 3, p99 5). There is no retention cap (ADR-101 C-03), so a want that churns for months must
+  page: 20 a page with an "Older changes" button (the movie History's load-more idiom) shows nearly every want in one
+  page and bounds the rest.
+
+### What a row shows
+
+The shared History presentation: the `.timeline` list the movie and book detail pages use, newest first. The words live in
+one pure module, `apps/web/lib/request-events.ts`; the list is `apps/web/components/request-event-history.tsx`.
+
+1. **Why**: the `reason` in plain words (the table below); the writer's function name is the hover title.
+2. **What changed**, one line per field, label then value. An `update` shows each changed field `before → after`; a
+   `mint` shows each field it set; a `delete` shows each field the want held (empty fields left out of both). Field
+   labels (a recorded field added without a label fails `apps/web/lib/__tests__/request-events.test.ts`):
+
+   | Column | Label | Column | Label |
+   |---|---|---|---|
+   | `ebook_status` | Ebook | `ll_rerequest_failures` | Re-request refusals |
+   | `audio_status` | Audiobook | `ll_rerequest_failed_at` | Last re-request refusal |
+   | `comic_status` | Comic | `ll_rerequest_added_at` | Re-request added |
+   | `unroutable_reason` | Park | `wrong_author_ll_book_id` | Other-author book |
+   | `ll_book_id` | LazyLibrarian book | `title` | Title |
+   | `matched_books_item_id` | In the library as | `author` | Author |
+   | `kapowarr_volume_id` | Kapowarr volume | `origin` | Origin |
+   | `comicvine_id` | ComicVine volume | `pairing_books_item_id` | Paired with |
+   | `ll_rerequested_at` | Re-request ended | `collection_id` | Collection |
+   | `integration_id` | Goodreads link | `collection_member_ref` | Collection member |
+   | `shelf_item_id` | Shelf item | | |
+
+   Values: a status in the Wanted detail's words (Requested, Wanted, Grabbed, Have it, Missing); a park in words (`comic`
+   Waiting on a ComicVine match, `wrong_volume` Wrong volume, `multi_book` Series holds several books, `no_book` Series
+   holds no book, `foreign_language` Not in English, `no_english_edition` No English edition, none: Not parked); the
+   origin (Goodreads shelf, Format pairing, Collection); a time as a date and time; a library item or collection by title
+   (a live item links to its book detail; a removed one says "no longer in the library"); a LazyLibrarian, Kapowarr or
+   ComicVine id in full, in monospace; the app's own row ids (`integration_id`, `shelf_item_id`) as their first 8
+   characters with the full id as the hover title; an empty value reads "None".
+3. **The writer's context** (`detail`), "Label: value" pairs in a fixed order (Postgres `jsonb` does not keep the
+   writer's key order): `outcome` (the re-request: LazyLibrarian already had it, took
+   it back, refused it, waiting for the next quota day), `cause` (LazyLibrarian does not hold it, has not grabbed it,
+   holds a different book, holds another volume or work; the library title changed), the LazyLibrarian ids, the formats.
+   A key the module does not know is shown with its name in words, never hidden; an empty list or a repeated id is left
+   out.
+4. **When and who**: the date and time, then "Sync", "Repair script" or the person's display name ("A removed account" when
+   it is gone), then the job and leg in words (`format-pairing.rerequest` reads "Format pairing, re-request").
+5. **Empty and partial.** No events: "No changes recorded for this want yet. Changes are recorded from Oct 6, 2026." (the
+   day migration 0096 shipped, in the viewer's locale). When the whole history is loaded and its oldest event is not the
+   mint, the want began before recording did: "Changes before Oct 6, 2026 were not recorded."
+
+**Reasons in words** (every `BOOK_REQUEST_EVENT_REASONS` member; the map is typed against the union, so a new reason
+without words fails the typecheck):
+
+| Reason | Words |
+|---|---|
+| `shelf_want_minted` / `shelf_want_refreshed` | Added from a Goodreads shelf / Updated from the Goodreads shelf |
+| `ll_pushed` / `ll_reconciled` / `ll_requeued` | Sent to LazyLibrarian / Status updated from LazyLibrarian / Queued again in LazyLibrarian |
+| `comic_routed` / `comic_reconciled` | Sent to Kapowarr / Status updated from Kapowarr |
+| `landed_reverted` | Status corrected after a LazyLibrarian check |
+| `ll_book_gone_repointed` / `ll_book_gone_settled` | LazyLibrarian book replaced, pointed at the new one / LazyLibrarian book gone, marked missing |
+| `ll_rerequest` | Re-requested from LazyLibrarian |
+| `pairing_want_minted` / `pairing_want_refreshed` | Added by format pairing / Updated by format pairing |
+| `pairing_want_revived` | Reopened: the paired copy left the library |
+| `pairing_held_format_landed` | Held format set to Have it |
+| `pairing_want_reidentified` / `pairing_want_retitled` | Cleared to look for the right book / Renamed to match the library title |
+| `collection_want_minted` / `collection_want_refreshed` | Added as a missing collection member / Updated from the collection |
+| `collection_want_dropped` / `collection_removed` | Removed: no longer missing from the collection / Removed with its collection |
+| `collection_want_downloaded` / `collection_want_download_reverted` | Downloaded, not in the library yet / Downloaded status taken back |
+| `force_search_reopened` | Reopened by a Force Search |
+| `wrong_author_released` | Released: the book was by another author |
+| `parked` / `unparked` | Parked / Unparked (the Park field names which park) |
+| `english_edition_switched` | Switched to an English edition |
+| `wrong_volume_repaired` / `removed_anchor_settled` / `parked_want_conformed` | Repaired: it pointed at the wrong volume / Settled: its library title was removed / Statuses corrected on a parked want |
+
+**Layout.** The field list wraps (label and value on one line where they fit, the value under the label where they do not);
+ids and titles wrap anywhere, so a phone (390 px) never scrolls sideways. Tokens only (hard rule 2). Opening "Show changes"
+or loading older changes grows the list in place and moves nothing beside it (hard rule 9).
+
+**Not built.** The requester's own view (ruled out). An estate-wide feed of one decision (`WHERE reason = …`) stays a SQL
+read (the queries in the Request Events amendment above).
+
+**Tests.** `packages/domain/__tests__/book-request-history.test.ts` (newest first, one want only; paging at sizes 1, 2 and
+4 neither skips nor repeats through a shared transaction timestamp and through timestamps a microsecond apart; the cursor
+keeps microseconds; the person's name, and none once the account is gone or for a sync event; `refs`; a deleted want's
+mint, change and delete through the real writers; an unknown want is empty), `packages/api/__tests__/books-request-events.test.ts`
+(anonymous `UNAUTHORIZED`; the requester and a household reader `FORBIDDEN`; an admin's wire rows; cursor paging; a
+malformed cursor `BAD_REQUEST`; an unknown want empty), `apps/web/lib/__tests__/request-events.test.ts` (every recorded
+field and reason has words with no em-dash; updates, mints, deletes, titles, links and short ids; the context; who and
+where), and the e2e admin journey in `apps/web/e2e/integrations.spec.ts` (the Wanted detail's History shows the shelf mint
+as its oldest event in words, at 390 and 1280 px with no sideways scroll).

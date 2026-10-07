@@ -2686,7 +2686,8 @@ input[aria-invalid='true'] {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.about-summary__toggle {
+.about-summary__toggle,
+.request-changes__toggle {
   appearance: none;
   border: 0;
   background: none;
@@ -2697,7 +2698,8 @@ input[aria-invalid='true'] {
   color: var(--color-accent);
   cursor: pointer;
 }
-.about-summary__toggle:hover {
+.about-summary__toggle:hover,
+.request-changes__toggle:hover {
   text-decoration: underline;
 }
 .meta-chips {
@@ -2777,6 +2779,96 @@ input[aria-invalid='true'] {
 }
 .timeline__when {
   font-size: 11px;
+}
+
+/* Issue 792 (GitHub) — a want's Request Event history (admins only), on the shared timeline. Each event: the reason (type),
+   the changed fields as a wrapping label/value list, the writer's context, then when and who. Static layout; values
+   and ids wrap anywhere so a phone never scrolls sideways. */
+.request-events .timeline__type {
+  overflow-wrap: anywhere;
+}
+.request-event__changes {
+  margin: 2px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  min-width: 0;
+}
+.request-event__change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  min-width: 0;
+}
+.request-event__change dt {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.request-event__change dt::after {
+  content: ':';
+}
+.request-event__change dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.request-event__arrow {
+  margin: 0 6px;
+  color: var(--color-text-muted);
+}
+.request-event__id {
+  font-family: ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.request-event__detail {
+  color: var(--color-text-muted);
+}
+.request-events__note {
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+.request-history__scope {
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+/* The book detail's per-request "Show changes" (an in-place expansion: it grows its own History row only). */
+.request-changes {
+  margin-top: 4px;
+  min-width: 0;
+}
+.request-changes__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+.request-changes__link {
+  font-size: 13px;
+}
+/* Links in the history (a library title) and "Open the want": the .about link idiom, accent-toned and underlined;
+   hover thickens the underline only (no layout change). */
+.request-events a,
+.request-changes__link {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+[data-theme='hnet-light'] .request-events a,
+[data-theme='hnet-light'] .request-changes__link {
+  color: color-mix(in srgb, var(--color-accent) 62%, var(--color-text));
+}
+.request-events a:hover,
+.request-changes__link:hover {
+  text-decoration-thickness: 2px;
+}
+.request-changes__list {
+  margin-top: 10px;
 }
 
 /* Fix list on the item + admin queue extras */

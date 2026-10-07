@@ -1,7 +1,7 @@
 # DESIGN-029: Integrations hub, the Goodreads sub-section, shelf chips, and the composed Library-Wanted
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-14
+- **Last updated:** 2026-10-07 (amendment 6: the Wanted detail's admin-only History, issue #792). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-188..R-191; governed by ADR-057 (hub + all-shelves acquisition + composed
   Wanted), ADR-055/056 (linking, requests, Kapowarr routing — unchanged), ADR-046 (mirror purity),
   ADR-051 (registry seam), ADR-015 (reflow-free), ADR-021 (section permissions). Supersedes the UI
@@ -362,3 +362,11 @@ to make LL re-acquire a format it holds — and names where it lives, because Fi
 page and this is the want page. Layout is untouched: the chip renders in the same
 `<ReservedActionSlot reserve="roll">` (12rem reservation), and the longer label still measures inside it,
 so the swap stays reflow-free (ADR-015 / hard rule 9). The comic (Kapowarr) leg is unaffected.
+
+## Amendment 6 — 2026-10-07 (the Wanted detail's admin-only History, issue #792)
+
+The Wanted detail page (amendment 2) gains a **History** card below Details for an admin only: the want's Request Events
+(ADR-101, glossary T-292), newest first and in words, through the admin-only `books.requestEvents`. A want that is gone
+(the page's `NOT_FOUND`) still shows an admin its History under a "No longer on the list" note, since its events outlive
+it. Everyone else, the requester included, sees the page exactly as before. The design of record (the read, the
+words, the layout and the tests) is DESIGN-028's amendment of the same date.

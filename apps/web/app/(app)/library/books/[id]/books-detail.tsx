@@ -11,6 +11,10 @@
 // missing format's honest affordance below it — a link to the pairing want's wanted-detail when the
 // paced backfill minted one, plus the audited Search button (the FormatSearchSlot reserved-slot
 // idiom: button swaps to a PhaseChip IN PLACE, recolor never reflow) when actionable.
+//
+// Issue #792 (DESIGN-028 amendment 2026-10-07; owner ruling: admins only) — for an admin, each linked request in
+// History opens its Request Events in place ("Show changes", the ADR-015 in-place expansion) and links to its Wanted
+// detail. Everyone else sees the History rows exactly as before.
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -22,6 +26,7 @@ import {
 import { trpc } from '@/lib/trpc-client';
 import { BackLink } from '@/components/back-link';
 import { MediaPoster } from '@/components/cards';
+import { RequestEventHistory } from '@/components/request-event-history';
 import { formatBytes, formatWhen } from '@/lib/media';
 import { BooksHeadActions } from './books-head-actions';
 
@@ -61,6 +66,7 @@ const REQUEST_STATUS_LABEL: Record<string, string> = {
 const REQUEST_ORIGIN_LABEL: Record<string, string> = {
   goodreads: 'From a reading list',
   pairing: 'Format pairing',
+  collection: 'Collection',
 };
 
 /** Badge tone for a fix/request status (reuses the ledger badge palette; no new hex). */
@@ -195,7 +201,51 @@ function AboutSummary({ text }: { text: string }) {
   );
 }
 
-export function BooksDetail({ id, from }: { id: string; from: string | null }) {
+/**
+ * Issue #792 — an admin's in-place "Show changes" for one linked request: its Request Events (the shared History
+ * list) and a link to its Wanted detail. Collapsed by default; the list loads only when opened. A deliberate in-place
+ * expansion (ADR-015): it grows this History row only, and never moves a neighbour sideways.
+ */
+function LinkedRequestChanges({ requestId }: { requestId: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="request-changes" data-testid="linked-request-changes">
+      <span className="request-changes__bar">
+        <button
+          type="button"
+          className="request-changes__toggle"
+          aria-expanded={open}
+          data-testid="linked-request-changes-toggle"
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? 'Hide changes' : 'Show changes'}
+        </button>
+        <Link
+          className="request-changes__link"
+          href={`/library/books/wanted/${encodeURIComponent(requestId)}?from=books`}
+        >
+          Open the want
+        </Link>
+      </span>
+      {open ? (
+        <div className="request-changes__list">
+          <RequestEventHistory requestId={requestId} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function BooksDetail({
+  id,
+  from,
+  canViewRequestHistory,
+}: {
+  id: string;
+  from: string | null;
+  /** Issue #792 — the viewer is an admin (the API's own gate decides; this only skips a refused call). */
+  canViewRequestHistory: boolean;
+}) {
   const detail = trpc.books.detail.useQuery({ id });
 
   if (detail.isLoading) {
@@ -489,6 +539,7 @@ export function BooksDetail({ id, from }: { id: string; from: string | null }) {
                   </span>
                   <span className="timeline__detail">{line}</span>
                   <span className="muted timeline__when">{formatWhen(req.createdAt)}</span>
+                  {canViewRequestHistory ? <LinkedRequestChanges requestId={req.id} /> : null}
                 </li>
               );
             })}
