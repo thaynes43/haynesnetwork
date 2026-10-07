@@ -1,7 +1,9 @@
 # PLAN-073: A want's Request Event history on the Wanted detail (admins only)
 
-- **Status:** PR open (issue [#792](https://github.com/thaynes43/haynesnetwork/issues/792)); the owner reviews the UI
-  before merge. After merge it rides the next release; then the live check below, and this plan moves to `completed/`.
+- **Status:** Released **v0.110.0** ([#826](https://github.com/thaynes43/haynesnetwork/pull/826), release
+  [#832](https://github.com/thaynes43/haynesnetwork/pull/832), deployed through
+  [haynes-ops #3541](https://github.com/thaynes43/haynes-ops/pull/3541)). The read-only API/DB fallback is recorded
+  below. Keep this plan active until the authenticated admin and non-admin UI checks pass.
 - **Owner ruling (2026-10-07):** admins only. Nobody else sees it, the requester included, and the API refuses them.
 - **Design of record:** [DESIGN-028](../../docs/designs/028-integrations-tab-goodreads-requests.md) amendment
   2026-10-07 (Request Event history). Pointers: DESIGN-029 amendment 6 (the Wanted detail), DESIGN-025 D-08 (the book
@@ -26,3 +28,28 @@
 As an admin, open a want on `haynesnetwork.haynesops.com` whose events SQL shows more than one row (for example a
 pairing want with an `ll_rerequest`), and confirm the History lists the same rows newest first in words. As a non-admin
 with books access, confirm the Wanted detail shows no History card.
+
+### 2026-10-07 live verification
+
+At 23:05Z the v0.110.0 deployment had three Ready web pods and all 22 sync CronJobs plus books-census and owed-checks
+on the tag. Both the internal and public login pages returned HTTP 200 after redirects.
+
+- **Deployed domain + replica passed, 23:05:24Z:** PostgreSQL replica with read-only enforced; 780 events on 524
+  requests, at most 6 per request. The Robert Langdon pairing want has three events including `ll_rerequest`.
+  Deployed `listRequestEvents` matches every SQL row and field newest first. Page size 20 returns all three with no
+  next page; three pages at size 1 preserve microsecond cursors with no skipped or duplicated events.
+- **Empty and gone wants passed:** Skin Deep's zero-event want and an unknown want return an empty history. A gone
+  collection want retains its two events; SQL counts 30 gone wants with events and 1,861 live wants without events.
+- **Unauthenticated HTTP passed:** the internal Wanted URL redirects to `/login`; `books.requestEvents` returns
+  HTTP 401 `UNAUTHORIZED`.
+- **API gates and wording passed, 23:08:04Z:** direct callers using real DB-derived roles and release-matching
+  source execute `authedProcedure`/`adminProcedure`: anonymous `UNAUTHORIZED`, books reader and Goodreads requester
+  `FORBIDDEN`, admin malformed cursor `BAD_REQUEST`. No DB accesses occurred in these gate checks. The recorded
+  re-request formats as "Re-requested from LazyLibrarian", Audiobook Missing to Wanted, and "Outcome: LazyLibrarian
+  took it back". Six relevant local source files and the deployed domain source match v0.110.0.
+- **Coverage gap:** Playwright started without any authenticated session. The admin History card's wording and
+  order, the non-admin's absent History card, authenticated viewport checks and the "Older changes" button remain
+  unverified live. A successful authenticated admin API response is also uncovered: the local replica DNS lookup
+  failed and port-forward permission was absent. The direct caller checks prove predicates, not HTTP session
+  validation. No sessions, requests or events were created or changed; no feature defect was found. This is partial
+  live verification, not completion of the UI check above.
