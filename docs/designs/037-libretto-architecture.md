@@ -14,6 +14,8 @@
   `hardcover_series` members carry their authors; D-09's acquisition is author-guarded. **AMENDED 2026-10-06
   (thaynes43/libretto#25, #26):** D-04's Kavita series detail refreshes after a scan and within 12 hours; D-09's
   acquisition never queues a book in a language not acquired (English here) or a format LazyLibrarian already holds.
+  **AMENDED 2026-10-07 (thaynes43/libretto#30, owner ruling "Member, never fetched"):** D-05's `hardcover_series`
+  unnumbered books stay collection members but are never reported missing or acquired.
 - **Satisfies:** the PLAN-043 saga phase "Books collection-manager app" (owner rulings
   2026-07-16, recorded in `.agents/plans/043-integration-tab-saga.md` and restated in
   PLAN-054); governed by **ADR-064** (mirrored-only doctrine — external software is always the
@@ -295,6 +297,31 @@ so the app's want carries an author and its resolve runs author-guarded. They gu
 guard the library match (D-04): a library's own author data is too uneven to veto with (Kavita filed the anthology *The
 End is Nigh* under "Veronica Roth (1)"), so no collection changes. Cache key `hardcover:series-works:v5`. Libretto PR
 https://github.com/thaynes43/libretto/pull/24.
+
+**AMENDED 2026-10-07 (https://github.com/thaynes43/libretto/issues/30, owner ruling "Member, never fetched").** A
+`hardcover_series` list keeps one book with no series position per series: the query's `distinct_on: position` folds
+every unnumbered book into one, the most read. Of the 48 live series recipes, 25 carried one, and most are companions
+rather than books of the series: a coloring book, a guide, a pocket companion, a cookbook. Unheld, each read missing, so
+the app minted a collection want for it and asked LazyLibrarian (the A Court of Thorns and Roses and Throne of Glass
+coloring books, The Kane Chronicles Survival Guide, the Stormlight Archive pocket companion, The Great Redwall Feast).
+The ruling treats every unnumbered book the way compilation editions are treated
+(https://github.com/thaynes43/libretto/issues/18, a box set or omnibus beside the books it holds):
+
+- A held unnumbered book matches and stays in the collection.
+- An unheld one is never in `missing[]`, the missing counts or acquisition. The missing endpoint reports it apart, in
+  `unnumbered[]` (each `unnumbered: true`) with `unnumberedCount`, top level and per target; the preview flags it.
+- The ruling covers the real unnumbered reads too (Harry Potter and the Cursed Child, Hunters of Dune, Book of Nails, A
+  Fire Within The Ways, Dead but Not Forgotten). The owner accepted that.
+- A series list with no numbered member keeps its books wanted, and an unnumbered compilation stays a compilation.
+- The builder's two earlier drops are unchanged (https://github.com/thaynes43/libretto/pull/29): an unnumbered book whose
+  title is a numbered book's (an edition Hardcover never merged), and a book Hardcover knows only in another language,
+  both leave the list entirely.
+
+A work is unnumbered when it names its series and has no position, which the series works already carried, so the
+cache key stays `hardcover:series-works:v6`. The app needs no change: its hourly collection wants pass deletes a want
+whose member left the missing list (DESIGN-038 D-13), and that delete records the LazyLibrarian Release, which unqueues
+the format the app had queued for the want once nothing else asks for it (DESIGN-028, issue #735). Libretto PR
+https://github.com/thaynes43/libretto/pull/31.
 
 ### D-06 — Write targets and per-recipe target mapping
 
