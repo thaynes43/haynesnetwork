@@ -35,18 +35,18 @@ everything it lists as open; this block says what is open now.
   Partners, Redwall; OC-033..OC-036). The seventh hold is Game of Thrones, a `foreign_held` finding. Game of Thrones audio is English (held; the `fr` is a
   bad Google Books record). Catwings audio cleared to Skipped. Census after: 0 unheld findings. #794 closed.
 
+- **libretto#30 closed**, owner ruling 2026-10-07 **"Member, never fetched"** (libretto#31, `sha-e04dc83`, haynes-ops
+  #3475; DESIGN-037 amended in #804): an unnumbered `hardcover_series` book stays a member if held, is never reported missing
+  or acquired (listed under `unnumbered[]`), real reads included. The app withdrew all 19 such wants on its own syncs. The
+  Outlandish Companion audiobook is still Wanted: that is format pairing (the ebook is held), outside the ruling.
+
 **In flight at the time of writing (check the PRs before redoing):**
-- libretto#30, owner ruling 2026-10-07 **"Member, never fetched"**: unnumbered `hardcover_series` books stay members if held
-  but are never reported missing or acquired (the compilations precedent), real reads included. Then withdraw the live
-  companion wants (ACOTAR and Throne of Glass coloring books, Kane Chronicles Survival Guide, Stormlight pocket companion,
-  The Great Redwall Feast).
 - #799, the census misses a wrong file whose title the record's title contains (Catwings 1 in Catwings 3's record); plus
   removing stale Audiobookshelf entries one at a time (API delete without `hard`), never the library-wide bulk remove.
 
 **Open:** #792 (a Request Event history view on the Wanted detail; a feature, not started). #733 parked, #674 benched
-(unchanged). Owed checks (`.agents/owed-checks.yaml` is the source): the 2026-10-07 morning rows (OC-013, OC-024,
-OC-028..OC-031), the 10-07 18:00Z rows (OC-014, OC-017, OC-018, OC-020, OC-022), OC-032 on 10-08, OC-009 purge on or after
-10-12, OC-026 on 10-13, OC-027 and OC-033..OC-036 on 10-20.
+(unchanged). Owed checks: `.agents/owed-checks.yaml` is the only list (every pending row, with its due time); the
+next due are the 2026-10-07 morning and 18:00Z rows.
 
 ## ▶ 2026-10-06 (evening) — Coordinator handoff: the books-rollout repair wave is done; what is next
 
