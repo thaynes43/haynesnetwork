@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.109.4](https://github.com/thaynes43/haynesnetwork/compare/v0.109.3...v0.109.4) (2026-10-07)
+
+
+### Bug Fixes
+
+* **books:** the wants pass never resolves a member a pairing want covers, and counts its misses ([#819](https://github.com/thaynes43/haynesnetwork/issues/819)) ([71ac0c1](https://github.com/thaynes43/haynesnetwork/commit/71ac0c15eb7037fc91991b441a97e1fc37409dd5))
+
+
+### Documentation
+
+* agents run the suite on main by label, not workflow_dispatch ([#814](https://github.com/thaynes43/haynesnetwork/issues/814)) ([c6d5fa1](https://github.com/thaynes43/haynesnetwork/commit/c6d5fa1e1a2416bc6a424b0b21b3aaf894abe4e7))
+
 ## [0.109.3](https://github.com/thaynes43/haynesnetwork/compare/v0.109.2...v0.109.3) (2026-10-07)
 
 
