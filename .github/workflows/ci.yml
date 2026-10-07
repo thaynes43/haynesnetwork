@@ -1,12 +1,23 @@
 name: CI
 
+# Job names lint-and-typecheck, test and build are required status-check contexts (ADR-009): keep them stable.
+#
+# Runner minutes go only where a change can break something (ADR-102):
+#   - `changes` lists the PR's files and runs scripts/ci-code-paths.sh over them. A PR with no code path (docs,
+#     agent notes, Markdown) skips every other job here. A job skipped by its `if:` reports as skipped, and a
+#     skipped check satisfies branch protection, so a docs-only PR still merges. If `changes` cannot decide,
+#     everything runs (fail safe). The release-please PR always runs in full.
+#   - `build-image` runs only when the PR changes an image input (scripts/ci-code-paths.sh --image: the Dockerfile,
+#     a package.json, the lockfile, ...), and on the release PR, so the image is proven before every release.
+#   - A push to main runs no checks: branch protection is strict, so the squash-merged tree is the tree the PR's
+#     checks passed. It runs `warm-pnpm-cache` when the lockfile changed, because a PR can restore main's cache
+#     but not another PR's.
 on:
   pull_request:
   push:
     branches: [main]
-    tags: ["v*.*.*"]
-  release:
-    types: [published]
+    paths: [pnpm-lock.yaml]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -15,10 +26,71 @@ concurrency:
 env:
   NODE_VERSION: "22"
 
-# Job names are the required status-check contexts (ADR-009): keep them stable.
 jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # list the PR's files
+    outputs:
+      code: ${{ steps.decide.outputs.code }}
+      image: ${{ steps.decide.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the docs-only rules against their examples
+        run: bash scripts/ci-code-paths.sh --self-test
+      - name: Decide whether this change touches code
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$HEAD_REF" == release-please--* ]]; then
+            printf 'code=true\nimage=true\n' >> "$GITHUB_OUTPUT"
+            echo "Release PR: everything runs."
+            exit 0
+          fi
+          # The files API returns at most 3000 files; past that the list is partial, so run everything.
+          if [ "${CHANGED_FILES:-0}" -ge 3000 ]; then
+            printf 'code=true\nimage=true\n' >> "$GITHUB_OUTPUT"
+            echo "$CHANGED_FILES changed files, more than the files API lists: everything runs."
+            exit 0
+          fi
+          # Renames list both names, so moving a file OUT of a code path still counts.
+          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/changed.txt"
+          echo "$(wc -l < "$RUNNER_TEMP/changed.txt") changed paths"
+          # Exit 0 = matched, 10 = nothing matched; anything else is a crash, and failing this step makes every
+          # job below run (their guard is `!= 'false'`), never skip.
+          rc=0; matched=$(bash scripts/ci-code-paths.sh < "$RUNNER_TEMP/changed.txt") || rc=$?
+          case $rc in
+            0) echo "code=true" >> "$GITHUB_OUTPUT"
+               echo "Code paths changed: lint, typecheck, tests and build run."
+               echo "$matched" ;;
+            10) echo "code=false" >> "$GITHUB_OUTPUT"
+                echo "Docs-only change: lint, typecheck, tests, build and the image build are skipped." ;;
+            *) echo "::error::scripts/ci-code-paths.sh exited $rc: everything runs."; exit 1 ;;
+          esac
+          rc=0; matched=$(bash scripts/ci-code-paths.sh --image < "$RUNNER_TEMP/changed.txt") || rc=$?
+          case $rc in
+            0) echo "image=true" >> "$GITHUB_OUTPUT"
+               echo "Image inputs changed, build-image runs:"
+               echo "$matched" ;;
+            10) echo "image=false" >> "$GITHUB_OUTPUT"
+                echo "No image input changed: build-image is skipped (the release PR builds it before any release)." ;;
+            *) echo "::error::scripts/ci-code-paths.sh --image exited $rc: everything runs."; exit 1 ;;
+          esac
+
   lint-and-typecheck:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: changes
+    # Skipped only when `changes` decided there is no code path; a failed decision runs it.
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +105,8 @@ jobs:
       - run: pnpm typecheck
 
   test:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +121,8 @@ jobs:
       - run: pnpm test
 
   build:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,51 +135,37 @@ jobs:
       - run: pnpm build
 
   build-image:
-    # VALIDATION build only — proves the Dockerfile builds on PRs and main. The image is
-    # PUBLISHED to GHCR by release-please.yml in the same run it cuts a release (release_created),
-    # using GITHUB_TOKEN — no PAT, no reliance on a tag/release event to trigger a job.
-    # Guarded on the Dockerfile existing so pre-Task-10 tags don't fail CI.
-    # NOT a required check — do not add to required contexts.
-    if: >-
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # VALIDATION build only: proves the Dockerfile builds (a package missing its COPY line in the deps stage fails
+    # here, not at release). Runs when the PR changes an image input (scripts/ci-code-paths.sh --image) and on the
+    # release PR, so the image is proven before every release. The image is PUBLISHED by release-please.yml in the
+    # run that cuts a release. NOT a required check: do not add it to the required contexts.
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.image != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      # Never publishes — release-please.yml owns the GHCR push. Build-only everywhere.
-      IMAGE_PUSH: 'false'
     steps:
       - uses: actions/checkout@v4
-        with:
-          # release tag on release events; the fully-qualified ref otherwise
-          # (refs/pull/N/merge on PRs, refs/heads/main, refs/tags/v*).
-          ref: ${{ github.event.release.tag_name || github.ref }}
-      - id: dockerfile
-        run: echo "exists=$([ -f Dockerfile ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-      - if: steps.dockerfile.outputs.exists == 'true'
-        uses: docker/setup-buildx-action@v3
-      - if: steps.dockerfile.outputs.exists == 'true' && env.IMAGE_PUSH == 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        if: steps.dockerfile.outputs.exists == 'true' && env.IMAGE_PUSH == 'true'
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/thaynes43/haynesnetwork
-          tags: |
-            type=raw,value=${{ github.event.release.tag_name || github.ref_name }}
-            type=raw,value=latest
-      - if: steps.dockerfile.outputs.exists == 'true'
-        uses: docker/build-push-action@v6
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ env.IMAGE_PUSH == 'true' }}
+          push: false
           platforms: linux/amd64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  warm-pnpm-cache:
+    # A PR restores the pnpm store cached on main, never another PR's, so main needs one for the current
+    # lockfile. Runs on a push to main that changed pnpm-lock.yaml (the push filter above), or by hand.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile

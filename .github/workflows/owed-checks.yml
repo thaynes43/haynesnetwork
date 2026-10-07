@@ -33,6 +33,11 @@ jobs:
         with:
           node-version: '22'
           cache: pnpm
+          # A key of its own: this job installs only @hnet/sync's tree and must never save that partial store
+          # under the key every CI job restores from main (ADR-102).
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            .github/workflows/owed-checks.yml
       - run: pnpm install --frozen-lockfile --filter @hnet/sync...
       - name: Evaluate the tracker (timing only)
         run: >-

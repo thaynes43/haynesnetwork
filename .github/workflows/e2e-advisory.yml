@@ -1,0 +1,24 @@
+name: e2e-advisory
+
+# The Playwright suite as an ADVISORY run, opt-in (ADR-102): add the `run-e2e` label to a pull request that does not
+# touch the book pipeline, and the suite runs on it now and on every later push while the label stays. It never blocks
+# a merge. A pipeline PR does not need the label: e2e.yml already runs the suite there as the `e2e-gate` gate.
+# Without the label nothing here starts a runner (the job's `if:` is false), so this workflow costs no minutes.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-advisory:
+    # Adding some OTHER label to a labelled PR must not re-run the suite.
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'run-e2e') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'run-e2e')
+    # Job-level, so a skipped run (no label, or another label added) never cancels a running suite.
+    concurrency:
+      group: e2e-advisory-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/e2e-suite.yml

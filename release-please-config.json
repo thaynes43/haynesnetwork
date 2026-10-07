@@ -6,6 +6,7 @@
     ".": {
       "package-name": "haynesnetwork",
       "bump-minor-pre-major": true,
+      "exclude-paths": [".agents", "docs"],
       "changelog-sections": [
         {
           "type": "feat",
