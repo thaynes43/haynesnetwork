@@ -636,6 +636,7 @@ export interface MintPairingWantsInput {
   now?: Date;
   logger?: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
+    warn?: (msg: string, meta?: Record<string, unknown>) => void;
     error?: (msg: string, meta?: Record<string, unknown>) => void;
   };
   /** Politeness pacer between attempts (the goodreads-sync 250ms default). */
@@ -2435,7 +2436,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
       : emptyLlRerequestTally();
 
   // Issue #825 — successors mint before predecessors retire; cap/quota gaps keep their queued format protected.
-  const retired = await settleRemovedPairingWants({ db: input.db, now });
+  const retired = await settleRemovedPairingWants({ db: input.db, now, log });
 
   // Issue #735 (DESIGN-036 amendment 2026-10-06) — the LazyLibrarian Releases: every format a want gave up (this run's
   // re-identify and parks included, and the goodreads-side ones since the last run) is unqueued in LazyLibrarian unless

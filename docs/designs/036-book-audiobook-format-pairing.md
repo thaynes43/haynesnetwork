@@ -699,6 +699,12 @@ initiates a resolve, queue or search. Other removed anchors do not own a LazyLib
 format; the migration must account for mint cap, quota and in-flight work before settling or releasing a predecessor.
 No release removes a downloaded file. Historical wants are retained rather than re-keyed to an inferred book.
 
+An unread live replacement cannot prove that the old queued format has no successor. While a same-kind Held Book
+read remains unknown, the reservation fails closed without a time expiry: an expiry during a prolonged detail-read
+outage could cancel a valid in-flight format. Once per format-pairing run, a structured warning names the unknown
+blocking item ids and deferred request ids, with total counts and at most 20 ids per list, so a persistent read
+outage can be diagnosed without unbounded log output.
+
 A surviving anchor whose Held Book changes cannot carry a prior book's landed state into the new identity. If its
 want has no LazyLibrarian id, a changed identity is reidentified through the existing writer, resetting the missing
 format to requested unless a current live format pair proves it held. A retitle that preserves state requires an

@@ -671,7 +671,7 @@ describe('runFormatPairing — a landed missing format stays truthful (issue #71
     expect(await getRequest(id)).toMatchObject({ ebookStatus: 'landed', audioStatus: 'landed' });
   });
 
-  it('leaves a want whose anchor left the library, and a parked want, alone', async () => {
+  it('settles a removed anchor as history and leaves a parked want alone', async () => {
     const gone = await seedLandedPairingWant('ll-history');
     await t.db
       .update(booksItems)
@@ -684,8 +684,10 @@ describe('runFormatPairing — a landed missing format stays truthful (issue #71
     });
     const report = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
     expect(report.requestsLandedReverted).toBe(0);
-    expect((await getRequest(gone.id)).audioStatus).toBe('landed');
+    expect(report.retiredAnchorsSettled).toBe(1);
+    expect(await getRequest(gone.id)).toMatchObject({ audioStatus: 'missing', llBookId: null });
     expect((await getRequest(parked.id)).audioStatus).toBe('landed');
+    expect(ll.calls).toEqual([]);
   });
 });
 

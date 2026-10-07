@@ -27,6 +27,7 @@ import {
   type GbBudgetTracker,
   type LazyLibrarianClientBundle,
   type LlSnapshotRow,
+  PAIRING_TRANSITION_DIAGNOSTIC_ID_LIMIT,
 } from '../src/index';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
@@ -263,8 +264,8 @@ describe('Kavita replacement anchors', () => {
 
   it('an unread replacement defers release until its held-book census is known', async () => {
     const old = await item('Mockingjay', { removed: true });
-    await want(old.id);
-    await item('A scanner name that is not yet trusted', { unknown: true });
+    const prior = await want(old.id);
+    const unread = await item('A scanner name that is not yet trusted', { unknown: true });
     await recordLlReleases(t.db, {
       llBookId: 'gb-mockingjay',
       formats: ['audiobook'],
@@ -273,6 +274,7 @@ describe('Kavita replacement anchors', () => {
       now: NOW,
     });
     const stub = ll();
+    const warnings: Array<{ message: string; data?: Record<string, unknown> }> = [];
     const report = await runFormatPairing({
       db: t.db,
       ll: stub.bundle,
@@ -280,6 +282,7 @@ describe('Kavita replacement anchors', () => {
       cap: 1,
       now: NOW,
       pacer: noPace,
+      logger: { warn: (message, data) => void warnings.push({ message, data }) },
     });
     expect(report).toMatchObject({
       retiredAnchorsDeferred: 1,
@@ -287,6 +290,97 @@ describe('Kavita replacement anchors', () => {
       llReleasesPending: 1,
     });
     expect(stub.calls).toEqual([]);
+    const diagnostic = warnings.filter(
+      (w) => w.message === 'format-pairing: retired anchors deferred by unread held books',
+    );
+    expect(diagnostic).toEqual([
+      {
+        message: 'format-pairing: retired anchors deferred by unread held books',
+        data: {
+          unknownBlockerItemCount: 1,
+          unknownBlockerItemIds: [unread.id],
+          unknownBlockedRequestCount: 1,
+          unknownBlockedRequestIds: [prior.id],
+          deferredRequestCount: 1,
+          deferredRequestIds: [prior.id],
+        },
+      },
+    ]);
+  });
+
+  it('unknown-blocker diagnostics cap each id list while keeping full counts', async () => {
+    const size = PAIRING_TRANSITION_DIAGNOSTIC_ID_LIMIT + 1;
+    const base = {
+      source: 'kavita' as const,
+      mediaKind: 'book' as const,
+      libraryId: '1',
+      libraryName: 'Books',
+      title: 'Mockingjay',
+      sortTitle: 'mockingjay',
+      author: 'Suzanne Collins',
+      deepLinkUrl: 'https://books.example',
+    };
+    const retired = await t.db
+      .insert(booksItems)
+      .values(
+        Array.from({ length: size }, (_, index) => ({
+          ...base,
+          externalId: `diagnostic-retired-${index}`,
+          deletedAt: NOW,
+          attrs: { heldBooks: [{ title: base.title, author: base.author, isbn: null }] },
+        })),
+      )
+      .returning();
+    const unknown = await t.db
+      .insert(booksItems)
+      .values(
+        Array.from({ length: size }, (_, index) => ({
+          ...base,
+          externalId: `diagnostic-unread-${index}`,
+          attrs: {},
+        })),
+      )
+      .returning();
+    const prior = await t.db
+      .insert(bookRequests)
+      .values(
+        retired.map((anchor) => ({
+          origin: 'pairing' as const,
+          pairingBooksItemId: anchor.id,
+          title: base.title,
+          author: base.author,
+          llBookId: 'gb-mockingjay',
+          ebookStatus: 'landed' as const,
+          audioStatus: 'wanted' as const,
+        })),
+      )
+      .returning();
+    const warnings: Array<{ message: string; data?: Record<string, unknown> }> = [];
+    expect(
+      await settleRemovedPairingWants({
+        db: t.db,
+        now: NOW,
+        log: { warn: (message, data) => void warnings.push({ message, data }) },
+      }),
+    ).toMatchObject({ retiredAnchorsSettled: 0, retiredAnchorsDeferred: size });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.data).toEqual({
+      unknownBlockerItemCount: size,
+      unknownBlockerItemIds: unknown
+        .map((i) => i.id)
+        .sort()
+        .slice(0, PAIRING_TRANSITION_DIAGNOSTIC_ID_LIMIT),
+      unknownBlockedRequestCount: size,
+      unknownBlockedRequestIds: prior
+        .map((w) => w.id)
+        .sort()
+        .slice(0, PAIRING_TRANSITION_DIAGNOSTIC_ID_LIMIT),
+      deferredRequestCount: size,
+      deferredRequestIds: prior
+        .map((w) => w.id)
+        .sort()
+        .slice(0, PAIRING_TRANSITION_DIAGNOSTIC_ID_LIMIT),
+    });
   });
 
   it('same title by another author does not invent a successor obligation', async () => {
@@ -523,15 +617,13 @@ describe('scoped one-book park repair', () => {
   it('a stale pair for the old held book does not land the replacement book', async () => {
     const { anchor, request } = await parked();
     const audio = await item('First Shift - Legacy', { audio: true });
-    await t.db
-      .insert(booksFormatPairs)
-      .values({
-        bookItemId: anchor.id,
-        audioItemId: audio.id,
-        matchedVia: 'title_author',
-        firstSeenAt: NOW,
-        lastSeenAt: NOW,
-      });
+    await t.db.insert(booksFormatPairs).values({
+      bookItemId: anchor.id,
+      audioItemId: audio.id,
+      matchedVia: 'title_author',
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+    });
     expect(await repair(request.id, false)).toMatchObject({ paired: false });
     expect((await t.db.select().from(bookRequests))[0]).toMatchObject({ audioStatus: 'requested' });
   });

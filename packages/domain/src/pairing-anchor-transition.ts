@@ -27,7 +27,11 @@ export interface RemovedPairingTransitions {
   settle: BookRequestRow[];
   deferred: BookRequestRow[];
   protectedFormats: Map<string, Set<LlFormat>>;
+  unknownBlockerItemIds: Set<string>;
+  unknownBlockedRequestIds: Set<string>;
 }
+
+export const PAIRING_TRANSITION_DIAGNOSTIC_ID_LIMIT = 20;
 
 /** Current transitions, with full title plus agreeing author (or equal ISBN), never a series-name guess. */
 export async function loadRemovedPairingTransitions(
@@ -53,7 +57,20 @@ export async function loadRemovedPairingTransitions(
         !isForeignLanguage(readItemLanguage(i.attrs)),
     )
     .map((i) => ({ item: i, identity: identityOf(i) }));
-  const out: RemovedPairingTransitions = { settle: [], deferred: [], protectedFormats: new Map() };
+  const out: RemovedPairingTransitions = {
+    settle: [],
+    deferred: [],
+    protectedFormats: new Map(),
+    unknownBlockerItemIds: new Set(),
+    unknownBlockedRequestIds: new Set(),
+  };
+  const unknownByKind = new Map<string, string[]>();
+  for (const { item, identity } of live) {
+    if (identity.kind !== 'unknown' || paired.has(item.id)) continue;
+    const ids = unknownByKind.get(item.mediaKind) ?? [];
+    ids.push(item.id);
+    unknownByKind.set(item.mediaKind, ids);
+  }
   const isbnKey = (v: string | null) => (v ?? '').replace(/[^0-9xX]/g, '').toUpperCase();
   for (const want of wants) {
     const anchor = want.pairingBooksItemId ? byId.get(want.pairingBooksItemId) : undefined;
@@ -72,27 +89,32 @@ export async function loadRemovedPairingTransitions(
       pairingTitleKey(oldIdentity.title) === pairingTitleKey(want.title)
         ? isbnKey(oldIdentity.isbn)
         : '';
+    const unknownBlockers = unknownByKind.get(anchor.mediaKind) ?? [];
     const waiting =
       want.llBookId !== null &&
       queued.length > 0 &&
-      live.some(({ item, identity }) => {
-        if (item.mediaKind !== anchor.mediaKind || paired.has(item.id)) return false;
-        // A failed detail read cannot prove there is no replacement. Keep the queued predecessor until
-        // the same-kind inventory is fully known; this grants no acquisition or collection coverage.
-        if (identity.kind === 'unknown') return true;
-        if (identity.kind !== 'one') return false;
-        if (pairingTitleKey(identity.title) !== pairingTitleKey(want.title)) return false;
-        const isbn = isbnKey(identity.isbn);
-        if (!pairingAuthorsAgree(want.author, identity.author) && !(oldIsbn && oldIsbn === isbn))
-          return false;
-        const successor = byAnchor.get(item.id);
-        return !successor || (successor.unroutableReason === null && successor.llBookId === null);
-      });
+      (unknownBlockers.length > 0 ||
+        live.some(({ item, identity }) => {
+          if (item.mediaKind !== anchor.mediaKind || paired.has(item.id)) return false;
+          if (identity.kind !== 'one') return false;
+          if (pairingTitleKey(identity.title) !== pairingTitleKey(want.title)) return false;
+          const isbn = isbnKey(identity.isbn);
+          if (!pairingAuthorsAgree(want.author, identity.author) && !(oldIsbn && oldIsbn === isbn))
+            return false;
+          const successor = byAnchor.get(item.id);
+          return !successor || (successor.unroutableReason === null && successor.llBookId === null);
+        }));
     if (!waiting) {
       out.settle.push(want);
       continue;
     }
     out.deferred.push(want);
+    // A failed detail read cannot prove there is no replacement. Keep the queue until the same-kind
+    // inventory is fully known; expose the blocking rows without granting acquisition or coverage.
+    if (unknownBlockers.length > 0) {
+      unknownBlockers.forEach((id) => out.unknownBlockerItemIds.add(id));
+      out.unknownBlockedRequestIds.add(want.id);
+    }
     const formats = out.protectedFormats.get(want.llBookId!) ?? new Set<LlFormat>();
     formats.add(missing);
     out.protectedFormats.set(want.llBookId!, formats);
@@ -104,8 +126,21 @@ export async function loadRemovedPairingTransitions(
 export async function settleRemovedPairingWants(input: {
   db?: DbClient;
   now?: Date;
+  log?: { warn?: (message: string, data?: Record<string, unknown>) => void };
 }): Promise<{ retiredAnchorsSettled: number; retiredAnchorsDeferred: number }> {
   const transitions = await loadRemovedPairingTransitions(input.db);
+  if (transitions.unknownBlockerItemIds.size > 0) {
+    const ids = (values: Iterable<string>) =>
+      [...values].sort().slice(0, PAIRING_TRANSITION_DIAGNOSTIC_ID_LIMIT);
+    input.log?.warn?.('format-pairing: retired anchors deferred by unread held books', {
+      unknownBlockerItemCount: transitions.unknownBlockerItemIds.size,
+      unknownBlockerItemIds: ids(transitions.unknownBlockerItemIds),
+      unknownBlockedRequestCount: transitions.unknownBlockedRequestIds.size,
+      unknownBlockedRequestIds: ids(transitions.unknownBlockedRequestIds),
+      deferredRequestCount: transitions.deferred.length,
+      deferredRequestIds: ids(transitions.deferred.map((w) => w.id)),
+    });
+  }
   let retiredAnchorsSettled = 0;
   for (const want of transitions.settle) {
     if (

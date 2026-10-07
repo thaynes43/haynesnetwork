@@ -256,24 +256,15 @@ describe('runSync books-sync — retained series ids after chapter changes (issu
   });
 
   it('bounded rolling refresh sees equal-page chapter changes under the same id and stamp', async () => {
+    const now = new Date();
     const first = stubBundle();
     await runSync({
       mode: 'books-sync',
       clients: {} as SyncClients,
       db: t.db,
       books: first.bundle,
+      now: new Date(now.getTime() - 7 * 3600_000),
     });
-    const now = new Date();
-    await t.db
-      .update(booksItems)
-      .set({
-        metadataSyncedAt: new Date(now.getTime() - 7 * 3600_000),
-        attrs: {
-          ...(await mirroredHeld()),
-          heldBooksSyncedAt: new Date(now.getTime() - 7 * 3600_000).toISOString(),
-        },
-      })
-      .where(eq(booksItems.externalId, '457'));
     const second = stubBundle();
     (second.bundle.kavita as unknown as { listSeriesVolumes: unknown }).listSeriesVolumes = async (
       id: string,
