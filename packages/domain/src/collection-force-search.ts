@@ -44,7 +44,7 @@ import {
   syncCollectionWants,
 } from './book-requests';
 import { llBookAuthorMismatch, llBookMismatch } from './ll-book-check';
-import { isForeignLanguage } from './book-language';
+import { isForeignLanguage, readLlLanguage } from './book-language';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import {
   applyLlGoneDecision,
@@ -119,7 +119,10 @@ export interface ForceSearchCollectionsReport extends LlGoneTally, LlRerequestTa
    * book as another volume or work than the member (`llBookMismatch`). No LazyLibrarian write for them.
    */
   parkedWrongVolume: number;
-  /** Issue #719 — wants SUPPRESSED because LazyLibrarian labels their book non-English (the English-edition pass takes them). */
+  /**
+   * Issue #719 — wants SUPPRESSED because LazyLibrarian labels their book non-English (the English-edition pass takes them).
+   * Issue #794: including a book this run's own addBook seated, read again after the seat (never queued or searched).
+   */
   skippedForeign: number;
   /**
    * Issue #771 — wants whose LazyLibrarian book is credited to another author (the Author Check, T-286): the book is given
@@ -383,15 +386,64 @@ async function runForceSearchWorklist(input: {
     if (toSearch.length === 0) continue;
     await input.pace(i);
     i += 1;
+    const recordFailure = (error: unknown): void => {
+      input.report.failed += toSearch.length;
+      input.log.warn?.(
+        'collection-force-search: LazyLibrarian force-search failed (left for next run)',
+        {
+          requestIds: toSearch.map((w) => w.id),
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    };
+    // DESIGN-039 D-18, now here too (issue #665): addBook ONLY seats a book LazyLibrarian does not hold. On a
+    // book it holds, `add_bookid_to_db` re-runs its upsert, which resets BOTH formats to the new-book status
+    // (`Skipped`): the other format's `Wanted` is dropped and its import status overwritten. A failed read
+    // leaves `held` empty, so this degrades to the old always-addBook.
+    let seatedForeign: string | null = null;
+    if (held.get(llBookId) == null) {
+      try {
+        await input.ll.write.addBook(llBookId);
+        // Issue #794 (DESIGN-028 amendment 2026-10-06): LazyLibrarian only labels a book's language once addBook has
+        // seated it, so the check above could not see it. The book is read again before anything is queued: a
+        // non-English one is left as seated (`Skipped`, never searched), as the goodreads push does. A failed read is
+        // unknown, so the push goes on.
+        const seatedLanguage = await readLlLanguage(input.ll, llBookId);
+        if (isForeignLanguage(seatedLanguage)) seatedForeign = seatedLanguage;
+      } catch (error) {
+        recordFailure(error);
+        continue;
+      }
+    }
+    if (seatedForeign !== null) {
+      // As the check above: counted and stamped (no audit, nothing was asked of LazyLibrarian beyond the seat), so the
+      // cooldown keeps these wants out of the next run and the English-edition pass switches or parks them.
+      input.report.skippedForeign += toSearch.length;
+      for (const want of toSearch) {
+        input.log.info?.('ll_push_skipped_foreign', {
+          site: `collection-force-search.${input.via}`,
+          requestId: want.id,
+          llBookId,
+          formats: [want.format],
+          title: want.title,
+          llLanguage: seatedForeign,
+          seated: true,
+        });
+      }
+      await stampBookRequests(
+        input.db,
+        inArray(
+          bookRequests.id,
+          toSearch.map((w) => w.id),
+        ),
+        { lastSearchedAt: input.now, updatedAt: input.now },
+      );
+      continue;
+    }
     try {
       // The confined LazyLibrarian force-search chain — MANDATORY queueBook after addBook (else Skipped).
-      // addBook once, queueBook once per distinct format, then the single searchBook that covers them all.
+      // addBook once (above), queueBook once per distinct format, then the single searchBook that covers them all.
       const formats = [...new Set(toSearch.map((w) => w.format))];
-      // DESIGN-039 D-18, now here too (issue #665): addBook ONLY seats a book LazyLibrarian does not hold. On a
-      // book it holds, `add_bookid_to_db` re-runs its upsert, which resets BOTH formats to the new-book status
-      // (`Skipped`): the other format's `Wanted` is dropped and its import status overwritten. A failed read
-      // leaves `held` empty, so this degrades to the old always-addBook.
-      if (held.get(llBookId) == null) await input.ll.write.addBook(llBookId);
       for (const format of formats) await input.ll.write.queueBook(llBookId, format);
       const coveredByRecent = llRecentSearchCovers(recent, llBookId, held.get(llBookId), formats);
       if (!coveredByRecent) await input.ll.write.searchBook(llBookId, formats[0]!);
@@ -454,14 +506,7 @@ async function runForceSearchWorklist(input: {
       if (coveredByRecent) input.report.skippedRecent += toSearch.length;
       else input.report.searched += toSearch.length;
     } catch (error) {
-      input.report.failed += toSearch.length;
-      input.log.warn?.(
-        'collection-force-search: LazyLibrarian force-search failed (left for next run)',
-        {
-          requestIds: toSearch.map((w) => w.id),
-          error: error instanceof Error ? error.message : String(error),
-        },
-      );
+      recordFailure(error);
     }
   }
 }
@@ -574,6 +619,7 @@ export async function forceSearchFindMissingCollections(
         report.llRerequestLanded +
         report.llRerequestNotAdded +
         report.llRerequestDeferred +
+        report.llRerequestSkippedForeign +
         report.releasedWrongAuthor >
       0
     ) {
@@ -612,6 +658,7 @@ export async function forceSearchFindMissingCollections(
     llRerequestLanded: report.llRerequestLanded,
     llRerequestNotAdded: report.llRerequestNotAdded,
     llRerequestDeferred: report.llRerequestDeferred,
+    llRerequestSkippedForeign: report.llRerequestSkippedForeign,
   });
   return report;
 }
@@ -779,6 +826,7 @@ async function rerequestGoneCollectionWants(input: {
   input.report.llRerequestLanded += tally.llRerequestLanded;
   input.report.llRerequestNotAdded += tally.llRerequestNotAdded;
   input.report.llRerequestDeferred += tally.llRerequestDeferred;
+  input.report.llRerequestSkippedForeign += tally.llRerequestSkippedForeign;
   return snapshot;
 }
 
@@ -941,7 +989,10 @@ export interface ForceSearchCollectionNowReport {
   skippedRecent: number;
   /** Issue #693 — wants parked (`wrong_volume`) because LazyLibrarian holds their book as another volume or work. */
   parkedWrongVolume: number;
-  /** Issue #719 — wants suppressed because LazyLibrarian labels their book non-English (the English-edition pass takes them). */
+  /**
+   * Issue #719 — wants suppressed because LazyLibrarian labels their book non-English (the English-edition pass takes them),
+   * including (issue #794) a book this call's own addBook seated, read again after the seat.
+   */
   skippedForeign: number;
   /** Issue #771 — wants whose book LazyLibrarian credits to another author, released and resolved again before the search. */
   releasedWrongAuthor: number;

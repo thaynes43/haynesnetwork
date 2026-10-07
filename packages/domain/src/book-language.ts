@@ -1,5 +1,6 @@
 // Issue #700 (DESIGN-036 amendment 2026-10-05) — the language of a library item or a LazyLibrarian book, as the
-// English-only rule (F10, `.agents/context/2026-07-13-f10-english-audit.md`) reads it. Pure.
+// English-only rule (F10, `.agents/context/2026-07-13-f10-english-audit.md`) reads it. Pure, except `readLlLanguage`
+// (issue #794), the one fresh LazyLibrarian read every push site makes after its own `addBook`.
 //
 // Three classes, from the live values of `books_items.attrs.language` (Kavita: `en`, `en-US`, `en-GB`, `nl`, `de`,
 // `es`; Audiobookshelf: `English`, `en`, blank, `XXX`) and LazyLibrarian's `BookLang`:
@@ -12,6 +13,7 @@
 // The library field is not fully reliable (an Audiobookshelf item that reads `English` held the German vols 4-6 of
 // Chroniken der Unterwelt), so the push also checks LazyLibrarian's own `BookLang` (the push-time guard in
 // `mintPairingWants`).
+import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 
 export type BookLanguageClass = 'english' | 'unknown' | 'foreign';
 
@@ -40,4 +42,21 @@ export const isForeignLanguage = (value: string | null | undefined): boolean =>
 export function readItemLanguage(attrs: unknown): string | null {
   const language = (attrs as { language?: unknown } | null | undefined)?.language;
   return typeof language === 'string' ? language : null;
+}
+
+/**
+ * Issue #719, shared since issue #794 (DESIGN-028 amendment 2026-10-06): LazyLibrarian's `BookLang` for one book, read
+ * fresh. LazyLibrarian only labels a book's language once `addBook` has seated it, so a book the run's earlier snapshot
+ * did not hold is read again before anything is queued. A failed read, or a book LazyLibrarian does not show, is unknown
+ * (null): the push proceeds, as before, because this guard may only ever withhold a write.
+ */
+export async function readLlLanguage(
+  ll: Pick<LazyLibrarianClientBundle, 'read'>,
+  llBookId: string,
+): Promise<string | null> {
+  try {
+    return (await ll.read.getAllBookStatuses()).get(llBookId)?.language ?? null;
+  } catch {
+    return null;
+  }
 }

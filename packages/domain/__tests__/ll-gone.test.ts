@@ -48,11 +48,18 @@ const daysAgo = (n: number): Date => new Date(Date.now() - n * DAY);
 
 type Row = Omit<LlSnapshotRow, 'title' | 'author'> & { title?: string; author?: string };
 
-/** Like LazyLibrarian: `addBook` seats the book (`Skipped/Skipped`) unless `refuseAdd`, and `queueBook` flips that
- *  format to `Wanted`, so a later read in the same test sees what the writes left behind. */
+/** Like LazyLibrarian: `addBook` seats the book (`Skipped/Skipped`, labelled `seatLanguage` when given) unless
+ *  `refuseAdd`, and `queueBook` flips that format to `Wanted`, so a later read in the same test sees what the writes
+ *  left behind. */
 function stubLl(
   initial: Record<string, Row> = {},
-  opts: { empty?: boolean; failRead?: boolean; refuseAdd?: boolean; refuseIds?: string[] } = {},
+  opts: {
+    empty?: boolean;
+    failRead?: boolean;
+    refuseAdd?: boolean;
+    refuseIds?: string[];
+    seatLanguage?: string;
+  } = {},
 ) {
   const rows: Record<string, Row> = { ...initial };
   const calls: Array<{ cmd: string; id: string; format?: string }> = [];
@@ -79,6 +86,7 @@ function stubLl(
         audioLibrary: r.audioLibrary ?? null,
         ebookFile: r.ebookFile ?? null,
         audioFile: r.audioFile ?? null,
+        language: r.language ?? null,
       });
     }
     return map;
@@ -89,7 +97,12 @@ function stubLl(
       addBook: async (id: string) => {
         calls.push({ cmd: 'addBook', id });
         if (opts.refuseAdd || opts.refuseIds?.includes(id)) return 'false';
-        if (!rows[id]) rows[id] = { ebookStatus: 'Skipped', audioStatus: 'Skipped' };
+        if (!rows[id])
+          rows[id] = {
+            ebookStatus: 'Skipped',
+            audioStatus: 'Skipped',
+            ...(opts.seatLanguage ? { language: opts.seatLanguage } : {}),
+          };
         return 'true';
       },
       queueBook: async (id: string, format: string) => {
@@ -852,6 +865,65 @@ describe('runFormatPairing — the one re-request of a settled want (issue #668)
       { cmd: 'queueBook', id: 'gb-gone', format: 'audiobook' },
     ]);
   });
+
+  // Issue #794 (DESIGN-028 amendment 2026-10-06): LazyLibrarian labels a book's language only once addBook has seated
+  // it, so the re-request reads it again before queueing.
+  it('a book the add seats as non-English is not queued and the want is not recorded (it stays missing)', async () => {
+    const id = await seedPairingWant(settled);
+    const ll = stubLl({}, { seatLanguage: 'it' });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({
+      llRerequestSkippedForeign: 1,
+      llRerequested: 0,
+      llRerequestNotAdded: 0,
+      llRerequestDeferred: 0,
+    });
+    expect(ll.calls).toEqual([{ cmd: 'addBook', id: 'gb-gone' }]);
+    const want = await getWant(id);
+    expect(want).toMatchObject({
+      audioStatus: 'missing',
+      llBookId: 'gb-gone',
+      llRerequestedAt: null,
+      llRerequestFailures: 0,
+      llRerequestFailedAt: null,
+      llRerequestAddedAt: null,
+    });
+    const events = await t.db
+      .select()
+      .from(bookRequestEvents)
+      .where(
+        and(eq(bookRequestEvents.requestId, id), eq(bookRequestEvents.reason, 'll_rerequest')),
+      );
+    expect(events).toEqual([]);
+
+    // The next pass sees the book in the snapshot, so it skips the want: no second add, nothing queued.
+    const again = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(again).toMatchObject({ llRerequestSkippedForeign: 0, llRerequested: 0 });
+    expect(ll.calls.filter((c) => c.cmd !== 'addBook')).toEqual([]);
+    expect(ll.calls.filter((c) => c.id === 'gb-gone')).toHaveLength(1);
+    expect((await getWant(id)).audioStatus).toBe('missing');
+  });
+
+  it('two wants on one book the add seats as non-English: one addBook, neither queued', async () => {
+    await seedPairingWant(settled);
+    await seedPairingWant({ ...settled, title: 'Saints (Unabridged)' });
+    const ll = stubLl({}, { seatLanguage: 'de' });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ llRerequestSkippedForeign: 2, llRerequested: 0 });
+    expect(ll.calls).toEqual([{ cmd: 'addBook', id: 'gb-gone' }]);
+  });
+
+  it('a book the add seats as English (or unknown) is queued as before', async () => {
+    const id = await seedPairingWant(settled);
+    const ll = stubLl({}, { seatLanguage: 'eng' });
+    const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
+    expect(run).toMatchObject({ llRerequested: 1, llRerequestSkippedForeign: 0 });
+    expect(ll.calls).toEqual([
+      { cmd: 'addBook', id: 'gb-gone' },
+      { cmd: 'queueBook', id: 'gb-gone', format: 'audiobook' },
+    ]);
+    expect((await getWant(id)).audioStatus).toBe('wanted');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1322,6 +1394,45 @@ describe('forceSearchFindMissingCollections — a force-searched want whose Lazy
     expect(want.ebookStatus).toBe('wanted');
     expect(want.llRerequestedAt).not.toBeNull();
     expect(Date.now() - want.lastSearchedAt!.getTime()).toBeLessThan(60_000);
+  });
+
+  it('issue #794: a settled collection want whose re-added book reads non-English is not queued, and the cron leaves it', async () => {
+    const cid = await seedCollection('c7', 'recipe-7');
+    const id = await seedCollectionWant(cid, {
+      ref: 'm1',
+      title: 'Crescent City',
+      llBookId: 'gb-italian',
+      lastSearchedAt: daysAgo(10),
+      ebookStatus: 'missing',
+    });
+    const ll = stubLl({}, { seatLanguage: 'it' });
+    const report = await forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: libretto('recipe-7'),
+      ll: ll.bundle,
+      pacer: noPace,
+    });
+    expect(report).toMatchObject({
+      llRerequestSkippedForeign: 1,
+      llRerequested: 0,
+      searched: 0,
+      candidates: 0,
+    });
+    expect(ll.calls).toEqual([{ cmd: 'addBook', id: 'gb-italian' }]);
+    const want = await getWant(id);
+    expect(want).toMatchObject({ ebookStatus: 'missing', llRerequestedAt: null });
+    expect(want.lastSearchedAt!.getTime()).toBeLessThan(daysAgo(9).getTime());
+
+    // The cron gather leaves a `missing` want alone, and the re-request now finds the book: nothing more is written.
+    const again = await forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: libretto('recipe-7'),
+      ll: ll.bundle,
+      pacer: noPace,
+      now: new Date(Date.now() + DAY),
+    });
+    expect(again).toMatchObject({ llRerequestSkippedForeign: 0, searched: 0 });
+    expect(ll.calls).toHaveLength(1);
   });
 
   it("a person's on-demand Force Search re-adds a settled want and returns it to `requested`", async () => {
