@@ -1,10 +1,10 @@
 // Reusable stack harness — boots the full local environment as a plain async
 // module (NO Playwright imports): embedded Postgres 16 (@hnet/test-utils), the
 // real @hnet/db migrations (incl. the 0002 catalog seed), the stub OIDC provider,
-// and `next dev` (or, with HNET_E2E_SERVER=start, a production `next build` +
-// `next start` — issue #812 prototype, see StackOptions.server). The Playwright globalSetup is one consumer; `pnpm dev:local`
-// (apps/web/dev/local.ts) is the other (same stack, interactive browser, sign in
-// as the stub personas — see stub-oidc.ts STUB_USERS).
+// and the app server: `next dev`, or one production `next build` served by `next start`
+// (ADR-103, StackOptions.server). The Playwright globalSetup is one consumer (production
+// build by default); `pnpm dev:local` (apps/web/dev/local.ts) is the other (`next dev`,
+// interactive browser, sign in as the stub personas — see stub-oidc.ts STUB_USERS).
 //
 // Entry point: `startStack(options?)` → `RunningStack` with an idempotent
 // `stop()` that tears everything down in reverse (dev server → stub OIDC → PG).
@@ -40,20 +40,22 @@ export interface StackOptions {
   /** App port (default 3100 — off 3000 so a local `pnpm dev` keeps its port). */
   port?: number;
   /**
-   * Pre-compile every user-facing route once after boot (default true). Next's
+   * Request every user-facing route once after boot (default true). Next's
    * dev server compiles on first request — on a cold CI runner that first-hit
-   * cost can eat a per-test timeout (donor lesson, todos-for-dues).
+   * cost can eat a per-test timeout (donor lesson, todos-for-dues). Under
+   * `next start` it only loads the built route modules, well under a second.
    */
   prewarm?: boolean;
   /** Working directory containing the Next app (default process.cwd()). */
   cwd?: string;
   /**
-   * Issue #812 prototype — which Next server the stack runs (default: `start` when HNET_E2E_SERVER=start,
-   * else `dev`). `dev` is `next dev` (ADR-010, on-demand compile). `start` runs one production `next build`
-   * (overlapped with the Postgres + seed boot) and serves it with `next start`. Both set HNET_E2E_HARNESS=1 on
-   * the server, which keeps the production build on the suite's non-production semantics where the app gates
-   * on NODE_ENV: the two /e2e harness routes render, the ADR-081 boot tasks stay off, Better Auth does not rate
-   * limit, and Trash candidates refresh inline.
+   * ADR-103 — which Next server the stack runs (default `dev`; the Playwright globalSetup passes `start` unless
+   * HNET_E2E_SERVER=dev). `dev` is `next dev` (on-demand compile, hot reload). `start` runs one production
+   * `next build` (overlapped with the Postgres + seed boot, no TypeScript pass) and serves it with `next start`.
+   * Both set the harness flag HNET_E2E_HARNESS=1 (with BETTER_AUTH_URL on localhost, which the guard requires),
+   * which keeps a production build on the suite's non-production behaviour where the app branches on NODE_ENV: the
+   * two /e2e harness routes render, the ADR-081 boot tasks stay off, Better Auth does not rate limit, and Trash
+   * candidates refresh inline (`@hnet/domain/e2e-harness`).
    */
   server?: 'dev' | 'start';
 }
@@ -124,8 +126,9 @@ async function prewarmRoutes(baseUrl: string): Promise<void> {
   const routes = [
     '/',
     '/login',
-    // PLAN-047 / ADR-058 — the card-gallery drift gate (dev-only harness route): compile it here so
-    // the first gallery assertion never pays the cold `next dev` compile inside its test budget.
+    // PLAN-047 / ADR-058 — the card-gallery drift gate (a harness route; ADR-103 keeps it in the suite's
+    // production build): under `next dev`, compile it here so the first gallery assertion never pays the
+    // cold compile inside its test budget.
     '/e2e/card-gallery',
     '/library',
     `/library/${placeholderId}`,
@@ -221,27 +224,34 @@ async function killDevServer(dev: ChildProcess): Promise<void> {
 /**
  * Boot the whole stack: embedded PG16 → migrations (subprocess — see the
  * @hnet/test-utils/postgres import note) → stub OIDC on a free port →
- * `next dev` with the composed env. Cleans up everything it managed to start
- * if a later step fails.
+ * the app server (`next dev`, or the production build's `next start`) with the
+ * composed env. Cleans up everything it managed to start if a later step fails.
  */
 export async function startStack(options: StackOptions = {}): Promise<RunningStack> {
   const port = options.port ?? DEFAULT_APP_PORT;
   const cwd = options.cwd ?? process.cwd();
   const appUrl = `http://localhost:${port}`;
-  const server = options.server ?? (process.env.HNET_E2E_SERVER === 'start' ? 'start' : 'dev');
+  const server = options.server ?? 'dev';
   const nextBin = join(cwd, 'node_modules', '.bin', 'next');
   const timings = createStackTimings();
 
   // `start`: kick the production build off FIRST so it overlaps Postgres, the migrations and the sync seeds
-  // (none of which need the app). It builds without the stack's runtime env, like the release image does; the
-  // harness flag is set at build time too, because the /e2e harness pages are static and prerender then.
+  // (none of which need the app). It builds without the stack's runtime env, like the release image does, except
+  // for the harness flag and its localhost BETTER_AUTH_URL: the /e2e harness pages are static and prerender at
+  // build time. HNET_E2E_BUILD=1 skips the build's TypeScript pass (next.config.ts).
   let build: ChildProcess | undefined;
   let buildDone: Promise<void> | undefined;
   if (server === 'start') {
     buildDone = runToCompletion(
       nextBin,
       ['build'],
-      { ...process.env, HNET_E2E_HARNESS: '1', NEXT_TELEMETRY_DISABLED: '1' },
+      {
+        ...process.env,
+        HNET_E2E_HARNESS: '1',
+        BETTER_AUTH_URL: appUrl,
+        HNET_E2E_BUILD: '1',
+        NEXT_TELEMETRY_DISABLED: '1',
+      },
       cwd,
       'next build',
       (child) => {

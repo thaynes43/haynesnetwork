@@ -22,6 +22,7 @@ import { activeBatchStrategy, getAppSetting } from './app-settings';
 import { compareByStrategy, type BatchStrategy } from './trash-strategy';
 import type { MaintainerrClientBundle } from './maintainerr-clients';
 import { isProposalWatchlistFiltered, readDisplayWatchlistSnapshot } from './watchlist-registry';
+import { e2eHarnessActive } from './e2e-harness';
 import {
   bucketFlatPendingForMedia,
   classifyForExpedite,
@@ -52,8 +53,8 @@ export interface CandidateFreshnessPolicy {
  *  every 15 min; the UI shows "as of N min ago" + a Refresh affordance, DESIGN-010 amendment).
  *  Non-production: maxAge 0 + inline ⇒ every read refreshes first (read-through equivalence). */
 const defaultFreshness = (): CandidateFreshnessPolicy =>
-  // Issue #812: the e2e stack's production build (HNET_E2E_HARNESS=1) keeps the read-through policy.
-  process.env.NODE_ENV === 'production' && process.env.HNET_E2E_HARNESS !== '1'
+  // ADR-103: the e2e stack's production build (the guarded harness flag) keeps the read-through policy.
+  process.env.NODE_ENV === 'production' && !e2eHarnessActive()
     ? { maxAgeMs: 20 * 60_000, serveStale: true }
     : { maxAgeMs: 0, serveStale: false };
 

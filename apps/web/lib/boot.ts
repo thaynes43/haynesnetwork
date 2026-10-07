@@ -7,16 +7,17 @@
 //      non-admins would see an empty Library even with grants. The recurring CronJob stays the steady owner.
 //
 // Both are PRODUCTION-ONLY (the deployed app) and fully ISOLATED — a failure is logged and swallowed so
-// serving and /api/health are never blocked. dev:local, the e2e harness (next dev), and unit tests never run
+// serving and /api/health are never blocked. dev:local, the e2e harness (ADR-103), and unit tests never run
 // these (they exercise the domain/sync helpers directly).
 import { db, getPool } from '@hnet/db';
 import { seedDefaultServerAllGrantsIfBootstrap } from '@hnet/domain';
+import { e2eHarnessActive } from '@hnet/domain/e2e-harness';
 
 export async function runBootTasks(): Promise<void> {
   if (process.env.NODE_ENV !== 'production') return;
-  // Issue #812: the e2e stack can serve a production build (`next start`); it sets HNET_E2E_HARNESS=1 so the suite
-  // keeps the state it seeds itself, exactly as under `next dev`.
-  if (process.env.HNET_E2E_HARNESS === '1') return;
+  // ADR-103: the e2e stack serves a production build; under its (guarded) harness flag the suite keeps the state it
+  // seeds itself, exactly as under `next dev`.
+  if (e2eHarnessActive()) return;
   if (!process.env.DATABASE_URL) return;
   await seedDefaultGrants();
   await triggerColdStartPlexMatch();

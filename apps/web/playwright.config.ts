@@ -1,8 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// ADR-010 e2e layer: Playwright against `next dev` (or, with HNET_E2E_SERVER=start, a production
-// `next build` + `next start`: issue #812 prototype) + embedded Postgres 16 + the
-// stub OIDC provider — all booted in e2e/support/global-setup.ts (Playwright's
+// ADR-010 e2e layer, amended by ADR-103: Playwright against one production `next build`
+// served by `next start` (HNET_E2E_SERVER=dev opts into `next dev` for debugging) +
+// embedded Postgres 16 + the stub OIDC provider — all booted in e2e/support/global-setup.ts (Playwright's
 // `webServer` plugin starts BEFORE globalSetup, so it cannot see the embedded PG's
 // DATABASE_URL; the donor repo hit the same ordering — see global-setup.ts).
 //
@@ -20,16 +20,17 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   // CI-only retry absorbs cold-runner jitter; real bugs reproduce locally with 0.
   retries: process.env.CI ? 1 : 0,
-  // Per-test budget: 60s in CI (cold compile/IO spikes), 30s locally.
+  // Per-test budget: 60s in CI (cold IO spikes), 30s locally. Sized for `next dev`'s cold
+  // compiles, which the HNET_E2E_SERVER=dev opt-in still has.
   timeout: process.env.CI ? 60_000 : 30_000,
   // First-hit dev-server compile lag can exceed Playwright's 5s expect default
-  // even after the globalSetup prewarm.
+  // even after the globalSetup prewarm (the `next dev` opt-in).
   expect: { timeout: 15_000 },
   reporter: [
     ...(process.env.CI
       ? ([['list'], ['github'], ['html', { open: 'never' }]] as const)
       : ([['list']] as const)),
-    // Issue #812 — per-test timings for e2e/support/timings-report.mjs (CI sets HNET_E2E_TIMINGS_DIR).
+    // ADR-103 — per-test timings for e2e/support/timings-report.mjs (CI sets HNET_E2E_TIMINGS_DIR).
     ...(process.env.HNET_E2E_TIMINGS_DIR
       ? ([['json', { outputFile: `${process.env.HNET_E2E_TIMINGS_DIR}/results.json` }]] as const)
       : []),

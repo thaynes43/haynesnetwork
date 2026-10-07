@@ -1,7 +1,7 @@
 # DESIGN-002: Auth wiring — Better Auth + Authentik OIDC; Authentik provisioning
 
 - **Status:** Accepted
-- **Last updated:** 2026-07-05
+- **Last updated:** 2026-10-07 (the `rateLimit.enabled` row, ADR-103)
 - **Satisfies:** PRD-001 R-01, R-02, R-03, R-04 (role-audit path); AC-01, AC-02, AC-03;
   governed by ADR-002 (Authentik OIDC via Better Auth), ADR-003 (Postgres 16 + Drizzle), and
   **ADR-012 (unified Role model)**. Depends on DESIGN-001
@@ -412,7 +412,7 @@ Decided configuration (`packages/auth/src/config.ts`):
 
 | Option (verified) | Value | Why |
 |---|---|---|
-| `rateLimit.enabled` | `process.env.NODE_ENV === 'production'` | Mirrors better-auth's default (`enabled ?? isProduction`) explicitly; dev + the Playwright stub-OIDC suite run `next dev` and must never rate limit |
+| `rateLimit.enabled` | `process.env.NODE_ENV === 'production' && !e2eHarnessActive()` | Mirrors better-auth's default (`enabled ?? isProduction`) explicitly; `next dev` must never rate limit, and neither may the Playwright stub-OIDC suite, which serves a production build under the harness flag (ADR-103). The flag counts only when `BETTER_AUTH_URL`'s host is `localhost` or `127.0.0.1` (`@hnet/domain/e2e-harness`), so a deployed pod always rate limits |
 | `rateLimit.window` / `rateLimit.max` | `60` s / `100` | Overall per-client-IP, per-path budget |
 | `rateLimit.customRules['/sign-in/oauth2']` | `{ window: 60, max: 10 }` | Overrides the built-in 3-per-10s `/sign-in*` special rule — ~10 OAuth initiation attempts/min per client. Keys are relative to basePath (`/api/auth`); exact match unless the key contains `*` |
 | `advanced.ipAddress.ipAddressHeaders` | `['x-forwarded-for', 'x-real-ip']` | Traefik sets both. XFF wins in the honest single-hop case; `x-real-ip` is single-value by construction (Traefik sets it to the connecting client) so the key still resolves per-client when the XFF chain has extra hops |

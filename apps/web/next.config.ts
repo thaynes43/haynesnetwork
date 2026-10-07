@@ -14,10 +14,10 @@ export const FRAME_DENY_HEADERS = [
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  // Issue #812 prototype: the e2e stack's own production build (HNET_E2E_HARNESS=1, e2e/support/harness.ts) skips
-  // the build's TypeScript pass. CI's required lint-and-typecheck and build checks type-check the same tree, and
-  // the release image build never sets the flag, so it still type-checks.
-  typescript: { ignoreBuildErrors: process.env.HNET_E2E_HARNESS === '1' },
+  // ADR-103: the e2e stack's own production build (HNET_E2E_BUILD=1, set only by e2e/support/harness.ts) skips the
+  // build's TypeScript pass. CI's required lint-and-typecheck and build checks type-check the same tree, and the
+  // release image build never sets it, so it still type-checks. The variable changes nothing at runtime.
+  typescript: { ignoreBuildErrors: process.env.HNET_E2E_BUILD === '1' },
   outputFileTracingRoot: resolve(process.cwd(), '../..'),
   async headers() {
     return [{ source: '/:path*', headers: FRAME_DENY_HEADERS.map((h) => ({ ...h })) }];

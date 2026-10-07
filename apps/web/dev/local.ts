@@ -2,7 +2,8 @@
 // EXACT stack the e2e suite uses — embedded Postgres 16 with the real
 // migrations + catalog seed, the stub OIDC provider with its personas, the stub
 // Sonarr/Radarr/Lidarr/Seerr server (startStack() calls startStubArr()), and
-// `next dev` — but long-running, so the app can be vetted hands-on in a real
+// the app — here `next dev` with hot reload, where the suite serves a production build
+// (ADR-103) — but long-running, so the app can be vetted hands-on in a real
 // browser (phone/tablet/PC via devtools device emulation) with no Docker, no
 // Authentik, no *arr stack, no cluster, and no real credentials. On top of the
 // e2e stack it runs the Watch Companion bootstrap (a one-row demo seed + one

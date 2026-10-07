@@ -1,4 +1,4 @@
-// Issue #812 — measurement hooks for the e2e stack (NO Playwright imports, like harness.ts).
+// ADR-103 (issue #812) — measurement hooks for the e2e stack (NO Playwright imports, like harness.ts).
 //
 // Off unless HNET_E2E_TIMINGS_DIR is set (CI sets it): then the harness records when each boot phase ends
 // (stack-timings.json) and copies the app server's output, one timestamped line at a time, to server.log, while

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Issue #812 — where the e2e suite's minutes go. Reads, from the directory given as argv[2] (or
+// ADR-103 (issue #812) — where the e2e suite's time goes. Reads, from the directory given as argv[2] (or
 // HNET_E2E_TIMINGS_DIR):
 //   results.json        Playwright's JSON report (per-test durations and start times);
 //   stack-timings.json  the harness boot phases (e2e/support/timings.ts);
@@ -15,7 +15,6 @@ if (!dir) {
   console.log('timings-report: no directory given');
   process.exit(0);
 }
-const label = process.env.HNET_E2E_SERVER === 'start' ? 'next start' : 'next dev';
 
 const readJson = (name) => {
   const path = join(dir, name);
@@ -68,6 +67,7 @@ const testSum = attempts.reduce((m, a) => m + a.duration, 0);
 
 // ------------------------------------------------------------------------------------------ boot phases
 const stack = readJson('stack-timings.json');
+const label = stack?.server === 'dev' ? 'next dev' : 'next start';
 
 // --------------------------------------------------------------------------------- dev request log
 // ` GET /library 200 in 2.3s (next.js: 1.9s, proxy.ts: 5ms, application-code: 400ms)`; `next.js` is the

@@ -4,6 +4,7 @@ import { nextCookies } from 'better-auth/next-js';
 import { genericOAuth } from 'better-auth/plugins/generic-oauth';
 import { eq } from 'drizzle-orm';
 import { db, users, session, account, verification, rateLimit } from '@hnet/db';
+import { e2eHarnessActive } from '@hnet/domain/e2e-harness';
 import { authEnv, OIDC_PROVIDER_ID } from './env';
 import { bootstrapAdminOnSignin } from './hooks/bootstrap-admin';
 import { consumePendingRoleOnSignin } from './hooks/consume-pending-role';
@@ -87,9 +88,10 @@ export const auth = betterAuth({
   },
   rateLimit: {
     // Mirror better-auth's default (enabled ?? isProduction) explicitly: prod-only.
-    // `next dev` (local + the Playwright/stub-OIDC suite) must never rate limit, and neither may the
-    // suite's production build (`next start` with HNET_E2E_HARNESS=1, issue #812).
-    enabled: process.env.NODE_ENV === 'production' && process.env.HNET_E2E_HARNESS !== '1',
+    // `next dev` must never rate limit, and neither may the Playwright/stub-OIDC suite's production
+    // build, which runs under the harness flag (ADR-103). The flag only counts on a localhost
+    // BETTER_AUTH_URL, so a deployed pod always rate limits.
+    enabled: process.env.NODE_ENV === 'production' && !e2eHarnessActive(),
     // Shared, cross-replica buckets in Postgres (saga haynesnetwork-ha plan 05 —
     // https://github.com/thaynes43/haynes-ops/blob/main/.agents/sagas/haynesnetwork-ha/backlog/05-shared-rate-limit-storage.md).
     // The default 'memory' keeps one bucket set PER pod, so once the app runs >1 replica each pod
