@@ -14,6 +14,9 @@ import { seedDefaultServerAllGrantsIfBootstrap } from '@hnet/domain';
 
 export async function runBootTasks(): Promise<void> {
   if (process.env.NODE_ENV !== 'production') return;
+  // Issue #812: the e2e stack can serve a production build (`next start`); it sets HNET_E2E_HARNESS=1 so the suite
+  // keeps the state it seeds itself, exactly as under `next dev`.
+  if (process.env.HNET_E2E_HARNESS === '1') return;
   if (!process.env.DATABASE_URL) return;
   await seedDefaultGrants();
   await triggerColdStartPlexMatch();

@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// ADR-010 e2e layer: Playwright against `next dev` + embedded Postgres 16 + the
+// ADR-010 e2e layer: Playwright against `next dev` (or, with HNET_E2E_SERVER=start, a production
+// `next build` + `next start`: issue #812 prototype) + embedded Postgres 16 + the
 // stub OIDC provider — all booted in e2e/support/global-setup.ts (Playwright's
 // `webServer` plugin starts BEFORE globalSetup, so it cannot see the embedded PG's
 // DATABASE_URL; the donor repo hit the same ordering — see global-setup.ts).
@@ -24,7 +25,15 @@ export default defineConfig({
   // First-hit dev-server compile lag can exceed Playwright's 5s expect default
   // even after the globalSetup prewarm.
   expect: { timeout: 15_000 },
-  reporter: process.env.CI ? [['list'], ['github'], ['html', { open: 'never' }]] : [['list']],
+  reporter: [
+    ...(process.env.CI
+      ? ([['list'], ['github'], ['html', { open: 'never' }]] as const)
+      : ([['list']] as const)),
+    // Issue #812 — per-test timings for e2e/support/timings-report.mjs (CI sets HNET_E2E_TIMINGS_DIR).
+    ...(process.env.HNET_E2E_TIMINGS_DIR
+      ? ([['json', { outputFile: `${process.env.HNET_E2E_TIMINGS_DIR}/results.json` }]] as const)
+      : []),
+  ],
   globalSetup: './e2e/support/global-setup.ts',
   globalTeardown: './e2e/support/global-teardown.ts',
   use: {

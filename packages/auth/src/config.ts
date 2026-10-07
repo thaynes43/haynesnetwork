@@ -87,8 +87,9 @@ export const auth = betterAuth({
   },
   rateLimit: {
     // Mirror better-auth's default (enabled ?? isProduction) explicitly: prod-only.
-    // `next dev` (local + the Playwright/stub-OIDC suite) must never rate limit.
-    enabled: process.env.NODE_ENV === 'production',
+    // `next dev` (local + the Playwright/stub-OIDC suite) must never rate limit, and neither may the
+    // suite's production build (`next start` with HNET_E2E_HARNESS=1, issue #812).
+    enabled: process.env.NODE_ENV === 'production' && process.env.HNET_E2E_HARNESS !== '1',
     // Shared, cross-replica buckets in Postgres (saga haynesnetwork-ha plan 05 —
     // https://github.com/thaynes43/haynes-ops/blob/main/.agents/sagas/haynesnetwork-ha/backlog/05-shared-rate-limit-storage.md).
     // The default 'memory' keeps one bucket set PER pod, so once the app runs >1 replica each pod

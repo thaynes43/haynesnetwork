@@ -15,8 +15,19 @@ env:
 
 jobs:
   e2e:
+    # Issue #812 MEASUREMENT (draft PR only): the same suite twice, against `next dev` (ADR-010, today's layer)
+    # and against a production `next build` + `next start` (the prototype), each writing its per-spec timings as
+    # annotations. A shipped version runs one leg.
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [dev, start]
+    name: e2e (${{ matrix.server }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      HNET_E2E_SERVER: ${{ matrix.server }}
+      HNET_E2E_TIMINGS_DIR: ${{ github.workspace }}/apps/web/e2e-timings
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
@@ -31,10 +42,14 @@ jobs:
       # globalSetup boots embedded Postgres 16 + the stub OIDC + `next dev`
       # (ADR-010 — no Docker/Testcontainers, no live Authentik).
       - run: pnpm --filter web e2e
+      # Issue #812: per-spec durations, boot phases and first-hit compile estimates, as annotations + job summary.
+      - name: Report e2e timings
+        if: always()
+        run: node apps/web/e2e/support/timings-report.mjs "$HNET_E2E_TIMINGS_DIR"
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.server }}
           path: apps/web/playwright-report/
           retention-days: 7

@@ -1,7 +1,8 @@
 // Reusable stack harness — boots the full local environment as a plain async
 // module (NO Playwright imports): embedded Postgres 16 (@hnet/test-utils), the
 // real @hnet/db migrations (incl. the 0002 catalog seed), the stub OIDC provider,
-// and `next dev`. The Playwright globalSetup is one consumer; `pnpm dev:local`
+// and `next dev` (or, with HNET_E2E_SERVER=start, a production `next build` +
+// `next start` — issue #812 prototype, see StackOptions.server). The Playwright globalSetup is one consumer; `pnpm dev:local`
 // (apps/web/dev/local.ts) is the other (same stack, interactive browser, sign in
 // as the stub personas — see stub-oidc.ts STUB_USERS).
 //
@@ -31,6 +32,7 @@ import { startStubKapowarr, type StubKapowarrServer } from './stub-kapowarr';
 import { startStubLibretto, type StubLibrettoServer } from './stub-libretto';
 import { startStubSmtp, type StubSmtpServer } from './stub-smtp';
 import { composeRuntimeEnv, DEFAULT_APP_PORT, type RuntimeEnv } from './env';
+import { createStackTimings, teeChildOutput } from './timings';
 
 const DEV_READY_TIMEOUT_MS = 180_000;
 
@@ -45,6 +47,15 @@ export interface StackOptions {
   prewarm?: boolean;
   /** Working directory containing the Next app (default process.cwd()). */
   cwd?: string;
+  /**
+   * Issue #812 prototype — which Next server the stack runs (default: `start` when HNET_E2E_SERVER=start,
+   * else `dev`). `dev` is `next dev` (ADR-010, on-demand compile). `start` runs one production `next build`
+   * (overlapped with the Postgres + seed boot) and serves it with `next start`. Both set HNET_E2E_HARNESS=1 on
+   * the server, which keeps the production build on the suite's non-production semantics where the app gates
+   * on NODE_ENV: the two /e2e harness routes render, the ADR-081 boot tasks stay off, Better Auth does not rate
+   * limit, and Trash candidates refresh inline.
+   */
+  server?: 'dev' | 'start';
 }
 
 export interface RunningStack {
@@ -154,9 +165,11 @@ async function runToCompletion(
   env: NodeJS.ProcessEnv,
   cwd: string,
   label: string,
+  onSpawn?: (child: ChildProcess) => void,
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, { env, cwd, stdio: 'inherit' });
+    onSpawn?.(child);
     child.on('error', reject);
     child.on('exit', (code) => {
       if (code === 0) resolve();
@@ -215,8 +228,35 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
   const port = options.port ?? DEFAULT_APP_PORT;
   const cwd = options.cwd ?? process.cwd();
   const appUrl = `http://localhost:${port}`;
+  const server = options.server ?? (process.env.HNET_E2E_SERVER === 'start' ? 'start' : 'dev');
+  const nextBin = join(cwd, 'node_modules', '.bin', 'next');
+  const timings = createStackTimings();
 
-  const pg = await startPostgres();
+  // `start`: kick the production build off FIRST so it overlaps Postgres, the migrations and the sync seeds
+  // (none of which need the app). It builds without the stack's runtime env, like the release image does; the
+  // harness flag is set at build time too, because the /e2e harness pages are static and prerender then.
+  let build: ChildProcess | undefined;
+  let buildDone: Promise<void> | undefined;
+  if (server === 'start') {
+    buildDone = runToCompletion(
+      nextBin,
+      ['build'],
+      { ...process.env, HNET_E2E_HARNESS: '1', NEXT_TELEMETRY_DISABLED: '1' },
+      cwd,
+      'next build',
+      (child) => {
+        build = child;
+      },
+    ).then(() => timings.mark('next-build-done'));
+    // Observed below (await buildDone) or abandoned by a failed boot; never an unhandled rejection.
+    buildDone.catch(() => undefined);
+  }
+
+  const pg = await startPostgres().catch((err: unknown) => {
+    build?.kill('SIGKILL');
+    throw err;
+  });
+  timings.mark('postgres');
   let oidc: StubOidcServer | undefined;
   let arr: StubArrServer | undefined;
   let bazarr: StubBazarrServer | undefined;
@@ -258,6 +298,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     if (seed.status !== 0) {
       throw new Error(`e2e ledger seed failed (exit ${String(seed.status)})`);
     }
+    timings.mark('migrations-and-ledger-seed');
 
     oidc = await startStubOidc();
     arr = await startStubArr();
@@ -276,6 +317,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     kapowarr = await startStubKapowarr();
     libretto = await startStubLibretto();
     smtp = await startStubSmtp();
+    timings.mark('stubs');
     const env = composeRuntimeEnv({
       databaseUrl: pg.connectionString,
       stubOidcBaseUrl: oidc.baseUrl,
@@ -381,16 +423,24 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
       'activity-scan seed',
     );
     await fetch(`${arr.baseUrl}/_stub/reset`, { method: 'POST' });
+    timings.mark('sync-seeds');
+
+    if (buildDone) {
+      await buildDone;
+      timings.mark('next-build-awaited');
+    }
 
     // Spawn .bin/next directly — some pnpm versions filter child env vars.
-    dev = spawn(join(cwd, 'node_modules', '.bin', 'next'), ['dev', '--port', String(port)], {
-      env: { ...process.env, ...env },
+    dev = spawn(nextBin, [server, '--port', String(port)], {
+      env: { ...process.env, ...env, HNET_E2E_HARNESS: '1' },
       cwd,
-      stdio: 'inherit',
+      stdio: timings.serverLog ? ['ignore', 'pipe', 'pipe'] : 'inherit',
       detached: false,
     });
+    if (timings.serverLog) teeChildOutput(dev, timings.serverLog, `next ${server}`);
     dev.on('exit', (code, signal) => {
-      if (code !== 0 && code !== null) {
+      // 143 = 128 + SIGTERM: `next start` exits that way on the teardown's SIGTERM (`next dev` exits 0).
+      if (code !== 0 && code !== null && code !== 143) {
         console.error(
           `[stack] dev server exited unexpectedly (code=${code}, signal=${signal ?? 'none'})`,
         );
@@ -398,7 +448,10 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     });
 
     await waitForReady(appUrl, DEV_READY_TIMEOUT_MS);
+    timings.mark('server-ready');
     if (options.prewarm !== false) await prewarmRoutes(appUrl);
+    timings.mark('prewarm');
+    timings.flush({ server });
 
     const running = dev;
     const runningArr = arr;
@@ -444,6 +497,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
         if (stopped) return;
         stopped = true;
         await killDevServer(running);
+        timings.serverLog?.end();
         await runningSmtp.stop().catch(() => undefined);
         await runningLibretto.stop().catch(() => undefined);
         await runningKapowarr.stop().catch(() => undefined);
@@ -466,6 +520,7 @@ export async function startStack(options: StackOptions = {}): Promise<RunningSta
     };
   } catch (err) {
     // Partial-boot cleanup, best effort in reverse order.
+    build?.kill('SIGKILL');
     if (dev) await killDevServer(dev).catch(() => undefined);
     if (smtp) await smtp.stop().catch(() => undefined);
     if (libretto) await libretto.stop().catch(() => undefined);
