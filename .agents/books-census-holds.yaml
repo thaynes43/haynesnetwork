@@ -80,3 +80,14 @@ holds:
       strip the series designation. The #795 repair re-pointed the record here on 2026-10-06; it had held The Hammer of Thor.
     opened: 2026-10-07
     links: ['#795', '#799']
+  - key: wrong_file:kyNEwgEACAAJ:ebook
+    path: EBooks/Zoraida Córdova/A Crash of Fate/Zoraida Córdova - A Crash of Fate.epub
+    title: Star Wars. Galaxy's Edge A Crash of Fate (Zoraida Córdova)
+    reason: >-
+      The census misreads the title, and the file is the book. The epub is A Crash of Fate (OPF dc:title, Disney Book Group
+      2019, ISBN 9781368050685; the record's ISBN 1368048536 is the hardcover). The record's title puts the series and its
+      sub-series in front ("Star Wars. Galaxy's Edge"), and no other LazyLibrarian title of the author starts with
+      "Galaxy's Edge", so the cut-title rule cannot tell the sub-series from words that name another book (#799, the
+      trade-off DESIGN-028 records). Checked 2026-10-07.
+    opened: 2026-10-07
+    links: ['#799']

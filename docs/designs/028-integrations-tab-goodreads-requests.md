@@ -1457,7 +1457,7 @@ book it is:
 | Cut | Passes when | Passes | Fails |
 |---|---|---|---|
 | after the kept words | it is whole parts (a subtitle or edition part after a part break), packaging ("LP", "Hardcover", "Hufflepuff Edition"), or a collection's tail ("and Other ...") | "Dune" for "Dune: Deluxe Edition"; "A Plague of Zombies" for "A Plague of Zombies. An Outlander Novella"; "The Martian Way" for "The Martian Way and Other Stories" | "Dune" for "Dune Messiah"; "A Secret Rage" for "A Secret Rage and Sweet and Deadly"; "Code to Zero" for "Code to Zero [and] The Man from St Petersburg" |
-| before the kept words | it is whole parts or runs across a part break (a series in front), packaging ("Sneak Peek for", "ILL/"), the file's declared series, the record's own decoration, or words another LazyLibrarian title of the author starts with | "The Golden Compass" for "His Dark Materials. The Golden Compass (Book 1)"; "A Crash of Fate" for "Star Wars. Galaxy's Edge A Crash of Fate"; "The Sea of Monsters" for "Percy Jackson and the Sea of Monsters" beside "Percy Jackson and the Olympians. ..." | "Catwings" for "Wonderful Alexander and the Catwings" (no other Le Guin title starts "Wonderful Alexander"); "Dune" for "Children of Dune"; "Disciple" for "Merge / Disciple" |
+| before the kept words | it is whole earlier parts (a series in front); whatever it cuts from the kept words' own part is packaging ("Sneak Peek for", "ILL/"), the file's declared series, the record's own decoration, or words another LazyLibrarian title of the author starts with | "The Golden Compass" for "His Dark Materials. The Golden Compass (Book 1)"; "The Sea of Monsters" for "Percy Jackson and the Sea of Monsters" beside "Percy Jackson and the Olympians. ..." | "Catwings" for "Wonderful Alexander and the Catwings" (no other Le Guin title starts "Wonderful Alexander"); "Dune" for "Children of Dune" and for "Dune Chronicles. God Emperor of Dune"; "Disciple" for "Merge / Disciple" |
 | between the kept words | it is packaging | | |
 
 Two guards then apply. A cut in front that names a separate work fails, as rule 3 already said ("Towers of Midnight" is not
@@ -1468,6 +1468,12 @@ author start with and go on past ("Wild Cards" for "Wild Cards. Lowball", "Four"
 on past the file's words is not enough: it can be another edition of the same book ("The Golden Compass Graphic Novel,
 Volume 1"), and a twin record titled exactly like the file is not a series either ("Theodore Boone" beside "Theodore
 Boone. Kid Lawyer").
+
+A series in front never vouches for words cut from the kept part (the code review of #805 traced "Dune" passing for "Dune
+Chronicles. God Emperor of Dune" before this was added). The trade-off: a record that puts a series and a sub-series in
+front, with no other title of the author to vouch for the sub-series, is flagged although its file is the book ("A Crash of
+Fate" for "Star Wars. Galaxy's Edge A Crash of Fate"). The one such record in the library carries a Census Hold. A missed
+wrong file stays unseen, while a false flag is read once and held, so the rule takes the false flag.
 
 Why the author's titles. LazyLibrarian has no series data here (its `series` and `member` tables are empty, 2026-10-07),
 and the file rarely declares one (Catwings does not). The two titles alone cannot tell "Percy Jackson and the Sea of
@@ -1486,16 +1492,17 @@ census ran over that snapshot. Before the change it found 0 unheld wrong files (
 | 1 | 35 | first rule: the record's subtitle took part (its words matched the file's by chance), and one other title going on past the file's words counted as a series |
 | 2 | 7 | `BookName` only; two other titles for a series name |
 | 3 | 5 | the shortest kept stretch (a repeated word); "ILL/" is packaging |
+| 4 | 6, one held | the code review's fix: a series in front does not vouch for words cut from the kept part; "Star Wars. Galaxy's Edge A Crash of Fate" is flagged and held (Census Hold) |
 
-The five are all the new shape, one book held for a record that names more: "Merge / Disciple" (eBook "Disciple"), "Code
-to Zero [and] The Man from St Petersburg" (eBook "Code to Zero"), "A Secret Rage and Sweet and Deadly" (eBook and
-audiobook "A Secret Rage"), and "The Ultimate Hitchhiker's Guide to the Galaxy" (audiobook "1-The Hitchhiker's Guide To
-The Galaxy"). No Catwings-shaped file is left: #795 repaired the one known.
+Five are the new shape, one book held for a record that names more: "Merge / Disciple" (eBook "Disciple"), "Code to Zero
+[and] The Man from St Petersburg" (eBook "Code to Zero"), "A Secret Rage and Sweet and Deadly" (eBook and audiobook "A
+Secret Rage"), and "The Ultimate Hitchhiker's Guide to the Galaxy" (audiobook "1-The Hitchhiker's Guide To The Galaxy").
+No Catwings-shaped file is left: #795 repaired the one known.
 
 **Tests:** `held-file-check.test.ts` "a cut title (issue #799)" (an earlier book or the series name cut from a longer
 title; one book of a record that names two; a subtitle, edition note or collection tail cut off the end; a series or
 character name cut off the front, with and without the author's titles; one extending title and a twin record are not a
-series; a prologue in front), `books-census.test.ts` (the census passes the author's titles: Catwings is found, The Sea of
+series; a series in front does not vouch for the kept part; a prologue in front), `books-census.test.ts` (the census passes the author's titles: Catwings is found, The Sea of
 Monsters is not).
 
 ## Amendment — 2026-10-06 (language after the seat): the collection force-search and the one re-request read the language again after their own addBook (issue #794)

@@ -490,6 +490,7 @@ describe('heldFileNamesBook: a cut title (issue #799)', () => {
       heldFileNamesBook(
         'A Crash of Fate',
         book("Star Wars. Galaxy's Edge A Crash of Fate", 'Zoraida Córdova'),
+        { authorTitles: ["Star Wars. Galaxy's Edge Black Spire"] },
       ),
     ).toBe(true);
     expect(
@@ -554,6 +555,23 @@ describe('heldFileNamesBook: a cut title (issue #799)', () => {
         authorTitles: ['Theodore Boone', 'Theodore Boone. Kid Lawyer'],
       }),
     ).toBe(true);
+  });
+  it('a series in front does not vouch for what is cut from the kept part (review of #805)', () => {
+    expect(
+      heldFileNamesBook('Dune', book('Dune Chronicles. God Emperor of Dune', 'Frank Herbert')),
+    ).toBe(false);
+    expect(
+      heldFileNamesBook(
+        'Catwings',
+        book('Catwings Tales. Wonderful Alexander and the Catwings', 'Ursula K. Le Guin'),
+      ),
+    ).toBe(false);
+    expect(
+      heldFileNamesBook(
+        'A Crash of Fate',
+        book("Star Wars. Galaxy's Edge A Crash of Fate", 'Zoraida Córdova'),
+      ),
+    ).toBe(false);
   });
   it('a prologue cut off the front is still a separate work', () => {
     expect(

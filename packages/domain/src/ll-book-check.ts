@@ -623,10 +623,12 @@ function leadsTitle(run: readonly string[], title: readonly string[], longer = f
  *   • a trailing cut is whole parts (a subtitle or edition part: "Dune" ⇄ "Dune: Deluxe Edition", "A Plague of Zombies"
  *     ⇄ "A Plague of Zombies. An Outlander Novella"), packaging ("Just Like Heaven LP", "... - Hufflepuff Edition"), or
  *     a collection's tail ("The Martian Way" ⇄ "The Martian Way and Other Stories");
- *   • a leading cut is whole parts or runs across a part break (a series in front: "The Golden Compass" ⇄ "His Dark
- *     Materials. The Golden Compass", "A Crash of Fate" ⇄ "Star Wars. Galaxy's Edge A Crash of Fate"), packaging
- *     ("Sneak Peek for"), the file's or the record's own series name, or words other titles of the author start with
- *     ("The Sea of Monsters" ⇄ "Percy Jackson and the Sea of Monsters" beside "Percy Jackson and the Olympians");
+ *   • a leading cut is whole parts (a series in front: "The Golden Compass" ⇄ "His Dark Materials. The Golden
+ *     Compass"); what it cuts from the kept words' own part must be packaging ("Sneak Peek for"), the file's or the
+ *     record's own series name, or words other titles of the author start with ("The Sea of Monsters" ⇄ "Percy Jackson
+ *     and the Sea of Monsters" beside "Percy Jackson and the Olympians"). So "Dune" ⇄ "Dune Chronicles. God Emperor of
+ *     Dune" fails, and so does "A Crash of Fate" ⇄ "Star Wars. Galaxy's Edge A Crash of Fate" unless another title
+ *     vouches for "Galaxy's Edge" (a Census Hold covers the one in the library);
  *   • nothing is cut from between the kept words but packaging.
  * A cut inside the kept part that names its book fails: "Dune" ⇄ "Dune Messiah", "Catwings" ⇄ "Wonderful Alexander and
  * the Catwings", "A Secret Rage" ⇄ "A Secret Rage and Sweet and Deadly". Two guards then apply: a leading cut that names
@@ -688,11 +690,13 @@ function cutTitleNamesBook(
       trail[0]!.p !== seq[last]!.p ||
       packaging(trail) ||
       (trail[0]!.w === 'other' && trail.length >= 2);
+    // A cut in front may be whole earlier parts (a series in front). Whatever it cuts from the kept words' own part must
+    // still be packaging or a series name: "Dune Chronicles. God Emperor of Dune" does not pass "Dune" on its series.
+    const leadInPart = lead.filter((s) => s.p === seq[first]!.p);
     const leadOk =
-      lead.length === 0 ||
-      lead.at(-1)!.p !== seq[first]!.p ||
-      lead[0]!.p !== lead.at(-1)!.p ||
-      packaging(lead) ||
+      leadInPart.length === 0 ||
+      packaging(leadInPart) ||
+      seriesRun(runWords(leadInPart), 1) ||
       seriesRun(runWords(lead), 1);
     if (!trailOk || !leadOk) return false;
     const cutWords = [...lead, ...gap, ...trail];
