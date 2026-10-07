@@ -9,6 +9,48 @@
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
 
+## ▶ 2026-10-07 (late) / 10-08: coordinator wave after the pod bounce
+
+- **18:00Z owed checks (#822):** OC-017, OC-020 and OC-022 passed. OC-014 failed: format-pairing paced mint
+  attempts, not requests, and hit Google Books' per-minute limit at 07:33Z. **#827 fixed it**, shipped in **v0.109.5**
+  (haynes-ops #3536): per-process 60/min `GB_CALLS_PER_MINUTE` pacer, wait out one minute trip per run, `gbCalls` on
+  `sync finished`, and a 10-minute Mint Backoff grace. OC-018 failed on Kavita, not the app (#825). Investigation:
+  `.agents/context/2026-10-07-pairing-oc014-oc018.md`.
+- **Rechecks, 10-08:** OC-042, the 07:3xZ pairing run: no pairing `gb_quota_trip`, `skippedQuota` 0, `gbCalls`
+  present; `inBackoff` about 184 or 245, not 49 to 50; `minted` 0 is not a failure. OC-043's corrected expectation:
+  dropped/revived is non-zero only after a books-sync with `kavitaHeldRead > 0` or a tombstone, and every revived want
+  lands again in the same run. OC-044: Libretto `no_match` cache hits at the 08:27Z pass. The actionable criteria and
+  due times live in `.agents/owed-checks.yaml`.
+- **libretto#34 closed:** owner ruling 2026-10-07, TTL **24 h**. Libretto #35, image `sha-1fdcddd` (haynes-ops
+  #3525); DESIGN-037 D-09 amended in #823. `LIBRETTO_RESOLVE_NO_MATCH_TTL_MS` controls the cache, 0 disables it.
+  Never caches `quota_exhausted`, `upstream_error`, `wrong_language`, or a miss after a failed ISBN leg.
+- **#812 closed by #824:** e2e serves `next build` + `next start` (ADR-103), from about 14 minutes to 7-9 minutes per job,
+  237 tests, nothing skipped. `HNET_E2E_HARNESS=1` is honoured only when `BETTER_AUTH_URL`'s host is
+  `localhost`/`127.0.0.1`; `HNET_E2E_SERVER=dev` opts into `next dev` locally. Goodreads cards now say "Checking…"
+  while loading instead of flashing "Not linked" to a linked user.
+- **ADR-104 (#828):** owner confirmed 2026-10-07 that only his private repos were billed, and they now use
+  self-hosted runners. Public-repo GitHub-hosted runs are not billed, so advisory e2e runs on every code PR again;
+  `run-e2e` forces it on a no-code PR. ADR-102 superseded in part.
+- **#792 closed by #826**, owner ruling 2026-10-07 **admins only**: History card on Wanted detail and "Show changes"
+  on book detail; `books.requestEvents` admin-only, 20 per page, internal row ids hidden, "Not set" for empty sides,
+  collection wants hide their unused format. Released **v0.110.0** (#832, haynes-ops #3541): 3/3 Ready web pods,
+  22 sync CronJobs plus books-census and owed-checks on the tag; both ingresses answer. **PLAN-073 partial live pass:**
+  deployed domain matches replica SQL, paging/empty/gone wants pass, API role predicates and re-request wording pass,
+  anonymous API denied. Successful admin HTTP and authenticated admin/non-admin UI remain uncovered because
+  Playwright has no session; the plan stays active. No feature defect found.
+- **#825 in progress**, Codex session `task-haynesnetwork-1007-182906` (report `/home/dev/work/hn-825-report.md`).
+  App PR #833 and haynes-ops #3540 (converter plus Libretto) are open.
+  Kavita merges books from different folders by their EPUB series tag, flips the series at every scan, and drives
+  OC-018 churn. Owner ruling 2026-10-07: **"one Kavita series per book"**. Strip the library's EPUB series tags
+  (about 213 of 1,930) now and hourly in `lazylibrarian-epub-convert`; about 46 Kavita series pages go away, with series
+  order through Libretto reading lists. [Evidence](https://github.com/thaynes43/haynesnetwork/issues/825#issuecomment-6048048575).
+  Preflight owner questions are #830 (cross-author title collision) and #831 (same-title copies); no release or image
+  bump from that task was in flight when this release started.
+- **haynes-ops#3538 filed:** Codex task sessions fail cigar-journal MCP with `AuthRequired`; Claude sessions work.
+
+**Open:** #825 in progress (its owner questions #830/#831), owed checks in `.agents/owed-checks.yaml`, #733 parked,
+#674 benched. PLAN-073 awaits its authenticated admin/non-admin UI check; read-only live fallback passed.
+
 ## ▶ 2026-10-07 (night) — Coordinator wave: Libretto guards, the Books Census, Request Events; v0.109.3 live
 
 The coordinator session started 2026-10-06 21:23Z took the 10-06 evening block's queue. The block below is history for
@@ -75,7 +117,7 @@ everything it lists as open; this block says what is open now.
     re-wanted. OC-040
     checks the 10-08 09:10Z scan leaves the repairs alone; OC-041 checks Shift and Gray Dawn after Google Books' quota reset.
 
-**Open:** #792 (a Request Event history view on the Wanted detail; a feature, not started). #733 parked, #674 benched
+**Open (historical, superseded by the late block above):** #792 (a Request Event history view on the Wanted detail; a feature, not started). #733 parked, #674 benched
 (unchanged). Owed checks: `.agents/owed-checks.yaml` is the only list (every pending row, with its due time); the
 the morning rows are done (#818, #820); next due are the 10-07
 18:00Z rows, then OC-041 at 10-08 14:00Z.

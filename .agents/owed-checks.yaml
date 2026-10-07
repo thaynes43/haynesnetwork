@@ -1542,7 +1542,7 @@ checks:
       prs: ['#819', 'thaynes43/libretto#33', 'haynes-ops #3514', 'haynes-ops #3515']
 
   - id: OC-042
-    title: "The first format-pairing run after the 2026-10-08 quota roll mints fresh wants without a Google Books minute trip (OC-014 recheck)"
+    title: "The first format-pairing run after the 2026-10-08 quota roll uses the shipped GB Call Pacer without a minute trip (OC-014 recheck)"
     opened: 2026-10-07
     after: the 2026-10-08 07:32Z format-pairing run (the first after the 07:00Z quota roll)
     not_before: 2026-10-08T07:45:00Z
@@ -1550,17 +1550,18 @@ checks:
     owner: haynesnetwork coordinator (books)
     status: pending
     check: |
-      OC-014 failed on 2026-10-07: the 07:32Z run hit a Google Books per-MINUTE trip (gb_quota_trip kind=minute) after 65
-      attempts and skipped 244 candidates for quota. Read the 2026-10-08 07:3xZ "sync finished" line and its
-      gb_quota_trip lines. Expect formatPairing.attempted at most 100, minted above 0, skippedQuota 0 and no
-      gb_quota_trip. A trip again means the first run after a roll fires its calls too fast: decide whether the run needs
-      a pace limit (the cause is Google's per-minute limit, not the daily cap). inBackoff reads 49 to 50 on both days
-      unless wants left the backoff; say why if it differs.
+      OC-014 failed on 2026-10-07: the 07:32Z run hit a Google Books per-minute trip after 65 attempts and skipped 244
+      candidates for quota. The GB Call Pacer shipped in #827 as v0.109.5. Read the 2026-10-08 07:3xZ "sync finished"
+      line and its gb_quota_trip lines. Expect formatPairing.attempted at most 100, skippedQuota 0, gbCalls on the line
+      and no gb_quota_trip with consumer pairing. minted 0 is valid when there are no new library items. Mint Backoff
+      starts near 184 (245 minus the 61 wants due at 07:32:03.36Z), or 245 if that due cohort has not been selected yet;
+      explain the due cohort if it differs. If a trip recurs, investigate the actual per-minute call pattern and
+      shared-key callers; the pacer is already implemented. See .agents/context/2026-10-07-pairing-oc014-oc018.md.
     links:
       issues: [haynesnetwork#740]
 
   - id: OC-043
-    title: "Format-pairing runs show dropped and revived 0 for a day, and the 2026-10-06/07 drops are explained (OC-018 recheck)"
+    title: "Format-pairing drops and revivals follow library changes, and revived wants land again in the same run (OC-018 recheck)"
     opened: 2026-10-07
     after: 24 hours of format-pairing runs from 2026-10-07 14:00Z
     not_before: 2026-10-08T14:00:00Z
@@ -1568,13 +1569,12 @@ checks:
     owner: haynesnetwork coordinator (books)
     status: pending
     check: |
-      OC-018 failed on 2026-10-07: 7 of the 24 runs from 2026-10-06 13:45Z read dropped 12 and revived 11 in total (last
-      at 06:32Z), with books-sync tombstoning nothing. Over the 24 hours to 2026-10-08 14:00Z the runs should read dropped
-      and revived 0 (Loki: sum_over_time of formatPairing_dropped and formatPairing_revived over "sync finished" lines).
-      Separately explain the earlier ones: which pairs dropped (a pair leaves books_format_pairs when matchFormatPairs
-      no longer declares it; the books_items change behind it is not logged) and which wants revived (Request Events,
-      reason pairing_want_revived: Mockingjay twice, Percy Jackson and the Olympians, Accomplice to the Villain twice,
-      The Hunger Games). A drop that no library change explains is a pairing defect: open an issue with the pair ids.
+      OC-018's earlier dropped/revived runs are explained by Kavita scan changes (issue #825) and Audiobookshelf
+      tombstones, as documented in .agents/context/2026-10-07-pairing-oc014-oc018.md. Over the 24 hours to 2026-10-08
+      14:00Z, every run with non-zero dropped or revived must follow a books-sync run with kavitaHeldRead above 0 or a
+      tombstone. The 04:32Z run may be non-zero after Kavita's nightly 04:00Z Books scan. Each revived want must read
+      landed again by the end of the same pairing run, confirmed by its ll_reconciled Request Event. A drop that no
+      library change explains is a pairing defect: open an issue with the pair ids.
     links:
       issues: [haynesnetwork#761]
 

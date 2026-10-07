@@ -147,7 +147,7 @@ dispatch** (standing rule).
 
 | 047 | Shared card system (drift-proof base card, site-wide) | ✅ **completed/ (ratified 2026-07-15)** | One base card family in code (typed slots + lint guard + card-gallery visual-regression CI) extended per media type incl. Helpdesk; refit every wall. "The code guarantees the UX doesn't drift." |
 | 048 | Activity / In-Flight (all libraries) | ✅ **completed/ (ratified 2026-07-15; Q-03 comics-gate still open)** | Library→Activity tab + wall badges; grabbing/downloading/importing/import-FAILED visibility (*arrs + LL/SAB + Kapowarr); failures = role-gated actions (Admin acts, others read-only); post-SMTP nightly admin digest backlogged. Motivated by the 42-stranded-downloads incident. |
-| 073 | A want's Request Event history on the Wanted detail (admins only, issue #792) | **PR open, owner UI review** | DESIGN-028 amendment 2026-10-07; `books.requestEvents` (admin-only) + the History card on the Wanted detail and the book detail's linked requests. After merge and the release: the plan's live check, then `completed/`. |
+| 073 | A want's Request Event history on the Wanted detail (admins only, issue #792) | **Released v0.110.0; authenticated live UI check pending** | #826, release #832, haynes-ops #3541. Read-only deployed domain/SQL, API role predicates, wording and anonymous HTTP checks passed. Successful admin HTTP and authenticated UI remain uncovered; Playwright has no session. Keep active until the plan's UI check passes, then move to `completed/`. |
 
 ### Unplanned intake (owner-gated)
 
