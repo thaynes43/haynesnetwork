@@ -1675,6 +1675,57 @@ export interface SyncCollectionWantsResult {
 }
 
 /**
+ * PLAN-060 E-1 / ADR-076 C-05 — which collection members an ACTIVE pairing want (the anchor card's coverage-badge want,
+ * ADR-075 C-05) already covers in `format`. The match is reuse-before-resolve: the llBookId when both sides hold one,
+ * else the normalized title + author agreement (the conservative pairing-matcher rule, never a fabricated link).
+ * `syncCollectionWants` skips a covered member; the wants pass asks it first with no id (title + author only) so it
+ * never spends a Google Books resolve on a member the sync will skip anyway (2026-10-07: ten such resolves an hour,
+ * reported as `resolved` while nothing kept them).
+ */
+export async function loadPairingCoverage(
+  executor: DbClient | Transaction | undefined,
+  format: 'ebook' | 'audiobook',
+): Promise<(m: Pick<CollectionWantMember, 'title' | 'author' | 'llBookId'>) => boolean> {
+  const activePairing = await resolveDb(executor as DbClient | undefined)
+    .select({
+      llBookId: bookRequests.llBookId,
+      title: bookRequests.title,
+      author: bookRequests.author,
+    })
+    .from(bookRequests)
+    .where(
+      and(
+        eq(bookRequests.origin, 'pairing'),
+        format === 'audiobook'
+          ? sql`${bookRequests.audioStatus} <> 'landed'`
+          : sql`${bookRequests.ebookStatus} <> 'landed'`,
+      ),
+    );
+  const pairingByLlBookId = new Set(
+    activePairing.map((p) => p.llBookId).filter((id): id is string => id !== null),
+  );
+  const pairingByTitle = new Map<string, string[]>();
+  for (const p of activePairing) {
+    const key = normTitle(p.title);
+    if (!key) continue;
+    const authors = pairingByTitle.get(key) ?? [];
+    authors.push(normAuthor(p.author));
+    pairingByTitle.set(key, authors);
+  }
+  const authorsAgree = (a: string, b: string): boolean =>
+    a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
+  return (m) => {
+    if (m.llBookId !== null && pairingByLlBookId.has(m.llBookId)) return true;
+    const key = normTitle(m.title);
+    if (!key) return false;
+    const authors = pairingByTitle.get(key);
+    if (!authors) return false;
+    const memberAuthor = normAuthor(m.author);
+    return authors.some((a) => authorsAgree(a, memberAuthor));
+  };
+}
+
+/**
  * Upsert one `book_requests` (origin='collection') per current MISSING member of a collection and
  * reconcile away the wants no longer missing — in ONE transaction (the derived-cache single-writer
  * discipline, the syncPlexCollections wanted-row analog). Idempotent: the upsert keys on
@@ -1700,43 +1751,7 @@ export async function syncCollectionWants(
     // superseded existing row falls out via the tail reconcile (never re-stamped this run). The
     // match is reuse-before-resolve: the llBookId when both sides hold one, else the normalized
     // title + author agreement (the conservative pairing-matcher rule — never a fabricated link).
-    const activePairing = await tx
-      .select({
-        llBookId: bookRequests.llBookId,
-        title: bookRequests.title,
-        author: bookRequests.author,
-      })
-      .from(bookRequests)
-      .where(
-        and(
-          eq(bookRequests.origin, 'pairing'),
-          input.format === 'audiobook'
-            ? sql`${bookRequests.audioStatus} <> 'landed'`
-            : sql`${bookRequests.ebookStatus} <> 'landed'`,
-        ),
-      );
-    const pairingByLlBookId = new Set(
-      activePairing.map((p) => p.llBookId).filter((id): id is string => id !== null),
-    );
-    const pairingByTitle = new Map<string, string[]>();
-    for (const p of activePairing) {
-      const key = normTitle(p.title);
-      if (!key) continue;
-      const authors = pairingByTitle.get(key) ?? [];
-      authors.push(normAuthor(p.author));
-      pairingByTitle.set(key, authors);
-    }
-    const authorsAgree = (a: string, b: string): boolean =>
-      a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
-    const pairingCovers = (m: CollectionWantMember): boolean => {
-      if (m.llBookId !== null && pairingByLlBookId.has(m.llBookId)) return true;
-      const key = normTitle(m.title);
-      if (!key) return false;
-      const authors = pairingByTitle.get(key);
-      if (!authors) return false;
-      const memberAuthor = normAuthor(m.author);
-      return authors.some((a) => authorsAgree(a, memberAuthor));
-    };
+    const pairingCovers = await loadPairingCoverage(tx, input.format);
 
     for (const m of input.members) {
       if (pairingCovers(m)) continue; // E-1 — the pairing want carries this (work, format)
