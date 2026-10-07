@@ -113,10 +113,10 @@ reports. A PR that touches a pipeline path (`scripts/e2e-gate-paths.sh`: `packag
 goodreads,books,kapowarr,downloads,libretto,db,test-utils}`, the integrations/books/book-fix tRPC routers,
 `apps/web/e2e`, the integrations UI) or is the release-please PR
 waits about 15 minutes for the Playwright suite, and a red suite blocks the merge. Every other PR passes the gate at
-once and runs no suite; label it `run-e2e` when it changes something the suite drives (a page, a router) and you want
-the advisory run before merging (ADR-102). A docs-only PR (`scripts/ci-code-paths.sh`) also skips lint, typecheck,
+once; the advisory `e2e-advisory` run (never required) covers it when it changes a code path (ADR-104), and the
+`run-e2e` label forces it on a PR with no code path (ADR-102 made it opt-in; ADR-104 reversed that). A docs-only PR (`scripts/ci-code-paths.sh`) also skips lint, typecheck,
 tests and build: they report as skipped, which branch protection accepts. Nothing runs on a push to main. To run the
-suite on main's code, label a docs-only PR `run-e2e`; its merge tree has main's code. (The bot token cannot
+suite on main's code, label a docs-only PR `run-e2e` (it forces the advisory run); its merge tree has main's code. (The bot token cannot
 dispatch workflows, `gh workflow run` gets a 403; the owner can run `gh workflow run e2e.yml --ref main`.) A red gate is a real failure until proven otherwise: read the
 failed step (`gh run view <id> --log-failed`), fix the cause, never skip or loosen the spec. Two things look like
 flakes and are not specs to retry blindly: a `The runner has received a shutdown signal` is the runner, so

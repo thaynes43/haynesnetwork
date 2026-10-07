@@ -1,12 +1,12 @@
 name: e2e
 
-# GATE for the book pipeline (issue #742, ADR-100; amends ADR-009 C-06 / ADR-010 C-07), trimmed by ADR-102.
+# GATE for the book pipeline (issue #742, ADR-100; amends ADR-009 C-06 / ADR-010 C-07), trimmed by ADR-102 and ADR-104.
 #
 # The required status-check context is `e2e-gate`. It ALWAYS reports on a pull request:
 #   - a PR that touches a pipeline path (scripts/e2e-gate-paths.sh), or is the release-please PR, runs the suite
 #     as `e2e / e2e` and `e2e-gate` mirrors it: red suite = red gate = nothing merges, nothing releases;
-#   - any other PR passes `e2e-gate` in seconds and runs no suite. The advisory run is opt-in: label the PR
-#     `run-e2e` (e2e-advisory.yml).
+#   - any other PR passes `e2e-gate` in seconds and runs no suite here. e2e-advisory.yml runs the suite as an
+#     advisory job on such a PR when it changes a code path (ADR-104), or on any PR labelled `run-e2e`.
 # A push to main runs nothing (ADR-102): branch protection is strict, so main's tree is the tree the PR tested, and
 # the release PR runs the suite on main's tree before any release. `workflow_dispatch` runs the suite on any branch.
 # Do NOT rename the `e2e-gate` job without updating branch protection (docs/ops/004-deploy-runbook.md section 6).
@@ -73,7 +73,7 @@ jobs:
                echo "Pipeline paths changed, e2e gates this PR:"
                echo "$matched" ;;
             10) echo "pipeline=false" >> "$GITHUB_OUTPUT"
-                echo "No pipeline path changed: e2e-gate passes at once (label the PR run-e2e for an advisory run)." ;;
+                echo "No pipeline path changed: e2e-gate passes at once (e2e-advisory.yml may run the advisory suite)." ;;
             *) echo "::error::scripts/e2e-gate-paths.sh exited $rc: cannot decide, so e2e-gate fails closed."; exit 1 ;;
           esac
 

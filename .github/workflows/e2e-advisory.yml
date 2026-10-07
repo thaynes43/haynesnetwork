@@ -1,9 +1,13 @@
 name: e2e-advisory
 
-# The Playwright suite as an ADVISORY run, opt-in (ADR-102): add the `run-e2e` label to a pull request that does not
-# touch the book pipeline, and the suite runs on it now and on every later push while the label stays. It never blocks
-# a merge. A pipeline PR does not need the label: e2e.yml already runs the suite there as the `e2e-gate` gate.
-# Without the label nothing here starts a runner (the job's `if:` is false), so this workflow costs no minutes.
+# The Playwright suite as an ADVISORY run (ADR-100, ADR-102, ADR-104). It never blocks a merge.
+#   - It runs on every pull request that changes a code path (scripts/ci-code-paths.sh) and no pipeline path
+#     (scripts/e2e-gate-paths.sh), on open and on every push.
+#   - The `run-e2e` label forces it on a PR with no code path (a docs-only or .agents/-only PR), for example to run the
+#     suite on main's code through that PR's merge tree. On a code PR the label is not needed.
+#   - A pipeline PR and the release-please PR never run it here: e2e.yml already runs the suite there as the
+#     `e2e-gate` gate, so a second run would only repeat it.
+# Adding some OTHER label never re-runs it.
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
@@ -12,12 +16,71 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    # Adding some OTHER label to a PR must not re-run the suite.
+    if: github.event.action != 'labeled' || github.event.label.name == 'run-e2e'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # list the PR's files
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decide whether the advisory suite runs
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
+          REPO: ${{ github.repository }}
+          LABELLED: ${{ contains(github.event.pull_request.labels.*.name, 'run-e2e') }}
+        run: |
+          set -euo pipefail
+          # The release PR and pipeline PRs run the suite as the gate in e2e.yml (same rules as its `changes` job).
+          if [[ "$HEAD_REF" == release-please--* ]]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Release PR: e2e.yml gates it, no second run."
+            exit 0
+          fi
+          if [ "${CHANGED_FILES:-0}" -ge 3000 ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "$CHANGED_FILES changed files: e2e.yml gates this PR, no second run."
+            exit 0
+          fi
+          # Renames list both names, so moving a file OUT of a path still counts.
+          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/changed.txt"
+          echo "$(wc -l < "$RUNNER_TEMP/changed.txt") changed paths"
+          # Exit 0 = matched, 10 = nothing matched; anything else is a crash, and failing this step shows red here.
+          rc=0; bash scripts/e2e-gate-paths.sh < "$RUNNER_TEMP/changed.txt" > /dev/null || rc=$?
+          case $rc in
+            0) echo "run=false" >> "$GITHUB_OUTPUT"
+               echo "Pipeline paths changed: e2e.yml gates this PR, no second run."
+               exit 0 ;;
+            10) ;;
+            *) echo "::error::scripts/e2e-gate-paths.sh exited $rc."; exit 1 ;;
+          esac
+          rc=0; bash scripts/ci-code-paths.sh < "$RUNNER_TEMP/changed.txt" > /dev/null || rc=$?
+          case $rc in
+            0) echo "run=true" >> "$GITHUB_OUTPUT"
+               echo "Code paths changed: the advisory suite runs." ;;
+            10) if [ "$LABELLED" = true ]; then
+                  echo "run=true" >> "$GITHUB_OUTPUT"
+                  echo "No code path changed, but the PR is labelled run-e2e: the advisory suite runs."
+                else
+                  echo "run=false" >> "$GITHUB_OUTPUT"
+                  echo "No code path changed: no suite (label the PR run-e2e to force one)."
+                fi ;;
+            *) echo "::error::scripts/ci-code-paths.sh exited $rc."; exit 1 ;;
+          esac
+
   e2e-advisory:
-    # Adding some OTHER label to a labelled PR must not re-run the suite.
-    if: >-
-      contains(github.event.pull_request.labels.*.name, 'run-e2e') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'run-e2e')
-    # Job-level, so a skipped run (no label, or another label added) never cancels a running suite.
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    # Job-level, so a skipped run (no suite wanted, or another label added) never cancels a running suite.
     concurrency:
       group: e2e-advisory-${{ github.event.pull_request.number }}
       cancel-in-progress: true
