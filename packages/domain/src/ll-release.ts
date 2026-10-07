@@ -41,6 +41,7 @@ import { resolveDb } from './db-client';
 import { llSnapshotUsable, type LlSnapshot, type LlSnapshotRow } from './ll-gone';
 import type { LazyLibrarianClientBundle } from './lazylibrarian-clients';
 import { llAcquiredFormats, type LlFormat } from './ll-release-record';
+import { loadRemovedPairingTransitions } from './pairing-anchor-transition';
 
 export * from './ll-release-record';
 
@@ -88,6 +89,8 @@ export async function liveLlFormatOwners(
       llBookId: bookRequests.llBookId,
       comicStatus: bookRequests.comicStatus,
       anchorKind: booksItems.mediaKind,
+      anchorId: booksItems.id,
+      anchorDeletedAt: booksItems.deletedAt,
       collectionSource: booksCollections.source,
       shelfDeletedAt: integrationShelfItems.deletedAt,
       integrationStatus: userIntegrations.status,
@@ -105,6 +108,7 @@ export async function liveLlFormatOwners(
       ),
     );
   for (const r of rows) {
+    if (r.origin === 'pairing' && (!r.anchorId || r.anchorDeletedAt !== null)) continue;
     if (r.origin === 'goodreads' && (r.shelfDeletedAt !== null || r.integrationStatus === 'unlinked')) continue;
     const formats = llAcquiredFormats(
       { origin: r.origin, comicStatus: r.comicStatus },
@@ -199,6 +203,7 @@ export async function drainLlReleases(input: {
     return done();
   }
   const owners = await liveLlFormatOwners(input.db, [...new Set(pending.map((p) => p.llBookId))]);
+  const transitionProtection = (await loadRemovedPairingTransitions(input.db)).protectedFormats;
   const drop = async (row: (typeof pending)[number]): Promise<void> => {
     // Guarded on the row being the one this drain read: a want that gave the same format up since then re-recorded it
     // (a newer `updated_at`), and that record is the next drain's to judge. Compared below the next millisecond, since
@@ -214,6 +219,9 @@ export async function drainLlReleases(input: {
       );
   };
   for (const row of pending) {
+    // A replacement still awaiting its resolved want must not lose a predecessor's queued format.
+    // Keep this release pending (rather than settle it as owned) so a later resolved successor is judged again.
+    if (transitionProtection.get(row.llBookId)?.has(row.format)) continue;
     const book = snapshot.get(row.llBookId);
     const owned = owners.get(row.llBookId)?.has(row.format) ?? false;
     let decision = decideLlRelease({ row: book, format: row.format, owned });
@@ -287,13 +295,14 @@ export async function findOrphanLlWants(input: {
   if (!llSnapshotUsable(input.snapshot)) return [];
   const snapshot = input.snapshot;
   const owners = await liveLlFormatOwners(input.db);
+  const transitionProtection = (await loadRemovedPairingTransitions(input.db)).protectedFormats;
   const orphans: OrphanLlWant[] = [];
   for (const [llBookId, row] of snapshot) {
     for (const format of ['ebook', 'audiobook'] as const) {
       const raw = format === 'ebook' ? row.ebookStatus : row.audioStatus;
       if (raw?.trim().toLowerCase() !== 'wanted') continue;
       if (llFormatAlreadyHeld(row, format)) continue;
-      if (owners.get(llBookId)?.has(format)) continue;
+      if (owners.get(llBookId)?.has(format) || transitionProtection.get(llBookId)?.has(format)) continue;
       if (input.exclude?.has(llReleaseKey(llBookId, format))) continue;
       orphans.push({
         llBookId,
@@ -320,7 +329,8 @@ export interface UnqueueOrphanReport {
   /** No longer `Wanted` (or unreadable) at the last look just before the write. */
   skipped: number;
   failed: number;
-  rows: Array<OrphanLlWant & { action: 'unqueue' | 'would_unqueue' | 'keep' | 'skip' | 'failed'; error?: string }>;
+  rows: Array<OrphanLlWant & { action: 'unqueue' | 'would_unqueue' | 'keep' | 'skip' | 'failed'; error?: string;
+    }>;
 }
 
 /**

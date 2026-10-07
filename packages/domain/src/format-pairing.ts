@@ -37,6 +37,7 @@ import {
   readLlLanguage,
 } from './book-language';
 import { inTransaction, resolveDb } from './db-client';
+import { settleRemovedPairingWants } from './pairing-anchor-transition';
 import { insertBookRequest, updateBookRequests } from './book-request-events';
 import { GB_MINUTE_TRIP_MS, guardedGbResolve, type GuardedGbResolveResult } from './gb-quota-breaker';
 import { gbBudgetCanStart, makeGbBudgetTracker, type GbBudgetTracker, type GbCallMeter } from './gb-call-budget';
@@ -206,6 +207,11 @@ function authorsAgree(a: string, b: string): boolean {
   const at = a.split(' ');
   const bt = b.split(' ');
   return at.length <= bt.length ? tokensAlign(at, bt) : tokensAlign(bt, at);
+}
+
+/** Conservative author agreement for current anchor identities and retired-want transitions. */
+export function pairingAuthorsAgree(a: string | null, b: string | null): boolean {
+  return authorsAgree(normAuthor(a), normAuthor(b));
 }
 
 /**
@@ -579,7 +585,7 @@ export async function syncFormatPairs(input: {
       if (!droppedIds.has(anchor.id)) continue; // never paired this run → not a re-vanish
       // A series holding several books (or none) cannot be wanted as one book (issue #661).
       const identity = pairingIdentity(anchor);
-      if (identity.kind === 'multi_book' || identity.kind === 'no_book') continue;
+      if (identity.kind !== 'one') continue;
       const missing = missingFormatFor(anchor.mediaKind);
       const missingStatus = missing === 'ebook' ? want.ebookStatus : want.audioStatus;
       if (missingStatus !== 'landed') continue; // still in flight / already retryable — nothing to heal
@@ -630,6 +636,7 @@ export interface MintPairingWantsInput {
   now?: Date;
   logger?: {
     info?: (msg: string, meta?: Record<string, unknown>) => void;
+    warn?: (msg: string, meta?: Record<string, unknown>) => void;
     error?: (msg: string, meta?: Record<string, unknown>) => void;
   };
   /** Politeness pacer between attempts (the goodreads-sync 250ms default). */
@@ -978,7 +985,7 @@ export function judgePairingWantBook(input: {
     const mismatch = llBookMismatch(identity, book);
     return mismatch ? { kind: 'clear', reason: mismatch } : { kind: 'keep' };
   }
-  if (!want.llBookId || llBookNamesTitle(identity.title, book)) return { kind: 'retitle' };
+  if (want.llBookId && llBookNamesTitle(identity.title, book)) return { kind: 'retitle' };
   return { kind: 'clear', reason: 'identity' };
 }
 
@@ -1956,6 +1963,10 @@ export interface FormatPairingReport
     LlGoneTally,
     LlRerequestTally,
     LlReleaseTally {
+  /** Issue #825 — historical wants settled after live successors could claim their formats. */
+  retiredAnchorsSettled: number;
+  /** Queued predecessors retained while an eligible successor still awaits its resolved want. */
+  retiredAnchorsDeferred: number;
   /** Open pairing wants whose LL statuses reconciled this run. */
   reconciled: number;
   /** Pairing wants whose raw-`Skipped` missing format was re-queued + re-searched this run. */
@@ -2236,15 +2247,24 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     );
     if (open.length > 0) {
       const anchors = await db
-        .select({ id: booksItems.id, mediaKind: booksItems.mediaKind, deletedAt: booksItems.deletedAt })
+        .select({
+          id: booksItems.id,
+          mediaKind: booksItems.mediaKind,
+          deletedAt: booksItems.deletedAt,
+          attrs: booksItems.attrs,
+        })
         .from(booksItems)
         .where(inArray(booksItems.id, [...new Set(open.map((w) => w.pairingBooksItemId!))]));
       for (const a of anchors) {
         anchorKindOf.set(a.id, a.mediaKind); // the media kind never changes, so a removed anchor still names it
-        if (a.deletedAt === null) anchorLive.add(a.id);
+        if (a.deletedAt === null && (a.mediaKind !== 'book' || readHeldBooks(a.attrs) !== undefined)) {
+          anchorLive.add(a.id);
+        }
       }
     }
     for (const want of open) {
+      // Issue #825 — a removed anchor is history, never a source of acquisition or reconciliation.
+      if (!anchorLive.has(want.pairingBooksItemId!)) continue;
       const status = seatedMap.get(want.llBookId!);
       const anchorKind = anchorKindOf.get(want.pairingBooksItemId!);
       const missing = anchorKind
@@ -2415,6 +2435,9 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
       ? await rerequestGonePairingWants({ db: input.db, ll: input.ll, snapshot: seatedMap, now, pace, log })
       : emptyLlRerequestTally();
 
+  // Issue #825 — successors mint before predecessors retire; cap/quota gaps keep their queued format protected.
+  const retired = await settleRemovedPairingWants({ db: input.db, now, log });
+
   // Issue #735 (DESIGN-036 amendment 2026-10-06) — the LazyLibrarian Releases: every format a want gave up (this run's
   // re-identify and parks included, and the goodreads-side ones since the last run) is unqueued in LazyLibrarian unless
   // a live request still asks for it. After the run's own mints and pushes, so a book a want minted this run takes is
@@ -2478,6 +2501,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     ...gone,
     ...rerequest,
     ...releases,
+    ...retired,
   };
   log.info?.('format-pairing run complete', { ...report });
   return report;

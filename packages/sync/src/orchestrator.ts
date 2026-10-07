@@ -518,6 +518,8 @@ async function loadExistingKavitaEnrichment(
     .select({
       externalId: booksItems.externalId,
       mediaKind: booksItems.mediaKind,
+      title: booksItems.title,
+      pageCount: booksItems.pageCount,
       author: booksItems.author,
       sourceUpdatedAt: booksItems.sourceUpdatedAt,
       metadataSyncedAt: booksItems.metadataSyncedAt,
@@ -540,6 +542,8 @@ async function loadExistingKavitaEnrichment(
     const language =
       ((r.attrs as Record<string, unknown> | null)?.language as string | null) ?? null;
     map.set(r.externalId, {
+      title: r.title,
+      pageCount: r.pageCount,
       sourceUpdatedAt: r.sourceUpdatedAt,
       metadataSyncedAt: authorless ? null : r.metadataSyncedAt,
       data: {
@@ -556,6 +560,10 @@ async function loadExistingKavitaEnrichment(
       },
       // Issue #661 — carry the held books forward; undefined (never read) makes the run read them once.
       heldBooks: readHeldBooks(r.attrs as Record<string, unknown> | null),
+      heldBooksSyncedAt:
+        typeof (r.attrs as Record<string, unknown> | null)?.heldBooksSyncedAt === 'string'
+          ? new Date((r.attrs as Record<string, unknown>).heldBooksSyncedAt as string)
+          : r.metadataSyncedAt,
     });
   }
   return map;
@@ -1276,6 +1284,7 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
       // re-fetched; the rest carry their last enrichment forward). ABS enrichment is inline (no read).
       const existingKavita = await loadExistingKavitaEnrichment(db);
       const snapshot = await fetchBooksSnapshot(options.books, logger, {
+        forceHeldBooksRefresh: process.env.KAVITA_FORCE_HELD_BOOKS_REFRESH === '1',
         existingKavita,
         now: options.now,
       });

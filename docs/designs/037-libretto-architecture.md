@@ -633,3 +633,16 @@ How the two queued hnet plans consume Libretto with no bespoke coupling:
    independently (its quick win is hand-curated collections; Libretto's arrivals are free) →
    PLAN-052 registry binds Kometa + Libretto behind one UI. 051 and Libretto have no
    ordering dependency on each other — that independence is the design working.
+
+## Amendment: 2026-10-07, reading lists after the EPUB series split (issue #825, ADR-105)
+
+A library EPUB belongs to its book-title Kavita series after the grouping tags are removed. Libretto continues to
+build series order from recipe members; it never relies on the stripped tags as the canonical list. Original
+series/index values remain in the converter inventory for identifying reading lists still needed.
+
+Reading-list reconciliation must compare chapter membership as well as series membership. A retained series id can
+have replaced chapters, so the same ordered series ids do not prove the reading list correct. Refresh cached chapter
+identity on scanner signals and a bounded maximum age; after the backfill, reapply existing ordered recipes and prove
+that every reading-list item names a current chapter. Adding recipes for the affected series uses settled builder
+membership/order and is library-only unless an existing acquisition policy explicitly authorizes more. A metadata
+migration does not itself authorize requests for missing series members.

@@ -91,3 +91,14 @@ holds:
       trade-off DESIGN-028 records). Checked 2026-10-07.
     opened: 2026-10-07
     links: ['#799']
+  - key: wrong_file:8kqxzgEACAAJ:ebook
+    path: EBooks/Eoin Colfer/Get What They Deserve/Eoin Colfer - Get What They Deserve.epub
+    title: The Fowl Twins Get What They Deserve (Eoin Colfer)
+    reason: >-
+      Issue #825 removes its EPUB3 series prefix The Fowl Twins (position 3), so the unchanged dc:title Get What They
+      Deserve no longer passes the census's series-decoration allowance. This is the correct third Fowl Twins novel:
+      dc:creator Eoin Colfer, EPUB ISBNs 9780008475246 and 9780008475277, and the publisher synopsis identifies that
+      novel. LazyLibrarian's ISBN 1368076912 is its US edition. Checked read-only 2026-10-07 before stripping; hold is
+      scoped to this exact path, not another copy or a general title rule.
+    opened: 2026-10-07
+    links: ['https://github.com/thaynes43/haynesnetwork/issues/825']

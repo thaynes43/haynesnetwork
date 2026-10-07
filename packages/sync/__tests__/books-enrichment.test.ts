@@ -330,7 +330,7 @@ describe('fetchBooksSnapshot — the held-books read (issue #661)', () => {
     expect(heldOf(by['103']!)).toHaveLength(1);
   });
 
-  it('a failed read carries the last value forward, or leaves the row unread (retried next run)', async () => {
+  it('a failed read of a changed series leaves its identity unread for retry', async () => {
     const carried = [{ title: 'Champion', author: 'CH', isbn: null }];
     const existing = new Map<string, ExistingKavitaEnrichment>([
       ['102', { sourceUpdatedAt: new Date('2026-07-01T00:00:00'), metadataSyncedAt: null, data: enriched }],
@@ -338,11 +338,13 @@ describe('fetchBooksSnapshot — the held-books read (issue #661)', () => {
     ]);
     const { bundle } = stubBundle(async () => meta(), async () => {
       throw new Error('kavita 500');
+    },
+    );
+    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing, metadataRefreshCap: 0,
     });
-    const snap = await fetchBooksSnapshot(bundle, undefined, { existingKavita: existing, metadataRefreshCap: 0 });
     const by = Object.fromEntries(snap.rows.map((r) => [r.externalId, r]));
     expect('heldBooks' in by['102']!.attrs).toBe(false); // unread, never an empty (= "holds nothing") list
-    expect(heldOf(by['103']!)).toEqual(carried);
+    expect('heldBooks' in by['103']!.attrs).toBe(false);
   });
 
   it('never reads a comics library (comics are never paired)', async () => {

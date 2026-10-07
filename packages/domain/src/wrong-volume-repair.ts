@@ -32,6 +32,7 @@ import type { BookRequestStatus } from '@hnet/db';
 import { parkCollectionWant } from './book-requests';
 import { llQueuedFormats, recordLlReleases } from './ll-release-record';
 import { llBookMismatch, type LlBookNaming } from './ll-book-check';
+import { settleRemovedAnchorPairingWant } from './pairing-anchor-transition';
 import {
   checkPairingWantBooks,
   missingFormatFor,
@@ -141,68 +142,6 @@ export async function reopenWrongVolumeRequest(input: {
         now,
       });
     }
-    return true;
-  });
-}
-
-/**
- * Issue #693 — settle a pairing want whose anchor LEFT the library and whose id names another book (the two Mistborn
- * sequels on "Mistborn: The Final Empire"): the id is cleared and the missing format becomes `missing` (no anchor, so
- * the library holds neither format and nothing looks for it). Guarded on the id, on the want being unparked, and on
- * the anchor still being removed. Records a `removed_anchor_settled` Request Event (ADR-101).
- */
-export async function settleRemovedAnchorPairingWant(input: {
-  db?: DbClient;
-  requestId: string;
-  llBookId: string;
-  now?: Date;
-}): Promise<boolean> {
-  const now = input.now ?? new Date();
-  return inTransaction(input.db, async (tx) => {
-    const [row] = await tx
-      .select({
-        want: bookRequests,
-        mediaKind: booksItems.mediaKind,
-        deletedAt: booksItems.deletedAt,
-      })
-      .from(bookRequests)
-      .innerJoin(booksItems, eq(booksItems.id, bookRequests.pairingBooksItemId))
-      .where(eq(bookRequests.id, input.requestId))
-      .for('update', { of: bookRequests });
-    if (
-      !row ||
-      row.deletedAt === null ||
-      row.want.origin !== 'pairing' ||
-      row.want.llBookId !== input.llBookId ||
-      row.want.unroutableReason !== null
-    ) {
-      return false;
-    }
-    const missing = missingFormatFor(row.mediaKind);
-    await updateBookRequests(
-      tx,
-      {
-        writer: 'settleRemovedAnchorPairingWant',
-        reason: 'removed_anchor_settled',
-        detail: { llBookId: input.llBookId },
-      },
-      eq(bookRequests.id, row.want.id),
-      {
-        llBookId: null,
-        ...(missing === 'ebook'
-          ? { ebookStatus: 'missing' as const }
-          : { audioStatus: 'missing' as const }),
-        updatedAt: now,
-      },
-    );
-    // Issue #735 — the id is cleared, so what LazyLibrarian was searching on the other book for it is released.
-    await recordLlReleases(tx, {
-      llBookId: input.llBookId,
-      formats: llQueuedFormats(row.want, [missing]),
-      reason: 'repaired:removed_anchor',
-      requestId: row.want.id,
-      now,
-    });
     return true;
   });
 }
