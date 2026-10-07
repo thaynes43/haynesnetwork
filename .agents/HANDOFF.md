@@ -9,7 +9,7 @@
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
 
-## ▶ 2026-10-07 (night) — Coordinator wave: Libretto guards, the Books Census, Request Events; v0.109.1 live
+## ▶ 2026-10-07 (night) — Coordinator wave: Libretto guards, the Books Census, Request Events; v0.109.3 live
 
 The coordinator session started 2026-10-06 21:23Z took the 10-06 evening block's queue. The block below is history for
 everything it lists as open; this block says what is open now.
@@ -40,9 +40,13 @@ everything it lists as open; this block says what is open now.
   or acquired (listed under `unnumbered[]`), real reads included. The app withdrew all 19 such wants on its own syncs. The
   Outlandish Companion audiobook is still Wanted: that is format pairing (the ebook is held), outside the ruling.
 
-**In flight at the time of writing (check the PRs before redoing):**
-- #799, the census misses a wrong file whose title the record's title contains (Catwings 1 in Catwings 3's record); plus
-  removing stale Audiobookshelf entries one at a time (API delete without `hard`), never the library-wide bulk remove.
+- **#799 closed** (v0.109.2 + v0.109.3, haynes-ops #3496/#3498; DESIGN-028 amended; notes in
+  `.agents/context/2026-10-07-census-cut-title-799.md`): the census's Held File Check now catches a file whose title is the
+  record's title with words cut, unless each cut is a subtitle, packaging, an "and Other Stories" tail or a backed series
+  name. Its five new findings were repaired (`fix_census_799.py`): two re-pointed, one audiobook re-wanted (OC-038), two
+  omnibus records nobody asks for set to Skipped (the Catwings precedent), plus a Census Hold for "A Crash of Fate".
+- **Audiobookshelf:** all 17 missing items removed one at a time (`DELETE /api/items/<id>` without `hard`; none had
+  progress). Census after: 0 unheld findings; Audiobookshelf: 0 missing items.
 
 **Open:** #792 (a Request Event history view on the Wanted detail; a feature, not started). #733 parked, #674 benched
 (unchanged). Owed checks: `.agents/owed-checks.yaml` is the only list (every pending row, with its due time); the
