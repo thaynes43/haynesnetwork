@@ -16,7 +16,8 @@
   acquisition never queues a book in a language not acquired (English here) or a format LazyLibrarian already holds.
   **AMENDED 2026-10-07 (issue #794; thaynes43/libretto#30, owner ruling "Member, never fetched"):** D-05's
   `hardcover_series` lists leave out unmerged duplicates and other-language books, and their other unnumbered books stay
-  collection members but are never reported missing or acquired.
+  collection members but are never reported missing or acquired. **AMENDED 2026-10-07 (thaynes43/libretto#34; owner
+  ruling "TTL = 24 hours"):** D-09's resolve broker remembers an honest Google Books `no_match` for 24 hours.
 - **Satisfies:** the PLAN-043 saga phase "Books collection-manager app" (owner rulings
   2026-07-16, recorded in `.agents/plans/043-integration-tab-saga.md` and restated in
   PLAN-054); governed by **ADR-064** (mirrored-only doctrine — external software is always the
@@ -447,6 +448,29 @@ checks now gate every acquisition write:
   guard (`llFormatAlreadyHeld`). A held format is never queued.
 
 Libretto PR https://github.com/thaynes43/libretto/pull/27.
+
+**AMENDED 2026-10-07 (https://github.com/thaynes43/libretto/issues/34, the no_match cache; owner ruling "TTL = 24
+hours").** The hourly collection-wants pass calls `POST /api/resolve` for every missing member that has no LazyLibrarian id.
+A member Google Books does not hold at all (Compulsory, The Infinite Extent and four more on 2026-10-07) came back
+`no_match` every hour, at three or four Google Books requests each, about 500 a day against the shared 1,000-a-day
+quota; the quota ran out at 13:45Z, before two resolvable wants were reached. The resolve broker now keeps an in-process
+**no_match cache**:
+
+- **What is remembered:** only an honest `no_match` (Google Books answered, nothing passed the guards), keyed by the want's
+  ISBN, title and author, folded for case, diacritics and punctuation (text in brackets is kept, so "[09]" and "[10]" are
+  different wants). A repeat inside the TTL answers `no_match` with no Google Books request.
+- **TTL: 24 hours** (owner ruling 2026-10-07), set by `LIBRETTO_RESOLVE_NO_MATCH_TTL_MS` (`0` turns the cache off). Google
+  Books' field search was degraded the same day, which is why the TTL was a decision; the keyword leg (libretto#33) makes
+  a false miss less likely. The cost of a long TTL is that a book Google Books starts to hold is found up to a day late.
+- **Never remembered:** `quota_exhausted`, `upstream_error`, `wrong_language`, a resolved volume, and a miss that followed
+  a transient failure of the ISBN leg (the ISBN leg never answered, so the miss is not honest). The caller still reads
+  `resolved: null` for all of them; the `reason` is unchanged.
+- **Lifetime and size:** in the process only, so a restart clears it (a deploy or pod roll re-asks every miss once).
+  Expired entries are pruned on every write and the map is capped at 5,000 entries.
+- **Observable:** each answer served from the cache logs `resolve broker: no_match answered from cache` with a running
+  `cacheHits` count; the Google Books request count falls by the same amount.
+
+Libretto PR https://github.com/thaynes43/libretto/pull/35.
 
 ### D-10 — API surface: the five contract nouns as REST
 
