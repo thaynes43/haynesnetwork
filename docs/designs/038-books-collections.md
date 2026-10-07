@@ -582,3 +582,17 @@ want (`force_search_reopened`). A collection that leaves its server records `col
 cascades away (`syncBooksCollections`, before its delete). A dropped want's events outlive its row (no foreign key).
 The on-demand collection Force Search records `actor: 'user'` with the caller's id. Nothing the wants pass decides
 changes. The full rules, reason table and queries: DESIGN-028, amendment 2026-10-06 (Request Events).
+
+## Amendment — 2026-10-07: the wants pass never resolves a member a pairing want covers, and counts its misses
+
+The pass logged `resolved` 9 to 12 every hour while no want gained an id (issue #771, owed check OC-024). Those
+resolves were members an active pairing want covers by title and author: `syncCollectionWants` skips such a member
+(PLAN-060 E-1) whatever it resolves to, so each was a Google Books call nothing kept. The members that did stay
+without an id were Google Books misses: its field search (`isbn:`, `intitle:`, `inauthor:`) answered no results for
+books its plain search found, which Libretto now covers with a keyword leg (thaynes43/libretto#33).
+
+- `loadPairingCoverage(db, format)` is the E-1 coverage check, shared by `syncCollectionWants` (in its transaction,
+  id or title + author) and the wants pass (before the resolve, title + author only, read once per format per pass).
+- `resolveMissingMembers` takes the check as an optional fifth argument; a covered member is not resolved and counts
+  `covered`. A resolve that names no volume counts `unresolved`.
+- `collection-wants complete` logs `covered` and `unresolved` beside `resolved`, `reused` and `parked`.
