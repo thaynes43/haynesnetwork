@@ -48,6 +48,14 @@ everything it lists as open; this block says what is open now.
 - **Audiobookshelf:** all 17 missing items removed one at a time (`DELETE /api/items/<id>` without `hard`; none had
   progress). Census after: 0 unheld findings; Audiobookshelf: 0 missing items.
 
+- **CI minutes cut (ADR-102, #811, #813, #814).** The owner's 3,000 included Actions minutes ran out on 2026-10-07 (public
+  repo minutes count against the pool on his account; haynesnetwork measured 11,751 min Oct 1-7). Now: a docs-only PR skips
+  lint/typecheck/test/build/image (required checks report skipped, which passes); a push to main runs only release-please, plus
+  `warm-pnpm-cache` when `pnpm-lock.yaml` changes and `owed-checks.yml` when `.agents/owed-checks.yaml` changes; the advisory e2e is opt-in with the `run-e2e` label; `build-image` only when an image input changes;
+  release-please ignores `.agents/`/`docs/`-only commits. The release PR and `e2e-gate` pipeline PRs still run the full suite.
+  The suite's own speed is #812 (needs a design decision). Private repos get self-hosted ARC runners in the cluster, owner
+  ruling 2026-10-07, handed to a Codex session in haynes-ops (worktree `agent/arc-runners`); not this session's work.
+
 **Open:** #792 (a Request Event history view on the Wanted detail; a feature, not started). #733 parked, #674 benched
 (unchanged). Owed checks: `.agents/owed-checks.yaml` is the only list (every pending row, with its due time); the
 next due are the 2026-10-07 morning and 18:00Z rows.
