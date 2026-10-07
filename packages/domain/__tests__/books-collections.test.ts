@@ -5,7 +5,7 @@
 // syncBooks writer (never a direct insert).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, asc, eq } from 'drizzle-orm';
-import { bookRequests, booksCollections, booksCollectionMembers } from '@hnet/db';
+import { bookRequests, booksCollections, booksCollectionMembers, booksItems } from '@hnet/db';
 import type { BooksSource, Database } from '@hnet/db';
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import {
@@ -581,6 +581,67 @@ describe('collection wants (DESIGN-038 D-13 — Wanted tiles from Libretto missi
       const rows = await wantRows(id);
       expect(rows).toHaveLength(1);
       expect(rows[0]?.llBookId).toBe('gbResolved');
+    });
+
+    // 2026-10-07 (#771 follow-up): the pass logged `resolved` 9 to 12 an hour while no want gained an id. Those
+    // resolves were members an active pairing want covers, which syncCollectionWants skips whatever they resolve to;
+    // the members that stayed without an id were Google Books misses, and the log could not say so.
+    it('never resolves a member a pairing want covers, and counts what stays unresolved', async () => {
+      const id = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'r1' });
+      const [anchor] = await t.db
+        .select({ id: booksItems.id })
+        .from(booksItems)
+        .where(eq(booksItems.externalId, 'abs-1'));
+      await t.db.insert(bookRequests).values({
+        origin: 'pairing',
+        pairingBooksItemId: anchor!.id,
+        title: 'Listen One',
+        author: 'Walter Mosley',
+        ebookStatus: 'requested',
+        audioStatus: 'landed',
+      });
+      const resolveCalls: string[] = [];
+      const libretto = stubLibretto({
+        listMissingMembers: async () => ({
+          missing: [
+            {
+              title: 'Listen One',
+              authors: ['Walter Mosley'],
+              isbn: '9780000000001',
+              identifiers: [],
+            },
+            {
+              title: 'Gray Dawn',
+              authors: ['Walter Mosley'],
+              isbn: '9780316573238',
+              identifiers: [],
+            },
+            {
+              title: 'Compulsory',
+              authors: ['Martha Wells'],
+              isbn: '9781645241720',
+              identifiers: [],
+            },
+          ],
+        }),
+        resolve: async (req: { title?: string }) => {
+          resolveCalls.push(req.title ?? '');
+          return req.title === 'Gray Dawn' ? { volumeId: 'gb-gray-dawn' } : null;
+        },
+      });
+      const report = await runCollectionWantsSync({ db: t.db, libretto });
+      expect(resolveCalls).toEqual(['Gray Dawn', 'Compulsory']);
+      expect(report).toMatchObject({ covered: 1, resolved: 1, unresolved: 1, minted: 2 });
+      const rows = await wantRows(id);
+      expect(rows.map((r) => [r.memberRef, r.llBookId]).sort()).toEqual([
+        ['isbn:9780316573238', 'gb-gray-dawn'],
+        ['isbn:9781645241720', null],
+      ]);
+      // The next pass reuses the id it kept and resolves only the miss again.
+      resolveCalls.length = 0;
+      const again = await runCollectionWantsSync({ db: t.db, libretto });
+      expect(resolveCalls).toEqual(['Compulsory']);
+      expect(again).toMatchObject({ covered: 1, reused: 1, resolved: 0, unresolved: 1 });
     });
 
     it('skips ONLY the failing collection on a per-collection read error', async () => {

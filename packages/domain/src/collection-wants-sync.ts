@@ -20,7 +20,12 @@ import {
   type LibrettoMissingResponse,
 } from '@hnet/libretto';
 import { resolveDb } from './db-client';
-import { normTitle, syncCollectionWants, type CollectionWantMember } from './book-requests';
+import {
+  loadPairingCoverage,
+  normTitle,
+  syncCollectionWants,
+  type CollectionWantMember,
+} from './book-requests';
 
 /**
  * The Libretto read surface this pass needs (stubbed in tests — a structural subset of LibrettoReadClient).
@@ -68,6 +73,14 @@ export interface CollectionWantsSyncReport {
    * back. The want stays a visible, unsearchable tile.
    */
   parked: number;
+  /**
+   * Missing members an active pairing want covers by title + author (`loadPairingCoverage`): not resolved, because
+   * syncCollectionWants skips them whatever they resolve to. Before 2026-10-07 they were resolved every pass and
+   * counted in `resolved`, which made ten resolves an hour look like ids that never stuck.
+   */
+  covered: number;
+  /** Missing members the resolve left without an id this run (Google Books has no match, or the broker failed). */
+  unresolved: number;
   /** True when Libretto was unreachable — the whole pass was skipped (nothing reconciled). */
   unreachable: boolean;
 }
@@ -213,11 +226,21 @@ export async function resolveMissingMembers(
   }>,
   resolvedRefs?: ReadonlyMap<string, string>,
   parkedRefs?: ReadonlySet<string>,
-): Promise<{ members: CollectionWantMember[]; resolved: number; reused: number; parked: number }> {
+  pairingCovers?: (m: Pick<CollectionWantMember, 'title' | 'author' | 'llBookId'>) => boolean,
+): Promise<{
+  members: CollectionWantMember[];
+  resolved: number;
+  reused: number;
+  parked: number;
+  covered: number;
+  unresolved: number;
+}> {
   const members: CollectionWantMember[] = [];
   let resolved = 0;
   let reused = 0;
   let parked = 0;
+  let covered = 0;
+  let unresolved = 0;
   for (const raw of missing) {
     const ref = collectionMemberRef(raw);
     if (!ref) continue; // unkeyable — cannot mint an idempotent want
@@ -241,6 +264,14 @@ export async function resolveMissingMembers(
       continue;
     }
 
+    // A member an active pairing want covers by title + author is skipped by syncCollectionWants whatever it resolves
+    // to, so its resolve would be a Google Books call nothing keeps (`loadPairingCoverage`).
+    if (pairingCovers?.({ title, author, llBookId: null })) {
+      covered += 1;
+      members.push({ memberRef: ref, title, author, llBookId: null });
+      continue;
+    }
+
     // Opportunistic force-search resolution (best-effort — a null keeps the tile visible, not searchable).
     let llBookId: string | null = null;
     try {
@@ -250,14 +281,15 @@ export async function resolveMissingMembers(
         ...(author ? { author } : {}),
       });
       llBookId = hit?.volumeId ?? null;
-      if (llBookId) resolved += 1;
     } catch {
       llBookId = null; // resolve broker unavailable/no-match — the tile still renders
     }
+    if (llBookId) resolved += 1;
+    else unresolved += 1;
 
     members.push({ memberRef: ref, title, author, llBookId });
   }
-  return { members, resolved, reused, parked };
+  return { members, resolved, reused, parked, covered, unresolved };
 }
 
 /**
@@ -279,6 +311,8 @@ export async function runCollectionWantsSync(
     resolved: 0,
     reused: 0,
     parked: 0,
+    covered: 0,
+    unresolved: 0,
     unreachable: false,
   };
 
@@ -298,6 +332,11 @@ export async function runCollectionWantsSync(
   // Issue #759 — a Kavita + Audiobookshelf recipe backs TWO mirror collections; one read per recipe per run serves
   // both (each takes its own target's entry), so the second collection costs no second library listing.
   const reads = new Map<string, Promise<LibrettoMissingResponse>>();
+  // The pairing wants' coverage per format, read once per pass (the sync re-reads it in its own transaction).
+  const pairingCoverage = new Map<
+    'ebook' | 'audiobook',
+    Awaited<ReturnType<typeof loadPairingCoverage>>
+  >();
 
   for (const collection of collections) {
     const recipeId = collection.recipeId;
@@ -351,20 +390,29 @@ export async function runCollectionWantsSync(
     // still-NULL members of late-iteration collections (The Expanse), so those never resolve.
     const resolvedRefs = await loadResolvedWantRefs(input.db, collection.id);
     const parkedRefs = await loadParkedWantRefs(input.db, collection.id);
-    const { members, resolved, reused, parked } = await resolveMissingMembers(
+    const format = formatForSource(collection.source);
+    let coverage = pairingCoverage.get(format);
+    if (!coverage) {
+      coverage = await loadPairingCoverage(input.db, format);
+      pairingCoverage.set(format, coverage);
+    }
+    const { members, resolved, reused, parked, covered, unresolved } = await resolveMissingMembers(
       input.libretto,
       selected.missing,
       resolvedRefs,
       parkedRefs,
+      coverage,
     );
     report.resolved += resolved;
     report.reused += reused;
     report.parked += parked;
+    report.covered += covered;
+    report.unresolved += unresolved;
 
     const result = await syncCollectionWants({
       db: input.db,
       collectionId: collection.id,
-      format: formatForSource(collection.source),
+      format,
       members,
       now,
     });
@@ -382,6 +430,8 @@ export async function runCollectionWantsSync(
     resolved: report.resolved,
     reused: report.reused,
     parked: report.parked,
+    covered: report.covered,
+    unresolved: report.unresolved,
     unreachable: report.unreachable,
   });
   return report;
