@@ -114,6 +114,12 @@ describe('heldFileNamesBook: the first live pass', () => {
       heldFileNamesBook(
         'The Sea of Monsters',
         book('Percy Jackson and the Sea of Monsters', 'Rick Riordan'),
+        {
+          authorTitles: [
+            'Percy Jackson and the Sea of Monsters',
+            'Percy Jackson and the Olympians',
+          ],
+        },
       ),
     ).toBe(true);
     expect(heldFileNamesBook('Lowball', book('Wild Cards. Lowball', 'George R.R. Martin'))).toBe(
@@ -350,6 +356,230 @@ describe('heldFileNamesBook: the right files stay quiet', () => {
     expect(heldFileNamesBook(null, howey('Shift'))).toBeNull();
     expect(heldFileNamesBook('1984', { title: '1984', author: 'George Orwell' })).toBeNull();
     expect(judgeableTitle('Untitled')).toBe(false);
+  });
+});
+
+// Issue #799: a file whose title is the record's with words cut. The Volume Check read either way round passed any
+// such file, so Catwings (book 1) held as "Wonderful Alexander and the Catwings" (book 3) logged nothing. Author titles
+// are LazyLibrarian's own for that author (2026-10-07 snapshot).
+describe('heldFileNamesBook: a cut title (issue #799)', () => {
+  const book = (title: string, author: string) => ({ title, subtitle: null, author });
+  const leGuin = ['Wonderful Alexander and the Catwings', 'Worlds of Exile and Illusion', 'Tehanu'];
+  const herbert = [
+    'Dune (Movie Tie-In)',
+    'Dune. Deluxe Hardcover Edition',
+    'Dune Messiah',
+    'Children of Dune',
+  ];
+  const martin = ['Wild Cards. Lowball', 'Wild Cards. Fort Freak', 'Wild Cards. High Stakes'];
+  const roth4 = ['Four. The Traitor', 'Four. The Son', 'Four. The Transfer', 'Divergent'];
+  const riordan = [
+    'Percy Jackson and the Sea of Monsters',
+    'Percy Jackson and the Olympians. The Lightning Thief Illustrated Edition',
+  ];
+  const colfer = ['Artemis Fowl (Mass market edition)', 'Artemis Fowl and the Eternity Code'];
+  const pullman = [
+    'His Dark Materials. The Golden Compass (Book 1)',
+    'The Golden Compass Graphic Novel, Volume 1',
+    'The Subtle Knife',
+  ];
+  it('flags an earlier book or the series name cut out of a longer title', () => {
+    expect(
+      heldFileNamesBook(
+        'Catwings',
+        book('Wonderful Alexander and the Catwings', 'Ursula K. Le Guin'),
+        { authorTitles: leGuin },
+      ),
+    ).toBe(false);
+    expect(
+      heldFileNamesBook('Dune', book('Dune Messiah', 'Frank Herbert'), { authorTitles: herbert }),
+    ).toBe(false);
+    expect(
+      heldFileNamesBook('Dune', book('Children of Dune', 'Frank Herbert'), {
+        authorTitles: herbert,
+      }),
+    ).toBe(false);
+    expect(
+      heldFileNamesBook('Wild Cards', book('Wild Cards. Lowball', 'George R.R. Martin'), {
+        authorTitles: martin,
+      }),
+    ).toBe(false);
+    expect(
+      heldFileNamesBook('Four', book('Four. The Traitor', 'Veronica Roth'), {
+        authorTitles: roth4,
+      }),
+    ).toBe(false);
+    expect(
+      heldFileNamesBook(
+        'Mistborn',
+        book('Mistborn: The Final Empire (Mistborn #1)', 'Brandon Sanderson'),
+      ),
+    ).toBe(false);
+  });
+  it('flags one book of a record that names two', () => {
+    expect(
+      heldFileNamesBook(
+        'A Secret Rage',
+        book('A Secret Rage and Sweet and Deadly', 'Charlaine Harris'),
+      ),
+    ).toBe(false);
+    expect(
+      heldFileNamesBook(
+        'Code to Zero',
+        book('Code to Zero [and] The Man from St Petersburg', 'Ken Follett'),
+      ),
+    ).toBe(false);
+    expect(heldFileNamesBook('Disciple', book('Merge / Disciple', 'Walter Mosley'))).toBe(false);
+    expect(
+      heldFileNamesBook(
+        "1-The Hitchhiker's Guide To The Galaxy",
+        book("The Ultimate Hitchhiker's Guide to the Galaxy", 'Douglas Adams'),
+      ),
+    ).toBe(false);
+  });
+  it('a subtitle, an edition note or a collection tail cut off the end', () => {
+    expect(
+      heldFileNamesBook('Dune', book('Dune. Deluxe Hardcover Edition', 'Frank Herbert'), {
+        authorTitles: herbert,
+      }),
+    ).toBe(true);
+    expect(heldFileNamesBook('Dune', book('Dune: Deluxe Edition', 'Frank Herbert'))).toBe(true);
+    expect(heldFileNamesBook('Picasso', book('Picasso: A Biography', "Patrick O'Brian"))).toBe(
+      true,
+    );
+    expect(
+      heldFileNamesBook(
+        'A Plague of Zombies',
+        book('A Plague of Zombies. An Outlander Novella', 'Diana Gabaldon'),
+      ),
+    ).toBe(true);
+    expect(heldFileNamesBook('Just Like Heaven', book('Just Like Heaven LP', 'Julia Quinn'))).toBe(
+      true,
+    );
+    expect(
+      heldFileNamesBook(
+        'Harry Potter and the Prisoner of Azkaban',
+        book('Harry Potter and the Prisoner of Azkaban - Hufflepuff Edition', 'J.K. Rowling'),
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook(
+        'The Martian Way',
+        book('The Martian Way and Other Stories', 'Isaac Asimov'),
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook(
+        'The Curious Case of Benjamin Button',
+        book(
+          'The Curious Case of Benjamin Button and Other Tales of the Jazz Age',
+          'F. Scott Fitzgerald',
+        ),
+      ),
+    ).toBe(true);
+  });
+  it('a series or character name cut off the front', () => {
+    expect(
+      heldFileNamesBook(
+        'The Golden Compass',
+        book('His Dark Materials. The Golden Compass (Book 1)', 'Philip Pullman'),
+        { authorTitles: pullman },
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook(
+        'A Crash of Fate',
+        book("Star Wars. Galaxy's Edge A Crash of Fate", 'Zoraida Córdova'),
+        { authorTitles: ["Star Wars. Galaxy's Edge Black Spire"] },
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook(
+        'Turn of the Cards',
+        book('Wild Cards XII. Turn of the Cards', 'George R.R. Martin'),
+        { authorTitles: martin },
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook(
+        'The Eternity Code',
+        book('Artemis Fowl and the Eternity Code', 'Eoin Colfer'),
+        { authorTitles: colfer },
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook(
+        'The Sea of Monsters',
+        book('Percy Jackson and the Sea of Monsters', 'Rick Riordan'),
+        { authorTitles: riordan },
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook(
+        'Get What They Deserve',
+        book('The Fowl Twins Get What They Deserve', 'Eoin Colfer'),
+        { series: 'The Fowl Twins' },
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook(
+        'Arch-Conspirator',
+        book('Sneak Peek for Arch-Conspirator', 'Veronica Roth'),
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook(
+        'Where the Crawdads Sing',
+        book('ILL/ Where the Crawdads Sing', 'Delia Owens'),
+      ),
+    ).toBe(true);
+  });
+  it('without other titles of the author, a cut front is not a series name', () => {
+    expect(
+      heldFileNamesBook(
+        'The Sea of Monsters',
+        book('Percy Jackson and the Sea of Monsters', 'Rick Riordan'),
+      ),
+    ).toBe(false);
+  });
+  it('one other title that extends the file’s is not a series, nor is a twin record', () => {
+    expect(
+      heldFileNamesBook(
+        'The World of Divergent',
+        book('The World of Divergent. The Path to Allegiant', 'Veronica Roth'),
+        { authorTitles: ['The World of Divergent. The Path to Allegiant', 'Divergent'] },
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook('Theodore Boone', book('Theodore Boone. Kid Lawyer', 'John Grisham'), {
+        authorTitles: ['Theodore Boone', 'Theodore Boone. Kid Lawyer'],
+      }),
+    ).toBe(true);
+  });
+  it('a series in front does not vouch for what is cut from the kept part (review of #805)', () => {
+    expect(
+      heldFileNamesBook('Dune', book('Dune Chronicles. God Emperor of Dune', 'Frank Herbert')),
+    ).toBe(false);
+    expect(
+      heldFileNamesBook(
+        'Catwings',
+        book('Catwings Tales. Wonderful Alexander and the Catwings', 'Ursula K. Le Guin'),
+      ),
+    ).toBe(false);
+    expect(
+      heldFileNamesBook(
+        'A Crash of Fate',
+        book("Star Wars. Galaxy's Edge A Crash of Fate", 'Zoraida Córdova'),
+      ),
+    ).toBe(false);
+  });
+  it('a prologue cut off the front is still a separate work', () => {
+    expect(
+      heldFileNamesBook(
+        'Towers of Midnight',
+        book('Distinctions. Prologue to Towers of Midnight', 'Robert Jordan'),
+      ),
+    ).toBe(false);
   });
 });
 

@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-06 (amendment: the collection force-search and the one re-request read the language again after their own addBook, issue #794). Prior: 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-07 (Books Census follow-up: a file whose title is the record's with words cut, issue #799). Prior: 2026-10-06 (amendment: the collection force-search and the one re-request read the language again after their own addBook, issue #794). Prior: 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -1436,6 +1436,74 @@ readers on EPUB, MOBI, ID3 v2.3 and v2.4 and MP4 files built byte by byte, a mis
 language guess; every kind of finding on the live shapes; holds by key, file and day, and unused holds; a whole pass over a
 real SQLite file and real files, an unreadable holds file, and the app reads on the embedded Postgres 16 through a
 read-only session).
+
+### Follow-up — 2026-10-07: a file whose title is the record's with words cut (issue #799)
+
+**What was seen.** Repairing #795 found LazyLibrarian `QGPZEAAAQBAJ` "Wonderful Alexander and the Catwings" (Catwings 3)
+holding Catwings, book 1 (OPF `dc:title` "Catwings", no series, ASIN B00MEWSDOW). The census logged nothing. Rule 3 above
+reads the Volume Check either way round, and with the file as the want, "Catwings" is covered by the record's title, so
+the file passed. The same rule would pass "Dune" held as "Dune Messiah", "Wild Cards" held as "Wild Cards. Lowball", and
+"A Secret Rage" held as the two-novel "A Secret Rage and Sweet and Deadly".
+
+**The rule (`cutTitleNamesBook`, applied before rule 3).** It applies when every word of the file's title (its
+decoration cut, packaging words aside) is a word of the record's `BookName` and the record has words the file lacks: the
+file's title is the record's with words cut. Otherwise rules 3 and 4 decide as before, so a file whose title adds words
+(an omnibus held as one of its books, "Shift Omnibus Edition" for "Shift") is judged as it was. The record's subtitle is
+not part of the comparison: a file that drops it is caught first by the exact-title check. The kept words are the
+shortest stretch of the record's title that holds every word of the file's ("Wild Cards XII. Turn of the Cards" keeps
+"Turn of the Cards", not "Cards XII. Turn"). The file is the record's book only when every cut says nothing about which
+book it is:
+
+| Cut | Passes when | Passes | Fails |
+|---|---|---|---|
+| after the kept words | it is whole parts (a subtitle or edition part after a part break), packaging ("LP", "Hardcover", "Hufflepuff Edition"), or a collection's tail ("and Other ...") | "Dune" for "Dune: Deluxe Edition"; "A Plague of Zombies" for "A Plague of Zombies. An Outlander Novella"; "The Martian Way" for "The Martian Way and Other Stories" | "Dune" for "Dune Messiah"; "A Secret Rage" for "A Secret Rage and Sweet and Deadly"; "Code to Zero" for "Code to Zero [and] The Man from St Petersburg" |
+| before the kept words | it is whole earlier parts (a series in front); whatever it cuts from the kept words' own part is packaging ("Sneak Peek for", "ILL/"), the file's declared series, the record's own decoration, or words another LazyLibrarian title of the author starts with | "The Golden Compass" for "His Dark Materials. The Golden Compass (Book 1)"; "The Sea of Monsters" for "Percy Jackson and the Sea of Monsters" beside "Percy Jackson and the Olympians. ..." | "Catwings" for "Wonderful Alexander and the Catwings" (no other Le Guin title starts "Wonderful Alexander"); "Dune" for "Children of Dune" and for "Dune Chronicles. God Emperor of Dune"; "Disciple" for "Merge / Disciple" |
+| between the kept words | it is packaging | | |
+
+Two guards then apply. A cut in front that names a separate work fails, as rule 3 already said ("Towers of Midnight" is not
+"Distinctions. Prologue to Towers of Midnight"). And a file whose kept words are only a series name fails unless all the
+record adds is packaging: the file's declared series, the record's decoration, or words at least two other titles of the
+author start with and go on past ("Wild Cards" for "Wild Cards. Lowball", "Four" for "Four. The Traitor", "Mistborn" for
+"Mistborn: The Final Empire (Mistborn #1)"; "Dune" for "Dune. Deluxe Hardcover Edition" passes). One other title that goes
+on past the file's words is not enough: it can be another edition of the same book ("The Golden Compass Graphic Novel,
+Volume 1"), and a twin record titled exactly like the file is not a series either ("Theodore Boone" beside "Theodore
+Boone. Kid Lawyer").
+
+A series in front never vouches for words cut from the kept part (the code review of #805 traced "Dune" passing for "Dune
+Chronicles. God Emperor of Dune" before this was added). The trade-off: a record that puts a series and a sub-series in
+front, with no other title of the author to vouch for the sub-series, is flagged although its file is the book ("A Crash of
+Fate" for "Star Wars. Galaxy's Edge A Crash of Fate"). The one such record in the library carries a Census Hold. A missed
+wrong file stays unseen, while a false flag is read once and held, so the rule takes the false flag.
+
+Why the author's titles. LazyLibrarian has no series data here (its `series` and `member` tables are empty, 2026-10-07),
+and the file rarely declares one (Catwings does not). The two titles alone cannot tell "Percy Jackson and the Sea of
+Monsters" held as "The Sea of Monsters" from "Wonderful Alexander and the Catwings" held as "Catwings": both cut a name and
+"and the" off the front. What separates them is that "Percy Jackson" starts other titles of the author and "Wonderful
+Alexander" does not. The census passes every `BookName` LazyLibrarian holds for the record's author
+(`HeldFileCheckOptions.authorTitles`). ISBN and ASIN were considered and not used: the file's identifiers are often an
+ASIN or another edition's ISBN, so a mismatch says nothing, and Catwings carries only an ASIN.
+
+**Trial pass, before release.** A one-off Job from the v0.109.1 image (the CronJob's mounts and read-only sources)
+dumped the LazyLibrarian rows and every held file's metadata, 2026-10-07 01:30Z: 1,315 records, 1,547 files. The branch's
+census ran over that snapshot. Before the change it found 0 unheld wrong files (6 held).
+
+| Pass | wrong_file (unheld) | What changed |
+|---|---|---|
+| 1 | 35 | first rule: the record's subtitle took part (its words matched the file's by chance), and one other title going on past the file's words counted as a series |
+| 2 | 7 | `BookName` only; two other titles for a series name |
+| 3 | 5 | the shortest kept stretch (a repeated word); "ILL/" is packaging |
+| 4 | 6, one held | the code review's fix: a series in front does not vouch for words cut from the kept part; "Star Wars. Galaxy's Edge A Crash of Fate" is flagged and held (Census Hold) |
+
+Five are the new shape, one book held for a record that names more: "Merge / Disciple" (eBook "Disciple"), "Code to Zero
+[and] The Man from St Petersburg" (eBook "Code to Zero"), "A Secret Rage and Sweet and Deadly" (eBook and audiobook "A
+Secret Rage"), and "The Ultimate Hitchhiker's Guide to the Galaxy" (audiobook "1-The Hitchhiker's Guide To The Galaxy").
+No Catwings-shaped file is left: #795 repaired the one known.
+
+**Tests:** `held-file-check.test.ts` "a cut title (issue #799)" (an earlier book or the series name cut from a longer
+title; one book of a record that names two; a subtitle, edition note or collection tail cut off the end; a series or
+character name cut off the front, with and without the author's titles; one extending title and a twin record are not a
+series; a series in front does not vouch for the kept part; a prologue in front), `books-census.test.ts` (the census passes the author's titles: Catwings is found, The Sea of
+Monsters is not).
 
 ## Amendment — 2026-10-06 (language after the seat): the collection force-search and the one re-request read the language again after their own addBook (issue #794)
 
