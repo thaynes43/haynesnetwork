@@ -846,6 +846,7 @@ checks:
     evidence:
       - "2026-10-06 17:27Z: collections sync logged releasedWrongAuthor 13 (13 collection_want_wrong_author_released lines), 13 releases recorded (released:wrong_author), no error lines."
       - "2026-10-07 11:50Z FAILED (not met four passes after the 07:00Z quota reset): Gray Dawn 05bc296f/bc5918a3 and Shift caf0d2a7 (and the other 10 of the 13) still hold ll_book_id NULL and last_searched_at NULL, wrong_author_ll_book_id set; LazyLibrarian has no Walter Mosley Gray Dawn row wanted in both formats. The hourly collection-wants passes (07:29Z, 08:27Z, 09:27Z, 10:28Z, 11:27Z) all logged unreachable:false and resolved 9 to 12 each, yet no want gained an id. None took back its old book (that part passes). Follow-up: #771, coordinator to find why the resolve does not stick."
+      - "2026-10-07 14:20Z ROOT CAUSE, not a lost write: no Request Event changed a collection want's ll_book_id after 07:27Z and minted/removed stayed 0, so the hourly `resolved` 9 to 12 were members an active pairing want covers, which syncCollectionWants skips whatever they resolve to (the same counts show on 2026-10-06 12:28Z, before #793). The released wants resolved to nothing because Google Books' field search (isbn:, intitle:, inauthor:) answered 200 totalItems:0 for books its plain search finds, so Libretto said no_match for Gray Dawn and Shift. Fixed: Libretto sha-71de8f2 (thaynes43/libretto#33, a guarded keyword leg; haynes-ops #3514) and haynesnetwork v0.109.4 (#819: covered members are not resolved, the pass logs covered and unresolved; haynes-ops #3515). One-off pass 13:45Z (haynesnetwork-sync-books-collections-oc024-1791380549): Gray Dawn ebook 05bc296f took 3bfm0QEACAAJ (Walter Mosley; it gave up vkDiAAAAMAAJ) and was searched (last_searched_at 13:45Z), but LazyLibrarian holds no 3bfm0QEACAAJ row yet and Google Books' daily quota ran out at 13:45Z before Shift and the Gray Dawn audiobook resolved. Compulsory, After the Bridge, The Last Flight of the Cassandra, Death and What Comes Next, Theatre of Cruelty and The Infinite Extent are not in Google Books by any query (expected unresolved). None took back its old book. Follow-up: OC-041 (after the 2026-10-08 07:00Z quota reset)."
     links:
       issues: ['#771', '#781']
       prs: ['#780', 'thaynes43/libretto#24', 'haynes-ops #3447', 'haynes-ops #3448']
@@ -1034,16 +1035,17 @@ checks:
         mismatch: wait
     evidence:
       - "2026-10-07 11:50Z FAILED on the app half, the LazyLibrarian and Kavita halves pass: Qw30DwAAQBAJ is Open on .../Hugh Howey/Shift/Shift - Hugh Howey.epub, md5 717b3c27d3e4ba089b020ac70d52c3d0 (the omnibus), no wanted row after 9597 names it, Kavita series 2062 reads 'Shift Omnibus Edition (Shift 1-3) (Silo Saga)'. But the Silo collection's Shift want caf0d2a7 is neither gone nor landed: ebook_status requested, ll_book_id NULL, last_searched_at NULL (nothing searches it), the same unresolved state as OC-024 after the wrong-author release. Follow-up: OC-024 and #771; if it still resolves to nothing, the member needs a title alias (T-287)."
+      - "2026-10-07 14:20Z Same cause as OC-024 (Google Books field search), fixed in Libretto sha-71de8f2 and v0.109.4. Libretto's resolve now names Qw30DwAAQBAJ for Shift (LazyLibrarian's own Shift record, which holds the omnibus); the 13:45Z one-off pass ran out of Google Books quota before it reached Shift. Follow-up: OC-041."
     links:
       issues: ['#781']
   - id: OC-030
     title: The Books Census runs on its schedule and its findings are triaged
     opened: 2026-10-06
     after: the first scheduled books-census run (2026-10-07 10:15Z) after the CronJob is deployed
-    not_before: 2026-10-07T10:30:00Z
+    not_before: 2026-10-07T10:00:00Z
     due: 2026-10-08T18:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: failed
+    status: passed
     check: |
       Loki {namespace="downloads", container="main", pod=~"books-census-.*"} has a `books_census` line from the
       scheduled run (not a manual Job) with appDb "ok" and holds "ok". Each unheld finding it lists is either repaired or
@@ -1057,6 +1059,7 @@ checks:
         mismatch: wait
     evidence:
       - "2026-10-07 11:50Z RAN, TRIAGE OPEN: the scheduled run books-census-29856135 (10:15Z, not a manual Job) logged books_census with appDb ok and holds ok (holdCount 8). Counts: llBooks 1323, wrongFile 17 unheld plus 6 held, foreignHeld 1 held, missingFile 0, foreign wanted/items 0; unusedHolds [wrong_file:W4ZDugEACAAJ:ebook]. Of the 17 unheld findings, 14 are records a repair had fixed that the 09:10Z library scan re-linked (OC-031, OC-032, OC-037) and 3 were never triaged (OwTswUGVzVcC Warriors 3 on Warriors 1.epub, VNalCwAAQBAJ Partners on Sparring Partners, 8CzFswEACAAJ Darker on Fifty Shades Darker). The runner's own check shows 'wait' only because not_before (10:30Z) is after the 10:15Z run, so its Loki range excludes the line: move not_before to 10:00Z. Follow-up: #744, #781, #795, #799."
+      - "2026-10-07 14:20Z TRIAGED, PASSED: the 14 re-linked records are redone and their folders marked `.ll_ignore` (OC-031, OC-032, OC-037; .agents/context/2026-10-07-scan-undid-census-repairs.md). The 3 untriaged findings: Warriors 3 OwTswUGVzVcC was the scan re-linking fix_census_795.py's re-want (blanked and queued again, Warriors 1/ marked; OC-034); Partners VNalCwAAQBAJ audio was a second wrong landing (grab 9616 delivered Sparring Partners at 05:29Z: held duplicate, release blocked, re-wanted; OC-035); Darker 8CzFswEACAAJ audio was Fifty Shades Darker from grab 9600 (05:27Z: held duplicate of Fifty Shades Darker/, release blocked, re-wanted under the 2026-10-06 ruling; OC-039). Manual census after a full library scan, 14:11Z (books-census-manual-1791382243, v0.109.4): llBooks 1342, wrongFile 0 unheld, held wrong_file 7 + foreign_held 1, missingFile 0, foreignWanted 0, foreignItems 0, unusedHolds [], holds ok, appDb ok. not_before moved to 10:00Z so the runner's Loki range covers the 10:15Z run."
     links:
       issues: ['#744', '#781']
   - id: OC-031
@@ -1089,6 +1092,7 @@ checks:
         expect: {max_rows: 0}
     evidence:
       - "2026-10-07 11:50Z FAILED: K0UczgEACAAJ is Status Open but BookFile is .../EBooks/Veronica Roth/Four - A Divergent Story Collection/Veronica Roth - Four - A Divergent Story Collection.epub, not the Divergent PDF: the 09:10Z library scan linked the collection back. The 10:15Z census lists wrong_file:K0UczgEACAAJ:ebook unheld. No wanted row after 9597 names its eBook; Kavita still shows series 256 (Four Divergent Stories - Omnibus) and 530 (Divergent). Follow-up: #795, coordinator (the scan undoes the re-point; see OC-032 and OC-037)."
+      - "2026-10-07 14:20Z MECHANISM AND REDO: the library scan matches a file to a record by title, a fuzzy title match and the ISBN as well as by opf id, writes a fresh opf naming the record beside the file, and re-points the record (.agents/context/2026-10-07-scan-undid-census-repairs.md). fix_census_scan_1007.py (13:25Z) re-pointed K0UczgEACAAJ to the Divergent PDF, held the opf the scan wrote in the Four folder and put `.ll_ignore` there. A full library scan (Job lazylibrarian-library-scan-manual-1791379571, 13:26 to 14:05Z) kept it on the PDF; the 14:11Z census lists no unheld wrong_file. Follow-up: OC-040 (the next scheduled scan)."
     links:
       issues: ['#795']
   - id: OC-032
@@ -1149,6 +1153,7 @@ checks:
         expect: {max_rows: 0}
     evidence:
       - "2026-10-07 11:50Z FAILED: the library scan undid 9 of the 16 re-points (the other 7 hold): QGPZEAAAQBAJ (Catwings.epub, not the PDF), wzxmQgAACAAJ (Discworld III), IMlH63ZPShAC (Outlander.epub), zTCLswEACAAJ (Innocence), qKuOEAAAQBAJ (More Tales of the Unexpected), lSybHLQbZ_kC (Towers of Midnight.epub), W4ZDugEACAAJ (The Hammer of Thor, not The Ship of the Dead), VKBoDwAAQBAJ (Expanse Origins #2), ENRSDwAAQBAJ (Nightflyers - The Illustrated Edition). The census lists the first eight as unheld wrong_file; the six held findings are not among them. Holding: laM7, i2fH, Obm7, opCL, 23fZ, A-ZV, HXHW, and A Crown of Swords keeps its 1996 m4b. No wanted row after 9599 names a re-pointed format. Kavita lists all eight titles; Audiobookshelf not checked. Follow-up: #795, coordinator (the scan undoes the re-point)."
+      - "2026-10-07 14:20Z REDONE: fix_census_scan_1007.py (13:25Z) restored the 9 undone re-points, held the opfs the 09:10Z scan wrote and put `.ll_ignore` in each wrong folder. The verifying full scan (13:26 to 14:05Z) then linked VKBoDwAAQBAJ to The Expanse Origins - Amos Burton (#4 of 4), whose folder (like James Holden, #1) also carried an opf the 09:10Z scan wrote: fix_census_scan_1007b.py (14:08Z) re-pointed it, held both opfs and marked both folders, and a scoped scan of EBooks/James S.A. Corey kept it on #3. Now all 16 rows and A Crown of Swords' m4b hold, no wanted row after 9633 names them, and the 14:11Z census has wrongFile 0. Follow-up: OC-040."
     links:
       issues: ['#795']
   - id: OC-033
@@ -1209,6 +1214,8 @@ checks:
         query: sum(count_over_time({namespace="downloads", container="main", pod=~"books-census-.*"} |= "books_census_finding" |= "wrong_file:OwTswUGVzVcC" [$SINCE]))
         expect: {max: 0}
         mismatch: fail
+    evidence:
+      - "2026-10-07 14:20Z The 09:10Z scan had re-linked Warriors 1.epub to it (09:16Z, a title match). fix_census_scan_1007.py blanked and queued it again (Wanted) and put `.ll_ignore` in Warriors 1/; it stayed Wanted with no file through the 13:26Z full scan."
     links:
       issues: ['#795']
   - id: OC-035
@@ -1245,6 +1252,8 @@ checks:
           select count(*) as n from book_requests where id::text like 'e94468f2%' and audio_status = 'landed'
         expect: {eq: 1}
         mismatch: wait
+    evidence:
+      - "2026-10-07 14:20Z WRONG BOOK LANDED AGAIN, handled by this check's rule: grab 9616 ('John Grisham - John Grisham - JB 03.5 - Sparring Partners', a release the block on 9567 did not cover) delivered Sparring Partners into Partners/ at 05:29Z, md5-identical to Sparring Partners/. fix_census_scan_1007.py held the 102 tracks `duplicate`, blocked 9616 with a Failed row, re-queued the audiobook (Wanted) and put `.ll_ignore` in Sparring Partners/ (the scan matches it to Partners by title). Every Sparring Partners release matches a search for Partners: if a third one lands, hold and block it, set the audiobook Skipped (the Catwings precedent) and close this check."
     links:
       issues: ['#795']
   - id: OC-036
@@ -1281,6 +1290,8 @@ checks:
           select count(*) as n from book_requests where id::text like 'a33f0c24%' and audio_status = 'landed'
         expect: {eq: 1}
         mismatch: wait
+    evidence:
+      - "2026-10-07 14:20Z Grab 9618 delivered 'Brian Jacques - Redwall.m4b' (305 MB) to Redwall/ at 05:29Z and LazyLibrarian reads the audiobook Open on it; its content (tags, duration) is not checked yet. The 09:10Z scan had re-written Eulalia!/Redwall.opf; fix_census_scan_1007b.py held it and put `.ll_ignore` in Eulalia!/, and a scoped scan of AudioBooks/Brian Jacques kept Redwall on the new m4b."
     links:
       issues: ['#795']
   - id: OC-037
@@ -1321,6 +1332,7 @@ checks:
         mismatch: fail
     evidence:
       - "2026-10-07 11:50Z FAILED: 4 of the 5 states were undone by the library scan: 83Hv_EYvHgEC eBook is on the Disciple folder (not Merge + Disciple), 4bLbswEACAAJ eBook is A Secret Rage (not Sweet and Deadly) and its audio is flagged too, K3wuAAAACAAJ is Open on Code to Zero.epub (should be Skipped, no file), 4m0Qj9xKksYC audio is Open on the Hitchhiker's mp3 (should be Skipped). zaynQgAACAAJ audio holds. The 10:15Z census lists 83Hv, 4bLb (ebook and audio), K3wu and 4m0Q unheld wrong_file (runner: 4 matches). No wanted row after 9599 names them. Kavita shows Merge and Disciple (1953), Disciple (942), A Secret Rage (1259), Code to Zero (1202); Audiobookshelf not checked. Follow-up: #799, coordinator (the scan undoes the repair)."
+      - "2026-10-07 14:20Z REDONE: fix_census_scan_1007.py (13:25Z) restored the four undone states (83Hv and 4bLb eBooks re-pointed, K3wu and 4m0Q Skipped with no file), re-queued 4bLb's audiobook (the scan had re-linked the A Secret Rage tracks), held the opfs the scan wrote and marked the folders `.ll_ignore`. After the full scan (13:26 to 14:05Z) the five rows read as expected (5 of 5) and the 14:11Z census lists none of them. Follow-up: OC-040."
     links:
       issues: ['#799']
   - id: OC-038
@@ -1363,3 +1375,154 @@ checks:
         mismatch: wait
     links:
       issues: ['#799']
+  - id: OC-039
+    title: "Books Census re-download: Darker (E.L. James, 2017, audiobook) lands, and is the right book"
+    opened: 2026-10-07
+    after: >-
+      Owner ruling on #795 (2026-10-06, "Yes, re-download all of them"), applied to the census's Darker finding (OC-030).
+      fix_census_scan_1007.py (2026-10-07 13:25Z): the three tracks grab 9600 delivered as Darker were Fifty Shades Darker
+      (md5-identical to Fifty Shades Darker/), held `duplicate`; grab 9600 blocked with a Failed row; the audiobook
+      re-wanted; Fifty Shades Darker/ marked `.ll_ignore`. The grab depends on LazyLibrarian's normal backlog search, so
+      `due` is a review date.
+    not_before: 2026-10-07T14:00:00Z
+    due: 2026-10-21T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian 8CzFswEACAAJ reads its AudioBook Open again with an AudioFile that exists, and the audio is Darker (Fifty
+      Shades Darker as told by Christian, 2017), not Fifty Shades Darker (2012). The next books_census line has no wrong_file
+      finding for 8CzFswEACAAJ:audiobook. Every Fifty Shades Darker release matches a search for Darker: if one lands again,
+      hold and block it, set the audiobook Skipped (the Catwings precedent) and close this check.
+    auto_covers: part
+    auto:
+      - name: LazyLibrarian holds a new AudioBook file
+        source: ll-db
+        query: |
+          select AudioFile from books where BookID = '8CzFswEACAAJ' and AudioStatus in ('Open', 'Have') and AudioFile is not null
+        expect: {min_rows: 1, paths_exist: true}
+        mismatch: wait
+      - name: the census no longer flags it
+        source: loki
+        query: sum(count_over_time({namespace="downloads", container="main", pod=~"books-census-.*"} |= "books_census_finding" |= "wrong_file:8CzFswEACAAJ:audiobook" [$SINCE]))
+        expect: {max: 0}
+        mismatch: fail
+    links:
+      issues: ['#795']
+  - id: OC-040
+    title: "The census repairs survive LazyLibrarian's scheduled library scan (the `.ll_ignore` rule)"
+    opened: 2026-10-07
+    after: >-
+      fix_census_scan_1007.py and fix_census_scan_1007b.py (2026-10-07 13:25Z and 14:08Z; max wanted rowid 9633) redid the
+      repairs the 09:10Z scan undid and put `.ll_ignore` in 21 folders (.agents/context/2026-10-07-scan-undid-census-repairs.md).
+      A manual full scan (13:26 to 14:05Z) kept them. The check follows the 2026-10-08 09:10Z scheduled scan and the 10:15Z
+      census.
+    not_before: 2026-10-08T10:00:00Z
+    due: 2026-10-09T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian (mode=ro): the 16 records of OC-032 and Divergent (OC-031) keep their files, the five states of OC-037
+      hold, and no re-wanted format (Warriors 3 eBook, A Secret Rage and Sweet and Deadly audiobook, Partners audiobook,
+      Darker audiobook) is linked into a marked folder. The 10:15Z books_census line lists none of these records as an
+      unheld wrong_file.
+    auto_covers: all
+    auto:
+      - name: the re-pointed eBooks keep their files
+        source: ll-db
+        query: |
+          select BookID, BookFile from books where Status = 'Open' and (
+               (BookID = 'ENRSDwAAQBAJ' and BookFile like '%/Nightflyers & Other Stories/Nightflyers & Other Stories - George R.R. Martin.epub')
+            or (BookID = 'laM7DwAAQBAJ' and BookFile like '%/Wild Cards I/Wild Cards I - George R.R. Martin.epub')
+            or (BookID = 'i2fHDwAAQBAJ' and BookFile like '%/City of Illusions/City of Illusions - Ursula K. Le Guin.%')
+            or (BookID = 'Obm7DmrDsroC' and BookFile like '%/The Tempest Tales/The Tempest Tales - Walter Mosley.epub')
+            or (BookID = 'wzxmQgAACAAJ' and BookFile like '%/The Science Of Discworld II - The Globe/%')
+            or (BookID = 'IMlH63ZPShAC' and BookFile like '%/A Plague of Zombies/Diana Gabaldon - A Plague of Zombies.epub')
+            or (BookID in ('opCLDQAAQBAJ', 'zTCLswEACAAJ') and BookFile like '%/Benedict Carey/How We Learn/How We Learn - Benedict Carey.epub')
+            or (BookID = 'qKuOEAAAQBAJ' and BookFile like '%/Tales of the Unexpected/Roald Dahl - Tales of the Unexpected.epub')
+            or (BookID = 'lSybHLQbZ_kC' and BookFile like '%/Distinctions - Prologue to Towers of Midnight/%')
+            or (BookID = '23fZCwAAQBAJ' and BookFile like '%/Anne of Green Gables - Collection/%')
+            or (BookID = 'W4ZDugEACAAJ' and BookFile like '%/The Ship of the Dead/Rick Riordan - The Ship of the Dead.epub')
+            or (BookID = 'VKBoDwAAQBAJ' and BookFile like '%/The Expanse Origins #3/%')
+            or (BookID = 'A-ZVAQAACAAJ' and BookFile like '%/The Hammer of Thor/Rick Riordan - The Hammer of Thor.epub')
+            or (BookID = 'HXHWBQAAQBAJ' and BookFile like '%/The Further Tales of Tempest Landry/%')
+            or (BookID = 'QGPZEAAAQBAJ' and BookFile like '%/Wonderful Alexander and the Catwings/%.pdf')
+            or (BookID = 'K0UczgEACAAJ' and BookFile like '%/EBooks/Veronica Roth/Divergent/Veronica Roth - Divergent.pdf'))
+        expect: {rows: 17, paths_exist: true}
+      - name: the five OC-037 states hold
+        source: ll-db
+        query: |
+          select BookID from books where
+               (BookID = '83Hv_EYvHgEC' and Status = 'Open' and BookFile like '%/Merge + Disciple - Two Short Novels from Crosstown to Oblivion/%.epub')
+            or (BookID = '4bLbswEACAAJ' and Status = 'Open' and BookFile like '%/Sweet and Deadly/Sweet and Deadly - Charlaine Harris.epub')
+            or (BookID = 'zaynQgAACAAJ' and AudioStatus = 'Open' and AudioFile like '%/The Hitchhiker''s Guide to the Galaxy/Douglas Adams - The Hitchhiker''s Guide to the Galaxy (1).mp3')
+            or (BookID = 'K3wuAAAACAAJ' and Status = 'Skipped' and BookFile is null)
+            or (BookID = '4m0Qj9xKksYC' and AudioStatus = 'Skipped' and AudioFile is null)
+        expect: {rows: 5}
+      - name: no re-wanted format is linked into a marked folder
+        source: ll-db
+        query: |
+          select BookID from books where
+               (BookID = 'OwTswUGVzVcC' and BookFile like '%/Warriors 1/%')
+            or (BookID = '4bLbswEACAAJ' and AudioFile like '%/A Secret Rage/%')
+            or (BookID = 'VNalCwAAQBAJ' and AudioFile like '%/Sparring Partners/%')
+            or (BookID = '8CzFswEACAAJ' and AudioFile like '%/Fifty Shades Darker/%')
+        expect: {max_rows: 0}
+      - name: the scheduled census lists none of them as an unheld wrong file
+        source: loki
+        query: sum(count_over_time({namespace="downloads", container="main", pod=~"books-census-.*"} |= "books_census_finding" |= "\"held\":false" |~ "wrong_file:(K0UczgEACAAJ|QGPZEAAAQBAJ|wzxmQgAACAAJ|IMlH63ZPShAC|zTCLswEACAAJ|qKuOEAAAQBAJ|lSybHLQbZ_kC|W4ZDugEACAAJ|VKBoDwAAQBAJ|ENRSDwAAQBAJ|83Hv_EYvHgEC|4bLbswEACAAJ|K3wuAAAACAAJ|4m0Qj9xKksYC|OwTswUGVzVcC|VNalCwAAQBAJ|8CzFswEACAAJ):" [$SINCE]))
+        expect: {max: 0}
+        mismatch: fail
+    links:
+      issues: ['#795', '#799']
+  - id: OC-041
+    title: "Gray Dawn's audiobook and Shift resolve and are searched after Google Books' daily quota resets (#771, OC-024)"
+    opened: 2026-10-07
+    after: >-
+      Libretto sha-71de8f2 (the keyword resolve leg) and haynesnetwork v0.109.4 live (2026-10-07 13:44Z and 14:10Z). The
+      13:45Z one-off pass resolved Gray Dawn's ebook want to 3bfm0QEACAAJ and searched it, then Google Books' daily quota ran
+      out, so LazyLibrarian could not add the book and the other two wants stayed unresolved. The 07:27Z pass after the
+      07:00Z reset resolves them.
+    not_before: 2026-10-08T07:45:00Z
+    due: 2026-10-08T14:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      Gray Dawn ebook 05bc296f, Gray Dawn audiobook bc5918a3 and Shift caf0d2a7 each hold an ll_book_id that is not the one
+      they gave up (wrong_author_ll_book_id), and each was searched or reads landed (Shift's id is Qw30DwAAQBAJ,
+      LazyLibrarian's own Shift record holding the omnibus: then OC-029 and #781 own it). LazyLibrarian has a Walter Mosley
+      "Gray Dawn" row whose ebook and audiobook read Wanted, Snatched, Open or Have. The pass's `collection-wants complete`
+      line carries `covered` and `unresolved` (v0.109.4) and unreachable false. The six members Google Books does not hold
+      (OC-024 evidence) stay unresolved, never on another author's book.
+    auto_covers: part
+    auto:
+      - name: Gray Dawn and Shift hold a new book and were searched (or read landed)
+        source: app-db
+        query: |
+          select count(*) as n from book_requests
+          where id in ('05bc296f-2f80-4a4e-9239-4932f287fa4e', 'bc5918a3-ef2a-447c-bb2b-e8313a8cfd18',
+                       'caf0d2a7-9f12-4c53-af7a-6608d41a764f')
+            and ll_book_id is not null and ll_book_id <> wrong_author_ll_book_id
+            and (last_searched_at is not null or (ebook_status = 'landed' and audio_status = 'landed'))
+        expect: {eq: 3}
+        mismatch: wait
+      - name: LazyLibrarian wants Walter Mosley's Gray Dawn in both formats
+        source: ll-db
+        query: |
+          select b.BookID, b.Status, b.AudioStatus from books b join authors a on a.AuthorID = b.AuthorID
+          where a.AuthorName = 'Walter Mosley' and b.BookName like 'Gray Dawn%'
+            and b.Status in ('Wanted', 'Snatched', 'Open', 'Have') and b.AudioStatus in ('Wanted', 'Snatched', 'Open', 'Have')
+        expect: {min_rows: 1}
+        mismatch: wait
+      - name: none of the released wants took back the book it gave up
+        source: app-db
+        query: select count(*) as n from book_requests where origin = 'collection' and ll_book_id = wrong_author_ll_book_id
+        expect: {eq: 0}
+        mismatch: fail
+      - name: the pass logs covered and unresolved
+        source: loki
+        query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-books-collections-.*"} |= "collection-wants complete" |= "\"covered\"" [$SINCE]))
+        expect: {min: 1}
+        mismatch: wait
+    links:
+      issues: ['#771', '#781']
+      prs: ['#819', 'thaynes43/libretto#33', 'haynes-ops #3514', 'haynes-ops #3515']
