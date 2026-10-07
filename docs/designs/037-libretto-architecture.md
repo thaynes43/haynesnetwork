@@ -324,6 +324,8 @@ the format the app had queued for the want once nothing else asks for it (DESIGN
 sha-e04dc83 (2026-10-07): none of the 48 series recipes lists an unnumbered book as missing on any target, the next
 collection wants pass removed the 19 wants these books held, and the next format-pairing run unqueued the one format
 LazyLibrarian still had `Wanted` for them (The Great Redwall Feast, audiobook); the rest were not `Wanted` there.
+The audiobook of The Outlandish Companion stays `Wanted`: the app asks for it because the ebook is held (format
+pairing, ADR-075), which this ruling does not cover.
 Libretto PR https://github.com/thaynes43/libretto/pull/31.
 
 ### D-06 — Write targets and per-recipe target mapping
