@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.3](https://github.com/thaynes43/haynesnetwork/compare/v0.109.2...v0.109.3) (2026-10-07)
+
+
+### Bug Fixes
+
+* **books:** the Held File Check reads two titles as one string without a leading article ([#799](https://github.com/thaynes43/haynesnetwork/issues/799) repair) ([#806](https://github.com/thaynes43/haynesnetwork/issues/806)) ([42a5e46](https://github.com/thaynes43/haynesnetwork/commit/42a5e46327a4c50f1cfb65cb45911af8bc048f0b))
+
 ## [0.109.2](https://github.com/thaynes43/haynesnetwork/compare/v0.109.1...v0.109.2) (2026-10-07)
 
 
