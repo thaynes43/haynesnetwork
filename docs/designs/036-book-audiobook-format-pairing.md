@@ -185,9 +185,9 @@ matrix (books read_only OK + audited; books disabled FORBIDDEN; goodreads-origin
 
 ## Open questions
 
-| ID   | Question                                                                                                              | Resolution                                                                                                                                                                                                                                              |
-| ---- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Q-01 | Should a long-unmintable want ever alert (an outbox digest of unresolvable titles)?                                   | (open — observe the backfill first)                                                                                                                                                                                                                     |
+| ID | Question | Resolution |
+|----|----------|------------|
+| Q-01 | Should a long-unmintable want ever alert (an outbox digest of unresolvable titles)? | (open — observe the backfill first) |
 | Q-02 | Identifier-backed matching (ISBN/ASIN columns on the mirror) to pair edition variants the conservative matcher skips. | (open — the known upgrade path, ADR-065 C-c; **2026-07-20 (ADR-075): now ALSO improves the unified Books wall's CARD COLLAPSE, not just the coverage badge — a true pair the conservative matcher misses renders as TWO cards until identifiers land**) |
 
 ## Amendment — 2026-07-20 (ADR-075 — the pair cache powers the unified Books wall)
@@ -400,7 +400,7 @@ Details:
 is off (`gbQueryTitle`: a trailing "(The Stormlight Archive, #1)", a leading "Expanse 05 - "). It keeps the subtitle
 and any volume number:
 
-- "Mistborn: Wax & Wayne" never reuses _The Final Empire_'s id.
+- "Mistborn: Wax & Wayne" never reuses *The Final Empire*'s id.
 - "Court of Thorns and Roses bk 2" never reuses book 1's id.
 - "Dune (Dune Chronicles, #1)" still reuses "Dune".
 - "Dune: Special Edition" no longer does. That is the conservative miss: one Google Books call, not a wrong book.
@@ -440,11 +440,11 @@ missing piece is a language rule. Owner-side rulings (the coordinator's, 2026-10
 
 **The language of an item** (`books_items.attrs.language`, both sources; `classifyBookLanguage`):
 
-| Class   | Values                                                                   | Pairing                                                                 |
-| ------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| English | `en`, `eng` (LazyLibrarian's own spelling), `en-*`, `English` (any case) | allowed                                                                 |
-| Unknown | blank, null, `XXX` (and LazyLibrarian's `Unknown`)                       | allowed (the 199 blank Audiobookshelf items are overwhelmingly English) |
-| Foreign | anything else: `nl`, `de`, `es`, `German`, ...                           | never                                                                   |
+| Class | Values | Pairing |
+|---|---|---|
+| English | `en`, `eng` (LazyLibrarian's own spelling), `en-*`, `English` (any case) | allowed |
+| Unknown | blank, null, `XXX` (and LazyLibrarian's `Unknown`) | allowed (the 199 blank Audiobookshelf items are overwhelmingly English) |
+| Foreign | anything else: `nl`, `de`, `es`, `German`, ... | never |
 
 **D-05, the candidate filter.** A foreign anchor is never a candidate: with no want yet it is not minted
 (`skippedForeign`, no Google Books call, no push); an existing want LazyLibrarian is not working yet (`ll_book_id`
@@ -601,11 +601,11 @@ want answers with no usable book (no match, or a match the Volume Check refuses)
 the next lookup waits 1 day after the first miss, 3 after the second, 7 after the third and 30 after every later one
 (`PAIRING_MINT_BACKOFF_DAYS`). Three columns on `book_requests` (migration 0094), written only by `upsertPairingWant`:
 
-| Column               | Meaning                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| `mint_backoff_count` | misses in a row for the identity below (0 when none)                                 |
-| `mint_backoff_until` | no lookup before this time                                                           |
-| `mint_backoff_key`   | the identity the misses were counted for: title key, author, ISBN (`mintBackoffKey`) |
+| Column | Meaning |
+| --- | --- |
+| `mint_backoff_count` | misses in a row for the identity below (0 when none) |
+| `mint_backoff_until` | no lookup before this time |
+| `mint_backoff_key` | the identity the misses were counted for: title key, author, ISBN (`mintBackoffKey`) |
 
 - **Only the lookup waits.** A want in backoff stays a candidate, so a book another request resolved since still mints it
   through the reuse index with no lookup. A waiting want needing a lookup is skipped with no cap consumed and no row
@@ -725,7 +725,9 @@ or searching only when a removed predecessor owns the same LazyLibrarian id and 
 plus known author agreement or a shared ISBN proves the same work. Resolution of the successor still uses its
 fresh held identity. Adoption records the existing status through the Request Event writer before the predecessor
 settles, so the release drain sees the successor owner. This scoped handoff does not change ordinary `Wanted`
-retry policy. An unavailable snapshot cannot prove an active download or handoff and retains the existing
+retry policy. The current LazyLibrarian language guard runs before adoption: an explicitly foreign book parks
+the new want without queueing or searching; an existing Snatched download is never cancelled by that park.
+An unavailable snapshot cannot prove an active download or handoff and retains the existing
 fail-closed reservation rules.
 
 A surviving anchor whose Held Book changes cannot carry a prior book's landed state into the new identity. If its

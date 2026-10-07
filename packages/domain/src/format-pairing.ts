@@ -1927,24 +1927,6 @@ export async function mintPairingWants(
     )
       ?.trim()
       .toLowerCase();
-    if (raw === 'snatched' || (raw === 'wanted' && predecessorOwns(llBookId, missing, identity))) {
-      await applyRequestReconcile({
-        db: input.db,
-        requestId: row.id,
-        ebookStatus: missing === 'ebook' ? (raw === 'snatched' ? 'grabbed' : 'wanted') : null,
-        audioStatus: missing === 'audiobook' ? (raw === 'snatched' ? 'grabbed' : 'wanted') : null,
-        site: 'format-pairing.mint-adopt-active',
-        now,
-      });
-      log.info?.('ll_push_adopted_active', {
-        site: 'format-pairing.mint-push',
-        requestId: row.id,
-        llBookId,
-        formats: [missing],
-        rawStatus: raw,
-      });
-      continue;
-    }
     try {
       // DESIGN-039 D-18 — addBook ONLY seats a volume LL does not already hold. When LL already has
       // it (the common case for a re-pushed want), skip addBook so LL makes ZERO Google Books calls
@@ -1976,6 +1958,24 @@ export async function mintPairingWants(
           });
           continue;
         }
+      }
+      if (raw === 'snatched' || (raw === 'wanted' && predecessorOwns(llBookId, missing, identity))) {
+        await applyRequestReconcile({
+          db: input.db,
+          requestId: row.id,
+          ebookStatus: missing === 'ebook' ? (raw === 'snatched' ? 'grabbed' : 'wanted') : null,
+          audioStatus: missing === 'audiobook' ? (raw === 'snatched' ? 'grabbed' : 'wanted') : null,
+          site: 'format-pairing.mint-adopt-active',
+          now,
+        });
+        log.info?.('ll_push_adopted_active', {
+          site: 'format-pairing.mint-push',
+          requestId: row.id,
+          llBookId,
+          formats: [missing],
+          rawStatus: raw,
+        });
+        continue;
       }
       await input.ll.write.queueBook(llBookId, missing);
       if (input.shouldSearch?.(llBookId, missing) ?? true) {

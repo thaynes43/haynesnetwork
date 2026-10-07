@@ -484,6 +484,21 @@ describe('Kavita replacement anchors', () => {
     expect(next).toMatchObject({ llBookId: 'gb-mockingjay', audioStatus: 'grabbed' });
   });
 
+  it.each(['Wanted', 'Snatched'])('foreign %s cannot bypass the language park through ownership adoption', async (raw) => {
+    const old = await item('Mockingjay', { removed: true });
+    await want(old.id, { status: raw === 'Snatched' ? 'grabbed' : 'wanted' });
+    const replacement = await item();
+    const stub = ll(raw);
+    const foreign: LlSnapshotRow = { title: 'Mockingjay', author: 'Suzanne Collins', language: 'de', ebookStatus: 'Open', audioStatus: raw };
+    stub.bundle.read.getAllBookStatuses = async () => new Map([['gb-mockingjay', foreign]]) as Awaited<ReturnType<LazyLibrarianClientBundle['read']['getAllBookStatuses']>>;
+    const report = await runFormatPairing({ db: t.db, ll: stub.bundle, gb, cap: 1, now: NOW, pacer: noPace });
+    expect(report).toMatchObject({ pushed: 0, refusedForeignBook: 1 });
+    const [next] = await t.db.select().from(bookRequests).where(eq(bookRequests.pairingBooksItemId, replacement.id));
+    expect(next).toMatchObject({ unroutableReason: 'foreign_language', audioStatus: 'requested' });
+    expect(stub.calls.filter((c) => c.cmd !== 'unqueueBook')).toEqual([]);
+    if (raw === 'Snatched') expect(stub.calls).toEqual([]);
+  });
+
   it('minting a missing ebook never resets the other format’s active audio download', async () => {
     const anchor = await item('Mockingjay', { audio: true });
     const stub = ll('Snatched');
