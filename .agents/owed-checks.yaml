@@ -1080,3 +1080,193 @@ checks:
         expect: {max_rows: 0}
     links:
       issues: ['#795']
+  - id: OC-032
+    title: "Books Census #795: the re-pointed LazyLibrarian records keep their right files after the library scan"
+    opened: 2026-10-06
+    after: >-
+      fix_census_795.py (2026-10-06 23:58Z) re-pointed 14 records to the right book already on disk, linked two records that
+      had no file (A-ZVAQAACAAJ The Hammer of Thor, HXHWBQAAQBAJ The Further Tales of Tempest Landry) and held the
+      LazyLibrarian opfs that named the wrong records; fix_census_795_catwings.py (00:05Z) re-pointed QGPZEAAAQBAJ's eBook
+      to its PDF. The check follows the 2026-10-07 09:10Z library scan and the 10:15Z census.
+    not_before: 2026-10-07T10:30:00Z
+    due: 2026-10-08T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian (mode=ro): every record below still points at the file fix_census_795.py printed (the scan linked no
+      held or wrong file back), and no wanted row after rowid 9599 names any of their re-pointed formats. The 10:15Z
+      books_census line lists none of them as wrong_file (the six held findings show held: true). Kavita shows The Science
+      of Discworld II, A Plague of Zombies, How We Learn, Tales of the Unexpected, Prologue to Towers of Midnight, The
+      Expanse Origins #3, The Tempest Tales and The Further Tales of Tempest Landry; Audiobookshelf's A Crown of Swords item
+      has one m4b (30.4 h) and The Sable Queen item replaced the one titled Redwall.
+    auto_covers: part
+    auto:
+      - name: the re-pointed eBooks keep their files
+        source: ll-db
+        query: |
+          select BookID, BookFile from books where Status = 'Open' and (
+               (BookID = 'ENRSDwAAQBAJ' and BookFile like '%/Nightflyers & Other Stories/Nightflyers & Other Stories - George R.R. Martin.epub')
+            or (BookID = 'laM7DwAAQBAJ' and BookFile like '%/Wild Cards I/Wild Cards I - George R.R. Martin.epub')
+            or (BookID = 'i2fHDwAAQBAJ' and BookFile like '%/City of Illusions/City of Illusions - Ursula K. Le Guin.%')
+            or (BookID = 'Obm7DmrDsroC' and BookFile like '%/The Tempest Tales/The Tempest Tales - Walter Mosley.epub')
+            or (BookID = 'wzxmQgAACAAJ' and BookFile like '%/The Science Of Discworld II - The Globe/%')
+            or (BookID = 'IMlH63ZPShAC' and BookFile like '%/A Plague of Zombies/Diana Gabaldon - A Plague of Zombies.epub')
+            or (BookID in ('opCLDQAAQBAJ', 'zTCLswEACAAJ') and BookFile like '%/Benedict Carey/How We Learn/How We Learn - Benedict Carey.epub')
+            or (BookID = 'qKuOEAAAQBAJ' and BookFile like '%/Tales of the Unexpected/Roald Dahl - Tales of the Unexpected.epub')
+            or (BookID = 'lSybHLQbZ_kC' and BookFile like '%/Distinctions - Prologue to Towers of Midnight/%')
+            or (BookID = '23fZCwAAQBAJ' and BookFile like '%/Anne of Green Gables - Collection/%')
+            or (BookID = 'W4ZDugEACAAJ' and BookFile like '%/The Ship of the Dead/Rick Riordan - The Ship of the Dead.epub')
+            or (BookID = 'VKBoDwAAQBAJ' and BookFile like '%/The Expanse Origins #3/%')
+            or (BookID = 'A-ZVAQAACAAJ' and BookFile like '%/The Hammer of Thor/Rick Riordan - The Hammer of Thor.epub')
+            or (BookID = 'HXHWBQAAQBAJ' and BookFile like '%/The Further Tales of Tempest Landry/%')
+            or (BookID = 'QGPZEAAAQBAJ' and BookFile like '%/Wonderful Alexander and the Catwings/%.pdf'))
+        expect: {rows: 16, paths_exist: true}
+      - name: A Crown of Swords keeps the 1996 unabridged m4b
+        source: ll-db
+        query: |
+          select AudioFile from books where BookID = 'H7XlVlTPqsIC' and AudioStatus = 'Open'
+            and AudioFile like '%/A Crown of Swords/1996 - A Crown of Swords Wheel of Time, Book 7 (Unabridged).m4b'
+        expect: {rows: 1, paths_exist: true}
+      - name: no new grab of a re-pointed format
+        source: ll-db
+        query: |
+          select rowid, BookID, AuxInfo, NZBtitle from wanted where rowid > 9599 and (
+               (AuxInfo = 'eBook' and BookID in ('ENRSDwAAQBAJ', 'laM7DwAAQBAJ', 'i2fHDwAAQBAJ', 'Obm7DmrDsroC', 'wzxmQgAACAAJ',
+                 'IMlH63ZPShAC', 'opCLDQAAQBAJ', 'zTCLswEACAAJ', 'qKuOEAAAQBAJ', 'lSybHLQbZ_kC', '23fZCwAAQBAJ', 'W4ZDugEACAAJ',
+                 'VKBoDwAAQBAJ', 'A-ZVAQAACAAJ', 'HXHWBQAAQBAJ', 'QGPZEAAAQBAJ'))
+            or (AuxInfo = 'AudioBook' and BookID in ('H7XlVlTPqsIC', 'QGPZEAAAQBAJ')))
+        expect: {max_rows: 0}
+    links:
+      issues: ['#795']
+  - id: OC-033
+    title: "Books Census #795 re-download: Freed (E.L. James, 2021) lands, and is the right book"
+    opened: 2026-10-06
+    after: >-
+      Owner ruling on #795 (2026-10-06, "Yes, re-download all of them"). fix_census_795.py (2026-10-06 23:58Z): the Fifty Shades Freed epub that LazyLibrarian linked as Freed is held `duplicate` and the record re-wanted; grab 94 (the release that delivered Fifty Shades Freed) is blocked with Failed row 9598.
+      The grab depends on LazyLibrarian's normal backlog search (English-only guards and blocks apply), so `due` is a
+      review date.
+    not_before: 2026-10-07T05:30:00Z
+    due: 2026-10-20T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian wDYhEAAAQBAJ reads its eBook Open again with a BookFile that exists, and the file is an epub whose OPF dc:title is Freed (E.L. James, 2021: Fifty Shades Freed as told by Christian), not Fifty Shades Freed (md5 differs from the `duplicate` row in quarantine/crossvolume-2026-10-05/sort.jsonl). The next
+      books_census line has no wrong_file finding for wDYhEAAAQBAJ. If the search finds nothing for two weeks, record that here and
+      move `due` with the reason; a wrong book landing again is a failure (hold it and block that release, the #795 pattern).
+    auto_covers: part
+    auto:
+      - name: LazyLibrarian holds a new eBook file
+        source: ll-db
+        query: |
+          select BookFile from books where BookID = 'wDYhEAAAQBAJ' and Status in ('Open', 'Have') and BookFile is not null
+        expect: {min_rows: 1, paths_exist: true}
+        mismatch: wait
+      - name: the census no longer flags it
+        source: loki
+        query: sum(count_over_time({namespace="downloads", container="main", pod=~"books-census-.*"} |= "books_census_finding" |= "wrong_file:wDYhEAAAQBAJ" [$SINCE]))
+        expect: {max: 0}
+        mismatch: fail
+    links:
+      issues: ['#795']
+  - id: OC-034
+    title: "Books Census #795 re-download: Warriors 3 (George R.R. Martin and Gardner Dozois, eds.) lands, and is the right book"
+    opened: 2026-10-06
+    after: >-
+      Owner ruling on #795 (2026-10-06, "Yes, re-download all of them"). fix_census_795.py (2026-10-06 23:58Z): the record linked Warriors 1/ (Warriors, vol. 1, which stays; its opf naming Warriors 3 is held) and is re-wanted; no grab row delivered the wrong book, so nothing is blocked.
+      The grab depends on LazyLibrarian's normal backlog search (English-only guards and blocks apply), so `due` is a
+      review date.
+    not_before: 2026-10-07T05:30:00Z
+    due: 2026-10-20T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian OwTswUGVzVcC reads its eBook Open again with a BookFile that exists, and the file is an epub whose OPF title is Warriors 3 (the third paperback volume of the Warriors anthology), not Warriors (vol. 1). The next
+      books_census line has no wrong_file finding for OwTswUGVzVcC. If the search finds nothing for two weeks, record that here and
+      move `due` with the reason; a wrong book landing again is a failure (hold it and block that release, the #795 pattern).
+    auto_covers: part
+    auto:
+      - name: LazyLibrarian holds a new eBook file
+        source: ll-db
+        query: |
+          select BookFile from books where BookID = 'OwTswUGVzVcC' and Status in ('Open', 'Have') and BookFile is not null
+        expect: {min_rows: 1, paths_exist: true}
+        mismatch: wait
+      - name: the census no longer flags it
+        source: loki
+        query: sum(count_over_time({namespace="downloads", container="main", pod=~"books-census-.*"} |= "books_census_finding" |= "wrong_file:OwTswUGVzVcC" [$SINCE]))
+        expect: {max: 0}
+        mismatch: fail
+    links:
+      issues: ['#795']
+  - id: OC-035
+    title: "Books Census #795 re-download: Partners (John Grisham short story, audiobook) lands, and is the right book"
+    opened: 2026-10-06
+    after: >-
+      Owner ruling on #795 (2026-10-06, "Yes, re-download all of them"). fix_census_795.py (2026-10-06 23:58Z): the 102 Sparring Partners tracks linked as Partners were re-homed to Sparring Partners/ and the audiobook re-wanted; grab 9567 (John Grisham - Sparring Partners) is blocked with Failed row 9599.
+      The grab depends on LazyLibrarian's normal backlog search (English-only guards and blocks apply), so `due` is a
+      review date.
+    not_before: 2026-10-07T05:30:00Z
+    due: 2026-10-20T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian VNalCwAAQBAJ reads its AudioBook Open again with a AudioFile that exists, and the file is audio whose tags name Partners (a short story; the record says 58 pages), not Sparring Partners (10 h, 102 tracks). The next
+      books_census line has no wrong_file finding for VNalCwAAQBAJ. If the search finds nothing for two weeks, record that here and
+      move `due` with the reason; a wrong book landing again is a failure (hold it and block that release, the #795 pattern).
+    auto_covers: part
+    auto:
+      - name: LazyLibrarian holds a new AudioBook file
+        source: ll-db
+        query: |
+          select AudioFile from books where BookID = 'VNalCwAAQBAJ' and AudioStatus in ('Open', 'Have') and AudioFile is not null
+        expect: {min_rows: 1, paths_exist: true}
+        mismatch: wait
+      - name: the census no longer flags it
+        source: loki
+        query: sum(count_over_time({namespace="downloads", container="main", pod=~"books-census-.*"} |= "books_census_finding" |= "wrong_file:VNalCwAAQBAJ" [$SINCE]))
+        expect: {max: 0}
+        mismatch: fail
+      - name: the app's want reads landed again
+        source: app-db
+        query: |
+          select count(*) as n from book_requests where id::text like 'e94468f2%' and audio_status = 'landed'
+        expect: {eq: 1}
+        mismatch: wait
+    links:
+      issues: ['#795']
+  - id: OC-036
+    title: "Books Census #795 re-download: Redwall (Brian Jacques, audiobook) lands, and is the right book"
+    opened: 2026-10-06
+    after: >-
+      Owner ruling on #795 (2026-10-06, "Yes, re-download all of them"). fix_census_795.py (2026-10-06 23:58Z): the record linked the Eulalia! m4b (stays in Eulalia!/, its Redwall.opf is held) and is re-wanted; no grab row delivered it. Redwall - Book One - The Wall/ was The Sable Queen, re-homed.
+      The grab depends on LazyLibrarian's normal backlog search (English-only guards and blocks apply), so `due` is a
+      review date.
+    not_before: 2026-10-07T05:30:00Z
+    due: 2026-10-20T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      LazyLibrarian uaBUIGS551cC reads its AudioBook Open again with a AudioFile that exists, and the file is audio whose tags name Redwall (book 1), not Eulalia! (12.6 h m4b) or The Sable Queen (album "Redwall - 21", 13.5 h). The next
+      books_census line has no wrong_file finding for uaBUIGS551cC. If the search finds nothing for two weeks, record that here and
+      move `due` with the reason; a wrong book landing again is a failure (hold it and block that release, the #795 pattern).
+    auto_covers: part
+    auto:
+      - name: LazyLibrarian holds a new AudioBook file
+        source: ll-db
+        query: |
+          select AudioFile from books where BookID = 'uaBUIGS551cC' and AudioStatus in ('Open', 'Have') and AudioFile is not null
+        expect: {min_rows: 1, paths_exist: true}
+        mismatch: wait
+      - name: the census no longer flags it
+        source: loki
+        query: sum(count_over_time({namespace="downloads", container="main", pod=~"books-census-.*"} |= "books_census_finding" |= "wrong_file:uaBUIGS551cC" [$SINCE]))
+        expect: {max: 0}
+        mismatch: fail
+      - name: the app's want reads landed again
+        source: app-db
+        query: |
+          select count(*) as n from book_requests where id::text like 'a33f0c24%' and audio_status = 'landed'
+        expect: {eq: 1}
+        mismatch: wait
+    links:
+      issues: ['#795']

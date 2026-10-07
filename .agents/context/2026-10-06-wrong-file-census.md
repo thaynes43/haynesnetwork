@@ -76,3 +76,50 @@ Living to Tell the Tale: German and Spanish records holding English files).
 - **`foreign_held`: Game of Thrones audiobook** (`pyj5oQEACAAJ`, labelled `fr`, album "A Game of Thrones", no language
   tag): needs a listen; in #795.
 - **`missing_file`: the Catwings audiobook** (`QGPZEAAAQBAJ`), the known pre-#631 pointer; in #795.
+
+## #795 repaired (2026-10-06 23:58Z to 10-07 00:05Z)
+
+Owner ruling 2026-10-06 on #795: "Yes, re-download all of them" (every wrong file with no right copy anywhere). Each file was
+read first: epub OPF titles and identifiers, mobi/azw3 EXTH titles, audio tags and durations (ffprobe in the Audiobookshelf
+pod), md5s. Audiobookshelf's database showed no listening progress on any item touched. The scripts are
+`.agents/context/ll-library-audit/fix_census_795.py` and `fix_census_795_catwings.py`. Their headers carry the evidence for
+every row. The LazyLibrarian backups are `/config/lazylibrarian.db.pre-795-20261006` and `...pre-795-catwings-20261007`.
+Activity was declared as act-235821-166161.
+
+Every wrong file was handled by one rule:
+- A book whose folder names it correctly stays where it is. Only the LazyLibrarian opf naming the wrong record is held, as in
+  the Divergent repair.
+- A misfiled copy of a book that is also held elsewhere is held `duplicate`.
+- A misfiled only copy is re-homed under its own title, the #782 precedent.
+
+Nothing was deleted.
+
+- **Re-pointed to the right book already on disk (14):** Nightflyers & Other Stories, Wild Cards I, A Crown of Swords
+  (audio), City of Illusions, The Tempest Tales, The Science of Discworld II, A Plague of Zombies, How We Learn (both twin
+  records), Tales of the Unexpected, Distinctions (eBook), Anne of Green Gables, Magnus Chase 3, The Expanse Origins #3.
+  - The Tempest Tales' right epub was copied from grab 2056's seeding torrent.
+  - City of Illusions now points at its azw3; the epub there was the omnibus.
+  - A Crown of Swords' Audiobookshelf item held seven copies in one folder (178 files, 241 h). One is Winter's Heart. It now
+    holds one copy, the 1996 unabridged m4b.
+- **Two records with no file got the right book that was already on disk:**
+  - A-ZVAQAACAAJ The Hammer of Thor was Wanted and is now Open.
+  - HXHWBQAAQBAJ The Further Tales of Tempest Landry, an eBook re-homed out of The Tempest Tales/.
+- **Re-wanted (4), under the ruling:**
+  - Freed (eBook). Grab 94 is blocked by row 9598.
+  - Warriors 3 (eBook).
+  - Partners (audio). Its 102 Sparring Partners tracks were re-homed to Sparring Partners/. Grab 9567 is blocked by row 9599.
+  - Redwall (audio). The linked file was Eulalia!. The folder `Redwall - Book One - The Wall/` was The Sable Queen; it was
+    re-homed to The Sable Queen/ with its Audiobookshelf title corrected.
+
+  Owed checks OC-033 to OC-036 track the four re-downloads.
+- **Census Holds (6):** Sweet and Deadly (omnibus), Roald Dahl's Dirty Beasts (audio, combined recording; a duplicate track
+  set held), Wilderness (audio, "Wilderness and Other Stories"), Dean Koontz (record titled with the author's name),
+  Distinctions (audio, Towers of Midnight), and the foreign_held Game of Thrones (audio). The Game of Thrones file is
+  English: Roy Dotrice, 33 h 46 min, English chapter-name tracks. Its `fr` label comes from a mismatched Google Books record.
+- **missing_file Catwings audiobook:** no audio exists anywhere; the two grabs were PDFs. The pointer is cleared and
+  AudioStatus set to Skipped. Nothing was searched.
+- **Found on the way:** the same record's eBook linked Catwings (book 1). It now points at its own PDF. The census gap that
+  let it through is #799.
+
+Kavita folder scans (13 authors) and an Audiobookshelf library scan ran at 00:00Z. Owed: OC-032 (the re-points survive the
+library scan) and OC-033 to OC-036.
