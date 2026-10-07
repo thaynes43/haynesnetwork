@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.109.5](https://github.com/thaynes43/haynesnetwork/compare/v0.109.4...v0.109.5) (2026-10-07)
+
+
+### Bug Fixes
+
+* **books:** pace Google Books requests under the per-minute quota and wait out one minute trip ([#827](https://github.com/thaynes43/haynesnetwork/issues/827)) ([9bed1ff](https://github.com/thaynes43/haynesnetwork/commit/9bed1ffe3f05448abba7c8f243cfaec6d54b53fb))
+* the e2e suite serves a production build (ADR-103), and the Goodreads cards stop flashing "Not linked" ([#824](https://github.com/thaynes43/haynesnetwork/issues/824)) ([5854dd2](https://github.com/thaynes43/haynesnetwork/commit/5854dd299f2bbbb20eb0e3f15f4205d4695346b3))
+
 ## [0.109.4](https://github.com/thaynes43/haynesnetwork/compare/v0.109.3...v0.109.4) (2026-10-07)
 
 
