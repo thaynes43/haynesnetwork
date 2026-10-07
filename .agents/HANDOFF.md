@@ -56,6 +56,19 @@ everything it lists as open; this block says what is open now.
   The suite's own speed is #812 (needs a design decision). Private repos get self-hosted ARC runners in the cluster, owner
   ruling 2026-10-07, handed to a Codex session in haynes-ops (worktree `agent/arc-runners`); not this session's work.
 
+- **2026-10-07 morning owed checks (#818) caught two bugs, both fixed (#819 v0.109.4, haynes-ops #3515; libretto#33
+  `sha-71de8f2`, haynes-ops #3514; tracker #820):**
+  - Released collection wants never got an LL id. Not a #793 regression: Google Books' field search (`isbn:`, `intitle:`,
+    `inauthor:`) misses books its plain search finds, so Libretto said `no_match`. Libretto now falls back to a strict plain
+    "title author" search; the app no longer resolves members an active pairing want covers and logs `covered`/`unresolved`.
+    libretto#34 (cache `no_match` to save quota) needs a TTL choice, not started.
+  - **LazyLibrarian repair rule (normative from now on):** LL's library scan (`librarysync.py`) matches a file to a record by
+    title, fuzzy partial title and ISBN, not only by the opf id, and writes a fresh opf on a match. So a repair must put an
+    empty `.ll_ignore` in every folder that keeps a wrong book AND search the whole library for opfs naming the record;
+    holding the opf alone is undone by the next 09:10Z scan (it undid 13 repairs on 10-07). All repairs were redone this way
+    and survived a full scan; census 14:11Z: 0 unheld findings. Warriors 3, Partners and Darker re-wanted (OC-039). OC-040
+    checks the 10-08 09:10Z scan leaves the repairs alone; OC-041 checks Shift and Gray Dawn after Google Books' quota reset.
+
 **Open:** #792 (a Request Event history view on the Wanted detail; a feature, not started). #733 parked, #674 benched
 (unchanged). Owed checks: `.agents/owed-checks.yaml` is the only list (every pending row, with its due time); the
 next due are the 2026-10-07 morning and 18:00Z rows.
