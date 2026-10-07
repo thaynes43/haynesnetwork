@@ -505,10 +505,23 @@ export function heldFileNamesBook(
   if (!judgeableTitle(recordTitle)) return null;
   const subtitle = book.subtitle?.trim() ? heldTitleText(llTitleText(book.subtitle)) : null;
   const author = book.author ?? null;
-  const squash = (t: string): string => fold(t).replace(/[^a-z0-9]/g, '');
+  // One string once spaces and punctuation go, a leading article too, read with and without the possessive "'s" (issue
+  // #799's repair): "Hitchhikers Guide To The Galaxy" is LazyLibrarian's "The Hitch Hiker's Guide to the Galaxy".
+  const keys = (t: string): string[] => {
+    const raw = t
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/&/g, ' and ');
+    return [fold(t), raw].flatMap((v) => {
+      const k = v.trim();
+      return [k, k.replace(/^(?:the|an?)\s+/, '')].map((x) => x.replace(/[^a-z0-9]/g, ''));
+    });
+  };
+  const sameString = (a: string, b: string): boolean => keys(a).some((k) => keys(b).includes(k));
   if (
-    squash(file) === squash(recordTitle) ||
-    (subtitle !== null && squash(file) === squash(`${recordTitle}${subtitle}`))
+    sameString(file, recordTitle) ||
+    (subtitle !== null && sameString(file, `${recordTitle}${subtitle}`))
   )
     return true;
   const asWant = (title: string) => ({ title, author });

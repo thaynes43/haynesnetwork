@@ -573,6 +573,24 @@ describe('heldFileNamesBook: a cut title (issue #799)', () => {
       ),
     ).toBe(false);
   });
+  it('a compound written apart, with or without the leading article (the #799 repair)', () => {
+    expect(
+      heldFileNamesBook(
+        'Hitchhikers Guide To The Galaxy',
+        book("The Hitch Hiker's Guide to the Galaxy", 'Douglas Adams'),
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook(
+        "The Hitchhiker's Guide to the Galaxy",
+        book("The Hitch Hiker's Guide to the Galaxy", 'Douglas Adams'),
+      ),
+    ).toBe(true);
+    expect(
+      heldFileNamesBook('A Clash of Kings', book('Clash of Kings', 'George R.R. Martin')),
+    ).toBe(true);
+    expect(heldFileNamesBook('Wild Cards', book('Wild Cards 3', 'George R.R. Martin'))).toBe(false);
+  });
   it('a prologue cut off the front is still a separate work', () => {
     expect(
       heldFileNamesBook(
