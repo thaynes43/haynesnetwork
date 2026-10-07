@@ -70,3 +70,13 @@ holds:
       guide), not from the audio. The library also holds a second English copy in A Game of Thrones/. Checked 2026-10-06.
     opened: 2026-10-06
     links: ['#795']
+  - key: wrong_file:W4ZDugEACAAJ:ebook
+    path: EBooks/Rick Riordan/The Ship of the Dead/Rick Riordan - The Ship of the Dead.epub
+    title: Magnus Chase and the Gods of Asgard, Book 3 The Ship of the Dead (Rick Riordan)
+    reason: >-
+      The census misreads the title, and the file is the book. The epub is The Ship of the Dead, Magnus Chase 3 (OPF dc:title,
+      ISBN 9781484758601). Its twin record 1BeXtAEACAAJ "Magnus Chase and the Ship of the Dead" links the same file and is not
+      flagged. The record's title has no separator between "Book 3" and "The Ship of the Dead", so the Held File Check cannot
+      strip the series designation. The #795 repair re-pointed the record here on 2026-10-06; it had held The Hammer of Thor.
+    opened: 2026-10-07
+    links: ['#795', '#799']
