@@ -1577,3 +1577,22 @@ checks:
       The Hunger Games). A drop that no library change explains is a pairing defect: open an issue with the pair ids.
     links:
       issues: [haynesnetwork#761]
+
+  - id: OC-044
+    title: "Libretto's no_match cache answers repeat honest misses with no Google Books call"
+    opened: 2026-10-07
+    after: >-
+      Libretto PR #35 (libretto#34, image sha-1fdcddd via haynes-ops #3525, live 2026-10-07) and the 2026-10-08 07:27Z
+      collection-wants pass, the first after the 07:00Z Google Books quota reset, which populates the cache
+    not_before: 2026-10-08T08:30:00Z
+    due: 2026-10-08T14:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      The 08:27Z collection-wants pass logs `resolve broker: no_match answered from cache` for Compulsory and The Infinite
+      Extent (`kubectl logs -n media deploy/libretto | grep "answered from cache"`, or Loki on the libretto pods in
+      namespace media). The `cacheHits` count rises. The day's Google Books calls from Libretto for the six known misses
+      drop to about one try each (the 07:27Z pass), not one per hourly pass.
+    links:
+      issues: ['https://github.com/thaynes43/libretto/issues/34']
+      prs: ['https://github.com/thaynes43/libretto/pull/35', 'https://github.com/thaynes43/haynes-ops/pull/3525']
