@@ -213,6 +213,7 @@ export * from './collection-want-downloaded';
 export * from './format-pairing';
 // Issue #693 — the one-off repair of requests pinned to another volume's LazyLibrarian book.
 export * from './wrong-volume-repair';
+export * from './pairing-anchor-transition';
 export * from './lazylibrarian-clients';
 // ADR-056 (PLAN-046 — Kapowarr comics acquisition) — the confined Kapowarr client bundle for comic routing +
 // the comic force-search (@hnet/kapowarr/write stays in this package — the arr-write-import-guard, extended).

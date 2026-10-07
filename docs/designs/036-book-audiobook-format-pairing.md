@@ -683,3 +683,40 @@ candidate tried again, instead of ending the run's lookups (DESIGN-039 D-07 as a
 
 **Tests:** `packages/domain/__tests__/format-pairing.test.ts` (the run an hour early still waits; the same-hour run a day
 later that starts 0.4 s sooner looks the want up; the quota-wait cases listed in DESIGN-039).
+
+## Amendment: 2026-10-07, EPUB series split and retired anchors (issue #825, ADR-105)
+
+Removing EPUB grouping metadata replaces a multi-book Kavita row with rows for its books. Kavita may retain a
+series id when its old grouping name equals a surviving book title. The mirror tombstones absent rows and keeps
+history; pairs are recomputed from live Held Book identities. Pair changes caused by replacement ids are expected
+once, with their identities and Request Events checked in the staged and full runs.
+
+A pairing want on a tombstoned anchor never enters mint, reconcile, identity repair, revival or the Skipped sweep.
+The single writer settles such a historical want as removed, clears its LazyLibrarian id, and records a Request
+Event in the same transaction. Removed anchors do not cover a collection want. A queued predecessor whose live replacement cannot yet
+claim its format is temporarily reserved from release while cap, quota or backoff delays the successor; it never
+initiates a resolve, queue or search. Other removed anchors do not own a LazyLibrarian format. Format release runs only through the existing audited release chain and after new live wants can claim the
+format; the migration must account for mint cap, quota and in-flight work before settling or releasing a predecessor.
+No release removes a downloaded file. Historical wants are retained rather than re-keyed to an inferred book.
+
+An unread live replacement cannot prove that the old queued format has no successor. While a same-kind Held Book
+read remains unknown, the reservation fails closed without a time expiry: an expiry during a prolonged detail-read
+outage could cancel a valid in-flight format. Once per format-pairing run, a structured warning names the unknown
+blocking item ids and deferred request ids, with total counts and at most 20 ids per list, so a persistent read
+outage can be diagnosed without unbounded log output.
+
+A surviving anchor whose Held Book changes cannot carry a prior book's landed state into the new identity. If its
+want has no LazyLibrarian id, a changed identity is reidentified through the existing writer, resetting the missing
+format to requested unless a current live format pair proves it held. A retitle that preserves state requires an
+existing LazyLibrarian id verified to describe the new book. Every write uses the Request Event helpers.
+
+Before the backfill, ship and deploy these safeguards, project the census against after-strip metadata, and review
+the merged implementation adversarially. The staged Hunger Games/Mockingjay run proves surviving and new series
+ids, chapter changes, exact file coverage and requests. Repeat across the full inventory; preserve one-time pair
+deltas as evidence. The next 04:00Z scan must not cause tagged-series flips or unexplained dropped/revived wants.
+
+A retained anchor can still carry a `multi_book` or `no_book` park after becoming one book. If the migration census
+finds one, a scoped repair may lift only those two reasons after a successful fresh Held Book read; it must use the
+new book identity, reset the missing format unless a live pair proves it held, and record the mutation under the
+repair Request Event scope. It never lifts a `wrong_volume` or `foreign_language` park. This backfill repair does not
+change the general rule that parks require an explicit repair to lift.

@@ -5,8 +5,15 @@
 // "Search again"). The @hnet/sync mode does the external READS (RSS + GB) and hands the enriched items in;
 // the confined LL WRITES happen here through the injected bundle (the poster-guard precedent).
 import { and, asc, eq, inArray, or } from 'drizzle-orm';
-import { bookRequests, type BookRequestFormat, type BookRequestStatus, type DbClient } from '@hnet/db';
+import {
+  bookRequests,
+  booksItems,
+  type BookRequestFormat,
+  type BookRequestStatus,
+  type DbClient,
+} from '@hnet/db';
 import { resolveDb } from './db-client';
+import { readHeldBooks } from './books';
 import { withRequestEventScope } from './book-request-events';
 import {
   applyLlGoneDecision,
@@ -835,6 +842,19 @@ async function runManualBookSearchAs(
     actorId: input.actorId,
   });
 
+  if (request.origin === 'pairing') {
+    const [anchor] = await resolveDb(input.db)
+      .select()
+      .from(booksItems)
+      .where(eq(booksItems.id, request.pairingBooksItemId!));
+    if (
+      !anchor ||
+      anchor.deletedAt !== null ||
+      (anchor.mediaKind === 'book' && readHeldBooks(anchor.attrs) === undefined)
+    ) {
+      return { searched: false, formats: [], reason: 'unroutable' };
+    }
+  }
   if (request.unroutableReason) return { searched: false, formats: [], reason: 'unroutable' };
   if (!request.llBookId) return { searched: false, formats: [], reason: 'no_ll_id' };
 

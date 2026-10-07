@@ -1693,9 +1693,12 @@ export async function loadPairingCoverage(
       author: bookRequests.author,
     })
     .from(bookRequests)
+    .innerJoin(booksItems, eq(booksItems.id, bookRequests.pairingBooksItemId))
     .where(
       and(
         eq(bookRequests.origin, 'pairing'),
+        isNull(booksItems.deletedAt),
+        isNull(bookRequests.unroutableReason),
         format === 'audiobook'
           ? sql`${bookRequests.audioStatus} <> 'landed'`
           : sql`${bookRequests.ebookStatus} <> 'landed'`,
@@ -2199,7 +2202,10 @@ export async function getCollectionWantedBookRequests(input: {
         // tile (its anchor already renders as a library card wearing the want on its coverage badge).
         sql`NOT EXISTS (
           SELECT 1 FROM book_requests pw
+           JOIN books_items pa ON pa.id = pw.pairing_books_item_id
            WHERE pw.origin = 'pairing'
+             AND pa.deleted_at IS NULL
+             AND pw.unroutable_reason IS NULL
              AND pw.ll_book_id IS NOT NULL
              AND pw.ll_book_id = ${bookRequests.llBookId}
              AND CASE WHEN ${booksCollections.source} = 'audiobookshelf'
