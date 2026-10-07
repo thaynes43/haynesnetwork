@@ -65,13 +65,16 @@ everything it lists as open; this block says what is open now.
   - **LazyLibrarian repair rule (normative from now on):** LL's library scan (`librarysync.py`) matches a file to a record by
     title, fuzzy partial title and ISBN, not only by the opf id, and writes a fresh opf on a match. So a repair must put an
     empty `.ll_ignore` in every folder that keeps a wrong book AND search the whole library for opfs naming the record;
-    holding the opf alone is undone by the next 09:10Z scan (it undid 13 repairs on 10-07). All repairs were redone this way
-    and survived a full scan; census 14:11Z: 0 unheld findings. Warriors 3, Partners and Darker re-wanted (OC-039). OC-040
+    holding the opf alone is undone by the next 09:10Z scan (it undid 15 repairs on 10-07; see
+    `.agents/context/2026-10-07-scan-undid-census-repairs.md`). All repairs were redone this way
+    and survived a full scan; census 14:11Z: 0 unheld findings. Warriors 3 (OC-034), Partners (OC-035) and Darker (OC-039)
+    re-wanted. OC-040
     checks the 10-08 09:10Z scan leaves the repairs alone; OC-041 checks Shift and Gray Dawn after Google Books' quota reset.
 
 **Open:** #792 (a Request Event history view on the Wanted detail; a feature, not started). #733 parked, #674 benched
 (unchanged). Owed checks: `.agents/owed-checks.yaml` is the only list (every pending row, with its due time); the
-next due are the 2026-10-07 morning and 18:00Z rows.
+the morning rows are done (#818, #820); next due are the 10-07
+18:00Z rows, then OC-041 at 10-08 14:00Z.
 
 ## ▶ 2026-10-06 (evening) — Coordinator handoff: the books-rollout repair wave is done; what is next
 
