@@ -3,6 +3,10 @@
 - **Status:** Accepted (2026-10-07; drafted and accepted by an agent under the Accept authority in
   `.agents/plans/README.md`, on the coordinator's work order after the owner's account ran out of its included
   Actions minutes)
+- **Superseded in part by:** [ADR-104](104-advisory-e2e-runs-on-every-code-pr.md) (2026-10-07): rule 4 and C-04, the
+  opt-in advisory suite. The premise that this repo's Actions minutes were billed was wrong (a public repo on
+  GitHub-hosted runners is not billed), so the advisory suite runs on every code PR again. Everything else here stands.
+  This is a status note only.
 - **Date:** 2026-10-07
 - **Deciders:** Tom Haynes (owner; the minutes budget) · drafted by Opus 5.5
 - **Supersedes in part:** [ADR-100](100-e2e-gates-the-book-pipeline.md): "`e2e` runs ... for a push to main" and

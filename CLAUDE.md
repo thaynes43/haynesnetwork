@@ -126,11 +126,12 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
   reports.** It passes at once for a PR that touches no pipeline path, and mirrors the Playwright
   suite for one that does (`packages/{domain,sync,arr,lazylibrarian,goodreads,books,kapowarr,downloads,libretto,db,test-utils}`,
   the integrations/books/book-fix tRPC routers, `apps/web/e2e`, the integrations UI; the list is `scripts/e2e-gate-paths.sh`) and for the release-please PR,
-  so a red e2e stops a pipeline change and the release (ADR-100, #742). **CI spends minutes only where a change
-  can break something (ADR-102):** a PR that changes no code path (`scripts/ci-code-paths.sh`: Markdown anywhere,
+  so a red e2e stops a pipeline change and the release (ADR-100, #742). **CI spends runner time only where a change
+  can break something (ADR-102; public-repo Actions minutes are not billed, so ADR-104 undid its coverage cut):** a PR that changes no code path (`scripts/ci-code-paths.sh`: Markdown anywhere,
   `docs/**`, `.agents/**` except its `*.yaml`/`*.json` data files) skips lint, typecheck, tests, build and the image
-  build; those required checks report as skipped, which satisfies branch protection. The advisory suite is opt-in:
-  label a non-pipeline PR `run-e2e` when it changes something the suite drives. Nothing runs on a push to main
+  build; those required checks report as skipped, which satisfies branch protection. The advisory suite
+  (`e2e-advisory`, never required) runs on every other PR that changes a code path (ADR-104); label a PR `run-e2e`
+  to force it on one with no code path. Nothing runs on a push to main
   (protection is strict, so main's tree is the tree the PR tested). To run the suite on main's code, label a
   docs-only PR `run-e2e` (its merge tree has main's code); the bot token cannot dispatch workflows (403), the owner
   can (`gh workflow run e2e.yml --ref main`). A commit touching only `.agents/` and `docs/` never opens or updates
