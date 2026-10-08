@@ -81,6 +81,33 @@ haynes-ops #3604. Deploy complete-credit matching and persistent ambiguous-count
 protection, refresh native source attributes, review the conservative cache and restore pairing. The
 unapplied repeat-force pair #3601/#3602 was superseded; it never paused production or requested a scan.
 
+### Native refresh and conclusive scan, 2026-10-08 19:48Z
+
+Issue #850 is fixed and closed. App #851, release #852 and haynes-ops #3605 deployed v0.110.4.
+The native refresh read all 1,932 Kavita books and all 1,231 expanded Audiobookshelf items with complete credits.
+An acquisition-disabled cache pass produced exactly 716 pairs and 35 persistent reservations. Its seven
+removed-anchor settlements wrote seven Request Events; all 764 protected wants remained byte-exact. No provider,
+LazyLibrarian, mint, push or release write occurred. Haynes-ops #3604 restored the narrow pairing hold at 19:19Z.
+
+Fresh read-only retention completed at 19:21:58Z, verifying the 1,956-EPUB, 4,730-file inventory, candidate bytes,
+ZIP contents and retained originals. A new Force request was accepted at 19:44:04Z. Continuous same-pod logs
+prove the unique server enqueue, accepted request, scan start and commit at 19:47:13Z; both actual completion
+notifications were received. All 48 reading rows, eight saved-lock tables and 27 curated tables and path mappings
+were exact afterward. Coverage remains 1,949 of 1,956, with exactly the seven existing gaps and 13 nonunique paths.
+This closes the current Force observation gap; the original historical backfill observer gap remains explicit.
+No verified metadata was replayed.
+
+The brief pause in haynes-ops #3606 was restored by its full inverse #3607, merged at 19:47:38Z after current
+checks and Claude review. At 19:48:44Z all five CronJobs were unsuspended, Libretto acquisition was normal and
+all three Flux scopes were unsuspended and Ready on the exact restore revision. Both task worktrees were removed.
+The Assistant to the Villain want from OC-043 names the correct held Hannah Nicole Maehrer ebook and its exact
+LazyLibrarian BookFile; the distinct Accomplice audiobook does not satisfy it. No correction or acquisition was run.
+
+Copy consolidation and library-only reading-list reconciliation remain in progress. No duplicate has moved and
+no recipe or reading-list write has occurred. Preserve unproved list members and protected copies rather than
+using acquisition or unrelated metadata edits to fill an identity gap. The hourly strip flag remains disabled
+until the remaining verification is complete. OC-045 remains pending the October 9 nightly scan and pairing run.
+
 ## Rollback
 
 Keep hourly stripping disabled and restore verified originals outside the library through the converter's locked,
