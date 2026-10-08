@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.110.2](https://github.com/thaynes43/haynesnetwork/compare/v0.110.1...v0.110.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **books:** require verified identities and preserve in-flight formats ([#837](https://github.com/thaynes43/haynesnetwork/issues/837)) ([52de2c6](https://github.com/thaynes43/haynesnetwork/commit/52de2c6d09f654f4558925de9c283e9ccb5b4a51))
+
 ## [0.110.1](https://github.com/thaynes43/haynesnetwork/compare/v0.110.0...v0.110.1) (2026-10-07)
 
 
