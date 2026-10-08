@@ -258,6 +258,18 @@ export async function startStubBooks(): Promise<StubBooksServer> {
         const page = Number(url.searchParams.get('page') ?? '0');
         return json(res, 200, { results: page === 0 ? ABS_ITEMS : [], total: ABS_ITEMS.length, page });
       }
+      // The listing omits author objects, as the native server does. These four fixtures each
+      // declare one writer, supplied by the complete item read rather than guessed by the sync.
+      if (path.startsWith('/api/items/') && !path.endsWith('/cover')) {
+        const item = ABS_ITEMS.find((it) => it.id === path.slice('/api/items/'.length));
+        if (!item || url.searchParams.get('expanded') !== '1') {
+          return json(res, 404, { message: 'complete item not found' });
+        }
+        const author = ABS_AUTHORS.find((a) => a.name === item.media.metadata.authorName);
+        return json(res, 200, { ...item, media: { ...item.media, metadata: {
+          ...item.media.metadata, authors: author ? [{ id: author.id, name: author.name }] : [],
+        } } });
+      }
       if (path.startsWith('/api/libraries/') && path.endsWith('/authors')) {
         return json(res, 200, {
           authors: ABS_AUTHORS.map((a) => ({

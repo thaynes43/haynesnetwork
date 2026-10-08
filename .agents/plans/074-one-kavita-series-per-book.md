@@ -61,6 +61,26 @@ Diagnose this boundary while live; preserve the original backfill's missing obse
 Do not repeat any of the 16 verified edits. The hourly gate remains off, and duplicate moves, app refresh,
 reading-list reconciliation and final force-scan verification remain pending.
 
+### Current verification and narrow pairing hold, 2026-10-08 17:32Z
+
+The scan-start refusal came from comparing clocks across hosts. A unique request, enqueue, start and commit
+on the same Kavita server, with the accepted normal-mode request and both notifications, proves the normal
+scan completed. This preserves the original historical backfill observer gap rather than manufacturing it.
+
+The force request was accepted at 16:32:57Z and committed at 16:36:01Z. Its notification reader failed before
+the final messages; conclusive notification evidence remains pending. Current coverage is 1,949 of 1,956
+EPUBs. All seven unmapped files and 13 nonunique paths already existed before the collision stage and force.
+No new gap was introduced. Pathfinder and Visitors mappings returned after force. All 48 reading rows,
+eight saved-lock tables and 27 curated tables exactly match the fresh preforce snapshot. Production was
+restored through haynes-ops #3599 at 16:36:18Z. Never replay verified metadata to obtain scan evidence.
+
+Native pairing projection then exposed issue #850: selecting a preferred writer discards complete coauthor
+credits and can pair different works. Haynes-ops #3603 merged and applied before 17:32Z, suspending only
+format pairing. The other four schedules and Libretto acquisition remain active. Its prepared inverse is
+haynes-ops #3604. Deploy complete-credit matching and persistent ambiguous-counterpart acquisition
+protection, refresh native source attributes, review the conservative cache and restore pairing. The
+unapplied repeat-force pair #3601/#3602 was superseded; it never paused production or requested a scan.
+
 ## Rollback
 
 Keep hourly stripping disabled and restore verified originals outside the library through the converter's locked,

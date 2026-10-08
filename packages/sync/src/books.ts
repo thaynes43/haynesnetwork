@@ -283,6 +283,7 @@ export function normalizeAbsItem(
     fileCount: item.media?.numAudioFiles ?? null,
     metadataSyncedAt: now,
     attrs: {
+      ...(meta?.authors !== undefined ? { authors: meta.authors?.map((a) => a.name) ?? [] } : {}),
       numTracks: item.media?.numTracks ?? null,
       numChapters: item.media?.numChapters ?? null,
       language: meta?.language ?? null,
@@ -583,7 +584,29 @@ export async function fetchBooksSnapshot(
             ABS_PAGE_SIZE,
           );
           for (const it of items) {
-            rows.push(normalizeAbsItem(it, lib.id, lib.name, bundle.audiobookshelfPublicUrl, now));
+            let source = it;
+            if (it.media?.metadata?.authors === undefined) {
+              // One complete-item GET at a time. Keep listing display fields; only the complete
+              // item supplies author boundaries. Missing complete credits remain unknown.
+              const complete = await bundle.audiobookshelf.getItem(it.id);
+              if (complete.id !== it.id || complete.libraryId !== lib.id) {
+                throw new Error('Audiobookshelf complete item identity mismatch');
+              }
+              if (it.updatedAt != null && complete.updatedAt != null && it.updatedAt !== complete.updatedAt) {
+                throw new Error('Audiobookshelf item changed during complete credit read');
+              }
+              for (const field of ['title', 'subtitle', 'isbn'] as const) {
+                const listed = it.media?.metadata?.[field];
+                const full = complete.media?.metadata?.[field];
+                if (listed !== undefined && full !== undefined && listed !== full) {
+                  throw new Error('Audiobookshelf work changed during complete credit read');
+                }
+              }
+              source = { ...it, media: { ...it.media, metadata: {
+                ...it.media?.metadata, authors: complete.media?.metadata?.authors ?? null,
+              } } };
+            }
+            rows.push(normalizeAbsItem(source, lib.id, lib.name, bundle.audiobookshelfPublicUrl, now));
             absItems += 1;
           }
           if (items.length === 0 || (page + 1) * ABS_PAGE_SIZE >= total || page >= MAX_PAGES) break;

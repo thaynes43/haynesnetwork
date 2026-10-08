@@ -194,6 +194,31 @@ describe('KavitaClient', () => {
 });
 
 describe('AudiobookshelfClient', () => {
+  it.each([{ authors: [{ id: 'terry', name: 'Terry Pratchett' }, { id: 'stephen', name: 'Stephen Baxter' }] },
+    { authors: [] }, { authors: null }, {}])('reads expanded complete item author records without inventing omitted credits: %j', async (metadata) => {
+    const { fetchImpl, calls } = stubFetch([
+      { method: 'POST', match: (u) => u.pathname === '/login', body: { user: { token: 'abs-tok' } } },
+      { match: (u) => u.pathname === '/api/items/long-earth' && u.searchParams.get('expanded') === '1',
+        body: { id: 'long-earth', libraryId: 'lib-1', media: { metadata: { title: 'The Long Earth', ...metadata } } } },
+    ]);
+    const item = await new AudiobookshelfClient({ ...ABS_OPTS, fetchImpl }).getItem('long-earth');
+    expect(item.media?.metadata?.authors).toEqual('authors' in metadata ? metadata.authors : undefined);
+    expect(calls.filter((c) => c.url.pathname.startsWith('/api/')).every((c) => c.method === 'GET')).toBe(true);
+  });
+
+  it('refuses a malformed complete credit record or a different item identity', async () => {
+    for (const body of [
+      { id: 'item-1', libraryId: 'lib-1', media: { metadata: { authors: [{ name: 7 }] } } },
+      { id: 'other', libraryId: 'lib-1', media: { metadata: { authors: [{ name: 'A' }] } } },
+    ]) {
+      const { fetchImpl } = stubFetch([
+        { method: 'POST', match: (u) => u.pathname === '/login', body: { user: { token: 'abs-tok' } } },
+        { match: (u) => u.pathname === '/api/items/item-1', body },
+      ]);
+      await expect(new AudiobookshelfClient({ ...ABS_OPTS, fetchImpl }).getItem('item-1')).rejects.toThrow();
+    }
+  });
+
   it('logs in then lists libraries and items with a bearer token + total', async () => {
     const { fetchImpl, calls } = stubFetch([
       {
@@ -217,7 +242,7 @@ describe('AudiobookshelfClient', () => {
               addedAt: 1783702399325,
               updatedAt: 1783702399325,
               media: {
-                metadata: { title: 'Restaurant at the End of the Universe', authorName: 'Douglas Adams' },
+                metadata: { title: 'Restaurant at the End of the Universe', authorName: 'Douglas Adams', authors: [{ id: 'adams', name: 'Douglas Adams' }] },
                 numTracks: 5,
                 duration: 19822,
                 size: 369070,
@@ -233,6 +258,7 @@ describe('AudiobookshelfClient', () => {
     const page = await client.listItemsPage('lib-1', 0, 50);
     expect(page.total).toBe(823);
     expect(page.items[0]?.media?.metadata?.authorName).toBe('Douglas Adams');
+    expect(page.items[0]?.media?.metadata?.authors).toEqual([{ id: 'adams', name: 'Douglas Adams' }]);
 
     const itemsCall = calls.find((c) => c.url.pathname === '/api/libraries/lib-1/items');
     expect(itemsCall?.headers.get('authorization')).toBe('Bearer abs-tok');

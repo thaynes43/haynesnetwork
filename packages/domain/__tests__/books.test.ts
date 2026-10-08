@@ -54,6 +54,17 @@ const liveRows = () =>
 const allRows = () => t.db.select().from(booksItems);
 
 describe('syncBooks', () => {
+  it('refreshes complete ABS source credits through the native upsert even when display author and timestamps are unchanged', async () => {
+    const item = row({ source: 'audiobookshelf', mediaKind: 'audiobook', externalId: 'credits', title: 'The Long Earth', author: 'Terry Pratchett' });
+    await syncBooks({ db: t.db, syncedSources: ['audiobookshelf'], now: NOW, rows: [item] });
+    const old = (await liveRows())[0]!;
+    await syncBooks({ db: t.db, syncedSources: ['audiobookshelf'], now: later(1000), rows: [{ ...item, attrs: { authors: ['Stephen Baxter', 'Terry Pratchett'] } }] });
+    const fresh = (await liveRows())[0]!;
+    expect(fresh.id).toBe(old.id);
+    expect(fresh.author).toBe(old.author);
+    expect(fresh.attrs.authors).toEqual(['Stephen Baxter', 'Terry Pratchett']);
+  });
+
   it('upserts the snapshot and reports per-kind counts', async () => {
     const report = await syncBooks({
       db: t.db,
