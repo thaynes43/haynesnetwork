@@ -113,3 +113,16 @@ until the remaining verification is complete. OC-045 remains pending the October
 
 Keep hourly stripping disabled and restore verified originals outside the library through the converter's locked,
 atomic restore procedure. Rescan Kavita and refresh app/Libretto identities. Preserve Request Events and backups.
+
+
+### Library-only curation checkpoint, 2026-10-08 21:20Z
+
+The completed source review permits 42 recipe scopes: nine existing repairs, one unchanged recipe and 32 new
+manual recipes with acquisition disabled. The preview contains 136 chapter additions and zero removals; no apply
+or copy move has happened at this checkpoint. Six newly identified source/credit contradictions join the retained
+56 holds, for 62 held scopes. DESIGN-037 records their exact reasons and staged execution contract.
+
+Source and stopped-database readers, strict five-Job ownership and two PostgreSQL lease cleanup are independently
+reviewed components. The final publisher-path and copy callback proof remains pending. All six relevant schedules,
+LazyLibrarian, Kavita and Libretto acquisition remain live; the hourly gate stays off. Prepare and review the exact
+inverse before the short copy window, restore first on every outcome, then refresh any affected native membership.

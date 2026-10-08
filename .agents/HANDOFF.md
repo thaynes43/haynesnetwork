@@ -46,6 +46,9 @@
   acquisition were restored through haynes-ops #3607; no production hold remains. Hourly strip is still off.
   Copy moves and list reconciliation remain in progress; Ransom stays held. OC-045 awaits October 9 nightly
   scanning, and OC-046 tracks the separate 30-day idle hold release.
+  Source review now permits 42 recipe scopes and holds 62; 32 proposed recipes stay manual with acquisition off.
+  Six explicit identity/credit holds and the staged execution rules are recorded in DESIGN-037. No list or copy
+  write is claimed by this checkpoint. All six relevant schedules, LL/Kavita and Libretto remain live.
 - **haynes-ops#3538 filed:** Codex task sessions fail cigar-journal MCP with `AuthRequired`; Claude sessions work.
 
 **Open:** #825 in progress (#830/#831 implementation and verification), owed checks in `.agents/owed-checks.yaml`, #733 parked,
