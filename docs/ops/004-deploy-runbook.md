@@ -102,8 +102,11 @@ transients self-heal without operator action.
 
 ### 1c. Release-PR "dance" guardrails (2026-07-14 — the label-strip incident)
 
-Bot-authored release PRs run zero CI, so the close/reopen dance re-triggers checks as a real
-actor. TWO hazards found live:
+The release workflow uses the haynes-dev-bot App token, so release PRs normally trigger CI
+automatically. Check the current head's runs first and leave queued or running checks alone.
+Use close/reopen only when the release workflow has finished and current-head checks are
+missing or require approval. Reopening a PR whose checks are running cancels those runs and
+starts replacements, as observed for v0.110.4 on 2026-10-08. Two older hazards still apply:
 
 - **Never dance while a release-please run is in flight.** Closing a release PR mid-run collided
   with the run and left the replacement PR (#270) with **no labels** — release-please tags
@@ -148,7 +151,8 @@ tag in the HelmRelease and committing to `haynes-ops`.
    `kubernetes/main/apps/downloads/owed-checks/app/cronjob.yaml` (DESIGN-053 D-08: it runs the app image in
    another namespace, so the anchor cannot reach it), and on the Books Census,
    `kubernetes/main/apps/downloads/books-census/app/cronjob.yaml` (DESIGN-028 amendment 2026-10-06, same reason).
-2. Commit and push to `haynes-ops` `main`.
+2. Commit and push a task branch, open a PR, wait for required checks and handle the completed
+   Claude advisory review, then squash-merge it. Never push directly to `main`.
 3. **Flux reconciles** (the `haynesnetwork` Kustomization polls every 30m; force it):
 
    ```bash
