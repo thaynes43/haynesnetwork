@@ -6,7 +6,6 @@
 ### Bug Fixes
 
 * defer acquisition for physically held title and credit conflicts ([#843](https://github.com/thaynes43/haynesnetwork/issues/843)) ([3a405e8](https://github.com/thaynes43/haynesnetwork/commit/3a405e876e348b803cc800027d6969c06a38c33e))
-* defer acquisition for physically held title and credit conflicts ([#843](https://github.com/thaynes43/haynesnetwork/issues/843)) ([3a405e8](https://github.com/thaynes43/haynesnetwork/commit/3a405e876e348b803cc800027d6969c06a38c33e))
 
 ## [0.110.2](https://github.com/thaynes43/haynesnetwork/compare/v0.110.1...v0.110.2) (2026-10-08)
 
