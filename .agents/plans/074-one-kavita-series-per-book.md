@@ -133,8 +133,8 @@ Haynes-ops #3608/#3609 restored the first copy refusal in 89 seconds, before any
 parser and Libretto rollout fence were corrected and independently reviewed. The next pause/inverse pair,
 #3611/#3612, created only one read-only Lidarr helper. All eight publisher captures completed in 32.283 seconds,
 then the imported mount guard refused before SOURCE/MAIN, PostgreSQL leases, proof delivery or archives.
-The exact first runtime refusal was not retained. Offline reproduction identified an already verified SAB
-local-XFS mount rejected again by the final sweep. A live read-only inventory also exposes unrelated system
+The exact first runtime refusal was not retained. Offline reproduction identified two already verified SAB
+local-XFS mounts rejected again by the final sweep. A live read-only inventory also exposes unrelated system
 storage mounts that require explicit normal-write/source classification rather than blanket exemptions.
 
 The second window's first stop was 23:09:08Z and full restoration completed at 23:11:34Z, about 146 seconds.
