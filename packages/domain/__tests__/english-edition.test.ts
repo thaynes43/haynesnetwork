@@ -10,6 +10,7 @@ import {
   bookRequests,
   booksCollections,
   booksFormatPairs,
+  booksPairingReservations,
   booksItems,
   gbCallBudget,
   gbQuotaState,
@@ -618,6 +619,40 @@ describe('runEnglishEditionPass — pairing and collection wants', () => {
     const report = await runEnglishEditionPass({ db: t.db, snapshot: SPANISH_SNAPSHOT(), resolver: { gb: gb.gb, consumer: 'goodreads' }, now: NOW });
     expect(report.parked).toBe(1);
     expect(await getRequest(id)).toMatchObject({ unroutableReason: 'no_english_edition', ebookStatus: 'requested', audioStatus: 'landed' });
+  });
+
+  it.each(['reserved', 'unread', 'reserved_park_fixed'] as const)('preserves an audio pairing request during %s ebook uncertainty in the separate English-edition pass', async (state) => {
+    const anchor = await seedAnchor('English');
+    const [book] = await t.db.insert(booksItems).values({
+      source: 'kavita', mediaKind: 'book', externalId: `uncertain-${++seq}`,
+      libraryId: '1', libraryName: 'Books', title: 'Unread counterpart', sortTitle: 'unread counterpart',
+      author: 'Isaac Asimov', deepLinkUrl: 'http://x',
+      attrs: state === 'unread' ? {} : { heldBooks: [{ title: null, author: null, isbn: null }] },
+    }).returning();
+    if (state !== 'unread') await t.db.insert(booksPairingReservations).values({ bookItemId: book!.id, audioItemId: anchor });
+    const id = await seedPairing(anchor, state === 'reserved_park_fixed' ? { unroutableReason: 'no_english_edition' } : {});
+    const before = await getRequest(id);
+    const gb = stubGb(() => AZAZEL_EN);
+    const snapshot = state === 'reserved_park_fixed' ? snapshotOf({ PitFPgAACAAJ: { ...SPANISH_ROW, language: 'en' } }) : SPANISH_SNAPSHOT();
+    const warnings: Record<string, unknown>[] = [];
+    const run = (now: Date) => runEnglishEditionPass({ db: t.db, snapshot, resolver: { gb: gb.gb, consumer: 'goodreads' }, now, log: { warn: (_message, data) => { warnings.push(data!); } } });
+    expect(await run(NOW)).toMatchObject({ due: 0, switched: 0, parked: 0, lifted: 0 });
+    expect(await run(TOMORROW)).toMatchObject({ due: 0, switched: 0, parked: 0, lifted: 0 });
+    expect(gb.queries).toEqual([]);
+    expect(await getRequest(id)).toEqual(before);
+    expect(warnings.at(-1)).toMatchObject({ deferredRequestCount: 1, deferredRequestIds: [id] });
+  });
+
+  it('lands verified existing-request coverage without rekeying a deferred audio pairing request', async () => {
+    const anchor = await seedAnchor('English');
+    const [book] = await t.db.insert(booksItems).values({ source: 'kavita', mediaKind: 'book', externalId: `unknown-${++seq}`, libraryId: '1', libraryName: 'Books', title: 'Unread', sortTitle: 'unread', author: 'Isaac Asimov', deepLinkUrl: 'http://x', attrs: {} }).returning();
+    await t.db.insert(booksPairingReservations).values({ bookItemId: book!.id, audioItemId: anchor });
+    const id = await seedPairing(anchor);
+    const gb = stubGb(() => AZAZEL_EN);
+    const snapshot = snapshotOf({ PitFPgAACAAJ: SPANISH_ROW, 'held-english': { title: 'Azazel', author: 'Isaac Asimov', language: 'en', ebookStatus: 'Open' } });
+    expect(await runEnglishEditionPass({ db: t.db, snapshot, resolver: { gb: gb.gb, consumer: 'goodreads' }, now: NOW })).toMatchObject({ due: 0, switched: 0 });
+    expect(gb.queries).toEqual([]);
+    expect(await getRequest(id)).toMatchObject({ llBookId: 'PitFPgAACAAJ', ebookStatus: 'landed', audioStatus: 'landed', englishEditionTriedAt: null });
   });
 
   async function seedCollection() {

@@ -18,7 +18,9 @@ import {
   matchFormatPairs,
   missingFormatFor,
   pairingIdentity,
+  pairingBookInventoryUnidentifiable,
   pairingTitleKey,
+  buildPairingHeldCoverage,
   type PairableItem,
 } from './format-pairing';
 import { llQueuedFormats, recordLlReleases, type LlFormat } from './ll-release-record';
@@ -61,6 +63,9 @@ export async function loadRemovedPairingTransitions(
         !isForeignLanguage(readItemLanguage(i.attrs)),
     )
     .map((i) => ({ item: i, identity: identityOf(i) }));
+  const heldCoverage = buildPairingHeldCoverage(live.map(({ item }) => ({
+    ...item, heldBooks: readHeldBooks(item.attrs), language: readItemLanguage(item.attrs),
+  })));
   const out: RemovedPairingTransitions = {
     settle: [],
     deferred: [],
@@ -70,7 +75,7 @@ export async function loadRemovedPairingTransitions(
   };
   const unknownByKind = new Map<string, string[]>();
   for (const { item, identity } of live) {
-    if (identity.kind !== 'unknown' || paired.has(item.id)) continue;
+    if ((identity.kind !== 'unknown' && !pairingBookInventoryUnidentifiable({ ...item, heldBooks: readHeldBooks(item.attrs) })) || paired.has(item.id)) continue;
     const ids = unknownByKind.get(item.mediaKind) ?? [];
     ids.push(item.id);
     unknownByKind.set(item.mediaKind, ids);
@@ -95,6 +100,7 @@ export async function loadRemovedPairingTransitions(
         : '';
     const unknownBlockers = unknownByKind.get(anchor.mediaKind) ?? [];
     const waiting =
+      !heldCoverage.holds(want, missing) &&
       want.llBookId !== null &&
       queued.length > 0 &&
       (unknownBlockers.length > 0 ||

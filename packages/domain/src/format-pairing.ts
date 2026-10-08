@@ -21,6 +21,7 @@
 import {
   bookRequests,
   booksFormatPairs,
+  booksPairingReservations,
   booksItems,
   type BookRequestRow,
   type BooksMediaKind,
@@ -28,7 +29,7 @@ import {
   type FormatPairMatchKind,
 } from '@hnet/db';
 import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
-import { gbQueryTitle } from '@hnet/goodreads';
+import { gbQueryTitle, titleVolumeNumbers, volumeNumbersAgree } from '@hnet/goodreads';
 import { readHeldBooks, type HeldBook } from './books';
 import {
   FOREIGN_LANGUAGE_REASON,
@@ -153,6 +154,8 @@ export interface PairableItem {
    * Ignored for ABS rows, whose title is already one book's.
    */
   heldBooks?: readonly HeldBook[];
+  /** Coverage excludes explicitly foreign library copies. */
+  language?: string | null;
 }
 
 export interface FormatPairMatch {
@@ -209,9 +212,40 @@ function authorsAgree(a: string, b: string): boolean {
   return at.length <= bt.length ? tokensAlign(at, bt) : tokensAlign(bt, at);
 }
 
-/** Conservative author agreement for current anchor identities and retired-want transitions. */
+/** Complete credited names: partial surnames cannot turn lost CSV boundaries into author proof. */
 export function pairingAuthorsAgree(a: string | null, b: string | null): boolean {
-  return authorsAgree(normAuthor(a), normAuthor(b));
+  const normalize = (name: string): string => name.normalize('NFKD').replace(/\p{M}/gu, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const credits = (value: string | null): string[] => {
+    const parts = (value ?? '').split(/\s*,\s*/);
+    // Explicit complete coauthor credits retain their boundaries. Surname-first or fragmented
+    // credits are not split into guessed aliases.
+    return parts.length > 1 && parts.every((part) => normalize(part).split(' ').length >= 2)
+      ? parts : [value ?? ''];
+  };
+  const tokens = (name: string, other: string): string[] => normalize(name.replace(/\b[A-Z]{2,3}\b/g,
+    (compact) => {
+      const explicit = [...other.matchAll(/\b(?:[A-Z][.\s]+){2,3}/g)]
+        .some(([run]) => run.replace(/[.\s]/g, '') === compact);
+      return explicit ? compact.split('').join(' ') : compact;
+    })).split(' ');
+  const givenAgrees = (x: string, y: string): boolean => x === y ||
+    (x.length === 1 && y.startsWith(x)) || (y.length === 1 && x.startsWith(y));
+  return credits(a).some((left) => credits(b).some((right) => {
+    const l = normalize(left), r = normalize(right);
+    if (!l || !r) return false;
+    if (l === r) return l.length >= 2;
+    const lt = tokens(left, right), rt = tokens(right, left);
+    if (lt.length < 2 || rt.length < 2 || lt.at(-1)!.length < 2 || rt.at(-1)!.length < 2 ||
+      lt.at(-1) !== rt.at(-1) || !givenAgrees(lt[0]!, rt[0]!)) return false;
+    const lm = lt.slice(1, -1), rm = rt.slice(1, -1);
+    const [shorter, longer] = lm.length <= rm.length ? [lm, rm] : [rm, lm];
+    let index = 0;
+    return shorter.every((part) => {
+      while (index < longer.length) if (givenAgrees(part, longer[index++]!)) return true;
+      return false;
+    });
+  }));
 }
 
 /**
@@ -349,7 +383,8 @@ export function stripAuthorDecoration(title: string, author: string | null): str
  *
  * - `one` — the anchor holds exactly one book, and this is its identity. An ABS audiobook is always one
  *   book (its own title). A Kavita book row is a SERIES, so its identity is the one book the series holds:
- *   that book's own title (series decoration stripped), its writer (else the row's author), and its ISBN.
+ *   that book's own title (series decoration stripped), actual Writers, and ISBN. The row's canonical
+ *   author is preferred only when an actual Writer verifies it; missing Writers never borrow that credit.
  * - `multi_book` — the Kavita series holds several books. One pairing want per anchor (D-02) cannot
  *   describe several books, so the anchor is not a candidate (and an unpushed want on it is parked).
  * - `no_book` — the Kavita series holds no book file.
@@ -361,6 +396,45 @@ export type PairingIdentity =
   | { kind: 'multi_book'; books: number }
   | { kind: 'no_book' }
   | { kind: 'unknown' };
+
+/** Actual chapter Writers only: a folder/series credit cannot supply missing writer metadata. */
+function heldBookAuthors(book: HeldBook): string[] {
+  return [...new Set([...(book.authors ?? []), book.author].filter((a): a is string => Boolean(a?.trim())))];
+}
+
+function heldBookWritersAmbiguous(book: HeldBook): boolean {
+  const writers = heldBookAuthors(book);
+  return writers.length > 1 && writers.some((a) => normAuthor(a).split(' ').length === 1);
+}
+
+/** A numbered leading label is uncertainty, not permission to strip it into a work-title alias. */
+function numberedSeriesSuffix(title: string): string | null {
+  const match = /^[a-z][a-z\s.'’&,:-]*?\s+(?:\[\s*\d+(?:\.\d+)?\s*\]|#?\d+(?:\.\d+)?)(?![a-z0-9])\s*(?:[:\u2013\u2014-]\s*)?(.+)$/i.exec(title.trim());
+  return match && /[a-z]/i.test(match[1]!) ? match[1]!.trim() : null;
+}
+
+function heldBookAuthor(book: HeldBook, rowAuthor: string | null): string | null {
+  const writers = heldBookAuthors(book);
+  return writers.some((a) => pairingAuthorsAgree(a, rowAuthor)) ? rowAuthor : (writers[0] ?? null);
+}
+
+/** An untitled chapter can still be a former counterpart, even inside a known multi-book series. */
+export function pairingBookInventoryUnidentifiable(item: Pick<PairableItem, 'mediaKind' | 'heldBooks'>): boolean {
+  return item.mediaKind === 'book' && (item.heldBooks === undefined ||
+    item.heldBooks.some((book) => !pairingTitleKey(book.title ?? '')));
+}
+
+export function pairingSourceIdentityUncertain(
+  item: Pick<PairableItem, 'mediaKind' | 'title' | 'author' | 'isbn' | 'heldBooks'>,
+): boolean {
+  if (item.mediaKind !== 'book') return false;
+  const identity = pairingIdentity(item);
+  return identity.kind === 'one' && (!normAuthor(identity.author) ||
+    (item.heldBooks ?? []).some(heldBookWritersAmbiguous) || Boolean(numberedSeriesSuffix(identity.title)) || Boolean(
+    normAuthor(item.author) && !(item.heldBooks ?? []).some((b) =>
+      heldBookAuthors(b).some((a) => pairingAuthorsAgree(a, item.author))),
+  ));
+}
 
 export function pairingIdentity(
   item: Pick<PairableItem, 'mediaKind' | 'title' | 'author' | 'isbn' | 'heldBooks'>,
@@ -374,7 +448,8 @@ export function pairingIdentity(
   const books: HeldBook[] = [];
   const isbnKey = (isbn: string | null): string =>
     (isbn ?? '').replace(/[^0-9x]/gi, '').toUpperCase();
-  for (const b of held) {
+  for (const raw of held) {
+    const b = { ...raw, author: heldBookAuthor(raw, item.author) };
     const seen = books.find((other) => {
       const knownAuthors = Boolean(normAuthor(other.author) && normAuthor(b.author));
       if (knownAuthors && !pairingAuthorsAgree(other.author, b.author)) return false;
@@ -395,7 +470,7 @@ export function pairingIdentity(
   if (books.length > 1) return { kind: 'multi_book', books: books.length };
   const book = books[0]!;
   if (!book.title?.trim()) return { kind: 'unknown' };
-  const author = book.author?.trim() ? book.author : item.author;
+  const author = book.author;
   const title = stripAuthorDecoration(stripSeriesDecoration(book.title, item.title), author).trim();
   if (!pairingTitleKey(title)) return { kind: 'unknown' };
   return {
@@ -411,6 +486,224 @@ export function pairingBooksItemIdentity(
   item: Pick<typeof booksItems.$inferSelect, 'mediaKind' | 'title' | 'author' | 'isbn' | 'attrs'>,
 ): PairingIdentity {
   return pairingIdentity({ ...item, heldBooks: readHeldBooks(item.attrs) });
+}
+
+export function pairingBooksItemSourceUncertain(
+  item: Pick<typeof booksItems.$inferSelect, 'mediaKind' | 'title' | 'author' | 'isbn' | 'attrs'>,
+): boolean {
+  return pairingSourceIdentityUncertain({ ...item, heldBooks: readHeldBooks(item.attrs) });
+}
+
+export interface PairingHeldCoverage {
+  holds(identity: { title: string; author: string | null }, format: 'ebook' | 'audiobook'): boolean;
+}
+
+/** Current work coverage is broader than one-to-one pairs, but never uses an aggregate series identity. */
+export function buildPairingHeldCoverage(
+  items: readonly PairableItem[],
+  snapshot?: LlSnapshot | null,
+): PairingHeldCoverage {
+  const indexes = { ebook: new Map<string, string[]>(), audiobook: new Map<string, string[]>() };
+  const add = (title: string | null | undefined, author: string | null | undefined, format: 'ebook' | 'audiobook') => {
+    if (!title || !normAuthor(author ?? null)) return;
+    const key = pairingTitleKey(title);
+    if (!key) return;
+    const authors = indexes[format].get(key) ?? [];
+    authors.push(author!);
+    indexes[format].set(key, authors);
+  };
+  for (const item of items) {
+    if (isForeignLanguage(item.language)) continue;
+    if (item.mediaKind === 'audiobook') add(item.title, item.author, 'audiobook');
+    if (item.mediaKind !== 'book') continue;
+    for (const book of item.heldBooks ?? []) {
+      if (!book.title?.trim() || heldBookWritersAmbiguous(book)) continue;
+      for (const author of heldBookAuthors(book)) {
+        add(stripAuthorDecoration(stripSeriesDecoration(book.title, item.title), author), author, 'ebook');
+      }
+    }
+  }
+  if (llSnapshotUsable(snapshot)) {
+    for (const row of snapshot.values()) {
+      if (isForeignLanguage(row.language)) continue;
+      for (const format of ['ebook', 'audiobook'] as const) {
+        if (!llFormatAlreadyHeld(row, format)) continue;
+        add([row.title, row.subtitle].filter(Boolean).join(': '), row.author, format);
+      }
+    }
+  }
+  return {
+    holds: (identity, format) =>
+      (indexes[format].get(pairingTitleKey(identity.title)) ?? []).some((a) => pairingAuthorsAgree(a, identity.author)),
+  };
+}
+
+export interface PairingAcquisitionDeferrals {
+  blocks(itemId: string, identity: { title: string; author: string | null }, format: 'ebook' | 'audiobook'): boolean;
+  unreadBookItemIds: ReadonlySet<string>;
+  unidentifiableBookItemIds: ReadonlySet<string>;
+  reservedAudioItemIds: ReadonlySet<string>;
+  uncertainBookItemIds: ReadonlySet<string>;
+  uncertainCreditItemIds: ReadonlySet<string>;
+  uncertainTitleItemIds: ReadonlySet<string>;
+  blockedItemIds: Set<string>;
+}
+
+/** Only negative permission: whole work titles can be plausible decorations without being aliases. */
+function titleUncertaintyText(title: string): string {
+  return title.replace(/\s*[([]\s*(?:disc|cd|track)\s+\d{1,4}(?:\s+of\s+\d{1,4})?\s*[)\]]\s*$/i, '').trim();
+}
+
+function titleUncertaintyKey(title: string): string {
+  return pairingTitleKey(titleUncertaintyText(title));
+}
+
+function titleBoundaryContains(left: string, right: string): boolean {
+  const [short, long] = left.length <= right.length ? [left, right] : [right, left];
+  return Boolean(short && short !== long && (long.startsWith(`${short} `) || long.endsWith(` ${short}`)));
+}
+
+function titleContainmentUncertain(left: string, right: string): boolean {
+  if (pairingTitleKey(left) === pairingTitleKey(right)) return false;
+  left = titleUncertaintyText(left); right = titleUncertaintyText(right);
+  const l = pairingTitleKey(left), r = pairingTitleKey(right);
+  if (!l || !r || (l !== r && !titleBoundaryContains(l, r))) return false;
+  if (!volumeNumbersAgree(left, right) || !volumeNumbersAgree(right, left)) return false;
+  const volumes = (raw: string) => {
+    const numbers = titleVolumeNumbers(raw);
+    const roman: Array<{ key: string; number: number }> = [];
+    const values: Record<string, number> = { I: 1, V: 5, X: 10 };
+    for (const match of raw.matchAll(/\b[IVX]{1,6}\b/gi)) {
+      if (match.index === 0) continue; // the opening pronoun 'I' is not a sequel number
+      const token = match[0].toUpperCase();
+      if (!/^(?:X{0,3})(?:IX|IV|V?I{0,3})$/.test(token)) continue;
+      let number = 0;
+      for (let i = 0; i < token.length; i++) {
+        const value = values[token[i]!]!;
+        number += value < (values[token[i + 1]!] ?? 0) ? -value : value;
+      }
+      numbers.add(number);
+      roman.push({ key: token.toLowerCase(), number });
+    }
+    return { numbers, roman };
+  };
+  const lv = volumes(left), rv = volumes(right);
+  if (lv.numbers.size > 0 && rv.numbers.size > 0 &&
+    ![...lv.numbers].some((n) => rv.numbers.has(n))) return false;
+  // A bare series stem is the unnumbered first volume, not an explicit later Roman sequel.
+  const laterRomanStem = (longKey: string, shortKey: string, refs: typeof lv, other: typeof lv) =>
+    other.numbers.size === 0 && refs.roman.some((ref) => ref.number > 1 &&
+      (longKey === `${shortKey} ${ref.key}` || longKey.startsWith(`${shortKey} ${ref.key} `)));
+  return !laterRomanStem(l, r, lv, rv) && !laterRomanStem(r, l, rv, lv);
+}
+
+/** Uncertainty removes acquisition permission; it never supplies held coverage or a guessed pair. */
+export function buildPairingAcquisitionDeferrals(
+  items: readonly PairableItem[],
+  reservedAudioItemIds: ReadonlySet<string> = new Set(),
+  snapshot?: LlSnapshot | null,
+): PairingAcquisitionDeferrals {
+  const books = items.filter((i) => i.mediaKind === 'book' && !isForeignLanguage(i.language));
+  const unreadBookItemIds = new Set(books.filter((i) => i.heldBooks === undefined).map((i) => i.id));
+  const unidentifiableBookItemIds = new Set(books.filter(pairingBookInventoryUnidentifiable).map((i) => i.id));
+  const uncertainBookItemIds = new Set(books.filter(pairingSourceIdentityUncertain).map((i) => i.id));
+  const audios = items.filter((i) => i.mediaKind === 'audiobook' && !isForeignLanguage(i.language));
+  const audioByTitle = new Map<string, PairableItem[]>();
+  for (const audio of audios) {
+    const key = titleUncertaintyKey(audio.title);
+    const matching = audioByTitle.get(key) ?? [];
+    matching.push(audio);
+    audioByTitle.set(key, matching);
+  }
+  const uncertainCreditItemIds = new Set<string>();
+  const uncertainTitleItemIds = new Set<string>();
+  // Legacy tolerance supplies uncertainty only. An abbreviation/role/coauthor credit that cannot
+  // prove a strict pair must not expose either current full-title counterpart to duplicate acquisition.
+  for (const item of books) for (const chapter of item.heldBooks ?? []) {
+    if (!chapter.title) continue;
+    for (const writer of heldBookAuthors(chapter)) {
+      const title = stripAuthorDecoration(stripSeriesDecoration(chapter.title, item.title), writer);
+      const key = titleUncertaintyKey(title);
+      if (!key) continue;
+      for (const [audioKey, matching] of audioByTitle) {
+        if (audioKey !== key && !titleBoundaryContains(key, audioKey)) continue;
+        for (const audio of matching) {
+          const exact = pairingTitleKey(title) === pairingTitleKey(audio.title);
+          if (!exact && !titleContainmentUncertain(title, audio.title)) continue;
+          const strict = pairingAuthorsAgree(writer, audio.author);
+          if (!strict && !authorsAgree(normAuthor(writer), normAuthor(audio.author))) continue;
+          const uncertain = exact ? !strict : true;
+          if (!uncertain) continue;
+          const ids = exact ? uncertainCreditItemIds : uncertainTitleItemIds;
+          ids.add(item.id);
+          ids.add(audio.id);
+        }
+      }
+    }
+  }
+  const heldLlRows = llSnapshotUsable(snapshot) ? [...snapshot.values()]
+    .filter((row) => !isForeignLanguage(row.language)).map((row) => {
+      const title = [row.title, row.subtitle].filter(Boolean).join(': ');
+      return { row, title, key: pairingTitleKey(title), uncertainKey: titleUncertaintyKey(title), ebook: llFormatAlreadyHeld(row, 'ebook'), audiobook: llFormatAlreadyHeld(row, 'audiobook') };
+    }) : [];
+  for (const item of items) {
+    if (isForeignLanguage(item.language) || (item.mediaKind !== 'book' && item.mediaKind !== 'audiobook')) continue;
+    const identity = pairingIdentity(item);
+    if (identity.kind !== 'one') continue;
+    const format = missingFormatFor(item.mediaKind);
+    const key = pairingTitleKey(identity.title);
+    const uncertainKey = titleUncertaintyKey(identity.title);
+    for (const held of heldLlRows) {
+      if (!held[format]) continue;
+      const { row, title } = held;
+      const exact = key === held.key;
+      if (!exact && ((uncertainKey !== held.uncertainKey && !titleBoundaryContains(uncertainKey, held.uncertainKey)) ||
+        !titleContainmentUncertain(identity.title, title))) continue;
+      const strict = pairingAuthorsAgree(identity.author, row.author ?? null);
+      if (!strict && !authorsAgree(normAuthor(identity.author), normAuthor(row.author ?? null))) continue;
+      if (!exact) uncertainTitleItemIds.add(item.id);
+      else if (!strict) uncertainCreditItemIds.add(item.id);
+    }
+  }
+  const blockedItemIds = new Set<string>();
+  return {
+    unreadBookItemIds, unidentifiableBookItemIds, reservedAudioItemIds, uncertainBookItemIds, uncertainCreditItemIds, uncertainTitleItemIds, blockedItemIds,
+    blocks: (itemId, identity, format) => {
+      const uncertainChapter = format === 'ebook' && books.some((item) => (item.heldBooks ?? []).some((book) => {
+        if (!book.title) return false;
+        const title = stripAuthorDecoration(stripSeriesDecoration(book.title, item.title), identity.author);
+        const writers = heldBookAuthors(book);
+        const suffix = numberedSeriesSuffix(title);
+        if (suffix && pairingTitleKey(suffix) === pairingTitleKey(identity.title) &&
+          (writers.length === 0 || heldBookWritersAmbiguous(book) ||
+            writers.some((a) => pairingAuthorsAgree(a, identity.author)))) return true;
+        if (pairingTitleKey(title) !== pairingTitleKey(identity.title)) return false;
+        if (heldBookWritersAmbiguous(book)) return true;
+        return writers.length === 0 || (pairingAuthorsAgree(item.author, identity.author) &&
+          !writers.some((a) => pairingAuthorsAgree(a, identity.author)));
+      }));
+      const blocked = uncertainBookItemIds.has(itemId) || uncertainCreditItemIds.has(itemId) || uncertainTitleItemIds.has(itemId) || (format === 'ebook' &&
+        (unreadBookItemIds.size > 0 || reservedAudioItemIds.has(itemId) || uncertainChapter));
+      if (blocked) blockedItemIds.add(itemId);
+      return blocked;
+    },
+  };
+}
+
+export async function loadPairingAcquisitionDeferrals(db: DbClient | undefined, items: readonly PairableItem[], snapshot?: LlSnapshot | null) {
+  const reservations = await resolveDb(db).select().from(booksPairingReservations);
+  return buildPairingAcquisitionDeferrals(items, new Set(reservations.map((r) => r.audioItemId)), snapshot);
+}
+
+/** Uncertain source metadata never substitutes a new work for an existing request's verified snapshot. */
+function pairingCoverageIdentity(
+  itemId: string,
+  identity: Extract<PairingIdentity, { kind: 'one' }>,
+  want: { title: string; author: string | null } | undefined,
+  missing: 'ebook' | 'audiobook',
+  deferrals: PairingAcquisitionDeferrals,
+): { title: string; author: string | null } {
+  return want && deferrals.blocks(itemId, identity, missing) ? want : identity;
 }
 
 const byDeterministicOrder = (a: PairableItem, b: PairableItem): number =>
@@ -432,7 +725,8 @@ export function matchFormatPairs(items: readonly PairableItem[]): FormatPairMatc
     return identity.kind === 'one' && pairingTitleKey(identity.title) === pairingTitleKey(b.title);
   };
   const books = items
-    .filter((i) => i.mediaKind === 'book' && pairingIdentity(i).kind === 'one')
+    .filter((i) => i.mediaKind === 'book' && pairingIdentity(i).kind === 'one' &&
+      !(i.heldBooks ?? []).some(heldBookWritersAmbiguous))
     .sort((a, b) => Number(namedAsHeld(b)) - Number(namedAsHeld(a)) || byDeterministicOrder(a, b));
   const audios = items.filter((i) => i.mediaKind === 'audiobook').sort(byDeterministicOrder);
 
@@ -459,7 +753,7 @@ export function matchFormatPairs(items: readonly PairableItem[]): FormatPairMatc
     const bucket = audioByTitle.get(key);
     if (!bucket) continue;
     const match = bucket.find(
-      (a) => !taken.has(a.id) && authorsAgree(bookAuthor, normAuthor(a.author)),
+      (a) => !taken.has(a.id) && pairingAuthorsAgree(identity.author, a.author),
     );
     if (!match) continue;
     taken.add(match.id);
@@ -498,21 +792,28 @@ export interface SyncFormatPairsReport {
 export async function syncFormatPairs(input: {
   db?: DbClient;
   now?: Date;
+  /** The run's live mirror snapshot: matching and held proof must observe the same chapter inventory. */
+  items?: readonly PairableItem[];
+  snapshot?: LlSnapshot | null;
 }): Promise<SyncFormatPairsReport> {
   const now = input.now ?? new Date();
-  const rows = (
+  const rows = input.items ?? (
     await resolveDb(input.db)
       .select({
         id: booksItems.id,
         title: booksItems.title,
         sortTitle: booksItems.sortTitle,
         author: booksItems.author,
+        isbn: booksItems.isbn,
         mediaKind: booksItems.mediaKind,
         attrs: booksItems.attrs,
+        deletedAt: booksItems.deletedAt,
       })
       .from(booksItems)
-      .where(isNull(booksItems.deletedAt))
-  ).map(({ attrs, ...r }): PairableItem => ({ ...r, heldBooks: readHeldBooks(attrs) }));
+  ).filter((r) => r.deletedAt === null)
+    .map(({ attrs, ...r }) => ({ ...r, heldBooks: readHeldBooks(attrs), language: readItemLanguage(attrs) }));
+  const liveById = new Map(rows.map((r) => [r.id, r]));
+  const heldCoverage = buildPairingHeldCoverage(rows, input.snapshot);
   const fresh = matchFormatPairs(rows);
   const freshByBook = new Map(fresh.map((p) => [p.bookItemId, p]));
 
@@ -530,6 +831,37 @@ export async function syncFormatPairs(input: {
     const stale = existing.filter(
       (e) => freshByBook.get(e.bookItemId)?.audioItemId !== e.audioItemId,
     );
+    // Archive only uncertainty, before deleting strict pairs. The edge survives a second failed
+    // read, when no pair remains to tell the audio acquisition that its ebook might still exist.
+    const toReserve = stale.filter((p) => {
+      const book = liveById.get(p.bookItemId);
+      return liveById.has(p.audioItemId) && (book ? pairingBookInventoryUnidentifiable(book) :
+        rows.some(pairingBookInventoryUnidentifiable));
+    });
+    if (toReserve.length > 0) {
+      await tx.insert(booksPairingReservations).values(toReserve.map((p) => ({
+        bookItemId: p.bookItemId, audioItemId: p.audioItemId, openedAt: now,
+      }))).onConflictDoNothing();
+    }
+    const reservations = await tx.select().from(booksPairingReservations);
+    const unidentifiableBooks = rows.some(pairingBookInventoryUnidentifiable);
+    const cleared = reservations.filter((r) => {
+      const audio = liveById.get(r.audioItemId);
+      if (!audio || audio.mediaKind !== 'audiobook') return true;
+      const identity = pairingIdentity(audio);
+      if (identity.kind === 'one' && heldCoverage.holds(identity, 'ebook')) return true;
+      const book = liveById.get(r.bookItemId);
+      return book ? !pairingBookInventoryUnidentifiable(book) : !unidentifiableBooks;
+    });
+    for (const r of cleared) {
+      await tx.delete(booksPairingReservations).where(and(
+        eq(booksPairingReservations.bookItemId, r.bookItemId),
+        eq(booksPairingReservations.audioItemId, r.audioItemId),
+      ));
+    }
+    const clearedKeys = new Set(cleared.map((r) => `${r.bookItemId}:${r.audioItemId}`));
+    const acquisitionDeferrals = buildPairingAcquisitionDeferrals(rows, new Set(reservations
+      .filter((r) => !clearedKeys.has(`${r.bookItemId}:${r.audioItemId}`)).map((r) => r.audioItemId)), input.snapshot);
     if (stale.length > 0) {
       await tx.delete(booksFormatPairs).where(
         inArray(
@@ -573,7 +905,6 @@ export async function syncFormatPairs(input: {
     // whose want reads `landed` because LazyLibrarian holds the format (the reconcile settles that
     // without any pair) has nothing to heal, and resetting it every run (312 a run on 2026-10-04) spent
     // the whole mint cap on wants LazyLibrarian already holds.
-    const liveById = new Map(rows.map((r) => [r.id, r]));
     const pairedIds = new Set<string>();
     for (const p of fresh) {
       pairedIds.add(p.bookItemId);
@@ -588,6 +919,8 @@ export async function syncFormatPairs(input: {
       .select({
         id: bookRequests.id,
         pairingBooksItemId: bookRequests.pairingBooksItemId,
+        title: bookRequests.title,
+        author: bookRequests.author,
         ebookStatus: bookRequests.ebookStatus,
         audioStatus: bookRequests.audioStatus,
       })
@@ -601,6 +934,8 @@ export async function syncFormatPairs(input: {
       const identity = pairingIdentity(anchor);
       if (identity.kind !== 'one') continue;
       const missing = missingFormatFor(anchor.mediaKind);
+      if (heldCoverage.holds(pairingCoverageIdentity(anchor.id, identity, want, missing, acquisitionDeferrals), missing)) continue;
+      if (acquisitionDeferrals.blocks(anchor.id, identity, missing)) continue;
       const missingStatus = missing === 'ebook' ? want.ebookStatus : want.audioStatus;
       if (missingStatus !== 'landed') continue; // still in flight / already retryable — nothing to heal
       await updateBookRequests(
@@ -640,7 +975,12 @@ export interface PairingGbResolver {
 }
 
 export interface MintPairingWantsInput {
+  /** Matching, coverage and acquisition permission share the run's live item snapshot. */
+  items?: readonly (PairableItem & { firstSeenAt: Date; language: string | null })[];
   db?: DbClient;
+  /** One current, strong library/cross-edition held-work index shared by every automatic boundary. */
+  heldCoverage?: PairingHeldCoverage;
+  acquisitionDeferrals?: PairingAcquisitionDeferrals;
   /** The confined LL bundle. Absent ⇒ mint only (no push) — the degraded goodreads-sync mode. */
   ll?: LazyLibrarianClientBundle;
   /** The GB fallback resolver. Absent ⇒ reuse-only resolution (unresolved wants stay unmintable). */
@@ -791,6 +1131,8 @@ export interface MintPairingWantsReport {
    * attempted, no row touched. Never guessed from the series name.
    */
   skippedUnknownHeld: number;
+  /** Known anchors deferred by unread counterparts or contradictory/absent actual Writer metadata. */
+  skippedUncertainHeld: number;
   /** Issue #661 — anchors holding several books or none, with no want yet: never minted. */
   skippedNotOneBook: number;
   /** Issue #661 / #700 — unpushed wants parked this run (`multi_book` / `no_book` / `foreign_language`). */
@@ -1117,6 +1459,7 @@ export async function checkPairingWantBooks(input: {
   pairedIds?: ReadonlySet<string>;
   /** The pairing wants (read here when absent); mutated in place to mirror each write. */
   wants?: BookRequestRow[];
+  acquisitionDeferrals?: PairingAcquisitionDeferrals;
   now?: Date;
   dryRun?: boolean;
   log?: { info?: (msg: string, meta?: Record<string, unknown>) => void };
@@ -1149,6 +1492,7 @@ export async function checkPairingWantBooks(input: {
   const wants =
     input.wants ?? (await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing')));
   const liveById = new Map(anchors.map((i) => [i.id, i] as const));
+  const acquisitionDeferrals = input.acquisitionDeferrals ?? await loadPairingAcquisitionDeferrals(input.db, anchors);
   const changes: PairingWantBookChange[] = [];
   let reidentified = 0;
   let retitled = 0;
@@ -1158,6 +1502,7 @@ export async function checkPairingWantBooks(input: {
     if (!anchor || anchor.mediaKind === 'comic') continue; // the anchor left the library: nothing to check against
     const identity = pairingIdentity(anchor);
     if (identity.kind !== 'one') continue; // unread, several books or none: the mint's park logic owns it
+    if (acquisitionDeferrals.blocks(anchor.id, identity, missingFormatFor(anchor.mediaKind))) continue;
     const book = want.llBookId ? input.llBookOf(want.llBookId) : undefined;
     const verdict = judgePairingWantBook({ want, identity, book });
     if (verdict.kind === 'keep') continue;
@@ -1236,6 +1581,8 @@ async function rerequestGonePairingWants(input: {
   db?: DbClient;
   ll: LazyLibrarianClientBundle;
   snapshot: LlSnapshot;
+  heldCoverage: PairingHeldCoverage;
+  acquisitionDeferrals: PairingAcquisitionDeferrals;
   now: Date;
   pace: (index: number) => Promise<void>;
   log: {
@@ -1279,19 +1626,30 @@ async function rerequestGonePairingWants(input: {
       r.deletedAt === null &&
       pairingBooksItemIdentity(r).kind === 'one' &&
       !snapshot.has(r.want.llBookId!) &&
-      !isForeignLanguage(readItemLanguage(r.attrs)),
+      !isForeignLanguage(readItemLanguage(r.attrs)) && (() => {
+        const identity = pairingBooksItemIdentity(r);
+        const format = missingFormatFor(r.mediaKind);
+        return identity.kind === 'one' && (input.heldCoverage.holds(
+          pairingCoverageIdentity(r.want.pairingBooksItemId!, identity, r.want, format, input.acquisitionDeferrals), format) ||
+          !input.acquisitionDeferrals.blocks(r.want.pairingBooksItemId!, identity, format));
+      })(),
   );
   if (rows.length === 0) return emptyLlRerequestTally();
   const pairRows = await db
     .select({ bookItemId: booksFormatPairs.bookItemId, audioItemId: booksFormatPairs.audioItemId })
     .from(booksFormatPairs);
   const paired = new Set(pairRows.flatMap((p) => [p.bookItemId, p.audioItemId]));
-  const candidates: LlRerequestCandidate[] = rows.map(({ want, mediaKind }) => {
+  const candidates: LlRerequestCandidate[] = rows.map((row) => {
+    const { want, mediaKind } = row;
     const format = missingFormatFor(mediaKind);
+    const identity = pairingBooksItemIdentity(row);
+    const coverageIdentity = identity.kind === 'one'
+      ? pairingCoverageIdentity(want.pairingBooksItemId!, identity, want, format, input.acquisitionDeferrals) : want;
     return {
       want,
       formats: [format],
-      libraryHolds: paired.has(want.pairingBooksItemId!) ? [format] : [],
+      libraryHolds: paired.has(want.pairingBooksItemId!) ||
+        (identity.kind === 'one' && input.heldCoverage.holds(coverageIdentity, format)) ? [format] : [],
     };
   });
   return runLlRerequests({
@@ -1492,7 +1850,7 @@ export async function mintPairingWants(
   const log = input.logger ?? {};
 
   // 1. The backlog: live, non-comic items with no pair on their side.
-  const items = (
+  const items = input.items ?? (
     await db
       .select({
         id: booksItems.id,
@@ -1507,6 +1865,8 @@ export async function mintPairingWants(
       .from(booksItems)
       .where(and(isNull(booksItems.deletedAt), ne(booksItems.mediaKind, 'comic')))
   ).map(({ attrs, ...r }) => ({ ...r, heldBooks: readHeldBooks(attrs), language: readItemLanguage(attrs) }));
+  const heldCoverage = input.heldCoverage ?? buildPairingHeldCoverage(items);
+  const acquisitionDeferrals = input.acquisitionDeferrals ?? await loadPairingAcquisitionDeferrals(input.db, items);
   const pairRows = await db
     .select({ bookItemId: booksFormatPairs.bookItemId, audioItemId: booksFormatPairs.audioItemId })
     .from(booksFormatPairs);
@@ -1557,7 +1917,10 @@ export async function mintPairingWants(
   const liftedParks = await liftForeignLanguageParks({
     db: input.db,
     wants: allWants,
-    anchors: items.filter((i) => pairingIdentity(i).kind === 'one'),
+    anchors: items.filter((i) => {
+      const identity = pairingIdentity(i);
+      return identity.kind === 'one' && !acquisitionDeferrals.blocks(i.id, identity, missingFormatFor(i.mediaKind));
+    }),
     llBookLanguage: input.llBookLanguage,
     log,
   });
@@ -1576,11 +1939,31 @@ export async function mintPairingWants(
         anchors: items,
         pairedIds,
         wants,
+        acquisitionDeferrals,
         now,
         log,
       })
     : { reidentified: 0, retitled: 0, changes: [] };
   const { reidentified, retitled } = check;
+
+  // Known held work coverage is checked before cap, reuse or Google Books: a stricter pair cache
+  // must not acquire another copy of a chapter the library serves or another LL edition holds.
+  const coveredIds = new Set<string>();
+  for (const item of unpaired) {
+    const identity = pairingIdentity(item);
+    if (identity.kind !== 'one' || isForeignLanguage(item.language)) continue;
+    const missing = missingFormatFor(item.mediaKind);
+    const want = wantByAnchor.get(item.id);
+    const coverageIdentity = pairingCoverageIdentity(item.id, identity, want, missing, acquisitionDeferrals);
+    if (!heldCoverage.holds(coverageIdentity, missing)) continue;
+    if (want?.unroutableReason) continue; // coverage never lifts an explicit park
+    coveredIds.add(item.id);
+    if (want) {
+      await landPairingHeldFormat({ db: input.db, requestId: want.id, format: missing, now });
+      if (missing === 'ebook') want.ebookStatus = 'landed';
+      else want.audioStatus = 'landed';
+    }
+  }
 
   // 3. The ordered candidate list (DESIGN-039 D-22 — OLDEST-FIRST DRAIN, ISBN-priority). A candidate
   //    is eligible when it has no want yet (fresh) OR its want is unresolved / the missing format is
@@ -1624,6 +2007,7 @@ export async function mintPairingWants(
   const isRetryable = (w: BookRequestRow, i: (typeof unpaired)[number]): boolean =>
     w.llBookId === null || statusOfFormat(w, missingFormatFor(i.mediaKind)) === 'requested';
   let skippedUnknownHeld = 0;
+  let skippedUncertainHeld = 0;
   let skippedNotOneBook = 0;
   let skippedForeign = 0;
   const toPark: Array<{
@@ -1633,6 +2017,7 @@ export async function mintPairingWants(
   }> = [];
   const candidates = unpaired
     .filter((i) => {
+      if (coveredIds.has(i.id)) return false;
       const w = wantByAnchor.get(i.id);
       // A PARKED want (`unroutable_reason` set, e.g. 'wrong_volume' after an omnibus repair) is never
       // re-attempted: re-resolving it would refill llBookId and hand it back to the Skipped sweep.
@@ -1655,6 +2040,10 @@ export async function mintPairingWants(
       if (identity.kind === 'multi_book' || identity.kind === 'no_book') {
         if (!w) skippedNotOneBook += 1;
         else if (isRetryable(w, i)) toPark.push({ want: w, item: i, reason: identity.kind });
+        return false;
+      }
+      if (acquisitionDeferrals.blocks(i.id, identity, missingFormatFor(i.mediaKind))) {
+        skippedUncertainHeld += 1;
         return false;
       }
       if (!w) return true; // fresh — never yet minted
@@ -1772,7 +2161,7 @@ export async function mintPairingWants(
   let unmintable = 0;
   let skippedQuota = 0;
   let skippedBudget = 0;
-  let skippedHeld = 0;
+  let skippedHeld = coveredIds.size;
   let refusedForeignBook = 0;
   let attempted = 0;
   let paceSeq = 0;
@@ -2019,6 +2408,7 @@ export async function mintPairingWants(
     skippedBudget,
     skippedHeld,
     skippedUnknownHeld,
+    skippedUncertainHeld,
     skippedNotOneBook,
     parked,
     skippedForeign,
@@ -2095,6 +2485,8 @@ export type RunFormatPairingInput = MintPairingWantsInput;
 async function revalidateLandedPairingWants(input: {
   db?: DbClient;
   snapshot: LlSnapshot;
+  heldCoverage: PairingHeldCoverage;
+  acquisitionDeferrals: PairingAcquisitionDeferrals;
   goneIndex: LlRekeyIndex | null;
   now: Date;
   gone: LlGoneTally;
@@ -2150,6 +2542,10 @@ async function revalidateLandedPairingWants(input: {
     ) continue;
     if (paired.has(anchor.id)) continue;
     const missing = missingFormatFor(anchor.mediaKind);
+    const identity = pairingBooksItemIdentity(anchor);
+    if (identity.kind === 'one' && input.heldCoverage.holds(
+      pairingCoverageIdentity(anchor.id, identity, want, missing, input.acquisitionDeferrals), missing)) continue;
+    if (identity.kind === 'one' && input.acquisitionDeferrals.blocks(anchor.id, identity, missing)) continue;
     if ((missing === 'ebook' ? want.ebookStatus : want.audioStatus) !== 'landed') continue;
     const llBookId = want.llBookId!;
     const row = input.snapshot.get(llBookId);
@@ -2226,8 +2622,6 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
   const pace = input.pacer ?? defaultPacer;
   const log = input.logger ?? {};
 
-  const pairs = await syncFormatPairs({ db: input.db, now });
-
   // DESIGN-039 D-18 — read LL's seated-book set ONCE per run (a single getAllBookStatuses — an LL DB
   // read, never a Google Books call) and use it for BOTH: (a) the mint push's addBook gate below
   // (skip re-adding a volume LL already holds — the fix for the all-day re-add GB amplification) and
@@ -2249,6 +2643,11 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     }
   }
   const seatedMap = seated;
+  const libraryRows = await db.select().from(booksItems).where(isNull(booksItems.deletedAt));
+  const libraryItems = libraryRows.map((r) => ({ ...r, heldBooks: readHeldBooks(r.attrs), language: readItemLanguage(r.attrs) }));
+  const heldCoverage = buildPairingHeldCoverage(libraryItems, seatedMap);
+  const pairs = await syncFormatPairs({ db: input.db, now, items: libraryItems, snapshot: seatedMap });
+  const acquisitionDeferrals = await loadPairingAcquisitionDeferrals(input.db, libraryItems, seatedMap);
 
   // DESIGN-039 D-23 — build the 'pairing' daily-budget tracker once per run (reads the start-of-run
   // usage). Only when a meter is wired (the cluster cron); absent ⇒ no budgeting (tests / degraded).
@@ -2275,6 +2674,9 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
 
   const mint = await mintPairingWants({
     ...input,
+    items: libraryItems.filter((i) => i.mediaKind !== 'comic'),
+    heldCoverage,
+    acquisitionDeferrals,
     now,
     shouldSearch,
     onSearched,
@@ -2313,6 +2715,8 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     landedReverted = await revalidateLandedPairingWants({
       db: input.db,
       snapshot: seatedMap,
+      heldCoverage,
+      acquisitionDeferrals,
       goneIndex,
       now,
       gone,
@@ -2324,6 +2728,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     const anchorKindOf = new Map<string, BooksMediaKind>();
     // Anchors still in the library: only those hold their format, so only their wants' held format is landed.
     const anchorLive = new Set<string>();
+    const anchorIdentityOf = new Map<string, PairingIdentity>();
     const open = (await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'))).filter(
       (w) =>
         w.llBookId !== null &&
@@ -2347,6 +2752,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
         .from(booksItems)
         .where(inArray(booksItems.id, [...new Set(open.map((w) => w.pairingBooksItemId!))]));
       for (const a of anchors) {
+        anchorIdentityOf.set(a.id, pairingBooksItemIdentity(a));
         anchorKindOf.set(a.id, a.mediaKind); // the media kind never changes, so a removed anchor still names it
         if (a.deletedAt === null && pairingBooksItemIdentity(a).kind === 'one') {
           anchorLive.add(a.id);
@@ -2364,6 +2770,14 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
           ? ('audiobook' as const)
           : ('ebook' as const);
       const heldFormat = missing === 'ebook' ? ('audiobook' as const) : ('ebook' as const);
+      const identity = anchorIdentityOf.get(want.pairingBooksItemId!);
+      if (identity?.kind === 'one' && heldCoverage.holds(
+        pairingCoverageIdentity(want.pairingBooksItemId!, identity, want, missing, acquisitionDeferrals), missing)) {
+        await landPairingHeldFormat({ db: input.db, requestId: want.id, format: missing, now });
+        sweepSkippedHeld += 1;
+        continue;
+      }
+      if (identity?.kind === 'one' && acquisitionDeferrals.blocks(want.pairingBooksItemId!, identity, missing)) continue;
       if (
         anchorLive.has(want.pairingBooksItemId!) &&
         (heldFormat === 'ebook' ? want.ebookStatus : want.audioStatus) !== 'landed'
@@ -2523,7 +2937,7 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
   // backlog search looks for them), a held format lands instead. Last, so the run's own work is done first.
   const rerequest =
     input.ll && seatedMap
-      ? await rerequestGonePairingWants({ db: input.db, ll: input.ll, snapshot: seatedMap, now, pace, log })
+      ? await rerequestGonePairingWants({ db: input.db, ll: input.ll, snapshot: seatedMap, heldCoverage, acquisitionDeferrals, now, pace, log })
       : emptyLlRerequestTally();
 
   // Issue #825 — successors mint before predecessors retire; cap/quota gaps keep their queued format protected.
@@ -2594,6 +3008,29 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     ...releases,
     ...retired,
   };
+  if (acquisitionDeferrals.blockedItemIds.size > 0) {
+    const ids = (values: Iterable<string>) => [...values].sort().slice(0, 20);
+    const blockedWants = (await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing')))
+      .filter((w) => w.pairingBooksItemId && acquisitionDeferrals.blockedItemIds.has(w.pairingBooksItemId));
+    log.warn?.('format-pairing: acquisition deferred by uncertain held metadata', {
+      unreadBookItemCount: acquisitionDeferrals.unreadBookItemIds.size,
+      unreadBookItemIds: ids(acquisitionDeferrals.unreadBookItemIds),
+      unidentifiableBookItemCount: acquisitionDeferrals.unidentifiableBookItemIds.size,
+      unidentifiableBookItemIds: ids(acquisitionDeferrals.unidentifiableBookItemIds),
+      reservedAudioItemCount: acquisitionDeferrals.reservedAudioItemIds.size,
+      reservedAudioItemIds: ids(acquisitionDeferrals.reservedAudioItemIds),
+      uncertainBookItemCount: acquisitionDeferrals.uncertainBookItemIds.size,
+      uncertainBookItemIds: ids(acquisitionDeferrals.uncertainBookItemIds),
+      uncertainCreditItemCount: acquisitionDeferrals.uncertainCreditItemIds.size,
+      uncertainCreditItemIds: ids(acquisitionDeferrals.uncertainCreditItemIds),
+      uncertainTitleItemCount: acquisitionDeferrals.uncertainTitleItemIds.size,
+      uncertainTitleItemIds: ids(acquisitionDeferrals.uncertainTitleItemIds),
+      deferredItemCount: acquisitionDeferrals.blockedItemIds.size,
+      deferredItemIds: ids(acquisitionDeferrals.blockedItemIds),
+      deferredRequestCount: blockedWants.length,
+      deferredRequestIds: ids(blockedWants.map((w) => w.id)),
+    });
+  }
   log.info?.('format-pairing run complete', { ...report });
   return report;
 }

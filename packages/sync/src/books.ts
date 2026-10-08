@@ -130,7 +130,7 @@ const numericPlaceholder = (v: string): boolean => /^-?\d+(\.\d+)?$/.test(v.trim
 /**
  * Issue #661 (DESIGN-024 D-01 amendment 2026-10-04) — reduce `GET /api/Series/volumes` to the books the
  * series holds: one HeldBook per chapter (in an EBooks library a chapter is one book file), carrying the
- * chapter's own title (`titleName`, else a non-numeric `title`), first writer and ISBN. Raw values, no
+ * chapter's own title (`titleName`, else a non-numeric `title`), all Writers and ISBN. Raw values, no
  * cleaning and no de-duplication (the pairing leg does both). Pure — unit-tested.
  */
 export function kavitaHeldBooksFrom(volumes: readonly KavitaVolume[]): HeldBook[] {
@@ -144,6 +144,7 @@ export function kavitaHeldBooksFrom(volumes: readonly KavitaVolume[]): HeldBook[
       out.push({
         title: titleName || (title && !numericPlaceholder(title) ? title : null),
         author: writers.length > 0 ? writers[0]! : null,
+        authors: writers,
         isbn: isbn.length > 0 ? isbn : null,
       });
     }

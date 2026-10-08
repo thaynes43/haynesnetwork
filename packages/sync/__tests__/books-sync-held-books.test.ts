@@ -90,7 +90,7 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
     const [row] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '457'));
     expect(row!.author).toBeNull(); // the live Murtagh row: no folder author, no series writer
     expect((row!.attrs as Record<string, unknown>).heldBooks).toEqual([
-      { title: 'Murtagh', author: 'Christopher Paolini', isbn: null },
+      { title: 'Murtagh', author: 'Christopher Paolini', authors: ['Christopher Paolini'], isbn: null },
     ]);
 
     // The series is unchanged: the authorless row is still re-enriched (the writers fallback), but its
@@ -102,7 +102,7 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
     expect(second.volumeCalls).toEqual([]);
     const [after] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '457'));
     expect((after!.attrs as Record<string, unknown>).heldBooks).toEqual([
-      { title: 'Murtagh', author: 'Christopher Paolini', isbn: null },
+      { title: 'Murtagh', author: 'Christopher Paolini', authors: ['Christopher Paolini'], isbn: null },
     ]);
     expect(after!.summary).toBe('A dragon rider.');
   });
@@ -163,7 +163,7 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
     expect(s.metadataCalls).toEqual([]); // unchanged and enriched: the metadata gate is untouched
     const [after] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '659'));
     expect((after!.attrs as Record<string, unknown>).heldBooks).toEqual([
-      { title: 'Fire & Blood', author: 'George R. R. Martin', isbn: '9781524796280' },
+      { title: 'Fire & Blood', author: 'George R. R. Martin', authors: ['George R. R. Martin'], isbn: '9781524796280' },
     ]);
     expect(after!.summary).toBe('Kept');
   });

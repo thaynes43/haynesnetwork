@@ -21,7 +21,11 @@
 // single-writer. Reads LazyLibrarian only through the snapshot the caller hands in (the run's one `getAllBooks`).
 import { and, asc, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { bookRequests, booksItems, type BookRequestRow, type DbClient } from '@hnet/db';
-import { pairingBooksItemIdentity } from './format-pairing';
+import {
+  buildPairingHeldCoverage, landPairingHeldFormat, loadPairingAcquisitionDeferrals, missingFormatFor,
+  pairingBooksItemIdentity,
+} from './format-pairing';
+import { readHeldBooks } from './books';
 import { resolveDb } from './db-client';
 import {
   FOREIGN_LANGUAGE_REASON,
@@ -192,22 +196,43 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
   ];
   const anchorLanguage = new Map<string, string | null>();
   const eligibleAnchors = new Set<string>();
+  const deferredPairingIds = new Set<string>();
   if (anchorIds.length > 0) {
     const anchors = await resolveDb(input.db)
-      .select({ id: booksItems.id, attrs: booksItems.attrs,
-        mediaKind: booksItems.mediaKind,
-        title: booksItems.title,
-        author: booksItems.author,
-        isbn: booksItems.isbn,
-        deletedAt: booksItems.deletedAt,
-      })
+      .select()
       .from(booksItems)
-      .where(inArray(booksItems.id, anchorIds));
+      .where(isNull(booksItems.deletedAt));
+    const items = anchors.map((a) => ({ ...a, heldBooks: readHeldBooks(a.attrs), language: readItemLanguage(a.attrs) }));
+    const coverage = buildPairingHeldCoverage(items, snapshot);
+    const deferrals = await loadPairingAcquisitionDeferrals(input.db, items, snapshot);
+    const byId = new Map(anchors.map((a) => [a.id, a]));
     for (const a of anchors) {
       anchorLanguage.set(a.id, readItemLanguage(a.attrs));
-      if (a.deletedAt === null && pairingBooksItemIdentity(a).kind === 'one')
-        eligibleAnchors.add(a.id);
+      if (pairingBooksItemIdentity(a).kind === 'one') eligibleAnchors.add(a.id);
     }
+    for (const row of rows.filter((r) => r.origin === 'pairing')) {
+      const anchor = byId.get(row.pairingBooksItemId!);
+      if (!anchor || !eligibleAnchors.has(anchor.id)) continue;
+      const identity = pairingBooksItemIdentity(anchor);
+      if (identity.kind !== 'one') continue;
+      const missing = missingFormatFor(anchor.mediaKind);
+      const blocked = deferrals.blocks(anchor.id, identity, missing);
+      // A deferred request retains its own identity. Another work derived from conflicting chapter
+      // metadata cannot land it or make replacing its LL edition safe.
+      if (coverage.holds(blocked ? row : identity, missing)) {
+        if (row.unroutableReason === null)
+          await landPairingHeldFormat({ db: input.db, requestId: row.id, format: missing, now });
+        deferredPairingIds.add(row.id);
+      } else if (blocked) deferredPairingIds.add(row.id);
+    }
+    if (deferredPairingIds.size > 0) log.warn?.('english_edition_pairing_deferred', {
+      deferredRequestCount: deferredPairingIds.size,
+      deferredRequestIds: [...deferredPairingIds].sort().slice(0, 20),
+      unreadBookItemCount: deferrals.unreadBookItemIds.size,
+      unreadBookItemIds: [...deferrals.unreadBookItemIds].sort().slice(0, 20),
+      reservedAudioItemCount: deferrals.reservedAudioItemIds.size,
+      reservedAudioItemIds: [...deferrals.reservedAudioItemIds].sort().slice(0, 20),
+    });
   }
   const anchorIsForeign = (row: BookRequestRow): boolean =>
     row.origin === 'pairing' &&
@@ -216,7 +241,7 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
 
   const due: BookRequestRow[] = [];
   for (const row of rows) {
-    if (row.origin === 'pairing' && !eligibleAnchors.has(row.pairingBooksItemId!)) continue;
+    if (row.origin === 'pairing' && (!eligibleAnchors.has(row.pairingBooksItemId!) || deferredPairingIds.has(row.id))) continue;
     if (englishEditionOpenFormats(row).length === 0) continue;
     const llBookId = row.llBookId!;
     const book = snapshot.get(llBookId);

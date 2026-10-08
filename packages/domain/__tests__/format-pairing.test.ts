@@ -187,7 +187,7 @@ describe('matchFormatPairs (the conservative matcher)', () => {
   });
   it('pairs a book with its audiobook on normalized title + author agreement', () => {
     const book = pi({ title: 'The Way of Kings', author: 'Brandon Sanderson', mediaKind: 'book' });
-    const audio = pi({ title: 'Way of Kings', author: 'Sanderson', mediaKind: 'audiobook' });
+    const audio = pi({ title: 'Way of Kings', author: 'Brandon Sanderson', mediaKind: 'audiobook' });
     const pairs = matchFormatPairs([book, audio]);
     expect(pairs).toEqual([
       { bookItemId: book.id, audioItemId: audio.id, matchedVia: 'title_author' },
@@ -223,12 +223,12 @@ describe('matchFormatPairs (the conservative matcher)', () => {
     expect(matchFormatPairs([book, audio])).toEqual([]);
   });
 
-  it('author tolerance (2026-07-21): initials spacing, initials-to-full, middle names, a leading co-author credit', () => {
+  it('complete author tolerance: initials spacing, initials-to-full, middle names and explicit complete coauthor credits', () => {
     const cases: Array<[string, string]> = [
       ['J.R.R. Tolkien', 'JRR Tolkien'], // "j r r tolkien" ⇄ "jrr tolkien" — the Silmarillion class
       ['L.M. Montgomery', 'Lucy Maud Montgomery'],
       ['Dean Koontz', 'Dean Ray Koontz'],
-      ['George R.R. Martin', 'Geo. R.R. Martin, Gardner Duzois, Daniel Abraham'],
+      ['George R.R. Martin', 'George R.R. Martin, Gardner Duzois, Daniel Abraham'],
     ];
     for (const [ebookAuthor, audioAuthor] of cases) {
       const book = pi({ title: 'Same Title', author: ebookAuthor, mediaKind: 'book' });
@@ -242,6 +242,8 @@ describe('matchFormatPairs (the conservative matcher)', () => {
       ['Walter Mosley', 'Homer'], // distinct works sharing a bare title
       ['Charlaine Harris', 'Harris Kelner'], // ordered alignment fails; substring fails
       ['J.', 'John Grisham'], // a bare initial alone can never anchor an agreement
+      ['Brandon Sanderson', 'Sanderson'], // a surname alone cannot prove the complete credit
+      ['Orson Scott', 'Orson Scott Card'], // given-name fragments cannot stand in for a surname
     ];
     for (const [ebookAuthor, audioAuthor] of refused) {
       const book = pi({ title: 'Same Title', author: ebookAuthor, mediaKind: 'book' });
@@ -491,12 +493,10 @@ describe('mintPairingWants (the paced estate-wide backfill)', () => {
     const gb1 = stubGb(() => 'gb-dune');
     await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb1.gb, pacer: async () => {} });
 
-    // Run 2: an audiobook of the SAME work whose series parenthetical keeps the pairing key distinct (so it does
-    // NOT auto-pair and stays an unpaired candidate), but whose reuse key (series decoration off, issue #693) +
-    // author still match the resolved book want. It must reuse 'gb-dune' — NO fresh GB call, even
-    // with the breaker otherwise starved. This is what keeps the pairing backlog draining on a
-    // quota-exhausted day; before the reuse index drew from pairing wants it would have needed GB.
-    await seedItem({ title: 'Dune (Dune Chronicles, #1)', author: 'Frank Herbert', mediaKind: 'audiobook' });
+    // Run 2: a second Kavita copy of the same work remains unpaired and reuses the existing
+    // missing-audio resolve. A differently decorated audio counterpart now defers acquisition;
+    // this same-format fixture exercises reuse without depending on title uncertainty.
+    await seedItem({ title: 'Another Dune Copy', author: 'Frank Herbert', mediaKind: 'book', attrs: { heldBooks: [held('Dune', { author: 'Frank Herbert' })] } });
     const gb2 = stubGb(() => {
       throw new Error('GB must not be called when a prior pairing want already resolved this work');
     });
@@ -1477,10 +1477,10 @@ describe('pairingIdentity — the anchor is the book held, never the series name
     expect(pairingIdentity(book(ISSUE_ROWS.fireAndBlood))).toEqual({
       kind: 'one',
       title: 'Fire & Blood',
-      author: 'George R. R. Martin',
+      author: 'George R.R. Martin',
       isbn: '9781524796280',
     });
-    expect(pairingIdentity(book(ISSUE_ROWS.beedle))).toMatchObject({ kind: 'one', title: 'The Tales of Beedle the Bard', author: 'J. K. Rowling',
+    expect(pairingIdentity(book(ISSUE_ROWS.beedle))).toMatchObject({ kind: 'one', title: 'The Tales of Beedle the Bard', author: 'J.K. Rowling',
     });
   });
 
@@ -1622,21 +1622,21 @@ describe('stripAuthorDecoration', () => {
 describe('matchFormatPairs — a one-book Kavita series pairs on the book it holds (issue #661)', () => {
   it('a series named for its book keeps its pair when a second series holds the same book', () => {
     // Live: "Heretics of Dune" (series) and "Dune" (series) both hold Heretics of Dune; one audiobook.
-    const named = pi({ title: 'Heretics of Dune', author: 'Frank Herbert', mediaKind: 'book', heldBooks: [held('Heretics of Dune')] });
-    const other = pi({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book', heldBooks: [held('Heretics Of Dune')] });
+    const named = pi({ title: 'Heretics of Dune', author: 'Frank Herbert', mediaKind: 'book', heldBooks: [held('Heretics of Dune', { author: 'Frank Herbert' })] });
+    const other = pi({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book', heldBooks: [held('Heretics Of Dune', { author: 'Frank Herbert' })] });
     const audio = pi({ title: 'Heretics of Dune', author: 'Frank Herbert', mediaKind: 'audiobook' });
     // "dune" sorts before "heretics of dune", yet the series named for the book claims the audiobook.
     expect(matchFormatPairs([other, named, audio])).toEqual([{ bookItemId: named.id, audioItemId: audio.id, matchedVia: 'title_author' }]);
   });
 
   it('pairs the held book with its audiobook, where the series name never could', () => {
-    const series = pi({ title: 'Bobiverse', author: 'Dennis E. Taylor', mediaKind: 'book', heldBooks: [held("Heaven's River")] });
+    const series = pi({ title: 'Bobiverse', author: 'Dennis E. Taylor', mediaKind: 'book', heldBooks: [held("Heaven's River", { author: "Dennis E. Taylor" })] });
     const audio = pi({ title: "Heaven's River", author: 'Dennis E. Taylor', mediaKind: 'audiobook' });
     expect(matchFormatPairs([series, audio])).toEqual([{ bookItemId: series.id, audioItemId: audio.id, matchedVia: 'title_author' }]);
   });
 
   it("no longer pairs a series with an audiobook named like the series (Dune holding Heretics of Dune is not 'Dune')", () => {
-    const series = pi({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book', heldBooks: [held('Heretics Of Dune')] });
+    const series = pi({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book', heldBooks: [held('Heretics Of Dune', { author: 'Frank Herbert' })] });
     const audio = pi({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'audiobook' });
     expect(matchFormatPairs([series, audio])).toEqual([]);
   });
@@ -1688,13 +1688,12 @@ describe('mintPairingWants — the want describes the book held (issue #661)', (
 
     const report = await mintPairingWants({ db: t.db, ll: ll.bundle, gb: gb.gb, pacer: async () => {} });
 
-    expect(report).toMatchObject({ attempted: 4, minted: 4, pushed: 4, unmintable: 0, skippedNotOneBook: 1, skippedUnknownHeld: 0, parked: 0 });
+    expect(report).toMatchObject({ attempted: 3, minted: 3, pushed: 3, unmintable: 0, skippedNotOneBook: 1, skippedUnknownHeld: 0, skippedUncertainHeld: 1, parked: 0 });
     // The GB resolve saw the books, never a series name.
-    expect(gb.inputs.map((i) => i.title).sort()).toEqual(['Fire & Blood', 'Murtagh', 'SSN', 'The Tales of Beedle the Bard']);
-    expect(gb.inputs.find((i) => i.title === 'Fire & Blood')).toMatchObject({ isbn: '9781524796280', author: 'George R. R. Martin',
+    expect(gb.inputs.map((i) => i.title).sort()).toEqual(['Fire & Blood', 'Murtagh', 'The Tales of Beedle the Bard']);
+    expect(gb.inputs.find((i) => i.title === 'Fire & Blood')).toMatchObject({ isbn: '9781524796280', author: 'George R.R. Martin',
     });
-    expect(gb.inputs.find((i) => i.title === 'SSN')).toMatchObject({ isbn: '9780425173534', author: 'Martin Greenberg',
-    });
+    expect(gb.inputs.some((i) => i.title === 'SSN')).toBe(false); // aggregate Clancy contradicts the actual Greenberg Writer
     expect(gb.inputs.find((i) => i.title === 'Murtagh')).toMatchObject({ author: 'Christopher Paolini' });
 
     const wants = await t.db.select().from(bookRequests);
@@ -1702,11 +1701,11 @@ describe('mintPairingWants — the want describes the book held (issue #661)', (
     expect(byAnchor.get(ids.fireAndBlood)).toMatchObject({ title: 'Fire & Blood', llBookId: 'gb-fire-and-blood', audioStatus: 'wanted' });
     expect(byAnchor.get(ids.beedle)).toMatchObject({ title: 'The Tales of Beedle the Bard', llBookId: 'gb-beedle' });
     expect(byAnchor.get(ids.murtagh)).toMatchObject({ title: 'Murtagh', author: 'Christopher Paolini', llBookId: 'gb-murtagh' });
-    expect(byAnchor.get(ids.ssn)).toMatchObject({ title: 'SSN', llBookId: 'gb-ssn' });
+    expect(byAnchor.has(ids.ssn)).toBe(false); // no automatic request from contradictory source credits
     // The two-book series mints nothing and pushes nothing.
     expect(byAnchor.has(ids.jackRyan)).toBe(false);
     expect(ll.calls.filter((c) => c.cmd === 'queueBook').map((c) => c.id).sort()).toEqual(
-      ['gb-beedle', 'gb-fire-and-blood', 'gb-murtagh', 'gb-ssn'],
+      ['gb-beedle', 'gb-fire-and-blood', 'gb-murtagh'],
     );
   });
 
@@ -1797,16 +1796,16 @@ describe('syncFormatPairs — the re-vanish heals only a pair that dropped this 
   });
 
   it('a pair that breaks because the series turns out to hold another book revives its want', async () => {
-    // A confirmed Dune identity paired first; a later chapter read changes it to Heretics of Dune,
+    // A confirmed Dune identity paired first; a later chapter read changes it to Whipping Star,
     // so the pair drops and the landed want wants the newly held book's audiobook again.
-    const series = await seedItem({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book', attrs: { heldBooks: [held('Dune')] } });
+    const series = await seedItem({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'book', attrs: { heldBooks: [held('Dune', { author: 'Frank Herbert' })] } });
     await seedItem({ title: 'Dune', author: 'Frank Herbert', mediaKind: 'audiobook' });
     expect((await syncFormatPairs({ db: t.db })).paired).toBe(1);
     const [want] = await t.db
       .insert(bookRequests)
       .values({ origin: 'pairing', pairingBooksItemId: series, title: 'Dune', author: 'Frank Herbert', llBookId: 'gb-dune', ebookStatus: 'landed', audioStatus: 'landed' })
       .returning();
-    await t.db.update(booksItems).set({ attrs: { heldBooks: [held('Heretics Of Dune')] } }).where(eq(booksItems.id, series));
+    await t.db.update(booksItems).set({ attrs: { heldBooks: [held('Whipping Star', { author: 'Frank Herbert' })] } }).where(eq(booksItems.id, series));
 
     const report = await syncFormatPairs({ db: t.db });
     expect(report).toMatchObject({ paired: 0, dropped: 1, revived: 1 });

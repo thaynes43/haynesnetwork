@@ -1,7 +1,7 @@
 # DESIGN-036: Book ⇄ audiobook format pairing — pair cache, paced system wants, dual consume buttons
 
 - **Status:** Draft
-- **Last updated:** 2026-10-07 (a Mint Backoff ends at the same-hour run however its start jitters; the mint waits out one per-minute quota window, owed check OC-014). Prior: 2026-10-06 (the pairing writers record a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (the missing format's `grabbed` follows LazyLibrarian, and a given-up want releases its LazyLibrarian book, issues #734 and #735; see the last amendment). Prior: 2026-10-05 (a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
+- **Last updated:** 2026-10-08 (issue #825: verified individual-work coverage, persistent uncertain counterparts and guarded identity transitions). Prior: 2026-10-07 (a Mint Backoff ends at the same-hour run however its start jitters; the mint waits out one per-minute quota window, owed check OC-014). Prior: 2026-10-06 (the pairing writers record a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (the missing format's `grabbed` follows LazyLibrarian, and a given-up want releases its LazyLibrarian book, issues #734 and #735; see the last amendment). Prior: 2026-10-05 (a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
   see the last amendment). Prior: 2026-10-05 (a want is checked against its anchor's book, issue #693; see the
   amendment of that date). Prior: 2026-07-21 (**author-agreement tolerance** — the live pairing-gap diagnosis found the
   substring check refusing real pairs on initials spacing ("JRR Tolkien" ⇄ "J.R.R. Tolkien"),
@@ -745,3 +745,100 @@ finds one, a scoped repair may lift only those two reasons after a successful fr
 new book identity, reset the missing format unless a live pair proves it held, and record the mutation under the
 repair Request Event scope. It never lifts a `wrong_volume` or `foreign_language` park. This backfill repair does not
 change the general rule that parks require an explicit repair to lift.
+
+### Held formats before automatic acquisition (2026-10-07, issue #825)
+
+One-to-one Format Pairs are the card and identity cache. They are not the only proof that a format is already
+held. Before automatic acquisition, a current individual Held Book can prove ebook coverage for a live audio
+anchor by its complete cleaned title and an agreeing actual Writer, even when its containing series holds
+several books. A current Audiobookshelf book can similarly prove audio coverage. A series name alone, a title
+without author proof, a removed item or an unread Held Book cannot establish this coverage. Pair matching still
+requires a one-book series and keeps its existing one-to-one rule.
+
+Actual author proof uses complete credits. Normalized equal names, including an exact declared mononym, agree.
+Initials and middle-name tolerance require given-name and surname components on both sides with agreeing
+first and last components. Unmarked uppercase given names are not inferred initial sequences; compact initials
+agree only through explicit initial notation. A surname alone cannot validate a full author, nor can a given-and-middle fragment
+validate a missing surname. Kavita's comma-split creator fragments cannot be joined into inferred people.
+A chapter with multiple Writer credits including single-token fragments remains uncertain for automatic
+acquisition; those ambiguous credits cannot establish strong library coverage. Multiple complete names
+explicitly separated as credits may each provide proof. Existing broader resolver tolerances stay separate.
+
+A complete LazyLibrarian snapshot can also prove the requested format is held by another edition: its complete
+title and known author must agree with the current anchor, the format must satisfy the existing held-file/library
+signals, and the edition's language must be English or unknown. A meaningful subtitle remains part of that
+full-work identity; the primary title alone cannot make a same-author novella cover the novel. An arbitrary resolved edition id does not
+override this already-held work. No Google Books lookup, add, queue or search is needed merely because the old
+request id disappeared while a verified edition remains held. A failed snapshot adds no such proof.
+
+Every automatic pairing path observes the same current coverage before mint, gone-book retry, dropped-pair
+revival, landed revalidation, Skipped retry, English-edition replacement and open-want reconcile. Pair matching
+and library coverage use the same current item snapshot. Existing wants record verified missing-format
+coverage as landed through the Request Event writer. Proven held formats never queue or search. This prevents
+a stricter pair cache or a one-time series split from acquiring a duplicate of text the library already serves,
+without inventing a pair or asserting ownership from ambiguous metadata.
+
+### Unread counterparts and conflicting metadata (2026-10-07, issue #825)
+
+A Pairing Reservation is a derived `books_pairing_reservations` edge between the book and audio items of a
+previous pair when the live book's chapter inventory is unread or includes an unidentifiable title. A prior book
+already tombstoned at the first pairing run also opens this edge while a live unread or unidentifiable replacement
+could still hold the work. The Format Pair can drop while this separate
+edge keeps that audio's ebook acquisition deferred on subsequent runs. The reservation establishes uncertainty,
+not ownership. Its single writer updates it in the pair-cache transaction before deleting stale pairs. Current
+verified held coverage or a fully identifiable original chapter inventory clears it; an empty inventory is valid
+no-book proof, but a multi-book inventory with an untitled chapter is not. A tombstoned original can clear only
+after the complete mirror's deletion proof, with no outstanding unread or unidentifiable book inventory. This
+restriction protects its former audio counterpart, without blocking unrelated new candidates merely because
+another successfully read book has no identifiable title.
+
+A genuinely unread live Book inventory (`heldBooks` absent) also defers uncovered automatic ebook acquisition
+until the read succeeds. A successfully read but unidentifiable book does not block unrelated audio items; its
+own pairing acquisition remains guarded, and any reservation of a prior counterpart persists. Unknown actual
+chapter Writers defer the corresponding full-title audio candidate and the Book anchor's own acquisition rather
+than asserting a pair or ownership.
+Warnings carry total counts and bounded item/request ids so a persistent outage or metadata gap is actionable.
+
+Known contradictory authors also defer acquisition while stronger coverage remains usable. A Book anchor whose
+known row author disagrees with every actual chapter Writer cannot automatically request another format from
+that uncertain identity. An audio candidate whose full title matches a held chapter, whose author agrees with
+the Book row but not its actual Writers, waits for that conflict to be resolved. These guards preserve an
+existing want's identity, LazyLibrarian id and state until the ambiguity clears, except
+that positive current held-format proof can land it. They do not replace the declared chapter identity with the
+aggregate author or guess that two authors are one.
+
+The removed-predecessor reader also accepts strong current library coverage of the predecessor's missing format
+as completed handoff. It uses the same full-work title/actual-author proof as acquisition, independently of the
+one-to-one pair cache. Unknown or mismatched coverage keeps the existing fail-closed reservation rules. A live
+multi-book replacement with any unidentifiable chapter remains an unknown-work blocker for a queued predecessor.
+
+An explicit leading numbered-series decoration can survive in the preserved book title after grouping metadata
+is removed. Until its full-work identity is verified, automatic missing-format acquisition waits unless positive
+complete-work coverage exists. A corresponding audio title and credible author can establish uncertainty and
+defer acquisition, without inventing a pair or held ownership. Unknown or fragmented Writers combined with
+the same complete suffix also preserve this uncertainty. This guard does not strip arbitrary prefixes or
+meaningful subtitles. Future source-context or canonical-title repair requires separate evidence; the migration
+keeps every EPUB title and author field intact.
+
+When a held chapter and an audio item have the same complete cleaned title, legacy author tolerance may
+recognize plausible credit ambiguity that strict complete-name proof refuses (an abbreviated given name,
+an editor label or separately formatted coauthors). This compatibility only removes automatic acquisition
+permission on both anchors; it never proves a pair or held coverage, joins credits, or rewrites metadata.
+The current matching-title inventories maintain the deferral across repeated runs even after the old pair
+has dropped. Existing wants keep their identity and state unless positive complete-work coverage for their
+preserved snapshot can land them. Clearly different authors or distinct meaningful subtitles do not meet
+this uncertainty guard.
+
+Differently decorated full titles can also make an existing counterpart uncertain. With agreeing actual
+author credits, a complete cleaned title contained at a whole-word prefix or suffix boundary of the other
+full title defers automatic acquisition on both anchors. The guard also examines complete titles of held
+LazyLibrarian editions, including their meaningful subtitles. Character substrings and resemblance among
+interior words do not qualify. Clearly different numbered or Roman-numbered sequel volumes remain distinct.
+Explicit bracketed Disc, CD or Track markers may be ignored only during this uncertainty comparison. They
+cannot establish complete-format ownership, and the original title remains intact.
+This is negative permission only: it never shortens the stored work title, creates an alias or pair, or treats
+an additional subtitle, compilation or partial work as held coverage. Positive exact full-work coverage remains
+usable, and an existing uncertain request keeps its preserved snapshot. The deferral survives repeated runs
+without the previous pair cache. A truly different same-author work whose full title contains another may
+also wait for canonical identity evidence; bounded diagnostics and issue #835 record that limitation rather
+than acquiring a potentially duplicated format.

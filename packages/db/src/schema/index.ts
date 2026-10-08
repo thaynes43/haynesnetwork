@@ -139,6 +139,7 @@ export * from './ll-format-releases';
 // buttons, the coverage badge, and the pairing-want mint all read it. Guarded single-writer table
 // (syncFormatPairs); rebuildable, no audit — the media_plex_matches class.
 export * from './books-format-pairs';
+export * from './books-pairing-reservations';
 // ADR-059 / DESIGN-030 (PLAN-048 — Activity / In-Flight) — the fine-grained Activity ACTION grants (the
 // role_trash_action_grants idiom, ADR-023; single-writer setRoleActivityActions, audited) and the DURABLE
 // import-failure ledger the `activity-scan` sync mode upserts (the ONLY persisted activity state — the tab
