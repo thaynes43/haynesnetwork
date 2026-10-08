@@ -778,6 +778,13 @@ coverage as landed through the Request Event writer. Proven held formats never q
 a stricter pair cache or a one-time series split from acquiring a duplicate of text the library already serves,
 without inventing a pair or asserting ownership from ambiguous metadata.
 
+Early held-format settlement must preserve safe edition-pointer repair. A complete LazyLibrarian snapshot
+that proves a current same-work held edition by complete title, strong author, language and held-format
+signals can repair a removed request id through the existing audited rekey writer before settlement.
+An uncertain request uses its preserved snapshot for that proof. Library-only coverage need not invent a
+replacement LazyLibrarian id; without verified current edition evidence its historical pointer may remain.
+Neither path performs Google Books lookup, add, queue, search or revival merely to land a held format.
+
 ### Unread counterparts and conflicting metadata (2026-10-07, issue #825)
 
 A Pairing Reservation is a derived `books_pairing_reservations` edge between the book and audio items of a
@@ -842,3 +849,9 @@ usable, and an existing uncertain request keeps its preserved snapshot. The defe
 without the previous pair cache. A truly different same-author work whose full title contains another may
 also wait for canonical identity evidence; bounded diagnostics and issue #835 record that limitation rather
 than acquiring a potentially duplicated format.
+
+An edition's marketing subtitle cannot turn a different primary work title into a match merely by naming the
+requested title as an explicit numbered series reference. For example, Drums of Autumn with a subtitle ending
+in `(Outlander 4)` is not the Outlander book. The shared mismatch check rejects that route as wrong-volume,
+using the current verified pairing identity even when a legacy request's author is null. Legitimate full work
+titles and meaningful subtitles retain their existing checks; no series alias supplies work identity.

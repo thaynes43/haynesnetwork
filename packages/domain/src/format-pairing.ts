@@ -74,6 +74,7 @@ import {
   LlRekeyIndex,
   llRerequestOpen,
   peoplesRerequestsWaiting,
+  repointRequestLlBook,
   runLlRerequests,
   type LlGoneTally,
   type LlRerequestCandidate,
@@ -496,6 +497,7 @@ export function pairingBooksItemSourceUncertain(
 
 export interface PairingHeldCoverage {
   holds(identity: { title: string; author: string | null }, format: 'ebook' | 'audiobook'): boolean;
+  replacementFor?(identity: { title: string; author: string | null }, format: 'ebook' | 'audiobook', absentLlBookId: string): string | null;
 }
 
 /** Current work coverage is broader than one-to-one pairs, but never uses an aggregate series identity. */
@@ -504,6 +506,7 @@ export function buildPairingHeldCoverage(
   snapshot?: LlSnapshot | null,
 ): PairingHeldCoverage {
   const indexes = { ebook: new Map<string, string[]>(), audiobook: new Map<string, string[]>() };
+  const editions = { ebook: new Map<string, Array<{ id: string; author: string }>>(), audiobook: new Map<string, Array<{ id: string; author: string }>>() };
   const add = (title: string | null | undefined, author: string | null | undefined, format: 'ebook' | 'audiobook') => {
     if (!title || !normAuthor(author ?? null)) return;
     const key = pairingTitleKey(title);
@@ -524,18 +527,47 @@ export function buildPairingHeldCoverage(
     }
   }
   if (llSnapshotUsable(snapshot)) {
-    for (const row of snapshot.values()) {
+    for (const [id, row] of snapshot) {
       if (isForeignLanguage(row.language)) continue;
       for (const format of ['ebook', 'audiobook'] as const) {
         if (!llFormatAlreadyHeld(row, format)) continue;
-        add([row.title, row.subtitle].filter(Boolean).join(': '), row.author, format);
+        const title = [row.title, row.subtitle].filter(Boolean).join(': ');
+        add(title, row.author, format);
+        if (title && row.author?.trim()) {
+          const key = pairingTitleKey(title);
+          const matching = editions[format].get(key) ?? [];
+          matching.push({ id, author: row.author });
+          editions[format].set(key, matching);
+        }
       }
     }
   }
   return {
     holds: (identity, format) =>
       (indexes[format].get(pairingTitleKey(identity.title)) ?? []).some((a) => pairingAuthorsAgree(a, identity.author)),
+    replacementFor: (identity, format, absentLlBookId) => {
+      if (!llSnapshotUsable(snapshot) || snapshot.has(absentLlBookId)) return null;
+      return (editions[format].get(pairingTitleKey(identity.title)) ?? [])
+        .filter((edition) => pairingAuthorsAgree(edition.author, identity.author))
+        .sort((a, b) => a.id.localeCompare(b.id))[0]?.id ?? null;
+    },
   };
+}
+
+/** Strong held-edition proof repairs only the existing request's work, without an acquisition or identity rewrite. */
+export async function repairPairingHeldEditionPointer(input: {
+  db?: DbClient;
+  want: Pick<BookRequestRow, 'id' | 'llBookId' | 'title' | 'author'>;
+  missing: 'ebook' | 'audiobook';
+  coverage: PairingHeldCoverage;
+  now: Date;
+  site: string;
+}): Promise<boolean> {
+  const fromLlBookId = input.want.llBookId;
+  if (!fromLlBookId) return false;
+  const toLlBookId = input.coverage.replacementFor?.(input.want, input.missing, fromLlBookId);
+  if (!toLlBookId) return false;
+  return repointRequestLlBook({ db: input.db, requestId: input.want.id, fromLlBookId, toLlBookId, site: input.site, now: input.now });
 }
 
 export interface PairingAcquisitionDeferrals {
@@ -2672,6 +2704,22 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
     searchedThisRun.set(llBookId, covered);
   };
 
+  const gone = emptyLlGoneTally();
+  const liveById = new Map(libraryItems.map((i) => [i.id, i]));
+  for (const want of await db.select().from(bookRequests).where(eq(bookRequests.origin, 'pairing'))) {
+    const anchor = want.pairingBooksItemId ? liveById.get(want.pairingBooksItemId) : undefined;
+    if (!anchor || want.unroutableReason || isForeignLanguage(anchor.language)) continue;
+    const identity = pairingIdentity(anchor);
+    if (identity.kind !== 'one') continue;
+    const missing = missingFormatFor(anchor.mediaKind);
+    const coverageIdentity = pairingCoverageIdentity(anchor.id, identity, want, missing, acquisitionDeferrals);
+    if (pairingTitleKey(want.title) !== pairingTitleKey(coverageIdentity.title) ||
+      !pairingAuthorsAgree(want.author, coverageIdentity.author)) continue;
+    if (await repairPairingHeldEditionPointer({ db: input.db, want, missing, coverage: heldCoverage, now, site: 'format-pairing.coverage-rekey' })) {
+      gone.llGoneRekeyed += 1;
+    }
+  }
+
   const mint = await mintPairingWants({
     ...input,
     items: libraryItems.filter((i) => i.mediaKind !== 'comic'),
@@ -2703,7 +2751,6 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
   let heldLanded = 0;
   let landedReverted = 0;
   let grabReverted = 0;
-  const gone = emptyLlGoneTally();
   if (input.ll && seatedMap) {
     // Issue #665 (DESIGN-028 amendment 2026-10-04) — a pushed want whose id LazyLibrarian no longer has is
     // re-keyed to the row LL holds for the same book, or settled `missing`. Built from the same one snapshot;
@@ -2771,10 +2818,21 @@ export async function runFormatPairing(input: RunFormatPairingInput): Promise<Fo
           : ('ebook' as const);
       const heldFormat = missing === 'ebook' ? ('audiobook' as const) : ('ebook' as const);
       const identity = anchorIdentityOf.get(want.pairingBooksItemId!);
-      if (identity?.kind === 'one' && heldCoverage.holds(
-        pairingCoverageIdentity(want.pairingBooksItemId!, identity, want, missing, acquisitionDeferrals), missing)) {
-        await landPairingHeldFormat({ db: input.db, requestId: want.id, format: missing, now });
-        sweepSkippedHeld += 1;
+      const coverageIdentity = identity?.kind === 'one'
+        ? pairingCoverageIdentity(want.pairingBooksItemId!, identity, want, missing, acquisitionDeferrals)
+        : null;
+      if (coverageIdentity && heldCoverage.holds(coverageIdentity, missing)) {
+        // With source uncertainty, the anchor may describe another work: only positive proof for
+        // this preserved snapshot can land its held side. A known fresh source can finish both sides.
+        const uncertain = identity?.kind === 'one' &&
+          acquisitionDeferrals.blocks(want.pairingBooksItemId!, identity, missing);
+        if ((!uncertain || heldCoverage.holds(coverageIdentity, heldFormat)) &&
+          await landPairingHeldFormat({ db: input.db, requestId: want.id, format: heldFormat, now })) {
+          heldLanded += 1;
+        }
+        if (await landPairingHeldFormat({ db: input.db, requestId: want.id, format: missing, now })) {
+          sweepSkippedHeld += 1;
+        }
         continue;
       }
       if (identity?.kind === 'one' && acquisitionDeferrals.blocks(want.pairingBooksItemId!, identity, missing)) continue;

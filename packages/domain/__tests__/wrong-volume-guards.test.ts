@@ -56,6 +56,31 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('llBookMismatch (lenient)', () => {
+  it('a marketing subtitle numbered reference cannot turn Drums of Autumn into Outlander', () => {
+    const edition = {
+      title: 'Drums Of Autumn', author: 'Diana Gabaldon',
+      subtitle: 'The spellbinding Scottish historical romance from the epic, bestselling series (Outlander 4)',
+    };
+    for (const author of ['Diana Gabaldon', null]) {
+      expect(llBookMismatch({ title: 'Outlander', author }, edition)).toBe('volume');
+    }
+    expect(llBookNamesTitle('Outlander', edition)).toBe(false);
+    expect(llBookMismatch({ title: 'Drums Of Autumn', author: 'Diana Gabaldon' }, edition)).toBeNull();
+  });
+  it('same primary title and a first-volume numbered subtitle retain legitimate work identity', () => {
+    expect(llBookMismatch({ title: 'Outlander', author: 'Diana Gabaldon' }, {
+      title: 'Outlander', author: 'Diana Gabaldon', subtitle: 'The bestselling first novel (Outlander 1)',
+    })).toBeNull();
+    expect(llBookMismatch({ title: 'Actual Work', author: 'Complete Writer' }, {
+      title: 'Another Work', author: 'Complete Writer', subtitle: 'Actual Work: A meaningful subtitle',
+    })).toBeNull();
+    expect(llBookMismatch({ title: 'Actual Work: Book Two', author: 'Complete Writer' }, {
+      title: 'Unrelated Work', author: 'Complete Writer', subtitle: 'Actual Work: Book Two',
+    })).toBeNull();
+    expect(llBookMismatch({ title: 'The Globe', author: 'Terry Pratchett' }, {
+      title: 'The Science of Discworld II', subtitle: 'The Globe: Book 2', author: 'Terry Pratchett',
+    })).toBeNull();
+  });
   it('another WORK: "BBC Radio Drama Collection" pinned to "Terry Pratchett\'s Discworld"', () => {
     // The author's name is no evidence of the same work, so the shared "Terry Pratchett" counts for nothing.
     expect(

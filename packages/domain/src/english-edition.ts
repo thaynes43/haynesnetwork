@@ -23,7 +23,7 @@ import { and, asc, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { bookRequests, booksItems, type BookRequestRow, type DbClient } from '@hnet/db';
 import {
   buildPairingHeldCoverage, landPairingHeldFormat, loadPairingAcquisitionDeferrals, missingFormatFor,
-  pairingBooksItemIdentity,
+  pairingBooksItemIdentity, repairPairingHeldEditionPointer,
 } from './format-pairing';
 import { readHeldBooks } from './books';
 import { resolveDb } from './db-client';
@@ -220,6 +220,8 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
       // A deferred request retains its own identity. Another work derived from conflicting chapter
       // metadata cannot land it or make replacing its LL edition safe.
       if (coverage.holds(blocked ? row : identity, missing)) {
+        if (row.unroutableReason === null)
+          await repairPairingHeldEditionPointer({ db: input.db, want: row, missing, coverage, now, site: 'english-edition.coverage-rekey' });
         if (row.unroutableReason === null)
           await landPairingHeldFormat({ db: input.db, requestId: row.id, format: missing, now });
         deferredPairingIds.add(row.id);

@@ -622,7 +622,8 @@ describe('runFormatPairing — the one re-request of a settled want (issue #668)
     });
     const ll = stubLl();
     const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
-    expect(run).toMatchObject({ paired: 1, llRerequestLanded: 1, llRerequested: 0 });
+    // Fresh library coverage settles before the re-request stage; no current LL edition is invented.
+    expect(run).toMatchObject({ paired: 1, llRerequestLanded: 0, llGoneRekeyed: 0, llRerequested: 0 });
     expect(ll.calls).toEqual([]);
     expect(await getWant(id)).toMatchObject({ audioStatus: 'landed', llRerequestedAt: null });
   });
@@ -638,7 +639,8 @@ describe('runFormatPairing — the one re-request of a settled want (issue #668)
       },
     });
     const run = await runFormatPairing({ db: t.db, ll: ll.bundle, pacer: noPace });
-    expect(run).toMatchObject({ llRerequestLanded: 1, llRerequested: 0 });
+    // Complete held-edition proof repairs the pointer and lands before the re-request stage.
+    expect(run).toMatchObject({ llRerequestLanded: 0, llGoneRekeyed: 1, llRerequested: 0 });
     expect(ll.calls).toEqual([]);
     expect(await getWant(id)).toMatchObject({ llBookId: 'll-saints', audioStatus: 'landed' });
   });

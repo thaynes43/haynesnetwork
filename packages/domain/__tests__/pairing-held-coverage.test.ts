@@ -444,6 +444,176 @@ function clients(snapshot: Map<string, LlSnapshotRow>) {
 }
 
 describe('every automatic pairing boundary honors held work coverage', () => {
+  it('a covered open want lands both proven formats once and counts only real transitions', async () => {
+    const row = await seed('Complete Work', 'Complete Writer', 'book', {
+      heldBooks: [book('Complete Work', ['Complete Writer'])],
+    });
+    const [want] = await t.db
+      .insert(bookRequests)
+      .values({
+        origin: 'pairing',
+        pairingBooksItemId: row.id,
+        title: 'Complete Work',
+        author: 'Complete Writer',
+        ebookStatus: 'wanted',
+        audioStatus: 'wanted',
+        llBookId: 'selected',
+      })
+      .returning();
+    const stub = clients(
+      new Map([
+        [
+          'selected',
+          {
+            title: 'Complete Work',
+            author: 'Complete Writer',
+            ebookStatus: 'Wanted',
+            audioStatus: 'Wanted',
+          },
+        ],
+        [
+          'held-other-edition',
+          {
+            title: 'Complete Work',
+            author: 'Complete Writer',
+            audioStatus: 'Open',
+            language: 'en',
+          },
+        ],
+      ]),
+    );
+    const first = await runFormatPairing({
+      db: t.db,
+      ll: stub.ll,
+      gb: stub.gb,
+      cap: 0,
+      now: NOW,
+      pacer: async () => {},
+    });
+    expect(first.heldLanded).toBe(1);
+    expect(first.skippedHeld).toBe(1); // one coverage skip; the sweep must not count an unchanged missing format again
+    expect(
+      (await t.db.select().from(bookRequests).where(eq(bookRequests.id, want!.id)))[0],
+    ).toMatchObject({ ebookStatus: 'landed', audioStatus: 'landed' });
+    expect(await t.db.select().from(bookRequestEvents)).toHaveLength(2);
+    const second = await runFormatPairing({
+      db: t.db,
+      ll: stub.ll,
+      gb: stub.gb,
+      cap: 0,
+      now: new Date(NOW.getTime() + 86_400_000),
+      pacer: async () => {},
+    });
+    expect(second).toMatchObject({ heldLanded: 0, skippedHeld: 1 });
+    expect(await t.db.select().from(bookRequestEvents)).toHaveLength(2);
+    expect(stub.calls).toEqual([]);
+  });
+  it.each(['old-work', 'gone-old-work'])(
+    'covered preserved audio cannot falsely land the old request ebook from a conflicting current Book (%s)',
+    async (oldLlBookId) => {
+      const row = await seed('Old Canonical Work', 'Canonical Writer', 'book', {
+        heldBooks: [book('New Derived Work', ['Different Writer'])],
+      });
+      const [want] = await t.db
+        .insert(bookRequests)
+        .values({
+          origin: 'pairing',
+          pairingBooksItemId: row.id,
+          title: 'Old Canonical Work',
+          author: 'Canonical Writer',
+          ebookStatus: 'wanted',
+          audioStatus: 'wanted',
+          llBookId: oldLlBookId,
+        })
+        .returning();
+      const stub = clients(
+        new Map([
+          [
+            'old-work',
+            { title: 'Old Canonical Work', author: 'Canonical Writer', audioStatus: 'Open' },
+          ],
+        ]),
+      );
+      const result = await runFormatPairing({
+        db: t.db,
+        ll: stub.ll,
+        gb: stub.gb,
+        cap: 0,
+        now: NOW,
+        pacer: async () => {},
+      });
+      expect(result).toMatchObject({ heldLanded: 0, skippedHeld: 1 });
+      expect(
+        (await t.db.select().from(bookRequests).where(eq(bookRequests.id, want!.id)))[0],
+      ).toMatchObject({
+        title: 'Old Canonical Work',
+        author: 'Canonical Writer',
+        llBookId: 'old-work',
+        ebookStatus: 'wanted',
+        audioStatus: 'landed',
+      });
+      expect(await t.db.select().from(bookRequestEvents)).toHaveLength(
+        oldLlBookId === 'old-work' ? 1 : 2,
+      );
+      expect(stub.calls).toEqual([]);
+    },
+  );
+  it('the current Outlander identity rejects an old null-author request pointing at Drums of Autumn/Outlander 4', async () => {
+    const row = await seed('Outlander', 'Diana Gabaldon', 'book', {
+      heldBooks: [book('Outlander', ['Diana Gabaldon'])],
+    });
+    const [want] = await t.db
+      .insert(bookRequests)
+      .values({
+        origin: 'pairing',
+        pairingBooksItemId: row.id,
+        title: 'Outlander',
+        author: null,
+        ebookStatus: 'landed',
+        audioStatus: 'landed',
+        llBookId: '3nyUar3bx0QC',
+      })
+      .returning();
+    const stub = clients(
+      new Map([
+        [
+          '3nyUar3bx0QC',
+          {
+            title: 'Drums Of Autumn',
+            subtitle:
+              'The spellbinding Scottish historical romance from the epic, bestselling series (Outlander 4)',
+            author: 'Diana Gabaldon',
+            audioStatus: 'Open',
+            ebookStatus: 'Skipped',
+            language: 'en',
+          },
+        ],
+      ]),
+    );
+    await runFormatPairing({
+      db: t.db,
+      ll: stub.ll,
+      gb: stub.gb,
+      cap: 0,
+      now: NOW,
+      pacer: async () => {},
+    });
+    expect(
+      (await t.db.select().from(bookRequests).where(eq(bookRequests.id, want!.id)))[0],
+    ).toMatchObject({
+      title: 'Outlander',
+      author: 'Diana Gabaldon',
+      llBookId: null,
+      ebookStatus: 'landed',
+      audioStatus: 'requested',
+    });
+    expect(
+      (await t.db.select().from(bookRequestEvents)).some(
+        (e) => e.reason === 'pairing_want_reidentified',
+      ),
+    ).toBe(true);
+    expect(stub.calls).toEqual([]);
+  });
   it.each(uncertainTitles)(
     'defers both sides of plausible decorated titles %s and %s without asserting ownership across repeated runs',
     async (title, audioTitle, author) => {
@@ -621,10 +791,8 @@ describe('every automatic pairing boundary honors held work coverage', () => {
           w.audioStatus === 'landed',
       ),
     ).toBe(true);
-    expect(new Set(wants.map((w) => w.llBookId))).toEqual(
-      new Set(['gone-book-id', 'gone-audio-id']),
-    );
-    expect(await t.db.select().from(bookRequestEvents)).toHaveLength(2);
+    expect(new Set(wants.map((w) => w.llBookId))).toEqual(new Set(['held']));
+    expect(await t.db.select().from(bookRequestEvents)).toHaveLength(4);
     expect(await t.db.select().from(booksFormatPairs)).toEqual([]);
   });
   it.each(uncertainCredits)(
@@ -922,11 +1090,22 @@ describe('every automatic pairing boundary honors held work coverage', () => {
     expect(stub.calls).toEqual([]);
     expect(
       (await t.db.select().from(bookRequests).where(eq(bookRequests.id, want!.id)))[0],
-    ).toMatchObject({ ebookStatus: 'landed', audioStatus: 'landed', llBookId: 'gone-edition' });
-    expect((await t.db.select().from(bookRequestEvents))[0]).toMatchObject({
-      writer: 'landPairingHeldFormat',
-      reason: 'pairing_held_format_landed',
+    ).toMatchObject({
+      ebookStatus: 'landed',
+      audioStatus: 'landed',
+      llBookId: 'different-edition',
     });
+    const events = await t.db.select().from(bookRequestEvents);
+    expect(
+      events.some(
+        (e) => e.writer === 'repointRequestLlBook' && e.reason === 'll_book_gone_repointed',
+      ),
+    ).toBe(true);
+    expect(
+      events.some(
+        (e) => e.writer === 'landPairingHeldFormat' && e.reason === 'pairing_held_format_landed',
+      ),
+    ).toBe(true);
   });
   it('an unread pair reserves its audio across two failed reads and a successfully read but untitled chapter', async () => {
     const bookRow = await seed('Murtagh', 'Christopher Paolini', 'book', {

@@ -353,3 +353,12 @@ writer `author`. Coauthored books must not lose a verified author merely because
 first. Pairing may prefer the row's author only when an actual chapter Writer agrees with it; otherwise the
 chapter's writer remains authoritative. A known chapter writer list never licenses an unverified aggregate author.
 Older records without `authors` keep their existing first-writer semantics until a successful refresh.
+
+The metadata migration holds `Daniel Silva/Ransom` because it has saved reading-location and session state.
+Zero page/read counters do not prove an empty location. Before and after each migration scan, compare every
+progress, location, session, bookmark and annotation field against the exact source file. Its grouping metadata
+remains intact until a separate preservation decision, [issue #840](https://github.com/thaynes43/haynesnetwork/issues/840).
+
+**Q-04 (reading-state preservation).** Should Ransom's saved location and session history be migrated through a
+separately scoped, verified Kavita state-preservation path before its final grouping tag is removed, or should
+this folder remain held? No reading-state mutation is part of this migration.

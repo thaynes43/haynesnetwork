@@ -266,6 +266,23 @@ export function llBookMismatch(
   const bare = wantParts.designation ? wantParts.headNumber : null;
   if (bare !== null && !namesNumber(text, bare) && (bare !== 1 || /\d/.test(text))) return 'volume';
 
+  // A marketing subtitle's numbered series reference cannot identify a different primary work.
+  // Compare only complete requested-title words, never an inferred series alias or subtitle fragment.
+  if (book.title && book.subtitle &&
+    llBookMismatch(want, { title: book.title, author: book.author }) === 'work') {
+    const requested = words(want.title);
+    const references = [...book.subtitle.matchAll(/\(([^()]*)\)|\[([^[\]]*)\]/g)]
+      .map((match) => match[1] ?? match[2] ?? '');
+    if (requested.length > 0 && references.some((reference) => {
+      const tokens = words(reference);
+      if (!requested.every((token, index) => tokens[index] === token)) return false;
+      const suffix = tokens.slice(requested.length);
+      return (suffix.length === 1 && /^\d{1,3}$/.test(suffix[0]!)) ||
+        (suffix.length === 2 && /^(?:book|bk|vol|volume|part|no|number|tome)$/.test(suffix[0]!) &&
+          /^(?:\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)$/.test(suffix[1]!));
+    })) return 'volume';
+  }
+
   const authorWords = new Set([...words(want.author), ...words(book.author)]);
   const wanted = distinctiveWords(wantParts.work.join(' : '), authorWords);
   const seriesWords = new Set(distinctiveWords(wantParts.decoration.join(' : '), authorWords));
