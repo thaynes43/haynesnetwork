@@ -39,13 +39,13 @@
   anonymous API denied. Successful admin HTTP and authenticated admin/non-admin UI remain uncovered because
   Playwright has no session; the plan stays active. No feature defect found.
 - **#825 resumed 10-08:** PLAN-074, report `/home/dev/work/hn-825b-report.md`. All 290 metadata operations
-  are verified, covering 289 current paths. Normal and force scanning preserve all 48 reading rows and eight
-  saved-lock tables; the force restored two missing mappings. Seven unmapped files and 13 nonunique paths
-  predate this run. At 17:31Z, haynes-ops #3603 suspended only format pairing to contain #850: incomplete
-  author credits can pair different works. Other four schedules and Libretto acquisition remain active.
-  Inverse draft haynes-ops #3604 resumes pairing after the complete-credit fix and native source refresh.
-  Hourly strip remains off. Copy moves and list reconciliation await verification; Ransom remains held.
-  OC-045 awaits October 9 nightly scanning, and OC-046 tracks the separate 30-day idle hold release.
+  cover 289 verified current paths. A fully observed Force scan completed at 19:47Z; all 48 reading rows,
+  saved locks across eight tables and 27 curated tables are exact. Seven unmapped files and 13 nonunique paths predate
+  this run. #850 is fixed in deployed v0.110.4: full native source refresh, 716 conservative pairs, 35 reservations,
+  no acquisition and exactly seven approved Request Events. At 19:48:44Z all five schedules and Libretto
+  acquisition were restored through haynes-ops #3607; no production hold remains. Hourly strip is still off.
+  Copy moves and list reconciliation remain in progress; Ransom stays held. OC-045 awaits October 9 nightly
+  scanning, and OC-046 tracks the separate 30-day idle hold release.
 - **haynes-ops#3538 filed:** Codex task sessions fail cigar-journal MCP with `AuthRequired`; Claude sessions work.
 
 **Open:** #825 in progress (#830/#831 implementation and verification), owed checks in `.agents/owed-checks.yaml`, #733 parked,

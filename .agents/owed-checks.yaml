@@ -1636,12 +1636,19 @@ checks:
       and commit evidence. Force accepted 16:32:57Z and committed 16:36:01Z; its final notification reader failed.
       Fresh accounting maps 1949 of 1956 EPUBs; seven unmapped paths and thirteen nonunique paths were already
       present before the backfill stages. Preserve those exact gaps and never report full unique coverage.
-      All 48 reading rows, eight saved-lock tables and 27 curated tables match the preforce snapshot. Production
-      restored through haynes-ops #3599 at 16:36:18Z. The 17:31Z narrow hold in haynes-ops #3603 then suspended
-      only format pairing for issue 850: incomplete counterpart credits can pair different works. Its inverse
-      is haynes-ops #3604, after corrected matching, native full-credit source refresh and conservative review.
-      The other four schedules and Libretto acquisition remain active. Duplicate moves and final mirror/list
-      reconciliation remain pending; do not satisfy this check while pairing is held or credits remain unproved.
+      All 48 reading rows, saved locks across eight tables and 27 curated tables match the preforce snapshot. Production
+      restored through haynes-ops #3599 at 16:36:18Z. Issue 850 was fixed in deployed v0.110.4, with all 1932
+      Kavita books and 1231 expanded Audiobookshelf items refreshed. The acquisition-disabled native cache pass
+      gave 716 pairs and 35 reservations, exactly seven approved settlements/events and all 764 protected wants
+      byte-exact. Haynes-ops #3604 ended the narrow pairing hold at 19:19Z.
+      A fully observed Force scan accepted 19:44:04Z committed at 19:47:13Z with both completion notifications.
+      Same-pod continuous logs bind its unique accepted request to the server enqueue, start and commit. All 48
+      reading rows, saved lock flags/values/references across eight tables and 27 curated tables/path mappings
+      remain exact; scanner timestamps and unlocked colors changed. File accounting
+      still maps 1949 of 1956 EPUBs with exactly the seven existing gaps and thirteen nonunique paths. The original
+      historical backfill observer gap remains recorded, and no metadata was replayed. Haynes-ops #3607 restored
+      the brief verification pause; actual runtime at 19:48:44Z shows all five CronJobs unsuspended and Libretto
+      acquisition normal. Copy moves and reading-list reconciliation are still in progress; hourly strip stays off.
       This manual evidence does not satisfy the October 9 nightly check.
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/825']
