@@ -1733,7 +1733,8 @@ eligibility rule still skips folders already holding EPUB/PDF; the metadata pass
 Remove `calibre:series`, `calibre:series_index`, every EPUB 3 `belongs-to-collection`, and the `collection-type` and
 `group-position` refinements of removed collections. Keep collection titles (`title-type=collection`), every
 unrelated OPF byte and every other ZIP member. Refuse a file whose edit would leave dangling refinements or require
-changing unrelated metadata. Untagged books retain their original bytes and modification times.
+changing unrelated metadata. Untagged books retain their original bytes and modification times unless the
+owner-approved same-title rule below requires a dedicated grouping tag.
 
 The shared converter lock serializes both passes. Refuse unsafe paths, symlinks, hardlinks, changing or unsettled
 files and invalid archives. Backups live under `books/.epub-convert/backup/`, outside `EBooks/`, with verified
@@ -1745,22 +1746,31 @@ and is reported. Touch its book/author folders and queue one Kavita scan after s
 
 Ship disabled, with read-only dry run and explicit targeted-folder mode. Before enabling: run the Held File Check
 against metadata with the series removed, repair or record a justified Census Hold for new findings, deploy pairing
-safeguards, and complete the adversarial review. Declare activity; stage the two Suzanne Collins folders first,
-verify file coverage, Request Events and pairing without unwanted pushes, then backfill all eligible EPUBs. Enable
+safeguards, and complete the adversarial review. The original stage used the two Suzanne Collins folders.
+Each further stage uses a fresh inventory and exact approved paths. Before pausing, checkpoint the schedules and
+prepare one reviewed GitOps inverse with a recovery watchdog. Pause only for metadata edits, scans, file validation
+and reading-state comparison. Restore schedules and Libretto acquisition immediately on success, failure or
+uncertainty, before app, pairing or recipe checks. Keep the strip gate off through those checks. Enable
 the hourly step only after the full run is verified. Preserve the extracted series name/index in the backfill
 inventory to restore reading order through Libretto. The next nightly scan is a dated Owed Check.
 
-**Collision preflight.** Before stripping, project the book-title grouping across the entire EPUB library. Hold a
-tagged file whose new grouping would merge books by different authors; the strip never changes a book title to
-avoid that merge. On 2026-10-07 this found Charlaine Harris's Night Shift (Midnight, Texas), whose new title grouping
-would collide with Stephen King's already untagged Night Shift. Other safe files may proceed; the held file keeps
-its original grouping pending a ruling. Report the hold in every metadata census, with its relative path and reason.
+**Collision preflight and Q-05 ruling (2026-10-08).** Before mutation, project grouping across the entire EPUB
+library. For the same title by different authors, write `calibre:series` as `<title> (<author>)` and
+`calibre:series_index` as `1`, including both tagged and untagged peers. The owner approved this in
+[issue #830](https://github.com/thaynes43/haynesnetwork/issues/830). Keep titles, creators and identifiers unchanged.
+Require an unambiguous author-role credit. Combined credits, unknown roles and conflicting spellings sharing an
+author or folder alias stay held; a spelling difference does not establish a different person. The unchanged
+author and title supply the qualifier. An already correct pair is unchanged.
 
-**Q-05.** How should Kavita distinguish Charlaine Harris's Night Shift from Stephen King's Night Shift while keeping
-both books, titles and identifiers intact? The current rule allows stripping grouping tags only and cannot create
-that distinction. Keeping Harris's existing tag temporarily is a safety hold, not a new naming policy.
+A manual grouping-only proof may resolve an ambiguous role for one exact existing file. It binds the file and OPF
+hashes, title, ISBN, ordered raw creators and owned title/copyright-page evidence to a verified primary publisher
+source. It selects an existing creator without altering the raw credits. Missing or changed evidence refuses the
+override. Hourly stripping and duplicate eligibility remain conservative without that proof. For The Face, the
+publisher's [eBook ISBN 9781439121573](https://www.simonandschuster.com/books/The-Face/R-L-Stine/Fear-Street-Superchillers/9781439121573)
+and the owned copyright page identify R.L. Stine as author and Bill Schmidt as
+cover artist. This permits the qualifier while preserving both original creator entries.
 
-Q-05 is filed as [issue #830](https://github.com/thaynes43/haynesnetwork/issues/830) with cold-start context. The Fowl
+Report unresolved holds in every census with their paths and reasons. The Fowl
 Twins projected census warning is covered by a path-scoped hold: creator, UK EPUB ISBNs and publisher synopsis
 confirm the correct third novel, while LazyLibrarian names the US edition. No title or identifier changes are needed.
 
@@ -1772,10 +1782,25 @@ configuration stops the job before writes. Holds are reported separately from un
 zero numeric read counters. Compare all saved progress/session/bookmark/annotation state before and after each
 migration scan. The hold remains configured when hourly stripping is enabled.
 
-**Q-07.** Should Ransom's saved location and session history be migrated through a separately scoped, verified
-Kavita state-preservation path before its final grouping tag is removed, or should this folder remain held?
-Recorded in [issue #840](https://github.com/thaynes43/haynesnetwork/issues/840); this migration performs no reading-state writes.
+**Q-07 ruling (2026-10-08).** Keep Ransom's folder held during this migration and perform no progress migration or
+reading-state writes. A held folder becomes eligible for a separately verified series-only strip after 30 days
+without actual Kavita reading activity. OC-046 records the fresh assessment and release procedure in
+[issue #840](https://github.com/thaynes43/haynesnetwork/issues/840). Use the actual last activity timestamp; recording
+the hold does not restart the idle clock.
 
-**Q-06.** What policy consolidates same-title copies across book folders without losing LazyLibrarian pointers or
-reading progress? Filed as [issue #831](https://github.com/thaynes43/haynesnetwork/issues/831): 32 existing untagged
-multi-folder title groups remain, including three partial groups. This is not resolved by the metadata strip.
+**Q-06 ruling (2026-10-08).** For same-title copies by the same verified author, keep the unique copy that
+LazyLibrarian's BookFile points to. Move each unprotected extra into the retained backup area outside EBooks;
+never delete it. This is a separate manual operation under the owner's
+[issue #831 ruling](https://github.com/thaynes43/haynesnetwork/issues/831), never part of hourly stripping.
+Check complete LazyLibrarian pointers, census repairs and `.ll_ignore` protections, Kavita reading dependencies
+and app wants. Unknown dependencies, ambiguous authors and nonunique keepers leave the copies in place for review.
+
+Dependency snapshots must begin after real writer fences are established and finish before those fences expire.
+Require explicit capture start and completion timestamps for every source, a complete filesystem census, exact
+path/hash/source identities and a short validity deadline. Snapshot flags alone do not establish quiescence.
+The controlled window stops LazyLibrarian and Kavita through GitOps, suspends their relevant jobs and Libretto
+acquisition, and holds primary PostgreSQL read-only SHARE locks on book requests and mirror items while capturing
+and moving copies. Supervise lock health and abort on loss or expiry. Prepare and validate the exact GitOps inverse
+while workloads are still running, then bound the service outage and restore immediately before further scans or
+app checks. A move verifies its retained bytes before removing the original directory entry. Restoration verifies
+the retained copy and publishes a fresh inode only to an absent original path, preserving the backup.
