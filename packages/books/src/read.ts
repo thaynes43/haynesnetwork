@@ -5,6 +5,7 @@
 import {
   absAuthorsResponseSchema,
   absCollectionsResponseSchema,
+  absItemSchema,
   absItemsPageSchema,
   absLibrariesSchema,
   absLoginSchema,
@@ -391,6 +392,15 @@ export class AudiobookshelfClient {
     const response = await this.authed(path);
     const parsed = await parseJson(response, absItemsPageSchema, 'GET', path);
     return { items: parsed.results, total: parsed.total ?? parsed.results.length };
+  }
+
+  /** Complete declared author records. Native library pages omit these on ABS 2.35.x. */
+  async getItem(itemId: string): Promise<AbsItem> {
+    const path = `/api/items/${encodeURIComponent(itemId)}?expanded=1`;
+    const response = await this.authed(path);
+    const item = await parseJson(response, absItemSchema, 'GET', path);
+    if (item.id !== itemId) throw new Error('Audiobookshelf item identity mismatch');
+    return item;
   }
 
   /**

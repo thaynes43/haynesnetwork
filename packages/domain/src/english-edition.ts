@@ -23,9 +23,9 @@ import { and, asc, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { bookRequests, booksItems, type BookRequestRow, type DbClient } from '@hnet/db';
 import {
   buildPairingHeldCoverage, landPairingHeldFormat, loadPairingAcquisitionDeferrals, missingFormatFor,
-  pairingBooksItemIdentity, repairPairingHeldEditionPointer,
+  pairingBooksItemIdentity, pairingCreditsAgree, repairPairingHeldEditionPointer, type PairingIdentity,
 } from './format-pairing';
-import { readHeldBooks } from './books';
+import { readHeldBooks, readSourceAuthors } from './books';
 import { resolveDb } from './db-client';
 import {
   FOREIGN_LANGUAGE_REASON,
@@ -197,12 +197,13 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
   const anchorLanguage = new Map<string, string | null>();
   const eligibleAnchors = new Set<string>();
   const deferredPairingIds = new Set<string>();
+  const pairingSourceOf = new Map<string, Extract<PairingIdentity, { kind: 'one' }>>();
   if (anchorIds.length > 0) {
     const anchors = await resolveDb(input.db)
       .select()
       .from(booksItems)
       .where(isNull(booksItems.deletedAt));
-    const items = anchors.map((a) => ({ ...a, heldBooks: readHeldBooks(a.attrs), language: readItemLanguage(a.attrs) }));
+    const items = anchors.map((a) => ({ ...a, heldBooks: readHeldBooks(a.attrs), authors: readSourceAuthors(a.attrs), language: readItemLanguage(a.attrs) }));
     const coverage = buildPairingHeldCoverage(items, snapshot);
     const deferrals = await loadPairingAcquisitionDeferrals(input.db, items, snapshot);
     const byId = new Map(anchors.map((a) => [a.id, a]));
@@ -215,13 +216,17 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
       if (!anchor || !eligibleAnchors.has(anchor.id)) continue;
       const identity = pairingBooksItemIdentity(anchor);
       if (identity.kind !== 'one') continue;
+      pairingSourceOf.set(row.id, identity);
       const missing = missingFormatFor(anchor.mediaKind);
       const blocked = deferrals.blocks(anchor.id, identity, missing);
       // A deferred request retains its own identity. Another work derived from conflicting chapter
       // metadata cannot land it or make replacing its LL edition safe.
-      if (coverage.holds(blocked ? row : identity, missing)) {
+      const coverageIdentity = blocked && (!pairingCreditsAgree(identity, identity) ||
+        (!pairingCreditsAgree(identity, row) && (identity.authors?.length ?? 0) > 1))
+        ? { title: row.title, author: null } : blocked ? row : identity;
+      if (coverage.holds(coverageIdentity, missing)) {
         if (row.unroutableReason === null)
-          await repairPairingHeldEditionPointer({ db: input.db, want: row, missing, coverage, now, site: 'english-edition.coverage-rekey' });
+          await repairPairingHeldEditionPointer({ db: input.db, want: row, missing, coverage, sourceIdentity: identity, now, site: 'english-edition.coverage-rekey' });
         if (row.unroutableReason === null)
           await landPairingHeldFormat({ db: input.db, requestId: row.id, format: missing, now });
         deferredPairingIds.add(row.id);
@@ -286,6 +291,11 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
     const llBookId = row.llBookId!;
     const llLanguage = snapshot.get(llBookId)?.language ?? null;
     if (found) {
+      const source = pairingSourceOf.get(row.id);
+      if (source && !pairingCreditsAgree(source, { author: null, authors: found.authors ?? [] })) {
+        log.info?.('english_edition_refused', { requestId: row.id, candidate: found.volumeId, reason: 'incomplete_source_credits' });
+        return;
+      }
       const verdict = acceptEnglishEdition({ title: row.title, author: row.author, llBookId }, found);
       if (verdict.ok) {
         const moved = await switchRequestToEnglishEdition({

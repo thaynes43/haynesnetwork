@@ -196,6 +196,8 @@ export const absItemSchema = z.object({
           titleIgnorePrefix: z.string().nullable().optional(),
           subtitle: z.string().nullable().optional(),
           authorName: z.string().nullable().optional(),
+          // Preserve ABS's actual credit boundaries, independently of its preferred display author.
+          authors: z.array(z.object({ id: z.string().optional(), name: z.string() })).nullable().optional(),
           narratorName: z.string().nullable().optional(),
           seriesName: z.string().nullable().optional(),
           genres: z.array(z.string()).nullable().optional(),

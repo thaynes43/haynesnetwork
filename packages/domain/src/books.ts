@@ -42,9 +42,18 @@ export function readHeldBooks(attrs: Record<string, unknown> | null | undefined)
     .map((b) => ({
       title: nullableString(b.title), author: nullableString(b.author), isbn: nullableString(b.isbn),
       ...(Array.isArray(b.authors)
-        ? { authors: b.authors.map(nullableString).filter((a): a is string => a !== null) }
-        : {}),
+        ? { authors: b.authors.every((a) => nullableString(a) !== null)
+            ? b.authors.map((a) => nullableString(a)!) : [] }
+        : b.authors !== undefined ? { authors: [] } : {}),
     }));
+}
+
+/** Explicit source credits retain their declared boundaries; absent differs from explicitly empty. */
+export function readSourceAuthors(attrs: Record<string, unknown> | null | undefined): string[] | undefined {
+  if (attrs?.authors === undefined) return undefined;
+  if (!Array.isArray(attrs.authors)) return [];
+  return attrs.authors.every((a) => nullableString(a) !== null)
+    ? attrs.authors.map((a) => nullableString(a)!) : [];
 }
 
 /** One Kavita series / ABS item reduced to the ledger row the mirror stores. */

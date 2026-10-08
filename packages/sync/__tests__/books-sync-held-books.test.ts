@@ -15,7 +15,7 @@ import {
 } from '@hnet/domain';
 import type { KavitaSeries, KavitaVolume } from '@hnet/books';
 import { runSync } from '../src/orchestrator';
-import type { BooksSyncBundle } from '../src/books';
+import { normalizeAbsItem, type BooksSyncBundle } from '../src/books';
 import type { SyncClients } from '../src/clients';
 import { bootMigratedDb, type TestDb } from './helpers';
 
@@ -81,6 +81,32 @@ function stubBundle() {
 }
 
 describe('runSync --mode=books-sync — the held books (issue #661)', () => {
+  it('refreshes old ABS attributes with all explicit authors when its display author and source timestamps stay unchanged', async () => {
+    const listed = { id: 'long-earth-credits', libraryId: 'audio-credits', updatedAt: 1783702399325,
+      media: { metadata: { title: 'The Long Earth', authorName: 'Terry Pratchett' } } };
+    const makeBundle = (authors: Array<{ id: string; name: string }>) => ({
+      kavitaPublicUrl: 'https://kavita.example', audiobookshelfPublicUrl: 'https://abs.example',
+      kavita: { listLibraries: async () => [] },
+      audiobookshelf: {
+        listLibraries: async () => [{ id: 'audio-credits', name: 'Audio', mediaType: 'book' }],
+        listItemsPage: async () => ({ total: 1, items: [listed] }),
+        getItem: async () => ({ id: listed.id, libraryId: listed.libraryId, media: { metadata: { authors } } }),
+        getMe: async () => ({ mediaProgress: [] }),
+      },
+    }) as unknown as BooksSyncBundle;
+    await syncBooks({ db: t.db, rows: [normalizeAbsItem(listed, 'audio-credits', 'Audio', 'https://abs.example')],
+      syncedSources: ['audiobookshelf'] });
+    const old = (await t.db.select().from(booksItems).where(eq(booksItems.externalId, 'long-earth-credits')))[0]!;
+    expect(old.attrs).not.toHaveProperty('authors');
+    await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db,
+      books: makeBundle([{ id: 'terry', name: 'Terry Pratchett' }, { id: 'stephen', name: 'Stephen Baxter' }]) });
+    const current = (await t.db.select().from(booksItems).where(eq(booksItems.externalId, 'long-earth-credits')))[0]!;
+    expect(current.id).toBe(old.id);
+    expect(current.author).toBe(old.author);
+    expect(current.sourceUpdatedAt).toEqual(old.sourceUpdatedAt);
+    expect(current.attrs.authors).toEqual(['Terry Pratchett', 'Stephen Baxter']);
+  });
+
   it('reads a series once, then carries its held books forward, even for a row with no author', async () => {
     const first = stubBundle();
     const r1 = await runSync({ mode: 'books-sync', clients: {} as SyncClients, db: t.db, books: first.bundle,

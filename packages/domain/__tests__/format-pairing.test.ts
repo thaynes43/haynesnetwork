@@ -228,7 +228,7 @@ describe('matchFormatPairs (the conservative matcher)', () => {
       ['J.R.R. Tolkien', 'JRR Tolkien'], // "j r r tolkien" ⇄ "jrr tolkien" — the Silmarillion class
       ['L.M. Montgomery', 'Lucy Maud Montgomery'],
       ['Dean Koontz', 'Dean Ray Koontz'],
-      ['George R.R. Martin', 'George R.R. Martin, Gardner Duzois, Daniel Abraham'],
+
     ];
     for (const [ebookAuthor, audioAuthor] of cases) {
       const book = pi({ title: 'Same Title', author: ebookAuthor, mediaKind: 'book' });

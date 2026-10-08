@@ -72,6 +72,19 @@ describe('kavitaEnrichmentFrom — SeriesMetadataDto reduce', () => {
 });
 
 describe('normalizeAbsItem — inline enrichment (no extra call)', () => {
+  it('preserves explicit complete credit boundaries independently of the display author and never invents an array', () => {
+    const base = { id: 'coauthors', media: { metadata: { title: 'The Long Earth', authorName: 'Terry Pratchett' } } };
+    const normalize = (authors?: Array<{ name: string }> | null) => normalizeAbsItem({ ...base,
+      media: { metadata: { ...base.media.metadata, ...(authors !== undefined ? { authors } : {}) } },
+    }, '1', 'Audio', 'https://audio.example');
+    expect(normalize([{ name: 'Stephen Baxter' }, { name: 'Terry Pratchett' }]).attrs.authors).toEqual(['Stephen Baxter', 'Terry Pratchett']);
+    expect(normalize([{ name: 'Quinn, Enoch, Hawkins, Ryan' }]).attrs.authors).toEqual(['Quinn, Enoch, Hawkins, Ryan']);
+    expect(normalize([]).attrs.authors).toEqual([]);
+    expect(normalize(null).attrs.authors).toEqual([]);
+    expect(normalize().attrs).not.toHaveProperty('authors');
+    expect(normalize([{ name: 'Stephen Baxter' }, { name: 'Terry Pratchett' }]).author).toBe('Terry Pratchett');
+  });
+
   it('carries summary(description)/publisher/isbn/file_count from the list item', () => {
     const now = new Date('2026-07-17T00:00:00Z');
     const item = {
@@ -171,6 +184,60 @@ describe('normalizeKavitaSeries — applies enrichment / stays null without it',
 // ---------------------------------------------------------------------------
 // The change-gate: fetchBooksSnapshot only calls getSeriesMetadata for new/changed series.
 // ---------------------------------------------------------------------------
+
+describe('Audiobookshelf complete source credits', () => {
+  const listed: AbsItem = { id: 'long-earth', libraryId: 'audio', media: { metadata: {
+    title: 'The Long Earth', authorName: 'Terry Pratchett, Stephen Baxter', narratorName: 'Reader',
+  } } };
+  function absBundle(getItem: (id: string) => Promise<AbsItem>, items = [listed]): BooksSyncBundle {
+    return { kavitaPublicUrl: 'https://kavita.example', audiobookshelfPublicUrl: 'https://abs.example',
+      kavita: { listLibraries: async () => [] }, audiobookshelf: {
+        listLibraries: async () => [{ id: 'audio', name: 'Audio', mediaType: 'book' }],
+        listItemsPage: async () => ({ items, total: items.length }), getItem,
+      } } as unknown as BooksSyncBundle;
+  }
+  it('reads omitted credits sequentially, preserving listing display fields and explicit boundaries', async () => {
+    const calls: string[] = []; let active = 0; let maximum = 0;
+    const snapshot = await fetchBooksSnapshot(absBundle(async (id) => {
+      calls.push(id); active += 1; maximum = Math.max(maximum, active);
+      await Promise.resolve(); active -= 1;
+      return { id, libraryId: 'audio', media: { metadata: { authors: [
+        { name: 'Terry Pratchett' }, { name: 'Stephen Baxter' },
+      ] } } };
+    }, [listed, { ...listed, id: 'second' }]));
+    expect(calls).toEqual(['long-earth', 'second']); expect(maximum).toBe(1);
+    expect(snapshot.syncedSources).toContain('audiobookshelf');
+    expect(snapshot.rows[0]).toMatchObject({ author: 'Terry Pratchett, Stephen Baxter', narrator: 'Reader',
+      attrs: { authors: ['Terry Pratchett', 'Stephen Baxter'] } });
+  });
+  it.each([{ authors: [] }, { authors: null }, {}])('keeps absent/empty/null complete credits unknown instead of a listing singleton: %j', async (metadata) => {
+    const snapshot = await fetchBooksSnapshot(absBundle(async () => ({ id: listed.id, libraryId: 'audio', media: { metadata } })));
+    expect(snapshot.rows[0]?.attrs.authors).toEqual([]);
+    expect(snapshot.rows[0]?.author).toBe(listed.media?.metadata?.authorName);
+  });
+  it('does not treat failed or mismatched full reads as a complete source for removal', async () => {
+    for (const read of [async () => { throw new Error('source unavailable'); },
+      async () => ({ id: listed.id, libraryId: 'other', media: { metadata: { authors: [{ name: 'Terry Pratchett' }] } } })]) {
+      const snapshot = await fetchBooksSnapshot(absBundle(read));
+      expect(snapshot.syncedSources).not.toContain('audiobookshelf');
+      expect(snapshot.rows).toEqual([]);
+    }
+  });
+  it.each([
+    { updatedAt: 2, metadata: { title: 'The Long Earth', subtitle: 'A novel', isbn: '9781446465738' } },
+    { updatedAt: 1, metadata: { title: 'Another work', subtitle: 'A novel', isbn: '9781446465738' } },
+    { updatedAt: 1, metadata: { title: 'The Long Earth', subtitle: 'Another volume', isbn: '9781446465738' } },
+    { updatedAt: 1, metadata: { title: 'The Long Earth', subtitle: 'A novel', isbn: '9789999999999' } },
+  ])('refuses mixed listing/full work evidence before publishing the mirror: %j', async ({ updatedAt, metadata }) => {
+    const item = { ...listed, updatedAt: 1, media: { metadata: {
+      ...listed.media?.metadata, subtitle: 'A novel', isbn: '9781446465738',
+    } } };
+    const snapshot = await fetchBooksSnapshot(absBundle(async () => ({ id: listed.id, libraryId: 'audio', updatedAt,
+      media: { metadata: { ...metadata, authors: [{ name: 'Terry Pratchett' }, { name: 'Stephen Baxter' }] } } }), [item]));
+    expect(snapshot.syncedSources).not.toContain('audiobookshelf');
+    expect(snapshot.rows).toEqual([]);
+  });
+});
 
 function stubBundle(
   getSeriesMetadata: (id: string) => Promise<KavitaSeriesMetadata>,

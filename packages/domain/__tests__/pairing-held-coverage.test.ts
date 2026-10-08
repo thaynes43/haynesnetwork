@@ -159,7 +159,11 @@ describe('strong actual work coverage', () => {
           ],
         ])
       : null;
-    expect(buildPairingHeldCoverage([pairable(c)], snapshot).holds(c, 'ebook')).toBe(!c.ambiguous);
+    const coverage = buildPairingHeldCoverage([pairable(c)], snapshot);
+    const multiCredits = c.held.length === 1 && (c.held[0]!.authors?.length ?? 0) > 1
+      ? c.held[0]!.authors : undefined;
+    expect(coverage.holds({ ...c, ...(multiCredits ? { authors: multiCredits } : {}) }, 'ebook')).toBe(!c.ambiguous);
+    if (multiCredits) expect(coverage.holds(c, 'ebook')).toBe(false);
   });
   it('complete-name proof refuses surname/given fragments but retains real initials, middle names and mononyms', () => {
     for (const [left, right] of [
@@ -222,7 +226,8 @@ describe('strong actual work coverage', () => {
   it('prefers a folder author only when an actual Writer proves that credit, and never collapses distinct authors', () => {
     expect(pairingIdentity(pairable(cases[3]!))).toMatchObject({
       kind: 'one',
-      author: 'Frank Herbert',
+      author: 'Brian Herbert, Frank Herbert',
+      authors: ['Brian Herbert', 'Frank Herbert'],
     });
     expect(pairingIdentity(pairable(cases[5]!))).toMatchObject({
       kind: 'one',

@@ -12,9 +12,9 @@ import { eq } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import { updateBookRequests } from './book-request-events';
 import { isForeignLanguage, readItemLanguage } from './book-language';
-import { readHeldBooks } from './books';
+import { readHeldBooks, readSourceAuthors } from './books';
 import {
-  pairingAuthorsAgree,
+  pairingAuthorsAgree, pairingCreditsAgree, pairingCreditsPlausible, buildPairingAcquisitionDeferrals,
   matchFormatPairs,
   missingFormatFor,
   pairingIdentity,
@@ -49,9 +49,9 @@ export async function loadRemovedPairingTransitions(
   const byAnchor = new Map(wants.map((w) => [w.pairingBooksItemId, w]));
   const pairs = await executor.select().from(booksFormatPairs);
   const identityOf = (i: (typeof items)[number]) =>
-    pairingIdentity({ ...i, heldBooks: readHeldBooks(i.attrs) } satisfies PairableItem);
+    pairingIdentity({ ...i, heldBooks: readHeldBooks(i.attrs), authors: readSourceAuthors(i.attrs) } satisfies PairableItem);
   const freshKeys = new Set(matchFormatPairs(items.filter((i) => i.deletedAt === null)
-    .map((i) => ({ ...i, heldBooks: readHeldBooks(i.attrs) })))
+    .map((i) => ({ ...i, heldBooks: readHeldBooks(i.attrs), authors: readSourceAuthors(i.attrs) })))
     .map((p) => `${p.bookItemId}:${p.audioItemId}`));
   const paired = new Set(pairs.filter((p) => freshKeys.has(`${p.bookItemId}:${p.audioItemId}`))
     .flatMap((p) => [p.bookItemId, p.audioItemId]));
@@ -64,7 +64,10 @@ export async function loadRemovedPairingTransitions(
     )
     .map((i) => ({ item: i, identity: identityOf(i) }));
   const heldCoverage = buildPairingHeldCoverage(live.map(({ item }) => ({
-    ...item, heldBooks: readHeldBooks(item.attrs), language: readItemLanguage(item.attrs),
+    ...item, heldBooks: readHeldBooks(item.attrs), authors: readSourceAuthors(item.attrs), language: readItemLanguage(item.attrs),
+  })));
+  const deferrals = buildPairingAcquisitionDeferrals(live.map(({ item }) => ({
+    ...item, heldBooks: readHeldBooks(item.attrs), authors: readSourceAuthors(item.attrs),
   })));
   const out: RemovedPairingTransitions = {
     settle: [],
@@ -75,7 +78,7 @@ export async function loadRemovedPairingTransitions(
   };
   const unknownByKind = new Map<string, string[]>();
   for (const { item, identity } of live) {
-    if ((identity.kind !== 'unknown' && !pairingBookInventoryUnidentifiable({ ...item, heldBooks: readHeldBooks(item.attrs) })) || paired.has(item.id)) continue;
+    if ((identity.kind !== 'unknown' && !pairingBookInventoryUnidentifiable({ ...item, heldBooks: readHeldBooks(item.attrs), authors: readSourceAuthors(item.attrs) })) || paired.has(item.id)) continue;
     const ids = unknownByKind.get(item.mediaKind) ?? [];
     ids.push(item.id);
     unknownByKind.set(item.mediaKind, ids);
@@ -99,8 +102,10 @@ export async function loadRemovedPairingTransitions(
         ? isbnKey(oldIdentity.isbn)
         : '';
     const unknownBlockers = unknownByKind.get(anchor.mediaKind) ?? [];
+    const coverageIdentity = oldIdentity.kind === 'one' && pairingTitleKey(oldIdentity.title) === pairingTitleKey(want.title)
+      ? { ...oldIdentity, title: want.title } : want;
     const waiting =
-      !heldCoverage.holds(want, missing) &&
+      !heldCoverage.holds(coverageIdentity, missing) &&
       want.llBookId !== null &&
       queued.length > 0 &&
       (unknownBlockers.length > 0 ||
@@ -109,8 +114,10 @@ export async function loadRemovedPairingTransitions(
           if (identity.kind !== 'one') return false;
           if (pairingTitleKey(identity.title) !== pairingTitleKey(want.title)) return false;
           const isbn = isbnKey(identity.isbn);
-          if (!pairingAuthorsAgree(want.author, identity.author) && !(oldIsbn && oldIsbn === isbn))
-            return false;
+          // An ISBN or former primary credit cannot resolve conflicting declared contributors.
+          if (pairingCreditsPlausible(coverageIdentity, identity) &&
+            (!pairingCreditsAgree(coverageIdentity, identity) || deferrals.blocks(item.id, identity, missing))) return true;
+          if (!pairingCreditsAgree(coverageIdentity, identity) && !(oldIsbn && oldIsbn === isbn)) return false;
           const successor = byAnchor.get(item.id);
           return !successor || (successor.unroutableReason === null && successor.llBookId === null);
         }));
@@ -282,7 +289,7 @@ export async function repairOneBookPairingPark(input: OneBookParkRepairInput): P
       isForeignLanguage(readItemLanguage(anchor.attrs))
     )
       return declined;
-    const anchorInput = { ...anchor, heldBooks: readHeldBooks(anchor.attrs) };
+    const anchorInput = { ...anchor, heldBooks: readHeldBooks(anchor.attrs), authors: readSourceAuthors(anchor.attrs) };
     const identity = pairingIdentity(anchorInput);
     if (
       identity.kind !== 'one' ||
@@ -303,7 +310,7 @@ export async function repairOneBookPairingPark(input: OneBookParkRepairInput): P
       if (other && other.deletedAt === null) {
         paired = matchFormatPairs([
           anchorInput,
-          { ...other, heldBooks: readHeldBooks(other.attrs) },
+          { ...other, heldBooks: readHeldBooks(other.attrs), authors: readSourceAuthors(other.attrs) },
         ]).some((p) => p.bookItemId === pair.bookItemId && p.audioItemId === pair.audioItemId);
       }
     }
