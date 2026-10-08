@@ -96,6 +96,38 @@ const uncertainCredits = [
     audio: 'Charlaine Harris/Christopher Golden/Jonathan Maberry',
   },
 ];
+const physicalCorpusUncertainty = [
+  {
+    title: 'Home Improvement Undead Edition',
+    writer: 'Charlaine Harris',
+    audioTitle: 'Home Improvement: Undead Edition',
+    audioAuthor: 'Harris Kelner',
+  },
+  {
+    title: "Shakespeare's Champion",
+    writer: 'Charlaine Harris',
+    audioTitle: 'Shakespeares Champion',
+    audioAuthor: 'Charlaine Harris',
+  },
+  {
+    title: "Clay's Ark",
+    writer: 'Octavia E. Butler',
+    audioTitle: 'Clays Ark',
+    audioAuthor: 'Octavia E. Butler',
+  },
+  {
+    title: 'Confessions of an Ugly Stepsister',
+    writer: 'Gregory Maguire',
+    audioTitle: 'Confessions ofanUglyStepsister',
+    audioAuthor: 'Gregory Maguire',
+  },
+  {
+    title: 'Day Shift',
+    writer: 'Charlaine Harris',
+    audioTitle: 'Midnight, Texas 2 - Day Shift',
+    audioAuthor: 'Susan Bennett',
+  },
+];
 const uncertainTitles = [
   ['The Final Empire', 'Mistborn - The Final Empire', 'Brandon Sanderson'],
   ['Mitosis', 'Mitosis - A Reckoners Story', 'Brandon Sanderson'],
@@ -322,6 +354,106 @@ describe('strong actual work coverage', () => {
       expect(deferred.blocks(audio.id, audio, 'ebook')).toBe(false);
     }
   });
+  it.each(physicalCorpusUncertainty)(
+    'physical corpus uncertainty defers both $title formats without proving a pair or held work',
+    (c) => {
+      const b: PairableItem = {
+        id: 'book',
+        mediaKind: 'book',
+        title: c.title,
+        sortTitle: c.title,
+        author: c.writer,
+        heldBooks: [book(c.title, [c.writer])],
+      };
+      const a: PairableItem = {
+        id: 'audio',
+        mediaKind: 'audiobook',
+        title: c.audioTitle,
+        sortTitle: c.audioTitle,
+        author: c.audioAuthor,
+      };
+      const coverage = buildPairingHeldCoverage([b, a]);
+      expect(coverage.holds({ title: c.audioTitle, author: c.audioAuthor }, 'ebook')).toBe(false);
+      expect(coverage.holds({ title: c.title, author: c.writer }, 'audiobook')).toBe(false);
+      expect(matchFormatPairs([b, a])).toEqual([]);
+      const deferred = buildPairingAcquisitionDeferrals([b, a]);
+      expect(deferred.blocks(b.id, { title: c.title, author: c.writer }, 'audiobook')).toBe(true);
+      expect(deferred.blocks(a.id, { title: c.audioTitle, author: c.audioAuthor }, 'ebook')).toBe(
+        true,
+      );
+    },
+  );
+  it.each([
+    [
+      'Home Improvement Undead Edition',
+      'Charlaine Harris',
+      'Home Improvement: Undead Edition',
+      'Richard Harris',
+    ],
+    [
+      'Home Improvement Undead Edition',
+      'Charlaine Harris',
+      'Home Improvement: Undead Edition',
+      'Harrison Kelner',
+    ],
+    [
+      'Home Improvement Undead Edition',
+      'Charlaine Harris',
+      'Home Improvement: Undead Edition',
+      'Charlaine Jones',
+    ],
+    ["Clay's Ark", 'Octavia E. Butler', 'Clays Ark', 'Richard Butler'],
+    ["Clay's Ark", 'Octavia E. Butler', 'Clays Arkwings', 'Octavia E. Butler'],
+    ['The Work Part 12', 'Complete Writer', 'The Work Part 1 2', 'Complete Writer'],
+    ['Day Shift', 'Charlaine Harris', 'Midnight, Texas 2 - Night Shift', 'Susan Bennett'],
+    ['Day Shift', 'Charlaine Harris', 'Before Day Shift After', 'Susan Bennett'],
+    ['The Work Part 1', 'Complete Writer', 'Collection 2 - The Work Part 2', 'Different Credit'],
+  ])(
+    'physical corpus uncertainty refuses conflicting final surnames and incomplete titles (%s / %s)',
+    (title, writer, audioTitle, audioAuthor) => {
+      const b: PairableItem = {
+        id: 'book',
+        mediaKind: 'book',
+        title: title!,
+        sortTitle: title!,
+        author: writer!,
+        heldBooks: [book(title!, [writer!])],
+      };
+      const a: PairableItem = {
+        id: 'audio',
+        mediaKind: 'audiobook',
+        title: audioTitle!,
+        sortTitle: audioTitle!,
+        author: audioAuthor!,
+      };
+      const deferred = buildPairingAcquisitionDeferrals([b, a]);
+      expect(deferred.blocks(b.id, { title: title!, author: writer! }, 'audiobook')).toBe(false);
+      expect(deferred.blocks(a.id, { title: audioTitle!, author: audioAuthor! }, 'ebook')).toBe(
+        false,
+      );
+    },
+  );
+  it('complete LL spelling differences defer only with strict credits and held English formats', () => {
+    const audio: PairableItem = {
+      id: 'audio',
+      mediaKind: 'audiobook',
+      title: 'Clays Ark',
+      sortTitle: 'Clays Ark',
+      author: 'Octavia E. Butler',
+    };
+    for (const [author, language, ebookStatus, expected] of [
+      ['Octavia E. Butler', 'en', 'Open', true],
+      ['Richard Butler', 'en', 'Open', false],
+      ['Octavia E. Butler', 'de', 'Open', false],
+      ['Octavia E. Butler', 'en', 'Wanted', false],
+    ] as const) {
+      const ll = new Map([['held', { title: "Clay's Ark", author, language, ebookStatus }]]);
+      expect(buildPairingHeldCoverage([], ll).holds(audio, 'ebook')).toBe(false);
+      expect(
+        buildPairingAcquisitionDeferrals([audio], new Set(), ll).blocks(audio.id, audio, 'ebook'),
+      ).toBe(expected);
+    }
+  });
   it('title uncertainty requires a complete whole-word boundary and refuses known numbered/Roman sequel conflicts', () => {
     for (const [left, right] of [
       ['The Science of Discworld III: Darwin’s Watch', 'The Science of Discworld'],
@@ -444,6 +576,79 @@ function clients(snapshot: Map<string, LlSnapshotRow>) {
 }
 
 describe('every automatic pairing boundary honors held work coverage', () => {
+  it.each(physicalCorpusUncertainty)(
+    'physical corpus uncertainty blocks fresh $title mints across repeated runs',
+    async (c) => {
+      await seed(c.title, c.writer, 'book', { heldBooks: [book(c.title, [c.writer])] });
+      await seed(c.audioTitle, c.audioAuthor, 'audiobook');
+      const stub = clients(
+        new Map([['unrelated', { title: 'Other', author: 'Other', ebookStatus: 'Skipped' }]]),
+      );
+      for (const now of [NOW, new Date(NOW.getTime() + 86_400_000)])
+        await runFormatPairing({
+          db: t.db,
+          ll: stub.ll,
+          gb: stub.gb,
+          cap: 25,
+          now,
+          pacer: async () => {},
+        });
+      expect(stub.calls).toEqual([]);
+      expect(await t.db.select().from(bookRequests)).toEqual([]);
+      expect(await t.db.select().from(bookRequestEvents)).toEqual([]);
+      expect(await t.db.select().from(booksFormatPairs)).toEqual([]);
+    },
+  );
+  it.each(
+    physicalCorpusUncertainty.flatMap((c) =>
+      ['requested', 'missing'].map((status) => ({ ...c, status })),
+    ),
+  )(
+    'physical corpus uncertainty preserves both $title $status wants through repeated automatic paths',
+    async (c) => {
+      const b = await seed(c.title, c.writer, 'book', { heldBooks: [book(c.title, [c.writer])] });
+      const a = await seed(c.audioTitle, c.audioAuthor, 'audiobook');
+      const wants = await t.db
+        .insert(bookRequests)
+        .values([
+          {
+            origin: 'pairing',
+            pairingBooksItemId: b.id,
+            title: c.title,
+            author: c.writer,
+            ebookStatus: 'landed',
+            audioStatus: c.status as 'requested' | 'missing',
+            llBookId: 'gone-book-id',
+          },
+          {
+            origin: 'pairing',
+            pairingBooksItemId: a.id,
+            title: c.audioTitle,
+            author: c.audioAuthor,
+            ebookStatus: c.status as 'requested' | 'missing',
+            audioStatus: 'landed',
+            llBookId: 'gone-audio-id',
+          },
+        ])
+        .returning();
+      const stub = clients(
+        new Map([['unrelated', { title: 'Other', author: 'Other', ebookStatus: 'Skipped' }]]),
+      );
+      for (const now of [NOW, new Date(NOW.getTime() + 86_400_000)])
+        await runFormatPairing({
+          db: t.db,
+          ll: stub.ll,
+          gb: stub.gb,
+          cap: 25,
+          now,
+          pacer: async () => {},
+        });
+      expect(stub.calls).toEqual([]);
+      expect(await t.db.select().from(bookRequests)).toEqual(wants);
+      expect(await t.db.select().from(bookRequestEvents)).toEqual([]);
+      expect(await t.db.select().from(booksFormatPairs)).toEqual([]);
+    },
+  );
   it('a covered open want lands both proven formats once and counts only real transitions', async () => {
     const row = await seed('Complete Work', 'Complete Writer', 'book', {
       heldBooks: [book('Complete Work', ['Complete Writer'])],

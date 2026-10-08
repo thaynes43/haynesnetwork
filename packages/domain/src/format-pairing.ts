@@ -595,6 +595,21 @@ function titleBoundaryContains(left: string, right: string): boolean {
   return Boolean(short && short !== long && (long.startsWith(`${short} `) || long.endsWith(` ${short}`)));
 }
 
+/** Complete spelling equality removes permission only; spaces and punctuation never become an alias. */
+function titleLetterDigitKey(title: string): string {
+  return title.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+/** A surname inside an incomplete credit is uncertainty, never evidence of the credited author. */
+function nonFinalSurnameUncertain(writer: string, credit: string | null): boolean {
+  const tokens = (name: string) => name.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const actual = tokens(writer), counterpart = tokens(credit ?? '');
+  const surname = actual.at(-1);
+  return actual.length > 1 && Boolean(surname && surname.length >= 3 &&
+    counterpart.slice(0, -1).includes(surname));
+}
+
 function titleContainmentUncertain(left: string, right: string): boolean {
   if (pairingTitleKey(left) === pairingTitleKey(right)) return false;
   left = titleUncertaintyText(left); right = titleUncertaintyText(right);
@@ -640,6 +655,8 @@ export function buildPairingAcquisitionDeferrals(
   const unidentifiableBookItemIds = new Set(books.filter(pairingBookInventoryUnidentifiable).map((i) => i.id));
   const uncertainBookItemIds = new Set(books.filter(pairingSourceIdentityUncertain).map((i) => i.id));
   const audios = items.filter((i) => i.mediaKind === 'audiobook' && !isForeignLanguage(i.language));
+  const audioSpellingKeys = new Map(audios.map((a) => [a.id, titleLetterDigitKey(a.title)]));
+  const audioSuffixes = new Map(audios.map((a) => [a.id, numberedSeriesSuffix(a.title)]));
   const audioByTitle = new Map<string, PairableItem[]>();
   for (const audio of audios) {
     const key = titleUncertaintyKey(audio.title);
@@ -656,14 +673,28 @@ export function buildPairingAcquisitionDeferrals(
     for (const writer of heldBookAuthors(chapter)) {
       const title = stripAuthorDecoration(stripSeriesDecoration(chapter.title, item.title), writer);
       const key = titleUncertaintyKey(title);
+      const spellingKey = titleLetterDigitKey(title);
       if (!key) continue;
       for (const [audioKey, matching] of audioByTitle) {
-        if (audioKey !== key && !titleBoundaryContains(key, audioKey)) continue;
+        if (audioKey !== key && !titleBoundaryContains(key, audioKey) &&
+          !matching.some((a) => spellingKey === audioSpellingKeys.get(a.id))) continue;
         for (const audio of matching) {
           const exact = pairingTitleKey(title) === pairingTitleKey(audio.title);
-          if (!exact && !titleContainmentUncertain(title, audio.title)) continue;
+          const spelling = !exact && spellingKey === audioSpellingKeys.get(audio.id) &&
+            volumeNumbersAgree(title, audio.title) && volumeNumbersAgree(audio.title, title);
+          const suffix = audioSuffixes.get(audio.id);
+          const numberedLabel = suffix != null && pairingTitleKey(suffix) === pairingTitleKey(title) &&
+            volumeNumbersAgree(title, audio.title) && volumeNumbersAgree(audio.title, title);
+          if (!exact && !spelling && !numberedLabel && !titleContainmentUncertain(title, audio.title)) continue;
           const strict = pairingAuthorsAgree(writer, audio.author);
-          if (!strict && !authorsAgree(normAuthor(writer), normAuthor(audio.author))) continue;
+          if (numberedLabel || (spelling && strict)) {
+            uncertainTitleItemIds.add(item.id);
+            uncertainTitleItemIds.add(audio.id);
+            continue;
+          }
+          if (!strict && !authorsAgree(normAuthor(writer), normAuthor(audio.author)) &&
+            !(exact && nonFinalSurnameUncertain(writer, audio.author))) continue;
+          if (spelling && !titleContainmentUncertain(title, audio.title)) continue;
           const uncertain = exact ? !strict : true;
           if (!uncertain) continue;
           const ids = exact ? uncertainCreditItemIds : uncertainTitleItemIds;
@@ -676,7 +707,7 @@ export function buildPairingAcquisitionDeferrals(
   const heldLlRows = llSnapshotUsable(snapshot) ? [...snapshot.values()]
     .filter((row) => !isForeignLanguage(row.language)).map((row) => {
       const title = [row.title, row.subtitle].filter(Boolean).join(': ');
-      return { row, title, key: pairingTitleKey(title), uncertainKey: titleUncertaintyKey(title), ebook: llFormatAlreadyHeld(row, 'ebook'), audiobook: llFormatAlreadyHeld(row, 'audiobook') };
+      return { row, title, key: pairingTitleKey(title), uncertainKey: titleUncertaintyKey(title), spellingKey: titleLetterDigitKey(title), ebook: llFormatAlreadyHeld(row, 'ebook'), audiobook: llFormatAlreadyHeld(row, 'audiobook') };
     }) : [];
   for (const item of items) {
     if (isForeignLanguage(item.language) || (item.mediaKind !== 'book' && item.mediaKind !== 'audiobook')) continue;
@@ -685,13 +716,20 @@ export function buildPairingAcquisitionDeferrals(
     const format = missingFormatFor(item.mediaKind);
     const key = pairingTitleKey(identity.title);
     const uncertainKey = titleUncertaintyKey(identity.title);
+    const spellingKey = titleLetterDigitKey(identity.title);
     for (const held of heldLlRows) {
       if (!held[format]) continue;
       const { row, title } = held;
       const exact = key === held.key;
-      if (!exact && ((uncertainKey !== held.uncertainKey && !titleBoundaryContains(uncertainKey, held.uncertainKey)) ||
+      const spelling = !exact && spellingKey === held.spellingKey &&
+        volumeNumbersAgree(identity.title, title) && volumeNumbersAgree(title, identity.title);
+      if (!exact && !spelling && ((uncertainKey !== held.uncertainKey && !titleBoundaryContains(uncertainKey, held.uncertainKey)) ||
         !titleContainmentUncertain(identity.title, title))) continue;
       const strict = pairingAuthorsAgree(identity.author, row.author ?? null);
+      if (spelling) {
+        if (strict) uncertainTitleItemIds.add(item.id);
+        continue;
+      }
       if (!strict && !authorsAgree(normAuthor(identity.author), normAuthor(row.author ?? null))) continue;
       if (!exact) uncertainTitleItemIds.add(item.id);
       else if (!strict) uncertainCreditItemIds.add(item.id);
