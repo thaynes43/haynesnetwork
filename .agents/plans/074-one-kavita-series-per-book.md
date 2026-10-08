@@ -45,6 +45,22 @@ migration engineering. The original July 27 timestamp is already older than 30 d
 Issues #835, #838, #839 and #842 remain technical backlog under the conservative defaults in DESIGN-037.
 OC-045 is pending the October 9 04:00Z scan and subsequent pairing run; a successful manual scan cannot satisfy it.
 
+### Verified collision stage, 2026-10-08 16:05Z
+
+The resumed run completed two Night Shift edits and 14 remaining edits, including all ten author-qualified
+collision peers and six ordinary strips. Every source and candidate ZIP member, retained original, and unchanged
+library fingerprint passed verification against the fresh 1,956-EPUB, 4,730-file inventory. Together with the
+historical 274 operations this is 290 operations; 289 current paths match verified candidates because
+LazyLibrarian replaced one historical Dungeon Crawler Carl edition before this stage.
+
+The normal Books scan was accepted at 16:02:47Z and emitted both completion notifications at 16:03:02/03Z.
+All 48 saved reading-state rows and all eight discovered saved-lock tables were exact afterward. Its verifier
+refused the scan-start boundary, so the force scan did not run. Production was restored first through
+haynes-ops #3597: all five schedules active, Libretto acquisition normal, and three Flux scopes Ready at 16:05:33Z.
+Diagnose this boundary while live; preserve the original backfill's missing observer coverage explicitly.
+Do not repeat any of the 16 verified edits. The hourly gate remains off, and duplicate moves, app refresh,
+reading-list reconciliation and final force-scan verification remain pending.
+
 ## Rollback
 
 Keep hourly stripping disabled and restore verified originals outside the library through the converter's locked,

@@ -1630,6 +1630,11 @@ checks:
       strips plus 272 full strips, with Ransom and the Night Shift collision held. The previous 04:29Z report
       predated that completion. New arrivals and the subsequently replaced Dungeon Crawler Carl file require
       fresh current inventory; do not claim that all 274 live sanitized files are unchanged.
+      On October 8, two Night Shift collision peers and fourteen remaining files were verified against a fresh
+      1956-EPUB, 4730-file inventory. Normal scanning preserved all 48 reading-state rows and all eight saved-lock
+      tables, but its start-boundary verifier refused completion. Production restored through haynes-ops #3597
+      at 16:05:33Z; force-scan verification, duplicate moves and final mirror/list reconciliation remain pending.
+      This manual evidence does not satisfy the October 9 nightly check.
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/825']
 

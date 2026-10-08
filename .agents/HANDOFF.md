@@ -39,10 +39,11 @@
   anonymous API denied. Successful admin HTTP and authenticated admin/non-admin UI remain uncovered because
   Playwright has no session; the plan stays active. No feature defect found.
 - **#825 resumed 10-08:** PLAN-074, report `/home/dev/work/hn-825b-report.md`. Recovered full Job completion proves
-  274 edits and retained originals; 273 live results match, with one later verified LazyLibrarian DCC replacement.
-  All five schedules and Libretto acquisition are restored through haynes-ops #3573 and #3575; hourly strip stays off
-  while verification proceeds. #830/#831 have rulings and converter work, not owner questions. Ransom remains held
-  under the 30-day actual reading-idle rule. OC-045 awaits October 9's scan; OC-046 tracks the separate hold release.
+  274 historical edits plus 16 verified new edits. Current verified candidates cover 289 paths after the DCC
+  replacement. Normal scan preserved all 48 reading rows and all eight saved-lock tables; its start-boundary
+  verifier refused, so force and copy moves remain pending. Production restored at 16:05:33Z through haynes-ops
+  #3597; hourly strip stays off. #830/#831 rulings are implemented, with final verification still in progress.
+  Ransom remains held. OC-045 awaits October 9's scan; OC-046 tracks the separate 30-day idle hold release.
 - **haynes-ops#3538 filed:** Codex task sessions fail cigar-journal MCP with `AuthRequired`; Claude sessions work.
 
 **Open:** #825 in progress (#830/#831 implementation and verification), owed checks in `.agents/owed-checks.yaml`, #733 parked,
