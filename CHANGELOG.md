@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.110.4](https://github.com/thaynes43/haynesnetwork/compare/v0.110.3...v0.110.4) (2026-10-08)
+
+
+### Bug Fixes
+
+* **books:** preserve complete credits across pairing and acquisition ([#851](https://github.com/thaynes43/haynesnetwork/issues/851)) ([b9a1ca2](https://github.com/thaynes43/haynesnetwork/commit/b9a1ca271ac3686abde7905028a76b42143fff80))
+
 ## [0.110.3](https://github.com/thaynes43/haynesnetwork/compare/v0.110.2...v0.110.3) (2026-10-08)
 
 
