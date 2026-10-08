@@ -49,9 +49,14 @@
   Source review now permits 42 recipe scopes and holds 62; 32 proposed recipes stay manual with acquisition off.
   Six explicit identity/credit holds and the staged execution rules are recorded in DESIGN-037. No list or copy
   write is claimed by this checkpoint. All six relevant schedules, LL/Kavita and Libretto remain live.
+  Two bounded copy attempts refused before SOURCE/MAIN or any archive move. Haynes-ops #3608/#3609 and
+  #3611/#3612 both restored production; the latest verified restore is 23:12:16Z at `0e6b3c29`.
+  Offline diagnosis found the mount guard rejecting already verified SAB local storage and unrelated system
+  storage mounts. Resolve normal-write/source classification while live before any further pause. Details:
+  `.agents/context/2026-10-08-831-copy-refusals.md`. #830 is closed; #831 still has zero actual moves.
 - **haynes-ops#3538 filed:** Codex task sessions fail cigar-journal MCP with `AuthRequired`; Claude sessions work.
 
-**Open:** #825 in progress (#830/#831 implementation and verification), owed checks in `.agents/owed-checks.yaml`, #733 parked,
+**Open:** #825 in progress (#831 consolidation and reading-list verification), owed checks in `.agents/owed-checks.yaml`, #733 parked,
 #674 benched. PLAN-073 awaits its authenticated admin/non-admin UI check; read-only live fallback passed.
 
 ## ▶ 2026-10-07 (night) — Coordinator wave: Libretto guards, the Books Census, Request Events; v0.109.3 live

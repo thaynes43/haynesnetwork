@@ -126,3 +126,20 @@ Source and stopped-database readers, strict five-Job ownership and two PostgreSQ
 reviewed components. The final publisher-path and copy callback proof remains pending. All six relevant schedules,
 LazyLibrarian, Kavita and Libretto acquisition remain live; the hourly gate stays off. Prepare and review the exact
 inverse before the short copy window, restore first on every outcome, then refresh any affected native membership.
+
+### Copy refusals and complete restoration, 2026-10-08 23:12Z
+
+Haynes-ops #3608/#3609 restored the first copy refusal in 89 seconds, before any Job was created. The startup
+parser and Libretto rollout fence were corrected and independently reviewed. The next pause/inverse pair,
+#3611/#3612, created only one read-only Lidarr helper. All eight publisher captures completed in 32.283 seconds,
+then the imported mount guard refused before SOURCE/MAIN, PostgreSQL leases, proof delivery or archives.
+The exact first runtime refusal was not retained. Offline reproduction identified two already verified SAB
+local-XFS mounts rejected again by the final sweep. A live read-only inventory also exposes unrelated system
+storage mounts that require explicit normal-write/source classification rather than blanket exemptions.
+
+The second window's first stop was 23:09:08Z and full restoration completed at 23:11:34Z, about 146 seconds.
+Kubectl/native checks at 23:12:16Z verify all six relevant schedules unsuspended, LazyLibrarian/Kavita/Libretto
+Ready, acquisition normal, all four Flux scopes Ready at `0e6b3c29`, and no owned copy Jobs, Pods or PostgreSQL
+sessions. Both inverse PRs passed current checks and Claude review before merging; their worktrees were removed.
+No copy moved and no list write occurred. Diagnose while live, with no automatic retry. The detailed cold-start
+receipt and remaining obligations are in `.agents/context/2026-10-08-831-copy-refusals.md`.
