@@ -1772,7 +1772,7 @@ configuration stops the job before writes. Holds are reported separately from un
 zero numeric read counters. Compare all saved progress/session/bookmark/annotation state before and after each
 migration scan. The hold remains configured when hourly stripping is enabled.
 
-**Q-06.** Should Ransom's saved location and session history be migrated through a separately scoped, verified
+**Q-07.** Should Ransom's saved location and session history be migrated through a separately scoped, verified
 Kavita state-preservation path before its final grouping tag is removed, or should this folder remain held?
 Recorded in [issue #840](https://github.com/thaynes43/haynesnetwork/issues/840); this migration performs no reading-state writes.
 
