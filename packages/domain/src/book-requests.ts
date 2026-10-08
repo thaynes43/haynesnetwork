@@ -2113,7 +2113,7 @@ export async function parkRequestNoEnglishEdition(input: {
   });
 }
 
-/** Record that the English-edition lookup ran and failed (a GB error), so it is not retried every run. Returns whether it stamped. */
+/** Record a completed but refused or failed English-edition lookup so it waits until the next quota-day. Returns whether it stamped. */
 export async function stampEnglishEditionTried(input: {
   db?: DbClient;
   requestId: string;

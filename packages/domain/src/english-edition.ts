@@ -293,6 +293,7 @@ export async function runEnglishEditionPass(input: RunEnglishEditionPassInput): 
     if (found) {
       const source = pairingSourceOf.get(row.id);
       if (source && !pairingCreditsAgree(source, { author: null, authors: found.authors ?? [] })) {
+        await stampEnglishEditionTried({ db: input.db, requestId: row.id, now });
         log.info?.('english_edition_refused', { requestId: row.id, candidate: found.volumeId, reason: 'incomplete_source_credits' });
         return;
       }

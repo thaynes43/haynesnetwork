@@ -189,14 +189,24 @@ describe('existing wants and counterpart reservations', () => {
     const [b] = sources();
     const row = await seed({ ...b, heldBooks: [{ title: b.title, author: 'Terry Pratchett', isbn: null }] });
     const before = await want(row.id);
-    const report = await runEnglishEditionPass({ db: t.db, now: NOW,
+    let resolves = 0;
+    const run = () => runEnglishEditionPass({ db: t.db, now: NOW,
       snapshot: new Map([['primary-only', { title: b.title, author: 'Terry Pratchett', language: 'de' }]]),
-      resolver: { consumer: 'pairing', gb: { resolveVolume: async () => ({ volumeId: 'candidate', title: b.title, language: 'en', authors }) } } });
+      resolver: { consumer: 'pairing', gb: { resolveVolume: async () => {
+        resolves += 1; return { volumeId: 'candidate', title: b.title, language: 'en', authors };
+      } } } });
+    const report = await run();
     expect(report).toMatchObject({ looked: 1, switched: 0, parked: 0 });
     expect((await t.db.select().from(bookRequests).where(eq(bookRequests.id, before.id)))[0]).toMatchObject({
       title: before.title, author: before.author, llBookId: before.llBookId,
       ebookStatus: before.ebookStatus, audioStatus: before.audioStatus, unroutableReason: null,
+      englishEditionTriedAt: NOW,
     });
+    // Existing bookkeeping writer preserves all Request Event fields: no false status/identity event.
+    expect(await t.db.select().from(bookRequestEvents)).toEqual([]);
+    expect(await run()).toMatchObject({ due: 0, looked: 0, switched: 0, parked: 0 });
+    expect(resolves).toBe(1);
+    expect(await t.db.select().from(bookRequestEvents)).toEqual([]);
   });
   it('still switches a positively proven singleton English edition through its native writer', async () => {
     const [b] = sources(); const row = await seed({ ...b, heldBooks: [{ title: b.title, author: 'Terry Pratchett', isbn: null }] });
@@ -207,6 +217,44 @@ describe('existing wants and counterpart reservations', () => {
     expect(report.switched).toBe(1);
     expect((await t.db.select().from(bookRequests).where(eq(bookRequests.id, before.id)))[0]?.llBookId).toBe('candidate');
     expect(await t.db.select().from(bookRequestEvents)).not.toEqual([]);
+  });
+  it('a refused first row frees the next cap-one lookup slice on the next pass', async () => {
+    const [b] = sources();
+    const firstAnchor = await seed({ ...b, heldBooks: [{ title: b.title, author: 'Terry Pratchett', isbn: null }] });
+    const first = await want(firstAnchor.id);
+    await t.db.update(bookRequests).set({ createdAt: new Date(NOW.getTime() - 1000) }).where(eq(bookRequests.id, first.id));
+    const secondAnchor = await seed({ ...b, title: 'The Long Mars', heldBooks: [{ title: 'The Long Mars', author: 'Terry Pratchett', isbn: null }] });
+    const second = await want(secondAnchor.id);
+    await t.db.update(bookRequests).set({ title: 'The Long Mars', llBookId: 'second' }).where(eq(bookRequests.id, second.id));
+    const titles: string[] = [];
+    const run = () => runEnglishEditionPass({ db: t.db, now: NOW, cap: 1,
+      snapshot: new Map([['primary-only', { title: b.title, author: 'Terry Pratchett', language: 'de' }],
+        ['second', { title: 'The Long Mars', author: 'Terry Pratchett', language: 'de' }]]),
+      resolver: { consumer: 'pairing', gb: { resolveVolume: async (query) => {
+        titles.push(query.title); return { volumeId: 'unproved', title: query.title, language: 'en', authors: ['Different Writer'] };
+      } } } });
+    expect(await run()).toMatchObject({ due: 2, looked: 1, switched: 0, parked: 0 });
+    expect(await run()).toMatchObject({ due: 1, looked: 1, switched: 0, parked: 0 });
+    expect(titles).toEqual([b.title, 'The Long Mars']);
+    expect(await run()).toMatchObject({ due: 0, looked: 0 });
+    expect(await t.db.select().from(bookRequestEvents)).toEqual([]);
+  });
+  it('stamps each memo-reused credit refusal without a second provider lookup', async () => {
+    const [b] = sources();
+    const single = { ...b, heldBooks: [{ title: b.title, author: 'Terry Pratchett', isbn: null }] };
+    const first = await want((await seed(single)).id), second = await want((await seed(single)).id);
+    let resolves = 0;
+    const run = () => runEnglishEditionPass({ db: t.db, now: NOW, cap: 1,
+      snapshot: new Map([['primary-only', { title: b.title, author: 'Terry Pratchett', language: 'de' }]]),
+      resolver: { consumer: 'pairing', gb: { resolveVolume: async () => {
+        resolves += 1; return { volumeId: 'unproved', title: b.title, language: 'en', authors: [] };
+      } } } });
+    expect(await run()).toMatchObject({ looked: 1, reused: 1, switched: 0, parked: 0 });
+    const rows = await t.db.select().from(bookRequests);
+    expect(rows.filter(r => [first.id, second.id].includes(r.id)).map(r => r.englishEditionTriedAt)).toEqual([NOW, NOW]);
+    expect(await run()).toMatchObject({ due: 0, looked: 0 });
+    expect(resolves).toBe(1);
+    expect(await t.db.select().from(bookRequestEvents)).toEqual([]);
   });
   it('does not resolve or switch an English edition using only a preserved primary author', async () => {
     const [b] = sources(); const row = await seed(b); const before = await want(row.id);
