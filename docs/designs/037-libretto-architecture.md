@@ -683,3 +683,42 @@ verified D-04 identity and membership rules. Unproved membership is refused, and
 preserves the existing list. Acquisition never fills an identity gap. No EPUB metadata changes are authorized
 beyond the grouping strip and #830's author-qualified series tag. These defaults supersede owner-question wording
 in the retained investigation evidence; the issues stay open for the stated technical work.
+
+
+### Verified collection scope and execution, 2026-10-08
+
+The migration repairs proved chapter membership and order without acquiring books or changing EPUB titles,
+creators or identifiers. New recipes are manual, target Kavita Books library 1 and keep acquisition disabled.
+Normal collection synchronization may still create collection Wanted tiles and Request Events for proved missing
+members. Those visible effects follow the existing collection behavior; the collection acquisition worker excludes
+recipes whose acquisition flag is false before queue or search. Existing recipes retain their complete payloads
+and acquisition policies.
+
+Six additional proposed recipes are held as whole recipes after source review. Hogwarts Library would include an
+original screenplay under the textbook work: chapter 600 has ISBN 9781781107140, which the
+[publisher identifies as the original screenplay](https://www.pottermorepublishing.com/publications/9781781107140-1-fantastic-beasts-and-where-to-find-them-the-original-screenplay/).
+The Reckoners, Consentiency Universe and Maps in a Mirror have missing source members with multiple declared
+credits, while the current collection-want resolver retains only its first author. The Pandora Sequence source
+omits Frank Herbert from The Ascension Factor, which the
+[publisher identifies as a collaboration with Bill Ransom](https://us.macmillan.com/author/frankherbert/).
+Anne of Green Gables includes two foreign or partial Anne & Rilla editions without canonical identifiers.
+Preserve their existing proved chapters, refuse these new recipes and retain the investigation in issues #835
+and #838. No alias, metadata edit or acquisition resolves these gaps during this migration.
+
+The resulting preview has 42 positive and 62 held recipe scopes: nine existing repairs, one unchanged recipe and
+32 proposed manual recipes. These are source-review counts, not evidence of completed writes. Actual copy moves
+require fresh affected chapter, file-byte and complete-credit proofs before the affected recipe can execute.
+Unchanged provider membership and order can be retained only while their exact source identity remains proved.
+
+Stage one existing recipe first, verify its exact added chapters, order and protected state, then use batches of
+at most four. Bind each operation to the current Libretto Pod, full workload, image and compiled modules; current
+runtime, physical-file, preservation and admission evidence expires 300 seconds after capture starts. Each worker
+has a 180-second deadline and uses acquisition-disabled child configuration. It may save only the approved manual
+recipe and create or add/order its owned list. It cannot delete items, invoke normal apply, acquire, or write a
+provider cache. Preserve every existing item id and record mutation intent and readback immediately.
+
+Admission compares the current recipe store with all original payloads plus only actual completed new-recipe
+receipts reviewed for that exact store. It also checks the full native run store, active work and next scheduled
+apply using the installed scheduler and the service timezone. These checks do not lock other API clients.
+Interference, expiry or an incomplete journal stops the operation; a saved recipe or created list never licenses
+automatic retry or adoption. Review the actual created ids and partial journal before a separate exact recovery.
