@@ -1133,7 +1133,7 @@ checks:
       - name: the re-pointed eBooks keep their files
         source: ll-db
         query: |
-          select BookID, BookFile from books where Status = 'Open' and (
+          select BookFile, BookID from books where Status = 'Open' and (
                (BookID = 'ENRSDwAAQBAJ' and BookFile like '%/Nightflyers & Other Stories/Nightflyers & Other Stories - George R.R. Martin.epub')
             or (BookID = 'laM7DwAAQBAJ' and BookFile like '%/Wild Cards I/Wild Cards I - George R.R. Martin.epub')
             or (BookID = 'i2fHDwAAQBAJ' and BookFile like '%/City of Illusions/City of Illusions - Ursula K. Le Guin.%')
@@ -1433,7 +1433,7 @@ checks:
     not_before: 2026-10-08T10:00:00Z
     due: 2026-10-09T12:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       LazyLibrarian (mode=ro): the 16 records of OC-032 and Divergent (OC-031) keep their files, the five states of OC-037
       hold, and no re-wanted format (Warriors 3 eBook, A Secret Rage and Sweet and Deadly audiobook, Partners audiobook,
@@ -1444,7 +1444,7 @@ checks:
       - name: the re-pointed eBooks keep their files
         source: ll-db
         query: |
-          select BookID, BookFile from books where Status = 'Open' and (
+          select BookFile, BookID from books where Status = 'Open' and (
                (BookID = 'ENRSDwAAQBAJ' and BookFile like '%/Nightflyers & Other Stories/Nightflyers & Other Stories - George R.R. Martin.epub')
             or (BookID = 'laM7DwAAQBAJ' and BookFile like '%/Wild Cards I/Wild Cards I - George R.R. Martin.epub')
             or (BookID = 'i2fHDwAAQBAJ' and BookFile like '%/City of Illusions/City of Illusions - Ursula K. Le Guin.%')
@@ -1486,6 +1486,8 @@ checks:
         query: sum(count_over_time({namespace="downloads", container="main", pod=~"books-census-.*"} |= "books_census_finding" |= "\"held\":false" |~ "wrong_file:(K0UczgEACAAJ|QGPZEAAAQBAJ|wzxmQgAACAAJ|IMlH63ZPShAC|zTCLswEACAAJ|qKuOEAAAQBAJ|lSybHLQbZ_kC|W4ZDugEACAAJ|VKBoDwAAQBAJ|ENRSDwAAQBAJ|83Hv_EYvHgEC|4bLbswEACAAJ|K3wuAAAACAAJ|4m0Qj9xKksYC|OwTswUGVzVcC|VNalCwAAQBAJ|8CzFswEACAAJ):" [$SINCE]))
         expect: {max: 0}
         mismatch: fail
+    evidence:
+      - "2026-10-08 11:50Z passed: the 09:10Z scheduled scan (lazylibrarian-library-scan-29857510) and the 10:15Z census (books_census line 10:15:56Z: wrongFile 9, 8 held + 1 foreign_held, none of the 17 listed ids) finished before the check. By hand in the LazyLibrarian pod (mode=ro): the 17 re-pointed records all Open and all 17 BookFile paths exist; the runner (10:50Z) agreed on rows 17, the five OC-037 states (5 rows), no re-wanted format linked into a marked folder (0 rows) and the census-finding Loki check (0). The runner's paths_exist line read '17 of 17 paths missing' because the query selected BookID first and paths_exist reads the first column; the auto query now selects BookFile first (same fix in OC-032's query)."
     links:
       issues: ['#795', '#799']
   - id: OC-041
@@ -1499,7 +1501,7 @@ checks:
     not_before: 2026-10-08T07:45:00Z
     due: 2026-10-08T14:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       Gray Dawn ebook 05bc296f, Gray Dawn audiobook bc5918a3 and Shift caf0d2a7 each hold an ll_book_id that is not the one
       they gave up (wrong_author_ll_book_id), and each was searched or reads landed (Shift's id is Qw30DwAAQBAJ,
@@ -1537,6 +1539,8 @@ checks:
         query: sum(count_over_time({namespace="frontend", container="main", pod=~"haynesnetwork-sync-books-collections-.*"} |= "collection-wants complete" |= "\"covered\"" [$SINCE]))
         expect: {min: 1}
         mismatch: wait
+    evidence:
+      - "2026-10-08 11:50Z passed: post-resume collections passes 10:27Z (`collection-wants complete` resolved 23, covered 25, unresolved 46, unreachable false) and 11:27Z (resolved 4, covered 27, unresolved 40, unreachable false). 05bc296f (Gray Dawn ebook) ll_book_id 3bfm0QEACAAJ, last_searched 2026-10-07 15:27Z; bc5918a3 (Gray Dawn audiobook) ll_book_id 3bfm0QEACAAJ, searched 2026-10-08 10:30Z; caf0d2a7 (Shift) ll_book_id Qw30DwAAQBAJ (the omnibus: OC-029 and #781 own it), ebook and audio landed; none holds its wrong_author_ll_book_id. LazyLibrarian Walter Mosley Gray Dawn 3bfm0QEACAAJ: Status Open, AudioStatus Wanted. No collection want holds the book it gave up (0). Runner 10:50Z: all four auto checks pass."
     links:
       issues: ['#771', '#781']
       prs: ['#819', 'thaynes43/libretto#33', 'haynes-ops #3514', 'haynes-ops #3515']
@@ -1548,7 +1552,7 @@ checks:
     not_before: 2026-10-08T07:45:00Z
     due: 2026-10-08T18:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       OC-014 failed on 2026-10-07: the 07:32Z run hit a Google Books per-minute trip after 65 attempts and skipped 244
       candidates for quota. The GB Call Pacer shipped in #827 as v0.109.5. Read the 2026-10-08 07:3xZ "sync finished"
@@ -1557,6 +1561,8 @@ checks:
       starts near 184 (245 minus the 61 wants due at 07:32:03.36Z), or 245 if that due cohort has not been selected yet;
       explain the due cohort if it differs. If a trip recurs, investigate the actual per-minute call pattern and
       shared-key callers; the pacer is already implemented. See .agents/context/2026-10-07-pairing-oc014-oc018.md.
+    evidence:
+      - "2026-10-08 11:50Z passed: the post-resume runs, 10:32Z (first after the 07:00Z reset; 'sync finished' 10:37:05Z) and 11:32Z (11:35:23Z). No gb_quota_trip line from any haynesnetwork sync since 07:00Z (Loki). 10:32Z: attempted 100, minted 66, skippedQuota 0, quotaWaits 0, gbCalls {calls 261, perMinute 60, paced 16, pacedMs 73159}. 11:32Z: attempted 86, minted 1, skippedQuota 0, gbCalls {calls 167, perMinute 60, paced 36}. Wording corrected: inBackoff read 21 then 86, not 184 or 245. The 184/245 figure assumed the 07:32Z run had run; the pairing job was suspended 00:00Z to 10:12Z (#825), so the first run after the pause spent its attempts on the whole due cohort (attempted 100, minted 66, unmintable 71) and the unmintables re-enter backoff run by run (84 more at 11:32Z). The cap of 100 attempts and the pacer held; no minute trip."
     links:
       issues: [haynesnetwork#740]
 
@@ -1564,8 +1570,8 @@ checks:
     title: "Format-pairing drops and revivals follow library changes, and revived wants land again in the same run (OC-018 recheck)"
     opened: 2026-10-07
     after: 24 hours of format-pairing runs from 2026-10-07 14:00Z
-    not_before: 2026-10-08T14:00:00Z
-    due: 2026-10-08T18:00:00Z
+    not_before: 2026-10-09T14:00:00Z
+    due: 2026-10-09T18:00:00Z
     owner: haynesnetwork coordinator (books)
     status: pending
     check: |
@@ -1575,6 +1581,8 @@ checks:
       tombstone. The 04:32Z run may be non-zero after Kavita's nightly 04:00Z Books scan. Each revived want must read
       landed again by the end of the same pairing run, confirmed by its ll_reconciled Request Event. A drop that no
       library change explains is a pairing defect: open an issue with the pair ids.
+    evidence:
+      - "2026-10-08 11:50Z PARTIAL, kept pending: the format-pairing job was suspended 00:00Z to 10:12Z (#825), so the 24 h window holds only two runs. 10:32Z (dropped 31, revived 1, added 106) follows the 10:22Z books-sync with kavitaHeldRead 204 and tombstoned 93: explained. 11:32Z (dropped 0, revived 0, added 0) follows the 11:22Z books-sync (kavitaHeldRead 150, tombstoned 0). The one revived want, 57b7d6ad (Assistant to the Villain audiobook, Kavita series 1919), did NOT read landed again in the same run: events 06:32:04 EDT pairing_want_revived, 06:32:21 reidentified, 06:32:37 refreshed + ll_pushed; now audio_status wanted, ll_book_id dGy0EAAAQBAJ, LazyLibrarian AudioStatus Wanted with no AudioFile, and Audiobookshelf holds no such audiobook. This is the known series-1919 side effect in .agents/context/2026-10-07-pairing-oc014-oc018.md (the want changes identity with the Kavita series and pushes the audiobook), not a new defect, so it is not filed; it belongs to the #825 migration. New window: not_before and due moved a day, to take in the runs after #825 resumes."
     links:
       issues: [haynesnetwork#761]
 
@@ -1587,12 +1595,14 @@ checks:
     not_before: 2026-10-08T08:30:00Z
     due: 2026-10-08T14:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       The 08:27Z collection-wants pass logs `resolve broker: no_match answered from cache` for Compulsory and The Infinite
       Extent (`kubectl logs -n media deploy/libretto | grep "answered from cache"`, or Loki on the libretto pods in
       namespace media). The `cacheHits` count rises. The day's Google Books calls from Libretto for the six known misses
       drop to about one try each (the 07:27Z pass), not one per hourly pass.
+    evidence:
+      - "2026-10-08 11:50Z passed: Libretto restarted at the 10:12Z resume (pod libretto-5fc66dc69c-vj7zv), clearing its in-process cache. The 10:27Z pass repopulated it (first `no_match answered from cache` 10:29:21Z, cached 16, cacheHits 1) and the 11:27Z pass answered from cache with no Google Books request: The Infinite Extent (cacheHits 28, cached 24) and Compulsory (cacheHits 32), plus Ghostbloods 1 to 3, Hyperthief and others; cacheHits rose from 27 to 46 in that pass. The six known misses therefore cost one try each after the restart (10:27Z) and none at 11:27Z. Libretto logs before the restart are gone with the old pod, so the 07:27Z to 09:27Z counts are not read; the first-pass-after-pause behaviour is the evidence."
     links:
       issues: ['https://github.com/thaynes43/libretto/issues/34']
       prs: ['https://github.com/thaynes43/libretto/pull/35', 'https://github.com/thaynes43/haynes-ops/pull/3525']
