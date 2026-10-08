@@ -605,6 +605,12 @@ hnet binds to).
 | Q-02 | Source API key provisioning: owner creates the Hardcover account + token (expiry behavior UNVERIFIED) and the NYT Books API key (rate limit UNVERIFIED); both land in 1Password `HaynesKube`. | Instructions delivered 2026-07-16 (env contract: HARDCOVER_TOKEN, NYT_API_KEY; 1P item `libretto` in HaynesKube); owner provisioning. |
 | Q-03 | Does Libretto share hnet's Postgres cluster (new database, one less StatefulSet) or get its own instance in its namespace (isolation, standalone-shaped)? | **RESOLVED, twice (both kept for the record): owner 2026-07-16 day — no Postgres, SQLite on the app volume; owner 2026-07-16 eve, FINAL — FULLY STATELESS, no database at all ("Kometa has no database... Stateless. Why are we stateful?"); D-01/D-03 amended accordingly.** |
 | Q-04 | Public repo home + name check: `github.com/thaynes43/libretto` (name availability on GHCR/npm unchecked). | **RESOLVED (owner 2026-07-16): name works; repo created by the owner at github.com/thaynes43/libretto (bot cannot create user repos); AGPL-3.0.** |
+| Q-05 | How should unrelated books with the same full title be disambiguated in Kavita without silently renaming their metadata? | Open, [issue #830](https://github.com/thaynes43/haynesnetwork/issues/830); the new Harris/King collision is held. |
+| Q-06 | Which copy should represent identical-title editions in separate folders that Kavita scans independently? | Open, [issue #831](https://github.com/thaynes43/haynesnetwork/issues/831); no copies are removed or moved. |
+| Q-07 | Which verified canonical sources settle Fowl Twins, Lily Bard, Ghosts of the Shadow Market and Poldark membership/order, and how should the Dollanganger title typo be represented? | Open, [issue #835](https://github.com/thaynes43/haynesnetwork/issues/835); uncertain members and aliases are held. |
+| Q-08 | Should the eight verified missing or contradictory creator-role identities receive a separate path-scoped metadata repair, with titles preserved? | Open, [issue #838](https://github.com/thaynes43/haynesnetwork/issues/838); this migration changes no creator fields. |
+| Q-09 | Should lost comma-form creator boundaries be repaired in a separately scoped Kavita integration, or exposed through authoritative original-OPF provenance? | Open, [issue #839](https://github.com/thaynes43/haynesnetwork/issues/839); split API names cannot be joined into guessed authors. |
+| Q-10 | What verified source context should establish canonical work identity when unchanged titles retain series labels, edition decorations or compilation/partial-work wording? | Open, [issue #835](https://github.com/thaynes43/haynesnetwork/issues/835); automatic acquisition waits on ambiguous identities rather than inferring title aliases. |
 
 ## Appendix A — the hnet binding sequence (the doctrine payoff)
 
@@ -644,5 +650,27 @@ Reading-list reconciliation must compare chapter membership as well as series me
 have replaced chapters, so the same ordered series ids do not prove the reading list correct. Refresh cached chapter
 identity on scanner signals and a bounded maximum age; after the backfill, reapply existing ordered recipes and prove
 that every reading-list item names a current chapter. Adding recipes for the affected series uses settled builder
-membership/order and is library-only unless an existing acquisition policy explicitly authorizes more. A metadata
-migration does not itself authorize requests for missing series members.
+membership/order. New recipes keep `acquisitionEnabled: false`: missing canonical members still appear as Wanted
+tiles under DESIGN-038 D-13, while automatic queue and search remain disabled. The metadata migration does not
+authorize acquiring missing members.
+
+
+### Chapter membership for ordered reading lists (2026-10-07, issue #825)
+
+A matched Kavita series id cannot prove that every chapter belongs to the source work. Existing title collisions
+include Cassandra Clare and Martha Wells in City of Bones; the owned Mortal Instruments list contained both
+chapters. Recipes with `ordered: true` targeting Kavita's Books library must carry the matched canonical works for
+each target series, then select
+fresh chapters by an equal normalized ISBN, or a complete confirmed title or configured title alias with an
+equal full author name after case, diacritic, punctuation, initial-spacing and explicit surname-comma-given-name
+format normalization. A shared name token or
+an expanded initial alone does not prove author agreement. Multiple legitimate copies of the same work may be included. Matching a series id alone never
+adds a chapter. Other library types retain their established membership rules.
+
+The source chapter identity reads must establish every membership decision before any removal. A known full title
+that differs from every canonical or confirmed title, with no matching ISBN, proves a foreign chapter even if its
+writer is absent. A missing title, a potentially matching title without author or ISBN proof, or a failed read
+preserves the existing list and reports the failure. After complete identity verification, sync mode
+removes chapters that belong to other works; append mode retains its established removal policy. This permits the
+owned Mortal Instruments list to drop the verified Wells chapter while keeping Clare's chapter, without renaming
+books or moving files. The rule is independent of the unresolved library grouping policy in issue #830.

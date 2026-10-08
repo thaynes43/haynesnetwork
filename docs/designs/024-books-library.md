@@ -1,7 +1,7 @@
 # DESIGN-024: Books & Audiobooks Library — the `books_items` ledger, `books-sync`, section-gated walls + cover proxy
 
 - **Status:** Draft
-- **Last updated:** 2026-10-06 (D-03 amendment, issue #761: a carried-forward run keeps a flat-layout series'
+- **Last updated:** 2026-10-08 (issue #825: one-book series migration, independent successful chapter refresh and all actual Writers). Prior: 2026-10-06 (D-03 amendment, issue #761: a carried-forward run keeps a flat-layout series'
   writers author, so its format pairs stop flapping). Prior: 2026-10-05 (D-03 amendment, issue #712: Kavita metadata edits reach the mirror via a bounded
   rolling re-read). Prior: 2026-10-04 (D-03 amendment, issue #661: the books-sync reads each Kavita book
   series' held books from `/api/Series/volumes` into `attrs.heldBooks`). Prior: 2026-07-21 (**Kavita metadata-writers author fallback** — the live pairing-gap
@@ -347,3 +347,18 @@ Chapter rotation has its own successful-read timestamp (`attrs.heldBooksSyncedAt
 An authorless row's metadata refresh is deliberately retried, so that timestamp cannot bound chapter freshness.
 Only a successful volumes read advances the chapter timestamp; rotation remains capped per library. The one-off
 sync exposes `KAVITA_FORCE_HELD_BOOKS_REFRESH=1` to read all book series after regrouping.
+
+A Held Book also retains every actual chapter Writer name in optional `authors`, alongside its existing first
+writer `author`. Coauthored books must not lose a verified author merely because Kavita orders another Writer
+first. Pairing may prefer the row's author only when an actual chapter Writer agrees with it; otherwise the
+chapter's writer remains authoritative. A known chapter writer list never licenses an unverified aggregate author.
+Older records without `authors` keep their existing first-writer semantics until a successful refresh.
+
+The metadata migration holds `Daniel Silva/Ransom` because it has saved reading-location and session state.
+Zero page/read counters do not prove an empty location. Before and after each migration scan, compare every
+progress, location, session, bookmark and annotation field against the exact source file. Its grouping metadata
+remains intact until a separate preservation decision, [issue #840](https://github.com/thaynes43/haynesnetwork/issues/840).
+
+**Q-04 (reading-state preservation).** Should Ransom's saved location and session history be migrated through a
+separately scoped, verified Kavita state-preservation path before its final grouping tag is removed, or should
+this folder remain held? No reading-state mutation is part of this migration.

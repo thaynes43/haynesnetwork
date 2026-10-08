@@ -673,6 +673,13 @@
       "when": 1791340000000,
       "tag": "0096_book_request_events",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1791350000000,
+      "tag": "0097_books_pairing_reservations",
+      "breakpoints": true
     }
   ]
 }

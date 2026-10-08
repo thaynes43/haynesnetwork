@@ -54,7 +54,9 @@ beforeEach(async () => {
 
 async function item(
   title = 'Mockingjay',
-  options: { removed?: boolean; audio?: boolean; unknown?: boolean; author?: string | null } = {},
+  options: { removed?: boolean; audio?: boolean; unknown?: boolean; author?: string | null;
+    heldTitles?: readonly (string | null)[];
+  } = {},
 ) {
   seq += 1;
   const author = options.author === undefined ? 'Suzanne Collins' : options.author;
@@ -71,7 +73,9 @@ async function item(
       author,
       deepLinkUrl: 'https://books.example',
       deletedAt: options.removed ? NOW : null,
-      attrs: options.audio || options.unknown ? {} : { heldBooks: [{ title, author, isbn: null }] },
+      attrs: options.audio || options.unknown ? {} : { heldBooks: (options.heldTitles ?? [title]).map((heldTitle) => ({
+                title: heldTitle, author, isbn: null })),
+            },
     })
     .returning();
   return row!;
@@ -81,7 +85,7 @@ async function want(
   options: {
     title?: string;
     llId?: string | null;
-    status?: 'wanted' | 'landed' | 'requested';
+    status?: 'wanted' | 'landed' | 'requested' | 'missing' | 'grabbed';
   } = {},
 ) {
   const [row] = await t.db
@@ -119,6 +123,160 @@ function ll(audioStatus = 'Wanted', title = 'Mockingjay') {
 const gb = { resolveVolume: async () => ({ volumeId: 'gb-mockingjay' }) };
 
 describe('Kavita replacement anchors', () => {
+  it('a held chapter without a title cannot pair, mint, or re-request using its series title', async () => {
+    const anchor = await item('Mockingjay', { heldTitles: [null] });
+    await want(anchor.id, { status: 'missing', llId: 'old-missing-id' });
+    const stub = ll();
+    let resolves = 0;
+    const report = await runFormatPairing({
+      db: t.db,
+      ll: stub.bundle,
+      gb: {
+        resolveVolume: async () => {
+          resolves += 1;
+          return null;
+        },
+      },
+      cap: 1,
+      now: NOW,
+      pacer: noPace,
+    });
+    expect(report).toMatchObject({ paired: 0, llRerequested: 0, pushed: 0 });
+    expect(resolves).toBe(0);
+    expect(stub.calls).toEqual([]);
+    const [unchanged] = await t.db
+      .select()
+      .from(bookRequests)
+      .where(eq(bookRequests.pairingBooksItemId, anchor.id));
+    expect(unchanged).toMatchObject({
+      title: 'Mockingjay',
+      llBookId: 'old-missing-id',
+      audioStatus: 'missing',
+      llRerequestedAt: null,
+    });
+  });
+
+  it.each([
+    ['unknown', { unknown: true }],
+    ['multi-book', { heldTitles: ['The Hunger Games', 'Catching Fire'] }],
+    ['no-book', { heldTitles: [] }],
+    ['untitled-book', { heldTitles: [null] }],
+  ] as const)(
+    'a %s identity neither re-requests a gone LL book nor reopens a landed want',
+    async (_kind, options) => {
+      const anchor = await item('Mockingjay', options);
+      const missing = await want(anchor.id, { status: 'missing', llId: 'old-missing-id' });
+      const stub = ll();
+      (
+        stub.bundle.read as unknown as {
+          getAllBookStatuses: () => Promise<Map<string, LlSnapshotRow>>;
+        }
+      ).getAllBookStatuses = async () =>
+        new Map([
+          [
+            'unrelated',
+            {
+              title: 'Another Book',
+              author: 'Another Writer',
+              ebookStatus: 'Open',
+              language: 'en',
+            },
+          ],
+        ]);
+      const report = await runFormatPairing({
+        db: t.db,
+        ll: stub.bundle,
+        gb,
+        cap: 0,
+        now: NOW,
+        pacer: noPace,
+      });
+      expect(report).toMatchObject({
+        reconciled: 0,
+        requeued: 0,
+        requestsLandedReverted: 0,
+        llRerequested: 0,
+      });
+      expect(stub.calls).toEqual([]);
+      const [unchanged] = await t.db
+        .select()
+        .from(bookRequests)
+        .where(eq(bookRequests.id, missing.id));
+      expect(unchanged).toMatchObject({
+        llBookId: 'old-missing-id',
+        ebookStatus: 'landed',
+        audioStatus: 'missing',
+        llRerequestedAt: null,
+        llRerequestFailures: 0,
+        unroutableReason: null,
+      });
+      await t.db.delete(bookRequests).where(eq(bookRequests.id, missing.id));
+      const landed = await want(anchor.id, { status: 'landed', llId: 'old-missing-id' });
+      const landedReport = await runFormatPairing({
+        db: t.db,
+        ll: stub.bundle,
+        gb,
+        cap: 0,
+        now: NOW,
+        pacer: noPace,
+      });
+      expect(landedReport).toMatchObject({ requestsLandedReverted: 0, llRerequested: 0 });
+      expect(stub.calls).toEqual([]);
+      const [stillLanded] = await t.db
+        .select()
+        .from(bookRequests)
+        .where(eq(bookRequests.id, landed.id));
+      expect(stillLanded).toMatchObject({
+        llBookId: 'old-missing-id',
+        ebookStatus: 'landed',
+        audioStatus: 'landed',
+      });
+      expect(await t.db.select().from(bookRequestEvents)).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['unknown', { unknown: true }],
+    ['multi-book', { heldTitles: ['The Hunger Games', 'Catching Fire'] }],
+    ['no-book', { heldTitles: [] }],
+    ['untitled-book', { heldTitles: [''] }],
+  ] as const)(
+    'a %s identity preserves its pushed want without a Skipped sweep or manual acquisition',
+    async (_kind, options) => {
+      const anchor = await item('Mockingjay', options);
+      const request = await want(anchor.id);
+      const stub = ll('Skipped');
+      const report = await runFormatPairing({
+        db: t.db,
+        ll: stub.bundle,
+        cap: 0,
+        now: NOW,
+        pacer: noPace,
+      });
+      expect(report).toMatchObject({ reconciled: 0, requeued: 0 });
+      const user = await createUser(t.db);
+      expect(
+        await runManualBookSearch({
+          db: t.db,
+          requestId: request.id,
+          userId: user.id,
+          actorId: user.id,
+          ll: stub.bundle,
+        }),
+      ).toMatchObject({ searched: false, reason: 'unroutable', formats: [] });
+      expect(stub.calls).toEqual([]);
+      const [unchanged] = await t.db
+        .select()
+        .from(bookRequests)
+        .where(eq(bookRequests.id, request.id));
+      expect(unchanged).toMatchObject({
+        llBookId: 'gb-mockingjay',
+        ebookStatus: 'landed',
+        audioStatus: 'wanted',
+        unroutableReason: null,
+      });
+    },
+  );
   it('a retired anchor never reconciles or requeues a Skipped format, and settlement records one event', async () => {
     const old = await item('Mockingjay', { removed: true });
     const request = await want(old.id);
@@ -249,7 +407,7 @@ describe('Kavita replacement anchors', () => {
     expect(resumed).toMatchObject({
       retiredAnchorsSettled: 1,
       retiredAnchorsDeferred: 0,
-      pushed: 1,
+      pushed: 0,
     });
     const [next] = await t.db
       .select()
@@ -260,6 +418,102 @@ describe('Kavita replacement anchors', () => {
     expect(retired).toMatchObject({ llBookId: null, audioStatus: 'missing' });
     expect(stub.calls.filter((c) => c.cmd === 'unqueueBook')).toEqual([]);
     expect(await t.db.select().from(llFormatReleases)).toEqual([]);
+  });
+
+  it.each([
+    ['Snatched', 'grabbed'],
+    ['Wanted', 'wanted'],
+  ] as const)(
+    'a replacement adopts its predecessor’s %s format without restarting acquisition',
+    async (raw, status) => {
+      const old = await item('Mockingjay', { removed: true });
+      const prior = await want(old.id, { status });
+      const replacement = await item();
+      await recordLlReleases(t.db, {
+        llBookId: 'gb-mockingjay',
+        formats: ['audiobook'],
+        reason: 'reidentified',
+        requestId: prior.id,
+        now: NOW,
+      });
+      const stub = ll(raw);
+      const report = await withRequestEventScope({ actor: 'sync', site: 'format-pairing' }, () =>
+        runFormatPairing({ db: t.db, ll: stub.bundle, gb, cap: 1, now: NOW, pacer: noPace }),
+      );
+      expect(report).toMatchObject({
+        minted: 1,
+        pushed: 0,
+        retiredAnchorsSettled: 1,
+        retiredAnchorsDeferred: 0,
+      });
+      expect(stub.calls).toEqual([]);
+      const [next] = await t.db
+        .select()
+        .from(bookRequests)
+        .where(eq(bookRequests.pairingBooksItemId, replacement.id));
+      const [retired] = await t.db.select().from(bookRequests).where(eq(bookRequests.id, prior.id));
+      expect(next).toMatchObject({
+        llBookId: 'gb-mockingjay',
+        ebookStatus: 'landed',
+        audioStatus: status,
+        lastSearchedAt: null,
+      });
+      expect(retired).toMatchObject({ llBookId: null, audioStatus: 'missing' });
+      expect(await t.db.select().from(llFormatReleases)).toEqual([]);
+      const events = await t.db
+        .select()
+        .from(bookRequestEvents)
+        .where(eq(bookRequestEvents.requestId, next!.id));
+      expect(
+        events.some(
+          (e) => e.site === 'format-pairing.mint-adopt-active' && e.reason === 'll_reconciled',
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it('a fresh want also preserves an active download owned by a person, without a migration predecessor', async () => {
+    const replacement = await item();
+    const stub = ll('Snatched');
+    await runFormatPairing({ db: t.db, ll: stub.bundle, gb, cap: 1, now: NOW, pacer: noPace });
+    expect(stub.calls).toEqual([]);
+    const [next] = await t.db
+      .select()
+      .from(bookRequests)
+      .where(eq(bookRequests.pairingBooksItemId, replacement.id));
+    expect(next).toMatchObject({ llBookId: 'gb-mockingjay', audioStatus: 'grabbed' });
+  });
+
+  it.each(['Wanted', 'Snatched'])('foreign %s cannot bypass the language park through ownership adoption', async (raw) => {
+    const old = await item('Mockingjay', { removed: true });
+    await want(old.id, { status: raw === 'Snatched' ? 'grabbed' : 'wanted' });
+    const replacement = await item();
+    const stub = ll(raw);
+    const foreign: LlSnapshotRow = { title: 'Mockingjay', author: 'Suzanne Collins', language: 'de', ebookStatus: 'Open', audioStatus: raw };
+    stub.bundle.read.getAllBookStatuses = async () => new Map([['gb-mockingjay', foreign]]) as Awaited<ReturnType<LazyLibrarianClientBundle['read']['getAllBookStatuses']>>;
+    const report = await runFormatPairing({ db: t.db, ll: stub.bundle, gb, cap: 1, now: NOW, pacer: noPace });
+    expect(report).toMatchObject({ pushed: 0, refusedForeignBook: 1 });
+    const [next] = await t.db.select().from(bookRequests).where(eq(bookRequests.pairingBooksItemId, replacement.id));
+    expect(next).toMatchObject({ unroutableReason: 'foreign_language', audioStatus: 'requested' });
+    expect(stub.calls.filter((c) => c.cmd !== 'unqueueBook')).toEqual([]);
+    if (raw === 'Snatched') expect(stub.calls).toEqual([]);
+  });
+
+  it('minting a missing ebook never resets the other format’s active audio download', async () => {
+    const anchor = await item('Mockingjay', { audio: true });
+    const stub = ll('Snatched');
+    const status: LlSnapshotRow = { title: 'Mockingjay', author: 'Suzanne Collins', ebookStatus: 'Skipped', audioStatus: 'Snatched' };
+    stub.bundle.read.getAllBookStatuses = async () => new Map([['gb-mockingjay', status]]) as Awaited<ReturnType<LazyLibrarianClientBundle['read']['getAllBookStatuses']>>;
+    stub.bundle.write.queueBook = async (id, format) => {
+      stub.calls.push({ cmd: 'queueBook', id, format });
+      if (format === 'ebook') status.ebookStatus = 'Wanted';
+      return 'OK';
+    };
+    await runFormatPairing({ db: t.db, ll: stub.bundle, gb, cap: 1, now: NOW, pacer: noPace });
+    expect(stub.calls).toEqual([{ cmd: 'queueBook', id: 'gb-mockingjay', format: 'ebook' }, { cmd: 'searchBook', id: 'gb-mockingjay', format: 'ebook' }]);
+    expect(status.audioStatus).toBe('Snatched');
+    const [request] = await t.db.select().from(bookRequests).where(eq(bookRequests.pairingBooksItemId, anchor.id));
+    expect(request).toMatchObject({ llBookId: 'gb-mockingjay', ebookStatus: 'wanted', audioStatus: 'landed' });
   });
 
   it('an unread replacement defers release until its held-book census is known', async () => {
@@ -306,6 +560,46 @@ describe('Kavita replacement anchors', () => {
         },
       },
     ]);
+  });
+
+  it.each(['wanted', 'grabbed'] as const)('a partially untitled multi-book replacement preserves its removed predecessor’s %s audio owner', async (status) => {
+    const old = await item('Mockingjay', { removed: true });
+    const prior = await want(old.id, { status });
+    const replacement = await item('Scanner group', { heldTitles: ['Known Other Work', null] });
+    await recordLlReleases(t.db, { llBookId: prior.llBookId!, formats: ['audiobook'], reason: 'reidentified', requestId: prior.id, now: NOW });
+    const stub = ll(status === 'grabbed' ? 'Snatched' : 'Wanted');
+    const warnings: Record<string, unknown>[] = [];
+    expect(await settleRemovedPairingWants({ db: t.db, now: NOW, log: { warn: (_message, data) => { warnings.push(data!); } } })).toEqual({ retiredAnchorsSettled: 0, retiredAnchorsDeferred: 1 });
+    await drainLlReleases({ db: t.db, ll: stub.bundle, site: 'test.partial-identity' });
+    expect(stub.calls).toEqual([]);
+    expect((await t.db.select().from(bookRequests).where(eq(bookRequests.id, prior.id)))[0]).toMatchObject({ audioStatus: status, llBookId: prior.llBookId });
+    expect(warnings[0]).toMatchObject({ unknownBlockerItemIds: [replacement.id], unknownBlockedRequestIds: [prior.id] });
+    expect(await t.db.select().from(bookRequestEvents)).toEqual([]);
+  });
+
+  it('an unrelated stale pair cannot discharge an unread replacement’s reservation in another job’s release drain', async () => {
+    const old = await item('Mockingjay', { removed: true });
+    await want(old.id);
+    const unread = await item('Mockingjay', { unknown: true });
+    const audio = await item('Catching Fire', { audio: true });
+    await t.db.insert(booksFormatPairs).values({ bookItemId: unread.id, audioItemId: audio.id, matchedVia: 'title_author' });
+    await recordLlReleases(t.db, { llBookId: 'gb-mockingjay', formats: ['audiobook'], reason: 'reidentified', requestId: null, now: NOW });
+    const stub = ll();
+    expect((await drainLlReleases({ db: t.db, ll: stub.bundle, site: 'goodreads-sync.release' })).tally.llReleasesPending).toBe(1);
+    expect(stub.calls).toEqual([]);
+    expect(await settleRemovedPairingWants({ db: t.db, now: NOW })).toMatchObject({ retiredAnchorsSettled: 0, retiredAnchorsDeferred: 1 });
+  });
+
+  it('a verified individual audiobook completes a removed predecessor handoff without a successor LL id or guessed pair', async () => {
+    const old = await item('Mockingjay', { removed: true });
+    await want(old.id);
+    await item('Mockingjay', { unknown: true });
+    await item('Mockingjay', { audio: true });
+    const stub = ll();
+    const report = await runFormatPairing({ db: t.db, ll: stub.bundle, gb: { resolveVolume: async () => { throw new Error('covered work must not resolve'); } }, cap: 1, now: NOW, pacer: noPace });
+    expect(report).toMatchObject({ retiredAnchorsSettled: 1, retiredAnchorsDeferred: 0, pushed: 0 });
+    expect(stub.calls.filter((c) => ['addBook', 'queueBook', 'searchBook'].includes(c.cmd))).toEqual([]);
+    expect((await t.db.select().from(bookRequests))[0]).toMatchObject({ llBookId: null, audioStatus: 'missing' });
   });
 
   it('unknown-blocker diagnostics cap each id list while keeping full counts', async () => {
@@ -496,11 +790,15 @@ describe('Kavita replacement anchors', () => {
     expect(await t.db.select().from(permissionAudit)).toHaveLength(1);
   });
 
-  it('edition repair leaves retired and unread anchors untouched', async () => {
+  it('edition repair leaves retired, unread, multi-book and empty anchors untouched', async () => {
     const retired = await item('Mockingjay', { removed: true });
     const unread = await item('Mockingjay', { unknown: true });
+    const multi = await item('Mockingjay', { heldTitles: ['The Hunger Games', 'Catching Fire'] });
+    const empty = await item('Mockingjay', { heldTitles: [] });
     await want(retired.id);
     await want(unread.id);
+    await want(multi.id);
+    await want(empty.id);
     let resolves = 0;
     const report = await runEnglishEditionPass({
       db: t.db,

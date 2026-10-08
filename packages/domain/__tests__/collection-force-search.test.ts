@@ -125,6 +125,38 @@ function stubLibretto(acq: Record<string, boolean>, opts?: { unreachable?: boole
 const noPace = () => Promise.resolve();
 
 describe('forceSearchFindMissingCollections — the cron acquisition leg', () => {
+  it('a fresh collection want adopts Snatched audio without queueing or searching it', async () => {
+    const audioId = await seedCollection('active-audio', 'active-recipe', 'audiobookshelf');
+    const ebookId = await seedCollection('missing-ebook', 'ebook-recipe');
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: audioId,
+      format: 'audiobook',
+      members: [{ memberRef: 'isbn:1', title: 'One', author: null, llBookId: 'gb1' }],
+    });
+    await syncCollectionWants({
+      db: t.db,
+      collectionId: ebookId,
+      format: 'ebook',
+      members: [{ memberRef: 'isbn:1', title: 'One', author: null, llBookId: 'gb1' }],
+    });
+    const ll = stubLl(() => ({ ebookStatus: 'Skipped', audioStatus: 'Snatched' }));
+    await forceSearchFindMissingCollections({
+      db: t.db,
+      libretto: stubLibretto({ 'active-recipe': true, 'ebook-recipe': true }),
+      ll: ll.bundle,
+      pacer: noPace,
+    });
+    expect(ll.calls.filter((c) => c.step === 'addBook')).toEqual([]);
+    expect(ll.calls.filter((c) => c.step === 'queueBook').map((c) => c.format)).toEqual(['ebook']);
+    expect(ll.calls.filter((c) => c.step === 'searchBook').map((c) => c.format)).toEqual(['ebook']);
+    const [want] = await t.db
+      .select()
+      .from(bookRequests)
+      .where(eq(bookRequests.collectionId, audioId));
+    expect(want).toMatchObject({ llBookId: 'gb1', audioStatus: 'grabbed', lastSearchedAt: null });
+  });
+
   it('force-searches only acquisition-ON collections’ resolved wants, stamps + audits each', async () => {
     const onId = await seedCollection('on', 'recipe-on');
     const offId = await seedCollection('off', 'recipe-off');

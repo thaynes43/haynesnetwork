@@ -1764,6 +1764,18 @@ Q-05 is filed as [issue #830](https://github.com/thaynes43/haynesnetwork/issues/
 Twins projected census warning is covered by a path-scoped hold: creator, UK EPUB ISBNs and publisher synopsis
 confirm the correct third novel, while LazyLibrarian names the US edition. No title or identifier changes are needed.
 
+**Reading-state hold (2026-10-08).** The converter also supports exact normalized library-relative folder holds,
+validated before mutation. They preserve every file and metadata field through stripping, conversion, cleanup and
+restore, including scoped Jobs, while remaining part of the read-only collision census. Malformed or unconfined
+configuration stops the job before writes. Holds are reported separately from untagged books.
+`Daniel Silva/Ransom` remains held: one progress row and one reading-session entry retain a nonempty XPath despite
+zero numeric read counters. Compare all saved progress/session/bookmark/annotation state before and after each
+migration scan. The hold remains configured when hourly stripping is enabled.
+
+**Q-07.** Should Ransom's saved location and session history be migrated through a separately scoped, verified
+Kavita state-preservation path before its final grouping tag is removed, or should this folder remain held?
+Recorded in [issue #840](https://github.com/thaynes43/haynesnetwork/issues/840); this migration performs no reading-state writes.
+
 **Q-06.** What policy consolidates same-title copies across book folders without losing LazyLibrarian pointers or
 reading progress? Filed as [issue #831](https://github.com/thaynes43/haynesnetwork/issues/831): 32 existing untagged
 multi-folder title groups remain, including three partial groups. This is not resolved by the metadata strip.

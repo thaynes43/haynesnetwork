@@ -4,8 +4,15 @@
 // books once they are stored). Embedded PG16; stub Kavita/ABS clients (no live API — ADR-010).
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { booksItems } from '@hnet/db';
-import { syncBooks, type BooksItemInput } from '@hnet/domain';
+import { bookRequests, booksItems } from '@hnet/db';
+import {
+  insertBookRequest,
+  runFormatPairing,
+  syncBooks,
+  withRequestEventScope, type BooksItemInput,
+  type LazyLibrarianClientBundle,
+  type LlSnapshotRow,
+} from '@hnet/domain';
 import type { KavitaSeries, KavitaVolume } from '@hnet/books';
 import { runSync } from '../src/orchestrator';
 import type { BooksSyncBundle } from '../src/books';
@@ -83,7 +90,7 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
     const [row] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '457'));
     expect(row!.author).toBeNull(); // the live Murtagh row: no folder author, no series writer
     expect((row!.attrs as Record<string, unknown>).heldBooks).toEqual([
-      { title: 'Murtagh', author: 'Christopher Paolini', isbn: null },
+      { title: 'Murtagh', author: 'Christopher Paolini', authors: ['Christopher Paolini'], isbn: null },
     ]);
 
     // The series is unchanged: the authorless row is still re-enriched (the writers fallback), but its
@@ -95,7 +102,7 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
     expect(second.volumeCalls).toEqual([]);
     const [after] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '457'));
     expect((after!.attrs as Record<string, unknown>).heldBooks).toEqual([
-      { title: 'Murtagh', author: 'Christopher Paolini', isbn: null },
+      { title: 'Murtagh', author: 'Christopher Paolini', authors: ['Christopher Paolini'], isbn: null },
     ]);
     expect(after!.summary).toBe('A dragon rider.');
   });
@@ -156,7 +163,7 @@ describe('runSync --mode=books-sync — the held books (issue #661)', () => {
     expect(s.metadataCalls).toEqual([]); // unchanged and enriched: the metadata gate is untouched
     const [after] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '659'));
     expect((after!.attrs as Record<string, unknown>).heldBooks).toEqual([
-      { title: 'Fire & Blood', author: 'George R. R. Martin', isbn: '9781524796280' },
+      { title: 'Fire & Blood', author: 'George R. R. Martin', authors: ['George R. R. Martin'], isbn: '9781524796280' },
     ]);
     expect(after!.summary).toBe('Kept');
   });
@@ -208,6 +215,121 @@ describe('runSync --mode=books-sync — a flat-layout author survives a carried-
 });
 
 describe('runSync books-sync — retained series ids after chapter changes (issue #825)', () => {
+  it('a forced chapter-read failure cannot re-request the stale absent LL id; a confirmed one-book read resumes retry', async () => {
+    const now = new Date('2026-10-08T00:00:00Z');
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: stubBundle().bundle,
+      now,
+    });
+    const [anchor] = await t.db.select().from(booksItems).where(eq(booksItems.externalId, '457'));
+    const request = await withRequestEventScope({ actor: 'repair', site: 'test-fixture' }, () =>
+      t.db.transaction((tx) =>
+        insertBookRequest(
+          tx,
+          { writer: 'test-fixture', reason: 'pairing_want_minted' },
+          {
+            origin: 'pairing',
+            pairingBooksItemId: anchor!.id,
+            title: 'Murtagh',
+            author: 'Christopher Paolini',
+            llBookId: 'old-murtagh',
+            ebookStatus: 'landed',
+            audioStatus: 'missing',
+            createdAt: now,
+          },
+        ),
+      ),
+    );
+    vi.stubEnv('KAVITA_FORCE_HELD_BOOKS_REFRESH', '1');
+    const failed = stubBundle();
+    (failed.bundle.kavita as unknown as { listSeriesVolumes: unknown }).listSeriesVolumes =
+      async () => {
+        throw new Error('detail read failed');
+      };
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: failed.bundle,
+      now,
+    });
+    const [unread] = await t.db.select().from(booksItems).where(eq(booksItems.id, anchor!.id));
+    expect(unread!.attrs).not.toHaveProperty('heldBooks');
+    const calls: Array<{ cmd: string; id: string; format?: string }> = [];
+    let added = false;
+    let queued = false;
+    const ll = {
+      read: {
+        getAllBookStatuses: async () => {
+          const map = new Map<string, LlSnapshotRow>([
+            [
+              'filler',
+              {
+                title: 'Another Book',
+                author: 'Another Writer',
+                ebookStatus: 'Open',
+                language: 'en',
+              },
+            ],
+          ]);
+          if (added)
+            map.set('old-murtagh', {
+              title: 'Murtagh',
+              author: 'Christopher Paolini',
+              language: 'en',
+              ebookStatus: 'Open',
+              audioStatus: queued ? 'Wanted' : 'Skipped',
+            });
+          return map;
+        },
+      },
+      write: {
+        addBook: async (id: string) => {
+          calls.push({ cmd: 'addBook', id });
+          added = true;
+          return 'true';
+        },
+        queueBook: async (id: string, format: string) => {
+          calls.push({ cmd: 'queueBook', id, format });
+          queued = true;
+        },
+        searchBook: async (id: string, format: string) =>
+          void calls.push({ cmd: 'searchBook', id, format }),
+        unqueueBook: async (id: string, format: string) =>
+          void calls.push({ cmd: 'unqueueBook', id, format }),
+      },
+    } as unknown as LazyLibrarianClientBundle;
+    const blocked = await runFormatPairing({ db: t.db, ll, cap: 0, now, pacer: async () => {} });
+    expect(blocked).toMatchObject({ llRerequested: 0, reconciled: 0, requeued: 0 });
+    expect(calls).toEqual([]);
+    const [unchanged] = await t.db
+      .select()
+      .from(bookRequests)
+      .where(eq(bookRequests.id, request!.id));
+    expect(unchanged).toMatchObject({
+      llBookId: 'old-murtagh',
+      ebookStatus: 'landed',
+      audioStatus: 'missing',
+      llRerequestedAt: null,
+    });
+
+    await runSync({
+      mode: 'books-sync',
+      clients: {} as SyncClients,
+      db: t.db,
+      books: stubBundle().bundle,
+      now,
+    });
+    const resumed = await runFormatPairing({ db: t.db, ll, cap: 0, now, pacer: async () => {} });
+    expect(resumed.llRerequested).toBe(1);
+    expect(calls).toEqual([
+      { cmd: 'addBook', id: 'old-murtagh' },
+      { cmd: 'queueBook', id: 'old-murtagh', format: 'audiobook' },
+    ]);
+  });
   const nextVolumes: KavitaVolume[] = [
     {
       name: '1',

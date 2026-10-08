@@ -268,13 +268,18 @@ const JACK_RYAN: KavitaVolume[] = [
 ];
 
 describe('kavitaHeldBooksFrom — one held book per chapter', () => {
+  it('preserves every actual Writer in order, including the canonical writer after a translator or coauthor', () => {
+    expect(kavitaHeldBooksFrom([{ name: '1', chapters: [{ titleName: 'Man of Two Worlds', writers: [{ name: 'Brian Herbert' }, { name: 'Frank Herbert' }] }] }])).toEqual([
+      { title: 'Man of Two Worlds', author: 'Brian Herbert', authors: ['Brian Herbert', 'Frank Herbert'], isbn: null },
+    ]);
+  });
   it('takes the chapter epub title, first writer and ISBN (blank ISBN → null)', () => {
     expect(kavitaHeldBooksFrom(FIRE_AND_BLOOD)).toEqual([
-      { title: 'Fire & Blood', author: 'George R. R. Martin', isbn: '9781524796280' },
+      { title: 'Fire & Blood', author: 'George R. R. Martin', authors: ['George R. R. Martin'], isbn: '9781524796280' },
     ]);
     expect(kavitaHeldBooksFrom(JACK_RYAN)).toEqual([
-      { title: 'Without Remorse', author: 'Tom Clancy', isbn: null },
-      { title: 'Ryan 11: Red Rabbit', author: 'Tom Clancy', isbn: '9780425191187' },
+      { title: 'Without Remorse', author: 'Tom Clancy', authors: ['Tom Clancy'], isbn: null },
+      { title: 'Ryan 11: Red Rabbit', author: 'Tom Clancy', authors: ['Tom Clancy'], isbn: '9780425191187' },
     ]);
   });
 
@@ -286,9 +291,9 @@ describe('kavitaHeldBooksFrom — one held book per chapter', () => {
         { name: '4', chapters: [{ title: '2.5' }] },
       ]),
     ).toEqual([
-      { title: 'Kiss Kiss', author: null, isbn: null },
-      { title: null, author: null, isbn: null },
-      { title: null, author: null, isbn: null },
+      { title: 'Kiss Kiss', author: null, authors: [], isbn: null },
+      { title: null, author: null, authors: [], isbn: null },
+      { title: null, author: null, authors: [], isbn: null },
     ]);
   });
 
@@ -308,7 +313,7 @@ describe('fetchBooksSnapshot — the held-books read (issue #661)', () => {
     const snap = await fetchBooksSnapshot(bundle);
     expect(volumeCalls.sort()).toEqual(['102', '103']);
     const by = Object.fromEntries(snap.rows.map((r) => [r.externalId, r]));
-    expect(heldOf(by['102']!)).toEqual([{ title: 'Fire & Blood', author: 'George R. R. Martin', isbn: '9781524796280' }]);
+    expect(heldOf(by['102']!)).toEqual([{ title: 'Fire & Blood', author: 'George R. R. Martin', authors: ['George R. R. Martin'], isbn: '9781524796280' }]);
     expect(heldOf(by['103']!)).toHaveLength(2);
     expect(by['102']!.attrs).toMatchObject({ format: 3, language: 'en' });
   });

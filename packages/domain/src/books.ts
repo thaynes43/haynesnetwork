@@ -20,6 +20,8 @@ export interface HeldBook {
   title: string | null;
   /** The chapter's first writer; null when none. */
   author: string | null;
+  /** All actual chapter Writers, when captured; older snapshots retain the first writer above. */
+  authors?: string[];
   /** The chapter's epub ISBN; null when absent. */
   isbn: string | null;
 }
@@ -37,7 +39,12 @@ export function readHeldBooks(attrs: Record<string, unknown> | null | undefined)
   if (!Array.isArray(raw)) return undefined;
   return raw
     .filter((b): b is Record<string, unknown> => typeof b === 'object' && b !== null)
-    .map((b) => ({ title: nullableString(b.title), author: nullableString(b.author), isbn: nullableString(b.isbn) }));
+    .map((b) => ({
+      title: nullableString(b.title), author: nullableString(b.author), isbn: nullableString(b.isbn),
+      ...(Array.isArray(b.authors)
+        ? { authors: b.authors.map(nullableString).filter((a): a is string => a !== null) }
+        : {}),
+    }));
 }
 
 /** One Kavita series / ABS item reduced to the ledger row the mirror stores. */

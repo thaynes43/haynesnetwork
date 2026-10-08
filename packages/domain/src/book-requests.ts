@@ -103,6 +103,15 @@ export function llFormatAlreadyHeld(
     : nonBlank(status.ebookLibrary) || nonBlank(status.ebookFile);
 }
 
+/** An automatic queue must never overwrite an in-flight download with Wanted. */
+export function llFormatDownloading(
+  status: LlHeldSignals | null | undefined,
+  format: Extract<BookRequestFormat, 'ebook' | 'audiobook'>,
+): boolean {
+  const raw = format === 'audiobook' ? status?.audioStatus : status?.ebookStatus;
+  return raw?.trim().toLowerCase() === 'snatched';
+}
+
 // ---------------------------------------------------------------------------------------------------
 // One LL searchBook per book (issue #644) — the cross-JOB leg.
 //
