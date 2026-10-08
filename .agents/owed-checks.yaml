@@ -1611,8 +1611,8 @@ checks:
     title: 'EPUB series split survives the next nightly Kavita scan without pairing churn'
     opened: 2026-10-07
     after: the first 04:00Z Kavita Books scan after the issue 825 metadata backfill
-    not_before: 2026-10-08T04:45:00Z
-    due: 2026-10-08T12:00:00Z
+    not_before: 2026-10-09T04:45:00Z
+    due: 2026-10-09T12:00:00Z
     owner: haynesnetwork coordinator (books)
     status: pending
     check: |
@@ -1624,5 +1624,7 @@ checks:
       embedded series tags does not split identical book titles (ADR-105 C-03). The zero-flip target must not be
       reported as passed if Kavita still flips any affected book. If the backfill finishes after this scan, move
       not_before and due to the next scan and record the reason here.
+      The controlled backfill had not started by 2026-10-08T04:00:00Z, so its first subsequent nightly scan is
+      2026-10-09T04:00:00Z. This check remains pending until that scan and the following pairing run complete.
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/825']
