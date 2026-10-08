@@ -1632,8 +1632,16 @@ checks:
       fresh current inventory; do not claim that all 274 live sanitized files are unchanged.
       On October 8, two Night Shift collision peers and fourteen remaining files were verified against a fresh
       1956-EPUB, 4730-file inventory. Normal scanning preserved all 48 reading-state rows and all eight saved-lock
-      tables, but its start-boundary verifier refused completion. Production restored through haynes-ops #3597
-      at 16:05:33Z; force-scan verification, duplicate moves and final mirror/list reconciliation remain pending.
+      tables. The cross-host start-boundary refusal was resolved by unique same-server request, enqueue, start
+      and commit evidence. Force accepted 16:32:57Z and committed 16:36:01Z; its final notification reader failed.
+      Fresh accounting maps 1949 of 1956 EPUBs; seven unmapped paths and thirteen nonunique paths were already
+      present before the backfill stages. Preserve those exact gaps and never report full unique coverage.
+      All 48 reading rows, eight saved-lock tables and 27 curated tables match the preforce snapshot. Production
+      restored through haynes-ops #3599 at 16:36:18Z. The 17:31Z narrow hold in haynes-ops #3603 then suspended
+      only format pairing for issue 850: incomplete counterpart credits can pair different works. Its inverse
+      is haynes-ops #3604, after corrected matching, native full-credit source refresh and conservative review.
+      The other four schedules and Libretto acquisition remain active. Duplicate moves and final mirror/list
+      reconciliation remain pending; do not satisfy this check while pairing is held or credits remain unproved.
       This manual evidence does not satisfy the October 9 nightly check.
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/825']

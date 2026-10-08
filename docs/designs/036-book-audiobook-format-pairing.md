@@ -763,7 +763,7 @@ agree only through explicit initial notation. A surname alone cannot validate a 
 validate a missing surname. Kavita's comma-split creator fragments cannot be joined into inferred people.
 A chapter with multiple Writer credits including single-token fragments remains uncertain for automatic
 acquisition; those ambiguous credits cannot establish strong library coverage. Multiple complete names
-explicitly separated as credits may each provide proof. Existing broader resolver tolerances stay separate.
+explicitly separated as credits remain a complete set; counterpart proof must agree with that complete declared set. Existing broader resolver tolerances stay separate.
 
 A complete LazyLibrarian snapshot can also prove the requested format is held by another edition: its complete
 title and known author must agree with the current anchor, the format must satisfy the existing held-file/library
@@ -876,3 +876,14 @@ requested title as an explicit numbered series reference. For example, Drums of 
 in `(Outlander 4)` is not the Outlander book. The shared mismatch check rejects that route as wrong-volume,
 using the current verified pairing identity even when a legacy request's author is null. Legitimate full work
 titles and meaningful subtitles retain their existing checks; no series alias supplies work identity.
+
+
+## Amendment: 2026-10-08, complete counterpart credits (issue #850)
+
+The one-to-one pair cache must preserve complete declared credits. A preferred primary writer cannot discard the other actual chapter Writers. Audiobookshelf normalization retains its explicit author names in source attributes. Pairing compares the complete declared credit sets with the existing strict actual-author rules, without joining fragments or inferring contributors. Missing or conflicting counterpart credits cannot prove a multi-writer pair.
+
+The concrete regression cases are Tolkien's History of Middle-earth volume VIII versus LOTR Book V, and a Long Earth ebook credited to Terry Pratchett and Stephen Baxter versus audio whose complete counterpart credits are unproved. Same normalized primary title and one agreeing writer do not prove either pair. No EPUB metadata is rewritten to repair that ambiguity.
+
+The same conservative credit evidence governs held-format coverage and all automatic acquisition paths. Both same-title sides with plausible but incomplete or conflicting credits wait for proof. A dropped former pair keeps its counterpart reservation and acquisition deferral across runs until complete source evidence resolves it. Existing wants retain their identities and states; only positive complete-work coverage may land them through the Request Event writer. A stricter cache must never trigger downloads to resolve an identity gap.
+
+Verification includes the two concrete regressions, complete matching coauthors as a positive control, missing and conflicting counterpart credits, single-writer compatibility, and repeated-run protection of a dropped pair and its existing wants. The temporary GitOps hold on the pairing schedule ends after the corrected image and a native source refresh are verified. The other book schedules and Libretto stay active throughout that repair.
