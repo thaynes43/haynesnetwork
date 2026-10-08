@@ -40,7 +40,7 @@
   Playwright has no session; the plan stays active. No feature defect found.
 - **#825 resumed 10-08:** PLAN-074, report `/home/dev/work/hn-825b-report.md`. All 290 metadata operations
   cover 289 verified current paths. A fully observed Force scan completed at 19:47Z; all 48 reading rows,
-  eight saved-lock tables and 27 curated tables are exact. Seven unmapped files and 13 nonunique paths predate
+  saved locks across eight tables and 27 curated tables are exact. Seven unmapped files and 13 nonunique paths predate
   this run. #850 is fixed in deployed v0.110.4: full native source refresh, 716 conservative pairs, 35 reservations,
   no acquisition and exactly seven approved Request Events. At 19:48:44Z all five schedules and Libretto
   acquisition were restored through haynes-ops #3607; no production hold remains. Hourly strip is still off.

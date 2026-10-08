@@ -12,7 +12,9 @@ Proof `/home/dev/work/hn-825b-force-only-cont03-proof.json` SHA-256:
 The controlled continuous log closed after both notifications, retaining 4,027,597 bytes and 18,878 lines.
 It proves the current requested scan, while original historical backfill observation remains false.
 
-All 48 reading rows, eight saved-lock tables and 27 curated tables and file path mappings stayed exact.
+All 48 reading rows, saved lock flags, values and references across eight tables, and all 27 curated tables
+and file path mappings stayed exact. Scanner timestamps and unlocked colors changed; whole locked
+Chapter/Series rows are not claimed byte-equal.
 The fresh 1,956 EPUB inventory accounts for every file, mapping 1,949 with the same seven missing and 13
 nonunique paths already recorded in `2026-10-08-825-coverage-gaps.md`. No new loss or metadata replay occurred.
 
@@ -32,3 +34,7 @@ Hannah Nicole Maehrer. Its requested audiobook is distinct from Accomplice; no c
 Remaining work: bounded guarded duplicate consolidation, physically verified library-only reading lists,
 hourly flag enablement and final documentation. OC-045 waits for October 9 04:00Z scanning and 04:32Z pairing;
 OC-046 separately governs the retained Ransom folder using its actual July reading timestamp.
+
+Final independent packet `/home/dev/work/hn-825b-force-only-cont03-final-evidence-packet.json`, SHA-256
+`4d4b9d6313da99a4230ac3e7b23590c748ef1a59478f947fa1a97c1b97b9ba19`, preserves an immutable received observer
+prefix through the original proof timestamp. Known owned Job/Pods and local/remote observers are absent.

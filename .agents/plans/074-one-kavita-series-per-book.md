@@ -54,7 +54,7 @@ historical 274 operations this is 290 operations; 289 current paths match verifi
 LazyLibrarian replaced one historical Dungeon Crawler Carl edition before this stage.
 
 The normal Books scan was accepted at 16:02:47Z and emitted both completion notifications at 16:03:02/03Z.
-All 48 saved reading-state rows and all eight discovered saved-lock tables were exact afterward. Its verifier
+All 48 saved reading-state rows and the saved lock flags, values and references across eight tables were exact afterward. Its verifier
 refused the scan-start boundary, so the force scan did not run. Production was restored first through
 haynes-ops #3597: all five schedules active, Libretto acquisition normal, and three Flux scopes Ready at 16:05:33Z.
 Diagnose this boundary while live; preserve the original backfill's missing observer coverage explicitly.
@@ -71,7 +71,7 @@ The force request was accepted at 16:32:57Z and committed at 16:36:01Z. Its noti
 the final messages; conclusive notification evidence remains pending. Current coverage is 1,949 of 1,956
 EPUBs. All seven unmapped files and 13 nonunique paths already existed before the collision stage and force.
 No new gap was introduced. Pathfinder and Visitors mappings returned after force. All 48 reading rows,
-eight saved-lock tables and 27 curated tables exactly match the fresh preforce snapshot. Production was
+saved lock flags, values and references across eight tables, and 27 curated tables exactly match the fresh preforce snapshot. Production was
 restored through haynes-ops #3599 at 16:36:18Z. Never replay verified metadata to obtain scan evidence.
 
 Native pairing projection then exposed issue #850: selecting a preferred writer discards complete coauthor
@@ -92,8 +92,9 @@ LazyLibrarian, mint, push or release write occurred. Haynes-ops #3604 restored t
 Fresh read-only retention completed at 19:21:58Z, verifying the 1,956-EPUB, 4,730-file inventory, candidate bytes,
 ZIP contents and retained originals. A new Force request was accepted at 19:44:04Z. Continuous same-pod logs
 prove the unique server enqueue, accepted request, scan start and commit at 19:47:13Z; both actual completion
-notifications were received. All 48 reading rows, eight saved-lock tables and 27 curated tables and path mappings
-were exact afterward. Coverage remains 1,949 of 1,956, with exactly the seven existing gaps and 13 nonunique paths.
+notifications were received. All 48 reading rows, saved lock flags, values and references across eight tables,
+and 27 curated tables and path mappings were exact afterward. Scanner timestamps and unlocked colors changed
+as expected; entire locked Chapter/Series rows are not claimed byte-equal. Coverage remains 1,949 of 1,956, with exactly the seven existing gaps and 13 nonunique paths.
 This closes the current Force observation gap; the original historical backfill observer gap remains explicit.
 No verified metadata was replayed.
 
