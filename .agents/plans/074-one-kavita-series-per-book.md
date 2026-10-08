@@ -87,7 +87,7 @@ Issue #850 is fixed and closed. App #851, release #852 and haynes-ops #3605 depl
 The native refresh read all 1,932 Kavita books and all 1,231 expanded Audiobookshelf items with complete credits.
 An acquisition-disabled cache pass produced exactly 716 pairs and 35 persistent reservations. Its seven
 removed-anchor settlements wrote seven Request Events; all 764 protected wants remained byte-exact. No provider,
-LazyLibrarian, mint, push or release write occurred. Haynes-ops #3604 restored the narrow pairing hold at 19:19Z.
+LazyLibrarian, mint, push or release write occurred. Haynes-ops #3604 ended the narrow hold and restored pairing at 19:19Z.
 
 Fresh read-only retention completed at 19:21:58Z, verifying the 1,956-EPUB, 4,730-file inventory, candidate bytes,
 ZIP contents and retained originals. A new Force request was accepted at 19:44:04Z. Continuous same-pod logs
