@@ -1754,7 +1754,7 @@ uncertainty, before app, pairing or recipe checks. Keep the strip gate off throu
 the hourly step only after the full run is verified. Preserve the extracted series name/index in the backfill
 inventory to restore reading order through Libretto. The next nightly scan is a dated Owed Check.
 
-**Collision preflight and Q-05 ruling (2026-10-08).** Before mutation, project grouping across the entire EPUB
+**Collision preflight and Q-05 ruling (2026-10-08, ADR-106).** Before mutation, project grouping across the entire EPUB
 library. For the same title by different authors, write `calibre:series` as `<title> (<author>)` and
 `calibre:series_index` as `1`, including both tagged and untagged peers. The owner approved this in
 [issue #830](https://github.com/thaynes43/haynesnetwork/issues/830). Keep titles, creators and identifiers unchanged.
@@ -1788,7 +1788,7 @@ without actual Kavita reading activity. OC-046 records the fresh assessment and 
 [issue #840](https://github.com/thaynes43/haynesnetwork/issues/840). Use the actual last activity timestamp; recording
 the hold does not restart the idle clock.
 
-**Q-06 ruling (2026-10-08).** For same-title copies by the same verified author, keep the unique copy that
+**Q-06 ruling (2026-10-08, ADR-106).** For same-title copies by the same verified author, keep the unique copy that
 LazyLibrarian's BookFile points to. Move each unprotected extra into the retained backup area outside EBooks;
 never delete it. This is a separate manual operation under the owner's
 [issue #831 ruling](https://github.com/thaynes43/haynesnetwork/issues/831), never part of hourly stripping.
