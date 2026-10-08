@@ -20,14 +20,30 @@ burners, stress or wide parallel/looped tests; use low parallelism under nice 19
 4. Review merged changes for corrupt/lost files, stale identities, releases and unintended acquisition.
 5. Declare activity; run the targeted Hunger Games/Mockingjay batch Job, scan, refresh mirrors and verify requests.
 6. Backfill all eligible tagged EPUBs; scan and verify file coverage, census, pairs, Request Events and LL pushes.
-7. Restore series order through library-only reading lists under existing membership/order rules; file exact questions
-   where policy is unsettled. Enable the hourly strip through GitOps after full verification.
+7. Restore series order through library-only reading lists under existing verified membership/order rules; refuse
+   unproved identities without acquiring replacements. Enable the hourly strip through GitOps after full verification.
 8. Merge the evidence and OC-045, update the external report, end activity and remove additional merged worktrees.
 
-## Out of scope
+## Resume and expanded owner rulings, 2026-10-08
 
-Metadata stripping does not disambiguate unrelated books sharing an identical title. Record remaining grouping
-limitations with cold-start evidence rather than declaring the entire library cured.
+The previous session ended before collecting the full Job's completion. Runtime logs now prove that the two
+staged edits and 272 full edits completed, with zero edit failures, one Night Shift cross-author collision hold
+and one whole-folder Ransom hold. The completed Job must not be reapplied using the stale 04:29Z report.
+
+Coordinator restored all five paused CronJobs and Libretto acquisition through haynes-ops #3573 at 10:13Z.
+Every further pause has a checkpoint and a concrete inverse restore PR prepared first. Pause only during the
+strip/scan/file-and-reading-state verification window, and restore immediately on success, failure or uncertainty.
+The hourly flag remains off until full verification. New arrivals require fresh inventory rather than reuse of
+the original 1,930-file approval.
+
+After the bulk verification, implement and stage #830's `<title> (<author>)` series tag plus index for unrelated
+same-title works, and #831's guarded consolidation retaining the LazyLibrarian BookFile copy. Originals and moved
+extras remain outside EBooks indefinitely. Protected extras stay and receive a review list. Ransom remains held;
+its separate owed check evaluates the latest actual reading activity against the 30-day idle rule without progress
+migration engineering. The original July 27 timestamp is already older than 30 days and must not be reset.
+
+Issues #835, #838, #839 and #842 remain technical backlog under the conservative defaults in DESIGN-037.
+OC-045 is pending the October 9 04:00Z scan and subsequent pairing run; a successful manual scan cannot satisfy it.
 
 ## Rollback
 

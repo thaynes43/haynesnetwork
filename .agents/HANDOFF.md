@@ -38,18 +38,14 @@
   deployed domain matches replica SQL, paging/empty/gone wants pass, API role predicates and re-request wording pass,
   anonymous API denied. Successful admin HTTP and authenticated admin/non-admin UI remain uncovered because
   Playwright has no session; the plan stays active. No feature defect found.
-- **#825 in progress**, Codex session `task-haynesnetwork-1007-182906` (report `/home/dev/work/hn-825-report.md`).
-  App safeguards #833 merged; its v0.110.1 release PR is #836, handled by that task. Converter plus Libretto are
-  tracked by haynes-ops #3540. The new plan is **PLAN-074**; Request Event history keeps its existing PLAN-073.
-  Kavita merges books from different folders by their EPUB series tag, flips the series at every scan, and drives
-  OC-018 churn. Owner ruling 2026-10-07: **"one Kavita series per book"**. Strip the library's EPUB series tags
-  (about 213 of 1,930) now and hourly in `lazylibrarian-epub-convert`; about 46 Kavita series pages go away, with series
-  order through Libretto reading lists. [Evidence](https://github.com/thaynes43/haynesnetwork/issues/825#issuecomment-6048048575).
-  Preflight owner questions are #830 (cross-author title collision) and #831 (same-title copies); no release or image
-  bump from that task was in flight when this release started.
+- **#825 resumed 10-08:** PLAN-074, report `/home/dev/work/hn-825b-report.md`. Recovered full Job completion proves
+  274 edits and retained originals; 273 live results match, with one later verified LazyLibrarian DCC replacement.
+  All five schedules and Libretto acquisition are restored through haynes-ops #3573 and #3575; hourly strip stays off
+  while verification proceeds. #830/#831 have rulings and converter work, not owner questions. Ransom remains held
+  under the 30-day actual reading-idle rule. OC-045 awaits October 9's scan; OC-046 tracks the separate hold release.
 - **haynes-ops#3538 filed:** Codex task sessions fail cigar-journal MCP with `AuthRequired`; Claude sessions work.
 
-**Open:** #825 in progress (its owner questions #830/#831), owed checks in `.agents/owed-checks.yaml`, #733 parked,
+**Open:** #825 in progress (#830/#831 implementation and verification), owed checks in `.agents/owed-checks.yaml`, #733 parked,
 #674 benched. PLAN-073 awaits its authenticated admin/non-admin UI check; read-only live fallback passed.
 
 ## ▶ 2026-10-07 (night) — Coordinator wave: Libretto guards, the Books Census, Request Events; v0.109.3 live

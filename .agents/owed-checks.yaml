@@ -1626,5 +1626,30 @@ checks:
       not_before and due to the next scan and record the reason here.
       The controlled backfill had not started by 2026-10-08T04:00:00Z, so its first subsequent nightly scan is
       2026-10-09T04:00:00Z. This check remains pending until that scan and the following pairing run complete.
+      Complete runtime logs recovered on October 8 prove that the full Job finished at 04:46:48Z: two staged
+      strips plus 272 full strips, with Ransom and the Night Shift collision held. The previous 04:29Z report
+      predated that completion. New arrivals and the subsequently replaced Dungeon Crawler Carl file require
+      fresh current inventory; do not claim that all 274 live sanitized files are unchanged.
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/825']
+
+  - id: OC-046
+    title: 'Release the retained Ransom folder hold after 30 days without reading activity'
+    opened: 2026-10-08
+    after: a fresh exact-file reading-state check for the retained Ransom folder
+    not_before: 2026-10-08T12:00:00Z
+    due: 2026-10-09T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      Keep Daniel Silva/Ransom held with its grouping tag during the bulk migration. Before releasing this hold,
+      map every current folder file to Kavita chapters and read every user's progress, location, reading session,
+      bookmark and annotation state. Use the latest actual reading timestamp; the retained July 27 timestamp
+      already exceeded 30 days on August 26, so do not restart the clock when the hold was created.
+      Unknown evidence or activity in the last 30 days retains the whole-folder hold. Once idle for at least
+      30 days, release it through a separately verified series-only strip with retained originals and a bounded
+      scan window, then confirm the source file and resulting book identity. Do not implement progress migration
+      or mutate Kavita reading state. Record the hold removal, scan result and actual timestamps here and in #840.
+      The bulk run's unchanged reading-state proof does not itself remove this configured hold.
+    links:
+      issues: ['https://github.com/thaynes43/haynesnetwork/issues/840']

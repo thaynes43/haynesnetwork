@@ -356,9 +356,20 @@ Older records without `authors` keep their existing first-writer semantics until
 
 The metadata migration holds `Daniel Silva/Ransom` because it has saved reading-location and session state.
 Zero page/read counters do not prove an empty location. Before and after each migration scan, compare every
-progress, location, session, bookmark and annotation field against the exact source file. Its grouping metadata
-remains intact until a separate preservation decision, [issue #840](https://github.com/thaynes43/haynesnetwork/issues/840).
+progress, location, session, bookmark and annotation field against the exact source file.
 
-**Q-04 (reading-state preservation).** Should Ransom's saved location and session history be migrated through a
-separately scoped, verified Kavita state-preservation path before its final grouping tag is removed, or should
-this folder remain held? No reading-state mutation is part of this migration.
+**Q-04 resolved, coordinator ruling 2026-10-08:** keep the whole folder held with its series tag; no progress
+migration engineering. A held folder becomes eligible for the series-only strip once its Kavita reading activity
+has been idle for 30 days. Measure from the latest actual reading timestamp across all users, rather than from
+when the hold was created. Refresh the exact source-file mapping and all reading state before releasing a hold;
+unknown timestamps or recent activity retain it. The retained July 27 Ransom evidence already exceeds 30 days,
+so its owed check calls for immediate fresh evaluation, not a new 30-day delay. Release and scan verification
+remain separate from the completed bulk edit. See [issue #840](https://github.com/thaynes43/haynesnetwork/issues/840).
+
+**Amendment 2026-10-08, coordinator rulings for #830 and #831:** unrelated books with the same title receive an
+explicit series tag `<title> (<author>)` and index 1, derived only from verified title and author metadata.
+This disambiguation also applies to untagged collision peers. Other title, author, identifier and content metadata
+is preserved. Same-work duplicate consolidation keeps the EPUB LazyLibrarian's BookFile names. An extra copy
+moves to the retained backup area outside EBooks only after complete, fresh dependency evidence proves that
+LazyLibrarian pointers, census repairs and `.ll_ignore` protections, Kavita reading state and app wants do not
+rely on it. Unknown or protected copies stay in place and are listed for review. These moves never delete files.
