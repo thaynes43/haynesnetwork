@@ -189,6 +189,7 @@ matrix (books read_only OK + audited; books disabled FORBIDDEN; goodreads-origin
 |----|----------|------------|
 | Q-01 | Should a long-unmintable want ever alert (an outbox digest of unresolvable titles)? | (open — observe the backfill first) |
 | Q-02 | Identifier-backed matching (ISBN/ASIN columns on the mirror) to pair edition variants the conservative matcher skips. | (open — the known upgrade path, ADR-065 C-c; **2026-07-20 (ADR-075): now ALSO improves the unified Books wall's CARD COLLAPSE, not just the coverage badge — a true pair the conservative matcher misses renders as TWO cards until identifiers land**) |
+| Q-03 | Should the incomplete anthology and conflicting Day Shift credits be corrected to verified complete names and roles, or remain deferred until authoritative credit evidence is integrated? | Open: [issue842](https://github.com/thaynes43/haynesnetwork/issues/842). Negative acquisition guards supply no alias or held proof. |
 
 ## Amendment — 2026-07-20 (ADR-075 — the pair cache powers the unified Books wall)
 
@@ -835,6 +836,26 @@ The current matching-title inventories maintain the deferral across repeated run
 has dropped. Existing wants keep their identity and state unless positive complete-work coverage for their
 preserved snapshot can land them. Clearly different authors or distinct meaningful subtitles do not meet
 this uncertainty guard.
+
+For identical complete titles, a complete surname from a known multi-token actual Writer that occurs as a
+whole non-final token in the counterpart credit also establishes unresolved credit boundaries. For example,
+Charlaine Harris versus `Harris Kelner` cannot prove authorship, but cannot authorize another copy of
+*Home Improvement: Undead Edition*. Both anchors remain deferred. Ordinary conflicting complete names
+whose shared surname is final on both sides remain distinct. Token substrings and first-name-only overlap
+do not qualify. No credit is expanded or joined, and existing request snapshots remain unchanged.
+
+A complete title with only punctuation or word-spacing differences can establish uncertainty when strict
+actual author proof agrees. Equality of the entire normalized letter/digit sequence is negative permission
+only: it never creates an alias, pair or coverage. This protects Shakespeare's Champion, Clay's Ark and
+Confessions of an Ugly Stepsister without rewriting the Audiobookshelf titles.
+
+An explicitly numbered leading label on an audio title can also conceal a held work when source credits
+conflict. An exact complete suffix matching a known actual chapter title defers both anchors, even when
+the audio credit cannot agree with the known Writer. This records a source identity conflict rather than
+asserting a role or ownership. *Midnight, Texas 2 - Day Shift* credited to Susan Bennett versus the held
+*Day Shift* with Writer Charlaine Harris is the verified case. No narrator role or title alias is inferred;
+ordinary distinct full titles and numbered sequels stay distinct. Authoritative source-credit repair remains
+a separate decision in [issue842](https://github.com/thaynes43/haynesnetwork/issues/842).
 
 Differently decorated full titles can also make an existing counterpart uncertain. With agreeing actual
 author credits, a complete cleaned title contained at a whole-word prefix or suffix boundary of the other
