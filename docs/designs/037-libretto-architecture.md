@@ -673,4 +673,13 @@ writer is absent. A missing title, a potentially matching title without author o
 preserves the existing list and reports the failure. After complete identity verification, sync mode
 removes chapters that belong to other works; append mode retains its established removal policy. This permits the
 owned Mortal Instruments list to drop the verified Wells chapter while keeping Clare's chapter, without renaming
-books or moving files. The rule is independent of the unresolved library grouping policy in issue #830.
+books or moving files. The rule also applies after the author-qualified library grouping authorized in issue #830
+on 2026-10-08.
+
+### Conservative curation after the split (2026-10-08, coordinator ruling)
+
+Issues #835, #838, #839 and #842 are engineering and curation backlog. Recipe sources and aliases follow the
+verified D-04 identity and membership rules. Unproved membership is refused, and incomplete chapter identity
+preserves the existing list. Acquisition never fills an identity gap. No EPUB metadata changes are authorized
+beyond the grouping strip and #830's author-qualified series tag. These defaults supersede owner-question wording
+in the retained investigation evidence; the issues stay open for the stated technical work.
