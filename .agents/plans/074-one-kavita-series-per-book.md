@@ -4,6 +4,24 @@
 - **Satisfies:** issue #825, ADR-105/106; DESIGN-024/028/036/037 amendments dated 2026-10-07
 - **Validation:** `.agents/context/2026-10-07-one-kavita-series-per-book.md`, OC-045
 
+### Current completion gates, 2026-10-09 15:23Z
+
+App #866 merged as `68a3ccd9` after five proved adversarial identity/state fixes and the Goodreads
+coauthor sibling; v0.110.5 deployment is pending. The current read-only checkpoint is
+`.agents/context/2026-10-09-825-completion-preflight.md`; the minimum Pathfinder selection and inverse
+are in `2026-10-09-831-pathfinder-preflight.md`. These supersede historical pending statements below.
+
+OC-047 FAILED: three Pathfinder EPUBs became unmapped at the normal nightly scan; series 1448 is PDF only.
+Keep #864 open and refresh the expanded corpus. Ransom is already eligible under the original July 27
+actual reading / August 26 30-day clock, but its separate exact-folder strip/scan/state proof remains pending.
+Signed image/certificate/transparency and all immutable host pins passed; actual native LIVE V2 refused
+before Job creation, so V3 typed-inventory/ACK/foreground cleanup still needs actual closure. No next pause
+is authorized by this checkpoint. Stage corrected-app deployment, fresh full fenced evidence, the narrow
+two-extra Pathfinder move/inverse/scan, optional safe Ransom stage, fresh 104-scope library-only preview,
+one existing recipe then at most four per batch, normal acquisition verification and only then hourly gate.
+Freeze executable profiles and exact inverse before any pause. Old preview and duration measurements are
+not current authority, and current active writers must be freshly admitted.
+
 ## Preconditions
 
 Owner authorized the library metadata change on 2026-10-07. No library edit before safeguards are deployed, the

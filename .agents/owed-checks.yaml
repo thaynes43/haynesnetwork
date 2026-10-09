@@ -1674,6 +1674,8 @@ checks:
       scan window, then confirm the source file and resulting book identity. Do not implement progress migration
       or mutate Kavita reading state. Record the hold removal, scan result and actual timestamps here and in #840.
       The bulk run's unchanged reading-state proof does not itself remove this configured hold.
+    evidence:
+      - "2026-10-09 14:47Z read-only preflight (not a pass). Stable Kavita DB source stats before/after; private mode=ro copy. Ransom EPUB SHA e4969ea19b51a3d65efbb0cdce7bea08a0a8434c98ff123a772a2f59a8733e7a maps file3570/chapter3358/volume1800/series1650, the only chapter/file in that current series. Latest actual activity22/session11 end is 2026-07-27T03:37:35.1269016Z; eligible since 2026-08-26T03:37:35.1269016Z. Session LastModified ten minutes later is housekeeping, not reading. Progress19 saved XPath remains; no target bookmark/annotation/list/remap/lock dependency. All 48 reading rows exactly equal the retained baseline. Configured whole-folder hold remains. Separate reviewed one-EPUB series-only strip, retained original, scan identity and exact state proof/inverse still required; no new 30-day wait or progress migration. Detailed gate: .agents/context/2026-10-09-825-completion-preflight.md. Status/due remain pending/currently owed, not deferred another month."
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/840']
 

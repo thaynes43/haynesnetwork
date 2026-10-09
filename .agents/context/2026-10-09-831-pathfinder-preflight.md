@@ -15,12 +15,12 @@ nonunique keepers and ambiguous identity keep copies in place for review.
 
 All paths below are relative to `/data/cephfs-hdd/data/media/books/EBooks`.
 
-| Role | Path | SHA-256 | Bytes |
-| --- | --- | --- | ---: |
-| Designated LL keeper | `Orson Scott Card/Pathfinder/Pathfinder - Orson Scott Card.epub` | `dca5fba80025aa2f91535d014684018e4e2211e85803cd136d4cda1c95a83f54` | 1199174 |
-| Extra 1 | `Orson Scott Card/Pathfinder/Orson Scott Card - Pathfinder.epub` | `c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2` | 480029 |
-| Extra 2, misfiled Pathfinder | `Orson Scott Card/Visitors/Visitors - Orson Scott Card.epub` | `c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2` | 480029 |
-| Genuine Visitors keeper, retain | `Orson Scott Card/Visitors/Orson Scott Card - Visitors.epub` | `8ed2e2410dfad7b272c1dfba9ba07017898a013f19fa38aaabca4168c322a9d5` | 1452402 |
+| Role                            | Path                                                             | SHA-256                                                            |   Bytes |
+| ------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------ | ------: |
+| Designated LL keeper            | `Orson Scott Card/Pathfinder/Pathfinder - Orson Scott Card.epub` | `dca5fba80025aa2f91535d014684018e4e2211e85803cd136d4cda1c95a83f54` | 1199174 |
+| Extra 1                         | `Orson Scott Card/Pathfinder/Orson Scott Card - Pathfinder.epub` | `c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2` |  480029 |
+| Extra 2, misfiled Pathfinder    | `Orson Scott Card/Visitors/Visitors - Orson Scott Card.epub`     | `c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2` |  480029 |
+| Genuine Visitors keeper, retain | `Orson Scott Card/Visitors/Orson Scott Card - Visitors.epub`     | `8ed2e2410dfad7b272c1dfba9ba07017898a013f19fa38aaabca4168c322a9d5` | 1452402 |
 
 The live four-file read, completed before the 15:14:47Z app diagnostic, found identical
 before/after device, inode, size, mtime, ctime, link count, mode, UID and GID for each file.
