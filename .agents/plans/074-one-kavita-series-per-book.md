@@ -143,3 +143,19 @@ Ready, acquisition normal, all four Flux scopes Ready at `0e6b3c29`, and no owne
 sessions. Both inverse PRs passed current checks and Claude review before merging; their worktrees were removed.
 No copy moved and no list write occurred. Diagnose while live, with no automatic retry. The detailed cold-start
 receipt and remaining obligations are in `.agents/context/2026-10-08-831-copy-refusals.md`.
+
+### Third copy refusal and live repair, 2026-10-09 00:01Z
+
+Haynes-ops #3613/#3614 restored all six schedules, LazyLibrarian/Kavita and Libretto acquisition.
+Actual checks at 23:57:28Z show four Flux scopes unsuspended/Ready at `1ed0d32de`, all owned
+Jobs/Pods absent and primary PostgreSQL 16 owned sessions zero. The watcher completed at
+23:57:34Z, 155.566417 seconds after first stop. Current checks and the clean normal Claude review
+were read before merge; both extra worktrees were removed.
+
+All eight publisher checks and explicit normal-write profiles passed. SOURCE was created but its
+Job validation refused before binding or a census; actual SOURCE UID/transient session history
+are unknown. MAIN was never created and zero copies moved. An exact server dry-run reproduced
+only the API's omission of `/tmp` mount `readOnly: false`. Correct that semantic comparison
+narrowly while live. Also correct hourly cleanup ordering so identity refusal precedes every
+cleanup edit. The detailed receipts remain in `.agents/context/2026-10-08-831-copy-refusals.md`.
+Lists, guarded consolidation and the hourly gate are still pending; OC-045 remains an overnight check.
