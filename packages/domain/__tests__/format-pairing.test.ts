@@ -10,6 +10,7 @@ import {
   bookRequests,
   booksFormatPairs,
   booksItems,
+  llFormatReleases,
   gbCallBudget,
   gbQuotaState,
   integrationShelfItems,
@@ -351,6 +352,139 @@ describe('syncFormatPairs (the derived-cache single-writer)', () => {
 });
 
 describe('mintPairingWants (the paced estate-wide backfill)', () => {
+  it.each(['title', 'contributors', 'removed'] as const)(
+    'does not mint or acquire a source whose %s changes during resolve',
+    async (change) => {
+      const id = await seedItem({ title: 'Alpha', author: 'Jane Writer', mediaKind: 'book' });
+      const ll = stubLl();
+      const first = await mintPairingWants({
+        db: t.db,
+        ll: ll.bundle,
+        pacer: async () => {},
+        gb: {
+          resolveVolume: async () => {
+            await t.db
+              .update(booksItems)
+              .set(
+                change === 'removed'
+                  ? { deletedAt: new Date() }
+                  : {
+                      ...(change === 'title' ? { title: 'Beta' } : {}),
+                      attrs: {
+                        heldBooks: [
+                          {
+                            title: change === 'title' ? 'Beta' : 'Alpha',
+                            author: 'Jane Writer',
+                            authors:
+                              change === 'contributors'
+                                ? ['Jane Writer', 'Other Writer']
+                                : ['Jane Writer'],
+                            isbn: null,
+                          },
+                        ],
+                      },
+                    },
+              )
+              .where(eq(booksItems.id, id));
+            return { volumeId: 'gb-alpha' };
+          },
+        },
+      });
+      expect(first).toMatchObject({ minted: 0, pushed: 0, skippedUncertainHeld: 1 });
+      expect(await t.db.select().from(bookRequests)).toHaveLength(0);
+      expect(ll.calls).toHaveLength(0);
+      if (change === 'title') {
+        const next = await mintPairingWants({
+          db: t.db,
+          ll: ll.bundle,
+          pacer: async () => {},
+          gb: stubGb(() => 'gb-beta').gb,
+        });
+        expect(next).toMatchObject({ minted: 1, pushed: 1 });
+        expect((await t.db.select().from(bookRequests))[0]?.title).toBe('Beta');
+      }
+    },
+  );
+
+  it.each(['addBook', 'queueBook'] as const)(
+    'stops later acquisition after a source change during %s',
+    async (boundary) => {
+      const id = await seedItem({ title: 'Alpha', author: 'Jane Writer', mediaKind: 'book' });
+      const calls: string[] = [];
+      const changed = async () =>
+        t.db
+          .update(booksItems)
+          .set({
+            title: 'Beta',
+            attrs: {
+              heldBooks: [
+                { title: 'Beta', author: 'Jane Writer', authors: ['Jane Writer'], isbn: null },
+              ],
+            },
+          })
+          .where(eq(booksItems.id, id));
+      const ll = {
+        write: {
+          addBook: async () => {
+            calls.push('addBook');
+            if (boundary === 'addBook') await changed();
+            return 'OK';
+          },
+          queueBook: async () => {
+            calls.push('queueBook');
+            if (boundary === 'queueBook') await changed();
+            return 'OK';
+          },
+          searchBook: async () => {
+            calls.push('searchBook');
+            return 'OK';
+          },
+        },
+      } as unknown as LazyLibrarianClientBundle;
+      const report = await mintPairingWants({
+        db: t.db,
+        ll,
+        pacer: async () => {},
+        gb: stubGb(() => 'gb-alpha').gb,
+      });
+      expect(report.skippedUncertainHeld).toBe(1);
+      expect(calls).toEqual(boundary === 'addBook' ? ['addBook'] : ['addBook', 'queueBook']);
+      const [want] = await t.db.select().from(bookRequests);
+      expect(want?.audioStatus).toBe(boundary === 'queueBook' ? 'wanted' : 'requested');
+      expect(want?.unroutableReason).toBeNull();
+      if (boundary === 'queueBook') {
+        // The queued old identity remains owned. A stable next pass clears it and records its release,
+        // even if resolving the new identity yields no match.
+        await mintPairingWants({
+          db: t.db,
+          pacer: async () => {},
+          gb: stubGb(() => null).gb,
+          llBookOf: (bookId) =>
+            bookId === 'gb-alpha' ? { title: 'Alpha', author: 'Jane Writer' } : undefined,
+        });
+        expect(
+          await t.db
+            .select()
+            .from(llFormatReleases)
+            .where(eq(llFormatReleases.llBookId, 'gb-alpha')),
+        ).toMatchObject([{ format: 'audiobook', reason: 'reidentified' }]);
+      }
+    },
+  );
+
+  it('still mints and pushes an unchanged verified source', async () => {
+    await seedItem({ title: 'Alpha', author: 'Jane Writer', mediaKind: 'book' });
+    const ll = stubLl();
+    const report = await mintPairingWants({
+      db: t.db,
+      ll: ll.bundle,
+      pacer: async () => {},
+      gb: stubGb(() => 'gb-alpha').gb,
+    });
+    expect(report).toMatchObject({ minted: 1, pushed: 1, skippedUncertainHeld: 0 });
+    expect(ll.calls.map((call) => call.cmd)).toEqual(['addBook', 'queueBook', 'searchBook']);
+  });
+
   const day = (n: number) => new Date(Date.UTC(2026, 6, n));
 
   async function seedUnpairedBooks(n: number): Promise<string[]> {

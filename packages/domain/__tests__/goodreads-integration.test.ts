@@ -399,8 +399,106 @@ describe('loadLibraryMatcher', () => {
     });
     const match = await loadLibraryMatcher(t.db);
     expect(match('The Way of Kings', 'Brandon Sanderson')?.mediaKind).toBe('book');
-    expect(match('Way of Kings: A Novel', 'Sanderson')).not.toBeNull(); // subtitle + partial author
+    expect(match('Way of Kings: A Novel', 'B. Sanderson')).not.toBeNull(); // edition noise + real initials
+    expect(match('Way of Kings: A Novel', 'Sanderson')).toBeNull(); // a surname alone cannot prove the credit
+    expect(match('The Way of Kings', 'Walter Mosley')).toBeNull();
+    expect(match('The Way of Kings', null)).toBeNull();
+    expect(match('The Way of Kings: Secret History', 'Brandon Sanderson')).toBeNull();
     expect(match('A Different Book', null)).toBeNull();
+  });
+
+  it('preserves complete source credits and distinguishes subtitle, parenthetical and volume works', async () => {
+    await t.db.insert(booksItems).values([
+      {
+        source: 'audiobookshelf',
+        mediaKind: 'audiobook',
+        externalId: 'credit-audio',
+        libraryId: '1',
+        libraryName: 'Audio',
+        title: 'Home Improvement',
+        sortTitle: 'home improvement',
+        author: 'Charlaine Harris',
+        attrs: { authors: ['Charlaine Harris', 'Toni L. P. Kelner'] },
+        deepLinkUrl: 'http://x',
+      },
+      {
+        source: 'audiobookshelf',
+        mediaKind: 'audiobook',
+        externalId: 'subtitle-audio',
+        libraryId: '1',
+        libraryName: 'Audio',
+        title: 'Mistborn: The Final Empire',
+        sortTitle: 'mistborn',
+        author: 'Brandon Sanderson',
+        deepLinkUrl: 'http://x',
+      },
+      {
+        source: 'audiobookshelf',
+        mediaKind: 'audiobook',
+        externalId: 'volume-audio',
+        libraryId: '1',
+        libraryName: 'Audio',
+        title: 'Saga (Book 1)',
+        sortTitle: 'saga',
+        author: 'Jane Writer',
+        deepLinkUrl: 'http://x',
+      },
+    ]);
+    const match = await loadLibraryMatcher(t.db);
+    expect(match('Home Improvement', 'Charlaine Harris')).toBeNull();
+    expect(match('Home Improvement', 'Charlaine Harris, Toni L. P. Kelner')?.mediaKind).toBe(
+      'audiobook',
+    );
+    expect(match('Mistborn: Secret History', 'Brandon Sanderson')).toBeNull();
+    expect(match('Mistborn: The Final Empire', 'Brandon Sanderson Jr')).toBeNull();
+    expect(match('Mistborn: The Final Empire', 'Brandon Sanderson')?.mediaKind).toBe('audiobook');
+    expect(match('Saga (Book 2)', 'Jane Writer')).toBeNull();
+    expect(match('Saga (Book 1)', 'Jane Writer')?.mediaKind).toBe('audiobook');
+  });
+
+  it('uses known Kavita held contributors rather than its preferred display author', async () => {
+    await t.db.insert(booksItems).values({
+      source: 'kavita', mediaKind: 'book', externalId: 'k-credit', libraryId: '1', libraryName: 'Books',
+      title: 'Good Omens', sortTitle: 'good omens', author: 'Neil Gaiman', deepLinkUrl: 'http://x',
+      attrs: { heldBooks: [{ title: 'Good Omens', author: 'Neil Gaiman', authors: ['Neil Gaiman', 'Terry Pratchett'], isbn: null }] },
+    });
+    const match = await loadLibraryMatcher(t.db);
+    expect(match('Good Omens', 'Neil Gaiman')).toBeNull();
+    expect(match('Good Omens', 'Neil Gaiman, Terry Pratchett')?.mediaKind).toBe('book');
+    await t.db.update(booksItems).set({ attrs: { heldBooks: [
+      { title: 'Neverwhere', author: 'Neil Gaiman', authors: ['Neil Gaiman'], isbn: null },
+      { title: 'American Gods', author: 'Neil Gaiman', authors: ['Neil Gaiman'], isbn: null },
+    ] } }).where(eq(booksItems.externalId, 'k-credit'));
+    const changed = await loadLibraryMatcher(t.db);
+    expect(changed('Good Omens', 'Neil Gaiman')).toBeNull();
+    expect(changed('Neverwhere', 'Neil Gaiman')?.mediaKind).toBe('book');
+    await t.db.update(booksItems).set({ title: 'Odyssey', author: 'Homer', attrs: { heldBooks: [
+      { title: 'The Iliad', author: 'Homer', authors: ['Homer'], isbn: null },
+    ] } }).where(eq(booksItems.externalId, 'k-credit'));
+    const iliad = await loadLibraryMatcher(t.db);
+    expect(iliad('Odyssey', 'Homer')).toBeNull();
+    expect(iliad('The Iliad', 'Homer')?.mediaKind).toBe('book');
+    await t.db.update(booksItems).set({ attrs: { heldBooks: [
+      { title: 'Odyssey', author: 'Homer', isbn: null },
+    ] } }).where(eq(booksItems.externalId, 'k-credit'));
+    expect((await loadLibraryMatcher(t.db))('Odyssey', 'Homer')).toBeNull(); // known incomplete inventory
+  });
+
+  it('preserves a mononym beside a coauthor instead of inventing one combined person', async () => {
+    await t.db.insert(booksItems).values({
+      source: 'audiobookshelf', mediaKind: 'audiobook', externalId: 'odyssey-credit',
+      libraryId: '1', libraryName: 'Audio', title: 'Odyssey', sortTitle: 'odyssey',
+      author: 'Homer', attrs: { authors: ['Homer', 'Robert Fagles'] }, deepLinkUrl: 'http://x',
+    });
+    const match = await loadLibraryMatcher(t.db);
+    expect(match('Odyssey', 'Homer Fagles')).toBeNull();
+    expect(match('Odyssey', 'Homer')).toBeNull();
+    expect(match('Odyssey', 'Homer, Robert Fagles')?.mediaKind).toBe('audiobook');
+    await t.db.update(booksItems).set({ author: 'Homer, Robert Fagles', attrs: {} })
+      .where(eq(booksItems.externalId, 'odyssey-credit'));
+    const legacy = await loadLibraryMatcher(t.db);
+    expect(legacy('Odyssey', 'Homer Fagles')).toBeNull();
+    expect(legacy('Odyssey', 'Homer, Robert Fagles')).toBeNull(); // no declared contributor boundaries
   });
 });
 

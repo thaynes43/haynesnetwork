@@ -23,6 +23,49 @@ const howey = (title: string, subtitle: string | null = null) => ({
   author: 'Hugh Howey',
 });
 
+describe('held-file title prefixes do not hide another explicitly named work', () => {
+  it.each(['and', '[and]', '&', '/', '+'])('rejects the extra work joined by %s', (connector) => {
+    const book = { title: 'Code to Zero', author: 'Ken Follett' };
+    const extra = `Code to Zero ${connector} The Man from St Petersburg`;
+    expect(heldFileNamesBook(extra, book)).toBe(false);
+    // A literal slash is a path boundary, so only the content title can carry that connector.
+    if (connector !== '/') expect(heldFileNameNamesBook(`/books/${extra}/${extra}.epub`, book)).toBe(false);
+  });
+
+  it('also rejects another volume appended to a full multiword title', () => {
+    for (const extra of ['Code to Zero: and The Man from St Petersburg', 'Code to Zero (and The Man from St Petersburg)']) {
+      expect(heldFileNamesBook(extra, { title: 'Code to Zero', author: 'Ken Follett' })).toBe(false);
+    }
+    expect(heldFileNamesBook('Harry Potter and the Goblet of Fire and Harry Potter and the Order of the Phoenix', {
+      title: 'Harry Potter and the Goblet of Fire', author: 'J.K. Rowling',
+    })).toBe(false);
+    expect(heldFileNamesBook('The Wizard of Oz and The Marvelous Land of Oz', {
+      title: 'The Wizard of Oz', author: 'L. Frank Baum',
+    })).toBe(false);
+  });
+
+  it('preserves declared subtitles, series, packaging and the collection tail', () => {
+    expect(heldFileNamesBook('Code to Zero and The Man from St Petersburg', {
+      title: 'Code to Zero', subtitle: 'The Man from St Petersburg', author: 'Ken Follett',
+    })).toBe(true);
+    expect(heldFileNamesBook('Artificial Condition / The Murderbot Diaries', {
+      title: 'Artificial Condition', author: 'Martha Wells',
+    }, { series: 'The Murderbot Diaries' })).toBe(true);
+    expect(heldFileNamesBook('Code to Zero & Deluxe Edition', {
+      title: 'Code to Zero', author: 'Ken Follett',
+    })).toBe(true);
+    expect(heldFileNamesBook('The Martian Way and Other Stories (Unabridged)', {
+      title: 'The Martian Way', author: 'Isaac Asimov',
+    })).toBe(true);
+    expect(heldFileNamesBook('NINE TOMORROWS Tales of the Near Future', {
+      title: 'Nine Tomorrows', author: 'Isaac Asimov',
+    })).toBe(true);
+    expect(heldFileNamesBook('Nine Tomorrows: Tales of the Near Future', {
+      title: 'Nine Tomorrows', author: 'Isaac Asimov',
+    })).toBe(true);
+  });
+});
+
 describe('llTitleText (LazyLibrarian writes a colon as a period)', () => {
   it('reads the period back as a part break', () => {
     expect(llTitleText('Four. The Traitor')).toBe('Four: The Traitor');

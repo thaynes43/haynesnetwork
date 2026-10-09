@@ -1,7 +1,7 @@
 # DESIGN-036: Book ⇄ audiobook format pairing — pair cache, paced system wants, dual consume buttons
 
 - **Status:** Draft
-- **Last updated:** 2026-10-08 (issue #825: verified individual-work coverage, persistent uncertain counterparts and guarded identity transitions). Prior: 2026-10-07 (a Mint Backoff ends at the same-hour run however its start jitters; the mint waits out one per-minute quota window, owed check OC-014). Prior: 2026-10-06 (the pairing writers record a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (the missing format's `grabbed` follows LazyLibrarian, and a given-up want releases its LazyLibrarian book, issues #734 and #735; see the last amendment). Prior: 2026-10-05 (a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
+- **Last updated:** 2026-10-09 (adversarial review: current-source acquisition boundaries). Prior: 2026-10-08 (issue #825: verified individual-work coverage, persistent uncertain counterparts and guarded identity transitions). Prior: 2026-10-07 (a Mint Backoff ends at the same-hour run however its start jitters; the mint waits out one per-minute quota window, owed check OC-014). Prior: 2026-10-06 (the pairing writers record a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (the missing format's `grabbed` follows LazyLibrarian, and a given-up want releases its LazyLibrarian book, issues #734 and #735; see the last amendment). Prior: 2026-10-05 (a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (a `foreign_language` park lifts when the anchor's language turns English, issue #712;
   see the last amendment). Prior: 2026-10-05 (a want is checked against its anchor's book, issue #693; see the
   amendment of that date). Prior: 2026-07-21 (**author-agreement tolerance** — the live pairing-gap diagnosis found the
   substring check refusing real pairs on initials spacing ("JRR Tolkien" ⇄ "J.R.R. Tolkien"),
@@ -889,3 +889,26 @@ The concrete regression cases are Tolkien's History of Middle-earth volume VIII 
 The same conservative credit evidence governs held-format coverage and all automatic acquisition paths. Both same-title sides with plausible but incomplete or conflicting credits wait for proof. A dropped former pair keeps its counterpart reservation and acquisition deferral across runs until complete source evidence resolves it. Existing wants retain their identities and states; only positive complete-work coverage may land them through the Request Event writer. A stricter cache must never trigger downloads to resolve an identity gap.
 
 Verification includes the two concrete regressions, complete matching coauthors as a positive control, missing and conflicting counterpart credits, single-writer compatibility, and repeated-run protection of a dropped pair and its existing wants. The temporary GitOps hold on the pairing schedule ends after the corrected image and a native source refresh are verified. The other book schedules and Libretto stay active throughout that repair.
+
+## Amendment — 2026-10-09: source identity is rechecked after asynchronous acquisition work
+
+A local PostgreSQL 16 reproduction changed a current Kavita anchor from *Alpha* to *Beta* inside the Google
+Books resolver. The mint still wrote an Alpha request with its ebook landed and queued/searched Alpha's audio.
+A run's initial mirror snapshot cannot authorize acquisition after its source identity changes during an await.
+
+The mint rereads only its anchor by id before resolving, before its request write and before each external
+add, queue and search boundary. Current proof requires an undeleted source of the same media kind, the existing
+English/unknown-language policy, one verified non-uncertain work, the same full pairing title, complete agreeing
+contributors and equal normalized ISBN. Changed or unread proof defers this attempt through `skippedUncertainHeld`;
+it neither mints from stale evidence nor creates a permanent park. The next run may resolve the new identity.
+
+The request transaction locks an existing request first, then takes `FOR SHARE` on its anchor while checking
+proof and writing. This matches the existing repair writer's request-before-anchor order. No transaction or
+row lock spans an external await. A source change during add stops queue/search; a change during queue stops
+search. These checks bound the separate-system race: a source can still change after the last read and before
+a remote write, because PostgreSQL and LazyLibrarian have no common transaction.
+If queue already succeeded, its request still records `wanted` ownership before deferring search. The next
+identity transition can then release that abandoned format instead of leaving an unowned LazyLibrarian queue.
+
+Verification uses controlled resolver/add/queue source changes and a stable-source positive control; it performs
+no live acquisition or destructive experiment and no repeated full-library recomputation.

@@ -9,6 +9,15 @@
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
 
+## ▶ 2026-10-09: adversarial review of the post-#746 books repair wave
+
+Five current failure cases reproduced and fixed: distinct collection requests erased by false coverage, Goodreads
+false held proof, pairing source changes during acquisition, census extra-work prefix acceptance, and LL unqueue
+using stale owners. Technical scope/provenance, regressions and bounded cross-system race limits are in
+`.agents/context/2026-10-09-adversarial-books-review.md`. The change is prepared for PR validation and coordinated
+shipping; required checks, advisory review and deployment evidence must be completed before calling it shipped.
+The #825 operational completion and its owed checks remain separate below.
+
 ## ▶ 2026-10-08 / 10-09: #825 EPUB series migration mostly done; Codex out until 10-15
 
 **Rulings.** Owner 2026-10-07: one Kavita series per book (#825); same-title books by different authors get a

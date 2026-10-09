@@ -19,8 +19,8 @@
 //
 // A LIVE request (the owner rule, `liveLlFormatOwners`): an unparked, non-comic request pointing at the book whose
 // acquired formats include that one (`llAcquiredFormats`), and, for a goodreads want, whose shelf item is still on the
-// shelf and whose link is not unlinked. Another person's request is never cancelled: the drain asks the owner rule again
-// at drain time, after this run's own mints and pushes.
+// shelf and whose link is not unlinked. The drain protects another person's request by checking the owner rule after
+// this run's own mints and pushes, and again after its final LazyLibrarian read; the final check and API write are not atomic.
 //
 // The census (`findOrphanLlWants`): every LazyLibrarian format that reads `Wanted`, is not held and has no live owner.
 // It is the measurement the adversarial review (#731, R-02) asked for, reported by format-pairing every run.
@@ -165,6 +165,40 @@ async function rereadLlBook(
 }
 
 /**
+ * Request writers or library sync may change a format's protection while the final LazyLibrarian read is in flight.
+ * A still-queued pairing predecessor with a removed anchor conservatively keeps its format until the pairing settle
+ * pass resolves its replacement or clears its id. Scope that check to this book and format, without repeating full
+ * library matching per release, then read current live owners. These reads and the remote API write are not atomic.
+ */
+async function currentLlFormatProtection(
+  db: DbClient | undefined,
+  llBookId: string,
+  format: LlFormat,
+): Promise<'owned' | 'removed_pairing' | null> {
+  const [removedPairing] = await resolveDb(db)
+    .select({ id: bookRequests.id })
+    .from(bookRequests)
+    .innerJoin(booksItems, eq(booksItems.id, bookRequests.pairingBooksItemId))
+    .where(
+      and(
+        eq(bookRequests.origin, 'pairing'),
+        eq(bookRequests.llBookId, llBookId),
+        isNull(bookRequests.unroutableReason),
+        isNull(bookRequests.comicStatus),
+        isNotNull(booksItems.deletedAt),
+        eq(booksItems.mediaKind, format === 'audiobook' ? 'book' : 'audiobook'),
+        // The pairing leg of llQueuedFormats: only a pushed or grabbed missing format was queued by the app.
+        inArray(format === 'audiobook' ? bookRequests.audioStatus : bookRequests.ebookStatus, ['wanted', 'grabbed']),
+      ),
+    )
+    .limit(1);
+  if (removedPairing) return 'removed_pairing';
+  // Keep the small per-book owner query last, immediately before the remote write.
+  const owners = await liveLlFormatOwners(db, [llBookId]);
+  return owners.get(llBookId)?.has(format) ? 'owned' : null;
+}
+
+/**
  * Drain the pending LazyLibrarian Releases (see the file header). Reads LazyLibrarian once, and only when a release is
  * pending; a failed or empty read decides nothing (every row stays pending). Never throws for one row's LazyLibrarian
  * error: it is logged, counted and kept for the next run. Logs `ll_format_unqueued` per unqueue and `ll_release_settled`
@@ -236,7 +270,12 @@ export async function drainLlReleases(input: {
         });
         continue;
       }
-      decision = decideLlRelease({ row: fresh, format: row.format, owned });
+      decision = decideLlRelease({ row: fresh, format: row.format, owned: false });
+      if (decision === 'unqueue') {
+        const protection = await currentLlFormatProtection(input.db, row.llBookId, row.format);
+        if (protection === 'removed_pairing') continue;
+        if (protection === 'owned') decision = 'owned';
+      }
     }
     const meta = {
       site: input.site,
@@ -370,7 +409,11 @@ export async function unqueueOrphanLlWants(input: {
     }
     // The same last look as the drain: skip a format that is no longer `Wanted` (or that the read cannot see).
     const fresh = await rereadLlBook(input.ll, orphan.llBookId);
-    if (fresh === null || decideLlRelease({ row: fresh, format: orphan.format, owned: false }) !== 'unqueue') {
+    if (
+      fresh === null ||
+      decideLlRelease({ row: fresh, format: orphan.format, owned: false }) !== 'unqueue' ||
+      (await currentLlFormatProtection(input.db, orphan.llBookId, orphan.format)) !== null
+    ) {
       report.skipped += 1;
       report.rows.push({ ...orphan, action: 'skip' });
       continue;
