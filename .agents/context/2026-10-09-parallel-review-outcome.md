@@ -59,9 +59,9 @@ fix; it is not a claim that collections and overlays were separately rerun.
 ## Inherited #825 assurance
 
 Production acquisition is on. `STRIP_SERIES_METADATA=0`; #3571 remains held.
-The unused drafts #3622/#3623 were closed without application. Prepared successor
-drafts #3659/#3660 have also never been applied. Old worktrees remain under the
-configured rescue/sweeper policy.
+The unused drafts #3622/#3623 and successor drafts #3659/#3660 were closed
+without merge or application; their branches remain preserved. Old worktrees
+remain under the configured rescue/sweeper policy.
 
 The third isolated Ransom fixture reached the actual pinned native scanner. All
 82 schemas, 34,433 rows and IDs remained; all 77 other tables were unchanged,
@@ -74,12 +74,49 @@ source uses nondeterministic cover colors; the successor must bind encoded cover
 bytes and the exact native output format rather than predict one random sample.
 No production writer is approved by this diagnostic.
 
-Read the current ops source/proof records before another phase. LIVE census host
-finalization, Normal-only recovery and native projection/inverse source successors
-are being independently reviewed in #3674/#3672/#3676. Every actual run needs its
-own newly frozen packet and exact-command GO; an expired diagnostic baseline never
-supplies COPY authority. Shared CI cache correction #3677 must retain canonical
-digests, full tests and publication provenance.
+The final complete LIVE diagnostic used the signed writer runtime and separately
+hash-reviewed two-reader source closure. It completed in **165.603374 seconds**:
+1,964 EPUB rows, 4,819 file fingerprints and the current three selected paths
+(2,159,232 bytes). Exact artifact/ACK, Kubernetes Job completion with exit 0 and foreground
+UID cleanup/full union absence passed. Ops
+[#3680](https://github.com/thaynes43/haynes-ops/pull/3680) retains the actual proof.
+Its original earliest-byte-plus-300-second clock expired honestly; it is
+permanently non-COPY and cannot be restamped or adopted for a later mutation.
+
+The one separately authorized Normal-only rehearsal proved actual suspension and
+fresh same-UID handler drains for both parents, four apps and the Source while
+services remained Normal. It restored all seven owned holds and annotations,
+then proved fresh Job/Pod union and both PG leases absent; watcher exit and
+unchanged Deployment/Pod identities were verified independently. It **missed
+the original 50-second recovery budget**: restoration began 22:29:08.925175Z,
+missed at 22:29:58.925777Z, and completed 22:31:07.270425Z (**118.345250s**).
+The result is `RECOVERED_AFTER_MISSED_BUDGET`, not an in-budget pass.
+Ops [#3685](https://github.com/thaynes43/haynes-ops/pull/3685) records the result and
+the narrow atomic/cold-state completion correction. The unresolved timing gate,
+next bounded instrumentation and unchanged guards/budgets are in ops
+[#3684](https://github.com/thaynes43/haynes-ops/issues/3684). Per-call timings were
+not retained, so no quantified bottleneck or ready-for-Stop claim is justified.
+
+The latest isolated Ransom v8 attempt also returned **UNKNOWN**, with exact UID
+cleanup and full native union absence. Before/after-Build equality and its durable
+ACK passed; after-bind/scan metadata projection, the inverse and native zero-exit
+completion remain unproved. Ops
+[#3683](https://github.com/thaynes43/haynes-ops/pull/3683) records the actual result
+and the concrete missing `IDefaultParser` dependency in native `BasicParser`
+construction. Source correction and signed fixture publication are preparation;
+they do not prove another scan or inverse and authorize no new Job.
+The corrected fixture `53dfa067` was signed and published from source `5dda7676`
+by [main run 38000667440](https://github.com/thaynes43/haynes-ops/actions/runs/38000667440).
+Its full 13-module/SDK closure passed, receipt
+`889403dea9d7724d7bf3bd1cd13a82b0d3bee1c5df50f8e54ddc53b720449ac1`.
+The CLOSED successor pin and publication record are in ops
+[#3686](https://github.com/thaynes43/haynes-ops/pull/3686); the native scan/inverse
+gate remains pending, with no successor Job authorization.
+
+Every future actual phase needs a newly frozen packet and exact-command approval.
+The merged host/fixture/CI source improvements preserve full finite checks and
+canonical image provenance; they grant no production write authority. Neither
+the expired LIVE diagnostic nor Normal safety recovery closes the COPY gate.
 
 #831/#864, reading lists and hourly enable remain open. Ransom's July 27 reading is
 already past the 30-day idle threshold; preserve the folder hold for the separate
@@ -87,5 +124,5 @@ native preservation proof, not another 30-day delay. The minimum Pathfinder scop
 is two duplicate extras; preserve the authoritative EPUB/PDF and genuine Visitors.
 Full COPY still requires current saved-state checks, complete synchronized caller
 closure, fresh actual fenced captures and original service/lease budgets. No
-production catalog/EPUB/library/list write or Stop/pause was performed by these
-diagnostics.
+production catalog/EPUB/library/list write or service Stop was performed by these
+diagnostics. The Normal rehearsal's temporary owned Flux holds were fully retired.

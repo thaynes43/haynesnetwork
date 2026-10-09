@@ -1,5 +1,11 @@
 # #825 completion preflight, 2026-10-09
 
+This is the earlier 15:23/15:34Z checkpoint, retained as history. Current deploy,
+complete non-COPY LIVE diagnostic, missed-budget Normal recovery and isolated
+Ransom UNKNOWN status are in `2026-10-09-parallel-review-outcome.md` and the top
+of HANDOFF/PLAN-074. The original packets and clocks remain unchanged; this
+checkpoint does not authorize another runtime stage or production write.
+
 Read-only checkpoint following the adversarial books review. App PR
 [#866](https://github.com/thaynes43/haynesnetwork/pull/866) merged at 15:23:46Z as
 `68a3ccd9ce59c69983b7f2d3962a0d00fce0ab41`; its exact tested head was

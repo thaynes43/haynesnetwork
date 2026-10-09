@@ -4,7 +4,22 @@
 - **Satisfies:** issue #825, ADR-105/106; DESIGN-024/028/036/037 amendments dated 2026-10-07
 - **Validation:** `.agents/context/2026-10-07-one-kavita-series-per-book.md`, OC-045
 
-### Current completion gates, 2026-10-09 15:23Z
+### Current assurance status, 2026-10-09
+
+The original parallel review and Kometa tasks are complete: v0.110.5 is deployed,
+and the verified Kometa operations run is 91s. The latest authoritative outcome
+is `.agents/context/2026-10-09-parallel-review-outcome.md` and the top of HANDOFF.
+The complete LIVE diagnostic passed its Job/ACK/cleanup proof but remains
+permanently non-COPY and expired. Normal-only containment recovered all owned
+holds after missing its original 50-second gate; ops issue #3684 retains the
+unresolved timing work without widening any budget. The latest isolated Ransom
+result is UNKNOWN; source correction/publication does not prove scan/inverse.
+Production duplicate cleanup, catalog/EPUB repair, reading-list application and
+hourly enable remain unperformed. #825/#831/#864 and OC-046/OC-047 remain gated;
+draft #3571 is held. Unused Stop/inverse pairs #3622/#3623/#3659/#3660 are closed.
+No retained diagnostic or prepared profile grants a new runtime phase.
+
+### Earlier completion gates, 2026-10-09 15:23Z (historical)
 
 App #866 merged as `68a3ccd9` after five proved adversarial identity/state fixes and the Goodreads
 coauthor sibling; v0.110.5 deployment is pending. The current read-only checkpoint is
