@@ -1814,6 +1814,8 @@ Pod/node/mount and immutable program identity. Partial or portable fingerprints 
 omit device identity cannot support reuse.
 
 SOURCE is the read-only census Job; MAIN is the manual copy-consolidation Job.
+The trusted assembly is the pinned preparation program that verifies captured
+inputs and builds the writer's snapshot without mutating source systems.
 Inside the short window, SOURCE still owns its primary PostgreSQL 16 read-only SHARE
 fence and freshly captures all app and vendor dependencies after the service stops.
 It traverses the entire library again. The trusted assembly compares the complete
