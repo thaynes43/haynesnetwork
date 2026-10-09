@@ -1815,8 +1815,9 @@ omit device identity cannot support reuse.
 
 Inside the short window, SOURCE still owns its primary PostgreSQL 16 read-only SHARE
 fence and freshly captures all app and vendor dependencies after the service stops.
-It traverses the entire library again and compares the complete path set and every
-full fingerprint with the reviewed live census. Only exact matches may reuse those
+It traverses the entire library again. The trusted assembly compares the complete
+path set and every full fingerprint with the reviewed live census while SOURCE's
+lease remains healthy. Only exact matches may reuse those
 byte and OPF facts; additions, removals, races, unsafe links or any changed field
 refuse the operation and restore production. Retain the original byte-capture clocks
 and hashes alongside the distinct current validation clocks. No old capture becomes
