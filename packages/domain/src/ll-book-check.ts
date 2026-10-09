@@ -784,6 +784,24 @@ function namesNothingElse(
     ...(series ? distinctiveWords(series, authorWords) : []),
   ]);
   const head = words(recordTitle).join(' ');
+  // A whole-title prefix followed by an explicit list connector can name a second work, not a subtitle. Check it
+  // before splitTitle's first-part fallback as well ("Code to Zero / The Man from St Petersburg").
+  const folded = fold(title);
+  const tokens = [...folded.matchAll(/[a-z0-9]+/g)];
+  const headWords = words(recordTitle);
+  if (headWords.length > 0 && headWords.every((w, i) => tokens[i]?.[0] === w)) {
+    const last = tokens[headWords.length - 1]!;
+    const tail = folded.slice(last.index + last[0].length).trim();
+    // Skip Unicode punctuation/whitespace, except the connector characters themselves. This covers decorated
+    // conjunctions without interpreting an ordinary unmarked subtitle as another work.
+    const connector = /^(?:(?![+/])[\p{P}\s])*(?:and\b|[+/])\s*/u.exec(tail);
+    if (connector) {
+      const suffix = distinctiveWords(tail.slice(connector[0].length), authorWords)
+        .filter((w) => !PACKAGING_WORDS.has(w));
+      const otherStories = suffix.length === 2 && suffix[0] === 'other' && suffix[1] === stem('stories');
+      if (!otherStories && suffix.some((w) => !allowed.has(w))) return false;
+    }
+  }
   if (recordWords.length >= 2 && `${words(title).join(' ')} `.startsWith(`${head} `)) return true;
   const partWords = splitTitle(title)
     .work.flatMap((part) => [part, ...LEADING_INDEX.map((re) => part.replace(re, ''))])

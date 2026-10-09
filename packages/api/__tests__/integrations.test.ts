@@ -4,7 +4,7 @@
 // and the manual re-search ownership check.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { GbVolume, GoodreadsRssClient, GoodreadsShelfItem, GoogleBooksClient } from '@hnet/goodreads';
-import type { LazyLibrarianClientBundle } from '@hnet/domain';
+import { syncBooks, type LazyLibrarianClientBundle } from '@hnet/domain';
 import { bootMigratedDb, caller, createUser, makeCtx, sessionUser, type TestDb } from './helpers';
 import type { TRPCContext } from '../src/trpc';
 
@@ -95,14 +95,21 @@ describe('integrations router — link + shelf', () => {
 
   it('runs the FIRST shelf sync on link so the wall is not a "0 of 0" dead-end (fix 3a)', async () => {
     const admin = await createUser(t.db, { admin: true });
+    await syncBooks({ db: t.db, syncedSources: [], rows: [{ source: 'kavita', mediaKind: 'book', externalId: 'held-good-omens',
+      libraryId: '1', libraryName: 'Books', title: 'Good Omens', sortTitle: 'good omens', author: 'Neil Gaiman', deepLinkUrl: 'http://x',
+      narrator: null, seriesName: null, year: null, releasedAt: null, genres: [], coverRef: null,
+      pageCount: null, wordCount: null, durationSeconds: null, sizeBytes: null, sourceAddedAt: null, sourceUpdatedAt: null,
+      attrs: { heldBooks: [{ title: 'Good Omens', author: 'Neil Gaiman', authors: ['Neil Gaiman', 'Terry Pratchett'], isbn: null }] },
+    }] });
     const shelfItem: GoodreadsShelfItem = {
-      externalBookId: 'gr-dune',
-      title: 'Dune',
-      author: 'Frank Herbert',
-      isbn: '9780593099322',
+      externalBookId: 'gr-good-omens',
+      title: 'Good Omens',
+      author: 'Neil Gaiman',
+      isbn: null,
       coverUrl: null,
       shelvedAt: new Date(),
     };
+    const llCalls: string[] = [];
     const ctx: TRPCContext = {
       ...makeCtx(t.db, sessionUser(admin)),
       // ADR-057 — the link now defaults to ALL FOUR shelves; the book lives on to-read only (the
@@ -111,12 +118,18 @@ describe('integrations router — link + shelf', () => {
         fetchShelf: async (_userId, shelf) => (shelf === 'to-read' ? [shelfItem] : []),
       }),
       googleBooks: stubGoogleBooks({
-        volumeId: 'gb-dune',
-        isbn13: '9780593099322',
+        volumeId: 'gb-other-edition',
+        title: 'Good Omens',
+        authors: ['Neil Gaiman', 'Terry Pratchett'],
+        isbn13: null,
         categories: ['Fiction'],
         isComic: false,
       }),
-      lazylibrarian: stubLazyLibrarian(),
+      lazylibrarian: { ...stubLazyLibrarian(), write: {
+        addBook: async () => { llCalls.push('addBook'); },
+        queueBook: async () => { llCalls.push('queueBook'); },
+        searchBook: async () => { llCalls.push('searchBook'); },
+      } } as unknown as LazyLibrarianClientBundle,
     };
 
     // Before the sync stamps last_synced_at, the wire signals PENDING (the UI shows "first sync in progress",
@@ -131,7 +144,9 @@ describe('integrations router — link + shelf', () => {
       requests = (await caller(ctx).integrations.requests()).requests;
     }
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.title).toBe('Dune');
+    expect(requests[0]?.title).toBe('Good Omens');
+    expect(requests[0]?.ebookStatus).toBe('landed');
+    expect(requests[0]?.audioStatus).toBe('landed');
 
     // And once synced, last_synced_at is stamped → the card leaves the pending state. POLL for it: the
     // request mint (step 3 of syncGoodreadsIntegration) lands well before markIntegrationSynced (step 6),
@@ -143,6 +158,7 @@ describe('integrations router — link + shelf', () => {
       lastSyncedAt = (await caller(ctx).integrations.shelf()).integration.lastSyncedAt;
     }
     expect(lastSyncedAt).not.toBeNull();
+    expect(llCalls).toEqual([]);
 
     await caller(ctx).integrations.unlink();
   });

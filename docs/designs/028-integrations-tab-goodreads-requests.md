@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-09 (duplicate-copy proof windows, issue #831). Prior: 2026-10-07 (amendment: admins read a want's Request Events on its Wanted detail, issue #792). Prior: 2026-10-07 (Books Census follow-up, issue #799: the first live run and its repair; titles that are one string without a leading article). Prior: 2026-10-07 (Books Census follow-up: a file whose title is the record's with words cut, issue #799). Prior: 2026-10-06 (amendment: the collection force-search and the one re-request read the language again after their own addBook, issue #794). Prior: 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-09 (final unqueue ownership checks; duplicate-copy proof windows, issue #831). Prior: 2026-10-07 (amendment: admins read a want's Request Events on its Wanted detail, issue #792). Prior: 2026-10-07 (Books Census follow-up, issue #799: the first live run and its repair; titles that are one string without a leading article). Prior: 2026-10-07 (Books Census follow-up: a file whose title is the record's with words cut, issue #799). Prior: 2026-10-06 (amendment: the collection force-search and the one re-request read the language again after their own addBook, issue #794). Prior: 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -74,6 +74,20 @@ possibly-truncated (non-empty, non-comic) category list, which recovers Scott Pi
 marker still routes (a documented honest gap — no ISBN column on the mirror, ADR-055 C-06).
 
 ### D-04 — The sync flow (`goodreads-sync` mode → domain orchestrator)
+
+**2026-10-09 review clarification — primary-only shelf credits.** Goodreads RSS exposes one `author_name`, so it
+cannot prove the complete credits of a coauthored held book. Both the hourly enrichment and first-link enrichment
+retain the fetched Google Books contributor array in memory, with its volume id and full title. It may supply the
+request's matching roster only when the fresh volume id and full title agree with the shelf item and exactly one
+declared credit strictly agrees with its primary author. Contributor boundaries remain explicit; neither a display
+comma nor a substring match supplies this proof. This does not rewrite the shelf's primary-author snapshot.
+
+When a same-full-title held source names that primary credit but its complete roster cannot agree, automatic
+acquisition defers for this sync. The shelf and request still mirror honestly, without a false library match or a
+new permanent hold. No push, Skipped sweep, gone-book re-request or Kapowarr routing is selected for that deferred item; a fresh
+sync retries the identity proof. A validated complete roster can match a held copy across editions and avoid a
+duplicate request. An unheld book remains eligible for acquisition. The existing bounded library snapshot is a
+point-in-time read, not a lock across later remote writes.
 
 `packages/sync/goodreads.ts` `runGoodreadsSync`: for each LINKED integration, fetch+enrich each
 shelf (external reads), then hand the enriched snapshot to the domain orchestrator. Per-integration
@@ -898,11 +912,12 @@ An empty or failed read, or a failed `unqueueBook`, decides nothing: the row sta
 `llReleasesUnqueued`, `llReleasesSettled`, `llReleasesPending`, `llReleasesFailed` (format-pairing report; `llReleases` on
 the goodreads-sync run report); logs `ll_format_unqueued`, `ll_release_settled`.
 
-**The owner rule (`liveLlFormatOwners`) is how another person's request is never cancelled.** A live owner of a book format
+**The owner rule (`liveLlFormatOwners`) protects another person's request.** A live owner of a book format
 is an unparked, non-comic request pointing at that LazyLibrarian id whose formats include it: both for a goodreads want
-(while its shelf item is on the shelf and its link is not `unlinked`), the anchor's missing format for a pairing want (a
-removed anchor's want included, since the reconcile still works it), the collection's format for a collection want. It is
-read at drain time, after the run's own mints and pushes, so a want that took the same book in the meantime keeps it.
+(while its shelf item is on the shelf and its link is not `unlinked`), the anchor's missing format for a pairing want whose
+anchor is still live, the collection's format for a collection want. A removed pairing anchor's unresolved replacement
+is protected separately by the transition rule. Ownership is read after the run's own mints and pushes, then again at
+the final unqueue decision as described below.
 
 **The confined write surface.** `unqueueBook` joins `@hnet/lazylibrarian/write` (`cmd=unqueueBook&id=&type=`), imported only
 by `packages/domain`. LazyLibrarian's `_unqueuebook` is, like `_queuebook`, an unguarded
@@ -914,6 +929,20 @@ format snatched inside it still imports (the post-processor works from LazyLibra
 stays `Skipped`, which is where the release was taking it. A re-recorded release always moves `updated_at` forward
 (`GREATEST(old + 1 ms, now)`), so the drain, which deletes only the row it read, never drops a release recorded after its
 read. No LazyLibrarian database write, only its API.
+
+**Amendment 2026-10-09 (adversarial review, PR #751): ownership at the final read.** The drain's initial owner and
+removed-pairing-transition snapshots are insufficient while it awaits LazyLibrarian's per-book re-read: another job
+can mint or revive a request for the same format in that interval. After that re-read, immediately before each
+`unqueueBook`, both the drain and the one-off orphan repair perform two small reads scoped to that book and format:
+an unparked pairing want whose removed anchor's missing format is still `wanted` or `grabbed` (the queued-format rule),
+then its live format owners. The initial derived transition protection remains; no full-library identity matching is
+repeated per unqueue. A new owner prevents the write (the drain settles its release as `owned`). A still-queued removed
+pairing want conservatively prevents it and keeps the drain's release pending, even if the initial transition snapshot
+found no successor: the existing `settleRemovedPairingWants` pass clears a genuinely obsolete id, after which cleanup
+can proceed, or retains it while a replacement is unresolved. The orphan repair counts either protection as `skipped`.
+This removes the stale initial snapshot from the final decision; it does not make the PostgreSQL ownership
+read and LazyLibrarian's unconditional API write atomic. There is no common per-book lock across the request writers
+and LazyLibrarian, so a request that changes after the final protection read can still race the remote write.
 
 **Coming back.** Every way back into a want re-queues it through paths that already exist: a lifted `foreign_language` or
 `no_english_edition` park and a re-shelved book reconcile, read `Skipped` (`missing`), and the Skipped sweep queues and
@@ -1360,6 +1389,16 @@ one string once spaces and punctuation go are the same book. Otherwise:
    History of Middle-earth Vol-7- "), must have only words of the record (title, subtitle, the file's own series name),
    packaging words aside ("Omnibus", "Edition", "Kindle Single", "Deluxe", "Box Set"), or the title must start with the
    record's whole title of two words or more and only add a subtitle after it ("NINE TOMORROWS Tales of the Near Future").
+
+   **Amendment 2026-10-09 (adversarial review, PR #791): an explicit second work is not a subtitle.** Before either
+   the whole-title prefix shortcut or a split-part match, a whole-record-title prefix followed by `and`, `[and]`,
+   `&`, `/` or `+` refuses distinctive suffix words the record's subtitle, the file's declared series or packaging
+   does not explain. Unicode punctuation and whitespace before the explicit connector do not hide it, including
+   parentheses, brackets, commas, dashes and repeated decoration. "Code to Zero [and] The Man from St Petersburg"
+   cannot satisfy "Code to Zero", including when
+   the first split part matches exactly. A declared `BookSub`, series or edition suffix remains allowed, as does
+   "and Other Stories". Implicit and colon subtitles retain the existing rule. This closes the inverse of the
+   shorter-file collection mismatch repaired in #805/#806; the census must report the longer file as `wrong_file`.
 
 The census judges a file by its content when it can (`contentNamesBook`): the primary title (the EPUB or MOBI title, the
 album tag) decides, and the other titles can only clear it, never condemn it. An album tag is often the series

@@ -18,6 +18,8 @@
 //     goodreads-sync discipline). The pairing path touches nothing on the confined LL surface
 //     beyond addBook/queueBook/searchBook, plus (issue #735) the LazyLibrarian Release's unqueueBook for a format a
 //     want gave up — the MAM governor is structurally untouched (C-08).
+import { declaredCredits, pairingAuthorsAgree, pairingCreditsAgree, pairingTitleKey, type PairingCredit } from './pairing-work-identity';
+export { pairingAuthorsAgree, pairingCreditsAgree, pairingTitleKey } from './pairing-work-identity';
 import {
   bookRequests,
   booksFormatPairs,
@@ -27,6 +29,7 @@ import {
   type BooksMediaKind,
   type DbClient,
   type FormatPairMatchKind,
+  type Transaction,
 } from '@hnet/db';
 import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { gbQueryTitle, titleVolumeNumbers, volumeNumbersAgree } from '@hnet/goodreads';
@@ -215,71 +218,6 @@ function authorsAgree(a: string, b: string): boolean {
   return at.length <= bt.length ? tokensAlign(at, bt) : tokensAlign(bt, at);
 }
 
-/** Complete credited names: partial surnames cannot turn lost CSV boundaries into author proof. */
-export function pairingAuthorsAgree(a: string | null, b: string | null): boolean {
-  const normalize = (name: string): string => name.normalize('NFKD').replace(/\p{M}/gu, '')
-    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const credits = (value: string | null): string[] => {
-    const parts = (value ?? '').split(/\s*,\s*/);
-    // Explicit complete coauthor credits retain their boundaries. Surname-first or fragmented
-    // credits are not split into guessed aliases.
-    return parts.length > 1 && parts.every((part) => normalize(part).split(' ').length >= 2)
-      ? parts : [value ?? ''];
-  };
-  const tokens = (name: string, other: string): string[] => normalize(name.replace(/\b[A-Z]{2,3}\b/g,
-    (compact) => {
-      const explicit = [...other.matchAll(/\b(?:[A-Z][.\s]+){2,3}/g)]
-        .some(([run]) => run.replace(/[.\s]/g, '') === compact);
-      return explicit ? compact.split('').join(' ') : compact;
-    })).split(' ');
-  const givenAgrees = (x: string, y: string): boolean => x === y ||
-    (x.length === 1 && y.startsWith(x)) || (y.length === 1 && x.startsWith(y));
-  const leftCredits = credits(a), rightCredits = credits(b);
-  if (leftCredits.length !== rightCredits.length) return false;
-  const agrees = (left: string, right: string): boolean => {
-    const l = normalize(left), r = normalize(right);
-    if (!l || !r) return false;
-    if (l === r) return l.length >= 2;
-    const lt = tokens(left, right), rt = tokens(right, left);
-    if (lt.length < 2 || rt.length < 2 || lt.at(-1)!.length < 2 || rt.at(-1)!.length < 2 ||
-      lt.at(-1) !== rt.at(-1) || !givenAgrees(lt[0]!, rt[0]!)) return false;
-    const lm = lt.slice(1, -1), rm = rt.slice(1, -1);
-    const [shorter, longer] = lm.length <= rm.length ? [lm, rm] : [rm, lm];
-    let index = 0;
-    return shorter.every((part) => {
-      while (index < longer.length) if (givenAgrees(part, longer[index++]!)) return true;
-      return false;
-    });
-  };
-  const taken = new Set<number>();
-  return leftCredits.every((left) => {
-    const index = rightCredits.findIndex((right, i) => !taken.has(i) && agrees(left, right));
-    if (index < 0) return false;
-    taken.add(index);
-    return true;
-  });
-}
-
-type PairingCredit = { author: string | null; authors?: readonly string[] };
-
-/** Explicit arrays are authoritative. A legacy display credit never expands into guessed people. */
-function declaredCredits(value: PairingCredit): string[] {
-  const raw = value.authors ?? (value.author ? [value.author] : []);
-  if (raw.some((a) => !a.trim() || a.split(',').length > 2)) return [];
-  return [...new Set(raw.map((a) => a.trim()))];
-}
-
-export function pairingCreditsAgree(a: PairingCredit, b: PairingCredit): boolean {
-  const left = declaredCredits(a), right = declaredCredits(b);
-  if (!left.length || left.length !== right.length) return false;
-  const taken = new Set<number>();
-  return left.every((credit) => {
-    const index = right.findIndex((other, i) => !taken.has(i) && pairingAuthorsAgree(credit, other));
-    if (index < 0) return false;
-    taken.add(index);
-    return true;
-  });
-}
 
 /** Negative permission only, including partial/conflicting contributor overlap. */
 export function pairingCreditsPlausible(a: PairingCredit, b: PairingCredit): boolean {
@@ -289,32 +227,6 @@ export function pairingCreditsPlausible(a: PairingCredit, b: PairingCredit): boo
     nonFinalSurnameUncertain(l, r) || nonFinalSurnameUncertain(r, l)));
 }
 
-/**
- * ADR-065 C-01 (review-hardened 2026-07-16) — the EDITION-NOISE tokens the pairing key drops.
- * Exactly these: the articles plus the packaging words the two ecosystems decorate the SAME work
- * with ("… : A Novel", "… (Unabridged)"). Nothing else — subtitles stay load-bearing.
- */
-const PAIRING_NOISE_TOKENS = new Set(['a', 'an', 'the', 'novel', 'unabridged', 'abridged', 'edition']);
-
-/**
- * The PAIRING title key — deliberately NOT the goodreads-match `normTitle` (which cuts at the first
- * ':'/'(' and would collapse DISTINCT franchise works: "Star Wars: Heir to the Empire" and
- * "Star Wars: Thrawn" share an author, and a subtitle-cutting key would mispair them). This key
- * keeps the FULL title: lowercase, collapse non-alphanumerics to single spaces, drop ONLY the
- * PAIRING_NOISE_TOKENS, and the matcher requires FULL EQUALITY of the remaining token sequence.
- * "Project Hail Mary: A Novel" ⇄ "Project Hail Mary (Unabridged)" both reduce to
- * "project hail mary"; "star wars heir to empire" ≠ "star wars thrawn". A bare stem vs a subtitled
- * edition ("Dune" vs "Dune: Book One of the Dune Chronicles") does NOT pair — the conservative
- * miss is correct (DESIGN-036 Q-02 is the upgrade path).
- */
-export function pairingTitleKey(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .split(' ')
-    .filter((w) => w.length > 0 && !PAIRING_NOISE_TOKENS.has(w))
-    .join(' ');
-}
 
 /**
  * Issue #693 — the reuse key: the full pairing title key once the series decoration is off (`gbQueryTitle`: the
@@ -1318,15 +1230,34 @@ const defaultPacer = (index: number): Promise<void> =>
 const statusOfFormat = (row: BookRequestRow, format: 'ebook' | 'audiobook') =>
   format === 'ebook' ? row.ebookStatus : row.audioStatus;
 
+/** A bounded current-source proof; no whole-library matching and no external call. */
+async function pairingMintAnchorCurrent(
+  executor: DbClient | Transaction | undefined,
+  item: PairableItem,
+  expected: Extract<PairingIdentity, { kind: 'one' }>,
+  lock = false,
+): Promise<boolean> {
+  const query = resolveDb(executor as DbClient | undefined).select().from(booksItems)
+    .where(eq(booksItems.id, item.id));
+  const [anchor] = await (lock ? query.for('share') : query);
+  if (!anchor || anchor.deletedAt !== null || anchor.mediaKind !== item.mediaKind ||
+    isForeignLanguage(readItemLanguage(anchor.attrs)) || pairingBooksItemSourceUncertain(anchor)) return false;
+  const current = pairingBooksItemIdentity(anchor);
+  const isbnKey = (value: string | null) => (value ?? '').replace(/[^0-9x]/gi, '').toUpperCase();
+  return current.kind === 'one' && pairingTitleKey(current.title) === pairingTitleKey(expected.title) &&
+    pairingCreditsAgree(current, expected) && isbnKey(current.isbn) === isbnKey(expected.isbn);
+}
+
 /**
  * Upsert ONE pairing want (single-writer, tx): insert with the held format `landed` and the missing
  * format `requested`, or refresh an existing want's snapshot + llBookId (updated_at always advances —
  * it is the retry backoff key). Records a `pairing_want_minted` / `pairing_want_refreshed` Request Event (ADR-101;
- * a refresh that changes no recorded field records none). Returns the row + whether it was freshly minted.
+ * a refresh that changes no recorded field records none). Returns null if the source proof changed.
  */
 async function upsertPairingWant(input: {
   db?: DbClient;
   item: PairableItem;
+  identity: Extract<PairingIdentity, { kind: 'one' }>;
   /** The want's title/author snapshot: the anchor's identity (the held book for a Kavita series — #661). */
   title: string;
   author: string | null;
@@ -1337,7 +1268,7 @@ async function upsertPairingWant(input: {
    */
   missKey?: string;
   now: Date;
-}): Promise<{ row: BookRequestRow; minted: boolean }> {
+}): Promise<{ row: BookRequestRow; minted: boolean } | null> {
   const missing = missingFormatFor(input.item.mediaKind);
   /** Issue #740 — the Mint Backoff columns this attempt writes: cleared once the want has an id, grown on a miss. */
   const backoffFor = (
@@ -1400,6 +1331,9 @@ async function upsertPairingWant(input: {
       .from(bookRequests)
       .where(eq(bookRequests.pairingBooksItemId, input.item.id))
       .for('update');
+    // Existing repair writers also lock the request before its anchor. Keep that order and
+    // hold the source stable only for this database proof/write, never across an external await.
+    if (!(await pairingMintAnchorCurrent(tx, input.item, input.identity, true))) return null;
     if (existing) return refresh(existing);
 
     // Review finding 2 (TOCTOU): the select-then-insert races a concurrent minter — land the insert
@@ -2363,6 +2297,10 @@ export async function mintPairingWants(
     }
     await pace(paceSeq);
     paceSeq += 1;
+    if (!(await pairingMintAnchorCurrent(input.db, item, identity))) {
+      skippedUncertainHeld += 1;
+      continue;
+    }
     if (needsGb) {
       let guarded: GuardedGbResolveResult<{ volumeId: string }> | null = null;
       let failed = false;
@@ -2435,15 +2373,21 @@ export async function mintPairingWants(
     }
 
     attempted += 1;
-    const { row, minted: isNew } = await upsertPairingWant({
+    const upsert = await upsertPairingWant({
       db: input.db,
       item,
+      identity,
       title: identity.title,
       author: identity.author,
       llBookId,
       ...(missKey ? { missKey } : {}),
       now,
     });
+    if (!upsert) {
+      skippedUncertainHeld += 1;
+      continue;
+    }
+    const { row, minted: isNew } = upsert;
     if (isNew) minted += 1;
     if (llBookId === null) {
       unmintable += 1;
@@ -2473,18 +2417,23 @@ export async function mintPairingWants(
       ?.trim()
       .toLowerCase();
     try {
+      const sourceCurrent = () => pairingMintAnchorCurrent(input.db, item, identity);
       // DESIGN-039 D-18 — addBook ONLY seats a volume LL does not already hold. When LL already has
       // it (the common case for a re-pushed want), skip addBook so LL makes ZERO Google Books calls
       // this push; queueBook + searchBook (neither hits GB) still drive the acquisition retry.
       const seatedNow =
         input.llBookOf?.(llBookId) !== undefined || (input.llHasSeededBook?.(llBookId) ?? false);
-      if (!seatedNow) await input.ll.write.addBook(llBookId);
+      if (!seatedNow) {
+        if (!(await sourceCurrent())) { skippedUncertainHeld += 1; continue; }
+        await input.ll.write.addBook(llBookId);
+      }
       // Issue #700 — the second language guard. The library's language field is not fully reliable (an item that
       // read `English` held German audio), so before the book is queued or searched, LazyLibrarian's own `BookLang`
       // is read (re-read after an addBook that first seated the book). Explicitly non-English ⇒ park, push nothing.
       // Blank or unknown ⇒ proceed.
       if (input.llBookLanguage) {
         const llLanguage = await input.llBookLanguage(llBookId, !seatedNow);
+        if (!(await sourceCurrent())) { skippedUncertainHeld += 1; continue; }
         if (isForeignLanguage(llLanguage)) {
           refusedForeignBook += 1;
           const done = await parkPairingWant({
@@ -2522,8 +2471,17 @@ export async function mintPairingWants(
         });
         continue;
       }
+      if (!(await sourceCurrent())) { skippedUncertainHeld += 1; continue; }
       await input.ll.write.queueBook(llBookId, missing);
       if (input.shouldSearch?.(llBookId, missing) ?? true) {
+        if (!(await sourceCurrent())) {
+          // The queue succeeded before the source changed: keep ownership truthful so a later
+          // identity transition records its release. No stale-source search follows that write.
+          await markPairingWantPushed({ db: input.db, requestId: row.id, llBookId, format: missing, now });
+          pushed += 1;
+          skippedUncertainHeld += 1;
+          continue;
+        }
         await input.ll.write.searchBook(llBookId, missing);
         input.onSearched?.(llBookId, missing);
         await stampRequestsSearched(input.db, [row.id], now);

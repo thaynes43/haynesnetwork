@@ -399,8 +399,106 @@ describe('loadLibraryMatcher', () => {
     });
     const match = await loadLibraryMatcher(t.db);
     expect(match('The Way of Kings', 'Brandon Sanderson')?.mediaKind).toBe('book');
-    expect(match('Way of Kings: A Novel', 'Sanderson')).not.toBeNull(); // subtitle + partial author
+    expect(match('Way of Kings: A Novel', 'B. Sanderson')).not.toBeNull(); // edition noise + real initials
+    expect(match('Way of Kings: A Novel', 'Sanderson')).toBeNull(); // a surname alone cannot prove the credit
+    expect(match('The Way of Kings', 'Walter Mosley')).toBeNull();
+    expect(match('The Way of Kings', null)).toBeNull();
+    expect(match('The Way of Kings: Secret History', 'Brandon Sanderson')).toBeNull();
     expect(match('A Different Book', null)).toBeNull();
+  });
+
+  it('preserves complete source credits and distinguishes subtitle, parenthetical and volume works', async () => {
+    await t.db.insert(booksItems).values([
+      {
+        source: 'audiobookshelf',
+        mediaKind: 'audiobook',
+        externalId: 'credit-audio',
+        libraryId: '1',
+        libraryName: 'Audio',
+        title: 'Home Improvement',
+        sortTitle: 'home improvement',
+        author: 'Charlaine Harris',
+        attrs: { authors: ['Charlaine Harris', 'Toni L. P. Kelner'] },
+        deepLinkUrl: 'http://x',
+      },
+      {
+        source: 'audiobookshelf',
+        mediaKind: 'audiobook',
+        externalId: 'subtitle-audio',
+        libraryId: '1',
+        libraryName: 'Audio',
+        title: 'Mistborn: The Final Empire',
+        sortTitle: 'mistborn',
+        author: 'Brandon Sanderson',
+        deepLinkUrl: 'http://x',
+      },
+      {
+        source: 'audiobookshelf',
+        mediaKind: 'audiobook',
+        externalId: 'volume-audio',
+        libraryId: '1',
+        libraryName: 'Audio',
+        title: 'Saga (Book 1)',
+        sortTitle: 'saga',
+        author: 'Jane Writer',
+        deepLinkUrl: 'http://x',
+      },
+    ]);
+    const match = await loadLibraryMatcher(t.db);
+    expect(match('Home Improvement', 'Charlaine Harris')).toBeNull();
+    expect(match('Home Improvement', 'Charlaine Harris, Toni L. P. Kelner')?.mediaKind).toBe(
+      'audiobook',
+    );
+    expect(match('Mistborn: Secret History', 'Brandon Sanderson')).toBeNull();
+    expect(match('Mistborn: The Final Empire', 'Brandon Sanderson Jr')).toBeNull();
+    expect(match('Mistborn: The Final Empire', 'Brandon Sanderson')?.mediaKind).toBe('audiobook');
+    expect(match('Saga (Book 2)', 'Jane Writer')).toBeNull();
+    expect(match('Saga (Book 1)', 'Jane Writer')?.mediaKind).toBe('audiobook');
+  });
+
+  it('uses known Kavita held contributors rather than its preferred display author', async () => {
+    await t.db.insert(booksItems).values({
+      source: 'kavita', mediaKind: 'book', externalId: 'k-credit', libraryId: '1', libraryName: 'Books',
+      title: 'Good Omens', sortTitle: 'good omens', author: 'Neil Gaiman', deepLinkUrl: 'http://x',
+      attrs: { heldBooks: [{ title: 'Good Omens', author: 'Neil Gaiman', authors: ['Neil Gaiman', 'Terry Pratchett'], isbn: null }] },
+    });
+    const match = await loadLibraryMatcher(t.db);
+    expect(match('Good Omens', 'Neil Gaiman')).toBeNull();
+    expect(match('Good Omens', 'Neil Gaiman, Terry Pratchett')?.mediaKind).toBe('book');
+    await t.db.update(booksItems).set({ attrs: { heldBooks: [
+      { title: 'Neverwhere', author: 'Neil Gaiman', authors: ['Neil Gaiman'], isbn: null },
+      { title: 'American Gods', author: 'Neil Gaiman', authors: ['Neil Gaiman'], isbn: null },
+    ] } }).where(eq(booksItems.externalId, 'k-credit'));
+    const changed = await loadLibraryMatcher(t.db);
+    expect(changed('Good Omens', 'Neil Gaiman')).toBeNull();
+    expect(changed('Neverwhere', 'Neil Gaiman')?.mediaKind).toBe('book');
+    await t.db.update(booksItems).set({ title: 'Odyssey', author: 'Homer', attrs: { heldBooks: [
+      { title: 'The Iliad', author: 'Homer', authors: ['Homer'], isbn: null },
+    ] } }).where(eq(booksItems.externalId, 'k-credit'));
+    const iliad = await loadLibraryMatcher(t.db);
+    expect(iliad('Odyssey', 'Homer')).toBeNull();
+    expect(iliad('The Iliad', 'Homer')?.mediaKind).toBe('book');
+    await t.db.update(booksItems).set({ attrs: { heldBooks: [
+      { title: 'Odyssey', author: 'Homer', isbn: null },
+    ] } }).where(eq(booksItems.externalId, 'k-credit'));
+    expect((await loadLibraryMatcher(t.db))('Odyssey', 'Homer')).toBeNull(); // known incomplete inventory
+  });
+
+  it('preserves a mononym beside a coauthor instead of inventing one combined person', async () => {
+    await t.db.insert(booksItems).values({
+      source: 'audiobookshelf', mediaKind: 'audiobook', externalId: 'odyssey-credit',
+      libraryId: '1', libraryName: 'Audio', title: 'Odyssey', sortTitle: 'odyssey',
+      author: 'Homer', attrs: { authors: ['Homer', 'Robert Fagles'] }, deepLinkUrl: 'http://x',
+    });
+    const match = await loadLibraryMatcher(t.db);
+    expect(match('Odyssey', 'Homer Fagles')).toBeNull();
+    expect(match('Odyssey', 'Homer')).toBeNull();
+    expect(match('Odyssey', 'Homer, Robert Fagles')?.mediaKind).toBe('audiobook');
+    await t.db.update(booksItems).set({ author: 'Homer, Robert Fagles', attrs: {} })
+      .where(eq(booksItems.externalId, 'odyssey-credit'));
+    const legacy = await loadLibraryMatcher(t.db);
+    expect(legacy('Odyssey', 'Homer Fagles')).toBeNull();
+    expect(legacy('Odyssey', 'Homer, Robert Fagles')).toBeNull(); // no declared contributor boundaries
   });
 });
 
@@ -438,6 +536,113 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
     // comic → parked out of LL (Kapowarr's domain)
     { shelf: 'to-read', externalBookId: 'gr-sp', title: 'Scott Pilgrim, Vol. 1', author: 'Bryan Lee O’Malley', isbn: null, gbVolumeId: 'gb-sp', coverUrl: null, shelvedAt: new Date(), isComic: true },
   ];
+
+  const coauthoredWant: EnrichedShelfItem = {
+    shelf: 'to-read', externalBookId: 'gr-good-omens', title: 'Good Omens', author: 'Neil Gaiman',
+    isbn: null, gbVolumeId: 'gb-other-edition', coverUrl: null, shelvedAt: null, isComic: false,
+  };
+  async function seedCoauthoredHeldBook() {
+    await t.db.insert(booksItems).values({
+      source: 'kavita', mediaKind: 'book', externalId: 'held-good-omens', libraryId: '1', libraryName: 'Books',
+      title: 'Good Omens', sortTitle: 'good omens', author: 'Neil Gaiman', deepLinkUrl: 'http://x',
+      attrs: { heldBooks: [{ title: 'Good Omens', author: 'Neil Gaiman', authors: ['Neil Gaiman', 'Terry Pratchett'], isbn: null }] },
+    });
+  }
+
+  it('defers a primary-only held candidate, then lands it on fresh complete GB proof across editions', async () => {
+    const { integration } = await seed();
+    await seedCoauthoredHeldBook();
+    const ll = stubLl(() => null);
+    const input = { db: t.db, integrationId: integration.id, syncedShelves: ['to-read'], ll: ll.bundle, pacer: async () => {} };
+    const deferred = await syncGoodreadsIntegration({ ...input, items: [coauthoredWant] });
+    expect(ll.calls).toEqual([]);
+    expect(deferred.coverage.covered).toBe(0);
+    const [pending] = await getBookRequestsForIntegration({ db: t.db, integrationId: integration.id });
+    expect(pending?.ebookStatus).toBe('requested');
+    expect(pending?.unroutableReason).toBeNull();
+    const proven = await syncGoodreadsIntegration({ ...input, items: [{ ...coauthoredWant,
+      gbIdentity: { volumeId: 'gb-other-edition', title: 'Good Omens', authors: ['Neil Gaiman', 'Terry Pratchett'] },
+    }] });
+    expect(ll.calls).toEqual([]);
+    expect(proven.coverage.covered).toBe(1);
+    const [landed] = await getBookRequestsForIntegration({ db: t.db, integrationId: integration.id });
+    expect(landed?.ebookStatus).toBe('landed');
+    expect(landed?.audioStatus).toBe('landed');
+    expect(landed?.matchedBooksItemId).not.toBeNull();
+    expect(landed?.author).toBe('Neil Gaiman'); // RSS snapshot is preserved, never flattened from GB.
+  });
+
+  it.each([
+    { volumeId: 'wrong-id', title: 'Good Omens', authors: ['Neil Gaiman', 'Terry Pratchett'] },
+    { volumeId: 'gb-other-edition', title: 'Neverwhere', authors: ['Neil Gaiman', 'Terry Pratchett'] },
+    { volumeId: 'gb-other-edition', title: 'Good Omens', authors: ['Terry Pratchett', 'Walter Mosley'] },
+    { volumeId: 'gb-other-edition', title: 'Good Omens', authors: ['Neil Gaiman', 'Emily Wilson'] },
+  ])('never borrows conflicting GB identity for held coverage: %j', async (gbIdentity) => {
+    const { integration } = await seed();
+    await seedCoauthoredHeldBook();
+    const ll = stubLl(() => null);
+    const report = await syncGoodreadsIntegration({ db: t.db, integrationId: integration.id,
+      items: [{ ...coauthoredWant, gbIdentity }], syncedShelves: ['to-read'], ll: ll.bundle, pacer: async () => {},
+    });
+    expect(report.coverage.covered).toBe(0);
+    expect(ll.calls).toEqual([]);
+  });
+
+  it('still acquires a proven coauthored work that is not held', async () => {
+    const { integration } = await seed();
+    const ll = stubLl(() => null);
+    await syncGoodreadsIntegration({ db: t.db, integrationId: integration.id, items: [{ ...coauthoredWant,
+      gbIdentity: { volumeId: 'gb-other-edition', title: 'Good Omens', authors: ['Neil Gaiman', 'Terry Pratchett'] },
+    }], syncedShelves: ['to-read'], ll: ll.bundle, pacer: async () => {} });
+    expect(ll.calls.map((c) => c.cmd)).toEqual(['addBook', 'queueBook', 'queueBook', 'searchBook']);
+  });
+
+  it('also defers a primary-only held comic before Kapowarr routing, then recovers with its complete roster', async () => {
+    const { integration } = await seed();
+    await t.db.insert(booksItems).values({ source: 'kavita', mediaKind: 'comic', externalId: 'held-watchmen',
+      libraryId: '2', libraryName: 'Comics', title: 'Watchmen', sortTitle: 'watchmen', author: 'Alan Moore', deepLinkUrl: 'http://x',
+      attrs: { heldBooks: [{ title: 'Watchmen', author: 'Alan Moore', authors: ['Alan Moore', 'Dave Gibbons'], isbn: null }] },
+    });
+    const want: EnrichedShelfItem = { ...coauthoredWant, externalBookId: 'gr-watchmen', title: 'Watchmen',
+      author: 'Alan Moore', gbVolumeId: 'gb-watchmen', isComic: true,
+    };
+    const kapowarr = stubKapowarr();
+    const ll = stubLl(() => null);
+    const input = { db: t.db, integrationId: integration.id, syncedShelves: ['to-read'],
+      kapowarr: kapowarr.bundle, ll: ll.bundle, pacer: async () => {},
+    };
+    const deferred = await syncGoodreadsIntegration({ ...input, items: [want] });
+    expect(deferred.coverage.covered).toBe(0);
+    expect(kapowarr.calls).toEqual([]);
+    expect(ll.calls).toEqual([]);
+    const proven = await syncGoodreadsIntegration({ ...input, items: [{ ...want, gbIdentity: {
+      volumeId: 'gb-watchmen', title: 'Watchmen', authors: ['Alan Moore', 'Dave Gibbons'],
+    } }] });
+    expect(proven.coverage.covered).toBe(1);
+    expect(kapowarr.calls).toEqual([]);
+    const [request] = await getBookRequestsForIntegration({ db: t.db, integrationId: integration.id });
+    expect(request?.comicStatus).toBe('landed');
+  });
+
+  it.each(['Skipped', 'Ignored'])('also defers automatic %s sweep or gone re-request on a later sync', async (status) => {
+    const { integration } = await seed();
+    const now = new Date('2026-10-09T10:00:00Z');
+    await syncGoodreadsIntegration({ db: t.db, integrationId: integration.id, items: [coauthoredWant],
+      syncedShelves: ['to-read'], ll: stubLl(() => ({ ebookStatus: status, audioStatus: status })).bundle,
+      pacer: async () => {}, now,
+    });
+    await seedCoauthoredHeldBook();
+    const ll = stubLl(() => ({ ebookStatus: 'Skipped', audioStatus: 'Skipped' }));
+    if (status === 'Ignored') {
+      ll.bundle.read.getAllBookStatuses = async () => new Map([['unrelated', {
+        bookId: 'unrelated', ebookStatus: 'Skipped', audioStatus: 'Skipped', title: 'Other Book', author: 'Other Author',
+      }]]) as never;
+    }
+    await syncGoodreadsIntegration({ db: t.db, integrationId: integration.id, items: [coauthoredWant],
+      syncedShelves: ['to-read'], ll: ll.bundle, pacer: async () => {}, now: new Date(now.getTime() + 3_600_000),
+    });
+    expect(ll.calls).toEqual([]);
+  });
 
   it('mirrors, mints, pushes BOTH formats via queueBook, parks comics, reconciles, and computes coverage', async () => {
     const { integration } = await seed();

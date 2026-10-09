@@ -14,6 +14,7 @@ import {
 } from '@hnet/db';
 import { resolveDb } from './db-client';
 import { pairingBooksItemIdentity } from './format-pairing';
+import { declaredCredits, pairingCreditsAgree, pairingTitleKey } from './pairing-work-identity';
 import { withRequestEventScope } from './book-request-events';
 import {
   applyLlGoneDecision,
@@ -68,6 +69,13 @@ import {
 export interface EnrichedShelfItem extends ShelfItemInput {
   /** GB (or matched-library) comic classification — comics are parked OUT of the LazyLibrarian route. */
   isComic: boolean;
+  /** Fresh fetched volume identity only; an RSS primary author never reconstructs its complete roster. */
+  gbIdentity?: {
+    volumeId: string;
+    title?: string | null;
+    subtitle?: string | null;
+    authors?: readonly string[];
+  };
 }
 
 /** Per llBookId, the formats a LazyLibrarian searchBook call already covered (issue #644). */
@@ -178,13 +186,25 @@ export async function syncGoodreadsIntegration(
   );
   const requestItems: RequestSyncItem[] = mirror.liveItems.map((li) => {
     const enriched = enrichedByKey.get(`${li.shelf}::${li.externalBookId}`);
-    const libMatch = match(li.title, li.author);
+    const gb = enriched?.gbIdentity;
+    const credits = declaredCredits({ author: null, authors: gb?.authors ?? [] });
+    const gbTitle = [gb?.title, gb?.subtitle].filter(Boolean).join(': ');
+    const verifiedCredits = gb?.volumeId === li.gbVolumeId && pairingTitleKey(gbTitle) &&
+      pairingTitleKey(gbTitle) === pairingTitleKey(li.title) && credits.length === gb.authors?.length &&
+      credits.filter((credit) => pairingCreditsAgree({ author: credit }, { author: li.author })).length === 1
+      ? credits : undefined;
+    const libMatch = match(li.title, li.author, verifiedCredits);
+    const acquisitionDeferred = !libMatch && match.deferAcquisition(li.title, li.author, verifiedCredits);
+    if (acquisitionDeferred) log.info?.('goodreads_acquisition_deferred_source_identity', {
+      site: 'goodreads-sync.library', shelfItemId: li.id, title: li.title,
+    });
     return {
       shelfItemId: li.id,
       title: li.title,
       author: li.author,
       gbVolumeId: li.gbVolumeId,
       matchedBooksItemId: libMatch?.id ?? null,
+      acquisitionDeferred,
       isComic: (enriched?.isComic ?? false) || libMatch?.mediaKind === 'comic',
     };
   });

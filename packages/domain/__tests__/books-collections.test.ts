@@ -5,7 +5,13 @@
 // syncBooks writer (never a direct insert).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, asc, eq } from 'drizzle-orm';
-import { bookRequests, booksCollections, booksCollectionMembers, booksItems } from '@hnet/db';
+import {
+  bookRequests,
+  booksCollections,
+  booksCollectionMembers,
+  booksItems,
+  llFormatReleases,
+} from '@hnet/db';
 import type { BooksSource, Database } from '@hnet/db';
 import { LibrettoUnreachableError } from '@hnet/libretto';
 import {
@@ -13,12 +19,14 @@ import {
   getCollectionWantedBookRequests,
   getWantedBookRequests,
   loadResolvedWantRefs,
+  loadPairingCoverage,
   missingForCollection,
   resolveMissingMembers,
   runCollectionWantsSync,
   syncBooks,
   syncBooksCollections,
   syncCollectionWants,
+  stampRequestsSearched,
   type BooksItemInput,
   type CollectionWantsLibretto,
 } from '../src';
@@ -642,6 +650,185 @@ describe('collection wants (DESIGN-038 D-13 — Wanted tiles from Libretto missi
       const again = await runCollectionWantsSync({ db: t.db, libretto });
       expect(resolveCalls).toEqual(['Compulsory']);
       expect(again).toMatchObject({ covered: 1, reused: 1, resolved: 0, unresolved: 1 });
+    });
+
+    it.each([
+      [
+        'different subtitle',
+        'Mistborn: The Final Empire',
+        'Brandon Sanderson',
+        'Mistborn: Secret History',
+        'Brandon Sanderson',
+      ],
+      [
+        'different parenthetical work',
+        'Mistborn (The Final Empire)',
+        'Brandon Sanderson',
+        'Mistborn (Secret History)',
+        'Brandon Sanderson',
+      ],
+      [
+        'different volume',
+        'Mistborn: Book 1',
+        'Brandon Sanderson',
+        'Mistborn: Book 2',
+        'Brandon Sanderson',
+      ],
+      ['surname suffix', 'Mistborn', 'Brandon Sanderson', 'Mistborn', 'Brandon Sanderson Jr'],
+      [
+        'partial coauthor credits',
+        'Home Improvement',
+        'Charlaine Harris, Toni L. P. Kelner',
+        'Home Improvement',
+        'Charlaine Harris',
+      ],
+    ])(
+      'retains and resolves an uncovered %s collection want',
+      async (_label, pairingTitle, pairingAuthor, title, author) => {
+        const id = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'r1' });
+        const [anchor] = await t.db
+          .select({ id: booksItems.id })
+          .from(booksItems)
+          .where(eq(booksItems.externalId, 'abs-1'));
+        await t.db.insert(bookRequests).values({
+          origin: 'pairing',
+          pairingBooksItemId: anchor!.id,
+          title: pairingTitle,
+          author: pairingAuthor,
+          llBookId: 'gb-pairing-work',
+          ebookStatus: 'requested',
+          audioStatus: 'landed',
+        });
+        const resolveCalls: string[] = [];
+        const libretto = stubLibretto({
+          listMissingMembers: async () => ({
+            missing: [{ title, authors: [author], isbn: '9780000000099', identifiers: [] }],
+          }),
+          resolve: async () => {
+            resolveCalls.push(title);
+            return { volumeId: 'gb-distinct-collection-work' };
+          },
+        });
+        const now = new Date('2026-10-09T12:00:00Z');
+        const first = await runCollectionWantsSync({ db: t.db, libretto, now });
+        expect(first).toMatchObject({ covered: 0, resolved: 1, minted: 1 });
+        expect(resolveCalls).toEqual([title]);
+        const [want] = await t.db
+          .select()
+          .from(bookRequests)
+          .where(eq(bookRequests.collectionId, id));
+        expect(want?.title).toBe(title);
+        await stampRequestsSearched(t.db, [want!.id], now);
+
+        // A real search creates release ownership. Wrong coverage must not erase that want on a later pass,
+        // even when its resolved edition id differs from the pairing want's id.
+        const again = await runCollectionWantsSync({
+          db: t.db,
+          libretto,
+          now: new Date(now.getTime() + 1000),
+        });
+        expect(again).toMatchObject({ covered: 0, reused: 1, removed: 0 });
+        expect(await wantRows(id)).toMatchObject([
+          { title, llBookId: 'gb-distinct-collection-work' },
+        ]);
+        expect(
+          await t.db
+            .select()
+            .from(llFormatReleases)
+            .where(eq(llFormatReleases.llBookId, 'gb-distinct-collection-work')),
+        ).toHaveLength(0);
+      },
+    );
+
+    it('retains explicit mononym/coauthor boundaries through both coverage passes', async () => {
+      const id = await seedCollection({ source: 'kavita', externalId: 'k1', recipeId: 'r1' });
+      const [anchor] = await t.db.insert(booksItems).values({
+        source: 'audiobookshelf', mediaKind: 'audiobook', externalId: 'abs-odyssey',
+        libraryId: '1', libraryName: 'Audio', title: 'Odyssey', sortTitle: 'odyssey',
+        author: 'Homer', attrs: { authors: ['Homer', 'Robert Fagles'] }, deepLinkUrl: 'http://x',
+      }).returning({ id: booksItems.id });
+      await t.db.insert(bookRequests).values({
+        origin: 'pairing', pairingBooksItemId: anchor!.id, title: 'Odyssey',
+        author: 'Homer, Robert Fagles', llBookId: 'gb-odyssey',
+        ebookStatus: 'requested', audioStatus: 'landed',
+      });
+      const coverage = await loadPairingCoverage(t.db, 'ebook');
+      expect(coverage({ title: 'Odyssey', author: 'Homer Fagles', llBookId: null })).toBe(false);
+      expect(coverage({ title: 'Odyssey', author: 'Homer', authors: ['Homer', 'Robert Fagles'], llBookId: null })).toBe(true);
+      const resolves: string[] = [];
+      const report = await runCollectionWantsSync({ db: t.db, libretto: stubLibretto({
+        listMissingMembers: async () => ({ missing: [
+          { title: 'Odyssey', authors: ['Homer Fagles'], isbn: '9780000000091', identifiers: [] },
+          { title: 'Odyssey', authors: ['Homer', 'Robert Fagles'], isbn: '9780000000092', identifiers: [] },
+        ] }),
+        resolve: async (request) => { resolves.push(request.author ?? ''); return { volumeId: 'gb-other-work' }; },
+      }) });
+      expect(report).toMatchObject({ covered: 1, resolved: 1, minted: 1 });
+      expect(resolves).toEqual(['Homer Fagles']);
+      expect(await wantRows(id)).toMatchObject([{ title: 'Odyssey', llBookId: 'gb-other-work' }]);
+      // A newly changed source roster does not relabel the Robert Fagles request's existing queue as Emily Wilson.
+      await t.db.update(booksItems).set({ attrs: { authors: ['Homer', 'Emily Wilson'] } })
+        .where(eq(booksItems.id, anchor!.id));
+      const changed = await loadPairingCoverage(t.db, 'ebook');
+      expect(changed({ title: 'Odyssey', author: 'Homer', authors: ['Homer', 'Emily Wilson'], llBookId: null })).toBe(false);
+      expect(changed({ title: 'Odyssey', author: null, llBookId: 'gb-odyssey' })).toBe(true);
+    });
+
+    it('keeps same-work edition and initial-name coverage, the shared-id shortcut and active statuses', async () => {
+      const [anchor] = await t.db
+        .select({ id: booksItems.id })
+        .from(booksItems)
+        .where(eq(booksItems.externalId, 'abs-1'));
+      const [want] = await t.db
+        .insert(bookRequests)
+        .values({
+          origin: 'pairing',
+          pairingBooksItemId: anchor!.id,
+          title: 'The Hobbit: A Novel',
+          author: 'J. R. R. Tolkien',
+          llBookId: 'gb-shared',
+          ebookStatus: 'missing',
+          audioStatus: 'landed',
+        })
+        .returning();
+      const coverage = await loadPairingCoverage(t.db, 'ebook');
+      expect(
+        coverage({
+          title: 'Hobbit (Unabridged)',
+          author: 'John Ronald Reuel Tolkien',
+          llBookId: 'gb-other-edition',
+        }),
+      ).toBe(true);
+      expect(
+        coverage({
+          title: 'Completely different display title',
+          author: null,
+          llBookId: 'gb-shared',
+        }),
+      ).toBe(true);
+      // An intentionally parked or completed pairing request supplies no open acquisition coverage.
+      await t.db
+        .update(bookRequests)
+        .set({ unroutableReason: 'wrong_volume' })
+        .where(eq(bookRequests.id, want!.id));
+      expect(
+        (await loadPairingCoverage(t.db, 'ebook'))({
+          title: 'Hobbit',
+          author: 'J. R. R. Tolkien',
+          llBookId: null,
+        }),
+      ).toBe(false);
+      await t.db
+        .update(bookRequests)
+        .set({ unroutableReason: null, ebookStatus: 'landed' })
+        .where(eq(bookRequests.id, want!.id));
+      expect(
+        (await loadPairingCoverage(t.db, 'ebook'))({
+          title: 'Hobbit',
+          author: 'J. R. R. Tolkien',
+          llBookId: null,
+        }),
+      ).toBe(false);
     });
 
     it('skips ONLY the failing collection on a per-collection read error', async () => {

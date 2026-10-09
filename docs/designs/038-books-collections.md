@@ -1,7 +1,7 @@
 # DESIGN-038: Books collections mirror — the Books/Audiobooks/Comics Collections group view
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-06 (D-13 amendment, issue #741: collection wants record a Request Event, ADR-101). Prior: 2026-10-06 (D-13 amendment, issue #759: a downloaded want the library cannot show reads Downloaded). Prior: 2026-10-06 (D-13 amendment, issue #759: each collection reads its own target's missing list). Prior: 2026-10-06 (D-13 amendment, issue #735: a collection want given up releases its LazyLibrarian book). Prior: 2026-10-05 (D-13 amendment, issue #719: a collection want on a non-English LazyLibrarian book asks for the English edition). Prior: 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
+- **Last updated:** 2026-10-09 (adversarial review: full work and structured contributor coverage). Prior: 2026-10-06 (D-13 amendment, issue #741: collection wants record a Request Event, ADR-101). Prior: 2026-10-06 (D-13 amendment, issue #759: a downloaded want the library cannot show reads Downloaded). Prior: 2026-10-06 (D-13 amendment, issue #759: each collection reads its own target's missing list). Prior: 2026-10-06 (D-13 amendment, issue #735: a collection want given up releases its LazyLibrarian book). Prior: 2026-10-05 (D-13 amendment, issue #719: a collection want on a non-English LazyLibrarian book asks for the English edition). Prior: 2026-10-05 (D-13 amendment, issue #693: a parked collection want stays parked, and the
   force-search parks a want on another work's book). Prior: 2026-07-20 (**ADR-076 — format-agnostic collections**: D-05 wall mapping → the comic
   partition (the three-way majority rule retires with the Audiobooks wall) + recipe-id twin MERGE; D-11/D-12
   the `cat=` token is now EMITTED by Libretto (L1 LIVE — recipe-authored categories; L2 agent-set stays the
@@ -596,3 +596,33 @@ books its plain search found, which Libretto now covers with a keyword leg (thay
 - `resolveMissingMembers` takes the check as an optional fifth argument; a covered member is not resolved and counts
   `covered`. A resolve that names no volume counts `unresolved`.
 - `collection-wants complete` logs `covered` and `unresolved` beside `resolved`, `reused` and `parked`.
+
+## Amendment — 2026-10-09: cross-origin coverage preserves complete work identities
+
+An active pairing want for *Mistborn: The Final Empire* incorrectly covered a collection member for
+*Mistborn: Secret History*: the E-1 helper cut both titles at the colon. A local PostgreSQL 16 reproduction
+also showed that the collection reconcile deleted the existing Secret History want. Substring author matching
+similarly treated `Brandon Sanderson Jr` as `Brandon Sanderson`.
+
+The shared `loadPairingCoverage` check retains the same-LazyLibrarian-id shortcut. Otherwise it requires
+full `pairingTitleKey` equality and the strict structured `pairingCreditsAgree` check used by format pairing.
+Subtitles, parenthetical work labels and volume numbers stay part of identity; only pairing's documented
+edition noise may disappear. Contributor boundaries, complete surnames and initials use the existing
+pairing rules. The pre-resolution pass and transactional reconcile apply exactly the same predicate.
+Existing active statuses and same-work coverage across different edition ids are unchanged.
+
+The sibling Goodreads library matcher uses this full title and strict credit comparison as well. A known
+different author or a missing credit cannot fall back to another same-title book's held state. Explicit complete
+Audiobookshelf contributor arrays take precedence over a preferred display author; unknown arrays provide no
+proof. Known Kavita held chapters index their actual full title and complete contributors, not the container's
+display title/primary writer. Any chapter that strictly names the requested work may prove it; unknown chapters
+cannot. An absent legacy held snapshot retains the row's strict single-credit fallback; ambiguous comma-only source
+credits provide no proof. Contributor arrays remain arrays through the library index and Libretto's pre-resolution/reconcile inputs;
+display snapshots never erase roster cardinality. `Homer` plus `Robert Fagles` cannot become the single credit
+`Homer Fagles`. A current roster must agree with the stored request snapshot before title-based coverage: a pending
+Robert Fagles queue cannot silently become an Emily Wilson queue when the source changes. The collection mirror
+continues resolving native members by exact source and external id.
+
+Verification covers both stages, retaining and resolving distinct subtitle/parenthetical/volume works and
+different complete author credits, preserving an already searched collection want without recording a
+LazyLibrarian Release, and retaining positive same-work edition and initial-name coverage.

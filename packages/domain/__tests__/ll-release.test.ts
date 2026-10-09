@@ -39,6 +39,7 @@ import {
   reidentifyPairingWant,
   revertLandedFormats,
   runFormatPairing,
+  settleRemovedPairingWants,
   switchRequestToEnglishEdition,
   syncCollectionWants,
   syncGoodreadsIntegration,
@@ -548,6 +549,35 @@ describe('recordLlReleases and drainLlReleases (#735)', () => {
     expect(await releases()).toHaveLength(1);
   });
 
+  it('keeps a format a new live want takes while the final LazyLibrarian read is in flight', async () => {
+    await recordLlReleases(t.db, {
+      llBookId: 'll-new-owner',
+      formats: ['ebook'],
+      reason: 'collection_want_dropped',
+      requestId: null,
+    });
+    const ll = stubLl({ 'll-new-owner': { title: 'Shared Book', ebookStatus: 'Wanted' } });
+    let reads = 0;
+    let newWantId: string | null = null;
+    const racing = {
+      ...ll.bundle,
+      read: {
+        getAllBookStatuses: async () => {
+          reads += 1;
+          if (reads === 2) newWantId = (await seedCollectionWant('ll-new-owner')).id;
+          return ll.snapshot();
+        },
+      },
+    } as unknown as LazyLibrarianClientBundle;
+    const drain = await drainLlReleases({ db: t.db, ll: racing, site: 'test' });
+    expect(reads).toBe(2);
+    expect(newWantId).not.toBeNull();
+    expect(drain.tally).toMatchObject({ llReleasesUnqueued: 0, llReleasesSettled: 1, llReleasesPending: 0 });
+    expect(unqueues(ll.calls)).toEqual([]);
+    expect(ll.state['ll-new-owner']!.ebookStatus).toBe('Wanted');
+    expect(await releases()).toEqual([]);
+  });
+
   it("a re-record always moves updated_at forward, so the drain never deletes a release recorded after its read", async () => {
     const later = new Date('2026-10-06T10:00:00.000Z');
     await recordLlReleases(t.db, { llBookId: 'll-clock', formats: ['ebook'], reason: 'reidentified', requestId: null, now: later });
@@ -731,6 +761,32 @@ describe('the Orphan LazyLibrarian Want census and the one-off repair (#735)', (
     expect((await findOrphanLlWants({ db: t.db, snapshot: ll.snapshot() })).map((o) => o.llBookId)).toEqual(['ll-hand']);
   });
 
+  it('the one-off skips an orphan a new live want takes during the final LazyLibrarian read', async () => {
+    const ll = stubLl({ 'll-orphan-new-owner': { title: 'Shared Book', ebookStatus: 'Wanted' } });
+    let newWantId: string | null = null;
+    const racing = {
+      ...ll.bundle,
+      read: {
+        getAllBookStatuses: async () => {
+          newWantId = (await seedCollectionWant('ll-orphan-new-owner')).id;
+          return ll.snapshot();
+        },
+      },
+    } as unknown as LazyLibrarianClientBundle;
+    const report = await unqueueOrphanLlWants({
+      db: t.db,
+      ll: racing,
+      snapshot: ll.snapshot(),
+      keep: new Set(),
+      dryRun: false,
+    });
+    expect(newWantId).not.toBeNull();
+    expect(report).toMatchObject({ orphans: 1, unqueued: 0, skipped: 1 });
+    expect(report.rows).toMatchObject([{ llBookId: 'll-orphan-new-owner', action: 'skip' }]);
+    expect(unqueues(ll.calls)).toEqual([]);
+    expect(ll.state['ll-orphan-new-owner']!.ebookStatus).toBe('Wanted');
+  });
+
   it('the one-off skips an orphan LazyLibrarian snatched since its read', async () => {
     const ll = stubLl({ 'll-gone-by': { title: 'Gone By', ebookStatus: 'Wanted' } });
     const stale = ll.snapshot();
@@ -739,4 +795,97 @@ describe('the Orphan LazyLibrarian Want census and the one-off repair (#735)', (
     expect(report).toMatchObject({ orphans: 1, unqueued: 0, skipped: 1 });
     expect(unqueues(ll.calls)).toEqual([]);
   });
+});
+
+describe('pairing transition protection at the final LazyLibrarian read', () => {
+  it.each(['drain', 'orphan'] as const)(
+    '%s can unqueue a stale removed anchor format after the pairing settle pass clears its id',
+    async (site) => {
+      const old = await seedPairingWant('ll-stale-removed', {}, { title: 'Removed Book' });
+      await t.db.update(booksItems).set({ deletedAt: new Date() }).where(eq(booksItems.id, old.anchorId));
+      if (site === 'drain') {
+        await recordLlReleases(t.db, {
+          llBookId: 'll-stale-removed',
+          formats: ['audiobook'],
+          reason: 'collection_want_dropped',
+          requestId: null,
+        });
+      }
+      const ll = stubLl({
+        'll-stale-removed': { title: old.title, ebookStatus: 'Open', audioStatus: 'Wanted' },
+      });
+      if (site === 'drain') {
+        expect((await drainLlReleases({ db: t.db, ll: ll.bundle, site: 'test' })).tally).toMatchObject({
+          llReleasesUnqueued: 0,
+          llReleasesPending: 1,
+        });
+      } else {
+        expect(await unqueueOrphanLlWants({ db: t.db, ll: ll.bundle, snapshot: ll.snapshot(), keep: new Set(), dryRun: false }))
+          .toMatchObject({ unqueued: 0, skipped: 1 });
+      }
+      expect(unqueues(ll.calls)).toEqual([]);
+      expect(await settleRemovedPairingWants({ db: t.db })).toMatchObject({ retiredAnchorsSettled: 1 });
+      expect(await getRequest(old.id)).toMatchObject({ llBookId: null, audioStatus: 'missing' });
+      if (site === 'drain') {
+        expect((await drainLlReleases({ db: t.db, ll: ll.bundle, site: 'test' })).tally).toMatchObject({
+          llReleasesUnqueued: 1,
+          llReleasesPending: 0,
+        });
+      } else {
+        expect(await unqueueOrphanLlWants({ db: t.db, ll: ll.bundle, snapshot: ll.snapshot(), keep: new Set(), dryRun: false }))
+          .toMatchObject({ unqueued: 1, skipped: 0 });
+      }
+      expect(unqueues(ll.calls)).toEqual([{ cmd: 'unqueueBook', id: 'll-stale-removed', format: 'audiobook' }]);
+      expect(ll.state['ll-stale-removed']!.audioStatus).toBe('Skipped');
+    },
+  );
+
+  it.each(['drain', 'orphan'] as const)(
+    '%s keeps a removed anchor format when an unresolved successor appears during the final read',
+    async (site) => {
+      const old = await seedPairingWant('ll-transition-race', {}, { title: 'Shared Book' });
+      await t.db.update(booksItems).set({ deletedAt: new Date() }).where(eq(booksItems.id, old.anchorId));
+      if (site === 'drain') {
+        await recordLlReleases(t.db, {
+          llBookId: 'll-transition-race',
+          formats: ['audiobook'],
+          reason: 'collection_want_dropped',
+          requestId: null,
+        });
+      }
+      const ll = stubLl({
+        'll-transition-race': { title: 'Shared Book', ebookStatus: 'Open', audioStatus: 'Wanted' },
+      });
+      let reads = 0;
+      const racing = {
+        ...ll.bundle,
+        read: {
+          getAllBookStatuses: async () => {
+            reads += 1;
+            if (reads === (site === 'drain' ? 2 : 1)) {
+              await seedPairingWant(null, { audioStatus: 'requested' }, { title: old.title });
+            }
+            return ll.snapshot();
+          },
+        },
+      } as unknown as LazyLibrarianClientBundle;
+      if (site === 'drain') {
+        const drain = await drainLlReleases({ db: t.db, ll: racing, site: 'test' });
+        expect(drain.tally).toMatchObject({ llReleasesUnqueued: 0, llReleasesSettled: 0, llReleasesPending: 1 });
+        expect(await releases()).toHaveLength(1);
+      } else {
+        const report = await unqueueOrphanLlWants({
+          db: t.db,
+          ll: racing,
+          snapshot: ll.snapshot(),
+          keep: new Set(),
+          dryRun: false,
+        });
+        expect(report).toMatchObject({ orphans: 1, unqueued: 0, skipped: 1 });
+      }
+      expect(reads).toBe(site === 'drain' ? 2 : 1);
+      expect(unqueues(ll.calls)).toEqual([]);
+      expect(ll.state['ll-transition-race']!.audioStatus).toBe('Wanted');
+    },
+  );
 });

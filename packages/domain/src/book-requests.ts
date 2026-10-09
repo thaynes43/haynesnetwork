@@ -36,6 +36,8 @@ import {
 } from './book-request-events';
 import { FOREIGN_LANGUAGE_REASON, NO_ENGLISH_EDITION_REASON } from './book-language';
 import { collectionFormatForSource, llQueuedFormats, recordLlReleases } from './ll-release-record';
+import { declaredCredits, pairingCreditsAgree, pairingTitleKey, type PairingCredit } from './pairing-work-identity';
+import { readHeldBooks, readSourceAuthors } from './books';
 
 // ---------------------------------------------------------------------------
 // LL status → per-format request status (the domain owns the mapping; the client returns raw strings).
@@ -436,8 +438,8 @@ export interface LibraryMatch {
   mediaKind: BooksMediaKind;
 }
 
-/** THE normalized-title idiom (lowercase, strip leading articles, cut at ':'/'(', collapse
- *  non-alphanumerics). Exported for the ADR-065 format-pairing matcher — one normalizer, never a fork. */
+/** Legacy display/ref normalizer (lowercase, strip leading articles, cut at ':'/'(', collapse
+ * non-alphanumerics). Held-work proof uses the complete pairing title key instead. */
 export function normTitle(t: string): string {
   return t
     .toLowerCase()
@@ -452,13 +454,24 @@ export function normAuthor(a: string | null): string {
   return (a ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-export type LibraryMatcher = (title: string, author: string | null) => LibraryMatch | null;
+export interface LibraryMatcher {
+  (title: string, author: string | null, authors?: readonly string[]): LibraryMatch | null;
+  /** A held candidate can forbid automatic acquisition without proving complete work coverage. */
+  deferAcquisition(title: string, author: string | null, authors?: readonly string[]): boolean;
+}
+
+/** These request/member display snapshots serialize contributors with commas, never substring aliases. */
+const snapshotCredit = (author: string | null, authors?: readonly string[]): PairingCredit => ({
+  author,
+  authors: authors ?? (author ? author.split(/\s*,\s*/) : []),
+});
 
 /**
  * Load the live books_items into an in-memory normalized-title index and return a matcher. One bounded read
  * per sync (the whole book library, a few thousand rows) — far cheaper than a per-item query, and it lets
- * the normalizer live in JS. When several library rows share a normalized title, an author match wins; a
- * non-comic format is preferred so "we have the ebook" beats a same-title comic for the coverage signal.
+ * the normalizer live in JS. A full work title and complete, strictly agreeing credits are required; an unknown or
+ * conflicting author cannot prove a held book. Among those matches a non-comic format is preferred, so "we have the
+ * ebook" beats a same-work comic for the coverage signal.
  */
 export async function loadLibraryMatcher(db?: DbClient): Promise<LibraryMatcher> {
   const rows = await resolveDb(db)
@@ -466,32 +479,47 @@ export async function loadLibraryMatcher(db?: DbClient): Promise<LibraryMatcher>
       id: booksItems.id,
       title: booksItems.title,
       author: booksItems.author,
+      attrs: booksItems.attrs,
       mediaKind: booksItems.mediaKind,
     })
     .from(booksItems)
     .where(isNull(booksItems.deletedAt));
 
-  const index = new Map<string, Array<{ id: string; author: string; mediaKind: BooksMediaKind }>>();
+  const index = new Map<string, Array<PairingCredit & { id: string; mediaKind: BooksMediaKind }>>();
   for (const r of rows) {
-    const key = normTitle(r.title);
-    if (!key) continue;
-    const bucket = index.get(key) ?? [];
-    bucket.push({ id: r.id, author: normAuthor(r.author), mediaKind: r.mediaKind });
-    index.set(key, bucket);
+    const held = readHeldBooks(r.attrs);
+    const works = held ?? [{ title: r.title, author: r.author, authors: readSourceAuthors(r.attrs) }];
+    for (const work of works) {
+      const key = pairingTitleKey(work.title ?? '');
+      if (!key) continue;
+      const bucket = index.get(key) ?? [];
+      // Only request/member snapshots have a documented roster serialization. A source display comma is ambiguous.
+      const authors = work.authors ?? (held !== undefined || work.author?.includes(',') ? [] : undefined);
+      bucket.push({ id: r.id, author: work.author, authors, mediaKind: r.mediaKind });
+      index.set(key, bucket);
+    }
   }
 
-  return (title, author) => {
-    const bucket = index.get(normTitle(title));
+  const match: LibraryMatcher = (title, author, authors) => {
+    const bucket = index.get(pairingTitleKey(title));
     if (!bucket || bucket.length === 0) return null;
-    const wantAuthor = normAuthor(author);
-    const authorMatches = wantAuthor
-      ? bucket.filter((b) => b.author && (b.author.includes(wantAuthor) || wantAuthor.includes(b.author)))
-      : [];
-    const pool = authorMatches.length > 0 ? authorMatches : bucket;
-    const nonComic = pool.find((b) => b.mediaKind !== 'comic');
-    const pick = nonComic ?? pool[0]!;
+    const matches = bucket.filter((b) => pairingCreditsAgree(b, snapshotCredit(author, authors)));
+    const pick = matches.find((b) => b.mediaKind !== 'comic') ?? matches[0];
+    if (!pick) return null;
     return { id: pick.id, mediaKind: pick.mediaKind };
   };
+  match.deferAcquisition = (title, author, authors) => {
+    if (!author || match(title, author, authors)) return false;
+    return (index.get(pairingTitleKey(title)) ?? []).some((candidate) => {
+      const credits = declaredCredits(candidate);
+      // A primary credit is negative permission only when complete source credits cannot prove the want.
+      // An incomplete chapter can still name that primary author without borrowing it for a positive match.
+      return (credits.length ? credits : [candidate.author]).some((credit) =>
+        pairingCreditsAgree({ author: credit }, { author }),
+      );
+    });
+  };
+  return match;
 }
 
 // ---------------------------------------------------------------------------
@@ -507,6 +535,8 @@ export interface RequestSyncItem {
   gbVolumeId: string | null;
   /** The library match (books_items id), when the want is already in the library. */
   matchedBooksItemId: string | null;
+  /** Current held-source ambiguity defers automatic acquisition only for this fresh shelf sync. */
+  acquisitionDeferred?: boolean;
   /** True when GB (or the matched library kind) classifies this as a comic — do NOT route to LL. */
   isComic: boolean;
 }
@@ -667,7 +697,7 @@ export async function syncShelfRequests(
       // A comic that is not (yet) landed needs Kapowarr work: resolve+add (no volume id) or reconcile.
       // Issue #715: a landed comic with no library match is reconciled too, so it can leave `landed` when Kapowarr
       // no longer holds every issue.
-      if (requestId && isComic && !item.matchedBooksItemId) {
+      if (requestId && isComic && !item.matchedBooksItemId && !item.acquisitionDeferred) {
         toRouteComics.push({ requestId, title: item.title, author: item.author, kapowarrVolumeId });
       }
     }
@@ -686,8 +716,9 @@ function collectTargets(
   prevAudio: BookRequestStatus,
   toPush: RequestLlTarget[],
   toReconcile: RequestLlTarget[],
-  want: { title: string; author: string | null; matchedBooksItemId: string | null },
+  want: { title: string; author: string | null; matchedBooksItemId: string | null; acquisitionDeferred?: boolean },
 ): void {
+  if (want.acquisitionDeferred) return;
   if (unroutableReason) return; // comics never touch LL
   if (!llBookId) return; // no GB id resolved — can't push yet (honest gap)
   // A library match lands both formats and nothing about LazyLibrarian can change that. Without one, `landed` is
@@ -1658,6 +1689,8 @@ export interface CollectionWantMember {
   memberRef: string;
   title: string;
   author: string | null;
+  /** Complete contributor roster from Libretto, retained for coverage proof rather than the display primary. */
+  authors?: readonly string[];
   /**
    * The resolved Google-Books volume id (the LL bookid) when Libretto's resolve broker matched one —
    * the want is then FORCE-SEARCHABLE (isRequestSearchable). null = unresolved this run: the want still
@@ -1694,12 +1727,13 @@ export interface SyncCollectionWantsResult {
 export async function loadPairingCoverage(
   executor: DbClient | Transaction | undefined,
   format: 'ebook' | 'audiobook',
-): Promise<(m: Pick<CollectionWantMember, 'title' | 'author' | 'llBookId'>) => boolean> {
+): Promise<(m: Pick<CollectionWantMember, 'title' | 'author' | 'authors' | 'llBookId'>) => boolean> {
   const activePairing = await resolveDb(executor as DbClient | undefined)
     .select({
       llBookId: bookRequests.llBookId,
       title: bookRequests.title,
       author: bookRequests.author,
+      attrs: booksItems.attrs,
     })
     .from(bookRequests)
     .innerJoin(booksItems, eq(booksItems.id, bookRequests.pairingBooksItemId))
@@ -1716,24 +1750,25 @@ export async function loadPairingCoverage(
   const pairingByLlBookId = new Set(
     activePairing.map((p) => p.llBookId).filter((id): id is string => id !== null),
   );
-  const pairingByTitle = new Map<string, string[]>();
+  const pairingByTitle = new Map<string, PairingCredit[]>();
   for (const p of activePairing) {
-    const key = normTitle(p.title);
+    const key = pairingTitleKey(p.title);
     if (!key) continue;
+    const snapshot = snapshotCredit(p.author);
+    const sourceCredits = readSourceAuthors(p.attrs);
+    // A current source roster can disprove the request snapshot, never silently rename the book its old queue owns.
+    if (sourceCredits !== undefined && !pairingCreditsAgree(snapshot, { author: null, authors: sourceCredits })) continue;
     const authors = pairingByTitle.get(key) ?? [];
-    authors.push(normAuthor(p.author));
+    authors.push(snapshot);
     pairingByTitle.set(key, authors);
   }
-  const authorsAgree = (a: string, b: string): boolean =>
-    a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a));
   return (m) => {
     if (m.llBookId !== null && pairingByLlBookId.has(m.llBookId)) return true;
-    const key = normTitle(m.title);
+    const key = pairingTitleKey(m.title);
     if (!key) return false;
     const authors = pairingByTitle.get(key);
     if (!authors) return false;
-    const memberAuthor = normAuthor(m.author);
-    return authors.some((a) => authorsAgree(a, memberAuthor));
+    return authors.some((a) => pairingCreditsAgree(a, snapshotCredit(m.author, m.authors)));
   };
 }
 

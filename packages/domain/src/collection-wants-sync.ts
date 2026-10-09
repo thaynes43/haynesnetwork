@@ -226,7 +226,7 @@ export async function resolveMissingMembers(
   }>,
   resolvedRefs?: ReadonlyMap<string, string>,
   parkedRefs?: ReadonlySet<string>,
-  pairingCovers?: (m: Pick<CollectionWantMember, 'title' | 'author' | 'llBookId'>) => boolean,
+  pairingCovers?: (m: Pick<CollectionWantMember, 'title' | 'author' | 'authors' | 'llBookId'>) => boolean,
 ): Promise<{
   members: CollectionWantMember[];
   resolved: number;
@@ -247,11 +247,12 @@ export async function resolveMissingMembers(
     const title = raw.title?.trim() || raw.label?.trim() || '';
     if (!title) continue; // no display title — skip (a want with no name is not renderable)
     const author = raw.authors?.[0]?.trim() || null;
+    const credits = raw.authors == null ? {} : { authors: raw.authors.map((a) => a.trim()) };
 
     // Issue #693 — a parked want is never resolved again (its id stays cleared; `syncCollectionWants` keeps it so).
     if (parkedRefs?.has(ref)) {
       parked += 1;
-      members.push({ memberRef: ref, title, author, llBookId: null });
+      members.push({ memberRef: ref, title, author, ...credits, llBookId: null });
       continue;
     }
 
@@ -260,15 +261,15 @@ export async function resolveMissingMembers(
     const prior = resolvedRefs?.get(ref);
     if (prior) {
       reused += 1;
-      members.push({ memberRef: ref, title, author, llBookId: prior });
+      members.push({ memberRef: ref, title, author, ...credits, llBookId: prior });
       continue;
     }
 
     // A member an active pairing want covers by title + author is skipped by syncCollectionWants whatever it resolves
     // to, so its resolve would be a Google Books call nothing keeps (`loadPairingCoverage`).
-    if (pairingCovers?.({ title, author, llBookId: null })) {
+    if (pairingCovers?.({ title, author, ...credits, llBookId: null })) {
       covered += 1;
-      members.push({ memberRef: ref, title, author, llBookId: null });
+      members.push({ memberRef: ref, title, author, ...credits, llBookId: null });
       continue;
     }
 
@@ -287,7 +288,7 @@ export async function resolveMissingMembers(
     if (llBookId) resolved += 1;
     else unresolved += 1;
 
-    members.push({ memberRef: ref, title, author, llBookId });
+    members.push({ memberRef: ref, title, author, ...credits, llBookId });
   }
   return { members, resolved, reused, parked, covered, unresolved };
 }

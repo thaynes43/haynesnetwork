@@ -504,6 +504,20 @@ const ITEMS = [
 const NOW = new Date('2026-10-07T10:15:00Z');
 
 describe('runBooksCensus', () => {
+  it('reports an explicitly appended second work even when the record is the full first title', async () => {
+    const path = `${E}/Ken Follett/Code to Zero/Code to Zero.epub`;
+    const { findings, summary } = await runBooksCensus({
+      llBooks: [ll({ BookID: 'code-zero', BookName: 'Code to Zero', AuthorName: 'Ken Follett', BookFile: path })],
+      wants: [], items: [], holds: [], booksRoot: ROOT, now: NOW,
+      readMeta: async () => read('Code to Zero [and] The Man from St Petersburg'),
+    });
+    expect(findings).toEqual([expect.objectContaining({
+      kind: 'wrong_file', llBookId: 'code-zero', format: 'ebook', basis: 'content',
+      fileTitle: 'Code to Zero [and] The Man from St Petersburg',
+    })]);
+    expect(summary).toMatchObject({ wrongFile: 1, judgedContent: 1 });
+  });
+
   it('finds the #781 wrong files, by content and by name, and leaves the right ones alone', async () => {
     const { findings, summary } = await runBooksCensus({
       llBooks: SNAPSHOT,
