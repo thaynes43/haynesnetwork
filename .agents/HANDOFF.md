@@ -9,6 +9,38 @@
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
 
+## ▶ 2026-10-08 / 10-09: #825 EPUB series migration mostly done; Codex out until 10-15
+
+**Rulings.** Owner 2026-10-07: one Kavita series per book (#825); same-title books by different authors get a
+"Title (Author)" series tag (#830, closed); keep one copy of same-title duplicates, extras moved to backup, never deleted
+(#831). Coordinator 2026-10-08: Ransom's folder stays held until its Kavita reading progress is idle 30 days (#840, OC-046);
+#835, #838, #839 and #842 are engineering backlog with conservative defaults (no EPUB metadata edits beyond the strip and
+the #830 tag, unproved membership refused, acquisition never covers an identity gap).
+
+**Done.** 290 verified metadata operations on 289 EPUB paths (series strip plus ten author-qualified collision tags);
+originals backed up under `books/.epub-convert/`. App v0.110.1 to v0.110.4: pairing guards for Kavita series splits and
+the #850 complete-credit matching fix (716 conservative pairs, 764 protected wants unchanged, no acquisition). Docs #846 to
+#849 and #854 to #860. Owed checks 10-08 (#845): OC-040, OC-041, OC-042, OC-044 passed.
+
+**What went wrong.** The first #825 Codex session paused the four book sync CronJobs, `lazylibrarian-epub-convert` and
+Libretto acquisition, then died at 10-08 04:46Z on a Codex usage limit, leaving the household's syncs off for ten hours.
+The coordinator restored them at 10:12Z (haynes-ops #3573). Rule since: pause writers only for the strip/scan window itself,
+checkpoint the restore PR before each pause, restore before anything that could end the session. The resumed session ran
+about twenty pause/restore windows, each restored, then hit the Codex limit again at about 10-09 02:00Z (resets 10-15).
+
+**State at 10-09 02:15Z.** Nothing suspended: CronJobs, Flux kustomizations and HelmReleases all live; Libretto
+acquisition on; `STRIP_SERIES_METADATA` is `0`, so the hourly strip is off and new books still arrive with series tags.
+
+**Open (#825).** Duplicate-copy cleanup (#831; the prepared pause/inverse haynes-ops #3622/#3623 are parked as drafts,
+re-verify before use). Reading lists: 32 new manual recipes and 9 repairs previewed, none written, acquisition disabled on
+them. Signed manual-census image. Hourly strip: rebase draft haynes-ops #3571 to only flip the gate, after the above.
+Final docs. The session's report is `.agents/context/2026-10-09-825-resume-report.md`; its work order is
+`.agents/context/2026-10-08-825-resume-workorder.md` if present. Resume with Codex after 2026-10-15, or on Claude if the
+owner says so.
+
+**Owed:** OC-045 (after the 10-09 04:00Z Kavita scan and 04:32Z pairing run, earliest 04:45Z), OC-043 (10-09 14:00Z),
+OC-046 (Ransom idle rule). Also open: haynes-ops#3538 (Codex sessions fail the cigar-journal MCP auth).
+
 ## ▶ 2026-10-07 (late) / 10-08: coordinator wave after the pod bounce
 
 - **18:00Z owed checks (#822):** OC-017, OC-020 and OC-022 passed. OC-014 failed: format-pairing paced mint
