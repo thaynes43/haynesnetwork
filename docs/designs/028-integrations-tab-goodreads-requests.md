@@ -1,7 +1,7 @@
 # DESIGN-028: Integrations tab — Goodreads shelf sync, requests/Missing, coverage
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-07 (amendment: admins read a want's Request Events on its Wanted detail, issue #792). Prior: 2026-10-07 (Books Census follow-up, issue #799: the first live run and its repair; titles that are one string without a leading article). Prior: 2026-10-07 (Books Census follow-up: a file whose title is the record's with words cut, issue #799). Prior: 2026-10-06 (amendment: the collection force-search and the one re-request read the language again after their own addBook, issue #794). Prior: 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
+- **Last updated:** 2026-10-09 (duplicate-copy proof windows, issue #831). Prior: 2026-10-07 (amendment: admins read a want's Request Events on its Wanted detail, issue #792). Prior: 2026-10-07 (Books Census follow-up, issue #799: the first live run and its repair; titles that are one string without a leading article). Prior: 2026-10-07 (Books Census follow-up: a file whose title is the record's with words cut, issue #799). Prior: 2026-10-06 (amendment: the collection force-search and the one re-request read the language again after their own addBook, issue #794). Prior: 2026-10-06 (amendment: the Books Census, a daily observe-only census of wrong files and the English-only rule, issues #744 and #781; the two #781 books repaired). Prior: 2026-10-06 (amendment: every write to a book request records a Request Event, issue #741, ADR-101). Prior: 2026-10-06 (amendment: LazyLibrarian's `.mobi` / `.azw3` books are converted to EPUB, issue #770). Prior: 2026-10-06 (amendment: the Author Check, a collection want on another author's book is resolved again, issue #771). Prior: 2026-10-06 (amendment: a collection want LazyLibrarian downloaded reads Downloaded, issue #759). Prior: 2026-10-06 (amendment: `grabbed` follows LazyLibrarian, and LazyLibrarian is told when a want is given up, issues #734 and #735). Prior: 2026-10-05 (amendment: a want on a non-English LazyLibrarian book asks for the English edition, issue #719). Prior: 2026-10-05 (amendment: a landed format stays truthful, issue #715). Prior: 2026-10-05 (amendment: a request is never satisfied by another volume, issue #693). Prior: 2026-07-14
 - **Satisfies:** PRD-001 R-178..R-184; governed by ADR-055 (linking + app-side sync + confined LL
   write + the Missing model), ADR-046 (books_items stays a pure mirror), ADR-021 (section
   permissions), ADR-015 (reflow-free UI), ADR-054 (MAM governor — untouched).
@@ -1804,3 +1804,32 @@ and moving copies. Supervise lock health and abort on loss or expiry. Prepare an
 while workloads are still running, then bound the service outage and restore immediately before further scans or
 app checks. A move verifies its retained bytes before removing the original directory entry. Restoration verifies
 the retained copy and publishes a fresh inode only to an absent original path, preserving the backup.
+
+The complete byte and OPF census may be collected while production is running. It is
+not a dependency snapshot or permission to move files. It must retain SHA-256, raw OPF
+and parsed identity for every EPUB, plus device, inode, size, modification time, change
+time, link count, mode, UID and GID for every library file. The collector must prove
+a complete stable traversal, unchanged source descriptors and paths, and its actual
+Pod/node/mount and immutable program identity. Partial or portable fingerprints that
+omit device identity cannot support reuse.
+
+Inside the short window, SOURCE still owns its primary PostgreSQL 16 read-only SHARE
+fence and freshly captures all app and vendor dependencies after the service stops.
+It traverses the entire library again and compares the complete path set and every
+full fingerprint with the reviewed live census. Only exact matches may reuse those
+byte and OPF facts; additions, removals, races, unsafe links or any changed field
+refuse the operation and restore production. Retain the original byte-capture clocks
+and hashes alongside the distinct current validation clocks. No old capture becomes
+a new byte read. This proof concerns the configured publishing paths and does not
+claim privileged storage or undiscovered aliases incapable of arbitrary writes.
+
+MAIN owns its own primary read-only SHARE fence, independently validates the complete
+current path/fingerprint set, and rehashes and parses every selected keeper and extra
+before the first move. It checks descriptor/path identity and PostgreSQL health at
+every file boundary and retains the first verified archive before continuing the
+exact remainder. Unknown or changed inputs refuse; no refresh, retry or new census
+is performed while paused. This removes redundant whole-corpus byte reads from the
+pause without reducing selected-file or dependency checks. Normal hourly behavior
+is unchanged. Keep the existing absolute expiry, exact writer ownership and restore
+watcher. Any performance claim must come from actual completed captures, not the
+faster of inconsistent earlier timings.
