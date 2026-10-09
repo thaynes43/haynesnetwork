@@ -176,3 +176,14 @@ another pause. The corpus reader's observed 32.588-second and 132.216-second dur
 prove a future duration. Production stays live during diagnosis. Hourly cleanup ordering is
 fixed by haynes-ops #3615 after both valid advisory findings were resolved and re-reviewed.
 Detailed actual receipts and remaining work are in the copy-refusals context.
+
+### Bounded copy proof revision, 2026-10-09
+
+Before the next pause, implement and review the DESIGN-028 amendment for complete
+live byte evidence followed by exact complete SOURCE and MAIN fingerprint validation.
+Retain device identity for every path; the earlier portable non-EPUB fingerprints
+are insufficient. App/vendor dependencies remain fresh inside the held window, and
+every selected keeper and extra still receives whole-byte and identity checks before
+any move. Preserve all absolute deadlines, original capture clocks and restore-first
+behavior. New or changed paths refuse rather than being silently adopted. Production
+stays live during implementation and its read-only baseline capture.
