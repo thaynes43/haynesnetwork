@@ -115,6 +115,9 @@ wide/looped tests or destructive live experiments. Embedded PostgreSQL was versi
   After the independent comic-worklist correction, the final Goodreads vertical selection passed 56/56; the pure
   Held File Check file was unchanged from its passing combined run. API TypeScript checking and all changed source/test
   files' scoped ESLint passed. A second independent targeted review found no remaining blocker in this follow-up.
+  The final-head required test exposed two transport fixtures seeding `books_items` outside the domain writer;
+  those fixtures now use `syncBooks`. The unchanged static single-writer guard passed 1/1, and the corrected first-link
+  and hourly transport suites passed 7/7 and 6/6 respectively. Scoped ESLint passed again.
 
 PostgreSQL proofs and unconditional vendor API writes cannot be made atomic by these small guards. Source mutation
 after a last read can still race an external add/queue/search; a new owner after the last protection read can still

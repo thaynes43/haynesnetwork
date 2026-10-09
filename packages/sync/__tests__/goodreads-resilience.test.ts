@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { booksItems, integrationShelfItems, permissionAudit, userIntegrations } from '@hnet/db';
-import { linkIntegration, markIntegrationSynced } from '@hnet/domain';
+import { linkIntegration, markIntegrationSynced, syncBooks } from '@hnet/domain';
 import { GoodreadsHttpError, type GoodreadsRssClient, type GoogleBooksClient } from '@hnet/goodreads';
 import { runGoodreadsSync } from '../src/goodreads';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
@@ -77,10 +77,12 @@ const T2 = new Date('2026-07-16T02:00:00Z');
 describe('runGoodreadsSync — transient shelf blip keeps the link (ADR-057 amend)', () => {
   it('retains the fresh GB roster when a shelf exposes only a coauthored work’s primary author', async () => {
     await linkTwoShelfIntegration('123456', ['to-read']);
-    await t.db.insert(booksItems).values({ source: 'kavita', mediaKind: 'book', externalId: 'held-good-omens',
+    await syncBooks({ db: t.db, syncedSources: [], rows: [{ source: 'kavita', mediaKind: 'book', externalId: 'held-good-omens',
       libraryId: '1', libraryName: 'Books', title: 'Good Omens', sortTitle: 'good omens', author: 'Neil Gaiman', deepLinkUrl: 'http://x',
+      narrator: null, seriesName: null, year: null, releasedAt: null, genres: [], coverRef: null,
+      pageCount: null, wordCount: null, durationSeconds: null, sizeBytes: null, sourceAddedAt: null, sourceUpdatedAt: null,
       attrs: { heldBooks: [{ title: 'Good Omens', author: 'Neil Gaiman', authors: ['Neil Gaiman', 'Terry Pratchett'], isbn: null }] },
-    });
+    }] });
     const report = await runGoodreadsSync({ db: t.db, goodreads: {
       rss: stubRss({ 'to-read': { items: [{ id: 'good-omens', title: 'Good Omens', author: 'Neil Gaiman' }] } }),
       googleBooks: { resolveVolume: async () => ({ volumeId: 'different-edition', title: 'Good Omens',

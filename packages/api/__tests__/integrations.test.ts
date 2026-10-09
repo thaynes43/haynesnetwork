@@ -4,8 +4,7 @@
 // and the manual re-search ownership check.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { GbVolume, GoodreadsRssClient, GoodreadsShelfItem, GoogleBooksClient } from '@hnet/goodreads';
-import type { LazyLibrarianClientBundle } from '@hnet/domain';
-import { booksItems } from '@hnet/db';
+import { syncBooks, type LazyLibrarianClientBundle } from '@hnet/domain';
 import { bootMigratedDb, caller, createUser, makeCtx, sessionUser, type TestDb } from './helpers';
 import type { TRPCContext } from '../src/trpc';
 
@@ -96,10 +95,12 @@ describe('integrations router — link + shelf', () => {
 
   it('runs the FIRST shelf sync on link so the wall is not a "0 of 0" dead-end (fix 3a)', async () => {
     const admin = await createUser(t.db, { admin: true });
-    await t.db.insert(booksItems).values({ source: 'kavita', mediaKind: 'book', externalId: 'held-good-omens',
+    await syncBooks({ db: t.db, syncedSources: [], rows: [{ source: 'kavita', mediaKind: 'book', externalId: 'held-good-omens',
       libraryId: '1', libraryName: 'Books', title: 'Good Omens', sortTitle: 'good omens', author: 'Neil Gaiman', deepLinkUrl: 'http://x',
+      narrator: null, seriesName: null, year: null, releasedAt: null, genres: [], coverRef: null,
+      pageCount: null, wordCount: null, durationSeconds: null, sizeBytes: null, sourceAddedAt: null, sourceUpdatedAt: null,
       attrs: { heldBooks: [{ title: 'Good Omens', author: 'Neil Gaiman', authors: ['Neil Gaiman', 'Terry Pratchett'], isbn: null }] },
-    });
+    }] });
     const shelfItem: GoodreadsShelfItem = {
       externalBookId: 'gr-good-omens',
       title: 'Good Omens',
