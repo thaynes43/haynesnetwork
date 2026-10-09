@@ -1852,7 +1852,10 @@ a complete stable traversal, unchanged source descriptors and paths, and its act
 Pod/node/mount and immutable program identity. Partial or portable fingerprints that
 omit device identity cannot support reuse.
 
-SOURCE is the read-only census Job; MAIN is the manual copy-consolidation Job.
+LIVE is the read-only whole-corpus byte producer that runs while normal production
+remains on. SOURCE is the read-only census Job; MAIN is the manual copy-consolidation Job.
+For this preparation record, Root (the coordinator) is the task-coordinating agent
+that reviews exact source and packets within the owner's authorized scope.
 The trusted assembly is the pinned preparation program that verifies captured
 inputs and builds the writer's snapshot without mutating source systems.
 Inside the short window, SOURCE still owns its primary PostgreSQL 16 read-only SHARE
@@ -1912,5 +1915,5 @@ failure after first retention halts the remainder and preserves the actual retai
 receipt before restore. A blocked NFS call can delay a synchronous health query;
 the existing owning-process deadline, native UID cleanup and restore-first gates
 still apply. This clarification grants preparation only; concrete implementation
-and finite failure proofs require independent review and root's final ratification.
+and finite failure proofs require independent review and Root's final ratification.
 It changes no source clock, publisher lease, recovery trigger or normal hourly mode.
