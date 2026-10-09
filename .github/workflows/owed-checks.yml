@@ -44,32 +44,5 @@ jobs:
           pnpm --filter @hnet/sync exec tsx src/scripts/owed-checks.ts --no-data
           --tracker="$GITHUB_WORKSPACE/.agents/owed-checks.yaml" --markdown="$RUNNER_TEMP/owed.md"
       - name: Open, update or close the overdue issue
-        run: |
-          set -euo pipefail
-          body="$RUNNER_TEMP/owed.md"
-          ids=$(head -1 "$body" | sed -n 's/^<!-- owed-checks-overdue: \(.*\) -->$/\1/p')
-          gh label create "$LABEL" --color D93F0B --description "Owed post-deploy checks past due (DESIGN-053)" \
-            >/dev/null 2>&1 || true
-          # GitHub's issue listing lags a new issue by minutes, so a run soon after another can open a second one:
-          # keep the oldest open issue and close any other.
-          read -r -a open_issues <<<"$(gh issue list --label "$LABEL" --state open --json number \
-            --jq '[.[].number] | sort | map(tostring) | join(" ")')"
-          issue="${open_issues[0]:-}"
-          for extra in "${open_issues[@]:1}"; do
-            gh issue close "$extra" --comment "Duplicate of #$issue; closing."
-          done
-          if [ -n "$ids" ]; then
-            if [ -z "$issue" ]; then
-              gh issue create --title "Owed checks overdue" --label "$LABEL" --body-file "$body"
-            else
-              was=$(gh issue view "$issue" --json body --jq .body | head -1 \
-                | sed -n 's/^<!-- owed-checks-overdue: \(.*\) -->$/\1/p')
-              gh issue edit "$issue" --body-file "$body" >/dev/null
-              if [ "$was" != "$ids" ]; then
-                gh issue comment "$issue" --body "Overdue now: ${ids//,/, } (was: ${was:-none})."
-              fi
-            fi
-          elif [ -n "$issue" ]; then
-            gh issue comment "$issue" --body "No owed check is overdue now; closing."
-            gh issue close "$issue"
-          fi
+        run: >-
+          pnpm --filter @hnet/sync exec tsx src/scripts/owed-checks-issue.ts "$RUNNER_TEMP/owed.md"
