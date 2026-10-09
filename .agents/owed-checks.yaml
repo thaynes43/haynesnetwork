@@ -1614,7 +1614,7 @@ checks:
     not_before: 2026-10-09T04:45:00Z
     due: 2026-10-09T12:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       Read Kavita's 04:00Z Books scan logs and compare the post-backfill file-to-series inventory with the result.
       Expect no series flips for the affected tagged EPUBs, every affected partial series' files present under the
@@ -1650,6 +1650,8 @@ checks:
       the brief verification pause; actual runtime at 19:48:44Z shows all five CronJobs unsuspended and Libretto
       acquisition normal. Copy moves and reading-list reconciliation are still in progress; hourly strip stays off.
       This manual evidence does not satisfy the October 9 nightly check.
+    evidence:
+      - "2026-10-09 05:09Z passed (read-only; Kavita pod logs kavita-67c5695b9b-qxkjr, app DB read-only session, format-pairing pod haynesnetwork-sync-format-pairing-29858672-thmmb). Kavita's 04:00Z Books scan (00:00 local, not forced): 2069 directories, 39 series reprocessed, finished in 10.9 s as 1931 series; the only series removed was one, Pathfinder (Kavita series 2268, the replacement id minted by the 2026-10-08 17:22Z sync). Zero series added (no books_items row first seen after 04:00Z), so there were no flips for the stripped series: the live Kavita book rows went from 1932 to 1931 by that one Pathfinder removal, and the surviving Pathfinder row is the original series 1448, whose pair the 04:32Z run re-created. The 04:32Z format-pairing run: paired 718, added 1, dropped 1, revived 0, minted 0, pushed 0, attempted 0; the one drop and one add are the same Pathfinder audiobook moving from the removed series 2268 to 1448 (pair first seen 04:32:03Z on external id 1448). Request Events since 04:00Z: 37, all ll_rerequest from format-pairing.rerequest (34 requeued, 3 deferred), no new requests. Same-title duplicate groups still present: 31 groups (62 live rows) with the same lower-cased title and author; the known #831 class (copy cleanup not done), recorded separately as the row asks, not a failure. Wording note: the row's older sentence that the zero-flip target covers every affected tagged EPUB was checked at series level (adds, removals, ids), not by a new file-to-series inventory, because Kavita's database is not readable from the pod; the 1949 of 1956 mapping and its seven unmapped and 13 nonunique paths are unchanged as last recorded and were not re-derived."
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/825']
 
