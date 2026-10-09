@@ -36,7 +36,7 @@ import {
 } from './book-request-events';
 import { FOREIGN_LANGUAGE_REASON, NO_ENGLISH_EDITION_REASON } from './book-language';
 import { collectionFormatForSource, llQueuedFormats, recordLlReleases } from './ll-release-record';
-import { pairingCreditsAgree, pairingTitleKey, type PairingCredit } from './pairing-work-identity';
+import { declaredCredits, pairingCreditsAgree, pairingTitleKey, type PairingCredit } from './pairing-work-identity';
 import { readHeldBooks, readSourceAuthors } from './books';
 
 // ---------------------------------------------------------------------------
@@ -454,7 +454,11 @@ export function normAuthor(a: string | null): string {
   return (a ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-export type LibraryMatcher = (title: string, author: string | null) => LibraryMatch | null;
+export interface LibraryMatcher {
+  (title: string, author: string | null, authors?: readonly string[]): LibraryMatch | null;
+  /** A held candidate can forbid automatic acquisition without proving complete work coverage. */
+  deferAcquisition(title: string, author: string | null, authors?: readonly string[]): boolean;
+}
 
 /** These request/member display snapshots serialize contributors with commas, never substring aliases. */
 const snapshotCredit = (author: string | null, authors?: readonly string[]): PairingCredit => ({
@@ -496,14 +500,26 @@ export async function loadLibraryMatcher(db?: DbClient): Promise<LibraryMatcher>
     }
   }
 
-  return (title, author) => {
+  const match: LibraryMatcher = (title, author, authors) => {
     const bucket = index.get(pairingTitleKey(title));
     if (!bucket || bucket.length === 0) return null;
-    const matches = bucket.filter((b) => pairingCreditsAgree(b, snapshotCredit(author)));
+    const matches = bucket.filter((b) => pairingCreditsAgree(b, snapshotCredit(author, authors)));
     const pick = matches.find((b) => b.mediaKind !== 'comic') ?? matches[0];
     if (!pick) return null;
     return { id: pick.id, mediaKind: pick.mediaKind };
   };
+  match.deferAcquisition = (title, author, authors) => {
+    if (!author || match(title, author, authors)) return false;
+    return (index.get(pairingTitleKey(title)) ?? []).some((candidate) => {
+      const credits = declaredCredits(candidate);
+      // A primary credit is negative permission only when complete source credits cannot prove the want.
+      // An incomplete chapter can still name that primary author without borrowing it for a positive match.
+      return (credits.length ? credits : [candidate.author]).some((credit) =>
+        pairingCreditsAgree({ author: credit }, { author }),
+      );
+    });
+  };
+  return match;
 }
 
 // ---------------------------------------------------------------------------
@@ -519,6 +535,8 @@ export interface RequestSyncItem {
   gbVolumeId: string | null;
   /** The library match (books_items id), when the want is already in the library. */
   matchedBooksItemId: string | null;
+  /** Current held-source ambiguity defers automatic acquisition only for this fresh shelf sync. */
+  acquisitionDeferred?: boolean;
   /** True when GB (or the matched library kind) classifies this as a comic — do NOT route to LL. */
   isComic: boolean;
 }
@@ -679,7 +697,7 @@ export async function syncShelfRequests(
       // A comic that is not (yet) landed needs Kapowarr work: resolve+add (no volume id) or reconcile.
       // Issue #715: a landed comic with no library match is reconciled too, so it can leave `landed` when Kapowarr
       // no longer holds every issue.
-      if (requestId && isComic && !item.matchedBooksItemId) {
+      if (requestId && isComic && !item.matchedBooksItemId && !item.acquisitionDeferred) {
         toRouteComics.push({ requestId, title: item.title, author: item.author, kapowarrVolumeId });
       }
     }
@@ -698,8 +716,9 @@ function collectTargets(
   prevAudio: BookRequestStatus,
   toPush: RequestLlTarget[],
   toReconcile: RequestLlTarget[],
-  want: { title: string; author: string | null; matchedBooksItemId: string | null },
+  want: { title: string; author: string | null; matchedBooksItemId: string | null; acquisitionDeferred?: boolean },
 ): void {
+  if (want.acquisitionDeferred) return;
   if (unroutableReason) return; // comics never touch LL
   if (!llBookId) return; // no GB id resolved — can't push yet (honest gap)
   // A library match lands both formats and nothing about LazyLibrarian can change that. Without one, `landed` is

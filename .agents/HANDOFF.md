@@ -16,6 +16,8 @@ false held proof, pairing source changes during acquisition, census extra-work p
 using stale owners. Technical scope/provenance, regressions and bounded cross-system race limits are in
 `.agents/context/2026-10-09-adversarial-books-review.md`. The change is prepared for PR validation and coordinated
 shipping; required checks, advisory review and deployment evidence must be completed before calling it shipped.
+The #866 advisory follow-up preserves fresh complete GB rosters for primary-only Goodreads feeds and defers unproved
+held candidates for the current sync; independent punctuation variants are covered by the same explicit-work guard.
 The #825 operational completion and its owed checks remain separate below.
 
 ## ▶ 2026-10-08 / 10-09: #825 EPUB series migration mostly done; Codex out until 10-15

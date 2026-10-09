@@ -33,7 +33,8 @@ describe('held-file title prefixes do not hide another explicitly named work', (
   });
 
   it('also rejects another volume appended to a full multiword title', () => {
-    for (const extra of ['Code to Zero: and The Man from St Petersburg', 'Code to Zero (and The Man from St Petersburg)']) {
+    for (const separator of [': ', '(', '[', ', ', '– ', '— ', '- ', ': ([— ']) {
+      const extra = `Code to Zero ${separator}and The Man from St Petersburg`;
       expect(heldFileNamesBook(extra, { title: 'Code to Zero', author: 'Ken Follett' })).toBe(false);
     }
     expect(heldFileNamesBook('Harry Potter and the Goblet of Fire and Harry Potter and the Order of the Phoenix', {

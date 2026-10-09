@@ -75,6 +75,20 @@ marker still routes (a documented honest gap — no ISBN column on the mirror, A
 
 ### D-04 — The sync flow (`goodreads-sync` mode → domain orchestrator)
 
+**2026-10-09 review clarification — primary-only shelf credits.** Goodreads RSS exposes one `author_name`, so it
+cannot prove the complete credits of a coauthored held book. Both the hourly enrichment and first-link enrichment
+retain the fetched Google Books contributor array in memory, with its volume id and full title. It may supply the
+request's matching roster only when the fresh volume id and full title agree with the shelf item and exactly one
+declared credit strictly agrees with its primary author. Contributor boundaries remain explicit; neither a display
+comma nor a substring match supplies this proof. This does not rewrite the shelf's primary-author snapshot.
+
+When a same-full-title held source names that primary credit but its complete roster cannot agree, automatic
+acquisition defers for this sync. The shelf and request still mirror honestly, without a false library match or a
+new permanent hold. No push, Skipped sweep, gone-book re-request or Kapowarr routing is selected for that deferred item; a fresh
+sync retries the identity proof. A validated complete roster can match a held copy across editions and avoid a
+duplicate request. An unheld book remains eligible for acquisition. The existing bounded library snapshot is a
+point-in-time read, not a lock across later remote writes.
+
 `packages/sync/goodreads.ts` `runGoodreadsSync`: for each LINKED integration, fetch+enrich each
 shelf (external reads), then hand the enriched snapshot to the domain orchestrator. Per-integration
 isolation — a private/unreachable shelf marks THAT integration `error` and continues.
@@ -1379,7 +1393,9 @@ one string once spaces and punctuation go are the same book. Otherwise:
    **Amendment 2026-10-09 (adversarial review, PR #791): an explicit second work is not a subtitle.** Before either
    the whole-title prefix shortcut or a split-part match, a whole-record-title prefix followed by `and`, `[and]`,
    `&`, `/` or `+` refuses distinctive suffix words the record's subtitle, the file's declared series or packaging
-   does not explain. "Code to Zero [and] The Man from St Petersburg" cannot satisfy "Code to Zero", including when
+   does not explain. Unicode punctuation and whitespace before the explicit connector do not hide it, including
+   parentheses, brackets, commas, dashes and repeated decoration. "Code to Zero [and] The Man from St Petersburg"
+   cannot satisfy "Code to Zero", including when
    the first split part matches exactly. A declared `BookSub`, series or edition suffix remains allowed, as does
    "and Other Stories". Implicit and colon subtitles retain the existing rule. This closes the inverse of the
    shorter-file collection mismatch repaired in #805/#806; the census must report the longer file as `wrong_file`.

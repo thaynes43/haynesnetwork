@@ -792,7 +792,9 @@ function namesNothingElse(
   if (headWords.length > 0 && headWords.every((w, i) => tokens[i]?.[0] === w)) {
     const last = tokens[headWords.length - 1]!;
     const tail = folded.slice(last.index + last[0].length).trim();
-    const connector = /^(?:[:;.(–-]\s*)*(?:\[\s*and\s*\]|and\b|[+/])\s*/.exec(tail);
+    // Skip Unicode punctuation/whitespace, except the connector characters themselves. This covers decorated
+    // conjunctions without interpreting an ordinary unmarked subtitle as another work.
+    const connector = /^(?:(?![+/])[\p{P}\s])*(?:and\b|[+/])\s*/u.exec(tail);
     if (connector) {
       const suffix = distinctiveWords(tail.slice(connector[0].length), authorWords)
         .filter((w) => !PACKAGING_WORDS.has(w));

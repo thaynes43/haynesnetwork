@@ -537,6 +537,113 @@ describe('syncGoodreadsIntegration (the vertical)', () => {
     { shelf: 'to-read', externalBookId: 'gr-sp', title: 'Scott Pilgrim, Vol. 1', author: 'Bryan Lee O’Malley', isbn: null, gbVolumeId: 'gb-sp', coverUrl: null, shelvedAt: new Date(), isComic: true },
   ];
 
+  const coauthoredWant: EnrichedShelfItem = {
+    shelf: 'to-read', externalBookId: 'gr-good-omens', title: 'Good Omens', author: 'Neil Gaiman',
+    isbn: null, gbVolumeId: 'gb-other-edition', coverUrl: null, shelvedAt: null, isComic: false,
+  };
+  async function seedCoauthoredHeldBook() {
+    await t.db.insert(booksItems).values({
+      source: 'kavita', mediaKind: 'book', externalId: 'held-good-omens', libraryId: '1', libraryName: 'Books',
+      title: 'Good Omens', sortTitle: 'good omens', author: 'Neil Gaiman', deepLinkUrl: 'http://x',
+      attrs: { heldBooks: [{ title: 'Good Omens', author: 'Neil Gaiman', authors: ['Neil Gaiman', 'Terry Pratchett'], isbn: null }] },
+    });
+  }
+
+  it('defers a primary-only held candidate, then lands it on fresh complete GB proof across editions', async () => {
+    const { integration } = await seed();
+    await seedCoauthoredHeldBook();
+    const ll = stubLl(() => null);
+    const input = { db: t.db, integrationId: integration.id, syncedShelves: ['to-read'], ll: ll.bundle, pacer: async () => {} };
+    const deferred = await syncGoodreadsIntegration({ ...input, items: [coauthoredWant] });
+    expect(ll.calls).toEqual([]);
+    expect(deferred.coverage.covered).toBe(0);
+    const [pending] = await getBookRequestsForIntegration({ db: t.db, integrationId: integration.id });
+    expect(pending?.ebookStatus).toBe('requested');
+    expect(pending?.unroutableReason).toBeNull();
+    const proven = await syncGoodreadsIntegration({ ...input, items: [{ ...coauthoredWant,
+      gbIdentity: { volumeId: 'gb-other-edition', title: 'Good Omens', authors: ['Neil Gaiman', 'Terry Pratchett'] },
+    }] });
+    expect(ll.calls).toEqual([]);
+    expect(proven.coverage.covered).toBe(1);
+    const [landed] = await getBookRequestsForIntegration({ db: t.db, integrationId: integration.id });
+    expect(landed?.ebookStatus).toBe('landed');
+    expect(landed?.audioStatus).toBe('landed');
+    expect(landed?.matchedBooksItemId).not.toBeNull();
+    expect(landed?.author).toBe('Neil Gaiman'); // RSS snapshot is preserved, never flattened from GB.
+  });
+
+  it.each([
+    { volumeId: 'wrong-id', title: 'Good Omens', authors: ['Neil Gaiman', 'Terry Pratchett'] },
+    { volumeId: 'gb-other-edition', title: 'Neverwhere', authors: ['Neil Gaiman', 'Terry Pratchett'] },
+    { volumeId: 'gb-other-edition', title: 'Good Omens', authors: ['Terry Pratchett', 'Walter Mosley'] },
+    { volumeId: 'gb-other-edition', title: 'Good Omens', authors: ['Neil Gaiman', 'Emily Wilson'] },
+  ])('never borrows conflicting GB identity for held coverage: %j', async (gbIdentity) => {
+    const { integration } = await seed();
+    await seedCoauthoredHeldBook();
+    const ll = stubLl(() => null);
+    const report = await syncGoodreadsIntegration({ db: t.db, integrationId: integration.id,
+      items: [{ ...coauthoredWant, gbIdentity }], syncedShelves: ['to-read'], ll: ll.bundle, pacer: async () => {},
+    });
+    expect(report.coverage.covered).toBe(0);
+    expect(ll.calls).toEqual([]);
+  });
+
+  it('still acquires a proven coauthored work that is not held', async () => {
+    const { integration } = await seed();
+    const ll = stubLl(() => null);
+    await syncGoodreadsIntegration({ db: t.db, integrationId: integration.id, items: [{ ...coauthoredWant,
+      gbIdentity: { volumeId: 'gb-other-edition', title: 'Good Omens', authors: ['Neil Gaiman', 'Terry Pratchett'] },
+    }], syncedShelves: ['to-read'], ll: ll.bundle, pacer: async () => {} });
+    expect(ll.calls.map((c) => c.cmd)).toEqual(['addBook', 'queueBook', 'queueBook', 'searchBook']);
+  });
+
+  it('also defers a primary-only held comic before Kapowarr routing, then recovers with its complete roster', async () => {
+    const { integration } = await seed();
+    await t.db.insert(booksItems).values({ source: 'kavita', mediaKind: 'comic', externalId: 'held-watchmen',
+      libraryId: '2', libraryName: 'Comics', title: 'Watchmen', sortTitle: 'watchmen', author: 'Alan Moore', deepLinkUrl: 'http://x',
+      attrs: { heldBooks: [{ title: 'Watchmen', author: 'Alan Moore', authors: ['Alan Moore', 'Dave Gibbons'], isbn: null }] },
+    });
+    const want: EnrichedShelfItem = { ...coauthoredWant, externalBookId: 'gr-watchmen', title: 'Watchmen',
+      author: 'Alan Moore', gbVolumeId: 'gb-watchmen', isComic: true,
+    };
+    const kapowarr = stubKapowarr();
+    const ll = stubLl(() => null);
+    const input = { db: t.db, integrationId: integration.id, syncedShelves: ['to-read'],
+      kapowarr: kapowarr.bundle, ll: ll.bundle, pacer: async () => {},
+    };
+    const deferred = await syncGoodreadsIntegration({ ...input, items: [want] });
+    expect(deferred.coverage.covered).toBe(0);
+    expect(kapowarr.calls).toEqual([]);
+    expect(ll.calls).toEqual([]);
+    const proven = await syncGoodreadsIntegration({ ...input, items: [{ ...want, gbIdentity: {
+      volumeId: 'gb-watchmen', title: 'Watchmen', authors: ['Alan Moore', 'Dave Gibbons'],
+    } }] });
+    expect(proven.coverage.covered).toBe(1);
+    expect(kapowarr.calls).toEqual([]);
+    const [request] = await getBookRequestsForIntegration({ db: t.db, integrationId: integration.id });
+    expect(request?.comicStatus).toBe('landed');
+  });
+
+  it.each(['Skipped', 'Ignored'])('also defers automatic %s sweep or gone re-request on a later sync', async (status) => {
+    const { integration } = await seed();
+    const now = new Date('2026-10-09T10:00:00Z');
+    await syncGoodreadsIntegration({ db: t.db, integrationId: integration.id, items: [coauthoredWant],
+      syncedShelves: ['to-read'], ll: stubLl(() => ({ ebookStatus: status, audioStatus: status })).bundle,
+      pacer: async () => {}, now,
+    });
+    await seedCoauthoredHeldBook();
+    const ll = stubLl(() => ({ ebookStatus: 'Skipped', audioStatus: 'Skipped' }));
+    if (status === 'Ignored') {
+      ll.bundle.read.getAllBookStatuses = async () => new Map([['unrelated', {
+        bookId: 'unrelated', ebookStatus: 'Skipped', audioStatus: 'Skipped', title: 'Other Book', author: 'Other Author',
+      }]]) as never;
+    }
+    await syncGoodreadsIntegration({ db: t.db, integrationId: integration.id, items: [coauthoredWant],
+      syncedShelves: ['to-read'], ll: ll.bundle, pacer: async () => {}, now: new Date(now.getTime() + 3_600_000),
+    });
+    expect(ll.calls).toEqual([]);
+  });
+
   it('mirrors, mints, pushes BOTH formats via queueBook, parks comics, reconciles, and computes coverage', async () => {
     const { integration } = await seed();
     // The routable book comes back Ignored from LL → the DEAD-END per-format Missing entry (raw Skipped

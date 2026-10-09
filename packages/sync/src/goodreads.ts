@@ -304,6 +304,7 @@ export async function runGoodreadsSync(input: {
             author: item.author,
             isbn: gb?.isbn13 ?? item.isbn,
             gbVolumeId: gb?.volumeId ?? null,
+            gbIdentity: gb ?? undefined,
             coverUrl: item.coverUrl,
             shelvedAt: item.shelvedAt,
             // GB classification, OR a comic marker in the shelved title/author — the safety net when GB

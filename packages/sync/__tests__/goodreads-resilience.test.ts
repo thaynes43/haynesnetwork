@@ -9,7 +9,7 @@
 // offline (ADR-010).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { integrationShelfItems, permissionAudit, userIntegrations } from '@hnet/db';
+import { booksItems, integrationShelfItems, permissionAudit, userIntegrations } from '@hnet/db';
 import { linkIntegration, markIntegrationSynced } from '@hnet/domain';
 import { GoodreadsHttpError, type GoodreadsRssClient, type GoogleBooksClient } from '@hnet/goodreads';
 import { runGoodreadsSync } from '../src/goodreads';
@@ -26,6 +26,7 @@ beforeEach(async () => {
   await t.db.delete(integrationShelfItems);
   await t.db.delete(userIntegrations);
   await t.db.delete(permissionAudit);
+  await t.db.delete(booksItems);
 });
 
 // A GB stub that never matches — items mirror honestly un-enriched (gbVolumeId null). Keeps the resilience
@@ -74,6 +75,21 @@ const T1 = new Date('2026-07-16T01:00:00Z');
 const T2 = new Date('2026-07-16T02:00:00Z');
 
 describe('runGoodreadsSync — transient shelf blip keeps the link (ADR-057 amend)', () => {
+  it('retains the fresh GB roster when a shelf exposes only a coauthored work’s primary author', async () => {
+    await linkTwoShelfIntegration('123456', ['to-read']);
+    await t.db.insert(booksItems).values({ source: 'kavita', mediaKind: 'book', externalId: 'held-good-omens',
+      libraryId: '1', libraryName: 'Books', title: 'Good Omens', sortTitle: 'good omens', author: 'Neil Gaiman', deepLinkUrl: 'http://x',
+      attrs: { heldBooks: [{ title: 'Good Omens', author: 'Neil Gaiman', authors: ['Neil Gaiman', 'Terry Pratchett'], isbn: null }] },
+    });
+    const report = await runGoodreadsSync({ db: t.db, goodreads: {
+      rss: stubRss({ 'to-read': { items: [{ id: 'good-omens', title: 'Good Omens', author: 'Neil Gaiman' }] } }),
+      googleBooks: { resolveVolume: async () => ({ volumeId: 'different-edition', title: 'Good Omens',
+        authors: ['Neil Gaiman', 'Terry Pratchett'], isbn13: null, categories: [], isComic: false,
+      }) } as unknown as GoogleBooksClient,
+    } });
+    expect(report.perIntegration[0]?.report?.coverage.covered).toBe(1);
+  });
+
   it('a 502 on ONE shelf keeps status linked, syncs the rest, tombstones nothing, then recovers', async () => {
     const integrationId = await linkTwoShelfIntegration('42', ['to-read', 'read']);
 

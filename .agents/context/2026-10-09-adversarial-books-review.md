@@ -36,6 +36,20 @@ chapters cannot supply contributor proof. Current source credits must also agree
 roster cannot rename an already queued Robert Fagles request. The exact shared-LL-id shortcut, active status rules,
 park/completion exclusions and genuine same-work edition/initial matches remain.
 
+The #866 advisory identified an acquisition consequence of A-02's conservative matching: Goodreads RSS exposes
+only a primary author. A deterministic PostgreSQL 16 replay of held *Good Omens* (Neil Gaiman and Terry Pratchett)
+with RSS credit Neil Gaiman and another Google Books edition produced add, both queues and search. LazyLibrarian's
+exact-id Held File guard could not see the copy Kavita already held. Both the hourly and first-link enrichers now
+retain the fetched GB identity and structured roster; matching admits it only with agreeing full title, current
+volume id and exactly one strict primary-credit match. A same-title held candidate with that primary credit but
+unproved complete identity instead defers automatic acquisition for this sync. It supplies no positive coverage,
+does not persist a new hold and retries with fresh proof. All automatic Goodreads pushes, Skipped sweeps and gone
+re-requests derive the guarded worklist; other automatic origin paths query only their own origin. Explicit manual
+search/Fix remains the owner's action. The independent reread found and closed the comic sibling worklist too:
+primary-only held Watchmen defers Kapowarr routing and later complete proof lands without vendor calls.
+The provider quota wrapper preserves its original complete payload; an
+unavailable enrichment supplies no guessed roster.
+
 A-03 reads only the current anchor by id. It checks undeleted/kind/language/held-source certainty, full work title,
 complete credits and normalized ISBN before resolve, inside the mint transaction, and before add/queue/search.
 The transaction locks the request first, then the anchor `FOR SHARE`, matching the existing repair writer's lock
@@ -45,6 +59,9 @@ ownership while skipping the stale search, so the next stable identity pass rele
 
 A-04 checks an explicit additional-work suffix before either the whole-title prefix or split-part fallback. `and`,
 `[and]`, `&`, `/` and `+`, including connectors behind part punctuation/parentheses, cannot hide another work.
+The finite independent follow-up also proved comma, square-bracket and em-dash bypasses. The guard now skips Unicode
+punctuation/whitespace before the explicit connector while retaining slash/plus as connectors themselves; regression
+controls cover both dashes, comma, parentheses, brackets and repeated decoration without inferring implicit subtitles.
 Declared BookSub/series/packaging, `and Other Stories`, implicit subtitles and ordinary colon subtitles retain
 their accepted behavior. The reproduced two-work title now yields one `wrong_file` census finding.
 
@@ -90,6 +107,14 @@ wide/looped tests or destructive live experiments. Embedded PostgreSQL was versi
 - Request Event writers and pacer: 13/13. Admin history API: 7/7.
 - Changed domain and sync test/source files passed scoped ESLint; domain TypeScript checking and `git diff --check`
   passed. Required lint/test/build/e2e and advisory Claude review run on the PR before merge.
+- Advisory follow-up: Goodreads vertical plus Held File Check 94/94, hourly enrichment transport 6/6, first-link API
+  enrichment 7/7. These prove cross-edition held-copy suppression, later fresh complete-credit recovery, conflicting
+  GB identity refusal, normal unheld acquisition and deferral of later Skipped/gone re-request paths. The new hourly
+  fixture initially used a nonnumeric external user id; correcting it to the existing numeric-id contract made the
+  focused suite pass. Domain TypeScript checking passed again.
+  After the independent comic-worklist correction, the final Goodreads vertical selection passed 56/56; the pure
+  Held File Check file was unchanged from its passing combined run. API TypeScript checking and all changed source/test
+  files' scoped ESLint passed. A second independent targeted review found no remaining blocker in this follow-up.
 
 PostgreSQL proofs and unconditional vendor API writes cannot be made atomic by these small guards. Source mutation
 after a last read can still race an external add/queue/search; a new owner after the last protection read can still
