@@ -9,6 +9,25 @@
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
 
+## ▶ 2026-10-09: parallel review and Kometa complete; #825 proofs remain gated
+
+The five adversarial fixes are live in v0.110.5; the normal Kometa operations run
+dropped from77m47s to91s after restoring one bulk IMDb request. Required checks,
+actual advisory findings, signed publication and deployment were verified. See
+`.agents/context/2026-10-09-parallel-review-outcome.md` for scope, evidence and limits.
+
+Production is normal: acquisition on, strip0. No COPY, production catalog/EPUB repair,
+reading-list application or hourly enable occurred. #3571 stays held. The unused
+old drafts #3622/#3623 are **closed**, superseding their parked-draft status below;
+prepared successors #3659/#3660 have never been applied.
+
+The third isolated Ransom scan preserved all IDs and protected tables but returned
+UNKNOWN on native metadata projection; its inverse did not run. Ops#3673 records
+the actual result. The bounded native successor, LIVE census host and Normal-only
+recovery source are under review; no prepared packet grants production authority.
+#831/#864, reading lists and hourly enable remain open. OC-046's idle threshold has
+already elapsed; keep Ransom's folder hold for preservation proof, not a new wait.
+
 ## ▶ 2026-10-09: adversarial review of the post-#746 books repair wave
 
 Five current failure cases reproduced and fixed: distinct collection requests erased by false coverage, Goodreads
