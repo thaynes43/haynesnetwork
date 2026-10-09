@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "prepared_only": true,
+  "runtime_authorization": false,
+  "root": "/data/cephfs-hdd/data/media/books/EBooks",
+  "state_dir": "/data/cephfs-hdd/data/media/books/.epub-convert",
+  "expected_app_version": "0.110.5",
+  "phase": "Pathfinder first: retain extra1, prove its retained backup and every remaining fingerprint, then extra2 under the same healthy SOURCE/MAIN fences and deadline; restore production before follow-on checks.",
+  "copy_selection": {
+    "schema": 1,
+    "authorizes_production": false,
+    "conditional_root_selection": true,
+    "condition": "Current complete SOURCE preflight after app v0.110.5 must prove these exact two entries eligible, unique LL keeper ownership, complete protection reads and unchanged corpus/selected bytes. Bind the resulting selection to exact snapshot SHA; root ratifies the phase before a writer. Any mismatch or dependency refuses the entire stage.",
+    "entries": [
+      {
+        "path": "Orson Scott Card/Pathfinder/Orson Scott Card - Pathfinder.epub",
+        "sha256": "c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2",
+        "keeper": "Orson Scott Card/Pathfinder/Pathfinder - Orson Scott Card.epub",
+        "keeper_sha256": "dca5fba80025aa2f91535d014684018e4e2211e85803cd136d4cda1c95a83f54"
+      },
+      {
+        "path": "Orson Scott Card/Visitors/Visitors - Orson Scott Card.epub",
+        "sha256": "c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2",
+        "keeper": "Orson Scott Card/Pathfinder/Pathfinder - Orson Scott Card.epub",
+        "keeper_sha256": "dca5fba80025aa2f91535d014684018e4e2211e85803cd136d4cda1c95a83f54"
+      }
+    ]
+  },
+  "selected_read_only_byte_scope": {
+    "Orson Scott Card/Pathfinder/Pathfinder - Orson Scott Card.epub": "dca5fba80025aa2f91535d014684018e4e2211e85803cd136d4cda1c95a83f54",
+    "Orson Scott Card/Pathfinder/Orson Scott Card - Pathfinder.epub": "c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2",
+    "Orson Scott Card/Visitors/Visitors - Orson Scott Card.epub": "c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2"
+  },
+  "unchanged_retained_paths": [
+    "Orson Scott Card/Pathfinder/Pathfinder - Orson Scott Card.pdf",
+    "Orson Scott Card/Visitors/Orson Scott Card - Visitors.epub"
+  ],
+  "restoration_trigger_seconds": 170,
+  "required_fresh_inputs": [
+    "actual v0.110.5 app/census module proof",
+    "complete expanded live corpus/device/byte evidence within original expiry",
+    "complete LL BookFile/AudioFile tables and unique keeper ownership",
+    "complete stable stopped Kavita reading/curation/lock dependency exports including historical aliases",
+    "full app items/wants under SOURCE and MAIN independent primary PostgreSQL16 SHARE fences",
+    "complete current publisher/writer scope and all active Jobs admitted",
+    "current reviewed GitOps pause and exact inverse plus armed independent recovery watcher",
+    "UID-bound native producer/input/ACK/foreground cleanup proof",
+    "explicit root phase ratification"
+  ],
+  "prohibited_actions": [
+    "other copy groups",
+    "metadata/title/contributor edits",
+    "LL rename or pointer repair",
+    "Kavita saved-state writes",
+    "reading-list changes",
+    "unfenced or expired capture adoption",
+    "overwriting a restored path",
+    "backup deletion"
+  ],
+  "filesystem_inverses": [
+    {
+      "relative_path": "Orson Scott Card/Pathfinder/Orson Scott Card - Pathfinder.epub",
+      "expected_sha256": "c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2",
+      "retained_manifest": "/data/cephfs-hdd/data/media/books/.epub-convert/copies/e14e562c49da94bdc9cfc3440b009b6435cf6aa3fbb85ae6698debededce8b2d-c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2.json",
+      "argv": [
+        "python3",
+        "/scripts/epub_convert.py",
+        "--restore-retained-copy",
+        "/data/cephfs-hdd/data/media/books/.epub-convert/copies/e14e562c49da94bdc9cfc3440b009b6435cf6aa3fbb85ae6698debededce8b2d-c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2.json"
+      ],
+      "dry_run_env": {
+        "STRIP_SERIES_METADATA": "0",
+        "STRIP_ONLY": "0",
+        "DRY_RUN": "1"
+      },
+      "apply_env": {
+        "STRIP_SERIES_METADATA": "0",
+        "STRIP_ONLY": "0",
+        "DRY_RUN": "0"
+      },
+      "requires": "Actual matching retained receipt, original path absent, reviewed bounded pause/inverse, source metadata/hash unchanged; fresh inode publish must not overwrite any racing path. Retained bytes stay indefinitely."
+    },
+    {
+      "relative_path": "Orson Scott Card/Visitors/Visitors - Orson Scott Card.epub",
+      "expected_sha256": "c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2",
+      "retained_manifest": "/data/cephfs-hdd/data/media/books/.epub-convert/copies/6c22fd9a602f88dbc9b1c8a673a8ea9355e4f0677106b9b90de0be0535321345-c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2.json",
+      "argv": [
+        "python3",
+        "/scripts/epub_convert.py",
+        "--restore-retained-copy",
+        "/data/cephfs-hdd/data/media/books/.epub-convert/copies/6c22fd9a602f88dbc9b1c8a673a8ea9355e4f0677106b9b90de0be0535321345-c48cece08187598a5a63a9fc2a330b911cef57393dcb4cd2db0697e9391e89b2.json"
+      ],
+      "dry_run_env": {
+        "STRIP_SERIES_METADATA": "0",
+        "STRIP_ONLY": "0",
+        "DRY_RUN": "1"
+      },
+      "apply_env": {
+        "STRIP_SERIES_METADATA": "0",
+        "STRIP_ONLY": "0",
+        "DRY_RUN": "0"
+      },
+      "requires": "Actual matching retained receipt, original path absent, reviewed bounded pause/inverse, source metadata/hash unchanged; fresh inode publish must not overwrite any racing path. Retained bytes stay indefinitely."
+    }
+  ],
+  "post_restore_checks": [
+    "all six schedules/services/normal acquisition and four Flux scopes restored",
+    "all owned Jobs/Pods and both PG owner sessions absent",
+    "normal Books scan uniquely enqueued/started/committed with both completion notifications",
+    "authoritative Pathfinder EPUB and genuine Visitors mapped; all unapproved path mappings unchanged",
+    "full saved reading/curation/lock exports exactly preserved",
+    "next unchanged-folder nightly file-level OC047 against deliberately updated baseline; unrelated historical gaps retained honestly"
+  ]
+}

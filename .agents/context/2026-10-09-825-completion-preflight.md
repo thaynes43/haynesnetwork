@@ -9,6 +9,15 @@ no findings. The review and its real counterexamples are recorded in
 `2026-10-09-adversarial-books-review.md`. The v0.110.5 release/deployment is still
 in progress at this checkpoint. This packet authorizes no library or list write.
 
+**15:34Z update.** Release PR #868 merged as `8374aeca2456ec7aba035530be4755fd89216cf1`;
+image publication and haynes-ops #3639 three-tag deployment verification remain in progress.
+The actual V3 whole-corpus LIVE attempt expired its original 180-second deadline without
+a baseline artifact or ACK. Independent cleanup at 15:33:33.916Z proved the union of all
+owned Jobs and Pods absent. Production stayed live. The child-kind cleanup correction,
+real typed-list regression and cap-preserving corpus-performance diagnosis are in progress;
+no fresh GO or increased CPU/deadline is inferred. The earlier V2 refusal remains history,
+not the latest closure state.
+
 ## Current gates and historical corrections
 
 The original #825 rulings remain: one Kavita series per book; #830 author-qualified
@@ -16,6 +25,12 @@ grouping for distinct same-title works; #831 unique LazyLibrarian BookFile keepe
 unprotected extras retained outside EBooks indefinitely; #835/#838/#839/#842
 conservative complete-identity defaults. Acquisition cannot fill an identity gap.
 No new author, title, progress migration or blanket duplicate policy is inferred.
+
+Prepared conditional profiles are `.agents/plans/074-pathfinder-two-extra-profile.json`
+and `074-ransom-series-only-profile.json`. They freeze exact scope, supported inverse argv
+and deterministic retained-manifest names, with `runtime_authorization=false`. Fresh
+inputs, native admission, current pause/inverse and ROOT's exact phase ratification are
+explicitly unbound. They are not approved writer selections or submitted Jobs.
 
 The October 9 14:30Z OC-047 file audit supersedes the earlier series-only conclusion.
 Of the original 1,956 EPUBs, 1,946 map, with ten gaps rather than seven. All three
@@ -86,6 +101,12 @@ saved IDs/XPath rather than assuming a metadata restore restores database IDs. K
 this as an explicit execution gate, not an invented new retention wait. Set the next
 overnight verification from the actual successful scan date, not from this capture.
 
+Preparation validation checked both profile scopes, deterministic retained-manifest
+names/inverse argv and Ransom's exact-folder strip-only/dry-run/state preservation
+flags. The current production `epub_copies.load_selection` refused the conditional
+Pathfinder profile, as required: it is not an approved SHA-bound writer selection.
+The owed-check parser admits all 47 rows and preserves OC-046's pending status/due.
+
 ## Reading lists and conservative identity decisions
 
 Credential-safe GET-only Libretto capture at 15:18:27.360Z found 75 recipes, all valid,
@@ -116,6 +137,16 @@ Hunger Games change may append only the approved Books target; keep its ABS targ
 every unrelated field. New manual recipes retain acquisition=false. Membership/order
 and the retained holds follow #835/#838/#839/#842; unknown metadata is a conservative
 hold with tracked reasons, never primary-author guessing or replacement acquisition.
+
+The retained `hn-825-recipes/worker-template.mjs` and `worker-seed-false-template.mjs`
+are also stale execution preparations: both permit `ReadingList/delete-item`; existing
+repair invokes full sync reconciliation; neither enforces the current 180-second worker,
+300-second evidence/native-run-store/scheduler admission or at-most-four scope. Their
+global empty LL URL prerequisite also predates the acquisition-disabled child contract.
+Do not execute either writer. Prepare a bounded successor matching DESIGN-037's add/order
+only, every-old-item-ID preservation and partial-journal rules, with finite protocol
+regressions and independent review before any list apply. Read-only previews must still
+be refreshed against the actual final corpus and source proofs.
 
 ## Exact next stage order
 

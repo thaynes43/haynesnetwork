@@ -15,12 +15,18 @@ OC-047 FAILED: three Pathfinder EPUBs became unmapped at the normal nightly scan
 Keep #864 open and refresh the expanded corpus. Ransom is already eligible under the original July 27
 actual reading / August 26 30-day clock, but its separate exact-folder strip/scan/state proof remains pending.
 Signed image/certificate/transparency and all immutable host pins passed; actual native LIVE V2 refused
-before Job creation, so V3 typed-inventory/ACK/foreground cleanup still needs actual closure. No next pause
+before Job creation. V3 then expired its original 180s without artifact/ACK; independent union cleanup at
+15:33:33.916Z proved all owned Jobs/Pods absent. Child-kind/typed-list correction and cap-preserving performance
+diagnosis remain. Release #868 merged `8374aeca`; publication/ops #3639 deployment is in progress. No next pause
 is authorized by this checkpoint. Stage corrected-app deployment, fresh full fenced evidence, the narrow
 two-extra Pathfinder move/inverse/scan, optional safe Ransom stage, fresh 104-scope library-only preview,
 one existing recipe then at most four per batch, normal acquisition verification and only then hourly gate.
 Freeze executable profiles and exact inverse before any pause. Old preview and duration measurements are
 not current authority, and current active writers must be freshly admitted.
+Conditional exact Pathfinder/Ransom profiles are `074-pathfinder-two-extra-profile.json` and
+`074-ransom-series-only-profile.json`; both retain runtime_authorization=false and unbound fresh inputs.
+Retained recipe writer templates permit item deletion and lack the current bounded/native admission contract;
+replace and independently review them before list apply.
 
 ## Preconditions
 

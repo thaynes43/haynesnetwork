@@ -23,12 +23,15 @@ The #825 operational completion and its owed checks remain separate below.
 ## ▶ 2026-10-09: #866 adversarial fixes merged; #825 completion has fresh preflight
 
 **Current.** App #866 merged as `68a3ccd9` at 15:23:46Z with every required check and a clean advisory;
-v0.110.5 release/deployment is in progress. The independent review fixed five proved identity/state defects,
+release #868 merged `8374aeca` at 15:34:17Z; v0.110.5 publication/ops #3639 deployment is in progress.
+The independent review fixed five proved identity/state defects,
 including Goodreads coauthor acquisition and sibling Kavita chapter identity. See
 `.agents/context/2026-10-09-adversarial-books-review.md`.
 
 **#825 gates.** Signed manual image and immutable packet pins verified; actual LIVE V2 refused before Job
-creation on synthetic `kind: List` inventory. A narrow V3 correction is under independent ops review. No
+creation, then V3 expired its original 180s without baseline artifact/ACK. Independent union cleanup proved
+all owned Jobs/Pods absent at 15:33:33.916Z. Child-kind cleanup/typed-list regression and a cap-preserving
+performance diagnosis are in progress. No
 Stop/pause/copy/list/strip GO. Fresh post-deploy corpus/app/source proof must precede the reviewed minimum
 Pathfinder stage: archive only two identical extras, retain the authoritative LL EPUB/PDF and genuine Visitors.
 OC-047 failed at file level (ten gaps, all three Pathfinder EPUBs unmapped); #864 is open. Ransom's latest
@@ -41,7 +44,9 @@ then batches of at most four with acquisition disabled/item IDs preserved → no
 → hourly gate. Old 42/62/136 preview is not write authority. Prepare exact profiles/inverses before any pause;
 re-read active Jobs rather than reusing an idle checkpoint. Current evidence and executable-stage gates:
 `.agents/context/2026-10-09-825-completion-preflight.md` and
-`.agents/context/2026-10-09-831-pathfinder-preflight.md`. Earlier resume reports below are historical.
+`.agents/context/2026-10-09-831-pathfinder-preflight.md`. Conditional Pathfinder/Ransom profiles in
+`.agents/plans/074-*-profile.json` retain runtime_authorization=false. Old recipe writers permit item deletion
+and lack current runtime admission; they must be replaced before apply. Earlier resume reports below are historical.
 
 ## 2026-10-08 / 10-09: #825 previous session's checkpoint (historical)
 
