@@ -49,10 +49,12 @@
   Source review now permits 42 recipe scopes and holds 62; 32 proposed recipes stay manual with acquisition off.
   Six explicit identity/credit holds and the staged execution rules are recorded in DESIGN-037. No list or copy
   write is claimed by this checkpoint. All six relevant schedules, LL/Kavita and Libretto remain live.
-  Two bounded copy attempts refused before SOURCE/MAIN or any archive move. Haynes-ops #3608/#3609 and
-  #3611/#3612 both restored production; the latest verified restore is 23:12:16Z at `0e6b3c29`.
-  Offline diagnosis found the mount guard rejecting already verified SAB local storage and unrelated system
-  storage mounts. Resolve normal-write/source classification while live before any further pause. Details:
+  Three bounded copy attempts restored production through haynes-ops #3608/#3609, #3611/#3612 and
+  #3613/#3614. Latest actual restore: 23:57:28Z at `1ed0d32de`, six schedules and four Flux scopes live,
+  owned Jobs/Pods and PostgreSQL sessions absent. The third publisher guard passed; SOURCE was created
+  but not bound, MAIN was never created, and zero copies moved. Exact server dry-run found only the
+  API omission of `/tmp` mount `readOnly: false`; correct that comparison and hourly preflight ordering
+  while live before another window. SOURCE's deleted UID/transient session history remain unknown. Details:
   `.agents/context/2026-10-08-831-copy-refusals.md`. #830 is closed; #831 still has zero actual moves.
 - **haynes-ops#3538 filed:** Codex task sessions fail cigar-journal MCP with `AuthRequired`; Claude sessions work.
 
