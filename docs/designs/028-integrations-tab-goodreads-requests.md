@@ -1813,6 +1813,7 @@ a complete stable traversal, unchanged source descriptors and paths, and its act
 Pod/node/mount and immutable program identity. Partial or portable fingerprints that
 omit device identity cannot support reuse.
 
+SOURCE is the read-only census Job; MAIN is the manual copy-consolidation Job.
 Inside the short window, SOURCE still owns its primary PostgreSQL 16 read-only SHARE
 fence and freshly captures all app and vendor dependencies after the service stops.
 It traverses the entire library again. The trusted assembly compares the complete
