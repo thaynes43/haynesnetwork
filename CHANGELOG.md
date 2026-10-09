@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.110.5](https://github.com/thaynes43/haynesnetwork/compare/v0.110.4...v0.110.5) (2026-10-09)
+
+
+### Bug Fixes
+
+* **books:** preserve work identity and refresh acquisition ownership guards ([#866](https://github.com/thaynes43/haynesnetwork/issues/866)) ([68a3ccd](https://github.com/thaynes43/haynesnetwork/commit/68a3ccd9ce59c69983b7f2d3962a0d00fce0ab41))
+
 ## [0.110.4](https://github.com/thaynes43/haynesnetwork/compare/v0.110.3...v0.110.4) (2026-10-08)
 
 
