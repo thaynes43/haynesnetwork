@@ -14,16 +14,28 @@
 Five current failure cases reproduced and fixed: distinct collection requests erased by false coverage, Goodreads
 false held proof, pairing source changes during acquisition, census extra-work prefix acceptance, and LL unqueue
 using stale owners. Technical scope/provenance, regressions and bounded cross-system race limits are in
-`.agents/context/2026-10-09-adversarial-books-review.md`. The change is prepared for PR validation and coordinated
-shipping; required checks, advisory review and deployment evidence must be completed before calling it shipped.
+`.agents/context/2026-10-09-adversarial-books-review.md`. The fixes shipped in v0.110.5 after full required checks,
+clean advisory review and verified deployment. The #825 operational recovery remains separately gated below.
 The #866 advisory follow-up preserves fresh complete GB rosters for primary-only Goodreads feeds and defers unproved
 held candidates for the current sync; independent punctuation variants are covered by the same explicit-work guard.
 The #825 operational completion and its owed checks remain separate below.
 
 ## ▶ 2026-10-09: #866 adversarial fixes merged; #825 completion has fresh preflight
 
+**Ransom preservation blocker (fresh 16:34Z native copy).** Ordinary grouping removal
+changes native series/volume lookup keys and can replace existing IDs/cascade saved state.
+Progress 19, session 11, activity 22 and ReadingHistory 9 remain protected. A prepared
+same-ID seven-field catalog option, exact offline forward/inverse evidence and required
+real native scanner proof are in `.agents/context/2026-10-09-ransom-scan-preservation.md`.
+This option adds a writer outside strip-only authorization and is not approved for
+production. Preserve the whole-folder hold, global strip gate 0 and normal services.
+
 **Current.** App #866 merged as `68a3ccd9` at 15:23:46Z with every required check and a clean advisory;
-release #868 merged `8374aeca` at 15:34:17Z; v0.110.5 publication/ops #3639 deployment is in progress.
+release #868 merged `8374aeca` at 15:34:17Z; v0.110.5 was published and deployed through ops #3639.
+All three app Pods, all eight released module hashes and all 24 relevant CronJob images were verified;
+normal acquisition/schedules remain on and strip gate 0. The prepared bounded native reading-list
+successor ops #3644 merged with 23 checks and clean review; its source-only status and actual finite
+read-only adapter payload check are recorded in `.agents/context/2026-10-09-reading-list-capture-preparation.md`.
 The independent review fixed five proved identity/state defects,
 including Goodreads coauthor acquisition and sibling Kavita chapter identity. See
 `.agents/context/2026-10-09-adversarial-books-review.md`.
@@ -45,8 +57,9 @@ then batches of at most four with acquisition disabled/item IDs preserved → no
 re-read active Jobs rather than reusing an idle checkpoint. Current evidence and executable-stage gates:
 `.agents/context/2026-10-09-825-completion-preflight.md` and
 `.agents/context/2026-10-09-831-pathfinder-preflight.md`. Conditional Pathfinder/Ransom profiles in
-`.agents/plans/074-*-profile.json` retain runtime_authorization=false. Old recipe writers permit item deletion
-and lack current runtime admission; they must be replaced before apply. Earlier resume reports below are historical.
+`.agents/plans/074-*-profile.json` retain runtime_authorization=false. Retained private recipe writers permit item
+deletion and must not run; the merged ops #3644 successor still requires a fresh full approval after library
+recovery. Earlier resume reports below are historical.
 
 ## 2026-10-08 / 10-09: #825 previous session's checkpoint (historical)
 

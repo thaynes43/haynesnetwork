@@ -25,6 +25,12 @@ Freeze executable profiles and exact inverse before any pause. Old preview and d
 not current authority, and current active writers must be freshly admitted.
 Conditional exact Pathfinder/Ransom profiles are `074-pathfinder-two-extra-profile.json` and
 `074-ransom-series-only-profile.json`; both retain runtime_authorization=false and unbound fresh inputs.
+
+**Ransom scanner blocker (16:34Z native copy).** Grouping removal changes series/volume keys and
+can replace IDs with cascaded saved-state loss. The same-ID catalog candidate and completed offline
+forward/inverse proof are in `../context/2026-10-09-ransom-scan-preservation.md`. This adds a new
+writer outside strip-only authority; native scanner execution proof, independent review and an
+owner ruling must precede any production catalog edit/strip/scan. Keep the whole-folder hold.
 Retained recipe writer templates permit item deletion and lack the current bounded/native admission contract;
 replace and independently review them before list apply.
 
