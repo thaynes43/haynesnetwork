@@ -1,7 +1,7 @@
 # DESIGN-053: The Owed Check tracker — dated, owned post-deploy checks with a runner and an overdue alert
 
 - **Status:** Accepted (2026-10-06)
-- **Last updated:** 2026-10-06 (later: deployed in v0.108.0; the live verification, the issue de-duplication and
+- **Last updated:** 2026-10-09 (marker ownership protects separate defect issues; deployed in v0.108.0; the live verification, the issue de-duplication and
   the test procedure recorded in D-06, D-08 and the test strategy)
 - **Satisfies:** issue #743 (adversarial review #731, finding W-08 and recommendation R-04,
   `.agents/context/2026-10-06-books-rollout-adversarial-review.md`); governed by the docs-first process
@@ -127,7 +127,15 @@ GitHub cannot reach the cluster) and keeps one open issue labelled `owed-checks`
 overdue, its body rewritten and a comment added when the overdue set changes, closed when nothing is overdue. The
 issue notifies the repository's watchers; it is not a page. GitHub's issue listing showed a new issue only about five
 minutes after it was created (2026-10-06), so a run soon after another could open a second one: each run keeps the
-oldest open `owed-checks` issue and closes any other.
+oldest open reminder it owns and closes only other owned reminders. Ownership requires the generated
+`<!-- owed-checks-overdue: ... -->` marker on the first body line with valid `OC-NNN` identifiers (or an empty
+overdue set). The label alone never authorizes an edit, comment or closure. A malformed generated report refuses
+issue reconciliation rather than treating it as an empty overdue set.
+
+The 2026-10-09 regression closed the independently reported Pathfinder file-inventory defect (#864) as a duplicate
+of the aggregate reminder (#853), because both had the `owed-checks` label. Marker ownership now protects separate
+defect issues while retaining oldest-reminder deduplication, changed-set comments and no-overdue closure. Tests
+exercise those actions with interleaved manual defects and owned reminders; they make no GitHub writes.
 
 ### D-07 The process hook
 
