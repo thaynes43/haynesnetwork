@@ -12,11 +12,11 @@
 ## ▶ 2026-10-09: parallel review and Kometa complete; #825 proofs remain gated
 
 The five adversarial fixes are live in v0.110.5; the normal Kometa operations run
-dropped from77m47s to91s after restoring one bulk IMDb request. Required checks,
+dropped from 77m47s to 91s after restoring one bulk IMDb request. Required checks,
 actual advisory findings, signed publication and deployment were verified. See
 `.agents/context/2026-10-09-parallel-review-outcome.md` for scope, evidence and limits.
 
-Production is normal: acquisition on, strip0. No COPY, production catalog/EPUB repair,
+Production is normal: acquisition on, strip at 0. No COPY, production catalog/EPUB repair,
 reading-list application or hourly enable occurred. #3571 stays held. The unused
 old drafts #3622/#3623 are **closed**, superseding their parked-draft status below;
 prepared successors #3659/#3660 have never been applied.

@@ -33,12 +33,12 @@ and ops [#3639](https://github.com/thaynes43/haynes-ops/pull/3639) deployment we
 verified: three app Pods, released raw/compiled modules, init success and all 24
 relevant CronJob image pins. Evidence is durable in ops
 [#3641](https://github.com/thaynes43/haynes-ops/pull/3641). Production was rechecked
-healthy at 20:44Z: app3/3, SourceReady, normal schedules/acquisition, strip0.
+healthy at 20:44Z: app 3/3, SourceReady, normal schedules/acquisition, strip at 0.
 
 ## Kometa
 
 The 2026-10-09 operations Job took 77m47s. The growth began with v2.5.0:
-v2.4.8 took 3m25s on September21; subsequent operations runs grew to 43–52m
+v2.4.8 took 3m25s on September 21; subsequent operations runs grew to 43–52m
 before this incident, while the library remained approximately 6,200 titles.
 The release replaced bulk IMDb rating data with per-ID utility calls cached only
 within a run ([upstream change](https://github.com/Kometa-Team/Kometa/pull/3374)).
@@ -50,7 +50,7 @@ bulk IMDb dataset for the reviewed exact module SHA, with a source-drift refusal
 and explicit upstream rollback mode. All three Kometa Jobs share a serial lock;
 timers are enabled and the deadline is now three hours. Paging thresholds remain.
 The actual normal operations Job completed in **91 seconds**, with **one bulk IMDb
-request and zero per-ID requests**, processing 6,224 rated titles. It exited0 with
+request and zero per-ID requests**, processing 6,224 rated titles. It exited 0 with
 no restarts or new errors. Exact timings, warnings and cleanup are in ops
 [#3637](https://github.com/thaynes43/haynes-ops/pull/3637) and
 `.agents/reports/kometa-runtime-2026-10-09.md` in haynes-ops. This proves the operations
@@ -81,7 +81,7 @@ own newly frozen packet and exact-command GO; an expired diagnostic baseline nev
 supplies COPY authority. Shared CI cache correction #3677 must retain canonical
 digests, full tests and publication provenance.
 
-#831/#864, reading lists and hourly enable remain open. Ransom's July27 reading is
+#831/#864, reading lists and hourly enable remain open. Ransom's July 27 reading is
 already past the 30-day idle threshold; preserve the folder hold for the separate
 native preservation proof, not another 30-day delay. The minimum Pathfinder scope
 is two duplicate extras; preserve the authoritative EPUB/PDF and genuine Visitors.
