@@ -17,16 +17,28 @@ actual advisory findings, signed publication and deployment were verified. See
 `.agents/context/2026-10-09-parallel-review-outcome.md` for scope, evidence and limits.
 
 Production is normal: acquisition on, strip at 0. No COPY, production catalog/EPUB repair,
-reading-list application or hourly enable occurred. #3571 stays held. The unused
-old drafts #3622/#3623 are **closed**, superseding their parked-draft status below;
-prepared successors #3659/#3660 have never been applied.
+reading-list application or hourly enable occurred. The unused
+old drafts #3622/#3623 and unused successors #3659/#3660 are **closed** without
+merge/application; branches remain preserved. This supersedes their parked-draft
+status below. The hourly-strip draft #3571 remains held pending safety gates.
 
-The third isolated Ransom scan preserved all IDs and protected tables but returned
-UNKNOWN on native metadata projection; its inverse did not run. Ops#3673 records
-the actual result. The bounded native successor, LIVE census host and Normal-only
-recovery source are under review; no prepared packet grants production authority.
-#831/#864, reading lists and hourly enable remain open. OC-046's idle threshold has
-already elapsed; keep Ransom's folder hold for preservation proof, not a new wait.
+The complete LIVE read-only census finished in 165.603s with exact ACK, Kubernetes
+Job completion with exit 0 and owned UID cleanup (ops #3680). Its original byte-age clock
+expired; this diagnostic can never authorize COPY. The one Normal-only rehearsal
+proved parent/app/Source holds and recovered all seven, but missed its original
+50-second budget: recovery took 118.345250s. Ops #3685 records the actual
+`RECOVERED_AFTER_MISSED_BUDGET`; ops issue #3684 is the unresolved timing gate.
+Services and Pod identities stayed unchanged. No budget or clock was widened.
+
+The latest isolated Ransom attempt returned UNKNOWN: before/after-Build equality
+and durable ACK passed, but native scan/projection/inverse/zero-exit completion
+remain unproved. Ops #3683 records that result and the concrete missing native
+parser dependency correction. Corrected fixture `53dfa067` is signed/published;
+ops #3686 binds its verified 13-module closure and CLOSED pins, with no new Job
+authorization. No diagnostic grants production authority. #825/#831/#864, reading lists
+and hourly enable remain open. OC-046's idle threshold has already elapsed; keep
+Ransom's folder hold for preservation proof, not a new wait. OC-047's file-mapping
+failure is unresolved.
 
 ## ▶ 2026-10-09: adversarial review of the post-#746 books repair wave
 
