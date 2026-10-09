@@ -1852,7 +1852,10 @@ a complete stable traversal, unchanged source descriptors and paths, and its act
 Pod/node/mount and immutable program identity. Partial or portable fingerprints that
 omit device identity cannot support reuse.
 
-SOURCE is the read-only census Job; MAIN is the manual copy-consolidation Job.
+LIVE is the read-only whole-corpus byte producer that runs while normal production
+remains on. SOURCE is the read-only census Job; MAIN is the manual copy-consolidation Job.
+For this preparation record, Root (the coordinator) is the task-coordinating agent
+that reviews exact source and packets within the owner's authorized scope.
 The trusted assembly is the pinned preparation program that verifies captured
 inputs and builds the writer's snapshot without mutating source systems.
 Inside the short window, SOURCE still owns its primary PostgreSQL 16 read-only SHARE
@@ -1868,11 +1871,49 @@ claim privileged storage or undiscovered aliases incapable of arbitrary writes.
 
 MAIN owns its own primary read-only SHARE fence, independently validates the complete
 current path/fingerprint set, and rehashes and parses every selected keeper and extra
-before the first move. It checks descriptor/path identity and PostgreSQL health at
-every file boundary and retains the first verified archive before continuing the
-exact remainder. Unknown or changed inputs refuse; no refresh, retry or new census
+before the first move. Every file boundary retains descriptor/path identity,
+the absolute deadline and the original owning connection's local health guards.
+Selected keeper/extra and retained whole-file reads require uncached actual PostgreSQL
+health before and after the read. Retained-link, original-unlink and manifest publication
+each retain their own uncached actual health query and final local identity check;
+the first verified archive precedes the exact remainder. Unknown or changed inputs
+refuse; no refresh, retry or new census
 is performed while paused. This removes redundant whole-corpus byte reads from the
 pause without reducing selected-file or dependency checks. Normal hourly behavior
 is unchanged. Keep the existing absolute expiry, exact writer ownership and restore
 watcher. Any performance claim must come from actual completed captures, not the
 faster of inconsistent earlier timings.
+
+**Read-only stat guard preparation (2026-10-09).** Root ratified preparation of a
+distinct guard for nonmutating complete fingerprint scans, rather than an actual
+database query for every unselected stat entry. It must verify the same original
+connection object, locally closed/broken state, `INTRANS` state and absolute deadline
+at every scan boundary. The owning process generates a cryptographic phase-bound
+nonce and sets it transaction-locally exactly once after `BEGIN`; the expected value
+is privately bound to that original connection and backend PID. Every actual health
+query must verify the exact transaction-local nonce, both SHARE locks, read-only
+status and primary/backend identity. Rollback followed by `BEGIN` on the same PID
+must fail; the process never resets the nonce, reconnects, re-begins or adopts a
+replacement transaction after loss. The nonce lives only in the owned read-only
+transaction and private process state, never persisted book data or public logs.
+The transaction's connection, actual SQL and mutations stay serialized on its
+owning thread; no SOURCE/MAIN connection is shared with byte-reader workers. LIVE's
+two-reader producer has no PostgreSQL client. The three selected COPY byte paths
+remain sequential and independently guarded before and after each read.
+
+While scan guards advance, actual health queries occur at most one elapsed second
+apart, and an uncached actual query is mandatory before and after each complete walk.
+Selected/retained read
+and every mutation-boundary query above remain uncached. A previously healthy result
+never authorizes a write, a different connection, a reconnect or a new transaction.
+
+An undetected loss during read-only IO may not yield an accepted proof or a move:
+the mandatory post-read query on that same owning connection must still prove the
+original fence. Backend termination, same-PID rollback, replaced connection, missing
+SHARE lock, standby, expired deadline or changed source identity must refuse. A
+failure after first retention halts the remainder and preserves the actual retained
+receipt before restore. A blocked NFS call can delay a synchronous health query;
+the existing owning-process deadline, native UID cleanup and restore-first gates
+still apply. This clarification grants preparation only; concrete implementation
+and finite failure proofs require independent review and Root's final ratification.
+It changes no source clock, publisher lease, recovery trigger or normal hourly mode.
