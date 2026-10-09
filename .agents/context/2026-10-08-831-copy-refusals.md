@@ -1,9 +1,9 @@
-# #831 copy windows through 2026-10-08 23:57Z
+# #831 copy windows through 2026-10-09 00:24Z
 
 Production is live. All five requested CronJobs plus the LazyLibrarian daily scan are unsuspended;
 LazyLibrarian, Kavita and Libretto are Ready, Libretto acquisition is normal, and four Flux scopes are
-unsuspended and Ready at haynes-ops `1ed0d32de06981fedb89dcc9188a050105f7a2a4`. Actual kubectl/native capture:
-`/home/dev/work/hn-825b-runtime-copy-cont03-restored-root.json`, completed 23:57:28Z.
+unsuspended and Ready at haynes-ops `d24a429fd4569e414cd04729abaa5ed6d6b3a6cf`. Actual kubectl/native capture:
+`/home/dev/work/hn-825b-runtime-copy-cont04-restored-root.json`, completed October 9 00:24:22Z.
 All owned copy Jobs, Pods and PostgreSQL sessions are absent. Hourly stripping remains off; Ransom is held.
 
 The first two copy windows restored first on refusal. Haynes-ops #3608/#3609 created no Job and restored
@@ -61,3 +61,43 @@ another runtime attempt. No mount, source, image or ownership check may be relax
 An offline hourly audit also reproduced cleanup preceding the full identity preflight. Correct
 that order before enabling hourly stripping. Production stays live during both fixes. No automatic
 retry, new metadata replay, scan or acquisition was performed by this checkpoint.
+
+## Fourth window and clock refusal, 2026-10-09 00:24Z
+
+Haynes-ops #3616/#3617 restored the fourth refusal. First stop was 00:20:35.034788Z,
+recovery was requested at 00:22:05.114196Z, and the watcher completed at 00:23:42.941947Z,
+187.907159 seconds after the first stop. All current checks and normal Claude findings were
+read before merge. Both extra worktrees were removed. The fresh native capture at 00:24:22Z
+verifies all six schedules, four Flux scopes, services and acquisition restored, with no owned
+Jobs, Pods or PostgreSQL sessions. No MAIN Job was created and no archive moved.
+
+Three read-only Jobs were bound. SOURCE's actual Job UID is `383973ba-1473-4549-836f-9c1722b7140e`,
+Pod UID `9076dbc4-3339-443a-88f2-c144b965bff3`, primary PostgreSQL 16 backend `769826`.
+Its healthy lease and complete app snapshot, 2440 requests and 3545 items, are retained.
+Its whole-library census never produced a retained completion receipt. The LL reader emitted
+`capture-refused / ERR_ASSERTION` before Kavita or MAIN creation. The immutable actual outcome
+is `/home/dev/work/hn-831-copy-cont04-outcome-audit/actual-outcome-review-v1.json`, SHA-256
+`25e3d97fcab72a558a9c04c25048e0a64164928994c2c76462ee19032b1c7f3f`.
+
+A narrow historical Loki query recovered the LL Pod UID
+`7cf7bae4-89bb-4613-bc79-a5d23d772913` and its refusal at 00:22:00.701829380Z.
+The separate recovered-evidence addendum is
+`/home/dev/work/hn-831-copy-cont04-outcome-audit/recovered-LL-clock-evidence-addendum-v1.json`,
+SHA-256 `afe96950b69b98d7d2a04d67cae3953f2e57a2b6d5856f1619701555318c105c`.
+The event does not name the assertion. A separate offline reproduction identifies
+`capture_fence_abort_clock`: JavaScript truncates the start timestamp to milliseconds,
+so the fractional Python deadline exceeds its bound by 0.788 milliseconds. Floor the reader
+deadline earlier rather than extending it. Offline inspection also finds Kavita's hardcoded
+node stale; bind the actual reader node through the downward API and retain all native
+service, PVC, Job and Pod checks. Review both corrections and safe refusal retention while live.
+
+Another identical timing sequence is not yet justified: the actual live corpus reader took
+32.588 seconds in one capture and 132.216 seconds in another, with the cause of that difference
+unknown. Check a bounded design before another pause; do not assume the faster duration or
+extend a pause through diagnosis. No new scan, metadata replay or acquisition is authorized
+merely by those failed attempts.
+
+Haynes-ops #3615 merged at 00:31:11Z as `9b65f666`, with all current checks green and the
+clean normal Claude review read. Its two valid findings were corrected and answered.
+Hourly identity preflight now precedes cleanup, and only an exact interrupted publication
+pair escalates ambiguous identity to a whole-run refusal. The strip flag remains off.

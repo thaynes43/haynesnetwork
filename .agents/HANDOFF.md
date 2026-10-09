@@ -49,12 +49,15 @@
   Source review now permits 42 recipe scopes and holds 62; 32 proposed recipes stay manual with acquisition off.
   Six explicit identity/credit holds and the staged execution rules are recorded in DESIGN-037. No list or copy
   write is claimed by this checkpoint. All six relevant schedules, LL/Kavita and Libretto remain live.
-  Three bounded copy attempts restored production through haynes-ops #3608/#3609, #3611/#3612 and
-  #3613/#3614. Latest actual restore: 23:57:28Z at `1ed0d32de`, six schedules and four Flux scopes live,
-  owned Jobs/Pods and PostgreSQL sessions absent. The third publisher guard passed; SOURCE was created
-  but not bound, MAIN was never created, and zero copies moved. Exact server dry-run found only the
-  API omission of `/tmp` mount `readOnly: false`; correct that comparison and hourly preflight ordering
-  while live before another window. SOURCE's deleted UID/transient session history remain unknown. Details:
+  Four bounded copy attempts restored production, latest through haynes-ops #3616/#3617.
+  Fresh checks at October 9 00:24:22Z show all six schedules, services and acquisition live,
+  four Flux scopes Ready at `d24a429fd`, and owned Jobs/Pods/PostgreSQL sessions absent.
+  SOURCE's actual UID and healthy primary-PG16 lease are retained, but its whole census
+  did not complete. LL refused before Kavita or MAIN creation; no copies moved. Historical
+  Loki recovered its Pod and assertion event; offline reproduction identifies a fractional
+  clock mismatch. A stale Kavita node assumption also needs repair. Check timing feasibility
+  while live before another pause. Hourly cleanup ordering fixed in haynes-ops #3615,
+  both valid review findings resolved; strip flag stays off. Details:
   `.agents/context/2026-10-08-831-copy-refusals.md`. #830 is closed; #831 still has zero actual moves.
 - **haynes-ops#3538 filed:** Codex task sessions fail cigar-journal MCP with `AuthRequired`; Claude sessions work.
 

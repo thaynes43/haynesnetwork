@@ -159,3 +159,20 @@ only the API's omission of `/tmp` mount `readOnly: false`. Correct that semantic
 narrowly while live. Also correct hourly cleanup ordering so identity refusal precedes every
 cleanup edit. The detailed receipts remain in `.agents/context/2026-10-08-831-copy-refusals.md`.
 Lists, guarded consolidation and the hourly gate are still pending; OC-045 remains an overnight check.
+
+### Fourth copy refusal, 2026-10-09 00:24Z
+
+Haynes-ops #3616/#3617 restored all six schedules, services, acquisition and four Flux scopes
+within 187.907 seconds of first stop. Fresh native checks at 00:24:22Z verify all owned Jobs,
+Pods and PostgreSQL sessions absent. Three read-only Jobs were bound; SOURCE established
+its own primary PostgreSQL 16 SHARE fence and captured both complete app tables, but its
+whole-library census has no completion receipt. LL refused before Kavita or MAIN creation.
+No copy moved. Both reviewed inverse worktrees were removed.
+
+Historical Loki recovers LL's Pod identity and an assertion refusal; an offline reproduction
+separately identifies the fractional deadline mismatch. Correct that bound conservatively and
+the stale Kavita node literal, retain safe named refusals, and prove a bounded sequence before
+another pause. The corpus reader's observed 32.588-second and 132.216-second durations do not
+prove a future duration. Production stays live during diagnosis. Hourly cleanup ordering is
+fixed by haynes-ops #3615 after both valid advisory findings were resolved and re-reviewed.
+Detailed actual receipts and remaining work are in the copy-refusals context.
