@@ -20,7 +20,35 @@ The #866 advisory follow-up preserves fresh complete GB rosters for primary-only
 held candidates for the current sync; independent punctuation variants are covered by the same explicit-work guard.
 The #825 operational completion and its owed checks remain separate below.
 
-## ▶ 2026-10-08 / 10-09: #825 EPUB series migration mostly done; Codex out until 10-15
+## ▶ 2026-10-09: #866 adversarial fixes merged; #825 completion has fresh preflight
+
+**Current.** App #866 merged as `68a3ccd9` at 15:23:46Z with every required check and a clean advisory;
+release #868 merged `8374aeca` at 15:34:17Z; v0.110.5 publication/ops #3639 deployment is in progress.
+The independent review fixed five proved identity/state defects,
+including Goodreads coauthor acquisition and sibling Kavita chapter identity. See
+`.agents/context/2026-10-09-adversarial-books-review.md`.
+
+**#825 gates.** Signed manual image and immutable packet pins verified; actual LIVE V2 refused before Job
+creation, then V3 expired its original 180s without baseline artifact/ACK. Independent union cleanup proved
+all owned Jobs/Pods absent at 15:33:33.916Z. Child-kind cleanup/typed-list regression and a cap-preserving
+performance diagnosis are in progress. No
+Stop/pause/copy/list/strip GO. Fresh post-deploy corpus/app/source proof must precede the reviewed minimum
+Pathfinder stage: archive only two identical extras, retain the authoritative LL EPUB/PDF and genuine Visitors.
+OC-047 failed at file level (ten gaps, all three Pathfinder EPUBs unmapped); #864 is open. Ransom's latest
+actual reading is July 27, eligible since August 26 under the ruled 30-day clock; retain its configured hold
+until the separate exact-folder strip/scan proves state preservation. No new 30-day wait.
+
+**Next.** App deploy → native lifecycle/fresh fenced capture → narrow Pathfinder two-extra stage/inverse/scan
+→ optional independently safe Ransom stage → fresh 104-scope library-only preview → one existing recipe,
+then batches of at most four with acquisition disabled/item IDs preserved → normal acquisition verification
+→ hourly gate. Old 42/62/136 preview is not write authority. Prepare exact profiles/inverses before any pause;
+re-read active Jobs rather than reusing an idle checkpoint. Current evidence and executable-stage gates:
+`.agents/context/2026-10-09-825-completion-preflight.md` and
+`.agents/context/2026-10-09-831-pathfinder-preflight.md`. Conditional Pathfinder/Ransom profiles in
+`.agents/plans/074-*-profile.json` retain runtime_authorization=false. Old recipe writers permit item deletion
+and lack current runtime admission; they must be replaced before apply. Earlier resume reports below are historical.
+
+## 2026-10-08 / 10-09: #825 previous session's checkpoint (historical)
 
 **Rulings.** Owner 2026-10-07: one Kavita series per book (#825); same-title books by different authors get a
 "Title (Author)" series tag (#830, closed); keep one copy of same-title duplicates, extras moved to backup, never deleted

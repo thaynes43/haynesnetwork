@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "prepared_only": true,
+  "runtime_authorization": false,
+  "expected_app_version": "0.110.5",
+  "ruling": {
+    "issue": 840,
+    "latest_actual_read_at": "2026-07-27T03:37:35.1269016Z",
+    "eligible_since": "2026-08-26T03:37:35.1269016Z",
+    "clock_must_not_restart": true
+  },
+  "source": {
+    "relative_path": "Daniel Silva/Ransom/Ransom - Daniel Silva.epub",
+    "sha256": "e4969ea19b51a3d65efbb0cdce7bea08a0a8434c98ff123a772a2f59a8733e7a",
+    "bytes": 1081949,
+    "title": "Ransom",
+    "creators": ["Daniel Silva"],
+    "grouping": "Gabriel Allon",
+    "current_ids": {
+      "series": 1650,
+      "volume": 1800,
+      "chapter": 3358,
+      "file": 3570
+    }
+  },
+  "cron_template": {
+    "namespace": "downloads",
+    "cronjob": "lazylibrarian-epub-convert",
+    "clone_current_exact_image_command_security_mounts": "Required; bind actual native hash/UID/image/modules, worker placement, existing resource limits and complete current holds. No new Job has been assembled or admitted."
+  },
+  "exact_stage_env": {
+    "STRIP_SERIES_METADATA": "1",
+    "STRIP_ONLY": "1",
+    "STRIP_FOLDERS_JSON": "[\"Daniel Silva/Ransom\"]"
+  },
+  "dry_run_env": {
+    "DRY_RUN": "1"
+  },
+  "apply_env": {
+    "DRY_RUN": "0"
+  },
+  "hold_release": "Separate reviewed GitOps change removes only Daniel Silva/Ransom after fresh all-user/file activity and preservation proof. Restore that exact hold immediately on refusal/uncertainty. No global hourly gate flip.",
+  "approved_mutation": "Remove only grouping tags/refinements from this one EPUB after complete current collision census; other OPF bytes and every uncompressed ZIP member stay exact; retain original indefinitely. No MOBI/AZW3/OPF/JPG change, conversion, cleanup, title/contributor/identifier edit, LL pointer repair or saved-state write.",
+  "required_unbound_inputs": [
+    "current complete corpus collision/credit identity census and exact original/candidate ZIP/CRC/content proof",
+    "fresh exact-folder mapping for all file formats plus every user actual reading/progress/XPath/session/bookmark/annotation and all saved locks/curated dependencies",
+    "proved normal scan behavior preserving existing saved row/chapter identities without progress migration",
+    "reviewed exact GitOps hold release/runtime pause and complete inverse with independent watcher before first Stop",
+    "actual candidate SHA and validated retained-original manifest",
+    "fresh full app/census/request-event and LL ownership state on v0.110.5",
+    "explicit root ratification of exact prepared/native admitted stage"
+  ],
+  "preservation": {
+    "all_state_tables": "Full exact before/after, not numeric read counts or timestamps alone",
+    "expected_reading_ids": {
+      "progress": 19,
+      "session": 11,
+      "activity": 22
+    },
+    "saved_xpath": "//body/section[1]/div[1]",
+    "no_saved_state_writes": true,
+    "no_assumption_metadata_restore_recreates_db_ids": true
+  },
+  "metadata_inverse": {
+    "manifest": "/data/cephfs-hdd/data/media/books/.epub-convert/backup/1b84fb460b5be263eceba166802e527e7613619b262cb01c542c90c16ea09333-e4969ea19b51a3d65efbb0cdce7bea08a0a8434c98ff123a772a2f59a8733e7a.json",
+    "argv": [
+      "python3",
+      "/scripts/epub_convert.py",
+      "--restore-backup",
+      "/data/cephfs-hdd/data/media/books/.epub-convert/backup/1b84fb460b5be263eceba166802e527e7613619b262cb01c542c90c16ea09333-e4969ea19b51a3d65efbb0cdce7bea08a0a8434c98ff123a772a2f59a8733e7a.json"
+    ],
+    "dry_run_env": {
+      "STRIP_SERIES_METADATA": "0",
+      "STRIP_ONLY": "0",
+      "DRY_RUN": "1"
+    },
+    "apply_env": {
+      "STRIP_SERIES_METADATA": "0",
+      "STRIP_ONLY": "0",
+      "DRY_RUN": "0"
+    },
+    "requires": "Actual verified original/candidate hashes and manifest, current path exactly matching candidate, no racing byte/identity change, reviewed hold/restore sequencing and normal scan verification. Configured holds also apply to restore; never bypass them incidentally."
+  },
+  "post_restore_checks": [
+    "production restored on every outcome before further checks",
+    "unique normal scan request/enqueue/start/commit and both notifications",
+    "actual Ransom full title/complete credits/file mapping and exact preserved saved reading/curation/lock state",
+    "fresh Census/pairing/Request Events with no unintended acquisition",
+    "record actual hold release/result in OC046 and issue840; after success schedule actual next nightly file-level guard from scan date"
+  ]
+}
