@@ -1573,16 +1573,17 @@ checks:
     not_before: 2026-10-09T14:00:00Z
     due: 2026-10-09T18:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       OC-018's earlier dropped/revived runs are explained by Kavita scan changes (issue #825) and Audiobookshelf
-      tombstones, as documented in .agents/context/2026-10-07-pairing-oc014-oc018.md. Over the 24 hours to 2026-10-08
-      14:00Z, every run with non-zero dropped or revived must follow a books-sync run with kavitaHeldRead above 0 or a
+      tombstones, as documented in .agents/context/2026-10-07-pairing-oc014-oc018.md. Over the 24 hours to 2026-10-09
+      14:00Z (moved a day with not_before after the #825 pause, see the 2026-10-08 evidence line), every run with non-zero dropped or revived must follow a books-sync run with kavitaHeldRead above 0 or a
       tombstone. The 04:32Z run may be non-zero after Kavita's nightly 04:00Z Books scan. Each revived want must read
       landed again by the end of the same pairing run, confirmed by its ll_reconciled Request Event. A drop that no
       library change explains is a pairing defect: open an issue with the pair ids.
     evidence:
       - "2026-10-08 11:50Z PARTIAL, kept pending: the format-pairing job was suspended 00:00Z to 10:12Z (#825), so the 24 h window holds only two runs. 10:32Z (dropped 31, revived 1, added 106) follows the 10:22Z books-sync with kavitaHeldRead 204 and tombstoned 93: explained. 11:32Z (dropped 0, revived 0, added 0) follows the 11:22Z books-sync (kavitaHeldRead 150, tombstoned 0). The one revived want, 57b7d6ad (Assistant to the Villain audiobook, Kavita series 1919), did NOT read landed again in the same run: events 06:32:04 EDT pairing_want_revived, 06:32:21 reidentified, 06:32:37 refreshed + ll_pushed; now audio_status wanted, ll_book_id dGy0EAAAQBAJ, LazyLibrarian AudioStatus Wanted with no AudioFile, and Audiobookshelf holds no such audiobook. This is the known series-1919 side effect in .agents/context/2026-10-07-pairing-oc014-oc018.md (the want changes identity with the Kavita series and pushes the audiobook), not a new defect, so it is not filed; it belongs to the #825 migration. New window: not_before and due moved a day, to take in the runs after #825 resumes."
+      - "2026-10-09 14:20Z passed (read-only; Loki on haynesnetwork-sync-format-pairing-* and haynesnetwork-sync-books-*, app DB on replica postgres16-7, LazyLibrarian DB mode=ro). Window 2026-10-08 14:00Z to 2026-10-09 14:00Z: 21 format-pairing runs logged sync finished (14:32, 15:32, 19:33 through 13:32Z); none for 16:32Z to 18:32Z, the hours of the #825 force and pairing hold, not investigated further. Dropped was non-zero in exactly one run and revived in none: 04:33Z (dropped 1, added 1, revived 0). It follows the 04:22Z books-sync (pod haynesnetwork-sync-books-29858662-vmnqh) with kavitaHeldRead 150 and tombstoned 1, right after Kavita 04:00Z Books scan removed series 2268, so it is the Pathfinder audiobook pair moving from series 2268 to 1448 (OC-045): explained by a library change. Every other run shows dropped 0 and revived 0 (added 2 at 20:32Z, 1 at 04:33Z and 7 at 06:32Z are new library items, not covered by this check). Revived wants: book_request_events with reason pairing_want_revived since 2026-10-08 14:00Z is 0 rows, so the each-revived-want-lands-again condition holds vacuously; the last two revivals were 57b7d6ad on 2026-10-08 06:32 -04 and 5144c230 on 2026-10-07 02:32 -04, both before this window. Wording fix: the check text said the window ended 2026-10-08 14:00Z; that was stale after not_before moved a day, so it now says 2026-10-09 14:00Z. Assistant to the Villain audiobook, want 57b7d6ad (Kavita series 1919): ebook_status landed, audio_status wanted, ll_book_id dGy0EAAAQBAJ, pushed to LazyLibrarian by ll_pushed at 2026-10-08 06:32:37 -04; LazyLibrarian now has Status Open, AudioStatus Wanted, no AudioFile (the epub is on disk); last_reconciled_at 2026-10-09 09:32 -04 with no further events since the push. Still wanted, never landed, with no defect: it is waiting on an audiobook release, tracked with the #825 migration."
     links:
       issues: [haynesnetwork#761]
 
@@ -1683,7 +1684,7 @@ checks:
     not_before: 2026-10-09T05:00:00Z
     due: 2026-10-12T12:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: failed
     check: |
       OC-045 was closed from series ids, scan logs, the app mirror and the pairing run; the pod cannot read Kavita's
       database. With Kavita API or database access, re-derive the file-to-series inventory against the 1956-EPUB,
@@ -1691,5 +1692,7 @@ checks:
       EPUB in a different series than on 2026-10-08, and the 31 live same-title groups (62 rows, 2026-10-09) holding
       all their files. Name which Pathfinder file series 1448 holds (the 480 KB rewritten EPUB and the older 1.2 MB one
       share a folder). Any stripped book that moved series is a failure: file an issue with the paths and ids.
+    evidence:
+      - "2026-10-09 14:30Z FAILED (read-only; Kavita DB copied from pod kavita-67c5695b9b-qxkjr with kubectl exec cat of /kavita/config/kavita.db, last write 13:32Z, opened mode=ro; EBooks tree listed with find in the pod; both local copies deleted). Compared to the 1956-EPUB inventory (hn-825b-cont01-current-inventory.jsonl) and the 2026-10-08 19:47Z coverage. All 1956 baseline EPUBs are still on disk. Mapped 1946 of 1956 (expected 1949): ten unmapped, the same seven as 2026-10-08 plus the three Pathfinder-group paths Orson Scott Card/Pathfinder/Pathfinder - Orson Scott Card.epub, Orson Scott Card/Pathfinder/Orson Scott Card - Pathfinder.epub and Orson Scott Card/Visitors/Visitors - Orson Scott Card.epub (OPF title Pathfinder). Nonunique unchanged at 13. No stripped EPUB moved series: all 1946 mapped paths have the same series ids as 2026-10-08 19:47Z, and the 23 series holding more than one distinct title are identical to that snapshot (13 nonunique paths plus name-variant groups such as Heartstopper Volume 3 and 4). The failure is the Pathfinder group: those three files were in series 2268 at 19:47Z; the 04:00Z scan skipped all three folders as unchanged and then removed series 2268, so they are now in no series (history: series 1155, then unmapped pre-force, then 2268 after the force, then unmapped). Series 1448 holds only the PDF (Pathfinder - Orson Scott Card.pdf, Kavita format 4), neither EPUB; so OC-045 saying the removal consolidated toward 1448 was wrong for the EPUBs. Same-title groups: by author and title key the inventory has 94 EPUB groups (193 paths, wider than the 31 live books_items groups); all their paths are mapped except six, the three Pathfinder paths and three of the seven old gaps. Seven EPUBs on disk are not in the baseline or in Kavita (Aurora, Earthside, Great Gatsby, Alvin Journeyman, Hammer of Eden, Last Guardian, Lord John and the Hand of Devils; files written 05:37Z to 05:45Z, after the 04:00Z scan), so they map at the next scan. The 4730-file baseline counts a wider scan than the EBooks tree and was not re-derived (EBooks now holds 4816 files, 1963 EPUBs). Issue filed: #864."
     links:
-      issues: ['https://github.com/thaynes43/haynesnetwork/issues/825']
+      issues: ['https://github.com/thaynes43/haynesnetwork/issues/825', 'https://github.com/thaynes43/haynesnetwork/issues/864']
