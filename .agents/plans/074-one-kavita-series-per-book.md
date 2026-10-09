@@ -187,3 +187,21 @@ every selected keeper and extra still receives whole-byte and identity checks be
 any move. Preserve all absolute deadlines, original capture clocks and restore-first
 behavior. New or changed paths refuse rather than being silently adopted. Production
 stays live during implementation and its read-only baseline capture.
+
+### Bounded writer shipped, 2026-10-09 01:08Z
+
+Haynes-ops #3620 merged at `04c611e7` after all current checks and a clean normal Claude
+review. Its manual mode retains the SOURCE and MAIN primary PostgreSQL fences, validates
+every current library fingerprint and rehashes every selected keeper and extra before
+the first move. It verifies the final whole path set against only the actual moved paths
+and preserves partial-move receipts on refusal. Normal hourly behavior is unchanged.
+Sixteen focused corpus fixtures, five existing guards and eighteen PostgreSQL 16 tests pass.
+
+The separately reviewed collectors retain complete original byte evidence with decimal-string
+fingerprints, collect current SOURCE stats without byte reads and measure the full stat
+operation plus all 41 selected paths. The prepared clock/node corrections are independently
+reviewed. Signed image publication, actual native input delivery and the final consumer
+closure remain pending; no actual baseline Job or next copy pause is authorized here.
+Use the 170-second restoration trigger and retain the original evidence expiry. Native
+checks at 01:05:49Z still show all six schedules, services and acquisition live with no
+owned Jobs, Pods or PostgreSQL sessions. Hourly stripping remains disabled.

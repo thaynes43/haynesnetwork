@@ -38,27 +38,21 @@
   deployed domain matches replica SQL, paging/empty/gone wants pass, API role predicates and re-request wording pass,
   anonymous API denied. Successful admin HTTP and authenticated admin/non-admin UI remain uncovered because
   Playwright has no session; the plan stays active. No feature defect found.
-- **#825 resumed 10-08:** PLAN-074, report `/home/dev/work/hn-825b-report.md`. All 290 metadata operations
-  cover 289 verified current paths. A fully observed Force scan completed at 19:47Z; all 48 reading rows,
-  saved locks across eight tables and 27 curated tables are exact. Seven unmapped files and 13 nonunique paths predate
-  this run. #850 is fixed in deployed v0.110.4: full native source refresh, 716 conservative pairs, 35 reservations,
-  no acquisition and exactly seven approved Request Events. At 19:48:44Z all five schedules and Libretto
-  acquisition were restored through haynes-ops #3607; no production hold remains. Hourly strip is still off.
-  Copy moves and list reconciliation remain in progress; Ransom stays held. OC-045 awaits October 9 nightly
-  scanning, and OC-046 tracks the separate 30-day idle hold release.
-  Source review now permits 42 recipe scopes and holds 62; 32 proposed recipes stay manual with acquisition off.
-  Six explicit identity/credit holds and the staged execution rules are recorded in DESIGN-037. No list or copy
-  write is claimed by this checkpoint. All six relevant schedules, LL/Kavita and Libretto remain live.
-  Four bounded copy attempts restored production, latest through haynes-ops #3616/#3617.
-  Fresh checks at October 9 00:24:22Z show all six schedules, services and acquisition live,
-  four Flux scopes Ready at `d24a429fd`, and owned Jobs/Pods/PostgreSQL sessions absent.
-  SOURCE's actual UID and healthy primary-PG16 lease are retained, but its whole census
-  did not complete. LL refused before Kavita or MAIN creation; no copies moved. Historical
-  Loki recovered its Pod and assertion event; offline reproduction identifies a fractional
-  clock mismatch. A stale Kavita node assumption also needs repair. Check timing feasibility
-  while live before another pause. Hourly cleanup ordering fixed in haynes-ops #3615,
-  both valid review findings resolved; strip flag stays off. Details:
-  `.agents/context/2026-10-08-831-copy-refusals.md`. #830 is closed; #831 still has zero actual moves.
+- **#825 resumed:** PLAN-074, report `/home/dev/work/hn-825b-report.md`. The 290 verified metadata
+  operations cover 289 current paths; the fully observed Force scan committed October 8 19:47Z.
+  All 48 reading rows, eight saved-lock tables and 27 curated tables/path mappings are preserved.
+  The seven unmapped and 13 nonunique paths predate this work. #830 and #850 are closed, with
+  v0.110.4 deployed. Four bounded copy refusals restored production; zero copies or lists moved.
+  Actual October 9 01:05Z checks show all six schedules, services and Libretto acquisition live,
+  four Flux scopes Ready and no owned Jobs, Pods or PostgreSQL sessions. Hourly stripping is off.
+  Cleanup ordering is deployed through haynes-ops #3615. The manual bounded writer is merged in
+  haynes-ops #3620 after current checks and a clean Claude review; its signed image and private
+  consumer bindings are still being verified. No next pause is authorized. Prepared clock/node
+  corrections and the complete stat/selected-byte collectors passed independent review.
+  Curation permits 42 recipe scopes and holds 62, including 32 new manual recipes with acquisition
+  disabled. Guarded copies and library-only lists remain in progress; Ransom stays held. OC-045
+  awaits October 9 nightly scanning, and OC-046 records the separate 30-day idle release. Details:
+  `.agents/context/2026-10-08-831-copy-refusals.md`.
 - **haynes-ops#3538 filed:** Codex task sessions fail cigar-journal MCP with `AuthRequired`; Claude sessions work.
 
 **Open:** #825 in progress (#831 consolidation and reading-list verification), owed checks in `.agents/owed-checks.yaml`, #733 parked,
