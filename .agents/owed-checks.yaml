@@ -1614,7 +1614,7 @@ checks:
     not_before: 2026-10-09T04:45:00Z
     due: 2026-10-09T12:00:00Z
     owner: haynesnetwork coordinator (books)
-    status: pending
+    status: passed
     check: |
       Read Kavita's 04:00Z Books scan logs and compare the post-backfill file-to-series inventory with the result.
       Expect no series flips for the affected tagged EPUBs, every affected partial series' files present under the
@@ -1650,6 +1650,8 @@ checks:
       the brief verification pause; actual runtime at 19:48:44Z shows all five CronJobs unsuspended and Libretto
       acquisition normal. Copy moves and reading-list reconciliation are still in progress; hourly strip stays off.
       This manual evidence does not satisfy the October 9 nightly check.
+    evidence:
+      - "2026-10-09 05:09Z passed (read-only; Kavita pod logs kavita-67c5695b9b-qxkjr, app DB read-only session, format-pairing pod haynesnetwork-sync-format-pairing-29858672-thmmb). Kavita's 04:00Z Books scan (00:00 local, not forced): 2069 directories, 39 series reprocessed, finished in 10.9 s as 1931 series; the only series removed was one, Pathfinder (Kavita series 2268, the replacement id minted by the 2026-10-08 17:22Z sync). Zero series added (no books_items row first seen after 04:00Z), so there were no flips for the stripped series: the live Kavita book rows went from 1932 to 1931 by that one Pathfinder removal, and the surviving Pathfinder row is the original series 1448, whose pair the 04:32Z run re-created. The 04:32Z format-pairing run: paired 718, added 1, dropped 1, revived 0, minted 0, pushed 0, attempted 0; the one drop and one add are the same Pathfinder audiobook moving from the removed series 2268 to 1448 (pair first seen 04:32:03Z on external id 1448). Request Events since 04:00Z: 37, all ll_rerequest from format-pairing.rerequest (34 requeued, 3 deferred), no new requests; the hourly baseline of the same event since 2026-10-08 20:00Z is 3, 3, 15, 29, 18, 19, 4, 3 per hour, so 37 is the top of that range for a pairing hour, not a new kind of write (no pushes, mints or attempts). Pathfinder: the folder Orson Scott Card/Pathfinder holds two EPUBs of the same title (the 480 KB one rewritten by the strip at 04:46Z on 2026-10-08, and the older 1.2 MB one), so it is a same-title duplicate group; Kavita had made a second series (2268) for it after the 2026-10-08 Force scan and dropped it again here, leaving the original id 1448. That is a consolidation toward the original id, not a stripped book moving to a new series. Which of the two files 1448 now holds was not read (no Kavita database access from the pod). Same-title duplicate groups still present: 31 groups (62 live rows) with the same lower-cased title and author; the known #831 class (copy cleanup not done), recorded separately as the row asks, not a failure. Wording note: the row's older sentence that the zero-flip target covers every affected tagged EPUB was checked at series level (adds, removals, ids), not by a new file-to-series inventory, because Kavita's database is not readable from the pod; the 1949 of 1956 mapping and its seven unmapped and 13 nonunique paths are unchanged as last recorded and were not re-derived. The file-level half (every partial series' files present under its book titles) is therefore parked as OC-047, not claimed here."
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/825']
 
@@ -1673,3 +1675,21 @@ checks:
       The bulk run's unchanged reading-state proof does not itself remove this configured hold.
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/840']
+
+  - id: OC-047
+    title: 'File-level Kavita inventory after the first nightly scan following the 825 strip'
+    opened: 2026-10-09
+    after: OC-045 passed at series level (Kavita 04:00Z scan, 2026-10-09)
+    not_before: 2026-10-09T05:00:00Z
+    due: 2026-10-12T12:00:00Z
+    owner: haynesnetwork coordinator (books)
+    status: pending
+    check: |
+      OC-045 was closed from series ids, scan logs, the app mirror and the pairing run; the pod cannot read Kavita's
+      database. With Kavita API or database access, re-derive the file-to-series inventory against the 1956-EPUB,
+      4730-file baseline. Expect 1949 of 1956 mapped with the same seven unmapped and 13 nonunique paths, no stripped
+      EPUB in a different series than on 2026-10-08, and the 31 live same-title groups (62 rows, 2026-10-09) holding
+      all their files. Name which Pathfinder file series 1448 holds (the 480 KB rewritten EPUB and the older 1.2 MB one
+      share a folder). Any stripped book that moved series is a failure: file an issue with the paths and ids.
+    links:
+      issues: ['https://github.com/thaynes43/haynesnetwork/issues/825']
