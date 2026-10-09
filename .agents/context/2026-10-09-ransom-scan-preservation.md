@@ -9,7 +9,7 @@ remain running. The current strip-only profile cannot safely advance unchanged.
 The stable native Kavita database copy captured at 2026-10-09T16:34:07.903866Z maps the
 one Ransom EPUB to series 1650 (`Gabriel Allon`), volume 1800 (`26`), chapter 3358
 (`-100000`) and file 3570. Its progress 19, session 11 and activity 22 still exist;
-progress holds XPath `//body/section[1]/div[1]` in BookScrollId. ReadingHistory 9 also
+progress retains its exact nonempty BookScrollId/XPath in private evidence. ReadingHistory 9 also
 embeds this series/chapter/activity identity and resolves through the same current
 file. Actual reading ended July 27 and the
 owner's 30-day rule has been satisfied since August 26. Eligibility does not prove

@@ -85,8 +85,8 @@ files. No folder/author `.ll_ignore` was found. The EPUB alone maps to MangaFile
 chapter/file. No separate current Ransom series was found.
 
 The latest actual reading ended **2026-07-27T03:37:35.1269016Z** in activity 22 /
-session 11. Progress 19 retains the same chapter and saved XPath
-`//body/section[1]/div[1]`. Session LastModified at 03:47:35 is housekeeping; daily
+session 11. Progress 19 retains the same chapter and exact nonempty saved reading
+location, held only in private row/digest evidence. Session LastModified at 03:47:35 is housekeeping; daily
 history preserves the same actual end, not newer reading. The 30-day rule was
 satisfied **2026-08-26T03:37:35.1269016Z**, about 74 days idle at this capture.
 No additional waiting period starts on October 8. Target bookmarks, annotations,

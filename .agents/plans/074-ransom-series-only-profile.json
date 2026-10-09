@@ -57,7 +57,7 @@
       "session": 11,
       "activity": 22
     },
-    "saved_xpath": "//body/section[1]/div[1]",
+    "saved_reading_location_private_evidence": "Bind the complete original BookScrollId/XPath value and its private row digest from fresh native evidence; no actual saved reading payload belongs in this public profile.",
     "no_saved_state_writes": true,
     "no_assumption_metadata_restore_recreates_db_ids": true
   },
