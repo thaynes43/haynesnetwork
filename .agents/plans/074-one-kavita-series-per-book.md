@@ -4,20 +4,51 @@
 - **Satisfies:** issue #825, ADR-105/106; DESIGN-024/028/036/037 amendments dated 2026-10-07
 - **Validation:** `.agents/context/2026-10-07-one-kavita-series-per-book.md`, OC-045
 
-### Current assurance status, 2026-10-09
+### Current completion status, 2026-10-10
 
-The original parallel review and Kometa tasks are complete: v0.110.5 is deployed,
-and the verified Kometa operations run is 91s. The latest authoritative outcome
-is `.agents/context/2026-10-09-parallel-review-outcome.md` and the top of HANDOFF.
-The complete LIVE diagnostic passed its Job/ACK/cleanup proof but remains
-permanently non-COPY and expired. Normal-only containment recovered all owned
-holds after missing its original 50-second gate; ops issue #3684 retains the
-unresolved timing work without widening any budget. The latest isolated Ransom
-result is UNKNOWN; source correction/publication does not prove scan/inverse.
-Production duplicate cleanup, catalog/EPUB repair, reading-list application and
-hourly enable remain unperformed. #825/#831/#864 and OC-046/OC-047 remain gated;
-draft #3571 is held. Unused Stop/inverse pairs #3622/#3623/#3659/#3660 are closed.
-No retained diagnostic or prepared profile grants a new runtime phase.
+The parallel adversarial review and Kometa investigation are complete: v0.110.5
+is deployed and the verified Kometa run is 91s. Reading-list work is also applied:
+116 missing entries across 39 lists, including 31 new acquisition-disabled
+recipes. Original 75 recipes/acquisition settings and old entries are preserved.
+Libretto now has 106 recipes. Do not repeat these completed batches.
+The signed census/COPY image is qualified as `628e97…`; production COPY success
+remains a separate result. The metadata cleanup targets EPUB ebooks, not MP3/M4B
+audiobook tags.
+
+Two selected Pathfinder extras remain unmoved; its list is withheld until fresh
+post-repair mapping. #831 also requires fresh accounting for other duplicate
+groups from the retained physical/Native/ownership exports. The old 21-move
+selection is stale; protected and ambiguous copies remain. V18 passed its fresh
+read-only EPUB capture in 91.698357s, then refused the publisher before the
+MAIN writer or Kavita/LazyLibrarian Native exports started. Neither extra moved.
+The retained collector recorded 84 events: 66 successful subprocesses and 18
+telemetry rows in 34.9337s, then reported a stable scope mismatch. One new Sonarr
+series added an EBooks-disjoint path; all old entries/paths and the other seven
+publisher rows remain exact. Its prospective paired scope rebind remains a
+proposal; further COPY staging is held while reported PVC pages are matched.
+V17's stale bridge image guard was corrected
+by ops #3759 as `1a78ce61`. Its focused test, relevant CI and independent review
+passed; the unavailable advisory was recorded. Final receipt `3bcea491`
+proves Normal `55f3cac8`, all seven unheld Ready controllers, full typed phase
+union/both primary PG absence, four existing Deployment identities with restored
+full Normal specs, six current healthy Pods and retired watcher/group. Actual cold
+recovery was 69.567367s under the prospective 130s reserve. Earlier 50s misses stay
+failed; no historical phase or measurement grants new runtime authority.
+Ops #3756's narrow approved-inverse race fix is merged as `76f22cce`; required
+checks and independent review passed, and the unavailable advisory was recorded.
+
+The isolated Ransom native proof passed actual scan, encoded cover, 32-cell
+inverse and exact 82-table saved-state preservation. Fresh all-user idle evidence
+and the owner's seven-field catalog ruling remain pending; keep the whole-folder
+hold. Historical July 27/August 26 eligibility must not replace a current check.
+
+OC-047/#864 requires repaired-file coverage after a real scheduled nightly scan;
+the next derived time is October 11 at 04:00Z. Manual scans do not satisfy it.
+Hourly strip draft #3571 remains held until nightly and subsequent hourly proof.
+#825/#831/#840/#864 and OC-046/OC-047 remain open for these gates. Unused pairs
+#3622/#3623/#3659/#3660 are closed. Production acquisition is enabled, strip is 0.
+Current receipts: `../context/2026-10-10-pathfinder-copy-preparation.md` and
+`../context/2026-10-09-ransom-scan-preservation.md`; HANDOFF is the resume point.
 
 ### Earlier completion gates, 2026-10-09 15:23Z (historical)
 

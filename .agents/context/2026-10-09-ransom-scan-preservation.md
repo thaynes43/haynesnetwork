@@ -1,8 +1,20 @@
-# Ransom: prepared catalog identity option, no runtime authorization
+# Ransom: prepared catalog identity option, no production authorization
+
+Current production status, 2026-10-10: the whole-folder hold remains. The isolated
+v13 native preservation proof below passed, but no fresh production Native export
+completed through V18, so current all-user reading idleness is unverified. Do not
+replace that check with historical July 27/August 26 dates or reset its original
+30-day rule. PLAN-074 requires an owner ruling before the proposed seven-field
+catalog writer; verify the fresh premise before asking. No MP3/M4B tags or
+production Ransom catalog fields have been rewritten by this work.
+
 
 This is a technical candidate for coordinator and independent review, not a production
 writer or an approved strip/scan profile. Normal services, acquisition and schedules
 remain running. The current strip-only profile cannot safely advance unchanged.
+The historical isolated native preservation proof passed on October 10, as recorded
+below. It does not establish current production eligibility or approve the seven
+catalog fields.
 
 ## Verified blocker and native source
 
@@ -144,3 +156,74 @@ separate preparation/review, with no
 production scan, rename, progress write or new Job implied by this note. Any actual
 scan must preserve every saved-state row and lock verbatim; otherwise stop and retain
 Ransom's hold. Metadata rollback alone cannot recreate deleted IDs or saved state.
+
+## Historical native preservation PASS, 2026-10-10 03:24Z
+
+One separately approved isolated v13 Job executed the actual pinned Kavita 0.9.0.2
+scanner against the unchanged historical private database/EPUB pair. It used signed
+fixture image `ghcr.io/thaynes43/book-native-scan-fixture@sha256:c5e8aa8f2b059ef95e1c5f43502f9ca3baaa37d961e69fc8c269a5956209d861`,
+published by ops #3708 (`0d51f288`) and literally pinned by #3709 (`7f522742`).
+The 13 admitted fixture/native modules matched their reviewed physical publication
+closure. The sole independent packet review is `c391dbe322c3f37fa9cf04eac9c084ccf53df33462563de342bbbbe1f927d1d7`.
+
+The native scan ran from `2026-10-10T03:24:22.898578Z` to
+`2026-10-10T03:24:25.9549517Z`. All existing target IDs and saved-state, curation and
+lock rows stayed exact. Across 82 tables and 34,433 rows, the seven proposed catalog
+cells and 25 explicitly bounded native effects occupied 32 distinct cells with no
+overlap. The native readback and complete typed compare-and-swap inverse passed;
+every table then exactly matched the original historical database. The native
+cleanup predicate removed zero retained works using the complete 1,931 parsed keys.
+The application was built without starting its hosted workers.
+
+The actual encoded cover check also passed. In the physically admitted harness,
+`Program.cs:162` calls `NativeProjection.RequireAfterCover` before publishing PASS
+or performing the inverse. `NativeProjection.cs:164–166` verifies the retained
+Volume/Chapter cover binding; line 175 hashes the actual native cover bytes against
+the independently encoded candidate. This guard was unchanged by the two Series
+color allowance corrections. Earlier v12 remains UNKNOWN; the successor supplies
+the previously missing cover and inverse proof.
+
+The actual receipt is `2c5a990c1e8b9b4c6998421e46fd8d4ccdd025c0d8b326756c761dc6a9fdffad`.
+The aggregate is `/home/dev/work/hn-ransom-native-fixture-actual-c5e8-v13-1010/aggregate-actual-v13-proof-final.json`,
+SHA-256 `44df8c85d981c00486f86a2ac4b76bed8d7ef17ad41ad21183bda03eab16b18c`.
+It binds CLOSED packet `10a8339d`, authorized one-run copy `ac62117f`, exact Job/Pod
+UIDs, durable proof/ACK, and complete final typed Job/Pod inventories. Owned cleanup
+finished at `03:24:46.559607Z`; the independent watchdog confirmed it at
+`03:24:46.721154Z`. Both preceded the original 180-second execution and 200-second
+cleanup caps. The fresh full fixture union was empty, and the production Kavita Pod
+UID stayed unchanged. Production writes were zero.
+
+This is a historical scanner preservation PASS. Fresh target-only all-user reading
+activity, saved location, file/catalog identity and idle eligibility remain pending
+from the existing authorized export. The historical July 27 reading timestamp and
+August 26 eligibility date are not a fresh current assessment; metadata scan clocks
+must not restart that 30-day rule. OC-046 remains pending and the whole-folder hold
+and global hourly strip gate remain in place.
+
+The production proposal still comprises only `Series.Name`, `Series.NormalizedName`,
+`Series.OriginalName`, `Volume.LookupName`, `Volume.Name`, `Volume.MinNumber` and
+`Volume.MaxNumber`, plus removal of this EPUB's grouping/index metadata under the
+existing strip-only boundary. It would present the existing ebook as a standalone
+work while preserving its exact reading place and identities. The added catalog
+writer still requires the owner's exact ruling and fresh runtime admission under
+PLAN-074. This proof neither validates the EPUB title/author nor changes audiobook
+metadata; no production catalog edit, EPUB strip, scan or hold release has occurred.
+
+The concrete production design remains non-executable. Fresh current target/file,
+all-user reading and saved-state, alias, lock, native version and writer-fence
+bindings are still empty. A forward transaction would update exactly two existing
+rows through typed full-row compare-and-swap, then verify that only the seven
+declared cells differ before commit. The accepted post-scan inverse would restore
+the seven catalog and 25 bounded native keys across five rows, requiring all original
+logical tables to match before commit. Missing or changed protected rows refuse;
+this inverse cannot recreate deleted saved state.
+
+Supported metadata APIs do not expose these lookup keys, and the offline/native
+fixture is not an admitted production writer. The minimum new admission after the
+owner's ruling is a narrow production catalog adapter with current-state binding,
+plus the separately reviewed exact-folder hold release/inverse, native single-series
+scan and owned retirement/Normal restoration. Existing EPUB strip and backup-restore
+helpers both reject the configured hold, so it must not be bypassed incidentally.
+The retained-original manifest and candidate-only atomic restore remain required.
+No production adapter, source/image PR, Job or hold change accompanies this design;
+it is separate from Pathfinder's two-extra COPY phase.
