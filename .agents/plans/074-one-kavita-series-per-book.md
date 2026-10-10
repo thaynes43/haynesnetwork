@@ -1,22 +1,26 @@
 # PLAN-074: One Kavita series per book
 
-### Current correction, 2026-10-10 17:11Z
+### Current correction, 2026-10-10 18:00Z
 
-V21 closed unactivated with zero book changes; accepted audit `25f12484` proves
-all seven controllers Normal/Ready/unheld, unchanged four Deployments/six Pods,
-no owned Jobs/Pods or primary PG owners, and the retired original watcher.
-Ops #3772's GitHub results DNS/HTTPS fix is merged/deployed at `08141a66` with
-no dev-env Pod restart. Actual #3771 result is an error after 365 ms with empty
-model usage; the underlying cause is unknown, not a completed source review.
+V22 completed its fresh read-only capture and stopped SOURCE but moved zero
+files: the full inventory guard refused an unclassified writable publisher
+mount after all eight reviewed routes passed. The exact offending tuple was not
+retained. Diagnose the specific current storage fact before another attempt;
+no blanket classification or new runtime authority follows from this result.
+MAIN and both book Native exporters never started.
 
-The owner answered Q-01 approving the verified seven-field Ransom repair,
-stale EPUB series-tag removal and guarded scans while preserving existing IDs
-and reading progress. The owner-ruling requirement is satisfied. Current
-maintenance admission, preservation and actual scan checks remain necessary;
-keep the folder hold until that operation is accepted. No production Ransom
-write or Pathfinder copy has occurred. Historical pending-owner text below is
-superseded; existing scheduled-nightly/hourly gates remain unchanged.
+Final audit `efcadd54` at 17:56:54Z proves Normal `57dd82bc`, all seven strictly
+Ready/unheld/owner-free controllers, original four Deployment identities with
+exact restored specs, six healthy current Pods, full phase Job/Pod and both
+primary PG absence, and retired original watcher/group. Actual restoration was
+74.549753s within 130s. Clocks remain unchanged; activity ended.
 
+The owner approved Q-01: exact seven-field Ransom repair, stale EPUB series-tag
+removal and guarded scans, preserving existing IDs and reading progress. Ops
+#3775 remains an unmerged implementation under review; no production Ransom
+write occurred. Its folder hold remains until accepted execution/preservation.
+Pathfinder mapping, fresh broader #831 accounting and real nightly/hourly proof
+remain incomplete. The historical pending-owner statements are superseded.
 
 - **Status:** In progress
 - **Satisfies:** issue #825, ADR-105/106; DESIGN-024/028/036/037 amendments dated 2026-10-07
@@ -39,17 +43,10 @@ remains a separate result.
 Two selected Pathfinder extras remain unmoved; its list is withheld until fresh
 post-repair mapping. #831 requires fresh accounting for the other duplicate
 groups; the old 21-move selection is stale, and protected or ambiguous copies stay.
-The latest closed V20 attempt passed LIVE in 86.566465s, then stopped after a
-complete publisher capture because phase assembly omitted the guard's unchanged
-approved normal-profile JSON. MAIN and both book Native exporters never started;
-zero copies moved. V19's receipt-permission defect was corrected before V20.
-
-Final audit `edbeb69c` at 15:47:29Z proves Normal `98722be5`, all seven strictly
-Ready/unheld/owner-free controllers, the same four Deployment identities with
-exact Normal specs restored, six healthy current Pods, full typed phase Job/Pod
-and both primary PG absence, and a retired watcher/group. Cold restoration took
-85.934463s within the existing 130s reserve. The original phase clocks remain
-unchanged; historical results do not grant new runtime authority.
+The latest V22 outcome and final audit are recorded above. Its complete publisher
+route capture did not establish the full writable-inventory guard. No copy has
+moved, and no Native ownership exports were produced by that attempt. The older
+policy omission was fixed; this classification blocker is separate.
 The two publisher-scope digest leaves were explicitly ratified before V19; the
 older proposed-rebind statements below are history.
 
@@ -61,9 +58,9 @@ The isolated Ransom native proof passed actual scan, encoded cover, 32-cell
 inverse and exact 82-table saved-state preservation. A separate fresh read-only
 check at 15:52Z now confirms 75 days of all-user reading idleness, unchanged
 current IDs/seven before-cells and no competing alias (aggregate `e6e88737`).
-Root asked the required seven-field catalog ruling through the phone tool after
-verifying the premise; Q-01 in the Ransom context is pending. Keep the whole-folder
-hold until the answer and exact current execution contract are bound. The old
+The owner answered the verified seven-field catalog question approving the repair.
+Q-01 is answered. Keep the whole-folder hold until the actual current execution
+and preservation result are accepted. The old
 native proof remains historical, and the hourly strip stays off.
 
 OC-047/#864 requires repaired-file coverage after a real scheduled nightly scan;
