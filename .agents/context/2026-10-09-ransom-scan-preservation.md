@@ -1,20 +1,32 @@
 # Ransom: prepared catalog identity option, no production authorization
 
-Current production status, 2026-10-10: the whole-folder hold remains. The isolated
-v13 native preservation proof below passed, but no fresh production Native export
-completed through V18, so current all-user reading idleness is unverified. Do not
-replace that check with historical July 27/August 26 dates or reset its original
-30-day rule. PLAN-074 requires an owner ruling before the proposed seven-field
-catalog writer; verify the fresh premise before asking. No MP3/M4B tags or
-production Ransom catalog fields have been rewritten by this work.
+Current production status, 2026-10-10 15:52Z: the whole-folder hold remains.
+A separate authorized read-only production capture now confirms **75 days of
+all-user reading idleness**, with all five files older than 30 days and no active
+matching session. The current activity source still records the July 27 reading
+end; this is a fresh verification of that historical date, not reuse of an old
+eligibility assertion. Current Library/Series/Volume/Chapter/File IDs remain
+1/1650/1800/3358/3570, all seven before-cells match, and no competing same-library
+alias exists. No production catalog, EPUB tag or scan write has occurred.
 
+Aggregate SHA-256:
+`e6e88737ddf50f93c8e233e2acb9dd6ac86843dd6636576d7c3a6ac4764f8937`.
+Applicability SHA-256:
+`572f884f14426ae94fa780803f232726ca40073688e558fe463610171a9cc2a2`.
+The current target reading state in five tables matches the earlier production
+capture; the immutable app image and all six folder-stat rows also match. This
+does not claim all 82 current global tables are unchanged or replay the native
+scanner test. The successful isolated v13 forward/inverse proof below remains
+historical.
 
-This is a technical candidate for coordinator and independent review, not a production
-writer or an approved strip/scan profile. Normal services, acquisition and schedules
-remain running. The current strip-only profile cannot safely advance unchanged.
-The historical isolated native preservation proof passed on October 10, as recorded
-below. It does not establish current production eligibility or approve the seven
-catalog fields.
+**Q-01 — owner ruling pending.** After physically checking the fresh premise and
+exact seven proposed cells, Root asked through the phone question tool whether
+to approve the seven-field catalog repair, existing series-tag removal and
+guarded scans while preserving IDs and saved state. PLAN-074 explicitly requires
+this ruling because the catalog writer extends strip-only authority. Keep the
+whole-folder hold until the answer and exact current execution contract are
+bound; general completion authorization and an isolated fixture are not this
+ruling. The hourly strip stays off. This work does not rewrite MP3/M4B tags.
 
 ## Verified blocker and native source
 
