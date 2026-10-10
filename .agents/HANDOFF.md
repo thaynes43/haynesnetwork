@@ -1,32 +1,43 @@
 # HANDOFF — cold-start resume point
 
-## 2026-10-10 17:11Z: current repair state and owner ruling
+## 2026-10-10 18:00Z: V22 safely closed; cleanup remains incomplete
 
-This block supersedes the pending-owner and latest-V20 statements below.
-V21 closed without activation or book changes. Its actual cancellation audit
-`25f1248445304a3a2040cf6d55578d7d3604a6df5159dde7098b496149015941`
-at 16:57:03Z proved all seven controllers Normal/Ready/unheld, the same four
-Deployment and six healthy Pod identities/specs, no phase Jobs/Pods or primary
-PG owners, and the retired original watcher. No cold-stop test or copy occurred.
+V22 moved **zero files**. Its fresh read-only capture passed in 129.031632s;
+the stopped SOURCE captured 1,970 EPUBs and 4,845 files. All eight reviewed
+publisher routes matched the approved scope, but the subsequent inventory guard
+refused `publisher writable physical storage is unclassified`. MAIN and both
+book Native exporters never started. The offending Pod/mount was not retained,
+so its identity and the missing storage fact remain unproved. Diagnose that
+specific classification before another maintenance window; do not weaken it.
 
-The owner approved the verified Ransom repair through the phone question:
-“Apply the verified Ransom repair (Recommended).” This permits the exact seven
-catalog fields, stale EPUB series-tag removal and guarded scans while preserving
-existing IDs and reading progress. Q-01 is answered. Approval does not replace
-fresh runtime admission, full current-state checks or scan preservation proof;
-the whole-folder hold remains until the accepted repair completes.
+Recovery completed in 74.549753s within the existing 130s reserve. Root's
+accepted final audit at 17:56:54Z, `efcadd5471b932602a7d97a9c8253945df948a0b056f817c00f5b0cbd49f98c6`,
+proves Normal `57dd82bc`, all seven controllers Ready/unheld/owner-free, the
+same four Deployment identities with exact Normal specs, six healthy current
+service Pods, complete phase Job/Pod and both primary PG absence, and retirement
+of the original watcher/group. Activity ended. Archived V22 receipts have no
+active authority; clocks were never reset. A recovered process exit is not COPY
+success. Acquisition is on and `STRIP_SERIES_METADATA=0`.
 
-Ops #3772 merged as `08141a66d0e079394c3efe6c89231a95550b906e` and deployed
-without changing the dev-env Pod. It adds the GitHub results-storage hostname
-pattern to the existing DNS/HTTPS allowlists. The previously blocked #3771 job
-log is now available: actual result 365 ms, error, zero model usage and cost;
-no underlying cause is reported. This was agent infrastructure overhead, not
-another book defect or a successful automated source review.
+The owner has **approved** the verified Ransom repair: seven catalog fields,
+stale EPUB series-tag removal and guarded scans, preserving IDs and reading
+progress. Q-01 is answered. Ops #3775 is an unmerged implementation under review,
+not a production repair. Fresh maintenance admission and actual preservation
+checks still apply; keep the whole-folder hold until the accepted repair.
 
-Fresh V22 preparation grants no runtime authority. Neither Pathfinder extra has
-moved yet, its three EPUB mappings still require repair, broader #831 needs fresh
-ownership accounting, and Ransom has no production catalog/tag write yet.
-OC-047 and hourly enablement still require the real scheduled scan proof.
+Pathfinder's two approved extras remain in place and its three EPUB mappings
+remain broken (#864). Its list is withheld. Broader #831 still needs fresh
+ownership accounting. Real scheduled-nightly proof (next derived time October
+11 at 04:00Z) and then hourly validation remain; manual scans cannot close those
+gates. The completed 290 metadata-edit operations and 116 reading-list additions
+must not be replayed. Application fixes improve future title/author matching;
+this EPUB/Kavita repair does not rewrite MP3/M4B audiobook tags.
+
+The Slskd PVC page was resolved by expanding its existing claim to 4 GiB.
+Books already use `gasha01`. Ops #3772's GitHub-results egress fix is deployed
+without a dev-env Pod restart. The actual current inverse advisory failed before
+source review (364 ms, zero model usage); exact independent/Root disposition
+was read before merge. Its underlying cause remains unknown.
 
 
 > The single resume point for agents. A fresh session should be able to orient from **only this
@@ -70,27 +81,11 @@ Historical metadata edits and completed reading-list batches must not be repeate
 The signed census/COPY image is qualified as `628e97…`; this completed image
 work does not prove that a production file move succeeded.
 
-The latest closed attempt, V20, passed its fresh read-only EPUB capture in
-86.566465s, including delivery ACK and full temporary Job/Pod cleanup. The private
-receipt defect from V19 was corrected and checked through the actual private
-reader before launch. V20 stopped after the complete publisher capture because
-the assembled phase omitted its guard's unchanged approved normal-profile JSON.
-Neither selected extra moved; MAIN and both book Native exporters never started.
-Retained diagnosis SHA-256:
-`61835aaaefb394fe3c9663229bd299a7455c66561fa84d9017ce183c4064a378`.
-The omission is in phase assembly, not the qualified image or book metadata.
-
-Actual cold restoration completed in 85.934463s under the existing 130s reserve.
-Final audit at 15:47:29Z proves Normal `98722be5`, all seven controllers Ready,
-unheld and owner-free, the same four Deployment identities with exact Normal
-specs restored, six healthy current service Pods, full typed phase Job/Pod and
-both primary PG absence, and the retired original watcher/group. LazyLibrarian,
-Kavita and Libretto Pod identities changed after the real Stop/restore cycle.
-Receipt SHA-256:
-`edbeb69c501e48982b8ebb47f198d4b8b5f0de84653eebbece155b010ad659a8`.
-Archived cache and activation receipts grant no active authority. Root accepted
-the audit and ended activity `act-152237-1770798`. Earlier 50s misses remain failed.
-No historical phase or recovered process exit proves a successful book move.
+The latest closed attempt is V22; its zero-move refusal and accepted final
+Normal audit are recorded in the current block above. V20's omitted policy input
+was fixed by ops #3768, preserving the image, guard, policy and clocks. V22
+reached the full inventory check and exposed the separate classification blocker.
+The prior 50s misses remain failed; past cold timings are not future guarantees.
 
 The owner's PVC pages were confirmed as `KubePersistentVolumeFillingUp` for
 `downloads/slskd`. Ops #3762 expanded that same claim from 2 GiB to 4 GiB without

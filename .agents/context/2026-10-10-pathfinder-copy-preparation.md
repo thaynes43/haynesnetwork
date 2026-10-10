@@ -1,6 +1,46 @@
 # Pathfinder two-extra COPY preparation, 2026-10-10
 
-## Latest closed outcome: V21, 2026-10-10 17:11Z
+## Latest closed outcome: V22, 2026-10-10 18:00Z
+
+V22 moved **zero files**. Its fresh read-only capture passed in 129.031632s;
+the stopped SOURCE captured 1,970 EPUBs and 4,845 files. All eight reviewed
+publisher routes matched the approved scope, but the subsequent inventory guard
+refused `publisher writable physical storage is unclassified`. MAIN and both
+book Native exporters never started. The offending Pod/mount was not retained,
+so its identity and the missing storage fact remain unproved. Diagnose that
+specific classification before another maintenance window; do not weaken it.
+
+Recovery completed in 74.549753s within the existing 130s reserve. Root's
+accepted final audit at 17:56:54Z, `efcadd5471b932602a7d97a9c8253945df948a0b056f817c00f5b0cbd49f98c6`,
+proves Normal `57dd82bc`, all seven controllers Ready/unheld/owner-free, the
+same four Deployment identities with exact Normal specs, six healthy current
+service Pods, complete phase Job/Pod and both primary PG absence, and retirement
+of the original watcher/group. Activity ended. Archived V22 receipts have no
+active authority; clocks were never reset. A recovered process exit is not COPY
+success. Acquisition is on and `STRIP_SERIES_METADATA=0`.
+
+The owner has **approved** the verified Ransom repair: seven catalog fields,
+stale EPUB series-tag removal and guarded scans, preserving IDs and reading
+progress. Q-01 is answered. Ops #3775 is an unmerged implementation under review,
+not a production repair. Fresh maintenance admission and actual preservation
+checks still apply; keep the whole-folder hold until the accepted repair.
+
+Pathfinder's two approved extras remain in place and its three EPUB mappings
+remain broken (#864). Its list is withheld. Broader #831 still needs fresh
+ownership accounting. Real scheduled-nightly proof (next derived time October
+11 at 04:00Z) and then hourly validation remain; manual scans cannot close those
+gates. The completed 290 metadata-edit operations and 116 reading-list additions
+must not be replayed. Application fixes improve future title/author matching;
+this EPUB/Kavita repair does not rewrite MP3/M4B audiobook tags.
+
+The Slskd PVC page was resolved by expanding its existing claim to 4 GiB.
+Books already use `gasha01`. Ops #3772's GitHub-results egress fix is deployed
+without a dev-env Pod restart. The actual current inverse advisory failed before
+source review (364 ms, zero model usage); exact independent/Root disposition
+was read before merge. Its underlying cause remains unknown.
+
+
+## Historical closed outcome: V21, 2026-10-10 17:11Z
 
 V21 was withdrawn before activation because the required advisory log could not
 be fetched through the agent's egress policy. Stop #3770 merged `f73395e0` and
@@ -19,7 +59,7 @@ Fresh CLOSED V22 artifacts/PRs are preparation only. No selected extra has moved
 use current actual receipts before granting any runtime authority.
 
 
-The latest outcome below is the resume point. Later historical sections retain
+The current V22 block above is the resume point. Historical sections below retain
 earlier preparations and refusals; their phases, receipts and clock values are
 not execution authority. The reported PVC page has been identified and resolved;
 Slskd's existing claim is now 4 GiB, with about 52% free and AlertManager clear.
