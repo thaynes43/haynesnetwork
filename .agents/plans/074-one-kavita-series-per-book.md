@@ -1,28 +1,37 @@
 # PLAN-074: One Kavita series per book
 
-### Current correction, 2026-10-10 19:35Z
+### Owner-requested safe closure, 2026-10-10 23:02Z
 
-V23 moved zero files. Its fresh read-only capture passed in 119.510789s, then
-private-artifact validation refused the three Kavita exports created with mode
-`0644` rather than `0600`. All were below the unchanged byte cap. The exact
-creation-site defect is being corrected prospectively; do not reuse/chmod the
-old exports or restart their phase. V22's separate prospective profile issue
-was fixed by merged ops #3777 without weakening the guard.
+Tom stopped further repair attempts and requested safe closure. **Do not start
+another Ransom, Pathfinder or optional repair, or keep an agent waiting overnight.**
+Earlier next-step execution instructions below are superseded for this run.
 
-Final audit `cf583fba` at 19:26:20Z proves Normal `31b8b3f4`, all seven controllers
-Ready/unheld/owner-free, exact restored Normal specs, six healthy current Pods,
-full phase Job/Pod and both primary PG absence, and retired original watcher.
-Actual recovery was 70.650373s within 130s; old deadline failures remain failed.
+Ransom V5 failed in the read-only publisher prelude before writer creation: the
+expected helper config SHA was null but READY supplied its actual hash. Writer
+UID/PG ownership remained null and no catalog/EPUB mutation path was reached.
+Distinct peer `1ad91f30` verifies the no-writer boundary. Normal `628e26d4` was
+restored at 23:01:46Z in 77.628682s within the 130s reserve. Final audit `b56d7a91`
+verifies controllers Ready/unheld/owner-free, exact Normal Deployment specs,
+healthy current service Pods, complete owned Job/Pod/PG absence and retired watch.
+The original producer was separately reaped/group-empty (`c8b9c8ce`). Root
+acceptance `29acccde` and actual 14-capture custody `8863a5eb` are retained; activity
+ended. Both named repairs remain unapplied; no fresh scan/attempt was started.
+Bounded final closure `26134303` confirms restored six schedules, strip `0`,
+converter-lock absence and unchanged admitted state inode. All task subagents
+completed without an overnight wait.
 
-The owner approved Q-01: the exact seven-field Ransom repair, stale EPUB series
-tag removal and guarded scans, preserving IDs/progress. Sources #3775 and #3782
-are merged (`fd356c37` latest), but no production Ransom repair or scan occurred.
-There is no pending owner decision for this exact repair. Its folder hold stays
-until actual execution/preservation. Pathfinder repair/list, fresh broader #831
-accounting, and real nightly/hourly proof remain incomplete. Production strip
-stays `0`; acquisition is on.
+Q-01 was answered approving Ransom's exact seven fields, stale EPUB series tag
+and guarded scans, preserving IDs/progress. A pending owner decision did not
+cause this stop. Keep the folder hold and automatic stripping off.
 
-- **Status:** In progress
+Follow-ups: ops #3798 (helper config binding); ops #3799 (P1 partial-commit
+recovery: catalog commits before EPUB publication). V5 never reached that write
+boundary. Ransom #840/OC-046, Pathfinder #864/OC-047, its withheld list, broader
+#831 accounting and real nightly/hourly gates remain unfinished. Retain all
+useful merged systemic fixes and previously completed metadata/list work.
+See `../context/2026-10-10-final-book-repair-verification.md` and HANDOFF.
+
+- **Status:** Deferred at owner request; repairs incomplete
 - **Satisfies:** issue #825, ADR-105/106; DESIGN-024/028/036/037 amendments dated 2026-10-07
 - **Validation:** `.agents/context/2026-10-07-one-kavita-series-per-book.md`, OC-045
 
@@ -43,9 +52,9 @@ remains a separate result.
 Two selected Pathfinder extras remain unmoved; its list is withheld until fresh
 post-repair mapping. #831 requires fresh accounting for the other duplicate
 groups; the old 21-move selection is stale, and protected or ambiguous copies stay.
-The latest V23 outcome and final audit are recorded above. Its private export
-creation failed before the main writer. No selected copy has moved. V20's policy
-omission and V22's prospective current-profile issue were separately corrected.
+The latest Ransom V5 and Pathfinder V24 outcomes are recorded above. Both
+refused before their writers changed books. No selected copy has moved. Earlier
+exporter, policy and current-profile defects were corrected prospectively.
 The two publisher-scope digest leaves were explicitly ratified before V19; the
 older proposed-rebind statements below are history.
 
