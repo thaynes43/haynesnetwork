@@ -9,36 +9,83 @@
 > OC-020, the old letter in `legacy`); the prose below is history. Overdue rows open the `owed-checks` GitHub issue.
 
 
-## ▶ 2026-10-09: parallel review and Kometa complete; #825 proofs remain gated
+## ▶ 2026-10-10: reading lists restored; duplicate cleanup and scheduled scan remain
 
-The five adversarial fixes are live in v0.110.5; the normal Kometa operations run
-dropped from 77m47s to 91s after restoring one bulk IMDb request. Required checks,
-actual advisory findings, signed publication and deployment were verified. See
-`.agents/context/2026-10-09-parallel-review-outcome.md` for scope, evidence and limits.
+The adversarial review is complete and its five fixes are deployed in v0.110.5.
+Kometa's verified run fell from 77m47s to 91s after restoring one bulk IMDb
+request. Evidence and limits remain in
+`.agents/context/2026-10-09-parallel-review-outcome.md`.
 
-Production is normal: acquisition on, strip at 0. No COPY, production catalog/EPUB repair,
-reading-list application or hourly enable occurred. The unused
-old drafts #3622/#3623 and unused successors #3659/#3660 are **closed** without
-merge/application; branches remain preserved. This supersedes their parked-draft
-status below. The hourly-strip draft #3571 remains held pending safety gates.
+Reading-list completion added **116 missing book entries across 39 lists**:
+19 entries in eight existing lists and 97 in 31 new lists. All existing entries
+were preserved. Libretto has 106 recipes; the original 75 recipes and acquisition
+settings are unchanged, and the 31 new recipes have acquisition disabled.
+Pathfinder's list remains withheld pending its file repair and fresh mapping.
+The completed batches do not need replay. The latest verification is
+`/home/dev/work/hn-825-reading-policy-four-1010-03/actual-four-verification-receipt.json`,
+SHA-256 `fe2d2d9d93c7ca1230814b03e52f16bee76e6e2da0034e8c44b5f5113a920154`.
 
-The complete LIVE read-only census finished in 165.603s with exact ACK, Kubernetes
-Job completion with exit 0 and owned UID cleanup (ops #3680). Its original byte-age clock
-expired; this diagnostic can never authorize COPY. The one Normal-only rehearsal
-proved parent/app/Source holds and recovered all seven, but missed its original
-50-second budget: recovery took 118.345250s. Ops #3685 records the actual
-`RECOVERED_AFTER_MISSED_BUDGET`; ops issue #3684 is the unresolved timing gate.
-Services and Pod identities stayed unchanged. No budget or clock was widened.
+Production acquisition and services are normal; `STRIP_SERIES_METADATA=0`.
+The two selected Pathfinder extras have **not moved**. Retain the authoritative
+LazyLibrarian EPUB, its PDF and genuine Visitors; quarantine only the two approved
+extras after fresh fenced authority. #831 also requires accounting for the other
+duplicate groups using the fresh retained physical, Native and ownership exports.
+The historical 21-move selection is stale, and protected or ambiguous copies stay.
+EPUB cleanup does not rewrite MP3/M4B tags.
+Historical metadata edits and completed reading-list batches must not be repeated.
+The signed census/COPY image is qualified as `628e97…`; this completed image
+work does not prove that a production file move succeeded.
 
-The latest isolated Ransom attempt returned UNKNOWN: before/after-Build equality
-and durable ACK passed, but native scan/projection/inverse/zero-exit completion
-remain unproved. Ops #3683 records that result and the concrete missing native
-parser dependency correction. Corrected fixture `53dfa067` is signed/published;
-ops #3686 binds its verified 13-module closure and CLOSED pins, with no new Job
-authorization. No diagnostic grants production authority. #825/#831/#864, reading lists
-and hourly enable remain open. OC-046's idle threshold has already elapsed; keep
-Ransom's folder hold for preservation proof, not a new wait. OC-047's file-mapping
-failure is unresolved.
+The latest V18 attempt passed the fresh read-only EPUB capture in 91.698357s,
+then stopped services and refused the publisher before the MAIN writer or
+Kavita/LazyLibrarian Native exports started. Neither selected extra moved.
+The retained collector recorded 84 events: 66 successful subprocesses and 18
+telemetry rows in 34.9337s. It then reported a stable scope mismatch. One new
+Sonarr series added a path outside EBooks; all 1067 prior items/paths and the
+other seven publishers remain exact. The specific prospective baseline rebind
+is prepared for independent review; no replacement scope or next phase is
+authorized. This is not a timeout. V17's stale bridge guard was corrected by ops #3759
+as `1a78ce61`; its focused test, relevant CI and independent review passed.
+The unavailable advisory was read and recorded. No image requalification is needed.
+
+Actual cold restoration completed in 69.567367s under the prospective 130s reserve.
+The final audit at 13:43:24Z proves Normal `55f3cac8`, all seven controllers Ready
+and unheld without phase owners, complete typed phase Job/Pod and both primary
+PG absence, the same four Deployment identities with restored full Normal specs,
+six current healthy Pods, and the retired watcher/group. Pod identities changed
+after the real stop. Receipt `actual-final-audit.json` in
+`/home/dev/work/hn-825-pathfinder-copy-packet-1010-v18/` has SHA-256
+`3bcea49113d279a7229fa1806f2ca28e53e68fb34cbceece375290bec3a99394`.
+The activity ended after Root accepted that audit. This completed phase grants
+no new runtime authority. Earlier 50s misses remain failed measurements.
+Ops #3756's narrow approved-inverse race fix is merged as `76f22cce`; required
+checks and independent review passed, and the unavailable Claude advisory was
+read and recorded. See the Pathfinder context for the exact retained evidence.
+
+Further COPY staging is held while the owner's reported PVC pages are matched.
+At 13:54Z the current book claims were Bound and had no error conditions; metrics
+showed Kavita 86.9% free, LazyLibrarian 88.2% free, and dev-env home 79.6% free.
+The seven-day volume-space alert query returned only `downloads/slskd` warning
+and critical alerts. This does not identify the owner's pages or exclude mount
+alerts. The exact alert/PVC name has been asked through the phone question tool.
+V18 used direct read-only gasha01 NFS and emptyDirs, plus the existing Lidarr
+claim for a read-only helper; no scratch/new PVC was created. No storage change
+has been made. Keep production services/acquisition normal during this audit.
+
+Ransom's isolated native preservation proof passed, but current all-user reading
+idleness remains unverified because no fresh Native export completed. The July
+27/August 26 dates are historical, not fresh authority. Keep its whole-folder hold.
+PLAN-074 requires an owner ruling before the proposed seven-field catalog writer;
+verify the current premise before asking. Do not infer catalog authority from a
+successful isolated fixture or general authorization to finish the existing work.
+
+OC-047/#864 remains failed pending the repaired files and a **real scheduled**
+Kavita scan. The next derived schedule is October 11 at 04:00Z (midnight New York);
+manual force/ordinary scans cannot establish scheduled-origin success. Hourly
+strip draft ops #3571 remains held until that proof and its subsequent hourly
+validation. Unused pairs #3622/#3623/#3659/#3660 are closed without merge.
+#825/#831/#840/#864 remain open for their specific remaining gates. Keep final
+state and evidence on main; do not revive historical drafts or reset old clocks.
 
 ## ▶ 2026-10-09: adversarial review of the post-#746 books repair wave
 
