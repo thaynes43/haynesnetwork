@@ -1,5 +1,24 @@
 # Pathfinder two-extra COPY preparation, 2026-10-10
 
+## Latest closed outcome: V21, 2026-10-10 17:11Z
+
+V21 was withdrawn before activation because the required advisory log could not
+be fetched through the agent's egress policy. Stop #3770 merged `f73395e0` and
+source-only inverse #3771 merged `d5c64801`; no Stop actuation, LIVE, COPY or book
+write occurred. Cancellation audit `25f1248445304a3a2040cf6d55578d7d3604a6df5159dde7098b496149015941`
+at 16:57:03Z proves all seven controllers strictly Normal/Ready/unheld, unchanged
+four Deployment and six healthy Pod identities/specs, no phase Job/Pod union or
+primary PG owner, and the retired original watcher. Activity ended; the original
+clock was never reset. Historical V20 cold timing remains historical.
+
+The narrow results-host allowlist fix #3772 merged/deployed `08141a66` with the
+same dev-env Pod. A fresh ordinary fetch now retains the actual #3771 log:
+365 ms, is_error true, one turn, zero cost and empty modelUsage; the underlying
+cause is not reported. This fixes access to evidence, not book metadata.
+Fresh CLOSED V22 artifacts/PRs are preparation only. No selected extra has moved;
+use current actual receipts before granting any runtime authority.
+
+
 The latest outcome below is the resume point. Later historical sections retain
 earlier preparations and refusals; their phases, receipts and clock values are
 not execution authority. The reported PVC page has been identified and resolved;
