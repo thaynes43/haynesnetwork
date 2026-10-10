@@ -1,5 +1,23 @@
 # PLAN-074: One Kavita series per book
 
+### Current correction, 2026-10-10 17:11Z
+
+V21 closed unactivated with zero book changes; accepted audit `25f12484` proves
+all seven controllers Normal/Ready/unheld, unchanged four Deployments/six Pods,
+no owned Jobs/Pods or primary PG owners, and the retired original watcher.
+Ops #3772's GitHub results DNS/HTTPS fix is merged/deployed at `08141a66` with
+no dev-env Pod restart. Actual #3771 result is an error after 365 ms with empty
+model usage; the underlying cause is unknown, not a completed source review.
+
+The owner answered Q-01 approving the verified seven-field Ransom repair,
+stale EPUB series-tag removal and guarded scans while preserving existing IDs
+and reading progress. The owner-ruling requirement is satisfied. Current
+maintenance admission, preservation and actual scan checks remain necessary;
+keep the folder hold until that operation is accepted. No production Ransom
+write or Pathfinder copy has occurred. Historical pending-owner text below is
+superseded; existing scheduled-nightly/hourly gates remain unchanged.
+
+
 - **Status:** In progress
 - **Satisfies:** issue #825, ADR-105/106; DESIGN-024/028/036/037 amendments dated 2026-10-07
 - **Validation:** `.agents/context/2026-10-07-one-kavita-series-per-book.md`, OC-045

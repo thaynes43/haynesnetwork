@@ -1,5 +1,21 @@
 # Ransom: prepared catalog identity option, no production authorization
 
+## Owner ruling received, 2026-10-10
+
+Q-01 is answered: the owner selected “Apply the verified Ransom repair
+(Recommended)” after the current read-only premise `e6e88737` established
+75 days without all-user reading activity, the exact IDs/seven cells, no alias
+and unchanged target reading state. Authorized scope is the seven catalog fields,
+stale EPUB series-tag removal and guarded scans, preserving IDs and reading
+progress. This supersedes pending-owner statements below.
+
+No production catalog/tag write or scan is claimed. The saved seven-cell
+maintenance component is preparation. A separately admitted finite maintenance
+Job, current full typed-state/fence checks, private original retention, actual
+scan completion and qualified preservation/inverse remain required. Keep the
+whole-folder hold until the accepted operation completes; hourly strip stays off.
+
+
 Current production status, 2026-10-10 15:52Z: the whole-folder hold remains.
 A separate authorized read-only production capture now confirms **75 days of
 all-user reading idleness**, with all five files older than 30 days and no active

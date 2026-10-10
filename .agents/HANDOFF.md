@@ -1,5 +1,34 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-10 17:11Z: current repair state and owner ruling
+
+This block supersedes the pending-owner and latest-V20 statements below.
+V21 closed without activation or book changes. Its actual cancellation audit
+`25f1248445304a3a2040cf6d55578d7d3604a6df5159dde7098b496149015941`
+at 16:57:03Z proved all seven controllers Normal/Ready/unheld, the same four
+Deployment and six healthy Pod identities/specs, no phase Jobs/Pods or primary
+PG owners, and the retired original watcher. No cold-stop test or copy occurred.
+
+The owner approved the verified Ransom repair through the phone question:
+“Apply the verified Ransom repair (Recommended).” This permits the exact seven
+catalog fields, stale EPUB series-tag removal and guarded scans while preserving
+existing IDs and reading progress. Q-01 is answered. Approval does not replace
+fresh runtime admission, full current-state checks or scan preservation proof;
+the whole-folder hold remains until the accepted repair completes.
+
+Ops #3772 merged as `08141a66d0e079394c3efe6c89231a95550b906e` and deployed
+without changing the dev-env Pod. It adds the GitHub results-storage hostname
+pattern to the existing DNS/HTTPS allowlists. The previously blocked #3771 job
+log is now available: actual result 365 ms, error, zero model usage and cost;
+no underlying cause is reported. This was agent infrastructure overhead, not
+another book defect or a successful automated source review.
+
+Fresh V22 preparation grants no runtime authority. Neither Pathfinder extra has
+moved yet, its three EPUB mappings still require repair, broader #831 needs fresh
+ownership accounting, and Ransom has no production catalog/tag write yet.
+OC-047 and hourly enablement still require the real scheduled scan proof.
+
+
 > The single resume point for agents. A fresh session should be able to orient from **only this
 > file + `CLAUDE.md`**. Update this in the same change as any milestone. Derive current state from
 > the top down; you should not have to reconcile anything.
