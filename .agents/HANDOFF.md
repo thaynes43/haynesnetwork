@@ -1,43 +1,54 @@
 # HANDOFF — cold-start resume point
 
-## 2026-10-10 18:00Z: V22 safely closed; cleanup remains incomplete
+## 2026-10-10 19:35Z: V23 safely closed; both named repairs remain unapplied
 
-V22 moved **zero files**. Its fresh read-only capture passed in 129.031632s;
-the stopped SOURCE captured 1,970 EPUBs and 4,845 files. All eight reviewed
-publisher routes matched the approved scope, but the subsequent inventory guard
-refused `publisher writable physical storage is unclassified`. MAIN and both
-book Native exporters never started. The offending Pod/mount was not retained,
-so its identity and the missing storage fact remain unproved. Diagnose that
-specific classification before another maintenance window; do not weaken it.
+V23 completed its fresh read-only capture in 119.510789s but moved **zero files**.
+It stopped before the main writer because three Kavita evidence exporters created
+files with mode `0644`; the pinned verifier requires private `0600` files. All
+three were below the existing 32 MiB cap. The precise source defect is ordinary
+`Path.write_text` creation under the inherited umask, not a size-cap failure.
+A prospective exporter fix is in progress; do not chmod/reuse the rejected
+artifacts, replay V23 or weaken the verifier.
 
-Recovery completed in 74.549753s within the existing 130s reserve. Root's
-accepted final audit at 17:56:54Z, `efcadd5471b932602a7d97a9c8253945df948a0b056f817c00f5b0cbd49f98c6`,
-proves Normal `57dd82bc`, all seven controllers Ready/unheld/owner-free, the
-same four Deployment identities with exact Normal specs, six healthy current
-service Pods, complete phase Job/Pod and both primary PG absence, and retirement
-of the original watcher/group. Activity ended. Archived V22 receipts have no
-active authority; clocks were never reset. A recovered process exit is not COPY
-success. Acquisition is on and `STRIP_SERIES_METADATA=0`.
+Root's accepted final audit at 19:26:20Z is
+`cf583fba086fd94816b0245cdf143e189ff6efd35fd0d6a104937858e0c40f8a`.
+It proves Normal `31b8b3f4`, all seven controllers Ready/unheld/owner-free,
+exact Normal specs on the original four Deployment identities, six healthy
+current service Pods, full phase Job/Pod and both primary PG absence, and
+retirement of the original watcher/group. Recovery took 70.650373s within the
+unchanged 130s reserve; old missed deadlines remain failed. Activity ended.
+V23's artifacts are historical, with no active runtime authority.
 
-The owner has **approved** the verified Ransom repair: seven catalog fields,
-stale EPUB series-tag removal and guarded scans, preserving IDs and reading
-progress. Q-01 is answered. Ops #3775 is an unmerged implementation under review,
-not a production repair. Fresh maintenance admission and actual preservation
-checks still apply; keep the whole-folder hold until the accepted repair.
+The V22 storage-classification refusal is separately closed prospectively by
+ops #3777 (`92ad9684`), which preserves the guard and adds exact reviewed current
+profiles. That does not identify V22's unretained offending tuple. The next
+maintenance attempt must use fresh identities and its own original clocks.
 
-Pathfinder's two approved extras remain in place and its three EPUB mappings
-remain broken (#864). Its list is withheld. Broader #831 still needs fresh
-ownership accounting. Real scheduled-nightly proof (next derived time October
-11 at 04:00Z) and then hourly validation remain; manual scans cannot close those
-gates. The completed 290 metadata-edit operations and 116 reading-list additions
-must not be replayed. Application fixes improve future title/author matching;
-this EPUB/Kavita repair does not rewrite MP3/M4B audiobook tags.
+The owner **approved** the verified Ransom repair: seven catalog fields, stale
+EPUB series-tag removal and guarded scans, preserving IDs and reading progress.
+Q-01 is answered; there is no pending owner decision for that exact repair.
+Its source changes #3775 and #3782 are merged, most recently `fd356c37` at
+19:35:22Z. They are preparation, not a production repair. No Ransom catalog/tag
+write or target scan has occurred. Its private reader already runs under
+umask `077`; the V23 exporter bug does not apply to that route. Fresh admission
+and actual preservation checks still apply before releasing its folder hold.
 
-The Slskd PVC page was resolved by expanding its existing claim to 4 GiB.
-Books already use `gasha01`. Ops #3772's GitHub-results egress fix is deployed
-without a dev-env Pod restart. The actual current inverse advisory failed before
-source review (364 ms, zero model usage); exact independent/Root disposition
-was read before merge. Its underlying cause remains unknown.
+Pathfinder's two approved extras remain in place; its three EPUB mappings are
+still unresolved (#864), and its list is withheld. Broader #831 needs fresh
+ownership accounting after the repairs. The next derived real nightly scan is
+October 11 at 04:00Z, followed by hourly validation. Manual scans cannot close
+those scheduled-origin gates. Production acquisition is on and
+`STRIP_SERIES_METADATA=0`; hourly draft #3571 remains held.
+
+The five adversarial-review fixes are deployed in v0.110.5. Kometa's verified
+run improved from 77m47s to 91s. The completed 290 metadata-edit operations
+(289 current paths) and 116 reading-list additions must not be replayed.
+These repairs concern EPUB/Kavita metadata and do not rewrite MP3/M4B tags.
+The `downloads/slskd` filling-volume page was resolved by expanding its existing
+claim to 4 GiB. Books already use `gasha01`.
+
+Detailed actual failure, recovery and source references are in
+`.agents/context/2026-10-10-v23-private-export-refusal.md`.
 
 
 > The single resume point for agents. A fresh session should be able to orient from **only this
@@ -81,10 +92,10 @@ Historical metadata edits and completed reading-list batches must not be repeate
 The signed census/COPY image is qualified as `628e97…`; this completed image
 work does not prove that a production file move succeeded.
 
-The latest closed attempt is V22; its zero-move refusal and accepted final
-Normal audit are recorded in the current block above. V20's omitted policy input
-was fixed by ops #3768, preserving the image, guard, policy and clocks. V22
-reached the full inventory check and exposed the separate classification blocker.
+The latest closed attempt is V23; its zero-move permissions refusal and accepted
+final Normal audit are recorded above. V20's policy-input omission was fixed by
+ops #3768, and V22's prospective current-profile classification was fixed by
+#3777. Preserve the image, verifier and original clocks.
 The prior 50s misses remain failed; past cold timings are not future guarantees.
 
 The owner's PVC pages were confirmed as `KubePersistentVolumeFillingUp` for
@@ -99,9 +110,9 @@ all-user reading activity, current IDs and seven before-cells, no competing alia
 and unchanged target saved reading state. Its aggregate is `e6e88737`; the
 historical native proof remains historical. PLAN-074's required seven-field
 catalog ruling was asked through the phone tool after Root verified this premise;
-Q-01 in the Ransom context is pending. Keep the whole-folder hold until the answer
-and exact fresh execution contract are bound. No Ransom catalog/tag/scan write or
-global hourly enable is authorized by the current receipt alone.
+The owner answered Q-01 approving the exact seven-field repair, tag removal and
+guarded scans. Keep the whole-folder hold until actual execution and preservation
+are accepted. That approval does not enable the global hourly strip.
 
 OC-047/#864 remains failed pending the repaired files and a **real scheduled**
 Kavita scan. The next derived schedule is October 11 at 04:00Z (midnight New York);

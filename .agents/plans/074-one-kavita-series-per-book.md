@@ -1,26 +1,26 @@
 # PLAN-074: One Kavita series per book
 
-### Current correction, 2026-10-10 18:00Z
+### Current correction, 2026-10-10 19:35Z
 
-V22 completed its fresh read-only capture and stopped SOURCE but moved zero
-files: the full inventory guard refused an unclassified writable publisher
-mount after all eight reviewed routes passed. The exact offending tuple was not
-retained. Diagnose the specific current storage fact before another attempt;
-no blanket classification or new runtime authority follows from this result.
-MAIN and both book Native exporters never started.
+V23 moved zero files. Its fresh read-only capture passed in 119.510789s, then
+private-artifact validation refused the three Kavita exports created with mode
+`0644` rather than `0600`. All were below the unchanged byte cap. The exact
+creation-site defect is being corrected prospectively; do not reuse/chmod the
+old exports or restart their phase. V22's separate prospective profile issue
+was fixed by merged ops #3777 without weakening the guard.
 
-Final audit `efcadd54` at 17:56:54Z proves Normal `57dd82bc`, all seven strictly
-Ready/unheld/owner-free controllers, original four Deployment identities with
-exact restored specs, six healthy current Pods, full phase Job/Pod and both
-primary PG absence, and retired original watcher/group. Actual restoration was
-74.549753s within 130s. Clocks remain unchanged; activity ended.
+Final audit `cf583fba` at 19:26:20Z proves Normal `31b8b3f4`, all seven controllers
+Ready/unheld/owner-free, exact restored Normal specs, six healthy current Pods,
+full phase Job/Pod and both primary PG absence, and retired original watcher.
+Actual recovery was 70.650373s within 130s; old deadline failures remain failed.
 
-The owner approved Q-01: exact seven-field Ransom repair, stale EPUB series-tag
-removal and guarded scans, preserving existing IDs and reading progress. Ops
-#3775 remains an unmerged implementation under review; no production Ransom
-write occurred. Its folder hold remains until accepted execution/preservation.
-Pathfinder mapping, fresh broader #831 accounting and real nightly/hourly proof
-remain incomplete. The historical pending-owner statements are superseded.
+The owner approved Q-01: the exact seven-field Ransom repair, stale EPUB series
+tag removal and guarded scans, preserving IDs/progress. Sources #3775 and #3782
+are merged (`fd356c37` latest), but no production Ransom repair or scan occurred.
+There is no pending owner decision for this exact repair. Its folder hold stays
+until actual execution/preservation. Pathfinder repair/list, fresh broader #831
+accounting, and real nightly/hourly proof remain incomplete. Production strip
+stays `0`; acquisition is on.
 
 - **Status:** In progress
 - **Satisfies:** issue #825, ADR-105/106; DESIGN-024/028/036/037 amendments dated 2026-10-07
@@ -43,10 +43,9 @@ remains a separate result.
 Two selected Pathfinder extras remain unmoved; its list is withheld until fresh
 post-repair mapping. #831 requires fresh accounting for the other duplicate
 groups; the old 21-move selection is stale, and protected or ambiguous copies stay.
-The latest V22 outcome and final audit are recorded above. Its complete publisher
-route capture did not establish the full writable-inventory guard. No copy has
-moved, and no Native ownership exports were produced by that attempt. The older
-policy omission was fixed; this classification blocker is separate.
+The latest V23 outcome and final audit are recorded above. Its private export
+creation failed before the main writer. No selected copy has moved. V20's policy
+omission and V22's prospective current-profile issue were separately corrected.
 The two publisher-scope digest leaves were explicitly ratified before V19; the
 older proposed-rebind statements below are history.
 
