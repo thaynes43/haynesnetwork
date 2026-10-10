@@ -11,36 +11,42 @@ is deployed and the verified Kometa run is 91s. Reading-list work is also applie
 116 missing entries across 39 lists, including 31 new acquisition-disabled
 recipes. Original 75 recipes/acquisition settings and old entries are preserved.
 Libretto now has 106 recipes. Do not repeat these completed batches.
+The earlier backfill completed 290 verified EPUB metadata-edit operations
+(289 verified current paths after one edition replacement). The later nightly
+scan unmapped three Pathfinder EPUBs; #864 remains unresolved. Do not replay the
+backfill. This targets EPUB ebooks, not MP3/M4B audiobook tags.
 The signed census/COPY image is qualified as `628e97…`; production COPY success
-remains a separate result. The metadata cleanup targets EPUB ebooks, not MP3/M4B
-audiobook tags.
+remains a separate result.
 
 Two selected Pathfinder extras remain unmoved; its list is withheld until fresh
-post-repair mapping. #831 also requires fresh accounting for other duplicate
-groups from the retained physical/Native/ownership exports. The old 21-move
-selection is stale; protected and ambiguous copies remain. V18 passed its fresh
-read-only EPUB capture in 91.698357s, then refused the publisher before the
-MAIN writer or Kavita/LazyLibrarian Native exports started. Neither extra moved.
-The retained collector recorded 84 events: 66 successful subprocesses and 18
-telemetry rows in 34.9337s, then reported a stable scope mismatch. One new Sonarr
-series added an EBooks-disjoint path; all old entries/paths and the other seven
-publisher rows remain exact. Its prospective paired scope rebind remains a
-proposal; further COPY staging is held while reported PVC pages are matched.
-V17's stale bridge image guard was corrected
-by ops #3759 as `1a78ce61`. Its focused test, relevant CI and independent review
-passed; the unavailable advisory was recorded. Final receipt `3bcea491`
-proves Normal `55f3cac8`, all seven unheld Ready controllers, full typed phase
-union/both primary PG absence, four existing Deployment identities with restored
-full Normal specs, six current healthy Pods and retired watcher/group. Actual cold
-recovery was 69.567367s under the prospective 130s reserve. Earlier 50s misses stay
-failed; no historical phase or measurement grants new runtime authority.
-Ops #3756's narrow approved-inverse race fix is merged as `76f22cce`; required
-checks and independent review passed, and the unavailable advisory was recorded.
+post-repair mapping. #831 requires fresh accounting for the other duplicate
+groups; the old 21-move selection is stale, and protected or ambiguous copies stay.
+The latest closed V20 attempt passed LIVE in 86.566465s, then stopped after a
+complete publisher capture because phase assembly omitted the guard's unchanged
+approved normal-profile JSON. MAIN and both book Native exporters never started;
+zero copies moved. V19's receipt-permission defect was corrected before V20.
+
+Final audit `edbeb69c` at 15:47:29Z proves Normal `98722be5`, all seven strictly
+Ready/unheld/owner-free controllers, the same four Deployment identities with
+exact Normal specs restored, six healthy current Pods, full typed phase Job/Pod
+and both primary PG absence, and a retired watcher/group. Cold restoration took
+85.934463s within the existing 130s reserve. The original phase clocks remain
+unchanged; historical results do not grant new runtime authority.
+The two publisher-scope digest leaves were explicitly ratified before V19; the
+older proposed-rebind statements below are history.
+
+The reported PVC pages were confirmed as `downloads/slskd`. Ops #3762 expanded
+its existing claim to 4 GiB; about 52% free space and AlertManager clearance were
+verified. Book jobs already use `gasha01`; this was not a book scratch-space issue.
 
 The isolated Ransom native proof passed actual scan, encoded cover, 32-cell
-inverse and exact 82-table saved-state preservation. Fresh all-user idle evidence
-and the owner's seven-field catalog ruling remain pending; keep the whole-folder
-hold. Historical July 27/August 26 eligibility must not replace a current check.
+inverse and exact 82-table saved-state preservation. A separate fresh read-only
+check at 15:52Z now confirms 75 days of all-user reading idleness, unchanged
+current IDs/seven before-cells and no competing alias (aggregate `e6e88737`).
+Root asked the required seven-field catalog ruling through the phone tool after
+verifying the premise; Q-01 in the Ransom context is pending. Keep the whole-folder
+hold until the answer and exact current execution contract are bound. The old
+native proof remains historical, and the hourly strip stays off.
 
 OC-047/#864 requires repaired-file coverage after a real scheduled nightly scan;
 the next derived time is October 11 at 04:00Z. Manual scans do not satisfy it.

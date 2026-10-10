@@ -2,10 +2,45 @@
 
 The latest outcome below is the resume point. Later historical sections retain
 earlier preparations and refusals; their phases, receipts and clock values are
-not execution authority. No next-phase runtime is authorized while the reported
-PVC pages are being matched.
+not execution authority. The reported PVC page has been identified and resolved;
+Slskd's existing claim is now 4 GiB, with about 52% free and AlertManager clear.
+Books already use `gasha01`; no scratch PVC was created.
 
-## Latest outcome, 13:43Z
+## Latest closed outcome, 15:47Z
+
+V20 corrected V19's mode-0644 approval/peer publication defect. Root's actual
+private-reader check and distinct peer passed before the sole launch. LIVE passed
+in 86.566465s with actual ACK and full owned Job/Pod GC. After the complete
+publisher capture, the supervisor stopped on a missing unchanged policy input:
+`publisher/approved-normal-write-profiles.json`, expected SHA-256
+`a5f076a6131d94820791ee040510d6544a2fccd4aa0c5e5e5449555b01e490e0`.
+No MAIN writer or either book Native exporter started, and **zero book copies
+moved**. Diagnosis `actual-publisher-missing-profile-diagnosis.json` in the V20
+packet has SHA-256
+`61835aaaefb394fe3c9663229bd299a7455c66561fa84d9017ce183c4064a378`.
+This is a phase-assembly defect; do not modify the historical V20 artifacts or
+weaken the existing guard, scope, qualified image or timing limits.
+
+Stop #3765 merged as `b2064b099befbf857bf8166ac774ad272f9c0fa5`; exact Normal
+inverse #3766 merged as `98722be545d32e0c40625167539f4447caceff48`.
+The immutable staging clock was 15:23:04.998272Z → 15:53:04.998272Z.
+Actual service Stop was first observed at 15:44:23.601009Z. Recovery request
+15:45:41.430026Z → actual Normal verification 15:47:07.364489Z took
+**85.934463s**, within the existing 130s reserve; supervisor completion measured
+86.757161s separately. Past measurements are not future timing guarantees.
+
+Root's exact final audit passed at 15:47:29Z, SHA-256
+`edbeb69c501e48982b8ebb47f198d4b8b5f0de84653eebbece155b010ad659a8`.
+It proves all seven strictly current Normal/unheld/owner-free controllers, the
+same four Deployment UIDs and exact restored specs, six healthy service Pods,
+full typed phase Job/Pod and both primary PG absence, and retired watcher/group.
+LazyLibrarian, Kavita and Libretto Pods were replaced by Stop/restore. Archived
+cache and activation receipt files remain, but their authority was revoked.
+Root accepted this audit and ended activity `act-152237-1770798`.
+Current Ransom all-user idleness and broader #831 Native accounting were not
+established by this attempt; separate current evidence is required.
+
+## Historical V18 outcome, 13:43Z
 
 V18's fresh read-only EPUB capture passed in 91.698357s with delivery ACK and full
 foreground Job/Pod cleanup. COPY stopped services but refused the publisher
