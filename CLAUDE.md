@@ -137,13 +137,15 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
   can (`gh workflow run e2e.yml --ref main`). A commit touching only `.agents/` and `docs/` never opens or updates
   the release PR.
   Conventional commits (`feat:`/`fix:`/`feat!:`) drive release-please versioning.
-- **Claude Code PR reviewer (advisory).** `.github/workflows/claude-code-review.yml` reviews every
+- **Claude Code PR reviewer (optional, advisory).** `.github/workflows/claude-code-review.yml` reviews every
   non-draft PR (job `Claude advisory review`) and `claude.yml` answers `@claude` mentions from
   write-access users. The review is **advisory, never a required check** (the required contexts stay
-  `lint-and-typecheck`, `test`, `build`, `e2e-gate`). **A PR waits for the review job to finish (one to three
-  minutes) and you read its findings before you merge** (R-05; it was the one gate that caught real defects
-  in the books rollout). Fix each one, or
-  answer it on the PR with a concrete reason it is wrong; never "merging anyway". It needs two things
+  `lint-and-typecheck`, `test`, `build`, `e2e-gate`). **Review runs are optional. Skip them when Claude Code
+  usage is exhausted or the reviewer is unavailable** (owner ruling 2026-10-11, supersedes the R-05 wait).
+  A pending, failed, skipped or missing Claude review does not block merge once required checks pass.
+  Record the skip reason in the PR description or comment; do not retry or dispatch another reviewer to
+  work around exhausted usage. Read any findings already posted before merging: fix each one, or
+  answer it on the PR with a concrete reason it is wrong. It needs two things
   or it skips (green, no review): the Claude GitHub App has access to this repo, and the
   `CLAUDE_CODE_OAUTH_TOKEN` repo secret exists. Fork and Dependabot/Renovate/release-please PRs are
   skipped by design.

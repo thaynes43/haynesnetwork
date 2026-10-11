@@ -125,9 +125,11 @@ so wait for something only hydration produces (a stored value, an enabled button
 and the storage target editor, 2026-10-06). The old note about `admin.spec.ts:79` is gone: that spec has not failed
 in the 300 most recent runs.
 
-**Wait for the advisory Claude review, then read it (R-05).** `Claude advisory review` takes one to three minutes
-after the last push. Do not merge before it finishes; fix each finding or answer it on the PR with a concrete reason
-it is wrong. It is not a required check, so the wait is yours to keep.
+**Claude Code reviews are optional and advisory** (owner ruling 2026-10-11, supersedes the R-05 wait).
+Skip the review when Claude Code usage is exhausted or the reviewer is unavailable, and record the reason on the
+PR. A pending, failed, skipped or missing Claude review does not block merge once required checks pass; do not
+retry or dispatch another reviewer to work around exhausted usage. Read any findings already posted before
+merging, and fix each one or answer it on the PR with a concrete reason it is wrong.
 
 **Testing — live Playwright is the sign-off.** Beyond unit + hermetic e2e stubs (`pnpm --filter
 web e2e`, :3100), each plan lists the **live journeys** to run against real staging
