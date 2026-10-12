@@ -34,6 +34,6 @@ The owner's clarification, 2026-10-12: "The gate is a judgment call, not a count
 
 ## More information
 
-- PRD R-271, US-19 and AC-44 are reworded to match; glossary T-312 and T-313 are redefined.
+- PRD R-271 drops from Must to Should: the Must was the counted gate, and what remains (a lightweight admin list and a working practice) is not load-bearing. US-19 and AC-44 are reworded to match; glossary T-312 and T-313 are redefined.
 - Precedent for amending an Accepted ADR: ADR-007 amended by ADR-016 (an `Amended by` line on the old ADR, the new
   decision in a new ADR).
