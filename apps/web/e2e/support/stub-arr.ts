@@ -54,8 +54,13 @@ export const grabHistoryIdFor = (episodeId: number) => 700_000 + episodeId;
 
 const EPISODE_COUNT = 10;
 
-/** ADR-109 / DESIGN-055 D-09 — Stub Runner (no grab history): the Case C stand-in for the Replacement Preview. */
+/**
+ * ADR-109 / DESIGN-055 D-09 — Stub Runner (no grab history): the Case C stand-in for the Replacement Preview. Seeded as
+ * Radarr id 602, but ledger.spec's Monitor-&-search re-adds it (the stub answers every `POST /movie` with id 9701), so
+ * the fixtures below serve ANY movie but The Fixture while they are on.
+ */
 export const STUB_SAME_RELEASE_MOVIE_ID = 602;
+const isSameReleaseMovie = (movieId: number) => Number.isFinite(movieId) && movieId !== STUB_MOVIE_ID;
 /** The Breaking Prod S01 episodes one pack download backs (the season guard's held-back pack). */
 export const STUB_PACK_EPISODES = [50101, 50102, 50103] as const;
 /** The grab record id of an episode in the repair-guide series history (pack episodes share one download). */
@@ -932,14 +937,14 @@ export async function startStubArr(): Promise<StubArrServer> {
         }
         case '/release': {
           // ADR-109 / DESIGN-055 D-09 — the interactive release list, only while the repair-guide fixtures are on.
-          if (repairGuideFixtures && Number(query.movieId) === STUB_SAME_RELEASE_MOVIE_ID) {
+          if (repairGuideFixtures && isSameReleaseMovie(Number(query.movieId))) {
             return json(res, 200, sameReleaseList());
           }
           return json(res, 200, []);
         }
         case '/moviefile': {
-          if (repairGuideFixtures && Number(query.movieId) === STUB_SAME_RELEASE_MOVIE_ID) {
-            return json(res, 200, [sameReleaseMovieFile()]);
+          if (repairGuideFixtures && isSameReleaseMovie(Number(query.movieId))) {
+            return json(res, 200, [{ ...sameReleaseMovieFile(), movieId: Number(query.movieId) }]);
           }
           // ADR-093 / DESIGN-052 D-11 — The Fixture's file, with the identity the Release Block records.
           if (Number(query.movieId) !== STUB_MOVIE_ID) return json(res, 200, []);

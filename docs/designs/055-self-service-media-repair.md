@@ -295,8 +295,9 @@ plus each Tautulli instance's history.
 - No play reached our servers: "Your play didn't reach our servers." The guide shows the Watch-here links (ADR-047) for
   the servers this person can use, and explains that Plex also lists its own free copies of some titles, so the copy to
   pick is the one that names our server. The Fix stays available behind "I played our copy and it still won't play".
-- Plays reached one server only, and that server is on the known-issues list (an app setting; today HaynesOps, whose
-  hardware transcoding fails, haynes-ops#3833): the guide suggests the other server's link first.
+- Plays reached one server only, and that server is on the known-issues list (an app setting, T-314; written for
+  HaynesOps' hardware-transcoding fault, haynes-ops#3833, which was fixed on 2026-10-12): the guide suggests the other
+  server's link first.
 - Plays reached and stopped quickly: the Fix continues with the Replacement Preview.
 
 PLAN-077 P1 checks that all three Tautulli instances post play and stop to the webhook, and adds Tautulli's Playback
@@ -353,6 +354,7 @@ Error trigger.
    HaynesOps and HaynesKube instances post `play` and `stop`; HaynesTower's Tautulli posts nothing to the app, so its
    plays come from its history only. The **Known-Issue Servers** (T-314) are the audited app setting
    `playback_known_issue_servers`; Won't play triage suggests another server first when every play reached only these.
+   It ships empty: haynes-ops#3833 (HaynesOps never hardware-transcoded) was fixed the same day, before P1 shipped.
 9. **The in-cluster tool.** `tsx /sync/src/scripts/repair-guide.ts` prints a title's plan (`preview`, with both planning
    remedies on whatever the switch says), a person's Playback Evidence (`evidence`) and a file's audio languages
    (`audio`), reading only; `settings` prints the switch and writes it, audited, with `--set` and `--known-issue`. It is

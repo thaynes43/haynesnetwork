@@ -875,7 +875,8 @@ export const APP_SETTING_KEYS = [
   // Admin-mutated + audited through setAppSetting (setRepairGuideRemedies validates first). migration 0098.
   'repair_guide_remedies',
   // DESIGN-055 D-09 (PLAN-077 P1) — the Known-Issue Servers (T-314): the Plex server slugs whose playback has a known
-  // fault (jsonb string[]; HaynesOps never hardware-transcodes, haynes-ops#3833). Won't play triage suggests another
+  // fault (jsonb string[]; the motivating case, HaynesOps' broken hardware transcoding, haynes-ops#3833, was fixed on
+  // 2026-10-12, so it ships empty). Won't play triage suggests another
   // server first when a person's plays reached only these. Absent ⇒ []. Audited through setAppSetting. migration 0098.
   'playback_known_issue_servers',
 ] as const;
