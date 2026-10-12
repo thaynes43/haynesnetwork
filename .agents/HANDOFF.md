@@ -20,7 +20,7 @@
   duplicated library content and were deleted along with the hold folder.
 - **Plex ordering fixed (same day):** both Plex servers that carry The Loud House (HaynesOps and HaynesTower; HaynesKube
   has no TV library) used the library default ordering, The Movie Database (Aired). That put another episode's title on
-  all 8 S10 items, and on 21 more items in S5, S6 and S9. Neither server's database had any play, watched flag or
+  all 8 S10 items, and on 22 more items in S5, S6 and S9. Neither server's database had any play, watched flag or
   resume point on the show for any account, and neither did Tautulli or `watch_events`, so no watch state could move.
   The show-level ordering on both servers is now TheTVDB (Aired), the numbering Sonarr and the files use, and the show
   was refreshed. All 8 S10 titles match their files. 5 items in S5 and S6 still differ, between TheTVDB in Plex and
