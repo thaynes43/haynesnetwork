@@ -1,5 +1,24 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-12 05:23Z: PLAN-075 delivered — agent-owned watch recommendations
+
+**The owner's book-repair stop below remains binding.** This task does not authorize resuming it.
+
+v0.111.0 is live: factual `viewing_context` and external `check_titles`; `recommend` discloses its
+limited cache and no longer boosts Plex/watchlist membership or reserves Plex-first pages. Agents
+own broad discovery, current research, regional availability checks and selections for the request.
+Missing records stay unknown; plays do not establish liking. Feature #882, release #881 and
+haynes-ops #3828 passed required checks; the signed image is on 3/3 replicas and 24 CronJobs.
+Read-only live checks resolved external candidates outside Plex without modifying viewing records.
+
+Four voice prompt holders were updated (#241); the helper now prevents OpenAI location drift (#242).
+Original cities/settings/API order/metadata were restored and verified through the bounded native
+writer (#3829), six accepted serial voice samples observed no added overhead, and cleanup #3830
+removed the temporary entry/commands/ConfigMap/mount. Home Assistant is 1/1 Ready with all eleven
+Watch history tools. Phone's active Assist-only pipeline is unchanged. PLAN-075 is in `completed/`;
+[delivery evidence](context/2026-10-12-agent-owned-watch-recommendations.md) records the exact commits,
+image, checks, limited voice sample and restoration. Start fresh client sessions to refresh schemas.
+
 ## 2026-10-10 23:02Z: safely closed at owner request; no further book attempts
 
 Tom changed the plan: **wrap safely now; do not start another Ransom, Pathfinder
