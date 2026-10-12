@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-12 (P1 decisions in D-08 and D-09)
+- **Last updated:** 2026-10-12 (P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
@@ -23,7 +23,7 @@ worked by hand on 2026-10-12, and none was self-serviceable:
 The shape: Fix and Force Search stay the only buttons. Each opens the **Repair Guide**, which asks one question at a
 time, reads the evidence, previews the remedy, and acts only after the person confirms. Every remedy is a **Repair
 Request** with an audit trail, budgeted like Fix. Seerr issues are mirrored into the app and linked to the guide, and
-every report's outcome feeds a readiness gate.
+every new report is worked through those tools first, and the owner decides when self-service becomes the default (D-12).
 
 **Facts this design relies on (read-only, 2026-10-12).** Sonarr 4.0.20.3012 and Radarr 6.4.4.10685, both with no
 recycle bin (`recycleBin: ""`): a deleted or replaced file is gone. Seerr 3.5.0: 4 issues ever, 18 users, 17 of them
@@ -376,8 +376,8 @@ subtitles, 4 other) · `status` (`open`, `resolved`) · `problem_season`, `probl
 title) · `media_type`, `tmdb_id`, `tvdb_id` · `media_item_id` null (the ledger item, by tmdb for movies and tvdb for
 TV, the DESIGN-005 D-14 rule) · `target_child_id` null (the Sonarr episode) · `reporter_seerr_user_id` ·
 `reporter_user_id` null (the app user by case-insensitive email) · `message` (the first comment) · `comment_count` ·
-`seerr_created_at`, `seerr_updated_at`, `read_at` · `outcome` (`pending`, `self_served`, `staff_assisted`,
-`unfixable`) · `staff_note` null.
+`seerr_created_at`, `seerr_updated_at`, `read_at` · `staff_handled_at` null · `staff_note` null (what staff did by
+hand and which capability was missing; D-12).
 
 **Sync.** Mode `seerr-issues` every 10 minutes reads `GET /api/v1/issue` (all statuses, newest first, until rows are
 unchanged). The Seerr webhook gains the four issue types (types 204 to 4044, a one-off reversible change recorded in
@@ -397,7 +397,7 @@ notification, so a report has one record in the app.
 
 **Surfaces.** On the title page, an open report shows above the episode list: "Reported in Seerr: <message>" and the
 guide button preselected. Admins also see who reported it. `/admin` gains a Seerr issues list: issue, title, age,
-linked repairs, outcome, and "Mark staff-assisted" with a note (D-12).
+the linked repairs (which tool fixed it), and "Mark fixed by hand" with a note naming the missing capability (D-12).
 
 **Writes** (Q-02 ruling, owner, 2026-10-12: comment and resolve, never as the owner's account): through a dedicated
 Seerr user ("haynesnetwork.com", created once by staff with `MANAGE_ISSUES`; its id in the audited app setting
@@ -425,26 +425,27 @@ after it, so a crash never posts twice.
 - **Delivery** is Seerr's own comment notification (D-10), sent however the reporter set up Seerr. The app adds no
   channel.
 
-### D-12 Readiness metrics and the gate
+### D-12 Working practice and the readiness judgment
 
-- **Real Issue:** a Seerr issue, or a Helpdesk ticket with a linked title in the `playback`, `audio`, `subtitles`,
-  `quality` or `missing` category (ADR-050, ADR-061).
-- **Outcome**, computed nightly and stored on the issue row (and for tickets in a `ticket_outcomes` row):
-  - **Self-Served** (T-312): between the report and its resolution, a non-admin account completed a Repair Request,
-    a Fix or a Force Search that ended in an import, on the reported grain, and no staff repair touched the title in
-    that window.
-  - **Staff-Assisted:** an admin account ran a repair on the title in that window, or staff marked it (a hand fix in an
-    *arr UI cannot always be told apart from automation, so staff mark it with a note).
-  - **Unfixable:** closed with no remedy applied (for example, no release exists anywhere).
-- **Shown** in `/admin` (each issue, its outcome, the current streak of Self-Served outcomes) and as one line in the
-  nightly digest.
-- **The gate** (T-313, Q-04 ruling): an agent replays Cases A, B and C end to end as a non-admin account on the built
-  tools (stubs in e2e, plus a live preview-only run of each remedy on the real titles), and then the next 3 real
-  issues are Self-Served with no staff help. Read as written, the 3 are consecutive real issues, so a Staff-Assisted
-  outcome restarts the count (AC-44). Whether an Unfixable outcome (no remedy exists anywhere) also restarts it is
-  Q-09, open until P8.
-- **After it passes** (Q-05 ruling): Seerr issue filing stays open, every new issue gets the fix-it-yourself comment
-  (D-10), and staff step in only after a self-service attempt has failed or when no remedy fits.
+**Owner clarification (2026-10-12), ADR-112:** "The gate is a judgment call, not a count. The intention is to keep building haynesnetwork.com until it can handle the kinds of problems people actually report, then steer users to fix things themselves instead of staff fixing them. Working practice: every new Seerr issue is worked through haynesnetwork.com's self-service tools first, as a user would. When a tool fixes it, the reply teaches the user that tool. When no tool can, staff fix it by hand and the missing capability is added to the plan. The owner decides when coverage is good enough to make self-service the default."
+
+This replaces the counted gate of ADR-111 C-05 and the Q-04 ruling (a replay of Cases A, B and C, then 3 consecutive
+Self-Served issues). Nothing in the app computes readiness.
+
+- **Working practice.** Every new Seerr issue (and Helpdesk media ticket) is worked through haynesnetwork.com's
+  self-service tools first, as a user would. The reply on the issue teaches the tool that fixed it (the D-10 comment and
+  resolve line name it). When no tool can fix it, staff fix it by hand, mark the issue fixed by hand with a note, and add
+  the missing capability to PLAN-077 (or a new plan) so the next report of that kind is self-serviceable.
+- **What the app keeps** (lightweight, no scoring): the `/admin` Seerr issues list (issue, title, age, linked repairs,
+  and the staff note), so an admin can see what is open and which tool fixed what. The linked repairs come from the app's
+  own Repair Request, Fix and Force Search records, never from Seerr status (ADR-111 C-08).
+- **What was dropped:** the nightly outcome classification (Self-Served, Staff-Assisted, Unfixable), the `outcome`
+  column and `ticket_outcomes`, the streak, the digest line and the replay checklist. Q-09 (whether an Unfixable outcome
+  restarts the count) is moot.
+- **The rule.** The owner decides when coverage is good enough to make self-service the default. Until he says so, Seerr
+  issue filing stays open and the comment offers the link as an invitation (D-10). When he decides, Q-05's ruling applies
+  unchanged: filing stays open, every new issue gets the fix-it-yourself comment, and staff step in only after a
+  self-service attempt has failed or when no remedy fits.
 
 ### D-13 Ops dependencies outside this repo
 
@@ -493,23 +494,23 @@ suite on each PR.
 | D-08 | `language-check.test.ts`: language present writes nothing to the *arr; absent grabs a matching approved release |
 | D-09 | `fix-guards.test.ts`: season guard refuses a pack backing unchosen episodes; Same Release refusal; no-approved-release refusal; Playback Evidence from stored Tautulli notifications |
 | D-10 | `seerr-issues-sync.test.ts`: mirror upsert, mapping, webhook triggers a read only; `seerr-issue-writes.test.ts`: one comment per issue across a crash, `X-API-User` on every call, resolve only after completion |
-| D-12 | `self-service-outcomes.test.ts`: the three outcomes and the streak |
-| e2e | `apps/web/e2e/support/stub-arr.ts` gains manual import (GET and command), release list and grab (with override), `RenameFiles`, staged queue states with status messages, file `mediaInfo`, Seerr issues with `X-API-User`, and Plex preferences. Journeys replay Cases A, B and C (AC-40..AC-42), the Seerr link and sign-in (AC-43), and the readiness view (AC-44), at phone and desktop widths |
+| D-12 | `seerr-issues-admin.test.ts`: the staff note and fixed-by-hand mark persist and the linked repairs come from the app's own records |
+| e2e | `apps/web/e2e/support/stub-arr.ts` gains manual import (GET and command), release list and grab (with override), `RenameFiles`, staged queue states with status messages, file `mediaInfo`, Seerr issues with `X-API-User`, and Plex preferences. Journeys replay Cases A, B and C (AC-40..AC-42), the Seerr link and sign-in (AC-43), and the admin Seerr issues view (AC-44), at phone and desktop widths |
 
 ## Open questions
 
 Owner decisions (asked one at a time; each answer is folded back here as a ruling). On 2026-10-12 the owner chose the
 recommended option on Q-01..Q-05 and approved P1..P8 in PLAN-077's order, one phase per release, each verified live
-before the next. Q-09 came up in review afterwards and is open:
+before the next. Q-09 came up in review afterwards; the owner's clarification of 2026-10-12 (D-12, ADR-112) amended Q-04 and closed Q-09 as moot:
 
 | ID | Question | Resolution |
 |----|----------|------------|
 | Q-01 | Who may grab a release the quality profile rejected (Release Pick override, D-06)? Options: **A** anyone who can use Fix, within their hourly budget, for a missing episode or movie only, when every rejection is on the overridable list and nothing is on the hard-refusal list; **B** a new per-role grant, off for every role until turned on in /admin; **C** admins only, others send their pick to staff. Recommendation: **A** (it follows the "repair is a verb" ruling, ADR-080, and the refusal list carries the risk). | **Ruling (owner, 2026-10-12): A.** Anyone who can use Fix may override, for a missing episode or movie only, within the hourly Fix budget, and only when every rejection reason is on the overridable list. The hard-refusal list applies to everyone. Folded into D-06 and ADR-109 C-06. |
 | Q-02 | Should the app write to Seerr issues (D-10)? Options: **A** read-only (the app shows issues and links; staff comment and resolve by hand); **B** one comment per new issue with the fix-it-yourself link, and a resolve with a note when the linked repair completes, posted as a dedicated Seerr user; **C** like B but comment only; **D** like B but posted as the owner's own Seerr account (what the API key does by default). Recommendation: **B**. | **Ruling (owner, 2026-10-12): B.** Comment once on each new issue with the fix-it-yourself link, and resolve it when the linked repair completes, posted as a dedicated Seerr bot user through `X-API-User`, never as the owner's account. Folded into D-10 and ADR-111 C-03. |
 | Q-03 | When a Wrong language report finds the wanted audio already in the file, should the app change Plex for everyone (D-08)? Options: **A** set the title's preferred audio language on every server that has it, only when the wanted language is the title's original language (a dubbed default track), otherwise guidance only; **B** set it on every request; **C** never change Plex, guidance only. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** Set the title's preferred audio language for everyone on every server that has it, only when the wanted language is the title's original language; otherwise show guidance and change nothing. Folded into D-08 and ADR-109 C-07. |
-| Q-04 | What evidence makes the platform ready for "fix it yourself" to be the rule (D-12)? Today's rate is about 1.3 Seerr issues a month (4 since 2026-07-11). Options: **A** Cases A, B and C replayed end to end by a non-admin account (stubs in e2e, plus a live preview-only run of each remedy on the real titles), then the next 3 real issues self-served; **B** the next 5 real issues self-served in a row (about four months at today's rate); **C** 60 days in which every real issue is self-served, with at least 3 issues; **D** no number, the owner decides at a review once P1..P6 ship. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** An agent replays the three cases as a non-admin user on the built tools, then the next 3 real issues are self-served with no staff help. Folded into D-12 and ADR-111 C-05. |
+| Q-04 | What evidence makes the platform ready for "fix it yourself" to be the rule (D-12)? Today's rate is about 1.3 Seerr issues a month (4 since 2026-07-11). Options: **A** Cases A, B and C replayed end to end by a non-admin account (stubs in e2e, plus a live preview-only run of each remedy on the real titles), then the next 3 real issues self-served; **B** the next 5 real issues self-served in a row (about four months at today's rate); **C** 60 days in which every real issue is self-served, with at least 3 issues; **D** no number, the owner decides at a review once P1..P6 ship. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** An agent replays the three cases as a non-admin user on the built tools, then the next 3 real issues are self-served with no staff help. Folded into D-12 and ADR-111 C-05.<br>**Amended (owner, 2026-10-12): the counted gate is dropped.** "The gate is a judgment call, not a count. The intention is to keep building haynesnetwork.com until it can handle the kinds of problems people actually report, then steer users to fix things themselves instead of staff fixing them. Working practice: every new Seerr issue is worked through haynesnetwork.com's self-service tools first, as a user would. When a tool fixes it, the reply teaches the user that tool. When no tool can, staff fix it by hand and the missing capability is added to the plan. The owner decides when coverage is good enough to make self-service the default." No replays and no streak; see D-12 and ADR-112, which supersedes ADR-111 C-05. |
 | Q-05 | Once the gate passes, what does the rule do? Options: **A** Seerr issue filing stays open, every new issue gets the fix-it-yourself comment, and staff act only after a self-service attempt failed or when no remedy fits; **B** issue reporting in Seerr is switched off for everyone but admins (Seerr permissions) and haynesnetwork.com becomes the only place to report; **C** A for 30 days, then B. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** Seerr issue filing stays open; haynesnetwork comments with the self-service link, and staff step in only after a self-service attempt fails or when no remedy fits (option A's wording). Folded into D-12 and ADR-111 C-05. |
-| Q-09 | Does an Unfixable outcome (closed with no remedy applied, for example no release exists anywhere) restart the Q-04 count of 3 consecutive Self-Served issues? Options: **A** yes, every real issue that is not Self-Served restarts it (the ruling's literal wording); **B** no, an Unfixable issue is skipped and neither counts nor restarts; **C** it counts toward the 3 when staff confirm no remedy could exist. Recommendation: **B** (the gate measures whether self-service works where a fix exists; an issue nobody can fix says nothing about that). Gates P8 only. | (open) |
+| Q-09 | Does an Unfixable outcome (closed with no remedy applied, for example no release exists anywhere) restart the Q-04 count of 3 consecutive Self-Served issues? Options: **A** yes, every real issue that is not Self-Served restarts it (the ruling's literal wording); **B** no, an Unfixable issue is skipped and neither counts nor restarts; **C** it counts toward the 3 when staff confirm no remedy could exist. Recommendation: **B** (the gate measures whether self-service works where a fix exists; an issue nobody can fix says nothing about that). Gates P8 only. | **Closed, moot (owner, 2026-10-12).** The Q-04 count no longer exists (Q-04 amendment, D-12, ADR-112), so there is nothing for an Unfixable outcome to restart. |
 
 Driver items, resolved inside PLAN-077 (not owner questions):
 

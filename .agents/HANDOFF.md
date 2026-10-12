@@ -1,5 +1,12 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-12: self-service readiness is the owner's judgment, not a count (ADR-112)
+
+- Owner clarification: the PLAN-077 readiness gate (replays, then 3 consecutive Self-Served issues) is dropped. Work every
+  new Seerr issue through haynesnetwork.com's self-service tools first; a hand fix is noted and the missing capability goes
+  into the plan; the owner decides when self-service is the default. ADR-112 supersedes ADR-111 C-05; DESIGN-055 D-12, Q-04
+  amended, Q-09 closed as moot; PRD R-271/US-19/AC-44, glossary T-312/T-313 and PLAN-077 P3/P8 follow.
+
 ## 2026-10-12 20:10Z: PLAN-077 P1 shipped — the Repair Guide's Fix guards, live in v0.112.1, remedies on
 
 - **What:** Fix on a movie, episode or season opens the Repair Guide (`repair_guide_remedies`, all four on since

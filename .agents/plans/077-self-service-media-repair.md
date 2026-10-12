@@ -13,7 +13,7 @@
   [haynes-ops#3834](https://github.com/thaynes43/haynes-ops/issues/3834) (SABnzbd leaves obfuscated `.7z` posts
   un-extracted), [haynes-ops#3833](https://github.com/thaynes43/haynes-ops/issues/3833) (HaynesOps never
   hardware-transcodes; P1 triage).
-- **Validation:** each phase's live check below, then P8's gate.
+- **Validation:** each phase's live check below, then P8's owner review.
 
 ## Why
 
@@ -49,12 +49,12 @@ Priority is how often real reports need the remedy, and how much harm today's be
 | P0 | Janitor stops blocklisting "Found archive file" downloads (D-14) | Live harm: 82 Sonarr downloads removed and blocklisted since 2026-09-29, 9 episodes still missing | none |
 | P1 | Fix safety guards: season guard, Replacement Preview, Same Release refusal, language check before destroy, playback triage (D-09, D-08 rules 1-2) | Today's destructive paths would have harmed Cases A and C | none |
 | P2 | Queue-aware Force Search, the Import Check, the Title Evidence engine, janitor classes `importable` and `title_mismatch` (D-07, D-05 engine) | The most frequent failure: 262 stuck Sonarr records on 2026-09-27 (#597), Case B | none |
-| P3 | Seerr Issue mirror (read-only), title page and admin surfaces, the onboarding link, readiness metrics (D-10 read, D-11, D-12) | The steering channel and the measurement; no writes | none |
+| P3 | Seerr Issue mirror (read-only), title page and admin surfaces, the onboarding link, admin issues list with linked repairs and a staff note (D-10 read, D-11, D-12) | The steering channel and the working record; no writes | none |
 | P4 | Title Check census, Episode Re-map, Mislabel Block (D-04, D-05) | Case A; #597's Lioness and Penguins mis-identifications | none |
 | P5 | Release Pick with guarded override (D-06) | Case A's two profile-rejected episodes | Q-01 ruled: anyone who can use Fix, missing items, within the budget, every reason overridable |
 | P6 | Language-aware Wrong language: Plex preference, language-filtered search (D-08) | Case A's Portuguese default; the last wrong_language Fix deleted a file | Q-03 ruled: set the preference only for the original language |
 | P7 | Seerr writes: comment and resolve (D-10 writes) | Brings reporters to the fix | Q-02 ruled: comment and resolve as a bot user |
-| P8 | Readiness gate and the rule (D-12) | Decides when "fix it yourself" is the rule | Q-04, Q-05 ruled (DESIGN-055 D-12); Q-09 open |
+| P8 | The rule: the owner's call (D-12) | Decides when "fix it yourself" is the default | Owner judgment (ADR-112); Q-05 ruled, Q-04 amended, Q-09 moot |
 
 ### P0: stop blocklisting releases SABnzbd failed to unpack (issue #887)
 
@@ -162,12 +162,12 @@ Priority is how often real reports need the remedy, and how much harm today's be
    haynes-ops (a new CronJob beside the other sync modes, short PR, no bare doc IDs in that repo).
 2. Webhook: issue notifications trigger a read and are not stored in the Feed. Then, as a recorded and reversible step,
    set the Seerr webhook types from 204 to 4044 and read it back.
-3. Title page banner, `/admin` Seerr issues list with "Mark staff-assisted".
+3. Title page banner, `/admin` Seerr issues list with "Mark fixed by hand" (staff note).
 4. `/r/seerr/<id>` link route; verify the signed-out round trip through Authentik keeps the link.
-5. Outcomes (D-12) nightly, the admin readiness view, one digest line.
-- **Tests:** `seerr-issues-sync.test.ts`, `self-service-outcomes.test.ts`, route tests for the link.
+5. Admin issues list shows the linked repairs (from the app's own records) and the staff note / "Mark fixed by hand" (D-12). No outcome scoring, streak or digest line (ADR-112).
+- **Tests:** `seerr-issues-sync.test.ts`, `seerr-issues-admin.test.ts`, route tests for the link.
 - **e2e:** stub Seerr issues; journey: a stub issue shows on its title page; the link after a stub sign-in opens the
-  guide preselected (AC-43 read half); the readiness view (AC-44).
+  guide preselected (AC-43 read half); the admin Seerr issues view with linked repairs and the fixed-by-hand mark (AC-44).
 - **Live check:** the four existing (resolved) Seerr issues appear in `/admin` with the right titles and episodes, and
   the link for issue 3 opens The Paper's S02E06 guide.
 - **Done when** a new real issue appears within one run and its link works signed out.
@@ -223,12 +223,16 @@ Priority is how often real reports need the remedy, and how much harm today's be
 - **e2e:** stub Seerr records the acting user. Journey: AC-43's write half.
 - **Live check:** the next real issue gets exactly one comment from the bridge user, and is resolved after its repair.
 
-### P8: readiness gate and the rule
+### P8: the rule (owner's judgment)
 
-1. Implement Q-04's gate in the admin readiness view (the streak, the replays) and run the replays it names.
-2. When the gate passes, record it here and in HANDOFF, then apply Q-05's ruling: Seerr filing stays open; the Seerr
-   comment wording, the About page and the MOTD copy say to try fixing it on haynesnetwork.com first. Settle DESIGN-055
-   Q-09 (does an Unfixable outcome restart the count) before the streak is implemented.
+Owner clarification, 2026-10-12 (ADR-112, DESIGN-055 D-12): "The gate is a judgment call, not a count. The intention is to keep building haynesnetwork.com until it can handle the kinds of problems people actually report, then steer users to fix things themselves instead of staff fixing them. Working practice: every new Seerr issue is worked through haynesnetwork.com's self-service tools first, as a user would. When a tool fixes it, the reply teaches the user that tool. When no tool can, staff fix it by hand and the missing capability is added to the plan. The owner decides when coverage is good enough to make self-service the default."
+
+1. From P3 on, work every new Seerr issue through haynesnetwork.com's self-service tools first, as a user would. When a
+   tool fixes it, the reply teaches that tool. When none can, fix it by hand, mark it in `/admin` with a note, and add
+   the missing capability to this plan.
+2. When the owner decides coverage is good enough, record it here and in HANDOFF, then apply Q-05's ruling: Seerr filing
+   stays open; the Seerr comment wording, the About page and the MOTD copy say to try fixing it on haynesnetwork.com
+   first.
 - **Done when** the owner confirms the rule is in effect. Then move this plan to `completed/`.
 
 ## Out of scope
