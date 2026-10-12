@@ -177,10 +177,12 @@ stage (a missing line fails only the release image build, which is not a require
 - `@hnet/api` — tRPC routers.
 - `@hnet/ui` — token-themed components (`data-theme`); `tokens.css` is the only place for hex.
 - `@hnet/test-utils` — embedded-Postgres + stub harness helpers.
-- `@hnet/watch` — the Watch Companion's pure progress math, recommendation scoring, title resolver
-  and spoken formatter, plus read queries (DESIGN-049). No MCP SDK, no writes.
-- `@hnet/mcp` — the in-cluster MCP endpoint behind `/api/mcp` (ADR-087): consumer auth, the nine
-  watch tools (ADR-092 added `watchlist` / `set_watchlist`), the Voice Budget tests.
+- `@hnet/watch` — progress math, personal evidence and candidate identity checks, limited cached
+  candidate hints, spoken formatting and read queries (DESIGN-049 / DESIGN-054). No MCP SDK, no writes.
+  ADR-107 assigns broad recommendation research and judgment to the consuming agent; Plex/watchlist
+  membership restricts choices only on explicit request.
+- `@hnet/mcp` — the in-cluster MCP endpoint behind `/api/mcp` (ADR-087): consumer auth, eleven
+  watch tools (ADR-107 adds `check_titles` / `viewing_context`), and the Voice Budget tests.
 - `@hnet/oauth` — the pure half of the public connectors' OAuth 2.1 authorization server (ADR-091):
   metadata, validation, PKCE, token hashing and the decisions. It never touches a database; every OAuth-table
   write is a `@hnet/domain` `oauth/*` single-writer.

@@ -11,13 +11,20 @@ import { WatchNotReadyError } from '@hnet/domain';
 import { authenticate, type HopConsumer } from '../src/auth';
 import { deadlineResponse } from '../src/http';
 import { buildServer, runTool, toolList } from '../src/server';
-import { INSTRUCTIONS, SERVER_NAME, WATCH_TOOLS } from '../src/tools';
+import {
+  checkTitlesInput,
+  INSTRUCTIONS,
+  SERVER_NAME,
+  viewingContextInput,
+  WATCH_TOOLS,
+} from '../src/tools';
+import { boundedWatchContent, MAX_STRUCTURED_BYTES } from '../src/structured';
 
 describe('the D-05 contract', () => {
-  it('serves exactly the nine tools with the D-05 / DESIGN-051 D-01 descriptions, and the D-02 name and instructions', () => {
+  it('serves the eleven shared tools and the agent-owned research instructions (ADR-107)', () => {
     expect(SERVER_NAME).toBe('Watch history');
     expect(INSTRUCTIONS).toBe(
-      "Watch history for the owner's Plex account across HaynesOps, HaynesKube and HaynesTower. Every result is short plain text meant to be read aloud. unfinished: shows started and not finished. recommend: never-watched picks with reasons (pass offset for more). watch_status: one title. recent_history: recent plays. watchlist: the Plex watchlist. set_watchlist adds or removes; adding a title not on Plex makes Seerr download it. mark_watched writes to Plex; dismiss never does; undo_last_change reverses the last change.",
+      'Use viewing_context for personal viewing and explicit feedback; plays do not prove liking. Discover broadly with web/catalog tools, check_titles against records, verify regional streaming/rental availability, then rank for the request. Use dated sources for current buzz. Plex/watchlist membership restricts only explicit requests. recommend is a limited cached pool, not broad discovery. No recorded viewing is not proof of never watched. Lookup reads never acquire titles. set_watchlist may trigger downloads; mark_watched writes Plex.',
     );
     expect(INSTRUCTIONS.length).toBeLessThanOrEqual(600);
     expect(WATCH_TOOLS.map((t) => [t.name, t.scope, t.description])).toEqual([
@@ -29,18 +36,32 @@ describe('the D-05 contract', () => {
       [
         'recommend',
         'watch:read',
-        'Titles the user has never watched, best first, each with a short reason; titles on Plex first.',
+        'Limited cached ledger/watchlist/TMDB candidates; scope plex or watchlist only when requested. For general choices use viewing_context, broad research and check_titles.',
       ],
       [
         'watch_status',
         'watch:read',
-        'Whether the user has seen a title, how far along he is, and whether it is on Plex and on his watchlist.',
+        'Recorded viewing, progress and Plex/watchlist membership for one title; unknowns are stated.',
       ],
-      ['recent_history', 'watch:read', 'What the user watched recently.'],
+      [
+        'recent_history',
+        'watch:read',
+        'Recent recorded plays; a play alone does not establish completion or liking.',
+      ],
       [
         'watchlist',
         'watch:read',
         "The user's Plex watchlist, newest first, each title with whether it is on Plex; pass offset for more.",
+      ],
+      [
+        'check_titles',
+        'watch:read',
+        'Check up to 10 researched titles against personal records, in input order. Returns identity, viewing, feedback, memberships and unknowns; no acquisitions. Supply kind with tmdbId.',
+      ],
+      [
+        'viewing_context',
+        'watch:read',
+        'Personal viewing evidence and explicit feedback, paginated. Plays do not prove completion or liking; personal ratings are unavailable.',
       ],
       [
         'mark_watched',
@@ -69,6 +90,8 @@ describe('the D-05 contract', () => {
       watch_status: { readOnlyHint: true },
       recent_history: { readOnlyHint: true },
       watchlist: { readOnlyHint: true },
+      check_titles: { readOnlyHint: true },
+      viewing_context: { readOnlyHint: true },
       mark_watched: { destructiveHint: false, idempotentHint: true },
       dismiss: { destructiveHint: false },
       set_watchlist: { destructiveHint: false, idempotentHint: true },
@@ -94,7 +117,7 @@ describe('the D-05 contract', () => {
     }
   });
 
-  it('the list is built once and follows the schema rules (flat, no defaults, no unions, bounded ints)', () => {
+  it('keeps primitive schemas except the explicitly bounded check_titles array, with no combinators or defaults', () => {
     const hop = { name: 'hop', tokenEnv: 'X', scopes: ['watch:read', 'watch:write'] } as const;
     expect(toolList(hop)).toBe(toolList(hop));
     for (const t of toolList(hop)) {
@@ -103,6 +126,24 @@ describe('the D-05 contract', () => {
       for (const p of Object.values(t.inputSchema.properties ?? {}) as Array<
         Record<string, unknown>
       >) {
+        if (p.type === 'array') {
+          expect(t.name).toBe('check_titles');
+          expect(p.minItems).toBe(1);
+          expect(p.maxItems).toBe(10);
+          const item = p.items as Record<string, unknown>;
+          expect(item.type).toBe('object');
+          expect(item.additionalProperties).toBe(false);
+          for (const child of Object.values(
+            item.properties as Record<string, Record<string, unknown>>,
+          )) {
+            expect(['string', 'integer']).toContain(child.type);
+            if (child.type === 'integer') {
+              expect(typeof child.minimum).toBe('number');
+              expect(typeof child.maximum).toBe('number');
+            }
+          }
+          continue;
+        }
         expect(['string', 'integer', 'boolean']).toContain(p.type);
         if (p.type === 'integer') {
           expect(typeof p.minimum).toBe('number');
@@ -110,6 +151,85 @@ describe('the D-05 contract', () => {
         }
       }
     }
+  });
+
+  it('validates batch identity, namespaces, field lengths and page caps before any read runs', () => {
+    expect(
+      checkTitlesInput.safeParse({
+        titles: [
+          { title: 'Dune', year: 2021 },
+          { kind: 'show', tmdbId: 63639 },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      checkTitlesInput.safeParse({
+        titles: [{ tvdbId: 280619 }, { imdbId: 'tt3230854' }, { plexGuid: 'plex://show/exp' }],
+      }).success,
+    ).toBe(true);
+    for (const titles of [
+      [],
+      Array.from({ length: 11 }, () => ({ title: 'Dune' })),
+      [{}],
+      [{ year: 2021 }],
+      [{ title: ' ' }],
+      [{ title: 'x'.repeat(201) }],
+      [{ tmdbId: 63639 }],
+      [{ tmdbId: 0, kind: 'show' }],
+      [{ kind: 'movie', tvdbId: 280619 }],
+      [{ imdbId: 'not-an-imdb-id' }],
+      [{ plexGuid: 'https://plex.test/title' }],
+      [{ plexGuid: 'plex://movie/1', kind: 'show' }],
+      [{ plexGuid: 'plex://movie/1', tvdbId: 1 }],
+      [{ title: 'Dune', acquire: true }],
+    ])
+      expect(checkTitlesInput.safeParse({ titles }).success).toBe(false);
+    expect(viewingContextInput.safeParse({ kind: 'any', limit: 20, offset: 2000 }).success).toBe(
+      true,
+    );
+    for (const args of [{ limit: 21 }, { offset: 2001 }, { section: 'ratings' }, { acquire: true }])
+      expect(viewingContextInput.safeParse(args).success).toBe(false);
+  });
+
+  it('clips optional metadata under 64KiB without dropping candidate/page items or changing canonical IDs', () => {
+    const items = Array.from({ length: 20 }, (_, i) => ({
+      identity: { tmdbId: i + 1, title: 'A long title '.repeat(100) },
+      evidence: {
+        plays: 100,
+        genres: Array.from({ length: 100 }, () => 'genre'.repeat(30)),
+        statements: Array.from({ length: 100 }, () => ({
+          action: 'watched',
+          at: '2026-10-11T00:00:00Z',
+        })),
+      },
+    }));
+    const out = boundedWatchContent({ items, page: { total: 20, hasMore: false } });
+    expect(Buffer.byteLength(JSON.stringify(out))).toBeLessThanOrEqual(MAX_STRUCTURED_BYTES);
+    expect(out.metadataClipped).toBe(true);
+    expect((out.items as typeof items).map((x) => x.identity.tmdbId)).toEqual(
+      items.map((x) => x.identity.tmdbId),
+    );
+    expect((out.items as typeof items).every((x) => x.evidence.plays === 100)).toBe(true);
+    expect(items[0]?.evidence.statements).toHaveLength(100);
+  });
+
+  it('refuses malformed identities before accessing principal data, with value-free logging', async () => {
+    const logs: string[] = [];
+    const tool = WATCH_TOOLS.find((t) => t.name === 'check_titles');
+    if (!tool) throw new Error('Missing candidate check tool');
+    const result = await runTool(
+      tool,
+      { titles: [{ title: 'private candidate name', tmdbId: 123 }] },
+      { log: (line: string) => logs.push(line) } as never,
+      { name: 'reader', scopes: ['watch:read'] },
+    );
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain(
+      'Provide kind for a TMDB identifier',
+    );
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('"code":"invalid_args"');
+    expect(logs[0]).not.toContain('private candidate name');
   });
 });
 
@@ -167,6 +287,8 @@ describe('consumer auth (D-03)', () => {
       'watch_status',
       'recent_history',
       'watchlist',
+      'check_titles',
+      'viewing_context',
     ]);
     const logs: string[] = [];
     const mark = WATCH_TOOLS.find((t) => t.name === 'mark_watched');
@@ -202,9 +324,14 @@ describe('consumer auth (D-03)', () => {
         'watch_status',
         'recent_history',
         'watchlist',
+        'check_titles',
+        'viewing_context',
       ]);
       // DESIGN-051 D-01: a watch:read-only token sees `watchlist` but never `set_watchlist`.
-      const change = await client.callTool({ name: 'set_watchlist', arguments: { title: 'x', action: 'add' } });
+      const change = await client.callTool({
+        name: 'set_watchlist',
+        arguments: { title: 'x', action: 'add' },
+      });
       expect(change.isError).toBe(true);
       expect(change.content).toEqual([
         { type: 'text', text: expect.stringMatching(/Tool set_watchlist not found/) },

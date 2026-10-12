@@ -1,8 +1,8 @@
 // ADR-087 / DESIGN-049 D-02 / D-05 — the watch tools: EXACTLY the D-05 names, descriptions and parameters,
 // one scope each, and the server's `instructions`; ADR-092 / DESIGN-051 D-01 adds `watchlist` and
-// `set_watchlist` (nine tools) and rewords `watch_status` and `undo_last_change`. Schema rules (Home Assistant converts every
-// schema and fails the whole entry on one it cannot; OpenAI strips top-level combinators): flat `.strict()`
-// objects, primitive properties, property-level enums only, no defaults (applied in the handler), no
+// `set_watchlist`; ADR-107 / DESIGN-054 adds the two bounded personal-evidence reads. Schema rules
+// (Home Assistant converts every schema; OpenAI strips top-level combinators): strict objects,
+// primitive properties except check_titles' bounded object array, property-level enums only, no defaults, no
 // nullable, no unions, integers bounded with `.int().min().max()`. Built ONCE at module scope.
 import { z } from 'zod';
 import type { WatchScope } from './auth';
@@ -11,7 +11,7 @@ export const SERVER_NAME = 'Watch history';
 
 /** D-02 — only Claude Code and Codex read these (Home Assistant drops them); ≤ 600 characters. */
 export const INSTRUCTIONS =
-  "Watch history for the owner's Plex account across HaynesOps, HaynesKube and HaynesTower. Every result is short plain text meant to be read aloud. unfinished: shows started and not finished. recommend: never-watched picks with reasons (pass offset for more). watch_status: one title. recent_history: recent plays. watchlist: the Plex watchlist. set_watchlist adds or removes; adding a title not on Plex makes Seerr download it. mark_watched writes to Plex; dismiss never does; undo_last_change reverses the last change.";
+  'Use viewing_context for personal viewing and explicit feedback; plays do not prove liking. Discover broadly with web/catalog tools, check_titles against records, verify regional streaming/rental availability, then rank for the request. Use dated sources for current buzz. Plex/watchlist membership restricts only explicit requests. recommend is a limited cached pool, not broad discovery. No recorded viewing is not proof of never watched. Lookup reads never acquire titles. set_watchlist may trigger downloads; mark_watched writes Plex.';
 
 const showOrMovie = z.enum(['show', 'movie']);
 const anyKind = z.enum(['show', 'movie', 'any']);
@@ -28,6 +28,7 @@ export const recommendInput = z
     limit: int(1, 10).optional(),
     offset: int(0, 100).optional(),
     kids: z.boolean().optional(),
+    scope: z.enum(['catalog', 'plex', 'watchlist']).optional(),
   })
   .strict();
 export const watchStatusInput = z.object({ title, kind: showOrMovie.optional() }).strict();
@@ -49,16 +50,70 @@ export const dismissInput = z
 export const undoInput = z.object({}).strict();
 /** DESIGN-051 D-01 — `offset` reaches the provider's 2,000-title read cap. */
 export const watchlistInput = z
-  .object({ kind: anyKind.optional(), limit: int(1, 10).optional(), offset: int(0, 2000).optional() })
+  .object({
+    kind: anyKind.optional(),
+    limit: int(1, 10).optional(),
+    offset: int(0, 2000).optional(),
+  })
   .strict();
 export const setWatchlistInput = z
   .object({ title, action: z.enum(['add', 'remove']), kind: showOrMovie.optional() })
   .strict();
 
+/** DESIGN-054 D-02: identity validation is local; a contradictory identity never falls back to a name. */
+const checkTitleInput = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    year: int(1800, 2200).optional(),
+    kind: showOrMovie.optional(),
+    tmdbId: int(1, 2_147_483_647).optional(),
+    tvdbId: int(1, 2_147_483_647).optional(),
+    imdbId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(40)
+      .regex(/^[tT][tT]\d+$/)
+      .optional(),
+    plexGuid: z
+      .string()
+      .trim()
+      .min(1)
+      .max(500)
+      .regex(/^plex:\/\/(movie|show)\/[^\s/]+$/)
+      .optional(),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    const issue = (message: string) => ctx.addIssue({ code: 'custom', message });
+    if (![v.title, v.tmdbId, v.tvdbId, v.imdbId, v.plexGuid].some((x) => x !== undefined))
+      issue('Provide a title or a canonical identifier');
+    if (v.tmdbId !== undefined && v.kind === undefined) issue('Provide kind for a TMDB identifier');
+    if (v.tvdbId !== undefined && v.kind === 'movie') issue('A TVDB identifier describes a show');
+    const guidKind = v.plexGuid?.split('/')[2];
+    if (v.kind !== undefined && guidKind !== undefined && guidKind !== v.kind)
+      issue('Plex identifier kind conflicts with kind');
+    if (v.tvdbId !== undefined && guidKind === 'movie')
+      issue('A TVDB identifier conflicts with a movie Plex identifier');
+  });
+
+export const checkTitlesInput = z
+  .object({ titles: z.array(checkTitleInput).min(1).max(10) })
+  .strict();
+
+export const viewingContextInput = z
+  .object({
+    kind: anyKind.optional(),
+    section: z.enum(['viewing', 'feedback']).optional(),
+    limit: int(1, 20).optional(),
+    offset: int(0, 2000).optional(),
+  })
+  .strict();
+
 /**
  * The JSON Schema served in `tools/list` — HAND-WRITTEN (D-05): the SDK's generated list adds a `$schema`
  * URL and `execution: {taskSupport}` to every tool and came to 3,475 bytes, over the 3,072-byte Voice
- * Budget of the time (the cap is 4,096 since ADR-092 C-09; the nine hand-written tools serve 3,633 bytes).
+ * Budget of the time (ADR-107 raises the eleven-tool cap to 6,144 bytes).
  * These carry the same parameters, types, enums and integer bounds as the zod schema (a test pins them to each
  * other); string lengths are checked by zod in the call path only.
  */
@@ -83,10 +138,7 @@ const S = { type: 'string' } as const;
 const B = { type: 'boolean' } as const;
 const I = (minimum: number, maximum: number) => ({ type: 'integer', minimum, maximum }) as const;
 const E = (...values: string[]) => ({ type: 'string', enum: values }) as const;
-const schema = (
-  properties: ToolJsonSchema['properties'],
-  required?: string[],
-): ToolJsonSchema => ({
+const schema = (properties: ToolJsonSchema['properties'], required?: string[]): ToolJsonSchema => ({
   type: 'object',
   properties,
   ...(required ? { required } : {}),
@@ -95,7 +147,7 @@ const schema = (
 
 const READ = { readOnlyHint: true } as const;
 
-/** D-05 (+ DESIGN-051 D-01), in the served order: the reads, then the writes, undo last. */
+/** D-05 (+ DESIGN-051 D-01 / DESIGN-054 D-04): reads, then writes, undo last. */
 export const WATCH_TOOLS = [
   {
     name: 'unfinished',
@@ -110,7 +162,7 @@ export const WATCH_TOOLS = [
     name: 'recommend',
     scope: 'watch:read',
     description:
-      'Titles the user has never watched, best first, each with a short reason; titles on Plex first.',
+      'Limited cached ledger/watchlist/TMDB candidates; scope plex or watchlist only when requested. For general choices use viewing_context, broad research and check_titles.',
     input: recommendInput,
     jsonSchema: schema({
       kind: E('show', 'movie', 'any'),
@@ -118,6 +170,7 @@ export const WATCH_TOOLS = [
       limit: I(1, 10),
       offset: I(0, 100),
       kids: B,
+      scope: E('catalog', 'plex', 'watchlist'),
     }),
     annotations: READ,
   },
@@ -125,7 +178,7 @@ export const WATCH_TOOLS = [
     name: 'watch_status',
     scope: 'watch:read',
     description:
-      'Whether the user has seen a title, how far along he is, and whether it is on Plex and on his watchlist.',
+      'Recorded viewing, progress and Plex/watchlist membership for one title; unknowns are stated.',
     input: watchStatusInput,
     jsonSchema: schema({ title: S, kind: E('show', 'movie') }, ['title']),
     annotations: READ,
@@ -133,7 +186,7 @@ export const WATCH_TOOLS = [
   {
     name: 'recent_history',
     scope: 'watch:read',
-    description: 'What the user watched recently.',
+    description: 'Recent recorded plays; a play alone does not establish completion or liking.',
     input: recentHistoryInput,
     jsonSchema: schema({ days: I(1, 365), limit: I(1, 20) }),
     annotations: READ,
@@ -145,6 +198,47 @@ export const WATCH_TOOLS = [
       "The user's Plex watchlist, newest first, each title with whether it is on Plex; pass offset for more.",
     input: watchlistInput,
     jsonSchema: schema({ kind: E('show', 'movie', 'any'), limit: I(1, 10), offset: I(0, 2000) }),
+    annotations: READ,
+  },
+  {
+    name: 'check_titles',
+    scope: 'watch:read',
+    description:
+      'Check up to 10 researched titles against personal records, in input order. Returns identity, viewing, feedback, memberships and unknowns; no acquisitions. Supply kind with tmdbId.',
+    input: checkTitlesInput,
+    jsonSchema: schema(
+      {
+        titles: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 10,
+          items: schema({
+            title: S,
+            year: I(1800, 2200),
+            kind: E('show', 'movie'),
+            tmdbId: I(1, 2_147_483_647),
+            tvdbId: I(1, 2_147_483_647),
+            imdbId: { ...S, pattern: '^[tT][tT]\\d+$' },
+            plexGuid: { ...S, pattern: '^plex:\\/\\/(movie|show)\\/[^\\s/]+$' },
+          }),
+        },
+      },
+      ['titles'],
+    ),
+    annotations: READ,
+  },
+  {
+    name: 'viewing_context',
+    scope: 'watch:read',
+    description:
+      'Personal viewing evidence and explicit feedback, paginated. Plays do not prove completion or liking; personal ratings are unavailable.',
+    input: viewingContextInput,
+    jsonSchema: schema({
+      kind: E('show', 'movie', 'any'),
+      section: E('viewing', 'feedback'),
+      limit: I(1, 20),
+      offset: I(0, 2000),
+    }),
     annotations: READ,
   },
   {
@@ -174,7 +268,10 @@ export const WATCH_TOOLS = [
     description:
       "Add a title to the user's Plex watchlist or remove it; says back the title it found. Adding a title not on Plex makes Seerr download it.",
     input: setWatchlistInput,
-    jsonSchema: schema({ title: S, action: E('add', 'remove'), kind: E('show', 'movie') }, ['title', 'action']),
+    jsonSchema: schema({ title: S, action: E('add', 'remove'), kind: E('show', 'movie') }, [
+      'title',
+      'action',
+    ]),
     annotations: { destructiveHint: false, idempotentHint: true },
   },
   {

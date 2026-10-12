@@ -2,7 +2,7 @@
 
 The Watch Companion's pure math (DESIGN-049; ADR-088, ADR-089; PLAN-068 S4): title identity,
 per-episode progress and states, the spoken-title resolver, the Taste Profile, the recommendation
-exclusions and score, and the spoken answers of the nine watch tools — plus (S5–S7) the Title State
+exclusions and score, and the spoken answers of the watch tools — plus (S5–S7) the Title State
 helpers the sync, the live revalidation and the Watch Mark write-through share, the read queries, and (ADR-092 /
 DESIGN-051, PLAN-071) the watchlist's read-time overlay.
 
@@ -57,7 +57,7 @@ counts for shows only (TVDB movie ids are another id space).
 
 `ResolverCandidate = { titleKey; kind; title; year: number \| null; inHistory: boolean; ids?: ExternalIds }`.
 
-## Recommendations (D-16..D-20) — `src/recommend.ts`, `src/genres.ts`
+## Limited cached candidates (ADR-107; legacy D-16..D-20) — `src/recommend.ts`, `src/genres.ts`
 
 | Export | Contract |
 |---|---|
@@ -70,8 +70,8 @@ counts for shows only (TVDB movie ids are another id space).
 | `buildExclusions(titles: HistoryFacts[], marks: LiveMark[]): Exclusions` | The four identity-key sets. Title States and marks that share a key (same kind, transitively) are one title, and ALL its keys join the set its facts call for. |
 | `excludeCandidates(cands, exclusions, { kids })` | D-18, applied last (AC-21): a candidate goes when any key of it — or of any candidate sharing a key with it — is in any set; `kids: false` drops children's titles, `kids: true` keeps only them (children's when any source says so, or their genres together do). |
 | `mergeCandidates(cands)` | One candidate per title across library, watchlist and TMDB seeds; order-independent. |
-| `scoreCandidates(cands, profile, { kind?, genre?, now, genreTitles? }): ScoredPick[]` | D-19 `0.45 × affinity + 0.30 × quality + boosts` (watchlist +0.35, seeds +0.3 × min(1, n/3), new on Plex within 21 days +0.1); ties on quality, then title. Reason, first that applies: "on your watchlist"; `because you watched <most recent seed>`; `<genre> like <title>` (the requested genre, else the owner's strongest shared genre, drama last); `rated <x> on IMDb`; "new on Plex"; "new to you". |
-| `pickRecommendations(input): { onPlex, notOnPlex }` | The whole pure pipeline: exclude → merge → score with the adult or kids profile → split. |
+| `scoreCandidates(cands, profile, opts): ScoredPick[]` | Legacy cached hints: genre affinity, population quality and TMDB seed agreement. ADR-107 removes watchlist/recent-Plex boosts and membership reasons. This helper does not own general recommendation judgment. |
+| `pickRecommendations(input)` | Exclude → merge → legacy hints → explicit `catalog` / `plex` / `watchlist` scope. Returns a uniform `picks` sequence plus compatibility partitions. |
 
 `name:` keys carry the kind (since PLAN-068 S5), so a watched movie no longer excludes a show with the
 same normalized title and year. Where identity is uncertain the rules still err toward leaving a pick
@@ -87,7 +87,7 @@ leads; episodes are "season 3 episode 1"; at most `limit` items, then "And N mor
 | Export | Example |
 |---|---|
 | `formatUnfinished(items, { now, limit, kind?, timeZone? })` | "Three unfinished shows. Silo: 30 of 40 watched, next is season 3 episode 1, last watched on September 20. For All Mankind: next is season 5 episode 3, on September 12. Stalled: The Righteous Gemstones, 36 of 45, untouched since March 2025." |
-| `formatRecommendations({ onPlex, notOnPlex }, { limit, offset?, genre?, kids?, kind? })` | "Five picks on Plex. Foundation, a 2021 show, because you watched The Expanse. … Not on Plex yet: Dark Matter, a 2024 show, on your watchlist." Not-on-Plex picks page two at a time with `offset`. Empty: "Nothing new matches that. Try another genre or kind." |
+| `formatRecommendations(recs, opts)` | Names cached coverage, uses a uniform page and states membership as metadata. Scope filtering precedes pagination; there is no separate allocation for Plex titles. |
 | `formatWatchStatus(view, { now })` | "The Expanse (2015 show): all 62 episodes watched, finished in March 2025. On Plex, not on your watchlist." — DESIGN-051 D-02's four availability sentences (`On Plex and on your watchlist.` · `On Plex, not on your watchlist.` · `Not on Plex, but on your watchlist.` · `Not on Plex or your watchlist.`); with `onWatchlist` null (a non-owner), DESIGN-049's `On Plex.` / `Not on Plex.` |
 | `formatWatchlist(items, { total, offset, kind? })` | DESIGN-051 D-02: "Your watchlist has 150 titles. Newest first: Slow Horses, a 2022 show, on Plex, started. The Toxic Avenger, a 2023 movie, not on Plex yet. And 148 more." The items are fitted to the 1,200-character cap FIRST, then the range and "And N more." name exactly the items kept (D-15f): a later page, or a first page the cap cut short, says its range ("Numbers 6 to 10: …", "Newest first, numbers 1 to 4: …"); empty: "Your watchlist is empty." (with a kind: "Your watchlist has no movies."); past the end: "That's the end of your watchlist." |
 | `formatWatchlistChange(view)` | "Added The Matrix (1999 movie) to your watchlist. It's on Plex." / "… It isn't on Plex yet, so Seerr will request it." / "Removed …" / "… is already on your watchlist." (+ " It isn't on Plex yet, so Seerr will request it if it hasn't already." for an add of a title not on Plex, D-15j) / "… isn't on your watchlist." / "I found … but not in Plex's catalog, so your watchlist didn't change." / "I couldn't confirm … in Plex's catalog, …" / "I couldn't reach Plex, so your watchlist didn't change." / an unconfirmed write: "Plex didn't answer in time, so I can't tell whether … changed." (+ " It isn't on Plex yet, so if it was added, Seerr will request it." for an add of a title not on Plex) (DESIGN-051 D-15). |
@@ -144,7 +144,7 @@ Pure: stored rows, events and live marks → the formatters' inputs, so the MCP 
 |---|---|
 | `indexMarks(marks)`, `marksFor(index, ids)` | Live marks by kind-scoped identity key → `{ watched, dismissed }`. |
 | `unfinishedItems(rows, marks, { kind, kids, now })` | T-245: `in_progress` / `stalled` (never a Taster), not dismissed, children's only with `kids`; `compareUnfinished` order. |
-| `recentEntries(events, marks)` | Per title: distinct episodes, the latest, when; a `not_mine` title is left out (a show whose episodes have no guid, Q-06, by its normalized name). |
+| `recentEntries(events, marks)` | Distinct recorded episodes/plays and latest dates; completion is reported only from completed evidence. A `not_mine` title is omitted from personal viewing. |
 | `recommendations(inputs, marks, opts)` | Exclusions + Taste Profile + exemplars → `pickRecommendations`. |
 | `watchStatusView({ title, row, marks, onPlexElsewhere, now, onWatchlist? })` | The `formatWatchStatus` view (Ever Watched per T-247; `onWatchlist` for DESIGN-051's availability sentence). |
 | `onPlexFor(ids, facts)`, `watchlistItems(entries, facts, marks, now)` | DESIGN-051 D-02: on Plex = a ledger item with a Plex match or a Title State with `on_plex`; `started` (in progress / stalled, or a Taster: a show tried and left is not `watched`, DESIGN-051 D-14g), `watched` (Ever Watched, not unfinished and not a Taster; never for a `not_mine` title). |
@@ -156,6 +156,20 @@ Pure: stored rows, events and live marks → the formatters' inputs, so the MCP 
 | `overlayWatchlist(base, marks, fetchedAt)`, `watchlistEvents(marks, fetchedAt)` | The cached rows with every WRITTEN change (at `created_at`) and WRITTEN revert (the inverse, at `reverted_at`, never before its change's `created_at`, DESIGN-051 D-15u) since `fetchedAt − WATCHLIST_OVERLAY_MARGIN_SECONDS` applied oldest first (then by mark id): an add of a title not present goes on top, a remove drops every row of the title. Set operations, so an event the cache already reflects changes nothing. |
 | `sameWatchlistTitle(a, b)`, `isOnWatchlist(entries, ids)` | The same kind and a shared plex guid or TMDB / TVDB / IMDb id; the name and year only when a side knows no external id. |
 | `isStatementAction`, `isWatchlistAction`, `statementMarks(marks)` | `watched` / `not_interested` / `not_mine` are watch statements; `watchlist_add` / `watchlist_remove` are not, and every statement reader (`indexMarks`, `recommendations`, `ledgerExclusions`) drops them. |
+
+## Personal evidence (ADR-107 / DESIGN-054)
+
+`checkWatchTitles` loads one account snapshot and checks up to ten externally supplied candidates,
+independent of the cached recommendation pool. Canonical IDs take precedence; every supplied ID
+must be verified. Exact title/year fallback preserves ambiguity and lookup failures. Unassignable
+name-only historical plays remain unknown rather than being attributed to multiple remakes.
+`selectViewingContext` provides paginated factual viewing and explicit feedback (combined by default),
+including marks-only identities, genres, progress and source timestamps. Neither computes taste
+judgment or infers likes. Numeric personal ratings are unavailable, coverage is not complete lifetime
+history, and empty caches do not prove membership absence. Both query helpers are SELECT-only.
+
+The consuming agent researches broadly, checks personal evidence, verifies current regional home
+availability, and chooses for the user's request. `recommend` remains a limited cached helper.
 
 ## Tests
 

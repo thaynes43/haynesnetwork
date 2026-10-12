@@ -16,3 +16,4 @@ export * from './state';
 export * from './queries';
 export * from './views';
 export * from './watchlist';
+export * from './personal';

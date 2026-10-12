@@ -236,75 +236,49 @@ function pick(
   };
 }
 
-describe('formatRecommendations (D-20/D-21)', () => {
-  const onPlex = [
-    pick('Foundation', 2021, 'show', 'because you watched The Expanse'),
-    pick('Severance', 2022, 'show', 'on your watchlist'),
-    pick('Andor', 2022, 'show', 'sci-fi like The Expanse'),
-    pick('Oppenheimer', 2023, 'movie', 'rated 8.3 on IMDb'),
-    pick('Shogun', 2024, 'show', 'new on Plex'),
-  ];
-  const notOnPlex = [pick('Dark Matter', 2024, 'show', 'on your watchlist', false)];
+describe('formatRecommendations — honest scope and uniform pagination (ADR-107)', () => {
+  const a = pick('Owned A', 2020, 'movie', 'no recorded viewing');
+  const b = pick('External B', 2021, 'movie', 'no recorded viewing', false);
+  const c = pick('Owned C', 2022, 'show', 'sci-fi like A');
+  b.candidate.watchlist = true;
+  const recs = { picks: [b, a, c], onPlex: [a, c], notOnPlex: [b] };
 
-  it('reads like the design example', () => {
-    expect(formatRecommendations({ onPlex, notOnPlex }, { limit: 5 })).toBe(
-      'Five picks on Plex. Foundation, a 2021 show, because you watched The Expanse. Severance, a 2022 ' +
-        'show, on your watchlist. Andor, a 2022 show, sci-fi like The Expanse. Oppenheimer, a 2023 ' +
-        'movie, rated 8.3 on IMDb. Shogun, a 2024 show, new on Plex. Not on Plex yet: Dark Matter, a ' +
-        '2024 show, on your watchlist.',
+  it('gives every candidate the same page allocation regardless of membership', () => {
+    expect(formatRecommendations(recs, { limit: 2 })).toBe(
+      'Cached catalog candidates: two picks. External B, a 2021 movie, no recorded viewing; not on Plex. Owned A, a 2020 movie, no recorded viewing; on Plex. And 1 more.',
+    );
+    expect(formatRecommendations(recs, { limit: 2, offset: 2 })).toBe(
+      'Cached catalog candidates: one pick. Owned C, a 2022 show, sci-fi like A; on Plex.',
+    );
+    expect(formatRecommendations(recs, { limit: 2, offset: 4 })).toBe(
+      'Cached catalog candidates: no more picks. Try another genre or kind.',
     );
   });
 
-  it('says nothing matches when nothing survives', () => {
-    expect(formatRecommendations({ onPlex: [], notOnPlex: [] }, { limit: 5 })).toBe(
-      'Nothing new matches that. Try another genre or kind.',
+  it('labels the limited collection scope even for an empty result', () => {
+    expect(formatRecommendations(recs, { limit: 5, scope: 'plex' })).toBe(
+      'Cached Plex candidates: two picks. Owned A, a 2020 movie, no recorded viewing; on Plex. Owned C, a 2022 show, sci-fi like A; on Plex.',
+    );
+    expect(formatRecommendations(recs, { limit: 5, scope: 'watchlist' })).toBe(
+      'Cached watchlist candidates: one pick. External B, a 2021 movie, no recorded viewing; not on Plex.',
+    );
+    expect(formatRecommendations({ onPlex: [], notOnPlex: [] }, { limit: 5, scope: 'plex' })).toBe(
+      'Cached Plex candidates: none match. Try another genre or kind.',
     );
   });
 
-  it('pages with offset, says how many more, and pages the not-on-Plex picks too', () => {
-    const more = [
-      ...onPlex,
-      pick('Slow Horses', 2022, 'show', 'new to you'),
-      pick('Heat', 1995, 'movie', 'new to you'),
-    ];
-    const off = ['A', 'B', 'C', 'D'].map((t) => pick(t, null, 'movie', 'on your watchlist', false));
-    const first = formatRecommendations({ onPlex: more, notOnPlex: off }, { limit: 5 });
-    expect(first).toContain(
-      'Shogun, a 2024 show, new on Plex. And 2 more. Not on Plex yet: A, a movie',
-    );
-    expect(first).toContain('B, a movie, on your watchlist.');
-    expect(first).not.toContain('C, a movie');
-    expect(formatRecommendations({ onPlex: more, notOnPlex: off }, { limit: 5, offset: 5 })).toBe(
-      'Two picks on Plex. Slow Horses, a 2022 show, new to you. Heat, a 1995 movie, new to you. Not on ' +
-        'Plex yet: C, a movie, on your watchlist. D, a movie, on your watchlist.',
-    );
-    expect(formatRecommendations({ onPlex: more, notOnPlex: [] }, { limit: 5, offset: 10 })).toBe(
-      'No more picks. Try another genre or kind.',
-    );
-  });
-
-  it('names the genre, the audience and the kind in the lead', () => {
+  it('names requested genre, audience and kind while retaining the scope', () => {
     expect(
       formatRecommendations(
-        { onPlex: onPlex.slice(2, 3), notOnPlex: [] },
+        { picks: [c], onPlex: [c], notOnPlex: [] },
         { limit: 5, genre: 'scifi', kind: 'show' },
       ),
-    ).toBe('One sci-fi show pick on Plex. Andor, a 2022 show, sci-fi like The Expanse.');
-    expect(
-      formatRecommendations(
-        { onPlex: onPlex.slice(0, 2), notOnPlex: [] },
-        { limit: 5, kids: true },
-      ),
-    ).toMatch(/^Two kids' picks on Plex\./);
-    expect(formatRecommendations({ onPlex: [], notOnPlex }, { limit: 5 })).toBe(
-      'No picks on Plex. Not on Plex yet: Dark Matter, a 2024 show, on your watchlist.',
+    ).toBe(
+      'Cached catalog candidates: one sci-fi show pick. Owned C, a 2022 show, sci-fi like A; on Plex.',
     );
-    expect(
-      formatRecommendations(
-        { onPlex: [pick('Tabu', 1893, 'movie', 'new to you')], notOnPlex: [] },
-        { limit: 5 },
-      ),
-    ).toBe('One pick on Plex. Tabu, an 1893 movie, new to you.');
+    expect(formatRecommendations(recs, { limit: 2, kids: true })).toMatch(
+      /^Cached catalog candidates: two kids' picks\./,
+    );
   });
 });
 
@@ -398,7 +372,7 @@ describe('formatWatchStatus (D-21)', () => {
     ],
     [
       status({ title: 'Pluribus', year: 2025, state: 'unstarted' }),
-      'Pluribus (2025 show): not watched yet. On Plex.',
+      'Pluribus (2025 show): no recorded viewing. On Plex.',
     ],
     [
       status({
@@ -417,7 +391,7 @@ describe('formatWatchStatus (D-21)', () => {
         state: 'unstarted',
         dismissed: 'not_interested',
       }),
-      "Grey's Anatomy (2005 show): not watched yet. You dismissed it, so it won't be suggested. On Plex.",
+      "Grey's Anatomy (2005 show): no recorded viewing. You dismissed it, so it won't be suggested. On Plex.",
     ],
     [
       status({
@@ -558,7 +532,14 @@ describe('formatMarkResult (D-14 read-back)', () => {
     ],
     // DESIGN-049 D-26: a show Plex lists with specials only is noted, and nothing is written.
     [
-      { kind: 'show', title: 'The Expanse', year: 2015, scope: 'show', plexResult: 'none', flipped: 0 },
+      {
+        kind: 'show',
+        title: 'The Expanse',
+        year: 2015,
+        scope: 'show',
+        plexResult: 'none',
+        flipped: 0,
+      },
       'Noted The Expanse (2015) as watched. Plex only lists specials for it, so nothing changed there.',
     ],
     [
@@ -580,7 +561,14 @@ describe('formatMarkResult (D-14 read-back)', () => {
 });
 
 describe('formatMarkResult — a history-only mark (ADR-091 C-04: Plex write-back is owner-only)', () => {
-  const base: MarkResultView = { kind: 'show', title: 'Severance', year: 2022, scope: 'show', plexResult: 'none', flipped: 0 };
+  const base: MarkResultView = {
+    kind: 'show',
+    title: 'Severance',
+    year: 2022,
+    scope: 'show',
+    plexResult: 'none',
+    flipped: 0,
+  };
   it('says the mark is in the history and that only the owner changes Plex — for every scope', () => {
     expect(formatMarkResult({ ...base, historyOnly: true })).toBe(
       "Noted Severance (2022) as watched in your history. Only the server owner's marks change Plex.",
@@ -588,10 +576,21 @@ describe('formatMarkResult — a history-only mark (ADR-091 C-04: Plex write-bac
     expect(formatMarkResult({ ...base, historyOnly: true, scope: 'season', season: 2 })).toBe(
       "Noted season 2 of Severance (2022) as watched in your history. Only the server owner's marks change Plex.",
     );
-    expect(formatMarkResult({ ...base, historyOnly: true, scope: 'through', season: 1, episode: 4 })).toMatch(
+    expect(
+      formatMarkResult({ ...base, historyOnly: true, scope: 'through', season: 1, episode: 4 }),
+    ).toMatch(
       /^Noted Severance \(2022\) through .+ as watched in your history\. Only the server owner's marks change Plex\.$/,
     );
-    expect(formatMarkResult({ kind: 'movie', title: 'Arrival', year: 2016, scope: 'movie', plexResult: 'none', historyOnly: true })).toBe(
+    expect(
+      formatMarkResult({
+        kind: 'movie',
+        title: 'Arrival',
+        year: 2016,
+        scope: 'movie',
+        plexResult: 'none',
+        historyOnly: true,
+      }),
+    ).toBe(
       "Noted Arrival (2016) as watched in your history. Only the server owner's marks change Plex.",
     );
   });
@@ -671,14 +670,22 @@ describe('formatDismissResult / formatUndoResult (D-15)', () => {
   });
 
   it('says a mark still going through is in progress, and undoes nothing (DESIGN-051 D-15t)', () => {
-    const sev = { undone: true as const, kind: 'show' as const, title: 'Severance', year: 2022, action: 'watched' as const };
+    const sev = {
+      undone: true as const,
+      kind: 'show' as const,
+      title: 'Severance',
+      year: 2022,
+      action: 'watched' as const,
+    };
     expect(formatUndoResult({ ...sev, scope: 'show', revertResult: null, inProgress: true })).toBe(
       'Plex is still working on your last change, marking Severance (2022) as watched. Say undo again in a moment.',
     );
     expect(formatUndoResult({ ...sev, scope: 'season', season: 2, inProgress: true })).toBe(
       'Plex is still working on your last change, marking season 2 of Severance (2022) as watched. Say undo again in a moment.',
     );
-    expect(formatUndoResult({ ...sev, scope: 'through', season: 2, episode: 3, inProgress: true })).toBe(
+    expect(
+      formatUndoResult({ ...sev, scope: 'through', season: 2, episode: 3, inProgress: true }),
+    ).toBe(
       'Plex is still working on your last change, marking Severance (2022) as watched through season 2 episode 3. Say undo again in a moment.',
     );
   });

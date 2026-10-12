@@ -437,11 +437,6 @@ export function candidateQuality(ratings: CandidateRatings | null | undefined): 
   return scaled.length === 0 ? NEUTRAL_QUALITY : scaled.reduce((s, v) => s + v, 0) / scaled.length;
 }
 
-function isNewOnPlex(c: RecoCandidate, now: number): boolean {
-  const added = validTime(c.addedAt);
-  return c.onPlex && added !== null && now - added <= NEW_ON_PLEX_SECONDS;
-}
-
 function distinctSeeds(c: RecoCandidate): number {
   return new Set((c.seeds ?? []).map((s) => s.titleKey)).size;
 }
@@ -462,7 +457,6 @@ function reasonFor(
   wanted: string | null,
   opts: ScoreOptions,
 ): { reason: string; reasonKind: PickReasonKind } {
-  if (c.watchlist === true) return { reason: 'on your watchlist', reasonKind: 'watchlist' };
   const seed = [...(c.seeds ?? [])].sort(
     (a, b) =>
       (validTime(b.lastWatchedAt) ?? 0) - (validTime(a.lastWatchedAt) ?? 0) ||
@@ -491,13 +485,12 @@ function reasonFor(
   }
   const imdb = validRating(c.ratings?.imdb);
   if (imdb !== null) return { reason: `rated ${formatRating(imdb)} on IMDb`, reasonKind: 'rating' };
-  if (isNewOnPlex(c, opts.now)) return { reason: 'new on Plex', reasonKind: 'new_on_plex' };
-  return { reason: 'new to you', reasonKind: 'new_to_you' };
+  return { reason: 'no recorded viewing', reasonKind: 'new_to_you' };
 }
 
 const round6 = (n: number) => Math.round(n * 1e6);
 
-function comparePicks(a: ScoredPick, b: ScoredPick): number {
+export function comparePicks(a: ScoredPick, b: ScoredPick): number {
   return (
     round6(b.score) - round6(a.score) ||
     round6(b.quality) - round6(a.quality) ||
@@ -509,11 +502,10 @@ function comparePicks(a: ScoredPick, b: ScoredPick): number {
 /**
  * Score candidates (D-19): `0.45 × affinity + 0.30 × quality + boosts`, where affinity is the profile
  * weight of the candidate's canonical genres over the profile's top-three weight sum (capped at 1),
- * quality is {@link candidateQuality}, and boosts are +0.35 on the watchlist, +0.3 × min(1, seeds ÷ 3)
- * for TMDB seed agreement and +0.1 when added to Plex within 21 days. Best first; ties break on
- * quality, then title. The reason is the first that applies: "on your watchlist"; "because you
- * watched <most recent seed>"; "<genre> like <most-watched title>"; "rated <x> on IMDb"; "new on
- * Plex"; and, so every pick has one (AC-21), "new to you". Does NOT exclude — see
+ * quality is {@link candidateQuality}, and the only boost is +0.3 × min(1, seeds ÷ 3)
+ * for TMDB seed agreement. ADR-107 removes membership boosts and reasons. This legacy cached
+ * candidate order does not own general recommendation judgment. Best first; ties break on
+ * quality, then title. Does NOT exclude — see
  * {@link pickRecommendations}.
  */
 export function scoreCandidates(
@@ -534,10 +526,7 @@ export function scoreCandidates(
     const genreWeight = genres.reduce((s, g) => s + (profile[g] ?? 0), 0);
     const affinity = topThree > 0 ? Math.min(1, genreWeight / topThree) : 0;
     const quality = candidateQuality(c.ratings);
-    const boost =
-      (c.watchlist === true ? 0.35 : 0) +
-      0.3 * Math.min(1, distinctSeeds(c) / 3) +
-      (isNewOnPlex(c, opts.now) ? 0.1 : 0);
+    const boost = 0.3 * Math.min(1, distinctSeeds(c) / 3);
     const score = 0.45 * affinity + 0.3 * quality + boost;
     picks.push({
       candidate: c,
@@ -560,19 +549,25 @@ export interface RecommendInput {
   kind?: WatchKind | 'any' | null;
   genre?: string | null;
   kids?: boolean;
+  scope?: RecommendationScope;
   now: number;
 }
 
+export type RecommendationScope = 'catalog' | 'plex' | 'watchlist';
+
 export interface Recommendations {
+  /** ADR-107: one ordered list, filtered to the explicit scope before pagination. */
+  picks?: ScoredPick[];
+  scope?: RecommendationScope;
   /** Best first. */
   onPlex: ScoredPick[];
-  /** Best first; listed separately as "Not on Plex yet" (D-20). */
+  /** Kept for internal callers; never a separate presentation allocation (ADR-107). */
   notOnPlex: ScoredPick[];
 }
 
 /**
  * The whole pure `recommend` pipeline: exclude (group-aware, D-18) → merge sources → score with the
- * grown-up or the children's profile → split on Plex / not on Plex. Paging is the formatter's job.
+ * grown-up or the children's profile → explicit scope. Paging is the formatter's job.
  */
 export function pickRecommendations(input: RecommendInput): Recommendations {
   const kids = input.kids === true;
@@ -587,8 +582,18 @@ export function pickRecommendations(input: RecommendInput): Recommendations {
       genreTitles: kids ? input.genreTitles?.kids : input.genreTitles?.adult,
     },
   );
+  const scope = input.scope ?? 'catalog';
+  const picks = scored.filter((p) =>
+    scope === 'plex'
+      ? p.candidate.onPlex
+      : scope === 'watchlist'
+        ? p.candidate.watchlist === true
+        : true,
+  );
   return {
-    onPlex: scored.filter((p) => p.candidate.onPlex),
-    notOnPlex: scored.filter((p) => !p.candidate.onPlex),
+    picks,
+    scope,
+    onPlex: picks.filter((p) => p.candidate.onPlex),
+    notOnPlex: picks.filter((p) => !p.candidate.onPlex),
   };
 }

@@ -3,7 +3,7 @@
 - **Status:** Active (2026-09-23) — the operating record since PLAN-068 S12 passed live (haynesnetwork v0.97.0, haynes-ops #3139).
 - **Scope:** operating the in-cluster MCP surface (`/api/mcp`), its hop, its generated token, the
   `sync-watch` CronJob, and the Movie Room agent that consumes it.
-- **Normative basis:** ADR-087, ADR-088, ADR-089, DESIGN-049, PLAN-068; the watchlist tools ADR-092, DESIGN-051, PLAN-071 (§8).
+- **Normative basis:** ADR-087, ADR-088, DESIGN-049, PLAN-068; the watchlist tools ADR-092, DESIGN-051, PLAN-071 (§8); ADR-107 / DESIGN-054 / PLAN-075 supersede ADR-089's general recommendation ownership and the earlier schema/response budgets (§9).
 - **Repos:** this app; haynes-ops (`kubernetes/main/apps/frontend/haynesnetwork/`,
   `kubernetes/main/apps/frontend/haynesnetwork-mcp-hop/`, dev-env `mcp.json`); hass-sandbox (the
   agent prompt backup and voice bench).
@@ -36,7 +36,7 @@ with urllib.request.urlopen(req, timeout=5) as r:
   body = r.read(); print(r.status, len(body), "bytes", r.headers.get("Mcp-Session-Id"))'
 ```
 
-Expect `200`, at most 4,096 bytes (3,633 with the nine tools of PLAN-071; the cap was 3,072 and the list 2,712 bytes with PLAN-068 S7's seven), and `None` for the session id. `401` means the hop and the web
+Expect `200`, at most 6,144 bytes for eleven tools (ADR-107 supersedes ADR-092's 4,096-byte nine-tool cap), and `None` for the session id. `401` means the hop and the web
 pods hold different tokens (section 4); `503` means the web pods have no token (the Secret is
 missing — check `kubectl get externalsecret -n frontend haynesnetwork-mcp-consumer`).
 
@@ -133,3 +133,16 @@ Watch Mark (`watchlist_add` / `watchlist_remove`) and `undo_last_change` reverse
 | "I couldn't reach Plex, so your watchlist didn't change." | plex.tv discover reachability from the web pods; `watchlist_changed` `failed` |
 | "Plex didn't answer in time, so I can't tell whether X changed." | `watchlist_changed` `unknown`; the write may still land, so plex.tv `userState` for the title decides; undo of such an add removes it anyway (DESIGN-051 D-15n; undo: D-04, D-15b) |
 | An add named the wrong title | `undo_last_change` at once; if the title was not on Plex, cancel the Seerr request in Seerr (undo cannot) |
+
+## 9. Agent-owned recommendations (ADR-107 / DESIGN-054)
+
+The agent owns recommendation research and judgment. Use this workflow:
+
+1. Read factual `viewing_context`, retaining its page, freshness and coverage limits.
+2. Discover broadly with web/catalog tools; use `recommend` only as a limited cached helper.
+3. Check up to ten external candidates with `check_titles`, preserving ambiguity, unavailable lookups and unknown personal evidence.
+4. Verify current regional streaming or rental availability; a theatrical release does not prove home availability.
+5. Rank for the request's taste, mood, runtime and audience; membership restricts the pool only when explicitly requested.
+6. Explain choices and evidence honestly, using dated sources for current attention and stating any limited discovery scope.
+
+`check_titles` and `viewing_context` are read-only and return at most 1,200 characters of spoken text plus at most 64 KiB serialized `structuredContent`. The other tools remain text-only. Eleven tool schemas fit 6,144 bytes and instructions fit 600 characters. Reads never mark, dismiss, edit watchlists or acquire media. Partial plays and completion do not establish liking; personal ratings are unavailable. Reload client tool schemas after deployment as described in §8.

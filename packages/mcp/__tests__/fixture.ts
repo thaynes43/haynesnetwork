@@ -318,6 +318,7 @@ function show(
     seasons: number[];
     watched: number;
     lastViewedAt?: number;
+    guid?: string;
     Guid?: Array<{ id: string }>;
     Genre?: string[];
     contentRating?: string;
@@ -342,7 +343,7 @@ function show(
     ratingKey: key,
     title,
     year,
-    guid: `plex://show/${key}`,
+    guid: opts.guid ?? `plex://show/${key}`,
     Guid: opts.Guid ?? [],
     ...(opts.Genre ? { Genre: opts.Genre.map((tag) => ({ tag })) } : {}),
     ...(opts.contentRating ? { contentRating: opts.contentRating } : {}),
@@ -356,6 +357,8 @@ export function ownerWorld(): FakePlex {
       seasons: [10],
       watched: 7,
       lastViewedAt: NOW_S - 2 * DAY,
+      // Server metadata and Discover describe the same canonical Plex title.
+      guid: `plex://show/${DISCOVER.silo}`,
       Guid: [{ id: 'tvdb://403245' }, { id: 'tmdb://125988' }],
       Genre: ['Drama', 'Science Fiction'],
     }),

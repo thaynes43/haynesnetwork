@@ -138,7 +138,7 @@ test.describe('public MCP connectors (ADR-091)', () => {
     expect(listed.status).toBe(200);
     const tools = ((await listed.json()) as { result: { tools: Array<{ name: string }> } }).result
       .tools;
-    // Exactly the served list (DESIGN-051: nine tools; `set_watchlist` is filtered by scope only, and a member's
+    // Exactly the served list (ADR-107: eleven tools; `set_watchlist` is filtered by scope only, and a member's
     // call is refused as "not set up" at call time).
     expect(tools.map((t) => t.name)).toEqual([
       'unfinished',
@@ -146,6 +146,8 @@ test.describe('public MCP connectors (ADR-091)', () => {
       'watch_status',
       'recent_history',
       'watchlist',
+      'check_titles',
+      'viewing_context',
       'mark_watched',
       'dismiss',
       'set_watchlist',

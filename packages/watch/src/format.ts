@@ -6,7 +6,13 @@
 import { canonicalGenre } from './genres';
 import { compareUnfinished, type EpisodeRef, type MovieState, type ShowState } from './progress';
 import type { WatchMarkAction } from '@hnet/db/schema';
-import type { Dismissal, Recommendations, ScoredPick } from './recommend';
+import {
+  comparePicks,
+  type Dismissal,
+  type Recommendations,
+  type ScoredPick,
+  type RecommendationScope,
+} from './recommend';
 import type { ResolverCandidate } from './resolver';
 import {
   SPOKEN_MAX_CHARS,
@@ -159,14 +165,11 @@ export function formatUnfinished(
 
 function pickSentence(p: ScoredPick): string {
   const c = p.candidate;
-  return `${spokenTitle(c.title)}, ${yearAndKind(c.year, c.kind)}, ${p.reason}.`;
+  return `${spokenTitle(c.title)}, ${yearAndKind(c.year, c.kind)}, ${p.reason}; ${c.onPlex ? 'on Plex' : 'not on Plex'}.`;
 }
 
 /**
- * `recommend` (D-20/D-21): "Five picks on Plex. Foundation, a 2021 show, because you watched The
- * Expanse. … Not on Plex yet: Dark Matter, a 2024 show, on your watchlist." Up to `limit` on-Plex
- * picks after skipping `offset`, "And N more." when more remain, then at most two not-on-Plex picks
- * (the next two on each later page, so "more" does not repeat them).
+ * ADR-107 / DESIGN-054 D-01: honest cached coverage and a uniform page, regardless of membership.
  */
 export function formatRecommendations(
   recs: Recommendations,
@@ -176,34 +179,33 @@ export function formatRecommendations(
     genre?: string | null;
     kids?: boolean;
     kind?: WatchKind | 'any' | null;
+    scope?: RecommendationScope;
   },
 ): string {
-  if (recs.onPlex.length === 0 && recs.notOnPlex.length === 0) {
-    return 'Nothing new matches that. Try another genre or kind.';
-  }
+  const scope = opts.scope ?? recs.scope ?? 'catalog';
+  const label = `Cached ${scope === 'catalog' ? 'catalog' : scope === 'plex' ? 'Plex' : 'watchlist'} candidates`;
+  const picks = (recs.picks ?? [...recs.onPlex, ...recs.notOnPlex].sort(comparePicks)).filter(
+    (p) =>
+      scope === 'plex'
+        ? p.candidate.onPlex
+        : scope === 'watchlist'
+          ? p.candidate.watchlist === true
+          : true,
+  );
+  if (picks.length === 0) return `${label}: none match. Try another genre or kind.`;
   const limit = Math.max(0, Math.floor(opts.limit));
   const offset = Math.max(0, Math.floor(opts.offset ?? 0));
-  const page = recs.onPlex.slice(offset, offset + limit);
-  const more = Math.max(0, recs.onPlex.length - offset - page.length);
-  const pageIndex = limit > 0 ? Math.floor(offset / limit) : 0;
-  const notOnPlex = recs.notOnPlex.slice(pageIndex * 2, pageIndex * 2 + 2);
-  if (page.length === 0 && notOnPlex.length === 0) {
-    return 'No more picks. Try another genre or kind.';
-  }
+  const page = picks.slice(offset, offset + limit);
+  const more = Math.max(0, picks.length - offset - page.length);
+  if (page.length === 0) return `${label}: no more picks. Try another genre or kind.`;
 
   const genre = opts.genre ? canonicalGenre(opts.genre) : null;
   const kidsWord = opts.kids || genre === 'kids' ? "kids'" : null;
   const genreWord = genre === 'kids' ? null : genre;
   const kindWord = opts.kind === 'show' || opts.kind === 'movie' ? opts.kind : null;
   const noun = [genreWord, kidsWord, kindWord, 'pick'].filter(Boolean).join(' ');
-  const lead =
-    page.length > 0
-      ? `${countWord(page.length, true)} ${noun}${page.length === 1 ? '' : 's'} on Plex.`
-      : `No ${offset > 0 ? 'more ' : ''}${noun}s on Plex.`;
-  const tail = notOnPlex.map((p, i) =>
-    i === 0 ? `Not on Plex yet: ${pickSentence(p)}` : pickSentence(p),
-  );
-  return capSpokenList({ lead, items: page.map(pickSentence), more, tail });
+  const lead = `${label}: ${countWord(page.length)} ${noun}${page.length === 1 ? '' : 's'}.`;
+  return capSpokenList({ lead, items: page.map(pickSentence), more });
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -271,7 +273,7 @@ function showStatusBody(v: WatchStatusView, opts: SpokenOptions): string {
           when && `last watched ${when}`,
         ]);
       }
-      return v.everWatched ? 'marked as watched' : 'not watched yet';
+      return v.everWatched ? 'marked as watched' : 'no recorded viewing';
     }
   }
 }
@@ -289,7 +291,7 @@ function movieStatusBody(v: WatchStatusView, opts: SpokenOptions): string {
     case 'finished':
       return when ? `watched ${when}` : 'watched';
     default:
-      if (!v.everWatched) return 'not watched yet';
+      if (!v.everWatched) return 'no recorded viewing';
       return when ? `watched ${when}` : 'watched before';
   }
 }
@@ -305,8 +307,10 @@ function titleYearKind(title: string, year: number | null | undefined, kind: Wat
  * on Plex or your watchlist." Without a watchlist to read (`onWatchlist` null), DESIGN-049's sentence.
  */
 function availabilitySentence(onPlex: boolean, onWatchlist: boolean | null | undefined): string {
-  if (onWatchlist === null || onWatchlist === undefined) return onPlex ? 'On Plex.' : 'Not on Plex.';
-  if (onPlex) return onWatchlist ? 'On Plex and on your watchlist.' : 'On Plex, not on your watchlist.';
+  if (onWatchlist === null || onWatchlist === undefined)
+    return onPlex ? 'On Plex.' : 'Not on Plex.';
+  if (onPlex)
+    return onWatchlist ? 'On Plex and on your watchlist.' : 'On Plex, not on your watchlist.';
   return onWatchlist ? 'Not on Plex, but on your watchlist.' : 'Not on Plex or your watchlist.';
 }
 
@@ -330,6 +334,8 @@ export function formatWatchStatus(v: WatchStatusView, opts: SpokenOptions): stri
 export interface RecentEntry {
   kind: WatchKind;
   title: string;
+  /** At least one event in the window is a play without the source's completed verdict. */
+  partialPlay?: boolean;
   /** Distinct episodes watched in the window (shows). */
   episodes?: number | null;
   /** The latest episode watched in the window (shows). */
@@ -360,11 +366,12 @@ function windowPhrase(days: number): string {
 function recentSentence(e: RecentEntry, opts: SpokenOptions): string {
   const title = spokenTitle(e.title);
   const date = spokenDate(e.lastAt, opts.now, opts);
-  if (e.kind === 'movie') return `${title}, a movie, ${date}.`;
+  if (e.kind === 'movie') return `${title}, a movie, ${e.partialPlay ? 'played ' : ''}${date}.`;
   const n = e.episodes ?? 1;
-  if (n <= 1) return `${sentence([title, e.latest ? episodeName(e.latest) : '1 episode', date])}.`;
+  if (n <= 1)
+    return `${sentence([title, `${e.partialPlay ? 'played ' : ''}${e.latest ? episodeName(e.latest) : '1 episode'}`, date])}.`;
   const latest = e.latest ? `latest ${episodeName(e.latest)} ${date}` : `latest ${date}`;
-  return `${sentence([title, plural(n, 'episode'), latest])}.`;
+  return `${sentence([title, `${e.partialPlay ? 'played ' : ''}${plural(n, 'episode')}`, latest])}.`;
 }
 
 /**
@@ -559,7 +566,9 @@ const SEERR_IF_PUT_BACK = "It isn't on Plex yet, so if it was put back, Seerr wi
  * sentence when the unconfirmed call was an add of a title not on Plex.
  */
 function unknownOutcome(label: string, seerr: string | null = null): string {
-  return capSpoken(`Plex didn't answer in time, so I can't tell whether ${label} changed.${seerr ? ` ${seerr}` : ''}`);
+  return capSpoken(
+    `Plex didn't answer in time, so I can't tell whether ${label} changed.${seerr ? ` ${seerr}` : ''}`,
+  );
 }
 
 /**
@@ -579,7 +588,9 @@ function formatWatchlistUndo(r: Extract<UndoView, { undone: true }>): string {
   switch (outcome) {
     case 'not_sent':
       // D-04, D-15a: the change never reached Plex, so undoing it only closes the record.
-      return capSpoken(`Your last change, ${change} your watchlist, never reached Plex, so there was nothing to undo.`);
+      return capSpoken(
+        `Your last change, ${change} your watchlist, never reached Plex, so there was nothing to undo.`,
+      );
     case 'left_as_is':
       return capSpoken(
         `Your last change, ${change} your watchlist, never confirmed with Plex, so I left your watchlist as it is.`,
@@ -591,7 +602,9 @@ function formatWatchlistUndo(r: Extract<UndoView, { undone: true }>): string {
       );
     case 'in_progress':
       // D-15o: the change has not finished; undo neither waits for it nor reaches past it to an older change.
-      return capSpoken(`Plex is still working on your last change, ${change} your watchlist. Say undo again in a moment.`);
+      return capSpoken(
+        `Plex is still working on your last change, ${change} your watchlist. Say undo again in a moment.`,
+      );
     case 'clear_failed':
       // D-15m: the add itself never confirmed, so the title is not said to be on the watchlist.
       return capSpoken(
@@ -614,14 +627,17 @@ function formatWatchlistUndo(r: Extract<UndoView, { undone: true }>): string {
           `Removed ${label} from your watchlist again.${r.onPlex === false ? ' Seerr may already have requested it.' : ''}`,
         );
       }
-      return capSpoken(`Put ${label} back on your watchlist.${r.onPlex === false ? ' Seerr will request it.' : ''}`);
+      return capSpoken(
+        `Put ${label} back on your watchlist.${r.onPlex === false ? ' Seerr will request it.' : ''}`,
+      );
   }
 }
 
 /** The `undo_last_change` read-back (D-15; a Watchlist Change: DESIGN-051 D-04). */
 export function formatUndoResult(r: UndoView): string {
   if (!r.undone) return 'Nothing to undo from the past day.';
-  if (r.action === 'watchlist_add' || r.action === 'watchlist_remove') return formatWatchlistUndo(r);
+  if (r.action === 'watchlist_add' || r.action === 'watchlist_remove')
+    return formatWatchlistUndo(r);
   const label = titleAndYear(r.title, r.year);
   if (r.action === 'not_interested') return capSpoken(`Undone. ${label} can be suggested again.`);
   if (r.action === 'not_mine') return capSpoken(`Undone. ${label} counts as your viewing again.`);
@@ -702,7 +718,9 @@ export function formatWatchlist(
     const more = Math.max(0, total - offset - k);
     return [
       lead,
-      ...items.slice(0, k).map((it, i) => `${i === 0 ? header(k) : ''}${watchlistItemSentence(it)}`),
+      ...items
+        .slice(0, k)
+        .map((it, i) => `${i === 0 ? header(k) : ''}${watchlistItemSentence(it)}`),
       ...(more > 0 ? [`And ${more} more.`] : []),
     ].join(' ');
   };
@@ -721,7 +739,14 @@ export type WatchlistChangeView =
    * The title was already in the asked state: nothing written, nothing sent. `onPlex` feeds the Seerr sentence of an
    * "already on" add (DESIGN-051 D-15j: a retried add lands here, and its first answer may never have been heard).
    */
-  | { status: 'unchanged'; action: 'add' | 'remove'; kind: WatchKind; title: string; year: number | null; onPlex: boolean }
+  | {
+      status: 'unchanged';
+      action: 'add' | 'remove';
+      kind: WatchKind;
+      title: string;
+      year: number | null;
+      onPlex: boolean;
+    }
   /** Resolved, but plex.tv's catalog has no such title. */
   | { status: 'not_in_catalog'; kind: WatchKind; title: string; year: number | null }
   /**
@@ -733,7 +758,14 @@ export type WatchlistChangeView =
    * DESIGN-051 D-15b: the write went out but plex.tv never confirmed whether it landed. An add of a title not on
    * Plex says Seerr will request it if it landed (DESIGN-051 D-15j).
    */
-  | { status: 'unknown'; action: 'add' | 'remove'; kind: WatchKind; title: string; year: number | null; onPlex: boolean }
+  | {
+      status: 'unknown';
+      action: 'add' | 'remove';
+      kind: WatchKind;
+      title: string;
+      year: number | null;
+      onPlex: boolean;
+    }
   /** Plex could not be reached (or refused the change). */
   | { status: 'failed' };
 
@@ -756,13 +788,19 @@ export function formatWatchlistChange(v: WatchlistChangeView): string {
       return capSpoken(`Removed ${label} from your watchlist.`);
     case 'unchanged':
       if (v.action === 'remove') return capSpoken(`${label} isn't on your watchlist.`);
-      return capSpoken(`${label} is already on your watchlist.${v.onPlex ? '' : ` ${SEERR_ALREADY_ON}`}`);
+      return capSpoken(
+        `${label} is already on your watchlist.${v.onPlex ? '' : ` ${SEERR_ALREADY_ON}`}`,
+      );
     case 'unconfirmed':
-      return capSpoken(`I couldn't confirm ${label} in Plex's catalog, so your watchlist didn't change.`);
+      return capSpoken(
+        `I couldn't confirm ${label} in Plex's catalog, so your watchlist didn't change.`,
+      );
     case 'unknown':
       return unknownOutcome(label, v.action === 'add' && !v.onPlex ? SEERR_IF_ADDED : null);
     default:
-      return capSpoken(`I found ${label} but not in Plex's catalog, so your watchlist didn't change.`);
+      return capSpoken(
+        `I found ${label} but not in Plex's catalog, so your watchlist didn't change.`,
+      );
   }
 }
 
@@ -775,7 +813,10 @@ export function formatWatchlistChange(v: WatchlistChangeView): string {
 export function formatWatchlistDuplicates(
   options: readonly Pick<ResolverCandidate, 'title' | 'year' | 'kind'>[],
 ): string {
-  const labels = [...new Set(options.map((o) => titleYearKind(o.title, o.year, o.kind)))].slice(0, 3);
+  const labels = [...new Set(options.map((o) => titleYearKind(o.title, o.year, o.kind)))].slice(
+    0,
+    3,
+  );
   const change = 'You can change it in the Plex app.';
   if (labels.length <= 1) {
     return capSpoken(
@@ -807,7 +848,10 @@ export function formatWatchlistIndistinct(
  * A `set_watchlist` remove resolves only among the titles on the watchlist (DESIGN-051 D-03 step 2), so its
  * not-found answer says where it looked: "I couldn't find X on your watchlist."
  */
-export function formatNotOnWatchlist(query: string, opts: { kind?: WatchKind | null } = {}): string {
+export function formatNotOnWatchlist(
+  query: string,
+  opts: { kind?: WatchKind | null } = {},
+): string {
   const what = opts.kind ? `a ${opts.kind} called ` : '';
   return capSpoken(`I couldn't find ${what}${spokenQuery(query)} on your watchlist.`);
 }

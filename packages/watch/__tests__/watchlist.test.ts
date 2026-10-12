@@ -53,7 +53,11 @@ function entry(title: string, over: Partial<WatchlistEntry> = {}): WatchlistEntr
 }
 
 let nextId = 1;
-function mark(action: 'watchlist_add' | 'watchlist_remove', createdAt: number, over: Partial<WatchlistMarkLike> = {}): WatchlistMarkLike {
+function mark(
+  action: 'watchlist_add' | 'watchlist_remove',
+  createdAt: number,
+  over: Partial<WatchlistMarkLike> = {},
+): WatchlistMarkLike {
   return {
     id: nextId++,
     action,
@@ -73,7 +77,11 @@ function mark(action: 'watchlist_add' | 'watchlist_remove', createdAt: number, o
   };
 }
 
-const SEV = entry('Severance', { plexGuid: 'plex://show/5d9c086c46115600200aa9b1', tmdbId: 95396, tvdbId: 371980 });
+const SEV = entry('Severance', {
+  plexGuid: 'plex://show/5d9c086c46115600200aa9b1',
+  tmdbId: 95396,
+  tvdbId: 371980,
+});
 const DARK = entry('Dark Matter', { year: 2024, tmdbId: 203744 });
 const BASE = [SEV, DARK];
 const titles = (list: readonly WatchlistEntry[]) => list.map((e) => e.title);
@@ -81,7 +89,11 @@ const titles = (list: readonly WatchlistEntry[]) => list.map((e) => e.title);
 describe('overlayWatchlist (D-05)', () => {
   it('an add of a title not present goes on top; a remove drops every row of the same title', () => {
     const add = mark('watchlist_add', FETCHED + 60);
-    expect(titles(overlayWatchlist(BASE, [add], FETCHED))).toEqual(['The Matrix', 'Severance', 'Dark Matter']);
+    expect(titles(overlayWatchlist(BASE, [add], FETCHED))).toEqual([
+      'The Matrix',
+      'Severance',
+      'Dark Matter',
+    ]);
     const synthetic = overlayWatchlist(BASE, [add], FETCHED)[0];
     expect(synthetic).toMatchObject({ source: 'change', kind: 'movie', year: 1999, tmdbId: 603 });
     const remove = mark('watchlist_remove', FETCHED + 60, {
@@ -97,13 +109,23 @@ describe('overlayWatchlist (D-05)', () => {
   });
 
   it('a written revert is the inverse at its reverted_at; a failed change or revert changes nothing', () => {
-    const undone = mark('watchlist_add', FETCHED + 60, { revertedAt: at(FETCHED + 90), revertResult: 'written' });
+    const undone = mark('watchlist_add', FETCHED + 60, {
+      revertedAt: at(FETCHED + 90),
+      revertResult: 'written',
+    });
     expect(titles(overlayWatchlist(BASE, [undone], FETCHED))).toEqual(['Severance', 'Dark Matter']);
     const failed = mark('watchlist_add', FETCHED + 60, { plexResult: 'failed' });
     const pending = mark('watchlist_add', FETCHED + 60, { plexResult: 'pending' });
-    expect(titles(overlayWatchlist(BASE, [failed, pending], FETCHED))).toEqual(['Severance', 'Dark Matter']);
+    expect(titles(overlayWatchlist(BASE, [failed, pending], FETCHED))).toEqual([
+      'Severance',
+      'Dark Matter',
+    ]);
     const revertFailed = mark('watchlist_add', FETCHED + 60, { revertResult: 'failed' });
-    expect(titles(overlayWatchlist(BASE, [revertFailed], FETCHED))).toEqual(['The Matrix', 'Severance', 'Dark Matter']);
+    expect(titles(overlayWatchlist(BASE, [revertFailed], FETCHED))).toEqual([
+      'The Matrix',
+      'Severance',
+      'Dark Matter',
+    ]);
     // A remove undone puts the title back on top.
     const removeUndone = mark('watchlist_remove', FETCHED + 60, {
       kind: 'show',
@@ -116,7 +138,10 @@ describe('overlayWatchlist (D-05)', () => {
       revertedAt: at(FETCHED + 120),
       revertResult: 'written',
     });
-    expect(titles(overlayWatchlist(BASE, [removeUndone], FETCHED))).toEqual(['Dark Matter', 'Severance']);
+    expect(titles(overlayWatchlist(BASE, [removeUndone], FETCHED))).toEqual([
+      'Dark Matter',
+      'Severance',
+    ]);
   });
 
   it('an event the cache already reflects changes nothing (set operations), inside the 5-minute margin', () => {
@@ -133,7 +158,11 @@ describe('overlayWatchlist (D-05)', () => {
     expect(titles(overlayWatchlist(BASE, [seen], FETCHED))).toEqual(['Severance', 'Dark Matter']);
     // An add whose row predates the read by 4 minutes but that the read missed (its PUT landed later): applied.
     const missed = mark('watchlist_add', FETCHED - 240);
-    expect(titles(overlayWatchlist(BASE, [missed], FETCHED))).toEqual(['The Matrix', 'Severance', 'Dark Matter']);
+    expect(titles(overlayWatchlist(BASE, [missed], FETCHED))).toEqual([
+      'The Matrix',
+      'Severance',
+      'Dark Matter',
+    ]);
     // Older than the margin: the cache is the truth.
     const old = mark('watchlist_add', FETCHED - WATCHLIST_OVERLAY_MARGIN_SECONDS - 1);
     expect(titles(overlayWatchlist(BASE, [old], FETCHED))).toEqual(['Severance', 'Dark Matter']);
@@ -145,7 +174,14 @@ describe('overlayWatchlist (D-05)', () => {
     expect(overlayWatchlist([], [r, a], FETCHED)).toEqual([]);
     expect(watchlistEvents([r, a], FETCHED).map((e) => e.op)).toEqual(['add', 'remove']);
     expect(titles(overlayWatchlist([], [a], FETCHED))).toEqual(['The Matrix']);
-    const b = mark('watchlist_add', FETCHED + 20, { title: 'Arrival', year: 2016, titleKey: 'tmdb:movie:329865', plexGuid: null, tmdbId: 329865, imdbId: null });
+    const b = mark('watchlist_add', FETCHED + 20, {
+      title: 'Arrival',
+      year: 2016,
+      titleKey: 'tmdb:movie:329865',
+      plexGuid: null,
+      tmdbId: 329865,
+      imdbId: null,
+    });
     expect(titles(overlayWatchlist([], [b, a], FETCHED))).toEqual(['Arrival', 'The Matrix']);
   });
 
@@ -166,31 +202,54 @@ describe('overlayWatchlist (D-05)', () => {
       ['remove', (FETCHED + 12) * 1000],
       ['add', (FETCHED + 12) * 1000],
     ]);
-    expect(titles(overlayWatchlist(BASE, [removed], FETCHED))).toEqual(['Severance', 'Dark Matter']);
+    expect(titles(overlayWatchlist(BASE, [removed], FETCHED))).toEqual([
+      'Severance',
+      'Dark Matter',
+    ]);
   });
 });
 
 describe('the same title on the watchlist (D-05) and the statement filter (D-07)', () => {
   it('matches a plex guid or an external id of the same kind; a name only when an id is missing on a side', () => {
-    expect(sameWatchlistTitle(SEV, { kind: 'show', title: 'Severance (US)', year: 2022, tvdbId: 371980 })).toBe(true);
-    expect(sameWatchlistTitle(SEV, { kind: 'movie', title: 'Severance', year: 2022, tmdbId: 95396 })).toBe(false);
-    expect(sameWatchlistTitle(SEV, { kind: 'show', title: 'Severance', year: 2022, tmdbId: 1 })).toBe(false);
+    expect(
+      sameWatchlistTitle(SEV, {
+        kind: 'show',
+        title: 'Severance (US)',
+        year: 2022,
+        tvdbId: 371980,
+      }),
+    ).toBe(true);
+    expect(
+      sameWatchlistTitle(SEV, { kind: 'movie', title: 'Severance', year: 2022, tmdbId: 95396 }),
+    ).toBe(false);
+    expect(
+      sameWatchlistTitle(SEV, { kind: 'show', title: 'Severance', year: 2022, tmdbId: 1 }),
+    ).toBe(false);
     expect(sameWatchlistTitle(SEV, { kind: 'show', title: 'Severance', year: 2022 })).toBe(true);
-    expect(isOnWatchlist(BASE, { kind: 'show', title: 'dark matter', year: 2024, tmdbId: 203744 })).toBe(true);
+    expect(
+      isOnWatchlist(BASE, { kind: 'show', title: 'dark matter', year: 2024, tmdbId: 203744 }),
+    ).toBe(true);
   });
 
   it('only watched / not_interested / not_mine are watch statements', () => {
-    expect(['watched', 'not_interested', 'not_mine', 'watchlist_add', 'watchlist_remove'].map(isStatementAction)).toEqual([
-      true,
-      true,
-      true,
-      false,
-      false,
-    ]);
-    const row = { ...mark('watchlist_add', FETCHED), plexAccountId: 1, scope: 'movie' } as unknown as WatchMarkRow;
+    expect(
+      ['watched', 'not_interested', 'not_mine', 'watchlist_add', 'watchlist_remove'].map(
+        isStatementAction,
+      ),
+    ).toEqual([true, true, true, false, false]);
+    const row = {
+      ...mark('watchlist_add', FETCHED),
+      plexAccountId: 1,
+      scope: 'movie',
+    } as unknown as WatchMarkRow;
     expect(statementMarks([row])).toEqual([]);
     const index = indexMarks([row]);
-    expect([...index.watched, ...index.notInterested, ...index.notMine, ...index.notMineShowNames]).toEqual([]);
+    expect([
+      ...index.watched,
+      ...index.notInterested,
+      ...index.notMine,
+      ...index.notMineShowNames,
+    ]).toEqual([]);
   });
 });
 
@@ -219,7 +278,9 @@ describe('the watchlist items (D-02): on Plex, started, watched', () => {
   it('on Plex by a ledger match with a Plex match; not otherwise', () => {
     expect(onPlexFor(SEV, facts)).toBe(true);
     expect(onPlexFor(DARK, facts)).toBe(false);
-    expect(onPlexFor(SEV, { ...facts, ledger: [{ ...facts.ledger[0]!, onPlex: false }] })).toBe(false);
+    expect(onPlexFor(SEV, { ...facts, ledger: [{ ...facts.ledger[0]!, onPlex: false }] })).toBe(
+      false,
+    );
     const items = watchlistItems(BASE, facts, indexMarks([]), FETCHED);
     expect(items).toEqual([
       { kind: 'show', title: 'Severance', year: 2022, onPlex: true, progress: null },
@@ -249,7 +310,12 @@ describe('the watchlist items (D-02): on Plex, started, watched', () => {
       lastWatchedAt: new Date((FETCHED - 400 * 86_400) * 1000),
       showStatus: 'continuing',
     };
-    const items = watchlistItems([BASE[0]!], { ...facts, titles: [taster] }, indexMarks([]), FETCHED);
+    const items = watchlistItems(
+      [BASE[0]!],
+      { ...facts, titles: [taster] },
+      indexMarks([]),
+      FETCHED,
+    );
     expect(items[0]!.progress).toBe('started');
     // A Title State with `on_plex` is on Plex by itself (no ledger match needed).
     expect(onPlexFor(SEV, { ledger: [], titles: [taster] })).toBe(true);
@@ -261,11 +327,22 @@ describe('a title or query with an en or em dash is said without it (DESIGN-051 
     const reckoning = 'Mission: Impossible \u2013 Dead Reckoning Part One';
     const fallout = 'Mission: Impossible \u2014 Fallout';
     expect(
-      formatWatchlist([{ kind: 'movie', title: reckoning, year: 2023, onPlex: true, progress: null }], { total: 1, offset: 0 }),
-    ).toBe('Your watchlist has one title. Newest first: Mission: Impossible - Dead Reckoning Part One, a 2023 movie, on Plex.');
-    expect(formatWatchlistChange({ status: 'added', kind: 'movie', title: fallout, year: 2018, onPlex: true })).toBe(
-      "Added Mission: Impossible - Fallout (2018 movie) to your watchlist. It's on Plex.",
+      formatWatchlist(
+        [{ kind: 'movie', title: reckoning, year: 2023, onPlex: true, progress: null }],
+        { total: 1, offset: 0 },
+      ),
+    ).toBe(
+      'Your watchlist has one title. Newest first: Mission: Impossible - Dead Reckoning Part One, a 2023 movie, on Plex.',
     );
+    expect(
+      formatWatchlistChange({
+        status: 'added',
+        kind: 'movie',
+        title: fallout,
+        year: 2018,
+        onPlex: true,
+      }),
+    ).toBe("Added Mission: Impossible - Fallout (2018 movie) to your watchlist. It's on Plex.");
     expect(formatNotOnWatchlist(`${fallout} \u2014 the sequel`)).toBe(
       "I couldn't find Mission: Impossible - Fallout - the sequel on your watchlist.",
     );
@@ -290,7 +367,9 @@ describe('formatWatchlist (D-02)', () => {
       'Your watchlist has twelve titles. Numbers 6 to 7: The Toxic Avenger, a 2023 movie, not on Plex yet. The Matrix, a 1999 movie, on Plex, watched. And 5 more.',
     );
     expect(formatWatchlist([], { total: 0, offset: 0 })).toBe('Your watchlist is empty.');
-    expect(formatWatchlist([], { total: 0, offset: 0, kind: 'movie' })).toBe('Your watchlist has no movies.');
+    expect(formatWatchlist([], { total: 0, offset: 0, kind: 'movie' })).toBe(
+      'Your watchlist has no movies.',
+    );
     expect(formatWatchlist([], { total: 3, offset: 3 })).toBe("That's the end of your watchlist.");
     expect(formatWatchlist([items[2]!], { total: 1, offset: 0, kind: 'movie' })).toBe(
       'Your watchlist has one movie. Newest first: The Matrix, a 1999 movie, on Plex, watched.',
@@ -336,40 +415,58 @@ describe('formatWatchlist (D-02)', () => {
 });
 
 describe('formatWatchlistChange and the not-set-up answers (D-02)', () => {
-  it('says back plex.tv\'s title and year, and the Seerr line for a title not on Plex', () => {
+  it("says back plex.tv's title and year, and the Seerr line for a title not on Plex", () => {
     const m = { kind: 'movie' as const, title: 'The Matrix', year: 1999 };
     expect(formatWatchlistChange({ status: 'added', ...m, onPlex: true })).toBe(
       "Added The Matrix (1999 movie) to your watchlist. It's on Plex.",
     );
-    expect(formatWatchlistChange({ status: 'added', kind: 'movie', title: 'Dune: Part Three', year: 2026, onPlex: false })).toBe(
+    expect(
+      formatWatchlistChange({
+        status: 'added',
+        kind: 'movie',
+        title: 'Dune: Part Three',
+        year: 2026,
+        onPlex: false,
+      }),
+    ).toBe(
       "Added Dune: Part Three (2026 movie) to your watchlist. It isn't on Plex yet, so Seerr will request it.",
     );
-    expect(formatWatchlistChange({ status: 'removed', ...m })).toBe('Removed The Matrix (1999 movie) from your watchlist.');
+    expect(formatWatchlistChange({ status: 'removed', ...m })).toBe(
+      'Removed The Matrix (1999 movie) from your watchlist.',
+    );
     expect(formatWatchlistChange({ status: 'unchanged', action: 'add', ...m, onPlex: true })).toBe(
       'The Matrix (1999 movie) is already on your watchlist.',
     );
-    expect(formatWatchlistChange({ status: 'unchanged', action: 'remove', ...m, onPlex: true })).toBe(
-      "The Matrix (1999 movie) isn't on your watchlist.",
-    );
-    expect(formatWatchlistChange({ status: 'unchanged', action: 'remove', ...m, onPlex: false })).toBe(
-      "The Matrix (1999 movie) isn't on your watchlist.",
-    );
+    expect(
+      formatWatchlistChange({ status: 'unchanged', action: 'remove', ...m, onPlex: true }),
+    ).toBe("The Matrix (1999 movie) isn't on your watchlist.");
+    expect(
+      formatWatchlistChange({ status: 'unchanged', action: 'remove', ...m, onPlex: false }),
+    ).toBe("The Matrix (1999 movie) isn't on your watchlist.");
     expect(formatWatchlistChange({ status: 'not_in_catalog', ...m })).toBe(
       "I found The Matrix (1999 movie) but not in Plex's catalog, so your watchlist didn't change.",
     );
     expect(formatWatchlistChange({ status: 'unconfirmed', ...m })).toBe(
       "I couldn't confirm The Matrix (1999 movie) in Plex's catalog, so your watchlist didn't change.",
     );
-    expect(formatWatchlistChange({ status: 'failed' })).toBe("I couldn't reach Plex, so your watchlist didn't change.");
+    expect(formatWatchlistChange({ status: 'failed' })).toBe(
+      "I couldn't reach Plex, so your watchlist didn't change.",
+    );
     expect(formatWatchlistChange({ status: 'unknown', action: 'add', ...m, onPlex: true })).toBe(
       "Plex didn't answer in time, so I can't tell whether The Matrix (1999 movie) changed.",
     );
-    expect(formatWatchlistChange({ status: 'unknown', action: 'remove', ...m, onPlex: false })).toBe(
-      "Plex didn't answer in time, so I can't tell whether The Matrix (1999 movie) changed.",
+    expect(
+      formatWatchlistChange({ status: 'unknown', action: 'remove', ...m, onPlex: false }),
+    ).toBe("Plex didn't answer in time, so I can't tell whether The Matrix (1999 movie) changed.");
+    expect(formatNotOnWatchlist('the fixture')).toBe(
+      "I couldn't find the fixture on your watchlist.",
     );
-    expect(formatNotOnWatchlist('the fixture')).toBe("I couldn't find the fixture on your watchlist.");
-    expect(formatNotOnWatchlist('Silo', { kind: 'show' })).toBe("I couldn't find a show called Silo on your watchlist.");
-    expect(formatWatchlistNotSetUp()).toBe("Your Plex watchlist isn't set up for your account yet.");
+    expect(formatNotOnWatchlist('Silo', { kind: 'show' })).toBe(
+      "I couldn't find a show called Silo on your watchlist.",
+    );
+    expect(formatWatchlistNotSetUp()).toBe(
+      "Your Plex watchlist isn't set up for your account yet.",
+    );
   });
 
   // D-15j: a retried add that landed answers "already on", and an unconfirmed add may have landed: when the title is
@@ -382,16 +479,35 @@ describe('formatWatchlistChange and the not-set-up answers (D-02)', () => {
     expect(formatWatchlistChange({ status: 'unknown', action: 'add', ...d })).toBe(
       "Plex didn't answer in time, so I can't tell whether Dune: Part Three (2026 movie) changed. It isn't on Plex yet, so if it was added, Seerr will request it.",
     );
-    const u = { undone: true as const, kind: 'movie' as const, title: 'Dune: Part Three', year: 2026 };
+    const u = {
+      undone: true as const,
+      kind: 'movie' as const,
+      title: 'Dune: Part Three',
+      year: 2026,
+    };
     expect(
-      formatUndoResult({ ...u, action: 'watchlist_remove', revertResult: 'failed', watchlistOutcome: 'unknown', onPlex: false }),
+      formatUndoResult({
+        ...u,
+        action: 'watchlist_remove',
+        revertResult: 'failed',
+        watchlistOutcome: 'unknown',
+        onPlex: false,
+      }),
     ).toBe(
       "Plex didn't answer in time, so I can't tell whether Dune: Part Three (2026 movie) changed. It isn't on Plex yet, so if it was put back, Seerr will request it.",
     );
     // Undoing an add sends a removal, which never downloads: no sentence.
     expect(
-      formatUndoResult({ ...u, action: 'watchlist_add', revertResult: 'failed', watchlistOutcome: 'unknown', onPlex: false }),
-    ).toBe("Plex didn't answer in time, so I can't tell whether Dune: Part Three (2026 movie) changed.");
+      formatUndoResult({
+        ...u,
+        action: 'watchlist_add',
+        revertResult: 'failed',
+        watchlistOutcome: 'unknown',
+        onPlex: false,
+      }),
+    ).toBe(
+      "Plex didn't answer in time, so I can't tell whether Dune: Part Three (2026 movie) changed.",
+    );
     for (const text of [
       formatWatchlistChange({ status: 'unchanged', action: 'add', ...d }),
       formatWatchlistChange({ status: 'unknown', action: 'add', ...d }),
@@ -404,18 +520,35 @@ describe('formatWatchlistChange and the not-set-up answers (D-02)', () => {
 describe('formatUndoResult for a Watchlist Change (D-04)', () => {
   const base = { undone: true as const, kind: 'movie' as const, title: 'The Matrix', year: 1999 };
   it('the inverse, the Seerr sentences, a failed inverse, a change that never reached Plex', () => {
-    expect(formatUndoResult({ ...base, action: 'watchlist_add', revertResult: 'written', onPlex: true })).toBe(
-      'Removed The Matrix (1999 movie) from your watchlist again.',
-    );
-    expect(formatUndoResult({ ...base, action: 'watchlist_add', revertResult: 'written', onPlex: false })).toBe(
+    expect(
+      formatUndoResult({ ...base, action: 'watchlist_add', revertResult: 'written', onPlex: true }),
+    ).toBe('Removed The Matrix (1999 movie) from your watchlist again.');
+    expect(
+      formatUndoResult({
+        ...base,
+        action: 'watchlist_add',
+        revertResult: 'written',
+        onPlex: false,
+      }),
+    ).toBe(
       'Removed The Matrix (1999 movie) from your watchlist again. Seerr may already have requested it.',
     );
-    expect(formatUndoResult({ ...base, action: 'watchlist_remove', revertResult: 'written', onPlex: true })).toBe(
-      'Put The Matrix (1999 movie) back on your watchlist.',
-    );
-    expect(formatUndoResult({ ...base, action: 'watchlist_remove', revertResult: 'written', onPlex: false })).toBe(
-      'Put The Matrix (1999 movie) back on your watchlist. Seerr will request it.',
-    );
+    expect(
+      formatUndoResult({
+        ...base,
+        action: 'watchlist_remove',
+        revertResult: 'written',
+        onPlex: true,
+      }),
+    ).toBe('Put The Matrix (1999 movie) back on your watchlist.');
+    expect(
+      formatUndoResult({
+        ...base,
+        action: 'watchlist_remove',
+        revertResult: 'written',
+        onPlex: false,
+      }),
+    ).toBe('Put The Matrix (1999 movie) back on your watchlist. Seerr will request it.');
     expect(formatUndoResult({ ...base, action: 'watchlist_remove', revertResult: 'failed' })).toBe(
       "I couldn't reach Plex, so The Matrix (1999 movie) is still off your watchlist. Say undo again to retry.",
     );
@@ -424,17 +557,33 @@ describe('formatUndoResult for a Watchlist Change (D-04)', () => {
     );
     // D-15b: a failed add that went out is cleared anyway; a failed remove is left as it is; unknown.
     expect(
-      formatUndoResult({ ...base, action: 'watchlist_add', revertResult: 'written', watchlistOutcome: 'cleared', onPlex: false }),
+      formatUndoResult({
+        ...base,
+        action: 'watchlist_add',
+        revertResult: 'written',
+        watchlistOutcome: 'cleared',
+        onPlex: false,
+      }),
     ).toBe(
       "Your last change, adding The Matrix (1999 movie) to your watchlist, may not have reached Plex, so I made sure it's off your watchlist. Seerr may already have requested it.",
     );
     expect(
-      formatUndoResult({ ...base, action: 'watchlist_remove', revertResult: 'none', watchlistOutcome: 'left_as_is' }),
+      formatUndoResult({
+        ...base,
+        action: 'watchlist_remove',
+        revertResult: 'none',
+        watchlistOutcome: 'left_as_is',
+      }),
     ).toBe(
       'Your last change, removing The Matrix (1999 movie) from your watchlist, never confirmed with Plex, so I left your watchlist as it is.',
     );
     expect(
-      formatUndoResult({ ...base, action: 'watchlist_remove', revertResult: 'failed', watchlistOutcome: 'unknown' }),
+      formatUndoResult({
+        ...base,
+        action: 'watchlist_remove',
+        revertResult: 'failed',
+        watchlistOutcome: 'unknown',
+      }),
     ).toBe("Plex didn't answer in time, so I can't tell whether The Matrix (1999 movie) changed.");
   });
 
@@ -451,7 +600,14 @@ describe('formatUndoResult for a Watchlist Change (D-04)', () => {
       "I couldn't reach Plex, so I couldn't make sure The Matrix (1999 movie) is off your watchlist. Say undo again to retry.",
     );
     // A written add's failed inverse still says it is on (that one is known).
-    expect(formatUndoResult({ ...base, action: 'watchlist_add', revertResult: 'failed', watchlistOutcome: 'failed' })).toBe(
+    expect(
+      formatUndoResult({
+        ...base,
+        action: 'watchlist_add',
+        revertResult: 'failed',
+        watchlistOutcome: 'failed',
+      }),
+    ).toBe(
       "I couldn't reach Plex, so The Matrix (1999 movie) is still on your watchlist. Say undo again to retry.",
     );
     // D-15k: a remove sent over an add plex.tv never settled is not re-added.
@@ -465,11 +621,17 @@ describe('formatUndoResult for a Watchlist Change (D-04)', () => {
       'Your last change, removing The Matrix (1999 movie) from your watchlist, came after an add Plex never confirmed, so I left it off your watchlist. To put it back, ask me to add it.',
     );
     // D-15o: still pending.
-    const inProgress = formatUndoResult({ ...base, action: 'watchlist_add', revertResult: null, watchlistOutcome: 'in_progress' });
+    const inProgress = formatUndoResult({
+      ...base,
+      action: 'watchlist_add',
+      revertResult: null,
+      watchlistOutcome: 'in_progress',
+    });
     expect(inProgress).toBe(
       'Plex is still working on your last change, adding The Matrix (1999 movie) to your watchlist. Say undo again in a moment.',
     );
-    for (const text of [clearFailed, leftOff, inProgress]) expect(text).not.toMatch(/[\u2014\u2013]/);
+    for (const text of [clearFailed, leftOff, inProgress])
+      expect(text).not.toMatch(/[\u2014\u2013]/);
   });
 });
 
@@ -484,10 +646,12 @@ describe('formatWatchlistDuplicates (D-15e, D-15l): one spoken title, several wa
     // Titles an id linked but that read differently are named.
     const linked = formatWatchlistDuplicates([dark, { ...dark, year: 2023 }]);
     expect(linked).toBe(
-      "Dark Matter (2024 show) and Dark Matter (2023 show) on your watchlist look like the same title to me, so I left your watchlist as it is. You can change it in the Plex app.",
+      'Dark Matter (2024 show) and Dark Matter (2023 show) on your watchlist look like the same title to me, so I left your watchlist as it is. You can change it in the Plex app.',
     );
     expect(linked).not.toMatch(/\?|[\u2014\u2013]/);
-    expect(formatWatchlistDuplicates([dark, { ...dark, year: 2023 }, { ...dark, year: 2022 }])).toMatch(
+    expect(
+      formatWatchlistDuplicates([dark, { ...dark, year: 2023 }, { ...dark, year: 2022 }]),
+    ).toMatch(
       /^Dark Matter \(2024 show\), Dark Matter \(2023 show\) and Dark Matter \(2022 show\) on your watchlist/,
     );
   });
@@ -518,15 +682,25 @@ describe('formatWatchStatus — the availability sentence (D-02)', () => {
     lastWatchedAt: null,
     onWatchlist,
   });
-  it('says both, explicitly, four ways; without a watchlist to read, DESIGN-049\'s sentence', () => {
+  it("says both, explicitly, four ways; without a watchlist to read, DESIGN-049's sentence", () => {
     const o = { now: FETCHED };
-    expect(formatWatchStatus(view(true, true), o)).toBe('Slow Horses (2022 show): not watched yet. On Plex and on your watchlist.');
-    expect(formatWatchStatus(view(true, false), o)).toBe('Slow Horses (2022 show): not watched yet. On Plex, not on your watchlist.');
-    expect(formatWatchStatus(view(false, true), o)).toBe(
-      'Slow Horses (2022 show): not watched yet. Not on Plex, but on your watchlist.',
+    expect(formatWatchStatus(view(true, true), o)).toBe(
+      'Slow Horses (2022 show): no recorded viewing. On Plex and on your watchlist.',
     );
-    expect(formatWatchStatus(view(false, false), o)).toBe('Slow Horses (2022 show): not watched yet. Not on Plex or your watchlist.');
-    expect(formatWatchStatus(view(true, null), o)).toBe('Slow Horses (2022 show): not watched yet. On Plex.');
-    expect(formatWatchStatus(view(false, null), o)).toBe('Slow Horses (2022 show): not watched yet. Not on Plex.');
+    expect(formatWatchStatus(view(true, false), o)).toBe(
+      'Slow Horses (2022 show): no recorded viewing. On Plex, not on your watchlist.',
+    );
+    expect(formatWatchStatus(view(false, true), o)).toBe(
+      'Slow Horses (2022 show): no recorded viewing. Not on Plex, but on your watchlist.',
+    );
+    expect(formatWatchStatus(view(false, false), o)).toBe(
+      'Slow Horses (2022 show): no recorded viewing. Not on Plex or your watchlist.',
+    );
+    expect(formatWatchStatus(view(true, null), o)).toBe(
+      'Slow Horses (2022 show): no recorded viewing. On Plex.',
+    );
+    expect(formatWatchStatus(view(false, null), o)).toBe(
+      'Slow Horses (2022 show): no recorded viewing. Not on Plex.',
+    );
   });
 });

@@ -21,12 +21,14 @@ import {
   type MarkAction,
   type ProfileTitle,
   type Recommendations,
+  type RecommendationScope,
 } from './recommend';
 import type { TitleIds, WatchKind } from './types';
 import { validTime } from './util';
 import { sameWatchlistTitle, statementMarks, type WatchlistEntry } from './watchlist';
 
-const sec = (d: Date | null | undefined): number | null => (d ? Math.floor(d.getTime() / 1000) : null);
+const sec = (d: Date | null | undefined): number | null =>
+  d ? Math.floor(d.getTime() / 1000) : null;
 
 /** Live marks indexed by kind-scoped identity key. */
 export interface MarkIndex {
@@ -56,10 +58,12 @@ export function indexMarks(marks: readonly WatchMarkRow[]): MarkIndex {
   // DESIGN-051 D-07: a Watchlist Change is not a watch statement (never Ever Watched, never a dismissal).
   for (const m of statementMarks(marks)) {
     if (m.revertedAt) continue;
-    const set = m.action === 'watched' ? watched : m.action === 'not_interested' ? notInterested : notMine;
+    const set =
+      m.action === 'watched' ? watched : m.action === 'not_interested' ? notInterested : notMine;
     for (const k of keysOf(m)) {
       set.add(`${m.kind}|${k}`);
-      if (m.action === 'not_mine' && m.kind === 'show' && k.startsWith(SHOW_NAME_KEY)) notMineShowNames.add(showNameOf(k));
+      if (m.action === 'not_mine' && m.kind === 'show' && k.startsWith(SHOW_NAME_KEY))
+        notMineShowNames.add(showNameOf(k));
     }
   }
   return { watched, notInterested, notMine, notMineShowNames };
@@ -129,7 +133,13 @@ export function unfinishedItems<R extends UnfinishedRow>(
       if (state !== 'in_progress' && state !== 'stalled') continue;
       out.push({
         row,
-        item: { kind: 'movie', title: row.title, state, lastWatchedAt, resumePercent: row.resumePercent },
+        item: {
+          kind: 'movie',
+          title: row.title,
+          state,
+          lastWatchedAt,
+          resumePercent: row.resumePercent,
+        },
       });
     }
   }
@@ -152,6 +162,7 @@ export function recentEntries(events: readonly WatchEventRow[], marks: MarkIndex
     latest: { season: number; episode: number } | null;
     latestAt: number;
     lastAt: number;
+    partialPlay: boolean;
   }
   const groups = new Map<string, Acc>();
   for (const e of events) {
@@ -160,13 +171,25 @@ export function recentEntries(events: readonly WatchEventRow[], marks: MarkIndex
     const isShow = e.kind === 'episode';
     const title = isShow ? (e.showTitle ?? e.title) : e.title;
     const guid = isShow ? e.showGuid : e.itemGuid?.startsWith('plex://movie/') ? e.itemGuid : null;
-    const id = guid ?? (isShow ? `show|${normalizeTitle(title).norm}` : nameKey('movie', title, e.year));
+    const id =
+      guid ?? (isShow ? `show|${normalizeTitle(title).norm}` : nameKey('movie', title, e.year));
     let g = groups.get(id);
     if (!g) {
-      g = { kind: isShow ? 'show' : 'movie', title, year: e.year, guid, pairs: new Set(), latest: null, latestAt: -1, lastAt: 0 };
+      g = {
+        kind: isShow ? 'show' : 'movie',
+        title,
+        year: e.year,
+        guid,
+        pairs: new Set(),
+        latest: null,
+        latestAt: -1,
+        lastAt: 0,
+        partialPlay: false,
+      };
       groups.set(id, g);
     }
     g.lastAt = Math.max(g.lastAt, at);
+    g.partialPlay ||= !e.watched;
     if (isShow && e.season !== null && e.episode !== null) {
       g.pairs.add(`${e.season}:${e.episode}`);
       if (started > g.latestAt) {
@@ -178,13 +201,30 @@ export function recentEntries(events: readonly WatchEventRow[], marks: MarkIndex
   }
   const out: RecentEntry[] = [];
   for (const g of groups.values()) {
-    const ids: TitleIds = { kind: g.kind, title: g.title, year: g.kind === 'movie' ? g.year : null, plexGuid: g.guid };
+    const ids: TitleIds = {
+      kind: g.kind,
+      title: g.title,
+      year: g.kind === 'movie' ? g.year : null,
+      plexGuid: g.guid,
+    };
     if (marksFor(marks, ids).dismissed === 'not_mine') continue;
-    if (g.kind === 'show' && g.guid === null && marks.notMineShowNames.has(showNameOf(nameKey('show', g.title)))) continue;
+    if (
+      g.kind === 'show' &&
+      g.guid === null &&
+      marks.notMineShowNames.has(showNameOf(nameKey('show', g.title)))
+    )
+      continue;
     out.push(
       g.kind === 'show'
-        ? { kind: 'show', title: g.title, episodes: Math.max(1, g.pairs.size), latest: g.latest, lastAt: g.lastAt }
-        : { kind: 'movie', title: g.title, lastAt: g.lastAt },
+        ? {
+            kind: 'show',
+            title: g.title,
+            episodes: Math.max(1, g.pairs.size),
+            latest: g.latest,
+            lastAt: g.lastAt,
+            partialPlay: g.partialPlay,
+          }
+        : { kind: 'movie', title: g.title, lastAt: g.lastAt, partialPlay: g.partialPlay },
     );
   }
   return out;
@@ -231,7 +271,13 @@ export function liveMark(m: WatchMarkRow & { action: MarkAction }): LiveMark {
 export function recommendations(
   inputs: RecommendInputs,
   marks: readonly WatchMarkRow[],
-  opts: { kind?: WatchKind | 'any' | null; genre?: string | null; kids?: boolean; now: number },
+  opts: {
+    kind?: WatchKind | 'any' | null;
+    genre?: string | null;
+    kids?: boolean;
+    scope?: RecommendationScope;
+    now: number;
+  },
 ): Recommendations {
   // DESIGN-051 D-07: Watchlist Changes never change recommendations — only watch statements count.
   const live = statementMarks(marks).filter((m) => !m.revertedAt);
@@ -244,7 +290,10 @@ export function recommendations(
       title: t.title,
       genres: t.genres,
       isKids: t.isKids,
-      everWatched: isEverWatched(historyFacts(t), { watched: m.watched, notMine: m.dismissed === 'not_mine' }),
+      everWatched: isEverWatched(historyFacts(t), {
+        watched: m.watched,
+        notMine: m.dismissed === 'not_mine',
+      }),
       dismissed: m.dismissed,
       episodesWatched: t.episodesWatched,
       episodesTotal: t.episodesTotal,
@@ -260,6 +309,7 @@ export function recommendations(
     kind: opts.kind ?? 'any',
     genre: opts.genre ?? null,
     kids: opts.kids === true,
+    scope: opts.scope,
     now: opts.now,
   });
 }
@@ -270,7 +320,9 @@ export function recommendations(
  * whether it is on Plex (its `on_plex`, else the ledger's match).
  */
 export function watchStatusView(input: {
-  title: { kind: WatchKind; title: string; year: number | null } & TitleIds & { titleKey?: string | null };
+  title: { kind: WatchKind; title: string; year: number | null } & TitleIds & {
+      titleKey?: string | null;
+    };
   row: WatchTitleRow | null;
   marks: MarkIndex;
   onPlexElsewhere: boolean;
@@ -302,10 +354,18 @@ export function watchStatusView(input: {
   const state =
     row.kind === 'show'
       ? showState(
-          { episodesWatched: row.episodesWatched ?? 0, episodesTotal: row.episodesTotal ?? 0, next, lastWatchedAt },
+          {
+            episodesWatched: row.episodesWatched ?? 0,
+            episodesTotal: row.episodesTotal ?? 0,
+            next,
+            lastWatchedAt,
+          },
           { showStatus: row.showStatus, now: input.now },
         )
-      : movieState({ plexWatched: row.plexWatched, resumePercent: row.resumePercent, lastWatchedAt }, { now: input.now });
+      : movieState(
+          { plexWatched: row.plexWatched, resumePercent: row.resumePercent, lastWatchedAt },
+          { now: input.now },
+        );
   return {
     kind: row.kind,
     title: row.title,
@@ -313,7 +373,11 @@ export function watchStatusView(input: {
     onPlex: row.onPlex.length > 0 || input.onPlexElsewhere,
     state,
     everWatched: isEverWatched(
-      { episodesWatched: row.episodesWatched, plexWatched: row.plexWatched, eventWatched: row.eventWatchedEpisodes > 0 },
+      {
+        episodesWatched: row.episodesWatched,
+        plexWatched: row.plexWatched,
+        eventWatched: row.eventWatchedEpisodes > 0,
+      },
       { watched: m.watched, notMine: m.dismissed === 'not_mine' },
     ),
     episodesWatched: row.episodesWatched,
@@ -374,14 +438,27 @@ export function watchlistItems(
         const state =
           row.kind === 'show'
             ? showState(
-                { episodesWatched: row.episodesWatched ?? 0, episodesTotal: row.episodesTotal ?? 0, next, lastWatchedAt },
+                {
+                  episodesWatched: row.episodesWatched ?? 0,
+                  episodesTotal: row.episodesTotal ?? 0,
+                  next,
+                  lastWatchedAt,
+                },
                 { showStatus: row.showStatus, now },
               )
-            : movieState({ plexWatched: row.plexWatched, resumePercent: row.resumePercent, lastWatchedAt }, { now });
-        if (state === 'in_progress' || state === 'stalled' || state === 'taster') progress = 'started';
+            : movieState(
+                { plexWatched: row.plexWatched, resumePercent: row.resumePercent, lastWatchedAt },
+                { now },
+              );
+        if (state === 'in_progress' || state === 'stalled' || state === 'taster')
+          progress = 'started';
         else if (
           isEverWatched(
-            { episodesWatched: row.episodesWatched, plexWatched: row.plexWatched, eventWatched: row.eventWatchedEpisodes > 0 },
+            {
+              episodesWatched: row.episodesWatched,
+              plexWatched: row.plexWatched,
+              eventWatched: row.eventWatchedEpisodes > 0,
+            },
             { watched: m.watched },
           )
         )

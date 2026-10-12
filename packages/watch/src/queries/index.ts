@@ -9,3 +9,4 @@ export * from './marks';
 export * from './signals';
 export * from './answers';
 export * from './watchlist';
+export * from './personal';

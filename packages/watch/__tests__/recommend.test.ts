@@ -475,6 +475,19 @@ describe('scoreCandidates (D-19)', () => {
     kids: 'Bluey',
   };
 
+  it('keeps relevance and reason unchanged when Plex/watchlist membership changes', () => {
+    const original = candidate({ title: 'Independent', genres: ['Drama'], ratings: { imdb: 8 } });
+    const variants = [
+      original,
+      { ...original, onPlex: false },
+      { ...original, watchlist: true, addedAt: NOW - DAY },
+    ];
+    const picks = variants.map((c) => scoreCandidates([c], profile, { now: NOW, genreTitles })[0]);
+    expect(picks.map((p) => [p?.score, p?.reason])).toEqual(
+      Array(3).fill([picks[0]?.score, picks[0]?.reason]),
+    );
+  });
+
   it('computes 0.45 × affinity + 0.30 × quality + boosts', () => {
     const [pick] = scoreCandidates(
       [
@@ -495,9 +508,9 @@ describe('scoreCandidates (D-19)', () => {
     );
     expect(pick?.affinity).toBeCloseTo(0.8, 12);
     expect(pick?.quality).toBeCloseTo(0.8, 12);
-    expect(pick?.boost).toBeCloseTo(0.65, 12);
-    expect(pick?.score).toBeCloseTo(1.25, 12);
-    expect(pick?.reason).toBe('on your watchlist');
+    expect(pick?.boost).toBeCloseTo(0.2, 12);
+    expect(pick?.score).toBeCloseTo(0.8, 12);
+    expect(pick?.reason).toBe('because you watched Silo');
   });
 
   it('uses 0.6 quality without ratings, caps affinity and seed agreement', () => {
@@ -551,8 +564,8 @@ describe('scoreCandidates (D-19)', () => {
       Genre: 'sci-fi like The Expanse',
       Rated: 'rated 7.3 on IMDb',
       'Rated whole': 'rated 8 on IMDb',
-      Fresh: 'new on Plex',
-      Plain: 'new to you',
+      Fresh: 'no recorded viewing',
+      Plain: 'no recorded viewing',
       'Bluey-ish': 'for kids, like Bluey',
     });
   });
@@ -668,9 +681,22 @@ describe('pickRecommendations (the pure recommend pipeline)', () => {
     ];
     const grownUp = pickRecommendations({ candidates, exclusions, profile, now: NOW });
     expect(grownUp.onPlex.map((p) => [p.candidate.title, p.reason])).toEqual([
-      ['Severance', 'on your watchlist'],
+      ['Severance', 'no recorded viewing'],
     ]);
     expect(grownUp.notOnPlex.map((p) => p.candidate.title)).toEqual(['Dark Matter']);
+    const plex = pickRecommendations({ candidates, exclusions, profile, now: NOW, scope: 'plex' });
+    expect(plex.picks?.map((p) => p.candidate.title)).toEqual(['Severance']);
+    const watchlist = pickRecommendations({
+      candidates,
+      exclusions,
+      profile,
+      now: NOW,
+      scope: 'watchlist',
+    });
+    expect(watchlist.picks?.map((p) => p.candidate.title).sort()).toEqual([
+      'Dark Matter',
+      'Severance',
+    ]);
 
     const kids = pickRecommendations({ candidates, exclusions, profile, now: NOW, kids: true });
     expect(kids.onPlex.map((p) => p.candidate.title)).toEqual(['Bluey']);

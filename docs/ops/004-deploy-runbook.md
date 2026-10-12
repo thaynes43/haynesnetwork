@@ -146,7 +146,7 @@ tag in the HelmRelease and committing to `haynes-ops`.
    `kubernetes/main/apps/frontend/haynesnetwork/app/helmrelease.yaml`: change the single
    `tag:` under `controllers.main.initContainers.migrate.image` (the `&mainImage` anchor) —
    e.g. `v0.3.1` → `vX.Y.Z`. The `*mainImage` alias reuses it for the `app` container and
-   **both** sync CronJobs, so one edit moves the whole deployment.
+   **all** sync CronJobs, so one edit moves the whole frontend deployment.
    In the same commit, set the same tag on the owed-check runner,
    `kubernetes/main/apps/downloads/owed-checks/app/cronjob.yaml` (DESIGN-053 D-08: it runs the app image in
    another namespace, so the anchor cannot reach it), and on the Books Census,

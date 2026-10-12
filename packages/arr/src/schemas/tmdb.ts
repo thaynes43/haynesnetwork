@@ -73,3 +73,29 @@ export const tmdbPagedResultsSchema = z.object({
   total_results: z.number().int().nullish(),
 });
 export type TmdbPagedResults = z.infer<typeof tmdbPagedResultsSchema>;
+
+/** ADR-107 / DESIGN-054 D-02: canonical identity facts for read-only personal candidate checks. */
+const tmdbIdentityExternalIds = z.object({
+  imdb_id: z.string().nullish(),
+  tvdb_id: z.number().int().nullish(),
+});
+export const tmdbMovieIdentitySchema = z.object({
+  id: z.number().int().positive(),
+  title: z.string().min(1),
+  release_date: z.string().nullish(),
+  imdb_id: z.string().nullish(),
+  external_ids: tmdbIdentityExternalIds.nullish(),
+});
+export const tmdbTvIdentitySchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string().min(1),
+  first_air_date: z.string().nullish(),
+  external_ids: tmdbIdentityExternalIds.nullish(),
+});
+export const tmdbExternalIdentitySchema = z.object({
+  movie_results: z.array(tmdbListResultSchema).nullish(),
+  tv_results: z.array(tmdbListResultSchema).nullish(),
+});
+export type TmdbMovieIdentity = z.infer<typeof tmdbMovieIdentitySchema>;
+export type TmdbTvIdentity = z.infer<typeof tmdbTvIdentitySchema>;
+export type TmdbExternalIdentity = z.infer<typeof tmdbExternalIdentitySchema>;

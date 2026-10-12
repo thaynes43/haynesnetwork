@@ -6,7 +6,7 @@
   authorization server, the public `POST /mcp`, the five OAuth tables, and the clients connected
   through them (ChatGPT, Claude Code, Codex). The in-cluster hop, `/api/mcp`, the `sync-watch` CronJob
   and the Movie Room agent are OPS-015.
-- **Normative basis:** ADR-091, DESIGN-050, FLOW-001, PLAN-069.
+- **Normative basis:** ADR-091, DESIGN-050, FLOW-001, PLAN-069; ADR-107 / DESIGN-054 / PLAN-075 govern the shared eleven-tool factual recommendation surface and supersede its earlier budgets.
 - **Repos:** this app; haynes-ops (`kubernetes/main/apps/frontend/haynesnetwork/app/gatus.yaml` and
   `lokirule.yaml`; the dev-env CiliumNetworkPolicy for in-cluster tests).
 
@@ -200,3 +200,7 @@ From the owner's first connects on 2026-09-25, audited read-only on 2026-09-26 (
 **`dev-env precheck`** (registered 2026-09-24 by the PLAN-069 S8 pre-check, redirect
 `127.0.0.1:8765`): never used. It owns no token, code or transaction, so the inline pruner removes it
 on the first `/oauth/token` request after it turns 30 days old (2026-10-24).
+
+## 10. Personal evidence for agent-owned recommendations
+
+Public connectors share the same eleven tools and recommendation workflow as the hop (OPS-015 §9). The token's user still determines the tracked account; a connector never reads another account's evidence. `check_titles` and `viewing_context` return bounded factual `structuredContent` plus short spoken text under ADR-107; other tools remain text-only. The agent uses other tools for broad discovery, dated current attention and regional availability, then checks personal evidence and explains its choices. Plex/watchlist membership restricts recommendations only on explicit request. Refresh connector schemas after deployment as described in §7.
