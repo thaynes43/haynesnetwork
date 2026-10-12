@@ -13,7 +13,10 @@ import {
   authentikPortalBundleFromEnv,
   ConcurrentTransitionError,
   FixAlreadyOpenError,
+  FixPlanChangedError,
   FixRateLimitError,
+  FixRefusedError,
+  type PlaybackHistoryReader,
   FixTargetRequiredError,
   InvalidCatalogUrlError,
   InvalidGoodreadsProfileError,
@@ -217,6 +220,12 @@ export interface TRPCContext {
    */
   playScoreboard?: PlayScoreboardSource;
   /**
+   * ADR-109 / DESIGN-055 D-09 (PLAN-077 P1) — the Tautulli history reads Playback Evidence (T-309) takes, one per
+   * instance (its Plex server's slug). Env-built from resolveTautulliInstances in production (an absent key ⇒ that
+   * instance is skipped); injected in tests.
+   */
+  playbackHistory?: readonly PlaybackHistoryReader[];
+  /**
    * ADR-079 / DESIGN-004 D-25 (PLAN-064) — the uptime-badge source `metrics.uptime` reads
    * (the 60s TTL memo over the in-cluster Gatus apex check). Env-built singleton in
    * production (resolveGatusEnv — always resolvable, keyless; an unreachable Gatus yields
@@ -310,6 +319,18 @@ export function resolvePlayScoreboardSource(ctx: TRPCContext): PlayScoreboardSou
     }),
   });
   return envPlayScoreboard;
+}
+
+let envPlaybackHistory: readonly PlaybackHistoryReader[] | undefined;
+
+/** DESIGN-055 D-09 — Playback Evidence's Tautulli history readers: injected (tests) or env-built (one per instance). */
+export function resolvePlaybackHistoryReaders(ctx: TRPCContext): readonly PlaybackHistoryReader[] {
+  if (ctx.playbackHistory) return ctx.playbackHistory;
+  envPlaybackHistory ??= resolveTautulliInstances().map((inst) => {
+    const client = new TautulliClient({ baseUrl: inst.baseUrl, apiKey: inst.apiKey, timeoutMs: 15_000 });
+    return { slug: inst.slug, getHistory: (params) => client.getHistory(params) };
+  });
+  return envPlaybackHistory;
 }
 
 let envUptimeSource: UptimeSource | undefined;
@@ -477,6 +498,8 @@ const APP_CODED_ERRORS = [
   FixRateLimitError,
   FixAlreadyOpenError,
   FixTargetRequiredError,
+  FixRefusedError,
+  FixPlanChangedError,
   SubtitleFixUnsupportedError,
   LedgerItemTombstonedError,
   ArrUpstreamError,
@@ -555,6 +578,8 @@ export const authedProcedure = t.procedure.use(({ ctx, next }) => {
  * | FixRateLimitError           | FIX_RATE_LIMIT_EXCEEDED     | TOO_MANY_REQUESTS     |
  * | FixAlreadyOpenError         | FIX_ALREADY_OPEN            | CONFLICT              |
  * | FixTargetRequiredError      | FIX_TARGET_REQUIRED         | UNPROCESSABLE_CONTENT |
+ * | FixRefusedError             | FIX_REFUSED                 | PRECONDITION_FAILED   |
+ * | FixPlanChangedError         | FIX_PLAN_CHANGED            | CONFLICT              |
  * | SubtitleFixUnsupportedError | SUBTITLE_FIX_UNSUPPORTED    | UNPROCESSABLE_CONTENT |
  * | LedgerItemTombstonedError   | LEDGER_ITEM_TOMBSTONED      | PRECONDITION_FAILED   |
  * | ArrUpstreamError            | ARR_UPSTREAM_UNAVAILABLE    | BAD_GATEWAY           |
@@ -619,6 +644,13 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     if (err instanceof FixTargetRequiredError) {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });
+    }
+    if (err instanceof FixRefusedError) {
+      // ADR-109 / DESIGN-055 D-09 — a guarded Fix refused before anything was written; the message is the guide's copy.
+      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: err.message, cause: err });
+    }
+    if (err instanceof FixPlanChangedError) {
+      throw new TRPCError({ code: 'CONFLICT', message: err.message, cause: err });
     }
     if (err instanceof SubtitleFixUnsupportedError) {
       throw new TRPCError({ code: 'UNPROCESSABLE_CONTENT', message: err.message, cause: err });

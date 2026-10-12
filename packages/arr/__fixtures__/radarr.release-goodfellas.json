@@ -1,0 +1,570 @@
+[
+  {
+    "guid": "radarr-goodfellas-0",
+    "quality": {
+      "quality": {
+        "id": 31,
+        "name": "Remux-2160p",
+        "source": "bluray",
+        "resolution": 2160,
+        "modifier": "remux"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 81,
+        "name": "DTS-HD MA"
+      },
+      {
+        "id": 90,
+        "name": "DV Boost"
+      },
+      {
+        "id": 69,
+        "name": "HDR"
+      },
+      {
+        "id": 73,
+        "name": "Remux Tier 01"
+      }
+    ],
+    "customFormatScore": 5950,
+    "qualityWeight": 2301,
+    "age": 614,
+    "ageHours": 14744.75550816536,
+    "ageMinutes": 884685.3304899234,
+    "size": 99476445308,
+    "indexerId": 2,
+    "indexer": "NinjaCentral (Prowlarr)",
+    "releaseGroup": "FraMeSToR",
+    "title": "Goodfellas.1990.UHD.BluRay.2160p.DTS-HD.MA.5.1.HDR10.DV.HEVC.HYBRiD.REMUX-FraMeSToR",
+    "sceneSource": false,
+    "movieTitles": [
+      "Goodfellas"
+    ],
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "tmdbId": 0,
+    "imdbId": 99685,
+    "rejections": [
+      "Existing file on disk has a equal or higher Custom Format score: 5950"
+    ],
+    "publishDate": "2025-02-05T09:01:39Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/0",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/0",
+    "infoUrl": "https://indexer.invalid/infoUrl/0",
+    "downloadAllowed": true,
+    "releaseWeight": 0,
+    "edition": "",
+    "protocol": "usenet",
+    "indexerFlags": []
+  },
+  {
+    "guid": "radarr-goodfellas-1",
+    "quality": {
+      "quality": {
+        "id": 31,
+        "name": "Remux-2160p",
+        "source": "bluray",
+        "resolution": 2160,
+        "modifier": "remux"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 81,
+        "name": "DTS-HD MA"
+      },
+      {
+        "id": 90,
+        "name": "DV Boost"
+      },
+      {
+        "id": 69,
+        "name": "HDR"
+      },
+      {
+        "id": 73,
+        "name": "Remux Tier 01"
+      }
+    ],
+    "customFormatScore": 5950,
+    "qualityWeight": 2301,
+    "age": 614,
+    "ageHours": 14758.52967484975,
+    "ageMinutes": 885511.780490985,
+    "size": 94932954127,
+    "indexerId": 1,
+    "indexer": "DrunkenSlug (Prowlarr)",
+    "releaseGroup": "FraMeSToR",
+    "title": "Goodfellas.1990.UHD.BluRay.2160p.DTS-HD.MA.5.1.HDR10.DV.HEVC.HYBRID.REMUX-FraMeSToR",
+    "sceneSource": false,
+    "movieTitles": [
+      "Goodfellas"
+    ],
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "tmdbId": 0,
+    "imdbId": 99685,
+    "rejections": [
+      "Existing file on disk has a equal or higher Custom Format score: 5950"
+    ],
+    "publishDate": "2025-02-04T19:15:12Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/1",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/1",
+    "infoUrl": "https://indexer.invalid/infoUrl/1",
+    "downloadAllowed": true,
+    "releaseWeight": 1,
+    "edition": "",
+    "protocol": "usenet",
+    "indexerFlags": []
+  },
+  {
+    "guid": "radarr-goodfellas-2",
+    "quality": {
+      "quality": {
+        "id": 31,
+        "name": "Remux-2160p",
+        "source": "bluray",
+        "resolution": 2160,
+        "modifier": "remux"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 81,
+        "name": "DTS-HD MA"
+      },
+      {
+        "id": 90,
+        "name": "DV Boost"
+      },
+      {
+        "id": 69,
+        "name": "HDR"
+      },
+      {
+        "id": 73,
+        "name": "Remux Tier 01"
+      }
+    ],
+    "customFormatScore": 5950,
+    "qualityWeight": 2301,
+    "age": 768,
+    "ageHours": 18449.908563739224,
+    "ageMinutes": 1106994.513824355,
+    "size": 94932907360,
+    "indexerId": 1,
+    "indexer": "DrunkenSlug (Prowlarr)",
+    "releaseGroup": "FraMeSToR",
+    "title": "Goodfellas.1990.UHD.BluRay.2160p.DTS-HD.MA.5.1.DV.HEVC.HYBRID.REMUX-FraMeSToR",
+    "sceneSource": false,
+    "movieTitles": [
+      "Goodfellas"
+    ],
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "tmdbId": 0,
+    "imdbId": 99685,
+    "rejections": [
+      "Existing file on disk has a equal or higher Custom Format score: 5950"
+    ],
+    "publishDate": "2024-09-03T23:52:28Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/2",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/2",
+    "infoUrl": "https://indexer.invalid/infoUrl/2",
+    "downloadAllowed": true,
+    "releaseWeight": 2,
+    "edition": "",
+    "protocol": "usenet",
+    "indexerFlags": []
+  },
+  {
+    "guid": "radarr-goodfellas-3",
+    "quality": {
+      "quality": {
+        "id": 31,
+        "name": "Remux-2160p",
+        "source": "bluray",
+        "resolution": 2160,
+        "modifier": "remux"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 81,
+        "name": "DTS-HD MA"
+      },
+      {
+        "id": 90,
+        "name": "DV Boost"
+      },
+      {
+        "id": 69,
+        "name": "HDR"
+      },
+      {
+        "id": 73,
+        "name": "Remux Tier 01"
+      }
+    ],
+    "customFormatScore": 5950,
+    "qualityWeight": 2301,
+    "age": 1285,
+    "ageHours": 30850.891341517585,
+    "ageMinutes": 1851053.480491055,
+    "size": 94930089626,
+    "indexerId": 1,
+    "indexer": "DrunkenSlug (Prowlarr)",
+    "releaseGroup": "FRAMESTOR",
+    "title": "GOODFELLAS.1990.UHD.BLURAY.2160P.DTS-HD.MA.5.1.DV.HEVC.HYBRID.REMUX-FRAMESTOR",
+    "sceneSource": false,
+    "movieTitles": [
+      "GOODFELLAS"
+    ],
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "tmdbId": 0,
+    "imdbId": 99685,
+    "rejections": [
+      "Existing file on disk has a equal or higher Custom Format score: 5950"
+    ],
+    "publishDate": "2023-04-06T06:53:30Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/3",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/3",
+    "infoUrl": "https://indexer.invalid/infoUrl/3",
+    "downloadAllowed": true,
+    "releaseWeight": 3,
+    "edition": "",
+    "protocol": "usenet",
+    "indexerFlags": []
+  },
+  {
+    "guid": "radarr-goodfellas-17",
+    "quality": {
+      "quality": {
+        "id": 31,
+        "name": "Remux-2160p",
+        "source": "bluray",
+        "resolution": 2160,
+        "modifier": "remux"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 90,
+        "name": "DV Boost"
+      },
+      {
+        "id": 82,
+        "name": "FLAC"
+      },
+      {
+        "id": 69,
+        "name": "HDR"
+      },
+      {
+        "id": 73,
+        "name": "Remux Tier 01"
+      }
+    ],
+    "customFormatScore": 5700,
+    "qualityWeight": 2301,
+    "age": 286,
+    "ageHours": 6880.503563745833,
+    "ageMinutes": 412830.21382475167,
+    "size": 95582548048,
+    "indexerId": 1,
+    "indexer": "DrunkenSlug (Prowlarr)",
+    "releaseGroup": "CiNEPHiLES",
+    "title": "GoodFellas.1990.2160p.UHD.Blu-ray.Hybrid.Remux.DV.HDR.HEVC.FLAC.2.0-CiNEPHiLES",
+    "sceneSource": false,
+    "movieTitles": [
+      "GoodFellas"
+    ],
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "tmdbId": 0,
+    "imdbId": 99685,
+    "rejections": [
+      "Existing file on disk has a equal or higher Custom Format score: 5950"
+    ],
+    "publishDate": "2025-12-30T01:16:46Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/17",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/17",
+    "infoUrl": "https://indexer.invalid/infoUrl/17",
+    "downloadAllowed": true,
+    "releaseWeight": 17,
+    "edition": "",
+    "protocol": "usenet",
+    "indexerFlags": []
+  },
+  {
+    "guid": "radarr-goodfellas-32",
+    "quality": {
+      "quality": {
+        "id": 31,
+        "name": "Remux-2160p",
+        "source": "bluray",
+        "resolution": 2160,
+        "modifier": "remux"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 81,
+        "name": "DTS-HD MA"
+      },
+      {
+        "id": 90,
+        "name": "DV Boost"
+      },
+      {
+        "id": 69,
+        "name": "HDR"
+      },
+      {
+        "id": 46,
+        "name": "LQ"
+      }
+    ],
+    "customFormatScore": -6000,
+    "qualityWeight": 2301,
+    "age": 1407,
+    "ageHours": 33791.63773041853,
+    "ageMinutes": 2027498.2638251116,
+    "size": 93629129336,
+    "indexerId": 1,
+    "indexer": "DrunkenSlug (Prowlarr)",
+    "releaseGroup": "RU4HD",
+    "title": "Goodfellas.1990.2160p.UHD.BluRay.REMUX.HDR.HEVC.DV.DoVi.DTS-HD.MA.5.1-RU4HD",
+    "sceneSource": false,
+    "movieTitles": [
+      "Goodfellas"
+    ],
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "tmdbId": 0,
+    "imdbId": 99685,
+    "rejections": [
+      "Custom Formats DTS-HD MA, DV Boost, HDR, LQ have score -6000 below Movie's profile minimum 0",
+      "Existing file on disk has a equal or higher Custom Format score: 5950"
+    ],
+    "publishDate": "2022-12-04T18:08:43Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/32",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/32",
+    "infoUrl": "https://indexer.invalid/infoUrl/32",
+    "downloadAllowed": true,
+    "releaseWeight": 32,
+    "edition": "",
+    "protocol": "usenet",
+    "indexerFlags": []
+  },
+  {
+    "guid": "radarr-goodfellas-74",
+    "quality": {
+      "quality": {
+        "id": 19,
+        "name": "Bluray-2160p",
+        "source": "bluray",
+        "resolution": 2160,
+        "modifier": "none"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 81,
+        "name": "DTS-HD MA"
+      },
+      {
+        "id": 69,
+        "name": "HDR"
+      },
+      {
+        "id": 46,
+        "name": "LQ"
+      }
+    ],
+    "customFormatScore": -7000,
+    "qualityWeight": 2201,
+    "age": 1313,
+    "ageHours": 31528.83495265517,
+    "ageMinutes": 1891730.09715931,
+    "size": 15360941495,
+    "indexerId": 2,
+    "indexer": "NinjaCentral (Prowlarr)",
+    "releaseGroup": "LAMA",
+    "title": "Goodfellas.1990.2160p.UHD.BluRay.x265.10bit.HDR.DTS-HD.MA.5.1-LAMA",
+    "sceneSource": false,
+    "movieTitles": [
+      "Goodfellas"
+    ],
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "tmdbId": 0,
+    "imdbId": 99685,
+    "rejections": [
+      "14.3 GB is smaller than minimum allowed 14.4 GB (for GoodFellas)",
+      "Custom Formats DTS-HD MA, HDR, LQ have score -7000 below Movie's profile minimum 0",
+      "Existing file on disk is of equal or higher preference: Remux-2160p v1"
+    ],
+    "publishDate": "2023-03-09T00:56:53Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/74",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/74",
+    "infoUrl": "https://indexer.invalid/infoUrl/74",
+    "downloadAllowed": true,
+    "releaseWeight": 74,
+    "edition": "",
+    "protocol": "usenet",
+    "indexerFlags": []
+  },
+  {
+    "guid": "radarr-goodfellas-415",
+    "quality": {
+      "quality": {
+        "id": 22,
+        "name": "BR-DISK",
+        "source": "bluray",
+        "resolution": 1080,
+        "modifier": "brdisk"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 44,
+        "name": "BR-DISK"
+      },
+      {
+        "id": 81,
+        "name": "DTS-HD MA"
+      }
+    ],
+    "customFormatScore": -7500,
+    "qualityWeight": 2401,
+    "age": 376,
+    "ageHours": 9025.471063876028,
+    "ageMinutes": 541528.2638325617,
+    "size": 58820428526,
+    "indexerId": 2,
+    "indexer": "NinjaCentral (Prowlarr)",
+    "title": "GoodFellas.1990.1080p.CEE.Blu-ray.AVC.DTS-HD.MA.5.1",
+    "sceneSource": false,
+    "movieTitles": [
+      "GoodFellas"
+    ],
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "tmdbId": 0,
+    "imdbId": 99685,
+    "rejections": [
+      "Custom Formats BR-DISK, DTS-HD MA have score -7500 below Movie's profile minimum 0",
+      "BR-DISK is not wanted in profile",
+      "Existing file on disk is of equal or higher preference: Remux-2160p v1"
+    ],
+    "publishDate": "2025-10-01T16:18:43Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/415",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/415",
+    "infoUrl": "https://indexer.invalid/infoUrl/415",
+    "downloadAllowed": true,
+    "releaseWeight": 415,
+    "edition": "",
+    "protocol": "usenet",
+    "indexerFlags": []
+  }
+]

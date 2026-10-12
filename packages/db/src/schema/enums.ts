@@ -870,8 +870,35 @@ export const APP_SETTING_KEYS = [
   // { enabled, onlyUserIds }). Absent ⇒ off. Read by the watchlist-registry mode's enrollment step; written only
   // through setAppSetting. migration 0081 relaxes the CHECK.
   'seerr_watchlist_enroll',
+  // ADR-109 / DESIGN-055 D-01 (PLAN-077) — the Repair Guide's per-remedy kill switch (jsonb object: { <remedy>: bool },
+  // the remedies in REPAIR_GUIDE_REMEDIES). Absent ⇒ every remedy off, so Fix keeps today's dialog and behaviour.
+  // Admin-mutated + audited through setAppSetting (setRepairGuideRemedies validates first). migration 0098.
+  'repair_guide_remedies',
+  // DESIGN-055 D-09 (PLAN-077 P1) — the Known-Issue Servers (T-314): the Plex server slugs whose playback has a known
+  // fault (jsonb string[]; the motivating case, HaynesOps' broken hardware transcoding, haynes-ops#3833, was fixed on
+  // 2026-10-12, so it ships empty). Won't play triage suggests another
+  // server first when a person's plays reached only these. Absent ⇒ []. Audited through setAppSetting. migration 0098.
+  'playback_known_issue_servers',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
+
+/**
+ * ADR-109 / DESIGN-055 D-01 (PLAN-077) — the Repair Guide remedies, each switched on or off in `repair_guide_remedies`.
+ * P1 ships the four Fix guards (DESIGN-055 D-08 rules 1-2, D-09); later phases append theirs. Every remedy ships off.
+ * - `replacement_preview`: every Fix delete path shows the release that would replace the file and refuses the Same
+ *   Release or nothing at all (T-308);
+ * - `season_guard`: a season Fix marks failed only downloads every on-disk episode of which the person chose, and an
+ *   episode Fix shows the pack it would cost;
+ * - `language_check`: a Wrong language Fix reads the file's audio first and changes nothing when the language is there;
+ * - `playback_triage`: a Won't play Fix first reads Playback Evidence (T-309).
+ */
+export const REPAIR_GUIDE_REMEDIES = [
+  'replacement_preview',
+  'season_guard',
+  'language_check',
+  'playback_triage',
+] as const;
+export type RepairGuideRemedy = (typeof REPAIR_GUIDE_REMEDIES)[number];
 
 // ADR-027 / DESIGN-004 D-15 (PLAN-010) — a MOTD's severity, driving the banner's token palette
 // (`--color-info` / `--color-warning`) and its ARIA role (status vs alert). Stored inside the

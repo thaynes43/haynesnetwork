@@ -686,6 +686,15 @@ sequenceDiagram
     Note over D,A: later: incremental sync ingests the replacement 'imported' event →<br/>completeFixRequests flips search_triggered → completed (ADR-007 C-06)
 ```
 
+**The Repair Guide's guards (ADR-109 C-03, DESIGN-055 D-08, D-09; PLAN-077 P1, 2026-10-12).** For Sonarr and Radarr,
+each guard runs only while its remedy is on in the audited `repair_guide_remedies` switch (every remedy ships off, and
+with all of them off this flow is exactly as drawn above). With `replacement_preview` or `season_guard` on, the Fix
+first reads a plan (`planFix`, also served read-only as `fix.preview`) and refuses before the pending row, so nothing
+is written and no budget is used: a delete whose replacement is the Same Release or with nothing acceptable to replace
+it, a pack blocklist the person did not choose, a season Fix with nothing safe to do. A season Fix marks only downloads
+every on-disk episode of which the person chose. `language_check` refuses a Wrong language Fix when the wanted audio is
+already in the file. The rules, and why each is shaped as it is, are DESIGN-055 D-09's P1 decisions.
+
 Rules already fixed above: mandatory reason taxonomy with `reason_text` iff `other`
 (D-09 CHECK), per-requester hourly rate limit — now the requester's ROLE budget (ADR-080 / D-23;
 fallback `25`), every step's raw *arr response persisted in `actions_taken`,

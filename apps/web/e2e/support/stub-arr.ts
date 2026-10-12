@@ -21,6 +21,10 @@
 //                        (Seerr result rows: ratingKey, title, mediaType, tmdbId); no `results` restores the default.
 //   GET  /_stub/import-list-exclusions → { radarr: [...], sonarr: [...] } — ADR-097: the exclusion lists the Trash
 //                        delete paths write (Radarr `/exclusions`, Sonarr `/importlistexclusion`; cleared by reset).
+//   POST /_stub/repair-guide → 204; body { on } — ADR-109 / DESIGN-055 D-09 (PLAN-077 P1): serve the Repair Guide's
+//                        fixtures (cleared by reset, so no other spec sees them): Stub Runner's file and a release list
+//                        whose only acceptable row is that same release (Case C, AC-42), and Breaking Prod's series
+//                        history with S01E01..E03 grabbed as ONE pack and E04..E09 one download each (the season guard).
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { clearStubArrDeleted, stubArrDeleted } from './stub-arr-state';
 
@@ -49,6 +53,92 @@ export const STUB_ALBUM_ID = 7011;
 export const grabHistoryIdFor = (episodeId: number) => 700_000 + episodeId;
 
 const EPISODE_COUNT = 10;
+
+/**
+ * ADR-109 / DESIGN-055 D-09 — Stub Runner (no grab history): the Case C stand-in for the Replacement Preview. Seeded as
+ * Radarr id 602, but ledger.spec's Monitor-&-search re-adds it (the stub answers every `POST /movie` with id 9701), so
+ * the fixtures below serve ANY movie but The Fixture while they are on.
+ */
+export const STUB_SAME_RELEASE_MOVIE_ID = 602;
+const isSameReleaseMovie = (movieId: number) => Number.isFinite(movieId) && movieId !== STUB_MOVIE_ID;
+/** The Breaking Prod S01 episodes one pack download backs (the season guard's held-back pack). */
+export const STUB_PACK_EPISODES = [50101, 50102, 50103] as const;
+/** The grab record id of an episode in the repair-guide series history (pack episodes share one download). */
+export const repairGuideGrabIdFor = (episodeId: number) => 800_000 + episodeId;
+
+/** Breaking Prod's series history for the season guard: E01..E03 one pack download, E04..E09 one download each. */
+function repairGuideSeriesHistory() {
+  return episodes()
+    .filter((e) => e.seasonNumber === 1 && e.hasFile)
+    .map((e) => {
+      const inPack = (STUB_PACK_EPISODES as readonly number[]).includes(e.id);
+      const code = `S01E${String(e.episodeNumber).padStart(2, '0')}`;
+      return {
+        id: repairGuideGrabIdFor(e.id),
+        eventType: 'grabbed',
+        date: '2026-07-01T10:00:00Z',
+        sourceTitle: inPack ? 'Breaking.Prod.S01.1080p.WEB-DL-PACKGRP' : `Breaking.Prod.${code}.1080p.WEB-DL-STUB`,
+        downloadId: inPack ? 'dl-pack-s01' : `dl-solo-${e.id}`,
+        episodeId: e.id,
+        seriesId: STUB_SERIES_ID,
+        quality: { quality: { id: 4, name: 'WEBDL-1080p', resolution: 1080 } },
+        data: { indexer: 'StubIndexer', releaseGroup: inPack ? 'PACKGRP' : 'STUB' },
+      };
+    });
+}
+
+/** Stub Runner's file: WEBDL-1080p from STUB, with no scene name and no grab history (as GoodFellas had). */
+function sameReleaseMovieFile() {
+  return {
+    id: 9602,
+    movieId: STUB_SAME_RELEASE_MOVIE_ID,
+    relativePath: 'Stub Runner (2020) [WEBDL-1080p]-STUB.mkv',
+    releaseGroup: 'STUB',
+    quality: { quality: { id: 3, name: 'WEBDL-1080p', resolution: 1080, source: 'web' }, revision: { version: 1 } },
+    size: 8_589_934_592,
+    customFormatScore: 50,
+    edition: '',
+    mediaInfo: { audioLanguages: 'eng', subtitles: 'eng' },
+  };
+}
+
+/**
+ * The release list for Stub Runner, in decision order: its own release again (rejected only for the file on disk,
+ * a usenet post 4 percent over the file), then a CAM no one would take. The Replacement Preview must refuse.
+ */
+function sameReleaseList() {
+  return [
+    {
+      guid: 'stub-runner-same',
+      indexerId: 1,
+      indexer: 'Stub Indexer (Prowlarr)',
+      title: 'Stub.Runner.2020.1080p.WEB-DL.DDP5.1.H.264-STUB',
+      size: 8_933_531_975,
+      quality: { quality: { name: 'WEBDL-1080p', resolution: 1080 }, revision: { version: 1 } },
+      releaseGroup: 'STUB',
+      approved: false,
+      rejected: true,
+      rejections: ['Existing file on disk has a equal or higher Custom Format score: 50'],
+      customFormatScore: 50,
+      protocol: 'usenet',
+      downloadUrl: 'http://stub.invalid/getnzb?apikey=not-a-secret',
+    },
+    {
+      guid: 'stub-runner-cam',
+      indexerId: 1,
+      indexer: 'Stub Indexer (Prowlarr)',
+      title: 'Stub.Runner.2020.CAM-NOBODY',
+      size: 1_400_000_000,
+      quality: { quality: { name: 'CAM', resolution: 480 }, revision: { version: 1 } },
+      releaseGroup: 'NOBODY',
+      approved: false,
+      rejected: true,
+      rejections: ['CAM is not wanted in profile'],
+      customFormatScore: 0,
+      protocol: 'torrent',
+    },
+  ];
+}
 
 /**
  * ADR-018 / DESIGN-008 D-14 — the metadata a harvest reads off the item resources
@@ -496,6 +586,8 @@ export async function startStubArr(): Promise<StubArrServer> {
   let nextExclusionId = 1;
   // DESIGN-052 D-17 / D-20 — each Seerr user's watchlist sync flags (settings/main), and the Sonarr server's tags.
   let seerrSyncFlags = new Map<number, { movies: boolean; tv: boolean }>([[1, { movies: true, tv: true }]]);
+  // ADR-109 / DESIGN-055 D-09 — the Repair Guide fixtures (POST /_stub/repair-guide); off until a spec turns them on.
+  let repairGuideFixtures = false;
   let seerrAnimeTags: number[] = [];
 
   const server: Server = createServer((req, res) => {
@@ -522,6 +614,7 @@ export async function startStubArr(): Promise<StubArrServer> {
         nextExclusionId = 1;
         seerrSyncFlags = new Map([[1, { movies: true, tv: true }]]);
         seerrAnimeTags = [];
+        repairGuideFixtures = false;
         clearStubArrDeleted();
         res.writeHead(204);
         return res.end();
@@ -643,6 +736,12 @@ export async function startStubArr(): Promise<StubArrServer> {
         return json(res, 201, created);
       }
       // PLAN-015 / D-20 — stage the download queue for the Action Feedback progress derivation.
+      if (url.pathname === '/_stub/repair-guide' && method === 'POST') {
+        const raw = await readBody(req);
+        repairGuideFixtures = raw !== '' && (JSON.parse(raw) as { on?: unknown }).on === true;
+        res.writeHead(204);
+        return res.end();
+      }
       if (url.pathname === '/_stub/queue' && method === 'POST') {
         const raw = await readBody(req);
         const parsed = raw === '' ? {} : (JSON.parse(raw) as { records?: Record<string, unknown>[] });
@@ -836,7 +935,17 @@ export async function startStubArr(): Promise<StubArrServer> {
             }));
           return json(res, 200, files);
         }
+        case '/release': {
+          // ADR-109 / DESIGN-055 D-09 — the interactive release list, only while the repair-guide fixtures are on.
+          if (repairGuideFixtures && isSameReleaseMovie(Number(query.movieId))) {
+            return json(res, 200, sameReleaseList());
+          }
+          return json(res, 200, []);
+        }
         case '/moviefile': {
+          if (repairGuideFixtures && isSameReleaseMovie(Number(query.movieId))) {
+            return json(res, 200, [{ ...sameReleaseMovieFile(), movieId: Number(query.movieId) }]);
+          }
           // ADR-093 / DESIGN-052 D-11 — The Fixture's file, with the identity the Release Block records.
           if (Number(query.movieId) !== STUB_MOVIE_ID) return json(res, 200, []);
           return json(res, 200, [
@@ -852,6 +961,10 @@ export async function startStubArr(): Promise<StubArrServer> {
           ]);
         }
         case '/history/series':
+          // ADR-109 / DESIGN-055 D-09 — the season guard's pack, only while the repair-guide fixtures are on.
+          if (repairGuideFixtures && Number(query.seriesId) === STUB_SERIES_ID) {
+            return json(res, 200, repairGuideSeriesHistory());
+          }
           return json(res, 200, []);
         case '/album': {
           // Lidarr album picker (D-06): the seeded artist 701 has one on-disk album so its

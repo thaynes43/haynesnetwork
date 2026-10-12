@@ -1,0 +1,130 @@
+[
+  {
+    "seriesId": 1061,
+    "seasonNumber": 1,
+    "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E06 - Boba or Bo-Bust [AMZN WEBDL-1080p Proper][EAC3 5.1][h264]-Kitsune.mkv",
+    "size": 445435735,
+    "dateAdded": "2026-09-10T15:04:00Z",
+    "sceneName": "Regular.Show.The.Lost.Tapes.S01E06.Boba.or.Bo-Bust.REPACK.1080p.AMZN.WEB-DL.DDP5.1.H.264-Kitsune",
+    "releaseGroup": "Kitsune",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 2,
+        "real": 0,
+        "isRepack": true
+      }
+    },
+    "customFormats": [
+      {
+        "id": 41,
+        "name": "AMZN"
+      },
+      {
+        "id": 38,
+        "name": "Repack/Proper"
+      },
+      {
+        "id": 59,
+        "name": "WEB Tier 01"
+      }
+    ],
+    "customFormatScore": 1780,
+    "indexerFlags": 0,
+    "releaseType": "singleEpisode",
+    "mediaInfo": {
+      "audioBitrate": 640000,
+      "audioChannels": 5.1,
+      "audioCodec": "EAC3",
+      "audioLanguages": "eng",
+      "audioStreamCount": 1,
+      "videoBitDepth": 8,
+      "videoBitrate": 0,
+      "videoCodec": "h264",
+      "videoFps": 23.976,
+      "videoDynamicRange": "",
+      "videoDynamicRangeType": "",
+      "resolution": "1920x1080",
+      "runTime": "11:18",
+      "scanType": "Progressive",
+      "subtitles": "eng/eng/por"
+    },
+    "qualityCutoffNotMet": true,
+    "id": 75669
+  },
+  {
+    "seriesId": 1061,
+    "seasonNumber": 1,
+    "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E03 - Blade Games [AMZN WEBDL-1080p Proper][EAC3 5.1][h264]-Kitsune.mkv",
+    "size": 430167232,
+    "dateAdded": "2026-09-10T15:04:01Z",
+    "sceneName": "Regular.Show.The.Lost.Tapes.S01E03.Blade.Games.REPACK.1080p.AMZN.WEB-DL.DDP5.1.H.264-Kitsune",
+    "releaseGroup": "Kitsune",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 2,
+        "real": 0,
+        "isRepack": true
+      }
+    },
+    "customFormats": [
+      {
+        "id": 41,
+        "name": "AMZN"
+      },
+      {
+        "id": 38,
+        "name": "Repack/Proper"
+      },
+      {
+        "id": 59,
+        "name": "WEB Tier 01"
+      }
+    ],
+    "customFormatScore": 1780,
+    "indexerFlags": 0,
+    "releaseType": "singleEpisode",
+    "mediaInfo": {
+      "audioBitrate": 640000,
+      "audioChannels": 5.1,
+      "audioCodec": "EAC3",
+      "audioLanguages": "eng",
+      "audioStreamCount": 1,
+      "videoBitDepth": 8,
+      "videoBitrate": 0,
+      "videoCodec": "h264",
+      "videoFps": 23.976,
+      "videoDynamicRange": "",
+      "videoDynamicRangeType": "",
+      "resolution": "1920x1080",
+      "runTime": "11:17",
+      "scanType": "Progressive",
+      "subtitles": "eng/eng/por"
+    },
+    "qualityCutoffNotMet": true,
+    "id": 75670
+  }
+]

@@ -2993,6 +2993,160 @@ input[aria-invalid='true'] {
   background: var(--color-surface-2);
 }
 
+/* ---------- ADR-109 / DESIGN-055 D-01 (PLAN-077 P1) — the Repair Guide ----------
+   A Modal with a FIXED height: steps replace each other inside the body, which alone scrolls, so a step change never
+   resizes or moves the dialog (hard rule 9). Tokens only (hard rule 2). */
+.modal.modal--guide {
+  width: min(560px, 100%);
+  height: min(640px, 90dvh);
+}
+.repair-guide__step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.repair-guide__step > p,
+.repair-guide__plan p {
+  margin: 0;
+  font-size: 14px;
+}
+.repair-guide__question {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.repair-guide__plan {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.repair-guide__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.repair-guide__group h4 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.repair-guide__facts,
+.repair-guide__how {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+/* Release and file names are long, unbroken strings: let them wrap anywhere instead of widening the dialog. */
+.repair-guide__release {
+  overflow-wrap: anywhere;
+}
+.repair-guide__cards {
+  display: grid;
+  gap: 8px;
+}
+.repair-guide__card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  font-size: 13px;
+}
+.repair-guide__card-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+.repair-guide__callout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+  border-left: 4px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-warning) 9%, var(--color-surface));
+}
+.repair-guide__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.repair-guide__episode {
+  align-items: flex-start;
+  padding: 6px 0;
+}
+.repair-guide__episode input[type='checkbox'] {
+  margin-top: 2px;
+}
+.repair-guide__episode-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.repair-guide__episode .repair-guide__release {
+  font-size: 12px;
+}
+.repair-guide__gone {
+  border: 1px solid color-mix(in srgb, var(--color-danger) 40%, var(--color-border));
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin: 0;
+}
+.repair-guide__gone legend {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-danger);
+  padding: 0 4px;
+}
+.repair-guide__gone .check-row {
+  align-items: flex-start;
+  padding: 6px 0;
+}
+.repair-guide__gone .check-row span {
+  overflow-wrap: anywhere;
+}
+
+/* DESIGN-055 D-01 — the Repair Guide settings card on /admin/fixes. The status slot keeps its line so a save message
+   never shifts the row (hard rule 9). */
+.repair-guide-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: var(--space);
+}
+.repair-guide-settings h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.repair-guide-settings p {
+  margin: 0;
+}
+.repair-guide-settings__row {
+  align-items: flex-start;
+  padding: 6px 0;
+}
+.repair-guide-settings__row > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.repair-guide-settings__hint {
+  font-size: 12px;
+}
+.repair-guide-settings__status {
+  min-height: 1.5em;
+}
+
 /* ---------- ADR-028 / DESIGN-005 D-20/D-21 — live *arr action feedback ----------
    Every color rides the token palette (--color-progress is the "in motion" tone);
    every surface reserves its footprint so a poll tick or a non-terminal → terminal

@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-12
+- **Last updated:** 2026-10-12 (P1 decisions in D-08 and D-09)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
@@ -261,6 +261,12 @@ already has a file) stay in #597 and PLAN-065.
 
 The one `wrong_language` Fix in the last 90 days took the delete path (read 2026-10-12): this check comes first.
 
+**P1 (2026-10-12):** rules 1 to 3 read the *arr's own `mediaInfo.audioLanguages` (ISO 639-2 codes, `"por/eng"` on The
+Lost Tapes S01E12); the Plex stream read moves to P6 with the preference write. "Present" means every file in scope
+carries the language and every file's audio could be read; a file the *arr could not read is "unknown" and the Fix
+runs as before. With the language present the Fix is refused (`language_present`) and the guide shows how to pick the
+track and set a default audio language in the person's Plex account.
+
 ### D-09 Fix safety guards and playback triage
 
 **Season Fix.** "Which episodes are wrong?" lists the season's episodes with files, their release and their Title
@@ -289,12 +295,75 @@ plus each Tautulli instance's history.
 - No play reached our servers: "Your play didn't reach our servers." The guide shows the Watch-here links (ADR-047) for
   the servers this person can use, and explains that Plex also lists its own free copies of some titles, so the copy to
   pick is the one that names our server. The Fix stays available behind "I played our copy and it still won't play".
-- Plays reached one server only, and that server is on the known-issues list (an app setting; today HaynesOps, whose
-  hardware transcoding fails, haynes-ops#3833): the guide suggests the other server's link first.
+- Plays reached one server only, and that server is on the known-issues list (an app setting, T-314; written for
+  HaynesOps' hardware-transcoding fault, haynes-ops#3833, which was fixed on 2026-10-12): the guide suggests the other
+  server's link first.
 - Plays reached and stopped quickly: the Fix continues with the Replacement Preview.
 
 PLAN-077 P1 checks that all three Tautulli instances post play and stop to the webhook, and adds Tautulli's Playback
 Error trigger.
+
+**P1 decisions (2026-10-12, PLAN-077 P1).** What the build settled, with the live reads behind it:
+
+1. **The kill switch.** One audited app setting, `repair_guide_remedies`, holds four P1 remedies: `replacement_preview`
+   (the Replacement Preview and its refusals), `season_guard` (the season guard and an episode Fix's pack cost),
+   `language_check` (D-08 rules 1-3) and `playback_triage` (Playback Evidence). Every remedy ships off; staff switch
+   them on `/admin/fixes` (the Repair Guide card) or with the in-cluster tool (item 9). Fix opens the guide for a movie
+   or a TV episode or season once any remedy is on, skips the steps of the remedies that are off, and opens today's
+   dialog when all are off; Music always keeps today's dialog. The server applies the same switch, so a caller that
+   skips the guide gets the same guards.
+2. **Which release replaces the file (T-308).** With the file on disk the *arr rejects every release that is not an
+   upgrade: all 635 GoodFellas releases carried "Existing file on disk has a equal or higher Custom Format score: 5950"
+   or "is of equal or higher preference" (Radarr 6.4.4, read 2026-10-12). Those rejections vanish with the file, so
+   the replacement is the first release, in the *arr's decision order, that is approved or whose every rejection is an
+   **Existing-File Rejection** (T-315, any reason naming the existing file). Every other rejection (blocklisted, a
+   must-not-contain term, a quality or size the profile refuses, a queue or delay rule) still stands after the delete.
+3. **Q-07, order half: resolved.** `GET /api/v3/release` returns the *arr's own decision order: both ReleaseControllers
+   run the decisions through `PrioritizeDecisions` before mapping them. GoodFellas' list leads with its custom-format
+   5950 remuxes; a Sonarr season search groups by episode. The override fields stay open for P5.
+4. **The Same Release, refined.** "A size within 2 percent" cannot hold for Usenet: a post's listed size includes its
+   yEnc and par2 overhead. GoodFellas' own FraMeSToR remux (an 87.61 GB file) is listed at 89.38 to 99.48 GB by four
+   indexers, 2 to 14 percent over. The rule is now: the same release group (case-insensitive), quality, resolution and
+   edition, not a newer revision (a PROPER or REPACK is a different release), the same custom-format score when the
+   *arr scored both (the score carries the DV, HDR, audio and tier features, so FraMeSToR's non-DV remux at 4950 is a
+   different release), and a size that fits: a torrent within 2 percent, a Usenet post from 2 percent under to 20
+   percent over. A normalized name equal to the file's scene name, or to the release name its last import recorded,
+   is the Same Release too. A season pack offered for one episode skips the size test. GoodFellas' replacement is the
+   Same Release on identity, so its Fix is refused.
+5. **The season guard in practice.** Packs are read from `GET /history/series` (one read, no release search): an
+   episode's latest grab names its download, and a download backs every on-disk episode whose latest grab it is. A
+   season Fix marks a download only when every on-disk episode it backs was chosen; a pack that also backs an episode
+   marked fine is held back and named. A chosen episode with no download record, while others have one, is left for an
+   episode Fix (it would need its own Replacement Preview). The delete path, with a Replacement Preview per episode from
+   one season release search, applies only when no chosen episode has a record. The search afterwards covers the marked
+   or deleted episodes (`EpisodeSearch`); it is today's `SeasonSearch` only when every on-disk episode was chosen and
+   acted on, and DESIGN-005 D-25 still decides whether the *arr's own Redownload Failed searches instead. A season Fix
+   with nothing safe to do is refused.
+6. **An episode Fix in a pack** is refused until the person chooses: "Replace just this episode" (the guarded delete
+   path for its own file; the pack stays) or "Block the whole pack" (having seen the other episodes it costs).
+7. **Refusals and the preview contract.** Every refusal is thrown before the pending Fix Request row
+   (`FixRefusedError`, appCode `FIX_REFUSED`): nothing is written and no budget is used. The guide shows the plan first
+   (`fix.preview`, read-only) and sends its digest with the confirm; the Fix reads the plan again just before acting and
+   refuses a plan that changed (`FIX_PLAN_CHANGED`), so it never acts on something the person did not see. A Replacement
+   Preview that cannot be read refuses the delete. Each "gone afterwards" line (a deleted file with its size, a blocked
+   release, a blocked pack) must be ticked before the confirm works; none is pre-ticked.
+   **The release search is spent sparingly** (it queries every indexer, whose API hits are capped): the preview and the
+   Fix first refuse, read-only, what the Fix would refuse anyway (over the hourly budget, a Fix already open on the
+   grain), so such a request runs no search; a release list is reused for 5 minutes, so a preview and its confirm cost
+   one search; and a member may run at most 12 live searches an hour (per web pod; cached lists, admins and the
+   in-cluster tool are not counted). The preview itself costs no budget unit, unlike P5's Release Pick list.
+8. **Playback Evidence (T-309).** The stored Tautulli `play`, `stop` and Playback Error webhooks, matched by the
+   person's app or Plex email, or their Plex username, and the title's ledger item or ids (a show at the show level),
+   plus each Tautulli instance's history for the title's rating keys on that server, filtered to the person's Plex
+   username. The template gains `server` (DESIGN-012 D-02), so a webhook names the server too. Read 2026-10-12: the
+   HaynesOps and HaynesKube instances post `play` and `stop`; HaynesTower's Tautulli posts nothing to the app, so its
+   plays come from its history only. The **Known-Issue Servers** (T-314) are the audited app setting
+   `playback_known_issue_servers`; Won't play triage suggests another server first when every play reached only these.
+   It ships empty: haynes-ops#3833 (HaynesOps never hardware-transcoded) was fixed the same day, before P1 shipped.
+9. **The in-cluster tool.** `tsx /sync/src/scripts/repair-guide.ts` prints a title's plan (`preview`, with both planning
+   remedies on whatever the switch says), a person's Playback Evidence (`evidence`) and a file's audio languages
+   (`audio`), reading only; `settings` prints the switch and writes it, audited, with `--set` and `--known-issue`. It is
+   how the live checks run: the app's sign-in cannot be driven from inside the cluster.
 
 ### D-10 The Seerr Issue mirror, its surfaces and its writes (ADR-111)
 
@@ -378,7 +447,7 @@ after it, so a crash never posts twice.
 | Dependency | Where | Needed by |
 |---|---|---|
 | SABnzbd extracts obfuscated `.7z` posts | haynes-ops#3834 | D-07 rule 6, D-14 |
-| All three Tautulli instances post play and stop to the webhook; the Playback Error trigger is added | Tautulli settings (each instance's UI) | D-09 |
+| All three Tautulli instances post play and stop to the webhook; the Playback Error trigger is added | Tautulli settings (each instance's API or UI) | D-09 (P1: HaynesOps and HaynesKube post; HaynesTower, outside the cluster, is read from its history) |
 | The Seerr webhook sends issue types | Seerr settings (API) | D-10 |
 | The Seerr bridge user exists | Seerr users (API or UI) | D-10 writes |
 | Case A's hand-made release profile is retired | Sonarr | D-05 adoption |
@@ -443,5 +512,5 @@ Driver items, resolved inside PLAN-077 (not owner questions):
 | ID | Question | Resolution |
 |----|----------|------------|
 | Q-06 | The Title Evidence thresholds (0.8 and 0.3). | (open: tuned on the Title Check census in P4 before the Import Check relies on `disagrees`) |
-| Q-07 | The exact override fields of Sonarr's and Radarr's `POST /release`, and whether `GET /release` returns releases in decision order. | (open: pinned from the running versions in P1 and P5) |
+| Q-07 | The exact override fields of Sonarr's and Radarr's `POST /release`, and whether `GET /release` returns releases in decision order. | **Order: resolved in P1 (2026-10-12).** Both *arrs return the decision order (D-09, P1 decision 3). The override fields stay open for P5. |
 | Q-08 | Does Plex offer a preferred audio language for a movie, as it does for a show? | (open: checked in P6) |

@@ -279,6 +279,10 @@ export function parseTautulliWebhook(raw: unknown): ParsedNotification | null {
   if (message !== undefined) payload.message = message;
   const user = stringish(raw.user, 200);
   if (user !== undefined) payload.user = user;
+  // ADR-109 / DESIGN-055 D-09 (PLAN-077 P1) — the Plex server that served the session (`{server_name}` in the template),
+  // so Playback Evidence can tell which server a play reached. Older rows carry none.
+  const server = nonEmpty(stringish(raw.server, 120));
+  if (server !== undefined) payload.server = server;
   if (email !== null) payload.user_email = email;
   if (tmdbId !== null) payload.tmdb_id = tmdbId;
   if (tvdbId !== null) payload.tvdb_id = tvdbId;

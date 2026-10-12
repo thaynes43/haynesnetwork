@@ -101,9 +101,14 @@ JSON we configure Tautulli to POST (Data tab), reading our own field names direc
   "media_type": "{media_type}",
   "tmdb_id": "{themoviedb_id}",
   "tvdb_id": "{thetvdb_id}",
+  "server": "{server_name}",
   "source_event_id": "{action}:{rating_key}:{unix_time}"
 }
 ```
+
+`server` (added 2026-10-12, DESIGN-055 D-09, PLAN-077 P1) names the Plex server that served the session, so Playback
+Evidence can tell which server a play reached; it is kept in the payload only. The HaynesOps and HaynesKube instances
+post this template for Playback Start, Playback Stop and Playback Error.
 
 Mapping: `event_type → type`; `subject → title`; `message → body`; `media_type` normalized
 (movie→movie; show/season/episode/series→tv); `tmdb_id`/`tvdb_id → tmdb/tvdbId`; `user_email →

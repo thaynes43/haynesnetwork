@@ -20,7 +20,7 @@ import {
 } from './errors';
 import { inTransaction } from './db-client';
 import { effectiveMediaActionBudget, mediaActionBudgetReachedMessage } from './media-action-budgets';
-import { resolveFixTarget, type SearchScope } from './action-scope';
+import { resolveFixTarget, type FixScope, type SearchScope } from './action-scope';
 
 /** D-09: statuses that count as an open fix for the one-open-fix-per-target rule. */
 export const OPEN_FIX_STATUSES = ['pending', 'actioned', 'search_triggered'] as const;
@@ -244,6 +244,54 @@ export async function createFixRequest(
     });
 
     return { fixRequestId: fix.id, status: fix.status };
+  });
+}
+
+/**
+ * ADR-109 / DESIGN-055 D-09 (PLAN-077 P1) — the guards createFixRequest applies, read-only and before any *arr read:
+ * the requester's hourly budget (admins bypass) and one open fix per grain. A guarded Fix and its preview call this
+ * BEFORE they plan, because planning may run a live release search across every indexer; a request that would be
+ * refused anyway must not cost one. createFixRequest still checks both again under its advisory lock (the
+ * authoritative check); this one only refuses early.
+ */
+export async function assertFixAllowed(input: {
+  db?: DbClient;
+  requesterId: string;
+  requesterIsAdmin?: boolean;
+  mediaItemId: string;
+  scope: FixScope;
+  targetArrChildId: number | null;
+  seasonNumber: number | null;
+}): Promise<void> {
+  return inTransaction(input.db, async (tx) => {
+    if (!input.requesterIsAdmin) {
+      const [requester] = await tx
+        .select({ roleId: users.roleId })
+        .from(users)
+        .where(eq(users.id, input.requesterId));
+      if (!requester) throw new NotFoundError(`User ${input.requesterId} not found`);
+      const limit = await effectiveMediaActionBudget({ db: tx, roleId: requester.roleId });
+      if (limit !== null && (await countRecentFixBudget(tx, input.requesterId)) >= limit) {
+        throw new FixRateLimitError(mediaActionBudgetReachedMessage(limit));
+      }
+    }
+    const [open] = await tx
+      .select({ id: fixRequests.id })
+      .from(fixRequests)
+      .where(
+        and(
+          eq(fixRequests.mediaItemId, input.mediaItemId),
+          eq(fixRequests.targetScope, input.scope),
+          sql`${fixRequests.targetArrChildId} IS NOT DISTINCT FROM ${input.targetArrChildId}`,
+          sql`${fixRequests.targetSeason} IS NOT DISTINCT FROM ${input.seasonNumber}`,
+          inArray(fixRequests.status, [...OPEN_FIX_STATUSES]),
+        ),
+      );
+    if (open) {
+      throw new FixAlreadyOpenError(
+        `An open fix (${open.id}) already targets this ${input.scope === 'item' ? 'item' : input.scope}`,
+      );
+    }
   });
 }
 

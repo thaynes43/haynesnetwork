@@ -935,6 +935,7 @@ export function ItemDetail({
         item={{ id: item.id, arrKind: item.arrKind, title: item.title }}
         target={action?.mode === 'fix' ? action.target : null}
         onSubmitted={refresh}
+        play={item.play}
       />
       <ForceSearchDialog
         open={action?.mode === 'search'}

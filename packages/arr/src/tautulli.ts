@@ -54,6 +54,13 @@ export interface TautulliHistoryParams {
    * grouped view (consecutive partial plays collapsed). Omitted ⇒ Tautulli's configured default (grouped).
    */
   grouping?: 0 | 1;
+  /**
+   * ADR-109 / DESIGN-055 D-09 (PLAN-077 P1, Playback Evidence) — one title's rows only: a movie's (or one episode's)
+   * Plex `rating_key` on THIS instance's server. Tautulli's `rating_key` filter.
+   */
+  ratingKey?: number | string;
+  /** DESIGN-055 D-09 — one show's rows only: the show's Plex `rating_key` on this server (`grandparent_rating_key`). */
+  grandparentRatingKey?: number | string;
   /** Sort column, e.g. `date` / `started` (Tautulli's `order_column`). */
   orderColumn?: string;
   /** `desc` (newest first) or `asc` (Tautulli's `order_dir`). */
@@ -96,6 +103,10 @@ export class TautulliClient {
           ...(params.mediaType ? { media_type: params.mediaType } : {}),
           ...(params.userId !== undefined ? { user_id: params.userId } : {}),
           ...(params.after !== undefined ? { after: params.after } : {}),
+          ...(params.ratingKey !== undefined ? { rating_key: params.ratingKey } : {}),
+          ...(params.grandparentRatingKey !== undefined
+            ? { grandparent_rating_key: params.grandparentRatingKey }
+            : {}),
           ...(params.grouping !== undefined ? { grouping: params.grouping } : {}),
           ...(params.includeActivity !== undefined ? { include_activity: params.includeActivity ? 1 : 0 } : {}),
           ...(params.orderColumn ? { order_column: params.orderColumn } : {}),

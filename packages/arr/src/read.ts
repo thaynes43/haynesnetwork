@@ -101,6 +101,7 @@ import {
   type SeerrUserWatchlistSync,
   type SonarrEpisodeFileRelease,
 } from './schemas/release-block';
+import { arrReleaseSchema, type ArrRelease } from './schemas/release';
 import {
   bazarrEnvelopeSchema,
   bazarrEpisodeSubtitleSchema,
@@ -158,6 +159,14 @@ const QUEUE_ALL_PAGE_SIZE = 250;
 
 const toIso = (value: string | Date) => (value instanceof Date ? value.toISOString() : value);
 
+/**
+ * ADR-109 / DESIGN-055 D-09 (PLAN-077 P1) — the bound on one interactive release search (`GET /release`). The *arr
+ * queries every indexer before it answers (16 s for GoodFellas across six indexers, 6 s for a Sonarr season, read
+ * 2026-10-12), so it gets far more than the 30 s default, and it is never retried: a retry would search every indexer
+ * again.
+ */
+export const RELEASE_SEARCH_TIMEOUT_MS = 120_000;
+
 /** ADR-093 / DESIGN-052 D-14 — a GET whose 404 means "the *arr no longer has it" (null), every other failure thrown. */
 async function orNullOn404<T>(read: () => Promise<T>): Promise<T | null> {
   try {
@@ -200,9 +209,17 @@ async function readAllImportListExclusions(
 /** Read endpoints shared verbatim by Sonarr/Radarr/Lidarr (D-03). */
 abstract class ArrReadClientBase {
   protected readonly http: ArrHttp;
+  /** DESIGN-055 D-09 — the interactive release search: a long bound and no retry (RELEASE_SEARCH_TIMEOUT_MS). */
+  protected readonly releaseHttp: ArrHttp;
 
   constructor(options: ArrClientOptions, apiBasePath: string) {
     this.http = new ArrHttp({ ...options, apiBasePath });
+    this.releaseHttp = new ArrHttp({
+      ...options,
+      apiBasePath,
+      timeoutMs: Math.max(options.timeoutMs ?? 0, RELEASE_SEARCH_TIMEOUT_MS),
+      getRetries: 0,
+    });
   }
 
   getSystemStatus(): Promise<ArrSystemStatus> {
@@ -374,6 +391,26 @@ export class SonarrClient extends ArrReadClientBase {
     });
   }
 
+  /**
+   * ADR-109 / DESIGN-055 D-09 (PLAN-077 P1) — `GET /release?episodeId=`: a live interactive search for one episode,
+   * every release the indexers return with the *arr's decision, in its decision order. Searches every indexer.
+   */
+  listEpisodeReleases(episodeId: number): Promise<ArrRelease[]> {
+    return this.releaseHttp.requestJson('GET', 'release', z.array(arrReleaseSchema), {
+      query: { episodeId },
+    });
+  }
+
+  /**
+   * ADR-109 / DESIGN-055 D-09 — `GET /release?seriesId=&seasonNumber=`: a live interactive search for one season
+   * (season packs and single episodes, grouped by episode). Searches every indexer.
+   */
+  listSeasonReleases(seriesId: number, seasonNumber: number): Promise<ArrRelease[]> {
+    return this.releaseHttp.requestJson('GET', 'release', z.array(arrReleaseSchema), {
+      query: { seriesId, seasonNumber },
+    });
+  }
+
   /** `GET /history/series?seriesId=` — every history record of one series (the grab ⇄ import join filters). */
   getSeriesReleaseHistory(seriesId: number): Promise<ArrReleaseHistoryRecord[]> {
     return this.http.requestJson('GET', 'history/series', z.array(arrReleaseHistoryRecordSchema), {
@@ -488,6 +525,16 @@ export class RadarrClient extends ArrReadClientBase {
   /** `GET /moviefile?movieId=` — the movie's file(s) with the identity fields (D-11). */
   listMovieFiles(movieId: number): Promise<RadarrMovieFile[]> {
     return this.http.requestJson('GET', 'moviefile', z.array(radarrMovieFileSchema), {
+      query: { movieId },
+    });
+  }
+
+  /**
+   * ADR-109 / DESIGN-055 D-09 (PLAN-077 P1) — `GET /release?movieId=`: a live interactive search for one movie, every
+   * release the indexers return with Radarr's decision, in its decision order. Searches every indexer.
+   */
+  listMovieReleases(movieId: number): Promise<ArrRelease[]> {
+    return this.releaseHttp.requestJson('GET', 'release', z.array(arrReleaseSchema), {
       query: { movieId },
     });
   }
