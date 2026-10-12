@@ -1,5 +1,43 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-12 23:15Z: PLAN-077 P2 shipped — queue-aware Force Search and the Import Check, live in v0.113.1, remedy on
+
+- **What:** Force Search on a missing episode or movie now reads the download queue first. The `import_check` remedy has
+  been on since 23:11Z (audited, actor null). What it does:
+  - A download already on its way: nothing is sent.
+  - A stuck finished download that passes the Import Check (T-306): imported through the *arr's own ManualImport, as
+    one Repair Request (`import_download`).
+  - A stuck download whose name points at another episode: the person may choose "Import this download onto...".
+  - A failed or defective download: removed with blocklist and `skipRedownload`, then searched once.
+  - Anything else: staff, with a prefilled Helpdesk ticket.
+  - A file the import replaces is a ticked "gone afterwards" line.
+
+  New pieces:
+  - Title Evidence (with a movie form and a series-year rule).
+  - Repair Requests (migration 0099).
+  - Janitor classes `importable` (census cell on Sonarr and Radarr) and `title_mismatch` (report only), DESIGN-046 D-27.
+
+  Decisions: DESIGN-055 D-07 "P2 decisions" 1-15. **To switch it off:** `/admin/fixes`, or
+  `tsx /sync/src/scripts/repair-guide.ts settings --set import_check=off`.
+- **Shipped:**
+  - hnet #905 (v0.113.0) and #907 (v0.113.1, the replaced-file line, found in the live check).
+  - haynes-ops #3851 and #3853: 3/3 web pods, the 22 sync CronJobs, the owed-check runner and the Books Census on
+    v0.113.1.
+- **Verified live (read-only; PLAN-077 P2 status has the details):**
+  - The new `repair-guide.ts queue-check` and the 22:25Z janitor census agree: Sonarr 8 `importable`, 26
+    `title_mismatch`; Radarr 1 `importable`.
+  - Spot-check: 9 of 9 `importable` correct. Each one replaces a file already on disk (the A Woman of Substance remuxes,
+    The Naked Gun 2½).
+  - `title_mismatch` is right on Rugrats 2021 and Franklin 2025 (another show), and withholds Peppa.Pig.2022.
+  - `search-plan` on the real stuck targets matched.
+- **Next:**
+  - **Flip the Sonarr and Radarr `importable` cells to enforce.** OC-051 carries the flip, after a re-spot-check. The
+    derived `arr` ladder reads L1 until then (PLAN-065 log).
+  - **The 38 Butterbean's Cafe downloads** stuck since 2026-10-04 are unextracted AndreMor `.7z` posts from before
+    haynes-ops#3836. Each needs an unpack (as #3836's script does), then a Force Search or Activity Retry import. Until
+    then the Import Check sends them to staff and never removes them.
+  - Then P3.
+
 ## 2026-10-12: self-service readiness is the owner's judgment, not a count (ADR-112)
 
 - Owner clarification: the PLAN-077 readiness gate (replays, then 3 consecutive Self-Served issues) is dropped. Work every

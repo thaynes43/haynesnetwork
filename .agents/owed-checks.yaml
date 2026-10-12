@@ -1779,3 +1779,31 @@ checks:
     evidence: []
     links:
       prs: ['https://github.com/thaynes43/haynesnetwork/pull/897', 'https://github.com/thaynes43/haynesnetwork/pull/901', 'https://github.com/thaynes43/haynes-ops/pull/3847', 'https://github.com/thaynes43/haynes-ops/pull/3848']
+  - id: OC-051
+    title: 'Queue-aware Force Search in use, and the importable census before its cells enforce (PLAN-077 P2)'
+    opened: 2026-10-12
+    after: v0.113.1 deployed (haynes-ops 3853) and the import_check remedy switched on at 23:11Z
+    not_before: 2026-10-13T23:11:00Z
+    due: 2026-10-19T23:11:00Z
+    owner: haynesnetwork coordinator (PLAN-077, PLAN-065 ladder)
+    status: pending
+    check: |
+      1. Presses: list repair_requests since 2026-10-12T23:11Z (kind import_download) and search_requested events whose
+         payload has queueRemoval. For each import, check the target now has the imported file and the row reached
+         completed (or timed_out with a reason). Read the web pods' logs for FIX_PLAN_CHANGED and FIX_REFUSED needs_guide.
+      2. Census: compare the hourly janitor rows of class importable and title_mismatch with
+         `tsx /sync/src/scripts/repair-guide.ts queue-check` in a web pod. Spot-check every new importable download
+         against the *arr's manual-import view (at least 90% judged correct, zero would-be wrong imports). Then flip the
+         Sonarr and Radarr importable cells to enforce (setArrQueueCleanupConfig, audited) and log it in PLAN-065, or
+         record why not.
+      3. Record the counts here. If no one pressed Force Search on a stuck item, say so.
+    auto:
+      - name: no Repair Request stays pending past an hour
+        source: app-db
+        query: |
+          select count(*) as n from repair_requests
+          where status = 'pending' and created_at < now() - interval '1 hour'
+        expect: {eq: 0}
+        mismatch: fail
+    auto_covers: part
+    evidence: []
