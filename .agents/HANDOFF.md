@@ -16,9 +16,10 @@ D-12, ADR-109 C-06/C-07, ADR-111 C-03/C-05, PRD R-266/R-267/R-270/R-271 and glos
 - **Q-04 (the gate):** an agent replays Cases A, B and C as a non-admin user on the built tools, then the next 3 real
   issues are self-served with no staff help.
 - **Q-05 (after the gate):** Seerr filing stays open; the app comments the self-service link; staff step in only after
-  a self-service attempt fails.
+  a self-service attempt fails or when no remedy fits.
+- **New, open, gates P8 only:** DESIGN-055 Q-09, whether an Unfixable outcome restarts the Q-04 count of 3.
 
-**Next:** P1 (Fix safety guards and playback triage). Nothing in P1..P8 waits on the owner any more.
+**Next:** P1 (Fix safety guards and playback triage). Only Q-09 (P8) waits on the owner.
 
 ## 2026-10-12 17:30Z: PLAN-077 P0 shipped — janitor stops blocklisting unextracted archives; SABnzbd extracts them
 
