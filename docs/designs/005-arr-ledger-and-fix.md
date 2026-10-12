@@ -1,7 +1,8 @@
 # DESIGN-005: *arr media ledger, Fix, and failsafe Restore — Phase 2
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-03 (**D-25** — a Fix makes exactly one search: when the *arr's own Redownload
+- **Last updated:** 2026-10-12 (**D-15/D-17 pointer**: queue-aware Force Search and the Import Check, DESIGN-055 D-07,
+  PLAN-077 P2). Before that 2026-10-03 (**D-25** — a Fix makes exactly one search: when the *arr's own Redownload
   Failed will search after the grab is marked failed, the Fix sends no search command of its own; issue #646,
   the ADR-098 principle). Prior: 2026-10-03 (**D-24** — *arr history that is ingested before its title's
   `media_items` row exists is attached once the row appears, for every *arr and every event type, not
@@ -695,6 +696,17 @@ it, a pack blocklist the person did not choose, a season Fix with nothing safe t
 every on-disk episode of which the person chose. `language_check` refuses a Wrong language Fix when the wanted audio is
 already in the file. The rules, and why each is shaped as it is, are DESIGN-055 D-09's P1 decisions.
 
+**Queue-aware Force Search (ADR-109 C-05, DESIGN-055 D-07; PLAN-077 P2, 2026-10-12).** With the `import_check` remedy
+on, Force Search on one Sonarr episode or one Radarr movie reads the *arr's queue for that target before it searches
+(`fix.searchPlan`, read-only and free; the press sends the plan's digest back to `fix.forceSearch`, which now also takes
+`planDigest` and `ontoEpisodeId` and returns `{outcome, eventId, repairRequestId, targetLabel, commandName}`). Nothing
+queued searches as drawn above (`outcome: 'searched'`); a download on its way sends nothing; a stuck download gets the
+Import Check (T-306), whose import is one Repair Request (`import_download`, DESIGN-055 D-02) with the *arr's own
+`ManualImport` command; a failed or defective download is removed with blocklist and `skipRedownload` before the one
+search, audited in the same `search_requested` event (`payload.queueRemoval`). The bulk collection search stays
+search-only. Repair Requests draw on the same hourly budget (`countRecentFixBudget` counts them), and one open repair
+or fix per grain is checked both ways. The decisions are DESIGN-055 D-07's P2 decisions.
+
 Rules already fixed above: mandatory reason taxonomy with `reason_text` iff `other`
 (D-09 CHECK), per-requester hourly rate limit — now the requester's ROLE budget (ADR-080 / D-23;
 fallback `25`), every step's raw *arr response persisted in `actions_taken`,
@@ -954,9 +966,12 @@ export const fixRouter = router({
     scope: z.enum(ACTION_SCOPES).optional(),               // omitted ⇒ legacy default (radarr item / sonarr whole-series when no child, else episode / lidarr album)
     targetChildId: z.number().int().positive().optional(),
     seasonNumber: z.number().int().min(0).optional(),
+    planDigest: z.string().optional(),                      // DESIGN-055 D-07: the confirmed fix.searchPlan
+    ontoEpisodeId: z.number().int().positive().optional(),  // D-07 rule 4: "Import this download onto..."
   }).refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }))
     .mutation(/* runForceSearch → recordSearchRequest ('search_requested') + the
-                  *arr search command → returns {eventId, targetLabel, commandName} */),
+                  *arr search command; queue-aware with the import_check remedy (D-15 note above) →
+                  returns {outcome, eventId, repairRequestId, targetLabel, commandName} */),
 
   // Surfaced in the Library **My Fixes** sub-tab (`/library?tab=my-fixes`, 2026-07-05) —
   // relocated out of the account menu (DESIGN-004 D-08). The procedure itself is unchanged.

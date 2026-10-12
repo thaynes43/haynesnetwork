@@ -30,6 +30,17 @@ describe('repair-guide.ts arguments', () => {
     expect(parseRepairGuideArgs(['settings', '--known-issue', 'none'])).toMatchObject({ knownIssue: [] });
   });
 
+  it('search-plan reads a movie or one episode (DESIGN-055 D-07, PLAN-077 P2)', () => {
+    expect(parseRepairGuideArgs(['search-plan', '--tmdb', '9428'])).toMatchObject({ command: 'search-plan', tmdb: 9428 });
+    expect(parseRepairGuideArgs(['search-plan', '--tvdb', '425007', '--episode', 'S02E06'])).toMatchObject({
+      command: 'search-plan',
+      episode: { season: 2, episode: 6 },
+    });
+    expect(() => parseRepairGuideArgs(['search-plan', '--tvdb', '425007', '--season', '2'])).toThrow(/--episode/);
+    expect(parseRepairGuideArgs(['settings', '--set', 'import_check=on'])).toMatchObject({ set: { import_check: true } });
+    expect(parseRepairGuideArgs(['queue-check'])).toMatchObject({ command: 'queue-check' });
+  });
+
   it('refuses what it does not understand', () => {
     expect(parseRepairGuideArgs([])).toBe('help');
     expect(() => parseRepairGuideArgs(['delete'])).toThrow(/unknown command/);

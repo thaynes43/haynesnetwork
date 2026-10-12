@@ -1,7 +1,9 @@
 # DESIGN-046: Arr queue janitor — classifier, census, promotion ladder
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-12 (D-26, issue #887: the *arrs' "Found archive file, might need to be extracted" is an archive
+- **Last updated:** 2026-10-12 (D-27, ADR-109 C-05, PLAN-077 P2: a Sonarr or Radarr download blocked only by an
+  identity rejection gets the Import Check of DESIGN-055 D-07. `importable` imports it through the *arr's own
+  ManualImport where its census-default cell is enforced; `title_mismatch` is report only). Prior: 2026-10-12 (D-26, issue #887: the *arrs' "Found archive file, might need to be extracted" is an archive
   the download client left unextracted, not a bad release. It leaves `bad_release` and is reported as `unknown` with the
   reason "Archive left unpacked"; DESIGN-055 D-14). Prior: 2026-10-03 (D-25: a release the *arr holds on its delay profile is `waiting`, left out of the census
   instead of counted as `unknown`, after the owner's 120-minute Usenet delay profile on Sonarr). Prior: 2026-10-03 (D-23, D-24, ADR-098, owner ruling: one search budget per title across every janitor
@@ -25,7 +27,8 @@
   census spot-check, made before any cell enforces: `skipRedownload` on every removal, the identity-mismatch
   guard, message-only reasons, release-level-only release-defect signals). Prior: 2026-08-01.
 - **Satisfies:** governed by ADR-083 (superseded in part by ADR-094 for `manual_match` and by ADR-095 for the download
-  suite and the per-family ladder, and by ADR-098 for the failed-download retry and the one search budget per title);
+  suite and the per-family ladder, and by ADR-098 for the failed-download retry and the one search budget per title;
+  ADR-109 C-05 adds the Import Check classes, D-27);
   extends ADR-007 (Fix / `markHistoryFailed`), ADR-059 /
   DESIGN-030 (queue read model), ADR-082 (audited config precedent). Build plan: PLAN-065.
 
@@ -80,6 +83,8 @@ schema.
 | `manual_match` | Since D-12: one of Lidarr's own match rejections ("Album match is not close enough…", "Worst track match…", "Has missing tracks", "Has unmatched tracks", "Couldn't find similar album for…", "Unable to import automatically, found multiple artists…"). Lidarr could not match the files to an album with confidence, so only a person can decide. **Report only**: no enforce cell, never acted on, like `unknown`. Also takes a `have_better` match that carries one of these messages. Since D-13 (owner ruling 2026-09-29) it has one enforce cell, on Lidarr, census by default. |
 | `waiting` | Since D-25: `status: delay`, a release the *arr is holding back on purpose (its delay profile) and has not sent to a download client yet. Not a ledger class: it gets no row and no count, and is never acted on. Checked after every class above, so it never masks one. |
 | `unknown` | Everything else. Lidarr's match-ambiguity messages started here and left for `manual_match` once census evidence answered Q-01 (D-12). Since D-26 it also takes "Found archive file, might need to be extracted", checked right after `bad_release`, with the reason "Archive left unpacked: …". |
+| `importable` | Since D-27, Sonarr and Radarr. Not a message pattern: set after the classifier, for a download whose records are all `unknown`, stuck (`importBlocked`/`importPending`) and blocked by an identity rejection, when its Import Check (T-306, DESIGN-055 D-07) passes. One enforce cell per *arr, census by default. |
+| `title_mismatch` | Since D-27: the same blocked download when the Import Check finds its names disagree with the target (another episode, show or year). Report only, like `unknown`. |
 
 Anything not matched with confidence falls to `unknown`. Items younger than
 `minItemAgeHours` (D-05) classify normally but are marked `skipped_young` and never acted on.
@@ -109,6 +114,9 @@ Executed only for `enforce` cells, in `evaluateQueueCleanup` (single writer, `@h
   albums that are monitored and still missing tracks; the loop guard holds an album already removed on two earlier
   downloads (`skipped_loop`), and a name that cannot be blocked safely leaves the download alone
   (`skipped_unblockable`).
+- `importable` → since D-27, one `ManualImport` per download with exactly the Import Check's files (`imported`); nothing
+  is removed, blocklisted or searched. The age rail and the cap apply, and a loop guard on its own imports holds a
+  download imported on two earlier runs (`skipped_loop`). `title_mismatch` → never acted on (no enforce cell).
 
 Rails (all levels): per-instance per-run mutation cap `maxActionsPerRun` (default 10);
 `minItemAgeHours` (default 2) so freshly-completed items get their organic import window; a
@@ -143,6 +151,8 @@ One `app_settings` jsonb key (migration 0075 rebuilds the key CHECK), ADR-082 sh
   `unknown` cell — it has no enforce state by construction. The same holds for `manual_match` (D-12): the
   modes matrix is unchanged, so a stored config stays valid. Since D-13, Lidarr has a fourth cell,
   `modes.lidarr.manual_match` (census by default; a stored config without it reads as census, so it stays valid).
+  Since D-27, Sonarr and Radarr have a fourth cell each, `modes.sonarr.importable` and `modes.radarr.importable`
+  (census by default; absent reads as census; a census `importable` cell is not stored, D-27 rule 6).
 - Resolution **DB row → code default** (all-census); typeof-guarded reads fail safe to
   census. No env tier: unlike the governor there is no pre-existing env contract to honor.
 - Writer `setArrQueueCleanupConfig({db?, config, actorId})` validates
@@ -161,7 +171,7 @@ Append-only; the census record AND the action audit in one table:
 (`census|enforce`), `action`
 (`none|removed_blocklisted|retried_import|blocklisted_searched|skipped_young|skipped_cap`; D-11 adds
 `skipped_mixed|skipped_gone`, migration 0082; D-13 / D-14 add `skipped_loop|skipped_unblockable` and the `targetId`
-column, migration 0084),
+column, migration 0084; D-27 adds `imported`, and the classes `importable` and `title_mismatch`, migration 0099),
 `outcome` (`observed|done|error`), `reason` (the driving or most informative message, ≤500 chars;
 never a release or file name, D-10), `error`,
 `createdAt`. Indexed `(createdAt desc)` and `(instance, downloadId, createdAt desc)` — the
@@ -183,7 +193,8 @@ ledger no longer suppresses janitor visibility.
 ### D-08 — /admin surface
 
 `/admin/janitor`, modeled on `/admin/governor` (ADR-082 C-05): a 3×3 mode grid (since D-13 a fourth row,
-`manual_match`, with a toggle for Lidarr only and "Not used" for Sonarr and Radarr)
+`manual_match`, with a toggle for Lidarr only and "Not used" for Sonarr and Radarr; since D-27 a "Ready to import" row,
+`importable`, with toggles for Sonarr and Radarr, and a "Name does not match" report-only row, `title_mismatch`)
 (class × instance, `census|enforce` toggle cells — the books-actions grant-grid shape), the
 three numeric knobs, ladder level + age readout, and a last-7-days census/action summary
 table read from D-06. `adminProcedure` only; ConfirmButton two-step on any census→enforce
@@ -549,6 +560,41 @@ The one-off repair is ops, not app code: the janitor's 83 false blocklist entrie
 still missing were searched again (PLAN-065 ladder log). Pinned by `queue-cleanup.test.ts` (the classifier cases, and
 the evaluator case: with every Sonarr and Radarr cell enforced, archive items are `unknown` rows and nothing is removed,
 blocklisted or searched).
+
+### D-27: `importable` and `title_mismatch`, the Import Check classes (2026-10-12, ADR-109 C-05)
+
+**Why.** Sonarr and Radarr hold a finished download short of its import when they doubt what it is: "Found matching
+series via grab history, but release was matched to series by ID", "… unexpected considering the … folder name",
+"… not found in the grabbed release". Since D-10 the janitor reports these as `unknown`, so they stay in the queue until a
+person imports them by hand: Sonarr's queue held 105 import-blocked records on 2026-10-12, almost all "matched to series
+by ID", and the janitor saw The Paper's S02E06 423 times (DESIGN-055 Case B). Most are the right episode under a name the
+*arr could not tie to it; some are another show (a Rugrats 2021 release grabbed for the 1991 series). DESIGN-055 D-07
+built the Import Check (T-306) for a person's Force Search; ADR-109 C-05 gives the janitor the same check, so automation
+and the button cannot disagree. PLAN-077 P2 step 5 builds it (DESIGN-055 D-07 P2 decision 14). Each row is pinned by
+tests (`queue-cleanup.test.ts`, on the live reads of 2026-10-12 in `packages/arr/__fixtures__`).
+
+| # | Ruling | Reason |
+|---|---|---|
+| 1 | **Which downloads are checked.** Sonarr and Radarr only. After every record has its own verdict (D-03; the classifier is unchanged and reads messages only), a download (D-11 grouping, with a non-empty download id) is checked when every one of its records is `unknown`, stuck short of its import (`trackedDownloadState` `importBlocked` or `importPending`), and its queue texts (`errorMessage`, every statusMessage title and message) carry one of the identity rejections the check overrules (`hasIdentityRejection`). A record in any other class (a failure, a defect, a stuck import with no message, a D-26 archive) and an `importFailed` record are never checked. | The check exists for the *arr's doubt about identity, not for a defect. Starting only from `unknown` means the check can only move a download out of report only; it never changes what an acting class does. |
+| 2 | **One check per download, through the client bundle.** `QueueCleanupInstanceClient.importCheck(records)` reads `GET /manualimport?downloadId=` (the download id only, DESIGN-055 D-07 P2 decision 2) and what Title Evidence needs: Sonarr the series' episode list and year, Radarr the movie with its original and alternate titles. Each parent is read once per pass (memoized in the bundle, reset at each queue read). Sonarr runs `checkSonarrImport` in `download` mode: every file of the download must pass and every tracked episode must be covered once. Radarr runs `checkRadarrImport`. A download with no parent id, a Sonarr record without an episode, or records of two parents is not checked. | The same check as Force Search, in its whole-download form: the janitor imports the whole download or nothing (D-11). |
+| 3 | **The verdict sets the class of every record of the download.** `importable` makes them `importable`. `title_mismatch` (Title Evidence `disagrees` or `ambiguous`, the release names another year's show, or the file and the download name different episodes) makes them `title_mismatch`. Any other verdict (`release_defect`, `archive`, `not_importable`) leaves them `unknown` with their own reason. The reason of a new row is `importCheckReasonText` without the judged file's name, for example "Import Check: Release names another year: 2021", at most 500 characters. | D-10 rule 3: a reason is a message, never a name, so the digest's top reasons group. The other verdicts already have an owner: a defect or a packed download is for a person's Force Search (DESIGN-055 D-07) and D-26's census, and `bad_release` keeps reading messages only. |
+| 4 | **A failed read never fails the run.** A manual-import, episode-list, series or movie read that throws leaves the download `unknown` and logs one warning, `queue-cleanup: import check read failed, download stays unknown`, with the download id. Each instance with qualifying downloads logs one info line, `queue-cleanup import checks` (`qualifying`, `checked`, `importable`, `titleMismatch`, `unchanged`, `failed`). | The census stays whole when one read fails, as with every other janitor read. |
+| 5 | **The cost is bounded.** At most `IMPORT_CHECK_MAX_PER_RUN` (100) downloads are checked per instance per run. When more qualify, the run checks a window of 100 in queue order that starts 100 further on each hour and wraps (`importCheckWindow`), and logs once: `queue-cleanup: import check cap reached, the rest stay unknown this run`. The rest stay `unknown` for that run. | Each check is one manual-import read. A queue of hundreds of blocked downloads must not become hundreds of reads an hour. A fixed window would leave the same downloads out every hour behind a standing pile of `title_mismatch`; the rotating one reaches each of them within a few runs. |
+| 6 | **`importable` has one enforce cell per *arr, census by default**: `modes.sonarr.importable` and `modes.radarr.importable`. A config stored before D-27 has neither key and reads census, so it stays valid and the deploy is inert (D-13 rule 1, D-16 rule 2). The writer leaves a census `importable` cell out of the stored row (D-16 rule 4), so the row stays one the image before D-27 accepts until a cell is enforced; after that, a rollback reads the row as invalid and falls back to all-census (roll forward, or rewrite the row without the cell). The API edge requires both cells (D-16 rule 3). `modes.lidarr.importable`, a suite instance's `importable` and a `title_mismatch` cell anywhere are unknown classes. | Absent-as-census is the D-05 fail-safe applied to a new cell, and storing only an enforced cell is D-16's rollback guard. |
+| 7 | **The action, per download (D-11), only where the cell is enforced:** the age rail (`minItemAgeHours`, `skipped_young`), the per-run cap (`skipped_cap`), then ONE `manualImport(check)`: the *arr's own `ManualImport` command (`importMode: 'auto'`) with exactly the check's files. Every record of the download is `imported`, `done`. A failed command is `none` with `outcome: 'error'`; it counts in the run's errors and costs its cap slot. The janitor does not wait for the command to finish: the next run's queue read is the read-back (an import that landed leaves the queue; one that did not is checked again and counted by the loop guard). Nothing is removed, blocklisted or searched, and a `title_mismatch` or `unknown` download is never acted on. | It is the import the *arr would have made itself without its doubt, through its own command, as the person's Force Search makes it (DESIGN-055 D-07 rule 3). Hard rule 4: it adds a file and never deletes one the *arr would not replace on its own import. |
+| 8 | **The loop guard.** A download the janitor imported (`imported`, `done`) on `QUEUE_CLEANUP_LOOP_LIMIT` (2) earlier runs within `QUEUE_CLEANUP_LOOP_WINDOW_MS` (30 days) is `skipped_loop`: nothing is sent and the rows say so. The held-download signal logs `[queue-cleanup] loop_detected` (`kind: 'skipped_loop'`, `actionClass: 'importable'`, `priorImports`) only when the hold is new (D-21 rule 10), and the digest's held list shows it. The guard is keyed by download id. A failed guard read imports nothing that run. | Without it, an import the *arr accepts but does not complete would be sent every hour. Two tries in any 30 days is the janitor's one bound (D-23 rule 7). An import is not a search, so it does not spend the per-title search budget of D-23 rule 1. |
+| 9 | **`title_mismatch` is report only** on Sonarr and Radarr: no enforce cell anywhere, never acted on, like `unknown` and `fail_loop`. | The names point at another episode, show or year. Importing would put the wrong file in the library, and removing the download could throw away a wanted episode in another edition. A person decides through Force Search's "Import this download onto..." (DESIGN-055 D-07 rule 4) or staff. |
+| 10 | **The ladder counts the new cells**, as it counts Lidarr's `manual_match` (D-13 rule 1). The `arr` family's L2 now means every cell enforced, both `importable` cells included, so the live config (every other *arr cell enforced) reads **L1** after the deploy until the coordinator enforces them. This is intended. | It puts the promotion of `importable` on the ladder, where the nag (more than 14 days at one level) asks for it. Promotion follows the PLAN-065 pattern: the census rows are spot-checked against Sonarr's and Radarr's manual-import view before a cell enforces (PLAN-077 P2 live check). |
+| 11 | **Surfaces.** The run log's `byClass`, the /admin 7-day summary and the digest's per-class rollup carry both classes. The /admin *arr grid gains a "Ready to import" row (a census or enforce toggle on Sonarr and Radarr, "Not used" on Lidarr) and a "Name does not match" report-only row. | One form and one audited write for every cell (D-08, D-20 rule 4). |
+
+Schema: migration 0099 (PLAN-077 P2) widens the `action_class` CHECK to admit `importable` and `title_mismatch`, and the
+`action` CHECK to admit `imported`. It is additive; the previous image never writes them. No new column or index: the
+loop guard reads `(instance, download_id, created_at)`. Glossary: T-239 and T-306 amended (DESIGN-055 D-07). Pinned by
+`queue-cleanup.test.ts`: the config and ladder cases and `importCheckWindow` (pure), and the evaluator on the live reads
+(A Woman of Substance S01E03 `importable`, and imported once with the check's files when enforced; Rugrats 2021 and
+Franklin 2025 `title_mismatch` on their years; Aqua Teen never checked without an identity rejection, and `unknown` on its
+sample rejection with one; TurkSeeD's Spider-Man `unknown` on its not-an-upgrade rejection; the Butterbeans read failing),
+then a pack imported once, the age rail, the cap and a failed import, the check cap, the loop guard and the stored row.
 
 ## Alternatives considered
 

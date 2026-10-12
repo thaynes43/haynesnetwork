@@ -15,6 +15,10 @@ import {
   QUEUE_CLEANUP_ACTION_CLASSES,
   QUEUE_CLEANUP_INSTANCES,
   QUEUE_CLEANUP_ACTIONS,
+  LEDGER_EVENT_TYPES,
+  REPAIR_REQUEST_KINDS,
+  REPAIR_REQUEST_SCOPES,
+  REPAIR_REQUEST_STATUSES,
   SYNC_RUN_KINDS,
   WATCH_ACCOUNT_ROLES,
   WATCH_EVENT_KINDS,
@@ -3222,6 +3226,55 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  describe('0099 repair_requests (ADR-109 C-04 / DESIGN-055 D-02, PLAN-077 P2)', () => {
+    it('creates repair_requests with CHECKs matching enums.ts and widens the ledger and janitor CHECKs', async () => {
+      const users = await client.query(`SELECT id FROM users LIMIT 1`);
+      const item = await client.query(
+        `INSERT INTO media_items (arr_kind, arr_item_id, title, sort_title, monitored, quality_profile_id, quality_profile_name, root_folder, tvdb_id)
+         VALUES ('sonarr', 990099, 'Repair 0099', 'repair 0099', true, 1, 'HD', '/tv', 990099) RETURNING id`,
+      );
+      const mediaItemId = item.rows[0].id as string;
+      const insert = (kind: string, scope: string, season: number | null, status = 'pending') =>
+        client.query({
+          text: `INSERT INTO repair_requests (requester_id, media_item_id, kind, scope, season_number, target_child_ids, status)
+                 VALUES ($1, $2, $3, $4, $5, '{85215}', $6)`,
+          values: [users.rows[0]?.id ?? null, mediaItemId, kind, scope, season, status],
+        });
+      try {
+        for (const kind of REPAIR_REQUEST_KINDS) await insert(kind, 'episode', 2);
+        for (const status of REPAIR_REQUEST_STATUSES) await insert('import_download', 'season', 2, status);
+        await insert('import_download', 'item', null);
+        await expect(insert('reboot', 'episode', 2)).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('import_download', 'show', 2)).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('import_download', 'episode', 2, 'open')).rejects.toMatchObject({ code: '23514' });
+        // A season or an episode names its season; a movie names none.
+        await expect(insert('import_download', 'episode', null)).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('import_download', 'item', 1)).rejects.toMatchObject({ code: '23514' });
+        for (const [name, values] of [
+          ['repair_requests_kind_enum', REPAIR_REQUEST_KINDS],
+          ['repair_requests_scope_enum', REPAIR_REQUEST_SCOPES],
+          ['repair_requests_status_enum', REPAIR_REQUEST_STATUSES],
+          ['ledger_events_event_type_enum', LEDGER_EVENT_TYPES],
+          ['arr_queue_cleanup_actions_class_enum', QUEUE_CLEANUP_ACTION_CLASSES],
+          ['arr_queue_cleanup_actions_action_enum', QUEUE_CLEANUP_ACTIONS],
+        ] as const) {
+          const def = await client.query({
+            text: `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = $1`,
+            values: [name],
+          });
+          const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+          expect(listed.sort()).toEqual([...values].sort());
+        }
+        expect(LEDGER_EVENT_TYPES).toEqual(expect.arrayContaining(['repair_requested', 'repair_completed', 'repair_failed']));
+        expect(QUEUE_CLEANUP_ACTION_CLASSES).toEqual(expect.arrayContaining(['importable', 'title_mismatch']));
+        expect(QUEUE_CLEANUP_ACTIONS).toContain('imported');
+      } finally {
+        await client.query(`DELETE FROM repair_requests WHERE media_item_id = $1`, [mediaItemId]);
+        await client.query(`DELETE FROM media_items WHERE id = $1`, [mediaItemId]);
+      }
+    });
+  });
+
   describe('0096 book_request_events (issue #741 / ADR-101 — the Request Event)', () => {
     it('creates the append-only history: no FK on request_id, kind and actor CHECKs matching their arrays, reason free', async () => {
       const insert = (kind: string, actor: string, reason = 'parked') =>
@@ -3580,6 +3633,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(entry!.when).toBeGreaterThan(prev!.when);
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0090_book_requests_ll_rerequest_added.sql'), 'utf8');
     expect(sqlText).toContain('ADD COLUMN "ll_rerequest_added_at" timestamp with time zone');
+  });
+
+  // PLAN-077 P2 gate — the Repair Request migration is journaled (idx 98), after 0098.
+  it('lists 0099_repair_requests at idx 98, strictly after 0098_repair_guide_settings', () => {
+    const entry = journal.entries.find((e) => e.tag === '0099_repair_requests');
+    const prev = journal.entries.find((e) => e.tag === '0098_repair_guide_settings');
+    expect(entry?.idx).toBe(98);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0099_repair_requests.sql'), 'utf8');
+    expect(sqlText).toContain('CREATE TABLE "repair_requests"');
   });
 
   // Issue #668 gate — the one-re-request column is journaled (idx 88), after 0088.

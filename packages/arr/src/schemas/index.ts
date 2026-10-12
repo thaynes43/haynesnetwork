@@ -15,3 +15,5 @@ export * from './gatus';
 export * from './release-block';
 // ADR-109 / DESIGN-055 D-09 — the interactive-search release list the Replacement Preview reads
 export * from './release';
+// ADR-109 C-05 / DESIGN-055 D-07 — the manual-import view of a download, the ManualImport body and the command status
+export * from './manual-import';

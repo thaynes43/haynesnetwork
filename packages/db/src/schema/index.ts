@@ -26,6 +26,7 @@ export * from './media-metadata';
 export * from './ledger-events';
 export * from './wanted-items';
 export * from './fix-requests';
+export * from './repair-requests';
 export * from './restore-runs';
 export * from './sync-runs';
 export * from './sync-state';

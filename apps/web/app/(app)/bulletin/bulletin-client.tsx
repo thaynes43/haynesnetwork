@@ -21,7 +21,7 @@
 // (placeholderData), compose overlays (Modal), pickers overlay (popover).
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useRef, useState, type FormEvent } from 'react';
+import { Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { Modal } from '@/components/modal';
 import { TicketCard, TicketWall, TicketWallSkeleton } from '@/components/cards';
@@ -43,6 +43,7 @@ import {
   type TicketCategoryName,
   type TicketStatusName,
 } from '@/lib/bulletin';
+import { COMPOSE_LINK_PARAMS, parseComposeLink, type ComposePrefill } from '@/lib/ticket-compose-link';
 
 export interface BulletinAccess {
   level: 'edit' | 'read_only';
@@ -565,16 +566,54 @@ function MediaPicker({
 /** ADR-014 — the multi-field "New ticket" Modal (requirement 2: compose NEVER stacks above the
  *  wall; a Modal overlays it — the strongest mobile shape). On success the router PUSHES the new
  *  ticket's detail page (a screen change — D-19), which doubles as the "it's filed" confirmation. */
-function ComposeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function ComposeModal({
+  open,
+  onClose,
+  prefill = null,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** DESIGN-055 D-07 — a Repair Guide link's prefill (lib/ticket-compose-link.ts); read once, when the modal mounts. */
+  prefill?: ComposePrefill | null;
+}) {
   const router = useRouter();
   const utils = trpc.useUtils();
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState<TicketCategoryName>('playback');
-  const [body, setBody] = useState('');
-  const [media, setMedia] = useState<MediaPick | null>(null);
+  const [title, setTitle] = useState(prefill?.subject ?? '');
+  const [category, setCategory] = useState<TicketCategoryName>(prefill?.category ?? 'playback');
+  const [body, setBody] = useState(prefill?.note ?? '');
+  const [pickedMedia, setMedia] = useState<MediaPick | null>(null);
   // ADR-061 R-200 — the leaf-or-scope choice; null on a hierarchical pick BLOCKS submit.
-  const [target, setTarget] = useState<TargetChoice | null>(null);
+  const [pickedTarget, setTarget] = useState<TargetChoice | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A prefilled title (and episode) stands until the person picks something else themselves. The server re-checks the
+  // media id on create; an id the person cannot see simply leaves the title unpicked.
+  const [picked, setPicked] = useState(false);
+  const linked = !picked && prefill?.mediaItemId ? prefill : null;
+  const linkedItem = trpc.ledger.detail.useQuery(
+    { id: linked?.mediaItemId ?? '' },
+    { enabled: open && linked !== null, staleTime: 60_000, retry: false },
+  );
+  const linkedChildren = trpc.ledger.children.useQuery(
+    { mediaItemId: linked?.mediaItemId ?? '' },
+    { enabled: open && linked !== null && linked.episodeId !== null, staleTime: 60_000, retry: false },
+  );
+  const linkedEpisode = linkedChildren.data?.find((c) => c.arrChildId === linked?.episodeId) ?? null;
+  const media: MediaPick | null = picked
+    ? pickedMedia
+    : linkedItem.data
+      ? { id: linkedItem.data.item.id, title: linkedItem.data.item.title, arrKind: linkedItem.data.item.arrKind }
+      : null;
+  const target: TargetChoice | null = picked
+    ? pickedTarget
+    : linkedEpisode
+      ? {
+          kind: 'episode',
+          childId: linkedEpisode.arrChildId,
+          season: linkedEpisode.seasonNumber,
+          episode: linkedEpisode.episodeNumber,
+          label: linkedEpisode.label,
+        }
+      : null;
 
   const create = trpc.communication.tickets.create.useMutation({
     onError: (err: unknown) => setError(describeMutationError(err)),
@@ -584,6 +623,7 @@ function ComposeModal({ open, onClose }: { open: boolean; onClose: () => void })
       setBody('');
       setMedia(null);
       setTarget(null);
+      setPicked(true); // a filed ticket never brings a link's title back
       setCategory('playback');
       void utils.communication.tickets.invalidate();
       router.push(`/bulletin/ticket/${created.id}`);
@@ -677,12 +717,22 @@ function ComposeModal({ open, onClose }: { open: boolean; onClose: () => void })
           <MediaPicker
             selected={media}
             onSelect={(pick) => {
+              setPicked(true);
               setMedia(pick);
               setTarget(null); // a new title restarts the leaf-or-scope choice (R-200)
             }}
           />
           {media !== null && HIERARCHICAL_KINDS.has(media.arrKind) ? (
-            <TargetPicker media={media} category={category} value={target} onChange={setTarget} />
+            <TargetPicker
+              media={media}
+              category={category}
+              value={target}
+              onChange={(t) => {
+                setPicked(true);
+                setMedia(media);
+                setTarget(t);
+              }}
+            />
           ) : null}
           {scopeMissing ? (
             <span className="muted tscope__note" data-testid="composer-scope-hint">
@@ -840,7 +890,17 @@ function HelpdeskTab({ access }: { access: BulletinAccess }) {
       ? counts.data.open + counts.data.in_progress + counts.data.complete + counts.data.rejected
       : undefined;
 
-  const [composing, setComposing] = useState(false);
+  // DESIGN-055 D-07 — a compose link (the Repair Guide's staff path) opens the composer prefilled, once: the link's
+  // parameters are read at mount and then dropped from the URL, so a reload or Back does not reopen it.
+  const [linkPrefill] = useState(() => (canCreate ? parseComposeLink(searchParams) : null));
+  const [composing, setComposing] = useState(linkPrefill !== null);
+  useEffect(() => {
+    if (!COMPOSE_LINK_PARAMS.some((k) => new URLSearchParams(window.location.search).has(k))) return;
+    const params = new URLSearchParams(window.location.search);
+    for (const k of COMPOSE_LINK_PARAMS) params.delete(k);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [router, pathname]);
 
   return (
     <>
@@ -934,7 +994,9 @@ function HelpdeskTab({ access }: { access: BulletinAccess }) {
         </div>
       ) : null}
 
-      {canCreate ? <ComposeModal open={composing} onClose={() => setComposing(false)} /> : null}
+      {canCreate ? (
+        <ComposeModal open={composing} onClose={() => setComposing(false)} prefill={linkPrefill} />
+      ) : null}
     </>
   );
 }

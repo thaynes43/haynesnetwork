@@ -1,0 +1,63 @@
+[
+  {
+    "path": "/data/haynestower/usenet/complete-k8s/tv/Rugrats.2021.S01E07.No.License.to.Drive.and.I.Dream.of.Duffy.1080p.SKST.WEB-DL.DD+2.0.H.264-playWEB/Rugrats.2021.S01E07.No.License.to.Drive.and.I.Dream.of.Duffy.1080p.SKST.WEB-DL.DD+2.0.H.264-playWEB.mkv",
+    "relativePath": "Rugrats.2021.S01E07.No.License.to.Drive.and.I.Dream.of.Duffy.1080p.SKST.WEB-DL.DD+2.0.H.264-playWEB.mkv",
+    "folderName": "Rugrats.2021.S01E07.No.License.to.Drive.and.I.Dream.of.Duffy.1080p.SKST.WEB-DL.DD+2.0.H.264-playWEB",
+    "name": "Rugrats.2021.S01E07.No.License.to.Drive.and.I.Dream.of.Duffy.1080p.SKST.WEB-DL.DD+2.0.H.264-playWEB",
+    "size": 1355239518,
+    "seasonNumber": 1,
+    "releaseGroup": "playWEB",
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      },
+      {
+        "id": 35,
+        "name": "Romanian"
+      }
+    ],
+    "qualityWeight": 13,
+    "downloadId": "95b73337-326c-4063-a9c3-9273ec5c45e1",
+    "customFormats": [
+      {
+        "id": 60,
+        "name": "WEB Tier 02"
+      }
+    ],
+    "customFormatScore": 1650,
+    "indexerFlags": 0,
+    "releaseType": "singleEpisode",
+    "rejections": [],
+    "id": 388802037,
+    "series": {
+      "id": 599,
+      "title": "Rugrats",
+      "year": 1991
+    },
+    "episodes": [
+      {
+        "id": 53626,
+        "seriesId": 599,
+        "seasonNumber": 1,
+        "episodeNumber": 7,
+        "title": "Little Dude",
+        "hasFile": true,
+        "episodeFileId": 36129
+      }
+    ]
+  }
+]

@@ -1,0 +1,58 @@
+[
+  {
+    "path": "/data/haynestower/usenet/complete-k8s/tv/Aqua.Teen.Hunger.Force.S05E05.Hoppy.Bunny.NorTV.WEB.DL.WEB.DL.1080p.WEB-DL.AAC.x264/Aqua.Teen.Hunger.Force.S05E05.Hoppy.Bunny.NorTV.WEB.DL.WEB.DL.1080p.WEB-DL.AAC.x264.mp4",
+    "relativePath": "Aqua.Teen.Hunger.Force.S05E05.Hoppy.Bunny.NorTV.WEB.DL.WEB.DL.1080p.WEB-DL.AAC.x264.mp4",
+    "folderName": "Aqua.Teen.Hunger.Force.S05E05.Hoppy.Bunny.NorTV.WEB.DL.WEB.DL.1080p.WEB-DL.AAC.x264",
+    "name": "Aqua.Teen.Hunger.Force.S05E05.Hoppy.Bunny.NorTV.WEB.DL.WEB.DL.1080p.WEB-DL.AAC.x264",
+    "size": 421871553,
+    "seasonNumber": 5,
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "qualityWeight": 13,
+    "downloadId": "e7eebc5e-b5e1-454d-bd95-fb87f09d629c",
+    "customFormats": [],
+    "customFormatScore": 0,
+    "indexerFlags": 0,
+    "releaseType": "singleEpisode",
+    "rejections": [
+      {
+        "reason": "Unable to determine if file is a sample",
+        "type": "permanent"
+      }
+    ],
+    "id": 1475845062,
+    "series": {
+      "id": 64,
+      "title": "Aqua Teen Hunger Force",
+      "year": 2000
+    },
+    "episodes": [
+      {
+        "id": 4867,
+        "seriesId": 64,
+        "seasonNumber": 5,
+        "episodeNumber": 5,
+        "title": "Hoppy Bunny",
+        "hasFile": false,
+        "episodeFileId": 0
+      }
+    ]
+  }
+]

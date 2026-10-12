@@ -1,0 +1,215 @@
+[
+  {
+    "seriesId": 144,
+    "episodeId": 12829,
+    "seasonNumber": 1,
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "size": 1688661485,
+    "title": "Butterbeans.Caf.S01E55E56.Poppys.Cooking.Class.A.Fairy.Peachy.Day.MULTI.1080p.SKST.WEB-DL.AAC2.0.x264-AndreMor",
+    "estimatedCompletionTime": "2026-10-12T20:29:00Z",
+    "added": "2026-10-04T22:08:25Z",
+    "status": "completed",
+    "trackedDownloadStatus": "warning",
+    "trackedDownloadState": "importBlocked",
+    "statusMessages": [
+      {
+        "title": "Butterbeans.Caf.S01E55E56.Poppys.Cooking.Class.A.Fairy.Peachy.Day.MULTI.1080p.SKST.WEB-DL.AAC2.0.x264-AndreMor",
+        "messages": [
+          "Found matching series via grab history, but release was matched to series by ID. Automatic import is not possible. See the FAQ for details."
+        ]
+      }
+    ],
+    "errorMessage": "",
+    "downloadId": "735a9e37-bea6-4626-a695-3007d3b378fe",
+    "protocol": "usenet",
+    "downloadClient": "SABnzbd",
+    "downloadClientHasPostImportCategory": false,
+    "indexer": "NZBgeek (Prowlarr)",
+    "outputPath": "/data/haynestower/usenet/complete-k8s/tv/Butterbeans.Caf.S01E55E56.Poppys.Cooking.Class.A.Fairy.Peachy.Day.MULTI.1080p.SKST.WEB-DL.AAC2.0.x264-AndreMor/",
+    "episodeHasFile": false,
+    "sizeleft": 0,
+    "timeleft": "00:00:00",
+    "id": 1842569885
+  },
+  {
+    "seriesId": 144,
+    "episodeId": 12830,
+    "seasonNumber": 1,
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "size": 1688661485,
+    "title": "Butterbeans.Caf.S01E55E56.Poppys.Cooking.Class.A.Fairy.Peachy.Day.MULTI.1080p.SKST.WEB-DL.AAC2.0.x264-AndreMor",
+    "estimatedCompletionTime": "2026-10-12T20:29:00Z",
+    "added": "2026-10-04T22:08:25Z",
+    "status": "completed",
+    "trackedDownloadStatus": "warning",
+    "trackedDownloadState": "importBlocked",
+    "statusMessages": [
+      {
+        "title": "Butterbeans.Caf.S01E55E56.Poppys.Cooking.Class.A.Fairy.Peachy.Day.MULTI.1080p.SKST.WEB-DL.AAC2.0.x264-AndreMor",
+        "messages": [
+          "Found matching series via grab history, but release was matched to series by ID. Automatic import is not possible. See the FAQ for details."
+        ]
+      }
+    ],
+    "errorMessage": "",
+    "downloadId": "735a9e37-bea6-4626-a695-3007d3b378fe",
+    "protocol": "usenet",
+    "downloadClient": "SABnzbd",
+    "downloadClientHasPostImportCategory": false,
+    "indexer": "NZBgeek (Prowlarr)",
+    "outputPath": "/data/haynestower/usenet/complete-k8s/tv/Butterbeans.Caf.S01E55E56.Poppys.Cooking.Class.A.Fairy.Peachy.Day.MULTI.1080p.SKST.WEB-DL.AAC2.0.x264-AndreMor/",
+    "episodeHasFile": false,
+    "sizeleft": 0,
+    "timeleft": "00:00:00",
+    "id": 1072646433
+  },
+  {
+    "seriesId": 599,
+    "episodeId": 53626,
+    "seasonNumber": 1,
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 60,
+        "name": "WEB Tier 02"
+      }
+    ],
+    "customFormatScore": 1650,
+    "size": 1402190845,
+    "title": "Rugrats.2021.S01E07.No.License.to.Drive.and.I.Dream.of.Duffy.1080p.SKST.WEB-DL.DD+2.0.H.264-playWEB",
+    "estimatedCompletionTime": "2026-10-12T20:29:00Z",
+    "added": "2026-10-11T16:25:06Z",
+    "status": "completed",
+    "trackedDownloadStatus": "warning",
+    "trackedDownloadState": "importBlocked",
+    "statusMessages": [
+      {
+        "title": "Rugrats.2021.S01E07.No.License.to.Drive.and.I.Dream.of.Duffy.1080p.SKST.WEB-DL.DD+2.0.H.264-playWEB",
+        "messages": [
+          "Found matching series via grab history, but release was matched to series by ID. Automatic import is not possible. See the FAQ for details."
+        ]
+      }
+    ],
+    "errorMessage": "",
+    "downloadId": "95b73337-326c-4063-a9c3-9273ec5c45e1",
+    "protocol": "usenet",
+    "downloadClient": "SABnzbd-Fast",
+    "downloadClientHasPostImportCategory": false,
+    "indexer": "DrunkenSlug (Prowlarr)",
+    "outputPath": "/data/haynestower/usenet/complete-k8s/tv/Rugrats.2021.S01E07.No.License.to.Drive.and.I.Dream.of.Duffy.1080p.SKST.WEB-DL.DD+2.0.H.264-playWEB/",
+    "episodeHasFile": true,
+    "sizeleft": 0,
+    "timeleft": "00:00:00",
+    "id": 1680781262
+  },
+  {
+    "seriesId": 64,
+    "episodeId": 4867,
+    "seasonNumber": 5,
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [],
+    "customFormatScore": 0,
+    "size": 426997414,
+    "title": "Aqua.Teen.Hunger.Force.S05E05.Hoppy.Bunny.NorTV.WEB.DL.WEB.DL.1080p.WEB-DL.AAC.x264",
+    "estimatedCompletionTime": "2026-10-12T20:29:00Z",
+    "added": "2026-10-07T08:47:06Z",
+    "status": "completed",
+    "trackedDownloadStatus": "warning",
+    "trackedDownloadState": "importPending",
+    "statusMessages": [
+      {
+        "title": "Aqua.Teen.Hunger.Force.S05E05.Hoppy.Bunny.NorTV.WEB.DL.WEB.DL.1080p.WEB-DL.AAC.x264",
+        "messages": [
+          "Unable to determine if file is a sample"
+        ]
+      }
+    ],
+    "errorMessage": "",
+    "downloadId": "e7eebc5e-b5e1-454d-bd95-fb87f09d629c",
+    "protocol": "usenet",
+    "downloadClient": "SABnzbd",
+    "downloadClientHasPostImportCategory": false,
+    "indexer": "NinjaCentral (Prowlarr)",
+    "outputPath": "/data/haynestower/usenet/complete-k8s/tv/Aqua.Teen.Hunger.Force.S05E05.Hoppy.Bunny.NorTV.WEB.DL.WEB.DL.1080p.WEB-DL.AAC.x264",
+    "episodeHasFile": false,
+    "sizeleft": 0,
+    "timeleft": "00:00:00",
+    "id": 786091044
+  }
+]

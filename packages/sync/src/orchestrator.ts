@@ -20,10 +20,12 @@ import {
   MassTombstoneAbortedError,
   backfillEventAttribution,
   completeFixRequests,
+  completeRepairRequests,
   relinkArrHistoryEvents,
   drainDuePoolRefreshes,
   keepTrashSaves,
   expireStaleFixRequests,
+  expireStaleRepairRequests,
   deliverOutbox,
   runFailureDigest,
   evaluateActivityFailures,
@@ -1795,6 +1797,22 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
   } catch (error) {
     fixTimeoutError = error instanceof Error ? error.message : String(error);
     logger.error('fix timeout sweep failed', { error: fixTimeoutError });
+  }
+
+  // ADR-109 C-04 / DESIGN-055 D-02 (PLAN-077 P2) — the Repair Request twins of the two steps above: an import the guide
+  // could not wait out completes from the ingested `imported` event; an open repair past the 48h horizon times out.
+  // Isolated (logged, never fails the run), like every post-step.
+  try {
+    const { completed } = await completeRepairRequests({ db });
+    if (completed.length > 0) logger.info('repair requests completed by ingested imports', { count: completed.length });
+  } catch (error) {
+    logger.error('repair completion matching failed', { error: error instanceof Error ? error.message : String(error) });
+  }
+  try {
+    const { timedOut } = await expireStaleRepairRequests({ db });
+    if (timedOut.length > 0) logger.info('stale repair requests timed out', { count: timedOut.length });
+  } catch (error) {
+    logger.error('repair timeout sweep failed', { error: error instanceof Error ? error.message : String(error) });
   }
 
   // ADR-035 — refresh the Trash candidate read-model (skip-if-absent, isolated like every other

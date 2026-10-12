@@ -201,6 +201,13 @@ export const LEDGER_EVENT_TYPES = [
   // candidateCount, candidateBytes, gateSkipped } — so Bulletin/Activity can show "policy proposed a
   // batch". Migration 0022 rebuilds the ledger_events.event_type CHECK to admit it.
   'trash_space_policy',
+  // ADR-109 C-04 / DESIGN-055 D-02 (PLAN-077 P2) — the Repair Request lifecycle (migration 0099): `repair_requested`
+  // commits with the pending repair_requests row, before any *arr call; `repair_completed` when the read-back shows the
+  // remedy landed (an import: the target has the imported file); `repair_failed` when the *arr refused or the command
+  // failed. Payload { repairRequestId, kind, ... }.
+  'repair_requested',
+  'repair_completed',
+  'repair_failed',
 ] as const;
 export type LedgerEventType = (typeof LEDGER_EVENT_TYPES)[number];
 
@@ -481,6 +488,13 @@ export const QUEUE_CLEANUP_ACTION_CLASSES = [
   // REPORT ONLY (no enforce cell anywhere; listed in the digest).
   'leftover',
   'fail_loop',
+  // ADR-109 C-05 / DESIGN-046 D-27 (PLAN-077 P2, migration 0099): `importable` — a Sonarr or Radarr download whose import
+  // is blocked only by an identity rejection and whose Import Check (DESIGN-055 D-07, T-306) passes; one enforce cell per
+  // *arr, census by default, acting through the *arr's own ManualImport. `title_mismatch` — the same blocked download,
+  // but the names disagree with its target (Title Evidence disagrees or is ambiguous, or the release names another
+  // year's show), REPORT ONLY (no enforce cell anywhere).
+  'importable',
+  'title_mismatch',
   'unknown',
 ] as const;
 export type QueueCleanupActionClass = (typeof QUEUE_CLEANUP_ACTION_CLASSES)[number];
@@ -524,6 +538,9 @@ export const QUEUE_CLEANUP_ACTIONS = [
   // is a qBittorrent torrent (MAM) that must keep seeding, so the janitor never removes it (report only).
   'removed_leftover',
   'skipped_seeding',
+  // DESIGN-046 D-27 (PLAN-077 P2, migration 0099): `imported` — an enforced `importable` download was imported through
+  // the *arr's ManualImport command (nothing removed, nothing blocklisted, nothing searched).
+  'imported',
 ] as const;
 export type QueueCleanupAction = (typeof QUEUE_CLEANUP_ACTIONS)[number];
 
@@ -897,8 +914,38 @@ export const REPAIR_GUIDE_REMEDIES = [
   'season_guard',
   'language_check',
   'playback_triage',
+  // DESIGN-055 D-07 (PLAN-077 P2): Force Search on a missing episode or movie reads the queue first and runs the Import
+  // Check on a stuck download. Not a Fix remedy: it never opens the Fix guide on its own.
+  'import_check',
 ] as const;
 export type RepairGuideRemedy = (typeof REPAIR_GUIDE_REMEDIES)[number];
+
+/**
+ * ADR-109 C-04 / DESIGN-055 D-02 (PLAN-077, migration 0099) — what a Repair Request (T-302) does. P2 writes
+ * `import_download` (the Import Check's ManualImport); `remap` (P4), `release_pick` (P5), `audio_preference` and
+ * `language_search` (P6) arrive with their phases. text + CHECK, the single source of truth for both.
+ */
+export const REPAIR_REQUEST_KINDS = [
+  'remap',
+  'import_download',
+  'release_pick',
+  'audio_preference',
+  'language_search',
+] as const;
+export type RepairRequestKind = (typeof REPAIR_REQUEST_KINDS)[number];
+
+/** DESIGN-055 D-02 — the grain a Repair Request targets: a movie (`item`), a season, or one episode. */
+export const REPAIR_REQUEST_SCOPES = ['item', 'season', 'episode'] as const;
+export type RepairRequestScope = (typeof REPAIR_REQUEST_SCOPES)[number];
+
+/**
+ * DESIGN-055 D-02 — a Repair Request's lifecycle. `pending` (row committed, no *arr call yet) → `actioned` (the write was
+ * sent) → `completed` (the read-back shows it landed) | `failed` (the *arr refused or the command failed) | `timed_out`
+ * (still open at the 48-hour horizon). `refused` is a request the guide declined after the row existed. The OPEN statuses
+ * are `pending` and `actioned`.
+ */
+export const REPAIR_REQUEST_STATUSES = ['pending', 'actioned', 'completed', 'refused', 'failed', 'timed_out'] as const;
+export type RepairRequestStatus = (typeof REPAIR_REQUEST_STATUSES)[number];
 
 // ADR-027 / DESIGN-004 D-15 (PLAN-010) — a MOTD's severity, driving the banner's token palette
 // (`--color-info` / `--color-warning`) and its ARIA role (status vs alert). Stored inside the

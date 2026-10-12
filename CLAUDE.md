@@ -90,6 +90,14 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    failed Sonarr or Radarr download, with no removal, only where the instance's `bad_release` cell is enforced and only
    while the *arr's own Redownload Failed is off; it shares the loop guard's budget of two tries per title in any 30 days with every
    other janitor search (D-23). It goes through `@hnet/arr/write` from `packages/domain` only.
+   **ADR-109 adds the Import Check's ManualImport** (DESIGN-055 D-07, PLAN-077 P2): one Sonarr or Radarr `ManualImport`
+   command (the body their own interactive-import UI sends, `importMode: auto`) for a finished download whose import is
+   blocked and whose Import Check passes, mapping its files onto the target the *arr's manual-import view, the queue and
+   Title Evidence agree on; it adds files, never deletes one. Two callers: a person's queue-aware Force Search on a missing
+   episode or movie (one Repair Request, `import_download`, only with the plan the person confirmed, behind the
+   `import_check` remedy) and the janitor's `importable` cell (DESIGN-046 D-27, census until promoted, loop-guarded). The same
+   Force Search may also remove a failed or defective download from the queue with blocklist and `skipRedownload` before its
+   one search (audited in its `search_requested` event). Through `@hnet/arr/write` from `packages/domain` only.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see

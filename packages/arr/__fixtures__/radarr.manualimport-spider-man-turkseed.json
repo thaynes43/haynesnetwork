@@ -1,0 +1,55 @@
+[
+  {
+    "path": "/data/haynestower/usenet/complete-k8s/movies/Orumcek Adam Yepyeni Bir Gun [Spider Man Brand New Day] 2026 WEBDL 2160p X265 10Bit DDP 5.1 [TR-EN] TurkSeeD/Örümcek Adam Yepyeni Bir Gün (Spider Man Brand New Day) 2026 WEBDL 2160p X265 10Bit DDP 5.1 [TR-EN] TurkSeeD.mkv",
+    "relativePath": "Örümcek Adam Yepyeni Bir Gün (Spider Man Brand New Day) 2026 WEBDL 2160p X265 10Bit DDP 5.1 [TR-EN] TurkSeeD.mkv",
+    "folderName": "Orumcek Adam Yepyeni Bir Gun [Spider Man Brand New Day] 2026 WEBDL 2160p X265 10Bit DDP 5.1 [TR-EN] TurkSeeD",
+    "name": "Örümcek Adam Yepyeni Bir Gün (Spider Man Brand New Day) 2026 WEBDL 2160p X265 10Bit DDP 5.1 [TR-EN] TurkSeeD",
+    "size": 14244638667,
+    "quality": {
+      "quality": {
+        "id": 18,
+        "name": "WEBDL-2160p",
+        "source": "webdl",
+        "resolution": 2160,
+        "modifier": "none"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "languages": [
+      {
+        "id": 17,
+        "name": "Turkish"
+      },
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "qualityWeight": 23,
+    "downloadId": "59d2ffec-f4ae-4164-a8b4-3b69a95210a8",
+    "customFormats": [
+      {
+        "id": 85,
+        "name": "DD+"
+      }
+    ],
+    "customFormatScore": 1750,
+    "indexerFlags": 0,
+    "rejections": [
+      {
+        "reason": "Not a Custom Format upgrade for existing movie file(s). New: [DD+] (1750) do not improve on Existing: [DD+ ATMOS, DV Boost, HDR, MA, WEB Tier 01] (6220)",
+        "type": "permanent"
+      }
+    ],
+    "id": 413571220,
+    "movie": {
+      "id": 9428,
+      "title": "Spider-Man: Brand New Day",
+      "year": 2026
+    }
+  }
+]

@@ -2,6 +2,7 @@ import {
   fixRequests,
   ledgerEvents,
   mediaItems,
+  repairRequests,
   users,
   type DbClient,
   type FixActionEntry,
@@ -77,7 +78,46 @@ export async function countRecentFixBudget(
         sql`${ledgerEvents.recordedAt} > now() - interval '1 hour'`,
       ),
     );
-  return (fixes?.count ?? 0) + (searches?.count ?? 0);
+  // ADR-109 C-04 / DESIGN-055 D-02 (PLAN-077 P2) — a confirmed Repair Request is one unit of the same budget.
+  const [repairs] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(repairRequests)
+    .where(
+      and(
+        eq(repairRequests.requesterId, requesterId),
+        sql`${repairRequests.createdAt} > now() - interval '1 hour'`,
+      ),
+    );
+  return (fixes?.count ?? 0) + (searches?.count ?? 0) + (repairs?.count ?? 0);
+}
+
+/**
+ * ADR-109 C-04 / DESIGN-055 D-02 (PLAN-077 P2) — the open Repair Request on a Fix's grain, if any: the open check is
+ * shared both ways. A movie Fix meets any open repair on the movie; a season Fix one on that season; an episode Fix one
+ * that acts on its episode. (repair-requests.ts runs the reverse check.)
+ */
+async function findOpenRepairForFix(
+  tx: Transaction,
+  grain: { mediaItemId: string; scope: string; targetArrChildId: number | null; seasonNumber: number | null },
+): Promise<{ id: string } | undefined> {
+  const grainMatch =
+    grain.scope === 'season' && grain.seasonNumber !== null
+      ? sql`${repairRequests.seasonNumber} = ${grain.seasonNumber}`
+      : grain.targetArrChildId !== null && Number.isInteger(grain.targetArrChildId)
+        ? sql`${repairRequests.targetChildIds} @> ${sql.raw(`ARRAY[${grain.targetArrChildId}]::integer[]`)}`
+        : sql`true`;
+  const [open] = await tx
+    .select({ id: repairRequests.id })
+    .from(repairRequests)
+    .where(
+      and(
+        eq(repairRequests.mediaItemId, grain.mediaItemId),
+        inArray(repairRequests.status, ['pending', 'actioned']),
+        grainMatch,
+      ),
+    )
+    .limit(1);
+  return open;
 }
 
 export interface CreateFixRequestInput {
@@ -202,6 +242,17 @@ export async function createFixRequest(
         `An open fix (${open.id}) already targets this ${scope === 'item' ? 'item' : scope}`,
       );
     }
+    const openRepair = await findOpenRepairForFix(tx, {
+      mediaItemId: input.mediaItemId,
+      scope,
+      targetArrChildId,
+      seasonNumber,
+    });
+    if (openRepair) {
+      throw new FixAlreadyOpenError(
+        `An open repair (${openRepair.id}) already targets this ${scope === 'item' ? 'item' : scope}`,
+      );
+    }
 
     const createdSnapshot: FixActionEntry = {
       step: 'created',
@@ -290,6 +341,17 @@ export async function assertFixAllowed(input: {
     if (open) {
       throw new FixAlreadyOpenError(
         `An open fix (${open.id}) already targets this ${input.scope === 'item' ? 'item' : input.scope}`,
+      );
+    }
+    const openRepair = await findOpenRepairForFix(tx, {
+      mediaItemId: input.mediaItemId,
+      scope: input.scope,
+      targetArrChildId: input.targetArrChildId,
+      seasonNumber: input.seasonNumber,
+    });
+    if (openRepair) {
+      throw new FixAlreadyOpenError(
+        `An open repair (${openRepair.id}) already targets this ${input.scope === 'item' ? 'item' : input.scope}`,
       );
     }
   });

@@ -309,6 +309,10 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   fix_completed: 'Fixed',
   fix_failed: "Fix didn't work",
   restored: 'Restored',
+  // ADR-109 C-04 / DESIGN-055 D-02 (PLAN-077 P2): the Repair Request lifecycle (an import from Force Search).
+  repair_requested: 'Repair requested',
+  repair_completed: 'Repaired',
+  repair_failed: "Repair didn't work",
 };
 
 /** Human-readable size; ledger sizes come as bytes. */

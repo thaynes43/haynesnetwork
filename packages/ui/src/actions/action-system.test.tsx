@@ -33,10 +33,16 @@ describe('MEDIA_ACTIONS registry', () => {
     expect(MEDIA_ACTIONS.forceSearch.variant).toBe('outline');
   });
 
-  it('has exactly the five action types', () => {
+  it('has exactly the six action types', () => {
     expect(MEDIA_ACTION_TYPES.sort()).toEqual(
-      ['consume', 'fix', 'forceSearch', 'notOnDisk', 'retryImport'].sort(),
+      ['consume', 'fix', 'forceSearch', 'importDownload', 'notOnDisk', 'retryImport'].sort(),
     );
+  });
+
+  it('names the Repair Guide import confirm "Import it", a green primary (DESIGN-055 D-01)', () => {
+    expect(MEDIA_ACTIONS.importDownload.label).toBe('Import it');
+    expect(MEDIA_ACTIONS.importDownload.variant).toBe('primary');
+    expect(MEDIA_ACTIONS.importDownload.destructive).toBe(false);
   });
 
   it('never uses the retired forked labels', () => {

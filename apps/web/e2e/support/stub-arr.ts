@@ -25,6 +25,12 @@
 //                        fixtures (cleared by reset, so no other spec sees them): Stub Runner's file and a release list
 //                        whose only acceptable row is that same release (Case C, AC-42), and Breaking Prod's series
 //                        history with S01E01..E03 grabbed as ONE pack and E04..E09 one download each (the season guard).
+//   POST /_stub/import-check → 204; body { on } — ADR-109 / DESIGN-055 D-07 (PLAN-077 P2): serve the queue-aware Force
+//                        Search fixtures (cleared by reset): Breaking Prod S01E10 is titled "125 Years Young" (Case B's
+//                        title), and `GET /manualimport?downloadId=` answers the Case B candidate of
+//                        importCheckQueueFixture()'s blocked download. Stage that queue with POST /_stub/queue.
+//   Always: `POST /command` `ManualImport` is recorded like any write, and afterwards its files' episodes (or movie)
+//   report `hasFile: true` and the download's queue records are gone; `GET /command/{id}` answers `completed`.
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { clearStubArrDeleted, stubArrDeleted } from './stub-arr-state';
 
@@ -65,6 +71,120 @@ const isSameReleaseMovie = (movieId: number) => Number.isFinite(movieId) && movi
 export const STUB_PACK_EPISODES = [50101, 50102, 50103] as const;
 /** The grab record id of an episode in the repair-guide series history (pack episodes share one download). */
 export const repairGuideGrabIdFor = (episodeId: number) => 800_000 + episodeId;
+
+/**
+ * ADR-109 / DESIGN-055 D-07 (PLAN-077 P2) — Case B (The Paper 2x06, Seerr issue 3) on the stub series. The real download
+ * was `The_Paper_2025_S02E06_125_Years_Young_…-FLUX`: Sonarr read `S02E06_125` as 2x06 to 2x125, blocked the import as
+ * "unexpected considering the … folder name", and a Force Search could only search again. Here the missing S01E10 plays
+ * 2x06 (titled "125 Years Young" while the import-check fixtures are on) and the name carries Breaking Prod and its own
+ * year, so only the folder-name rejection stands between the file and the episode.
+ */
+export const IMPORT_CHECK_EPISODE_ID = 50110;
+export const IMPORT_CHECK_EPISODE_TITLE = '125 Years Young';
+export const IMPORT_CHECK_DOWNLOAD_ID = 'SABnzbd_nzo_stub_case_b';
+export const IMPORT_CHECK_FOLDER = 'Breaking_Prod_2019_S01E10_125_Years_Young_2160p_PCOK_WEB-DL_DDP5_1_Atmos_DV_HDR_H_265-FLUX';
+export const IMPORT_CHECK_FILE = `${IMPORT_CHECK_FOLDER}.mkv`;
+const IMPORT_CHECK_REJECTION =
+  'Episodes 1x11, 1x12, 1x13 were unexpected considering the Breaking_Prod_2019_S01E10_125_Years_Young folder name';
+/** S02E02 · Reckoning, which is on its way (downloading) in the same staged queue. */
+export const ON_ITS_WAY_EPISODE_ID = 50302;
+
+/** The queue for the D-07 journeys: Case B's finished, import-blocked download, and S02E02 still downloading. */
+export function importCheckQueueFixture(): Record<string, unknown>[] {
+  return [
+    {
+      id: 92001,
+      seriesId: STUB_SERIES_ID,
+      episodeId: IMPORT_CHECK_EPISODE_ID,
+      seasonNumber: 1,
+      downloadId: IMPORT_CHECK_DOWNLOAD_ID,
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importBlocked',
+      size: 6_442_450_944,
+      sizeleft: 0,
+      added: '2026-09-24T00:00:00Z',
+      title: 'Breaking.Prod.2019.S01E10.125.Years.Young.2160p.PCOK.WEB-DL.DDP5.1.Atmos.DV.HDR.H.265-FLUX',
+      statusMessages: [{ title: IMPORT_CHECK_FILE, messages: [IMPORT_CHECK_REJECTION] }],
+    },
+    {
+      id: 92002,
+      seriesId: STUB_SERIES_ID,
+      episodeId: ON_ITS_WAY_EPISODE_ID,
+      seasonNumber: 2,
+      downloadId: 'SABnzbd_nzo_stub_reckoning',
+      status: 'downloading',
+      trackedDownloadStatus: 'ok',
+      trackedDownloadState: 'downloading',
+      size: 2_000_000_000,
+      sizeleft: 1_100_000_000,
+      timeleft: '00:12:20',
+      added: '2026-10-12T00:00:00Z',
+      title: 'Breaking.Prod.S02E02.Reckoning.1080p.WEB-DL-STUB',
+    },
+  ];
+}
+
+/** The staff path (D-07 rule 6): S01E10's download left packed, which only staff can unpack for now. */
+export function importCheckArchiveQueueFixture(): Record<string, unknown>[] {
+  return [
+    {
+      id: 92003,
+      seriesId: STUB_SERIES_ID,
+      episodeId: IMPORT_CHECK_EPISODE_ID,
+      seasonNumber: 1,
+      downloadId: 'SABnzbd_nzo_stub_packed',
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importBlocked',
+      size: 6_442_450_944,
+      sizeleft: 0,
+      added: '2026-09-24T00:00:00Z',
+      title: 'Breaking.Prod.2019.S01E10.2160p.WEB-DL-PACKED',
+      statusMessages: [
+        { title: 'Breaking.Prod.2019.S01E10.2160p.WEB-DL-PACKED', messages: ['Found archive file, might need to be extracted'] },
+      ],
+    },
+  ];
+}
+
+/** Sonarr's manual-import view of Case B's download (`GET /manualimport?downloadId=`), shaped like Sonarr 4.0.20's. */
+function importCheckCandidates(downloadId: string): Record<string, unknown>[] {
+  if (downloadId !== IMPORT_CHECK_DOWNLOAD_ID) return [];
+  return [
+    {
+      id: 1,
+      path: `/data/haynestower/usenet/complete-k8s/tv/${IMPORT_CHECK_FOLDER}/${IMPORT_CHECK_FILE}`,
+      relativePath: IMPORT_CHECK_FILE,
+      folderName: IMPORT_CHECK_FOLDER,
+      name: IMPORT_CHECK_FOLDER,
+      size: 6_442_450_944,
+      series: { id: STUB_SERIES_ID, title: 'Breaking Prod', year: 2019 },
+      seasonNumber: 1,
+      episodes: [
+        {
+          id: IMPORT_CHECK_EPISODE_ID,
+          seriesId: STUB_SERIES_ID,
+          seasonNumber: 1,
+          episodeNumber: 10,
+          title: IMPORT_CHECK_EPISODE_TITLE,
+          hasFile: false,
+        },
+      ],
+      releaseGroup: 'FLUX',
+      quality: {
+        quality: { id: 19, name: 'WEBDL-2160p', source: 'web', resolution: 2160 },
+        revision: { version: 1, real: 0, isRepack: false },
+      },
+      languages: [{ id: 1, name: 'English' }],
+      indexerFlags: 0,
+      releaseType: 'singleEpisode',
+      downloadId,
+      customFormatScore: 0,
+      rejections: [{ reason: IMPORT_CHECK_REJECTION, type: 'permanent' }],
+    },
+  ];
+}
 
 /** Breaking Prod's series history for the season guard: E01..E03 one pack download, E04..E09 one download each. */
 function repairGuideSeriesHistory() {
@@ -589,6 +709,12 @@ export async function startStubArr(): Promise<StubArrServer> {
   // ADR-109 / DESIGN-055 D-09 — the Repair Guide fixtures (POST /_stub/repair-guide); off until a spec turns them on.
   let repairGuideFixtures = false;
   let seerrAnimeTags: number[] = [];
+  // ADR-109 / DESIGN-055 D-07 — the queue-aware Force Search fixtures (POST /_stub/import-check), and what a recorded
+  // ManualImport put on disk (cleared by reset).
+  let importCheckFixtures = false;
+  const importedEpisodeIds = new Set<number>();
+  const importedMovieIds = new Set<number>();
+  let lastCommandName = 'UnknownCommand';
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -615,6 +741,10 @@ export async function startStubArr(): Promise<StubArrServer> {
         seerrSyncFlags = new Map([[1, { movies: true, tv: true }]]);
         seerrAnimeTags = [];
         repairGuideFixtures = false;
+        importCheckFixtures = false;
+        importedEpisodeIds.clear();
+        importedMovieIds.clear();
+        lastCommandName = 'UnknownCommand';
         clearStubArrDeleted();
         res.writeHead(204);
         return res.end();
@@ -742,6 +872,12 @@ export async function startStubArr(): Promise<StubArrServer> {
         res.writeHead(204);
         return res.end();
       }
+      if (url.pathname === '/_stub/import-check' && method === 'POST') {
+        const raw = await readBody(req);
+        importCheckFixtures = raw !== '' && (JSON.parse(raw) as { on?: unknown }).on === true;
+        res.writeHead(204);
+        return res.end();
+      }
       if (url.pathname === '/_stub/queue' && method === 'POST') {
         const raw = await readBody(req);
         const parsed = raw === '' ? {} : (JSON.parse(raw) as { records?: Record<string, unknown>[] });
@@ -777,6 +913,22 @@ export async function startStubArr(): Promise<StubArrServer> {
             typeof body === 'object' && body !== null && 'name' in body
               ? String((body as { name: unknown }).name)
               : 'UnknownCommand';
+          lastCommandName = name;
+          // DESIGN-055 D-07 — a ManualImport lands at once: its episodes (or movie) have a file, its download leaves.
+          if (name === 'ManualImport') {
+            const files = ((body as { files?: unknown }).files ?? []) as Array<{
+              episodeIds?: number[];
+              movieId?: number;
+              downloadId?: string;
+            }>;
+            const done = new Set<string>();
+            for (const f of files) {
+              for (const id of f.episodeIds ?? []) importedEpisodeIds.add(id);
+              if (typeof f.movieId === 'number') importedMovieIds.add(f.movieId);
+              if (f.downloadId) done.add(f.downloadId);
+            }
+            queueRecords = queueRecords.filter((r) => !done.has(String(r.downloadId ?? '')));
+          }
           return json(res, 201, { id: 4242, name });
         }
         // File deletes (AC-08 fallback) — accepted, recorded.
@@ -829,8 +981,19 @@ export async function startStubArr(): Promise<StubArrServer> {
           if (id === STUB_VANISHED_ID && stubArrDeleted.tmdb.has(STUB_VANISHED_TMDB_ID)) {
             return json(res, 404, { message: `stub-arr: movie ${id} was deleted` });
           }
-          if (id === STUB_VANISHED_ID) return json(res, 200, vanishedMovieResource());
+          if (id === STUB_VANISHED_ID) {
+            return json(res, 200, { ...vanishedMovieResource(), ...(importedMovieIds.has(id) ? { hasFile: true } : {}) });
+          }
           return json(res, 404, { message: `stub-arr: no movie ${id}` });
+        }
+        // DESIGN-055 D-07 — the queue-aware Force Search reads its ManualImport back: every command has finished.
+        const commandById = /^\/command\/(\d+)$/.exec(path);
+        if (commandById) {
+          return json(res, 200, { id: Number(commandById[1]), name: lastCommandName, status: 'completed' });
+        }
+        // DESIGN-055 D-07 — the *arr's manual-import view of one download (Sonarr and Radarr share the path).
+        if (path === '/manualimport') {
+          return json(res, 200, importCheckFixtures ? importCheckCandidates(String(query.downloadId ?? '')) : []);
         }
         const seriesById = /^\/series\/(\d+)$/.exec(path);
         if (seriesById) {
@@ -913,7 +1076,16 @@ export async function startStubArr(): Promise<StubArrServer> {
           ]);
         case '/episode': {
           if (Number(query.seriesId) !== STUB_SERIES_ID) return json(res, 200, []);
-          return json(res, 200, episodes());
+          // DESIGN-055 D-07 — Case B's title while the import-check fixtures are on; a ManualImport's episodes have a file.
+          return json(
+            res,
+            200,
+            episodes().map((e) => ({
+              ...e,
+              ...(importCheckFixtures && e.id === IMPORT_CHECK_EPISODE_ID ? { title: IMPORT_CHECK_EPISODE_TITLE } : {}),
+              ...(importedEpisodeIds.has(e.id) ? { hasFile: true } : {}),
+            })),
+          );
         }
         case '/episodefile': {
           // DESIGN-008 D-02 resolution fix — one file per on-disk episode, each carrying the
