@@ -30,17 +30,29 @@ function viewingFact(evidence: WatchPersonalEvidence, kind: 'show' | 'movie'): s
     case 'played':
       return 'played; completion unconfirmed';
     case 'partial':
-      return 'partial viewing recorded';
+      return evidence.viewingBasis.includes('plex_resume')
+        ? 'partial viewing; Plex resume evidence'
+        : 'partial viewing in playback records';
     case 'watched':
-      if (kind === 'movie') return 'recorded as watched';
-      if (
-        evidence.statements.some(
-          (statement) => statement.action === 'watched' && statement.scope === 'show',
-        )
-      ) {
-        return 'explicitly marked watched';
-      }
-      return 'recorded viewing; see episode progress';
+      return `${kind === 'movie' ? 'recorded as watched' : 'recorded watched evidence; see statement scope and episode progress'} (${evidence.viewingBasis
+        .map((basis) => {
+          switch (basis) {
+            case 'explicit_watched':
+              return 'explicit watched statement';
+            case 'plex_watched_state':
+              return 'Plex watched flag';
+            case 'plex_episode_state':
+              return 'Plex episode state';
+            case 'completed_playback':
+              return 'playback watched verdict';
+            case 'historical_completion':
+              return 'retained playback watched summary';
+            default:
+              return '';
+          }
+        })
+        .filter(Boolean)
+        .join(', ')})`;
   }
 }
 
@@ -49,7 +61,7 @@ function briefEvidence(identity: WatchResolvedIdentity, evidence: WatchPersonalE
   return `${label(identity)}: ${viewingFact(evidence, identity.kind)}${feedback}.`;
 }
 
-function unresolvedFact(check: WatchCandidateCheck): string {
+function unresolvedFact(check: WatchCandidateCheck, includeOptions = true): string {
   const name = inputLabel(check);
   if (check.reason === 'conflicting_ids')
     return `${name}: identifiers disagree; no viewing conclusion assigned.`;
@@ -57,6 +69,12 @@ function unresolvedFact(check: WatchCandidateCheck): string {
     return `${name}: identity ambiguous; no viewing conclusion assigned.`;
   if (check.resolution === 'unavailable')
     return `${name}: identity lookup unavailable; viewing status unknown.`;
+  if (check.reason === 'year_mismatch') {
+    if (!check.options.length)
+      return `${name}: release year differs; identity unresolved and viewing unknown.`;
+    const options = check.options.slice(0, 2).map(label).join(' or ');
+    return `${name}: release year differs; confirm ${includeOptions ? options : 'a canonical option'}${includeOptions && check.options.length > 2 ? ' or another listed option' : ''} before checking viewing.`;
+  }
   return `${name}: identity unresolved; viewing status unknown.`;
 }
 
@@ -85,7 +103,7 @@ export function formatViewingContext(context: WatchViewingContext): string {
 export function formatSingleWatchCheck(check: WatchCandidateCheck): string {
   if (check.resolution !== 'resolved' || !check.identity || !check.evidence) {
     const options = check.options.map(label);
-    return capSpokenList({ lead: unresolvedFact(check), items: options });
+    return capSpokenList({ lead: unresolvedFact(check, false), items: options });
   }
   const { identity, evidence } = check;
   const details: string[] = [];

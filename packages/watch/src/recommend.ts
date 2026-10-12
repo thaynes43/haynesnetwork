@@ -99,8 +99,8 @@ export function buildTasteProfile(titles: readonly ProfileTitle[], now: number):
 }
 
 /**
- * For each canonical genre, the owner's most-watched title sharing it — the "<genre> like <title>"
- * reason (D-19). Most-watched = most episodes (Plex or events; a movie counts 1), then the most
+ * For each canonical genre, the owner's most-watched title sharing it — the neutral genre-similarity
+ * hint (DESIGN-054 D-07). Most-watched = most episodes (Plex or events; a movie counts 1), then the most
  * recently watched, then title. Only Ever Watched, undismissed titles; split like the profile.
  */
 export function genreExemplars(titles: readonly ProfileTitle[]): {
@@ -404,7 +404,7 @@ export interface ScoredPick {
   affinity: number;
   quality: number;
   boost: number;
-  /** Spoken, e.g. "because you watched The Expanse". */
+  /** Spoken, e.g. "cached similarity to The Expanse in viewing records". */
   reason: string;
   reasonKind: PickReasonKind;
 }
@@ -447,7 +447,7 @@ function formatRating(n: number): string {
 }
 
 function genrePhrase(genre: string, title: string): string {
-  return genre === 'kids' ? `for kids, like ${title}` : `${genre} like ${title}`;
+  return `${genre === 'kids' ? 'children’s genre' : genre} similarity to ${title} in viewing records`;
 }
 
 function reasonFor(
@@ -463,7 +463,10 @@ function reasonFor(
       compareText(a.title, b.title),
   )[0];
   if (seed) {
-    return { reason: `because you watched ${spokenTitle(seed.title)}`, reasonKind: 'seed' };
+    return {
+      reason: `cached similarity to ${spokenTitle(seed.title)} in viewing records`,
+      reasonKind: 'seed',
+    };
   }
   const exemplars = opts.genreTitles ?? {};
   const shared = genres.filter((g) => {

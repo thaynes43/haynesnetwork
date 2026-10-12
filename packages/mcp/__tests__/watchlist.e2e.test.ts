@@ -244,9 +244,9 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(await say('watch_status', { title: 'foundation' })).toContain(
       'On Plex. On your watchlist.',
     );
-    // A watchlist change is not a watch statement: Foundation stays a pick (now "on your watchlist").
+    // A watchlist change is not a watch statement: Foundation remains a cached candidate.
     expect(await say('recommend')).toContain(
-      'Foundation, a 2021 show, because you watched The Expanse',
+      'Foundation, a 2021 show, cached similarity to The Expanse in viewing records',
     );
 
     expect(await say('set_watchlist', { title: 'Foundation', action: 'add' })).toBe(
@@ -685,9 +685,12 @@ describe('the seventh review pass on PR #580 (DESIGN-051 D-15aa, D-15ab)', () =>
       ENV,
     );
     // A factual check never assigns the cached 2021 title to a request for the 2020 title.
-    expect(await say('watch_status', { title: 'Foundation 2020' })).toContain(
-      'viewing status unknown',
-    );
+    const factualStatus = await say('watch_status', { title: 'Foundation 2020' });
+    expect(factualStatus).toContain('confirm a canonical option before checking viewing');
+    expect(factualStatus).toContain('Foundation, 2021');
+    expect(factualStatus).not.toContain('recorded as watched');
+    expect(fake.writes()).toEqual([]);
+    expect(await db.select().from(watchMarks)).toEqual([]);
     expect(await say('mark_watched', { title: 'Foundation 2020', season: 1 })).toBe(
       'Marked season 1 of Foundation (2021) as watched in Plex, 10 episodes.',
     );

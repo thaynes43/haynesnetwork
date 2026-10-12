@@ -507,6 +507,11 @@ test in AC-21 exercises exactly this function.
 
 ### D-19 — Score and reason
 
+The original D-19/D-20 scoring, membership allocation and recommendation speech below are
+superseded by ADR-107/108 and DESIGN-054 D-01/D-07. Current cached hints use neutral similarity
+to titles in viewing records, supply no membership boost and do not infer liking. The consuming
+agent owns general discovery and judgment.
+
 `score = 0.45 × affinity + 0.30 × quality + boosts`, where affinity is the sum of the profile weights of
 the candidate's genres divided by the sum of the profile's top three weights (capped at 1), quality
 is the mean of the available ratings scaled to 0–1 (IMDb and TMDB ÷ 10, Rotten Tomatoes ÷ 100;

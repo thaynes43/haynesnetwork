@@ -78,6 +78,19 @@ export interface WatchPersonalCoverage {
 
 export interface WatchPersonalEvidence {
   viewing: 'watched' | 'partial' | 'played' | 'no_recorded_viewing' | 'not_mine' | 'unknown';
+  /** Sources supporting the selected classification, not a liking or whole-show completion claim. */
+  viewingBasis: Array<
+    | 'explicit_watched'
+    | 'plex_watched_state'
+    | 'plex_episode_state'
+    | 'completed_playback'
+    | 'historical_completion'
+    | 'partial_playback'
+    | 'plex_resume'
+    | 'recorded_playback'
+    | 'explicit_not_mine'
+    | 'ambiguous_attribution'
+  >;
   everWatched: boolean | null;
   attributionAmbiguous: boolean;
   unattributedPlays: number;
@@ -177,11 +190,11 @@ function latest(dates: readonly (Date | string | null | undefined)[]): string | 
       .at(-1) ?? null
   );
 }
-function asIdentity(t: TitleIds): WatchResolvedIdentity {
+function asIdentity(t: TitleIds, inferTitleYear = true): WatchResolvedIdentity {
   const ids = {
     kind: t.kind,
     title: t.title,
-    year: t.year ?? normalizeTitle(t.title).year,
+    year: t.year ?? (inferTitleYear ? normalizeTitle(t.title).year : null),
     plexGuid: t.plexGuid ?? null,
     tmdbId: t.tmdbId ?? null,
     tvdbId: t.kind === 'show' ? (t.tvdbId ?? null) : null,
@@ -419,15 +432,43 @@ export function personalEvidence(
   ]);
   const newest = [...rows].sort((a, b) => b.refreshedAt.getTime() - a.refreshedAt.getTime())[0];
   const resume = record.identity.kind === 'movie' ? (newest?.resumePercent ?? null) : null;
-  const partial =
-    events.some((e) => !e.watched && (e.percentComplete ?? 0) > 0) ||
-    rows.some((r) => r.nextResume || (r.resumePercent ?? 0) > 0);
-  const everWatched =
-    dismissal !== 'not_mine' &&
-    (explicitWatched ||
-      completedPlays > 0 ||
-      watchedEpisodes > 0 ||
-      rows.some((r) => r.plexWatched));
+  const partialPlayback = events.some((e) => !e.watched && (e.percentComplete ?? 0) > 0);
+  const plexResume = rows.some((r) => r.nextResume || (r.resumePercent ?? 0) > 0);
+  const partial = partialPlayback || plexResume;
+  const watchedBasis: WatchPersonalEvidence['viewingBasis'] = [];
+  if (explicitWatched) watchedBasis.push('explicit_watched');
+  if (rows.some((r) => r.plexWatched)) watchedBasis.push('plex_watched_state');
+  if (episodesWatched > 0) watchedBasis.push('plex_episode_state');
+  if (completedPlays > 0) watchedBasis.push('completed_playback');
+  if (rows.some((r) => r.eventWatchedEpisodes > 0)) watchedBasis.push('historical_completion');
+  const everWatched = dismissal !== 'not_mine' && watchedBasis.length > 0;
+  const viewing: WatchPersonalEvidence['viewing'] =
+    dismissal === 'not_mine'
+      ? 'not_mine'
+      : everWatched
+        ? 'watched'
+        : partial
+          ? 'partial'
+          : plays > 0
+            ? 'played'
+            : unattributed.length > 0
+              ? 'unknown'
+              : 'no_recorded_viewing';
+  const viewingBasis: WatchPersonalEvidence['viewingBasis'] =
+    viewing === 'not_mine'
+      ? ['explicit_not_mine']
+      : viewing === 'watched'
+        ? watchedBasis
+        : viewing === 'partial'
+          ? [
+              ...(partialPlayback ? (['partial_playback'] as const) : []),
+              ...(plexResume ? (['plex_resume'] as const) : []),
+            ]
+          : viewing === 'played'
+            ? ['recorded_playback']
+            : viewing === 'unknown'
+              ? ['ambiguous_attribution']
+              : [];
   const state = !newest
     ? 'unknown'
     : record.identity.kind === 'show'
@@ -454,15 +495,13 @@ export function personalEvidence(
   const genres = [
     ...new Set([...rows.flatMap((r) => r.genres), ...record.ledger.flatMap((r) => r.genres ?? [])]),
   ];
-  const statements = marks
-    .slice(0, MAX_METADATA)
-    .map((m) => ({
-      action: m.action as 'watched' | 'not_interested' | 'not_mine',
-      scope: m.scope,
-      season: m.season,
-      episode: m.episode,
-      at: m.createdAt.toISOString(),
-    }));
+  const statements = marks.slice(0, MAX_METADATA).map((m) => ({
+    action: m.action as 'watched' | 'not_interested' | 'not_mine',
+    scope: m.scope,
+    season: m.season,
+    episode: m.episode,
+    at: m.createdAt.toISOString(),
+  }));
   const sources: WatchPersonalEvidence['sources'] = [];
   if (rows.length)
     sources.push({ source: 'title_state', asOf: latest(rows.map((r) => r.refreshedAt)) });
@@ -473,18 +512,8 @@ export function personalEvidence(
   if (record.ledger.length) sources.push({ source: 'arr_ledger', asOf: coverage.plex.asOf });
   if (record.watchlist.length) sources.push({ source: 'watchlist', asOf: coverage.watchlist.asOf });
   return {
-    viewing:
-      dismissal === 'not_mine'
-        ? 'not_mine'
-        : everWatched
-          ? 'watched'
-          : partial
-            ? 'partial'
-            : plays > 0
-              ? 'played'
-              : unattributed.length > 0
-                ? 'unknown'
-                : 'no_recorded_viewing',
+    viewing,
+    viewingBasis,
     everWatched:
       !everWatched && dismissal !== 'not_mine' && unattributed.length > 0 ? null : everWatched,
     attributionAmbiguous: unattributed.length > 0,
@@ -558,6 +587,46 @@ function fitsInput(input: WatchCandidateInput, identity: WatchResolvedIdentity):
     !personalIdentityConflict(input, identity) &&
     (year === null || literalYearWord || identity.year === year)
   );
+}
+function confirmsInputIds(input: WatchCandidateInput, identity: WatchResolvedIdentity): boolean {
+  return ID_FIELDS.every(
+    (k) => input[k] == null || String(input[k]).toLowerCase() === String(identity[k]).toLowerCase(),
+  );
+}
+/** Recovery identities only: exact names, confirmed IDs and known alternate years, never evidence. */
+function yearAlternatives(
+  input: WatchCandidateInput,
+  identities: readonly WatchResolvedIdentity[],
+  records: readonly PersonalRecord[],
+): WatchResolvedIdentity[] {
+  const year = candidateYear(input);
+  if (year === null) return [];
+  const kind = inputKind(input);
+  const names = input.title
+    ? new Set([normalizeTitle(input.title).norm, normalizeTitle(namedTitle(input)).norm])
+    : null;
+  const alternatives: WatchResolvedIdentity[] = [];
+  for (const identity of identities) {
+    if (
+      identity.year === null ||
+      identity.year === year ||
+      fitsInput(input, identity) ||
+      (kind && identity.kind !== kind) ||
+      (names && !names.has(normalizeTitle(identity.title).norm)) ||
+      canonicalKeys(identity).length === 0 ||
+      !confirmsInputIds(input, identity) ||
+      records.some(
+        (r) => sharesId(identity, r.identity) && personalIdentityConflict(identity, r.identity),
+      ) ||
+      identities.some(
+        (other) => sharesId(identity, other) && personalIdentityConflict(identity, other),
+      )
+    )
+      continue;
+    if (alternatives.some((other) => sharesId(identity, other))) continue;
+    alternatives.push(identity);
+  }
+  return alternatives.slice(0, MAX_OPTIONS);
 }
 interface PersonalRecordIndex {
   byId: Map<string, Set<PersonalRecord>>;
@@ -634,8 +703,12 @@ function catalogIdentity(t: CatalogTitle, kind: WatchKind): WatchResolvedIdentit
   const title = kind === 'show' ? t.name : t.title;
   if (!title) return null;
   const date = kind === 'show' ? t.first_air_date : t.release_date;
+  return asIdentity({ kind, title, year: catalogYear(date), tmdbId: t.id }, false);
+}
+/** Catalog release years come from dated metadata, never a numeric word in a title. */
+function catalogYear(date: string | null | undefined): number | null {
   const year = /^(\d{4})-/.exec(date ?? '')?.[1];
-  return asIdentity({ kind, title, year: year ? Number(year) : null, tmdbId: t.id });
+  return year ? Number(year) : null;
 }
 
 async function hydrateIdentity(
@@ -645,24 +718,30 @@ async function hydrateIdentity(
   if (identity.tmdbId == null) return identity;
   if (identity.kind === 'movie' && lookup.getMovieIdentity) {
     const t = await lookup.getMovieIdentity(identity.tmdbId);
-    return asIdentity({
-      ...identity,
-      title: t.title,
-      year: Number(t.release_date?.slice(0, 4)) || identity.year,
-      tmdbId: t.id,
-      imdbId: t.external_ids?.imdb_id ?? t.imdb_id ?? identity.imdbId,
-    });
+    return asIdentity(
+      {
+        ...identity,
+        title: t.title,
+        year: catalogYear(t.release_date),
+        tmdbId: t.id,
+        imdbId: t.external_ids?.imdb_id ?? t.imdb_id ?? identity.imdbId,
+      },
+      false,
+    );
   }
   if (identity.kind === 'show' && lookup.getTvIdentity) {
     const t = await lookup.getTvIdentity(identity.tmdbId);
-    return asIdentity({
-      ...identity,
-      title: t.name,
-      year: Number(t.first_air_date?.slice(0, 4)) || identity.year,
-      tmdbId: t.id,
-      tvdbId: t.external_ids?.tvdb_id ?? identity.tvdbId,
-      imdbId: t.external_ids?.imdb_id ?? identity.imdbId,
-    });
+    return asIdentity(
+      {
+        ...identity,
+        title: t.name,
+        year: catalogYear(t.first_air_date),
+        tmdbId: t.id,
+        tvdbId: t.external_ids?.tvdb_id ?? identity.tvdbId,
+        imdbId: t.external_ids?.imdb_id ?? identity.imdbId,
+      },
+      false,
+    );
   }
   return identity;
 }
@@ -708,12 +787,8 @@ export async function resolvePersonalCandidate(
     };
   };
   // With multiple supplied IDs, unknown fields are not confirmation of their consistency.
-  const confirmsEveryId = (r: PersonalRecord) =>
-    ID_FIELDS.every(
-      (k) =>
-        input[k] == null || String(input[k]).toLowerCase() === String(r.identity[k]).toLowerCase(),
-    );
-  if (matches.length === 1 && confirmsEveryId(matches[0]!)) return result(matches[0]!.identity);
+  if (matches.length === 1 && confirmsInputIds(input, matches[0]!.identity))
+    return result(matches[0]!.identity);
   if (matches.length > 1)
     return fail(
       input,
@@ -721,7 +796,15 @@ export async function resolvePersonalCandidate(
       'multiple_personal_matches',
       matches.map((m) => m.identity),
     );
-  if (!lookup) return fail(input, 'unavailable', 'catalog_unavailable');
+  const localAlternatives = yearAlternatives(
+    input,
+    exactMatches.map((r) => r.identity),
+    records,
+  );
+  // A confirmed ID fixes the local identity; a name-only cache cannot rule out another catalog year.
+  if (canonical && localAlternatives.length)
+    return fail(input, 'unresolved', 'year_mismatch', localAlternatives);
+  if (!lookup) return fail(input, 'unavailable', 'catalog_unavailable', localAlternatives);
   let identities: WatchResolvedIdentity[] = [];
   try {
     if (input.tmdbId != null) {
@@ -730,25 +813,31 @@ export async function resolvePersonalCandidate(
       if (kind === 'movie') {
         const t = await lookup.getMovieIdentity!(input.tmdbId);
         identities = [
-          asIdentity({
-            kind,
-            title: t.title,
-            year: Number(t.release_date?.slice(0, 4)) || null,
-            tmdbId: t.id,
-            imdbId: t.external_ids?.imdb_id ?? t.imdb_id,
-          }),
+          asIdentity(
+            {
+              kind,
+              title: t.title,
+              year: catalogYear(t.release_date),
+              tmdbId: t.id,
+              imdbId: t.external_ids?.imdb_id ?? t.imdb_id,
+            },
+            false,
+          ),
         ];
       } else {
         const t = await lookup.getTvIdentity!(input.tmdbId);
         identities = [
-          asIdentity({
-            kind,
-            title: t.name,
-            year: Number(t.first_air_date?.slice(0, 4)) || null,
-            tmdbId: t.id,
-            tvdbId: t.external_ids?.tvdb_id,
-            imdbId: t.external_ids?.imdb_id,
-          }),
+          asIdentity(
+            {
+              kind,
+              title: t.name,
+              year: catalogYear(t.first_air_date),
+              tmdbId: t.id,
+              tvdbId: t.external_ids?.tvdb_id,
+              imdbId: t.external_ids?.imdb_id,
+            },
+            false,
+          ),
         ];
       }
     } else if (input.tvdbId != null || input.imdbId) {
@@ -764,11 +853,14 @@ export async function resolvePersonalCandidate(
       ].filter((t): t is WatchResolvedIdentity => t !== null);
       // An external-id lookup is the bridge to otherwise disjoint personal TMDB identities.
       identities = identities.map((t) =>
-        asIdentity({
-          ...t,
-          tvdbId: input.tvdbId ?? t.tvdbId,
-          imdbId: input.tvdbId ? t.imdbId : (input.imdbId ?? t.imdbId),
-        }),
+        asIdentity(
+          {
+            ...t,
+            tvdbId: input.tvdbId ?? t.tvdbId,
+            imdbId: input.tvdbId ? t.imdbId : (input.imdbId ?? t.imdbId),
+          },
+          false,
+        ),
       );
     } else if (input.plexGuid) {
       return fail(input, 'unavailable', 'canonical_lookup_unavailable');
@@ -804,6 +896,7 @@ export async function resolvePersonalCandidate(
       typeof error === 'object' && error !== null && 'status' in error && error.status === 404
         ? 'catalog_not_found'
         : 'catalog_lookup_failed',
+      localAlternatives,
     );
   }
   identities = identities.filter((t) => !kind || t.kind === kind);
@@ -813,14 +906,21 @@ export async function resolvePersonalCandidate(
   const distinct = [...new Map(fits.map((t) => [`${t.kind}:${t.tmdbId}`, t])).values()];
   if (distinct.length > 1) return fail(input, 'ambiguous', 'multiple_catalog_matches', distinct);
   let identity = distinct[0];
-  if (!identity)
+  if (!identity) {
+    const options = yearAlternatives(
+      input,
+      [...identities, ...exactMatches.map((r) => r.identity)],
+      records,
+    );
     return fail(
       input,
       'unresolved',
-      identities.length > 0 && candidateYear(input) !== null
+      (identities.length > 0 && candidateYear(input) !== null) || options.length > 0
         ? 'year_mismatch'
         : 'catalog_not_found',
+      options,
     );
+  }
   // Search and find results may need one detail read to bridge IMDb/TVDB-only personal evidence.
   const needsBridge = records.some(
     (r) =>
@@ -837,7 +937,8 @@ export async function resolvePersonalCandidate(
   }
   if (personalIdentityConflict(wanted, identity))
     return fail(input, 'unresolved', 'conflicting_ids');
-  if (!fitsInput(input, identity)) return fail(input, 'unresolved', 'year_mismatch');
+  if (!fitsInput(input, identity))
+    return fail(input, 'unresolved', 'year_mismatch', yearAlternatives(input, [identity], records));
   if (
     ID_FIELDS.some(
       (k) =>

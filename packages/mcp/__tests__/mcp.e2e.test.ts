@@ -327,6 +327,7 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
       { title: 'Dune', kind: 'movie' },
       { title: 'Dune', year: 2021, kind: 'movie' },
       { title: 'No such researched title', year: 2026 },
+      { title: 'Dune', year: 1983, kind: 'movie', tmdbId: 841 },
     ];
     const checked = await evidenceCall<WatchBatchCheck>('check_titles', { titles });
     expect(checked.results.map((r) => r.input)).toEqual(titles);
@@ -336,6 +337,8 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
       evidence: { everWatched: true, personalRating: { status: 'unavailable', value: null } },
     });
     expect(checked.results[1]?.evidence).toMatchObject({ viewing: 'partial', everWatched: false });
+    expect(checked.results[0]?.evidence?.viewingBasis).toContain('plex_episode_state');
+    expect(checked.results[1]?.evidence?.viewingBasis).toEqual(['partial_playback', 'plex_resume']);
     expect(checked.results[2]?.evidence).toMatchObject({
       viewing: 'no_recorded_viewing',
       onPlex: true,
@@ -343,6 +346,13 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
     expect(checked.results[3]?.resolution).toBe('ambiguous');
     expect(checked.results[4]).toMatchObject({ resolution: 'resolved', identity: { year: 2021 } });
     expect(['unresolved', 'unavailable']).toContain(checked.results[5]?.resolution);
+    expect(checked.results[6]).toMatchObject({
+      resolution: 'unresolved',
+      reason: 'year_mismatch',
+      identity: null,
+      evidence: null,
+      options: [{ title: 'Dune', year: 1984, tmdbId: 841 }],
+    });
     expect(fake.calls).toEqual([]);
     expect(await db.select().from(watchMarks)).toEqual(marksBefore);
     const lines = toolLines();
@@ -506,7 +516,7 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
     const { text } = await call('recommend');
     expect(text.length).toBeLessThanOrEqual(SPOKEN_MAX_CHARS);
     expect(text).toMatch(/^Cached catalog candidates:/);
-    expect(text).toContain('Foundation, a 2021 show, because you watched The Expanse');
+    expect(text).toContain('Foundation, a 2021 show, cached similarity to The Expanse in viewing records');
     expect(text).not.toContain('on your watchlist');
     // Never an Ever Watched, started, or children's title.
     for (const absent of ['Silo', 'The Fixture', 'Stub Runner', 'Paw Patrol', 'Bluey'])

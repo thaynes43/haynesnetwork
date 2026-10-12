@@ -65,7 +65,7 @@ counts for shows only (TVDB movie ids are another id space).
 | `canonicalGenres(list): string[]` | Per title; compound source genres split on `&`, `/`, `,` ("Sci-Fi & Fantasy" → sci-fi, fantasy). |
 | `buildTasteProfile(titles: ProfileTitle[], now): { adult, kids }` | D-16: each Ever Watched title weighs `0.5 ^ (years since last watched)` × completion (movies 1; shows watched/total, at least 0.25 once three episodes are watched — Plex or events), split evenly over its genres; `not_mine` left out; `not_interested` subtracts half its weight (floored at 0); children's titles build `kids`; each vector sums to 1. |
 | `titleWeight(t, now)` | One title's weight (0 without a last-watched time). |
-| `genreExemplars(titles)` | Per genre, the owner's most-watched title — the input for `<genre> like <title>`. |
+| `genreExemplars(titles)` | Per genre, the owner's most-watched title — the source for a neutral genre-similarity hint (DESIGN-054 D-07). |
 | `isEverWatched(facts, { watched?, notMine? })`, `isStarted(facts)` | T-247 and the D-18 "started" rule (a show with a watched episode or a started next episode; a movie with a resume point). |
 | `buildExclusions(titles: HistoryFacts[], marks: LiveMark[]): Exclusions` | The four identity-key sets. Title States and marks that share a key (same kind, transitively) are one title, and ALL its keys join the set its facts call for. |
 | `excludeCandidates(cands, exclusions, { kids })` | D-18, applied last (AC-21): a candidate goes when any key of it — or of any candidate sharing a key with it — is in any set; `kids: false` drops children's titles, `kids: true` keeps only them (children's when any source says so, or their genres together do). |
@@ -168,8 +168,13 @@ including marks-only identities, genres, progress and source timestamps. Neither
 judgment or infers likes. Numeric personal ratings are unavailable, coverage is not complete lifetime
 history, and empty caches do not prove membership absence. Both query helpers are SELECT-only.
 
-The consuming agent researches broadly, checks personal evidence, verifies current regional home
-availability, and chooses for the user's request. `recommend` remains a limited cached helper.
+The consuming agent researches broadly, checks personal evidence and release status, and chooses
+for the user's request. Under ADR-108, released media beyond theatrical-only is eligible outside
+Plex/watchlists; commercial listings are optional convenience, never a default filter or ranking
+boost. Upcoming/theatrical-only titles need an explicit request. `viewingBasis` explains the selected
+classification independently of direct-event counts; episode evidence does not imply whole-show
+completion. Year mismatches retain unresolved identity with at most five exact-name, kind/ID-safe
+canonical options. `recommend` remains a limited cached helper with neutral similarity copy.
 
 ## Tests
 

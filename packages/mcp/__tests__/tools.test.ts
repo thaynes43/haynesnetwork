@@ -24,7 +24,7 @@ describe('the D-05 contract', () => {
   it('serves the eleven shared tools and the agent-owned research instructions (ADR-107)', () => {
     expect(SERVER_NAME).toBe('Watch history');
     expect(INSTRUCTIONS).toBe(
-      'Use viewing_context for personal viewing and explicit feedback; plays do not prove liking. Discover broadly with web/catalog tools, check_titles against records, verify regional streaming/rental availability, then rank for the request. Use dated sources for current buzz. Plex/watchlist membership restricts only explicit requests. recommend is a limited cached pool, not broad discovery. No recorded viewing is not proof of never watched. Lookup reads never acquire titles. set_watchlist may trigger downloads; mark_watched writes Plex.',
+      'Use viewing_context for personal evidence; plays do not prove liking. Discover broadly, then check_titles and rank for the request using dated research. Released titles beyond theatrical-only are eligible; upcoming/theatrical-only need explicit request. Streaming/rental listings are optional convenience, never a default filter or ranking boost. Plex/watchlist restrict only explicit requests. recommend is a limited cache. No recorded viewing is not proof of never watched; viewingBasis explains recorded status. Reads never acquire titles; set_watchlist may download, mark_watched writes Plex.',
     );
     expect(INSTRUCTIONS.length).toBeLessThanOrEqual(600);
     expect(WATCH_TOOLS.map((t) => [t.name, t.scope, t.description])).toEqual([
@@ -196,6 +196,7 @@ describe('the D-05 contract', () => {
       identity: { tmdbId: i + 1, title: 'A long title '.repeat(100) },
       evidence: {
         plays: 100,
+        viewingBasis: ['explicit_watched', 'plex_watched_state', 'completed_playback'],
         genres: Array.from({ length: 100 }, () => 'genre'.repeat(30)),
         statements: Array.from({ length: 100 }, () => ({
           action: 'watched',
@@ -210,6 +211,9 @@ describe('the D-05 contract', () => {
       items.map((x) => x.identity.tmdbId),
     );
     expect((out.items as typeof items).every((x) => x.evidence.plays === 100)).toBe(true);
+    expect((out.items as typeof items).every((x) => x.evidence.viewingBasis.length === 3)).toBe(
+      true,
+    );
     expect(items[0]?.evidence.statements).toHaveLength(100);
   });
 

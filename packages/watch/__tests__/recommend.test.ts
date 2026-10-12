@@ -510,7 +510,7 @@ describe('scoreCandidates (D-19)', () => {
     expect(pick?.quality).toBeCloseTo(0.8, 12);
     expect(pick?.boost).toBeCloseTo(0.2, 12);
     expect(pick?.score).toBeCloseTo(0.8, 12);
-    expect(pick?.reason).toBe('because you watched Silo');
+    expect(pick?.reason).toBe('cached similarity to Silo in viewing records');
   });
 
   it('uses 0.6 quality without ratings, caps affinity and seed agreement', () => {
@@ -560,13 +560,13 @@ describe('scoreCandidates (D-19)', () => {
     );
     const reasons = Object.fromEntries(picks.map((p) => [p.candidate.title, p.reason]));
     expect(reasons).toEqual({
-      Seeded: 'because you watched Silo',
-      Genre: 'sci-fi like The Expanse',
+      Seeded: 'cached similarity to Silo in viewing records',
+      Genre: 'sci-fi similarity to The Expanse in viewing records',
       Rated: 'rated 7.3 on IMDb',
       'Rated whole': 'rated 8 on IMDb',
       Fresh: 'no recorded viewing',
       Plain: 'no recorded viewing',
-      'Bluey-ish': 'for kids, like Bluey',
+      'Bluey-ish': 'children’s genre similarity to Bluey in viewing records',
     });
   });
 
@@ -583,9 +583,9 @@ describe('scoreCandidates (D-19)', () => {
     );
     const reasons = Object.fromEntries(picks.map((p) => [p.candidate.title, p.reason]));
     expect(reasons).toEqual({
-      Andor: 'sci-fi like The Expanse',
-      'Succession-like': 'drama like Succession',
-      Dramedy: 'comedy like Parks and Recreation',
+      Andor: 'sci-fi similarity to The Expanse in viewing records',
+      'Succession-like': 'drama similarity to Succession in viewing records',
+      Dramedy: 'comedy similarity to Parks and Recreation in viewing records',
     });
   });
 
@@ -596,7 +596,7 @@ describe('scoreCandidates (D-19)', () => {
     ];
     const drama = scoreCandidates(cands, profile, { now: NOW, genre: 'dramas', genreTitles });
     expect(drama.map((p) => [p.candidate.title, p.reason])).toEqual([
-      ['Both', 'drama like Succession'],
+      ['Both', 'drama similarity to Succession in viewing records'],
     ]);
     expect(
       scoreCandidates(cands, profile, { now: NOW, kind: 'movie' }).map((p) => p.candidate.title),
