@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.113.0](https://github.com/thaynes43/haynesnetwork/compare/v0.112.1...v0.113.0) (2026-10-12)
+
+
+### Features
+
+* queue-aware Force Search, the Import Check and the janitor's importable class (PLAN-077 P2) ([#905](https://github.com/thaynes43/haynesnetwork/issues/905)) ([9e40c68](https://github.com/thaynes43/haynesnetwork/commit/9e40c68386b954ad427aae667a9b540bf7190fdc))
+
 ## [0.112.1](https://github.com/thaynes43/haynesnetwork/compare/v0.112.0...v0.112.1) (2026-10-12)
 
 
