@@ -87,9 +87,14 @@ test.describe('the Repair Guide (ADR-109 / DESIGN-055, PLAN-077 P1)', () => {
   test.afterAll(async ({ browser }) => {
     await stubArr('/_stub/reset');
     await asAdmin(browser, async (page) => {
-      // Close the season Fix this file opened, then switch every remedy off again.
+      // Switch every remedy off FIRST (later specs expect today's Fix dialog), then close the season Fix this file
+      // opened so no later spec meets an open fix.
+      await setRemedies(page, false);
       await page.goto('/admin/fixes');
-      const row = page.locator('.admin-table tbody tr').filter({ hasText: 'Breaking Prod' }).filter({ hasText: 'Season 1' });
+      const row = page
+        .locator('.admin-table tbody tr')
+        .filter({ hasText: 'Breaking Prod' })
+        .filter({ hasText: 'Season 1' });
       const closeButtons = row.getByRole('button', { name: /Close the open fix/ });
       if ((await closeButtons.count()) > 0) {
         // The two-step ConfirmButton (ADR-014): arm, wait past its double-click guard, confirm.
@@ -100,7 +105,6 @@ test.describe('the Repair Guide (ADR-109 / DESIGN-055, PLAN-077 P1)', () => {
         await confirmClose.click();
         await expect(row.getByRole('button', { name: /Close the open fix|Confirm closing the fix/ })).toHaveCount(0);
       }
-      await setRemedies(page, false);
     });
   });
 
