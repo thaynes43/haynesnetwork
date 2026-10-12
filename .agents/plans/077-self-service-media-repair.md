@@ -104,7 +104,7 @@ Priority is how often real reports need the remedy, and how much harm today's be
   The Lost Tapes S01 and stop at each preview: GoodFellas shows the no-play message, then the Same Release refusal; the
   season guide shows the pack warning. No write is sent.
 - **Done when** the live previews match and the remedies are switched on.
-- **Status (2026-10-12): built; deploy and live check next.** What landed, and the decisions behind it, are DESIGN-055
+- **Status (2026-10-12): merged as [#897](https://github.com/thaynes43/haynesnetwork/pull/897); release, deploy and live check next.** What landed, and the decisions behind it, are DESIGN-055
   D-09's "P1 decisions" (items 1-9) and D-08's P1 note:
   - Steps 1-6: `fix-guards.ts` (pure), `fix-plan.ts` (the read-only plan, `fix.preview`), `language-check.ts`,
     `playback-evidence.ts`, the guarded path in `fix-flow.ts`, the guide (`repair-guide.tsx`, rules in

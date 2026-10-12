@@ -1,5 +1,16 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-12 19:20Z: PLAN-077 P1 merged (#897) — the Repair Guide's Fix guards; release and live check in progress
+
+- **What:** Fix opens the Repair Guide once any remedy in the audited `repair_guide_remedies` switch is on (all four
+  ship **off**): Replacement Preview and Same Release refusal, the season guard, the language check, playback triage.
+  Decisions: DESIGN-055 D-09 "P1 decisions". Migration 0098 (two app-setting keys). No new *arr write.
+- **In flight:** release, haynes-ops tag bump, live check with `tsx /sync/src/scripts/repair-guide.ts` in a web pod
+  (GoodFellas, Radarr movie 2934, must refuse the Same Release), the Tautulli template change (`server`, Playback
+  Error, a webhook on HaynesTower), then the remedies switched on. The release-please run for #897 failed once
+  ("Error adding to tree"); this docs merge re-runs it.
+- **Known-Issue Servers ship empty:** haynes-ops#3833 (HaynesOps hardware transcoding) was fixed the same day.
+
 ## 2026-10-12 17:50Z: PLAN-077 docs Accepted — owner rulings on DESIGN-055 Q-01..Q-05
 
 The owner chose the recommended option on every question and accepted ADR-109, ADR-110 and ADR-111 (DESIGN-055 is
