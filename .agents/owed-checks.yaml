@@ -1700,3 +1700,52 @@ checks:
       - "2026-10-10 04:26Z current scheduler read-only verification for the next scheduled check, not an OC-047 pass. Existing deployed Libretto KavitaTarget read GET /api/Settings (taskScan daily, installVersion 0.9.0.2) and GET /api/Library/libraries (Library1 Books, lastScanned 2026-10-10T00:00:15.8724264 local). Actual unchanged Kavita Pod timezone America/New_York was EDT -0400, and latest bounded existing logs showed Books scanner activity at 04:00Z today. Official Tasks documentation defines daily as local midnight: https://wiki.kavitareader.com/guides/admin-settings/tasks/. Next configured scan is 2026-10-11T00:00:00-04:00 / 2026-10-11T04:00:00Z, derived from these current settings and timezone; a direct scheduler NextExecution row was not observed, so execution is not guaranteed. Private summary21782f842f920cf24fe40b23e3749c05b8b9455d762c0050427d6a2101396c7b. No scan/settings/book write, extra reader Job, mirror or census. Pending production COPY and file-level/native membership proof remain separate; status/due unchanged."
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/825', 'https://github.com/thaynes43/haynesnetwork/issues/864']
+  - id: OC-048
+    title: 'A week of janitor runs with no archive removal, and the census read for "Archive left unpacked" (PLAN-077 P0)'
+    opened: 2026-10-12
+    after: v0.111.2 (DESIGN-046 D-26) deployed by haynes-ops 3840, and the SABnzbd unpack script (haynes-ops 3836) live
+    not_before: 2026-10-12T17:30:00Z
+    due: 2026-10-20T12:00:00Z
+    owner: haynesnetwork coordinator (janitor ladder, PLAN-065 / PLAN-077 P0)
+    status: pending
+    check: |
+      From 2026-10-19T17:30Z, read arr_queue_cleanup_actions since 2026-10-12T17:30Z. Count the distinct downloads
+      whose reason starts "Archive left unpacked". With SABnzbd now extracting obfuscated 7z posts, that count should be
+      near zero. Record it, and say whether the message should ever return to an acting class (DESIGN-046 D-26 rule 4).
+      Then list every removal (removed_blocklisted or blocklisted_searched) whose reason mentions "archive file". D-26
+      allows one only for a download the *arr had marked failed or errored (bad_release runs first, and a failed
+      download with no other message keeps the archive text as its reason). For each, confirm that state from the
+      *arr's history. A removal of a download that had only the archive warning is a failure: reopen #887.
+    auto:
+      # The D-26 invariant only. A removal with the raw archive text can be legitimate (a failed download, see
+      # `check`), so judging removals stays a manual step.
+      - name: every report-only archive row carries the D-26 reason
+        source: app-db
+        query: |
+          select count(*) as n from arr_queue_cleanup_actions
+          where created_at > '2026-10-12T17:30:00Z' and reason ilike '%archive file%'
+            and action_class = 'unknown' and reason not like 'Archive left unpacked:%'
+        expect: {eq: 0}
+        mismatch: fail
+    auto_covers: part
+    evidence: []
+    links:
+      issues: ['https://github.com/thaynes43/haynesnetwork/issues/887', 'https://github.com/thaynes43/haynes-ops/issues/3834']
+      prs: ['https://github.com/thaynes43/haynesnetwork/pull/890', 'https://github.com/thaynes43/haynes-ops/pull/3836', 'https://github.com/thaynes43/haynes-ops/pull/3840']
+  - id: OC-049
+    title: 'Delete the hold folder of the 3 mislabelled Loud House S10 files'
+    opened: 2026-10-12
+    after: "the #887 repair moved Sonarr's TLHG files for S10E05, E09 and E12 out of the library (they held other episode pairs)"
+    not_before: 2026-10-19T12:00:00Z
+    due: 2026-10-26T12:00:00Z
+    owner: haynesnetwork coordinator (media ops)
+    status: pending
+    check: |
+      In the Sonarr pod (kubectl exec), confirm The Loud House S10E05, E06, E09, E10, E12 and E13 still have their
+      AndreMor pair files and that nobody has asked for the held copies. Then delete
+      "/data/haynestower/usenet/_hold-mislabelled-2026-10-12" (3 files, about 5.4 GB). Record the deletion here. The
+      held "E09" file holds E20 and E21 (Hobblin the Gobblin, Fruit Dispute), and those episodes are still missing:
+      search them in Sonarr first rather than re-import this mislabelled copy.
+    evidence: []
+    links:
+      issues: ['https://github.com/thaynes43/haynesnetwork/issues/887']
