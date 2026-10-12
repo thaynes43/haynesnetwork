@@ -107,6 +107,8 @@ describe('POST /mcp — the public route', () => {
       'watch_status',
       'recent_history',
       'watchlist',
+      'check_titles',
+      'viewing_context',
     ]);
     for (const name of ['mark_watched', 'dismiss', 'set_watchlist', 'undo_last_change']) {
       const res = await post(
