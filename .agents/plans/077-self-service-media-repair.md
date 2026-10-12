@@ -104,7 +104,23 @@ Priority is how often real reports need the remedy, and how much harm today's be
   The Lost Tapes S01 and stop at each preview: GoodFellas shows the no-play message, then the Same Release refusal; the
   season guide shows the pack warning. No write is sent.
 - **Done when** the live previews match and the remedies are switched on.
-- **Status (2026-10-12): merged as [#897](https://github.com/thaynes43/haynesnetwork/pull/897); release, deploy and live check next.** What landed, and the decisions behind it, are DESIGN-055
+- **Status (2026-10-12): shipped, verified live, remedies on.** [#897](https://github.com/thaynes43/haynesnetwork/pull/897)
+  (v0.112.0) and [#901](https://github.com/thaynes43/haynesnetwork/pull/901) (v0.112.1: Playback Evidence matches the
+  session's Plex identity; no user row carried a Plex username), deployed by haynes-ops
+  [#3847](https://github.com/thaynes43/haynes-ops/pull/3847) and [#3848](https://github.com/thaynes43/haynes-ops/pull/3848),
+  3/3 web pods on v0.112.1. The live checks (read-only, `tsx /sync/src/scripts/repair-guide.ts` in a web pod, 20:00Z):
+  GoodFellas' preview refuses the Same Release (its next release is FraMeSToR's own Remux-2160p, a 99.48 GB Usenet post
+  for the 87.61 GB file, basis `identity`); Ludwig (2024) S01, a live 6-episode pack, holds the pack back for a
+  season Fix that chose only E01 (nothing safe: refused) and shows its 5-episode cost on an episode Fix; The Lost Tapes
+  S01 (no pack left after the hand fix) marks E14's own download and leaves E12 (no download record) for an episode
+  Fix; S01E12's audio reads Portuguese and English; Playback Evidence reads `no_play` for the non-admin test account on
+  GoodFellas and `played` (HaynesOps history, by plex.tv id) for a play of the night before. Step 7 done the same day:
+  the template gained `server` and Playback Error on HaynesOps and HaynesKube, and HaynesTower's Tautulli now posts
+  the same webhook through the LAN route (`haynesnetwork.haynesops.com`); each read back. The four remedies were then
+  switched on (audited, actor null, 20:05Z); the Known-Issue Servers stay empty (haynes-ops#3833 fixed). OC-050 watches
+  the first webhooks and guided Fixes. The plan's UI walkthrough as a non-admin cannot run from inside the cluster
+  (the sign-in goes through the public Authentik); e2e `repair-guide.spec.ts` covers the UI. Earlier status lines:
+  build details below. What landed, and the decisions behind it, are DESIGN-055
   D-09's "P1 decisions" (items 1-9) and D-08's P1 note:
   - Steps 1-6: `fix-guards.ts` (pure), `fix-plan.ts` (the read-only plan, `fix.preview`), `language-check.ts`,
     `playback-evidence.ts`, the guarded path in `fix-flow.ts`, the guide (`repair-guide.tsx`, rules in
