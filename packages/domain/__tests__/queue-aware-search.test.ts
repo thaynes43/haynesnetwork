@@ -62,7 +62,22 @@ function stubArr() {
     if (method === 'GET' && p === '/api/v3/queue') return json(page(sonarr ? state.queue : state.radarrQueue));
     if (method === 'GET' && p === '/api/v3/episode') {
       return json(
-        paper.episodes.map((e) => ({ ...e, seriesId: 864, hasFile: state.hasFile.has(e.id) || e.id !== 85215, monitored: true })),
+        paper.episodes.map((e) => {
+          const hasFile = state.hasFile.has(e.id) || e.id !== 85215;
+          return { ...e, seriesId: 864, hasFile, monitored: true, ...(hasFile ? { episodeFileId: 9000 + e.episodeNumber } : {}) };
+        }),
+      );
+    }
+    if (method === 'GET' && p === '/api/v3/episodefile') {
+      return json(
+        paper.episodes.map((e) => ({
+          id: 9000 + e.episodeNumber,
+          seriesId: 864,
+          seasonNumber: 2,
+          relativePath: `Season 2/The Paper (2025) - S02E0${e.episodeNumber}.mkv`,
+          quality: { quality: { id: 7, name: 'Bluray-1080p', resolution: 1080 }, revision: { version: 1 } },
+          size: 800_000_000,
+        })),
       );
     }
     if (method === 'GET' && p === '/api/v3/series/864') {
@@ -173,6 +188,26 @@ describe('queue-aware Force Search (DESIGN-055 D-07)', () => {
       .where(and(eq(ledgerEvents.mediaItemId, paperItemId)));
     expect(events.map((e) => e.type)).toEqual(expect.arrayContaining(['repair_requested', 'repair_completed']));
     expect(events.map((e) => e.type)).not.toContain('search_requested');
+  });
+
+  it('an import over a file on disk names that file as gone afterwards (D-01 preview contract)', async () => {
+    const arr = stubArr();
+    arr.state.queue = [blockedRecord()];
+    arr.state.candidates = [paperCandidate()];
+    const missing = await planForceSearch({ db: t.db, arr: arr.bundle, ...target() });
+    expect(missing.replaces).toEqual([]);
+    arr.state.hasFile.add(85215);
+    const upgrade = await planForceSearch({ db: t.db, arr: arr.bundle, ...target() });
+    expect(upgrade).toMatchObject({
+      state: 'import',
+      replaces: [{ targetId: 85215, fileName: 'Season 2/The Paper (2025) - S02E06.mkv', qualityName: 'Bluray-1080p', sizeBytes: 800_000_000 }],
+    });
+    // A plan that now replaces a file is a different plan: the earlier confirm is refused.
+    expect(upgrade.digest).not.toBe(missing.digest);
+    await expect(
+      runForceSearch({ db: t.db, arr: arr.bundle, requesterId: memberId, ...target(), confirm: { digest: missing.digest } }),
+    ).rejects.toBeInstanceOf(FixPlanChangedError);
+    expect(arr.commands()).toEqual([]);
   });
 
   it('an import that is still running answers `importing` and leaves the repair actioned', async () => {

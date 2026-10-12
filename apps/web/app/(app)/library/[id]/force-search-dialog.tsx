@@ -42,6 +42,7 @@ import {
   progressPercent,
   readsQueueFirst,
   removalGoneLine,
+  replacedGoneLine,
   staffText,
   staffTicketText,
   stepHeading,
@@ -378,11 +379,34 @@ function QueueAwareForceSearch({
               <h4>What it will do</h4>
               <ul className="repair-guide__facts">
                 <li>Add this file to {joinLabels(targets)}.</li>
-                <li>Nothing is deleted or blocked.</li>
+                {data.replaces.length === 0 ? (
+                  <li>Nothing is deleted or blocked.</li>
+                ) : (
+                  <li>Replace the file on disk with this one. Nothing is blocked.</li>
+                )}
               </ul>
             </section>
+            {data.replaces.length > 0 ? (
+              <fieldset className="field repair-guide__gone">
+                <legend>Gone afterwards (tick to confirm)</legend>
+                <label className="check-row">
+                  <input type="checkbox" checked={acked} onChange={(e) => setAcked(e.target.checked)} />
+                  <span>
+                    {data.replaces.map((r) => (
+                      <span key={r.targetId} className="fs-guide__gone-line">
+                        {replacedGoneLine(r)}
+                      </span>
+                    ))}
+                  </span>
+                </label>
+              </fieldset>
+            ) : null}
             <div className="form-actions">
-              <MediaAction action="importDownload" disabled={search.isPending} onFire={() => submit(data)} />
+              <MediaAction
+                action="importDownload"
+                disabled={search.isPending || (data.replaces.length > 0 && !acked)}
+                onFire={() => submit(data)}
+              />
             </div>
           </div>
         );
