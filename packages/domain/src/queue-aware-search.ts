@@ -120,7 +120,6 @@ interface InternalPlan extends ForceSearchPlan {
   arrItemId: number;
   seasonNumber: number | null;
   targetChildId: number | null;
-  seasonEpisodeIds: number[];
   /** The first queue record of the download (a removal goes through it). */
   queueItemId: number | null;
   sonarrCheck: SonarrImportCheck | null;
@@ -258,7 +257,6 @@ async function buildPlan(input: ForceSearchPlanInput): Promise<InternalPlan> {
     arrItemId: item.arrItemId,
     seasonNumber: null,
     targetChildId,
-    seasonEpisodeIds: [],
     queueItemId: null,
     sonarrCheck: null,
     sonarrCheckInput: null,
@@ -318,7 +316,6 @@ async function buildPlan(input: ForceSearchPlanInput): Promise<InternalPlan> {
     queueAware: true,
     targetLabel: label(target.id),
     seasonNumber: target.seasonNumber,
-    seasonEpisodeIds: episodes.filter((e) => e.seasonNumber === target.seasonNumber).map((e) => e.id),
   };
   const picked = pickDownload(queue.filter((r) => r.episodeId === target.id));
   if (!picked) return finish(plan);
@@ -536,7 +533,8 @@ export async function runQueueAwareForceSearch(
     scope: plan.kind === 'radarr' ? 'item' : 'episode',
     seasonNumber: plan.kind === 'radarr' ? null : plan.seasonNumber,
     targetChildIds: plan.kind === 'radarr' ? [] : targetIds,
-    seasonEpisodeIds: plan.seasonEpisodeIds,
+    // An import onto one episode meets a season Fix on its season and a Fix on the episodes it lands on, not a Fix on
+    // another episode of the season (DESIGN-055 D-02, as built in P2): the two touch different files.
     targetLabel: label,
     reason: null,
     preview: {

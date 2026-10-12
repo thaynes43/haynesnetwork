@@ -94,6 +94,9 @@ describe('Repair Requests (DESIGN-055 D-02)', () => {
     // An open episode Fix in the season blocks an import there (the caller names the season's episodes).
     await createFixRequest({ db: t.db, requesterId: memberId, mediaItemId: showId, scope: 'episode', targetArrChildId: 85216, reason: 'wont_play_corrupt' });
     await expect(importRepair({ seasonEpisodeIds: [85210, 85215, 85216] })).rejects.toBeInstanceOf(FixAlreadyOpenError);
+    // Without the season's episodes (an import onto one episode), a Fix on another episode does not block it.
+    const free = await importRepair();
+    await t.db.delete(repairRequests).where(eq(repairRequests.id, free.repairRequestId));
     await t.db.update(fixRequests).set({ status: 'closed_manually' });
 
     // An open import blocks a Fix on its episode, and a season Fix on its season.

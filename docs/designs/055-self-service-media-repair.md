@@ -83,8 +83,10 @@ at L2. App usage: 2 Fix requests in 90 days (one person), 1 Helpdesk ticket ever
   `repair_failed` events and the writer (`createRepairRequest`, `recordRepairTransition`, `completeRepairRequests`,
   `expireStaleRepairRequests`) landed with kind `import_download`. `countRecentFixBudget` counts Repair Requests.
   The open check, both ways: a repair meets any open repair on the movie or on the same season; against a Fix, a season
-  Fix matches by its season and an episode Fix by its episode (an episode Fix knows its episode, not its season, so the
-  repair side passes the season's episode ids when it has them, as Force Search does). `release_list_requested` arrives
+  Fix matches by its season and an episode Fix by its episode. An import onto one episode is therefore not held up by a
+  Fix on another episode of the same season, which touches a different file (seen in e2e: a Fix still waiting for its
+  replacement on S01E02 would otherwise block importing S01E10 for up to 48 hours). The writer can also take the
+  season's episode ids, for a remedy that moves files across the season (P4's re-map). `release_list_requested` arrives
   with P5. The `refused` status exists but P2 never writes it: every refusal is thrown before the row, as in P1.
 
 ### D-03 The write surface (hard rule 4)

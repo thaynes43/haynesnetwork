@@ -174,7 +174,7 @@ Priority is how often real reports need the remedy, and how much harm today's be
     were on) for the live check.
   - Tests: `title-evidence.test.ts`, `import-check.test.ts`, `queue-aware-search.test.ts`, `repair-requests.test.ts`,
     `queue-cleanup.test.ts` (D-27), `manual-import-clients.test.ts` (arr), the router test in `fix-guards.test.ts` (api);
-    e2e `force-search-guide.spec.ts`: Case B (AC-41), a download on its way, the staff path with the prefilled ticket.
+    e2e `queue-aware-force-search.spec.ts`: Case B (AC-41), a download on its way, the staff path with the prefilled ticket.
 
 ### P3: Seerr Issue mirror, surfaces, onboarding and metrics
 

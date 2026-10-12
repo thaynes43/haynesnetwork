@@ -8,6 +8,10 @@
 //     title, the episode and what Force Search found (the ticket is not filed). Run as the admin, who may file tickets.
 // The `import_check` remedy is switched on through the admin card on /admin/fixes for this file only and switched off
 // again afterwards, and the stub is reset, so no later spec sees the guide or the fixtures.
+//
+// NB: the file name keeps this suite alphabetically AFTER library.spec.ts (as progress-feedback.spec.ts does): the
+// Repair Request events Case B lands on Breaking Prod (repair_requested / repair_completed, dated now) must not outrank
+// the seeded history in specs that assert timeline order.
 import { test, expect, type Browser, type Page, type TestInfo } from '@playwright/test';
 import { signIn } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
