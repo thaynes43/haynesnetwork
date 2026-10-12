@@ -46,7 +46,9 @@ single `watch_status` adopts improved read status where compatible. Action resol
 
 ### D-04 — Shared workflow and bounds
 
-Shared instructions/descriptions expose the workflow. New tools have <=1,200-character text plus
+Shared instructions/descriptions expose the workflow. The viewing-context tool description also
+carries broad discovery, contextual judgment and released-media eligibility policy for connected
+clients that omit initialize instructions. New tools have <=1,200-character text plus
 structured content <=64 KiB, with page/input caps and clipped optional metadata. Preserve candidate
 results and indicate clipping. Other tools keep text. Schemas <=6,144 bytes; instructions <=600.
 Maintain bounded lookup cost and the added voice latency target of 0.5 seconds.
