@@ -1739,13 +1739,14 @@ checks:
     not_before: 2026-10-19T12:00:00Z
     due: 2026-10-26T12:00:00Z
     owner: haynesnetwork coordinator (media ops)
-    status: pending
+    status: passed
     check: |
       In the Sonarr pod (kubectl exec), confirm The Loud House S10E05, E06, E09, E10, E12 and E13 still have their
       AndreMor pair files and that nobody has asked for the held copies. Then delete
       "/data/haynestower/usenet/_hold-mislabelled-2026-10-12" (3 files, about 5.4 GB). Record the deletion here. The
       held "E09" file holds E20 and E21 (Hobblin the Gobblin, Fruit Dispute), and those episodes are still missing:
       search them in Sonarr first rather than re-import this mislabelled copy.
-    evidence: []
+    evidence:
+      - "2026-10-12 17:55Z PASSED early, on the coordinator's request; the not_before wait no longer applied. The subtitle text (SRT CC stream, read with Sonarr's ffprobe) identified all 3 held files. The 'E09' file opens with the Morticians' Club and a cursed cookbook (Hobblin the Gobblin), and its second half is Leni, Mariella's dragon-fruit belts and River's protest (Fruit Dispute). No release named S10E20/E21 was indexed, so Sonarr manual-imported this file (importMode move) onto S10E20 and E21 as one multi-episode file: episode file 78978, 'S10E20-21 - Hobblin the Gobblin and Fruit Dispute'. Plex (plexops, HOps TV Shows) lists it, as the single entry 'Episode 20' it uses for every multi-episode file in this season. The 'E05' file is One False Move and Personal Train Wreck (Shelby, Uncle Lance's gym), duplicating the AndreMor S10E14-15 file in the library. The 'E12' file is Student of the Jeer and Bean Dreams (Lori and the Brewniversity), duplicating S09E22 and S09E23, which the library holds in its LAZY S09E21-22 and S09E23-24 files. Both duplicates and the hold folder were deleted."
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/887']
