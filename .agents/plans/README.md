@@ -152,6 +152,7 @@ dispatch** (standing rule).
 | 075 | [Agent-owned watch recommendations](completed/075-agent-owned-watch-recommendations.md) | ✅ **completed/ (v0.111.0, 2026-10-12)** | ADR-107 / DESIGN-054; factual context and external candidate checks, membership-neutral cache scopes, live app/24-job verification and preserved voice settings. Feature #882, release #881, haynes-ops #3828/#3829/#3830, hass-sandbox #241/#242. |
 
 | 076 | [Watch recommendation acceptance feedback](076-watch-recommendation-acceptance-feedback.md) | **In progress** | ADR-108 / DESIGN-054 D-04..D-07: eligibility guidance, classification provenance, strict year alternatives and neutral cached hints; release and guarded voice rollout required. |
+| 077 | [Self-service media repair and the Seerr issue bridge](077-self-service-media-repair.md) | **Draft; docs Proposed** (ADR-109, ADR-110, ADR-111, DESIGN-055) | Nine phases by frequency and risk. **P0 first** ([#887](https://github.com/thaynes43/haynesnetwork/issues/887): the janitor blocklists good releases SABnzbd left as an unextracted `.7z`; haynes-ops [#3834](https://github.com/thaynes43/haynes-ops/issues/3834)). P1..P4 need no owner input; P5..P8 wait on DESIGN-055 Q-01..Q-05. Absorbs [#597](https://github.com/thaynes43/haynesnetwork/issues/597) Part 1. |
 
 ### Unplanned intake (owner-gated)
 
