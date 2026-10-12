@@ -14,7 +14,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { watchMarks, watchTitles, type Database } from '@hnet/db';
 import * as schema from '@hnet/db/schema';
-import { upsertWatchTitles, type WatchPlexClients } from '@hnet/domain';
+import { replaceRecoSignals, upsertWatchTitles, type WatchPlexClients } from '@hnet/domain';
 import { SPOKEN_MAX_CHARS, type WatchBatchCheck, type WatchViewingContext } from '@hnet/watch';
 import type { McpDeps } from '../src/index';
 import { FakePlex, NOW, OWNER, ownerWorld, seedWorld, serveMcp, type McpHttp } from './fixture';
@@ -424,7 +424,7 @@ describe('the read tools (D-05, D-10, D-11, D-16..D-21) and the 1,200-character 
   });
 
   it('an empty watchlist cache reports unknown membership without a synthetic fetched timestamp', async () => {
-    await db.execute(sql`DELETE FROM watch_reco_signals WHERE source = 'watchlist'`);
+    await replaceRecoSignals({ db, plexAccountId: OWNER, source: 'watchlist', rows: [], fetchedAt: NOW });
     const checked = await evidenceCall<WatchBatchCheck>('check_titles', {
       titles: [{ kind: 'show', tmdbId: 93740 }],
     });
