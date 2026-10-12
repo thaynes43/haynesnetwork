@@ -12,6 +12,7 @@ import {
   type DbClient,
   type MotdSeverity,
   type PlexServerSlug,
+  type RepairGuideRemedy,
   type TrashMediaKind,
 } from '@hnet/db';
 import { eq } from 'drizzle-orm';
@@ -324,6 +325,12 @@ export interface AppSettingValueMap {
   // ADR-093 C-11 / DESIGN-052 D-17 (PLAN-072) — the audited Seerr watchlist enrollment switch. An object (so the
   // getAppSetting typeof-guard treats it like motd); off out of the box, `onlyUserIds` limits a canary (null: all).
   seerr_watchlist_enroll: SeerrWatchlistEnrollSetting;
+  // ADR-109 / DESIGN-055 D-01 (PLAN-077) — the Repair Guide's per-remedy kill switch. An object (so the getAppSetting
+  // typeof-guard treats it like motd); read through getRepairGuideRemedies (strict booleans, unknown keys dropped).
+  repair_guide_remedies: Partial<Record<RepairGuideRemedy, boolean>>;
+  // DESIGN-055 D-09 (PLAN-077 P1) — the Known-Issue Servers (T-314), Plex server slugs. Read through
+  // getKnownIssueServers (known slugs only).
+  playback_known_issue_servers: string[];
 }
 
 /** DESIGN-052 D-17 — the Seerr watchlist enrollment switch (off until PLAN-072 S9). */
@@ -396,6 +403,10 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   },
   // ADR-093 C-11 / DESIGN-052 D-17 — enrollment ships OFF (absent key ⇒ off); PLAN-072 S9 turns it on.
   seerr_watchlist_enroll: { enabled: false, onlyUserIds: null },
+  // ADR-109 / DESIGN-055 D-01 — every remedy ships off (absent key ⇒ Fix keeps today's dialog and behaviour).
+  repair_guide_remedies: {},
+  // DESIGN-055 D-09 — no Known-Issue Server out of the box; staff name them in /admin.
+  playback_known_issue_servers: [],
 };
 
 /**

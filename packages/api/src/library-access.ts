@@ -134,6 +134,12 @@ export interface PlexPlayTarget {
   /** The Plex library this button opens the title in. */
   libraryName: string;
   url: string;
+  /**
+   * ADR-109 / DESIGN-055 D-09 (PLAN-077 P1) — the Plex server the library lives on, so Won't play triage can offer a
+   * server with no known issue first (T-314).
+   */
+  serverSlug: string;
+  serverName: string;
 }
 
 /**
@@ -154,6 +160,8 @@ export async function resolvePlexPlayTargets(
       ratingKey: mediaPlexMatches.ratingKey,
       libraryName: plexLibraries.name,
       machineIdentifier: plexServers.machineIdentifier,
+      serverSlug: plexServers.slug,
+      serverName: plexServers.name,
     })
     .from(mediaPlexMatches)
     .innerJoin(plexLibraries, eq(plexLibraries.id, mediaPlexMatches.plexLibraryId))
@@ -167,6 +175,8 @@ export async function resolvePlexPlayTargets(
       label: `Watch on Plex — ${r.libraryName}`,
       libraryName: r.libraryName,
       url: buildPlexWebDeepLink(r.machineIdentifier, r.ratingKey),
+      serverSlug: r.serverSlug,
+      serverName: r.serverName,
     }));
 }
 

@@ -1,0 +1,69 @@
+[
+  {
+    "movieId": 2934,
+    "relativePath": "GoodFellas (1990) {imdb-tt0099685} [Hybrid][Remux-2160p][DV HDR10][DTS-HD MA 5.1][HEVC]-FRAMESTOR.mkv",
+    "size": 87610002547,
+    "dateAdded": "2026-07-03T02:18:16Z",
+    "releaseGroup": "FRAMESTOR",
+    "edition": "",
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "quality": {
+      "quality": {
+        "id": 31,
+        "name": "Remux-2160p",
+        "source": "bluray",
+        "resolution": 2160,
+        "modifier": "remux"
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "customFormats": [
+      {
+        "id": 81,
+        "name": "DTS-HD MA"
+      },
+      {
+        "id": 90,
+        "name": "DV Boost"
+      },
+      {
+        "id": 69,
+        "name": "HDR"
+      },
+      {
+        "id": 73,
+        "name": "Remux Tier 01"
+      }
+    ],
+    "customFormatScore": 5950,
+    "indexerFlags": 0,
+    "mediaInfo": {
+      "audioBitrate": 4000280,
+      "audioChannels": 5.1,
+      "audioCodec": "DTS-HD MA",
+      "audioLanguages": "eng/eng/eng",
+      "audioStreamCount": 3,
+      "videoBitDepth": 10,
+      "videoBitrate": 74802644,
+      "videoCodec": "h265",
+      "videoFps": 23.976,
+      "videoDynamicRange": "HDR",
+      "videoDynamicRangeType": "DV HDR10",
+      "resolution": "3840x2160",
+      "runTime": "2:25:21",
+      "scanType": "Progressive",
+      "subtitles": "eng/ara/chi/chi/chi/cze/dan/dut/fin/fre/ger/gre/heb/hun/ita/jpn/kor/nor/pol/por/por/rum/rus/spa/spa/swe/tha/tur/jpn/jpn"
+    },
+    "qualityCutoffNotMet": false,
+    "id": 1507
+  }
+]

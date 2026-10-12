@@ -35,10 +35,16 @@ import {
 } from '@hnet/arr';
 import {
   ArrUpstreamError,
+  FixPlanChangedError,
+  FixRefusedError,
   LedgerItemTombstonedError,
   NotFoundError,
   SubtitleFixUnsupportedError,
 } from './errors';
+import { getRepairGuideRemedies, type RepairGuideRemedies } from './repair-guide-settings';
+import { planApplies, planFix, type FixPlan, type PlanReplacement } from './fix-plan';
+import { languageVerdict, readFileAudio } from './language-check';
+import { audioLanguageName } from './fix-guards';
 import { resolveDb } from './db-client';
 import { createFixRequest, recordFixAction } from './fix-requests';
 import { arrApiBasePath, type ArrClientBundle } from './arr-clients';
@@ -66,6 +72,20 @@ export interface RunFixRequestInput {
   seasonNumber?: number;
   reason: FixReason;
   reasonText?: string;
+  /**
+   * ADR-109 / DESIGN-055 D-09 (PLAN-077 P1) — the Repair Guide's choices. Each is read only while its remedy is on
+   * (`repair_guide_remedies`); with every remedy off the Fix runs exactly as before.
+   * - `episodeIds`: season guard, the episodes the person marked wrong (absent ⇒ every on-disk episode);
+   * - `replaceFile`: season guard, replace just this episode's file instead of blocking the pack that holds it;
+   * - `blockWholePack`: season guard, the person saw the other episodes a pack blocklist costs and chose it anyway;
+   * - `wantedLanguage`: language check, the audio language the person wanted (ISO 639-2, e.g. `eng`);
+   * - `planDigest`: the digest of the plan the person confirmed; a different plan now is refused, not run.
+   */
+  episodeIds?: number[];
+  replaceFile?: boolean;
+  blockWholePack?: boolean;
+  wantedLanguage?: string;
+  planDigest?: string;
 }
 
 export interface RunFixRequestResult {
@@ -178,6 +198,35 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
       { id: item.id, arrKind: kind, arrItemId: item.arrItemId },
       { scope, targetChildId, seasonNumber },
     );
+  }
+
+  // ADR-109 / DESIGN-055 D-08, D-09 (PLAN-077 P1) — the Repair Guide's guards, each behind its kill switch. Every
+  // check here reads only, and refuses BEFORE the pending row: a refused Fix writes nothing and uses no budget.
+  if (kind === 'sonarr' || kind === 'radarr') {
+    const remedies = await getRepairGuideRemedies(input.db);
+    if (input.reason === 'wrong_language' && remedies.language_check && input.wantedLanguage) {
+      const audio = await readFileAudio({
+        db: input.db,
+        arr: input.arr,
+        mediaItemId: item.id,
+        scope,
+        targetChildId: targetChildId ?? undefined,
+        seasonNumber: seasonNumber ?? undefined,
+      });
+      if (languageVerdict(audio, input.wantedLanguage) === 'present') {
+        throw new FixRefusedError(
+          'language_present',
+          `${audioLanguageName(input.wantedLanguage)} audio is already in this file, so nothing was removed. Pick that track in Plex instead.`,
+        );
+      }
+    }
+    if (planApplies(kind, remedies)) {
+      return runGuardedFix(input, { id: item.id, arrKind: kind, arrItemId: item.arrItemId }, remedies, {
+        scope,
+        targetChildId,
+        seasonNumber,
+      });
+    }
   }
 
   // Season roll-up is its own orchestration (blocklist every backing grab + SeasonSearch).
@@ -750,4 +799,288 @@ async function runSeasonFix(
   }
 
   return { id: fixRequestId, status: 'search_triggered', pathTaken, targetLabel };
+}
+
+/**
+ * ADR-109 C-03 / DESIGN-055 D-09 (PLAN-077 P1) — a Fix under the Repair Guide's guards. The plan is read again here (the
+ * guide's preview is never trusted as is), compared with the one the person confirmed, and refused before the pending
+ * row when it would destroy something it should not:
+ * - a delete whose replacement is the Same Release, or with nothing acceptable to replace it (`replacement_preview`);
+ * - a blocklist that would also cost other episodes' pack, unless the person chose that (`season_guard`);
+ * - a season Fix in which every chosen episode was held back or refused.
+ * Then it acts exactly as the plan says, with the same audit steps as an unguarded Fix plus the plan itself.
+ */
+async function runGuardedFix(
+  input: RunFixRequestInput,
+  item: { id: string; arrKind: 'sonarr' | 'radarr'; arrItemId: number },
+  remedies: RepairGuideRemedies,
+  resolved: { scope: FixScope; targetChildId: number | null; seasonNumber: number | null },
+): Promise<RunFixRequestResult> {
+  const kind = item.arrKind;
+  const base = arrApiBasePath(kind);
+  const plan = await planFix({
+    db: input.db,
+    arr: input.arr,
+    mediaItemId: item.id,
+    scope: resolved.scope,
+    targetChildId: resolved.targetChildId ?? undefined,
+    seasonNumber: resolved.seasonNumber ?? undefined,
+    episodeIds: input.episodeIds,
+    replaceFile: input.replaceFile,
+    remedies,
+  });
+  if (input.planDigest !== undefined && input.planDigest !== plan.digest) {
+    throw new FixPlanChangedError(
+      'Something changed since you looked, so nothing was done. Check the new preview before you confirm.',
+    );
+  }
+  refuseUnsafePlan(plan, remedies, input);
+
+  const targetLabel = plan.targetLabel;
+  const { fixRequestId } = await createFixRequest({
+    db: input.db,
+    requesterId: input.requesterId,
+    requesterIsAdmin: input.requesterIsAdmin,
+    mediaItemId: item.id,
+    scope: resolved.scope,
+    targetArrChildId: resolved.targetChildId,
+    seasonNumber: resolved.seasonNumber,
+    targetLabel,
+    reason: input.reason,
+    reasonText: input.reasonText ?? null,
+  });
+
+  const fail = async (entry: FixActionEntry, err: unknown): Promise<never> => {
+    await recordFixAction({ db: input.db, fixRequestId, transition: 'failed', actions: [entry] });
+    throw new ArrUpstreamError(err instanceof Error ? err.message : `fix step ${entry.step} failed`, { cause: err });
+  };
+  const planEntry = stepOk('guard_plan', `${base} (read-only plan)`, {
+    ...planSummary(plan),
+    ...(input.wantedLanguage ? { wantedLanguage: input.wantedLanguage } : {}),
+  });
+  const readConfig = async (): Promise<ArrDownloadClientConfig> => {
+    try {
+      return await input.arr.read[kind].getDownloadClientConfig();
+    } catch (err) {
+      if (err instanceof ArrError) await fail(stepFailed('redownload_check', `GET ${base}/config/downloadclient`, err), err);
+      throw err;
+    }
+  };
+  const search = async (run: () => Promise<{ id: number; name: string }>): Promise<void> => {
+    const endpoint = `POST ${base}/command`;
+    try {
+      const command = await run();
+      await recordFixAction({
+        db: input.db,
+        fixRequestId,
+        transition: 'search_triggered',
+        actions: [stepOk('trigger_search', endpoint, { commandId: command.id, commandName: command.name })],
+      });
+    } catch (err) {
+      if (err instanceof ArrError) await fail(stepFailed('trigger_search', endpoint, err), err);
+      throw err;
+    }
+  };
+  const leaveSearchToArr = async () =>
+    recordFixAction({ db: input.db, fixRequestId, transition: 'search_triggered', actions: [searchLeftToArr(base, kind)] });
+  const searchTarget = () =>
+    kind === 'sonarr'
+      ? input.arr.write.sonarr.searchEpisodes([resolved.targetChildId!])
+      : input.arr.write.radarr.searchMovies([item.arrItemId]);
+
+  if (plan.kind === 'blocklist') {
+    const config = await readConfig();
+    const arrSearches = arrSearchesAfterMarkFailed(config, { data: { releaseSource: plan.grab.releaseSource } });
+    const endpoint = `POST ${base}/history/failed/${plan.grab.grabId}`;
+    try {
+      await input.arr.write[kind].markHistoryFailed(plan.grab.grabId);
+    } catch (err) {
+      if (err instanceof ArrError) await fail(stepFailed('mark_failed', endpoint, err), err);
+      throw err;
+    }
+    await recordFixAction({
+      db: input.db,
+      fixRequestId,
+      transition: 'actioned',
+      pathTaken: 'blocklist_search',
+      actions: [
+        planEntry,
+        stepOk('resolve_grab', `GET ${base}/history (plan)`, {
+          grabHistoryId: plan.grab.grabId,
+          ...(plan.grab.sourceTitle ? { sourceTitle: plan.grab.sourceTitle } : {}),
+        }),
+        redownloadEntry(base, config, {
+          ...(plan.grab.releaseSource ? { releaseSource: plan.grab.releaseSource } : {}),
+          arrSearches,
+        }),
+        stepOk('mark_failed', endpoint, { status: 200 }),
+      ],
+    });
+    if (arrSearches) await leaveSearchToArr();
+    else await search(searchTarget);
+    return { id: fixRequestId, status: 'search_triggered', pathTaken: 'blocklist_search', targetLabel };
+  }
+
+  if (plan.kind === 'delete') {
+    const deleteEntries: FixActionEntry[] = [];
+    if (plan.file) {
+      const endpoint =
+        kind === 'sonarr' ? `DELETE ${base}/episodefile/${plan.file.fileId}` : `DELETE ${base}/moviefile/${plan.file.fileId}`;
+      try {
+        if (kind === 'sonarr') await input.arr.write.sonarr.deleteEpisodeFile(plan.file.fileId);
+        else await input.arr.write.radarr.deleteMovieFile(plan.file.fileId);
+      } catch (err) {
+        if (err instanceof ArrError) await fail(stepFailed('delete_file', endpoint, err), err);
+        throw err;
+      }
+      deleteEntries.push(stepOk('delete_file', endpoint, { status: 200 }));
+    } else {
+      deleteEntries.push(
+        stepOk('delete_file', `${base} (fix fallback)`, {
+          skipped: true,
+          note: 'no grab history and nothing on disk to delete — search only',
+        }),
+      );
+    }
+    await recordFixAction({
+      db: input.db,
+      fixRequestId,
+      transition: 'actioned',
+      pathTaken: 'delete_search',
+      actions: [planEntry, ...deleteEntries],
+    });
+    await search(searchTarget);
+    return { id: fixRequestId, status: 'search_triggered', pathTaken: 'delete_search', targetLabel };
+  }
+
+  // ---- season ----
+  const sonarr = input.arr.write.sonarr;
+  if (plan.mode === 'blocklist') {
+    const config = await readConfig();
+    const actions: FixActionEntry[] = [planEntry];
+    const covered = new Set<number>();
+    for (const mark of plan.marks) {
+      if (arrSearchesAfterMarkFailed(config, { data: { releaseSource: mark.releaseSource } })) {
+        for (const id of mark.grabbedEpisodeIds) covered.add(id);
+      }
+    }
+    actions.push(
+      redownloadEntry(base, config, {
+        arrSearchesGrabs: plan.marks
+          .filter((m) => arrSearchesAfterMarkFailed(config, { data: { releaseSource: m.releaseSource } }))
+          .map((m) => m.grabId),
+      }),
+    );
+    for (const mark of plan.marks) {
+      const endpoint = `POST ${base}/history/failed/${mark.grabId}`;
+      try {
+        await sonarr.markHistoryFailed(mark.grabId);
+      } catch (err) {
+        if (err instanceof ArrError) await fail(stepFailed('mark_failed', endpoint, err), err);
+        throw err;
+      }
+      actions.push(
+        stepOk('mark_failed', endpoint, {
+          status: 200,
+          grabHistoryId: mark.grabId,
+          episodeIds: mark.episodes.map((e) => e.episodeId),
+        }),
+      );
+    }
+    await recordFixAction({ db: input.db, fixRequestId, transition: 'actioned', pathTaken: 'blocklist_search', actions });
+    const left = plan.searchEpisodeIds.filter((id) => !covered.has(id));
+    if (plan.wholeSeason && covered.size === 0) await search(() => sonarr.searchSeason(item.arrItemId, plan.seasonNumber));
+    else if (left.length === 0) await leaveSearchToArr();
+    else await search(() => sonarr.searchEpisodes(left));
+    return { id: fixRequestId, status: 'search_triggered', pathTaken: 'blocklist_search', targetLabel };
+  }
+
+  const actions: FixActionEntry[] = [planEntry];
+  for (const d of plan.deletes) {
+    const endpoint = `DELETE ${base}/episodefile/${d.file.fileId}`;
+    try {
+      await sonarr.deleteEpisodeFile(d.file.fileId);
+    } catch (err) {
+      if (err instanceof ArrError) await fail(stepFailed('delete_file', endpoint, err), err);
+      throw err;
+    }
+    actions.push(stepOk('delete_file', endpoint, { status: 200, episodeId: d.episode.episodeId }));
+  }
+  await recordFixAction({ db: input.db, fixRequestId, transition: 'actioned', pathTaken: 'delete_search', actions });
+  if (plan.wholeSeason) await search(() => sonarr.searchSeason(item.arrItemId, plan.seasonNumber));
+  else await search(() => sonarr.searchEpisodes(plan.searchEpisodeIds));
+  return { id: fixRequestId, status: 'search_triggered', pathTaken: 'delete_search', targetLabel };
+}
+
+function replacementRefused(replacement: PlanReplacement): 'same_release' | 'no_replacement' | null {
+  return replacement.verdict === 'same_release' || replacement.verdict === 'no_replacement' ? replacement.verdict : null;
+}
+
+/** The refusals (DESIGN-055 D-09). Thrown before the pending row: nothing written, no budget used. */
+function refuseUnsafePlan(plan: FixPlan, remedies: RepairGuideRemedies, input: RunFixRequestInput): void {
+  if (plan.kind === 'delete' && plan.file && remedies.replacement_preview) {
+    const refused = replacementRefused(plan.replacement);
+    if (refused === 'same_release') {
+      throw new FixRefusedError(
+        'same_release',
+        'Deleting this file would download the same release again, so nothing was removed.',
+      );
+    }
+    if (refused === 'no_replacement') {
+      throw new FixRefusedError(
+        'no_replacement',
+        'Deleting this file would leave nothing to replace it, so nothing was removed.',
+      );
+    }
+  }
+  if (plan.kind === 'blocklist' && plan.packCost.length > 0 && remedies.season_guard && input.blockWholePack !== true) {
+    throw new FixRefusedError(
+      'pack',
+      `This download is a pack that also holds ${plan.packCost.length} other episode${plan.packCost.length === 1 ? '' : 's'}. Choose whether to replace just this episode or block the whole pack.`,
+    );
+  }
+  if (plan.kind === 'season' && !plan.actionable) {
+    throw new FixRefusedError(
+      'nothing_safe',
+      'Nothing in this season can be fixed safely as a whole. Fix the episodes one at a time.',
+    );
+  }
+}
+
+/** The plan's audit entry: enough to see later what was previewed and why it was allowed (no URL, no guid). */
+function planSummary(plan: FixPlan): Record<string, unknown> {
+  if (plan.kind === 'blocklist') {
+    return {
+      plan: 'blocklist',
+      digest: plan.digest,
+      grabHistoryId: plan.grab.grabId,
+      packCost: plan.packCost.map((e) => e.label),
+    };
+  }
+  if (plan.kind === 'delete') {
+    return {
+      plan: 'delete',
+      digest: plan.digest,
+      fileId: plan.file?.fileId ?? null,
+      fileName: plan.file?.name ?? null,
+      insteadOfPack: plan.insteadOfPack,
+      replacement: {
+        verdict: plan.replacement.verdict,
+        title: plan.replacement.candidate?.title ?? null,
+        group: plan.replacement.candidate?.releaseGroup ?? null,
+        quality: plan.replacement.candidate?.qualityName ?? null,
+        size: plan.replacement.candidate?.size ?? null,
+      },
+    };
+  }
+  return {
+    plan: `season_${plan.mode}`,
+    digest: plan.digest,
+    chosen: plan.chosen.map((e) => e.label),
+    marks: plan.marks.map((m) => ({ grabHistoryId: m.grabId, episodes: m.episodes.map((e) => e.label) })),
+    heldBack: plan.heldBack.map((h) => ({ chosen: h.chosen.map((e) => e.label), others: h.others.map((e) => e.label) })),
+    noRecord: plan.noRecord.map((e) => e.label),
+    deletes: plan.deletes.map((d) => d.episode.label),
+    refused: plan.refused.map((d) => ({ episode: d.episode.label, verdict: d.replacement.verdict })),
+  };
 }

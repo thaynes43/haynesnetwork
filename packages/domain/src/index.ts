@@ -115,6 +115,13 @@ export * from './action-scope';
 export * from './fix-reasons';
 export * from './media-children';
 export * from './fix-flow';
+// ADR-109 / DESIGN-055 D-08, D-09 (PLAN-077 P1) — the Repair Guide's Fix guards: the settings, the pure guards, the
+// read-only plan the guide previews, the language check and Playback Evidence.
+export * from './repair-guide-settings';
+export * from './fix-guards';
+export * from './fix-plan';
+export * from './language-check';
+export * from './playback-evidence';
 export * from './search-requests';
 export * from './search-flow';
 // ADR-071 owner ruling 2026-07-19 — the bulk movies/TV collection Force Search (fans out the per-item

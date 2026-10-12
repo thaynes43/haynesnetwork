@@ -1,0 +1,316 @@
+[
+  {
+    "guid": "sonarr-lost-tapes-s01-0",
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 2,
+        "real": 0,
+        "isRepack": true
+      }
+    },
+    "qualityWeight": 1102,
+    "age": 152,
+    "ageHours": 3649.6089240470556,
+    "ageMinutes": 218976.53544282835,
+    "size": 456123370,
+    "indexerId": 2,
+    "indexer": "NinjaCentral (Prowlarr)",
+    "releaseGroup": "Kitsune",
+    "title": "Regular Show The Lost Tapes S01E01 Fix That Tape REPACK 1080p AMZN WEB-DL DDP5 1 H 264-Kitsune",
+    "fullSeason": false,
+    "sceneSource": false,
+    "seasonNumber": 1,
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "episodeNumbers": [
+      1
+    ],
+    "mappedSeasonNumber": 1,
+    "mappedEpisodeNumbers": [
+      1
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "imdbId": "tt32604054",
+    "rejections": [
+      "Existing file on disk has a equal or higher Custom Format score: 1780"
+    ],
+    "publishDate": "2026-05-13T16:16:25Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/0",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/0",
+    "infoUrl": "https://indexer.invalid/infoUrl/0",
+    "downloadAllowed": true,
+    "releaseWeight": 0,
+    "customFormats": [
+      {
+        "id": 41,
+        "name": "AMZN"
+      },
+      {
+        "id": 38,
+        "name": "Repack/Proper"
+      },
+      {
+        "id": 59,
+        "name": "WEB Tier 01"
+      }
+    ],
+    "customFormatScore": 1780,
+    "protocol": "usenet",
+    "indexerFlags": 0
+  },
+  {
+    "guid": "sonarr-lost-tapes-s01-1",
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 2,
+        "real": 0,
+        "isRepack": true
+      }
+    },
+    "qualityWeight": 1102,
+    "age": 135,
+    "ageHours": 3259.105312942611,
+    "ageMinutes": 195546.31877655667,
+    "size": 417161919,
+    "indexerId": 1,
+    "indexer": "DrunkenSlug (Prowlarr)",
+    "releaseGroup": "Kitsune",
+    "title": "Regular.Show.The.Lost.Tapes.S01E01.Fix.That.Tape.REPACK.1080p.AMZN.WEB-DL.DDP5.1.H.264-Kitsune",
+    "fullSeason": false,
+    "sceneSource": false,
+    "seasonNumber": 1,
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "episodeNumbers": [
+      1
+    ],
+    "mappedSeasonNumber": 1,
+    "mappedEpisodeNumbers": [
+      1
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "rejections": [
+      "Existing file on disk has a equal or higher Custom Format score: 1780"
+    ],
+    "publishDate": "2026-05-29T22:46:38Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/1",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/1",
+    "infoUrl": "https://indexer.invalid/infoUrl/1",
+    "downloadAllowed": true,
+    "releaseWeight": 1,
+    "customFormats": [
+      {
+        "id": 41,
+        "name": "AMZN"
+      },
+      {
+        "id": 38,
+        "name": "Repack/Proper"
+      },
+      {
+        "id": 59,
+        "name": "WEB Tier 01"
+      }
+    ],
+    "customFormatScore": 1780,
+    "protocol": "usenet",
+    "indexerFlags": 0
+  },
+  {
+    "guid": "sonarr-lost-tapes-s01-2",
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 2,
+        "real": 0,
+        "isRepack": true
+      }
+    },
+    "qualityWeight": 1102,
+    "age": 135,
+    "ageHours": 3258.7897573876667,
+    "ageMinutes": 195527.38544326,
+    "size": 411182608,
+    "indexerId": 3,
+    "indexer": "NZBFinder (Prowlarr)",
+    "releaseGroup": "Kitsune",
+    "title": "Regular.Show.The.Lost.Tapes.S01E01.Fix.That.Tape.REPACK.1080p.AMZN.WEB-DL.DDP5.1.H.264-Kitsune",
+    "fullSeason": false,
+    "sceneSource": false,
+    "seasonNumber": 1,
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "episodeNumbers": [
+      1
+    ],
+    "mappedSeasonNumber": 1,
+    "mappedEpisodeNumbers": [
+      1
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "rejections": [
+      "Existing file on disk has a equal or higher Custom Format score: 1780"
+    ],
+    "publishDate": "2026-05-29T23:05:34Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/2",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/2",
+    "infoUrl": "https://indexer.invalid/infoUrl/2",
+    "downloadAllowed": true,
+    "releaseWeight": 2,
+    "customFormats": [
+      {
+        "id": 41,
+        "name": "AMZN"
+      },
+      {
+        "id": 38,
+        "name": "Repack/Proper"
+      },
+      {
+        "id": 59,
+        "name": "WEB Tier 01"
+      }
+    ],
+    "customFormatScore": 1780,
+    "protocol": "usenet",
+    "indexerFlags": 0
+  },
+  {
+    "guid": "sonarr-lost-tapes-s01-127",
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "qualityWeight": 1101,
+    "age": 147,
+    "ageHours": 3535.097257429778,
+    "ageMinutes": 212105.83544578668,
+    "size": 5090764000,
+    "indexerId": 4,
+    "indexer": "NZBgeek (Prowlarr)",
+    "releaseGroup": "playWEB",
+    "title": "Regular.Show.The.Lost.Tapes.S01.1080p.AMZN.WEB-DL.DD+5.1.H.264-playWEB",
+    "fullSeason": true,
+    "sceneSource": false,
+    "seasonNumber": 1,
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "episodeNumbers": [],
+    "mappedSeasonNumber": 1,
+    "mappedEpisodeNumbers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38
+    ],
+    "approved": false,
+    "temporarilyRejected": false,
+    "rejected": true,
+    "rejections": [
+      "4.7 GB is smaller than minimum allowed 6.7 GB (for 38x 456min)",
+      "Full season release rejected. All episodes haven't aired yet.",
+      "Existing file on disk has a equal or higher Custom Format score: 1780"
+    ],
+    "publishDate": "2026-05-18T10:47:07Z",
+    "commentUrl": "https://indexer.invalid/commentUrl/127",
+    "downloadUrl": "https://indexer.invalid/downloadUrl/127",
+    "infoUrl": "https://indexer.invalid/infoUrl/127",
+    "downloadAllowed": true,
+    "releaseWeight": 127,
+    "customFormats": [
+      {
+        "id": 41,
+        "name": "AMZN"
+      },
+      {
+        "id": 60,
+        "name": "WEB Tier 02"
+      }
+    ],
+    "customFormatScore": 1725,
+    "protocol": "usenet",
+    "indexerFlags": 0
+  }
+]

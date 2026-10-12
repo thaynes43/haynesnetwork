@@ -211,6 +211,8 @@ describe('identity reads (D-11)', () => {
       releaseGroup: 'FraMeSToR',
       quality: file.quality,
       size: file.size,
+      // DESIGN-055 D-08: the file's media info rides the identity read, cut to the audio and subtitle languages.
+      mediaInfo: {},
     });
     const history = await radarr.getMovieReleaseHistory(7);
     expect(history[0]).toMatchObject({

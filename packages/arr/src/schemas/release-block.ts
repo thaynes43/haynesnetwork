@@ -99,11 +99,30 @@ export const arrReleaseQualitySchema = z
         modifier: z.string().nullish(),
       })
       .nullish(),
+    /** DESIGN-055 D-09 — the release's revision (`version` 2+ is a PROPER or REPACK). */
+    revision: z.object({ version: z.number().int().nullish() }).nullish(),
   })
   .nullish();
 export type ArrReleaseQuality = z.infer<typeof arrReleaseQualitySchema>;
 
-/** The identity fields of a Radarr movie file or a Sonarr episode file (D-11). */
+/**
+ * ADR-109 / DESIGN-055 D-08, D-09 (PLAN-077 P1) — a file's media info, as the language check reads it: the audio and
+ * subtitle languages Sonarr and Radarr read from the file itself, each one `/`-separated string of ISO 639-2 codes
+ * (`"por/eng"`, verified live 2026-10-12 on Regular Show: The Lost Tapes S01E12).
+ */
+export const arrFileMediaInfoSchema = z
+  .object({
+    audioLanguages: z.string().nullish(),
+    subtitles: z.string().nullish(),
+  })
+  .nullish();
+export type ArrFileMediaInfo = z.infer<typeof arrFileMediaInfoSchema>;
+
+/**
+ * The identity fields of a Radarr movie file or a Sonarr episode file (D-11), plus what the Replacement Preview and the
+ * language check read (DESIGN-055 D-08, D-09): the custom-format score the *arr gives the file, its edition (Radarr),
+ * and its media info.
+ */
 const releaseFileShape = {
   id: z.number().int(),
   relativePath: z.string().nullish(),
@@ -112,6 +131,9 @@ const releaseFileShape = {
   releaseGroup: z.string().nullish(),
   quality: arrReleaseQualitySchema,
   size: z.number().nullish(),
+  customFormatScore: z.number().nullish(),
+  edition: z.string().nullish(),
+  mediaInfo: arrFileMediaInfoSchema,
 };
 
 /** `GET /api/v3/moviefile?movieId=` element. */
@@ -172,6 +194,11 @@ export const arrReleaseHistoryRecordSchema = z
       importedPath: str('importedPath'),
       releaseGroup: str('releaseGroup'),
       indexer: str('indexer'),
+      /**
+       * DESIGN-055 D-09 / DESIGN-005 D-25 — a grab's `data.releaseSource` (`InteractiveSearch`, `Rss`, ...): whether the
+       * *arr's own Redownload Failed searches after the grab is marked failed.
+       */
+      releaseSource: str('releaseSource'),
     };
   });
 export type ArrReleaseHistoryRecord = z.infer<typeof arrReleaseHistoryRecordSchema>;

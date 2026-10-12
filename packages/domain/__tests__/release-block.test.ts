@@ -89,6 +89,7 @@ function grabbedMovie(id: number, over: Partial<StaticArrMovie> = {}): StaticArr
         importedPath: null,
         releaseGroup: 'FraMeSToR',
         indexer: 'NZBgeek (Prowlarr)',
+        releaseSource: null,
       },
       {
         id: 2,
@@ -102,6 +103,7 @@ function grabbedMovie(id: number, over: Partial<StaticArrMovie> = {}): StaticArr
         importedPath: '/movies/Babygirl (2024)/Babygirl (2024) [Remux-2160p].mkv',
         releaseGroup: 'FraMeSToR',
         indexer: null,
+        releaseSource: null,
       },
     ],
     ...over,
@@ -1987,6 +1989,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
           importedPath: null,
           releaseGroup: null,
           indexer: null,
+          releaseSource: null,
         },
       ];
       logs.length = 0;
@@ -2047,6 +2050,7 @@ describe('the Release Block (ADR-093 / DESIGN-052 D-11..D-14, D-23)', () => {
           importedPath: null,
           releaseGroup: null,
           indexer: null,
+          releaseSource: null,
         },
       ];
       report = await checkReleaseBlockReadds({ db: t.db, arr: arr.read, logger });

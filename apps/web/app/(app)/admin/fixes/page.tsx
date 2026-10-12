@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { ConfirmButton } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
+import { RepairGuideSettings } from './repair-guide-settings';
 import {
   ARR_KIND_LABELS,
   FIX_REASON_LABELS,
@@ -46,6 +47,7 @@ export default function AdminFixesPage() {
   return (
     <>
       <h1>Fix requests</h1>
+      <RepairGuideSettings />
       <div className="library-filters admin-filterbar">
         <div className="seg" role="group" aria-label="Status">
           {STATUS_FILTERS.map((value) => (

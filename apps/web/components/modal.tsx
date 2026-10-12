@@ -18,9 +18,14 @@ export interface ModalProps {
    * mounted (so later errors are announced); omit entirely when a dialog has no banner.
    */
   banner?: ReactNode;
+  /**
+   * An extra class on the dialog box. ADR-109 / DESIGN-055 D-01: the Repair Guide passes `modal--guide`, which fixes the
+   * dialog's height so its steps replace each other without the box resizing or moving (hard rule 9).
+   */
+  className?: string;
 }
 
-export function Modal({ open, title, onClose, children, banner }: ModalProps) {
+export function Modal({ open, title, onClose, children, banner, className }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Focus the dialog ONCE per open, keyed on `open` alone. Keeping `onClose` out of
@@ -53,7 +58,7 @@ export function Modal({ open, title, onClose, children, banner }: ModalProps) {
     >
       <div
         ref={dialogRef}
-        className="modal"
+        className={className ? `modal ${className}` : 'modal'}
         role="dialog"
         aria-modal="true"
         aria-label={title}

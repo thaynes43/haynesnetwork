@@ -50,6 +50,12 @@ const AUTHED_CALLS: Array<[string, (c: Caller) => Promise<unknown>]> = [
   ['ledger.wanted', (c) => c.ledger.wanted({})],
   ['fix.create', (c) => c.fix.create({ mediaItemId: UUID_A, reason: 'wrong_language' })],
   ['fix.myFixes', (c) => c.fix.myFixes()],
+  // ADR-109 / DESIGN-055 (PLAN-077 P1) — the Repair Guide's reads.
+  ['fix.guideConfig', (c) => c.fix.guideConfig()],
+  ['fix.preview', (c) => c.fix.preview({ mediaItemId: UUID_A })],
+  ['fix.seasonChoices', (c) => c.fix.seasonChoices({ mediaItemId: UUID_A, seasonNumber: 1 })],
+  ['fix.audioLanguages', (c) => c.fix.audioLanguages({ mediaItemId: UUID_A })],
+  ['fix.playbackEvidence', (c) => c.fix.playbackEvidence({ mediaItemId: UUID_A })],
   ['ytdlsub.access', (c) => c.ytdlsub.access()],
 ];
 
@@ -71,6 +77,8 @@ const ADMIN_CALLS: Array<[string, (c: Caller) => Promise<unknown>]> = [
   ['roles.delete', (c) => c.roles.delete({ id: UUID_A })],
   ['roles.setTrashActions', (c) => c.roles.setTrashActions({ roleId: UUID_A, actions: [] })],
   ['fix.adminList', (c) => c.fix.adminList({})],
+  ['fix.guideSettings', (c) => c.fix.guideSettings()],
+  ['fix.setGuideSettings', (c) => c.fix.setGuideSettings({ remedies: { season_guard: true } })],
   ['restore.diff', (c) => c.restore.diff({ arrKind: 'sonarr' })],
   ['restore.execute', (c) => c.restore.execute({ arrKind: 'sonarr', mediaItemIds: [UUID_A] })],
   ['restore.run', (c) => c.restore.run({ id: UUID_A })],

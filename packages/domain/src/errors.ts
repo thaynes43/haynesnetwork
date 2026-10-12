@@ -96,6 +96,35 @@ export class SubtitleFixUnsupportedError extends Error {
   readonly code = 'SUBTITLE_FIX_UNSUPPORTED' as const;
 }
 
+/**
+ * ADR-109 C-03 / DESIGN-055 D-08, D-09 (PLAN-077 P1) — a guarded Fix refused before anything was written (no Fix
+ * Request row, no budget used). `reason` says why, for the guide:
+ * - `same_release`: the delete would download the same release again (T-308);
+ * - `no_replacement`: nothing acceptable would replace the deleted file;
+ * - `language_present`: the wanted audio language is already in the file (D-08 rule 3);
+ * - `pack`: the blocklist would also cost other episodes' pack, and the person did not choose that;
+ * - `nothing_safe`: a season Fix where every chosen episode was held back or refused.
+ */
+export type FixRefusalReason = 'same_release' | 'no_replacement' | 'language_present' | 'pack' | 'nothing_safe';
+
+export class FixRefusedError extends Error {
+  readonly code = 'FIX_REFUSED' as const;
+  constructor(
+    readonly reason: FixRefusalReason,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * DESIGN-055 D-01 (preview contract) — the plan computed just before acting differs from the one the person confirmed
+ * (a file moved, a grab landed, a release appeared). Nothing was written; the guide shows the new plan.
+ */
+export class FixPlanChangedError extends Error {
+  readonly code = 'FIX_PLAN_CHANGED' as const;
+}
+
 /** D-09 lifecycle (DDD-001 T-43): the requested status transition is not legal. */
 export class InvalidFixTransitionError extends Error {
   readonly code = 'FIX_INVALID_TRANSITION' as const;

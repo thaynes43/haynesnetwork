@@ -26,6 +26,7 @@ import {
   type ProgressSource,
   type SearchProgressInput,
 } from '@/components/action-progress';
+import { RepairGuide, type GuidePlayTarget } from './repair-guide';
 
 export interface FixDialogProps {
   open: boolean;
@@ -39,6 +40,33 @@ export interface FixDialogProps {
   target?: ActionTarget | null;
   /** Invalidate/refresh hooks after a successful submit. */
   onSubmitted: () => void;
+  /** ADR-109 / DESIGN-055 D-09 — the title's "Watch on Plex" links, for the Repair Guide's Won't play triage. */
+  play?: readonly GuidePlayTarget[];
+}
+
+/**
+ * ADR-109 / DESIGN-055 D-01 (PLAN-077 P1) — Fix opens the Repair Guide for a movie or a TV episode or season once any
+ * of its remedies is on (`repair_guide_remedies`, read through `fix.guideConfig`); otherwise, and always for Music,
+ * today's dialog. The guide mounts only while open, so each Fix starts from its first question.
+ */
+export function FixDialog(props: FixDialogProps) {
+  const guide = trpc.fix.guideConfig.useQuery(undefined, { staleTime: 60_000 });
+  const kind = props.item.arrKind;
+  if (guide.data?.guideOn && (kind === 'sonarr' || kind === 'radarr')) {
+    return props.open ? (
+      <RepairGuide
+        open
+        onClose={props.onClose}
+        item={{ id: props.item.id, arrKind: kind, title: props.item.title }}
+        target={props.target ?? null}
+        play={props.play ?? []}
+        remedies={guide.data.remedies}
+        knownIssueServers={guide.data.knownIssueServers}
+        onSubmitted={props.onSubmitted}
+      />
+    ) : null;
+  }
+  return <ClassicFixDialog {...props} />;
 }
 
 interface DoneState {
@@ -49,7 +77,7 @@ interface DoneState {
   searchInput: SearchProgressInput;
 }
 
-export function FixDialog({ open, onClose, item, target, onSubmitted }: FixDialogProps) {
+function ClassicFixDialog({ open, onClose, item, target, onSubmitted }: FixDialogProps) {
   const needsTarget = item.arrKind === 'sonarr' || item.arrKind === 'lidarr';
   const targetNoun = item.arrKind === 'sonarr' ? 'episode' : 'album';
   const preselected = target ?? null;

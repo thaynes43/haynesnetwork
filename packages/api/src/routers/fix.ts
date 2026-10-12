@@ -5,15 +5,39 @@
 // live inside createFixRequest and surface here as TOO_MANY_REQUESTS / CONFLICT appCodes.
 import { z } from 'zod';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
-import { FIX_REASONS, FIX_STATUSES, fixRequests, mediaItems, users } from '@hnet/db';
 import {
+  FIX_REASONS,
+  FIX_STATUSES,
+  REPAIR_GUIDE_REMEDIES,
+  fixRequests,
+  mediaItems,
+  plexServers,
+  users,
+} from '@hnet/db';
+import {
+  anyRemedyOn,
   closeFixManually,
   computeFixProgress,
   computeSearchProgress,
+  getKnownIssueServers,
+  getRepairGuideRemedies,
+  planApplies,
+  planFix,
+  readFileAudio,
+  readPlaybackEvidence,
+  readSeasonChoices,
   runFixRequest,
   runForceSearch,
+  setKnownIssueServers,
+  setRepairGuideRemedies,
 } from '@hnet/domain';
-import { authedProcedure, mapDomainErrors, resolveArrBundle, router } from '../trpc';
+import {
+  authedProcedure,
+  mapDomainErrors,
+  resolveArrBundle,
+  resolvePlaybackHistoryReaders,
+  router,
+} from '../trpc';
 import { adminProcedure } from '../middleware/role';
 import { decodeCursor, encodeCursor } from '../cursor';
 
@@ -37,7 +61,167 @@ function refineScopeShape(v: {
   return true;
 }
 
+/**
+ * ADR-109 / DESIGN-055 D-09 (PLAN-077 P1) — the Repair Guide's choices, carried by `preview` and `create`. Each is read
+ * only while its remedy is on; the domain ignores the rest.
+ */
+const guideChoices = {
+  /** Season guard: the episodes the person marked wrong. */
+  episodeIds: z.array(z.number().int().positive()).min(1).max(500).optional(),
+  /** Season guard: replace just this episode's file instead of blocking its pack. */
+  replaceFile: z.boolean().optional(),
+};
+
+const languageCode = z
+  .string()
+  .trim()
+  .regex(/^[a-zA-Z]{2,3}$/, { error: 'a two- or three-letter language code' });
+
 export const fixRouter = router({
+  /**
+   * ADR-109 / DESIGN-055 D-01 — which Repair Guide remedies are on, for the Fix button to open the guide or today's
+   * dialog. Read by every member (no secret in it).
+   */
+  guideConfig: authedProcedure.query(async ({ ctx }) => {
+    const remedies = await getRepairGuideRemedies(ctx.db);
+    return { remedies, guideOn: anyRemedyOn(remedies), knownIssueServers: await getKnownIssueServers(ctx.db) };
+  }),
+
+  /** DESIGN-055 D-01 — the admin read of the guide's settings, with every Plex server to choose from. */
+  guideSettings: adminProcedure.query(async ({ ctx }) => {
+    const servers = await ctx.db
+      .select({ slug: plexServers.slug, name: plexServers.name })
+      .from(plexServers)
+      .orderBy(plexServers.name);
+    return {
+      remedies: await getRepairGuideRemedies(ctx.db),
+      knownIssueServers: await getKnownIssueServers(ctx.db),
+      servers,
+    };
+  }),
+
+  /**
+   * DESIGN-055 D-01 — turn remedies on or off, and name the Known-Issue Servers (T-314). Audited (`update_app_setting`,
+   * the row and its audit in one transaction).
+   */
+  setGuideSettings: adminProcedure
+    .input(
+      z.object({
+        remedies: z.partialRecord(z.enum(REPAIR_GUIDE_REMEDIES), z.boolean()).optional(),
+        knownIssueServers: z.array(z.string().min(1).max(64)).max(10).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () => {
+        if (input.remedies) {
+          await setRepairGuideRemedies({ db: ctx.db, remedies: input.remedies, actorId: ctx.user.id });
+        }
+        if (input.knownIssueServers) {
+          await setKnownIssueServers({ db: ctx.db, servers: input.knownIssueServers, actorId: ctx.user.id });
+        }
+        return {
+          remedies: await getRepairGuideRemedies(ctx.db),
+          knownIssueServers: await getKnownIssueServers(ctx.db),
+        };
+      });
+    }),
+
+  /**
+   * ADR-109 C-03 / DESIGN-055 D-09 — the guarded Fix's plan, read-only: what it will mark, delete and search, the
+   * Replacement Preview (a live release search when a file would be deleted), the pack it would cost. `plan: null` when
+   * no planning remedy is on or the kind has none (Lidarr). The digest goes back with `create`.
+   */
+  preview: authedProcedure
+    .input(
+      z
+        .object({
+          mediaItemId: z.uuid(),
+          scope: z.enum(ACTION_SCOPES).optional(),
+          targetChildId: z.number().int().positive().optional(),
+          seasonNumber: z.number().int().min(0).optional(),
+          ...guideChoices,
+        })
+        .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
+    )
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () => {
+        const remedies = await getRepairGuideRemedies(ctx.db);
+        const [item] = await ctx.db
+          .select({ arrKind: mediaItems.arrKind })
+          .from(mediaItems)
+          .where(eq(mediaItems.id, input.mediaItemId));
+        if (!item || !planApplies(item.arrKind, remedies)) return { plan: null };
+        const plan = await planFix({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          scope: input.scope,
+          targetChildId: input.targetChildId,
+          seasonNumber: input.seasonNumber,
+          episodeIds: input.episodeIds,
+          replaceFile: input.replaceFile,
+          remedies,
+        });
+        return { plan };
+      });
+    }),
+
+  /** DESIGN-055 D-09 — the season guard's list: each on-disk episode with the download behind it (no release search). */
+  seasonChoices: authedProcedure
+    .input(z.object({ mediaItemId: z.uuid(), seasonNumber: z.number().int().min(0) }))
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        readSeasonChoices({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          seasonNumber: input.seasonNumber,
+        }),
+      );
+    }),
+
+  /** DESIGN-055 D-08 rules 1-2 — the audio languages of the file(s) a Wrong language Fix would touch. */
+  audioLanguages: authedProcedure
+    .input(
+      z
+        .object({
+          mediaItemId: z.uuid(),
+          scope: z.enum(ACTION_SCOPES).optional(),
+          targetChildId: z.number().int().positive().optional(),
+          seasonNumber: z.number().int().min(0).optional(),
+        })
+        .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
+    )
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        readFileAudio({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          scope: input.scope,
+          targetChildId: input.targetChildId,
+          seasonNumber: input.seasonNumber,
+        }),
+      );
+    }),
+
+  /**
+   * DESIGN-055 D-09 / T-309 — Playback Evidence for the CALLER and this title over the last 48 hours: the stored
+   * Tautulli play and stop webhooks plus each Tautulli instance's history. Only ever about the caller's own plays.
+   */
+  playbackEvidence: authedProcedure
+    .input(z.object({ mediaItemId: z.uuid() }))
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        readPlaybackEvidence({
+          db: ctx.db,
+          mediaItemId: input.mediaItemId,
+          requesterId: ctx.user.id,
+          tautulli: resolvePlaybackHistoryReaders(ctx),
+        }),
+      );
+    }),
+
   /**
    * R-43/R-44/R-45 — submit a Fix. Reason taxonomy is mandatory; free text rides
    * only on 'other' (zod refine here, D-09 CHECK as the backstop). Returns the
@@ -60,6 +244,14 @@ export const fixRouter = router({
           seasonNumber: z.number().int().min(0).optional(),
           reason: z.enum(FIX_REASONS),
           reasonText: z.string().trim().min(1).max(500).optional(),
+          // ADR-109 / DESIGN-055 D-08, D-09 — the Repair Guide's choices (read only while their remedy is on).
+          ...guideChoices,
+          /** Season guard: block the whole pack, having seen the other episodes it costs. */
+          blockWholePack: z.boolean().optional(),
+          /** Language check: the audio language the person wanted. */
+          wantedLanguage: languageCode.optional(),
+          /** The digest of the plan the person confirmed (`preview`). */
+          planDigest: z.string().regex(/^[0-9a-f]{8,64}$/).optional(),
         })
         .refine((v) => (v.reason === 'other') === (v.reasonText !== undefined), {
           error: 'reasonText is required exactly when reason is "other"',
@@ -79,6 +271,11 @@ export const fixRouter = router({
           seasonNumber: input.seasonNumber,
           reason: input.reason,
           reasonText: input.reasonText,
+          episodeIds: input.episodeIds,
+          replaceFile: input.replaceFile,
+          blockWholePack: input.blockWholePack,
+          wantedLanguage: input.wantedLanguage,
+          planDigest: input.planDigest,
         });
         return result; // {id, status, pathTaken, targetLabel}
       });

@@ -108,6 +108,13 @@ describe('parseTautulliWebhook (designed template, DESIGN-012 D-02)', () => {
     });
   });
 
+  it('keeps the server that served the session (DESIGN-055 D-09), and none when the template has none', () => {
+    const parsed = parseTautulliWebhook({ event_type: 'play', user: 'ada', server: 'HaynesOps' });
+    expect(parsed?.payload).toMatchObject({ event_type: 'play', user: 'ada', server: 'HaynesOps' });
+    expect(parseTautulliWebhook({ event_type: 'play', server: '' })?.payload).not.toHaveProperty('server');
+    expect(parseTautulliWebhook({ event_type: 'play' })?.payload).not.toHaveProperty('server');
+  });
+
   it('normalizes an episode media_type to the tv hint', () => {
     const parsed = parseTautulliWebhook({ event_type: 'playback.stop', media_type: 'episode' });
     expect(parsed?.mediaType).toBe('tv');
