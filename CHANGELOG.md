@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.112.1](https://github.com/thaynes43/haynesnetwork/compare/v0.112.0...v0.112.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **fix:** Playback Evidence matches the person's Plex identity from their sign-in ([#901](https://github.com/thaynes43/haynesnetwork/issues/901)) ([4fb4087](https://github.com/thaynes43/haynesnetwork/commit/4fb4087547642775b3900ac60ad94c10412b3af0))
+
 ## [0.112.0](https://github.com/thaynes43/haynesnetwork/compare/v0.111.2...v0.112.0) (2026-10-12)
 
 
