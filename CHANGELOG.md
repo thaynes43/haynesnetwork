@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.111.2](https://github.com/thaynes43/haynesnetwork/compare/v0.111.1...v0.111.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **janitor:** "Found archive file" is an archive left unpacked, not a bad release (D-26) ([#890](https://github.com/thaynes43/haynesnetwork/issues/890)) ([330822b](https://github.com/thaynes43/haynesnetwork/commit/330822b7f43b991598500845460fbde1a5acaa48))
+
 ## [0.111.1](https://github.com/thaynes43/haynesnetwork/compare/v0.111.0...v0.111.1) (2026-10-12)
 
 
