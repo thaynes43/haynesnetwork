@@ -323,7 +323,7 @@ already has a file) stay in #597 and PLAN-065.
 14. **The janitor** (DESIGN-046 D-27): the Import Check runs only on downloads whose records are all `unknown`, stuck,
     and carry an identity rejection, at most 100 downloads per instance per run; `importable` acts through the same
     ManualImport when its cell is enforced, loop-guarded; `title_mismatch` is report only.
-15. **A file the import replaces is "gone afterwards"** (found in the live check, v0.113.1). An import onto a target that
+15. **A file the import replaces is "gone afterwards"** (found in the live check of v0.113.0, fixed in v0.113.1). An import onto a target that
     already has a file is an upgrade the *arr accepted (no not-an-upgrade rejection), and the *arr deletes the old file
     (no recycle bin). The plan lists each such file (`replaces`: name, quality, size), the guide shows it as a "gone
     afterwards" line that must be ticked before "Import it" works, and the digest covers it, so a plan that starts
