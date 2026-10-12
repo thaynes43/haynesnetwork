@@ -1,7 +1,8 @@
 # PLAN-077: Self-service media repair and the Seerr issue bridge — implementation
 
-- **Status:** Draft. Docs are Proposed (ADR-109, ADR-110, ADR-111, DESIGN-055); no build has started. Owner questions
-  DESIGN-055 Q-01..Q-05 are open and gate P5..P8 only.
+- **Status:** Draft. P0 is shipped (v0.111.2, 2026-10-12); its week of census is owed (OC-048). P1..P8 are not
+  started. Docs are Proposed (ADR-109, ADR-110, ADR-111, DESIGN-055). Owner questions DESIGN-055 Q-01..Q-05 are open
+  and gate P5..P8 only.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -69,6 +70,17 @@ Priority is how often real reports need the remedy, and how much harm today's be
 - **e2e:** none beyond the gate. **Live check:** the next hourly run records archive items as `unknown`, with no
   `blocklisted_searched` row for that reason.
 - **Done when** a week of runs shows no archive removal and the 9 episodes are searched.
+- **Status (2026-10-12): shipped; the week of census is owed.**
+  - Steps 1 and 2: hnet #890 (DESIGN-046 D-26) shipped in v0.111.2, deployed by haynes-ops #3840 around 17:22Z. The
+    17:25Z run ran on it.
+  - Step 3: done the same day, by hand, with no app code; see #887 and the PLAN-065 ladder log. 83 false blocklist
+    entries were removed (Sonarr 82, Radarr 1). Fixing the SABnzbd side also needed: the 83 janitor-removed jobs
+    deleted from SABnzbd's archived history (its duplicate check failed every re-grab as "Duplicate NZB"), 4 resulting
+    "Duplicate NZB" Sonarr entries removed, and 3 mislabelled TLHG files (S10E05, E09, E12, other episode pairs)
+    moved to a hold folder. All 9 episodes have files.
+  - Step 4: haynes-ops#3834 was fixed by haynes-ops #3836, a post-processing script on both SABnzbd instances. It
+    extracted 5 obfuscated posts with no hand step. The 7-day census read is OC-048, and deleting the hold folder is
+    OC-049.
 
 ### P1: Fix safety guards and playback triage
 

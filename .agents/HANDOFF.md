@@ -1,5 +1,25 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-12 17:30Z: PLAN-077 P0 shipped — janitor stops blocklisting unextracted archives; SABnzbd extracts them
+
+- **The janitor (#887, closed).** "Found archive file, might need to be extracted" is now `unknown`, report only, with
+  the reason `Archive left unpacked: …` (DESIGN-046 D-26, hnet #890). It shipped in v0.111.2, which is live (haynes-ops
+  #3840, 3/3 pods; the 17:25Z queue-cleanup run used it). No janitor config changed; `arr` stays at L2.
+- **SABnzbd (haynes-ops#3834, closed).** haynes-ops #3836 adds `unpack-archives.sh`, in its own ks `sabnzbd-scripts`,
+  mounted at `/scripts` on both instances. `script_dir` and the script on the `sonarrtv`, `radarrmovies` and `lidarr`
+  categories are `sabnzbd.ini` settings, set through SABnzbd's API; git does not hold them. If that config is ever
+  restored or rebuilt, set them again. Proof: 5 obfuscated AndreMor posts were extracted and imported with no hand
+  step.
+- **The repair (by hand, recorded on #887 and in the PLAN-065 ladder log).** It removed 83 false blocklist entries
+  and 4 "Duplicate NZB" entries that followed from them. It deleted the 83 janitor-removed jobs from SABnzbd's
+  archived history: SABnzbd kept them as "Completed", so its duplicate check failed every re-grab. Anyone who undoes
+  a janitor blocklist must delete that archived job too. Three mislabelled TLHG files (Loud House S10E05, E09, E12)
+  went to `/data/haynestower/usenet/_hold-mislabelled-2026-10-12/`. All 9 missing episodes now have files.
+- **Owed:** OC-048 (a week of census, from 2026-10-19 17:30Z) and OC-049 (delete the hold folder after 2026-10-19;
+  the held "E09" copy holds E20 and E21, which are still missing).
+- **Next in PLAN-077:** P1. The TLHG mislabels are a live example for P4 (Title Check): those single-episode releases
+  are named for other pairs, and Sonarr imported them into the wrong slots.
+
 ## 2026-10-12 16:35Z: PLAN-077 drafted — self-service media repair (docs only, Proposed)
 
 The owner wants Plex users to fix problems themselves on haynesnetwork.com instead of filing Seerr issues for staff,
