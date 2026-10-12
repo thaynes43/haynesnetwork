@@ -141,6 +141,7 @@ describe('personal candidate checks', () => {
       identity: { tmdbId: 999, imdbId: 'tt999' },
       evidence: {
         viewing: 'no_recorded_viewing',
+        viewingBasis: [],
         onPlex: null,
         onWatchlist: null,
         personalRating: { status: 'unavailable' },
@@ -220,6 +221,7 @@ describe('personal candidate checks', () => {
     expect(out.results[1]?.evidence).toMatchObject({
       dismissal: 'not_mine',
       viewing: 'not_mine',
+      viewingBasis: ['explicit_not_mine'],
       everWatched: false,
       completedPlays: 1,
     });
@@ -238,6 +240,7 @@ describe('personal candidate checks', () => {
     );
     expect(out.results[0]?.evidence).toMatchObject({
       viewing: 'partial',
+      viewingBasis: ['partial_playback'],
       everWatched: false,
       plays: 1,
       completedPlays: 0,
@@ -254,11 +257,218 @@ describe('personal candidate checks', () => {
     );
     expect(out.results[0]?.evidence).toMatchObject({
       viewing: 'watched',
+      viewingBasis: ['plex_watched_state'],
       everWatched: true,
       plays: 2,
       genres: ['Mystery', 'Thriller'],
     });
     expect(personalRecords(snapshot({ titles: [title(), title({ id: 2 })] }))).toHaveLength(1);
+  });
+
+  it('names Plex watched-state evidence despite no recorded completed playback', async () => {
+    const out = await checkPersonalSnapshot(snapshot({ titles: [title({ plexWatched: true })] }), {
+      titles: [{ kind: 'movie', tmdbId: 1 }],
+      now: NOW,
+    });
+    expect(out.results[0]?.evidence).toMatchObject({
+      viewing: 'watched',
+      viewingBasis: ['plex_watched_state'],
+      completedPlays: 0,
+      progress: { state: 'finished' },
+    });
+  });
+
+  it('keeps retained historical movie completion separate from the current replay', async () => {
+    const out = await checkPersonalSnapshot(
+      snapshot({
+        titles: [
+          title({ eventWatchedEpisodes: 1, eventPlays: 2, resumePercent: 13, lastWatchedAt: AT }),
+        ],
+      }),
+      { titles: [{ kind: 'movie', tmdbId: 1 }], now: NOW },
+    );
+    expect(out.results[0]?.evidence).toMatchObject({
+      viewing: 'watched',
+      viewingBasis: ['historical_completion'],
+      completedPlays: 0,
+      plays: 2,
+      progress: { state: 'in_progress', resumePercent: 13 },
+    });
+  });
+
+  it('uses the source watched verdict and excludes a later partial replay from watched provenance', async () => {
+    const out = await checkPersonalSnapshot(
+      snapshot({
+        events: [
+          event({ percentComplete: 85 }),
+          event({ id: 2, tautulliRowId: 2, watched: false, percentComplete: 13 }),
+        ],
+      }),
+      { titles: [{ title: 'A Film', year: 2020, kind: 'movie' }], now: NOW },
+    );
+    expect(out.results[0]?.evidence).toMatchObject({
+      viewing: 'watched',
+      viewingBasis: ['completed_playback'],
+      completedPlays: 1,
+      plays: 2,
+    });
+  });
+
+  it('derives decisive statements before optional statement metadata is clipped', async () => {
+    const out = await checkPersonalSnapshot(
+      snapshot({
+        marks: [
+          mark({ tmdbId: 1, action: 'watched', createdAt: new Date('2026-01-01T00:00:00Z') }),
+          ...Array.from({ length: 6 }, (_, i) => mark({ id: i + 2, tmdbId: 1 })),
+        ],
+      }),
+      { titles: [{ kind: 'movie', tmdbId: 1 }], now: NOW },
+    );
+    expect(out.results[0]?.evidence).toMatchObject({
+      viewing: 'watched',
+      viewingBasis: ['explicit_watched'],
+      statementCount: 7,
+      clipped: true,
+    });
+    expect(out.results[0]?.evidence?.statements).toHaveLength(5);
+    expect(out.results[0]?.evidence?.statements.every((s) => s.action === 'not_interested')).toBe(
+      true,
+    );
+  });
+
+  it('identifies watched episode evidence without turning it into whole-show completion', async () => {
+    const out = await checkPersonalSnapshot(
+      snapshot({
+        titles: [
+          title({
+            kind: 'show',
+            title: 'A Show',
+            episodeMap: {
+              '1': [
+                [1, 1, 0, {}],
+                [2, 0, 0, {}],
+                [3, 0, 0, {}],
+              ],
+            },
+            nextSeason: 1,
+            nextEpisode: 2,
+          }),
+        ],
+        marks: [
+          mark({
+            tmdbId: 1,
+            imdbId: null,
+            kind: 'show',
+            title: 'A Show',
+            action: 'watched',
+            scope: 'episode',
+            season: 1,
+            episode: 1,
+          }),
+        ],
+      }),
+      { titles: [{ kind: 'show', tmdbId: 1 }], now: NOW },
+    );
+    expect(out.results[0]?.evidence).toMatchObject({
+      viewing: 'watched',
+      viewingBasis: ['explicit_watched', 'plex_episode_state'],
+      completedPlays: 0,
+      progress: { episodesWatched: 1, episodesTotal: 3 },
+      statements: [{ scope: 'episode', season: 1, episode: 1 }],
+    });
+    expect(out.results[0]?.evidence?.progress.state).not.toBe('finished');
+  });
+
+  it('reports all watched supporting sources but lets not-mine override the classification', async () => {
+    const data = snapshot({
+      titles: [
+        title({
+          kind: 'show',
+          title: 'A Show',
+          plexWatched: true,
+          episodesWatched: 1,
+          episodesTotal: 1,
+          eventWatchedEpisodes: 1,
+          showStatus: 'ended',
+        }),
+      ],
+      events: [
+        event({ kind: 'episode', title: 'Pilot', showTitle: 'A Show', season: 1, episode: 1 }),
+      ],
+      marks: [
+        mark({
+          tmdbId: 1,
+          imdbId: null,
+          kind: 'show',
+          title: 'A Show',
+          scope: 'show',
+          action: 'watched',
+        }),
+      ],
+    });
+    const watched = await checkPersonalSnapshot(data, {
+      titles: [{ kind: 'show', tmdbId: 1 }],
+      now: NOW,
+    });
+    expect(watched.results[0]?.evidence?.viewingBasis).toEqual([
+      'explicit_watched',
+      'plex_watched_state',
+      'plex_episode_state',
+      'completed_playback',
+      'historical_completion',
+    ]);
+    const notMine = await checkPersonalSnapshot(
+      {
+        ...data,
+        marks: [
+          ...data.marks,
+          mark({
+            id: 2,
+            tmdbId: 1,
+            imdbId: null,
+            kind: 'show',
+            title: 'A Show',
+            scope: 'show',
+            action: 'not_mine',
+          }),
+        ],
+      },
+      { titles: [{ kind: 'show', tmdbId: 1 }], now: NOW },
+    );
+    expect(notMine.results[0]?.evidence).toMatchObject({
+      viewing: 'not_mine',
+      viewingBasis: ['explicit_not_mine'],
+      everWatched: false,
+      completedPlays: 1,
+      progress: { state: 'finished' },
+    });
+    expect(notMine.results[0]?.evidence?.sources.map((s) => s.source)).toEqual([
+      'title_state',
+      'tautulli_events',
+      'explicit_statements',
+    ]);
+  });
+
+  it('names both partial sources and distinguishes a play with no completion verdict', async () => {
+    const partial = await checkPersonalSnapshot(
+      snapshot({
+        titles: [title({ resumePercent: 13 })],
+        events: [event({ watched: false, percentComplete: 13 })],
+      }),
+      { titles: [{ kind: 'movie', tmdbId: 1 }], now: NOW },
+    );
+    expect(partial.results[0]?.evidence).toMatchObject({
+      viewing: 'partial',
+      viewingBasis: ['partial_playback', 'plex_resume'],
+    });
+    const played = await checkPersonalSnapshot(
+      snapshot({ events: [event({ watched: false, percentComplete: null })] }),
+      { titles: [{ title: 'A Film', year: 2020, kind: 'movie' }], now: NOW },
+    );
+    expect(played.results[0]?.evidence).toMatchObject({
+      viewing: 'played',
+      viewingBasis: ['recorded_playback'],
+    });
   });
 
   it('does not attribute a yearless remake play to either canonical title', async () => {
@@ -280,6 +490,7 @@ describe('personal candidate checks', () => {
     expect(out.results[0]?.evidence).toMatchObject({
       everWatched: null,
       attributionAmbiguous: true,
+      viewingBasis: ['ambiguous_attribution'],
       unattributedPlays: 1,
       plays: 0,
     });
@@ -309,7 +520,156 @@ describe('personal candidate checks', () => {
       resolution: 'unresolved',
       reason: 'conflicting_ids',
       evidence: null,
+      options: [],
     });
+  });
+
+  it('returns a confirmed local canonical-year alternative without a provider call or personal evidence', async () => {
+    const search = vi.fn(searchEmpty);
+    const out = await checkPersonalSnapshot(
+      snapshot({ titles: [title({ plexWatched: true, imdbId: 'tt123' })] }),
+      {
+        titles: [{ title: 'A Film', kind: 'movie', year: 2019, tmdbId: 1, imdbId: 'tt123' }],
+        now: NOW,
+        lookup: { searchMulti: search },
+      },
+    );
+    expect(out.results[0]).toMatchObject({
+      resolution: 'unresolved',
+      reason: 'year_mismatch',
+      identity: null,
+      evidence: null,
+      options: [{ title: 'A Film', year: 2020, tmdbId: 1, imdbId: 'tt123' }],
+    });
+    expect(search).not.toHaveBeenCalled();
+    expect(out.results[0]?.options[0]).not.toHaveProperty('viewing');
+  });
+
+  it('does not let a name-only local alternative suppress a same-name catalog title in the requested year', async () => {
+    const search = vi.fn(async () => ({
+      results: [{ id: 2, title: 'A Film', release_date: '2019-01-01', media_type: 'movie' }],
+    }));
+    const data = snapshot({ titles: [title({ plexWatched: true })] });
+    const out = await checkPersonalSnapshot(data, {
+      titles: [{ title: 'A Film', kind: 'movie', year: 2019 }],
+      now: NOW,
+      lookup: { searchMulti: search },
+    });
+    expect(out.results[0]).toMatchObject({
+      resolution: 'resolved',
+      identity: { year: 2019, tmdbId: 2 },
+      evidence: { viewing: 'no_recorded_viewing' },
+    });
+    expect(search).toHaveBeenCalledTimes(1);
+    const offline = await checkPersonalSnapshot(data, {
+      titles: [{ title: 'A Film', kind: 'movie', year: 2019 }],
+      now: NOW,
+    });
+    expect(offline.results[0]).toMatchObject({
+      resolution: 'unavailable',
+      reason: 'catalog_unavailable',
+      identity: null,
+      evidence: null,
+      options: [{ year: 2020, tmdbId: 1 }],
+    });
+  });
+
+  it('keeps provider failure unavailable despite name-only alternate-year records', async () => {
+    const out = await checkPersonalSnapshot(snapshot({ titles: [title()] }), {
+      titles: [{ title: 'A Film', year: 2019, kind: 'movie' }],
+      now: NOW,
+      lookup: {
+        searchMulti: async () => {
+          throw new Error('offline');
+        },
+      },
+    });
+    expect(out.results[0]).toMatchObject({
+      resolution: 'unavailable',
+      reason: 'catalog_lookup_failed',
+      evidence: null,
+      options: [{ year: 2020, tmdbId: 1 }],
+    });
+  });
+
+  it('deduplicates and caps exact-name known-year options while excluding fuzzy names and other kinds', async () => {
+    const search = vi.fn(async () => ({
+      results: [
+        { id: 1, title: 'A Film', release_date: '2020-01-01', media_type: 'movie' },
+        { id: 1, title: 'A Film', release_date: '2020-01-01', media_type: 'movie' },
+        { id: 2, name: 'A Film', first_air_date: '2020-01-01', media_type: 'tv' },
+        { id: 3, title: 'A Film', media_type: 'movie' },
+        { id: 4, title: 'A Film Returns', release_date: '2020-01-01', media_type: 'movie' },
+        ...Array.from({ length: 6 }, (_, i) => ({
+          id: i + 10,
+          title: 'A Film',
+          release_date: `${2021 + i}-01-01`,
+          media_type: 'movie',
+        })),
+      ],
+    }));
+    const out = await checkPersonalSnapshot(snapshot(), {
+      titles: [{ title: 'A Film', year: 2019, kind: 'movie' }],
+      now: NOW,
+      lookup: { searchMulti: search },
+    });
+    expect(out.results[0]).toMatchObject({
+      resolution: 'unresolved',
+      reason: 'year_mismatch',
+      identity: null,
+      evidence: null,
+    });
+    expect(out.results[0]?.options.map((o) => o.tmdbId)).toEqual([1, 10, 11, 12, 13]);
+    expect(out.coverage.clipped).toBe(true);
+    expect(search).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects unverified or conflicting IDs and unrelated local names as year alternatives', async () => {
+    const data = snapshot({ titles: [title({ imdbId: 'tt123' })] });
+    const out = await checkPersonalSnapshot(data, {
+      titles: [
+        { title: 'A Film', year: 2019, kind: 'movie', tmdbId: 1, imdbId: 'tt999' },
+        { title: 'Different Film', year: 2019, kind: 'movie', tmdbId: 1 },
+        { title: 'A Film', year: 2019, kind: 'show' },
+        { title: 'A Film', year: 2019, kind: 'movie', tmdbId: 2, imdbId: 'tt777' },
+      ],
+      now: NOW,
+      lookup: {
+        searchMulti: searchEmpty,
+        getMovieIdentity: async (id) => ({ id, title: 'A Film', release_date: '2020-01-01' }),
+      },
+    });
+    expect(out.results.every((r) => r.resolution !== 'resolved' && r.options.length === 0)).toBe(
+      true,
+    );
+    expect(out.results[0]?.reason).toBe('conflicting_ids');
+  });
+
+  it('returns an identity-only alternate year discovered by detail hydration', async () => {
+    const detail = vi.fn(async () => ({
+      id: 2,
+      title: 'A Film',
+      release_date: '2020-01-01',
+      imdb_id: 'tt123',
+    }));
+    const out = await checkPersonalSnapshot(snapshot({ marks: [mark({ action: 'watched' })] }), {
+      titles: [{ title: 'A Film', year: 2019, kind: 'movie' }],
+      now: NOW,
+      lookup: {
+        searchMulti: async () => ({
+          results: [{ id: 2, title: 'A Film', release_date: '2019-01-01', media_type: 'movie' }],
+        }),
+        getMovieIdentity: detail,
+      },
+    });
+    expect(out.results[0]).toMatchObject({
+      resolution: 'unresolved',
+      reason: 'year_mismatch',
+      identity: null,
+      evidence: null,
+      options: [{ year: 2020, tmdbId: 2, imdbId: 'tt123' }],
+    });
+    expect(detail).toHaveBeenCalledTimes(1);
   });
 
   it('cannot treat unverified supplied IDs as equivalence after a canonical lookup', async () => {
@@ -381,6 +741,68 @@ describe('personal candidate checks', () => {
     expect(search.mock.calls.map((c) => c[0])).toEqual(['Blade Runner 2049']);
   });
 
+  it('never invents a canonical year from a numeric title when catalog dates are missing', async () => {
+    const lookup: WatchTitleLookup = {
+      searchMulti: async () => ({
+        results: [{ id: 2049, title: 'Blade Runner 2049', media_type: 'movie' }],
+      }),
+      getMovieIdentity: async () => ({ id: 2049, title: 'Blade Runner 2049' }),
+      getTvIdentity: async () => ({ id: 2049, name: 'A Show 2049' }),
+      findByExternalId: async () => ({ movie_results: [{ id: 2049, title: 'Blade Runner 2049' }] }),
+    };
+    const out = await checkPersonalSnapshot(snapshot(), {
+      titles: [
+        { title: 'Blade Runner 2049', year: 2022, kind: 'movie' },
+        { title: 'Blade Runner 2049', year: 2022, kind: 'movie', tmdbId: 2049 },
+        { title: 'A Show 2049', year: 2022, kind: 'show', tmdbId: 2049 },
+        { title: 'Blade Runner 2049', year: 2022, kind: 'movie', imdbId: 'tt2049' },
+      ],
+      now: NOW,
+      lookup,
+    });
+    expect(out.results.every((r) => r.resolution === 'unresolved' && r.options.length === 0)).toBe(
+      true,
+    );
+    const literal = await checkPersonalSnapshot(snapshot(), {
+      titles: [{ title: 'Blade Runner 2049', kind: 'movie' }],
+      now: NOW,
+      lookup,
+    });
+    expect(literal.results[0]).toMatchObject({
+      resolution: 'resolved',
+      identity: { title: 'Blade Runner 2049', year: null },
+    });
+  });
+
+  it('does not turn a missing hydrated date into a numeric-title year alternative', async () => {
+    const detail = vi.fn(async () => ({ id: 2049, title: 'Blade Runner 2049', imdb_id: 'tt2049' }));
+    const out = await checkPersonalSnapshot(snapshot({ marks: [mark({ imdbId: 'tt2049' })] }), {
+      titles: [{ title: 'Blade Runner 2049', year: 2022, kind: 'movie' }],
+      now: NOW,
+      lookup: {
+        searchMulti: async () => ({
+          results: [
+            {
+              id: 2049,
+              title: 'Blade Runner 2049',
+              release_date: '2022-01-01',
+              media_type: 'movie',
+            },
+          ],
+        }),
+        getMovieIdentity: detail,
+      },
+    });
+    expect(out.results[0]).toMatchObject({
+      resolution: 'unresolved',
+      reason: 'year_mismatch',
+      identity: null,
+      evidence: null,
+      options: [],
+    });
+    expect(detail).toHaveBeenCalledTimes(1);
+  });
+
   it('tries a stripped year hint only after literal search and never substitutes another year', async () => {
     const search = vi.fn(async (query: string) => ({
       results:
@@ -397,7 +819,13 @@ describe('personal candidate checks', () => {
       lookup: { searchMulti: search },
     });
     expect(out.results[0]).toMatchObject({ resolution: 'resolved', identity: { year: 2020 } });
-    expect(out.results[1]).toMatchObject({ resolution: 'unresolved', reason: 'year_mismatch' });
+    expect(out.results[1]).toMatchObject({
+      resolution: 'unresolved',
+      reason: 'year_mismatch',
+      identity: null,
+      evidence: null,
+      options: [{ title: 'Foundation', year: 2020, tmdbId: 20 }],
+    });
     expect(search.mock.calls.map((c) => c[0])).toEqual([
       'Foundation 2020',
       'Foundation (2021)',

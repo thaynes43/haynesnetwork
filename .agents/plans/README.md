@@ -151,6 +151,8 @@ dispatch** (standing rule).
 | 074 | One Kavita series per book (issue #825) | **In progress; app safeguards #833 merged** | ADR-105; converter and Libretto tracked by haynes-ops #3540. Staged metadata removal, census, backfill and hourly gate follow this plan. The existing Request Event history plan retains 073. |
 | 075 | [Agent-owned watch recommendations](completed/075-agent-owned-watch-recommendations.md) | ✅ **completed/ (v0.111.0, 2026-10-12)** | ADR-107 / DESIGN-054; factual context and external candidate checks, membership-neutral cache scopes, live app/24-job verification and preserved voice settings. Feature #882, release #881, haynes-ops #3828/#3829/#3830, hass-sandbox #241/#242. |
 
+| 076 | [Watch recommendation acceptance feedback](076-watch-recommendation-acceptance-feedback.md) | **In progress** | ADR-108 / DESIGN-054 D-04..D-07: eligibility guidance, classification provenance, strict year alternatives and neutral cached hints; release and guarded voice rollout required. |
+
 ### Unplanned intake (owner-gated)
 
 - **SMTP relay (F-04)** — Google Workspace + `noreply@haynesnetwork.com` alias + shared relay; unblocks

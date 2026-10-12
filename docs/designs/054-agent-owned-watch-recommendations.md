@@ -1,8 +1,8 @@
 # DESIGN-054: Personal evidence for agent-owned watch recommendations
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-11
-- **Satisfies:** PRD-001 R-242/R-244/R-245/R-261; governed by ADR-107, ADR-088 and ADR-091
+- **Last updated:** 2026-10-12
+- **Satisfies:** PRD-001 R-242/R-244/R-245/R-261; governed by ADR-107, ADR-108, ADR-088 and ADR-091
 
 ## Overview
 
@@ -51,10 +51,44 @@ structured content <=64 KiB, with page/input caps and clipped optional metadata.
 results and indicate clipping. Other tools keep text. Schemas <=6,144 bytes; instructions <=600.
 Maintain bounded lookup cost and the added voice latency target of 0.5 seconds.
 
-Read context, research broadly, check candidates, verify current regional home availability, then
-rank/explain for the request. Membership restricts only explicit requests. Current attention needs
-dated sources; theatrical release does not prove rental availability. Reads never call mutation or
-acquisition writers; existing explicit writes keep their audited owner-aware semantics.
+Read context, research broadly, check candidates, then rank/explain for the request. Released
+movies/shows beyond theatrical-only are eligible through the owner's acquisition setup regardless
+of Plex, watchlist or commercial listings. Upcoming/theatrical-only titles need an explicit request.
+Research release status where needed and disclose uncertainty; missing provider listings do not
+prove unreleased status. Streaming/rental is optional convenience, never a default filter or ranking
+boost. Membership restricts only explicit requests; Plex-only needs confirmed membership. Current
+attention needs dated sources. Separate editorial fit, viewing evidence, membership and verified
+acquisition status. Reads never call mutation/acquisition writers; explicit writes retain semantics.
+
+### D-05 — Classification provenance
+
+Add `viewingBasis`, a bounded fixed-enum list explaining the selected `viewing` classification:
+`explicit_watched`, `plex_watched_state`, `plex_episode_state`, `completed_playback`,
+`historical_completion`, `partial_playback`, `plex_resume`, `recorded_playback`,
+`explicit_not_mine`, `ambiguous_attribution`. Derive it from complete rows/events/marks before
+clipping displayed statements. For watched, include each supporting watched source; replay/resume
+stays in progress rather than becoming a reason for watched. For partial, include relevant partial
+sources; for played use recorded playback. Unknown attribution and not-mine use their own basis,
+with not-mine overriding other personal classifications while counts/progress remain factual.
+No recorded viewing has an empty basis. A retained movie/episode completion summary can establish
+watched despite zero direct completed events. Plex episode flags/counts do not prove a whole show
+finished. Completion denotes the source verdict, including the Tautulli watched threshold.
+Spoken single-title and batch summaries name the supporting evidence without implying liking.
+
+### D-06 — Canonical year alternatives
+
+At local, catalog-search and post-hydration year mismatch, retain `unresolved/year_mismatch`,
+`identity: null` and `evidence: null`. Offer at most five deduplicated identity-only options with the
+same normalized exact title, requested kind, a known differing canonical year and consistency
+with all supplied identifiers. Contradictory IDs never produce alternatives; missing years,
+different kinds and fuzzy names are not suggestions. Strong local identities need no provider
+call to establish mismatch. Preserve genuine ambiguity and numeric title literals. No automatic
+year substitution or retry; the six-second shared lookup budget and two in-flight calls remain.
+
+### D-07 — Neutral cached reasons
+
+Cached hints describe similarity to titles in viewing records, without claiming the user liked
+them or replacing the consuming agent's judgment. Do not alter scorer weights or candidate filters.
 
 ## Alternatives considered
 
@@ -70,8 +104,13 @@ score/pagination, no mutations, schemas/bounds and both endpoints. Tests run ser
 `nice -n 19`; no busy loops, stress tools or wide parallel/looped tests in this shared pod.
 Complete required CI and verify deployed tools with read-only live results.
 
+Also cover zero-direct-event Plex/retained completion, replay plus prior watched evidence, explicit
+marks beyond displayed statements, episode versus whole-show evidence, not-mine precedence and
+local/catalog/hydrated year recovery. Reject wrong kind/IDs/fuzzy titles/missing years; test option
+deduplication/caps and ten maximal results with provenance under the unchanged response budgets.
+
 ## Open questions
 
-| ID | Question | Resolution |
-|----|----------|------------|
-| — | No unresolved design questions: the owner request decides recommendation ownership/scope. | Missing evidence and capabilities are reported as limits. |
+| ID  | Question                                                                                  | Resolution                                                |
+| --- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| —   | No unresolved design questions: the owner request decides recommendation ownership/scope. | Missing evidence and capabilities are reported as limits. |

@@ -72,8 +72,11 @@ for your account yet." (ADR-092 C-04); `watch_status` reports watchlist membersh
 ## Personal context and recommendation research (ADR-107)
 
 The agent owns discovery and final selection. Read `viewing_context` (default: viewing plus explicit
-feedback), research candidates broadly, check them with `check_titles`, verify current regional
-streaming/rental availability, then rank and explain for the request. Use dated sources for current
+feedback), research candidates broadly, check them with `check_titles`, then rank and explain for
+the request. ADR-108 makes released media beyond theatrical-only eligible outside Plex/watchlists
+regardless of commercial listings. Exclude upcoming/theatrical-only titles unless requested;
+research release status where needed. Streaming/rental is optional convenience, never a default
+filter or ranking boost. Missing provider listings do not prove unreleased status. Use dated sources for current
 attention. Plays do not establish liking or completion; personal numeric ratings are unavailable.
 Plex/watchlist membership restricts choices only when explicitly requested.
 
@@ -84,7 +87,10 @@ that limit rather than presenting cached coverage as comprehensive.
 
 Candidate checks use canonical IDs or exact title/year and retain input order, ambiguity, lookup
 failures, conflicting IDs and uncertain historical attribution. Source coverage is partial; no record
-is not proof of never viewing. External lookups share a six-second budget inside the nine-second
+is not proof of never viewing. `viewingBasis` explains selected classifications from full records;
+zero direct completed plays can coexist with recorded watched evidence from Plex or retained history.
+Exact-name year mismatch returns up to five strict canonical identity-only options, never a silently
+chosen year or personal evidence for an unresolved identity. External lookups share a six-second budget inside the nine-second
 request deadline. The two new tools are SELECT-only and never acquire media or call action writers.
 
 ## Logging and errors (`src/log.ts`, D-06)

@@ -6,7 +6,9 @@
 
 v0.111.0 is live: factual `viewing_context` and external `check_titles`; `recommend` discloses its
 limited cache and no longer boosts Plex/watchlist membership or reserves Plex-first pages. Agents
-own broad discovery, current research, regional availability checks and selections for the request.
+own broad discovery, current research and selections for the request. ADR-108 / PLAN-076 refines
+eligibility: released media beyond theatrical-only is eligible; commercial listings are optional
+convenience, never a default filter or ranking boost. The acceptance-feedback fixes are in progress.
 Missing records stay unknown; plays do not establish liking. Feature #882, release #881 and
 haynes-ops #3828 passed required checks; the signed image is on 3/3 replicas and 24 CronJobs.
 Read-only live checks resolved external candidates outside Plex without modifying viewing records.

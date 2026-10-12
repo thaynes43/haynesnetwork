@@ -28,7 +28,8 @@ const KINDS_SQL_LIST = WATCH_TITLE_KINDS.map((k) => `'${k}'`).join(',');
  *   in the provider's default order (newest-watchlisted first). The list endpoint carries no watchlist
  *   timestamp (verified live 2026-09-23), so `added_at` stays NULL unless a later reader fetches it.
  * - `tmdb_seed` — page one of TMDB `/{tv|movie}/{id}/recommendations` for up to 15 seed titles, refreshed
- *   when older than 20 hours; `seed_title_key` / `seed_title` name the seed ("because you watched …").
+ *   when older than 20 hours; `seed_title_key` / `seed_title` name the source title in viewing
+ *   records. Cached similarity is not evidence of liking (ADR-108 / DESIGN-054 D-07).
  *
  * Each run REPLACES one source's rows for the account in one transaction (delete + insert), so the DELETE
  * family is guarded too. Written ONLY by the @hnet/domain signal writer — guard-listed. A rebuildable

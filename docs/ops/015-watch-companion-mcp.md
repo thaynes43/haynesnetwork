@@ -134,15 +134,15 @@ Watch Mark (`watchlist_add` / `watchlist_remove`) and `undo_last_change` reverse
 | "Plex didn't answer in time, so I can't tell whether X changed." | `watchlist_changed` `unknown`; the write may still land, so plex.tv `userState` for the title decides; undo of such an add removes it anyway (DESIGN-051 D-15n; undo: D-04, D-15b) |
 | An add named the wrong title | `undo_last_change` at once; if the title was not on Plex, cancel the Seerr request in Seerr (undo cannot) |
 
-## 9. Agent-owned recommendations (ADR-107 / DESIGN-054)
+## 9. Agent-owned recommendations (ADR-107/108 / DESIGN-054)
 
 The agent owns recommendation research and judgment. Use this workflow:
 
 1. Read factual `viewing_context`, retaining its page, freshness and coverage limits.
 2. Discover broadly with web/catalog tools; use `recommend` only as a limited cached helper.
 3. Check up to ten external candidates with `check_titles`, preserving ambiguity, unavailable lookups and unknown personal evidence.
-4. Verify current regional streaming or rental availability; a theatrical release does not prove home availability.
+4. Treat released media beyond theatrical-only as eligible regardless of Plex/watchlist or commercial listings. Research release status when needed; exclude upcoming/theatrical-only media unless requested. Streaming/rental is optional convenience, never a default filter or ranking boost. Missing provider listings do not prove unreleased status.
 5. Rank for the request's taste, mood, runtime and audience; membership restricts the pool only when explicitly requested.
 6. Explain choices and evidence honestly, using dated sources for current attention and stating any limited discovery scope.
 
-`check_titles` and `viewing_context` are read-only and return at most 1,200 characters of spoken text plus at most 64 KiB serialized `structuredContent`. The other tools remain text-only. Eleven tool schemas fit 6,144 bytes and instructions fit 600 characters. Reads never mark, dismiss, edit watchlists or acquire media. Partial plays and completion do not establish liking; personal ratings are unavailable. Reload client tool schemas after deployment as described in §8.
+`check_titles` and `viewing_context` are read-only and return at most 1,200 characters of spoken text plus at most 64 KiB serialized `structuredContent`. The other tools remain text-only. Eleven tool schemas fit 6,144 bytes and instructions fit 600 characters. Reads never mark, dismiss, edit watchlists or acquire media. `viewingBasis` explains recorded classifications independently of direct completed-play counts. Plex flags and retained playback summaries can establish recorded watched status; episode evidence does not claim whole-show completion. Exact-name year mismatch stays unresolved with identity-only canonical options requiring confirmation. Partial plays and completion do not establish liking; personal ratings are unavailable. Reload client tool schemas after deployment as described in §8.

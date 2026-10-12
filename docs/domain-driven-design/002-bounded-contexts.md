@@ -199,8 +199,8 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
   ledger (`media_metadata`, `media_plex_matches`). BC-06 reads them and owns none of them.
 - **Does NOT own:** ADR-053's per-title `user_media_watch` facets or the household watch stats
   (BC-03), library access (BC-02/BC-04), or requests (Seerr). General recommendation
-  discovery, current attention, regional streaming/rental research and final judgment belong to
-  the consuming agent, not this context; reads never acquire media.
+  discovery, current attention, release-status research and final judgment belong to
+  the consuming agent, not this context; reads never acquire media. ADR-108 makes commercial listings optional convenience, not eligibility or ranking criteria; released media beyond theatrical-only remains eligible outside Plex/watchlists. Viewing Basis (T-300) explains classifications without inferring liking.
 
 ## 4. Relationship rules
 

@@ -11,7 +11,7 @@ export const SERVER_NAME = 'Watch history';
 
 /** D-02 — only Claude Code and Codex read these (Home Assistant drops them); ≤ 600 characters. */
 export const INSTRUCTIONS =
-  'Use viewing_context for personal viewing and explicit feedback; plays do not prove liking. Discover broadly with web/catalog tools, check_titles against records, verify regional streaming/rental availability, then rank for the request. Use dated sources for current buzz. Plex/watchlist membership restricts only explicit requests. recommend is a limited cached pool, not broad discovery. No recorded viewing is not proof of never watched. Lookup reads never acquire titles. set_watchlist may trigger downloads; mark_watched writes Plex.';
+  'Use viewing_context for personal evidence; plays do not prove liking. Discover broadly, then check_titles and rank for the request using dated research. Released titles beyond theatrical-only are eligible; upcoming/theatrical-only need explicit request. Streaming/rental listings are optional convenience, never a default filter or ranking boost. Plex/watchlist restrict only explicit requests. recommend is a limited cache. No recorded viewing is not proof of never watched; viewingBasis explains recorded status. Reads never acquire titles; set_watchlist may download, mark_watched writes Plex.';
 
 const showOrMovie = z.enum(['show', 'movie']);
 const anyKind = z.enum(['show', 'movie', 'any']);
