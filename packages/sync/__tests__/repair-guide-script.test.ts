@@ -17,6 +17,12 @@ describe('repair-guide.ts arguments', () => {
   it('evidence needs a person; settings parses the switch', () => {
     expect(() => parseRepairGuideArgs(['evidence', '--tmdb', '769'])).toThrow(/--email/);
     expect(parseRepairGuideArgs(['evidence', '--tmdb', '769', '--email', 'A@B.C'])).toMatchObject({ email: 'a@b.c' });
+    expect(
+      parseRepairGuideArgs(['evidence', '--tmdb', '769', '--email', 'a@b.c', '--plex-user-id', '77', '--plex-username', 'Member']),
+    ).toMatchObject({ plexUserId: '77', plexUsername: 'member' });
+    expect(() => parseRepairGuideArgs(['evidence', '--tmdb', '769', '--email', 'a@b.c', '--plex-user-id', 'x'])).toThrow(
+      /numeric/,
+    );
     expect(parseRepairGuideArgs(['settings'])).toMatchObject({ command: 'settings' });
     expect(
       parseRepairGuideArgs(['settings', '--set', 'replacement_preview=on,season_guard=off', '--known-issue', 'haynesops']),

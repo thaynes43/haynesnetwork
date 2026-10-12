@@ -354,8 +354,9 @@ Error trigger.
    in-cluster tool are not counted). The preview itself costs no budget unit, unlike P5's Release Pick list.
 8. **Playback Evidence (T-309).** The stored Tautulli `play`, `stop` and Playback Error webhooks, matched by the
    person's app or Plex email, or their Plex username, and the title's ledger item or ids (a show at the show level),
-   plus each Tautulli instance's history for the title's rating keys on that server, filtered to the person's Plex
-   username. The template gains `server` (DESIGN-012 D-02), so a webhook names the server too. Read 2026-10-12: the
+   plus each Tautulli instance's history for the title's rating keys on that server, filtered to the person's plex.tv
+   id or Plex username. Those come from the session's Plex identity (the sign-in claims) as well as the user row's
+   admin overrides: on 2026-10-12 no user row carried a Plex username, so the row alone would match no history. The template gains `server` (DESIGN-012 D-02), so a webhook names the server too. Read 2026-10-12: the
    HaynesOps and HaynesKube instances post `play` and `stop`; HaynesTower's Tautulli posts nothing to the app, so its
    plays come from its history only. The **Known-Issue Servers** (T-314) are the audited app setting
    `playback_known_issue_servers`; Won't play triage suggests another server first when every play reached only these.

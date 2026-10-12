@@ -3,6 +3,7 @@
 //   tsx repair-guide.ts preview  (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n> [--episodes 1,2]]
 //                                [--replace-file]
 //   tsx repair-guide.ts evidence (--tmdb <id> | --tvdb <id>) --email <app user email>
+//                                [--plex-user-id <plex.tv id>] [--plex-username <name>]
 //   tsx repair-guide.ts audio    (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n>]
 //   tsx repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
 //
@@ -33,7 +34,7 @@ import {
 
 const USAGE = `Usage:
   repair-guide.ts preview  (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n> [--episodes 1,2]] [--replace-file]
-  repair-guide.ts evidence (--tmdb <id> | --tvdb <id>) --email <app user email>
+  repair-guide.ts evidence (--tmdb <id> | --tvdb <id>) --email <app user email> [--plex-user-id <id>] [--plex-username <name>]
   repair-guide.ts audio    (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n>]
   repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
 
@@ -49,6 +50,9 @@ export interface RepairGuideArgs {
   episodes?: number[];
   replaceFile: boolean;
   email?: string;
+  /** The person's Plex identity as their sign-in carries it (the app keeps it in the session, not the user row). */
+  plexUserId?: string;
+  plexUsername?: string;
   set?: Partial<Record<RepairGuideRemedy, boolean>>;
   knownIssue?: string[];
 }
@@ -99,6 +103,16 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
       case '--email':
         if (!value) throw new Error('--email needs an address');
         args.email = value.trim().toLowerCase();
+        i += 1;
+        break;
+      case '--plex-user-id':
+        if (!value || !/^\d+$/.test(value)) throw new Error('--plex-user-id needs the plex.tv numeric id');
+        args.plexUserId = value;
+        i += 1;
+        break;
+      case '--plex-username':
+        if (!value) throw new Error('--plex-username needs a name');
+        args.plexUsername = value.trim().toLowerCase();
         i += 1;
         break;
       case '--set': {
@@ -194,6 +208,7 @@ async function main(): Promise<number> {
       db,
       mediaItemId: item.id,
       requesterId: person.id,
+      plexIdentity: { userId: args.plexUserId ?? null, email: null, username: args.plexUsername ?? null },
       tautulli: resolveTautulliInstances().map((inst) => {
         const client = new TautulliClient({ baseUrl: inst.baseUrl, apiKey: inst.apiKey, timeoutMs: 15_000 });
         return { slug: inst.slug, getHistory: (params) => client.getHistory(params) };
