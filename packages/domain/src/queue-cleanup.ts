@@ -6,6 +6,9 @@
 // D-13 gives Lidarr's `manual_match` an enforce cell, with a loop guard and a loop signal in the log and digest.
 // D-23 extends the loop guard to every janitor search; ADR-098 (D-24) makes the janitor the one retrier of a failed
 // Sonarr or Radarr download, once per failure, within the same budget.
+// D-27 (ADR-109 C-05, DESIGN-055 D-07, PLAN-077 P2) runs the Import Check on a Sonarr or Radarr download blocked only by
+// an identity rejection: `importable` (one census-default enforce cell per *arr, acting through the *arr's ManualImport)
+// or the report-only `title_mismatch`.
 // ADR-095 (D-15..D-20) extends it to the download suite: LazyLibrarian and Kapowarr through the source adapter seam
 // (./queue-cleanup-sources), the same rails and rows, a config that stays valid without them, and a ladder per family.
 //
@@ -61,6 +64,15 @@ import {
   type QueueCleanupSourceAdapter,
   type QueueCleanupSourceItem,
 } from './queue-cleanup-sources';
+import {
+  checkRadarrImport,
+  checkSonarrImport,
+  hasIdentityRejection,
+  importCheckReasonText,
+  queueTexts,
+  type RadarrImportCheck,
+  type SonarrImportCheck,
+} from './import-check';
 
 // ---------------------------------------------------------------------------
 // Classifier (D-03) — pure, exhaustively tested; patterns in versioned code.
@@ -328,11 +340,24 @@ export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClas
 export const QUEUE_CLEANUP_SHARED_CLASSES = ['have_better', 'retry_import', 'bad_release'] as const;
 export type QueueCleanupSharedClass = (typeof QUEUE_CLEANUP_SHARED_CLASSES)[number];
 
-/** The classes that have an enforce cell on SOME instance. `unknown` never does (ADR-083 normative), nor does
- *  `fail_loop` (D-18, report only). `manual_match` was report only (D-12) and since D-13 has one cell, on Lidarr only;
- *  `leftover` has one, on LazyLibrarian only (D-18). */
-export const QUEUE_CLEANUP_ENFORCEABLE_CLASSES = [...QUEUE_CLEANUP_SHARED_CLASSES, 'manual_match', 'leftover'] as const;
+/** The classes that have an enforce cell on SOME instance. `unknown` never does (ADR-083 normative), nor do
+ *  `fail_loop` (D-18) and `title_mismatch` (D-27), both report only. `manual_match` was report only (D-12) and since
+ *  D-13 has one cell, on Lidarr only; `leftover` has one, on LazyLibrarian only (D-18); `importable` one on Sonarr and
+ *  one on Radarr (D-27). */
+export const QUEUE_CLEANUP_ENFORCEABLE_CLASSES = [
+  ...QUEUE_CLEANUP_SHARED_CLASSES,
+  'manual_match',
+  'leftover',
+  'importable',
+] as const;
 export type QueueCleanupEnforceableClass = (typeof QUEUE_CLEANUP_ENFORCEABLE_CLASSES)[number];
+
+/** D-27 — the *arrs whose blocked downloads get the Import Check, each with an `importable` cell (census by default). */
+export const QUEUE_CLEANUP_IMPORT_INSTANCES = ['sonarr', 'radarr'] as const;
+export type QueueCleanupImportInstance = (typeof QUEUE_CLEANUP_IMPORT_INSTANCES)[number];
+
+/** D-27 — Sonarr's and Radarr's cells: the shared three plus `importable`. */
+export const QUEUE_CLEANUP_IMPORT_ARR_CLASSES = [...QUEUE_CLEANUP_SHARED_CLASSES, 'importable'] as const;
 
 /** LazyLibrarian's cells (D-18): retry (forceProcess), bad_release (the SABnzbd job delete), leftover (the folder). */
 export const QUEUE_CLEANUP_LAZYLIBRARIAN_CLASSES = ['retry_import', 'bad_release', 'leftover'] as const;
@@ -340,15 +365,15 @@ export const QUEUE_CLEANUP_LAZYLIBRARIAN_CLASSES = ['retry_import', 'bad_release
 export const QUEUE_CLEANUP_KAPOWARR_CLASSES = ['bad_release'] as const;
 
 /**
- * The cells each instance has (D-05, D-13, D-16): the shared three on every *arr, plus `manual_match` on Lidarr;
- * LazyLibrarian's three and Kapowarr's one (D-18, D-19). A class an instance has no cell for is refused in its
- * stored modes (a `modes.sonarr.manual_match` is an unknown class) and always reads census.
+ * The cells each instance has (D-05, D-13, D-16, D-27): the shared three on every *arr, plus `importable` on Sonarr and
+ * Radarr and `manual_match` on Lidarr; LazyLibrarian's three and Kapowarr's one (D-18, D-19). A class an instance has no
+ * cell for is refused in its stored modes (a `modes.sonarr.manual_match` is an unknown class) and always reads census.
  */
 export const QUEUE_CLEANUP_INSTANCE_CLASSES: {
   readonly [K in QueueCleanupInstance]: readonly QueueCleanupEnforceableClass[];
 } = {
-  sonarr: QUEUE_CLEANUP_SHARED_CLASSES,
-  radarr: QUEUE_CLEANUP_SHARED_CLASSES,
+  sonarr: QUEUE_CLEANUP_IMPORT_ARR_CLASSES,
+  radarr: QUEUE_CLEANUP_IMPORT_ARR_CLASSES,
   lidarr: [...QUEUE_CLEANUP_SHARED_CLASSES, 'manual_match'],
   lazylibrarian: QUEUE_CLEANUP_LAZYLIBRARIAN_CLASSES,
   kapowarr: QUEUE_CLEANUP_KAPOWARR_CLASSES,
@@ -362,12 +387,17 @@ export function isQueueCleanupSourceInstance(instance: string): instance is Queu
 }
 
 /**
- * D-13 / D-16 — a cell a stored config may lack: added after its instance was first stored, so an absent value reads
- * as census and never invalidates the rest. Lidarr's `manual_match` (D-13) and every suite-source cell (D-16); a
- * missing suite instance reads as census on all its cells. The nine shared *arr cells stay required.
+ * D-13 / D-16 / D-27 — a cell a stored config may lack: added after its instance was first stored, so an absent value
+ * reads as census and never invalidates the rest. Lidarr's `manual_match` (D-13), Sonarr's and Radarr's `importable`
+ * (D-27) and every suite-source cell (D-16); a missing suite instance reads as census on all its cells. The nine shared
+ * *arr cells stay required.
  */
 function isOptionalCell(instance: QueueCleanupInstance, klass: QueueCleanupEnforceableClass): boolean {
-  return (instance === 'lidarr' && klass === 'manual_match') || isQueueCleanupSourceInstance(instance);
+  return (
+    (instance === 'lidarr' && klass === 'manual_match') ||
+    klass === 'importable' ||
+    isQueueCleanupSourceInstance(instance)
+  );
 }
 
 const ENFORCEABLE_CLASS_SET: ReadonlySet<string> = new Set(QUEUE_CLEANUP_ENFORCEABLE_CLASSES);
@@ -386,6 +416,9 @@ export type QueueCleanupModeCells = Record<QueueCleanupSharedClass, QueueCleanup
 /** Lidarr's cells: the shared three plus `manual_match` (D-13). */
 export type LidarrQueueCleanupModeCells = QueueCleanupModeCells & { manual_match: QueueCleanupMode };
 
+/** Sonarr's and Radarr's cells: the shared three plus `importable` (D-27). */
+export type ImportArrQueueCleanupModeCells = QueueCleanupModeCells & { importable: QueueCleanupMode };
+
 /** LazyLibrarian's cells (D-18). */
 export type LazyLibrarianQueueCleanupModeCells = Record<
   (typeof QUEUE_CLEANUP_LAZYLIBRARIAN_CLASSES)[number],
@@ -399,8 +432,8 @@ export interface ArrQueueCleanupConfig {
   /** T-240 cells: per instance × the classes that instance has a cell for (QUEUE_CLEANUP_INSTANCE_CLASSES). The
    *  resolved config always carries all five instances; a STORED config may lack the suite sources (D-16). */
   modes: {
-    sonarr: QueueCleanupModeCells;
-    radarr: QueueCleanupModeCells;
+    sonarr: ImportArrQueueCleanupModeCells;
+    radarr: ImportArrQueueCleanupModeCells;
     lidarr: LidarrQueueCleanupModeCells;
     lazylibrarian: LazyLibrarianQueueCleanupModeCells;
     kapowarr: KapowarrQueueCleanupModeCells;
@@ -418,12 +451,12 @@ function allCensusCells(): QueueCleanupModeCells {
 }
 
 /** The code default — ALL-CENSUS (observe-only), caps 10 / 2h / 6-run (DESIGN-046 D-05). Lidarr's `manual_match`
- *  cell is census too (D-13), and so is every suite-source cell (D-16), so a deploy that adds a cell is inert until
- *  the cell is flipped. */
+ *  cell is census too (D-13), and so are Sonarr's and Radarr's `importable` (D-27) and every suite-source cell (D-16),
+ *  so a deploy that adds a cell is inert until the cell is flipped. */
 export const ARR_QUEUE_CLEANUP_CONFIG_DEFAULT: ArrQueueCleanupConfig = {
   modes: {
-    sonarr: allCensusCells(),
-    radarr: allCensusCells(),
+    sonarr: { ...allCensusCells(), importable: 'census' },
+    radarr: { ...allCensusCells(), importable: 'census' },
     lidarr: { ...allCensusCells(), manual_match: 'census' },
     lazylibrarian: { retry_import: 'census', bad_release: 'census', leftover: 'census' },
     kapowarr: { bad_release: 'census' },
@@ -434,10 +467,11 @@ export const ARR_QUEUE_CLEANUP_CONFIG_DEFAULT: ArrQueueCleanupConfig = {
 };
 
 /**
- * The mode of one class×instance cell. `census` for a class the instance has no cell for (`unknown` and `fail_loop`
- * anywhere, `manual_match` off Lidarr, `leftover` off LazyLibrarian) and for a cell or instance a config lacks: a
- * config stored before D-13 has no `manual_match` cell and one stored before D-16 no suite source, and they read as
- * census (fail safe, never enforce by omission).
+ * The mode of one class×instance cell. `census` for a class the instance has no cell for (`unknown`, `fail_loop` and
+ * `title_mismatch` anywhere, `manual_match` off Lidarr, `leftover` off LazyLibrarian, `importable` off Sonarr and
+ * Radarr) and for a cell or instance a config lacks: a config stored before D-13 has no `manual_match` cell, one stored
+ * before D-16 no suite source and one stored before D-27 no `importable` cell, and they read as census (fail safe, never
+ * enforce by omission).
  */
 export function queueCleanupCellMode(
   config: ArrQueueCleanupConfig,
@@ -502,9 +536,9 @@ export function queueCleanupConfigError(cfg: unknown): string | null {
   return null;
 }
 
-/** The canonical shape of a validated config: every instance and cell present (Lidarr's `manual_match` and every
- *  suite-source cell filled as census when an older config lacks them, D-13 / D-16), stray keys dropped. Used for
- *  storing AND for reading back. */
+/** The canonical shape of a validated config: every instance and cell present (Lidarr's `manual_match`, Sonarr's and
+ *  Radarr's `importable` and every suite-source cell filled as census when an older config lacks them, D-13 / D-16 /
+ *  D-27), stray keys dropped. Used for storing AND for reading back. */
 function canonicalConfig(config: ArrQueueCleanupConfig): ArrQueueCleanupConfig {
   const cell = (c: QueueCleanupModeCells): QueueCleanupModeCells => ({
     have_better: c.have_better,
@@ -515,8 +549,8 @@ function canonicalConfig(config: ArrQueueCleanupConfig): ArrQueueCleanupConfig {
     queueCleanupCellMode(config, instance, klass);
   return {
     modes: {
-      sonarr: cell(config.modes.sonarr),
-      radarr: cell(config.modes.radarr),
+      sonarr: { ...cell(config.modes.sonarr), importable: mode('sonarr', 'importable') },
+      radarr: { ...cell(config.modes.radarr), importable: mode('radarr', 'importable') },
       lidarr: {
         ...cell(config.modes.lidarr),
         manual_match: mode('lidarr', 'manual_match'),
@@ -537,7 +571,9 @@ function canonicalConfig(config: ArrQueueCleanupConfig): ArrQueueCleanupConfig {
 /**
  * ADR-095 / DESIGN-046 D-16 rule 4 — the shape the writer STORES: the canonical config without a suite instance whose
  * cells are all census (absent reads as census, so nothing changes on read). Until a books or comics cell is enforced,
- * the stored row is exactly what the image before ADR-095 accepts, so a rollback keeps the *arr cells enforcing.
+ * the stored row is exactly what the image before ADR-095 accepts, so a rollback keeps the *arr cells enforcing. D-27
+ * applies the same rule to Sonarr's and Radarr's `importable`: a census `importable` cell is left out, so the row stays
+ * one the image before D-27 accepts until the coordinator enforces it.
  */
 function storableConfig(config: ArrQueueCleanupConfig): Omit<ArrQueueCleanupConfig, 'modes'> & {
   modes: Record<string, Record<string, QueueCleanupMode>>;
@@ -546,6 +582,10 @@ function storableConfig(config: ArrQueueCleanupConfig): Omit<ArrQueueCleanupConf
   const modes: Record<string, Record<string, QueueCleanupMode>> = { ...canonical.modes };
   for (const instance of QUEUE_CLEANUP_SOURCE_INSTANCES) {
     if (Object.values(canonical.modes[instance]).every((m) => m === 'census')) delete modes[instance];
+  }
+  for (const instance of QUEUE_CLEANUP_IMPORT_INSTANCES) {
+    const { importable, ...rest } = canonical.modes[instance];
+    modes[instance] = importable === 'census' ? rest : { ...rest, importable };
   }
   return { ...canonical, modes };
 }
@@ -648,6 +688,19 @@ export interface QueueCleanupInstanceClient {
   releaseProfiles?: JanitorReleaseProfileClient;
   /** D-24 (ADR-098): the *arr's failed downloads, for the failed-download retry. Sonarr and Radarr only. */
   failedDownloads?: QueueCleanupFailedDownloadSource;
+  /**
+   * D-27 (DESIGN-055 D-07): the Import Check of ONE download, given all of its queue records. It reads the *arr's
+   * manual-import view of the download (`GET /manualimport?downloadId=`) and what Title Evidence needs (Sonarr the
+   * series' episode list and its year, Radarr the movie and its titles), then judges it in `download` mode. Null when
+   * the records cannot be checked (no download id, no parent, records of more than one parent); a throw is a failed
+   * read. Read-only. Sonarr and Radarr only.
+   */
+  importCheck?(items: QueueCleanupQueueItem[]): Promise<SonarrImportCheck | RadarrImportCheck | null>;
+  /**
+   * D-27: import an `importable` download through the *arr's own `ManualImport` command (`importMode: 'auto'`), with
+   * exactly the check's files. Nothing is removed, blocklisted or searched. Sonarr and Radarr only.
+   */
+  manualImport?(check: SonarrImportCheck | RadarrImportCheck): Promise<void>;
 }
 
 /**
@@ -754,6 +807,34 @@ function normalizeItem(raw: {
   };
 }
 
+/**
+ * D-27 — what the Import Check of one download is about: its download id, its one parent (Sonarr the series, Radarr the
+ * movie) and, where `needsChild`, every record's episode. Null when a record lacks any of them or the records disagree
+ * (another download, another parent): such a download cannot be checked and stays `unknown`.
+ */
+function importCheckTarget(
+  items: readonly QueueCleanupQueueItem[],
+  targets: WeakMap<QueueCleanupQueueItem, QueueTargetIds>,
+  needsChild: boolean,
+): { downloadId: string; parentId: number; childIds: number[] } | null {
+  const downloadId = nonEmpty(items[0]?.downloadId);
+  if (downloadId === null) return null;
+  let parentId: number | null = null;
+  const childIds: number[] = [];
+  for (const item of items) {
+    if (nonEmpty(item.downloadId) !== downloadId) return null;
+    const t = targets.get(item);
+    if (t?.parentId == null || (parentId !== null && t.parentId !== parentId)) return null;
+    parentId = t.parentId;
+    if (needsChild) {
+      if (t.childId == null) return null;
+      childIds.push(t.childId);
+    }
+  }
+  if (parentId === null) return null;
+  return { downloadId, parentId, childIds: distinctIds(childIds) };
+}
+
 /** D-24 — the newest grab time per target, from the *arr's `grabbed` history. */
 function latestGrabByTarget(grabs: Array<{ targetId: number; date: string }>): Map<number, number> {
   const out = new Map<number, number>();
@@ -798,7 +879,9 @@ function toFailedDownload(
  * else the series); Lidarr the album (via listAlbums, else the artist). Re-search targets the same level. Both
  * take a download's records together (D-11): one list read per parent, and one search command for every
  * monitored episode / movie / album (the series / artist search only for a record with no child id). Lidarr also
- * answers which albums are monitored and still missing tracks (D-13, manual_match), from the same album list.
+ * answers which albums are monitored and still missing tracks (D-13, manual_match), from the same album list. Sonarr
+ * and Radarr also run the Import Check (D-27) and its ManualImport; its parent reads (Sonarr's episode list and series,
+ * Radarr's movie) are memoized for one janitor pass, from one queue read to the next.
  */
 export function buildQueueCleanupClients(clients: {
   read: { sonarr: SonarrClient; radarr: RadarrClient; lidarr: LidarrClient };
@@ -809,10 +892,22 @@ export function buildQueueCleanupClients(clients: {
     targetsByItem.set(item, ids);
     return item;
   };
+  // D-27: the Import Check's parent reads, one per parent per pass (a season's single-episode downloads share one
+  // episode list and one series read). Reset at each queue read, so a reused bundle never serves an earlier pass.
+  const sonarrImportReads = () => ({
+    episodes: memoized((seriesId: number) => clients.read.sonarr.listEpisodes(seriesId)),
+    series: memoized((seriesId: number) => clients.read.sonarr.getSeriesById(seriesId)),
+  });
+  const radarrImportReads = () => ({
+    movie: memoized((movieId: number) => clients.read.radarr.getMovieById(movieId)),
+  });
+  let sonarrPass = sonarrImportReads();
+  let radarrPass = radarrImportReads();
 
   return {
     sonarr: {
       async getQueueAll() {
+        sonarrPass = sonarrImportReads();
         const records = await clients.read.sonarr.getQueueAll();
         return records.map((r: SonarrQueueRecord) =>
           remember(normalizeItem(r, r.episodeId ?? null), {
@@ -887,9 +982,43 @@ export function buildQueueCleanupClients(clients: {
           if (episodeIds.length > 0) await clients.write.sonarr.searchEpisodes(episodeIds);
         },
       },
+      // D-27: the Import Check of one download (every episode its records track), and its ManualImport.
+      async importCheck(items) {
+        const target = importCheckTarget(items, targetsByItem, true);
+        if (target === null) return null;
+        const [candidates, episodes, series] = await Promise.all([
+          clients.read.sonarr.getManualImport(target.downloadId),
+          sonarrPass.episodes(target.parentId),
+          sonarrPass.series(target.parentId),
+        ]);
+        return checkSonarrImport({
+          downloadId: target.downloadId,
+          seriesId: target.parentId,
+          seriesYear: series.year ?? null,
+          targetEpisodeIds: target.childIds,
+          mode: 'download',
+          recordEpisodeIds: target.childIds,
+          releaseTitle: nonEmpty(items[0]!.title),
+          queueMessages: queueTexts(items),
+          candidates,
+          episodes: episodes.map((e) => ({
+            id: e.id,
+            seasonNumber: e.seasonNumber,
+            episodeNumber: e.episodeNumber,
+            title: e.title,
+          })),
+        });
+      },
+      async manualImport(check) {
+        if (check.kind !== 'sonarr' || check.verdict !== 'importable' || check.files.length === 0) {
+          throw new Error('not an importable Sonarr check');
+        }
+        await clients.write.sonarr.manualImport(check.files, 'auto');
+      },
     },
     radarr: {
       async getQueueAll() {
+        radarrPass = radarrImportReads();
         const records = await clients.read.radarr.getQueueAll();
         return records.map((r: RadarrQueueRecord) =>
           remember(normalizeItem(r, r.movieId ?? null), {
@@ -941,6 +1070,34 @@ export function buildQueueCleanupClients(clients: {
           const movieIds = distinctIds(failures.map((f) => f.targetId));
           if (movieIds.length > 0) await clients.write.radarr.searchMovies(movieIds);
         },
+      },
+      // D-27: the Import Check of one download (its movie), and its ManualImport.
+      async importCheck(items) {
+        const target = importCheckTarget(items, targetsByItem, false);
+        if (target === null) return null;
+        const [candidates, movie] = await Promise.all([
+          clients.read.radarr.getManualImport(target.downloadId),
+          radarrPass.movie(target.parentId),
+        ]);
+        return checkRadarrImport({
+          downloadId: target.downloadId,
+          movie: {
+            id: movie.id,
+            title: movie.title,
+            originalTitle: movie.originalTitle ?? null,
+            alternateTitles: movie.alternateTitles ?? [],
+            year: movie.year ?? null,
+          },
+          releaseTitle: nonEmpty(items[0]!.title),
+          queueMessages: queueTexts(items),
+          candidates,
+        });
+      },
+      async manualImport(check) {
+        if (check.kind !== 'radarr' || check.verdict !== 'importable' || check.files.length === 0) {
+          throw new Error('not an importable Radarr check');
+        }
+        await clients.write.radarr.manualImport(check.files, 'auto');
       },
     },
     lidarr: {
@@ -1108,6 +1265,8 @@ function emptyByClass(): Record<QueueCleanupActionClass, { observed: number; enf
     manual_match: { observed: 0, enforced: 0 },
     leftover: { observed: 0, enforced: 0 },
     fail_loop: { observed: 0, enforced: 0 },
+    importable: { observed: 0, enforced: 0 },
+    title_mismatch: { observed: 0, enforced: 0 },
     unknown: { observed: 0, enforced: 0 },
   };
 }
@@ -1203,6 +1362,70 @@ const REPEAT_SEARCH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** The stable message of the loop log line (D-13). One JSON line per event; alert on it in Loki. */
 export const QUEUE_CLEANUP_LOOP_LOG = '[queue-cleanup] loop_detected';
+
+/**
+ * D-27 — the most downloads one janitor pass runs the Import Check on, per instance. Each check costs one manual-import
+ * read (the parent reads are shared per series or movie), so the bound keeps a queue of hundreds of blocked downloads
+ * from turning one hourly run into hundreds of reads. When more qualify, the run checks a window of this many in queue
+ * order, starting this many further on each hour (`importCheckWindow`), so every download is checked in turn; the rest
+ * stay `unknown` for that run.
+ */
+export const IMPORT_CHECK_MAX_PER_RUN = 100;
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * D-27 — which of `count` qualifying downloads (queue order) this run checks: all of them when they fit the cap, else
+ * a window of `cap` that starts `cap` further on every hour, wrapping, so a download left out this hour is in the next
+ * hour's window and none waits behind a standing pile. Pure.
+ */
+export function importCheckWindow(count: number, now: Date, cap: number = IMPORT_CHECK_MAX_PER_RUN): number[] {
+  if (count <= cap) return Array.from({ length: count }, (_, k) => k);
+  const start = (Math.floor(now.getTime() / HOUR_MS) * cap) % count;
+  return Array.from({ length: cap }, (_, k) => (start + k) % count);
+}
+
+/** D-27 — a record the *arr is holding short of its import (the states the Import Check exists for). */
+function isStuckImport(item: { trackedDownloadState: string | null }): boolean {
+  const state = (item.trackedDownloadState ?? '').toLowerCase();
+  return state === 'importblocked' || state === 'importpending';
+}
+
+/**
+ * D-27 — the loop guard of `importable`: for each download, the earlier runs (distinct run times, before `now`, since
+ * `since`) on which the janitor imported it (`imported`, outcome `done`). A download still blocked after the janitor
+ * imported it QUEUE_CLEANUP_LOOP_LIMIT times is held for a person. Keyed by download id.
+ */
+async function priorImportRuns(
+  db: ReturnType<typeof resolveDb>,
+  instance: ArrKind,
+  downloadIds: string[],
+  since: Date,
+  now: Date,
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (downloadIds.length === 0) return out;
+  const rows = await db
+    .select({
+      downloadId: arrQueueCleanupActions.downloadId,
+      runs: sql<number>`count(distinct ${arrQueueCleanupActions.createdAt})`,
+    })
+    .from(arrQueueCleanupActions)
+    .where(
+      and(
+        eq(arrQueueCleanupActions.instance, instance),
+        eq(arrQueueCleanupActions.actionClass, 'importable'),
+        eq(arrQueueCleanupActions.action, 'imported'),
+        eq(arrQueueCleanupActions.outcome, 'done'),
+        inArray(arrQueueCleanupActions.downloadId, downloadIds),
+        gte(arrQueueCleanupActions.createdAt, since),
+        lt(arrQueueCleanupActions.createdAt, now),
+      ),
+    )
+    .groupBy(arrQueueCleanupActions.downloadId);
+  for (const r of rows) if (r.downloadId !== null) out.set(r.downloadId, Number(r.runs));
+  return out;
+}
 
 /**
  * D-13, D-23 — for each target, the earlier downloads the janitor tried since `since` (now minus
@@ -1307,7 +1530,7 @@ interface RecordVerdict {
    *  a report-only class, too young, or held by the loop guard). */
   wants: QueueCleanupEnforceableClass | null;
   /** D-13: the loop guard holds this record (`skipped_loop`); `priorRemovals` is how many earlier downloads of
-   *  its album the janitor removed as manual_match. */
+   *  its target the janitor tried (D-23), or, for `importable` (D-27), on how many earlier runs it imported this one. */
   loop: boolean;
   priorRemovals: number;
 }
@@ -1324,6 +1547,89 @@ const result = (
   outcome: QueueCleanupOutcome = 'observed',
   error: string | null = null,
 ): RecordResult => ({ action, outcome, error });
+
+/**
+ * D-27 (DESIGN-055 D-07) — the Import Check pass over one Sonarr or Radarr queue, after every record has its own verdict.
+ * A download qualifies when it has a download id and every one of its records is `unknown`, stuck short of importing
+ * (`importBlocked` / `importPending`) and, in the download's queue texts, blocked by an identity rejection ("matched to
+ * series|movie by ID", "unexpected considering the … folder name", "not found in the grabbed release"). Each qualifying
+ * download gets ONE check (the download is the group, so the check is once per download id in the run), at most
+ * IMPORT_CHECK_MAX_PER_RUN per run (`importCheckWindow`). The verdict `importable` or `title_mismatch` becomes the class
+ * of every record of the download, with the check's reason (never a file name, D-10 rule 3); every other verdict, a
+ * download the client cannot check (null) and a failed read leave it `unknown` with its own reason, and a failed read
+ * never fails the run. Returns the `importable` checks by download id, for the enforce step.
+ */
+async function applyImportChecks(ctx: {
+  instance: ArrKind;
+  client: QueueCleanupInstanceClient;
+  items: QueueCleanupQueueItem[];
+  verdicts: Map<QueueCleanupQueueItem, RecordVerdict>;
+  config: ArrQueueCleanupConfig;
+  now: Date;
+  logger?: QueueCleanupLogger;
+}): Promise<Map<string, SonarrImportCheck | RadarrImportCheck>> {
+  const { instance, client, verdicts, config, now, logger } = ctx;
+  const checks = new Map<string, SonarrImportCheck | RadarrImportCheck>();
+  if (!client.importCheck || !QUEUE_CLEANUP_INSTANCE_CLASSES[instance].includes('importable')) return checks;
+  const qualifying = groupQueueRecordsByDownload(ctx.items).filter(
+    (group) =>
+      nonEmpty(group[0]!.downloadId) !== null &&
+      group.every((item) => verdicts.get(item)!.actionClass === 'unknown' && isStuckImport(item)) &&
+      hasIdentityRejection(queueTexts(group)),
+  );
+  if (qualifying.length === 0) return checks;
+
+  const window = importCheckWindow(qualifying.length, now);
+  if (window.length < qualifying.length) {
+    logger?.warn?.('queue-cleanup: import check cap reached, the rest stay unknown this run', {
+      instance,
+      qualifying: qualifying.length,
+      checked: window.length,
+    });
+  }
+  const tally = { checked: 0, importable: 0, titleMismatch: 0, unchanged: 0, failed: 0 };
+  for (const index of window) {
+    const group = qualifying[index]!;
+    const downloadId = nonEmpty(group[0]!.downloadId)!;
+    tally.checked += 1;
+    let check: SonarrImportCheck | RadarrImportCheck | null;
+    try {
+      check = await client.importCheck(group);
+    } catch (err) {
+      tally.failed += 1;
+      logger?.warn?.('queue-cleanup: import check read failed, download stays unknown', {
+        instance,
+        downloadId,
+        error: errMsg(err),
+      });
+      continue;
+    }
+    if (check === null || (check.verdict !== 'importable' && check.verdict !== 'title_mismatch')) {
+      tally.unchanged += 1;
+      continue;
+    }
+    const actionClass: QueueCleanupActionClass = check.verdict;
+    // D-10 rule 3: the reason is a message, never a name, so the judged file's name is left out (the release name is
+    // already the row's title, and the digest's top reasons must group).
+    const reason = truncate(importCheckReasonText({ ...check, file: null }));
+    const mode = queueCleanupCellMode(config, instance, actionClass);
+    for (const item of group) {
+      const v = verdicts.get(item)!;
+      v.actionClass = actionClass;
+      v.reason = reason;
+      v.mode = mode;
+      v.wants = actionClass === 'importable' && mode === 'enforce' && !v.young ? 'importable' : null;
+    }
+    if (actionClass === 'importable') {
+      checks.set(downloadId, check);
+      tally.importable += 1;
+    } else {
+      tally.titleMismatch += 1;
+    }
+  }
+  logger?.info?.('queue-cleanup import checks', { instance, qualifying: qualifying.length, ...tally });
+  return checks;
+}
 
 /**
  * D-13 — the records of a removed manual_match download to search again: those with an album (a record without
@@ -2129,7 +2435,10 @@ async function retryFailedDownloads(ctx: {
  * earlier downloads in any searching class (`skipped_loop`), and every loop event is one `[queue-cleanup] loop_detected`
  * log line. A target is searched at most once per run, and never for a failure the *arr took itself (D-23). Then, on
  * Sonarr and Radarr, the failed-download retry (ADR-098, D-24) searches once after each failed download the *arr
- * recorded, under the instance's bad_release cell, within the same budget.
+ * recorded, under the instance's bad_release cell, within the same budget. On Sonarr and Radarr a download blocked only
+ * by an identity rejection gets the Import Check (D-27, at most IMPORT_CHECK_MAX_PER_RUN per run): `importable` is
+ * imported through ONE ManualImport where its cell is enforced (age rail, cap, a loop guard on its own imports), and
+ * `title_mismatch` is report only.
  *
  * The janitor acts once per DOWNLOAD, not once per record (D-11): records sharing a downloadId (a season pack's
  * episodes) get one call, which costs the cap once, and every one of them records that call's result; a
@@ -2239,6 +2548,20 @@ export async function evaluateQueueCleanup(input: {
       });
     }
 
+    // 1a. The Import Check (D-27, DESIGN-055 D-07), Sonarr and Radarr: a download blocked only by an identity rejection
+    //     is checked once; `importable` or `title_mismatch` replaces `unknown` for all of its records.
+    let importChecks = new Map<string, SonarrImportCheck | RadarrImportCheck>();
+    try {
+      importChecks = await applyImportChecks({ instance, client, items, verdicts, config, now, logger: input.logger });
+    } catch (err) {
+      // Never the run's failure: each read already fails soft; this catches the unexpected. A download left `importable`
+      // without its check is never imported (the enforce step finds no check and records an error).
+      input.logger?.warn?.('queue-cleanup: import checks failed, blocked downloads stay as they are this run', {
+        instance,
+        error: errMsg(err),
+      });
+    }
+
     // 1b. The loop guard (D-13, D-23): a record whose target the janitor already tried on QUEUE_CLEANUP_LOOP_LIMIT
     //     earlier downloads in the last 30 days (QUEUE_CLEANUP_LOOP_WINDOW_MS), in any searching class, is held (`skipped_loop`), never removed or searched again, while
     //     the janitor would search it again: a manual_match album still monitored and missing tracks, a bad_release
@@ -2291,6 +2614,35 @@ export async function evaluateQueueCleanup(input: {
       }
     }
 
+    // 1c. The import loop guard (D-27): a download the janitor already imported on QUEUE_CLEANUP_LOOP_LIMIT earlier runs
+    //     in the last 30 days and that is blocked again is held (`skipped_loop`), never imported again by the janitor
+    //     until the oldest of those runs is 30 days old. A failed read imports nothing this run (fail safe).
+    const importCandidates = [...verdicts.values()].filter((v) => v.wants === 'importable');
+    if (importCandidates.length > 0) {
+      try {
+        const prior = await priorImportRuns(
+          db,
+          instance,
+          [...new Set(importCandidates.map((v) => nonEmpty(v.item.downloadId)!))],
+          new Date(now.getTime() - QUEUE_CLEANUP_LOOP_WINDOW_MS),
+          now,
+        );
+        for (const v of importCandidates) {
+          const runs = prior.get(nonEmpty(v.item.downloadId)!) ?? 0;
+          if (runs < QUEUE_CLEANUP_LOOP_LIMIT) continue;
+          v.loop = true;
+          v.priorRemovals = runs;
+          v.wants = null;
+        }
+      } catch (err) {
+        for (const v of importCandidates) v.wants = null;
+        input.logger?.warn?.('queue-cleanup: import loop-guard read failed, nothing imported this run', {
+          instance,
+          error: errMsg(err),
+        });
+      }
+    }
+
     // 2. One decision per download (D-11), in first-seen queue order — the cap is spent per download.
     const results = new Map<QueueCleanupQueueItem, RecordResult>();
     let actionsTaken = 0;
@@ -2328,6 +2680,7 @@ export async function evaluateQueueCleanup(input: {
         }
         const looping = members.filter((m) => m.loop);
         if (looping.length > 0) {
+          const prior = Math.max(...looping.map((m) => m.priorRemovals));
           heldDownloads.push({
             key: heldLoopKey({ downloadId: members[0]!.item.downloadId, itemRef: null }),
             meta: {
@@ -2336,7 +2689,10 @@ export async function evaluateQueueCleanup(input: {
               downloadId: members[0]!.item.downloadId,
               title: members[0]!.item.title,
               targetIds: distinctIds(looping.map((m) => m.item.targetId)),
-              priorRemovals: Math.max(...looping.map((m) => m.priorRemovals)),
+              // D-27: an import loop counts the runs that imported this download, not removals of the target.
+              ...(looping[0]!.actionClass === 'importable'
+                ? { actionClass: 'importable', priorImports: prior }
+                : { priorRemovals: prior }),
             },
           });
         }
@@ -2376,6 +2732,23 @@ export async function evaluateQueueCleanup(input: {
 
       if (actionsTaken >= config.maxActionsPerRun) {
         setAll(result('skipped_cap'));
+        continue;
+      }
+
+      // importable (D-27) — ONE ManualImport for the whole download, with exactly the Import Check's files. Nothing is
+      // removed, blocklisted or searched. A failure is an error row, and it costs the cap slot like any write call.
+      if (wanted === 'importable') {
+        actionsTaken += 1;
+        report.covered += members.length - 1;
+        const check = importChecks.get(nonEmpty(primary.downloadId) ?? '');
+        try {
+          if (!check || !client.manualImport) throw new Error(`no Import Check to import on ${instance}`);
+          await client.manualImport(check);
+          setAll(result('imported', 'done'));
+        } catch (err) {
+          setAll(result('none', 'error', errMsg(err)));
+          report.errors += 1;
+        }
         continue;
       }
 

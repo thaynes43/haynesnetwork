@@ -1,0 +1,87 @@
+[
+  {
+    "path": "/data/haynestower/usenet/complete-k8s/tv/Franklin.2025.S01E05.2160p.NF.WEB-DL.MULTi.DDP5.1.H.265-FUZEER/Franklin.2025.S01E05.2160p.NF.WEB-DL.MULTi.DDP5.1.H.265-FUZEER.mkv",
+    "relativePath": "Franklin.2025.S01E05.2160p.NF.WEB-DL.MULTi.DDP5.1.H.265-FUZEER.mkv",
+    "folderName": "Franklin.2025.S01E05.2160p.NF.WEB-DL.MULTi.DDP5.1.H.265-FUZEER",
+    "name": "Franklin.2025.S01E05.2160p.NF.WEB-DL.MULTi.DDP5.1.H.265-FUZEER",
+    "size": 5742938695,
+    "seasonNumber": 1,
+    "releaseGroup": "FUZEER",
+    "quality": {
+      "quality": {
+        "id": 18,
+        "name": "WEBDL-2160p",
+        "source": "web",
+        "resolution": 2160
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "languages": [
+      {
+        "id": 26,
+        "name": "Arabic"
+      },
+      {
+        "id": 12,
+        "name": "Polish"
+      },
+      {
+        "id": 1,
+        "name": "English"
+      },
+      {
+        "id": 18,
+        "name": "Portuguese"
+      },
+      {
+        "id": 22,
+        "name": "Hungarian"
+      },
+      {
+        "id": 2,
+        "name": "French"
+      },
+      {
+        "id": 3,
+        "name": "Spanish"
+      }
+    ],
+    "qualityWeight": 17,
+    "downloadId": "d5d43b58-a674-4e91-b79e-69a653881146",
+    "customFormats": [
+      {
+        "id": 52,
+        "name": "NF"
+      },
+      {
+        "id": 64,
+        "name": "UHD Streaming Boost"
+      }
+    ],
+    "customFormatScore": 150,
+    "indexerFlags": 0,
+    "releaseType": "singleEpisode",
+    "rejections": [],
+    "id": 1462829683,
+    "series": {
+      "id": 267,
+      "title": "Franklin",
+      "year": 1997
+    },
+    "episodes": [
+      {
+        "id": 23623,
+        "seriesId": 267,
+        "seasonNumber": 1,
+        "episodeNumber": 5,
+        "title": "Franklin Rides a Bike / Franklin Is Messy",
+        "hasFile": false,
+        "episodeFileId": 0
+      }
+    ]
+  }
+]

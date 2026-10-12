@@ -1,0 +1,54 @@
+[
+  {
+    "path": "/data/haynestower/usenet/complete-k8s/tv/A.Woman.of.Substance.S01E03.Episode.3.1080p.Blu-ray.Remux.AVC-HD.mkv/A.Woman.of.Substance.S01E03.Episode.3.1080p.Blu-ray.Remux.AVC-HD.mkv",
+    "relativePath": "A.Woman.of.Substance.S01E03.Episode.3.1080p.Blu-ray.Remux.AVC-HD.mkv",
+    "folderName": "A.Woman.of.Substance.S01E03.Episode.3.1080p.Blu-ray.Remux.AVC-HD.mkv",
+    "name": "A.Woman.of.Substance.S01E03.Episode.3.1080p.Blu-ray.Remux.AVC-HD",
+    "size": 10761293289,
+    "seasonNumber": 1,
+    "releaseGroup": "HD",
+    "quality": {
+      "quality": {
+        "id": 20,
+        "name": "Bluray-1080p Remux",
+        "source": "blurayRaw",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "qualityWeight": 15,
+    "downloadId": "8a449d45-b4c0-4b0a-80f2-7c28ddb95c5a",
+    "customFormats": [],
+    "customFormatScore": 0,
+    "indexerFlags": 0,
+    "releaseType": "singleEpisode",
+    "rejections": [],
+    "id": 231105744,
+    "series": {
+      "id": 29,
+      "title": "A Woman of Substance (2026)",
+      "year": 2026
+    },
+    "episodes": [
+      {
+        "id": 1305,
+        "seriesId": 29,
+        "seasonNumber": 1,
+        "episodeNumber": 3,
+        "title": "Episode 3",
+        "hasFile": true,
+        "episodeFileId": 981
+      }
+    ]
+  }
+]

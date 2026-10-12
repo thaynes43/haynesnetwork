@@ -21,6 +21,7 @@ import {
   computeSearchProgress,
   getKnownIssueServers,
   getRepairGuideRemedies,
+  planForceSearch,
   previewFix,
   readFileAudio,
   readPlaybackEvidence,
@@ -83,7 +84,13 @@ export const fixRouter = router({
    */
   guideConfig: authedProcedure.query(async ({ ctx }) => {
     const remedies = await getRepairGuideRemedies(ctx.db);
-    return { remedies, guideOn: anyRemedyOn(remedies), knownIssueServers: await getKnownIssueServers(ctx.db) };
+    return {
+      remedies,
+      guideOn: anyRemedyOn(remedies),
+      /** DESIGN-055 D-07 — Force Search on one episode or movie reads the queue first. */
+      importCheckOn: remedies.import_check,
+      knownIssueServers: await getKnownIssueServers(ctx.db),
+    };
   }),
 
   /** DESIGN-055 D-01 — the admin read of the guide's settings, with every Plex server to choose from. */
@@ -284,6 +291,35 @@ export const fixRouter = router({
    * on the same hourly budget as `create` (rate limit / tombstone guards inside the
    * domain writer). Returns the accepted command + resolved target label.
    */
+  /**
+   * ADR-109 C-05 / DESIGN-055 D-07 (PLAN-077 P2) — what a Force Search press would do, read-only and free: with the
+   * `import_check` remedy on and one episode or one movie as the target, it reads the queue first and runs the Import
+   * Check on a stuck download. `queueAware: false` means today's search. The digest goes back with `forceSearch`.
+   */
+  searchPlan: authedProcedure
+    .input(
+      z
+        .object({
+          mediaItemId: z.uuid(),
+          scope: z.enum(ACTION_SCOPES).optional(),
+          targetChildId: z.number().int().positive().optional(),
+          seasonNumber: z.number().int().min(0).optional(),
+        })
+        .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
+    )
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        planForceSearch({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          scope: input.scope,
+          targetChildId: input.targetChildId,
+          seasonNumber: input.seasonNumber,
+        }),
+      );
+    }),
+
   forceSearch: authedProcedure
     .input(
       z
@@ -299,6 +335,10 @@ export const fixRouter = router({
           targetChildId: z.number().int().positive().optional(),
           /** Sonarr season number — for scope 'season'. */
           seasonNumber: z.number().int().min(0).optional(),
+          /** DESIGN-055 D-07 — the digest of the `searchPlan` the person confirmed (an import or a removal needs it). */
+          planDigest: z.string().min(1).max(64).optional(),
+          /** DESIGN-055 D-07 rule 4 — "Import this download onto...": the episode the person chose. */
+          ontoEpisodeId: z.number().int().positive().optional(),
         })
         .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
     )
@@ -313,8 +353,12 @@ export const fixRouter = router({
           scope: input.scope,
           targetChildId: input.targetChildId,
           seasonNumber: input.seasonNumber,
+          confirm:
+            input.planDigest !== undefined
+              ? { digest: input.planDigest, ...(input.ontoEpisodeId !== undefined ? { ontoEpisodeId: input.ontoEpisodeId } : {}) }
+              : null,
         });
-        return result; // {eventId, targetLabel, commandName}
+        return result; // {outcome, eventId, repairRequestId, targetLabel, commandName}
       });
     }),
 

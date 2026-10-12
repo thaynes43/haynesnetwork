@@ -9,6 +9,8 @@
 //
 // ADR-095 (DESIGN-046 D-15..D-20) adds the download suite: LazyLibrarian and Kapowarr get their own grid (the
 // "Books and comics" family grids) beside the *arr grid, inside the same form, so one Save covers every cell.
+// DESIGN-046 D-27 (PLAN-077 P2) adds the Import Check classes to the *arr grid: "Ready to import" (`importable`), a
+// cell on Sonarr and Radarr, and "Name does not match" (`title_mismatch`), report only.
 //
 // Reflow-safe (ADR-015 / hard rule 9): mode cells reserve the width of the wider label so a toggle recolors
 // without shifting the grid; the save-status slot is reserved; the ladder pill holds its footprint. Tokens
@@ -22,20 +24,21 @@ import { describeMutationError } from '@/lib/app-error';
 const INSTANCES = ['sonarr', 'radarr', 'lidarr', 'lazylibrarian', 'kapowarr'] as const;
 type Instance = (typeof INSTANCES)[number];
 /** Every class with a cell somewhere. */
-type EnforceableClass = 'have_better' | 'retry_import' | 'bad_release' | 'manual_match' | 'leftover';
+type EnforceableClass = 'have_better' | 'retry_import' | 'bad_release' | 'manual_match' | 'leftover' | 'importable';
 /** The cells each app has, mirroring QUEUE_CLEANUP_INSTANCE_CLASSES in @hnet/domain. */
 const INSTANCE_CLASSES: Record<Instance, readonly EnforceableClass[]> = {
-  sonarr: ['have_better', 'retry_import', 'bad_release'],
-  radarr: ['have_better', 'retry_import', 'bad_release'],
+  sonarr: ['have_better', 'retry_import', 'bad_release', 'importable'],
+  radarr: ['have_better', 'retry_import', 'bad_release', 'importable'],
   lidarr: ['have_better', 'retry_import', 'bad_release', 'manual_match'],
   lazylibrarian: ['retry_import', 'bad_release', 'leftover'],
   kapowarr: ['bad_release'],
 };
 /** The report-only classes: no enforce cell, never acted on. */
-type ReportOnlyClass = 'fail_loop' | 'unknown';
+type ReportOnlyClass = 'fail_loop' | 'title_mismatch' | 'unknown';
 /** Which apps report a report-only class (the others show "Not used"). */
 const REPORT_ONLY_INSTANCES: Record<ReportOnlyClass, readonly Instance[]> = {
   fail_loop: ['lazylibrarian'],
+  title_mismatch: ['sonarr', 'radarr'],
   unknown: INSTANCES,
 };
 type Mode = 'census' | 'enforce';
@@ -65,7 +68,9 @@ const CLASS_LABEL: Record<EnforceableClass | ReportOnlyClass, string> = {
   bad_release: 'Bad release',
   manual_match: 'Needs a manual match',
   leftover: 'Leftover download',
+  importable: 'Ready to import',
   fail_loop: 'Keeps failing',
+  title_mismatch: 'Name does not match',
   unknown: 'Unknown reason',
 };
 
@@ -74,8 +79,8 @@ const GRIDS: readonly GridSpec[] = [
     id: 'arr',
     title: 'Sonarr, Radarr and Lidarr',
     instances: ['sonarr', 'radarr', 'lidarr'],
-    classes: ['have_better', 'retry_import', 'bad_release', 'manual_match'],
-    reportOnly: ['unknown'],
+    classes: ['have_better', 'retry_import', 'bad_release', 'manual_match', 'importable'],
+    reportOnly: ['title_mismatch', 'unknown'],
     hints: {
       have_better:
         'The library already holds this at equal or better quality. Enforcing removes the download and blocklists the release. Nothing is searched again.',
@@ -85,6 +90,10 @@ const GRIDS: readonly GridSpec[] = [
         'A failed or defective release. Enforcing blocklists it and searches once for a replacement while the item is still monitored. On Sonarr and Radarr it also searches once after a download fails, as long as the app is not set to search again by itself. An item that fails twice within 30 days is listed in the nightly digest and left alone until 30 days have passed since its first try.',
       manual_match:
         'Lidarr could not match the downloaded files to the album closely enough to import them. Enforcing blocks that release name in Lidarr, removes the download and searches for the album again while it is monitored and still missing tracks. An album that fails this way twice within 30 days is listed in the nightly digest and left for a manual import until 30 days have passed since its first removal.',
+      importable:
+        'A finished download that Sonarr or Radarr held back only because it doubted the name. The Import Check confirms the file and the title match what was wanted. Enforcing imports it as it is. Nothing is removed, blocklisted or searched. A download still stuck after two imports within 30 days is listed in the nightly digest and left alone until 30 days have passed since the first one.',
+      title_mismatch:
+        'Report only. A held-back download whose file name points at a different episode, show or year. Nothing is imported or removed.',
       unknown: 'Report only. The janitor never acts on a reason it does not recognize.',
     },
   },
@@ -244,8 +253,18 @@ export default function AdminJanitorPage() {
     const m = (instance: Instance, klass: EnforceableClass): Mode => cellMode(modes, instance, klass) ?? 'census';
     save.mutate({
       modes: {
-        sonarr: { have_better: m('sonarr', 'have_better'), retry_import: m('sonarr', 'retry_import'), bad_release: m('sonarr', 'bad_release') },
-        radarr: { have_better: m('radarr', 'have_better'), retry_import: m('radarr', 'retry_import'), bad_release: m('radarr', 'bad_release') },
+        sonarr: {
+          have_better: m('sonarr', 'have_better'),
+          retry_import: m('sonarr', 'retry_import'),
+          bad_release: m('sonarr', 'bad_release'),
+          importable: m('sonarr', 'importable'),
+        },
+        radarr: {
+          have_better: m('radarr', 'have_better'),
+          retry_import: m('radarr', 'retry_import'),
+          bad_release: m('radarr', 'bad_release'),
+          importable: m('radarr', 'importable'),
+        },
         lidarr: {
           have_better: m('lidarr', 'have_better'),
           retry_import: m('lidarr', 'retry_import'),

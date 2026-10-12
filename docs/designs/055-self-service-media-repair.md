@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-12 (P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
+- **Last updated:** 2026-10-12 (P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
@@ -79,6 +79,13 @@ at L2. App usage: 2 Fix requests in 90 days (one person), 1 Helpdesk ticket ever
 - **Completion** is read, never assumed: a re-map completes when the episode-file read-back matches the plan; an
   import when the target episode or movie has the imported file; a grab when the ADR-028 phase reaches `complete`. Open
   rows time out at the existing 48-hour horizon (`FIX_TIMEOUT_HORIZON_MS`).
+- **As built in P2 (2026-10-12, migration 0099).** The table, the `repair_requested` / `repair_completed` /
+  `repair_failed` events and the writer (`createRepairRequest`, `recordRepairTransition`, `completeRepairRequests`,
+  `expireStaleRepairRequests`) landed with kind `import_download`. `countRecentFixBudget` counts Repair Requests.
+  The open check, both ways: a repair meets any open repair on the movie or on the same season; against a Fix, a season
+  Fix matches by its season and an episode Fix by its episode (an episode Fix knows its episode, not its season, so the
+  repair side passes the season's episode ids when it has them, as Force Search does). `release_list_requested` arrives
+  with P5. The `refused` status exists but P2 never writes it: every refusal is thrown before the row, as in P1.
 
 ### D-03 The write surface (hard rule 4)
 
@@ -100,8 +107,9 @@ New reads (`@hnet/arr/read` and the Plex and Seerr read clients): `getManualImpo
 `mediaInfo`, Seerr `listIssues` and `getIssue`, Plex item streams and preferences.
 
 **Contract rule.** Each new request body is pinned in a fixture taken from the running version's own UI request
-(Sonarr 4.0.20.3012, Radarr 6.4.4.10685, Seerr 3.5.0) and asserted in `write-clients.test.ts`; the app sends no field
-the UI does not send. The `arr-write-import-guard` test stays green.
+(Sonarr 4.0.20.3012, Radarr 6.4.4.10685, Seerr 3.5.0) and asserted in `write-clients.test.ts` (P2's `ManualImport` in
+`manual-import-clients.test.ts`, beside its reads); the app sends no field the UI does not send. The
+`arr-write-import-guard` test stays green.
 
 ### D-04 Episode Re-map
 
@@ -154,6 +162,25 @@ library files onto the right episodes with Sonarr's own manual import. Nothing i
    score are kept), `silent` (an empty segment), otherwise `ambiguous`. The thresholds are starting values that the
    Title Check census tunes before anything relies on them (PLAN-077 P4).
 5. A title that agrees outranks the number; silence and ambiguity are never evidence against an import.
+
+**As built in P2 (2026-10-12, `title-evidence.ts`, TITLE_EVIDENCE_VERSION 1).** The rules above, with what the live
+names forced (1,817 real release names from Sonarr's Lost Tapes search and grab history were parsed; only true
+mismatches stay `ambiguous`):
+
+- `agrees` needs the numbered (or mapped) episode to be the season's best match (rule 4), so a close call where another
+  episode scores higher is `ambiguous`. Scoring is the Dice coefficient on token sets; a two-part title scores its whole
+  and each part. Titles that are empty, "TBA" or "TBD" leave nothing to compare: `silent`.
+- Two kinds of stop token: codes (`1080p`, `x264`, `AMZN`, ...) always end the title; words that are also tags (`red`,
+  `french`, `proper`, `dual`, ...) end it only when another stop token follows ("Franklin and the Red Scooter").
+- Multi-episode names are a range, as Sonarr reads them (`S01E01-E03`, `S01E55E56`); a file is judged against all the
+  episodes it holds. Spelling variants match (hyphens joined, accented letters dropped, `12,000`, `2½`, `&amp;`).
+- Two additions for the Import Check (D-07): **movie Title Evidence** (the release's title, before its year, must
+  contain the movie's title, original title or an alternate title, at least 0.8 of its words, and name a year within one
+  of the movie's; a TV-shaped name is `ambiguous`) and the **series year** (a release whose series part names a year more
+  than one off the series' year names another show).
+- Q-06 data: Dice marks down shortened titles (`Terror.Tales.of.the.Park.VII` for the Halloween special scores 0.71;
+  a two-episode file named with both titles 0.67 to 0.75), so those stay `ambiguous` until the Title Check census tunes
+  the thresholds (P4).
 
 **Title Check** (census, ADR-110 C-03): sync mode `title-check`, hourly at :35 (after the janitor's :25). It reads
 Sonarr history `downloadFolderImported` events since its cursor and writes one `title_checks` row per imported file:
@@ -243,6 +270,57 @@ passes) with one enforce cell per *arr instance, census by default, acting throu
 the report-only class `title_mismatch`. Promotion follows the PLAN-065 spot-check pattern; #597's T.O.T.S. ("matched by
 ID", 61 records) and The Paper are the first evidence. #597 Part 2's library-state classes (records whose episode
 already has a file) stay in #597 and PLAN-065.
+
+**P2 decisions (2026-10-12, PLAN-077 P2).** What the build settled, with the live reads behind it (Sonarr's queue held
+105 import-blocked records that day, almost all "matched to series by ID"):
+
+1. **The kill switch.** One more remedy in `repair_guide_remedies`, `import_check`, ships off. It belongs to Force
+   Search, so on its own it never opens the Fix guide. The server applies it to every caller; the bulk collection search
+   stays search-only (it confirmed "search these", never an import or a removal it did not show).
+2. **The read sends only the download id.** Sonarr 4.0.20.3012's `ManualImportController` takes the series-folder
+   branch whenever `seriesId` is present (`if (seriesId.HasValue)`), so step 1's `&seriesId=` would list the series'
+   library files (read live on A Woman of Substance). The queue's own "Manual Import" button sends only `downloadId`.
+3. **The write and its read-back.** `POST /command {name: 'ManualImport', files, importMode: 'auto'}` with exactly the
+   fields each UI sends (a field the candidate lacks is left out), quality and languages echoed verbatim. The guide waits
+   up to 20 seconds for `GET /command/{id}`, then reads the target's file: `imported`; a command still running answers
+   `importing`, and the sync completes the Repair Request from the ingested import (D-02); a failed command or no file
+   after it is `failed`.
+4. **Which download.** A target's queue records are grouped by download: one on its way wins (a search would only be
+   refused), then a stuck one (`importBlocked`, `importPending`, `importFailed`), then a failed one (`failed`,
+   `failedPending`, status `failed`, tracked status `error`); the newest grab within a state.
+5. **Files.** Force Search judges only the file that holds its target (a pack's other files are not imported); the janitor
+   needs every file of the download to pass and every tracked episode covered once. A sample beside the real file is
+   ignored; a sample alone is a release defect. A download with no candidate at all goes to staff, never to a removal:
+   it may still be packed (P0's lesson; a live Butterbean's Cafe download read empty). A temporary rejection, a file of
+   another series, two files for one episode, a not-an-upgrade rejection and any other rejection go to staff, with the
+   *arr's words.
+6. **`ambiguous` is not importable.** Rule 2 lists `agrees` or `silent`; D-05 rule 5 governs the Title Check's flag, not
+   an import. Live: a Rugrats 2021 release that Sonarr's grab history put on the 1991 series mapped onto "Little Dude"
+   with no rejection at all; its title (two segments of the 2021 show) is `ambiguous`, so it is never imported.
+7. **The series year.** A release whose series part names a year more than one off the series' year is a
+   `title_mismatch`, whatever its episode title says. Live: `Franklin.2025.S01E05` (no episode title) mapped onto the 1997
+   Franklin's missing S01E05 with no rejection; without this rule it would have imported another show's episode. The cost
+   is that a long-running show's release named with its airing year (`Gold.Rush.2026`, `Peppa.Pig.2022`) is reported, not
+   imported; the census counts them.
+8. **Movies.** Radarr has no episode titles, so the movie Title Evidence of D-05 applies. issue #597's `Alatriste` grabbed
+   for A Movie of Eggs is a `title_mismatch`; TurkSeeD's Turkish-titled Spider-Man release agrees (its name carries the
+   English title), and was refused anyway because the library already holds a better file.
+9. **"Import this download onto..."** offers the episode the title names, when it has no file, and the grab's own target,
+   when it has no file; otherwise the download goes to staff. The import onto the chosen episode re-applies every rule but
+   the title (a release naming another year's show is never offered).
+10. **Plan and confirm.** `fix.searchPlan` is read-only and costs nothing; its digest goes back with the press, which
+    re-plans and refuses a changed plan (`FIX_PLAN_CHANGED`). A press without a digest (an older client) searches or
+    reports "on its way"; an import or a removal needs the confirmed plan (`FIX_REFUSED`, reason `needs_guide`).
+11. **The removal.** A failed or defective download is removed through its first queue record with
+    `removeFromClient`, `blocklist` and `skipRedownload`, after the `search_requested` event that records it
+    (`payload.queueRemoval`), then one `EpisodeSearch` or `MoviesSearch`.
+12. **A packed download stays report only** although haynes-ops#3834 is closed: DESIGN-046 D-26 still classifies it
+    `unknown`, and P0's census decides whether it ever acts.
+13. **Activity's admin row** showing the Import Check result is not in P2; it moves to P3 with the other admin surfaces
+    (PLAN-077 P3).
+14. **The janitor** (DESIGN-046 D-27): the Import Check runs only on downloads whose records are all `unknown`, stuck,
+    and carry an identity rejection, at most 100 downloads per instance per run; `importable` acts through the same
+    ManualImport when its cell is enforced, loop-guarded; `title_mismatch` is report only.
 
 ### D-08 Language-aware Wrong language
 
@@ -485,12 +563,12 @@ suite on each PR.
 
 | Area | Tests |
 |---|---|
-| D-02 | `repair-requests.test.ts`: pending row and event in one transaction before any call; budget shared with Fix and Force Search; one open repair per grain both ways; timeout sweep |
+| D-02 | `repair-requests.test.ts`: pending row and event in one transaction before any call; budget shared with Fix and Force Search; one open repair per grain both ways; completion from the ingested import; timeout sweep |
 | D-03 | `write-clients.test.ts`: each new body against the pinned fixture; the import guard |
 | D-04 | `remap-plan.test.ts` (pure): shift +1/-1 order, refusals (occupied slot, cycle, split multi-episode file, more than 40 moves), discard only when ticked; `remap-flow.test.ts`: freshness abort, stop on first mismatch, rename, read-back |
 | D-05 | `title-evidence.test.ts`: the three cases' real names (BiOMA silent, `S01E10.Spice.It.Up` agrees with E11, `The_Paper_2025_S02E06_125_Years_Young` agrees with 2x06, the Penguins Spanish titles disagree); `mislabel-block.test.ts`: grammar, compile check, read-back, expiry, cap |
 | D-06 | `release-pick.test.ts`: state per row from rejection sets, hard refusals win, override body |
-| D-07 | `import-check.test.ts`: The Paper importable, T.O.T.S. "matched by ID" importable, Penguins `title_mismatch`, archive report-only, failed download removed and searched once; queue-aware Force Search sends no search while a download is in progress |
+| D-07 | `import-check.test.ts`: The Paper importable, T.O.T.S. "matched by ID" importable, Penguins `title_mismatch`, archive report-only, the live Rugrats 2021 and Franklin 2025 mismatches, Aqua Teen's and Spider-Man's refusals, "Import this download onto..."; `queue-aware-search.test.ts`: Case B imports and sends no search, a failed download removed and searched once, nothing sent while a download is in progress, a changed plan refused; `manual-import-clients.test.ts` (arr): the reads and the pinned body |
 | D-08 | `language-check.test.ts`: language present writes nothing to the *arr; absent grabs a matching approved release |
 | D-09 | `fix-guards.test.ts`: season guard refuses a pack backing unchosen episodes; Same Release refusal; no-approved-release refusal; Playback Evidence from stored Tautulli notifications |
 | D-10 | `seerr-issues-sync.test.ts`: mirror upsert, mapping, webhook triggers a read only; `seerr-issue-writes.test.ts`: one comment per issue across a crash, `X-API-User` on every call, resolve only after completion |

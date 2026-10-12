@@ -103,6 +103,14 @@ import {
 } from './schemas/release-block';
 import { arrReleaseSchema, type ArrRelease } from './schemas/release';
 import {
+  arrCommandStatusSchema,
+  radarrManualImportCandidateSchema,
+  sonarrManualImportCandidateSchema,
+  type ArrCommandStatus,
+  type RadarrManualImportCandidate,
+  type SonarrManualImportCandidate,
+} from './schemas/manual-import';
+import {
   bazarrEnvelopeSchema,
   bazarrEpisodeSubtitleSchema,
   bazarrMovieSubtitleSchema,
@@ -257,6 +265,15 @@ abstract class ArrReadClientBase {
     return this.http.requestJson('GET', 'config/downloadclient', downloadClientConfigSchema);
   }
 
+  /**
+   * ADR-109 C-05 / DESIGN-055 D-07 (PLAN-077 P2) — `GET /command/{id}`: a command's state (queued, started, completed,
+   * failed, ...). The Import Check reads its ManualImport command back before it reads the target's file. Shared
+   * verbatim by all three.
+   */
+  getCommand(id: number): Promise<ArrCommandStatus> {
+    return this.http.requestJson('GET', `command/${id}`, arrCommandStatusSchema);
+  }
+
   protected historyQuery(params: HistoryPageParams): QueryParams {
     return {
       page: params.page ?? 1,
@@ -380,6 +397,17 @@ export class SonarrClient extends ArrReadClientBase {
   /** DESIGN-046 D-02 (PLAN-065) — the WHOLE Sonarr queue, paged (the janitor reads every errored grab). */
   getQueueAll(): Promise<SonarrQueueRecord[]> {
     return this.getQueueAllRecords(sonarrQueueRecordSchema);
+  }
+
+  /**
+   * ADR-109 C-05 / DESIGN-055 D-07 (PLAN-077 P2) — `GET /manualimport?downloadId=`: the *arr's manual-import view of one
+   * finished download (each video file, its mapping onto episodes, and its rejections). Sends ONLY the download id:
+   * Sonarr 4.0.20 lists the series folder instead whenever a `seriesId` rides along (see schemas/manual-import.ts).
+   */
+  getManualImport(downloadId: string): Promise<SonarrManualImportCandidate[]> {
+    return this.http.requestJson('GET', 'manualimport', z.array(sonarrManualImportCandidateSchema), {
+      query: { downloadId, filterExistingFiles: true },
+    });
   }
 
   // ---------- ADR-093 / DESIGN-052 D-11 / D-14 / D-23 (PLAN-072) — the Release Block's identity reads ----------
@@ -518,6 +546,16 @@ export class RadarrClient extends ArrReadClientBase {
   /** DESIGN-046 D-02 (PLAN-065) — the WHOLE Radarr queue, paged (the janitor reads every errored grab). */
   getQueueAll(): Promise<RadarrQueueRecord[]> {
     return this.getQueueAllRecords(radarrQueueRecordSchema);
+  }
+
+  /**
+   * ADR-109 C-05 / DESIGN-055 D-07 (PLAN-077 P2) — `GET /manualimport?downloadId=`: Radarr's manual-import view of one
+   * finished download. Only the download id is sent, the queue's own "Manual Import" request.
+   */
+  getManualImport(downloadId: string): Promise<RadarrManualImportCandidate[]> {
+    return this.http.requestJson('GET', 'manualimport', z.array(radarrManualImportCandidateSchema), {
+      query: { downloadId, filterExistingFiles: true },
+    });
   }
 
   // ---------- ADR-093 / DESIGN-052 D-11 / D-14 / D-23 (PLAN-072) — the Release Block's identity reads ----------

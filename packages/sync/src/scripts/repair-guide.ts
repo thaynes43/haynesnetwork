@@ -6,6 +6,11 @@
 //                                [--plex-user-id <plex.tv id>] [--plex-username <name>]
 //   tsx repair-guide.ts audio    (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n>]
 //   tsx repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
+//   tsx repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
+//
+// `search-plan` (DESIGN-055 D-07, PLAN-077 P2) prints what a queue-aware Force Search press would do: the target's queue
+// state and the Import Check on a stuck download, planned as if `import_check` were on. It only reads (the queue, the
+// manual-import view, the episode list); nothing is imported, removed or searched.
 //
 // `preview`, `evidence` and `audio` only READ: they print the guarded Fix's plan (with every planning remedy on,
 // whatever the stored switch says, so a remedy can be checked live before it is turned on), a person's Playback
@@ -26,6 +31,7 @@ import {
   getKnownIssueServers,
   getRepairGuideRemedies,
   planFix,
+  planForceSearch,
   readFileAudio,
   readPlaybackEvidence,
   setKnownIssueServers,
@@ -37,12 +43,13 @@ const USAGE = `Usage:
   repair-guide.ts evidence (--tmdb <id> | --tvdb <id>) --email <app user email> [--plex-user-id <id>] [--plex-username <name>]
   repair-guide.ts audio    (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n>]
   repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
+  repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
 
-preview, evidence and audio only read. settings writes only with --set or --known-issue (audited, actor null).
+preview, evidence, audio and search-plan only read. settings writes only with --set or --known-issue (audited, actor null).
 Remedies: ${REPAIR_GUIDE_REMEDIES.join(', ')}.`;
 
 export interface RepairGuideArgs {
-  command: 'preview' | 'evidence' | 'audio' | 'settings';
+  command: 'preview' | 'evidence' | 'audio' | 'settings' | 'search-plan';
   tmdb?: number;
   tvdb?: number;
   episode?: { season: number; episode: number };
@@ -66,7 +73,13 @@ const positiveInt = (flag: string, value: string | undefined): number => {
 export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs | 'help' {
   const [command, ...rest] = argv;
   if (command === undefined || command === '--help' || command === '-h') return 'help';
-  if (command !== 'preview' && command !== 'evidence' && command !== 'audio' && command !== 'settings') {
+  if (
+    command !== 'preview' &&
+    command !== 'evidence' &&
+    command !== 'audio' &&
+    command !== 'settings' &&
+    command !== 'search-plan'
+  ) {
     throw new Error(`unknown command "${command}"`);
   }
   const args: RepairGuideArgs = { command, replaceFile: false };
@@ -146,6 +159,9 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
       throw new Error('a show needs --episode or --season');
     }
     if (command === 'evidence' && !args.email) throw new Error('evidence needs --email');
+    if (command === 'search-plan' && args.tvdb !== undefined && !args.episode) {
+      throw new Error('search-plan on a show needs --episode');
+    }
   }
   if (args.episodes && args.season === undefined) throw new Error('--episodes goes with --season');
   return args;
@@ -238,6 +254,18 @@ async function main(): Promise<number> {
     } else {
       scope = { scope: 'season', seasonNumber: args.season! };
     }
+  }
+
+  if (args.command === 'search-plan') {
+    const plan = await planForceSearch({
+      db,
+      arr,
+      mediaItemId: item.id,
+      ...(scope.scope === 'episode' ? { scope: 'episode' as const, targetChildId: scope.targetChildId } : {}),
+      importCheckOn: true,
+    });
+    console.log(JSON.stringify({ title: item.title, plan }, null, 2));
+    return 0;
   }
 
   if (args.command === 'audio') {

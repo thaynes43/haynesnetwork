@@ -25,6 +25,12 @@ test.describe('/admin/janitor (admin)', () => {
     // Kapowarr has no retry or leftover cell; "Keeps failing" is LazyLibrarian's report-only row.
     const keepsFailing = suite.getByRole('row').filter({ hasText: 'Keeps failing' });
     await expect(keepsFailing.getByRole('cell')).toHaveText(['Report only', 'Not used']);
+    // DESIGN-046 D-27: "Ready to import" has a census-default cell on Sonarr and Radarr only, and "Name does not match"
+    // is their report-only row.
+    const readyToImport = arrGrid.getByRole('row').filter({ hasText: 'Ready to import' });
+    await expect(readyToImport.getByRole('cell')).toHaveText(['Census', 'Census', 'Not used']);
+    const nameMismatch = arrGrid.getByRole('row').filter({ hasText: 'Name does not match' });
+    await expect(nameMismatch.getByRole('cell')).toHaveText(['Report only', 'Report only', 'Not used']);
 
     // Flipping a new cell to enforce swaps Save for the two-step confirm, without moving the grid (ADR-015).
     const leftover = page.getByTestId('janitor-cell-lazylibrarian-leftover');

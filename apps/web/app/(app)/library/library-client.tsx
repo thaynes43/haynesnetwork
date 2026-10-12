@@ -1221,6 +1221,8 @@ function MediaBrowser({
           // The search runs async; refresh the drill so the member's on-disk state updates when it lands.
           void search.refetch();
         }}
+        // DESIGN-055 D-07 — an import (queue-aware Force Search) puts the file on disk without a search: refresh too.
+        onChanged={() => void search.refetch()}
       />
     </>
   );

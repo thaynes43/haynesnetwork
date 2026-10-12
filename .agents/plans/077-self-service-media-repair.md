@@ -155,6 +155,26 @@ Priority is how often real reports need the remedy, and how much harm today's be
   import view before any cell enforces (the PLAN-065 L0 to L1 pattern). Exercise Force Search on the next real stuck
   item, or record that none occurred.
 - **Done when** the remedy is on, the census spot-check is recorded, and #597 Part 1 is closed with a link here.
+- **Build (2026-10-12):** what landed, and the decisions behind it, are DESIGN-055 D-07's "P2 decisions" (items 1-14),
+  D-05's and D-02's "As built" notes and DESIGN-046 D-27:
+  - Steps 1-2: `title-evidence.ts` (pure, the live names of the motivating cases as fixtures, plus movie Title Evidence
+    and the series-year rule), `import-check.ts` (pure), `getManualImport` (the download id only: Sonarr 4.0.20 lists
+    the series folder when `seriesId` rides along), `getCommand`, and `manualImport` on both *arrs, its body pinned to
+    each UI's own request.
+  - Step 3: migration 0099 (`repair_requests`, the three ledger events, the janitor's class and action CHECKs);
+    `repair-requests.ts`; the budget counts Repair Requests; the open check is shared both ways; the sync completes an
+    import that outran the guide and times out a stale one.
+  - Step 4: `queue-aware-search.ts` (`fix.searchPlan`, read-only; `fix.forceSearch` with the plan's digest), behind the
+    new remedy `import_check` (ships off); the Force Search dialog's guide step, its copy, the `importDownload` media
+    action, the admin switch, and a prefilled Helpdesk ticket for the staff path.
+  - Step 5: DESIGN-046 D-27, `importable` (census) and `title_mismatch` (report only), at most 100 checks per instance
+    per run, loop-guarded imports when enforced; `/admin/janitor` shows both rows.
+  - Step 6: CLAUDE.md hard rule 4.
+  - The in-cluster tool gains `tsx /sync/src/scripts/repair-guide.ts search-plan` (read-only, plans as if the remedy
+    were on) for the live check.
+  - Tests: `title-evidence.test.ts`, `import-check.test.ts`, `queue-aware-search.test.ts`, `repair-requests.test.ts`,
+    `queue-cleanup.test.ts` (D-27), `manual-import-clients.test.ts` (arr), the router test in `fix-guards.test.ts` (api);
+    e2e `force-search-guide.spec.ts`: Case B (AC-41), a download on its way, the staff path with the prefilled ticket.
 
 ### P3: Seerr Issue mirror, surfaces, onboarding and metrics
 
@@ -165,6 +185,8 @@ Priority is how often real reports need the remedy, and how much harm today's be
 3. Title page banner, `/admin` Seerr issues list with "Mark fixed by hand" (staff note).
 4. `/r/seerr/<id>` link route; verify the signed-out round trip through Authentik keeps the link.
 5. Admin issues list shows the linked repairs (from the app's own records) and the staff note / "Mark fixed by hand" (D-12). No outcome scoring, streak or digest line (ADR-112).
+6. Carried from P2 (DESIGN-055 D-07 P2 decision 13): Activity's admin row for a stuck *arr download shows its Import
+   Check result (read-only, the same `checkSonarrImport` / `checkRadarrImport` the janitor runs).
 - **Tests:** `seerr-issues-sync.test.ts`, `seerr-issues-admin.test.ts`, route tests for the link.
 - **e2e:** stub Seerr issues; journey: a stub issue shows on its title page; the link after a stub sign-in opens the
   guide preselected (AC-43 read half); the admin Seerr issues view with linked repairs and the fixed-by-hand mark (AC-44).

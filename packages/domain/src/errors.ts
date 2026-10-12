@@ -104,8 +104,16 @@ export class SubtitleFixUnsupportedError extends Error {
  * - `language_present`: the wanted audio language is already in the file (D-08 rule 3);
  * - `pack`: the blocklist would also cost other episodes' pack, and the person did not choose that;
  * - `nothing_safe`: a season Fix where every chosen episode was held back or refused.
+ * - `needs_guide` (DESIGN-055 D-07, PLAN-077 P2): a queue-aware Force Search found a stuck download that only a person
+ *   can act on after seeing it (an import, a removal), or one that needs staff.
  */
-export type FixRefusalReason = 'same_release' | 'no_replacement' | 'language_present' | 'pack' | 'nothing_safe';
+export type FixRefusalReason =
+  | 'same_release'
+  | 'no_replacement'
+  | 'language_present'
+  | 'pack'
+  | 'nothing_safe'
+  | 'needs_guide';
 
 export class FixRefusedError extends Error {
   readonly code = 'FIX_REFUSED' as const;

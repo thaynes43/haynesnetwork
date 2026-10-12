@@ -63,6 +63,7 @@ do not reach around it.
 | `createApp`, `updateApp`, `deleteApp`, `reorderCatalog`      | `catalog.ts`               | `app_catalog`                           | `permission_audit`           |
 | `createFixRequest`, `recordFixAction`, `completeFixRequests` | `fix-requests.ts`          | `fix_requests`                          | `ledger_events`              |
 | `recordSearchRequest`                                        | `search-requests.ts`       | —                                       | `ledger_events`              |
+| `createRepairRequest`, `recordRepairTransition`, `completeRepairRequests`, `expireStaleRepairRequests` (ADR-109, DESIGN-055 D-02) | `repair-requests.ts` | `repair_requests` | `ledger_events` |
 | `startRestoreRun`, `recordRestoreResult`, `finishRestoreRun` | `restore-runs.ts`          | `restore_runs`, `media_items`           | `ledger_events`              |
 | `upsertMediaItemsBatch`, `tombstoneMissingItems`             | `media-sync.ts`            | `media_items`, `sync_state`             | `ledger_events` (tombstones) |
 | `ingestLedgerEvents`, `backfillEventAttribution`             | `ledger-ingest.ts`         | `ledger_events`, `sync_state`           | (is the ledger)              |

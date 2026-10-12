@@ -3116,6 +3116,36 @@ input[aria-invalid='true'] {
   overflow-wrap: anywhere;
 }
 
+/* DESIGN-055 D-07 (PLAN-077 P2) — the queue-aware Force Search step. The facts a finished download carries, label
+   beside value; file names wrap anywhere instead of widening the dialog. */
+.fs-guide__facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 4px 0 0;
+}
+.fs-guide__facts dt {
+  color: var(--color-text-muted);
+}
+.fs-guide__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.fs-guide__evidence {
+  margin-top: 4px;
+}
+/* "Import onto …": every choice's label shares one grid cell and only the chosen one shows, so the button keeps the
+   width of the longest label and a new choice never moves the row (hard rule 9). */
+.btn.fs-guide__sized {
+  display: inline-grid;
+}
+.btn.fs-guide__sized > span {
+  grid-area: 1 / 1;
+}
+.btn.fs-guide__sized > .fs-guide__ghost {
+  visibility: hidden;
+}
+
 /* DESIGN-055 D-01 — the Repair Guide settings card on /admin/fixes. The status slot keeps its line so a save message
    never shifts the row (hard rule 9). */
 .repair-guide-settings {

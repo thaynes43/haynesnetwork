@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import {
   appSettings,
@@ -7,7 +8,12 @@ import {
   notificationOutbox,
   permissionAudit,
 } from '@hnet/db';
-import { ArrHttpError } from '@hnet/arr';
+import {
+  ArrHttpError,
+  radarrManualImportCandidateSchema,
+  sonarrManualImportCandidateSchema,
+  type SonarrManualImportCandidate,
+} from '@hnet/arr';
 import type { SonarrClient, RadarrClient, LidarrClient } from '@hnet/arr/read';
 import type { SonarrWriteClient, RadarrWriteClient, LidarrWriteClient } from '@hnet/arr/write';
 import { bootMigratedDb, type TestDb } from './helpers';
@@ -24,9 +30,12 @@ import {
   type JanitorReleaseProfileClient,
 } from '../src/janitor-release-block';
 import { isGrammarTerm, isWholeNameTerm, renderTerm, termMatchesRaw } from '../src/release-terms';
+import { importCheckReasonText, type RadarrImportCheck, type SonarrImportCheck } from '../src/import-check';
 import {
   ARCHIVE_LEFT_UNPACKED_REASON,
   ARR_QUEUE_CLEANUP_CONFIG_DEFAULT,
+  IMPORT_CHECK_MAX_PER_RUN,
+  importCheckWindow,
   buildQueueCleanupClients,
   buildQueueCleanupDigestSection,
   classifyQueueItem,
@@ -782,7 +791,7 @@ describe('deriveQueueCleanupLadderLevel (D-05, pure)', () => {
   it('L2 when every cell is enforce, Lidarr manual_match included (D-13)', () => {
     const cfg = clone();
     for (const inst of ['sonarr', 'radarr'] as const) {
-      cfg.modes[inst] = { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' };
+      cfg.modes[inst] = { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce', importable: 'enforce' };
     }
     cfg.modes.lidarr = { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce', manual_match: 'census' };
     // The nine shared cells alone are partial now: Lidarr's manual_match cell is still census.
@@ -806,7 +815,17 @@ describe('deriveQueueCleanupLadderLevel (D-05, pure)', () => {
     expect(queueCleanupCellMode(cfg, 'lidarr', 'manual_match')).toBe('census');
     expect(deriveQueueCleanupLadderLevel(cfg)).toBe(1);
     const flipped = { ...cfg, modes: { ...cfg.modes, lidarr: { ...cfg.modes.lidarr, manual_match: 'enforce' as const } } };
-    expect(deriveQueueCleanupLadderLevel(flipped)).toBe(2);
+    // D-27: Sonarr's and Radarr's `importable` cells are census (absent), so the family stays partial until they enforce.
+    expect(deriveQueueCleanupLadderLevel(flipped)).toBe(1);
+    const imports = {
+      ...flipped,
+      modes: {
+        ...flipped.modes,
+        sonarr: { ...flipped.modes.sonarr, importable: 'enforce' as const },
+        radarr: { ...flipped.modes.radarr, importable: 'enforce' as const },
+      },
+    };
+    expect(deriveQueueCleanupLadderLevel(imports)).toBe(2);
   });
   it('L1 when only Lidarr manual_match enforces (D-13: the owner-ruled flip on its own)', () => {
     const cfg = clone();
@@ -961,6 +980,97 @@ describe('D-13 config: Lidarr manual_match cell (pure)', () => {
   });
 });
 
+describe('D-27 config: the importable cells on Sonarr and Radarr (pure)', () => {
+  it('accepts importable census or enforce on Sonarr and Radarr; a config without the cells is valid and reads census', () => {
+    const cfg = clone();
+    cfg.modes.sonarr.importable = 'enforce';
+    cfg.modes.radarr.importable = 'census';
+    expect(queueCleanupConfigError(cfg)).toBeNull();
+    expect(queueCleanupCellMode(cfg, 'sonarr', 'importable')).toBe('enforce');
+    expect(queueCleanupCellMode(cfg, 'radarr', 'importable')).toBe('census');
+    // The row stored before D-27 (and Lidarr's manual_match enforced) has no importable key at all.
+    const stored = {
+      modes: {
+        sonarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' },
+        radarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' },
+        lidarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce', manual_match: 'enforce' },
+      },
+      maxActionsPerRun: 10,
+      minItemAgeHours: 2,
+      retryEscalateRuns: 6,
+    };
+    expect(queueCleanupConfigError(stored)).toBeNull();
+    const legacy = stored as unknown as ArrQueueCleanupConfig;
+    expect(queueCleanupCellMode(legacy, 'sonarr', 'importable')).toBe('census');
+    expect(queueCleanupCellMode(legacy, 'radarr', 'importable')).toBe('census');
+    expect(queueCleanupCellMode(legacy, 'sonarr', 'have_better')).toBe('enforce');
+    // The code default ships both cells census (the deploy is inert).
+    expect(ARR_QUEUE_CLEANUP_CONFIG_DEFAULT.modes.sonarr.importable).toBe('census');
+    expect(ARR_QUEUE_CLEANUP_CONFIG_DEFAULT.modes.radarr.importable).toBe('census');
+  });
+
+  it('refuses importable off Sonarr and Radarr, a title_mismatch cell anywhere, and a bad importable mode', () => {
+    const lidarr = clone();
+    (lidarr.modes.lidarr as Record<string, unknown>).importable = 'census';
+    expect(queueCleanupConfigError(lidarr)).toBe("Unknown class 'importable' in modes.lidarr.");
+    const kapowarr = clone();
+    (kapowarr.modes.kapowarr as Record<string, unknown>).importable = 'census';
+    expect(queueCleanupConfigError(kapowarr)).toBe("Unknown class 'importable' in modes.kapowarr.");
+    const mismatch = clone();
+    (mismatch.modes.sonarr as Record<string, unknown>).title_mismatch = 'enforce';
+    expect(queueCleanupConfigError(mismatch)).toBe("Unknown class 'title_mismatch' in modes.sonarr.");
+    const bad = clone();
+    (bad.modes.radarr as Record<string, unknown>).importable = 'on';
+    expect(queueCleanupConfigError(bad)).toBe("modes.radarr.importable must be 'census' or 'enforce'.");
+    // title_mismatch is report only: no cell reads anything but census.
+    const all = clone();
+    all.modes.sonarr.importable = 'enforce';
+    expect(queueCleanupCellMode(all, 'sonarr', 'title_mismatch')).toBe('census');
+    expect(queueCleanupCellMode(all, 'lidarr', 'importable')).toBe('census');
+  });
+
+  it('the arr ladder counts the importable cells: they alone read L1, and L2 needs them enforced', () => {
+    const only = clone();
+    only.modes.sonarr.importable = 'enforce';
+    expect(deriveQueueCleanupLadderLevel(only)).toBe(1);
+    const shared = clone();
+    for (const inst of ['sonarr', 'radarr', 'lidarr'] as const) {
+      shared.modes[inst].have_better = 'enforce';
+      shared.modes[inst].retry_import = 'enforce';
+      shared.modes[inst].bad_release = 'enforce';
+    }
+    shared.modes.lidarr.manual_match = 'enforce';
+    expect(deriveQueueCleanupLadderLevel(shared)).toBe(1); // both importable cells still census
+    shared.modes.sonarr.importable = 'enforce';
+    expect(deriveQueueCleanupLadderLevel(shared)).toBe(1);
+    shared.modes.radarr.importable = 'enforce';
+    expect(deriveQueueCleanupLadderLevel(shared)).toBe(2);
+    // The books and comics families never see the cells.
+    expect(deriveQueueCleanupLadderLevel(shared, 'books')).toBe(0);
+  });
+
+  it('importCheckWindow: every download fits under the cap; above it, a rotating window so none is left out for good', () => {
+    const now = new Date('2026-10-12T17:25:00Z');
+    expect(IMPORT_CHECK_MAX_PER_RUN).toBe(100);
+    expect(importCheckWindow(0, now)).toEqual([]);
+    expect(importCheckWindow(3, now)).toEqual([0, 1, 2]);
+    expect(importCheckWindow(100, now)).toHaveLength(100);
+    const first = importCheckWindow(101, now);
+    expect(first).toHaveLength(100);
+    expect(new Set(first).size).toBe(100);
+    const left = [...Array(101).keys()].find((k) => !first.includes(k))!;
+    // The next hour's window starts with the download this hour left out.
+    const next = importCheckWindow(101, new Date(now.getTime() + 60 * 60 * 1000));
+    expect(next[0]).toBe(left);
+    // Small numbers: 5 downloads, a cap of 2, so every download is checked within three runs.
+    const seen = new Set<number>();
+    for (let h = 0; h < 3; h += 1) {
+      for (const k of importCheckWindow(5, new Date(now.getTime() + h * 60 * 60 * 1000), 2)) seen.add(k);
+    }
+    expect([...seen].sort()).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Test helpers.
 // ---------------------------------------------------------------------------
@@ -973,8 +1083,8 @@ function cell(o: Partial<QueueCleanupModeCells> = {}): QueueCleanupModeCells {
 function clone(o: Partial<ArrQueueCleanupConfig> = {}): ArrQueueCleanupConfig {
   return {
     modes: {
-      sonarr: cell(),
-      radarr: cell(),
+      sonarr: { ...cell(), importable: 'census' },
+      radarr: { ...cell(), importable: 'census' },
       lidarr: { ...cell(), manual_match: 'census' },
       lazylibrarian: { retry_import: 'census', bad_release: 'census', leftover: 'census' },
       kapowarr: { bad_release: 'census' },
@@ -1101,8 +1211,12 @@ interface InstanceStub {
     missingChecks: number[][];
     /** D-14: the queue ids whose release identity was read. */
     identityReads: number[];
-    /** Every write-side call in order: `profile:GET|POST|PUT`, `delete:<id>`, `search:<ids>`. */
+    /** Every write-side call in order: `profile:GET|POST|PUT`, `delete:<id>`, `search:<ids>`, `import:<downloadId>`. */
     order: string[];
+    /** D-27: one entry per Import Check, the queue ids of the download it was given. */
+    importChecks: number[][];
+    /** D-27: one entry per ManualImport that landed. */
+    imports: Array<{ downloadId: string; files: number }>;
   };
 }
 
@@ -1127,6 +1241,10 @@ function makeInstanceStub(
     identity?: (qi: QueueCleanupQueueItem) => { releaseTitle: string | null; artistName: string | null };
     /** D-14: the release-profile store (default: an empty one). */
     profiles?: ProfileStore;
+    /** D-27: the Import Check of one download (absent: the instance has no Import Check); a throw is a failed read. */
+    importCheck?: (qis: QueueCleanupQueueItem[]) => SonarrImportCheck | RadarrImportCheck | null;
+    /** D-27: the download ids whose ManualImport fails. */
+    importErrors?: string[];
   } = {},
 ): InstanceStub {
   const calls: InstanceStub['calls'] = {
@@ -1138,7 +1256,10 @@ function makeInstanceStub(
     missingChecks: [],
     identityReads: [],
     order: [],
+    importChecks: [],
+    imports: [],
   };
+  const importCheck = opts.importCheck;
   const profiles = opts.profiles ?? makeProfileStore([], calls.order);
   if (opts.explodeOnWrite) profiles.fail.explode = true;
   const removed = new Set<string>();
@@ -1198,6 +1319,20 @@ function makeInstanceStub(
         };
       },
       releaseProfiles: profiles.client,
+      ...(importCheck
+        ? {
+            async importCheck(qis: QueueCleanupQueueItem[]) {
+              calls.importChecks.push(qis.map((qi) => qi.queueItemId));
+              return importCheck(qis);
+            },
+            async manualImport(check: SonarrImportCheck | RadarrImportCheck) {
+              if (opts.explodeOnWrite) throw new Error('census must never write');
+              calls.order.push(`import:${check.downloadId}`);
+              if (opts.importErrors?.includes(check.downloadId)) throw new Error('ManualImport failed');
+              calls.imports.push({ downloadId: check.downloadId, files: check.files.length });
+            },
+          }
+        : {}),
     },
   };
 }
@@ -1401,7 +1536,7 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
       });
     const cfg = clone();
     for (const instance of ['sonarr', 'radarr'] as const) {
-      cfg.modes[instance] = { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' };
+      cfg.modes[instance] = { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce', importable: 'enforce' };
     }
     cfg.minItemAgeHours = 0;
     const sonarr = makeInstanceStub(
@@ -3466,6 +3601,546 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
       ['SABnzbd_nzo_a', 46391, 'none', 'observed'],
       ['SABnzbd_nzo_c', 46393, 'none', 'observed'],
     ]);
+  });
+
+  // --- DESIGN-046 D-27 (PLAN-077 P2, DESIGN-055 D-07) — the Import Check classes, on the live reads of 2026-10-12 ---
+
+  /** A live *arr read (packages/arr/__fixtures__). */
+  function arrFixture<T>(name: string): T {
+    return JSON.parse(readFileSync(new URL(`../../arr/__fixtures__/${name}.json`, import.meta.url), 'utf8')) as T;
+  }
+  /** Sonarr's own identity rejection (the live Rugrats record), and Radarr's form of it. */
+  const MATCHED_SERIES_BY_ID =
+    'Found matching series via grab history, but release was matched to series by ID. Automatic import is not possible. See the FAQ for details.';
+  const MATCHED_MOVIE_BY_ID =
+    'Found matching movie via grab history, but release was matched to movie by ID. Automatic import is not possible. See the FAQ for details.';
+  const DL = {
+    butterbeans: '735a9e37-bea6-4626-a695-3007d3b378fe',
+    rugrats: '95b73337-326c-4063-a9c3-9273ec5c45e1',
+    aquaTeen: 'e7eebc5e-b5e1-454d-bd95-fb87f09d629c',
+    franklin: 'd5d43b58-a674-4e91-b79e-69a653881146',
+    woman: '8a449d45-b4c0-4b0a-80f2-7c28ddb95c5a',
+    spiderMan: '59d2ffec-f4ae-4164-a8b4-3b69a95210a8',
+  };
+  /** Each download's manual-import view as Sonarr or Radarr answered it live (Butterbeans has none: its read fails). */
+  const MANUAL_IMPORT: Record<string, string> = {
+    [DL.rugrats]: 'sonarr.manualimport-rugrats-2021-e07',
+    [DL.aquaTeen]: 'sonarr.manualimport-aqua-teen-s05e05',
+    [DL.franklin]: 'sonarr.manualimport-franklin-2025-e05',
+    [DL.woman]: 'sonarr.manualimport-woman-of-substance-e03',
+    [DL.spiderMan]: 'radarr.manualimport-spider-man-turkseed',
+  };
+  /** A queue record blocked by an identity rejection, in the *arr's raw shape (the live Rugrats record's fields). */
+  const blockedRaw = (o: {
+    id: number;
+    downloadId: string;
+    title: string;
+    seriesId?: number;
+    episodeId?: number;
+    movieId?: number;
+    message?: string;
+  }) => ({
+    id: o.id,
+    downloadId: o.downloadId,
+    title: o.title,
+    added: '2026-10-11T16:25:06Z',
+    status: 'completed',
+    trackedDownloadStatus: 'warning',
+    trackedDownloadState: 'importBlocked',
+    errorMessage: '',
+    statusMessages: [{ title: o.title, messages: [o.message ?? MATCHED_SERIES_BY_ID] }],
+    ...(o.movieId !== undefined ? { movieId: o.movieId } : { seriesId: o.seriesId, episodeId: o.episodeId }),
+  });
+  const FRANKLIN = 'Franklin.2025.S01E05.2160p.NF.WEB-DL.MULTi.DDP5.1.H.265-FUZEER';
+  const WOMAN = 'A.Woman.of.Substance.S01E03.Episode.3.1080p.Blu-ray.Remux.AVC-HD.mkv';
+  const AQUA_TEEN = 'Aqua.Teen.Hunger.Force.S05E05.Hoppy.Bunny.NorTV.WEB.DL.WEB.DL.1080p.WEB-DL.AAC.x264';
+  /** The live blocked Sonarr queue (the Butterbeans pack, Rugrats, Aqua Teen), plus Franklin and A Woman of Substance
+   *  with the same rejection as Rugrats. Aqua Teen's own record carries no identity rejection. */
+  const liveSonarrQueue = () => [
+    ...arrFixture<Array<Record<string, unknown>>>('sonarr.queue-blocked'),
+    blockedRaw({ id: 501, downloadId: DL.franklin, title: FRANKLIN, seriesId: 267, episodeId: 23623 }),
+    blockedRaw({ id: 502, downloadId: DL.woman, title: WOMAN, seriesId: 29, episodeId: 1305 }),
+  ];
+  const spiderManRaw = () =>
+    blockedRaw({
+      id: 601,
+      downloadId: DL.spiderMan,
+      title: 'Orumcek Adam Yepyeni Bir Gun [Spider Man Brand New Day] 2026 WEBDL 2160p X265 10Bit DDP 5.1 [TR-EN] TurkSeeD',
+      movieId: 9428,
+      message: MATCHED_MOVIE_BY_ID,
+    });
+
+  /**
+   * The REAL bundle (buildQueueCleanupClients) over fake *arr clients serving the live reads: the manual-import view by
+   * download id, parsed as the read client parses it (an unknown id fails the read), each series' episodes and year from
+   * those views, and movie 9428. Every removal, blocklist and search throws: these classes never send one.
+   */
+  const importBundle = (queues: { sonarr?: unknown[]; radarr?: unknown[] }) => {
+    const log = {
+      manualImportReads: [] as string[],
+      listEpisodes: [] as number[],
+      getSeriesById: [] as number[],
+      getMovieById: [] as number[],
+      imports: [] as Array<{ kind: 'sonarr' | 'radarr'; files: Array<Record<string, unknown>>; importMode: string }>,
+    };
+    const view = (downloadId: string) => {
+      const name = MANUAL_IMPORT[downloadId];
+      if (!name) throw new ArrHttpError(500, 'GET', `http://arr.test/api/v3/manualimport?downloadId=${downloadId}`);
+      const raw = arrFixture<unknown[]>(name);
+      return name.startsWith('sonarr.')
+        ? sonarrManualImportCandidateSchema.array().parse(raw)
+        : radarrManualImportCandidateSchema.array().parse(raw);
+    };
+    const sonarrViews = (): SonarrManualImportCandidate[] =>
+      Object.values(MANUAL_IMPORT)
+        .filter((n) => n.startsWith('sonarr.'))
+        .flatMap((n) => sonarrManualImportCandidateSchema.array().parse(arrFixture<unknown[]>(n)));
+    const never = async () => {
+      throw new Error('the Import Check classes never remove, blocklist or search');
+    };
+    const clients = buildQueueCleanupClients({
+      read: {
+        sonarr: {
+          getQueueAll: async () => queues.sonarr ?? [],
+          getHistorySince: async () => [],
+          getManualImport: async (downloadId: string) => {
+            log.manualImportReads.push(downloadId);
+            return view(downloadId);
+          },
+          listEpisodes: async (seriesId: number) => {
+            log.listEpisodes.push(seriesId);
+            return sonarrViews()
+              .flatMap((c) => c.episodes ?? [])
+              .filter((e) => e.seriesId === seriesId)
+              .map((e) => ({ ...e, title: e.title ?? '', monitored: true }));
+          },
+          getSeriesById: async (id: number) => {
+            log.getSeriesById.push(id);
+            return { id, year: sonarrViews().find((c) => c.series?.id === id)?.series?.year ?? 2016, monitored: true };
+          },
+        } as unknown as SonarrClient,
+        radarr: {
+          getQueueAll: async () => queues.radarr ?? [],
+          getHistorySince: async () => [],
+          getManualImport: async (downloadId: string) => {
+            log.manualImportReads.push(downloadId);
+            return view(downloadId);
+          },
+          getMovieById: async (id: number) => {
+            log.getMovieById.push(id);
+            return arrFixture('radarr.movie-9428');
+          },
+        } as unknown as RadarrClient,
+        lidarr: { getQueueAll: async () => [] } as unknown as LidarrClient,
+      },
+      write: {
+        sonarr: {
+          deleteQueueItem: never,
+          processMonitoredDownloads: never,
+          searchEpisodes: never,
+          searchSeries: never,
+          manualImport: async (files: Array<Record<string, unknown>>, importMode: string) => {
+            log.imports.push({ kind: 'sonarr', files, importMode });
+            return { id: 1, name: 'ManualImport' };
+          },
+        } as unknown as SonarrWriteClient,
+        radarr: {
+          deleteQueueItem: never,
+          processMonitoredDownloads: never,
+          searchMovies: never,
+          manualImport: async (files: Array<Record<string, unknown>>, importMode: string) => {
+            log.imports.push({ kind: 'radarr', files, importMode });
+            return { id: 2, name: 'ManualImport' };
+          },
+        } as unknown as RadarrWriteClient,
+        lidarr: {} as unknown as LidarrWriteClient,
+      },
+    });
+    return { clients, log };
+  };
+  const rowOf = (rows: Array<typeof arrQueueCleanupActions.$inferSelect>, downloadId: string) =>
+    rows.filter((r) => r.downloadId === downloadId);
+
+  it('D-27 CENSUS (live reads): importable and title_mismatch rows; unknown stays unknown; no write, no file name in a reason', async () => {
+    const now = new Date('2026-10-12T17:25:00Z');
+    const { clients, log } = importBundle({ sonarr: liveSonarrQueue(), radarr: [spiderManRaw()] });
+    const lines: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
+    const push = (msg: string, meta?: Record<string, unknown>) => {
+      lines.push({ msg, meta });
+    };
+    const logger = { info: push, warn: push };
+    const report = await evaluateQueueCleanup({ db: t.db, clients, config: clone(), now, logger });
+
+    expect(report.totalFailure).toBe(false);
+    const rows = await rowsOf('sonarr');
+    const byDownload = (id: string) => rowOf(rows, id).map((r) => [r.actionClass, r.mode, r.action, r.outcome, r.reason]);
+    // A Woman of Substance: "Episode 3" on the 2026 series, no rejection, one file for the one episode.
+    expect(byDownload(DL.woman)).toEqual([['importable', 'census', 'none', 'observed', 'Import Check: passed']]);
+    // Rugrats 2021 mapped onto the 1991 series, Franklin 2025 onto the 1997 one: the release names another year's show.
+    expect(byDownload(DL.rugrats)).toEqual([
+      ['title_mismatch', 'census', 'none', 'observed', 'Import Check: Release names another year: 2021'],
+    ]);
+    expect(byDownload(DL.franklin)).toEqual([
+      ['title_mismatch', 'census', 'none', 'observed', 'Import Check: Release names another year: 2025'],
+    ]);
+    // Aqua Teen carries no identity rejection ("Unable to determine if file is a sample"): never checked, unknown.
+    expect(byDownload(DL.aquaTeen)).toEqual([['unknown', 'census', 'none', 'observed', 'Unable to determine if file is a sample']]);
+    // The Butterbeans pack's manual-import read fails: both records stay unknown with their own reason, and the run goes on.
+    expect(byDownload(DL.butterbeans)).toEqual([
+      ['unknown', 'census', 'none', 'observed', MATCHED_SERIES_BY_ID],
+      ['unknown', 'census', 'none', 'observed', MATCHED_SERIES_BY_ID],
+    ]);
+    // Spider-Man (TurkSeeD): Radarr's own "Not a Custom Format upgrade" rejection, so the check leaves it unknown.
+    expect((await rowsOf('radarr')).map((r) => [r.actionClass, r.action, r.reason])).toEqual([
+      ['unknown', 'none', MATCHED_MOVIE_BY_ID],
+    ]);
+    for (const r of [...rows, ...(await rowsOf('radarr'))]) expect(r.reason ?? '').not.toMatch(/\.(mkv|mp4)\b/i);
+
+    // Reads: one manual-import view per qualifying download (Aqua Teen's is never read); one episode list and one series
+    // read per series; no write at all in census.
+    expect(log.manualImportReads).toEqual([DL.butterbeans, DL.rugrats, DL.franklin, DL.woman, DL.spiderMan]);
+    expect(log.listEpisodes).toEqual([144, 599, 267, 29]);
+    expect(log.getSeriesById).toEqual([144, 599, 267, 29]);
+    expect(log.getMovieById).toEqual([9428]);
+    expect(log.imports).toEqual([]);
+    expect(lines.find((l) => l.msg === 'queue-cleanup: import check read failed, download stays unknown')?.meta).toMatchObject({
+      instance: 'sonarr',
+      downloadId: DL.butterbeans,
+    });
+    expect(lines.find((l) => l.msg === 'queue-cleanup import checks' && l.meta?.instance === 'sonarr')?.meta).toEqual({
+      instance: 'sonarr',
+      qualifying: 4,
+      checked: 4,
+      importable: 1,
+      titleMismatch: 2,
+      unchanged: 0,
+      failed: 1,
+    });
+    const sonarr = reportOf(report, 'sonarr');
+    expect(sonarr.byClass.importable).toEqual({ observed: 1, enforced: 0 });
+    expect(sonarr.byClass.title_mismatch).toEqual({ observed: 2, enforced: 0 });
+    expect(sonarr.byClass.unknown).toEqual({ observed: 3, enforced: 0 });
+    expect(sonarr).toMatchObject({ read: true, actionsTaken: 0, errors: 0 });
+
+    // The digest and the /admin summary show both classes.
+    const section = await buildQueueCleanupDigestSection({ db: t.db, now });
+    const sonarrClasses = section!.instances.find((i) => i.instance === 'sonarr')!.classes;
+    expect(sonarrClasses.find((c) => c.actionClass === 'importable')).toEqual({
+      actionClass: 'importable',
+      census: 1,
+      enforced: 0,
+      topReasons: [{ reason: 'Import Check: passed', count: 1 }],
+    });
+    expect(sonarrClasses.find((c) => c.actionClass === 'title_mismatch')).toMatchObject({ census: 2, enforced: 0 });
+    const status = await getArrQueueCleanupStatus({ db: t.db, now });
+    expect(status.summary).toEqual(
+      expect.arrayContaining([
+        { instance: 'sonarr', actionClass: 'importable', observed: 1, enforced: 0 },
+        { instance: 'sonarr', actionClass: 'title_mismatch', observed: 2, enforced: 0 },
+      ]),
+    );
+    expect(status.config.modes.sonarr.importable).toBe('census');
+  });
+
+  it('D-27 ENFORCE (live reads): ONE ManualImport with the check\'s files; title_mismatch and unknown are never acted on', async () => {
+    const now = new Date('2026-10-12T17:25:00Z');
+    // Aqua Teen with an identity rejection this time: the check reads it, and its "Unable to determine if file is a
+    // sample" rejection keeps it unknown.
+    const aquaTeen = blockedRaw({ id: 503, downloadId: DL.aquaTeen, title: AQUA_TEEN, seriesId: 64, episodeId: 4867 });
+    const queue = liveSonarrQueue().filter((r) => r.downloadId !== DL.aquaTeen);
+    const { clients, log } = importBundle({ sonarr: [...queue, aquaTeen], radarr: [spiderManRaw()] });
+    const cfg = clone({ minItemAgeHours: 2 });
+    cfg.modes.sonarr.importable = 'enforce';
+    cfg.modes.radarr.importable = 'enforce';
+    const report = await evaluateQueueCleanup({ db: t.db, clients, config: cfg, now });
+
+    const [woman] = sonarrManualImportCandidateSchema.array().parse(arrFixture<unknown[]>(MANUAL_IMPORT[DL.woman]!));
+    expect(log.imports).toEqual([
+      {
+        kind: 'sonarr',
+        importMode: 'auto',
+        files: [
+          {
+            path: woman!.path,
+            seriesId: 29,
+            episodeIds: [1305],
+            quality: woman!.quality,
+            languages: woman!.languages,
+            indexerFlags: 0,
+            downloadId: DL.woman,
+            folderName: woman!.folderName,
+            releaseGroup: 'HD',
+            releaseType: 'singleEpisode',
+          },
+        ],
+      },
+    ]);
+    const rows = await rowsOf('sonarr');
+    expect(rowOf(rows, DL.woman).map((r) => [r.actionClass, r.mode, r.action, r.outcome, r.error])).toEqual([
+      ['importable', 'enforce', 'imported', 'done', null],
+    ]);
+    for (const id of [DL.rugrats, DL.franklin]) {
+      expect(rowOf(rows, id).map((r) => [r.actionClass, r.mode, r.action])).toEqual([['title_mismatch', 'census', 'none']]);
+    }
+    expect(rowOf(rows, DL.aquaTeen).map((r) => [r.actionClass, r.action, r.reason])).toEqual([
+      ['unknown', 'none', MATCHED_SERIES_BY_ID],
+    ]);
+    expect((await rowsOf('radarr')).map((r) => [r.actionClass, r.action])).toEqual([['unknown', 'none']]);
+    expect(log.manualImportReads).toContain(DL.aquaTeen);
+    expect(reportOf(report, 'sonarr')).toMatchObject({ actionsTaken: 1, errors: 0 });
+    expect(reportOf(report, 'sonarr').byClass.importable).toEqual({ observed: 1, enforced: 1 });
+    expect(reportOf(report, 'radarr')).toMatchObject({ actionsTaken: 0, errors: 0 });
+  });
+
+  /** A synthetic importable check for one download (the files are what the evaluator hands to manualImport). */
+  const importableCheck = (downloadId: string): SonarrImportCheck => ({
+    kind: 'sonarr',
+    verdict: 'importable',
+    reason: 'ok',
+    detail: null,
+    downloadId,
+    file: null,
+    title: { verdict: 'agrees', bestEpisodeId: null, bestScore: 1, againstScore: 1, conflictingYear: null },
+    files: [
+      {
+        path: `/downloads/${downloadId}/episode.mkv`,
+        seriesId: 7,
+        episodeIds: [1],
+        quality: { quality: { id: 3, name: 'WEBDL-1080p' } },
+        languages: [{ id: 1, name: 'English' }],
+        indexerFlags: 0,
+        downloadId,
+      },
+    ],
+  });
+  /** An identity-blocked record of the stub path (normalized shape). */
+  const identityBlocked = (id: number, downloadId: string | null, o: Partial<QueueCleanupQueueItem> = {}) =>
+    item({
+      queueItemId: id,
+      downloadId,
+      title: `Show.S01E0${id % 10}.1080p.WEB-DL-GRP`,
+      targetId: 1000 + id,
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importBlocked',
+      statusMessages: [{ title: 'x', messages: [MATCHED_SERIES_BY_ID] }],
+      ...o,
+    });
+  const importCfg = (o: Partial<ArrQueueCleanupConfig> = {}) => {
+    const cfg = clone(o);
+    cfg.modes.sonarr.importable = 'enforce';
+    return cfg;
+  };
+
+  it('D-27: only a download whose every record is unknown, stuck short of importing and identity-blocked is checked', async () => {
+    const sonarr = makeInstanceStub(
+      [
+        identityBlocked(1, 'dl-downloading', { trackedDownloadState: 'downloading' }), // not stuck
+        unknownItem(2), // no identity rejection
+        identityBlocked(3, null), // no download id
+        retryImport(4), // a stuck import with no message: retry_import, not unknown
+        // An identity rejection beside "not an upgrade" is unknown (D-10), so it is checked.
+        identityBlocked(5, 'dl-have-better', {
+          statusMessages: [{ title: 'x', messages: ['Not an upgrade for existing episode file(s)', MATCHED_SERIES_BY_ID] }],
+        }),
+        identityBlocked(6, 'dl-pending', { trackedDownloadState: 'importPending' }),
+      ],
+      { importCheck: () => null },
+    );
+    await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: sonarr.client }), config: importCfg() });
+    expect(sonarr.calls.importChecks).toEqual([[5], [6]]);
+    // A null check (the client could not check it) leaves the download unknown.
+    expect((await rowsByQueueId()).map((r) => [r.queueItemId, r.actionClass])).toEqual([
+      [1, 'unknown'],
+      [2, 'unknown'],
+      [3, 'unknown'],
+      [4, 'retry_import'],
+      [5, 'unknown'],
+      [6, 'unknown'],
+    ]);
+  });
+
+  it('D-27 PACK: a two-record download is checked once and imported through ONE ManualImport; both rows say imported', async () => {
+    const sonarr = makeInstanceStub([identityBlocked(1, 'dl-pack'), identityBlocked(2, 'dl-pack')], {
+      importCheck: (qis) => importableCheck(qis[0]!.downloadId!),
+    });
+    const report = await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: sonarr.client }), config: importCfg() });
+    expect(sonarr.calls.importChecks).toEqual([[1, 2]]);
+    expect(sonarr.calls.imports).toEqual([{ downloadId: 'dl-pack', files: 1 }]);
+    expect(sonarr.calls.deletes).toEqual([]);
+    expect(sonarr.calls.searches).toEqual([]);
+    expect((await rowsByQueueId()).map((r) => [r.queueItemId, r.actionClass, r.action, r.outcome])).toEqual([
+      [1, 'importable', 'imported', 'done'],
+      [2, 'importable', 'imported', 'done'],
+    ]);
+    expect(sonarrReport(report)).toMatchObject({ actionsTaken: 1, covered: 1, errors: 0 });
+  });
+
+  it('D-27 AGE RAIL: a young importable download is checked and recorded but not imported (skipped_young)', async () => {
+    const now = new Date('2026-10-12T17:25:00Z');
+    const sonarr = makeInstanceStub(
+      [identityBlocked(1, 'dl-young', { addedAt: new Date(now.getTime() - 60 * 60 * 1000) })],
+      { importCheck: (qis) => importableCheck(qis[0]!.downloadId!) },
+    );
+    await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: importCfg({ minItemAgeHours: 2 }),
+      now,
+    });
+    expect(sonarr.calls.imports).toEqual([]);
+    expect((await rowsByQueueId()).map((r) => [r.actionClass, r.mode, r.action])).toEqual([
+      ['importable', 'enforce', 'skipped_young'],
+    ]);
+  });
+
+  it('D-27 CAP + ERROR: a failed ManualImport is an error row and costs its cap slot; past the cap, skipped_cap', async () => {
+    const sonarr = makeInstanceStub(
+      [identityBlocked(1, 'dl-a'), identityBlocked(2, 'dl-b'), identityBlocked(3, 'dl-c')],
+      { importCheck: (qis) => importableCheck(qis[0]!.downloadId!), importErrors: ['dl-a'] },
+    );
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client }),
+      config: importCfg({ maxActionsPerRun: 2 }),
+    });
+    expect(sonarr.calls.order).toEqual(['import:dl-a', 'import:dl-b']);
+    expect(sonarr.calls.imports).toEqual([{ downloadId: 'dl-b', files: 1 }]);
+    expect((await rowsByQueueId()).map((r) => [r.queueItemId, r.action, r.outcome, r.error])).toEqual([
+      [1, 'none', 'error', 'ManualImport failed'],
+      [2, 'imported', 'done', null],
+      [3, 'skipped_cap', 'observed', null],
+    ]);
+    expect(sonarrReport(report)).toMatchObject({ actionsTaken: 2, errors: 1 });
+  });
+
+  it('D-27 CHECK CAP: at most IMPORT_CHECK_MAX_PER_RUN downloads are checked a run; the rest wait their turn', async () => {
+    const now = new Date('2026-10-12T17:25:00Z');
+    const n = IMPORT_CHECK_MAX_PER_RUN + 1;
+    const queue = Array.from({ length: n }, (_, k) => identityBlocked(k + 1, `dl-${k + 1}`));
+    const mismatch = (qis: QueueCleanupQueueItem[]): SonarrImportCheck => ({
+      ...importableCheck(qis[0]!.downloadId!),
+      verdict: 'title_mismatch',
+      reason: 'title_ambiguous',
+      files: [],
+    });
+    const run = async (at: Date) => {
+      const sonarr = makeInstanceStub(queue, { importCheck: mismatch });
+      const lines: string[] = [];
+      const push = (msg: string) => lines.push(msg);
+      await evaluateQueueCleanup({
+        db: t.db,
+        clients: makeClients({ sonarr: sonarr.client }),
+        config: clone(),
+        now: at,
+        logger: { info: push, warn: push },
+      });
+      return { checked: sonarr.calls.importChecks.map(([id]) => id!), lines };
+    };
+    const first = await run(now);
+    expect(first.checked).toHaveLength(IMPORT_CHECK_MAX_PER_RUN);
+    expect(first.lines.filter((l) => l === 'queue-cleanup: import check cap reached, the rest stay unknown this run')).toHaveLength(1);
+    const left = queue.map((q) => q.queueItemId).filter((id) => !first.checked.includes(id));
+    expect(left).toHaveLength(1);
+    const firstRows = await t.db.select().from(arrQueueCleanupActions).where(eq(arrQueueCleanupActions.createdAt, now));
+    expect(firstRows.filter((r) => r.actionClass === 'unknown').map((r) => r.queueItemId)).toEqual(left);
+    expect(firstRows.filter((r) => r.actionClass === 'title_mismatch')).toHaveLength(IMPORT_CHECK_MAX_PER_RUN);
+    // The next hour checks the download this run left out first.
+    const second = await run(new Date(now.getTime() + HOUR));
+    expect(second.checked[0]).toBe(left[0]);
+  });
+
+  it('D-27 LOOP GUARD: a download imported on two earlier runs within 30 days is held (skipped_loop), logged once', async () => {
+    const t0 = new Date('2026-10-12T17:25:00Z');
+    const prior = (at: Date) => ({
+      instance: 'sonarr' as const,
+      queueItemId: 1,
+      downloadId: 'dl-stuck',
+      title: 'Show.S01E01.1080p.WEB-DL-GRP',
+      targetId: 1001,
+      actionClass: 'importable' as const,
+      mode: 'enforce' as const,
+      action: 'imported' as const,
+      outcome: 'done' as const,
+      reason: 'Import Check: passed',
+      createdAt: at,
+    });
+    // One import 31 days ago (outside the window) and one 2 days ago: one counted run, so this run imports again.
+    await t.db.insert(arrQueueCleanupActions).values([prior(new Date(t0.getTime() - 31 * 24 * HOUR)), prior(new Date(t0.getTime() - 48 * HOUR))]);
+    const run = async (at: Date) => {
+      const sonarr = makeInstanceStub([identityBlocked(1, 'dl-stuck')], {
+        importCheck: (qis) => importableCheck(qis[0]!.downloadId!),
+      });
+      const log = captureLogger();
+      await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: sonarr.client }), config: importCfg(), now: at, logger: log.logger });
+      const [row] = await t.db.select().from(arrQueueCleanupActions).where(eq(arrQueueCleanupActions.createdAt, at));
+      return { imports: sonarr.calls.imports.length, action: row!.action, loops: log.loops().map((l) => l.meta) };
+    };
+    expect(await run(t0)).toEqual({ imports: 1, action: 'imported', loops: [] });
+    // Still blocked an hour later, after two counted imports (2 days ago and the last run): held, logged once.
+    expect(await run(new Date(t0.getTime() + HOUR))).toEqual({
+      imports: 0,
+      action: 'skipped_loop',
+      loops: [
+        {
+          kind: 'skipped_loop',
+          instance: 'sonarr',
+          downloadId: 'dl-stuck',
+          title: 'Show.S01E01.1080p.WEB-DL-GRP',
+          targetIds: [1001],
+          actionClass: 'importable',
+          priorImports: 2,
+        },
+      ],
+    });
+    // Standing: still held the hour after, with no new loop line (D-21).
+    expect(await run(new Date(t0.getTime() + 2 * HOUR))).toEqual({ imports: 0, action: 'skipped_loop', loops: [] });
+    // The digest lists it among the held loops.
+    const section = await buildQueueCleanupDigestSection({ db: t.db, now: new Date(t0.getTime() + 2 * HOUR) });
+    expect(section!.loops.skipped).toEqual([
+      { instance: 'sonarr', targetId: 1001, itemRef: null, downloadId: 'dl-stuck', title: 'Show.S01E01.1080p.WEB-DL-GRP', runs: 2 },
+    ]);
+  });
+
+  it('D-27 STORAGE: a census importable cell is left out of the stored row (rollback-safe); an enforced one is stored', async () => {
+    const cfg = clone();
+    cfg.modes.sonarr.have_better = 'enforce';
+    await setArrQueueCleanupConfig({ db: t.db, config: cfg, actorId: null });
+    const storedModes = async () => {
+      const [row] = await t.db.select().from(appSettings).where(eq(appSettings.key, 'arr_queue_cleanup_config'));
+      return (row!.value as { modes: Record<string, Record<string, string>> }).modes;
+    };
+    expect((await storedModes()).sonarr).toEqual({ have_better: 'enforce', retry_import: 'census', bad_release: 'census' });
+    expect((await storedModes()).radarr).toEqual({ have_better: 'census', retry_import: 'census', bad_release: 'census' });
+    expect((await getArrQueueCleanupConfig(t.db))!.modes.sonarr.importable).toBe('census');
+
+    const next = (await getArrQueueCleanupConfig(t.db))!;
+    next.modes.radarr.importable = 'enforce';
+    await setArrQueueCleanupConfig({ db: t.db, config: next, actorId: null });
+    expect((await storedModes()).radarr).toEqual({
+      have_better: 'census',
+      retry_import: 'census',
+      bad_release: 'census',
+      importable: 'enforce',
+    });
+    expect((await storedModes()).sonarr).not.toHaveProperty('importable');
+    const read = (await getArrQueueCleanupConfig(t.db))!;
+    expect([read.modes.sonarr.importable, read.modes.radarr.importable]).toEqual(['census', 'enforce']);
+  });
+
+  it('D-27 CENSUS never imports: an importable download on a census cell gets a row and no ManualImport', async () => {
+    const sonarr = makeInstanceStub([identityBlocked(1, 'dl-census')], {
+      importCheck: (qis) => importableCheck(qis[0]!.downloadId!),
+      explodeOnWrite: true,
+    });
+    const report = await evaluateQueueCleanup({ db: t.db, clients: makeClients({ sonarr: sonarr.client }), config: clone() });
+    expect(sonarr.calls.order).toEqual([]);
+    expect((await rowsByQueueId()).map((r) => [r.actionClass, r.mode, r.action, r.outcome])).toEqual([
+      ['importable', 'census', 'none', 'observed'],
+    ]);
+    expect(sonarrReport(report)).toMatchObject({ actionsTaken: 0, errors: 0 });
+    // The reason is the check's text without the file name (D-10 rule 3).
+    expect((await rowsByQueueId())[0]!.reason).toBe(importCheckReasonText({ ...importableCheck('dl-census'), file: null }));
   });
 });
 

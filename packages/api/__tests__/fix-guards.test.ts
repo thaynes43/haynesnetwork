@@ -635,7 +635,14 @@ describe('the settings and the kill switch (DESIGN-055 D-01)', () => {
       knownIssueServers: ['haynesops', 'not-a-server'],
     });
     expect(saved).toEqual({
-      remedies: { replacement_preview: false, season_guard: false, language_check: false, playback_triage: false },
+      remedies: {
+        replacement_preview: false,
+        season_guard: false,
+        language_check: false,
+        playback_triage: false,
+        // PLAN-077 P2 (DESIGN-055 D-07): Force Search's remedy, untouched by this write, ships off.
+        import_check: false,
+      },
       knownIssueServers: ['haynesops'],
     });
     const audit = await tdb.db
@@ -646,12 +653,75 @@ describe('the settings and the kill switch (DESIGN-055 D-01)', () => {
       'playback_known_issue_servers',
       'repair_guide_remedies',
     ]);
-    expect(await memberApi.fix.guideConfig()).toMatchObject({ guideOn: false });
+    expect(await memberApi.fix.guideConfig()).toMatchObject({ guideOn: false, importCheckOn: false });
+    // Force Search's remedy alone never opens the Fix guide (DESIGN-055 D-07, PLAN-077 P2).
+    await adminApi.fix.setGuideSettings({ remedies: { import_check: true } });
+    expect(await memberApi.fix.guideConfig()).toMatchObject({ guideOn: false, importCheckOn: true });
+    await adminApi.fix.setGuideSettings({ remedies: { import_check: false } });
 
     const item = await seedMediaItem(tdb.db, 'radarr', { title: 'Switch Off', arrItemId: 5001 });
     const stub = stubArrBundle(radarrRoutes({ files: [movieFile(51)], releases: [] }));
     const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
     expect(await api.fix.preview({ mediaItemId: item.id })).toEqual({ plan: null });
     await setKnownIssueServers({ db: tdb.db, servers: [], actorId: null });
+  });
+});
+
+describe('queue-aware Force Search through the router (DESIGN-055 D-07, PLAN-077 P2)', () => {
+  const MATCHED = 'Found matching movie via grab history, but release was matched to movie by ID. Manual Import required.';
+  const turkseed = (arrFixture('radarr.manualimport-spider-man-turkseed') as Array<Record<string, unknown>>)[0]!;
+
+  it('searchPlan shows the import; forceSearch with its digest imports through ManualImport and sends no search', async () => {
+    await setRepairGuideRemedies({ db: tdb.db, remedies: { import_check: true }, actorId: null });
+    try {
+      const member = await createUser(tdb.db);
+      const item = await seedMediaItem(tdb.db, 'radarr', { title: 'Spider-Man: Brand New Day', arrItemId: 9428 });
+      let imported = false;
+      const movie = { ...(arrFixture('radarr.movie-byid') as Record<string, unknown>), ...(arrFixture('radarr.movie-9428') as Record<string, unknown>) };
+      const stub = stubArrBundle([
+        {
+          path: '/api/v3/queue',
+          body: () => ({
+            page: 1,
+            pageSize: 200,
+            totalRecords: imported ? 0 : 1,
+            records: imported
+              ? []
+              : [
+                  {
+                    id: 5501, movieId: 9428, downloadId: '59d2ffec', title: turkseed.folderName, status: 'completed',
+                    trackedDownloadStatus: 'warning', trackedDownloadState: 'importBlocked', size: 1, sizeleft: 0,
+                    added: '2026-10-06T00:19:18Z', statusMessages: [{ title: turkseed.folderName, messages: [MATCHED] }],
+                  },
+                ],
+          }),
+        },
+        { path: '/api/v3/manualimport', body: [{ ...turkseed, rejections: [{ reason: MATCHED, type: 'permanent' }] }] },
+        { path: '/api/v3/movie/9428', body: () => ({ ...movie, hasFile: imported }) },
+        {
+          method: 'POST',
+          path: '/api/v3/command',
+          body: () => {
+            imported = true;
+            return { id: 91, name: 'ManualImport' };
+          },
+        },
+        { path: '/api/v3/command/91', body: { id: 91, name: 'ManualImport', status: 'completed' } },
+      ]);
+      const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+      const plan = await api.fix.searchPlan({ mediaItemId: item.id });
+      expect(plan).toMatchObject({ queueAware: true, state: 'import', check: { verdict: 'importable', title: { verdict: 'agrees' } } });
+      // Nothing about the plan leaks the command body or the file's full path.
+      expect(JSON.stringify(plan)).not.toContain('/data/haynestower');
+
+      const result = await api.fix.forceSearch({ mediaItemId: item.id, planDigest: plan.digest });
+      expect(result).toMatchObject({ outcome: 'imported', commandName: 'ManualImport', eventId: null });
+      const commands = stub.callsFor('POST', '/api/v3/command').map((c) => (c.body as { name: string }).name);
+      expect(commands).toEqual(['ManualImport']);
+      const [row] = await tdb.db.select().from(schema.repairRequests).where(eq(schema.repairRequests.mediaItemId, item.id));
+      expect(row).toMatchObject({ kind: 'import_download', scope: 'item', status: 'completed', requesterId: member.id });
+    } finally {
+      await setRepairGuideRemedies({ db: tdb.db, remedies: { import_check: false }, actorId: null });
+    }
   });
 });

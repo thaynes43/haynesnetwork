@@ -1,6 +1,6 @@
 'use client';
 
-// ADR-109 / DESIGN-055 D-01, D-09 (PLAN-077 P1) — the Repair Guide's settings on /admin/fixes: the per-remedy kill
+// ADR-109 / DESIGN-055 D-01, D-07, D-09 (PLAN-077 P1, P2) — the Repair Guide's settings on /admin/fixes: the per-remedy kill
 // switch (`repair_guide_remedies`) and the Known-Issue Servers (T-314). One form, one Save, audited
 // (`update_app_setting`). Every remedy ships off; staff turn each on after its live check. With every remedy off, Fix
 // opens today's dialog. Reflow-safe (hard rule 9): the save-status slot is reserved, toggles only change their own box.
@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
 
-type Remedy = 'replacement_preview' | 'season_guard' | 'language_check' | 'playback_triage';
+type Remedy = 'replacement_preview' | 'season_guard' | 'language_check' | 'playback_triage' | 'import_check';
 
 const REMEDIES: ReadonlyArray<{ key: Remedy; label: string; hint: string }> = [
   {
@@ -30,6 +30,13 @@ const REMEDIES: ReadonlyArray<{ key: Remedy; label: string; hint: string }> = [
     key: 'playback_triage',
     label: 'Check the play before a Won’t play Fix',
     hint: 'Looks for the person’s play on our servers first. When it never reached them, the guide points to our copy instead of replacing a working file.',
+  },
+  // DESIGN-055 D-07 (PLAN-077 P2) — the queue-aware Force Search. It belongs to Force Search, so it never opens the Fix
+  // guide on its own.
+  {
+    key: 'import_check',
+    label: 'Force Search checks the queue first',
+    hint: 'Force Search on a missing episode or movie reads the download queue first. A finished download that passes the Import Check is added instead of searching again, and a download already on its way is left alone. This one changes Force Search, not Fix.',
   },
 ];
 
@@ -67,8 +74,8 @@ export function RepairGuideSettings() {
     <section className="card repair-guide-settings" aria-labelledby="repair-guide-settings-title">
       <h2 id="repair-guide-settings-title">Repair Guide</h2>
       <p className="muted">
-        Fix opens the Repair Guide for movies and TV once any check below is on. A check that is off is skipped. With
-        all of them off, Fix works as it always has.
+        Fix opens the Repair Guide for movies and TV once any of its checks below is on, and the last check changes Force
+        Search. A check that is off is skipped. With all of them off, Fix and Force Search work as they always have.
       </p>
       <form
         className="admin-form"

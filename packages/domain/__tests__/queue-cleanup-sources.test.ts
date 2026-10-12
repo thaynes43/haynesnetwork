@@ -599,6 +599,9 @@ describe('config back-compat (D-16, pure)', () => {
       modes: {
         ...LIVE_STORED_2026_09_29.modes,
         lidarr: { ...LIVE_STORED_2026_09_29.modes.lidarr, manual_match: 'enforce' },
+        // D-27: Sonarr's and Radarr's `importable` cells are arr cells too; L2 needs them enforced.
+        sonarr: { ...LIVE_STORED_2026_09_29.modes.sonarr, importable: 'enforce' },
+        radarr: { ...LIVE_STORED_2026_09_29.modes.radarr, importable: 'enforce' },
       },
     } as unknown as ArrQueueCleanupConfig;
     expect(deriveQueueCleanupLadderLevel(flipped, 'arr')).toBe(2);
@@ -737,8 +740,8 @@ describe('the suite on embedded Postgres (D-15..D-20)', () => {
     const cfg = await getArrQueueCleanupConfig(t.db);
     expect(cfg).toEqual({
       modes: {
-        sonarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' },
-        radarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' },
+        sonarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce', importable: 'census' },
+        radarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce', importable: 'census' },
         lidarr: { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce', manual_match: 'census' },
         lazylibrarian: { retry_import: 'census', bad_release: 'census', leftover: 'census' },
         kapowarr: { bad_release: 'census' },
@@ -755,7 +758,8 @@ describe('the suite on embedded Postgres (D-15..D-20)', () => {
       ['comics', 0],
     ]);
 
-    // Flip the Lidarr manual_match cell the way the coordinator will: arr reads L2, the new families stay L0.
+    // Flip the Lidarr manual_match cell the way the coordinator did: arr stays L1 while Sonarr's and Radarr's
+    // `importable` cells are census (DESIGN-046 D-27), and the new families stay L0.
     cfg!.modes.lidarr.manual_match = 'enforce';
     await setArrQueueCleanupConfig({ db: t.db, config: cfg!, actorId: null });
     // D-16 rule 4: an all-census suite instance is not stored, so the row stays one the previous image accepts.
@@ -765,9 +769,9 @@ describe('the suite on embedded Postgres (D-15..D-20)', () => {
     };
     expect(await storedModes()).toEqual(['lidarr', 'radarr', 'sonarr']);
     const after = await getArrQueueCleanupStatus({ db: t.db });
-    expect(after.ladder.level).toBe(2);
+    expect(after.ladder.level).toBe(1);
     expect(after.ladders.map((l) => [l.family, l.level])).toEqual([
-      ['arr', 2],
+      ['arr', 1],
       ['books', 0],
       ['comics', 0],
     ]);
@@ -777,10 +781,15 @@ describe('the suite on embedded Postgres (D-15..D-20)', () => {
     await setArrQueueCleanupConfig({ db: t.db, config: next!, actorId: null });
     expect(await storedModes()).toEqual(['lazylibrarian', 'lidarr', 'radarr', 'sonarr']);
     const final = await getArrQueueCleanupStatus({ db: t.db });
-    expect(final.config.modes.sonarr).toEqual({ have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' });
+    expect(final.config.modes.sonarr).toEqual({
+      have_better: 'enforce',
+      retry_import: 'enforce',
+      bad_release: 'enforce',
+      importable: 'census',
+    });
     expect(final.config.modes.lazylibrarian).toEqual({ retry_import: 'census', bad_release: 'census', leftover: 'enforce' });
     expect(final.ladders.map((l) => [l.family, l.level])).toEqual([
-      ['arr', 2],
+      ['arr', 1],
       ['books', 1],
       ['comics', 0],
     ]);

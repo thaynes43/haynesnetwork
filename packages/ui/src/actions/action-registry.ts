@@ -11,7 +11,7 @@
 import type { IconKey } from '../icons/registry';
 
 /** Every per-item media action the estate exposes. One entry per verb, keyed here. */
-export type MediaActionType = 'fix' | 'forceSearch' | 'consume' | 'retryImport' | 'notOnDisk';
+export type MediaActionType = 'fix' | 'forceSearch' | 'consume' | 'retryImport' | 'notOnDisk' | 'importDownload';
 
 /** The two canonical looks: `primary` = green accent pill (`.btn.primary`); `outline` = neutral
  *  surface pill (`.btn`). Owner rule (ADR-071): Fix is ALWAYS the green pill; Force Search is
@@ -41,6 +41,9 @@ export interface MediaActionSpec {
  *   call site through <ConsumeLink label=…>; the entry here fixes the look, not the string.
  * - `retryImport` — the activity-failure "retry the stuck import" outline pill.
  * - `notOnDisk` — the inert, disabled "Not on Disk" pill shown where a missing item has no consume.
+ * - `importDownload` — ADR-109 / DESIGN-055 D-01, D-07: the Repair Guide's "Import it" confirm, which adds a finished
+ *   download that passed the Import Check to its missing episode or movie. Shown only inside the guide's Modal (the
+ *   explanatory confirm, hard rule 8), so it is not destructive here: nothing is deleted or blocked.
  */
 export const MEDIA_ACTIONS: Record<MediaActionType, MediaActionSpec> = {
   fix: { type: 'fix', label: 'Fix', variant: 'primary', destructive: false },
@@ -49,6 +52,7 @@ export const MEDIA_ACTIONS: Record<MediaActionType, MediaActionSpec> = {
   consume: { type: 'consume', label: '', variant: 'primary', external: true, destructive: false },
   retryImport: { type: 'retryImport', label: 'Retry import', variant: 'outline', destructive: false },
   notOnDisk: { type: 'notOnDisk', label: 'Not on Disk', variant: 'outline', destructive: false },
+  importDownload: { type: 'importDownload', label: 'Import it', variant: 'primary', destructive: false },
 };
 
 /** The action types (registry keys) — for exhaustive iteration in guards/tests. */

@@ -122,6 +122,20 @@ export * from './fix-guards';
 export * from './fix-plan';
 export * from './language-check';
 export * from './playback-evidence';
+// ADR-109 C-04, C-05 / DESIGN-055 D-02, D-07 (PLAN-077 P2) — the Repair Request writer, the Import Check (pure) and the
+// queue-aware Force Search that reads the queue before it searches.
+export * from './repair-requests';
+export * from './import-check';
+export * from './queue-aware-search';
+// ADR-110 / DESIGN-055 D-05 (PLAN-077 P2): Title Evidence, pure. Its parseReleaseName and ParsedReleaseName share their
+// names with release-terms' (DESIGN-052 D-12), which keep the barrel names; Title Evidence's are re-exported under
+// their own names here (inside this package, import them from './title-evidence').
+export * from './title-evidence';
+export { parseReleaseName, type ParsedReleaseName } from './release-terms';
+export {
+  parseReleaseName as parseTitleEvidenceName,
+  type ParsedReleaseName as TitleEvidenceParsedName,
+} from './title-evidence';
 export * from './search-requests';
 export * from './search-flow';
 // ADR-071 owner ruling 2026-07-19 — the bulk movies/TV collection Force Search (fans out the per-item

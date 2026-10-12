@@ -2,7 +2,7 @@
 // split). ADR-008: the ONLY sanctioned *arr write-backs are Fix (mark-failed / delete /
 // search) and Restore (add-item / create-tag), plus the later ruled additions (the ADR-083 queue janitor; the
 // ADR-093 Release Block profile and Seerr watchlist enrollment; the ADR-094 janitor release block on Lidarr; the ADR-097
-// title exclusion on Radarr and Sonarr). This
+// title exclusion on Radarr and Sonarr; the ADR-109 ManualImport of the Import Check, DESIGN-055 D-07). This
 // entrypoint may be imported ONLY by
 // packages/domain — enforced by the D-12 guard test. Exercised exclusively via fetch stubs in tests.
 import { assertArrEnv, type ArrEnvConfig } from './config';
@@ -25,6 +25,7 @@ import {
   type SeerrUserWatchlistSync,
 } from './schemas/release-block';
 import { commandResponseSchema, tagSchema, type ArrCommandResponse, type ArrTag } from './schemas/common';
+import type { ManualImportMode, RadarrManualImportFile, SonarrManualImportFile } from './schemas/manual-import';
 import { sonarrSeriesSchema, type SonarrSeries } from './schemas/sonarr';
 import { radarrMovieSchema, type RadarrMovie } from './schemas/radarr';
 import { lidarrArtistSchema, type LidarrArtist } from './schemas/lidarr';
@@ -229,6 +230,17 @@ export class SonarrWriteClient extends ReleaseProfileWriteClient {
     return this.runCommand({ name: 'SeasonSearch', seriesId, seasonNumber });
   }
 
+  /**
+   * ADR-109 C-05 / DESIGN-055 D-03, D-07 (PLAN-077 P2) — `POST /command {name: 'ManualImport', files, importMode}`: import
+   * a finished download's files onto the given episodes, the request Sonarr 4.0.20.3012's own interactive-import UI
+   * sends (pinned in write-clients.test.ts). Hard rule 4: the Import Check's write-back, from a person's Force Search
+   * (a Repair Request) or the janitor's enforced `importable` cell; it adds a file, never deletes one the *arr would not
+   * replace on its own import.
+   */
+  manualImport(files: SonarrManualImportFile[], importMode: ManualImportMode = 'auto'): Promise<ArrCommandResponse> {
+    return this.runCommand({ name: 'ManualImport', files, importMode });
+  }
+
   /** `POST /series` — Restore re-add (D-16). */
   addSeries(payload: AddSeriesPayload): Promise<SonarrSeries> {
     return this.http.requestJson('POST', 'series', sonarrSeriesSchema, { body: payload });
@@ -261,6 +273,14 @@ export class RadarrWriteClient extends ReleaseProfileWriteClient {
   /** `POST /command {name: 'MoviesSearch', movieIds}` (D-03 payload keys). */
   searchMovies(movieIds: number[]): Promise<ArrCommandResponse> {
     return this.runCommand({ name: 'MoviesSearch', movieIds });
+  }
+
+  /**
+   * ADR-109 C-05 / DESIGN-055 D-03, D-07 (PLAN-077 P2) — `POST /command {name: 'ManualImport', files, importMode}`, the
+   * request Radarr 6.4.4.10685's own interactive-import UI sends (pinned in write-clients.test.ts).
+   */
+  manualImport(files: RadarrManualImportFile[], importMode: ManualImportMode = 'auto'): Promise<ArrCommandResponse> {
+    return this.runCommand({ name: 'ManualImport', files, importMode });
   }
 
   /**

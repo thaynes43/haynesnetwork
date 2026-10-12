@@ -8,6 +8,11 @@
 //      under the shared per-requester hourly budget BEFORE the *arr call (D-07/D-17);
 //   3. POST /command (EpisodeSearch | SeriesSearch | MoviesSearch | AlbumSearch).
 //
+// ADR-109 C-05 / DESIGN-055 D-07 (PLAN-077 P2): with the `import_check` remedy on, a Force Search on one episode or one
+// movie reads the queue first (queue-aware-search.ts): nothing queued searches as above; a download on its way sends
+// nothing; a stuck one gets the Import Check (an import is a Repair Request); a failed or defective one is removed with
+// blocklist and searched once. The bulk collection search stays search-only (`searchOnly`).
+//
 // Lives in packages/domain so @hnet/arr/write stays confined here (D-12/D-18 guard).
 import { mediaItems, type DbClient } from '@hnet/db';
 import { eq } from 'drizzle-orm';
@@ -18,6 +23,8 @@ import { recordSearchRequest } from './search-requests';
 import { type ArrClientBundle } from './arr-clients';
 import { listMediaChildren } from './media-children';
 import { resolveSearchTarget, type SearchScope } from './action-scope';
+import { getRepairGuideRemedies } from './repair-guide-settings';
+import { queueAwareEligible, runQueueAwareForceSearch, type ForceSearchOutcome } from './queue-aware-search';
 
 export interface RunForceSearchInput {
   db?: DbClient;
@@ -35,16 +42,77 @@ export interface RunForceSearchInput {
   targetChildId?: number;
   /** Sonarr season number — for the 'season' scope. */
   seasonNumber?: number;
+  /**
+   * ADR-109 C-05 / DESIGN-055 D-07 (PLAN-077 P2) — the queue-aware plan the person confirmed (`fix.searchPlan`'s digest)
+   * and, for "Import this download onto...", the episode they chose. An import or a removal needs it.
+   */
+  confirm?: { digest: string; ontoEpisodeId?: number } | null;
+  /**
+   * Search only, never queue-aware (the bulk collection search: a press there confirms "search these", not an import
+   * or a removal it never showed).
+   */
+  searchOnly?: boolean;
+  /** How long a queue-aware import waits for the ManualImport command (tests shorten it). */
+  commandWait?: { timeoutMs: number; intervalMs: number };
 }
 
 export interface RunForceSearchResult {
-  eventId: string;
+  /**
+   * What the press did (DESIGN-055 D-07): `searched` (today's search), `on_its_way` (something is already
+   * downloading; nothing sent), `imported` / `importing` (a stuck download was imported, or is being), or
+   * `removed_and_searched` (a failed or defective download was removed with blocklist, then one search).
+   */
+  outcome: ForceSearchOutcome;
+  /** The `search_requested` event, when the press searched. */
+  eventId: string | null;
+  /** The Repair Request, when the press imported. */
+  repairRequestId: string | null;
   targetLabel: string | null;
-  /** The *arr command that was accepted, e.g. 'EpisodeSearch' — surfaced to the UI. */
-  commandName: string;
+  /** The *arr command that was accepted, e.g. 'EpisodeSearch' or 'ManualImport' — surfaced to the UI. */
+  commandName: string | null;
 }
 
 export async function runForceSearch(input: RunForceSearchInput): Promise<RunForceSearchResult> {
+  const db = resolveDb(input.db);
+  if (!input.searchOnly) {
+    const [row] = await db
+      .select({ arrKind: mediaItems.arrKind })
+      .from(mediaItems)
+      .where(eq(mediaItems.id, input.mediaItemId));
+    if (row) {
+      const resolved = resolveSearchTarget(row.arrKind, {
+        scope: input.scope,
+        targetChildId: input.targetChildId,
+        seasonNumber: input.seasonNumber,
+      });
+      const remedies = await getRepairGuideRemedies(db);
+      if (
+        queueAwareEligible({
+          arrKind: row.arrKind,
+          scope: resolved.scope,
+          targetChildId: resolved.targetChildId,
+          importCheckOn: remedies.import_check,
+        })
+      ) {
+        return runQueueAwareForceSearch(input, (opts) => searchOnce(input, opts));
+      }
+    }
+  }
+  const r = await searchOnce(input, {});
+  return { outcome: 'searched', eventId: r.eventId, repairRequestId: null, targetLabel: r.targetLabel, commandName: r.commandName };
+}
+
+/**
+ * Today's Force Search (DESIGN-005 D-17): the audited `search_requested` event, then the search command. A queue-aware
+ * removal (D-07) rides in the same event and runs between the two (`beforeSearch`), so it is audited before any call.
+ */
+async function searchOnce(
+  input: RunForceSearchInput,
+  opts: {
+    queueRemoval?: { downloadId: string | null; title: string | null; why: 'failed' | 'defect' } | null;
+    beforeSearch?: () => Promise<void>;
+  },
+): Promise<{ eventId: string; targetLabel: string | null; commandName: string }> {
   const db = resolveDb(input.db);
   const [item] = await db
     .select({
@@ -100,7 +168,11 @@ export async function runForceSearch(input: RunForceSearchInput): Promise<RunFor
     targetArrChildId: targetChildId,
     seasonNumber,
     targetLabel,
+    queueRemoval: opts.queueRemoval ?? null,
   });
+
+  // DESIGN-055 D-07: a failed or defective download is removed (with blocklist, skipRedownload) before the one search.
+  if (opts.beforeSearch) await opts.beforeSearch();
 
   // Search only — no mark-failed, no delete (ADR-008: this is the whole point).
   try {

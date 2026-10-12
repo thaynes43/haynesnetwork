@@ -35,6 +35,12 @@ export interface CreateSearchRequestInput {
   seasonNumber?: number | null;
   /** Display-durable label, e.g. 'S01E10 · Chapter 10' / album title / 'Season 2' (audit copy). */
   targetLabel?: string | null;
+  /**
+   * ADR-109 C-05 / DESIGN-055 D-07 (PLAN-077 P2) — the stuck download a queue-aware Force Search removes (with blocklist,
+   * `skipRedownload`) before it searches once. Recorded in the event's payload, so the removal is audited before the
+   * *arr call like the search itself.
+   */
+  queueRemoval?: { downloadId: string | null; title: string | null; why: 'failed' | 'defect' } | null;
 }
 
 export interface CreateSearchRequestResult {
@@ -121,6 +127,7 @@ export async function recordSearchRequest(
           targetLabel: input.targetLabel ?? null,
           requesterId: input.requesterId,
           arrKind: item.arrKind,
+          ...(input.queueRemoval ? { queueRemoval: input.queueRemoval } : {}),
         },
       })
       .returning({ id: ledgerEvents.id });

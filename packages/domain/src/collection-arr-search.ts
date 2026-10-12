@@ -81,6 +81,8 @@ export async function forceSearchArrCollection(
         requesterId: input.requesterId,
         requesterIsAdmin: input.requesterIsAdmin,
         mediaItemId,
+        // DESIGN-055 D-07 (PLAN-077 P2): the bulk search confirms "search these", never an import or a removal.
+        searchOnly: true,
       });
       report.searched += 1;
     } catch (error) {
