@@ -104,6 +104,21 @@ Priority is how often real reports need the remedy, and how much harm today's be
   The Lost Tapes S01 and stop at each preview: GoodFellas shows the no-play message, then the Same Release refusal; the
   season guide shows the pack warning. No write is sent.
 - **Done when** the live previews match and the remedies are switched on.
+- **Status (2026-10-12): built; deploy and live check next.** What landed, and the decisions behind it, are DESIGN-055
+  D-09's "P1 decisions" (items 1-9) and D-08's P1 note:
+  - Steps 1-6: `fix-guards.ts` (pure), `fix-plan.ts` (the read-only plan, `fix.preview`), `language-check.ts`,
+    `playback-evidence.ts`, the guarded path in `fix-flow.ts`, the guide (`repair-guide.tsx`, rules in
+    `lib/repair-guide.ts`) and the admin card on `/admin/fixes`. Two audited settings, migration 0098:
+    `repair_guide_remedies` (four remedies, all off) and `playback_known_issue_servers`.
+  - Step 3, Q-07's order half: resolved (the *arr decision order). The Same Release rule was refined on GoodFellas' live
+    release list (Usenet sizes, custom-format score; D-09 P1 decision 4).
+  - Step 7, read 2026-10-12: the HaynesOps and HaynesKube Tautullis post `play` and `stop`; HaynesTower's posts nothing
+    to the app. The template change (`server`, Playback Error) is applied after the deploy.
+  - Tests: `fix-guards.test.ts` (domain, pure, on the live GoodFellas and Lost Tapes reads), `fix-guards.test.ts` (api,
+    end to end on embedded Postgres), `release-clients.test.ts` (arr), `repair-guide.test.ts` (web rules),
+    `repair-guide-script.test.ts` (sync); e2e `repair-guide.spec.ts`: Case C (AC-42) and the season guard (AC-40's
+    season half). The live check runs `tsx /sync/src/scripts/repair-guide.ts` in a web pod (the app's sign-in cannot
+    be driven from inside the cluster).
 
 ### P2: queue-aware Force Search, the Import Check and the janitor classes
 
