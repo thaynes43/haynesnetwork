@@ -44,8 +44,17 @@ D-12, ADR-109 C-06/C-07, ADR-111 C-03/C-05, PRD R-266/R-267/R-270/R-271 and glos
   all 8 S10 items, and on 22 more items in S5, S6 and S9. Neither server's database had any play, watched flag or
   resume point on the show for any account, and neither did Tautulli or `watch_events`, so no watch state could move.
   The show-level ordering on both servers is now TheTVDB (Aired), the numbering Sonarr and the files use, and the show
-  was refreshed. All 8 S10 titles match their files. 5 items in S5 and S6 still differ, between TheTVDB in Plex and
-  Sonarr's own data.
+  was refreshed. All 8 S10 titles match their files.
+- **S5 and S6 re-mapped (same day).** The 5 items still mis-titled led to the cause. The LAZY AMZN season packs use
+  Amazon's numbering, so Sonarr had imported most S5 and S6 files onto the wrong TVDB episodes. In S5, each file was one
+  episode late from E02 on. S6 was scrambled. Subtitle text, and title-card frames for one file with no subtitles,
+  identified each file.
+  - Sonarr: 43 files staged out of the library and manual-imported onto their true episodes (move). 3 duplicates
+    deleted. S6 E05-06, E22 and E23 grabbed from correctly named AndreMor/PMTP releases and imported.
+  - Plex: Plex's own metadata provider holds stale duplicate entries for S5E09 and S6E11, so those two items have
+    locked titles and summaries on both servers. All 215 items on both servers now carry their files' titles.
+  - Left as is: **S6E30 A Stella Performance** is the second half of the S6E26 file (Save the Last Pants). Its only
+    release is named S06E26E30, which Sonarr and Plex read as E26 to E30, so it cannot be mapped as its own episode.
 - **Next in PLAN-077:** P1. The TLHG mislabels are a live example for P4 (Title Check): those single-episode releases
   are named for other pairs, and Sonarr imported them into the wrong slots.
 
