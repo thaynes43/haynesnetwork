@@ -1,5 +1,22 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-12 16:35Z: PLAN-077 drafted — self-service media repair (docs only, Proposed)
+
+The owner wants Plex users to fix problems themselves on haynesnetwork.com instead of filing Seerr issues for staff,
+as a hard rule once the platform can fix what people report. Seerr issues 2, 3 and 4 (GoodFellas, The Paper 2x06,
+Regular Show: The Lost Tapes S01) were worked by hand today; none was self-serviceable. Their evidence became ADR-109
+(repair in place behind Fix and Force Search), ADR-110 (episode-title evidence and the Mislabel Block), ADR-111 (the
+Seerr issue bridge and a readiness gate), DESIGN-055, PRD R-262..R-271 and PLAN-077, all Proposed. Nothing is built.
+
+- **Do P0 first** ([#887](https://github.com/thaynes43/haynesnetwork/issues/887)): since L2 the janitor has removed
+  and blocklisted 82 Sonarr downloads for "Found archive file" (9 episodes still missing). SABnzbd adds the `.7z`
+  extension only after its unpack step, so obfuscated posts are never extracted
+  ([haynes-ops#3834](https://github.com/thaynes43/haynes-ops/issues/3834)).
+- **Owner questions** DESIGN-055 Q-01..Q-05 (override authority, Seerr writes, Plex audio language scope, the gate's
+  threshold, what the rule does) are open and gate P5..P8 only. Ask them one at a time and fold each answer back in.
+- Facts read today: Sonarr and Radarr have no recycle bin; Seerr 3.5.0 has 18 users (17 on default permissions that
+  include `MANAGE_ISSUES`), 10 of them with an app account; its webhook sends no issue events.
+
 ## 2026-10-12 05:23Z: PLAN-075 delivered — agent-owned watch recommendations
 
 **The owner's book-repair stop below remains binding.** This task does not authorize resuming it.

@@ -1,0 +1,432 @@
+# DESIGN-055: Self-service media repair: the Repair Guide, its remedies, and the Seerr issue bridge
+
+- **Status:** Proposed
+- **Last updated:** 2026-10-12
+- **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
+  (episode-title evidence), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
+  D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
+  DESIGN-030 (Activity), DESIGN-012 (webhook ingestion), DESIGN-032 (ticket locator). Plan: PLAN-077.
+
+## Overview
+
+The owner wants Plex users to fix problems themselves on haynesnetwork.com instead of filing Seerr issues for staff.
+That can become the rule only once the platform reliably fixes what people actually report. Three Seerr issues were
+worked by hand on 2026-10-12, and none was self-serviceable:
+
+| Case | The report | What it really was | What fixed it by hand | What today's tools would have done | Remedy here |
+|---|---|---|---|---|---|
+| A. Regular Show: The Lost Tapes S01 (Seerr 4) | "Missing episode 11 and all the episodes after 10 are slid up by 1" | A BiOMA pack numbered one behind TVDB from E12 on: 8 files one slot low, the real E11 "upgraded" away; a Disney+ E23 filed on E24; the only E11 and E13 releases rejected by the profile; Portuguese default audio | Manual import of the existing files, highest first, then rename; two override grabs plus manual imports; a hand unpack of a `.7z`; a per-series release profile; Plex show-level audio language | Episode Fix: blocklist, then a search that finds nothing acceptable. Season Fix: also blocklists the 10 good releases | D-04 Re-map, D-05 Mislabel Block, D-06 Release Pick, D-08 language check, D-09 season guard |
+| B. The Paper (2025) S02E06 (Seerr 3) | "Missing episode 6" | A finished download whose inner file name Sonarr parsed as 2x06 to 2x125; import blocked 18 days; the janitor saw it 423 times as `unknown` | Admin manual import | Force Search: 81 releases, 0 grabbed (the stuck download held the episode). Activity Retry import: same failure, admins only | D-07 queue-aware Force Search and Import Check |
+| C. GoodFellas (1990) (Seerr 2) | "Click play, it says I just watched it" | A healthy 87.6 GB DV remux; the play never reached our servers (most likely Plex's own free-catalogue copy) | Nothing to fix on the server | A Won't play Fix with no grab history deletes the 88 GB file and downloads an essentially identical release | D-09 playback triage and Replacement Preview |
+
+The shape: Fix and Force Search stay the only buttons. Each opens the **Repair Guide**, which asks one question at a
+time, reads the evidence, previews the remedy, and acts only after the person confirms. Every remedy is a **Repair
+Request** with an audit trail, budgeted like Fix. Seerr issues are mirrored into the app and linked to the guide, and
+every report's outcome feeds a readiness gate.
+
+**Facts this design relies on (read-only, 2026-10-12).** Sonarr 4.0.20.3012 and Radarr 6.4.4.10685, both with no
+recycle bin (`recycleBin: ""`): a deleted or replaced file is gone. Seerr 3.5.0: 4 issues ever, 18 users, 17 of them
+on the default permissions that include `MANAGE_ISSUES`, 10 with an app account (by email); the webhook to the app is
+on with types 204 (media events only); the API key acts as user 1 unless `X-API-User` names another. SABnzbd 5.1.3
+leaves obfuscated `.7z` posts un-extracted (haynes-ops#3834); since 2026-09-29 the janitor's `bad_release` cell has
+removed and blocklisted 82 Sonarr downloads carrying "Found archive file" (issue #887). The janitor's *arr family is
+at L2. App usage: 2 Fix requests in 90 days (one person), 1 Helpdesk ticket ever.
+
+## Detailed design
+
+### D-01 The Repair Guide
+
+- **Entry points.** The existing `<MediaAction action="fix">` and `<MediaAction action="forceSearch">` (ADR-071) open
+  the guide instead of today's dialogs. No new head button. A verb shown inside the guide that is a media action
+  ("Pick a release", "Import it") gets a `MEDIA_ACTIONS` registry row and the action-anatomy guard's token list.
+- **Container.** A `Modal` (hard rule 8: an explanatory multi-step confirm). Steps replace each other in place inside
+  the modal body, which reserves its height for the tallest step, so nothing outside it moves (hard rule 9).
+- **Question tree.**
+
+  | Entry | First question | Routes to |
+  |---|---|---|
+  | Fix on an episode or movie with a file | "What's wrong?" (the R-45 reasons, worded for people) | Won't play: D-09 triage, then Fix with the Replacement Preview. Wrong language: D-08. Wrong episode (TV) or wrong content: "Which episode is this really?" opens D-04; a wrong movie runs Fix with the Replacement Preview. Missing subtitles: the Bazarr path (ADR-016). Wrong version or quality: Fix, with "See every release" (D-06). Something else: Fix, or a prefilled Helpdesk ticket. |
+  | Fix on a season (`Fix · Season N`) | "Which episodes are wrong?" | D-09 season guard; "they're all shifted by one" opens D-04 |
+  | Force Search on a missing episode or movie | none: it reads the queue first | D-07; when nothing is found, "See every release" opens D-06 |
+  | A Seerr issue link (D-11) | preselected from the issue (D-10 routing table) | as above |
+
+- **Preview contract.** Before any write the guide shows what it found (the evidence, each item with its source), what
+  it will do, and what will be gone afterwards (any file, any blocklisted release). "Gone" lines are never pre-ticked.
+  The confirm button names the action ("Move 8 files", "Import it", "Grab this release").
+- **Outcome.** After the write the slot shows the ADR-028 live chip, and the final line says what happened in plain
+  words. The same text becomes the Seerr resolve note (D-10).
+- **Copy.** Owner copy rules: no em-dashes, no personal names, friendly and plain, "cluster" never "Kubernetes".
+
+### D-02 Repair Requests
+
+- **Table `repair_requests`** (BC-03), guard-listed in `no-direct-state-writes`:
+  `id` uuid · `requester_id` FK users · `media_item_id` FK media_items · `kind` text CHECK (`remap`,
+  `import_download`, `release_pick`, `audio_preference`, `language_search`) · `scope` text CHECK (`item`, `season`,
+  `episode`) · `season_number` int null · `target_child_ids` int[] (episode ids) · `target_label` text · `reason` text
+  null (a `FIX_REASONS` value when the guide started from Fix) · `preview` jsonb (exactly what was shown and confirmed)
+  · `status` text CHECK (`pending`, `actioned`, `completed`, `refused`, `failed`, `timed_out`) · `actions_taken` jsonb
+  (the `FixActionEntry[]` shape) · `seerr_issue_id` int null · `fix_request_id` uuid null (when the guide ended in a
+  classic Fix) · `created_at`, `updated_at`, `completed_at`.
+- **Single writer** `packages/domain/src/repair-requests.ts`: `createRepairRequest` (pending row plus a
+  `repair_requested` ledger event in one transaction, before any mutating call, under the per-requester advisory lock
+  that `createFixRequest` uses), `recordRepairAction`, `completeRepairRequest`, `refuseRepairRequest`. Ledger event
+  types gain `repair_requested`, `repair_completed`, `repair_failed`, and `release_list_requested` (D-06).
+- **Budget (ADR-080).** `countRecentFixBudget` also counts `repair_requests` and `release_list_requested` events, in
+  the arr pool. Admins bypass as today. One press is one unit, however many calls it makes.
+- **One open repair per grain.** At most one open Repair Request or Fix Request per (movie) or (series, season); the
+  open check is shared both ways, so a re-map and a season Fix cannot run together.
+- **Completion** is read, never assumed: a re-map completes when the episode-file read-back matches the plan; an
+  import when the target episode or movie has the imported file; a grab when the ADR-028 phase reaches `complete`. Open
+  rows time out at the existing 48-hour horizon (`FIX_TIMEOUT_HORIZON_MS`).
+
+### D-03 The write surface (hard rule 4)
+
+Every write goes through `@hnet/arr/write`, `@hnet/plex/write` or the Seerr write client, called only from
+`packages/domain`, after its Repair Request row (or, for the bridge, its write row) is committed.
+
+| Call | Where | Endpoint | Used by |
+|---|---|---|---|
+| `manualImport(files, importMode)` | Sonarr, Radarr | `POST /api/v3/command` `ManualImport` | D-04, D-06 follow-through, D-07 |
+| `renameFiles(...)` | Sonarr (series + file ids), Radarr (movie ids) | `POST /api/v3/command` `RenameFiles` | D-04 |
+| `grabRelease({guid, indexerId, override?})` | Sonarr, Radarr | `POST /api/v3/release` | D-06, D-08 |
+| `deleteQueueItem(id, {removeFromClient, blocklist, skipRedownload: true})` | exists | `DELETE /api/v3/queue/{id}` | D-07 |
+| Mislabel Block profile write | Sonarr | `/api/v3/releaseprofile` | D-05 |
+| `setItemPreference(ratingKey, {audioLanguage})` | each Plex server | `PUT /library/metadata/{ratingKey}/prefs` | D-08, only under Q-03 |
+| `commentOnIssue`, `resolveIssue` | Seerr, with `X-API-User` | `POST /api/v1/issue/{id}/comment`, `POST /api/v1/issue/{id}/resolved` | D-10, only under Q-02 |
+
+New reads (`@hnet/arr/read` and the Plex and Seerr read clients): `getManualImport` by `downloadId` or by folder
+(series, season), `listReleases` by episode or movie, queue records for a target, episode and movie files with
+`mediaInfo`, Seerr `listIssues` and `getIssue`, Plex item streams and preferences.
+
+**Contract rule.** Each new request body is pinned in a fixture taken from the running version's own UI request
+(Sonarr 4.0.20.3012, Radarr 6.4.4.10685, Seerr 3.5.0) and asserted in `write-clients.test.ts`; the app sends no field
+the UI does not send. The `arr-write-import-guard` test stays green.
+
+### D-04 Episode Re-map
+
+The remedy for "this file is really episode N" and "every episode from N on is shifted by one". It moves existing
+library files onto the right episodes with Sonarr's own manual import. Nothing is downloaded.
+
+1. **Scope.** One season of one Sonarr series. Every source is an episode file of that season inside the series
+   folder. Movies have no re-map; a wrong movie is a Fix.
+2. **Claims.** A single move (the file on episode A belongs to episode B), or a shift (every file from episode N
+   through M, default the last episode with a file, moves by k = +1 or -1). The guide pre-fills a shift when Title
+   Evidence (D-05) or Title Check flags suggest one, and shows each file's verdict beside it.
+3. **No implicit displacement.** Every target slot must be empty, or hold a file that the plan itself moves, or hold a
+   file the person explicitly ticks "discard this file" for (shown with its name and size, never pre-ticked). With no
+   recycle bin, an import onto an occupied slot deletes that slot's file for good, so the plan refuses every other case.
+4. **Order.** For k = +1, highest episode first; for k = -1, lowest first; a single move is one step. This is the order
+   that fixed Case A by hand: each move lands on a slot whose file has already moved. A cycle (a swap) has no free slot
+   to pass through and is refused with "ask staff".
+5. **Multi-episode files** move as a set (their episode ids shift together). A plan that would split one is refused.
+6. **Freshness.** Just before executing, the season's episode files are read again; if any file id, size or mapping
+   differs from the preview, nothing runs and the guide shows the new state.
+7. **Execution.** For each step: read the file's manual-import candidate (`GET /manualimport` on the season folder with
+   `filterExistingFiles=false`), send `ManualImport` with `importMode: 'move'`, the target episode ids, and the file's
+   own quality, languages and release group; read the series' episode files back and check the file is on its target.
+   The first mismatch stops the run; the steps done so far are each complete and lose nothing, by rule 4's order.
+8. **Rename.** `RenameFiles` for the moved files, then a read-back of their names.
+9. **Vacated slots.** Each episode left without a file is offered Force Search (D-07) or the Release Pick (D-06) in the
+   same guide. Case A's Spice It Up is that step.
+10. **Mislabel offer.** When the plan is a shift and two or more moved files came from one release group (from each
+    file's grab or import history), the result step offers "Stop <group> from filing this show again", which writes a
+    Mislabel Block term (D-05) on confirm.
+11. **Limits.** At most 40 moves per request. Refused while any queue record targets that season (an import could race
+    the moves) or another open repair or Fix holds it (D-02).
+12. **Who.** Anyone who can use Fix, within the budget: no file is lost without an explicit discard tick, and a re-map
+    can be reversed by another re-map.
+
+### D-05 Title Evidence, the Title Check and the Mislabel Block (ADR-110)
+
+**Title Evidence** (`packages/domain/src/title-evidence.ts`, pure):
+
+1. Normalize: lowercase, fold accents, `&` to "and", drop punctuation, apostrophes and the quality, source, codec,
+   audio, language and group tokens (`2160p`, `WEB-DL`, `AMZN`, `HMAX`, `DSNP`, `PCOK`, `DDP5.1`, `H.265`, `DUAL`,
+   `MULTI` and the rest, a versioned list).
+2. Extract the title segment: the tokens after the `SxxEyy` (or `NxNN`) token up to the first stripped token.
+   `Regular.Show.The.Lost.Tapes.S01E10.Spice.It.Up.1080p...` gives "spice it up";
+   `The_Paper_2025_S02E06_125_Years_Young_...` gives "125 years young"; a BiOMA name gives nothing.
+3. Score the segment against every TVDB title of the season (from the *arr's episode list; two-part titles split on
+   `/` or `;`), by token-set similarity.
+4. Verdict against the numbered episode: `agrees` (the numbered episode is the best match and scores at least 0.8),
+   `disagrees` (another episode scores at least 0.8 and beats the numbered one by at least 0.3; the best episode and
+   score are kept), `silent` (an empty segment), otherwise `ambiguous`. The thresholds are starting values that the
+   Title Check census tunes before anything relies on them (PLAN-077 P4).
+5. A title that agrees outranks the number; silence and ambiguity are never evidence against an import.
+
+**Title Check** (census, ADR-110 C-03): sync mode `title-check`, hourly at :35 (after the janitor's :25). It reads
+Sonarr history `downloadFolderImported` events since its cursor and writes one `title_checks` row per imported file:
+`id`, `instance`, `series_id`, `episode_id`, `episode_file_id`, `source_title`, `verdict`, `best_episode_id`,
+`score`, `created_at`. A `disagrees` row whose file is still on that episode puts a flag on the episode row of the
+title page ("This file's name says it is E23, All You Can Fit") that opens D-04 pre-filled. It writes nothing to
+Sonarr. The nightly digest gains one count line.
+
+**Mislabel Block** (T-310, ADR-110 C-04): one Sonarr release profile, "haynesnetwork: mislabelled releases (managed,
+do not edit)", "must not contain" terms only, no tags.
+
+- **Term:** `/^(?=.*\b<series title words joined by \W*>\b)(?=.*\b<group>\b)/i`, built only from the DESIGN-052 D-12
+  whitelist grammar (words, separators, the apostrophe and accent alternations) and a group token from
+  `[A-Za-z0-9.-]`, then checked by the same compile validator before every write.
+- **Table `mislabel_block_terms`:** `series_id`, `release_group`, `term`, `repair_request_id`, `state`
+  (`active`, `expired`, `removed`), `created_at`, `expires_at` (365 days). At most 500 active terms.
+- **Single writer** `reconcileMislabelBlock` (domain): writes and reads back the profile on a confirmed offer (D-04
+  rule 10), and in the `title-check` run removes expired terms and repairs drift, the ADR-094 janitor release block
+  pattern. A write that cannot be read back answers the person with "not saved" and leaves the term `removed`.
+- **Adoption:** Case A's hand-made profile (tag `lost-tapes-release-block`, id 31 on series 1061) becomes the first
+  term, after which the tag profile and the tag are removed by hand with a read-back (PLAN-077 P4).
+
+### D-06 Release Pick
+
+The remedy for "nothing acceptable was found": an interactive release list for one missing episode or movie.
+
+- **Read.** `GET /api/v3/release?episodeId=` (Sonarr) or `?movieId=` (Radarr): a live indexer search. Opening the list
+  records one `release_list_requested` event against the budget (D-02). The list stays in the dialog while it is open.
+- **Each row:** release title, size, quality, languages, custom-format score, age, indexer and protocol; the *arr's
+  rejection reasons in plain words (a versioned mapping, unknown reasons shown verbatim); the Title Evidence badge
+  against the target; and one state:
+
+  | State | When |
+  |---|---|
+  | Grab | the *arr approved it |
+  | Override | rejected, and every reason is on the overridable list, and Q-01 allows this person |
+  | Not allowed | any reason is on the hard-refusal list (the reason is shown) |
+
+- **Overridable reasons:** quality not wanted by the profile, custom-format score below the minimum, language not
+  wanted, and an episode number that differs from the target **only when** Title Evidence agrees with the target.
+- **Hard-refusal reasons:** blocklisted; matches a "must not contain" term (Release Block, Mislabel Block or any other
+  profile); CAM, TELESYNC, TS, WORKPRINT, sample or unknown quality; larger than the profile's size limit for its
+  quality (or 15 GB for an episode and 100 GB for a movie when the profile sets none); already in the queue for the
+  target; Title Evidence disagrees with the target.
+- **Grab.** Approved: `POST /release {guid, indexerId}`. Override: the same call with the override fields carrying the
+  target series, episode ids, quality and languages, pinned to the UI's request (D-03). The ADR-028 chip follows it.
+  When the import blocks (a mis-numbered name), the Import Check (D-07) runs with the person's chosen episode as the
+  expected mapping. That is Case A's "override grab, then manual import onto the right episode".
+- **Who** may override: Q-01. Until answered, everyone sees and grabs approved rows; Override rows are read-only, with
+  "Ask staff", which opens a Helpdesk ticket prefilled with the target (ADR-061 locator) and the release title.
+
+### D-07 Queue-aware Force Search and the Import Check (issue #597 Part 1)
+
+Force Search reads the queue for its target before it searches:
+
+| Queue state for the target | What Force Search does | What it says |
+|---|---|---|
+| nothing | searches, as today; when the ADR-028 window ends `nothing_found`, offers "See every release" (D-06) | "Searching" |
+| downloading, queued or held by a delay profile | nothing | "Already on its way" with the progress |
+| finished, import blocked or pending | the **Import Check** below | per outcome |
+| download failed | removes it with blocklist (`skipRedownload: true`) and searches once | "Removed a failed download and searched again" |
+
+**Import Check** (T-306), shared by Force Search, the Release Pick's follow-through and the janitor:
+
+1. Read the download's candidates: `GET /api/v3/manualimport?downloadId=<id>&seriesId=<id>` (or the movie's).
+2. **Importable** when every rule holds: exactly one video candidate maps to the target (Sonarr's manual-import mapping,
+   the queue record's own mapping, or, when those disagree, the episode that Title Evidence agrees with, which must be
+   the target); no permanent rejection except the identity rejections this check exists to overrule ("matched to series
+   by ID", "unexpected considering the ... folder name", "were not found in the grabbed release"); no sample, archive,
+   password or unparseable rejection; Title Evidence `agrees` or `silent`; the target has no file, or the *arr does not
+   say "not an upgrade"; the candidate's series is the target's series.
+3. Importable: `ManualImport` with the target ids and `importMode: 'auto'`, read back the target's file: "Found a
+   finished download and imported it."
+4. `disagrees`: "Import this download onto..." lists the season's missing episodes with the agreeing one preselected.
+   Allowed only for the agreeing episode or the grab's own target; anything else goes to staff.
+5. A release defect: remove with blocklist, search once: "Removed a bad download and searched again."
+6. "Found archive file": report only while haynes-ops#3834 is open: "This download has to be unpacked before it can
+   be added, and that needs staff for now." The guide offers a prefilled Helpdesk ticket. Then the D-14 rule applies.
+
+Each press is one Repair Request (`import_download`) or one search event. Activity keeps its admin Retry import; its
+row shows the Import Check result to admins.
+
+**Janitor tie-in** (DESIGN-046 amendment in PLAN-077 P2): a new class `importable` (a blocked item whose Import Check
+passes) with one enforce cell per *arr instance, census by default, acting through the same writer when enforced, and
+the report-only class `title_mismatch`. Promotion follows the PLAN-065 spot-check pattern; #597's T.O.T.S. ("matched by
+ID", 61 records) and The Paper are the first evidence. #597 Part 2's library-state classes (records whose episode
+already has a file) stay in #597 and PLAN-065.
+
+### D-08 Language-aware Wrong language
+
+1. **Read the file's audio**: Sonarr `episodefile.mediaInfo.audioLanguages` or Radarr `movieFile.mediaInfo.audioLanguages`,
+   and each matched Plex item's audio streams (`languageCode`, `default`) on every server (the ADR-047 match).
+2. **Ask** "Which language did you want?", with English first and the languages found in the file listed.
+3. **The language is in the file:** no blocklist and no delete. Until Q-03 is answered, the guide shows how to choose
+   the audio track in Plex and how to set a default audio language in the person's own Plex account. Under Q-03's
+   recommended answer, when the wanted language is the title's original language (the *arr's `originalLanguage`), the
+   app sets the show's preferred audio language on every server that has it and reads it back (Case A). Whether Plex
+   offers the same preference for a movie is checked in PLAN-077 P6; where it does not, a movie gets guidance only.
+4. **The language is not in the file:** the Fix runs as today (blocklist, or the D-09 guarded delete path), then
+   instead of a blind search it reads the release list and grabs the best approved release whose languages include the
+   wanted one. With none approved, it opens the Release Pick filtered to that language.
+
+The one `wrong_language` Fix in the last 90 days took the delete path (read 2026-10-12): this check comes first.
+
+### D-09 Fix safety guards and playback triage
+
+**Season Fix.** "Which episodes are wrong?" lists the season's episodes with files, their release and their Title
+Check flag, nothing preselected except flagged ones. Only the downloads behind the chosen episodes are marked failed.
+A download that also backs episodes the person did not choose (a pack) is not marked, because marking any of its
+records fails the whole download (DESIGN-005 D-25). The guide says why ("This pack also holds 10 episodes you marked
+fine") and offers those chosen episodes the guarded delete path below, a Re-map or the Release Pick instead. The same
+check applies to an episode Fix whose grab is a pack: the person sees which other episodes the blocklist would cost
+before anything is marked.
+
+**Replacement Preview** (T-308) on every delete path (no grab history: episode, season fallback, movie). Before any
+delete, the guide reads the release list and shows the release the *arr would take next (the first approved release
+in the *arr's own order; PLAN-077 P1 verifies the API's order and otherwise ranks by the profile) beside the current
+file: size, quality, group, source. The Fix refuses when:
+
+- no approved release exists: "Deleting would leave nothing to replace it", with "See every release";
+- the replacement is the **Same Release** (T-308): same group, quality and resolution with a size within 2 percent, or
+  a normalized name equal to the current file's scene name: "That would download the same release again", followed by
+  playback triage.
+
+**Playback triage** (Won't play). The guide first reads **Playback Evidence** (T-309) for this person and title over
+the last 48 hours: the Tautulli play and stop webhooks already stored as Feed notifications (sent at session start,
+before Tautulli's 120-second history filter drops short sessions), matched by the person's email and the title's ids,
+plus each Tautulli instance's history.
+
+- No play reached our servers: "Your play didn't reach our servers." The guide shows the Watch-here links (ADR-047) for
+  the servers this person can use, and explains that Plex also lists its own free copies of some titles, so the copy to
+  pick is the one that names our server. The Fix stays available behind "I played our copy and it still won't play".
+- Plays reached one server only, and that server is on the known-issues list (an app setting; today HaynesOps, whose
+  hardware transcoding fails, haynes-ops#3833): the guide suggests the other server's link first.
+- Plays reached and stopped quickly: the Fix continues with the Replacement Preview.
+
+PLAN-077 P1 checks that all three Tautulli instances post play and stop to the webhook, and adds Tautulli's Playback
+Error trigger.
+
+### D-10 The Seerr Issue mirror, its surfaces and its writes (ADR-111)
+
+**Table `seerr_issues`** (BC-05), guard-listed: `seerr_issue_id` int PK · `issue_type` smallint (1 video, 2 audio, 3
+subtitles, 4 other) · `status` (`open`, `resolved`) · `problem_season`, `problem_episode` (0 means the whole season or
+title) · `media_type`, `tmdb_id`, `tvdb_id` · `media_item_id` null (the ledger item, by tmdb for movies and tvdb for
+TV, the DESIGN-005 D-14 rule) · `target_child_id` null (the Sonarr episode) · `reporter_seerr_user_id` ·
+`reporter_user_id` null (the app user by case-insensitive email) · `message` (the first comment) · `comment_count` ·
+`seerr_created_at`, `seerr_updated_at`, `read_at` · `outcome` (`pending`, `self_served`, `staff_assisted`,
+`unfixable`) · `staff_note` null.
+
+**Sync.** Mode `seerr-issues` every 10 minutes reads `GET /api/v1/issue` (all statuses, newest first, until rows are
+unchanged). The Seerr webhook gains the four issue types (types 204 to 4044, a one-off reversible change recorded in
+PLAN-077 P3); an issue webhook only triggers a fresh `GET /api/v1/issue/{id}`, and it is not stored as a Feed
+notification, so a report has one record in the app.
+
+**Routing** (the guide entry a Seerr issue opens):
+
+| Issue | Guide entry |
+|---|---|
+| video, episode or movie with no file | Force Search (D-07) |
+| video, file present | Fix, "What's wrong?" |
+| video, a whole season (episode 0) | the season view with Title Check flags; "Fix · Season" |
+| audio | Fix, Wrong language (D-08) |
+| subtitles | Fix, Missing subtitles |
+| other | the guide's first question |
+
+**Surfaces.** On the title page, an open report shows above the episode list: "Reported in Seerr: <message>" and the
+guide button preselected. Admins also see who reported it. `/admin` gains a Seerr issues list: issue, title, age,
+linked repairs, outcome, and "Mark staff-assisted" with a note (D-12).
+
+**Writes** (only if Q-02 approves): through a dedicated Seerr user ("haynesnetwork.com", created once by staff with
+`MANAGE_ISSUES`; its id in the audited app setting `seerr_bridge_user_id`), every call sending `X-API-User`. Single
+writer `packages/domain/src/seerr-issue-writes.ts`, table `seerr_issue_writes` (`seerr_issue_id`, `kind` `comment` or
+`resolve`, `body`, `state` `intended`, `done` or `failed`, `created_at`, `done_at`; unique per issue and kind). The
+intended row commits before the call and is completed after it, so a crash never posts twice.
+
+- **Comment**, once per new issue: "Thanks for the report. You can fix this one yourself on haynesnetwork.com: <link>.
+  Sign in with your Plex account. If that doesn't sort it out, reply here and staff will take a look."
+- **Resolve**, when the linked Repair Request or Fix completes: a comment "Fixed on haynesnetwork.com: <the outcome
+  line>", then `POST /api/v1/issue/{id}/resolved`.
+- Never: delete an issue, reopen one, edit any comment, or write without the bridge user.
+
+### D-11 Reporter onboarding
+
+- **The link** is `https://haynesnetwork.com/r/seerr/<issueId>`: a small route that looks up the mirror row and
+  redirects to the title page with the guide preselected (or to a short explanation while the ledger has no item for
+  it yet). A stable link survives a changed mapping.
+- **Sign-in.** Signed out, the route sends the person through Authentik's "Log in with Plex" and back to the link.
+  Their first sign-in creates the account in the Default role (R-03), which sees every library (ADR-081) and has the
+  budget's fallback of 25 actions an hour. Nothing has to be granted. PLAN-077 P3 verifies the round trip keeps the
+  link.
+- **First visit.** The reporter sees "You reported this in Seerr. Here's what you can try first." above the guide.
+- **Delivery** is Seerr's own comment notification (D-10), sent however the reporter set up Seerr. The app adds no
+  channel.
+
+### D-12 Readiness metrics and the gate
+
+- **Real Issue:** a Seerr issue, or a Helpdesk ticket with a linked title in the `playback`, `audio`, `subtitles`,
+  `quality` or `missing` category (ADR-050, ADR-061).
+- **Outcome**, computed nightly and stored on the issue row (and for tickets in a `ticket_outcomes` row):
+  - **Self-Served** (T-312): between the report and its resolution, a non-admin account completed a Repair Request,
+    a Fix or a Force Search that ended in an import, on the reported grain, and no staff repair touched the title in
+    that window.
+  - **Staff-Assisted:** an admin account ran a repair on the title in that window, or staff marked it (a hand fix in an
+    *arr UI cannot always be told apart from automation, so staff mark it with a note).
+  - **Unfixable:** closed with no remedy applied (for example, no release exists anywhere).
+- **Shown** in `/admin` (each issue, its outcome, the current streak of Self-Served outcomes) and as one line in the
+  nightly digest.
+- **The gate** (T-313) and what passing it changes are Q-04 and Q-05.
+
+### D-13 Ops dependencies outside this repo
+
+| Dependency | Where | Needed by |
+|---|---|---|
+| SABnzbd extracts obfuscated `.7z` posts | haynes-ops#3834 | D-07 rule 6, D-14 |
+| All three Tautulli instances post play and stop to the webhook; the Playback Error trigger is added | Tautulli settings (each instance's UI) | D-09 |
+| The Seerr webhook sends issue types | Seerr settings (API) | D-10 |
+| The Seerr bridge user exists | Seerr users (API or UI) | D-10 writes |
+| Case A's hand-made release profile is retired | Sonarr | D-05 adoption |
+
+### D-14 Phase 0: stop blocklisting releases SABnzbd failed to unpack (issue #887)
+
+Sonarr's and Radarr's "Found archive file, might need to be extracted" leaves `bad_release` and becomes report-only,
+with its own reason ("archive left unpacked"), in a DESIGN-046 amendment made with the fix. Like every D-10 ruling in
+DESIGN-046, it moves items toward observation. After haynes-ops#3834 ships, a census of the message decides whether it
+ever returns to an acting class. The 9 episodes still missing after the earlier removals are searched again by hand.
+
+## Alternatives considered
+
+- ADR-109, ADR-110 and ADR-111 record the option-level alternatives.
+- **Extending `fix_requests`** instead of a new aggregate: a Fix has a required reason, a blocklist-or-delete path and
+  its own statuses; a re-map or an import has none of them. One shared open-check and one budget keep them together.
+- **Seerr issues as Feed notifications**: the Feed is a stream of events, not a record with a lifecycle and outcome.
+- **A tag-scoped release profile per series** (Case A's hand fix): one tag and one profile per affected series grows
+  without bound; title-anchored terms in one profile are the Release Block's proven pattern.
+- **Subtitle-text and title-card evidence**: deferred. Plex can serve a file's text subtitles, but comparing them needs
+  reference text per episode, and a title card needs OCR. The Title Check census shows whether names alone leave a gap
+  worth that cost.
+
+## Test strategy
+
+All unit and integration tests use the embedded Postgres harness (`@hnet/test-utils`) and in-memory or stub clients;
+no Docker. The changes touch `packages/domain`, `packages/arr` and `packages/sync`, so `e2e-gate` runs the Playwright
+suite on each PR.
+
+| Area | Tests |
+|---|---|
+| D-02 | `repair-requests.test.ts`: pending row and event in one transaction before any call; budget shared with Fix and Force Search; one open repair per grain both ways; timeout sweep |
+| D-03 | `write-clients.test.ts`: each new body against the pinned fixture; the import guard |
+| D-04 | `remap-plan.test.ts` (pure): shift +1/-1 order, refusals (occupied slot, cycle, split multi-episode file, more than 40 moves), discard only when ticked; `remap-flow.test.ts`: freshness abort, stop on first mismatch, rename, read-back |
+| D-05 | `title-evidence.test.ts`: the three cases' real names (BiOMA silent, `S01E10.Spice.It.Up` agrees with E11, `The_Paper_2025_S02E06_125_Years_Young` agrees with 2x06, the Penguins Spanish titles disagree); `mislabel-block.test.ts`: grammar, compile check, read-back, expiry, cap |
+| D-06 | `release-pick.test.ts`: state per row from rejection sets, hard refusals win, override body |
+| D-07 | `import-check.test.ts`: The Paper importable, T.O.T.S. "matched by ID" importable, Penguins `title_mismatch`, archive report-only, failed download removed and searched once; queue-aware Force Search sends no search while a download is in progress |
+| D-08 | `language-check.test.ts`: language present writes nothing to the *arr; absent grabs a matching approved release |
+| D-09 | `fix-guards.test.ts`: season guard refuses a pack backing unchosen episodes; Same Release refusal; no-approved-release refusal; Playback Evidence from stored Tautulli notifications |
+| D-10 | `seerr-issues-sync.test.ts`: mirror upsert, mapping, webhook triggers a read only; `seerr-issue-writes.test.ts`: one comment per issue across a crash, `X-API-User` on every call, resolve only after completion |
+| D-12 | `self-service-outcomes.test.ts`: the three outcomes and the streak |
+| e2e | `apps/web/e2e/support/stub-arr.ts` gains manual import (GET and command), release list and grab (with override), `RenameFiles`, staged queue states with status messages, file `mediaInfo`, Seerr issues with `X-API-User`, and Plex preferences. Journeys replay Cases A, B and C (AC-40..AC-42), the Seerr link and sign-in (AC-43), and the readiness view (AC-44), at phone and desktop widths |
+
+## Open questions
+
+Owner decisions (asked one at a time; each answer is folded back here as a ruling):
+
+| ID | Question | Resolution |
+|----|----------|------------|
+| Q-01 | Who may grab a release the quality profile rejected (Release Pick override, D-06)? Options: **A** anyone who can use Fix, within their hourly budget, for a missing episode or movie only, when every rejection is on the overridable list and nothing is on the hard-refusal list; **B** a new per-role grant, off for every role until turned on in /admin; **C** admins only, others send their pick to staff. Recommendation: **A** (it follows the "repair is a verb" ruling, ADR-080, and the refusal list carries the risk). | (open) |
+| Q-02 | Should the app write to Seerr issues (D-10)? Options: **A** read-only (the app shows issues and links; staff comment and resolve by hand); **B** one comment per new issue with the fix-it-yourself link, and a resolve with a note when the linked repair completes, posted as a dedicated Seerr user; **C** like B but comment only; **D** like B but posted as the owner's own Seerr account (what the API key does by default). Recommendation: **B**. | (open) |
+| Q-03 | When a Wrong language report finds the wanted audio already in the file, should the app change Plex for everyone (D-08)? Options: **A** set the title's preferred audio language on every server that has it, only when the wanted language is the title's original language (a dubbed default track), otherwise guidance only; **B** set it on every request; **C** never change Plex, guidance only. Recommendation: **A**. | (open) |
+| Q-04 | What evidence makes the platform ready for "fix it yourself" to be the rule (D-12)? Today's rate is about 1.3 Seerr issues a month (4 since 2026-07-11). Options: **A** Cases A, B and C replayed end to end by a non-admin account (stubs in e2e, plus a live preview-only run of each remedy on the real titles), then the next 3 real issues self-served; **B** the next 5 real issues self-served in a row (about four months at today's rate); **C** 60 days in which every real issue is self-served, with at least 3 issues; **D** no number, the owner decides at a review once P1..P6 ship. Recommendation: **A**. | (open) |
+| Q-05 | Once the gate passes, what does the rule do? Options: **A** Seerr issue filing stays open, every new issue gets the fix-it-yourself comment, and staff act only after a self-service attempt failed or when no remedy fits; **B** issue reporting in Seerr is switched off for everyone but admins (Seerr permissions) and haynesnetwork.com becomes the only place to report; **C** A for 30 days, then B. Recommendation: **A**. | (open) |
+
+Driver items, resolved inside PLAN-077 (not owner questions):
+
+| ID | Question | Resolution |
+|----|----------|------------|
+| Q-06 | The Title Evidence thresholds (0.8 and 0.3). | (open: tuned on the Title Check census in P4 before the Import Check relies on `disagrees`) |
+| Q-07 | The exact override fields of Sonarr's and Radarr's `POST /release`, and whether `GET /release` returns releases in decision order. | (open: pinned from the running versions in P1 and P5) |
+| Q-08 | Does Plex offer a preferred audio language for a movie, as it does for a show? | (open: checked in P6) |
