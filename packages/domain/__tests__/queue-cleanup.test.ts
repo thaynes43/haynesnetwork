@@ -25,6 +25,7 @@ import {
 } from '../src/janitor-release-block';
 import { isGrammarTerm, isWholeNameTerm, renderTerm, termMatchesRaw } from '../src/release-terms';
 import {
+  ARCHIVE_LEFT_UNPACKED_REASON,
   ARR_QUEUE_CLEANUP_CONFIG_DEFAULT,
   buildQueueCleanupClients,
   buildQueueCleanupDigestSection,
@@ -122,12 +123,13 @@ describe('classifyQueueItem (D-03, pure)', () => {
       class: 'bad_release',
     },
     {
-      name: 'sonarr bad_release: upstream archive rejection ("Found archive file, might need to be extracted")',
+      // D-26 (issue #887): the download client left an archive unextracted; the release is not bad. Report only.
+      name: 'sonarr unknown: upstream archive rejection ("Found archive file, might need to be extracted") is report only (D-26)',
       item: {
         trackedDownloadState: 'importBlocked',
         ...msg('Some.Show.S01E01.1080p.WEB.h264-GRP', 'Found archive file, might need to be extracted'),
       },
-      class: 'bad_release',
+      class: 'unknown',
     },
     {
       name: 'radarr bad_release: password-protected archive',
@@ -217,6 +219,77 @@ describe('classifyQueueItem (D-03, pure)', () => {
       // A download client that is down is a fault to see, not a wait to hide.
       expect(classifyQueueItem({ status: 'downloadClientUnavailable' }).class).toBe('unknown');
       expect(classifyQueueItem({ status: 'queued' }).class).toBe('unknown');
+    });
+  });
+
+  // --- DESIGN-046 D-26 — "Found archive file" is an archive the download client left unextracted, not a bad release ---
+
+  describe('D-26 archive left unpacked: report only, never bad_release (issue #887)', () => {
+    const ARCHIVE_MSG = 'Found archive file, might need to be extracted';
+    const release = 'The.Loud.House.S10E06.Garbage.Dumped.MULTI.1080p.SKST.WEB-DL.AAC2.0.x264-AndreMor';
+    // The shape Sonarr and Radarr give it: a completed download, import blocked, the rejection on the release entry.
+    const stalled = {
+      title: release,
+      status: 'completed',
+      trackedDownloadStatus: 'warning',
+      trackedDownloadState: 'importBlocked',
+      statusMessages: [{ title: release, messages: [ARCHIVE_MSG] }],
+    };
+
+    it('the archive rejection alone is unknown, with its own reason that keeps the upstream text', () => {
+      expect(ARCHIVE_LEFT_UNPACKED_REASON).toBe('Archive left unpacked');
+      expect(classifyQueueItem(stalled)).toEqual({
+        class: 'unknown',
+        reason: `Archive left unpacked: ${ARCHIVE_MSG}`,
+        confidence: 'low', // every unknown is low confidence: never acted on
+      });
+      // importPending, no tracked status, any casing: still report only, never a stuck import to retry.
+      expect(
+        classifyQueueItem({ trackedDownloadState: 'importPending', ...msg(release, ARCHIVE_MSG.toUpperCase()) }).class,
+      ).toBe('unknown');
+    });
+
+    it('a real release defect still wins: a failed download, an error status or a release-level defect message', () => {
+      expect(classifyQueueItem({ ...stalled, status: 'failed' }).class).toBe('bad_release');
+      expect(classifyQueueItem({ ...stalled, trackedDownloadStatus: 'error' }).class).toBe('bad_release');
+      expect(classifyQueueItem({ ...stalled, trackedDownloadState: 'failed' }).class).toBe('bad_release');
+      const withDefect = classifyQueueItem({
+        ...stalled,
+        statusMessages: [{ title: release, messages: [ARCHIVE_MSG, 'Sample'] }],
+      });
+      expect(withDefect).toMatchObject({ class: 'bad_release', reason: 'Sample' });
+      expect(
+        classifyQueueItem({ ...stalled, statusMessages: [{ title: release, messages: ['Unable to parse file'] }] }).class,
+      ).toBe('bad_release');
+      expect(
+        classifyQueueItem({ ...stalled, errorMessage: 'Unpacking failed, archive requires a password' }).class,
+      ).toBe('bad_release');
+    });
+
+    it('an already-satisfied rejection keeps have_better (first match), and a Lidarr match rejection beside it stays report only', () => {
+      expect(
+        classifyQueueItem({
+          ...stalled,
+          statusMessages: [{ title: release, messages: ['Not an upgrade for existing episode file(s)', ARCHIVE_MSG] }],
+        }).class,
+      ).toBe('have_better');
+      // Lidarr: an unextracted archive is not an album that failed to match, so manual_match never acts on it.
+      expect(
+        classifyQueueItem({
+          title: 'Artist - Album (2019) [FLAC]',
+          trackedDownloadState: 'importBlocked',
+          statusMessages: [{ title: 'Artist - Album (2019) [FLAC]', messages: [ARCHIVE_MSG, 'Has missing tracks'] }],
+        }).class,
+      ).toBe('unknown');
+    });
+
+    it('"archive" elsewhere is still not the verdict (D-10 rule 4 holds): only the verbatim upstream rejection matches', () => {
+      const result = classifyQueueItem({
+        title: 'Archive.81.S01E03.1080p.WEB.H264-GLHF',
+        trackedDownloadState: 'importBlocked',
+        ...msg('Archive.81.S01E03.1080p.WEB.H264-GLHF', 'Something the classifier has never seen'),
+      });
+      expect(result).toMatchObject({ class: 'unknown', reason: 'Something the classifier has never seen' });
     });
   });
 
@@ -1311,6 +1384,58 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     expect(sonarr.calls.deletes.map((d) => d.id)).toEqual([3]);
     expect(sonarr.calls.processMonitored).toBe(0);
     expect(sonarr.calls.searches).toHaveLength(0);
+  });
+
+  it('D-26 ARCHIVE LEFT UNPACKED: with every Sonarr and Radarr cell enforced, an unextracted archive is observed as unknown and never removed, blocklisted or searched', async () => {
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const stalled = (id: number, title: string) =>
+      item({
+        queueItemId: id,
+        downloadId: `dl-${id}`,
+        title,
+        addedAt: old,
+        status: 'completed',
+        trackedDownloadStatus: 'warning',
+        trackedDownloadState: 'importBlocked',
+        statusMessages: [{ title, messages: ['Found archive file, might need to be extracted'] }],
+      });
+    const cfg = clone();
+    for (const instance of ['sonarr', 'radarr'] as const) {
+      cfg.modes[instance] = { have_better: 'enforce', retry_import: 'enforce', bad_release: 'enforce' };
+    }
+    cfg.minItemAgeHours = 0;
+    const sonarr = makeInstanceStub(
+      [stalled(1, 'The.Loud.House.S10E06.1080p.WEB-DL.x264-AndreMor'), stalled(2, 'PAW.Patrol.S05E26.1080p.WEB-DL.x264-AndreMor')],
+      { monitored: true, explodeOnWrite: true },
+    );
+    const radarr = makeInstanceStub([stalled(3, 'Carlos.2010.1080p.BluRay.x264-DEiMOS')], {
+      monitored: true,
+      explodeOnWrite: true,
+    });
+    const report = await evaluateQueueCleanup({
+      db: t.db,
+      clients: makeClients({ sonarr: sonarr.client, radarr: radarr.client }),
+      config: cfg,
+    });
+
+    const rows = await t.db.select().from(arrQueueCleanupActions).orderBy(arrQueueCleanupActions.queueItemId);
+    expect(rows).toHaveLength(3);
+    for (const r of rows) {
+      expect(r).toMatchObject({
+        actionClass: 'unknown',
+        action: 'none',
+        outcome: 'observed',
+        reason: 'Archive left unpacked: Found archive file, might need to be extracted',
+      });
+    }
+    for (const stub of [sonarr, radarr]) {
+      expect(stub.calls.deletes).toEqual([]);
+      expect(stub.calls.searches).toEqual([]);
+      expect(stub.calls.processMonitored).toBe(0);
+    }
+    for (const instance of ['sonarr', 'radarr']) {
+      expect(report.instances.find((i) => i.instance === instance)).toMatchObject({ actionsTaken: 0, errors: 0 });
+    }
   });
 
   it('CENSUS DEFAULT (D-13): manual_match is not acted on while its cell is census, even with every other Lidarr cell enforced', async () => {
@@ -2816,10 +2941,11 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
 
   // --- D-23 / D-24 (ADR-098): one budget for every janitor search; the failed-download retry ---
 
-  const ARCHIVE = 'Found archive file, might need to be extracted';
+  // A release-level release defect (D-03). Not "Found archive file": that is report only since D-26.
+  const DEFECT = 'Unable to parse file';
   const ABORTED = 'Aborted, cannot be completed - https://sabnzbd.org/not-complete';
   const HOUR = 60 * 60 * 1000;
-  /** A bad release of one target (Sonarr's episode, Radarr's movie, Lidarr's album), in the Paw Patrol shape. */
+  /** A bad release of one target (Sonarr's episode, Radarr's movie, Lidarr's album). */
   const targetRelease = (id: number, downloadId: string, targetId: number, o: Partial<QueueCleanupQueueItem> = {}) => {
     const title = 'PAW.Patrol.S05E26.MULTI.1080p.WEB-DL.AAC2.0.x264-GRP';
     return item({
@@ -2830,7 +2956,7 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
       status: 'completed',
       trackedDownloadStatus: 'warning',
       trackedDownloadState: 'importBlocked',
-      statusMessages: [{ title, messages: [ARCHIVE] }],
+      statusMessages: [{ title, messages: [DEFECT] }],
       ...o,
     });
   };
@@ -2860,7 +2986,7 @@ describe('evaluateQueueCleanup + config + digest (embedded Postgres)', () => {
     mode: 'enforce' as const,
     action: o.action ?? ('blocklisted_searched' as const),
     outcome: o.outcome ?? ('done' as const),
-    reason: ARCHIVE,
+    reason: DEFECT,
     createdAt: o.createdAt ?? new Date(Date.now() - 3 * 24 * HOUR),
   });
   const rowsOf = (instance: 'sonarr' | 'radarr' | 'lidarr') =>

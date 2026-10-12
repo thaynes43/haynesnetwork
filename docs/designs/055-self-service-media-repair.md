@@ -378,6 +378,7 @@ Sonarr's and Radarr's "Found archive file, might need to be extracted" leaves `b
 with its own reason ("archive left unpacked"), in a DESIGN-046 amendment made with the fix. Like every D-10 ruling in
 DESIGN-046, it moves items toward observation. After haynes-ops#3834 ships, a census of the message decides whether it
 ever returns to an acting class. The 9 episodes still missing after the earlier removals are searched again by hand.
+Shipped as DESIGN-046 D-26 (2026-10-12): the message classifies `unknown` with the reason "Archive left unpacked: …".
 
 ## Alternatives considered
 

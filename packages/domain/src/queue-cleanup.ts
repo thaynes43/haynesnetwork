@@ -124,18 +124,28 @@ const IDENTITY_MISMATCH_PATTERNS = [
  * release or file name, and never a per-file rejection among real files (a `-sample.mkv` or an unparseable
  * featurette beside the episodes condemns that file, not the release). "Sample" is the upstream
  * NotSampleSpecification rejection verbatim; "Unable to determine if file is a sample" (SampleIndeterminate) is
- * not a verdict and does not match. "archive" is the upstream import rejection verbatim ("Found archive file,
- * might need to be extracted"): a bare \barchive\b also hit release names and paths that upstream embeds in
- * other messages ("Archive 81", "…not found in the grabbed release: <release>", "…eligible for import in
- * <path>").
+ * not a verdict and does not match. The upstream "Found archive file, might need to be extracted" is NOT a release
+ * defect (D-26): see ARCHIVE_LEFT_UNPACKED_PATTERN.
  */
 const BAD_RELEASE_PATTERNS = [
   /unable to parse/i,
-  /found archive file/i,
   /password/i,
   /executable/i,
   /^sample\.?$/i,
 ];
+
+/**
+ * D-26 (issue #887, DESIGN-055 D-14): the *arr's import rejection "Found archive file, might need to be extracted" is
+ * report only. It says the download client left an archive unextracted (SABnzbd adds the `.7z` extension to an
+ * obfuscated post only after its unpack step, haynes-ops#3834), not that the release is bad: blocklisting it removed 82
+ * working Sonarr releases. Matched verbatim, never a bare "archive" (release names and paths carry that word, D-10
+ * rule 4). It classifies `unknown` with its own reason, after `bad_release`, so a failed download or a real
+ * release-level defect beside it keeps its class, and before `retry_import` and `manual_match`, so neither acts on it.
+ */
+const ARCHIVE_LEFT_UNPACKED_PATTERN = /found archive file/i;
+
+/** The reason prefix an archive-left-unpacked item carries (D-26); the upstream message follows it. */
+export const ARCHIVE_LEFT_UNPACKED_REASON = 'Archive left unpacked';
 
 /** The header the *arrs put first in a multi-file statusMessage set ("One or more episodes|movies|tracks
  *  expected in this release were not imported or missing…"); every titled entry after it names a FILE. */
@@ -231,7 +241,7 @@ function collectMessages(item: ClassifiableQueueItem): QueueItemMessages {
 
 /**
  * Classify one queue item into exactly one Action Class (D-03, FIRST-MATCH order: have_better → bad_release →
- * retry_import → manual_match → waiting (D-25, not a ledger class) → unknown). Pure. Patterns read MESSAGES, never a statusMessage title that names
+ * archive left unpacked (D-26, `unknown`) → retry_import → manual_match → waiting (D-25, not a ledger class) → unknown). Pure. Patterns read MESSAGES, never a statusMessage title that names
  * the release or a file; release-defect patterns read only the release-level ones; a have_better match that
  * also carries an identity mismatch goes to `unknown` (all D-10). Lidarr's match rejections ("Album match is not
  * close enough…", "Has missing tracks", "Couldn't find similar album…") are `manual_match` (D-12, Q-01), which
@@ -276,6 +286,17 @@ export function classifyQueueItem(item: ClassifiableQueueItem): QueueCleanupClas
   if (trackedStatus === 'error' || status === 'failed' || state === 'failed' || badMsg) {
     const r = badMsg ?? bestMessage;
     return { class: 'bad_release', reason: r ? truncate(r) : null, confidence: 'high' };
+  }
+
+  // 2b. D-26 — an archive the download client left unextracted. Not a release defect: report only (`unknown`), with
+  //     its own reason, so it is never removed, blocklisted, retried or searched again by the janitor.
+  const archiveMsg = matchIn([ARCHIVE_LEFT_UNPACKED_PATTERN]);
+  if (archiveMsg) {
+    return {
+      class: 'unknown',
+      reason: truncate(`${ARCHIVE_LEFT_UNPACKED_REASON}: ${archiveMsg}`),
+      confidence: 'low',
+    };
   }
 
   // 3. retry_import — a stuck import with an empty/transient message set.
