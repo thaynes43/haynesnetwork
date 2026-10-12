@@ -153,8 +153,9 @@ export function AboutContent({ trashWindowDays }: { trashWindowDays: number }) {
           in a <Link href="/bulletin">Ticket</Link> if it&rsquo;s holding you up.
         </p>
         <p>
-          Books have their own Fix: the <strong>Fix this</strong> button on a book&rsquo;s page. It
-          works the same way but never deletes the old file. The current copy stays on your shelf.
+          Books get the same <strong>Fix</strong> and <strong>Force Search</strong> buttons on
+          their own page. A book Fix searches for a better copy and brings it in, but it never
+          deletes the old file. The current copy stays on your shelf until an admin removes it.
         </p>
       </AboutSection>
 
