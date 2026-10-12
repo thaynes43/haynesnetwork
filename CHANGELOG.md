@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.111.1](https://github.com/thaynes43/haynesnetwork/compare/v0.111.0...v0.111.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **mcp:** expose recommendation policy to connected agents ([#888](https://github.com/thaynes43/haynesnetwork/issues/888)) ([688e7d4](https://github.com/thaynes43/haynesnetwork/commit/688e7d475529ac27d6301f52fd6e0b047f9d3639))
+* **watch:** clarify eligibility and explain viewing evidence ([#884](https://github.com/thaynes43/haynesnetwork/issues/884)) ([df7bb2b](https://github.com/thaynes43/haynesnetwork/commit/df7bb2b2096ed3285bcd00eafdcf49106aee4136))
+* **web:** name the books Fix button by its real label on the About page ([#885](https://github.com/thaynes43/haynesnetwork/issues/885)) ([c6bf452](https://github.com/thaynes43/haynesnetwork/commit/c6bf45267fbcb6d7adf4cfd1ceed40c5cfdda452))
+
 ## [0.111.0](https://github.com/thaynes43/haynesnetwork/compare/v0.110.5...v0.111.0) (2026-10-12)
 
 
