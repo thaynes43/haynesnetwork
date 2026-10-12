@@ -20,7 +20,7 @@
 - **Next in PLAN-077:** P1. The TLHG mislabels are a live example for P4 (Title Check): those single-episode releases
   are named for other pairs, and Sonarr imported them into the wrong slots.
 
-## 2026-10-12 17:11Z: PLAN-076 delivered — watch recommendation acceptance feedback
+## 2026-10-12 17:29Z: PLAN-076 delivered — watch recommendation acceptance feedback
 
 **The owner's book-repair stop below remains binding.** This task does not authorize resuming it.
 
@@ -36,9 +36,12 @@ Feature #884/#888 and release #886 passed required gates; signed image/provenanc
 read-only contracts passed. haynes-ops #3837 delivered 3/3 healthy replicas and 24 CronJob templates
 with unchanged image-stripped specs/suspension. Guarded voice update #243/#3831 preserved every
 unrelated setting; cleanup #3832 removed the temporary entry/commands/mount and private snapshots.
-Both scoped activities ended. No viewing/watchlist/acquisition writes were performed by this work.
+Post-deploy Watch-only reload verified all eleven current loaded tool descriptions, with complete
+settings/pipeline preservation and no HA pod restart.
+All scoped activities ended. No viewing/watchlist/acquisition writes were performed by this work.
 PLAN-076 is in `completed/`; [delivery evidence](context/2026-10-12-watch-recommendation-acceptance-feedback.md)
-records commits, digests, checks and cleanup. Start fresh client sessions to refresh tool guidance.
+records commits, digests, checks and cleanup. In ChatGPT, refresh the connector in settings and
+start a new chat; native Claude Code/Codex clients refresh tools when a session starts (OPS-015 §8).
 
 ## 2026-10-12 16:35Z: PLAN-077 drafted — self-service media repair (docs only, Proposed)
 
@@ -76,7 +79,7 @@ writer (#3829), six accepted serial voice samples observed no added overhead, an
 removed the temporary entry/commands/ConfigMap/mount. Home Assistant is 1/1 Ready with all eleven
 Watch history tools. Phone's active Assist-only pipeline is unchanged. PLAN-075 is in `completed/`;
 [delivery evidence](context/2026-10-12-agent-owned-watch-recommendations.md) records the exact commits,
-image, checks, limited voice sample and restoration. Start fresh client sessions to refresh schemas.
+image, checks, limited voice sample and restoration. Follow OPS-015 §8 for client schema refresh.
 
 ## 2026-10-10 23:02Z: safely closed at owner request; no further book attempts
 

@@ -66,6 +66,33 @@ contract checks are not added to the distinct 171-case feature total.
 - No physical, audio, playback, history, watchlist or acquisition writes. The wording-only rollout
   did not repeat the prior limited voice latency benchmark and makes no new performance claim.
 
+### Post-deploy Home Assistant metadata refresh
+
+The final factual audit caught that the earlier HA receipt preceded the app deployment. OPS-015
+§8 requires an entry reload after description changes: HA loads tools at setup and discards MCP
+initialize instructions. A supported Watch-only entry reload succeeded at 17:25:40Z. Native
+coordinator readback confirms all eleven loaded names, input schemas and descriptions exactly
+match v0.111.1, including the 484-character viewing-context description (SHA-256
+`d478910301cc3f9da7b42ac09dcfd4fb1d4904d2ce2fdf9615f2527e9b123135`). The Watch API is registered
+and entry loaded. Temporary coordinator logging was restored in finally to inherited INFO with
+unchanged `core.logger` bytes. Complete `core.config_entries` and Assist pipelines are byte-identical
+before/after; the refresh adds no prompt/settings writes or HA pod restart.
+
+Final 17:29:12Z readback also verifies all four full holder/parent entries and relevant registry
+metadata, active Phone entity/entry/subentry/pipeline and Assist-only APIs. HA kept the same Pod UID,
+both containers Ready with zero restarts. All integration effective log levels remain INFO;
+persisted logger bytes are identical. Full identical-file hashes:
+
+- `core.config_entries`: `34a3ca3fa3376dae166625a0095fa71e5c6072cdfc0a9eba7b633d920834ce6d`.
+- Assist pipelines: `4480a53392da2d0dc289683ed60a64ea5b95c89e6eae03dcdbf20006cac3fe31`.
+- `core.logger`: `361023c7e3df8ce81cc649ade435ba821f90608482c02113b9d2c3efcb7ba7a0`.
+
+Private snapshots/native capture were removed and activity `act-172447-3215500` ended. Sanitized
+final HA receipt SHA-256: `e6854c664c9e284b87cee4cdd66142a0663421bee421d6dd4945de2adf5edc65`;
+app receipt SHA-256: `f166efa279047634045333594e88fd8cf3f071edf7cf7b340113a49c2a8ea6f7`.
+These include the direct loaded-description/schema hashes and distinguish server initialize
+instructions from the tool descriptions HA consumes.
+
 ## Release and deployed verification
 
 - Release [haynesnetwork #886](https://github.com/thaynes43/haynesnetwork/pull/886) merged

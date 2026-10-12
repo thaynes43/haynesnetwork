@@ -20,8 +20,10 @@ provenance were verified; haynes-ops #3837 delivered it to 3/3 healthy replicas 
 templates with unchanged image-stripped specs/suspension. Live read-only provenance, strict year
 recovery, numeric-title and outside-Plex checks passed; eleven tools and both response budgets
 remain within bounds. Four voice prompts were updated through the guarded native path with all
-unrelated settings preserved; temporary maintenance resources/snapshots were removed and both
-activities ended. Detailed commits, digests, checks and cleanup:
+unrelated settings preserved; temporary maintenance resources/snapshots were removed and all
+activities ended. A post-deploy Watch-only reload verified the current descriptions and schemas
+of all eleven tools, with byte-identical HA settings/pipelines, restored logging and no pod restart.
+Detailed commits, digests, checks and cleanup:
 [delivery evidence](../../context/2026-10-12-watch-recommendation-acceptance-feedback.md).
 
 No acquisition/history/watchlist mutations, new discovery service or scorer redesign. The owner's
