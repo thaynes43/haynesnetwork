@@ -7,10 +7,13 @@
 //   tsx repair-guide.ts audio    (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n>]
 //   tsx repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
 //   tsx repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
+//   tsx repair-guide.ts queue-check
 //
 // `search-plan` (DESIGN-055 D-07, PLAN-077 P2) prints what a queue-aware Force Search press would do: the target's queue
 // state and the Import Check on a stuck download, planned as if `import_check` were on. It only reads (the queue, the
-// manual-import view, the episode list); nothing is imported, removed or searched.
+// manual-import view, the episode list); nothing is imported, removed or searched. `queue-check` runs the Import Check
+// over Sonarr's and Radarr's whole queues exactly as the janitor selects (DESIGN-046 D-27: every record `unknown`, stuck,
+// with an identity rejection) and prints one line per download: the census spot-check, read-only.
 //
 // `preview`, `evidence` and `audio` only READ: they print the guarded Fix's plan (with every planning remedy on,
 // whatever the stored switch says, so a remedy can be checked live before it is turned on), a person's Playback
@@ -29,9 +32,15 @@ import {
   allRemediesOff,
   arrClientBundleFromEnv,
   getKnownIssueServers,
+  arrQueueCleanupClientsFromEnv,
+  classifyQueueItem,
   getRepairGuideRemedies,
+  groupQueueRecordsByDownload,
+  hasIdentityRejection,
+  importCheckReasonText,
   planFix,
   planForceSearch,
+  queueTexts,
   readFileAudio,
   readPlaybackEvidence,
   setKnownIssueServers,
@@ -44,12 +53,13 @@ const USAGE = `Usage:
   repair-guide.ts audio    (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n>]
   repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
   repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
+  repair-guide.ts queue-check
 
-preview, evidence, audio and search-plan only read. settings writes only with --set or --known-issue (audited, actor null).
+preview, evidence, audio, search-plan and queue-check only read. settings writes only with --set or --known-issue (audited, actor null).
 Remedies: ${REPAIR_GUIDE_REMEDIES.join(', ')}.`;
 
 export interface RepairGuideArgs {
-  command: 'preview' | 'evidence' | 'audio' | 'settings' | 'search-plan';
+  command: 'preview' | 'evidence' | 'audio' | 'settings' | 'search-plan' | 'queue-check';
   tmdb?: number;
   tvdb?: number;
   episode?: { season: number; episode: number };
@@ -78,7 +88,8 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'evidence' &&
     command !== 'audio' &&
     command !== 'settings' &&
-    command !== 'search-plan'
+    command !== 'search-plan' &&
+    command !== 'queue-check'
   ) {
     throw new Error(`unknown command "${command}"`);
   }
@@ -150,7 +161,7 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         throw new Error(`unknown argument "${flag}"`);
     }
   }
-  if (command !== 'settings') {
+  if (command !== 'settings' && command !== 'queue-check') {
     if ((args.tmdb === undefined) === (args.tvdb === undefined)) throw new Error('give exactly one of --tmdb or --tvdb');
     if (args.tmdb !== undefined && (args.episode || args.season !== undefined)) {
       throw new Error('--episode and --season are for a show (--tvdb)');
@@ -195,6 +206,47 @@ async function main(): Promise<number> {
         2,
       ),
     );
+    return 0;
+  }
+
+  if (args.command === 'queue-check') {
+    const clients = arrQueueCleanupClientsFromEnv();
+    const tally: Record<string, number> = {};
+    for (const instance of ['sonarr', 'radarr'] as const) {
+      const client = clients[instance];
+      const queue = await client.getQueueAll();
+      for (const group of groupQueueRecordsByDownload(queue)) {
+        const qualifies =
+          group[0]!.downloadId &&
+          group.every((r) => {
+            const state = (r.trackedDownloadState ?? '').toLowerCase();
+            return classifyQueueItem(r).class === 'unknown' && (state === 'importblocked' || state === 'importpending');
+          }) &&
+          hasIdentityRejection(queueTexts(group));
+        if (!qualifies || !client.importCheck) continue;
+        let line: Record<string, unknown>;
+        try {
+          const check = await client.importCheck(group);
+          const verdict = check?.verdict ?? 'no_check';
+          tally[`${instance}.${verdict}`] = (tally[`${instance}.${verdict}`] ?? 0) + 1;
+          line = {
+            instance,
+            verdict,
+            reason: check ? importCheckReasonText(check) : null,
+            title: group[0]!.title,
+            targets: [...new Set(group.map((r) => r.targetId))],
+            importsOnto: check?.file?.targetIds ?? [],
+            titleVerdict: check?.title?.verdict ?? null,
+            bestEpisodeId: check?.title?.bestEpisodeId ?? null,
+          };
+        } catch (error) {
+          tally[`${instance}.read_failed`] = (tally[`${instance}.read_failed`] ?? 0) + 1;
+          line = { instance, verdict: 'read_failed', title: group[0]!.title, error: (error as Error).message };
+        }
+        console.log(JSON.stringify(line));
+      }
+    }
+    console.log(JSON.stringify({ summary: tally }));
     return 0;
   }
 

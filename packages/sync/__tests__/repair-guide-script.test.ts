@@ -38,6 +38,7 @@ describe('repair-guide.ts arguments', () => {
     });
     expect(() => parseRepairGuideArgs(['search-plan', '--tvdb', '425007', '--season', '2'])).toThrow(/--episode/);
     expect(parseRepairGuideArgs(['settings', '--set', 'import_check=on'])).toMatchObject({ set: { import_check: true } });
+    expect(parseRepairGuideArgs(['queue-check'])).toMatchObject({ command: 'queue-check' });
   });
 
   it('refuses what it does not understand', () => {
