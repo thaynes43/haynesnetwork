@@ -2,7 +2,9 @@
 
 - **Status:** Active. Docs Accepted (owner, 2026-10-12: ADR-109, ADR-110, ADR-111, DESIGN-055). The owner ruled
   DESIGN-055 Q-01..Q-05 (the recommended option each time) and approved P1..P8 in this order, one phase per release,
-  each verified live before the next. P0 is shipped (v0.111.2); its week of census is owed (OC-048). P1 is next.
+  each verified live before the next. P0 (v0.111.2), P1 (v0.112.1) and P2 (v0.113.1) are shipped and verified live;
+  P0's week of census is owed (OC-048), P1's first guided Fixes OC-050, P2's first presses and the `importable` flip
+  OC-051. P3 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -155,7 +157,25 @@ Priority is how often real reports need the remedy, and how much harm today's be
   import view before any cell enforces (the PLAN-065 L0 to L1 pattern). Exercise Force Search on the next real stuck
   item, or record that none occurred.
 - **Done when** the remedy is on, the census spot-check is recorded, and #597 Part 1 is closed with a link here.
-- **Build (2026-10-12):** what landed, and the decisions behind it, are DESIGN-055 D-07's "P2 decisions" (items 1-14),
+- **Status (2026-10-12): shipped, verified live, remedy on.** [#905](https://github.com/thaynes43/haynesnetwork/pull/905)
+  (v0.113.0) and [#907](https://github.com/thaynes43/haynesnetwork/pull/907) (v0.113.1: the file an import replaces is a
+  ticked "gone afterwards" line, decision 15, found in this live check), deployed by haynes-ops
+  [#3851](https://github.com/thaynes43/haynes-ops/pull/3851) and [#3853](https://github.com/thaynes43/haynes-ops/pull/3853):
+  3/3 web pods, all 22 sync CronJobs, the owed-check runner and the Books Census on v0.113.1; migration 0099 applied.
+  `import_check` switched on at 23:11Z (audited, actor null). Live checks (read-only, in a web pod):
+  - `repair-guide.ts queue-check` over both queues: Sonarr 8 `importable`, 26 `title_mismatch`, 39 left for staff;
+    Radarr 1 and 1. The 22:25Z janitor census wrote the same counts. Spot-check: 9 of 9 `importable` judged correct
+    (PLAN-065 ladder log, 2026-10-12); the cells stay census (each import would replace a file on disk; OC-051 carries
+    the flip).
+  - `repair-guide.ts search-plan` on real stuck targets: Peppa Pig S09E30 and Franklin S01E05 go to staff (the release
+    names another year); Butterbean's Cafe S01E62 goes to staff (the download holds only an unextracted `.7z`, never a
+    removal); The Paper S02E06 (Case B, imported by hand on 2026-09-27) has nothing queued and searches; The Naked Gun 2½
+    plans an import that lists its current WEBDL-2160p file as replaced.
+  - No real Force Search press on a stuck item happened in the session; OC-051 records the first ones. The UI walkthrough
+    as a member cannot run from inside the cluster (sign-in goes through the public Authentik); e2e
+    `queue-aware-force-search.spec.ts` covers it.
+  - #597 Part 1 closed by comment, with a link here.
+- **Build (2026-10-12):** what landed, and the decisions behind it, are DESIGN-055 D-07's "P2 decisions" (items 1-15),
   D-05's and D-02's "As built" notes and DESIGN-046 D-27:
   - Steps 1-2: `title-evidence.ts` (pure, the live names of the motivating cases as fixtures, plus movie Title Evidence
     and the series-year rule), `import-check.ts` (pure), `getManualImport` (the download id only: Sonarr 4.0.20 lists
