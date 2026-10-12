@@ -1,7 +1,9 @@
 # DESIGN-046: Arr queue janitor — classifier, census, promotion ladder
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-03 (D-25: a release the *arr holds on its delay profile is `waiting`, left out of the census
+- **Last updated:** 2026-10-12 (D-26, issue #887: the *arrs' "Found archive file, might need to be extracted" is an archive
+  the download client left unextracted, not a bad release. It leaves `bad_release` and is reported as `unknown` with the
+  reason "Archive left unpacked"; DESIGN-055 D-14). Prior: 2026-10-03 (D-25: a release the *arr holds on its delay profile is `waiting`, left out of the census
   instead of counted as `unknown`, after the owner's 120-minute Usenet delay profile on Sonarr). Prior: 2026-10-03 (D-23, D-24, ADR-098, owner ruling: one search budget per title across every janitor
   search, the loop guard on `bad_release` for all three *arrs, one search per failure, and the failed-download retry on
   Sonarr and Radarr once their own Redownload Failed is off; Q-08 answered: at most two tries per title in any
@@ -73,11 +75,11 @@ schema.
 | Class (T-239) | Signal (initial pattern set, tuned by census) |
 |---|---|
 | `have_better` | `importBlocked`/`importPending` + a `statusMessages` message matching the *arr's own already-satisfied rejections: "Not an upgrade for existing …", "Not a Custom Format upgrade …", "…quality cutoff … already met…". The *arr already compared against the library — the janitor trusts its verdict rather than re-deriving (the *arrs are the source of truth, hard rule 4). Since D-10, not when the item also carries an identity mismatch (then `unknown`). |
-| `bad_release` | `trackedDownloadStatus: 'error'`; or messages matching "Unable to parse…", "…sample…", "…archive…/…password…/…executable…" (release defects); or `status: 'failed'`. Since D-10 the release-defect patterns read release-level messages only ("Sample" and "Found archive file…" verbatim). |
+| `bad_release` | `trackedDownloadStatus: 'error'`; or messages matching "Unable to parse…", "…sample…", "…password…/…executable…" (release defects); or `status: 'failed'`. Since D-10 the release-defect patterns read release-level messages only ("Sample" verbatim). Since D-26, "Found archive file, might need to be extracted" is not a release defect: it is `unknown`, report only. |
 | `retry_import` | `importBlocked`/`importPending` with an empty/transient message set ("Waiting to import…", no messages at all) — the stuck-import class `ProcessMonitoredDownloads` exists for. |
 | `manual_match` | Since D-12: one of Lidarr's own match rejections ("Album match is not close enough…", "Worst track match…", "Has missing tracks", "Has unmatched tracks", "Couldn't find similar album for…", "Unable to import automatically, found multiple artists…"). Lidarr could not match the files to an album with confidence, so only a person can decide. **Report only**: no enforce cell, never acted on, like `unknown`. Also takes a `have_better` match that carries one of these messages. Since D-13 (owner ruling 2026-09-29) it has one enforce cell, on Lidarr, census by default. |
 | `waiting` | Since D-25: `status: delay`, a release the *arr is holding back on purpose (its delay profile) and has not sent to a download client yet. Not a ledger class: it gets no row and no count, and is never acted on. Checked after every class above, so it never masks one. |
-| `unknown` | Everything else. Lidarr's match-ambiguity messages started here and left for `manual_match` once census evidence answered Q-01 (D-12). |
+| `unknown` | Everything else. Lidarr's match-ambiguity messages started here and left for `manual_match` once census evidence answered Q-01 (D-12). Since D-26 it also takes "Found archive file, might need to be extracted", checked right after `bad_release`, with the reason "Archive left unpacked: …". |
 
 Anything not matched with confidence falls to `unknown`. Items younger than
 `minItemAgeHours` (D-05) classify normally but are marked `skipped_young` and never acted on.
@@ -525,6 +527,28 @@ normal, intended wait read as a pile of unclassified queue items.
 Pinned by `queue-cleanup.test.ts` (the classifier cases; the evaluator case: held records leave the census with every
 cell enforced, only the real item is acted on, the report counts them; and the retry case: a failure whose replacement is
 held is not searched).
+
+### D-26 — "Found archive file" is an archive left unpacked, not a bad release (2026-10-12, issue #887)
+
+**Why.** Sonarr and Radarr reject a completed download with "Found archive file, might need to be extracted" when the
+download client left an archive in the job folder. SABnzbd does that to obfuscated 7z posts (its logs show it since at least 2026-09-19): it runs
+its unpack step before it deobfuscates the files and adds the `.7z` extension, so the archive is never extracted
+(haynes-ops#3834). The release is fine. D-10 rule 4 had made the message a verbatim `bad_release` signal, so once the
+*arr family reached L2 the janitor removed and blocklisted 82 working Sonarr downloads (97 episodes, 2026-10-02 to
+2026-10-11) and 1 Radarr download, then searched again; 9 episodes found no other release. DESIGN-055 D-14 records the
+plan-level decision.
+
+| # | Ruling | Reason |
+|---|---|---|
+| 1 | **The message is report only.** "Found archive file, might need to be extracted" (verbatim, any casing, never a bare "archive", D-10 rule 4) classifies `unknown` with the reason `Archive left unpacked: <upstream message>`. | The fix belongs in the download client. Blocklisting removes a working source, and for a rare release the only one. The prefix gives the census its own reason while the upstream text stays searchable. |
+| 2 | **It is checked right after `bad_release`.** A failed download (`status: failed`, `trackedDownloadStatus: error`, a failed state) or a release-level defect beside it ("Sample", "Unable to parse…", a password) keeps `bad_release`, and an already-satisfied rejection keeps `have_better` (first match). It comes before `retry_import` and `manual_match`, so a stuck-import retry or a Lidarr removal never acts on it. | Like every D-10 ruling, the change moves items toward observation and never hides a real defect. |
+| 3 | **No config, no migration.** `unknown` has no enforce cell on any instance, so no cell can act on it; the class CHECK is unchanged. | The scope is in code (ADR-083: classification is code). |
+| 4 | **Whether it ever acts again is a census question.** After haynes-ops#3834 ships, seven days of census for the reason decide whether the message returns to an acting class. | The message should become rare once SABnzbd extracts these posts; what remains is the evidence. |
+
+The one-off repair is ops, not app code: the janitor's 83 false blocklist entries were removed by hand and the episodes
+still missing were searched again (PLAN-065 ladder log). Pinned by `queue-cleanup.test.ts` (the classifier cases, and
+the evaluator case: with every Sonarr and Radarr cell enforced, archive items are `unknown` rows and nothing is removed,
+blocklisted or searched).
 
 ## Alternatives considered
 
