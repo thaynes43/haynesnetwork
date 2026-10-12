@@ -601,7 +601,7 @@ marks X watched in Plex.
 Owner directive 2026-09-23: "We should do what we did for cigar-journal so I can hook haynesnetwork-mcp
 up to ChatGPT." Owner ruling the same day: "The auth path needs to be user aware too." ChatGPT, Claude
 Code and Codex (and, not yet verified, claude.ai) connect to a public MCP endpoint through OAuth 2.1,
-using the same tools as the hop (seven then, nine since ADR-092); the Movie Room agent and the dev-env agents stay on the in-cluster hop
+using the same tools as the hop (seven then, nine since ADR-092, eleven since ADR-107); the Movie Room agent and the dev-env agents stay on the in-cluster hop
 (R-244).
 
 | ID | Requirement | Priority |
