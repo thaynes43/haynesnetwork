@@ -262,6 +262,17 @@ export function confirmText(state: SearchPlanState, ontoLabel: string | null): s
   }
 }
 
+/**
+ * DESIGN-055 D-01 preview contract — the "gone afterwards" line for a file an import replaces: the *arr imports the
+ * upgrade over the file on disk and deletes the old one, so the person ticks it before "Import it" works.
+ */
+export function replacedGoneLine(r: Pick<SearchPlan['replaces'][number], 'label' | 'qualityName' | 'sizeBytes'>): string {
+  const about = [r.qualityName, r.sizeBytes !== null && r.sizeBytes > 0 ? formatBytes(r.sizeBytes) : null].filter(
+    (x): x is string => x !== null && x !== '',
+  );
+  return `The current file of ${r.label}${about.length > 0 ? ` (${about.join(', ')})` : ''}, which this download replaces`;
+}
+
 /** The one line a removal makes gone for good. It must be ticked first and is never pre-ticked (D-01). */
 export function removalGoneLine(download: Pick<SearchPlanDownload, 'title'> | null): string {
   return `Remove ${download?.title ?? 'this download'} and block that release so it is not downloaded again`;

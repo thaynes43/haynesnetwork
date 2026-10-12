@@ -18,6 +18,7 @@ import {
   progressPercent,
   readsQueueFirst,
   removalGoneLine,
+  replacedGoneLine,
   staffText,
   staffTicketText,
   stepHeading,
@@ -65,6 +66,7 @@ function plan(o: Partial<SearchPlan> = {}): SearchPlan {
     },
     check: check(),
     ontoChoices: [],
+    replaces: [],
     removeWhy: null,
     digest: 'abc123abc123abc123abc123',
     ...o,
@@ -196,6 +198,15 @@ describe('the step for each state (D-07)', () => {
     expect(confirmText('search', null)).toBe('Force search');
     expect(confirmText('on_its_way', null)).toBeNull();
     expect(confirmText('staff', null)).toBeNull();
+  });
+
+  it('a file the import replaces is named as gone, with its quality and size (D-01 preview contract)', () => {
+    expect(
+      replacedGoneLine({ label: 'S01E03 · Episode 3', qualityName: 'Bluray-1080p', sizeBytes: 829_771_748 }),
+    ).toMatch(/^The current file of S01E03 · Episode 3 \(Bluray-1080p, [\d.]+ MB\), which this download replaces$/);
+    expect(replacedGoneLine({ label: 'GoodFellas', qualityName: null, sizeBytes: null })).toBe(
+      'The current file of GoodFellas, which this download replaces',
+    );
   });
 
   it('the removal line names the release it blocks', () => {

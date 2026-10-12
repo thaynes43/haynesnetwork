@@ -3131,6 +3131,10 @@ input[aria-invalid='true'] {
   margin: 0;
   overflow-wrap: anywhere;
 }
+.fs-guide__gone-line {
+  display: block;
+}
+
 .fs-guide__evidence {
   margin-top: 4px;
 }

@@ -88,6 +88,19 @@ export interface ForceSearchOntoChoice {
   grabTarget: boolean;
 }
 
+/**
+ * DESIGN-055 D-01 preview contract — a file the import replaces. The *arr imports an upgrade over the file on disk and
+ * deletes the old one (no recycle bin), so the guide shows it as gone afterwards, to be ticked.
+ */
+export interface ForceSearchReplacedFile {
+  /** The episode (Sonarr) or movie (Radarr) whose file is replaced. */
+  targetId: number;
+  label: string;
+  fileName: string | null;
+  sizeBytes: number | null;
+  qualityName: string | null;
+}
+
 export interface ForceSearchPlan {
   /** False when the remedy is off or the target is not one episode or one movie: today's search-only Force Search. */
   queueAware: boolean;
@@ -96,6 +109,8 @@ export interface ForceSearchPlan {
   download: ForceSearchDownload | null;
   check: ForceSearchCheck | null;
   ontoChoices: ForceSearchOntoChoice[];
+  /** `import`: the files on disk the import replaces (empty when the target is missing). */
+  replaces: ForceSearchReplacedFile[];
   /** `remove_and_search`: `failed` or `defect`. */
   removeWhy: 'failed' | 'defect' | null;
   /** A stable digest of what the press will DO; the confirm sends it back. */
@@ -206,6 +221,7 @@ export function publicPlan(plan: ForceSearchPlan): ForceSearchPlan {
     download: plan.download,
     check: plan.check,
     ontoChoices: plan.ontoChoices,
+    replaces: plan.replaces,
     removeWhy: plan.removeWhy,
     digest: plan.digest,
   };
@@ -250,6 +266,7 @@ async function buildPlan(input: ForceSearchPlanInput): Promise<InternalPlan> {
     download: null,
     check: null,
     ontoChoices: [],
+    replaces: [],
     removeWhy: null,
     digest: '',
     kind: item.arrKind === 'radarr' ? 'radarr' : 'sonarr',
@@ -297,6 +314,16 @@ async function buildPlan(input: ForceSearchPlanInput): Promise<InternalPlan> {
     });
     plan.radarrCheck = check;
     plan.check = publicCheck(check);
+    if (check.verdict === 'importable' && movie.hasFile) {
+      const files = await guarded('movie file read', () => input.arr.read.radarr.listMovieFiles(item.arrItemId));
+      plan.replaces = files.map((f) => ({
+        targetId: movie.id,
+        label: item.title,
+        fileName: f.relativePath ?? null,
+        sizeBytes: f.size ?? null,
+        qualityName: f.quality?.quality?.name ?? null,
+      }));
+    }
     return finish({ ...plan, ...stateFor(check) });
   }
 
@@ -351,6 +378,22 @@ async function buildPlan(input: ForceSearchPlanInput): Promise<InternalPlan> {
   plan.sonarrCheck = check;
   plan.sonarrCheckInput = checkInput;
   plan.check = publicCheck(check);
+  if (check.verdict === 'importable') {
+    const landing = episodes.filter((e) => (check.file?.targetIds ?? []).includes(e.id) && e.hasFile);
+    if (landing.length > 0) {
+      const files = await guarded('episode file read', () => input.arr.read.sonarr.listEpisodeFileReleases(seriesId));
+      plan.replaces = landing.map((e) => {
+        const f = files.find((x) => x.id === e.episodeFileId);
+        return {
+          targetId: e.id,
+          label: label(e.id),
+          fileName: f?.relativePath ?? null,
+          sizeBytes: f?.size ?? null,
+          qualityName: f?.quality?.quality?.name ?? null,
+        };
+      });
+    }
+  }
   const next = stateFor(check);
   if (check.verdict === 'title_mismatch' && check.reason === 'title_disagrees') {
     // D-07 rule 4: "Import this download onto..." the episode the title names (when it has no file), or the grab's own
@@ -389,6 +432,7 @@ function finish(plan: InternalPlan): InternalPlan {
       queueItemId: plan.state === 'remove_and_search' ? plan.queueItemId : null,
       files: files.map((f) => ({ path: f.path, to: 'episodeIds' in f ? f.episodeIds : f.movieId })),
       onto: plan.ontoChoices.map((c) => c.episodeId),
+      replaces: plan.replaces.map((r) => [r.targetId, r.fileName]),
       removeWhy: plan.removeWhy,
       reason: plan.check?.reason ?? null,
     }),
@@ -543,6 +587,7 @@ export async function runQueueAwareForceSearch(
       download: plan.download,
       check: plan.check,
       ontoEpisodeId: input.confirm.ontoEpisodeId ?? null,
+      replaces: plan.replaces,
       files: check.files.map((f) => ({ path: f.path, to: 'episodeIds' in f ? f.episodeIds : f.movieId })),
     },
   });
