@@ -1,15 +1,22 @@
 # HANDOFF — cold-start resume point
 
-## 2026-10-12 19:20Z: PLAN-077 P1 merged (#897) — the Repair Guide's Fix guards; release and live check in progress
+## 2026-10-12 20:10Z: PLAN-077 P1 shipped — the Repair Guide's Fix guards, live in v0.112.1, remedies on
 
-- **What:** Fix opens the Repair Guide once any remedy in the audited `repair_guide_remedies` switch is on (all four
-  ship **off**): Replacement Preview and Same Release refusal, the season guard, the language check, playback triage.
-  Decisions: DESIGN-055 D-09 "P1 decisions". Migration 0098 (two app-setting keys). No new *arr write.
-- **In flight:** release, haynes-ops tag bump, live check with `tsx /sync/src/scripts/repair-guide.ts` in a web pod
-  (GoodFellas, Radarr movie 2934, must refuse the Same Release), the Tautulli template change (`server`, Playback
-  Error, a webhook on HaynesTower), then the remedies switched on. The release-please run for #897 failed once
-  ("Error adding to tree"); this docs merge re-runs it.
-- **Known-Issue Servers ship empty:** haynes-ops#3833 (HaynesOps hardware transcoding) was fixed the same day.
+- **What:** Fix on a movie, episode or season opens the Repair Guide (`repair_guide_remedies`, all four on since
+  20:05Z, audited, actor null): the Replacement Preview refuses the Same Release or nothing to replace it; the season
+  guard never marks a pack that also backs an episode marked fine, and an episode Fix in a pack must choose; Wrong
+  language reads the audio first; Won't play reads Playback Evidence first. Decisions: DESIGN-055 D-09 "P1 decisions".
+  Music keeps today's dialog. **To switch a remedy off:** `/admin/fixes` (Repair Guide card), or
+  `kubectl -n frontend exec <web pod> -c app -- tsx /sync/src/scripts/repair-guide.ts settings --set <remedy>=off`.
+- **Shipped:** hnet #897 (v0.112.0) and #901 (v0.112.1, Playback Evidence matches the session's Plex identity),
+  haynes-ops #3847 and #3848, 3/3 web pods on v0.112.1. Docs PR #895 accepted ADR-109/110/111 with the owner's
+  rulings; Q-09 (does an Unfixable outcome restart the gate's count of 3) is open and gates P8 only.
+- **Verified live (read-only; PLAN-077 P1 status has the details):** GoodFellas refuses the Same Release (FraMeSToR's
+  own remux); Ludwig (2024) S01's live pack is held back and its cost shown; The Lost Tapes S01E12 audio is
+  Portuguese and English; Playback Evidence reads `no_play` and `played` correctly.
+- **Tautulli:** all three instances post play, stop and Playback Error with `server`; HaynesTower through the LAN
+  route. OC-050 watches the first webhooks and guided Fixes. Known-Issue Servers empty (haynes-ops#3833 fixed).
+- **Next in PLAN-077:** P2 (queue-aware Force Search, the Import Check, Title Evidence, the janitor classes).
 
 ## 2026-10-12 17:50Z: PLAN-077 docs Accepted — owner rulings on DESIGN-055 Q-01..Q-05
 

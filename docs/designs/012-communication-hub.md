@@ -108,7 +108,8 @@ JSON we configure Tautulli to POST (Data tab), reading our own field names direc
 
 `server` (added 2026-10-12, DESIGN-055 D-09, PLAN-077 P1) names the Plex server that served the session, so Playback
 Evidence can tell which server a play reached; it is kept in the payload only. The HaynesOps and HaynesKube instances
-post this template for Playback Start, Playback Stop and Playback Error.
+post this template for Playback Start, Playback Stop and Playback Error to the in-cluster route; HaynesTower's
+Tautulli (outside the cluster) posts it to the LAN route `https://haynesnetwork.haynesops.com/api/webhooks/tautulli`.
 
 Mapping: `event_type → type`; `subject → title`; `message → body`; `media_type` normalized
 (movie→movie; show/season/episode/series→tv); `tmdb_id`/`tvdb_id → tmdb/tvdbId`; `user_email →

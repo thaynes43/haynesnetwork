@@ -1750,3 +1750,32 @@ checks:
       - "2026-10-12 17:55Z PASSED early, on the coordinator's request; the not_before wait no longer applied. The subtitle text (SRT CC stream, read with Sonarr's ffprobe) identified all 3 held files. The 'E09' file opens with the Morticians' Club and a cursed cookbook (Hobblin the Gobblin), and its second half is Leni, Mariella's dragon-fruit belts and River's protest (Fruit Dispute). No release named S10E20/E21 was indexed, so Sonarr manual-imported this file (importMode move) onto S10E20 and E21 as one multi-episode file: episode file 78978, 'S10E20-21 - Hobblin the Gobblin and Fruit Dispute'. Plex (plexops, HOps TV Shows) lists it, as the single entry 'Episode 20' it uses for every multi-episode file in this season. The 'E05' file is One False Move and Personal Train Wreck (Shelby, Uncle Lance's gym), duplicating the AndreMor S10E14-15 file in the library. The 'E12' file is Student of the Jeer and Bean Dreams (Lori and the Brewniversity), duplicating S09E22 and S09E23, which the library holds in its LAZY S09E21-22 and S09E23-24 files. Before deleting, Sonarr confirmed that S10E05, E06, E09, E10, E12 and E13 all hold AndreMor pair files (episode files 78975, 78976, 78977). Nobody had asked for the held copies, which existed only from 17:19Z to 17:55Z that day. Both duplicates and the hold folder were deleted."
     links:
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/887']
+  - id: OC-050
+    title: 'The Repair Guide in use: Tautulli webhooks name their server, and the first guided Fixes (PLAN-077 P1)'
+    opened: 2026-10-12
+    after: v0.112.1 deployed (haynes-ops 3848), the Tautulli template changed on all three instances, and the four remedies switched on at 20:05Z
+    not_before: 2026-10-13T20:05:00Z
+    due: 2026-10-19T20:05:00Z
+    owner: haynesnetwork coordinator (PLAN-077)
+    status: pending
+    check: |
+      1. Tautulli: read the tautulli notifications since 2026-10-12T20:05Z. Each of HaynesOps, HaynesKube and
+         HaynesTower should appear in payload->>'server' once someone has played on it. HaynesTower posts through the
+         LAN route; if it never appears while its own history shows plays, check its notifier "haynesnetwork Bulletin"
+         (Tautulli API get_notifier_config) and the route from that box.
+      2. Guided Fixes: list fix_requests since 20:05Z whose actions_taken has a guard_plan step. For each, check the
+         plan matched what the *arr did (the marks and deletes in the trail). Read the web pods' logs for
+         FIX_PLAN_CHANGED and release-search errors.
+      3. Record the counts here. If no one used Fix in the week, say so.
+    auto:
+      - name: webhook rows since the change carry the server
+        source: app-db
+        query: |
+          select count(*) as n from notifications
+          where source = 'tautulli' and occurred_at > '2026-10-12T20:05:00Z' and coalesce(payload->>'server', '') = ''
+        expect: {eq: 0}
+        mismatch: fail
+    auto_covers: part
+    evidence: []
+    links:
+      prs: ['https://github.com/thaynes43/haynesnetwork/pull/897', 'https://github.com/thaynes43/haynesnetwork/pull/901', 'https://github.com/thaynes43/haynes-ops/pull/3847', 'https://github.com/thaynes43/haynes-ops/pull/3848']

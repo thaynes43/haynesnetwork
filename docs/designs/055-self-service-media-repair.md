@@ -356,9 +356,12 @@ Error trigger.
    person's app or Plex email, or their Plex username, and the title's ledger item or ids (a show at the show level),
    plus each Tautulli instance's history for the title's rating keys on that server, filtered to the person's plex.tv
    id or Plex username. Those come from the session's Plex identity (the sign-in claims) as well as the user row's
-   admin overrides: on 2026-10-12 no user row carried a Plex username, so the row alone would match no history. The template gains `server` (DESIGN-012 D-02), so a webhook names the server too. Read 2026-10-12: the
-   HaynesOps and HaynesKube instances post `play` and `stop`; HaynesTower's Tautulli posts nothing to the app, so its
-   plays come from its history only. The **Known-Issue Servers** (T-314) are the audited app setting
+   admin overrides: on 2026-10-12 no user row carried a Plex username, so the row alone would match no history. The
+   template gains `server` (DESIGN-012 D-02), so a webhook names the server too. Read 2026-10-12: the HaynesOps and
+   HaynesKube instances posted `play` and `stop`, and HaynesTower's Tautulli posted nothing to the app. The same day
+   all three gained the Playback Error trigger and `server`, and HaynesTower's (outside the cluster) now posts
+   through the LAN route `https://haynesnetwork.haynesops.com/api/webhooks/tautulli`. The **Known-Issue Servers**
+   (T-314) are the audited app setting
    `playback_known_issue_servers`; Won't play triage suggests another server first when every play reached only these.
    It ships empty: haynes-ops#3833 (HaynesOps never hardware-transcoded) was fixed the same day, before P1 shipped.
 9. **The in-cluster tool.** `tsx /sync/src/scripts/repair-guide.ts` prints a title's plan (`preview`, with both planning
@@ -448,7 +451,7 @@ after it, so a crash never posts twice.
 | Dependency | Where | Needed by |
 |---|---|---|
 | SABnzbd extracts obfuscated `.7z` posts | haynes-ops#3834 | D-07 rule 6, D-14 |
-| All three Tautulli instances post play and stop to the webhook; the Playback Error trigger is added | Tautulli settings (each instance's API or UI) | D-09 (P1: HaynesOps and HaynesKube post; HaynesTower, outside the cluster, is read from its history) |
+| All three Tautulli instances post play and stop to the webhook; the Playback Error trigger is added | Tautulli settings (each instance's API or UI) | D-09 (P1, 2026-10-12: all three post play, stop and Playback Error; HaynesTower through the LAN route) |
 | The Seerr webhook sends issue types | Seerr settings (API) | D-10 |
 | The Seerr bridge user exists | Seerr users (API or UI) | D-10 writes |
 | Case A's hand-made release profile is retired | Sonarr | D-05 adoption |
