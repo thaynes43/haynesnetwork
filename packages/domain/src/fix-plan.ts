@@ -10,7 +10,8 @@ import { createHash } from 'node:crypto';
 import { mediaItems, type DbClient } from '@hnet/db';
 import { eq } from 'drizzle-orm';
 import type { ArrRelease, ArrReleaseHistoryRecord } from '@hnet/arr';
-import { NotFoundError, LedgerItemTombstonedError, FixTargetRequiredError } from './errors';
+import { FixRateLimitError, FixTargetRequiredError, LedgerItemTombstonedError, NotFoundError } from './errors';
+import { assertFixAllowed } from './fix-requests';
 import { resolveDb } from './db-client';
 import type { ArrClientBundle } from './arr-clients';
 import { guardArrCall, listMediaChildren, type MediaChildTarget } from './media-children';
@@ -151,6 +152,71 @@ export interface PlanFixInput {
   /** Season guard: replace just this episode's file instead of blocking the pack that holds it. */
   replaceFile?: boolean;
   remedies: RepairGuideRemedies;
+  /**
+   * Who asked, for the release-search throttle (RELEASE_SEARCHES_PER_HOUR). Absent (the in-cluster tool) or an admin:
+   * not throttled.
+   */
+  requesterId?: string;
+  requesterIsAdmin?: boolean;
+  /** Test clock for the release cache and throttle. */
+  now?: () => number;
+}
+
+/**
+ * DESIGN-055 D-09 — a release list is reused for this long, so a preview and the confirm's re-plan (and a person going
+ * back and forth in the guide) cost one search of the indexers, not several.
+ */
+export const RELEASE_LIST_TTL_MS = 5 * 60_000;
+
+/**
+ * DESIGN-055 D-09 — a member's live release searches per hour (each one queries every indexer, whose API hits are
+ * capped). A cached list costs nothing; admins and the in-cluster tool are not throttled. Kept per web pod, in memory.
+ */
+export const RELEASE_SEARCHES_PER_HOUR = 12;
+
+const RELEASE_CACHE_MAX = 200;
+const releaseCache = new Map<string, { at: number; releases: ArrRelease[] }>();
+const searchesByRequester = new Map<string, number[]>();
+
+/** Tests: forget every cached release list and every counted search. */
+export function resetReleaseSearchState(): void {
+  releaseCache.clear();
+  searchesByRequester.clear();
+}
+
+/** One release list, from the cache when fresh, else a live search (throttled per member). */
+async function releasesFor(
+  input: PlanFixInput,
+  key: string,
+  read: () => Promise<ArrRelease[]>,
+): Promise<ArrRelease[]> {
+  const now = input.now ? input.now() : Date.now();
+  const hit = releaseCache.get(key);
+  if (hit && now - hit.at < RELEASE_LIST_TTL_MS) return hit.releases;
+  if (input.requesterId && !input.requesterIsAdmin) {
+    const recent = (searchesByRequester.get(input.requesterId) ?? []).filter((at) => now - at < 3_600_000);
+    if (recent.length >= RELEASE_SEARCHES_PER_HOUR) {
+      throw new FixRateLimitError(
+        'You have checked for replacements many times in a short while. Give it a little while and try again.',
+      );
+    }
+    recent.push(now);
+    searchesByRequester.set(input.requesterId, recent);
+  }
+  const releases = await read();
+  releaseCache.set(key, { at: now, releases });
+  if (releaseCache.size > RELEASE_CACHE_MAX) {
+    let oldestKey: string | null = null;
+    let oldestAt = Infinity;
+    for (const [k, v] of releaseCache) {
+      if (v.at < oldestAt) {
+        oldestAt = v.at;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey !== null) releaseCache.delete(oldestKey);
+  }
+  return releases;
 }
 
 /** Whether a guarded plan applies at all: a Sonarr or Radarr Fix with a remedy that plans on. */
@@ -300,7 +366,9 @@ async function planMovie(input: PlanFixInput, movieId: number): Promise<FixPlan>
   if (file && input.remedies.replacement_preview) {
     const [history, releases] = await Promise.all([
       guardArrCall(`radarr GET /history/movie?movieId=${movieId}`, () => radarr.getMovieReleaseHistory(movieId)),
-      guardArrCall(`radarr GET /release?movieId=${movieId}`, () => radarr.listMovieReleases(movieId)),
+      releasesFor(input, `radarr:movie:${movieId}`, () =>
+        guardArrCall(`radarr GET /release?movieId=${movieId}`, () => radarr.listMovieReleases(movieId)),
+      ),
     ]);
     const check = checkReplacement(fileIdentity(file, history), releases);
     replacement = {
@@ -367,8 +435,10 @@ async function planEpisode(
   }
   let replacement = UNCHECKED;
   if (file && input.remedies.replacement_preview) {
-    const releases = await guardArrCall(`sonarr GET /release?episodeId=${episodeId}`, () =>
-      input.arr.read.sonarr.listEpisodeReleases(episodeId),
+    const releases = await releasesFor(input, `sonarr:episode:${episodeId}`, () =>
+      guardArrCall(`sonarr GET /release?episodeId=${episodeId}`, () =>
+        input.arr.read.sonarr.listEpisodeReleases(episodeId),
+      ),
     );
     const check = checkReplacement(fileIdentity(file, history), releases, {
       covers: (r) =>
@@ -459,8 +529,10 @@ async function planSeason(
       : [];
     const releases =
       input.remedies.replacement_preview && chosenIds.length
-        ? await guardArrCall(`sonarr GET /release?seriesId=${seriesId}&seasonNumber=${seasonNumber}`, () =>
-            input.arr.read.sonarr.listSeasonReleases(seriesId, seasonNumber),
+        ? await releasesFor(input, `sonarr:season:${seriesId}:${seasonNumber}`, () =>
+            guardArrCall(`sonarr GET /release?seriesId=${seriesId}&seasonNumber=${seasonNumber}`, () =>
+              input.arr.read.sonarr.listSeasonReleases(seriesId, seasonNumber),
+            ),
           )
         : null;
     for (const id of chosenIds) {
@@ -571,4 +643,36 @@ export async function readSeasonChoices(input: {
       downloadEpisodes: grab ? (counts.get(grab.downloadKey) ?? 1) : 0,
     };
   });
+}
+
+/**
+ * DESIGN-055 D-01, D-09 — the guide's preview for one person (`fix.preview`): null when no planning remedy is on or the
+ * kind has none (Lidarr). It refuses early, like the Fix itself, when the person is over their hourly budget or a Fix is
+ * already open on the grain, so a request that would be refused anyway never runs a release search.
+ */
+export async function previewFix(
+  input: Omit<PlanFixInput, 'requesterId'> & { requesterId: string },
+): Promise<FixPlan | null> {
+  const db = resolveDb(input.db);
+  const [item] = await db
+    .select({ id: mediaItems.id, arrKind: mediaItems.arrKind })
+    .from(mediaItems)
+    .where(eq(mediaItems.id, input.mediaItemId));
+  if (!item) throw new NotFoundError(`Media item ${input.mediaItemId} not found`);
+  if (!planApplies(item.arrKind, input.remedies)) return null;
+  const resolved = resolveFixTarget(item.arrKind, {
+    scope: input.scope,
+    targetChildId: input.targetChildId,
+    seasonNumber: input.seasonNumber,
+  });
+  await assertFixAllowed({
+    db: input.db,
+    requesterId: input.requesterId,
+    requesterIsAdmin: input.requesterIsAdmin,
+    mediaItemId: item.id,
+    scope: resolved.scope,
+    targetArrChildId: resolved.targetChildId,
+    seasonNumber: resolved.seasonNumber,
+  });
+  return planFix(input);
 }

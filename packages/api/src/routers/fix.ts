@@ -21,8 +21,7 @@ import {
   computeSearchProgress,
   getKnownIssueServers,
   getRepairGuideRemedies,
-  planApplies,
-  planFix,
+  previewFix,
   readFileAudio,
   readPlaybackEvidence,
   readSeasonChoices,
@@ -145,13 +144,7 @@ export const fixRouter = router({
     )
     .query(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
-        const remedies = await getRepairGuideRemedies(ctx.db);
-        const [item] = await ctx.db
-          .select({ arrKind: mediaItems.arrKind })
-          .from(mediaItems)
-          .where(eq(mediaItems.id, input.mediaItemId));
-        if (!item || !planApplies(item.arrKind, remedies)) return { plan: null };
-        const plan = await planFix({
+        const plan = await previewFix({
           db: ctx.db,
           arr: resolveArrBundle(ctx),
           mediaItemId: input.mediaItemId,
@@ -160,7 +153,9 @@ export const fixRouter = router({
           seasonNumber: input.seasonNumber,
           episodeIds: input.episodeIds,
           replaceFile: input.replaceFile,
-          remedies,
+          remedies: await getRepairGuideRemedies(ctx.db),
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
         });
         return { plan };
       });

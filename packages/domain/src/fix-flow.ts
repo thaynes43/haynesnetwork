@@ -46,7 +46,7 @@ import { planApplies, planFix, type FixPlan, type PlanReplacement } from './fix-
 import { languageVerdict, readFileAudio } from './language-check';
 import { audioLanguageName } from './fix-guards';
 import { resolveDb } from './db-client';
-import { createFixRequest, recordFixAction } from './fix-requests';
+import { assertFixAllowed, createFixRequest, recordFixAction } from './fix-requests';
 import { arrApiBasePath, type ArrClientBundle } from './arr-clients';
 import type { ArrDownloadClientConfig } from '@hnet/arr';
 import { listMediaChildren } from './media-children';
@@ -818,6 +818,16 @@ async function runGuardedFix(
 ): Promise<RunFixRequestResult> {
   const kind = item.arrKind;
   const base = arrApiBasePath(kind);
+  // Refuse early (read-only) what createFixRequest would refuse: planning may search every indexer.
+  await assertFixAllowed({
+    db: input.db,
+    requesterId: input.requesterId,
+    requesterIsAdmin: input.requesterIsAdmin,
+    mediaItemId: item.id,
+    scope: resolved.scope,
+    targetArrChildId: resolved.targetChildId,
+    seasonNumber: resolved.seasonNumber,
+  });
   const plan = await planFix({
     db: input.db,
     arr: input.arr,
@@ -828,6 +838,8 @@ async function runGuardedFix(
     episodeIds: input.episodeIds,
     replaceFile: input.replaceFile,
     remedies,
+    requesterId: input.requesterId,
+    requesterIsAdmin: input.requesterIsAdmin,
   });
   if (input.planDigest !== undefined && input.planDigest !== plan.digest) {
     throw new FixPlanChangedError(

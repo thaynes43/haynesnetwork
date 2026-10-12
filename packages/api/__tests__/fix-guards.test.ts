@@ -12,7 +12,12 @@ import { and, eq } from 'drizzle-orm';
 import * as schema from '@hnet/db/schema';
 import { SEEDED_PLEX_SERVER_IDS } from '@hnet/db';
 import {
+  RELEASE_SEARCHES_PER_HOUR,
+  allRemediesOff,
+  createFixRequest,
+  planFix,
   recordNotification,
+  resetReleaseSearchState,
   setKnownIssueServers,
   setRepairGuideRemedies,
   syncPlexMatches,
@@ -53,6 +58,7 @@ const ALL_ON = {
 
 beforeEach(async () => {
   await setRepairGuideRemedies({ db: tdb.db, remedies: ALL_ON, actorId: null });
+  resetReleaseSearchState();
 });
 
 async function fixRows(mediaItemId: string) {
@@ -524,6 +530,76 @@ describe('Playback Evidence (T-309, DESIGN-055 D-09)', () => {
     const played = await api.fix.playbackEvidence({ mediaItemId: item.id });
     expect(played).toMatchObject({ verdict: 'played', servers: ['hayneskube', 'haynesops'] });
     await setKnownIssueServers({ db: tdb.db, servers: [], actorId: null });
+  });
+});
+
+describe('the release search is spent sparingly (every indexer, capped API hits)', () => {
+  it('a preview and its confirm share one search; a request refused anyway runs none', async () => {
+    const member = await createUser(tdb.db);
+    const item = await seedMediaItem(tdb.db, 'radarr', { title: 'One Search', arrItemId: 6001 });
+    const stub = stubArrBundle(radarrRoutes({ files: [movieFile(61)], releases: [releaseRow('next', { releaseGroup: 'NEW' })] }));
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+    const { plan } = await api.fix.preview({ mediaItemId: item.id });
+    await api.fix.preview({ mediaItemId: item.id }); // back and forth in the guide
+    await api.fix.create({ mediaItemId: item.id, reason: 'wont_play_corrupt', planDigest: plan!.digest });
+    expect(stub.callsFor('GET', '/api/v3/release')).toHaveLength(1);
+
+    // The Fix is now open on this movie: a second preview or create is refused before any search.
+    resetReleaseSearchState();
+    const previewErr = await api.fix.preview({ mediaItemId: item.id }).catch((e: unknown) => e);
+    expect(wireShape(previewErr, 'fix.preview').data.appCode).toBe('FIX_ALREADY_OPEN');
+    const createErr = await api.fix.create({ mediaItemId: item.id, reason: 'wont_play_corrupt' }).catch((e: unknown) => e);
+    expect(wireShape(createErr, 'fix.create').data.appCode).toBe('FIX_ALREADY_OPEN');
+    expect(stub.callsFor('GET', '/api/v3/release')).toHaveLength(1);
+  });
+
+  it('a member over the hourly budget gets no preview and no search', async () => {
+    const member = await createUser(tdb.db);
+    const other = await seedMediaItem(tdb.db, 'radarr', { title: 'Budget Filler', arrItemId: 6002 });
+    for (let i = 0; i < 25; i += 1) {
+      const { fixRequestId } = await createFixRequest({
+        db: tdb.db,
+        requesterId: member.id,
+        mediaItemId: other.id,
+        reason: 'other',
+        reasonText: `filler ${i}`,
+      });
+      await tdb.db.update(schema.fixRequests).set({ status: 'failed' }).where(eq(schema.fixRequests.id, fixRequestId));
+    }
+    const item = await seedMediaItem(tdb.db, 'radarr', { title: 'Over Budget', arrItemId: 6003 });
+    const stub = stubArrBundle(radarrRoutes({ files: [movieFile(63)], releases: [releaseRow('next', { releaseGroup: 'NEW' })] }));
+    const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
+    const err = await api.fix.preview({ mediaItemId: item.id }).catch((e: unknown) => e);
+    expect(wireShape(err, 'fix.preview').data).toMatchObject({ code: 'TOO_MANY_REQUESTS', appCode: 'FIX_RATE_LIMIT_EXCEEDED' });
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  it(`a member's live searches are capped at ${RELEASE_SEARCHES_PER_HOUR} an hour; cached lists and admins are not`, async () => {
+    const member = await createUser(tdb.db);
+    const items = [];
+    for (let i = 0; i <= RELEASE_SEARCHES_PER_HOUR; i += 1) {
+      items.push(await seedMediaItem(tdb.db, 'radarr', { title: `Throttle ${i}`, arrItemId: 6100 + i }));
+    }
+    const stub = stubArrBundle(radarrRoutes({ files: [movieFile(64)], releases: [releaseRow('next', { releaseGroup: 'NEW' })] }));
+    let clock = 1_000_000;
+    const plan = (mediaItemId: string, requesterIsAdmin = false) =>
+      planFix({
+        db: tdb.db,
+        arr: stub.bundle,
+        mediaItemId,
+        remedies: { ...allRemediesOff(), replacement_preview: true },
+        requesterId: member.id,
+        requesterIsAdmin,
+        now: () => clock,
+      });
+    for (const item of items.slice(0, RELEASE_SEARCHES_PER_HOUR)) await plan(item.id);
+    await plan(items[0]!.id); // cached: free
+    await expect(plan(items[RELEASE_SEARCHES_PER_HOUR]!.id)).rejects.toMatchObject({ code: 'FIX_RATE_LIMIT_EXCEEDED' });
+    await plan(items[RELEASE_SEARCHES_PER_HOUR]!.id, true); // an admin is not throttled
+    clock += 3_600_001; // an hour later the member may search again (the cached list has expired too)
+    const before = stub.callsFor('GET', '/api/v3/release').length;
+    await plan(items[RELEASE_SEARCHES_PER_HOUR]!.id);
+    expect(stub.callsFor('GET', '/api/v3/release')).toHaveLength(before + 1);
   });
 });
 

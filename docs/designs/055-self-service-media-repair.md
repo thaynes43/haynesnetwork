@@ -347,6 +347,11 @@ Error trigger.
    refuses a plan that changed (`FIX_PLAN_CHANGED`), so it never acts on something the person did not see. A Replacement
    Preview that cannot be read refuses the delete. Each "gone afterwards" line (a deleted file with its size, a blocked
    release, a blocked pack) must be ticked before the confirm works; none is pre-ticked.
+   **The release search is spent sparingly** (it queries every indexer, whose API hits are capped): the preview and the
+   Fix first refuse, read-only, what the Fix would refuse anyway (over the hourly budget, a Fix already open on the
+   grain), so such a request runs no search; a release list is reused for 5 minutes, so a preview and its confirm cost
+   one search; and a member may run at most 12 live searches an hour (per web pod; cached lists, admins and the
+   in-cluster tool are not counted). The preview itself costs no budget unit, unlike P5's Release Pick list.
 8. **Playback Evidence (T-309).** The stored Tautulli `play`, `stop` and Playback Error webhooks, matched by the
    person's app or Plex email, or their Plex username, and the title's ledger item or ids (a show at the show level),
    plus each Tautulli instance's history for the title's rating keys on that server, filtered to the person's Plex
