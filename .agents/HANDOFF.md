@@ -36,8 +36,16 @@ D-12, ADR-109 C-06/C-07, ADR-111 C-03/C-05, PRD R-266/R-267/R-270/R-271 and glos
   archived history: SABnzbd kept them as "Completed", so its duplicate check failed every re-grab. Anyone who undoes
   a janitor blocklist must delete that archived job too. Three mislabelled TLHG files (Loud House S10E05, E09, E12)
   went to `/data/haynestower/usenet/_hold-mislabelled-2026-10-12/`. All 9 missing episodes now have files.
-- **Owed:** OC-048 (a week of census, from 2026-10-19 17:30Z) and OC-049 (delete the hold folder after 2026-10-19;
-  the held "E09" copy holds E20 and E21, which are still missing).
+- **Owed:** OC-048 (a week of census, from 2026-10-19 17:30Z). OC-049 passed the same day. Subtitles showed the held
+  "E09" file is S10E20 and E21, so Sonarr manual-imported it onto both (moved, not copied). The other two held files
+  duplicated library content and were deleted along with the hold folder.
+- **Plex ordering fixed (same day):** both Plex servers that carry The Loud House (HaynesOps and HaynesTower; HaynesKube
+  has no TV library) used the library default ordering, The Movie Database (Aired). That put another episode's title on
+  all 8 S10 items, and on 22 more items in S5, S6 and S9. Neither server's database had any play, watched flag or
+  resume point on the show for any account, and neither did Tautulli or `watch_events`, so no watch state could move.
+  The show-level ordering on both servers is now TheTVDB (Aired), the numbering Sonarr and the files use, and the show
+  was refreshed. All 8 S10 titles match their files. 5 items in S5 and S6 still differ, between TheTVDB in Plex and
+  Sonarr's own data.
 - **Next in PLAN-077:** P1. The TLHG mislabels are a live example for P4 (Title Check): those single-episode releases
   are named for other pairs, and Sonarr imported them into the wrong slots.
 
