@@ -33,7 +33,8 @@
 - **Next:**
   - **Flip the Sonarr and Radarr `importable` cells to enforce.** OC-051 carries the flip, after a re-spot-check. The
     derived `arr` ladder reads L1 until then (PLAN-065 log).
-  - **The 38 Butterbean's Cafe downloads** stuck since 2026-10-04 are unextracted AndreMor `.7z` posts from before
+  - **The 38 Butterbean's Cafe downloads** ([#910](https://github.com/thaynes43/haynesnetwork/issues/910)) stuck since
+    2026-10-04 are unextracted AndreMor `.7z` posts from before
     haynes-ops#3836. Each needs an unpack (as #3836's script does), then a Force Search or Activity Retry import. Until
     then the Import Check sends them to staff and never removes them.
   - Then P3.
