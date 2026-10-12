@@ -38,7 +38,7 @@ Empty watchlist caches without successful-fetch markers cannot prove absence.
 ### D-03 — Factual context
 
 `viewing_context` supports optional `kind`, `section: viewing|feedback`, `limit` (1..20) and `offset`
-(0..2000). Return bounded IDs, available genres, plays/completion evidence, current progress,
+(0..2000). Omitting `section` combines viewing and explicit feedback. Return bounded IDs, available genres, plays/completion evidence, current progress,
 statements and freshness; include marks-only identities and page/coverage metadata. Exclude
 `not_mine` from viewing pages and retain it in feedback. No computed taste score or liking inference.
 Personal ratings explicitly report unavailable. `recent_history` describes plays truthfully;
