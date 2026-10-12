@@ -14,6 +14,7 @@ import { SEEDED_PLEX_SERVER_IDS } from '@hnet/db';
 import {
   RELEASE_SEARCHES_PER_HOUR,
   allRemediesOff,
+  closeFixManually,
   createFixRequest,
   planFix,
   recordNotification,
@@ -564,7 +565,8 @@ describe('the release search is spent sparingly (every indexer, capped API hits)
         reason: 'other',
         reasonText: `filler ${i}`,
       });
-      await tdb.db.update(schema.fixRequests).set({ status: 'failed' }).where(eq(schema.fixRequests.id, fixRequestId));
+      // Close each one through its single writer, so the next one is not "already open" (the budget still counts it).
+      await closeFixManually({ db: tdb.db, fixRequestId, actorId: member.id });
     }
     const item = await seedMediaItem(tdb.db, 'radarr', { title: 'Over Budget', arrItemId: 6003 });
     const stub = stubArrBundle(radarrRoutes({ files: [movieFile(63)], releases: [releaseRow('next', { releaseGroup: 'NEW' })] }));
