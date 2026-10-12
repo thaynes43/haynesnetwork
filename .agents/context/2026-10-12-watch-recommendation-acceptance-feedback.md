@@ -137,3 +137,9 @@ instructions from the tool descriptions HA consumes.
 
 CPU constraint: no burners, stress tools or wide parallel/looped tests. Bounded tests ran serially
 under `nice -n 19`; required CI supplied broad validation.
+
+While this completion PR was finishing, peer PLAN-077 shipped v0.111.2. Final readback confirms
+three updated/ready/available replicas on that tag; its release commit contains v0.111.1 and the
+Watch/MCP packages have no changes between the tags. The recommendation fixes remain deployed.
+The peer delivery record is preserved above this task in HANDOFF; this task's signed-image and
+CronJob evidence describes its own v0.111.1 rollout, rather than claiming a new image audit.

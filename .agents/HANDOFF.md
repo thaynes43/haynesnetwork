@@ -24,7 +24,8 @@
 
 **The owner's book-repair stop below remains binding.** This task does not authorize resuming it.
 
-v0.111.1 is live. Released titles beyond theatrical-only are eligible outside Plex/watchlists;
+The feedback fixes shipped in v0.111.1 and remain live in v0.111.2. Released titles beyond
+theatrical-only are eligible outside Plex/watchlists;
 commercial listings are optional convenience, never a default filter or ranking boost. The policy
 is in native instructions, connected-agent viewing-context descriptions and all four voice prompts.
 Agents still own broad research and selections for the request. `viewingBasis` identifies the
