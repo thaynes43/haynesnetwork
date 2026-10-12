@@ -20,6 +20,30 @@
 - **Next in PLAN-077:** P1. The TLHG mislabels are a live example for P4 (Title Check): those single-episode releases
   are named for other pairs, and Sonarr imported them into the wrong slots.
 
+## 2026-10-12 17:29Z: PLAN-076 delivered — watch recommendation acceptance feedback
+
+**The owner's book-repair stop below remains binding.** This task does not authorize resuming it.
+
+The feedback fixes shipped in v0.111.1 and remain live in v0.111.2. Released titles beyond
+theatrical-only are eligible outside Plex/watchlists;
+commercial listings are optional convenience, never a default filter or ranking boost. The policy
+is in native instructions, connected-agent viewing-context descriptions and all four voice prompts.
+Agents still own broad research and selections for the request. `viewingBasis` identifies the
+source supporting recorded status; zero direct completed plays can still have Plex watched state.
+Strict year mismatches offer canonical identity-only alternatives without resolving or assigning
+personal evidence. Cached similarity hints no longer imply liking. Missing history stays unknown.
+
+Feature #884/#888 and release #886 passed required gates; signed image/provenance and the deployed
+read-only contracts passed. haynes-ops #3837 delivered 3/3 healthy replicas and 24 CronJob templates
+with unchanged image-stripped specs/suspension. Guarded voice update #243/#3831 preserved every
+unrelated setting; cleanup #3832 removed the temporary entry/commands/mount and private snapshots.
+Post-deploy Watch-only reload verified all eleven current loaded tool descriptions, with complete
+settings/pipeline preservation and no HA pod restart.
+All scoped activities ended. No viewing/watchlist/acquisition writes were performed by this work.
+PLAN-076 is in `completed/`; [delivery evidence](context/2026-10-12-watch-recommendation-acceptance-feedback.md)
+records commits, digests, checks and cleanup. In ChatGPT, refresh the connector in settings and
+start a new chat; native Claude Code/Codex clients refresh tools when a session starts (OPS-015 §8).
+
 ## 2026-10-12 16:35Z: PLAN-077 drafted — self-service media repair (docs only, Proposed)
 
 The owner wants Plex users to fix problems themselves on haynesnetwork.com instead of filing Seerr issues for staff,
@@ -45,7 +69,7 @@ v0.111.0 is live: factual `viewing_context` and external `check_titles`; `recomm
 limited cache and no longer boosts Plex/watchlist membership or reserves Plex-first pages. Agents
 own broad discovery, current research and selections for the request. ADR-108 / PLAN-076 refines
 eligibility: released media beyond theatrical-only is eligible; commercial listings are optional
-convenience, never a default filter or ranking boost. The acceptance-feedback fixes are in progress.
+convenience, never a default filter or ranking boost. PLAN-076 delivered these refinements in v0.111.1.
 Missing records stay unknown; plays do not establish liking. Feature #882, release #881 and
 haynes-ops #3828 passed required checks; the signed image is on 3/3 replicas and 24 CronJobs.
 Read-only live checks resolved external candidates outside Plex without modifying viewing records.
@@ -56,7 +80,7 @@ writer (#3829), six accepted serial voice samples observed no added overhead, an
 removed the temporary entry/commands/ConfigMap/mount. Home Assistant is 1/1 Ready with all eleven
 Watch history tools. Phone's active Assist-only pipeline is unchanged. PLAN-075 is in `completed/`;
 [delivery evidence](context/2026-10-12-agent-owned-watch-recommendations.md) records the exact commits,
-image, checks, limited voice sample and restoration. Start fresh client sessions to refresh schemas.
+image, checks, limited voice sample and restoration. Follow OPS-015 §8 for client schema refresh.
 
 ## 2026-10-10 23:02Z: safely closed at owner request; no further book attempts
 
