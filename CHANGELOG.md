@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.113.1](https://github.com/thaynes43/haynesnetwork/compare/v0.113.0...v0.113.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* Force Search shows the file an import replaces as gone afterwards ([#907](https://github.com/thaynes43/haynesnetwork/issues/907)) ([17b0781](https://github.com/thaynes43/haynesnetwork/commit/17b078175341b94f0c94ce01496fac15aaee2de2))
+
 ## [0.113.0](https://github.com/thaynes43/haynesnetwork/compare/v0.112.1...v0.113.0) (2026-10-12)
 
 
