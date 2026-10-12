@@ -7,6 +7,9 @@
   Drafted by Opus 5.5. Owner rulings (2026-10-12): DESIGN-055 Q-02 (Seerr writes), Q-04 (the gate's threshold), Q-05
   (what the rule does once the gate passes).
 - **Design:** [DESIGN-055](../designs/055-self-service-media-repair.md) D-10..D-12. Plan: PLAN-077 phases P3, P7, P8.
+- **Amended by:** [ADR-112](112-self-service-readiness-is-a-judgment-call.md) (2026-10-12): **C-05's counted gate is
+  superseded** by the owner's judgment (no replays, no streak, no Self-Served count). C-01..C-04 and C-06..C-08 stand;
+  read C-08's "the gate counts outcomes" as "the admin view reads the app's own repair records".
 - **Amends (when its writer lands):** hard rule 4's Seerr write list (CLAUDE.md) gains the issue comment and the
   issue resolve (C-03), beside ADR-093 C-11's watchlist enrollment and `animeTags` preflight.
 
