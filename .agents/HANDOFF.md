@@ -1,5 +1,26 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-12 17:50Z: PLAN-077 docs Accepted — owner rulings on DESIGN-055 Q-01..Q-05
+
+The owner chose the recommended option on every question and accepted ADR-109, ADR-110 and ADR-111 (DESIGN-055 is
+Accepted with them). He approved P1..P8 in PLAN-077's order, **one phase per release, each verified live before the
+next**. The rulings are recorded where the questions live (DESIGN-055 Open questions) and folded into D-06, D-08, D-10,
+D-12, ADR-109 C-06/C-07, ADR-111 C-03/C-05, PRD R-266/R-267/R-270/R-271 and glossary T-307/T-313:
+
+- **Q-01 (Release Pick override):** anyone who can use Fix, missing items only, within the hourly Fix budget, only
+  when every rejection reason is overridable. The hard-refusal list applies to everyone.
+- **Q-02 (Seerr writes):** one comment per new issue with the fix-it-yourself link, and a resolve when the linked
+  repair completes, posted as a dedicated Seerr bot user via `X-API-User`, never as the owner's account.
+- **Q-03 (Plex audio language):** set the title's preferred audio language for everyone on every server only when the
+  wanted language is the title's original language; otherwise guidance, no change.
+- **Q-04 (the gate):** an agent replays Cases A, B and C as a non-admin user on the built tools, then the next 3 real
+  issues are self-served with no staff help.
+- **Q-05 (after the gate):** Seerr filing stays open; the app comments the self-service link; staff step in only after
+  a self-service attempt fails or when no remedy fits.
+- **New, open, gates P8 only:** DESIGN-055 Q-09, whether an Unfixable outcome restarts the Q-04 count of 3.
+
+**Next:** P1 (Fix safety guards and playback triage). Only Q-09 (P8) waits on the owner.
+
 ## 2026-10-12 17:30Z: PLAN-077 P0 shipped — janitor stops blocklisting unextracted archives; SABnzbd extracts them
 
 - **The janitor (#887, closed).** "Found archive file, might need to be extracted" is now `unknown`, report only, with

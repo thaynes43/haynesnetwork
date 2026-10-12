@@ -1,11 +1,12 @@
 # ADR-109: Self-service media repair: Fix and Force Search diagnose first, then repair in place
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-10-12, with rulings on DESIGN-055 Q-01 and Q-03 folded into C-06 and C-07; P1..P8
+  approved in PLAN-077's order, one phase per release, each verified live before the next)
 - **Date:** 2026-10-12
 - **Deciders:** Tom Haynes (owner goal, 2026-10-12: steer Plex users away from filing Seerr issues for staff and
   toward fixing problems themselves on haynesnetwork.com, once the platform reliably fixes what they report).
-  Drafted by Opus 5.5 from three Seerr issues worked by hand the same day. Open owner questions: DESIGN-055 Q-01
-  (who may override a profile rejection) and Q-03 (scope of a Plex audio-language write).
+  Drafted by Opus 5.5 from three Seerr issues worked by hand the same day. Owner rulings (2026-10-12): DESIGN-055
+  Q-01 (who may override a profile rejection) and Q-03 (scope of a Plex audio-language write).
 - **Design:** [DESIGN-055](../designs/055-self-service-media-repair.md). Plan: PLAN-077. Siblings: ADR-110 (episode-title
   evidence), ADR-111 (Seerr issue bridge and readiness gate).
 - **Amends (when the first writer lands):** hard rule 4's write-back list (CLAUDE.md), as ADR-083 C-04, ADR-093 C-08 and
@@ -74,8 +75,8 @@ the vocabulary and the write confinement, and lets every remedy show its evidenc
 | C-03 | **Destroy last.** No remedy deletes or displaces a library file implicitly. A Re-map refuses any move onto an occupied slot unless that slot's file moves too or the person explicitly discards it. The Fix's no-history delete path shows a Replacement Preview and refuses when the replacement is the same release or nothing acceptable exists. A season Fix blocklists only the downloads behind episodes the person marks bad. Wrong language reads the file's audio tracks before any blocklist or delete. |
 | C-04 | **Repair Requests** (T-302): a new aggregate with one single writer, the pending row committed before any mutating call (the Fix pattern), every step appended to its trail, and a ledger event per transition. Each remedy and each interactive release list counts once against the arr pool of the per-role budget (ADR-080). One open repair per series season or movie. |
 | C-05 | **Force Search becomes queue-aware** (issue #597 Part 1). It reads the queue for its target first. A finished download that passes the Import Check (T-306) is imported; one that fails it is removed with blocklist and searched again; a healthy one in progress is shown, not searched over. The janitor gets the same Import Check as a new census-first class on its own ladder cell (DESIGN-046 amendment), so automation and the person's button cannot disagree. |
-| C-06 | **Who may grab a release the profile rejected is open** (DESIGN-055 Q-01). Until the owner answers, the Release Pick offers approved releases to everyone and shows rejected ones read-only. A hard-refusal list applies whatever the answer: blocklisted, CAM/TS/sample/unknown quality, a Release Block or Mislabel Block term match, a name that names a different episode, or a size over the profile's limit. |
-| C-07 | **The scope of a Plex audio-language write is open** (DESIGN-055 Q-03). Until answered, Wrong language with the wanted audio already in the file explains how to pick the track and writes nothing. |
+| C-06 | **Who may grab a release the profile rejected** (DESIGN-055 Q-01, owner ruling 2026-10-12): anyone who can use Fix, for a missing episode or movie only, within their hourly Fix budget, and only when every rejection reason is on the overridable list. A hard-refusal list applies to everyone: blocklisted, CAM/TS/sample/unknown quality, a Release Block or Mislabel Block term match, a name that names a different episode, or a size over the profile's limit. |
+| C-07 | **The Plex audio-language write** (DESIGN-055 Q-03, owner ruling 2026-10-12): when the file already has the wanted audio and that language is the title's original language, the app sets the title's preferred audio language for everyone on every server that has it and reads it back. Otherwise Wrong language explains how to pick the track and writes nothing. |
 | C-08 | Good: the three motivating cases become self-serviceable, and the destructive paths that would have harmed Cases A and C refuse instead. |
 | C-09 | Bad: a larger *arr write surface. Mitigated by previews, the refusal lists, the budget, one open repair per scope, per-request caps, and an audit row before every call. |
 | C-10 | Bad: manual import and override grabs are less stable API surfaces than search commands. Contract tests pin the request bodies against the running versions (Sonarr 4.0.20.3012, Radarr 6.4.4.10685) and the stub *arr. |

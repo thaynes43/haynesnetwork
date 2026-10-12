@@ -1,6 +1,6 @@
 # ADR-110: Episode-title evidence guards imports, and a confirmed mislabel blocks its release group on that series
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-10-12, with ADR-109 and ADR-111; built in PLAN-077 P2 and P4)
 - **Date:** 2026-10-12
 - **Deciders:** Tom Haynes (owner goal, 2026-10-12, as in ADR-109). Drafted by Opus 5.5. No owner question is open on
   this ADR: it acts only through a person's confirmed re-map, and anything automatic stays census.

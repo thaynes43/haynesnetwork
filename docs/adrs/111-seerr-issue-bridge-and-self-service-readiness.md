@@ -1,11 +1,11 @@
 # ADR-111: Seerr issues bridge to self-service, and a readiness gate decides when fixing it yourself becomes the rule
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-10-12, with rulings on DESIGN-055 Q-02, Q-04 and Q-05 folded into C-03 and C-05)
 - **Date:** 2026-10-12
 - **Deciders:** Tom Haynes (owner goal, 2026-10-12: steer Plex users away from filing Seerr issues for staff and toward
   fixing problems themselves, and make that a hard rule only once the platform reliably fixes what they report).
-  Drafted by Opus 5.5. Open owner questions: DESIGN-055 Q-02 (Seerr writes), Q-04 (the gate's threshold), Q-05 (what
-  the rule does once the gate passes).
+  Drafted by Opus 5.5. Owner rulings (2026-10-12): DESIGN-055 Q-02 (Seerr writes), Q-04 (the gate's threshold), Q-05
+  (what the rule does once the gate passes).
 - **Design:** [DESIGN-055](../designs/055-self-service-media-repair.md) D-10..D-12. Plan: PLAN-077 phases P3, P7, P8.
 - **Amends (when its writer lands):** hard rule 4's Seerr write list (CLAUDE.md) gains the issue comment and the
   issue resolve (C-03), beside ADR-093 C-11's watchlist enrollment and `animeTags` preflight.
@@ -51,7 +51,7 @@ would only move the work back to staff with an extra step.
 ## Decision outcome
 
 Chosen option: **3**, because it reaches every reporter where they are, keeps Seerr authoritative, and produces the
-evidence the rule needs. Option 4 remains available as the gate's outcome (Q-05).
+evidence the rule needs. Option 4 was offered as the gate's outcome and declined (Q-05 ruling: filing stays open).
 
 ### Consequences
 
@@ -59,9 +59,9 @@ evidence the rule needs. Option 4 remains available as the gate's outcome (Q-05)
 |----|-------------|
 | C-01 | **The Seerr Issue mirror** (T-311): a `seerr-issues` sync mode reads `GET /api/v1/issue` every 10 minutes and on each issue webhook (issue types added to the existing webhook), stores one row per issue (type, status, season, episode, media ids, the ledger item, the reporter's Seerr id and app user when the email matches, the first message, comment count), and never treats a webhook body as state: a webhook only triggers a fresh read of that issue. |
 | C-02 | **Surfaces:** the title page shows an open Seerr report for that title or episode with the Repair Guide preselected for it; `/admin` lists Seerr issues with their linked repairs and outcome. The reporter's name is shown to admins only. |
-| C-03 | **Writes are open** (DESIGN-055 Q-02). If approved: one comment per new issue with the fix-it-yourself link, and a resolve with a one-line note when the linked repair completes, both as a dedicated Seerr user through `X-API-User`, through a single writer that records each write before and after the call and never comments twice on one issue. The bridge never deletes, reopens or edits an issue or another person's comment. |
+| C-03 | **Writes** (DESIGN-055 Q-02, owner ruling 2026-10-12): one comment per new issue with the fix-it-yourself link, and a resolve with a one-line note when the linked repair completes, both as a dedicated Seerr user through `X-API-User`, through a single writer that records each write before and after the call and never comments twice on one issue. The bridge never deletes, reopens or edits an issue or another person's comment. |
 | C-04 | **Reporter onboarding** (DESIGN-055 D-11): the deep link opens the title page with the guide preselected; signing in with Plex creates the account (R-03) and returns to the link. Seerr's own comment notification is the delivery channel; the app adds none. |
-| C-05 | **The readiness gate** (T-313): every Seerr issue and every Helpdesk media ticket is counted Self-Served (T-312), Staff-Assisted or Unfixable by the same rule, shown in `/admin` and the nightly digest. The threshold (Q-04) and what the rule does once it passes (Q-05) are owner decisions. |
+| C-05 | **The readiness gate** (T-313): every Seerr issue and every Helpdesk media ticket is counted Self-Served (T-312), Staff-Assisted or Unfixable by the same rule, shown in `/admin` and the nightly digest. The gate (Q-04, owner ruling 2026-10-12): an agent replays Cases A, B and C as a non-admin account on the built tools, then the next 3 real issues are Self-Served with no staff help. Once it passes (Q-05): Seerr issue filing stays open, every new issue gets the fix-it-yourself comment, and staff step in only after a self-service attempt fails or when no remedy fits. |
 | C-06 | Good: every report gets a path to a fix within minutes, including from people with no account, and the owner can see whether self-service works before he makes it the rule. |
 | C-07 | Bad: one more dependency on Seerr's API, which changes between Seerr releases. Contract tests and the stub Seerr pin the reads and writes used. |
 | C-08 | Bad: any Seerr user can resolve or delete an issue (default `MANAGE_ISSUES`), so a resolve is a fact the mirror records, not proof of a fix. The gate counts outcomes from the app's own repair records, not from Seerr status. |

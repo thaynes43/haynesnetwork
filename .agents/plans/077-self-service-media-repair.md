@@ -1,8 +1,8 @@
 # PLAN-077: Self-service media repair and the Seerr issue bridge — implementation
 
-- **Status:** Draft. P0 is shipped (v0.111.2, 2026-10-12); its week of census is owed (OC-048). P1..P8 are not
-  started. Docs are Proposed (ADR-109, ADR-110, ADR-111, DESIGN-055). Owner questions DESIGN-055 Q-01..Q-05 are open
-  and gate P5..P8 only.
+- **Status:** Active. Docs Accepted (owner, 2026-10-12: ADR-109, ADR-110, ADR-111, DESIGN-055). The owner ruled
+  DESIGN-055 Q-01..Q-05 (the recommended option each time) and approved P1..P8 in this order, one phase per release,
+  each verified live before the next. P0 is shipped (v0.111.2); its week of census is owed (OC-048). P1 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -51,10 +51,10 @@ Priority is how often real reports need the remedy, and how much harm today's be
 | P2 | Queue-aware Force Search, the Import Check, the Title Evidence engine, janitor classes `importable` and `title_mismatch` (D-07, D-05 engine) | The most frequent failure: 262 stuck Sonarr records on 2026-09-27 (#597), Case B | none |
 | P3 | Seerr Issue mirror (read-only), title page and admin surfaces, the onboarding link, readiness metrics (D-10 read, D-11, D-12) | The steering channel and the measurement; no writes | none |
 | P4 | Title Check census, Episode Re-map, Mislabel Block (D-04, D-05) | Case A; #597's Lioness and Penguins mis-identifications | none |
-| P5 | Release Pick with guarded override (D-06) | Case A's two profile-rejected episodes | Q-01 (override rows stay read-only until answered) |
-| P6 | Language-aware Wrong language: Plex preference, language-filtered search (D-08) | Case A's Portuguese default; the last wrong_language Fix deleted a file | Q-03 (guidance only until answered) |
-| P7 | Seerr writes: comment and resolve (D-10 writes) | Brings reporters to the fix | Q-02 |
-| P8 | Readiness gate and the rule (D-12) | Decides when "fix it yourself" is the rule | Q-04, Q-05 |
+| P5 | Release Pick with guarded override (D-06) | Case A's two profile-rejected episodes | Q-01 ruled: anyone who can use Fix, missing items, within the budget, every reason overridable |
+| P6 | Language-aware Wrong language: Plex preference, language-filtered search (D-08) | Case A's Portuguese default; the last wrong_language Fix deleted a file | Q-03 ruled: set the preference only for the original language |
+| P7 | Seerr writes: comment and resolve (D-10 writes) | Brings reporters to the fix | Q-02 ruled: comment and resolve as a bot user |
+| P8 | Readiness gate and the rule (D-12) | Decides when "fix it yourself" is the rule | Q-04, Q-05 ruled (DESIGN-055 D-12); Q-09 open |
 
 ### P0: stop blocklisting releases SABnzbd failed to unpack (issue #887)
 
@@ -162,11 +162,12 @@ Priority is how often real reports need the remedy, and how much harm today's be
 1. Release list display, plain-words rejection mapping, the three row states, hard refusals (D-06).
 2. Write `grabRelease`, approved and override bodies pinned (DESIGN-055 Q-07); the import follow-through through P2's
    Import Check.
-3. Apply Q-01's ruling. Until answered, override rows are read-only with "Ask staff".
+3. Apply Q-01's ruling: Override for anyone who can use Fix, missing items only, within the hourly Fix budget, when
+   every rejection reason is overridable; Not allowed rows offer "Ask staff".
 4. CLAUDE.md hard rule 4: the interactive grab.
 - **Tests:** `release-pick.test.ts`; budget counting of `release_list_requested`.
 - **e2e:** stub release list with approved, overridable and refused rows. Journey: grab an approved release; an
-  override row's state follows the Q-01 setting.
+  override row's state follows the Q-01 ruling (Override for anyone who can use Fix, within the budget).
 - **Live check:** open the list for a real missing episode as a non-admin and check that each row's state matches
   Sonarr's own interactive search for the same episode.
 
@@ -183,7 +184,7 @@ Priority is how often real reports need the remedy, and how much harm today's be
 
 ### P7: Seerr writes
 
-1. Only under Q-02's ruling. Staff create the Seerr bridge user with `MANAGE_ISSUES`; store its id in
+1. Q-02 ruled B (owner, 2026-10-12). Staff create the Seerr bridge user with `MANAGE_ISSUES`; store its id in
    `seerr_bridge_user_id`.
 2. `seerr_issue_writes` table and single writer; comment and resolve as in D-10; `X-API-User` on every call.
 3. CLAUDE.md hard rule 4: the Seerr issue comment and resolve.
@@ -194,8 +195,9 @@ Priority is how often real reports need the remedy, and how much harm today's be
 ### P8: readiness gate and the rule
 
 1. Implement Q-04's gate in the admin readiness view (the streak, the replays) and run the replays it names.
-2. When the gate passes, record it here and in HANDOFF, then apply Q-05's ruling (Seerr comment wording, permissions,
-   About page and MOTD copy as it says).
+2. When the gate passes, record it here and in HANDOFF, then apply Q-05's ruling: Seerr filing stays open; the Seerr
+   comment wording, the About page and the MOTD copy say to try fixing it on haynesnetwork.com first. Settle DESIGN-055
+   Q-09 (does an Unfixable outcome restart the count) before the streak is implemented.
 - **Done when** the owner confirms the rule is in effect. Then move this plan to `completed/`.
 
 ## Out of scope
