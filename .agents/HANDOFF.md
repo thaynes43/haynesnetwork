@@ -18,10 +18,13 @@
 - **Owed:** OC-048 (a week of census, from 2026-10-19 17:30Z). OC-049 passed the same day. Subtitles showed the held
   "E09" file is S10E20 and E21, so Sonarr manual-imported it onto both (moved, not copied). The other two held files
   duplicated library content and were deleted along with the hold folder.
-- **Found, not fixed (pre-existing):** Plex (plexops, HOps TV Shows) numbers The Loud House S10 differently from Sonarr
-  (TVDB). Its "S10E01" is TVDB E14 One False Move, so every S10 entry in Plex carries another episode's title, and each
-  multi-episode file shows as one entry. Changing the show's episode ordering in Plex would fix it. That moves watch
-  state, so it needs a decision first.
+- **Plex ordering fixed (same day):** both Plex servers that carry The Loud House (HaynesOps and HaynesTower; HaynesKube
+  has no TV library) used the library default ordering, The Movie Database (Aired). That put another episode's title on
+  all 8 S10 items, and on 22 more items in S5, S6 and S9. Neither server's database had any play, watched flag or
+  resume point on the show for any account, and neither did Tautulli or `watch_events`, so no watch state could move.
+  The show-level ordering on both servers is now TheTVDB (Aired), the numbering Sonarr and the files use, and the show
+  was refreshed. All 8 S10 titles match their files. 5 items in S5 and S6 still differ, between TheTVDB in Plex and
+  Sonarr's own data.
 - **Next in PLAN-077:** P1. The TLHG mislabels are a live example for P4 (Title Check): those single-episode releases
   are named for other pairs, and Sonarr imported them into the wrong slots.
 
