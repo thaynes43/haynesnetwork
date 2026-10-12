@@ -1,6 +1,7 @@
 # DESIGN-055: Self-service media repair: the Repair Guide, its remedies, and the Seerr issue bridge
 
-- **Status:** Proposed
+- **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
+  approved in PLAN-077's order, one phase per release, each verified live before the next)
 - **Last updated:** 2026-10-12
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
@@ -91,8 +92,8 @@ Every write goes through `@hnet/arr/write`, `@hnet/plex/write` or the Seerr writ
 | `grabRelease({guid, indexerId, override?})` | Sonarr, Radarr | `POST /api/v3/release` | D-06, D-08 |
 | `deleteQueueItem(id, {removeFromClient, blocklist, skipRedownload: true})` | exists | `DELETE /api/v3/queue/{id}` | D-07 |
 | Mislabel Block profile write | Sonarr | `/api/v3/releaseprofile` | D-05 |
-| `setItemPreference(ratingKey, {audioLanguage})` | each Plex server | `PUT /library/metadata/{ratingKey}/prefs` | D-08, only under Q-03 |
-| `commentOnIssue`, `resolveIssue` | Seerr, with `X-API-User` | `POST /api/v1/issue/{id}/comment`, `POST /api/v1/issue/{id}/resolved` | D-10, only under Q-02 |
+| `setItemPreference(ratingKey, {audioLanguage})` | each Plex server | `PUT /library/metadata/{ratingKey}/prefs` | D-08, original language only (Q-03 ruling) |
+| `commentOnIssue`, `resolveIssue` | Seerr, with `X-API-User` | `POST /api/v1/issue/{id}/comment`, `POST /api/v1/issue/{id}/resolved` | D-10, as the bridge user (Q-02 ruling) |
 
 New reads (`@hnet/arr/read` and the Plex and Seerr read clients): `getManualImport` by `downloadId` or by folder
 (series, season), `listReleases` by episode or movie, queue records for a target, episode and movie files with
@@ -188,7 +189,7 @@ The remedy for "nothing acceptable was found": an interactive release list for o
   | State | When |
   |---|---|
   | Grab | the *arr approved it |
-  | Override | rejected, and every reason is on the overridable list, and Q-01 allows this person |
+  | Override | rejected, every reason is on the overridable list, the target is a missing episode or movie, and the person can use Fix and has budget left (Q-01 ruling) |
   | Not allowed | any reason is on the hard-refusal list (the reason is shown) |
 
 - **Overridable reasons:** quality not wanted by the profile, custom-format score below the minimum, language not
@@ -201,8 +202,10 @@ The remedy for "nothing acceptable was found": an interactive release list for o
   target series, episode ids, quality and languages, pinned to the UI's request (D-03). The ADR-028 chip follows it.
   When the import blocks (a mis-numbered name), the Import Check (D-07) runs with the person's chosen episode as the
   expected mapping. That is Case A's "override grab, then manual import onto the right episode".
-- **Who** may override: Q-01. Until answered, everyone sees and grabs approved rows; Override rows are read-only, with
-  "Ask staff", which opens a Helpdesk ticket prefilled with the target (ADR-061 locator) and the release title.
+- **Who** may override (Q-01 ruling, owner, 2026-10-12): anyone who can use Fix, for a missing episode or movie only,
+  within their hourly Fix budget, and only when every rejection reason is on the overridable list. The hard-refusal
+  list applies to everyone, admins included. A Not allowed row offers "Ask staff", which opens a Helpdesk ticket
+  prefilled with the target (ADR-061 locator) and the release title.
 
 ### D-07 Queue-aware Force Search and the Import Check (issue #597 Part 1)
 
@@ -246,11 +249,12 @@ already has a file) stay in #597 and PLAN-065.
 1. **Read the file's audio**: Sonarr `episodefile.mediaInfo.audioLanguages` or Radarr `movieFile.mediaInfo.audioLanguages`,
    and each matched Plex item's audio streams (`languageCode`, `default`) on every server (the ADR-047 match).
 2. **Ask** "Which language did you want?", with English first and the languages found in the file listed.
-3. **The language is in the file:** no blocklist and no delete. Until Q-03 is answered, the guide shows how to choose
-   the audio track in Plex and how to set a default audio language in the person's own Plex account. Under Q-03's
-   recommended answer, when the wanted language is the title's original language (the *arr's `originalLanguage`), the
-   app sets the show's preferred audio language on every server that has it and reads it back (Case A). Whether Plex
-   offers the same preference for a movie is checked in PLAN-077 P6; where it does not, a movie gets guidance only.
+3. **The language is in the file:** no blocklist and no delete. Under the Q-03 ruling (owner, 2026-10-12), when the
+   wanted language is the title's original language (the *arr's `originalLanguage`), the app sets the title's
+   preferred audio language for everyone on every server that has it and reads it back (Case A). Otherwise it changes
+   nothing and shows how to choose the audio track in Plex and how to set a default audio language in the person's own
+   Plex account. Until PLAN-077 P6 lands the write, every case gets that guidance. Whether Plex offers the same
+   preference for a movie is checked in P6; where it does not, a movie gets guidance only.
 4. **The language is not in the file:** the Fix runs as today (blocklist, or the D-09 guarded delete path), then
    instead of a blind search it reads the release list and grabs the best approved release whose languages include the
    wanted one. With none approved, it opens the Release Pick filtered to that language.
@@ -322,11 +326,12 @@ notification, so a report has one record in the app.
 guide button preselected. Admins also see who reported it. `/admin` gains a Seerr issues list: issue, title, age,
 linked repairs, outcome, and "Mark staff-assisted" with a note (D-12).
 
-**Writes** (only if Q-02 approves): through a dedicated Seerr user ("haynesnetwork.com", created once by staff with
-`MANAGE_ISSUES`; its id in the audited app setting `seerr_bridge_user_id`), every call sending `X-API-User`. Single
-writer `packages/domain/src/seerr-issue-writes.ts`, table `seerr_issue_writes` (`seerr_issue_id`, `kind` `comment` or
-`resolve`, `body`, `state` `intended`, `done` or `failed`, `created_at`, `done_at`; unique per issue and kind). The
-intended row commits before the call and is completed after it, so a crash never posts twice.
+**Writes** (Q-02 ruling, owner, 2026-10-12: comment and resolve, never as the owner's account): through a dedicated
+Seerr user ("haynesnetwork.com", created once by staff with `MANAGE_ISSUES`; its id in the audited app setting
+`seerr_bridge_user_id`), every call sending `X-API-User`. Single writer `packages/domain/src/seerr-issue-writes.ts`,
+table `seerr_issue_writes` (`seerr_issue_id`, `kind` `comment` or `resolve`, `body`, `state` `intended`, `done` or
+`failed`, `created_at`, `done_at`; unique per issue and kind). The intended row commits before the call and is completed
+after it, so a crash never posts twice.
 
 - **Comment**, once per new issue: "Thanks for the report. You can fix this one yourself on haynesnetwork.com: <link>.
   Sign in with your Plex account. If that doesn't sort it out, reply here and staff will take a look."
@@ -360,7 +365,11 @@ intended row commits before the call and is completed after it, so a crash never
   - **Unfixable:** closed with no remedy applied (for example, no release exists anywhere).
 - **Shown** in `/admin` (each issue, its outcome, the current streak of Self-Served outcomes) and as one line in the
   nightly digest.
-- **The gate** (T-313) and what passing it changes are Q-04 and Q-05.
+- **The gate** (T-313, Q-04 ruling): an agent replays Cases A, B and C end to end as a non-admin account on the built
+  tools (stubs in e2e, plus a live preview-only run of each remedy on the real titles), and then the next 3 real
+  issues are Self-Served with no staff help. A Staff-Assisted outcome resets the streak.
+- **After it passes** (Q-05 ruling): Seerr issue filing stays open, every new issue gets the fix-it-yourself comment
+  (D-10), and staff step in only after a self-service attempt has failed or when no remedy fits.
 
 ### D-13 Ops dependencies outside this repo
 
@@ -414,15 +423,17 @@ suite on each PR.
 
 ## Open questions
 
-Owner decisions (asked one at a time; each answer is folded back here as a ruling):
+Owner decisions (asked one at a time; each answer is folded back here as a ruling). The owner chose the recommended
+option on every one, on 2026-10-12, and approved P1..P8 in PLAN-077's order, one phase per release, each verified live
+before the next:
 
 | ID | Question | Resolution |
 |----|----------|------------|
-| Q-01 | Who may grab a release the quality profile rejected (Release Pick override, D-06)? Options: **A** anyone who can use Fix, within their hourly budget, for a missing episode or movie only, when every rejection is on the overridable list and nothing is on the hard-refusal list; **B** a new per-role grant, off for every role until turned on in /admin; **C** admins only, others send their pick to staff. Recommendation: **A** (it follows the "repair is a verb" ruling, ADR-080, and the refusal list carries the risk). | (open) |
-| Q-02 | Should the app write to Seerr issues (D-10)? Options: **A** read-only (the app shows issues and links; staff comment and resolve by hand); **B** one comment per new issue with the fix-it-yourself link, and a resolve with a note when the linked repair completes, posted as a dedicated Seerr user; **C** like B but comment only; **D** like B but posted as the owner's own Seerr account (what the API key does by default). Recommendation: **B**. | (open) |
-| Q-03 | When a Wrong language report finds the wanted audio already in the file, should the app change Plex for everyone (D-08)? Options: **A** set the title's preferred audio language on every server that has it, only when the wanted language is the title's original language (a dubbed default track), otherwise guidance only; **B** set it on every request; **C** never change Plex, guidance only. Recommendation: **A**. | (open) |
-| Q-04 | What evidence makes the platform ready for "fix it yourself" to be the rule (D-12)? Today's rate is about 1.3 Seerr issues a month (4 since 2026-07-11). Options: **A** Cases A, B and C replayed end to end by a non-admin account (stubs in e2e, plus a live preview-only run of each remedy on the real titles), then the next 3 real issues self-served; **B** the next 5 real issues self-served in a row (about four months at today's rate); **C** 60 days in which every real issue is self-served, with at least 3 issues; **D** no number, the owner decides at a review once P1..P6 ship. Recommendation: **A**. | (open) |
-| Q-05 | Once the gate passes, what does the rule do? Options: **A** Seerr issue filing stays open, every new issue gets the fix-it-yourself comment, and staff act only after a self-service attempt failed or when no remedy fits; **B** issue reporting in Seerr is switched off for everyone but admins (Seerr permissions) and haynesnetwork.com becomes the only place to report; **C** A for 30 days, then B. Recommendation: **A**. | (open) |
+| Q-01 | Who may grab a release the quality profile rejected (Release Pick override, D-06)? Options: **A** anyone who can use Fix, within their hourly budget, for a missing episode or movie only, when every rejection is on the overridable list and nothing is on the hard-refusal list; **B** a new per-role grant, off for every role until turned on in /admin; **C** admins only, others send their pick to staff. Recommendation: **A** (it follows the "repair is a verb" ruling, ADR-080, and the refusal list carries the risk). | **Ruling (owner, 2026-10-12): A.** Anyone who can use Fix may override, for a missing episode or movie only, within the hourly Fix budget, and only when every rejection reason is on the overridable list. The hard-refusal list applies to everyone. Folded into D-06 and ADR-109 C-06. |
+| Q-02 | Should the app write to Seerr issues (D-10)? Options: **A** read-only (the app shows issues and links; staff comment and resolve by hand); **B** one comment per new issue with the fix-it-yourself link, and a resolve with a note when the linked repair completes, posted as a dedicated Seerr user; **C** like B but comment only; **D** like B but posted as the owner's own Seerr account (what the API key does by default). Recommendation: **B**. | **Ruling (owner, 2026-10-12): B.** Comment once on each new issue with the fix-it-yourself link, and resolve it when the linked repair completes, posted as a dedicated Seerr bot user through `X-API-User`, never as the owner's account. Folded into D-10 and ADR-111 C-03. |
+| Q-03 | When a Wrong language report finds the wanted audio already in the file, should the app change Plex for everyone (D-08)? Options: **A** set the title's preferred audio language on every server that has it, only when the wanted language is the title's original language (a dubbed default track), otherwise guidance only; **B** set it on every request; **C** never change Plex, guidance only. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** Set the title's preferred audio language for everyone on every server that has it, only when the wanted language is the title's original language; otherwise show guidance and change nothing. Folded into D-08 and ADR-109 C-07. |
+| Q-04 | What evidence makes the platform ready for "fix it yourself" to be the rule (D-12)? Today's rate is about 1.3 Seerr issues a month (4 since 2026-07-11). Options: **A** Cases A, B and C replayed end to end by a non-admin account (stubs in e2e, plus a live preview-only run of each remedy on the real titles), then the next 3 real issues self-served; **B** the next 5 real issues self-served in a row (about four months at today's rate); **C** 60 days in which every real issue is self-served, with at least 3 issues; **D** no number, the owner decides at a review once P1..P6 ship. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** An agent replays the three cases as a non-admin user on the built tools, then the next 3 real issues are self-served with no staff help. Folded into D-12 and ADR-111 C-05. |
+| Q-05 | Once the gate passes, what does the rule do? Options: **A** Seerr issue filing stays open, every new issue gets the fix-it-yourself comment, and staff act only after a self-service attempt failed or when no remedy fits; **B** issue reporting in Seerr is switched off for everyone but admins (Seerr permissions) and haynesnetwork.com becomes the only place to report; **C** A for 30 days, then B. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** Seerr issue filing stays open; haynesnetwork comments with the self-service link, and staff step in only after a self-service attempt fails. Folded into D-12 and ADR-111 C-05. |
 
 Driver items, resolved inside PLAN-077 (not owner questions):
 
