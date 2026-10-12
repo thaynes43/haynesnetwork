@@ -20,11 +20,25 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { TmdbClient } from '@hnet/arr/read';
 import { watchMarks, type Database } from '@hnet/db';
-import { buildPlexClientBundle, replaceRecoSignals, type PlexBundleOptions, type WatchPlexClients } from '@hnet/domain';
+import {
+  buildPlexClientBundle,
+  replaceRecoSignals,
+  type PlexBundleOptions,
+  type WatchPlexClients,
+} from '@hnet/domain';
 import { SPOKEN_MAX_CHARS } from '@hnet/watch';
 import { DISCOVER_PLEX_TUNING } from '../src/deps';
 import type { McpDeps } from '../src/index';
-import { DISCOVER, FakePlex, NOW, OWNER, ownerWorld, seedWorld, serveMcp, type McpHttp } from './fixture';
+import {
+  DISCOVER,
+  FakePlex,
+  NOW,
+  OWNER,
+  ownerWorld,
+  seedWorld,
+  serveMcp,
+  type McpHttp,
+} from './fixture';
 import { bootMigratedDb, type TestDb } from './helpers';
 
 const TOKEN = 'test-hop-token-000000000000000000000000000000000';
@@ -45,7 +59,14 @@ const tmdbSearch = {
     const results = /andor/i.test(q)
       ? [{ id: 83867, media_type: 'tv', name: 'Andor', first_air_date: '2022-09-21' }]
       : /dune/i.test(q)
-        ? [{ id: 1170608, media_type: 'movie', title: 'Dune: Part Three', release_date: '2026-12-18' }]
+        ? [
+            {
+              id: 1170608,
+              media_type: 'movie',
+              title: 'Dune: Part Three',
+              release_date: '2026-12-18',
+            },
+          ]
         : /sh.gun/i.test(q)
           ? [
               { id: 126308, media_type: 'tv', name: 'Shōgun', first_air_date: '2024-02-27' },
@@ -74,7 +95,9 @@ function deps(): McpDeps {
 async function call(name: string, args: Record<string, unknown> = {}) {
   const c = new Client({ name: 'vitest', version: '1.0.0' });
   await c.connect(
-    new StreamableHTTPClientTransport(new URL(http.url), { requestInit: { headers: { authorization: `Bearer ${TOKEN}` } } }),
+    new StreamableHTTPClientTransport(new URL(http.url), {
+      requestInit: { headers: { authorization: `Bearer ${TOKEN}` } },
+    }),
   );
   try {
     const r = await c.callTool({ name, arguments: args });
@@ -90,7 +113,8 @@ async function call(name: string, args: Record<string, unknown> = {}) {
   }
 }
 
-const say = async (name: string, args: Record<string, unknown> = {}) => (await call(name, args)).text;
+const say = async (name: string, args: Record<string, unknown> = {}) =>
+  (await call(name, args)).text;
 const changedLines = () => http.logs.filter((l) => l.startsWith('[mcp] watchlist_changed '));
 
 beforeAll(async () => {
@@ -139,8 +163,26 @@ describe('watchlist (DESIGN-051 D-02, AC-29)', () => {
       plexAccountId: OWNER,
       source: 'watchlist',
       rows: [
-        { ...none, kind: 'show', title: 'Silo', year: 2023, tvdbId: 403245, tmdbId: 125988, plexGuid: 'plex://show/silo', rank: 0 },
-        { ...none, kind: 'show', title: 'The Expanse', year: 2015, tvdbId: 280619, tmdbId: 63639, plexGuid: 'plex://show/exp', rank: 1 },
+        {
+          ...none,
+          kind: 'show',
+          title: 'Silo',
+          year: 2023,
+          tvdbId: 403245,
+          tmdbId: 125988,
+          plexGuid: 'plex://show/silo',
+          rank: 0,
+        },
+        {
+          ...none,
+          kind: 'show',
+          title: 'The Expanse',
+          year: 2015,
+          tvdbId: 280619,
+          tmdbId: 63639,
+          plexGuid: 'plex://show/exp',
+          rank: 1,
+        },
         ...Array.from({ length: 150 }, (_, i) => ({
           ...none,
           kind: 'movie' as const,
@@ -167,7 +209,9 @@ describe('watchlist (DESIGN-051 D-02, AC-29)', () => {
     expect(Number(/And (\d+) more\.$/.exec(long)![1])).toBe(152 - to);
     // The next page starts right after the last title said.
     expect(await say('watchlist', { limit: 1, offset: to })).toMatch(
-      new RegExp(`^Your watchlist has 152 titles\\. Number ${to + 1}: The Extraordinarily Long Title of Watchlist Movie Number ${to - 2}: `),
+      new RegExp(
+        `^Your watchlist has 152 titles\\. Number ${to + 1}: The Extraordinarily Long Title of Watchlist Movie Number ${to - 2}: `,
+      ),
     );
   });
 });
@@ -187,16 +231,23 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     const rows = await db.select().from(watchMarks);
     expect(rows).toHaveLength(1);
     const [row] = rows;
-    expect(row).toMatchObject({ action: 'watchlist_add', consumer: 'hop', plexResult: 'written', plexGuid: `plex://show/${DISCOVER.foundation}` });
+    expect(row).toMatchObject({
+      action: 'watchlist_add',
+      consumer: 'hop',
+      plexResult: 'written',
+      plexGuid: `plex://show/${DISCOVER.foundation}`,
+    });
     // The cache predates the change; the overlay puts it on top (D-05).
     expect(await say('watchlist')).toBe(
       'Your watchlist has three titles. Newest first: Foundation, a 2021 show, on Plex. Severance, a 2022 show, on Plex. Dark Matter, a 2024 show, not on Plex yet.',
     );
-    expect(await say('watch_status', { title: 'foundation' })).toBe(
-      'Foundation (2021 show): not watched yet. On Plex and on your watchlist.',
+    expect(await say('watch_status', { title: 'foundation' })).toContain(
+      'On Plex. On your watchlist.',
     );
     // A watchlist change is not a watch statement: Foundation stays a pick (now "on your watchlist").
-    expect(await say('recommend')).toContain('Foundation, a 2021 show, on your watchlist.');
+    expect(await say('recommend')).toContain(
+      'Foundation, a 2021 show, because you watched The Expanse',
+    );
 
     expect(await say('set_watchlist', { title: 'Foundation', action: 'add' })).toBe(
       'Foundation (2021 show) is already on your watchlist.',
@@ -219,16 +270,16 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(changedLines().at(-1)).toBe(
       '[mcp] watchlist_changed {"consumer":"hop","action":"add","kind":"show","result":"written","onPlex":false}',
     );
-    expect(await say('watch_status', { title: 'andor' })).toBe(
-      'Andor (2022 show): not watched yet. Not on Plex, but on your watchlist.',
+    expect(await say('watch_status', { title: 'andor' })).toContain(
+      'Not on Plex. On your watchlist.',
     );
     fake.calls.length = 0;
     expect(await say('undo_last_change')).toBe(
       'Removed Andor (2022 show) from your watchlist again. Seerr may already have requested it.',
     );
     expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${DISCOVER.andor}`]);
-    expect(await say('watch_status', { title: 'andor' })).toBe(
-      'Andor (2022 show): not watched yet. Not on Plex or your watchlist.',
+    expect(await say('watch_status', { title: 'andor' })).toContain(
+      'Not on Plex. Not on your watchlist.',
     );
   });
 
@@ -268,22 +319,38 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     );
   });
 
-  it("the add's TMDB fallback goes through the single-attempt client; other tools keep the retrying one (D-15g)", async () => {
+  it('watchlist adds and factual title checks use the single-attempt client (D-15g / ADR-107)', async () => {
     const BRUTALIST = '6a1b2c3d4e5f60718293a4b5';
-    fake.catalog.push({ id: BRUTALIST, kind: 'movie', title: 'The Brutalist', year: 2024, guids: ['tmdb://549509'] });
+    fake.catalog.push({
+      id: BRUTALIST,
+      kind: 'movie',
+      title: 'The Brutalist',
+      year: 2024,
+      guids: ['tmdb://549509'],
+    });
     const retrying: string[] = [];
     const once: string[] = [];
     const search = (calls: string[]) => ({
       searchMulti: async (q: string) => {
         calls.push(q);
         const results = /brutalist/i.test(q)
-          ? [{ id: 549509, media_type: 'movie', title: 'The Brutalist', release_date: '2024-12-20' }]
+          ? [
+              {
+                id: 549509,
+                media_type: 'movie',
+                title: 'The Brutalist',
+                release_date: '2024-12-20',
+              },
+            ]
           : [];
         return { page: 1, total_pages: 1, total_results: results.length, results };
       },
     });
     await http.stop();
-    http = await serveMcp({ ...deps(), tmdb: () => search(retrying), tmdbOnce: () => search(once) }, ENV);
+    http = await serveMcp(
+      { ...deps(), tmdb: () => search(retrying), tmdbOnce: () => search(once) },
+      ENV,
+    );
     // Known to nothing but TMDB: `set_watchlist` resolves it through `tmdbOnce` (no GET retries, so the add's worst
     // case stays inside the 9 s deadline) and never through the retrying client.
     expect(await say('set_watchlist', { title: 'The Brutalist', action: 'add' })).toBe(
@@ -292,10 +359,9 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(once).toEqual(['The Brutalist']);
     expect(retrying).toEqual([]);
     expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${BRUTALIST}`]);
-    // `watch_status` (and every other tool) keeps the retrying client.
-    expect(await say('watch_status', { title: 'Nosferatu' })).toBe("I couldn't find anything called Nosferatu.");
-    expect(retrying).toEqual(['Nosferatu']);
-    expect(once).toEqual(['The Brutalist']);
+    expect(await say('watch_status', { title: 'Nosferatu' })).toContain('viewing status unknown');
+    expect(retrying).toEqual([]);
+    expect(once).toEqual(['The Brutalist', 'Nosferatu']);
   });
 
   it('remove: the next answers drop it at once; undo puts it back (not on Plex ⇒ Seerr will request it)', async () => {
@@ -309,7 +375,9 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
             page: 1,
             total_pages: 1,
             total_results: 1,
-            results: [{ id: 203744, media_type: 'tv', name: 'Dark Matter', first_air_date: '2024-05-08' }],
+            results: [
+              { id: 203744, media_type: 'tv', name: 'Dark Matter', first_air_date: '2024-05-08' },
+            ],
           }),
         }),
       },
@@ -323,14 +391,20 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
       `short:getDiscoverUserState:${DISCOVER.darkMatter}`,
       `write:removeFromWatchlist:${DISCOVER.darkMatter}`,
     ]);
-    expect(await say('watchlist')).toBe('Your watchlist has one title. Newest first: Severance, a 2022 show, on Plex.');
-    expect(await say('watch_status', { title: 'dark matter' })).toBe(
-      'Dark Matter (2024 show): not watched yet. Not on Plex or your watchlist.',
+    expect(await say('watchlist')).toBe(
+      'Your watchlist has one title. Newest first: Severance, a 2022 show, on Plex.',
+    );
+    expect(await say('watch_status', { title: 'dark matter' })).toContain(
+      'Not on Plex. Not on your watchlist.',
     );
     fake.calls.length = 0;
-    expect(await say('undo_last_change')).toBe('Put Dark Matter (2024 show) back on your watchlist. Seerr will request it.');
+    expect(await say('undo_last_change')).toBe(
+      'Put Dark Matter (2024 show) back on your watchlist. Seerr will request it.',
+    );
     expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${DISCOVER.darkMatter}`]);
-    expect(await say('watchlist')).toMatch(/^Your watchlist has two titles\. Newest first: Dark Matter, a 2024 show/);
+    expect(await say('watchlist')).toMatch(
+      /^Your watchlist has two titles\. Newest first: Dark Matter, a 2024 show/,
+    );
   });
 
   it('remove resolves only among watchlist titles: a title only in the library is not found there, with no call', async () => {
@@ -354,7 +428,13 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
 
   it('two watchlist titles under one name: no question nothing can answer, nothing changed (D-15e, D-15l)', async () => {
     const OTHER = 'aaaaaaaaaaaaaaaaaaaaaaaa';
-    fake.catalog.push({ id: OTHER, kind: 'show', title: 'Dark Matter', year: 2024, guids: ['tmdb://999001'] });
+    fake.catalog.push({
+      id: OTHER,
+      kind: 'show',
+      title: 'Dark Matter',
+      year: 2024,
+      guids: ['tmdb://999001'],
+    });
     fake.watchlist.set(OTHER, 0);
     const none = { tvdbId: null, imdbId: null };
     await replaceRecoSignals({
@@ -362,9 +442,34 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
       plexAccountId: OWNER,
       source: 'watchlist',
       rows: [
-        { ...none, kind: 'show', title: 'Severance', year: 2022, tmdbId: 95396, tvdbId: 371980, plexGuid: null, rank: 0 },
-        { ...none, kind: 'show', title: 'Dark Matter', year: 2024, tmdbId: 203744, plexGuid: `plex://show/${DISCOVER.darkMatter}`, rank: 1 },
-        { ...none, kind: 'show', title: 'Dark Matter', year: 2024, tmdbId: 999001, plexGuid: `plex://show/${OTHER}`, rank: 2 },
+        {
+          ...none,
+          kind: 'show',
+          title: 'Severance',
+          year: 2022,
+          tmdbId: 95396,
+          tvdbId: 371980,
+          plexGuid: null,
+          rank: 0,
+        },
+        {
+          ...none,
+          kind: 'show',
+          title: 'Dark Matter',
+          year: 2024,
+          tmdbId: 203744,
+          plexGuid: `plex://show/${DISCOVER.darkMatter}`,
+          rank: 1,
+        },
+        {
+          ...none,
+          kind: 'show',
+          title: 'Dark Matter',
+          year: 2024,
+          tmdbId: 999001,
+          plexGuid: `plex://show/${OTHER}`,
+          rank: 2,
+        },
       ],
       fetchedAt: NOW,
     });
@@ -375,7 +480,9 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     for (const title of ['dark matter', 'Dark Matter 2024']) {
       expect(await say('set_watchlist', { title, action: 'remove' })).toBe(answer);
     }
-    expect(await say('set_watchlist', { title: 'dark matter', action: 'add', kind: 'show' })).toBe(answer);
+    expect(await say('set_watchlist', { title: 'dark matter', action: 'add', kind: 'show' })).toBe(
+      answer,
+    );
     expect(fake.calls).toEqual([]);
     expect(await db.select().from(watchMarks)).toEqual([]);
     expect(changedLines().at(-1)).toBe(
@@ -385,7 +492,13 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
 
   it("an add's TMDB fallback: a year in parentheses settles it, and titles that read the same are no question (D-15v, D-15w)", async () => {
     const SHOGUN = '6b2c3d4e5f60718293a4b5c6';
-    fake.catalog.push({ id: SHOGUN, kind: 'show', title: 'Shōgun', year: 2024, guids: ['tmdb://126308'] });
+    fake.catalog.push({
+      id: SHOGUN,
+      kind: 'show',
+      title: 'Shōgun',
+      year: 2024,
+      guids: ['tmdb://126308'],
+    });
     const search = {
       searchMulti: async (q: string) => {
         const results = /sh.gun/i.test(q)
@@ -409,7 +522,9 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
       'More than one match for Shōgun: Shōgun (2024, show), Shōgun (1980, show). Which one?',
     );
     // The agent's natural retry puts the year in the title, in the answer's own format.
-    expect(await say('set_watchlist', { title: 'Shōgun (2024)', action: 'add', kind: 'show' })).toBe(
+    expect(
+      await say('set_watchlist', { title: 'Shōgun (2024)', action: 'add', kind: 'show' }),
+    ).toBe(
       "Added Shōgun (2024 show) to your watchlist. It isn't on Plex yet, so Seerr will request it.",
     );
     expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${SHOGUN}`]);
@@ -418,7 +533,9 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(await say('set_watchlist', { title: 'Alone', action: 'add' })).toBe(
       'More than one match for Alone: Alone (2020, movie), Alone (2015, show). Which one?',
     );
-    expect(await say('set_watchlist', { title: 'Alone (2020)', action: 'add', kind: 'movie' })).toBe(
+    expect(
+      await say('set_watchlist', { title: 'Alone (2020)', action: 'add', kind: 'movie' }),
+    ).toBe(
       "I found more than one Alone (2020 movie) and can't tell them apart, so I left your watchlist as it is. You can add it in the Plex app.",
     );
     expect(fake.watchlistWrites()).toEqual([`addToWatchlist:${SHOGUN}`]);
@@ -433,7 +550,13 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     const SHOGUN = '6b2c3d4e5f60718293a4b5c6';
     const SHOGUN80 = '7c3d4e5f60718293a4b5c6d7';
     fake.catalog.push(
-      { id: DUNE3, kind: 'movie', title: 'Dune: Part Three', year: 2026, guids: ['tmdb://1170608'] },
+      {
+        id: DUNE3,
+        kind: 'movie',
+        title: 'Dune: Part Three',
+        year: 2026,
+        guids: ['tmdb://1170608'],
+      },
       { id: SHOGUN, kind: 'show', title: 'Shōgun', year: 2024, guids: ['tmdb://126308'] },
       { id: SHOGUN80, kind: 'show', title: 'Shōgun', year: 1980, guids: ['tmdb://1'] },
     );
@@ -486,7 +609,9 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
     expect(changedLines().at(-1)).toBe(
       '[mcp] watchlist_changed {"consumer":"hop","action":"add","kind":"movie","result":"failed","onPlex":true}',
     );
-    expect(await say('watch_status', { title: 'arrival' })).toMatch(/On Plex, not on your watchlist\.$/);
+    expect(await say('watch_status', { title: 'arrival' })).toMatch(
+      /On Plex\. Not on your watchlist\.$/,
+    );
     // The add may have landed: undo sends the (idempotent) removal anyway, and plex.tv's re-read settles it.
     fake.calls.length = 0;
     expect(await say('undo_last_change')).toBe(
@@ -506,18 +631,23 @@ describe('set_watchlist (DESIGN-051 D-03, AC-30)', () => {
       recent: await say('recent_history'),
       silo: await say('watch_status', { title: 'Silo' }),
     };
-    expect(await say('set_watchlist', { title: 'Silo', action: 'add' })).toBe("Added Silo (2023 show) to your watchlist. It's on Plex.");
+    expect(await say('set_watchlist', { title: 'Silo', action: 'add' })).toBe(
+      "Added Silo (2023 show) to your watchlist. It's on Plex.",
+    );
     expect(await say('set_watchlist', { title: 'Severance', action: 'remove' })).toBe(
       'Removed Severance (2022 show) from your watchlist.',
     );
     expect(await say('unfinished', { kind: 'any', limit: 10 })).toBe(before.unfinished);
     expect(await say('recent_history')).toBe(before.recent);
     // The same progress wording (never "someone else's viewing", never "dismissed") — only availability moves.
-    expect(before.silo).toMatch(/ On Plex, not on your watchlist\.$/);
+    expect(before.silo).toMatch(/ On Plex\. Not on your watchlist\.$/);
     expect(await say('watch_status', { title: 'Silo' })).toBe(
-      before.silo.replace('On Plex, not on your watchlist.', 'On Plex and on your watchlist.'),
+      before.silo.replace('Not on your watchlist.', 'On your watchlist.'),
     );
-    expect((await db.select().from(watchMarks)).map((m) => m.action)).toEqual(['watchlist_add', 'watchlist_remove']);
+    expect((await db.select().from(watchMarks)).map((m) => m.action)).toEqual([
+      'watchlist_add',
+      'watchlist_remove',
+    ]);
   });
 
   it('refuses a missing action (strict inputs) before anything runs', async () => {
@@ -540,7 +670,7 @@ function waitOrAbort(ms: number, signal?: AbortSignal | null): Promise<void> {
 }
 
 describe('the seventh review pass on PR #580 (DESIGN-051 D-15aa, D-15ab)', () => {
-  it("every tool's TMDB check with the pool's answer in hand goes through the single-attempt client; not found keeps the retries (D-15aa)", async () => {
+  it('factual status respects a named year; existing action resolution and single-attempt checks stay bounded', async () => {
     const retrying: string[] = [];
     const once: string[] = [];
     const search = (calls: string[]) => ({
@@ -550,19 +680,24 @@ describe('the seventh review pass on PR #580 (DESIGN-051 D-15aa, D-15ab)', () =>
       },
     });
     await http.stop();
-    http = await serveMcp({ ...deps(), tmdb: () => search(retrying), tmdbOnce: () => search(once) }, ENV);
-    // Foundation is the pool's (2021); a named 2020 sends the query on to TMDB, whose miss leaves the pool's title.
-    expect(await say('watch_status', { title: 'Foundation 2020' })).toMatch(/^Foundation \(2021 show\): /);
+    http = await serveMcp(
+      { ...deps(), tmdb: () => search(retrying), tmdbOnce: () => search(once) },
+      ENV,
+    );
+    // A factual check never assigns the cached 2021 title to a request for the 2020 title.
+    expect(await say('watch_status', { title: 'Foundation 2020' })).toContain(
+      'viewing status unknown',
+    );
     expect(await say('mark_watched', { title: 'Foundation 2020', season: 1 })).toBe(
       'Marked season 1 of Foundation (2021) as watched in Plex, 10 episodes.',
     );
     expect(await say('dismiss', { title: 'Foundation 2020' })).toMatch(/Foundation \(2021/);
-    // The search term drops the trailing year (DESIGN-049 D-13).
-    expect(once).toEqual(['Foundation', 'Foundation', 'Foundation']);
+    // Factual lookup tries a literal title first, then its year hint; actions retain D-13's single lookup.
+    expect(once).toEqual(['Foundation 2020', 'Foundation', 'Foundation', 'Foundation']);
     expect(retrying).toEqual([]);
-    // "Not found" is D-13's own last resort: the retrying client, as on main.
-    expect(await say('watch_status', { title: 'Nosferatu' })).toBe("I couldn't find anything called Nosferatu.");
-    expect(retrying).toEqual(['Nosferatu']);
+    expect(await say('watch_status', { title: 'Nosferatu' })).toContain('viewing status unknown');
+    expect(once).toEqual(['Foundation 2020', 'Foundation', 'Foundation', 'Foundation', 'Nosferatu']);
+    expect(retrying).toEqual([]);
   });
 
   it("mark_watched with a year the pool's title does not have answers inside the deadline while TMDB stalls (D-15aa)", async () => {
@@ -575,7 +710,14 @@ describe('the seventh review pass on PR #580 (DESIGN-051 D-15aa, D-15ab)', () =>
       return waitOrAbort(60_000, init?.signal).then(() => new Response('{}'));
     }) as typeof fetch;
     const tmdbClient = (getRetries: number) =>
-      new TmdbClient({ apiKey: 'test-tmdb-key', timeoutMs: 400, retryDelayMs: 0, timeoutCoversBody: true, getRetries, fetchImpl: stalled });
+      new TmdbClient({
+        apiKey: 'test-tmdb-key',
+        timeoutMs: 400,
+        retryDelayMs: 0,
+        timeoutCoversBody: true,
+        getRetries,
+        fetchImpl: stalled,
+      });
     const slowMark = (): WatchPlexClients => {
       const clients = fake.clients();
       for (const [server, read] of Object.entries(clients.read)) {
@@ -621,7 +763,13 @@ describe('the seventh review pass on PR #580 (DESIGN-051 D-15aa, D-15ab)', () =>
     const slowMatches = (async (input: string | URL | Request, init?: RequestInit) => {
       lookups.push(String(input instanceof Request ? input.url : input));
       await waitOrAbort(1_000, init?.signal);
-      const foundation = { ratingKey: DISCOVER.foundation, type: 'show', title: 'Foundation', year: 2021, Guid: [{ id: 'tmdb://93740' }] };
+      const foundation = {
+        ratingKey: DISCOVER.foundation,
+        type: 'show',
+        title: 'Foundation',
+        year: 2021,
+        Guid: [{ id: 'tmdb://93740' }],
+      };
       return new Response(JSON.stringify({ MediaContainer: { size: 1, Metadata: [foundation] } }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -635,7 +783,11 @@ describe('the seventh review pass on PR #580 (DESIGN-051 D-15aa, D-15ab)', () =>
       fetchImpl: slowMatches,
       ...DISCOVER_PLEX_TUNING,
     };
-    const options: PlexBundleOptions = { haynestower: server, haynesops: server, hayneskube: server };
+    const options: PlexBundleOptions = {
+      haynestower: server,
+      haynesops: server,
+      hayneskube: server,
+    };
     const discover = buildPlexClientBundle(options);
     await http.stop();
     http = await serveMcp({ ...deps(), discoverPlex: () => discover }, ENV);
@@ -659,20 +811,28 @@ describe('the eighth review pass on PR #580 (DESIGN-051 D-04, D-15ac)', () => {
       "Added Foundation (2021 show) to your watchlist. It's on Plex.",
     );
     clock = at(5);
-    expect(await say('undo_last_change')).toBe('Removed Foundation (2021 show) from your watchlist again.');
+    expect(await say('undo_last_change')).toBe(
+      'Removed Foundation (2021 show) from your watchlist again.',
+    );
     clock = at(10);
-    expect(await say('set_watchlist', { title: 'Silo', action: 'add' })).toBe("Added Silo (2023 show) to your watchlist. It's on Plex.");
+    expect(await say('set_watchlist', { title: 'Silo', action: 'add' })).toBe(
+      "Added Silo (2023 show) to your watchlist. It's on Plex.",
+    );
     // Inside the replay window, but a change was made since the last undo: this undo is the owner's own.
     clock = at(15);
     fake.calls.length = 0;
-    expect(await say('undo_last_change')).toBe('Removed Silo (2023 show) from your watchlist again.');
+    expect(await say('undo_last_change')).toBe(
+      'Removed Silo (2023 show) from your watchlist again.',
+    );
     expect(fake.watchlistWrites()).toEqual([`removeFromWatchlist:${DISCOVER.silo}`]);
     expect(fake.watchlist.has(DISCOVER.silo)).toBe(false);
     expect(fake.watchlist.has(DISCOVER.foundation)).toBe(false);
     // Said again with nothing new: the same answer, and nothing reverted.
     clock = at(20);
     fake.calls.length = 0;
-    expect(await say('undo_last_change')).toBe('Removed Silo (2023 show) from your watchlist again.');
+    expect(await say('undo_last_change')).toBe(
+      'Removed Silo (2023 show) from your watchlist again.',
+    );
     expect(fake.watchlistWrites()).toEqual([]);
   });
 
@@ -691,13 +851,21 @@ describe('the eighth review pass on PR #580 (DESIGN-051 D-04, D-15ac)', () => {
 
   it('an add never takes a TMDB title of another year than the one named: it asks (D-15ac)', async () => {
     const ROAD89 = '9e5f60718293a4b5c6d7e8f9';
-    fake.catalog.push({ id: ROAD89, kind: 'movie', title: 'Road House', year: 1989, guids: ['tmdb://10127'] });
+    fake.catalog.push({
+      id: ROAD89,
+      kind: 'movie',
+      title: 'Road House',
+      year: 1989,
+      guids: ['tmdb://10127'],
+    });
     const search = {
       searchMulti: async () => ({
         page: 1,
         total_pages: 1,
         total_results: 1,
-        results: [{ id: 10127, media_type: 'movie', title: 'Road House', release_date: '1989-05-19' }],
+        results: [
+          { id: 10127, media_type: 'movie', title: 'Road House', release_date: '1989-05-19' },
+        ],
       }),
     };
     await http.stop();

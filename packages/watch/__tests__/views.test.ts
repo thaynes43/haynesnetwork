@@ -9,7 +9,13 @@ import { indexMarks, ledgerExclusions, recentEntries, titleKeyFor } from '../src
 const NOW = Date.parse('2026-09-23T20:00:00Z');
 let rowId = 0;
 
-function episode(showTitle: string, showGuid: string | null, season: number, ep: number, hoursAgo: number): WatchEventRow {
+function episode(
+  showTitle: string,
+  showGuid: string | null,
+  season: number,
+  ep: number,
+  hoursAgo: number,
+): WatchEventRow {
   rowId += 1;
   const startedAt = new Date(NOW - hoursAgo * 3_600_000);
   return {
@@ -38,10 +44,24 @@ function episode(showTitle: string, showGuid: string | null, season: number, ep:
 
 function mark(
   action: WatchMarkRow['action'],
-  t: { kind: 'show' | 'movie'; title: string; year: number | null; plexGuid?: string | null; tvdbId?: number | null },
+  t: {
+    kind: 'show' | 'movie';
+    title: string;
+    year: number | null;
+    plexGuid?: string | null;
+    tvdbId?: number | null;
+  },
   revertedAt: Date | null = null,
 ): WatchMarkRow {
-  const ids = { kind: t.kind, title: t.title, year: t.year, plexGuid: t.plexGuid ?? null, tmdbId: null, tvdbId: t.tvdbId ?? null, imdbId: null };
+  const ids = {
+    kind: t.kind,
+    title: t.title,
+    year: t.year,
+    plexGuid: t.plexGuid ?? null,
+    tmdbId: null,
+    tvdbId: t.tvdbId ?? null,
+    imdbId: null,
+  };
   return {
     id: 1,
     plexAccountId: 1,
@@ -66,10 +86,28 @@ function mark(
 const titles = (entries: ReturnType<typeof recentEntries>) => entries.map((e) => e.title).sort();
 
 describe('recentEntries — not_mine (D-21, Q-06)', () => {
-  const bluey = { kind: 'show' as const, title: 'Bluey', year: 2018, plexGuid: 'plex://show/bluey', tvdbId: 353546 };
+  const bluey = {
+    kind: 'show' as const,
+    title: 'Bluey',
+    year: 2018,
+    plexGuid: 'plex://show/bluey',
+    tvdbId: 353546,
+  };
+
+  it('distinguishes plays without completion from source-confirmed watched events', () => {
+    const partial = { ...episode('A Show', null, 1, 1, 1), watched: false, percentComplete: 10 };
+    expect(recentEntries([partial], indexMarks([]))[0]?.partialPlay).toBe(true);
+    expect(recentEntries([{ ...partial, watched: true }], indexMarks([]))[0]?.partialPlay).toBe(
+      false,
+    );
+  });
 
   it('leaves out a not_mine show whose episodes have no show guid (the name matches without the year)', () => {
-    const events = [episode('Bluey', null, 3, 1, 5), episode('Bluey', null, 3, 2, 4), episode('Silo', 'plex://show/silo', 1, 7, 2)];
+    const events = [
+      episode('Bluey', null, 3, 1, 5),
+      episode('Bluey', null, 3, 2, 4),
+      episode('Silo', 'plex://show/silo', 1, 7, 2),
+    ];
     expect(titles(recentEntries(events, indexMarks([])))).toEqual(['Bluey', 'Silo']);
     expect(titles(recentEntries(events, indexMarks([mark('not_mine', bluey)])))).toEqual(['Silo']);
   });
@@ -93,18 +131,31 @@ describe('recentEntries — not_mine (D-21, Q-06)', () => {
     ]) {
       expect(titles(recentEntries(events, indexMarks([m])))).toEqual(['Bluey', 'Bluey Tales']);
     }
-    expect(titles(recentEntries(events, indexMarks([mark('not_mine', bluey)])))).toEqual(['Bluey Tales']);
+    expect(titles(recentEntries(events, indexMarks([mark('not_mine', bluey)])))).toEqual([
+      'Bluey Tales',
+    ]);
   });
 
   it('normalizes both names the same way (case, punctuation, a year hint)', () => {
     const events = [episode('BLUEY!', null, 3, 1, 5)];
-    expect(titles(recentEntries(events, indexMarks([mark('not_mine', { ...bluey, title: 'Bluey (2018)', plexGuid: null })])))).toEqual([]);
+    expect(
+      titles(
+        recentEntries(
+          events,
+          indexMarks([mark('not_mine', { ...bluey, title: 'Bluey (2018)', plexGuid: null })]),
+        ),
+      ),
+    ).toEqual([]);
   });
 });
 
 type TitleIn = Parameters<typeof ledgerExclusions>[0][number];
 
-function title(kind: 'show' | 'movie', ids: Partial<TitleIn>, state: Partial<TitleIn> = {}): TitleIn {
+function title(
+  kind: 'show' | 'movie',
+  ids: Partial<TitleIn>,
+  state: Partial<TitleIn> = {},
+): TitleIn {
   return {
     kind,
     mediaItemId: null,
@@ -125,13 +176,21 @@ describe('ledgerExclusions (D-17 anti-join inputs)', () => {
   it('takes every started-or-watched Title State and every live mark, per kind, without NULLs or duplicates', () => {
     const ex = ledgerExclusions(
       [
-        title('show', { mediaItemId: 'a', tvdbId: 1, tmdbId: 10, imdbId: 'tt1' }, { episodesWatched: 2 }),
+        title(
+          'show',
+          { mediaItemId: 'a', tvdbId: 1, tmdbId: 10, imdbId: 'tt1' },
+          { episodesWatched: 2 },
+        ),
         title('show', { tvdbId: 2 }, { plexWatched: true }),
         title('show', { tmdbId: 10 }, { eventWatchedEpisodes: 1 }),
         title('show', { imdbId: 'tt3' }, { nextResume: true }),
         title('movie', { mediaItemId: 'b', tmdbId: 10 }, { resumePercent: 12 }),
         // Untouched: excludes nothing.
-        title('show', { mediaItemId: 'z', tvdbId: 99, tmdbId: 99, imdbId: 'tt99' }, { episodesWatched: 0, resumePercent: 0 }),
+        title(
+          'show',
+          { mediaItemId: 'z', tvdbId: 99, tmdbId: 99, imdbId: 'tt99' },
+          { episodesWatched: 0, resumePercent: 0 },
+        ),
       ],
       [
         mark('not_mine', { kind: 'show', title: 'M', year: null, tvdbId: 5 }),

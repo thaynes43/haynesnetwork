@@ -11,10 +11,16 @@ import {
   tmdbMovieSchema,
   tmdbPagedResultsSchema,
   tmdbTvSchema,
+  tmdbMovieIdentitySchema,
+  tmdbTvIdentitySchema,
+  tmdbExternalIdentitySchema,
   type TmdbFind,
   type TmdbMovie,
   type TmdbPagedResults,
   type TmdbTv,
+  type TmdbMovieIdentity,
+  type TmdbTvIdentity,
+  type TmdbExternalIdentity,
 } from './schemas/tmdb';
 
 export interface TmdbClientOptions extends TmdbConfig {
@@ -44,7 +50,9 @@ export class TmdbClient {
       timeoutMs: options.timeoutMs,
       retryDelayMs: options.retryDelayMs,
       ...(options.getRetries !== undefined ? { getRetries: options.getRetries } : {}),
-      ...(options.timeoutCoversBody !== undefined ? { timeoutCoversBody: options.timeoutCoversBody } : {}),
+      ...(options.timeoutCoversBody !== undefined
+        ? { timeoutCoversBody: options.timeoutCoversBody }
+        : {}),
       fetchImpl: options.fetchImpl,
     });
     this.v3Key = options.readAccessToken ? undefined : options.apiKey;
@@ -60,6 +68,33 @@ export class TmdbClient {
 
   getTv(tmdbId: number): Promise<TmdbTv> {
     return this.http.requestJson('GET', `tv/${tmdbId}`, tmdbTvSchema, { query: this.q() });
+  }
+
+  /** Canonical title and cross-provider identifiers, without recommendation or user-state writes. */
+  getMovieIdentity(tmdbId: number): Promise<TmdbMovieIdentity> {
+    return this.http.requestJson('GET', `movie/${tmdbId}`, tmdbMovieIdentitySchema, {
+      query: this.q({ append_to_response: 'external_ids' }),
+    });
+  }
+
+  getTvIdentity(tmdbId: number): Promise<TmdbTvIdentity> {
+    return this.http.requestJson('GET', `tv/${tmdbId}`, tmdbTvIdentitySchema, {
+      query: this.q({ append_to_response: 'external_ids' }),
+    });
+  }
+
+  findByExternalId(
+    id: string | number,
+    source: 'imdb_id' | 'tvdb_id',
+  ): Promise<TmdbExternalIdentity> {
+    return this.http.requestJson(
+      'GET',
+      `find/${encodeURIComponent(String(id))}`,
+      tmdbExternalIdentitySchema,
+      {
+        query: this.q({ external_source: source }),
+      },
+    );
   }
 
   /** Resolve a tvdb id → TMDB tv record id (Sonarr series carry tvdbId, not tmdbId). */

@@ -1,6 +1,6 @@
 // ADR-087 / DESIGN-049 D-02 / D-05 / D-06 — one MCP server per request (stateless: a server binds one
 // transport, and a stateless transport refuses a second request), serving the consumer's tools. Every tool
-// answers plain text (no `structuredContent`, no `outputSchema`); a thrown failure is replaced by the D-06
+// preserves existing plain text answers; ADR-107's two new reads add bounded structuredContent. A failure is replaced by the D-06
 // text here, before the SDK could hand the raw `error.message` to the client.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
@@ -18,6 +18,7 @@ import {
 import { z } from 'zod';
 import {
   answerDismiss,
+  answerCheckTitles,
   answerMarkWatched,
   answerRecentHistory,
   answerRecommend,
@@ -26,9 +27,11 @@ import {
   answerUnfinished,
   answerWatchlist,
   answerWatchStatus,
+  answerViewingContext,
   type AnswerContext,
   type McpDeps,
   type WatchPrincipal,
+  type StructuredAnswer,
 } from './answers';
 import { WatchNotReadyError } from '@hnet/domain';
 import type { McpConsumer } from './auth';
@@ -50,7 +53,7 @@ import {
 } from './tools';
 import { APP_VERSION } from './version';
 
-type Answer = (ctx: AnswerContext, args: never) => Promise<string>;
+type Answer = (ctx: AnswerContext, args: never) => Promise<string | StructuredAnswer>;
 
 const ANSWERS: Record<WatchToolName, Answer> = {
   unfinished: answerUnfinished as Answer,
@@ -58,6 +61,8 @@ const ANSWERS: Record<WatchToolName, Answer> = {
   watch_status: answerWatchStatus as Answer,
   recent_history: answerRecentHistory as Answer,
   watchlist: answerWatchlist as Answer,
+  check_titles: answerCheckTitles as Answer,
+  viewing_context: answerViewingContext as Answer,
   mark_watched: answerMarkWatched as Answer,
   dismiss: answerDismiss as Answer,
   set_watchlist: answerSetWatchlist as Answer,
@@ -154,7 +159,16 @@ export async function runTool(
     if (!account) return finish(text(notServed(consumer)));
     const ctx: AnswerContext = { deps, account, consumer, phases };
     const answer = await ANSWERS[tool.name as WatchToolName](ctx, parsed.data as never);
-    return finish(text(answer), undefined, ctx);
+    return finish(
+      typeof answer === 'string'
+        ? text(answer)
+        : {
+            content: [{ type: 'text', text: answer.text }],
+            structuredContent: answer.structuredContent,
+          },
+      undefined,
+      ctx,
+    );
   } catch (error) {
     // The domain refuses an account that is no longer tracked (or no longer the owner) between the read above
     // and the flow's own check — still the ordinary answer, never isError.
@@ -168,7 +182,10 @@ export async function runTool(
  * A delegated token: `users.id` → the ADR-053 Plex Account Map → its `tracked` watch account (ADR-091 C-04),
  * attributed to the token's user.
  */
-export async function resolvePrincipal(deps: McpDeps, consumer: McpConsumer): Promise<WatchPrincipal | null> {
+export async function resolvePrincipal(
+  deps: McpDeps,
+  consumer: McpConsumer,
+): Promise<WatchPrincipal | null> {
   if (consumer.userId === undefined) {
     const owner = await selectWatchOwner(deps.db);
     return owner ? { ...owner, isOwner: true } : null;

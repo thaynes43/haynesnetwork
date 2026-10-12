@@ -1,8 +1,8 @@
 # @hnet/mcp
 
 The MCP endpoint behind the in-cluster `POST /api/mcp` (ADR-087; DESIGN-049 D-02..D-06; PLAN-068 S7) and the
-public `POST /mcp` (ADR-091; DESIGN-050 D-07; PLAN-069 S4): consumer auth, the nine watch tools (ADR-092 /
-DESIGN-051 added `watchlist` and `set_watchlist`, PLAN-071), the D-06
+public `POST /mcp` (ADR-091; DESIGN-050 D-07; PLAN-069 S4): consumer auth, eleven watch tools (ADR-092 / DESIGN-051 added watchlist actions;
+ADR-107 / DESIGN-054 add `check_titles` and `viewing_context`), the D-06
 logging, and the Voice Budget tests. `apps/web/app/api/mcp/route.ts` and `apps/web/app/mcp/route.ts` are thin
 adapters over `handleMcpRequest` (the public one passes `authenticateOAuth`); this package never writes a table
 itself — reads come from the `@hnet/watch` queries and the `@hnet/domain` bearer lookup, writes and Plex calls
@@ -38,18 +38,18 @@ clients such as Home Assistant and Codex with SSE even in JSON mode — D-02).
 
 ## Tools (`src/tools.ts`, `src/answers.ts`, `src/server.ts`)
 
-The nine tools of DESIGN-049 D-05 + DESIGN-051 D-01 with exactly their names, descriptions and parameters (reads
+The eleven tools of DESIGN-049 D-05 + DESIGN-051 D-01 + DESIGN-054 with their names, descriptions and parameters (reads
 first, then writes, `undo_last_change` last); `.strict()` zod inputs at
 module scope validate every call (a call without `arguments` counts as `{}`). A consumer's connection
 registers only the tools its scopes allow, so `tools/list` omits the others and a call to one answers "not
 found". `tools/list` is served from **hand-written JSON Schemas** through the
 low-level handler: the SDK-generated list (a `$schema` URL and `execution` on every tool) measured 3,475
-bytes, over the 3,072-byte budget; the served list was 2,712 bytes with seven tools and is **3,633 bytes** with
-nine (the cap is 4,096 since ADR-092 C-09; `oauth.e2e.test.ts` pins the exact size), and a test pins each
+bytes, over the 3,072-byte budget; the served list is bounded at **6,144 bytes** for eleven tools (ADR-107), and a test pins each
 hand-written schema to its zod schema. **Changing a tool's name, description or parameters is a deploy step
 too:** after the deploy, reload Home Assistant's "Watch history" entry (OPS-015 §8; HA loads the tool list only
-at entry setup) and have the owner refresh the ChatGPT connector and start a new chat (OPS-016 §7). Every answer is `@hnet/watch`-formatted plain text — no `structuredContent`, no
-`outputSchema`. Principal (`resolvePrincipal`): the hop acts as THE `owner` row (none yet ⇒ "Watch history isn't
+at entry setup) and have the owner refresh the ChatGPT connector and start a new chat (OPS-016 §7). Existing tools return plain text. `check_titles` and `viewing_context` add factual
+`structuredContent` (at most 64 KiB) beside spoken text (at most 1,200 characters); no tool advertises
+an `outputSchema`. The batch schema permits up to ten candidate objects; other inputs remain flat. Principal (`resolvePrincipal`): the hop acts as THE `owner` row (none yet ⇒ "Watch history isn't
 ready yet."); an OAuth consumer acts as its user's own tracked account — `users.id` → the ADR-053 Plex Account
 Map → `watch_accounts` with `tracked = true` (none ⇒ "Watch history isn't set up for your account yet.", an
 ordinary answer). Only the owner's account is revalidated live and written to Plex (both use the owner's server
@@ -59,16 +59,33 @@ marks use an ≈ 800 ms-per-attempt bundle (D-14's 3 s).
 
 **The watchlist (ADR-092 / DESIGN-051).** `watchlist` (read) lists the owner's plex.tv watchlist through
 `@hnet/watch`'s `selectWatchlist` — the 15-minute cache with the Watchlist Changes since that sync overlaid at
-read time (D-05) — with the D-02 "on Plex" rule and started / watched per title; `watch_status` ends with the
-four-way availability sentence (on the watchlist ⇔ the resolver's matched entries include an overlaid watchlist
-entry). `set_watchlist` (write) runs `@hnet/domain` `changeWatchlist`: its live userState read before the write goes out
+read time (D-05) — with the D-02 "on Plex" rule and started / watched per title; `watch_status` reports factual membership with unknown states where the cached records cannot
+confirm absence; it uses the same personal evidence as `check_titles`. `set_watchlist` (write) runs `@hnet/domain` `changeWatchlist`: its live userState read before the write goes out
 on the short 300 ms bundle (`revalidatePlex`), its catalog lookup (the external-id match) and the userState re-read
 after a failed PUT on the discover bundle (`discoverPlex`: one 1.5 s attempt, since plex.tv takes up to 1.3 s to
 match a long-running show, DESIGN-051 D-15ab), its two PUTs on the mark bundle (`markPlex`), and its TMDB fallback
-makes a single attempt (`tmdbOnce`, DESIGN-051 D-15g). Every tool's TMDB check made while the pool already has an
+makes a single attempt (`tmdbOnce`, DESIGN-051 D-15g). The action tools' TMDB check made while the pool already has an
 answer (a named year the pool's title does not have) goes through `tmdbOnce` too, since `mark_watched`'s Plex work
 follows it; "not found" keeps the retrying `tmdb` (D-15aa). Both answer a principal that is not the Server Owner with "Your Plex watchlist isn't set up
-for your account yet." (ADR-092 C-04); `watch_status` keeps DESIGN-049's sentence for them.
+for your account yet." (ADR-092 C-04); `watch_status` reports watchlist membership unknown for them.
+
+## Personal context and recommendation research (ADR-107)
+
+The agent owns discovery and final selection. Read `viewing_context` (default: viewing plus explicit
+feedback), research candidates broadly, check them with `check_titles`, verify current regional
+streaming/rental availability, then rank and explain for the request. Use dated sources for current
+attention. Plays do not establish liking or completion; personal numeric ratings are unavailable.
+Plex/watchlist membership restricts choices only when explicitly requested.
+
+`recommend` remains a compatible limited cached helper, with `scope: catalog|plex|watchlist` and
+uniform pagination. Membership boosts and membership-based reasons are removed. Its legacy
+heuristic order is not general recommendation judgment. Agents without broad discovery state
+that limit rather than presenting cached coverage as comprehensive.
+
+Candidate checks use canonical IDs or exact title/year and retain input order, ambiguity, lookup
+failures, conflicting IDs and uncertain historical attribution. Source coverage is partial; no record
+is not proof of never viewing. External lookups share a six-second budget inside the nine-second
+request deadline. The two new tools are SELECT-only and never acquire media or call action writers.
 
 ## Logging and errors (`src/log.ts`, D-06)
 

@@ -1,14 +1,14 @@
 // ADR-087 / DESIGN-049 D-05, D-10, D-11, D-13..D-15, D-20, D-21 (+ ADR-092 / DESIGN-051 D-02..D-05, the
 // watchlist) — what each watch tool answers: read
 // (@hnet/watch queries), revalidate (D-11) or write (the @hnet/domain flows), then format (@hnet/watch).
-// Every answer is plain spoken text; problems a person can act on (not found, ambiguous, nothing
+// Existing answers are plain spoken text; ADR-107's new read tools add bounded personal evidence. Problems
+// a person can act on (not found, ambiguous, nothing
 // unfinished) are ordinary answers, never errors.
 import type { DbClient, WatchTitleRow } from '@hnet/db';
 import {
   changeWatchlist,
   dismissTitle,
   markWatched,
-  resolveWatchTitle,
   revalidateTitles,
   undoLastChange,
   type WatchDiscoverReaders,
@@ -19,6 +19,7 @@ import {
   type WatchTmdbSearch,
 } from '@hnet/domain';
 import {
+  checkWatchTitles,
   formatAmbiguous,
   formatDismissResult,
   formatMarkResult,
@@ -34,11 +35,9 @@ import {
   formatWatchlistDuplicates,
   formatWatchlistIndistinct,
   formatWatchlistNotSetUp,
-  formatWatchStatus,
   indexMarks,
   recentEntries,
   recommendations,
-  selectLedgerHolders,
   selectLiveMarks,
   selectRecentEvents,
   selectRecommendInputs,
@@ -47,9 +46,9 @@ import {
   selectTitleRowsByIdentity,
   selectUnfinishedRows,
   selectWatchlist,
+  selectViewingContext,
   unfinishedItems,
   watchlistItems,
-  watchStatusView,
   type UnfinishedRow,
   type WatchOwner,
 } from '@hnet/watch';
@@ -65,7 +64,20 @@ import type {
   unfinishedInput,
   watchlistInput,
   watchStatusInput,
+  checkTitlesInput,
+  viewingContextInput,
 } from './tools';
+import { boundedWatchContent } from './structured';
+import {
+  formatCandidateChecks,
+  formatSingleWatchCheck,
+  formatViewingContext,
+} from './personal-format';
+
+export interface StructuredAnswer {
+  text: string;
+  structuredContent: Record<string, unknown>;
+}
 
 /** What the handlers run against (tests inject fakes; production builds these from env — deps.ts). */
 export interface McpDeps {
@@ -122,7 +134,10 @@ const NO_PLEX: WatchPlexClients = { read: {}, write: {} };
 const nowSec = (ctx: AnswerContext) => Math.floor(ctx.deps.now().getTime() / 1000);
 
 /** D-11 for the titles about to be reported; the fresh rows by id (none when Plex is not configured). */
-async function revalidate(ctx: AnswerContext, rows: readonly WatchTitleRow[]): Promise<Map<number, WatchTitleRow>> {
+async function revalidate(
+  ctx: AnswerContext,
+  rows: readonly WatchTitleRow[],
+): Promise<Map<number, WatchTitleRow>> {
   const out = new Map<number, WatchTitleRow>();
   // Live revalidation reads Plex with the OWNER's tokens, so it describes the owner's state only (ADR-091 C-04).
   if (!ctx.account.isOwner) return out;
@@ -147,10 +162,16 @@ async function revalidate(ctx: AnswerContext, rows: readonly WatchTitleRow[]): P
  * {@link revalidate} by row id: the whole rows (episode map, Plex counters, `on_plex`) are loaded only for
  * the titles being revalidated, and only when Plex is configured. The load counts toward the phase.
  */
-async function revalidateIds(ctx: AnswerContext, ids: readonly number[]): Promise<Map<number, WatchTitleRow>> {
+async function revalidateIds(
+  ctx: AnswerContext,
+  ids: readonly number[],
+): Promise<Map<number, WatchTitleRow>> {
   if (ids.length === 0 || !ctx.account.isOwner || !ctx.deps.revalidatePlex()) return new Map();
   const started = Date.now();
-  const out = await revalidate(ctx, await selectTitleRows(ctx.deps.db, ctx.account.plexAccountId, { ids }));
+  const out = await revalidate(
+    ctx,
+    await selectTitleRows(ctx.deps.db, ctx.account.plexAccountId, { ids }),
+  );
   ctx.phases.revalidate = Date.now() - started;
   return out;
 }
@@ -193,6 +214,7 @@ export async function answerRecommend(
   const kind = args.kind ?? 'any';
   const kids = args.kids ?? false;
   const genre = args.genre ?? null;
+  const scope = args.scope ?? 'catalog';
   // The live marks come with the inputs: the library query was anti-joined on these very rows.
   const inputs = await selectRecommendInputs(ctx.deps.db, ctx.account.plexAccountId, {
     now: ctx.deps.now(),
@@ -200,55 +222,115 @@ export async function answerRecommend(
     genre,
     kids,
   });
-  const recs = recommendations(inputs, inputs.marks, { kind, genre, kids, now: nowSec(ctx) });
+  const recs = recommendations(inputs, inputs.marks, {
+    kind,
+    genre,
+    kids,
+    scope,
+    now: nowSec(ctx),
+  });
   return formatRecommendations(recs, {
     limit: args.limit ?? 5,
     offset: args.offset ?? 0,
     genre,
     kids,
     kind,
+    scope,
   });
 }
 
+/** DESIGN-054 D-02: one account snapshot for the whole input-ordered, read-only batch. */
+export async function answerCheckTitles(
+  ctx: AnswerContext,
+  args: z.infer<typeof checkTitlesInput>,
+): Promise<StructuredAnswer> {
+  const started = Date.now();
+  const result = await checkWatchTitles({
+    db: ctx.deps.db,
+    plexAccountId: ctx.account.plexAccountId,
+    isOwner: ctx.account.isOwner,
+    titles: args.titles,
+    lookup: (ctx.deps.tmdbOnce ?? ctx.deps.tmdb)(),
+    now: ctx.deps.now(),
+  });
+  ctx.phases.resolve = Date.now() - started;
+  return {
+    text: formatCandidateChecks(result),
+    structuredContent: boundedWatchContent(result),
+  };
+}
+
+/** DESIGN-054 D-03: omitted section includes viewing and feedback; neither implies liking. */
+export async function answerViewingContext(
+  ctx: AnswerContext,
+  args: z.infer<typeof viewingContextInput>,
+): Promise<StructuredAnswer> {
+  const result = await selectViewingContext({
+    db: ctx.deps.db,
+    plexAccountId: ctx.account.plexAccountId,
+    isOwner: ctx.account.isOwner,
+    kind: args.kind ?? 'any',
+    ...(args.section === undefined ? {} : { section: args.section }),
+    limit: args.limit ?? 10,
+    offset: args.offset ?? 0,
+    now: ctx.deps.now(),
+  });
+  return {
+    text: formatViewingContext(result),
+    structuredContent: boundedWatchContent(result),
+  };
+}
+
 /**
- * `watch_status` (D-13, D-21): resolve, revalidate the title (D-11), answer — with DESIGN-051 D-02's availability
- * sentence: on the owner's watchlist when the resolver's matched entries include an overlaid watchlist entry
- * (DESIGN-051 D-02). A principal that is not the Server Owner keeps DESIGN-049's sentence.
+ * `watch_status` (DESIGN-054 D-03): the factual identity/evidence read, retaining established owner-only
+ * live progress revalidation (D-11). Re-read the facts only when revalidation returned refreshed rows.
  */
 export async function answerWatchStatus(
   ctx: AnswerContext,
   args: z.infer<typeof watchStatusInput>,
 ): Promise<string> {
   const started = Date.now();
-  const r = await resolveWatchTitle({
+  const read = {
     db: ctx.deps.db,
     plexAccountId: ctx.account.plexAccountId,
-    query: args.title,
-    kind: args.kind ?? null,
-    tmdb: ctx.deps.tmdb(),
-    tmdbOnce: ctx.deps.tmdbOnce?.() ?? null,
+    isOwner: ctx.account.isOwner,
     now: ctx.deps.now(),
-  });
+  };
+  let check = (
+    await checkWatchTitles({
+      ...read,
+      titles: [{ title: args.title, ...(args.kind === undefined ? {} : { kind: args.kind }) }],
+      lookup: (ctx.deps.tmdbOnce ?? ctx.deps.tmdb)(),
+    })
+  ).results[0];
+  if (!check) throw new Error('The single title check returned no result');
   ctx.phases.resolve = Date.now() - started;
-  if (r.status === 'ambiguous') return formatAmbiguous(args.title, r.options);
-  if (r.status === 'not_found') return formatNotFound(args.title, { kind: args.kind ?? null });
-  const ids = { kind: r.kind, title: r.title, year: r.year, titleKey: r.titleKey, ...r.ids };
-  const [rows, marks, holders] = await Promise.all([
-    selectTitleRowsByIdentity(ctx.deps.db, ctx.account.plexAccountId, ids),
-    selectLiveMarks(ctx.deps.db, ctx.account.plexAccountId),
-    selectLedgerHolders(ctx.deps.db, r.mediaItemIds),
-  ]);
-  let row = rows[0] ?? null;
-  if (row) row = (await revalidate(ctx, [row])).get(row.id) ?? row;
-  const view = watchStatusView({
-    title: ids,
-    row,
-    marks: indexMarks(marks),
-    onPlexElsewhere: holders.length > 0,
-    now: nowSec(ctx),
-    onWatchlist: ctx.account.isOwner ? r.members.some((m) => m.source === 'watchlist') : null,
-  });
-  return formatWatchStatus(view, { now: nowSec(ctx) });
+  if (check.resolution === 'resolved' && check.identity) {
+    const identity = check.identity;
+    const rows = await selectTitleRowsByIdentity(ctx.deps.db, ctx.account.plexAccountId, identity);
+    const refreshed = await revalidate(ctx, rows);
+    if (refreshed.size > 0) {
+      check =
+        (
+          await checkWatchTitles({
+            ...read,
+            titles: [
+              {
+                title: identity.title,
+                kind: identity.kind,
+                ...(identity.year === null ? {} : { year: identity.year }),
+                ...(identity.tmdbId === null ? {} : { tmdbId: identity.tmdbId }),
+                ...(identity.tvdbId === null ? {} : { tvdbId: identity.tvdbId }),
+                ...(identity.imdbId === null ? {} : { imdbId: identity.imdbId }),
+                ...(identity.plexGuid === null ? {} : { plexGuid: identity.plexGuid }),
+              },
+            ],
+            lookup: null,
+          })
+        ).results[0] ?? check;
+    }
+  }
+  return formatSingleWatchCheck(check);
 }
 
 /**

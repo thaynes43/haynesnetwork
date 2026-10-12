@@ -1,7 +1,7 @@
 # DDD-002: Bounded Contexts
 
 - **Status:** Accepted
-- **Last updated:** 2026-09-26 (BC-03 gains watchlist protection for Trash: the Watchlist Registry, the Release Block write-back and a Seerr settings write — ADR-093, DESIGN-052; the "Seerr is read-only" rule is amended). Prior: 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
+- **Last updated:** 2026-10-11 (ADR-107 / DESIGN-054: BC-06 supplies personal evidence for agent-owned recommendations). Prior: 2026-09-26 (BC-03 gains watchlist protection for Trash: the Watchlist Registry, the Release Block write-back and a Seerr settings write — ADR-093, DESIGN-052; the "Seerr is read-only" rule is amended). Prior: 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
 - **Related:** PRD-001, DDD-001
 
 Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs as
@@ -168,12 +168,16 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
 - **Does NOT own:** the media estate or the Fix flow — Messages **complement** Fix (BC-03), never
   replace it; the Feed is a read-through over inbound events, not a media source of truth.
 
-### BC-06 — Watch Companion (ADR-087 / ADR-088 / ADR-089 / DESIGN-049, PLAN-068; ADR-091 / DESIGN-050, PLAN-069; ADR-092 / DESIGN-051, PLAN-071)
+### BC-06 — Watch Companion (ADR-087 / ADR-088 / ADR-089 / DESIGN-049, PLAN-068; ADR-091 / DESIGN-050, PLAN-069; ADR-092 / DESIGN-051, PLAN-071; ADR-107 / DESIGN-054, PLAN-075)
 
 - **Purpose:** answer "what haven't I finished", "what should I watch next" and "I already watched
   that" for the **Server Owner** (T-94), fast enough for a voice turn, and expose it to machine
   consumers (the Movie Room voice agent, the dev-env agents) through the in-cluster MCP surface, and to
-  external AI apps through public **Connectors** (T-254, ADR-091).
+  external AI apps through public **Connectors** (T-254, ADR-091). Under ADR-107, the consuming agent
+  owns broad research, ranking and explanation; BC-06 supplies factual Candidate Checks (T-297),
+  Viewing Context (T-298), explicit actions and a bounded Cached Candidate Scope (T-299). Every
+  answer states its available records' scope: no recorded viewing does not prove never watched;
+  personal ratings are unavailable and no liking is inferred.
 - **Owned aggregates:** **Watch Event** (`watch_events`, the append-only play log), **Title State**
   (`watch_titles`, the per-account progress snapshot), **Watch Mark** (`watch_marks`, the owner's
   audited corrections), the tracked-account registry (`watch_accounts`) and the recommendation
@@ -184,7 +188,7 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
 - **Inbound:** the `watch` sync mode (Tautulli history, the owner's Plex progress, the plex.tv
   watchlist, TMDB recommendations); MCP tool calls from an **MCP Consumer** (T-251) through the
   **MCP Hop** (T-252); MCP tool calls from a **Connector** on the public `/mcp` with a **Delegated
-  Token** (T-258), answering for its user's **Tracked Account** (T-259); consent from a signed-in
+  Token** (T-258), answering for its user's tracked account; consent from a signed-in
   BC-01 user.
 - **Outbound:** Plex `scrobble`/`unscrobble` for `watched` Watch Marks only (owner ruling
   2026-09-23), and the owner's plex.tv watchlist (`addToWatchlist` / `removeFromWatchlist`) for an
@@ -194,7 +198,9 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
   Tautulli trio from the ADR-068 env contract; ratings, genres and availability from BC-03's
   ledger (`media_metadata`, `media_plex_matches`). BC-06 reads them and owns none of them.
 - **Does NOT own:** ADR-053's per-title `user_media_watch` facets or the household watch stats
-  (BC-03), library access (BC-02/BC-04), or requests (Seerr).
+  (BC-03), library access (BC-02/BC-04), or requests (Seerr). General recommendation
+  discovery, current attention, regional streaming/rental research and final judgment belong to
+  the consuming agent, not this context; reads never acquire media.
 
 ## 4. Relationship rules
 
