@@ -530,6 +530,21 @@ describe('Playback Evidence (T-309, DESIGN-055 D-09)', () => {
     historyRows = [{ rating_key: 4242, user: 'Viewer1', started: Math.floor(Date.now() / 1000) - 600, date: Math.floor(Date.now() / 1000) - 600 }];
     const played = await api.fix.playbackEvidence({ mediaItemId: item.id });
     expect(played).toMatchObject({ verdict: 'played', servers: ['hayneskube', 'haynesops'] });
+
+    // Most accounts carry their Plex identity only in the sign-in claims (the session), not on the user row: a history
+    // row is theirs by plex.tv id even under a display name that differs.
+    historyRows = [
+      { rating_key: 4242, user: 'Display Name', user_id: 424242, started: Math.floor(Date.now() / 1000) - 300 },
+      { rating_key: 9999, user: 'Display Name', user_id: 424242, started: Math.floor(Date.now() / 1000) - 300 },
+    ];
+    const claimsOnly = await createUser(tdb.db, { email: 'claims@example.com' });
+    const claimsApi = caller({
+      ...makeCtx(tdb.db, sessionUser(claimsOnly, undefined, undefined, undefined, { userId: '424242', email: null, username: null })),
+      playbackHistory: [reader],
+    });
+    const byId = await claimsApi.fix.playbackEvidence({ mediaItemId: item.id });
+    expect(byId).toMatchObject({ verdict: 'played', servers: ['hayneskube'], historyMatched: true });
+    expect(byId.plays).toHaveLength(1); // the other rating key is another title
     await setKnownIssueServers({ db: tdb.db, servers: [], actorId: null });
   });
 });

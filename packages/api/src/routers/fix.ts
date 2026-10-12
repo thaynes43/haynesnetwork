@@ -212,6 +212,7 @@ export const fixRouter = router({
           db: ctx.db,
           mediaItemId: input.mediaItemId,
           requesterId: ctx.user.id,
+          plexIdentity: ctx.user.plexIdentity,
           tautulli: resolvePlaybackHistoryReaders(ctx),
         }),
       );

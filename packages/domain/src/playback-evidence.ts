@@ -9,7 +9,8 @@
 //    PLAN-077 P1 the template also names the server (`server`); older rows have none.
 // 2. Each Tautulli instance's history (`get_history`), filtered to the title's rating keys on that instance's server
 //    and to the person's Plex username. It covers the instance that posts no webhook (HaynesTower) and names the
-//    server by construction.
+//    server by construction. The person is matched by their plex.tv numeric id or Plex username: from the session's
+//    Plex identity (the sign-in claims, which is where most accounts carry them) and the admin overrides on the user.
 // A TV title is matched at the show level: the webhook rows carry the show's ids, not the episode's.
 import {
   mediaItems,
@@ -64,7 +65,7 @@ export interface PlaybackEvidence {
   verdict: PlaybackVerdict;
   /** Instances whose history could not be read (the verdict leans on the webhooks for them). */
   unreadServers: string[];
-  /** Whether history could be matched to the person (it needs their Plex username). */
+  /** Whether history could be matched to the person (it needs their plex.tv id or Plex username). */
   historyMatched: boolean;
   /** Every Plex server's display name, by slug, for the guide's copy. */
   serverNames: Record<string, string>;
@@ -75,6 +76,11 @@ export interface PlaybackEvidenceInput {
   mediaItemId: string;
   requesterId: string;
   tautulli: readonly PlaybackHistoryReader[];
+  /**
+   * The person's Plex identity from their sign-in (the `plex_user_id` / `plex_email` / `plex_username` claims; the
+   * session carries it). The user row's admin overrides are added to it. Absent: the user row alone.
+   */
+  plexIdentity?: { userId: string | null; email: string | null; username: string | null };
   now?: Date;
   windowHours?: number;
 }
@@ -110,8 +116,15 @@ export async function readPlaybackEvidence(input: PlaybackEvidenceInput): Promis
   const slugByName = new Map(servers.map((s) => [lower(s.name), s.slug as string]));
   const knownSlugs = new Set(servers.map((s) => s.slug as string));
 
-  const emails = [...new Set([lower(person.email), lower(person.plexEmail)].filter((e) => e !== ''))];
-  const username = lower(person.plexUsername);
+  const emails = [
+    ...new Set(
+      [lower(person.email), lower(person.plexEmail), lower(input.plexIdentity?.email)].filter((e) => e !== ''),
+    ),
+  ];
+  const usernames = [
+    ...new Set([lower(person.plexUsername), lower(input.plexIdentity?.username)].filter((u) => u !== '')),
+  ];
+  const plexUserId = (input.plexIdentity?.userId ?? '').trim();
 
   // ---- 1. the stored Tautulli webhooks ----
   const titleMatch: SQL[] = [eq(notifications.mediaItemId, item.id)];
@@ -119,7 +132,7 @@ export async function readPlaybackEvidence(input: PlaybackEvidenceInput): Promis
   if (item.arrKind === 'sonarr' && item.tvdbId !== null) titleMatch.push(eq(notifications.tvdbId, item.tvdbId));
   const personMatch: SQL[] = [];
   if (emails.length > 0) personMatch.push(inArray(sql`lower(${notifications.payload}->>'user_email')`, emails));
-  if (username !== '') personMatch.push(sql`lower(${notifications.payload}->>'user') = ${username}`);
+  if (usernames.length > 0) personMatch.push(inArray(sql`lower(${notifications.payload}->>'user')`, usernames));
   const plays: PlaybackPlay[] = [];
   if (personMatch.length > 0) {
     const rows = await db
@@ -146,7 +159,7 @@ export async function readPlaybackEvidence(input: PlaybackEvidenceInput): Promis
 
   // ---- 2. each Tautulli instance's history ----
   const unreadServers: string[] = [];
-  const historyMatched = username !== '';
+  const historyMatched = plexUserId !== '' || usernames.length > 0;
   if (historyMatched && input.tautulli.length > 0) {
     const keys = await db
       .select({ slug: plexServers.slug, ratingKey: mediaPlexMatches.ratingKey })
@@ -172,7 +185,8 @@ export async function readPlaybackEvidence(input: PlaybackEvidenceInput): Promis
             for (const row of rows) {
               const at = row.started ?? row.date ?? null;
               if (at === null || at < sinceSeconds) continue;
-              if (lower(row.user) !== username) continue;
+              const byId = plexUserId !== '' && String(row.user_id ?? '') === plexUserId;
+              if (!byId && !usernames.includes(lower(row.user))) continue;
               // The filter is Tautulli's; check the row is this title anyway (a reader may ignore the filter).
               const rowKey = item.arrKind === 'sonarr' ? row.grandparent_rating_key : row.rating_key;
               if (rowKey !== null && rowKey !== undefined && String(rowKey) !== ratingKey) continue;
