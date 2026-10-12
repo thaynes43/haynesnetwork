@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.111.0](https://github.com/thaynes43/haynesnetwork/compare/v0.110.5...v0.111.0) (2026-10-12)
+
+
+### Features
+
+* **mcp:** support agent-owned recommendations with personal evidence ([#882](https://github.com/thaynes43/haynesnetwork/issues/882)) ([b6c3823](https://github.com/thaynes43/haynesnetwork/commit/b6c38232804d33d0d5a4c72bcdf02c3e7d0da357))
+
+
+### Documentation
+
+* make unavailable Claude Code reviews optional ([#880](https://github.com/thaynes43/haynesnetwork/issues/880)) ([5e1939f](https://github.com/thaynes43/haynesnetwork/commit/5e1939f55e19a04ca1566edaec19a5e2b4d1b25f))
+
 ## [0.110.5](https://github.com/thaynes43/haynesnetwork/compare/v0.110.4...v0.110.5) (2026-10-09)
 
 
