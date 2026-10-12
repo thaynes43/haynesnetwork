@@ -61,7 +61,7 @@ describe('the D-05 contract', () => {
       [
         'viewing_context',
         'watch:read',
-        'Personal viewing evidence and explicit feedback, paginated. Plays do not prove completion or liking; personal ratings are unavailable.',
+        'Personal viewing and explicit feedback, paginated; plays do not prove completion or liking; personal ratings unavailable. Discover broadly, check_titles, then choose for context/request using dated research, not ratings alone. Released beyond theatrical-only is eligible outside Plex/watchlists. Streaming/rental listings are optional convenience, never a default filter or ranking boost. Upcoming/theatrical-only need explicit request; Plex/watchlist restrict only explicit requests.',
       ],
       [
         'mark_watched',
