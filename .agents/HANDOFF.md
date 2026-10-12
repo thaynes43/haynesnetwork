@@ -15,8 +15,13 @@
   archived history: SABnzbd kept them as "Completed", so its duplicate check failed every re-grab. Anyone who undoes
   a janitor blocklist must delete that archived job too. Three mislabelled TLHG files (Loud House S10E05, E09, E12)
   went to `/data/haynestower/usenet/_hold-mislabelled-2026-10-12/`. All 9 missing episodes now have files.
-- **Owed:** OC-048 (a week of census, from 2026-10-19 17:30Z) and OC-049 (delete the hold folder after 2026-10-19;
-  the held "E09" copy holds E20 and E21, which are still missing).
+- **Owed:** OC-048 (a week of census, from 2026-10-19 17:30Z). OC-049 passed the same day. Subtitles showed the held
+  "E09" file is S10E20 and E21, so Sonarr manual-imported it onto both (moved, not copied). The other two held files
+  duplicated library content and were deleted along with the hold folder.
+- **Found, not fixed (pre-existing):** Plex (plexops, HOps TV Shows) numbers The Loud House S10 differently from Sonarr
+  (TVDB). Its "S10E01" is TVDB E14 One False Move, so every S10 entry in Plex carries another episode's title, and each
+  multi-episode file shows as one entry. Changing the show's episode ordering in Plex would fix it. That moves watch
+  state, so it needs a decision first.
 - **Next in PLAN-077:** P1. The TLHG mislabels are a live example for P4 (Title Check): those single-episode releases
   are named for other pairs, and Sonarr imported them into the wrong slots.
 
