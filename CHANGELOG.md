@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.112.0](https://github.com/thaynes43/haynesnetwork/compare/v0.111.2...v0.112.0) (2026-10-12)
+
+
+### Features
+
+* **fix:** the Repair Guide's Fix safety guards (PLAN-077 P1) ([#897](https://github.com/thaynes43/haynesnetwork/issues/897)) ([82c9415](https://github.com/thaynes43/haynesnetwork/commit/82c9415d4ab7d47fb744631714c03e12ab97da18))
+
 ## [0.111.2](https://github.com/thaynes43/haynesnetwork/compare/v0.111.1...v0.111.2) (2026-10-12)
 
 
