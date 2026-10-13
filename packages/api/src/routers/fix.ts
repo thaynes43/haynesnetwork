@@ -31,7 +31,8 @@ import {
   removeMislabelTerm,
   titleCheckSummary,
   planForceSearch,
-  previewFix,
+  previewAudioPreference,
+  previewRepairPlan,
   readRemapSeason,
   runEpisodeRemap,
   readFileAudio,
@@ -39,6 +40,7 @@ import {
   readSeasonChoices,
   runFixRequest,
   runForceSearch,
+  setAudioPreference,
   setKnownIssueServers,
   setRepairGuideRemedies,
 } from '@hnet/domain';
@@ -47,6 +49,7 @@ import {
   mapDomainErrors,
   resolveArrBundle,
   resolvePlaybackHistoryReaders,
+  resolvePlexBundle,
   router,
 } from '../trpc';
 import { adminProcedure } from '../middleware/role';
@@ -119,6 +122,10 @@ export const fixRouter = router({
       remapOn: remedies.episode_remap,
       /** DESIGN-055 D-06 — Force Search and a re-map's emptied episodes offer "See every release" (the Release Pick). */
       releasePickOn: remedies.release_pick,
+      /** DESIGN-055 D-08 (PLAN-077 P6) — Wrong language may set a show's audio language in Plex (Q-03 ruling). */
+      audioPreferenceOn: remedies.audio_preference,
+      /** DESIGN-055 D-08 rule 4 — Wrong language replaces a file that lacks the language with a release that has it. */
+      languageSearchOn: remedies.language_search,
       knownIssueServers: await getKnownIssueServers(ctx.db),
     };
   }),
@@ -176,12 +183,15 @@ export const fixRouter = router({
           targetChildId: z.number().int().positive().optional(),
           seasonNumber: z.number().int().min(0).optional(),
           ...guideChoices,
+          /** DESIGN-055 D-08 rule 4 — a Wrong language Fix: the wanted language (the Language Replace's plan). */
+          wantedLanguage: languageCode.optional(),
         })
         .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
     )
     .query(async ({ ctx, input }) => {
       return mapDomainErrors(async () => {
-        const plan = await previewFix({
+        const plan = await previewRepairPlan({
+          wantedLanguage: input.wantedLanguage,
           db: ctx.db,
           arr: resolveArrBundle(ctx),
           mediaItemId: input.mediaItemId,
@@ -353,6 +363,74 @@ export const fixRouter = router({
           scope: input.scope,
           targetChildId: input.targetChildId,
           seasonNumber: input.seasonNumber,
+        }),
+      );
+    }),
+
+  /**
+   * ADR-109 C-07 / DESIGN-055 D-08 rule 3 (PLAN-077 P6) — a Wrong language report whose language is in the file: whether
+   * the guide may set the show's preferred audio language in Plex (only the title's original language, Q-03 ruling; a
+   * movie never, Q-08), each server's stored value, and the file's own tracks in Plex for the guidance. Read-only, free.
+   */
+  audioPreference: authedProcedure
+    .input(
+      z
+        .object({
+          mediaItemId: z.uuid(),
+          scope: z.enum(ACTION_SCOPES).optional(),
+          targetChildId: z.number().int().positive().optional(),
+          seasonNumber: z.number().int().min(0).optional(),
+          wantedLanguage: languageCode,
+        })
+        .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
+    )
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        previewAudioPreference({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          plex: resolvePlexBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          scope: input.scope,
+          targetChildId: input.targetChildId,
+          seasonNumber: input.seasonNumber,
+          wantedLanguage: input.wantedLanguage,
+        }),
+      );
+    }),
+
+  /**
+   * ADR-109 C-02, C-07 — set the show's preferred audio language on every Plex server that carries it, after its Repair
+   * Request (`audio_preference`, one unit of the hourly budget) commits; each server is read back. `already_set` writes
+   * nothing. Refused (FIX_REFUSED) when the preview says guidance only, or the remedy is off.
+   */
+  setAudioPreference: authedProcedure
+    .input(
+      z
+        .object({
+          mediaItemId: z.uuid(),
+          scope: z.enum(ACTION_SCOPES).optional(),
+          targetChildId: z.number().int().positive().optional(),
+          seasonNumber: z.number().int().min(0).optional(),
+          wantedLanguage: languageCode,
+          digest: z.string().regex(/^[0-9a-f]{8,64}$/).optional(),
+        })
+        .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        setAudioPreference({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          plex: resolvePlexBundle(ctx),
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
+          mediaItemId: input.mediaItemId,
+          scope: input.scope,
+          targetChildId: input.targetChildId,
+          seasonNumber: input.seasonNumber,
+          wantedLanguage: input.wantedLanguage,
+          digest: input.digest,
         }),
       );
     }),

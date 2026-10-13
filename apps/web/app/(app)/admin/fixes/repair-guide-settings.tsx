@@ -1,6 +1,6 @@
 'use client';
 
-// ADR-109 / DESIGN-055 D-01, D-04, D-06, D-07, D-09 (PLAN-077 P1, P2, P4, P5) — the Repair Guide's settings on /admin/fixes: the per-remedy kill
+// ADR-109 / DESIGN-055 D-01, D-04, D-06, D-07, D-08, D-09 (PLAN-077 P1, P2, P4, P5, P6) — the Repair Guide's settings on /admin/fixes: the per-remedy kill
 // switch (`repair_guide_remedies`) and the Known-Issue Servers (T-314). One form, one Save, audited
 // (`update_app_setting`). Every remedy ships off; staff turn each on after its live check. With every remedy off, Fix
 // opens today's dialog. Reflow-safe (hard rule 9): the save-status slot is reserved, toggles only change their own box.
@@ -15,7 +15,9 @@ type Remedy =
   | 'playback_triage'
   | 'import_check'
   | 'episode_remap'
-  | 'release_pick';
+  | 'release_pick'
+  | 'audio_preference'
+  | 'language_search';
 
 const REMEDIES: ReadonlyArray<{ key: Remedy; label: string; hint: string }> = [
   {
@@ -57,6 +59,17 @@ const REMEDIES: ReadonlyArray<{ key: Remedy; label: string; hint: string }> = [
     key: 'release_pick',
     label: 'See every release',
     hint: 'Force Search on a missing episode or movie, and each episode a re-map leaves empty, offer a list of every release the sites have, with the reasons in plain words. Anyone who can use Fix may grab one, including a release outside the library’s usual quality or language rules. Blocked releases, camera copies, oversized files and releases named for another episode can never be picked. Opening the list and each grab use one hourly media action. In Force Search it shows only while the queue check above is on.',
+  },
+  // DESIGN-055 D-08 (PLAN-077 P6): both act after the audio check above has read the file, so they need it on.
+  {
+    key: 'audio_preference',
+    label: 'Set a show’s audio language in Plex',
+    hint: 'When a Wrong language report finds the wanted audio already in the file, and that language is the show’s original language, the guide offers to set the show’s preferred audio language in Plex for everyone, on every server that has the show. Each server is read back. Any other language, and every movie, gets the steps to pick the track instead. Uses one hourly media action. Needs the audio check above.',
+  },
+  {
+    key: 'language_search',
+    label: 'Replace with a release in the wanted language',
+    hint: 'When the file has no track in the wanted language, a Wrong language Fix on an episode or a movie shows the release with that audio that would replace it, then removes the file, blocks the download it came from, and downloads that release. With none available, nothing is removed. A season is fixed one episode at a time. Needs the audio check above.',
   },
 ];
 

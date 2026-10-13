@@ -951,6 +951,14 @@ export const REPAIR_GUIDE_REMEDIES = [
   // reasons in plain words, a grab of an approved one and the guarded override of a rejected one (Q-01 ruling). Reached
   // from Force Search and from a re-map's emptied episodes; not a Fix remedy, so it never opens the Fix guide on its own.
   'release_pick',
+  // DESIGN-055 D-08 (PLAN-077 P6): with the wanted audio in the file and that language the show's original one, Wrong
+  // language sets the show's preferred audio language in Plex on every server that carries it (Q-03 ruling). Off: the
+  // guide shows how to pick the track and changes nothing (P1). Needs `language_check`.
+  'audio_preference',
+  // DESIGN-055 D-08 rule 4 (PLAN-077 P6): with the wanted audio missing, an episode or movie Wrong language Fix replaces
+  // the file with a release in that language (the Language Replace) instead of a blind search. Off: the Fix as before.
+  // Needs `language_check`.
+  'language_search',
 ] as const;
 export type RepairGuideRemedy = (typeof REPAIR_GUIDE_REMEDIES)[number];
 

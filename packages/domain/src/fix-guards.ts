@@ -11,7 +11,7 @@
 // 3. The season guard (D-09): which downloads back which episodes, so a pack that also holds episodes the person did
 //    not choose is never marked failed.
 // 4. The language check (D-08 rules 1-2): which audio languages the file carries.
-import type { ArrRelease, ArrReleaseHistoryRecord } from '@hnet/arr';
+import type { ArrDownloadClientConfig, ArrRelease, ArrReleaseHistoryRecord } from '@hnet/arr';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Replacement Preview
@@ -366,6 +366,13 @@ export const AUDIO_LANGUAGE_NAMES: Readonly<Record<string, string>> = {
   isl: 'Icelandic',
   per: 'Persian',
   fas: 'Persian',
+  slo: 'Slovak',
+  slk: 'Slovak',
+  lav: 'Latvian',
+  lit: 'Lithuanian',
+  est: 'Estonian',
+  ben: 'Bengali',
+  urd: 'Urdu',
 };
 
 /** One code per language: the terminology code folds into the bibliographic one the *arrs mostly send. */
@@ -380,6 +387,9 @@ const CODE_ALIASES: Readonly<Record<string, string>> = {
   msa: 'may',
   isl: 'ice',
   fas: 'per',
+  slk: 'slo',
+  nob: 'nor',
+  nno: 'nor',
 };
 
 /** The canonical lowercase code for a language code (`FRA` → `fre`). */
@@ -412,4 +422,136 @@ export function parseAudioLanguages(value: string | null | undefined): string[] 
 /** D-08 rule 3's test: the wanted language is among the file's audio tracks. */
 export function fileHasLanguage(fileLanguages: readonly string[], wanted: string): boolean {
   return fileLanguages.includes(canonicalLanguageCode(wanted));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — the languages the *arrs name and the locales Plex stores
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * The names Sonarr 4.0.20 and Radarr 6.4.4 give languages (a series' or movie's `originalLanguage.name`, a release's
+ * `languages[].name`) that are not plain AUDIO_LANGUAGE_NAMES entries, to their ISO 639-2 code. "Unknown", "Any" and
+ * "Original" name no language.
+ */
+const ARR_LANGUAGE_NAME_CODES: Readonly<Record<string, string>> = {
+  'portuguese (brazil)': 'por',
+  'spanish (latino)': 'spa',
+  flemish: 'dut',
+  'norwegian bokmal': 'nor',
+  'norwegian bokmål': 'nor',
+  'chinese (simplified)': 'chi',
+  'chinese (traditional)': 'chi',
+  'mandarin': 'chi',
+  'cantonese': 'chi',
+};
+
+/** The canonical ISO 639-2 code for a language the *arr names (`"English"` → `eng`), or null when it names none. */
+export function languageCodeFromArrName(name: string | null | undefined): string | null {
+  const n = (name ?? '').trim().toLowerCase();
+  if (n === '' || n === 'unknown' || n === 'any' || n === 'original') return null;
+  const special = ARR_LANGUAGE_NAME_CODES[n];
+  if (special) return special;
+  for (const [code, label] of Object.entries(AUDIO_LANGUAGE_NAMES)) {
+    if (label.toLowerCase() === n) return canonicalLanguageCode(code);
+  }
+  return null;
+}
+
+/** Whether one of a release's languages, as the *arr parsed them from its name, is the wanted one. */
+export function releaseHasLanguage(release: Pick<ArrRelease, 'languages'>, wanted: string): boolean {
+  const code = canonicalLanguageCode(wanted);
+  return release.languages.some((name) => languageCodeFromArrName(name) === code);
+}
+
+/** ISO 639-2 (canonical) to the two-letter ISO 639-1 code a Plex locale starts with (`eng` → `en`). */
+const ISO_639_1: Readonly<Record<string, string>> = {
+  eng: 'en',
+  spa: 'es',
+  por: 'pt',
+  fre: 'fr',
+  ger: 'de',
+  ita: 'it',
+  jpn: 'ja',
+  kor: 'ko',
+  chi: 'zh',
+  rus: 'ru',
+  hin: 'hi',
+  ara: 'ar',
+  dut: 'nl',
+  swe: 'sv',
+  nor: 'nb',
+  dan: 'da',
+  fin: 'fi',
+  pol: 'pl',
+  cze: 'cs',
+  hun: 'hu',
+  tur: 'tr',
+  gre: 'el',
+  heb: 'he',
+  tha: 'th',
+  vie: 'vi',
+  ukr: 'uk',
+  rum: 'ro',
+  bul: 'bg',
+  hrv: 'hr',
+  srp: 'sr',
+  slv: 'sl',
+  ind: 'id',
+  may: 'ms',
+  tam: 'ta',
+  tel: 'te',
+  tgl: 'tl',
+  cat: 'ca',
+  ice: 'is',
+  per: 'fa',
+  slo: 'sk',
+  lav: 'lv',
+  lit: 'lt',
+  est: 'et',
+  ben: 'bn',
+  urd: 'ur',
+};
+
+/** The language a Plex locale value names (`en-US` → `eng`, `nb-NO` → `nor`); `''` (Account default) names none. */
+export function languageOfPlexLocale(value: string | null | undefined): string | null {
+  const prefix = (value ?? '').trim().toLowerCase().split('-')[0] ?? '';
+  if (prefix === '') return null;
+  if (prefix === 'no' || prefix === 'nn') return 'nor';
+  for (const [code, two] of Object.entries(ISO_639_1)) if (two === prefix) return code;
+  return null;
+}
+
+/**
+ * The Plex value to store for a language: the first of the item's own options (Plex's order, so English is `en-US`, not
+ * `en-AU`) whose locale names it. Null when Plex offers none for it (its list is the Plex UI languages, about 45).
+ */
+export function plexLocaleFor(code: string, options: ReadonlyArray<{ value: string }>): string | null {
+  const wanted = canonicalLanguageCode(code);
+  for (const option of options) {
+    if (option.value !== '' && languageOfPlexLocale(option.value) === wanted) return option.value;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// DESIGN-005 D-25 — the *arr's own Redownload Failed (moved here from fix-flow.ts in PLAN-077 P6, so the Language
+// Replace's plan can read it too)
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * DESIGN-005 D-25 (issue #646, the ADR-098 principle) — whether the *arr searches again by itself
+ * after the Fix marks this grab failed. `POST /history/failed/{id}` publishes the *arr's
+ * DownloadFailedEvent with `skipRedownload = false` (the endpoint takes no such parameter), and
+ * upstream RedownloadFailedDownloadService then searches unless Redownload Failed is off, or the
+ * grab came from an interactive search while its interactive-search twin is off (the grab
+ * record's `data.releaseSource`). Its search always covers the Fix's target: the grab's own
+ * episodes / movie / albums, or the season / artist when the grab was all of it. Pure.
+ */
+export function arrSearchesAfterMarkFailed(
+  config: ArrDownloadClientConfig,
+  grab: { data?: Record<string, unknown> | null },
+): boolean {
+  if (!config.autoRedownloadFailed) return false;
+  const interactive = grab.data?.releaseSource === 'InteractiveSearch';
+  return !interactive || config.autoRedownloadFailedFromInteractiveSearch !== false;
 }

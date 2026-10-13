@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
+- **Last updated:** 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
   missing, is a pick for all of them). Before that 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
@@ -102,7 +102,7 @@ Every write goes through `@hnet/arr/write`, `@hnet/plex/write` or the Seerr writ
 | `grabRelease({guid, indexerId, override?})` | Sonarr, Radarr | `POST /api/v3/release` | D-06, D-08 |
 | `deleteQueueItem(id, {removeFromClient, blocklist, skipRedownload: true})` | exists | `DELETE /api/v3/queue/{id}` | D-07 |
 | Mislabel Block profile write | Sonarr | `/api/v3/releaseprofile` | D-05 |
-| `setItemPreference(ratingKey, {audioLanguage})` | each Plex server | `PUT /library/metadata/{ratingKey}/prefs` | D-08, original language only (Q-03 ruling) |
+| `setAudioLanguagePreference(ratingKey, locale)` (named `setItemPreference` before P6) | each Plex server that carries the show | `PUT /library/metadata/{ratingKey}/prefs?audioLanguage=<locale>` | D-08, a show's original language only (Q-03 ruling, Q-08: a show only; P6 decision 2) |
 | `commentOnIssue`, `resolveIssue` | Seerr, with `X-API-User` | `POST /api/v1/issue/{id}/comment`, `POST /api/v1/issue/{id}/resolved` | D-10, as the bridge user (Q-02 ruling) |
 
 New reads (`@hnet/arr/read` and the Plex and Seerr read clients): `getManualImport` by `downloadId` or by folder
@@ -720,6 +720,81 @@ carries the language and every file's audio could be read; a file the *arr could
 runs as before. With the language present the Fix is refused (`language_present`) and the guide shows how to pick the
 track and set a default audio language in the person's Plex account.
 
+**P6 decisions (2026-10-13, PLAN-077 P6).** What the build settled, with the live reads behind it. ADR-109 C-02 and C-07
+already carry the Plex write (a title-level preferred audio language through `@hnet/plex/write`, only under C-07), so P6
+adds no ADR; CLAUDE.md hard rule 4 names the write.
+
+1. **Q-08 answered: a show only.** Read live on HaynesTower and HaynesOps (`GET /library/metadata/{key}?includePreferences=1`):
+   a show's own settings carry `audioLanguage` ("Preferred audio language", type text, value `en-US`, default `''` for
+   "Account default", `enumValues` the Plex UI languages, about 45, in Plex's own order), beside `subtitleLanguage` and
+   `subtitleMode`. GoodFellas' settings are only `languageOverride`, `useOriginalTitle` and
+   `enableCreditsMarkerGeneration`. A movie therefore always gets the guidance (reason `movie`).
+2. **The write and its read-back.** `setAudioLanguagePreference(ratingKey, locale)` on `@hnet/plex/write` sends
+   `PUT /library/metadata/{key}/prefs?audioLanguage=<locale>` (the call Plex Web's Edit, Advanced makes; python-plexapi's
+   `editAdvanced`). Only a locale or `''` passes its check, before the URL is built, and it is retried like a read on a
+   timeout or a 502-504, since the stored value is idempotent. The value written is Plex's first locale for the language
+   in the item's own list (`en-US`, not `en-AU`); a stored variant of the language (`en-GB`) already counts as set. Every
+   written server is read back (`getAudioLanguagePreference`) before the request completes. The hand fix of 2026-10-12
+   also refreshed the show; the setting does not need a refresh, and none is sent.
+3. **The decision** (`decideAudioPreference`, pure). `set` when every file in scope has the wanted language (P1's verdict
+   `present`), the title is a show, the *arr's `originalLanguage` (read from `GET /series/{id}` or `GET /movie/{id}`) is
+   that language, and a server that carries the show (the ADR-047 match, `media_plex_matches`) prefers another;
+   `already_set` when every server already prefers it (The Lost Tapes and Butterbean's Cafe after the hand fix); otherwise
+   `guidance` with its reason: `not_original`, `movie`, `unknown_original`, `no_plex`, `no_plex_value`, `not_present`. A
+   server that cannot be read is left out of the write and named in the result.
+4. **The record.** A `set` is one Repair Request (`audio_preference`, one unit of the hourly budget, its
+   `repair_requested` event in the same transaction), with a `plex_audio_preference` and a `plex_audio_readback` step per
+   server. It is `completed` only when every written server reads back the language, else `failed`, and the person is
+   told which server did not take it. `already_set` writes nothing and opens no row. Only another open Audio Preference
+   on the title holds one up, and it holds up nothing else: it changes a title-wide Plex setting and no file.
+5. **The track advice.** The guidance names the track as Plex lists it for the scope's own file (one episode or the
+   movie, `getAudioTracks` on the first server that answers: `English (EAC3 5.1)`), its place among the file's audio
+   tracks, and the track that plays first instead (the one the file flags as its default, else the first). Then where
+   the audio menu is: a browser or the desktop app (the Audio menu under the summary, or the player's audio and subtitle
+   settings), a phone or tablet, a TV or streaming box. A season, or a file Plex cannot read, gets "the audio track whose
+   name starts with English". Every case links the person's Plex account settings and the About page's recommended
+   settings (`/about#watching`).
+6. **The remedies.** `audio_preference` (off: the P1 guidance only) and `language_search` (off: the Fix as before) each
+   ship off and need `language_check`; neither opens the guide on its own.
+7. **The Language Replace (D-08 rule 4)**, for one episode or a movie whose file lacks the wanted language (verdict
+   `missing` or `unknown`). The file is deleted (ticked first), and the download it came from is marked failed so it is
+   never taken again. It is not marked when it is a pack that also holds other on-disk episodes (the season guard), or
+   when the *arr's own Redownload Failed would then search by itself (DESIGN-005 D-25, read in the plan): that blind
+   search would race the language grab, so only the file is replaced (`redownloadKept`; ADR-098 keeps it off in Sonarr
+   and Radarr, PR #942 review). A step that fails after an earlier write records the whole trail. The replacement is
+   grabbed with the plain body. It is the first release, in the *arr's own order, that:
+   - the *arr would take once the file is gone (approved, or rejected only for the existing file, T-315);
+   - the *arr parsed as carrying the wanted language;
+   - is mapped onto this episode or movie alone (never a pack);
+   - passes the Release Pick's hard refusals (P5 decision 15 included: Radarr approved another movie's releases for
+     Zom 100);
+   - is not the Same Release.
+   Sonarr's list is the season list narrowed to the episode, cached with the Release Pick's. A grab the *arr refuses falls
+   back to the search the Fix made before, so the target never ends with neither. The record is the Fix Request (path
+   `delete_search`, steps `guard_plan`, `mark_failed`, `delete_file`, `language_grab`), which already holds the mark and
+   the delete and completes on the import; the reserved Repair Request kind `language_search` stays unused.
+8. **No release in the language: nothing is removed** (`no_language_release`). Rule 4 opened the Release Pick filtered to
+   the language instead. The Release Pick is for missing items (Q-01 ruling), and deleting the only copy with nothing in
+   the person's language to replace it is the harm P1's "nothing to replace it" refusal guards against. The guide says
+   how many releases name the language but are turned down by the library's rules, and offers "Ask staff" (a prefilled
+   Helpdesk ticket, category audio).
+9. **A season is fixed one episode at a time.** A season whose files lack the language lists those episodes and sends
+   the person to each episode's own Fix (`language_by_episode`). With every file carrying it, a season gets the advice
+   and, for the show's original language, the same Audio Preference.
+10. **A release's languages are the *arr's reading of its name.** Sonarr gives a release with no language token the
+    series' original language, so BiOMA's "DUAL" posts read "English" (Case A's E11 list). The Language Replace trusts
+    that reading as the *arr does, and the Same Release test keeps it from taking the file's own release again.
+11. **The staff scan and sweep.** `repair-guide.ts audio-scan` reads every Sonarr series, one episode-file read each. It
+    lists the files whose audio carries the original language behind another one, confirmed on one such file in Plex
+    (the language a play starts in), with each server's stored preference. `--apply-original <code>` then sets the Audio
+    Preference as staff (requester null, one Repair Request each, the same writer) on every finding with that original
+    language whose Plex default is another one. Shows whose original language is not English are not swept: for them, a
+    viewer chooses between the original and an English dub, and Q-03 keeps that to a person's own report.
+12. **The scan's first read (2026-10-13, read-only).** 965 Sonarr series with files, 63,647 files: 181 series have files
+    that carry the original language behind another one, 166 of them English originals (Star Trek: Voyager starts 107
+    episodes in German on HaynesOps, Jessie 91 in Czech, Futurama 72 in German). The sweep and its result are in PLAN-077
+    P6's status.
+
 ### D-09 Fix safety guards and playback triage
 
 **Season Fix.** "Which episodes are wrong?" lists the season's episodes with files, their release and their Title
@@ -1001,7 +1076,7 @@ suite on each PR.
 | D-05 | `title-evidence.test.ts`: the three cases' real names (BiOMA silent, `S01E10.Spice.It.Up` agrees with E11, `The_Paper_2025_S02E06_125_Years_Young` agrees with 2x06, the Penguins Spanish titles disagree); `mislabel-block.test.ts`: grammar, compile check, read-back, expiry, cap; the ADR-113 name kinds against Case A's five hand-made blocks (each matches its mislabelled name and not the right release), their refusals, and the same writer (add, dry run, roll back, remove); `release-terms.test.ts`: the name templates |
 | D-06 | `release-pick.test.ts`: state per row from rejection sets, hard refusals win, override body |
 | D-07 | `import-check.test.ts`: The Paper importable, T.O.T.S. "matched by ID" importable, Penguins `title_mismatch`, archive report-only, the live Rugrats 2021 and Franklin 2025 mismatches, Aqua Teen's and Spider-Man's refusals, "Import this download onto..."; `queue-aware-search.test.ts`: Case B imports and sends no search, a failed download removed and searched once, nothing sent while a download is in progress, a changed plan refused; `manual-import-clients.test.ts` (arr): the reads and the pinned body |
-| D-08 | `language-check.test.ts`: language present writes nothing to the *arr; absent grabs a matching approved release |
+| D-08 | P1: `fix-guards.test.ts` (the language check). P6: `language-aware.test.ts` (domain): the decision and its reasons, the write on the server that needs it with its read-back and audited Repair Request, `already_set` with no row, a read-back that fails, the remedy off, a stale digest, a movie; the Language Replace's pick (never a pack, a hard refusal or the Same Release), its mark, delete and plain grab in order, the search fallback, nothing removed without a release in the language, a season refused; `audio-language.test.ts` (plex): the prefs and track reads on live-shaped bodies, the pinned `PUT`, the value check, the retry |
 | D-09 | `fix-guards.test.ts`: season guard refuses a pack backing unchosen episodes; Same Release refusal; no-approved-release refusal; Playback Evidence from stored Tautulli notifications |
 | D-10 | `seerr-issues-sync.test.ts`: mirror upsert, mapping, webhook triggers a read only; `seerr-issue-writes.test.ts`: one comment per issue across a crash, `X-API-User` on every call, resolve only after completion |
 | D-12 | `seerr-issues-admin.test.ts`: the staff note and fixed-by-hand mark persist and the linked repairs come from the app's own records |
@@ -1030,4 +1105,4 @@ Driver items, resolved inside PLAN-077 (not owner questions):
 |----|----------|------------|
 | Q-06 | The Title Evidence thresholds (0.8 and 0.3). | **Resolved in P4 (2026-10-13): kept.** Read on the library-wide census rather than a week: 18,205 files judged, 692 disagreed, and 546 of those scored 1.0 for the named episode against 0 for their own. On inspection they are real name-against-number conflicts, and 3 subtitle spot-checks out of 3 confirmed the names. The only false positives came from library-shaped names, and decision 16 handles those, not the thresholds. OC-053 re-reads the first week of hourly runs. |
 | Q-07 | The exact override fields of Sonarr's and Radarr's `POST /release`, and whether `GET /release` returns releases in decision order. | **Order: resolved in P1 (2026-10-12).** Both *arrs return the decision order (D-09, P1 decision 3). **Override fields: resolved in P5 (2026-10-13)** from the UIs' source at the running tags (P5 decision 3): Sonarr `{guid, indexerId, seriesId, episodeIds, quality, languages, downloadClientId, shouldOverride}`, Radarr `{indexerId, guid, movieId, quality, languages, downloadClientId, shouldOverride}`. |
-| Q-08 | Does Plex offer a preferred audio language for a movie, as it does for a show? | (open: checked in P6) |
+| Q-08 | Does Plex offer a preferred audio language for a movie, as it does for a show? | **Resolved in P6 (2026-10-13): no.** Read live on both servers: a show's settings carry `audioLanguage`, a movie's only `languageOverride`, `useOriginalTitle` and `enableCreditsMarkerGeneration`. A movie gets the guidance only (P6 decision 1). |

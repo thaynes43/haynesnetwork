@@ -11,7 +11,7 @@ import {
   type FixStatus,
   type Transaction,
 } from '@hnet/db';
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, ne, sql } from 'drizzle-orm';
 import {
   FixAlreadyOpenError,
   FixRateLimitError,
@@ -115,6 +115,8 @@ async function findOpenRepairForFix(
         eq(repairRequests.mediaItemId, grain.mediaItemId),
         inArray(repairRequests.status, ['pending', 'actioned']),
         grainMatch,
+        // DESIGN-055 P6 decision 4: an Audio Preference touches no file, so it never holds up a Fix.
+        ne(repairRequests.kind, 'audio_preference'),
       ),
     )
     .limit(1);

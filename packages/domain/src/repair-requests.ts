@@ -80,7 +80,12 @@ function intArray(ids: readonly number[]) {
 export async function findOpenRepair(
   tx: Transaction,
   grain: { mediaItemId: string; seasonNumber: number | null; episodeIds?: readonly number[] },
-  options: { episodeGrain?: boolean; ignoreKinds?: readonly RepairRequestKind[] } = {},
+  options: {
+    episodeGrain?: boolean;
+    ignoreKinds?: readonly RepairRequestKind[];
+    /** Only these kinds count, on the whole title (`grain` is ignored): the Audio Preference's own check. */
+    onlyKinds?: readonly RepairRequestKind[];
+  } = {},
 ): Promise<{ id: string } | undefined> {
   const episodes = (grain.episodeIds ?? []).filter((n) => Number.isInteger(n));
   const seasonMatch =
@@ -93,7 +98,9 @@ export async function findOpenRepair(
     ...(seasonMatch ? [seasonMatch] : []),
     ...(episodes.length > 0 ? [sql`${repairRequests.targetChildIds} && ${intArray(episodes)}`] : []),
   ];
-  const grainMatch = conditions.length === 0 ? sql`true` : sql`(${sql.join(conditions, sql` OR `)})`;
+  const only = options.onlyKinds ?? [];
+  const grainMatch =
+    only.length > 0 || conditions.length === 0 ? sql`true` : sql`(${sql.join(conditions, sql` OR `)})`;
   const ignored = options.ignoreKinds ?? [];
   const [open] = await tx
     .select({ id: repairRequests.id })
@@ -104,6 +111,7 @@ export async function findOpenRepair(
         inArray(repairRequests.status, [...OPEN_REPAIR_STATUSES]),
         grainMatch,
         ...(ignored.length > 0 ? [notInArray(repairRequests.kind, [...ignored])] : []),
+        ...(only.length > 0 ? [inArray(repairRequests.kind, [...only])] : []),
       ),
     )
     .limit(1);
@@ -116,9 +124,13 @@ export async function findOpenRepair(
  * Release Pick it follows through.
  */
 function openCheckOptions(kind: RepairRequestKind, scope: RepairRequestScope) {
+  // DESIGN-055 P6 decision 4: the Audio Preference changes a title-wide Plex setting and no file, so only another open
+  // Audio Preference on the same title holds it up (and it holds up nothing else).
+  if (kind === 'audio_preference') return { onlyKinds: ['audio_preference'] as const };
   return {
     episodeGrain: scope === 'episode',
-    ignoreKinds: kind === 'import_download' ? (['release_pick'] as const) : [],
+    ignoreKinds:
+      kind === 'import_download' ? (['release_pick', 'audio_preference'] as const) : (['audio_preference'] as const),
   };
 }
 
@@ -202,7 +214,7 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
         `An open repair (${openRepair.id}) already targets this ${input.scope === 'item' ? 'item' : 'season'}`,
       );
     }
-    const openFix = await findOpenFixForRepair(tx, grain);
+    const openFix = input.kind === 'audio_preference' ? undefined : await findOpenFixForRepair(tx, grain);
     if (openFix) {
       throw new FixAlreadyOpenError(
         `An open fix (${openFix.id}) already targets this ${input.scope === 'item' ? 'item' : 'season'}`,

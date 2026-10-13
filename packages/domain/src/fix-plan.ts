@@ -28,6 +28,7 @@ import {
   type SameReleaseBasis,
 } from './fix-guards';
 import type { RepairGuideRemedies } from './repair-guide-settings';
+import type { LanguagePlan } from './language-replace';
 
 /** One episode, as the guide names it. */
 export interface PlanEpisode {
@@ -138,7 +139,8 @@ export interface SeasonPlan {
   digest: string;
 }
 
-export type FixPlan = BlocklistPlan | DeletePlan | SeasonPlan;
+/** DESIGN-055 D-08 rule 4 (PLAN-077 P6): the Language Replace's plan lives in language-replace.ts. */
+export type FixPlan = BlocklistPlan | DeletePlan | SeasonPlan | LanguagePlan;
 
 export interface PlanFixInput {
   db?: DbClient;
@@ -264,7 +266,8 @@ const baseName = (path: string | null | undefined): string | null => {
   return parts[parts.length - 1] || null;
 };
 
-interface FileRecord {
+/** The *arr's file record, as the plan reads it (an episode file or a movie file). */
+export interface FileRecord {
   id: number;
   relativePath?: string | null;
   sceneName?: string | null;
@@ -278,7 +281,7 @@ interface FileRecord {
   edition?: string | null;
 }
 
-function planFile(file: FileRecord): PlanFile {
+export function planFile(file: FileRecord): PlanFile {
   return {
     fileId: file.id,
     name: baseName(file.relativePath),
@@ -296,7 +299,8 @@ function recordedReleaseName(history: readonly ArrReleaseHistoryRecord[], fileId
   return imports[0]?.sourceTitle ?? null;
 }
 
-function fileIdentity(file: FileRecord, history: readonly ArrReleaseHistoryRecord[]): CurrentFileIdentity {
+/** The file as the Same Release test sees it (its own names, and the release name its history recorded). */
+export function fileIdentity(file: FileRecord, history: readonly ArrReleaseHistoryRecord[]): CurrentFileIdentity {
   return {
     fileName: baseName(file.relativePath),
     sceneName: file.sceneName ?? null,
@@ -311,7 +315,7 @@ function fileIdentity(file: FileRecord, history: readonly ArrReleaseHistoryRecor
   };
 }
 
-function planRelease(release: ArrRelease): PlanRelease {
+export function planRelease(release: ArrRelease): PlanRelease {
   return {
     title: release.title,
     releaseGroup: release.releaseGroup,

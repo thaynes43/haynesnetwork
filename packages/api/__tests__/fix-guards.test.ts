@@ -646,6 +646,9 @@ describe('the settings and the kill switch (DESIGN-055 D-01)', () => {
         episode_remap: false,
         // PLAN-077 P5 (DESIGN-055 D-06): the Release Pick's remedy, untouched by this write, ships off.
         release_pick: false,
+        // PLAN-077 P6 (DESIGN-055 D-08): the Audio Preference and the Language Replace, untouched by this write, ship off.
+        audio_preference: false,
+        language_search: false,
       },
       knownIssueServers: ['haynesops'],
     });

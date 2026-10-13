@@ -53,6 +53,11 @@
 //                        (404 for an unknown guid, 409 for guid `stub-rp-b-409`, else 200 echo); `GET /_stub/release-grabs`
 //                        reads the bodies back; a grabbed release then shows in `GET /queue` as a downloading record for
 //                        each of its episodes.
+//   POST /_stub/language → 204; body { on } — ADR-109 C-02, C-07 / DESIGN-055 D-08 (PLAN-077 P6): Breaking Prod's files
+//                        report their audio (S01E03 `por/eng`, S01E06 `por`, the rest `eng`), and
+//                        `GET /release?seriesId=501&seasonNumber=1` serves S01E06's Portuguese release (approved) and an
+//                        English one rejected only for the file on disk; `POST /release` records the English grab (404
+//                        for any other guid). The series always names English as its original language. Cleared by reset.
 //   Always: `POST /command` `ManualImport` is recorded like any write, and afterwards its files' episodes (or movie)
 //   report `hasFile: true` and the download's queue records are gone; `GET /command/{id}` answers `completed`.
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -1114,8 +1119,67 @@ function seriesResource(id: number) {
     status: 'ended',
     ended: true,
     added: '2025-01-01T00:00:00Z',
+    // ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — the series' original language (Wrong language reads it).
+    originalLanguage: { id: 1, name: 'English' },
     ...SONARR_META,
   };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ADR-109 C-02, C-07 / DESIGN-055 D-08 (PLAN-077 P6) — the language fixtures (POST /_stub/language). Breaking Prod
+// S01E03's file carries Portuguese then English (Case A's S01E12: English is in the file, behind a Portuguese default);
+// S01E06's file is Portuguese only, and Sonarr's season-1 list offers its Portuguese release again (approved) and an
+// English one rejected only for the file on disk, which the Language Replace takes.
+// ---------------------------------------------------------------------------------------------------------------------
+
+export const LANGUAGE_PRESENT_EPISODE_ID = STUB_SERIES_ID * 100 + 3; // 50103, S01E03
+export const LANGUAGE_MISSING_EPISODE_ID = STUB_SERIES_ID * 100 + 6; // 50106, S01E06
+export const LANGUAGE_REPLACE_GUID = 'breaking-prod-s01e06-english';
+export const LANGUAGE_REPLACE_TITLE = 'Breaking.Prod.S01E06.Chapter.6.1080p.AMZN.WEB-DL.DDP5.1.H.264-ENGRP';
+
+/** The audio languages Sonarr reports for an on-disk episode (`mediaInfo.audioLanguages`) while the fixtures are on. */
+function languageAudioFor(episodeId: number): string {
+  if (episodeId === LANGUAGE_PRESENT_EPISODE_ID) return 'por/eng';
+  if (episodeId === LANGUAGE_MISSING_EPISODE_ID) return 'por';
+  return 'eng';
+}
+
+/** Sonarr's season-1 release list for the Language Replace, in its own decision order. */
+function languageSeasonList(): Array<Record<string, unknown> & { guid: string; title: string }> {
+  const row = (over: Record<string, unknown> & { guid: string; title: string }) => ({
+    indexerId: 2,
+    indexer: 'Stub Indexer (Prowlarr)',
+    size: 1_100_000_000,
+    quality: { quality: { id: 3, name: 'WEBDL-1080p', source: 'web', resolution: 1080 }, revision: { version: 1 } },
+    approved: false,
+    rejected: true,
+    rejections: [] as string[],
+    customFormatScore: 0,
+    protocol: 'usenet',
+    seasonNumber: 1,
+    episodeNumbers: [6],
+    mappedEpisodeNumbers: [6],
+    fullSeason: false,
+    downloadAllowed: true,
+    ...over,
+  });
+  return [
+    row({
+      guid: 'breaking-prod-s01e06-dublado',
+      title: 'Breaking.Prod.S01E06.1080p.WEB-DL.DUBLADO-PTGRP',
+      releaseGroup: 'PTGRP',
+      approved: true,
+      rejected: false,
+      languages: [{ id: 18, name: 'Portuguese' }],
+    }),
+    row({
+      guid: LANGUAGE_REPLACE_GUID,
+      title: LANGUAGE_REPLACE_TITLE,
+      releaseGroup: 'ENGRP',
+      rejections: ['Existing file on disk has a equal or higher Custom Format score: 0'],
+      languages: [{ id: 1, name: 'English' }],
+    }),
+  ];
 }
 
 function grabRecord(episodeId: number) {
@@ -1248,6 +1312,9 @@ export async function startStubArr(): Promise<StubArrServer> {
   let seerrSyncFlags = new Map<number, { movies: boolean; tv: boolean }>([[1, { movies: true, tv: true }]]);
   // ADR-109 / DESIGN-055 D-09 — the Repair Guide fixtures (POST /_stub/repair-guide); off until a spec turns them on.
   let repairGuideFixtures = false;
+  // ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — the language fixtures (POST /_stub/language) and the language grabs.
+  let languageFixtures = false;
+  let languageGrabs: unknown[] = [];
   let seerrAnimeTags: number[] = [];
   // ADR-109 / DESIGN-055 D-07 — the queue-aware Force Search fixtures (POST /_stub/import-check), and what a recorded
   // ManualImport put on disk (cleared by reset).
@@ -1293,6 +1360,8 @@ export async function startStubArr(): Promise<StubArrServer> {
         seerrSyncFlags = new Map([[1, { movies: true, tv: true }]]);
         seerrAnimeTags = [];
         repairGuideFixtures = false;
+        languageFixtures = false;
+        languageGrabs = [];
         releasePickFixtures = false;
         releaseGrabs = [];
         releaseGrabQueue = [];
@@ -1461,6 +1530,12 @@ export async function startStubArr(): Promise<StubArrServer> {
         res.writeHead(204);
         return res.end();
       }
+      if (url.pathname === '/_stub/language' && method === 'POST') {
+        const raw = await readBody(req);
+        languageFixtures = raw !== '' && (JSON.parse(raw) as { on?: unknown }).on === true;
+        res.writeHead(204);
+        return res.end();
+      }
       if (url.pathname === '/_stub/release-pick' && method === 'POST') {
         const raw = await readBody(req);
         releasePickFixtures = raw !== '' && (JSON.parse(raw) as { on?: unknown }).on === true;
@@ -1551,6 +1626,15 @@ export async function startStubArr(): Promise<StubArrServer> {
           const id = nextCommandId++;
           commandLog.push({ id, name, status: 'completed' });
           return json(res, 201, { id, name });
+        }
+        // DESIGN-055 D-08 rule 4 — the Language Replace's grab of the English release (the plain body).
+        if (method === 'POST' && path === '/release' && languageFixtures) {
+          const guid = String((body as { guid?: unknown } | undefined)?.guid ?? '');
+          if (!languageSeasonList().some((r) => r.guid === guid)) {
+            return json(res, 404, { message: "Couldn't find requested release in cache, try searching again" });
+          }
+          languageGrabs.push(body);
+          return json(res, 200, body ?? {});
         }
         // DESIGN-055 D-06 — the Release Pick's grab (`POST /release`), only while its fixtures are on.
         if (method === 'POST' && path === '/release' && releasePickFixtures) {
@@ -1781,6 +1865,8 @@ export async function startStubArr(): Promise<StubArrServer> {
               sceneName: `Breaking.Prod.S0${e.seasonNumber}E${String(e.episodeNumber).padStart(2, '0')}.1080p.WEB-DL.DDP5.1.H.264-STUB`,
               releaseGroup: 'STUB',
               size: 1_073_741_824,
+              // DESIGN-055 D-08 (PLAN-077 P6) — the audio Wrong language reads, while the language fixtures are on.
+              ...(languageFixtures ? { mediaInfo: { audioLanguages: languageAudioFor(e.id), subtitles: 'eng' } } : {}),
             }));
           return json(res, 200, [
             ...files,
@@ -1792,6 +1878,10 @@ export async function startStubArr(): Promise<StubArrServer> {
           // ADR-109 / DESIGN-055 D-09 — the interactive release list, only while the repair-guide fixtures are on.
           if (repairGuideFixtures && isSameReleaseMovie(Number(query.movieId))) {
             return json(res, 200, sameReleaseList());
+          }
+          // DESIGN-055 D-08 rule 4 — the Language Replace's season-1 list, while the language fixtures are on.
+          if (languageFixtures && Number(query.seriesId) === STUB_SERIES_ID && Number(query.seasonNumber) === 1) {
+            return json(res, 200, languageSeasonList());
           }
           // DESIGN-055 D-06 — the Release Pick's Sonarr season list.
           if (

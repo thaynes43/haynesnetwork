@@ -121,6 +121,8 @@ export * from './repair-guide-settings';
 export * from './fix-guards';
 export * from './fix-plan';
 export * from './language-check';
+export * from './audio-preference';
+export * from './language-replace';
 export * from './playback-evidence';
 // ADR-109 C-04, C-05 / DESIGN-055 D-02, D-07 (PLAN-077 P2) — the Repair Request writer, the Import Check (pure) and the
 // queue-aware Force Search that reads the queue before it searches.

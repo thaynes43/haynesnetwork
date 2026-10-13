@@ -15,13 +15,19 @@
 // (episode-remap.tsx), which moves the existing files onto the right episodes. A Title Check flag on the title page opens
 // the guide straight at that step with the move chosen.
 //
+// ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — Wrong language, language-aware: when the file has the wanted audio, the
+// guide names the track to pick and how, on each kind of player, and (the `audio_preference` remedy, owner ruling Q-03)
+// offers to set the show's preferred audio language in Plex when that language is the show's original one. When the file
+// lacks it, the preview is the Language Replace (`language_search`): the release with that audio that would replace it.
+//
 // Hard rule 8: the guide is a Modal (an explanatory multi-step confirm). Hard rule 9: the dialog has a fixed height
 // (`modal--guide`) and only its body scrolls, so a step that replaces another never moves anything else. Copy follows
 // the owner's rules: plain, friendly, no em-dashes, no names, links where there is somewhere to go.
 import Link from 'next/link';
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import { ConsumeLink } from '@hnet/ui';
-import { trpc } from '@/lib/trpc-client';
+import { trpc, type RouterOutputs } from '@/lib/trpc-client';
+import { ticketComposeHref } from '@/lib/ticket-compose-link';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
 import {
   FIX_REASON_LABELS,
@@ -36,16 +42,21 @@ import {
   confirmFieldsFor,
   confirmLabelFor,
   describeRelease,
+  filesLacking,
   firstGuideStep,
   goneLinesFor,
   joinServerNames,
+  languagePlans,
   orderPlayTargets,
+  ordinal,
   refusalFor,
   remapChoiceOn,
   stepAfterChoice,
+  stepAfterLanguage,
   stepAfterTriage,
-  wantedLanguageInFile,
+  trackAdvice,
   type GuidePlan,
+  type GuideRefusal,
   type GuideRemedies,
   type GuideStep,
 } from '@/lib/repair-guide';
@@ -105,6 +116,78 @@ interface DoneState {
   pathTaken: string;
   targetLabel: string | null;
   searchInput: SearchProgressInput;
+  /** DESIGN-055 D-08 rule 4 — the Language Replace's grab (null: it fell back to a search). */
+  grabbedRelease?: string | null;
+}
+
+type AudioPreview = RouterOutputs['fix']['audioPreference'];
+type AudioResult = RouterOutputs['fix']['setAudioPreference'];
+
+const ACCOUNT_SETTINGS_URL = 'https://app.plex.tv/desktop/#!/settings/account';
+
+/** A language's name for the guide: from the file's own list, the common list, else the code in capitals. */
+function languageName(code: string, found: ReadonlyArray<{ code: string; name: string }>): string {
+  return (
+    found.find((l) => l.code === code)?.name ??
+    [{ code: 'eng', name: 'English' }, ...OTHER_AUDIO_LANGUAGES].find((l) => l.code === code)?.name ??
+    code.toUpperCase()
+  );
+}
+
+/** "HaynesTower and HaynesOps". */
+const andList = (names: readonly string[]) =>
+  names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
+/**
+ * DESIGN-055 D-08 rule 3 — which track to pick and how, on each kind of player. Plain and specific: the track as Plex
+ * names it when it could be read, its place among the file's audio tracks, and where the audio menu is on a browser, a
+ * phone and a TV.
+ */
+function TrackHelp({ name, wanted, preview }: { name: string; wanted: string; preview: AudioPreview | undefined }) {
+  const advice = preview?.tracks ? trackAdvice(preview.tracks.tracks, wanted) : null;
+  return (
+    <>
+      <h4 className="repair-guide__subhead">Which track to pick</h4>
+      {advice ? (
+        <p>
+          Choose <strong>{advice.pick}</strong>, the {ordinal(advice.position)} of {advice.total} audio tracks
+          {advice.playsFirst ? (
+            <>
+              . The file marks <strong>{advice.playsFirst}</strong> as its main track, which is why that one plays first
+            </>
+          ) : null}
+          .
+        </p>
+      ) : (
+        <p>
+          Choose the audio track whose name starts with <strong>{name}</strong>.
+        </p>
+      )}
+      <h4 className="repair-guide__subhead">How to switch it</h4>
+      <ul className="repair-guide__how">
+        <li>
+          <strong>Web browser or the Plex desktop app:</strong>{' '}
+          {'open the episode or movie, choose the track in the Audio menu under its summary, then press play. While it plays, the same choice is in the player’s audio and subtitle settings.'}
+        </li>
+        <li>
+          <strong>Phone or tablet:</strong> while it plays, tap the screen, open the audio and subtitle settings, and
+          choose it under Audio.
+        </li>
+        <li>
+          <strong>TV or streaming box:</strong> while it plays, press Up or Down on the remote (on Apple TV, swipe down)
+          to show the player options, then open Audio and choose it.
+        </li>
+      </ul>
+      <p className="muted">
+        Plex remembers the track you pick for that file. To have Plex pick {name}
+        {' by itself everywhere, turn on “Automatically select audio and subtitle tracks” and set your preferred audio language in your '}
+        <a href={ACCOUNT_SETTINGS_URL} target="_blank" rel="noopener noreferrer">
+          Plex account settings
+        </a>
+        . The <Link href="/about#watching">Watching Movies &amp; TV</Link> guide lists the recommended settings.
+      </p>
+    </>
+  );
 }
 
 export function RepairGuide({
@@ -147,6 +230,7 @@ export function RepairGuide({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<DoneState | null>(null);
   const [retried, setRetried] = useState(false);
+  const [audioDone, setAudioDone] = useState<AudioResult | null>(null);
   // DESIGN-055 D-04 — the re-map chosen on "What's wrong?", and the question its Back returns to.
   const [remapPicked, setRemapPicked] = useState(false);
   const [remapBack, setRemapBack] = useState<GuideStep>(firstStep);
@@ -181,14 +265,36 @@ export function RepairGuide({
       refetchOnWindowFocus: false,
     },
   );
+  const languagePlan = languagePlans(reason, remedies);
+  const audioPref = trpc.fix.audioPreference.useQuery(
+    { mediaItemId: item.id, ...scopeInput, wantedLanguage: wanted },
+    {
+      enabled: open && (step === 'language-present' || step === 'language-set'),
+      staleTime: 60_000,
+      retry: false,
+      refetchOnWindowFocus: false,
+    },
+  );
+  const setPref = trpc.fix.setAudioPreference.useMutation({
+    onError: (err) => setError(describeMutationError(err)),
+    onSuccess: (result) => {
+      setError(null);
+      setAudioDone(result);
+      setStep('language-set');
+      // The stored preference changed: the next look at this title reads it again instead of the cached offer.
+      void utils.fix.audioPreference.invalidate();
+      onSubmitted();
+    },
+  });
   const previewInput = {
     mediaItemId: item.id,
     ...scopeInput,
     ...(episodeIds ? { episodeIds } : {}),
     ...(packChoice === 'replace' && !isSeason ? { replaceFile: true } : {}),
+    ...(languagePlan ? { wantedLanguage: wanted } : {}),
   };
   const preview = trpc.fix.preview.useQuery(previewInput, {
-    enabled: open && step === 'preview' && planning,
+    enabled: open && step === 'preview' && (planning || languagePlan),
     staleTime: Infinity,
     retry: false,
     refetchOnWindowFocus: false,
@@ -209,6 +315,7 @@ export function RepairGuide({
         fixRequestId: result.id,
         pathTaken: result.pathTaken,
         targetLabel: result.targetLabel,
+        grabbedRelease: result.grabbedRelease,
         searchInput: {
           mediaItemId: variables.mediaItemId,
           scope: variables.scope,
@@ -250,6 +357,7 @@ export function RepairGuide({
     setError(null);
     setDone(null);
     setRetried(false);
+    setAudioDone(null);
     setRemapPicked(false);
     setRemapBack(firstStep);
     onClose();
@@ -590,8 +698,7 @@ export function RepairGuide({
                 className="admin-form fix-form"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  if (wantedLanguageInFile(audio.data?.files ?? [], wanted)) go('language-present');
-                  else afterTriage();
+                  go(stepAfterLanguage({ files: audio.data?.files ?? [], wanted, isSeason, remedies }));
                 }}
               >
                 <fieldset className="field">
@@ -646,29 +753,118 @@ export function RepairGuide({
       }
 
       case 'language-present': {
-        const name =
-          audio.data?.languages.find((l) => l.code === wanted)?.name ??
-          [{ code: 'eng', name: 'English' }, ...OTHER_AUDIO_LANGUAGES].find((l) => l.code === wanted)?.name ??
-          wanted.toUpperCase();
+        const name = languageName(wanted, audio.data?.languages ?? []);
+        const ap = audioPref.data;
+        const serverNames = ap ? ap.servers.filter((sv) => ap.toWrite.includes(sv.slug)).map((sv) => sv.name) : [];
+        const setNames = ap
+          ? ap.servers.filter((sv) => !sv.unreachable && sv.offered && sv.currentLanguage === ap.wanted.code).map((sv) => sv.name)
+          : [];
         return (
           <div className="repair-guide__step">
             {targetLine}
             <h3 className="repair-guide__question">This file already has {name} audio.</h3>
-            <p>Nothing needs replacing. Another track is just playing first.</p>
-            <ol className="repair-guide__how">
-              <li>Start playing it in Plex.</li>
-              <li>Open the audio menu and choose {name}.</li>
-              <li>
-                To have Plex pick {name} by itself, set your preferred audio language in your{' '}
-                <a href="https://app.plex.tv/desktop/#!/settings/account" target="_blank" rel="noopener noreferrer">
-                  Plex account settings
-                </a>
-                .
-              </li>
-            </ol>
+            <p>Nothing needs replacing. Another track just plays first.</p>
+            {audioPref.isLoading ? (
+              <p className="muted" role="status">
+                Checking this title&rsquo;s audio settings in Plex…
+              </p>
+            ) : ap && ap.action === 'set' && ap.remedyOn ? (
+              <div className="repair-guide__callout repair-guide__callout--info">
+                <p>
+                  <strong>
+                    {name} is this {ap.isShow ? 'show' : 'title'}&rsquo;s original language.
+                  </strong>{' '}
+                  We can set Plex to play {name} first on this show, for everyone, on {andList(serverNames)}. Nothing is
+                  downloaded or removed.
+                </p>
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="btn primary"
+                    disabled={setPref.isPending}
+                    onClick={() =>
+                      setPref.mutate({ mediaItemId: item.id, ...scopeInput, wantedLanguage: wanted, digest: ap.digest })
+                    }
+                  >
+                    {setPref.isPending ? 'Working…' : `Play ${name} first on this show`}
+                  </button>
+                </div>
+              </div>
+            ) : ap && ap.action === 'already_set' ? (
+              <p>
+                Plex is already set to play {name} first on this show{setNames.length > 0 ? ` on ${andList(setNames)}` : ''}. If
+                you still hear another language, that track was picked by hand on your account. Pick {name} once, as
+                below, and Plex keeps it.
+              </p>
+            ) : ap && ap.action === 'guidance' && ap.reason === 'not_original' && ap.original ? (
+              <p>
+                {name} isn&rsquo;t this {ap.isShow ? 'show' : 'movie'}&rsquo;s original language ({ap.original.name}), so
+                Plex stays as it is for everyone else. Here is how to pick {name} for yourself.
+              </p>
+            ) : null}
+            <TrackHelp name={name} wanted={wanted} preview={ap} />
             <div className="form-actions">
               <button type="button" className="btn" onClick={() => go('reason')}>
                 Something else is wrong
+              </button>
+              <button type="button" className="btn primary" onClick={close}>
+                Done
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      case 'language-set': {
+        const name = languageName(wanted, audio.data?.languages ?? []);
+        return (
+          <div className="repair-guide__step">
+            {targetLine}
+            <h3 className="repair-guide__question">Done. Plex now plays {name} first on this show.</h3>
+            <p>
+              It&rsquo;s set for everyone on {andList(audioDone?.servers ?? [])}. Start the episode again to hear it.
+              {audioDone && audioDone.unreachable.length > 0
+                ? ` ${andList(audioDone.unreachable)} couldn’t be reached, so it was left as it was.`
+                : ''}
+            </p>
+            <p>If it still starts in another language, that track was picked by hand on your account once. Pick {name}:</p>
+            <TrackHelp name={name} wanted={wanted} preview={audioPref.data} />
+            <div className="form-actions">
+              <button type="button" className="btn primary" onClick={close}>
+                Done
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      case 'language-episodes': {
+        const name = languageName(wanted, audio.data?.languages ?? []);
+        const lacking = filesLacking(audio.data?.files ?? [], wanted);
+        const have = (audio.data?.files ?? []).length - lacking.length;
+        return (
+          <div className="repair-guide__step">
+            {targetLine}
+            <h3 className="repair-guide__question">
+              {lacking.length === 1 ? 'One episode has' : 'Some episodes have'} no {name} audio.
+            </h3>
+            <ul className="repair-guide__facts">
+              {lacking.map((label) => (
+                <li key={label}>{label}</li>
+              ))}
+            </ul>
+            <p>
+              Fix {lacking.length === 1 ? 'that episode' : 'each of those episodes'} on its own from the episode list.
+              The guide then looks for a release with {name} audio to replace it.
+            </p>
+            {have > 0 ? (
+              <p className="muted">
+                The other {have === 1 ? 'episode already has' : `${have} episodes already have`} {name} audio.
+              </p>
+            ) : null}
+            <div className="form-actions">
+              <button type="button" className="btn" onClick={() => go('language')}>
+                Back
               </button>
               <button type="button" className="btn primary" onClick={close}>
                 Done
@@ -707,6 +903,15 @@ export function RepairGuide({
                   setPackChoice(c);
                 }}
                 reason={reason}
+                askStaffHref={(subject, note) =>
+                  ticketComposeHref({
+                    mediaItemId: item.id,
+                    episodeId: effectiveTarget?.scope === 'episode' ? effectiveTarget.childId : null,
+                    subject,
+                    note,
+                    category: 'audio',
+                  })
+                }
               />
             ) : (
               <p className="muted">Nothing to preview.</p>
@@ -800,7 +1005,9 @@ export function RepairGuide({
             <p className="fix-done__lead">
               {done.pathTaken === 'bazarr_subtitle'
                 ? 'Bazarr is searching for subtitles. The video file is untouched.'
-                : done.pathTaken === 'blocklist_search'
+                : done.grabbedRelease
+                  ? `The old file was removed, and the release with ${languageName(wanted, audio.data?.languages ?? [])} audio is on its way.`
+                  : done.pathTaken === 'blocklist_search'
                   ? 'The bad release is blocked and a search for a replacement is running.'
                   : 'The file was removed and a search for a replacement is running.'}
             </p>
@@ -858,13 +1065,15 @@ function PlanView({
   packChoice,
   onPackChoice,
   reason,
+  askStaffHref,
 }: {
   plan: GuidePlan;
   remedies: GuideRemedies;
-  refusal: 'same_release' | 'no_replacement' | 'nothing_safe' | null;
+  refusal: GuideRefusal | null;
   packChoice: 'replace' | 'block';
   onPackChoice: (choice: 'replace' | 'block') => void;
   reason: FixReasonName;
+  askStaffHref: (subject: string, note: string) => string;
 }) {
   const packChooser = (others: ReadonlyArray<{ label: string }>) => (
     <div className="repair-guide__callout">
@@ -991,6 +1200,76 @@ function PlanView({
             ) : null}
           </>
         )}
+      </div>
+    );
+  }
+
+  if (plan.kind === 'language') {
+    // DESIGN-055 D-08 rule 4 (PLAN-077 P6): the Language Replace.
+    const name = plan.wanted.name;
+    const fileCard = plan.file ? (
+      <div className="repair-guide__card">
+        <span className="repair-guide__card-label">In the library</span>
+        <span className="repair-guide__release">{plan.file.name ?? 'The current file'}</span>
+        <span className="muted">{describeRelease(plan.file)}</span>
+      </div>
+    ) : null;
+    if (refusal === 'no_language_release') {
+      const what = plan.targetLabel ?? 'this movie';
+      return (
+        <div className="repair-guide__plan">
+          <h3 className="repair-guide__question">No release with {name} audio is available.</h3>
+          {fileCard ? <div className="repair-guide__cards">{fileCard}</div> : null}
+          <p>
+            Nothing was removed.{' '}
+            {plan.languageReleases > 0
+              ? `${plan.languageReleases === 1 ? 'One release names' : `${plan.languageReleases} releases name`} ${name}, but the library’s rules turn ${plan.languageReleases === 1 ? 'it' : 'them'} down for ${what}.`
+              : `None of the sites lists a release of ${what} with ${name} audio.`}{' '}
+            Staff can look further:{' '}
+            <Link
+              href={askStaffHref(
+                `${name} audio for ${plan.targetLabel ?? 'a movie'}`,
+                `The file has no ${name} audio, and no release with ${name} audio could replace it from the app.`,
+              )}
+            >
+              Ask staff
+            </Link>
+            .
+          </p>
+        </div>
+      );
+    }
+    const candidate = plan.candidate;
+    return (
+      <div className="repair-guide__plan">
+        <h3 className="repair-guide__question">Here&rsquo;s what will happen</h3>
+        <div className="repair-guide__cards">
+          {fileCard}
+          {candidate ? (
+            <div className="repair-guide__card">
+              <span className="repair-guide__card-label">Replaces it, with {name} audio</span>
+              <span className="repair-guide__release">{candidate.title}</span>
+              <span className="muted">
+                {[describeRelease(candidate), candidate.languages.length > 0 ? `Audio: ${candidate.languages.join(', ')}` : null]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            </div>
+          ) : null}
+        </div>
+        {plan.packKept.length > 0 ? (
+          <p className="muted">
+            This file came in a pack that also holds {plan.packKept.map((e) => e.label).join(', ')}, so the pack stays
+            and only this file is replaced.
+          </p>
+        ) : plan.redownloadKept ? (
+          <p className="muted">
+            The download it came from is not blocked: blocking it would make the library search again by itself, beside
+            this release. Only the file is replaced.
+          </p>
+        ) : !plan.grab ? (
+          <p className="muted">There is no download record to block, so only the file is replaced.</p>
+        ) : null}
       </div>
     );
   }

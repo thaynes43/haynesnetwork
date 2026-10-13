@@ -122,6 +122,17 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    missing item, within the budget; the hard-refusal list applies to everyone, admins included). It downloads, never
    deletes or blocks anything; a grab the *arr cannot file is imported through the Import Check above. Through
    `@hnet/arr/write` from `packages/domain` only.
+   **ADR-109 adds the language-aware Wrong language** (C-02, C-07; DESIGN-055 D-08, PLAN-077 P6). **The Audio
+   Preference**, a Plex write: a show's preferred audio language (`PUT /library/metadata/{key}/prefs?audioLanguage=`),
+   on every Plex server that carries the show, only when the person's file already has the wanted audio and that
+   language is the show's original one (owner ruling Q-03; Plex has no movie-level setting, Q-08). It runs behind the
+   `audio_preference` remedy, after its Repair Request (`audio_preference`, one budget unit) commits, and every server is
+   read back. Any other language, and every movie, gets guidance and no write. Through `@hnet/plex/write` from
+   `packages/domain` only. **The Language Replace**: for one episode or a movie whose file lacks the wanted audio, behind
+   the `language_search` remedy, the Fix marks the file's grab failed (never a pack that also holds other on-disk
+   episodes), deletes the file and grabs, with the plain `{guid, indexerId}` body, the first release the *arr would take
+   that it parsed as carrying the language. With no such release nothing is removed. Through `@hnet/arr/write` from
+   `packages/domain` only.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see

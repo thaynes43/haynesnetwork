@@ -6,15 +6,20 @@ import {
   GUIDE_REASON_LABELS,
   confirmFieldsFor,
   confirmLabelFor,
+  filesLacking,
   firstGuideStep,
   goneLinesFor,
   joinServerNames,
+  languagePlans,
   orderPlayTargets,
+  ordinal,
   refusalFor,
   remapChoiceOn,
   stepAfterChoice,
   stepAfterReason,
+  stepAfterLanguage,
   stepAfterTriage,
+  trackAdvice,
   wantedLanguageInFile,
   type GuidePlan,
   type GuideRemedies,
@@ -222,5 +227,102 @@ describe('copy rules', () => {
       confirmLabelFor(seasonPlan(2)),
     ];
     for (const text of copy) expect(text).not.toContain('—');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — the language-aware Wrong language
+// ---------------------------------------------------------------------------------------------------------------------
+
+describe('Wrong language, language-aware (DESIGN-055 D-08, PLAN-077 P6)', () => {
+  const P6: GuideRemedies = { ...ON, audio_preference: true, language_search: true };
+  const lostTapesE12 = [{ label: 'S01E12 · Secret Menu Item', codes: ['por', 'eng'] }];
+  const season = [
+    { label: 'S01E05 · Gumball Machine', codes: ['por'] },
+    { label: 'S01E06 · Boba or Bo-Bust', codes: ['eng'] },
+    { label: 'S01E12 · Secret Menu Item', codes: ['por', 'eng'] },
+  ];
+
+  it('a file that has the language goes to the track advice, whatever else is on', () => {
+    expect(stepAfterLanguage({ files: lostTapesE12, wanted: 'eng', isSeason: false, remedies: P6 })).toBe('language-present');
+    expect(stepAfterLanguage({ files: lostTapesE12, wanted: 'eng', isSeason: false, remedies: ON })).toBe('language-present');
+  });
+
+  it('a file without it previews the Language Replace when it is on, else the Fix as before', () => {
+    const portugueseOnly = [{ label: 'S01E05', codes: ['por'] }];
+    expect(stepAfterLanguage({ files: portugueseOnly, wanted: 'eng', isSeason: false, remedies: P6 })).toBe('preview');
+    expect(languagePlans('wrong_language', P6)).toBe(true);
+    expect(languagePlans('wrong_language', ON)).toBe(false);
+    // Language Replace on but no planning remedy: still a preview (the replace is shown before anything is removed).
+    expect(stepAfterTriage('wrong_language', { ...OFF, language_check: true, language_search: true })).toBe('preview');
+    expect(stepAfterLanguage({ files: portugueseOnly, wanted: 'eng', isSeason: false, remedies: OFF })).toBe('confirm');
+  });
+
+  it('a season whose files lack it lists those episodes, to be fixed one at a time', () => {
+    expect(stepAfterLanguage({ files: season, wanted: 'eng', isSeason: true, remedies: P6 })).toBe('language-episodes');
+    expect(filesLacking(season, 'eng')).toEqual(['S01E05 · Gumball Machine']);
+    // A file whose audio could not be read is not listed as lacking.
+    expect(filesLacking([{ label: 'S01E07', codes: [] }], 'eng')).toEqual([]);
+  });
+
+  it('names the track as Plex does, its place, and the track that plays first instead', () => {
+    const tracks = [
+      { position: 1, languageCode: 'por', displayTitle: 'Português (EAC3 5.1)', isDefault: true },
+      { position: 2, languageCode: 'eng', displayTitle: 'English (EAC3 5.1)', isDefault: false },
+    ];
+    expect(trackAdvice(tracks, 'eng')).toEqual({ pick: 'English (EAC3 5.1)', position: 2, total: 2, playsFirst: 'Português (EAC3 5.1)' });
+    // Butterbean's Cafe: 16 tracks, Bulgarian flagged; Plex's terminology codes fold (deu → ger).
+    const many = [
+      { position: 1, languageCode: 'bul', displayTitle: 'български (AAC Stereo)', isDefault: true },
+      ...Array.from({ length: 14 }, (_, i) => ({ position: i + 2, languageCode: 'deu', displayTitle: `Deutsch ${i}`, isDefault: false })),
+      { position: 16, languageCode: 'eng', displayTitle: 'English (AAC Stereo)', isDefault: false },
+    ];
+    expect(trackAdvice(many, 'eng')).toMatchObject({ position: 16, total: 16, playsFirst: 'български (AAC Stereo)' });
+    expect(trackAdvice(many, 'ger')?.pick).toBe('Deutsch 0');
+    // Already first: nothing else plays first.
+    expect(trackAdvice([{ position: 1, languageCode: 'eng', displayTitle: 'English', isDefault: false }], 'eng')?.playsFirst).toBeNull();
+    expect(trackAdvice(tracks, 'jpn')).toBeNull();
+    expect([1, 2, 3, 4, 11, 12, 13, 16, 21, 22].map(ordinal)).toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '16th', '21st', '22nd']);
+  });
+
+  const languagePlan = (verdict: 'ok' | 'no_language_release', grab = true): GuidePlan => ({
+    kind: 'language',
+    scope: 'episode',
+    targetLabel: 'S01E05 · Gumball Machine',
+    wanted: { code: 'eng', name: 'English' },
+    file: { fileId: 75705, name: 'S01E05.mkv', releaseGroup: 'PTGroup', qualityName: 'WEBDL-1080p', size: 420_000_000 },
+    grab: grab ? { grabId: 501, sourceTitle: 'Regular.Show.The.Lost.Tapes.S01E05.DUBLADO-PTGroup', releaseSource: 'Rss' } : null,
+    packKept: [],
+    redownloadKept: false,
+    candidate:
+      verdict === 'ok'
+        ? {
+            title: 'Regular.Show.The.Lost.Tapes.S01E05.1080p.AMZN.WEB-DL-Kitsune',
+            releaseGroup: 'Kitsune',
+            qualityName: 'WEBDL-1080p',
+            size: 400_000_000,
+            protocol: 'usenet',
+            indexer: 'NZBgeek',
+            customFormatScore: 1780,
+            fullSeason: false,
+            languages: ['English'],
+          }
+        : null,
+    candidateKey: verdict === 'ok' ? '0123456789abcdef' : null,
+    verdict,
+    languageReleases: verdict === 'ok' ? 3 : 0,
+    digest: 'aaa111bbb222',
+  });
+
+  it('the Language Replace: block and delete lines to tick, its own confirm, and the refusal with nothing to take', () => {
+    const ok = languagePlan('ok');
+    expect(goneLinesFor(ok).map((l) => l.key)).toEqual(['block:501', 'delete:75705']);
+    expect(goneLinesFor(languagePlan('ok', false)).map((l) => l.key)).toEqual(['delete:75705']);
+    expect(refusalFor(ok, P6)).toBeNull();
+    expect(confirmLabelFor(ok)).toBe('Replace it with the English release');
+    expect(confirmFieldsFor(ok, undefined)).toEqual({ planDigest: 'aaa111bbb222' });
+    const none = languagePlan('no_language_release');
+    expect(refusalFor(none, P6)).toBe('no_language_release');
+    expect(goneLinesFor(none)).toEqual([]);
   });
 });

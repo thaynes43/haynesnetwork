@@ -3370,6 +3370,21 @@ input[aria-invalid='true'] {
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--color-warning) 9%, var(--color-surface));
 }
+/* DESIGN-055 D-08 (PLAN-077 P6): the Plex audio-language offer is an option, not a warning. */
+.repair-guide__callout.repair-guide__callout--info {
+  border-color: color-mix(in srgb, var(--color-info) 45%, var(--color-border));
+  border-left-color: var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 9%, var(--color-surface));
+}
+.repair-guide__callout p {
+  margin: 0;
+  font-size: 14px;
+}
+.repair-guide__subhead {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
 .repair-guide__links {
   display: flex;
   flex-wrap: wrap;
