@@ -11,7 +11,7 @@
 // 3. The season guard (D-09): which downloads back which episodes, so a pack that also holds episodes the person did
 //    not choose is never marked failed.
 // 4. The language check (D-08 rules 1-2): which audio languages the file carries.
-import type { ArrRelease, ArrReleaseHistoryRecord } from '@hnet/arr';
+import type { ArrDownloadClientConfig, ArrRelease, ArrReleaseHistoryRecord } from '@hnet/arr';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Replacement Preview
@@ -531,4 +531,27 @@ export function plexLocaleFor(code: string, options: ReadonlyArray<{ value: stri
     if (option.value !== '' && languageOfPlexLocale(option.value) === wanted) return option.value;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// DESIGN-005 D-25 — the *arr's own Redownload Failed (moved here from fix-flow.ts in PLAN-077 P6, so the Language
+// Replace's plan can read it too)
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * DESIGN-005 D-25 (issue #646, the ADR-098 principle) — whether the *arr searches again by itself
+ * after the Fix marks this grab failed. `POST /history/failed/{id}` publishes the *arr's
+ * DownloadFailedEvent with `skipRedownload = false` (the endpoint takes no such parameter), and
+ * upstream RedownloadFailedDownloadService then searches unless Redownload Failed is off, or the
+ * grab came from an interactive search while its interactive-search twin is off (the grab
+ * record's `data.releaseSource`). Its search always covers the Fix's target: the grab's own
+ * episodes / movie / albums, or the season / artist when the grab was all of it. Pure.
+ */
+export function arrSearchesAfterMarkFailed(
+  config: ArrDownloadClientConfig,
+  grab: { data?: Record<string, unknown> | null },
+): boolean {
+  if (!config.autoRedownloadFailed) return false;
+  const interactive = grab.data?.releaseSource === 'InteractiveSearch';
+  return !interactive || config.autoRedownloadFailedFromInteractiveSearch !== false;
 }

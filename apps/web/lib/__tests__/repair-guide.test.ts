@@ -293,6 +293,7 @@ describe('Wrong language, language-aware (DESIGN-055 D-08, PLAN-077 P6)', () => 
     file: { fileId: 75705, name: 'S01E05.mkv', releaseGroup: 'PTGroup', qualityName: 'WEBDL-1080p', size: 420_000_000 },
     grab: grab ? { grabId: 501, sourceTitle: 'Regular.Show.The.Lost.Tapes.S01E05.DUBLADO-PTGroup', releaseSource: 'Rss' } : null,
     packKept: [],
+    redownloadKept: false,
     candidate:
       verdict === 'ok'
         ? {

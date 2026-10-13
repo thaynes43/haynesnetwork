@@ -179,7 +179,15 @@ const SEASON_RELEASES = [
   release({ title: 'Regular.Show.The.Lost.Tapes.S01E06.1080p.WEB-DL-Other', episodeNumbers: [6], mappedEpisodeNumbers: [6], approved: true }),
 ];
 
-function stubArr(over: { e05Audio?: string; releases?: Array<Record<string, unknown>>; grabStatus?: number } = {}) {
+function stubArr(
+  over: {
+    e05Audio?: string;
+    releases?: Array<Record<string, unknown>>;
+    grabStatus?: number;
+    redownloadFailed?: boolean;
+    deleteStatus?: number;
+  } = {},
+) {
   const calls: Array<{ method: string; path: string; body: unknown }> = [];
   const files = [
     { id: E05.fileId, seriesId: SERIES, seasonNumber: 1, relativePath: 'Season 1/S01E05.mkv', sceneName: 'Regular.Show.The.Lost.Tapes.S01E05.1080p.WEB-DL.DUBLADO-PTGroup', releaseGroup: 'PTGroup', size: 420_000_000, quality: { quality: { id: 3, name: 'WEBDL-1080p', resolution: 1080 }, revision: { version: 1 } }, mediaInfo: { audioLanguages: over.e05Audio ?? 'por' } },
@@ -215,10 +223,14 @@ function stubArr(over: { e05Audio?: string; releases?: Array<Record<string, unkn
         : [];
       return json({ page: 1, pageSize: 10, totalRecords: records.length, records });
     }
-    if (method === 'GET' && p === '/api/v3/config/downloadclient') return json({ id: 1, autoRedownloadFailed: false });
+    if (method === 'GET' && p === '/api/v3/config/downloadclient') {
+      return json({ id: 1, autoRedownloadFailed: over.redownloadFailed ?? false, autoRedownloadFailedFromInteractiveSearch: true });
+    }
     if (sonarr && method === 'GET' && p === '/api/v3/release') return json(over.releases ?? SEASON_RELEASES);
     if (method === 'POST' && p === '/api/v3/history/failed/501') return json({});
-    if (method === 'DELETE' && p === `/api/v3/episodefile/${E05.fileId}`) return json({});
+    if (method === 'DELETE' && p === `/api/v3/episodefile/${E05.fileId}`) {
+      return over.deleteStatus ? json({ message: 'disk error' }, over.deleteStatus) : json({});
+    }
     if (method === 'POST' && p === '/api/v3/release') {
       if ((over.grabStatus ?? 200) !== 200) return json({ message: "Couldn't find requested release in cache, try searching again" }, over.grabStatus);
       return json(body);
@@ -268,7 +280,8 @@ function stubPlex(initial: { tower?: string; ops?: string; readBack?: string } =
     const host = url.host.startsWith('tower') ? 'tower' : url.host.startsWith('ops') ? 'ops' : 'kube';
     const m = /^\/library\/metadata\/([^/]+)(\/.*)?$/.exec(url.pathname);
     if (!m) return json({ message: 'no stub' }, 404);
-    const [, rk, rest] = m;
+    const rk = m[1]!;
+    const rest = m[2];
     if (method === 'PUT' && rest === '/prefs') {
       writes.push(`${host}:${rk}=${url.searchParams.get('audioLanguage')}`);
       prefs.set(`${host}:${rk}`, initial.readBack ?? url.searchParams.get('audioLanguage') ?? '');
@@ -547,6 +560,33 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
       expect(grab.body).toEqual({ guid: 'guid-Regular.Show.The.Lost.Tapes.S01E05.Gumball.Machine.1080p.AMZN.WEB-DL.DDP5.1.H.264-Kitsune', indexerId: 3 });
       const [fix] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, result.id));
       expect(fix!.actionsTaken.map((a) => a.step)).toEqual(['created', 'guard_plan', 'mark_failed', 'delete_file', 'language_grab']);
+    });
+
+    it('with the *arr’s own Redownload Failed on, the download is not marked: no blind search races the grab (D-25)', async () => {
+      const arr = stubArr({ redownloadFailed: true });
+      const { plan } = await readLanguagePlan({ db: t.db, arr: arr.bundle, ...e05(), wantedLanguage: 'eng', remedies: { language_check: true, language_search: true } as never });
+      expect(plan).toMatchObject({ grab: null, redownloadKept: true, verdict: 'ok' });
+      const result = await runFixRequest({ db: t.db, arr: arr.bundle, requesterId: memberId, ...e05(), reason: 'wrong_language', wantedLanguage: 'eng' });
+      expect(result).toMatchObject({ status: 'search_triggered', pathTaken: 'delete_search' });
+      expect(arr.writes()).toEqual([`DELETE /api/v3/episodefile/${E05.fileId}`, 'POST /api/v3/release']);
+      const [fix] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, result.id));
+      expect(fix!.actionsTaken.find((a) => a.step === 'guard_plan')).toMatchObject({ redownloadKept: true, grabHistoryId: null });
+    });
+
+    it('a delete that fails after the mark keeps the whole trail, so the record shows the download is blocked', async () => {
+      const arr = stubArr({ deleteStatus: 500 });
+      await expect(
+        runFixRequest({ db: t.db, arr: arr.bundle, requesterId: memberId, ...e05(), reason: 'wrong_language', wantedLanguage: 'eng' }),
+      ).rejects.toThrow();
+      const [fix] = await t.db.select().from(fixRequests);
+      expect(fix!.status).toBe('failed');
+      expect(fix!.actionsTaken.map((a) => [a.step, a.ok ?? null])).toEqual([
+        ['created', null],
+        ['guard_plan', true],
+        ['mark_failed', true],
+        ['delete_file', false],
+      ]);
+      expect(arr.writes()).not.toContain('POST /api/v3/release');
     });
 
     it('a grab the *arr refuses falls back to a search, so the episode is never left with nothing', async () => {

@@ -4,7 +4,8 @@
 // (fix-flow.ts runGuardedFix), so a plan that changed since the person confirmed is refused rather than run.
 //
 // The plan: the file goes (deleted, after the person ticks it), the download it came from is blocked so it is never taken
-// again (unless it is a pack that also holds other episodes on disk: the season guard), and the replacement is the first
+// again (unless it is a pack that also holds other episodes on disk, the season guard, or the *arr's own Redownload
+// Failed would then search by itself, DESIGN-005 D-25), and the replacement is the first
 // release, in the *arr's own decision order, that
 //   - the *arr would take once the file is gone (approved, or rejected only for the existing file, T-315),
 //   - the *arr parsed as carrying the wanted language (its `languages`),
@@ -39,6 +40,7 @@ import {
   type PlanRelease,
 } from './fix-plan';
 import {
+  arrSearchesAfterMarkFailed,
   audioLanguageName,
   canonicalLanguageCode,
   latestGrabsByEpisode,
@@ -68,6 +70,11 @@ export interface LanguagePlan {
   grab: PlanGrab | null;
   /** The file came in a pack that also holds these on-disk episodes: the pack is not blocked, only this file goes. */
   packKept: PlanEpisode[];
+  /**
+   * DESIGN-005 D-25 — the *arr's own Redownload Failed would search by itself after the mark, racing the language grab
+   * with a blind one (P6 decision 7): the download is then not marked, and only the file is replaced.
+   */
+  redownloadKept: boolean;
   /** The release that replaces the file, or null (`no_language_release`). */
   candidate: LanguageCandidate | null;
   /** The candidate's opaque key (a hash of its indexer and guid; the guid never leaves the server). */
@@ -237,6 +244,18 @@ export async function readLanguagePlan(input: PlanLanguageInput): Promise<Langua
     if (file) current = fileIdentity(file, history);
   }
 
+  // D-25: with the *arr's own Redownload Failed on, a mark would start a blind search beside the language grab.
+  let redownloadKept = false;
+  if (grab) {
+    const config = await guardArrCall(`${target.kind} GET /config/downloadclient`, () =>
+      input.arr.read[target.kind].getDownloadClientConfig(),
+    );
+    if (arrSearchesAfterMarkFailed(config, { data: { releaseSource: grab.releaseSource } })) {
+      grab = null;
+      redownloadKept = true;
+    }
+  }
+
   const read =
     target.kind === 'radarr'
       ? () => guardArrCall(`radarr GET /release?movieId=${target.movieId}`, () => input.arr.read.radarr.listMovieReleases(target.movieId))
@@ -282,6 +301,7 @@ export async function readLanguagePlan(input: PlanLanguageInput): Promise<Langua
     file: file ? planFile(file) : null,
     grab,
     packKept,
+    redownloadKept,
     candidate: release ? { ...planRelease(release), languages: release.languages } : null,
     candidateKey,
     verdict: release ? 'ok' : 'no_language_release',
@@ -291,6 +311,7 @@ export async function readLanguagePlan(input: PlanLanguageInput): Promise<Langua
       wanted,
       fileId: file?.id ?? null,
       grabId: grab?.grabId ?? null,
+      redownloadKept,
       candidateKey,
     }),
   };

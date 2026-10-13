@@ -45,7 +45,7 @@ import { getRepairGuideRemedies, type RepairGuideRemedies } from './repair-guide
 import { forgetReleaseLists, planApplies, planFix, type FixPlan, type PlanReplacement } from './fix-plan';
 import { languagePlanApplies, readLanguagePlan } from './language-replace';
 import { languageVerdict, readFileAudio } from './language-check';
-import { audioLanguageName } from './fix-guards';
+import { arrSearchesAfterMarkFailed, audioLanguageName } from './fix-guards';
 import { resolveDb } from './db-client';
 import { assertFixAllowed, createFixRequest, recordFixAction } from './fix-requests';
 import { arrApiBasePath, type ArrClientBundle } from './arr-clients';
@@ -120,24 +120,6 @@ function stepFailed(step: string, endpoint: string, err: unknown): FixActionEntr
     ...(err instanceof ArrHttpError ? { status: err.status } : {}),
     error: err instanceof Error ? err.message : String(err),
   };
-}
-
-/**
- * DESIGN-005 D-25 (issue #646, the ADR-098 principle) — whether the *arr searches again by itself
- * after the Fix marks this grab failed. `POST /history/failed/{id}` publishes the *arr's
- * DownloadFailedEvent with `skipRedownload = false` (the endpoint takes no such parameter), and
- * upstream RedownloadFailedDownloadService then searches unless Redownload Failed is off, or the
- * grab came from an interactive search while its interactive-search twin is off (the grab
- * record's `data.releaseSource`). Its search always covers the Fix's target: the grab's own
- * episodes / movie / albums, or the season / artist when the grab was all of it. Pure.
- */
-export function arrSearchesAfterMarkFailed(
-  config: ArrDownloadClientConfig,
-  grab: { data?: Record<string, unknown> | null },
-): boolean {
-  if (!config.autoRedownloadFailed) return false;
-  const interactive = grab.data?.releaseSource === 'InteractiveSearch';
-  return !interactive || config.autoRedownloadFailedFromInteractiveSearch !== false;
 }
 
 /** D-25 — the audit step for the Redownload Failed read. */
@@ -1101,11 +1083,6 @@ async function runLanguageFix(
     reason: input.reason,
     reasonText: input.reasonText ?? null,
   });
-  const fail = async (entry: FixActionEntry, err: unknown): Promise<never> => {
-    await recordFixAction({ db: input.db, fixRequestId, transition: 'failed', actions: [entry] });
-    throw new ArrUpstreamError(err instanceof Error ? err.message : `fix step ${entry.step} failed`, { cause: err });
-  };
-
   const actions: FixActionEntry[] = [
     stepOk('guard_plan', `${base} (read-only plan)`, {
       plan: 'language',
@@ -1115,11 +1092,18 @@ async function runLanguageFix(
       fileName: plan.file?.name ?? null,
       grabHistoryId: plan.grab?.grabId ?? null,
       packKept: plan.packKept.map((e) => e.label),
+      // D-25: the plan read Redownload Failed; with it on, the download is not marked (no blind search beside the grab).
+      redownloadKept: plan.redownloadKept,
       candidate: plan.candidate
         ? { title: plan.candidate.title, languages: plan.candidate.languages, quality: plan.candidate.qualityName }
         : null,
     }),
   ];
+  // A step that fails after an earlier write keeps the whole trail, so the record shows what was already done.
+  const fail = async (entry: FixActionEntry, err: unknown): Promise<never> => {
+    await recordFixAction({ db: input.db, fixRequestId, transition: 'failed', actions: [...actions, entry] });
+    throw new ArrUpstreamError(err instanceof Error ? err.message : `fix step ${entry.step} failed`, { cause: err });
+  };
   if (plan.grab) {
     const endpoint = `POST ${base}/history/failed/${plan.grab.grabId}`;
     try {

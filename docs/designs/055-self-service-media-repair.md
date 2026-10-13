@@ -758,7 +758,10 @@ adds no ADR; CLAUDE.md hard rule 4 names the write.
    ship off and need `language_check`; neither opens the guide on its own.
 7. **The Language Replace (D-08 rule 4)**, for one episode or a movie whose file lacks the wanted language (verdict
    `missing` or `unknown`). The file is deleted (ticked first), and the download it came from is marked failed so it is
-   never taken again, unless it is a pack that also holds other on-disk episodes (the season guard). The replacement is
+   never taken again. It is not marked when it is a pack that also holds other on-disk episodes (the season guard), or
+   when the *arr's own Redownload Failed would then search by itself (DESIGN-005 D-25, read in the plan): that blind
+   search would race the language grab, so only the file is replaced (`redownloadKept`; ADR-098 keeps it off in Sonarr
+   and Radarr, PR #942 review). A step that fails after an earlier write records the whole trail. The replacement is
    grabbed with the plain body. It is the first release, in the *arr's own order, that:
    - the *arr would take once the file is gone (approved, or rejected only for the existing file, T-315);
    - the *arr parsed as carrying the wanted language;

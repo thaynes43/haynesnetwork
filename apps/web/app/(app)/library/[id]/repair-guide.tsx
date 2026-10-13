@@ -1260,6 +1260,11 @@ function PlanView({
             This file came in a pack that also holds {plan.packKept.map((e) => e.label).join(', ')}, so the pack stays
             and only this file is replaced.
           </p>
+        ) : plan.redownloadKept ? (
+          <p className="muted">
+            The download it came from is not blocked: blocking it would make the library search again by itself, beside
+            this release. Only the file is replaced.
+          </p>
         ) : !plan.grab ? (
           <p className="muted">There is no download record to block, so only the file is replaced.</p>
         ) : null}
