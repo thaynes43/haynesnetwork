@@ -589,7 +589,7 @@ export async function finishWrongContentReplaceCarry(input: {
   if (settled === 'cleared') {
     throw new FixRefusedError(
       'copy_refused',
-      `The file deletion or watch-state restoration is still unverified. No release was grabbed. Check repair-guide.ts carry-status --carry ${input.carryId}, then retry carry-finish after Sonarr and Plex can be read.`,
+      `The file deletion or watch-state restoration is still unverified. Recovery did not start a download. Check repair-guide.ts carry-status --carry ${input.carryId}, then retry carry-finish after Sonarr and Plex can be read.`,
     );
   }
   const result = settled === 'refused' ? null : await carryWatchState(input);
@@ -1161,7 +1161,7 @@ export async function runWrongContentReplace(
       }
       throw new FixRefusedError(
         'copy_refused',
-        `The file was removed but a release could not be grabbed (${err instanceof Error ? err.message : String(err)}).${auditError ? ` The failed Fix audit could not be saved (${auditError}); use the stored carry for recovery.` : ''} The affected episodes remain missing; use repair-guide.ts release-list or Fix for a new pick.${carryCommands}`,
+        `The file was removed but a release could not be grabbed (${err instanceof Error ? err.message : String(err)}).${auditError ? ` The failed Fix audit could not be saved (${auditError}); use the stored carry for recovery.` : ''} Check the affected episodes. Use repair-guide.ts release-list or Fix for any that are still missing.${carryCommands}`,
       );
     }
   }
