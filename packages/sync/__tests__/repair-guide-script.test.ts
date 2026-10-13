@@ -61,6 +61,16 @@ describe('repair-guide.ts arguments', () => {
     expect(() => parseRepairGuideArgs(['preview', '--tvdb', '1', '--season', '1', '--move', '1:2'])).toThrow(/for remap-plan/);
   });
 
+  it('remap-run needs a claim and the digest of the plan staff checked (DESIGN-055 P4 decision 17)', () => {
+    expect(
+      parseRepairGuideArgs(['remap-run', '--tvdb', '475718', '--season', '1', '--move', '24:23', '--digest', 'a1b2c3d4e5f6a7b8']),
+    ).toMatchObject({ command: 'remap-run', remap: { kind: 'single', from: 24, to: 23 }, digest: 'a1b2c3d4e5f6a7b8' });
+    expect(() => parseRepairGuideArgs(['remap-run', '--tvdb', '1', '--season', '1', '--move', '2:1'])).toThrow(/--digest of the plan/);
+    expect(() => parseRepairGuideArgs(['remap-run', '--tvdb', '1', '--season', '1', '--digest', 'a1b2c3d4'])).toThrow(/needs a claim/);
+    expect(() => parseRepairGuideArgs(['remap-plan', '--tvdb', '1', '--season', '1', '--digest', 'a1b2c3d4'])).toThrow(/--digest is for remap-run/);
+    expect(() => parseRepairGuideArgs(['remap-run', '--tvdb', '1', '--season', '1', '--move', '2:1', '--digest', 'nope'])).toThrow(/plan digest/);
+  });
+
   it('title-check runs the backfill (optionally dry) or lists one series\' flags (DESIGN-055 D-05, PLAN-077 P4)', () => {
     expect(parseRepairGuideArgs(['title-check', '--backfill', '--dry-run', '--json'])).toMatchObject({
       command: 'title-check',
