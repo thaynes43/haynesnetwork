@@ -1969,6 +1969,7 @@ checks:
     auto_covers: part
     evidence:
       - "2026-10-13 17:50Z-17:52Z staff sweep: 143 English originals set to English on HaynesTower and HaynesOps (143 audio_preference Repair Requests completed), then Love, Death & Robots on v0.122.2; the final re-scan shows 146 set and no English original open."
+      - "2026-10-13 19:38Z-19:40Z household sweep (owner ruling #955, ADR-115) on v0.123.1: 30 set (11 non-English originals to English), 3 no-ops (Boruto, Pokemon Twilight Wings, Frieren)."
     links:
       prs: ['https://github.com/thaynes43/haynesnetwork/pull/942', 'https://github.com/thaynes43/haynesnetwork/pull/951', 'https://github.com/thaynes43/haynesnetwork/pull/953', 'https://github.com/thaynes43/haynesnetwork/pull/954']
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/955']

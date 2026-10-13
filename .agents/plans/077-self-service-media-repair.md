@@ -9,7 +9,7 @@
   non-group blocks) is ruled A (owner, 2026-10-13, ADR-113): mislabelled-name terms shipped in v0.117.0, the five terms
   are adopted and the hand profile and its tag are gone (P4, "Q-10 ruling"). Q-11 (the library's whole-season
   reorderings, issue #916) is ruled A too: staff's Season Re-map shipped in v0.117.0 and ran on 29 seasons (P4's
-  follow-up below; open flags 622 to 400, then 321 after the #928 round). P5 (Release Pick) is shipped and verified live, remedy on: v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)), v0.118.1 ([#930](https://github.com/thaynes43/haynesnetwork/pull/930)) and v0.119.1 ([#935](https://github.com/thaynes43/haynesnetwork/pull/935)). Its first person's pick is OC-054. P6 (language-aware Wrong language) is shipped and verified live, both remedies on: v0.121.0 ([#942](https://github.com/thaynes43/haynesnetwork/pull/942)), v0.122.1 ([#951](https://github.com/thaynes43/haynesnetwork/pull/951), [#953](https://github.com/thaynes43/haynesnetwork/pull/953)) and v0.122.2 ([#954](https://github.com/thaynes43/haynesnetwork/pull/954)); 144 English originals set to English as staff; its first person's report is OC-055, and the 13 non-English originals wait on the owner ([#955](https://github.com/thaynes43/haynesnetwork/issues/955)). P7 is next.
+  follow-up below; open flags 622 to 400, then 321 after the #928 round). P5 (Release Pick) is shipped and verified live, remedy on: v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)), v0.118.1 ([#930](https://github.com/thaynes43/haynesnetwork/pull/930)) and v0.119.1 ([#935](https://github.com/thaynes43/haynesnetwork/pull/935)). Its first person's pick is OC-054. P6 (language-aware Wrong language) is shipped and verified live, both remedies on: v0.121.0 ([#942](https://github.com/thaynes43/haynesnetwork/pull/942)), v0.122.1 ([#951](https://github.com/thaynes43/haynesnetwork/pull/951), [#953](https://github.com/thaynes43/haynesnetwork/pull/953)) and v0.122.2 ([#954](https://github.com/thaynes43/haynesnetwork/pull/954)); 144 English originals set to English as staff; its first person's report is OC-055, and the 13 non-English originals got the owner's "English if present" ruling ([#955](https://github.com/thaynes43/haynesnetwork/issues/955), ADR-115), applied in v0.123.1. P7 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -685,8 +685,21 @@ names, never deleting a file, after a watch-state check on every Plex server and
       it was set to English as staff (preview, then `--digest`) and reads back `en` on both servers.
     - The final re-scan on v0.122.2 shows 146 set and no English original open. Two remain unread: Sugar has no Plex
       match at all, so there is nothing to write, and Ranma ½ (2024) is a Japanese original.
-    - The 13 non-English originals are left for the owner ([#955](https://github.com/thaynes43/haynesnetwork/issues/955),
-      options A to D, C recommended).
+    - The 13 non-English originals went to the owner as [#955](https://github.com/thaynes43/haynesnetwork/issues/955). The
+      ruling (2026-10-13) was **"English if present"**, recorded in ADR-115 and DESIGN-055 P6 decision 14 (it amends
+      ADR-109 C-07 for staff writes only).
+  - **The household sweep** (`audio-scan --apply-household`, v0.123.1, 19:38Z to 19:40Z), from #958 and #960:
+    - 30 shows were set, each a completed Repair Request with the rule recorded and read back on every server that
+      carries the show.
+      - 11 non-English originals now play English first: One Piece, Dragon Ball, Alpha Males, Demon Slayer, JUJUTSU
+        KAISEN, 30 Coins, Iron Reign, Attack on Titan, Gudetama, Berlin (2023) and Sweet Home. Every one of them has
+        English tracks, so none needed the original language.
+      - 19 English originals had some files that still started in another language: DuckTales, Henry Danger, Phineas
+        and Ferb, and others.
+    - 3 no-ops, where every English file already starts in English: Boruto, Pokémon: Twilight Wings and Frieren.
+    - 146 shows were already set. 2 have no Plex match (Sugar; Ranma ½ (2024)), so there was nothing to write.
+    - Boruto reads as a no-op, as expected. One Piece does not: some of its files start in German, French or Hindi, so
+      it was set to English.
   - **UI:** the deployed site's sign-in cannot be driven from inside the cluster. Instead:
     - e2e `wrong-language.spec.ts` passed in CI.
     - The guide was walked on dev:local at 390 and 1280 wide, and the screenshots were checked: the language question,

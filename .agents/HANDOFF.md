@@ -32,11 +32,14 @@
   & Robots on v0.122.2. Each is a completed `audio_preference` Repair Request, read back on both servers. Examples:
   Star Trek: Voyager in German, Jessie in Czech, SpongeBob, Paw Patrol and ER. The final re-scan shows 146 set and no
   English original open; Sugar has no Plex match, so there is nothing to write.
+- **#955 ruled "English if present" (owner, 2026-10-13):** ADR-115 and DESIGN-055 P6 decision 14 record it. It
+  amends ADR-109 C-07 for staff writes only; a person's report keeps the original-language rule.
+  - Applied as staff on v0.123.1 (hnet #958, #960; haynes-ops #3903) with `audio-scan --apply-household`: 30 shows
+    set and read back.
+  - 11 of them are non-English originals now playing English: One Piece, Dragon Ball, JUJUTSU KAISEN, Demon Slayer
+    and others. Boruto, Pokémon: Twilight Wings and Frieren are no-ops.
 - **Open:**
   - OC-055: the first person's Audio Preference or Language Replace.
-  - [#955](https://github.com/thaynes43/haynesnetwork/issues/955): 13 non-English originals (Dragon Ball in German,
-    JUJUTSU KAISEN in Portuguese, Boruto's English dub, and others). This is an owner decision with options A to D; C
-    is recommended.
 - **Next:** P7 (Seerr writes).
 
 ## 2026-10-13 16:30Z: Release Pick follow-ups #931 and #936; v0.120.1 live; Zom 100 and Croc fixed; `title_mismatch` stays report only
