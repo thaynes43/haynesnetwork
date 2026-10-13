@@ -26,7 +26,7 @@ import {
   type ProgressSource,
   type SearchProgressInput,
 } from '@/components/action-progress';
-import { RepairGuide, type GuidePlayTarget } from './repair-guide';
+import { RepairGuide, type GuidePlayTarget, type GuideRemapStart } from './repair-guide';
 
 export interface FixDialogProps {
   open: boolean;
@@ -49,6 +49,11 @@ export interface FixDialogProps {
   initialReason?: FixReasonName | null;
   /** D-11 — a short note above the first question ("You reported this in Seerr. Here's what you can try first."). */
   intro?: ReactNode;
+  /**
+   * DESIGN-055 D-05 (PLAN-077 P4) — opened from a Title Check flag: the guide starts at the Episode Re-map preview with
+   * this move (the file on one episode belongs on the one its name says). Ignored while the remedy is off.
+   */
+  initialRemap?: GuideRemapStart | null;
 }
 
 /**
@@ -72,6 +77,8 @@ export function FixDialog(props: FixDialogProps) {
         onSubmitted={props.onSubmitted}
         initialReason={props.initialReason ?? null}
         intro={props.intro}
+        remapOn={guide.data.remapOn}
+        initialRemap={props.initialRemap ?? null}
       />
     ) : null;
   }

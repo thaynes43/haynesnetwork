@@ -11,6 +11,8 @@ import {
   joinServerNames,
   orderPlayTargets,
   refusalFor,
+  remapChoiceOn,
+  stepAfterChoice,
   stepAfterReason,
   stepAfterTriage,
   wantedLanguageInFile,
@@ -115,6 +117,34 @@ describe('step order (each remedy switches its own step)', () => {
     expect(stepAfterTriage('missing_subtitles', ON)).toBe('confirm');
     expect(stepAfterTriage('wont_play_corrupt', { ...OFF, playback_triage: true })).toBe('confirm');
     expect(stepAfterTriage('wont_play_corrupt', { ...OFF, season_guard: true })).toBe('preview');
+  });
+});
+
+describe('the Episode Re-map in the step order (DESIGN-055 D-04, PLAN-077 P4)', () => {
+  it('a Title Check flag opens the re-map first, only for a TV episode', () => {
+    expect(firstGuideStep({ isTv: true, hasTarget: true, isSeason: false, remedies: ON, remapStart: true })).toBe('remap');
+    expect(firstGuideStep({ isTv: true, hasTarget: false, isSeason: false, remedies: ON, remapStart: true })).toBe('pick');
+    expect(firstGuideStep({ isTv: false, hasTarget: false, isSeason: false, remedies: ON, remapStart: true })).toBe('reason');
+    expect(firstGuideStep({ isTv: true, hasTarget: true, isSeason: false, remedies: OFF, remapStart: false })).toBe('reason');
+  });
+
+  it('puts the single move on "What\'s wrong?" and the shift on the season\'s first question', () => {
+    expect(remapChoiceOn('reason', 'single', ON)).toBe(true);
+    expect(remapChoiceOn('episodes', 'single', ON)).toBe(false);
+    // With the season guard on, the shift sits beside "Which episodes are wrong?"; with it off, on "What's wrong?".
+    expect(remapChoiceOn('episodes', 'shift', ON)).toBe(true);
+    expect(remapChoiceOn('reason', 'shift', ON)).toBe(false);
+    expect(remapChoiceOn('reason', 'shift', OFF)).toBe(true);
+    expect(remapChoiceOn('episodes', 'shift', OFF)).toBe(false);
+    expect(remapChoiceOn('reason', null, ON)).toBe(false);
+  });
+
+  it('the re-map choice leads to the re-map step; a reason keeps its own next step', () => {
+    expect(stepAfterChoice('remap', ON)).toBe('remap');
+    expect(stepAfterChoice('remap', OFF)).toBe('remap');
+    expect(stepAfterChoice('wrong_content', ON)).toBe('preview');
+    expect(stepAfterChoice('wont_play_corrupt', ON)).toBe('playback');
+    expect(stepAfterChoice('missing_subtitles', ON)).toBe('confirm');
   });
 });
 

@@ -33,10 +33,16 @@ describe('MEDIA_ACTIONS registry', () => {
     expect(MEDIA_ACTIONS.forceSearch.variant).toBe('outline');
   });
 
-  it('has exactly the six action types', () => {
+  it('has exactly the seven action types', () => {
     expect(MEDIA_ACTION_TYPES.sort()).toEqual(
-      ['consume', 'fix', 'forceSearch', 'importDownload', 'notOnDisk', 'retryImport'].sort(),
+      ['consume', 'fix', 'forceSearch', 'importDownload', 'moveFile', 'notOnDisk', 'retryImport'].sort(),
     );
+  });
+
+  it('names the Title Check flag action "Move it", an outline pill that deletes nothing (DESIGN-055 D-05)', () => {
+    expect(MEDIA_ACTIONS.moveFile.label).toBe('Move it');
+    expect(MEDIA_ACTIONS.moveFile.variant).toBe('outline');
+    expect(MEDIA_ACTIONS.moveFile.destructive).toBe(false);
   });
 
   it('names the Repair Guide import confirm "Import it", a green primary (DESIGN-055 D-01)', () => {

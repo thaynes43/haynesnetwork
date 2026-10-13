@@ -79,6 +79,13 @@ describe('action-anatomy ESLint guard — violations (ADR-071 / DESIGN-004 D-24)
     expect(guardHits(`export const X = () => <MediaAction action="importDownload" onFire={f} />;`)).toEqual([]);
   });
 
+  it('FAILS a hand-rolled "Move it" button (DESIGN-055 D-05: the Title Check flag action is a registry verb)', () => {
+    const hits = guardHits(`export const X = () => <button type="button" className="btn sm">Move it</button>;`);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0]!.message).toBe(ACTION_ANATOMY_MESSAGES.R1);
+    expect(guardHits(`export const X = () => <MediaAction action="moveFile" size="sm" onFire={f} />;`)).toEqual([]);
+  });
+
   it('FAILS an action smuggled via aria-label on an icon-only btn button', () => {
     const hits = guardHits(
       `export const X = () => <button className="btn" aria-label="Fix"><Icon /></button>;`,
@@ -178,8 +185,8 @@ describe('action-anatomy ESLint guard — sanctioned + non-action forms pass', (
 });
 
 describe('action-anatomy guard mirrors the @hnet/ui registry (parity lock)', () => {
-  it('the guard label MIRROR equals the ACTIVE-fire registry labels (fix/forceSearch/retryImport/importDownload)', () => {
-    const activeLabels = (['fix', 'forceSearch', 'retryImport', 'importDownload'] as const).map(
+  it('the guard label MIRROR equals the ACTIVE-fire registry labels (fix/forceSearch/retryImport/importDownload/moveFile)', () => {
+    const activeLabels = (['fix', 'forceSearch', 'retryImport', 'importDownload', 'moveFile'] as const).map(
       (t) => MEDIA_ACTIONS[t].label,
     );
     expect(new Set(CANONICAL_ACTION_LABELS)).toEqual(new Set(activeLabels));

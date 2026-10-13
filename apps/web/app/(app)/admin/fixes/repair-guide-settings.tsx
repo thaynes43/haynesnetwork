@@ -1,6 +1,6 @@
 'use client';
 
-// ADR-109 / DESIGN-055 D-01, D-07, D-09 (PLAN-077 P1, P2) — the Repair Guide's settings on /admin/fixes: the per-remedy kill
+// ADR-109 / DESIGN-055 D-01, D-04, D-07, D-09 (PLAN-077 P1, P2, P4) — the Repair Guide's settings on /admin/fixes: the per-remedy kill
 // switch (`repair_guide_remedies`) and the Known-Issue Servers (T-314). One form, one Save, audited
 // (`update_app_setting`). Every remedy ships off; staff turn each on after its live check. With every remedy off, Fix
 // opens today's dialog. Reflow-safe (hard rule 9): the save-status slot is reserved, toggles only change their own box.
@@ -8,7 +8,13 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
 
-type Remedy = 'replacement_preview' | 'season_guard' | 'language_check' | 'playback_triage' | 'import_check';
+type Remedy =
+  | 'replacement_preview'
+  | 'season_guard'
+  | 'language_check'
+  | 'playback_triage'
+  | 'import_check'
+  | 'episode_remap';
 
 const REMEDIES: ReadonlyArray<{ key: Remedy; label: string; hint: string }> = [
   {
@@ -37,6 +43,12 @@ const REMEDIES: ReadonlyArray<{ key: Remedy; label: string; hint: string }> = [
     key: 'import_check',
     label: 'Force Search checks the queue first',
     hint: 'Force Search on a missing episode or movie reads the download queue first. A finished download that passes the Import Check is added instead of searching again, and a download already on its way is left alone. This one changes Force Search, not Fix.',
+  },
+  // DESIGN-055 D-04, D-05 (PLAN-077 P4) — the Episode Re-map, its Mislabel Block offer, and the Title Check flag.
+  {
+    key: 'episode_remap',
+    label: 'Move files onto the right episodes',
+    hint: 'Fix offers "It’s a different episode of this show" and, on a season, "They’re all off by one". The guide moves the existing files with Sonarr’s own import, shows every move first, and never deletes a file. Episodes whose file name points at another episode are flagged on the title page.',
   },
 ];
 

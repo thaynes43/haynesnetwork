@@ -32,6 +32,16 @@
 //   POST /_stub/seerr-issues → 204; body { issues } — ADR-111 / DESIGN-055 D-10 (PLAN-077 P3): the Seerr issues
 //                        `GET /issue`, `GET /issue/{id}` and `GET /issue/count` serve (Seerr 3.5.0's shapes). No body
 //                        (or `issues: null`) restores seerrIssueFixture(); `issues: []` serves none. Cleared by reset.
+//   POST /_stub/remap → 204; body { on } — ADR-109 C-02 / DESIGN-055 D-04, D-05 (PLAN-077 P4): Breaking Prod gains a
+//                        Season 3 whose library files can move (remapSeasonFixture(), Case A's shape: seven BiOMA files
+//                        one slot low from E11, E12 and E19 free, plus a FLUX file on E02 whose name says it is E01). While
+//                        on, the season follows Sonarr 4.0.20.3012's library-file semantics: `GET /manualimport?seriesId=
+//                        &seasonNumber=&filterExistingFiles=false` lists its files as candidates; `ManualImport` with
+//                        importMode `move` re-links the file at that path to the given episodes under a NEW episode-file
+//                        id (the old record goes, the file keeps its path, an episode that still had another file leaves
+//                        it orphaned); `RenameFiles` renames in id order and skips a name another file holds; `GET
+//                        /rename` lists stale names; `GET /history/since` serves the season's import records for the
+//                        Title Check. Cleared by reset. `GET /_stub/remap` reads the season back for specs.
 //   Always: `POST /command` `ManualImport` is recorded like any write, and afterwards its files' episodes (or movie)
 //   report `hasFile: true` and the download's queue records are gone; `GET /command/{id}` answers `completed`.
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -91,6 +101,218 @@ const IMPORT_CHECK_REJECTION =
   'Episodes 1x11, 1x12, 1x13 were unexpected considering the Breaking_Prod_2019_S01E10_125_Years_Young folder name';
 /** S02E02 · Reckoning, which is on its way (downloading) in the same staged queue. */
 export const ON_ITS_WAY_EPISODE_ID = 50302;
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ADR-109 C-02 / DESIGN-055 D-04, D-05 (PLAN-077 P4) — the Episode Re-map season (POST /_stub/remap)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Breaking Prod's library folder (seriesResource().path); a library file's path is this plus its relativePath. */
+export const STUB_SERIES_PATH = '/data/haynestower/Media/TV Shows/Breaking Prod';
+/** The re-map season and its episode ids (50400 + episode number). */
+export const REMAP_SEASON = 3;
+export const remapEpisodeIdFor = (episodeNumber: number) => STUB_SERIES_ID * 100 + 300 + episodeNumber;
+/** The release group that filed Case A's files one slot low (the Mislabel offer's group). */
+export const REMAP_MISLABEL_GROUP = 'BiOMA';
+
+/** Season 3's episodes: E01 and E02 (the single move), E10..E19 (Case A). */
+export const REMAP_TITLES: Readonly<Record<number, string>> = {
+  1: 'All You Can Fit',
+  2: 'Disney Plus',
+  10: 'Spice It Up',
+  11: 'Prank Callers',
+  12: 'Secret Menu Item',
+  13: 'Time Out',
+  14: 'Rap It Up',
+  15: 'Night Shift',
+  16: 'Bad Signal',
+  17: 'Lost Remote',
+  18: 'Thats Funny',
+  19: 'Cool Boss',
+};
+
+export interface RemapStubFile {
+  id: number;
+  relativePath: string;
+  size: number;
+  releaseGroup: string;
+  sceneName: string | null;
+}
+
+export interface RemapStubState {
+  /** Episode id → the episode-file id on it (0: none). */
+  episodeFile: Map<number, number>;
+  files: Map<number, RemapStubFile>;
+  nextFileId: number;
+  /** Files left on disk with no record (what an import onto an occupied slot causes; a plan must never cause it). */
+  orphaned: string[];
+}
+
+const remapCode = (numbers: number[]) =>
+  numbers.map((n) => `S0${REMAP_SEASON}E${String(n).padStart(2, '0')}`).join('-');
+/** Sonarr's naming format for the stub series, enough to tell a renamed file from a stale one. */
+const remapNameFor = (numbers: number[], title: string, group: string) =>
+  `Season ${REMAP_SEASON}/Breaking Prod - ${remapCode(numbers)} - ${title} [WEBDL-1080p]-${group}.mkv`;
+const dotted = (title: string) => title.replace(/\s+/g, '.');
+
+/**
+ * The season as it starts. Case A (AC-40): the BiOMA files on E11 and E13..E18 each hold the NEXT episode (their names
+ * say so; Sonarr named each file for the slot it sits on), E12 and E19 are free, so "from E11, one later, to the end"
+ * moves seven files highest first and leaves E11 and E13 empty. And the Title Check's single move: the FLUX file on E02
+ * is really E01 (free). E10's file is where it belongs.
+ */
+export function remapSeasonFixture(): RemapStubState {
+  const episodeFile = new Map<number, number>();
+  const files = new Map<number, RemapStubFile>();
+  for (const n of Object.keys(REMAP_TITLES).map(Number)) episodeFile.set(remapEpisodeIdFor(n), 0);
+  const add = (slot: number, really: number, group: string, size: number) => {
+    const id = 3400 + slot;
+    const scene = `Breaking.Prod.S0${REMAP_SEASON}E${String(slot).padStart(2, '0')}.${dotted(REMAP_TITLES[really]!)}.1080p.WEB-DL.DDP5.1.H.264-${group}`;
+    files.set(id, { id, relativePath: remapNameFor([slot], REMAP_TITLES[slot]!, group), size, releaseGroup: group, sceneName: scene });
+    episodeFile.set(remapEpisodeIdFor(slot), id);
+  };
+  add(2, 1, 'FLUX', 1_610_612_736);
+  add(10, 10, 'STUB', 1_073_741_824);
+  add(11, 12, REMAP_MISLABEL_GROUP, 1_073_741_811);
+  for (const slot of [13, 14, 15, 16, 17, 18]) add(slot, slot + 1, REMAP_MISLABEL_GROUP, 1_073_741_800 + slot);
+  return { episodeFile, files, nextFileId: 95_000, orphaned: [] };
+}
+
+const remapQuality = {
+  quality: { id: 3, name: 'WEBDL-1080p', source: 'web', resolution: 1080 },
+  revision: { version: 1, real: 0, isRepack: false },
+};
+
+const remapEpisodesOf = (state: RemapStubState, fileId: number) =>
+  Object.keys(REMAP_TITLES)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .filter((n) => state.episodeFile.get(remapEpisodeIdFor(n)) === fileId);
+
+/** The name the naming format gives a file where it sits now (its old name when it sits nowhere). */
+function remapExpectedName(state: RemapStubState, f: RemapStubFile): string {
+  const on = remapEpisodesOf(state, f.id);
+  return on.length === 0 ? f.relativePath : remapNameFor(on, REMAP_TITLES[on[0]!]!, f.releaseGroup);
+}
+
+/** Season 3's episodes as `GET /episode` reports them. */
+function remapEpisodeRows(state: RemapStubState) {
+  return Object.keys(REMAP_TITLES)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map((n) => {
+      const fileId = state.episodeFile.get(remapEpisodeIdFor(n)) ?? 0;
+      return {
+        id: remapEpisodeIdFor(n),
+        seriesId: STUB_SERIES_ID,
+        seasonNumber: REMAP_SEASON,
+        episodeNumber: n,
+        title: REMAP_TITLES[n],
+        airDateUtc: `2023-04-${String(n).padStart(2, '0')}T01:00:00Z`,
+        hasFile: fileId > 0,
+        monitored: true,
+        ...(fileId > 0 ? { episodeFileId: fileId } : {}),
+      };
+    });
+}
+
+/** Season 3's files as `GET /episodefile` reports them. */
+function remapFileRows(state: RemapStubState) {
+  return [...state.files.values()].map((f) => ({
+    id: f.id,
+    seriesId: STUB_SERIES_ID,
+    seasonNumber: REMAP_SEASON,
+    relativePath: f.relativePath,
+    sceneName: f.sceneName,
+    releaseGroup: f.releaseGroup,
+    size: f.size,
+    quality: remapQuality,
+  }));
+}
+
+/** Sonarr's manual-import view of the season's library files (`filterExistingFiles=false`). */
+function remapCandidates(state: RemapStubState) {
+  return [...state.files.values()].map((f) => ({
+    id: f.id * 10,
+    path: `${STUB_SERIES_PATH}/${f.relativePath}`,
+    relativePath: f.relativePath,
+    folderName: 'Breaking Prod',
+    name: f.relativePath.split('/').pop()!.replace(/\.mkv$/, ''),
+    size: f.size,
+    series: { id: STUB_SERIES_ID, title: 'Breaking Prod', year: 2019 },
+    seasonNumber: REMAP_SEASON,
+    episodes: remapEpisodesOf(state, f.id).map((n) => ({
+      id: remapEpisodeIdFor(n),
+      seriesId: STUB_SERIES_ID,
+      seasonNumber: REMAP_SEASON,
+      episodeNumber: n,
+      title: REMAP_TITLES[n],
+      hasFile: true,
+      episodeFileId: f.id,
+    })),
+    episodeFileId: f.id,
+    releaseGroup: f.releaseGroup,
+    quality: remapQuality,
+    languages: [{ id: 1, name: 'English' }],
+    indexerFlags: 0,
+    releaseType: 'singleEpisode',
+    customFormatScore: 0,
+    rejections: [],
+  }));
+}
+
+/**
+ * Sonarr 4.0.20.3012's library-file ManualImport (`ImportApprovedEpisodes`, newDownload false): the record for the path
+ * goes (`DeleteMediaFileReason.ManualOverride`), the file stays where it is, and a new record links the chosen episodes.
+ * An episode that still had another file leaves that file on disk with no record. Returns false for a path outside the
+ * season (the caller handles it like any other import).
+ */
+function remapImport(state: RemapStubState, file: { path?: string; episodeIds?: number[] }): boolean {
+  const prefix = `${STUB_SERIES_PATH}/`;
+  if (!file.path?.startsWith(prefix)) return false;
+  const rel = file.path.slice(prefix.length);
+  const old = [...state.files.values()].find((f) => f.relativePath === rel);
+  if (!old) return false;
+  state.files.delete(old.id);
+  for (const [ep, id] of state.episodeFile) if (id === old.id) state.episodeFile.set(ep, 0);
+  for (const target of file.episodeIds ?? []) {
+    const other = state.episodeFile.get(target) ?? 0;
+    if (other > 0 && state.files.has(other)) state.orphaned.push(state.files.get(other)!.relativePath);
+  }
+  const fresh: RemapStubFile = { ...old, id: state.nextFileId++, sceneName: null };
+  state.files.set(fresh.id, fresh);
+  for (const target of file.episodeIds ?? []) if (state.episodeFile.has(target)) state.episodeFile.set(target, fresh.id);
+  return true;
+}
+
+/** `RenameFiles`: in id order, skipping a name another file still holds (Sonarr never overwrites). */
+function remapRename(state: RemapStubState, ids: number[]): void {
+  for (const id of [...ids].sort((a, b) => a - b)) {
+    const f = state.files.get(id);
+    if (!f) continue;
+    const next = remapExpectedName(state, f);
+    if ([...state.files.values()].some((x) => x.id !== id && x.relativePath === next)) continue;
+    f.relativePath = next;
+  }
+}
+
+/** The season's `downloadFolderImported` history (the Title Check reads it): one record per file, an hour ago. */
+function remapImportHistory(state: RemapStubState) {
+  const date = new Date(Date.now() - 60 * 60_000).toISOString();
+  return [...state.files.values()]
+    .filter((f) => f.sceneName !== null)
+    .flatMap((f) =>
+      remapEpisodesOf(state, f.id).map((n) => ({
+        id: 960_000 + f.id * 10 + (n % 10),
+        eventType: 'downloadFolderImported',
+        date,
+        seriesId: STUB_SERIES_ID,
+        episodeId: remapEpisodeIdFor(n),
+        sourceTitle: f.sceneName,
+        downloadId: `SABnzbd_nzo_remap_${f.id}`,
+        data: { fileId: String(f.id), droppedPath: `/data/haynestower/usenet/complete-k8s/tv/${f.sceneName}/${f.sceneName}.mkv`, releaseGroup: f.releaseGroup },
+      })),
+    );
+}
 
 /** The queue for the D-07 journeys: Case B's finished, import-blocked download, and S02E02 still downloading. */
 export function importCheckQueueFixture(): Record<string, unknown>[] {
@@ -768,6 +990,11 @@ export async function startStubArr(): Promise<StubArrServer> {
   let importCheckFixtures = false;
   // ADR-111 / DESIGN-055 D-10 — the served Seerr issues (null: seerrIssueFixture()); POST /_stub/seerr-issues sets them.
   let seerrIssuesOverride: Array<Record<string, unknown>> | null = null;
+  // ADR-109 C-02 / DESIGN-055 D-04 — the Episode Re-map season (POST /_stub/remap); null while off.
+  let remapState: RemapStubState | null = null;
+  // Every command this stub accepted (`GET /command` lists them; each is completed at once).
+  let commandLog: Array<{ id: number; name: string; status: string }> = [];
+  let nextCommandId = 4242;
   const importedEpisodeIds = new Set<number>();
   const importedMovieIds = new Set<number>();
   let lastCommandName = 'UnknownCommand';
@@ -799,6 +1026,9 @@ export async function startStubArr(): Promise<StubArrServer> {
         repairGuideFixtures = false;
         importCheckFixtures = false;
         seerrIssuesOverride = null;
+        remapState = null;
+        commandLog = [];
+        nextCommandId = 4242;
         importedEpisodeIds.clear();
         importedMovieIds.clear();
         lastCommandName = 'UnknownCommand';
@@ -959,6 +1189,21 @@ export async function startStubArr(): Promise<StubArrServer> {
         res.writeHead(204);
         return res.end();
       }
+      if (url.pathname === '/_stub/remap' && method === 'POST') {
+        const raw = await readBody(req);
+        remapState = raw !== '' && (JSON.parse(raw) as { on?: unknown }).on === true ? remapSeasonFixture() : null;
+        res.writeHead(204);
+        return res.end();
+      }
+      if (url.pathname === '/_stub/remap' && method === 'GET') {
+        if (!remapState) return json(res, 200, { on: false, episodes: [], files: [], orphaned: [] });
+        return json(res, 200, {
+          on: true,
+          episodes: remapEpisodeRows(remapState),
+          files: remapFileRows(remapState),
+          orphaned: remapState.orphaned,
+        });
+      }
       if (url.pathname === '/_stub/import-check' && method === 'POST') {
         const raw = await readBody(req);
         importCheckFixtures = raw !== '' && (JSON.parse(raw) as { on?: unknown }).on === true;
@@ -1002,21 +1247,29 @@ export async function startStubArr(): Promise<StubArrServer> {
               : 'UnknownCommand';
           lastCommandName = name;
           // DESIGN-055 D-07 — a ManualImport lands at once: its episodes (or movie) have a file, its download leaves.
+          // D-04 — a library file of the re-map season is re-linked instead (Sonarr's library-file semantics).
           if (name === 'ManualImport') {
             const files = ((body as { files?: unknown }).files ?? []) as Array<{
+              path?: string;
               episodeIds?: number[];
               movieId?: number;
               downloadId?: string;
             }>;
             const done = new Set<string>();
             for (const f of files) {
+              if (remapState && remapImport(remapState, f)) continue;
               for (const id of f.episodeIds ?? []) importedEpisodeIds.add(id);
               if (typeof f.movieId === 'number') importedMovieIds.add(f.movieId);
               if (f.downloadId) done.add(f.downloadId);
             }
             queueRecords = queueRecords.filter((r) => !done.has(String(r.downloadId ?? '')));
           }
-          return json(res, 201, { id: 4242, name });
+          if (name === 'RenameFiles' && remapState) {
+            remapRename(remapState, ((body as { files?: unknown }).files ?? []) as number[]);
+          }
+          const id = nextCommandId++;
+          commandLog.push({ id, name, status: 'completed' });
+          return json(res, 201, { id, name });
         }
         // File deletes (AC-08 fallback) — accepted, recorded.
         if (method === 'DELETE' && /^\/(episodefile|moviefile|trackfile)\/\d+$/.test(path)) {
@@ -1076,11 +1329,43 @@ export async function startStubArr(): Promise<StubArrServer> {
         // DESIGN-055 D-07 — the queue-aware Force Search reads its ManualImport back: every command has finished.
         const commandById = /^\/command\/(\d+)$/.exec(path);
         if (commandById) {
-          return json(res, 200, { id: Number(commandById[1]), name: lastCommandName, status: 'completed' });
+          const logged = commandLog.find((c) => c.id === Number(commandById[1]));
+          return json(res, 200, { id: Number(commandById[1]), name: logged?.name ?? lastCommandName, status: 'completed' });
         }
-        // DESIGN-055 D-07 — the *arr's manual-import view of one download (Sonarr and Radarr share the path).
+        // DESIGN-055 D-04 rule 11 — the *arr's commands (the re-map refuses while a move or rename is still running).
+        if (path === '/command') return json(res, 200, commandLog);
+        // DESIGN-055 D-07 — the *arr's manual-import view of one download (Sonarr and Radarr share the path); D-04 — or
+        // of a season's library files.
         if (path === '/manualimport') {
+          if (remapState && Number(query.seriesId) === STUB_SERIES_ID && Number(query.seasonNumber) === REMAP_SEASON) {
+            return json(res, 200, remapCandidates(remapState));
+          }
           return json(res, 200, importCheckFixtures ? importCheckCandidates(String(query.downloadId ?? '')) : []);
+        }
+        // DESIGN-055 D-04 rule 8 — Sonarr's rename preview: the season's files whose name is stale.
+        if (path === '/rename') {
+          if (!remapState || Number(query.seriesId) !== STUB_SERIES_ID || Number(query.seasonNumber) !== REMAP_SEASON) {
+            return json(res, 200, []);
+          }
+          const state = remapState;
+          return json(
+            res,
+            200,
+            [...state.files.values()]
+              .filter((f) => f.relativePath !== remapExpectedName(state, f))
+              .map((f) => ({
+                seriesId: STUB_SERIES_ID,
+                seasonNumber: REMAP_SEASON,
+                episodeNumbers: remapEpisodesOf(state, f.id),
+                episodeFileId: f.id,
+                existingPath: f.relativePath,
+                newPath: remapExpectedName(state, f),
+              })),
+          );
+        }
+        // DESIGN-055 D-05 — the Title Check's import history (`downloadFolderImported` since a date).
+        if (path === '/history/since') {
+          return json(res, 200, remapState ? remapImportHistory(remapState) : []);
         }
         const seriesById = /^\/series\/(\d+)$/.exec(path);
         if (seriesById) {
@@ -1167,11 +1452,15 @@ export async function startStubArr(): Promise<StubArrServer> {
           return json(
             res,
             200,
-            episodes().map((e) => ({
-              ...e,
-              ...(importCheckFixtures && e.id === IMPORT_CHECK_EPISODE_ID ? { title: IMPORT_CHECK_EPISODE_TITLE } : {}),
-              ...(importedEpisodeIds.has(e.id) ? { hasFile: true } : {}),
-            })),
+            [
+              ...episodes().map((e) => ({
+                ...e,
+                ...(importCheckFixtures && e.id === IMPORT_CHECK_EPISODE_ID ? { title: IMPORT_CHECK_EPISODE_TITLE } : {}),
+                ...(importedEpisodeIds.has(e.id) ? { hasFile: true } : {}),
+              })),
+              // D-04 — the re-map season, while its fixtures are on.
+              ...(remapState ? remapEpisodeRows(remapState) : []),
+            ],
           );
         }
         case '/episodefile': {
@@ -1192,7 +1481,7 @@ export async function startStubArr(): Promise<StubArrServer> {
               releaseGroup: 'STUB',
               size: 1_073_741_824,
             }));
-          return json(res, 200, files);
+          return json(res, 200, [...files, ...(remapState ? remapFileRows(remapState) : [])]);
         }
         case '/release': {
           // ADR-109 / DESIGN-055 D-09 — the interactive release list, only while the repair-guide fixtures are on.

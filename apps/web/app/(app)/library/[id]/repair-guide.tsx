@@ -10,11 +10,16 @@
 // ticking every line that would be gone afterwards (never pre-ticked). Each remedy follows its kill switch
 // (`repair_guide_remedies`): a remedy that is off is skipped, and with every remedy off the classic Fix dialog opens.
 //
+// ADR-109 C-02 / DESIGN-055 D-04 (PLAN-077 P4) — with the `episode_remap` remedy on, "What's wrong?" on an episode gains
+// "It's a different episode of this show" and a season gains "They're all off by one"; both open the Episode Re-map
+// (episode-remap.tsx), which moves the existing files onto the right episodes. A Title Check flag on the title page opens
+// the guide straight at that step with the move chosen.
+//
 // Hard rule 8: the guide is a Modal (an explanatory multi-step confirm). Hard rule 9: the dialog has a fixed height
 // (`modal--guide`) and only its body scrolls, so a step that replaces another never moves anything else. Copy follows
 // the owner's rules: plain, friendly, no em-dashes, no names, links where there is somewhere to go.
 import Link from 'next/link';
-import { useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import { ConsumeLink } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
@@ -36,13 +41,15 @@ import {
   joinServerNames,
   orderPlayTargets,
   refusalFor,
-  stepAfterReason,
+  remapChoiceOn,
+  stepAfterChoice,
   stepAfterTriage,
   wantedLanguageInFile,
   type GuidePlan,
   type GuideRemedies,
   type GuideStep,
 } from '@/lib/repair-guide';
+import { REMAP_CHOICE_LABELS, remapKindFor } from '@/lib/remap-guide';
 import { Modal } from '@/components/modal';
 import {
   ActionProgressBlock,
@@ -50,8 +57,16 @@ import {
   type ProgressSource,
   type SearchProgressInput,
 } from '@/components/action-progress';
+import { EpisodeRemap } from './episode-remap';
 
 export type { GuideRemedies };
+
+/** DESIGN-055 D-05 — a Title Check flag: the file on `fromEpisodeId` belongs on `toEpisodeId` (its name says so). */
+export interface GuideRemapStart {
+  seasonNumber: number;
+  fromEpisodeId: number;
+  toEpisodeId: number;
+}
 
 export interface GuidePlayTarget {
   label: string;
@@ -75,6 +90,10 @@ export interface RepairGuideProps {
   initialReason?: FixReasonName | null;
   /** D-11 — a short note above the guide's steps when it opened from a Seerr report. */
   intro?: ReactNode;
+  /** DESIGN-055 D-04 (PLAN-077 P4) — the `episode_remap` remedy: the guide offers moving files onto the right episodes. */
+  remapOn?: boolean;
+  /** D-05 — opened from a Title Check flag: start at the re-map preview with this move. */
+  initialRemap?: GuideRemapStart | null;
 }
 
 interface DoneState {
@@ -95,14 +114,18 @@ export function RepairGuide({
   onSubmitted,
   initialReason = null,
   intro,
+  remapOn = false,
+  initialRemap = null,
 }: RepairGuideProps) {
   const isTv = item.arrKind === 'sonarr';
   const planning = remedies.replacement_preview || remedies.season_guard;
+  const remapStart = remapOn && initialRemap !== null && target?.scope === 'episode';
   const firstStep = firstGuideStep({
     isTv,
     hasTarget: target !== null,
     isSeason: target?.scope === 'season',
     remedies,
+    remapStart,
   });
 
   const [step, setStep] = useState<GuideStep>(firstStep);
@@ -118,6 +141,9 @@ export function RepairGuide({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<DoneState | null>(null);
   const [retried, setRetried] = useState(false);
+  // DESIGN-055 D-04 — the re-map chosen on "What's wrong?", and the question its Back returns to.
+  const [remapPicked, setRemapPicked] = useState(false);
+  const [remapBack, setRemapBack] = useState<GuideStep>(firstStep);
 
   const children = trpc.ledger.children.useQuery(
     { mediaItemId: item.id },
@@ -129,6 +155,7 @@ export function RepairGuide({
     (isTv && pickedChild !== '' ? { scope: 'episode', childId: pickedChild, label: pickedLabel } : null);
   const scopeInput = targetToInput(effectiveTarget);
   const isSeason = effectiveTarget?.scope === 'season';
+  const remapKind = remapKindFor({ remapOn, arrKind: item.arrKind, target: effectiveTarget });
   const episodeIds = isSeason && remedies.season_guard && chosen.size > 0 ? [...chosen].sort((a, b) => a - b) : undefined;
 
   const seasonChoices = trpc.fix.seasonChoices.useQuery(
@@ -217,6 +244,8 @@ export function RepairGuide({
     setError(null);
     setDone(null);
     setRetried(false);
+    setRemapPicked(false);
+    setRemapBack(firstStep);
     onClose();
   }
 
@@ -232,11 +261,16 @@ export function RepairGuide({
   }
 
   function afterReason() {
+    if (remapPicked && remapKind !== null) {
+      setRemapBack('reason');
+      go(stepAfterChoice('remap', remedies));
+      return;
+    }
     if (reason === 'other' && reasonText.trim() === '') {
       setError('Tell us what is wrong. A few words are enough.');
       return;
     }
-    go(stepAfterReason(reason, remedies));
+    go(stepAfterChoice(reason, remedies));
   }
 
   function submit(extra: Record<string, unknown> = {}) {
@@ -361,7 +395,28 @@ export function RepairGuide({
                 ))}
               </ul>
             )}
+            {remapChoiceOn('episodes', remapKind, remedies) ? (
+              <section className="repair-guide__group">
+                <h4>Or are they all off by one?</h4>
+                <p className="muted remap-guide__note">
+                  When each file plays the episode next to it, nothing needs downloading: the files can be moved onto the
+                  right episodes.
+                </p>
+              </section>
+            ) : null}
             <div className="form-actions">
+              {remapChoiceOn('episodes', remapKind, remedies) ? (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setRemapBack('episodes');
+                    go('remap');
+                  }}
+                >
+                  They&rsquo;re all off by one
+                </button>
+              ) : null}
               <button type="button" className="btn primary" disabled={chosen.size === 0} onClick={() => go('reason')}>
                 Next
               </button>
@@ -383,22 +438,42 @@ export function RepairGuide({
               <legend className="repair-guide__question">What&rsquo;s wrong?</legend>
               <ul className="check-list">
                 {reasons.map((value) => (
-                  <li key={value}>
-                    <label className="check-row">
-                      <input
-                        type="radio"
-                        name="guide-reason"
-                        value={value}
-                        checked={reason === value}
-                        onChange={() => setReason(value)}
-                      />
-                      <span>{GUIDE_REASON_LABELS[value] ?? FIX_REASON_LABELS[value]}</span>
-                    </label>
-                  </li>
+                  <Fragment key={value}>
+                    {/* DESIGN-055 D-04: the re-map choice sits just before "It's a different show or movie". */}
+                    {value === 'wrong_content' && remapKind !== null && remapChoiceOn('reason', remapKind, remedies) ? (
+                      <li>
+                        <label className="check-row">
+                          <input
+                            type="radio"
+                            name="guide-reason"
+                            value="remap"
+                            checked={remapPicked}
+                            onChange={() => setRemapPicked(true)}
+                          />
+                          <span>{REMAP_CHOICE_LABELS[remapKind]}</span>
+                        </label>
+                      </li>
+                    ) : null}
+                    <li>
+                      <label className="check-row">
+                        <input
+                          type="radio"
+                          name="guide-reason"
+                          value={value}
+                          checked={!remapPicked && reason === value}
+                          onChange={() => {
+                            setRemapPicked(false);
+                            setReason(value);
+                          }}
+                        />
+                        <span>{GUIDE_REASON_LABELS[value] ?? FIX_REASON_LABELS[value]}</span>
+                      </label>
+                    </li>
+                  </Fragment>
                 ))}
               </ul>
             </fieldset>
-            {reason === 'other' ? (
+            {reason === 'other' && !remapPicked ? (
               <label className="field">
                 <span>Tell us more</span>
                 <textarea
@@ -694,6 +769,22 @@ export function RepairGuide({
             </div>
           </div>
         );
+
+      case 'remap':
+        return remapKind !== null && effectiveTarget !== null ? (
+          <EpisodeRemap
+            item={{ id: item.id, title: item.title }}
+            kind={remapKind}
+            seasonNumber={remapKind === 'shift' ? (effectiveTarget.seasonNumber ?? null) : (initialRemap?.seasonNumber ?? null)}
+            fromEpisodeId={remapKind === 'single' ? effectiveTarget.childId : undefined}
+            targetLabel={effectiveTarget.label}
+            initialToEpisodeId={remapStart && remapBack === firstStep ? (initialRemap?.toEpisodeId ?? null) : null}
+            onBack={() => go(remapStart && remapBack === 'remap' ? 'reason' : remapBack)}
+            onClose={close}
+            onChanged={onSubmitted}
+            setError={setError}
+          />
+        ) : null;
 
       case 'done':
         return done ? (
