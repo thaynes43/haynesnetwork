@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.124.0](https://github.com/thaynes43/haynesnetwork/compare/v0.123.1...v0.124.0) (2026-10-13)
+
+
+### Features
+
+* answer Seerr issues as a bridge user, comment once and resolve after the repair (PLAN-077 P7) ([#963](https://github.com/thaynes43/haynesnetwork/issues/963)) ([fc2ec98](https://github.com/thaynes43/haynesnetwork/commit/fc2ec987ff5d9fb29de29915669891bb2a54a185))
+
 ## [0.123.1](https://github.com/thaynes43/haynesnetwork/compare/v0.123.0...v0.123.1) (2026-10-13)
 
 
