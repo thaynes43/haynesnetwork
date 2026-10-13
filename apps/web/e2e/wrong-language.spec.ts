@@ -1,6 +1,6 @@
 // ADR-109 C-02, C-07 / DESIGN-055 D-08 (PLAN-077 P6) end to end — the language-aware Wrong language, against the stub
 // *arr's language fixtures (POST /_stub/language) and the stub Plex's show preferences:
-//   • The file has the wanted audio (Breaking Prod S01E02: Portuguese first and flagged default, English second, like
+//   • The file has the wanted audio (Breaking Prod S01E03: Portuguese first and flagged default, English second, like
 //     Regular Show: The Lost Tapes S01E12). English is the show's original language, so the guide names the track
 //     ("English (EAC3 5.1)", the 2nd of 2), explains how to switch it on each kind of player, and offers to set the
 //     show's preferred audio language in Plex; pressed, HaynesTower stores en-US and the guide says so. Nothing is
@@ -9,7 +9,10 @@
 //   • The file lacks it (S01E06, Portuguese only): the preview is the Language Replace, the English release that would
 //     replace it; confirmed, the Fix blocks the Portuguese download, deletes the file and grabs that release.
 // The remedies are switched on and off through the admin card on /admin/fixes (every remedy ships off), and the one Fix
-// this file opens is closed from /admin/fixes, so no later spec sees the guide or an open fix.
+// this file opens is closed from /admin/fixes, so no later spec sees the guide or an open fix. The file is named to run
+// after library.spec (whose first timeline row is the seeded import, and which leaves a Fix open on S01E02), and the
+// journeys run as the admin, so the member's hourly budget the other specs count is untouched.
+//
 import { test, expect, type Browser, type Page, type TestInfo } from '@playwright/test';
 import { signIn } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
@@ -150,8 +153,8 @@ test.describe('the language-aware Wrong language (ADR-109 C-07 / DESIGN-055 D-08
     page,
   }, testInfo) => {
     await stageLanguageFixtures();
-    await signIn(page, 'member');
-    const dialog = await openEpisodeFix(page, 'S01E02 · Chapter 2');
+    await signIn(page, 'admin');
+    const dialog = await openEpisodeFix(page, 'S01E03 · Chapter 3');
     await expect(dialog.getByRole('radio', { name: /English \(in this file\)/ })).toBeChecked();
     await expect(dialog.getByRole('radio', { name: /Portuguese \(in this file\)/ })).toBeVisible();
     await dialog.getByRole('button', { name: 'Next' }).click();
@@ -183,7 +186,7 @@ test.describe('the language-aware Wrong language (ADR-109 C-07 / DESIGN-055 D-08
     await dialog.getByRole('button', { name: 'Done' }).click();
 
     // Asked again: Plex already prefers English, so there is no offer and nothing is written.
-    const again = await openEpisodeFix(page, 'S01E02 · Chapter 2');
+    const again = await openEpisodeFix(page, 'S01E03 · Chapter 3');
     await again.getByRole('button', { name: 'Next' }).click();
     await expect(again).toContainText('Plex is already set to play English first on this show on HaynesTower.', {
       timeout: 30_000,
@@ -195,8 +198,8 @@ test.describe('the language-aware Wrong language (ADR-109 C-07 / DESIGN-055 D-08
 
   test('another language than the original gets the advice only', async ({ page }) => {
     await stageLanguageFixtures();
-    await signIn(page, 'member');
-    const dialog = await openEpisodeFix(page, 'S01E02 · Chapter 2');
+    await signIn(page, 'admin');
+    const dialog = await openEpisodeFix(page, 'S01E03 · Chapter 3');
     await dialog.getByRole('radio', { name: /Portuguese \(in this file\)/ }).check();
     await dialog.getByRole('button', { name: 'Next' }).click();
     await expect(dialog.getByRole('heading', { name: 'This file already has Portuguese audio.' })).toBeVisible();
@@ -211,7 +214,7 @@ test.describe('the language-aware Wrong language (ADR-109 C-07 / DESIGN-055 D-08
     page,
   }, testInfo) => {
     await stageLanguageFixtures();
-    await signIn(page, 'member');
+    await signIn(page, 'admin');
     const dialog = await openEpisodeFix(page, 'S01E06 · Chapter 6');
     await dialog.getByRole('button', { name: 'Next' }).click();
 

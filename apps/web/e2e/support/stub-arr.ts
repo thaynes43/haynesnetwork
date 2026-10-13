@@ -54,7 +54,7 @@
 //                        reads the bodies back; a grabbed release then shows in `GET /queue` as a downloading record for
 //                        each of its episodes.
 //   POST /_stub/language → 204; body { on } — ADR-109 C-02, C-07 / DESIGN-055 D-08 (PLAN-077 P6): Breaking Prod's files
-//                        report their audio (S01E02 `por/eng`, S01E06 `por`, the rest `eng`), and
+//                        report their audio (S01E03 `por/eng`, S01E06 `por`, the rest `eng`), and
 //                        `GET /release?seriesId=501&seasonNumber=1` serves S01E06's Portuguese release (approved) and an
 //                        English one rejected only for the file on disk; `POST /release` records the English grab (404
 //                        for any other guid). The series always names English as its original language. Cleared by reset.
@@ -1127,12 +1127,12 @@ function seriesResource(id: number) {
 
 // ---------------------------------------------------------------------------------------------------------------------
 // ADR-109 C-02, C-07 / DESIGN-055 D-08 (PLAN-077 P6) — the language fixtures (POST /_stub/language). Breaking Prod
-// S01E02's file carries Portuguese then English (Case A's S01E12: English is in the file, behind a Portuguese default);
+// S01E03's file carries Portuguese then English (Case A's S01E12: English is in the file, behind a Portuguese default);
 // S01E06's file is Portuguese only, and Sonarr's season-1 list offers its Portuguese release again (approved) and an
 // English one rejected only for the file on disk, which the Language Replace takes.
 // ---------------------------------------------------------------------------------------------------------------------
 
-export const LANGUAGE_PRESENT_EPISODE_ID = STUB_SERIES_ID * 100 + 2; // 50102, S01E02
+export const LANGUAGE_PRESENT_EPISODE_ID = STUB_SERIES_ID * 100 + 3; // 50103, S01E03
 export const LANGUAGE_MISSING_EPISODE_ID = STUB_SERIES_ID * 100 + 6; // 50106, S01E06
 export const LANGUAGE_REPLACE_GUID = 'breaking-prod-s01e06-english';
 export const LANGUAGE_REPLACE_TITLE = 'Breaking.Prod.S01E06.Chapter.6.1080p.AMZN.WEB-DL.DDP5.1.H.264-ENGRP';

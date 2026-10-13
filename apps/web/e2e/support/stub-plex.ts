@@ -19,7 +19,7 @@
 //
 // ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — `GET /library/metadata/<key>?includePreferences=1` answers a show's
 // preferred audio language (stored per server, cleared by reset), `PUT /library/metadata/<key>/prefs?audioLanguage=`
-// sets it (RECORDED in `calls`), and Breaking Prod S01E02 lists its audio tracks.
+// sets it (RECORDED in `calls`), and Breaking Prod S01E03 lists its audio tracks.
 //
 // Control endpoints:
 //   GET  /_stub/calls  → { calls: [{method, path, machineId, body}] } (sharing writes, poster uploads,
@@ -460,12 +460,12 @@ const WATCH_CHILDREN: Record<string, StubSectionItem[]> = {
 
 // ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — a title's own Plex preferences and an episode's audio tracks, shaped
 // like PMS's own answers read live 2026-10-13. A show offers `audioLanguage` (Plex's enum of UI languages, `''` is
-// "Account default"); a movie offers none (Q-08). Breaking Prod S01E02 (50112) carries Portuguese, flagged default,
+// "Account default"); a movie offers none (Q-08). Breaking Prod S01E03 (50113) carries Portuguese, flagged default,
 // then English, like Regular Show: The Lost Tapes S01E12.
 const AUDIO_LANGUAGE_ENUM =
   ':Account default|en-US:English|pt-BR:Português|de-DE:Deutsch|en-GB:English (UK)|es-ES:Español|fr-FR:Français|ja-JP:日本語';
 const AUDIO_STREAMS: Record<string, Array<Record<string, unknown>>> = {
-  '50112': [
+  '50113': [
     { id: 1, streamType: 1, index: 0, displayTitle: '1080p (H.264)' },
     { id: 2, streamType: 2, index: 1, languageCode: 'por', languageTag: 'pt-BR', default: true, displayTitle: 'Português (EAC3 5.1)' },
     { id: 3, streamType: 2, index: 2, languageCode: 'eng', languageTag: 'en-US', displayTitle: 'English (EAC3 5.1)' },

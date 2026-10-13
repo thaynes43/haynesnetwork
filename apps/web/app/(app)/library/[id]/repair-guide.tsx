@@ -281,6 +281,8 @@ export function RepairGuide({
       setError(null);
       setAudioDone(result);
       setStep('language-set');
+      // The stored preference changed: the next look at this title reads it again instead of the cached offer.
+      void utils.fix.audioPreference.invalidate();
       onSubmitted();
     },
   });
