@@ -523,6 +523,30 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
       expect(pickLanguageRelease({ releases, allowed, wanted: 'jpn', current: null, single })).toBeNull();
     });
 
+    it('never takes another post of the file’s own group at the same quality, whatever languages its name claims', () => {
+      // Live 2026-10-13: JUJUTSU KAISEN S02E06's file is OLYMPUS WEBDL-2160p with Portuguese and Japanese only; OLYMPUS's
+      // "MULTi" WEBDL-2160p post reads as eight languages, English among them.
+      const multi = arrReleaseSchema.parse(
+        release({
+          title: 'JUJUTSU.KAISEN.S02E06.That.2160p.B-Global.WEB-DL.AAC2.0.H.264.MULTi-OLYMPUS',
+          releaseGroup: 'OLYMPUS',
+          quality: { quality: { id: 18, name: 'WEBDL-2160p', source: 'web', resolution: 2160 }, revision: { version: 1 } },
+          size: 2_097_773_000,
+          rejections: ['Existing file on disk has a equal or higher Custom Format score: 0'],
+          languages: ['English', 'French', 'German', 'Japanese', 'Portuguese'].map((name, id) => ({ id, name })),
+        }),
+      );
+      const other = arrReleaseSchema.parse(release({ title: 'Jujutsu.Kaisen.S02E06.1080p.CR.WEB-DL.DUAL-Other', releaseGroup: 'Other', approved: true }));
+      const current = {
+        fileName: 'Jujutsu Kaisen (2020) - S02E06 - Thats How It Is [WEBDL-2160p][AAC 2.0][h264]-OLYMPUS.mkv', sceneName: null,
+        releaseName: null, releaseGroup: 'OLYMPUS', qualityName: 'WEBDL-2160p', resolution: 2160, revision: 1, edition: null,
+        size: 1_642_212_847, customFormatScore: 0,
+      };
+      const allowed = new Set([multi, other].map(releaseKey));
+      expect(pickLanguageRelease({ releases: [multi, other], allowed, wanted: 'eng', current })?.releaseGroup).toBe('Other');
+      expect(pickLanguageRelease({ releases: [multi], allowed, wanted: 'eng', current })).toBeNull();
+    });
+
     it('the preview is the Language Replace: block the Portuguese download, delete the file, take the English one', async () => {
       const arr = stubArr();
       const plan = await previewRepairPlan({
