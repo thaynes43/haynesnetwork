@@ -222,7 +222,7 @@ describe('repair-guide.ts arguments', () => {
           key: 'aaaaaaaaaaaaaaaa', keys: ['aaaaaaaaaaaaaaaa'], title: 'Regular.Show.The.Lost.Tapes.S01E10.Spice.It.Up.1080p.HMAX.WEB-DL.DDP2.0.H.265-OldT',
           sizeBytes: 352_000_000, qualityName: 'WEBDL-1080p', qualityPlain: '1080p', languages: ['English'], customFormatScore: -9925,
           ageHours: 640, indexer: 'NZBgeek (Prowlarr)', protocol: 'usenet', releaseGroup: 'OldT', state: 'override', recommended: true,
-          numberedAs: 'S01E10 · Stilt Walkers', evidence: { verdict: 'agrees', namedLabel: null },
+          numberedAs: 'S01E10 · Stilt Walkers', evidence: { verdict: 'agrees', namedLabel: null }, holds: null,
           reasons: [
             { code: 'score_below_minimum', class: 'overridable', text: 'Lower quality than the library usually keeps', arrText: 'Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0' },
           ],
@@ -231,8 +231,16 @@ describe('repair-guide.ts arguments', () => {
           key: 'bbbbbbbbbbbbbbbb', keys: ['bbbbbbbbbbbbbbbb', 'cccccccccccccccc'], title: 'Regular.Show.The.Lost.Tapes.S01E11.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA',
           sizeBytes: null, qualityName: 'WEBDL-1080p', qualityPlain: '1080p', languages: ['English'], customFormatScore: 75,
           ageHours: 369, indexer: 'DrunkenSlug (Prowlarr)', protocol: 'usenet', releaseGroup: 'BiOMA', state: 'not_allowed', recommended: false,
-          numberedAs: null, evidence: { verdict: 'silent', namedLabel: null },
+          numberedAs: null, evidence: { verdict: 'silent', namedLabel: null }, holds: null,
           reasons: [{ code: 'blocklisted', class: 'hard', text: 'Blocked after an earlier download of it failed or was removed', arrText: 'Release is blocklisted' }],
+        },
+        {
+          key: 'dddddddddddddddd', keys: ['dddddddddddddddd'], title: 'Regular.Show.The.Lost.Tapes.S01E11E12.720p.WEB.H.264-JFF',
+          sizeBytes: null, qualityName: 'WEBDL-720p', qualityPlain: '720p', languages: ['English'], customFormatScore: 0,
+          ageHours: 10, indexer: 'NZBgeek (Prowlarr)', protocol: 'usenet', releaseGroup: 'JFF', state: 'override', recommended: false,
+          numberedAs: null, evidence: { verdict: 'silent', namedLabel: null },
+          holds: ['S01E11 · Spice It Up', 'S01E12 · Secret Menu Item'],
+          reasons: [{ code: 'quality_not_wanted', class: 'overridable', text: 'Not a quality the library usually keeps (720p)', arrText: 'WEBDL-720p is not wanted in profile' }],
         },
       ],
     });
@@ -243,6 +251,8 @@ describe('repair-guide.ts arguments', () => {
       '      overridable: Lower quality than the library usually keeps  [Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0]',
     );
     expect(lines[4]).toMatch(/^ {2}\[NOT ALLOWED\] .*BiOMA \| WEBDL-1080p \? \| DrunkenSlug \(Prowlarr\) \+1 more title:silent \| key b{16}$/);
+    // P5 decision 17: a release that holds two missing episodes names both.
+    expect(lines[7]).toBe('      holds: S01E11 · Spice It Up + S01E12 · Secret Menu Item');
   });
 
   it('copy-plan and copy-run name one episode, optionally the original, and need the digest and evidence (DESIGN-055 P4 decision 25)', () => {

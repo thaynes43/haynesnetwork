@@ -67,6 +67,7 @@ function row(o: Partial<ReleaseRow> = {}): ReleaseRow {
     reasons: [],
     evidence: { verdict: 'agrees', namedLabel: null },
     numberedAs: null,
+    holds: null,
     recommended: false,
     ...o,
   };
@@ -326,6 +327,49 @@ describe('the confirm (D-01 preview contract)', () => {
   });
 });
 
+describe('a release that holds several missing episodes (DESIGN-055 P5 decision 17, issue #936)', () => {
+  // Spidey and His Amazing Friends S05E19 and E20: a two-segment file numbered S05E09E10 (scene), mapped onto both.
+  const HOLDS = ['S05E19 · Pet Party', 'S05E20 · Jeff Bites Back'];
+  const TWO = row({
+    key: 'd4d4d4d4d4d4d4d4',
+    keys: ['d4d4d4d4d4d4d4d4'],
+    title: 'Marvels.Spidey.And.His.Amazing.Friends.S05E09E10.720p.WEB.H.264-JFF',
+    state: 'override',
+    reasons: [NOT_WANTED],
+    evidence: { verdict: 'silent', namedLabel: null },
+    holds: HOLDS,
+  });
+
+  it('says which episodes it fills, under its facts and in the confirm', () => {
+    expect(evidenceText(TWO, 'sonarr')).toEqual({ text: 'Holds S05E19 and S05E20, both missing', tone: 'good' });
+    expect(evidenceText(row({ holds: ['S01E01 · A', 'S01E02 · B', 'S01E03 · C'] }), 'sonarr')!.text).toBe(
+      'Holds S01E01, S01E02 and S01E03, all missing',
+    );
+    const lines = confirmPlan(TWO, { kind: 'sonarr', targetLabel: HOLDS[1]!, limited: true });
+    expect(lines[0]).toEqual({ text: 'Download this release for both of the missing episodes it holds:', sub: HOLDS });
+    expect(lines[1]!.text).toBe(
+      'It is outside the library’s usual rules, so the library would not take it on its own. Grabbing it makes an exception for these episodes.',
+    );
+    expect(lines.map((l) => l.text)).toContain('Nothing is deleted or blocked.');
+    expect(confirmPlan(row({ holds: ['S01E01 · A', 'S01E02 · B', 'S01E03 · C'] }), { kind: 'sonarr', targetLabel: 'S01E01 · A', limited: false })[0]!.text).toBe(
+      'Download this release for all 3 of the missing episodes it holds:',
+    );
+  });
+
+  it('never claims its name matches the one episode the list was opened for', () => {
+    expect(bestChoiceWhy({ ...TWO, state: 'grab', evidence: { verdict: 'agrees', namedLabel: null } }, 'sonarr')).toBe(
+      'It’s the one the library would pick on its own.',
+    );
+    expect(bestChoiceWhy(TWO, 'sonarr')).toBe('The closest to what the library usually keeps.');
+  });
+
+  it('a grab names every episode it landed on', () => {
+    expect(grabOutcomeText({ outcome: 'grabbed', targetLabel: `${HOLDS[0]} and ${HOLDS[1]}`, override: true })).toBe(
+      `Grabbed it for ${HOLDS[0]} and ${HOLDS[1]}, as an exception to the library’s usual rules.`,
+    );
+  });
+});
+
 describe('after the press', () => {
   it('says what each outcome means', () => {
     expect(grabOutcomeText({ outcome: 'grabbed', targetLabel: SPICE, override: false })).toBe(`Grabbed it for ${SPICE}.`);
@@ -424,7 +468,7 @@ describe('the copy rules', () => {
         ...Object.values(statusStepText(s, SPICE)),
         ...Object.values(statusStepText(s, SPICE, false)),
       ]),
-      ...[OLDT, WVF, BIOMA, row()].flatMap((r) => [
+      ...[OLDT, WVF, BIOMA, row(), row({ state: 'override', holds: ['S05E19 · Pet Party', 'S05E20 · Jeff Bites Back'] })].flatMap((r) => [
         bestChoiceWhy(r, 'sonarr'),
         bestChoiceWhy(r, 'radarr'),
         rowStateTag(r),

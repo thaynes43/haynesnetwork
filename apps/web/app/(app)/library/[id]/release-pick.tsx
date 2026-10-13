@@ -418,7 +418,8 @@ export function ReleasePick({
       <div className="repair-guide__step">
         {targetLine}
         <p className="fix-done__lead" role="status">
-          {grabOutcomeText({ outcome: grab.outcome, targetLabel: label, override: false })}
+          {/* The answer names the episode that changed: for a release that holds several, it can be another one. */}
+          {grabOutcomeText({ outcome: grab.outcome, targetLabel: grab.targetLabel || label, override: false })}
         </p>
         {grab.outcome === 'not_allowed' ? (
           <p className="muted">

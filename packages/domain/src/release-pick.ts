@@ -63,7 +63,7 @@ import {
 // ---------------------------------------------------------------------------------------------------------------------
 
 /** Bump when a reason's class or words change, so a stored list can be told apart from one the current rules give. */
-export const RELEASE_REASONS_VERSION = 2;
+export const RELEASE_REASONS_VERSION = 3;
 
 /**
  * DESIGN-055 D-06 — how long after the *arr's search a row can still be grabbed. The *arr keeps the rows it listed in
@@ -119,6 +119,7 @@ export type ReleaseReasonCode =
   | 'few_seeders'
   | 'protocol_off'
   | 'pack'
+  | 'holds_episode_with_file'
   | 'not_matched'
   | 'raw_disc'
   | 'already_downloaded'
@@ -323,6 +324,11 @@ export interface ReleasePickRow {
   evidence: ReleasePickTitle | null;
   /** Numbered for another episode (that episode's label) but its title names the target. */
   numberedAs: string | null;
+  /**
+   * P5 decision 17 (issue #936): a release that holds two or more episodes, every one of them missing, is a pick for all
+   * of them. The labels of every episode it lands on, in episode order; null for a one-episode row (and for a pack).
+   */
+  holds: string[] | null;
   recommended: boolean;
 }
 
@@ -340,6 +346,10 @@ export interface ReleasePickOffer {
   reasonCodes: ReleaseReasonCode[];
   titleVerdict: TitleVerdict | 'none' | null;
   numberedAs: string | null;
+  /** P5 decision 17: every episode a multi-episode pick lands on (its override body and Repair Request); null for one. */
+  episodeIds: number[] | null;
+  /** The labels of `episodeIds`, in the same order; null for one episode. */
+  holds: string[] | null;
 }
 
 export type ReleasePickTarget =
@@ -352,7 +362,7 @@ export type ReleasePickTarget =
       episodeNumber: number;
       label: string;
       /** Every episode of the target's season (Title Evidence judges against all of them). */
-      seasonEpisodes: TitleEvidenceEpisode[];
+      seasonEpisodes: ReleasePickEpisode[];
     }
   | {
       kind: 'radarr';
@@ -361,6 +371,15 @@ export type ReleasePickTarget =
       titles: string[];
       year: number | null;
     };
+
+/**
+ * One episode of the target's season. `hasFile` says whether it has a file: a multi-episode release is a pick only when
+ * every episode it holds is known to be missing (P5 decision 17), so an episode whose state is not known counts as having
+ * one.
+ */
+export interface ReleasePickEpisode extends TitleEvidenceEpisode {
+  hasFile?: boolean;
+}
 
 export interface ClassifiedReleases {
   rows: ReleasePickRow[];
@@ -385,8 +404,13 @@ interface RowDraft {
   title: ReleasePickTitle | null;
   numberedAs: string | null;
   overrideBody: boolean;
-  /** 0: the title names the target and the number matches; 1: the title names it, numbered for another; 2: the rest. */
+  /**
+   * 0: the title names the target and the number matches; 1: the title names it, numbered for another; 2: the rest of
+   * the one-episode rows; 3: a release that holds several episodes (P5 decision 17).
+   */
   evidenceRank: number;
+  /** P5 decision 17: every episode a multi-episode pick lands on, in episode order; null for one episode. */
+  holds: ReleasePickEpisode[] | null;
 }
 
 function stateOf(reasons: readonly ReleaseReason[]): ReleasePickState {
@@ -403,6 +427,19 @@ function dedupeReasons(reasons: ReleaseReason[]): ReleaseReason[] {
     seen.add(k);
     return true;
   });
+}
+
+const heldLabel = (e: ReleasePickEpisode) => episodeLabel(e.seasonNumber, e.episodeNumber, e.title ?? '');
+
+/** "S01E13 and S01E14", "S01E01, S01E02 and S01E03". */
+function codeList(episodes: readonly ReleasePickEpisode[]): string {
+  const codes = episodes.map((e) => episodeCode(e.seasonNumber, e.episodeNumber));
+  return codes.length <= 1 ? (codes[0] ?? '') : `${codes.slice(0, -1).join(', ')} and ${codes.at(-1)}`;
+}
+
+/** P5 decision 17: why a multi-episode release is Not allowed when another episode it holds has a file. */
+function alsoHoldsText(withFile: readonly ReleasePickEpisode[]): string {
+  return `Also holds ${codeList(withFile)}, which ${withFile.length === 1 ? 'already has a file' : 'already have files'}`;
 }
 
 /** The reasons the app works out itself, beside the *arr's (D-06 hard refusals that a rejection may not carry). */
@@ -441,6 +478,7 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
     let pack = false;
     let title: ReleasePickTitle | null = null;
     let evidenceRank = 2;
+    let holds: ReleasePickEpisode[] | null = null;
     const extra: ReleaseReason[] = [];
 
     if (target.kind === 'sonarr') {
@@ -450,8 +488,25 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
       }
       const eps = release.episodeNumbers;
       const covers = release.fullSeason || eps.includes(target.episodeNumber);
+      // P5 decision 17 (issue #936): a release that holds several episodes of the season (not a season pack) is a pick
+      // for all of them when every one is missing. One that would land on an episode with a file stays Not allowed:
+      // replacing a file is what Fix is for.
+      let withFile: ReleasePickEpisode[] = [];
       if (covers) {
-        pack = release.fullSeason || eps.length > 1;
+        const numbers = [...new Set(eps)].sort((a, b) => a - b);
+        if (release.fullSeason) {
+          pack = true;
+        } else if (numbers.length > 1) {
+          const found = numbers.map(
+            (n) => target.seasonEpisodes.find((e) => e.seasonNumber === target.seasonNumber && e.episodeNumber === n) ?? null,
+          );
+          if (found.some((e) => e === null)) {
+            pack = true;
+          } else {
+            holds = found as ReleasePickEpisode[];
+            withFile = holds.filter((e) => e.id !== target.episodeId && e.hasFile !== false);
+          }
+        }
       } else if (eps.length === 1) {
         const te = episodeTitleEvidence({
           name: release.title,
@@ -475,11 +530,14 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
 
       if (pack) {
         extra.push(reason('pack', 'other', 'Holds more than this one episode', null));
+      } else if (withFile.length > 0) {
+        extra.push(reason('holds_episode_with_file', 'other', alsoHoldsText(withFile), null));
+        holds = null;
       } else {
         const te = episodeTitleEvidence({
           name: release.title,
           episodes: target.seasonEpisodes,
-          againstEpisodeIds: [target.episodeId],
+          againstEpisodeIds: holds ? holds.map((e) => e.id) : [target.episodeId],
         });
         const named =
           te.bestEpisodeId !== null ? target.seasonEpisodes.find((e) => e.id === te.bestEpisodeId) ?? null : null;
@@ -509,6 +567,9 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
             ),
           );
           evidenceRank = 1;
+        } else if (holds !== null) {
+          // A release that fills several episodes ranks after every one that is this episode alone.
+          evidenceRank = 3;
         } else if (te.verdict === 'agrees') {
           evidenceRank = 0;
         }
@@ -547,6 +608,7 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
       numberedAs: mislabeledAs,
       overrideBody: !release.approved || !release.downloadAllowed || mislabeledAs !== null,
       evidenceRank,
+      holds,
     });
   }
 
@@ -601,6 +663,7 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
       reasons: d.reasons,
       evidence: d.title,
       numberedAs: d.numberedAs,
+      holds: d.holds ? d.holds.map(heldLabel) : null,
       recommended: g === recommended,
     };
   });
@@ -618,6 +681,8 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
       reasonCodes: d.reasons.map((x) => x.code),
       titleVerdict: d.title?.verdict ?? null,
       numberedAs: d.numberedAs,
+      episodeIds: d.holds ? d.holds.map((e) => e.id) : null,
+      holds: d.holds ? d.holds.map(heldLabel) : null,
     }));
   return {
     rows,
@@ -663,6 +728,8 @@ interface ResolvedTarget {
   monitored: boolean;
   queueState: 'none' | 'on_its_way' | 'queue_stuck';
   download: { title: string | null; progress: number | null; status: string | null } | null;
+  /** Sonarr: every episode of the series with something in the queue (P5 decision 17's re-read of a multi-episode pick). */
+  queuedEpisodeIds: number[];
 }
 
 async function guardedRead<T>(what: string, fn: () => Promise<T>): Promise<T> {
@@ -738,6 +805,7 @@ export async function readReleasePickTarget(input: ReleasePickTargetInput): Prom
       monitored: movie.monitored,
       queueState: queueStateOf(records),
       download: downloadOf(records),
+      queuedEpisodeIds: [],
     };
   }
   if (item.arrKind !== 'sonarr' || scope !== 'episode' || targetChildId === null) {
@@ -766,12 +834,21 @@ export async function readReleasePickTarget(input: ReleasePickTargetInput): Prom
       label: episodeLabel(episode.seasonNumber, episode.episodeNumber, episode.title),
       seasonEpisodes: episodes
         .filter((e) => e.seasonNumber === episode.seasonNumber)
-        .map((e) => ({ id: e.id, seasonNumber: e.seasonNumber, episodeNumber: e.episodeNumber, title: e.title })),
+        .map((e) => ({
+          id: e.id,
+          seasonNumber: e.seasonNumber,
+          episodeNumber: e.episodeNumber,
+          title: e.title,
+          hasFile: e.hasFile,
+        })),
     },
     hasFile: episode.hasFile,
     monitored: episode.monitored,
     queueState: queueStateOf(records),
     download: downloadOf(records),
+    queuedEpisodeIds: [
+      ...new Set(queue.map((r) => r.episodeId).filter((id): id is number => typeof id === 'number')),
+    ],
   };
 }
 
@@ -783,10 +860,10 @@ export function releaseListKey(target: ReleasePickTarget): string {
 }
 
 /** Every cache key a grab for the target makes stale (the season list, and the episode list P1's preview reads). */
-function staleKeysAfterGrab(target: ReleasePickTarget): string[] {
-  return target.kind === 'radarr'
-    ? [`radarr:movie:${target.movieId}`]
-    : [`sonarr:season:${target.seriesId}:${target.seasonNumber}`, `sonarr:episode:${target.episodeId}`];
+function staleKeysAfterGrab(target: ReleasePickTarget, episodeIds: readonly number[] | null = null): string[] {
+  if (target.kind === 'radarr') return [`radarr:movie:${target.movieId}`];
+  const episodes = episodeIds && episodeIds.length > 0 ? episodeIds : [target.episodeId];
+  return [`sonarr:season:${target.seriesId}:${target.seasonNumber}`, ...episodes.map((id) => `sonarr:episode:${id}`)];
 }
 
 /**
@@ -1134,11 +1211,14 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
   if (!remedies.release_pick) {
     throw new FixRefusedError('needs_guide', "Seeing every release is turned off.");
   }
-  const refuse = (outcome: Exclude<ReleaseGrabOutcome, 'grabbed' | 'unsure'>): ReleaseGrabResult => ({
+  const refuse = (
+    outcome: Exclude<ReleaseGrabOutcome, 'grabbed' | 'unsure'>,
+    targetLabel: string = list.targetLabel,
+  ): ReleaseGrabResult => ({
     outcome,
     message: GRAB_COPY[outcome],
     repairRequestId: null,
-    targetLabel: list.targetLabel,
+    targetLabel,
     override: false,
   });
   const now = input.now ? input.now() : Date.now();
@@ -1165,6 +1245,18 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
   if (await settleTargetLive({ db: input.db, arr: input.arr, resolved })) return refuse('on_its_way');
 
   const target = resolved.target;
+  // P5 decision 17: a release that holds several episodes is re-read for every one of them; it lands only when each is
+  // still missing and has nothing in the queue. The answer names the episode that changed.
+  const held = offer.episodeIds && offer.episodeIds.length > 1 && target.kind === 'sonarr' ? offer.episodeIds : null;
+  if (held && target.kind === 'sonarr') {
+    for (const id of held) {
+      const episode = target.seasonEpisodes.find((e) => e.id === id);
+      const name = episode ? episodeLabel(episode.seasonNumber, episode.episodeNumber, episode.title ?? '') : target.label;
+      if (!episode || episode.hasFile !== false) return refuse('has_file', name);
+      if (resolved.queuedEpisodeIds.includes(id)) return refuse('on_its_way', name);
+    }
+  }
+  const targetLabel = held && offer.holds ? joinLabels(offer.holds) : target.label;
   const override = offer.state === 'override';
   const { repairRequestId } = await createRepairRequest({
     db: input.db,
@@ -1174,8 +1266,9 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
     kind: 'release_pick',
     scope: target.kind === 'radarr' ? 'item' : 'episode',
     seasonNumber: target.kind === 'radarr' ? null : target.seasonNumber,
-    targetChildIds: target.kind === 'radarr' ? [] : [target.episodeId],
-    targetLabel: target.label,
+    // P5 decision 17: a multi-episode pick holds every episode it lands on, under the per-episode open check (decision 6).
+    targetChildIds: target.kind === 'radarr' ? [] : (held ?? [target.episodeId]),
+    targetLabel,
     reason: null,
     preview: {
       releaseListId: list.id,
@@ -1186,6 +1279,7 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
       titleVerdict: offer.titleVerdict,
       numberedAs: offer.numberedAs,
       overrideBody: offer.overrideBody,
+      ...(held ? { episodes: offer.holds ?? [] } : {}),
       searchedAt: list.searchedAt.toISOString(),
       reasonsVersion: list.reasonsVersion,
     },
@@ -1214,7 +1308,7 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
               guid: offer.guid,
               indexerId: offer.indexerId,
               seriesId: target.seriesId,
-              episodeIds: [target.episodeId],
+              episodeIds: held ?? [target.episodeId],
               quality: offer.quality ?? {},
               languages: offer.languages,
               downloadClientId: null,
@@ -1225,7 +1319,7 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
     }
   } catch (err) {
     const status = err instanceof ArrHttpError ? err.status : null;
-    forgetReleaseLists(staleKeysAfterGrab(target));
+    forgetReleaseLists(staleKeysAfterGrab(target, held));
     // A 4xx answer means the *arr refused the grab and sent nothing on: 404 its own cache dropped the row, 409 the site
     // would not hand the file over, any other 4xx the *arr refused the request.
     if (err instanceof ArrHttpError && status !== null && status >= 400 && status < 500) {
@@ -1235,7 +1329,7 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
         transition: 'failed',
         actions: [{ step: 'grab', at: at(), ok: false, title: offer.title, status, error: errText(err) }],
       });
-      return { ...refuse(status === 404 ? 'list_stale' : 'grab_failed'), repairRequestId };
+      return { ...refuse(status === 404 ? 'list_stale' : 'grab_failed', targetLabel), repairRequestId };
     }
     if (err instanceof ArrError) {
       // A timeout, a dropped connection or a 5xx may come after the *arr already handed the release to the download
@@ -1257,7 +1351,7 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
         outcome: 'unsure',
         message: "It isn't certain the grab went through: the answer got lost on the way.",
         repairRequestId,
-        targetLabel: target.label,
+        targetLabel,
         override,
       };
     }
@@ -1284,14 +1378,19 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
       },
     ],
   });
-  forgetReleaseLists(staleKeysAfterGrab(target));
+  forgetReleaseLists(staleKeysAfterGrab(target, held));
   return {
     outcome: 'grabbed',
     message: override ? "Grabbed it, past the library's usual rules." : 'Grabbed it.',
     repairRequestId,
-    targetLabel: target.label,
+    targetLabel,
     override,
   };
+}
+
+/** "S05E19 · Pet Party and S05E20 · Jeff Bites Back": the episodes a multi-episode pick lands on. */
+function joinLabels(labels: readonly string[]): string {
+  return labels.length <= 1 ? (labels[0] ?? '') : `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`;
 }
 
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -1438,8 +1537,15 @@ export async function settleReleasePicks(input: { db?: DbClient; mediaItemId?: s
     );
   const failed: string[] = [];
   for (const r of open) {
-    const child = r.targetChildIds[0] ?? null;
-    const childMatch = child === null ? sql`true` : sql`${ledgerEvents.payload}->>'episodeId' = ${String(child)}`;
+    // Any episode the pick holds (P5 decision 17: a multi-episode pick holds several; its download fails for all).
+    const children = r.targetChildIds.map(String);
+    const childMatch =
+      children.length === 0
+        ? sql`true`
+        : sql`${ledgerEvents.payload}->>'episodeId' IN (${sql.join(
+            children.map((c) => sql`${c}`),
+            sql`, `,
+          )})`;
     const events = await db
       .select({ eventType: ledgerEvents.eventType })
       .from(ledgerEvents)

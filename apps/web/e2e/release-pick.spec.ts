@@ -12,6 +12,9 @@
 //     grab's body pins the series, the episode, the row's own quality and languages, no download client and
 //     `shouldOverride`. The release numbered for another episode shows its "Numbered as" line. Three hourly media actions
 //     (the list and two grabs).
+//   • Episodes C (E07 and E08, P5 decision 17, issue #936), as the admin: the only release is one two-episode file and
+//     both episodes are missing, so it is a pick for both. The row says which episodes it holds, the confirm names each,
+//     and the override grab's body lists both episode ids.
 // The `import_check` (Force Search checks the queue first) and `release_pick` remedies are switched on through the admin
 // card on /admin/fixes for this file only and switched off afterwards, and the stub is reset, so no later spec sees them.
 //
@@ -23,6 +26,8 @@ import { signIn } from './support/helpers';
 import { readRuntimeEnv } from './support/env';
 import {
   RELEASE_PICK_B_EPISODE_ID,
+  RELEASE_PICK_C_EPISODE_IDS,
+  RELEASE_PICK_C_GUID,
   RELEASE_PICK_REFUSED_GUID,
   STUB_SERIES_ID,
 } from './support/stub-arr';
@@ -38,6 +43,8 @@ const B_BLOCKLISTED = 'Breaking.Prod.S04E05.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-
 const B_WRONG_TITLE = 'Breaking.Prod.S04E05.Legacy.Code.1080p.WEB-DL-OldT';
 const B_REFUSED = 'Breaking.Prod.S04E05.480p.WEB.h264-NOPE';
 const UNRELATED = 'Standup.Showdown';
+const C_LABELS = ['S04E07 · Merge Conflict', 'S04E08 · Deploy Day'] as const;
+const C_TWO = 'Breaking.Prod.S04E07E08.720p.WEB.H.264-JFF';
 
 async function stubArr(path: string, body?: unknown): Promise<void> {
   const env = readRuntimeEnv();
@@ -280,6 +287,53 @@ test.describe('the Release Pick (ADR-109 C-06 / DESIGN-055 D-06, PLAN-077 P5)', 
       timeout: 30_000,
     });
 
+    await dialog.getByRole('button', { name: 'Done' }).click();
+    await expect(dialog).toHaveCount(0);
+  });
+  test('episodes C: a two-episode release fills both missing episodes, and the confirm names each (P5 decision 17)', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await stageReleasePick();
+    await signIn(page, 'admin');
+    await openBreakingProd(page);
+    const dialog = await seeEveryRelease(page, C_LABELS[1]);
+
+    const best = dialog.locator('.release-pick__row--best');
+    await expect(best).toContainText(C_TWO);
+    await expect(best).toContainText('Outside the usual rules');
+    await expect(best).toContainText('Holds S04E07 and S04E08, both missing');
+    await expect(best).toContainText('Not a quality the library usually keeps (720p)');
+    await expect(best).not.toContainText('Holds more than this one episode');
+    // Nothing for the other targets of the season is on this list.
+    await expect(dialog).not.toContainText('Hotfix.Hootenanny');
+
+    await best.getByRole('button', { name: 'Pick this one' }).click();
+    await expect(dialog.getByRole('heading', { name: 'Grab this release?' })).toBeVisible();
+    await expect(dialog).toContainText('Download this release for both of the missing episodes it holds:');
+    for (const label of C_LABELS) await expect(dialog.locator('.release-pick__sub')).toContainText(label);
+    await expect(dialog).toContainText('Grabbing it makes an exception for these episodes.');
+    await expect(dialog).toContainText('Nothing is deleted or blocked.');
+    await dialog.getByRole('button', { name: 'Grab this release' }).click();
+
+    await expect(dialog).toContainText(
+      `Grabbed it for ${C_LABELS[0]} and ${C_LABELS[1]}, as an exception to the library’s usual rules.`,
+      { timeout: 30_000 },
+    );
+    expect(await releaseGrabs()).toEqual([
+      expect.objectContaining({
+        guid: RELEASE_PICK_C_GUID,
+        indexerId: 2,
+        seriesId: STUB_SERIES_ID,
+        episodeIds: [...RELEASE_PICK_C_EPISODE_IDS],
+        downloadClientId: null,
+        shouldOverride: true,
+      }),
+    ]);
+    await expect(dialog.locator('.action-progress')).toHaveAttribute('data-live-phase', 'downloading', {
+      timeout: 30_000,
+    });
     await dialog.getByRole('button', { name: 'Done' }).click();
     await expect(dialog).toHaveCount(0);
   });
