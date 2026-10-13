@@ -26,6 +26,8 @@ export interface RemapEpisode {
   title: string | null;
   /** The episode file on this episode, or null. */
   episodeFileId: number | null;
+  /** Whether Sonarr monitors the episode (the Season Re-map parks on an unmonitored one first). */
+  monitored?: boolean;
 }
 
 export interface RemapFile {

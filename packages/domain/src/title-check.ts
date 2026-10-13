@@ -460,6 +460,51 @@ async function clearFlags(executor: DbClient | undefined, ids: readonly string[]
   return cleared;
 }
 
+/**
+ * DESIGN-055 P4 decision 22 — carry one file's Title Check across a Season Re-map step. A step re-links the file under a
+ * new episode-file id with no import record and no scene name, so neither the hourly census nor the library-wide read
+ * would judge it again. The step's names are judged against the episodes the file holds now and written for the new
+ * id, keeping the earlier row's origin and import time; the earlier row's open flag is cleared (its file has left).
+ * A file staff placed on an episode its name does not name (a second copy moved aside) stays flagged there.
+ */
+export async function carryTitleCheckForward(input: {
+  db?: DbClient;
+  seriesId: number;
+  mediaItemId: string | null;
+  oldFileId: number;
+  newFileId: number;
+  names: ReadonlyArray<string | null | undefined>;
+  episodes: readonly TitleEvidenceEpisode[];
+  fileEpisodeIds: readonly number[];
+  now?: Date;
+}): Promise<{ verdict: TitleCheckVerdict | null }> {
+  const now = input.now ?? new Date();
+  const judgment = judgeTitleCheckFile({ names: input.names, episodes: input.episodes, fileEpisodeIds: input.fileEpisodeIds });
+  return inTransaction(input.db, async (tx) => {
+    const [old] = await tx
+      .select()
+      .from(titleChecks)
+      .where(and(eq(titleChecks.instance, 'sonarr'), eq(titleChecks.episodeFileId, input.oldFileId)));
+    if (old && isOpenFlag(old) && input.oldFileId !== input.newFileId) await clearFlags(tx, [old.id], now);
+    if (judgment === null) return { verdict: null };
+    await upsertTitleChecks(
+      tx,
+      [
+        {
+          seriesId: input.seriesId,
+          mediaItemId: input.mediaItemId,
+          judgment,
+          episodeFileId: input.newFileId,
+          origin: old?.origin ?? 'backfill',
+          importedAt: old?.importedAt ?? now,
+        },
+      ],
+      now,
+    );
+    return { verdict: judgment.verdict };
+  });
+}
+
 const openFlagWhere = () =>
   and(eq(titleChecks.instance, 'sonarr'), eq(titleChecks.verdict, 'disagrees'), isNull(titleChecks.clearedAt));
 

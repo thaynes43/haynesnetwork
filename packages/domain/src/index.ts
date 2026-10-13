@@ -134,6 +134,8 @@ export * from './activity-import-check';
 // ADR-109 C-02, C-03 / DESIGN-055 D-04 (PLAN-077 P4) — the Episode Re-map: its plan (pure) and its run.
 export * from './remap-plan';
 export * from './remap-flow';
+export * from './season-remap-plan';
+export * from './season-remap-flow';
 // ADR-110 / DESIGN-055 D-05 (PLAN-077 P2): Title Evidence, pure. Its parseReleaseName and ParsedReleaseName share their
 // names with release-terms' (DESIGN-052 D-12), which keep the barrel names; Title Evidence's are re-exported under
 // their own names here (inside this package, import them from './title-evidence').

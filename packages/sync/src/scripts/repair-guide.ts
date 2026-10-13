@@ -9,6 +9,16 @@
 //   tsx repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
 //   tsx repair-guide.ts queue-check
 //   tsx repair-guide.ts title-check (--backfill [--dry-run] [--json] | --flags <sonarr series id>)
+//   tsx repair-guide.ts season-plan --tvdb <id> --season <n> [--place <from>:<to>,...] [--keep <n>,...] [--json]
+//   tsx repair-guide.ts season-run  --tvdb <id> --season <n> [--place ...] [--keep ...] --digest <d> [--ignore-plex]
+//
+// `season-plan` / `season-run` (DESIGN-055 P4 decisions 18-24, issue #916) are staff's Season Re-map: every file of the
+// season moves to the episode its own name says (staff place the files whose names say nothing, `--place 21:28`, a
+// two-episode file `--place 53-54:27-28`, by subtitle or title-card evidence), cycles pass through a free parking
+// episode, and each file is renamed right after its move. `season-plan` only reads (Sonarr and Plex) and prints the
+// steps, the files that stay and why, the Plex check and the digest; `season-run` re-plans, refuses a changed plan, a
+// failed Plex check (unless `--ignore-plex`) or the remedy switched off, then runs the steps (one Repair Request,
+// requester null). Check every Plex server's watch state for the season first (the staff runbook in DESIGN-055).
 //
 // `search-plan` (DESIGN-055 D-07, PLAN-077 P2) prints what a queue-aware Force Search press would do: the target's queue
 // state and the Import Check on a stuck download, planned as if `import_check` were on. It only reads (the queue, the
@@ -47,6 +57,11 @@ import {
   importCheckReasonText,
   planFix,
   planEpisodeRemap,
+  planSeasonRemap,
+  plexClientBundleFromEnv,
+  runSeasonRemap,
+  seasonPlexReader,
+  type SeasonRemapView,
   planForceSearch,
   readRemapSeason,
   runEpisodeRemap,
@@ -71,11 +86,15 @@ const USAGE = `Usage:
   repair-guide.ts title-check (--backfill [--dry-run] [--json] | --flags <sonarr series id>)
   repair-guide.ts remap-plan --tvdb <id> --season <n> [--shift <from>:<+1|-1>[:<through>] | --move <from>:<to>]
   repair-guide.ts remap-run  --tvdb <id> --season <n> (--shift ... | --move ...) --digest <the remap-plan digest>
+  repair-guide.ts season-plan --tvdb <id> --season <n> [--place <from>:<to>,...] [--keep <n>,...] [--json]
+  repair-guide.ts season-run  --tvdb <id> --season <n> [--place ...] [--keep ...] --digest <the season-plan digest> [--ignore-plex]
 
 preview, evidence, audio, search-plan, queue-check and remap-plan only read (remap-plan plans as if episode_remap were on). settings writes only with --set or --known-issue (audited, actor null).
 title-check only reads Sonarr; --backfill writes title_checks rows unless --dry-run, --flags clears a stale flag.
 remap-run is staff's Episode Re-map (DESIGN-055 P4 decision 17): it re-plans, refuses unless the plan's digest is the one
 given, then moves the files exactly as the guide does (one Repair Request, requester null: the staff tool).
+season-plan only reads Sonarr and Plex; season-run is staff's Season Re-map (DESIGN-055 P4 decisions 18-24): files go
+where their names (or --place) say, cycles pass through a free episode, each file is renamed after its move.
 Remedies: ${REPAIR_GUIDE_REMEDIES.join(', ')}.`;
 
 export interface RepairGuideArgs {
@@ -88,7 +107,9 @@ export interface RepairGuideArgs {
     | 'queue-check'
     | 'title-check'
     | 'remap-plan'
-    | 'remap-run';
+    | 'remap-run'
+    | 'season-plan'
+    | 'season-run';
   /** remap-run: the digest of the remap-plan output staff confirmed. */
   digest?: string;
   tmdb?: number;
@@ -108,6 +129,11 @@ export interface RepairGuideArgs {
   dryRun?: boolean;
   json?: boolean;
   flagsSeriesId?: number;
+  /** season-plan / season-run: staff placements (episode numbers; a two-episode file as a range) and kept episodes. */
+  placements?: Array<{ from: number[]; to: number[] }>;
+  keep?: number[];
+  /** season-run: run although the Plex check failed (staff decision, recorded on the Repair Request). */
+  ignorePlex?: boolean;
   /** remap-plan: a claim by episode numbers (none: the season view and the suggested claim). */
   remap?: { kind: 'shift'; from: number; by: 1 | -1; through: number | null } | { kind: 'single'; from: number; to: number };
 }
@@ -130,7 +156,9 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'queue-check' &&
     command !== 'title-check' &&
     command !== 'remap-plan' &&
-    command !== 'remap-run'
+    command !== 'remap-run' &&
+    command !== 'season-plan' &&
+    command !== 'season-run'
   ) {
     throw new Error(`unknown command "${command}"`);
   }
@@ -230,6 +258,35 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         args.flagsSeriesId = positiveInt(flag, value);
         i += 1;
         break;
+      case '--place': {
+        const range = (part: string) => {
+          const m = /^(\d+)(?:-(\d+))?$/.exec(part);
+          if (!m) return null;
+          const a = Number(m[1]);
+          const b = m[2] ? Number(m[2]) : a;
+          if (b < a || b - a > 9) return null;
+          return Array.from({ length: b - a + 1 }, (_, k) => a + k);
+        };
+        args.placements = [...(args.placements ?? [])];
+        for (const pair of (value ?? '').split(',')) {
+          const [from, to] = pair.trim().split(':');
+          const f = from !== undefined ? range(from) : null;
+          const t = to !== undefined ? range(to) : null;
+          if (!f || !t || f.length !== t.length) {
+            throw new Error('--place needs <from>:<to> pairs, e.g. 21:28 or 53-54:27-28 (comma separated)');
+          }
+          args.placements.push({ from: f, to: t });
+        }
+        i += 1;
+        break;
+      }
+      case '--keep':
+        args.keep = [...(args.keep ?? []), ...(value ?? '').split(',').map((n) => positiveInt(flag, n.trim()))];
+        i += 1;
+        break;
+      case '--ignore-plex':
+        args.ignorePlex = true;
+        break;
       default:
         throw new Error(`unknown argument "${flag}"`);
     }
@@ -241,6 +298,22 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     if (args.dryRun && !args.backfill) throw new Error('--dry-run goes with --backfill');
     return args;
   }
+  if (command === 'season-plan' || command === 'season-run') {
+    if (args.tvdb === undefined || args.season === undefined || args.tmdb !== undefined || args.episode) {
+      throw new Error(`${command} needs --tvdb <id> and --season <n>`);
+    }
+    if (args.remap) throw new Error('--shift and --move are for remap-plan and remap-run');
+    if (command === 'season-run' && !args.digest) throw new Error('season-run needs the --digest of the season-plan you checked');
+    if (command === 'season-plan' && (args.digest !== undefined || args.ignorePlex)) {
+      throw new Error('--digest and --ignore-plex are for season-run');
+    }
+    if (args.json && command === 'season-run') throw new Error('--json is for season-plan');
+    if (args.backfill || args.dryRun || args.flagsSeriesId !== undefined) {
+      throw new Error('--backfill, --dry-run and --flags are for title-check');
+    }
+    return args;
+  }
+  if (args.placements || args.keep || args.ignorePlex) throw new Error('--place, --keep and --ignore-plex are for season-plan and season-run');
   if (args.remap && command !== 'remap-plan' && command !== 'remap-run') {
     throw new Error('--shift and --move are for remap-plan and remap-run');
   }
@@ -269,6 +342,58 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
   }
   if (args.episodes && args.season === undefined) throw new Error('--episodes goes with --season');
   return args;
+}
+
+/** The season plan in plain lines for staff (exported for the unit test). */
+export function formatSeasonPlan(title: string, view: SeasonRemapView): string {
+  const labels = (eps: ReadonlyArray<{ label: string }>) => eps.map((e) => e.label).join(' + ');
+  const numbers = (eps: ReadonlyArray<{ episodeNumber: number }>) => {
+    const ns = eps.map((e) => e.episodeNumber);
+    return ns.length > 1 ? `${ns[0]}-${ns[ns.length - 1]}` : String(ns[0]);
+  };
+  const lines: string[] = [];
+  lines.push(
+    `${title}, season ${view.seasonNumber} (Sonarr series ${view.seriesId}): ${view.moved} files move in ${view.steps.length} steps` +
+      (view.parking ? `, passing through ${view.parking.label} (season ${view.parking.seasonNumber})` : '') +
+      '.',
+  );
+  if (view.refusalText) lines.push(`REFUSED: ${view.refusalText}`);
+  if (!view.remapOn) lines.push('The episode_remap remedy is off, so a run refuses.');
+  if (view.plexCheck) {
+    for (const c of view.plexCheck.servers) {
+      lines.push(`Plex ${c.server}: ${c.followsTvdb} of ${c.followsTvdb + c.differs} titled items carry the TVDB title (${c.unknown} untitled).`);
+    }
+    for (const w of view.plexCheck.wrongAfter) {
+      lines.push(
+        `  Plex ${w.server} would title file ${w.fileId} on ${w.to.label} as ${w.plexTitle === null ? '(no item yet)' : JSON.stringify(w.plexTitle)}` +
+          (w.rightNow ? ': WORSE, Plex shows its own title where it sits now.' : ' (wrong where it sits now too).'),
+      );
+    }
+    lines.push(
+      view.plexCheck.ok
+        ? 'Plex check: ok (no move makes a Plex title worse).'
+        : `Plex check: FAILED, ${view.plexCheck.worse} moves would make a right Plex title wrong (a run refuses without --ignore-plex).`,
+    );
+  } else {
+    lines.push(`Plex check: not done (${view.plexError ?? 'unknown'}); a run refuses without --ignore-plex.`);
+  }
+  view.steps.forEach((st, i) => {
+    const said = st.nameSays ? ` [${st.why}; name ${st.nameSays.verdict}] ${st.nameSays.name}` : ` [${st.why}]`;
+    lines.push(`${String(i + 1).padStart(3)}. ${st.kind.padEnd(6)} ${labels(st.from)} -> ${labels(st.to)}${said}`);
+  });
+  for (const h of view.held) {
+    lines.push(`stays ${labels(h.on)} (${h.reason})${h.names ? `, its name says ${h.names.label}` : ''}: ${h.name ?? h.fileName ?? ''}`);
+  }
+  for (const u of view.unplaced) {
+    lines.push(
+      `unplaced ${labels(u.on)} (name ${u.verdict}): ${u.name ?? u.fileName ?? ''}` +
+        (u.suggestion ? ` -> suggestion --place ${numbers(u.on)}:${u.suggestion.episodeNumber}` : ''),
+    );
+  }
+  if (view.open.length > 0) lines.push(`open if every name-led move went ahead: ${view.open.map((e) => e.label).join(', ')}`);
+  if (view.vacated.length > 0) lines.push(`left without a file: ${view.vacated.map((e) => e.label).join(', ')}`);
+  lines.push(`digest ${view.digest}`);
+  return lines.join('\n');
 }
 
 async function main(): Promise<number> {
@@ -401,6 +526,26 @@ async function main(): Promise<number> {
     } else {
       scope = { scope: 'season', seasonNumber: args.season! };
     }
+  }
+
+  if (args.command === 'season-plan' || args.command === 'season-run') {
+    const request = {
+      db,
+      arr,
+      mediaItemId: item.id,
+      seasonNumber: args.season!,
+      placements: args.placements ?? [],
+      keep: args.keep ?? [],
+      plex: seasonPlexReader({ db, plex: plexClientBundleFromEnv() }),
+    };
+    if (args.command === 'season-run') {
+      const result = await runSeasonRemap({ ...request, planDigest: args.digest!, ignorePlex: args.ignorePlex === true });
+      console.log(JSON.stringify({ title: item.title, season: args.season, result }, null, 2));
+      return result.outcome === 'moved' ? 0 : 1;
+    }
+    const view = await planSeasonRemap(request);
+    console.log(args.json ? JSON.stringify({ title: item.title, plan: view }, null, 2) : formatSeasonPlan(item.title, view));
+    return 0;
   }
 
   if (args.command === 'remap-plan' || args.command === 'remap-run') {
