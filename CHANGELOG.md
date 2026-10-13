@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.122.1](https://github.com/thaynes43/haynesnetwork/compare/v0.122.0...v0.122.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* Sonarr series without statistics no longer fail the sync; the Language Replace skips the file's own release ([#951](https://github.com/thaynes43/haynesnetwork/issues/951)) ([d4b41f4](https://github.com/thaynes43/haynesnetwork/commit/d4b41f42687a67b205dd81a6ad1daf14610ab99e))
+* **sync:** a Radarr movie without statistics falls back to hasFile (PR [#951](https://github.com/thaynes43/haynesnetwork/issues/951) review) ([#953](https://github.com/thaynes43/haynesnetwork/issues/953)) ([cb40d30](https://github.com/thaynes43/haynesnetwork/commit/cb40d30d06735c554f15a277ade8f515c6e76f23))
+
 ## [0.122.0](https://github.com/thaynes43/haynesnetwork/compare/v0.121.0...v0.122.0) (2026-10-13)
 
 
