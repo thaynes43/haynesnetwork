@@ -392,13 +392,21 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
           if (b < a || b - a > 9) return null;
           return Array.from({ length: b - a + 1 }, (_, k) => a + k);
         };
+        // DESIGN-055 P4 decision 35: the two sides may name different counts (`17:33-34`, `5-8:3-4`), and a target may
+        // list episodes that are not next to each other (`29-30:25+32`).
+        const list = (part: string) => {
+          const pieces = part.split('+').map((x) => range(x.trim()));
+          if (pieces.some((x) => x === null)) return null;
+          const all = pieces.flatMap((x) => x!);
+          return new Set(all).size === all.length && all.length <= 10 ? all : null;
+        };
         args.placements = [...(args.placements ?? [])];
         for (const pair of (value ?? '').split(',')) {
           const [from, to] = pair.trim().split(':');
           const f = from !== undefined ? range(from) : null;
-          const t = to !== undefined ? range(to) : null;
-          if (!f || !t || f.length !== t.length) {
-            throw new Error('--place needs <from>:<to> pairs, e.g. 21:28 or 53-54:27-28 (comma separated)');
+          const t = to !== undefined ? list(to) : null;
+          if (!f || !t) {
+            throw new Error('--place needs <from>:<to> pairs, e.g. 21:28, 53-54:27-28, 17:33-34 or 29-30:25+32 (comma separated)');
           }
           args.placements.push({ from: f, to: t });
         }
@@ -601,7 +609,7 @@ export function formatSeasonPlan(title: string, view: SeasonRemapView): string {
   const lines: string[] = [];
   lines.push(
     `${title}, season ${view.seasonNumber} (Sonarr series ${view.seriesId}): ${view.moved} files move in ${view.steps.length} steps` +
-      (view.parking ? `, passing through ${view.parking.label} (season ${view.parking.seasonNumber})` : '') +
+      (view.parkings.length > 0 ? `, passing through ${view.parkings.map((p) => `${p.label} (season ${p.seasonNumber})`).join(' and ')}` : '') +
       '.',
   );
   if (view.refusalText) lines.push(`REFUSED: ${view.refusalText}`);

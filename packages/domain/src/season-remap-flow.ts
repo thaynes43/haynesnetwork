@@ -371,7 +371,7 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
     if (sizes.some((size) => size === null || size <= 0)) {
       throw new FixRefusedError('remap_refused', 'Sonarr does not list the size of every file that would move, so their watch state cannot be carried. Nothing moved.');
     }
-    const seasons = [...new Set([input.seasonNumber, ...(plan.parking ? [plan.parking.seasonNumber] : [])])];
+    const seasons = [...new Set([input.seasonNumber, ...plan.parkings.map((p) => p.seasonNumber)])];
     try {
       carry = await takeWatchCarrySnapshot({
         db: input.db,
@@ -418,6 +418,7 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
       seriesId: season.seriesId,
       seriesTitle: season.seriesTitle,
       parking: plan.parking,
+      parkings: plan.parkings,
       steps: plan.steps.map((s) => ({
         kind: s.kind,
         fileId: s.fileId,
@@ -589,11 +590,13 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
   let parked: SeasonRemapRunResult['parked'] = null;
   const doneSteps = plan.steps.slice(0, done);
   const landedSteps = plan.steps.slice(0, landed);
-  const parkStep = [...landedSteps].reverse().find((s) => s.kind === 'park');
-  if (parkStep && !landedSteps.some((s) => s.kind === 'unpark' && s.fileId === parkStep.fileId)) {
+  // Two cycles open at once can leave two files parked (P4 decision 36): the first is reported, the trail has them all.
+  const stillParked = landedSteps.filter((s) => s.kind === 'park' && !landedSteps.some((u) => u.kind === 'unpark' && u.fileId === s.fileId));
+  const parkedAll = stillParked.map((parkStep) => {
     const back = plan.steps.find((s) => s.kind === 'unpark' && s.fileId === parkStep.fileId);
-    parked = { fileId: now.get(parkStep.fileId)?.id ?? parkStep.fileId, on: parkStep.to[0]!, belongs: back?.to ?? [] };
-  }
+    return { fileId: now.get(parkStep.fileId)?.id ?? parkStep.fileId, on: parkStep.to[0]!, belongs: back?.to ?? [] };
+  });
+  parked = parkedAll[0] ?? null;
   const movedFiles = new Set(doneSteps.filter((s) => s.kind !== 'park').map((s) => s.fileId)).size;
 
   // ADR-114 C-04..C-06 — carry every account's state onto the items that now play the files, then verify.
@@ -621,6 +624,7 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
     moved: movedFiles,
     fileCountUnchanged,
     ...(parked ? { parkedFileId: parked.fileId, parkedOn: parked.on.id, belongs: parked.belongs.map((e) => e.id) } : {}),
+    ...(parkedAll.length > 1 ? { parkedAll: parkedAll.map((p) => ({ fileId: p.fileId, on: p.on.id, belongs: p.belongs.map((e) => e.id) })) } : {}),
   };
   await recordRepairTransition({
     db: input.db,

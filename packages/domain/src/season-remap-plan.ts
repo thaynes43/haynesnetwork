@@ -29,7 +29,10 @@ export interface SeasonRemapFile extends RemapFile {
   sourceNames: readonly string[];
 }
 
-/** Staff evidence (subtitles, title cards): the file on these episode numbers belongs on those. Same count. */
+/**
+ * Staff evidence (subtitles, title cards): the file on these episode numbers belongs on those. The counts may differ
+ * (P4 decision 35): a one-episode slot can hold two TVDB segments, a four-episode slot two.
+ */
 export interface SeasonRemapPlacement {
   from: readonly number[];
   to: readonly number[];
@@ -130,8 +133,10 @@ export interface SeasonRemapPlan {
   open: RemapEpisodeRef[];
   /** Episodes that have a file now and none afterwards. */
   vacated: RemapEpisodeRef[];
-  /** The free episode a cycle passes through (null: no cycle). */
+  /** The first free episode a cycle passes through (null: no cycle). */
   parking: SeasonRemapParking | null;
+  /** Every parking episode the steps use (two cycles open at once use two, P4 decision 36). */
+  parkings: SeasonRemapParking[];
   refusal: SeasonRemapRefusal | null;
   /** Plain words for a `bad_placement`. */
   refusalDetail: string | null;
@@ -211,7 +216,9 @@ export function buildSeasonRemapPlan(input: SeasonRemapInput): SeasonRemapPlan {
   for (const p of input.placements ?? []) {
     const from = p.from.map((n) => byNum.get(n));
     const to = p.to.map((n) => byNum.get(n));
-    if (from.some((e) => !e) || to.some((e) => !e) || from.length !== to.length || from.length === 0) {
+    // P4 decision 35: a file may be placed on a different number of episodes than it sits on (a one-episode slot that
+    // holds two TVDB segments, or a four-episode slot that holds two), each named by staff from evidence.
+    if (from.some((e) => !e) || to.some((e) => !e) || from.length === 0 || to.length === 0 || new Set(p.to).size !== p.to.length) {
       return finish([], 'bad_placement', `The placement ${p.from.join('-')}:${p.to.join('-')} names an episode this season does not have.`, null);
     }
     const fid = from[0]!.episodeFileId;
@@ -226,7 +233,7 @@ export function buildSeasonRemapPlan(input: SeasonRemapInput): SeasonRemapPlan {
       }
       placedTargets.set(t!.id, fid);
     }
-    if (to.every((t, i) => t!.id === from[i]!.id)) held.set(fid, 'kept');
+    if (to.length === from.length && to.every((t, i) => t!.id === from[i]!.id)) held.set(fid, 'kept');
     else {
       desire.set(fid, to as RemapEpisode[]);
       why.set(fid, 'placed');
@@ -300,25 +307,25 @@ export function buildSeasonRemapPlan(input: SeasonRemapInput): SeasonRemapPlan {
   const targeted = new Set(movers.flatMap((id) => desire.get(id)!.map((e) => e.id)));
   const queuedEpisodes = new Set(input.queuedEpisodeIds ?? []);
   const queuedSeasons = new Set(input.queuedSeasonNumbers ?? []);
-  const parking =
-    input.episodes
-      .filter(
-        (e) => e.episodeFileId == null && !targeted.has(e.id) && !queuedEpisodes.has(e.id) && !queuedSeasons.has(e.seasonNumber),
-      )
-      .sort((a, b) => {
-        // An unmonitored episode first (Sonarr grabs nothing for it while a file is parked there), then this season,
-        // then specials, then every other season; lowest episode first.
-        const watched = (e: RemapEpisode) => (e.monitored === false ? 0 : 1);
-        const rank = (e: RemapEpisode) => (e.seasonNumber === sn ? 0 : e.seasonNumber === 0 ? 1 : 2);
-        return watched(a) - watched(b) || rank(a) - rank(b) || byNumber(a, b);
-      })[0] ?? null;
+  const parkingList = input.episodes
+    .filter(
+      (e) => e.episodeFileId == null && !targeted.has(e.id) && !queuedEpisodes.has(e.id) && !queuedSeasons.has(e.seasonNumber),
+    )
+    .sort((a, b) => {
+      // An unmonitored episode first (Sonarr grabs nothing for it while a file is parked there), then this season,
+      // then specials, then every other season; lowest episode first.
+      const watched = (e: RemapEpisode) => (e.monitored === false ? 0 : 1);
+      const rank = (e: RemapEpisode) => (e.seasonNumber === sn ? 0 : e.seasonNumber === 0 ? 1 : 2);
+      return watched(a) - watched(b) || rank(a) - rank(b) || byNumber(a, b);
+    });
 
   const occupant = new Map<number, number>();
   for (const e of input.episodes) if (e.episodeFileId != null) occupant.set(e.id, e.episodeFileId);
   const current = new Map<number, RemapEpisode[]>(movers.map((id) => [id, holds.get(id)!] as const));
   const pending = new Set(movers);
-  let parkedId: number | null = null;
-  let usedParking = false;
+  /** Files parked now, and every parking episode used, in order (P4 decision 36: one per cycle open at once). */
+  const parked = new Set<number>();
+  const usedParking: RemapEpisode[] = [];
   const steps: Array<{ kind: SeasonRemapStepKind; fileId: number; from: RemapEpisode[]; to: RemapEpisode[] }> = [];
   const free = (id: number, e: RemapEpisode) => {
     const occ = occupant.get(e.id);
@@ -334,11 +341,11 @@ export function buildSeasonRemapPlan(input: SeasonRemapInput): SeasonRemapPlan {
   while (pending.size > 0) {
     const ready = [...pending]
       .filter((id) => desire.get(id)!.every((e) => free(id, e)))
-      .sort((a, b) => (a === parkedId ? -1 : b === parkedId ? 1 : byNumber(current.get(a)![0]!, current.get(b)![0]!)));
+      .sort((a, b) => Number(parked.has(b)) - Number(parked.has(a)) || byNumber(current.get(a)![0]!, current.get(b)![0]!));
     if (ready.length > 0) {
       const id = ready[0]!;
-      apply(id === parkedId ? 'unpark' : 'move', id, desire.get(id)!);
-      if (id === parkedId) parkedId = null;
+      apply(parked.has(id) ? 'unpark' : 'move', id, desire.get(id)!);
+      parked.delete(id);
       pending.delete(id);
       continue;
     }
@@ -347,9 +354,13 @@ export function buildSeasonRemapPlan(input: SeasonRemapInput): SeasonRemapPlan {
     // cycle's lowest single-episode file; a cycle of two-episode files only (P4 decision 34: Daniel Tiger's
     // Neighborhood S05 swaps two-story files) parks its lowest file on the one parking episode, and that file's move
     // back puts it on both its episodes again.
-    if (parkedId !== null || parking === null) return finish([], 'no_parking', null, null, unplaced, open);
+    // A file can sit in two cycles at once (Daniel Tiger's Neighborhood S05's E18-19 file, P4 decision 36): while one
+    // cycle waits on a parked file, the next cycle parks one of its own files on the next free parking episode.
+    const parking = parkingList.find((e) => !occupant.has(e.id));
+    if (parking === undefined) return finish([], 'no_parking', null, null, unplaced, open);
     const waitsOn = (id: number) => occupant.get(desire.get(id)!.find((e) => !free(id, e))!.id)!;
-    const lowest = [...pending].sort((a, b) => byNumber(current.get(a)![0]!, current.get(b)![0]!))[0]!;
+    const lowest = [...pending].filter((id) => !parked.has(id)).sort((a, b) => byNumber(current.get(a)![0]!, current.get(b)![0]!))[0];
+    if (lowest === undefined) return finish([], 'no_parking', null, null, unplaced, open);
     const walk: number[] = [];
     let at = lowest;
     while (!walk.includes(at)) {
@@ -358,24 +369,25 @@ export function buildSeasonRemapPlan(input: SeasonRemapInput): SeasonRemapPlan {
     }
     const cycle = walk.slice(walk.indexOf(at));
     const lowestFirst = (a: number, b: number) => byNumber(current.get(a)![0]!, current.get(b)![0]!);
+    const unparked = cycle.filter((id) => !parked.has(id));
     const candidate =
-      cycle.filter((id) => current.get(id)!.length === 1).sort(lowestFirst)[0] ?? [...cycle].sort(lowestFirst)[0];
+      unparked.filter((id) => current.get(id)!.length === 1).sort(lowestFirst)[0] ?? [...unparked].sort(lowestFirst)[0];
     if (candidate === undefined) return finish([], 'no_parking', null, null, unplaced, open);
     apply('park', candidate, [parking]);
-    parkedId = candidate;
-    usedParking = true;
+    parked.add(candidate);
+    usedParking.push(parking);
   }
 
-  if (steps.length > SEASON_REMAP_MAX_STEPS) return finish(steps, 'too_many', null, usedParking ? parking : null, unplaced, open);
-  if (input.queueBusy) return finish(steps, 'queue_busy', null, usedParking ? parking : null, unplaced, open);
-  if (input.sonarrBusy) return finish(steps, 'sonarr_busy', null, usedParking ? parking : null, unplaced, open);
-  return finish(steps, null, null, usedParking ? parking : null, unplaced, open);
+  if (steps.length > SEASON_REMAP_MAX_STEPS) return finish(steps, 'too_many', null, usedParking, unplaced, open);
+  if (input.queueBusy) return finish(steps, 'queue_busy', null, usedParking, unplaced, open);
+  if (input.sonarrBusy) return finish(steps, 'sonarr_busy', null, usedParking, unplaced, open);
+  return finish(steps, null, null, usedParking, unplaced, open);
 
   function finish(
     raw: Array<{ kind: SeasonRemapStepKind; fileId: number; from: RemapEpisode[]; to: RemapEpisode[] }>,
     refusal: SeasonRemapRefusal | null,
     refusalDetail: string | null,
-    park: RemapEpisode | null,
+    parks: RemapEpisode[] | null,
     unplacedFiles: SeasonRemapUnplaced[] = [],
     openEpisodes: RemapEpisodeRef[] = [],
   ): SeasonRemapPlan {
@@ -422,7 +434,7 @@ export function buildSeasonRemapPlan(input: SeasonRemapInput): SeasonRemapPlan {
       .filter((e) => !finalTargets.has(e.id))
       .sort(byNumber)
       .map(ref);
-    const parkingView = park ? { ...ref(park), seasonNumber: park.seasonNumber } : null;
+    const parkingViews = [...new Map((parks ?? []).map((e) => [e.id, e] as const)).values()].map((e) => ({ ...ref(e), seasonNumber: e.seasonNumber }));
     const digest = createHash('sha256')
       .update(
         JSON.stringify({
@@ -442,7 +454,8 @@ export function buildSeasonRemapPlan(input: SeasonRemapInput): SeasonRemapPlan {
       unplaced: unplacedFiles,
       open: openEpisodes,
       vacated,
-      parking: parkingView,
+      parking: parkingViews[0] ?? null,
+      parkings: parkingViews,
       refusal,
       refusalDetail,
       digest,

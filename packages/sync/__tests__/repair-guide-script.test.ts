@@ -144,7 +144,16 @@ describe('repair-guide.ts arguments', () => {
     ).toMatchObject({ command: 'season-run', digest: 'abcdef0123456789', ignorePlex: true });
     expect(() => parseRepairGuideArgs(['season-run', '--tvdb', '1', '--season', '5'])).toThrow(/--digest/);
     expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1'])).toThrow(/--season/);
-    expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '5', '--place', '14-15:13'])).toThrow(/--place/);
+    // P4 decision 35: the sides may name different counts, and a target may list episodes apart.
+    expect(parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '5', '--place', '17:33-34,5-8:3-4,29-30:25+32'])).toMatchObject({
+      placements: [
+        { from: [17], to: [33, 34] },
+        { from: [5, 6, 7, 8], to: [3, 4] },
+        { from: [29, 30], to: [25, 32] },
+      ],
+    });
+    expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '5', '--place', '14-15'])).toThrow(/--place/);
+    expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '5', '--place', '14:13+13'])).toThrow(/--place/);
     expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '5', '--ignore-plex'])).toThrow(/season-run/);
     expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '5', '--shift', '11:+1'])).toThrow(/remap-plan/);
     expect(() => parseRepairGuideArgs(['remap-plan', '--tvdb', '1', '--season', '5', '--place', '1:2'])).toThrow(/season-plan/);
@@ -165,6 +174,7 @@ describe('repair-guide.ts arguments', () => {
       open: [ref(7, 'Golf')],
       vacated: [],
       parking: { ...ref(1, 'Special'), label: 'S00E01 · Special', seasonNumber: 0 },
+      parkings: [{ ...ref(1, 'Special'), label: 'S00E01 · Special', seasonNumber: 0 }],
       refusal: null,
       refusalDetail: null,
       digest: 'abc123',
