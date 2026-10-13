@@ -1973,3 +1973,36 @@ checks:
     links:
       prs: ['https://github.com/thaynes43/haynesnetwork/pull/942', 'https://github.com/thaynes43/haynesnetwork/pull/951', 'https://github.com/thaynes43/haynesnetwork/pull/953', 'https://github.com/thaynes43/haynesnetwork/pull/954']
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/955']
+  - id: OC-056
+    title: 'Watch Carry: the two held re-maps once their Fix requests close (Bubble Guppies S5, Paw Patrol S5 E43-E47)'
+    opened: 2026-10-13
+    after: the 2026-10-13 Second-Copy Fixes on Bubble Guppies S1 (E11, E12, E14) and Paw Patrol S5 (E15, E17, E25) close, imported or failed at the 48-hour horizon
+    not_before: 2026-10-15T20:10:00Z
+    due: 2026-10-20T00:00:00Z
+    owner: 'haynesnetwork coordinator (PLAN-077, issue #928)'
+    status: pending
+    check: |
+      1. Bubble Guppies S5 (tvdb 226391): its only parking episodes are the S1 slots those copy fixes emptied, and a season
+         re-map refuses while a Fix is open in that season. `repair-guide.ts season-plan --tvdb 226391 --season 5` (name-led,
+         no args): 7 files move through a parking episode, Plex check ok. Then `season-run ... --digest <d>` (it carries
+         every account's marks; 3 accounts have state on S5). Expect VERIFIED and the season's 7 flags cleared.
+      2. Paw Patrol S5 (tvdb 272472) E43-E47: the NICK E44-45 file holds TVDB E43+E44, the LAZY E46 file is the only copy
+         of E45 (Runaway Stargazer: keep it), the LAZY E47 file holds E46+E47. `season-plan --tvdb 272472 --season 5
+         --place 44-45:43-44,46:45,47:46-47` then `season-run` (as a Job: `kubectl create` from the title-check CronJob's pod
+         template with the repair-guide command). Expect VERIFIED.
+      3. If a slot imported a mislabelled release meanwhile (the Title Check flags it), remove it with `copy-run` and add a
+         staff pair term (`mislabel-block.ts add-name`).
+    auto:
+      - name: the Fix requests that block both re-maps have closed
+        source: app-db
+        query: |
+          select count(*) as n from fix_requests f join media_items m on m.id = f.media_item_id
+          where m.arr_kind = 'sonarr' and m.arr_item_id in (142, 527) and f.status in ('pending', 'actioned', 'search_triggered')
+        expect: {max: 0}
+        mismatch: wait
+    auto_covers: part
+    evidence:
+      - "2026-10-13 18:06Z: the Bubble Guppies S5 run refused (an open Fix on S01E11); 19:43Z: the Paw Patrol S5 E43-E47 run refused (open Fixes on S05E15/E17); both carries were refused with nothing written."
+    links:
+      prs: ['https://github.com/thaynes43/haynesnetwork/pull/944', 'https://github.com/thaynes43/haynesnetwork/pull/950']
+      issues: ['https://github.com/thaynes43/haynesnetwork/issues/928']

@@ -9,7 +9,7 @@
   non-group blocks) is ruled A (owner, 2026-10-13, ADR-113): mislabelled-name terms shipped in v0.117.0, the five terms
   are adopted and the hand profile and its tag are gone (P4, "Q-10 ruling"). Q-11 (the library's whole-season
   reorderings, issue #916) is ruled A too: staff's Season Re-map shipped in v0.117.0 and ran on 29 seasons (P4's
-  follow-up below; open flags 622 to 400, then 321 after the #928 round). P5 (Release Pick) is shipped and verified live, remedy on: v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)), v0.118.1 ([#930](https://github.com/thaynes43/haynesnetwork/pull/930)) and v0.119.1 ([#935](https://github.com/thaynes43/haynesnetwork/pull/935)). Its first person's pick is OC-054. P6 (language-aware Wrong language) is shipped and verified live, both remedies on: v0.121.0 ([#942](https://github.com/thaynes43/haynesnetwork/pull/942)), v0.122.1 ([#951](https://github.com/thaynes43/haynesnetwork/pull/951), [#953](https://github.com/thaynes43/haynesnetwork/pull/953)) and v0.122.2 ([#954](https://github.com/thaynes43/haynesnetwork/pull/954)); 144 English originals set to English as staff; its first person's report is OC-055, and the 13 non-English originals got the owner's "English if present" ruling ([#955](https://github.com/thaynes43/haynesnetwork/issues/955), ADR-115), applied in v0.123.1. P7 is next.
+  follow-up below; open flags 622 to 400, then 321 after the #928 round, then 155 after the Watch Carry run). The owner's ruling on #928 ("Carry marks, then move") is ADR-114, the Watch Carry: shipped in v0.122.0 and v0.123.0, and run live 2026-10-13 (P4 follow-up). P5 (Release Pick) is shipped and verified live, remedy on: v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)), v0.118.1 ([#930](https://github.com/thaynes43/haynesnetwork/pull/930)) and v0.119.1 ([#935](https://github.com/thaynes43/haynesnetwork/pull/935)). Its first person's pick is OC-054. P6 (language-aware Wrong language) is shipped and verified live, both remedies on: v0.121.0 ([#942](https://github.com/thaynes43/haynesnetwork/pull/942)), v0.122.1 ([#951](https://github.com/thaynes43/haynesnetwork/pull/951), [#953](https://github.com/thaynes43/haynesnetwork/pull/953)) and v0.122.2 ([#954](https://github.com/thaynes43/haynesnetwork/pull/954)); 144 English originals set to English as staff; its first person's report is OC-055, and the 13 non-English originals got the owner's "English if present" ruling ([#955](https://github.com/thaynes43/haynesnetwork/issues/955), ADR-115), applied in v0.123.1. P7 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -509,6 +509,75 @@ names, never deleting a file, after a watch-state check on every Plex server and
     episodes apart (`17:33-34`, `5-8:3-4`, `29-30:25+32`); a second open cycle parks on a second free episode; the
     Second-Copy Fix takes a copy that sits on several episodes. Tests: `season-remap-plan.test.ts` (one onto two, two
     onto one, two cycles sharing a file), `second-copy-fix.test.ts` (a two-episode copy), the script test.
+
+  - **Shipped:** [#944](https://github.com/thaynes43/haynesnetwork/pull/944) (v0.122.0) and
+    [#950](https://github.com/thaynes43/haynesnetwork/pull/950) (v0.123.0: decisions 35 to 37, and a byte-identical copy
+    told apart by file name), deployed by haynes-ops [#3897](https://github.com/thaynes43/haynes-ops/pull/3897) and
+    [#3901](https://github.com/thaynes43/haynes-ops/pull/3901). Migration 0104 is applied.
+  - **Live run (2026-10-13, 17:14Z to 20:10Z, declared `act-171435-245325`).** One season at a time, each a Job or a pod
+    exec of `repair-guide.ts`, after the read-only evidence passes (subtitles, title cards, durations; notes kept with
+    each run's evidence line).
+    - **Carries:** 66 verified, 6 refused, with nothing written or everything put back. The refused runs were a season
+      re-map whose parking episode had an open Fix, and copy fixes whose episode had one. 0 mismatches, 0 failed writes.
+      There were 117 pre-clears and 116 carried marks, each one a `watch_carry_marks` row.
+    - **Per account** (12 people: the owner on both servers and 11 friends; counts only): 0 mismatches for every
+      account. In all, 359 watched files sit on the item that plays them, 35 resume points sit on their file's item, and
+      no item whose file an account never played carries a mark.
+    - **Spot-checked against the Plex database** (read only):
+      - Malcolm in the Middle S5: E18 and E19 swapped with their marks.
+      - Sister Wives S6: a one-step shift; each watched story and the resume point followed its file.
+      - The Simpsons S38: E01 has both plays, and E02 is cleared before its real episode arrives.
+    - **Seasons re-mapped with the carry:**
+      - Malcolm S5, Abbott Elementary S1 and Parts Unknown S5.
+      - The Wild Thornberrys S1 to S3, Guy's Grocery Games S12 to S15 and Married... with Children S3.
+      - Pokémon S3 (the T0Bi pair only) and S5 (E41 to E64 one step up), and Sister Wives S6.
+      - Daniel Tiger's Neighborhood S4 and S5 (E10-E17 by two-episode swaps, then E18-E25 through two parking episodes).
+      - Fireman Sam S6, S7, S9 (with `--ignore-plex`: five Plex items keep Plex's own old titles; Plex titles matching
+        their file went from 9 of 25 to 20 of 25) and S10.
+      - Paw Patrol S5 (two runs), Bob the Builder S2, and Spidey and His Amazing Friends S1 (every file placed on its
+        two TVDB segments) and S5.
+    - **Second-Copy Fixes with the carry:**
+      - Abbott S2E14, Parts Unknown S8E07, and Guy's Grocery Games S12E06, S14E04 and S15E05.
+      - Pokémon S5E41, South Park S14E12, Fireman Sam S6E03 and S10E22.
+      - Bubble Guppies S1E11, E12 and E14, and Paw Patrol S5E11, E12, E15, E17, E25 and E44.
+      - Paw Patrol S6E48-49 (`--copy-of 46-47`), The Simpsons S38E02 (byte-identical) and Spidey S5E09-12.
+    - **Plex ordering switched to TheTVDB (Aired) with whole-show carries:** Alaskan Bush People, Fireman Sam, Pokémon
+      (1329 of 1346 items now titled as TVDB, up from 613), and Bob the Builder. Plex numbered Bob S2 like the release, so
+      Bob is one more show than #928 named.
+    - **Re-grabs of mislabelled releases:**
+      - Fireman Sam S06E03 re-imported BurCyg's "S06E03 Dinosaur Hunt" (E16).
+      - Pokémon S05E41 re-imported JC's "Beauty is Skin Deep" (E42).
+      - Paw Patrol S05E25 re-imported NF's "Pups Save the Tigers" (E26).
+      - Each was removed again with a second copy fix.
+      - Staff pair terms were added: Fireman Sam "S06E03 Dinosaur Hunt", Paw Patrol "S05E12 Snowshoeing Goodways" and "S05E25 Pups Save the Tigers". Pokémon's term was refused (`names_other_series`: Pokémon Concierge).
+      - Paw Patrol S05E44's search imported NICK's "S05E44E45" (TVDB E43 and E44) over E45. E45's story (Stargazer) still lives in the LAZY E46 copy, so that copy was kept.
+    - **Ben 10 (2016) (the #928 secondary item; no account has watch state on the show):**
+      - Re-maps from title cards and subtitles:
+        - S1: `--place 1:6,3:1,6:3 --keep 12,16,23,24`. Most flagged S1 mp4s hold their own slot; their flags are
+          false positives.
+        - S2: three cycles.
+        - S4: the two-part E01 and E02 files go onto two episodes each.
+      - Copy fixes: S1E03, and S2E10, E14, E21, E27 and E35-36.
+      - Re-grabs, removed again: the S2 searches re-imported LAZY's own mislabels, byte-identical copies of E11, E25
+        and E26. Staff pair terms now block "S02E10 High Stress Express", "S02E14 Bounty Ball" and "S02E21 The Charm
+        Offensive".
+      - Held: S1E10 and E12 hold Ben 10 (2005) episodes. A delete and search is not a second-copy fix, so they wait for
+        the owner.
+    - **Title Check:** 321 open flags at the start of the work order, 310 just before the first run, 155 after (Ben 10's
+      re-maps cleared flags, and the hourly census re-judges the files that moved).
+    - **Held** (#928 and OC-056 list them with reasons):
+      - Waiting for open Fix requests to close (48 hours): Bubble Guppies S5, whose only parking episodes are the
+        emptied S1 slots, and Paw Patrol S5 E43-E47 (`--place 44-45:43-44,46:45,47:46-47`).
+      - Needs no tool change, needs the owner:
+        - Mickey Mouse: Mixed-Up Adventures S1: its files are Season 3 stories, and the real S1 is mostly missing.
+        - Pokémon S3: E01-E34 hold Pokémon Horizons episodes.
+      - Cannot run:
+        - Mecha Builders S1: no free episode in the series.
+        - Alaskan Bush People S4: Plex's own metadata keeps the old numbering even under TVDB, so a move would make all
+          8 titles wrong.
+        - Fireman Sam S6E01-E13: copies of S7 stories in another season.
+        - Pokémon S8: the flag is a false positive; the title card shows E32 is right.
+        - Paw Patrol S5E29-30: holds E25's story and a copy of E32.
 
 ### P5: Release Pick
 

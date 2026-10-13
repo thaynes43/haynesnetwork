@@ -1,5 +1,31 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-13 21:00Z: the Watch Carry (ADR-114), live in v0.122.0 and v0.123.0; watched seasons moved with everyone's marks; open flags 310 to 155
+
+- **What** (owner ruling on #928, "Carry marks, then move"; DESIGN-055 P4 decisions 26 to 37):
+  - Every staff move now runs inside a **Watch Carry**: `season-run`, `copy-run` and the new `ordering-run`.
+  - It snapshots every account's Plex plays and resume points on every server, and the move refuses when a read fails. The owner is read with the server token, each friend with the per-server token plex.tv lists (never stored or printed).
+  - It clears the items the move takes files away from, moves, then puts each account's state on the item that now plays the file they watched.
+  - It verifies per account, with one audit row per mark.
+  - `carry-status`, `carry-finish` and `carry-revert` are the staff tools. Long runs go as a Job, so a web-pod rollout cannot kill them.
+- **Also shipped (v0.123.0):**
+  - `--place` may change the episode count or name episodes that are not adjacent.
+  - A second open cycle parks on a second free episode.
+  - The Second-Copy Fix takes a multi-episode copy (`--copy-of 46-47`).
+  - A byte-identical copy is told apart by its file name.
+- **Shipped:**
+  - hnet #944 and #950; release PRs #949 and #959.
+  - haynes-ops #3897 and #3901. Migration 0104 is applied.
+- **Live run** (17:14Z to 20:10Z; PLAN-077 P4 follow-up "The Watch Carry" has every season):
+  - 29 season re-maps, 33 copy fixes and 4 Plex ordering switches, all verified per account. The switched shows are Alaskan Bush People, Fireman Sam, Pokémon and Bob the Builder.
+  - Ben 10 (2016) S1, S2 and S4 were placed by title cards. Its S2 searches re-grabbed LAZY's mislabels; they were removed again and blocked with pair terms.
+  - 0 mismatches and 0 failed writes.
+  - 359 watched files and 35 resume points now sit on the item that plays them, across 12 people.
+- **Open:**
+  - OC-056: Bubble Guppies S5 and Paw Patrol S5 E43-E47 wait for their Fix requests to close.
+  - #928: the owner must decide on Mickey Mouse S1 (Season 3 stories on S1), Pokémon S3 (Horizons episodes) and Ben 10 (2016) S1E10 and E12 (Ben 10 (2005) episodes). Mecha Builders S1, Alaskan Bush People S4, Fireman Sam S6E01-E13 and Pokémon S8 cannot run, each with its reason on the issue.
+  - Paw Patrol's Plex ordering is not TVDB (7 of 26 S5 titles right). Switching it with a carry is the next step if the owner wants Paw Patrol's titles fixed.
+
 ## 2026-10-13 19:00Z: PLAN-077 P6 shipped: the language-aware Wrong language, live in v0.122.2, both remedies on; 144 shows set to English
 
 - **What** (DESIGN-055 D-08, P6 decisions 1-13; ADR-109 C-02 and C-07 carry the writes, so no new ADR):
