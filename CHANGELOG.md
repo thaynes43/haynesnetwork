@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.119.0](https://github.com/thaynes43/haynesnetwork/compare/v0.118.1...v0.119.0) (2026-10-13)
+
+
+### Features
+
+* staff Second-Copy Fix removes a file that duplicates another episode and searches the slot ([#928](https://github.com/thaynes43/haynesnetwork/issues/928)) ([#932](https://github.com/thaynes43/haynesnetwork/issues/932)) ([3525207](https://github.com/thaynes43/haynesnetwork/commit/3525207992ed952fdef7fc12c53e48d89825d81a))
+
 ## [0.118.1](https://github.com/thaynes43/haynesnetwork/compare/v0.118.0...v0.118.1) (2026-10-13)
 
 
