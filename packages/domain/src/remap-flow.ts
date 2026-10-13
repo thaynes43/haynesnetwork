@@ -270,6 +270,8 @@ export async function planEpisodeRemap(input: RemapPlanRequest & { remapOn?: boo
 // ---------------------------------------------------------------------------
 
 export interface RunRemapInput extends RemapPlanRequest {
+  /** PLAN-077 P7 — the Seerr issue the guide was opened from (kept only when it is open and on this title). */
+  seerrIssueId?: number | null;
   /** The person who confirmed the plan; null is staff working from the in-cluster tool (P4 decision 17). */
   requesterId: string | null;
   requesterIsAdmin?: boolean;
@@ -392,6 +394,7 @@ export async function runEpisodeRemap(input: RunRemapInput): Promise<RemapRunRes
   const touched = [...new Set(plan.moves.flatMap((m) => [...m.from, ...m.to].map((e) => e.id)))];
   const { repairRequestId } = await createRepairRequest({
     db: input.db,
+    seerrIssueId: input.seerrIssueId ?? null,
     requesterId: input.requesterId,
     requesterIsAdmin: input.requesterIsAdmin,
     mediaItemId: season.mediaItemId,

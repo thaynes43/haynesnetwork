@@ -729,6 +729,13 @@
       "when": 1791420000000,
       "tag": "0104_watch_carries",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1791430000000,
+      "tag": "0105_seerr_issue_writes",
+      "breakpoints": true
     }
   ]
 }

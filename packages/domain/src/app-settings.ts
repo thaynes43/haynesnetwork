@@ -331,6 +331,22 @@ export interface AppSettingValueMap {
   // DESIGN-055 D-09 (PLAN-077 P1) — the Known-Issue Servers (T-314), Plex server slugs. Read through
   // getKnownIssueServers (known slugs only).
   playback_known_issue_servers: string[];
+  // ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the Seerr Issue bridge's user and its kill switch. An object (so the
+  // getAppSetting typeof-guard treats it like motd); read through getSeerrIssueBridge (strict booleans, a bridge user
+  // that is never Seerr user 1), written through setSeerrIssueBridge.
+  seerr_issue_bridge: SeerrIssueBridgeSetting;
+}
+
+/**
+ * ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the Seerr Issue bridge setting. `comment` and `resolve` switch the two
+ * writes; `bridgeUserId` is the Seerr user they post as (null: nothing is written); `commentFrom` (ISO time) is when
+ * the comment was last switched on, and only issues Seerr created at or after it get the comment.
+ */
+export interface SeerrIssueBridgeSetting {
+  comment: boolean;
+  resolve: boolean;
+  bridgeUserId: number | null;
+  commentFrom: string | null;
 }
 
 /** DESIGN-052 D-17 — the Seerr watchlist enrollment switch (off until PLAN-072 S9). */
@@ -407,6 +423,8 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   repair_guide_remedies: {},
   // DESIGN-055 D-09 — no Known-Issue Server out of the box; staff name them in /admin.
   playback_known_issue_servers: [],
+  // ADR-111 C-03 — absent key: no bridge user and both writes off, so nothing is ever written to Seerr.
+  seerr_issue_bridge: { comment: false, resolve: false, bridgeUserId: null, commentFrom: null },
 };
 
 /**

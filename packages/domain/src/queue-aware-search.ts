@@ -459,6 +459,8 @@ export type ForceSearchOutcome =
   | 'removed_and_searched';
 
 export interface QueueAwareSearchInput extends ForceSearchPlanInput {
+  /** PLAN-077 P7 — the Seerr issue the guide was opened from (kept only when it is open and on this title). */
+  seerrIssueId?: number | null;
   requesterId: string;
   requesterIsAdmin?: boolean;
   /** The plan the person confirmed; an import or a removal needs it. */
@@ -570,6 +572,7 @@ export async function runQueueAwareForceSearch(
   const targetIds = check.file?.targetIds ?? [];
   const { repairRequestId } = await createRepairRequest({
     db: input.db,
+    seerrIssueId: input.seerrIssueId ?? null,
     requesterId: input.requesterId,
     requesterIsAdmin: input.requesterIsAdmin,
     mediaItemId: plan.mediaItemId,

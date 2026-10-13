@@ -116,6 +116,9 @@ import {
   type SeerrEnrollReport,
   // ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — the Seerr Issue mirror's sync.
   syncSeerrIssues,
+  runSeerrIssueBridge,
+  type SeerrBridgeClients,
+  type SeerrBridgeReport,
   type SeerrIssueEpisodeReader,
   type SeerrIssueReader,
   type SyncSeerrIssuesResult,
@@ -264,7 +267,12 @@ export interface RunSyncOptions {
   authentik?: Pick<AuthentikReadClient, 'listUsers'>;
   /** ADR-111 C-01 / DESIGN-055 D-10 — the `seerr-issues` mode's read-only Seerr issue reader and the OPTIONAL Sonarr
    *  episode reader (absent ⇒ episode ids stay unknown). Required only for that mode; tests inject stubs. */
-  seerrIssues?: { seerr: Pick<SeerrIssueReader, 'listAllIssues'>; sonarr: SeerrIssueEpisodeReader | null };
+  seerrIssues?: {
+    seerr: Pick<SeerrIssueReader, 'listAllIssues'>;
+    sonarr: SeerrIssueEpisodeReader | null;
+    /** ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the bridge's clients and link origin; absent ⇒ no bridge pass. */
+    bridge?: { clients: SeerrBridgeClients; linkOrigin: string } | null;
+  };
   /** ADR-110 C-03 / DESIGN-055 D-05 — the `title-check` mode's read-only Sonarr reader (import history and episodes).
    *  Required only for that mode; tests inject a stub. */
   titleCheck?: {
@@ -391,6 +399,10 @@ export interface SyncReport {
   seerrIssues?: SyncSeerrIssuesResult | null;
   /** The seerr-issues run's error — sets totalFailure for the CLI exit. */
   seerrIssuesError?: string;
+  /** ADR-111 C-03 — the Seerr Issue bridge pass after the mirror (null when not run). */
+  seerrBridge?: SeerrBridgeReport | null;
+  /** The bridge pass's unexpected error (a Seerr call that fails is recorded on its write row instead). */
+  seerrBridgeError?: string;
   /** DESIGN-055 D-05 — the `title-check` census result (null for every other mode / on error). */
   titleCheck?: TitleCheckRunResult | null;
   /** ADR-110 C-04 — the Mislabel Block upkeep of the `title-check` run (null when not run). */
@@ -1320,6 +1332,20 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
       seerrIssuesError = error instanceof Error ? error.message : String(error);
       logger.error('seerr-issues sync failed', { error: seerrIssuesError });
     }
+    // ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the bridge pass on a fresh mirror: the comment on each new issue and
+    // the resolve on each issue whose linked repair completed, both through the domain single writer (off unless the
+    // audited `seerr_issue_bridge` setting says so). Skipped when the mirror read failed.
+    let seerrBridge: SeerrBridgeReport | null = null;
+    let seerrBridgeError: string | undefined;
+    if (seerrIssuesError === undefined && options.seerrIssues.bridge) {
+      try {
+        seerrBridge = await runSeerrIssueBridge({ db, ...options.seerrIssues.bridge, logger });
+        logger.info('seerr-bridge pass complete', { ...seerrBridge });
+      } catch (error) {
+        seerrBridgeError = error instanceof Error ? error.message : String(error);
+        logger.error('seerr-bridge pass failed', { error: seerrBridgeError });
+      }
+    }
     return {
       mode: options.mode,
       startedAt,
@@ -1329,7 +1355,9 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
       fixesCompleted: null,
       seerrIssues: seerrIssuesResult,
       ...(seerrIssuesError !== undefined ? { seerrIssuesError } : {}),
-      totalFailure: seerrIssuesError !== undefined,
+      seerrBridge,
+      ...(seerrBridgeError !== undefined ? { seerrBridgeError } : {}),
+      totalFailure: seerrIssuesError !== undefined || seerrBridgeError !== undefined,
     };
   }
 

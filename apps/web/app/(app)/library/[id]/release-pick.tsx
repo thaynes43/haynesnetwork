@@ -63,6 +63,7 @@ import {
 } from '@/lib/release-pick-guide';
 import { ticketComposeHref } from '@/lib/ticket-compose-link';
 import { ActionProgressBlock, useActionProgress } from '@/components/action-progress';
+import { useSeerrIssueLink } from '@/lib/seerr-issue-link-context';
 
 export interface ReleasePickProps {
   item: { id: string; title: string };
@@ -107,6 +108,7 @@ export function ReleasePick({
   onChanged,
   setError,
 }: ReleasePickProps) {
+  const seerrLink = useSeerrIssueLink();
   // Each bump opens a fresh list (the first open, "Search again", "Pick another release").
   const [request, setRequest] = useState(0);
   const [list, setList] = useState<ReleaseList | null>(null);
@@ -297,7 +299,7 @@ export function ReleasePick({
   function send(key: string) {
     if (!list?.listId) return;
     setError(null);
-    take.mutate({ listId: list.listId, key });
+    take.mutate({ listId: list.listId, key, ...seerrLink });
   }
 
   // ---------------------------------------------------------------- the confirm (D-01 preview contract)

@@ -64,6 +64,7 @@ import {
   type SearchProgressInput,
 } from '@/components/action-progress';
 import { ReleasePick } from './release-pick';
+import { useSeerrIssueLink } from '@/lib/seerr-issue-link-context';
 
 export interface ForceSearchDialogProps {
   open: boolean;
@@ -138,6 +139,7 @@ function QueueAwareForceSearch({
   /** DESIGN-055 D-06: the `release_pick` remedy is on and the target is one episode or the movie. */
   releasePickOn: boolean;
 }) {
+  const seerrLink = useSeerrIssueLink();
   const scopeInput = targetToInput(target);
   const utils = trpc.useUtils();
   const [error, setError] = useState<string | null>(null);
@@ -215,6 +217,7 @@ function QueueAwareForceSearch({
       ...scopeInput,
       ...(p.queueAware ? { planDigest: p.digest } : {}),
       ...(p.state === 'import_onto' && chosenOnto !== null ? { ontoEpisodeId: chosenOnto } : {}),
+      ...seerrLink,
     });
   }
 

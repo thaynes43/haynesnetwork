@@ -8,7 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const recordNotification = vi.hoisted(() => vi.fn());
 const refreshSeerrIssueFromEnv = vi.hoisted(() => vi.fn());
-vi.mock('@hnet/domain', () => ({ recordNotification, refreshSeerrIssueFromEnv }));
+const runSeerrIssueBridgeFromEnv = vi.hoisted(() => vi.fn());
+vi.mock('@hnet/domain', () => ({ recordNotification, refreshSeerrIssueFromEnv, runSeerrIssueBridgeFromEnv }));
+// PLAN-077 P7 — `after` runs once the response is sent; here it is captured and run by the test.
+const afterTasks = vi.hoisted(() => [] as Array<() => Promise<void>>);
+vi.mock('next/server', () => ({ after: (fn: () => Promise<void>) => afterTasks.push(fn) }));
 
 import { POST } from '../../app/api/webhooks/[source]/route';
 import { MAX_WEBHOOK_BODY_BYTES } from '../webhook-sources';
@@ -39,6 +43,9 @@ beforeEach(() => {
   recordNotification.mockResolvedValue({ id: 'n-1', deduped: false });
   refreshSeerrIssueFromEnv.mockReset();
   refreshSeerrIssueFromEnv.mockResolvedValue({ outcome: 'inserted' });
+  runSeerrIssueBridgeFromEnv.mockReset();
+  runSeerrIssueBridgeFromEnv.mockResolvedValue({ status: 'ok', comments: {}, resolves: {} });
+  afterTasks.length = 0;
 });
 
 afterEach(() => {
@@ -216,5 +223,30 @@ describe('POST /api/webhooks/seerr — issue notifications (DESIGN-055 D-10)', (
     const res = await call('seerr', { headers: { 'x-webhook-secret': 'wrong' }, body: issueBody('ISSUE_CREATED', '3') });
     expect(res.status).toBe(401);
     expect(refreshSeerrIssueFromEnv).not.toHaveBeenCalled();
+    expect(afterTasks).toHaveLength(0);
+  });
+
+  it('PLAN-077 P7: a read that changed the mirror runs the bridge pass for that one issue after the response', async () => {
+    const res = await call('seerr', { headers: { 'x-webhook-secret': SEERR }, body: issueBody('ISSUE_CREATED', '3') });
+    expect(res.status).toBe(202);
+    expect(runSeerrIssueBridgeFromEnv).not.toHaveBeenCalled();
+    expect(afterTasks).toHaveLength(1);
+    await afterTasks[0]!();
+    expect(runSeerrIssueBridgeFromEnv).toHaveBeenCalledWith({ issueIds: [3] });
+  });
+
+  it('PLAN-077 P7: no bridge pass when the read changed nothing or Seerr was unreachable; a failed pass is only logged', async () => {
+    for (const outcome of ['unchanged', 'unavailable', 'not_found', 'unconfigured']) {
+      refreshSeerrIssueFromEnv.mockResolvedValue({ outcome });
+      await call('seerr', { headers: { 'x-webhook-secret': SEERR }, body: issueBody('ISSUE_COMMENT', '3') });
+    }
+    expect(afterTasks).toHaveLength(0);
+    refreshSeerrIssueFromEnv.mockResolvedValue({ outcome: 'updated' });
+    runSeerrIssueBridgeFromEnv.mockRejectedValue(new Error('db down'));
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await call('seerr', { headers: { 'x-webhook-secret': SEERR }, body: issueBody('ISSUE_COMMENT', '3') });
+    await expect(afterTasks[0]!()).resolves.toBeUndefined();
+    expect(quiet).toHaveBeenCalled();
+    quiet.mockRestore();
   });
 });

@@ -27,6 +27,7 @@ import {
   type SearchProgressInput,
 } from '@/components/action-progress';
 import { RepairGuide, type GuidePlayTarget, type GuideRemapStart } from './repair-guide';
+import { useSeerrIssueLink } from '@/lib/seerr-issue-link-context';
 
 export interface FixDialogProps {
   open: boolean;
@@ -101,6 +102,7 @@ interface DoneState {
 }
 
 function ClassicFixDialog({ open, onClose, item, target, onSubmitted, initialReason, intro }: FixDialogProps) {
+  const seerrLink = useSeerrIssueLink();
   const needsTarget = item.arrKind === 'sonarr' || item.arrKind === 'lidarr';
   const targetNoun = item.arrKind === 'sonarr' ? 'episode' : 'album';
   const preselected = target ?? null;
@@ -211,6 +213,7 @@ function ClassicFixDialog({ open, onClose, item, target, onSubmitted, initialRea
       ...scopeInput,
       reason,
       ...(reason === 'other' ? { reasonText: reasonText.trim() } : {}),
+      ...seerrLink,
     });
   }
 

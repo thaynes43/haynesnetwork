@@ -327,6 +327,8 @@ export async function previewAudioPreference(input: AudioPreferenceInput): Promi
 }
 
 export interface SetAudioPreferenceInput extends AudioPreferenceInput {
+  /** PLAN-077 P7 — the Seerr issue the guide was opened from (kept only when it is open and on this title). */
+  seerrIssueId?: number | null;
   plex: PlexClientBundle;
   /** The person who confirmed; null is staff working from the in-cluster tool (no budget, "actor null"). */
   requesterId: string | null;
@@ -401,6 +403,7 @@ export async function setAudioPreference(input: SetAudioPreferenceInput): Promis
 
   const { repairRequestId } = await createRepairRequest({
     db: input.db,
+    seerrIssueId: input.seerrIssueId ?? null,
     requesterId: input.requesterId,
     requesterIsAdmin: input.requesterIsAdmin,
     mediaItemId: input.mediaItemId,

@@ -6,13 +6,19 @@
 //     note (D-12). No outcome is scored (ADR-112 C-01).
 //   • `setStaffNote` (admin): "Mark fixed by hand" with a note naming the missing capability, or clear it; audited in
 //     the same transaction by the domain single writer.
+// ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the Seerr Issue bridge (the only Seerr writes, made by the domain's
+// bridge pass, never from here): `bridge` reads its setting and its Seerr user, `setBridge` is the audited kill switch,
+// and `adminList` shows each issue's comment and resolve.
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import {
   ADMIN_SEERR_ISSUE_FILTERS,
   SEERR_ISSUE_NOTE_MAX,
   listSeerrIssuesForAdmin,
+  readSeerrIssueBridgeStatus,
+  seerrIssueWritesFor,
   seerrIssuesForItem,
+  setSeerrIssueBridge,
   setSeerrIssueStaffNote,
 } from '@hnet/domain';
 import { authedProcedure, mapDomainErrors, router } from '../trpc';
@@ -56,7 +62,32 @@ export const seerrIssuesRouter = router({
         limit: input.limit,
         before: input.cursor ?? null,
       });
-      return { items: page.items, nextCursor: page.nextBefore };
+      // P7 — each issue's comment and resolve, from the bridge's own write rows.
+      const writes = await seerrIssueWritesFor(ctx.db, page.items.map((i) => i.seerrIssueId));
+      return {
+        items: page.items.map((i) => ({ ...i, bridge: writes.get(i.seerrIssueId) ?? {} })),
+        nextCursor: page.nextBefore,
+      };
+    }),
+
+  /** ADR-111 C-03 — the bridge's setting and its Seerr user, read live (a short timeout; Seerr down reads `unreachable`). */
+  bridge: adminProcedure.query(async ({ ctx }) => readSeerrIssueBridgeStatus({ db: ctx.db })),
+
+  /**
+   * ADR-111 C-03 — the kill switch: the comment and the resolve on or off, and the Seerr user they post as. Audited
+   * (`update_app_setting`, the row and its audit in one transaction). Either switch on needs a bridge user above 1.
+   */
+  setBridge: adminProcedure
+    .input(
+      z.object({
+        comment: z.boolean(),
+        resolve: z.boolean(),
+        bridgeUserId: z.number().int().min(2).max(2_147_483_647).nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await mapDomainErrors(() => setSeerrIssueBridge({ db: ctx.db, value: input, actorId: ctx.user.id }));
+      return readSeerrIssueBridgeStatus({ db: ctx.db });
     }),
 
   /** D-12 — mark fixed by hand (a note is required), change the note, or clear both. */

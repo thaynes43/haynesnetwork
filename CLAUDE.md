@@ -90,6 +90,13 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    failed Sonarr or Radarr download, with no removal, only where the instance's `bad_release` cell is enforced and only
    while the *arr's own Redownload Failed is off; it shares the loop guard's budget of two tries per title in any 30 days with every
    other janitor search (D-23). It goes through `@hnet/arr/write` from `packages/domain` only.
+   **ADR-111 C-03 adds the Seerr Issue bridge** (DESIGN-055 D-10, P7 decisions; owner ruling Q-02): one fix-it-yourself
+   comment per new Seerr issue, and one resolve (an outcome note, then `POST /api/v1/issue/{id}/resolved`) once the
+   Repair Request or Fix the guide ran from that report has completed and nothing linked to it is still open. Both post
+   as the dedicated bridge user through `X-API-User` (never user 1, the owner's account), behind the audited
+   `seerr_issue_bridge` setting, written only by `seerr-issue-writes.ts` (one `seerr_issue_writes` row per issue and kind,
+   committed before the call). It never deletes, reopens or edits an issue or a comment. Through `@hnet/arr/write` from
+   `packages/domain` only.
    **ADR-114 adds the Watch Carry** (DESIGN-055 P4 decisions 26-34; owner ruling on #928, "Carry marks, then move"): inside
    a staff move only (`season-run`, `copy-run`, `ordering-run`, and `carry-finish` / `carry-revert`), each account's Plex
    plays and resume point (`scrobble`, `unscrobble`, `progress`) are written as that account, with the per-server token

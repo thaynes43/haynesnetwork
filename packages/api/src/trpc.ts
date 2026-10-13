@@ -56,6 +56,7 @@ import {
   NotFoundError,
   OwuiUnavailableError,
   QueueCleanupConfigInvalidError,
+  SeerrBridgeConfigInvalidError,
   PlexAccountUnmatchedError,
   PlexAllStateError,
   PlexServerUnavailableError,
@@ -534,6 +535,7 @@ const APP_CODED_ERRORS = [
   MediaActionBudgetRangeError,
   GovernorConfigInvalidError,
   QueueCleanupConfigInvalidError,
+  SeerrBridgeConfigInvalidError,
 ] as const;
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -625,6 +627,9 @@ export async function mapDomainErrors<T>(fn: () => Promise<T>): Promise<T> {
       throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
     }
     if (err instanceof QueueCleanupConfigInvalidError) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
+    }
+    if (err instanceof SeerrBridgeConfigInvalidError) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: err.message, cause: err });
     }
     if (err instanceof LastAdminError) {

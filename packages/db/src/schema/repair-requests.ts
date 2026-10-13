@@ -44,7 +44,10 @@ export const repairRequests = pgTable(
     preview: jsonb('preview').$type<Record<string, unknown>>().notNull().default({}),
     status: text('status').$type<RepairRequestStatus>().notNull().default('pending'),
     actionsTaken: jsonb('actions_taken').$type<FixActionEntry[]>().notNull().default([]),
-    /** The Seerr issue the request answers (P3/P7); null until then. */
+    /**
+     * The open Seerr issue the request answers: set (PLAN-077 P7) only when the guide was opened from that issue's report
+     * on the same title, validated by the writer; its completion lets the bridge resolve the issue. Null otherwise.
+     */
     seerrIssueId: integer('seerr_issue_id'),
     /** The classic Fix the guide ended in, when it did. */
     fixRequestId: uuid('fix_request_id').references(() => fixRequests.id, { onDelete: 'set null' }),
@@ -71,6 +74,7 @@ export const repairRequests = pgTable(
     index('repair_requests_requester_created_idx').on(t.requesterId, t.createdAt.desc()),
     index('repair_requests_item_idx').on(t.mediaItemId),
     index('repair_requests_status_idx').on(t.status),
+    index('repair_requests_seerr_issue_idx').on(t.seerrIssueId).where(sql`${t.seerrIssueId} IS NOT NULL`),
   ],
 );
 

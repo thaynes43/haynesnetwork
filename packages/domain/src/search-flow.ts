@@ -27,6 +27,8 @@ import { getRepairGuideRemedies } from './repair-guide-settings';
 import { queueAwareEligible, runQueueAwareForceSearch, type ForceSearchOutcome } from './queue-aware-search';
 
 export interface RunForceSearchInput {
+  /** PLAN-077 P7 — the Seerr issue the guide was opened from (kept only when it is open and on this title). */
+  seerrIssueId?: number | null;
   db?: DbClient;
   arr: ArrClientBundle;
   requesterId: string;

@@ -3,7 +3,8 @@
 // ADR-111 C-02 / ADR-112 C-02, C-03 / DESIGN-055 D-10, D-12 (PLAN-077 P3) — the admin Seerr issues list: each report
 // with its title and episode, the reporter (admins only), the fix-it-yourself link, the repairs the app's own records
 // link to it (which tool, by whom, how it ended), and the staff note. "Mark fixed by hand" asks for a note naming the
-// missing capability (D-12 working practice). Nothing is scored (ADR-112 C-01); Seerr is never written (P7 does that).
+// missing capability (D-12 working practice). Nothing is scored (ADR-112 C-01). Nothing here writes to Seerr: the
+// replies row shows what the Seerr Issue bridge (ADR-111 C-03, PLAN-077 P7) posted, and its settings sit above the list.
 //
 // Hard rule 8: the note is a multi-field form, so it opens in a Modal; clearing a mark is the ConfirmButton two-step.
 // Hard rule 9: nothing moves on interaction; the copy-link status reserves its width. Token colours only.
@@ -16,6 +17,7 @@ import { Modal } from '@/components/modal';
 import { ARR_KIND_LABELS, formatWhen, type ArrKindName } from '@/lib/media';
 import { issueKicker, seerrIssueUrl, seerrLinkPath, SEERR_URL } from '@/lib/seerr-issues';
 import type { RouterOutputs } from '@/lib/trpc-client';
+import { SeerrBridgeSettings } from './seerr-bridge-settings';
 
 type AdminIssue = RouterOutputs['seerrIssues']['adminList']['items'][number];
 type Filter = 'open' | 'all';
@@ -31,6 +33,31 @@ const REPAIR_STATUS_WORDS: Record<string, string> = {
   timed_out: 'Timed out',
   closed_manually: 'Closed by staff',
 };
+
+type BridgeWrite = NonNullable<AdminIssue['bridge']['comment']>;
+
+/** PLAN-077 P7 — one of the bridge's writes on a report: its badge and the line beside it. */
+function bridgeWriteView(kind: 'comment' | 'resolve', w: BridgeWrite): { badge: string; tone: string; text: string } {
+  const what = kind === 'comment' ? 'Fix-it-yourself comment' : 'Resolve with a note';
+  switch (w.state) {
+    case 'done':
+      return { badge: 'Posted', tone: 'ok', text: `${what}, ${formatWhen(w.at)}` };
+    case 'intended':
+      return { badge: 'Posting', tone: 'info', text: what };
+    case 'skipped':
+      return {
+        badge: 'Skipped',
+        tone: 'muted',
+        text: `${what}: ${w.skipReason === 'removed_in_seerr' ? 'the report was deleted in Seerr first' : 'the report was resolved in Seerr first'}`,
+      };
+    case 'failed':
+      return {
+        badge: 'Failed',
+        tone: 'danger',
+        text: `${what}: ${w.attempts} ${w.attempts === 1 ? 'try' : 'tries'}${w.lastError ? `, ${w.lastError}` : ''}`,
+      };
+  }
+}
 
 function repairTone(status: string): string {
   if (status === 'completed') return 'ok';
@@ -201,6 +228,26 @@ function IssueCard({
           </ul>
         )}
       </div>
+      <div className="seerr-admin__row" data-testid="seerr-admin-replies">
+        <span className="seerr-admin__label">Replies in Seerr</span>
+        {!issue.bridge.comment && !issue.bridge.resolve ? (
+          <span className="muted">None from the app.</span>
+        ) : (
+          <ul className="seerr-admin__repairs">
+            {(['comment', 'resolve'] as const).map((kind) => {
+              const w = issue.bridge[kind];
+              if (!w) return null;
+              const view = bridgeWriteView(kind, w);
+              return (
+                <li key={kind} className="seerr-admin__repair">
+                  <span className={`badge badge--${view.tone}`}>{view.badge}</span>
+                  <span className="seerr-admin__reply">{view.text}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
       <div className="seerr-admin__row">
         <span className="seerr-admin__label">Staff note</span>
         {issue.staff.note ? (
@@ -256,6 +303,7 @@ export function SeerrIssuesAdmin({ linkOrigin }: { linkOrigin: string }) {
         new report through the Library&apos;s own tools first, the way a member would. When none of them can fix it,
         fix it by hand and note what was missing. Reports sync from Seerr every ten minutes.
       </p>
+      <SeerrBridgeSettings />
       <div className="library-filters admin-filterbar">
         <div className="seg" role="group" aria-label="Which reports">
           {(['open', 'all'] as const).map((value) => (

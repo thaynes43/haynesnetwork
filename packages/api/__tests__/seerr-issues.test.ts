@@ -144,3 +144,43 @@ describe('seerrIssues admin surface (D-12)', () => {
     });
   });
 });
+
+// ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the bridge's settings (the kill switch and its Seerr user): admin-only,
+// refused with no user or as user 1, audited; the admin list carries each issue's replies.
+describe('seerrIssues bridge settings (PLAN-077 P7)', () => {
+  it('is admin-only', async () => {
+    await expect(memberCaller.seerrIssues.bridge()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
+      memberCaller.seerrIssues.setBridge({ comment: true, resolve: true, bridgeUserId: 19 }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('refuses a switch on with no Seerr user, and user 1 (the owner) at the edge', async () => {
+    await expect(
+      adminCaller.seerrIssues.setBridge({ comment: true, resolve: false, bridgeUserId: null }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(
+      adminCaller.seerrIssues.setBridge({ comment: true, resolve: true, bridgeUserId: 1 }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect((await adminCaller.seerrIssues.bridge()).setting).toEqual({
+      comment: false,
+      resolve: false,
+      bridgeUserId: null,
+      commentFrom: null,
+    });
+  });
+
+  it('turns the bridge on with an audit row, and the admin list shows no replies yet', async () => {
+    const before = (await auditRows(t.db, 'update_app_setting')).length;
+    const res = await adminCaller.seerrIssues.setBridge({ comment: true, resolve: true, bridgeUserId: 19 });
+    expect(res.setting).toMatchObject({ comment: true, resolve: true, bridgeUserId: 19 });
+    expect(typeof res.setting.commentFrom).toBe('string');
+    // No SEERR_API_KEY in the test environment: the user cannot be checked, and nothing is ever posted.
+    expect(res.seerr).toBe('unconfigured');
+    const audit = await auditRows(t.db, 'update_app_setting');
+    expect(audit).toHaveLength(before + 1);
+    expect(audit.at(-1)!.actorId).toBe(admin.id);
+    const list = await adminCaller.seerrIssues.adminList({ filter: 'all' });
+    expect(list.items[0]).toMatchObject({ seerrIssueId: 3, bridge: {} });
+  });
+});

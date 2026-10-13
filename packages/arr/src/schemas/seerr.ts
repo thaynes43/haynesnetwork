@@ -159,3 +159,23 @@ export const seerrIssuePageSchema = z.object({
   results: z.array(seerrIssueSchema),
 });
 export type SeerrIssuePage = z.infer<typeof seerrIssuePageSchema>;
+
+// ---------------------------------------------------------------------------
+// ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the Seerr Issue bridge. `GET /api/v1/user/{id}` reads the bridge user
+// before any write (it must exist, hold MANAGE_ISSUES and not be an admin); Seerr 3.5.0's permission bits are below.
+// The comment (`POST /issue/{id}/comment` with `{message}`) and the resolve (`POST /issue/{id}/resolved`, no body) both
+// answer with the issue (seerrIssueSchema), read live 2026-10-13.
+// ---------------------------------------------------------------------------
+
+/** Seerr 3.5.0's permission bits the bridge checks (server/lib/permissions.ts). */
+export const SEERR_PERMISSION_ADMIN = 2;
+export const SEERR_PERMISSION_MANAGE_ISSUES = 1048576;
+
+/** `GET /api/v1/user/{id}`, as the bridge needs it: the id, the permission bits, the user type and the shown name. */
+export const seerrUserDetailSchema = z.object({
+  id: z.number().int(),
+  permissions: z.number().int(),
+  userType: z.number().int().nullish(),
+  displayName: z.string().nullish(),
+});
+export type SeerrUserDetail = z.infer<typeof seerrUserDetailSchema>;

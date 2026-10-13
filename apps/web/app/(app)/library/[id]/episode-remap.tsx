@@ -55,6 +55,7 @@ import { PICK_ENTRY_SHORT_NOTE } from '@/lib/release-pick-guide';
 import type { ActionTarget } from '@/lib/media';
 import { ActionLiveChip, useActionProgress, type SearchProgressInput } from '@/components/action-progress';
 import { ReleasePick } from './release-pick';
+import { useSeerrIssueLink } from '@/lib/seerr-issue-link-context';
 
 export interface EpisodeRemapProps {
   item: { id: string; title: string };
@@ -98,6 +99,7 @@ export function EpisodeRemap({
   releasePickOn = false,
   onForceSearch,
 }: EpisodeRemapProps) {
+  const seerrLink = useSeerrIssueLink();
   const startAtPreview = kind === 'single' && initialToEpisodeId !== null && knownSeason !== null;
   const [step, setStep] = useState<Step>(startAtPreview ? 'preview' : 'ask');
   const [toChoice, setToChoice] = useState<number | null>(initialToEpisodeId);
@@ -445,6 +447,7 @@ export function EpisodeRemap({
                     claim,
                     planDigest: p.digest,
                     reason: REMAP_FIX_REASON,
+                    ...seerrLink,
                   });
                 }}
               >

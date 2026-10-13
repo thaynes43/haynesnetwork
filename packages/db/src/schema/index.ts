@@ -29,6 +29,8 @@ export * from './fix-requests';
 export * from './repair-requests';
 // ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — the Seerr Issue mirror.
 export * from './seerr-issues';
+// ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the Seerr Issue bridge's comment and resolve writes.
+export * from './seerr-issue-writes';
 export * from './restore-runs';
 export * from './sync-runs';
 export * from './sync-state';
