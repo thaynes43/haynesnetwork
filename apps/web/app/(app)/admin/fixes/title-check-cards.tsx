@@ -1,8 +1,9 @@
 'use client';
 
-// ADR-110 C-03, C-04, C-08 / DESIGN-055 D-04 rule 10, D-05 (PLAN-077 P4) — two cards on /admin/fixes:
+// ADR-110 C-03, C-04, C-08, ADR-113 / DESIGN-055 D-04 rule 10, D-05 (PLAN-077 P4) — two cards on /admin/fixes:
 //   • the Mislabel Block: every term the app keeps in Sonarr's "mislabelled releases" profile (one per series and release
-//     group), the series linked to its title page, with an inline two-step Remove (hard rule 8: the @hnet/ui
+//     group, or per series and mislabelled name: a number with the wrong title, a double episode, another title of the
+//     show), the series linked to its title page, with an inline two-step Remove (hard rule 8: the @hnet/ui
 //     ConfirmButton, never window.confirm). Remove writes the profile without the term and reads it back first;
 //   • the Title Check census: how imported file names compared with their episodes, the open flags, and the newest of
 //     them linked to the title page, where the live flag names both episodes.
@@ -23,6 +24,20 @@ const dateOnly = (value: string | Date): string => {
 };
 
 const STATE_LABELS: Record<string, string> = { active: 'Active', expired: 'Expired', removed: 'Removed' };
+
+/** ADR-113 — what a term blocks, in a few words after it: a release group, or one kind of mislabelled name. */
+const KIND_LABELS: Record<string, string> = {
+  group: 'release group',
+  pair: 'episode with the wrong title',
+  double: 'double episode',
+  alias: 'other title of the show',
+};
+
+const ORIGIN_LABELS: Record<string, string> = { adoption: 'added by hand', staff: 'added by staff' };
+
+/** The term's blocked text: its group, or its name (`S01E11 Secret Menu`, `S01E13E14`, an alternate title). */
+const blockedText = (t: { releaseGroup: string | null; nameToken: string | null }): string =>
+  t.releaseGroup ?? t.nameToken ?? '';
 
 /** The Mislabel Block terms: the active ones with Remove, the ended ones below them, muted. */
 export function MislabelBlockCard() {
@@ -45,8 +60,9 @@ export function MislabelBlockCard() {
     <section className="card repair-admin-card" aria-labelledby="mislabel-block-title">
       <h2 id="mislabel-block-title">Mislabel Block</h2>
       <p className="muted">
-        Release groups that filed a show&rsquo;s episodes in the wrong place. Sonarr skips each group&rsquo;s releases
-        of that one show; other groups and other shows are not affected. A term ends on its own after a year.
+        Release groups and release names that filed a show&rsquo;s episodes in the wrong place. Sonarr skips a blocked
+        group&rsquo;s releases of that one show, and any release of it that carries a blocked name; other groups and
+        other shows are not affected. A term ends on its own after a year.
       </p>
       {terms.isLoading ? (
         <p className="muted">Loading the terms…</p>
@@ -55,7 +71,7 @@ export function MislabelBlockCard() {
           Failed to load the Mislabel Block: {terms.error.message}
         </p>
       ) : active.length === 0 ? (
-        <p className="muted">No group is blocked right now.</p>
+        <p className="muted">Nothing is blocked right now.</p>
       ) : (
         <ul className="mislabel-terms">
           {active.map((t) => (
@@ -69,10 +85,12 @@ export function MislabelBlockCard() {
                   t.seriesTitle
                 )}
                 <span>
-                  <code>{t.releaseGroup}</code>
+                  <code>{blockedText(t)}</code>
                   <span className="muted">
                     {' '}
-                    {t.origin === 'adoption' ? 'added by hand' : t.createdByName ? `from a fix by ${t.createdByName}` : 'from a fix'}
+                    {KIND_LABELS[t.kind] ?? t.kind},{' '}
+                    {ORIGIN_LABELS[t.origin] ??
+                      (t.createdByName ? `from a fix by ${t.createdByName}` : 'from a fix')}
                   </span>
                 </span>
                 <span className="muted mislabel-terms__dates">
@@ -89,8 +107,8 @@ export function MislabelBlockCard() {
                     className="btn sm"
                     label="Remove"
                     confirmLabel="Confirm remove"
-                    restingAriaLabel={`Remove the block on ${t.releaseGroup} for ${t.seriesTitle}, click twice to confirm`}
-                    confirmAriaLabel={`Confirm removing the block on ${t.releaseGroup} for ${t.seriesTitle}`}
+                    restingAriaLabel={`Remove the block on ${blockedText(t)} for ${t.seriesTitle}, click twice to confirm`}
+                    confirmAriaLabel={`Confirm removing the block on ${blockedText(t)} for ${t.seriesTitle}`}
                     disabled={remove.isPending}
                     onConfirm={() => remove.mutate({ termId: t.id })}
                   />
@@ -108,7 +126,7 @@ export function MislabelBlockCard() {
           <ul className="repair-guide__facts">
             {ended.map((t) => (
               <li key={t.id} className="muted">
-                {t.seriesTitle}: {t.releaseGroup} ({STATE_LABELS[t.state] ?? t.state}, added {dateOnly(t.createdAt)})
+                {t.seriesTitle}: {blockedText(t)} ({STATE_LABELS[t.state] ?? t.state}, added {dateOnly(t.createdAt)})
               </li>
             ))}
           </ul>

@@ -985,12 +985,21 @@ export type TitleCheckOrigin = (typeof TITLE_CHECK_ORIGINS)[number];
 /**
  * ADR-110 C-04, C-05 / DESIGN-055 D-05 (PLAN-077 P4, migration 0101) — a Mislabel Block term's life: `active` (in the
  * profile), `expired` (365 days passed; left the profile), `removed` (staff removed it, or a write that could not be
- * read back). Its origin: a person's confirmed Episode Re-map, or the adoption of Case A's hand-made profile.
+ * read back). Its origin: a person's confirmed Episode Re-map, or the adoption of Case A's hand-made profile; ADR-113
+ * (migration 0102) adds `staff`, a mislabelled-name term staff add with the in-cluster tool.
  */
 export const MISLABEL_TERM_STATES = ['active', 'expired', 'removed'] as const;
 export type MislabelTermState = (typeof MISLABEL_TERM_STATES)[number];
-export const MISLABEL_TERM_ORIGINS = ['remap', 'adoption'] as const;
+export const MISLABEL_TERM_ORIGINS = ['remap', 'adoption', 'staff'] as const;
 export type MislabelTermOrigin = (typeof MISLABEL_TERM_ORIGINS)[number];
+/**
+ * ADR-113 / DESIGN-055 Q-10 ruling (migration 0102) — what a Mislabel Block term names: `group` (a series and a release
+ * group, ADR-110 C-04; origin `remap` or `adoption`) or one of the three mislabelled names (origin `staff` or
+ * `adoption`): `pair` (an episode number with another episode's title), `double` (a double-episode token) and `alias`
+ * (an alternate title of the series).
+ */
+export const MISLABEL_TERM_KINDS = ['group', 'pair', 'double', 'alias'] as const;
+export type MislabelTermKind = (typeof MISLABEL_TERM_KINDS)[number];
 
 // ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — the Seerr Issue mirror's status (Seerr's 1 open, 2 resolved) and
 // type (Seerr's issueType 1..4, stored as Seerr numbers them).

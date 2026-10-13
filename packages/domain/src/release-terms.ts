@@ -558,6 +558,106 @@ export function isMislabelTerm(term: string): boolean {
 }
 
 /**
+ * ADR-113 / DESIGN-055 Q-10 ruling — the three MISLABELLED-NAME kinds of a Mislabel Block term (beside the group term
+ * above): a release name that files a series wrong whoever posts it.
+ *
+ *   pair     /^(?=.*(?<![a-z0-9]){series words}(?![a-z0-9]))(?=.*(?<![a-z0-9])s0*{S}e0*{E}SEP*{title words}(?![a-z0-9]))/i
+ *   double   /^(?=.*(?<![a-z0-9]){series words}(?![a-z0-9]))(?=.*(?<![a-z0-9])s0*{S}e0*{E}SEP*e0*{F}(?![a-z0-9]))/i
+ *   alias    /^(?=.*(?<![a-z0-9]){alias words}(?![a-z0-9]))/i
+ *
+ * SEP is `[^a-z0-9]`; the words are the exact form's (`termWords`: apostrophes, accented letters, `&`), joined by SEP*.
+ * The episode token is the show template's `s0*` form, so `S01E11`, `S1E11` and `S01E011` match and no other number
+ * does (a digit after the number is neither a separator nor the next letter). S is 0..999, E and F 1..9999, F > E. A
+ * pair and a double carry the series anchor, since the profile has no tags; an alias is an alternate title of the
+ * series, which names the series by itself. Throws outside the grammar.
+ */
+export type MislabelNameParts =
+  | {
+      kind: 'pair';
+      series: readonly TermToken[];
+      season: number;
+      episode: number;
+      title: readonly TermToken[];
+    }
+  | {
+      kind: 'double';
+      series: readonly TermToken[];
+      season: number;
+      episode: number;
+      lastEpisode: number;
+    }
+  | { kind: 'alias'; alias: readonly TermToken[] };
+
+export type MislabelNameKind = MislabelNameParts['kind'];
+
+const okSeason = (n: number) => Number.isInteger(n) && n >= 0 && n <= 999;
+const okEpisode = (n: number) => Number.isInteger(n) && n >= 1 && n <= 9999;
+
+export function renderMislabelNameTerm(parts: MislabelNameParts): string {
+  const words = (w: readonly TermToken[]) => {
+    if (w.length === 0 || !w.every(okWord)) throw new Error('term: bad tokens');
+    return renderWords(w, `${SEP}*`, JOIN_EXACT, OPTIONAL_AND_EXACT);
+  };
+  const look = (body: string) => `(?=.*${NOT_ALNUM_BEFORE}${body}${NOT_ALNUM_AFTER})`;
+  switch (parts.kind) {
+    case 'pair': {
+      if (!okSeason(parts.season) || !okEpisode(parts.episode)) throw new Error('term: bad episode');
+      const token = `s0*${parts.season}e0*${parts.episode}`;
+      return `/^${look(words(parts.series))}${look(`${token}${SEP}*${words(parts.title)}`)}/i`;
+    }
+    case 'double': {
+      if (
+        !okSeason(parts.season) ||
+        !okEpisode(parts.episode) ||
+        !okEpisode(parts.lastEpisode) ||
+        parts.lastEpisode <= parts.episode
+      ) {
+        throw new Error('term: bad episode');
+      }
+      const token = `s0*${parts.season}e0*${parts.episode}${SEP}*e0*${parts.lastEpisode}`;
+      return `/^${look(words(parts.series))}${look(token)}/i`;
+    }
+    case 'alias':
+      return `/^${look(words(parts.alias))}/i`;
+  }
+}
+
+const LOOK_OPEN_META = esc(`(?=.*${NOT_ALNUM_BEFORE}`);
+const LOOK_CLOSE_META = esc(`${NOT_ALNUM_AFTER})`);
+const EPISODE_META = '[1-9][0-9]{0,3}';
+const EPISODE_TOKEN_META = `${esc('s0*')}(?:0|[1-9][0-9]{0,2})${esc('e0*')}${EPISODE_META}`;
+const SERIES_LOOK_META = `${LOOK_OPEN_META}${EXACT_WORDS_META}${LOOK_CLOSE_META}`;
+const PAIR_META = new RegExp(
+  `^${esc('/^')}${SERIES_LOOK_META}${LOOK_OPEN_META}${EPISODE_TOKEN_META}${esc(`${SEP}*`)}${EXACT_WORDS_META}` +
+    `${LOOK_CLOSE_META}${esc('/i')}$`,
+);
+const DOUBLE_META = new RegExp(
+  `^${esc('/^')}${SERIES_LOOK_META}${LOOK_OPEN_META}${EPISODE_TOKEN_META}${esc(`${SEP}*e0*`)}${EPISODE_META}` +
+    `${LOOK_CLOSE_META}${esc('/i')}$`,
+);
+const ALIAS_META = new RegExp(`^${esc('/^')}${SERIES_LOOK_META}${esc('/i')}$`);
+
+/** ADR-113 — which mislabelled-name template this term is exactly, if it compiles; null for anything else (the group
+ *  term and the sentinel included). */
+export function mislabelNameKindOf(term: string): MislabelNameKind | null {
+  if (term.length > 1_000) return null;
+  const kind: MislabelNameKind | null = PAIR_META.test(term)
+    ? 'pair'
+    : DOUBLE_META.test(term)
+      ? 'double'
+      : ALIAS_META.test(term)
+        ? 'alias'
+        : null;
+  return kind !== null && compileTerm(term) !== null ? kind : null;
+}
+
+/** ADR-113 — is this exactly one of the three mislabelled-name templates, and does it compile? The Mislabel Block's
+ *  writer accepts these, its group terms and its sentinel, and nothing else (`isMislabelBlockTerm`). */
+export function isMislabelNameTerm(term: string): boolean {
+  return mislabelNameKindOf(term) !== null;
+}
+
+/**
  * DESIGN-052 D-12 / D-13 step 2 — is this exactly one of the three templates (or the sentinel), and does it compile?
  * The writer refuses to POST / PUT a profile holding any term for which this is false.
  */

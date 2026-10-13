@@ -2,6 +2,8 @@
 // compile check, the real Case A names), and its single writer on embedded Postgres against a stub Sonarr profile
 // surface (the re-map offer's checks, the write and read-back with the row in the read-back's transaction, a failed
 // read-back, idempotency, the cap, expiry, drift repair, staff removal with its audit row, and the adoption).
+// ADR-113 (DESIGN-055 Q-10 ruling) — the mislabelled-name terms (pair, double, alias): grammar, the Case A hand
+// profile's five names, the refusals, and the same writer for them (add, dry run, refuse, roll back, remove).
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { mislabelBlockTerms, permissionAudit, repairRequests } from '@hnet/db/schema';
@@ -10,12 +12,16 @@ import {
   MISLABEL_BLOCK_SENTINEL,
   MISLABEL_TERM_CAP,
   MislabelBlockError,
+  addMislabelNameTerm,
   addMislabelTermFromRemap,
   adoptMislabelTerm,
+  deriveMislabelNameTerm,
   deriveMislabelTerm,
+  isMislabelBlockTerm,
   listMislabelTerms,
   mislabelBlockUpkeep,
   mislabelTermsForSeries,
+  parseMislabelName,
   reconcileMislabelBlock,
   removeMislabelTerm,
   type MislabelBlockSonarr,
@@ -25,10 +31,14 @@ import {
 import {
   compileTerm,
   isGrammarTerm,
+  isMislabelNameTerm,
   isMislabelTerm,
   isWholeNameTerm,
+  mislabelNameKindOf,
+  renderMislabelNameTerm,
   renderMislabelTerm,
   termMatchesRaw,
+  type MislabelNameKind,
 } from '../src/release-terms';
 import { silentDomainLogger, upsertMediaItemsBatch } from '../src/index';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
@@ -38,6 +48,27 @@ const BIOMA_E11 = 'Regular.Show.The.Lost.Tapes.S01E11.1080p.AMZN.WEB-DL.DDP5.1.H
 const OLDT_E10 = 'Regular.Show.The.Lost.Tapes.S01E10.Spice.It.Up.1080p.HMAX.WEB-DL.DDP2.0.H.265-OldT';
 const OTHER_BIOMA = 'Some.Other.Show.S01E01.1080p.DUAL-BiOMA';
 const BIOMAX = 'Regular.Show.The.Lost.Tapes.S01E11.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMAX';
+/** Sonarr's alternate title for series 1061 (seasonNumber -1), read 2026-10-13. */
+const GERMAN_TITLE = 'Regular Show Die verlorenen Videos';
+const GERMAN_GRAB = 'Regular.Show.Die.verlorenen.Videos.S01E11.GERMAN.DL.1080P.WEB.H264-WAYNE';
+/** A stub season: the titles each number really has (E12 is Secret Menu Item, E23 All You Can Fit). */
+const LOST_TAPES_EPISODES = [
+  { seasonNumber: 1, episodeNumber: 10, title: 'Tenth Title' },
+  { seasonNumber: 1, episodeNumber: 11, title: 'Spice It Up' },
+  { seasonNumber: 1, episodeNumber: 12, title: 'Secret Menu Item' },
+  { seasonNumber: 1, episodeNumber: 13, title: 'Thirteenth Title' },
+  { seasonNumber: 1, episodeNumber: 14, title: 'Smoke Alarm' },
+  { seasonNumber: 1, episodeNumber: 23, title: 'All You Can Fit' },
+  { seasonNumber: 1, episodeNumber: 24, title: 'Twenty-Fourth Title' },
+];
+/** The Case A hand profile's five non-group blocks (profile id 3, read 2026-10-13), as the name terms that replace them. */
+const HAND_NAMES: Array<[MislabelNameKind, string]> = [
+  ['alias', GERMAN_TITLE],
+  ['double', 'S01E13E14'],
+  ['pair', 'S01E11 Secret Menu'],
+  ['pair', 'S01E13 Smoke Alarm'],
+  ['pair', 'S01E24 All You Can Fit'],
+];
 
 const termOf = (seriesTitle: string, releaseGroup: string, otherSeriesTitles?: string[]) => {
   const d = deriveMislabelTerm({ seriesTitle, releaseGroup, otherSeriesTitles });
@@ -142,6 +173,202 @@ describe('the Mislabel Block term (D-05, pure)', () => {
   });
 });
 
+const nameTermOf = (kind: MislabelNameKind, name: string, o: Partial<Parameters<typeof deriveMislabelNameTerm>[0]> = {}) => {
+  const d = deriveMislabelNameTerm({
+    seriesTitle: LOST_TAPES,
+    kind,
+    name,
+    alternateTitles: [GERMAN_TITLE],
+    episodes: LOST_TAPES_EPISODES,
+    ...o,
+  });
+  if (!('term' in d)) throw new Error(`refused: ${d.refused}`);
+  return d;
+};
+const nameRefusalOf = (kind: MislabelNameKind, name: string, o: Partial<Parameters<typeof deriveMislabelNameTerm>[0]> = {}) => {
+  const d = deriveMislabelNameTerm({
+    seriesTitle: LOST_TAPES,
+    kind,
+    name,
+    alternateTitles: [GERMAN_TITLE],
+    episodes: LOST_TAPES_EPISODES,
+    ...o,
+  });
+  return 'refused' in d ? d.refused : null;
+};
+const SERIES_LOOK = '(?=.*(?<![a-z0-9])regular[^a-z0-9]*show[^a-z0-9]*the[^a-z0-9]*lost[^a-z0-9]*tapes(?![a-z0-9]))';
+
+describe('mislabelled-name terms (ADR-113, pure)', () => {
+  it('pair: blocks the number with the wrong title on the Lost Tapes, and nothing else', () => {
+    const { term, nameToken } = nameTermOf('pair', 'S01E11 Secret Menu');
+    expect(nameToken).toBe('S01E11 Secret Menu');
+    expect(term).toBe(`/^${SERIES_LOOK}(?=.*(?<![a-z0-9])s0*1e0*11[^a-z0-9]*secret[^a-z0-9]*menu(?![a-z0-9]))/i`);
+    for (const name of [
+      'Regular.Show..The.Lost.Tapes.S01E11.Secret.Menu.1080p.AMZN.WEB-DL.DDP2.0.H.264-NTb',
+      'Regular Show The Lost Tapes S01E11 Secret Menu Item 1080p WEB-DL-NTb',
+      'Regular_Show_The_Lost_Tapes_S1E11_Secret_Menu_720p',
+      'regular show - the lost tapes - s01e11 - secret menu [GRP]',
+    ]) {
+      expect(termMatchesRaw(term, name), name).toBe(true);
+    }
+    for (const name of [
+      'Regular.Show..The.Lost.Tapes.S01E12.Secret.Menu.Item.1080p.AMZN.WEB-DL-NTb', // the right number
+      'Regular.Show.The.Lost.Tapes.S01E11.Spice.It.Up.1080p.HMAX.WEB-DL-OldT', // E11's own title
+      'Regular.Show.The.Lost.Tapes.S01E110.Secret.Menu.1080p', // another number
+      'Regular.Show.The.Lost.Tapes.S11E11.Secret.Menu.1080p',
+      BIOMA_E11,
+      OLDT_E10,
+      'Regular.Show.S08E11.Secret.Menu.1080p.WEB-DL-NTb', // the parent show
+    ]) {
+      expect(termMatchesRaw(term, name), name).toBe(false);
+    }
+    expect(nameTermOf('pair', 'S01E13 Smoke Alarm').term).toContain('s0*1e0*13[^a-z0-9]*smoke[^a-z0-9]*alarm');
+    const fit = nameTermOf('pair', 'S01E24 All You Can Fit').term;
+    expect(termMatchesRaw(fit, 'Regular.Show.The.Lost.Tapes.S01E24.All.You.Can.Fit.1080p.DSNP.WEB-DL.DDP5.1.H.264-FLUX')).toBe(true);
+    expect(termMatchesRaw(fit, 'Regular.Show.The.Lost.Tapes.S01E23.All.You.Can.Fit.1080p.DSNP.WEB-DL.DDP5.1.H.264-FLUX')).toBe(false);
+  });
+
+  it('double: blocks the double-episode token on the Lost Tapes, not either episode alone', () => {
+    const { term, nameToken } = nameTermOf('double', 's01e13-e14');
+    expect(nameToken).toBe('S01E13E14');
+    expect(term).toBe(`/^${SERIES_LOOK}(?=.*(?<![a-z0-9])s0*1e0*13[^a-z0-9]*e0*14(?![a-z0-9]))/i`);
+    for (const name of [
+      'Regular Show The Lost Tapes S01E13E14 1080p WEB-DL-GRP',
+      'Regular.Show.The.Lost.Tapes.S01E13-E14.1080p.AMZN.WEB-DL-GRP',
+    ]) {
+      expect(termMatchesRaw(term, name), name).toBe(true);
+    }
+    for (const name of [
+      'Regular.Show.The.Lost.Tapes.S01E13.Thirteenth.Title.1080p-GRP',
+      'Regular.Show.The.Lost.Tapes.S01E14.Smoke.Alarm.1080p-GRP',
+      'Regular.Show.The.Lost.Tapes.S01E12E13.1080p-GRP',
+      'Regular.Show.The.Lost.Tapes.S01E14E15.1080p-GRP',
+      'Some.Other.Show.S01E13E14.1080p-GRP',
+    ]) {
+      expect(termMatchesRaw(term, name), name).toBe(false);
+    }
+  });
+
+  it("alias: blocks the series' German title, never its own title", () => {
+    const { term, nameToken } = nameTermOf('alias', 'regular show die verlorenen videos');
+    expect(nameToken).toBe(GERMAN_TITLE); // Sonarr's spelling
+    expect(term).toBe(
+      '/^(?=.*(?<![a-z0-9])regular[^a-z0-9]*show[^a-z0-9]*die[^a-z0-9]*verlorenen[^a-z0-9]*videos(?![a-z0-9]))/i',
+    );
+    expect(termMatchesRaw(term, GERMAN_GRAB)).toBe(true);
+    expect(termMatchesRaw(term, 'Regular Show - Die verlorenen Videos - S01E02 [GER]')).toBe(true);
+    for (const name of [BIOMA_E11, OLDT_E10, 'Regular.Show..The.Lost.Tapes.S01E11.Secret.Menu.1080p', 'Regular.Show.S01E01.GERMAN-WAYNE']) {
+      expect(termMatchesRaw(term, name), name).toBe(false);
+    }
+  });
+
+  it('is its own grammar: each kind validates and compiles; no other validator accepts it', () => {
+    const terms = HAND_NAMES.map(([kind, name]) => [kind, nameTermOf(kind, name).term] as const);
+    for (const [kind, term] of terms) {
+      expect(mislabelNameKindOf(term), term).toBe(kind);
+      expect(isMislabelNameTerm(term)).toBe(true);
+      expect(isMislabelBlockTerm(term)).toBe(true);
+      expect(compileTerm(term)).not.toBeNull();
+      expect(isMislabelTerm(term)).toBe(false);
+      expect(isGrammarTerm(term)).toBe(false);
+      expect(isWholeNameTerm(term)).toBe(false);
+      // Only `[^a-z0-9]` separators and lookaround boundaries: no `\b` / `\W`, which differ between .NET and JavaScript.
+      expect(term).not.toMatch(/\\[bBwW]/);
+    }
+    const group = termOf(LOST_TAPES, 'BiOMA');
+    expect(mislabelNameKindOf(group)).toBeNull();
+    expect(isMislabelBlockTerm(group)).toBe(true);
+    expect(isMislabelBlockTerm(MISLABEL_BLOCK_SENTINEL)).toBe(true);
+    // The hand profile's own terms (and anything else off-template) are refused before any write.
+    for (const hand of [
+      '/\\bDUAL[ ._-]BiOMA\\b/i',
+      '/\\bverlorenen[ ._-]Videos\\b/i',
+      '/\\bS01E13[ ._-]?E14\\b/i',
+      '/\\bS01E11[ ._-]+Secret[ ._-]+Menu\\b/i',
+      '/bioma/i',
+    ]) {
+      expect(isMislabelBlockTerm(hand), hand).toBe(false);
+    }
+    const [, pair] = terms[2]!;
+    expect(isMislabelNameTerm(pair.replace('s0*1e0*11', 's0*1e0*011'))).toBe(false); // a leading zero
+    expect(isMislabelNameTerm(pair.replace('s0*1e0*11', 's0*1e.*'))).toBe(false);
+    expect(isMislabelNameTerm(pair.replace('menu(?!', 'menu((?!'))).toBe(false); // .NET cannot compile it
+    expect(isMislabelNameTerm(pair.replace(/\/i$/, '/'))).toBe(false);
+    expect(isMislabelNameTerm(`${pair.slice(0, -2)}(?=.*x)/i`)).toBe(false);
+    const [, alias] = terms[0]!;
+    expect(isMislabelNameTerm(alias.replace('videos', 'vid.*eos'))).toBe(false);
+    // The renderer refuses parts outside the grammar.
+    expect(() => renderMislabelNameTerm({ kind: 'pair', series: ['x'], season: 1, episode: 0, title: ['y'] })).toThrow();
+    expect(() => renderMislabelNameTerm({ kind: 'pair', series: ['x'], season: 1, episode: 1, title: [] })).toThrow();
+    expect(() => renderMislabelNameTerm({ kind: 'pair', series: ['X'], season: 1, episode: 1, title: ['y'] })).toThrow();
+    expect(() => renderMislabelNameTerm({ kind: 'double', series: ['x'], season: 1, episode: 14, lastEpisode: 13 })).toThrow();
+    expect(() => renderMislabelNameTerm({ kind: 'alias', alias: [] })).toThrow();
+  });
+
+  it('reads the name the way staff give it', () => {
+    expect(parseMislabelName('pair', '  s1e11   Secret  Menu ')).toEqual({
+      kind: 'pair',
+      nameToken: 'S01E11 Secret Menu',
+      season: 1,
+      episode: 11,
+      title: 'Secret Menu',
+    });
+    expect(parseMislabelName('double', 'S01E13 E14')).toMatchObject({ nameToken: 'S01E13E14', episode: 13, lastEpisode: 14 });
+    for (const [kind, name] of [
+      ['pair', 'Secret Menu'],
+      ['pair', 'S01E11'],
+      ['pair', 'S01E11E12 Secret Menu'],
+      ['pair', 'S01E00 Secret Menu'],
+      ['pair', 'S01E11 日本'],
+      ['double', 'S01E14E13'],
+      ['double', 'S01E13'],
+      ['double', 'S01E13E14 Smoke'],
+      ['alias', '   '],
+      ['alias', '進撃の巨人'],
+    ] as const) {
+      expect(parseMislabelName(kind, name), `${kind} ${name}`).toBeNull();
+    }
+  });
+
+  it('refuses what it cannot block safely', () => {
+    expect(nameRefusalOf('pair', 'Secret Menu')).toBe('name_unwritable');
+    expect(nameRefusalOf('double', 'S01E13')).toBe('name_unwritable');
+    expect(nameRefusalOf('pair', 'S01E11 Secret Menu', { seriesTitle: '' })).toBe('no_title');
+    // An alias must be Sonarr's, and not the show's own title.
+    expect(nameRefusalOf('alias', 'Regular Show: The Lost Tapes')).toBe('alias_is_title');
+    expect(nameRefusalOf('alias', 'Regular Show Las cintas perdidas')).toBe('alias_not_listed');
+    expect(nameRefusalOf('alias', GERMAN_TITLE, { alternateTitles: [] })).toBe('alias_not_listed');
+    // An alias, or a pair's words, that ordinary releases of the show carry would block good downloads.
+    expect(nameRefusalOf('alias', 'Regular Show', { alternateTitles: ['Regular Show'] })).toBe('name_too_broad');
+    expect(nameRefusalOf('alias', 'The Lost Tapes', { alternateTitles: ['The Lost Tapes'] })).toBe('name_too_broad');
+    for (const name of ['S01E11 1080p', 'S01E11 WEB-DL', 'S01E11 AMZN', 'S01E11 x264']) {
+      expect(nameRefusalOf('pair', name), name).toBe('name_too_broad');
+    }
+    // A pair whose number really has that title would stop the right release.
+    expect(nameRefusalOf('pair', 'S01E12 Secret Menu Item')).toBe('name_is_correct');
+    expect(nameRefusalOf('pair', 'S01E12 Secret Menu')).toBe('name_is_correct');
+    expect(nameRefusalOf('pair', 'S01E23 All You Can Fit')).toBe('name_is_correct');
+    expect(nameRefusalOf('pair', 'S01E23 All You Can Fit', { episodes: [] })).toBeNull(); // nothing to compare with
+    // Another library show the term would also reach.
+    expect(
+      deriveMislabelNameTerm({ seriesTitle: 'Lost', kind: 'pair', name: 'S01E11 Secret Menu', otherSeriesTitles: ['Lost Girl'] }),
+    ).toEqual({ refused: 'names_other_series', otherSeries: 'Lost Girl' });
+    expect(
+      deriveMislabelNameTerm({
+        seriesTitle: 'Lost',
+        kind: 'alias',
+        name: 'Perdidos',
+        alternateTitles: ['Perdidos'],
+        otherSeriesTitles: ['Perdidos en el espacio'],
+      }),
+    ).toEqual({ refused: 'names_other_series', otherSeries: 'Perdidos en el espacio' });
+    // The five Case A names reach neither the parent show nor any other.
+    for (const [kind, name] of HAND_NAMES) {
+      expect(nameRefusalOf(kind, name, { otherSeriesTitles: ['Regular Show', 'Lost', 'The Lost Tapes'] }), name).toBeNull();
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // The writer
 // ---------------------------------------------------------------------------
@@ -154,6 +381,8 @@ interface StubOptions {
   /** The GET after a write throws. */
   failReadBack?: boolean;
   onReadBack?: () => Promise<void>;
+  /** The series read throws. */
+  failSeries?: boolean;
 }
 
 function stubSonarr(initial: MislabelReleaseProfile[] = [], opts: StubOptions = {}) {
@@ -166,7 +395,12 @@ function stubSonarr(initial: MislabelReleaseProfile[] = [], opts: StubOptions = 
     read: {
       async findSeries(id: number) {
         log.push(`series ${id}`);
-        return id === 1061 ? { title: LOST_TAPES } : null;
+        if (opts.failSeries) throw new Error('sonarr down');
+        return id === 1061 ? { title: LOST_TAPES, alternateTitles: [{ title: GERMAN_TITLE }] } : null;
+      },
+      async listEpisodes(id: number) {
+        log.push(`episodes ${id}`);
+        return id === 1061 ? LOST_TAPES_EPISODES : [];
       },
     },
     write: {
@@ -553,7 +787,7 @@ describe('the Mislabel Block writer (ADR-110 C-04, C-05, C-08)', () => {
 
     const at = new Date(T0.getTime() + DAY);
     const r = await removeMislabelTerm({ db: t.db, sonarr: s.sonarr, termId, actorId: adminId, note: '  BiOMA fixed their numbering  ', now: at, logger: silentDomainLogger });
-    expect(r).toEqual({ removed: true, termId, seriesId: 1061, releaseGroup: 'BiOMA', term });
+    expect(r).toEqual({ removed: true, termId, seriesId: 1061, kind: 'group', releaseGroup: 'BiOMA', nameToken: null, term });
     expect(s.ours()[0]!.ignored).toEqual([MISLABEL_BLOCK_SENTINEL]);
     expect(await rows()).toEqual([expect.objectContaining({ id: termId, state: 'removed', endedAt: at, endedReason: 'staff_removed' })]);
     const audit = await t.db
@@ -561,7 +795,16 @@ describe('the Mislabel Block writer (ADR-110 C-04, C-05, C-08)', () => {
       .from(permissionAudit)
       .where(and(eq(permissionAudit.action, 'remove_mislabel_term'), eq(permissionAudit.actorId, adminId)));
     expect(audit).toHaveLength(1);
-    expect(audit[0]!.detail).toEqual({ termId, seriesId: 1061, seriesTitle: LOST_TAPES, releaseGroup: 'BiOMA', term, note: 'BiOMA fixed their numbering' });
+    expect(audit[0]!.detail).toEqual({
+      termId,
+      seriesId: 1061,
+      seriesTitle: LOST_TAPES,
+      kind: 'group',
+      releaseGroup: 'BiOMA',
+      nameToken: null,
+      term,
+      note: 'BiOMA fixed their numbering',
+    });
 
     expect(await removeMislabelTerm({ db: t.db, sonarr: s.sonarr, termId, actorId: adminId, logger: silentDomainLogger })).toMatchObject({
       removed: false,
@@ -610,5 +853,158 @@ describe('the Mislabel Block writer (ADR-110 C-04, C-05, C-08)', () => {
     expect(forSeries.map((r) => r.state)).toEqual(['active']);
     expect(await mislabelTermsForSeries({ db: t.db, seriesId: 1061, state: 'all' })).toHaveLength(2);
     expect(await mislabelTermsForSeries({ db: t.db, seriesId: 77 })).toEqual([]);
+  });
+
+  // ADR-113 — the mislabelled-name terms through the same writer.
+  const addName = (sonarr: MislabelBlockSonarr, kind: MislabelNameKind, name: string, o: Partial<Parameters<typeof addMislabelNameTerm>[0]> = {}) =>
+    addMislabelNameTerm({ db: t.db, sonarr, seriesId: 1061, kind, name, origin: 'adoption', now: T0, logger: silentDomainLogger, ...o });
+
+  it("adopts the hand profile's five names beside the group term, each written and read back", async () => {
+    const s = stubSonarr(othersProfiles());
+    const group = await adoptMislabelTerm({ db: t.db, sonarr: s.sonarr, seriesId: 1061, releaseGroup: 'BiOMA', now: T0, logger: silentDomainLogger });
+    expect(group.saved).toBe(true);
+    s.log.length = 0;
+
+    // The dry run derives and reports, and writes nothing.
+    const dry = await addName(s.sonarr, 'pair', 'S01E11 Secret Menu', { dryRun: true });
+    expect(dry).toEqual({
+      saved: false,
+      dryRun: true,
+      seriesTitle: LOST_TAPES,
+      term: nameTermOf('pair', 'S01E11 Secret Menu').term,
+      alreadyActive: false,
+      kind: 'pair',
+      nameToken: 'S01E11 Secret Menu',
+    });
+    expect(s.log).toEqual(['series 1061', 'episodes 1061']);
+    expect(await activeRows()).toHaveLength(1);
+
+    const saved: string[] = [];
+    for (const [kind, name] of HAND_NAMES) {
+      s.log.length = 0;
+      const r = await addName(s.sonarr, kind, name);
+      expect(r, name).toMatchObject({ saved: true, alreadyActive: false, kind });
+      // Sonarr's series read (and a pair's episodes), then the profile write and its read-back.
+      expect(s.log).toEqual([...(kind === 'pair' ? ['series 1061', 'episodes 1061'] : ['series 1061']), 'GET', 'PUT 40', 'GET']);
+      saved.push((r as { term: string }).term);
+    }
+    // The sentinel first, then every active term (rows made in the same instant come in id order).
+    expect(s.ours()[0]!.ignored![0]).toBe(MISLABEL_BLOCK_SENTINEL);
+    expect([...s.ours()[0]!.ignored!].sort()).toEqual([MISLABEL_BLOCK_SENTINEL, termOf(LOST_TAPES, 'BiOMA'), ...saved].sort());
+    // Every blocked Case A name is now caught by the managed profile; the right releases are not.
+    const blocks = (name: string) => s.ours()[0]!.ignored!.some((term) => termMatchesRaw(term, name));
+    for (const name of [
+      GERMAN_GRAB,
+      BIOMA_E11,
+      'Regular.Show..The.Lost.Tapes.S01E11.Secret.Menu.1080p.AMZN.WEB-DL.DDP2.0.H.264-NTb',
+      'Regular.Show.The.Lost.Tapes.S01E13E14.1080p.HMAX.WEB-DL-GRP',
+      'Regular.Show.The.Lost.Tapes.S01E13.Smoke.Alarm.1080p-GRP',
+      'Regular.Show.The.Lost.Tapes.S01E24.All.You.Can.Fit.1080p.DSNP.WEB-DL-FLUX',
+    ]) {
+      expect(blocks(name), name).toBe(true);
+    }
+    for (const name of [
+      OLDT_E10,
+      'Regular.Show.The.Lost.Tapes.S01E12.Secret.Menu.Item.1080p.AMZN.WEB-DL-NTb',
+      'Regular.Show.The.Lost.Tapes.S01E14.Smoke.Alarm.1080p-GRP',
+      'Regular.Show.The.Lost.Tapes.S01E23.All.You.Can.Fit.1080p.DSNP.WEB-DL-FLUX',
+    ]) {
+      expect(blocks(name), name).toBe(false);
+    }
+    // Other profiles (the Release Block and the hand profile) were never touched.
+    expect(s.profiles.filter((p) => p.id === 3 || p.id === 31)).toEqual(othersProfiles());
+
+    const names = await mislabelTermsForSeries({ db: t.db, seriesId: 1061 });
+    expect(names).toHaveLength(6);
+    expect(names.find((r) => r.kind === 'alias')).toMatchObject({
+      releaseGroup: null,
+      nameToken: GERMAN_TITLE,
+      origin: 'adoption',
+      repairRequestId: null,
+      createdBy: null,
+      mediaItemId: lostTapesId,
+      state: 'active',
+    });
+    expect(names.filter((r) => r.kind === 'pair').map((r) => r.nameToken).sort()).toEqual([
+      'S01E11 Secret Menu',
+      'S01E13 Smoke Alarm',
+      'S01E24 All You Can Fit',
+    ]);
+    expect(names.find((r) => r.kind === 'group')).toMatchObject({ releaseGroup: 'BiOMA', nameToken: null });
+
+    // Again, in another spelling: already active, nothing written.
+    s.log.length = 0;
+    expect(await addName(s.sonarr, 'pair', 's1e11 secret  menu', { origin: 'staff' })).toMatchObject({ saved: true, alreadyActive: true });
+    expect(await addName(s.sonarr, 'double', 'S01E13-E14', { dryRun: true })).toMatchObject({ alreadyActive: true });
+    expect(s.log.filter((l) => !l.startsWith('series') && !l.startsWith('episodes'))).toEqual([]);
+    expect(await activeRows()).toHaveLength(6);
+
+    // The upkeep keeps the profile with name terms in it.
+    s.log.length = 0;
+    expect(await mislabelBlockUpkeep({ db: t.db, sonarr: s.sonarr, now: T0, logger: silentDomainLogger })).toEqual({
+      expiring: 0,
+      drift: null,
+      report: null,
+      error: null,
+    });
+    s.ours()[0]!.ignored = [MISLABEL_BLOCK_SENTINEL];
+    expect(await mislabelBlockUpkeep({ db: t.db, sonarr: s.sonarr, now: T0, logger: silentDomainLogger })).toMatchObject({
+      drift: 'terms',
+      report: { wrote: true, added: 6 },
+      error: null,
+    });
+  });
+
+  it('a staff name is refused before any write, and a write that is not read back leaves no active term', async () => {
+    const s = stubSonarr();
+    for (const [kind, name, reason] of [
+      ['alias', 'Regular Show Las cintas perdidas', 'alias_not_listed'],
+      ['alias', LOST_TAPES, 'alias_is_title'],
+      ['pair', 'S01E12 Secret Menu Item', 'name_is_correct'],
+      ['pair', 'S01E11 1080p', 'name_too_broad'],
+      ['pair', 'Secret Menu', 'name_unwritable'],
+    ] as const) {
+      expect(await addName(s.sonarr, kind, name, { origin: 'staff' }), name).toMatchObject({ saved: false, reason });
+    }
+    expect(await addName(s.sonarr, 'alias', GERMAN_TITLE, { seriesId: 4242 })).toMatchObject({ saved: false, reason: 'not_a_series' });
+    const down = stubSonarr([], { failSeries: true });
+    expect(await addName(down.sonarr, 'alias', GERMAN_TITLE)).toMatchObject({ saved: false, reason: 'sonarr_unavailable' });
+    expect(s.log.filter((l) => l === 'GET' || l.startsWith('P'))).toEqual([]);
+    expect(await rows()).toHaveLength(0);
+
+    const broken = stubSonarr([], { dropWrites: true });
+    const r = await addName(broken.sonarr, 'double', 'S01E13E14', { origin: 'staff' });
+    expect(r).toMatchObject({ saved: false, reason: 'read_back_failed' });
+    expect(await rows()).toEqual([
+      expect.objectContaining({
+        kind: 'double',
+        nameToken: 'S01E13E14',
+        releaseGroup: null,
+        origin: 'staff',
+        state: 'removed',
+        endedReason: 'read_back_failed',
+      }),
+    ]);
+    // A healthy retry saves it (the removed row does not hold the slot).
+    expect(await addName(s.sonarr, 'double', 'S01E13E14', { origin: 'staff' })).toMatchObject({ saved: true, alreadyActive: false });
+  });
+
+  it('staff remove a name term with its audit row', async () => {
+    const s = stubSonarr();
+    const saved = await addName(s.sonarr, 'pair', 'S01E24 All You Can Fit', { origin: 'staff' });
+    const termId = (saved as { termId: string }).termId;
+    const term = (saved as { term: string }).term;
+    expect(s.ours()[0]!.ignored).toEqual([MISLABEL_BLOCK_SENTINEL, term]);
+    const r = await removeMislabelTerm({ db: t.db, sonarr: s.sonarr, termId, actorId: adminId, now: T0, logger: silentDomainLogger });
+    expect(r).toEqual({ removed: true, termId, seriesId: 1061, kind: 'pair', releaseGroup: null, nameToken: 'S01E24 All You Can Fit', term });
+    expect(s.ours()[0]!.ignored).toEqual([MISLABEL_BLOCK_SENTINEL]);
+    const [audit] = await t.db
+      .select()
+      .from(permissionAudit)
+      .where(and(eq(permissionAudit.action, 'remove_mislabel_term'), eq(permissionAudit.actorId, adminId)));
+    expect(audit!.detail).toMatchObject({ termId, kind: 'pair', releaseGroup: null, nameToken: 'S01E24 All You Can Fit', term, note: null });
+    expect(await listMislabelTerms({ db: t.db })).toEqual([
+      expect.objectContaining({ id: termId, kind: 'pair', origin: 'staff', state: 'removed', endedReason: 'staff_removed' }),
+    ]);
   });
 });

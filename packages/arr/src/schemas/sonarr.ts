@@ -67,6 +67,11 @@ export const sonarrSeriesSchema = z.object({
   // exposes on `GET /series` (ISO string; absent for an unaired show). The metadata harvest maps it
   // to media_metadata.released_at (a show's canonical release instant). Nullish-tolerant (strip mode).
   firstAired: z.string().optional(),
+  // ADR-113 (DESIGN-055 Q-10 ruling) — the series' alternate titles (scene and translated titles; `seasonNumber` -1 for
+  // every season). The Mislabel Block writes an `alias` term only for one of these.
+  alternateTitles: z
+    .array(z.object({ title: z.string(), seasonNumber: z.number().int().nullish() }))
+    .nullish(),
 });
 export type SonarrSeries = z.infer<typeof sonarrSeriesSchema>;
 

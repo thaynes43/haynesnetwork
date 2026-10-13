@@ -2,9 +2,9 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
+- **Last updated:** 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
-  (episode-title evidence), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
+  (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
   DESIGN-030 (Activity), DESIGN-012 (webhook ingestion), DESIGN-032 (ticket locator). Plan: PLAN-077.
 
@@ -206,6 +206,57 @@ do not edit)", "must not contain" terms only, no tags.
   pattern. A write that cannot be read back answers the person with "not saved" and leaves the term `removed`.
 - **Adoption:** Case A's hand-made profile (tag `lost-tapes-release-block`, id 31 on series 1061) becomes the first
   term, after which the tag profile and the tag are removed by hand with a read-back (PLAN-077 P4).
+- **Mislabelled names** (ADR-113, the owner's ruling on Q-10): the block also holds terms that name a mislabelled
+  release name instead of a group: a `pair` (a number with another episode's title, `S01E11 Secret Menu`), a `double`
+  (a double-episode token, `S01E13E14`) and an `alias` (an alternate title Sonarr lists for the series). Pair and double
+  carry the series anchor; an alias names the series by itself. Staff add them, and the adoption moves Case A's five in,
+  through the same single writer; no person is offered one.
+
+**Q-10 ruling decisions (2026-10-13, ADR-113, built in PLAN-077 P4).** Kept apart from the numbered P4 decisions below.
+
+- **The grammar** (`release-terms.ts` `renderMislabelNameTerm`, `mislabelNameKindOf`):
+  `pair` `/^(?=.*(?<![a-z0-9]){series}(?![a-z0-9]))(?=.*(?<![a-z0-9])s0*{S}e0*{E}[^a-z0-9]*{title}(?![a-z0-9]))/i`,
+  `double` the same series lookahead then `(?=.*(?<![a-z0-9])s0*{S}e0*{E}[^a-z0-9]*e0*{F}(?![a-z0-9]))` (F after E),
+  `alias` `/^(?=.*(?<![a-z0-9]){alias}(?![a-z0-9]))/i`. The words are the exact form's, joined by `[^a-z0-9]*` (their
+  apostrophes, accented letters and `&`, as the group term's series words). The episode token is the show template's
+  `s0*` form, so `S01E11`, `S1E11` and `S01E011` match and `S01E110` and `S11E11` do not. The hand profile's `[ ._-]`
+  and `\b` become `[^a-z0-9]*` and the lookaround boundaries, as in decision 13. A strict template check that also
+  compiles the term runs before every write; the writer accepts a group term, a name term or the sentinel and nothing
+  else (`isMislabelBlockTerm`).
+- **Reading a name** (`parseMislabelName`): a pair is `SxxEyy` then title words (`S01E11 Secret Menu`, or
+  `s1e11 secret menu`); a double is `SxxEyyEzz` with z after y (`S01E13E14`, `S01E13-E14`); an alias is a title. Its
+  display text (`name_token`) is `S01E11 Secret Menu`, `S01E13E14`, or the alternate title as Sonarr spells it. Season
+  0 to 999, episodes from 1. A title word the term cannot write (another script, a symbol) is refused
+  (`name_unwritable`).
+- **The checks** (`deriveMislabelNameTerm`, ADR-113 C-02): the term must match the mislabelled name in a release title
+  of the series, raw and dotted. It must match no ordinary release name of the series (`name_too_broad`): the title
+  with every ordinary tag; a pair's words under the next or previous episode or the next season, or an ordinary tag in
+  place of its words (`S01E11 1080p` would block the whole episode); a double's two episodes alone and the doubles
+  beside it; any release under the series' own title for an alias. A pair must not match a release that gives its
+  number the title Sonarr has for it (`name_is_correct`: `S01E12 Secret Menu Item` would stop the right release; the
+  titles come from `GET /episode?seriesId=`). An alias must be one of the series' `alternateTitles` (`alias_not_listed`,
+  compared folded; the Sonarr series schema gains the field) and must differ from its title (`alias_is_title`). No
+  kind may match another library series (`names_other_series`). The series title is the ledger's, else Sonarr's.
+- **The writer** (`addMislabelNameTerm({ seriesId, kind, name, origin: 'staff' | 'adoption', dryRun })`): the term is
+  derived before the lock (it needs Sonarr's reads), then the group term's `saveTerm` writes it under the same lock:
+  idempotent per (series, kind, name), case-insensitive, and per identical term text; the 500 cap counts both kinds;
+  expiry; the profile write and read-back; the row in the read-back's transaction; a `removed` row for a write that
+  was sent but not confirmed. No Repair Request, no creator, no offer to a person. Removal, reconcile and the hourly
+  upkeep handle both kinds unchanged; the removal's audit detail gains `kind` and `nameToken`.
+- **Storage** (migration 0102): `kind` (`group`, `pair`, `double`, `alias`, default `group`), `name_token`,
+  `release_group` nullable; a group term has its group and no name, a name term its name and no group; a group term's
+  origin is `remap` or `adoption`, a name term's `staff` or `adoption`; one live term per (series, kind, lower(group or
+  name)). The previous image runs unchanged until a name term exists. After that its writer refuses every profile write
+  (its grammar check does not know a name term), which leaves the profile as it is, so a rollback removes the name
+  terms first.
+- **Staff tool:** `mislabel-block.ts add-name --series <id> (--pair "<SxxEyy title>" | --double <SxxEyyEzz> |
+  --alias "<alternate title>") [--dry-run]` adds one as staff (origin `staff`); `adopt --series <id>` takes the same
+  name flags for the adoption (origin `adoption`); `list` prints each term's `kind` and `nameToken`.
+- **The admin card** (`/admin/fixes`): each term shows its group or its name, then what it blocks ("release group",
+  "episode with the wrong title", "double episode", "other title of the show") and where it came from. Text only.
+- **Retiring the hand profile** (PLAN-077 P4, owed after the deploy, by hand as ADR-110 C-05): adopt the five names
+  (dry run first), read back the Mislabel profile (id 4), then delete profile 3, remove tag 31 from series 1061 and
+  delete tag 31, reading back each step. No writer deletes a Sonarr profile or tag.
 
 **P4 decisions (2026-10-13, PLAN-077 P4).** What the build of D-04 and D-05 settled, with the reads behind it:
 
@@ -275,7 +326,9 @@ do not edit)", "must not contain" terms only, no tags.
     holds five terms that are not a series and a group: the German title "Die verlorenen Videos", the double-episode
     token `S01E13E14`, and three number-and-title pairs (`S01E11 Secret Menu`, `S01E13 Smoke Alarm`,
     `S01E24 All You Can Fit`). ADR-110 C-04 admits only series-and-group terms, so the hand profile stays in place until
-    the owner rules on Q-10; removing it would drop those five blocks.
+    the owner rules on Q-10; removing it would drop those five blocks. **Ruled (owner, 2026-10-13): Q-10 option A**
+    (ADR-113): the five become mislabelled-name terms of the Mislabel Block, then the hand profile and its tag are
+    removed by hand ("Q-10 ruling decisions" above).
 15. **A flag the person cannot act on goes to staff** (v0.115.1, found in the live library-wide read: 692 files
     disagree, and in nearly all of them the episode the name points at keeps its own file, a whole season in another
     order). The title page's flag offers "Move it" only when that single move can run (`TitleFlag.movable`: the
@@ -725,7 +778,7 @@ suite on each PR.
 | D-02 | `repair-requests.test.ts`: pending row and event in one transaction before any call; budget shared with Fix and Force Search; one open repair per grain both ways; completion from the ingested import; timeout sweep |
 | D-03 | `write-clients.test.ts`: each new body against the pinned fixture; the import guard |
 | D-04 | `remap-plan.test.ts` (pure): shift +1/-1 order, refusals (occupied slot, cycle, split multi-episode file, more than 40 moves), discard only when ticked; `remap-flow.test.ts`: freshness abort, stop on first mismatch, rename, read-back |
-| D-05 | `title-evidence.test.ts`: the three cases' real names (BiOMA silent, `S01E10.Spice.It.Up` agrees with E11, `The_Paper_2025_S02E06_125_Years_Young` agrees with 2x06, the Penguins Spanish titles disagree); `mislabel-block.test.ts`: grammar, compile check, read-back, expiry, cap |
+| D-05 | `title-evidence.test.ts`: the three cases' real names (BiOMA silent, `S01E10.Spice.It.Up` agrees with E11, `The_Paper_2025_S02E06_125_Years_Young` agrees with 2x06, the Penguins Spanish titles disagree); `mislabel-block.test.ts`: grammar, compile check, read-back, expiry, cap; the ADR-113 name kinds against Case A's five hand-made blocks (each matches its mislabelled name and not the right release), their refusals, and the same writer (add, dry run, roll back, remove); `release-terms.test.ts`: the name templates |
 | D-06 | `release-pick.test.ts`: state per row from rejection sets, hard refusals win, override body |
 | D-07 | `import-check.test.ts`: The Paper importable, T.O.T.S. "matched by ID" importable, Penguins `title_mismatch`, archive report-only, the live Rugrats 2021 and Franklin 2025 mismatches, Aqua Teen's and Spider-Man's refusals, "Import this download onto..."; `queue-aware-search.test.ts`: Case B imports and sends no search, a failed download removed and searched once, nothing sent while a download is in progress, a changed plan refused; `manual-import-clients.test.ts` (arr): the reads and the pinned body |
 | D-08 | `language-check.test.ts`: language present writes nothing to the *arr; absent grabs a matching approved release |
@@ -748,7 +801,7 @@ before the next. Q-09 came up in review afterwards; the owner's clarification of
 | Q-04 | What evidence makes the platform ready for "fix it yourself" to be the rule (D-12)? Today's rate is about 1.3 Seerr issues a month (4 since 2026-07-11). Options: **A** Cases A, B and C replayed end to end by a non-admin account (stubs in e2e, plus a live preview-only run of each remedy on the real titles), then the next 3 real issues self-served; **B** the next 5 real issues self-served in a row (about four months at today's rate); **C** 60 days in which every real issue is self-served, with at least 3 issues; **D** no number, the owner decides at a review once P1..P6 ship. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** An agent replays the three cases as a non-admin user on the built tools, then the next 3 real issues are self-served with no staff help. Folded into D-12 and ADR-111 C-05.<br>**Amended (owner, 2026-10-12): the counted gate is dropped.** "The gate is a judgment call, not a count. The intention is to keep building haynesnetwork.com until it can handle the kinds of problems people actually report, then steer users to fix things themselves instead of staff fixing them. Working practice: every new Seerr issue is worked through haynesnetwork.com's self-service tools first, as a user would. When a tool fixes it, the reply teaches the user that tool. When no tool can, staff fix it by hand and the missing capability is added to the plan. The owner decides when coverage is good enough to make self-service the default." No replays and no streak; see D-12 and ADR-112, which supersedes ADR-111 C-05. |
 | Q-05 | Once the gate passes, what does the rule do? Options: **A** Seerr issue filing stays open, every new issue gets the fix-it-yourself comment, and staff act only after a self-service attempt failed or when no remedy fits; **B** issue reporting in Seerr is switched off for everyone but admins (Seerr permissions) and haynesnetwork.com becomes the only place to report; **C** A for 30 days, then B. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** Seerr issue filing stays open; haynesnetwork comments with the self-service link, and staff step in only after a self-service attempt fails or when no remedy fits (option A's wording). Folded into D-12 and ADR-111 C-05. |
 | Q-09 | Does an Unfixable outcome (closed with no remedy applied, for example no release exists anywhere) restart the Q-04 count of 3 consecutive Self-Served issues? Options: **A** yes, every real issue that is not Self-Served restarts it (the ruling's literal wording); **B** no, an Unfixable issue is skipped and neither counts nor restarts; **C** it counts toward the 3 when staff confirm no remedy could exist. Recommendation: **B** (the gate measures whether self-service works where a fix exists; an issue nobody can fix says nothing about that). Gates P8 only. | **Closed, moot (owner, 2026-10-12).** The Q-04 count no longer exists (Q-04 amendment, D-12, ADR-112), so there is nothing for an Unfixable outcome to restart. |
-| Q-10 | Case A's hand profile holds five blocks that are not a series and a release group (P4 decision 14). Options: **A** a new ADR adds a second Mislabel term kind, a series-anchored mislabelled name (a number with another episode's title, an alternate title, a double-episode token), written from a confirmed re-map's own file names and by the adoption, then the hand profile is deleted; **B** keep the hand profile as a hand-kept exception beside the Mislabel Block; **C** drop the five blocks (the season is complete) and delete the hand profile. Recommendation: **A**. | (open: owner) |
+| Q-10 | Case A's hand profile holds five blocks that are not a series and a release group (P4 decision 14). Options: **A** a new ADR adds a second Mislabel term kind, a series-anchored mislabelled name (a number with another episode's title, an alternate title, a double-episode token), written from a confirmed re-map's own file names and by the adoption, then the hand profile is deleted; **B** keep the hand profile as a hand-kept exception beside the Mislabel Block; **C** drop the five blocks (the season is complete) and delete the hand profile. Recommendation: **A**. | **Ruling (owner, 2026-10-13): A.** [ADR-113](../adrs/113-mislabelled-name-terms-in-the-mislabel-block.md): three name kinds (`pair`, `double`, `alias`) in the same profile, under the same lifetime, cap and read-back. As built, staff (the in-cluster tool) and the adoption write them; no re-map offers one, so the offer stays the group's alone. The hand profile and its tag are removed by hand once the five are adopted (PLAN-077 P4). Folded into D-05 ("Mislabelled names", "Q-10 ruling decisions") and P4 decision 14. |
 | Q-11 | The library-wide Title Check (P4, issue #916) leaves 622 open flags after staff fixed the five seasons a single claim could fix. Nearly all are whole-season reorderings (a streaming service's order against TVDB's), where the episode a file names keeps its own file, or the moves form a rotation. The re-map refuses both by design: it displaces nothing, and Sonarr's rename cannot pass two files through each other's names. Options: **A** a staff season re-map that follows the names. It parks one file on a free episode to break a rotation and renames as it goes; staff place the files whose names are silent; seasons are worked one at a time after an evidence and watch-state check. **B** staff fix the seasons by hand as they are reported. **C** leave them; fix only what people report. Recommendation: **A** (548 of the 692 showed viewers one title and played another; the Plex watch marks on those seasons stay with the episode numbers). | (open: owner) |
 
 Driver items, resolved inside PLAN-077 (not owner questions):

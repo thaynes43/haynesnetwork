@@ -9,10 +9,13 @@ import {
   deriveTermsPerName,
   foldReleaseName,
   isGrammarTerm,
+  isMislabelNameTerm,
   mergeTermWords,
+  mislabelNameKindOf,
   parseReleaseGroup,
   parseReleaseName,
   releaseTokens,
+  renderMislabelNameTerm,
   renderTerm,
   resolutionFromQualityName,
   termMatches,
@@ -914,5 +917,50 @@ describe('the grammar (D-12 / D-13 step 2)', () => {
     expect(compileTerm('/^a/i')).not.toBeNull();
     expect(compileTerm('/^a/')).toBeNull();
     expect(compileTerm(RELEASE_BLOCK_SENTINEL)).toBeNull();
+  });
+});
+
+describe('the Mislabel Block mislabelled-name grammar (ADR-113)', () => {
+  const series = termWords("Bob's Burgers");
+  it('renders each kind from the exact-form words, and each validates and compiles', () => {
+    const pair = renderMislabelNameTerm({ kind: 'pair', series, season: 2, episode: 5, title: termWords('Crêpe & Gravy') });
+    const double = renderMislabelNameTerm({ kind: 'double', series, season: 0, episode: 1, lastEpisode: 2 });
+    const alias = renderMislabelNameTerm({ kind: 'alias', alias: termWords('Pokémon: La Série') });
+    expect(pair).toBe(
+      '/^(?=.*(?<![a-z0-9])bob(?:[^a-z0-9]|&(?:#39|apos);)*s[^a-z0-9]*burgers(?![a-z0-9]))' +
+        '(?=.*(?<![a-z0-9])s0*2e0*5[^a-z0-9]*cr(?:e|ê)pe[^a-z0-9]*(?:(?:and|amp)[^a-z0-9]*)?gravy(?![a-z0-9]))/i',
+    );
+    expect(double).toContain('s0*0e0*1[^a-z0-9]*e0*2(?![a-z0-9])');
+    expect([mislabelNameKindOf(pair), mislabelNameKindOf(double), mislabelNameKindOf(alias)]).toEqual(['pair', 'double', 'alias']);
+    for (const term of [pair, double, alias]) {
+      expect(isMislabelNameTerm(term)).toBe(true);
+      expect(compileTerm(term)).not.toBeNull();
+      expect(isGrammarTerm(term)).toBe(false);
+    }
+    for (const name of [
+      "Bob's.Burgers.S02E05.Crêpe.&.Gravy.1080p",
+      'Bobs.Burgers.S2E5.Crepe.and.Gravy.720p',
+      'Bob&#39;s Burgers - S02E05 - Crepe Gravy',
+    ]) {
+      expect(termMatchesRaw(pair, name), name).toBe(true);
+    }
+    expect(termMatchesRaw(pair, 'Bobs.Burgers.S02E15.Crepe.and.Gravy')).toBe(false);
+    expect(termMatchesRaw(double, "Bob's Burgers S00E01E02 1080p")).toBe(true);
+    expect(termMatchesRaw(double, "Bob's Burgers S00E01 1080p")).toBe(false);
+    expect(termMatchesRaw(alias, 'Pokemon.La.Serie.S01E01.FRENCH.1080p')).toBe(true);
+    expect(termMatchesRaw(alias, 'Pokémon La Série S01E01')).toBe(true);
+    expect(termMatchesRaw(alias, 'Pokemon.S01E01.1080p')).toBe(false);
+  });
+
+  it('accepts nothing but the three templates', () => {
+    expect(mislabelNameKindOf(RELEASE_BLOCK_SENTINEL)).toBeNull();
+    expect(mislabelNameKindOf(renderTerm({ shape: 'exact', tokens: ['show', 's01e01', 'x264', 'grp'] }))).toBeNull();
+    expect(mislabelNameKindOf('/^(?=.*(?<![a-z0-9])x(?![a-z0-9]))(?=.*(?<![a-z0-9])bioma(?![a-z0-9]))/i')).toBeNull(); // a group term
+    expect(mislabelNameKindOf('/^(?=.*(?<![a-z0-9])x(?![a-z0-9]))/i')).toBe('alias');
+    expect(mislabelNameKindOf('/^(?=.*(?<![a-z0-9])x(?![a-z0-9]))(?=.*(?<![a-z0-9])s0*1e0*1[^a-z0-9]*y(?![a-z0-9]))/i')).toBe('pair');
+    expect(mislabelNameKindOf('/^(?=.*(?<![a-z0-9])x(?![a-z0-9]))(?=.*(?<![a-z0-9])s0*01e0*1[^a-z0-9]*y(?![a-z0-9]))/i')).toBeNull();
+    expect(mislabelNameKindOf('/^(?=.*(?<![a-z0-9])x(?![a-z0-9]))(?=.*(?<![a-z0-9])s0*1e0*1[^a-z0-9]*e0*2(?![a-z0-9]))/')).toBeNull();
+    expect(mislabelNameKindOf('/^(?=.*(?<![a-z0-9])x|y(?![a-z0-9]))/i')).toBeNull();
+    expect(mislabelNameKindOf(`/^(?=.*(?<![a-z0-9])${'x'.repeat(1_000)}(?![a-z0-9]))/i`)).toBeNull();
   });
 });

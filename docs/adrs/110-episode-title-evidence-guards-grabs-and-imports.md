@@ -7,6 +7,10 @@
 - **Design:** [DESIGN-055](../designs/055-self-service-media-repair.md) D-05, D-07. Plan: PLAN-077 phases P2 and P4.
 - **Amends (when its writer lands):** hard rule 4's write-back list gains the Mislabel Block (C-04); DESIGN-046 gains
   the report-only class `title_mismatch` (C-02).
+- **Amended by:** [ADR-113](113-mislabelled-name-terms-in-the-mislabel-block.md) (2026-10-13, owner ruling on
+  DESIGN-055 Q-10): C-04's block also holds mislabelled-name terms (a number with another episode's title, a
+  double-episode token, an alternate title), written only by staff and the adoption through the same single writer;
+  C-05's hand profile is retired once its five name blocks are adopted. Every other consequence stands.
 
 ## Context and problem statement
 
