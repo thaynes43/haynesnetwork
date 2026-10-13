@@ -384,11 +384,13 @@ do not edit)", "must not contain" terms only, no tags.
     Plex's title for the episode a file moves to is that episode's TVDB title. The plan reads every Plex server that
     carries the series (`media_plex_matches`, then `allLeaves`), counts the season's items whose Plex title is the TVDB
     title of the same number (folded words, Dice at least 0.8; "Episode 13" placeholders say nothing), and lists each
-    move whose episode Plex titles differently; an episode with no Plex item yet passes only when the server follows TVDB
-    for at least 90% of the season. A run refuses a failed check, or one that could not be done (the plan prints the
-    server's error), unless staff pass `--ignore-plex` (recorded on the Repair Request). A season whose Plex numbering follows the release rather than TVDB
-    (Plex already shows the name's title) is left alone: moving it in Sonarr would put the wrong title on it in Plex.
-    Switching a show's Plex ordering stays out of scope (decision 10).
+    move whose episode Plex titles differently (an episode with no Plex item yet passes only when the server follows
+    TVDB for at least 90% of the season). Such a move makes Plex **worse** when Plex shows the file's own title where it
+    sits today (its numbering follows the release, not TVDB); a move whose title is wrong in Plex before and after is
+    no worse, and goes ahead with the rest. A run refuses any move that makes Plex worse, or a check that could not be
+    done (the plan prints the server's error), unless staff pass `--ignore-plex` (recorded on the Repair Request). So a
+    season whose Plex numbering follows the release is left alone: moving it in Sonarr would put the wrong title on it
+    in Plex. Switching a show's Plex ordering stays out of scope (decision 10).
 22. **The run renames as it goes.** Each step: the file's own manual-import candidate, read from the season it sits in
     now (a parked file sits in the parking season); one `ManualImport` (`move`, the decision 6 fields) onto the step's
     episodes; the read-back (the file at its path holds exactly those episodes, under its new id); one `RenameFiles` for

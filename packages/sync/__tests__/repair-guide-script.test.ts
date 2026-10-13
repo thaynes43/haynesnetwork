@@ -168,14 +168,15 @@ describe('repair-guide.ts arguments', () => {
       refusal: null,
       refusalDetail: null,
       digest: 'abc123',
-      plexCheck: { servers: [{ server: 'haynestower', items: 7, followsTvdb: 7, differs: 0, unknown: 0 }], wrongAfter: [], ok: true },
+      plexCheck: { servers: [{ server: 'haynestower', items: 7, followsTvdb: 7, differs: 0, unknown: 0 }], wrongAfter: [], worse: 0, ok: true },
+      plexError: null,
       remapOn: true,
       refusalText: null,
     } as unknown as SeasonRemapView;
     const out = formatSeasonPlan('Show', view);
     expect(out).toContain('Show, season 1 (Sonarr series 777): 2 files move in 1 steps, passing through S00E01 · Special (season 0).');
     expect(out).toContain('Plex haynestower: 7 of 7 titled items carry the TVDB title (0 untitled).');
-    expect(out).toContain('Plex check: ok.');
+    expect(out).toContain('Plex check: ok (no move makes a Plex title worse).');
     expect(out).toContain('  1. park   S01E02 · Bravo -> S00E01 · Special [name; name agrees] Show.S01E02.Charlie');
     expect(out).toContain('stays S01E05 · Echo (duplicate), its name says S01E04 · Delta: Show.S01E05.Delta');
     expect(out).toContain('unplaced S01E06 · Foxtrot (name silent): Show.S01E06 -> suggestion --place 6:7');

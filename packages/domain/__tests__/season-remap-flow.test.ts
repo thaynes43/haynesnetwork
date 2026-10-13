@@ -333,7 +333,8 @@ describe('Season Re-map (DESIGN-055 P4 decisions 18-23)', () => {
 
     const plexOther: SeasonPlexReader = {
       async seasonTitles() {
-        return [{ server: 'haynesops', items: TITLES.map((title, i) => ({ episodeNumber: i + 1, title: i === 1 ? 'Something Else' : title })) }];
+        // Plex numbers E2 and E3 like the files (as a streaming order would): moving them would make both titles wrong.
+        return [{ server: 'haynesops', items: TITLES.map((title, i) => ({ episodeNumber: i + 1, title: i === 1 ? TITLES[2]! : i === 2 ? TITLES[1]! : title })) }];
       },
     };
     const withOther = { ...target, plex: plexOther };

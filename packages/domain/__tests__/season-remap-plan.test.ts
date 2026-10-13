@@ -244,11 +244,20 @@ describe('checkSeasonPlex', () => {
     expect(c.servers[0]).toMatchObject({ followsTvdb: 6, differs: 0 });
   });
 
-  it('fails when Plex titles the episode a file moves to differently', () => {
+  it('passes a move whose Plex title is wrong before and after (no worse), and lists it', () => {
     const items = TITLES.map((t, i) => ({ episodeNumber: i + 1, title: i === 1 ? 'Another Story' : t }));
     const c = checkSeasonPlex({ plan: p, tvdbTitles: tvdb, plex: [{ server: 'haynesops', items }] });
+    expect(c.ok).toBe(true);
+    expect(c.wrongAfter).toEqual([expect.objectContaining({ server: 'haynesops', plexTitle: 'Another Story', rightNow: false })]);
+  });
+
+  it('fails when Plex already numbers the season like the files (moving would make right titles wrong)', () => {
+    // Bravo sits on E3 and Charlie on E2, and Plex titles E2 "Charlie Comes Home" and E3 "Bravo Night".
+    const items = TITLES.map((t, i) => ({ episodeNumber: i + 1, title: i === 1 ? TITLES[2]! : i === 2 ? TITLES[1]! : t }));
+    const c = checkSeasonPlex({ plan: p, tvdbTitles: tvdb, plex: [{ server: 'haynestower', items }] });
     expect(c.ok).toBe(false);
-    expect(c.wrongAfter).toEqual([expect.objectContaining({ server: 'haynesops', plexTitle: 'Another Story' })]);
+    expect(c.worse).toBe(2);
+    expect(c.wrongAfter.every((w) => w.rightNow)).toBe(true);
   });
 
   it('reads a placeholder title as saying nothing', () => {

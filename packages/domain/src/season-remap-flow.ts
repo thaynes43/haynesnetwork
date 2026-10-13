@@ -108,9 +108,14 @@ export interface SeasonPlexServerCheck {
 
 export interface SeasonPlexCheck {
   servers: SeasonPlexServerCheck[];
-  /** Files that would show another title in Plex after their move (the episode they move to is titled differently there). */
-  wrongAfter: Array<{ fileId: number; to: RemapEpisodeRef; server: string; plexTitle: string | null }>;
-  /** Every final move would show its own title on every server (or the series is on no Plex server). */
+  /**
+   * Files that would show another title in Plex after their move (the episode they move to is titled differently
+   * there). `rightNow`: Plex shows the file's own title where it sits today, so the move would make Plex worse.
+   */
+  wrongAfter: Array<{ fileId: number; to: RemapEpisodeRef; server: string; plexTitle: string | null; rightNow: boolean }>;
+  /** How many of those would make Plex worse (each refuses a run). */
+  worse: number;
+  /** No move takes a title Plex shows right today and makes it wrong (a title wrong before and after is no worse). */
   ok: boolean;
 }
 
@@ -139,29 +144,40 @@ export function checkSeasonPlex(input: {
     }
     return { server: p.server, items: p.items.length, followsTvdb, differs, unknown };
   });
-  // Each moved file's final episode (its last step; a parking step is never final).
+  // Each moved file's final episode (its last step; a parking step is never final), and where it sits today (its first).
   const finals = new Map<number, RemapEpisodeRef[]>();
-  for (const s of input.plan.steps) if (s.kind !== 'park') finals.set(s.fileId, s.to);
+  const origins = new Map<number, RemapEpisodeRef[]>();
+  for (const s of input.plan.steps) {
+    if (!origins.has(s.fileId)) origins.set(s.fileId, s.from);
+    if (s.kind !== 'park') finals.set(s.fileId, s.to);
+  }
   const wrongAfter: SeasonPlexCheck['wrongAfter'] = [];
   for (const p of input.plex) {
     const check = servers.find((c) => c.server === p.server)!;
     const titled = check.followsTvdb + check.differs;
     const follows = titled > 0 && check.followsTvdb / titled >= PLEX_FOLLOWS_TVDB_MIN;
     for (const [fileId, to] of finals) {
+      // Does Plex show this file's own title (the TVDB title of where it belongs) where it sits today?
+      const own = to.map((e) => input.tvdbTitles.get(e.episodeNumber) ?? null);
+      const rightNow = (origins.get(fileId) ?? []).some((from) => {
+        const item = p.items.find((i) => i.episodeNumber === from.episodeNumber);
+        return !!item && own.some((t) => !!t && sameEpisodeTitle(item.title, t));
+      });
       for (const ep of to) {
         const tv = input.tvdbTitles.get(ep.episodeNumber) ?? null;
         const item = p.items.find((i) => i.episodeNumber === ep.episodeNumber);
         if (item) {
           if (PLACEHOLDER.test(item.title.trim()) || !tv || sameEpisodeTitle(item.title, tv)) continue;
-          wrongAfter.push({ fileId, to: ep, server: p.server, plexTitle: item.title });
+          wrongAfter.push({ fileId, to: ep, server: p.server, plexTitle: item.title, rightNow });
         } else if (!follows) {
           // No item to read yet: trust the season's own numbering only when it follows TVDB.
-          wrongAfter.push({ fileId, to: ep, server: p.server, plexTitle: null });
+          wrongAfter.push({ fileId, to: ep, server: p.server, plexTitle: null, rightNow });
         }
       }
     }
   }
-  return { servers, wrongAfter, ok: wrongAfter.length === 0 };
+  const worse = wrongAfter.filter((w) => w.rightNow).length;
+  return { servers, wrongAfter, worse, ok: worse === 0 };
 }
 
 // ---------------------------------------------------------------------------
@@ -307,7 +323,7 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
       'remap_refused',
       plexCheck === null
         ? `The Plex check was not done (${plexError ?? 'unknown'}), so nothing moved.`
-        : 'Plex numbers some of these episodes differently, so the moves would show the wrong titles there. Nothing moved.',
+        : 'Plex already shows the right title for some of these files, and moving them would make it wrong. Nothing moved.',
     );
   }
 
@@ -349,7 +365,9 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
       })),
       held: plan.held.map((h) => ({ fileId: h.fileId, onEpisodeIds: h.on.map((e) => e.id), reason: h.reason })),
       vacatedEpisodeIds: plan.vacated.map((e) => e.id),
-      plexCheck: plexCheck ? { ok: plexCheck.ok, servers: plexCheck.servers, wrongAfter: plexCheck.wrongAfter.length } : null,
+      plexCheck: plexCheck
+        ? { ok: plexCheck.ok, servers: plexCheck.servers, wrongAfter: plexCheck.wrongAfter.length, worse: plexCheck.worse }
+        : null,
       plexError,
       ignorePlex: input.ignorePlex === true,
       // No Mislabel offer from a season re-map (it is not a shift).

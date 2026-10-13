@@ -364,9 +364,16 @@ export function formatSeasonPlan(title: string, view: SeasonRemapView): string {
       lines.push(`Plex ${c.server}: ${c.followsTvdb} of ${c.followsTvdb + c.differs} titled items carry the TVDB title (${c.unknown} untitled).`);
     }
     for (const w of view.plexCheck.wrongAfter) {
-      lines.push(`  Plex ${w.server} would title file ${w.fileId} on ${w.to.label} as ${w.plexTitle === null ? '(no item yet)' : JSON.stringify(w.plexTitle)}.`);
+      lines.push(
+        `  Plex ${w.server} would title file ${w.fileId} on ${w.to.label} as ${w.plexTitle === null ? '(no item yet)' : JSON.stringify(w.plexTitle)}` +
+          (w.rightNow ? ': WORSE, Plex shows its own title where it sits now.' : ' (wrong where it sits now too).'),
+      );
     }
-    lines.push(view.plexCheck.ok ? 'Plex check: ok.' : 'Plex check: FAILED (a run refuses without --ignore-plex).');
+    lines.push(
+      view.plexCheck.ok
+        ? 'Plex check: ok (no move makes a Plex title worse).'
+        : `Plex check: FAILED, ${view.plexCheck.worse} moves would make a right Plex title wrong (a run refuses without --ignore-plex).`,
+    );
   } else {
     lines.push(`Plex check: not done (${view.plexError ?? 'unknown'}); a run refuses without --ignore-plex.`);
   }
