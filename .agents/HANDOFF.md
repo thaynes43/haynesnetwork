@@ -1,5 +1,15 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-13 23:30Z: HANDOFF TO CODEX. Self-service media repair program: P0 to P6 live, P7 released but not deployed, PR #965 ready
+
+- **Start here:** `.agents/context/2026-10-13-self-service-repair-codex-handoff.md` has the goal, phase status, the resume steps in order, every owner ruling and the ops facts.
+- **First steps:**
+  1. Merge PR #965 (wrong-content replace tool, checks green), release v0.125.0 (it also carries P7, v0.124.0) and deploy it.
+  2. Switch P7 on: `seerr-bridge.ts --set --user 19 --comment on --resolve on`. Live-check it on a test issue, then delete the test issue.
+  3. Ask the owner Q-12.
+  4. Run the wrong-content replacements for #928 (Ben 10 (2016) S1, Pokemon S3, Mickey Mouse S1), following the ruling in the note.
+- **Dated:** OC-056 cannot run before 2026-10-15T20:10Z. Production runs v0.123.1. Title Check: 155 open flags.
+
 ## 2026-10-13 21:00Z: the Watch Carry (ADR-114), live in v0.122.0 and v0.123.0; watched seasons moved with everyone's marks; open flags 310 to 155
 
 - **What** (owner ruling on #928, "Carry marks, then move"; DESIGN-055 P4 decisions 26 to 37):
