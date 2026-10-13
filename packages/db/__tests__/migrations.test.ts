@@ -3281,12 +3281,16 @@ describe('migrations against embedded Postgres 16', () => {
         expect(nullable.rows[0].is_nullable).toBe('YES');
       } finally {
         await client.query(`DELETE FROM mislabel_block_terms WHERE series_id BETWEEN 9102000 AND 9102099`);
+      }
+    });
+  });
+
   describe('0103 release_pick_lists (ADR-109 C-04, C-06 / DESIGN-055 D-06, PLAN-077 P5)', () => {
     it('creates the Release List with its CHECKs, cascades with its item, and admits release_list_requested', async () => {
       const users = await client.query(`SELECT id FROM users LIMIT 1`);
       const item = await client.query(
         `INSERT INTO media_items (arr_kind, arr_item_id, title, sort_title, monitored, quality_profile_id, quality_profile_name, root_folder, tvdb_id)
-         VALUES ('sonarr', 990102, 'Release Pick 0102', 'release pick 0102', true, 1, 'HD', '/tv', 990102) RETURNING id`,
+         VALUES ('sonarr', 990103, 'Release Pick 0103', 'release pick 0103', true, 1, 'HD', '/tv', 990103) RETURNING id`,
       );
       const mediaItemId = item.rows[0].id as string;
       const insert = (kind: string, child: number | null, season: number | null) =>

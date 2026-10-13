@@ -384,7 +384,7 @@ names, never deleting a file, after a watch-state check on every Plex server and
   - Step 1: `release-pick.ts` (`describeRejection`, the plain words, `RELEASE_REASONS_VERSION` 1; `classifyReleases`, the
     three row states, hard refusals winning, rows of one release on several sites grouped, the recommended pick;
     `openReleaseList`, `previewReleaseList`). The read is Sonarr's season list narrowed to the episode (P5 decision 2: Case
-    A's E10-numbered pick never comes back from an episode search). Migration 0102: `release_pick_lists` (T-316, the guid
+    A's E10-numbered pick never comes back from an episode search). Migration 0103: `release_pick_lists` (T-316, the guid
     kept server-side) and the `release_list_requested` ledger event; the budget counts it; the remedy `release_pick`
     (ships off, not a Fix remedy).
   - Step 2: `grabRelease` on both write clients, Q-07's override half resolved from the UIs' source at the running tags
@@ -400,7 +400,7 @@ names, never deleting a file, after a watch-state check on every Plex server and
     and `release-grab ... --key <row key>` (staff's Release Pick, requester null, P5 decision 14).
   - Tests: `release-pick.test.ts` (domain: the plain words, Case A's E11 and E13 lists read live, the end-to-end list,
     grab, follow-through, settling and completion, the refusals, the budget, a movie), `repair-requests.test.ts` (the
-    per-episode open check), `release-grab-clients.test.ts` (arr), `release-pick.test.ts` (api), the migration 0102 test,
+    per-episode open check), `release-grab-clients.test.ts` (arr), `release-pick.test.ts` (api), the migration 0103 test,
     the repair-guide script test.
 
 ### P6: language-aware Wrong language
