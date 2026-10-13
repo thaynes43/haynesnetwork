@@ -743,6 +743,13 @@
       "when": 1791440000000,
       "tag": "0106_watch_carry_wrong_content",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791450000000,
+      "tag": "0107_seerr_bridge_smoke",
+      "breakpoints": true
     }
   ]
 }

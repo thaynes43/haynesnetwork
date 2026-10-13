@@ -691,6 +691,23 @@ export class SeerrWriteClient {
     this.http = new ArrHttp({ ...options, apiBasePath: '/api/v1' });
   }
 
+  /** DESIGN-055 P7 decision 11: staff's marked fixture only; its domain writer owns the durable intent and guards. */
+  createIssue(mediaId: number, message: string, asUserId: number): Promise<SeerrIssue> {
+    return this.http.requestJson('POST', 'issue', seerrIssueSchema, {
+      body: { issueType: 4, mediaId, message },
+      headers: bridgeUserHeader(asUserId),
+    });
+  }
+
+  /** Staff smoke cleanup only; never exposed as a general issue-delete action. */
+  deleteIssue(issueId: number, asUserId: number): Promise<void> {
+    if (!Number.isSafeInteger(issueId) || issueId <= 4)
+      throw new Error('seerr: smoke cleanup refuses issues 1 to 4');
+    return this.http.requestVoid('DELETE', `issue/${encodeURIComponent(String(issueId))}`, {
+      headers: bridgeUserHeader(asUserId),
+    });
+  }
+
   async setWatchlistSync(
     userId: number,
     flags: { movies: boolean; tv: boolean },

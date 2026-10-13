@@ -1246,6 +1246,18 @@ and resolve, as a dedicated Seerr user, never as the owner's account), with the 
 10. **Delivery** (D-11): Seerr sends a comment to its reporter through its notification agents, and on 2026-10-13 only
     the webhook to this app is on (email and web push are off). A reporter sees the comment when they open the issue
     in Seerr. Q-12 asks whether to change that.
+11. **Staff smoke test** (owner-authorized, 2026-10-13): `seerr-bridge.ts --smoke` creates one explicitly marked
+    staff test on The Canterville Ghost (1986), Seerr media 10974 / TMDB 65465, as user 19. It checks exactly one
+    bridge invitation, links a simulated Repair Request through the normal writer, checks that pending does not
+    resolve and completed resolves once, then deletes only that fixture. It never changes a library file, download,
+    Plex mark or notification setting. The initial marked report and the resolve note are distinct from the one
+    invitation. Every test intent and result is kept through `setAppSetting` (actor null) in
+    `seerr_issue_bridge_smoke`, with its permission audit in the same transaction; migration 0107 admits that key.
+    A unique run marker, the stored issue id above 4, the matching media, reporter and creation time all guard
+    cleanup. An ambiguous create is adopted by its marker, never blindly posted again. `--smoke-cleanup` resumes
+    only the recorded fixture after an interruption. The normal bridge gains no general delete surface. The test
+    mirror remains marked as removed and its audits survive; OC-052 excludes removed rows and this test marker,
+    because a smoke test is not a real person's report.
 
 ### D-12 Working practice and the readiness judgment
 

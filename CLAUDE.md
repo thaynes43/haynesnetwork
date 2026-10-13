@@ -97,6 +97,11 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    `seerr_issue_bridge` setting, written only by `seerr-issue-writes.ts` (one `seerr_issue_writes` row per issue and kind,
    committed before the call). It never deletes, reopens or edits an issue or a comment. Through `@hnet/arr/write` from
    `packages/domain` only.
+   **The owner-authorized P7 staff smoke test** (DESIGN-055 P7 decision 11) additionally creates and deletes its own
+   marked fixture only, on Seerr media 10974 (The Canterville Ghost, TMDB 65465), as user 19. Its sole writer is
+   `seerr-bridge-smoke.ts`, with durable intents and results through the audited `seerr_issue_bridge_smoke` setting;
+   it refuses issues 1 to 4 and any issue it did not create. Its simulated repair uses the normal Repair Request
+   lifecycle writers and performs no library write. Through `@hnet/arr/write` from `packages/domain` only.
    **ADR-114 adds the Watch Carry** (DESIGN-055 P4 decisions 26-34; owner ruling on #928, "Carry marks, then move"): inside
    a staff move only (`season-run`, `copy-run`, `ordering-run`, and `carry-finish` / `carry-revert`), each account's Plex
    plays and resume point (`scrobble`, `unscrobble`, `progress`) are written as that account, with the per-server token

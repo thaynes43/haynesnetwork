@@ -816,6 +816,10 @@ names, never deleting a file, after a watch-state check on every Plex server and
 - **Tests:** `seerr-issue-writes.test.ts`: one comment across a crash and a retry; resolve only after completion.
 - **e2e:** stub Seerr records the acting user. Journey: AC-43's write half.
 - **Live check:** the next real issue gets exactly one comment from the bridge user, and is resolved after its repair.
+- **Staff smoke preparation (2026-10-13):** DESIGN-055 P7 decision 11 adds the audited, bounded
+  `seerr-bridge.ts --smoke` / `--smoke-cleanup` fixture tool, migration 0107. It creates only media 10974's marked
+  staff test as user 19, distinguishes the invitation from the initial test report, simulates a linked repair with
+  no library writes, checks one resolve, and deletes only its own fixture. The test does not satisfy OC-052.
 - **Bridge user (staff one-off, 2026-10-13 20:18Z, P7 decision 1):** `POST /api/v1/user` on Seerr (local user, username
   "haynesnetwork.com", email `seerr-bridge@haynesnetwork.com`, random password never stored; Seerr's local login is off),
   then `POST /api/v1/user/19/settings/permissions` with `1048576` (MANAGE_ISSUES only), read back: Seerr user 19,

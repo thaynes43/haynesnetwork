@@ -822,6 +822,20 @@ export class SeerrClient {
     return this.http.requestJson('GET', 'settings/main', seerrMainSettingsSchema);
   }
 
+  /** DESIGN-055 P7 decision 11: only the title and Seerr media identity needed to guard a staff smoke fixture. */
+  getMovieIssueTarget(
+    tmdbId: number,
+  ): Promise<{ title: string; mediaInfo?: { id: number; tmdbId: number } | null }> {
+    return this.http.requestJson(
+      'GET',
+      `movie/${encodeURIComponent(String(tmdbId))}`,
+      z.object({
+        title: z.string(),
+        mediaInfo: z.object({ id: z.number().int(), tmdbId: z.number().int() }).nullish(),
+      }),
+    );
+  }
+
   getRequests(params: SeerrRequestParams = {}): Promise<SeerrRequestPage> {
     return this.http.requestJson('GET', 'request', seerrRequestPageSchema, {
       query: {

@@ -1843,7 +1843,9 @@ checks:
       - name: a real issue filed after P3 is mirrored
         source: app-db
         query: |
-          select count(*) as n from seerr_issues where seerr_issue_id > 4
+          select count(*) as n from seerr_issues
+          where seerr_issue_id > 4 and removed_at is null
+            and coalesce(message, '') not like '[haynesnetwork bridge smoke:%'
         expect: {min: 1}
         mismatch: wait
     auto_covers: part
