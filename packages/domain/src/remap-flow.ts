@@ -26,7 +26,6 @@ import {
   type RemapEpisodeRef,
   type RemapFile,
   type RemapPlan,
-  type RemapRefusal,
   type RemapSuggestion,
 } from './remap-plan';
 import { episodeLabel } from './media-children';
@@ -400,7 +399,6 @@ export async function runEpisodeRemap(input: RunRemapInput): Promise<RemapRunRes
   });
 
   const wait = input.commandWait ?? DEFAULT_COMMAND_WAIT;
-  const sonarr = input.arr.read.sonarr;
   const movedFileIds: number[] = [];
   let stoppedText: string | null = null;
   let stopAction: { step: string; at: string; [key: string]: unknown } | null = null;

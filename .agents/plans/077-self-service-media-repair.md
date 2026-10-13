@@ -264,6 +264,30 @@ Priority is how often real reports need the remedy, and how much harm today's be
 - **Live check:** run a preview-only re-map on The Lost Tapes S01 (already fixed by hand, so the guide must find nothing
   to move) and read the first week's Title Check flags.
 - **Done when** the remedy is on and the first Mislabel term is the adopted Lost Tapes one.
+- **Build (2026-10-13):** DESIGN-055's "P4 decisions" (items 1-14, after D-05) record what landed and why.
+  - Step 1: migration 0101 (`title_checks`, `mislabel_block_terms`, run kind `title-check`, audit action
+    `remove_mislabel_term`); `title-check.ts` (`runTitleCheck`, `backfillTitleChecks`, `listTitleFlags`,
+    `titleCheckSummary`); sync mode `title-check` (the census, then the Mislabel upkeep); the nightly digest line;
+    `repair-guide.ts title-check --backfill [--dry-run]` and `--flags <seriesId>`; the import history read with the
+    dropped path. Q-06 is read on the library-wide census (below), not on 7 days.
+  - Step 2: `remap-plan.ts` (pure) and `remap-flow.ts` (`readRemapSeason`, `planEpisodeRemap`, `runEpisodeRemap`); the
+    Sonarr reads `listSeasonImportCandidates`, `listRenamePreview`, `listCommands` and the write `renameFiles`;
+    `appendRepairActions`; the fix router's `remapSeason`, `remapPlan`, `remap`, `titleFlags`; the remedy
+    `episode_remap` (ships off). No discard tick: a re-map never deletes a file (owner ruling in the P4 work order).
+  - Step 3: `mislabel-block.ts` (`deriveMislabelTerm`, `addMislabelTermFromRemap`, `adoptMislabelTerm`,
+    `reconcileMislabelBlock`, `mislabelBlockUpkeep`, `removeMislabelTerm`), the term template `renderMislabelTerm` in
+    `release-terms.ts`, the router's `mislabelBlock`, `mislabelTerms`, `removeMislabelTerm`, and the CLI
+    `tsx /sync/src/scripts/mislabel-block.ts list|adopt|reconcile`.
+  - Step 4 (adoption) is a live step after the deploy; only the BiOMA group term fits ADR-110 C-04, so the hand
+    profile keeps its five other terms until the owner rules on DESIGN-055 Q-10.
+  - Step 5: CLAUDE.md hard rule 4.
+  - UI: the guide's "It's a different episode of this show" and "They're all off by one" paths, the preview, the
+    result with Force Search for each emptied episode and the Mislabel offer, the title page flag ("Move it", a new
+    `moveFile` media action), and `/admin/fixes` (the switch, a Mislabel Block card, a Title Check card).
+  - Tests: `remap-plan.test.ts`, `remap-flow.test.ts`, `title-check.test.ts`, `mislabel-block.test.ts` (domain),
+    `episode-remap.test.ts` (api), the arr client tests, `title-check-sync.test.ts` and the repair-guide script test
+    (sync), migration 0101, `remap-guide.test.ts` and `repair-guide.test.ts` (web); e2e `episode-remap.spec.ts`: Case A
+    (AC-40) on a stub season, the flag's single move, the admin removal.
 
 ### P5: Release Pick
 
