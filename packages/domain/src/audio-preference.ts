@@ -653,21 +653,24 @@ export async function scanAudioDefaults(input: {
 }
 
 /**
- * DESIGN-055 P6 decision 14 — the owner's household default (#955, 2026-10-13) for one scan finding: English when the
- * show's files carry an English track, else the original language. `noop` when every file that carries that language
- * already starts in it (Boruto: all 291 files start in English), so nothing is written.
+ * ADR-115 / DESIGN-055 P6 decision 14 — the owner's household default (#955, 2026-10-13) for one scan finding: English
+ * when the show's files carry an English track, else the original language. `noop` when every file that carries that
+ * language already starts in it (Boruto: all 291 files start in English) AND no server stores another language (a show
+ * set to `ja-JP` by an earlier report still plays Japanese, so it is not a no-op; PR #958 review), so nothing is written.
  */
 export function householdTarget(f: AudioScanFinding): {
   language: string;
   scope: { episodeId: number; label: string } | null;
   noop: boolean;
 } {
+  const storedOther = (language: string) =>
+    f.plex.some((p) => !p.unreachable && p.current !== '' && languageOfPlexLocale(p.current) !== language);
   if (f.english.files > 0) {
-    return { language: 'eng', scope: f.english.sample, noop: f.english.leadOther === 0 };
+    return { language: 'eng', scope: f.english.sample, noop: f.english.leadOther === 0 && !storedOther('eng') };
   }
   return {
     language: f.original,
     scope: f.sample ? { episodeId: f.sample.episodeId, label: f.sample.label } : null,
-    noop: f.filesFirstOther === 0 || f.plexDefault === f.original,
+    noop: (f.filesFirstOther === 0 || f.plexDefault === f.original) && !storedOther(f.original),
   };
 }
