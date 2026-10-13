@@ -107,8 +107,10 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    (managed, do not edit)`) holding "must not contain" terms that pair one series title with one release group, written
    only by its single writer (`mislabel-block.ts`): from a person's confirmed shift re-map that moved two or more files of
    that group, from the one-off adoption of Case A's hand-made profile, and in the hourly `title-check` upkeep (expiry,
-   drift repair); every write is read back, terms live 365 days, at most 500. The Title Check itself is census only and
-   writes nothing to Sonarr. Through `@hnet/arr/write` from `packages/domain` only.
+   drift repair); every write is read back, terms live 365 days, at most 500. **ADR-113** adds mislabelled-name terms to
+   the same profile (a number with another episode's title, a double-episode token, an alternate title of the series),
+   written only by staff (`mislabel-block.ts add-name`) and the adoption, through the same single writer and read-back.
+   The Title Check itself is census only and writes nothing to Sonarr. Through `@hnet/arr/write` from `packages/domain` only.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see

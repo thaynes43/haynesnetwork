@@ -1,51 +1,83 @@
-// ADR-110 C-04, C-05 / DESIGN-055 D-05 (PLAN-077 P4) — the Mislabel Block's in-cluster tool (not a sync mode):
+// ADR-110 C-04, C-05, ADR-113 / DESIGN-055 D-05, Q-10 ruling (PLAN-077 P4) — the Mislabel Block's in-cluster tool (not
+// a sync mode):
 //
 //   tsx mislabel-block.ts list [--state active|expired|removed|all]
-//   tsx mislabel-block.ts adopt --series <sonarr series id> --group <release group> [--dry-run]
+//   tsx mislabel-block.ts adopt --series <sonarr series id> (--group <g> | --pair "<SxxEyy title>" | --double <SxxEyyEzz>
+//                               | --alias "<alternate title>") [--dry-run]
+//   tsx mislabel-block.ts add-name --series <sonarr series id> (--pair ... | --double ... | --alias ...) [--dry-run]
 //   tsx mislabel-block.ts reconcile [--dry-run]
+//   tsx mislabel-block.ts offer --repair <repair request id> --group <release group>
 //
-// `list` prints the terms (default: active). `adopt` is ADR-110 C-05: Case A's hand-made per-series profile becomes one
-// Mislabel Block term (origin `adoption`), written and read back by the domain's single writer; `--dry-run` prints the
-// term it would write and writes nothing. The hand-made profile and its tag are then removed by hand with a read-back
-// (PLAN-077 P4). `reconcile` expires terms past their 365 days and repairs the profile's drift, as the hourly
-// `title-check` upkeep does; `--dry-run` reports the drift and writes nothing.
+// `list` prints the terms (default: active), each with its `kind` (`group`, `pair`, `double`, `alias`). `adopt` is
+// ADR-110 C-05: a block of Case A's hand-made per-series profile becomes one Mislabel Block term (origin `adoption`),
+// written and read back by the domain's single writer; a group with `--group`, a mislabelled name (ADR-113) with
+// `--pair`, `--double` or `--alias`. `add-name` is ADR-113's staff path: one mislabelled-name term, origin `staff`.
+// `--dry-run` prints the term either would write and writes nothing. The hand-made profile and its tag are then removed
+// by hand with a read-back (PLAN-077 P4). `reconcile` expires terms past their 365 days and repairs the profile's drift,
+// as the hourly `title-check` upkeep does; `--dry-run` reports the drift and writes nothing.
 //
 // Env: DATABASE_URL, SONARR_API_KEY (SONARR_URL defaults in-cluster). `list` needs only DATABASE_URL.
 import { MISLABEL_TERM_STATES, db, getPool, type MislabelTermState } from '@hnet/db';
 import {
+  addMislabelNameTerm,
   addMislabelTermFromRemap,
   adoptMislabelTerm,
   listMislabelTerms,
   mislabelBlockSonarrFromEnv,
   reconcileMislabelBlock,
+  type MislabelNameKind,
 } from '@hnet/domain';
 import { createConsoleLogger } from '../logger';
 
 const USAGE = `Usage:
   mislabel-block.ts list [--state active|expired|removed|all]
-  mislabel-block.ts adopt --series <sonarr series id> --group <release group> [--dry-run]
+  mislabel-block.ts adopt --series <sonarr series id> (--group <release group> | --pair "<SxxEyy title words>"
+                          | --double <SxxEyyEzz> | --alias "<alternate title>") [--dry-run]
+  mislabel-block.ts add-name --series <sonarr series id> (--pair "<SxxEyy title words>" | --double <SxxEyyEzz>
+                             | --alias "<alternate title>") [--dry-run]
   mislabel-block.ts reconcile [--dry-run]
   mislabel-block.ts offer --repair <repair request id> --group <release group>
 
-list only reads. adopt and reconcile write Sonarr's "mislabelled releases" profile (read back) unless --dry-run.
+list only reads. adopt, add-name and reconcile write Sonarr's "mislabelled releases" profile (read back) unless
+--dry-run. adopt moves one block of a hand-made profile in (origin adoption); add-name adds a mislabelled name as staff
+(origin staff): --pair "S01E11 Secret Menu" (a number with another episode's title), --double S01E13E14, or --alias
+with one of the show's alternate titles in Sonarr.
 offer accepts the Mislabel offer of a completed shift re-map (a staff remap-run prints its mislabelGroups), as staff.`;
 
 export type MislabelBlockArgs =
   | { command: 'list'; state: MislabelTermState | 'all' }
   | { command: 'adopt'; seriesId: number; group: string; dryRun: boolean }
+  | {
+      command: 'add-name';
+      seriesId: number;
+      kind: MislabelNameKind;
+      name: string;
+      /** `adoption` for `adopt` with a name flag, `staff` for `add-name`. */
+      origin: 'staff' | 'adoption';
+      dryRun: boolean;
+    }
   | { command: 'reconcile'; dryRun: boolean }
   | { command: 'offer'; repairRequestId: string; group: string };
+
+const NAME_FLAGS: Record<string, MislabelNameKind> = { '--pair': 'pair', '--double': 'double', '--alias': 'alias' };
 
 /** Parse the command line (exported for a unit test). */
 export function parseMislabelBlockArgs(argv: readonly string[]): MislabelBlockArgs | 'help' {
   const [command, ...rest] = argv;
   if (command === undefined || command === '--help' || command === '-h') return 'help';
-  if (command !== 'list' && command !== 'adopt' && command !== 'reconcile' && command !== 'offer') {
+  if (
+    command !== 'list' &&
+    command !== 'adopt' &&
+    command !== 'add-name' &&
+    command !== 'reconcile' &&
+    command !== 'offer'
+  ) {
     throw new Error(`unknown command "${command}"`);
   }
   let state: MislabelTermState | 'all' = 'active';
   let seriesId: number | undefined;
   let group: string | undefined;
+  let name: { kind: MislabelNameKind; name: string } | undefined;
   let dryRun = false;
   let repairRequestId: string | undefined;
   for (let i = 0; i < rest.length; i += 1) {
@@ -77,18 +109,47 @@ export function parseMislabelBlockArgs(argv: readonly string[]): MislabelBlockAr
         repairRequestId = value.toLowerCase();
         i += 1;
         break;
+      case '--pair':
+      case '--double':
+      case '--alias':
+        if (!value || value.trim().length === 0 || value.startsWith('--')) {
+          throw new Error(`${flag} needs the name, quoted`);
+        }
+        if (name !== undefined) throw new Error('give one of --pair, --double or --alias');
+        name = { kind: NAME_FLAGS[flag]!, name: value.trim() };
+        i += 1;
+        break;
       default:
         throw new Error(`unknown argument "${flag}"`);
     }
   }
   if (command === 'list') {
-    if (seriesId !== undefined || group !== undefined || dryRun) throw new Error('list takes only --state');
+    if (seriesId !== undefined || group !== undefined || name !== undefined || dryRun) {
+      throw new Error('list takes only --state');
+    }
     return { command, state };
   }
-  if (command === 'adopt') {
-    if (seriesId === undefined || group === undefined) throw new Error('adopt needs --series and --group');
-    return { command, seriesId, group, dryRun };
+  if (command === 'adopt' || command === 'add-name') {
+    if (repairRequestId !== undefined) throw new Error(`${command} takes no --repair`);
+    if (seriesId === undefined) throw new Error(`${command} needs --series`);
+    if (command === 'adopt' && group !== undefined && name === undefined) return { command, seriesId, group, dryRun };
+    if (group !== undefined || name === undefined) {
+      throw new Error(
+        command === 'adopt'
+          ? 'adopt needs one of --group, --pair, --double or --alias'
+          : 'add-name needs one of --pair, --double or --alias',
+      );
+    }
+    return {
+      command: 'add-name',
+      seriesId,
+      kind: name.kind,
+      name: name.name,
+      origin: command === 'adopt' ? 'adoption' : 'staff',
+      dryRun,
+    };
   }
+  if (name !== undefined) throw new Error(`${command} takes no --pair, --double or --alias`);
   if (command === 'offer') {
     if (repairRequestId === undefined || group === undefined || seriesId !== undefined || dryRun) {
       throw new Error('offer needs --repair and --group (and nothing else)');
@@ -132,6 +193,21 @@ async function main(): Promise<number> {
       sonarr,
       seriesId: args.seriesId,
       releaseGroup: args.group,
+      dryRun: args.dryRun,
+      logger,
+    });
+    console.log(JSON.stringify(result, null, 2));
+    return result.saved || 'dryRun' in result ? 0 : 1;
+  }
+
+  if (args.command === 'add-name') {
+    const result = await addMislabelNameTerm({
+      db,
+      sonarr,
+      seriesId: args.seriesId,
+      kind: args.kind,
+      name: args.name,
+      origin: args.origin,
       dryRun: args.dryRun,
       logger,
     });

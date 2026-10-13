@@ -4,8 +4,10 @@ import { users } from './users';
 import { mediaItems } from './media-items';
 import { repairRequests } from './repair-requests';
 import {
+  MISLABEL_TERM_KINDS,
   MISLABEL_TERM_ORIGINS,
   MISLABEL_TERM_STATES,
+  type MislabelTermKind,
   type MislabelTermOrigin,
   type MislabelTermState,
 } from './enums';
@@ -22,6 +24,12 @@ const sqlList = (values: readonly string[]) => values.map((v) => `'${v}'`).join(
  * that could not be read back). `repair_request_id` is the confirmed Episode Re-map that offered it (null for the
  * adoption of Case A's hand-made profile). Only the packages/domain/src/mislabel-block.ts single writer changes a row
  * (the no-direct-state-writes guard).
+ *
+ * ADR-113 / DESIGN-055 Q-10 ruling (migration 0102) — a term also names a MISLABELLED NAME instead of a group: `kind`
+ * `pair` (`S01E11 Secret Menu`), `double` (`S01E13E14`) or `alias` (an alternate title of the series), with
+ * `name_token` its display text and `release_group` null. A group term has `kind` `group`, its group, and no
+ * `name_token`. A name term comes only from staff (`origin` `staff`, the in-cluster tool) or the adoption; a group term
+ * only from a confirmed re-map or the adoption. One live term per (series, kind, group or name token).
  */
 export const mislabelBlockTerms = pgTable(
   'mislabel_block_terms',
@@ -31,7 +39,11 @@ export const mislabelBlockTerms = pgTable(
     seriesId: integer('series_id').notNull(),
     mediaItemId: uuid('media_item_id').references(() => mediaItems.id, { onDelete: 'set null' }),
     seriesTitle: text('series_title').notNull(),
-    releaseGroup: text('release_group').notNull(),
+    kind: text('kind').$type<MislabelTermKind>().notNull().default('group'),
+    /** The release group (kind `group`); null for a mislabelled-name term. */
+    releaseGroup: text('release_group'),
+    /** A mislabelled name's display text (kinds `pair`, `double`, `alias`); null for a group term. */
+    nameToken: text('name_token'),
     term: text('term').notNull(),
     state: text('state').$type<MislabelTermState>().notNull().default('active'),
     origin: text('origin').$type<MislabelTermOrigin>().notNull(),
@@ -50,9 +62,20 @@ export const mislabelBlockTerms = pgTable(
       'mislabel_block_terms_ended_iff_inactive',
       sql`(${t.state} = 'active') = (${t.endedAt} IS NULL)`,
     ),
-    // One live term per (series, group).
+    check('mislabel_block_terms_kind_enum', sql`${t.kind} = ANY (ARRAY[${sql.raw(sqlList(MISLABEL_TERM_KINDS))}])`),
+    // A group term names its group and no name; a name term names its name and no group.
+    check(
+      'mislabel_block_terms_kind_fields',
+      sql`(${t.kind} = 'group' AND ${t.releaseGroup} IS NOT NULL AND ${t.nameToken} IS NULL) OR (${t.kind} <> 'group' AND ${t.releaseGroup} IS NULL AND ${t.nameToken} IS NOT NULL)`,
+    ),
+    // ADR-113: a group term comes from a re-map or the adoption, a name term from staff or the adoption.
+    check(
+      'mislabel_block_terms_kind_origin',
+      sql`(${t.kind} = 'group' AND ${t.origin} IN ('remap','adoption')) OR (${t.kind} <> 'group' AND ${t.origin} IN ('staff','adoption'))`,
+    ),
+    // One live term per (series, kind, group or name token).
     uniqueIndex('mislabel_block_terms_active_uq')
-      .on(t.instance, t.seriesId, sql`lower(${t.releaseGroup})`)
+      .on(t.instance, t.seriesId, t.kind, sql`lower(coalesce(${t.releaseGroup}, ${t.nameToken}))`)
       .where(sql`${t.state} = 'active'`),
     index('mislabel_block_terms_state_idx').on(t.state, t.expiresAt),
     index('mislabel_block_terms_series_idx').on(t.seriesId),

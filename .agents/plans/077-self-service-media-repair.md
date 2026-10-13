@@ -5,8 +5,10 @@
   each verified live before the next. P0 (v0.111.2), P1 (v0.112.1), P2 (v0.113.1) and P3 (v0.114.0) are shipped and
   verified live; P0's week of census is owed (OC-048), P1's first guided Fixes OC-050, P2's first presses OC-051, P3's
   first real Seerr issue OC-052. P4 (v0.115.0, v0.115.1, v0.116.0) is shipped and verified live, remedy on; its first
-  week of Title Check census and first person-run re-map are OC-053. Two owner questions are open: DESIGN-055 Q-10 (the
-  hand profile's five non-group blocks) and Q-11 (the library's whole-season reorderings, issue #916). P5 is next.
+  week of Title Check census and first person-run re-map are OC-053. DESIGN-055 Q-10 (the hand profile's five
+  non-group blocks) is ruled A (owner, 2026-10-13, ADR-113): mislabelled-name terms are built, and their live adoption
+  and the hand profile's removal are owed after the deploy (P4, "Q-10 ruling"). One owner question is open: Q-11 (the
+  library's whole-season reorderings, issue #916). P5 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -319,6 +321,31 @@ Priority is how often real reports need the remedy, and how much harm today's be
     `episode-remap.test.ts` (api), the arr client tests, `title-check-sync.test.ts` and the repair-guide script test
     (sync), migration 0101, `remap-guide.test.ts` and `repair-guide.test.ts` (web); e2e `remap-episodes.spec.ts`: Case A
     (AC-40) on a stub season, the flag's single move, the admin removal.
+- **Q-10 ruling (owner, 2026-10-13: A, ADR-113): built in [#924](https://github.com/thaynes43/haynesnetwork/pull/924);
+  the live adoption is owed.** DESIGN-055 D-05 "Q-10 ruling decisions" record the design.
+  - Build: migration 0102 (`mislabel_block_terms.kind`, `name_token`, `release_group` nullable, origin `staff`, the
+    kind/field and kind/origin CHECKs, the active unique index per kind); `release-terms.ts` `renderMislabelNameTerm`,
+    `mislabelNameKindOf`, `isMislabelNameTerm`; `mislabel-block.ts` `parseMislabelName`, `deriveMislabelNameTerm`,
+    `addMislabelNameTerm`, `saveTerm` for both kinds, `isMislabelBlockTerm` for both, kind-aware reads and removal;
+    the Sonarr series schema's `alternateTitles`; the CLI's `add-name` and `adopt` name flags; the `/admin/fixes`
+    card's kind labels. Tests: `mislabel-block.test.ts`, `release-terms.test.ts`, migration 0102, the script test.
+  - Read live before the build (2026-10-13, read-only): series 1061's alternate title is exactly "Regular Show Die
+    verlorenen Videos"; its episodes 11, 13 and 24 are "Spice It Up", the Halloween special and "Don's Back", so none of
+    the three pairs names its own episode. Profile 3 holds the six terms; the Mislabel profile (id 4) holds the
+    sentinel and the BiOMA term.
+  - **Owed after the deploy, in order** (staff, in the web pod:
+    `kubectl -n frontend exec deploy/haynesnetwork-main -c app -- tsx /sync/src/scripts/mislabel-block.ts ...`):
+    1. Each of the five with `--dry-run` first, then without: `adopt --series 1061 --alias "Regular Show Die verlorenen
+       Videos"`, `adopt --series 1061 --double S01E13E14`, `adopt --series 1061 --pair "S01E11 Secret Menu"`,
+       `adopt --series 1061 --pair "S01E13 Smoke Alarm"`, `adopt --series 1061 --pair "S01E24 All You Can Fit"`.
+    2. Read back the Mislabel profile (id 4): the sentinel, the BiOMA term and the five name terms; `list` shows six
+       active terms on series 1061.
+    3. Delete release profile 3 by hand and read back that it is gone.
+    4. Remove tag 31 from series 1061 and read back the series' tags.
+    5. Delete tag 31 (`lost-tapes-release-block`) and read back the tag list.
+  - Seen in the same read, outside Q-10: hand profile 2 ("T.O.T.S.: block mislabeled MULTI and DUTCH postings", tag 30
+    on series 724) holds `\bMULTI\b`, `\bDUTCH\b` and `\bThe[ ._-]Case[ ._-]of[ ._-]the\b`. None is a group, a
+    pair, a double or an alternate title, so it stays a hand profile; ADR-113 does not cover it.
 
 ### P5: Release Pick
 

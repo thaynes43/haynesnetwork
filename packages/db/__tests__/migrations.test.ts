@@ -27,6 +27,7 @@ import {
   TITLE_CHECK_ORIGINS,
   MISLABEL_TERM_STATES,
   MISLABEL_TERM_ORIGINS,
+  MISLABEL_TERM_KINDS,
   SYNC_RUN_KINDS,
   WATCH_ACCOUNT_ROLES,
   WATCH_EVENT_KINDS,
@@ -3234,6 +3235,56 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  describe('0102 mislabel_block_terms name terms (ADR-113 / DESIGN-055 Q-10 ruling)', () => {
+    it('adds the term kind and the name token, ties each kind to its fields and origins, and keys one live term per kind', async () => {
+      const insert = (series: number, fields: Record<string, unknown> = {}) => {
+        const row = { kind: 'pair', release_group: null, name_token: 'S01E11 Secret Menu', origin: 'staff', state: 'active', ended_at: null, ...fields };
+        return client.query({
+          text: `INSERT INTO mislabel_block_terms (series_id, series_title, kind, release_group, name_token, term, state, origin, expires_at, ended_at)
+                 VALUES ($1, 'Regular Show: The Lost Tapes', $2, $3, $4, '/x/i', $5, $6, now() + interval '365 days', $7)`,
+          values: [series, row.kind, row.release_group, row.name_token, row.state, row.origin, row.ended_at],
+        });
+      };
+      try {
+        // An existing-style group row (no kind given) is a group term.
+        await client.query(
+          `INSERT INTO mislabel_block_terms (series_id, series_title, release_group, term, origin, expires_at)
+           VALUES (9102000, 'Regular Show: The Lost Tapes', 'BiOMA', '/x/i', 'adoption', now() + interval '365 days')`,
+        );
+        const kind = await client.query(`SELECT kind, name_token FROM mislabel_block_terms WHERE series_id = 9102000`);
+        expect(kind.rows).toEqual([{ kind: 'group', name_token: null }]);
+        for (const k of MISLABEL_TERM_KINDS.filter((x) => x !== 'group')) {
+          for (const origin of ['staff', 'adoption']) await insert(9_102_001, { kind: k, name_token: `${k} ${origin}`, origin });
+        }
+        expect(MISLABEL_TERM_ORIGINS).toContain('staff');
+        await expect(insert(9_102_002, { kind: 'title' })).rejects.toMatchObject({ code: '23514' });
+        // A name term names no group, a group term no name; each needs its own.
+        await expect(insert(9_102_002, { release_group: 'BiOMA' })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9_102_002, { name_token: null })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9_102_002, { kind: 'group', name_token: null })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9_102_002, { kind: 'group', release_group: 'BiOMA' })).rejects.toMatchObject({ code: '23514' });
+        // A name term comes from staff or the adoption, a group term from a re-map or the adoption.
+        await expect(insert(9_102_002, { origin: 'remap' })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9_102_002, { kind: 'group', release_group: 'BiOMA', name_token: null, origin: 'staff' })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9_102_002, { origin: 'janitor' })).rejects.toMatchObject({ code: '23514' });
+        // One live term per (series, kind, group or name), case-insensitive; an ended one does not count.
+        await insert(9_102_003);
+        await expect(insert(9_102_003, { name_token: 's01e11 secret menu' })).rejects.toMatchObject({ code: '23505' });
+        await insert(9_102_003, { state: 'removed', ended_at: new Date() });
+        await insert(9_102_003, { name_token: 'S01E13 Smoke Alarm' });
+        // The same text under another kind, or as a group, is another term.
+        await insert(9_102_003, { kind: 'alias' });
+        await insert(9_102_003, { kind: 'group', release_group: 'S01E11 Secret Menu', name_token: null, origin: 'adoption' });
+        const nullable = await client.query(
+          `SELECT is_nullable FROM information_schema.columns WHERE table_name = 'mislabel_block_terms' AND column_name = 'release_group'`,
+        );
+        expect(nullable.rows[0].is_nullable).toBe('YES');
+      } finally {
+        await client.query(`DELETE FROM mislabel_block_terms WHERE series_id BETWEEN 9102000 AND 9102099`);
+      }
+    });
+  });
+
   describe('0101 title_checks + mislabel_block_terms (ADR-110 C-03, C-04 / DESIGN-055 D-05, PLAN-077 P4)', () => {
     it('creates the Title Check census with its CHECKs and one row per file', async () => {
       const insert = (fileId: number, fields: Record<string, unknown> = {}) => {
@@ -3271,7 +3322,8 @@ describe('migrations against embedded Postgres 16', () => {
         });
       };
       try {
-        for (const origin of MISLABEL_TERM_ORIGINS) await insert(9_101_100 + MISLABEL_TERM_ORIGINS.indexOf(origin), 'BiOMA', { origin });
+        // A group term's origins (0102 adds `staff`, for mislabelled-name terms only).
+        for (const [i, origin] of (['remap', 'adoption'] as const).entries()) await insert(9_101_100 + i, 'BiOMA', { origin });
         for (const state of MISLABEL_TERM_STATES.filter((s) => s !== 'active')) {
           await insert(9_101_100, 'BiOMA', { state, ended_at: new Date() });
         }

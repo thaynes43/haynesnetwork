@@ -305,7 +305,8 @@ export const fixRouter = router({
       );
     }),
 
-  /** ADR-110 C-04, C-08 — the Mislabel Block's terms for /admin/fixes (active first, then the ended ones). */
+  /** ADR-110 C-04, C-08, ADR-113 — the Mislabel Block's terms for /admin/fixes (active first, then the ended ones): each
+   *  with its `kind`, and its group (`releaseGroup`) or its mislabelled name (`nameToken`). */
   mislabelTerms: adminProcedure.query(async ({ ctx }) => {
     const terms = await listMislabelTerms({ db: ctx.db, state: 'all' });
     return { terms };
