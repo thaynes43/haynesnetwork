@@ -131,7 +131,9 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    **ADR-109 adds the language-aware Wrong language** (C-02, C-07; DESIGN-055 D-08, PLAN-077 P6). **The Audio
    Preference**, a Plex write: a show's preferred audio language (`PUT /library/metadata/{key}/prefs?audioLanguage=`),
    on every Plex server that carries the show, only when the person's file already has the wanted audio and that
-   language is the show's original one (owner ruling Q-03; Plex has no movie-level setting, Q-08). It runs behind the
+   language is the show's original one (owner ruling Q-03; Plex has no movie-level setting, Q-08); and staff's household
+   default (owner ruling on #955: English where the show's files carry it, else the original; requester null only,
+   `repair-guide.ts audio-scan --apply-household`). It runs behind the
    `audio_preference` remedy, after its Repair Request (`audio_preference`, one budget unit) commits, and every server is
    read back. Any other language, and every movie, gets guidance and no write. Through `@hnet/plex/write` from
    `packages/domain` only. **The Language Replace**: for one episode or a movie whose file lacks the wanted audio, behind

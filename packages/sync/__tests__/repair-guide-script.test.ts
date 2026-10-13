@@ -290,6 +290,16 @@ describe('repair-guide.ts arguments', () => {
     expect(parseRepairGuideArgs(['audio-scan'])).toMatchObject({ command: 'audio-scan' });
     expect(parseRepairGuideArgs(['audio-scan', '--json', '--apply-original', 'eng'])).toMatchObject({ json: true, applyOriginal: 'eng' });
     expect(() => parseRepairGuideArgs(['audio-scan', '--tvdb', '1'])).toThrow(/audio-scan takes only/);
+    // DESIGN-055 P6 decision 14 (#955): the owner's household default, as staff.
+    expect(parseRepairGuideArgs(['audio-scan', '--apply-household'])).toMatchObject({ command: 'audio-scan', household: true });
+    expect(() => parseRepairGuideArgs(['audio-scan', '--apply-household', '--apply-original', 'eng'])).toThrow(/one of/);
+    expect(
+      parseRepairGuideArgs(['audio-preference', '--tvdb', '321285', '--episode', 'S01E01', '--language', 'eng', '--household']),
+    ).toMatchObject({ household: true, language: 'eng' });
+    expect(() => parseRepairGuideArgs(['language-plan', '--tvdb', '1', '--episode', 'S01E05', '--language', 'eng', '--household'])).toThrow(
+      /--household is for audio-preference/,
+    );
+    expect(() => parseRepairGuideArgs(['preview', '--tmdb', '1', '--household'])).toThrow(/--apply-household is for audio-scan/);
     expect(() => parseRepairGuideArgs(['preview', '--tmdb', '1', '--language', 'eng'])).toThrow(/--language is for/);
     expect(() => parseRepairGuideArgs(['preview', '--tmdb', '1', '--apply-original', 'eng'])).toThrow(/--apply-original is for/);
   });
@@ -303,12 +313,14 @@ describe('repair-guide.ts arguments', () => {
           tvdbId: 74550, seriesId: 1, mediaItemId: null, title: 'Star Trek: Voyager', original: 'eng', filesWithOriginal: 154,
           filesFirstOther: 110, leadingLanguages: ['ger'], sample: { episodeId: 9, label: 'S02E01', fileName: 'x.mkv' }, plexDefault: 'ger',
           plex: [{ server: 'HaynesOps', current: '', unreachable: false }], preferenceSet: false,
+          english: { files: 154, leadOther: 110, sample: { episodeId: 9, label: 'S02E01' } },
         },
         {
           tvdbId: 475718, seriesId: 1061, mediaItemId: null, title: 'Regular Show: The Lost Tapes', original: 'eng', filesWithOriginal: 20,
           filesFirstOther: 8, leadingLanguages: ['por'], sample: { episodeId: 2, label: 'S01E12', fileName: 'y.mkv' }, plexDefault: 'por',
           plex: [{ server: 'HaynesTower', current: 'en-US', unreachable: false }, { server: 'HaynesOps', current: 'en-US', unreachable: false }],
           preferenceSet: true,
+          english: { files: 20, leadOther: 8, sample: { episodeId: 2, label: 'S01E12' } },
         },
       ],
     });

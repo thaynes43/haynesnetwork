@@ -18,6 +18,7 @@ import {
   canonicalLanguageCode,
   decideAudioPreference,
   effectiveDefaultLanguage,
+  householdTarget,
   languageCodeFromArrName,
   languageOfPlexLocale,
   pickLanguageRelease,
@@ -116,6 +117,38 @@ describe('decideAudioPreference (D-08 rule 3, the Q-03 ruling)', () => {
     expect(decideAudioPreference({ ...base, servers: [server({ current: 'en-GB', currentLanguage: 'eng' })] }).action).toBe(
       'already_set',
     );
+  });
+
+  it('the household default (#955, staff only) also allows English on a show whose original is another language', () => {
+    const one = [server({})];
+    expect(decideAudioPreference({ ...base, original: 'jpn', servers: one, rule: 'household' })).toMatchObject({ action: 'set' });
+    expect(decideAudioPreference({ ...base, wanted: 'jpn', original: 'jpn', servers: [server({ target: 'ja-JP' })], rule: 'household' })).toMatchObject({
+      action: 'set',
+    });
+    expect(decideAudioPreference({ ...base, wanted: 'por', original: 'jpn', servers: one, rule: 'household' })).toMatchObject({
+      reason: 'not_original',
+    });
+    // A person's report keeps the Q-03 rule.
+    expect(decideAudioPreference({ ...base, original: 'jpn', servers: one })).toMatchObject({ reason: 'not_original' });
+  });
+
+  it('householdTarget: English where the files carry it, else the original; a show already starting in it is a no-op', () => {
+    const finding = (over: Record<string, unknown>) =>
+      ({
+        tvdbId: 1, seriesId: 1, mediaItemId: 'm', title: 't', original: 'jpn', filesWithOriginal: 10, filesFirstOther: 5,
+        leadingLanguages: ['ger'], sample: { episodeId: 7, label: 'S01E07', fileName: null }, plexDefault: 'ger', plex: [],
+        preferenceSet: false, english: { files: 0, leadOther: 0, sample: null }, ...over,
+      }) as Parameters<typeof householdTarget>[0];
+    // Dragon Ball: no English track, German first: the original.
+    expect(householdTarget(finding({}))).toEqual({ language: 'jpn', scope: { episodeId: 7, label: 'S01E07' }, noop: false });
+    // JUJUTSU KAISEN: some files carry English, some start in Portuguese: English.
+    expect(householdTarget(finding({ english: { files: 40, leadOther: 14, sample: { episodeId: 9, label: 'S02E01' } } }))).toEqual({
+      language: 'eng',
+      scope: { episodeId: 9, label: 'S02E01' },
+      noop: false,
+    });
+    // Boruto: every file with English already starts in it.
+    expect(householdTarget(finding({ english: { files: 291, leadOther: 0, sample: { episodeId: 3, label: 'S01E01' } } })).noop).toBe(true);
   });
 
   it('gives guidance only for anything else', () => {
@@ -474,6 +507,19 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
       expect(row!.actionsTaken.at(-1)).toMatchObject({ step: 'plex_audio_readback', ok: false, value: '' });
     });
 
+    it('the household rule is staff’s only: a person cannot set it, staff can', async () => {
+      const plex = stubPlex();
+      await expect(
+        setAudioPreference({ db: t.db, arr: stubArr().bundle, plex: plex.bundle, ...e12(), wantedLanguage: 'eng', requesterId: memberId, rule: 'household' }),
+      ).rejects.toThrow(/staff/);
+      expect(plex.writes).toEqual([]);
+      const result = await setAudioPreference({ db: t.db, arr: stubArr().bundle, plex: plex.bundle, ...e12(), wantedLanguage: 'eng', requesterId: null, rule: 'household' });
+      expect(result).toMatchObject({ outcome: 'set' });
+      const [row] = await t.db.select().from(repairRequests).where(eq(repairRequests.id, result.repairRequestId!));
+      expect(row).toMatchObject({ requesterId: null, status: 'completed' });
+      expect(row!.preview).toMatchObject({ rule: 'household' });
+    });
+
     it('changes nothing for a language that is not the original one, for a movie, with a stale digest, or while off', async () => {
       const plex = stubPlex();
       const notOriginal = await previewAudioPreference({ db: t.db, arr: stubArr({ e05Audio: 'por/eng' }).bundle, plex: plex.bundle, ...e12(), wantedLanguage: 'por' });
@@ -504,6 +550,7 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
       expect(report.seriesScanned).toBe(1);
       expect(report.findings).toEqual([
         expect.objectContaining({
+          english: { files: 2, leadOther: 1, sample: { episodeId: E12.id, label: 'S01E12' } },
           tvdbId: 475718,
           original: 'eng',
           filesWithOriginal: 2,
