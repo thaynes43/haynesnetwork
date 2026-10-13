@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.117.0](https://github.com/thaynes43/haynesnetwork/compare/v0.116.0...v0.117.0) (2026-10-13)
+
+
+### Features
+
+* mislabelled-name terms in the Mislabel Block (DESIGN-055 Q-10, ADR-113) ([#924](https://github.com/thaynes43/haynesnetwork/issues/924)) ([17feb9f](https://github.com/thaynes43/haynesnetwork/commit/17feb9fe7b132bbf2293ee86d932fdff02bfb584))
+* staff Season Re-map puts every file of a season where its name says (DESIGN-055 Q-11, [#916](https://github.com/thaynes43/haynesnetwork/issues/916)) ([#923](https://github.com/thaynes43/haynesnetwork/issues/923)) ([50f0533](https://github.com/thaynes43/haynesnetwork/commit/50f05331f7b0f1b995c8f8170980710bdcff8140))
+
 ## [0.116.0](https://github.com/thaynes43/haynesnetwork/compare/v0.115.1...v0.116.0) (2026-10-13)
 
 
