@@ -207,7 +207,39 @@ describe('classifyReleases on the live Lost Tapes S01 lists (Case A, AC-40 relea
     ]);
     expect(rows[1]!.reasons[0]).toMatchObject({ code: 'early_copy', class: 'hard' });
     expect(rows[2]!.reasons[0]).toMatchObject({ code: 'unknown_quality' });
-    expect(rows[3]!.reasons[0]).toMatchObject({ code: 'too_big' });
+    expect(rows[3]!.reasons[0]).toMatchObject({ code: 'too_big', text: 'Much bigger than a movie should be' });
+  });
+
+  it("a movie: another movie's release Radarr approved by id is refused, and a disc image is never a pick (P5 decision 15)", () => {
+    // Read live 2026-10-13 for Zom 100: Bucket List of the Dead (2023): an indexer tagged "The Convert" and "The List"
+    // (both 2023) with its id, and Radarr approved them; the first approved row was "The Convert" in 2160p.
+    const base = { ...releases()[0]!, seasonNumber: null, episodeNumbers: [], approved: true, rejections: [] as string[] };
+    const target: ReleasePickTarget = {
+      kind: 'radarr',
+      movieId: 1,
+      label: 'Zom 100: Bucket List of the Dead',
+      titles: ['Zom 100: Bucket List of the Dead', 'Zom 100: Zombie ni Naru made ni Shitai 100 no Koto'],
+      year: 2023,
+    };
+    const { rows, recommendedKey } = classifyReleases(
+      [
+        { ...base, guid: 'z1', title: 'The.Convert.2023.UHD.BluRay.2160p.DDP.5.1.HDR.x265-hallowed', qualityName: 'Bluray-2160p' },
+        { ...base, guid: 'z2', title: 'Zom.100.Bucket.List.of.the.Dead.2023.1080p.NF.WEB-DL.DDP5.1.Atmos.x264-OzONE' },
+        { ...base, guid: 'z3', title: 'Zom.100.Zombie.ni.Naru.made.ni.Shitai.100.no.Koto.2023.1080p.NF.WEB-DL.DDPA5.1.H.264-playWEB' },
+        { ...base, guid: 'z4', title: 'The.List.2023.1080p.AMZN.WEB-DL.DDP5.1.H.264-FLUX', approved: false, rejections: ['Custom Formats AMZN have score -100 below Movie\'s profile minimum 0'] },
+        { ...base, guid: 'z5', title: 'Zom.100.Bucket.List.of.the.Dead.2023.COMPLETE.BLURAY-GRP', qualityName: 'BR-DISK', approved: false, rejections: ['BR-DISK is not wanted in profile'] },
+      ],
+      target,
+    );
+    const byTitle = (part: string) => rows.find((r) => r.title.includes(part))!;
+    expect(byTitle('The.Convert')).toMatchObject({ state: 'not_allowed', recommended: false });
+    expect(byTitle('The.Convert').reasons[0]).toMatchObject({ code: 'other_movie', class: 'hard', text: 'Its name is for a different movie' });
+    expect(byTitle('The.List')).toMatchObject({ state: 'not_allowed' });
+    expect(byTitle('OzONE')).toMatchObject({ state: 'grab', recommended: true });
+    expect(byTitle('Zombie.ni.Naru')).toMatchObject({ state: 'grab' });
+    expect(byTitle('COMPLETE.BLURAY')).toMatchObject({ state: 'not_allowed' });
+    expect(byTitle('COMPLETE.BLURAY').reasons.map((r) => r.code)).toContain('raw_disc');
+    expect(recommendedKey).toBe(byTitle('OzONE').key);
   });
 });
 
