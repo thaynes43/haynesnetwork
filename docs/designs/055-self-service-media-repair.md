@@ -531,7 +531,10 @@ do not edit)", "must not contain" terms only, no tags.
     still refuses (`no_parking`): Bubble Guppies S05 and Mecha Builders S01, where every episode of the series has a file.
 37. **The Second-Copy Fix takes a multi-episode copy** (Paw Patrol S06E48-49 holds the same file content as E46-47;
     Spidey S05's E09-12 file is a copy of E05-06's). The slot is every episode of the season the copy sits on: all are
-    emptied, read back and searched. The copy must sit in one season only.
+    emptied, read back and searched. The copy must sit in one season only. A copy byte-identical to its original (The
+    Simpsons S38E02 and E01: 719,258,375 bytes each) is one content already; the carry tells the copy's item apart by
+    its file name, clears it, and credits its plays to the original's item. The carry's wait checks files of one size
+    together (each must sit on its own Sonarr episode).
 
 ### D-06 Release Pick
 

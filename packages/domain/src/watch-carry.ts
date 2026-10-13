@@ -131,6 +131,11 @@ export interface WatchCarryScope {
   moved: number[] | 'all';
   /** Files the move deletes (a second copy). Their plays count only through `sameAs`. */
   deleted?: number[];
+  /**
+   * Files the move deletes, by file name, when a byte size cannot tell them apart (a second copy byte-identical to its
+   * original: The Simpsons S38E02 and E01 are both 719,258,375 bytes). Never counted as content where they sit.
+   */
+  deletedNames?: string[];
   /** `[copy, original]`: plays of the copy are plays of the original's content (staff evidence). */
   sameAs?: Array<[number, number]>;
   /** Ordering switch: the items (per server, rating keys) the switch is expected to re-match, cleared first. */
@@ -159,8 +164,9 @@ export interface CarryTarget {
  */
 function contentsOf(parts: readonly WatchCarryPart[], scope: WatchCarryScope): number[] {
   const deleted = new Set(scope.deleted ?? []);
+  const deletedNames = new Set(scope.deletedNames ?? []);
   const same = new Map((scope.sameAs ?? []).map(([copy, original]) => [copy, original] as const));
-  return [...new Set(parts.filter((p) => !deleted.has(p.size)).map((p) => same.get(p.size) ?? p.size))];
+  return [...new Set(parts.filter((p) => !deleted.has(p.size) && !deletedNames.has(p.name)).map((p) => same.get(p.size) ?? p.size))];
 }
 
 /** Every content key the move touches: what moves, what is deleted, and what a deleted copy is the same as. */
@@ -580,9 +586,10 @@ async function accountsOf(server: WatchCarryServer, section: string | null): Pro
 function preClearKeys(slug: string, snapshot: WatchCarrySnapshot): Set<string> {
   const scope = snapshot.scope;
   const away = new Set<number>([...(scope.moved === 'all' ? [] : scope.moved), ...(scope.deleted ?? [])]);
+  const awayNames = new Set(scope.deletedNames ?? []);
   const keys = new Set<string>(scope.preClear?.[slug] ?? []);
   for (const item of snapshot.servers[slug]?.items ?? []) {
-    if (item.parts.some((p) => away.has(p.size))) keys.add(item.ratingKey);
+    if (item.parts.some((p) => away.has(p.size) || awayNames.has(p.name))) keys.add(item.ratingKey);
   }
   return keys;
 }
@@ -752,13 +759,14 @@ export async function waitForCarryPlaces(input: {
         missing.push({ server: slug, size: 0, expected: 'the show', seen: null });
         continue;
       }
-      for (const e of input.expected) {
-        const holders = leaves.filter((l) => l.parts.some((p) => p.size === e.size));
-        const ok = holders.length === 1 && holders[0]!.season === e.season && holders[0]!.episode === e.episode;
-        if (!ok) {
-          const seen = holders.map((h) => `S${h.season}E${h.episode}`).join(',') || null;
-          missing.push({ server: slug, size: e.size, expected: `S${e.season}E${e.episode}`, seen });
-        }
+      // Files of one byte size (a byte-identical copy) are checked together: their items must sit exactly where Sonarr
+      // has them, one item each.
+      const bySize = new Map<number, string[]>();
+      for (const e of input.expected) bySize.set(e.size, [...(bySize.get(e.size) ?? []), `S${e.season}E${e.episode}`]);
+      for (const [size, places] of bySize) {
+        const seen = leaves.filter((l) => l.parts.some((p) => p.size === size)).map((h) => `S${h.season}E${h.episode}`);
+        const ok = seen.length === places.length && [...seen].sort().join(',') === [...places].sort().join(',');
+        if (!ok) missing.push({ server: slug, size, expected: places.join(','), seen: seen.join(',') || null });
       }
     }
     if (missing.length === 0) return { ready: true, missing, polls };

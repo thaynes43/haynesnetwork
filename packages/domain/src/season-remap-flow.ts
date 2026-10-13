@@ -655,12 +655,13 @@ export function expectedCarryPlaces(
   state: Pick<RemapSeasonState, 'episodes' | 'files'>,
 ): CarryExpectedPlace[] {
   const out: CarryExpectedPlace[] = [];
-  for (const size of sizes) {
-    const file = state.files.find((f) => f.size === size);
-    if (!file) continue;
-    const on = state.episodes.filter((e) => e.episodeFileId === file.id).sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);
-    if (on.length === 0) continue;
-    out.push({ size, season: on[0]!.seasonNumber, episode: on[0]!.episodeNumber });
+  for (const size of new Set(sizes)) {
+    // Every file of that size (a byte-identical copy has the same size as its original).
+    for (const file of state.files.filter((f) => f.size === size)) {
+      const on = state.episodes.filter((e) => e.episodeFileId === file.id).sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);
+      if (on.length === 0) continue;
+      out.push({ size, season: on[0]!.seasonNumber, episode: on[0]!.episodeNumber });
+    }
   }
   return out;
 }

@@ -209,7 +209,8 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
   if (input.watchCarry) {
     const copySize = plan.copy.size;
     const originalSize = plan.original.size;
-    if (!copySize || !originalSize) {
+    const copyName = (plan.copy.relativePath ?? '').split(/[\\/]/).pop() ?? '';
+    if (!copySize || !originalSize || (copySize === originalSize && !copyName)) {
       throw new FixRefusedError('copy_refused', 'Sonarr does not list the size of both files, so their watch state cannot be carried. Nothing was removed.');
     }
     try {
@@ -220,7 +221,11 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
         mediaItemId: input.mediaItemId,
         seriesId: plan.seriesId,
         seasons: [input.seasonNumber],
-        scope: { moved: [], deleted: [copySize], sameAs: [[copySize, originalSize]] },
+        // A copy byte-identical to its original is one content already: it is told apart by its file name instead.
+        scope:
+          copySize === originalSize
+            ? { moved: [copySize], deletedNames: [copyName] }
+            : { moved: [], deleted: [copySize], sameAs: [[copySize, originalSize]] },
         detail: { planDigest: plan.digest, episode: plan.episode.label, original: plan.original.label },
         pauseMs: input.carryPauseMs,
       });
