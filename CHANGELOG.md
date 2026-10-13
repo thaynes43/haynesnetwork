@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.123.0](https://github.com/thaynes43/haynesnetwork/compare/v0.122.2...v0.123.0) (2026-10-13)
+
+
+### Features
+
+* **domain:** Season Re-map placements may change the episode count, a second cycle parks too, and the Second-Copy Fix takes a multi-episode copy ([#928](https://github.com/thaynes43/haynesnetwork/issues/928)) ([#950](https://github.com/thaynes43/haynesnetwork/issues/950)) ([9507544](https://github.com/thaynes43/haynesnetwork/commit/95075441ddb7970dd7117af218d316f2c6addc20))
+* **domain:** the household Audio Preference for staff, English if present (owner ruling [#955](https://github.com/thaynes43/haynesnetwork/issues/955)) ([#958](https://github.com/thaynes43/haynesnetwork/issues/958)) ([fcebfde](https://github.com/thaynes43/haynesnetwork/commit/fcebfde4c913e61bb9e5709ad1c44894d43cef70))
+
 ## [0.122.2](https://github.com/thaynes43/haynesnetwork/compare/v0.122.1...v0.122.2) (2026-10-13)
 
 
