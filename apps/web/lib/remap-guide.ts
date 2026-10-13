@@ -280,6 +280,27 @@ export function titleFlagText(flag: {
   return `This file's name says it's ${episodeLabelOf(flag.seasonNumber, flag.best.episodeNumber, flag.best.title)}`;
 }
 
+/**
+ * A flag whose move cannot run (that episode keeps its own file, so the guide would refuse): the line under the flag,
+ * and the prefilled Helpdesk ticket staff work from (DESIGN-055 P4 decision 15).
+ */
+export const TITLE_FLAG_STAFF_LINE = 'That episode already has a file, so staff need to move this one.';
+
+export function titleFlagStaffTicket(flag: {
+  seasonNumber: number;
+  episodeNumber: number;
+  episodeTitle: string | null;
+  sourceTitle: string;
+  best: { episodeNumber: number; title: string | null } | null;
+}): { subject: string; note: string } {
+  const on = episodeLabelOf(flag.seasonNumber, flag.episodeNumber, flag.episodeTitle);
+  const named = flag.best ? episodeLabelOf(flag.seasonNumber, flag.best.episodeNumber, flag.best.title) : 'another episode';
+  return {
+    subject: `${on} plays another episode`,
+    note: `The file on ${on} is named for ${named} (${flag.sourceTitle}), and that episode has its own file, so it cannot be moved from the episode page.`,
+  };
+}
+
 /** The single-move claim a flag opens the guide with, or null when the name points nowhere. */
 export function titleFlagClaim(flag: { episodeId: number; best: { episodeId: number } | null }): RemapClaim | null {
   if (!flag.best || flag.best.episodeId === flag.episodeId) return null;

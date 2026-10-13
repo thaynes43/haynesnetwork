@@ -137,6 +137,19 @@ export function droppedFileName(path: string | null | undefined): string | null 
 }
 
 /**
+ * DESIGN-055 P4 decision 16 — a name in a library's own naming shape (`The Loud House (2016) - S05E46 - Appetite for
+ * Destruction [AMZN WEBDL-1080p]...`): the file was imported from a folder holding files a Sonarr had already renamed
+ * (a hold folder, an older library), so its title is that library's earlier mapping, not the release's. It is no
+ * evidence either way. Release names that merely use " - " (`Clarence.2014 - S02E35 - Belson's Backpack.WEBDL-1080p`)
+ * have no `(year)` before the episode token and no `[quality]` block, so they still count.
+ */
+const LIBRARY_FILE_NAME = /^.+ \(\d{4}\) - S\d{1,3}E\d{1,4}(?:-?E?\d{1,4})* - .+\[/i;
+
+export function isLibraryFileName(name: string): boolean {
+  return LIBRARY_FILE_NAME.test(name);
+}
+
+/**
  * D-05: judge one file. Every candidate name is scored against the series' episodes with the file's episodes as the
  * mapping; the kept verdict is any `agrees`, else the first `disagrees` (with its best episode and scores), else
  * `ambiguous`, else `silent`. Null when there is no name, or none of the file's episodes is in `episodes`.
@@ -152,9 +165,26 @@ export function judgeTitleCheckFile(input: {
     .sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);
   const first = held[0];
   if (!first) return null;
-  const names = [...new Set(input.names.map((n) => n?.trim() ?? '').filter((n) => n.length > 0))];
-  if (names.length === 0) return null;
+  const given = [...new Set(input.names.map((n) => n?.trim() ?? '').filter((n) => n.length > 0))];
+  if (given.length === 0) return null;
+  const names = given.filter((n) => !isLibraryFileName(n));
   const episodeIds = held.map((e) => e.id);
+  if (names.length === 0) {
+    // Only a library's own names: no evidence either way (decision 16), recorded as silent so an earlier verdict on the
+    // same file is replaced, not left standing.
+    return {
+      verdict: 'silent',
+      name: given[0]!,
+      episodeIds,
+      episodeId: first.id,
+      episodeNumber: first.episodeNumber,
+      seasonNumber: first.seasonNumber,
+      bestEpisodeId: null,
+      bestEpisodeNumber: null,
+      score: null,
+      bestScore: null,
+    };
+  }
 
   let kept: { name: string; evidence: EpisodeTitleEvidence } | null = null;
   for (const name of names) {
@@ -853,6 +883,12 @@ export interface TitleFlag {
   best: TitleCheckEpisodeRef | null;
   score: number | null;
   bestScore: number | null;
+  /**
+   * Whether the single move the flag offers can run: the file lands, by the same offset, on episodes that exist and are
+   * free (or hold this same file). False when that episode keeps its own file: the guide would refuse, so the title page
+   * says staff move it instead of offering "Move it" (DESIGN-055 P4 decision 15).
+   */
+  movable: boolean;
 }
 
 /**
@@ -891,6 +927,19 @@ export async function listTitleFlags(input: {
     .filter((f) => !stale.includes(f.id))
     .map((f) => {
       const on = byId.get(f.episodeId)!;
+      const best = f.bestEpisodeId === null ? undefined : byId.get(f.bestEpisodeId);
+      let movable = best !== undefined && best.seasonNumber === on.seasonNumber;
+      if (best !== undefined && movable) {
+        const offset = best.episodeNumber - on.episodeNumber;
+        for (const id of f.episodeIds) {
+          const held = byId.get(id);
+          const target = held
+            ? episodes.find((e) => e.seasonNumber === held.seasonNumber && e.episodeNumber === held.episodeNumber + offset)
+            : undefined;
+          const targetFile = target?.episodeFileId ?? 0;
+          if (!target || (targetFile > 0 && targetFile !== f.episodeFileId)) movable = false;
+        }
+      }
       return {
         titleCheckId: f.id,
         seasonNumber: on.seasonNumber,
@@ -903,6 +952,7 @@ export async function listTitleFlags(input: {
         best: ref(f.bestEpisodeId),
         score: f.score,
         bestScore: f.bestScore,
+        movable,
       };
     })
     .sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);

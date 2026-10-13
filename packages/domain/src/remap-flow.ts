@@ -29,6 +29,7 @@ import {
   type RemapSuggestion,
 } from './remap-plan';
 import { episodeLabel } from './media-children';
+import { isLibraryFileName } from './title-check';
 import type { FixReason } from '@hnet/db';
 
 export interface RemapTargetInput {
@@ -121,7 +122,8 @@ async function readSeason(input: RemapTargetInput): Promise<SeasonRead> {
       size: f.size ?? null,
       releaseGroup: f.releaseGroup ?? null,
       qualityName: f.quality?.quality?.name ?? null,
-      sourceName: f.sceneName?.trim() ? f.sceneName : (judgedName.get(f.id) ?? null),
+      // A library's own earlier name is no evidence (DESIGN-055 P4 decision 16).
+      sourceName: [f.sceneName?.trim() || null, judgedName.get(f.id) ?? null].find((n) => n && !isLibraryFileName(n)) ?? null,
     })),
     queueBusy,
     sonarrBusy,
@@ -205,6 +207,9 @@ export function remapRefusalText(plan: Pick<RemapPlan, 'refusal' | 'blocker'>): 
     case 'no_such_episode':
       return 'That would move a file past the last episode of the season.';
     case 'occupied':
+      if (b?.misplaced) {
+        return `The file on ${b.episode.label} seems to be on the wrong episode too, so the two would have to trade places. That needs staff for now.`;
+      }
       return b
         ? `${b.episode.label} has its own file, which this would not move. Fix that episode first, or ask staff for help.`
         : 'One of those episodes has its own file, which this would not move. Ask staff for help.';

@@ -163,6 +163,32 @@ describe('buildRemapPlan: shapes beyond Case A', () => {
   });
 });
 
+describe('buildRemapPlan: a file in the way that is misplaced too', () => {
+  it('says the two would have to trade places (staff), not "Fix that episode first"', () => {
+    const season: RemapEpisode[] = [
+      { id: 1, seasonNumber: 1, episodeNumber: 8, title: 'Work Family', episodeFileId: 18 },
+      { id: 2, seasonNumber: 1, episodeNumber: 9, title: 'Step Class', episodeFileId: 19 },
+    ];
+    const file = (id: number, name: string): RemapFile => ({ id, seasonNumber: 1, relativePath: `f${id}`, size: 1, releaseGroup: 'FUZEER', qualityName: null, sourceName: name });
+    // Abbott Elementary S01E08 and E09, each file named for the other episode (the live census, 2026-10-13).
+    const p = buildRemapPlan({
+      seasonNumber: 1,
+      claim: { kind: 'single', fromEpisodeId: 1, toEpisodeId: 2 },
+      episodes: season,
+      files: [
+        file(18, 'Abbott.Elementary.2021.S01E08.Step.Class.1080p.HMAX.WEB-DL.DDP5.1.H.264-FUZEER'),
+        file(19, 'Abbott.Elementary.2021.S01E09.Work.Family.1080p.HMAX.WEB-DL.DDP5.1.H.264-FUZEER'),
+      ],
+      queueBusy: false,
+    });
+    expect(p.refusal).toBe('occupied');
+    expect(p.blocker).toMatchObject({ misplaced: true });
+    expect(remapRefusalText(p)).toBe(
+      'The file on S01E09 · Step Class seems to be on the wrong episode too, so the two would have to trade places. That needs staff for now.',
+    );
+  });
+});
+
 describe('suggestRemap (D-04 rule 2)', () => {
   it('suggests the single move Case A\'s Disney+ file names, and nothing from the silent BiOMA names', () => {
     const s = suggestRemap({ seasonNumber: 1, episodes, files });

@@ -35,6 +35,8 @@ import {
   type RemapMove,
   type RemapSeason,
   type RemapSeasonEpisode,
+  TITLE_FLAG_STAFF_LINE,
+  titleFlagStaffTicket,
 } from '../remap-guide';
 
 const ref = (id: number, n: number, title: string) => ({
@@ -270,5 +272,21 @@ describe('the Title Check flag', () => {
     expect(map.get(1024)?.titleCheckId).toBe('a');
     expect(episodeLabelOf(2, 6, null)).toBe('S02E06');
     expect(episodeLabelOf(2, 6, ' 125 Years Young ')).toBe('S02E06 · 125 Years Young');
+  });
+});
+
+describe('a flag whose move cannot run (DESIGN-055 P4 decision 15)', () => {
+  it('hands it to staff with the evidence, worded for people', () => {
+    const t = titleFlagStaffTicket({
+      seasonNumber: 1,
+      episodeNumber: 8,
+      episodeTitle: 'Work Family',
+      sourceTitle: 'Abbott.Elementary.2021.S01E08.Step.Class.1080p.HMAX.WEB-DL.DDP5.1.H.264-FUZEER',
+      best: { episodeNumber: 9, title: 'Step Class' },
+    });
+    expect(t.subject).toBe('S01E08 · Work Family plays another episode');
+    expect(t.note).toContain('named for S01E09 · Step Class');
+    expect(TITLE_FLAG_STAFF_LINE).toBe('That episode already has a file, so staff need to move this one.');
+    expect(`${t.subject} ${t.note} ${TITLE_FLAG_STAFF_LINE}`).not.toMatch(/—/);
   });
 });
