@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.118.1](https://github.com/thaynes43/haynesnetwork/compare/v0.118.0...v0.118.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **domain:** the Release Pick refuses another movie's release, and never offers a disc image (PLAN-077 P5) ([#930](https://github.com/thaynes43/haynesnetwork/issues/930)) ([dac5d0f](https://github.com/thaynes43/haynesnetwork/commit/dac5d0f58203444937a2b341bb846ddaa48ccc9b))
+
 ## [0.118.0](https://github.com/thaynes43/haynesnetwork/compare/v0.117.0...v0.118.0) (2026-10-13)
 
 
