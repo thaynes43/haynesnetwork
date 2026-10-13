@@ -7,8 +7,8 @@
   first real Seerr issue OC-052. P4 (v0.115.0, v0.115.1, v0.116.0) is shipped and verified live, remedy on; its first
   week of Title Check census and first person-run re-map are OC-053. DESIGN-055 Q-10 (the hand profile's five
   non-group blocks) is ruled A (owner, 2026-10-13, ADR-113): mislabelled-name terms are built, and their live adoption
-  and the hand profile's removal are owed after the deploy (P4, "Q-10 ruling"). One owner question is open: Q-11 (the
-  library's whole-season reorderings, issue #916). P5 is next.
+  and the hand profile's removal are owed after the deploy (P4, "Q-10 ruling"). Q-11 (the library's whole-season reorderings,
+  issue #916) is ruled A too (owner, 2026-10-13): staff's Season Re-map, P4's follow-up below. P5 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -346,6 +346,25 @@ Priority is how often real reports need the remedy, and how much harm today's be
   - Seen in the same read, outside Q-10: hand profile 2 ("T.O.T.S.: block mislabeled MULTI and DUTCH postings", tag 30
     on series 724) holds `\bMULTI\b`, `\bDUTCH\b` and `\bThe[ ._-]Case[ ._-]of[ ._-]the\b`. None is a group, a
     pair, a double or an alternate title, so it stays a hand profile; ADR-113 does not cover it.
+
+### P4 follow-up: the Season Re-map (issue #916, DESIGN-055 Q-11 ruled A)
+
+The library-wide Title Check left 622 open flags: 17 a person could move, 605 whole-season reorderings and rotations the
+person's re-map refuses by design. Owner ruling (2026-10-13): staff fix them with a season re-map that follows the
+names, never deleting a file, after a watch-state check on every Plex server and an evidence spot-check per season.
+
+- **Build:** DESIGN-055 P4 decisions 18 to 24. `season-remap-plan.ts` (pure: names or staff placements, holds that
+  never displace, the order with a Parking Episode for each cycle, the unplaced files with suggestions and the open
+  episodes) and `season-remap-flow.ts` (`planSeasonRemap`, `runSeasonRemap`: the Plex check against every server that
+  carries the series, then one ManualImport and one RenameFiles per step, each read back, the file count checked after);
+  `remap-flow.ts` exports its season read with every source name. Staff tool: `repair-guide.ts season-plan | season-run`
+  (`--place`, `--keep`, `--digest`, `--ignore-plex`). Glossary T-316 Season Re-map and T-317 Parking Episode.
+- **Tests:** `season-remap-plan.test.ts` (chains, a swap, a rotation, two swaps through one parking episode, no parking,
+  second copies, collisions, an unplaced file and its placement, a two-episode placement, keep, refusals, the Plex check)
+  and `season-remap-flow.test.ts` (embedded Postgres and a stateful stub Sonarr: a swap and a rotation end on their own
+  episodes under their own names with nothing orphaned; a skipped rename stops the run and reports the parked file; a
+  changed plan, a failed Plex check and the switch off refuse); the repair-guide script test.
+- **Live run:** recorded below once done (seasons moved, seasons skipped and why, the census before and after).
 
 ### P5: Release Pick
 

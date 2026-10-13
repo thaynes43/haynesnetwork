@@ -103,7 +103,9 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    remedy): one `ManualImport` per move of a file already in the series folder onto its right episodes (Sonarr re-links
    it; nothing is downloaded), in an order where every move lands on a free slot, each read back before the next, then
    `RenameFiles` for the moved files. It never deletes a file and never imports onto an episode that keeps a file it does
-   not move. The **Mislabel Block** is one app-owned Sonarr release profile (`haynesnetwork: mislabelled releases
+   not move. Staff's **Season Re-map** (DESIGN-055 P4 decisions 18 to 24, in-cluster tool only) uses the same two writes
+   for a whole season by the files' own names: one file per step, a swap or rotation passing through a free parking
+   episode, each file renamed and read back right after its step. The **Mislabel Block** is one app-owned Sonarr release profile (`haynesnetwork: mislabelled releases
    (managed, do not edit)`) holding "must not contain" terms that pair one series title with one release group, written
    only by its single writer (`mislabel-block.ts`): from a person's confirmed shift re-map that moved two or more files of
    that group, from the one-off adoption of Case A's hand-made profile, and in the hourly `title-check` upkeep (expiry,

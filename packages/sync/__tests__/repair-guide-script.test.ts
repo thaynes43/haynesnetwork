@@ -1,7 +1,8 @@
 // ADR-109 / DESIGN-055 (PLAN-077 P1) — the Repair Guide's in-cluster tool parses its commands strictly: a read can never
 // be mistaken for a write, and `settings` writes only with --set / --known-issue.
 import { describe, expect, it } from 'vitest';
-import { formatTitleCheckBackfill, parseRepairGuideArgs } from '../src/scripts/repair-guide';
+import { formatSeasonPlan, formatTitleCheckBackfill, parseRepairGuideArgs } from '../src/scripts/repair-guide';
+import type { SeasonRemapView } from '@hnet/domain';
 
 describe('repair-guide.ts arguments', () => {
   it('preview a movie, an episode, a season with chosen episodes', () => {
@@ -123,6 +124,62 @@ describe('repair-guide.ts arguments', () => {
       'Regular Show: The Lost Tapes S01E24 "Don\'s Back" -> S01E23 "All You Can Fit" (score 0.00, best 1.00) file 9024 ' +
         '[history]: Regular.Show..The.Lost.Tapes.S01E24.All.You.Can.Fit.1080p.DSNP.WEB-DL.DDP5.1.H.264-AndreMor',
     );
+  });
+
+  it('season-plan and season-run take placements, kept episodes, the digest and the Plex override (DESIGN-055 P4 decisions 18-24)', () => {
+    expect(parseRepairGuideArgs(['season-plan', '--tvdb', '279257', '--season', '20'])).toMatchObject({ command: 'season-plan', tvdb: 279257, season: 20 });
+    expect(
+      parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '5', '--place', '14:13,19:21', '--place', '53-54:27-28', '--keep', '4,5', '--json']),
+    ).toMatchObject({
+      placements: [
+        { from: [14], to: [13] },
+        { from: [19], to: [21] },
+        { from: [53, 54], to: [27, 28] },
+      ],
+      keep: [4, 5],
+      json: true,
+    });
+    expect(
+      parseRepairGuideArgs(['season-run', '--tvdb', '1', '--season', '5', '--place', '14:13', '--digest', 'abcdef0123456789', '--ignore-plex']),
+    ).toMatchObject({ command: 'season-run', digest: 'abcdef0123456789', ignorePlex: true });
+    expect(() => parseRepairGuideArgs(['season-run', '--tvdb', '1', '--season', '5'])).toThrow(/--digest/);
+    expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1'])).toThrow(/--season/);
+    expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '5', '--place', '14-15:13'])).toThrow(/--place/);
+    expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '5', '--ignore-plex'])).toThrow(/season-run/);
+    expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '5', '--shift', '11:+1'])).toThrow(/remap-plan/);
+    expect(() => parseRepairGuideArgs(['remap-plan', '--tvdb', '1', '--season', '5', '--place', '1:2'])).toThrow(/season-plan/);
+  });
+
+  it('prints the season plan: steps, files that stay, files to place, the Plex check and the digest', () => {
+    const ref = (n: number, title: string) => ({ id: 100 + n, episodeNumber: n, title, label: `S01E0${n} · ${title}` });
+    const view = {
+      seasonNumber: 1,
+      seriesId: 777,
+      seriesTitle: 'Show',
+      steps: [
+        { kind: 'park', fileId: 1, fileName: 'a.mkv', size: 1, releaseGroup: 'GRP', from: [ref(2, 'Bravo')], to: [{ ...ref(1, 'Special'), label: 'S00E01 · Special' }], why: 'name', nameSays: { name: 'Show.S01E02.Charlie', verdict: 'agrees', best: ref(3, 'Charlie') } },
+      ],
+      moved: 2,
+      held: [{ fileId: 9, fileName: 'x.mkv', on: [ref(5, 'Echo')], reason: 'duplicate', names: ref(4, 'Delta'), name: 'Show.S01E05.Delta' }],
+      unplaced: [{ fileId: 8, fileName: 'y.mkv', on: [ref(6, 'Foxtrot')], name: 'Show.S01E06', verdict: 'silent', suggestion: ref(7, 'Golf') }],
+      open: [ref(7, 'Golf')],
+      vacated: [],
+      parking: { ...ref(1, 'Special'), label: 'S00E01 · Special', seasonNumber: 0 },
+      refusal: null,
+      refusalDetail: null,
+      digest: 'abc123',
+      plexCheck: { servers: [{ server: 'haynestower', items: 7, followsTvdb: 7, differs: 0, unknown: 0 }], wrongAfter: [], ok: true },
+      remapOn: true,
+      refusalText: null,
+    } as unknown as SeasonRemapView;
+    const out = formatSeasonPlan('Show', view);
+    expect(out).toContain('Show, season 1 (Sonarr series 777): 2 files move in 1 steps, passing through S00E01 · Special (season 0).');
+    expect(out).toContain('Plex haynestower: 7 of 7 titled items carry the TVDB title (0 untitled).');
+    expect(out).toContain('Plex check: ok.');
+    expect(out).toContain('  1. park   S01E02 · Bravo -> S00E01 · Special [name; name agrees] Show.S01E02.Charlie');
+    expect(out).toContain('stays S01E05 · Echo (duplicate), its name says S01E04 · Delta: Show.S01E05.Delta');
+    expect(out).toContain('unplaced S01E06 · Foxtrot (name silent): Show.S01E06 -> suggestion --place 6:7');
+    expect(out).toContain('digest abc123');
   });
 
   it('refuses what it does not understand', () => {

@@ -39,17 +39,19 @@ export interface RemapTargetInput {
   seasonNumber: number;
 }
 
-interface SeasonRead {
+/** One season as the re-maps read it (the person's re-map here, staff's Season Re-map in season-remap-flow.ts). */
+export interface RemapSeasonState {
   mediaItemId: string;
   seriesId: number;
   seriesTitle: string;
   episodes: RemapEpisode[];
-  files: Array<RemapFile & { relativePathFull: string | null }>;
+  files: Array<RemapFile & { relativePathFull: string | null; sourceNames: string[] }>;
   queueBusy: boolean;
   sonarrBusy: boolean;
 }
 
-async function guarded<T>(what: string, fn: () => Promise<T>): Promise<T> {
+/** An *arr call whose ArrError becomes an ArrUpstreamError naming `what` (the re-maps' reads). */
+export async function remapGuarded<T>(what: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
@@ -62,7 +64,9 @@ async function guarded<T>(what: string, fn: () => Promise<T>): Promise<T> {
 
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-async function readSeason(input: RemapTargetInput): Promise<SeasonRead> {
+/** Read one season for a re-map: the episodes, the files with the names they were imported under, and whether a
+ *  download or an earlier move or rename is still in flight. */
+export async function readRemapSeasonState(input: RemapTargetInput): Promise<RemapSeasonState> {
   const db = resolveDb(input.db);
   const [item] = await db
     .select({
@@ -83,10 +87,10 @@ async function readSeason(input: RemapTargetInput): Promise<SeasonRead> {
   }
   const sonarr = input.arr.read.sonarr;
   const [episodes, files, queue, commands] = await Promise.all([
-    guarded('episodes', () => sonarr.listEpisodes(item.arrItemId)),
-    guarded('episode files', () => sonarr.listEpisodeFileReleases(item.arrItemId)),
-    guarded('queue', () => sonarr.getQueue(item.arrItemId)),
-    guarded('commands', () => sonarr.listCommands()),
+    remapGuarded('episodes', () => sonarr.listEpisodes(item.arrItemId)),
+    remapGuarded('episode files', () => sonarr.listEpisodeFileReleases(item.arrItemId)),
+    remapGuarded('queue', () => sonarr.getQueue(item.arrItemId)),
+    remapGuarded('commands', () => sonarr.listCommands()),
   ]);
   const sonarrBusy = commands.some(
     (c) => (c.name === 'ManualImport' || c.name === 'RenameFiles') && ['queued', 'started'].includes(c.status.toLowerCase()),
@@ -114,17 +118,23 @@ async function readSeason(input: RemapTargetInput): Promise<SeasonRead> {
       title: e.title ?? null,
       episodeFileId: e.hasFile && e.episodeFileId ? e.episodeFileId : null,
     })),
-    files: files.map((f) => ({
-      id: f.id,
-      seasonNumber: f.seasonNumber ?? null,
-      relativePath: f.relativePath ?? null,
-      relativePathFull: f.relativePath ?? null,
-      size: f.size ?? null,
-      releaseGroup: f.releaseGroup ?? null,
-      qualityName: f.quality?.quality?.name ?? null,
+    files: files.map((f) => {
       // A library's own earlier name is no evidence (DESIGN-055 P4 decision 16).
-      sourceName: [f.sceneName?.trim() || null, judgedName.get(f.id) ?? null].find((n) => n && !isLibraryFileName(n)) ?? null,
-    })),
+      const names = [f.sceneName?.trim() || null, judgedName.get(f.id)?.trim() || null].filter(
+        (n): n is string => !!n && !isLibraryFileName(n),
+      );
+      return {
+        id: f.id,
+        seasonNumber: f.seasonNumber ?? null,
+        relativePath: f.relativePath ?? null,
+        relativePathFull: f.relativePath ?? null,
+        size: f.size ?? null,
+        releaseGroup: f.releaseGroup ?? null,
+        qualityName: f.quality?.quality?.name ?? null,
+        sourceName: names[0] ?? null,
+        sourceNames: [...new Set(names)],
+      };
+    }),
     queueBusy,
     sonarrBusy,
   };
@@ -156,7 +166,7 @@ export interface RemapSeasonView {
  * Title Evidence suggests (files whose name names another episode). Read-only, costs nothing.
  */
 export async function readRemapSeason(input: RemapTargetInput & { remapOn?: boolean }): Promise<RemapSeasonView> {
-  const season = await readSeason(input);
+  const season = await readRemapSeasonState(input);
   const remedies = input.remapOn === undefined ? await getRepairGuideRemedies(input.db) : null;
   const inSeason = season.episodes
     .filter((e) => e.seasonNumber === input.seasonNumber)
@@ -236,7 +246,7 @@ export interface RemapPlanRequest extends RemapTargetInput {
 
 /** DESIGN-055 D-04 — the read-only plan for a claim: what moves where, in what order, and what is left empty. */
 export async function planEpisodeRemap(input: RemapPlanRequest & { remapOn?: boolean }): Promise<PublicRemapPlan> {
-  const season = await readSeason(input);
+  const season = await readRemapSeasonState(input);
   const plan = buildRemapPlan({
     seasonNumber: input.seasonNumber,
     claim: input.claim,
@@ -287,11 +297,12 @@ export interface RemapRunResult {
   stoppedText: string | null;
 }
 
-const DEFAULT_COMMAND_WAIT = { timeoutMs: 60_000, intervalMs: 1_000 };
+export const REMAP_COMMAND_WAIT = { timeoutMs: 60_000, intervalMs: 1_000 };
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const TERMINAL = new Set(['completed', 'failed', 'aborted', 'cancelled', 'orphaned']);
 
-async function waitForCommand(
+/** Poll one Sonarr command until it ends or the wait runs out (a failed read is not a failed command). */
+export async function waitForSonarrCommand(
   arr: ArrClientBundle,
   commandId: number,
   wait: { timeoutMs: number; intervalMs: number },
@@ -323,7 +334,7 @@ export async function runEpisodeRemap(input: RunRemapInput): Promise<RemapRunRes
   if (!remedies.episode_remap) {
     throw new FixRefusedError('remap_refused', 'Moving episode files is switched off right now. Ask staff for help.');
   }
-  const season = await readSeason(input);
+  const season = await readRemapSeasonState(input);
   const plan = buildRemapPlan({
     seasonNumber: input.seasonNumber,
     claim: input.claim,
@@ -338,7 +349,7 @@ export async function runEpisodeRemap(input: RunRemapInput): Promise<RemapRunRes
   if (plan.refusal) throw new FixRefusedError('remap_refused', remapRefusalText(plan) ?? 'This cannot be moved.');
 
   // Rule 7: each move sends the file's own manual-import candidate back with its new episodes.
-  const candidates = await guarded('season import candidates', () =>
+  const candidates = await remapGuarded('season import candidates', () =>
     input.arr.read.sonarr.listSeasonImportCandidates(season.seriesId, input.seasonNumber),
   );
   const byFileId = new Map<number, SonarrManualImportCandidate>();
@@ -404,7 +415,7 @@ export async function runEpisodeRemap(input: RunRemapInput): Promise<RemapRunRes
     },
   });
 
-  const wait = input.commandWait ?? DEFAULT_COMMAND_WAIT;
+  const wait = input.commandWait ?? REMAP_COMMAND_WAIT;
   const movedFileIds: number[] = [];
   let stoppedText: string | null = null;
   let stopAction: { step: string; at: string; [key: string]: unknown } | null = null;
@@ -426,10 +437,10 @@ export async function runEpisodeRemap(input: RunRemapInput): Promise<RemapRunRes
     } else {
       await appendRepairActions({ db: input.db, repairRequestId, actions: [sent] });
     }
-    const { status, message } = await waitForCommand(input.arr, commandId, wait);
+    const { status, message } = await waitForSonarrCommand(input.arr, commandId, wait);
     let landedId: number | null = null;
     if (status === 'completed') {
-      landedId = await readBackMove(input.arr, season.seriesId, step.relativePath, step.file.episodeIds).catch(() => null);
+      landedId = await readBackRemapMove(input.arr, season.seriesId, step.relativePath, step.file.episodeIds).catch(() => null);
     }
     if (landedId === null) {
       stoppedText =
@@ -494,7 +505,7 @@ export async function runEpisodeRemap(input: RunRemapInput): Promise<RemapRunRes
  * Rule 7's read-back: the file at `relativePath` now holds exactly the target episodes. A library file keeps its path
  * through the import (Sonarr re-links it under a new episode-file id), so the path finds it. Returns the new id.
  */
-async function readBackMove(
+export async function readBackRemapMove(
   arr: ArrClientBundle,
   seriesId: number,
   relativePath: string,
@@ -524,13 +535,13 @@ async function renameMoved(
   seriesId: number,
   fileIds: number[],
 ): Promise<{ renamed: boolean; trail: Array<{ step: string; at: string; [key: string]: unknown }> }> {
-  const wait = input.commandWait ?? DEFAULT_COMMAND_WAIT;
+  const wait = input.commandWait ?? REMAP_COMMAND_WAIT;
   let pending = fileIds;
   const trail: Array<{ step: string; at: string; [key: string]: unknown }> = [];
   for (let pass = 1; pass <= 3 && pending.length > 0; pass += 1) {
     try {
       const command = await input.arr.write.sonarr.renameFiles(seriesId, pending);
-      const { status } = await waitForCommand(input.arr, command.id, wait);
+      const { status } = await waitForSonarrCommand(input.arr, command.id, wait);
       const preview = await input.arr.read.sonarr.listRenamePreview(seriesId, input.seasonNumber);
       const left = new Set(preview.map((p) => p.episodeFileId));
       const before = pending.length;

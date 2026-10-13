@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
+- **Last updated:** 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
@@ -131,6 +131,8 @@ library files onto the right episodes with Sonarr's own manual import. Nothing i
 4. **Order.** For k = +1, highest episode first; for k = -1, lowest first; a single move is one step. This is the order
    that fixed Case A by hand: each move lands on a slot whose file has already moved. A cycle (a swap) has no free slot
    to pass through and is refused with "ask staff".
+   *Staff's Season Re-map (P4 decisions 18 to 24) orders swaps and rotations through a free parking episode; the
+   person's re-map still refuses them.*
 5. **Multi-episode files** move as a set (their episode ids shift together). A plan that would split one is refused.
 6. **Freshness.** Just before executing, the season's episode files are read again; if any file id, size or mapping
    differs from the preview, nothing runs and the guide shows the new state.
@@ -351,6 +353,62 @@ do not edit)", "must not contain" terms only, no tags.
     prints `mislabelGroups`) is accepted with `mislabel-block.ts offer --repair <repair id> --group <group>` (staff, no
     requester). The in-cluster tools now exit only once stdout has drained (a large report piped through `kubectl exec`
     was cut at 64 KiB); the sibling scripts under `packages/sync/src/scripts` got the same fix.
+18. **The Season Re-map** (owner ruling on Q-11, 2026-10-13: option A; issue #916). Staff, never a person, from the
+    in-cluster tool: `repair-guide.ts season-plan --tvdb <id> --season <n> [--place <from>:<to>,...] [--keep <n>,...]`
+    reads and prints the plan; `season-run ... --digest <digest> [--ignore-plex]` runs it (requester null, decision 17;
+    behind `episode_remap`). Every file of the season goes to the episode its own names say: the Title Check's precedence
+    over its scene name and its judged import name (any `agrees`, else `disagrees`, else `ambiguous`, else `silent`;
+    decisions 12 and 16), or where a staff placement says (`--place 21:28`, a two-episode file `--place 53-54:27-28`),
+    which outranks a name. A file whose names say nothing stays unless staff place it; `--keep` holds a file in place.
+    `season-remap-plan.ts` (pure) and `season-remap-flow.ts`.
+19. **Nothing displaced, nothing deleted.** A move is held when an episode it needs keeps a file that does not move:
+    `duplicate` (that file's own name agrees with the episode, so this one is a second copy), `collision` (two files
+    name one episode), `blocked` (the file in the way stays: held itself, kept, or its name says nothing) and
+    `multi_episode` (a two-segment file whose name disagrees; staff place it with a range). Holds cascade to a fixpoint:
+    a held file's episodes stay occupied. The plan lists the files whose names say nothing but sit where a moving file
+    belongs (`unplaced`), each with a suggestion (the one episode left over if every name-led move went ahead, or an
+    ambiguous name's best guess among the leftovers), and those leftover (`open`) episodes. Staff confirm by evidence
+    (decision 24) and place them. A second copy, or a file holding another season's or a special's episode, may be
+    placed by staff on an open episode of its own chain so the rest of the chain lands: it stays wrong there, still
+    flagged (its name still disagrees), and that episode's own file is missing from the library (Fix or Release Pick).
+20. **Order and the parking episode.** A step is ready when the episodes it moves onto are free (no file, or left by an
+    earlier step). When no step is ready the waits form a cycle (a swap or a rotation): its lowest single-episode file
+    moves first to the **Parking Episode** (an episode of the series with no file that no step targets: this season
+    first, then specials, then any other season), the rest of the cycle follows, and the parked file then moves to its
+    own episode. One parking episode serves every cycle in turn. A series with no free episode at all refuses a cycle
+    (`no_parking`): the files cannot pass each other through Sonarr, so the season is listed as a leftover. At most 120
+    steps a run.
+21. **The Plex check.** Plex reads the episode number from the renamed file and titles the item from its own agent (TMDB
+    order on HaynesTower and HaynesOps, except shows switched to TVDB), so a Sonarr move only fixes what viewers see when
+    Plex's title for the episode a file moves to is that episode's TVDB title. The plan reads every Plex server that
+    carries the series (`media_plex_matches`, then `allLeaves`), counts the season's items whose Plex title is the TVDB
+    title of the same number (folded words, Dice at least 0.8; "Episode 13" placeholders say nothing), and lists each
+    move whose episode Plex titles differently; an episode with no Plex item yet passes only when the server follows TVDB
+    for at least 90% of the season. A run refuses a failed check, or one that could not be done, unless staff pass
+    `--ignore-plex` (recorded on the Repair Request). A season whose Plex numbering follows the release rather than TVDB
+    (Plex already shows the name's title) is left alone: moving it in Sonarr would put the wrong title on it in Plex.
+    Switching a show's Plex ordering stays out of scope (decision 10).
+22. **The run renames as it goes.** Each step: the file's own manual-import candidate, read from the season it sits in
+    now (a parked file sits in the parking season); one `ManualImport` (`move`, the decision 6 fields) onto the step's
+    episodes; the read-back (the file at its path holds exactly those episodes, under its new id); one `RenameFiles` for
+    that file; and the rename read-back (it is off Sonarr's rename preview for that season, under its new path).
+    Renaming each step, not once at the end as the person's re-map does, is what lets a cycle pass: the parked file has
+    given up its old name before the file taking its episode needs that name. The first step that does not land, or
+    whose rename Sonarr skips (a name another file still holds; Sonarr never overwrites), stops the run. Every step
+    before it is whole; a file left on the parking episode is reported with the episodes it belongs on (finish it with
+    `--place`). The run then checks that the series holds as many episode files as before. One Repair Request (`remap`,
+    claim `names`, the steps, the files held and why, the Plex check) records every call; a season re-map offers no
+    Mislabel Block (it is not a shift).
+23. **Watch state first** (owner ruling, 2026-10-13). Plex keeps watched marks and resume points on the episode, not the
+    file (decision 10), so a move changes what an existing mark means. Before a season runs, staff read every Plex
+    server's database for that season, read only, for every account (`metadata_item_settings` view count and offset,
+    and `metadata_item_views`). A season where any real person has watch state is not moved; it is listed for the owner
+    with the counts. The app's Plex token sees only the owner's own state, so this is a staff step, not a code check.
+24. **Evidence before each season** (owner ruling, 2026-10-13). Staff spot-check at least one swapped pair per season
+    against the files' own subtitle streams (short reads, no full decodes; a title card frame when a file carries no
+    text subtitles) and the TVDB overviews. A season where the evidence contradicts the names is skipped and reported.
+    Every `--place` comes from such a read. Subtitle files beside a video are no evidence: they were fetched for the
+    episode the file sat on.
 
 ### D-06 Release Pick
 
@@ -802,7 +860,7 @@ before the next. Q-09 came up in review afterwards; the owner's clarification of
 | Q-05 | Once the gate passes, what does the rule do? Options: **A** Seerr issue filing stays open, every new issue gets the fix-it-yourself comment, and staff act only after a self-service attempt failed or when no remedy fits; **B** issue reporting in Seerr is switched off for everyone but admins (Seerr permissions) and haynesnetwork.com becomes the only place to report; **C** A for 30 days, then B. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** Seerr issue filing stays open; haynesnetwork comments with the self-service link, and staff step in only after a self-service attempt fails or when no remedy fits (option A's wording). Folded into D-12 and ADR-111 C-05. |
 | Q-09 | Does an Unfixable outcome (closed with no remedy applied, for example no release exists anywhere) restart the Q-04 count of 3 consecutive Self-Served issues? Options: **A** yes, every real issue that is not Self-Served restarts it (the ruling's literal wording); **B** no, an Unfixable issue is skipped and neither counts nor restarts; **C** it counts toward the 3 when staff confirm no remedy could exist. Recommendation: **B** (the gate measures whether self-service works where a fix exists; an issue nobody can fix says nothing about that). Gates P8 only. | **Closed, moot (owner, 2026-10-12).** The Q-04 count no longer exists (Q-04 amendment, D-12, ADR-112), so there is nothing for an Unfixable outcome to restart. |
 | Q-10 | Case A's hand profile holds five blocks that are not a series and a release group (P4 decision 14). Options: **A** a new ADR adds a second Mislabel term kind, a series-anchored mislabelled name (a number with another episode's title, an alternate title, a double-episode token), written from a confirmed re-map's own file names and by the adoption, then the hand profile is deleted; **B** keep the hand profile as a hand-kept exception beside the Mislabel Block; **C** drop the five blocks (the season is complete) and delete the hand profile. Recommendation: **A**. | **Ruling (owner, 2026-10-13): A.** [ADR-113](../adrs/113-mislabelled-name-terms-in-the-mislabel-block.md): three name kinds (`pair`, `double`, `alias`) in the same profile, under the same lifetime, cap and read-back. As built, staff (the in-cluster tool) and the adoption write them; no re-map offers one, so the offer stays the group's alone. The hand profile and its tag are removed by hand once the five are adopted (PLAN-077 P4). Folded into D-05 ("Mislabelled names", "Q-10 ruling decisions") and P4 decision 14. |
-| Q-11 | The library-wide Title Check (P4, issue #916) leaves 622 open flags after staff fixed the five seasons a single claim could fix. Nearly all are whole-season reorderings (a streaming service's order against TVDB's), where the episode a file names keeps its own file, or the moves form a rotation. The re-map refuses both by design: it displaces nothing, and Sonarr's rename cannot pass two files through each other's names. Options: **A** a staff season re-map that follows the names. It parks one file on a free episode to break a rotation and renames as it goes; staff place the files whose names are silent; seasons are worked one at a time after an evidence and watch-state check. **B** staff fix the seasons by hand as they are reported. **C** leave them; fix only what people report. Recommendation: **A** (548 of the 692 showed viewers one title and played another; the Plex watch marks on those seasons stay with the episode numbers). | (open: owner) |
+| Q-11 | The library-wide Title Check (P4, issue #916) leaves 622 open flags after staff fixed the five seasons a single claim could fix. Nearly all are whole-season reorderings (a streaming service's order against TVDB's), where the episode a file names keeps its own file, or the moves form a rotation. The re-map refuses both by design: it displaces nothing, and Sonarr's rename cannot pass two files through each other's names. Options: **A** a staff season re-map that follows the names. It parks one file on a free episode to break a rotation and renames as it goes; staff place the files whose names are silent; seasons are worked one at a time after an evidence and watch-state check. **B** staff fix the seasons by hand as they are reported. **C** leave them; fix only what people report. Recommendation: **A** (548 of the 692 showed viewers one title and played another; the Plex watch marks on those seasons stay with the episode numbers). | **Resolved (owner ruling, 2026-10-13): A.** P4 decisions 18 to 24 (the Season Re-map); the run and its leftovers are recorded in PLAN-077 and issue #916. |
 
 Driver items, resolved inside PLAN-077 (not owner questions):
 
