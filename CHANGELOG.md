@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.115.1](https://github.com/thaynes43/haynesnetwork/compare/v0.115.0...v0.115.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* a Title Check flag the person cannot move goes to staff (PLAN-077 P4) ([#918](https://github.com/thaynes43/haynesnetwork/issues/918)) ([74e630e](https://github.com/thaynes43/haynesnetwork/commit/74e630e1584673acfd4744b3ea8366618aa9b662))
+
 ## [0.115.0](https://github.com/thaynes43/haynesnetwork/compare/v0.114.0...v0.115.0) (2026-10-13)
 
 
