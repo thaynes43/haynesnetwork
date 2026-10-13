@@ -1,5 +1,44 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-13 19:00Z: PLAN-077 P6 shipped: the language-aware Wrong language, live in v0.122.2, both remedies on; 144 shows set to English
+
+- **What** (DESIGN-055 D-08, P6 decisions 1-13; ADR-109 C-02 and C-07 carry the writes, so no new ADR):
+  - **Audio Preference** (T-323): a Wrong language report whose file already has the wanted audio sets the show's
+    preferred audio language in Plex. The setting applies to everyone, on every server that carries the show, and
+    each server is read back.
+    - Q-03 ruling: this happens only for the show's original language. Anything else, and every movie (Q-08: Plex keeps
+      no movie-level setting), gets guidance: which track to pick, named as Plex lists it, and how to switch it on a
+      browser, a phone and a TV.
+  - **Language Replace** (T-324): when the file lacks the wanted audio, an episode or movie Fix deletes the file, blocks
+    its download and grabs the first release the *arr would take with that language. It skips packs, hard refusals,
+    the Same Release and another post of the file's own release. With no such release, nothing is removed; a season is
+    fixed one episode at a time.
+  - Staff tools in a web pod: `tsx /sync/src/scripts/repair-guide.ts audio-preference`, `language-plan` and
+    `audio-scan [--apply-original eng]`.
+- **Shipped:**
+  - hnet #942 (v0.121.0).
+  - #951 and #953 (v0.122.1): the Sonarr full sync had failed since 2026-10-09 on a series without `statistics`
+    ("Zodiac (2028)"), now fixed; and the Language Replace guard.
+  - #954 (v0.122.2): a show's own Plex item wins over a same-named movie.
+  - haynes-ops #3896, #3899 and #3900: 3/3 web pods and all 26 CronJobs on v0.122.2.
+- **Remedies:** `audio_preference` on at 16:54Z and `language_search` at 17:49Z, each audited, actor null.
+- **Verified live:**
+  - The Lost Tapes and Butterbean's Cafe read `already_set` (en-US on both servers).
+  - Boruto/English reads guidance `not_original`, GoodFellas reads guidance `movie`, and JUJUTSU KAISEN/Japanese reads
+    `set`.
+  - The Language Replace plan for JUJUTSU KAISEN S02E06 now picks a Kitsune BluRay DUAL release.
+  - A one-off full sync ran Sonarr cleanly again: 2 series inserted, 322 history rows relinked.
+- **Sweep:** 143 English originals that Plex starts in another language were set to English as staff, plus Love, Death
+  & Robots on v0.122.2. Each is a completed `audio_preference` Repair Request, read back on both servers. Examples:
+  Star Trek: Voyager in German, Jessie in Czech, SpongeBob, Paw Patrol and ER. The final re-scan shows 146 set and no
+  English original open; Sugar has no Plex match, so there is nothing to write.
+- **Open:**
+  - OC-055: the first person's Audio Preference or Language Replace.
+  - [#955](https://github.com/thaynes43/haynesnetwork/issues/955): 13 non-English originals (Dragon Ball in German,
+    JUJUTSU KAISEN in Portuguese, Boruto's English dub, and others). This is an owner decision with options A to D; C
+    is recommended.
+- **Next:** P7 (Seerr writes).
+
 ## 2026-10-13 16:30Z: Release Pick follow-ups #931 and #936; v0.120.1 live; Zom 100 and Croc fixed; `title_mismatch` stays report only
 
 - **#931 (Radarr grabbed The Convert for Zom 100):**

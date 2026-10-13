@@ -1932,3 +1932,43 @@ checks:
     links:
       prs: ['https://github.com/thaynes43/haynesnetwork/pull/926', 'https://github.com/thaynes43/haynesnetwork/pull/930', 'https://github.com/thaynes43/haynesnetwork/pull/935']
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/931', 'https://github.com/thaynes43/haynesnetwork/issues/936']
+  - id: OC-055
+    title: 'P6 first reports: the first person-run Wrong language (Audio Preference or Language Replace) (PLAN-077 P6)'
+    opened: 2026-10-13
+    after: v0.121.0 to v0.122.2 deployed, audio_preference on 16:54Z, language_search on 17:49Z, 144 English originals set to English as staff
+    not_before: 2026-10-20T18:00:00Z
+    due: 2026-11-12T00:00:00Z
+    owner: haynesnetwork coordinator (PLAN-077)
+    status: pending
+    check: |
+      1. The first person-run Audio Preference (an `audio_preference` Repair Request with a requester): it completed, and
+         every server it names reads back the language (`repair-guide.ts audio-preference ... --language <code>` reads
+         `already_set`). The language was the show's original one, and no other show changed.
+      2. The first person-run Language Replace (a Fix Request whose `guard_plan` step says `plan: 'language'`): its
+         `language_grab` release imported onto the episode or movie, and the new file carries the wanted audio (the *arr's
+         `mediaInfo.audioLanguages`). If the new file lacks it too, record the release and its parsed languages, and
+         decide whether `pickLanguageRelease` needs another rule (decision 13 is the model). If no person ran one in the
+         week, move the review a month with an evidence line.
+      3. Any `no_language_release` refusal or Ask staff ticket (category audio): was the refusal right?
+      4. Re-run `repair-guide.ts audio-scan` (read-only): no English original is open again. A new one is a show added
+         since 2026-10-13: set it with `--apply-original eng`.
+    auto:
+      - name: a person has run the Audio Preference or a language Fix
+        source: app-db
+        query: |
+          select (select count(*) from repair_requests where kind = 'audio_preference' and requester_id is not null)
+            + (select count(*) from fix_requests where reason = 'wrong_language' and created_at > '2026-10-13 18:00+00') as n
+        expect: {min: 1}
+        mismatch: wait
+      - name: no Audio Preference failed or is stuck open
+        source: app-db
+        query: |
+          select count(*) as n from repair_requests where kind = 'audio_preference' and status in ('pending', 'actioned', 'failed')
+        expect: {max: 0}
+        mismatch: fail
+    auto_covers: part
+    evidence:
+      - "2026-10-13 17:50Z-17:52Z staff sweep: 143 English originals set to English on HaynesTower and HaynesOps (143 audio_preference Repair Requests completed), then Love, Death & Robots on v0.122.2; the final re-scan shows 146 set and no English original open."
+    links:
+      prs: ['https://github.com/thaynes43/haynesnetwork/pull/942', 'https://github.com/thaynes43/haynesnetwork/pull/951', 'https://github.com/thaynes43/haynesnetwork/pull/953', 'https://github.com/thaynes43/haynesnetwork/pull/954']
+      issues: ['https://github.com/thaynes43/haynesnetwork/issues/955']
