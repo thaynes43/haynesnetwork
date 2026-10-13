@@ -123,7 +123,11 @@ async function findOpenRepairForFix(
 
 export interface CreateFixRequestInput {
   db?: DbClient;
-  requesterId: string;
+  /**
+   * The person asking. null is staff working from the in-cluster tool (`repair-guide.ts copy-run`, DESIGN-055 P4
+   * decision 25): no person, no budget, recorded as the staff tool (the P4 decision 17 pattern of Repair Requests).
+   */
+  requesterId: string | null;
   /** Admins bypass the hourly rate limit (D-09). */
   requesterIsAdmin?: boolean;
   mediaItemId: string;
@@ -167,20 +171,24 @@ export async function createFixRequest(
   return inTransaction(input.db, async (tx) => {
     // Serialize this requester's submissions for the rate-limit count (D-09).
     await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext('fix_requests'), hashtext(${input.requesterId}))`,
+      sql`SELECT pg_advisory_xact_lock(hashtext('fix_requests'), hashtext(${input.requesterId ?? 'staff-tool'}))`,
     );
 
-    const [requester] = await tx
-      .select({
-        id: users.id,
-        email: users.email,
-        displayName: users.displayName,
-        roleId: users.roleId,
-      })
-      .from(users)
-      .where(eq(users.id, input.requesterId));
-    if (!requester) {
-      throw new NotFoundError(`User ${input.requesterId} not found`);
+    let requester: { id: string; email: string | null; displayName: string | null; roleId: string | null } | null = null;
+    if (input.requesterId !== null) {
+      const [row] = await tx
+        .select({
+          id: users.id,
+          email: users.email,
+          displayName: users.displayName,
+          roleId: users.roleId,
+        })
+        .from(users)
+        .where(eq(users.id, input.requesterId));
+      if (!row) {
+        throw new NotFoundError(`User ${input.requesterId} not found`);
+      }
+      requester = row;
     }
 
     const [item] = await tx
@@ -211,13 +219,13 @@ export async function createFixRequest(
     });
     const targetArrChildId = targetChildId; // fix_requests column name
 
-    if (!input.requesterIsAdmin) {
+    if (requester !== null && !input.requesterIsAdmin) {
       // ADR-080 C-03/C-04 — the arr pool draws the REQUESTER'S ROLE budget (admin ⇒ null bypass,
       // else the role's row, else fallback 25). D-17 unchanged: Fix + Force Search share one hourly
       // counter (countRecentFixBudget) so the two actions can't be alternated to dodge the limit.
       const limit = await effectiveMediaActionBudget({ db: tx, roleId: requester.roleId });
       if (limit !== null) {
-        const used = await countRecentFixBudget(tx, input.requesterId);
+        const used = await countRecentFixBudget(tx, requester.id);
         if (used >= limit) {
           throw new FixRateLimitError(mediaActionBudgetReachedMessage(limit));
         }
@@ -258,7 +266,9 @@ export async function createFixRequest(
     const createdSnapshot: FixActionEntry = {
       step: 'created',
       at: new Date().toISOString(),
-      requester: { email: requester.email, displayName: requester.displayName },
+      requester: requester
+        ? { email: requester.email, displayName: requester.displayName }
+        : { staffTool: 'repair-guide.ts' },
     };
     const [fix] = await tx
       .insert(fixRequests)

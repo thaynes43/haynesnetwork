@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
+- **Last updated:** 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
@@ -415,6 +415,21 @@ do not edit)", "must not contain" terms only, no tags.
     text subtitles) and the TVDB overviews. A season where the evidence contradicts the names is skipped and reported.
     Every `--place` comes from such a read. Subtitle files beside a video are no evidence: they were fetched for the
     episode the file sat on.
+25. **The Second-Copy Fix** (coordinator ruling on issue #928, 2026-10-13: a second copy is a bug, fix it). A **second
+    copy** is an episode file that holds another episode of the season, one that has its own file: its slot plays the
+    wrong episode, and the slot's own episode is missing from the library. Staff remove it with the app's Fix run as a
+    no-person request: `repair-guide.ts copy-plan --tvdb <id> --episode S06E10 [--copy-of <n>]` reads;
+    `copy-run ... --digest <digest> --evidence "<what was compared>"` runs (`second-copy-fix.ts`). The plan refuses
+    when the slot has no single file of its own, when the file's names (or staff's `--copy-of`, from evidence) name no
+    other episode, when that episode has no file of its own (`only_copy`: deleting would lose it, so a re-map or a
+    report instead), when another file of the season says it is this slot's episode (`content_elsewhere`: the content
+    is already in the library, so a re-map, not a search, fills the slot), or while a download for the season is
+    queued. The run opens a Fix Request with no requester (`createFixRequest` takes `requesterId: null` for the staff
+    tool, as decision 17 did for Repair Requests: no budget, the trail names the tool), reason `wrong_content`, path
+    `delete_search`. It deletes the copy, reads back that the slot is empty and the original still holds its own file
+    (else it stops before searching), and sends one EpisodeSearch for the slot. The person's Replacement Preview is not
+    a gate here: the copy's content stays on its own episode, so nothing is lost if no release is found and the slot
+    shows as missing. Staff confirm first, by subtitles or durations, that both files hold the same episode.
 
 ### D-06 Release Pick
 

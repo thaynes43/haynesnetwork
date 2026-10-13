@@ -13,6 +13,14 @@
 //   tsx repair-guide.ts title-check (--backfill [--dry-run] [--json] | --flags <sonarr series id>)
 //   tsx repair-guide.ts season-plan --tvdb <id> --season <n> [--place <from>:<to>,...] [--keep <n>,...] [--json]
 //   tsx repair-guide.ts season-run  --tvdb <id> --season <n> [--place ...] [--keep ...] --digest <d> [--ignore-plex]
+//   tsx repair-guide.ts copy-plan --tvdb <id> --episode S06E10 [--copy-of <n>]
+//   tsx repair-guide.ts copy-run  --tvdb <id> --episode S06E10 [--copy-of <n>] --digest <d> --evidence "<note>"
+//
+// `copy-plan` / `copy-run` (DESIGN-055 P4 decision 25, issue #928) are staff's Second-Copy Fix: an episode whose file
+// holds another episode of the season that already has its own file. The plan only reads; the run opens a Fix Request
+// with no requester (reason `wrong_content`, path `delete_search`), deletes the copy, reads back that the original is
+// still on its own episode, and searches for the emptied episode. It refuses when the copy is the only one, or when
+// another file says it is this episode (re-map instead). Staff confirm the two files hold the same episode first.
 //
 // `season-plan` / `season-run` (DESIGN-055 P4 decisions 18-24, issue #916) are staff's Season Re-map: every file of the
 // season moves to the episode its own name says (staff place the files whose names say nothing, `--place 21:28`, a
@@ -69,6 +77,9 @@ import {
   planFix,
   planEpisodeRemap,
   planSeasonRemap,
+  planSecondCopyFix,
+  runSecondCopyFix,
+  secondCopyRefusalText,
   plexClientBundleFromEnv,
   runSeasonRemap,
   seasonPlexReader,
@@ -104,6 +115,8 @@ const USAGE = `Usage:
   repair-guide.ts remap-run  --tvdb <id> --season <n> (--shift ... | --move ...) --digest <the remap-plan digest>
   repair-guide.ts season-plan --tvdb <id> --season <n> [--place <from>:<to>,...] [--keep <n>,...] [--json]
   repair-guide.ts season-run  --tvdb <id> --season <n> [--place ...] [--keep ...] --digest <the season-plan digest> [--ignore-plex]
+  repair-guide.ts copy-plan --tvdb <id> --episode S06E10 [--copy-of <n>]
+  repair-guide.ts copy-run  --tvdb <id> --episode S06E10 [--copy-of <n>] --digest <the copy-plan digest> --evidence "<note>"
 
 preview, evidence, audio, search-plan, release-list, queue-check and remap-plan only read (remap-plan plans as if episode_remap were on). settings writes only with --set or --known-issue (audited, actor null).
 title-check only reads Sonarr; --backfill writes title_checks rows unless --dry-run, --flags clears a stale flag.
@@ -111,6 +124,8 @@ remap-run is staff's Episode Re-map (DESIGN-055 P4 decision 17): it re-plans, re
 given, then moves the files exactly as the guide does (one Repair Request, requester null: the staff tool).
 season-plan only reads Sonarr and Plex; season-run is staff's Season Re-map (DESIGN-055 P4 decisions 18-24): files go
 where their names (or --place) say, cycles pass through a free episode, each file is renamed after its move.
+copy-plan only reads; copy-run is staff's Second-Copy Fix (DESIGN-055 P4 decision 25): it deletes a file whose episode
+already has its own file and searches for the episode the slot is missing (a Fix Request, requester null).
 release-grab is staff's Release Pick (DESIGN-055 P5 decision 14): a fresh list as staff, then the grab of the row with
 that key, with the guide's refusals (one Repair Request, requester null).
 Remedies: ${REPAIR_GUIDE_REMEDIES.join(', ')}.`;
@@ -129,7 +144,9 @@ export interface RepairGuideArgs {
     | 'remap-plan'
     | 'remap-run'
     | 'season-plan'
-    | 'season-run';
+    | 'season-run'
+    | 'copy-plan'
+    | 'copy-run';
   /** remap-run: the digest of the remap-plan output staff confirmed. */
   digest?: string;
   /** release-grab: the row key release-list printed. */
@@ -156,6 +173,10 @@ export interface RepairGuideArgs {
   keep?: number[];
   /** season-run: run although the Plex check failed (staff decision, recorded on the Repair Request). */
   ignorePlex?: boolean;
+  /** copy-plan / copy-run: the episode the copy holds, from staff evidence, when its names do not say. */
+  copyOf?: number;
+  /** copy-run: staff's evidence that both files hold the same episode. */
+  evidence?: string;
   /** remap-plan: a claim by episode numbers (none: the season view and the suggested claim). */
   remap?: { kind: 'shift'; from: number; by: 1 | -1; through: number | null } | { kind: 'single'; from: number; to: number };
 }
@@ -182,7 +203,9 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'remap-plan' &&
     command !== 'remap-run' &&
     command !== 'season-plan' &&
-    command !== 'season-run'
+    command !== 'season-run' &&
+    command !== 'copy-plan' &&
+    command !== 'copy-run'
   ) {
     throw new Error(`unknown command "${command}"`);
   }
@@ -316,6 +339,15 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
       case '--ignore-plex':
         args.ignorePlex = true;
         break;
+      case '--copy-of':
+        args.copyOf = positiveInt(flag, value);
+        i += 1;
+        break;
+      case '--evidence':
+        if (!value || value.trim().length < 10) throw new Error('--evidence needs a short note of what was compared');
+        args.evidence = value.trim();
+        i += 1;
+        break;
       default:
         throw new Error(`unknown argument "${flag}"`);
     }
@@ -327,6 +359,22 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     if (args.dryRun && !args.backfill) throw new Error('--dry-run goes with --backfill');
     return args;
   }
+  if (command === 'copy-plan' || command === 'copy-run') {
+    if (args.tvdb === undefined || !args.episode || args.tmdb !== undefined || args.season !== undefined) {
+      throw new Error(`${command} needs --tvdb <id> and --episode S01E05`);
+    }
+    if (command === 'copy-run' && (!args.digest || !args.evidence)) {
+      throw new Error('copy-run needs the --digest of the copy-plan you checked and the --evidence you compared');
+    }
+    if (command === 'copy-plan' && (args.digest !== undefined || args.evidence !== undefined)) {
+      throw new Error('--digest and --evidence are for copy-run');
+    }
+    if (args.remap || args.placements || args.keep || args.ignorePlex || args.backfill || args.dryRun || args.json || args.flagsSeriesId !== undefined) {
+      throw new Error(`${command} takes only --tvdb, --episode, --copy-of, --digest and --evidence`);
+    }
+    return args;
+  }
+  if (args.copyOf !== undefined || args.evidence !== undefined) throw new Error('--copy-of and --evidence are for copy-plan and copy-run');
   if (command === 'season-plan' || command === 'season-run') {
     if (args.tvdb === undefined || args.season === undefined || args.tmdb !== undefined || args.episode) {
       throw new Error(`${command} needs --tvdb <id> and --season <n>`);
@@ -560,6 +608,25 @@ async function main(): Promise<number> {
     } else {
       scope = { scope: 'season', seasonNumber: args.season! };
     }
+  }
+
+  if (args.command === 'copy-plan' || args.command === 'copy-run') {
+    const request = {
+      db,
+      arr,
+      mediaItemId: item.id,
+      seasonNumber: args.episode!.season,
+      episodeNumber: args.episode!.episode,
+      copyOf: args.copyOf ?? null,
+    };
+    if (args.command === 'copy-run') {
+      const result = await runSecondCopyFix({ ...request, planDigest: args.digest!, evidence: args.evidence! });
+      console.log(JSON.stringify({ title: item.title, result }, null, 2));
+      return 0;
+    }
+    const plan = await planSecondCopyFix(request);
+    console.log(JSON.stringify({ title: item.title, plan, refusalText: secondCopyRefusalText(plan.refusal) }, null, 2));
+    return 0;
   }
 
   if (args.command === 'season-plan' || args.command === 'season-run') {

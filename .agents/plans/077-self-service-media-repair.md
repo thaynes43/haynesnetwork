@@ -374,6 +374,10 @@ names, never deleting a file, after a watch-state check on every Plex server and
 - **Shipped:** [#923](https://github.com/thaynes43/haynesnetwork/pull/923), v0.117.0 (with Q-10's #924), deployed by
   haynes-ops [#3888](https://github.com/thaynes43/haynes-ops/pull/3888). 3/3 web pods, all 24 CronJobs, the owed-check
   runner and the Books Census run v0.117.0, and migration 0102 is applied.
+- **Second-Copy Fix (DESIGN-055 P4 decision 25, issue #928):** `second-copy-fix.ts` (`planSecondCopyFix`,
+  `runSecondCopyFix`) and `repair-guide.ts copy-plan | copy-run`; `createFixRequest` takes a null requester for the
+  staff tool. Tests: `second-copy-fix.test.ts` (the delete, read-back and search as staff; only copy, content elsewhere,
+  a name that agrees, `--copy-of`, a changed plan, no evidence) and the script test. Its live run is in #928.
 - **Live run (2026-10-13, 12:26Z to 13:20Z, declared `act-122609-88358`).**
   - **Census before:** 622 open flags (40 series, 92 seasons). **After:** 400 (35 series, 73 seasons).
   - **Checks first.** Plex watch state was read from both server databases (read only, every account) at 07:20Z, at
