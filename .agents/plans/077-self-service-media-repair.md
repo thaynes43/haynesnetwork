@@ -576,6 +576,9 @@ names, never deleting a file, after a watch-state check on every Plex server and
       unresolved files. `carry-finish` reads Sonarr again before reconciling a Wrong-Content Replace; a retained file's
       marks are restored only to that same file, and unresolved outcomes keep the carry open. Failure-path tests cover
       total and partial deletion failure, unverified read-back and failed grabs. No automatic search is promised.
+      Follow-up review: the delete trail is saved before carry recovery; load/settle failures record a failed Fix when
+      the database is reachable, otherwise explicitly report the unsaved audit and recovery commands. Partial-delete
+      failures list confirmed missing episodes with `release-list` / Fix guidance.
     - **Held** (#928 and OC-056 list them with reasons):
       - Waiting for open Fix requests to close (48 hours): Bubble Guppies S5, whose only parking episodes are the
         emptied S1 slots, and Paw Patrol S5 E43-E47 (`--place 44-45:43-44,46:45,47:46-47`).

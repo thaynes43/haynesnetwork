@@ -295,6 +295,7 @@ interface DeletionReadBack {
   retained: DeletionFile[];
   unresolved: DeletionFile[];
   slotEmpty: boolean;
+  missingEpisodeIds: number[];
 }
 
 /** Both reads must agree for every named episode; a missing row never proves an empty slot. */
@@ -307,7 +308,19 @@ async function readDeletionOutcome(
     arr.read.sonarr.listEpisodes(seriesId),
     arr.read.sonarr.listEpisodeFileReleases(seriesId),
   ]);
-  const out: DeletionReadBack = { removed: [], retained: [], unresolved: [], slotEmpty: false };
+  const knownEpisodes = new Map(
+    episodeRead.status === 'fulfilled' ? episodeRead.value.map((e) => [e.id, e] as const) : [],
+  );
+  const out: DeletionReadBack = {
+    removed: [],
+    retained: [],
+    unresolved: [],
+    slotEmpty: false,
+    missingEpisodeIds: [...new Set(planned.flatMap((f) => f.episodeIds))].filter((id) => {
+      const episode = knownEpisodes.get(id);
+      return episode !== undefined && !episode.hasFile && !episode.episodeFileId;
+    }),
+  };
   if (episodeRead.status === 'rejected' || fileRead.status === 'rejected') {
     out.unresolved = planned;
     return out;
@@ -633,6 +646,28 @@ export async function runWrongContentReplace(
   if (carry)
     await noteWatchCarry({ db: input.db, carryId: carry.carryId, detail: { fixRequestId } });
   const at = () => new Date().toISOString();
+  const deletionFiles = plan.files.map((f) => ({
+    id: f.id,
+    size: f.size ?? 0,
+    name: f.name ?? '',
+    episodeIds: season.episodes.filter((e) => e.episodeFileId === f.id).map((e) => e.id),
+    sameAs: originalsFor(f.id),
+  }));
+  const deletionProgress: { outcome: DeletionReadBack | null } = { outcome: null };
+  const carryCommands = carry
+    ? ` Check repair-guide.ts carry-status --carry ${carry.carryId}; run carry-finish if it remains open.`
+    : '';
+  const missingGuidance = (outcome: DeletionReadBack | null) => {
+    const missing = plan.slot
+      .filter((e) => outcome?.missingEpisodeIds.includes(e.id))
+      .map((e) => e.label);
+    if (missing.length > 0)
+      return ` Missing now: ${missing.join(' + ')}. Use repair-guide.ts release-list or Fix for a new pick.`;
+    if (!outcome || outcome.unresolved.length > 0) {
+      return ` Affected episodes: ${plan.slot.map((e) => e.label).join(' + ')}. Verify which are missing, then use repair-guide.ts release-list or Fix for a new pick.`;
+    }
+    return '';
+  };
   let carryOutcome: WrongContentReplaceResult['carry'] = null;
   const runCarry = async (): Promise<FixActionEntry[]> => {
     if (!carry || !input.watchCarry || carryOutcome) return [];
@@ -668,15 +703,29 @@ export async function runWrongContentReplace(
     ];
   };
   const recoverDeletion = async (): Promise<FixActionEntry[]> => {
+    deletionProgress.outcome = await readDeletionOutcome(input.arr, plan.seriesId, deletionFiles);
     if (!carry || !input.watchCarry) return [];
     try {
-      const result = await finishWrongContentReplaceCarry({
+      const { row } = await loadWatchCarry({ db: input.db, carryId: carry.carryId });
+      const settled = await settleDeletionScope({
         db: input.db,
-        arr: input.arr,
         plex: input.watchCarry,
         carryId: carry.carryId,
+        deletion: row.detail.wrongContentDeletion as DeletionSnapshot,
+        outcome: deletionProgress.outcome,
         pauseMs: input.carryPauseMs,
       });
+      if (settled === 'cleared')
+        throw new Error(`The deletion outcome remains unverified.${carryCommands}`);
+      const result =
+        settled === 'refused'
+          ? null
+          : await carryWatchState({
+              db: input.db,
+              plex: input.watchCarry,
+              carryId: carry.carryId,
+              pauseMs: input.carryPauseMs,
+            });
       carryOutcome = {
         carryId: carry.carryId,
         status: result?.status ?? 'refused',
@@ -714,80 +763,130 @@ export async function runWrongContentReplace(
       deletes.push({ step: 'delete_file', endpoint, ok: true, at: at(), status: 200 });
     } catch (err) {
       const carried = await recoverDeletion();
+      let auditError: string | null = null;
+      try {
+        await recordFixAction({
+          db: input.db,
+          fixRequestId,
+          transition: 'failed',
+          actions: [
+            ...deletes,
+            {
+              step: 'delete_file',
+              endpoint,
+              ok: false,
+              at: at(),
+              error: err instanceof Error ? err.message : String(err),
+            },
+            ...(deletionProgress.outcome
+              ? [
+                  {
+                    step: 'delete_read_back',
+                    endpoint: 'GET /api/v3/episode + episodefile',
+                    ok: false,
+                    at: at(),
+                    removedFileIds: deletionProgress.outcome.removed.map((file) => file.id),
+                    retainedFileIds: deletionProgress.outcome.retained.map((file) => file.id),
+                    unresolvedFileIds: deletionProgress.outcome.unresolved.map((file) => file.id),
+                    missingEpisodeIds: deletionProgress.outcome.missingEpisodeIds,
+                  },
+                ]
+              : []),
+            ...carried,
+          ],
+        });
+      } catch (auditFailure) {
+        auditError = auditFailure instanceof Error ? auditFailure.message : String(auditFailure);
+      }
+      throw new FixRefusedError(
+        'copy_refused',
+        `A file could not be deleted (${err instanceof Error ? err.message : String(err)}). Nothing was grabbed.${auditError ? ` The failed Fix audit could not be saved (${auditError}); use the stored carry for recovery.` : ''}${missingGuidance(deletionProgress.outcome)}${carryCommands}`,
+      );
+    }
+  }
+  const deletionOutcome = await readDeletionOutcome(input.arr, plan.seriesId, deletionFiles);
+  const slotEmpty = deletionOutcome.slotEmpty;
+  const deletionActions: FixActionEntry[] = [
+    {
+      step: 'wrong_content_replace',
+      endpoint: 'repair-guide.ts replace-run',
+      ok: true,
+      at: at(),
+      files: plan.files.map((f) => ({
+        fileId: f.id,
+        name: f.name,
+        size: f.size,
+        episodes: f.episodes,
+      })),
+      slot: plan.slot.map((e) => e.label),
+      releases: picks.map((p) => p.offer.title),
+      evidence,
+      sameAs: sameAsFiles,
+    },
+    ...deletes,
+    {
+      step: 'delete_read_back',
+      endpoint: 'GET /api/v3/episode',
+      ok: slotEmpty,
+      at: at(),
+      slotEmpty,
+      removedFileIds: deletionOutcome.removed.map((f) => f.id),
+      retainedFileIds: deletionOutcome.retained.map((f) => f.id),
+      unresolvedFileIds: deletionOutcome.unresolved.map((f) => f.id),
+      missingEpisodeIds: deletionOutcome.missingEpisodeIds,
+    },
+  ];
+  let deletionAuditRecorded = false;
+  try {
+    // Persist the known write trail before a carry read/update can fail. A failed initial audit leaves the original
+    // stored carry's pending-deletion scope untouched and blocks every grab.
+    await recordFixAction({
+      db: input.db,
+      fixRequestId,
+      transition: 'actioned',
+      pathTaken: 'delete_search',
+      actions: deletionActions,
+    });
+    deletionAuditRecorded = true;
+    if (carry && input.watchCarry) {
+      const { row } = await loadWatchCarry({ db: input.db, carryId: carry.carryId });
+      await settleDeletionScope({
+        db: input.db,
+        plex: input.watchCarry,
+        carryId: carry.carryId,
+        deletion: row.detail.wrongContentDeletion as DeletionSnapshot,
+        outcome: deletionOutcome,
+        pauseMs: input.carryPauseMs,
+      });
+    }
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    let auditError: string | null = null;
+    try {
       await recordFixAction({
         db: input.db,
         fixRequestId,
         transition: 'failed',
         actions: [
-          ...deletes,
+          ...(deletionAuditRecorded ? [] : deletionActions),
           {
-            step: 'delete_file',
-            endpoint,
+            step: 'delete_recovery',
+            endpoint: 'repair-guide.ts carry-finish',
             ok: false,
             at: at(),
-            error: err instanceof Error ? err.message : String(err),
+            error,
+            ...(carry ? { carryId: carry.carryId } : {}),
           },
-          ...carried,
         ],
       });
-      throw new FixRefusedError(
-        'copy_refused',
-        `A file could not be deleted (${err instanceof Error ? err.message : String(err)}). Nothing was grabbed.${carry ? ` Check repair-guide.ts carry-status --carry ${carry.carryId}; run carry-finish if it remains open.` : ''}`,
-      );
+    } catch (auditFailure) {
+      auditError = auditFailure instanceof Error ? auditFailure.message : String(auditFailure);
     }
+    throw new FixRefusedError(
+      'copy_refused',
+      `After the delete attempts, the Fix audit or watch-state recovery could not be completed (${error}). Nothing was grabbed.${auditError ? ` The failed Fix audit could not be saved (${auditError}); use the stored carry for recovery.` : ''}${missingGuidance(deletionOutcome)}${carryCommands}`,
+    );
   }
-  const deletionFiles = plan.files.map((f) => ({
-    id: f.id,
-    size: f.size ?? 0,
-    name: f.name ?? '',
-    episodeIds: season.episodes.filter((e) => e.episodeFileId === f.id).map((e) => e.id),
-    sameAs: originalsFor(f.id),
-  }));
-  const deletionOutcome = await readDeletionOutcome(input.arr, plan.seriesId, deletionFiles);
-  const slotEmpty = deletionOutcome.slotEmpty;
-  if (carry && input.watchCarry) {
-    const { row } = await loadWatchCarry({ db: input.db, carryId: carry.carryId });
-    await settleDeletionScope({
-      db: input.db,
-      plex: input.watchCarry,
-      carryId: carry.carryId,
-      deletion: row.detail.wrongContentDeletion as DeletionSnapshot,
-      outcome: deletionOutcome,
-      pauseMs: input.carryPauseMs,
-    });
-  }
-  await recordFixAction({
-    db: input.db,
-    fixRequestId,
-    transition: 'actioned',
-    pathTaken: 'delete_search',
-    actions: [
-      {
-        step: 'wrong_content_replace',
-        endpoint: 'repair-guide.ts replace-run',
-        ok: true,
-        at: at(),
-        files: plan.files.map((f) => ({
-          fileId: f.id,
-          name: f.name,
-          size: f.size,
-          episodes: f.episodes,
-        })),
-        slot: plan.slot.map((e) => e.label),
-        releases: picks.map((p) => p.offer.title),
-        evidence,
-        sameAs: sameAsFiles,
-      },
-      ...deletes,
-      {
-        step: 'delete_read_back',
-        endpoint: 'GET /api/v3/episode',
-        ok: slotEmpty,
-        at: at(),
-        slotEmpty,
-      },
-    ],
-  });
   if (!slotEmpty) {
     const carried = await recoverDeletion();
     await recordFixAction({
@@ -801,7 +900,7 @@ export async function runWrongContentReplace(
     });
     throw new FixRefusedError(
       'copy_refused',
-      `Sonarr did not verify every episode is empty, so nothing was grabbed.${carry ? ` Check repair-guide.ts carry-status --carry ${carry.carryId}; run carry-finish if it remains open.` : ''}`,
+      `Sonarr did not verify every episode is empty, so nothing was grabbed.${missingGuidance(deletionOutcome)}${carryCommands}`,
     );
   }
 

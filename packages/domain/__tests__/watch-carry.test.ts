@@ -3,7 +3,9 @@
 // (guid), not the file. A Season Re-map swaps two files that two friends watched; the Second-Copy Fix removes a copy
 // someone watched; an ordering switch re-matches items. Every account's state must end on the content it watched.
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as carryWriters from '../src/watch-carry';
+import * as fixWriters from '../src/fix-requests';
 import {
   fixRequests,
   ledgerEvents,
@@ -400,6 +402,7 @@ describe('the Watch Carry flow (ADR-114)', () => {
   afterAll(async () => {
     await t.stop();
   });
+  afterEach(() => vi.restoreAllMocks());
 
   beforeEach(async () => {
     await setRepairGuideRemedies({ db: t.db, remedies: { episode_remap: true }, actorId: null });
@@ -789,7 +792,7 @@ describe('the Watch Carry flow (ADR-114)', () => {
     arr.state.deleteFailures.add(7003);
     const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2, alsoEpisodes: [3] };
     const plan = await planWrongContentReplace(target);
-    await expect(runWrongContentReplace({ ...target, planDigest: plan.digest, keys: plan.candidates.map((c) => c.key), sameAs: [{ copyOfEpisode: 3, seasonNumber: 1, episodeNumber: 4 }], evidence: 'E02 is another show and E03 matches E04.', watchCarry: plex.plex, carryPauseMs: 0 })).rejects.toThrow(/nothing was grabbed/i);
+    await expect(runWrongContentReplace({ ...target, planDigest: plan.digest, keys: plan.candidates.map((c) => c.key), sameAs: [{ copyOfEpisode: 3, seasonNumber: 1, episodeNumber: 4 }], evidence: 'E02 is another show and E03 matches E04.', watchCarry: plex.plex, carryPauseMs: 0 })).rejects.toThrow(/Missing now: S01E02.*release-list or Fix/);
     expect(arr.state.deleted).toEqual([7002]);
     expect(arr.state.grabs).toEqual([]);
     expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 0 });
@@ -874,6 +877,56 @@ describe('the Watch Carry flow (ADR-114)', () => {
     // Even a later explicit revert refuses to put the removed file's state on that new file.
     expect((await revertWatchCarry({ db: t.db, plex: plex.plex, carryId: carry!.id, pauseMs: 0 })).failed).toBe(1);
     expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 0 });
+  });
+
+  it.each(['load', 'settle'] as const)('audits confirmed deletion and fails the Fix without a grab when post-delete carry %s fails', async (failure) => {
+    resetReleaseSearchState();
+    const arr = stubSonarr({ contentOn: [[1, 1], [2, 9], [3, 3], [4, 4]] });
+    const plex = fakePlex({ files: arr.plexFiles, accounts: [OWNER, FRIEND_A] });
+    plex.seed(FRIEND_A, 'g-1-2', { viewCount: 1 });
+    arr.state.releases = [release('right', 'Show.S01E02.Bravo.Night.1080p.WEB-DL-GRP', 2, ['Existing file on disk is of equal or higher preference'])];
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2 };
+    const plan = await planWrongContentReplace(target);
+    if (failure === 'load') vi.spyOn(carryWriters, 'loadWatchCarry').mockRejectedValue(new Error('carry load unavailable'));
+    else vi.spyOn(carryWriters, 'reconcileWrongContentWatchCarry').mockRejectedValue(new Error('carry settle unavailable'));
+    await expect(runWrongContentReplace({ ...target, planDigest: plan.digest, keys: [plan.candidates[0]!.key], evidence: 'The title card names another show.', watchCarry: plex.plex, carryPauseMs: 0 })).rejects.toThrow(/Nothing was grabbed.*S01E02.*release-list or Fix.*carry-status.*carry-finish/);
+    expect(arr.state.deleted).toEqual([7002]);
+    expect(arr.state.grabs).toEqual([]);
+    const [fix] = await t.db.select().from(fixRequests);
+    expect(fix!.status).toBe('failed');
+    expect(fix!.actionsTaken).toEqual(expect.arrayContaining([
+      expect.objectContaining({ step: 'delete_file', endpoint: 'DELETE /api/v3/episodefile/7002', ok: true }),
+      expect.objectContaining({ step: 'delete_read_back', slotEmpty: true, removedFileIds: [7002], missingEpisodeIds: [402] }),
+      expect.objectContaining({ step: 'delete_recovery', ok: false, error: `carry ${failure} unavailable` }),
+    ]));
+    expect((fix!.actionsTaken as Array<{ step: string }>).filter((action) => action.step === 'delete_file')).toHaveLength(1);
+    const [carry] = await t.db.select().from(watchCarries);
+    expect(carry!.status).toBe('cleared');
+    expect((carry!.scope.pendingDeletes as unknown[]).length).toBe(1);
+    expect(carry!.summary.verification).toBeUndefined();
+    expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 0 });
+  });
+
+  it('reports an unsaved post-delete audit and keeps the stored pending carry without grabbing when its writer is unavailable', async () => {
+    resetReleaseSearchState();
+    const arr = stubSonarr({ contentOn: [[1, 1], [2, 9], [3, 3], [4, 4]] });
+    const plex = fakePlex({ files: arr.plexFiles, accounts: [OWNER, FRIEND_A] });
+    plex.seed(FRIEND_A, 'g-1-2', { viewCount: 1 });
+    arr.state.releases = [release('right', 'Show.S01E02.Bravo.Night.1080p.WEB-DL-GRP', 2, ['Existing file on disk is of equal or higher preference'])];
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2 };
+    const plan = await planWrongContentReplace(target);
+    vi.spyOn(fixWriters, 'recordFixAction').mockRejectedValue(new Error('Fix audit database unavailable'));
+    await expect(runWrongContentReplace({ ...target, planDigest: plan.digest, keys: [plan.candidates[0]!.key], evidence: 'The title card names another show.', watchCarry: plex.plex, carryPauseMs: 0 })).rejects.toThrow(/failed Fix audit could not be saved.*stored carry.*carry-status.*carry-finish/);
+    expect(arr.state.deleted).toEqual([7002]);
+    expect(arr.state.grabs).toEqual([]);
+    const [fix] = await t.db.select().from(fixRequests);
+    expect(fix!.status).toBe('pending');
+    expect((fix!.actionsTaken as Array<{ step: string }>).map((action) => action.step)).toEqual(['created']);
+    const [carry] = await t.db.select().from(watchCarries);
+    expect(carry!.status).toBe('cleared');
+    expect((carry!.scope.pendingDeletes as unknown[]).length).toBe(1);
+    expect(carry!.detail.deleteRecovery).toBeUndefined();
+    await expect(carryWatchState({ db: t.db, plex: plex.plex, carryId: carry!.id, pauseMs: 0 })).rejects.toThrow(/file deletions are not verified/);
   });
 
   it('records a failed grab after confirmed deletion and says to choose again without promising a search', async () => {

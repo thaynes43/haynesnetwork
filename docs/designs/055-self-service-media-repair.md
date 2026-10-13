@@ -573,6 +573,11 @@ do not edit)", "must not contain" terms only, no tags.
     source keeps those sources unresolved, rather than crediting another file's marks.
     The run requires a Plex adapter and a stored Watch Carry; an absent adapter refuses before any write. Read-only
     planning remains available without Plex.
+    The Fix records successful delete attempts and the per-file/episode read-back before loading or settling the
+    carry. A post-delete audit or recovery error stops every grab and attempts a failed transition with that evidence.
+    If the audit cannot be saved, the error says so and points staff to `carry-status` and `carry-finish`; the stored
+    carry remains the recovery source. Partial-delete errors name confirmed missing episodes and direct staff to
+    `release-list` or Fix for a new pick.
 
     The live plans (2026-10-13) added four things. **Several files:** `--also 34` replaces more files with the slot
     when one release holds all their episodes (Mickey's S01E33 and E34 files each sit on one episode, and the right
