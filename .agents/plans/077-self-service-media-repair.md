@@ -718,6 +718,18 @@ names, never deleting a file, after a watch-state check on every Plex server and
 
 ### P6: language-aware Wrong language
 
+**Live bug found 2026-10-13 23:26Z (v0.125.0 replacement follow-up).** Ben 10 (2016) S01E10's new MZABI file 79991
+contains only an Arabic track, confirmed by ffprobe; E12's LAZY file 79992 has English audio and its actual title card
+reads Adventures In Babysitting. The read-only English Language Replace plan for E10 chose Sonarr-approved
+`Ben.10.S01E10.Lucky.Girl...playWEB`, the known wrong 2005 story. Nothing was written from that plan. P6 must reuse
+the Release Pick's Title Evidence and exclude ambiguous named episode titles from automatic selection, while retaining
+the existing title-silent, exact episode, language, Same Release/group/quality and hard-refusal guards. Test the actual
+Ben titles, a correct candidate after them, no safe candidate (no writes), and multi-episode refusals. The staff follow-up
+uses the existing audited `runFixRequest` with requester null and a fresh digest, then verifies the actual imported file;
+no raw arr writes or wrong-content rerun. Accepted ADRs stay untouched. The English E10 follow-up remains held for the
+driver's corrected plan review and deployment. Only affected tests under nice 19 with one worker; no CPU burners,
+wide tests or repeated test loops.
+
 1. Check whether Plex offers a movie-level preferred audio language (DESIGN-055 Q-08).
 2. Under Q-03's ruling: `setItemPreference` through `@hnet/plex/write` with a read-back on every server that has the
    title; ADR-017's confined surface notes the new call.

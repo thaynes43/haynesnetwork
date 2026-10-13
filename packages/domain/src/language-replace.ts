@@ -288,6 +288,10 @@ export async function readLanguagePlan(input: PlanLanguageInput): Promise<Langua
   const allowed = new Set<string>();
   for (const row of classified.rows) {
     if (row.reasons.some((r) => r.class === 'hard')) continue;
+    // A person can inspect an ambiguous named TV release in the Release Pick, but this automatic replacement cannot
+    // prove that story belongs to its episode (Ben 10's approved Lucky Girl post on the 2016 Animo Farm slot).
+    // Silent names still use the existing parsed episode, language, quality and Same Release guards.
+    if (target.kind === 'sonarr' && row.evidence?.verdict === 'ambiguous') continue;
     for (const key of row.keys) allowed.add(key);
   }
   const single =

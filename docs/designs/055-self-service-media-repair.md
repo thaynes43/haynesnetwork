@@ -939,11 +939,19 @@ adds no ADR; CLAUDE.md hard rule 4 names the write.
    - is mapped onto this episode or movie alone (never a pack);
    - passes the Release Pick's hard refusals (P5 decision 15 included: Radarr approved another movie's releases for
      Zom 100);
+   - for Sonarr, its named episode title agrees with the target. An ambiguous named title is not an automatic
+     Language Replace candidate: an approved `Ben.10.S01E10.Lucky.Girl...playWEB` is still the 2005 story, not the
+     2016 target Animo Farm (live P4 replacement follow-up, 2026-10-13). The existing Title Evidence verdict is
+     reused; no change to its thresholds or to the Import Check's treatment of ambiguity. A silent title segment
+     keeps the existing episode-number, language, Same Release and quality guards;
    - is not the Same Release.
    Sonarr's list is the season list narrowed to the episode, cached with the Release Pick's. A grab the *arr refuses falls
    back to the search the Fix made before, so the target never ends with neither. The record is the Fix Request (path
    `delete_search`, steps `guard_plan`, `mark_failed`, `delete_file`, `language_grab`), which already holds the mark and
    the delete and completes on the import; the reserved Repair Request kind `language_search` stays unused.
+   Staff may invoke the same domain writer with requester null and the fresh confirmed language-plan digest;
+   no separate arr writer or staff CLI is needed. A normal language replacement preserves correct-story watch state;
+   it must not use the wrong-content carry/drop path merely because the file's audio is wrong.
 8. **No release in the language: nothing is removed** (`no_language_release`). Rule 4 opened the Release Pick filtered to
    the language instead. The Release Pick is for missing items (Q-01 ruling), and deleting the only copy with nothing in
    the person's language to replace it is the harm P1's "nothing to replace it" refusal guards against. The guide says

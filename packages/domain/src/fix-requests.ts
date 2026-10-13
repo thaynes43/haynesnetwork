@@ -327,7 +327,8 @@ export async function createFixRequest(
  */
 export async function assertFixAllowed(input: {
   db?: DbClient;
-  requesterId: string;
+  /** null: the staff tool, matching createFixRequest's budget and audit convention. */
+  requesterId: string | null;
   requesterIsAdmin?: boolean;
   mediaItemId: string;
   scope: FixScope;
@@ -335,7 +336,7 @@ export async function assertFixAllowed(input: {
   seasonNumber: number | null;
 }): Promise<void> {
   return inTransaction(input.db, async (tx) => {
-    if (!input.requesterIsAdmin) {
+    if (input.requesterId !== null && !input.requesterIsAdmin) {
       const [requester] = await tx
         .select({ roleId: users.roleId })
         .from(users)
