@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.122.0](https://github.com/thaynes43/haynesnetwork/compare/v0.121.0...v0.122.0) (2026-10-13)
+
+
+### Features
+
+* **domain:** the Watch Carry moves every person's Plex watch state with the content (ADR-114, [#928](https://github.com/thaynes43/haynesnetwork/issues/928)) ([#944](https://github.com/thaynes43/haynesnetwork/issues/944)) ([500ba04](https://github.com/thaynes43/haynesnetwork/commit/500ba0411141d4df11c8e4b2c9d3ee09ff2755a6))
+
 ## [0.121.0](https://github.com/thaynes43/haynesnetwork/compare/v0.120.1...v0.121.0) (2026-10-13)
 
 
