@@ -1,5 +1,42 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-13 03:50Z: PLAN-077 P4 shipped — the Title Check, the Episode Re-map and the Mislabel Block, live in v0.116.0, remedy on
+
+- **What:**
+  - **Episode Re-map** (remedy `episode_remap`, on since 03:05Z, audited, actor null). From a TV Fix, "It's a different
+    episode of this show" moves the file onto the episode it really is. From a season Fix, "They're all off by one"
+    shifts every file from an episode on by one. It moves existing library files with Sonarr's own ManualImport, one at
+    a time, each read back, then renames them. It never deletes a file, and refuses anything it would displace.
+  - **Title Check** (CronJob `sync-title-check`, hourly at :35). It compares each imported file's name with the episode it
+    was filed on. A disagreement flags the episode row on the title page: "Move it" when the move can run, otherwise
+    "staff need to move this one" with an Ask staff link.
+  - **Mislabel Block**. After a shift that moved two or more files of one release group, the person may block that group
+    for that show (one app-owned Sonarr release profile, 365-day terms). The first term is the adopted BiOMA term on The
+    Lost Tapes (profile id 4).
+  - **Staff tools in the web pod:**
+    - `tsx /sync/src/scripts/repair-guide.ts remap-plan|remap-run ...` (a run needs the plan's `--digest`; no requester,
+      decision 17).
+    - `repair-guide.ts title-check --backfill [--dry-run] | --flags <series>`.
+    - `mislabel-block.ts list|adopt|reconcile|offer`.
+  - Decisions: DESIGN-055 "P4 decisions" 1-17 (after D-05).
+- **Shipped:**
+  - hnet #915 (v0.115.0), #918 (v0.115.1) and #920 (v0.116.0).
+  - haynes-ops #3861, #3873 and #3882: 3/3 web pods and 24 CronJobs on v0.116.0; migration 0101 applied.
+- **Verified live:**
+  - The Lost Tapes S01 preview finds nothing to move.
+  - The library-wide census judged 18,205 files: 677 real disagreements across 44 series. Subtitle spot-checks confirmed
+    3 of 3.
+  - Staff fixed the five seasons one claim could fix, 55 files in all: Ben 10 (2016) S3, Clarence S2, Guy's Grocery
+    Games S32E10, The Practice S06E17 and Bob the Builder S15E08. Each move was read back, renamed and checked in Plex.
+  - **622 flags stay open:**
+    - 17 a person can move.
+    - 605 are whole-season reorderings and rotations the re-map refuses by design: issue #916, owner question
+      DESIGN-055 Q-11.
+- **Open owner questions:**
+  - DESIGN-055 Q-10: the hand profile's five non-group blocks. The hand profile (id 3) stays until it is ruled.
+  - DESIGN-055 Q-11: how to work the whole-season reorderings.
+- **Next:** OC-053 (the first week of census, the first person-run re-map, the upkeep), then P5 (Release Pick).
+
 ## 2026-10-13 00:50Z: PLAN-077 P3 shipped — the Seerr Issue mirror, the `/r/seerr/<id>` link and `/admin/seerr`, live in v0.114.0
 
 - **What (read-only toward Seerr; the comment and resolve are P7):**
