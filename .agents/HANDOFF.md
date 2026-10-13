@@ -1,5 +1,31 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-13 00:50Z: PLAN-077 P3 shipped — the Seerr Issue mirror, the `/r/seerr/<id>` link and `/admin/seerr`, live in v0.114.0
+
+- **What (read-only toward Seerr; the comment and resolve are P7):**
+  - **Mirror:** sync mode `seerr-issues` (CronJob every 10 minutes at :06) reads every Seerr issue into
+    `seerr_issues` (migration 0100). An `ISSUE_*` webhook triggers one fresh read and is not stored in the Feed.
+  - **Title page:** a banner per open report, with the guide its report points at: missing goes to Force Search, a
+    file to Fix, Audio preselects Wrong language, a season goes to the season.
+  - **`/r/seerr/<id>`:** signed out, an onboarding card ("Sign in with Plex" comes back to the link; the first sign-in
+    creates the account). Signed in, the title page with the guide open once.
+  - **`/admin/seerr`:** each report with the app's own linked repairs, the fix-it-yourself link (Copy) and an audited
+    "Mark fixed by hand" note.
+  - **Activity:** admins see a stuck Sonarr or Radarr download's Import Check result (P2 decision 13).
+  - Decisions: DESIGN-055 "P3 decisions" 1-12 (after D-11).
+- **Shipped:** hnet #911 (v0.114.0) and haynes-ops #3857: 3/3 web pods, 23 sync CronJobs, the owed-check runner and
+  the Books Census on v0.114.0.
+- **Seerr setting changed:** the webhook types went from 204 to 4044 at 00:44Z (read back; everything else unchanged by
+  hash). To revert, POST the same object with `types: 204` to `/api/v1/settings/notifications/webhook`.
+- **Verified live (PLAN-077 P3 status has the details):**
+  - All 4 (resolved) issues are mirrored with the right titles and episodes.
+  - `/r/seerr/3` signed out shows the card. The stored sign-in state's `callbackURL` is `/r/seerr/3`.
+  - A posted `ISSUE_COMMENT` refreshed issue 3 without a Feed row.
+  - The Import Check row's reads match P2's census.
+- **Working practice from now on (DESIGN-055 D-12):** every new Seerr issue goes through the self-service tools first.
+  Until P7, post its link on the issue by hand: Copy link in `/admin/seerr`. OC-052 waits on the first real one.
+- **Next:** P4 (Title Check census, Episode Re-map, Mislabel Block).
+
 ## 2026-10-13 00:40Z: janitor `importable` enforced on Sonarr and Radarr (`arr` back at L2); #910 fixed
 
 - **The flip (OC-051 part 2, PLAN-065 ladder log has the full evidence).**
