@@ -9,7 +9,7 @@
   non-group blocks) is ruled A (owner, 2026-10-13, ADR-113): mislabelled-name terms shipped in v0.117.0, the five terms
   are adopted and the hand profile and its tag are gone (P4, "Q-10 ruling"). Q-11 (the library's whole-season
   reorderings, issue #916) is ruled A too: staff's Season Re-map shipped in v0.117.0 and ran on 29 seasons (P4's
-  follow-up below; open flags 622 to 400). P5 (Release Pick) is shipped and verified live, remedy on: v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)), v0.118.1 ([#930](https://github.com/thaynes43/haynesnetwork/pull/930)) and v0.119.1 ([#935](https://github.com/thaynes43/haynesnetwork/pull/935)). Its first person's pick is OC-054. P6 is next.
+  follow-up below; open flags 622 to 400, then 321 after the #928 round). P5 (Release Pick) is shipped and verified live, remedy on: v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)), v0.118.1 ([#930](https://github.com/thaynes43/haynesnetwork/pull/930)) and v0.119.1 ([#935](https://github.com/thaynes43/haynesnetwork/pull/935)). Its first person's pick is OC-054. P6 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -378,7 +378,7 @@ names, never deleting a file, after a watch-state check on every Plex server and
   `runSecondCopyFix`) and `repair-guide.ts copy-plan | copy-run`; `createFixRequest` takes a null requester for the
   staff tool. Tests: `second-copy-fix.test.ts` (the delete, read-back and search as staff; only copy, content elsewhere,
   a name that agrees, `--copy-of`, a changed plan, no evidence) and the script test. Its live run is in #928.
-- **Live run (2026-10-13, 12:26Z to 13:20Z, declared `act-122609-88358`).**
+- **Live run (2026-10-13, 12:26Z to 12:49Z, declared `act-122609-88358`).**
   - **Census before:** 622 open flags (40 series, 92 seasons). **After:** 400 (35 series, 73 seasons).
   - **Checks first.** Plex watch state was read from both server databases (read only, every account) at 07:20Z, at
     12:07Z, and again at 12:34Z before the second half; every season run was clear. Evidence came from five read-only
@@ -411,7 +411,8 @@ names, never deleting a file, after a watch-state check on every Plex server and
     - Star Wars Rebels S1 [9:7] and Batman: The Animated Series S1 [21:23].
   - **Left open (400 flags), by reason.** Issue #916 has the per-season list; follow-up issue #928 carries what needs a
     decision.
-    - Watch state, not moved by owner rule (135 flags, 31 seasons). Seasons with a person's play, watched mark or resume
+    - Watch state, not moved by owner rule (135 flags, 31 seasons; the #928 round below later moved Bob the Builder S1
+      and Married... with Children S2, which every account with state had watched in full). Seasons with a person's play, watched mark or resume
       point on HaynesTower: Abbott Elementary S1-S2, Anthony Bourdain S5 and S8, Bob the Builder S1-S2, Bubble Guppies
       S1 and S5, Daniel Tiger S4-S5, Fireman Sam S6, Guy's Grocery Games S12-S15, Malcolm in the Middle S5, Married...
       with Children S2-S3, Mecha Builders S1, Mickey Mouse S1, Paw Patrol S5-S6, Pokémon S3 and S5, Sister Wives S6,
@@ -436,6 +437,56 @@ names, never deleting a file, after a watch-state check on every Plex server and
     - Evidence contradicts the names for Ben 10 (2016) S1 (2).
     - Each of the rest is a file holding two segments whose name names only one, so it needs a two-episode mapping:
       Spidey S3 (3) and New Looney Tunes S2 (2).
+- **The #928 round (2026-10-13, 13:05Z to 15:05Z, declared `act-130511-110073`; coordinator rulings on #928 items 1
+  to 3).** Open flags 400 to 321 (32 series, 61 seasons).
+  - **Plex ordering, staff hand op (item 1; no app write, so no ADR).**
+    - Watch state was read on both servers' databases at 13:04Z for every account and every season of each show.
+    - Four shows had none. Each was switched to TheTVDB (Aired) (`PUT /library/metadata/<show>/prefs?showOrdering=tvdbAiring`,
+      then `.../refresh`) on HaynesOps and HaynesTower, and the titles were read back per season:
+      - Midsomer Murders: 143 of 144 items carry the TVDB title.
+      - The Fairly OddParents: 258 of 268; the rest are spelling variants.
+      - Leah Remini: Scientology and the Aftermath: 24 of 25.
+      - One Piece: all 1179 items numbered as Sonarr numbers them (translation variants of the titles).
+    - The re-maps then ran: Midsomer S12 (2 files), The Fairly OddParents S3 (2), S4 (2) and S5 (4), Leah Remini S3
+      (11, of which 2 are extra episodes TVDB does not list, moved aside), One Piece S22 (9, of which 2 are copies moved
+      aside).
+    - The Thundermans was switched, then set back to the library default. Plex's own TVDB data for S4 runs one
+      episode off Sonarr's, so neither ordering titles S4 right.
+    - Left for the owner because someone has watch state on the show: Alaskan Bush People (one account, S14), Fireman
+      Sam (one account, S1 to S6) and Pokémon (seven accounts, S1 to S5).
+  - **Second-Copy Fix (item 2; DESIGN-055 P4 decision 25; #932, v0.119.0, haynes-ops #3891).**
+    - Two read-only evidence passes compared each suspected copy with the file on its named episode (subtitle
+      windows, durations, frame fingerprints). 27 were confirmed copies. 23 were not, and stay: 13 were different
+      content and 10 were the only copy of their content.
+    - Ben 10 (2016) S2 and S4 were rechecked after their files moved: all nine "copies" hold other content, because
+      the WEBDL mp4 files on the named episodes are themselves misfiled. They are only copies, kept, and left as
+      evidence work.
+    - 37 slots were fixed as staff (Fix Request, requester null, delete, read-back, EpisodeSearch), one at a time,
+      waiting for each season's queue to empty.
+      - The first searches grabbed the same mislabelled releases again, numbered for another episode. SABnzbd failed
+        most as Duplicate NZB, and Sonarr blocklisted them.
+      - Three imported anyway: Batman S1E09, Henry Danger S2E18 and Law & Order S3E16. Staff removed each again; Law
+        & Order's release was also blocklisted by hand (`POST /history/failed/66106`).
+      - To stop the loop, staff added 23 Mislabel Block pair terms (ADR-113, origin `staff`) for the exact mislabelled
+        names: The Thundermans 4, Deadliest Catch 1, Guy's Grocery Games 4, Stuck in the Middle 4, Batman 10. Law &
+        Order's term was refused (`names_other_series`).
+    - Bounded wait to 15:04Z. 27 slots now hold their own episode: Batman 10, Guy's Grocery Games 4, Stuck in the
+      Middle 4, One Piece 7, Henry Danger S5E35 and E38. Each import's name agrees, or its subtitles were checked.
+    - 10 are missing, honestly, with no correct release found yet: Batman S1E59, Deadliest Catch S6E16, Henry Danger
+      S2E18, Law & Order S3E16, The Fairly OddParents S1E05 and E08, The Thundermans S4E07, E19, E25 and E26.
+    - Batman S1E54 and E59 were swapped first (a re-map), so the Zatanna copy could be removed from E59.
+    - No wrong import remains.
+  - **Watched seasons (item 3; facts, plus a move only where every account with state has watched the whole season).**
+    - 11 accounts, all on HaynesTower, hold 42 account-season pairs across the 31 seasons: 8 complete, 34 partial.
+    - Fully watched by every account with state, and moved: Bob the Builder S1 (9 files) and Married... with
+      Children S2 (7).
+    - Not moved:
+      - The Simpsons S38: its only flag is a second copy, and a Fix would leave a mark on an episode nobody watched.
+      - Daniel Tiger S5 and Mickey Mouse S1: re-pairing two-episode files can create new, unwatched Plex episodes.
+    - Moving each account's marks and resume points is technically possible for all 11 (the owner, and 10 friends
+      through their per-server tokens on plex.tv's shared_servers), but not today. The app writes Plex only as the
+      owner, cannot set a resume point, and drops friend tokens. That needs new code and an owner decision (#928).
+  - Ben 10 (2016) S2 was re-mapped once its copies were placed on open episodes: 22 files, 18 now right.
 
 ### P5: Release Pick
 

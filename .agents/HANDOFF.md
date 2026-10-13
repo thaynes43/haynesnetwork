@@ -1,5 +1,32 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-13 15:10Z: #928 round: Plex ordering, Second-Copy Fix (v0.119.0), watched-season facts; open flags 400 to 321
+
+- **Plex ordering (staff hand op, coordinator ruling: no app write, no ADR).**
+  - Four shows with no watch state on either server were switched to TheTVDB (Aired) on HaynesOps and HaynesTower,
+    refreshed, and read back: Midsomer Murders, The Fairly OddParents, Leah Remini and One Piece. Their flagged seasons
+    were then re-mapped.
+  - The Thundermans went back to the library default: Plex's TVDB data for S4 runs one episode off.
+  - Alaskan Bush People, Fireman Sam and Pokémon were not touched, because someone has watch state on them.
+  - To undo a switch: `PUT /library/metadata/<show ratingKey>/prefs?showOrdering=` (empty is the library default), then
+    refresh.
+- **Second-Copy Fix** (`repair-guide.ts copy-plan | copy-run`, DESIGN-055 P4 decision 25; hnet #932, release v0.119.0,
+  haynes-ops #3891).
+  - 37 slots were fixed as staff, each after evidence that its content sits on its own episode.
+  - 27 now hold their own episode. 10 are missing, with no correct release yet.
+  - 23 staff pair terms block the mislabelled names that the first searches re-grabbed.
+  - Law & Order S3E16's release was blocklisted by hand (its name term would also block other Law & Order shows).
+- **Watched seasons:** 11 accounts (HaynesTower), 8 complete and 34 partial account-seasons. Bob the Builder S1 and
+  Married... with Children S2 were fully watched by everyone with state, and were moved. Carrying marks for friends is
+  possible only with new code, which is an owner decision in #928.
+- **Also re-mapped:** Ben 10 (2016) S2, and Batman S1E54 and E59.
+- **Details:** PLAN-077, P4 follow-up, "The #928 round".
+- **Open (owner, #928):**
+  - The watched seasons.
+  - The three held shows' ordering.
+  - Ben 10 (2016) S1, S2 and S4 mp4 identification.
+  - The 10 missing episodes, which Sonarr keeps searching.
+
 ## 2026-10-13 14:30Z: PLAN-077 P5 shipped: the Release Pick, live in v0.119.1, remedy on; first real pick (SpongeBob S17E18) imported
 
 - **What:** "See every release" (DESIGN-055 D-06, decisions 1-16 after D-06). It lists every release for one missing
@@ -52,7 +79,7 @@
   - The five hand-profile blocks were adopted as name terms and read back in Mislabel profile 4.
   - Hand profile 3, its tag on series 1061 and tag 31 are deleted by hand, each read back.
   - Hand profile 2 (T.O.T.S., tag 30) stays: it fits no term kind.
-- **Season Re-map live (12:26Z to 13:20Z):**
+- **Season Re-map live (12:26Z to 12:49Z):**
   - 29 seasons and 263 files moved, with nothing orphaned and file counts on disk and in Sonarr unchanged.
   - 237 files are now right. 26 second copies or other content were moved aside and are still wrong.
   - Plex shows every file of those seasons on its Sonarr episode on both servers.
