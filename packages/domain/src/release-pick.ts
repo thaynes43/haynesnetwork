@@ -7,7 +7,7 @@
 // 1. Pure: `describeRejection` (the plain-words mapping, versioned) and `classifyReleases` (the rows the person sees,
 //    each with its state, reasons, Title Evidence and the recommended pick). Unit-tested on the live Lost Tapes reads.
 // 2. `openReleaseList`: reads the target and its queue, searches (the release cache and the member throttle of P1), and
-//    writes the Release List (T-316) with its `release_list_requested` ledger event, the budget unit, in one transaction.
+//    writes the Release List (T-319) with its `release_list_requested` ledger event, the budget unit, in one transaction.
 // 3. `grabFromReleaseList`: re-reads the target, opens a `release_pick` Repair Request (the budget unit and the one open
 //    repair per grain), then `POST /release` through @hnet/arr/write (hard rule 4) with the body the *arr's own UI sends.
 //    The import follows through P2's Import Check: Force Search on the target imports a finished download whose name

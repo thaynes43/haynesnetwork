@@ -1,5 +1,5 @@
 -- ADR-109 C-04, C-06 / DESIGN-055 D-02, D-06 (PLAN-077 P5). Journal idx 102. ADDITIVE, two parts:
--- (1) release_pick_lists (T-316): the Release Pick's list as one person was shown it, for one missing episode or movie,
+-- (1) release_pick_lists (T-319): the Release Pick's list as one person was shown it, for one missing episode or movie,
 --     with what a grab needs kept server-side (the *arr's guid and indexer id never reach a browser). Single writer
 --     packages/domain/src/release-pick.ts, in the transaction of its ledger event.
 -- (2) ledger_events.event_type admits `release_list_requested` (built from LEDGER_EVENT_TYPES, enums.ts): opening the list

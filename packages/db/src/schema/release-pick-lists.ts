@@ -4,7 +4,7 @@ import { users } from './users';
 import { mediaItems } from './media-items';
 
 /**
- * ADR-109 C-04, C-06 / DESIGN-055 D-06 (PLAN-077 P5, migration 0103) — a Release List (T-316): the Release Pick's list as
+ * ADR-109 C-04, C-06 / DESIGN-055 D-06 (PLAN-077 P5, migration 0103) — a Release List (T-319): the Release Pick's list as
  * one person was shown it, for one missing episode or movie. BC-03. Written only by the single writer
  * packages/domain/src/release-pick.ts (the no-direct-state-writes guard), in the same transaction as its
  * `release_list_requested` ledger event, the budget unit.

@@ -129,7 +129,7 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
   `mislabel_block_terms`), one app-owned Sonarr release profile of series-and-group "must not contain" terms. New
   outbound, through the import-confined `@hnet/arr/write`: the Episode Re-map's library-file `ManualImport` and
   `RenameFiles` (T-303) and the Mislabel Block profile writes; hard rule 4 amended (ADR-109 C-02, ADR-110 C-04). P5
-  adds the **Release List** (T-316, `release_pick_lists`): what one person was shown in the Release Pick, with the
+  adds the **Release List** (T-319, `release_pick_lists`): what one person was shown in the Release Pick, with the
   grab data kept server-side, and the interactive-search grab `POST /release` (T-307, ADR-109 C-02, C-06).
 
 ### BC-04 — Plex Sharing (Phase 3 — **built**: ADR-017 / DESIGN-007)
