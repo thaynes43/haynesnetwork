@@ -53,6 +53,7 @@ import { queueRecordState } from './queue-aware-search';
 import {
   episodeTitleEvidence,
   movieTitleEvidence,
+  parseReleaseName,
   seriesYearConflict,
   type TitleEvidenceEpisode,
   type TitleVerdict,
@@ -151,6 +152,12 @@ export interface DescribeContext {
   kind: 'sonarr' | 'radarr';
   /** The row is numbered for another episode and its title names the target (D-06's overridable episode reason). */
   mislabeled?: boolean;
+  /**
+   * P4 decision 38 (the staff Wrong-Content Replace): the file on the target is about to be deleted, so a rejection
+   * that is only about that file (an Existing-File Rejection, or "Episode file on disk contains more episodes") goes
+   * with it.
+   */
+  replacing?: boolean;
 }
 
 const noun = (ctx: DescribeContext) => (ctx.kind === 'radarr' ? 'movie' : 'episode');
@@ -189,6 +196,7 @@ export function describeRejection(text: string, ctx: DescribeContext): ReleaseRe
   if (/season pack required/i.test(t) || /^Full season release rejected/i.test(t)) return null;
   if (ctx.mislabeled && (/^Episode wasn't requested/i.test(t) || /^Wrong episode$/i.test(t))) return null;
   if (ctx.mislabeled && isExistingFileRejection(t)) return null;
+  if (ctx.replacing && (isExistingFileRejection(t) || /^Episode file on disk contains more episodes/i.test(t))) return null;
 
   // Hard refusals (D-06), for everyone.
   if (/^Release is blocklisted$/i.test(t)) {
@@ -470,9 +478,19 @@ function appReasons(release: ArrRelease, target: ReleasePickTarget, ctx: Describ
  * for it (a pack or a multi-episode file that holds it is shown, Not allowed), and rows numbered for another episode of
  * the season whose own title names the target (D-06's overridable episode reason, Case A's `S01E10.Spice.It.Up`). Rows
  * the *arr could not match to the title are dropped.
+ *
+ * `replacing` (the staff Wrong-Content Replace, P4 decision 38) reads the list as if the target's file were gone, and
+ * judges a row the *arr renumbered (scene numbering) by its own name: Mickey Mouse: Mixed-Up Adventures'
+ * `S01E01E02.Mickeys.Wild.Tire..Sittin.Kitty` holds TVDB E01 and E02, and Sonarr files it on E01 to E04 (read live
+ * 2026-10-13). Such a row holds the episodes its name numbers, needs the override (it is grabbed onto them), and is a
+ * pick only when its titles name them.
  */
-export function classifyReleases(releases: readonly ArrRelease[], target: ReleasePickTarget): ClassifiedReleases {
-  const ctxBase: DescribeContext = { kind: target.kind };
+export function classifyReleases(
+  releases: readonly ArrRelease[],
+  target: ReleasePickTarget,
+  opts: { replacing?: boolean } = {},
+): ClassifiedReleases {
+  const ctxBase: DescribeContext = { kind: target.kind, ...(opts.replacing ? { replacing: true } : {}) };
   const drafts: RowDraft[] = [];
   let dropped = 0;
   for (const release of releases) {
@@ -484,11 +502,13 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
     const extra: ReleaseReason[] = [];
 
     if (target.kind === 'sonarr') {
-      if (release.seasonNumber !== target.seasonNumber) {
+      const named = opts.replacing && release.renumbered && !release.fullSeason ? parseReleaseName(release.title) : null;
+      const byName = named !== null && named.season === target.seasonNumber && named.episodes.length > 0;
+      if (!byName && release.seasonNumber !== target.seasonNumber) {
         dropped += 1;
         continue;
       }
-      const eps = release.episodeNumbers;
+      const eps = byName ? named.episodes : release.episodeNumbers;
       const covers = release.fullSeason || eps.includes(target.episodeNumber);
       // P5 decision 17 (issue #936): a release that holds several episodes of the season (not a season pack) is a pick
       // for all of them when every one is missing. One that would land on an episode with a file stays Not allowed:
@@ -532,7 +552,7 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
 
       if (pack) {
         extra.push(reason('pack', 'other', 'Holds more than this one episode', null));
-      } else if (holds !== null && release.renumbered) {
+      } else if (holds !== null && release.renumbered && !byName) {
         // The *arr filed the name's episodes as others (scene numbering): which episodes the file really holds can't be
         // told from the list. Spidey's `S05E09E10` held E09 and E10, and Sonarr filed it on E17 to E20 (2026-10-13).
         extra.push(reason('renumbered', 'other', 'It would be filed on other episodes than its name says', null));
@@ -550,6 +570,14 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
           te.bestEpisodeId !== null ? target.seasonEpisodes.find((e) => e.id === te.bestEpisodeId) ?? null : null;
         const namedLabel = named ? episodeLabel(named.seasonNumber, named.episodeNumber, named.title ?? '') : null;
         title = { verdict: te.verdict, namedLabel: te.verdict === 'disagrees' || mislabeledAs ? namedLabel : null };
+        if (byName) {
+          // Judged by its own name: a pick only when its titles name the episodes it would be grabbed onto.
+          extra.push(
+            te.verdict === 'agrees'
+              ? reason('renumbered', 'overridable', 'Sonarr would file it on other episodes; its name and titles are these', null)
+              : reason('renumbered', 'other', 'It would be filed on other episodes than its name says', null),
+          );
+        }
         if (te.verdict === 'disagrees') {
           extra.push(
             reason(
@@ -1149,6 +1177,65 @@ export async function previewReleaseList(
     counts: classified.counts,
     offers: classified.offers.length,
   };
+}
+
+/**
+ * DESIGN-055 P4 decision 38 — send one grab of a listed offer, with the body the Release Pick sends (the plain
+ * `{guid, indexerId}` for an approved row mapped onto the target; otherwise Sonarr's override body naming the episodes).
+ * For the staff Wrong-Content Replace, which grabs right after it deleted the target's file, so the offer is always sent
+ * with the override body (the *arr judged it while the file was still there). Hard rule 4: `@hnet/arr/write` from here.
+ */
+export async function sendReleaseGrab(input: {
+  arr: ArrClientBundle;
+  target: Extract<ReleasePickTarget, { kind: 'sonarr' }>;
+  offer: ReleasePickOffer;
+  episodeIds: readonly number[];
+  /**
+   * Keep the season's cached list (a staff run filling several slots from one search: the list's other rows are
+   * unchanged by this grab, and every slot re-reads its own queue). Default: forget it, so the next list reads the queue.
+   */
+  keepList?: boolean;
+}): Promise<void> {
+  const { offer } = input;
+  await input.arr.write.sonarr.grabRelease({
+    guid: offer.guid,
+    indexerId: offer.indexerId,
+    seriesId: input.target.seriesId,
+    episodeIds: [...input.episodeIds],
+    quality: offer.quality ?? {},
+    languages: offer.languages,
+    downloadClientId: null,
+    shouldOverride: true,
+  });
+  if (!input.keepList) forgetReleaseLists(staleKeysAfterGrab(input.target, input.episodeIds));
+}
+
+/**
+ * DESIGN-055 P4 decision 38 — the staff Wrong-Content Replace's read-only list: the target's releases as they would be
+ * classified once the file on `freedEpisodeIds` is gone (those episodes count as missing, and the rejections that are
+ * only about that file go with it). The same season search the Release Pick reads; nothing is recorded or grabbed.
+ */
+export async function previewReplacementList(
+  input: ReleasePickTargetInput & { freedEpisodeIds: readonly number[] },
+): Promise<{
+  status: 'list' | 'on_its_way' | 'queue_stuck';
+  target: ReleasePickTarget;
+  rows: ReleasePickRow[];
+  offers: ReleasePickOffer[];
+  searchedAt: string | null;
+}> {
+  const resolved = await readReleasePickTarget(input);
+  const freed = new Set(input.freedEpisodeIds);
+  const target: ReleasePickTarget =
+    resolved.target.kind === 'sonarr'
+      ? { ...resolved.target, seasonEpisodes: resolved.target.seasonEpisodes.map((e) => (freed.has(e.id) ? { ...e, hasFile: false } : e)) }
+      : resolved.target;
+  if (resolved.queueState !== 'none') {
+    return { status: resolved.queueState, target, rows: [], offers: [], searchedAt: null };
+  }
+  const { releases, searchedAt } = await readReleases(target, input.arr, {});
+  const classified = classifyReleases(releases, target, { replacing: true });
+  return { status: 'list', target, rows: classified.rows, offers: classified.offers, searchedAt: new Date(searchedAt).toISOString() };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

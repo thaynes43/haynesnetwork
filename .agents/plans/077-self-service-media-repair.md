@@ -565,6 +565,17 @@ names, never deleting a file, after a watch-state check on every Plex server and
         the owner.
     - **Title Check:** 321 open flags at the start of the work order, 310 just before the first run, 155 after (Ben 10's
       re-maps cleared flags, and the hourly census re-judges the files that moved).
+    - **The Wrong-Content Replace** (DESIGN-055 P4 decision 38; coordinator ruling on #928: "they are bugs, fix them",
+      C then A): `wrong-content-replace.ts`, `previewReplacementList` and `sendReleaseGrab` in `release-pick.ts`,
+      migration 0106 (Watch Carry kind `wrong_content`), the carry's `droppedDetail`, and `repair-guide.ts replace-plan |
+      replace-run`. Tests: `watch-carry.test.ts`: a replace that drops a mark on content held nowhere else; and a slot
+      kept while no release names it, then replaced with its mark credited to the copy elsewhere; two files replaced at
+      once from parts, with a renumbered release judged by its own name and one search for the run. Also migration 0106
+      and the script test (`--also`, `--key a,b`, `--slots`, `replace-batch`).
+      Review recovery: deletion failures stop grabs; the persisted carry separates confirmed removed, retained and
+      unresolved files. `carry-finish` reads Sonarr again before reconciling a Wrong-Content Replace; a retained file's
+      marks are restored only to that same file, and unresolved outcomes keep the carry open. Failure-path tests cover
+      total and partial deletion failure, unverified read-back and failed grabs. No automatic search is promised.
     - **Held** (#928 and OC-056 list them with reasons):
       - Waiting for open Fix requests to close (48 hours): Bubble Guppies S5, whose only parking episodes are the
         emptied S1 slots, and Paw Patrol S5 E43-E47 (`--place 44-45:43-44,46:45,47:46-47`).

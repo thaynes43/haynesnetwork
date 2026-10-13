@@ -20,6 +20,23 @@
 //   tsx repair-guide.ts carry-status (--carry <id> | --tvdb <id>)
 //   tsx repair-guide.ts carry-finish --carry <id>
 //   tsx repair-guide.ts carry-revert --carry <id>
+//   tsx repair-guide.ts replace-plan --tvdb <id> (--episode S03E01 [--also 2] | --season <n> --slots 1,2,33+34)
+//   tsx repair-guide.ts replace-run  --tvdb <id> --episode S03E01 [--also 2] --key <key>[,<key>] --digest <d>
+//                                    --evidence "<note>" [--same-as S03E07,S03E08 | --same-as 33:S03E65,34:S03E67]
+//   tsx repair-guide.ts replace-batch --tvdb <id> --season <n> --batch '<json>' [--pause-ms <ms>]
+//
+// `replace-plan` / `replace-run` (DESIGN-055 P4 decision 38, coordinator ruling on #928) are staff's Wrong-Content
+// Replace: a file that holds the wrong content (another season's story, another show's episode) is replaced only when a
+// correct release exists. The plan only reads: the Release Pick's own season search, judged as if the file were gone,
+// keeping the releases whose names agree with the slot's episodes and cover the whole slot. The run re-plans, snapshots
+// the watch state, deletes the file and grabs the chosen release onto the slot (one Fix Request, requester null). A mark
+// on the wrong content never lands on the replacement: `--same-as` names the episodes whose own file holds that same
+// story (the carry credits the plays there); without it the marks are dropped and recorded on the carry. `--also` replaces
+// more files with the same slot (one release holds all their episodes); `--key a,b` fills a slot from parts. A release
+// the *arr renumbers (scene numbering) is judged by its own name and titles. `--slots` plans many slots and
+// `replace-batch` runs them in one process, one season search between them (indexer API hits are capped); the batch is
+// a JSON list of {"slot":"33+34","keys":[..],"digest":"..","evidence":"..","sameAs":["33:S03E65",..]}, run in order,
+// stopping at the first refusal.
 //
 // The WATCH CARRY (ADR-114, DESIGN-055 P4 decisions 26-34; owner ruling on issue #928, 2026-10-13: "Carry marks, then
 // move"): `season-run` and `copy-run` always snapshot every account's Plex watch state first (the owner, and each friend
@@ -125,6 +142,10 @@ import {
   runShowOrdering,
   watchCarryPlexFromEnv,
   type WatchCarryResult,
+  planWrongContentReplace,
+  runWrongContentReplace,
+  finishWrongContentReplaceCarry,
+  wrongContentRefusalText,
 } from '@hnet/domain';
 
 const USAGE = `Usage:
@@ -151,6 +172,9 @@ const USAGE = `Usage:
   repair-guide.ts carry-status (--carry <id> | --tvdb <id>)
   repair-guide.ts carry-finish --carry <id>
   repair-guide.ts carry-revert --carry <id>
+  repair-guide.ts replace-plan --tvdb <id> (--episode S03E01 [--also <n>,...] | --season <n> --slots 1,2,33+34)
+  repair-guide.ts replace-run  --tvdb <id> --episode S03E01 [--also <n>,...] --key <key>[,<key>] --digest <the replace-plan digest> --evidence "<note>" [--same-as [<n>:]S03E07,...]
+  repair-guide.ts replace-batch --tvdb <id> --season <n> --batch '<json list>' [--pause-ms <ms>]
 
 preview, evidence, audio, search-plan, release-list, queue-check and remap-plan only read (remap-plan plans as if episode_remap were on). settings writes only with --set or --known-issue (audited, actor null).
 title-check only reads Sonarr; --backfill writes title_checks rows unless --dry-run, --flags clears a stale flag.
@@ -201,7 +225,23 @@ export interface RepairGuideArgs {
     | 'ordering-run'
     | 'carry-status'
     | 'carry-finish'
-    | 'carry-revert';
+    | 'carry-revert'
+    | 'replace-plan'
+    | 'replace-run'
+    | 'replace-batch';
+  /**
+   * replace-run: the episodes (this show) whose own file holds a wrong file's story; `copyOf` names the slot episode
+   * whose file it copies (needed when the slot has several files).
+   */
+  sameAs?: Array<{ season: number; episode: number; copyOf?: number }>;
+  /** replace-plan / replace-run: more episodes whose files are replaced with the slot. */
+  also?: number[];
+  /** replace-plan: many slots planned from one search (`33+34` is one slot of two files). */
+  slots?: Array<{ episode: number; also: number[] }>;
+  /** replace-batch: the slots to run, in order. */
+  batch?: ReplaceBatchEntry[];
+  /** replace-batch: the pause between slots. */
+  pauseMs?: number;
   /** audio-preference / language-plan: the wanted audio language (ISO 639-2, e.g. `eng`). */
   language?: string;
   /** audio-scan: set the Audio Preference on the findings whose original language is this one. */
@@ -251,6 +291,57 @@ const positiveInt = (flag: string, value: string | undefined): number => {
   return Number(value);
 };
 
+/** One slot of a `replace-batch` run, as staff wrote it from the `replace-plan --slots` output. */
+export interface ReplaceBatchEntry {
+  episode: number;
+  also: number[];
+  keys: string[];
+  digest: string;
+  evidence: string;
+  sameAs: Array<{ season: number; episode: number; copyOf?: number }>;
+}
+
+/** `S03E07,S03E08`, or `33:S03E65,34:S03E67` (the slot episode whose file each copies). */
+function parseSameAs(value: string): Array<{ season: number; episode: number; copyOf?: number }> {
+  return value.split(',').map((part) => {
+    const m = /^(?:(\d+):)?S(\d+)E(\d+)$/i.exec(part.trim());
+    if (!m) throw new Error('--same-as needs episodes like S03E07,S03E08 (or 33:S03E65 for a slot of several files)');
+    return { season: Number(m[2]), episode: Number(m[3]), ...(m[1] !== undefined ? { copyOf: Number(m[1]) } : {}) };
+  });
+}
+
+/** `1,2,33+34`: one slot per comma; `+` joins the episodes whose files are replaced together. */
+function parseSlots(value: string): Array<{ episode: number; also: number[] }> {
+  return value.split(',').map((part) => {
+    const nums = part.trim().split('+');
+    if (nums.some((n) => !/^\d+$/.test(n))) throw new Error('--slots needs episode numbers like 1,2,33+34');
+    return { episode: Number(nums[0]), also: nums.slice(1).map(Number) };
+  });
+}
+
+function parseReplaceBatch(value: string): ReplaceBatchEntry[] {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(value);
+  } catch {
+    throw new Error('--batch needs a JSON list');
+  }
+  if (!Array.isArray(raw) || raw.length === 0) throw new Error('--batch needs a JSON list of slots');
+  return raw.map((e: Record<string, unknown>, i) => {
+    const at = `--batch entry ${i + 1}`;
+    if (typeof e !== 'object' || e === null) throw new Error(`${at} is not an object`);
+    const [slot] = parseSlots(String(e.slot ?? ''));
+    const keys = Array.isArray(e.keys) ? e.keys.map(String) : [];
+    if (keys.length === 0 || keys.some((k) => !/^[0-9a-f]{16}$/.test(k))) throw new Error(`${at} needs "keys" (the plan's 16-character keys)`);
+    const digest = String(e.digest ?? '');
+    if (!/^[0-9a-f]{8,64}$/.test(digest)) throw new Error(`${at} needs the plan's "digest"`);
+    const evidence = String(e.evidence ?? '').trim();
+    if (evidence.length < 10) throw new Error(`${at} needs "evidence" (what was read)`);
+    const sameAs = Array.isArray(e.sameAs) && e.sameAs.length > 0 ? parseSameAs(e.sameAs.map(String).join(',')) : [];
+    return { episode: slot!.episode, also: slot!.also, keys, digest, evidence, sameAs };
+  });
+}
+
 /** Parse the command line (exported for the unit test). */
 export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs | 'help' {
   const [command, ...rest] = argv;
@@ -278,7 +369,10 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'ordering-run' &&
     command !== 'carry-status' &&
     command !== 'carry-finish' &&
-    command !== 'carry-revert'
+    command !== 'carry-revert' &&
+    command !== 'replace-plan' &&
+    command !== 'replace-run' &&
+    command !== 'replace-batch'
   ) {
     throw new Error(`unknown command "${command}"`);
   }
@@ -375,7 +469,8 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         i += 1;
         break;
       case '--key':
-        if (!value || !/^[0-9a-f]{16}$/.test(value)) throw new Error('--key needs the 16-character row key release-list printed');
+        if (!value || !/^[0-9a-f]{16}(,[0-9a-f]{16})*$/.test(value)) throw new Error('--key needs the 16-character row key release-list printed');
+        if (value.includes(',') && command !== 'replace-run') throw new Error('only replace-run takes several keys');
         args.key = value;
         i += 1;
         break;
@@ -466,6 +561,27 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         args.carry = value;
         i += 1;
         break;
+      case '--same-as':
+        args.sameAs = parseSameAs(value ?? '');
+        i += 1;
+        break;
+      case '--also':
+        args.also = (value ?? '').split(',').map((n) => positiveInt(flag, n.trim()));
+        i += 1;
+        break;
+      case '--slots':
+        args.slots = parseSlots(value ?? '');
+        i += 1;
+        break;
+      case '--batch':
+        args.batch = parseReplaceBatch(value ?? '');
+        i += 1;
+        break;
+      case '--pause-ms':
+        if (!value || !/^\d+$/.test(value)) throw new Error('--pause-ms needs a number of milliseconds');
+        args.pauseMs = Number(value);
+        i += 1;
+        break;
       default:
         throw new Error(`unknown argument "${flag}"`);
     }
@@ -516,6 +632,35 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     if (args.dryRun && !args.backfill) throw new Error('--dry-run goes with --backfill');
     return args;
   }
+  if (command === 'replace-plan' || command === 'replace-run' || command === 'replace-batch') {
+    if (args.copyOf !== undefined || args.remap || args.placements || args.keep || args.ignorePlex || args.backfill || args.dryRun || args.flagsSeriesId !== undefined || args.tmdb !== undefined) {
+      throw new Error(`${command} takes only --tvdb, --episode, --also, --season, --slots, --key, --digest, --evidence, --same-as, --batch and --pause-ms`);
+    }
+    if (args.tvdb === undefined) throw new Error(`${command} needs --tvdb <id>`);
+    if (command === 'replace-batch') {
+      if (args.season === undefined || !args.batch || args.episode || args.also || args.slots || args.key !== undefined || args.digest !== undefined || args.evidence !== undefined || args.sameAs) {
+        throw new Error('replace-batch needs --tvdb, --season and --batch (each entry carries its own keys, digest, evidence and sameAs)');
+      }
+      return args;
+    }
+    if (args.batch || args.pauseMs !== undefined) throw new Error('--batch and --pause-ms are for replace-batch');
+    if (command === 'replace-plan') {
+      if (args.digest !== undefined || args.evidence !== undefined || args.key !== undefined || args.sameAs) {
+        throw new Error('--key, --digest, --evidence and --same-as are for replace-run');
+      }
+      if (args.slots ? args.season === undefined || args.episode !== undefined || args.also !== undefined : !args.episode || args.season !== undefined) {
+        throw new Error('replace-plan needs --episode S01E05 [--also ...], or --season <n> --slots 1,2,33+34');
+      }
+      return args;
+    }
+    if (!args.episode || args.season !== undefined || args.slots) throw new Error('replace-run needs --tvdb <id> and --episode S01E05');
+    if (!args.digest || !args.evidence || !args.key) {
+      throw new Error('replace-run needs the --key and --digest the replace-plan printed and the --evidence you read');
+    }
+    return args;
+  }
+  if (args.sameAs) throw new Error('--same-as is for replace-run');
+  if (args.also || args.slots || args.batch || args.pauseMs !== undefined) throw new Error('--also, --slots, --batch and --pause-ms are for the replace commands');
   if (command === 'copy-plan' || command === 'copy-run') {
     if (args.tvdb === undefined || !args.episode || args.tmdb !== undefined || args.season !== undefined) {
       throw new Error(`${command} needs --tvdb <id> and --episode S01E05`);
@@ -590,7 +735,7 @@ export function formatCarryResult(result: WatchCarryResult): string {
   lines.push(
     `Watch carry ${result.carryId}: ${result.status.toUpperCase()}. ${t.accounts} account(s) with state; ${t.written} item(s) written` +
       ` (${t.failed} failed); ${t.watchedCarried} watched file(s) on their item; ${t.resumesCarried} resume point(s); ` +
-      `${t.newViews} new view(s) left alone; ${t.lost} watched file(s) no item plays; ${t.mismatches} mismatch(es).`,
+      `${t.newViews} new view(s) left alone; ${t.lost} dropped (watched or started file(s) no item plays); ${t.mismatches} mismatch(es).`,
   );
   for (const [server, byAccount] of Object.entries(result.accounts)) {
     for (const [account, s] of Object.entries(byAccount)) {
@@ -598,7 +743,7 @@ export function formatCarryResult(result: WatchCarryResult): string {
         `  ${server} ${account}: watched ${s.watchedCarried}, resume ${s.resumesCarried}, clean ${s.cleanItems}, written ${s.written}` +
           (s.failed ? `, FAILED ${s.failed}` : '') +
           (s.newViews ? `, new views ${s.newViews}` : '') +
-          (s.lost ? `, lost ${s.lost}` : '') +
+          (s.lost ? `, dropped ${s.lost}` : '') +
           (s.mismatches ? `, MISMATCH ${s.mismatches}` : ''),
       );
     }
@@ -736,7 +881,14 @@ async function main(): Promise<number> {
     return 0;
   }
   if (args.command === 'carry-finish') {
-    const result = await carryWatchState({ db, plex: watchCarryPlexFromEnv(), carryId: args.carry! });
+    const [carry] = await listWatchCarries({ db, carryId: args.carry!, limit: 1 });
+    const result = carry?.kind === 'wrong_content'
+      ? await finishWrongContentReplaceCarry({ db, arr: arrClientBundleFromEnv(), plex: watchCarryPlexFromEnv(), carryId: args.carry! })
+      : await carryWatchState({ db, plex: watchCarryPlexFromEnv(), carryId: args.carry! });
+    if (!result) {
+      console.log('Every wrong-content file was retained; its watch state was restored. No release was grabbed.');
+      return 0;
+    }
     console.log(formatCarryResult(result));
     return result.status === 'verified' ? 0 : 1;
   }
@@ -867,6 +1019,88 @@ async function main(): Promise<number> {
     } else {
       scope = { scope: 'season', seasonNumber: args.season! };
     }
+  }
+
+  if (args.command === 'replace-plan' || args.command === 'replace-run' || args.command === 'replace-batch') {
+    const toSameAs = (list: RepairGuideArgs['sameAs']) =>
+      (list ?? []).map((x) => ({ seasonNumber: x.season, episodeNumber: x.episode, ...(x.copyOf !== undefined ? { copyOfEpisode: x.copyOf } : {}) }));
+    if (args.command === 'replace-batch') {
+      // One process for the whole list: the season search is cached between slots, and every slot re-plans first.
+      const watchCarry = watchCarryPlexFromEnv();
+      const pauseMs = args.pauseMs ?? 15_000;
+      for (const [i, entry] of args.batch!.entries()) {
+        if (i > 0 && pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs));
+        const slot = [entry.episode, ...entry.also].join('+');
+        try {
+          const result = await runWrongContentReplace({
+            db,
+            arr,
+            mediaItemId: item.id,
+            seasonNumber: args.season!,
+            episodeNumber: entry.episode,
+            alsoEpisodes: entry.also,
+            planDigest: entry.digest,
+            keys: entry.keys,
+            evidence: entry.evidence,
+            sameAs: toSameAs(entry.sameAs),
+            watchCarry,
+            keepReleaseList: true,
+          });
+          const c = result.carry;
+          console.log(JSON.stringify({ slot, fixRequestId: result.fixRequestId, grabbed: result.grabbed, carry: c ? { carryId: c.carryId, status: c.status, error: c.error, totals: c.result?.totals ?? null, dropped: c.result?.droppedDetail.length ?? null } : null }));
+          if (c && c.status !== 'verified') {
+            if (c.result) console.log(formatCarryResult(c.result));
+            console.error(`repair-guide: slot ${slot}: the carry is ${c.status}; stopping`);
+            return 1;
+          }
+        } catch (err) {
+          console.log(JSON.stringify({ slot, error: err instanceof Error ? err.message : String(err) }));
+          console.error(`repair-guide: slot ${slot} refused; stopping (the slots before it ran)`);
+          return 1;
+        }
+      }
+      return 0;
+    }
+    if (args.command === 'replace-plan' && args.slots) {
+      for (const slot of args.slots) {
+        const plan = await planWrongContentReplace({ db, arr, mediaItemId: item.id, seasonNumber: args.season!, episodeNumber: slot.episode, alsoEpisodes: slot.also });
+        console.log(
+          JSON.stringify({
+            slot: [slot.episode, ...slot.also].join('+'),
+            files: plan.files,
+            refusal: plan.refusal,
+            digest: plan.digest,
+            candidates: plan.candidates.map((c) => ({ key: c.key, state: c.state, whole: c.whole, lands: c.lands, title: c.title })),
+          }),
+        );
+      }
+      return 0;
+    }
+    const request = {
+      db,
+      arr,
+      mediaItemId: item.id,
+      seasonNumber: args.episode!.season,
+      episodeNumber: args.episode!.episode,
+      alsoEpisodes: args.also ?? [],
+    };
+    if (args.command === 'replace-run') {
+      const result = await runWrongContentReplace({
+        ...request,
+        planDigest: args.digest!,
+        keys: args.key!.split(','),
+        evidence: args.evidence!,
+        sameAs: toSameAs(args.sameAs),
+        watchCarry: watchCarryPlexFromEnv(),
+      });
+      const { carry, ...rest } = result;
+      console.log(JSON.stringify({ title: item.title, result: { ...rest, carry: carry ? { carryId: carry.carryId, status: carry.status, error: carry.error } : null } }, null, 2));
+      if (carry?.result) console.log(formatCarryResult(carry.result));
+      return carry && carry.status !== 'verified' ? 1 : 0;
+    }
+    const plan = await planWrongContentReplace(request);
+    console.log(JSON.stringify({ title: item.title, plan, refusalText: wrongContentRefusalText(plan.refusal) }, null, 2));
+    return 0;
   }
 
   if (args.command === 'copy-plan' || args.command === 'copy-run') {
