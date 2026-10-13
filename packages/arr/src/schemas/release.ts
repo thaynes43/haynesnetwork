@@ -95,6 +95,12 @@ export const arrReleaseSchema = z
         ? r.mappedEpisodeNumbers
         : (r.episodeNumbers ?? []),
     fullSeason: r.fullSeason === true,
+    /**
+     * DESIGN-055 D-06 (P5 decision 17) — the *arr mapped the row onto other episodes (or another season) than the ones its
+     * own name numbers: scene numbering. Spidey and His Amazing Friends' `S05E09E10` files hold TVDB E09 and E10, and
+     * Sonarr maps them onto E17 to E20 (read live 2026-10-13).
+     */
+    renumbered: isRenumbered(r),
     /** DESIGN-055 D-06 — the *arr mapped the row onto the series and its episodes (the UI's plain grab needs it). */
     downloadAllowed: r.downloadAllowed === true,
     /** DESIGN-055 D-06 — the row's QualityModel, unchanged, for an override grab (null when the *arr sent none). */
@@ -103,6 +109,21 @@ export const arrReleaseSchema = z
     languageModels: r.languages ?? [],
   }));
 export type ArrRelease = z.infer<typeof arrReleaseSchema>;
+
+function isRenumbered(r: {
+  seasonNumber?: number | null;
+  mappedSeasonNumber?: number | null;
+  episodeNumbers?: number[] | null;
+  mappedEpisodeNumbers?: number[] | null;
+}): boolean {
+  if (r.mappedSeasonNumber != null && r.seasonNumber != null && r.mappedSeasonNumber !== r.seasonNumber) return true;
+  const mapped = r.mappedEpisodeNumbers ?? [];
+  const parsed = r.episodeNumbers ?? [];
+  if (mapped.length === 0 || parsed.length === 0) return false;
+  const a = [...new Set(mapped)].sort((x, y) => x - y);
+  const b = [...new Set(parsed)].sort((x, y) => x - y);
+  return a.length !== b.length || a.some((n, i) => n !== b[i]);
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // ADR-109 C-02, C-06 / DESIGN-055 D-03, D-06 (PLAN-077 P5) — the interactive-search grab, `POST /api/v3/release`. The

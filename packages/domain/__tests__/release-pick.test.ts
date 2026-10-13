@@ -203,6 +203,15 @@ describe('classifyReleases on the live Lost Tapes S01 lists (Case A, AC-40 relea
     expect(oneHas.rows[0]).toMatchObject({ state: 'not_allowed', holds: null });
     expect(oneHas.rows[0]!.reasons.map((r) => r.text)).toContain('Also holds S01E14, which already has a file');
     expect(oneHas.offers).toEqual([]);
+    // One the *arr filed on other episodes than its name numbers (scene numbering) is Not allowed: Spidey's S05E09E10
+    // held E09 and E10, and Sonarr filed it on E17 to E20 (read live 2026-10-13).
+    const renumbered = classifyReleases([{ ...clean, renumbered: true }], missing([E13.id, E14.id]));
+    expect(renumbered.rows[0]).toMatchObject({ state: 'not_allowed', holds: null });
+    expect(renumbered.rows[0]!.reasons.find((r) => r.code === 'renumbered')).toMatchObject({
+      class: 'other',
+      text: 'It would be filed on other episodes than its name says',
+    });
+    expect(renumbered.offers).toEqual([]);
     // A whole-season release stays Not allowed whatever is missing.
     const season: ArrRelease = { ...clean, guid: 'season', title: 'Regular.Show.The.Lost.Tapes.S01.1080p.HDTV.x264-GRP', fullSeason: true, episodeNumbers: [] };
     expect(classifyReleases([season], missing(lostTapes.episodes.map((e) => e.id))).rows[0]!.reasons.map((r) => r.code)).toContain('pack');

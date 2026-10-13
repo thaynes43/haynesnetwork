@@ -560,15 +560,24 @@ Tapes S01E11 and S01E13, Sonarr 4.0.20.3012, read 2026-10-13):
     Overrides of the same title evidence, the one with the higher custom-format score is now recommended first, then the
     *arr's order. The list itself keeps the *arr's order.
 17. **A release that holds several episodes, every one of them missing, is a pick for all of them (issue #936, ruled by
-    the coordinator on its proposal, 2026-10-13).** Spidey and His Amazing Friends S05E19 and S05E20 were missing, and
-    the only releases were files named `S05E09E10` in scene numbering. A scene episode is one broadcast of two segments,
-    and TVDB numbers each segment, so Sonarr maps these files onto E17 to E20, all four missing (read live 2026-10-13).
-    Disney's two-segment kids shows do this often. Until now such a row was Not allowed ("Holds more than this one
-    episode"), so the episodes could not be fixed from the app.
+    the coordinator on its proposal, 2026-10-13).** Two-segment kids shows (TVDB numbers each 12-minute segment) often
+    come as files that hold two episodes. Until now such a row was Not allowed ("Holds more than this one episode"), so
+    the episodes could not be fixed from the app. The motivating case, Spidey and His Amazing Friends S05E19 and S05E20,
+    turned out not to be one (the renumbered rule below).
     - **Which rows.** A row numbered for the target that holds more than one episode of the season (the *arr's mapped
       numbers), and is not a season pack, is judged on the episodes it holds. When every one of them is on the season's
       episode list and has no file, the row is a pick like any other: Grab, Override or Not allowed by its reasons. Title
       Evidence judges its name against all of them, so a name that says it is another episode is still a Hard Refusal.
+    - **Not allowed when the *arr filed it on other episodes than its name numbers** (code `renumbered`, neither list:
+      "It would be filed on other episodes than its name says"; `ArrRelease.renumbered`: the mapped season or episode
+      numbers differ from the parsed ones). Found in the live check of v0.120.0, the first build of this decision. The
+      only Spidey S5 releases were untitled `S05E09E10` files (RBB, JFF). Sonarr's scene mapping (one scene episode per
+      broadcast of two segments) files them on TVDB E17 to E20, all four missing, so the row was a pick for all four.
+      Staff picked RBB's: one 24-minute file, whose own subtitles open with "Aunt May's Flying House" and "Spiders
+      Versus Flies", TVDB E09 and E10. The group numbered segments the TVDB way, and Sonarr read the numbers as scene
+      numbers. The file was deleted by hand at 15:56Z, read back, and E17 to E20 are missing again. When the *arr
+      renumbers a multi-episode release, which episodes the file holds cannot be told from the list, so it is never a
+      pick; staff place such files by evidence (issue #928's two-segment files).
     - **Not allowed when it would replace a file.** When another episode it holds has a file, the row stays Not allowed,
       with the reason in plain words ("Also holds S01E14, which already has a file"; code `holds_episode_with_file`,
       neither list). Replacing a file is what Fix is for. An episode whose file state is unknown counts as having one. A
@@ -590,7 +599,7 @@ Tapes S01E11 and S01E13, Sonarr 4.0.20.3012, read 2026-10-13):
       `completed` only once all of them imported. A `download_failed` on any of them closes the pick as failed.
     - **The recommended pick.** Among Overrides, a release that holds several episodes ranks after every one that is the
       target alone (evidence rank 3), then the custom-format score, then the *arr's order. The first Grab still leads.
-    - The plain words are `RELEASE_REASONS_VERSION` 3. Pinned by `release-pick.test.ts` (the pure rows on the Lost Tapes
+    - The plain words are `RELEASE_REASONS_VERSION` 4 (3 shipped in v0.120.0 without the renumbered rule). Pinned by `release-pick.test.ts` (the pure rows on the Lost Tapes
       S01E13E14 file, then the grab, the refusals, the open check, the live chip and completion over the embedded harness)
       and `release-pick-guide.test.ts` (the words).
 
