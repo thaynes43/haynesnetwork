@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.115.0](https://github.com/thaynes43/haynesnetwork/compare/v0.114.0...v0.115.0) (2026-10-13)
+
+
+### Features
+
+* Episode Re-map, Title Check and Mislabel Block (PLAN-077 P4) ([#915](https://github.com/thaynes43/haynesnetwork/issues/915)) ([10f8e34](https://github.com/thaynes43/haynesnetwork/commit/10f8e346640b314f9f691e3b1871fd99c73d35d3))
+
 ## [0.114.0](https://github.com/thaynes43/haynesnetwork/compare/v0.113.1...v0.114.0) (2026-10-13)
 
 
