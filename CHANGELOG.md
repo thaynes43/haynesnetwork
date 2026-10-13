@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.120.0](https://github.com/thaynes43/haynesnetwork/compare/v0.119.1...v0.120.0) (2026-10-13)
+
+
+### Features
+
+* **domain:** a two-episode release fills every missing episode it holds ([#936](https://github.com/thaynes43/haynesnetwork/issues/936)) ([#939](https://github.com/thaynes43/haynesnetwork/issues/939)) ([d31f419](https://github.com/thaynes43/haynesnetwork/commit/d31f41918564302ca69ba350e19b21668e688d93))
+
 ## [0.119.1](https://github.com/thaynes43/haynesnetwork/compare/v0.119.0...v0.119.1) (2026-10-13)
 
 
