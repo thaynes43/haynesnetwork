@@ -560,8 +560,9 @@ Tapes S01E11 and S01E13, Sonarr 4.0.20.3012, read 2026-10-13):
     Overrides of the same title evidence, the one with the higher custom-format score is now recommended first, then the
     *arr's order. The list itself keeps the *arr's order.
 17. **A release that holds several episodes, every one of them missing, is a pick for all of them (issue #936, ruled by
-    the coordinator on its proposal, 2026-10-13).** Spidey and His Amazing Friends S05E19 and S05E20 were both missing,
-    and the only releases were two-segment files named `S05E09E10` (scene numbering) that Sonarr maps onto E19 and E20.
+    the coordinator on its proposal, 2026-10-13).** Spidey and His Amazing Friends S05E19 and S05E20 were missing, and
+    the only releases were files named `S05E09E10` in scene numbering. A scene episode is one broadcast of two segments,
+    and TVDB numbers each segment, so Sonarr maps these files onto E17 to E20, all four missing (read live 2026-10-13).
     Disney's two-segment kids shows do this often. Until now such a row was Not allowed ("Holds more than this one
     episode"), so the episodes could not be fixed from the app.
     - **Which rows.** A row numbered for the target that holds more than one episode of the season (the *arr's mapped
@@ -581,8 +582,9 @@ Tapes S01E11 and S01E13, Sonarr 4.0.20.3012, read 2026-10-13):
       `on_its_way`). The request's label names each episode ("S05E19 · ... and S05E20 · ..."), and its preview keeps them
       as `episodes`.
     - **The confirm names each episode** ("Download this release for both of the missing episodes it holds:", then one
-      line per episode), and the row says "Holds S05E19 and S05E20, both missing" where a one-episode row shows its Title
-      Evidence. An override is "an exception for these episodes".
+      line per episode), and a row someone can pick says "Holds S05E19 and S05E20, both missing" where a one-episode row
+      shows its Title Evidence (a Not allowed row does not, so the line never sits beside a Hard Refusal). An override
+      is "an exception for these episodes".
     - **Completion waits for every import.** `completeRepairRequests` already completes only when every target episode
       has an `imported` event. The live chip (`fix.repairProgress`) follows the queue records of any of them, and reads
       `completed` only once all of them imported. A `download_failed` on any of them closes the pick as failed.

@@ -195,6 +195,10 @@ describe('classifyReleases on the live Lost Tapes S01 lists (Case A, AC-40 relea
     expect(classifyReleases([clean, single], missing([E13.id, E14.id])).rows.find((r) => r.recommended)!.title).toBe(single.title);
 
     // The same release when E14 has a file: Not allowed, and the reason names the episode.
+    // Both missing, but a Hard Refusal (the fixture's own blocked term): Not allowed, and it promises nothing.
+    const blocked = classifyReleases([two], missing([E13.id, E14.id]));
+    expect(blocked.rows[0]).toMatchObject({ state: 'not_allowed', holds: null });
+    expect(blocked.rows[0]!.reasons.map((r) => r.code)).toContain('blocked_term');
     const oneHas = classifyReleases([clean], missing([E13.id]));
     expect(oneHas.rows[0]).toMatchObject({ state: 'not_allowed', holds: null });
     expect(oneHas.rows[0]!.reasons.map((r) => r.text)).toContain('Also holds S01E14, which already has a file');

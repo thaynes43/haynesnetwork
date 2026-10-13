@@ -326,7 +326,8 @@ export interface ReleasePickRow {
   numberedAs: string | null;
   /**
    * P5 decision 17 (issue #936): a release that holds two or more episodes, every one of them missing, is a pick for all
-   * of them. The labels of every episode it lands on, in episode order; null for a one-episode row (and for a pack).
+   * of them. The labels of every episode it lands on, in episode order; null for a one-episode row, a pack, and a row
+   * nobody can pick.
    */
   holds: string[] | null;
   recommended: boolean;
@@ -663,7 +664,8 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
       reasons: d.reasons,
       evidence: d.title,
       numberedAs: d.numberedAs,
-      holds: d.holds ? d.holds.map(heldLabel) : null,
+      // Only a row someone can pick says which episodes it fills: beside a Hard Refusal the line would read as a promise.
+      holds: d.holds && d.state !== 'not_allowed' ? d.holds.map(heldLabel) : null,
       recommended: g === recommended,
     };
   });
