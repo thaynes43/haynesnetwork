@@ -144,6 +144,7 @@ import {
   type WatchCarryResult,
   planWrongContentReplace,
   runWrongContentReplace,
+  finishWrongContentReplaceCarry,
   wrongContentRefusalText,
 } from '@hnet/domain';
 
@@ -880,7 +881,14 @@ async function main(): Promise<number> {
     return 0;
   }
   if (args.command === 'carry-finish') {
-    const result = await carryWatchState({ db, plex: watchCarryPlexFromEnv(), carryId: args.carry! });
+    const [carry] = await listWatchCarries({ db, carryId: args.carry!, limit: 1 });
+    const result = carry?.kind === 'wrong_content'
+      ? await finishWrongContentReplaceCarry({ db, arr: arrClientBundleFromEnv(), plex: watchCarryPlexFromEnv(), carryId: args.carry! })
+      : await carryWatchState({ db, plex: watchCarryPlexFromEnv(), carryId: args.carry! });
+    if (!result) {
+      console.log('Every wrong-content file was retained; its watch state was restored. No release was grabbed.');
+      return 0;
+    }
     console.log(formatCarryResult(result));
     return result.status === 'verified' ? 0 : 1;
   }

@@ -136,6 +136,8 @@ export interface WatchCarryScope {
    * original: The Simpsons S38E02 and E01 are both 719,258,375 bytes). Never counted as content where they sit.
    */
   deletedNames?: string[];
+  /** Wrong-Content Replace: planned deletions whose Sonarr read-back is not yet conclusive. Never carry or revert. */
+  pendingDeletes?: WatchCarryPart[];
   /**
    * `[copy, original]`: plays of the copy are plays of the original's content (staff evidence). A copy that holds the
    * content of two original files (a two-episode copy of two one-episode files) has one pair per original.
@@ -838,6 +840,9 @@ export async function carryWatchState(input: {
 }): Promise<WatchCarryResult> {
   const pause = input.pauseMs ?? CARRY_PAUSE_MS;
   const { snapshot } = await loadWatchCarry({ db: input.db, carryId: input.carryId });
+  if (snapshot.scope.pendingDeletes?.length) {
+    throw new WatchCarryError(`The file deletions are not verified. Run repair-guide.ts carry-finish --carry ${input.carryId} to read Sonarr again before carrying any marks.`);
+  }
   const db = resolveDb(input.db);
   const ourMarks = await db
     .select({ server: watchCarryMarks.server, account: watchCarryMarks.plexAccountId, ratingKey: watchCarryMarks.ratingKey })
@@ -998,6 +1003,47 @@ export async function noteWatchCarry(input: { db?: DbClient; carryId: string; de
     .where(eq(watchCarries.id, input.carryId));
 }
 
+/**
+ * DESIGN-055 P4 decision 38 — persist deletion read-back and its safe scope in one write, before restoring or carrying
+ * any marks. Only this single writer changes the carry's scope. The initial deletion scope remains in its detail.
+ */
+export async function reconcileWrongContentWatchCarry(input: {
+  db?: DbClient;
+  plex: WatchCarryPlex;
+  carryId: string;
+  scope: WatchCarryScope;
+  removed: WatchCarryPart[];
+  retained: WatchCarryPart[];
+  unresolved: WatchCarryPart[];
+  pauseMs?: number;
+}): Promise<{ restored: number; failed: number }> {
+  const evidence = {
+    deleteRecovery: {
+      at: new Date().toISOString(),
+      removed: input.removed,
+      retained: input.retained,
+      unresolved: input.unresolved,
+    },
+  };
+  const updated = await resolveDb(input.db)
+    .update(watchCarries)
+    .set({
+      status: 'cleared',
+      updatedAt: new Date(),
+      scope: input.scope as unknown as Record<string, unknown>,
+      detail: sql`${watchCarries.detail} || ${JSON.stringify(evidence)}::jsonb`,
+    })
+    .where(and(eq(watchCarries.id, input.carryId), eq(watchCarries.kind, 'wrong_content')))
+    .returning({ id: watchCarries.id });
+  if (updated.length !== 1) {
+    throw new WatchCarryError(`No Wrong-Content Replace carry ${input.carryId}. No marks were restored.`);
+  }
+  if (input.unresolved.length === 0) return { restored: 0, failed: 0 };
+  // Unresolved files stay cleared and blocked. Restore only files Sonarr confirms retained; the revert also checks
+  // the actual Plex part before writing, so a newly imported file never receives the old wrong-content state.
+  return revertWatchCarry({ ...input, restoreParts: input.retained, preserveStatus: true });
+}
+
 // ---------------------------------------------------------------------------
 // Revert
 // ---------------------------------------------------------------------------
@@ -1020,9 +1066,19 @@ export async function revertWatchCarry(input: {
   pauseMs?: number;
   finalStatus?: 'reverted' | 'refused';
   note?: string;
+  /** Internal deletion recovery: restore only these confirmed retained files, leaving the carry open. */
+  restoreParts?: readonly WatchCarryPart[];
+  preserveStatus?: boolean;
 }): Promise<WatchCarryRevertResult> {
   const pause = input.pauseMs ?? CARRY_PAUSE_MS;
   const { snapshot } = await loadWatchCarry({ db: input.db, carryId: input.carryId });
+  const samePart = (a: WatchCarryPart, b: WatchCarryPart) => a.name === b.name && a.size === b.size;
+  if (
+    snapshot.scope.pendingDeletes?.length &&
+    (!input.restoreParts || input.restoreParts.some((p) => snapshot.scope.pendingDeletes!.some((pending) => samePart(p, pending))))
+  ) {
+    throw new WatchCarryError(`The file deletions are not verified. Run repair-guide.ts carry-finish --carry ${input.carryId} before reverting any marks.`);
+  }
   const marks = await resolveDb(input.db)
     .select()
     .from(watchCarryMarks)
@@ -1032,6 +1088,7 @@ export async function revertWatchCarry(input: {
   const original = new Map<string, (typeof marks)[number]>();
   const lastAt = new Map<string, number>();
   for (const m of marks) {
+    if (input.restoreParts && !m.parts.every((p) => input.restoreParts!.some((part) => samePart(p, part)))) continue;
     const key = `${m.server}/${m.plexAccountId}/${m.ratingKey}`;
     if (!original.has(key)) original.set(key, m);
     lastAt.set(key, m.createdAt.getTime());
@@ -1070,7 +1127,9 @@ export async function revertWatchCarry(input: {
       else {
         const leaf = leaves.get(m.ratingKey);
         if (!leaf) error = 'the item no longer exists';
-        else current = stateOf(leaf);
+        else if (snapshot.kind === 'wrong_content' && !m.parts.every((p) => leaf.parts.some((part) => samePart(p, part)))) {
+          error = 'the item now plays a different file; its old wrong-content marks were not restored';
+        } else current = stateOf(leaf);
       }
       if (current && !sameCarryState(current, target)) {
         const sent = await applyCalls(account, m.ratingKey, current, target, pause);
@@ -1099,7 +1158,7 @@ export async function revertWatchCarry(input: {
   await setCarryStatus({
     db: input.db,
     carryId: input.carryId,
-    status: input.finalStatus ?? 'reverted',
+    status: input.preserveStatus || failed > 0 ? 'cleared' : input.finalStatus ?? 'reverted',
     patch: { detail: { revert: { at: new Date().toISOString(), restored, failed, ...(input.note ? { note: input.note } : {}) } } },
   });
   return { carryId: input.carryId, restored, failed };

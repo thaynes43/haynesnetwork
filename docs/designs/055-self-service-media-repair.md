@@ -558,6 +558,22 @@ do not edit)", "must not contain" terms only, no tags.
     dropped, each recorded on the carry (`droppedDetail`: account index, file size, state) beside the pre-clear audit
     row. Each import is then checked by subtitles or a title card.
 
+    **Deletion recovery:** before the first delete, the carry records every planned file as awaiting read-back. A
+    failed delete stops the run before any grab. Sonarr's file list and every named episode distinguish removed files
+    from retained files; missing episodes or failed reads leave the outcome unresolved. The carry's single writer
+    stores that evidence and its resulting scope together. Retained files get their pre-clear restored, with each
+    write audited; only confirmed removals can credit a copy or drop a mark. If the outcome remains unresolved,
+    the carry stays open and neither `carry-finish` nor `carry-revert` may apply the planned deletion scope.
+    `carry-finish --carry <id>` first repeats that bounded Sonarr read-back for a Wrong-Content Replace, then restores
+    retained content and finishes confirmed removals. Restoration verifies the current file's name and size, so a
+    new correct file cannot receive the wrong content's marks. A failed grab leaves its affected episodes missing;
+    staff use `release-list` or Fix for a new pick, because deleting a file does not start a Sonarr search.
+    Copy mappings remain keyed by the source file id. Equal-size source files with different copy mappings refuse
+    before writes; a partial deletion that cannot distinguish a removed source's mapping from a retained equal-size
+    source keeps those sources unresolved, rather than crediting another file's marks.
+    The run requires a Plex adapter and a stored Watch Carry; an absent adapter refuses before any write. Read-only
+    planning remains available without Plex.
+
     The live plans (2026-10-13) added four things. **Several files:** `--also 34` replaces more files with the slot
     when one release holds all their episodes (Mickey's S01E33 and E34 files each sit on one episode, and the right
     release `S01E33E34` holds both); `--same-as 33:S03E65,34:S03E67` names which file each copy belongs to.

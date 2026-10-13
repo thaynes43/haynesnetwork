@@ -135,6 +135,13 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    missing item, within the budget; the hard-refusal list applies to everyone, admins included). It downloads, never
    deletes or blocks anything; a grab the *arr cannot file is imported through the Import Check above. Through
    `@hnet/arr/write` from `packages/domain` only.
+   **DESIGN-055 P4 decision 38 adds the staff Wrong-Content Replace:** a correct release is chosen before deleting
+   one or more wrong-content episode files, under one staff Fix Request (`wrong_content`, requester null) and a
+   Watch Carry (migration 0106). Only after every target file's deletion is read back does the Release Pick writer
+   grab the chosen releases onto those now-missing episodes. A deletion failure stops all grabs; retained files keep
+   their audited watch state, and unverified deletions keep the carry open until a fresh read-back. Marks from the
+   wrong content go only to its evidenced copies, or are audited as dropped after confirmed removal, never onto the
+   replacement. Through `@hnet/arr/write` and `@hnet/plex/write` from `packages/domain` only.
    **ADR-109 adds the language-aware Wrong language** (C-02, C-07; DESIGN-055 D-08, PLAN-077 P6). **The Audio
    Preference**, a Plex write: a show's preferred audio language (`PUT /library/metadata/{key}/prefs?audioLanguage=`),
    on every Plex server that carries the show, only when the person's file already has the wanted audio and that
