@@ -383,6 +383,7 @@ describe('repair-guide.ts arguments', () => {
       mismatchDetail: [
         { server: 'haynestower', account: 'account 2', ratingKey: '46420', episode: 'S1E7', want: { viewCount: 1, viewOffset: 0, lastViewedAt: null }, got: { viewCount: 0, viewOffset: 0, lastViewedAt: null } },
       ],
+      droppedDetail: [],
     };
     const text = formatCarryResult(result);
     expect(text).toContain('Watch carry c-1: MISMATCH. 2 account(s) with state; 4 item(s) written (1 failed); 2 watched file(s) on their item');
@@ -397,6 +398,16 @@ describe('repair-guide.ts arguments', () => {
     expect(parseRepairGuideArgs(['copy-plan', '--tvdb', '272472', '--episode', 'S05E29', '--copy-of', '25+32'])).toMatchObject({ copyOf: [25, 32] });
     expect(parseRepairGuideArgs(['copy-plan', '--tvdb', '272472', '--episode', 'S05E11', '--copy-of', '20'])).toMatchObject({ copyOf: 20 });
     expect(() => parseRepairGuideArgs(['copy-plan', '--tvdb', '1', '--episode', 'S01E01', '--copy-of', 'x'])).toThrow(/--copy-of/);
+  });
+
+  it('replace-plan reads one slot; replace-run needs the key, the digest and the evidence (DESIGN-055 P4 decision 38)', () => {
+    expect(parseRepairGuideArgs(['replace-plan', '--tvdb', '76703', '--episode', 'S03E01'])).toMatchObject({ command: 'replace-plan', episode: { season: 3, episode: 1 } });
+    expect(
+      parseRepairGuideArgs(['replace-run', '--tvdb', '320725', '--episode', 'S01E01', '--key', '0123456789abcdef', '--digest', 'abcdef0123456789', '--evidence', 'title card reads Motor Lab', '--same-as', 'S03E01,S03E02']),
+    ).toMatchObject({ command: 'replace-run', key: '0123456789abcdef', sameAs: [{ season: 3, episode: 1 }, { season: 3, episode: 2 }] });
+    expect(() => parseRepairGuideArgs(['replace-run', '--tvdb', '1', '--episode', 'S01E01', '--digest', 'abcdef01', '--evidence', 'a long enough note'])).toThrow(/--key/);
+    expect(() => parseRepairGuideArgs(['replace-plan', '--tvdb', '1', '--episode', 'S01E01', '--same-as', 'S03E01'])).toThrow(/replace-run/);
+    expect(() => parseRepairGuideArgs(['copy-plan', '--tvdb', '1', '--episode', 'S01E01', '--same-as', 'S03E01'])).toThrow(/--same-as is for replace-run/);
   });
 
   it('refuses what it does not understand', () => {

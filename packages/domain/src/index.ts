@@ -316,3 +316,6 @@ export * from './second-copy-fix';
 export * from './watch-carry';
 export * from './watch-carry-plex';
 export * from './show-ordering';
+// DESIGN-055 P4 decision 38 (issue #928) — the staff Wrong-Content Replace: a correct release found first, then the wrong
+// file deleted and that release grabbed, inside a Watch Carry.
+export * from './wrong-content-replace';

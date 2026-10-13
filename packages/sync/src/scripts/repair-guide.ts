@@ -20,6 +20,17 @@
 //   tsx repair-guide.ts carry-status (--carry <id> | --tvdb <id>)
 //   tsx repair-guide.ts carry-finish --carry <id>
 //   tsx repair-guide.ts carry-revert --carry <id>
+//   tsx repair-guide.ts replace-plan --tvdb <id> --episode S03E01
+//   tsx repair-guide.ts replace-run  --tvdb <id> --episode S03E01 --key <release key> --digest <d> --evidence "<note>"
+//                                    [--same-as S03E07,S03E08]
+//
+// `replace-plan` / `replace-run` (DESIGN-055 P4 decision 38, coordinator ruling on #928) are staff's Wrong-Content
+// Replace: a file that holds the wrong content (another season's story, another show's episode) is replaced only when a
+// correct release exists. The plan only reads: the Release Pick's own season search, judged as if the file were gone,
+// keeping the releases whose names agree with the slot's episodes and cover the whole slot. The run re-plans, snapshots
+// the watch state, deletes the file and grabs the chosen release onto the slot (one Fix Request, requester null). A mark
+// on the wrong content never lands on the replacement: `--same-as` names the episodes whose own file holds that same
+// story (the carry credits the plays there); without it the marks are dropped and recorded on the carry.
 //
 // The WATCH CARRY (ADR-114, DESIGN-055 P4 decisions 26-34; owner ruling on issue #928, 2026-10-13: "Carry marks, then
 // move"): `season-run` and `copy-run` always snapshot every account's Plex watch state first (the owner, and each friend
@@ -125,6 +136,9 @@ import {
   runShowOrdering,
   watchCarryPlexFromEnv,
   type WatchCarryResult,
+  planWrongContentReplace,
+  runWrongContentReplace,
+  wrongContentRefusalText,
 } from '@hnet/domain';
 
 const USAGE = `Usage:
@@ -151,6 +165,8 @@ const USAGE = `Usage:
   repair-guide.ts carry-status (--carry <id> | --tvdb <id>)
   repair-guide.ts carry-finish --carry <id>
   repair-guide.ts carry-revert --carry <id>
+  repair-guide.ts replace-plan --tvdb <id> --episode S03E01
+  repair-guide.ts replace-run  --tvdb <id> --episode S03E01 --key <release key> --digest <the replace-plan digest> --evidence "<note>" [--same-as S03E07,S03E08]
 
 preview, evidence, audio, search-plan, release-list, queue-check and remap-plan only read (remap-plan plans as if episode_remap were on). settings writes only with --set or --known-issue (audited, actor null).
 title-check only reads Sonarr; --backfill writes title_checks rows unless --dry-run, --flags clears a stale flag.
@@ -201,7 +217,11 @@ export interface RepairGuideArgs {
     | 'ordering-run'
     | 'carry-status'
     | 'carry-finish'
-    | 'carry-revert';
+    | 'carry-revert'
+    | 'replace-plan'
+    | 'replace-run';
+  /** replace-run: the episodes (this show) whose own file holds the wrong file's story. */
+  sameAs?: Array<{ season: number; episode: number }>;
   /** audio-preference / language-plan: the wanted audio language (ISO 639-2, e.g. `eng`). */
   language?: string;
   /** audio-scan: set the Audio Preference on the findings whose original language is this one. */
@@ -278,7 +298,9 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'ordering-run' &&
     command !== 'carry-status' &&
     command !== 'carry-finish' &&
-    command !== 'carry-revert'
+    command !== 'carry-revert' &&
+    command !== 'replace-plan' &&
+    command !== 'replace-run'
   ) {
     throw new Error(`unknown command "${command}"`);
   }
@@ -466,6 +488,14 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         args.carry = value;
         i += 1;
         break;
+      case '--same-as':
+        args.sameAs = (value ?? '').split(',').map((part) => {
+          const m = /^S(\d+)E(\d+)$/i.exec(part.trim());
+          if (!m) throw new Error('--same-as needs episodes like S03E07,S03E08');
+          return { season: Number(m[1]), episode: Number(m[2]) };
+        });
+        i += 1;
+        break;
       default:
         throw new Error(`unknown argument "${flag}"`);
     }
@@ -516,6 +546,22 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     if (args.dryRun && !args.backfill) throw new Error('--dry-run goes with --backfill');
     return args;
   }
+  if (command === 'replace-plan' || command === 'replace-run') {
+    if (args.tvdb === undefined || !args.episode || args.tmdb !== undefined || args.season !== undefined) {
+      throw new Error(`${command} needs --tvdb <id> and --episode S01E05`);
+    }
+    if (command === 'replace-run' && (!args.digest || !args.evidence || !args.key)) {
+      throw new Error('replace-run needs the --key and --digest the replace-plan printed and the --evidence you read');
+    }
+    if (command === 'replace-plan' && (args.digest !== undefined || args.evidence !== undefined || args.key !== undefined || args.sameAs)) {
+      throw new Error('--key, --digest, --evidence and --same-as are for replace-run');
+    }
+    if (args.copyOf !== undefined || args.remap || args.placements || args.keep || args.ignorePlex || args.backfill || args.dryRun || args.flagsSeriesId !== undefined) {
+      throw new Error(`${command} takes only --tvdb, --episode, --key, --digest, --evidence, --same-as and --json`);
+    }
+    return args;
+  }
+  if (args.sameAs) throw new Error('--same-as is for replace-run');
   if (command === 'copy-plan' || command === 'copy-run') {
     if (args.tvdb === undefined || !args.episode || args.tmdb !== undefined || args.season !== undefined) {
       throw new Error(`${command} needs --tvdb <id> and --episode S01E05`);
@@ -590,7 +636,7 @@ export function formatCarryResult(result: WatchCarryResult): string {
   lines.push(
     `Watch carry ${result.carryId}: ${result.status.toUpperCase()}. ${t.accounts} account(s) with state; ${t.written} item(s) written` +
       ` (${t.failed} failed); ${t.watchedCarried} watched file(s) on their item; ${t.resumesCarried} resume point(s); ` +
-      `${t.newViews} new view(s) left alone; ${t.lost} watched file(s) no item plays; ${t.mismatches} mismatch(es).`,
+      `${t.newViews} new view(s) left alone; ${t.lost} dropped (watched or started file(s) no item plays); ${t.mismatches} mismatch(es).`,
   );
   for (const [server, byAccount] of Object.entries(result.accounts)) {
     for (const [account, s] of Object.entries(byAccount)) {
@@ -598,7 +644,7 @@ export function formatCarryResult(result: WatchCarryResult): string {
         `  ${server} ${account}: watched ${s.watchedCarried}, resume ${s.resumesCarried}, clean ${s.cleanItems}, written ${s.written}` +
           (s.failed ? `, FAILED ${s.failed}` : '') +
           (s.newViews ? `, new views ${s.newViews}` : '') +
-          (s.lost ? `, lost ${s.lost}` : '') +
+          (s.lost ? `, dropped ${s.lost}` : '') +
           (s.mismatches ? `, MISMATCH ${s.mismatches}` : ''),
       );
     }
@@ -867,6 +913,27 @@ async function main(): Promise<number> {
     } else {
       scope = { scope: 'season', seasonNumber: args.season! };
     }
+  }
+
+  if (args.command === 'replace-plan' || args.command === 'replace-run') {
+    const request = { db, arr, mediaItemId: item.id, seasonNumber: args.episode!.season, episodeNumber: args.episode!.episode };
+    if (args.command === 'replace-run') {
+      const result = await runWrongContentReplace({
+        ...request,
+        planDigest: args.digest!,
+        key: args.key!,
+        evidence: args.evidence!,
+        sameAs: (args.sameAs ?? []).map((x) => ({ seasonNumber: x.season, episodeNumber: x.episode })),
+        watchCarry: watchCarryPlexFromEnv(),
+      });
+      const { carry, ...rest } = result;
+      console.log(JSON.stringify({ title: item.title, result: { ...rest, carry: carry ? { carryId: carry.carryId, status: carry.status, error: carry.error } : null } }, null, 2));
+      if (carry?.result) console.log(formatCarryResult(carry.result));
+      return carry && carry.status !== 'verified' ? 1 : 0;
+    }
+    const plan = await planWrongContentReplace(request);
+    console.log(JSON.stringify({ title: item.title, plan, refusalText: wrongContentRefusalText(plan.refusal) }, null, 2));
+    return 0;
   }
 
   if (args.command === 'copy-plan' || args.command === 'copy-run') {

@@ -151,6 +151,12 @@ export interface DescribeContext {
   kind: 'sonarr' | 'radarr';
   /** The row is numbered for another episode and its title names the target (D-06's overridable episode reason). */
   mislabeled?: boolean;
+  /**
+   * P4 decision 38 (the staff Wrong-Content Replace): the file on the target is about to be deleted, so a rejection
+   * that is only about that file (an Existing-File Rejection, or "Episode file on disk contains more episodes") goes
+   * with it.
+   */
+  replacing?: boolean;
 }
 
 const noun = (ctx: DescribeContext) => (ctx.kind === 'radarr' ? 'movie' : 'episode');
@@ -189,6 +195,7 @@ export function describeRejection(text: string, ctx: DescribeContext): ReleaseRe
   if (/season pack required/i.test(t) || /^Full season release rejected/i.test(t)) return null;
   if (ctx.mislabeled && (/^Episode wasn't requested/i.test(t) || /^Wrong episode$/i.test(t))) return null;
   if (ctx.mislabeled && isExistingFileRejection(t)) return null;
+  if (ctx.replacing && (isExistingFileRejection(t) || /^Episode file on disk contains more episodes/i.test(t))) return null;
 
   // Hard refusals (D-06), for everyone.
   if (/^Release is blocklisted$/i.test(t)) {
@@ -471,8 +478,12 @@ function appReasons(release: ArrRelease, target: ReleasePickTarget, ctx: Describ
  * the season whose own title names the target (D-06's overridable episode reason, Case A's `S01E10.Spice.It.Up`). Rows
  * the *arr could not match to the title are dropped.
  */
-export function classifyReleases(releases: readonly ArrRelease[], target: ReleasePickTarget): ClassifiedReleases {
-  const ctxBase: DescribeContext = { kind: target.kind };
+export function classifyReleases(
+  releases: readonly ArrRelease[],
+  target: ReleasePickTarget,
+  opts: { replacing?: boolean } = {},
+): ClassifiedReleases {
+  const ctxBase: DescribeContext = { kind: target.kind, ...(opts.replacing ? { replacing: true } : {}) };
   const drafts: RowDraft[] = [];
   let dropped = 0;
   for (const release of releases) {
@@ -1149,6 +1160,60 @@ export async function previewReleaseList(
     counts: classified.counts,
     offers: classified.offers.length,
   };
+}
+
+/**
+ * DESIGN-055 P4 decision 38 — send one grab of a listed offer, with the body the Release Pick sends (the plain
+ * `{guid, indexerId}` for an approved row mapped onto the target; otherwise Sonarr's override body naming the episodes).
+ * For the staff Wrong-Content Replace, which grabs right after it deleted the target's file, so the offer is always sent
+ * with the override body (the *arr judged it while the file was still there). Hard rule 4: `@hnet/arr/write` from here.
+ */
+export async function sendReleaseGrab(input: {
+  arr: ArrClientBundle;
+  target: Extract<ReleasePickTarget, { kind: 'sonarr' }>;
+  offer: ReleasePickOffer;
+  episodeIds: readonly number[];
+}): Promise<void> {
+  const { offer } = input;
+  await input.arr.write.sonarr.grabRelease({
+    guid: offer.guid,
+    indexerId: offer.indexerId,
+    seriesId: input.target.seriesId,
+    episodeIds: [...input.episodeIds],
+    quality: offer.quality ?? {},
+    languages: offer.languages,
+    downloadClientId: null,
+    shouldOverride: true,
+  });
+  forgetReleaseLists(staleKeysAfterGrab(input.target, input.episodeIds));
+}
+
+/**
+ * DESIGN-055 P4 decision 38 — the staff Wrong-Content Replace's read-only list: the target's releases as they would be
+ * classified once the file on `freedEpisodeIds` is gone (those episodes count as missing, and the rejections that are
+ * only about that file go with it). The same season search the Release Pick reads; nothing is recorded or grabbed.
+ */
+export async function previewReplacementList(
+  input: ReleasePickTargetInput & { freedEpisodeIds: readonly number[] },
+): Promise<{
+  status: 'list' | 'on_its_way' | 'queue_stuck';
+  target: ReleasePickTarget;
+  rows: ReleasePickRow[];
+  offers: ReleasePickOffer[];
+  searchedAt: string | null;
+}> {
+  const resolved = await readReleasePickTarget(input);
+  const freed = new Set(input.freedEpisodeIds);
+  const target: ReleasePickTarget =
+    resolved.target.kind === 'sonarr'
+      ? { ...resolved.target, seasonEpisodes: resolved.target.seasonEpisodes.map((e) => (freed.has(e.id) ? { ...e, hasFile: false } : e)) }
+      : resolved.target;
+  if (resolved.queueState !== 'none') {
+    return { status: resolved.queueState, target, rows: [], offers: [], searchedAt: null };
+  }
+  const { releases, searchedAt } = await readReleases(target, input.arr, {});
+  const classified = classifyReleases(releases, target, { replacing: true });
+  return { status: 'list', target, rows: classified.rows, offers: classified.offers, searchedAt: new Date(searchedAt).toISOString() };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

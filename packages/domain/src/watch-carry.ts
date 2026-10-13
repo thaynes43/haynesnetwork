@@ -801,7 +801,7 @@ export interface CarryAccountSummary {
   cleanItems: number;
   /** Items left alone because the account played them after the snapshot. */
   newViews: number;
-  /** Watched files no Plex item plays any more (deleted with no original). */
+  /** Files the account had watched or started that no Plex item plays any more (deleted, with no copy elsewhere): dropped. */
   lost: number;
   /** Items whose read-back differs from the target. */
   mismatches: number;
@@ -814,6 +814,11 @@ export interface WatchCarryResult {
   accounts: Record<string, Record<string, CarryAccountSummary>>;
   totals: { accounts: number; written: number; failed: number; mismatches: number; watchedCarried: number; resumesCarried: number; newViews: number; lost: number };
   mismatchDetail: Array<{ server: string; account: string; ratingKey: string; episode: string; want: WatchCarryStateValue; got: WatchCarryStateValue }>;
+  /**
+   * P4 decision 38: each dropped state, a file the account had watched or started that no item plays now (the wrong
+   * content was deleted and lives nowhere else). The account is named by index, the file by its byte size.
+   */
+  droppedDetail: Array<{ server: string; account: string; size: number; state: WatchCarryStateValue }>;
 }
 
 const blankSummary = (): CarryAccountSummary => ({ written: 0, failed: 0, watchedCarried: 0, resumesCarried: 0, cleanItems: 0, newViews: 0, lost: 0, mismatches: 0 });
@@ -847,6 +852,7 @@ export async function carryWatchState(input: {
     accounts: {},
     totals: { accounts: 0, written: 0, failed: 0, mismatches: 0, watchedCarried: 0, resumesCarried: 0, newViews: 0, lost: 0 },
     mismatchDetail: [],
+    droppedDetail: [],
   };
 
   for (const [slug, server] of Object.entries(snapshot.servers)) {
@@ -937,7 +943,10 @@ export async function carryWatchState(input: {
       // Watched content no item plays any more.
       const playing = new Set(check.flatMap((l) => contentsOf(l.parts, snapshot.scope)));
       for (const [key, s] of content) {
-        if (s.viewCount > 0 && (touched === 'all' || touched.has(key)) && !playing.has(key)) summary.lost += 1;
+        if ((s.viewCount > 0 || s.viewOffset > 0) && (touched === 'all' || touched.has(key)) && !playing.has(key)) {
+          summary.lost += 1;
+          result.droppedDetail.push({ server: slug, account: label, size: key, state: s });
+        }
       }
       if (states.length > 0 || summary.written > 0 || summary.mismatches > 0 || summary.newViews > 0) perServer[label] = summary;
       if (pause > 0) await sleep(pause);
@@ -961,7 +970,17 @@ export async function carryWatchState(input: {
     db: input.db,
     carryId: input.carryId,
     status: result.status,
-    patch: { summary: { verification: { at: new Date().toISOString(), totals: result.totals, accounts: result.accounts, mismatches: result.mismatchDetail.slice(0, 50) } } },
+    patch: {
+      summary: {
+        verification: {
+          at: new Date().toISOString(),
+          totals: result.totals,
+          accounts: result.accounts,
+          mismatches: result.mismatchDetail.slice(0, 50),
+          dropped: result.droppedDetail.slice(0, 200),
+        },
+      },
+    },
   });
   return result;
 }

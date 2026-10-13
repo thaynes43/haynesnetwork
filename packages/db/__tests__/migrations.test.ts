@@ -3328,6 +3328,19 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  describe('0106 watch_carries kind wrong_content (DESIGN-055 P4 decision 38)', () => {
+    it('admits the Wrong-Content Replace carry and still refuses an unknown kind', async () => {
+      const insert = (kind: string) =>
+        client.query({ text: `INSERT INTO watch_carries (kind, series_id, status, taken_at) VALUES ($1, 990106, 'snapshot', now())`, values: [kind] });
+      try {
+        await insert('wrong_content');
+        await expect(insert('replace')).rejects.toMatchObject({ code: '23514' });
+      } finally {
+        await client.query(`DELETE FROM watch_carries WHERE series_id = 990106`);
+      }
+    });
+  });
+
   describe('0104 watch_carries (ADR-114 / DESIGN-055 P4 decisions 26-34)', () => {
     it('creates the Watch Carry, its snapshot states and its mark audit with their CHECKs, and cascades', async () => {
       const item = await client.query(

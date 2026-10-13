@@ -26,18 +26,50 @@ import {
   planSeasonRemap,
   planSecondCopyFix,
   planShowOrdering,
+  planWrongContentReplace,
   preClearWatchCarry,
   revertWatchCarry,
   runSeasonRemap,
   runSecondCopyFix,
   runShowOrdering,
+  runWrongContentReplace,
+  resetReleaseSearchState,
   setRepairGuideRemedies,
   takeWatchCarrySnapshot,
   upsertMediaItemsBatch,
   type ArrClientBundle,
   type SeasonPlexReader,
 } from '../src/index';
+import { readFileSync } from 'node:fs';
 import { fakePlex, type FakeFile } from './fake-plex-carry';
+
+const arrFixture = (name: string): unknown =>
+  JSON.parse(readFileSync(new URL(`../../arr/__fixtures__/${name}.json`, import.meta.url), 'utf8'));
+
+/** One release of Sonarr's season list, as `GET /api/v3/release` sends it (the Lost Tapes recording's shape). */
+const release = (guid: string, title: string, episode: number, rejections: string[]) => ({
+  guid,
+  indexerId: 1,
+  indexer: 'Indexer (Prowlarr)',
+  title,
+  size: 489_693_272,
+  quality: { quality: { id: 3, name: 'WEBDL-1080p', source: 'web', resolution: 1080 }, revision: { version: 1, real: 0, isRepack: false } },
+  releaseGroup: 'GRP',
+  approved: rejections.length === 0,
+  temporarilyRejected: false,
+  rejected: rejections.length > 0,
+  rejections,
+  customFormatScore: 0,
+  languages: [{ id: 1, name: 'English' }],
+  protocol: 'usenet',
+  ageHours: 12,
+  seasonNumber: 1,
+  mappedSeasonNumber: 1,
+  episodeNumbers: [episode],
+  mappedEpisodeNumbers: [episode],
+  fullSeason: false,
+  downloadAllowed: true,
+});
 import { bootMigratedDb, type TestDb } from './helpers';
 
 const EMPTY = { viewCount: 0, viewOffset: 0, lastViewedAt: null };
@@ -180,7 +212,17 @@ function stubSonarr(opts: { contentOn?: Array<[number, number]>; copyNames?: Rec
       sceneName: opts.copyNames?.[slot] ?? `Show.S01E${pad(slot)}.${TITLES[content - 1]!.replace(/ /g, '.')}.1080p.WEB-DL-GRP`,
     });
   }
-  const state = { nextFileId: 95_000, nextCommandId: 800, commands: new Map<number, string>(), deleted: [] as number[], searched: [] as number[][], posts: 0 };
+  const state = {
+    nextFileId: 95_000,
+    nextCommandId: 800,
+    commands: new Map<number, string>(),
+    deleted: [] as number[],
+    searched: [] as number[][],
+    posts: 0,
+    /** Sonarr's season release list (the Wrong-Content Replace's search), and the grabs sent. */
+    releases: [] as Array<Record<string, unknown>>,
+    grabs: [] as Array<Record<string, unknown>>,
+  };
   const json = (body: unknown, status = 200) =>
     new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   const quality = { quality: { id: 3, name: 'WEBDL-1080p', source: 'web', resolution: 1080 }, revision: { version: 1, real: 0 } };
@@ -212,6 +254,14 @@ function stubSonarr(opts: { contentOn?: Array<[number, number]>; copyNames?: Rec
       return json([...files.values()].map((f) => ({ id: f.id, seriesId: SERIES_ID, seasonNumber: seasonOf(f), relativePath: f.relativePath, sceneName: f.sceneName, releaseGroup: 'GRP', size: f.size, quality })));
     }
     if (method === 'GET' && p === '/api/v3/queue') return json({ page: 1, pageSize: 200, totalRecords: 0, records: [] });
+    if (method === 'GET' && p === `/api/v3/series/${SERIES_ID}`) {
+      return json({ ...(arrFixture('sonarr.series-byid') as Record<string, unknown>), id: SERIES_ID, title: 'Show', year: 2020 });
+    }
+    if (method === 'GET' && p === '/api/v3/release') return json(state.releases);
+    if (method === 'POST' && p === '/api/v3/release') {
+      state.grabs.push(body as Record<string, unknown>);
+      return json(body);
+    }
     if (method === 'GET' && p === '/api/v3/manualimport') {
       const season = Number(url.searchParams.get('seasonNumber'));
       return json(
@@ -559,6 +609,76 @@ describe('the Watch Carry flow (ADR-114)', () => {
     expect(result.carry).toMatchObject({ status: 'verified' });
     expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 0 });
     expect(plex.view(FRIEND_A, 'g-1-4')).toMatchObject({ viewCount: 2 });
+  });
+
+  it('the Wrong-Content Replace finds a correct release first, then deletes, grabs, and drops a mark on content held nowhere else (P4 decision 38)', async () => {
+    // E2 holds another show's episode (content 9, which nothing else in the library holds). A watched it on E2.
+    resetReleaseSearchState();
+    const arr = stubSonarr({ contentOn: [[1, 1], [2, 9], [3, 3], [4, 4]], copyNames: { 2: 'Other.Show.S01E01.Some.Story.1080p.WEB-DL-GRP' } });
+    const plex = fakePlex({ files: arr.plexFiles, accounts: [OWNER, FRIEND_A] });
+    plex.seed(FRIEND_A, 'g-1-2', { viewCount: 1 });
+    const existing = 'Existing file on disk has a equal or higher Custom Format score: 0';
+    arr.state.releases = [
+      release('wrong-1', 'Show.S01E02.Another.Story.1080p.WEB-DL-GRP', 2, [existing]),
+      release('right-1', 'Show.S01E02.Bravo.Night.1080p.WEB-DL-GRP', 2, [existing]),
+    ];
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2 };
+    const plan = await planWrongContentReplace(target);
+    expect(plan.refusal).toBeNull();
+    expect(plan.candidates.map((c) => c.title)).toEqual(['Show.S01E02.Bravo.Night.1080p.WEB-DL-GRP']);
+    expect(arr.state.deleted).toEqual([]); // the plan only reads
+    const result = await runWrongContentReplace({
+      ...target,
+      planDigest: plan.digest,
+      key: plan.candidates[0]!.key,
+      evidence: 'The title card names another show.',
+      watchCarry: plex.plex,
+      carryPauseMs: 0,
+    });
+    expect(arr.state.deleted).toEqual([7002]);
+    expect(arr.state.grabs).toEqual([
+      expect.objectContaining({ guid: 'right-1', indexerId: 1, seriesId: SERIES_ID, episodeIds: [402], shouldOverride: true }),
+    ]);
+    // The mark on the wrong content is cleared and recorded as dropped; it never lands on the slot.
+    expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 0 });
+    expect(result.carry).toMatchObject({ status: 'verified' });
+    expect(result.carry!.result!.totals.lost).toBe(1);
+    expect(result.carry!.result!.droppedDetail).toEqual([expect.objectContaining({ server: 'haynestower', state: expect.objectContaining({ viewCount: 1 }) })]);
+    const [fix] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, result.fixRequestId));
+    expect(fix).toMatchObject({ requesterId: null, reason: 'wrong_content', status: 'search_triggered' });
+    expect((fix!.actionsTaken as Array<{ step: string }>).map((a) => a.step)).toEqual(
+      expect.arrayContaining(['wrong_content_replace', 'delete_file', 'delete_read_back', 'release_grab', 'watch_carry']),
+    );
+    const [carry] = await t.db.select().from(watchCarries).where(eq(watchCarries.id, result.carry!.carryId));
+    expect(carry!.kind).toBe('wrong_content');
+  });
+
+  it('keeps the wrong file when no release names the episode, and credits a mark to the copy elsewhere (P4 decision 38)', async () => {
+    // E2 holds E4's story (a copy of content 4 under another size): no release names E2, so nothing moves.
+    resetReleaseSearchState();
+    const arr = stubSonarr({ contentOn: [[1, 1], [2, 4], [3, 3], [4, 4]] });
+    const plex = fakePlex({ files: arr.plexFiles, accounts: [OWNER, FRIEND_A] });
+    plex.seed(FRIEND_A, 'g-1-2', { viewCount: 1 });
+    arr.state.releases = [release('wrong-1', 'Show.S01E02.Another.Story.1080p.WEB-DL-GRP', 2, ['Existing file on disk is of equal or higher preference'])];
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2 };
+    expect((await planWrongContentReplace(target)).refusal).toBe('no_release');
+    // A correct release turns up: the replace credits A's play to E4, which holds the same story.
+    arr.state.releases.push(release('right-2', 'Show.S01E02.Bravo.Night.1080p.WEB-DL-GRP', 2, ['Existing file on disk is of equal or higher preference']));
+    resetReleaseSearchState();
+    const plan = await planWrongContentReplace(target);
+    const result = await runWrongContentReplace({
+      ...target,
+      planDigest: plan.digest,
+      key: plan.candidates[0]!.key,
+      evidence: 'Subtitles match the E04 file.',
+      sameAs: [{ seasonNumber: 1, episodeNumber: 4 }],
+      watchCarry: plex.plex,
+      carryPauseMs: 0,
+    });
+    expect(result.carry).toMatchObject({ status: 'verified' });
+    expect(result.carry!.result!.totals.lost).toBe(0);
+    expect(plex.view(FRIEND_A, 'g-1-4')).toMatchObject({ viewCount: 1 });
+    expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 0 });
   });
 
   it('an ordering switch re-matches items and the carry puts each account’s state back on its files', async () => {
