@@ -885,6 +885,11 @@ export async function openReleaseList(input: OpenReleaseListInput): Promise<Rele
   const budgetBefore = await readBudget(input.db, input.requesterId, input.requesterIsAdmin);
   if (resolved.hasFile) return emptyList('has_file', resolved, budgetBefore);
   if (resolved.queueState !== 'none') return emptyList(resolved.queueState, resolved, budgetBefore);
+  // A pick still open on this target (its download just finished and is being added, or failed in a way the *arr has
+  // not recorded yet) holds the target: a new list could not be grabbed from, so it is not opened and costs nothing.
+  if (await settleTargetLive({ db: input.db, arr: input.arr, resolved })) {
+    return emptyList('on_its_way', { ...resolved, download: null }, budgetBefore);
+  }
 
   const db = resolveDb(input.db);
   const now = input.now ? input.now() : Date.now();
@@ -904,7 +909,7 @@ export async function openReleaseList(input: OpenReleaseListInput): Promise<Rele
     )
     .orderBy(desc(releasePickLists.createdAt))
     .limit(1);
-  if (recent && recent.reasonsVersion === RELEASE_REASONS_VERSION) {
+  if (recent && recent.reasonsVersion === RELEASE_REASONS_VERSION && !(await listWasGrabbed(input.db, recent.id))) {
     const rows = recent.rows as unknown as ReleasePickRow[];
     return {
       status: 'list',
@@ -1112,6 +1117,9 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
   });
   const now = input.now ? input.now() : Date.now();
   if (now - list.searchedAt.getTime() > RELEASE_PICK_GRAB_WINDOW_MS) return refuse('list_stale');
+  // A list a grab already went out from is spent: what it offered may since have failed and been blocklisted. A grab
+  // the site refused (nothing sent to the download client) leaves it usable, so another site can be tried.
+  if (await listWasGrabbed(input.db, list.id)) return refuse('list_stale');
   const offers = list.offers as unknown as ReleasePickOffer[];
   const offer = offers.find((o) => o.key === input.key);
   if (!offer) return refuse('not_allowed');
@@ -1126,6 +1134,7 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
   if (resolved.hasFile) return refuse('has_file');
   if (resolved.queueState !== 'none') return refuse('on_its_way');
   await settleReleasePicks({ db: input.db, mediaItemId: resolved.mediaItemId });
+  if (await settleTargetLive({ db: input.db, arr: input.arr, resolved })) return refuse('on_its_way');
 
   const target = resolved.target;
   const override = offer.state === 'override';
@@ -1229,6 +1238,102 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
 }
 
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** A grab's record in the *arr's history counts from a little before its Repair Request (clocks drift). */
+const HISTORY_SLACK_MS = 2 * 60_000;
+
+/**
+ * DESIGN-055 D-06 (P5 decision 11) — settle the open picks on one target from the *arr's own history, without waiting
+ * for the sync to ingest it: with nothing in the queue for the target, a pick whose grab (its release title, after the
+ * pick) has a `downloadFailed` or `downloadIgnored` record for the same download closes as `failed`, so the person can
+ * pick another at once. Returns whether a pick (or an import) is still open on the target afterwards. One history read,
+ * only when a pick is open.
+ */
+async function settleTargetLive(input: {
+  db?: DbClient;
+  arr: Pick<ArrClientBundle, 'read'>;
+  resolved: ResolvedTarget;
+}): Promise<boolean> {
+  const db = resolveDb(input.db);
+  const { target } = input.resolved;
+  const childId = target.kind === 'sonarr' ? target.episodeId : null;
+  const open = await db
+    .select({
+      id: repairRequests.id,
+      kind: repairRequests.kind,
+      createdAt: repairRequests.createdAt,
+      targetChildIds: repairRequests.targetChildIds,
+      preview: repairRequests.preview,
+    })
+    .from(repairRequests)
+    .where(
+      and(
+        eq(repairRequests.mediaItemId, input.resolved.mediaItemId),
+        inArray(repairRequests.kind, ['release_pick', 'import_download']),
+        inArray(repairRequests.status, ['pending', 'actioned']),
+      ),
+    );
+  const mine = open.filter((r) => childId === null || r.targetChildIds.includes(childId));
+  if (mine.length === 0) return false;
+  const picks = mine.filter((r) => r.kind === 'release_pick');
+  let stillOpen = mine.length - picks.length;
+  if (picks.length === 0) return stillOpen > 0;
+  let history: Array<{ eventType: string; date: string | null; sourceTitle: string | null; downloadId: string | null; episodeId: number | null }>;
+  try {
+    history =
+      target.kind === 'radarr'
+        ? await input.arr.read.radarr.getMovieReleaseHistory(target.movieId)
+        : await input.arr.read.sonarr.getSeriesReleaseHistory(target.seriesId);
+  } catch {
+    return true; // the history could not be read: the pick stays open, as the sync would leave it
+  }
+  for (const pick of picks) {
+    const title = typeof pick.preview.title === 'string' ? pick.preview.title : null;
+    const since = pick.createdAt.getTime() - HISTORY_SLACK_MS;
+    const forTarget = history.filter(
+      (h) => (childId === null || h.episodeId === childId) && h.date !== null && Date.parse(h.date) >= since,
+    );
+    const downloads = new Set(
+      forTarget
+        .filter((h) => /^grabbed$/i.test(h.eventType) && h.sourceTitle === title && h.downloadId)
+        .map((h) => h.downloadId as string),
+    );
+    const failed = forTarget.some(
+      (h) => /^download(failed|ignored)$/i.test(h.eventType) && h.downloadId !== null && downloads.has(h.downloadId),
+    );
+    if (!failed) {
+      stillOpen += 1;
+      continue;
+    }
+    try {
+      await recordRepairTransition({
+        db: input.db,
+        repairRequestId: pick.id,
+        transition: 'failed',
+        actions: [{ step: 'download_failed', at: new Date().toISOString(), ok: false, note: "the download failed (the *arr's history)" }],
+      });
+    } catch {
+      // Closed by another writer meanwhile.
+    }
+  }
+  return stillOpen > 0;
+}
+
+/** Whether a grab from this Release List reached the *arr (a Repair Request with a successful `grab` step). */
+async function listWasGrabbed(db: DbClient | undefined, listId: string): Promise<boolean> {
+  const [hit] = await resolveDb(db)
+    .select({ id: repairRequests.id })
+    .from(repairRequests)
+    .where(
+      and(
+        eq(repairRequests.kind, 'release_pick'),
+        sql`${repairRequests.preview}->>'releaseListId' = ${listId}`,
+        sql`${repairRequests.actionsTaken} @> ${JSON.stringify([{ step: 'grab', ok: true }])}::jsonb`,
+      ),
+    )
+    .limit(1);
+  return hit !== undefined;
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Settling a pick whose download failed

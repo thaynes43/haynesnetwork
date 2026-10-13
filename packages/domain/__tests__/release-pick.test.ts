@@ -230,6 +230,7 @@ function stubArr() {
     movieHasFile: false,
     grabStatus: new Map<string, number>(),
     movieReleases: [] as Array<Record<string, unknown>>,
+    history: [] as Array<Record<string, unknown>>,
     calls: [] as Call[],
   };
   const json = (body: unknown, status = 200) =>
@@ -265,6 +266,7 @@ function stubArr() {
     if (!sonarr && method === 'GET' && p === '/api/v3/movie/1') {
       return json({ ...(arrFixture('radarr.movie-byid') as Record<string, unknown>), hasFile: state.movieHasFile, monitored: true });
     }
+    if (method === 'GET' && (p === '/api/v3/history/series' || p === '/api/v3/history/movie')) return json(state.history);
     if (method === 'GET' && p === '/api/v3/release') return json(sonarr ? lostTapes.releases : state.movieReleases);
     if (method === 'POST' && p === '/api/v3/release') {
       const guid = (body as { guid: string }).guid;
@@ -391,6 +393,20 @@ describe('the Release Pick over embedded Postgres (DESIGN-055 D-06)', () => {
     // E11 now has a download on its way: its list shows that, costs nothing and does not search.
     const busy = await openReleaseList({ db: t.db, arr: arr.bundle, ...e11(), requesterId: memberId });
     expect(busy).toMatchObject({ status: 'on_its_way', listId: null, rows: [] });
+    // A list a grab went out from is spent, even once the queue is empty again (the download may have failed and been
+    // blocklisted): no second grab from it, and reopening searches afresh instead of showing it again.
+    const queued = arr.state.queue;
+    arr.state.queue = [];
+    expect(
+      await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: pick.key, requesterId: memberId }),
+    ).toMatchObject({ outcome: 'list_stale' });
+    expect(arr.grabs()).toHaveLength(1);
+    // With the pick still open and nothing in the queue (the download is being added, or failed in a way the *arr has
+    // not recorded), the target is held: no list, no cost.
+    const held = await openReleaseList({ db: t.db, arr: arr.bundle, ...e11(), requesterId: memberId });
+    expect(held).toMatchObject({ status: 'on_its_way', download: null, listId: null });
+    expect(arr.releaseSearches()).toHaveLength(1);
+    arr.state.queue = queued;
 
     // E13 of the same season: a grab makes the cached season list stale (the *arr's decisions changed: a release is in
     // the queue, and a failed one will be blocklisted), so it searches again; the open pick on E11 does not hold it up.
@@ -428,6 +444,31 @@ describe('the Release Pick over embedded Postgres (DESIGN-055 D-06)', () => {
       .from(ledgerEvents)
       .where(and(eq(ledgerEvents.mediaItemId, showId), eq(ledgerEvents.eventType, 'repair_failed')));
     expect(failedEvents).toHaveLength(1);
+  });
+
+  it("a failed download frees the episode at once, read from the *arr's history, so the person can pick another", async () => {
+    const arr = stubArr();
+    const list = await openReleaseList({ db: t.db, arr: arr.bundle, ...e11(), requesterId: memberId });
+    const first = await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: list.recommendedKey!, requesterId: memberId });
+    expect(first.outcome).toBe('grabbed');
+    const oldT = String(lostTapes.releases.find((r) => String(r.title).includes('S01E10.Spice.It.Up'))!.title);
+    // SABnzbd fails it (the BiOMA lesson: incomplete on Usenet); Sonarr blocklists it and removes it from the queue.
+    arr.state.queue = [];
+    const at = new Date(Date.now() + 1000).toISOString();
+    arr.state.history = [
+      { id: 1, eventType: 'grabbed', date: at, sourceTitle: oldT, downloadId: 'SABnzbd_nzo_x', episodeId: E11.id },
+      { id: 2, eventType: 'downloadFailed', date: at, sourceTitle: oldT, downloadId: 'SABnzbd_nzo_x', episodeId: E11.id },
+      // An earlier attempt of another release on the same episode is not this pick's.
+      { id: 3, eventType: 'downloadFailed', date: at, sourceTitle: 'Other', downloadId: 'SABnzbd_nzo_other', episodeId: E11.id },
+    ];
+    resetReleaseSearchState();
+    const again = await openReleaseList({ db: t.db, arr: arr.bundle, ...e11(), requesterId: memberId });
+    expect(again.status).toBe('list');
+    const [closed] = await t.db.select().from(repairRequests).where(eq(repairRequests.id, first.repairRequestId!));
+    expect(closed!.status).toBe('failed');
+    expect(closed!.actionsTaken.at(-1)).toMatchObject({ step: 'download_failed' });
+    const second = await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: again.listId!, key: again.recommendedKey!, requesterId: memberId });
+    expect(second.outcome).toBe('grabbed');
   });
 
   it('refuses without sending: a stale list, a row that is not offered, an episode that has a file now', async () => {

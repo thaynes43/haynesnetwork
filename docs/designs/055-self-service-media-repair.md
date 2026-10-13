@@ -506,8 +506,13 @@ Tapes S01E11 and S01E13, Sonarr 4.0.20.3012, read 2026-10-13):
 11. **Completion and failure are read.** `completeRepairRequests` completes an actioned pick once its target records an
     `imported` event; `settleReleasePicks` (after every sync run, and before every list and grab) closes a pick whose target
     recorded `download_failed` and no import as `failed`, with its `repair_failed` event, which frees the episode for another
-    pick. A grab forgets the cached list (its decisions changed), so the next list searches again and shows the failed
-    release blocklisted. `fix.repairProgress` is the grab's live phase (ADR-028), the row authoritative for its terminals.
+    pick. Before a list or a grab for a target with an open pick and nothing in its queue, the *arr's own history settles
+    it at once (the pick's grab, by its release title, and a `downloadFailed` or `downloadIgnored` record for the same
+    download), so "Pick another release" never waits for the sync; a pick still open after that holds the target (no list,
+    no cost). A list a grab went out from is spent: it is neither reused nor grabbed from again (what it offered may since
+    have failed and been blocklisted); a grab the site refused leaves it usable for another site. A grab also forgets the
+    cached list, so the next list searches again and shows the failed release blocklisted. `fix.repairProgress` is the
+    grab's live phase (ADR-028), the row authoritative for its terminals.
 12. **The recommended pick:** the first Grab in the *arr's order; else the Override whose title names the target and whose
     number matches it, then one renumbered whose title names it, then the *arr's order. Case A, read on the live lists with
     the episodes missing: E11's pick is OldT's E10-numbered release (the hand fix); E13's the AndreMor 720p release. Every
