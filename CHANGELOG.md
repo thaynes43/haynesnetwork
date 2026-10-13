@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.116.0](https://github.com/thaynes43/haynesnetwork/compare/v0.115.1...v0.116.0) (2026-10-13)
+
+
+### Features
+
+* staff run the Episode Re-map from the in-cluster tool (PLAN-077 P4) ([#920](https://github.com/thaynes43/haynesnetwork/issues/920)) ([0922245](https://github.com/thaynes43/haynesnetwork/commit/092224578328e814cee9f6dff6349795cf0afabc))
+
 ## [0.115.1](https://github.com/thaynes43/haynesnetwork/compare/v0.115.0...v0.115.1) (2026-10-13)
 
 
