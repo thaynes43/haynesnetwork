@@ -411,7 +411,8 @@ names, never deleting a file, after a watch-state check on every Plex server and
     - Star Wars Rebels S1 [9:7] and Batman: The Animated Series S1 [21:23].
   - **Left open (400 flags), by reason.** Issue #916 has the per-season list; follow-up issue #928 carries what needs a
     decision.
-    - Watch state, not moved by owner rule (135 flags, 31 seasons). Seasons with a person's play, watched mark or resume
+    - Watch state, not moved by owner rule (135 flags, 31 seasons; the #928 round below later moved Bob the Builder S1
+      and Married... with Children S2, which every account with state had watched in full). Seasons with a person's play, watched mark or resume
       point on HaynesTower: Abbott Elementary S1-S2, Anthony Bourdain S5 and S8, Bob the Builder S1-S2, Bubble Guppies
       S1 and S5, Daniel Tiger S4-S5, Fireman Sam S6, Guy's Grocery Games S12-S15, Malcolm in the Middle S5, Married...
       with Children S2-S3, Mecha Builders S1, Mickey Mouse S1, Paw Patrol S5-S6, Pokémon S3 and S5, Sister Wives S6,
@@ -475,7 +476,7 @@ names, never deleting a file, after a watch-state check on every Plex server and
       S2E18, Law & Order S3E16, The Fairly OddParents S1E05 and E08, The Thundermans S4E07, E19, E25 and E26.
     - Batman S1E54 and E59 were swapped first (a re-map), so the Zatanna copy could be removed from E59.
     - No wrong import remains.
-  - **Watched seasons (item 3; facts only, no move).**
+  - **Watched seasons (item 3; facts, plus a move only where every account with state has watched the whole season).**
     - 11 accounts, all on HaynesTower, hold 42 account-season pairs across the 31 seasons: 8 complete, 34 partial.
     - Fully watched by every account with state, and moved: Bob the Builder S1 (9 files) and Married... with
       Children S2 (7).
