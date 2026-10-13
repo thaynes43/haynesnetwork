@@ -8,7 +8,7 @@
 // nothing_found / stalled / failed terminal with a retry) instead of a static
 // "a search is running" line. Closing the dialog is safe — the same state lives on
 // the item's action slot (D-21).
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import { describeMutationError } from '@/lib/app-error';
 import {
@@ -42,6 +42,13 @@ export interface FixDialogProps {
   onSubmitted: () => void;
   /** ADR-109 / DESIGN-055 D-09 — the title's "Watch on Plex" links, for the Repair Guide's Won't play triage. */
   play?: readonly GuidePlayTarget[];
+  /**
+   * DESIGN-055 D-10 / D-11 (PLAN-077 P3) — opened from a Seerr report: the reason the report's type points at
+   * (Audio is Wrong language, Subtitles is Missing subtitles), preselected on "What's wrong?". The person still confirms.
+   */
+  initialReason?: FixReasonName | null;
+  /** D-11 — a short note above the first question ("You reported this in Seerr. Here's what you can try first."). */
+  intro?: ReactNode;
 }
 
 /**
@@ -63,6 +70,8 @@ export function FixDialog(props: FixDialogProps) {
         remedies={guide.data.remedies}
         knownIssueServers={guide.data.knownIssueServers}
         onSubmitted={props.onSubmitted}
+        initialReason={props.initialReason ?? null}
+        intro={props.intro}
       />
     ) : null;
   }
@@ -77,7 +86,7 @@ interface DoneState {
   searchInput: SearchProgressInput;
 }
 
-function ClassicFixDialog({ open, onClose, item, target, onSubmitted }: FixDialogProps) {
+function ClassicFixDialog({ open, onClose, item, target, onSubmitted, initialReason, intro }: FixDialogProps) {
   const needsTarget = item.arrKind === 'sonarr' || item.arrKind === 'lidarr';
   const targetNoun = item.arrKind === 'sonarr' ? 'episode' : 'album';
   const preselected = target ?? null;
@@ -87,7 +96,11 @@ function ClassicFixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
   const reasons = fixReasonsForKind(item.arrKind as ArrKindName);
 
   const [targetChildId, setTargetChildId] = useState<number | ''>('');
-  const [reason, setReason] = useState<FixReasonName>('wont_play_corrupt');
+  // DESIGN-055 D-10 — this dialog stays mounted and resets on close, so the reason is the person's pick, else the one a
+  // Seerr report points at, else Won't play (derived, so a report's reason applies on every open).
+  const [pickedReason, setReason] = useState<FixReasonName | null>(null);
+  const reason: FixReasonName =
+    pickedReason ?? (initialReason && reasons.includes(initialReason) ? initialReason : 'wont_play_corrupt');
   const [reasonText, setReasonText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<DoneState | null>(null);
@@ -144,7 +157,7 @@ function ClassicFixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
 
   function reset() {
     setTargetChildId('');
-    setReason('wont_play_corrupt');
+    setReason(null);
     setReasonText('');
     setError(null);
     setDone(null);
@@ -196,6 +209,7 @@ function ClassicFixDialog({ open, onClose, item, target, onSubmitted }: FixDialo
       // squeezes the reason list into a cut-off scrollbox (owner UX nitpick).
       banner={error ? <p className="alert">{error}</p> : null}
     >
+      {intro && !done ? intro : null}
       {done ? (
         <div className="fix-done">
           <p className="fix-done__lead">

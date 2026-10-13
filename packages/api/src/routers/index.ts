@@ -24,6 +24,7 @@ import { activityRouter } from './activity';
 import { collectionsRouter } from './collections';
 import { mamGovernorRouter } from './mam-governor';
 import { queueCleanupRouter } from './queue-cleanup';
+import { seerrIssuesRouter } from './seerr-issues';
 
 export const appRouter = router({
   profile: profileRouter,
@@ -88,6 +89,9 @@ export const appRouter = router({
   // ADR-083 / DESIGN-046 D-08 (PLAN-065): the *arr queue-janitor admin surface — the census/action summary +
   // promotion-ladder readout + the DB-backed audited 3×3 mode grid and rails. Admin-only, audited same-tx.
   queueCleanup: queueCleanupRouter,
+  // ADR-111 / ADR-112 / DESIGN-055 D-10, D-12 (PLAN-077 P3): the Seerr Issue mirror — the title page's reports
+  // (library-gated, reporter names admin-only) and the admin list with linked repairs and the audited staff note.
+  seerrIssues: seerrIssuesRouter,
 });
 
 export type AppRouter = typeof appRouter;

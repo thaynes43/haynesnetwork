@@ -98,3 +98,64 @@ export const seerrWatchlistPageSchema = z.object({
   ),
 });
 export type SeerrWatchlistPage = z.infer<typeof seerrWatchlistPageSchema>;
+
+// ---------------------------------------------------------------------------
+// ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — the Seerr Issue mirror's reads (strip mode). `GET /api/v1/issue?take=
+// &skip=&filter=all&sort=added` pages every issue, newest first, with its comments; `GET /api/v1/issue/{id}` reads one.
+// Read live against Seerr 3.5.0 (2026-10-12): `status` is 1 open or 2 resolved; `issueType` 1 video, 2 audio,
+// 3 subtitles, 4 other; `problemSeason` / `problemEpisode` are 0 for "the whole title" or "the whole season"; the issue
+// carries no title (the ledger item gives it). The reporter's email crosses this boundary only to match an app user
+// (DESIGN-005 D-14); the mirror never stores it. Seerr's first comment is the report's own message.
+// ---------------------------------------------------------------------------
+
+/** The reporter (or a commenter), as the mirror needs it. */
+export const seerrIssueUserSchema = z.object({
+  id: z.number().int(),
+  email: z.string().nullish(),
+  plexUsername: z.string().nullish(),
+  username: z.string().nullish(),
+  displayName: z.string().nullish(),
+});
+export type SeerrIssueUser = z.infer<typeof seerrIssueUserSchema>;
+
+/** One comment: its id, its text and when it was written (the list omits the author; the detail read adds it). */
+export const seerrIssueCommentSchema = z.object({
+  id: z.number().int(),
+  message: z.string().nullish(),
+  createdAt: z.string(),
+  user: seerrIssueUserSchema.nullish(),
+});
+export type SeerrIssueComment = z.infer<typeof seerrIssueCommentSchema>;
+
+/** `GET /api/v1/issue` element and `GET /api/v1/issue/{id}` body. */
+export const seerrIssueSchema = z.object({
+  id: z.number().int(),
+  issueType: z.number().int(),
+  status: z.number().int(),
+  problemSeason: z.number().int().nullish(),
+  problemEpisode: z.number().int().nullish(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  media: z
+    .object({
+      mediaType: z.string().nullish(),
+      tmdbId: z.number().int().nullish(),
+      tvdbId: z.number().int().nullish(),
+    })
+    .nullish(),
+  createdBy: seerrIssueUserSchema.nullish(),
+  comments: z.array(seerrIssueCommentSchema).nullish(),
+});
+export type SeerrIssue = z.infer<typeof seerrIssueSchema>;
+
+/** `GET /api/v1/issue?take=&skip=&filter=&sort=` envelope. */
+export const seerrIssuePageSchema = z.object({
+  pageInfo: z.object({
+    pages: z.number().int(),
+    pageSize: z.number().int(),
+    results: z.number().int(),
+    page: z.number().int(),
+  }),
+  results: z.array(seerrIssueSchema),
+});
+export type SeerrIssuePage = z.infer<typeof seerrIssuePageSchema>;

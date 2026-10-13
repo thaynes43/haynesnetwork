@@ -22,6 +22,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         <Link href="/admin/catalog">Catalog</Link>
         <Link href="/admin/roles">Roles</Link>
         <Link href="/admin/fixes">Fixes</Link>
+        {/* ADR-111 / ADR-112 / DESIGN-055 D-10, D-12 (PLAN-077 P3) — Seerr reports, linked repairs, staff notes. */}
+        <Link href="/admin/seerr">Seerr issues</Link>
         {/* ADR-027 / DESIGN-004 D-15 (PLAN-010) — the dashboard Message-of-the-Day compose surface. */}
         <Link href="/admin/motd">MOTD</Link>
         {/* ADR-082 / DESIGN-027 D-10 (PLAN-040) — the MAM governor state + DB-backed audited config. */}

@@ -1,0 +1,240 @@
+{
+  "pageInfo": {
+    "pages": 1,
+    "pageSize": 20,
+    "results": 4,
+    "page": 1
+  },
+  "results": [
+    {
+      "id": 4,
+      "issueType": 4,
+      "status": 2,
+      "problemSeason": 1,
+      "problemEpisode": 0,
+      "createdAt": "2026-10-04T09:44:03.000Z",
+      "updatedAt": "2026-10-12T16:10:12.000Z",
+      "createdBy": {
+        "id": 11,
+        "email": "reporter-one@example.test",
+        "plexUsername": "reporter-one",
+        "username": null,
+        "displayName": "Reporter One",
+        "userType": 1,
+        "permissions": 277872800,
+        "avatar": "/avatar/redacted",
+        "plexToken": "redacted-never-read"
+      },
+      "modifiedBy": {
+        "id": 1,
+        "email": "owner@example.test",
+        "plexUsername": "owner",
+        "username": null,
+        "displayName": "Owner",
+        "userType": 1,
+        "permissions": 2,
+        "avatar": "/avatar/redacted",
+        "plexToken": "redacted-never-read"
+      },
+      "media": {
+        "id": 10862,
+        "mediaType": "tv",
+        "tmdbId": 256695,
+        "tvdbId": 475718,
+        "imdbId": null,
+        "status": 4,
+        "ratingKey": "1",
+        "serviceUrl": "https://sonarr.example.test/series/x",
+        "downloadStatus": []
+      },
+      "comments": [
+        {
+          "id": 6,
+          "message": "Missing episode 11 and all the episodes after 10 are slid up by 1.",
+          "createdAt": "2026-10-04T09:44:03.000Z",
+          "updatedAt": "2026-10-04T09:44:03.000Z"
+        },
+        {
+          "id": 7,
+          "message": "This is fixed. One of the downloaded packs numbered its episodes one behind.",
+          "createdAt": "2026-10-12T16:10:12.000Z",
+          "updatedAt": "2026-10-12T16:10:12.000Z"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "issueType": 1,
+      "status": 2,
+      "problemSeason": 2,
+      "problemEpisode": 6,
+      "createdAt": "2026-09-16T00:17:25.000Z",
+      "updatedAt": "2026-10-12T16:10:12.000Z",
+      "createdBy": {
+        "id": 11,
+        "email": "reporter-one@example.test",
+        "plexUsername": "reporter-one",
+        "username": null,
+        "displayName": "Reporter One",
+        "userType": 1,
+        "permissions": 277872800,
+        "avatar": "/avatar/redacted",
+        "plexToken": "redacted-never-read"
+      },
+      "modifiedBy": {
+        "id": 1,
+        "email": "owner@example.test",
+        "plexUsername": "owner",
+        "username": null,
+        "displayName": "Owner",
+        "userType": 1,
+        "permissions": 2,
+        "avatar": "/avatar/redacted",
+        "plexToken": "redacted-never-read"
+      },
+      "media": {
+        "id": 5566,
+        "mediaType": "tv",
+        "tmdbId": 253941,
+        "tvdbId": 449872,
+        "imdbId": null,
+        "status": 5,
+        "ratingKey": "1",
+        "serviceUrl": "https://sonarr.example.test/series/x",
+        "downloadStatus": []
+      },
+      "comments": [
+        {
+          "id": 3,
+          "message": "Missing episode 6",
+          "createdAt": "2026-09-16T00:17:25.000Z",
+          "updatedAt": "2026-09-16T00:17:25.000Z"
+        },
+        {
+          "id": 5,
+          "message": "Got stuck, will fix it.",
+          "createdAt": "2026-09-27T01:01:43.000Z",
+          "updatedAt": "2026-09-27T01:01:43.000Z"
+        },
+        {
+          "id": 8,
+          "message": "Episode 6 is in the library now.",
+          "createdAt": "2026-10-12T16:10:12.000Z",
+          "updatedAt": "2026-10-12T16:10:12.000Z"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "issueType": 1,
+      "status": 2,
+      "problemSeason": 0,
+      "problemEpisode": 0,
+      "createdAt": "2026-09-03T23:51:07.000Z",
+      "updatedAt": "2026-10-12T16:10:12.000Z",
+      "createdBy": {
+        "id": 16,
+        "email": "reporter-two@example.test",
+        "plexUsername": "reporter-two",
+        "username": null,
+        "displayName": "Reporter Two",
+        "userType": 1,
+        "permissions": 277872800,
+        "avatar": "/avatar/redacted",
+        "plexToken": "redacted-never-read"
+      },
+      "modifiedBy": {
+        "id": 1,
+        "email": "owner@example.test",
+        "plexUsername": "owner",
+        "username": null,
+        "displayName": "Owner",
+        "userType": 1,
+        "permissions": 2,
+        "avatar": "/avatar/redacted",
+        "plexToken": "redacted-never-read"
+      },
+      "media": {
+        "id": 1780,
+        "mediaType": "movie",
+        "tmdbId": 769,
+        "tvdbId": null,
+        "imdbId": null,
+        "status": 5,
+        "ratingKey": "1",
+        "serviceUrl": "https://sonarr.example.test/series/x",
+        "downloadStatus": []
+      },
+      "comments": [
+        {
+          "id": 2,
+          "message": "When I click play it does not start, it says I just watched it.",
+          "createdAt": "2026-09-03T23:51:07.000Z",
+          "updatedAt": "2026-09-03T23:51:07.000Z"
+        },
+        {
+          "id": 4,
+          "message": "The file plays here.",
+          "createdAt": "2026-09-27T00:47:38.000Z",
+          "updatedAt": "2026-09-27T00:47:38.000Z"
+        },
+        {
+          "id": 9,
+          "message": "Closing this one.",
+          "createdAt": "2026-10-12T16:10:12.000Z",
+          "updatedAt": "2026-10-12T16:10:12.000Z"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "issueType": 1,
+      "status": 2,
+      "problemSeason": 1,
+      "problemEpisode": 0,
+      "createdAt": "2026-07-11T23:48:37.000Z",
+      "updatedAt": "2026-07-25T02:51:12.000Z",
+      "createdBy": {
+        "id": 6,
+        "email": "reporter-three@example.test",
+        "plexUsername": "reporter-three",
+        "username": null,
+        "displayName": "Reporter Three",
+        "userType": 1,
+        "permissions": 277872800,
+        "avatar": "/avatar/redacted",
+        "plexToken": "redacted-never-read"
+      },
+      "modifiedBy": {
+        "id": 1,
+        "email": "owner@example.test",
+        "plexUsername": "owner",
+        "username": null,
+        "displayName": "Owner",
+        "userType": 1,
+        "permissions": 2,
+        "avatar": "/avatar/redacted",
+        "plexToken": "redacted-never-read"
+      },
+      "media": {
+        "id": 5278,
+        "mediaType": "tv",
+        "tmdbId": 243316,
+        "tvdbId": 444528,
+        "imdbId": null,
+        "status": 5,
+        "ratingKey": "1",
+        "serviceUrl": "https://sonarr.example.test/series/x",
+        "downloadStatus": []
+      },
+      "comments": [
+        {
+          "id": 1,
+          "message": "SEASON 2. It seems stuck. Can we cancel the request and try again?",
+          "createdAt": "2026-07-11T23:48:37.000Z",
+          "updatedAt": "2026-07-11T23:48:37.000Z"
+        }
+      ]
+    }
+  ]
+}

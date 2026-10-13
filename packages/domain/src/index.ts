@@ -127,6 +127,10 @@ export * from './playback-evidence';
 export * from './repair-requests';
 export * from './import-check';
 export * from './queue-aware-search';
+// ADR-111 C-01 / DESIGN-055 D-10..D-12 (PLAN-077 P3) — the Seerr Issue mirror, its staff note and its reads.
+export * from './seerr-issues';
+// DESIGN-055 D-07 P2 decision 13 (PLAN-077 P3) — Activity's admin Import Check row.
+export * from './activity-import-check';
 // ADR-110 / DESIGN-055 D-05 (PLAN-077 P2): Title Evidence, pure. Its parseReleaseName and ParsedReleaseName share their
 // names with release-terms' (DESIGN-052 D-12), which keep the barrel names; Title Evidence's are re-exported under
 // their own names here (inside this package, import them from './title-evidence').

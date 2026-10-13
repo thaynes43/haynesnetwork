@@ -29,6 +29,9 @@
 //                        Search fixtures (cleared by reset): Breaking Prod S01E10 is titled "125 Years Young" (Case B's
 //                        title), and `GET /manualimport?downloadId=` answers the Case B candidate of
 //                        importCheckQueueFixture()'s blocked download. Stage that queue with POST /_stub/queue.
+//   POST /_stub/seerr-issues → 204; body { issues } — ADR-111 / DESIGN-055 D-10 (PLAN-077 P3): the Seerr issues
+//                        `GET /issue`, `GET /issue/{id}` and `GET /issue/count` serve (Seerr 3.5.0's shapes). No body
+//                        (or `issues: null`) restores seerrIssueFixture(); `issues: []` serves none. Cleared by reset.
 //   Always: `POST /command` `ManualImport` is recorded like any write, and afterwards its files' episodes (or movie)
 //   report `hasFile: true` and the download's queue records are gone; `GET /command/{id}` answers `completed`.
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -659,6 +662,57 @@ function json(res: import('node:http').ServerResponse, status: number, body: unk
 }
 
 /**
+ * ADR-111 / DESIGN-055 D-10, D-11 (PLAN-077 P3) — the stub Seerr issues, in Seerr 3.5.0's `GET /issue` shape:
+ *   • 901 (open, Video): Breaking Prod S01E10, which is missing, so its link opens Force Search on it. Reported by the
+ *     fresh-member persona, who may have no account yet (the D-11 first-visit path).
+ *   • 902 (open, Audio): The Fixture, on disk, so its link opens Fix with Wrong language preselected. Reported by the
+ *     member persona.
+ *   • 903 (resolved, Other): Stub Runner.
+ *   • 904 (open, Video): a movie the ledger does not have.
+ */
+export const SEERR_ISSUE_MISSING_EPISODE = 901;
+export const SEERR_ISSUE_AUDIO_MOVIE = 902;
+export const SEERR_ISSUE_RESOLVED = 903;
+export const SEERR_ISSUE_NOT_IN_LIBRARY = 904;
+
+export function seerrIssueFixture(): Array<Record<string, unknown>> {
+  const user = (id: number, name: string, email: string) => ({
+    id,
+    email,
+    plexUsername: name,
+    username: null,
+    displayName: name,
+    userType: 1,
+    permissions: 277872800,
+    avatar: '/avatar.png',
+  });
+  const issue = (
+    id: number,
+    o: { issueType: number; status: number; season: number; episode: number; media: Record<string, unknown>; by: Record<string, unknown>; message: string; at: string },
+  ) => ({
+    id,
+    issueType: o.issueType,
+    status: o.status,
+    problemSeason: o.season,
+    problemEpisode: o.episode,
+    createdAt: o.at,
+    updatedAt: o.at,
+    createdBy: o.by,
+    modifiedBy: null,
+    media: { id: 9000 + id, downloadStatus: [], status: 5, ...o.media },
+    comments: [{ id: 9100 + id, message: o.message, createdAt: o.at, updatedAt: o.at }],
+  });
+  const fresh = user(3, 'stubfresh', 'fresh-member@example.test');
+  const member = user(2, 'stubmember', 'member@example.test');
+  return [
+    issue(SEERR_ISSUE_NOT_IN_LIBRARY, { issueType: 1, status: 1, season: 0, episode: 0, media: { mediaType: 'movie', tmdbId: 889999, tvdbId: null }, by: member, message: 'It never finished downloading.', at: '2026-10-12T12:30:00.000Z' }),
+    issue(SEERR_ISSUE_RESOLVED, { issueType: 4, status: 2, season: 0, episode: 0, media: { mediaType: 'movie', tmdbId: 880002, tvdbId: null }, by: member, message: 'The poster is wrong.', at: '2026-10-11T08:00:00.000Z' }),
+    issue(SEERR_ISSUE_AUDIO_MOVIE, { issueType: 2, status: 1, season: 0, episode: 0, media: { mediaType: 'movie', tmdbId: 880001, tvdbId: null }, by: member, message: 'The audio is in the wrong language.', at: '2026-10-12T10:00:00.000Z' }),
+    issue(SEERR_ISSUE_MISSING_EPISODE, { issueType: 1, status: 1, season: 1, episode: 10, media: { mediaType: 'tv', tmdbId: 770001, tvdbId: STUB_SERIES_TVDB_ID }, by: fresh, message: 'Missing episode 10', at: '2026-10-12T09:00:00.000Z' }),
+  ];
+}
+
+/**
  * DESIGN-052 D-25da — Radarr's and Sonarr's own stub keys. One stub serves both, and the Release Block keeps one
  * app-owned profile per *arr, so the stub keeps a profile list per `X-Api-Key` (env.ts gives the two their own keys): a
  * shared list would make each *arr's upkeep read the other's terms as drift and rewrite them away on every run.
@@ -712,6 +766,8 @@ export async function startStubArr(): Promise<StubArrServer> {
   // ADR-109 / DESIGN-055 D-07 — the queue-aware Force Search fixtures (POST /_stub/import-check), and what a recorded
   // ManualImport put on disk (cleared by reset).
   let importCheckFixtures = false;
+  // ADR-111 / DESIGN-055 D-10 — the served Seerr issues (null: seerrIssueFixture()); POST /_stub/seerr-issues sets them.
+  let seerrIssuesOverride: Array<Record<string, unknown>> | null = null;
   const importedEpisodeIds = new Set<number>();
   const importedMovieIds = new Set<number>();
   let lastCommandName = 'UnknownCommand';
@@ -742,6 +798,7 @@ export async function startStubArr(): Promise<StubArrServer> {
         seerrAnimeTags = [];
         repairGuideFixtures = false;
         importCheckFixtures = false;
+        seerrIssuesOverride = null;
         importedEpisodeIds.clear();
         importedMovieIds.clear();
         lastCommandName = 'UnknownCommand';
@@ -755,6 +812,36 @@ export async function startStubArr(): Promise<StubArrServer> {
         seerrWatchlistError = parsed.on !== false;
         res.writeHead(204);
         return res.end();
+      }
+      if (url.pathname === '/_stub/seerr-issues' && method === 'POST') {
+        const raw = await readBody(req);
+        const parsed = raw === '' ? {} : (JSON.parse(raw) as { issues?: Array<Record<string, unknown>> | null });
+        seerrIssuesOverride = Array.isArray(parsed.issues) ? parsed.issues : null;
+        res.writeHead(204);
+        return res.end();
+      }
+      // ADR-111 / DESIGN-055 D-10 — Seerr's issue reads (the mirror's sync, the webhook's and the link's fresh read).
+      if (method === 'GET' && (path === '/issue' || path === '/issue/count' || /^\/issue\/\d+$/.test(path))) {
+        const all = (seerrIssuesOverride ?? seerrIssueFixture())
+          .slice()
+          .sort((a, b) => Number(b.id) - Number(a.id));
+        if (path === '/issue/count') {
+          const open = all.filter((i) => i.status === 1).length;
+          return json(res, 200, { total: all.length, open, closed: all.length - open });
+        }
+        const one = /^\/issue\/(\d+)$/.exec(path);
+        if (one) {
+          const found = all.find((i) => Number(i.id) === Number(one[1]));
+          return found ? json(res, 200, found) : json(res, 404, { message: 'Issue not found.' });
+        }
+        const filter = query.filter ?? 'open';
+        const listed = all.filter((i) => (filter === 'all' ? true : filter === 'resolved' ? i.status === 2 : i.status === 1));
+        const take = Math.max(1, Number(query.take ?? 10));
+        const skip = Math.max(0, Number(query.skip ?? 0));
+        return json(res, 200, {
+          pageInfo: { pages: Math.ceil(listed.length / take), pageSize: take, results: listed.length, page: Math.floor(skip / take) + 1 },
+          results: listed.slice(skip, skip + take),
+        });
       }
       if (url.pathname === '/_stub/seerr-watchlist' && method === 'POST') {
         const raw = await readBody(req);

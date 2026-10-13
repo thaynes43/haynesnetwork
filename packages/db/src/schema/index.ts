@@ -27,6 +27,8 @@ export * from './ledger-events';
 export * from './wanted-items';
 export * from './fix-requests';
 export * from './repair-requests';
+// ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — the Seerr Issue mirror.
+export * from './seerr-issues';
 export * from './restore-runs';
 export * from './sync-runs';
 export * from './sync-state';

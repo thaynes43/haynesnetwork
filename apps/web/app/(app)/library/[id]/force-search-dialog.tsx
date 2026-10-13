@@ -22,7 +22,7 @@
 // only its body scrolls, so a step that replaces another never moves anything outside it; an interaction recolors or
 // enables, and the "Import onto…" confirm reserves the width of its longest label. Copy follows the owner's rules.
 import Link from 'next/link';
-import { Fragment, useState } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { MediaAction, ProgressMeter } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
@@ -78,6 +78,8 @@ export interface ForceSearchDialogProps {
    * shows the title somewhere the item queries do not cover can refresh it.
    */
   onChanged?: () => void;
+  /** DESIGN-055 D-11 (PLAN-077 P3) — a short note above the first step when Force Search opened from a Seerr report. */
+  intro?: ReactNode;
 }
 
 /**
@@ -114,6 +116,7 @@ function QueueAwareForceSearch({
   configLoading,
   onSubmitted,
   onChanged,
+  intro,
 }: ForceSearchDialogProps & { kind: GuideArrKind; target: ActionTarget | null; configLoading: boolean }) {
   const scopeInput = targetToInput(target);
   const utils = trpc.useUtils();
@@ -536,7 +539,10 @@ function QueueAwareForceSearch({
       className="modal--guide"
       banner={error ? <p className="alert">{error}</p> : null}
     >
-      <div className="repair-guide">{body}</div>
+      <div className="repair-guide">
+        {intro && done === null ? intro : null}
+        {body}
+      </div>
     </Modal>
   );
 }
@@ -547,6 +553,7 @@ function ClassicForceSearchDialog({
   item,
   target,
   onSubmitted,
+  intro,
 }: ForceSearchDialogProps) {
   const preselected = target ?? null;
   const what = preselected !== null ? preselected.label : item.title;
@@ -594,6 +601,7 @@ function ClassicForceSearchDialog({
 
   return (
     <Modal open={open} title={`Force search ${item.title}`} onClose={close}>
+      {intro && !done ? intro : null}
       {done ? (
         <div className="fix-done">
           <p className="fix-done__lead">

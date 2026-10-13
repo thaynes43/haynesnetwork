@@ -7,7 +7,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const recordNotification = vi.hoisted(() => vi.fn());
-vi.mock('@hnet/domain', () => ({ recordNotification }));
+const refreshSeerrIssueFromEnv = vi.hoisted(() => vi.fn());
+vi.mock('@hnet/domain', () => ({ recordNotification, refreshSeerrIssueFromEnv }));
 
 import { POST } from '../../app/api/webhooks/[source]/route';
 import { MAX_WEBHOOK_BODY_BYTES } from '../webhook-sources';
@@ -36,6 +37,8 @@ beforeEach(() => {
   vi.stubEnv('MAINTAINERR_WEBHOOK_SECRET', MAINTAINERR);
   recordNotification.mockReset();
   recordNotification.mockResolvedValue({ id: 'n-1', deduped: false });
+  refreshSeerrIssueFromEnv.mockReset();
+  refreshSeerrIssueFromEnv.mockResolvedValue({ outcome: 'inserted' });
 });
 
 afterEach(() => {
@@ -168,5 +171,50 @@ describe('POST /api/webhooks/[source] — body cap + parse rejection', () => {
     expect(Object.keys(arg.payload).sort()).toEqual(['message', 'notification_type', 'subject']);
     expect('arbitrary_dump' in arg.payload).toBe(false);
     expect(Object.getPrototypeOf(arg.payload)).toBe(Object.prototype);
+  });
+});
+
+describe('POST /api/webhooks/seerr — issue notifications (DESIGN-055 D-10)', () => {
+  const issueBody = (type: string, issueId: string) =>
+    JSON.stringify({
+      notification_type: type,
+      subject: 'The Paper (2025)',
+      message: 'Missing episode 6',
+      media: { media_type: 'tv', tmdbId: '253941', tvdbId: '449872' },
+      issue: { issue_id: issueId, issue_type: 'VIDEO', issue_status: 'OPEN', reportedBy_email: 'a@example.com' },
+    });
+
+  it('an issue notification triggers one fresh read of that issue and is never stored as a Feed notification', async () => {
+    for (const type of ['ISSUE_CREATED', 'ISSUE_COMMENT', 'ISSUE_RESOLVED', 'ISSUE_REOPENED']) {
+      const res = await call('seerr', { headers: { 'x-webhook-secret': SEERR }, body: issueBody(type, '3') });
+      expect(res.status).toBe(202);
+      await expect(res.json()).resolves.toEqual({ ok: true, seerrIssueId: 3, outcome: 'inserted' });
+    }
+    expect(refreshSeerrIssueFromEnv).toHaveBeenCalledTimes(4);
+    expect(refreshSeerrIssueFromEnv).toHaveBeenCalledWith({ seerrIssueId: 3 });
+    expect(recordNotification).not.toHaveBeenCalled();
+  });
+
+  it('an unreachable Seerr still answers 202 (the sync catches up)', async () => {
+    refreshSeerrIssueFromEnv.mockResolvedValue({ outcome: 'unavailable' });
+    const res = await call('seerr', { headers: { 'x-webhook-secret': SEERR }, body: issueBody('ISSUE_CREATED', '9') });
+    expect(res.status).toBe(202);
+    await expect(res.json()).resolves.toMatchObject({ seerrIssueId: 9, outcome: 'unavailable' });
+  });
+
+  it('media notifications, and an issue notification without an id, keep the Feed path', async () => {
+    await call('seerr', {
+      headers: { 'x-webhook-secret': SEERR },
+      body: JSON.stringify({ notification_type: 'MEDIA_AVAILABLE', subject: 'x', media: { media_type: 'movie', tmdbId: '1' } }),
+    });
+    await call('seerr', { headers: { 'x-webhook-secret': SEERR }, body: issueBody('ISSUE_CREATED', '') });
+    expect(refreshSeerrIssueFromEnv).not.toHaveBeenCalled();
+    expect(recordNotification).toHaveBeenCalledTimes(2);
+  });
+
+  it('the issue read needs the secret like everything else', async () => {
+    const res = await call('seerr', { headers: { 'x-webhook-secret': 'wrong' }, body: issueBody('ISSUE_CREATED', '3') });
+    expect(res.status).toBe(401);
+    expect(refreshSeerrIssueFromEnv).not.toHaveBeenCalled();
   });
 });

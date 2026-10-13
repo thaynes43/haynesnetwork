@@ -26,6 +26,59 @@ import { formatWhen } from '@/lib/media';
 
 type FailureWire = RouterOutputs['activity']['failure'];
 
+const IMPORT_CHECK_TONE: Record<string, string> = {
+  import: 'ok',
+  import_onto: 'info',
+  remove_and_search: 'warn',
+  on_its_way: 'info',
+  search: 'muted',
+  staff: 'danger',
+};
+const IMPORT_CHECK_LABEL: Record<string, string> = {
+  import: 'Ready to import',
+  import_onto: 'Names another episode',
+  remove_and_search: 'Remove and search',
+  on_its_way: 'On its way',
+  search: 'Nothing queued',
+  staff: 'Needs staff',
+};
+
+/**
+ * DESIGN-055 D-07 P2 decision 13 (PLAN-077 P3) — admins only: the stuck download's Import Check result, read-only (what
+ * a Force Search press on the title would do). Its slot keeps one line's height while it loads (hard rule 9).
+ */
+function ImportCheckRow({ failureId }: { failureId: string }) {
+  const check = trpc.activity.importCheck.useQuery({ failureId }, { retry: false, refetchOnWindowFocus: false });
+  const data = check.data;
+  return (
+    <div className="activity-import-check" data-testid="activity-import-check">
+      <h3 className="activity-import-check__title">Import Check</h3>
+      {check.isLoading ? (
+        <p className="muted">Reading the download…</p>
+      ) : check.error ? (
+        <p className="muted">Could not read the download: {check.error.message}</p>
+      ) : data && data.available ? (
+        <>
+          <p>
+            <span className={`badge badge--${IMPORT_CHECK_TONE[data.state] ?? 'muted'}`}>
+              {IMPORT_CHECK_LABEL[data.state] ?? data.state}
+            </span>{' '}
+            {data.summary}
+          </p>
+          {data.reason ? <p className="muted activity-import-check__reason">{data.reason}</p> : null}
+          {data.downloadTitle ? <p className="muted activity-import-check__reason">Download: {data.downloadTitle}</p> : null}
+        </>
+      ) : (
+        <p className="muted">
+          {data?.why === 'no_title'
+            ? 'This title is not in the Library, so there is nothing to check against.'
+            : 'There is no single episode or movie to check here.'}
+        </p>
+      )}
+    </div>
+  );
+}
+
 const FAILURE_LABEL: Record<string, string> = {
   stranded_import: 'Stranded import',
   postprocess_failed: 'Import failed',
@@ -236,6 +289,7 @@ export function ActivityFailureDetail({ failureId, from }: { failureId: string; 
             granted the action) can act on it.
           </p>
         )}
+        {d.showImportCheck && isFailed ? <ImportCheckRow failureId={failureId} /> : null}
         {d.downstreamUrl ? (
           <p className="muted">
             <a href={d.downstreamUrl} target="_blank" rel="noreferrer" data-testid="activity-downstream">

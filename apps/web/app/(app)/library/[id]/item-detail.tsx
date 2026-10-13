@@ -15,7 +15,7 @@
 // FixAlreadyOpenError toast; the buttons re-arm when the live phase lands a
 // terminal. Every slot reserves width (hard rule 9), so button ↔ chip swaps and
 // percent ticks never reflow the row.
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { trpc } from '@/lib/trpc-client';
 import {
   PhaseChip,
@@ -45,6 +45,7 @@ import {
   type ActionScope,
   type ActionTarget,
   type ArrKindName,
+  type FixReasonName,
   type SeasonEpisode,
 } from '@/lib/media';
 import { MediaPoster } from '@/components/cards';
@@ -59,11 +60,17 @@ import {
 } from '@/components/action-progress';
 import { FixDialog } from './fix-dialog';
 import { ForceSearchDialog } from './force-search-dialog';
+import { SeerrReportBanner } from './seerr-report-banner';
+import { guideIntroText, seerrGuideEntry, type SeerrGuideEntry } from '@/lib/seerr-issues';
 
 /** The open dialog: repair (Fix) vs search-only (Force Search), and its scoped target. */
 type PendingAction = {
   mode: 'fix' | 'search';
   target: ActionTarget | null;
+  /** DESIGN-055 D-10 — a Seerr report's reason, preselected on "What's wrong?". */
+  reason?: FixReasonName | null;
+  /** D-11 — the note above the guide when a `/r/seerr/<id>` link opened it. */
+  intro?: string | null;
 };
 
 /** Client mirror of @hnet/domain OPEN_FIX_STATUSES (lib/media never imports domain). */
@@ -232,15 +239,27 @@ function TvSeasonEpisodes({
 /** DESIGN-010 D-09 — the caller's Trash access (null when the section is Disabled for them). */
 export type ItemTrashAccess = TrashAccess | null;
 
+/** DESIGN-055 D-11 — the note above a guide a Seerr report's link opened. */
+function GuideIntro({ text }: { text: string }) {
+  return (
+    <p className="guide-intro" data-testid="seerr-guide-intro">
+      {text}
+    </p>
+  );
+}
+
 export function ItemDetail({
   mediaItemId,
   trashAccess = null,
   from = null,
+  arrivedSeerrIssueId = null,
 }: {
   mediaItemId: string;
   trashAccess?: ItemTrashAccess;
   /** The `?from=` origin key (resolved server-side; DESIGN-005 D-17). */
   from?: string | null;
+  /** DESIGN-055 D-11 — the `?seerr=` Seerr issue a `/r/seerr/<id>` link arrived with (resolved server-side). */
+  arrivedSeerrIssueId?: number | null;
 }) {
   const utils = trpc.useUtils();
   const [action, setAction] = useState<PendingAction | null>(null);
@@ -284,6 +303,52 @@ export function ItemDetail({
     for (const s of plexSeasons.data?.seasons ?? []) map.set(s.seasonNumber, s.posterUrl);
     return map;
   }, [plexSeasons.data]);
+
+  // ADR-111 C-02 / DESIGN-055 D-10, D-11 (PLAN-077 P3) — the title's Seerr reports (the app's mirror; nothing calls
+  // Seerr), and the one a `/r/seerr/<id>` link arrived with. The arrival is kept for the visit: the `?seerr=` param is
+  // dropped from the address once the guide opened, so a reload does not open it again.
+  const [arrivedId] = useState<number | null>(arrivedSeerrIssueId);
+  const reports = trpc.seerrIssues.forItem.useQuery(
+    { mediaItemId, ...(arrivedId !== null ? { arrivedIssueId: arrivedId } : {}) },
+    { staleTime: 60_000, retry: false, refetchOnWindowFocus: false },
+  );
+  const routedChildren =
+    arrKind === 'sonarr' ? (children.error ? [] : (children.data ?? null)) : arrKind === 'radarr' ? [] : null;
+  const entryFor = (report: NonNullable<typeof reports.data>[number]): SeerrGuideEntry | null => {
+    const it = detail.data?.item;
+    if (!it) return null;
+    return seerrGuideEntry(report, { arrKind: it.arrKind, title: it.title, onDiskFileCount: it.onDiskFileCount }, routedChildren);
+  };
+  // D-11 — the first visit from the link opens the guide the report points at, once, with its note. Decided while
+  // rendering (React's "adjust state while rendering" pattern, guarded so it runs once): no effect sets state.
+  const [autoOpen, setAutoOpen] = useState<'pending' | 'done'>(arrivedSeerrIssueId !== null ? 'pending' : 'done');
+  if (autoOpen === 'pending' && reports.data && detail.data) {
+    const arrivedReport = reports.data.find((r) => r.seerrIssueId === arrivedId) ?? null;
+    const arrivedEntry = arrivedReport !== null ? entryFor(arrivedReport) : null;
+    if (arrivedReport === null || detail.data.item.tombstonedAt != null) {
+      setAutoOpen('done');
+    } else if (arrivedEntry !== null) {
+      setAutoOpen('done');
+      setAction({
+        mode: arrivedEntry.mode,
+        target: arrivedEntry.target,
+        reason: arrivedEntry.reason,
+        intro: guideIntroText(arrivedReport.viewerIsReporter),
+      });
+    }
+  }
+  // Drop `?seerr=` from the address once decided, so a reload does not open the guide again (no state set here).
+  useEffect(() => {
+    if (autoOpen !== 'done' || arrivedSeerrIssueId === null) return;
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has('seerr')) return;
+      url.searchParams.delete('seerr');
+      window.history.replaceState(window.history.state, '', url.toString());
+    } catch {
+      // A browser that refuses replaceState keeps the param; a reload then opens the guide again. Harmless.
+    }
+  }, [autoOpen, arrivedSeerrIssueId]);
 
   if (detail.isLoading) return <p className="muted">Loading item…</p>;
   if (detail.error) {
@@ -544,6 +609,22 @@ export function ItemDetail({
           ) : undefined
         }
       />
+
+      {/* ADR-111 C-02 / DESIGN-055 D-10 — the title's Seerr reports, above the episode list, each with the guide button
+          its report points at. The arrived report comes first. */}
+      {(reports.data ?? [])
+        .slice()
+        .sort((a, b) => Number(b.seerrIssueId === arrivedId) - Number(a.seerrIssueId === arrivedId))
+        .map((report) => (
+          <SeerrReportBanner
+            key={report.seerrIssueId}
+            report={report}
+            arrived={report.seerrIssueId === arrivedId}
+            entry={entryFor(report)}
+            disabled={tombstoned}
+            onOpen={(entry) => setAction({ mode: entry.mode, target: entry.target, reason: entry.reason })}
+          />
+        ))}
 
       {/* DESIGN-010 D-09 / Q-02 (protect-in-context) — the deletion-guard panel: renders ONLY
           when this Movie/TV item is actually in Maintainerr's pending set (the pending row is
@@ -936,6 +1017,8 @@ export function ItemDetail({
         target={action?.mode === 'fix' ? action.target : null}
         onSubmitted={refresh}
         play={item.play}
+        initialReason={action?.mode === 'fix' ? (action.reason ?? null) : null}
+        intro={action?.mode === 'fix' && action.intro ? <GuideIntro text={action.intro} /> : undefined}
       />
       <ForceSearchDialog
         open={action?.mode === 'search'}
@@ -943,6 +1026,7 @@ export function ItemDetail({
         item={{ id: item.id, arrKind: item.arrKind, title: item.title }}
         target={action?.mode === 'search' ? action.target : null}
         onSubmitted={registerSearch}
+        intro={action?.mode === 'search' && action.intro ? <GuideIntro text={action.intro} /> : undefined}
       />
     </>
   );

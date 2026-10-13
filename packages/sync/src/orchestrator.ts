@@ -112,6 +112,11 @@ import {
   type ReleaseBlockArrClients,
   type SeerrEnrollClients,
   type SeerrEnrollReport,
+  // ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — the Seerr Issue mirror's sync.
+  syncSeerrIssues,
+  type SeerrIssueEpisodeReader,
+  type SeerrIssueReader,
+  type SyncSeerrIssuesResult,
 } from '@hnet/domain';
 // ADR-044 / DESIGN-022 (PLAN-021) — the read-only Open WebUI admin-API client the `ai-usage-sync` mode
 // polls; the fetched snapshot is handed to the @hnet/domain syncAiUsage single-writer (never a live
@@ -248,6 +253,9 @@ export interface RunSyncOptions {
   /** ADR-045 / DESIGN-023 — the read-only Authentik directory client the `authentik-users` mode pages.
    *  Required only for that mode; tests inject a stubbed client. */
   authentik?: Pick<AuthentikReadClient, 'listUsers'>;
+  /** ADR-111 C-01 / DESIGN-055 D-10 — the `seerr-issues` mode's read-only Seerr issue reader and the OPTIONAL Sonarr
+   *  episode reader (absent ⇒ episode ids stay unknown). Required only for that mode; tests inject stubs. */
+  seerrIssues?: { seerr: Pick<SeerrIssueReader, 'listAllIssues'>; sonarr: SeerrIssueEpisodeReader | null };
   /** ADR-046 / DESIGN-024 — the read-only Kavita + Audiobookshelf clients + public deep-link bases the
    *  `books-sync` mode pages. Required only for that mode; tests inject fetch-stubbed clients. */
   books?: BooksSyncBundle;
@@ -363,6 +371,10 @@ export interface SyncReport {
   authentikUsers?: SyncAuthentikUsersResult | null;
   /** The authentik-users run's error — sets totalFailure for the CLI exit. */
   authentikUsersError?: string;
+  /** DESIGN-055 D-10 — the `seerr-issues` mirror result (null for every other mode / on error). */
+  seerrIssues?: SyncSeerrIssuesResult | null;
+  /** The seerr-issues run's error — sets totalFailure for the CLI exit. */
+  seerrIssuesError?: string;
   /** ADR-046 — the `books-sync` result (null for every other mode / when it errored). ADR-053 folds the
    *  per-user ABS listening-progress read (absProgress) in as an isolated sub-step. */
   booksSync?:
@@ -1260,6 +1272,42 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
       authentikUsers: authentikUsersResult,
       ...(authentikUsersError !== undefined ? { authentikUsersError } : {}),
       totalFailure: authentikUsersError !== undefined,
+    };
+  }
+
+  // ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — the `seerr-issues` mode reads every Seerr issue (all statuses,
+  // read-only) and upserts the seerr_issues mirror through the domain syncSeerrIssues single-writer; Sonarr is read only
+  // for an episode's id. Standalone like authentik-users: no *arr source loop and NO sync_runs row (its trail is the
+  // mirror's read_at). A failed list read writes nothing and sets totalFailure (nonzero exit) so a persistently
+  // unreachable Seerr shows in the CronJob history.
+  if (options.mode === 'seerr-issues') {
+    const startedAt = new Date();
+    if (!options.seerrIssues) {
+      throw new Error('seerr-issues requires a Seerr issue reader (seerrIssues)');
+    }
+    let seerrIssuesResult: SyncSeerrIssuesResult | null = null;
+    let seerrIssuesError: string | undefined;
+    try {
+      seerrIssuesResult = await syncSeerrIssues({
+        db,
+        seerr: options.seerrIssues.seerr,
+        sonarr: options.seerrIssues.sonarr,
+      });
+      logger.info('seerr-issues sync complete', { ...seerrIssuesResult });
+    } catch (error) {
+      seerrIssuesError = error instanceof Error ? error.message : String(error);
+      logger.error('seerr-issues sync failed', { error: seerrIssuesError });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      seerrIssues: seerrIssuesResult,
+      ...(seerrIssuesError !== undefined ? { seerrIssuesError } : {}),
+      totalFailure: seerrIssuesError !== undefined,
     };
   }
 

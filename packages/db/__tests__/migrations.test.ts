@@ -19,6 +19,10 @@ import {
   REPAIR_REQUEST_KINDS,
   REPAIR_REQUEST_SCOPES,
   REPAIR_REQUEST_STATUSES,
+  PERMISSION_AUDIT_ACTIONS,
+  SEERR_ISSUE_MEDIA_TYPES,
+  SEERR_ISSUE_STATUSES,
+  SEERR_ISSUE_TYPES,
   SYNC_RUN_KINDS,
   WATCH_ACCOUNT_ROLES,
   WATCH_EVENT_KINDS,
@@ -3226,6 +3230,71 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  describe('0100 seerr_issues (ADR-111 C-01 / DESIGN-055 D-10, D-12, PLAN-077 P3)', () => {
+    it('creates the Seerr Issue mirror with its CHECKs and widens the run-kind and audit-action CHECKs', async () => {
+      const insert = (id: number, fields: Record<string, unknown> = {}) => {
+        const row = {
+          issue_type: 1,
+          status: 'open',
+          problem_season: 2,
+          problem_episode: 6,
+          media_type: 'tv',
+          staff_handled_at: null,
+          staff_note: null,
+          ...fields,
+        };
+        return client.query({
+          text: `INSERT INTO seerr_issues (seerr_issue_id, issue_type, status, problem_season, problem_episode, media_type,
+                   seerr_created_at, seerr_updated_at, read_at, staff_handled_at, staff_note)
+                 VALUES ($1, $2, $3, $4, $5, $6, now(), now(), now(), $7, $8)`,
+          values: [id, row.issue_type, row.status, row.problem_season, row.problem_episode, row.media_type, row.staff_handled_at, row.staff_note],
+        });
+      };
+      try {
+        for (const type of SEERR_ISSUE_TYPES) await insert(9100 + type, { issue_type: type });
+        await insert(9110, { status: 'resolved', media_type: 'movie', problem_season: 0, problem_episode: 0 });
+        await insert(9111, { media_type: null });
+        await insert(9112, { staff_handled_at: new Date(), staff_note: 'Fixed by hand: the download needed unpacking.' });
+        await expect(insert(9120, { issue_type: 5 })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9121, { status: 'pending' })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9122, { media_type: 'music' })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9123, { problem_episode: -1 })).rejects.toMatchObject({ code: '23514' });
+        // "Fixed by hand" always names what was missing.
+        await expect(insert(9124, { staff_handled_at: new Date(), staff_note: '  ' })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9125, { staff_handled_at: new Date() })).rejects.toMatchObject({ code: '23514' });
+        // A note alone (not yet marked) is fine.
+        await insert(9126, { staff_note: 'Looking into it.' });
+        await expect(insert(9101)).rejects.toMatchObject({ code: '23505' });
+        for (const [name, values] of [
+          ['seerr_issues_status_enum', SEERR_ISSUE_STATUSES],
+          ['seerr_issues_media_type_enum', SEERR_ISSUE_MEDIA_TYPES],
+        ] as const) {
+          const def = await client.query({
+            text: `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = $1`,
+            values: [name],
+          });
+          const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+          expect(listed.sort()).toEqual([...values].sort());
+        }
+        for (const [name, values] of [
+          ['sync_runs_run_kind_enum', SYNC_RUN_KINDS],
+          ['permission_audit_action_enum', PERMISSION_AUDIT_ACTIONS],
+        ] as const) {
+          const def = await client.query({
+            text: `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = $1`,
+            values: [name],
+          });
+          const listed = [...String(def.rows[0].def).matchAll(/'([a-z_-]+)'/g)].map((m) => m[1]);
+          expect(listed.sort()).toEqual([...values].sort());
+        }
+        expect(SYNC_RUN_KINDS).toContain('seerr-issues');
+        expect(PERMISSION_AUDIT_ACTIONS).toContain('update_seerr_issue_note');
+      } finally {
+        await client.query(`DELETE FROM seerr_issues WHERE seerr_issue_id BETWEEN 9100 AND 9199`);
+      }
+    });
+  });
+
   describe('0099 repair_requests (ADR-109 C-04 / DESIGN-055 D-02, PLAN-077 P2)', () => {
     it('creates repair_requests with CHECKs matching enums.ts and widens the ledger and janitor CHECKs', async () => {
       const users = await client.query(`SELECT id FROM users LIMIT 1`);
@@ -3633,6 +3702,16 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(entry!.when).toBeGreaterThan(prev!.when);
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0090_book_requests_ll_rerequest_added.sql'), 'utf8');
     expect(sqlText).toContain('ADD COLUMN "ll_rerequest_added_at" timestamp with time zone');
+  });
+
+  // PLAN-077 P3 gate — the Seerr Issue mirror migration is journaled (idx 99), after 0099.
+  it('lists 0100_seerr_issues at idx 99, strictly after 0099_repair_requests', () => {
+    const entry = journal.entries.find((e) => e.tag === '0100_seerr_issues');
+    const prev = journal.entries.find((e) => e.tag === '0099_repair_requests');
+    expect(entry?.idx).toBe(99);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0100_seerr_issues.sql'), 'utf8');
+    expect(sqlText).toContain('CREATE TABLE "seerr_issues"');
   });
 
   // PLAN-077 P2 gate — the Repair Request migration is journaled (idx 98), after 0098.
