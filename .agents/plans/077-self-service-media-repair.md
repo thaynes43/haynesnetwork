@@ -591,7 +591,7 @@ names, never deleting a file, after a watch-state check on every Plex server and
     (read-only) and `audio-scan [--json] [--apply-original eng]`.
   - Tests: `language-aware.test.ts` (domain), `audio-language.test.ts` (plex), `repair-guide.test.ts` (web rules),
     `repair-guide-script.test.ts` (sync), the remedies list in `fix-guards.test.ts` (api); e2e `wrong-language.spec.ts`
-    (the stub *arr's `POST /_stub/language`, the stub Plex's show preferences and S01E02's tracks).
+    (the stub *arr's `POST /_stub/language`, the stub Plex's show preferences and S01E03's tracks).
   - dev:local walk at 390 and 1280 wide: the offer, its result, already set, another language, the season list, the
     Language Replace preview, its refusal and its result.
 
