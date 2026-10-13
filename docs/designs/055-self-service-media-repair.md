@@ -596,7 +596,7 @@ Self-Served issues). Nothing in the app computes readiness.
 |---|---|---|
 | SABnzbd extracts obfuscated `.7z` posts | haynes-ops#3834 | D-07 rule 6, D-14 |
 | All three Tautulli instances post play and stop to the webhook; the Playback Error trigger is added | Tautulli settings (each instance's API or UI) | D-09 (P1, 2026-10-12: all three post play, stop and Playback Error; HaynesTower through the LAN route) |
-| The Seerr webhook sends issue types | Seerr settings (API) | D-10 |
+| The Seerr webhook sends issue types | Seerr settings (API) | D-10 (done 2026-10-13: types 204 to 4044, read back; PLAN-077 P3) |
 | The Seerr bridge user exists | Seerr users (API or UI) | D-10 writes |
 | Case A's hand-made release profile is retired | Sonarr | D-05 adoption |
 

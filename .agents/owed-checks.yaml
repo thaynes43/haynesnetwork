@@ -1815,3 +1815,39 @@ checks:
     links:
       prs: ['https://github.com/thaynes43/haynesnetwork/pull/905', 'https://github.com/thaynes43/haynesnetwork/pull/907']
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/910']
+  - id: OC-052
+    title: 'The first real Seerr issue after P3: mirrored, linked, and worked through self-service first (PLAN-077 P3)'
+    opened: 2026-10-13
+    after: v0.114.0 deployed (haynes-ops 3857) and the Seerr webhook types set to 4044 at 00:44Z
+    not_before: 2026-10-13T01:00:00Z
+    due: 2026-11-12T00:00:00Z
+    owner: haynesnetwork coordinator (PLAN-077)
+    status: pending
+    check: |
+      Review date, not a deadline: Seerr sees about one issue a month. When the next real issue (id above 4) is filed:
+      1. It is in /admin/seerr within one sync run (the webhook usually makes it immediate) with the right title, type
+         and episode. Its link https://haynesnetwork.com/r/seerr/<id> shows the onboarding card signed out.
+      2. Work it through the self-service tools first, as a user would (DESIGN-055 D-12). If a tool fixes it, the linked
+         repairs show it; if none can, fix it by hand, "Mark fixed by hand" with the missing capability, and add that
+         capability to PLAN-077. Until P7, staff post the link on the issue by hand (Copy link in /admin/seerr).
+      3. If the reporter follows the link, check they landed on the guide (their first visit) and say what they did.
+      If the review date passes with no new issue, move it a month with an evidence line.
+    auto:
+      - name: the mirror is read at least every half hour
+        source: app-db
+        query: |
+          select count(*) as n from seerr_issues
+          where removed_at is null and read_at < now() - interval '30 minutes'
+        expect: {eq: 0}
+        mismatch: fail
+      - name: a real issue filed after P3 is mirrored
+        source: app-db
+        query: |
+          select count(*) as n from seerr_issues where seerr_issue_id > 4
+        expect: {min: 1}
+        mismatch: wait
+    auto_covers: part
+    evidence:
+      - "2026-10-13 00:40Z first seerr-issues run: 4 of 4 issues mirrored (all resolved), titles and episodes right (PLAN-077 P3 status)."
+    links:
+      prs: ['https://github.com/thaynes43/haynesnetwork/pull/911', 'https://github.com/thaynes43/haynes-ops/pull/3857']

@@ -2,9 +2,9 @@
 
 - **Status:** Active. Docs Accepted (owner, 2026-10-12: ADR-109, ADR-110, ADR-111, DESIGN-055). The owner ruled
   DESIGN-055 Q-01..Q-05 (the recommended option each time) and approved P1..P8 in this order, one phase per release,
-  each verified live before the next. P0 (v0.111.2), P1 (v0.112.1) and P2 (v0.113.1) are shipped and verified live;
-  P0's week of census is owed (OC-048), P1's first guided Fixes OC-050, P2's first presses and the `importable` flip
-  OC-051. P3 is next.
+  each verified live before the next. P0 (v0.111.2), P1 (v0.112.1), P2 (v0.113.1) and P3 (v0.114.0) are shipped and
+  verified live; P0's week of census is owed (OC-048), P1's first guided Fixes OC-050, P2's first presses OC-051, P3's
+  first real Seerr issue OC-052. P4 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -213,6 +213,27 @@ Priority is how often real reports need the remedy, and how much harm today's be
 - **Live check:** the four existing (resolved) Seerr issues appear in `/admin` with the right titles and episodes, and
   the link for issue 3 opens The Paper's S02E06 guide.
 - **Done when** a new real issue appears within one run and its link works signed out.
+- **Status (2026-10-13): shipped and verified live.** [#911](https://github.com/thaynes43/haynesnetwork/pull/911)
+  (v0.114.0; the advisory review's one finding, a Sonarr read inside the mirror's write transaction, fixed in the PR),
+  deployed by haynes-ops [#3857](https://github.com/thaynes43/haynes-ops/pull/3857): 3/3 web pods, all 23 sync CronJobs
+  (the new `sync-seerr-issues` every 10 minutes at :06), the owed-check runner and the Books Census on v0.114.0;
+  migration 0100 applied. Live checks (read-only toward Seerr except the webhook types below):
+  - The first `seerr-issues` run (a Job from the CronJob, 00:40Z) mirrored all 4 issues, all resolved, with the right
+    titles and grains: 4 Regular Show: The Lost Tapes Season 1, 3 The Paper (2025) S02E06 (Sonarr episode 85215),
+    2 GoodFellas, 1 The Four Seasons (2025) Season 1. Issue 3 links one Force Search from the app's own records; the
+    link for issue 3 resolves to The Paper's title page (S02E06 has a file now, so its guide is Fix on S02E06).
+  - `/r/seerr/3` on the in-cluster route, signed out: the onboarding card, nothing about the report, at 1280 and 390
+    wide. "Sign in with Plex" reached Authentik; the stored sign-in state's `callbackURL` is `/r/seerr/3` (and no
+    new-user override), so the round trip comes back to the link. The signed-in leg cannot run from inside the cluster
+    (Authentik with a real Plex account); e2e `seerr-issues.spec.ts` covers it with the stub sign-in.
+  - Step 2, the recorded reversible step: Seerr's webhook types went from 204 to 4044 at 00:44Z (round-tripped, read
+    back: URL, payload, auth header and custom headers unchanged by hash). To revert, POST the same object with
+    `types: 204` to `/api/v1/settings/notifications/webhook`. An `ISSUE_COMMENT` for issue 3 posted to a web pod's
+    webhook answered 202 `unchanged` (one fresh read, no Feed row).
+  - Activity's admin Import Check read (P2 decision 13) on the open *arr failures: Rugrats 2021, Franklin 2025 and
+    Peppa Pig 2022 read `title_mismatch` (needs staff), Aqua Teen and Pawn Stars `not_importable` with the *arr's
+    rejection, a Lidarr failure is not offered. These match P2's census.
+  - No new real Seerr issue was filed in the session, so "Done when" waits on OC-052.
 - **Build (2026-10-12):** DESIGN-055's "P3 decisions" (items 1-12, after D-11) record what landed and why:
   - Step 1: `SeerrClient.listAllIssues` / `getIssue` (strip mode, fixture from the live read), migration 0100
     (`seerr_issues`, the run kind, the audit action), `packages/domain/src/seerr-issues.ts` (the single writer:
