@@ -47,6 +47,10 @@ export interface SeasonRemapInput {
   keep?: readonly number[];
   queueBusy: boolean;
   sonarrBusy?: boolean;
+  /** Episodes a queued download targets, and seasons a queued season pack targets: never a parking episode (an import
+   *  landing on a parked file would replace it). */
+  queuedEpisodeIds?: readonly number[];
+  queuedSeasonNumbers?: readonly number[];
 }
 
 /** Why a file whose name names another episode stays where it is. */
@@ -294,13 +298,19 @@ export function buildSeasonRemapPlan(input: SeasonRemapInput): SeasonRemapPlan {
 
   // ---- Order: a step is ready when its target episodes are free; a cycle parks one file first ----
   const targeted = new Set(movers.flatMap((id) => desire.get(id)!.map((e) => e.id)));
+  const queuedEpisodes = new Set(input.queuedEpisodeIds ?? []);
+  const queuedSeasons = new Set(input.queuedSeasonNumbers ?? []);
   const parking =
     input.episodes
-      .filter((e) => e.episodeFileId == null && !targeted.has(e.id))
+      .filter(
+        (e) => e.episodeFileId == null && !targeted.has(e.id) && !queuedEpisodes.has(e.id) && !queuedSeasons.has(e.seasonNumber),
+      )
       .sort((a, b) => {
-        // This season first, then specials, then every other season; lowest episode first.
+        // An unmonitored episode first (Sonarr grabs nothing for it while a file is parked there), then this season,
+        // then specials, then every other season; lowest episode first.
+        const watched = (e: RemapEpisode) => (e.monitored === false ? 0 : 1);
         const rank = (e: RemapEpisode) => (e.seasonNumber === sn ? 0 : e.seasonNumber === 0 ? 1 : 2);
-        return rank(a) - rank(b) || byNumber(a, b);
+        return watched(a) - watched(b) || rank(a) - rank(b) || byNumber(a, b);
       })[0] ?? null;
 
   const occupant = new Map<number, number>();

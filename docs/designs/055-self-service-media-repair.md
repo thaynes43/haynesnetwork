@@ -373,9 +373,10 @@ do not edit)", "must not contain" terms only, no tags.
     flagged (its name still disagrees), and that episode's own file is missing from the library (Fix or Release Pick).
 20. **Order and the parking episode.** A step is ready when the episodes it moves onto are free (no file, or left by an
     earlier step). When no step is ready the waits form a cycle (a swap or a rotation): its lowest single-episode file
-    moves first to the **Parking Episode** (an episode of the series with no file that no step targets: this season
-    first, then specials, then any other season), the rest of the cycle follows, and the parked file then moves to its
-    own episode. One parking episode serves every cycle in turn. A series with no free episode at all refuses a cycle
+    moves first to the **Parking Episode** (an episode of the series with no file that no step targets and no queued
+    download or season pack targets, since an import landing on a parked file would replace it; an unmonitored episode
+    first, as Sonarr grabs nothing for it, then this season, then specials, then any other season), the rest of the
+    cycle follows, and the parked file then moves to its own episode. One parking episode serves every cycle in turn. A series with no free episode at all refuses a cycle
     (`no_parking`): the files cannot pass each other through Sonarr, so the season is listed as a leftover. At most 120
     steps a run.
 21. **The Plex check.** Plex reads the episode number from the renamed file and titles the item from its own agent (TMDB
@@ -384,8 +385,8 @@ do not edit)", "must not contain" terms only, no tags.
     carries the series (`media_plex_matches`, then `allLeaves`), counts the season's items whose Plex title is the TVDB
     title of the same number (folded words, Dice at least 0.8; "Episode 13" placeholders say nothing), and lists each
     move whose episode Plex titles differently; an episode with no Plex item yet passes only when the server follows TVDB
-    for at least 90% of the season. A run refuses a failed check, or one that could not be done, unless staff pass
-    `--ignore-plex` (recorded on the Repair Request). A season whose Plex numbering follows the release rather than TVDB
+    for at least 90% of the season. A run refuses a failed check, or one that could not be done (the plan prints the
+    server's error), unless staff pass `--ignore-plex` (recorded on the Repair Request). A season whose Plex numbering follows the release rather than TVDB
     (Plex already shows the name's title) is left alone: moving it in Sonarr would put the wrong title on it in Plex.
     Switching a show's Plex ordering stays out of scope (decision 10).
 22. **The run renames as it goes.** Each step: the file's own manual-import candidate, read from the season it sits in

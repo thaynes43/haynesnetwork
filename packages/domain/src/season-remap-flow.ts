@@ -178,8 +178,9 @@ export interface SeasonRemapRequest extends RemapTargetInput {
 export interface SeasonRemapView extends SeasonRemapPlan {
   seriesId: number;
   seriesTitle: string;
-  /** null when no Plex reader was given. */
+  /** null when the check could not be done (`plexError` says why). */
   plexCheck: SeasonPlexCheck | null;
+  plexError: string | null;
   /** Whether the `episode_remap` remedy is on (a run refuses while it is off). */
   remapOn: boolean;
   refusalText: string | null;
@@ -207,30 +208,45 @@ function planFrom(season: RemapSeasonState, input: SeasonRemapRequest): SeasonRe
     keep: input.keep ?? [],
     queueBusy: season.queueBusy,
     sonarrBusy: season.sonarrBusy,
+    queuedEpisodeIds: season.queuedEpisodeIds,
+    queuedSeasonNumbers: season.queuedSeasonNumbers,
   });
 }
 
-async function plexCheckFor(season: RemapSeasonState, input: SeasonRemapRequest, plan: SeasonRemapPlan): Promise<SeasonPlexCheck | null> {
-  if (!input.plex) return null;
+async function plexCheckFor(
+  season: RemapSeasonState,
+  input: SeasonRemapRequest,
+  plan: SeasonRemapPlan,
+): Promise<{ check: SeasonPlexCheck | null; error: string | null }> {
+  if (!input.plex) return { check: null, error: 'no Plex reader was given' };
   let titles: PlexSeasonTitles[];
   try {
     titles = await input.plex.seasonTitles({ mediaItemId: season.mediaItemId, seasonNumber: input.seasonNumber });
-  } catch {
-    return null; // a Plex server that cannot be read leaves the check not done (a run then refuses)
+  } catch (err) {
+    // A Plex server that cannot be read leaves the check not done (a run then refuses); staff see why.
+    return { check: null, error: errText(err) };
   }
   const tvdbTitles = new Map(
     season.episodes.filter((e) => e.seasonNumber === input.seasonNumber).map((e) => [e.episodeNumber, e.title] as const),
   );
-  return checkSeasonPlex({ plan, tvdbTitles, plex: titles });
+  return { check: checkSeasonPlex({ plan, tvdbTitles, plex: titles }), error: null };
 }
 
 /** DESIGN-055 P4 decisions 18-21 — the read-only season plan with its Plex check. */
 export async function planSeasonRemap(input: SeasonRemapRequest): Promise<SeasonRemapView> {
   const season = await readRemapSeasonState(input);
   const plan = planFrom(season, input);
-  const plexCheck = await plexCheckFor(season, input, plan);
+  const plex = await plexCheckFor(season, input, plan);
   const remapOn = (await getRepairGuideRemedies(input.db)).episode_remap;
-  return { ...plan, seriesId: season.seriesId, seriesTitle: season.seriesTitle, plexCheck, remapOn, refusalText: seasonRemapRefusalText(plan) };
+  return {
+    ...plan,
+    seriesId: season.seriesId,
+    seriesTitle: season.seriesTitle,
+    plexCheck: plex.check,
+    plexError: plex.error,
+    remapOn,
+    refusalText: seasonRemapRefusalText(plan),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -285,12 +301,12 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
     throw new FixPlanChangedError('The season changed since the plan was checked. Plan it again.');
   }
   if (plan.refusal) throw new FixRefusedError('remap_refused', seasonRemapRefusalText(plan) ?? 'This season cannot be moved.');
-  const plexCheck = await plexCheckFor(season, input, plan);
+  const { check: plexCheck, error: plexError } = await plexCheckFor(season, input, plan);
   if (!input.ignorePlex && (plexCheck === null || !plexCheck.ok)) {
     throw new FixRefusedError(
       'remap_refused',
       plexCheck === null
-        ? 'The Plex check was not done, so nothing moved.'
+        ? `The Plex check was not done (${plexError ?? 'unknown'}), so nothing moved.`
         : 'Plex numbers some of these episodes differently, so the moves would show the wrong titles there. Nothing moved.',
     );
   }
@@ -334,6 +350,7 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
       held: plan.held.map((h) => ({ fileId: h.fileId, onEpisodeIds: h.on.map((e) => e.id), reason: h.reason })),
       vacatedEpisodeIds: plan.vacated.map((e) => e.id),
       plexCheck: plexCheck ? { ok: plexCheck.ok, servers: plexCheck.servers, wrongAfter: plexCheck.wrongAfter.length } : null,
+      plexError,
       ignorePlex: input.ignorePlex === true,
       // No Mislabel offer from a season re-map (it is not a shift).
       mislabelGroups: [],

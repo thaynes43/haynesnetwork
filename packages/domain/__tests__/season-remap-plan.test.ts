@@ -126,6 +126,16 @@ describe('buildSeasonRemapPlan', () => {
     expect(at.get(5004)).toEqual([105]);
   });
 
+  it('never parks on an episode a queued download targets, and prefers an unmonitored one', () => {
+    const s = season({ on: [1, 3, 2, 4, 5, 6], specials: 3 });
+    // S00E01 has a download queued; S00E03 is unmonitored.
+    s.episodes.find((e) => e.id === 903)!.monitored = false;
+    const p = plan(s, { queuedEpisodeIds: [901] });
+    expect(p.parking).toMatchObject({ seasonNumber: 0, episodeNumber: 3 });
+    // A queued season pack for specials rules them all out: no free episode is left.
+    expect(plan(s, { queuedSeasonNumbers: [0] }).refusal).toBe('no_parking');
+  });
+
   it('refuses a cycle when the series has no free episode', () => {
     const s = season({ on: [1, 3, 2, 4, 5, 6], specials: 1, specialsWithFiles: true });
     const p = plan(s);

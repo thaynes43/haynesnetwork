@@ -47,6 +47,9 @@ export interface RemapSeasonState {
   episodes: RemapEpisode[];
   files: Array<RemapFile & { relativePathFull: string | null; sourceNames: string[] }>;
   queueBusy: boolean;
+  /** Episodes of the series a queued download targets, and seasons a queued season pack targets (never parked on). */
+  queuedEpisodeIds: number[];
+  queuedSeasonNumbers: number[];
   sonarrBusy: boolean;
 }
 
@@ -117,6 +120,7 @@ export async function readRemapSeasonState(input: RemapTargetInput): Promise<Rem
       episodeNumber: e.episodeNumber,
       title: e.title ?? null,
       episodeFileId: e.hasFile && e.episodeFileId ? e.episodeFileId : null,
+      monitored: e.monitored,
     })),
     files: files.map((f) => {
       // A library's own earlier name is no evidence (DESIGN-055 P4 decision 16).
@@ -136,6 +140,8 @@ export async function readRemapSeasonState(input: RemapTargetInput): Promise<Rem
       };
     }),
     queueBusy,
+    queuedEpisodeIds: [...new Set(queue.flatMap((r) => (r.episodeId != null ? [r.episodeId] : [])))],
+    queuedSeasonNumbers: [...new Set(queue.flatMap((r) => (r.episodeId == null && r.seasonNumber != null ? [r.seasonNumber] : [])))],
     sonarrBusy,
   };
 }

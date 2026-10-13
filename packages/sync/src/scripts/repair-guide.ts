@@ -368,7 +368,7 @@ export function formatSeasonPlan(title: string, view: SeasonRemapView): string {
     }
     lines.push(view.plexCheck.ok ? 'Plex check: ok.' : 'Plex check: FAILED (a run refuses without --ignore-plex).');
   } else {
-    lines.push('Plex check: not done (a run refuses without --ignore-plex).');
+    lines.push(`Plex check: not done (${view.plexError ?? 'unknown'}); a run refuses without --ignore-plex.`);
   }
   view.steps.forEach((st, i) => {
     const said = st.nameSays ? ` [${st.why}; name ${st.nameSays.verdict}] ${st.nameSays.name}` : ` [${st.why}]`;

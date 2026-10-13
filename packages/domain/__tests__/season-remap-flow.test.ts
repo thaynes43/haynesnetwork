@@ -341,6 +341,17 @@ describe('Season Re-map (DESIGN-055 P4 decisions 18-23)', () => {
     expect(view.plexCheck?.ok).toBe(false);
     await expect(runSeasonRemap({ ...withOther, planDigest: view.digest, commandWait: WAIT })).rejects.toBeInstanceOf(FixRefusedError);
 
+    // A Plex server that cannot be read: the plan says why, and a run refuses with the reason.
+    const plexDown: SeasonPlexReader = {
+      async seasonTitles() {
+        throw new Error('haynesops: connect ECONNREFUSED');
+      },
+    };
+    const down = await planSeasonRemap({ ...target, plex: plexDown });
+    expect(down.plexCheck).toBeNull();
+    expect(down.plexError).toMatch(/ECONNREFUSED/);
+    await expect(runSeasonRemap({ ...target, plex: plexDown, planDigest: down.digest, commandWait: WAIT })).rejects.toThrow(/ECONNREFUSED/);
+
     await setRepairGuideRemedies({ db: t.db, remedies: { episode_remap: false }, actorId: null });
     await expect(runSeasonRemap({ ...target, planDigest: plan.digest, commandWait: WAIT })).rejects.toBeInstanceOf(FixRefusedError);
     expect(arr.commands()).toEqual([]);
