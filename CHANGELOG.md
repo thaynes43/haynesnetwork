@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.121.0](https://github.com/thaynes43/haynesnetwork/compare/v0.120.1...v0.121.0) (2026-10-13)
+
+
+### Features
+
+* **fix:** language-aware Wrong language: Plex audio preference and the Language Replace (PLAN-077 P6) ([#942](https://github.com/thaynes43/haynesnetwork/issues/942)) ([12e2231](https://github.com/thaynes43/haynesnetwork/commit/12e22312983a689035d5a6454d55ca3afe6de847))
+
 ## [0.120.1](https://github.com/thaynes43/haynesnetwork/compare/v0.120.0...v0.120.1) (2026-10-13)
 
 
