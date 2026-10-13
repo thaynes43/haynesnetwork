@@ -3281,6 +3281,42 @@ describe('migrations against embedded Postgres 16', () => {
         expect(nullable.rows[0].is_nullable).toBe('YES');
       } finally {
         await client.query(`DELETE FROM mislabel_block_terms WHERE series_id BETWEEN 9102000 AND 9102099`);
+  describe('0103 release_pick_lists (ADR-109 C-04, C-06 / DESIGN-055 D-06, PLAN-077 P5)', () => {
+    it('creates the Release List with its CHECKs, cascades with its item, and admits release_list_requested', async () => {
+      const users = await client.query(`SELECT id FROM users LIMIT 1`);
+      const item = await client.query(
+        `INSERT INTO media_items (arr_kind, arr_item_id, title, sort_title, monitored, quality_profile_id, quality_profile_name, root_folder, tvdb_id)
+         VALUES ('sonarr', 990102, 'Release Pick 0102', 'release pick 0102', true, 1, 'HD', '/tv', 990102) RETURNING id`,
+      );
+      const mediaItemId = item.rows[0].id as string;
+      const insert = (kind: string, child: number | null, season: number | null) =>
+        client.query({
+          text: `INSERT INTO release_pick_lists (requester_id, media_item_id, arr_kind, target_child_id, season_number,
+                   target_label, searched_at, reasons_version, rows, offers, counts)
+                 VALUES ($1, $2, $3, $4, $5, 'S01E11 · Spice It Up', now(), 1, '[]', '[]', '{"grab":0}')`,
+          values: [users.rows[0]?.id ?? null, mediaItemId, kind, child, season],
+        });
+      try {
+        await insert('sonarr', 118407, 1);
+        await insert('radarr', null, null);
+        await expect(insert('lidarr', null, null)).rejects.toMatchObject({ code: '23514' });
+        // An episode names its season; a movie names neither.
+        await expect(insert('sonarr', 118407, null)).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('sonarr', null, 1)).rejects.toMatchObject({ code: '23514' });
+        await expect(insert('radarr', 2934, null)).rejects.toMatchObject({ code: '23514' });
+        const def = await client.query({
+          text: `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = $1`,
+          values: ['ledger_events_event_type_enum'],
+        });
+        const listed = [...String(def.rows[0].def).matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+        expect(listed.sort()).toEqual([...LEDGER_EVENT_TYPES].sort());
+        expect(LEDGER_EVENT_TYPES).toContain('release_list_requested');
+        await client.query(`DELETE FROM media_items WHERE id = $1`, [mediaItemId]);
+        const left = await client.query(`SELECT count(*)::int AS n FROM release_pick_lists WHERE media_item_id = $1`, [mediaItemId]);
+        expect(left.rows[0].n).toBe(0);
+      } finally {
+        await client.query(`DELETE FROM release_pick_lists WHERE media_item_id = $1`, [mediaItemId]);
+        await client.query(`DELETE FROM media_items WHERE id = $1`, [mediaItemId]);
       }
     });
   });
@@ -3826,6 +3862,17 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(entry!.when).toBeGreaterThan(prev!.when);
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0090_book_requests_ll_rerequest_added.sql'), 'utf8');
     expect(sqlText).toContain('ADD COLUMN "ll_rerequest_added_at" timestamp with time zone');
+  });
+
+  // PLAN-077 P5 gate — the Release Pick's lists are journaled (idx 102), after 0102.
+  it('lists 0103_release_pick_lists at idx 102, strictly after 0102_mislabel_name_terms', () => {
+    const entry = journal.entries.find((e) => e.tag === '0103_release_pick_lists');
+    const prev = journal.entries.find((e) => e.tag === '0102_mislabel_name_terms');
+    expect(entry?.idx).toBe(102);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0103_release_pick_lists.sql'), 'utf8');
+    expect(sqlText).toContain('CREATE TABLE "release_pick_lists"');
+    expect(sqlText).toContain("'release_list_requested'");
   });
 
   // PLAN-077 P4 gate — the Title Check and Mislabel Block migration is journaled (idx 100), after 0100.

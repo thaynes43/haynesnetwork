@@ -7,6 +7,7 @@
 //   tsx repair-guide.ts audio    (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n>]
 //   tsx repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
 //   tsx repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
+//   tsx repair-guide.ts release-list (--tmdb <id> | --tvdb <id> --episode S01E05) [--json]
 //   tsx repair-guide.ts queue-check
 //   tsx repair-guide.ts title-check (--backfill [--dry-run] [--json] | --flags <sonarr series id>)
 //   tsx repair-guide.ts season-plan --tvdb <id> --season <n> [--place <from>:<to>,...] [--keep <n>,...] [--json]
@@ -25,6 +26,12 @@
 // manual-import view, the episode list); nothing is imported, removed or searched. `queue-check` runs the Import Check
 // over Sonarr's and Radarr's whole queues exactly as the janitor selects (DESIGN-046 D-27: every record `unknown`, stuck,
 // with an identity rejection) and prints one line per download: the census spot-check, read-only.
+//
+// `release-list` (DESIGN-055 D-06, PLAN-077 P5) prints the Release Pick's list for one missing episode or movie: each row
+// with its state (Grab, Override, Not allowed), the reasons in plain words beside the *arr's own, and the recommended
+// pick. It runs the *arr's interactive search (Sonarr's season list, Radarr's movie list; it searches the indexers), and
+// records nothing: no Release List row, no budget unit, no grab. The live check compares it with the *arr's own
+// interactive search for the same episode or movie.
 //
 // `title-check` (ADR-110 C-03 / DESIGN-055 D-05, PLAN-077 P4): `--backfill` runs the one-off library-wide Title Check
 // (every `downloadFolderImported` record, and the scene name of a current file with no import record) and prints the
@@ -63,6 +70,7 @@ import {
   seasonPlexReader,
   type SeasonRemapView,
   planForceSearch,
+  previewReleaseList,
   readRemapSeason,
   runEpisodeRemap,
   queueTexts,
@@ -82,6 +90,7 @@ const USAGE = `Usage:
   repair-guide.ts audio    (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n>]
   repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
   repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
+  repair-guide.ts release-list (--tmdb <id> | --tvdb <id> --episode S01E05) [--json]
   repair-guide.ts queue-check
   repair-guide.ts title-check (--backfill [--dry-run] [--json] | --flags <sonarr series id>)
   repair-guide.ts remap-plan --tvdb <id> --season <n> [--shift <from>:<+1|-1>[:<through>] | --move <from>:<to>]
@@ -89,7 +98,7 @@ const USAGE = `Usage:
   repair-guide.ts season-plan --tvdb <id> --season <n> [--place <from>:<to>,...] [--keep <n>,...] [--json]
   repair-guide.ts season-run  --tvdb <id> --season <n> [--place ...] [--keep ...] --digest <the season-plan digest> [--ignore-plex]
 
-preview, evidence, audio, search-plan, queue-check and remap-plan only read (remap-plan plans as if episode_remap were on). settings writes only with --set or --known-issue (audited, actor null).
+preview, evidence, audio, search-plan, release-list, queue-check and remap-plan only read (remap-plan plans as if episode_remap were on). settings writes only with --set or --known-issue (audited, actor null).
 title-check only reads Sonarr; --backfill writes title_checks rows unless --dry-run, --flags clears a stale flag.
 remap-run is staff's Episode Re-map (DESIGN-055 P4 decision 17): it re-plans, refuses unless the plan's digest is the one
 given, then moves the files exactly as the guide does (one Repair Request, requester null: the staff tool).
@@ -104,6 +113,7 @@ export interface RepairGuideArgs {
     | 'audio'
     | 'settings'
     | 'search-plan'
+    | 'release-list'
     | 'queue-check'
     | 'title-check'
     | 'remap-plan'
@@ -153,6 +163,7 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'audio' &&
     command !== 'settings' &&
     command !== 'search-plan' &&
+    command !== 'release-list' &&
     command !== 'queue-check' &&
     command !== 'title-check' &&
     command !== 'remap-plan' &&
@@ -324,8 +335,8 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
   if (command === 'remap-run' && (!args.remap || !args.digest)) {
     throw new Error('remap-run needs a claim (--shift or --move) and the --digest of the plan you checked');
   }
-  if (args.backfill || args.dryRun || args.json || args.flagsSeriesId !== undefined) {
-    throw new Error('--backfill, --dry-run, --json and --flags are for title-check');
+  if (args.backfill || args.dryRun || (args.json && command !== 'release-list') || args.flagsSeriesId !== undefined) {
+    throw new Error('--backfill, --dry-run and --flags are for title-check (--json also for release-list)');
   }
   if (command !== 'settings' && command !== 'queue-check') {
     if ((args.tmdb === undefined) === (args.tvdb === undefined)) throw new Error('give exactly one of --tmdb or --tvdb');
@@ -336,8 +347,8 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
       throw new Error('a show needs --episode or --season');
     }
     if (command === 'evidence' && !args.email) throw new Error('evidence needs --email');
-    if (command === 'search-plan' && args.tvdb !== undefined && !args.episode) {
-      throw new Error('search-plan on a show needs --episode');
+    if ((command === 'search-plan' || command === 'release-list') && args.tvdb !== undefined && !args.episode) {
+      throw new Error(`${command} on a show needs --episode`);
     }
   }
   if (args.episodes && args.season === undefined) throw new Error('--episodes goes with --season');
@@ -585,6 +596,18 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  if (args.command === 'release-list') {
+    const list = await previewReleaseList({
+      db,
+      arr,
+      mediaItemId: item.id,
+      ...(scope.scope === 'episode' ? { scope: 'episode' as const, targetChildId: scope.targetChildId } : {}),
+    });
+    if (args.json) console.log(JSON.stringify({ title: item.title, list }, null, 2));
+    else for (const line of formatReleaseList(item.title, list)) console.log(line);
+    return 0;
+  }
+
   if (args.command === 'audio') {
     const audio = await readFileAudio({ db, arr, mediaItemId: item.id, ...scope });
     console.log(JSON.stringify({ title: item.title, audio }, null, 2));
@@ -611,6 +634,34 @@ async function main(): Promise<number> {
   });
   console.log(JSON.stringify({ title: item.title, plan }, null, 2));
   return 0;
+}
+
+const gb = (bytes: number | null) => (bytes === null ? '?' : `${(bytes / 1024 ** 3).toFixed(2)} GB`);
+
+/** The Release Pick preview as text: the target, the counts, then one line per row with its reasons (exported for the test). */
+export function formatReleaseList(title: string, list: Awaited<ReturnType<typeof previewReleaseList>>): string[] {
+  const lines = [`${title} ${list.targetLabel}: ${list.status}`];
+  if (list.status !== 'list') {
+    if (list.download?.title) lines.push(`in the queue: ${list.download.title} (${list.download.status ?? 'unknown'})`);
+    return lines;
+  }
+  const c = list.counts!;
+  lines.push(
+    `searched ${list.searchedAt}: ${c.sources} sources, ${c.dropped} for other episodes or titles dropped; ` +
+      `${c.grab} grab, ${c.override} override, ${c.notAllowed} not allowed; ${list.offers} sources can be picked`,
+  );
+  for (const row of list.rows) {
+    const state = row.state === 'grab' ? 'GRAB' : row.state === 'override' ? 'OVERRIDE' : 'NOT ALLOWED';
+    const evidence = row.evidence ? ` title:${row.evidence.verdict}${row.evidence.namedLabel ? `(${row.evidence.namedLabel})` : ''}` : '';
+    lines.push(
+      `${row.recommended ? '* ' : '  '}[${state}] ${row.title} | ${row.qualityName ?? '?'} ${gb(row.sizeBytes)} | ` +
+        `${row.indexer ?? '?'}${row.keys.length > 1 ? ` +${row.keys.length - 1} more` : ''}${evidence}`,
+    );
+    for (const r of row.reasons) {
+      lines.push(`      ${r.class}: ${r.text}${r.arrText && r.arrText !== r.text ? `  [${r.arrText}]` : ''}`);
+    }
+  }
+  return lines;
 }
 
 const score = (n: number | null) => (n === null ? '-' : n.toFixed(2));

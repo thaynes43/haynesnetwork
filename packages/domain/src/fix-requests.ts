@@ -68,12 +68,13 @@ export async function countRecentFixBudget(
         sql`${fixRequests.createdAt} > now() - interval '1 hour'`,
       ),
     );
+  // DESIGN-055 D-02, D-06 (PLAN-077 P5) — opening the Release Pick's list is one unit too (`release_list_requested`).
   const [searches] = await tx
     .select({ count: sql<number>`count(*)::int` })
     .from(ledgerEvents)
     .where(
       and(
-        eq(ledgerEvents.eventType, 'search_requested'),
+        inArray(ledgerEvents.eventType, ['search_requested', 'release_list_requested']),
         eq(ledgerEvents.requestedByUserId, requesterId),
         sql`${ledgerEvents.recordedAt} > now() - interval '1 hour'`,
       ),

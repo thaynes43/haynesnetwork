@@ -65,6 +65,9 @@ function release(overrides: Partial<ArrRelease>): ArrRelease {
     seasonNumber: null,
     episodeNumbers: [],
     fullSeason: false,
+    downloadAllowed: true,
+    qualityModel: null,
+    languageModels: [],
     ...overrides,
   };
 }

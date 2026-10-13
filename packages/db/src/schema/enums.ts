@@ -217,6 +217,11 @@ export const LEDGER_EVENT_TYPES = [
   'repair_requested',
   'repair_completed',
   'repair_failed',
+  // ADR-109 C-04 / DESIGN-055 D-02, D-06 (PLAN-077 P5, migration 0103) — a person opened the Release Pick's list (one
+  // live interactive search for one missing episode or movie): one unit of the arr pool's hourly budget. Payload
+  // { releaseListId, scope, targetArrChildId, seasonNumber, targetLabel, counts }. Written with its release_pick_lists
+  // row, in one transaction (packages/domain/src/release-pick.ts).
+  'release_list_requested',
 ] as const;
 export type LedgerEventType = (typeof LEDGER_EVENT_TYPES)[number];
 
@@ -942,6 +947,10 @@ export const REPAIR_GUIDE_REMEDIES = [
   // DESIGN-055 D-04, D-05 (PLAN-077 P4): the Episode Re-map ("this file is really episode N", "shift this season by one")
   // and its Mislabel Block offer, plus the Title Check flag on the title page that opens it.
   'episode_remap',
+  // DESIGN-055 D-06 (PLAN-077 P5): the Release Pick, every release for one missing episode or movie with the *arr's
+  // reasons in plain words, a grab of an approved one and the guarded override of a rejected one (Q-01 ruling). Reached
+  // from Force Search and from a re-map's emptied episodes; not a Fix remedy, so it never opens the Fix guide on its own.
+  'release_pick',
 ] as const;
 export type RepairGuideRemedy = (typeof REPAIR_GUIDE_REMEDIES)[number];
 

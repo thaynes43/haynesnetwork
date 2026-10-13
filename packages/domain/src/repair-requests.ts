@@ -21,7 +21,7 @@ import {
   type RepairRequestStatus,
   type Transaction,
 } from '@hnet/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import {
   FixAlreadyOpenError,
   FixRateLimitError,
@@ -71,17 +71,30 @@ function intArray(ids: readonly number[]) {
  * The open Repair Request on a grain, if any (D-02), read inside the caller's transaction (under its advisory lock):
  * any on a movie (`seasonNumber` null and no episodes); else any on the same season, or holding one of `episodeIds`
  * (an episode Fix knows its episode, not its season).
+ *
+ * `episodeGrain` (DESIGN-055 P5 decision 6): a remedy that adds a file to one episode (an import, a Release Pick) meets a
+ * season-wide repair on its season (a re-map) and any repair holding one of its episodes, not one on another episode of
+ * the season, which touches a different file. `ignoreKinds` leaves out the open repairs a remedy follows through: an
+ * import onto an episode is how a Release Pick's grab lands, so an open pick on that episode does not hold it up.
  */
 export async function findOpenRepair(
   tx: Transaction,
   grain: { mediaItemId: string; seasonNumber: number | null; episodeIds?: readonly number[] },
+  options: { episodeGrain?: boolean; ignoreKinds?: readonly RepairRequestKind[] } = {},
 ): Promise<{ id: string } | undefined> {
   const episodes = (grain.episodeIds ?? []).filter((n) => Number.isInteger(n));
+  const seasonMatch =
+    grain.seasonNumber === null
+      ? null
+      : options.episodeGrain
+        ? sql`(${repairRequests.scope} = 'season' AND ${repairRequests.seasonNumber} = ${grain.seasonNumber})`
+        : sql`${repairRequests.seasonNumber} = ${grain.seasonNumber}`;
   const conditions = [
-    ...(grain.seasonNumber !== null ? [sql`${repairRequests.seasonNumber} = ${grain.seasonNumber}`] : []),
+    ...(seasonMatch ? [seasonMatch] : []),
     ...(episodes.length > 0 ? [sql`${repairRequests.targetChildIds} && ${intArray(episodes)}`] : []),
   ];
   const grainMatch = conditions.length === 0 ? sql`true` : sql`(${sql.join(conditions, sql` OR `)})`;
+  const ignored = options.ignoreKinds ?? [];
   const [open] = await tx
     .select({ id: repairRequests.id })
     .from(repairRequests)
@@ -90,10 +103,23 @@ export async function findOpenRepair(
         eq(repairRequests.mediaItemId, grain.mediaItemId),
         inArray(repairRequests.status, [...OPEN_REPAIR_STATUSES]),
         grainMatch,
+        ...(ignored.length > 0 ? [notInArray(repairRequests.kind, [...ignored])] : []),
       ),
     )
     .limit(1);
   return open;
+}
+
+/**
+ * DESIGN-055 P5 decision 6 — the open check for a new Repair Request: an episode remedy (an import, a Release Pick) is
+ * held up only by repairs on its own episode or a season-wide one on its season; an import is never held up by the open
+ * Release Pick it follows through.
+ */
+function openCheckOptions(kind: RepairRequestKind, scope: RepairRequestScope) {
+  return {
+    episodeGrain: scope === 'episode',
+    ignoreKinds: kind === 'import_download' ? (['release_pick'] as const) : [],
+  };
 }
 
 /** The open Fix Request on a repair's grain (D-02, shared both ways), if any. */
@@ -166,11 +192,11 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
       seasonNumber: input.seasonNumber,
       episodeIds: [...input.targetChildIds, ...(input.seasonEpisodeIds ?? [])],
     };
-    const openRepair = await findOpenRepair(tx, {
-      mediaItemId: input.mediaItemId,
-      seasonNumber: input.seasonNumber,
-      episodeIds: input.targetChildIds,
-    });
+    const openRepair = await findOpenRepair(
+      tx,
+      { mediaItemId: input.mediaItemId, seasonNumber: input.seasonNumber, episodeIds: input.targetChildIds },
+      openCheckOptions(input.kind, input.scope),
+    );
     if (openRepair) {
       throw new FixAlreadyOpenError(
         `An open repair (${openRepair.id}) already targets this ${input.scope === 'item' ? 'item' : 'season'}`,
@@ -322,9 +348,11 @@ export async function appendRepairActions(input: {
 }
 
 /**
- * DESIGN-055 D-02 — completion is read, never assumed: an `actioned` import whose every target episode (or, for a
- * movie, the movie) has an `imported` ledger event since the request was opened completes, with a `repair_completed`
- * event. Runs in the sync post-steps beside completeFixRequests (an import the guide could not wait out).
+ * DESIGN-055 D-02 — completion is read, never assumed: an `actioned` import, or an `actioned` Release Pick (P5), whose
+ * every target episode (or, for a movie, the movie) has an `imported` ledger event since the request was opened
+ * completes, with a `repair_completed` event. Runs in the sync post-steps beside completeFixRequests (an import the
+ * guide could not wait out, and a picked release once its download is imported, by the *arr itself, by the Import Check
+ * or by the janitor).
  */
 export async function completeRepairRequests(input: { db?: DbClient } = {}): Promise<{ completed: string[] }> {
   return inTransaction(input.db, async (tx) => {
@@ -334,9 +362,15 @@ export async function completeRepairRequests(input: { db?: DbClient } = {}): Pro
         mediaItemId: repairRequests.mediaItemId,
         targetChildIds: repairRequests.targetChildIds,
         createdAt: repairRequests.createdAt,
+        kind: repairRequests.kind,
       })
       .from(repairRequests)
-      .where(and(eq(repairRequests.status, 'actioned'), eq(repairRequests.kind, 'import_download')))
+      .where(
+        and(
+          eq(repairRequests.status, 'actioned'),
+          inArray(repairRequests.kind, ['import_download', 'release_pick']),
+        ),
+      )
       .for('update');
     const completed: string[] = [];
     for (const r of open) {
@@ -379,7 +413,7 @@ export async function completeRepairRequests(input: { db?: DbClient } = {}): Pro
         eventType: 'repair_completed',
         source: 'app',
         occurredAt: new Date(),
-        payload: { repairRequestId: r.id, kind: 'import_download', importedEventIds: eventIds },
+        payload: { repairRequestId: r.id, kind: r.kind, importedEventIds: eventIds },
       });
       completed.push(r.id);
     }
