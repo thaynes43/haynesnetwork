@@ -308,3 +308,8 @@ export * from './title-check';
 // removal) and its reads.
 export * from './mislabel-block';
 export * from './second-copy-fix';
+// ADR-114 / DESIGN-055 P4 decisions 26-34 (issue #928, owner ruling 2026-10-13) — the Watch Carry: every account's Plex
+// watch state carried onto the content it watched across a staff move, and the Plex ordering switch inside one.
+export * from './watch-carry';
+export * from './watch-carry-plex';
+export * from './show-ordering';

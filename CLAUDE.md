@@ -90,6 +90,12 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    failed Sonarr or Radarr download, with no removal, only where the instance's `bad_release` cell is enforced and only
    while the *arr's own Redownload Failed is off; it shares the loop guard's budget of two tries per title in any 30 days with every
    other janitor search (D-23). It goes through `@hnet/arr/write` from `packages/domain` only.
+   **ADR-114 adds the Watch Carry** (DESIGN-055 P4 decisions 26-34; owner ruling on #928, "Carry marks, then move"): inside
+   a staff move only (`season-run`, `copy-run`, `ordering-run`, and `carry-finish` / `carry-revert`), each account's Plex
+   plays and resume point (`scrobble`, `unscrobble`, `progress`) are written as that account, with the per-server token
+   plex.tv lists for a friend (never stored or printed), onto the item that plays the file they watched; and a show's Plex
+   episode ordering (`prefs?showOrdering`, `refresh`) is switched only inside such a carry. A snapshot is stored first, and
+   every mark is one `watch_carry_marks` audit row. Through `@hnet/plex/write` from `packages/domain` only.
    **ADR-109 adds the Import Check's ManualImport** (DESIGN-055 D-07, PLAN-077 P2): one Sonarr or Radarr `ManualImport`
    command (the body their own interactive-import UI sends, `importMode: auto`) for a finished download whose import is
    blocked and whose Import Check passes, mapping its files onto the target the *arr's manual-import view, the queue and

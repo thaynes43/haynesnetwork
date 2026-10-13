@@ -17,7 +17,7 @@
 //
 // Hard rule 4: the Fix's own writes (DELETE episodefile, the search command) through `@hnet/arr/write` from here.
 import { createHash } from 'node:crypto';
-import type { DbClient } from '@hnet/db';
+import type { DbClient, FixActionEntry } from '@hnet/db';
 import { ArrError } from '@hnet/arr';
 import type { ArrClientBundle } from './arr-clients';
 import { FixPlanChangedError, FixRefusedError } from './errors';
@@ -25,6 +25,16 @@ import { createFixRequest, recordFixAction } from './fix-requests';
 import { episodeLabel } from './media-children';
 import { readRemapSeasonState, remapGuarded } from './remap-flow';
 import { episodeTitleEvidence } from './title-evidence';
+import {
+  abandonWatchCarry,
+  carryWatchState,
+  noteWatchCarry,
+  preClearWatchCarry,
+  takeWatchCarrySnapshot,
+  type WatchCarryPlex,
+  type WatchCarryResult,
+  type WatchCarrySnapshot,
+} from './watch-carry';
 
 export type SecondCopyRefusal =
   /** The episode has no file, or its file holds other episodes too. */
@@ -45,7 +55,7 @@ export interface SecondCopyPlan {
   episode: { id: number; episodeNumber: number; label: string };
   copy: { fileId: number; relativePath: string | null; size: number | null; name: string | null } | null;
   /** The episode the copy holds, and its own file. */
-  original: { id: number; episodeNumber: number; label: string; fileId: number; relativePath: string | null } | null;
+  original: { id: number; episodeNumber: number; label: string; fileId: number; relativePath: string | null; size: number | null } | null;
   /** Files of the season whose names name this slot's episode (they would block the delete: `content_elsewhere`). */
   namedElsewhere: Array<{ episodeNumber: number; fileId: number; name: string }>;
   refusal: SecondCopyRefusal | null;
@@ -118,7 +128,7 @@ export async function planSecondCopyFix(input: SecondCopyRequest): Promise<Secon
     else if (origEp.episodeFileId == null || origEp.episodeFileId === fileId) refusal = 'only_copy';
     else {
       const of = fileById.get(origEp.episodeFileId);
-      original = { ...ref(origEp), fileId: origEp.episodeFileId, relativePath: of?.relativePathFull ?? null };
+      original = { ...ref(origEp), fileId: origEp.episodeFileId, relativePath: of?.relativePathFull ?? null, size: of?.size ?? null };
     }
     for (const other of season.files) {
       if (other.id === fileId) continue;
@@ -152,12 +162,22 @@ export interface RunSecondCopyFixInput extends SecondCopyRequest {
   planDigest: string;
   /** Staff's evidence that both files hold the same episode (a short note: the subtitle lines or durations compared). */
   evidence: string;
+  /**
+   * ADR-114 C-05 — the Watch Carry's Plex clients. When given, every account's plays of the copy are carried to the
+   * original's item (they saw that content) and the copy's slot is cleared before the delete, so the real episode that
+   * later fills it comes back unwatched. The staff tool always passes it.
+   */
+  watchCarry?: WatchCarryPlex | null;
+  /** Pause between the carry's Plex calls (tests set 0). */
+  carryPauseMs?: number;
 }
 
 export interface SecondCopyFixResult {
   fixRequestId: string;
   /** The search command Sonarr took for the emptied episode. */
   searchCommandId: number;
+  /** ADR-114 — the Watch Carry (null when the run was given no carry clients). */
+  carry: { carryId: string; status: string; result: WatchCarryResult | null; error: string | null } | null;
 }
 
 /**
@@ -172,25 +192,73 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
   if (plan.refusal || !plan.copy || !plan.original) {
     throw new FixRefusedError('copy_refused', secondCopyRefusalText(plan.refusal) ?? 'This file cannot be removed.');
   }
-  const { fixRequestId } = await createFixRequest({
-    db: input.db,
-    requesterId: null,
-    requesterIsAdmin: true,
-    mediaItemId: input.mediaItemId,
-    scope: 'episode',
-    targetArrChildId: plan.episode.id,
-    targetLabel: plan.episode.label,
-    reason: 'wrong_content',
-  });
+  // ADR-114 C-02, C-03, C-05 — snapshot every account's watch state and clear the copy's slot before anything is deleted.
+  let carry: WatchCarrySnapshot | null = null;
+  if (input.watchCarry) {
+    const copySize = plan.copy.size;
+    const originalSize = plan.original.size;
+    if (!copySize || !originalSize) {
+      throw new FixRefusedError('copy_refused', 'Sonarr does not list the size of both files, so their watch state cannot be carried. Nothing was removed.');
+    }
+    try {
+      carry = await takeWatchCarrySnapshot({
+        db: input.db,
+        plex: input.watchCarry,
+        kind: 'second_copy',
+        mediaItemId: input.mediaItemId,
+        seriesId: plan.seriesId,
+        seasons: [input.seasonNumber],
+        scope: { moved: [], deleted: [copySize], sameAs: [[copySize, originalSize]] },
+        detail: { planDigest: plan.digest, episode: plan.episode.label, original: plan.original.label },
+        pauseMs: input.carryPauseMs,
+      });
+      await preClearWatchCarry({ db: input.db, plex: input.watchCarry, snapshot: carry, pauseMs: input.carryPauseMs });
+    } catch (err) {
+      throw new FixRefusedError('copy_refused', `The watch state could not be carried (${err instanceof Error ? err.message : String(err)}). Nothing was removed.`);
+    }
+  }
+  let fixRequestId: string;
+  try {
+    ({ fixRequestId } = await createFixRequest({
+      db: input.db,
+      requesterId: null,
+      requesterIsAdmin: true,
+      mediaItemId: input.mediaItemId,
+      scope: 'episode',
+      targetArrChildId: plan.episode.id,
+      targetLabel: plan.episode.label,
+      reason: 'wrong_content',
+    }));
+  } catch (err) {
+    if (carry && input.watchCarry) {
+      await abandonWatchCarry({ db: input.db, plex: input.watchCarry, carryId: carry.carryId, reason: err instanceof Error ? err.message : String(err), pauseMs: input.carryPauseMs }).catch(() => {});
+    }
+    throw err;
+  }
+  if (carry) await noteWatchCarry({ db: input.db, carryId: carry.carryId, detail: { fixRequestId } });
+  /** ADR-114 C-04..C-06 — carry and verify once the delete has run (whatever its outcome); never throws. */
+  let carryOutcome: SecondCopyFixResult['carry'] = null;
+  const runCarry = async (): Promise<FixActionEntry[]> => {
+    if (!carry || !input.watchCarry || carryOutcome) return [];
+    try {
+      const result = await carryWatchState({ db: input.db, plex: input.watchCarry, carryId: carry.carryId, pauseMs: input.carryPauseMs });
+      carryOutcome = { carryId: carry.carryId, status: result.status, result, error: null };
+    } catch (err) {
+      carryOutcome = { carryId: carry.carryId, status: 'cleared', result: null, error: err instanceof Error ? err.message : String(err) };
+    }
+    const o = carryOutcome as NonNullable<SecondCopyFixResult['carry']>;
+    return [{ step: 'watch_carry', endpoint: 'repair-guide.ts copy-run', ok: o.status === 'verified', at: new Date().toISOString(), carryId: o.carryId, status: o.status, totals: o.result?.totals ?? null, ...(o.error ? { error: o.error } : {}) }];
+  };
   const at = () => new Date().toISOString();
   const sonarr = input.arr.write.sonarr;
   const endpoint = `DELETE /api/v3/episodefile/${plan.copy.fileId}`;
   const fail = async (step: string, err: unknown) => {
+    const carried = await runCarry();
     await recordFixAction({
       db: input.db,
       fixRequestId,
       transition: 'failed',
-      actions: [{ step, endpoint, ok: false, at: at(), error: err instanceof Error ? err.message : String(err) }],
+      actions: [{ step, endpoint, ok: false, at: at(), error: err instanceof Error ? err.message : String(err) }, ...carried],
     });
   };
   try {
@@ -209,11 +277,13 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
       remapGuarded('episode files', () => input.arr.read.sonarr.listEpisodeFileReleases(plan.seriesId)),
     ]);
   } catch (err) {
+    const carried = await runCarry();
     await recordFixAction({
       db: input.db,
       fixRequestId,
       transition: 'failed',
       actions: [
+        ...carried,
         { step: 'delete_file', endpoint, ok: true, at: at(), status: 200, copyFileId: plan.copy.fileId },
         { step: 'delete_read_back', endpoint: 'GET /api/v3/episode, /episodefile', ok: false, at: at(), error: err instanceof Error ? err.message : String(err) },
       ],
@@ -248,11 +318,12 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
   });
   if (!readBack.slotEmpty || !readBack.copyGone || !readBack.originalKept) {
     // Never search when the delete did not take, or over a library that lost the original: staff look first.
+    const carried = await runCarry();
     await recordFixAction({
       db: input.db,
       fixRequestId,
       transition: 'failed',
-      actions: [{ step: readBack.originalKept ? 'delete_not_landed' : 'original_missing', endpoint: 'GET /api/v3/episode', ok: false, at: at(), ...readBack }],
+      actions: [{ step: readBack.originalKept ? 'delete_not_landed' : 'original_missing', endpoint: 'GET /api/v3/episode', ok: false, at: at(), ...readBack }, ...carried],
     });
     throw new FixRefusedError(
       'copy_refused',
@@ -266,13 +337,15 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
     searchCommandId = (await sonarr.searchEpisodes([plan.episode.id])).id;
   } catch (err) {
     if (err instanceof ArrError) await fail('trigger_search', err);
+    else await runCarry();
     throw err;
   }
+  const carried = await runCarry();
   await recordFixAction({
     db: input.db,
     fixRequestId,
     transition: 'search_triggered',
-    actions: [{ step: 'trigger_search', endpoint: 'POST /api/v3/command (EpisodeSearch)', ok: true, at: at(), commandId: searchCommandId }],
+    actions: [{ step: 'trigger_search', endpoint: 'POST /api/v3/command (EpisodeSearch)', ok: true, at: at(), commandId: searchCommandId }, ...carried],
   });
-  return { fixRequestId, searchCommandId };
+  return { fixRequestId, searchCommandId, carry: carryOutcome };
 }

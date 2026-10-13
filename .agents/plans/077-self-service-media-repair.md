@@ -487,6 +487,24 @@ names, never deleting a file, after a watch-state check on every Plex server and
       through their per-server tokens on plex.tv's shared_servers), but not today. The app writes Plex only as the
       owner, cannot set a resume point, and drops friend tokens. That needs new code and an owner decision (#928).
   - Ben 10 (2016) S2 was re-mapped once its copies were placed on open episodes: 22 files, 18 now right.
+- **The Watch Carry (ADR-114, DESIGN-055 P4 decisions 26 to 34; owner ruling on #928, 2026-10-13: "Carry marks, then
+  move").** Every staff move now carries every person's Plex watch state onto the content they watched, so the held
+  watched seasons and the three held shows' ordering can move.
+  - **Build:** `@hnet/plex` reads `listLeafFiles` (each item's files and the token account's state),
+    `getShowOrdering` and `listSharedServerAccess` (each friend's per-server token, never stored), and writes
+    `setProgress`, `setShowOrdering` and `refreshMetadata` (`carry-read.ts`, `write.ts`). Migration 0104
+    (`watch_carries`, `watch_carry_states`, `watch_carry_marks`). `watch-carry.ts` (snapshot, pre-clear, wait, carry,
+    verify, revert; the pure `carryCalls`, `contentStates`, `planCarryTargets`), `watch-carry-plex.ts` (the clients from
+    the env, one per account), `show-ordering.ts` (`planShowOrdering`, `runShowOrdering`). `runSeasonRemap` and
+    `runSecondCopyFix` take `watchCarry`; the planner parks a two-episode file (decision 34). Staff tool:
+    `season-run` and `copy-run` always carry; `ordering-plan | ordering-run`, `carry-status`, `carry-finish`,
+    `carry-revert`. Glossary T-326 Watch Carry and T-327 Carry Snapshot; PRD R-272; hard rule 4.
+  - **Tests:** `watch-carry.test.ts` (the pure plan; over embedded Postgres, a stub Sonarr and an in-memory Plex whose
+    state follows the guid: a swap two friends watched ends with each mark on its content and no stale mark; an
+    unreadable account refuses the move with nothing written; a failed clear puts every clear back and refuses; a view
+    after the snapshot is left alone and `carry-finish` writes nothing more; `carry-revert` restores; the Second-Copy
+    Fix credits the original and clears the slot; an ordering switch re-matches and the carry follows), the Plex client
+    tests (`carry.test.ts`), the parking test in `season-remap-plan.test.ts`, migration 0104 and the script test.
 
 ### P5: Release Pick
 

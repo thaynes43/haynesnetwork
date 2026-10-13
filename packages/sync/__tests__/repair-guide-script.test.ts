@@ -1,8 +1,8 @@
 // ADR-109 / DESIGN-055 (PLAN-077 P1) — the Repair Guide's in-cluster tool parses its commands strictly: a read can never
 // be mistaken for a write, and `settings` writes only with --set / --known-issue.
 import { describe, expect, it } from 'vitest';
-import { formatAudioScan, formatReleaseList, formatSeasonPlan, formatTitleCheckBackfill, parseRepairGuideArgs } from '../src/scripts/repair-guide';
-import type { SeasonRemapView } from '@hnet/domain';
+import { formatAudioScan, formatCarryResult, formatReleaseList, formatSeasonPlan, formatTitleCheckBackfill, parseRepairGuideArgs } from '../src/scripts/repair-guide';
+import type { SeasonRemapView, WatchCarryResult } from '@hnet/domain';
 
 describe('repair-guide.ts arguments', () => {
   it('preview a movie, an episode, a season with chosen episodes', () => {
@@ -317,6 +317,57 @@ describe('repair-guide.ts arguments', () => {
       'OPEN tvdb 74550 Star Trek: Voyager | original eng | 110/154 files lead with ger | Plex starts S02E01 in ger | HaynesOps=account default',
     );
     expect(lines[2]).toMatch(/^set {2}tvdb 475718 .*HaynesTower=en-US HaynesOps=en-US$/);
+  });
+
+  it('ordering-plan and ordering-run name the show and Plex’s ordering, and the run needs the digest (ADR-114 C-08)', () => {
+    expect(parseRepairGuideArgs(['ordering-plan', '--tvdb', '281414', '--ordering', 'tvdbAiring'])).toMatchObject({
+      command: 'ordering-plan',
+      tvdb: 281414,
+      ordering: 'tvdbAiring',
+    });
+    expect(parseRepairGuideArgs(['ordering-run', '--tvdb', '281414', '--ordering', 'default', '--digest', 'abcdef0123456789'])).toMatchObject({
+      ordering: '',
+      digest: 'abcdef0123456789',
+    });
+    expect(() => parseRepairGuideArgs(['ordering-run', '--tvdb', '281414', '--ordering', 'tvdbAiring'])).toThrow(/--digest/);
+    expect(() => parseRepairGuideArgs(['ordering-plan', '--tvdb', '281414', '--ordering', 'tvdb'])).toThrow(/--ordering needs/);
+    expect(() => parseRepairGuideArgs(['ordering-plan', '--tvdb', '281414'])).toThrow(/--ordering/);
+    expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '1', '--ordering', 'tvdbAiring'])).toThrow(/--ordering is for/);
+  });
+
+  it('carry-status takes a carry or a show; carry-finish and carry-revert need the carry id (ADR-114 C-06, C-07)', () => {
+    const id = '0f7c2a8e-1b2c-4d3e-8f9a-0b1c2d3e4f50';
+    expect(parseRepairGuideArgs(['carry-status', '--carry', id])).toMatchObject({ command: 'carry-status', carry: id });
+    expect(parseRepairGuideArgs(['carry-status', '--tvdb', '261511'])).toMatchObject({ command: 'carry-status', tvdb: 261511 });
+    expect(parseRepairGuideArgs(['carry-finish', '--carry', id])).toMatchObject({ command: 'carry-finish', carry: id });
+    expect(parseRepairGuideArgs(['carry-revert', '--carry', id])).toMatchObject({ command: 'carry-revert', carry: id });
+    expect(() => parseRepairGuideArgs(['carry-finish', '--tvdb', '1'])).toThrow(/--carry/);
+    expect(() => parseRepairGuideArgs(['carry-status'])).toThrow(/exactly one/);
+    expect(() => parseRepairGuideArgs(['carry-revert', '--carry', 'nope'])).toThrow(/--carry needs/);
+    expect(() => parseRepairGuideArgs(['season-run', '--tvdb', '1', '--season', '1', '--digest', 'abcdef01', '--carry', id])).toThrow(/--carry is for/);
+  });
+
+  it('prints a carry’s verification by account index, never a name', () => {
+    const result: WatchCarryResult = {
+      carryId: 'c-1',
+      status: 'mismatch',
+      accounts: {
+        haynestower: {
+          'account 1': { written: 3, failed: 0, watchedCarried: 2, resumesCarried: 1, cleanItems: 1, newViews: 0, lost: 0, mismatches: 0 },
+          'account 2': { written: 1, failed: 1, watchedCarried: 0, resumesCarried: 0, cleanItems: 0, newViews: 1, lost: 0, mismatches: 1 },
+        },
+      },
+      totals: { accounts: 2, written: 4, failed: 1, mismatches: 1, watchedCarried: 2, resumesCarried: 1, newViews: 1, lost: 0 },
+      mismatchDetail: [
+        { server: 'haynestower', account: 'account 2', ratingKey: '46420', episode: 'S1E7', want: { viewCount: 1, viewOffset: 0, lastViewedAt: null }, got: { viewCount: 0, viewOffset: 0, lastViewedAt: null } },
+      ],
+    };
+    const text = formatCarryResult(result);
+    expect(text).toContain('Watch carry c-1: MISMATCH. 2 account(s) with state; 4 item(s) written (1 failed); 2 watched file(s) on their item');
+    expect(text).toContain('  haynestower account 1: watched 2, resume 1, clean 1, written 3');
+    expect(text).toContain('  haynestower account 2: watched 0, resume 0, clean 0, written 1, FAILED 1, new views 1, MISMATCH 1');
+    expect(text).toContain('  mismatch haynestower account 2 S1E7 (item 46420): want plays 1 at 0 ms, got plays 0 at 0 ms');
+    expect(text).toContain('carry-finish --carry c-1');
   });
 
   it('refuses what it does not understand', () => {

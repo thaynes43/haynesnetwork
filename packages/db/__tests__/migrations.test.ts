@@ -3285,6 +3285,67 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  describe('0104 watch_carries (ADR-114 / DESIGN-055 P4 decisions 26-34)', () => {
+    it('creates the Watch Carry, its snapshot states and its mark audit with their CHECKs, and cascades', async () => {
+      const item = await client.query(
+        `INSERT INTO media_items (arr_kind, arr_item_id, title, sort_title, monitored, quality_profile_id, quality_profile_name, root_folder, tvdb_id)
+         VALUES ('sonarr', 990104, 'Watch Carry 0104', 'watch carry 0104', true, 1, 'HD', '/tv', 990104) RETURNING id`,
+      );
+      const mediaItemId = item.rows[0].id as string;
+      const carry = (kind: string, status: string) =>
+        client.query({
+          text: `INSERT INTO watch_carries (kind, media_item_id, series_id, season_numbers, status, taken_at)
+                 VALUES ($1, $2, 192, '{5}', $3, now()) RETURNING id`,
+          values: [kind, mediaItemId, status],
+        });
+      try {
+        const id = (await carry('season_remap', 'snapshot')).rows[0].id as string;
+        await carry('show_ordering', 'verified');
+        await carry('second_copy', 'mismatch');
+        await expect(carry('episode_remap', 'snapshot')).rejects.toMatchObject({ code: '23514' });
+        await expect(carry('season_remap', 'done')).rejects.toMatchObject({ code: '23514' });
+        const state = (account: string, count: number, offset: number) =>
+          client.query({
+            text: `INSERT INTO watch_carry_states (carry_id, server, plex_account_id, rating_key, season_number, episode_number,
+                     parts, view_count, view_offset_ms, last_viewed_at)
+                   VALUES ($1, 'haynestower', $2, '46420', 5, 10, '[{"name":"x.mkv","size":1}]', $3, $4, now())`,
+            values: [id, account, count, offset],
+          });
+        await state('12874060', 1, 0);
+        await state('16768829', 0, 421000);
+        // A row holds state, and one account has one row per item.
+        await expect(state('9631953', 0, 0)).rejects.toMatchObject({ code: '23514' });
+        await expect(state('12874060', 2, 0)).rejects.toMatchObject({ code: '23505' });
+        const mark = (phase: string, reason: string) =>
+          client.query({
+            text: `INSERT INTO watch_carry_marks (carry_id, server, plex_account_id, rating_key, phase, reason,
+                     before_state, target_state, calls, ok)
+                   VALUES ($1, 'haynestower', '12874060', '46420', $2, $3, '{"viewCount":1,"viewOffset":0,"lastViewedAt":null}',
+                     '{"viewCount":0,"viewOffset":0,"lastViewedAt":null}', '{unscrobble}', true)`,
+            values: [id, phase, reason],
+          });
+        await mark('pre_clear', 'pre_clear');
+        await mark('carry', 'stale');
+        await mark('revert', 'restore');
+        await expect(mark('later', 'stale')).rejects.toMatchObject({ code: '23514' });
+        await expect(mark('carry', 'moved')).rejects.toMatchObject({ code: '23514' });
+        // A deleted series keeps its carries (the audit outlives the item); deleting a carry takes its rows.
+        await client.query(`DELETE FROM media_items WHERE id = $1`, [mediaItemId]);
+        const kept = await client.query(`SELECT count(*)::int AS n FROM watch_carries WHERE id = $1 AND media_item_id IS NULL`, [id]);
+        expect(kept.rows[0].n).toBe(1);
+        await client.query(`DELETE FROM watch_carries WHERE id = $1`, [id]);
+        const left = await client.query(
+          `SELECT (SELECT count(*) FROM watch_carry_states WHERE carry_id = $1)::int AS s, (SELECT count(*) FROM watch_carry_marks WHERE carry_id = $1)::int AS m`,
+          [id],
+        );
+        expect(left.rows[0]).toEqual({ s: 0, m: 0 });
+      } finally {
+        await client.query(`DELETE FROM watch_carries WHERE series_id = 192 AND taken_at IS NOT NULL AND (media_item_id = $1 OR media_item_id IS NULL)`, [mediaItemId]);
+        await client.query(`DELETE FROM media_items WHERE id = $1`, [mediaItemId]);
+      }
+    });
+  });
+
   describe('0103 release_pick_lists (ADR-109 C-04, C-06 / DESIGN-055 D-06, PLAN-077 P5)', () => {
     it('creates the Release List with its CHECKs, cascades with its item, and admits release_list_requested', async () => {
       const users = await client.query(`SELECT id FROM users LIMIT 1`);

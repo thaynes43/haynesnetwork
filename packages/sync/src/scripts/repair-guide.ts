@@ -15,6 +15,20 @@
 //   tsx repair-guide.ts season-run  --tvdb <id> --season <n> [--place ...] [--keep ...] --digest <d> [--ignore-plex]
 //   tsx repair-guide.ts copy-plan --tvdb <id> --episode S06E10 [--copy-of <n>]
 //   tsx repair-guide.ts copy-run  --tvdb <id> --episode S06E10 [--copy-of <n>] --digest <d> --evidence "<note>"
+//   tsx repair-guide.ts ordering-plan --tvdb <id> --ordering tvdbAiring
+//   tsx repair-guide.ts ordering-run  --tvdb <id> --ordering tvdbAiring --digest <d>
+//   tsx repair-guide.ts carry-status (--carry <id> | --tvdb <id>)
+//   tsx repair-guide.ts carry-finish --carry <id>
+//   tsx repair-guide.ts carry-revert --carry <id>
+//
+// The WATCH CARRY (ADR-114, DESIGN-055 P4 decisions 26-34; owner ruling on issue #928, 2026-10-13: "Carry marks, then
+// move"): `season-run` and `copy-run` always snapshot every account's Plex watch state first (the owner, and each friend
+// with the per-server token plex.tv lists; tokens stay in memory and are never printed), refuse when that cannot be
+// read, clear the items the move takes files away from, and after the move put each account's plays and resume point
+// on the item that now plays the file they watched, then verify per account. `ordering-plan | ordering-run` switch a
+// show's Plex episode ordering (TheTVDB Aired is `tvdbAiring`) inside the same carry. `carry-status` prints a carry's
+// counts (by account index, never a name); `carry-finish` runs the carry again from the stored snapshot (after Plex
+// caught up, or after a mismatch); `carry-revert` restores every item the carry wrote to its state before.
 //
 // `copy-plan` / `copy-run` (DESIGN-055 P4 decision 25, issue #928) are staff's Second-Copy Fix: an episode whose file
 // holds another episode of the season that already has its own file. The plan only reads; the run opens a Fix Request
@@ -103,6 +117,13 @@ import {
   listTitleFlags,
   titleCheckSonarrFromEnv,
   type TitleCheckBackfillReport,
+  carryWatchState,
+  listWatchCarries,
+  planShowOrdering,
+  revertWatchCarry,
+  runShowOrdering,
+  watchCarryPlexFromEnv,
+  type WatchCarryResult,
 } from '@hnet/domain';
 
 const USAGE = `Usage:
@@ -124,6 +145,11 @@ const USAGE = `Usage:
   repair-guide.ts season-run  --tvdb <id> --season <n> [--place ...] [--keep ...] --digest <the season-plan digest> [--ignore-plex]
   repair-guide.ts copy-plan --tvdb <id> --episode S06E10 [--copy-of <n>]
   repair-guide.ts copy-run  --tvdb <id> --episode S06E10 [--copy-of <n>] --digest <the copy-plan digest> --evidence "<note>"
+  repair-guide.ts ordering-plan --tvdb <id> --ordering <tvdbAiring|tmdbAiring|tvdbDvd|tvdbAbsolute|default>
+  repair-guide.ts ordering-run  --tvdb <id> --ordering <...> --digest <the ordering-plan digest>
+  repair-guide.ts carry-status (--carry <id> | --tvdb <id>)
+  repair-guide.ts carry-finish --carry <id>
+  repair-guide.ts carry-revert --carry <id>
 
 preview, evidence, audio, search-plan, release-list, queue-check and remap-plan only read (remap-plan plans as if episode_remap were on). settings writes only with --set or --known-issue (audited, actor null).
 title-check only reads Sonarr; --backfill writes title_checks rows unless --dry-run, --flags clears a stale flag.
@@ -142,6 +168,9 @@ plan, as if language_search were on). audio-scan only reads: every Sonarr series
 behind another one, confirmed in Plex on one file, with each Plex server's stored preference (DESIGN-055 P6 decision 10);
 with --apply-original <code> it then sets the Audio Preference, as staff, on every finding whose original language is
 that one and whose Plex default is another (one Repair Request each, requester null; needs the audio_preference remedy).
+season-run, copy-run and ordering-run carry every account's Plex watch state onto the content it watched (the Watch
+Carry, ADR-114): a snapshot first (refused when it cannot be read), then the move, then the carry and a per-account
+check. carry-finish re-runs a carry from its snapshot; carry-revert restores what it wrote.
 Remedies: ${REPAIR_GUIDE_REMEDIES.join(', ')}.`;
 
 export interface RepairGuideArgs {
@@ -163,11 +192,20 @@ export interface RepairGuideArgs {
     | 'copy-run'
     | 'audio-preference'
     | 'language-plan'
-    | 'audio-scan';
+    | 'audio-scan'
+    | 'ordering-plan'
+    | 'ordering-run'
+    | 'carry-status'
+    | 'carry-finish'
+    | 'carry-revert';
   /** audio-preference / language-plan: the wanted audio language (ISO 639-2, e.g. `eng`). */
   language?: string;
   /** audio-scan: set the Audio Preference on the findings whose original language is this one. */
   applyOriginal?: string;
+  /** ordering-plan / ordering-run: Plex's ordering value (`default` is the library default, sent as ''). */
+  ordering?: string;
+  /** carry-status / carry-finish / carry-revert: the Watch Carry's id. */
+  carry?: string;
   /** remap-run: the digest of the remap-plan output staff confirmed. */
   digest?: string;
   /** release-grab: the row key release-list printed. */
@@ -229,7 +267,12 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'copy-run' &&
     command !== 'audio-preference' &&
     command !== 'language-plan' &&
-    command !== 'audio-scan'
+    command !== 'audio-scan' &&
+    command !== 'ordering-plan' &&
+    command !== 'ordering-run' &&
+    command !== 'carry-status' &&
+    command !== 'carry-finish' &&
+    command !== 'carry-revert'
   ) {
     throw new Error(`unknown command "${command}"`);
   }
@@ -382,10 +425,41 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         args.evidence = value.trim();
         i += 1;
         break;
+      case '--ordering':
+        if (!value || !/^(tvdbAiring|tmdbAiring|tvdbDvd|tvdbAbsolute|default)$/.test(value)) {
+          throw new Error('--ordering needs tvdbAiring, tmdbAiring, tvdbDvd, tvdbAbsolute or default');
+        }
+        args.ordering = value === 'default' ? '' : value;
+        i += 1;
+        break;
+      case '--carry':
+        if (!value || !/^[0-9a-f-]{36}$/.test(value)) throw new Error('--carry needs the carry id a run printed');
+        args.carry = value;
+        i += 1;
+        break;
       default:
         throw new Error(`unknown argument "${flag}"`);
     }
   }
+  if (command === 'carry-status' || command === 'carry-finish' || command === 'carry-revert') {
+    const extra = args.tmdb !== undefined || args.episode || args.season !== undefined || args.digest || args.ordering !== undefined || args.language !== undefined || args.applyOriginal !== undefined;
+    if (extra) throw new Error(`${command} takes only --carry${command === 'carry-status' ? ' or --tvdb' : ''}`);
+    if (command === 'carry-status' ? (args.carry === undefined) === (args.tvdb === undefined) : args.carry === undefined || args.tvdb !== undefined) {
+      throw new Error(command === 'carry-status' ? 'carry-status needs exactly one of --carry <id> or --tvdb <id>' : `${command} needs --carry <id>`);
+    }
+    return args;
+  }
+  if (args.carry !== undefined) throw new Error('--carry is for carry-status, carry-finish and carry-revert');
+  if (command === 'ordering-plan' || command === 'ordering-run') {
+    if (args.tvdb === undefined || args.ordering === undefined || args.tmdb !== undefined || args.episode || args.season !== undefined) {
+      throw new Error(`${command} needs --tvdb <id> and --ordering <value>`);
+    }
+    if (args.language !== undefined || args.applyOriginal !== undefined) throw new Error(`${command} takes only --tvdb, --ordering and --digest`);
+    if (command === 'ordering-run' && !args.digest) throw new Error('ordering-run needs the --digest of the ordering-plan you checked');
+    if (command === 'ordering-plan' && args.digest !== undefined) throw new Error('--digest is for ordering-run');
+    return args;
+  }
+  if (args.ordering !== undefined) throw new Error('--ordering is for ordering-plan and ordering-run');
   if (command === 'audio-scan') {
     if (Object.keys(args).some((k) => !['command', 'replaceFile', 'json', 'applyOriginal'].includes(k))) {
       throw new Error('audio-scan takes only --json and --apply-original');
@@ -475,6 +549,33 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
   }
   if (args.episodes && args.season === undefined) throw new Error('--episodes goes with --season');
   return args;
+}
+
+/** A Watch Carry's verification in plain lines: counts per server and account index, never a name (exported for the test). */
+export function formatCarryResult(result: WatchCarryResult): string {
+  const lines: string[] = [];
+  const t = result.totals;
+  lines.push(
+    `Watch carry ${result.carryId}: ${result.status.toUpperCase()}. ${t.accounts} account(s) with state; ${t.written} item(s) written` +
+      ` (${t.failed} failed); ${t.watchedCarried} watched file(s) on their item; ${t.resumesCarried} resume point(s); ` +
+      `${t.newViews} new view(s) left alone; ${t.lost} watched file(s) no item plays; ${t.mismatches} mismatch(es).`,
+  );
+  for (const [server, byAccount] of Object.entries(result.accounts)) {
+    for (const [account, s] of Object.entries(byAccount)) {
+      lines.push(
+        `  ${server} ${account}: watched ${s.watchedCarried}, resume ${s.resumesCarried}, clean ${s.cleanItems}, written ${s.written}` +
+          (s.failed ? `, FAILED ${s.failed}` : '') +
+          (s.newViews ? `, new views ${s.newViews}` : '') +
+          (s.lost ? `, lost ${s.lost}` : '') +
+          (s.mismatches ? `, MISMATCH ${s.mismatches}` : ''),
+      );
+    }
+  }
+  for (const m of result.mismatchDetail.slice(0, 20)) {
+    lines.push(`  mismatch ${m.server} ${m.account} ${m.episode} (item ${m.ratingKey}): want plays ${m.want.viewCount} at ${m.want.viewOffset} ms, got plays ${m.got.viewCount} at ${m.got.viewOffset} ms`);
+  }
+  if (result.status !== 'verified') lines.push(`Finish it with: repair-guide.ts carry-finish --carry ${result.carryId}`);
+  return lines.join('\n');
 }
 
 /** The season plan in plain lines for staff (exported for the unit test). */
@@ -597,6 +698,20 @@ async function main(): Promise<number> {
     }
     return failures === 0 ? 0 : 1;
   }
+  if (args.command === 'carry-status' && args.carry) {
+    console.log(JSON.stringify({ carries: await listWatchCarries({ db, carryId: args.carry }) }, null, 2));
+    return 0;
+  }
+  if (args.command === 'carry-finish') {
+    const result = await carryWatchState({ db, plex: watchCarryPlexFromEnv(), carryId: args.carry! });
+    console.log(formatCarryResult(result));
+    return result.status === 'verified' ? 0 : 1;
+  }
+  if (args.command === 'carry-revert') {
+    const result = await revertWatchCarry({ db, plex: watchCarryPlexFromEnv(), carryId: args.carry! });
+    console.log(JSON.stringify(result, null, 2));
+    return result.failed === 0 ? 0 : 1;
+  }
 
   if (args.command === 'queue-check') {
     const clients = arrQueueCleanupClientsFromEnv();
@@ -675,7 +790,31 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  if (args.command === 'carry-status') {
+    const [series] = await db.select({ arrItemId: mediaItems.arrItemId }).from(mediaItems).where(eq(mediaItems.id, item.id));
+    console.log(JSON.stringify({ title: item.title, carries: await listWatchCarries({ db, seriesId: series!.arrItemId }) }, null, 2));
+    return 0;
+  }
+
   const arr = arrClientBundleFromEnv();
+  if (args.command === 'ordering-plan' || args.command === 'ordering-run') {
+    const request = { db, arr, plex: watchCarryPlexFromEnv(), mediaItemId: item.id, ordering: args.ordering! };
+    if (args.command === 'ordering-run') {
+      const result = await runShowOrdering({ ...request, planDigest: args.digest! });
+      console.log(JSON.stringify({ title: item.title, carryId: result.carryId, switched: result.switched, wait: result.wait, status: result.status }, null, 2));
+      if (result.carry) console.log(formatCarryResult(result.carry));
+      return result.status === 'verified' ? 0 : 1;
+    }
+    const plan = await planShowOrdering(request);
+    console.log(
+      JSON.stringify(
+        { title: item.title, ...plan, servers: plan.servers.map(({ rematchKeys, rematchSizes, ...rest }) => ({ ...rest, rematch: rematchKeys.length, rematchFiles: rematchSizes.length })) },
+        null,
+        2,
+      ),
+    );
+    return 0;
+  }
   let scope: { scope?: 'episode' | 'season'; targetChildId?: number; seasonNumber?: number } = {};
   if (kind === 'sonarr') {
     if (args.episode) {
@@ -707,9 +846,11 @@ async function main(): Promise<number> {
       copyOf: args.copyOf ?? null,
     };
     if (args.command === 'copy-run') {
-      const result = await runSecondCopyFix({ ...request, planDigest: args.digest!, evidence: args.evidence! });
-      console.log(JSON.stringify({ title: item.title, result }, null, 2));
-      return 0;
+      const result = await runSecondCopyFix({ ...request, planDigest: args.digest!, evidence: args.evidence!, watchCarry: watchCarryPlexFromEnv() });
+      const { carry, ...rest } = result;
+      console.log(JSON.stringify({ title: item.title, result: { ...rest, carry: carry ? { carryId: carry.carryId, status: carry.status, error: carry.error } : null } }, null, 2));
+      if (carry?.result) console.log(formatCarryResult(carry.result));
+      return carry && carry.status !== 'verified' ? 1 : 0;
     }
     const plan = await planSecondCopyFix(request);
     console.log(JSON.stringify({ title: item.title, plan, refusalText: secondCopyRefusalText(plan.refusal) }, null, 2));
@@ -727,9 +868,22 @@ async function main(): Promise<number> {
       plex: seasonPlexReader({ db, plex: plexClientBundleFromEnv() }),
     };
     if (args.command === 'season-run') {
-      const result = await runSeasonRemap({ ...request, planDigest: args.digest!, ignorePlex: args.ignorePlex === true });
-      console.log(JSON.stringify({ title: item.title, season: args.season, result }, null, 2));
-      return result.outcome === 'moved' ? 0 : 1;
+      const result = await runSeasonRemap({
+        ...request,
+        planDigest: args.digest!,
+        ignorePlex: args.ignorePlex === true,
+        watchCarry: watchCarryPlexFromEnv(),
+      });
+      const { carry, ...rest } = result;
+      console.log(
+        JSON.stringify(
+          { title: item.title, season: args.season, result: { ...rest, carry: carry ? { carryId: carry.carryId, status: carry.status, accountsWithState: carry.accountsWithState, error: carry.error } : null } },
+          null,
+          2,
+        ),
+      );
+      if (carry?.result) console.log(formatCarryResult(carry.result));
+      return result.outcome === 'moved' && (!carry || carry.status === 'verified') ? 0 : 1;
     }
     const view = await planSeasonRemap(request);
     console.log(args.json ? JSON.stringify({ title: item.title, plan: view }, null, 2) : formatSeasonPlan(item.title, view));

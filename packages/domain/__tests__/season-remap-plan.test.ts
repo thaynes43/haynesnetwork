@@ -201,6 +201,28 @@ describe('buildSeasonRemapPlan', () => {
     replay(s, placed);
   });
 
+  it('swaps two two-episode files through one parking episode (P4 decision 34: Daniel Tiger S05)', () => {
+    // E1-E2 holds the file whose stories are E3-E4, and E3-E4 the one whose stories are E1-E2 (staff placed both).
+    const s = season({ on: [1, null, 3, null, 5, 6] });
+    const a = s.files.find((x) => x.id === 5000)!;
+    const b = s.files.find((x) => x.id === 5002)!;
+    s.episodes.find((e) => e.seasonNumber === 1 && e.episodeNumber === 2)!.episodeFileId = a.id;
+    s.episodes.find((e) => e.seasonNumber === 1 && e.episodeNumber === 4)!.episodeFileId = b.id;
+    a.sourceNames = [];
+    b.sourceNames = [];
+    const p = plan(s, { placements: [{ from: [1, 2], to: [3, 4] }, { from: [3, 4], to: [1, 2] }] });
+    expect(p.refusal).toBeNull();
+    expect(p.parking).toMatchObject({ seasonNumber: 0, episodeNumber: 1 });
+    expect(p.steps.map((x) => [x.kind, x.fileId, x.to.map((e) => e.episodeNumber)])).toEqual([
+      ['park', 5000, [1]],
+      ['move', 5002, [1, 2]],
+      ['unpark', 5000, [3, 4]],
+    ]);
+    const at = replay(s, p);
+    expect(at.get(5000)).toEqual([103, 104]);
+    expect(at.get(5002)).toEqual([101, 102]);
+  });
+
   it('refuses a placement that names no one file or an episode the season lacks', () => {
     const s = season({ on: [1, 3, 2, 4, 5, 6] });
     expect(plan(s, { placements: [{ from: [9], to: [2] }] }).refusal).toBe('bad_placement');
