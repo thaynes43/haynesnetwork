@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.114.0](https://github.com/thaynes43/haynesnetwork/compare/v0.113.1...v0.114.0) (2026-10-13)
+
+
+### Features
+
+* mirror Seerr issues and link reporters to the Repair Guide (PLAN-077 P3) ([#911](https://github.com/thaynes43/haynesnetwork/issues/911)) ([2f3c89b](https://github.com/thaynes43/haynesnetwork/commit/2f3c89bce88371681ff5797d3c76f8411f851a0b))
+
 ## [0.113.1](https://github.com/thaynes43/haynesnetwork/compare/v0.113.0...v0.113.1) (2026-10-12)
 
 
