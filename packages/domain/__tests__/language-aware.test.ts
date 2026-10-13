@@ -148,7 +148,13 @@ describe('decideAudioPreference (D-08 rule 3, the Q-03 ruling)', () => {
       noop: false,
     });
     // Boruto: every file with English already starts in it.
-    expect(householdTarget(finding({ english: { files: 291, leadOther: 0, sample: { episodeId: 3, label: 'S01E01' } } })).noop).toBe(true);
+    const boruto = { english: { files: 291, leadOther: 0, sample: { episodeId: 3, label: 'S01E01' } } };
+    expect(householdTarget(finding(boruto)).noop).toBe(true);
+    // ...unless a server stores another language (an earlier report set ja-JP): Plex plays Japanese, so English is set.
+    expect(
+      householdTarget(finding({ ...boruto, plex: [{ server: 'HaynesOps', current: 'ja-JP', unreachable: false }] })).noop,
+    ).toBe(false);
+    expect(householdTarget(finding({ ...boruto, plex: [{ server: 'HaynesOps', current: 'en', unreachable: false }] })).noop).toBe(true);
   });
 
   it('gives guidance only for anything else', () => {
