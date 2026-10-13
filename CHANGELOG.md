@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.118.0](https://github.com/thaynes43/haynesnetwork/compare/v0.117.0...v0.118.0) (2026-10-13)
+
+
+### Features
+
+* Release Pick, every release for a missing episode or movie with a guarded override (PLAN-077 P5) ([#926](https://github.com/thaynes43/haynesnetwork/issues/926)) ([321f5c9](https://github.com/thaynes43/haynesnetwork/commit/321f5c9eb4c09dd215b4265db41e25858ca8eff5))
+
 ## [0.117.0](https://github.com/thaynes43/haynesnetwork/compare/v0.116.0...v0.117.0) (2026-10-13)
 
 
