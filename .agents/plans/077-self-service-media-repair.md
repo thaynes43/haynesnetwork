@@ -9,7 +9,7 @@
   non-group blocks) is ruled A (owner, 2026-10-13, ADR-113): mislabelled-name terms shipped in v0.117.0, the five terms
   are adopted and the hand profile and its tag are gone (P4, "Q-10 ruling"). Q-11 (the library's whole-season
   reorderings, issue #916) is ruled A too: staff's Season Re-map shipped in v0.117.0 and ran on 29 seasons (P4's
-  follow-up below; open flags 622 to 400). P5 (Release Pick) shipped in v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)); P6 is next.
+  follow-up below; open flags 622 to 400). P5 (Release Pick) is shipped and verified live, remedy on: v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)), v0.118.1 ([#930](https://github.com/thaynes43/haynesnetwork/pull/930)) and v0.119.1 ([#935](https://github.com/thaynes43/haynesnetwork/pull/935)). Its first person's pick is OC-054. P6 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -450,7 +450,47 @@ names, never deleting a file, after a watch-state check on every Plex server and
   override row's state follows the Q-01 ruling (Override for anyone who can use Fix, within the budget).
 - **Live check:** open the list for a real missing episode as a non-admin and check that each row's state matches
   Sonarr's own interactive search for the same episode.
-- **Build (2026-10-13):** DESIGN-055's "P5 decisions" (items 1-13, after D-06) record what landed and why.
+- **Status (2026-10-13): shipped, verified live, remedy on.**
+  - Releases:
+    - [#926](https://github.com/thaynes43/haynesnetwork/pull/926) (v0.118.0).
+    - [#930](https://github.com/thaynes43/haynesnetwork/pull/930) (v0.118.1): a movie row whose name carries none of the
+      movie's titles is a Hard Refusal; a disc image is never a pick. This is P5 decision 15, found in this live check.
+    - [#935](https://github.com/thaynes43/haynesnetwork/pull/935) (v0.119.1): the recommended override weighs the
+      library's custom formats. This is P5 decision 16, found in this live check.
+  - Deployed by haynes-ops [#3889](https://github.com/thaynes43/haynes-ops/pull/3889),
+    [#3890](https://github.com/thaynes43/haynes-ops/pull/3890) and [#3892](https://github.com/thaynes43/haynes-ops/pull/3892):
+    3/3 web pods, all sync CronJobs, the owed-check runner and the Books Census on v0.119.1 (26 CronJobs). Migration 0103
+    is applied. Decision 16 checked live on v0.119.1: E18 had a file by then, so it was read on S17E17 "Duct Tape Dystopia",
+    the next missing episode, which has the same release shape. Its recommended pick is the HDTV 1080p h264 release, not
+    the x265 one.
+  - `release_pick` was switched on at 13:35Z (audited, actor null).
+  - The live checks used `repair-guide.ts release-list` in a web pod, read-only, against Sonarr's own `GET /release`:
+    - **SpongeBob SquarePants S17E18** (missing, monitored): Sonarr's episode search returned 22 rows, all rejected for
+      reasons on the overridable list (x265 at custom-format -9925, HDTV not wanted, 720p LQ, SDTV). The list showed 7
+      Override rows grouped from 23 sources. The 23rd source, the season search's S17 pack of Unknown quality, showed as
+      Not allowed. The states match Sonarr's.
+    - **Real override grab** (staff `release-grab`, requester null): the HDTV 1080p h264 release
+      (`...S17E18.Farmers.Market.Feud.1080p.HDTV.AAC2.0.x264-Slurpuff`) was grabbed at 13:35Z. Sonarr imported it onto
+      S17E18 "Farmers Market Feud" at 13:37Z, and the 13:45Z sync completed the Repair Request from the ingested import.
+      The x265 release the list had recommended led to decision 16.
+    - **Zom 100: Bucket List of the Dead** (movie, missing): Radarr approved 33 releases of *The Convert* and *The List*
+      (2023), because an indexer tagged them with its id. The list recommended *The Convert*, which led to decision 15.
+      On v0.118.1 they are Not allowed and the pick is a real Zom 100 release. Radarr's own search still takes them, and
+      it grabbed *The Convert* on 2026-10-01: issue [#931](https://github.com/thaynes43/haynesnetwork/issues/931).
+    - **LEGO Ninjago: Dragons Rising S04E16:** one approved release is a Grab, and its blocklisted posting is refused.
+    - **Spidey and His Amazing Friends S05E20:** only two-episode files (scene `E09E10`, TVDB E19 and E20). Both
+      episodes are missing, but a release holding more than one episode is Not allowed under D-06. This is parked as
+      issue [#936](https://github.com/thaynes43/haynesnetwork/issues/936).
+    - **Peppa Pig S09E34:** the queue has a stuck download, so the list is not opened. It is P2's `title_mismatch`.
+    - **The Loud House S10E19, S10E23, WWE SmackDown S28E41 and Bluey Book Reads S03E05:** nothing on the indexers, the
+      same as Sonarr's own search.
+  - Not run against the deployed site: the UI as a member. The app's sign-in goes through the public Authentik and
+    cannot be driven from inside the cluster. Instead:
+    - The e2e `release-pick.spec.ts` passed in CI (252/252).
+    - The UI was driven on dev:local, with screenshots at 390 and 1280 wide checked: the list, the closed section, each
+      confirm step, a refusal, the grabbed step, on-its-way and admin.
+  - No person has picked yet. The first person's pick is OC-054.
+- **Build (2026-10-13):** DESIGN-055's "P5 decisions" (items 1-16, after D-06) record what landed and why.
   - Step 1: `release-pick.ts` (`describeRejection`, the plain words, `RELEASE_REASONS_VERSION` 1; `classifyReleases`, the
     three row states, hard refusals winning, rows of one release on several sites grouped, the recommended pick;
     `openReleaseList`, `previewReleaseList`). The read is Sonarr's season list narrowed to the episode (P5 decision 2: Case

@@ -1,5 +1,37 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-13 14:30Z: PLAN-077 P5 shipped: the Release Pick, live in v0.119.1, remedy on; first real pick (SpongeBob S17E18) imported
+
+- **What:** "See every release" (DESIGN-055 D-06, decisions 1-16 after D-06). It lists every release for one missing
+  episode or movie, with the *arr's reasons in plain words, the Best choice first, and "Releases you can't pick" with an
+  Ask staff ticket.
+  - Each row is one of three states:
+    - Grab: approved.
+    - Override: every reason overridable, under the owner's Q-01 ruling.
+    - Not allowed: a Hard Refusal, which applies to everyone.
+  - The read is Sonarr's season list narrowed to the episode. This finds a release numbered for another episode whose
+    own title is this one, Case A's real pick.
+  - The grab is one `release_pick` Repair Request, then `POST /release` with the body each UI sends.
+  - A grab the *arr cannot file goes through P2's Import Check.
+  - Staff tools in a web pod: `tsx /sync/src/scripts/repair-guide.ts release-list ...` (read-only) and
+    `release-grab ... --key <row key>` (staff's pick, requester null).
+- **Shipped:**
+  - hnet #926 (v0.118.0), #930 (v0.118.1: another movie's release is refused; disc images are never a pick) and #935
+    (v0.119.1: the recommended override weighs the custom formats).
+  - haynes-ops #3889, #3890 and #3892: 3/3 web pods and all 26 CronJobs on v0.119.1. Migration 0103 is applied.
+- **Remedy:** `release_pick` switched on 13:35Z (audited, actor null).
+- **Verified live (PLAN-077 P5 status has the details):**
+  - SpongeBob S17E18 matches Sonarr's own search: 22 rows, all overridable.
+  - Staff override-grabbed the HDTV 1080p release. Sonarr imported it onto S17E18 "Farmers Market Feud", and the Repair
+    Request completed at 13:45Z.
+  - Zom 100 (movie) found Radarr approving another movie's releases. This was fixed in v0.118.1; issue #931 tracks
+    Radarr's own search.
+- **Open:**
+  - OC-054: the first person's pick.
+  - Issue #931: Radarr id-matched wrong movie for Zom 100.
+  - Issue #936: a two-episode release for two missing episodes.
+- **Next:** P6 (language-aware Wrong language).
+
 ## 2026-10-13 13:25Z: Season Re-map (Q-11) and mislabelled-name terms (Q-10) live in v0.117.0; 29 seasons re-mapped, open flags 622 to 400
 
 - **What:**

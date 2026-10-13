@@ -1891,3 +1891,44 @@ checks:
     links:
       prs: ['https://github.com/thaynes43/haynesnetwork/pull/915', 'https://github.com/thaynes43/haynesnetwork/pull/918', 'https://github.com/thaynes43/haynesnetwork/pull/920']
       issues: ['https://github.com/thaynes43/haynesnetwork/issues/916']
+  - id: OC-054
+    title: 'P5 first picks: the first person-run Release Pick, its import and its budget (PLAN-077 P5)'
+    opened: 2026-10-13
+    after: v0.119.1 deployed, release_pick on at 13:35Z, the staff pick of SpongeBob S17E18 imported and completed
+    not_before: 2026-10-20T13:00:00Z
+    due: 2026-11-12T00:00:00Z
+    owner: haynesnetwork coordinator (PLAN-077)
+    status: pending
+    check: |
+      1. The first Release Lists a person opens (`release_pick_lists` with a requester, `release_list_requested` events):
+         for each, compare its rows' states with the *arr's own interactive search for that episode or movie. Every Grab
+         row must be the title's own release, and no Override row may carry a reason outside the overridable list. A row
+         in the wrong state is a bug in the plain-words mapping or the classification: fix it and bump
+         RELEASE_REASONS_VERSION.
+      2. The first person's grab (a `release_pick` Repair Request with a requester): it completed from the ingested import
+         on the chosen episode or movie. If it failed, check that settleReleasePicks closed it and that the person could
+         pick again. An override numbered for another episode must land through the Import Check (Force Search or the
+         janitor's `importable` cell). If no person picked in the week, move the review a month with an evidence line.
+      3. Any `unsure` grab (a step with `uncertain: true`): the *arr's history settled it, either the grab was recorded or
+         it closed as `grab_not_recorded` after 10 minutes, and nothing was grabbed twice.
+      4. Any Ask staff ticket from a Not allowed row: was the refusal right?
+    auto:
+      - name: a person has opened a Release List
+        source: app-db
+        query: |
+          select count(*) as n from release_pick_lists where requester_id is not null
+        expect: {min: 1}
+        mismatch: wait
+      - name: no release pick is stuck open past the 48-hour horizon
+        source: app-db
+        query: |
+          select count(*) as n from repair_requests where kind = 'release_pick' and status in ('pending', 'actioned')
+            and created_at < now() - interval '48 hours'
+        expect: {max: 0}
+        mismatch: fail
+    auto_covers: part
+    evidence:
+      - "2026-10-13 13:35Z staff release-grab of SpongeBob S17E18 (HDTV 1080p, an override): imported 13:37Z onto S17E18, Repair Request completed 13:45Z."
+    links:
+      prs: ['https://github.com/thaynes43/haynesnetwork/pull/926', 'https://github.com/thaynes43/haynesnetwork/pull/930', 'https://github.com/thaynes43/haynesnetwork/pull/935']
+      issues: ['https://github.com/thaynes43/haynesnetwork/issues/931', 'https://github.com/thaynes43/haynesnetwork/issues/936']
