@@ -45,12 +45,17 @@ export const sonarrSeriesSchema = z.object({
   rootFolderPath: z.string(),
   path: z.string(),
   tags: z.array(z.number().int()),
-  statistics: z.object({
-    episodeFileCount: z.number().int(),
-    episodeCount: z.number().int(),
-    totalEpisodeCount: z.number().int(),
-    sizeOnDisk: z.number(),
-  }),
+  // Sonarr omits `statistics` for a series it has not refreshed yet (seen live 2026-10-13 on "Zodiac (2028)", added
+  // 2026-10-09: the field is absent, and one such series failed the whole `GET /series` read, so the daily full sync's
+  // Sonarr run failed for four days). Absent reads as nothing on disk, as Lidarr's artists do.
+  statistics: z
+    .object({
+      episodeFileCount: z.number().int(),
+      episodeCount: z.number().int(),
+      totalEpisodeCount: z.number().int(),
+      sizeOnDisk: z.number(),
+    })
+    .default({ episodeFileCount: 0, episodeCount: 0, totalEpisodeCount: 0, sizeOnDisk: 0 }),
   // Restore-fidelity extras (D-02 / D-05 arr_attrs)
   seriesType: z.string(),
   seasonFolder: z.boolean(),
