@@ -365,7 +365,14 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
     showId = (await t.db.query.mediaItems.findMany({ where: (m, { and: a, eq: e }) => a(e(m.arrItemId, SERIES), e(m.arrKind, 'sonarr')) }))[0]!.id;
     movieId = (await t.db.query.mediaItems.findMany({ where: (m, { and: a, eq: e }) => a(e(m.arrItemId, 1), e(m.arrKind, 'radarr')) }))[0]!.id;
     await upsertPlexLibraries({ db: t.db, slug: 'haynestower', libraries: [{ sectionKey: '2', name: 'TV Shows', mediaType: 'show' }, { sectionKey: '1', name: 'Movies', mediaType: 'movie' }] });
-    await upsertPlexLibraries({ db: t.db, slug: 'haynesops', libraries: [{ sectionKey: '2', name: 'TV Shows', mediaType: 'show' }] });
+    await upsertPlexLibraries({
+      db: t.db,
+      slug: 'haynesops',
+      libraries: [
+        { sectionKey: '2', name: 'TV Shows', mediaType: 'show' },
+        { sectionKey: '1', name: 'Movies', mediaType: 'movie' },
+      ],
+    });
     const libs = await t.db.select().from(plexLibraries);
     const lib = (slugIndex: number, key: string) => libs.filter((l) => l.sectionKey === key)[slugIndex]!.id;
     const servers = await t.db.query.plexServers.findMany();
@@ -377,6 +384,8 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
       matches: [
         { mediaItemId: showId, plexLibraryId: libOf('haynestower', '2'), ratingKey: '552877', matchedVia: 'tvdb' as const, plexAddedAt: null },
         { mediaItemId: showId, plexLibraryId: libOf('haynesops', '2'), ratingKey: '106050', matchedVia: 'tvdb' as const, plexAddedAt: null },
+        // A same-named movie in HaynesOps' movie library with a lower key (Love, Death & Robots, live): never the show's item.
+        { mediaItemId: showId, plexLibraryId: libOf('haynesops', '1'), ratingKey: '10000', matchedVia: 'tmdb' as const, plexAddedAt: null },
         { mediaItemId: movieId, plexLibraryId: libOf('haynestower', '1'), ratingKey: '8452', matchedVia: 'tmdb' as const, plexAddedAt: null },
       ],
       scopedLibraryIds: [],
@@ -413,9 +422,9 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
         toWrite: ['haynesops'],
         remedyOn: true,
       });
-      expect(preview.servers.map((s) => [s.name, s.current])).toEqual([
-        ['HaynesOps', ''],
-        ['HaynesTower', 'en-US'],
+      expect(preview.servers.map((s) => [s.name, s.ratingKey, s.current])).toEqual([
+        ['HaynesOps', '106050', ''],
+        ['HaynesTower', '552877', 'en-US'],
       ]);
       // The guidance names the track as Plex does, and the one that plays first.
       expect(preview.tracks?.tracks.map((tr) => [tr.displayTitle, tr.isDefault])).toEqual([
