@@ -9,9 +9,9 @@ import { isShowOrdering, parseSharedServerAccess, partName } from '../src/carry-
 import { parseXml } from '../src/xml';
 import { plexStub, TEST_CLIENT_OPTIONS } from './helpers';
 
-const read = (stub: ReturnType<typeof plexStub>, token = TEST_CLIENT_OPTIONS.token) =>
+const read = (stub: ReturnType<typeof plexStub>, token: string = TEST_CLIENT_OPTIONS.token) =>
   new PlexReadClient({ ...TEST_CLIENT_OPTIONS, token, fetchImpl: stub.fetchImpl });
-const write = (stub: ReturnType<typeof plexStub>, token = TEST_CLIENT_OPTIONS.token) =>
+const write = (stub: ReturnType<typeof plexStub>, token: string = TEST_CLIENT_OPTIONS.token) =>
   new PlexWriteClient({ ...TEST_CLIENT_OPTIONS, token, fetchImpl: stub.fetchImpl });
 
 const LEAVES = [
