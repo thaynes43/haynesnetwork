@@ -49,6 +49,7 @@ import {
   planEpisodeRemap,
   planForceSearch,
   readRemapSeason,
+  runEpisodeRemap,
   queueTexts,
   readFileAudio,
   readPlaybackEvidence,
@@ -69,13 +70,27 @@ const USAGE = `Usage:
   repair-guide.ts queue-check
   repair-guide.ts title-check (--backfill [--dry-run] [--json] | --flags <sonarr series id>)
   repair-guide.ts remap-plan --tvdb <id> --season <n> [--shift <from>:<+1|-1>[:<through>] | --move <from>:<to>]
+  repair-guide.ts remap-run  --tvdb <id> --season <n> (--shift ... | --move ...) --digest <the remap-plan digest>
 
 preview, evidence, audio, search-plan, queue-check and remap-plan only read (remap-plan plans as if episode_remap were on). settings writes only with --set or --known-issue (audited, actor null).
 title-check only reads Sonarr; --backfill writes title_checks rows unless --dry-run, --flags clears a stale flag.
+remap-run is staff's Episode Re-map (DESIGN-055 P4 decision 17): it re-plans, refuses unless the plan's digest is the one
+given, then moves the files exactly as the guide does (one Repair Request, requester null: the staff tool).
 Remedies: ${REPAIR_GUIDE_REMEDIES.join(', ')}.`;
 
 export interface RepairGuideArgs {
-  command: 'preview' | 'evidence' | 'audio' | 'settings' | 'search-plan' | 'queue-check' | 'title-check' | 'remap-plan';
+  command:
+    | 'preview'
+    | 'evidence'
+    | 'audio'
+    | 'settings'
+    | 'search-plan'
+    | 'queue-check'
+    | 'title-check'
+    | 'remap-plan'
+    | 'remap-run';
+  /** remap-run: the digest of the remap-plan output staff confirmed. */
+  digest?: string;
   tmdb?: number;
   tvdb?: number;
   episode?: { season: number; episode: number };
@@ -114,7 +129,8 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'search-plan' &&
     command !== 'queue-check' &&
     command !== 'title-check' &&
-    command !== 'remap-plan'
+    command !== 'remap-plan' &&
+    command !== 'remap-run'
   ) {
     throw new Error(`unknown command "${command}"`);
   }
@@ -205,6 +221,11 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         i += 1;
         break;
       }
+      case '--digest':
+        if (!value || !/^[0-9a-f]{8,64}$/.test(value)) throw new Error('--digest needs the plan digest remap-plan printed');
+        args.digest = value;
+        i += 1;
+        break;
       case '--flags':
         args.flagsSeriesId = positiveInt(flag, value);
         i += 1;
@@ -220,9 +241,15 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     if (args.dryRun && !args.backfill) throw new Error('--dry-run goes with --backfill');
     return args;
   }
-  if (args.remap && command !== 'remap-plan') throw new Error('--shift and --move are for remap-plan');
-  if (command === 'remap-plan' && (args.tvdb === undefined || args.season === undefined || args.episode)) {
-    throw new Error('remap-plan needs --tvdb <id> and --season <n>');
+  if (args.remap && command !== 'remap-plan' && command !== 'remap-run') {
+    throw new Error('--shift and --move are for remap-plan and remap-run');
+  }
+  if (args.digest !== undefined && command !== 'remap-run') throw new Error('--digest is for remap-run');
+  if ((command === 'remap-plan' || command === 'remap-run') && (args.tvdb === undefined || args.season === undefined || args.episode)) {
+    throw new Error(`${command} needs --tvdb <id> and --season <n>`);
+  }
+  if (command === 'remap-run' && (!args.remap || !args.digest)) {
+    throw new Error('remap-run needs a claim (--shift or --move) and the --digest of the plan you checked');
   }
   if (args.backfill || args.dryRun || args.json || args.flagsSeriesId !== undefined) {
     throw new Error('--backfill, --dry-run, --json and --flags are for title-check');
@@ -376,7 +403,7 @@ async function main(): Promise<number> {
     }
   }
 
-  if (args.command === 'remap-plan') {
+  if (args.command === 'remap-plan' || args.command === 'remap-run') {
     const target = { db, arr, mediaItemId: item.id, seasonNumber: args.season! };
     const view = await readRemapSeason({ ...target, remapOn: true });
     if (!args.remap) {
@@ -389,6 +416,13 @@ async function main(): Promise<number> {
       args.remap.kind === 'shift'
         ? { kind: 'shift' as const, fromEpisodeNumber: args.remap.from, throughEpisodeNumber: args.remap.through, by: args.remap.by }
         : { kind: 'single' as const, fromEpisodeId: byNumber(args.remap.from), toEpisodeId: byNumber(args.remap.to) };
+    if (args.command === 'remap-run') {
+      // The guide's own run: re-plans, refuses a changed plan (FIX_PLAN_CHANGED) or the switch off, writes the Repair
+      // Request first, then one ManualImport per move with its read-back, then the rename.
+      const result = await runEpisodeRemap({ ...target, claim, planDigest: args.digest!, requesterId: null });
+      console.log(JSON.stringify({ title: item.title, result }, null, 2));
+      return result.outcome === 'moved' ? 0 : 1;
+    }
     const plan = await planEpisodeRemap({ ...target, claim, remapOn: true });
     console.log(JSON.stringify({ title: item.title, plan }, null, 2));
     return 0;
@@ -503,13 +537,15 @@ if (process.argv[1]?.endsWith('repair-guide.ts')) {
       await getPool()
         .end()
         .catch(() => {});
-      process.exit(code);
+      // Exit only once stdout has drained: a large JSON report piped through `kubectl exec` was cut at 64 KiB when
+      // process.exit ran with the write still queued.
+      process.stdout.write('', () => process.exit(code));
     })
     .catch(async (error: unknown) => {
       console.error(error instanceof Error ? error.message : String(error));
       await getPool()
         .end()
         .catch(() => {});
-      process.exit(1);
+      process.stdout.write('', () => process.exit(1));
     });
 }

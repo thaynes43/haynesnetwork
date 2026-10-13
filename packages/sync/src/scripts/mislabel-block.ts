@@ -13,6 +13,7 @@
 // Env: DATABASE_URL, SONARR_API_KEY (SONARR_URL defaults in-cluster). `list` needs only DATABASE_URL.
 import { MISLABEL_TERM_STATES, db, getPool, type MislabelTermState } from '@hnet/db';
 import {
+  addMislabelTermFromRemap,
   adoptMislabelTerm,
   listMislabelTerms,
   mislabelBlockSonarrFromEnv,
@@ -24,25 +25,29 @@ const USAGE = `Usage:
   mislabel-block.ts list [--state active|expired|removed|all]
   mislabel-block.ts adopt --series <sonarr series id> --group <release group> [--dry-run]
   mislabel-block.ts reconcile [--dry-run]
+  mislabel-block.ts offer --repair <repair request id> --group <release group>
 
-list only reads. adopt and reconcile write Sonarr's "mislabelled releases" profile (read back) unless --dry-run.`;
+list only reads. adopt and reconcile write Sonarr's "mislabelled releases" profile (read back) unless --dry-run.
+offer accepts the Mislabel offer of a completed shift re-map (a staff remap-run prints its mislabelGroups), as staff.`;
 
 export type MislabelBlockArgs =
   | { command: 'list'; state: MislabelTermState | 'all' }
   | { command: 'adopt'; seriesId: number; group: string; dryRun: boolean }
-  | { command: 'reconcile'; dryRun: boolean };
+  | { command: 'reconcile'; dryRun: boolean }
+  | { command: 'offer'; repairRequestId: string; group: string };
 
 /** Parse the command line (exported for a unit test). */
 export function parseMislabelBlockArgs(argv: readonly string[]): MislabelBlockArgs | 'help' {
   const [command, ...rest] = argv;
   if (command === undefined || command === '--help' || command === '-h') return 'help';
-  if (command !== 'list' && command !== 'adopt' && command !== 'reconcile') {
+  if (command !== 'list' && command !== 'adopt' && command !== 'reconcile' && command !== 'offer') {
     throw new Error(`unknown command "${command}"`);
   }
   let state: MislabelTermState | 'all' = 'active';
   let seriesId: number | undefined;
   let group: string | undefined;
   let dryRun = false;
+  let repairRequestId: string | undefined;
   for (let i = 0; i < rest.length; i += 1) {
     const flag = rest[i]!;
     const value = rest[i + 1];
@@ -67,6 +72,11 @@ export function parseMislabelBlockArgs(argv: readonly string[]): MislabelBlockAr
       case '--dry-run':
         dryRun = true;
         break;
+      case '--repair':
+        if (!value || !/^[0-9a-f-]{36}$/i.test(value)) throw new Error('--repair needs the repair request id');
+        repairRequestId = value.toLowerCase();
+        i += 1;
+        break;
       default:
         throw new Error(`unknown argument "${flag}"`);
     }
@@ -79,7 +89,15 @@ export function parseMislabelBlockArgs(argv: readonly string[]): MislabelBlockAr
     if (seriesId === undefined || group === undefined) throw new Error('adopt needs --series and --group');
     return { command, seriesId, group, dryRun };
   }
-  if (seriesId !== undefined || group !== undefined) throw new Error('reconcile takes only --dry-run');
+  if (command === 'offer') {
+    if (repairRequestId === undefined || group === undefined || seriesId !== undefined || dryRun) {
+      throw new Error('offer needs --repair and --group (and nothing else)');
+    }
+    return { command, repairRequestId, group };
+  }
+  if (seriesId !== undefined || group !== undefined || repairRequestId !== undefined) {
+    throw new Error('reconcile takes only --dry-run');
+  }
   return { command, dryRun };
 }
 
@@ -121,6 +139,20 @@ async function main(): Promise<number> {
     return result.saved || 'dryRun' in result ? 0 : 1;
   }
 
+  if (args.command === 'offer') {
+    const result = await addMislabelTermFromRemap({
+      db,
+      sonarr,
+      repairRequestId: args.repairRequestId,
+      releaseGroup: args.group,
+      requesterId: null,
+      requesterIsAdmin: true,
+      logger,
+    });
+    console.log(JSON.stringify(result, null, 2));
+    return result.saved ? 0 : 1;
+  }
+
   const report = await reconcileMislabelBlock({ db, sonarr, dryRun: args.dryRun, logger });
   console.log(JSON.stringify(report, null, 2));
   return 0;
@@ -133,13 +165,15 @@ if (process.argv[1]?.endsWith('mislabel-block.ts')) {
       await getPool()
         .end()
         .catch(() => {});
-      process.exit(code);
+      // Exit only once stdout has drained: a large JSON report piped through `kubectl exec` was cut at 64 KiB when
+      // process.exit ran with the write still queued.
+      process.stdout.write('', () => process.exit(code));
     })
     .catch(async (error: unknown) => {
       console.error(error instanceof Error ? error.message : String(error));
       await getPool()
         .end()
         .catch(() => {});
-      process.exit(1);
+      process.stdout.write('', () => process.exit(1));
     });
 }

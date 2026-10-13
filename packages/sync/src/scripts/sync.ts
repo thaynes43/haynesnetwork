@@ -1007,9 +1007,9 @@ main()
     } catch {
       // pool never initialized (config error before any DB use) — nothing to close
     }
-    process.exit(code);
+    process.stdout.write('', () => process.exit(code));
   })
   .catch((error) => {
     console.error(error);
-    process.exit(1);
+    process.stdout.write('', () => process.exit(1));
   });

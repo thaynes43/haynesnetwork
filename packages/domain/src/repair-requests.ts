@@ -38,7 +38,11 @@ export const OPEN_REPAIR_STATUSES = ['pending', 'actioned'] as const satisfies r
 
 export interface CreateRepairRequestInput {
   db?: DbClient;
-  requesterId: string;
+  /**
+   * The person who confirmed the remedy. null is staff working from the in-cluster tool (`repair-guide.ts`, DESIGN-055
+   * P4 decision 17): no person, no budget, recorded as the staff tool, the "audited, actor null" pattern of the settings.
+   */
+  requesterId: string | null;
   /** Admins bypass the hourly budget (ADR-080), as for Fix. */
   requesterIsAdmin?: boolean;
   mediaItemId: string;
@@ -126,13 +130,17 @@ async function findOpenFixForRepair(
 export async function createRepairRequest(input: CreateRepairRequestInput): Promise<{ repairRequestId: string }> {
   return inTransaction(input.db, async (tx) => {
     await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext('fix_requests'), hashtext(${input.requesterId}))`,
+      sql`SELECT pg_advisory_xact_lock(hashtext('fix_requests'), hashtext(${input.requesterId ?? 'staff-tool'}))`,
     );
-    const [requester] = await tx
-      .select({ id: users.id, email: users.email, displayName: users.displayName, roleId: users.roleId })
-      .from(users)
-      .where(eq(users.id, input.requesterId));
-    if (!requester) throw new NotFoundError(`User ${input.requesterId} not found`);
+    let requester: { id: string; email: string | null; displayName: string | null; roleId: string | null } | null = null;
+    if (input.requesterId !== null) {
+      const [row] = await tx
+        .select({ id: users.id, email: users.email, displayName: users.displayName, roleId: users.roleId })
+        .from(users)
+        .where(eq(users.id, input.requesterId));
+      if (!row) throw new NotFoundError(`User ${input.requesterId} not found`);
+      requester = row;
+    }
 
     const [item] = await tx
       .select({ id: mediaItems.id, deletedFromArrAt: mediaItems.deletedFromArrAt })
@@ -146,9 +154,9 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
       throw new Error('createRepairRequest: a season or an episode names its season; a movie names none');
     }
 
-    if (!input.requesterIsAdmin) {
+    if (requester !== null && !input.requesterIsAdmin) {
       const limit = await effectiveMediaActionBudget({ db: tx, roleId: requester.roleId });
-      if (limit !== null && (await countRecentFixBudget(tx, input.requesterId)) >= limit) {
+      if (limit !== null && (await countRecentFixBudget(tx, requester.id)) >= limit) {
         throw new FixRateLimitError(mediaActionBudgetReachedMessage(limit));
       }
     }
@@ -178,7 +186,9 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
     const created: FixActionEntry = {
       step: 'created',
       at: new Date().toISOString(),
-      requester: { email: requester.email, displayName: requester.displayName },
+      requester: requester
+        ? { email: requester.email, displayName: requester.displayName }
+        : { staffTool: 'repair-guide.ts' },
     };
     const [row] = await tx
       .insert(repairRequests)

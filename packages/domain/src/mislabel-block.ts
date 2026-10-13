@@ -611,7 +611,8 @@ export async function addMislabelTermFromRemap(input: {
   sonarr: MislabelBlockWriter;
   repairRequestId: string;
   releaseGroup: string;
-  requesterId: string;
+  /** The person accepting the offer; null is staff from the in-cluster tool (with requesterIsAdmin, P4 decision 17). */
+  requesterId: string | null;
   requesterIsAdmin: boolean;
   now?: Date;
   logger?: DomainLogger;

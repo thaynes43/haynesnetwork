@@ -254,7 +254,8 @@ export async function planEpisodeRemap(input: RemapPlanRequest & { remapOn?: boo
 // ---------------------------------------------------------------------------
 
 export interface RunRemapInput extends RemapPlanRequest {
-  requesterId: string;
+  /** The person who confirmed the plan; null is staff working from the in-cluster tool (P4 decision 17). */
+  requesterId: string | null;
   requesterIsAdmin?: boolean;
   /** The digest of the plan the person confirmed. */
   planDigest: string;

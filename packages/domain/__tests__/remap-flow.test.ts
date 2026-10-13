@@ -261,6 +261,20 @@ describe('Episode Re-map (DESIGN-055 D-04)', () => {
     expect(arr.fileOn(24)).toBeNull();
   });
 
+  it('staff run it from the in-cluster tool with no person: requester null, the trail says so (P4 decision 17)', async () => {
+    const arr = stubSonarr();
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1 };
+    const e24 = fixture.episodes.find((e) => e.episodeNumber === 24)!.id;
+    const e23 = fixture.episodes.find((e) => e.episodeNumber === 23)!.id;
+    const claim = { kind: 'single', fromEpisodeId: e24, toEpisodeId: e23 } as const;
+    const plan = await planEpisodeRemap({ ...target, claim });
+    const result = await runEpisodeRemap({ ...target, claim, planDigest: plan.digest, requesterId: null, commandWait: WAIT });
+    expect(result).toMatchObject({ outcome: 'moved', moved: 1 });
+    const [row] = await t.db.select().from(repairRequests).where(eq(repairRequests.mediaItemId, itemId));
+    expect(row).toMatchObject({ requesterId: null, kind: 'remap', status: 'completed' });
+    expect((row!.actionsTaken as Array<Record<string, unknown>>)[0]).toMatchObject({ step: 'created', requester: { staffTool: 'repair-guide.ts' } });
+  });
+
   it('refuses a plan that changed since the person saw it, writing nothing', async () => {
     const arr = stubSonarr();
     const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1 };

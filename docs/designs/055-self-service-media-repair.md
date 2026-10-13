@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 and 16, a flag the person cannot act on goes to staff, a library's own names are no evidence). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
+- **Last updated:** 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
@@ -289,6 +289,15 @@ do not edit)", "must not contain" terms only, no tags.
     [AMZN WEBDL-1080p]...`). A name in that shape (`<title> (<year>) - SxxEyy - <title> [`) is not judged: the Title
     Check records it `silent`, and the re-map never shows it as what the file's name says. 15 of the library's 692
     disagreements had such a name (The Loud House 12, Be Cool, Scooby-Doo! 3).
+17. **Staff run the re-map from the cluster** (v0.115.2). `repair-guide.ts remap-run --tvdb <id> --season <n>
+    (--shift ... | --move ...) --digest <digest>` runs the guide's own `runEpisodeRemap` for a plan staff checked with
+    `remap-plan` (a changed plan is refused). Its Repair Request has no requester (`requester_id` null, the trail's
+    first step names the staff tool), the "audited, actor null" pattern of the settings, and draws on no one's budget.
+    This is how the live census's whole-season offsets that the re-map can fix are worked by staff (issue #916), since a
+    person's sign-in cannot be driven from inside the cluster. A staff shift that offers the Mislabel Block (its result
+    prints `mislabelGroups`) is accepted with `mislabel-block.ts offer --repair <repair id> --group <group>` (staff, no
+    requester). The in-cluster tools now exit only once stdout has drained (a large report piped through `kubectl exec`
+    was cut at 64 KiB); the sibling scripts under `packages/sync/src/scripts` got the same fix.
 
 ### D-06 Release Pick
 

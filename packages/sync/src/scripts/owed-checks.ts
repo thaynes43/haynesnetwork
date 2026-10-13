@@ -97,9 +97,9 @@ export async function main(): Promise<number> {
 // Run only as a script (tests import parseOwedChecksArgs).
 if (process.argv[1]?.endsWith('owed-checks.ts')) {
   main()
-    .then((code) => process.exit(code))
+    .then((code) => process.stdout.write('', () => process.exit(code)))
     .catch((error: unknown) => {
       console.error(error instanceof Error ? error.message : String(error));
-      process.exit(1);
+      process.stdout.write('', () => process.exit(1));
     });
 }
