@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P6 decision 14 and Q-03 amended: the owner's ruling on #955, "English if present", for staff defaults). Before that 2026-10-13 (P6 decision 3: a server's item is the one in a library of the title's own kind, PR #954; P6's live status and sweep in PLAN-077). Before that 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
+- **Last updated:** 2026-10-13 (P4 decisions 35 to 37, issue #928's evidence: a placement may change the episode count, a second parking episode for a second open cycle, the Second-Copy Fix takes a multi-episode copy). Before that 2026-10-13 (P6 decision 14 and Q-03 amended: the owner's ruling on #955, "English if present", for staff defaults). Before that 2026-10-13 (P6 decision 3: a server's item is the one in a library of the title's own kind, PR #954; P6's live status and sweep in PLAN-077). Before that 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
   missing, is a pick for all of them). Before that 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
@@ -519,6 +519,26 @@ do not edit)", "must not contain" terms only, no tags.
     two-story files are paired against TVDB in two swaps). A cycle with no single-episode file used to refuse
     (`no_parking`); now its lowest two-episode file parks on the one parking episode (Sonarr maps a file to whatever
     episodes the import names) and its move back puts it on both its episodes again. Decision 20 is otherwise unchanged.
+35. **A placement may change the number of episodes** (found in the evidence for #928: Spidey and His Amazing Friends
+    S01, where the file Sonarr has on episode k holds TVDB's two segments 2k-1 and 2k; S05, where a file on E05-E08
+    holds E03-E04). `--place 17:33-34` puts a one-episode file on two episodes, `--place 5-8:3-4` a four-episode file on
+    two, and `--place 29-30:25+32` names episodes that are not next to each other (at most 10). The plan still checks
+    that the left side names exactly the episodes one file sits on, and that no two placements share an episode.
+36. **Two cycles open at once each get a parking episode** (Daniel Tiger's Neighborhood S05 E18-E25: the E18-19 file is
+    in two cycles at once, so the plan used to park one file and then find no free episode for the second cycle). When
+    no step is ready and a file is already parked, the next cycle parks one of its own files on the next free parking
+    episode (same order as decision 20). A stop reports every file still parked. A series with no free episode at all
+    still refuses (`no_parking`): Bubble Guppies S05 and Mecha Builders S01, where every episode of the series has a file.
+37. **The Second-Copy Fix takes a multi-episode copy** (Paw Patrol S06E48-49 holds the same file content as E46-47;
+    Spidey S05's E09-12 file is a copy of E05-06's). The slot is every episode of the season the copy sits on: all are
+    emptied, read back and searched. The copy must sit in one season only. A multi-episode copy's names are no evidence
+    of everything it holds, so staff name every episode it holds (`--copy-of 46-47` or `46+47`), and each must keep a
+    file of its own (else `only_copy`, or `not_a_copy` for an episode of the slot itself); the read-back checks every one
+    of them, and the carry credits the copy's plays to each. A stop of a season re-map reports every file still parked
+    (`parkedAll`). A copy byte-identical to its original (The
+    Simpsons S38E02 and E01: 719,258,375 bytes each) is one content already; the carry tells the copy's item apart by
+    its file name, clears it, and credits its plays to the original's item. The carry's wait checks files of one size
+    together (each must sit on its own Sonarr episode).
 
 ### D-06 Release Pick
 

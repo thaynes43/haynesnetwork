@@ -76,6 +76,16 @@ describe('contentStates and planCarryTargets (ADR-114 C-01, C-04, C-05)', () => 
     expect(content.get(10)).toEqual({ viewCount: 3, viewOffset: 0, lastViewedAt: 200 });
     expect(content.get(20)).toEqual({ viewCount: 0, viewOffset: 400_000, lastViewedAt: 300 });
     expect(content.has(99)).toBe(false);
+    // A two-episode copy of two one-episode originals credits both.
+    const both = contentStates([{ ratingKey: 'c', parts: [part(77)], viewCount: 1, viewOffset: 0, lastViewedAt: 5 }], {
+      moved: [],
+      deleted: [77],
+      sameAs: [
+        [77, 10],
+        [77, 20],
+      ],
+    });
+    expect([...both.keys()].sort()).toEqual([10, 20]);
   });
 
   it('targets each item by the file it holds now: carried, partial, or stale; untouched items are left out', () => {
@@ -147,7 +157,7 @@ interface StubFile {
  * file (the parking episode). Follows Sonarr's library-file ManualImport and RenameFiles like the Season Re-map's test.
  * `contentOn` overrides which content sits on which slot.
  */
-function stubSonarr(opts: { contentOn?: Array<[number, number]>; copyNames?: Record<number, string> } = {}) {
+function stubSonarr(opts: { contentOn?: Array<[number, number]>; copyNames?: Record<number, string>; identicalCopies?: boolean } = {}) {
   const nameFor = (e: StubEpisode) =>
     `${e.seasonNumber === 0 ? 'Specials' : `Season ${e.seasonNumber}`}/Show - S${pad(e.seasonNumber)}E${pad(e.episodeNumber)} - ${e.title}-GRP.mkv`;
   const episodes: StubEpisode[] = TITLES.map((title, i) => ({ id: 400 + i + 1, seasonNumber: 1, episodeNumber: i + 1, title, episodeFileId: 0 }));
@@ -166,7 +176,7 @@ function stubSonarr(opts: { contentOn?: Array<[number, number]>; copyNames?: Rec
     files.set(id, {
       id,
       relativePath: nameFor(e),
-      size: 50_000 + content * 10 + (slot === content ? 0 : slot),
+      size: 50_000 + content * 10 + (slot === content || opts.identicalCopies ? 0 : slot),
       sceneName: opts.copyNames?.[slot] ?? `Show.S01E${pad(slot)}.${TITLES[content - 1]!.replace(/ /g, '.')}.1080p.WEB-DL-GRP`,
     });
   }
@@ -535,6 +545,20 @@ describe('the Watch Carry flow (ADR-114)', () => {
     expect(plex.view(FRIEND_B, 'g-1-4')).toMatchObject({ viewCount: 2 });
     const [fix] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, result.fixRequestId));
     expect((fix!.actionsTaken as Array<{ step: string }>).map((a) => a.step)).toContain('watch_carry');
+  });
+
+  it('a byte-identical copy is told apart by its file name (The Simpsons S38E02)', async () => {
+    const arr = stubSonarr({ contentOn: [[1, 1], [2, 4], [3, 3], [4, 4]], identicalCopies: true });
+    const plex = fakePlex({ files: arr.plexFiles, accounts: [OWNER, FRIEND_A] });
+    plex.seed(FRIEND_A, 'g-1-2', { viewCount: 1 }); // the copy
+    plex.seed(FRIEND_A, 'g-1-4', { viewCount: 1 }); // and the original
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2 };
+    const plan = await planSecondCopyFix(target);
+    expect(plan.copy!.size).toBe(plan.original!.size);
+    const result = await runSecondCopyFix({ ...target, planDigest: plan.digest, evidence: 'Same size and length; subtitles at 5:00 match.', watchCarry: plex.plex, carryPauseMs: 0 });
+    expect(result.carry).toMatchObject({ status: 'verified' });
+    expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 0 });
+    expect(plex.view(FRIEND_A, 'g-1-4')).toMatchObject({ viewCount: 2 });
   });
 
   it('an ordering switch re-matches items and the carry puts each account’s state back on its files', async () => {

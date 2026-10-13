@@ -20,10 +20,10 @@ const TITLES = ['Alpha Run', 'Bravo Night', 'Charlie Comes Home', 'Delta Force F
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** Season 1: E3's file is a second copy of E5 ("Echo Lake"); E5 has its own file. `names` overrides scene names. */
-function stubSonarr(opts: { e5HasFile?: boolean; names?: Record<number, string>; deleteNoop?: boolean } = {}) {
+function stubSonarr(opts: { e5HasFile?: boolean; names?: Record<number, string>; deleteNoop?: boolean; copyOnE3E4?: boolean } = {}) {
   const episodes = TITLES.map((title, i) => ({ id: 300 + i + 1, seasonNumber: 1, episodeNumber: i + 1, title, episodeFileId: 0 }));
   const files = new Map<number, { id: number; relativePath: string; sceneName: string; size: number }>();
-  const contentOn: Array<[number, number]> = [[1, 1], [2, 2], [3, 5], [4, 4]];
+  const contentOn: Array<[number, number]> = opts.copyOnE3E4 ? [[1, 1], [2, 2], [3, 5]] : [[1, 1], [2, 2], [3, 5], [4, 4]];
   if (opts.e5HasFile !== false) contentOn.push([5, 5]);
   for (const [slot, content] of contentOn) {
     const id = 6000 + slot;
@@ -35,6 +35,8 @@ function stubSonarr(opts: { e5HasFile?: boolean; names?: Record<number, string>;
       size: 1000 + slot,
     });
   }
+  // A two-episode copy: the E3 file sits on E3 and E4 (P4 decision 37).
+  if (opts.copyOnE3E4) episodes[3]!.episodeFileId = 6003;
   const state = { deleted: [] as number[], searched: [] as number[][], nextCommand: 700 };
   const json = (body: unknown, status = 200) =>
     new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -122,6 +124,29 @@ describe('Second-Copy Fix (DESIGN-055 P4 decision 25)', () => {
     expect(trail[0]).toMatchObject({ step: 'created', requester: { staffTool: 'repair-guide.ts' } });
     expect(trail.find((a) => a.step === 'second_copy')).toMatchObject({ evidence: EVIDENCE });
     expect(trail.find((a) => a.step === 'delete_read_back')).toMatchObject({ ok: true, slotEmpty: true, copyGone: true, originalKept: true });
+  });
+
+  it('removes a copy that sits on two episodes and searches both, only when staff name what it holds (P4 decision 37)', async () => {
+    const arr = stubSonarr({ copyOnE3E4: true });
+    const unnamed = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 3 };
+    // A multi-episode copy's name is no evidence of everything it holds.
+    expect((await planSecondCopyFix(unnamed)).refusal).toBe('not_a_copy');
+    // Every episode staff name must keep a file of its own (E4 has none: its only file is the copy).
+    expect((await planSecondCopyFix({ ...unnamed, copyOf: [4, 5] })).refusal).toBe('not_a_copy');
+    expect((await planSecondCopyFix({ ...unnamed, copyOf: [2, 5] })).originals.map((o) => o.episodeNumber)).toEqual([2, 5]);
+    const target = { ...unnamed, copyOf: 5 };
+    const plan = await planSecondCopyFix(target);
+    expect(plan.refusal).toBeNull();
+    expect(plan.slotEpisodes.map((e) => e.episodeNumber)).toEqual([3, 4]);
+    expect(plan.original).toMatchObject({ episodeNumber: 5, fileId: 6005 });
+    const run = await runSecondCopyFix({ ...target, planDigest: plan.digest, evidence: EVIDENCE });
+    expect(arr.state.deleted).toEqual([6003]);
+    expect(arr.state.searched).toEqual([[303, 304]]);
+    const [row] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, run.fixRequestId));
+    expect((row!.actionsTaken as Array<Record<string, unknown>>).find((a) => a.step === 'second_copy')).toMatchObject({
+      originals: [expect.objectContaining({ fileId: 6005 })],
+      slotEpisodeIds: [303, 304],
+    });
   });
 
   it('refuses the only copy, a file another one claims the slot of, and a name that agrees', async () => {

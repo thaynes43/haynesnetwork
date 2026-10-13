@@ -239,7 +239,7 @@ export interface RepairGuideArgs {
   /** season-run: run although the Plex check failed (staff decision, recorded on the Repair Request). */
   ignorePlex?: boolean;
   /** copy-plan / copy-run: the episode the copy holds, from staff evidence, when its names do not say. */
-  copyOf?: number;
+  copyOf?: number | number[];
   /** copy-run: staff's evidence that both files hold the same episode. */
   evidence?: string;
   /** remap-plan: a claim by episode numbers (none: the season view and the suggested claim). */
@@ -392,13 +392,21 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
           if (b < a || b - a > 9) return null;
           return Array.from({ length: b - a + 1 }, (_, k) => a + k);
         };
+        // DESIGN-055 P4 decision 35: the two sides may name different counts (`17:33-34`, `5-8:3-4`), and a target may
+        // list episodes that are not next to each other (`29-30:25+32`).
+        const list = (part: string) => {
+          const pieces = part.split('+').map((x) => range(x.trim()));
+          if (pieces.some((x) => x === null)) return null;
+          const all = pieces.flatMap((x) => x!);
+          return new Set(all).size === all.length && all.length <= 10 ? all : null;
+        };
         args.placements = [...(args.placements ?? [])];
         for (const pair of (value ?? '').split(',')) {
           const [from, to] = pair.trim().split(':');
           const f = from !== undefined ? range(from) : null;
-          const t = to !== undefined ? range(to) : null;
-          if (!f || !t || f.length !== t.length) {
-            throw new Error('--place needs <from>:<to> pairs, e.g. 21:28 or 53-54:27-28 (comma separated)');
+          const t = to !== undefined ? list(to) : null;
+          if (!f || !t) {
+            throw new Error('--place needs <from>:<to> pairs, e.g. 21:28, 53-54:27-28, 17:33-34 or 29-30:25+32 (comma separated)');
           }
           args.placements.push({ from: f, to: t });
         }
@@ -413,7 +421,18 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         args.ignorePlex = true;
         break;
       case '--copy-of':
-        args.copyOf = positiveInt(flag, value);
+        // P4 decision 37: a multi-episode copy names every episode it holds (`--copy-of 46-47` or `46+47`).
+        {
+          const parts = (value ?? '').split('+').flatMap((piece) => {
+            const m = /^(\d+)(?:-(\d+))?$/.exec(piece.trim());
+            if (!m) throw new Error('--copy-of needs an episode number, a range (46-47) or a list (46+47)');
+            const a = Number(m[1]);
+            const b = m[2] ? Number(m[2]) : a;
+            if (b < a || b - a > 9) throw new Error('--copy-of needs an episode number, a range (46-47) or a list (46+47)');
+            return Array.from({ length: b - a + 1 }, (_, k) => a + k);
+          });
+          args.copyOf = parts.length === 1 ? parts[0]! : parts;
+        }
         i += 1;
         break;
       case '--apply-household':
@@ -601,7 +620,7 @@ export function formatSeasonPlan(title: string, view: SeasonRemapView): string {
   const lines: string[] = [];
   lines.push(
     `${title}, season ${view.seasonNumber} (Sonarr series ${view.seriesId}): ${view.moved} files move in ${view.steps.length} steps` +
-      (view.parking ? `, passing through ${view.parking.label} (season ${view.parking.seasonNumber})` : '') +
+      (view.parkings.length > 0 ? `, passing through ${view.parkings.map((p) => `${p.label} (season ${p.seasonNumber})`).join(' and ')}` : '') +
       '.',
   );
   if (view.refusalText) lines.push(`REFUSED: ${view.refusalText}`);

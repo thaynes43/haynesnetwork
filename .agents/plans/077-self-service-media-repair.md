@@ -505,6 +505,10 @@ names, never deleting a file, after a watch-state check on every Plex server and
     after the snapshot is left alone and `carry-finish` writes nothing more; `carry-revert` restores; the Second-Copy
     Fix credits the original and clears the slot; an ordering switch re-matches and the carry follows), the Plex client
     tests (`carry.test.ts`), the parking test in `season-remap-plan.test.ts`, migration 0104 and the script test.
+  - **Tool gaps the evidence found (DESIGN-055 P4 decisions 35 to 37):** a placement may change the episode count or name
+    episodes apart (`17:33-34`, `5-8:3-4`, `29-30:25+32`); a second open cycle parks on a second free episode; the
+    Second-Copy Fix takes a copy that sits on several episodes. Tests: `season-remap-plan.test.ts` (one onto two, two
+    onto one, two cycles sharing a file), `second-copy-fix.test.ts` (a two-episode copy), the script test.
 
 ### P5: Release Pick
 
