@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
+- **Last updated:** 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decision 15, a flag the person cannot act on goes to staff). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
@@ -276,6 +276,13 @@ do not edit)", "must not contain" terms only, no tags.
     token `S01E13E14`, and three number-and-title pairs (`S01E11 Secret Menu`, `S01E13 Smoke Alarm`,
     `S01E24 All You Can Fit`). ADR-110 C-04 admits only series-and-group terms, so the hand profile stays in place until
     the owner rules on Q-10; removing it would drop those five blocks.
+15. **A flag the person cannot act on goes to staff** (v0.115.1, found in the live library-wide read: 692 files
+    disagree, and in nearly all of them the episode the name points at keeps its own file, a whole season in another
+    order). The title page's flag offers "Move it" only when that single move can run (`TitleFlag.movable`: the
+    target episodes are free or hold this same file); otherwise it says "That episode already has a file, so staff
+    need to move this one." with an "Ask staff" link to a prefilled Helpdesk ticket. And when a move is refused because
+    the file in the way names another episode itself, the refusal says the two would have to trade places and that
+    needs staff, instead of "Fix that episode first" (a Fix would delete a file that only sits in the wrong place).
 
 ### D-06 Release Pick
 

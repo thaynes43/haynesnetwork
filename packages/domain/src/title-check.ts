@@ -853,6 +853,12 @@ export interface TitleFlag {
   best: TitleCheckEpisodeRef | null;
   score: number | null;
   bestScore: number | null;
+  /**
+   * Whether the single move the flag offers can run: the file lands, by the same offset, on episodes that exist and are
+   * free (or hold this same file). False when that episode keeps its own file: the guide would refuse, so the title page
+   * says staff move it instead of offering "Move it" (DESIGN-055 P4 decision 15).
+   */
+  movable: boolean;
 }
 
 /**
@@ -891,6 +897,19 @@ export async function listTitleFlags(input: {
     .filter((f) => !stale.includes(f.id))
     .map((f) => {
       const on = byId.get(f.episodeId)!;
+      const best = f.bestEpisodeId === null ? undefined : byId.get(f.bestEpisodeId);
+      let movable = best !== undefined && best.seasonNumber === on.seasonNumber;
+      if (best !== undefined && movable) {
+        const offset = best.episodeNumber - on.episodeNumber;
+        for (const id of f.episodeIds) {
+          const held = byId.get(id);
+          const target = held
+            ? episodes.find((e) => e.seasonNumber === held.seasonNumber && e.episodeNumber === held.episodeNumber + offset)
+            : undefined;
+          const targetFile = target?.episodeFileId ?? 0;
+          if (!target || (targetFile > 0 && targetFile !== f.episodeFileId)) movable = false;
+        }
+      }
       return {
         titleCheckId: f.id,
         seasonNumber: on.seasonNumber,
@@ -903,6 +922,7 @@ export async function listTitleFlags(input: {
         best: ref(f.bestEpisodeId),
         score: f.score,
         bestScore: f.bestScore,
+        movable,
       };
     })
     .sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);

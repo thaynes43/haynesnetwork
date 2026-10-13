@@ -103,6 +103,8 @@ export interface RemapMove {
 export interface RemapBlocker {
   episode: RemapEpisodeRef;
   fileName: string | null;
+  /** `occupied`: the file in the way names another episode itself (the two would have to trade places). */
+  misplaced?: boolean;
 }
 
 export interface RemapPlan {
@@ -290,7 +292,16 @@ export function buildRemapPlan(input: RemapPlanInput): RemapPlan {
       }
       landing.set(t.id, m.fileId);
       if (t.episodeFileId != null && !moving.has(t.episodeFileId)) {
-        return result(raw, 'occupied', { episode: ref(t), fileName: basename(filesById.get(t.episodeFileId)?.relativePath ?? null) });
+        const occupant = filesById.get(t.episodeFileId);
+        const name = occupant?.sourceName?.trim();
+        const misplaced =
+          !!name &&
+          episodeTitleEvidence({
+            name,
+            episodes: season.map((e) => ({ id: e.id, seasonNumber: e.seasonNumber, episodeNumber: e.episodeNumber, title: e.title })),
+            againstEpisodeIds: season.filter((e) => e.episodeFileId === t.episodeFileId).map((e) => e.id),
+          }).verdict === 'disagrees';
+        return result(raw, 'occupied', { episode: ref(t), fileName: basename(occupant?.relativePath ?? null), misplaced });
       }
     }
   }

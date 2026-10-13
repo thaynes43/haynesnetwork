@@ -402,7 +402,15 @@ describe('the Title Check census (D-05)', () => {
         best: { episodeId: ep(23), episodeNumber: 23, title: 'All You Can Fit' },
         score: 0,
         bestScore: 1,
+        // E23 has no file, so the one move the flag offers can run.
+        movable: true,
       },
+    ]);
+
+    // With a file of its own on E23, the move would be refused: the flag stays, marked not movable.
+    sonarr.state.episodes.set(SERIES, seasonEpisodes({ 24: 9024, 23: 9023, 11: 9011, 12: 9012, 16: 9016, 17: 9016 }));
+    expect(await listTitleFlags({ db: t.db, sonarr: sonarr.reader, mediaItemId: itemId })).toMatchObject([
+      { episodeFileId: 9024, movable: false },
     ]);
 
     // The person re-mapped the file onto E23: the flag is stale, left out and cleared.

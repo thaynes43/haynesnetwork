@@ -205,6 +205,9 @@ export function remapRefusalText(plan: Pick<RemapPlan, 'refusal' | 'blocker'>): 
     case 'no_such_episode':
       return 'That would move a file past the last episode of the season.';
     case 'occupied':
+      if (b?.misplaced) {
+        return `The file on ${b.episode.label} seems to be on the wrong episode too, so the two would have to trade places. That needs staff for now.`;
+      }
       return b
         ? `${b.episode.label} has its own file, which this would not move. Fix that episode first, or ask staff for help.`
         : 'One of those episodes has its own file, which this would not move. Ask staff for help.';

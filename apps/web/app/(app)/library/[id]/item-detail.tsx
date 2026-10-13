@@ -60,7 +60,15 @@ import {
 } from '@/components/action-progress';
 import { FixDialog } from './fix-dialog';
 import type { GuideRemapStart } from './repair-guide';
-import { flagsByEpisode, titleFlagClaim, titleFlagText } from '@/lib/remap-guide';
+import Link from 'next/link';
+import {
+  TITLE_FLAG_STAFF_LINE,
+  flagsByEpisode,
+  titleFlagClaim,
+  titleFlagStaffTicket,
+  titleFlagText,
+} from '@/lib/remap-guide';
+import { ticketComposeHref } from '@/lib/ticket-compose-link';
 import { ForceSearchDialog } from './force-search-dialog';
 import { SeerrReportBanner } from './seerr-report-banner';
 import { guideIntroText, seerrGuideEntry, type SeerrGuideEntry } from '@/lib/seerr-issues';
@@ -553,6 +561,28 @@ export function ItemDetail({
     const text = titleFlagText(flag);
     const claim = titleFlagClaim(flag);
     if (text === null || claim === null || claim.kind !== 'single') return null;
+    if (!flag.movable) {
+      // The move would be refused (that episode keeps its own file): say so, and hand it to staff with the evidence.
+      const ticket = titleFlagStaffTicket(flag);
+      return (
+        <span className="child-row__flag" data-testid="title-check-flag">
+          <span className="child-row__flag-text">
+            {text}. {TITLE_FLAG_STAFF_LINE}{' '}
+            <Link
+              href={ticketComposeHref({
+                mediaItemId,
+                episodeId: child.arrChildId,
+                subject: ticket.subject,
+                note: ticket.note,
+                category: 'other',
+              })}
+            >
+              Ask staff
+            </Link>
+          </span>
+        </span>
+      );
+    }
     return (
       <span className="child-row__flag" data-testid="title-check-flag">
         <span className="child-row__flag-text">{text}</span>
