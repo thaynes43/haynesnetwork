@@ -254,7 +254,9 @@ do not edit)", "must not contain" terms only, no tags.
 12. **The Title Check as built** (`title-check.ts`, migration 0101). The cursor is the newest `history` row's import
     time less two hours of overlap (the first run reads 48 hours). A file's candidate names are the history record's
     `sourceTitle` and its `droppedPath` file name; the kept verdict is any `agrees`, else `disagrees`, else `ambiguous`,
-    else `silent`. One row per file, with the episode numbers stored so a report reads without Sonarr. Every hour the
+    else `silent`. A series whose episode read fails for a reason that may pass holds the cursor: nothing imported at
+    or after its oldest import is written that run, so the next run reads it all again (a series Sonarr answers 404 for
+    is gone and is skipped). One row per file, with the episode numbers stored so a report reads without Sonarr. Every hour the
     open flags of up to 200 series are re-read and a flag whose file has left its episodes is cleared (a re-map, an
     upgrade, a delete); the title page's live read clears one too. The one-off library-wide read
     (`repair-guide.ts title-check --backfill`) judges every import record Sonarr kept, plus the scene name of a current

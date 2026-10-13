@@ -1333,8 +1333,9 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
 
   // ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — the hourly `title-check` mode (at :35, after the janitor's :25): the
   // census Title Check reads Sonarr's `downloadFolderImported` history since its cursor and records one Title Evidence
-  // verdict per imported file through the domain runTitleCheck single writer, then re-validates the open flags. It
-  // writes nothing to Sonarr. Standalone like seerr-issues: no *arr source loop and NO sync_runs row (its trail is
+  // verdict per imported file through the domain runTitleCheck single writer, then re-validates the open flags; the census
+  // writes nothing to Sonarr. Then the Mislabel Block upkeep (ADR-110 C-04), the mode's only Sonarr write: expired terms
+  // leave its one release profile and drift is repaired, each write read back. Standalone like seerr-issues: no *arr source loop and NO sync_runs row (its trail is
   // title_checks). Only a failed history read (Sonarr unreadable) is a totalFailure; a failed series read is counted.
   if (options.mode === 'title-check') {
     const startedAt = new Date();

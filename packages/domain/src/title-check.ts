@@ -25,7 +25,7 @@ import {
   type TitleCheckVerdict,
   type Transaction,
 } from '@hnet/db';
-import { ARR_CLUSTER_URL_DEFAULTS, ArrConfigError, type SonarrImportHistoryRecord } from '@hnet/arr';
+import { ARR_CLUSTER_URL_DEFAULTS, ArrConfigError, ArrHttpError, type SonarrImportHistoryRecord } from '@hnet/arr';
 import { SonarrClient } from '@hnet/arr/read';
 import { and, asc, count, eq, gte, inArray, isNull, max, sql } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
@@ -440,6 +440,11 @@ export interface TitleCheckRunResult {
   files: number;
   /** Files not judged: no name, or none of their episodes is on the series any more (or its read failed). */
   skipped: number;
+  /**
+   * Judged files not written because an earlier import's series could not be read (a transient failure): the cursor is
+   * held at that import so the next run reads it again; these files are re-read then too.
+   */
+  deferred: number;
   verdicts: Record<TitleCheckVerdict, number>;
   inserted: number;
   updated: number;
@@ -482,6 +487,7 @@ export async function runTitleCheck(input: {
     records: records.length,
     files: 0,
     skipped: 0,
+    deferred: 0,
     verdicts: emptyVerdicts(),
     inserted: 0,
     updated: 0,
@@ -500,17 +506,26 @@ export async function runTitleCheck(input: {
 
   // Each touched series' episodes, read once (before any transaction opens: a slow Sonarr holds no row lock).
   const episodesBySeries = new Map<number, TitleCheckEpisode[]>();
+  /** Series whose read failed for a reason that may pass (not a 404: a series deleted from Sonarr is gone for good). */
+  const transient = new Set<number>();
   const readEpisodes = async (seriesId: number) => {
     try {
       episodesBySeries.set(seriesId, await input.sonarr.listEpisodes(seriesId));
       result.seriesRead += 1;
     } catch (error) {
       fail(seriesId, error);
+      if (!(error instanceof ArrHttpError && error.status === 404)) transient.add(seriesId);
     }
   };
   const touched = [...new Set([...files.values()].map((f) => f.seriesId))];
   for (const seriesId of touched) await readEpisodes(seriesId);
 
+  // The cursor is the newest written import, so a write past a transiently unread import would skip that import for
+  // good. Hold the line: nothing newer than the oldest such import is written this run; the next run reads it all again.
+  let holdAt: number | null = null;
+  for (const f of files.values()) {
+    if (transient.has(f.seriesId) && (holdAt === null || f.importedAt.getTime() < holdAt)) holdAt = f.importedAt.getTime();
+  }
   const items = await seriesItems(input.db, touched);
   const writes: TitleCheckWrite[] = [];
   for (const file of files.values()) {
@@ -524,6 +539,10 @@ export async function runTitleCheck(input: {
       : null;
     if (!judgment) {
       result.skipped += 1;
+      continue;
+    }
+    if (holdAt !== null && file.importedAt.getTime() >= holdAt) {
+      result.deferred += 1;
       continue;
     }
     result.files += 1;

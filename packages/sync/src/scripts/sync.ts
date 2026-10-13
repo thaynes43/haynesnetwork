@@ -128,8 +128,10 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
   --mode=title-check       the hourly Title Check census (ADR-110 / DESIGN-055 D-05): read Sonarr's
                            downloadFolderImported history since the cursor, judge each imported file's own name
                            against the episodes it was filed on, upsert title_checks, and clear the flags whose
-                           file has left its episodes. READ-ONLY against Sonarr. Needs SONARR_API_KEY (URL
-                           defaults in-cluster). No --source. Writes no sync_runs row.
+                           file has left its episodes; then the Mislabel Block upkeep (ADR-110 C-04): expire
+                           terms past 365 days and repair drift in its ONE Sonarr release profile, the only
+                           Sonarr write. Needs SONARR_API_KEY (URL defaults in-cluster). No --source. Writes no
+                           sync_runs row.
   --mode=books-sync        mirror the BOOK servers' libraries READ-ONLY (ADR-046): page Kavita series + the
                            Audiobookshelf items into the books_items mirror (reconcile scoped to the
                            fully-read servers), then read each linked user's ABS listening progress.

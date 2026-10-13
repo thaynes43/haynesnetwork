@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { notificationOutbox, titleChecks } from '@hnet/db';
-import type { SonarrImportHistoryRecord } from '@hnet/arr';
+import { ArrHttpError, type SonarrImportHistoryRecord } from '@hnet/arr';
 import {
   backfillTitleChecks,
   judgeTitleCheckFile,
@@ -335,14 +335,37 @@ describe('the Title Check census (D-05)', () => {
     });
   });
 
-  it('counts a failed series read and skips it; the other series still lands', async () => {
+  it('counts a failed series read and holds the cursor at it, so nothing after it is skipped for good', async () => {
     const sonarr = caseA();
     sonarr.state.history.push(imported({ fileId: 7001, episode: 1, sourceTitle: DSNP, date: at(HOUR), seriesId: 2000 }));
     sonarr.state.failing.add(2000);
     const result = await runTitleCheck({ db: t.db, sonarr: sonarr.reader, now: NOW });
-    expect(result).toMatchObject({ files: 4, skipped: 1, errors: 1, written: 4 });
+    // The import an hour ago could not be read; the two-part file imported then waits with it (cursor held).
+    expect(result).toMatchObject({ files: 3, skipped: 1, deferred: 1, errors: 1, written: 3 });
     expect(result.errorSamples[0]).toMatch(/series 2000: .*http_503/);
     expect(await rowFor(7001)).toBeUndefined();
+    expect(await rowFor(9016)).toBeUndefined();
+    // Sonarr answers again: the next run reads from before the held import and lands both.
+    sonarr.state.failing.delete(2000);
+    sonarr.state.episodes.set(2000, [{ id: ep(1), seasonNumber: 1, episodeNumber: 1, title: 'Pilot', episodeFileId: 7001 }]);
+    const next = await runTitleCheck({ db: t.db, sonarr: sonarr.reader, now: new Date(NOW.getTime() + HOUR) });
+    expect(next).toMatchObject({ deferred: 0, errors: 0 });
+    expect(await rowFor(7001)).toBeDefined();
+    expect(await rowFor(9016)).toBeDefined();
+  });
+
+  it('a series Sonarr no longer has (404) is skipped without holding the cursor', async () => {
+    const sonarr = caseA();
+    sonarr.state.history.push(imported({ fileId: 7002, episode: 1, sourceTitle: DSNP, date: at(HOUR), seriesId: 2001 }));
+    const reader = {
+      ...sonarr.reader,
+      listEpisodes: async (id: number) => {
+        if (id === 2001) throw new ArrHttpError(404, 'GET', 'http://sonarr.test/api/v3/episode?seriesId=2001');
+        return sonarr.reader.listEpisodes(id);
+      },
+    };
+    const result = await runTitleCheck({ db: t.db, sonarr: reader, now: NOW });
+    expect(result).toMatchObject({ files: 4, skipped: 1, deferred: 0, errors: 1, written: 4 });
   });
 
   it('a failed history read throws (the mode reports it) and writes nothing', async () => {
