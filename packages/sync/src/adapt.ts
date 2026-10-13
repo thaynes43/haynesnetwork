@@ -93,7 +93,8 @@ export function adaptRadarrMovie(movie: RadarrMovie, maps: ArrLookupMaps): Media
     // schema-level fallback for the wanted/missing shape that omits it (D-02 note).
     rootFolder: movie.rootFolderPath ?? movie.path,
     arrTags: tagLabels(maps, movie.tags),
-    onDiskFileCount: movie.statistics.movieFileCount,
+    // A movie Radarr has not refreshed yet carries no statistics: its own hasFile says whether one file is on disk.
+    onDiskFileCount: movie.statistics?.movieFileCount ?? (movie.hasFile ? 1 : 0),
     expectedFileCount: 1, // the movie itself (D-05 normalization across kinds)
     sizeOnDisk: movie.sizeOnDisk,
     arrAttrs: {

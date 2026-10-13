@@ -207,12 +207,14 @@ describe('RadarrClient (v3)', () => {
     };
   }
 
-  it('reads a movie without statistics as no file', async () => {
+  it('reads a movie without statistics (the adapter falls back to hasFile)', async () => {
     const movie = fixture('radarr.movie-byid') as Record<string, unknown>;
     const unrefreshed: Record<string, unknown> = { ...movie };
     delete unrefreshed.statistics;
     const { client } = radarr([{ path: '/api/v3/movie', body: [unrefreshed] }]);
-    expect((await client.listMovies())[0]!.statistics).toEqual({ movieFileCount: 0 });
+    const [read] = await client.listMovies();
+    expect(read!.statistics).toBeUndefined();
+    expect(read!.hasFile).toBe(movie.hasFile);
   });
 
   it('parses system status, movie list + byId with unknown fields stripped', async () => {
@@ -224,7 +226,7 @@ describe('RadarrClient (v3)', () => {
     expect((await client.getSystemStatus()).appName).toBe('Radarr');
     const movies = await client.listMovies();
     expect(movies[0]?.tmdbId).toBeTypeOf('number');
-    expect(movies[0]?.statistics.movieFileCount).toBeTypeOf('number');
+    expect(movies[0]?.statistics?.movieFileCount).toBeTypeOf('number');
     expect(movies[0]).not.toHaveProperty('overview');
     // DESIGN-008 D-02: Radarr's multi-source ratings + images/genres/runtime are parsed.
     expect(movies[0]!.images?.some((i) => i.coverType === 'poster')).toBe(true);
