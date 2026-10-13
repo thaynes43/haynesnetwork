@@ -85,6 +85,26 @@ describe('GET /release — the interactive release list (DESIGN-055 D-09)', () =
     expect(row.rejections).toEqual(['Release is blocklisted', 'Existing file meets cutoff: WEBDL-1080p']);
     // The *arr's own mapping wins over the parsed number (a release named E10 the *arr maps to E11).
     expect(row.episodeNumbers).toEqual([11]);
+    expect(row.renumbered).toBe(true);
+  });
+
+  it('flags a row the *arr filed on other episodes than its name numbers (P5 decision 17, read live 2026-10-13)', () => {
+    // Spidey and His Amazing Friends: `S05E09E10` holds TVDB E09 and E10; Sonarr's scene mapping files it on E17 to E20.
+    const spidey = arrReleaseSchema.parse({
+      guid: 's',
+      title: 'Marvels.Spidey.and.His.Amazing.Friends.S05E09E10.WEB.H264-RBB',
+      seasonNumber: 5,
+      mappedSeasonNumber: 5,
+      episodeNumbers: [9, 10],
+      mappedEpisodeNumbers: [17, 18, 19, 20],
+    });
+    expect(spidey).toMatchObject({ episodeNumbers: [17, 18, 19, 20], renumbered: true });
+    const same = arrReleaseSchema.parse({ guid: 'a', title: 'A.S05E09E10', seasonNumber: 5, mappedSeasonNumber: 5, episodeNumbers: [9, 10], mappedEpisodeNumbers: [10, 9] });
+    expect(same.renumbered).toBe(false);
+    // Another season, and a season pack (no parsed episodes) and an unmapped row.
+    expect(arrReleaseSchema.parse({ guid: 'b', title: 'B', seasonNumber: 1, mappedSeasonNumber: 2, episodeNumbers: [3], mappedEpisodeNumbers: [3] }).renumbered).toBe(true);
+    expect(arrReleaseSchema.parse({ guid: 'c', title: 'C.S01', seasonNumber: 1, fullSeason: true, mappedEpisodeNumbers: [1, 2, 3] }).renumbered).toBe(false);
+    expect(arrReleaseSchema.parse({ guid: 'd', title: 'D.S01E01', seasonNumber: 1, episodeNumbers: [1] }).renumbered).toBe(false);
   });
 });
 

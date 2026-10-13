@@ -63,7 +63,7 @@ import {
 // ---------------------------------------------------------------------------------------------------------------------
 
 /** Bump when a reason's class or words change, so a stored list can be told apart from one the current rules give. */
-export const RELEASE_REASONS_VERSION = 3;
+export const RELEASE_REASONS_VERSION = 4;
 
 /**
  * DESIGN-055 D-06 — how long after the *arr's search a row can still be grabbed. The *arr keeps the rows it listed in
@@ -120,6 +120,7 @@ export type ReleaseReasonCode =
   | 'protocol_off'
   | 'pack'
   | 'holds_episode_with_file'
+  | 'renumbered'
   | 'not_matched'
   | 'raw_disc'
   | 'already_downloaded'
@@ -531,6 +532,11 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
 
       if (pack) {
         extra.push(reason('pack', 'other', 'Holds more than this one episode', null));
+      } else if (holds !== null && release.renumbered) {
+        // The *arr filed the name's episodes as others (scene numbering): which episodes the file really holds can't be
+        // told from the list. Spidey's `S05E09E10` held E09 and E10, and Sonarr filed it on E17 to E20 (2026-10-13).
+        extra.push(reason('renumbered', 'other', 'It would be filed on other episodes than its name says', null));
+        holds = null;
       } else if (withFile.length > 0) {
         extra.push(reason('holds_episode_with_file', 'other', alsoHoldsText(withFile), null));
         holds = null;
