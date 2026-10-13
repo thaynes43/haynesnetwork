@@ -134,3 +134,74 @@ describe('POST /command ManualImport (DESIGN-055 D-03 contract rule)', () => {
     );
   });
 });
+
+// ADR-109 C-02 / DESIGN-055 D-04 rules 7-8 (PLAN-077 P4) — the Episode Re-map's reads and writes, offline against the live
+// read of Regular Show: The Lost Tapes S01 (series 1061, Sonarr 4.0.20.3012, 2026-10-12, after the hand fix).
+describe('the Episode Re-map surface (DESIGN-055 D-04)', () => {
+  it('GET /manualimport?seriesId=&seasonNumber=&filterExistingFiles=false lists the season library files with their ids', async () => {
+    const stub = stubFetch([{ path: '/api/v3/manualimport', body: fixture('sonarr.manualimport-season-lost-tapes-s01') }]);
+    const candidates = await new SonarrClient({ ...SONARR, fetchImpl: stub.fetchImpl }).listSeasonImportCandidates(1061, 1);
+    const url = stub.calls[0]!.url;
+    expect(Object.fromEntries(url.searchParams)).toEqual({ seriesId: '1061', seasonNumber: '1', filterExistingFiles: 'false' });
+    expect(candidates.map((c) => [c.episodeFileId, c.episodes?.map((e) => e.episodeNumber)])).toEqual([
+      [78961, [23]],
+      [78962, [19]],
+    ]);
+    expect(candidates[0]).toMatchObject({ folderName: 'Regular Show - The Lost Tapes', releaseGroup: 'AndreMor', rejections: [] });
+    expect(candidates[0]!.path).toMatch(/^\/data\/haynestower\/Media\/TV Shows\/Regular Show - The Lost Tapes\/Season 1\//);
+  });
+
+  it('GET /rename?seriesId=&seasonNumber= reads the files whose name is stale', async () => {
+    const stub = stubFetch([
+      {
+        path: '/api/v3/rename',
+        body: [{ seriesId: 1061, seasonNumber: 1, episodeNumbers: [23], episodeFileId: 78961, existingPath: 'Season 1/a.mkv', newPath: 'Season 1/b.mkv' }],
+      },
+    ]);
+    const rows = await new SonarrClient({ ...SONARR, fetchImpl: stub.fetchImpl }).listRenamePreview(1061, 1);
+    expect(Object.fromEntries(stub.calls[0]!.url.searchParams)).toEqual({ seriesId: '1061', seasonNumber: '1' });
+    expect(rows).toEqual([{ seriesId: 1061, seasonNumber: 1, episodeNumbers: [23], episodeFileId: 78961, existingPath: 'Season 1/a.mkv', newPath: 'Season 1/b.mkv' }]);
+  });
+
+  it('GET /command lists the running and recent commands', async () => {
+    const stub = stubFetch([
+      { path: '/api/v3/command', body: [{ id: 398069, name: 'ManualImport', status: 'started', message: '', started: '2026-10-13T01:08:00Z' }] },
+    ]);
+    const cmds = await new SonarrClient({ ...SONARR, fetchImpl: stub.fetchImpl }).listCommands();
+    expect(cmds).toMatchObject([{ id: 398069, name: 'ManualImport', status: 'started' }]);
+  });
+
+  it('RenameFiles sends exactly Organize\'s body {name, seriesId, files}', async () => {
+    const stub = stubFetch([{ method: 'POST', path: '/api/v3/command', status: 201, body: { id: 9, name: 'RenameFiles' } }]);
+    await new SonarrWriteClient({ ...SONARR, fetchImpl: stub.fetchImpl }).renameFiles(1061, [78968, 78962]);
+    expect(stub.calls[0]!.body).toEqual({ name: 'RenameFiles', seriesId: 1061, files: [78968, 78962] });
+  });
+
+  it('a library-file ManualImport carries its episodeFileId and no download id, importMode move', async () => {
+    const stub = stubFetch([{ method: 'POST', path: '/api/v3/command', status: 201, body: { id: 10, name: 'ManualImport' } }]);
+    const [c] = fixture('sonarr.manualimport-season-lost-tapes-s01') as Array<Record<string, unknown>>;
+    await new SonarrWriteClient({ ...SONARR, fetchImpl: stub.fetchImpl }).manualImport(
+      [
+        {
+          path: c!.path as string,
+          folderName: c!.folderName as string,
+          seriesId: 1061,
+          episodeIds: [118419],
+          releaseGroup: 'AndreMor',
+          quality: c!.quality as never,
+          languages: c!.languages as never,
+          indexerFlags: 0,
+          releaseType: 'singleEpisode',
+          episodeFileId: 78961,
+        },
+      ],
+      'move',
+    );
+    const body = stub.calls[0]!.body as { name: string; importMode: string; files: Array<Record<string, unknown>> };
+    expect(body.name).toBe('ManualImport');
+    expect(body.importMode).toBe('move');
+    expect(Object.keys(body.files[0]!).sort()).toEqual(
+      ['episodeFileId', 'episodeIds', 'folderName', 'indexerFlags', 'languages', 'path', 'quality', 'releaseGroup', 'releaseType', 'seriesId'].sort(),
+    );
+  });
+});
