@@ -76,6 +76,16 @@ describe('contentStates and planCarryTargets (ADR-114 C-01, C-04, C-05)', () => 
     expect(content.get(10)).toEqual({ viewCount: 3, viewOffset: 0, lastViewedAt: 200 });
     expect(content.get(20)).toEqual({ viewCount: 0, viewOffset: 400_000, lastViewedAt: 300 });
     expect(content.has(99)).toBe(false);
+    // A two-episode copy of two one-episode originals credits both.
+    const both = contentStates([{ ratingKey: 'c', parts: [part(77)], viewCount: 1, viewOffset: 0, lastViewedAt: 5 }], {
+      moved: [],
+      deleted: [77],
+      sameAs: [
+        [77, 10],
+        [77, 20],
+      ],
+    });
+    expect([...both.keys()].sort()).toEqual([10, 20]);
   });
 
   it('targets each item by the file it holds now: carried, partial, or stale; untouched items are left out', () => {

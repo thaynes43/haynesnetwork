@@ -60,8 +60,13 @@ export interface SecondCopyPlan {
    */
   slotEpisodes: Array<{ id: number; episodeNumber: number; label: string }>;
   copy: { fileId: number; relativePath: string | null; size: number | null; name: string | null } | null;
-  /** The episode the copy holds, and its own file. */
+  /** The episode the copy holds, and its own file (the first, when the copy holds several). */
   original: { id: number; episodeNumber: number; label: string; fileId: number; relativePath: string | null; size: number | null } | null;
+  /**
+   * Every episode the copy holds, each with its own file (P4 decision 37: a multi-episode copy names them all with
+   * `--copy-of 46-47`; each must keep a file of its own, so the content survives the delete).
+   */
+  originals: Array<{ id: number; episodeNumber: number; label: string; fileId: number; relativePath: string | null; size: number | null }>;
   /** Files of the season whose names name this slot's episode (they would block the delete: `content_elsewhere`). */
   namedElsewhere: Array<{ episodeNumber: number; fileId: number; name: string }>;
   refusal: SecondCopyRefusal | null;
@@ -87,7 +92,7 @@ export interface SecondCopyRequest {
   seasonNumber: number;
   episodeNumber: number;
   /** Staff evidence: the episode number (this season) the copy holds, when its names do not say. */
-  copyOf?: number | null;
+  copyOf?: number | readonly number[] | null;
 }
 
 /** DESIGN-055 P4 decision 25 — the read-only plan for removing one second copy. */
@@ -120,6 +125,7 @@ export async function planSecondCopyFix(input: SecondCopyRequest): Promise<Secon
   let copy: SecondCopyPlan['copy'] = null;
   let original: SecondCopyPlan['original'] = null;
   const namedElsewhere: SecondCopyPlan['namedElsewhere'] = [];
+  const originals: SecondCopyPlan['originals'] = [];
   if (!target) throw new FixRefusedError('copy_refused', `Season ${input.seasonNumber} has no episode ${input.episodeNumber}.`);
   const fileId = target.episodeFileId;
   // The slot is every episode of the season the file sits on (one, or several for a multi-episode file); the file
@@ -133,13 +139,19 @@ export async function planSecondCopyFix(input: SecondCopyRequest): Promise<Secon
     const named = namedBy(fileId);
     copy = { fileId, relativePath: f?.relativePathFull ?? null, size: f?.size ?? null, name: named?.name ?? f?.sourceNames[0] ?? null };
     const slotNumbers = new Set(slot.map((e) => e.episodeNumber));
-    const holds = input.copyOf ?? (named && !slotNumbers.has(named.episodeNumber) ? named.episodeNumber : null);
-    const origEp = holds != null ? eps.find((e) => e.episodeNumber === holds) : undefined;
-    if (holds == null || slotNumbers.has(holds) || !origEp) refusal = 'not_a_copy';
-    else if (origEp.episodeFileId == null || origEp.episodeFileId === fileId) refusal = 'only_copy';
+    // Staff's evidence names what the copy holds; a name may say it only for a one-episode copy (a multi-episode
+    // copy's name cannot be trusted to name every story it holds, P4 decision 37).
+    const given = input.copyOf == null ? null : Array.isArray(input.copyOf) ? [...input.copyOf] : [input.copyOf as number];
+    const holdsList = given ?? (slot.length === 1 && named && !slotNumbers.has(named.episodeNumber) ? [named.episodeNumber] : null);
+    const origEps = (holdsList ?? []).map((n) => eps.find((e) => e.episodeNumber === n));
+    if (!holdsList || holdsList.length === 0 || holdsList.some((n) => slotNumbers.has(n)) || origEps.some((e) => !e)) refusal = 'not_a_copy';
+    else if (origEps.some((e) => e!.episodeFileId == null || e!.episodeFileId === fileId)) refusal = 'only_copy';
     else {
-      const of = fileById.get(origEp.episodeFileId);
-      original = { ...ref(origEp), fileId: origEp.episodeFileId, relativePath: of?.relativePathFull ?? null, size: of?.size ?? null };
+      for (const e of origEps) {
+        const of = fileById.get(e!.episodeFileId!);
+        originals.push({ ...ref(e!), fileId: e!.episodeFileId!, relativePath: of?.relativePathFull ?? null, size: of?.size ?? null });
+      }
+      original = originals[0] ?? null;
     }
     for (const other of season.files) {
       if (other.id === fileId) continue;
@@ -153,7 +165,17 @@ export async function planSecondCopyFix(input: SecondCopyRequest): Promise<Secon
   }
   if (refusal === null && season.queueBusy) refusal = 'queue_busy';
   const digest = createHash('sha256')
-    .update(JSON.stringify([input.seasonNumber, target.id, copy?.fileId ?? null, copy?.size ?? null, original?.fileId ?? null, refusal, ...(slot.length > 1 ? [slot.map((e) => e.id)] : [])]))
+    .update(
+      JSON.stringify([
+        input.seasonNumber,
+        target.id,
+        copy?.fileId ?? null,
+        copy?.size ?? null,
+        original?.fileId ?? null,
+        refusal,
+        ...(slot.length > 1 || originals.length > 1 ? [slot.map((e) => e.id), originals.map((o) => o.fileId)] : []),
+      ]),
+    )
     .digest('hex')
     .slice(0, 32);
   return {
@@ -164,6 +186,7 @@ export async function planSecondCopyFix(input: SecondCopyRequest): Promise<Secon
     slotEpisodes: (slot.length > 0 ? slot : [target]).map(ref),
     copy,
     original,
+    originals,
     namedElsewhere,
     refusal,
     digest,
@@ -208,9 +231,10 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
   let carry: WatchCarrySnapshot | null = null;
   if (input.watchCarry) {
     const copySize = plan.copy.size;
-    const originalSize = plan.original.size;
+    const originalSizes = [...new Set(plan.originals.map((o) => o.size))];
     const copyName = (plan.copy.relativePath ?? '').split(/[\\/]/).pop() ?? '';
-    if (!copySize || !originalSize || (copySize === originalSize && !copyName)) {
+    const identical = originalSizes.includes(copySize);
+    if (!copySize || originalSizes.some((x) => !x) || (identical && !copyName)) {
       throw new FixRefusedError('copy_refused', 'Sonarr does not list the size of both files, so their watch state cannot be carried. Nothing was removed.');
     }
     try {
@@ -222,10 +246,13 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
         seriesId: plan.seriesId,
         seasons: [input.seasonNumber],
         // A copy byte-identical to its original is one content already: it is told apart by its file name instead.
-        scope:
-          copySize === originalSize
-            ? { moved: [copySize], deletedNames: [copyName] }
-            : { moved: [], deleted: [copySize], sameAs: [[copySize, originalSize]] },
+        scope: identical
+          ? {
+              moved: [copySize],
+              deletedNames: [copyName],
+              sameAs: originalSizes.filter((x) => x !== copySize).map((x) => [copySize, x as number] as [number, number]),
+            }
+          : { moved: [], deleted: [copySize], sameAs: originalSizes.map((x) => [copySize, x as number] as [number, number]) },
         detail: { planDigest: plan.digest, episode: plan.episode.label, original: plan.original.label },
         pauseMs: input.carryPauseMs,
       });
@@ -309,11 +336,13 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
   }
   const slotIds = new Set(plan.slotEpisodes.map((e) => e.id));
   const slotNow = episodes.filter((e) => slotIds.has(e.id));
-  const orig = episodes.find((e) => e.id === plan.original!.id);
   const readBack = {
     slotEmpty: slotNow.length === slotIds.size && slotNow.every((e) => !e.hasFile),
     copyGone: !files.some((f) => f.id === plan.copy!.fileId),
-    originalKept: !!orig && orig.hasFile && orig.episodeFileId === plan.original.fileId,
+    originalKept: plan.originals.every((o) => {
+      const e = episodes.find((x) => x.id === o.id);
+      return !!e && e.hasFile && e.episodeFileId === o.fileId;
+    }),
   };
   await recordFixAction({
     db: input.db,

@@ -239,7 +239,7 @@ export interface RepairGuideArgs {
   /** season-run: run although the Plex check failed (staff decision, recorded on the Repair Request). */
   ignorePlex?: boolean;
   /** copy-plan / copy-run: the episode the copy holds, from staff evidence, when its names do not say. */
-  copyOf?: number;
+  copyOf?: number | number[];
   /** copy-run: staff's evidence that both files hold the same episode. */
   evidence?: string;
   /** remap-plan: a claim by episode numbers (none: the season view and the suggested claim). */
@@ -421,7 +421,18 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         args.ignorePlex = true;
         break;
       case '--copy-of':
-        args.copyOf = positiveInt(flag, value);
+        // P4 decision 37: a multi-episode copy names every episode it holds (`--copy-of 46-47` or `46+47`).
+        {
+          const parts = (value ?? '').split('+').flatMap((piece) => {
+            const m = /^(\d+)(?:-(\d+))?$/.exec(piece.trim());
+            if (!m) throw new Error('--copy-of needs an episode number, a range (46-47) or a list (46+47)');
+            const a = Number(m[1]);
+            const b = m[2] ? Number(m[2]) : a;
+            if (b < a || b - a > 9) throw new Error('--copy-of needs an episode number, a range (46-47) or a list (46+47)');
+            return Array.from({ length: b - a + 1 }, (_, k) => a + k);
+          });
+          args.copyOf = parts.length === 1 ? parts[0]! : parts;
+        }
         i += 1;
         break;
       case '--apply-household':

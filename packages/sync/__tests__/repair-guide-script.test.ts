@@ -392,6 +392,13 @@ describe('repair-guide.ts arguments', () => {
     expect(text).toContain('carry-finish --carry c-1');
   });
 
+  it('copy-plan takes a multi-episode copy-of as a range or a list (DESIGN-055 P4 decision 37)', () => {
+    expect(parseRepairGuideArgs(['copy-plan', '--tvdb', '272472', '--episode', 'S06E48', '--copy-of', '46-47'])).toMatchObject({ copyOf: [46, 47] });
+    expect(parseRepairGuideArgs(['copy-plan', '--tvdb', '272472', '--episode', 'S05E29', '--copy-of', '25+32'])).toMatchObject({ copyOf: [25, 32] });
+    expect(parseRepairGuideArgs(['copy-plan', '--tvdb', '272472', '--episode', 'S05E11', '--copy-of', '20'])).toMatchObject({ copyOf: 20 });
+    expect(() => parseRepairGuideArgs(['copy-plan', '--tvdb', '1', '--episode', 'S01E01', '--copy-of', 'x'])).toThrow(/--copy-of/);
+  });
+
   it('refuses what it does not understand', () => {
     expect(parseRepairGuideArgs([])).toBe('help');
     expect(() => parseRepairGuideArgs(['delete'])).toThrow(/unknown command/);

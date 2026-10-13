@@ -323,6 +323,8 @@ export interface SeasonRemapRunResult {
   moved: number;
   /** A file a stop left on the parking episode, and the episodes it belongs on (finish with `--place`). */
   parked: { fileId: number; on: RemapEpisodeRef; belongs: RemapEpisodeRef[] } | null;
+  /** Every file a stop left parked (two cycles open at once can leave two, P4 decision 36). */
+  parkedAll: Array<{ fileId: number; on: RemapEpisodeRef; belongs: RemapEpisodeRef[] }>;
   /** The series held as many episode files after the run as before (nothing was lost or left unmapped). */
   fileCountUnchanged: boolean;
   vacated: RemapEpisodeRef[];
@@ -590,7 +592,8 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
   let parked: SeasonRemapRunResult['parked'] = null;
   const doneSteps = plan.steps.slice(0, done);
   const landedSteps = plan.steps.slice(0, landed);
-  // Two cycles open at once can leave two files parked (P4 decision 36): the first is reported, the trail has them all.
+  // Two cycles open at once can leave two files parked (P4 decision 36): `parkedAll` and the trail list every one;
+  // `parked` is the first.
   const stillParked = landedSteps.filter((s) => s.kind === 'park' && !landedSteps.some((u) => u.kind === 'unpark' && u.fileId === s.fileId));
   const parkedAll = stillParked.map((parkStep) => {
     const back = plan.steps.find((s) => s.kind === 'unpark' && s.fileId === parkStep.fileId);
@@ -639,6 +642,7 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
     planned: plan.steps.length,
     moved: movedFiles,
     parked,
+    parkedAll,
     fileCountUnchanged,
     vacated: stoppedText === null ? plan.vacated : [],
     stoppedText,

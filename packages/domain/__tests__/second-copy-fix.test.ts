@@ -126,9 +126,15 @@ describe('Second-Copy Fix (DESIGN-055 P4 decision 25)', () => {
     expect(trail.find((a) => a.step === 'delete_read_back')).toMatchObject({ ok: true, slotEmpty: true, copyGone: true, originalKept: true });
   });
 
-  it('removes a copy that sits on two episodes and searches both (P4 decision 37)', async () => {
+  it('removes a copy that sits on two episodes and searches both, only when staff name what it holds (P4 decision 37)', async () => {
     const arr = stubSonarr({ copyOnE3E4: true });
-    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 3 };
+    const unnamed = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 3 };
+    // A multi-episode copy's name is no evidence of everything it holds.
+    expect((await planSecondCopyFix(unnamed)).refusal).toBe('not_a_copy');
+    // Every episode staff name must keep a file of its own (E4 has none: its only file is the copy).
+    expect((await planSecondCopyFix({ ...unnamed, copyOf: [4, 5] })).refusal).toBe('not_a_copy');
+    expect((await planSecondCopyFix({ ...unnamed, copyOf: [2, 5] })).originals.map((o) => o.episodeNumber)).toEqual([2, 5]);
+    const target = { ...unnamed, copyOf: 5 };
     const plan = await planSecondCopyFix(target);
     expect(plan.refusal).toBeNull();
     expect(plan.slotEpisodes.map((e) => e.episodeNumber)).toEqual([3, 4]);
