@@ -3311,16 +3311,16 @@ describe('migrations against embedded Postgres 16', () => {
                    VALUES ($1, 'haynestower', $2, '46420', 5, 10, '[{"name":"x.mkv","size":1}]', $3, $4, now())`,
             values: [id, account, count, offset],
           });
-        await state('12874060', 1, 0);
-        await state('16768829', 0, 421000);
+        await state('9000', 1, 0);
+        await state('1001', 0, 421000);
         // A row holds state, and one account has one row per item.
-        await expect(state('9631953', 0, 0)).rejects.toMatchObject({ code: '23514' });
-        await expect(state('12874060', 2, 0)).rejects.toMatchObject({ code: '23505' });
+        await expect(state('1002', 0, 0)).rejects.toMatchObject({ code: '23514' });
+        await expect(state('9000', 2, 0)).rejects.toMatchObject({ code: '23505' });
         const mark = (phase: string, reason: string) =>
           client.query({
             text: `INSERT INTO watch_carry_marks (carry_id, server, plex_account_id, rating_key, phase, reason,
                      before_state, target_state, calls, ok)
-                   VALUES ($1, 'haynestower', '12874060', '46420', $2, $3, '{"viewCount":1,"viewOffset":0,"lastViewedAt":null}',
+                   VALUES ($1, 'haynestower', '9000', '46420', $2, $3, '{"viewCount":1,"viewOffset":0,"lastViewedAt":null}',
                      '{"viewCount":0,"viewOffset":0,"lastViewedAt":null}', '{unscrobble}', true)`,
             values: [id, phase, reason],
           });

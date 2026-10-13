@@ -136,19 +136,19 @@ describe('PlexReadClient — getShowOrdering (ADR-114 C-08)', () => {
 describe('PlexReadClient — listSharedServerAccess (ADR-114 C-02)', () => {
   const XML = `<?xml version="1.0" encoding="UTF-8"?>
 <MediaContainer friendlyName="myPlex" identifier="com.plexapp.plugins.myplex" machineIdentifier="mid-tower" size="3">
-  <SharedServer id="1" username="a" email="a@example.test" userID="16768829" accessToken="friend-token-1" name="HaynesTower" acceptedAt="1" invitedAt="1" allowSync="1" owned="0" allLibraries="0">
+  <SharedServer id="1" username="a" email="a@example.test" userID="1001" accessToken="friend-token-1" name="HaynesTower" acceptedAt="1" invitedAt="1" allowSync="1" owned="0" allLibraries="0">
     <Section id="11" key="4" title="HNet TV Shows" type="show" shared="1"/>
     <Section id="12" key="5" title="HNet Movies" type="movie" shared="0"/>
   </SharedServer>
-  <SharedServer id="2" userID="9631953" accessToken="friend-token-2" allLibraries="1"/>
+  <SharedServer id="2" userID="1002" accessToken="friend-token-2" allLibraries="1"/>
   <SharedServer id="3" userID="777" accessToken="" allLibraries="1"/>
 </MediaContainer>`;
 
   it('keeps each friend’s id, token and shared section keys, and leaves out a share without a token', async () => {
     const stub = plexStub([{ path: '/api/servers/mid-tower/shared_servers', body: XML }]);
     expect(await read(stub).listSharedServerAccess()).toEqual([
-      { userId: '16768829', accessToken: 'friend-token-1', allLibraries: false, sectionKeys: ['4'] },
-      { userId: '9631953', accessToken: 'friend-token-2', allLibraries: true, sectionKeys: [] },
+      { userId: '1001', accessToken: 'friend-token-1', allLibraries: false, sectionKeys: ['4'] },
+      { userId: '1002', accessToken: 'friend-token-2', allLibraries: true, sectionKeys: [] },
     ]);
     expect(stub.calls[0]!.url.origin).toBe('https://plex.tv');
     expect(stub.calls[0]!.headers['X-Plex-Token']).toBe('owner-secret-token');

@@ -123,10 +123,10 @@ const SERIES_ID = 9101;
 const SERIES_PATH = '/data/tv/Show';
 const TITLES = ['Alpha Run', 'Bravo Night', 'Charlie Comes Home', 'Delta Force Five'];
 const pad = (n: number) => String(n).padStart(2, '0');
-const OWNER = '12874060';
-const FRIEND_A = '16768829';
-const FRIEND_B = '9631953';
-const FRIEND_C = '241373424';
+const OWNER = '9000';
+const FRIEND_A = '1001';
+const FRIEND_B = '1002';
+const FRIEND_C = '1003';
 
 interface StubEpisode {
   id: number;
@@ -418,6 +418,52 @@ describe('the Watch Carry flow (ADR-114)', () => {
     expect(plex.view(FRIEND_B, 'g-1-3')).toMatchObject({ viewCount: 1 });
     const [carry] = await t.db.select().from(watchCarries).where(eq(watchCarries.seriesId, SERIES_ID));
     expect(carry!.status).toBe('refused');
+  });
+
+  it('a clear that lands but answers with a timeout is put back from the item’s state now, without doubling plays', async () => {
+    const { arr, plex } = swapWorld();
+    // B's clear of E3 lands, then times out: the move must not run, and B's one play comes back as one play.
+    plex.landThenFailAt.set(FRIEND_B, 1);
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, plex: plexFollowingTvdb };
+    const plan = await planSeasonRemap(target);
+    await expect(
+      runSeasonRemap({ ...target, planDigest: plan.digest, commandWait: WAIT, stepPauseMs: 0, watchCarry: plex.plex, carryPauseMs: 0 }),
+    ).rejects.toThrow(/put back \(carry [0-9a-f-]{36}\) and nothing moved/);
+    expect(arr.state.posts).toBe(0);
+    expect(plex.view(FRIEND_B, 'g-1-3')).toMatchObject({ viewCount: 1 });
+    expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 2 });
+    expect(plex.view(FRIEND_A, 'g-1-3')).toMatchObject({ viewCount: 0, viewOffset: 300_000 });
+    const [carry] = await t.db.select().from(watchCarries).where(eq(watchCarries.seriesId, SERIES_ID));
+    expect(carry!.status).toBe('refused');
+  });
+
+  it('a carry that stopped part-way blocks a new snapshot of the series until it is finished', async () => {
+    const { arr, plex } = swapWorld();
+    const snapshot = await takeWatchCarrySnapshot({
+      db: t.db,
+      plex: plex.plex,
+      kind: 'season_remap',
+      mediaItemId: itemId,
+      seriesId: SERIES_ID,
+      seasons: [1],
+      scope: { moved: [arr.sizeOfContent(2)!, arr.sizeOfContent(3)!] },
+      pauseMs: 0,
+    });
+    // The run dies after its first clear: the carry is already `cleared`.
+    plex.failRead.add(FRIEND_A);
+    plex.failWriteAt.set(FRIEND_A, 2);
+    await expect(preClearWatchCarry({ db: t.db, plex: plex.plex, snapshot, pauseMs: 0 })).rejects.toThrow(/could not be put back: run carry-revert/);
+    const [carry] = await t.db.select().from(watchCarries).where(eq(watchCarries.id, snapshot.carryId));
+    expect(carry!.status).toBe('cleared');
+    await expect(
+      takeWatchCarrySnapshot({ db: t.db, plex: plex.plex, kind: 'season_remap', mediaItemId: itemId, seriesId: SERIES_ID, seasons: [1], scope: { moved: [] }, pauseMs: 0 }),
+    ).rejects.toThrow(/not finished/);
+    // carry-finish from the stored snapshot puts A's marks back where the files are.
+    plex.failRead.delete(FRIEND_A);
+    const finished = await carryWatchState({ db: t.db, plex: plex.plex, carryId: snapshot.carryId, pauseMs: 0 });
+    expect(finished.status).toBe('verified');
+    expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 2 });
+    expect(plex.view(FRIEND_A, 'g-1-3')).toMatchObject({ viewOffset: 300_000 });
   });
 
   it('leaves a view made after the snapshot alone, and carry-finish runs again from the stored snapshot', async () => {

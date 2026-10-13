@@ -42,8 +42,11 @@ export function fakePlex(opts: FakePlexOptions) {
   const state = new Map<string, Map<string, FakeState>>();
   const calls: Array<{ account: string; call: string; ratingKey: string; arg?: number }> = [];
   const failRead = new Set<string>();
-  /** Account → the write number (1-based) that throws. */
+  /** Account → the write number (1-based) that throws before it lands. */
   const failWriteAt = new Map<string, number>();
+  /** Account → the write number (1-based) that lands, then throws (a timeout after Plex applied it). */
+  const landThenFailAt = new Map<string, number>();
+  let pendingFailure: string | null = null;
   const writesBy = new Map<string, number>();
 
   const items = () =>
@@ -72,7 +75,16 @@ export function fakePlex(opts: FakePlexOptions) {
     const n = (writesBy.get(account) ?? 0) + 1;
     writesBy.set(account, n);
     if (failWriteAt.get(account) === n) throw new Error(`GET /:/${call} → HTTP 500`);
+    if (landThenFailAt.get(account) === n) pendingFailure = `GET /:/${call} → timed out after 30000ms`;
     calls.push({ account, call, ratingKey, ...(arg !== undefined ? { arg } : {}) });
+  };
+  /** Throw now when the write that just landed was told to fail afterwards. */
+  const afterWrite = () => {
+    if (pendingFailure) {
+      const message = pendingFailure;
+      pendingFailure = null;
+      throw new Error(message);
+    }
   };
 
   const accountClient = (accountId: string, owner: boolean): WatchCarryAccount => ({
@@ -91,17 +103,20 @@ export function fakePlex(opts: FakePlexOptions) {
         s.viewCount += 1;
         s.viewOffset = 0;
         s.lastViewedAt = ++clock;
+        afterWrite();
       },
       async unscrobble(ratingKey: string) {
         write(accountId, 'unscrobble', ratingKey);
         state.get(accountId)?.delete(itemGuid(ratingKey));
+        afterWrite();
       },
       async setProgress(ratingKey: string, offsetMs: number) {
         write(accountId, 'progress', ratingKey, offsetMs);
         const s = st(accountId, itemGuid(ratingKey));
-        if (s.viewCount === 0 && offsetMs <= 60_000) return;
+        if (s.viewCount === 0 && offsetMs <= 60_000) return afterWrite();
         s.viewOffset = offsetMs;
         s.lastViewedAt = ++clock;
+        afterWrite();
       },
     },
   });
@@ -139,6 +154,7 @@ export function fakePlex(opts: FakePlexOptions) {
     calls,
     failRead,
     failWriteAt,
+    landThenFailAt,
     /** Seed an account's state on the episode with this guid. */
     seed(account: string, guid: string, s: Partial<FakeState>) {
       Object.assign(st(account, guid), { viewCount: 0, viewOffset: 0, lastViewedAt: 1_700_000_000, ...s });

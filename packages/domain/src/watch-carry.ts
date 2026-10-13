@@ -86,11 +86,12 @@ const errText = (err: unknown): string => {
   return text.length > 300 ? `${text.slice(0, 297)}...` : text;
 };
 
-/** What the carry writes for a resume point: Plex drops one of 60 s or less on an unwatched item. */
-function keptOffset(viewCount: number, offset: number): number {
-  if (offset <= 0) return 0;
-  if (viewCount === 0 && offset <= PLEX_MIN_RESUME_MS) return 0;
-  return offset;
+/**
+ * What the carry writes for a resume point: Plex keeps none of 60 s or less on an unwatched item (read live), and the
+ * carry treats one that short as no resume point on a watched item too (a point that short means "not started").
+ */
+function keptOffset(_viewCount: number, offset: number): number {
+  return offset > PLEX_MIN_RESUME_MS ? offset : 0;
 }
 
 function stateOf(leaf: Pick<PlexLeafFile, 'viewCount' | 'viewOffset' | 'lastViewedAt'>): WatchCarryStateValue {
@@ -310,8 +311,11 @@ export interface WatchCarrySnapshot {
   touchedStates: number;
 }
 
-/** Statuses that leave a series mid-carry: no new snapshot may be taken (it would read cleared items as unwatched). */
-const OPEN_STATUSES: WatchCarryStatus[] = ['cleared', 'waiting'];
+/**
+ * Statuses that leave a series mid-carry: no new snapshot may be taken, since it would read cleared or not yet carried
+ * items as unwatched and those marks would be lost. `mismatch` too: some item did not take its state (carry-finish).
+ */
+const OPEN_STATUSES: WatchCarryStatus[] = ['cleared', 'waiting', 'mismatch'];
 
 const inScope = (season: number | null, seasons: readonly number[] | null) => seasons === null || (season !== null && seasons.includes(season));
 
@@ -588,8 +592,11 @@ export interface PreClearResult {
 }
 
 /**
- * ADR-114 C-03 — before the move: clear each account's state on the items the move takes content away from. A failed
- * clear puts back every clear already made and refuses (status `refused`): the move must not run.
+ * ADR-114 C-03 — before the move: clear each account's state on the items the move takes content away from. The carry
+ * is marked `cleared` before the first write, so a run that dies part-way leaves the series blocked for a new snapshot
+ * until `carry-finish` or `carry-revert` (a new snapshot would read the cleared items as unwatched). Any failure (a
+ * write, a read, the audit) puts back every item already cleared, from its state now, and refuses (`refused`): the move
+ * must not run. The error names the carry.
  */
 export async function preClearWatchCarry(input: {
   db?: DbClient;
@@ -598,76 +605,101 @@ export async function preClearWatchCarry(input: {
   pauseMs?: number;
 }): Promise<PreClearResult> {
   const pause = input.pauseMs ?? CARRY_PAUSE_MS;
-  const done: Array<{ account: WatchCarryAccount; mark: MarkRecord }> = [];
+  const carryId = input.snapshot.carryId;
+  /** Every item a clear was sent for (even one whose answer failed: it may have landed). */
+  const touchedItems: Array<{ account: WatchCarryAccount; mark: MarkRecord; showRatingKey: string }> = [];
   let failure: string | null = null;
-  outer: for (const [slug, server] of Object.entries(input.snapshot.servers)) {
-    const keys = preClearKeys(slug, input.snapshot);
-    const byAccount = input.snapshot.states[slug] ?? {};
-    const targets = Object.entries(byAccount).flatMap(([accountId, list]) => list.filter((s) => keys.has(s.ratingKey)).map((s) => ({ accountId, s })));
-    if (targets.length === 0) continue;
-    const client = input.plex.server(slug);
-    if (!client) {
-      failure = `No Plex client for ${slug}.`;
-      break;
-    }
-    const accounts = await accountsOf(client, server.librarySectionId);
-    for (const { accountId, s } of targets) {
-      const account = accounts.get(accountId);
-      const item = server.items.find((i) => i.ratingKey === s.ratingKey);
-      const before: WatchCarryStateValue = { viewCount: s.viewCount, viewOffset: s.viewOffset, lastViewedAt: s.lastViewedAt };
-      const mark: MarkRecord = {
-        server: slug,
-        accountId,
-        ratingKey: s.ratingKey,
-        season: item?.season ?? null,
-        episode: item?.episode ?? null,
-        phase: 'pre_clear',
-        reason: 'pre_clear',
-        parts: s.parts,
-        before,
-        target: EMPTY,
-        calls: [],
-        ok: false,
-        error: null,
-      };
-      if (!account) {
-        mark.error = 'the account can no longer be reached on this server';
-        await recordCarryMark(input.db, input.snapshot.carryId, mark);
-        failure = mark.error;
-        break outer;
+  await setCarryStatus({ db: input.db, carryId, status: 'cleared' });
+  try {
+    outer: for (const [slug, server] of Object.entries(input.snapshot.servers)) {
+      const keys = preClearKeys(slug, input.snapshot);
+      const byAccount = input.snapshot.states[slug] ?? {};
+      const targets = Object.entries(byAccount).flatMap(([accountId, list]) => list.filter((s) => keys.has(s.ratingKey)).map((s) => ({ accountId, s })));
+      if (targets.length === 0) continue;
+      const client = input.plex.server(slug);
+      if (!client) {
+        failure = `No Plex client for ${slug}.`;
+        break;
       }
-      const sent = await applyCalls(account, s.ratingKey, before, EMPTY, pause);
-      mark.calls = sent.calls;
-      mark.ok = sent.error === null;
-      mark.error = sent.error;
-      await recordCarryMark(input.db, input.snapshot.carryId, mark);
-      if (!mark.ok) {
-        failure = sent.error;
-        break outer;
+      const accounts = await accountsOf(client, server.librarySectionId);
+      for (const { accountId, s } of targets) {
+        const account = accounts.get(accountId);
+        const item = server.items.find((i) => i.ratingKey === s.ratingKey);
+        const before: WatchCarryStateValue = { viewCount: s.viewCount, viewOffset: s.viewOffset, lastViewedAt: s.lastViewedAt };
+        const mark: MarkRecord = {
+          server: slug,
+          accountId,
+          ratingKey: s.ratingKey,
+          season: item?.season ?? null,
+          episode: item?.episode ?? null,
+          phase: 'pre_clear',
+          reason: 'pre_clear',
+          parts: s.parts,
+          before,
+          target: EMPTY,
+          calls: [],
+          ok: false,
+          error: null,
+        };
+        if (!account) {
+          mark.error = 'the account can no longer be reached on this server';
+          await recordCarryMark(input.db, carryId, mark);
+          failure = mark.error;
+          break outer;
+        }
+        touchedItems.push({ account, mark, showRatingKey: server.showRatingKey });
+        const sent = await applyCalls(account, s.ratingKey, before, EMPTY, pause);
+        mark.calls = sent.calls;
+        mark.ok = sent.error === null;
+        mark.error = sent.error;
+        await recordCarryMark(input.db, carryId, mark);
+        if (!mark.ok) {
+          failure = sent.error;
+          break outer;
+        }
       }
-      done.push({ account, mark });
     }
+  } catch (err) {
+    failure = errText(err);
   }
   if (failure !== null) {
-    // Put back what was cleared, newest first, then refuse the move.
-    for (const { account, mark } of done.reverse()) {
-      const sent = await applyCalls(account, mark.ratingKey, EMPTY, { ...mark.before, viewCount: Math.min(mark.before.viewCount, MAX_CARRIED_PLAYS) }, pause);
-      await recordCarryMark(input.db, input.snapshot.carryId, {
-        ...mark,
-        phase: 'revert',
-        reason: 'restore',
-        before: EMPTY,
-        target: mark.before,
-        calls: sent.calls,
-        ok: sent.error === null,
-        error: sent.error,
-      });
+    // Put back what was cleared, newest first, from each item's state now (a clear whose answer failed may have
+    // landed, or not), then refuse the move.
+    const now = new Map<string, Map<string, PlexLeafFile> | null>();
+    let restoreFailed = 0;
+    for (const { account, mark, showRatingKey } of touchedItems.reverse()) {
+      const target: WatchCarryStateValue = { ...mark.before, viewCount: Math.min(mark.before.viewCount, MAX_CARRIED_PLAYS) };
+      const cacheKey = `${mark.server}/${mark.accountId}`;
+      let error: string | null = null;
+      let calls: string[] = [];
+      let current: WatchCarryStateValue = EMPTY;
+      try {
+        if (!now.has(cacheKey)) {
+          now.set(cacheKey, new Map((await account.read.listLeafFiles(showRatingKey)).map((l) => [l.ratingKey, l] as const)));
+        }
+        const leaf = now.get(cacheKey)?.get(mark.ratingKey);
+        if (!leaf) error = 'the item no longer exists';
+        else {
+          current = stateOf(leaf);
+          const sent = await applyCalls(account, mark.ratingKey, current, target, pause);
+          calls = sent.calls;
+          error = sent.error;
+        }
+      } catch (err) {
+        error = errText(err);
+      }
+      if (error) restoreFailed += 1;
+      await recordCarryMark(input.db, carryId, { ...mark, phase: 'revert', reason: 'restore', before: current, target, calls, ok: error === null, error }).catch(() => {});
     }
-    await setCarryStatus({ db: input.db, carryId: input.snapshot.carryId, status: 'refused', patch: { detail: { refused: failure } } });
-    throw new WatchCarryError(`Clearing the watched marks before the move failed (${failure}); they were put back and nothing moved.`);
+    await setCarryStatus({ db: input.db, carryId, status: restoreFailed === 0 ? 'refused' : 'cleared', patch: { detail: { refused: failure, restoreFailed } } }).catch(() => {});
+    throw new WatchCarryError(
+      restoreFailed === 0
+        ? `Clearing the watched marks before the move failed (${failure}); they were put back (carry ${carryId}) and nothing moved.`
+        : `Clearing the watched marks before the move failed (${failure}), and ${restoreFailed} could not be put back: run carry-revert --carry ${carryId}. Nothing moved.`,
+    );
   }
-  await setCarryStatus({ db: input.db, carryId: input.snapshot.carryId, status: 'cleared', patch: { summary: { preCleared: done.length } } });
-  return { cleared: done.length };
+  await setCarryStatus({ db: input.db, carryId, status: 'cleared', patch: { summary: { preCleared: touchedItems.length } } });
+  return { cleared: touchedItems.length };
 }
 
 /** ADR-114 C-02 — the move did not run after a snapshot: put back any pre-clear and mark the carry `refused`. */
