@@ -289,7 +289,7 @@ do not edit)", "must not contain" terms only, no tags.
     [AMZN WEBDL-1080p]...`). A name in that shape (`<title> (<year>) - SxxEyy - <title> [`) is not judged: the Title
     Check records it `silent`, and the re-map never shows it as what the file's name says. 15 of the library's 692
     disagreements had such a name (The Loud House 12, Be Cool, Scooby-Doo! 3).
-17. **Staff run the re-map from the cluster** (v0.115.2). `repair-guide.ts remap-run --tvdb <id> --season <n>
+17. **Staff run the re-map from the cluster** (v0.116.0). `repair-guide.ts remap-run --tvdb <id> --season <n>
     (--shift ... | --move ...) --digest <digest>` runs the guide's own `runEpisodeRemap` for a plan staff checked with
     `remap-plan` (a changed plan is refused). Its Repair Request has no requester (`requester_id` null, the trail's
     first step names the staff tool), the "audited, actor null" pattern of the settings, and draws on no one's budget.
