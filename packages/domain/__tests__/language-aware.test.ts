@@ -6,7 +6,7 @@
 // English) S01E12 carries "por/eng" with Portuguese the file's default; HaynesTower already prefers en-US for the show
 // (the hand fix of 2026-10-12) while HaynesOps is set back to "Account default" here so the writer has work to do; a
 // movie (Radarr "Winner Takes the Cake", original language Spanish) has no Plex audio-language setting (Q-08).
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { arrReleaseSchema, type ArrRelease } from '@hnet/arr';
 import { fixRequests, ledgerEvents, plexLibraries, repairRequests } from '@hnet/db/schema';
@@ -225,14 +225,26 @@ function stubArr(
     grabStatus?: number;
     redownloadFailed?: boolean;
     deleteStatus?: number;
+    episodes?: typeof EPISODES;
+    series?: ReturnType<typeof seriesBody>;
+    fileGroup?: string;
+    fileSceneName?: string;
   } = {},
 ) {
   const calls: Array<{ method: string; path: string; body: unknown }> = [];
-  const files = [
-    { id: E05.fileId, seriesId: SERIES, seasonNumber: 1, relativePath: 'Season 1/S01E05.mkv', sceneName: 'Regular.Show.The.Lost.Tapes.S01E05.1080p.WEB-DL.DUBLADO-PTGroup', releaseGroup: 'PTGroup', size: 420_000_000, quality: { quality: { id: 3, name: 'WEBDL-1080p', resolution: 1080 }, revision: { version: 1 } }, mediaInfo: { audioLanguages: over.e05Audio ?? 'por' } },
-    { id: E06.fileId, seriesId: SERIES, seasonNumber: 1, relativePath: 'Season 1/S01E06.mkv', releaseGroup: 'Kitsune', size: 445_000_000, quality: { quality: { id: 3, name: 'WEBDL-1080p', resolution: 1080 }, revision: { version: 2 } }, mediaInfo: { audioLanguages: 'eng' } },
-    { id: E12.fileId, seriesId: SERIES, seasonNumber: 1, relativePath: 'Season 1/S01E12.mkv', releaseGroup: 'BiOMA', size: 500_000_000, quality: { quality: { id: 3, name: 'WEBDL-1080p', resolution: 1080 }, revision: { version: 1 } }, mediaInfo: { audioLanguages: 'por/eng' } },
-  ];
+  const series = over.series ?? seriesBody();
+  const episodes = over.episodes ?? EPISODES;
+  const first = episodes[0]!;
+  const sceneName = over.fileSceneName ?? 'Regular.Show.The.Lost.Tapes.S01E05.1080p.WEB-DL.DUBLADO-PTGroup';
+  const files = episodes.map((e, index) => ({
+    id: e.fileId, seriesId: series.id, seasonNumber: e.seasonNumber,
+    relativePath: `Season ${e.seasonNumber}/S01E${String(e.episodeNumber).padStart(2, '0')}.mkv`,
+    ...(index === 0 ? { sceneName } : {}),
+    releaseGroup: index === 0 ? over.fileGroup ?? 'PTGroup' : index === 1 ? 'Kitsune' : 'BiOMA',
+    size: index === 0 ? 420_000_000 : index === 1 ? 445_000_000 : 500_000_000,
+    quality: { quality: { id: 3, name: 'WEBDL-1080p', resolution: 1080 }, revision: { version: index === 1 ? 2 : 1 } },
+    mediaInfo: { audioLanguages: index === 0 ? over.e05Audio ?? 'por' : index === 1 ? 'eng' : 'por/eng' },
+  }));
   const json = (body: unknown, status = 200) =>
     new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   const fetchImpl = (async (input: unknown, init: RequestInit = {}) => {
@@ -243,22 +255,22 @@ function stubArr(
     const p = url.pathname;
     const sonarr = url.host.startsWith('sonarr');
     if (sonarr && method === 'GET' && p === '/api/v3/series') {
-      return json([seriesBody()]);
+      return json([series]);
     }
-    if (sonarr && method === 'GET' && p === `/api/v3/series/${SERIES}`) return json(seriesBody());
+    if (sonarr && method === 'GET' && p === `/api/v3/series/${series.id}`) return json(series);
     if (sonarr && method === 'GET' && p === '/api/v3/episode') {
-      return json(EPISODES.map((e) => ({ id: e.id, seriesId: SERIES, seasonNumber: 1, episodeNumber: e.episodeNumber, title: e.title, hasFile: true, monitored: true, episodeFileId: e.fileId })));
+      return json(episodes.map((e) => ({ id: e.id, seriesId: series.id, seasonNumber: 1, episodeNumber: e.episodeNumber, title: e.title, hasFile: true, monitored: true, episodeFileId: e.fileId })));
     }
     if (sonarr && method === 'GET' && p === '/api/v3/episodefile') return json(files);
     if (sonarr && method === 'GET' && p === '/api/v3/history/series') {
       return json([
-        { id: 501, episodeId: E05.id, eventType: 'grabbed', date: '2026-10-01T00:00:00Z', sourceTitle: 'Regular.Show.The.Lost.Tapes.S01E05.1080p.WEB-DL.DUBLADO-PTGroup', downloadId: 'dl-pt', data: { releaseSource: 'Rss' } },
+        { id: 501, episodeId: first.id, eventType: 'grabbed', date: '2026-10-01T00:00:00Z', sourceTitle: sceneName, downloadId: 'dl-pt', data: { releaseSource: 'Rss' } },
       ]);
     }
     if (method === 'GET' && p === '/api/v3/queue') return json({ page: 1, pageSize: 200, totalRecords: 0, records: [] });
     if (sonarr && method === 'GET' && p === '/api/v3/history') {
-      const records = url.searchParams.get('episodeId') === String(E05.id)
-        ? [{ id: 501, seriesId: SERIES, episodeId: E05.id, eventType: 'grabbed', date: '2026-10-01T00:00:00Z', sourceTitle: 'Regular.Show.The.Lost.Tapes.S01E05.1080p.WEB-DL.DUBLADO-PTGroup', data: { releaseSource: 'Rss' } }]
+      const records = url.searchParams.get('episodeId') === String(first.id)
+        ? [{ id: 501, seriesId: series.id, episodeId: first.id, eventType: 'grabbed', date: '2026-10-01T00:00:00Z', sourceTitle: sceneName, data: { releaseSource: 'Rss' } }]
         : [];
       return json({ page: 1, pageSize: 10, totalRecords: records.length, records });
     }
@@ -267,7 +279,7 @@ function stubArr(
     }
     if (sonarr && method === 'GET' && p === '/api/v3/release') return json(over.releases ?? SEASON_RELEASES);
     if (method === 'POST' && p === '/api/v3/history/failed/501') return json({});
-    if (method === 'DELETE' && p === `/api/v3/episodefile/${E05.fileId}`) {
+    if (method === 'DELETE' && p === `/api/v3/episodefile/${first.fileId}`) {
       return over.deleteStatus ? json({ message: 'disk error' }, over.deleteStatus) : json({});
     }
     if (method === 'POST' && p === '/api/v3/release') {
@@ -385,6 +397,7 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
   let memberId: string;
   let showId: string;
   let movieId: string;
+  let benId: string;
   const e12 = () => ({ mediaItemId: showId, scope: 'episode' as const, targetChildId: E12.id });
   const e05 = () => ({ mediaItemId: showId, scope: 'episode' as const, targetChildId: E05.id });
 
@@ -394,7 +407,10 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
     await upsertMediaItemsBatch({
       db: t.db,
       arrKind: 'sonarr',
-      items: [{ arrItemId: SERIES, tvdbId: 475718, title: 'Regular Show: The Lost Tapes', sortTitle: 'regular show the lost tapes', monitored: true, qualityProfileId: 1, qualityProfileName: 'HD', rootFolder: '/tv' }],
+      items: [
+        { arrItemId: SERIES, tvdbId: 475718, title: 'Regular Show: The Lost Tapes', sortTitle: 'regular show the lost tapes', monitored: true, qualityProfileId: 1, qualityProfileName: 'HD', rootFolder: '/tv' },
+        { arrItemId: 99, tvdbId: 318145, title: 'Ben 10 (2016)', sortTitle: 'ben 10', monitored: true, qualityProfileId: 1, qualityProfileName: 'HD', rootFolder: '/tv' },
+      ],
     });
     await upsertMediaItemsBatch({
       db: t.db,
@@ -402,6 +418,7 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
       items: [{ arrItemId: 1, tmdbId: 1233620, title: 'Winner Takes the Cake', sortTitle: 'winner takes the cake', monitored: true, qualityProfileId: 1, qualityProfileName: 'HD', rootFolder: '/movies' }],
     });
     showId = (await t.db.query.mediaItems.findMany({ where: (m, { and: a, eq: e }) => a(e(m.arrItemId, SERIES), e(m.arrKind, 'sonarr')) }))[0]!.id;
+    benId = (await t.db.query.mediaItems.findMany({ where: (m, { and: a, eq: e }) => a(e(m.arrItemId, 99), e(m.arrKind, 'sonarr')) }))[0]!.id;
     movieId = (await t.db.query.mediaItems.findMany({ where: (m, { and: a, eq: e }) => a(e(m.arrItemId, 1), e(m.arrKind, 'radarr')) }))[0]!.id;
     await upsertPlexLibraries({ db: t.db, slug: 'haynestower', libraries: [{ sectionKey: '2', name: 'TV Shows', mediaType: 'show' }, { sectionKey: '1', name: 'Movies', mediaType: 'movie' }] });
     await upsertPlexLibraries({
@@ -444,7 +461,7 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
     });
     await t.db.delete(repairRequests);
     await t.db.delete(fixRequests);
-    await t.db.delete(ledgerEvents).where(eq(ledgerEvents.mediaItemId, showId));
+    await t.db.delete(ledgerEvents).where(inArray(ledgerEvents.mediaItemId, [showId, benId]));
   });
 
   describe('the Audio Preference (rule 3)', () => {
@@ -571,6 +588,117 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
   });
 
   describe('the Language Replace (rule 4)', () => {
+    const benEpisodes = [
+      { id: 8507, seasonNumber: 1, episodeNumber: 10, title: 'Animo Farm', fileId: 79991 },
+      { id: 8509, seasonNumber: 1, episodeNumber: 12, title: 'Adventures in Babysitting', fileId: 79992 },
+      { id: 8506, seasonNumber: 1, episodeNumber: 9, title: 'Brief Career of Lucky Girl', fileId: 79990 },
+    ];
+    const benArr = (releases: Array<Record<string, unknown>>, episodeNumber = 10) => {
+      const target = benEpisodes.find((e) => e.episodeNumber === episodeNumber)!;
+      return stubArr({
+        episodes: [target, ...benEpisodes.filter((e) => e !== target)],
+        series: { ...seriesBody(), id: 99, tvdbId: 318145, title: 'Ben 10 (2016)', year: 2016 },
+        e05Audio: 'ara', fileGroup: 'MZABI',
+        fileSceneName: `Ben.10.2016.S01E${episodeNumber}.1080p.SHAHID.WEB-DL-MZABI`,
+        releases,
+      });
+    };
+    const benRelease = (episodeNumber: number, title: string, over: Record<string, unknown> = {}) => release({
+      title, seasonNumber: 1, episodeNumbers: [episodeNumber], mappedEpisodeNumbers: [episodeNumber],
+      releaseGroup: title.split('-').at(-1), approved: true, ...over,
+    });
+    const benTarget = (episodeNumber = 10) => ({
+      mediaItemId: benId, scope: 'episode' as const,
+      targetChildId: benEpisodes.find((e) => e.episodeNumber === episodeNumber)!.id,
+    });
+
+    it.each([
+      { episode: 10, wrong: 'Lucky.Girl', right: 'Animo.Farm' },
+      { episode: 12, wrong: 'Side.Effects', right: 'Adventures.in.Babysitting' },
+    ])('never chooses the approved English $wrong 2005 story for the 2016 $right target', async ({ episode, wrong, right }) => {
+      const incorrect = benRelease(episode, `Ben.10.S01E${episode}.${wrong}.1080p.NF.WEB-DL.DD+2.0.H.264-playWEB`);
+      const correct = benRelease(episode, `Ben.10.2016.S01E${episode}.${right}.1080p.HMAX.WEBRip.DD.2.0.H.265-EDGE2020`);
+      const arr = benArr([incorrect, correct], episode);
+      const { plan } = await readLanguagePlan({
+        db: t.db, arr: arr.bundle, ...benTarget(episode), wantedLanguage: 'eng',
+        remedies: { language_check: true, language_search: true } as never,
+      });
+      expect(plan).toMatchObject({ verdict: 'ok', candidate: { title: correct.title, languages: ['English'] } });
+      const result = await runFixRequest({
+        db: t.db, arr: arr.bundle, requesterId: memberId, ...benTarget(episode),
+        reason: 'wrong_language', wantedLanguage: 'eng', planDigest: plan.digest,
+      });
+      expect(result.grabbedRelease).toBe(correct.title);
+      const grabbed = arr.calls.find((c) => c.method === 'POST' && c.path === '/api/v3/release')!;
+      expect(grabbed.body).toEqual({ guid: correct.guid, indexerId: 1 });
+    });
+
+    it('keeps the current file with no row or writes when only another show’s English story is offered', async () => {
+      const wrong = benRelease(10, 'Ben.10.S01E10.Lucky.Girl.1080p.NF.WEB-DL.H.264-playWEB');
+      const arr = benArr([wrong]);
+      const { plan } = await readLanguagePlan({
+        db: t.db, arr: arr.bundle, ...benTarget(), wantedLanguage: 'eng',
+        remedies: { language_check: true, language_search: true } as never,
+      });
+      expect(plan).toMatchObject({ verdict: 'no_language_release', candidate: null, languageReleases: 1 });
+      await expect(runFixRequest({
+        db: t.db, arr: arr.bundle, requesterId: memberId, ...benTarget(), reason: 'wrong_language', wantedLanguage: 'eng',
+      })).rejects.toMatchObject({ reason: 'no_language_release' });
+      expect(arr.writes()).toEqual([]);
+      expect(await t.db.select().from(fixRequests)).toHaveLength(0);
+    });
+
+    it('retains a silent numbered release while refusing a multi-episode candidate and the existing hard/quality guards', async () => {
+      const correctTitle = 'Ben.10.2016.S01E10.Animo.Farm.1080p.HMAX.WEB-DL';
+      const blocked = benRelease(10, `${correctTitle}-Blocked`, { rejections: ['Release is blocklisted'] });
+      const quality = benRelease(10, `${correctTitle}-Quality`, { approved: false, rejections: ['Quality for release in profile does not meet cutoff'] });
+      const ownGroup = benRelease(10, `${correctTitle}-MZABI`);
+      const pair = benRelease(10, 'Ben.10.2016.S01E10E12.Animo.Farm.Adventures.in.Babysitting.1080p.WEB-DL-Pair', {
+        episodeNumbers: [10, 12], mappedEpisodeNumbers: [10, 12],
+      });
+      const silent = benRelease(10, 'Ben.10.2016.S01E10.1080p.HMAX.WEB-DL-Other');
+      const arr = benArr([blocked, quality, ownGroup, pair, silent]);
+      const { plan } = await readLanguagePlan({
+        db: t.db, arr: arr.bundle, ...benTarget(), wantedLanguage: 'eng',
+        remedies: { language_check: true, language_search: true } as never,
+      });
+      expect(plan).toMatchObject({ verdict: 'ok', candidate: { title: silent.title } });
+      expect(arr.writes()).toEqual([]);
+    });
+
+    it('staff uses the same guarded writer with a null requester, durable staff audit, and the open-grain guard', async () => {
+      const correct = benRelease(10, 'Ben.10.2016.S01E10.Animo.Farm.1080p.HMAX.WEB-DL-English');
+      const arr = benArr([correct]);
+      const { plan } = await readLanguagePlan({
+        db: t.db, arr: arr.bundle, ...benTarget(), wantedLanguage: 'eng', requesterId: null,
+        remedies: { language_check: true, language_search: true } as never,
+      });
+      const result = await runFixRequest({
+        db: t.db, arr: arr.bundle, requesterId: null, ...benTarget(),
+        reason: 'wrong_language', wantedLanguage: 'eng', planDigest: plan.digest,
+      });
+      const [fix] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, result.id));
+      expect(fix).toMatchObject({ requesterId: null, status: 'search_triggered', reason: 'wrong_language' });
+      expect(fix!.actionsTaken[0]).toMatchObject({ step: 'created', requester: { staffTool: 'repair-guide.ts' } });
+      expect(fix!.actionsTaken.find((a) => a.step === 'guard_plan')).toMatchObject({ digest: plan.digest, wantedLanguage: 'eng' });
+      const [event] = await t.db.select().from(ledgerEvents).where(and(eq(ledgerEvents.mediaItemId, benId), eq(ledgerEvents.eventType, 'fix_requested')));
+      expect(event!.payload).toMatchObject({ requesterId: null, fixRequestId: result.id });
+      const writes = arr.writes();
+      await expect(runFixRequest({
+        db: t.db, arr: arr.bundle, requesterId: null, ...benTarget(), reason: 'wrong_language', wantedLanguage: 'eng',
+      })).rejects.toMatchObject({ code: 'FIX_ALREADY_OPEN' });
+      expect(arr.writes()).toEqual(writes);
+    });
+
+    it('nullable staff input does not bypass a missing authenticated requester', async () => {
+      const arr = benArr([benRelease(10, 'Ben.10.2016.S01E10.Animo.Farm.1080p.HMAX.WEB-DL-English')]);
+      await expect(runFixRequest({
+        db: t.db, arr: arr.bundle, requesterId: '00000000-0000-0000-0000-000000000001', ...benTarget(),
+        reason: 'wrong_language', wantedLanguage: 'eng',
+      })).rejects.toThrow('not found');
+      expect(arr.writes()).toEqual([]);
+      expect(await t.db.select().from(fixRequests)).toHaveLength(0);
+    });
     it('picks the first English release the *arr would take once the file is gone, never a pack or a hard refusal', () => {
       const releases: ArrRelease[] = SEASON_RELEASES.map((r) => arrReleaseSchema.parse(r));
       const allowed = new Set(releases.filter((r) => !r.rejections.includes('Release is blocklisted')).map(releaseKey));

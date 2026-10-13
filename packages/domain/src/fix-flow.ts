@@ -58,7 +58,8 @@ export interface RunFixRequestInput {
   seerrIssueId?: number | null;
   db?: DbClient;
   arr: ArrClientBundle;
-  requesterId: string;
+  /** null: the in-cluster staff tool, audited by createFixRequest; public API callers always pass their user id. */
+  requesterId: string | null;
   /** Admins bypass the hourly rate limit (D-09). */
   requesterIsAdmin?: boolean;
   mediaItemId: string;

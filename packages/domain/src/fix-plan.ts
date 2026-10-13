@@ -158,7 +158,7 @@ export interface PlanFixInput {
    * Who asked, for the release-search throttle (RELEASE_SEARCHES_PER_HOUR). Absent (the in-cluster tool) or an admin:
    * not throttled.
    */
-  requesterId?: string;
+  requesterId?: string | null;
   requesterIsAdmin?: boolean;
   /** Test clock for the release cache and throttle. */
   now?: () => number;
@@ -205,7 +205,7 @@ async function releasesFor(
 export async function readReleaseListCached(input: {
   key: string;
   read: () => Promise<ArrRelease[]>;
-  requesterId?: string;
+  requesterId?: string | null;
   requesterIsAdmin?: boolean;
   now?: () => number;
   /** The words a member sees at the throttle (the Fix's preview says "checked for replacements"). */
