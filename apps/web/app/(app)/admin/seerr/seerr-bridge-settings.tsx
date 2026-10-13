@@ -121,8 +121,8 @@ export function SeerrBridgeSettings() {
             aria-invalid={!idValid}
           />
           <span className="field-hint">
-            A local Seerr user with only the Manage Issues permission. Never 1, the owner&rsquo;s account. Clear it to
-            stop every reply.
+            A local Seerr user with only the Manage Issues permission. Never 1, the owner&rsquo;s account. To stop every
+            reply, untick both switches above.
           </span>
         </label>
         <div className="form-actions">

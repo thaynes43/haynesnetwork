@@ -851,7 +851,8 @@ Owner clarification, 2026-10-12 (ADR-112, DESIGN-055 D-12): "The gate is a judgm
 ## Rollback
 
 Each remedy has its kill switch (`repair_guide_remedies`); off restores today's dialog for that remedy. Janitor cells
-go back to census through `/admin/janitor`. Seerr writes stop when either switch in `seerr_issue_bridge` is turned off on
-`/admin/seerr` (or its bridge user is cleared); deleting Seerr user 19 stops them too. New tables are
+go back to census through `/admin/janitor`. The Seerr comment stops when its switch in `seerr_issue_bridge` is turned off on
+`/admin/seerr` (or `seerr-bridge.ts --set --comment off`), the resolve likewise; both off stops every Seerr write, and
+deleting Seerr user 19 stops them too (each pass checks the user first). New tables are
 additive; a code revert leaves them unread. The Mislabel Block's terms can be removed by its writer (expire all) or by
 deleting the managed profile in Sonarr, which only lifts blocks.
