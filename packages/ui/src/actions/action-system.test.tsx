@@ -33,10 +33,29 @@ describe('MEDIA_ACTIONS registry', () => {
     expect(MEDIA_ACTIONS.forceSearch.variant).toBe('outline');
   });
 
-  it('has exactly the seven action types', () => {
+  it('has exactly the nine action types', () => {
     expect(MEDIA_ACTION_TYPES.sort()).toEqual(
-      ['consume', 'fix', 'forceSearch', 'importDownload', 'moveFile', 'notOnDisk', 'retryImport'].sort(),
+      [
+        'consume',
+        'fix',
+        'forceSearch',
+        'grabRelease',
+        'importDownload',
+        'moveFile',
+        'notOnDisk',
+        'pickRelease',
+        'retryImport',
+      ].sort(),
     );
+  });
+
+  it('names the Release Pick verbs: "See every release" (outline) and "Grab this release" (primary) (DESIGN-055 D-06)', () => {
+    expect(MEDIA_ACTIONS.pickRelease.label).toBe('See every release');
+    expect(MEDIA_ACTIONS.pickRelease.variant).toBe('outline');
+    expect(MEDIA_ACTIONS.pickRelease.destructive).toBe(false);
+    expect(MEDIA_ACTIONS.grabRelease.label).toBe('Grab this release');
+    expect(MEDIA_ACTIONS.grabRelease.variant).toBe('primary');
+    expect(MEDIA_ACTIONS.grabRelease.destructive).toBe(false);
   });
 
   it('names the Title Check flag action "Move it", an outline pill that deletes nothing (DESIGN-055 D-05)', () => {

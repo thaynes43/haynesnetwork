@@ -1103,6 +1103,7 @@ export function ItemDetail({
         initialReason={action?.mode === 'fix' ? (action.reason ?? null) : null}
         intro={action?.mode === 'fix' && action.intro ? <GuideIntro text={action.intro} /> : undefined}
         initialRemap={action?.mode === 'fix' ? (action.remap ?? null) : null}
+        onForceSearch={(t) => setAction({ mode: 'search', target: t })}
       />
       <ForceSearchDialog
         open={action?.mode === 'search'}

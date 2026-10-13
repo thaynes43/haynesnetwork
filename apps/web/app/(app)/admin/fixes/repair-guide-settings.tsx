@@ -1,6 +1,6 @@
 'use client';
 
-// ADR-109 / DESIGN-055 D-01, D-04, D-07, D-09 (PLAN-077 P1, P2, P4) — the Repair Guide's settings on /admin/fixes: the per-remedy kill
+// ADR-109 / DESIGN-055 D-01, D-04, D-06, D-07, D-09 (PLAN-077 P1, P2, P4, P5) — the Repair Guide's settings on /admin/fixes: the per-remedy kill
 // switch (`repair_guide_remedies`) and the Known-Issue Servers (T-314). One form, one Save, audited
 // (`update_app_setting`). Every remedy ships off; staff turn each on after its live check. With every remedy off, Fix
 // opens today's dialog. Reflow-safe (hard rule 9): the save-status slot is reserved, toggles only change their own box.
@@ -14,7 +14,8 @@ type Remedy =
   | 'language_check'
   | 'playback_triage'
   | 'import_check'
-  | 'episode_remap';
+  | 'episode_remap'
+  | 'release_pick';
 
 const REMEDIES: ReadonlyArray<{ key: Remedy; label: string; hint: string }> = [
   {
@@ -49,6 +50,13 @@ const REMEDIES: ReadonlyArray<{ key: Remedy; label: string; hint: string }> = [
     key: 'episode_remap',
     label: 'Move files onto the right episodes',
     hint: 'Fix offers "It’s a different episode of this show" and, on a season, "They’re all off by one". The guide moves the existing files with Sonarr’s own import, shows every move first, and never deletes a file. Episodes whose file name points at another episode are flagged on the title page.',
+  },
+  // DESIGN-055 D-06 (PLAN-077 P5): the Release Pick. Reached from Force Search (with the check above it on) and from the
+  // episodes a re-map leaves empty; it never opens the Fix guide on its own.
+  {
+    key: 'release_pick',
+    label: 'See every release',
+    hint: 'Force Search on a missing episode or movie, and each episode a re-map leaves empty, offer a list of every release the sites have, with the reasons in plain words. Anyone who can use Fix may grab one, including a release outside the library’s usual quality or language rules. Blocked releases, camera copies, oversized files and releases named for another episode can never be picked. Opening the list and each grab use one hourly media action. In Force Search it shows only while the queue check above is on.',
   },
 ];
 
@@ -86,8 +94,9 @@ export function RepairGuideSettings() {
     <section className="card repair-guide-settings" aria-labelledby="repair-guide-settings-title">
       <h2 id="repair-guide-settings-title">Repair Guide</h2>
       <p className="muted">
-        Fix opens the Repair Guide for movies and TV once any of its checks below is on, and the last check changes Force
-        Search. A check that is off is skipped. With all of them off, Fix and Force Search work as they always have.
+        Fix opens the Repair Guide for movies and TV once any of its checks below is on. &ldquo;Force Search checks the
+        queue first&rdquo; and &ldquo;See every release&rdquo; change Force Search instead. A check that is off is skipped.
+        With all of them off, Fix and Force Search work as they always have.
       </p>
       <form
         className="admin-form"

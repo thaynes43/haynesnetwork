@@ -255,7 +255,7 @@ export function describeRejection(text: string, ctx: DescribeContext): ReleaseRe
     return reason('history', 'other', 'Something as good was already downloaded once', t);
   }
   if (/^Indexer .* is blocked till/i.test(t)) {
-    return reason('site_unavailable', 'other', "The site it comes from isn't available right now", t);
+    return reason('site_unavailable', 'other', "The site it comes from isn't available", t);
   }
   if (/^Only -?\d+ minutes old/i.test(t)) {
     return reason('too_new', 'other', 'Too new: the library waits a short while before taking a release', t);
@@ -269,7 +269,7 @@ export function describeRejection(text: string, ctx: DescribeContext): ReleaseRe
   if (/runtime .*is 0|Runtime of all episodes is 0/i.test(t)) {
     return reason('unknown_runtime', 'other', `The ${noun(ctx)}'s length isn't known yet, so its size can't be checked`, t);
   }
-  if (/free space/i.test(t)) return reason('disk_space', 'other', 'Not enough free space for it right now', t);
+  if (/free space/i.test(t)) return reason('disk_space', 'other', 'Not enough free space for it', t);
   if (/indexer flags|tags do not match/i.test(t)) {
     return reason('site_rules', 'other', "The library's rules for that site don't allow it", t);
   }
@@ -878,7 +878,7 @@ function emptyList(status: ReleasePickStatus, resolved: ResolvedTarget, budget: 
 export async function openReleaseList(input: OpenReleaseListInput): Promise<ReleasePickList> {
   const remedies = await getRepairGuideRemedies(input.db);
   if (!remedies.release_pick) {
-    throw new FixRefusedError('needs_guide', "Seeing every release isn't turned on right now.");
+    throw new FixRefusedError('needs_guide', "Seeing every release is turned off.");
   }
   const resolved = await readReleasePickTarget(input);
   await settleReleasePicks({ db: input.db, mediaItemId: resolved.mediaItemId });
@@ -1106,7 +1106,7 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
   if (!list || list.requesterId !== input.requesterId) throw new NotFoundError(`Release list ${input.listId} not found`);
   const remedies = await getRepairGuideRemedies(input.db);
   if (!remedies.release_pick) {
-    throw new FixRefusedError('needs_guide', "Seeing every release isn't turned on right now.");
+    throw new FixRefusedError('needs_guide', "Seeing every release is turned off.");
   }
   const refuse = (outcome: Exclude<ReleaseGrabOutcome, 'grabbed'>): ReleaseGrabResult => ({
     outcome,

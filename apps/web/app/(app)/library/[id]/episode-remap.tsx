@@ -13,6 +13,10 @@
 // Rendered inside the guide's Modal (hard rule 8). Hard rule 9: the dialog keeps its fixed height and the steps replace
 // each other in place; a button that turns into its answer (Force Search, the Mislabel offer) shares one reserved cell
 // with that answer, so nothing beside or below it moves. Copy lives in lib/remap-guide.ts.
+//
+// DESIGN-055 D-04 rule 9, D-06 (PLAN-077 P5): with the `release_pick` remedy on, each emptied episode also offers "See
+// every release" beside its Force Search. It opens the Release Pick for that episode in place of the result (the result
+// stays in memory; Back returns to it).
 import Link from 'next/link';
 import { useState } from 'react';
 import { MediaAction, ReservedActionSlot } from '@hnet/ui';
@@ -47,7 +51,10 @@ import {
   type RemapResult,
   type ShiftChoice,
 } from '@/lib/remap-guide';
+import { PICK_ENTRY_SHORT_NOTE } from '@/lib/release-pick-guide';
+import type { ActionTarget } from '@/lib/media';
 import { ActionLiveChip, useActionProgress, type SearchProgressInput } from '@/components/action-progress';
+import { ReleasePick } from './release-pick';
 
 export interface EpisodeRemapProps {
   item: { id: string; title: string };
@@ -67,6 +74,10 @@ export interface EpisodeRemapProps {
   onChanged: () => void;
   /** The guide's banner line (null clears it). */
   setError: (message: string | null) => void;
+  /** DESIGN-055 D-06: the `release_pick` remedy is on, so each emptied episode offers "See every release". */
+  releasePickOn?: boolean;
+  /** Opens Force Search for one episode (the Release Pick's way to add a download that needs a hand). */
+  onForceSearch?: (target: ActionTarget) => void;
 }
 
 type Step = 'ask' | 'preview' | 'done';
@@ -84,6 +95,8 @@ export function EpisodeRemap({
   onClose,
   onChanged,
   setError,
+  releasePickOn = false,
+  onForceSearch,
 }: EpisodeRemapProps) {
   const startAtPreview = kind === 'single' && initialToEpisodeId !== null && knownSeason !== null;
   const [step, setStep] = useState<Step>(startAtPreview ? 'preview' : 'ask');
@@ -95,6 +108,8 @@ export function EpisodeRemap({
       : null,
   );
   const [result, setResult] = useState<RemapResult | null>(null);
+  // DESIGN-055 D-06: the emptied episode whose Release Pick is open in place of the result.
+  const [picking, setPicking] = useState<RemapEpisodeRef | null>(null);
 
   // A single move from the episode list knows only the episode: its season comes from the title's episode list.
   const children = trpc.ledger.children.useQuery(
@@ -447,6 +462,29 @@ export function EpisodeRemap({
 
   // ---------------------------------------------------------------- the result
   if (!result) return null;
+  if (picking !== null) {
+    const episode = picking;
+    return (
+      <ReleasePick
+        item={{ id: item.id, title: item.title }}
+        kind="sonarr"
+        episodeId={episode.id}
+        targetLabel={episode.label}
+        onBack={() => {
+          setError(null);
+          setPicking(null);
+        }}
+        onClose={onClose}
+        onForceSearch={
+          onForceSearch
+            ? () => onForceSearch({ scope: 'episode', childId: episode.id, label: episode.label })
+            : undefined
+        }
+        onChanged={onChanged}
+        setError={setError}
+      />
+    );
+  }
   const notes = resultNotes(result);
   return (
     <div className="fix-done repair-guide__step">
@@ -463,9 +501,23 @@ export function EpisodeRemap({
         <section className="repair-guide__group">
           <h4>Left empty</h4>
           <p className="muted remap-guide__note">{vacatedResultNote(result.vacated.length)}</p>
+          {releasePickOn ? <p className="muted remap-guide__note">{PICK_ENTRY_SHORT_NOTE}</p> : null}
           <ul className="remap-guide__vacated">
             {result.vacated.map((e) => (
-              <VacatedEpisode key={e.id} itemId={item.id} episode={e} onSearched={onChanged} />
+              <VacatedEpisode
+                key={e.id}
+                itemId={item.id}
+                episode={e}
+                onSearched={onChanged}
+                onPickRelease={
+                  releasePickOn
+                    ? () => {
+                        setError(null);
+                        setPicking(e);
+                      }
+                    : undefined
+                }
+              />
             ))}
           </ul>
         </section>
@@ -495,16 +547,19 @@ export function EpisodeRemap({
 /**
  * One episode the re-map left empty, with Force Search (D-04 rule 9). The same `fix.forceSearch` as the title page: one
  * unit of the hourly budget, and with the Import Check on it reads the queue first. Once pressed, the button's cell shows
- * the live search instead (hard rule 9: the slot keeps its width).
+ * the live search instead (hard rule 9: the slot keeps its width). With the Release Pick on, "See every release" sits
+ * beside it (D-06); it opens the list in the guide, so it never changes the row.
  */
 function VacatedEpisode({
   itemId,
   episode,
   onSearched,
+  onPickRelease,
 }: {
   itemId: string;
   episode: RemapEpisodeRef;
   onSearched: () => void;
+  onPickRelease?: () => void;
 }) {
   const [input, setInput] = useState<SearchProgressInput | null>(null);
   const [note, setNote] = useState<string>('');
@@ -532,6 +587,9 @@ function VacatedEpisode({
           onFire={() => search.mutate({ mediaItemId: itemId, scope: 'episode', targetChildId: episode.id })}
         />
       </ReservedActionSlot>
+      {onPickRelease ? (
+        <MediaAction action="pickRelease" size="sm" disabled={search.isPending} onFire={onPickRelease} />
+      ) : null}
       <span className="muted remap-guide__vacated-note" role="status">
         {note}
       </span>

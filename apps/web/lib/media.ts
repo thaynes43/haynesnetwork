@@ -268,11 +268,11 @@ export function actionPhaseCopy(input: {
     case 'searching':
       return 'Searching for a release…';
     case 'queued':
-      return `Queued in ${manager} — waiting for the download to start…`;
+      return `Queued in ${manager}, waiting for the download to start…`;
     case 'grabbed':
-      return 'Release grabbed — handing off to the download client…';
+      return 'Release grabbed, handing it to the download client…';
     case 'downloading': {
-      const pct = input.progressPct !== undefined ? ` — ${Math.round(input.progressPct)}%` : '';
+      const pct = input.progressPct !== undefined ? `, ${Math.round(input.progressPct)}%` : '';
       const eta =
         input.etaSeconds !== undefined && formatEta(input.etaSeconds) !== ''
           ? ` (${formatEta(input.etaSeconds)} left)`
@@ -280,15 +280,15 @@ export function actionPhaseCopy(input: {
       return `Downloading${pct}${eta}`;
     }
     case 'importing':
-      return 'Downloaded — importing the new copy…';
+      return 'Downloaded, adding the new copy…';
     case 'completed':
-      return 'Done — the new copy imported.';
+      return 'Done. The new copy is in.';
     case 'nothing_found':
-      return 'No release found yet — still watching; you can try again later.';
+      return 'No release found yet. You can try again later.';
     case 'stalled':
       return input.message
-        ? `This seems stuck — ${input.message}`
-        : 'This seems stuck — no progress for a while.';
+        ? `This seems stuck: ${input.message}`
+        : 'This seems stuck: no progress for a while.';
     case 'failed':
       return input.message ? `The download failed: ${input.message}` : 'The download failed.';
     default:
@@ -313,6 +313,8 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   repair_requested: 'Repair requested',
   repair_completed: 'Repaired',
   repair_failed: "Repair didn't work",
+  // DESIGN-055 D-06 (PLAN-077 P5): someone opened the Release Pick's list for one missing episode or movie.
+  release_list_requested: 'Releases listed',
 };
 
 /** Human-readable size; ledger sizes come as bytes. */

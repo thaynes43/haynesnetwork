@@ -21,6 +21,10 @@
 // Hard rule 8: a Modal (an explanatory confirm). Hard rule 9: the guide's dialog has a fixed height (`modal--guide`) and
 // only its body scrolls, so a step that replaces another never moves anything outside it; an interaction recolors or
 // enables, and the "Import onto…" confirm reserves the width of its longest label. Copy follows the owner's rules.
+//
+// ADR-109 C-06 / DESIGN-055 D-06 (PLAN-077 P5): with the `release_pick` remedy on too, the search step offers "See every
+// release" beside the search, and so does a search whose live window ended with nothing found. It swaps the dialog's
+// body to the Release Pick step (release-pick.tsx) in place; Back returns to Force Search.
 import Link from 'next/link';
 import { Fragment, useState, type ReactNode } from 'react';
 import { MediaAction, ProgressMeter } from '@hnet/ui';
@@ -52,12 +56,14 @@ import {
   type SearchPlan,
 } from '@/lib/force-search-guide';
 import { ticketComposeHref } from '@/lib/ticket-compose-link';
+import { PICK_ENTRY_NOTE, offersReleasePick } from '@/lib/release-pick-guide';
 import { Modal } from '@/components/modal';
 import {
   ActionProgressBlock,
   useActionProgress,
   type SearchProgressInput,
 } from '@/components/action-progress';
+import { ReleasePick } from './release-pick';
 
 export interface ForceSearchDialogProps {
   open: boolean;
@@ -92,8 +98,15 @@ export function ForceSearchDialog(props: ForceSearchDialogProps) {
   const kind = props.item.arrKind;
   const eligible = readsQueueFirst({ arrKind: kind, target, importCheckOn: true });
   if (eligible && (kind === 'sonarr' || kind === 'radarr') && (guide.isLoading || guide.data?.importCheckOn)) {
+    const releasePickOn = offersReleasePick({ arrKind: kind, target, releasePickOn: guide.data?.releasePickOn ?? false });
     return props.open ? (
-      <QueueAwareForceSearch {...props} kind={kind} target={target} configLoading={guide.isLoading} />
+      <QueueAwareForceSearch
+        {...props}
+        kind={kind}
+        target={target}
+        configLoading={guide.isLoading}
+        releasePickOn={releasePickOn}
+      />
     ) : null;
   }
   return <ClassicForceSearchDialog {...props} />;
@@ -114,16 +127,25 @@ function QueueAwareForceSearch({
   target,
   kind,
   configLoading,
+  releasePickOn,
   onSubmitted,
   onChanged,
   intro,
-}: ForceSearchDialogProps & { kind: GuideArrKind; target: ActionTarget | null; configLoading: boolean }) {
+}: ForceSearchDialogProps & {
+  kind: GuideArrKind;
+  target: ActionTarget | null;
+  configLoading: boolean;
+  /** DESIGN-055 D-06: the `release_pick` remedy is on and the target is one episode or the movie. */
+  releasePickOn: boolean;
+}) {
   const scopeInput = targetToInput(target);
   const utils = trpc.useUtils();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<DoneState | null>(null);
   const [acked, setAcked] = useState(false);
   const [onto, setOnto] = useState<number | null>(null);
+  // DESIGN-055 D-06: the Release Pick step in place of Force Search's own (Back returns here).
+  const [picking, setPicking] = useState(false);
 
   // Read-only and free. `gcTime: 0` drops the plan when the dialog closes, so the next open reads the queue again.
   const plan = trpc.fix.searchPlan.useQuery(
@@ -262,7 +284,45 @@ function QueueAwareForceSearch({
     });
   };
 
+  /** Back to Force Search's own step from the Release Pick, reading the queue again (a pick may have changed it). */
+  const backToForceSearch = (fresh: boolean) => {
+    setError(null);
+    setPicking(false);
+    if (fresh) {
+      setDone(null);
+      setAcked(false);
+      setOnto(null);
+      void plan.refetch();
+    }
+  };
+
+  const pickEntry = (
+    <MediaAction
+      action="pickRelease"
+      disabled={search.isPending}
+      onFire={() => {
+        setError(null);
+        setPicking(true);
+      }}
+    />
+  );
+
   const body = (() => {
+    if (picking) {
+      return (
+        <ReleasePick
+          item={{ id: item.id, title: item.title }}
+          kind={kind}
+          episodeId={kind === 'sonarr' ? (target?.childId ?? null) : null}
+          targetLabel={label}
+          onBack={() => backToForceSearch(false)}
+          onClose={onClose}
+          onForceSearch={() => backToForceSearch(true)}
+          onChanged={refreshItem}
+          setError={setError}
+        />
+      );
+    }
     if (done) {
       const searched = outcomeSearched(done.outcome);
       return (
@@ -287,6 +347,13 @@ function QueueAwareForceSearch({
                 retryLabel="Search again"
                 retryPending={search.isPending}
               />
+              {releasePickOn && live.progress?.phase === 'nothing_found' ? (
+                <section className="repair-guide__group release-pick__entry">
+                  <h4>Nothing the library would take on its own turned up</h4>
+                  <p className="muted">{PICK_ENTRY_NOTE}</p>
+                  <div className="form-actions">{pickEntry}</div>
+                </section>
+              ) : null}
               <p className="muted">You can close this. The live status stays on the title until it finishes.</p>
             </>
           ) : null}
@@ -334,10 +401,12 @@ function QueueAwareForceSearch({
               <button type="button" className="btn primary" disabled={search.isPending} onClick={() => submit(data)}>
                 {confirmText('search', null)}
               </button>
+              {releasePickOn ? pickEntry : null}
               <button type="button" className="btn" disabled={search.isPending} onClick={onClose}>
                 Cancel
               </button>
             </div>
+            {releasePickOn ? <p className="muted release-pick__entry-note">{PICK_ENTRY_NOTE}</p> : null}
           </div>
         );
 
@@ -540,7 +609,7 @@ function QueueAwareForceSearch({
       banner={error ? <p className="alert">{error}</p> : null}
     >
       <div className="repair-guide">
-        {intro && done === null ? intro : null}
+        {intro && done === null && !picking ? intro : null}
         {body}
       </div>
     </Modal>

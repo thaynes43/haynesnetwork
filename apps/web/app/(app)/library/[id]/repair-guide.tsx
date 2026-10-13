@@ -94,6 +94,10 @@ export interface RepairGuideProps {
   remapOn?: boolean;
   /** D-05 — opened from a Title Check flag: start at the re-map preview with this move. */
   initialRemap?: GuideRemapStart | null;
+  /** DESIGN-055 D-06 (PLAN-077 P5): the `release_pick` remedy, offered on each episode a re-map leaves empty. */
+  releasePickOn?: boolean;
+  /** Closes the guide and opens Force Search for one episode (the Release Pick's way to add a download). */
+  onForceSearch?: (target: ActionTarget) => void;
 }
 
 interface DoneState {
@@ -116,6 +120,8 @@ export function RepairGuide({
   intro,
   remapOn = false,
   initialRemap = null,
+  releasePickOn = false,
+  onForceSearch,
 }: RepairGuideProps) {
   const isTv = item.arrKind === 'sonarr';
   const planning = remedies.replacement_preview || remedies.season_guard;
@@ -783,6 +789,8 @@ export function RepairGuide({
             onClose={close}
             onChanged={onSubmitted}
             setError={setError}
+            releasePickOn={releasePickOn}
+            onForceSearch={onForceSearch}
           />
         ) : null;
 

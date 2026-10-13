@@ -54,6 +54,11 @@ export interface FixDialogProps {
    * this move (the file on one episode belongs on the one its name says). Ignored while the remedy is off.
    */
   initialRemap?: GuideRemapStart | null;
+  /**
+   * DESIGN-055 D-06 (PLAN-077 P5): open Force Search for one episode in place of the guide (the Release Pick sends a
+   * download that needs a hand to Force Search, whose Import Check adds it).
+   */
+  onForceSearch?: (target: ActionTarget) => void;
 }
 
 /**
@@ -79,6 +84,8 @@ export function FixDialog(props: FixDialogProps) {
         intro={props.intro}
         remapOn={guide.data.remapOn}
         initialRemap={props.initialRemap ?? null}
+        releasePickOn={guide.data.releasePickOn}
+        onForceSearch={props.onForceSearch}
       />
     ) : null;
   }

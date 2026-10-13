@@ -3562,6 +3562,198 @@ input[aria-invalid='true'] {
   color: var(--color-danger);
 }
 
+/* ---------- ADR-109 C-06 / DESIGN-055 D-06 (PLAN-077 P5): the Release Pick step of the Repair Guide ----------
+   Every release for one missing episode or movie, one card each: the best choice first, then the others the person can
+   pick, then a closed list of the ones nobody can. Titles are long unbroken strings, so they wrap anywhere instead of
+   widening the dialog on a phone. A row's action keeps one reserved cell for "Pick this one" and "Try another site", so
+   a refusal recolors it and moves nothing (hard rule 9). Tokens only (hard rule 2). */
+.release-pick__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.release-pick__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  font-size: 13px;
+}
+.release-pick__row--best {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  border-left: 4px solid var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface-2));
+}
+.release-pick__row--not_allowed {
+  background: var(--color-surface);
+}
+.release-pick__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.release-pick__tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+}
+.release-pick__tag--best {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+.release-pick__tag--grab {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+  color: var(--color-text);
+}
+.release-pick__tag--override {
+  border-color: color-mix(in srgb, var(--color-warning) 60%, var(--color-border));
+  color: var(--color-text);
+}
+.release-pick__tag--not_allowed {
+  border-color: color-mix(in srgb, var(--color-danger) 50%, var(--color-border));
+  color: var(--color-danger);
+}
+.release-pick__title {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.release-pick__grabbed-title {
+  font-size: 13px;
+}
+.release-pick__why {
+  color: var(--color-text);
+}
+.release-pick__facts {
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.release-pick__evidence--good {
+  color: var(--color-accent);
+}
+.release-pick__evidence--quiet {
+  color: var(--color-text-muted);
+}
+.release-pick__reasons {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.release-pick__reason--hard {
+  color: var(--color-danger);
+}
+.release-pick__reason--blocks {
+  color: var(--color-warning);
+}
+.release-pick__reason--neutral {
+  color: var(--color-text);
+}
+.release-pick__arr summary,
+.release-pick__blocked > summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.release-pick__arr summary {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.release-pick__arr ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.release-pick__act {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 4px;
+  /* The cell keeps a button's height when a refusal line takes the button's place (hard rule 9). */
+  min-height: 2.25rem;
+}
+.release-pick__refused {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--color-danger);
+}
+.release-pick__note {
+  font-size: 12px;
+}
+/* "Pick this one" and "Try another site" share one grid cell; only one shows, so the button keeps the wider width. */
+.btn.release-pick__sized {
+  display: inline-grid;
+}
+.btn.release-pick__sized > span {
+  grid-area: 1 / 1;
+}
+.release-pick__ghost {
+  visibility: hidden;
+}
+.release-pick__blocked > summary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.release-pick__blocked[open] > summary {
+  margin-bottom: 6px;
+}
+.release-pick__blocked > .release-pick__note {
+  margin: 0 0 8px;
+}
+.release-pick__sub {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--color-text-muted);
+}
+.repair-guide__step .release-pick__status {
+  min-height: 1.5em;
+  font-size: 13px;
+}
+.release-pick__next {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 4.5em;
+}
+.repair-guide__step .release-pick__next > p {
+  margin: 0;
+  font-size: 14px;
+}
+.release-pick__next--quiet > p {
+  color: var(--color-text-muted);
+}
+.release-pick__next--alert > p {
+  color: var(--color-warning);
+}
+.release-pick__next--done > p {
+  color: var(--color-accent);
+}
+.repair-guide__step > .release-pick__entry-note {
+  font-size: 12px;
+  margin-top: -4px;
+}
+
 /* DESIGN-055 D-05 — the Title Check flag on an episode row: its own line under the label and the actions, rendered with
    the row (never inserted by a click), so it moves nothing on interaction (hard rule 9). */
 .child-row--flagged {

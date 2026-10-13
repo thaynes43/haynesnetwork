@@ -1,7 +1,7 @@
 'use client';
 
 // ADR-028 / DESIGN-005 D-20/D-21 — the client half of the action-feedback contract:
-// poll `fix.progress` / `fix.searchProgress` while a progress surface is mounted AND
+// poll `fix.progress` / `fix.searchProgress` / `fix.repairProgress` while a progress surface is mounted AND
 // the phase is non-terminal (stop on terminal/unmount — never a polling storm), and
 // render the live phase as a compact chip (button slots, table rows) or the full
 // dialog block (big meter + plain-language copy + retry + per-child roll-up).
@@ -35,10 +35,14 @@ export interface SearchProgressInput {
   seasonNumber?: number;
 }
 
-/** What to poll: a fix row's progress, or the latest force-search on a grain. */
+/**
+ * What to poll: a fix row's progress, the latest force-search on a grain, or (DESIGN-055 D-06, PLAN-077 P5) a Repair
+ * Request that grabbed a release from the Release Pick (`fix.repairProgress`).
+ */
 export type ProgressSource =
   | { kind: 'fix'; fixRequestId: string }
-  | { kind: 'search'; input: SearchProgressInput };
+  | { kind: 'search'; input: SearchProgressInput }
+  | { kind: 'repair'; repairRequestId: string };
 
 // D-20 poll cadence (judgment call recorded in the plan): bytes are moving →
 // 2.5 s; waiting on a search/queue → 5 s (8 s for the My Fixes table rows);
@@ -104,7 +108,25 @@ export function useActionProgress(
     },
   );
 
-  const active = source?.kind === 'fix' ? fixQuery : source?.kind === 'search' ? searchQuery : null;
+  const repairQuery = trpc.fix.repairProgress.useQuery(
+    { repairRequestId: source?.kind === 'repair' ? source.repairRequestId : PLACEHOLDER_UUID },
+    {
+      enabled: source?.kind === 'repair',
+      refetchInterval: (query) => nextPollMs(query as unknown as PollableQueryState, slowMs),
+      refetchOnWindowFocus: false,
+      staleTime: 0,
+      retry: false,
+    },
+  );
+
+  const active =
+    source?.kind === 'fix'
+      ? fixQuery
+      : source?.kind === 'search'
+        ? searchQuery
+        : source?.kind === 'repair'
+          ? repairQuery
+          : null;
   const progress = (active?.data as ActionProgressData | undefined) ?? null;
 
   // Fire onTerminal once per ENTRY into a terminal phase — a later non-terminal
