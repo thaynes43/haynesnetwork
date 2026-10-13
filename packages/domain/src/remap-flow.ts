@@ -29,6 +29,7 @@ import {
   type RemapSuggestion,
 } from './remap-plan';
 import { episodeLabel } from './media-children';
+import { isLibraryFileName } from './title-check';
 import type { FixReason } from '@hnet/db';
 
 export interface RemapTargetInput {
@@ -121,7 +122,8 @@ async function readSeason(input: RemapTargetInput): Promise<SeasonRead> {
       size: f.size ?? null,
       releaseGroup: f.releaseGroup ?? null,
       qualityName: f.quality?.quality?.name ?? null,
-      sourceName: f.sceneName?.trim() ? f.sceneName : (judgedName.get(f.id) ?? null),
+      // A library's own earlier name is no evidence (DESIGN-055 P4 decision 16).
+      sourceName: [f.sceneName?.trim() || null, judgedName.get(f.id) ?? null].find((n) => n && !isLibraryFileName(n)) ?? null,
     })),
     queueBusy,
     sonarrBusy,

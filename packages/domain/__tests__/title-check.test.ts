@@ -17,6 +17,7 @@ import { notificationOutbox, titleChecks } from '@hnet/db';
 import { ArrHttpError, type SonarrImportHistoryRecord } from '@hnet/arr';
 import {
   backfillTitleChecks,
+  isLibraryFileName,
   judgeTitleCheckFile,
   listTitleFlags,
   renderOutboxEmail,
@@ -333,6 +334,28 @@ describe('the Title Check census (D-05)', () => {
       // The row keeps how it was first written.
       origin: 'history',
     });
+  });
+
+  it('a name in a library\'s own naming shape is no evidence (DESIGN-055 P4 decision 16)', () => {
+    // The 2026-10-12 hand fix re-imported The Loud House files from a hold folder under their earlier, wrong Sonarr names.
+    expect(isLibraryFileName('The Loud House (2016) - S05E46 - Appetite for Destruction [AMZN WEBDL-1080p][EAC3 5.1][h264]-LAZY')).toBe(true);
+    expect(isLibraryFileName('Be Cool, Scooby-Doo! (2015) - S02E24 - Pizza OPossums [AMZN][WEBDL-1080p]')).toBe(true);
+    expect(isLibraryFileName('The Loud House (2016) - S05E02-03 - The Boss Maybe and Family Bonding [AMZN WEBDL-1080p]')).toBe(true);
+    // Release names that merely use " - " still count.
+    expect(isLibraryFileName("Clarence.2014 - S02E35 - Belson's Backpack.WEBDL-1080p.AAC.h264.ROWSDOWER")).toBe(false);
+    expect(isLibraryFileName('Ben.10.2016 - S03E43 - Wheels of Fortune.WEBRip-1080p.AAC.x264.LAZY')).toBe(false);
+    expect(isLibraryFileName(DSNP)).toBe(false);
+    const episodes = [
+      { id: 1, seasonNumber: 5, episodeNumber: 45, title: 'How the Best Was Won' },
+      { id: 2, seasonNumber: 5, episodeNumber: 46, title: 'Appetite for Destruction' },
+    ];
+    expect(
+      judgeTitleCheckFile({
+        names: ['The Loud House (2016) - S05E46 - Appetite for Destruction [AMZN WEBDL-1080p][EAC3 5.1][h264]-LAZY'],
+        episodes,
+        fileEpisodeIds: [1],
+      }),
+    ).toMatchObject({ verdict: 'silent', bestEpisodeId: null, score: null });
   });
 
   it('counts a failed series read and holds the cursor at it, so nothing after it is skipped for good', async () => {
