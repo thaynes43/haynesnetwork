@@ -566,11 +566,17 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
   const firstIndex = new Map(grouped.map((g) => [g, drafts.indexOf(g[0]!)] as const));
   grouped.sort((a, b) => stateRank[a[0]!.state] - stateRank[b[0]!.state] || firstIndex.get(a)! - firstIndex.get(b)!);
 
-  // The recommended pick: the first Grab; else the Override whose title names the target, then the *arr's order.
+  // The recommended pick: the first Grab; else the Override whose title names the target, then the one the library's
+  // custom formats score highest (P5 decision 16: a large negative score is a format the owner refuses, such as x265 at
+  // -9925, so a quality the profile merely does not list ranks above it), then the *arr's order.
   let recommended: RowDraft[] | null = grouped.find((g) => g[0]!.state === 'grab') ?? null;
   if (!recommended) {
     const overrides = grouped.filter((g) => g[0]!.state === 'override');
-    overrides.sort((a, b) => a[0]!.evidenceRank - b[0]!.evidenceRank || firstIndex.get(a)! - firstIndex.get(b)!);
+    const score = (g: RowDraft[]) => g[0]!.release.customFormatScore ?? 0;
+    overrides.sort(
+      (a, b) =>
+        a[0]!.evidenceRank - b[0]!.evidenceRank || score(b) - score(a) || firstIndex.get(a)! - firstIndex.get(b)!,
+    );
     recommended = overrides[0] ?? null;
   }
 

@@ -161,6 +161,26 @@ describe('classifyReleases on the live Lost Tapes S01 lists (Case A, AC-40 relea
     expect(pack.reasons.map((r) => r.code)).toContain('pack');
   });
 
+  it('recommends the override the library scores highest among those whose name matches (P5 decision 16)', () => {
+    // Read live 2026-10-13 for SpongeBob SquarePants S17E18 "Farmer's Market Feud", missing: every release was rejected.
+    // The *arr's order leads with an x265 WEBRip the profile scores -9925; the HDTV 1080p h264 one is only a quality the
+    // profile does not list.
+    const base = releases().find((r) => r.title.includes('S01E11.1080p.AMZN'))!;
+    const sb = (o: Partial<ArrRelease>): ArrRelease => ({ ...base, approved: false, episodeNumbers: [11], ...o });
+    const target = episodeTarget(E11);
+    const { rows } = classifyReleases(
+      [
+        sb({ guid: 's1', title: 'Regular.Show.The.Lost.Tapes.S01E11.Spice.It.Up.1080p.AMZN.Webrip.x265.10bit.EAC3.2.0-Frys-TAoE', customFormatScore: -9925, rejections: ['Custom Formats AMZN, x265 (HD) have score -9925 below Series profile minimum 0'] }),
+        sb({ guid: 's2', title: 'Regular.Show.The.Lost.Tapes.S01E11.Spice.It.Up.1080p.HDTV.AAC2.0.x264-Slurpuff', customFormatScore: 0, qualityName: 'HDTV-1080p', rejections: ['HDTV-1080p is not wanted in profile'] }),
+        sb({ guid: 's3', title: 'Regular.Show.The.Lost.Tapes.S01E11.720p.HDTV.H.264-JFF', customFormatScore: 0, qualityName: 'HDTV-720p', rejections: ['HDTV-720p is not wanted in profile'] }),
+      ],
+      target,
+    );
+    expect(rows.find((r) => r.recommended)!.title).toContain('HDTV.AAC2.0.x264-Slurpuff');
+    // The list itself keeps the *arr's order.
+    expect(rows.map((r) => r.title.split('-').at(-1))).toEqual(['TAoE', 'Slurpuff', 'JFF']);
+  });
+
   it('an approved row is a Grab with the plain body, unless a hard reason refuses it (hard refusals win)', () => {
     const base = releases().find((r) => r.title.includes('S01E10.Spice.It.Up'))!;
     const approved: ArrRelease = {
