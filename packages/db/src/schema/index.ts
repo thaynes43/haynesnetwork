@@ -198,3 +198,7 @@ export * from './trash-sweep-status';
 // ADR-097 / DESIGN-052 D-27 (migration 0087) — the Title Exclusion audit: one append-only row per import-list exclusion
 // the app wrote on Radarr or Sonarr before a Trash delete (or in the one-off backfill). Guarded single-writer table.
 export * from './trash-title-exclusions';
+// ADR-110 C-03, C-04 / DESIGN-055 D-05 (PLAN-077 P4, migration 0101) — the Title Check census (one verdict per imported
+// Sonarr episode file) and the Mislabel Block's terms. Both guarded single-writer tables.
+export * from './title-checks';
+export * from './mislabel-block-terms';

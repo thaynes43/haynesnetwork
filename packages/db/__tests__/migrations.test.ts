@@ -23,6 +23,10 @@ import {
   SEERR_ISSUE_MEDIA_TYPES,
   SEERR_ISSUE_STATUSES,
   SEERR_ISSUE_TYPES,
+  TITLE_CHECK_VERDICTS,
+  TITLE_CHECK_ORIGINS,
+  MISLABEL_TERM_STATES,
+  MISLABEL_TERM_ORIGINS,
   SYNC_RUN_KINDS,
   WATCH_ACCOUNT_ROLES,
   WATCH_EVENT_KINDS,
@@ -3230,6 +3234,73 @@ describe('migrations against embedded Postgres 16', () => {
     });
   });
 
+  describe('0101 title_checks + mislabel_block_terms (ADR-110 C-03, C-04 / DESIGN-055 D-05, PLAN-077 P4)', () => {
+    it('creates the Title Check census with its CHECKs and one row per file', async () => {
+      const insert = (fileId: number, fields: Record<string, unknown> = {}) => {
+        const row = { verdict: 'disagrees', origin: 'history', episode_ids: '{118419}', instance: 'sonarr', ...fields };
+        return client.query({
+          text: `INSERT INTO title_checks (instance, series_id, season_number, episode_id, episode_ids, episode_file_id,
+                   source_title, verdict, best_episode_id, score, best_score, evidence_version, origin, imported_at)
+                 VALUES ($1, 1061, 1, 118419, $2, $3, 'Regular.Show..The.Lost.Tapes.S01E24.All.You.Can.Fit.1080p', $4,
+                   118418, 0, 1, 1, $5, now())`,
+          values: [row.instance, row.episode_ids, fileId, row.verdict, row.origin],
+        });
+      };
+      try {
+        for (const verdict of TITLE_CHECK_VERDICTS) await insert(9_101_000 + TITLE_CHECK_VERDICTS.indexOf(verdict), { verdict });
+        for (const origin of TITLE_CHECK_ORIGINS) await insert(9_101_010 + TITLE_CHECK_ORIGINS.indexOf(origin), { origin });
+        await expect(insert(9_101_020, { verdict: 'maybe' })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9_101_021, { origin: 'janitor' })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9_101_022, { instance: 'radarr' })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9_101_023, { episode_ids: '{}' })).rejects.toMatchObject({ code: '23514' });
+        // One row per (instance, episode file).
+        await expect(insert(9_101_000)).rejects.toMatchObject({ code: '23505' });
+      } finally {
+        await client.query(`DELETE FROM title_checks WHERE episode_file_id BETWEEN 9101000 AND 9101099`);
+      }
+    });
+
+    it('creates mislabel_block_terms with one live term per (series, group) and widens the run-kind and audit CHECKs', async () => {
+      const insert = (series: number, group: string, fields: Record<string, unknown> = {}) => {
+        const row = { state: 'active', origin: 'remap', ended_at: null, ...fields };
+        return client.query({
+          text: `INSERT INTO mislabel_block_terms (series_id, series_title, release_group, term, state, origin, expires_at, ended_at)
+                 VALUES ($1, 'Regular Show: The Lost Tapes', $2, '/x/i', $3, $4, now() + interval '365 days', $5)`,
+          values: [series, group, row.state, row.origin, row.ended_at],
+        });
+      };
+      try {
+        for (const origin of MISLABEL_TERM_ORIGINS) await insert(9_101_100 + MISLABEL_TERM_ORIGINS.indexOf(origin), 'BiOMA', { origin });
+        for (const state of MISLABEL_TERM_STATES.filter((s) => s !== 'active')) {
+          await insert(9_101_100, 'BiOMA', { state, ended_at: new Date() });
+        }
+        // One live term per (series, group), case-insensitive; an ended one does not count.
+        await expect(insert(9_101_100, 'bioma')).rejects.toMatchObject({ code: '23505' });
+        await insert(9_101_100, 'LAZY');
+        await expect(insert(9_101_102, 'X', { state: 'gone' })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9_101_102, 'X', { origin: 'janitor' })).rejects.toMatchObject({ code: '23514' });
+        // ended_at is set exactly when the term is no longer active.
+        await expect(insert(9_101_102, 'X', { state: 'expired' })).rejects.toMatchObject({ code: '23514' });
+        await expect(insert(9_101_102, 'X', { ended_at: new Date() })).rejects.toMatchObject({ code: '23514' });
+        for (const [name, values] of [
+          ['sync_runs_run_kind_enum', SYNC_RUN_KINDS],
+          ['permission_audit_action_enum', PERMISSION_AUDIT_ACTIONS],
+        ] as const) {
+          const def = await client.query({
+            text: `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = $1`,
+            values: [name],
+          });
+          const listed = [...String(def.rows[0].def).matchAll(/'([a-z_-]+)'/g)].map((m) => m[1]);
+          expect(listed.sort()).toEqual([...values].sort());
+        }
+        expect(SYNC_RUN_KINDS).toContain('title-check');
+        expect(PERMISSION_AUDIT_ACTIONS).toContain('remove_mislabel_term');
+      } finally {
+        await client.query(`DELETE FROM mislabel_block_terms WHERE series_id BETWEEN 9101100 AND 9101199`);
+      }
+    });
+  });
+
   describe('0100 seerr_issues (ADR-111 C-01 / DESIGN-055 D-10, D-12, PLAN-077 P3)', () => {
     it('creates the Seerr Issue mirror with its CHECKs and widens the run-kind and audit-action CHECKs', async () => {
       const insert = (id: number, fields: Record<string, unknown> = {}) => {
@@ -3702,6 +3773,17 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(entry!.when).toBeGreaterThan(prev!.when);
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0090_book_requests_ll_rerequest_added.sql'), 'utf8');
     expect(sqlText).toContain('ADD COLUMN "ll_rerequest_added_at" timestamp with time zone');
+  });
+
+  // PLAN-077 P4 gate — the Title Check and Mislabel Block migration is journaled (idx 100), after 0100.
+  it('lists 0101_title_check_mislabel_block at idx 100, strictly after 0100_seerr_issues', () => {
+    const entry = journal.entries.find((e) => e.tag === '0101_title_check_mislabel_block');
+    const prev = journal.entries.find((e) => e.tag === '0100_seerr_issues');
+    expect(entry?.idx).toBe(100);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0101_title_check_mislabel_block.sql'), 'utf8');
+    expect(sqlText).toContain('CREATE TABLE "title_checks"');
+    expect(sqlText).toContain('CREATE TABLE "mislabel_block_terms"');
   });
 
   // PLAN-077 P3 gate — the Seerr Issue mirror migration is journaled (idx 99), after 0099.

@@ -110,9 +110,11 @@ import {
   arrCommandStatusSchema,
   radarrManualImportCandidateSchema,
   sonarrManualImportCandidateSchema,
+  sonarrRenamePreviewSchema,
   type ArrCommandStatus,
   type RadarrManualImportCandidate,
   type SonarrManualImportCandidate,
+  type SonarrRenamePreview,
 } from './schemas/manual-import';
 import {
   bazarrEnvelopeSchema,
@@ -411,6 +413,31 @@ export class SonarrClient extends ArrReadClientBase {
   getManualImport(downloadId: string): Promise<SonarrManualImportCandidate[]> {
     return this.http.requestJson('GET', 'manualimport', z.array(sonarrManualImportCandidateSchema), {
       query: { downloadId, filterExistingFiles: true },
+    });
+  }
+
+  /**
+   * ADR-109 C-02 / DESIGN-055 D-04 rule 7 (PLAN-077 P4) — `GET /manualimport?seriesId=&seasonNumber=&filterExistingFiles=
+   * false`: the *arr's manual-import view of one season's LIBRARY files (each with its `episodeFileId`, quality,
+   * languages and release group), what the Episode Re-map sends back with new `episodeIds`. Sonarr 4.0.20.3012's
+   * `ManualImportController.GetMediaFiles` takes the series branch whenever `seriesId` is present
+   * (`GetMediaFiles(seriesId, seasonNumber)`), which lists the series folder's files, never a download.
+   */
+  listSeasonImportCandidates(seriesId: number, seasonNumber: number): Promise<SonarrManualImportCandidate[]> {
+    return this.http.requestJson('GET', 'manualimport', z.array(sonarrManualImportCandidateSchema), {
+      query: { seriesId, seasonNumber, filterExistingFiles: false },
+    });
+  }
+
+  /**
+   * DESIGN-055 D-04 rule 8 (PLAN-077 P4) — `GET /rename?seriesId=&seasonNumber=`: the files of a season whose name on
+   * disk differs from what the naming format would give them (Sonarr's own "Preview Rename"). After a re-map and its
+   * RenameFiles, a moved file still listed here was not renamed (its new name was taken; Sonarr skips, never
+   * overwrites).
+   */
+  listRenamePreview(seriesId: number, seasonNumber: number): Promise<SonarrRenamePreview[]> {
+    return this.http.requestJson('GET', 'rename', z.array(sonarrRenamePreviewSchema), {
+      query: { seriesId, seasonNumber },
     });
   }
 
