@@ -9,7 +9,7 @@
   non-group blocks) is ruled A (owner, 2026-10-13, ADR-113): mislabelled-name terms shipped in v0.117.0, the five terms
   are adopted and the hand profile and its tag are gone (P4, "Q-10 ruling"). Q-11 (the library's whole-season
   reorderings, issue #916) is ruled A too: staff's Season Re-map shipped in v0.117.0 and ran on 29 seasons (P4's
-  follow-up below; open flags 622 to 400, then 321 after the #928 round). P5 (Release Pick) is shipped and verified live, remedy on: v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)), v0.118.1 ([#930](https://github.com/thaynes43/haynesnetwork/pull/930)) and v0.119.1 ([#935](https://github.com/thaynes43/haynesnetwork/pull/935)). Its first person's pick is OC-054. P6 is next.
+  follow-up below; open flags 622 to 400, then 321 after the #928 round). P5 (Release Pick) is shipped and verified live, remedy on: v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)), v0.118.1 ([#930](https://github.com/thaynes43/haynesnetwork/pull/930)) and v0.119.1 ([#935](https://github.com/thaynes43/haynesnetwork/pull/935)). Its first person's pick is OC-054. P6 (language-aware Wrong language) is shipped and verified live, both remedies on: v0.121.0 ([#942](https://github.com/thaynes43/haynesnetwork/pull/942)), v0.122.1 ([#951](https://github.com/thaynes43/haynesnetwork/pull/951), [#953](https://github.com/thaynes43/haynesnetwork/pull/953)) and v0.122.2 ([#954](https://github.com/thaynes43/haynesnetwork/pull/954)); 144 English originals set to English as staff; its first person's report is OC-055, and the 13 non-English originals wait on the owner ([#955](https://github.com/thaynes43/haynesnetwork/issues/955)). P7 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -635,6 +635,60 @@ names, never deleting a file, after a watch-state check on every Plex server and
 - **e2e:** stub Plex preferences. Journey: a file with the wanted language sets the preference (or shows guidance,
   per Q-03); one without it grabs a matching release.
 - **Live check:** read back The Lost Tapes' show-level preference on each server; no other title changes.
+- **Status (2026-10-13): shipped, verified live, both remedies on; 144 English originals set to English as staff.**
+  - Releases:
+    - [#942](https://github.com/thaynes43/haynesnetwork/pull/942) (v0.121.0): the Audio Preference, the Language Replace,
+      the guide and the staff tools.
+    - [#951](https://github.com/thaynes43/haynesnetwork/pull/951) and [#953](https://github.com/thaynes43/haynesnetwork/pull/953)
+      (v0.122.1), found in this live check:
+      - The daily full sync's Sonarr run had failed since 2026-10-09: Sonarr sent "Zodiac (2028)" without
+        `statistics`, which failed the whole `GET /series` parse. The scan failed the same way. A missing `statistics`
+        now reads as nothing on disk, and Radarr falls back to `hasFile`.
+      - The Language Replace never takes another post of the file's own release (DESIGN-055 P6 decision 13).
+    - [#954](https://github.com/thaynes43/haynesnetwork/pull/954) (v0.122.2): the Audio Preference reads a show's own Plex
+      item, not a same-named movie in a movie library. Twelve Sonarr titles have one; Love, Death & Robots is the case
+      found.
+  - Deployed by haynes-ops [#3896](https://github.com/thaynes43/haynes-ops/pull/3896),
+    [#3899](https://github.com/thaynes43/haynes-ops/pull/3899) and [#3900](https://github.com/thaynes43/haynes-ops/pull/3900). Web pods, all 26 CronJobs, the
+    owed-check runner and the Books Census are on each version. There is no migration.
+  - A one-off full sync on v0.122.1 (17:47Z) ran Sonarr cleanly again: 1,069 series, 2 inserted, 322 history rows
+    relinked.
+  - **Live reads** (staff tools in a web pod, read-only), on v0.121.0:
+    - **Regular Show: The Lost Tapes S01E12, English:** `already_set`. The original is English, the file is `present`,
+      and HaynesTower 552877 and HaynesOps 106050 both read `en-US`. Plex's own tracks: Português (EAC3 5.1) is the
+      default, English (EAC3 5.1) is second.
+    - **Butterbean's Cafe season 1, English:** `already_set` on both servers.
+    - **Boruto S01E01, English:** guidance, `not_original` (the original is Japanese; the English track is the file's
+      default).
+    - **JUJUTSU KAISEN S02E06, Japanese:** `set` would write `ja` on both servers. Asking for English there is
+      `not_present` (the file is Portuguese and Japanese).
+    - **GoodFellas:** guidance, `movie` (Q-08).
+  - **Language Replace** (`language-plan`, read-only), JUJUTSU KAISEN S02E06, English:
+    - On v0.121.0 the pick was OLYMPUS's "MULTi" post of the file's own release. That led to decision 13.
+    - On v0.122.1 the pick is `...REPACK.1080p.BluRay.DUAL.FLAC.2.0.x264-Kitsune` (English and Japanese).
+  - **Remedies:** `audio_preference` was switched on at 16:54Z and `language_search` at 17:49Z (each audited, actor
+    null).
+  - **The staff sweep** (`repair-guide.ts audio-scan`, then `--apply-original eng`, 17:50Z to 17:52Z):
+    - The scan read 965 series and 63,648 files. 181 have files that carry the original language behind another one.
+      For 143 English originals, Plex confirmed that the sample file starts in another language: Star Trek: Voyager in
+      German on 107 episodes, Jessie in Czech, SpongeBob, Mickey Mouse Clubhouse, ER, Paw Patrol, and others.
+    - All 143 were set to English as staff. Each is a completed `audio_preference` Repair Request (requester null), read
+      back on HaynesTower and HaynesOps, with no failure.
+    - The re-scan afterwards shows 145 set (with The Lost Tapes and Butterbean's Cafe) and no English original left
+      open. Twenty more have files that lead with another language, but Plex starts the sample in English (the file's
+      own default flag), so they need nothing.
+    - Love, Death & Robots could not be read on the first pass (its HaynesOps match was a same-named movie). On v0.122.2
+      it was set to English as staff (preview, then `--digest`) and reads back `en` on both servers.
+    - The final re-scan on v0.122.2 shows 146 set and no English original open. Two remain unread: Sugar has no Plex
+      match at all, so there is nothing to write, and Ranma ½ (2024) is a Japanese original.
+    - The 13 non-English originals are left for the owner ([#955](https://github.com/thaynes43/haynesnetwork/issues/955),
+      options A to D, C recommended).
+  - **UI:** the deployed site's sign-in cannot be driven from inside the cluster. Instead:
+    - e2e `wrong-language.spec.ts` passed in CI.
+    - The guide was walked on dev:local at 390 and 1280 wide, and the screenshots were checked: the language question,
+      the offer, its result, already set, another language, the season list, the Language Replace preview, its refusal
+      and its result.
+  - First person's report: OC-055.
 - **Build (2026-10-13):** DESIGN-055's "P6 decisions" (items 1-12, after D-08) record what landed and why. No migration:
   the Repair Request kind `audio_preference` was already allowed (0099), and the two remedies are keys of
   `repair_guide_remedies` (`audio_preference`, `language_search`, both ship off).
