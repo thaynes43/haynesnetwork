@@ -312,7 +312,9 @@ test.describe('the Release Pick (ADR-109 C-06 / DESIGN-055 D-06, PLAN-077 P5)', 
     await best.getByRole('button', { name: 'Pick this one' }).click();
     await expect(dialog.getByRole('heading', { name: 'Grab this release?' })).toBeVisible();
     await expect(dialog).toContainText('Download this release for both of the missing episodes it holds:');
-    for (const label of C_LABELS) await expect(dialog.locator('.release-pick__sub')).toContainText(label);
+    // The first line's list names each episode (the override line below has its own list of rules).
+    const named = dialog.locator('.release-pick__sub').first();
+    for (const label of C_LABELS) await expect(named).toContainText(label);
     await expect(dialog).toContainText('Grabbing it makes an exception for these episodes.');
     await expect(dialog).toContainText('Nothing is deleted or blocked.');
     await dialog.getByRole('button', { name: 'Grab this release' }).click();
