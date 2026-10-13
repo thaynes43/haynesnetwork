@@ -221,11 +221,57 @@ const SEERR_COLUMNS = [
   'commentCount',
 ] as const;
 
+/** An episode report's ledger item and Sonarr episode, looked up BEFORE the write transaction opens. */
+type EpisodeTargets = Map<number, { mediaItemId: string; targetChildId: number | null }>;
+
+const isEpisodeReport = (m: MappedSeerrIssue) =>
+  m.mediaType === 'tv' && m.problemSeason > 0 && m.problemEpisode > 0;
+
+const sameEpisode = (existing: SeerrIssueRow | undefined, mediaItemId: string, m: MappedSeerrIssue) =>
+  existing !== undefined &&
+  existing.mediaItemId === mediaItemId &&
+  existing.problemSeason === m.problemSeason &&
+  existing.problemEpisode === m.problemEpisode &&
+  existing.targetChildId !== null;
+
+/**
+ * The Sonarr episode of each episode report: kept while the item, season and episode are unchanged; read again
+ * otherwise. Runs OUTSIDE any transaction, so a slow Sonarr never holds a lock on the mirror (the webhook's read and
+ * the staff note take row locks).
+ */
+async function episodeTargetsFor(
+  db: DbClient | undefined,
+  mapped: readonly MappedSeerrIssue[],
+  existing: ReadonlyMap<number, SeerrIssueRow>,
+  ctx: ResolveContext,
+): Promise<EpisodeTargets> {
+  const out: EpisodeTargets = new Map();
+  const exec = resolveDb(db);
+  for (const m of mapped) {
+    if (!isEpisodeReport(m)) continue;
+    const mediaItemId = await resolveMediaItemId(exec, { mediaType: m.mediaType, tmdbId: m.tmdbId, tvdbId: m.tvdbId });
+    if (mediaItemId === null) continue;
+    const ex = existing.get(m.seerrIssueId);
+    if (sameEpisode(ex, mediaItemId, m)) {
+      out.set(m.seerrIssueId, { mediaItemId, targetChildId: ex!.targetChildId });
+      continue;
+    }
+    const [item] = await exec
+      .select({ arrKind: mediaItems.arrKind, arrItemId: mediaItems.arrItemId })
+      .from(mediaItems)
+      .where(eq(mediaItems.id, mediaItemId));
+    const targetChildId =
+      item?.arrKind === 'sonarr' ? await episodeIdFor(ctx, item.arrItemId, m.problemSeason, m.problemEpisode) : null;
+    out.set(m.seerrIssueId, { mediaItemId, targetChildId });
+  }
+  return out;
+}
+
 async function upsertMapped(
   tx: Transaction,
   mapped: MappedSeerrIssue,
   existing: SeerrIssueRow | undefined,
-  ctx: ResolveContext,
+  targets: EpisodeTargets,
   now: Date,
 ): Promise<UpsertOutcome> {
   const mediaItemId = await resolveMediaItemId(tx, {
@@ -235,26 +281,12 @@ async function upsertMapped(
   });
   const reporterUserId = await resolveUserIdByEmail(tx, mapped.reporterEmail);
 
-  // The Sonarr episode: kept while the item, season and episode are unchanged; read again otherwise.
+  // The episode looked up before the transaction; no *arr call happens inside it.
   let targetChildId: number | null = null;
-  if (mediaItemId !== null && mapped.mediaType === 'tv' && mapped.problemSeason > 0 && mapped.problemEpisode > 0) {
-    const same =
-      existing !== undefined &&
-      existing.mediaItemId === mediaItemId &&
-      existing.problemSeason === mapped.problemSeason &&
-      existing.problemEpisode === mapped.problemEpisode &&
-      existing.targetChildId !== null;
-    if (same) {
-      targetChildId = existing.targetChildId;
-    } else {
-      const [item] = await tx
-        .select({ arrKind: mediaItems.arrKind, arrItemId: mediaItems.arrItemId })
-        .from(mediaItems)
-        .where(eq(mediaItems.id, mediaItemId));
-      if (item?.arrKind === 'sonarr') {
-        targetChildId = await episodeIdFor(ctx, item.arrItemId, mapped.problemSeason, mapped.problemEpisode);
-      }
-    }
+  if (mediaItemId !== null && isEpisodeReport(mapped)) {
+    const pre = targets.get(mapped.seerrIssueId);
+    if (pre !== undefined && pre.mediaItemId === mediaItemId) targetChildId = pre.targetChildId;
+    else if (sameEpisode(existing, mediaItemId, mapped)) targetChildId = existing!.targetChildId;
   }
 
   const values = {
@@ -346,13 +378,20 @@ export async function syncSeerrIssues(input: {
     removed: 0,
     episodeLookupFailures: 0,
   };
+  const ids = mapped.map((m) => m.seerrIssueId);
+  const readExisting = async (exec: DbClient | undefined) =>
+    new Map(
+      (ids.length > 0
+        ? await resolveDb(exec).select().from(seerrIssues).where(inArray(seerrIssues.seerrIssueId, ids))
+        : []
+      ).map((r) => [r.seerrIssueId, r] as const),
+    );
+  // Sonarr is read before the transaction opens (a slow Sonarr must not hold the mirror's row locks).
+  const targets = await episodeTargetsFor(input.db, mapped, await readExisting(input.db), ctx);
   await inTransaction(input.db, async (tx) => {
-    const ids = mapped.map((m) => m.seerrIssueId);
-    const existingRows =
-      ids.length > 0 ? await tx.select().from(seerrIssues).where(inArray(seerrIssues.seerrIssueId, ids)) : [];
-    const existing = new Map(existingRows.map((r) => [r.seerrIssueId, r]));
+    const existing = await readExisting(tx);
     for (const m of mapped) {
-      const outcome = await upsertMapped(tx, m, existing.get(m.seerrIssueId), ctx, now);
+      const outcome = await upsertMapped(tx, m, existing.get(m.seerrIssueId), targets, now);
       result[outcome] += 1;
     }
     // A complete read that no longer lists an issue: it was deleted in Seerr. Kept (its staff note too), marked.
@@ -400,13 +439,22 @@ export async function refreshSeerrIssue(input: {
   }
   const mapped = mapSeerrIssue(issue, now);
   const ctx: ResolveContext = { sonarr: input.sonarr ?? null, episodes: new Map(), episodeLookupFailures: 0 };
+  const rowOf = async (exec: DbClient | undefined, lock: boolean) => {
+    const q = resolveDb(exec).select().from(seerrIssues).where(eq(seerrIssues.seerrIssueId, mapped.seerrIssueId));
+    const [row] = lock ? await q.for('update') : await q;
+    return row;
+  };
+  // Sonarr first, outside the transaction; the row lock is held only for the write.
+  const before = await rowOf(input.db, false);
+  const targets = await episodeTargetsFor(
+    input.db,
+    [mapped],
+    new Map(before ? [[before.seerrIssueId, before] as const] : []),
+    ctx,
+  );
   const outcome = await inTransaction(input.db, async (tx) => {
-    const [existing] = await tx
-      .select()
-      .from(seerrIssues)
-      .where(eq(seerrIssues.seerrIssueId, mapped.seerrIssueId))
-      .for('update');
-    return upsertMapped(tx, mapped, existing, ctx, now);
+    const existing = await rowOf(tx, true);
+    return upsertMapped(tx, mapped, existing, targets, now);
   });
   return { outcome };
 }

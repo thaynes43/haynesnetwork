@@ -3,7 +3,7 @@
 // by tmdb or tvdb, the Sonarr episode, the reporter's app account by email, the first message), an unchanged read
 // counted as such, an issue deleted in Seerr marked removed (its staff note kept), a failed list read that writes
 // nothing, and the webhook's single-issue read (a fresh GET, never the webhook body), including a 404 and an outage.
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { seerrIssues } from '@hnet/db/schema';
 import type { SeerrIssue } from '@hnet/arr';
@@ -226,6 +226,27 @@ describe('syncSeerrIssues and refreshSeerrIssue (D-10)', () => {
     expect(await syncSeerrIssues({ db: t.db, seerr: seerr.reader, sonarr: broken })).toMatchObject({ episodeLookupFailures: 1 });
     expect((await row(3))!.targetChildId).toBeNull();
     await syncSeerrIssues({ db: t.db, seerr: seerr.reader, sonarr: fakeSonarr().reader });
+    expect((await row(3))!.targetChildId).toBe(85215);
+  });
+
+  it('reads Sonarr before the write transaction opens, so a slow Sonarr holds no row lock', async () => {
+    const openTransactions = async () => {
+      const r = await t.db.execute(
+        sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%'`,
+      );
+      return Number((r as unknown as { rows: Array<{ n: number }> }).rows[0]!.n);
+    };
+    const seen: number[] = [];
+    const watching = {
+      async listEpisodes() {
+        seen.push(await openTransactions());
+        return [{ id: 85215, seasonNumber: 2, episodeNumber: 6 }];
+      },
+    };
+    await syncSeerrIssues({ db: t.db, seerr: fakeSeerr([PAPER]).reader, sonarr: watching });
+    await t.db.update(seerrIssues).set({ targetChildId: null });
+    await refreshSeerrIssue({ db: t.db, seerr: fakeSeerr([PAPER]).reader, sonarr: watching, seerrIssueId: 3 });
+    expect(seen).toEqual([0, 0]);
     expect((await row(3))!.targetChildId).toBe(85215);
   });
 
