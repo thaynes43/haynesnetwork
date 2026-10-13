@@ -72,6 +72,9 @@ export const sonarrSeriesSchema = z.object({
   alternateTitles: z
     .array(z.object({ title: z.string(), seasonNumber: z.number().int().nullish() }))
     .nullish(),
+  // ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — the series' original language (`{id, name}`, e.g. `{1, "English"}`).
+  // Wrong language sets Plex's preferred audio language only when the wanted language is this one (Q-03 ruling).
+  originalLanguage: z.object({ id: z.number().int().nullish(), name: z.string().nullish() }).nullish(),
 });
 export type SonarrSeries = z.infer<typeof sonarrSeriesSchema>;
 

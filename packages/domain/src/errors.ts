@@ -118,7 +118,16 @@ export type FixRefusalReason =
   | 'needs_guide'
   | 'remap_refused'
   /** DESIGN-055 P4 decision 25: the staff second-copy Fix refused (staff tool only). */
-  | 'copy_refused';
+  | 'copy_refused'
+  /**
+   * DESIGN-055 D-08 (PLAN-077 P6): the Audio Preference may not be set (the wanted language is not the title's original
+   * language, the title is a movie, Plex has no value for it, or the file lacks it). Nothing was written.
+   */
+  | 'audio_preference_refused'
+  /** DESIGN-055 D-08 rule 4 (PLAN-077 P6): no release in the wanted language the library would take. Nothing removed. */
+  | 'no_language_release'
+  /** DESIGN-055 D-08 (PLAN-077 P6): a season's files lack the wanted language; each episode is fixed on its own. */
+  | 'language_by_episode';
 
 export class FixRefusedError extends Error {
   readonly code = 'FIX_REFUSED' as const;

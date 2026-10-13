@@ -92,6 +92,10 @@ import {
   runEpisodeRemap,
   queueTexts,
   readFileAudio,
+  previewAudioPreference,
+  setAudioPreference,
+  readLanguagePlan,
+  scanAudioDefaults,
   readPlaybackEvidence,
   setKnownIssueServers,
   setRepairGuideRemedies,
@@ -105,6 +109,9 @@ const USAGE = `Usage:
   repair-guide.ts preview  (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n> [--episodes 1,2]] [--replace-file]
   repair-guide.ts evidence (--tmdb <id> | --tvdb <id>) --email <app user email> [--plex-user-id <id>] [--plex-username <name>]
   repair-guide.ts audio    (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n>]
+  repair-guide.ts audio-preference (--tmdb <id> | --tvdb <id> (--episode S01E05 | --season <n>)) --language eng [--digest <d>]
+  repair-guide.ts language-plan (--tmdb <id> | --tvdb <id> --episode S01E05) --language eng
+  repair-guide.ts audio-scan [--json] [--apply-original eng]
   repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
   repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
   repair-guide.ts release-list (--tmdb <id> | --tvdb <id> --episode S01E05) [--json]
@@ -128,6 +135,13 @@ copy-plan only reads; copy-run is staff's Second-Copy Fix (DESIGN-055 P4 decisio
 already has its own file and searches for the episode the slot is missing (a Fix Request, requester null).
 release-grab is staff's Release Pick (DESIGN-055 P5 decision 14): a fresh list as staff, then the grab of the row with
 that key, with the guide's refusals (one Repair Request, requester null).
+audio-preference only reads without --digest (the Wrong language decision: set, already set, or guidance, and why); with
+the --digest it printed it is staff's Audio Preference (DESIGN-055 P6): the show's preferred audio language on every Plex
+server that carries it, read back (one Repair Request, requester null). language-plan only reads (the Language Replace
+plan, as if language_search were on). audio-scan only reads: every Sonarr series whose files carry the original language
+behind another one, confirmed in Plex on one file, with each Plex server's stored preference (DESIGN-055 P6 decision 10);
+with --apply-original <code> it then sets the Audio Preference, as staff, on every finding whose original language is
+that one and whose Plex default is another (one Repair Request each, requester null; needs the audio_preference remedy).
 Remedies: ${REPAIR_GUIDE_REMEDIES.join(', ')}.`;
 
 export interface RepairGuideArgs {
@@ -146,7 +160,14 @@ export interface RepairGuideArgs {
     | 'season-plan'
     | 'season-run'
     | 'copy-plan'
-    | 'copy-run';
+    | 'copy-run'
+    | 'audio-preference'
+    | 'language-plan'
+    | 'audio-scan';
+  /** audio-preference / language-plan: the wanted audio language (ISO 639-2, e.g. `eng`). */
+  language?: string;
+  /** audio-scan: set the Audio Preference on the findings whose original language is this one. */
+  applyOriginal?: string;
   /** remap-run: the digest of the remap-plan output staff confirmed. */
   digest?: string;
   /** release-grab: the row key release-list printed. */
@@ -205,7 +226,10 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'season-plan' &&
     command !== 'season-run' &&
     command !== 'copy-plan' &&
-    command !== 'copy-run'
+    command !== 'copy-run' &&
+    command !== 'audio-preference' &&
+    command !== 'language-plan' &&
+    command !== 'audio-scan'
   ) {
     throw new Error(`unknown command "${command}"`);
   }
@@ -343,6 +367,16 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         args.copyOf = positiveInt(flag, value);
         i += 1;
         break;
+      case '--apply-original':
+        if (!value || !/^[a-z]{3}$/i.test(value)) throw new Error('--apply-original needs a three-letter code, e.g. eng');
+        args.applyOriginal = value.toLowerCase();
+        i += 1;
+        break;
+      case '--language':
+        if (!value || !/^[a-z]{3}$/i.test(value)) throw new Error('--language needs a three-letter code, e.g. eng');
+        args.language = value.toLowerCase();
+        i += 1;
+        break;
       case '--evidence':
         if (!value || value.trim().length < 10) throw new Error('--evidence needs a short note of what was compared');
         args.evidence = value.trim();
@@ -352,6 +386,23 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         throw new Error(`unknown argument "${flag}"`);
     }
   }
+  if (command === 'audio-scan') {
+    if (Object.keys(args).some((k) => !['command', 'replaceFile', 'json', 'applyOriginal'].includes(k))) {
+      throw new Error('audio-scan takes only --json and --apply-original');
+    }
+    return args;
+  }
+  if (command === 'audio-preference' || command === 'language-plan') {
+    if (!args.language) throw new Error(`${command} needs --language <code>`);
+    if ((args.tmdb === undefined) === (args.tvdb === undefined)) throw new Error('give exactly one of --tmdb or --tvdb');
+    if (args.tmdb !== undefined && (args.episode || args.season !== undefined)) throw new Error('--episode and --season are for a show (--tvdb)');
+    if (args.tvdb !== undefined && command === 'language-plan' && !args.episode) throw new Error('language-plan on a show needs --episode');
+    if (args.tvdb !== undefined && !args.episode && args.season === undefined) throw new Error('a show needs --episode or --season');
+    if (args.digest !== undefined && command !== 'audio-preference') throw new Error('--digest is for audio-preference');
+    return args;
+  }
+  if (args.language !== undefined) throw new Error('--language is for audio-preference and language-plan');
+  if (args.applyOriginal !== undefined) throw new Error('--apply-original is for audio-scan');
   if (command === 'title-check') {
     if ((args.backfill === true) === (args.flagsSeriesId !== undefined)) {
       throw new Error('title-check needs exactly one of --backfill or --flags <series id>');
@@ -510,6 +561,42 @@ async function main(): Promise<number> {
   }
 
   if (args.command === 'title-check') return titleCheck(args, db);
+
+  if (args.command === 'audio-scan') {
+    const arr = arrClientBundleFromEnv();
+    const plex = plexClientBundleFromEnv();
+    const report = await scanAudioDefaults({ db, arr, plex });
+    if (args.json) console.log(JSON.stringify(report, null, 2));
+    else for (const line of formatAudioScan(report)) console.log(line);
+    if (!args.applyOriginal) return 0;
+    let failures = 0;
+    for (const f of report.findings) {
+      if (f.original !== args.applyOriginal || f.preferenceSet || !f.mediaItemId || !f.sample) continue;
+      if (f.plexDefault === null || f.plexDefault === f.original) continue;
+      const input = {
+        db,
+        arr,
+        plex,
+        mediaItemId: f.mediaItemId,
+        scope: 'episode' as const,
+        targetChildId: f.sample.episodeId,
+        wantedLanguage: f.original,
+      };
+      try {
+        const preview = await previewAudioPreference(input);
+        if (preview.action !== 'set') {
+          console.log(JSON.stringify({ tvdbId: f.tvdbId, title: f.title, skipped: preview.action, reason: preview.reason }));
+          continue;
+        }
+        const result = await setAudioPreference({ ...input, requesterId: null, digest: preview.digest });
+        console.log(JSON.stringify({ tvdbId: f.tvdbId, title: f.title, result }));
+      } catch (error) {
+        failures += 1;
+        console.log(JSON.stringify({ tvdbId: f.tvdbId, title: f.title, error: (error as Error).message }));
+      }
+    }
+    return failures === 0 ? 0 : 1;
+  }
 
   if (args.command === 'queue-check') {
     const clients = arrQueueCleanupClientsFromEnv();
@@ -728,6 +815,32 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  if (args.command === 'audio-preference') {
+    const plex = plexClientBundleFromEnv();
+    const input = { db, arr, plex, mediaItemId: item.id, ...scope, wantedLanguage: args.language! };
+    if (!args.digest) {
+      const preview = await previewAudioPreference(input);
+      console.log(JSON.stringify({ title: item.title, preview }, null, 2));
+      return 0;
+    }
+    const result = await setAudioPreference({ ...input, requesterId: null, digest: args.digest });
+    console.log(JSON.stringify({ title: item.title, result }, null, 2));
+    return 0;
+  }
+
+  if (args.command === 'language-plan') {
+    const { plan } = await readLanguagePlan({
+      db,
+      arr,
+      mediaItemId: item.id,
+      ...scope,
+      wantedLanguage: args.language!,
+      remedies: { ...allRemediesOff(), language_check: true, language_search: true },
+    });
+    console.log(JSON.stringify({ title: item.title, plan }, null, 2));
+    return 0;
+  }
+
   // preview: every planning remedy on, so the guard can be checked live before the switch is turned on.
   let episodeIds: number[] | undefined;
   if (args.episodes && scope.seasonNumber !== undefined) {
@@ -751,6 +864,22 @@ async function main(): Promise<number> {
 }
 
 const gb = (bytes: number | null) => (bytes === null ? '?' : `${(bytes / 1024 ** 3).toFixed(2)} GB`);
+
+/** The audio scan as text: one line per series, worst first (exported for the test). */
+export function formatAudioScan(report: Awaited<ReturnType<typeof scanAudioDefaults>>): string[] {
+  const lines = [
+    `scanned ${report.seriesScanned} series with files (${report.filesRead} files); ${report.findings.length} put another language ahead of the original one`,
+  ];
+  for (const f of report.findings) {
+    const prefs = f.plex.map((p) => `${p.server}=${p.unreachable ? 'unreachable' : p.current === '' ? 'account default' : p.current}`).join(' ');
+    const state = f.preferenceSet ? 'set ' : f.plexDefault === null ? 'UNREAD' : f.plexDefault === f.original ? 'plays' : 'OPEN';
+    lines.push(
+      `${state} tvdb ${f.tvdbId} ${f.title} | original ${f.original} | ${f.filesFirstOther}/${f.filesWithOriginal} files lead with ${f.leadingLanguages.join('/')}` +
+        ` | Plex starts ${f.sample?.label ?? '?'} in ${f.plexDefault ?? '?'} | ${prefs}`,
+    );
+  }
+  return lines;
+}
 
 /** The Release Pick preview as text: the target, the counts, then one line per row with its reasons (exported for the test). */
 export function formatReleaseList(title: string, list: Awaited<ReturnType<typeof previewReleaseList>>): string[] {

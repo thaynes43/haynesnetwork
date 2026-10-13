@@ -38,6 +38,9 @@ export const radarrMovieSchema = z.object({
    *  "Örümcek Adam" for Spider-Man). */
   originalTitle: z.string().nullish(),
   alternateTitles: z.array(z.object({ title: z.string() })).nullish(),
+  /** ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — the movie's original language (`{id, name}`); Wrong language reads it
+   *  to tell a dubbed default track from the person's own preference (Q-03 ruling). */
+  originalLanguage: z.object({ id: z.number().int().nullish(), name: z.string().nullish() }).nullish(),
   tmdbId: z.number().int(), // always set (D-02 external-id identity)
   imdbId: z.string().optional(),
   monitored: z.boolean(),

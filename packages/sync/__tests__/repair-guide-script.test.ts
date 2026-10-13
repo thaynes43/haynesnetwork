@@ -1,7 +1,7 @@
 // ADR-109 / DESIGN-055 (PLAN-077 P1) — the Repair Guide's in-cluster tool parses its commands strictly: a read can never
 // be mistaken for a write, and `settings` writes only with --set / --known-issue.
 import { describe, expect, it } from 'vitest';
-import { formatReleaseList, formatSeasonPlan, formatTitleCheckBackfill, parseRepairGuideArgs } from '../src/scripts/repair-guide';
+import { formatAudioScan, formatReleaseList, formatSeasonPlan, formatTitleCheckBackfill, parseRepairGuideArgs } from '../src/scripts/repair-guide';
 import type { SeasonRemapView } from '@hnet/domain';
 
 describe('repair-guide.ts arguments', () => {
@@ -268,6 +268,55 @@ describe('repair-guide.ts arguments', () => {
     expect(() => parseRepairGuideArgs(['copy-plan', '--tvdb', '1', '--season', '6'])).toThrow(/--episode/);
     expect(() => parseRepairGuideArgs(['copy-plan', '--tvdb', '1', '--episode', 'S06E10', '--evidence', 'subtitles match'])).toThrow(/copy-run/);
     expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '6', '--copy-of', '3'])).toThrow(/copy-plan/);
+  });
+
+  it('audio-preference reads, and writes only with the digest it printed; language-plan and audio-scan read (DESIGN-055 P6)', () => {
+    expect(parseRepairGuideArgs(['audio-preference', '--tvdb', '475718', '--episode', 'S01E12', '--language', 'ENG'])).toMatchObject({
+      command: 'audio-preference',
+      tvdb: 475718,
+      episode: { season: 1, episode: 12 },
+      language: 'eng',
+    });
+    expect(
+      parseRepairGuideArgs(['audio-preference', '--tvdb', '1', '--season', '1', '--language', 'eng', '--digest', 'abcdef0123456789abcdef01']),
+    ).toMatchObject({ season: 1, digest: 'abcdef0123456789abcdef01' });
+    expect(parseRepairGuideArgs(['audio-preference', '--tmdb', '769', '--language', 'eng'])).toMatchObject({ tmdb: 769 });
+    expect(() => parseRepairGuideArgs(['audio-preference', '--tvdb', '1', '--episode', 'S01E01'])).toThrow(/--language/);
+    expect(() => parseRepairGuideArgs(['audio-preference', '--tvdb', '1', '--language', 'eng'])).toThrow(/--episode or --season/);
+    expect(() => parseRepairGuideArgs(['audio-preference', '--tvdb', '1', '--episode', 'S01E01', '--language', 'english'])).toThrow(/three-letter/);
+    expect(parseRepairGuideArgs(['language-plan', '--tvdb', '1', '--episode', 'S01E05', '--language', 'eng'])).toMatchObject({ command: 'language-plan' });
+    expect(() => parseRepairGuideArgs(['language-plan', '--tvdb', '1', '--season', '1', '--language', 'eng'])).toThrow(/--episode/);
+    expect(() => parseRepairGuideArgs(['language-plan', '--tvdb', '1', '--episode', 'S01E05', '--language', 'eng', '--digest', 'abcdef0123456789'])).toThrow(/--digest/);
+    expect(parseRepairGuideArgs(['audio-scan'])).toMatchObject({ command: 'audio-scan' });
+    expect(parseRepairGuideArgs(['audio-scan', '--json', '--apply-original', 'eng'])).toMatchObject({ json: true, applyOriginal: 'eng' });
+    expect(() => parseRepairGuideArgs(['audio-scan', '--tvdb', '1'])).toThrow(/audio-scan takes only/);
+    expect(() => parseRepairGuideArgs(['preview', '--tmdb', '1', '--language', 'eng'])).toThrow(/--language is for/);
+    expect(() => parseRepairGuideArgs(['preview', '--tmdb', '1', '--apply-original', 'eng'])).toThrow(/--apply-original is for/);
+  });
+
+  it('prints the audio scan: one line per show, open ones first', () => {
+    const lines = formatAudioScan({
+      seriesScanned: 965,
+      filesRead: 63647,
+      findings: [
+        {
+          tvdbId: 74550, seriesId: 1, mediaItemId: null, title: 'Star Trek: Voyager', original: 'eng', filesWithOriginal: 154,
+          filesFirstOther: 110, leadingLanguages: ['ger'], sample: { episodeId: 9, label: 'S02E01', fileName: 'x.mkv' }, plexDefault: 'ger',
+          plex: [{ server: 'HaynesOps', current: '', unreachable: false }], preferenceSet: false,
+        },
+        {
+          tvdbId: 475718, seriesId: 1061, mediaItemId: null, title: 'Regular Show: The Lost Tapes', original: 'eng', filesWithOriginal: 20,
+          filesFirstOther: 8, leadingLanguages: ['por'], sample: { episodeId: 2, label: 'S01E12', fileName: 'y.mkv' }, plexDefault: 'por',
+          plex: [{ server: 'HaynesTower', current: 'en-US', unreachable: false }, { server: 'HaynesOps', current: 'en-US', unreachable: false }],
+          preferenceSet: true,
+        },
+      ],
+    });
+    expect(lines[0]).toBe('scanned 965 series with files (63647 files); 2 put another language ahead of the original one');
+    expect(lines[1]).toBe(
+      'OPEN tvdb 74550 Star Trek: Voyager | original eng | 110/154 files lead with ger | Plex starts S02E01 in ger | HaynesOps=account default',
+    );
+    expect(lines[2]).toMatch(/^set {2}tvdb 475718 .*HaynesTower=en-US HaynesOps=en-US$/);
   });
 
   it('refuses what it does not understand', () => {

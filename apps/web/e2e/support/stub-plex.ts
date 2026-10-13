@@ -17,6 +17,10 @@
 // every read overlays — so a mark → re-read round-trip behaves like a real server. Only the WATCH dataset
 // below carries watch state; every pre-existing fixture item reads exactly as before.
 //
+// ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — `GET /library/metadata/<key>?includePreferences=1` answers a show's
+// preferred audio language (stored per server, cleared by reset), `PUT /library/metadata/<key>/prefs?audioLanguage=`
+// sets it (RECORDED in `calls`), and Breaking Prod S01E02 lists its audio tracks.
+//
 // Control endpoints:
 //   GET  /_stub/calls  → { calls: [{method, path, machineId, body}] } (sharing writes, poster uploads,
 //                         scrobble/unscrobble)
@@ -454,6 +458,20 @@ const WATCH_CHILDREN: Record<string, StubSectionItem[]> = {
   ),
 };
 
+// ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — a title's own Plex preferences and an episode's audio tracks, shaped
+// like PMS's own answers read live 2026-10-13. A show offers `audioLanguage` (Plex's enum of UI languages, `''` is
+// "Account default"); a movie offers none (Q-08). Breaking Prod S01E02 (50112) carries Portuguese, flagged default,
+// then English, like Regular Show: The Lost Tapes S01E12.
+const AUDIO_LANGUAGE_ENUM =
+  ':Account default|en-US:English|pt-BR:Português|de-DE:Deutsch|en-GB:English (UK)|es-ES:Español|fr-FR:Français|ja-JP:日本語';
+const AUDIO_STREAMS: Record<string, Array<Record<string, unknown>>> = {
+  '50112': [
+    { id: 1, streamType: 1, index: 0, displayTitle: '1080p (H.264)' },
+    { id: 2, streamType: 2, index: 1, languageCode: 'por', languageTag: 'pt-BR', default: true, displayTitle: 'Português (EAC3 5.1)' },
+    { id: 3, streamType: 2, index: 2, languageCode: 'eng', languageTag: 'en-US', displayTitle: 'English (EAC3 5.1)' },
+  ],
+};
+
 /** The owning section of every watch item (the metadata/children `librarySectionID`). */
 const WATCH_SECTION_OF: Record<string, string> = Object.fromEntries([
   ...['6001', '6002', '6003', '601', '602'].map((k) => [k, '1'] as const),
@@ -723,9 +741,12 @@ export async function startStubPlex(): Promise<StubPlexServer> {
     communityLists.set(STUB_REGISTRY_ACCOUNTS.member.uuid, STUB_COMMUNITY_DEFAULT_NODES.map((n) => ({ ...n })));
     communityLists.set(STUB_REGISTRY_ACCOUNTS.hiddenFriend.uuid, []);
   };
+  // DESIGN-055 D-08 — each server's stored show preferences (`<slug>:<ratingKey>` → audioLanguage). Reset clears them.
+  const audioPrefs = new Map<string, string>();
   const resetState = () => {
     calls.length = 0;
     shares.clear();
+    audioPrefs.clear();
     ownerEmail = STUB_PLEX_OWNER.email;
     seedFixtures();
     seedWatch();
@@ -1137,6 +1158,19 @@ export async function startStubPlex(): Promise<StubPlexServer> {
         }
         return json(res, 404, { Error: { error: 'Not Found', statusCode: 404 } });
       }
+      // ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — the Audio Preference write: a show's preferred audio language
+      // (`PUT /library/metadata/<key>/prefs?audioLanguage=`), recorded and stored for the read-back.
+      const prefsMatch = path.match(/^\/library\/metadata\/([^/]+)\/prefs$/);
+      if (prefsMatch && method === 'PUT') {
+        const key = prefsMatch[1]!;
+        const item = findMetadataItem(key, viewer);
+        if (!viewer || !item) return json(res, 404, { message: 'no such metadata' });
+        const value = url.searchParams.get('audioLanguage') ?? '';
+        calls.push({ method, path, machineId: viewer, body: { audioLanguage: value } });
+        if (item.type === 'show') audioPrefs.set(`${viewer}:${key}`, value);
+        res.writeHead(200);
+        return res.end();
+      }
       // DESIGN-017 D-09 — one metadata item (the drill-in head), with librarySectionID on the item.
       const metaMatch = path.match(/^\/library\/metadata\/([^/]+)$/);
       if (metaMatch) {
@@ -1144,10 +1178,34 @@ export async function startStubPlex(): Promise<StubPlexServer> {
         const item = findMetadataItem(key, viewer);
         if (!item) return json(res, 404, { message: 'no such metadata' });
         const sectionId = METADATA_SECTION[key] ?? WATCH_SECTION_OF[key];
+        // DESIGN-055 D-08 — `includePreferences=1`: the item's own settings (a show's audioLanguage; none on a movie).
+        const prefs =
+          url.searchParams.get('includePreferences') === '1'
+            ? {
+                Preferences: {
+                  Setting:
+                    item.type === 'show'
+                      ? [
+                          { id: 'episodeSort', type: 'int', default: '-1', value: '-1' },
+                          {
+                            id: 'audioLanguage',
+                            label: 'Preferred audio language',
+                            type: 'text',
+                            default: '',
+                            value: audioPrefs.get(`${viewer ?? ''}:${key}`) ?? '',
+                            enumValues: AUDIO_LANGUAGE_ENUM,
+                          },
+                          { id: 'subtitleMode', type: 'int', default: '-1', value: '-1' },
+                        ]
+                      : [{ id: 'languageOverride', type: 'text', default: '', value: '' }],
+                },
+              }
+            : {};
+        const streams = AUDIO_STREAMS[key] ? { Media: [{ id: 1, Part: [{ id: 1, Stream: AUDIO_STREAMS[key] }] }] } : {};
         return json(res, 200, {
           MediaContainer: {
             size: 1,
-            Metadata: [{ ...overlay(item), librarySectionID: sectionId ? Number(sectionId) : undefined }],
+            Metadata: [{ ...overlay(item), librarySectionID: sectionId ? Number(sectionId) : undefined, ...prefs, ...streams }],
           },
         });
       }

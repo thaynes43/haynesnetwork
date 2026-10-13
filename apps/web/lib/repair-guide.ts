@@ -11,6 +11,10 @@ export interface GuideRemedies {
   season_guard: boolean;
   language_check: boolean;
   playback_triage: boolean;
+  /** DESIGN-055 D-08 (PLAN-077 P6): Wrong language may set a show's audio language in Plex (Q-03 ruling). */
+  audio_preference?: boolean;
+  /** DESIGN-055 D-08 rule 4 (PLAN-077 P6): Wrong language replaces a file that lacks the language (the Language Replace). */
+  language_search?: boolean;
 }
 
 export type GuideStep =
@@ -20,6 +24,9 @@ export type GuideStep =
   | 'playback'
   | 'language'
   | 'language-present'
+  // DESIGN-055 D-08 (PLAN-077 P6): Plex now plays the wanted language first on the show; a season whose files lack it.
+  | 'language-set'
+  | 'language-episodes'
   | 'preview'
   | 'confirm'
   | 'done'
@@ -76,9 +83,94 @@ export function firstGuideStep(input: {
   return 'reason';
 }
 
+/** The Language Replace's plan applies: a Wrong language Fix with both of its remedies on (DESIGN-055 D-08 rule 4). */
+export function languagePlans(reason: FixReasonName, remedies: GuideRemedies): boolean {
+  return reason === 'wrong_language' && remedies.language_check && remedies.language_search === true;
+}
+
 /** After the triage steps: the preview when a planning remedy is on, else today's confirm. Subtitles never preview. */
 export function stepAfterTriage(reason: FixReasonName, remedies: GuideRemedies): GuideStep {
+  if (languagePlans(reason, remedies)) return 'preview';
   return guidePlans(remedies) && reason !== 'missing_subtitles' ? 'preview' : 'confirm';
+}
+
+/**
+ * DESIGN-055 D-08 (PLAN-077 P6) — after "Which language did you want?": the language in every file goes to the track
+ * advice (and, for a show's original language, the Plex setting); a season whose files lack it goes to the episode list
+ * (each episode is fixed on its own); otherwise the replace preview, or today's Fix.
+ */
+export function stepAfterLanguage(input: {
+  files: ReadonlyArray<{ codes: readonly string[] }>;
+  wanted: string;
+  isSeason: boolean;
+  remedies: GuideRemedies;
+}): GuideStep {
+  if (wantedLanguageInFile(input.files, input.wanted)) return 'language-present';
+  if (input.isSeason && languagePlans('wrong_language', input.remedies)) return 'language-episodes';
+  return stepAfterTriage('wrong_language', input.remedies);
+}
+
+/** The files in scope that do not carry the wanted language (a season's episodes, by label). */
+export function filesLacking(
+  files: ReadonlyArray<{ label: string | null; codes: readonly string[] }>,
+  wanted: string,
+): string[] {
+  return files.filter((f) => f.codes.length > 0 && !f.codes.includes(wanted)).map((f) => f.label ?? 'This file');
+}
+
+/** One audio track as Plex lists it (`fix.audioPreference`'s `tracks`). */
+export interface GuideAudioTrack {
+  position: number;
+  languageCode: string | null;
+  displayTitle: string | null;
+  isDefault: boolean;
+}
+
+/** The terminology codes Plex sends for a few languages, folded to the codes the *arrs send (`deu` → `ger`). */
+const TRACK_CODE_ALIASES: Readonly<Record<string, string>> = {
+  fra: 'fre',
+  deu: 'ger',
+  zho: 'chi',
+  nld: 'dut',
+  ces: 'cze',
+  ell: 'gre',
+  ron: 'rum',
+  msa: 'may',
+  isl: 'ice',
+  fas: 'per',
+  slk: 'slo',
+  nob: 'nor',
+};
+const trackCode = (code: string | null) => {
+  const c = (code ?? '').toLowerCase();
+  return TRACK_CODE_ALIASES[c] ?? c;
+};
+
+/**
+ * DESIGN-055 D-08 rule 3 — the track to pick, as Plex names it (`English (EAC3 5.1)`), its place among the file's audio
+ * tracks, and the track that plays first instead (the file's default, else its first). Null when Plex listed no track in
+ * the wanted language.
+ */
+export function trackAdvice(
+  tracks: readonly GuideAudioTrack[],
+  wanted: string,
+): { pick: string; position: number; total: number; playsFirst: string | null } | null {
+  const pick = tracks.find((t) => trackCode(t.languageCode) === wanted);
+  if (!pick) return null;
+  const first = tracks.find((t) => t.isDefault) ?? tracks[0] ?? null;
+  return {
+    pick: pick.displayTitle ?? `Track ${pick.position}`,
+    position: pick.position,
+    total: tracks.length,
+    playsFirst: first && first !== pick ? (first.displayTitle ?? `Track ${first.position}`) : null,
+  };
+}
+
+/** "the 2nd", "the 11th" — a track's place, for "choose the 2nd track". */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? 'th' : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th';
+  return `${n}${suffix}`;
 }
 
 /** After "What's wrong?": Won't play reads Playback Evidence, Wrong language reads the audio, if their remedy is on. */
@@ -153,6 +245,21 @@ export function goneLinesFor(plan: GuidePlan | null): Array<{ key: string; text:
         text: `${plan.file.name ?? 'The file'}${s ? ` (${s})` : ''} is deleted for good. There is no recycle bin.`,
       });
     }
+  } else if (plan.kind === 'language') {
+    if (plan.verdict !== 'ok') return lines;
+    if (plan.grab) {
+      lines.push({
+        key: `block:${plan.grab.grabId}`,
+        text: `${plan.grab.sourceTitle ?? 'The download it came from'} is blocked, so it is not downloaded again.`,
+      });
+    }
+    if (plan.file) {
+      const s = size(plan.file.size);
+      lines.push({
+        key: `delete:${plan.file.fileId}`,
+        text: `${plan.file.name ?? 'The file'}${s ? ` (${s})` : ''} is deleted for good. There is no recycle bin.`,
+      });
+    }
   } else {
     for (const m of plan.marks) {
       lines.push({
@@ -171,7 +278,7 @@ export function goneLinesFor(plan: GuidePlan | null): Array<{ key: string; text:
   return lines;
 }
 
-export type GuideRefusal = 'same_release' | 'no_replacement' | 'nothing_safe';
+export type GuideRefusal = 'same_release' | 'no_replacement' | 'nothing_safe' | 'no_language_release';
 
 /** When the preview itself is the answer: the Fix would refuse, so the guide offers no confirm (D-09). */
 export function refusalFor(plan: GuidePlan | null, remedies: GuideRemedies): GuideRefusal | null {
@@ -181,6 +288,7 @@ export function refusalFor(plan: GuidePlan | null, remedies: GuideRemedies): Gui
     if (plan.replacement.verdict === 'no_replacement') return 'no_replacement';
   }
   if (plan.kind === 'season' && !plan.actionable) return 'nothing_safe';
+  if (plan.kind === 'language' && plan.verdict !== 'ok') return 'no_language_release';
   return null;
 }
 
@@ -189,6 +297,7 @@ export function confirmLabelFor(plan: GuidePlan | null): string {
   if (!plan) return 'Submit fix';
   if (plan.kind === 'blocklist') return 'Block it and search again';
   if (plan.kind === 'delete') return plan.file ? 'Delete it and search again' : 'Search again';
+  if (plan.kind === 'language') return `Replace it with the ${plan.wanted.name} release`;
   if (plan.mode === 'blocklist') {
     return plan.marks.length === 1
       ? 'Block it and search again'

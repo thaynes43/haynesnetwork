@@ -5,7 +5,9 @@
 // reached only through an owner-issued Watch Mark and its undo in @hnet/domain, and — ADR-092 (owner ruling
 // 2026-09-25, "Add it, say it downloads") — the owner's plex.tv WATCHLIST (`addToWatchlist` /
 // `removeFromWatchlist` on the discover provider), reached only through an owner-issued Watchlist Change and
-// its undo in @hnet/domain (never a view state, never a library). This entrypoint
+// its undo in @hnet/domain (never a view state, never a library), and — ADR-109 C-02, C-07 (DESIGN-055 D-08, owner
+// ruling Q-03 2026-10-12) — a show's preferred audio language (`setAudioLanguagePreference`), reached only through
+// the Wrong language Fix's Audio Preference writer in @hnet/domain, and only for the title's original language. This entrypoint
 // may be imported ONLY by the packages/domain share orchestrator and by packages/plex itself
 // — enforced by the arr-write-import-guard test (extended for @hnet/plex/write). The
 // read-merge-write invariant (never blind-overwrite a user's section set — ADR-017 D-02) is
@@ -112,6 +114,22 @@ export class PlexWriteClient {
       query: { identifier: LIBRARY_IDENTIFIER, key: requireRatingKey(ratingKey) },
       accept: 'application/xml',
     });
+  }
+
+  /**
+   * ADR-109 C-02, C-07 / DESIGN-055 D-08 (PLAN-077 P6) — set a show's preferred audio language on this server, for
+   * everyone: `PUT {baseUrl}/library/metadata/{ratingKey}/prefs?audioLanguage=<locale>` (the call Plex Web's "Edit >
+   * Advanced > Preferred audio language" makes; python-plexapi `editAdvanced`). `locale` is one of the values the item's
+   * own `audioLanguage` Setting offers (`en-US`; `''` is "Account default"), validated before the URL is built. PMS
+   * answers 200 with an empty body. Idempotent on the stored value, so it is RETRIED like a GET on a timeout / network
+   * failure / 502–504. Reached ONLY from the Audio Preference writer in @hnet/domain (setAudioPreference), which reads
+   * the value back after the write (ADR-017 C-10 confinement; the arr-write-import-guard test).
+   */
+  async setAudioLanguagePreference(ratingKey: string, locale: string): Promise<void> {
+    await this.http.requestIdempotentPut(
+      `${this.baseUrl}/library/metadata/${encodeURIComponent(requireRatingKey(ratingKey))}/prefs`,
+      { query: { audioLanguage: requireLocale(locale) }, accept: 'application/json' },
+    );
   }
 
   /**
@@ -257,4 +275,13 @@ function requireRatingKey(ratingKey: string): string {
   const key = String(ratingKey).trim();
   if (!key) throw new TypeError('PlexWriteClient: a ratingKey is required');
   return key;
+}
+
+/** A Plex locale value (`en-US`, `pt-BR`, `ja-JP`) or `''` (Account default); anything else is refused before a request. */
+function requireLocale(locale: string): string {
+  const value = String(locale).trim();
+  if (value !== '' && !/^[a-z]{2,3}(-[A-Za-z0-9]{2,4})?$/.test(value)) {
+    throw new TypeError(`PlexWriteClient: ${JSON.stringify(value)} is not a Plex language value`);
+  }
+  return value;
 }

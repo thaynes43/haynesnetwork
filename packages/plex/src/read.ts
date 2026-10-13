@@ -22,7 +22,10 @@ import {
   discoverMatchesSchema,
   discoverUserStateSchema,
   identitySchema,
+  itemPreferencesContainerSchema,
+  itemStreamsContainerSchema,
   librarySectionsSchema,
+  parseEnumValues,
   plexAccountSchema,
   plexFriendSchema,
   metadataContainerSchema,
@@ -31,6 +34,8 @@ import {
   sharedServerSchema,
   watchlistContainerSchema,
   type PlexAccount,
+  type PlexAudioLanguagePreference,
+  type PlexAudioTrack,
   type PlexCollection,
   type PlexFriend,
   type PlexIdentity,
@@ -339,6 +344,57 @@ export class PlexReadClient {
       librarySectionId: mc.librarySectionID ?? mc.Metadata[0]?.librarySectionID ?? null,
       totalSize: mc.totalSize ?? null,
     };
+  }
+
+  /**
+   * ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — a title's own preferred audio language on this server:
+   * `GET /library/metadata/{ratingKey}?includePreferences=1`, the `audioLanguage` Setting of `Preferences`. A show
+   * offers it (value `en-US`, or `''` for "Account default", with Plex's own `enumValues` as the options); a movie does
+   * not (`offered: false`, DESIGN-055 Q-08, read live 2026-10-13). Read-only; token in the header. A missing item
+   * returns null.
+   */
+  async getAudioLanguagePreference(ratingKey: string): Promise<PlexAudioLanguagePreference | null> {
+    const body = await this.http.requestJson(
+      'GET',
+      `${this.baseUrl}/library/metadata/${encodeURIComponent(ratingKey)}`,
+      itemPreferencesContainerSchema,
+      { query: { includePreferences: 1 } },
+    );
+    const item = body.MediaContainer.Metadata[0];
+    if (!item) return null;
+    const setting = (item.Preferences?.Setting ?? []).find((s) => s.id === 'audioLanguage');
+    return {
+      ratingKey: item.ratingKey,
+      type: item.type ?? null,
+      offered: setting !== undefined,
+      value: setting?.value === undefined || setting.value === null ? '' : String(setting.value),
+      options: parseEnumValues(setting?.enumValues),
+    };
+  }
+
+  /**
+   * ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — the audio tracks of one episode or movie on this server, in the
+   * file's own order (`GET /library/metadata/{ratingKey}`, `Media[].Part[].Stream[]` with `streamType` 2): the language,
+   * Plex's display title (`English (EAC3 5.1)`, written in that language) and the file's default flag. The first
+   * part of the first media only (the file a play starts with). Read-only. A missing item returns null.
+   */
+  async getAudioTracks(ratingKey: string): Promise<PlexAudioTrack[] | null> {
+    const body = await this.http.requestJson(
+      'GET',
+      `${this.baseUrl}/library/metadata/${encodeURIComponent(ratingKey)}`,
+      itemStreamsContainerSchema,
+    );
+    const item = body.MediaContainer.Metadata[0];
+    if (!item) return null;
+    const streams = item.Media[0]?.Part[0]?.Stream ?? [];
+    return streams
+      .filter((s) => s.streamType === 2)
+      .map((s, i) => ({
+        position: i + 1,
+        languageCode: s.languageCode ?? null,
+        displayTitle: s.displayTitle ?? null,
+        isDefault: s.default === true,
+      }));
   }
 
   /**

@@ -42,7 +42,8 @@ import {
   SubtitleFixUnsupportedError,
 } from './errors';
 import { getRepairGuideRemedies, type RepairGuideRemedies } from './repair-guide-settings';
-import { planApplies, planFix, type FixPlan, type PlanReplacement } from './fix-plan';
+import { forgetReleaseLists, planApplies, planFix, type FixPlan, type PlanReplacement } from './fix-plan';
+import { languagePlanApplies, readLanguagePlan } from './language-replace';
 import { languageVerdict, readFileAudio } from './language-check';
 import { audioLanguageName } from './fix-guards';
 import { resolveDb } from './db-client';
@@ -93,6 +94,11 @@ export interface RunFixRequestResult {
   status: FixStatus; // 'search_triggered' on success
   pathTaken: FixPath;
   targetLabel: string | null;
+  /**
+   * DESIGN-055 D-08 rule 4 (PLAN-077 P6) — the Language Replace sent this release to download (its name). Absent on every
+   * other path, and null when the grab failed and the Fix fell back to a search.
+   */
+  grabbedRelease?: string | null;
 }
 
 const nowIso = () => new Date().toISOString();
@@ -204,6 +210,14 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
   // check here reads only, and refuses BEFORE the pending row: a refused Fix writes nothing and uses no budget.
   if (kind === 'sonarr' || kind === 'radarr') {
     const remedies = await getRepairGuideRemedies(input.db);
+    // DESIGN-055 D-08 rule 4 (PLAN-077 P6): the Language Replace, which refuses a file that has the language itself.
+    if (input.reason === 'wrong_language' && languagePlanApplies({ wantedLanguage: input.wantedLanguage, remedies })) {
+      return runLanguageFix(input, { id: item.id, arrKind: kind, arrItemId: item.arrItemId }, remedies, {
+        scope,
+        targetChildId,
+        seasonNumber,
+      });
+    }
     if (input.reason === 'wrong_language' && remedies.language_check && input.wantedLanguage) {
       const audio = await readFileAudio({
         db: input.db,
@@ -847,6 +861,7 @@ async function runGuardedFix(
     );
   }
   refuseUnsafePlan(plan, remedies, input);
+  if (plan.kind === 'language') throw new Error('runGuardedFix: the Language Replace runs in runLanguageFix');
 
   const targetLabel = plan.targetLabel;
   const { fixRequestId } = await createFixRequest({
@@ -1024,6 +1039,157 @@ async function runGuardedFix(
   return { id: fixRequestId, status: 'search_triggered', pathTaken: 'delete_search', targetLabel };
 }
 
+/**
+ * ADR-109 C-02 / DESIGN-055 D-08 rule 4 (PLAN-077 P6) — the Language Replace. The plan is read again just before acting
+ * (language-replace.ts); a different plan than the one confirmed, or no release in the wanted language, is refused before
+ * the pending row (nothing written, no budget used). Then, in order, each step recorded: the file's download is marked
+ * failed (blocked; never a pack that also holds other on-disk episodes), the file is deleted, and the chosen release is
+ * grabbed with the plain body (`POST /release {guid, indexerId}`, the row the *arr mapped onto this target). A grab the
+ * *arr refuses falls back to today's search, so the episode or movie is never left without one.
+ */
+async function runLanguageFix(
+  input: RunFixRequestInput,
+  item: { id: string; arrKind: 'sonarr' | 'radarr'; arrItemId: number },
+  remedies: RepairGuideRemedies,
+  resolved: { scope: FixScope; targetChildId: number | null; seasonNumber: number | null },
+): Promise<RunFixRequestResult> {
+  const kind = item.arrKind;
+  const base = arrApiBasePath(kind);
+  await assertFixAllowed({
+    db: input.db,
+    requesterId: input.requesterId,
+    requesterIsAdmin: input.requesterIsAdmin,
+    mediaItemId: item.id,
+    scope: resolved.scope,
+    targetArrChildId: resolved.targetChildId,
+    seasonNumber: resolved.seasonNumber,
+  });
+  const { plan, release, listKey } = await readLanguagePlan({
+    db: input.db,
+    arr: input.arr,
+    mediaItemId: item.id,
+    scope: resolved.scope,
+    targetChildId: resolved.targetChildId ?? undefined,
+    seasonNumber: resolved.seasonNumber ?? undefined,
+    remedies,
+    requesterId: input.requesterId,
+    requesterIsAdmin: input.requesterIsAdmin,
+    wantedLanguage: input.wantedLanguage!,
+  });
+  if (input.planDigest !== undefined && input.planDigest !== plan.digest) {
+    throw new FixPlanChangedError(
+      'Something changed since you looked, so nothing was done. Check the new preview before you confirm.',
+    );
+  }
+  if (plan.verdict === 'no_language_release' || release === null || release.indexerId === null) {
+    throw new FixRefusedError(
+      'no_language_release',
+      `No release with ${plan.wanted.name} audio is available that the library would take, so nothing was removed.`,
+    );
+  }
+
+  const targetLabel = plan.targetLabel;
+  const { fixRequestId } = await createFixRequest({
+    db: input.db,
+    requesterId: input.requesterId,
+    requesterIsAdmin: input.requesterIsAdmin,
+    mediaItemId: item.id,
+    scope: resolved.scope,
+    targetArrChildId: resolved.targetChildId,
+    seasonNumber: resolved.seasonNumber,
+    targetLabel,
+    reason: input.reason,
+    reasonText: input.reasonText ?? null,
+  });
+  const fail = async (entry: FixActionEntry, err: unknown): Promise<never> => {
+    await recordFixAction({ db: input.db, fixRequestId, transition: 'failed', actions: [entry] });
+    throw new ArrUpstreamError(err instanceof Error ? err.message : `fix step ${entry.step} failed`, { cause: err });
+  };
+
+  const actions: FixActionEntry[] = [
+    stepOk('guard_plan', `${base} (read-only plan)`, {
+      plan: 'language',
+      digest: plan.digest,
+      wantedLanguage: plan.wanted.code,
+      fileId: plan.file?.fileId ?? null,
+      fileName: plan.file?.name ?? null,
+      grabHistoryId: plan.grab?.grabId ?? null,
+      packKept: plan.packKept.map((e) => e.label),
+      candidate: plan.candidate
+        ? { title: plan.candidate.title, languages: plan.candidate.languages, quality: plan.candidate.qualityName }
+        : null,
+    }),
+  ];
+  if (plan.grab) {
+    const endpoint = `POST ${base}/history/failed/${plan.grab.grabId}`;
+    try {
+      await input.arr.write[kind].markHistoryFailed(plan.grab.grabId);
+    } catch (err) {
+      if (err instanceof ArrError) await fail(stepFailed('mark_failed', endpoint, err), err);
+      throw err;
+    }
+    actions.push(stepOk('mark_failed', endpoint, { status: 200, grabHistoryId: plan.grab.grabId }));
+  }
+  if (plan.file) {
+    const endpoint =
+      kind === 'sonarr' ? `DELETE ${base}/episodefile/${plan.file.fileId}` : `DELETE ${base}/moviefile/${plan.file.fileId}`;
+    try {
+      if (kind === 'sonarr') await input.arr.write.sonarr.deleteEpisodeFile(plan.file.fileId);
+      else await input.arr.write.radarr.deleteMovieFile(plan.file.fileId);
+    } catch (err) {
+      if (err instanceof ArrError) await fail(stepFailed('delete_file', endpoint, err), err);
+      throw err;
+    }
+    actions.push(stepOk('delete_file', endpoint, { status: 200 }));
+  }
+  const pathTaken: FixPath = plan.file || !plan.grab ? 'delete_search' : 'blocklist_search';
+  await recordFixAction({ db: input.db, fixRequestId, transition: 'actioned', pathTaken, actions });
+
+  const grabEndpoint = `POST ${base}/release`;
+  try {
+    await input.arr.write[kind].grabRelease({ guid: release.guid, indexerId: release.indexerId });
+    forgetReleaseLists([listKey]);
+    await recordFixAction({
+      db: input.db,
+      fixRequestId,
+      transition: 'search_triggered',
+      actions: [
+        stepOk('language_grab', grabEndpoint, {
+          title: release.title,
+          key: plan.candidateKey,
+          languages: release.languages,
+          quality: release.qualityName,
+        }),
+      ],
+    });
+    return { id: fixRequestId, status: 'search_triggered', pathTaken, targetLabel, grabbedRelease: release.title };
+  } catch (err) {
+    if (!(err instanceof ArrError)) throw err;
+    // The *arr refused the grab (the row left its 30-minute cache, the site refused the file): fall back to a search.
+    const searchEndpoint = `POST ${base}/command`;
+    const grabFailed = stepFailed('language_grab', grabEndpoint, err);
+    try {
+      const command =
+        kind === 'sonarr'
+          ? await input.arr.write.sonarr.searchEpisodes([resolved.targetChildId!])
+          : await input.arr.write.radarr.searchMovies([item.arrItemId]);
+      await recordFixAction({
+        db: input.db,
+        fixRequestId,
+        transition: 'search_triggered',
+        actions: [grabFailed, stepOk('trigger_search', searchEndpoint, { commandId: command.id, commandName: command.name })],
+      });
+    } catch (searchErr) {
+      if (searchErr instanceof ArrError) {
+        await recordFixAction({ db: input.db, fixRequestId, transition: 'failed', actions: [grabFailed, stepFailed('trigger_search', searchEndpoint, searchErr)] });
+        throw new ArrUpstreamError(searchErr.message, { cause: searchErr });
+      }
+      throw searchErr;
+    }
+    return { id: fixRequestId, status: 'search_triggered', pathTaken, targetLabel, grabbedRelease: null };
+  }
+}
+
 function replacementRefused(replacement: PlanReplacement): 'same_release' | 'no_replacement' | null {
   return replacement.verdict === 'same_release' || replacement.verdict === 'no_replacement' ? replacement.verdict : null;
 }
@@ -1060,7 +1226,7 @@ function refuseUnsafePlan(plan: FixPlan, remedies: RepairGuideRemedies, input: R
 }
 
 /** The plan's audit entry: enough to see later what was previewed and why it was allowed (no URL, no guid). */
-function planSummary(plan: FixPlan): Record<string, unknown> {
+function planSummary(plan: Exclude<FixPlan, { kind: 'language' }>): Record<string, unknown> {
   if (plan.kind === 'blocklist') {
     return {
       plan: 'blocklist',

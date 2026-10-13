@@ -289,3 +289,109 @@ export const sharedServerSchema = z.object({
   sections: z.array(sharedSectionSchema),
 });
 export type PlexSharedServer = z.infer<typeof sharedServerSchema>;
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — a title's own Plex preferences and an item's audio tracks.
+// Read live 2026-10-13 (PMS on HaynesTower and HaynesOps): `GET /library/metadata/{show}?includePreferences=1` carries
+// `Preferences.Setting[]` with `audioLanguage` ("Preferred audio language", `type: text`, `value: "en-US"`, `default: ""`,
+// `enumValues: ":Account default|en-US:English|pt-BR:Português|..."`), `subtitleLanguage` and `subtitleMode`. A movie's
+// settings are only `languageOverride`, `useOriginalTitle` and `enableCreditsMarkerGeneration`: Plex offers no
+// movie-level audio language (DESIGN-055 Q-08). Loose objects: Plex adds fields between versions.
+// ---------------------------------------------------------------------------------------------------------------------
+
+export const plexItemSettingSchema = z.looseObject({
+  id: z.string(),
+  label: z.string().nullish(),
+  type: z.string().nullish(),
+  default: z.union([z.string(), z.number(), z.boolean()]).nullish(),
+  value: z.union([z.string(), z.number(), z.boolean()]).nullish(),
+  enumValues: z.string().nullish(),
+});
+export type PlexItemSetting = z.infer<typeof plexItemSettingSchema>;
+
+export const itemPreferencesContainerSchema = z.object({
+  MediaContainer: z.object({
+    Metadata: z
+      .array(
+        z.looseObject({
+          ratingKey: z.string(),
+          type: z.string().nullish(),
+          title: z.string().nullish(),
+          Preferences: z.object({ Setting: z.array(plexItemSettingSchema).default([]) }).nullish(),
+        }),
+      )
+      .default([]),
+  }),
+});
+
+/** One audio track of an item, as PMS lists it (`streamType` 2). `default` is the file's own default flag. */
+export const plexStreamSchema = z.looseObject({
+  id: z.union([z.number(), z.string()]).nullish(),
+  streamType: z.number().int(),
+  index: z.number().int().nullish(),
+  languageCode: z.string().nullish(),
+  languageTag: z.string().nullish(),
+  language: z.string().nullish(),
+  default: z.boolean().nullish(),
+  selected: z.boolean().nullish(),
+  displayTitle: z.string().nullish(),
+});
+
+export const itemStreamsContainerSchema = z.object({
+  MediaContainer: z.object({
+    Metadata: z
+      .array(
+        z.looseObject({
+          ratingKey: z.string(),
+          type: z.string().nullish(),
+          title: z.string().nullish(),
+          index: z.number().int().nullish(),
+          parentIndex: z.number().int().nullish(),
+          Media: z
+            .array(z.looseObject({ Part: z.array(z.looseObject({ Stream: z.array(plexStreamSchema).default([]) })).default([]) }))
+            .default([]),
+        }),
+      )
+      .default([]),
+  }),
+});
+
+/** A title's audio-language preference as one server holds it. */
+export interface PlexAudioLanguagePreference {
+  ratingKey: string;
+  /** The item's type (`show`, `movie`, ...). */
+  type: string | null;
+  /**
+   * Whether Plex offers the setting on this item at all (a show does; a movie does not, DESIGN-055 Q-08). When false,
+   * `value` and `options` are empty.
+   */
+  offered: boolean;
+  /** The stored value: a Plex locale (`en-US`), or `''` for "Account default". */
+  value: string;
+  /** Every value Plex accepts, in its own order (`{value: 'en-US', label: 'English'}`; `''` is "Account default"). */
+  options: Array<{ value: string; label: string }>;
+}
+
+/** One audio track of one file, for the Wrong language guidance ("choose English (EAC3 5.1)"). */
+export interface PlexAudioTrack {
+  /** The track's position among the file's audio tracks, from 1. */
+  position: number;
+  languageCode: string | null;
+  displayTitle: string | null;
+  /** The file marks this track as its default. */
+  isDefault: boolean;
+}
+
+/** Parse Plex's `enumValues` string (`":Account default|en-US:English|..."`) into ordered, de-duplicated options. */
+export function parseEnumValues(enumValues: string | null | undefined): Array<{ value: string; label: string }> {
+  const out: Array<{ value: string; label: string }> = [];
+  if (!enumValues) return out;
+  for (const part of enumValues.split('|')) {
+    const at = part.indexOf(':');
+    const value = at < 0 ? part : part.slice(0, at);
+    const label = at < 0 ? part : part.slice(at + 1);
+    if (out.some((o) => o.value === value)) continue;
+    out.push({ value, label });
+  }
+  return out;
+}
