@@ -1,7 +1,8 @@
 # DESIGN-005: *arr media ledger, Fix, and failsafe Restore — Phase 2
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-13 (**D-17 pointer**: the Release Pick behind Force Search, DESIGN-055 D-06, PLAN-077 P5).
+- **Last updated:** 2026-10-13 (**D-15 pointer**: the language-aware Wrong language, DESIGN-055 D-08, PLAN-077 P6).
+  Before that 2026-10-13 (**D-17 pointer**: the Release Pick behind Force Search, DESIGN-055 D-06, PLAN-077 P5).
   Before that 2026-10-13 (**D-15 pointer**: the Episode Re-map behind a TV Fix, DESIGN-055 D-04, PLAN-077 P4).
   Before that 2026-10-12 (**D-15/D-17 pointer**: queue-aware Force Search and the Import Check, DESIGN-055 D-07,
   PLAN-077 P2). Before that 2026-10-03 (**D-25** — a Fix makes exactly one search: when the *arr's own Redownload
@@ -724,6 +725,17 @@ interactive search returns, with its reasons in plain words, each row Grab, Over
 allowed; `fix.releaseGrab` grabs the row the person confirmed (`POST /release`). Opening the list and the grab are one
 unit each of the shared hourly budget; the grab is a Repair Request (`release_pick`). Fix itself is unchanged. The
 decisions are DESIGN-055's P5 decisions.
+
+**The language-aware Wrong language (ADR-109 C-02, C-07, DESIGN-055 D-08; PLAN-077 P6, 2026-10-13).** With
+`language_check` on, a Wrong language Fix whose file already has the wanted audio still changes nothing in the *arr. The
+guide names the track to pick and, with `audio_preference` on and that language the show's original one, offers to set
+the show's preferred audio language in Plex for everyone (`fix.audioPreference`, read-only; `fix.setAudioPreference`, a
+Repair Request `audio_preference`, each server read back). With `language_search` on, an episode or movie whose file
+lacks it gets the Language Replace instead of the blind search: the plan (`fix.preview` with `wantedLanguage`) shows the
+release with that audio that would replace the file, and `create` marks the grab failed (never a pack that also holds
+other on-disk episodes), deletes the file and grabs that release (`POST /release`, the plain body), falling back to the
+search if the *arr refuses the grab. With no such release nothing is removed; a season is fixed one episode at a time.
+The decisions are DESIGN-055's P6 decisions.
 
 Rules already fixed above: mandatory reason taxonomy with `reason_text` iff `other`
 (D-09 CHECK), per-requester hourly rate limit — now the requester's ROLE budget (ADR-080 / D-23;

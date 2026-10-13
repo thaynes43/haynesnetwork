@@ -166,9 +166,8 @@ function TrackHelp({ name, wanted, preview }: { name: string; wanted: string; pr
       <h4 className="repair-guide__subhead">How to switch it</h4>
       <ul className="repair-guide__how">
         <li>
-          <strong>Web browser or the Plex desktop app:</strong> open the episode or movie, choose the track in the Audio
-          menu under its summary, then press play. While it plays, the same choice is in the player&rsquo;s audio and
-          subtitle settings.
+          <strong>Web browser or the Plex desktop app:</strong>{' '}
+          {'open the episode or movie, choose the track in the Audio menu under its summary, then press play. While it plays, the same choice is in the player’s audio and subtitle settings.'}
         </li>
         <li>
           <strong>Phone or tablet:</strong> while it plays, tap the screen, open the audio and subtitle settings, and
@@ -180,8 +179,8 @@ function TrackHelp({ name, wanted, preview }: { name: string; wanted: string; pr
         </li>
       </ul>
       <p className="muted">
-        Plex remembers the track you pick for that file. To have Plex pick {name} by itself everywhere, turn on
-        &ldquo;Automatically select audio and subtitle tracks&rdquo; and set your preferred audio language in your{' '}
+        Plex remembers the track you pick for that file. To have Plex pick {name}
+        {' by itself everywhere, turn on “Automatically select audio and subtitle tracks” and set your preferred audio language in your '}
         <a href={ACCOUNT_SETTINGS_URL} target="_blank" rel="noopener noreferrer">
           Plex account settings
         </a>
@@ -1256,13 +1255,14 @@ function PlanView({
             </div>
           ) : null}
         </div>
-        <p className="muted">
-          {plan.packKept.length > 0
-            ? `This file came in a pack that also holds ${plan.packKept.map((e) => e.label).join(', ')}, so the pack stays and only this file is replaced.`
-            : plan.grab
-              ? 'The download it came from is blocked too, so it is never picked again.'
-              : 'There is no download record to block, so only the file is replaced.'}
-        </p>
+        {plan.packKept.length > 0 ? (
+          <p className="muted">
+            This file came in a pack that also holds {plan.packKept.map((e) => e.label).join(', ')}, so the pack stays
+            and only this file is replaced.
+          </p>
+        ) : !plan.grab ? (
+          <p className="muted">There is no download record to block, so only the file is replaced.</p>
+        ) : null}
       </div>
     );
   }

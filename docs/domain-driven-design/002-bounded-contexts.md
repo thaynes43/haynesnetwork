@@ -1,7 +1,7 @@
 # DDD-002: Bounded Contexts
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-13 (ADR-109 / DESIGN-055 P5: BC-03 owns the Release List and the Release Pick's grab). Prior: 2026-10-13 (ADR-110 / DESIGN-055 P4: BC-03 owns the Title Check census and the Mislabel Block). Prior: 2026-10-12 (ADR-111 / DESIGN-055 P3: BC-05 owns the Seerr Issue mirror). Prior: 2026-10-11 (ADR-107 / DESIGN-054: BC-06 supplies personal evidence for agent-owned recommendations). Prior: 2026-09-26 (BC-03 gains watchlist protection for Trash: the Watchlist Registry, the Release Block write-back and a Seerr settings write — ADR-093, DESIGN-052; the "Seerr is read-only" rule is amended). Prior: 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
+- **Last updated:** 2026-10-13 (ADR-109 / DESIGN-055 P6: BC-03's Wrong language writes a show's Audio Preference to Plex and runs the Language Replace). Prior: 2026-10-13 (ADR-109 / DESIGN-055 P5: BC-03 owns the Release List and the Release Pick's grab). Prior: 2026-10-13 (ADR-110 / DESIGN-055 P4: BC-03 owns the Title Check census and the Mislabel Block). Prior: 2026-10-12 (ADR-111 / DESIGN-055 P3: BC-05 owns the Seerr Issue mirror). Prior: 2026-10-11 (ADR-107 / DESIGN-054: BC-06 supplies personal evidence for agent-owned recommendations). Prior: 2026-09-26 (BC-03 gains watchlist protection for Trash: the Watchlist Registry, the Release Block write-back and a Seerr settings write — ADR-093, DESIGN-052; the "Seerr is read-only" rule is amended). Prior: 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
 - **Related:** PRD-001, DDD-001
 
 Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs as
@@ -130,7 +130,10 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
   outbound, through the import-confined `@hnet/arr/write`: the Episode Re-map's library-file `ManualImport` and
   `RenameFiles` (T-303) and the Mislabel Block profile writes; hard rule 4 amended (ADR-109 C-02, ADR-110 C-04). P5
   adds the **Release List** (T-319, `release_pick_lists`): what one person was shown in the Release Pick, with the
-  grab data kept server-side, and the interactive-search grab `POST /release` (T-307, ADR-109 C-02, C-06).
+  grab data kept server-side, and the interactive-search grab `POST /release` (T-307, ADR-109 C-02, C-06). P6 adds the
+  language-aware Wrong language: the **Audio Preference** (T-323), BC-03's one Plex write, a show's preferred audio
+  language through the import-confined `@hnet/plex/write` (ADR-109 C-07, owner ruling Q-03), and the **Language
+  Replace** (T-324), a Fix whose search is a grab of a release in the wanted language.
 
 ### BC-04 — Plex Sharing (Phase 3 — **built**: ADR-017 / DESIGN-007)
 

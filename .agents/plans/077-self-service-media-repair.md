@@ -574,6 +574,26 @@ names, never deleting a file, after a watch-state check on every Plex server and
 - **e2e:** stub Plex preferences. Journey: a file with the wanted language sets the preference (or shows guidance,
   per Q-03); one without it grabs a matching release.
 - **Live check:** read back The Lost Tapes' show-level preference on each server; no other title changes.
+- **Build (2026-10-13):** DESIGN-055's "P6 decisions" (items 1-12, after D-08) record what landed and why. No migration:
+  the Repair Request kind `audio_preference` was already allowed (0099), and the two remedies are keys of
+  `repair_guide_remedies` (`audio_preference`, `language_search`, both ship off).
+  - Step 1: Q-08 answered live: a show only (P6 decision 1). A movie gets the guidance.
+  - Step 2: `@hnet/plex` `getAudioLanguagePreference`, `getAudioTracks` (read) and `setAudioLanguagePreference` (write,
+    `PUT /library/metadata/{key}/prefs?audioLanguage=`); the domain's `audio-preference.ts` (`decideAudioPreference`,
+    `previewAudioPreference`, the single writer `setAudioPreference` with its Repair Request and per-server read-back);
+    the router's `fix.audioPreference` (read-only) and `fix.setAudioPreference`; the *arrs' `originalLanguage`.
+  - Step 3: the Language Replace (`language-replace.ts`: `readLanguagePlan`, `pickLanguageRelease`,
+    `previewRepairPlan`; `fix-flow.ts` `runLanguageFix`), its own plan kind in `fix.preview`.
+  - The guide: the track advice per player, the offer and its result, the season's episode list, the Language Replace
+    preview and its refusal; the admin card gains both remedies. CLAUDE.md hard rule 4 names both writes.
+  - Staff tools in a web pod: `tsx /sync/src/scripts/repair-guide.ts audio-preference (--tmdb <id> | --tvdb <id>
+    (--episode S01E05 | --season <n>)) --language eng` (read-only; with `--digest` it writes as staff), `language-plan`
+    (read-only) and `audio-scan [--json] [--apply-original eng]`.
+  - Tests: `language-aware.test.ts` (domain), `audio-language.test.ts` (plex), `repair-guide.test.ts` (web rules),
+    `repair-guide-script.test.ts` (sync), the remedies list in `fix-guards.test.ts` (api); e2e `language-aware.spec.ts`
+    (the stub *arr's `POST /_stub/language`, the stub Plex's show preferences and S01E02's tracks).
+  - dev:local walk at 390 and 1280 wide: the offer, its result, already set, another language, the season list, the
+    Language Replace preview, its refusal and its result.
 
 ### P7: Seerr writes
 

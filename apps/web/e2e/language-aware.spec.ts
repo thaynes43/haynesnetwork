@@ -219,7 +219,6 @@ test.describe('the language-aware Wrong language (ADR-109 C-07 / DESIGN-055 D-08
     const replacement = dialog.locator('.repair-guide__card').filter({ hasText: 'Replaces it, with English audio' });
     await expect(replacement).toContainText(LANGUAGE_REPLACE_TITLE);
     await expect(replacement).toContainText('Audio: English');
-    await expect(dialog).toContainText('The download it came from is blocked too');
     await checkWidths(page, testInfo, 'language-replace-preview');
 
     // Both lines must be ticked first; nothing was written yet.
