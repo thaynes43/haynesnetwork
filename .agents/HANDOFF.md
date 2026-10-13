@@ -29,6 +29,9 @@
 
 ## 2026-10-13 23:30Z: HANDOFF TO CODEX. Self-service media repair program: P0 to P6 live, P7 released but not deployed, PR #965 ready
 
+**Superseded:** follow the live 23:20Z takeover record above. This original handoff retains its supplied timestamp;
+its merge, release, deployment and bridge-enable steps are complete.
+
 - **Start here:** `.agents/context/2026-10-13-self-service-repair-codex-handoff.md` has the goal, phase status, the resume steps in order, every owner ruling and the ops facts.
 - **First steps:**
   1. Merge PR #965 (wrong-content replace tool, checks green), release v0.125.0 (it also carries P7, v0.124.0) and deploy it.
