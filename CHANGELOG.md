@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.119.1](https://github.com/thaynes43/haynesnetwork/compare/v0.119.0...v0.119.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **domain:** the recommended override weighs the library's custom formats (DESIGN-055 P5 decision 16) ([#935](https://github.com/thaynes43/haynesnetwork/issues/935)) ([c5b4743](https://github.com/thaynes43/haynesnetwork/commit/c5b4743b528b4fcc8b55cfdcfc56953860ab3840))
+
 ## [0.119.0](https://github.com/thaynes43/haynesnetwork/compare/v0.118.1...v0.119.0) (2026-10-13)
 
 
