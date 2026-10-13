@@ -396,7 +396,10 @@ do not edit)", "must not contain" terms only, no tags.
     given up its old name before the file taking its episode needs that name. The first step that does not land, or
     whose rename Sonarr skips (a name another file still holds; Sonarr never overwrites), stops the run. Every step
     before it is whole; a file left on the parking episode is reported with the episodes it belongs on (finish it with
-    `--place`). The run then checks that the series holds as many episode files as before. One Repair Request (`remap`,
+    `--place`). Each landed file's names go with it (`carryTitleCheckForward`): a step re-links the file under a new id
+    with no import record and no scene name, so the run writes its Title Check row for the new id, judged against its
+    new episodes (keeping the old row's origin and import time) and clears the old flag. A second copy moved aside stays
+    flagged where it lands. The run then checks that the series holds as many episode files as before. One Repair Request (`remap`,
     claim `names`, the steps, the files held and why, the Plex check) records every call; a season re-map offers no
     Mislabel Block (it is not a shift).
 23. **Watch state first** (owner ruling, 2026-10-13). Plex keeps watched marks and resume points on the episode, not the

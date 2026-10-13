@@ -21,6 +21,7 @@ import { type PlexClientBundle } from './plex-clients';
 import { releaseTokens } from './release-terms';
 import { getRepairGuideRemedies } from './repair-guide-settings';
 import { appendRepairActions, createRepairRequest, recordRepairTransition } from './repair-requests';
+import { carryTitleCheckForward } from './title-check';
 import {
   REMAP_COMMAND_WAIT,
   readBackRemapMove,
@@ -300,6 +301,8 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
   const seasonIds = season.episodes.filter((e) => e.seasonNumber === input.seasonNumber).map((e) => e.id);
   const touched = [...new Set(plan.steps.flatMap((s) => [...s.from, ...s.to].map((e) => e.id)))];
   const filesBefore = season.files.length;
+  const namesOf = new Map(season.files.map((f) => [f.id, f.sourceNames] as const));
+  const evidenceEpisodes = season.episodes.map((e) => ({ id: e.id, seasonNumber: e.seasonNumber, episodeNumber: e.episodeNumber, title: e.title }));
   const { repairRequestId } = await createRepairRequest({
     db: input.db,
     requesterId: null,
@@ -444,6 +447,24 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
     }
     now.set(step.fileId, { id: landedId, path: newPath, seasonNumber: toSeason });
     done += 1;
+    // Keep the census honest: the file's names go with it to its new id (a parked file's are carried when it lands).
+    if (step.kind !== 'park') {
+      try {
+        await carryTitleCheckForward({
+          db: input.db,
+          seriesId: season.seriesId,
+          mediaItemId: season.mediaItemId,
+          oldFileId: step.fileId,
+          newFileId: landedId,
+          names: namesOf.get(step.fileId) ?? [],
+          episodes: evidenceEpisodes,
+          fileEpisodeIds: toIds,
+        });
+      } catch (err) {
+        // The move stands; the census picks the file up again only by hand, so the trail says so.
+        await record([{ step: 'season_remap_title_check', at: at(), ok: false, index, fileId: landedId, error: errText(err) }]);
+      }
+    }
     if (pause > 0 && index < plan.steps.length - 1) await sleep(pause);
   }
 

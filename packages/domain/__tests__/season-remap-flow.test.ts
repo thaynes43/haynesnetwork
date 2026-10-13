@@ -5,10 +5,11 @@
 // its own episode under its own name, through the parking episode, with nothing orphaned and the file count unchanged.
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { repairRequests } from '@hnet/db/schema';
+import { repairRequests, titleChecks } from '@hnet/db/schema';
 import {
   FixPlanChangedError,
   FixRefusedError,
+  TITLE_EVIDENCE_VERSION,
   buildArrClientBundle,
   planSeasonRemap,
   runSeasonRemap,
@@ -233,10 +234,32 @@ describe('Season Re-map (DESIGN-055 P4 decisions 18-23)', () => {
   beforeEach(async () => {
     await setRepairGuideRemedies({ db: t.db, remedies: { episode_remap: true }, actorId: null });
     await t.db.delete(repairRequests).where(eq(repairRequests.mediaItemId, itemId));
+    await t.db.delete(titleChecks).where(eq(titleChecks.seriesId, SERIES_ID));
   });
 
   it('puts every file on the episode its name says, through the parking episode, renamed, losing nothing', async () => {
     const arr = stubSonarr();
+    // The census flagged the file on E2 ("Charlie Comes Home", E3).
+    const charlie = 'Show.S01E02.Charlie.Comes.Home.1080p.WEB-DL-GRP';
+    await t.db.insert(titleChecks).values({
+      instance: 'sonarr',
+      seriesId: SERIES_ID,
+      mediaItemId: itemId,
+      seasonNumber: 1,
+      episodeId: 102,
+      episodeNumber: 2,
+      episodeIds: [102],
+      episodeFileId: 5003,
+      sourceTitle: charlie,
+      verdict: 'disagrees',
+      bestEpisodeId: 103,
+      bestEpisodeNumber: 3,
+      score: 0,
+      bestScore: 1,
+      evidenceVersion: TITLE_EVIDENCE_VERSION,
+      origin: 'backfill',
+      importedAt: new Date('2026-01-01T00:00:00Z'),
+    });
     const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, plex: plexFollowingTvdb };
     const plan = await planSeasonRemap(target);
     expect(plan.refusal).toBeNull();
@@ -270,6 +293,14 @@ describe('Season Re-map (DESIGN-055 P4 decisions 18-23)', () => {
     expect(trail[0]).toMatchObject({ step: 'created', requester: { staffTool: 'repair-guide.ts' } });
     expect(trail.filter((a) => a.step === 'season_remap_rename').every((a) => a.ok)).toBe(true);
     expect(trail.at(-1)).toMatchObject({ step: 'season_remap_done', ok: true, fileCountUnchanged: true });
+
+    // The census follows the files: the old flag is cleared and each moved file's new id carries its names, agreeing.
+    const rows = await t.db.select().from(titleChecks).where(eq(titleChecks.seriesId, SERIES_ID));
+    expect(rows.find((r) => r.episodeFileId === 5003)!.clearedAt).not.toBeNull();
+    const carried = rows.filter((r) => r.episodeFileId >= 90_000);
+    expect(carried).toHaveLength(5);
+    expect(carried.every((r) => r.verdict === 'agrees' && r.origin === 'backfill')).toBe(true);
+    expect(carried.find((r) => r.sourceTitle === charlie)).toMatchObject({ episodeIds: [103], importedAt: new Date('2026-01-01T00:00:00Z') });
 
     // Afterwards every name agrees with its episode: nothing left to move.
     const again = await planSeasonRemap(target);

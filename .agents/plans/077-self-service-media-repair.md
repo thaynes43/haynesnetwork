@@ -356,7 +356,8 @@ names, never deleting a file, after a watch-state check on every Plex server and
 - **Build:** DESIGN-055 P4 decisions 18 to 24. `season-remap-plan.ts` (pure: names or staff placements, holds that
   never displace, the order with a Parking Episode for each cycle, the unplaced files with suggestions and the open
   episodes) and `season-remap-flow.ts` (`planSeasonRemap`, `runSeasonRemap`: the Plex check against every server that
-  carries the series, then one ManualImport and one RenameFiles per step, each read back, the file count checked after);
+  carries the series, then one ManualImport and one RenameFiles per step, each read back, the file's Title Check carried
+  to its new id (`carryTitleCheckForward`), the file count checked after);
   `remap-flow.ts` exports its season read with every source name. Staff tool: `repair-guide.ts season-plan | season-run`
   (`--place`, `--keep`, `--digest`, `--ignore-plex`). Glossary T-316 Season Re-map and T-317 Parking Episode.
 - **Tests:** `season-remap-plan.test.ts` (chains, a swap, a rotation, two swaps through one parking episode, no parking,
