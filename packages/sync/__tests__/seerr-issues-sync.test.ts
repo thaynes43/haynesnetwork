@@ -84,7 +84,7 @@ describe('runSync — seerr-issues mode (DESIGN-055 D-10)', () => {
         write: {
           commentOnIssue: async (issueId: number, message: string, asUserId: number) => {
             posts.push({ issueId, asUserId, message });
-            return { ...issue, comments: [...issue.comments, { id: 99, message, createdAt: issue.createdAt, user: { id: asUserId } }] };
+            return { ...issue, comments: [...(issue.comments ?? []), { id: 99, message, createdAt: issue.createdAt, user: { id: asUserId } }] };
           },
           resolveIssue: async () => {
             throw new Error('not expected');

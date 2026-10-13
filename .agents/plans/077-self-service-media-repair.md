@@ -818,6 +818,8 @@ names, never deleting a file, after a watch-state check on every Plex server and
     the single writer (`runSeerrIssueBridge`: claim, read fresh, adopt or post, complete), `resolveSourceFor`, and the
     admin reads. `seerr-issue-link.ts`: the exact link the repair and Fix writers keep (`seerrIssueLinkFor`).
   - The bridge runs after every `seerr-issues` sync and after an issue webhook that changed the mirror (`after`).
+  - Staff tool `tsx /sync/src/scripts/seerr-bridge.ts`: `--show` (the setting, the bridge user, recent writes),
+    `--set [--user <id>|none] [--comment on|off] [--resolve on|off]` (audited, actor null), `--run [--issue <id>]`.
   - The guide sends `seerrIssueId` from a report's banner or link (`SeerrIssueLinkContext`); `/admin/seerr` gains the
     "Replies in Seerr" card and each report's replies.
   - Tests: `seerr-issue-writes.test.ts` (domain), the bridge clients in `seerr-issues.test.ts` (arr), the bridge pass in
