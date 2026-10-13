@@ -53,6 +53,7 @@ import { queueRecordState } from './queue-aware-search';
 import {
   episodeTitleEvidence,
   movieTitleEvidence,
+  parseReleaseName,
   seriesYearConflict,
   type TitleEvidenceEpisode,
   type TitleVerdict,
@@ -477,6 +478,12 @@ function appReasons(release: ArrRelease, target: ReleasePickTarget, ctx: Describ
  * for it (a pack or a multi-episode file that holds it is shown, Not allowed), and rows numbered for another episode of
  * the season whose own title names the target (D-06's overridable episode reason, Case A's `S01E10.Spice.It.Up`). Rows
  * the *arr could not match to the title are dropped.
+ *
+ * `replacing` (the staff Wrong-Content Replace, P4 decision 38) reads the list as if the target's file were gone, and
+ * judges a row the *arr renumbered (scene numbering) by its own name: Mickey Mouse: Mixed-Up Adventures'
+ * `S01E01E02.Mickeys.Wild.Tire..Sittin.Kitty` holds TVDB E01 and E02, and Sonarr files it on E01 to E04 (read live
+ * 2026-10-13). Such a row holds the episodes its name numbers, needs the override (it is grabbed onto them), and is a
+ * pick only when its titles name them.
  */
 export function classifyReleases(
   releases: readonly ArrRelease[],
@@ -495,11 +502,13 @@ export function classifyReleases(
     const extra: ReleaseReason[] = [];
 
     if (target.kind === 'sonarr') {
-      if (release.seasonNumber !== target.seasonNumber) {
+      const named = opts.replacing && release.renumbered && !release.fullSeason ? parseReleaseName(release.title) : null;
+      const byName = named !== null && named.season === target.seasonNumber && named.episodes.length > 0;
+      if (!byName && release.seasonNumber !== target.seasonNumber) {
         dropped += 1;
         continue;
       }
-      const eps = release.episodeNumbers;
+      const eps = byName ? named.episodes : release.episodeNumbers;
       const covers = release.fullSeason || eps.includes(target.episodeNumber);
       // P5 decision 17 (issue #936): a release that holds several episodes of the season (not a season pack) is a pick
       // for all of them when every one is missing. One that would land on an episode with a file stays Not allowed:
@@ -543,7 +552,7 @@ export function classifyReleases(
 
       if (pack) {
         extra.push(reason('pack', 'other', 'Holds more than this one episode', null));
-      } else if (holds !== null && release.renumbered) {
+      } else if (holds !== null && release.renumbered && !byName) {
         // The *arr filed the name's episodes as others (scene numbering): which episodes the file really holds can't be
         // told from the list. Spidey's `S05E09E10` held E09 and E10, and Sonarr filed it on E17 to E20 (2026-10-13).
         extra.push(reason('renumbered', 'other', 'It would be filed on other episodes than its name says', null));
@@ -561,6 +570,14 @@ export function classifyReleases(
           te.bestEpisodeId !== null ? target.seasonEpisodes.find((e) => e.id === te.bestEpisodeId) ?? null : null;
         const namedLabel = named ? episodeLabel(named.seasonNumber, named.episodeNumber, named.title ?? '') : null;
         title = { verdict: te.verdict, namedLabel: te.verdict === 'disagrees' || mislabeledAs ? namedLabel : null };
+        if (byName) {
+          // Judged by its own name: a pick only when its titles name the episodes it would be grabbed onto.
+          extra.push(
+            te.verdict === 'agrees'
+              ? reason('renumbered', 'overridable', 'Sonarr would file it on other episodes; its name and titles are these', null)
+              : reason('renumbered', 'other', 'It would be filed on other episodes than its name says', null),
+          );
+        }
         if (te.verdict === 'disagrees') {
           extra.push(
             reason(
@@ -1173,6 +1190,11 @@ export async function sendReleaseGrab(input: {
   target: Extract<ReleasePickTarget, { kind: 'sonarr' }>;
   offer: ReleasePickOffer;
   episodeIds: readonly number[];
+  /**
+   * Keep the season's cached list (a staff run filling several slots from one search: the list's other rows are
+   * unchanged by this grab, and every slot re-reads its own queue). Default: forget it, so the next list reads the queue.
+   */
+  keepList?: boolean;
 }): Promise<void> {
   const { offer } = input;
   await input.arr.write.sonarr.grabRelease({
@@ -1185,7 +1207,7 @@ export async function sendReleaseGrab(input: {
     downloadClientId: null,
     shouldOverride: true,
   });
-  forgetReleaseLists(staleKeysAfterGrab(input.target, input.episodeIds));
+  if (!input.keepList) forgetReleaseLists(staleKeysAfterGrab(input.target, input.episodeIds));
 }
 
 /**

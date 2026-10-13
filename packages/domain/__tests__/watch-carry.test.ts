@@ -222,6 +222,7 @@ function stubSonarr(opts: { contentOn?: Array<[number, number]>; copyNames?: Rec
     /** Sonarr's season release list (the Wrong-Content Replace's search), and the grabs sent. */
     releases: [] as Array<Record<string, unknown>>,
     grabs: [] as Array<Record<string, unknown>>,
+    searches: 0,
   };
   const json = (body: unknown, status = 200) =>
     new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -257,7 +258,10 @@ function stubSonarr(opts: { contentOn?: Array<[number, number]>; copyNames?: Rec
     if (method === 'GET' && p === `/api/v3/series/${SERIES_ID}`) {
       return json({ ...(arrFixture('sonarr.series-byid') as Record<string, unknown>), id: SERIES_ID, title: 'Show', year: 2020 });
     }
-    if (method === 'GET' && p === '/api/v3/release') return json(state.releases);
+    if (method === 'GET' && p === '/api/v3/release') {
+      state.searches += 1;
+      return json(state.releases);
+    }
     if (method === 'POST' && p === '/api/v3/release') {
       state.grabs.push(body as Record<string, unknown>);
       return json(body);
@@ -630,7 +634,7 @@ describe('the Watch Carry flow (ADR-114)', () => {
     const result = await runWrongContentReplace({
       ...target,
       planDigest: plan.digest,
-      key: plan.candidates[0]!.key,
+      keys: [plan.candidates[0]!.key],
       evidence: 'The title card names another show.',
       watchCarry: plex.plex,
       carryPauseMs: 0,
@@ -669,7 +673,7 @@ describe('the Watch Carry flow (ADR-114)', () => {
     const result = await runWrongContentReplace({
       ...target,
       planDigest: plan.digest,
-      key: plan.candidates[0]!.key,
+      keys: [plan.candidates[0]!.key],
       evidence: 'Subtitles match the E04 file.',
       sameAs: [{ seasonNumber: 1, episodeNumber: 4 }],
       watchCarry: plex.plex,
@@ -679,6 +683,49 @@ describe('the Watch Carry flow (ADR-114)', () => {
     expect(result.carry!.result!.totals.lost).toBe(0);
     expect(plex.view(FRIEND_A, 'g-1-4')).toMatchObject({ viewCount: 1 });
     expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 0 });
+  });
+
+  it('replaces two files at once, judges a renumbered release by its own name, and fills a slot from parts (P4 decision 38)', async () => {
+    // E2 and E3 each hold another show's episode. Sonarr files `S01E02E03` (Bravo Night + Charlie Comes Home) on E3
+    // and E4 (scene numbering); its name and titles say E2 and E3.
+    resetReleaseSearchState();
+    const arr = stubSonarr({
+      contentOn: [[1, 1], [2, 9], [3, 8], [4, 4]],
+      copyNames: { 2: 'Other.Show.S01E01.Some.Story.1080p.WEB-DL-GRP', 3: 'Other.Show.S01E02.More.Story.1080p.WEB-DL-GRP' },
+    });
+    const plex = fakePlex({ files: arr.plexFiles, accounts: [OWNER, FRIEND_A] });
+    const existing = 'Existing file on disk has a equal or higher Custom Format score: 0';
+    arr.state.releases = [
+      { ...release('both', 'Show.S01E02E03.Bravo.Night.Charlie.Comes.Home.1080p.WEB-DL-GRP', 2, [existing]), episodeNumbers: [2, 3], mappedEpisodeNumbers: [3, 4] },
+      release('two', 'Show.S01E02.Bravo.Night.1080p.WEB-DL-GRP', 2, [existing]),
+      release('three', 'Show.S01E03.Charlie.Comes.Home.1080p.WEB-DL-GRP', 3, [existing]),
+    ];
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2, alsoEpisodes: [3] };
+    const plan = await planWrongContentReplace(target);
+    expect(plan.refusal).toBeNull();
+    expect(plan.files.map((f) => f.id)).toEqual([7002, 7003]);
+    expect(plan.candidates.map((c) => [c.title.split('.')[1], c.whole, c.state])).toEqual([
+      ['S01E02E03', true, 'override'],
+      ['S01E02', false, 'grab'],
+      ['S01E03', false, 'grab'],
+    ]);
+    expect(plan.candidates[0]!.reasonCodes).toContain('renumbered');
+    const [both, two, three] = plan.candidates.map((c) => c.key);
+    const run = { ...target, planDigest: plan.digest, evidence: 'The title cards name another show.', watchCarry: plex.plex, carryPauseMs: 0, keepReleaseList: true };
+    // Releases that land on an episode twice do not fill the slot: refused before anything is written.
+    await expect(runWrongContentReplace({ ...run, keys: [both!, two!] })).rejects.toThrow(/do not fill the slot exactly/);
+    expect(arr.state.deleted).toEqual([]);
+    const result = await runWrongContentReplace({ ...run, keys: [two!, three!] });
+    expect(arr.state.deleted).toEqual([7002, 7003]);
+    expect(arr.state.grabs).toEqual([
+      expect.objectContaining({ guid: 'two', episodeIds: [402], shouldOverride: true }),
+      expect.objectContaining({ guid: 'three', episodeIds: [403], shouldOverride: true }),
+    ]);
+    expect(result.grabbed.map((g) => g.lands)).toEqual([['S01E02 · Bravo Night'], ['S01E03 · Charlie Comes Home']]);
+    expect(result.carry).toMatchObject({ status: 'verified' });
+    // The staff run kept its one search: the next slot plans from the same list.
+    await planWrongContentReplace({ ...target, episodeNumber: 4, alsoEpisodes: [] });
+    expect(arr.state.searches).toBe(1);
   });
 
   it('an ordering switch re-matches items and the carry puts each account’s state back on its files', async () => {

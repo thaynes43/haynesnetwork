@@ -410,6 +410,28 @@ describe('repair-guide.ts arguments', () => {
     expect(() => parseRepairGuideArgs(['copy-plan', '--tvdb', '1', '--episode', 'S01E01', '--same-as', 'S03E01'])).toThrow(/--same-as is for replace-run/);
   });
 
+  it('replace takes a slot of several files, parts, many slots from one plan, and a batch run (DESIGN-055 P4 decision 38)', () => {
+    expect(
+      parseRepairGuideArgs(['replace-run', '--tvdb', '320725', '--episode', 'S01E33', '--also', '34', '--key', '0123456789abcdef,fedcba9876543210', '--digest', 'abcdef0123456789', '--evidence', 'subtitles name two Season 3 stories', '--same-as', '33:S03E65,34:S03E67']),
+    ).toMatchObject({
+      also: [34],
+      key: '0123456789abcdef,fedcba9876543210',
+      sameAs: [{ season: 3, episode: 65, copyOf: 33 }, { season: 3, episode: 67, copyOf: 34 }],
+    });
+    expect(parseRepairGuideArgs(['replace-plan', '--tvdb', '1', '--season', '1', '--slots', '1,3,33+34'])).toMatchObject({
+      slots: [{ episode: 1, also: [] }, { episode: 3, also: [] }, { episode: 33, also: [34] }],
+    });
+    expect(() => parseRepairGuideArgs(['replace-plan', '--tvdb', '1', '--season', '1'])).toThrow(/--slots/);
+    expect(() => parseRepairGuideArgs(['release-grab', '--tvdb', '1', '--episode', 'S01E01', '--key', '0123456789abcdef,fedcba9876543210'])).toThrow(/only replace-run/);
+    const batch = JSON.stringify([{ slot: '33+34', keys: ['0123456789abcdef'], digest: 'abcdef0123456789', evidence: 'subtitles name two Season 3 stories', sameAs: ['33:S03E65', '34:S03E67'] }]);
+    expect(parseRepairGuideArgs(['replace-batch', '--tvdb', '1', '--season', '1', '--batch', batch, '--pause-ms', '0'])).toMatchObject({
+      pauseMs: 0,
+      batch: [{ episode: 33, also: [34], keys: ['0123456789abcdef'], sameAs: [{ season: 3, episode: 65, copyOf: 33 }, { season: 3, episode: 67, copyOf: 34 }] }],
+    });
+    expect(() => parseRepairGuideArgs(['replace-batch', '--tvdb', '1', '--season', '1', '--batch', '[{"slot":"1","keys":["x"]}]'])).toThrow(/keys/);
+    expect(() => parseRepairGuideArgs(['copy-plan', '--tvdb', '1', '--episode', 'S01E01', '--also', '2'])).toThrow(/replace commands/);
+  });
+
   it('refuses what it does not understand', () => {
     expect(parseRepairGuideArgs([])).toBe('help');
     expect(() => parseRepairGuideArgs(['delete'])).toThrow(/unknown command/);

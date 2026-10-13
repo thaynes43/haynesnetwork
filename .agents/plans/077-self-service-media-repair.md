@@ -569,8 +569,9 @@ names, never deleting a file, after a watch-state check on every Plex server and
       C then A): `wrong-content-replace.ts`, `previewReplacementList` and `sendReleaseGrab` in `release-pick.ts`,
       migration 0105 (Watch Carry kind `wrong_content`), the carry's `droppedDetail`, and `repair-guide.ts replace-plan |
       replace-run`. Tests: `watch-carry.test.ts`: a replace that drops a mark on content held nowhere else; and a slot
-      kept while no release names it, then replaced with its mark credited to the copy elsewhere. Also migration 0105 and
-      the script test.
+      kept while no release names it, then replaced with its mark credited to the copy elsewhere; two files replaced at
+      once from parts, with a renumbered release judged by its own name and one search for the run. Also migration 0105
+      and the script test (`--also`, `--key a,b`, `--slots`, `replace-batch`).
     - **Held** (#928 and OC-056 list them with reasons):
       - Waiting for open Fix requests to close (48 hours): Bubble Guppies S5, whose only parking episodes are the
         emptied S1 slots, and Paw Patrol S5 E43-E47 (`--place 44-45:43-44,46:45,47:46-47`).

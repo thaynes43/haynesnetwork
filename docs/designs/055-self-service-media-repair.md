@@ -558,6 +558,19 @@ do not edit)", "must not contain" terms only, no tags.
     dropped, each recorded on the carry (`droppedDetail`: account index, file size, state) beside the pre-clear audit
     row. Each import is then checked by subtitles or a title card.
 
+    The live plans (2026-10-13) added four things. **Several files:** `--also 34` replaces more files with the slot
+    when one release holds all their episodes (Mickey's S01E33 and E34 files each sit on one episode, and the right
+    release `S01E33E34` holds both); `--same-as 33:S03E65,34:S03E67` names which file each copy belongs to.
+    **Parts:** a slot may be filled by several releases that together land on each of its episodes once (`--key a,b`;
+    Mickey's S01E13-E16 file is refilled by `S01E13E14` and `S01E15E16`); any other set is refused before anything is
+    written. **Renumbered releases:** Sonarr files Mickey's `S01E01E02.Mickeys.Wild.Tire..Sittin.Kitty` on E01 to E04
+    (scene numbering, doubled); in replace mode the Release Pick judges such a row by its own name, holding the episodes
+    its name numbers, as an override, and a pick only when its titles name them (`classifyReleases` with `replacing`;
+    the person's Release Pick still refuses it). **One search:** each plan and run reads the season list once and the
+    list is cached (five minutes); `replace-plan --season <n> --slots 1,3,33+34` plans many slots from it and
+    `replace-batch --batch '<json>'` runs them in one process, keeping the list after each grab, pausing between slots
+    and stopping at the first refusal. Indexer API hits are capped, and a season search per slot would spend hundreds.
+
 ### D-06 Release Pick
 
 The remedy for "nothing acceptable was found": an interactive release list for one missing episode or movie.
