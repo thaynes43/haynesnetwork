@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.120.1](https://github.com/thaynes43/haynesnetwork/compare/v0.120.0...v0.120.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **domain:** a multi-episode release the *arr renumbers is never a pick (DESIGN-055 P5 decision 17) ([#945](https://github.com/thaynes43/haynesnetwork/issues/945)) ([fd9334f](https://github.com/thaynes43/haynesnetwork/commit/fd9334f82a7836e768e9d300f39e3d73716a8c49))
+
 ## [0.120.0](https://github.com/thaynes43/haynesnetwork/compare/v0.119.1...v0.120.0) (2026-10-13)
 
 
