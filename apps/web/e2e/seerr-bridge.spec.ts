@@ -82,6 +82,8 @@ async function setImportCheck(page: Page, on: boolean): Promise<void> {
  */
 async function closeOpenFixes(page: Page): Promise<void> {
   await page.goto('/admin/fixes');
+  // The list loads after the page: count the close buttons only once it is there (earlier specs always leave fixes).
+  await expect(page.locator('.admin-table tbody tr').first()).toBeVisible();
   const rows = page.locator('.admin-table tbody tr').filter({ hasText: 'Breaking Prod' });
   for (let i = 0; i < 10; i += 1) {
     const close = rows.getByRole('button', { name: /Close the open fix/ });
