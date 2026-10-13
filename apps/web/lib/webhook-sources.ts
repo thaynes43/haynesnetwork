@@ -249,6 +249,21 @@ export function parseSeerrWebhook(raw: unknown): ParsedNotification | null {
   return { type, title, body, sourceEventId, tmdbId, tvdbId, mediaType, requesterEmail: email, payload };
 }
 
+/**
+ * ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — the Seerr issue id of an ISSUE notification (`ISSUE_CREATED`,
+ * `ISSUE_COMMENT`, `ISSUE_RESOLVED`, `ISSUE_REOPENED`; the default template's `{{issue}}.issue_id`), else null. An
+ * issue webhook only triggers a fresh read of that issue (the mirror); it is never stored as a Feed notification, so a
+ * report has one record in the app. Media and test notifications answer null and keep today's path.
+ */
+export function seerrIssueIdFromWebhook(raw: unknown): number | null {
+  if (!isPlainObject(raw)) return null;
+  const type = stringish(raw.notification_type, MAX_TYPE_LEN);
+  if (type === undefined || !type.toUpperCase().startsWith('ISSUE_')) return null;
+  const issue = isPlainObject(raw.issue) ? raw.issue : undefined;
+  const id = issue ? intish(issue.issue_id) : null;
+  return id !== null && id > 0 && id <= 2_147_483_647 ? id : null;
+}
+
 // ---------------------------------------------------------------------------
 // Tautulli — the notification-agent body is FULLY user-templated, so we DESIGN the canonical JSON
 // we configure Tautulli to POST (see DESIGN-012 D-02 deploy section). We control the field names,

@@ -78,6 +78,10 @@ import {
   seerrStatusSchema,
   seerrUserPageSchema,
   seerrWatchlistPageSchema,
+  seerrIssuePageSchema,
+  seerrIssueSchema,
+  type SeerrIssue,
+  type SeerrIssuePage,
   type SeerrUserSummary,
   type SeerrWatchlistPage,
   type SeerrMainSettings,
@@ -804,6 +808,65 @@ export class SeerrClient {
   listSonarrServers(): Promise<SeerrSonarrServerSummary[]> {
     return this.http.requestJson('GET', 'settings/sonarr', z.array(seerrSonarrServerSummarySchema));
   }
+
+  /**
+   * ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — ONE page of Seerr issues (`GET /api/v1/issue`), every status by
+   * default, newest first. `listAllIssues` pages to the end.
+   */
+  getIssuePage(params: SeerrIssuePageParams = {}): Promise<SeerrIssuePage> {
+    return this.http.requestJson('GET', 'issue', seerrIssuePageSchema, {
+      query: {
+        take: params.take ?? SEERR_ISSUE_PAGE_SIZE,
+        skip: params.skip ?? 0,
+        filter: params.filter ?? 'all',
+        sort: params.sort ?? 'added',
+      },
+    });
+  }
+
+  /**
+   * DESIGN-055 D-10 — every Seerr issue (all statuses), newest first, paged `take=100` to completion under a 50-page
+   * cap: a longer list throws rather than answer a partial mirror (the sync marks issues missing from a COMPLETE read).
+   */
+  async listAllIssues(): Promise<SeerrIssue[]> {
+    const out: SeerrIssue[] = [];
+    const seen = new Set<number>();
+    for (let page = 0; page < SEERR_ISSUE_MAX_PAGES; page += 1) {
+      const body = await this.getIssuePage({ take: SEERR_ISSUE_PAGE_SIZE, skip: page * SEERR_ISSUE_PAGE_SIZE });
+      for (const issue of body.results) {
+        // An issue filed while paging shifts the pages by one; never count it twice.
+        if (seen.has(issue.id)) continue;
+        seen.add(issue.id);
+        out.push(issue);
+      }
+      if (body.results.length < SEERR_ISSUE_PAGE_SIZE || out.length >= body.pageInfo.results) return out;
+    }
+    throw new Error(`seerr: the issue list did not end within ${SEERR_ISSUE_MAX_PAGES} pages`);
+  }
+
+  /**
+   * DESIGN-055 D-10 — one issue (`GET /api/v1/issue/{id}`), with its comments and their authors; null when Seerr has
+   * no such issue (404: never filed, or deleted). The webhook and the `/r/seerr/<id>` link read through here.
+   */
+  async getIssue(issueId: number): Promise<SeerrIssue | null> {
+    try {
+      return await this.http.requestJson('GET', `issue/${encodeURIComponent(String(issueId))}`, seerrIssueSchema);
+    } catch (error) {
+      if (error instanceof ArrHttpError && error.status === 404) return null;
+      throw error;
+    }
+  }
+}
+
+/** DESIGN-055 D-10 — the issue list's page size and page cap. */
+export const SEERR_ISSUE_PAGE_SIZE = 100;
+export const SEERR_ISSUE_MAX_PAGES = 50;
+
+export interface SeerrIssuePageParams {
+  take?: number;
+  skip?: number;
+  filter?: 'all' | 'open' | 'resolved';
+  sort?: 'added' | 'modified';
 }
 
 /**

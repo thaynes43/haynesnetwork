@@ -16,7 +16,14 @@ import { signInErrorRedirect, withNext } from '@/lib/sign-in-error';
  * safe `?next=` (e.g. back to /oauth/authorize) or `/`. It is carried on the error redirects too, so a retry
  * resumes the same flow.
  */
-export function LoginButton({ callbackURL = '/' }: { callbackURL?: string }) {
+export function LoginButton({
+  callbackURL = '/',
+  label = 'Sign in with Plex (Authentik)',
+}: {
+  callbackURL?: string;
+  /** DESIGN-055 D-11 — the Seerr onboarding card says "Sign in with Plex"; the flow is the same. */
+  label?: string;
+}) {
   const [pending, setPending] = useState(false);
 
   async function start() {
@@ -48,7 +55,7 @@ export function LoginButton({ callbackURL = '/' }: { callbackURL?: string }) {
       disabled={pending}
       onClick={() => void start()}
     >
-      {pending ? 'Redirecting…' : 'Sign in with Plex (Authentik)'}
+      {pending ? 'Redirecting…' : label}
     </button>
   );
 }

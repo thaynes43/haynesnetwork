@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-12 (P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
+- **Last updated:** 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
@@ -510,6 +510,63 @@ after it, so a crash never posts twice.
 - **First visit.** The reporter sees "You reported this in Seerr. Here's what you can try first." above the guide.
 - **Delivery** is Seerr's own comment notification (D-10), sent however the reporter set up Seerr. The app adds no
   channel.
+
+**P3 decisions (2026-10-12, PLAN-077 P3).** What the build settled for D-10's read side, D-11 and D-12, with the live
+reads behind it (Seerr 3.5.0, 4 issues, all resolved). Seerr is only read; the comment and resolve stay P7.
+
+1. **The reads.** `GET /api/v1/issue?take=100&skip=&filter=all&sort=added`, paged to the end under a 50-page cap (a
+   longer list fails the run rather than mirror part of it), and `GET /api/v1/issue/{id}`. Read live: `status` is 1 open
+   or 2 resolved; the list carries every comment (without its author); an issue carries no title, only
+   `media.tmdbId`/`tvdbId`. Strip-mode schemas (`packages/arr/src/schemas/seerr.ts`) keep only what the mirror reads.
+2. **A full read every run**, not "until rows are unchanged": at today's rate the whole list is one page, and only a
+   complete read can tell that Seerr deleted an issue. Such an issue gets `removed_at` (kept, with its staff note,
+   cleared if it comes back). A failed list read writes nothing. Sync mode `seerr-issues`, CronJob
+   `sync-seerr-issues` every 10 minutes; Sonarr is read only for an episode's id (kept while the title, season and
+   episode are unchanged; unknown while Sonarr is down).
+3. **Columns beyond the list above:** `reporter_name` (the name Seerr shows, for admins only, ADR-111 C-02),
+   `removed_at`, `staff_handled_by`, `created_at` and `updated_at`. The reporter's email is read only to match the app
+   account (`resolveUserIdByEmail`, the DESIGN-005 D-14 path) and is never stored; the ledger item comes from the
+   shared `resolveMediaItemId`. A fixed-by-hand mark needs a note (a CHECK as well as the writer).
+4. **The webhook.** An `ISSUE_*` notification (the default template's `{{issue}}.issue_id`) triggers one fresh read
+   (`refreshSeerrIssueFromEnv`, 5-second timeout) and answers 202 without a Feed row; an unreachable Seerr still answers
+   202 and the sync catches up. Media notifications keep the Feed path. The webhook types change (204 to 4044) is
+   recorded in PLAN-077 P3.
+5. **Routing** (`seerrGuideEntry`, the client): an episode or movie with no file opens Force Search on it; with a file,
+   Fix on it, Audio preselecting Wrong language and Subtitles Missing subtitles (Video and Other ask "What's wrong?";
+   the person always confirms); a season opens Fix · Season when anything in it is on disk, else Force Search on the
+   season; the whole show opens Fix with the episode picker, or Force Search · Whole show when nothing is on disk; an
+   episode Sonarr does not list falls back to its season. Title Check flags on the season view wait for P4.
+6. **The title page** shows one banner per open report, plus the one a link arrived with whatever its status, right
+   under the title header (above the episode list): "Reported in Seerr", the type and episode, the reporter's own
+   words, the date, a link to the Seerr issue and the guide button (`MediaAction` Fix or Force Search with its grain).
+   Admins also see the reporter's name. A resolved report says Seerr marked it resolved and that the person can try
+   again.
+7. **The link** is public. Signed out it shows an onboarding card and nothing about the report (issue ids are
+   sequential): three steps, "Sign in with Plex" whose `callbackURL` is the link itself (Better Auth carries it through
+   Authentik; the first sign-in creates the account, R-03), and a note that the report stays open in Seerr. Signed in,
+   a missing row, a row with no title yet, or one with no app reporter yet is read fresh from Seerr first; then
+   `/library/<id>?seerr=<issueId>` when the person can see the title (ADR-047), else a card: not in the Library yet,
+   removed in Seerr, a library the account cannot see, or no such report.
+8. **First visit.** The title page opens the routed guide once, with "You reported this in Seerr. Here's what you can
+   try first." above its first step ("This was reported in Seerr..." for anyone else), then drops `?seerr=` from the
+   address so a reload does not open it again.
+9. **Linked repairs** (D-12) are the app's own Repair Requests, Fixes and Force Searches on the same title and grain
+   (a movie: all of them; an episode: that episode by id or by its SxxEyy label, its season and the whole show; a
+   season: the season and its episodes), made from the report until a day after Seerr last changed a resolved report
+   (an open report has no end). A Repair Request whose `seerr_issue_id` names the issue is linked whatever its grain;
+   the guide does not set that column yet, and P7 sets it when the resolve needs an exact link.
+10. **The staff note** (`setSeerrIssueStaffNote`): "Mark fixed by hand" opens a Modal that needs a note naming the
+    missing capability; editing keeps the first mark's time and person; "Clear the mark" is the ConfirmButton
+    two-step. Each change writes `update_seerr_issue_note` (before and after) in the same transaction.
+11. **`/admin/seerr`** (Open by default, All adds resolved and removed reports): one card per report with the title,
+    type and episode, the reporter's words, the reporter (Seerr name, and the app account or "no haynesnetwork account
+    yet"), the comment count, links to Seerr, the fix-it-yourself link with Copy (built from the public origin, so it
+    reads `https://haynesnetwork.com/r/seerr/<id>` from the in-cluster route too), the linked repairs (what, target,
+    status, by whom, staff marked) and the staff note.
+12. **Activity's admin Import Check row** (D-07 P2 decision 13): `activity.importCheck` (admin only) runs
+    `planForceSearch` read-only, as if `import_check` were on, for a stuck Sonarr episode or Radarr movie; the failure
+    page shows what a Force Search press would do ("Ready to import", "Needs staff", ...) and the Import Check's own
+    reason. Nothing is written.
 
 ### D-12 Working practice and the readiness judgment
 

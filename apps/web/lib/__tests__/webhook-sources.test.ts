@@ -4,6 +4,7 @@ import {
   parseSeerrWebhook,
   parseTautulliWebhook,
   parserForSource,
+  seerrIssueIdFromWebhook,
 } from '../webhook-sources';
 
 describe('per-source secret env map (DESIGN-012 D-03)', () => {
@@ -132,5 +133,19 @@ describe('parseTautulliWebhook (designed template, DESIGN-012 D-02)', () => {
 
   it('rejects a non-object body (→ 400)', () => {
     expect(parseTautulliWebhook(42)).toBeNull();
+  });
+});
+
+describe('seerrIssueIdFromWebhook (DESIGN-055 D-10)', () => {
+  it('reads the issue id of an ISSUE notification only', () => {
+    expect(seerrIssueIdFromWebhook({ notification_type: 'ISSUE_CREATED', issue: { issue_id: '3' } })).toBe(3);
+    expect(seerrIssueIdFromWebhook({ notification_type: 'issue_comment', issue: { issue_id: 12 } })).toBe(12);
+    expect(seerrIssueIdFromWebhook({ notification_type: 'MEDIA_AVAILABLE', issue: { issue_id: '3' } })).toBeNull();
+    expect(seerrIssueIdFromWebhook({ notification_type: 'ISSUE_CREATED', issue: { issue_id: '' } })).toBeNull();
+    expect(seerrIssueIdFromWebhook({ notification_type: 'ISSUE_CREATED', issue: { issue_id: '-4' } })).toBeNull();
+    expect(seerrIssueIdFromWebhook({ notification_type: 'ISSUE_CREATED', issue: 'nope' })).toBeNull();
+    expect(seerrIssueIdFromWebhook({ notification_type: 'ISSUE_CREATED' })).toBeNull();
+    expect(seerrIssueIdFromWebhook(null)).toBeNull();
+    expect(seerrIssueIdFromWebhook('ISSUE_CREATED')).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 # DDD-002: Bounded Contexts
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-11 (ADR-107 / DESIGN-054: BC-06 supplies personal evidence for agent-owned recommendations). Prior: 2026-09-26 (BC-03 gains watchlist protection for Trash: the Watchlist Registry, the Release Block write-back and a Seerr settings write — ADR-093, DESIGN-052; the "Seerr is read-only" rule is amended). Prior: 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
+- **Last updated:** 2026-10-12 (ADR-111 / DESIGN-055 P3: BC-05 owns the Seerr Issue mirror). Prior: 2026-10-11 (ADR-107 / DESIGN-054: BC-06 supplies personal evidence for agent-owned recommendations). Prior: 2026-09-26 (BC-03 gains watchlist protection for Trash: the Watchlist Registry, the Release Block write-back and a Seerr settings write — ADR-093, DESIGN-052; the "Seerr is read-only" rule is amended). Prior: 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
 - **Related:** PRD-001, DDD-001
 
 Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs as
@@ -152,6 +152,9 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
   event store, widened from PLAN-006), **Message** (`messages` — user board entries with a soft
   moderation lifecycle), and the **Message Action Grant** (`role_message_action_grants` — the
   fine-grained post/moderate grant; its *mutation* audit is BC-02 Entitlements, `update_message_actions`).
+  ADR-111 / DESIGN-055 D-10 (PLAN-077 P3) adds the **Seerr Issue** (`seerr_issues`, T-311): the read-only mirror of
+  Seerr's issues, read by the `seerr-issues` sync and on each issue webhook (never stored as a Notification), with a
+  staff note whose audit is `update_seerr_issue_note`. Its linked repairs are read from BC-03's own records.
 - **Anti-corruption layer:** per-source webhook **adapters** (Seerr/Overseerr, Tautulli, Maintainerr)
   translate each service's webhook template into the common Notification model; external payload
   quirks never leak past the parser (known-key validation + sanitization).
@@ -233,3 +236,4 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
 | 2026-09-23 | Opus 5.5 | Added **BC-06 Watch Companion** (ADR-087/088/089 / DESIGN-049, PLAN-068): owns Watch Event, Title State, Watch Mark, the tracked-account registry and the recommendation signal cache; reads BC-03/BC-04; one outbound write (Plex scrobble for an owner-issued `watched` mark); serves MCP consumers through the in-cluster hop. |
 | 2026-09-23 | Opus 5.5 | **BC-06 gains the public connector surface** (ADR-091 / DESIGN-050, PLAN-069): owns the five OAuth tables (OAuth Client, Authorization Transaction and codes, Refresh Family and Delegated Token stores); Connectors call the public `/mcp` and answer for their user's Tracked Account (T-259) through the ADR-053 Plex Account Map; Plex write-back stays owner-only. No new context. |
 | 2026-09-26 | Opus 5.5 | **BC-03 gains watchlist protection for Trash** (ADR-093 / DESIGN-052, PLAN-072): owns the Watchlist Registry and the Deleted-Release Record; reads plex.tv, community.plex.tv and Seerr per-user watchlists as guard input; two new confined writes (the Release Block release profiles in Radarr/Sonarr, the Seerr watchlist-sync flags). The "Seerr is read-only" rule is amended. No new context. |
+| 2026-10-12 | Opus 5.5 | **BC-05 gains the Seerr Issue** (ADR-111 / DESIGN-055 D-10, PLAN-077 P3): the read-only `seerr_issues` mirror (sync mode `seerr-issues`, issue webhooks trigger a fresh read, never a Notification), its audited staff note, and the `/r/seerr/<id>` link. |

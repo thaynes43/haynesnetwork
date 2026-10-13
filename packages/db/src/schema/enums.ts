@@ -67,6 +67,10 @@ export const PERMISSION_AUDIT_ACTIONS = [
   // single-writer with { role_name, before, after } in the SAME tx (hard rule 6); the Admin role has
   // no editable budget (it bypasses). Migration 0073 rebuilds the permission_audit action CHECK to admit it.
   'update_media_action_budget',
+  // ADR-112 C-02 / DESIGN-055 D-12 (PLAN-077 P3) — staff marked a Seerr issue fixed by hand, or changed or cleared its
+  // staff note. Written by the setSeerrIssueStaffNote single-writer with { seerrIssueId, before, after } in the SAME tx
+  // as the seerr_issues update (hard rule 6). Migration 0100 rebuilds the permission_audit action CHECK to admit it.
+  'update_seerr_issue_note',
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -455,6 +459,12 @@ export const SYNC_RUN_KINDS = [
   // SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0081 rebuilds the sync_runs.run_kind
   // CHECK for parity).
   'watchlist-registry',
+  // ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — 'seerr-issues' mirrors every Seerr issue into seerr_issues (the
+  // Seerr Issue, T-311) through the domain syncSeerrIssues single-writer, every 10 minutes. READ-ONLY against Seerr
+  // (and Sonarr, for an episode's id). Standalone mode: no --source, writes NO sync_runs row (its trail is the mirror's
+  // read_at). It joins SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0100 rebuilds the
+  // sync_runs.run_kind CHECK for parity).
+  'seerr-issues',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -946,6 +956,15 @@ export type RepairRequestScope = (typeof REPAIR_REQUEST_SCOPES)[number];
  */
 export const REPAIR_REQUEST_STATUSES = ['pending', 'actioned', 'completed', 'refused', 'failed', 'timed_out'] as const;
 export type RepairRequestStatus = (typeof REPAIR_REQUEST_STATUSES)[number];
+
+// ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — the Seerr Issue mirror's status (Seerr's 1 open, 2 resolved) and
+// type (Seerr's issueType 1..4, stored as Seerr numbers them).
+export const SEERR_ISSUE_STATUSES = ['open', 'resolved'] as const;
+export type SeerrIssueStatus = (typeof SEERR_ISSUE_STATUSES)[number];
+export const SEERR_ISSUE_TYPES = [1, 2, 3, 4] as const;
+export type SeerrIssueType = (typeof SEERR_ISSUE_TYPES)[number];
+export const SEERR_ISSUE_MEDIA_TYPES = ['movie', 'tv'] as const;
+export type SeerrIssueMediaType = (typeof SEERR_ISSUE_MEDIA_TYPES)[number];
 
 // ADR-027 / DESIGN-004 D-15 (PLAN-010) — a MOTD's severity, driving the banner's token palette
 // (`--color-info` / `--color-warning`) and its ARIA role (status vs alert). Stored inside the

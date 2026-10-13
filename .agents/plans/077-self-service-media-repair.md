@@ -213,6 +213,20 @@ Priority is how often real reports need the remedy, and how much harm today's be
 - **Live check:** the four existing (resolved) Seerr issues appear in `/admin` with the right titles and episodes, and
   the link for issue 3 opens The Paper's S02E06 guide.
 - **Done when** a new real issue appears within one run and its link works signed out.
+- **Build (2026-10-12):** DESIGN-055's "P3 decisions" (items 1-12, after D-11) record what landed and why:
+  - Step 1: `SeerrClient.listAllIssues` / `getIssue` (strip mode, fixture from the live read), migration 0100
+    (`seerr_issues`, the run kind, the audit action), `packages/domain/src/seerr-issues.ts` (the single writer:
+    `syncSeerrIssues`, `refreshSeerrIssue`, `setSeerrIssueStaffNote`, and the reads), sync mode `seerr-issues`.
+  - Step 2: an `ISSUE_*` webhook triggers `refreshSeerrIssueFromEnv` and is never stored in the Feed.
+  - Steps 3 and 5: the title page banner (`seerr-report-banner.tsx`, routed by `seerrGuideEntry`), `/admin/seerr`
+    (linked repairs, the fix-it-yourself link, "Mark fixed by hand" with its audited note).
+  - Step 4: `/r/seerr/<id>` (`lib/seerr-link.ts`): the onboarding card signed out, the title page with the guide open
+    signed in, cards for the rest.
+  - Step 6: `activity.importCheck` and the failure page's admin Import Check row.
+  - Tests: `seerr-issues.test.ts` (arr), `seerr-issues-sync.test.ts` and `seerr-issues-admin.test.ts` (domain),
+    `seerr-issues-sync.test.ts` (sync), `seerr-issues.test.ts` and `activity.test.ts` (api), `seerr-issues.test.ts`,
+    `seerr-link.test.ts` and the webhook tests (web), migration 0100; e2e `seerr-issues.spec.ts` (AC-43 read half,
+    AC-44, the link cards, the webhook), with stub Seerr issues in `stub-arr.ts` (also served by `dev:local`).
 
 ### P4: Title Check, Episode Re-map and the Mislabel Block
 

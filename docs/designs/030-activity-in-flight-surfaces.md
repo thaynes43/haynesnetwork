@@ -120,6 +120,10 @@ fire (the `FormatSearchSlot` idiom — no reflow):
   write the books "Search again" fires), to fetch a fresh source when the grab is a dead end.
 - **Open downstream** — a plain deep link (LL/SAB) shown to Admins only (the operator UIs are
   LAN-only, so it is a best-effort convenience, never load-bearing).
+- **Import Check** (DESIGN-055 D-07 P2 decision 13, built in PLAN-077 P3) — for a stuck Sonarr episode or Radarr movie,
+  Admins see the download's Import Check result, read-only (`activity.importCheck`: the plan a Force Search press on the
+  title would follow, as if the `import_check` remedy were on): "Ready to import", "Needs staff" and so on, with the
+  check's own reason. Nothing is written.
 
 Both mutations are gated by `activityActionProcedure(action)`: authed AND (admin OR the caller's role
 holds the `role_activity_action_grants` row for that action). Each co-writes a `permission_audit` row

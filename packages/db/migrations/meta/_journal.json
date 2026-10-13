@@ -694,6 +694,13 @@
       "when": 1791370000000,
       "tag": "0099_repair_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1791380000000,
+      "tag": "0100_seerr_issues",
+      "breakpoints": true
     }
   ]
 }

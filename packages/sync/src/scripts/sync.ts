@@ -31,6 +31,7 @@ import {
   plexClientBundleFromEnv,
   releaseBlockArrClientsFromEnv,
   seerrEnrollClientsFromEnv,
+  seerrIssueSyncClientsFromEnv,
   watchlistRegistrySourcesFromEnv,
   resolveArrBaseUrls,
   resolveGovernorConfig,
@@ -118,6 +119,10 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
                            /admin/users portal reads (ADR-045). READ-ONLY against Authentik. Needs
                            AUTHENTIK_API_TOKEN (AUTHENTIK_URL defaults to the in-cluster Service DNS).
                            No --source. Writes no sync_runs row.
+  --mode=seerr-issues      mirror every Seerr issue (all statuses) into seerr_issues (ADR-111 / DESIGN-055 D-10:
+                           the title page banner, the /r/seerr/<id> link and /admin's Seerr issues). READ-ONLY
+                           against Seerr (and Sonarr, for an episode's id). Needs SEERR_API_KEY (SONARR_API_KEY
+                           optional; URLs default in-cluster). No --source. Writes no sync_runs row.
   --mode=books-sync        mirror the BOOK servers' libraries READ-ONLY (ADR-046): page Kavita series + the
                            Audiobookshelf items into the books_items mirror (reconcile scoped to the
                            fully-read servers), then read each linked user's ABS listening progress.
@@ -311,7 +316,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
       mode === 'goodreads-sync' ||
       mode === 'format-pairing' ||
       mode === 'watch' ||
-      mode === 'watchlist-registry') &&
+      mode === 'watchlist-registry' ||
+      mode === 'seerr-issues') &&
     sources.length > 0
   ) {
     throw new CliUsageError(`--source is not valid for --mode=${mode}`);
@@ -337,7 +343,8 @@ function parseArgs(argv: string[]): CliArgs | 'help' {
     mode === 'goodreads-sync' ||
     mode === 'format-pairing' ||
     mode === 'watch' ||
-    mode === 'watchlist-registry'
+    mode === 'watchlist-registry' ||
+    mode === 'seerr-issues'
       ? []
       : mode === 'metadata-refresh'
         ? [...ARR_KINDS]
@@ -539,6 +546,8 @@ async function main(): Promise<number> {
       });
     }
   }
+  // ADR-111 C-01 / DESIGN-055 D-10 — the Seerr Issue mirror's readers (SEERR_API_KEY required; Sonarr optional).
+  const seerrIssues = args.mode === 'seerr-issues' ? seerrIssueSyncClientsFromEnv() : undefined;
   // ADR-093 C-11 / DESIGN-052 D-17 — the Seerr enrollment clients (null without SEERR_API_KEY ⇒ the step is skipped).
   const seerrEnroll = args.mode === 'watchlist-registry' ? seerrEnrollClientsFromEnv() : undefined;
   // ADR-068 / DESIGN-049 D-09 — the `watch` mode's Tautulli instances (each skip-if-unconfigured: a missing
@@ -729,6 +738,7 @@ async function main(): Promise<number> {
     ...(watchlistRegistry ? { watchlistRegistry } : {}),
     ...(releaseBlockArr ? { releaseBlockArr } : {}),
     ...(seerrEnroll ? { seerrEnroll } : {}),
+    ...(seerrIssues ? { seerrIssues } : {}),
     ...(collectionsRadarr ? { collectionsRadarr } : {}),
     ...(openWebUi ? { openWebUi } : {}),
     ...(authentik ? { authentik } : {}),

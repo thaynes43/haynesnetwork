@@ -805,6 +805,302 @@ button.motd__dismiss:hover {
   white-space: nowrap;
 }
 
+/* ---------- Seerr reports (ADR-111 / DESIGN-055 D-10, D-11, PLAN-077 P3) ---------- */
+/* `/r/seerr/<id>` reuses the login card (the OAuth pages' pattern): the numbered steps sit in the same bordered rows
+   as the consent page's scope lines. Token colours only (hard rule 2). */
+.seerr-link .login-btn {
+  width: 100%;
+}
+.seerr-link a:not(.btn) {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.seerr-link__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  text-decoration: none;
+}
+.seerr-link__aside {
+  font-size: 13px;
+  text-align: center;
+}
+.seerr-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.seerr-steps__item {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.seerr-steps__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* The title page's report banner. Present from the page's load, never toggled by an interaction (hard rule 9); the
+   action column keeps its place while the episodes load. On a phone the action drops under the text. */
+.seerr-report {
+  --seerr-tone: var(--color-info);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'icon body action';
+  align-items: start;
+  gap: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--seerr-tone) 40%, var(--color-border));
+  border-left: 4px solid var(--seerr-tone);
+  background: color-mix(in srgb, var(--seerr-tone) 8%, var(--color-surface));
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-top: var(--space);
+}
+.seerr-report--resolved {
+  --seerr-tone: var(--color-text-muted);
+}
+.seerr-report__icon {
+  grid-area: icon;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  color: var(--seerr-tone);
+}
+.seerr-report__icon svg {
+  width: 18px;
+  height: 18px;
+}
+.seerr-report__body {
+  grid-area: body;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.seerr-report__body p {
+  margin: 0;
+}
+.seerr-report__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 22px;
+  color: var(--color-text);
+}
+.seerr-report__kicker {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--seerr-tone, var(--color-info));
+  background: color-mix(in srgb, var(--seerr-tone, var(--color-info)) 14%, transparent);
+  border-radius: 999px;
+  padding: 1px 9px;
+}
+.seerr-report__message {
+  margin: 0;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid color-mix(in srgb, var(--color-text) 18%, transparent);
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.seerr-report__meta,
+.seerr-report__note {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+.seerr-report__meta a {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.seerr-report__action {
+  grid-area: action;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 32px;
+  min-width: 9.5rem;
+}
+.seerr-report__pending {
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  .seerr-report {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'icon body'
+      '. action';
+  }
+  .seerr-report__action {
+    justify-content: flex-start;
+    min-width: 0;
+  }
+}
+/* The note at the top of a guide a report's link opened (D-11). */
+.guide-intro {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-info) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-info) 35%, var(--color-border));
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Activity's admin Import Check row (DESIGN-055 D-07 P2 decision 13). */
+.activity-import-check {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+  min-height: 52px;
+}
+.activity-import-check p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.activity-import-check__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.activity-import-check__reason {
+  overflow-wrap: anywhere;
+}
+
+/* /admin/seerr — one card per report. */
+.seerr-admin__lead {
+  margin: 0 0 var(--space);
+  max-width: 760px;
+  font-size: 13px;
+}
+.seerr-admin__lead a {
+  color: var(--color-accent);
+}
+.seerr-admin__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.seerr-admin__issue {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+}
+.seerr-admin__issue p {
+  margin: 0;
+}
+.seerr-admin__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.seerr-admin__id {
+  font-weight: 700;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.seerr-admin__title {
+  font-size: 15px;
+}
+.seerr-admin__meta {
+  font-size: 13px;
+}
+.seerr-admin__meta a {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.seerr-admin__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+.seerr-admin__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.seerr-admin__link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.seerr-admin__url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  overflow-wrap: anywhere;
+}
+.seerr-admin__copied {
+  display: inline-block;
+  min-width: 6.5em; /* the widest status ("Copy failed"), so the row never shifts */
+  font-size: 12px;
+}
+.seerr-admin__repairs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.seerr-admin__repair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 13px;
+}
+.seerr-admin__repair-what {
+  font-weight: 600;
+}
+.seerr-admin__note p {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.seerr-admin__form {
+  max-width: none;
+}
+
 /* ---------- Connected apps (ADR-091 C-10 / DESIGN-050 D-08) ---------- */
 /* One row per connection. ADR-015: the action slot always holds the width of its widest label — the
    bold armed "Confirm disconnect" — via a hidden ghost stacked in the same grid cell, so arming the

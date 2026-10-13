@@ -14,7 +14,7 @@
 // (`modal--guide`) and only its body scrolls, so a step that replaces another never moves anything else. Copy follows
 // the owner's rules: plain, friendly, no em-dashes, no names, links where there is somewhere to go.
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ConsumeLink } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { appCodeOf, describeMutationError } from '@/lib/app-error';
@@ -71,6 +71,10 @@ export interface RepairGuideProps {
   remedies: GuideRemedies;
   knownIssueServers: readonly string[];
   onSubmitted: () => void;
+  /** DESIGN-055 D-10 (PLAN-077 P3) — opened from a Seerr report: the reason its type points at, preselected. */
+  initialReason?: FixReasonName | null;
+  /** D-11 — a short note above the guide's steps when it opened from a Seerr report. */
+  intro?: ReactNode;
 }
 
 interface DoneState {
@@ -89,6 +93,8 @@ export function RepairGuide({
   remedies,
   knownIssueServers,
   onSubmitted,
+  initialReason = null,
+  intro,
 }: RepairGuideProps) {
   const isTv = item.arrKind === 'sonarr';
   const planning = remedies.replacement_preview || remedies.season_guard;
@@ -102,7 +108,9 @@ export function RepairGuide({
   const [step, setStep] = useState<GuideStep>(firstStep);
   const [pickedChild, setPickedChild] = useState<number | ''>('');
   const [chosen, setChosen] = useState<ReadonlySet<number>>(() => new Set());
-  const [reason, setReason] = useState<FixReasonName>('wont_play_corrupt');
+  const [reason, setReason] = useState<FixReasonName>(
+    initialReason && fixReasonsForKind(item.arrKind).includes(initialReason) ? initialReason : 'wont_play_corrupt',
+  );
   const [reasonText, setReasonText] = useState('');
   const [wanted, setWanted] = useState<string>('eng');
   const [packChoice, setPackChoice] = useState<'replace' | 'block'>('replace');
@@ -735,7 +743,10 @@ export function RepairGuide({
       className="modal--guide"
       banner={error ? <p className="alert">{error}</p> : null}
     >
-      <div className="repair-guide">{body}</div>
+      <div className="repair-guide">
+        {intro && done === null ? intro : null}
+        {body}
+      </div>
     </Modal>
   );
 }

@@ -7,13 +7,18 @@
 // OR a `?token=` query param), matched constant-time against the source's env secret. The parsed +
 // sanitized event is persisted through the @hnet/domain `recordNotification` single-writer (so the
 // no-direct-state-writes guard passes); the Bulletin Feed + Trash Activity read it back.
-import { recordNotification } from '@hnet/domain';
+//
+// ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — a Seerr ISSUE notification is not a Feed event: it only triggers a
+// fresh read of that issue into the Seerr Issue mirror (refreshSeerrIssueFromEnv; the webhook body is never state) and
+// is not stored, so a report has one record in the app. Seerr is not retried from here; the 10-minute sync catches up.
+import { recordNotification, refreshSeerrIssueFromEnv } from '@hnet/domain';
 import {
   WEBHOOK_SECRET_ENV,
   WEBHOOK_SOURCES,
   parserForSource,
   readWebhookBodyCapped,
   secretsMatch,
+  seerrIssueIdFromWebhook,
   type WebhookSource,
 } from '@/lib/webhook-sources';
 
@@ -64,6 +69,14 @@ export async function POST(
     json = JSON.parse(rawText);
   } catch {
     return new Response('bad request', { status: 400 });
+  }
+
+  if (source === 'seerr') {
+    const seerrIssueId = seerrIssueIdFromWebhook(json);
+    if (seerrIssueId !== null) {
+      const { outcome } = await refreshSeerrIssueFromEnv({ seerrIssueId });
+      return Response.json({ ok: true, seerrIssueId, outcome }, { status: 202 });
+    }
   }
 
   // Per-source parser: Zod-free validation to the known shape + strip arbitrary/proto keys + cap

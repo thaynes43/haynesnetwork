@@ -88,6 +88,11 @@ Mapping: `notification_type → type` (fallback `event`); `subject → title`; `
 **`source_event_id = "<notification_type>:<request_id>"`** (each request lifecycle event is one row;
 exact re-send dedupes). Empty ids/emails → null (a TEST_NOTIFICATION stays unattributed).
 
+**Seerr issue notifications (DESIGN-055 D-10, PLAN-077 P3).** An `ISSUE_CREATED`, `ISSUE_COMMENT`, `ISSUE_RESOLVED` or
+`ISSUE_REOPENED` notification with an `issue.issue_id` is NOT a Feed notification: the receiver reads that issue fresh
+from Seerr into the Seerr Issue mirror (`seerr_issues`, T-311) and answers 202 without writing `notifications`, so a
+report has one record in the app. The webhook body is never state.
+
 **Tautulli** — the notification-agent body is **fully user-templated**, so we DESIGN the canonical
 JSON we configure Tautulli to POST (Data tab), reading our own field names directly:
 

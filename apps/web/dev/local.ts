@@ -59,6 +59,18 @@ async function main(): Promise<void> {
     console.error('[dev:local] watch bootstrap failed (the rest of the stack is up):', error);
   }
 
+  // ADR-111 / DESIGN-055 D-10 (PLAN-077 P3) — mirror the stub Seerr's reports once, so the title page banners,
+  // `/r/seerr/<id>` and /admin/seerr have something to show. Best-effort, like the watch bootstrap.
+  try {
+    await runInStack(
+      stack,
+      [join('..', '..', 'packages', 'sync', 'src', 'scripts', 'sync.ts'), '--mode=seerr-issues'],
+      'seerr-issues sync',
+    );
+  } catch (error) {
+    console.error('[dev:local] seerr-issues bootstrap failed (the rest of the stack is up):', error);
+  }
+
   let shuttingDown = false;
   const shutdown = async (code: number): Promise<never> => {
     if (shuttingDown) process.exit(code);
@@ -94,6 +106,9 @@ async function main(): Promise<void> {
   Watchlists (ADR-093): the stack ran --mode=watchlist-registry once at boot; Expedite and Expire now
              need a run at most 30 minutes old. Re-run: DATABASE_URL=${stack.env.DATABASE_URL} … tsx
              packages/sync/src/scripts/sync.ts --mode=watchlist-registry
+
+  Seerr reports (ADR-111): the stack ran --mode=seerr-issues once at boot. Try ${stack.appUrl}/r/seerr/901
+             signed out (the onboarding card), /admin/seerr as admin, and Breaking Prod's page.
 
   Connectors (ADR-091, the public OAuth path — POST ${stack.appUrl}/mcp takes only OAuth tokens):
              metadata: ${stack.appUrl}/.well-known/oauth-authorization-server

@@ -18,6 +18,7 @@ import {
   caller,
   createUser,
   makeCtx,
+  seedMediaItem,
   sessionUser,
   type TestDb,
 } from './helpers';
@@ -244,5 +245,41 @@ describe('activity.failure — universal *arr visibility, action flags gated (D-
     expect(adminView.canRetryImport).toBe(true);
     expect(adminView.canForceSearch).toBe(true);
     expect(adminView.downstreamUrl).toBe('http://radarr.test:7878');
+  });
+});
+
+describe('activity.importCheck — the admin Import Check row (DESIGN-055 D-07 P2 decision 13)', () => {
+  it('is admin-only, and offered only on a stuck Sonarr or Radarr download', async () => {
+    const admin = await createUser(tdb.db, { admin: true });
+    const member = await createUser(tdb.db);
+    const failureId = await seedArrFailure(arrFailure({ sourceRef: 'arr:radarr:605' }));
+    const memberCaller = caller(makeCtx(tdb.db, sessionUser(member)));
+    expect((await memberCaller.activity.failure({ failureId })).showImportCheck).toBe(false);
+    await expect(memberCaller.activity.importCheck({ failureId })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const adminCaller = caller(makeCtx(tdb.db, sessionUser(admin)));
+    expect((await adminCaller.activity.failure({ failureId })).showImportCheck).toBe(true);
+    const comicId = await seedComicFailure(comicFailure({ sourceRef: 'kapowarr:705' }));
+    expect((await adminCaller.activity.failure({ failureId: comicId })).showImportCheck).toBe(false);
+  });
+
+  it('reads the plan read-only: no title in the Library, then nothing queued for a ledger movie', async () => {
+    const admin = await createUser(tdb.db, { admin: true });
+    const { bundle, calls } = stubArrBundle([
+      {
+        method: 'GET',
+        path: '/api/v3/queue',
+        body: { page: 1, pageSize: 200, totalRecords: 0, records: [] },
+      },
+    ]);
+    const adminCaller = caller(makeCtx(tdb.db, sessionUser(admin), bundle));
+    const orphanId = await seedArrFailure(arrFailure({ sourceRef: 'arr:radarr:98765' }));
+    expect(await adminCaller.activity.importCheck({ failureId: orphanId })).toEqual({ available: false, why: 'no_title' });
+
+    await seedMediaItem(tdb.db, 'radarr', { title: 'Queued Movie', arrItemId: 606 });
+    const failureId = await seedArrFailure(arrFailure({ sourceRef: 'arr:radarr:606' }));
+    const check = await adminCaller.activity.importCheck({ failureId });
+    expect(check).toMatchObject({ available: true, state: 'search', verdict: null });
+    // Read-only: no POST, PUT or DELETE reached the *arr.
+    expect(calls.filter((c) => c.method !== 'GET')).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import {
+  activityImportCheck,
   aggregateActivity,
   activityFamilyOf,
   activityWallStages,
@@ -33,7 +34,12 @@ import {
   type TRPCContext,
 } from '../trpc';
 import { authedProcedure } from '../trpc';
-import { activityActionProcedure, effectiveSectionLevel, resolveActivityActions } from '../middleware/role';
+import {
+  activityActionProcedure,
+  adminProcedure,
+  effectiveSectionLevel,
+  resolveActivityActions,
+} from '../middleware/role';
 
 type AuthedCtx = TRPCContext & { user: NonNullable<TRPCContext['user']> };
 
@@ -242,8 +248,20 @@ export const activityRouter = router({
         lastAction: row.lastAction,
         canRetryImport: acts.includes('retry_import'),
         canForceSearch: acts.includes('force_research'),
+        // DESIGN-055 D-07 P2 decision 13 — admins see a stuck Sonarr or Radarr download's Import Check result.
+        showImportCheck: ctx.user.role.isAdmin && /^arr:(sonarr|radarr):/.test(row.sourceRef),
       };
     }),
+
+  /**
+   * DESIGN-055 D-07 P2 decision 13 (PLAN-077 P3) — admin-only: a stuck Sonarr or Radarr download's Import Check result,
+   * read-only (the plan a Force Search press would follow, as if the `import_check` remedy were on). Nothing is written.
+   */
+  importCheck: adminProcedure
+    .input(z.object({ failureId: z.string().uuid() }))
+    .query(async ({ ctx, input }) =>
+      mapDomainErrors(() => activityImportCheck({ db: ctx.db, arr: resolveArrBundle(ctx), failureId: input.failureId })),
+    ),
 
   /** Retry the stuck import (Admin / granted role). Audited; the confined retry write (the *arr
    *  `ProcessMonitoredDownloads` or the books LL `forceProcess`) fires after commit, per source. */

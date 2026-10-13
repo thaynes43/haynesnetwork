@@ -261,6 +261,14 @@ under `next dev` (hot reload) where the suite serves a production build (§5, AD
   access token turns 401); the eleventh registration from one IP in an hour is 429 with `Retry-After` and
   `{"error":"rate_limited"}`. The dev server logs one `[auth] <event> {…}` line per step and never a token,
   code or verifier. Connected apps is at `/settings/connections` (sign in through the browser to Disconnect).
+- **Seerr reports** (ADR-111 / DESIGN-055 D-10..D-12; PLAN-077 P3). `dev:local` runs the real `--mode=seerr-issues`
+  once at boot: the stub *arr serves Seerr's `GET /api/v1/issue`, `/issue/{id}` and `/issue/count` with four reports
+  (`seerrIssueFixture()` in `e2e/support/stub-arr.ts`): 901 Breaking Prod S01E10 (missing, so Force Search), 902 The
+  Fixture (Audio, so Fix with Wrong language), 903 Stub Runner (resolved) and 904 a movie the ledger lacks. Open
+  `/r/seerr/901` signed out for the onboarding card, sign in as `fresh-member` (the reporter) to land on the guide, and
+  `/admin/seerr` as `admin`. `POST <stub-arr>/_stub/seerr-issues {"issues":[...]}` replaces the reports (`{}` restores
+  them), then re-run the mode, or POST an `ISSUE_CREATED` webhook to `/api/webhooks/seerr` (the stack's
+  `SEERR_WEBHOOK_SECRET` as the Authorization header) to mirror one issue without a sync.
 - Everything is **throwaway**: the database is a temp dir deleted on Ctrl-C; restart for a
   pristine seeded catalog.
 - Phone/tablet/PC layouts: use the browser devtools device toolbar.
