@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.125.0](https://github.com/thaynes43/haynesnetwork/compare/v0.124.0...v0.125.0) (2026-10-13)
+
+
+### Features
+
+* **domain:** the staff Wrong-Content Replace finds a correct release first, then replaces the file inside a Watch Carry ([#928](https://github.com/thaynes43/haynesnetwork/issues/928)) ([#965](https://github.com/thaynes43/haynesnetwork/issues/965)) ([3f176a9](https://github.com/thaynes43/haynesnetwork/commit/3f176a9d2151a4988d35e42644043cb20e590256))
+
 ## [0.124.0](https://github.com/thaynes43/haynesnetwork/compare/v0.123.1...v0.124.0) (2026-10-13)
 
 
