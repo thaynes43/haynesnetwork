@@ -357,6 +357,9 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
         at: at(),
         copy: { fileId: plan.copy.fileId, relativePath: plan.copy.relativePath, size: plan.copy.size, name: plan.copy.name },
         original: { episodeId: plan.original.id, label: plan.original.label, fileId: plan.original.fileId, relativePath: plan.original.relativePath },
+        // P4 decision 37: every original the delete relied on (a multi-episode copy names several).
+        originals: plan.originals.map((o) => ({ episodeId: o.id, label: o.label, fileId: o.fileId, relativePath: o.relativePath })),
+        slotEpisodeIds: plan.slotEpisodes.map((e) => e.id),
         evidence,
       },
       { step: 'delete_file', endpoint, ok: true, at: at(), status: 200 },

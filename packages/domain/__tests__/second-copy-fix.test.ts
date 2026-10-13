@@ -139,9 +139,14 @@ describe('Second-Copy Fix (DESIGN-055 P4 decision 25)', () => {
     expect(plan.refusal).toBeNull();
     expect(plan.slotEpisodes.map((e) => e.episodeNumber)).toEqual([3, 4]);
     expect(plan.original).toMatchObject({ episodeNumber: 5, fileId: 6005 });
-    await runSecondCopyFix({ ...target, planDigest: plan.digest, evidence: EVIDENCE });
+    const run = await runSecondCopyFix({ ...target, planDigest: plan.digest, evidence: EVIDENCE });
     expect(arr.state.deleted).toEqual([6003]);
     expect(arr.state.searched).toEqual([[303, 304]]);
+    const [row] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, run.fixRequestId));
+    expect((row!.actionsTaken as Array<Record<string, unknown>>).find((a) => a.step === 'second_copy')).toMatchObject({
+      originals: [expect.objectContaining({ fileId: 6005 })],
+      slotEpisodeIds: [303, 304],
+    });
   });
 
   it('refuses the only copy, a file another one claims the slot of, and a name that agrees', async () => {
