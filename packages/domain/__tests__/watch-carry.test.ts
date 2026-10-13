@@ -1049,7 +1049,7 @@ describe('the Watch Carry flow (ADR-114)', () => {
     arr.state.failGrabs = true;
     const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2 };
     const plan = await planWrongContentReplace(target);
-    await expect(runWrongContentReplace({ ...target, planDigest: plan.digest, keys: [plan.candidates[0]!.key], evidence: 'The title card names another show.', watchCarry: plex.plex, carryPauseMs: 0 })).rejects.toThrow(/remain missing; use repair-guide.ts release-list or Fix/);
+    await expect(runWrongContentReplace({ ...target, planDigest: plan.digest, keys: [plan.candidates[0]!.key], evidence: 'The title card names another show.', watchCarry: plex.plex, carryPauseMs: 0 })).rejects.toThrow(/Use repair-guide.ts release-list or Fix for any that are still missing/);
     expect(arr.state.deleted).toEqual([7002]);
     expect(arr.state.grabs).toEqual([]);
     expect(arr.state.searched).toEqual([]);
