@@ -462,15 +462,19 @@ do not edit)", "must not contain" terms only, no tags.
     the season (a second copy), or the whole show (an ordering switch). Rows: `watch_carries` (the item map per server,
     the scope, the counts by account index) and `watch_carry_states` (one per account and item with state: plays,
     resume point, last watch, the files). Any account that cannot be read refuses the move, writing nothing. A new
-    snapshot of a series is refused while an earlier carry is `cleared` or `waiting` (it would read the cleared items as
-    unwatched): `carry-finish` or `carry-revert` first. HaynesTower on 2026-10-13: the owner and 40 friends can see the
+    snapshot of a series is refused while an earlier carry is `cleared`, `waiting` or `mismatch` (it would read the
+    cleared or not yet carried items as unwatched, and those marks would be lost): `carry-finish` or `carry-revert`
+    first. HaynesTower on 2026-10-13: the owner and 40 friends can see the
     TV library; 11 have state on the held seasons. Plex Home managed users have no token here and are not read.
 29. **Clear what would be orphaned, before the move.** HaynesTower empties the trash after every scan, so an item whose
     file leaves disappears, and its guid's state outlives it: the next file to land on that episode would come back
     "watched". So the items holding a file the move takes away (a re-map's moving files; a second copy) are cleared for
     every account with state on them (`unscrobble`) before the move. An ordering switch clears the items whose Plex
-    title differs from Sonarr's for the same number (the items it re-matches). The snapshot keeps what was cleared. A
-    failed clear puts back every clear already made and refuses the move (`refused`).
+    title differs from Sonarr's for the same number (the items it re-matches). The snapshot keeps what was cleared. The
+    carry is marked `cleared` before the first clear, so a run that dies part-way blocks a new snapshot. Any failure (a
+    write, a read, the audit) puts back every item already cleared, from its state now (a clear that landed but timed
+    out is not doubled), and refuses the move (`refused`); an item that cannot be put back leaves the carry `cleared`
+    and the error asks for `carry-revert`.
 30. **The carry.** After the move, for each account and each item of the write scope (an item that holds a touched file
     now, or that held one before and still exists), the target is the state of the file it holds: **carried**, the plays
     (one `scrobble` each, at most 5) and the resume point when the person had watched the file; **partial**, only the
