@@ -825,17 +825,21 @@ export interface ReleasePickList {
 
 export interface OpenReleaseListInput extends ReleasePickTargetInput {
   arr: ArrClientBundle;
-  requesterId: string;
+  /**
+   * The person opening the list. null is staff working from the in-cluster tool (`repair-guide.ts release-grab`, P5
+   * decision 14, the P4 decision 17 pattern): no person, no budget, the same refusals.
+   */
+  requesterId: string | null;
   requesterIsAdmin?: boolean;
   now?: () => number;
 }
 
 async function readBudget(
   db: DbClient | undefined,
-  requesterId: string,
+  requesterId: string | null,
   requesterIsAdmin: boolean | undefined,
 ): Promise<ReleasePickBudget> {
-  if (requesterIsAdmin) return { limit: null, used: 0, left: null };
+  if (requesterIsAdmin || requesterId === null) return { limit: null, used: 0, left: null };
   return inTransaction(db, async (tx) => {
     const [user] = await tx.select({ roleId: users.roleId }).from(users).where(eq(users.id, requesterId));
     if (!user) throw new NotFoundError(`User ${requesterId} not found`);
@@ -890,7 +894,9 @@ export async function openReleaseList(input: OpenReleaseListInput): Promise<Rele
     .from(releasePickLists)
     .where(
       and(
-        eq(releasePickLists.requesterId, input.requesterId),
+        input.requesterId === null
+          ? isNull(releasePickLists.requesterId)
+          : eq(releasePickLists.requesterId, input.requesterId),
         eq(releasePickLists.mediaItemId, resolved.mediaItemId),
         childId === null ? isNull(releasePickLists.targetChildId) : eq(releasePickLists.targetChildId, childId),
         gte(releasePickLists.searchedAt, new Date(now - RELEASE_LIST_TTL_MS)),
@@ -920,12 +926,18 @@ export async function openReleaseList(input: OpenReleaseListInput): Promise<Rele
   if (budgetBefore.limit !== null && budgetBefore.used >= budgetBefore.limit) {
     throw new FixRateLimitError(mediaActionBudgetReachedMessage(budgetBefore.limit));
   }
-  const { releases, searchedAt } = await readReleases(resolved.target, input.arr, input);
+  const { releases, searchedAt } = await readReleases(resolved.target, input.arr, {
+    requesterId: input.requesterId ?? undefined,
+    requesterIsAdmin: input.requesterIsAdmin,
+    now: input.now,
+  });
   const classified = classifyReleases(releases, resolved.target);
 
   const listId = await inTransaction(input.db, async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('fix_requests'), hashtext(${input.requesterId}))`);
-    if (!input.requesterIsAdmin) {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext('fix_requests'), hashtext(${input.requesterId ?? 'staff-tool'}))`,
+    );
+    if (input.requesterId !== null && !input.requesterIsAdmin) {
       const [user] = await tx.select({ roleId: users.roleId }).from(users).where(eq(users.id, input.requesterId));
       if (!user) throw new NotFoundError(`User ${input.requesterId} not found`);
       const limit = await effectiveMediaActionBudget({ db: tx, roleId: user.roleId });
@@ -1061,7 +1073,8 @@ export interface GrabFromReleaseListInput {
   arr: ArrClientBundle;
   listId: string;
   key: string;
-  requesterId: string;
+  /** The person who opened the list (null: staff's in-cluster tool, whose list has no requester either). */
+  requesterId: string | null;
   requesterIsAdmin?: boolean;
   now?: () => number;
 }

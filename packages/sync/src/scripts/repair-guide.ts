@@ -8,6 +8,7 @@
 //   tsx repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
 //   tsx repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
 //   tsx repair-guide.ts release-list (--tmdb <id> | --tvdb <id> --episode S01E05) [--json]
+//   tsx repair-guide.ts release-grab (--tmdb <id> | --tvdb <id> --episode S01E05) --key <row key from release-list>
 //   tsx repair-guide.ts queue-check
 //   tsx repair-guide.ts title-check (--backfill [--dry-run] [--json] | --flags <sonarr series id>)
 //   tsx repair-guide.ts season-plan --tvdb <id> --season <n> [--place <from>:<to>,...] [--keep <n>,...] [--json]
@@ -31,7 +32,10 @@
 // with its state (Grab, Override, Not allowed), the reasons in plain words beside the *arr's own, and the recommended
 // pick. It runs the *arr's interactive search (Sonarr's season list, Radarr's movie list; it searches the indexers), and
 // records nothing: no Release List row, no budget unit, no grab. The live check compares it with the *arr's own
-// interactive search for the same episode or movie.
+// interactive search for the same episode or movie. `release-grab` is staff's Release Pick (DESIGN-055 P5 decision 14,
+// the remap-run pattern): it opens a fresh list as staff (requester null: no budget), finds the row whose key
+// `release-list` printed, and grabs it exactly as the guide does: the same refusals (a Not allowed row is never
+// grabbed, by anyone), one Repair Request, the plain or the override body.
 //
 // `title-check` (ADR-110 C-03 / DESIGN-055 D-05, PLAN-077 P4): `--backfill` runs the one-off library-wide Title Check
 // (every `downloadFolderImported` record, and the scene name of a current file with no import record) and prints the
@@ -71,6 +75,8 @@ import {
   type SeasonRemapView,
   planForceSearch,
   previewReleaseList,
+  openReleaseList,
+  grabFromReleaseList,
   readRemapSeason,
   runEpisodeRemap,
   queueTexts,
@@ -91,6 +97,7 @@ const USAGE = `Usage:
   repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
   repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
   repair-guide.ts release-list (--tmdb <id> | --tvdb <id> --episode S01E05) [--json]
+  repair-guide.ts release-grab (--tmdb <id> | --tvdb <id> --episode S01E05) --key <row key from release-list>
   repair-guide.ts queue-check
   repair-guide.ts title-check (--backfill [--dry-run] [--json] | --flags <sonarr series id>)
   repair-guide.ts remap-plan --tvdb <id> --season <n> [--shift <from>:<+1|-1>[:<through>] | --move <from>:<to>]
@@ -104,6 +111,8 @@ remap-run is staff's Episode Re-map (DESIGN-055 P4 decision 17): it re-plans, re
 given, then moves the files exactly as the guide does (one Repair Request, requester null: the staff tool).
 season-plan only reads Sonarr and Plex; season-run is staff's Season Re-map (DESIGN-055 P4 decisions 18-24): files go
 where their names (or --place) say, cycles pass through a free episode, each file is renamed after its move.
+release-grab is staff's Release Pick (DESIGN-055 P5 decision 14): a fresh list as staff, then the grab of the row with
+that key, with the guide's refusals (one Repair Request, requester null).
 Remedies: ${REPAIR_GUIDE_REMEDIES.join(', ')}.`;
 
 export interface RepairGuideArgs {
@@ -114,6 +123,7 @@ export interface RepairGuideArgs {
     | 'settings'
     | 'search-plan'
     | 'release-list'
+    | 'release-grab'
     | 'queue-check'
     | 'title-check'
     | 'remap-plan'
@@ -122,6 +132,8 @@ export interface RepairGuideArgs {
     | 'season-run';
   /** remap-run: the digest of the remap-plan output staff confirmed. */
   digest?: string;
+  /** release-grab: the row key release-list printed. */
+  key?: string;
   tmdb?: number;
   tvdb?: number;
   episode?: { season: number; episode: number };
@@ -164,6 +176,7 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'settings' &&
     command !== 'search-plan' &&
     command !== 'release-list' &&
+    command !== 'release-grab' &&
     command !== 'queue-check' &&
     command !== 'title-check' &&
     command !== 'remap-plan' &&
@@ -265,6 +278,11 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         args.digest = value;
         i += 1;
         break;
+      case '--key':
+        if (!value || !/^[0-9a-f]{16}$/.test(value)) throw new Error('--key needs the 16-character row key release-list printed');
+        args.key = value;
+        i += 1;
+        break;
       case '--flags':
         args.flagsSeriesId = positiveInt(flag, value);
         i += 1;
@@ -329,6 +347,7 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     throw new Error('--shift and --move are for remap-plan and remap-run');
   }
   if (args.digest !== undefined && command !== 'remap-run') throw new Error('--digest is for remap-run');
+  if ((args.key !== undefined) !== (command === 'release-grab')) throw new Error('release-grab needs --key, and only it takes one');
   if ((command === 'remap-plan' || command === 'remap-run') && (args.tvdb === undefined || args.season === undefined || args.episode)) {
     throw new Error(`${command} needs --tvdb <id> and --season <n>`);
   }
@@ -347,7 +366,11 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
       throw new Error('a show needs --episode or --season');
     }
     if (command === 'evidence' && !args.email) throw new Error('evidence needs --email');
-    if ((command === 'search-plan' || command === 'release-list') && args.tvdb !== undefined && !args.episode) {
+    if (
+      (command === 'search-plan' || command === 'release-list' || command === 'release-grab') &&
+      args.tvdb !== undefined &&
+      !args.episode
+    ) {
       throw new Error(`${command} on a show needs --episode`);
     }
   }
@@ -596,6 +619,30 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  if (args.command === 'release-grab') {
+    const target = {
+      db,
+      arr,
+      mediaItemId: item.id,
+      ...(scope.scope === 'episode' ? { scope: 'episode' as const, targetChildId: scope.targetChildId } : {}),
+    };
+    const list = await openReleaseList({ ...target, requesterId: null });
+    if (list.status !== 'list') {
+      console.log(JSON.stringify({ title: item.title, target: list.targetLabel, status: list.status, download: list.download }, null, 2));
+      return 1;
+    }
+    const row = list.rows.find((r) => r.keys.includes(args.key!));
+    if (!row || row.state === 'not_allowed') {
+      console.error(
+        `repair-guide: ${row ? `that row is not allowed: ${row.reasons.map((r) => r.text).join('; ')}` : 'no row with that key on the list now'}`,
+      );
+      return 1;
+    }
+    const result = await grabFromReleaseList({ db, arr, listId: list.listId!, key: args.key!, requesterId: null });
+    console.log(JSON.stringify({ title: item.title, release: row.title, state: row.state, result }, null, 2));
+    return result.outcome === 'grabbed' ? 0 : 1;
+  }
+
   if (args.command === 'release-list') {
     const list = await previewReleaseList({
       db,
@@ -655,7 +702,7 @@ export function formatReleaseList(title: string, list: Awaited<ReturnType<typeof
     const evidence = row.evidence ? ` title:${row.evidence.verdict}${row.evidence.namedLabel ? `(${row.evidence.namedLabel})` : ''}` : '';
     lines.push(
       `${row.recommended ? '* ' : '  '}[${state}] ${row.title} | ${row.qualityName ?? '?'} ${gb(row.sizeBytes)} | ` +
-        `${row.indexer ?? '?'}${row.keys.length > 1 ? ` +${row.keys.length - 1} more` : ''}${evidence}`,
+        `${row.indexer ?? '?'}${row.keys.length > 1 ? ` +${row.keys.length - 1} more` : ''}${evidence} | key ${row.key}`,
     );
     for (const r of row.reasons) {
       lines.push(`      ${r.class}: ${r.text}${r.arrText && r.arrText !== r.text ? `  [${r.arrText}]` : ''}`);

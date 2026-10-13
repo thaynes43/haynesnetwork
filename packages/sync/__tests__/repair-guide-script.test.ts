@@ -195,6 +195,16 @@ describe('repair-guide.ts arguments', () => {
     expect(() => parseRepairGuideArgs(['search-plan', '--tmdb', '1', '--json'])).toThrow(/--json/);
   });
 
+  it("release-grab is staff's Release Pick: it needs the row key release-list printed (DESIGN-055 P5 decision 14)", () => {
+    expect(parseRepairGuideArgs(['release-grab', '--tvdb', '475718', '--episode', 'S01E11', '--key', '0123456789abcdef'])).toMatchObject({
+      command: 'release-grab',
+      key: '0123456789abcdef',
+    });
+    expect(() => parseRepairGuideArgs(['release-grab', '--tvdb', '475718', '--episode', 'S01E11'])).toThrow(/--key/);
+    expect(() => parseRepairGuideArgs(['release-grab', '--tvdb', '475718', '--episode', 'S01E11', '--key', 'nope'])).toThrow(/16-character/);
+    expect(() => parseRepairGuideArgs(['release-list', '--tmdb', '1', '--key', '0123456789abcdef'])).toThrow(/only it/);
+  });
+
   it('prints the Release Pick preview: the counts, then each row with its reasons beside the *arr words', () => {
     const lines = formatReleaseList('Regular Show: The Lost Tapes', {
       status: 'list',
@@ -228,11 +238,11 @@ describe('repair-guide.ts arguments', () => {
     });
     expect(lines[0]).toBe('Regular Show: The Lost Tapes S01E11 · Spice It Up: list');
     expect(lines[1]).toMatch(/5 sources, 3 for other episodes or titles dropped; 0 grab, 1 override, 1 not allowed/);
-    expect(lines[2]).toMatch(/^\* \[OVERRIDE\] Regular\.Show.*OldT \| WEBDL-1080p 0\.33 GB \| NZBgeek \(Prowlarr\) title:agrees$/);
+    expect(lines[2]).toMatch(/^\* \[OVERRIDE\] Regular\.Show.*OldT \| WEBDL-1080p 0\.33 GB \| NZBgeek \(Prowlarr\) title:agrees \| key a{16}$/);
     expect(lines[3]).toBe(
       '      overridable: Lower quality than the library usually keeps  [Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0]',
     );
-    expect(lines[4]).toMatch(/^ {2}\[NOT ALLOWED\] .*BiOMA \| WEBDL-1080p \? \| DrunkenSlug \(Prowlarr\) \+1 more title:silent$/);
+    expect(lines[4]).toMatch(/^ {2}\[NOT ALLOWED\] .*BiOMA \| WEBDL-1080p \? \| DrunkenSlug \(Prowlarr\) \+1 more title:silent \| key b{16}$/);
   });
 
   it('refuses what it does not understand', () => {

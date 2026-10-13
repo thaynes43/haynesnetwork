@@ -486,6 +486,27 @@ describe('the Release Pick over embedded Postgres (DESIGN-055 D-06)', () => {
     expect(arr.releaseSearches()).toHaveLength(0);
   });
 
+  it("staff's in-cluster tool (requester null): no budget, the same refusals, a Repair Request with no requester", async () => {
+    const arr = stubArr();
+    const list = await openReleaseList({ db: t.db, arr: arr.bundle, ...e11(), requesterId: null });
+    expect(list).toMatchObject({ status: 'list', budget: { limit: null }, canPick: true });
+    const [stored] = await t.db.select().from(releasePickLists).where(eq(releasePickLists.id, list.listId!));
+    expect(stored!.requesterId).toBeNull();
+    // A member cannot grab from staff's list, nor staff from a member's.
+    await expect(
+      grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: list.recommendedKey!, requesterId: memberId }),
+    ).rejects.toThrow(/not found/);
+    const refused = list.rows.find((r) => r.state === 'not_allowed')!;
+    expect(
+      (await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: refused.key, requesterId: null })).outcome,
+    ).toBe('not_allowed');
+    const result = await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: list.recommendedKey!, requesterId: null });
+    expect(result.outcome).toBe('grabbed');
+    const [repair] = await t.db.select().from(repairRequests).where(eq(repairRequests.id, result.repairRequestId!));
+    expect(repair).toMatchObject({ requesterId: null, kind: 'release_pick', status: 'actioned' });
+    expect(repair!.actionsTaken[0]).toMatchObject({ requester: { staffTool: 'repair-guide.ts' } });
+  });
+
   it('a movie: an approved release is grabbed with the plain body Radarr 6.4.4.10685 sends', async () => {
     const arr = stubArr();
     const base = { indexerId: 2, indexer: 'NZBgeek (Prowlarr)', size: 6e9, languages: [{ id: 1, name: 'English' }], protocol: 'usenet', downloadAllowed: true };
