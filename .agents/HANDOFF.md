@@ -1,5 +1,30 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-13 00:40Z: janitor `importable` enforced on Sonarr and Radarr (`arr` back at L2); #910 fixed
+
+- **The flip (OC-051 part 2, PLAN-065 ladder log has the full evidence).**
+  - A fresh spot-check came first. It found the same 9 `importable` downloads (8 A Woman of Substance remuxes, The Naked
+    Gun 2½), all correct:
+    - Runtime and subtitle cue timings match each episode's library file.
+    - English audio is present on every download.
+    - Each one beats the file it replaces.
+    - Nothing was kept on purpose.
+  - At 23:28Z one audited `setArrQueueCleanupConfig` call (actor null) set `sonarr.importable` and `radarr.importable` to
+    `enforce`. `getQueueCleanupLadder` now reads **arr L2**.
+- **First enforcing run, 00:25Z:**
+  - Sonarr imported 8 and Radarr 1, with 0 errors.
+  - All 9 ManualImports completed, and the replaced files are gone.
+  - The HaynesTower server and PlexOps both show the new files.
+  - **To undo:** set the two cells back to `census`, from `/admin/janitor` or the same writer.
+- **#910 (Butterbean's Cafe, 38 downloads):** closed with evidence.
+  - These downloads finished on 2026-10-04, before haynes-ops#3836's unpack script existed (SABnzbd history:
+    `script: None`). The categories now run the script, and it handles this pattern, so nothing needed changing.
+  - Each was extracted in the sabnzbd pod with the deployed script. All 38 were then judged `importable` (Title
+    Evidence `agrees`) and imported by hand: 70 of 70 episodes have files, and both Plex servers list them.
+  - No other leftover archive remains under `complete-k8s`.
+- **Next:** OC-051 part 1 (the Force Search presses) from 2026-10-13 23:11Z. L2 → L3 needs ≥ 14 days at L2 with the
+  queues near zero and the `unknown` residue characterized.
+
 ## 2026-10-12 23:15Z: PLAN-077 P2 shipped — queue-aware Force Search and the Import Check, live in v0.113.1, remedy on
 
 - **What:** Force Search on a missing episode or movie now reads the download queue first. The `import_check` remedy has
@@ -31,12 +56,9 @@
   - `title_mismatch` is right on Rugrats 2021 and Franklin 2025 (another show), and withholds Peppa.Pig.2022.
   - `search-plan` on the real stuck targets matched.
 - **Next:**
-  - **Flip the Sonarr and Radarr `importable` cells to enforce.** OC-051 carries the flip, after a re-spot-check. The
-    derived `arr` ladder reads L1 until then (PLAN-065 log).
-  - **The 38 Butterbean's Cafe downloads** ([#910](https://github.com/thaynes43/haynesnetwork/issues/910)) stuck since
-    2026-10-04 are unextracted AndreMor `.7z` posts from before
-    haynes-ops#3836. Each needs an unpack (as #3836's script does), then a Force Search or Activity Retry import. Until
-    then the Import Check sends them to staff and never removes them.
+  - ~~Flip the Sonarr and Radarr `importable` cells to enforce.~~ Done 2026-10-12 23:28Z (block above).
+  - ~~The 38 Butterbean's Cafe downloads ([#910](https://github.com/thaynes43/haynesnetwork/issues/910)).~~ Extracted
+    and imported 2026-10-12 23:38Z; #910 closed (block above).
   - Then P3.
 
 ## 2026-10-12: self-service readiness is the owner's judgment, not a count (ADR-112)

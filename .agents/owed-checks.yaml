@@ -1806,4 +1806,12 @@ checks:
         expect: {eq: 0}
         mismatch: fail
     auto_covers: part
-    evidence: []
+    evidence:
+      - "2026-10-12 23:25Z part 2, census: queue-check matched the hourly rows (Sonarr importable 8, title_mismatch 26; Radarr importable 1). Re-spot-check of all 9: correct 9 of 9, zero would-be wrong (runtime and subtitle-timing match per episode, English audio, nothing kept on purpose; PLAN-065 log)."
+      - "2026-10-12 23:28Z part 2, flip: sonarr.importable and radarr.importable set to enforce (setArrQueueCleanupConfig, actor null, audited); getQueueCleanupLadder reads arr L2."
+      - "2026-10-13 00:25Z first enforcing run: Sonarr 8 and Radarr 1 imported/done, 0 errors; all 9 ManualImports completed, old files gone, both Plex servers show the new files."
+      - "2026-10-12 23:38Z hnet#910: 38 Butterbean's Cafe downloads were extracted, then imported by hand (judged importable, Title Evidence agrees). These are not janitor actions."
+      - "Part 1 (Force Search presses) and part 3 not yet run: not_before 2026-10-13T23:11Z."
+    links:
+      prs: ['https://github.com/thaynes43/haynesnetwork/pull/905', 'https://github.com/thaynes43/haynesnetwork/pull/907']
+      issues: ['https://github.com/thaynes43/haynesnetwork/issues/910']
