@@ -516,6 +516,40 @@ describe('the Release Pick over embedded Postgres (DESIGN-055 D-06)', () => {
     ).toMatchObject({ outcome: 'list_stale' });
   });
 
+  it('a grab with no clear answer (a 5xx) keeps the pick open and the list spent; no grab recorded closes it later', async () => {
+    const arr = stubArr();
+    const list = await openReleaseList({ db: t.db, arr: arr.bundle, ...e11(), requesterId: memberId });
+    const guid = String(lostTapes.releases.find((r) => String(r.title).includes('S01E10.Spice.It.Up'))!.guid);
+    arr.state.grabStatus.set(guid, 502);
+    const unsure = await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: list.recommendedKey!, requesterId: memberId });
+    expect(unsure).toMatchObject({ outcome: 'unsure', repairRequestId: expect.any(String) });
+    const [open] = await t.db.select().from(repairRequests).where(eq(repairRequests.id, unsure.repairRequestId!));
+    expect(open!.status).toBe('actioned');
+    expect(open!.actionsTaken.at(-1)).toMatchObject({ step: 'grab', ok: false, uncertain: true, status: 502 });
+    // Nothing is grabbed twice: the list is spent, and the episode is held while the *arr's history is silent.
+    arr.state.grabStatus.delete(guid);
+    expect(
+      (await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: list.recommendedKey!, requesterId: memberId })).outcome,
+    ).toBe('list_stale');
+    expect((await openReleaseList({ db: t.db, arr: arr.bundle, ...e11(), requesterId: memberId })).status).toBe('on_its_way');
+    // Ten minutes on with no grab in the *arr's history, the pick closes and the episode is free.
+    await t.db
+      .update(repairRequests)
+      .set({ createdAt: new Date(Date.now() - 11 * 60_000) })
+      .where(eq(repairRequests.id, unsure.repairRequestId!));
+    resetReleaseSearchState();
+    expect((await openReleaseList({ db: t.db, arr: arr.bundle, ...e11(), requesterId: memberId })).status).toBe('list');
+    const [closed] = await t.db.select().from(repairRequests).where(eq(repairRequests.id, unsure.repairRequestId!));
+    expect(closed).toMatchObject({ status: 'failed' });
+    expect(closed!.actionsTaken.at(-1)).toMatchObject({ step: 'grab_not_recorded' });
+    // Any other 4xx means the *arr refused it and nothing went out.
+    const fresh = await openReleaseList({ db: t.db, arr: arr.bundle, ...e11(), requesterId: memberId });
+    arr.state.grabStatus.set(guid, 400);
+    expect(
+      (await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: fresh.listId!, key: fresh.recommendedKey!, requesterId: memberId })).outcome,
+    ).toBe('grab_failed');
+  });
+
   it('over the hourly budget the list is refused before any search', async () => {
     const arr = stubArr();
     await t.db.insert(ledgerEvents).values(

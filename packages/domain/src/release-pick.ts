@@ -48,6 +48,7 @@ import { forgetReleaseLists, readReleaseListCached, RELEASE_LIST_TTL_MS } from '
 import { isExistingFileRejection } from './fix-guards';
 import { getRepairGuideRemedies } from './repair-guide-settings';
 import { createRepairRequest, recordRepairTransition } from './repair-requests';
+import { consoleDomainLogger } from './domain-logger';
 import { queueRecordState } from './queue-aware-search';
 import {
   episodeTitleEvidence,
@@ -1056,6 +1057,11 @@ export type ReleaseGrabOutcome =
   | 'list_stale'
   /** The site would not hand the release over (or the *arr refused it): the person can pick another. */
   | 'grab_failed'
+  /**
+   * The grab got no clear answer (a timeout, a dropped connection, a 5xx): it may have reached the download client. The
+   * pick stays open, the live chip shows what happened, and the *arr's history settles it.
+   */
+  | 'unsure'
   /** The target got a file since the list was read. Nothing was sent. */
   | 'has_file'
   /** A download for the target appeared in the queue since. Nothing was sent. */
@@ -1084,7 +1090,7 @@ export interface GrabFromReleaseListInput {
   now?: () => number;
 }
 
-const GRAB_COPY: Record<Exclude<ReleaseGrabOutcome, 'grabbed'>, string> = {
+const GRAB_COPY: Record<Exclude<ReleaseGrabOutcome, 'grabbed' | 'unsure'>, string> = {
   list_stale: 'This list is out of date. Search again to see what is there now.',
   grab_failed: "That release couldn't be fetched from the site it was found on. Pick another one.",
   has_file: 'This one has a file now, so nothing was grabbed.',
@@ -1108,7 +1114,7 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
   if (!remedies.release_pick) {
     throw new FixRefusedError('needs_guide', "Seeing every release is turned off.");
   }
-  const refuse = (outcome: Exclude<ReleaseGrabOutcome, 'grabbed'>): ReleaseGrabResult => ({
+  const refuse = (outcome: Exclude<ReleaseGrabOutcome, 'grabbed' | 'unsure'>): ReleaseGrabResult => ({
     outcome,
     message: GRAB_COPY[outcome],
     repairRequestId: null,
@@ -1197,19 +1203,48 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
     }
   } catch (err) {
     const status = err instanceof ArrHttpError ? err.status : null;
+    forgetReleaseLists(staleKeysAfterGrab(target));
+    // A 4xx answer means the *arr refused the grab and sent nothing on: 404 its own cache dropped the row, 409 the site
+    // would not hand the file over, any other 4xx the *arr refused the request.
+    if (err instanceof ArrHttpError && status !== null && status >= 400 && status < 500) {
+      await recordRepairTransition({
+        db: input.db,
+        repairRequestId,
+        transition: 'failed',
+        actions: [{ step: 'grab', at: at(), ok: false, title: offer.title, status, error: errText(err) }],
+      });
+      return { ...refuse(status === 404 ? 'list_stale' : 'grab_failed'), repairRequestId };
+    }
+    if (err instanceof ArrError) {
+      // A timeout, a dropped connection or a 5xx may come after the *arr already handed the release to the download
+      // client. The pick stays open and the list spent, so nothing is grabbed twice; the *arr's history settles it
+      // (settleTargetLive): a grab it records follows as usual, and none recorded within UNSURE_GRAB_SETTLE_MS closes it.
+      consoleDomainLogger.warn('release pick: the grab got no clear answer; the pick stays open until the history settles it', {
+        repairRequestId,
+        mediaItemId: resolved.mediaItemId,
+        status,
+        error: errText(err),
+      });
+      await recordRepairTransition({
+        db: input.db,
+        repairRequestId,
+        transition: 'actioned',
+        actions: [{ step: 'grab', at: at(), ok: false, uncertain: true, title: offer.title, status, error: errText(err) }],
+      });
+      return {
+        outcome: 'unsure',
+        message: "It isn't certain the grab went through: the answer got lost on the way.",
+        repairRequestId,
+        targetLabel: target.label,
+        override,
+      };
+    }
     await recordRepairTransition({
       db: input.db,
       repairRequestId,
       transition: 'failed',
       actions: [{ step: 'grab', at: at(), ok: false, title: offer.title, status, error: errText(err) }],
     });
-    forgetReleaseLists(staleKeysAfterGrab(target));
-    if (err instanceof ArrHttpError && (status === 404 || status === 409)) {
-      // 404: the *arr's own cache dropped the row; 409: the site would not hand the file over.
-      const outcome = status === 404 ? 'list_stale' : 'grab_failed';
-      return { ...refuse(outcome), repairRequestId };
-    }
-    if (err instanceof ArrError) throw new ArrUpstreamError(`release grab: ${errText(err)}`, { cause: err });
     throw err;
   }
   await recordRepairTransition({
@@ -1242,6 +1277,9 @@ const errText = (err: unknown): string => (err instanceof Error ? err.message : 
 /** A grab's record in the *arr's history counts from a little before its Repair Request (clocks drift). */
 const HISTORY_SLACK_MS = 2 * 60_000;
 
+/** A grab with no clear answer that the *arr's history still does not record after this long never reached it. */
+export const UNSURE_GRAB_SETTLE_MS = 10 * 60_000;
+
 /**
  * DESIGN-055 D-06 (P5 decision 11) — settle the open picks on one target from the *arr's own history, without waiting
  * for the sync to ingest it: with nothing in the queue for the target, a pick whose grab (its release title, after the
@@ -1264,6 +1302,7 @@ async function settleTargetLive(input: {
       createdAt: repairRequests.createdAt,
       targetChildIds: repairRequests.targetChildIds,
       preview: repairRequests.preview,
+      actionsTaken: repairRequests.actionsTaken,
     })
     .from(repairRequests)
     .where(
@@ -1284,8 +1323,12 @@ async function settleTargetLive(input: {
       target.kind === 'radarr'
         ? await input.arr.read.radarr.getMovieReleaseHistory(target.movieId)
         : await input.arr.read.sonarr.getSeriesReleaseHistory(target.seriesId);
-  } catch {
-    return true; // the history could not be read: the pick stays open, as the sync would leave it
+  } catch (err) {
+    consoleDomainLogger.warn('release pick: the *arr history could not be read; the open pick holds the target', {
+      mediaItemId: input.resolved.mediaItemId,
+      error: errText(err),
+    });
+    return true; // the pick stays open, as the sync would leave it
   }
   for (const pick of picks) {
     const title = typeof pick.preview.title === 'string' ? pick.preview.title : null;
@@ -1298,9 +1341,14 @@ async function settleTargetLive(input: {
         .filter((h) => /^grabbed$/i.test(h.eventType) && h.sourceTitle === title && h.downloadId)
         .map((h) => h.downloadId as string),
     );
-    const failed = forTarget.some(
-      (h) => /^download(failed|ignored)$/i.test(h.eventType) && h.downloadId !== null && downloads.has(h.downloadId),
-    );
+    const unsure = pick.actionsTaken.some((a) => a.step === 'grab' && a.uncertain === true);
+    const neverArrived =
+      unsure && downloads.size === 0 && Date.now() - pick.createdAt.getTime() > UNSURE_GRAB_SETTLE_MS;
+    const failed =
+      neverArrived ||
+      forTarget.some(
+        (h) => /^download(failed|ignored)$/i.test(h.eventType) && h.downloadId !== null && downloads.has(h.downloadId),
+      );
     if (!failed) {
       stillOpen += 1;
       continue;
@@ -1310,16 +1358,21 @@ async function settleTargetLive(input: {
         db: input.db,
         repairRequestId: pick.id,
         transition: 'failed',
-        actions: [{ step: 'download_failed', at: new Date().toISOString(), ok: false, note: "the download failed (the *arr's history)" }],
+        actions: [
+          neverArrived
+            ? { step: 'grab_not_recorded', at: new Date().toISOString(), ok: false, note: "the *arr's history records no grab" }
+            : { step: 'download_failed', at: new Date().toISOString(), ok: false, note: "the download failed (the *arr's history)" },
+        ],
       });
-    } catch {
-      // Closed by another writer meanwhile.
+    } catch (err) {
+      // Closed by another writer meanwhile (an import completed it, or a timeout).
+      consoleDomainLogger.warn('release pick: settling a failed pick found it already closed', { repairRequestId: pick.id, error: errText(err) });
     }
   }
   return stillOpen > 0;
 }
 
-/** Whether a grab from this Release List reached the *arr (a Repair Request with a successful `grab` step). */
+/** Whether a grab from this Release List may have reached the *arr (a `grab` step that succeeded, or had no clear answer). */
 async function listWasGrabbed(db: DbClient | undefined, listId: string): Promise<boolean> {
   const [hit] = await resolveDb(db)
     .select({ id: repairRequests.id })
@@ -1328,7 +1381,7 @@ async function listWasGrabbed(db: DbClient | undefined, listId: string): Promise
       and(
         eq(repairRequests.kind, 'release_pick'),
         sql`${repairRequests.preview}->>'releaseListId' = ${listId}`,
-        sql`${repairRequests.actionsTaken} @> ${JSON.stringify([{ step: 'grab', ok: true }])}::jsonb`,
+        sql`(${repairRequests.actionsTaken} @> ${JSON.stringify([{ step: 'grab', ok: true }])}::jsonb OR ${repairRequests.actionsTaken} @> ${JSON.stringify([{ step: 'grab', uncertain: true }])}::jsonb)`,
       ),
     )
     .limit(1);

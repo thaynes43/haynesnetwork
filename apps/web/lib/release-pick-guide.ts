@@ -364,6 +364,8 @@ export function grabOutcomeText(input: { outcome: ReleaseGrabOutcome; targetLabe
       return input.override
         ? `Grabbed it for ${targetLabel}, as an exception to the library’s usual rules.`
         : `Grabbed it for ${targetLabel}.`;
+    case 'unsure':
+      return `It isn’t certain the grab for ${targetLabel} went through: the answer got lost on the way. The status below shows what happens.`;
     case 'list_stale':
       return 'This list is out of date, so nothing was grabbed.';
     case 'grab_failed':

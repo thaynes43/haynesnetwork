@@ -333,6 +333,7 @@ describe('after the press', () => {
       `Grabbed it for ${SPICE}, as an exception to the library’s usual rules.`,
     );
     expect(grabOutcomeText({ outcome: 'grab_failed', targetLabel: SPICE, override: false })).toBe(SITE_REFUSED_TEXT);
+    expect(grabOutcomeText({ outcome: 'unsure', targetLabel: SPICE, override: false })).toMatch(/isn’t certain .* went through/);
     expect(grabOutcomeText({ outcome: 'list_stale', targetLabel: SPICE, override: false })).toBe(
       'This list is out of date, so nothing was grabbed.',
     );

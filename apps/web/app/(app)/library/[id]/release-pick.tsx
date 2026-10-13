@@ -170,6 +170,8 @@ export function ReleasePick({
       setGrab(result);
       switch (result.outcome) {
         case 'grabbed':
+        case 'unsure':
+          // An unsure grab may have reached the download client: the live progress shows what happened.
           setView('grabbed');
           onChanged?.();
           return;
@@ -363,7 +365,7 @@ export function ReleasePick({
       <div className="fix-done repair-guide__step">
         {targetLine}
         <p className="fix-done__lead" role="status">
-          {grabOutcomeText({ outcome: 'grabbed', targetLabel: grab.targetLabel, override: grab.override })}
+          {grabOutcomeText({ outcome: grab.outcome, targetLabel: grab.targetLabel, override: grab.override })}
         </p>
         {row ? <p className="repair-guide__release release-pick__grabbed-title">{row.title}</p> : null}
         <p className="muted">Nothing was deleted or blocked.</p>

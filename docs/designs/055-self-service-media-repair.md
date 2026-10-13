@@ -510,7 +510,11 @@ Tapes S01E11 and S01E13, Sonarr 4.0.20.3012, read 2026-10-13):
     it at once (the pick's grab, by its release title, and a `downloadFailed` or `downloadIgnored` record for the same
     download), so "Pick another release" never waits for the sync; a pick still open after that holds the target (no list,
     no cost). A list a grab went out from is spent: it is neither reused nor grabbed from again (what it offered may since
-    have failed and been blocklisted); a grab the site refused leaves it usable for another site. A grab also forgets the
+    have failed and been blocklisted); a grab the site refused leaves it usable for another site. Only a 4xx answer means
+    nothing went out (404: the *arr's cache dropped the row; 409: the site refused; any other: the *arr refused the
+    request). A timeout, a dropped connection or a 5xx may come after the *arr handed the release on, so the grab answers
+    `unsure`: the pick stays open and the list spent (nothing is grabbed twice), the live chip shows what happened, and the
+    history settles it, closing it as failed when no grab is recorded 10 minutes on (`UNSURE_GRAB_SETTLE_MS`). A grab also forgets the
     cached list, so the next list searches again and shows the failed release blocklisted. `fix.repairProgress` is the
     grab's live phase (ADR-028), the row authoritative for its terminals.
 12. **The recommended pick:** the first Grab in the *arr's order; else the Override whose title names the target and whose
