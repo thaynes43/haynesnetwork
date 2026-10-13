@@ -305,3 +305,4 @@ export * from './title-check';
 // single writer of its Sonarr profile and of mislabel_block_terms (the re-map offer, the adoption, the upkeep, staff
 // removal) and its reads.
 export * from './mislabel-block';
+export * from './second-copy-fix';

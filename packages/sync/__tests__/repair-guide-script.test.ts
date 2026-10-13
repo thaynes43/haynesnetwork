@@ -245,6 +245,21 @@ describe('repair-guide.ts arguments', () => {
     expect(lines[4]).toMatch(/^ {2}\[NOT ALLOWED\] .*BiOMA \| WEBDL-1080p \? \| DrunkenSlug \(Prowlarr\) \+1 more title:silent \| key b{16}$/);
   });
 
+  it('copy-plan and copy-run name one episode, optionally the original, and need the digest and evidence (DESIGN-055 P4 decision 25)', () => {
+    expect(parseRepairGuideArgs(['copy-plan', '--tvdb', '274453', '--episode', 'S20E03'])).toMatchObject({
+      command: 'copy-plan',
+      episode: { season: 20, episode: 3 },
+    });
+    expect(parseRepairGuideArgs(['copy-plan', '--tvdb', '1', '--episode', 'S06E10', '--copy-of', '13'])).toMatchObject({ copyOf: 13 });
+    expect(
+      parseRepairGuideArgs(['copy-run', '--tvdb', '1', '--episode', 'S06E10', '--digest', 'abcdef0123456789', '--evidence', 'subtitles match at 5:00']),
+    ).toMatchObject({ command: 'copy-run', digest: 'abcdef0123456789', evidence: 'subtitles match at 5:00' });
+    expect(() => parseRepairGuideArgs(['copy-run', '--tvdb', '1', '--episode', 'S06E10', '--digest', 'abcdef0123456789'])).toThrow(/--evidence/);
+    expect(() => parseRepairGuideArgs(['copy-plan', '--tvdb', '1', '--season', '6'])).toThrow(/--episode/);
+    expect(() => parseRepairGuideArgs(['copy-plan', '--tvdb', '1', '--episode', 'S06E10', '--evidence', 'subtitles match'])).toThrow(/copy-run/);
+    expect(() => parseRepairGuideArgs(['season-plan', '--tvdb', '1', '--season', '6', '--copy-of', '3'])).toThrow(/copy-plan/);
+  });
+
   it('refuses what it does not understand', () => {
     expect(parseRepairGuideArgs([])).toBe('help');
     expect(() => parseRepairGuideArgs(['delete'])).toThrow(/unknown command/);

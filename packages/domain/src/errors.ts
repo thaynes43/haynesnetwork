@@ -116,7 +116,9 @@ export type FixRefusalReason =
   | 'pack'
   | 'nothing_safe'
   | 'needs_guide'
-  | 'remap_refused';
+  | 'remap_refused'
+  /** DESIGN-055 P4 decision 25: the staff second-copy Fix refused (staff tool only). */
+  | 'copy_refused';
 
 export class FixRefusedError extends Error {
   readonly code = 'FIX_REFUSED' as const;
