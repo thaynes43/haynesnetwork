@@ -46,7 +46,9 @@ import {
   hasIdentityRejection,
   importCheckReasonText,
   planFix,
+  planEpisodeRemap,
   planForceSearch,
+  readRemapSeason,
   queueTexts,
   readFileAudio,
   readPlaybackEvidence,
@@ -66,13 +68,14 @@ const USAGE = `Usage:
   repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
   repair-guide.ts queue-check
   repair-guide.ts title-check (--backfill [--dry-run] [--json] | --flags <sonarr series id>)
+  repair-guide.ts remap-plan --tvdb <id> --season <n> [--shift <from>:<+1|-1>[:<through>] | --move <from>:<to>]
 
-preview, evidence, audio, search-plan and queue-check only read. settings writes only with --set or --known-issue (audited, actor null).
+preview, evidence, audio, search-plan, queue-check and remap-plan only read (remap-plan plans as if episode_remap were on). settings writes only with --set or --known-issue (audited, actor null).
 title-check only reads Sonarr; --backfill writes title_checks rows unless --dry-run, --flags clears a stale flag.
 Remedies: ${REPAIR_GUIDE_REMEDIES.join(', ')}.`;
 
 export interface RepairGuideArgs {
-  command: 'preview' | 'evidence' | 'audio' | 'settings' | 'search-plan' | 'queue-check' | 'title-check';
+  command: 'preview' | 'evidence' | 'audio' | 'settings' | 'search-plan' | 'queue-check' | 'title-check' | 'remap-plan';
   tmdb?: number;
   tvdb?: number;
   episode?: { season: number; episode: number };
@@ -90,6 +93,8 @@ export interface RepairGuideArgs {
   dryRun?: boolean;
   json?: boolean;
   flagsSeriesId?: number;
+  /** remap-plan: a claim by episode numbers (none: the season view and the suggested claim). */
+  remap?: { kind: 'shift'; from: number; by: 1 | -1; through: number | null } | { kind: 'single'; from: number; to: number };
 }
 
 const positiveInt = (flag: string, value: string | undefined): number => {
@@ -108,7 +113,8 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'settings' &&
     command !== 'search-plan' &&
     command !== 'queue-check' &&
-    command !== 'title-check'
+    command !== 'title-check' &&
+    command !== 'remap-plan'
   ) {
     throw new Error(`unknown command "${command}"`);
   }
@@ -185,6 +191,20 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
       case '--json':
         args.json = true;
         break;
+      case '--shift': {
+        const m = /^(\d+):([+-]1)(?::(\d+))?$/.exec(value ?? '');
+        if (!m) throw new Error('--shift needs <from>:<+1|-1>[:<through>], e.g. 11:+1:18');
+        args.remap = { kind: 'shift', from: Number(m[1]), by: m[2] === '+1' ? 1 : -1, through: m[3] ? Number(m[3]) : null };
+        i += 1;
+        break;
+      }
+      case '--move': {
+        const m = /^(\d+):(\d+)$/.exec(value ?? '');
+        if (!m) throw new Error('--move needs <from episode>:<to episode>, e.g. 24:23');
+        args.remap = { kind: 'single', from: Number(m[1]), to: Number(m[2]) };
+        i += 1;
+        break;
+      }
       case '--flags':
         args.flagsSeriesId = positiveInt(flag, value);
         i += 1;
@@ -199,6 +219,10 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     }
     if (args.dryRun && !args.backfill) throw new Error('--dry-run goes with --backfill');
     return args;
+  }
+  if (args.remap && command !== 'remap-plan') throw new Error('--shift and --move are for remap-plan');
+  if (command === 'remap-plan' && (args.tvdb === undefined || args.season === undefined || args.episode)) {
+    throw new Error('remap-plan needs --tvdb <id> and --season <n>');
   }
   if (args.backfill || args.dryRun || args.json || args.flagsSeriesId !== undefined) {
     throw new Error('--backfill, --dry-run, --json and --flags are for title-check');
@@ -350,6 +374,24 @@ async function main(): Promise<number> {
     } else {
       scope = { scope: 'season', seasonNumber: args.season! };
     }
+  }
+
+  if (args.command === 'remap-plan') {
+    const target = { db, arr, mediaItemId: item.id, seasonNumber: args.season! };
+    const view = await readRemapSeason({ ...target, remapOn: true });
+    if (!args.remap) {
+      const withFiles = view.episodes.filter((e) => e.hasFile).length;
+      console.log(JSON.stringify({ title: item.title, season: args.season, episodes: view.episodes.length, withFiles, queueBusy: view.queueBusy, suggestion: view.suggestion }, null, 2));
+      return 0;
+    }
+    const byNumber = (n: number) => view.episodes.find((e) => e.episodeNumber === n)?.id ?? -1;
+    const claim =
+      args.remap.kind === 'shift'
+        ? { kind: 'shift' as const, fromEpisodeNumber: args.remap.from, throughEpisodeNumber: args.remap.through, by: args.remap.by }
+        : { kind: 'single' as const, fromEpisodeId: byNumber(args.remap.from), toEpisodeId: byNumber(args.remap.to) };
+    const plan = await planEpisodeRemap({ ...target, claim, remapOn: true });
+    console.log(JSON.stringify({ title: item.title, plan }, null, 2));
+    return 0;
   }
 
   if (args.command === 'search-plan') {

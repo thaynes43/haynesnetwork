@@ -41,6 +41,26 @@ describe('repair-guide.ts arguments', () => {
     expect(parseRepairGuideArgs(['queue-check'])).toMatchObject({ command: 'queue-check' });
   });
 
+  it('remap-plan reads a season, or plans a shift or a single move, read-only (DESIGN-055 D-04, PLAN-077 P4)', () => {
+    expect(parseRepairGuideArgs(['remap-plan', '--tvdb', '451113', '--season', '1'])).toMatchObject({
+      command: 'remap-plan',
+      tvdb: 451113,
+      season: 1,
+    });
+    expect(parseRepairGuideArgs(['remap-plan', '--tvdb', '451113', '--season', '1', '--shift', '11:+1:18'])).toMatchObject({
+      remap: { kind: 'shift', from: 11, by: 1, through: 18 },
+    });
+    expect(parseRepairGuideArgs(['remap-plan', '--tvdb', '451113', '--season', '1', '--shift', '3:-1'])).toMatchObject({
+      remap: { kind: 'shift', from: 3, by: -1, through: null },
+    });
+    expect(parseRepairGuideArgs(['remap-plan', '--tvdb', '451113', '--season', '1', '--move', '24:23'])).toMatchObject({
+      remap: { kind: 'single', from: 24, to: 23 },
+    });
+    expect(() => parseRepairGuideArgs(['remap-plan', '--tvdb', '451113'])).toThrow(/a show needs --episode or --season|remap-plan needs/);
+    expect(() => parseRepairGuideArgs(['remap-plan', '--tvdb', '1', '--season', '1', '--shift', '11:+2'])).toThrow(/--shift needs/);
+    expect(() => parseRepairGuideArgs(['preview', '--tvdb', '1', '--season', '1', '--move', '1:2'])).toThrow(/for remap-plan/);
+  });
+
   it('title-check runs the backfill (optionally dry) or lists one series\' flags (DESIGN-055 D-05, PLAN-077 P4)', () => {
     expect(parseRepairGuideArgs(['title-check', '--backfill', '--dry-run', '--json'])).toMatchObject({
       command: 'title-check',

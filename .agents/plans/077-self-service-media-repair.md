@@ -270,7 +270,7 @@ Priority is how often real reports need the remedy, and how much harm today's be
     `titleCheckSummary`); sync mode `title-check` (the census, then the Mislabel upkeep); the nightly digest line;
     `repair-guide.ts title-check --backfill [--dry-run]` and `--flags <seriesId>`; the import history read with the
     dropped path. Q-06 is read on the library-wide census (below), not on 7 days.
-  - Step 2: `remap-plan.ts` (pure) and `remap-flow.ts` (`readRemapSeason`, `planEpisodeRemap`, `runEpisodeRemap`); the
+  - Step 2 (in-cluster preview: `tsx /sync/src/scripts/repair-guide.ts remap-plan --tvdb <id> --season <n> [--shift 11:+1[:18] | --move 24:23]`, read-only): `remap-plan.ts` (pure) and `remap-flow.ts` (`readRemapSeason`, `planEpisodeRemap`, `runEpisodeRemap`); the
     Sonarr reads `listSeasonImportCandidates`, `listRenamePreview`, `listCommands` and the write `renameFiles`;
     `appendRepairActions`; the fix router's `remapSeason`, `remapPlan`, `remap`, `titleFlags`; the remedy
     `episode_remap` (ships off). No discard tick: a re-map never deletes a file (owner ruling in the P4 work order).
