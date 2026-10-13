@@ -131,6 +131,9 @@ export * from './queue-aware-search';
 export * from './seerr-issues';
 // DESIGN-055 D-07 P2 decision 13 (PLAN-077 P3) — Activity's admin Import Check row.
 export * from './activity-import-check';
+// ADR-109 C-02, C-03 / DESIGN-055 D-04 (PLAN-077 P4) — the Episode Re-map: its plan (pure) and its run.
+export * from './remap-plan';
+export * from './remap-flow';
 // ADR-110 / DESIGN-055 D-05 (PLAN-077 P2): Title Evidence, pure. Its parseReleaseName and ParsedReleaseName share their
 // names with release-terms' (DESIGN-052 D-12), which keep the barrel names; Title Evidence's are re-exported under
 // their own names here (inside this package, import them from './title-evidence').
@@ -290,3 +293,10 @@ export * from './release-block-static';
 // and its one-off backfill.
 export * from './title-exclusion';
 export * from './seerr-enroll';
+// ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — the Title Check census (T-305): the hourly run, the one-off backfill,
+// a title's open flags and the per-file judged names (the single writer of title_checks).
+export * from './title-check';
+// ADR-110 C-04, C-05, C-08 / DESIGN-055 D-05 (PLAN-077 P4) — the Mislabel Block (T-310): the series + group term, the
+// single writer of its Sonarr profile and of mislabel_block_terms (the re-map offer, the adoption, the upkeep, staff
+// removal) and its reads.
+export * from './mislabel-block';

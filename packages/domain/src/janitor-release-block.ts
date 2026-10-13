@@ -99,9 +99,10 @@ const MEANINGFUL = /[\p{L}\p{N}\p{S}]/u;
  * fold such as `ø` or `ß`, a symbol such as `÷` or `♥`) anywhere but strictly inside a written word? The term matches
  * such a character only through SEP, which is harmless inside a word ("Bjørk": `bj`, one non-alphanumeric, `rk`;
  * "Ke$ha") but lets any other word stand in for a whole unwritten one ("Artist - 日本 (2019)" would also block
- * "Artist - 東京 (2019)", and "Ed Sheeran - ÷ [FLAC]" would block "Ed Sheeran - × [FLAC]").
+ * "Artist - 東京 (2019)", and "Ed Sheeran - ÷ [FLAC]" would block "Ed Sheeran - × [FLAC]"). The Mislabel Block
+ * (ADR-110 C-04) refuses a series title by the same check.
  */
-function hasUnwritableWord(title: string): boolean {
+export function hasUnwritableWord(title: string): boolean {
   const chars = [...foldReleaseName(title)];
   return chars.some((c, i) => {
     if (WRITABLE.test(c) || !MEANINGFUL.test(c)) return false;

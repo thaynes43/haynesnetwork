@@ -17,7 +17,8 @@ const sqlList = (values: readonly string[]) => values.map((v) => `'${v}'`).join(
  * page that opens the Episode Re-map (D-04) pre-filled; `cleared_at` is set once the file has left those episodes (a
  * re-map, an upgrade, a delete), which closes the flag.
  *
- * `episode_ids` are every episode the file holds (a multi-episode file); `episode_id` the first of them. `score` is the
+ * `episode_ids` are every episode the file holds (a multi-episode file); `episode_id` the first of them (and
+ * `episode_number` its number, `best_episode_number` the best episode's, so a report reads without Sonarr). `score` is the
  * mapped episodes' score, `best_score` the best episode's. `source_title` is the name judged (the history record's
  * `sourceTitle`, else the file's scene name). One row per (instance, episode_file_id): a re-run updates it in place.
  * Only the packages/domain/src/title-check.ts single writer changes a row (the no-direct-state-writes guard).
@@ -31,11 +32,13 @@ export const titleChecks = pgTable(
     mediaItemId: uuid('media_item_id').references(() => mediaItems.id, { onDelete: 'set null' }),
     seasonNumber: integer('season_number').notNull(),
     episodeId: integer('episode_id').notNull(),
+    episodeNumber: integer('episode_number').notNull(),
     episodeIds: integer('episode_ids').array().notNull(),
     episodeFileId: integer('episode_file_id').notNull(),
     sourceTitle: text('source_title').notNull(),
     verdict: text('verdict').$type<TitleCheckVerdict>().notNull(),
     bestEpisodeId: integer('best_episode_id'),
+    bestEpisodeNumber: integer('best_episode_number'),
     score: real('score'),
     bestScore: real('best_score'),
     evidenceVersion: integer('evidence_version').notNull(),

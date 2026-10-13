@@ -21,7 +21,12 @@ import {
   computeSearchProgress,
   getKnownIssueServers,
   getRepairGuideRemedies,
+  addMislabelTermFromRemap,
+  listMislabelTerms,
+  listTitleFlags,
   planEpisodeRemap,
+  removeMislabelTerm,
+  titleCheckSummary,
   planForceSearch,
   previewFix,
   readRemapSeason,
@@ -266,6 +271,60 @@ export const fixRouter = router({
         }),
       );
     }),
+
+  /**
+   * ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — the Title Check's open flags on one TV title, verified live (a flag
+   * whose file has left its episode is dropped and cleared). Each flag opens the Episode Re-map pre-filled when the
+   * remedy is on.
+   */
+  titleFlags: authedProcedure.input(z.object({ mediaItemId: z.uuid() })).query(async ({ ctx, input }) => {
+    return mapDomainErrors(async () => {
+      const remapOn = (await getRepairGuideRemedies(ctx.db)).episode_remap;
+      const flags = await listTitleFlags({ db: ctx.db, sonarr: resolveArrBundle(ctx).read.sonarr, mediaItemId: input.mediaItemId });
+      return { remapOn, flags };
+    });
+  }),
+
+  /**
+   * ADR-110 C-04 / DESIGN-055 D-04 rule 10 — the Mislabel offer after a completed shift re-map: block the release group
+   * that moved two or more files from filing this series again. Written and read back before the answer; `saved: false`
+   * carries the plain reason. The person who ran the re-map, or an admin.
+   */
+  mislabelBlock: authedProcedure
+    .input(z.object({ repairRequestId: z.uuid(), releaseGroup: z.string().trim().min(1).max(64) }))
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        addMislabelTermFromRemap({
+          db: ctx.db,
+          sonarr: { write: resolveArrBundle(ctx).write.sonarr },
+          repairRequestId: input.repairRequestId,
+          releaseGroup: input.releaseGroup,
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
+        }),
+      );
+    }),
+
+  /** ADR-110 C-04, C-08 — the Mislabel Block's terms for /admin/fixes (active first, then the ended ones). */
+  mislabelTerms: adminProcedure.query(async ({ ctx }) => {
+    const terms = await listMislabelTerms({ db: ctx.db, state: 'all' });
+    return { terms };
+  }),
+
+  /** ADR-110 C-08 — staff remove a term: the profile is written without it and read back, then the audited row. */
+  removeMislabelTerm: adminProcedure.input(z.object({ termId: z.uuid() })).mutation(async ({ ctx, input }) => {
+    return mapDomainErrors(async () =>
+      removeMislabelTerm({
+        db: ctx.db,
+        sonarr: { write: resolveArrBundle(ctx).write.sonarr },
+        termId: input.termId,
+        actorId: ctx.user.id,
+      }),
+    );
+  }),
+
+  /** ADR-110 C-03 — the Title Check census for /admin/fixes: verdict counts, open flags and the newest of them. */
+  titleCheckSummary: adminProcedure.query(async ({ ctx }) => titleCheckSummary({ db: ctx.db, limit: 50 })),
 
   /** DESIGN-055 D-08 rules 1-2 — the audio languages of the file(s) a Wrong language Fix would touch. */
   audioLanguages: authedProcedure

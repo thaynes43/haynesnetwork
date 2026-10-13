@@ -65,6 +65,31 @@ describe('runSync — title-check mode (DESIGN-055 D-05)', () => {
     expect(await t.db.select().from(syncRuns)).toEqual([]);
   });
 
+  it('runs the Mislabel Block upkeep after the census, and with no term it reads nothing from Sonarr', async () => {
+    const profileReads: string[] = [];
+    const never = async () => {
+      throw new Error('no write expected');
+    };
+    const report = await runSync({
+      mode: 'title-check',
+      clients: {},
+      titleCheck: {
+        sonarr: { getImportHistorySince: async () => [], listEpisodes: async () => EPISODES },
+        mislabelBlock: {
+          write: {
+            listReleaseProfiles: async () => (profileReads.push('profiles'), []),
+            createReleaseProfile: never,
+            updateReleaseProfile: never,
+          } as never,
+        },
+      },
+      db: t.db,
+    });
+    expect(report.totalFailure).toBe(false);
+    expect(report.mislabelBlock).toMatchObject({ expiring: 0, drift: null, error: null });
+    expect(profileReads).toEqual([]);
+  });
+
   it('a failed history read is a totalFailure and keeps the rows', async () => {
     const report = await runSync({
       mode: 'title-check',

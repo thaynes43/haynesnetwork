@@ -516,6 +516,47 @@ export function isWholeNameTerm(term: string): boolean {
   return compileTerm(term) !== null;
 }
 
+/** ADR-110 C-04 / DESIGN-055 D-05 — a release group the Mislabel Block can write (lower case): `[a-z0-9]` runs joined by
+ *  single `.` or `-`. */
+const MISLABEL_GROUP = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+const NOT_ALNUM_BEFORE = '(?<![a-z0-9])';
+const NOT_ALNUM_AFTER = '(?![a-z0-9])';
+
+/**
+ * ADR-110 C-04 / DESIGN-055 D-05 (PLAN-077 P4) — the MISLABEL BLOCK's term: a release title that names the series and
+ * the release group, anywhere and in either order:
+ *
+ *   /^(?=.*(?<![a-z0-9]){series words joined by SEP*}(?![a-z0-9]))(?=.*(?<![a-z0-9]){group}(?![a-z0-9]))/i
+ *
+ * D-05 writes the boundaries as `\b` and the join as `\W*`; the term uses this grammar's own separator and boundaries
+ * instead, which match identically in .NET and JavaScript under `i` and read `_` as a separator (`\b` does not, so
+ * `Show_S01E01_DUAL_BiOMA` would slip past). The series words are the exact form's (apostrophes, accented letters,
+ * `&`, `termWords`); the group is lower case `[a-z0-9]` runs joined by single `-` or an escaped `.`. Throws outside
+ * the grammar. A separate grammar: `isGrammarTerm` and `isWholeNameTerm` never accept it, `isMislabelTerm` nothing else.
+ */
+export function renderMislabelTerm(series: readonly TermToken[], group: string): string {
+  if (series.length === 0 || !series.every(okWord)) throw new Error('term: bad tokens');
+  if (!MISLABEL_GROUP.test(group)) throw new Error('term: bad group');
+  const words = renderWords(series, `${SEP}*`, JOIN_EXACT, OPTIONAL_AND_EXACT);
+  const g = group.replace(/\./g, '\\.');
+  return `/^(?=.*${NOT_ALNUM_BEFORE}${words}${NOT_ALNUM_AFTER})(?=.*${NOT_ALNUM_BEFORE}${g}${NOT_ALNUM_AFTER})/i`;
+}
+
+const EXACT_WORDS_META = `${PART_META}(?:(?:${esc(`${SEP}*`)}(?:${esc(OPTIONAL_AND_EXACT)})?|${esc(JOIN_EXACT)})${PART_META})*`;
+const MISLABEL_META = new RegExp(
+  `^${esc(`/^(?=.*${NOT_ALNUM_BEFORE}`)}${EXACT_WORDS_META}${esc(`${NOT_ALNUM_AFTER})(?=.*${NOT_ALNUM_BEFORE}`)}` +
+    `[a-z0-9]+(?:(?:${esc('\\.')}|-)[a-z0-9]+)*${esc(`${NOT_ALNUM_AFTER})/i`)}$`,
+);
+
+/** ADR-110 C-04 / DESIGN-055 D-05 — is this exactly the Mislabel Block template, and does it compile? Its writer
+ *  refuses to POST / PUT a profile holding any other term (its sentinel aside): one term .NET cannot compile rejects
+ *  every release on that Sonarr (ADR-093 C-19). */
+export function isMislabelTerm(term: string): boolean {
+  if (term.length > 1_000) return false;
+  if (!MISLABEL_META.test(term)) return false;
+  return compileTerm(term) !== null;
+}
+
 /**
  * DESIGN-052 D-12 / D-13 step 2 — is this exactly one of the three templates (or the sentinel), and does it compile?
  * The writer refuses to POST / PUT a profile holding any term for which this is false.

@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
+- **Last updated:** 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
@@ -126,6 +126,8 @@ library files onto the right episodes with Sonarr's own manual import. Nothing i
 3. **No implicit displacement.** Every target slot must be empty, or hold a file that the plan itself moves, or hold a
    file the person explicitly ticks "discard this file" for (shown with its name and size, never pre-ticked). With no
    recycle bin, an import onto an occupied slot deletes that slot's file for good, so the plan refuses every other case.
+   *As built (P4 decisions 2 and 3): the discard tick is not offered, since a re-map never deletes a file (owner ruling,
+   2026-10-12); for a library file, an import onto an occupied slot would leave that slot's file on disk but unmapped.*
 4. **Order.** For k = +1, highest episode first; for k = -1, lowest first; a single move is one step. This is the order
    that fixed Case A by hand: each move lands on a slot whose file has already moved. A cycle (a swap) has no free slot
    to pass through and is refused with "ask staff".
@@ -204,6 +206,51 @@ do not edit)", "must not contain" terms only, no tags.
   pattern. A write that cannot be read back answers the person with "not saved" and leaves the term `removed`.
 - **Adoption:** Case A's hand-made profile (tag `lost-tapes-release-block`, id 31 on series 1061) becomes the first
   term, after which the tag profile and the tag are removed by hand with a read-back (PLAN-077 P4).
+
+**P4 decisions (2026-10-13, PLAN-077 P4).** What the build of D-04 and D-05 settled, with the reads behind it:
+
+1. **The kill switch.** One more remedy in `repair_guide_remedies`, `episode_remap`, ships off. It covers the re-map in the
+   Fix guide, the Title Check flag on the title page that opens it, and the Mislabel offer after it. The Title Check
+   census and the Mislabel Block's upkeep run whatever the switch says (neither moves a file).
+2. **What a library-file import does** (Sonarr 4.0.20.3012's `ManualImportService` and `ImportApprovedEpisodes`, read at
+   the tag, and Case A's hand fix of 2026-10-12): a `ManualImport` of a file already inside the series folder is not a
+   new download. The file stays where it is; Sonarr deletes the episode-file record for that path (a database delete,
+   `ManualOverride`), adds a new record on the chosen episodes (a new id, the scene name dropped) and writes no history
+   row. An episode that still had another file keeps that file on disk but unmapped. So the plan never imports onto an
+   episode whose file it does not move, and the order matters for a run that stops part way.
+3. **No discard.** Owner ruling (2026-10-12, the P4 work order): a re-map never deletes a file. Rule 3's "discard this
+   file" tick is not built; an episode that keeps a file the plan does not move refuses the plan ("Fix that episode
+   first, or ask staff for help").
+4. **Two-episode files.** A shift whose range cuts one refuses (rule 5). A single move of one moves the whole file by
+   the offset chosen: "the file on S05E06 is really S05E07" moves S05E05-06 to S05E06-07.
+5. **Order.** Each move waits for the moves that free its target episodes; among the moves that are ready, a +1 shift
+   takes the highest episode first and a -1 shift the lowest. A cycle refuses (a single move or a shift by one cannot
+   make one; the check stays as a guard). At most 40 moves.
+6. **The run.** One `ManualImport` per move, `importMode: move`, with the fields Sonarr's own series-folder import sends
+   (`path`, `folderName`, `seriesId`, `episodeIds`, `releaseGroup`, `quality`, `languages`, `indexerFlags`,
+   `releaseType`, `episodeFileId`; no download id), taken from `GET /manualimport?seriesId=&seasonNumber=` for the file.
+   Each command is awaited (up to 60 seconds), then read back: the file at that path holds exactly the target episodes.
+   The first move that does not land stops the run; what moved is renamed, and the Repair Request closes `failed`, so
+   the season's grain is free for the person to run the rest. Every move and read-back is in the request's trail
+   (`appendRepairActions`).
+7. **Refused while Sonarr is busy.** Besides a queued download for the season (rule 11), the plan refuses while a
+   `ManualImport` or `RenameFiles` is still queued or running on Sonarr (`sonarr_busy`): a late command could land on a
+   slot a new plan counts as free.
+8. **Rename.** One `RenameFiles` with every moved file (`{seriesId, files}`, the body Sonarr's Organize sends), then
+   Sonarr's own rename preview (`GET /rename?seriesId=&seasonNumber=`) as the read-back, up to three passes: Sonarr
+   renames in its own order and skips a name another file still holds, never overwrites it. A file left with its old
+   name is reported (`renamed: false`); it is still on the right episode.
+9. **Evidence in the preview** is the file's scene name, else the name the Title Check judged; never the file's path,
+   which Sonarr renamed after the episode it sits on.
+10. **Plex watch state.** Plex keeps a watched mark on the episode (its metadata item), not on the file, and a re-map
+    does not touch Plex: after it, the marks stay on the episode numbers, and the preview says so in one line. A Plex
+    episode-ordering change (Case 3 of the P4 work order, The Loud House S10, fixed by hand by switching the show to TVDB
+    ordering once nobody had watch state on it) moves watched marks; it is not built here. It would need its own ADR, a
+    Plex write and a watch-state check first.
+11. **What names can and cannot see.** LAZY's Amazon season packs of The Loud House S05 and S06 carry no episode titles
+    (`The.Loud.House.S05E01.1080p.AMZN.WEBRip.DDP2.0.H.264-LAZY`), so Title Evidence is `silent` and the Title Check
+    cannot flag them; subtitle and title-card evidence stay out of scope (Alternatives). A person who sees it can still
+    fix S05 with a shift; a scrambled season (S06) is a series of single moves, and a swap needs staff.
 
 ### D-06 Release Pick
 

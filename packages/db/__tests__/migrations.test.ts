@@ -3239,10 +3239,11 @@ describe('migrations against embedded Postgres 16', () => {
       const insert = (fileId: number, fields: Record<string, unknown> = {}) => {
         const row = { verdict: 'disagrees', origin: 'history', episode_ids: '{118419}', instance: 'sonarr', ...fields };
         return client.query({
-          text: `INSERT INTO title_checks (instance, series_id, season_number, episode_id, episode_ids, episode_file_id,
-                   source_title, verdict, best_episode_id, score, best_score, evidence_version, origin, imported_at)
-                 VALUES ($1, 1061, 1, 118419, $2, $3, 'Regular.Show..The.Lost.Tapes.S01E24.All.You.Can.Fit.1080p', $4,
-                   118418, 0, 1, 1, $5, now())`,
+          text: `INSERT INTO title_checks (instance, series_id, season_number, episode_id, episode_number, episode_ids,
+                   episode_file_id, source_title, verdict, best_episode_id, best_episode_number, score, best_score,
+                   evidence_version, origin, imported_at)
+                 VALUES ($1, 1061, 1, 118419, 24, $2, $3, 'Regular.Show..The.Lost.Tapes.S01E24.All.You.Can.Fit.1080p', $4,
+                   118418, 23, 0, 1, 1, $5, now())`,
           values: [row.instance, row.episode_ids, fileId, row.verdict, row.origin],
         });
       };

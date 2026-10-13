@@ -33,6 +33,7 @@ import {
   seerrEnrollClientsFromEnv,
   seerrIssueSyncClientsFromEnv,
   titleCheckSonarrFromEnv,
+  mislabelBlockSonarrFromEnv,
   watchlistRegistrySourcesFromEnv,
   resolveArrBaseUrls,
   resolveGovernorConfig,
@@ -557,7 +558,11 @@ async function main(): Promise<number> {
   // ADR-111 C-01 / DESIGN-055 D-10 — the Seerr Issue mirror's readers (SEERR_API_KEY required; Sonarr optional).
   const seerrIssues = args.mode === 'seerr-issues' ? seerrIssueSyncClientsFromEnv() : undefined;
   // ADR-110 C-03 / DESIGN-055 D-05 — the Title Check's Sonarr reader (SONARR_API_KEY required).
-  const titleCheck = args.mode === 'title-check' ? { sonarr: titleCheckSonarrFromEnv() } : undefined;
+  // ADR-110 C-04 — and the Mislabel Block's profile clients for its hourly upkeep (the same SONARR_API_KEY).
+  const titleCheck =
+    args.mode === 'title-check'
+      ? { sonarr: titleCheckSonarrFromEnv(), mislabelBlock: mislabelBlockSonarrFromEnv() }
+      : undefined;
   // ADR-093 C-11 / DESIGN-052 D-17 — the Seerr enrollment clients (null without SEERR_API_KEY ⇒ the step is skipped).
   const seerrEnroll = args.mode === 'watchlist-registry' ? seerrEnrollClientsFromEnv() : undefined;
   // ADR-068 / DESIGN-049 D-09 — the `watch` mode's Tautulli instances (each skip-if-unconfigured: a missing

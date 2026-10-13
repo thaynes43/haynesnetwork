@@ -109,8 +109,10 @@ export interface TitleCheckJudgment {
   episodeIds: number[];
   /** The first of them, and its season. */
   episodeId: number;
+  episodeNumber: number;
   seasonNumber: number;
   bestEpisodeId: number | null;
+  bestEpisodeNumber: number | null;
   /** The file's own episodes' score. */
   score: number | null;
   bestScore: number | null;
@@ -161,8 +163,13 @@ export function judgeTitleCheckFile(input: {
     name,
     episodeIds,
     episodeId: first.id,
+    episodeNumber: first.episodeNumber,
     seasonNumber: first.seasonNumber,
     bestEpisodeId: evidence.bestEpisodeId,
+    bestEpisodeNumber:
+      evidence.bestEpisodeId === null
+        ? null
+        : (input.episodes.find((e) => e.id === evidence.bestEpisodeId)?.episodeNumber ?? null),
     score: evidence.againstScore,
     bestScore: evidence.bestScore,
   };
@@ -335,8 +342,10 @@ async function upsertTitleChecks(tx: Transaction, writes: readonly TitleCheckWri
       old.mediaItemId === w.mediaItemId &&
       old.seasonNumber === j.seasonNumber &&
       old.episodeId === j.episodeId &&
+      old.episodeNumber === j.episodeNumber &&
       old.sourceTitle === j.name &&
       old.bestEpisodeId === j.bestEpisodeId &&
+      old.bestEpisodeNumber === j.bestEpisodeNumber &&
       sameScore(old.score, j.score) &&
       sameScore(old.bestScore, j.bestScore) &&
       old.evidenceVersion === TITLE_EVIDENCE_VERSION &&
@@ -360,11 +369,13 @@ async function upsertTitleChecks(tx: Transaction, writes: readonly TitleCheckWri
           mediaItemId: w.mediaItemId,
           seasonNumber: w.judgment.seasonNumber,
           episodeId: w.judgment.episodeId,
+          episodeNumber: w.judgment.episodeNumber,
           episodeIds: w.judgment.episodeIds,
           episodeFileId: w.episodeFileId,
           sourceTitle: w.judgment.name,
           verdict: w.judgment.verdict,
           bestEpisodeId: w.judgment.bestEpisodeId,
+          bestEpisodeNumber: w.judgment.bestEpisodeNumber,
           score: w.judgment.score,
           bestScore: w.judgment.bestScore,
           evidenceVersion: TITLE_EVIDENCE_VERSION,
@@ -381,10 +392,12 @@ async function upsertTitleChecks(tx: Transaction, writes: readonly TitleCheckWri
           mediaItemId: sql`excluded.media_item_id`,
           seasonNumber: sql`excluded.season_number`,
           episodeId: sql`excluded.episode_id`,
+          episodeNumber: sql`excluded.episode_number`,
           episodeIds: sql`excluded.episode_ids`,
           sourceTitle: sql`excluded.source_title`,
           verdict: sql`excluded.verdict`,
           bestEpisodeId: sql`excluded.best_episode_id`,
+          bestEpisodeNumber: sql`excluded.best_episode_number`,
           score: sql`excluded.score`,
           bestScore: sql`excluded.best_score`,
           evidenceVersion: sql`excluded.evidence_version`,
@@ -884,4 +897,57 @@ export async function titleCheckDigestCounts(input: {
     );
   const [open] = await db.select({ n: count() }).from(titleChecks).where(openFlagWhere());
   return { opened24h: opened?.n ?? 0, open: open?.n ?? 0 };
+}
+
+/** One open flag as the admin Title Check card lists it (stored numbers, so it reads without Sonarr). */
+export interface TitleCheckSummaryFlag {
+  titleCheckId: string;
+  mediaItemId: string | null;
+  seriesId: number;
+  seriesTitle: string | null;
+  seasonNumber: number;
+  episodeNumber: number;
+  bestEpisodeNumber: number | null;
+  sourceTitle: string;
+  origin: TitleCheckOrigin;
+  importedAt: Date;
+}
+
+export interface TitleCheckSummary {
+  counts: Record<TitleCheckVerdict, number>;
+  openFlags: number;
+  /** The newest open flags (newest import first), at most `limit`. */
+  recentFlags: TitleCheckSummaryFlag[];
+}
+
+/** DESIGN-055 D-05 (PLAN-077 P4) — the admin read of the census: verdict counts, open flags, the newest open flags. */
+export async function titleCheckSummary(input: { db?: DbClient; limit?: number } = {}): Promise<TitleCheckSummary> {
+  const db = resolveDb(input.db);
+  const rows = await db
+    .select({ verdict: titleChecks.verdict, n: count() })
+    .from(titleChecks)
+    .where(eq(titleChecks.instance, 'sonarr'))
+    .groupBy(titleChecks.verdict);
+  const counts: Record<TitleCheckVerdict, number> = { agrees: 0, disagrees: 0, silent: 0, ambiguous: 0 };
+  for (const r of rows) counts[r.verdict] = Number(r.n);
+  const [open] = await db.select({ n: count() }).from(titleChecks).where(openFlagWhere());
+  const recent = await db
+    .select({
+      titleCheckId: titleChecks.id,
+      mediaItemId: titleChecks.mediaItemId,
+      seriesId: titleChecks.seriesId,
+      seriesTitle: mediaItems.title,
+      seasonNumber: titleChecks.seasonNumber,
+      episodeNumber: titleChecks.episodeNumber,
+      bestEpisodeNumber: titleChecks.bestEpisodeNumber,
+      sourceTitle: titleChecks.sourceTitle,
+      origin: titleChecks.origin,
+      importedAt: titleChecks.importedAt,
+    })
+    .from(titleChecks)
+    .leftJoin(mediaItems, eq(mediaItems.id, titleChecks.mediaItemId))
+    .where(openFlagWhere())
+    .orderBy(sql`${titleChecks.importedAt} DESC`)
+    .limit(Math.min(Math.max(input.limit ?? 50, 1), 500));
+  return { counts, openFlags: Number(open?.n ?? 0), recentFlags: recent };
 }
