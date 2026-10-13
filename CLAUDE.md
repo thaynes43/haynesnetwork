@@ -113,6 +113,15 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    the same profile (a number with another episode's title, a double-episode token, an alternate title of the series),
    written only by staff (`mislabel-block.ts add-name`) and the adoption, through the same single writer and read-back.
    The Title Check itself is census only and writes nothing to Sonarr. Through `@hnet/arr/write` from `packages/domain` only.
+   **ADR-109 adds the Release Pick's grab** (C-02, C-06; DESIGN-055 D-06, PLAN-077 P5): one Sonarr or Radarr
+   `POST /release` per press, for one missing episode or movie, of a row from the person's own Release List
+   (`release_pick_lists`, read at most 25 minutes earlier), behind the `release_pick` remedy and after its Repair Request
+   (`release_pick`, one unit of the hourly budget) is committed. A row the *arr approved goes back as `{guid, indexerId}`;
+   every other row as the override body the *arr's own UI sends (this series and episode, or this movie, at the row's
+   own quality and languages), and only when every reason is overridable (owner ruling Q-01: anyone who can use Fix, a
+   missing item, within the budget; the hard-refusal list applies to everyone, admins included). It downloads, never
+   deletes or blocks anything; a grab the *arr cannot file is imported through the Import Check above. Through
+   `@hnet/arr/write` from `packages/domain` only.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see

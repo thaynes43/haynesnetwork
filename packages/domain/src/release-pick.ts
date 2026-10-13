@@ -1,4 +1,4 @@
-// ADR-109 C-02, C-04, C-06 / DESIGN-055 D-06 (PLAN-077 P5) — the RELEASE PICK (T-311): every release for one missing
+// ADR-109 C-02, C-04, C-06 / DESIGN-055 D-06 (PLAN-077 P5) — the RELEASE PICK (T-307): every release for one missing
 // episode or movie, the *arr's reasons in plain words, a grab of an approved one, and the guarded override of a rejected
 // one under the owner's Q-01 ruling (anyone who can use Fix, a missing episode or movie only, within the hourly budget,
 // and only when every reason is on the overridable list; the hard-refusal list applies to everyone, admins included).
