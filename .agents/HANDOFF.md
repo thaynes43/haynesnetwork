@@ -1,5 +1,32 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-13 23:20Z: Codex takeover, v0.125.0 deployed and P7 on; #928 replacements underway
+
+- [PLAN-077](plans/077-self-service-media-repair.md) remains active. Read the updated
+  [cold-start note](context/2026-10-13-self-service-repair-codex-handoff.md) before resuming.
+- [#965](https://github.com/thaynes43/haynesnetwork/pull/965) and
+  [release #968](https://github.com/thaynes43/haynesnetwork/pull/968) merged; the image and signature were verified,
+  then [haynes-ops #3905](https://github.com/thaynes43/haynes-ops/pull/3905) deployed v0.125.0. All three web replicas,
+  every active frontend app pod and all 26 app CronJob templates use it. Migrations 0105 to 0107 and both bounded
+  verification Jobs passed. Historical finished Job pods were retained.
+- P7 comment and resolve are on as user 19. Owned Ghost fixture issue 5 passed invitation, pending, resolve and
+  deletion checks at 23:09Z, with no library writes. Issues 1 to 4 were unchanged. The fixture is excluded from
+  OC-052 and member-use evidence.
+- Q-12 was asked through the owner's question tool after that check, recommending web push. Answer pending;
+  Seerr email and web push remain off. No readiness count or default-policy question was asked.
+- #928 underway: `frontend/p077-ben10-replace-batch-10132320` is running approved S1 E10/E12 replacements;
+  Mickey's 23 initial slots are approved (22 AndreMor, E11 GoApe 720p), waiting for Ben's verified carries.
+  Pokémon's fresh plan is complete, with alternatives under final review. Media activity `act-231926-392897`
+  expires 2026-10-14T01:19:26Z; end it once all media work is verified. Never replay a completed batch slot.
+- [Ben and Mickey content-copy evidence](context/2026-10-13-ben-mickey-wrong-content-copy-mappings.md) and
+  [Pokémon evidence](context/2026-10-13-pokemon-wrong-content-copy-mappings.md) preserve IDs, names, bytes and
+  physical content proofs. Recheck identity before mapping; old marks never credit that slot's replacement.
+  Mickey E13 to E16 run last, after the new E07 to E08 content is proved. Actual import and content verification
+  are still owed, even after a grab succeeds.
+- OC-056 stays pending until **2026-10-15T20:10Z** and closed Fixes. Paw Patrol's TVDB airing ordering switch
+  must finish inside a verified Watch Carry before regenerating its season plan. Keep the only Runaway Stargazer
+  file. P8 remains lightweight staff working practice; the owner alone judges readiness.
+
 ## 2026-10-13 23:30Z: HANDOFF TO CODEX. Self-service media repair program: P0 to P6 live, P7 released but not deployed, PR #965 ready
 
 - **Start here:** `.agents/context/2026-10-13-self-service-repair-codex-handoff.md` has the goal, phase status, the resume steps in order, every owner ruling and the ops facts.
