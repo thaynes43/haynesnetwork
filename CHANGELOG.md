@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.123.1](https://github.com/thaynes43/haynesnetwork/compare/v0.123.0...v0.123.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **domain:** ADR-115 records the household audio default; a stored other language is never a no-op ([#960](https://github.com/thaynes43/haynesnetwork/issues/960)) ([b559718](https://github.com/thaynes43/haynesnetwork/commit/b5597187575c456522edc9c5d98004a2167cab30))
+
 ## [0.123.0](https://github.com/thaynes43/haynesnetwork/compare/v0.122.2...v0.123.0) (2026-10-13)
 
 
