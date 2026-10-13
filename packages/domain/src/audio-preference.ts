@@ -121,21 +121,32 @@ const SERVER_NAMES: Record<PlexServerName, string> = {
 
 const isServerSlug = (slug: string): slug is PlexServerName => (PLEX_SERVERS as readonly string[]).includes(slug);
 
-/** The title's Plex items (ADR-047 match), one per server: the first library's item when a server holds it twice. */
-async function plexItemsFor(db: DbClient | undefined, mediaItemId: string) {
+/**
+ * The title's Plex items (ADR-047 match), one per server. A title can match in two libraries of one server, a show in
+ * its TV library and a same-named movie in a movie library (12 Sonarr titles live, 2026-10-13: Love, Death & Robots on
+ * HaynesOps matched movie 11764 before show 55811). The item in a library of the title's own kind wins (`show` for
+ * Sonarr, `movie` for Radarr), then the lowest rating key.
+ */
+async function plexItemsFor(db: DbClient | undefined, mediaItemId: string, kind: 'show' | 'movie') {
   const rows = await resolveDb(db)
-    .select({ slug: plexServers.slug, name: plexServers.name, ratingKey: mediaPlexMatches.ratingKey })
+    .select({
+      slug: plexServers.slug,
+      name: plexServers.name,
+      ratingKey: mediaPlexMatches.ratingKey,
+      mediaType: plexLibraries.mediaType,
+    })
     .from(mediaPlexMatches)
     .innerJoin(plexLibraries, eq(plexLibraries.id, mediaPlexMatches.plexLibraryId))
     .innerJoin(plexServers, eq(plexServers.id, plexLibraries.serverId))
     .where(eq(mediaPlexMatches.mediaItemId, mediaItemId))
     .orderBy(asc(plexServers.slug), asc(mediaPlexMatches.ratingKey));
+  const ordered = [...rows.filter((r) => r.mediaType === kind), ...rows.filter((r) => r.mediaType !== kind)];
   const out: Array<{ slug: PlexServerName; name: string; ratingKey: string }> = [];
-  for (const row of rows) {
+  for (const row of ordered) {
     if (!isServerSlug(row.slug) || out.some((o) => o.slug === row.slug)) continue;
     out.push({ slug: row.slug, name: row.name || SERVER_NAMES[row.slug], ratingKey: row.ratingKey });
   }
-  return out;
+  return out.sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
 /** One server's read, never throwing: an unreachable server is recorded as such and left out of the write. */
@@ -268,7 +279,7 @@ export async function previewAudioPreference(input: AudioPreferenceInput): Promi
   const verdict = languageVerdict(audio, wanted);
   const originalCode = languageCodeFromArrName(originalName);
 
-  const matches = await plexItemsFor(input.db, item.id);
+  const matches = await plexItemsFor(input.db, item.id, isShow ? 'show' : 'movie');
   const servers = await Promise.all(
     matches.map(async (m) => {
       const pref = await input.plex.read[m.slug].getAudioLanguagePreference(m.ratingKey).catch(() => null);
@@ -564,7 +575,7 @@ export async function scanAudioDefaults(input: {
     const plex: AudioScanFinding['plex'] = [];
     const servers: AudioPreferenceServer[] = [];
     if (item) {
-      for (const m of await plexItemsFor(input.db, item.id)) {
+      for (const m of await plexItemsFor(input.db, item.id, 'show')) {
         const pref = await input.plex.read[m.slug].getAudioLanguagePreference(m.ratingKey).catch(() => null);
         plex.push({ server: m.name, current: pref?.value ?? '', unreachable: pref === null });
         servers.push(serverFromRead(m, pref, original));
