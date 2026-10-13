@@ -131,6 +131,9 @@ export * from './import-check';
 export * from './queue-aware-search';
 // ADR-111 C-01 / DESIGN-055 D-10..D-12 (PLAN-077 P3) — the Seerr Issue mirror, its staff note and its reads.
 export * from './seerr-issues';
+// ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the Seerr Issue bridge's comment and resolve.
+export * from './seerr-issue-writes';
+export * from './seerr-issue-link';
 // DESIGN-055 D-07 P2 decision 13 (PLAN-077 P3) — Activity's admin Import Check row.
 export * from './activity-import-check';
 // ADR-109 C-02, C-03 / DESIGN-055 D-04 (PLAN-077 P4) — the Episode Re-map: its plan (pure) and its run.

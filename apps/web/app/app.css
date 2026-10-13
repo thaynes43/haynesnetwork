@@ -1100,6 +1100,35 @@ button.motd__dismiss:hover {
 .seerr-admin__form {
   max-width: none;
 }
+/* PLAN-077 P7 — the bridge's replies on a report, and its settings card above the list. */
+.seerr-admin__reply {
+  overflow-wrap: anywhere;
+}
+.seerr-bridge {
+  margin-bottom: var(--space);
+}
+.seerr-bridge__lead {
+  max-width: 760px;
+  font-size: 13px;
+}
+.seerr-bridge__lead a {
+  color: var(--color-accent);
+}
+.seerr-bridge__user {
+  font-size: 13px;
+}
+.seerr-bridge__hint {
+  display: block;
+  font-size: 12.5px;
+}
+.seerr-bridge__field input {
+  max-width: 10em;
+}
+.seerr-bridge__status {
+  display: inline-block;
+  min-width: 16em; /* the widest status, so the Save row never shifts */
+  font-size: 12.5px;
+}
 
 /* ---------- Connected apps (ADR-091 C-10 / DESIGN-050 D-08) ---------- */
 /* One row per connection. ADR-015: the action slot always holds the width of its widest label — the

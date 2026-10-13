@@ -136,6 +136,8 @@ test.describe('the language-aware Wrong language (ADR-109 C-07 / DESIGN-055 D-08
       await setRemedies(page, false);
       // Close the S01E06 Fix this file opened, so no later spec meets an open fix.
       await page.goto('/admin/fixes');
+      // The list loads after the page: wait for it, or the count below finds no button and the fix stays open.
+      await expect(page.locator('.admin-table tbody tr').first()).toBeVisible();
       const row = page.locator('.admin-table tbody tr').filter({ hasText: 'Breaking Prod' }).filter({ hasText: 'S01E06' });
       const closeButtons = row.getByRole('button', { name: /Close the open fix/ });
       if ((await closeButtons.count()) > 0) {

@@ -39,6 +39,8 @@ import {
   WATCH_SHOW_STATUSES,
   WATCH_TITLE_KINDS,
   APP_SETTING_KEYS,
+  SEERR_ISSUE_WRITE_KINDS,
+  SEERR_ISSUE_WRITE_STATES,
   DELETED_RELEASE_ARR_KINDS,
   DELETED_RELEASE_IDENTITY_SOURCES,
   TITLE_EXCLUSION_ARR_KINDS,
@@ -2954,6 +2956,8 @@ describe('migrations against embedded Postgres 16', () => {
         ['trash_batch_items_keep_reason_enum', TRASH_KEEP_REASONS],
         ['sync_runs_run_kind_enum', SYNC_RUN_KINDS],
         ['app_settings_key_enum', APP_SETTING_KEYS],
+        ['seerr_issue_writes_kind_enum', SEERR_ISSUE_WRITE_KINDS],
+        ['seerr_issue_writes_state_enum', SEERR_ISSUE_WRITE_STATES],
       ];
       for (const [conname, values] of pairs) {
         expect(await checkValues(conname), conname).toEqual([...values].sort());
@@ -3281,6 +3285,45 @@ describe('migrations against embedded Postgres 16', () => {
         expect(nullable.rows[0].is_nullable).toBe('YES');
       } finally {
         await client.query(`DELETE FROM mislabel_block_terms WHERE series_id BETWEEN 9102000 AND 9102099`);
+      }
+    });
+  });
+
+  describe('0105 seerr_issue_writes (ADR-111 C-03 / DESIGN-055 D-10, PLAN-077 P7)', () => {
+    it('creates the bridge write rows with their CHECKs (one per issue and kind, never user 1), the Fix link column and the setting key', async () => {
+      await client.query(
+        `INSERT INTO seerr_issues (seerr_issue_id, issue_type, status, seerr_created_at, seerr_updated_at, read_at)
+         VALUES (990105, 1, 'open', now(), now(), now())`,
+      );
+      const write = (kind: string, state: string, user: number, doneAt: string | null) =>
+        client.query({
+          text: `INSERT INTO seerr_issue_writes (seerr_issue_id, kind, state, body, seerr_user_id, done_at)
+                 VALUES (990105, $1, $2, 'Thanks for the report.', $3, $4::timestamptz) RETURNING id`,
+          values: [kind, state, user, doneAt],
+        });
+      try {
+        await write('comment', 'intended', 19, null);
+        // One per issue and kind, ever.
+        await expect(write('comment', 'done', 19, new Date().toISOString())).rejects.toMatchObject({ code: '23505' });
+        await write('resolve', 'done', 19, new Date().toISOString());
+        await client.query(`DELETE FROM seerr_issue_writes WHERE seerr_issue_id = 990105 AND kind = 'resolve'`);
+        // Never the owner's account; `done` iff done_at; known kinds and states only.
+        await expect(write('resolve', 'intended', 1, null)).rejects.toMatchObject({ code: '23514' });
+        await expect(write('resolve', 'done', 19, null)).rejects.toMatchObject({ code: '23514' });
+        await expect(write('resolve', 'failed', 19, new Date().toISOString())).rejects.toMatchObject({ code: '23514' });
+        await expect(write('delete', 'intended', 19, null)).rejects.toMatchObject({ code: '23514' });
+        await expect(write('resolve', 'posted', 19, null)).rejects.toMatchObject({ code: '23514' });
+        // The mirror row cannot go while a write names it.
+        await expect(client.query(`DELETE FROM seerr_issues WHERE seerr_issue_id = 990105`)).rejects.toMatchObject({ code: '23503' });
+        const col = await client.query(
+          `SELECT is_nullable FROM information_schema.columns WHERE table_name = 'fix_requests' AND column_name = 'seerr_issue_id'`,
+        );
+        expect(col.rows[0].is_nullable).toBe('YES');
+        await client.query(`INSERT INTO app_settings (key, value) VALUES ('seerr_issue_bridge', '{}'::jsonb)`);
+        await client.query(`DELETE FROM app_settings WHERE key = 'seerr_issue_bridge'`);
+      } finally {
+        await client.query(`DELETE FROM seerr_issue_writes WHERE seerr_issue_id = 990105`);
+        await client.query(`DELETE FROM seerr_issues WHERE seerr_issue_id = 990105`);
       }
     });
   });
@@ -3927,6 +3970,17 @@ describe('migration journal integrity (_journal.json — the incremental-apply i
     expect(entry!.when).toBeGreaterThan(prev!.when);
     const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0090_book_requests_ll_rerequest_added.sql'), 'utf8');
     expect(sqlText).toContain('ADD COLUMN "ll_rerequest_added_at" timestamp with time zone');
+  });
+
+  // PLAN-077 P7 gate — the Seerr Issue bridge's writes are journaled (idx 104), after 0104.
+  it('lists 0105_seerr_issue_writes at idx 104, strictly after 0104_watch_carries', () => {
+    const entry = journal.entries.find((e) => e.tag === '0105_seerr_issue_writes');
+    const prev = journal.entries.find((e) => e.tag === '0104_watch_carries');
+    expect(entry?.idx).toBe(104);
+    expect(entry!.when).toBeGreaterThan(prev!.when);
+    const sqlText = readFileSync(join(DEFAULT_MIGRATIONS_FOLDER, '0105_seerr_issue_writes.sql'), 'utf8');
+    expect(sqlText).toContain('CREATE TABLE "seerr_issue_writes"');
+    expect(sqlText).toContain("'seerr_issue_bridge'");
   });
 
   // PLAN-077 P5 gate — the Release Pick's lists are journaled (idx 102), after 0102.

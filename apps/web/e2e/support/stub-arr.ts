@@ -32,6 +32,8 @@
 //   POST /_stub/seerr-issues → 204; body { issues } — ADR-111 / DESIGN-055 D-10 (PLAN-077 P3): the Seerr issues
 //                        `GET /issue`, `GET /issue/{id}` and `GET /issue/count` serve (Seerr 3.5.0's shapes). No body
 //                        (or `issues: null`) restores seerrIssueFixture(); `issues: []` serves none. Cleared by reset.
+//                        PLAN-077 P7: `POST /issue/{id}/comment` and `POST /issue/{id}/resolved` change them and are
+//                        recorded with `actingUser` (the `X-API-User` header); `GET /user/19` is the bridge user.
 //   POST /_stub/remap → 204; body { on } — ADR-109 C-02 / DESIGN-055 D-04, D-05 (PLAN-077 P4): Breaking Prod gains a
 //                        Season 3 whose library files can move (remapSeasonFixture(), Case A's shape: seven BiOMA files
 //                        one slot low from E11, E12 and E19 free, plus a FLUX file on E02 whose name says it is E01). While
@@ -68,6 +70,8 @@ export interface RecordedArrWrite {
   path: string;
   query: Record<string, string>;
   body: unknown;
+  /** ADR-111 C-03 (PLAN-077 P7) — Seerr's `X-API-User` (the user a write acts as), when the call sent one. */
+  actingUser?: string;
 }
 
 export interface StubArrServer {
@@ -1224,6 +1228,11 @@ export const SEERR_ISSUE_MISSING_EPISODE = 901;
 export const SEERR_ISSUE_AUDIO_MOVIE = 902;
 export const SEERR_ISSUE_RESOLVED = 903;
 export const SEERR_ISSUE_NOT_IN_LIBRARY = 904;
+/**
+ * ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the stub Seerr's bridge user: a local user holding only MANAGE_ISSUES,
+ * served by `GET /user/19`. The stub records the `X-API-User` of every write as `actingUser`.
+ */
+export const STUB_SEERR_BRIDGE_USER_ID = 19;
 
 export function seerrIssueFixture(): Array<Record<string, unknown>> {
   const user = (id: number, name: string, email: string) => ({
@@ -1320,7 +1329,9 @@ export async function startStubArr(): Promise<StubArrServer> {
   // ManualImport put on disk (cleared by reset).
   let importCheckFixtures = false;
   // ADR-111 / DESIGN-055 D-10 — the served Seerr issues (null: seerrIssueFixture()); POST /_stub/seerr-issues sets them.
+  // PLAN-077 P7: the bridge's comment and resolve change them (a write first copies the fixture into the override).
   let seerrIssuesOverride: Array<Record<string, unknown>> | null = null;
+  let nextSeerrCommentId = 9500;
   // ADR-109 C-02 / DESIGN-055 D-04 — the Episode Re-map season (POST /_stub/remap); null while off.
   let remapState: RemapStubState | null = null;
   // ADR-109 / DESIGN-055 D-06 — the Release Pick fixtures (POST /_stub/release-pick), the bodies of the `POST /release`
@@ -1367,6 +1378,7 @@ export async function startStubArr(): Promise<StubArrServer> {
         releaseGrabQueue = [];
         importCheckFixtures = false;
         seerrIssuesOverride = null;
+        nextSeerrCommentId = 9500;
         remapState = null;
         commandLog = [];
         nextCommandId = 4242;
@@ -1426,6 +1438,20 @@ export async function startStubArr(): Promise<StubArrServer> {
       // ADR-093 / DESIGN-052 D-02 / D-20 — Seerr's users and each user's watchlist (SEERR_URL points here; the path is
       // normalized, so `/api/v1/user` is `/user`). Seerr user 1 is the owner, user 2 the member (a friend); the
       // member's list holds Stub Dune, a title that is NOT in the Trash pool.
+      // ADR-111 C-03 (PLAN-077 P7) — one Seerr user: the bridge user, read before every bridge pass; others are unknown.
+      const seerrUser = /^\/user\/(\d+)$/.exec(path);
+      if (method === 'GET' && seerrUser) {
+        return Number(seerrUser[1]) === STUB_SEERR_BRIDGE_USER_ID
+          ? json(res, 200, {
+              id: STUB_SEERR_BRIDGE_USER_ID,
+              permissions: 1048576,
+              userType: 2,
+              displayName: 'haynesnetwork.com',
+              username: 'haynesnetwork.com',
+              email: 'seerr-bridge@example.test',
+            })
+          : json(res, 404, { message: 'User not found.' });
+      }
       if (method === 'GET' && path === '/user') {
         return json(res, 200, {
           pageInfo: { pages: 1, pageSize: 100, results: 2, page: 1 },
@@ -1589,7 +1615,35 @@ export async function startStubArr(): Promise<StubArrServer> {
       if (method === 'POST' || method === 'DELETE' || method === 'PUT') {
         const raw = await readBody(req);
         const body = raw === '' ? undefined : (JSON.parse(raw) as unknown);
-        calls.push({ method, path, query, body });
+        const actingUser = req.headers['x-api-user'];
+        calls.push({ method, path, query, body, ...(actingUser !== undefined ? { actingUser: String(actingUser) } : {}) });
+
+        // ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — Seerr's issue comment (`{message}`) and resolve, as the user
+        // `X-API-User` names (user 1, the owner, without it). Each answers with the whole issue, as Seerr 3.5.0 does.
+        const issueWrite = method === 'POST' ? /^\/issue\/(\d+)\/(comment|resolved)$/.exec(path) : null;
+        if (issueWrite) {
+          seerrIssuesOverride ??= seerrIssueFixture();
+          const target = seerrIssuesOverride.find((i) => Number(i.id) === Number(issueWrite[1]));
+          if (!target) return json(res, 500, { message: 'Issue not found.' });
+          const now = new Date().toISOString();
+          if (issueWrite[2] === 'comment') {
+            const comments = (target.comments as Array<Record<string, unknown>> | undefined) ?? [];
+            target.comments = [
+              ...comments,
+              {
+                id: nextSeerrCommentId++,
+                message: (body as { message?: string } | undefined)?.message ?? '',
+                createdAt: now,
+                updatedAt: now,
+                user: { id: Number(actingUser ?? 1) },
+              },
+            ];
+          } else {
+            target.status = 2;
+          }
+          target.updatedAt = now;
+          return json(res, 200, target);
+        }
 
         // POST /history/failed/{id} — the AC-07 blocklist write. No response body.
         if (method === 'POST' && /^\/history\/failed\/\d+$/.test(path)) {

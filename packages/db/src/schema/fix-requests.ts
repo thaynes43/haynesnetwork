@@ -65,6 +65,12 @@ export const fixRequests = pgTable(
       onDelete: 'set null',
     }),
     // the observed replacement-import event that closed the loop (ADR-007 C-06)
+    /**
+     * ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7, migration 0105) — the open Seerr issue this Fix answers, set only when
+     * the guide was opened from that issue's report on the same title (validated by the writer); its completion lets the
+     * bridge resolve the issue. Null otherwise.
+     */
+    seerrIssueId: integer('seerr_issue_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -103,6 +109,7 @@ export const fixRequests = pgTable(
     index('fix_requests_requester_created_idx').on(t.requesterId, t.createdAt.desc()),
     index('fix_requests_item_idx').on(t.mediaItemId),
     index('fix_requests_status_idx').on(t.status),
+    index('fix_requests_seerr_issue_idx').on(t.seerrIssueId).where(sql`${t.seerrIssueId} IS NOT NULL`),
   ],
 );
 

@@ -30,6 +30,7 @@ import {
   NotFoundError,
 } from './errors';
 import { inTransaction } from './db-client';
+import { seerrIssueLinkFor } from './seerr-issue-link';
 import { effectiveMediaActionBudget, mediaActionBudgetReachedMessage } from './media-action-budgets';
 import { FIX_TIMEOUT_HORIZON_MS, OPEN_FIX_STATUSES, countRecentFixBudget } from './fix-requests';
 
@@ -59,6 +60,11 @@ export interface CreateRepairRequestInput {
   reason?: FixReason | null;
   /** Exactly what the person was shown and confirmed. */
   preview: Record<string, unknown>;
+  /**
+   * PLAN-077 P7 — the Seerr issue the guide was opened from. Kept only for an open, mirrored issue on this title
+   * (`seerrIssueLinkFor`); anything else links nothing and the repair goes ahead. Its completion resolves the issue.
+   */
+  seerrIssueId?: number | null;
 }
 
 /** A literal integer[] for an id list that came through zod as integers (never interpolates anything else). */
@@ -228,9 +234,11 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
         ? { email: requester.email, displayName: requester.displayName }
         : { staffTool: 'repair-guide.ts' },
     };
+    const seerrIssueId = await seerrIssueLinkFor(tx, { seerrIssueId: input.seerrIssueId, mediaItemId: input.mediaItemId });
     const [row] = await tx
       .insert(repairRequests)
       .values({
+        seerrIssueId,
         requesterId: input.requesterId,
         mediaItemId: input.mediaItemId,
         kind: input.kind,

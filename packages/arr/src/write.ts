@@ -32,6 +32,7 @@ import type { ArrReleaseGrab, RadarrReleaseOverrideGrab, SonarrReleaseOverrideGr
 import { sonarrSeriesSchema, type SonarrSeries } from './schemas/sonarr';
 import { radarrMovieSchema, type RadarrMovie } from './schemas/radarr';
 import { lidarrArtistSchema, type LidarrArtist } from './schemas/lidarr';
+import { seerrIssueSchema, type SeerrIssue } from './schemas/seerr';
 import { z } from 'zod';
 import { RELEASE_SEARCH_TIMEOUT_MS, type ArrClientOptions } from './read';
 
@@ -676,8 +677,12 @@ export class MaintainerrWriteClient {
  * - `setSonarrAnimeTags(serverId, animeTags)` — `GET /settings/sonarr`, then `PUT /settings/sonarr/{id}` with the SAME
  *   server object and `animeTags` replaced (Seerr's PUT replaces the whole object), then a read-back. The object holds
  *   the Sonarr API key: it is echoed to Seerr and never returned, logged or stored.
+ * - `commentOnIssue(issueId, message, asUserId)` and `resolveIssue(issueId, asUserId)` (ADR-111 C-03 / DESIGN-055 D-10,
+ *   PLAN-077 P7): the Seerr Issue bridge's two writes, `POST /issue/{id}/comment` with `{message}` and
+ *   `POST /issue/{id}/resolved` with no body (the bodies Seerr 3.5.0's own UI sends), each with `X-API-User` naming the
+ *   bridge user, so Seerr records the bridge user and never the owner's account. User 1 is refused before any call.
  *
- * Neither body ever leaves this class; callers get flags and ids only.
+ * The settings bodies never leave this class; callers get flags and ids only.
  */
 export class SeerrWriteClient {
   private readonly http: ArrHttp;
@@ -724,6 +729,36 @@ export class SeerrWriteClient {
     if (!saved) throw new Error(`seerr: Sonarr server ${serverId} missing after the write`);
     return saved;
   }
+
+  /**
+   * ADR-111 C-03 — post one comment on an issue as the bridge user (`X-API-User`). Seerr answers with the whole issue,
+   * its comments and their authors, from which the caller finds the comment it posted. Not retried here (a POST is not
+   * idempotent); the caller's write row decides whether a retry is safe.
+   */
+  commentOnIssue(issueId: number, message: string, asUserId: number): Promise<SeerrIssue> {
+    return this.http.requestJson('POST', `issue/${encodeURIComponent(String(issueId))}/comment`, seerrIssueSchema, {
+      body: { message },
+      headers: bridgeUserHeader(asUserId),
+    });
+  }
+
+  /** ADR-111 C-03 — mark an issue resolved as the bridge user (`X-API-User`). Seerr answers with the issue. */
+  resolveIssue(issueId: number, asUserId: number): Promise<SeerrIssue> {
+    return this.http.requestJson('POST', `issue/${encodeURIComponent(String(issueId))}/resolved`, seerrIssueSchema, {
+      headers: bridgeUserHeader(asUserId),
+    });
+  }
+}
+
+/**
+ * ADR-111 C-03 (the owner's Q-02 ruling) — the header that makes Seerr's API key act as the bridge user. Without it the
+ * key acts as user 1, the owner's admin account, so a missing, non-integer or owner id is refused before any call.
+ */
+function bridgeUserHeader(asUserId: number): Record<string, string> {
+  if (!Number.isSafeInteger(asUserId) || asUserId <= 1) {
+    throw new Error('seerr: an issue write must name the bridge user (never user 1, the owner)');
+  }
+  return { 'X-API-User': String(asUserId) };
 }
 
 export interface ArrWriteClients {

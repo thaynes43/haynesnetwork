@@ -63,6 +63,12 @@ export class QueueCleanupConfigInvalidError extends Error {
   readonly code = 'QUEUE_CLEANUP_CONFIG_INVALID' as const;
 }
 
+/** ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7): a Seerr Issue bridge setting that cannot be stored (a switch on with no
+ * bridge user, or a bridge user that is Seerr user 1, the owner). Thrown before any row is written. Maps to BAD_REQUEST. */
+export class SeerrBridgeConfigInvalidError extends Error {
+  readonly code = 'SEERR_BRIDGE_CONFIG_INVALID' as const;
+}
+
 // ---------------------------------------------------------------------------
 // DESIGN-005 Phase 2 — media ledger / fix / sync errors (D-09, D-14, D-17).
 // ---------------------------------------------------------------------------

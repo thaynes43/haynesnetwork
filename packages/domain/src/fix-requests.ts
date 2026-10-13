@@ -20,6 +20,7 @@ import {
   NotFoundError,
 } from './errors';
 import { inTransaction } from './db-client';
+import { seerrIssueLinkFor } from './seerr-issue-link';
 import { effectiveMediaActionBudget, mediaActionBudgetReachedMessage } from './media-action-budgets';
 import { resolveFixTarget, type FixScope, type SearchScope } from './action-scope';
 
@@ -149,6 +150,11 @@ export interface CreateFixRequestInput {
   reason: FixReason;
   /** Required iff reason === 'other' — backstopped by the D-09 CHECK (SQLSTATE 23514). */
   reasonText?: string | null;
+  /**
+   * PLAN-077 P7 — the Seerr issue the guide was opened from. Kept only for an open, mirrored issue on this title
+   * (`seerrIssueLinkFor`); anything else links nothing and the Fix goes ahead. Its completion resolves the issue.
+   */
+  seerrIssueId?: number | null;
 }
 
 export interface CreateFixRequestResult {
@@ -275,6 +281,7 @@ export async function createFixRequest(
     const [fix] = await tx
       .insert(fixRequests)
       .values({
+        seerrIssueId: await seerrIssueLinkFor(tx, { seerrIssueId: input.seerrIssueId, mediaItemId: input.mediaItemId }),
         requesterId: input.requesterId,
         mediaItemId: input.mediaItemId,
         targetScope: scope,

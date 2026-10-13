@@ -10,6 +10,16 @@ import { redactSecrets } from './redact';
 
 export type QueryParams = Record<string, string | number | boolean | undefined>;
 
+/**
+ * One request's options. `headers` adds request-specific headers (ADR-111 C-03: Seerr's `X-API-User`, which makes the
+ * API key act as that Seerr user); they can never replace the API key, `Accept` or `Content-Type`.
+ */
+export interface RequestOptions {
+  query?: QueryParams;
+  body?: unknown;
+  headers?: Record<string, string>;
+}
+
 export interface ArrHttpOptions {
   /** Service origin WITHOUT the API base path, e.g. `http://sonarr.media.svc.cluster.local:8989`. */
   baseUrl: string;
@@ -102,7 +112,12 @@ export class ArrHttp {
    * One attempt: fetch with timeout. Throws ArrTimeoutError / ArrHttpError / network errors. The error snippet is
    * read under the timer; with `timeoutCoversBody` a 2xx body is too (buffered, then handed back as a new Response).
    */
-  private async attempt(method: string, url: string, body?: unknown): Promise<Response> {
+  private async attempt(
+    method: string,
+    url: string,
+    body?: unknown,
+    extraHeaders?: Record<string, string>,
+  ): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
@@ -111,6 +126,7 @@ export class ArrHttp {
         response = await this.fetchImpl(url, {
           method,
           headers: {
+            ...(extraHeaders ?? {}),
             [this.apiKeyHeader]: this.apiKey,
             Accept: 'application/json',
             ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
@@ -151,7 +167,7 @@ export class ArrHttp {
   async request(
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
-    options: { query?: QueryParams; body?: unknown } = {},
+    options: RequestOptions = {},
   ): Promise<Response> {
     const url = this.buildUrl(path, options.query);
     const attempts = method === 'GET' ? 1 + this.getRetries : 1;
@@ -159,7 +175,7 @@ export class ArrHttp {
     for (let i = 0; i < attempts; i++) {
       if (i > 0) await sleep(this.retryBackoffMs(i));
       try {
-        return await this.attempt(method, url, options.body);
+        return await this.attempt(method, url, options.body, options.headers);
       } catch (error) {
         lastError = error;
         const retryable =
@@ -177,7 +193,7 @@ export class ArrHttp {
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     schema: ZodType<T>,
-    options: { query?: QueryParams; body?: unknown } = {},
+    options: RequestOptions = {},
   ): Promise<T> {
     const response = await this.request(method, path, options);
     const url = response.url || this.buildUrl(path, options.query);
@@ -205,7 +221,7 @@ export class ArrHttp {
   async requestVoid(
     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
-    options: { query?: QueryParams; body?: unknown } = {},
+    options: RequestOptions = {},
   ): Promise<void> {
     const response = await this.request(method, path, options);
     await response.text().catch(() => ''); // drain — bodies may be empty or non-JSON

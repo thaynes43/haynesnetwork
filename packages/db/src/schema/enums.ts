@@ -923,6 +923,12 @@ export const APP_SETTING_KEYS = [
   // 2026-10-12, so it ships empty). Won't play triage suggests another
   // server first when a person's plays reached only these. Absent ⇒ []. Audited through setAppSetting. migration 0098.
   'playback_known_issue_servers',
+  // ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the Seerr Issue bridge's settings and kill switch (jsonb object:
+  // { comment, resolve, bridgeUserId, commentFrom }): the Seerr user the comment and resolve post as (never user 1,
+  // the owner), whether each write is on, and since when new issues get the comment. Absent ⇒ both off, no user, so
+  // nothing is ever written to Seerr. Admin-mutated + audited through setAppSetting (setSeerrIssueBridge validates
+  // first). migration 0105.
+  'seerr_issue_bridge',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 
@@ -1026,6 +1032,15 @@ export const SEERR_ISSUE_TYPES = [1, 2, 3, 4] as const;
 export type SeerrIssueType = (typeof SEERR_ISSUE_TYPES)[number];
 export const SEERR_ISSUE_MEDIA_TYPES = ['movie', 'tv'] as const;
 export type SeerrIssueMediaType = (typeof SEERR_ISSUE_MEDIA_TYPES)[number];
+
+// ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7, migration 0105) — the Seerr Issue bridge's writes: what was written
+// (`comment`, the fix-it-yourself invitation; `resolve`, the outcome note then the resolve) and where each stands
+// (`intended` commits before the call, `done` after it, `failed` is retried a bounded number of times, `skipped` means
+// Seerr had already resolved or deleted the issue when the bridge came to write).
+export const SEERR_ISSUE_WRITE_KINDS = ['comment', 'resolve'] as const;
+export type SeerrIssueWriteKind = (typeof SEERR_ISSUE_WRITE_KINDS)[number];
+export const SEERR_ISSUE_WRITE_STATES = ['intended', 'done', 'failed', 'skipped'] as const;
+export type SeerrIssueWriteState = (typeof SEERR_ISSUE_WRITE_STATES)[number];
 
 // ADR-027 / DESIGN-004 D-15 (PLAN-010) — a MOTD's severity, driving the banner's token palette
 // (`--color-info` / `--color-warning`) and its ARIA role (status vs alert). Stored inside the

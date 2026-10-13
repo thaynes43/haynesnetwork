@@ -1185,6 +1185,8 @@ export interface ReleaseGrabResult {
 }
 
 export interface GrabFromReleaseListInput {
+  /** PLAN-077 P7 — the Seerr issue the guide was opened from (kept only when it is open and on this title). */
+  seerrIssueId?: number | null;
   db?: DbClient;
   arr: ArrClientBundle;
   listId: string;
@@ -1268,6 +1270,7 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
   const override = offer.state === 'override';
   const { repairRequestId } = await createRepairRequest({
     db: input.db,
+    seerrIssueId: input.seerrIssueId ?? null,
     requesterId: input.requesterId,
     requesterIsAdmin: input.requesterIsAdmin,
     mediaItemId: resolved.mediaItemId,

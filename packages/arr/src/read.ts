@@ -83,8 +83,10 @@ import {
   seerrWatchlistPageSchema,
   seerrIssuePageSchema,
   seerrIssueSchema,
+  seerrUserDetailSchema,
   type SeerrIssue,
   type SeerrIssuePage,
+  type SeerrUserDetail,
   type SeerrUserSummary,
   type SeerrWatchlistPage,
   type SeerrMainSettings,
@@ -844,6 +846,19 @@ export class SeerrClient {
       if (body.results.length === 0 || out.length >= body.pageInfo.results) return out;
     }
     throw new Error('seerr: the user list did not end within 50 pages');
+  }
+
+  /**
+   * ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — one Seerr user (`GET /api/v1/user/{id}`): its id, permission bits, type
+   * and shown name only. Null when Seerr has no such user (404). The bridge reads its user here before any write.
+   */
+  async getUser(userId: number): Promise<SeerrUserDetail | null> {
+    try {
+      return await this.http.requestJson('GET', `user/${encodeURIComponent(String(userId))}`, seerrUserDetailSchema);
+    } catch (error) {
+      if (error instanceof ArrHttpError && error.status === 404) return null;
+      throw error;
+    }
   }
 
   /** `GET /api/v1/user/{id}/watchlist?page=` — ONE raw page (classify with `readUserWatchlist`). */

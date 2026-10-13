@@ -799,12 +799,34 @@ names, never deleting a file, after a watch-state check on every Plex server and
 ### P7: Seerr writes
 
 1. Q-02 ruled B (owner, 2026-10-12). Staff create the Seerr bridge user with `MANAGE_ISSUES`; store its id in
-   `seerr_bridge_user_id`.
+   `seerr_issue_bridge` (P7 decision 2: the setting also holds the comment and resolve switches).
 2. `seerr_issue_writes` table and single writer; comment and resolve as in D-10; `X-API-User` on every call.
 3. CLAUDE.md hard rule 4: the Seerr issue comment and resolve.
 - **Tests:** `seerr-issue-writes.test.ts`: one comment across a crash and a retry; resolve only after completion.
 - **e2e:** stub Seerr records the acting user. Journey: AC-43's write half.
 - **Live check:** the next real issue gets exactly one comment from the bridge user, and is resolved after its repair.
+- **Bridge user (staff one-off, 2026-10-13 20:18Z, P7 decision 1):** `POST /api/v1/user` on Seerr (local user, username
+  "haynesnetwork.com", email `seerr-bridge@haynesnetwork.com`, random password never stored; Seerr's local login is off),
+  then `POST /api/v1/user/19/settings/permissions` with `1048576` (MANAGE_ISSUES only), read back: Seerr user 19,
+  `userType` 2, permissions 1048576. Undo: `DELETE /api/v1/user/19` (and clear the setting first).
+- **Build (2026-10-13):** DESIGN-055 "P7 decisions" (items 1-10, after D-11) record what landed and why:
+  - Migration 0105: `seerr_issue_writes` (one row per issue and kind, never user 1), `fix_requests.seerr_issue_id`, the
+    partial indexes on both link columns, and the `seerr_issue_bridge` setting key.
+  - `@hnet/arr`: `SeerrClient.getUser`, `SeerrWriteClient.commentOnIssue` / `resolveIssue` (with `X-API-User`; user 1 is
+    refused before any call), and per-request headers in `ArrHttp`.
+  - `packages/domain/src/seerr-issue-writes.ts`: the setting (`getSeerrIssueBridge`, `setSeerrIssueBridge`), the words,
+    the single writer (`runSeerrIssueBridge`: claim, read fresh, adopt or post, complete), `resolveSourceFor`, and the
+    admin reads. `seerr-issue-link.ts`: the exact link the repair and Fix writers keep (`seerrIssueLinkFor`).
+  - The bridge runs after every `seerr-issues` sync and after an issue webhook that changed the mirror (`after`).
+  - Staff tool `tsx /sync/src/scripts/seerr-bridge.ts`: `--show` (the setting, the bridge user, recent writes),
+    `--set [--user <id>|none] [--comment on|off] [--resolve on|off]` (audited, actor null), `--run [--issue <id>]`.
+  - The guide sends `seerrIssueId` from a report's banner or link (`SeerrIssueLinkContext`); `/admin/seerr` gains the
+    "Replies in Seerr" card and each report's replies.
+  - Tests: `seerr-issue-writes.test.ts` (domain), the bridge clients in `seerr-issues.test.ts` (arr), the bridge pass in
+    `seerr-issues-sync.test.ts` (sync), the settings in `seerr-issues.test.ts` (api), the webhook's pass in
+    `webhook-route.test.ts` (web), migration 0105; e2e `seerr-bridge.spec.ts` (AC-43's write half: one comment as the
+    bridge user, then the note and the resolve after Case B's import from the report's link), with the stub Seerr
+    recording `X-API-User`.
 
 ### P8: the rule (owner's judgment)
 
@@ -829,6 +851,8 @@ Owner clarification, 2026-10-12 (ADR-112, DESIGN-055 D-12): "The gate is a judgm
 ## Rollback
 
 Each remedy has its kill switch (`repair_guide_remedies`); off restores today's dialog for that remedy. Janitor cells
-go back to census through `/admin/janitor`. Seerr writes stop when `seerr_bridge_user_id` is cleared. New tables are
+go back to census through `/admin/janitor`. The Seerr comment stops when its switch in `seerr_issue_bridge` is turned off on
+`/admin/seerr` (or `seerr-bridge.ts --set --comment off`), the resolve likewise; both off stops every Seerr write, and
+deleting Seerr user 19 stops them too (each pass checks the user first). New tables are
 additive; a code revert leaves them unread. The Mislabel Block's terms can be removed by its writer (expire all) or by
 deleting the managed profile in Sonarr, which only lifts blocks.

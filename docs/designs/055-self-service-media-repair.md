@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P6 decision 14 scoped to the audit's flagged shows, ADR-115). Before that 2026-10-13 (P4 decisions 35 to 37, issue #928's evidence: a placement may change the episode count, a second parking episode for a second open cycle, the Second-Copy Fix takes a multi-episode copy). Before that 2026-10-13 (P6 decision 14 and Q-03 amended: the owner's ruling on #955, "English if present", for staff defaults). Before that 2026-10-13 (P6 decision 3: a server's item is the one in a library of the title's own kind, PR #954; P6's live status and sweep in PLAN-077). Before that 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
+- **Last updated:** 2026-10-13 (P7 decisions 1-10 after D-11: the Seerr Issue bridge as built, the bridge user, the `seerr_issue_bridge` setting, the comment's wording, one write per issue and kind, the exact link, when the resolve happens; Q-12 raised). Before that 2026-10-13 (P6 decision 14 scoped to the audit's flagged shows, ADR-115). Before that 2026-10-13 (P4 decisions 35 to 37, issue #928's evidence: a placement may change the episode count, a second parking episode for a second open cycle, the Second-Copy Fix takes a multi-episode copy). Before that 2026-10-13 (P6 decision 14 and Q-03 amended: the owner's ruling on #955, "English if present", for staff defaults). Before that 2026-10-13 (P6 decision 3: a server's item is the one in a library of the title's own kind, PR #954; P6's live status and sweep in PLAN-077). Before that 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
   missing, is a pick for all of them). Before that 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
@@ -1056,15 +1056,17 @@ the linked repairs (which tool fixed it), and "Mark fixed by hand" with a note n
 
 **Writes** (Q-02 ruling, owner, 2026-10-12: comment and resolve, never as the owner's account): through a dedicated
 Seerr user ("haynesnetwork.com", created once by staff with `MANAGE_ISSUES`; its id in the audited app setting
-`seerr_bridge_user_id`), every call sending `X-API-User`. Single writer `packages/domain/src/seerr-issue-writes.ts`,
-table `seerr_issue_writes` (`seerr_issue_id`, `kind` `comment` or `resolve`, `body`, `state` `intended`, `done` or
-`failed`, `created_at`, `done_at`; unique per issue and kind). The intended row commits before the call and is completed
-after it, so a crash never posts twice.
+`seerr_issue_bridge`, P7 decision 2), every call sending `X-API-User`. Single writer
+`packages/domain/src/seerr-issue-writes.ts`, table `seerr_issue_writes` (`seerr_issue_id`, `kind` `comment` or
+`resolve`, `body`, `state` `intended`, `done`, `failed` or `skipped`, `created_at`, `done_at`; unique per issue and
+kind; P7 decision 5 has the rest). The intended row commits before the call and is completed after it, so a crash never
+posts twice.
 
-- **Comment**, once per new issue: "Thanks for the report. You can fix this one yourself on haynesnetwork.com: <link>.
-  Sign in with your Plex account. If that doesn't sort it out, reply here and staff will take a look."
-- **Resolve**, when the linked Repair Request or Fix completes: a comment "Fixed on haynesnetwork.com: <the outcome
-  line>", then `POST /api/v1/issue/{id}/resolved`.
+- **Comment**, once per new issue, worded for the report (P7 decision 4): "Thanks for the report. You can try fixing
+  this yourself on haynesnetwork.com:", the link with "sign in with your Plex account", the button to press, and "If that
+  doesn't sort it out, reply here and staff will take a look."
+- **Resolve**, when the linked Repair Request or Fix completes (P7 decision 7): a comment "Fixed on haynesnetwork.com:
+  <the outcome line>", then `POST /api/v1/issue/{id}/resolved`.
 - Never: delete an issue, reopen one, edit any comment, or write without the bridge user.
 
 ### D-11 Reporter onboarding
@@ -1137,6 +1139,67 @@ reads behind it (Seerr 3.5.0, 4 issues, all resolved). Seerr is only read; the c
     page shows what a Force Search press would do ("Ready to import", "Needs staff", ...) and the Import Check's own
     reason. Nothing is written.
 
+**P7 decisions (2026-10-13, PLAN-077 P7).** What the build settled for D-10's writes (the owner's Q-02 ruling: comment
+and resolve, as a dedicated Seerr user, never as the owner's account), with the live reads behind it (Seerr 3.5.0).
+
+1. **The bridge user** is a staff one-off through Seerr's API (D-13), recorded in PLAN-077 P7: a local user
+   (`POST /api/v1/user`, username "haynesnetwork.com", email `seerr-bridge@haynesnetwork.com`, a random password that was
+   never stored; Seerr's local login is off, so nobody can sign in as it), then `POST /api/v1/user/19/settings/permissions`
+   with `1048576` (MANAGE_ISSUES only), read back. It is Seerr user 19. Seerr creates a local user with the default
+   permissions first; the permissions write follows in the same step. To undo: `DELETE /api/v1/user/19`. The
+   watchlist registry and the enrollment skip local users (`userType` 2), so they never touch it.
+2. **One audited setting, `seerr_issue_bridge`** (`{ comment, resolve, bridgeUserId, commentFrom }`), replaces the
+   `seerr_bridge_user_id` named above: it holds the bridge user and switches each write on or off (the kill switch).
+   Either switch on needs a bridge user above 1 (`SeerrBridgeConfigInvalidError`, BAD_REQUEST). Turning the comment on
+   stamps `commentFrom`; turning it off clears it. Written through `setAppSetting` (`update_app_setting`, the row and
+   its audit in one transaction) from the "Replies in Seerr" card on `/admin/seerr`, which also reads the bridge user
+   from Seerr live and says when it cannot post. Absent, nothing is ever written to Seerr.
+3. **Which issues get the comment:** open and not removed in the mirror, mapped to a ledger item that is not
+   tombstoned (the link has a title to open), and filed in Seerr at or after `commentFrom`. Turning the switch on never
+   reaches back: the four resolved issues of 2026-10-12, and any report filed while the switch was off, get nothing.
+4. **The wording** follows the report (`seerrCommentKind`): an episode or movie with no file is `missing` whatever its
+   type (the guide opens Force Search on it, P3 decision 5), then Audio is `wrong_language`, Subtitles `subtitles`,
+   Video on an episode or movie with a file `wont_play`, and everything else (Other, a season, a whole show, a file
+   nobody could read) `other`, which names both buttons. Whether the episode has a file is Sonarr's episode list; a
+   movie's is the ledger's file count. Every comment opens "Thanks for the report. You can try fixing this yourself on
+   haynesnetwork.com:", gives the `/r/seerr/<id>` link as step 1, the button and reason to press as steps 2 and 3, and
+   ends "If that doesn't sort it out, reply here and staff will take a look." (ADR-112 C-04: filing stays open and staff
+   still help). A Won't play comment adds the server tip from the hand reply on issue 2. The link is written out:
+   Seerr renders a comment with only paragraphs, emphasis and lists, so a Markdown link would lose its address. The
+   exact texts are `seerrIssueCommentText` in `packages/domain/src/seerr-issue-writes.ts`, pinned by its tests.
+5. **One comment per issue, ever** (`seerr_issue_writes`, unique per issue and kind; the row is the audit, the
+   repair_requests pattern). The single writer inserts the `intended` row and commits it before any call; whoever
+   inserts it (or takes back a `failed` row under 5 attempts, or an `intended` row older than 5 minutes) owns the call,
+   so the sync and a webhook arriving together never both post. Before posting it reads the issue fresh: a comment the
+   bridge user already left with the same text is adopted (`done`, no post), which covers a crash after the post and a
+   lost answer; an issue Seerr resolved or deleted first is `skipped`. A retry keeps the first body. A failed call
+   records its error on the row, shown in `/admin/seerr` with the number of tries.
+6. **The exact link P3 deferred** (P3 decision 9): `repair_requests.seerr_issue_id` is now set, and
+   `fix_requests.seerr_issue_id` added (migration 0105), only when the guide was opened from that report (its banner,
+   or the link's first visit; kept when the guide hands Fix over to Force Search) and the issue is open, mirrored and on
+   the same title (`seerrIssueLinkFor`, read in the writer's transaction). Anything else links nothing and the repair
+   goes ahead. The remedies send it (`seerrIssueId` on `fix.create`, `forceSearch`, `remap`, `setAudioPreference` and
+   `releaseGrab`) from the guide's context; the staff tools never set it.
+7. **When the resolve happens:** among the Repair Requests and Fixes that name the issue, nothing is still open
+   (`pending`, `actioned`, `search_triggered`) and the newest has `completed`, which is read, never assumed (D-02). A
+   failed, timed-out or closed newest record leaves the issue for staff. A Force Search on its own leaves no record with
+   an end, so it never resolves anything; nor does a Missing subtitles Fix, which rests at `search_triggered`. One
+   resolve per issue, ever: a report the reporter reopens stays with staff.
+8. **The resolve** is the outcome note as a bridge comment, then `POST /api/v1/issue/{id}/resolved` (no body, as the
+   UI sends), its answer read for status 2. The note names the tool that fixed it (ADR-112 C-02, the reply teaches the
+   tool), for example "Fixed on haynesnetwork.com: Force Search found the stuck download for S02E06 and imported it.",
+   and ends "If something still isn't right, use Reopen with Comment and staff will take a look." (Seerr's own button
+   on a resolved issue). A note that posted before a failed resolve is found on the retry and not posted again.
+9. **When the bridge runs:** after every `seerr-issues` sync (every 10 minutes, on a fresh mirror only), and after an
+   issue webhook whose read changed the mirror, for that issue only, once the 202 is sent (Next.js `after`), so a new
+   report gets its comment within seconds. The bridge's own comment comes back as a webhook and finds its row done.
+   Each pass reads the bridge user first (`GET /api/v1/user/{id}`): missing, an admin, without MANAGE_ISSUES, or user 1,
+   and nothing is written (`[seerr-bridge] bridge_user_invalid`). Every write sends `X-API-User`; the write client
+   refuses user 1 before any call, and a CHECK refuses it in `seerr_issue_writes`.
+10. **Delivery** (D-11): Seerr sends a comment to its reporter through its notification agents, and on 2026-10-13 only
+    the webhook to this app is on (email and web push are off). A reporter sees the comment when they open the issue
+    in Seerr. Q-12 asks whether to change that.
+
 ### D-12 Working practice and the readiness judgment
 
 **Owner clarification (2026-10-12), ADR-112:** "The gate is a judgment call, not a count. The intention is to keep building haynesnetwork.com until it can handle the kinds of problems people actually report, then steer users to fix things themselves instead of staff fixing them. Working practice: every new Seerr issue is worked through haynesnetwork.com's self-service tools first, as a user would. When a tool fixes it, the reply teaches the user that tool. When no tool can, staff fix it by hand and the missing capability is added to the plan. The owner decides when coverage is good enough to make self-service the default."
@@ -1166,7 +1229,7 @@ Self-Served issues). Nothing in the app computes readiness.
 | SABnzbd extracts obfuscated `.7z` posts | haynes-ops#3834 | D-07 rule 6, D-14 |
 | All three Tautulli instances post play and stop to the webhook; the Playback Error trigger is added | Tautulli settings (each instance's API or UI) | D-09 (P1, 2026-10-12: all three post play, stop and Playback Error; HaynesTower through the LAN route) |
 | The Seerr webhook sends issue types | Seerr settings (API) | D-10 (done 2026-10-13: types 204 to 4044, read back; PLAN-077 P3) |
-| The Seerr bridge user exists | Seerr users (API or UI) | D-10 writes |
+| The Seerr bridge user exists | Seerr users (API or UI) | D-10 writes (done 2026-10-13: Seerr user 19, "haynesnetwork.com", MANAGE_ISSUES only; P7 decision 1) |
 | Case A's hand-made release profile is retired | Sonarr | D-05 adoption |
 
 ### D-14 Phase 0: stop blocklisting releases SABnzbd failed to unpack (issue #887)
@@ -1225,6 +1288,7 @@ before the next. Q-09 came up in review afterwards; the owner's clarification of
 | Q-09 | Does an Unfixable outcome (closed with no remedy applied, for example no release exists anywhere) restart the Q-04 count of 3 consecutive Self-Served issues? Options: **A** yes, every real issue that is not Self-Served restarts it (the ruling's literal wording); **B** no, an Unfixable issue is skipped and neither counts nor restarts; **C** it counts toward the 3 when staff confirm no remedy could exist. Recommendation: **B** (the gate measures whether self-service works where a fix exists; an issue nobody can fix says nothing about that). Gates P8 only. | **Closed, moot (owner, 2026-10-12).** The Q-04 count no longer exists (Q-04 amendment, D-12, ADR-112), so there is nothing for an Unfixable outcome to restart. |
 | Q-10 | Case A's hand profile holds five blocks that are not a series and a release group (P4 decision 14). Options: **A** a new ADR adds a second Mislabel term kind, a series-anchored mislabelled name (a number with another episode's title, an alternate title, a double-episode token), written from a confirmed re-map's own file names and by the adoption, then the hand profile is deleted; **B** keep the hand profile as a hand-kept exception beside the Mislabel Block; **C** drop the five blocks (the season is complete) and delete the hand profile. Recommendation: **A**. | **Ruling (owner, 2026-10-13): A.** [ADR-113](../adrs/113-mislabelled-name-terms-in-the-mislabel-block.md): three name kinds (`pair`, `double`, `alias`) in the same profile, under the same lifetime, cap and read-back. As built, staff (the in-cluster tool) and the adoption write them; no re-map offers one, so the offer stays the group's alone. The hand profile and its tag are removed by hand once the five are adopted (PLAN-077 P4). Folded into D-05 ("Mislabelled names", "Q-10 ruling decisions") and P4 decision 14. |
 | Q-11 | The library-wide Title Check (P4, issue #916) leaves 622 open flags after staff fixed the five seasons a single claim could fix. Nearly all are whole-season reorderings (a streaming service's order against TVDB's), where the episode a file names keeps its own file, or the moves form a rotation. The re-map refuses both by design: it displaces nothing, and Sonarr's rename cannot pass two files through each other's names. Options: **A** a staff season re-map that follows the names. It parks one file on a free episode to break a rotation and renames as it goes; staff place the files whose names are silent; seasons are worked one at a time after an evidence and watch-state check. **B** staff fix the seasons by hand as they are reported. **C** leave them; fix only what people report. Recommendation: **A** (548 of the 692 showed viewers one title and played another; the Plex watch marks on those seasons stay with the episode numbers). | **Resolved (owner ruling, 2026-10-13): A.** P4 decisions 18 to 24 (the Season Re-map); the run and its leftovers are recorded in PLAN-077 and issue #916. |
+| Q-12 | Seerr delivers a comment to its reporter only through its notification agents, and only the webhook to this app is on (email and web push are off, read 2026-10-13), so a reporter sees the bridge's comment only by opening the issue in Seerr (P7 decision 10). Options: **A** leave it: the reporter checks the issue, as with the hand replies so far; **B** turn on Seerr's web push (each person allows it once in their browser; no new service); **C** turn on Seerr's email (needs a mail relay and sender address for Seerr); **D** the app tells the reporter itself (a Pushover or email channel it does not have for members today). Recommendation: **B**. | Open (raised 2026-10-13 by PLAN-077 P7; the comment and resolve ship either way). |
 
 Driver items, resolved inside PLAN-077 (not owner questions):
 

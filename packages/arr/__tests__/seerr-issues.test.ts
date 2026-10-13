@@ -4,6 +4,7 @@
 // issue that shifts pages counted once, the page cap, the detail read, and a 404 read as "no such issue".
 import { describe, expect, it } from 'vitest';
 import { SeerrClient, SEERR_ISSUE_PAGE_SIZE } from '../src/read';
+import { SeerrWriteClient } from '../src/write';
 import { ArrHttpError } from '../src/errors';
 import { fixture, stubFetch, type StubRoute } from './helpers';
 
@@ -106,5 +107,77 @@ describe('SeerrClient issue reads (DESIGN-055 D-10)', () => {
     expect(await seerr.getIssue(99)).toBeNull();
     await expect(seerr.getIssue(7)).rejects.toBeInstanceOf(ArrHttpError);
     expect(calls.every((c) => c.method === 'GET')).toBe(true);
+  });
+});
+
+// ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the Seerr Issue bridge's read of its user and its two writes, with the
+// bodies Seerr 3.5.0's own UI sends (IssueDetails: `{message}` to `/comment`, nothing to `/resolved`) and `X-API-User`
+// naming the bridge user on every write. The key stays in `X-Api-Key`; user 1 (the owner) is refused before any call.
+describe('the Seerr Issue bridge clients (PLAN-077 P7)', () => {
+  const ISSUE = {
+    id: 12,
+    issueType: 1,
+    status: 1,
+    problemSeason: 2,
+    problemEpisode: 6,
+    createdAt: '2026-10-13T12:00:00.000Z',
+    updatedAt: '2026-10-13T12:05:00.000Z',
+    media: { mediaType: 'tv', tmdbId: 253941, tvdbId: 449872 },
+    createdBy: { id: 1, displayName: 'admin' },
+    comments: [
+      { id: 40, message: 'Missing episode 6', createdAt: '2026-10-13T12:00:00.000Z', user: { id: 1 } },
+      { id: 41, message: 'Thanks for the report.', createdAt: '2026-10-13T12:05:00.000Z', user: { id: 19, displayName: 'haynesnetwork.com' } },
+    ],
+  };
+
+  function writer(routes: StubRoute[]) {
+    const stub = stubFetch(routes);
+    return {
+      client: new SeerrWriteClient({ baseUrl: 'http://seerr.test:5055', fetchImpl: stub.fetchImpl, ...TEST_OPTS }),
+      ...stub,
+    };
+  }
+
+  it('reads the bridge user (id, permission bits, type, name only) and answers a missing user with null', async () => {
+    const { client: seerr, calls } = client([
+      { path: '/api/v1/user/19', body: { id: 19, permissions: 1048576, userType: 2, displayName: 'haynesnetwork.com', email: 'x@example.com', settings: {} } },
+      { path: '/api/v1/user/20', status: 404, body: { message: 'User not found.' } },
+    ]);
+    expect(await seerr.getUser(19)).toEqual({ id: 19, permissions: 1048576, userType: 2, displayName: 'haynesnetwork.com' });
+    expect(await seerr.getUser(20)).toBeNull();
+    expect(calls.map((c) => c.headers.get('x-api-user'))).toEqual([null, null]);
+  });
+
+  it('comments with exactly {message} and resolves with no body, both as the bridge user', async () => {
+    const { client: seerr, calls } = writer([
+      { method: 'POST', path: '/api/v1/issue/12/comment', body: ISSUE },
+      { method: 'POST', path: '/api/v1/issue/12/resolved', body: { ...ISSUE, status: 2 } },
+    ]);
+    const after = await seerr.commentOnIssue(12, 'Thanks for the report.', 19);
+    expect(after.comments?.at(-1)).toMatchObject({ id: 41, user: { id: 19 } });
+    expect((await seerr.resolveIssue(12, 19)).status).toBe(2);
+    expect(calls.map((c) => [c.method, c.url.pathname, c.body])).toEqual([
+      ['POST', '/api/v1/issue/12/comment', { message: 'Thanks for the report.' }],
+      ['POST', '/api/v1/issue/12/resolved', undefined],
+    ]);
+    for (const c of calls) {
+      expect(c.headers.get('x-api-user')).toBe('19');
+      expect(c.headers.get('x-api-key')).toBe('test-seerr-key');
+    }
+  });
+
+  it('refuses to write as user 1 or with no usable user, before any call', async () => {
+    const { client: seerr, calls } = writer([]);
+    for (const bad of [1, 0, -3, 1.5, Number.NaN]) {
+      expect(() => seerr.commentOnIssue(12, 'x', bad)).toThrow(/never user 1/);
+      expect(() => seerr.resolveIssue(12, bad)).toThrow(/never user 1/);
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('a refused write is an error with its status, and is not retried (a POST is not idempotent)', async () => {
+    const { client: seerr, calls } = writer([{ method: 'POST', path: '/api/v1/issue/12/comment', status: 502, body: { message: 'bad gateway' } }]);
+    await expect(seerr.commentOnIssue(12, 'x', 19)).rejects.toBeInstanceOf(ArrHttpError);
+    expect(calls).toHaveLength(1);
   });
 });

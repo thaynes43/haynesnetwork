@@ -54,6 +54,8 @@ import { listMediaChildren } from './media-children';
 import { resolveFixTarget, type FixScope, type SearchScope } from './action-scope';
 
 export interface RunFixRequestInput {
+  /** PLAN-077 P7 — the Seerr issue the guide was opened from (kept only when it is open and on this title). */
+  seerrIssueId?: number | null;
   db?: DbClient;
   arr: ArrClientBundle;
   requesterId: string;
@@ -253,6 +255,7 @@ export async function runFixRequest(input: RunFixRequestInput): Promise<RunFixRe
   // D-09: pending row + fix_requested event commit before any mutating *arr call.
   const { fixRequestId } = await createFixRequest({
     db: input.db,
+    seerrIssueId: input.seerrIssueId ?? null,
     requesterId: input.requesterId,
     requesterIsAdmin: input.requesterIsAdmin,
     mediaItemId: item.id,
@@ -496,6 +499,7 @@ async function runSubtitleFix(
   // ---- Step 3: pending row + fix_requested event before any Bazarr call (D-09). ----
   const { fixRequestId } = await createFixRequest({
     db: input.db,
+    seerrIssueId: input.seerrIssueId ?? null,
     requesterId: input.requesterId,
     requesterIsAdmin: input.requesterIsAdmin,
     mediaItemId: item.id,
@@ -609,6 +613,7 @@ async function runSeasonFix(
   // D-09: pending row + fix_requested event commit before any mutating *arr call.
   const { fixRequestId } = await createFixRequest({
     db: input.db,
+    seerrIssueId: input.seerrIssueId ?? null,
     requesterId: input.requesterId,
     requesterIsAdmin: input.requesterIsAdmin,
     mediaItemId: item.id,
@@ -848,6 +853,7 @@ async function runGuardedFix(
   const targetLabel = plan.targetLabel;
   const { fixRequestId } = await createFixRequest({
     db: input.db,
+    seerrIssueId: input.seerrIssueId ?? null,
     requesterId: input.requesterId,
     requesterIsAdmin: input.requesterIsAdmin,
     mediaItemId: item.id,
@@ -1073,6 +1079,7 @@ async function runLanguageFix(
   const targetLabel = plan.targetLabel;
   const { fixRequestId } = await createFixRequest({
     db: input.db,
+    seerrIssueId: input.seerrIssueId ?? null,
     requesterId: input.requesterId,
     requesterIsAdmin: input.requesterIsAdmin,
     mediaItemId: item.id,

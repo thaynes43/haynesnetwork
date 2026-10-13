@@ -269,6 +269,8 @@ export const fixRouter = router({
         claim: remapClaim,
         planDigest: z.string().min(1).max(64),
         reason: z.enum(FIX_REASONS).optional(),
+        /** PLAN-077 P7 — the Seerr issue the guide was opened from (the domain keeps it only when open and on this title). */
+        seerrIssueId: z.number().int().positive().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -281,6 +283,7 @@ export const fixRouter = router({
           claim: input.claim,
           planDigest: input.planDigest,
           reason: input.reason ?? null,
+          seerrIssueId: input.seerrIssueId ?? null,
           requesterId: ctx.user.id,
           requesterIsAdmin: ctx.user.role.isAdmin,
         }),
@@ -414,6 +417,8 @@ export const fixRouter = router({
           seasonNumber: z.number().int().min(0).optional(),
           wantedLanguage: languageCode,
           digest: z.string().regex(/^[0-9a-f]{8,64}$/).optional(),
+          /** PLAN-077 P7 — the Seerr issue the guide was opened from (the domain keeps it only when open and on this title). */
+          seerrIssueId: z.number().int().positive().optional(),
         })
         .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
     )
@@ -431,6 +436,7 @@ export const fixRouter = router({
           seasonNumber: input.seasonNumber,
           wantedLanguage: input.wantedLanguage,
           digest: input.digest,
+          seerrIssueId: input.seerrIssueId ?? null,
         }),
       );
     }),
@@ -483,6 +489,8 @@ export const fixRouter = router({
           wantedLanguage: languageCode.optional(),
           /** The digest of the plan the person confirmed (`preview`). */
           planDigest: z.string().regex(/^[0-9a-f]{8,64}$/).optional(),
+          /** PLAN-077 P7 — the Seerr issue the guide was opened from (the domain keeps it only when open and on this title). */
+          seerrIssueId: z.number().int().positive().optional(),
         })
         .refine((v) => (v.reason === 'other') === (v.reasonText !== undefined), {
           error: 'reasonText is required exactly when reason is "other"',
@@ -507,6 +515,7 @@ export const fixRouter = router({
           blockWholePack: input.blockWholePack,
           wantedLanguage: input.wantedLanguage,
           planDigest: input.planDigest,
+          seerrIssueId: input.seerrIssueId ?? null,
         });
         return result; // {id, status, pathTaken, targetLabel}
       });
@@ -567,6 +576,8 @@ export const fixRouter = router({
           planDigest: z.string().min(1).max(64).optional(),
           /** DESIGN-055 D-07 rule 4 — "Import this download onto...": the episode the person chose. */
           ontoEpisodeId: z.number().int().positive().optional(),
+          /** PLAN-077 P7 — the Seerr issue the guide was opened from (the domain keeps it only when open and on this title). */
+          seerrIssueId: z.number().int().positive().optional(),
         })
         .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
     )
@@ -585,6 +596,7 @@ export const fixRouter = router({
             input.planDigest !== undefined
               ? { digest: input.planDigest, ...(input.ontoEpisodeId !== undefined ? { ontoEpisodeId: input.ontoEpisodeId } : {}) }
               : null,
+          seerrIssueId: input.seerrIssueId ?? null,
         });
         return result; // {outcome, eventId, repairRequestId, targetLabel, commandName}
       });
@@ -628,7 +640,14 @@ export const fixRouter = router({
    * site refused it, the episode has a file now), so the guide can offer the next step.
    */
   releaseGrab: authedProcedure
-    .input(z.object({ listId: z.uuid(), key: z.string().regex(/^[0-9a-f]{16}$/) }))
+    .input(
+      z.object({
+        listId: z.uuid(),
+        key: z.string().regex(/^[0-9a-f]{16}$/),
+        /** PLAN-077 P7 — the Seerr issue the guide was opened from (the domain keeps it only when open and on this title). */
+        seerrIssueId: z.number().int().positive().optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       return mapDomainErrors(async () =>
         grabFromReleaseList({
@@ -636,6 +655,7 @@ export const fixRouter = router({
           arr: resolveArrBundle(ctx),
           listId: input.listId,
           key: input.key,
+          seerrIssueId: input.seerrIssueId ?? null,
           requesterId: ctx.user.id,
           requesterIsAdmin: ctx.user.role.isAdmin,
         }),

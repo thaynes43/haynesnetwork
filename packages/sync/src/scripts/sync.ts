@@ -32,6 +32,7 @@ import {
   releaseBlockArrClientsFromEnv,
   seerrEnrollClientsFromEnv,
   seerrIssueSyncClientsFromEnv,
+  seerrBridgeFromEnv,
   titleCheckSonarrFromEnv,
   mislabelBlockSonarrFromEnv,
   watchlistRegistrySourcesFromEnv,
@@ -122,9 +123,12 @@ const USAGE = `Usage: sync.ts --mode=${SYNC_RUN_KINDS.join('|')} [--source=${SYN
                            AUTHENTIK_API_TOKEN (AUTHENTIK_URL defaults to the in-cluster Service DNS).
                            No --source. Writes no sync_runs row.
   --mode=seerr-issues      mirror every Seerr issue (all statuses) into seerr_issues (ADR-111 / DESIGN-055 D-10:
-                           the title page banner, the /r/seerr/<id> link and /admin's Seerr issues). READ-ONLY
-                           against Seerr (and Sonarr, for an episode's id). Needs SEERR_API_KEY (SONARR_API_KEY
-                           optional; URLs default in-cluster). No --source. Writes no sync_runs row.
+                           the title page banner, the /r/seerr/<id> link and /admin's Seerr issues). Reads Seerr
+                           (and Sonarr, for an episode's id and whether it has a file). Then the Seerr Issue bridge
+                           (ADR-111 C-03, PLAN-077 P7): its only Seerr writes, the fix-it-yourself comment and the
+                           resolve, as the bridge user, only when the audited seerr_issue_bridge setting turns them
+                           on. Needs SEERR_API_KEY (SONARR_API_KEY optional; URLs default in-cluster; the link's
+                           origin is BETTER_AUTH_URL). No --source. Writes no sync_runs row.
   --mode=title-check       the hourly Title Check census (ADR-110 / DESIGN-055 D-05): read Sonarr's
                            downloadFolderImported history since the cursor, judge each imported file's own name
                            against the episodes it was filed on, upsert title_checks, and clear the flags whose
@@ -558,7 +562,10 @@ async function main(): Promise<number> {
     }
   }
   // ADR-111 C-01 / DESIGN-055 D-10 — the Seerr Issue mirror's readers (SEERR_API_KEY required; Sonarr optional).
-  const seerrIssues = args.mode === 'seerr-issues' ? seerrIssueSyncClientsFromEnv() : undefined;
+  // ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — and the bridge's clients and link origin (the comment and resolve run
+  // only when the audited `seerr_issue_bridge` setting turns them on).
+  const seerrIssues =
+    args.mode === 'seerr-issues' ? { ...seerrIssueSyncClientsFromEnv(), bridge: seerrBridgeFromEnv() } : undefined;
   // ADR-110 C-03 / DESIGN-055 D-05 — the Title Check's Sonarr reader (SONARR_API_KEY required).
   // ADR-110 C-04 — and the Mislabel Block's profile clients for its hourly upkeep (the same SONARR_API_KEY).
   const titleCheck =

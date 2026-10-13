@@ -91,6 +91,9 @@ test.describe('the Repair Guide (ADR-109 / DESIGN-055, PLAN-077 P1)', () => {
       // opened so no later spec meets an open fix.
       await setRemedies(page, false);
       await page.goto('/admin/fixes');
+      // The list loads after the page; counting the close buttons before it arrives found none and left the season
+      // Fix open for later specs (seen by seerr-bridge.spec.ts, PLAN-077 P7).
+      await expect(page.locator('.admin-table tbody tr').first()).toBeVisible();
       const row = page
         .locator('.admin-table tbody tr')
         .filter({ hasText: 'Breaking Prod' })

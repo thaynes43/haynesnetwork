@@ -69,6 +69,7 @@ import {
   type SearchProgressInput,
 } from '@/components/action-progress';
 import { EpisodeRemap } from './episode-remap';
+import { useSeerrIssueLink } from '@/lib/seerr-issue-link-context';
 
 export type { GuideRemedies };
 
@@ -206,6 +207,7 @@ export function RepairGuide({
   releasePickOn = false,
   onForceSearch,
 }: RepairGuideProps) {
+  const seerrLink = useSeerrIssueLink();
   const isTv = item.arrKind === 'sonarr';
   const planning = remedies.replacement_preview || remedies.season_guard;
   const remapStart = remapOn && initialRemap !== null && target?.scope === 'episode';
@@ -396,6 +398,7 @@ export function RepairGuide({
       ...(reason === 'other' ? { reasonText: reasonText.trim() } : {}),
       ...(reason === 'wrong_language' && remedies.language_check ? { wantedLanguage: wanted } : {}),
       ...extra,
+      ...seerrLink,
     });
   }
 
@@ -783,7 +786,13 @@ export function RepairGuide({
                     className="btn primary"
                     disabled={setPref.isPending}
                     onClick={() =>
-                      setPref.mutate({ mediaItemId: item.id, ...scopeInput, wantedLanguage: wanted, digest: ap.digest })
+                      setPref.mutate({
+                        mediaItemId: item.id,
+                        ...scopeInput,
+                        wantedLanguage: wanted,
+                        digest: ap.digest,
+                        ...seerrLink,
+                      })
                     }
                   >
                     {setPref.isPending ? 'Working…' : `Play ${name} first on this show`}

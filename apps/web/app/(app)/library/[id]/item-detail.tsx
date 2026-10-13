@@ -72,6 +72,7 @@ import { ticketComposeHref } from '@/lib/ticket-compose-link';
 import { ForceSearchDialog } from './force-search-dialog';
 import { SeerrReportBanner } from './seerr-report-banner';
 import { guideIntroText, seerrGuideEntry, type SeerrGuideEntry } from '@/lib/seerr-issues';
+import { SeerrIssueLinkContext } from '@/lib/seerr-issue-link-context';
 
 /** The open dialog: repair (Fix) vs search-only (Force Search), and its scoped target. */
 type PendingAction = {
@@ -83,6 +84,8 @@ type PendingAction = {
   intro?: string | null;
   /** DESIGN-055 D-05 (PLAN-077 P4) — a Title Check flag's move: the guide opens at the Episode Re-map preview. */
   remap?: GuideRemapStart | null;
+  /** PLAN-077 P7 — the Seerr report the guide was opened from; its remedies name it, so the bridge can resolve it. */
+  seerrIssueId?: number | null;
 };
 
 /** Client mirror of @hnet/domain OPEN_FIX_STATUSES (lib/media never imports domain). */
@@ -358,6 +361,7 @@ export function ItemDetail({
         target: arrivedEntry.target,
         reason: arrivedEntry.reason,
         intro: guideIntroText(arrivedReport.viewerIsReporter),
+        seerrIssueId: arrivedReport.seerrIssueId,
       });
     }
   }
@@ -697,7 +701,9 @@ export function ItemDetail({
             arrived={report.seerrIssueId === arrivedId}
             entry={entryFor(report)}
             disabled={tombstoned}
-            onOpen={(entry) => setAction({ mode: entry.mode, target: entry.target, reason: entry.reason })}
+            onOpen={(entry) =>
+              setAction({ mode: entry.mode, target: entry.target, reason: entry.reason, seerrIssueId: report.seerrIssueId })
+            }
           />
         ))}
 
@@ -1093,6 +1099,8 @@ export function ItemDetail({
         ) : null}
       </section>
 
+      {/* PLAN-077 P7 — a report's guide names the report on every remedy it runs (the bridge resolves it on completion). */}
+      <SeerrIssueLinkContext.Provider value={action?.seerrIssueId ?? null}>
       <FixDialog
         open={action?.mode === 'fix'}
         onClose={() => setAction(null)}
@@ -1103,7 +1111,7 @@ export function ItemDetail({
         initialReason={action?.mode === 'fix' ? (action.reason ?? null) : null}
         intro={action?.mode === 'fix' && action.intro ? <GuideIntro text={action.intro} /> : undefined}
         initialRemap={action?.mode === 'fix' ? (action.remap ?? null) : null}
-        onForceSearch={(t) => setAction({ mode: 'search', target: t })}
+        onForceSearch={(t) => setAction({ mode: 'search', target: t, seerrIssueId: action?.seerrIssueId ?? null })}
       />
       <ForceSearchDialog
         open={action?.mode === 'search'}
@@ -1113,6 +1121,7 @@ export function ItemDetail({
         onSubmitted={registerSearch}
         intro={action?.mode === 'search' && action.intro ? <GuideIntro text={action.intro} /> : undefined}
       />
+      </SeerrIssueLinkContext.Provider>
     </>
   );
 }
