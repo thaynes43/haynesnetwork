@@ -127,13 +127,13 @@ if (process.argv[1]?.endsWith('ll-orphan-unqueue.ts')) {
       await getPool()
         .end()
         .catch(() => {});
-      process.exit(code);
+      process.stdout.write('', () => process.exit(code));
     })
     .catch(async (error: unknown) => {
       console.error(error instanceof Error ? error.message : String(error));
       await getPool()
         .end()
         .catch(() => {});
-      process.exit(1);
+      process.stdout.write('', () => process.exit(1));
     });
 }

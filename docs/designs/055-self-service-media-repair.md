@@ -294,7 +294,10 @@ do not edit)", "must not contain" terms only, no tags.
     `remap-plan` (a changed plan is refused). Its Repair Request has no requester (`requester_id` null, the trail's
     first step names the staff tool), the "audited, actor null" pattern of the settings, and draws on no one's budget.
     This is how the live census's whole-season offsets that the re-map can fix are worked by staff (issue #916), since a
-    person's sign-in cannot be driven from inside the cluster.
+    person's sign-in cannot be driven from inside the cluster. A staff shift that offers the Mislabel Block (its result
+    prints `mislabelGroups`) is accepted with `mislabel-block.ts offer --repair <repair id> --group <group>` (staff, no
+    requester). The in-cluster tools now exit only once stdout has drained (a large report piped through `kubectl exec`
+    was cut at 64 KiB); the sibling scripts under `packages/sync/src/scripts` got the same fix.
 
 ### D-06 Release Pick
 

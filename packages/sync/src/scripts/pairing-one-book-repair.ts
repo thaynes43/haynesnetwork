@@ -70,7 +70,7 @@ if (process.argv[1]?.endsWith('pairing-one-book-repair.ts')) {
   main()
     .then(async (code) => {
       if (poolStarted) await getPool().end();
-      process.exit(code);
+      process.stdout.write('', () => process.exit(code));
     })
     .catch(async (error: unknown) => {
       console.error(error instanceof Error ? error.message : String(error));
@@ -79,6 +79,6 @@ if (process.argv[1]?.endsWith('pairing-one-book-repair.ts')) {
           .end()
           .catch(() => {});
       }
-      process.exit(1);
+      process.stdout.write('', () => process.exit(1));
     });
 }

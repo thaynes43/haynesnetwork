@@ -537,13 +537,15 @@ if (process.argv[1]?.endsWith('repair-guide.ts')) {
       await getPool()
         .end()
         .catch(() => {});
-      process.exit(code);
+      // Exit only once stdout has drained: a large JSON report piped through `kubectl exec` was cut at 64 KiB when
+      // process.exit ran with the write still queued.
+      process.stdout.write('', () => process.exit(code));
     })
     .catch(async (error: unknown) => {
       console.error(error instanceof Error ? error.message : String(error));
       await getPool()
         .end()
         .catch(() => {});
-      process.exit(1);
+      process.stdout.write('', () => process.exit(1));
     });
 }
