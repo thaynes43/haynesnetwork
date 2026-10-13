@@ -23,7 +23,8 @@ import {
   type RecordedArrWrite,
 } from './support/stub-arr';
 
-const NEW_REPORT = 906;
+/** The new report's Seerr id; a CI retry uses a fresh one, since the first attempt's writes are already recorded. */
+let NEW_REPORT = 906;
 const env = () => readRuntimeEnv();
 
 async function stubArr(path: string, body?: unknown): Promise<void> {
@@ -75,6 +76,25 @@ async function setImportCheck(page: Page, on: boolean): Promise<void> {
   await expect(card.getByRole('status')).toHaveText('Saved.');
 }
 
+/**
+ * Close every open Fix on Breaking Prod (the admin escape hatch, the two-step ConfirmButton), so the import below meets no
+ * open fix on its season left by an earlier spec (the repair-guide.spec.ts pattern).
+ */
+async function closeOpenFixes(page: Page): Promise<void> {
+  await page.goto('/admin/fixes');
+  const rows = page.locator('.admin-table tbody tr').filter({ hasText: 'Breaking Prod' });
+  for (let i = 0; i < 10; i += 1) {
+    const close = rows.getByRole('button', { name: /Close the open fix/ });
+    if ((await close.count()) === 0) return;
+    await close.first().click();
+    const confirm = rows.getByRole('button', { name: /Confirm closing the fix/ });
+    await expect(confirm).toBeVisible();
+    await page.waitForTimeout(350);
+    await confirm.click();
+    await expect(confirm).toHaveCount(0);
+  }
+}
+
 /** The Replies in Seerr card on /admin/seerr: both switches and the bridge user, one Save. */
 async function setBridge(page: Page, on: boolean): Promise<void> {
   await page.goto('/admin/seerr');
@@ -112,9 +132,13 @@ test.describe('the Seerr Issue bridge (ADR-111 C-03 / DESIGN-055 D-10, PLAN-077 
   test.beforeAll(async ({ browser }) => {
     // Case B's stuck download on Breaking Prod S01E10, behind the queue-aware Force Search.
     await stubArr('/_stub/reset');
+    await stubArr('/_stub/seerr-issues', { issues: [] });
     await stubArr('/_stub/import-check', { on: true });
     await stubArr('/_stub/queue', { records: importCheckQueueFixture() });
-    await asAdmin(browser, (page) => setImportCheck(page, true));
+    await asAdmin(browser, async (page) => {
+      await setImportCheck(page, true);
+      await closeOpenFixes(page);
+    });
   });
 
   test.afterAll(async ({ browser }) => {
@@ -130,6 +154,7 @@ test.describe('the Seerr Issue bridge (ADR-111 C-03 / DESIGN-055 D-10, PLAN-077 
   test('an admin turns the replies on; a new report gets exactly one comment, as the bridge user (AC-43)', async ({
     page,
   }, testInfo) => {
+    NEW_REPORT = 906 + testInfo.retry;
     await page.setViewportSize({ width: 1280, height: 900 });
     await signIn(page, 'admin');
     await setBridge(page, true);
