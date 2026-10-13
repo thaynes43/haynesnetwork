@@ -102,7 +102,8 @@ export interface SonarrManualImportFile {
   languages: ManualImportLanguage[];
   indexerFlags: number;
   releaseType?: string;
-  downloadId: string;
+  /** A download's id; left out for a library file (the UI's series-folder import sends none). */
+  downloadId?: string;
   episodeFileId?: number;
 }
 

@@ -21,8 +21,11 @@ import {
   computeSearchProgress,
   getKnownIssueServers,
   getRepairGuideRemedies,
+  planEpisodeRemap,
   planForceSearch,
   previewFix,
+  readRemapSeason,
+  runEpisodeRemap,
   readFileAudio,
   readPlaybackEvidence,
   readSeasonChoices,
@@ -72,6 +75,21 @@ const guideChoices = {
   replaceFile: z.boolean().optional(),
 };
 
+/** DESIGN-055 D-04 rule 2 — the Episode Re-map's claim: one file onto another episode, or a shift by one. */
+const remapClaim = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('single'),
+    fromEpisodeId: z.number().int().positive(),
+    toEpisodeId: z.number().int().positive(),
+  }),
+  z.object({
+    kind: z.literal('shift'),
+    fromEpisodeNumber: z.number().int().min(0).max(10_000),
+    throughEpisodeNumber: z.number().int().min(0).max(10_000).nullish(),
+    by: z.union([z.literal(1), z.literal(-1)]),
+  }),
+]);
+
 const languageCode = z
   .string()
   .trim()
@@ -89,6 +107,8 @@ export const fixRouter = router({
       guideOn: anyRemedyOn(remedies),
       /** DESIGN-055 D-07 — Force Search on one episode or movie reads the queue first. */
       importCheckOn: remedies.import_check,
+      /** DESIGN-055 D-04 — the guide offers the Episode Re-map ("this file is really episode N", "shifted by one"). */
+      remapOn: remedies.episode_remap,
       knownIssueServers: await getKnownIssueServers(ctx.db),
     };
   }),
@@ -178,6 +198,71 @@ export const fixRouter = router({
           arr: resolveArrBundle(ctx),
           mediaItemId: input.mediaItemId,
           seasonNumber: input.seasonNumber,
+        }),
+      );
+    }),
+
+  /**
+   * ADR-109 / DESIGN-055 D-04 rules 1-2 (PLAN-077 P4) — the season as the Episode Re-map shows it: each episode, whether
+   * it has a file, and the claim the files' own names suggest. Read-only; costs nothing.
+   */
+  remapSeason: authedProcedure
+    .input(z.object({ mediaItemId: z.uuid(), seasonNumber: z.number().int().min(0) }))
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        readRemapSeason({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          seasonNumber: input.seasonNumber,
+        }),
+      );
+    }),
+
+  /**
+   * DESIGN-055 D-04 — the read-only plan for a claim: every move in the order it would run, what is left empty, the
+   * refusal in plain words, and the digest the confirm sends back. Costs nothing.
+   */
+  remapPlan: authedProcedure
+    .input(z.object({ mediaItemId: z.uuid(), seasonNumber: z.number().int().min(0), claim: remapClaim }))
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        planEpisodeRemap({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          seasonNumber: input.seasonNumber,
+          claim: input.claim,
+        }),
+      );
+    }),
+
+  /**
+   * DESIGN-055 D-04 rules 6-9 — run the re-map the person confirmed (its `planDigest`). One Repair Request (`remap`),
+   * one unit of the hourly budget; moves existing files only, never deletes one. Refused while the remedy is off.
+   */
+  remap: authedProcedure
+    .input(
+      z.object({
+        mediaItemId: z.uuid(),
+        seasonNumber: z.number().int().min(0),
+        claim: remapClaim,
+        planDigest: z.string().min(1).max(64),
+        reason: z.enum(FIX_REASONS).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        runEpisodeRemap({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          seasonNumber: input.seasonNumber,
+          claim: input.claim,
+          planDigest: input.planDigest,
+          reason: input.reason ?? null,
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
         }),
       );
     }),

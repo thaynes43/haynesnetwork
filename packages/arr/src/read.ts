@@ -27,8 +27,11 @@ import {
   type ArrTag,
 } from './schemas/common';
 import {
+  SONARR_DOWNLOAD_FOLDER_IMPORTED_EVENT_TYPE,
   SONARR_GRABBED_EVENT_TYPE,
   sonarrEpisodeFileSchema,
+  sonarrImportHistoryRecordSchema,
+  type SonarrImportHistoryRecord,
   sonarrEpisodeSchema,
   sonarrHistoryRecordSchema,
   sonarrLookupSchema,
@@ -173,6 +176,10 @@ const QUEUE_ALL_PAGE_SIZE = 250;
 
 const toIso = (value: string | Date) => (value instanceof Date ? value.toISOString() : value);
 
+/** A record the import-history reads keep: the filter asked for imports; anything else the *arr sends is dropped. */
+const isDownloadFolderImport = (r: SonarrImportHistoryRecord) =>
+  r.eventType === null || r.eventType === 'downloadFolderImported';
+
 /**
  * ADR-109 / DESIGN-055 D-09 (PLAN-077 P1) — the bound on one interactive release search (`GET /release`). The *arr
  * queries every indexer before it answers (16 s for GoodFellas across six indexers, 6 s for a Sonarr season, read
@@ -280,6 +287,15 @@ abstract class ArrReadClientBase {
     return this.http.requestJson('GET', `command/${id}`, arrCommandStatusSchema);
   }
 
+  /**
+   * DESIGN-055 D-04 rule 11 (PLAN-077 P4) — `GET /command`: the *arr's recent and running commands. The Episode Re-map
+   * refuses while a ManualImport or RenameFiles is still queued or running (a late one could land on a slot a new plan
+   * counts as free). Shared verbatim by all three.
+   */
+  listCommands(): Promise<ArrCommandStatus[]> {
+    return this.http.requestJson('GET', 'command', z.array(arrCommandStatusSchema));
+  }
+
   protected historyQuery(params: HistoryPageParams): QueryParams {
     return {
       page: params.page ?? 1,
@@ -344,6 +360,35 @@ export class SonarrClient extends ArrReadClientBase {
     return this.http.requestJson('GET', 'history/since', z.array(sonarrHistoryRecordSchema), {
       query: { date: toIso(date), eventType },
     });
+  }
+
+  /**
+   * ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — one page of `downloadFolderImported` history (`GET /history?eventType=3`),
+   * oldest first, so an import that lands while the Title Check backfill pages adds to the end and never shifts a page
+   * already read. Only the import's named `data` keys are kept (sonarrImportHistoryRecordSchema).
+   */
+  async getImportHistoryPage(params: { page: number; pageSize?: number }): Promise<ArrPage<SonarrImportHistoryRecord>> {
+    const page = await this.http.requestJson('GET', 'history', pagedSchema(sonarrImportHistoryRecordSchema), {
+      query: {
+        page: params.page,
+        pageSize: params.pageSize ?? 1000,
+        sortKey: 'date',
+        sortDirection: 'ascending',
+        eventType: SONARR_DOWNLOAD_FOLDER_IMPORTED_EVENT_TYPE,
+      },
+    });
+    return { ...page, records: page.records.filter(isDownloadFolderImport) };
+  }
+
+  /**
+   * ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — every `downloadFolderImported` record since `date`
+   * (`GET /history/since`, which binds `eventType` by name), for the hourly Title Check.
+   */
+  async getImportHistorySince(date: string | Date): Promise<SonarrImportHistoryRecord[]> {
+    const records = await this.http.requestJson('GET', 'history/since', z.array(sonarrImportHistoryRecordSchema), {
+      query: { date: toIso(date), eventType: 'downloadFolderImported' },
+    });
+    return records.filter(isDownloadFolderImport);
   }
 
   /** `GET /episode?seriesId=` — fix-target picker, resolved LIVE, never synced (D-06). */

@@ -281,6 +281,37 @@ export async function recordRepairTransition(input: {
 }
 
 /**
+ * DESIGN-055 D-02, D-04 rule 7 (PLAN-077 P4) — append steps to an OPEN Repair Request's trail without moving its status:
+ * an Episode Re-map records every move and its read-back as it goes, so a run that stops part way shows exactly which
+ * moves landed. Throws InvalidFixTransitionError on a closed row.
+ */
+export async function appendRepairActions(input: {
+  db?: DbClient;
+  repairRequestId: string;
+  actions: FixActionEntry[];
+}): Promise<void> {
+  if (input.actions.length === 0) return;
+  await inTransaction(input.db, async (tx) => {
+    const [row] = await tx
+      .select({ id: repairRequests.id, status: repairRequests.status })
+      .from(repairRequests)
+      .where(eq(repairRequests.id, input.repairRequestId))
+      .for('update');
+    if (!row) throw new NotFoundError(`Repair request ${input.repairRequestId} not found`);
+    if (!(OPEN_REPAIR_STATUSES as readonly string[]).includes(row.status)) {
+      throw new InvalidFixTransitionError(`Repair request ${row.id} is ${row.status}; its trail is closed`);
+    }
+    await tx
+      .update(repairRequests)
+      .set({
+        actionsTaken: sql`${repairRequests.actionsTaken} || ${JSON.stringify(input.actions)}::jsonb`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(repairRequests.id, row.id));
+  });
+}
+
+/**
  * DESIGN-055 D-02 — completion is read, never assumed: an `actioned` import whose every target episode (or, for a
  * movie, the movie) has an `imported` ledger event since the request was opened completes, with a `repair_completed`
  * event. Runs in the sync post-steps beside completeFixRequests (an import the guide could not wait out).
