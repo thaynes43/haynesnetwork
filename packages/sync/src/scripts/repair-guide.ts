@@ -8,12 +8,19 @@
 //   tsx repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
 //   tsx repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
 //   tsx repair-guide.ts queue-check
+//   tsx repair-guide.ts title-check (--backfill [--dry-run] [--json] | --flags <sonarr series id>)
 //
 // `search-plan` (DESIGN-055 D-07, PLAN-077 P2) prints what a queue-aware Force Search press would do: the target's queue
 // state and the Import Check on a stuck download, planned as if `import_check` were on. It only reads (the queue, the
 // manual-import view, the episode list); nothing is imported, removed or searched. `queue-check` runs the Import Check
 // over Sonarr's and Radarr's whole queues exactly as the janitor selects (DESIGN-046 D-27: every record `unknown`, stuck,
 // with an identity rejection) and prints one line per download: the census spot-check, read-only.
+//
+// `title-check` (ADR-110 C-03 / DESIGN-055 D-05, PLAN-077 P4): `--backfill` runs the one-off library-wide Title Check
+// (every `downloadFolderImported` record, and the scene name of a current file with no import record) and prints the
+// counts, then one line per file whose name says it is another episode; it writes title_checks rows (origin `backfill`)
+// unless `--dry-run`. `--flags` prints one series' open flags, verified live (a stale flag is cleared). Both only READ
+// Sonarr.
 //
 // `preview`, `evidence` and `audio` only READ: they print the guarded Fix's plan (with every planning remedy on,
 // whatever the stored switch says, so a remedy can be checked live before it is turned on), a person's Playback
@@ -45,6 +52,10 @@ import {
   readPlaybackEvidence,
   setKnownIssueServers,
   setRepairGuideRemedies,
+  backfillTitleChecks,
+  listTitleFlags,
+  titleCheckSonarrFromEnv,
+  type TitleCheckBackfillReport,
 } from '@hnet/domain';
 
 const USAGE = `Usage:
@@ -54,12 +65,14 @@ const USAGE = `Usage:
   repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
   repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
   repair-guide.ts queue-check
+  repair-guide.ts title-check (--backfill [--dry-run] [--json] | --flags <sonarr series id>)
 
 preview, evidence, audio, search-plan and queue-check only read. settings writes only with --set or --known-issue (audited, actor null).
+title-check only reads Sonarr; --backfill writes title_checks rows unless --dry-run, --flags clears a stale flag.
 Remedies: ${REPAIR_GUIDE_REMEDIES.join(', ')}.`;
 
 export interface RepairGuideArgs {
-  command: 'preview' | 'evidence' | 'audio' | 'settings' | 'search-plan' | 'queue-check';
+  command: 'preview' | 'evidence' | 'audio' | 'settings' | 'search-plan' | 'queue-check' | 'title-check';
   tmdb?: number;
   tvdb?: number;
   episode?: { season: number; episode: number };
@@ -72,6 +85,11 @@ export interface RepairGuideArgs {
   plexUsername?: string;
   set?: Partial<Record<RepairGuideRemedy, boolean>>;
   knownIssue?: string[];
+  /** title-check: the one-off backfill (with `dryRun`: write nothing), or one series' open flags. */
+  backfill?: boolean;
+  dryRun?: boolean;
+  json?: boolean;
+  flagsSeriesId?: number;
 }
 
 const positiveInt = (flag: string, value: string | undefined): number => {
@@ -89,7 +107,8 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'audio' &&
     command !== 'settings' &&
     command !== 'search-plan' &&
-    command !== 'queue-check'
+    command !== 'queue-check' &&
+    command !== 'title-check'
   ) {
     throw new Error(`unknown command "${command}"`);
   }
@@ -157,9 +176,32 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         args.knownIssue = value === 'none' ? [] : value.split(',').map((s) => s.trim());
         i += 1;
         break;
+      case '--backfill':
+        args.backfill = true;
+        break;
+      case '--dry-run':
+        args.dryRun = true;
+        break;
+      case '--json':
+        args.json = true;
+        break;
+      case '--flags':
+        args.flagsSeriesId = positiveInt(flag, value);
+        i += 1;
+        break;
       default:
         throw new Error(`unknown argument "${flag}"`);
     }
+  }
+  if (command === 'title-check') {
+    if ((args.backfill === true) === (args.flagsSeriesId !== undefined)) {
+      throw new Error('title-check needs exactly one of --backfill or --flags <series id>');
+    }
+    if (args.dryRun && !args.backfill) throw new Error('--dry-run goes with --backfill');
+    return args;
+  }
+  if (args.backfill || args.dryRun || args.json || args.flagsSeriesId !== undefined) {
+    throw new Error('--backfill, --dry-run, --json and --flags are for title-check');
   }
   if (command !== 'settings' && command !== 'queue-check') {
     if ((args.tmdb === undefined) === (args.tvdb === undefined)) throw new Error('give exactly one of --tmdb or --tvdb');
@@ -208,6 +250,8 @@ async function main(): Promise<number> {
     );
     return 0;
   }
+
+  if (args.command === 'title-check') return titleCheck(args, db);
 
   if (args.command === 'queue-check') {
     const clients = arrQueueCleanupClientsFromEnv();
@@ -345,6 +389,68 @@ async function main(): Promise<number> {
     remedies: { ...allRemediesOff(), replacement_preview: true, season_guard: true },
   });
   console.log(JSON.stringify({ title: item.title, plan }, null, 2));
+  return 0;
+}
+
+const score = (n: number | null) => (n === null ? '-' : n.toFixed(2));
+const sxe = (season: number, episode: number) =>
+  `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')}`;
+
+/** The backfill report as text: the counts, then one line per file whose name says it is another episode. */
+export function formatTitleCheckBackfill(report: TitleCheckBackfillReport): string[] {
+  const v = report.verdicts;
+  const lines = [
+    `Title Check backfill${report.dryRun ? ' (dry run, nothing written)' : ''}: ${report.historyRecords} import records, ` +
+      `${report.historyFiles} files in history, ${report.series} series read (${report.errors} failed)`,
+    `judged ${report.filesJudged} current files (${report.fromHistory} by import record, ${report.fromSceneName} by scene ` +
+      `name); ${report.noEvidence} with nothing to judge`,
+    `agrees ${v.agrees}, disagrees ${v.disagrees}, ambiguous ${v.ambiguous}, silent ${v.silent}; ` +
+      `${report.dryRun ? 'would open' : 'opened'} ${report.flagsOpened} flags, wrote ${report.written} rows`,
+    ...report.errorSamples.map((e) => `read failed: ${e}`),
+  ];
+  for (const d of report.disagrees) {
+    const best = d.best ? `${sxe(d.seasonNumber, d.best.episodeNumber)} "${d.best.title ?? ''}"` : 'unknown';
+    lines.push(
+      `${d.seriesTitle} ${sxe(d.seasonNumber, d.episode.episodeNumber)} "${d.episode.title ?? ''}" -> ${best} ` +
+        `(score ${score(d.score)}, best ${score(d.bestScore)}) file ${d.episodeFileId} [${d.nameFrom}]: ${d.name}`,
+    );
+  }
+  return lines;
+}
+
+async function titleCheck(args: RepairGuideArgs, db: typeof defaultDb): Promise<number> {
+  const sonarr = titleCheckSonarrFromEnv();
+  if (args.backfill) {
+    const report = await backfillTitleChecks({
+      db,
+      sonarr,
+      dryRun: args.dryRun === true,
+      onProgress: (p) => {
+        if (p.phase === 'series' && (p.done % 50 === 0 || p.done === p.total)) {
+          console.error(`title-check: ${p.done}/${p.total} series read`);
+        }
+      },
+    });
+    if (args.json) console.log(JSON.stringify(report, null, 2));
+    else for (const line of formatTitleCheckBackfill(report)) console.log(line);
+    return 0;
+  }
+  const [item] = await db
+    .select({ id: mediaItems.id, title: mediaItems.title })
+    .from(mediaItems)
+    .where(
+      and(
+        eq(mediaItems.arrKind, 'sonarr'),
+        eq(mediaItems.arrItemId, args.flagsSeriesId!),
+        isNull(mediaItems.deletedFromArrAt),
+      ),
+    );
+  if (!item) {
+    console.error(`repair-guide: no live sonarr item with series id ${args.flagsSeriesId}`);
+    return 1;
+  }
+  const flags = await listTitleFlags({ db, sonarr, mediaItemId: item.id });
+  console.log(JSON.stringify({ title: item.title, seriesId: args.flagsSeriesId, flags }, null, 2));
   return 0;
 }
 

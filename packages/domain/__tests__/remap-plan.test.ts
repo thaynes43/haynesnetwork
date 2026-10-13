@@ -143,8 +143,16 @@ describe('buildRemapPlan: shapes beyond Case A', () => {
     expect(whole.moves[0]!.to.map((e) => e.episodeNumber)).toEqual([6, 7]);
     const split = buildRemapPlan({ seasonNumber: 5, claim: { kind: 'shift', fromEpisodeNumber: 6, throughEpisodeNumber: 6, by: 1 }, episodes: season, files: fs([2, 56]), queueBusy: false });
     expect(split.refusal).toBe('split_multi');
-    const single = buildRemapPlan({ seasonNumber: 5, claim: { kind: 'single', fromEpisodeId: 105, toEpisodeId: 108 }, episodes: season, files: fs([2, 56]), queueBusy: false });
-    expect(single.refusal).toBe('split_multi');
+    // A single move of a two-episode file moves both, by the offset chosen: "the file on S05E06 is really S05E07".
+    const single = buildRemapPlan({ seasonNumber: 5, claim: { kind: 'single', fromEpisodeId: 106, toEpisodeId: 107 }, episodes: season, files: fs([2, 56]), queueBusy: false });
+    expect(single.refusal).toBeNull();
+    expect(single.moves[0]!.to.map((e) => e.episodeNumber)).toEqual([6, 7]);
+    expect(single.vacated.map((e) => e.episodeNumber)).toEqual([5]);
+    const two = buildRemapPlan({ seasonNumber: 5, claim: { kind: 'single', fromEpisodeId: 105, toEpisodeId: 107 }, episodes: season, files: fs([2, 56]), queueBusy: false });
+    expect(two.moves[0]!.to.map((e) => e.episodeNumber)).toEqual([7, 8]);
+    // Past the season's end, it has nowhere to go.
+    const past = buildRemapPlan({ seasonNumber: 5, claim: { kind: 'single', fromEpisodeId: 105, toEpisodeId: 108 }, episodes: season, files: fs([2, 56]), queueBusy: false });
+    expect(past.refusal).toBe('no_such_episode');
   });
 
   it(`caps a request at ${REMAP_MAX_MOVES} moves`, () => {

@@ -1,7 +1,7 @@
 // ADR-109 / DESIGN-055 (PLAN-077 P1) — the Repair Guide's in-cluster tool parses its commands strictly: a read can never
 // be mistaken for a write, and `settings` writes only with --set / --known-issue.
 import { describe, expect, it } from 'vitest';
-import { parseRepairGuideArgs } from '../src/scripts/repair-guide';
+import { formatTitleCheckBackfill, parseRepairGuideArgs } from '../src/scripts/repair-guide';
 
 describe('repair-guide.ts arguments', () => {
   it('preview a movie, an episode, a season with chosen episodes', () => {
@@ -39,6 +39,60 @@ describe('repair-guide.ts arguments', () => {
     expect(() => parseRepairGuideArgs(['search-plan', '--tvdb', '425007', '--season', '2'])).toThrow(/--episode/);
     expect(parseRepairGuideArgs(['settings', '--set', 'import_check=on'])).toMatchObject({ set: { import_check: true } });
     expect(parseRepairGuideArgs(['queue-check'])).toMatchObject({ command: 'queue-check' });
+  });
+
+  it('title-check runs the backfill (optionally dry) or lists one series\' flags (DESIGN-055 D-05, PLAN-077 P4)', () => {
+    expect(parseRepairGuideArgs(['title-check', '--backfill', '--dry-run', '--json'])).toMatchObject({
+      command: 'title-check',
+      backfill: true,
+      dryRun: true,
+      json: true,
+    });
+    expect(parseRepairGuideArgs(['title-check', '--flags', '1061'])).toMatchObject({ command: 'title-check', flagsSeriesId: 1061 });
+    expect(() => parseRepairGuideArgs(['title-check'])).toThrow(/exactly one of --backfill or --flags/);
+    expect(() => parseRepairGuideArgs(['title-check', '--backfill', '--flags', '1'])).toThrow(/exactly one/);
+    expect(() => parseRepairGuideArgs(['title-check', '--flags', '1', '--dry-run'])).toThrow(/--dry-run goes with --backfill/);
+    expect(() => parseRepairGuideArgs(['title-check', '--flags', 'x'])).toThrow(/whole number/);
+    expect(() => parseRepairGuideArgs(['queue-check', '--backfill'])).toThrow(/are for title-check/);
+  });
+
+  it('prints the backfill counts, then one line per file whose name says it is another episode', () => {
+    const lines = formatTitleCheckBackfill({
+      dryRun: true,
+      historyRecords: 22_500,
+      historyFiles: 18_000,
+      series: 950,
+      filesJudged: 17_000,
+      fromHistory: 16_500,
+      fromSceneName: 500,
+      noEvidence: 300,
+      verdicts: { agrees: 9_000, disagrees: 1, ambiguous: 500, silent: 7_499 },
+      written: 0,
+      flagsOpened: 1,
+      errors: 0,
+      errorSamples: [],
+      disagrees: [
+        {
+          seriesId: 1061,
+          seriesTitle: 'Regular Show: The Lost Tapes',
+          seasonNumber: 1,
+          episodeFileId: 9024,
+          episode: { episodeId: 118420, episodeNumber: 24, title: "Don's Back" },
+          episodeIds: [118420],
+          best: { episodeId: 118419, episodeNumber: 23, title: 'All You Can Fit' },
+          score: 0,
+          bestScore: 1,
+          name: 'Regular.Show..The.Lost.Tapes.S01E24.All.You.Can.Fit.1080p.DSNP.WEB-DL.DDP5.1.H.264-AndreMor',
+          nameFrom: 'history',
+        },
+      ],
+    });
+    expect(lines[0]).toMatch(/dry run, nothing written.*22500 import records/);
+    expect(lines[2]).toBe('agrees 9000, disagrees 1, ambiguous 500, silent 7499; would open 1 flags, wrote 0 rows');
+    expect(lines[3]).toBe(
+      'Regular Show: The Lost Tapes S01E24 "Don\'s Back" -> S01E23 "All You Can Fit" (score 0.00, best 1.00) file 9024 ' +
+        '[history]: Regular.Show..The.Lost.Tapes.S01E24.All.You.Can.Fit.1080p.DSNP.WEB-DL.DDP5.1.H.264-AndreMor',
+    );
   });
 
   it('refuses what it does not understand', () => {

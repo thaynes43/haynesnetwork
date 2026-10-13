@@ -120,6 +120,55 @@ export const sonarrHistoryRecordSchema = historyRecordBaseSchema.extend({
 export type SonarrHistoryRecord = z.infer<typeof sonarrHistoryRecordSchema>;
 
 /**
+ * ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — the `downloadFolderImported` filter value for the paged
+ * `GET /history?eventType=` (the integer enum, like SONARR_GRABBED_EVENT_TYPE): 3.
+ */
+export const SONARR_DOWNLOAD_FOLDER_IMPORTED_EVENT_TYPE: number =
+  SONARR_HISTORY_EVENT_TYPES.indexOf('downloadFolderImported');
+
+/**
+ * ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — one `downloadFolderImported` history record as the Title Check reads it
+ * (Sonarr 4.0.20.3012, `GET /history?eventType=3` and `GET /history/since?eventType=downloadFolderImported`). Sonarr
+ * writes one record per episode, so a multi-episode file has several records with the same `data.fileId`. Only the
+ * named `data` keys are kept: the imported file's id, the path the download was dropped at (its base name is the
+ * release's own file name), the library path and the release group. Nothing else from `data` (an indexer URL can ride
+ * there on other event types) enters the app.
+ */
+export const sonarrImportHistoryRecordSchema = z
+  .object({
+    id: z.number().int(),
+    eventType: z.string().nullish(),
+    date: z.string(),
+    seriesId: z.number().int(),
+    episodeId: z.number().int(),
+    sourceTitle: z.string().nullish(),
+    downloadId: z.string().nullish(),
+    data: z.record(z.string(), z.unknown()).nullish(),
+  })
+  .transform((r) => {
+    const str = (key: string): string | null => {
+      const v = r.data?.[key];
+      return typeof v === 'string' && v.trim().length > 0 ? v : null;
+    };
+    const fileId = str('fileId');
+    return {
+      id: r.id,
+      eventType: r.eventType ?? null,
+      date: r.date,
+      seriesId: r.seriesId,
+      episodeId: r.episodeId,
+      sourceTitle: r.sourceTitle?.trim() ? r.sourceTitle : null,
+      downloadId: r.downloadId ?? null,
+      /** The imported episode file's id (`data.fileId`, a numeric string upstream); null when absent or malformed. */
+      fileId: fileId !== null && /^\d+$/.test(fileId) ? Number(fileId) : null,
+      droppedPath: str('droppedPath'),
+      importedPath: str('importedPath'),
+      releaseGroup: str('releaseGroup'),
+    };
+  });
+export type SonarrImportHistoryRecord = z.infer<typeof sonarrImportHistoryRecordSchema>;
+
+/**
  * `GET /queue?seriesIds=` record with Sonarr's join keys (PLAN-015 / D-20). `seriesId` is the
  * parent (= media_items.arr_item_id) the queue is filtered by; `episodeId`/`seasonNumber` map a
  * record back to a fix/search target child (verified live 2026-07-07). Nullish because a queue

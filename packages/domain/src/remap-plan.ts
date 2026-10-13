@@ -62,7 +62,7 @@ export type RemapRefusal =
   | 'collision'
   /** The moves form a cycle, a swap, with no free slot to pass through (rule 4). */
   | 'cycle'
-  /** A file holding two episodes would be split (rule 5). */
+  /** A shift's range would split a file holding two episodes (rule 5). */
   | 'split_multi'
   /** More than REMAP_MAX_MOVES moves (rule 11). */
   | 'too_many'
@@ -246,11 +246,17 @@ export function buildRemapPlan(input: RemapPlanInput): RemapPlan {
     if (!to) return result([], 'no_such_episode', null);
     if (from.id === to.id) return result([], 'same_episode', null);
     const held = holds.get(from.episodeFileId) ?? [from];
-    if (held.length > 1) {
-      // A file holding two episodes moves as a set (rule 5); a single move names one episode, so it would split it.
-      return result([], 'split_multi', { episode: ref(from), fileName: basename(filesById.get(from.episodeFileId)?.relativePath ?? null) });
+    // A file holding several episodes moves as a set (rule 5), by the offset the person chose for the episode they
+    // picked ("the file on S05E03 is really S05E04" moves S05E02-03 to S05E03-04).
+    const offset = to.episodeNumber - from.episodeNumber;
+    const targets: RemapEpisode[] = [];
+    for (const h of held) {
+      const t = byNum.get(h.episodeNumber + offset);
+      if (!t) return result([], 'no_such_episode', null);
+      targets.push(t);
     }
-    raw.push({ fileId: from.episodeFileId, from: [from], to: [to] });
+    if (targets.every((t, i) => t.id === held[i]!.id)) return result([], 'same_episode', null);
+    raw.push({ fileId: from.episodeFileId, from: held, to: targets });
   } else {
     const inRange = (e: RemapEpisode) =>
       e.episodeNumber >= claim.fromEpisodeNumber && e.episodeNumber <= claim.throughEpisodeNumber;

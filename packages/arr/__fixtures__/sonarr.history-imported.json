@@ -1,0 +1,35 @@
+{
+  "page": 1,
+  "pageSize": 1000,
+  "sortKey": "date",
+  "sortDirection": "ascending",
+  "totalRecords": 1,
+  "records": [
+    {
+      "episodeId": 34301,
+      "seriesId": 402,
+      "sourceTitle": "Love.on.the.Spectrum.US.S04E07.Episode.7.1080p.NF.WEB-DL.DDP5.1.H.264-Kitsune",
+      "languages": [{ "id": 1, "name": "English" }],
+      "quality": {
+        "quality": { "id": 3, "name": "WEBDL-1080p", "source": "web", "resolution": 1080 },
+        "revision": { "version": 1, "real": 0, "isRepack": false }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "qualityCutoffNotMet": false,
+      "date": "2026-10-13T00:44:15Z",
+      "downloadId": "ae18d2b8-0000-0000-0000-000000000000",
+      "eventType": "downloadFolderImported",
+      "data": {
+        "fileId": "79099",
+        "droppedPath": "/data/haynestower/usenet/complete-k8s/tv/Love.on.the.Spectrum.US.S04.1080p.NF.WEB-DL.DDP5.1.H.264-Kitsune/Love.on.the.Spectrum.US.S04E07.Episode.7.1080p.NF.WEB-DL.DDP5.1.H.264-Kitsune.mkv",
+        "importedPath": "/data/haynestower/Media/TV Shows/Love on the Spectrum U.S/Season 4/Love on the Spectrum (US) (2022) - S04E07 - Episode 7 [NF WEBDL-1080p][EAC3 5.1][x264]-Kitsune.mkv",
+        "downloadClient": "SABnzbd",
+        "releaseGroup": "Kitsune",
+        "size": "2237709403",
+        "releaseType": "SeasonPack"
+      },
+      "id": 1504212
+    }
+  ]
+}
