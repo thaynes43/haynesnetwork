@@ -286,7 +286,7 @@ Priority is how often real reports need the remedy, and how much harm today's be
     `moveFile` media action), and `/admin/fixes` (the switch, a Mislabel Block card, a Title Check card).
   - Tests: `remap-plan.test.ts`, `remap-flow.test.ts`, `title-check.test.ts`, `mislabel-block.test.ts` (domain),
     `episode-remap.test.ts` (api), the arr client tests, `title-check-sync.test.ts` and the repair-guide script test
-    (sync), migration 0101, `remap-guide.test.ts` and `repair-guide.test.ts` (web); e2e `episode-remap.spec.ts`: Case A
+    (sync), migration 0101, `remap-guide.test.ts` and `repair-guide.test.ts` (web); e2e `remap-episodes.spec.ts`: Case A
     (AC-40) on a stub season, the flag's single move, the admin removal.
 
 ### P5: Release Pick

@@ -1,3 +1,5 @@
+// Named to run after library.spec.ts (the suite is serial, alphabetical): this spec writes repair and search events on
+// Breaking Prod, and library.spec.ts asserts that title's newest timeline event.
 // ADR-109 C-02 / ADR-110 C-03, C-04 / DESIGN-055 D-04, D-05 (PLAN-077 P4) end to end — the Episode Re-map, against the
 // stub *arr's re-map season (POST /_stub/remap: Breaking Prod Season 3, whose library files follow Sonarr 4.0.20.3012's
 // ManualImport and RenameFiles semantics):

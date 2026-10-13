@@ -642,6 +642,8 @@ describe('the settings and the kill switch (DESIGN-055 D-01)', () => {
         playback_triage: false,
         // PLAN-077 P2 (DESIGN-055 D-07): Force Search's remedy, untouched by this write, ships off.
         import_check: false,
+        // PLAN-077 P4 (DESIGN-055 D-04): the Episode Re-map's remedy, untouched by this write, ships off.
+        episode_remap: false,
       },
       knownIssueServers: ['haynesops'],
     });
