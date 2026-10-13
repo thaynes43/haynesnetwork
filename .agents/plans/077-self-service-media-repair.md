@@ -321,8 +321,8 @@ Priority is how often real reports need the remedy, and how much harm today's be
     `episode-remap.test.ts` (api), the arr client tests, `title-check-sync.test.ts` and the repair-guide script test
     (sync), migration 0101, `remap-guide.test.ts` and `repair-guide.test.ts` (web); e2e `remap-episodes.spec.ts`: Case A
     (AC-40) on a stub season, the flag's single move, the admin removal.
-- **Q-10 ruling (owner, 2026-10-13: A, ADR-113): built; the live adoption is owed.** DESIGN-055 D-05 "Q-10 ruling
-  decisions" record the design.
+- **Q-10 ruling (owner, 2026-10-13: A, ADR-113): built in [#924](https://github.com/thaynes43/haynesnetwork/pull/924);
+  the live adoption is owed.** DESIGN-055 D-05 "Q-10 ruling decisions" record the design.
   - Build: migration 0102 (`mislabel_block_terms.kind`, `name_token`, `release_group` nullable, origin `staff`, the
     kind/field and kind/origin CHECKs, the active unique index per kind); `release-terms.ts` `renderMislabelNameTerm`,
     `mislabelNameKindOf`, `isMislabelNameTerm`; `mislabel-block.ts` `parseMislabelName`, `deriveMislabelNameTerm`,
