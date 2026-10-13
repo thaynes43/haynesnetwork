@@ -927,6 +927,117 @@ describe('the Watch Carry flow (ADR-114)', () => {
     expect((carry!.scope.pendingDeletes as unknown[]).length).toBe(1);
     expect(carry!.detail.deleteRecovery).toBeUndefined();
     await expect(carryWatchState({ db: t.db, plex: plex.plex, carryId: carry!.id, pauseMs: 0 })).rejects.toThrow(/file deletions are not verified/);
+    vi.restoreAllMocks();
+    // Recovery can itself lose the closing audit after marks are carried. Its closure obligation must survive the
+    // now-empty pending scope, so another carry-finish completes the parent and unblocks this episode's Fix grain.
+    vi.spyOn(fixWriters, 'recordFixAction').mockRejectedValueOnce(new Error('closing audit unavailable'));
+    const recovery = { db: t.db, arr: arr.bundle, plex: plex.plex, carryId: carry!.id, pauseMs: 0 };
+    await expect(finishWrongContentReplaceCarry(recovery)).rejects.toThrow(/closure could not be saved.*obligation is stored.*carry-finish/);
+    const [interrupted] = await t.db.select().from(watchCarries).where(eq(watchCarries.id, carry!.id));
+    expect(interrupted!.scope.pendingDeletes).toEqual([]);
+    expect(interrupted!.detail.wrongContentNoGrabRecovery).toMatchObject({ fixRequestId: fix!.id, mediaItemId: itemId });
+    expect((await t.db.select().from(fixRequests).where(eq(fixRequests.id, fix!.id)))[0]!.status).toBe('pending');
+    vi.restoreAllMocks();
+    expect(await finishWrongContentReplaceCarry(recovery)).toMatchObject({ status: 'verified' });
+    const [closed] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, fix!.id));
+    expect(closed!.status).toBe('failed');
+    expect(closed!.actionsTaken).toEqual(expect.arrayContaining([expect.objectContaining({ step: 'wrong_content_no_grab_recovery', removedFileIds: [7002], missingEpisodeIds: [402], grabStarted: false })]));
+    const retry = await fixWriters.createFixRequest({ db: t.db, requesterId: null, requesterIsAdmin: true, mediaItemId: itemId, scope: 'episode', targetArrChildId: 402, reason: 'wrong_content' });
+    await finishWrongContentReplaceCarry(recovery);
+    const [again] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, fix!.id));
+    expect((again!.actionsTaken as Array<{ step: string }>).filter((action) => action.step === 'wrong_content_no_grab_recovery')).toHaveLength(1);
+    expect((await t.db.select().from(fixRequests).where(eq(fixRequests.id, retry.fixRequestId)))[0]!.status).toBe('pending');
+    expect(arr.state.grabs).toEqual([]);
+  });
+
+  it('never grabs without durable grab-start intent, and recovers the parent after that audit outage', async () => {
+    resetReleaseSearchState();
+    const arr = stubSonarr({ contentOn: [[1, 1], [2, 9], [3, 3], [4, 4]] });
+    const plex = fakePlex({ files: arr.plexFiles, accounts: [OWNER, FRIEND_A] });
+    plex.seed(FRIEND_A, 'g-1-2', { viewCount: 1 });
+    arr.state.releases = [release('right', 'Show.S01E02.Bravo.Night.1080p.WEB-DL-GRP', 2, ['Existing file on disk is of equal or higher preference'])];
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2 };
+    const plan = await planWrongContentReplace(target);
+    const note = carryWriters.noteWatchCarry;
+    const record = fixWriters.recordFixAction;
+    vi.spyOn(carryWriters, 'noteWatchCarry').mockImplementation((input) => (input.detail.wrongContentDeletion as { grabStarted?: boolean } | undefined)?.grabStarted ? Promise.reject(new Error('grab intent database unavailable')) : note(input));
+    vi.spyOn(fixWriters, 'recordFixAction').mockImplementation((input) => input.transition === 'failed' ? Promise.reject(new Error('failure audit unavailable')) : record(input));
+    await expect(runWrongContentReplace({ ...target, planDigest: plan.digest, keys: [plan.candidates[0]!.key], evidence: 'The title card names another show.', watchCarry: plex.plex, carryPauseMs: 0 })).rejects.toThrow(/grab intent database unavailable.*audit could not be saved.*carry-finish/);
+    const [carry] = await t.db.select().from(watchCarries);
+    const [fix] = await t.db.select().from(fixRequests);
+    expect(carry!.scope.pendingDeletes).toEqual([]);
+    expect(carry!.detail.wrongContentDeletion).toMatchObject({ version: 1, grabStarted: false });
+    expect(fix!.status).toBe('actioned');
+    expect(arr.state.grabs).toEqual([]);
+    vi.restoreAllMocks();
+    expect(await finishWrongContentReplaceCarry({ db: t.db, arr: arr.bundle, plex: plex.plex, carryId: carry!.id, pauseMs: 0 })).toMatchObject({ status: 'verified' });
+    expect((await t.db.select().from(fixRequests).where(eq(fixRequests.id, fix!.id)))[0]!.status).toBe('failed');
+    expect(arr.state.grabs).toEqual([]);
+  });
+
+  it.each(['saved', 'audit_unavailable'] as const)('preserves a successful or possible grab’s parent when its completion audit is %s', async (audit) => {
+    resetReleaseSearchState();
+    const arr = stubSonarr({ contentOn: [[1, 1], [2, 9], [3, 3], [4, 4]] });
+    const plex = fakePlex({ files: arr.plexFiles, accounts: [OWNER, FRIEND_A] });
+    arr.state.releases = [release('right', 'Show.S01E02.Bravo.Night.1080p.WEB-DL-GRP', 2, ['Existing file on disk is of equal or higher preference'])];
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2 };
+    const plan = await planWrongContentReplace(target);
+    const record = fixWriters.recordFixAction;
+    if (audit === 'audit_unavailable') vi.spyOn(fixWriters, 'recordFixAction').mockImplementation((input) => input.transition === 'search_triggered' ? Promise.reject(new Error('completion audit unavailable')) : record(input));
+    const run = runWrongContentReplace({ ...target, planDigest: plan.digest, keys: [plan.candidates[0]!.key], evidence: 'The title card names another show.', watchCarry: plex.plex, carryPauseMs: 0 });
+    if (audit === 'audit_unavailable') await expect(run).rejects.toThrow(/completion audit unavailable/);
+    else await run;
+    const [carry] = await t.db.select().from(watchCarries);
+    const [before] = await t.db.select().from(fixRequests);
+    expect(carry!.detail.wrongContentDeletion).toMatchObject({ version: 1, grabStarted: true });
+    expect(arr.state.grabs).toHaveLength(1);
+    vi.restoreAllMocks();
+    await finishWrongContentReplaceCarry({ db: t.db, arr: arr.bundle, plex: plex.plex, carryId: carry!.id, pauseMs: 0 });
+    const [after] = await t.db.select().from(fixRequests).where(eq(fixRequests.id, before!.id));
+    expect(after!.status).toBe(audit === 'saved' ? 'search_triggered' : 'actioned');
+    expect(after!.actionsTaken).toEqual(before!.actionsTaken);
+    expect(arr.state.grabs).toHaveLength(1);
+  });
+
+  it('rolls Fix creation back if its carry link cannot commit, then restores retained marks without any delete', async () => {
+    resetReleaseSearchState();
+    const arr = stubSonarr({ contentOn: [[1, 1], [2, 9], [3, 3], [4, 4]] });
+    const plex = fakePlex({ files: arr.plexFiles, accounts: [OWNER, FRIEND_A] });
+    plex.seed(FRIEND_A, 'g-1-2', { viewCount: 1 });
+    arr.state.releases = [release('right', 'Show.S01E02.Bravo.Night.1080p.WEB-DL-GRP', 2, ['Existing file on disk is of equal or higher preference'])];
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2 };
+    const plan = await planWrongContentReplace(target);
+    const note = carryWriters.noteWatchCarry;
+    vi.spyOn(carryWriters, 'noteWatchCarry').mockImplementation((input) => input.detail.fixRequestId ? Promise.reject(new Error('carry link could not be saved')) : note(input));
+    await expect(runWrongContentReplace({ ...target, planDigest: plan.digest, keys: [plan.candidates[0]!.key], evidence: 'The title card names another show.', watchCarry: plex.plex, carryPauseMs: 0 })).rejects.toThrow(/carry link could not be saved/);
+    expect(await t.db.select().from(fixRequests)).toEqual([]);
+    expect((await t.db.select().from(ledgerEvents)).filter((event) => event.eventType === 'fix_requested')).toEqual([]);
+    expect(arr.state.deleteAttempts).toEqual([]);
+    expect(arr.state.grabs).toEqual([]);
+    expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 1 });
+    const [carry] = await t.db.select().from(watchCarries);
+    expect(carry!.status).toBe('refused');
+    expect(carry!.detail.fixRequestId).toBeUndefined();
+  });
+
+  it('a failed wrong-content pre-clear restoration directs staff to carry-finish and never deletes or grabs', async () => {
+    resetReleaseSearchState();
+    const arr = stubSonarr({ contentOn: [[1, 1], [2, 9], [3, 3], [4, 4]] });
+    const plex = fakePlex({ files: arr.plexFiles, accounts: [OWNER, FRIEND_A] });
+    plex.seed(FRIEND_A, 'g-1-2', { viewCount: 1 });
+    plex.landThenFailAt.set(FRIEND_A, 1); // The clear landed, but its answer failed.
+    plex.failWriteAt.set(FRIEND_A, 2); // Restoring that clear also fails.
+    arr.state.releases = [release('right', 'Show.S01E02.Bravo.Night.1080p.WEB-DL-GRP', 2, ['Existing file on disk is of equal or higher preference'])];
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2 };
+    const plan = await planWrongContentReplace(target);
+    await expect(runWrongContentReplace({ ...target, planDigest: plan.digest, keys: [plan.candidates[0]!.key], evidence: 'The title card names another show.', watchCarry: plex.plex, carryPauseMs: 0 })).rejects.toThrow(/run carry-finish --carry/);
+    expect(arr.state.deleteAttempts).toEqual([]);
+    expect(arr.state.grabs).toEqual([]);
+    expect(await t.db.select().from(fixRequests)).toEqual([]);
+    const [carry] = await t.db.select().from(watchCarries);
+    expect(carry!.status).toBe('cleared');
+    expect(await finishWrongContentReplaceCarry({ db: t.db, arr: arr.bundle, plex: plex.plex, carryId: carry!.id, pauseMs: 0 })).toBeNull();
+    expect(plex.view(FRIEND_A, 'g-1-2')).toMatchObject({ viewCount: 1 });
   });
 
   it('records a failed grab after confirmed deletion and says to choose again without promising a search', async () => {

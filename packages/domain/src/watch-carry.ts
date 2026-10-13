@@ -714,7 +714,7 @@ export async function preClearWatchCarry(input: {
     throw new WatchCarryError(
       restoreFailed === 0
         ? `Clearing the watched marks before the move failed (${failure}); they were put back (carry ${carryId}) and nothing moved.`
-        : `Clearing the watched marks before the move failed (${failure}), and ${restoreFailed} could not be put back: run carry-revert --carry ${carryId}. Nothing moved.`,
+        : `Clearing the watched marks before the move failed (${failure}), and ${restoreFailed} could not be put back: run ${input.snapshot.kind === 'wrong_content' ? 'carry-finish' : 'carry-revert'} --carry ${carryId}. Nothing moved.`,
     );
   }
   await setCarryStatus({ db: input.db, carryId, status: 'cleared', patch: { summary: { preCleared: touchedItems.length } } });

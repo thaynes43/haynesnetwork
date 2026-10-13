@@ -578,6 +578,13 @@ do not edit)", "must not contain" terms only, no tags.
     If the audit cannot be saved, the error says so and points staff to `carry-status` and `carry-finish`; the stored
     carry remains the recovery source. Partial-delete errors name confirmed missing episodes and direct staff to
     `release-list` or Fix for a new pick.
+    The Fix creation and its carry link commit together; a failed link rolls the Fix back before any delete. The
+    stored deletion plan records its version and `grabStarted: false`, then commits `true` before the first release
+    POST. Staff recovery keeps a durable no-grab closure marker before changing the scope, validates the linked
+    staff Fix and media, and closes a pending/actioned parent through `recordFixAction` once recovery succeeds. A
+    repeated recovery is idempotent. Recorded or possible grabs, search-triggered parents and completed parents keep
+    their lifecycle. A failed pre-clear restoration names `carry-finish` for Wrong-Content Replace, because its
+    pending deletion scope blocks a generic revert.
 
     The live plans (2026-10-13) added four things. **Several files:** `--also 34` replaces more files with the slot
     when one release holds all their episodes (Mickey's S01E33 and E34 files each sit on one episode, and the right

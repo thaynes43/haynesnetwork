@@ -13,7 +13,16 @@
 // Writes: the Fix's own (DELETE episodefile) and the Release Pick's grab (POST /release with the override body), through
 // `@hnet/arr/write` from this package (hard rule 4), inside one Fix Request per slot (requester null: the staff tool).
 import { createHash } from 'node:crypto';
-import type { DbClient, FixActionEntry, WatchCarryPart } from '@hnet/db';
+import {
+  fixRequests,
+  watchCarries,
+  type DbClient,
+  type FixActionEntry,
+  type WatchCarryPart,
+  type WatchCarryRow,
+} from '@hnet/db';
+import { eq } from 'drizzle-orm';
+import { inTransaction, resolveDb } from './db-client';
 import type { ArrClientBundle } from './arr-clients';
 import { FixPlanChangedError, FixRefusedError } from './errors';
 import { createFixRequest, recordFixAction } from './fix-requests';
@@ -287,8 +296,157 @@ interface DeletionFile extends WatchCarryPart {
   sameAs: number[];
 }
 interface DeletionSnapshot {
+  version: 1;
+  /** Durable intent: true commits before any POST /release; false proves no grab was started by this run. */
+  grabStarted: boolean;
   files: DeletionFile[];
   scope: WatchCarryScope;
+}
+
+interface NoGrabRecoveryMarker {
+  fixRequestId: string;
+  mediaItemId: string;
+  at: string;
+  closedAt?: string;
+}
+
+/** Validate the parent before changing the scope, and persist its no-grab closure obligation first. */
+async function prepareNoGrabRecovery(input: {
+  db?: DbClient;
+  row: WatchCarryRow;
+  deletion: DeletionSnapshot;
+}): Promise<NoGrabRecoveryMarker | null> {
+  const fixRequestId = input.row.detail.fixRequestId;
+  if (fixRequestId === undefined) return null; // A pre-clear failure precedes Fix creation.
+  if (typeof fixRequestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(fixRequestId)) {
+    throw new FixRefusedError(
+      'copy_refused',
+      'The carry has an invalid Fix link. Inspect carry-status before recovery.',
+    );
+  }
+  const [fix] = await resolveDb(input.db)
+    .select()
+    .from(fixRequests)
+    .where(eq(fixRequests.id, fixRequestId));
+  if (
+    !fix ||
+    fix.mediaItemId !== input.row.mediaItemId ||
+    fix.reason !== 'wrong_content' ||
+    fix.requesterId !== null ||
+    fix.targetScope !== 'episode' ||
+    !input.deletion.files.some((file) => file.episodeIds.includes(fix.targetArrChildId!))
+  ) {
+    throw new FixRefusedError(
+      'copy_refused',
+      'The carry’s linked Fix does not match its media and episode. Inspect carry-status before recovery.',
+    );
+  }
+  if (
+    !['pending', 'actioned'].includes(fix.status) ||
+    input.deletion.grabStarted === true ||
+    (fix.actionsTaken ?? []).some((action) => action.step === 'release_grab')
+  )
+    return null;
+  const prior = input.row.detail.wrongContentNoGrabRecovery as NoGrabRecoveryMarker | undefined;
+  if (prior && (prior.fixRequestId !== fix.id || prior.mediaItemId !== fix.mediaItemId)) {
+    throw new FixRefusedError(
+      'copy_refused',
+      'The stored recovery obligation does not match the linked Fix. Inspect carry-status before recovery.',
+    );
+  }
+  const pending = (input.row.scope.pendingDeletes as unknown[] | undefined)?.length ?? 0;
+  if (
+    !prior &&
+    !(input.deletion.version === 1 && input.deletion.grabStarted === false) &&
+    pending === 0
+  )
+    return null;
+  const marker: NoGrabRecoveryMarker = prior ?? {
+    fixRequestId: fix.id,
+    mediaItemId: fix.mediaItemId,
+    at: new Date().toISOString(),
+  };
+  if (!prior)
+    await noteWatchCarry({
+      db: input.db,
+      carryId: input.row.id,
+      detail: { wrongContentNoGrabRecovery: marker },
+    });
+  return marker;
+}
+
+/** The existing lifecycle writer closes only this validated, proved no-grab parent, once. No external write in TX. */
+async function closeNoGrabRecovery(input: {
+  db?: DbClient;
+  carryId: string;
+  marker: NoGrabRecoveryMarker;
+  outcome: DeletionReadBack;
+  carryStatus: string;
+}): Promise<void> {
+  await inTransaction(input.db, async (tx) => {
+    const [carry] = await tx
+      .select()
+      .from(watchCarries)
+      .where(eq(watchCarries.id, input.carryId))
+      .for('update');
+    const [fix] = await tx
+      .select()
+      .from(fixRequests)
+      .where(eq(fixRequests.id, input.marker.fixRequestId))
+      .for('update');
+    const deletion = carry?.detail.wrongContentDeletion as DeletionSnapshot | undefined;
+    const obligation = carry?.detail.wrongContentNoGrabRecovery as NoGrabRecoveryMarker | undefined;
+    if (
+      !carry ||
+      carry.kind !== 'wrong_content' ||
+      !fix ||
+      carry.mediaItemId !== fix.mediaItemId ||
+      fix.mediaItemId !== input.marker.mediaItemId ||
+      carry.detail.fixRequestId !== fix.id ||
+      obligation?.fixRequestId !== fix.id ||
+      obligation.mediaItemId !== fix.mediaItemId ||
+      fix.reason !== 'wrong_content' ||
+      fix.requesterId !== null
+    ) {
+      throw new FixRefusedError(
+        'copy_refused',
+        'The recovery obligation and linked Fix do not match. Inspect carry-status before retrying.',
+      );
+    }
+    if (
+      !['pending', 'actioned'].includes(fix.status) ||
+      deletion?.grabStarted === true ||
+      (fix.actionsTaken ?? []).some((action) => action.step === 'release_grab')
+    )
+      return;
+    await recordFixAction({
+      db: tx,
+      fixRequestId: fix.id,
+      transition: 'failed',
+      actions: [
+        {
+          step: 'wrong_content_no_grab_recovery',
+          endpoint: 'repair-guide.ts carry-finish',
+          ok: true,
+          at: new Date().toISOString(),
+          carryId: carry.id,
+          carryStatus: input.carryStatus,
+          grabStarted: false,
+          removedFileIds: input.outcome.removed.map((file) => file.id),
+          retainedFileIds: input.outcome.retained.map((file) => file.id),
+          unresolvedFileIds: input.outcome.unresolved.map((file) => file.id),
+          missingEpisodeIds: input.outcome.missingEpisodeIds,
+        },
+      ],
+    });
+    await noteWatchCarry({
+      db: tx,
+      carryId: carry.id,
+      detail: {
+        wrongContentNoGrabRecovery: { ...input.marker, closedAt: new Date().toISOString() },
+      },
+    });
+  });
 }
 interface DeletionReadBack {
   removed: DeletionFile[];
@@ -425,6 +583,7 @@ export async function finishWrongContentReplaceCarry(input: {
       'This carry has no recorded wrong-content deletion plan. Inspect its files before restoring any marks.',
     );
   }
+  const closure = await prepareNoGrabRecovery({ db: input.db, row, deletion });
   const outcome = await readDeletionOutcome(input.arr, row.seriesId, deletion.files);
   const settled = await settleDeletionScope({ ...input, deletion, outcome });
   if (settled === 'cleared') {
@@ -433,8 +592,24 @@ export async function finishWrongContentReplaceCarry(input: {
       `The file deletion or watch-state restoration is still unverified. No release was grabbed. Check repair-guide.ts carry-status --carry ${input.carryId}, then retry carry-finish after Sonarr and Plex can be read.`,
     );
   }
-  if (settled === 'refused') return null;
-  return carryWatchState(input);
+  const result = settled === 'refused' ? null : await carryWatchState(input);
+  if (closure) {
+    try {
+      await closeNoGrabRecovery({
+        db: input.db,
+        carryId: row.id,
+        marker: closure,
+        outcome,
+        carryStatus: result?.status ?? 'refused',
+      });
+    } catch (err) {
+      throw new FixRefusedError(
+        'copy_refused',
+        `Watch recovery finished but the linked Fix closure could not be saved (${err instanceof Error ? err.message : String(err)}). The closure obligation is stored. Check repair-guide.ts carry-status --carry ${row.id}, then retry carry-finish when the database is available.`,
+      );
+    }
+  }
+  return result;
 }
 
 /**
@@ -556,6 +731,7 @@ export async function runWrongContentReplace(
   }
 
   let carry: WatchCarrySnapshot | null = null;
+  let wrongContentDeletion: DeletionSnapshot | null = null;
   if (input.watchCarry) {
     // Per wrong file: a file byte-identical to one of its own copies is told apart by name (it is that copy's content
     // where it sits); any other is deleted content, credited only through its copies.
@@ -573,7 +749,9 @@ export async function runWrongContentReplace(
       deletedNames,
       ...(sameAs.length > 0 ? { sameAs } : {}),
     };
-    const wrongContentDeletion: DeletionSnapshot = {
+    wrongContentDeletion = {
+      version: 1,
+      grabStarted: false,
       scope,
       files: plan.files.map((f) => ({
         id: f.id,
@@ -620,15 +798,24 @@ export async function runWrongContentReplace(
 
   let fixRequestId: string;
   try {
-    ({ fixRequestId } = await createFixRequest({
-      db: input.db,
-      requesterId: null,
-      requesterIsAdmin: true,
-      mediaItemId: input.mediaItemId,
-      scope: 'episode',
-      targetArrChildId: plan.slot[0]!.id,
-      targetLabel: plan.slot.map((e) => e.label).join(' + '),
-      reason: 'wrong_content',
+    ({ fixRequestId } = await inTransaction(input.db, async (tx) => {
+      const created = await createFixRequest({
+        db: tx,
+        requesterId: null,
+        requesterIsAdmin: true,
+        mediaItemId: input.mediaItemId,
+        scope: 'episode',
+        targetArrChildId: plan.slot[0]!.id,
+        targetLabel: plan.slot.map((e) => e.label).join(' + '),
+        reason: 'wrong_content',
+      });
+      if (carry)
+        await noteWatchCarry({
+          db: tx,
+          carryId: carry.carryId,
+          detail: { fixRequestId: created.fixRequestId },
+        });
+      return created;
     }));
   } catch (err) {
     if (carry && input.watchCarry) {
@@ -643,8 +830,6 @@ export async function runWrongContentReplace(
     }
     throw err;
   }
-  if (carry)
-    await noteWatchCarry({ db: input.db, carryId: carry.carryId, detail: { fixRequestId } });
   const at = () => new Date().toISOString();
   const deletionFiles = plan.files.map((f) => ({
     id: f.id,
@@ -707,6 +892,11 @@ export async function runWrongContentReplace(
     if (!carry || !input.watchCarry) return [];
     try {
       const { row } = await loadWatchCarry({ db: input.db, carryId: carry.carryId });
+      await prepareNoGrabRecovery({
+        db: input.db,
+        row,
+        deletion: row.detail.wrongContentDeletion as DeletionSnapshot,
+      });
       const settled = await settleDeletionScope({
         db: input.db,
         plex: input.watchCarry,
@@ -920,6 +1110,14 @@ export async function runWrongContentReplace(
     try {
       if (!target || target.kind !== 'sonarr')
         throw new Error('the episode could not be read back for the grab');
+      if (carry && wrongContentDeletion && !wrongContentDeletion.grabStarted) {
+        await noteWatchCarry({
+          db: input.db,
+          carryId: carry.carryId,
+          detail: { wrongContentDeletion: { ...wrongContentDeletion, grabStarted: true } },
+        });
+        wrongContentDeletion.grabStarted = true;
+      }
       await sendReleaseGrab({
         arr: input.arr,
         target,
@@ -930,35 +1128,40 @@ export async function runWrongContentReplace(
       grabbed.push({ key: p.offer.key, title: p.offer.title, lands: p.ids.map(label) });
     } catch (err) {
       const carried = await runCarry();
-      await recordFixAction({
-        db: input.db,
-        fixRequestId,
-        transition: 'failed',
-        actions: [
-          ...grabbed.map((g) => ({
-            step: 'release_grab',
-            endpoint: 'POST /api/v3/release',
-            ok: true,
-            at: at(),
-            release: g.title,
-            key: g.key,
-            lands: g.lands,
-            override: true,
-          })),
-          {
-            step: 'release_grab',
-            endpoint: 'POST /api/v3/release',
-            ok: false,
-            at: at(),
-            release: p.offer.title,
-            error: err instanceof Error ? err.message : String(err),
-          },
-          ...carried,
-        ],
-      });
+      let auditError: string | null = null;
+      try {
+        await recordFixAction({
+          db: input.db,
+          fixRequestId,
+          transition: 'failed',
+          actions: [
+            ...grabbed.map((g) => ({
+              step: 'release_grab',
+              endpoint: 'POST /api/v3/release',
+              ok: true,
+              at: at(),
+              release: g.title,
+              key: g.key,
+              lands: g.lands,
+              override: true,
+            })),
+            {
+              step: 'release_grab',
+              endpoint: 'POST /api/v3/release',
+              ok: false,
+              at: at(),
+              release: p.offer.title,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            ...carried,
+          ],
+        });
+      } catch (auditFailure) {
+        auditError = auditFailure instanceof Error ? auditFailure.message : String(auditFailure);
+      }
       throw new FixRefusedError(
         'copy_refused',
-        `The file was removed but a release could not be grabbed (${err instanceof Error ? err.message : String(err)}). The affected episodes remain missing; use repair-guide.ts release-list or Fix for a new pick.${carry ? ` Check repair-guide.ts carry-status --carry ${carry.carryId}.` : ''}`,
+        `The file was removed but a release could not be grabbed (${err instanceof Error ? err.message : String(err)}).${auditError ? ` The failed Fix audit could not be saved (${auditError}); use the stored carry for recovery.` : ''} The affected episodes remain missing; use repair-guide.ts release-list or Fix for a new pick.${carryCommands}`,
       );
     }
   }
