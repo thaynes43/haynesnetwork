@@ -134,6 +134,8 @@ const releaseFileShape = {
   customFormatScore: z.number().nullish(),
   edition: z.string().nullish(),
   mediaInfo: arrFileMediaInfoSchema,
+  /** DESIGN-055 D-05 (PLAN-077 P4) — when the *arr added the file (ISO), the Title Check backfill's import time. */
+  dateAdded: z.string().nullish(),
 };
 
 /** `GET /api/v3/moviefile?movieId=` element. */

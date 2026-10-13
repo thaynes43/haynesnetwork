@@ -106,6 +106,8 @@ export class SubtitleFixUnsupportedError extends Error {
  * - `nothing_safe`: a season Fix where every chosen episode was held back or refused.
  * - `needs_guide` (DESIGN-055 D-07, PLAN-077 P2): a queue-aware Force Search found a stuck download that only a person
  *   can act on after seeing it (an import, a removal), or one that needs staff.
+ * - `remap_refused` (DESIGN-055 D-04, PLAN-077 P4): an Episode Re-map that would displace a file it does not move, split
+ *   a two-episode file, swap files, or race a download; or the switch is off. Nothing was written.
  */
 export type FixRefusalReason =
   | 'same_release'
@@ -113,7 +115,8 @@ export type FixRefusalReason =
   | 'language_present'
   | 'pack'
   | 'nothing_safe'
-  | 'needs_guide';
+  | 'needs_guide'
+  | 'remap_refused';
 
 export class FixRefusedError extends Error {
   readonly code = 'FIX_REFUSED' as const;

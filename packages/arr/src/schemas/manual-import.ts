@@ -102,7 +102,8 @@ export interface SonarrManualImportFile {
   languages: ManualImportLanguage[];
   indexerFlags: number;
   releaseType?: string;
-  downloadId: string;
+  /** A download's id; left out for a library file (the UI's series-folder import sends none). */
+  downloadId?: string;
   episodeFileId?: number;
 }
 
@@ -137,3 +138,17 @@ export const arrCommandStatusSchema = z.object({
   ended: z.string().nullish(),
 });
 export type ArrCommandStatus = z.infer<typeof arrCommandStatusSchema>;
+
+/**
+ * DESIGN-055 D-04 rule 8 (PLAN-077 P4) — one row of Sonarr's `GET /rename?seriesId=&seasonNumber=` (RenameEpisodeFile
+ * Preview): a file whose name on disk is not the one the naming format gives it. Read live on Sonarr 4.0.20.3012.
+ */
+export const sonarrRenamePreviewSchema = z.object({
+  seriesId: z.number().int().nullish(),
+  seasonNumber: z.number().int().nullish(),
+  episodeNumbers: z.array(z.number().int()).nullish(),
+  episodeFileId: z.number().int(),
+  existingPath: z.string().nullish(),
+  newPath: z.string().nullish(),
+});
+export type SonarrRenamePreview = z.infer<typeof sonarrRenamePreviewSchema>;

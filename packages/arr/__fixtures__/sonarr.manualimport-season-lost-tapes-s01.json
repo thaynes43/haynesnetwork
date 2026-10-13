@@ -1,0 +1,122 @@
+[
+  {
+    "path": "/data/haynestower/Media/TV Shows/Regular Show - The Lost Tapes/Season 1/Regular Show - The Lost Tapes (2026) - S01E23 - All You Can Fit [DSNP WEBDL-1080p][EAC3 5.1][x264]-AndreMor.mkv",
+    "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E23 - All You Can Fit [DSNP WEBDL-1080p][EAC3 5.1][x264]-AndreMor.mkv",
+    "folderName": "Regular Show - The Lost Tapes",
+    "size": 378391500,
+    "series": {
+      "id": 1061,
+      "title": "Regular Show: The Lost Tapes",
+      "year": 2026
+    },
+    "seasonNumber": 1,
+    "episodes": [
+      {
+        "seriesId": 1061,
+        "episodeFileId": 78961,
+        "seasonNumber": 1,
+        "episodeNumber": 23,
+        "title": "All You Can Fit",
+        "hasFile": true,
+        "id": 118419
+      }
+    ],
+    "episodeFileId": 78961,
+    "releaseGroup": "AndreMor",
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "languages": [
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "qualityWeight": 13,
+    "customFormats": [
+      {
+        "id": 46,
+        "name": "DSNP"
+      },
+      {
+        "id": 58,
+        "name": "HD Streaming Boost"
+      }
+    ],
+    "customFormatScore": 150,
+    "indexerFlags": 0,
+    "releaseType": "singleEpisode",
+    "rejections": [],
+    "id": 589086886
+  },
+  {
+    "path": "/data/haynestower/Media/TV Shows/Regular Show - The Lost Tapes/Season 1/Regular Show - The Lost Tapes (2026) - S01E19 - Cool Boss [AMZN WEBDL-1080p][EAC3 5.1][h264]-BiOMA.mkv",
+    "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E19 - Cool Boss [AMZN WEBDL-1080p][EAC3 5.1][h264]-BiOMA.mkv",
+    "folderName": "Regular Show - The Lost Tapes",
+    "size": 449435600,
+    "series": {
+      "id": 1061,
+      "title": "Regular Show: The Lost Tapes",
+      "year": 2026
+    },
+    "seasonNumber": 1,
+    "episodes": [
+      {
+        "seriesId": 1061,
+        "episodeFileId": 78962,
+        "seasonNumber": 1,
+        "episodeNumber": 19,
+        "title": "Cool Boss",
+        "hasFile": true,
+        "id": 118415
+      }
+    ],
+    "episodeFileId": 78962,
+    "releaseGroup": "BiOMA",
+    "quality": {
+      "quality": {
+        "id": 3,
+        "name": "WEBDL-1080p",
+        "source": "web",
+        "resolution": 1080
+      },
+      "revision": {
+        "version": 1,
+        "real": 0,
+        "isRepack": false
+      }
+    },
+    "languages": [
+      {
+        "id": 18,
+        "name": "Portuguese"
+      },
+      {
+        "id": 1,
+        "name": "English"
+      }
+    ],
+    "qualityWeight": 13,
+    "customFormats": [
+      {
+        "id": 41,
+        "name": "AMZN"
+      }
+    ],
+    "customFormatScore": 75,
+    "indexerFlags": 0,
+    "releaseType": "singleEpisode",
+    "rejections": [],
+    "id": 1534285469
+  }
+]

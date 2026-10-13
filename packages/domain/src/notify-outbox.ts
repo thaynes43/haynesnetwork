@@ -555,11 +555,19 @@ export function renderOutboxEmail(row: {
       const loops = queueCleanupLoops(qc);
       const loopDetected = loops.skipped.length > 0 || loops.repeatSearches.length > 0;
 
+      // DESIGN-055 D-05 (PLAN-077 P4) — the Title Check's one count line (absent on a payload without flags).
+      const tc =
+        p.titleCheck && typeof p.titleCheck === 'object' ? (p.titleCheck as Record<string, unknown>) : null;
+      const tcOpened = num(tc?.opened24h);
+      const tcOpen = num(tc?.open);
+
       const subject =
         `[haynesnetwork] ` +
         (count > 0
           ? `${count} stuck import${count === 1 ? '' : 's'} need attention`
-          : `Queue janitor census — ${num(qc?.observed)} observed (24h)`) +
+          : qc
+            ? `Queue janitor census — ${num(qc.observed)} observed (24h)`
+            : `Title Check: ${tcOpened} file${tcOpened === 1 ? '' : 's'} flagged as mislabelled (24h)`) +
         promotionTags +
         (loopDetected ? ' [janitor: loop detected]' : '');
 
@@ -568,8 +576,11 @@ export function renderOutboxEmail(row: {
           ? `Open import failures at digest time:\n\n${failureLines}${more}\n\nReview + retry: https://haynesnetwork.com/library/activity\n`
           : '';
       const janitorBlock = qc ? `${count > 0 ? '\n' : ''}${renderQueueCleanupSection(qc)}` : '';
+      const titleCheckLine = tc
+        ? `${count > 0 || qc ? '\n' : ''}Title Check (last 24h): ${tcOpened} file${tcOpened === 1 ? '' : 's'} flagged as mislabelled, ${tcOpen} open flag${tcOpen === 1 ? '' : 's'} in all.\n`
+        : '';
 
-      return { to, subject, text: `${failureBlock}${janitorBlock}` };
+      return { to, subject, text: `${failureBlock}${janitorBlock}${titleCheckLine}` };
     }
     // R-196 — the author's opt-in status-transition notification.
     case 'ticket_status_changed': {

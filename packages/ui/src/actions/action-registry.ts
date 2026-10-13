@@ -11,7 +11,14 @@
 import type { IconKey } from '../icons/registry';
 
 /** Every per-item media action the estate exposes. One entry per verb, keyed here. */
-export type MediaActionType = 'fix' | 'forceSearch' | 'consume' | 'retryImport' | 'notOnDisk' | 'importDownload';
+export type MediaActionType =
+  | 'fix'
+  | 'forceSearch'
+  | 'consume'
+  | 'retryImport'
+  | 'notOnDisk'
+  | 'importDownload'
+  | 'moveFile';
 
 /** The two canonical looks: `primary` = green accent pill (`.btn.primary`); `outline` = neutral
  *  surface pill (`.btn`). Owner rule (ADR-071): Fix is ALWAYS the green pill; Force Search is
@@ -44,6 +51,10 @@ export interface MediaActionSpec {
  * - `importDownload` — ADR-109 / DESIGN-055 D-01, D-07: the Repair Guide's "Import it" confirm, which adds a finished
  *   download that passed the Import Check to its missing episode or movie. Shown only inside the guide's Modal (the
  *   explanatory confirm, hard rule 8), so it is not destructive here: nothing is deleted or blocked.
+ * - `moveFile` — ADR-109 / DESIGN-055 D-04, D-05 (PLAN-077 P4): "Move it", the Title Check flag's action on an episode
+ *   whose file's own name says it is another episode. It opens the Repair Guide at the Episode Re-map preview (the
+ *   explanatory Modal), where the counted confirm ("Move 1 file") runs it; a re-map never deletes a file, so it is not
+ *   destructive. An outline pill, so it never competes with the row's green Fix.
  */
 export const MEDIA_ACTIONS: Record<MediaActionType, MediaActionSpec> = {
   fix: { type: 'fix', label: 'Fix', variant: 'primary', destructive: false },
@@ -53,6 +64,7 @@ export const MEDIA_ACTIONS: Record<MediaActionType, MediaActionSpec> = {
   retryImport: { type: 'retryImport', label: 'Retry import', variant: 'outline', destructive: false },
   notOnDisk: { type: 'notOnDisk', label: 'Not on Disk', variant: 'outline', destructive: false },
   importDownload: { type: 'importDownload', label: 'Import it', variant: 'primary', destructive: false },
+  moveFile: { type: 'moveFile', label: 'Move it', variant: 'outline', destructive: false },
 };
 
 /** The action types (registry keys) — for exhaustive iteration in guards/tests. */

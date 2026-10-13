@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { ConfirmButton } from '@hnet/ui';
 import { trpc } from '@/lib/trpc-client';
 import { RepairGuideSettings } from './repair-guide-settings';
+import { MislabelBlockCard, TitleCheckCard } from './title-check-cards';
 import {
   ARR_KIND_LABELS,
   FIX_REASON_LABELS,
@@ -48,6 +49,8 @@ export default function AdminFixesPage() {
     <>
       <h1>Fix requests</h1>
       <RepairGuideSettings />
+      <MislabelBlockCard />
+      <TitleCheckCard />
       <div className="library-filters admin-filterbar">
         <div className="seg" role="group" aria-label="Status">
           {STATUS_FILTERS.map((value) => (

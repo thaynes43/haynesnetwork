@@ -1,0 +1,564 @@
+{
+ "source": "Sonarr 4.0.20.3012, series 1061 Regular Show: The Lost Tapes, Season 1, read 2026-10-12 before the hand fix (Case A, Seerr issue 4)",
+ "seriesId": 1061,
+ "episodes": [
+  {
+   "id": 118397,
+   "seasonNumber": 1,
+   "episodeNumber": 1,
+   "title": "Fix That Tape",
+   "hasFile": true,
+   "episodeFileId": 75674
+  },
+  {
+   "id": 118398,
+   "seasonNumber": 1,
+   "episodeNumber": 2,
+   "title": "Skips' Luau",
+   "hasFile": true,
+   "episodeFileId": 75673
+  },
+  {
+   "id": 118399,
+   "seasonNumber": 1,
+   "episodeNumber": 3,
+   "title": "Blade Games",
+   "hasFile": true,
+   "episodeFileId": 75670
+  },
+  {
+   "id": 118400,
+   "seasonNumber": 1,
+   "episodeNumber": 4,
+   "title": "Nap Spot",
+   "hasFile": true,
+   "episodeFileId": 75671
+  },
+  {
+   "id": 118401,
+   "seasonNumber": 1,
+   "episodeNumber": 5,
+   "title": "Coffee Shop Wars",
+   "hasFile": true,
+   "episodeFileId": 75672
+  },
+  {
+   "id": 118402,
+   "seasonNumber": 1,
+   "episodeNumber": 6,
+   "title": "Boba or Bo-Bust",
+   "hasFile": true,
+   "episodeFileId": 75669
+  },
+  {
+   "id": 118403,
+   "seasonNumber": 1,
+   "episodeNumber": 7,
+   "title": "Corpse Flower",
+   "hasFile": true,
+   "episodeFileId": 75675
+  },
+  {
+   "id": 118404,
+   "seasonNumber": 1,
+   "episodeNumber": 8,
+   "title": "Beginson",
+   "hasFile": true,
+   "episodeFileId": 75678
+  },
+  {
+   "id": 118405,
+   "seasonNumber": 1,
+   "episodeNumber": 9,
+   "title": "Good Mitch Spiking",
+   "hasFile": true,
+   "episodeFileId": 75676
+  },
+  {
+   "id": 118406,
+   "seasonNumber": 1,
+   "episodeNumber": 10,
+   "title": "Stilt Walkers",
+   "hasFile": true,
+   "episodeFileId": 75677
+  },
+  {
+   "id": 118407,
+   "seasonNumber": 1,
+   "episodeNumber": 11,
+   "title": "Spice It Up",
+   "hasFile": true,
+   "episodeFileId": 77587
+  },
+  {
+   "id": 118408,
+   "seasonNumber": 1,
+   "episodeNumber": 12,
+   "title": "Secret Menu Item",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118409,
+   "seasonNumber": 1,
+   "episodeNumber": 13,
+   "title": "Regular Show Presents: Terror Tales of the Park VII Halloween Special",
+   "hasFile": true,
+   "episodeFileId": 77588
+  },
+  {
+   "id": 118410,
+   "seasonNumber": 1,
+   "episodeNumber": 14,
+   "title": "Smoke Alarm on the Water",
+   "hasFile": true,
+   "episodeFileId": 77592
+  },
+  {
+   "id": 118411,
+   "seasonNumber": 1,
+   "episodeNumber": 15,
+   "title": "Party Horse 4: Third Time's a Charm",
+   "hasFile": true,
+   "episodeFileId": 77590
+  },
+  {
+   "id": 119205,
+   "seasonNumber": 1,
+   "episodeNumber": 16,
+   "title": "Clean the Living Room",
+   "hasFile": true,
+   "episodeFileId": 77589
+  },
+  {
+   "id": 118413,
+   "seasonNumber": 1,
+   "episodeNumber": 17,
+   "title": "Artist's Block",
+   "hasFile": true,
+   "episodeFileId": 77591
+  },
+  {
+   "id": 118414,
+   "seasonNumber": 1,
+   "episodeNumber": 18,
+   "title": "That's Funny",
+   "hasFile": true,
+   "episodeFileId": 77593
+  },
+  {
+   "id": 118415,
+   "seasonNumber": 1,
+   "episodeNumber": 19,
+   "title": "Cool Boss",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118416,
+   "seasonNumber": 1,
+   "episodeNumber": 20,
+   "title": "Skips' Van",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118417,
+   "seasonNumber": 1,
+   "episodeNumber": 21,
+   "title": "Super Strong Johns",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118418,
+   "seasonNumber": 1,
+   "episodeNumber": 22,
+   "title": "Car Wash",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118419,
+   "seasonNumber": 1,
+   "episodeNumber": 23,
+   "title": "All You Can Fit",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118420,
+   "seasonNumber": 1,
+   "episodeNumber": 24,
+   "title": "Don's Back",
+   "hasFile": true,
+   "episodeFileId": 75839
+  },
+  {
+   "id": 118421,
+   "seasonNumber": 1,
+   "episodeNumber": 25,
+   "title": "Life & Death of Robot Dog",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118422,
+   "seasonNumber": 1,
+   "episodeNumber": 26,
+   "title": "Before Sunrise",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118423,
+   "seasonNumber": 1,
+   "episodeNumber": 27,
+   "title": "Recycle Yo!",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118424,
+   "seasonNumber": 1,
+   "episodeNumber": 28,
+   "title": "Hi Five's Throat",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118425,
+   "seasonNumber": 1,
+   "episodeNumber": 29,
+   "title": "Carter & Briggs Are Here",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118426,
+   "seasonNumber": 1,
+   "episodeNumber": 30,
+   "title": "Wet Phone",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118427,
+   "seasonNumber": 1,
+   "episodeNumber": 31,
+   "title": "Dip Deep",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118428,
+   "seasonNumber": 1,
+   "episodeNumber": 32,
+   "title": "Ketch of the Day",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118429,
+   "seasonNumber": 1,
+   "episodeNumber": 33,
+   "title": "Thanks for the Memories",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118430,
+   "seasonNumber": 1,
+   "episodeNumber": 34,
+   "title": "Master Curator",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118431,
+   "seasonNumber": 1,
+   "episodeNumber": 35,
+   "title": "12,000 Seconds",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118432,
+   "seasonNumber": 1,
+   "episodeNumber": 36,
+   "title": "The Afterheist",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118433,
+   "seasonNumber": 1,
+   "episodeNumber": 37,
+   "title": "Japlan",
+   "hasFile": false,
+   "episodeFileId": 0
+  },
+  {
+   "id": 118434,
+   "seasonNumber": 1,
+   "episodeNumber": 38,
+   "title": "The Ultimate Format War",
+   "hasFile": false,
+   "episodeFileId": 0
+  }
+ ],
+ "files": [
+  {
+   "id": 75674,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E01 - Fix That Tape [AMZN WEBDL-1080p Proper][EAC3 5.1][h264]-Kitsune.mkv",
+   "size": 378866074,
+   "releaseGroup": "Kitsune",
+   "sceneName": "Regular Show The Lost Tapes S01E01 Fix That Tape REPACK 1080p AMZN WEB-DL DDP5 1 H 264-Kitsune",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 75673,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E02 - Skips Luau [AMZN WEBDL-1080p Proper][EAC3 5.1][h264]-Kitsune.mkv",
+   "size": 447950283,
+   "releaseGroup": "Kitsune",
+   "sceneName": "Regular.Show.The.Lost.Tapes.S01E02.Skips.Luau.REPACK.1080p.AMZN.WEB-DL.DDP5.1.H.264-Kitsune",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 75670,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E03 - Blade Games [AMZN WEBDL-1080p Proper][EAC3 5.1][h264]-Kitsune.mkv",
+   "size": 430167232,
+   "releaseGroup": "Kitsune",
+   "sceneName": "Regular.Show.The.Lost.Tapes.S01E03.Blade.Games.REPACK.1080p.AMZN.WEB-DL.DDP5.1.H.264-Kitsune",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 75671,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E04 - Nap Spot [AMZN WEBDL-1080p Proper][EAC3 5.1][h264]-Kitsune.mkv",
+   "size": 435088769,
+   "releaseGroup": "Kitsune",
+   "sceneName": "Regular.Show.The.Lost.Tapes.S01E04.Nap.Spot.REPACK.1080p.AMZN.WEB-DL.DDP5.1.H.264-Kitsune",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 75672,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E05 - Coffee Shop Wars [AMZN WEBDL-1080p Proper][EAC3 5.1][h264]-Kitsune.mkv",
+   "size": 355517173,
+   "releaseGroup": "Kitsune",
+   "sceneName": "Regular Show The Lost Tapes S01E05 Coffee Shop Wars REPACK 1080p AMZN WEB-DL DDP5 1 H 264-Kitsune",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 75669,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E06 - Boba or Bo-Bust [AMZN WEBDL-1080p Proper][EAC3 5.1][h264]-Kitsune.mkv",
+   "size": 445435735,
+   "releaseGroup": "Kitsune",
+   "sceneName": "Regular.Show.The.Lost.Tapes.S01E06.Boba.or.Bo-Bust.REPACK.1080p.AMZN.WEB-DL.DDP5.1.H.264-Kitsune",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 75675,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E07 - Corpse Flower [AMZN WEBDL-1080p Proper][EAC3 5.1][h264]-Kitsune.mkv",
+   "size": 370676362,
+   "releaseGroup": "Kitsune",
+   "sceneName": "Regular Show The Lost Tapes S01E07 Corpse Flower REPACK 1080p AMZN WEB-DL DDP5 1 H 264-Kitsune",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 75678,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E08 - Beginson [AMZN WEBDL-1080p][EAC3 5.1][h264]-Kitsune.mkv",
+   "size": 388801725,
+   "releaseGroup": "Kitsune",
+   "sceneName": "Regular Show The Lost Tapes S01E08 Beginson 1080p AMZN WEB-DL DDP5 1 H 264-Kitsune",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 75676,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E09 - Good Mitch Spiking [AMZN WEBDL-1080p][EAC3 5.1][h264]-Kitsune.mkv",
+   "size": 383234430,
+   "releaseGroup": "Kitsune",
+   "sceneName": "Regular Show The Lost Tapes S01E09 Good Mitch Spiking 1080p AMZN WEB-DL DDP5 1 H 264-Kitsune",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 75677,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E10 - Stilt Walkers [AMZN WEBDL-1080p][EAC3 5.1][h264]-Kitsune.mkv",
+   "size": 466109071,
+   "releaseGroup": "Kitsune",
+   "sceneName": "Regular Show The Lost Tapes S01E10 Stilt Walkers 1080p AMZN WEB-DL DDP5 1 H 264-Kitsune",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 77587,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E11 - Spice It Up [AMZN WEBDL-1080p][EAC3 5.1][h264]-BiOMA.mkv",
+   "size": 433317059,
+   "releaseGroup": "BiOMA",
+   "sceneName": "Regular.Show.The.Lost.Tapes.S01E11.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 77588,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E13 - Terror Tales of the Park VII [AMZN WEBDL-1080p][EAC3 5.1][h264]-BiOMA.mkv",
+   "size": 497530513,
+   "releaseGroup": "BiOMA",
+   "sceneName": "Regular.Show.The.Lost.Tapes.S01E13.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 77592,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E14 - Smoke Alarm on the Water [AMZN WEBDL-1080p][EAC3 5.1][h264]-BiOMA.mkv",
+   "size": 415554928,
+   "releaseGroup": "BiOMA",
+   "sceneName": "Regular.Show.The.Lost.Tapes.S01E14.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 77590,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E15 - Party Horse 4 Third Times a Charm [AMZN WEBDL-1080p][EAC3 5.1][h264]-BiOMA.mkv",
+   "size": 437458291,
+   "releaseGroup": "BiOMA",
+   "sceneName": "Regular.Show.The.Lost.Tapes.S01E15.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 77589,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E16 - Clean the Living Room [AMZN WEBDL-1080p][EAC3 5.1][h264]-BiOMA.mkv",
+   "size": 454780724,
+   "releaseGroup": "BiOMA",
+   "sceneName": "Regular.Show.The.Lost.Tapes.S01E16.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 77591,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E17 - Artists Block [AMZN WEBDL-1080p][EAC3 5.1][h264]-BiOMA.mkv",
+   "size": 481965988,
+   "releaseGroup": "BiOMA",
+   "sceneName": "Regular.Show.The.Lost.Tapes.S01E17.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 77593,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E18 - Thats Funny [AMZN WEBDL-1080p][EAC3 5.1][h264]-BiOMA.mkv",
+   "size": 449435600,
+   "releaseGroup": "BiOMA",
+   "sceneName": "Regular.Show.The.Lost.Tapes.S01E18.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  },
+  {
+   "id": 75839,
+   "seasonNumber": 1,
+   "relativePath": "Season 1/Regular Show - The Lost Tapes (2026) - S01E24 - All You Can Fit [DSNP WEBDL-1080p][EAC3 5.1][x264]-AndreMor.mkv",
+   "size": 378391500,
+   "releaseGroup": "AndreMor",
+   "sceneName": "Regular.Show..The.Lost.Tapes.S01E24.All.You.Can.Fit.1080p.DSNP.WEB-DL.DDP5.1.x264-AndreMor",
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p"
+    }
+   }
+  }
+ ]
+}

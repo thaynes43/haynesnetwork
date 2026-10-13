@@ -1,7 +1,7 @@
 # DDD-002: Bounded Contexts
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-12 (ADR-111 / DESIGN-055 P3: BC-05 owns the Seerr Issue mirror). Prior: 2026-10-11 (ADR-107 / DESIGN-054: BC-06 supplies personal evidence for agent-owned recommendations). Prior: 2026-09-26 (BC-03 gains watchlist protection for Trash: the Watchlist Registry, the Release Block write-back and a Seerr settings write — ADR-093, DESIGN-052; the "Seerr is read-only" rule is amended). Prior: 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
+- **Last updated:** 2026-10-13 (ADR-110 / DESIGN-055 P4: BC-03 owns the Title Check census and the Mislabel Block). Prior: 2026-10-12 (ADR-111 / DESIGN-055 P3: BC-05 owns the Seerr Issue mirror). Prior: 2026-10-11 (ADR-107 / DESIGN-054: BC-06 supplies personal evidence for agent-owned recommendations). Prior: 2026-09-26 (BC-03 gains watchlist protection for Trash: the Watchlist Registry, the Release Block write-back and a Seerr settings write — ADR-093, DESIGN-052; the "Seerr is read-only" rule is amended). Prior: 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
 - **Related:** PRD-001, DDD-001
 
 Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs as
@@ -123,6 +123,12 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
   and **Seerr Watchlist Enrollment** (T-266), the per-user watchlist-sync flags in Seerr, behind an audited setting
   (ADR-093 C-11). BC-03 reads BC-06's owner Watchlist Changes (`watch_marks`) so an owner add protects a title at
   once; it does not reuse BC-06's `watch_reco_signals`.
+- **Self-service repair (ADR-109 / ADR-110 / DESIGN-055, PLAN-077 P2 and P4):** the **Repair Request** (T-302,
+  `repair_requests`) records each remedy a person confirmed in the Repair Guide; P4 adds the **Title Check** census
+  (T-305, `title_checks`, the `title-check` sync mode, read-only toward Sonarr) and the **Mislabel Block** (T-310,
+  `mislabel_block_terms`), one app-owned Sonarr release profile of series-and-group "must not contain" terms. New
+  outbound, through the import-confined `@hnet/arr/write`: the Episode Re-map's library-file `ManualImport` and
+  `RenameFiles` (T-303) and the Mislabel Block profile writes; hard rule 4 amended (ADR-109 C-02, ADR-110 C-04).
 
 ### BC-04 — Plex Sharing (Phase 3 — **built**: ADR-017 / DESIGN-007)
 
@@ -212,7 +218,7 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
   enforcement start (PRD Non-goals; Authentik-side enforcement is follow-on R-30).
 - **BC-01 is upstream of everything:** contexts read (user, role); none mutates identity.
 - **The *arrs are upstream of BC-03** (conformist behind the ACL): sync is strictly
-  *arr → app; the only writes back are Fix and Restore, both narrow and audited (R-52). _(The list has grown by ADR: Trash via Maintainerr (ADR-023), the queue janitor (ADR-083) and, with ADR-093, the Release Block; each is narrow, confined to `packages/domain` and audited.)_
+  *arr → app; the only writes back are Fix and Restore, both narrow and audited (R-52). _(The list has grown by ADR: Trash via Maintainerr (ADR-023), the queue janitor (ADR-083) and, with ADR-093, the Release Block; with ADR-109 and ADR-110, the Import Check's and the Episode Re-map's manual imports, the rename and the Mislabel Block; each is narrow, confined to `packages/domain` and audited.)_
 - **BC-04 owns library identity; BC-02 references it** — `role_library_grants` (BC-02)
   point at `plex_libraries` `(server_id, section_key)` identities from BC-04's registry.
 - **Seerr is read-only** — attribution source and a catalog Tile; never replaced (Non-goals). _(Amended by ADR-093 C-11, 2026-09-26: BC-03 writes one thing in Seerr, each user's watchlist-sync flags, once per user and behind an audited setting; requests are still Seerr's own.)_
@@ -237,3 +243,4 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
 | 2026-09-23 | Opus 5.5 | **BC-06 gains the public connector surface** (ADR-091 / DESIGN-050, PLAN-069): owns the five OAuth tables (OAuth Client, Authorization Transaction and codes, Refresh Family and Delegated Token stores); Connectors call the public `/mcp` and answer for their user's Tracked Account (T-259) through the ADR-053 Plex Account Map; Plex write-back stays owner-only. No new context. |
 | 2026-09-26 | Opus 5.5 | **BC-03 gains watchlist protection for Trash** (ADR-093 / DESIGN-052, PLAN-072): owns the Watchlist Registry and the Deleted-Release Record; reads plex.tv, community.plex.tv and Seerr per-user watchlists as guard input; two new confined writes (the Release Block release profiles in Radarr/Sonarr, the Seerr watchlist-sync flags). The "Seerr is read-only" rule is amended. No new context. |
 | 2026-10-12 | Opus 5.5 | **BC-05 gains the Seerr Issue** (ADR-111 / DESIGN-055 D-10, PLAN-077 P3): the read-only `seerr_issues` mirror (sync mode `seerr-issues`, issue webhooks trigger a fresh read, never a Notification), its audited staff note, and the `/r/seerr/<id>` link. |
+| 2026-10-13 | Opus 5.5 | **BC-03 gains the Title Check and the Mislabel Block** (ADR-110 / DESIGN-055 D-04, D-05, PLAN-077 P4): the `title_checks` census (sync mode `title-check`, read-only toward Sonarr), the `mislabel_block_terms` single-writer profile, and the Episode Re-map's library-file manual import and rename as new narrow write-backs. |

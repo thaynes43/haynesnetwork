@@ -98,6 +98,17 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    `import_check` remedy) and the janitor's `importable` cell (DESIGN-046 D-27, census until promoted, loop-guarded). The same
    Force Search may also remove a failed or defective download from the queue with blocklist and `skipRedownload` before its
    one search (audited in its `search_requested` event). Through `@hnet/arr/write` from `packages/domain` only.
+   **ADR-109 and ADR-110 add the Episode Re-map and the Mislabel Block** (DESIGN-055 D-04, D-05, PLAN-077 P4). The
+   re-map is a person's confirmed plan for one Sonarr season (one Repair Request, `remap`, behind the `episode_remap`
+   remedy): one `ManualImport` per move of a file already in the series folder onto its right episodes (Sonarr re-links
+   it; nothing is downloaded), in an order where every move lands on a free slot, each read back before the next, then
+   `RenameFiles` for the moved files. It never deletes a file and never imports onto an episode that keeps a file it does
+   not move. The **Mislabel Block** is one app-owned Sonarr release profile (`haynesnetwork: mislabelled releases
+   (managed, do not edit)`) holding "must not contain" terms that pair one series title with one release group, written
+   only by its single writer (`mislabel-block.ts`): from a person's confirmed shift re-map that moved two or more files of
+   that group, from the one-off adoption of Case A's hand-made profile, and in the hourly `title-check` upkeep (expiry,
+   drift repair); every write is read back, terms live 365 days, at most 500. The Title Check itself is census only and
+   writes nothing to Sonarr. Through `@hnet/arr/write` from `packages/domain` only.
 5. **Auth is Authentik OIDC only.** No email/password, no invite tokens. Admin role is
    bootstrapped by matching the OIDC email against the `BOOTSTRAP_ADMIN_EMAILS` allowlist.
 6. Role/permission mutations must write audit rows in the same transaction (see

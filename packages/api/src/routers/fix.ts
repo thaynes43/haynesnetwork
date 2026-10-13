@@ -21,8 +21,16 @@ import {
   computeSearchProgress,
   getKnownIssueServers,
   getRepairGuideRemedies,
+  addMislabelTermFromRemap,
+  listMislabelTerms,
+  listTitleFlags,
+  planEpisodeRemap,
+  removeMislabelTerm,
+  titleCheckSummary,
   planForceSearch,
   previewFix,
+  readRemapSeason,
+  runEpisodeRemap,
   readFileAudio,
   readPlaybackEvidence,
   readSeasonChoices,
@@ -72,6 +80,21 @@ const guideChoices = {
   replaceFile: z.boolean().optional(),
 };
 
+/** DESIGN-055 D-04 rule 2 — the Episode Re-map's claim: one file onto another episode, or a shift by one. */
+const remapClaim = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('single'),
+    fromEpisodeId: z.number().int().positive(),
+    toEpisodeId: z.number().int().positive(),
+  }),
+  z.object({
+    kind: z.literal('shift'),
+    fromEpisodeNumber: z.number().int().min(0).max(10_000),
+    throughEpisodeNumber: z.number().int().min(0).max(10_000).nullish(),
+    by: z.union([z.literal(1), z.literal(-1)]),
+  }),
+]);
+
 const languageCode = z
   .string()
   .trim()
@@ -89,6 +112,8 @@ export const fixRouter = router({
       guideOn: anyRemedyOn(remedies),
       /** DESIGN-055 D-07 — Force Search on one episode or movie reads the queue first. */
       importCheckOn: remedies.import_check,
+      /** DESIGN-055 D-04 — the guide offers the Episode Re-map ("this file is really episode N", "shifted by one"). */
+      remapOn: remedies.episode_remap,
       knownIssueServers: await getKnownIssueServers(ctx.db),
     };
   }),
@@ -181,6 +206,125 @@ export const fixRouter = router({
         }),
       );
     }),
+
+  /**
+   * ADR-109 / DESIGN-055 D-04 rules 1-2 (PLAN-077 P4) — the season as the Episode Re-map shows it: each episode, whether
+   * it has a file, and the claim the files' own names suggest. Read-only; costs nothing.
+   */
+  remapSeason: authedProcedure
+    .input(z.object({ mediaItemId: z.uuid(), seasonNumber: z.number().int().min(0) }))
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        readRemapSeason({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          seasonNumber: input.seasonNumber,
+        }),
+      );
+    }),
+
+  /**
+   * DESIGN-055 D-04 — the read-only plan for a claim: every move in the order it would run, what is left empty, the
+   * refusal in plain words, and the digest the confirm sends back. Costs nothing.
+   */
+  remapPlan: authedProcedure
+    .input(z.object({ mediaItemId: z.uuid(), seasonNumber: z.number().int().min(0), claim: remapClaim }))
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        planEpisodeRemap({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          seasonNumber: input.seasonNumber,
+          claim: input.claim,
+        }),
+      );
+    }),
+
+  /**
+   * DESIGN-055 D-04 rules 6-9 — run the re-map the person confirmed (its `planDigest`). One Repair Request (`remap`),
+   * one unit of the hourly budget; moves existing files only, never deletes one. Refused while the remedy is off.
+   */
+  remap: authedProcedure
+    .input(
+      z.object({
+        mediaItemId: z.uuid(),
+        seasonNumber: z.number().int().min(0),
+        claim: remapClaim,
+        planDigest: z.string().min(1).max(64),
+        reason: z.enum(FIX_REASONS).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        runEpisodeRemap({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          seasonNumber: input.seasonNumber,
+          claim: input.claim,
+          planDigest: input.planDigest,
+          reason: input.reason ?? null,
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
+        }),
+      );
+    }),
+
+  /**
+   * ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — the Title Check's open flags on one TV title, verified live (a flag
+   * whose file has left its episode is dropped and cleared). Each flag opens the Episode Re-map pre-filled when the
+   * remedy is on.
+   */
+  titleFlags: authedProcedure.input(z.object({ mediaItemId: z.uuid() })).query(async ({ ctx, input }) => {
+    return mapDomainErrors(async () => {
+      const remapOn = (await getRepairGuideRemedies(ctx.db)).episode_remap;
+      const flags = await listTitleFlags({ db: ctx.db, sonarr: resolveArrBundle(ctx).read.sonarr, mediaItemId: input.mediaItemId });
+      return { remapOn, flags };
+    });
+  }),
+
+  /**
+   * ADR-110 C-04 / DESIGN-055 D-04 rule 10 — the Mislabel offer after a completed shift re-map: block the release group
+   * that moved two or more files from filing this series again. Written and read back before the answer; `saved: false`
+   * carries the plain reason. The person who ran the re-map, or an admin.
+   */
+  mislabelBlock: authedProcedure
+    .input(z.object({ repairRequestId: z.uuid(), releaseGroup: z.string().trim().min(1).max(64) }))
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        addMislabelTermFromRemap({
+          db: ctx.db,
+          sonarr: { write: resolveArrBundle(ctx).write.sonarr },
+          repairRequestId: input.repairRequestId,
+          releaseGroup: input.releaseGroup,
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
+        }),
+      );
+    }),
+
+  /** ADR-110 C-04, C-08 — the Mislabel Block's terms for /admin/fixes (active first, then the ended ones). */
+  mislabelTerms: adminProcedure.query(async ({ ctx }) => {
+    const terms = await listMislabelTerms({ db: ctx.db, state: 'all' });
+    return { terms };
+  }),
+
+  /** ADR-110 C-08 — staff remove a term: the profile is written without it and read back, then the audited row. */
+  removeMislabelTerm: adminProcedure.input(z.object({ termId: z.uuid() })).mutation(async ({ ctx, input }) => {
+    return mapDomainErrors(async () =>
+      removeMislabelTerm({
+        db: ctx.db,
+        sonarr: { write: resolveArrBundle(ctx).write.sonarr },
+        termId: input.termId,
+        actorId: ctx.user.id,
+      }),
+    );
+  }),
+
+  /** ADR-110 C-03 — the Title Check census for /admin/fixes: verdict counts, open flags and the newest of them. */
+  titleCheckSummary: adminProcedure.query(async ({ ctx }) => titleCheckSummary({ db: ctx.db, limit: 50 })),
 
   /** DESIGN-055 D-08 rules 1-2 — the audio languages of the file(s) a Wrong language Fix would touch. */
   audioLanguages: authedProcedure

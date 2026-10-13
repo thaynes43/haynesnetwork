@@ -10,6 +10,7 @@ import { enqueueOutbox } from '../notify-outbox';
 import { computeEarliestSend, getNotifyWindow } from '../notify-window';
 import { buildQueueCleanupDigestSection } from '../queue-cleanup';
 import { ticketAdminEmail } from '../tickets';
+import { titleCheckDigestCounts } from '../title-check';
 
 /** The digest lists at most this many failures in the email body (the count is always exact). */
 const DIGEST_ITEM_CAP = 20;
@@ -21,6 +22,11 @@ export interface FailureDigestReport {
   enqueued: number;
   /** ADR-083 / DESIGN-046 D-07 — queue-janitor rows observed in the last 24h (0 when the janitor was silent). */
   queueObserved: number;
+  /**
+   * DESIGN-055 D-05 (PLAN-077 P4) — the Title Check line: flags opened in the last 24h and open in all. Present only when
+   * either is above zero.
+   */
+  titleCheck?: { opened24h: number; open: number };
 }
 
 /**
@@ -55,7 +61,14 @@ export async function runFailureDigest(input: {
   const queueCleanup = await buildQueueCleanupDigestSection({ db: input.db, now });
   const queueObserved = queueCleanup?.observed ?? 0;
 
-  if (open.length === 0 && queueCleanup === null) return { openCount: 0, enqueued: 0, queueObserved: 0 };
+  // DESIGN-055 D-05 — the Title Check's one count line. A flag opened in 24h sends the digest by itself; open flags
+  // alone only ride a digest that is going out anyway (no nightly mail for an old, unchanged flag).
+  const flags = await titleCheckDigestCounts({ db: input.db, now });
+  const titleCheck = flags.opened24h > 0 || flags.open > 0 ? flags : null;
+
+  if (open.length === 0 && queueCleanup === null && flags.opened24h === 0) {
+    return { openCount: 0, enqueued: 0, queueObserved: 0, ...(titleCheck ? { titleCheck } : {}) };
+  }
 
   const window = await getNotifyWindow(input.db);
   await enqueueOutbox(db, {
@@ -73,8 +86,9 @@ export async function runFailureDigest(input: {
       // The janitor rollup rides the SAME digest row (D-07); renderOutboxEmail composes the section +
       // appends '[janitor: promotion due]' to the subject when promotionDue.
       ...(queueCleanup ? { queueCleanup } : {}),
+      ...(titleCheck ? { titleCheck } : {}),
     },
     earliestSendAt: computeEarliestSend(now, window),
   });
-  return { openCount: open.length, enqueued: 1, queueObserved };
+  return { openCount: open.length, enqueued: 1, queueObserved, ...(titleCheck ? { titleCheck } : {}) };
 }

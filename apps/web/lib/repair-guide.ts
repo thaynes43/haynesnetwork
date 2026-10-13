@@ -22,7 +22,9 @@ export type GuideStep =
   | 'language-present'
   | 'preview'
   | 'confirm'
-  | 'done';
+  | 'done'
+  // DESIGN-055 D-04 (PLAN-077 P4): the Episode Re-map (episode-remap.tsx runs its own question, preview and result).
+  | 'remap';
 
 /** The guarded Fix's plan, as `fix.preview` returns it. */
 export type GuidePlan = NonNullable<RouterOutputs['fix']['preview']['plan']>;
@@ -56,13 +58,19 @@ export function guidePlans(remedies: GuideRemedies): boolean {
   return remedies.replacement_preview || remedies.season_guard;
 }
 
-/** The first question: pick an episode for a bare TV Fix, the episodes of a season (season guard), else the reason. */
+/**
+ * The first question: a Title Check flag opens the re-map straight away (D-05); else pick an episode for a bare TV Fix,
+ * the episodes of a season (season guard), else the reason.
+ */
 export function firstGuideStep(input: {
   isTv: boolean;
   hasTarget: boolean;
   isSeason: boolean;
   remedies: GuideRemedies;
+  /** DESIGN-055 D-05 — opened from a Title Check flag with the move already chosen. */
+  remapStart?: boolean;
 }): GuideStep {
+  if (input.remapStart && input.isTv && input.hasTarget) return 'remap';
   if (input.isTv && !input.hasTarget) return 'pick';
   if (input.isSeason && input.remedies.season_guard) return 'episodes';
   return 'reason';
@@ -78,6 +86,26 @@ export function stepAfterReason(reason: FixReasonName, remedies: GuideRemedies):
   if (reason === 'wont_play_corrupt' && remedies.playback_triage) return 'playback';
   if (reason === 'wrong_language' && remedies.language_check) return 'language';
   return stepAfterTriage(reason, remedies);
+}
+
+/**
+ * DESIGN-055 D-01, D-04 (PLAN-077 P4) — where the re-map choice sits. A single move ("It's a different episode of this
+ * show") is a choice on "What's wrong?". A shift ("They're all off by one") belongs to the season's first question: the
+ * season guard's "Which episodes are wrong?" when that remedy is on, else "What's wrong?".
+ */
+export function remapChoiceOn(
+  where: 'reason' | 'episodes',
+  kind: 'single' | 'shift' | null,
+  remedies: Pick<GuideRemedies, 'season_guard'>,
+): boolean {
+  if (kind === null) return false;
+  if (kind === 'single') return where === 'reason';
+  return where === 'episodes' ? remedies.season_guard : !remedies.season_guard;
+}
+
+/** After "What's wrong?" with the re-map chosen, or a reason: the re-map step, else the reason's own next step. */
+export function stepAfterChoice(choice: FixReasonName | 'remap', remedies: GuideRemedies): GuideStep {
+  return choice === 'remap' ? 'remap' : stepAfterReason(choice, remedies);
 }
 
 /**

@@ -71,6 +71,11 @@ export const PERMISSION_AUDIT_ACTIONS = [
   // staff note. Written by the setSeerrIssueStaffNote single-writer with { seerrIssueId, before, after } in the SAME tx
   // as the seerr_issues update (hard rule 6). Migration 0100 rebuilds the permission_audit action CHECK to admit it.
   'update_seerr_issue_note',
+  // ADR-110 C-08 / DESIGN-055 D-05 (PLAN-077 P4) — staff removed an active Mislabel Block term (the series is no longer
+  // blocked from that release group). Written by the removeMislabelTerm single-writer with { seriesId, releaseGroup,
+  // term } in the SAME tx as the mislabel_block_terms update and after the profile read-back (hard rule 6). Migration
+  // 0101 rebuilds the permission_audit action CHECK to admit it.
+  'remove_mislabel_term',
 ] as const;
 export type PermissionAuditAction = (typeof PERMISSION_AUDIT_ACTIONS)[number];
 
@@ -465,6 +470,13 @@ export const SYNC_RUN_KINDS = [
   // read_at). It joins SYNC_RUN_KINDS so the CLI --mode parser + SyncMode accept it (migration 0100 rebuilds the
   // sync_runs.run_kind CHECK for parity).
   'seerr-issues',
+  // ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — 'title-check' is the census Title Check (T-305): it reads Sonarr's
+  // new `downloadFolderImported` history, records one Title Evidence verdict per imported episode file into
+  // title_checks, clears flags whose file left its episode, and runs the Mislabel Block's upkeep (expiry, drift).
+  // Hourly at :35. READ-ONLY against Sonarr except the Mislabel Block profile (its single writer). Standalone mode: no
+  // --source, writes NO sync_runs row (its trail is title_checks). It joins SYNC_RUN_KINDS so the CLI --mode parser +
+  // SyncMode accept it (migration 0101 rebuilds the sync_runs.run_kind CHECK for parity).
+  'title-check',
 ] as const;
 export type SyncRunKind = (typeof SYNC_RUN_KINDS)[number];
 
@@ -927,6 +939,9 @@ export const REPAIR_GUIDE_REMEDIES = [
   // DESIGN-055 D-07 (PLAN-077 P2): Force Search on a missing episode or movie reads the queue first and runs the Import
   // Check on a stuck download. Not a Fix remedy: it never opens the Fix guide on its own.
   'import_check',
+  // DESIGN-055 D-04, D-05 (PLAN-077 P4): the Episode Re-map ("this file is really episode N", "shift this season by one")
+  // and its Mislabel Block offer, plus the Title Check flag on the title page that opens it.
+  'episode_remap',
 ] as const;
 export type RepairGuideRemedy = (typeof REPAIR_GUIDE_REMEDIES)[number];
 
@@ -956,6 +971,26 @@ export type RepairRequestScope = (typeof REPAIR_REQUEST_SCOPES)[number];
  */
 export const REPAIR_REQUEST_STATUSES = ['pending', 'actioned', 'completed', 'refused', 'failed', 'timed_out'] as const;
 export type RepairRequestStatus = (typeof REPAIR_REQUEST_STATUSES)[number];
+
+/**
+ * ADR-110 C-01, C-03 / DESIGN-055 D-05 (PLAN-077 P4, migration 0101) — a Title Check row's verdict: the Title Evidence
+ * (T-304) of the imported file's name against the episodes it was filed on. Mirrors @hnet/domain's TitleVerdict.
+ */
+export const TITLE_CHECK_VERDICTS = ['agrees', 'disagrees', 'silent', 'ambiguous'] as const;
+export type TitleCheckVerdict = (typeof TITLE_CHECK_VERDICTS)[number];
+/** Where a Title Check row came from: the hourly census (`history`) or the one-off library-wide read (`backfill`). */
+export const TITLE_CHECK_ORIGINS = ['history', 'backfill'] as const;
+export type TitleCheckOrigin = (typeof TITLE_CHECK_ORIGINS)[number];
+
+/**
+ * ADR-110 C-04, C-05 / DESIGN-055 D-05 (PLAN-077 P4, migration 0101) — a Mislabel Block term's life: `active` (in the
+ * profile), `expired` (365 days passed; left the profile), `removed` (staff removed it, or a write that could not be
+ * read back). Its origin: a person's confirmed Episode Re-map, or the adoption of Case A's hand-made profile.
+ */
+export const MISLABEL_TERM_STATES = ['active', 'expired', 'removed'] as const;
+export type MislabelTermState = (typeof MISLABEL_TERM_STATES)[number];
+export const MISLABEL_TERM_ORIGINS = ['remap', 'adoption'] as const;
+export type MislabelTermOrigin = (typeof MISLABEL_TERM_ORIGINS)[number];
 
 // ADR-111 C-01 / DESIGN-055 D-10 (PLAN-077 P3) — the Seerr Issue mirror's status (Seerr's 1 open, 2 resolved) and
 // type (Seerr's issueType 1..4, stored as Seerr numbers them).

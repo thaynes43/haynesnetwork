@@ -59,6 +59,8 @@ import {
   type SearchProgressInput,
 } from '@/components/action-progress';
 import { FixDialog } from './fix-dialog';
+import type { GuideRemapStart } from './repair-guide';
+import { flagsByEpisode, titleFlagClaim, titleFlagText } from '@/lib/remap-guide';
 import { ForceSearchDialog } from './force-search-dialog';
 import { SeerrReportBanner } from './seerr-report-banner';
 import { guideIntroText, seerrGuideEntry, type SeerrGuideEntry } from '@/lib/seerr-issues';
@@ -71,6 +73,8 @@ type PendingAction = {
   reason?: FixReasonName | null;
   /** D-11 — the note above the guide when a `/r/seerr/<id>` link opened it. */
   intro?: string | null;
+  /** DESIGN-055 D-05 (PLAN-077 P4) — a Title Check flag's move: the guide opens at the Episode Re-map preview. */
+  remap?: GuideRemapStart | null;
 };
 
 /** Client mirror of @hnet/domain OPEN_FIX_STATUSES (lib/media never imports domain). */
@@ -304,6 +308,18 @@ export function ItemDetail({
     return map;
   }, [plexSeasons.data]);
 
+  // ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — the Title Check's open flags: an episode whose file's own name says it
+  // is another episode of the season. Shown on the episode row (with the row, never inserted by a click: hard rule 9)
+  // only while the `episode_remap` remedy is on; its action opens the Repair Guide at the Episode Re-map preview.
+  const titleFlags = trpc.fix.titleFlags.useQuery(
+    { mediaItemId },
+    { enabled: arrKind === 'sonarr' && !tombstoned, staleTime: 60_000, retry: false, refetchOnWindowFocus: false },
+  );
+  const flagByEpisode = useMemo(
+    () => flagsByEpisode(titleFlags.data?.remapOn ? titleFlags.data.flags : []),
+    [titleFlags.data],
+  );
+
   // ADR-111 C-02 / DESIGN-055 D-10, D-11 (PLAN-077 P3) — the title's Seerr reports (the app's mirror; nothing calls
   // Seerr), and the one a `/r/seerr/<id>` link arrived with. The arrival is kept for the visit: the `?seerr=` param is
   // dropped from the address once the guide opened, so a reload does not open it again.
@@ -383,6 +399,9 @@ export function ItemDetail({
     void utils.ledger.events.invalidate();
     void utils.ledger.children.invalidate({ mediaItemId });
     void utils.fix.myFixes.invalidate();
+    // DESIGN-055 D-05 — a re-map moves files, so the Title Check flags and the season's re-map view are re-read.
+    void utils.fix.titleFlags.invalidate({ mediaItemId });
+    void utils.fix.remapSeason.invalidate();
   };
 
   const kindName = item.arrKind as ArrKindName;
@@ -485,7 +504,7 @@ export function ItemDetail({
     // icon), NOT rendered at all for albums (still === undefined). ADR-015 reflow-free.
     still?: { url: string | null },
   ) => (
-    <li key={child.arrChildId} className="child-row">
+    <li key={child.arrChildId} className={`child-row${scope === 'episode' && child.hasFile && flagByEpisode.has(child.arrChildId) ? ' child-row--flagged' : ''}`}>
       {still !== undefined ? (
         <MediaPoster posterUrl={still.url} kind="show" alt="" shape="still" />
       ) : null}
@@ -523,8 +542,34 @@ export function ItemDetail({
           ),
         })}
       </span>
+      {scope === 'episode' && child.hasFile ? titleFlagLine(child) : null}
     </li>
   );
+
+  // DESIGN-055 D-05 — the Title Check flag line under an episode row, rendered with the row (hard rule 9).
+  function titleFlagLine(child: { arrChildId: number; label: string }): ReactNode {
+    const flag = flagByEpisode.get(child.arrChildId);
+    if (!flag || tombstoned) return null;
+    const text = titleFlagText(flag);
+    const claim = titleFlagClaim(flag);
+    if (text === null || claim === null || claim.kind !== 'single') return null;
+    return (
+      <span className="child-row__flag" data-testid="title-check-flag">
+        <span className="child-row__flag-text">{text}</span>
+        <MediaAction
+          action="moveFile"
+          size="sm"
+          onFire={() =>
+            setAction({
+              mode: 'fix',
+              target: { scope: 'episode', childId: child.arrChildId, label: child.label },
+              remap: { seasonNumber: flag.seasonNumber, fromEpisodeId: claim.fromEpisodeId, toEpisodeId: claim.toEpisodeId },
+            })
+          }
+        />
+      </span>
+    );
+  }
 
   // DESIGN-004 D-24 (ADR-071) — the hero is now the shared <MediaHero>: the poster, title/year,
   // typed badges, the consume/missing row and the radarr action bar are slots. It emits the exact
@@ -809,6 +854,14 @@ export function ItemDetail({
                     >
                       {s.onDiskCount}/{s.total} on disk
                     </span>
+                    {(() => {
+                      const flagged = s.episodes.filter((ep) => ep.hasFile && flagByEpisode.has(ep.arrChildId)).length;
+                      return flagged > 0 ? (
+                        <span className="badge badge--warn" title="A file's own name says it is another episode of this season">
+                          {flagged === 1 ? '1 may be misplaced' : `${flagged} may be misplaced`}
+                        </span>
+                      ) : null;
+                    })()}
                     <span className="season__actions">
                       {actionSlot({
                         scope: 'season',
@@ -1019,6 +1072,7 @@ export function ItemDetail({
         play={item.play}
         initialReason={action?.mode === 'fix' ? (action.reason ?? null) : null}
         intro={action?.mode === 'fix' && action.intro ? <GuideIntro text={action.intro} /> : undefined}
+        initialRemap={action?.mode === 'fix' ? (action.remap ?? null) : null}
       />
       <ForceSearchDialog
         open={action?.mode === 'search'}

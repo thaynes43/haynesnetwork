@@ -117,6 +117,13 @@ import {
   type SeerrIssueEpisodeReader,
   type SeerrIssueReader,
   type SyncSeerrIssuesResult,
+  // ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — the Title Check census (`title-check` mode).
+  runTitleCheck,
+  mislabelBlockUpkeep,
+  type MislabelBlockUpkeep,
+  type MislabelBlockWriter,
+  type TitleCheckRunResult,
+  type TitleCheckSonarrReader,
 } from '@hnet/domain';
 // ADR-044 / DESIGN-022 (PLAN-021) — the read-only Open WebUI admin-API client the `ai-usage-sync` mode
 // polls; the fetched snapshot is handed to the @hnet/domain syncAiUsage single-writer (never a live
@@ -256,6 +263,13 @@ export interface RunSyncOptions {
   /** ADR-111 C-01 / DESIGN-055 D-10 — the `seerr-issues` mode's read-only Seerr issue reader and the OPTIONAL Sonarr
    *  episode reader (absent ⇒ episode ids stay unknown). Required only for that mode; tests inject stubs. */
   seerrIssues?: { seerr: Pick<SeerrIssueReader, 'listAllIssues'>; sonarr: SeerrIssueEpisodeReader | null };
+  /** ADR-110 C-03 / DESIGN-055 D-05 — the `title-check` mode's read-only Sonarr reader (import history and episodes).
+   *  Required only for that mode; tests inject a stub. */
+  titleCheck?: {
+    sonarr: Pick<TitleCheckSonarrReader, 'getImportHistorySince' | 'listEpisodes'>;
+    /** ADR-110 C-04 — the Mislabel Block's profile reader and writer for its hourly upkeep (absent ⇒ no upkeep). */
+    mislabelBlock?: MislabelBlockWriter | null;
+  };
   /** ADR-046 / DESIGN-024 — the read-only Kavita + Audiobookshelf clients + public deep-link bases the
    *  `books-sync` mode pages. Required only for that mode; tests inject fetch-stubbed clients. */
   books?: BooksSyncBundle;
@@ -375,6 +389,12 @@ export interface SyncReport {
   seerrIssues?: SyncSeerrIssuesResult | null;
   /** The seerr-issues run's error — sets totalFailure for the CLI exit. */
   seerrIssuesError?: string;
+  /** DESIGN-055 D-05 — the `title-check` census result (null for every other mode / on error). */
+  titleCheck?: TitleCheckRunResult | null;
+  /** ADR-110 C-04 — the Mislabel Block upkeep of the `title-check` run (null when not run). */
+  mislabelBlock?: MislabelBlockUpkeep | null;
+  /** The title-check run's error (Sonarr's import history could not be read) — sets totalFailure for the CLI exit. */
+  titleCheckError?: string;
   /** ADR-046 — the `books-sync` result (null for every other mode / when it errored). ADR-053 folds the
    *  per-user ABS listening-progress read (absProgress) in as an isolated sub-step. */
   booksSync?:
@@ -1308,6 +1328,47 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
       seerrIssues: seerrIssuesResult,
       ...(seerrIssuesError !== undefined ? { seerrIssuesError } : {}),
       totalFailure: seerrIssuesError !== undefined,
+    };
+  }
+
+  // ADR-110 C-03 / DESIGN-055 D-05 (PLAN-077 P4) — the hourly `title-check` mode (at :35, after the janitor's :25): the
+  // census Title Check reads Sonarr's `downloadFolderImported` history since its cursor and records one Title Evidence
+  // verdict per imported file through the domain runTitleCheck single writer, then re-validates the open flags; the census
+  // writes nothing to Sonarr. Then the Mislabel Block upkeep (ADR-110 C-04), the mode's only Sonarr write: expired terms
+  // leave its one release profile and drift is repaired, each write read back. Standalone like seerr-issues: no *arr source loop and NO sync_runs row (its trail is
+  // title_checks). Only a failed history read (Sonarr unreadable) is a totalFailure; a failed series read is counted.
+  if (options.mode === 'title-check') {
+    const startedAt = new Date();
+    if (!options.titleCheck) {
+      throw new Error('title-check requires a Sonarr reader (titleCheck)');
+    }
+    let titleCheckResult: TitleCheckRunResult | null = null;
+    let titleCheckError: string | undefined;
+    try {
+      titleCheckResult = await runTitleCheck({ db, sonarr: options.titleCheck.sonarr });
+      logger.info('title-check complete', { ...titleCheckResult });
+    } catch (error) {
+      titleCheckError = error instanceof Error ? error.message : String(error);
+      logger.error('title-check failed', { error: titleCheckError });
+    }
+    // ADR-110 C-04 / DESIGN-055 D-05 — the Mislabel Block's upkeep: expire terms past 365 days and repair drift in its
+    // one profile. Best effort (mislabelBlockUpkeep never throws): a failure is reported, never the run's failure.
+    let mislabelBlockResult: MislabelBlockUpkeep | null = null;
+    if (options.titleCheck.mislabelBlock) {
+      mislabelBlockResult = await mislabelBlockUpkeep({ db, sonarr: options.titleCheck.mislabelBlock });
+      logger.info('mislabel-block upkeep complete', { ...mislabelBlockResult, report: undefined });
+    }
+    return {
+      mode: options.mode,
+      startedAt,
+      finishedAt: new Date(),
+      sources: [],
+      backfill: null,
+      fixesCompleted: null,
+      titleCheck: titleCheckResult,
+      mislabelBlock: mislabelBlockResult,
+      ...(titleCheckError !== undefined ? { titleCheckError } : {}),
+      totalFailure: titleCheckError !== undefined,
     };
   }
 

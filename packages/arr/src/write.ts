@@ -2,7 +2,8 @@
 // split). ADR-008: the ONLY sanctioned *arr write-backs are Fix (mark-failed / delete /
 // search) and Restore (add-item / create-tag), plus the later ruled additions (the ADR-083 queue janitor; the
 // ADR-093 Release Block profile and Seerr watchlist enrollment; the ADR-094 janitor release block on Lidarr; the ADR-097
-// title exclusion on Radarr and Sonarr; the ADR-109 ManualImport of the Import Check, DESIGN-055 D-07). This
+// title exclusion on Radarr and Sonarr; the ADR-109 ManualImport of the Import Check, DESIGN-055 D-07, and the Episode
+// Re-map's ManualImport of library files and RenameFiles, D-04). This
 // entrypoint may be imported ONLY by
 // packages/domain — enforced by the D-12 guard test. Exercised exclusively via fetch stubs in tests.
 import { assertArrEnv, type ArrEnvConfig } from './config';
@@ -239,6 +240,16 @@ export class SonarrWriteClient extends ReleaseProfileWriteClient {
    */
   manualImport(files: SonarrManualImportFile[], importMode: ManualImportMode = 'auto'): Promise<ArrCommandResponse> {
     return this.runCommand({ name: 'ManualImport', files, importMode });
+  }
+
+  /**
+   * ADR-109 C-02 / DESIGN-055 D-04 rule 8 (PLAN-077 P4) — `POST /command {name: 'RenameFiles', seriesId, files}`: rename
+   * the given episode files of one series to the naming format (Sonarr's "Organize"), the body Sonarr 4.0.20.3012's
+   * OrganizePreviewModalContentConnector sends. A rename onto a name another file holds is skipped by Sonarr
+   * (`FileAlreadyExistsException`, logged), never overwritten. Hard rule 4: the Episode Re-map's rename.
+   */
+  renameFiles(seriesId: number, files: number[]): Promise<ArrCommandResponse> {
+    return this.runCommand({ name: 'RenameFiles', seriesId, files });
   }
 
   /** `POST /series` — Restore re-add (D-16). */
