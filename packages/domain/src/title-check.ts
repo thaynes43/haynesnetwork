@@ -42,6 +42,12 @@ import {
 
 /** The hourly read re-reads this much history before its cursor, so an import Sonarr records late is not missed. */
 export const TITLE_CHECK_CURSOR_OVERLAP_MS = 2 * 60 * 60 * 1000;
+/**
+ * How long an import whose series cannot be read may hold the cursor (one day): past that, the run stops waiting for it
+ * (counted in `abandoned`, logged in `errorSamples`) so one broken series cannot stall the census; the library-wide
+ * backfill reads it again.
+ */
+export const TITLE_CHECK_HOLD_MAX_MS = 24 * 60 * 60 * 1000;
 /** The first hourly run (no `history` row yet) reads this far back. */
 export const TITLE_CHECK_FIRST_WINDOW_MS = 48 * 60 * 60 * 1000;
 /** The most series whose open flags one hourly run re-reads from Sonarr (more rotate through later runs). */
@@ -445,6 +451,8 @@ export interface TitleCheckRunResult {
    * held at that import so the next run reads it again; these files are re-read then too.
    */
   deferred: number;
+  /** Imports of a transiently unreadable series older than TITLE_CHECK_HOLD_MAX_MS: no longer held for. */
+  abandoned: number;
   verdicts: Record<TitleCheckVerdict, number>;
   inserted: number;
   updated: number;
@@ -488,6 +496,7 @@ export async function runTitleCheck(input: {
     files: 0,
     skipped: 0,
     deferred: 0,
+    abandoned: 0,
     verdicts: emptyVerdicts(),
     inserted: 0,
     updated: 0,
@@ -522,9 +531,16 @@ export async function runTitleCheck(input: {
 
   // The cursor is the newest written import, so a write past a transiently unread import would skip that import for
   // good. Hold the line: nothing newer than the oldest such import is written this run; the next run reads it all again.
+  // The hold is bounded: an import older than TITLE_CHECK_HOLD_MAX_MS is given up on (the backfill reads it again).
   let holdAt: number | null = null;
+  const holdFloor = now.getTime() - TITLE_CHECK_HOLD_MAX_MS;
   for (const f of files.values()) {
-    if (transient.has(f.seriesId) && (holdAt === null || f.importedAt.getTime() < holdAt)) holdAt = f.importedAt.getTime();
+    if (!transient.has(f.seriesId)) continue;
+    if (f.importedAt.getTime() < holdFloor) {
+      result.abandoned += 1;
+      continue;
+    }
+    if (holdAt === null || f.importedAt.getTime() < holdAt) holdAt = f.importedAt.getTime();
   }
   const items = await seriesItems(input.db, touched);
   const writes: TitleCheckWrite[] = [];

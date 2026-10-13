@@ -354,6 +354,14 @@ describe('the Title Check census (D-05)', () => {
     expect(await rowFor(9016)).toBeDefined();
   });
 
+  it('the hold is bounded: an unreadable import older than a day no longer holds the cursor', async () => {
+    const sonarr = caseA();
+    sonarr.state.history.push(imported({ fileId: 7003, episode: 1, sourceTitle: DSNP, date: at(30 * HOUR), seriesId: 2002 }));
+    sonarr.state.failing.add(2002);
+    const result = await runTitleCheck({ db: t.db, sonarr: sonarr.reader, now: NOW });
+    expect(result).toMatchObject({ files: 4, skipped: 1, deferred: 0, abandoned: 1, errors: 1, written: 4 });
+  });
+
   it('a series Sonarr no longer has (404) is skipped without holding the cursor', async () => {
     const sonarr = caseA();
     sonarr.state.history.push(imported({ fileId: 7002, episode: 1, sourceTitle: DSNP, date: at(HOUR), seriesId: 2001 }));
