@@ -537,7 +537,7 @@ Tapes S01E11 and S01E13, Sonarr 4.0.20.3012, read 2026-10-13):
     names another year) is its mismatch, as for the Import Check (P2 decision 8). So an `ambiguous` movie row is a Hard
     Refusal ("Its name is for a different movie"), approved or not; `silent` (an obfuscated name) is not. A whole disc
     image (BR-DISK, Raw-HD) is not a file Plex can play: it is never a pick (neither list, Not allowed). The plain words
-    are `RELEASE_REASONS_VERSION` 2, so a stored list of version 1 is never shown again.
+    are `RELEASE_REASONS_VERSION` 2, so a stored list of version 1 is never shown again nor grabbed from.
 
 ### D-07 Queue-aware Force Search and the Import Check (issue #597 Part 1)
 

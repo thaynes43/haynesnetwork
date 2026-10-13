@@ -1137,6 +1137,8 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
   });
   const now = input.now ? input.now() : Date.now();
   if (now - list.searchedAt.getTime() > RELEASE_PICK_GRAB_WINDOW_MS) return refuse('list_stale');
+  // A list written under older rules is neither shown again nor grabbed from (P5 decision 15).
+  if (list.reasonsVersion !== RELEASE_REASONS_VERSION) return refuse('list_stale');
   // A list a grab already went out from is spent: what it offered may since have failed and been blocklisted. A grab
   // the site refused (nothing sent to the download client) leaves it usable, so another site can be tried.
   if (await listWasGrabbed(input.db, list.id)) return refuse('list_stale');

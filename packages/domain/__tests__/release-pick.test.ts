@@ -14,6 +14,7 @@ import {
   FixRateLimitError,
   FixRefusedError,
   RELEASE_PICK_GRAB_WINDOW_MS,
+  RELEASE_REASONS_VERSION,
   buildArrClientBundle,
   classifyReleases,
   completeRepairRequests,
@@ -515,6 +516,12 @@ describe('the Release Pick over embedded Postgres (DESIGN-055 D-06)', () => {
     expect(
       await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: refused.key, requesterId: memberId }),
     ).toMatchObject({ outcome: 'not_allowed' });
+    // A list written under older plain-words rules is never grabbed from.
+    await t.db.update(releasePickLists).set({ reasonsVersion: 1 }).where(eq(releasePickLists.id, list.listId!));
+    expect(
+      await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: pick.key, requesterId: memberId }),
+    ).toMatchObject({ outcome: 'list_stale', repairRequestId: null });
+    await t.db.update(releasePickLists).set({ reasonsVersion: RELEASE_REASONS_VERSION }).where(eq(releasePickLists.id, list.listId!));
     arr.state.hasFile.add(E11.id);
     expect(
       await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: pick.key, requesterId: memberId }),
