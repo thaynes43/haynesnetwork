@@ -110,6 +110,7 @@ import {
   setAudioPreference,
   readLanguagePlan,
   scanAudioDefaults,
+  householdTarget,
   readPlaybackEvidence,
   setKnownIssueServers,
   setRepairGuideRemedies,
@@ -130,9 +131,9 @@ const USAGE = `Usage:
   repair-guide.ts preview  (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n> [--episodes 1,2]] [--replace-file]
   repair-guide.ts evidence (--tmdb <id> | --tvdb <id>) --email <app user email> [--plex-user-id <id>] [--plex-username <name>]
   repair-guide.ts audio    (--tmdb <id> | --tvdb <id>) [--episode S01E05 | --season <n>]
-  repair-guide.ts audio-preference (--tmdb <id> | --tvdb <id> (--episode S01E05 | --season <n>)) --language eng [--digest <d>]
+  repair-guide.ts audio-preference (--tmdb <id> | --tvdb <id> (--episode S01E05 | --season <n>)) --language eng [--household] [--digest <d>]
   repair-guide.ts language-plan (--tmdb <id> | --tvdb <id> --episode S01E05) --language eng
-  repair-guide.ts audio-scan [--json] [--apply-original eng]
+  repair-guide.ts audio-scan [--json] [--apply-original eng | --apply-household]
   repair-guide.ts settings [--set remedy=on|off,...] [--known-issue slug,slug | --known-issue none]
   repair-guide.ts search-plan (--tmdb <id> | --tvdb <id> --episode S01E05)
   repair-guide.ts release-list (--tmdb <id> | --tvdb <id> --episode S01E05) [--json]
@@ -168,6 +169,9 @@ plan, as if language_search were on). audio-scan only reads: every Sonarr series
 behind another one, confirmed in Plex on one file, with each Plex server's stored preference (DESIGN-055 P6 decision 10);
 with --apply-original <code> it then sets the Audio Preference, as staff, on every finding whose original language is
 that one and whose Plex default is another (one Repair Request each, requester null; needs the audio_preference remedy).
+--apply-household applies the owner's ruling on #955 (DESIGN-055 P6 decision 14) to every finding: English where the
+show's files carry an English track, else the original language; a show whose files already start in that language is a
+no-op. audio-preference --household previews or sets one show under the same rule (staff only).
 season-run, copy-run and ordering-run carry every account's Plex watch state onto the content it watched (the Watch
 Carry, ADR-114): a snapshot first (refused when it cannot be read), then the move, then the carry and a per-account
 check. carry-finish re-runs a carry from its snapshot; carry-revert restores what it wrote.
@@ -202,6 +206,8 @@ export interface RepairGuideArgs {
   language?: string;
   /** audio-scan: set the Audio Preference on the findings whose original language is this one. */
   applyOriginal?: string;
+  /** audio-scan: apply the owner's household default (#955) to every finding. audio-preference: use that rule. */
+  household?: boolean;
   /** ordering-plan / ordering-run: Plex's ordering value (`default` is the library default, sent as ''). */
   ordering?: string;
   /** carry-status / carry-finish / carry-revert: the Watch Carry's id. */
@@ -410,6 +416,10 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         args.copyOf = positiveInt(flag, value);
         i += 1;
         break;
+      case '--apply-household':
+      case '--household':
+        args.household = true;
+        break;
       case '--apply-original':
         if (!value || !/^[a-z]{3}$/i.test(value)) throw new Error('--apply-original needs a three-letter code, e.g. eng');
         args.applyOriginal = value.toLowerCase();
@@ -461,9 +471,10 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
   }
   if (args.ordering !== undefined) throw new Error('--ordering is for ordering-plan and ordering-run');
   if (command === 'audio-scan') {
-    if (Object.keys(args).some((k) => !['command', 'replaceFile', 'json', 'applyOriginal'].includes(k))) {
-      throw new Error('audio-scan takes only --json and --apply-original');
+    if (Object.keys(args).some((k) => !['command', 'replaceFile', 'json', 'applyOriginal', 'household'].includes(k))) {
+      throw new Error('audio-scan takes only --json, --apply-original and --apply-household');
     }
+    if (args.applyOriginal && args.household) throw new Error('give one of --apply-original or --apply-household');
     return args;
   }
   if (command === 'audio-preference' || command === 'language-plan') {
@@ -473,10 +484,12 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     if (args.tvdb !== undefined && command === 'language-plan' && !args.episode) throw new Error('language-plan on a show needs --episode');
     if (args.tvdb !== undefined && !args.episode && args.season === undefined) throw new Error('a show needs --episode or --season');
     if (args.digest !== undefined && command !== 'audio-preference') throw new Error('--digest is for audio-preference');
+    if (args.household && command !== 'audio-preference') throw new Error('--household is for audio-preference');
     return args;
   }
   if (args.language !== undefined) throw new Error('--language is for audio-preference and language-plan');
   if (args.applyOriginal !== undefined) throw new Error('--apply-original is for audio-scan');
+  if (args.household) throw new Error('--apply-household is for audio-scan, --household for audio-preference');
   if (command === 'title-check') {
     if ((args.backfill === true) === (args.flagsSeriesId !== undefined)) {
       throw new Error('title-check needs exactly one of --backfill or --flags <series id>');
@@ -669,6 +682,7 @@ async function main(): Promise<number> {
     const report = await scanAudioDefaults({ db, arr, plex });
     if (args.json) console.log(JSON.stringify(report, null, 2));
     else for (const line of formatAudioScan(report)) console.log(line);
+    if (args.household) return applyHousehold(report, { db, arr, plex });
     if (!args.applyOriginal) return 0;
     let failures = 0;
     for (const f of report.findings) {
@@ -971,7 +985,15 @@ async function main(): Promise<number> {
 
   if (args.command === 'audio-preference') {
     const plex = plexClientBundleFromEnv();
-    const input = { db, arr, plex, mediaItemId: item.id, ...scope, wantedLanguage: args.language! };
+    const input = {
+      db,
+      arr,
+      plex,
+      mediaItemId: item.id,
+      ...scope,
+      wantedLanguage: args.language!,
+      ...(args.household ? { rule: 'household' as const } : {}),
+    };
     if (!args.digest) {
       const preview = await previewAudioPreference(input);
       console.log(JSON.stringify({ title: item.title, preview }, null, 2));
@@ -1018,6 +1040,53 @@ async function main(): Promise<number> {
 }
 
 const gb = (bytes: number | null) => (bytes === null ? '?' : `${(bytes / 1024 ** 3).toFixed(2)} GB`);
+
+/**
+ * DESIGN-055 P6 decision 14 — the owner's household default (#955) as staff: per finding, English where the show's files
+ * carry it, else the original language. A show already starting in that language everywhere, or whose servers all prefer
+ * it, is reported and left alone. One Repair Request per write, requester null, every server read back.
+ */
+async function applyHousehold(
+  report: Awaited<ReturnType<typeof scanAudioDefaults>>,
+  deps: { db: typeof defaultDb; arr: ReturnType<typeof arrClientBundleFromEnv>; plex: ReturnType<typeof plexClientBundleFromEnv> },
+): Promise<number> {
+  let failures = 0;
+  for (const f of report.findings) {
+    const target = householdTarget(f);
+    const line = { tvdbId: f.tvdbId, title: f.title, original: f.original, language: target.language };
+    if (target.noop) {
+      console.log(JSON.stringify({ ...line, skipped: 'noop', note: `every file with this language already starts in it` }));
+      continue;
+    }
+    if (!f.mediaItemId || !target.scope) {
+      console.log(JSON.stringify({ ...line, skipped: 'no_scope' }));
+      continue;
+    }
+    const input = {
+      db: deps.db,
+      arr: deps.arr,
+      plex: deps.plex,
+      mediaItemId: f.mediaItemId,
+      scope: 'episode' as const,
+      targetChildId: target.scope.episodeId,
+      wantedLanguage: target.language,
+      rule: 'household' as const,
+    };
+    try {
+      const preview = await previewAudioPreference(input);
+      if (preview.action !== 'set') {
+        console.log(JSON.stringify({ ...line, skipped: preview.action, reason: preview.reason }));
+        continue;
+      }
+      const result = await setAudioPreference({ ...input, requesterId: null, digest: preview.digest });
+      console.log(JSON.stringify({ ...line, scope: target.scope.label, result }));
+    } catch (error) {
+      failures += 1;
+      console.log(JSON.stringify({ ...line, error: (error as Error).message }));
+    }
+  }
+  return failures === 0 ? 0 : 1;
+}
 
 /** The audio scan as text: one line per series, worst first (exported for the test). */
 export function formatAudioScan(report: Awaited<ReturnType<typeof scanAudioDefaults>>): string[] {

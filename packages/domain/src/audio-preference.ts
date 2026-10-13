@@ -111,7 +111,16 @@ export interface AudioPreferenceInput {
   seasonNumber?: number;
   /** The audio language the person wanted (ISO 639-2, e.g. `eng`). */
   wantedLanguage: string;
+  /**
+   * Which languages may be set. `original` (the default): a person's Wrong language report, the show's original language
+   * only (Q-03 ruling). `household`: staff's sweep under the owner's ruling on #955 (2026-10-13), English when the show's
+   * files carry it, else the original language; staff only (requester null).
+   */
+  rule?: AudioPreferenceRule;
 }
+
+/** DESIGN-055 P6 decision 14 — the Q-03 rule for a person's report, or the owner's household default for staff (#955). */
+export type AudioPreferenceRule = 'original' | 'household';
 
 const SERVER_NAMES: Record<PlexServerName, string> = {
   haynestower: 'HaynesTower',
@@ -179,13 +188,16 @@ export function decideAudioPreference(input: {
   wanted: string;
   original: string | null;
   servers: readonly AudioPreferenceServer[];
+  /** `household` (staff, #955): English is allowed beside the original language. */
+  rule?: AudioPreferenceRule;
 }): { action: AudioPreferenceAction; reason: AudioGuidanceReason | null; toWrite: PlexServerName[] } {
   const guidance = (reason: AudioGuidanceReason) => ({ action: 'guidance' as const, reason, toWrite: [] });
   const wanted = canonicalLanguageCode(input.wanted);
   if (input.verdict !== 'present') return guidance('not_present');
   if (!input.isShow) return guidance('movie');
   if (input.original === null) return guidance('unknown_original');
-  if (canonicalLanguageCode(input.original) !== wanted) return guidance('not_original');
+  const allowed = canonicalLanguageCode(input.original) === wanted || (input.rule === 'household' && wanted === 'eng');
+  if (!allowed) return guidance('not_original');
   const readable = input.servers.filter((s) => !s.unreachable && s.offered);
   if (readable.length === 0) return guidance('no_plex');
   const toWrite = readable.filter((s) => s.currentLanguage !== wanted);
@@ -297,7 +309,7 @@ export async function previewAudioPreference(input: AudioPreferenceInput): Promi
   }
   const tracks = await readTrackHint({ plex: input.plex, servers, isShow, episode });
 
-  const decision = decideAudioPreference({ isShow, verdict, wanted, original: originalCode, servers });
+  const decision = decideAudioPreference({ isShow, verdict, wanted, original: originalCode, servers, rule: input.rule });
   const remedies = await getRepairGuideRemedies(input.db);
   const preview = {
     remedyOn: remedies.audio_preference,
@@ -343,6 +355,9 @@ const stepAt = () => new Date().toISOString();
  * with each server's step in its trail.
  */
 export async function setAudioPreference(input: SetAudioPreferenceInput): Promise<SetAudioPreferenceResult> {
+  if (input.rule === 'household' && input.requesterId !== null) {
+    throw new FixRefusedError('audio_preference_refused', "The household default is staff's to set.");
+  }
   const preview = await previewAudioPreference(input);
   if (input.digest !== undefined && input.digest !== preview.digest) {
     throw new FixPlanChangedError('Something changed since you looked, so nothing was done. Check again before you confirm.');
@@ -397,6 +412,7 @@ export async function setAudioPreference(input: SetAudioPreferenceInput): Promis
     reason: 'wrong_language',
     preview: {
       action: preview.action,
+      rule: input.rule ?? 'original',
       wanted: preview.wanted.code,
       original: preview.original?.code ?? null,
       digest: preview.digest,
@@ -499,6 +515,12 @@ export interface AudioScanFinding {
   plex: Array<{ server: string; current: string; unreachable: boolean }>;
   /** Every readable Plex server already prefers the original language for this show. */
   preferenceSet: boolean;
+  /**
+   * DESIGN-055 P6 decision 14 (#955) — English in the show's files, for the household default: how many files carry an
+   * English track, how many of those start in another language, and one file to use as the scope (one that starts in
+   * another language when there is one).
+   */
+  english: { files: number; leadOther: number; sample: { episodeId: number; label: string } | null };
 }
 
 export interface AudioScanReport {
@@ -545,8 +567,20 @@ export async function scanAudioDefaults(input: {
     let firstOther = 0;
     const leading = new Set<string>();
     let sampleFile: (typeof files)[number] | null = null;
+    let withEnglish = 0;
+    let englishLeadOther = 0;
+    let englishFile: (typeof files)[number] | null = null;
     for (const f of files) {
       const codes = parseAudioLanguages(f.mediaInfo?.audioLanguages);
+      if (codes.includes('eng')) {
+        withEnglish += 1;
+        if (codes[0] !== 'eng') {
+          englishLeadOther += 1;
+          if (englishFile === null || parseAudioLanguages(englishFile.mediaInfo?.audioLanguages)[0] === 'eng') englishFile = f;
+        } else {
+          englishFile ??= f;
+        }
+      }
       if (!codes.includes(original)) continue;
       withOriginal += 1;
       if (codes[0] !== original) {
@@ -561,16 +595,21 @@ export async function scanAudioDefaults(input: {
       .from(mediaItems)
       .where(and(eq(mediaItems.arrKind, 'sonarr'), eq(mediaItems.arrItemId, s.id), isNull(mediaItems.deletedFromArrAt)));
     let sample: AudioScanFinding['sample'] = null;
-    if (sampleFile) {
+    let englishSample: AudioScanFinding['english']['sample'] = null;
+    if (sampleFile || englishFile) {
       const episodes = await guardArrCall(`sonarr GET /episode?seriesId=${s.id}`, () => sonarr.listEpisodes(s.id));
-      const ep = episodes.find((e) => e.episodeFileId === sampleFile!.id);
-      if (ep) {
+      const label = (e: { seasonNumber: number; episodeNumber: number }) =>
+        `S${String(e.seasonNumber).padStart(2, '0')}E${String(e.episodeNumber).padStart(2, '0')}`;
+      const ep = sampleFile ? episodes.find((e) => e.episodeFileId === sampleFile!.id) : undefined;
+      if (ep && sampleFile) {
         sample = {
           episodeId: ep.id,
-          label: `S${String(ep.seasonNumber).padStart(2, '0')}E${String(ep.episodeNumber).padStart(2, '0')}`,
+          label: label(ep),
           fileName: (sampleFile.relativePath ?? '').split(/[\\/]/).pop() || null,
         };
       }
+      const enEp = englishFile ? episodes.find((e) => e.episodeFileId === englishFile!.id) : undefined;
+      if (enEp) englishSample = { episodeId: enEp.id, label: label(enEp) };
     }
     const plex: AudioScanFinding['plex'] = [];
     const servers: AudioPreferenceServer[] = [];
@@ -606,8 +645,29 @@ export async function scanAudioDefaults(input: {
       plexDefault,
       plex,
       preferenceSet: readable.length > 0 && readable.every((p) => languageOfPlexLocale(p.current) === original),
+      english: { files: withEnglish, leadOther: englishLeadOther, sample: englishSample },
     });
   }
   findings.sort((a, b) => Number(a.preferenceSet) - Number(b.preferenceSet) || b.filesFirstOther - a.filesFirstOther);
   return { seriesScanned, filesRead, findings };
+}
+
+/**
+ * DESIGN-055 P6 decision 14 — the owner's household default (#955, 2026-10-13) for one scan finding: English when the
+ * show's files carry an English track, else the original language. `noop` when every file that carries that language
+ * already starts in it (Boruto: all 291 files start in English), so nothing is written.
+ */
+export function householdTarget(f: AudioScanFinding): {
+  language: string;
+  scope: { episodeId: number; label: string } | null;
+  noop: boolean;
+} {
+  if (f.english.files > 0) {
+    return { language: 'eng', scope: f.english.sample, noop: f.english.leadOther === 0 };
+  }
+  return {
+    language: f.original,
+    scope: f.sample ? { episodeId: f.sample.episodeId, label: f.sample.label } : null,
+    noop: f.filesFirstOther === 0 || f.plexDefault === f.original,
+  };
 }
