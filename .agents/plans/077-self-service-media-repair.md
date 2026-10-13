@@ -6,9 +6,10 @@
   verified live; P0's week of census is owed (OC-048), P1's first guided Fixes OC-050, P2's first presses OC-051, P3's
   first real Seerr issue OC-052. P4 (v0.115.0, v0.115.1, v0.116.0) is shipped and verified live, remedy on; its first
   week of Title Check census and first person-run re-map are OC-053. DESIGN-055 Q-10 (the hand profile's five
-  non-group blocks) is ruled A (owner, 2026-10-13, ADR-113): mislabelled-name terms are built, and their live adoption
-  and the hand profile's removal are owed after the deploy (P4, "Q-10 ruling"). Q-11 (the library's whole-season reorderings,
-  issue #916) is ruled A too (owner, 2026-10-13): staff's Season Re-map, P4's follow-up below. P5 is next.
+  non-group blocks) is ruled A (owner, 2026-10-13, ADR-113): mislabelled-name terms shipped in v0.117.0, the five terms
+  are adopted and the hand profile and its tag are gone (P4, "Q-10 ruling"). Q-11 (the library's whole-season
+  reorderings, issue #916) is ruled A too: staff's Season Re-map shipped in v0.117.0 and ran on 29 seasons (P4's
+  follow-up below; open flags 622 to 400). P5 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -321,8 +322,8 @@ Priority is how often real reports need the remedy, and how much harm today's be
     `episode-remap.test.ts` (api), the arr client tests, `title-check-sync.test.ts` and the repair-guide script test
     (sync), migration 0101, `remap-guide.test.ts` and `repair-guide.test.ts` (web); e2e `remap-episodes.spec.ts`: Case A
     (AC-40) on a stub season, the flag's single move, the admin removal.
-- **Q-10 ruling (owner, 2026-10-13: A, ADR-113): built in [#924](https://github.com/thaynes43/haynesnetwork/pull/924);
-  the live adoption is owed.** DESIGN-055 D-05 "Q-10 ruling decisions" record the design.
+- **Q-10 ruling (owner, 2026-10-13: A, ADR-113): built in [#924](https://github.com/thaynes43/haynesnetwork/pull/924),
+  live in v0.117.0, adopted 2026-10-13 12:26Z.** DESIGN-055 D-05 "Q-10 ruling decisions" record the design.
   - Build: migration 0102 (`mislabel_block_terms.kind`, `name_token`, `release_group` nullable, origin `staff`, the
     kind/field and kind/origin CHECKs, the active unique index per kind); `release-terms.ts` `renderMislabelNameTerm`,
     `mislabelNameKindOf`, `isMislabelNameTerm`; `mislabel-block.ts` `parseMislabelName`, `deriveMislabelNameTerm`,
@@ -333,7 +334,12 @@ Priority is how often real reports need the remedy, and how much harm today's be
     verlorenen Videos"; its episodes 11, 13 and 24 are "Spice It Up", the Halloween special and "Don's Back", so none of
     the three pairs names its own episode. Profile 3 holds the six terms; the Mislabel profile (id 4) holds the
     sentinel and the BiOMA term.
-  - **Owed after the deploy, in order** (staff, in the web pod:
+  - **Done after the deploy (2026-10-13, 12:25Z to 12:27Z), in order.** All five dry runs derived the expected terms.
+    The real adoptions saved five active terms (origin `adoption`, `total` 6 with BiOMA). Read back: profile 4 holds
+    the sentinel, the BiOMA term and the five name terms. Profile 3 was deleted (`DELETE /releaseprofile/3`, 200;
+    profiles now 1, 2, 4). Tag 31 was removed from series 1061 (series editor, `applyTags: remove`; tags now [1, 4]).
+    Tag 31 was then deleted (200), and the tag list no longer holds it or its label. The steps as planned
+    (staff, in the web pod:
     `kubectl -n frontend exec deploy/haynesnetwork-main -c app -- tsx /sync/src/scripts/mislabel-block.ts ...`):
     1. Each of the five with `--dry-run` first, then without: `adopt --series 1061 --alias "Regular Show Die verlorenen
        Videos"`, `adopt --series 1061 --double S01E13E14`, `adopt --series 1061 --pair "S01E11 Secret Menu"`,
@@ -365,7 +371,67 @@ names, never deleting a file, after a watch-state check on every Plex server and
   and `season-remap-flow.test.ts` (embedded Postgres and a stateful stub Sonarr: a swap and a rotation end on their own
   episodes under their own names with nothing orphaned; a skipped rename stops the run and reports the parked file; a
   changed plan, a failed Plex check and the switch off refuse); the repair-guide script test.
-- **Live run:** recorded below once done (seasons moved, seasons skipped and why, the census before and after).
+- **Shipped:** [#923](https://github.com/thaynes43/haynesnetwork/pull/923), v0.117.0 (with Q-10's #924), deployed by
+  haynes-ops [#3888](https://github.com/thaynes43/haynes-ops/pull/3888). 3/3 web pods, all 24 CronJobs, the owed-check
+  runner and the Books Census run v0.117.0, and migration 0102 is applied.
+- **Live run (2026-10-13, 12:26Z to 13:20Z, declared `act-122609-88358`).**
+  - **Census before:** 622 open flags (40 series, 92 seasons). **After:** 400 (35 series, 73 seasons).
+  - **Checks first.** Plex watch state was read from both server databases (read only, every account) at 07:20Z, at
+    12:07Z, and again at 12:34Z before the second half; every season run was clear. Evidence came from five read-only
+    passes over the files' own subtitle streams, or title-card frames where a file had none (short reads,
+    `nice -n 19`, one at a time). They confirmed the names in every season run. They also placed the files whose names
+    say nothing, and found the second copies.
+  - **Moved:** 29 seasons, 263 files, each read back and renamed, with nothing orphaned. Sonarr's file count and the
+    disk's video-file count per series were unchanged after every season.
+    - 237 files now sit on their own episodes.
+    - 26 are second copies or other content that staff moved aside to the episode their chain left open (decision 19).
+      They are still wrong there, and that episode's own file is missing.
+    - Plex (HaynesOps and HaynesTower) holds every file of all 29 seasons on the episode Sonarr has it on: 0 wrong and
+      0 missing. Every moved season's Plex titles follow TVDB.
+  - **Seasons run (placements and keeps in brackets):**
+    - Married... with Children S4 [13:11], S5 [14:13, 19:21, 20:22, 22:23, 23:24], S6, S8, S9 [13:12, 19:18, 18:17,
+      17:16], S10 [17:18, 18:19] and S11.
+    - Law & Order S9, Bluey Book Reads S1, My Little Pony S3, Fireman Sam S11 and Lilo & Stitch S2. In Lilo & Stitch S2,
+      Plex calls one file's episode "Woops" before and after, so it is no worse.
+    - Guy's Grocery Games:
+      - S6 [keep 13; 12:10] and S8 [keep 11; 10:5].
+      - S16 [1:6, 11:10]: a holiday special and S17E06 moved aside.
+      - S17: its one free move.
+      - S19 [14:15, 15:16, 18:13] and S20 [keep 21, 28; 20:3, 27:22].
+      - S37.
+    - Alaskan Bush People S2 [1:8] and S6 [1:8] (specials moved aside), and S9 [1:2, 4:5].
+    - American Dad! S12 [1:12, 2:13, 3:14]: three files of other episodes moved aside.
+    - Ben 10 (2016) S4 [18:10, 26:23].
+    - Stuck in the Middle S2 [2:6, 8:12, 14:20] and S3 [4:10, 12:17].
+    - Henry Danger S5 [4:21, 23:32, 34:35, 37:38].
+    - Star Wars Rebels S1 [9:7] and Batman: The Animated Series S1 [21:23].
+  - **Left open (400 flags), by reason.** Issue #916 has the per-season list; follow-up issue #928 carries what needs a
+    decision.
+    - Watch state, not moved by owner rule (135 flags, 31 seasons). Seasons with a person's play, watched mark or resume
+      point on HaynesTower: Abbott Elementary S1-S2, Anthony Bourdain S5 and S8, Bob the Builder S1-S2, Bubble Guppies
+      S1 and S5, Daniel Tiger S4-S5, Fireman Sam S6, Guy's Grocery Games S12-S15, Malcolm in the Middle S5, Married...
+      with Children S2-S3, Mecha Builders S1, Mickey Mouse S1, Paw Patrol S5-S6, Pokémon S3 and S5, Sister Wives S6,
+      South Park S14, Spidey S1, The Simpsons S38 and The Wild Thornberrys S1-S3.
+    - Plex numbers the season like the release, or differently from TVDB, so a move would not fix what viewers see or
+      would make it wrong (90 flags): Alaskan Bush People S4; Fireman Sam S7, S9 and S10; Leah Remini S3; One Piece S22;
+      Pokémon S8; The Thundermans S4; Midsomer Murders S12; The Fairly OddParents S3-S5.
+    - Evidence contradicts the names or cannot place the files (95 flags): 60 Days In S2; Alaskan Bush People S5;
+      Ben 10 (2016) S1; Henry Danger S4; SpongeBob S16; Midsomer Murders S5; Guy's Grocery Games S3 and S17;
+      Pokémon S6 and S11; The Fairly OddParents S7.
+    - Second copies whose own episode is missing (34 flags, including the 26 moved aside where they are flagged).
+      Before the run: Henry Danger S2, Law & Order S3, Deadliest Catch S6, The Fairly OddParents S1. After it:
+      Guy's Grocery Games S6, S8 and S20; Alaskan Bush People S9; Ben 10 (2016) S4; Henry Danger S5; Stuck in the
+      Middle S2-S3; Batman S1. American Dad! S12's three and Alaskan Bush People S2 and S6's specials carry only the
+      library's own names, so they are not flagged.
+    - Ben 10 (2016) S2 (24 flags): six second copies block chains with only four free episodes.
+    - Two-segment files that a name cannot place (20 flags): Arthur S19, New Looney Tunes S1-S2, Spidey S3.
+    - No free episode in the whole series to pass a swap through (2 flags): S.W.A.T. (2017) S5.
+  - **The 17 flags a person could move:** 7 were fixed in the same pass: Ben 10 (2016) S4 (5), Fireman Sam S11 (1) and
+    Guy's Grocery Games S17 (1). The other 10 stay open:
+    - The watch-state rule holds Spidey S1 (2) and The Wild Thornberrys S2 (1).
+    - Evidence contradicts the names for Ben 10 (2016) S1 (2).
+    - Each of the rest is a file holding two segments whose name names only one, so it needs a two-episode mapping:
+      Spidey S3 (3) and New Looney Tunes S2 (2).
 
 ### P5: Release Pick
 

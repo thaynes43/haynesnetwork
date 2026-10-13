@@ -1,5 +1,40 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-13 13:25Z: Season Re-map (Q-11) and mislabelled-name terms (Q-10) live in v0.117.0; 29 seasons re-mapped, open flags 622 to 400
+
+- **What:**
+  - **Season Re-map** (DESIGN-055 P4 decisions 18 to 24, staff only) runs from `repair-guide.ts season-plan | season-run`.
+    - Every file of a season goes where its own names say, or where `--place` from evidence says. `--keep` holds a file
+      in place.
+    - Swaps and rotations pass through a free Parking Episode, and each file is renamed and read back after its step.
+    - A Plex check refuses a move that would make a right Plex title wrong.
+    - Each moved file's Title Check row follows it to its new id.
+  - **Mislabelled-name terms** (ADR-113; Q-10 ruled A): pair, double and alias terms in the Mislabel Block, written by
+    staff (`mislabel-block.ts add-name`) and by the adoption.
+- **Shipped:**
+  - hnet #924 (Q-10), #923 (Season Re-map) and #925 (release v0.117.0).
+  - haynes-ops #3888: 3/3 web pods, 24 CronJobs, the owed-check runner and the Books Census on v0.117.0. Migration 0102
+    is applied.
+  - The P5 agent shipped v0.118.0 on top.
+- **Q-10 live (12:26Z):**
+  - The five hand-profile blocks were adopted as name terms and read back in Mislabel profile 4.
+  - Hand profile 3, its tag on series 1061 and tag 31 are deleted by hand, each read back.
+  - Hand profile 2 (T.O.T.S., tag 30) stays: it fits no term kind.
+- **Season Re-map live (12:26Z to 13:20Z):**
+  - 29 seasons and 263 files moved, with nothing orphaned and file counts on disk and in Sonarr unchanged.
+  - 237 files are now right. 26 second copies or other content were moved aside and are still wrong.
+  - Plex shows every file of those seasons on its Sonarr episode on both servers.
+  - Watch state was read from both Plex databases before each batch, and evidence came from read-only subtitle and
+    title-card reads.
+  - The seasons, placements and leftovers are in PLAN-077, under "P4 follow-up: the Season Re-map".
+- **Open:** issue #928 holds the 400 leftover flags by reason:
+  - watched seasons (owner decision);
+  - Plex numbering (an ADR decision);
+  - evidence still to read;
+  - second copies, where a Fix needs the owner's go-ahead;
+  - two-segment files and one season with no free episode.
+- **Next:** #928's owner decisions; OC-053 continues.
+
 ## 2026-10-13 03:50Z: PLAN-077 P4 shipped — the Title Check, the Episode Re-map and the Mislabel Block, live in v0.116.0, remedy on
 
 - **What:**
