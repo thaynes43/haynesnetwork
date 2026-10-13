@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.122.2](https://github.com/thaynes43/haynesnetwork/compare/v0.122.1...v0.122.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* **domain:** the Audio Preference reads a show's own Plex item, not a same-named movie ([#954](https://github.com/thaynes43/haynesnetwork/issues/954)) ([24357d1](https://github.com/thaynes43/haynesnetwork/commit/24357d1d94fb503f3182ceaea29bd12fbbdcd2b9))
+
 ## [0.122.1](https://github.com/thaynes43/haynesnetwork/compare/v0.122.0...v0.122.1) (2026-10-13)
 
 
