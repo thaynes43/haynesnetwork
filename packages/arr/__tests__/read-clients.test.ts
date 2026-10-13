@@ -46,6 +46,21 @@ describe('SonarrClient (v3)', () => {
     expect(first.runtime).toBeTypeOf('number');
   });
 
+  it('reads a series Sonarr has not refreshed yet (no statistics) as nothing on disk, and keeps the rest of the list', async () => {
+    // Live 2026-10-13: "Zodiac (2028)", added 2026-10-09, came back without `statistics`, which failed the whole read.
+    const list = fixture('sonarr.series-list') as Array<Record<string, unknown>>;
+    const unrefreshed: Record<string, unknown> = { ...list[0]!, id: 1082, title: 'Zodiac (2028)' };
+    delete unrefreshed.statistics;
+    const { client } = sonarr([{ path: '/api/v3/series', body: [...list, unrefreshed] }]);
+    const series = await client.listSeries();
+    expect(series).toHaveLength(list.length + 1);
+    expect(series.at(-1)).toMatchObject({
+      id: 1082,
+      statistics: { episodeFileCount: 0, episodeCount: 0, totalEpisodeCount: 0, sizeOnDisk: 0 },
+    });
+    expect(series[0]!.statistics.totalEpisodeCount).toBe((list[0]!.statistics as { totalEpisodeCount: number }).totalEpisodeCount);
+  });
+
   it('fetches a single series by id', async () => {
     const { client, calls } = sonarr([
       { path: '/api/v3/series/1', body: fixture('sonarr.series-byid') },
@@ -191,6 +206,14 @@ describe('RadarrClient (v3)', () => {
       ...stub,
     };
   }
+
+  it('reads a movie without statistics as no file', async () => {
+    const movie = fixture('radarr.movie-byid') as Record<string, unknown>;
+    const unrefreshed: Record<string, unknown> = { ...movie };
+    delete unrefreshed.statistics;
+    const { client } = radarr([{ path: '/api/v3/movie', body: [unrefreshed] }]);
+    expect((await client.listMovies())[0]!.statistics).toEqual({ movieFileCount: 0 });
+  });
 
   it('parses system status, movie list + byId with unknown fields stripped', async () => {
     const { client } = radarr([

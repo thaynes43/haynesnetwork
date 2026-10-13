@@ -119,9 +119,23 @@ export function pickLanguageRelease(input: {
     if (!wouldTakeWithoutFile(release)) continue;
     if (!releaseHasLanguage(release, input.wanted)) continue;
     if (input.current && sameReleaseBasis(input.current, release) !== null) continue;
+    if (input.current && sameGroupAndQuality(input.current, release)) continue;
     return release;
   }
   return null;
+}
+
+const sameText = (a: string | null | undefined, b: string | null | undefined) =>
+  (a ?? '').trim() !== '' && (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+
+/**
+ * DESIGN-055 P6 decision 13 — another post of the file's own release: the same release group at the same quality. The
+ * file lacks the language, so that group's release of this episode at this quality most likely does too, whatever its
+ * name claims (live 2026-10-13: JUJUTSU KAISEN S02E06's file, OLYMPUS WEBDL-2160p with Portuguese and Japanese only, and
+ * OLYMPUS's "MULTi" WEBDL-2160p post, which Sonarr reads as eight languages, English among them).
+ */
+export function sameGroupAndQuality(current: CurrentFileIdentity, release: ArrRelease): boolean {
+  return sameText(current.releaseGroup, release.releaseGroup) && sameText(current.qualityName, release.qualityName);
 }
 
 /** The plan and, for the run only, the candidate's own release (with its guid). Never sent to a client. */

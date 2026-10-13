@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
+- **Last updated:** 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
   missing, is a pick for all of them). Before that 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
@@ -821,7 +821,9 @@ adds no ADR; CLAUDE.md hard rule 4 names the write.
    `PUT /library/metadata/{key}/prefs?audioLanguage=<locale>` (the call Plex Web's Edit, Advanced makes; python-plexapi's
    `editAdvanced`). Only a locale or `''` passes its check, before the URL is built, and it is retried like a read on a
    timeout or a 502-504, since the stored value is idempotent. The value written is Plex's first locale for the language
-   in the item's own list (`en-US`, not `en-AU`); a stored variant of the language (`en-GB`) already counts as set. Every
+   in the item's own list (`en-US`, not `en-AU`); a stored variant of the language (`en-GB`) already counts as set. Read
+   live on v0.121.0: Plex lists the show's own track languages first, so the first match is the tag its files carry
+   (`en-US` on The Lost Tapes, `en` on Boruto, `ja` on JUJUTSU KAISEN). Every
    written server is read back (`getAudioLanguagePreference`) before the request completes. The hand fix of 2026-10-12
    also refreshed the show; the setting does not need a refresh, and none is sent.
 3. **The decision** (`decideAudioPreference`, pure). `set` when every file in scope has the wanted language (P1's verdict
@@ -882,6 +884,11 @@ adds no ADR; CLAUDE.md hard rule 4 names the write.
     that carry the original language behind another one, 166 of them English originals (Star Trek: Voyager starts 107
     episodes in German on HaynesOps, Jessie 91 in Czech, Futurama 72 in German). The sweep and its result are in PLAN-077
     P6's status.
+13. **Never another post of the file's own release** (found in the live check on v0.121.0). The Language Replace skips
+    a release from the file's own release group at the file's quality: the file lacks the language, so that group's
+    release of the episode at that quality most likely does too, whatever its name claims. JUJUTSU KAISEN S02E06's file
+    is OLYMPUS WEBDL-2160p with Portuguese and Japanese only, and the plan's first pick was OLYMPUS's "MULTi"
+    WEBDL-2160p post, which Sonarr reads as eight languages, English among them (`sameGroupAndQuality`).
 
 ### D-09 Fix safety guards and playback triage
 
