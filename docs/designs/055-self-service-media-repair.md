@@ -551,7 +551,7 @@ do not edit)", "must not contain" terms only, no tags.
     episodes, a plain grab first. With none, the plan refuses `no_release` and the wrong file stays, flagged, waiting for
     a release (an empty slot helps nobody). `replace-run ... --key <k> --digest <d> --evidence "<what was read>"
     [--same-as S03E07,S03E08]` re-plans (one fresh search), snapshots the watch state (Watch Carry kind `wrong_content`,
-    migration 0105), opens a Fix Request (requester null, `wrong_content`), deletes the file, reads the slot back empty,
+    migration 0106), opens a Fix Request (requester null, `wrong_content`), deletes the file, reads the slot back empty,
     and grabs the chosen release onto the slot's episodes with Sonarr's override body (`sendReleaseGrab`: the *arr judged
     it while the file was there). A mark on the wrong content never lands on the replacement: `--same-as` names the
     episodes of the show whose own file holds that story, and the carry credits the plays there; without it the marks are
