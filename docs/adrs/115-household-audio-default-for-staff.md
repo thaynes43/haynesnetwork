@@ -64,4 +64,4 @@ one. A show whose files already start in its original language is not flagged, a
 
 - Builds on ADR-109 C-07 (the Q-03 write), ADR-017 (the confined Plex write surface) and DESIGN-055 P6 decision 11 (the
   staff scan).
-- Glossary T-323 (Audio Preference), T-326 (Household Default).
+- Glossary T-323 (Audio Preference), T-328 (Household Default).
