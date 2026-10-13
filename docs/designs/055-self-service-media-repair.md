@@ -251,6 +251,28 @@ do not edit)", "must not contain" terms only, no tags.
     (`The.Loud.House.S05E01.1080p.AMZN.WEBRip.DDP2.0.H.264-LAZY`), so Title Evidence is `silent` and the Title Check
     cannot flag them; subtitle and title-card evidence stay out of scope (Alternatives). A person who sees it can still
     fix S05 with a shift; a scrambled season (S06) is a series of single moves, and a swap needs staff.
+12. **The Title Check as built** (`title-check.ts`, migration 0101). The cursor is the newest `history` row's import
+    time less two hours of overlap (the first run reads 48 hours). A file's candidate names are the history record's
+    `sourceTitle` and its `droppedPath` file name; the kept verdict is any `agrees`, else `disagrees`, else `ambiguous`,
+    else `silent`. One row per file, with the episode numbers stored so a report reads without Sonarr. Every hour the
+    open flags of up to 200 series are re-read and a flag whose file has left its episodes is cleared (a re-map, an
+    upgrade, a delete); the title page's live read clears one too. The one-off library-wide read
+    (`repair-guide.ts title-check --backfill`) judges every import record Sonarr kept, plus the scene name of a current
+    file with no record, against the episodes holding the file now. The nightly failure digest gains the count line; a
+    flag opened in the last 24 hours sends the digest on its own.
+13. **The Mislabel term as built** (`release-terms.ts` `renderMislabelTerm`, `mislabel-block.ts`). D-05's `\b` and `\W*`
+    are written `(?<![a-z0-9])`, `(?![a-z0-9])` and `[^a-z0-9]*`: the same in .NET and JavaScript, and `\b` misses an
+    `_`-separated name. The group is written in lower case under `/i`. Beyond the grammar it refuses a group that is
+    an ordinary tag or a title word (`group_too_broad`) and a series title that would also block another library show
+    (`names_other_series`, "Regular Show" against "Regular Show: The Lost Tapes"). A write that cannot be read back
+    leaves no active term (one `removed` row; the upkeep takes a stray term out of the profile). A second profile with
+    the block's name is never repaired: every write refuses until staff delete the copy, as the Release Block does.
+14. **The adoption** (ADR-110 C-05) moves the hand profile's group term (BiOMA on The Lost Tapes) into the Mislabel
+    Block. The hand profile (`Regular Show: The Lost Tapes: block off-by-one numbered postings`, id 3, tag 31) also
+    holds five terms that are not a series and a group: the German title "Die verlorenen Videos", the double-episode
+    token `S01E13E14`, and three number-and-title pairs (`S01E11 Secret Menu`, `S01E13 Smoke Alarm`,
+    `S01E24 All You Can Fit`). ADR-110 C-04 admits only series-and-group terms, so the hand profile stays in place until
+    the owner rules on Q-10; removing it would drop those five blocks.
 
 ### D-06 Release Pick
 
@@ -701,6 +723,7 @@ before the next. Q-09 came up in review afterwards; the owner's clarification of
 | Q-04 | What evidence makes the platform ready for "fix it yourself" to be the rule (D-12)? Today's rate is about 1.3 Seerr issues a month (4 since 2026-07-11). Options: **A** Cases A, B and C replayed end to end by a non-admin account (stubs in e2e, plus a live preview-only run of each remedy on the real titles), then the next 3 real issues self-served; **B** the next 5 real issues self-served in a row (about four months at today's rate); **C** 60 days in which every real issue is self-served, with at least 3 issues; **D** no number, the owner decides at a review once P1..P6 ship. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** An agent replays the three cases as a non-admin user on the built tools, then the next 3 real issues are self-served with no staff help. Folded into D-12 and ADR-111 C-05.<br>**Amended (owner, 2026-10-12): the counted gate is dropped.** "The gate is a judgment call, not a count. The intention is to keep building haynesnetwork.com until it can handle the kinds of problems people actually report, then steer users to fix things themselves instead of staff fixing them. Working practice: every new Seerr issue is worked through haynesnetwork.com's self-service tools first, as a user would. When a tool fixes it, the reply teaches the user that tool. When no tool can, staff fix it by hand and the missing capability is added to the plan. The owner decides when coverage is good enough to make self-service the default." No replays and no streak; see D-12 and ADR-112, which supersedes ADR-111 C-05. |
 | Q-05 | Once the gate passes, what does the rule do? Options: **A** Seerr issue filing stays open, every new issue gets the fix-it-yourself comment, and staff act only after a self-service attempt failed or when no remedy fits; **B** issue reporting in Seerr is switched off for everyone but admins (Seerr permissions) and haynesnetwork.com becomes the only place to report; **C** A for 30 days, then B. Recommendation: **A**. | **Ruling (owner, 2026-10-12): A.** Seerr issue filing stays open; haynesnetwork comments with the self-service link, and staff step in only after a self-service attempt fails or when no remedy fits (option A's wording). Folded into D-12 and ADR-111 C-05. |
 | Q-09 | Does an Unfixable outcome (closed with no remedy applied, for example no release exists anywhere) restart the Q-04 count of 3 consecutive Self-Served issues? Options: **A** yes, every real issue that is not Self-Served restarts it (the ruling's literal wording); **B** no, an Unfixable issue is skipped and neither counts nor restarts; **C** it counts toward the 3 when staff confirm no remedy could exist. Recommendation: **B** (the gate measures whether self-service works where a fix exists; an issue nobody can fix says nothing about that). Gates P8 only. | **Closed, moot (owner, 2026-10-12).** The Q-04 count no longer exists (Q-04 amendment, D-12, ADR-112), so there is nothing for an Unfixable outcome to restart. |
+| Q-10 | Case A's hand profile holds five blocks that are not a series and a release group (P4 decision 14). Options: **A** a new ADR adds a second Mislabel term kind, a series-anchored mislabelled name (a number with another episode's title, an alternate title, a double-episode token), written from a confirmed re-map's own file names and by the adoption, then the hand profile is deleted; **B** keep the hand profile as a hand-kept exception beside the Mislabel Block; **C** drop the five blocks (the season is complete) and delete the hand profile. Recommendation: **A**. | (open: owner) |
 
 Driver items, resolved inside PLAN-077 (not owner questions):
 
