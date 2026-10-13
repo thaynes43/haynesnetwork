@@ -9,7 +9,7 @@
   non-group blocks) is ruled A (owner, 2026-10-13, ADR-113): mislabelled-name terms shipped in v0.117.0, the five terms
   are adopted and the hand profile and its tag are gone (P4, "Q-10 ruling"). Q-11 (the library's whole-season
   reorderings, issue #916) is ruled A too: staff's Season Re-map shipped in v0.117.0 and ran on 29 seasons (P4's
-  follow-up below; open flags 622 to 400, then 321 after the #928 round, then 155 after the Watch Carry run). The owner's ruling on #928 ("Carry marks, then move") is ADR-114, the Watch Carry: shipped in v0.122.0 and v0.123.0, and run live 2026-10-13 (P4 follow-up). P5 (Release Pick) is shipped and verified live, remedy on: v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)), v0.118.1 ([#930](https://github.com/thaynes43/haynesnetwork/pull/930)) and v0.119.1 ([#935](https://github.com/thaynes43/haynesnetwork/pull/935)). Its first person's pick is OC-054. P6 (language-aware Wrong language) is shipped and verified live, both remedies on: v0.121.0 ([#942](https://github.com/thaynes43/haynesnetwork/pull/942)), v0.122.1 ([#951](https://github.com/thaynes43/haynesnetwork/pull/951), [#953](https://github.com/thaynes43/haynesnetwork/pull/953)) and v0.122.2 ([#954](https://github.com/thaynes43/haynesnetwork/pull/954)); 144 English originals set to English as staff; its first person's report is OC-055, and the 13 non-English originals got the owner's "English if present" ruling ([#955](https://github.com/thaynes43/haynesnetwork/issues/955), ADR-115), applied in v0.123.1. P7 is next.
+  follow-up below; open flags 622 to 400, then 321 after the #928 round, then 155 after the Watch Carry run). The owner's ruling on #928 ("Carry marks, then move") is ADR-114, the Watch Carry: shipped in v0.122.0 and v0.123.0, and run live 2026-10-13 (P4 follow-up). P5 (Release Pick) is shipped and verified live, remedy on: v0.118.0 ([#926](https://github.com/thaynes43/haynesnetwork/pull/926)), v0.118.1 ([#930](https://github.com/thaynes43/haynesnetwork/pull/930)) and v0.119.1 ([#935](https://github.com/thaynes43/haynesnetwork/pull/935)). Its first person's pick is OC-054. P6 (language-aware Wrong language) is shipped and verified live, both remedies on: v0.121.0 ([#942](https://github.com/thaynes43/haynesnetwork/pull/942)), v0.122.1 ([#951](https://github.com/thaynes43/haynesnetwork/pull/951), [#953](https://github.com/thaynes43/haynesnetwork/pull/953)) and v0.122.2 ([#954](https://github.com/thaynes43/haynesnetwork/pull/954)); 144 English originals set to English as staff; its first person's report is OC-055, and the 13 non-English originals got the owner's "English if present" ruling ([#955](https://github.com/thaynes43/haynesnetwork/issues/955), ADR-115), applied in v0.123.1. P7 is live in v0.125.0, comment and resolve on as user 19; its owned fixture passed and was deleted (P7 live record below). Q-12 has been asked and awaits the owner. P8 remains working practice only; no readiness ruling has been requested.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -201,7 +201,7 @@ Priority is how often real reports need the remedy, and how much harm today's be
     `queue-cleanup.test.ts` (D-27), `manual-import-clients.test.ts` (arr), the router test in `fix-guards.test.ts` (api);
     e2e `queue-aware-force-search.spec.ts`: Case B (AC-41), a download on its way, the staff path with the prefilled ticket.
 
-### P3: Seerr Issue mirror, surfaces, onboarding and metrics
+### P3: Seerr Issue mirror, surfaces, onboarding and staff notes
 
 1. Seerr reads `listIssues`, `getIssue`; table `seerr_issues`; sync mode `seerr-issues` (every 10 minutes) in
    haynes-ops (a new CronJob beside the other sync modes, short PR, no bare doc IDs in that repo).
@@ -827,6 +827,25 @@ wide tests or repeated test loops.
     Language Replace preview, its refusal and its result.
 
 ### P7: Seerr writes
+
+- **Live, 2026-10-13 23:09Z:** [application #965](https://github.com/thaynes43/haynesnetwork/pull/965),
+  [release #968](https://github.com/thaynes43/haynesnetwork/pull/968) and
+  [deployment haynes-ops #3905](https://github.com/thaynes43/haynes-ops/pull/3905) shipped v0.125.0, including P7.
+  The [publisher](https://github.com/thaynes43/haynesnetwork/actions/runs/38480728183) verified the signature for
+  `sha256:5ceb01cb1e46534b375a2b379af20f8ca4de70f38c8c81b3adcda92133af7d87`. Three web replicas, every active
+  frontend app pod, all 24 frontend CronJob templates and the downloads owed-checks and books-census templates
+  use that image. Migrations 0105, 0106 and 0107 match their journal hashes. Internal and external health pass;
+  bounded Books Census and owed-check Jobs completed with exit zero on the same image. The rollout declaration
+  ended after verification; retained finished pods remain historical evidence.
+- **Switched on and smoke-checked, 23:09:21Z to 23:09:25Z:** the audited setting reads user 19, comment on,
+  resolve on. Owned Ghost media 10974 fixture issue 5 received invitation comment 11 and outcome comment 12,
+  once each as user 19. A simulated completed Repair Request (`c04828d9-1a6e-491c-a263-8dc65cbad84a`) carried
+  `noLibraryWrites`; pending did not resolve. The fixture was resolved, deleted and mirrored as removed, with
+  its ownership lease released. Issues 1 to 4 retained identical status, comment counts and hashes. The
+  [signed-out report link](https://haynesnetwork.com/r/seerr/5) showed Plex onboarding. This is a staff fixture,
+  not real report or member-use evidence; OC-052 excludes removed rows and its marker.
+- **Q-12:** email and web push were read back off after this check. The owner was asked through the question tool,
+  with web push recommended. Delivery stays visible in Seerr until a ruling; no notification setting changed.
 
 1. Q-02 ruled B (owner, 2026-10-12). Staff create the Seerr bridge user with `MANAGE_ISSUES`; store its id in
    `seerr_issue_bridge` (P7 decision 2: the setting also holds the comment and resolve switches).

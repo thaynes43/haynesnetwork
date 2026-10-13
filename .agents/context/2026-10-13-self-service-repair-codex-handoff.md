@@ -33,36 +33,42 @@ Before that becomes the default, the platform must reliably fix the kinds of pro
 | P4 | Hourly Title Check, Episode Re-map, Mislabel Block, staff Season Re-map, Watch Carry | Live |
 | P5 | Release Pick, including two-episode releases | Live |
 | P6 | Language-aware Wrong language (Audio Preference, Language Replace) | Live |
-| P7 | Seerr bridge: bot comments once per issue, resolves on completed repair | Merged, released in v0.124.0, **not deployed, not switched on** |
+| P7 | Seerr bridge: bot comments once per issue, resolves on completed repair | **Live and on in v0.125.0**, checked 2026-10-13 23:09Z |
 | P8 | Working practice per ADR-112 | Not started; keep it lightweight |
 
-Production runs **v0.123.1** as of this note.
+Production runs **v0.125.0** as of 2026-10-13 23:09Z. All three web replicas, every active frontend app pod and all 26 app CronJob templates use it; migrations 0105 to 0107 and the bounded verification Jobs passed. Retained finished Job pods are historical evidence.
 
 ## Resume steps, in order
 
-1. **Ship PR #965, the wrong-content replace tool.** Its required checks are green.
-   - Squash-merge it, then merge the release PR (expected v0.125.0). That release also carries P7.
-   - Confirm the image and signature exist in GHCR.
-   - Bump haynes-ops per `docs/ops/004-deploy-runbook.md`: the web HelmRelease, plus the owed-checks and books-census
-     CronJobs. Migration 0105 (P7) and any migration from #965 run on deploy.
-   - Verify that the web pods and every CronJob in ns `frontend` run the new tag.
-2. **Switch P7 on and check it live.**
-   - Set it from a web pod with `tsx /sync/src/scripts/seerr-bridge.ts --set --user 19 --comment on --resolve on`,
-     then confirm with `--show`.
-   - Live check: create a test issue on The Canterville Ghost (Seerr media 10974). Expect exactly one comment from Seerr
-     user 19 ("haynesnetwork.com", Manage Issues only), carrying the `/r/seerr/<id>` link. After a completed repair, or a
-     simulated one, it must resolve. Then `DELETE /api/v1/issue/{id}`.
-   - **Never post on issues 1 to 4.** Staff already answered them, and they are resolved.
-   - Update the PLAN-077 P7 status.
-3. **Ask the owner Q-12** (DESIGN-055). Seerr's email and web push are off, so reporters see the bot's comment only
-   when they open the issue in Seerr.
-4. **Replace the wrong-content files.** This is #928, and the PR #965 comment has the exact slot lists, release
+1. **Complete:** [#965](https://github.com/thaynes43/haynesnetwork/pull/965) and
+   [release #968](https://github.com/thaynes43/haynesnetwork/pull/968) merged. v0.125.0 includes P7 and the audited
+   wrong-content recovery and owned-smoke helper. Its GHCR image and signature were verified, including the
+   publisher's explicit cosign verification. [haynes-ops #3905](https://github.com/thaynes43/haynes-ops/pull/3905)
+   deployed all three pins; pods, templates, migrations, health and bounded job executions passed.
+2. **Complete:** P7 is on as user 19, comment and resolve on. Owned Ghost media 10974 fixture issue 5 received
+   exactly one invitation and one outcome/resolve as user 19, then was deleted. Pending did not resolve. The
+   simulated repair made no library writes; issues 1 to 4 were untouched. The signed-out link showed Plex
+   onboarding. OC-052 excludes this removed, marked fixture. Use only the audited `seerr-bridge.ts --smoke` and
+   `--smoke-cleanup` for any future test, never arbitrary Seerr create/delete calls.
+3. **Asked, answer pending:** Q-12 (DESIGN-055) was sent through the owner's question tool after the live check,
+   recommending Seerr web push. Email and web push were read back off, so reporters currently see the comment
+   only when opening their issue. Do not change delivery without the ruling; continue the independent repairs.
+4. **In progress, 2026-10-13 23:20Z:** Ben's approved batch Job is
+   `frontend/p077-ben10-replace-batch-10132320` (E10/E12). Mickey's 23 initial slots are approved and follow Ben's
+   verified carries; Pokémon's fresh plan and alternatives are under final review. The media declaration is
+   `act-231926-392897`, expiry 2026-10-14T01:19:26Z. Inspect jobs and domain audits before resuming; never replay
+   completed slots. Actual imported stories, episode coverage and watch-state verification are owed.
+   **Replace the wrong-content files.** This is #928, and the PR #965 comment has the exact slot lists, release
    preferences and copy mappings. Run `declare-activity` first, then `replace-plan --slots`, then one `replace-batch`
    Job per season. Stream each Job's logs while it runs, because finished staff Jobs vanish quickly.
    - Ben 10 (2016), tvdb 318145: S1 E10 and E12 hold Ben 10 (2005) episodes.
    - Pokémon, tvdb 76703: S3 E01-24, E26, E28-34, E36 and E38 hold Pokémon Horizons. Never pick the Saon x265
      releases.
    - Mickey Mouse, tvdb 320725: 23 S1 slots hold Season 3 stories. Do E13-16 last.
+   - **Durable content proofs:** [Ben 10 and Mickey mappings](2026-10-13-ben-mickey-wrong-content-copy-mappings.md)
+     and [Pokémon mappings](2026-10-13-pokemon-wrong-content-copy-mappings.md). These anchor source and destination
+     IDs, names, bytes and independent content evidence. Recheck them against the fresh plan; an unchanged episode
+     number or a new digest alone is not content proof.
    - **Coordinator ruling for these slots:**
      - Find a correct release first, through the Release Pick tool as a staff request.
      - Only then replace the slot, using the wrong-content Fix inside a Watch Carry.
@@ -117,7 +123,7 @@ All four Seerr issues are resolved. Each got a self-service reply on 2026-10-12.
 - **Plex servers:**
   - HaynesTower is Unraid, reached by LAN route; machine id `a5ec8cb2…`.
   - HaynesOps is the `plexops` pod; `80b33acb…`.
-  - HaynesKube is the `plex` pod; `c1b23d68…`. It has no TV library.
+  - HaynesKube is the `plex` pod; `c1b23d68…`. It has no ordinary TV-series library, but its TV-type Peloton and YouTube sections must be included in an all-server inventory (read 2026-10-13 23:16Z).
 - **Staff tools** run in a web pod as `tsx /sync/src/scripts/<tool>.ts`: `repair-guide.ts`, `seerr-bridge.ts`, and
   the season, copy and ordering runs. Long runs go as a Job, so a rollout cannot kill them.
 - **Signed-in UI** cannot be driven from the cluster, because sign-in goes through the public Authentik. Check
