@@ -44,7 +44,16 @@
 // intentionally excluded from LABEL matching; consume is covered structurally by R4.
 // ADR-109 / DESIGN-055 D-01: the Repair Guide's "Import it" (`importDownload`) joins them, so a hand-rolled
 // "Import it" button fails like a hand-rolled Fix. PLAN-077 P4: the Title Check flag's "Move it" (`moveFile`) too.
-export const CANONICAL_ACTION_LABELS = ['Fix', 'Force Search', 'Retry import', 'Import it', 'Move it'];
+// PLAN-077 P5: the Release Pick's "See every release" (`pickRelease`) and its confirm "Grab this release" (`grabRelease`).
+export const CANONICAL_ACTION_LABELS = [
+  'Fix',
+  'Force Search',
+  'Retry import',
+  'Import it',
+  'Move it',
+  'See every release',
+  'Grab this release',
+];
 
 // The off-pattern label variants ADR-071 retired — a hand-rolled button using any of these is a
 // regression to the pre-unification vocabulary. (Audit §2a/§2c inventory.)
@@ -65,7 +74,17 @@ export const RETIRED_ACTION_LABELS = [
 
 // Every MEDIA_ACTIONS registry key — the valid `<MediaAction action="…">` values. Locked to
 // MEDIA_ACTION_TYPES by the parity test; R3 flags any string literal outside this set.
-export const MEDIA_ACTION_KEYS = ['fix', 'forceSearch', 'consume', 'retryImport', 'notOnDisk', 'importDownload', 'moveFile'];
+export const MEDIA_ACTION_KEYS = [
+  'fix',
+  'forceSearch',
+  'consume',
+  'retryImport',
+  'notOnDisk',
+  'importDownload',
+  'moveFile',
+  'pickRelease',
+  'grabRelease',
+];
 
 // ── Selector construction ────────────────────────────────────────────────────────────────────────
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -115,7 +134,8 @@ const R2_MESSAGE =
 // prop; this catches a loosened type / a stray literal and gives the actionable message).
 const R3_MESSAGE =
   'Unknown media-action key on <MediaAction action="…"> (ADR-071). The value must be a MEDIA_ACTIONS ' +
-  'registry key (fix | forceSearch | consume | retryImport | notOnDisk | importDownload | moveFile); add a registry entry rather ' +
+  'registry key (fix | forceSearch | consume | retryImport | notOnDisk | importDownload | moveFile | pickRelease | ' +
+  'grabRelease); add a registry entry rather ' +
   'than passing an off-registry literal.';
 const unknownKeyPattern = `^(?!(${alternation(MEDIA_ACTION_KEYS)})$).+$`;
 

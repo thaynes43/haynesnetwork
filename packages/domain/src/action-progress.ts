@@ -12,6 +12,7 @@ import {
   fixRequests,
   ledgerEvents,
   mediaItems,
+  repairRequests,
   type ArrKind,
   type DbClient,
 } from '@hnet/db';
@@ -775,6 +776,77 @@ export async function computeSearchProgress(
     anchorAt,
     queueRecords: records,
     hasImported: treatImportAsComplete && flags.hasImported,
+    hasGrabbed,
+    hasDownloadFailed: flags.hasDownloadFailed,
+    lastActivityAt,
+  });
+}
+
+export interface ComputeRepairProgressInput {
+  db?: DbClient;
+  arr: Pick<ArrClientBundle, 'read'>;
+  repairRequestId: string;
+  /** The caller — the person who asked for the repair, or an admin; anyone else sees NOT_FOUND (no leak). */
+  requesterId: string;
+  requesterIsAdmin?: boolean;
+}
+
+/**
+ * ADR-028 / DESIGN-055 D-06 (PLAN-077 P5) — the live Action Progress Phase for a Repair Request that grabbed a release
+ * (the Release Pick): the row is authority for its own terminals (completed, failed), then the live queue and the
+ * ledger milestones for its one episode (or the movie) since the row was opened, exactly as for a Fix. A pick whose
+ * download failed reads `failed`, so the guide offers another pick.
+ */
+export async function computeRepairProgress(input: ComputeRepairProgressInput): Promise<ActionProgress> {
+  const db = resolveDb(input.db);
+  const [row] = await db
+    .select({
+      id: repairRequests.id,
+      requesterId: repairRequests.requesterId,
+      status: repairRequests.status,
+      kind: repairRequests.kind,
+      targetChildIds: repairRequests.targetChildIds,
+      createdAt: repairRequests.createdAt,
+      mediaItemId: repairRequests.mediaItemId,
+      arrKind: mediaItems.arrKind,
+      arrItemId: mediaItems.arrItemId,
+    })
+    .from(repairRequests)
+    .innerJoin(mediaItems, eq(mediaItems.id, repairRequests.mediaItemId))
+    .where(eq(repairRequests.id, input.repairRequestId));
+  if (!row || (row.requesterId !== input.requesterId && !input.requesterIsAdmin)) {
+    throw new NotFoundError(`Repair request ${input.repairRequestId} not found`);
+  }
+  if (row.status === 'timed_out' || row.status === 'refused') {
+    return { phase: 'nothing_found', message: 'this repair was closed automatically (timed out)' };
+  }
+  const now = new Date();
+  const anchorAt = row.createdAt;
+  const rowTerminal =
+    row.status === 'completed' ? 'completed' : row.status === 'failed' ? 'failed' : undefined;
+  if (rowTerminal !== undefined) return derivePhaseForTarget({ now, anchorAt, rowTerminal, queueRecords: [] });
+
+  const childId = row.arrKind === 'radarr' ? null : (row.targetChildIds[0] ?? null);
+  const queue = await readNormalizedQueue(input.arr, row.arrKind, row.arrItemId);
+  const events = await loadMilestones(db, row.mediaItemId, anchorAt);
+  const records = childId === null ? queue : queue.filter((r) => r.childId === childId);
+  const flags = flagsForTarget(events, childId);
+  let hasGrabbed = flags.hasGrabbed;
+  let lastActivityAt = flags.lastActivityAt;
+  // The grab was sent before the row moved to `actioned`, so an empty queue right after it is the lag between the *arr
+  // and the sync: the live grab history keeps the phase at `grabbed` instead of `searching`.
+  if (records.length === 0 && !flags.hasGrabbed && !flags.hasImported && !flags.hasDownloadFailed) {
+    const grabAt = await liveReplacementGrabSinceAnchor(input.arr, row.arrKind, row.arrItemId, childId, anchorAt);
+    if (grabAt !== null) {
+      hasGrabbed = true;
+      lastActivityAt = grabAt;
+    }
+  }
+  return derivePhaseForTarget({
+    now,
+    anchorAt,
+    queueRecords: records,
+    hasImported: flags.hasImported,
     hasGrabbed,
     hasDownloadFailed: flags.hasDownloadFailed,
     lastActivityAt,

@@ -190,20 +190,41 @@ async function releasesFor(
   key: string,
   read: () => Promise<ArrRelease[]>,
 ): Promise<ArrRelease[]> {
+  return (await readReleaseListCached({ ...input, key, read })).releases;
+}
+
+/**
+ * DESIGN-055 D-06, D-09 — one release list for `key` (`sonarr:season:<series>:<season>`, `sonarr:episode:<id>`,
+ * `radarr:movie:<id>`), from the cache while it is younger than RELEASE_LIST_TTL_MS, else a live search, throttled to
+ * RELEASE_SEARCHES_PER_HOUR for a member. `searchedAt` is when the *arr searched (the Release Pick's grab window counts
+ * from it: the *arr keeps the rows it listed in its own cache for 30 minutes). Shared by the Fix plan and the Release
+ * Pick, so a person who previews a season Fix and then opens the Release Pick costs the indexers one search.
+ */
+export async function readReleaseListCached(input: {
+  key: string;
+  read: () => Promise<ArrRelease[]>;
+  requesterId?: string;
+  requesterIsAdmin?: boolean;
+  now?: () => number;
+  /** The words a member sees at the throttle (the Fix's preview says "checked for replacements"). */
+  throttleMessage?: string;
+}): Promise<{ releases: ArrRelease[]; searchedAt: number; cached: boolean }> {
   const now = input.now ? input.now() : Date.now();
+  const key = input.key;
   const hit = releaseCache.get(key);
-  if (hit && now - hit.at < RELEASE_LIST_TTL_MS) return hit.releases;
+  if (hit && now - hit.at < RELEASE_LIST_TTL_MS) return { releases: hit.releases, searchedAt: hit.at, cached: true };
   if (input.requesterId && !input.requesterIsAdmin) {
     const recent = (searchesByRequester.get(input.requesterId) ?? []).filter((at) => now - at < 3_600_000);
     if (recent.length >= RELEASE_SEARCHES_PER_HOUR) {
       throw new FixRateLimitError(
-        'You have checked for replacements many times in a short while. Give it a little while and try again.',
+        input.throttleMessage ??
+          'You have checked for replacements many times in a short while. Give it a little while and try again.',
       );
     }
     recent.push(now);
     searchesByRequester.set(input.requesterId, recent);
   }
-  const releases = await read();
+  const releases = await input.read();
   releaseCache.set(key, { at: now, releases });
   if (releaseCache.size > RELEASE_CACHE_MAX) {
     let oldestKey: string | null = null;
@@ -216,7 +237,15 @@ async function releasesFor(
     }
     if (oldestKey !== null) releaseCache.delete(oldestKey);
   }
-  return releases;
+  return { releases, searchedAt: now, cached: false };
+}
+
+/**
+ * DESIGN-055 D-06 — forget the cached lists for these keys: after a grab the *arr's own decisions change (the release is
+ * in the queue, a failed one is blocklisted), so the next list must be a fresh search.
+ */
+export function forgetReleaseLists(keys: readonly string[]): void {
+  for (const key of keys) releaseCache.delete(key);
 }
 
 /** Whether a guarded plan applies at all: a Sonarr or Radarr Fix with a remedy that plans on. */

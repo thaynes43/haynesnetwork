@@ -79,10 +79,30 @@ describe('Repair Requests (DESIGN-055 D-02)', () => {
     expect(event).toMatchObject({ requestedByUserId: memberId, payload: { repairRequestId, kind: 'import_download' } });
   });
 
-  it('one open repair per (series, season), and per movie', async () => {
+  it('one open repair per episode for an episode remedy, per season for a season-wide one, and per movie', async () => {
     await importRepair();
+    // DESIGN-055 P5 decision 6: an import onto another episode of the season touches a different file, so it is free;
+    // the same episode is not.
+    const other = await importRepair({ targetChildIds: [85216] });
+    await expect(importRepair()).rejects.toBeInstanceOf(FixAlreadyOpenError);
+    await t.db.delete(repairRequests).where(eq(repairRequests.id, other.repairRequestId));
+    // A season-wide repair (a re-map) meets every open repair on its season, and holds up every episode remedy there.
+    const remap = () =>
+      createRepairRequest({ db: t.db, requesterId: memberId, mediaItemId: showId, kind: 'remap', scope: 'season', seasonNumber: 2, targetChildIds: [85210, 85211], preview: {} });
+    await expect(remap()).rejects.toBeInstanceOf(FixAlreadyOpenError);
+    await t.db.delete(repairRequests);
+    await remap();
     await expect(importRepair({ targetChildIds: [85216] })).rejects.toBeInstanceOf(FixAlreadyOpenError);
+    await t.db.delete(repairRequests);
+    // An import onto an episode follows through that episode's open Release Pick (its grab landing); a second pick is held up.
+    const pick = () =>
+      createRepairRequest({ db: t.db, requesterId: memberId, mediaItemId: showId, kind: 'release_pick', scope: 'episode', seasonNumber: 2, targetChildIds: [85215], preview: {} });
+    await pick();
+    await expect(pick()).rejects.toBeInstanceOf(FixAlreadyOpenError);
+    await importRepair();
+    await t.db.delete(repairRequests);
     // Another season of the same show is its own grain.
+    await importRepair();
     await importRepair({ seasonNumber: 1, targetChildIds: [85200] });
     await createRepairRequest({ db: t.db, requesterId: memberId, mediaItemId: movieId, kind: 'import_download', scope: 'item', seasonNumber: null, targetChildIds: [], preview: {} });
     await expect(

@@ -1,7 +1,8 @@
 # DESIGN-005: *arr media ledger, Fix, and failsafe Restore — Phase 2
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-13 (**D-15 pointer**: the Episode Re-map behind a TV Fix, DESIGN-055 D-04, PLAN-077 P4).
+- **Last updated:** 2026-10-13 (**D-17 pointer**: the Release Pick behind Force Search, DESIGN-055 D-06, PLAN-077 P5).
+  Before that 2026-10-13 (**D-15 pointer**: the Episode Re-map behind a TV Fix, DESIGN-055 D-04, PLAN-077 P4).
   Before that 2026-10-12 (**D-15/D-17 pointer**: queue-aware Force Search and the Import Check, DESIGN-055 D-07,
   PLAN-077 P2). Before that 2026-10-03 (**D-25** — a Fix makes exactly one search: when the *arr's own Redownload
   Failed will search after the grab is marked failed, the Fix sends no search command of its own; issue #646,
@@ -715,6 +716,14 @@ whose files are all one slot off, does not blocklist or delete anything: the gui
 right episodes with Sonarr's own `ManualImport`, one move at a time and highest first, then renames them. It is one
 Repair Request (`remap`) on the shared hourly budget, holds the season's grain against any open Fix, and never deletes a
 file. The decisions are DESIGN-055's P4 decisions.
+
+**The Release Pick (ADR-109 C-02, C-06, DESIGN-055 D-06; PLAN-077 P5, 2026-10-13).** With the `release_pick` remedy on,
+Force Search on one missing episode or a missing movie offers "See every release" (beside its search, and when the search
+ends with nothing found), as does each episode a re-map leaves empty. `fix.releaseList` lists every release the *arr's
+interactive search returns, with its reasons in plain words, each row Grab, Override (the owner's Q-01 ruling) or Not
+allowed; `fix.releaseGrab` grabs the row the person confirmed (`POST /release`). Opening the list and the grab are one
+unit each of the shared hourly budget; the grab is a Repair Request (`release_pick`). Fix itself is unchanged. The
+decisions are DESIGN-055's P5 decisions.
 
 Rules already fixed above: mandatory reason taxonomy with `reason_text` iff `other`
 (D-09 CHECK), per-requester hourly rate limit — now the requester's ROLE budget (ADR-080 / D-23;

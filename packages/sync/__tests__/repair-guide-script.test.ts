@@ -1,7 +1,7 @@
 // ADR-109 / DESIGN-055 (PLAN-077 P1) — the Repair Guide's in-cluster tool parses its commands strictly: a read can never
 // be mistaken for a write, and `settings` writes only with --set / --known-issue.
 import { describe, expect, it } from 'vitest';
-import { formatSeasonPlan, formatTitleCheckBackfill, parseRepairGuideArgs } from '../src/scripts/repair-guide';
+import { formatReleaseList, formatSeasonPlan, formatTitleCheckBackfill, parseRepairGuideArgs } from '../src/scripts/repair-guide';
 import type { SeasonRemapView } from '@hnet/domain';
 
 describe('repair-guide.ts arguments', () => {
@@ -181,6 +181,68 @@ describe('repair-guide.ts arguments', () => {
     expect(out).toContain('stays S01E05 · Echo (duplicate), its name says S01E04 · Delta: Show.S01E05.Delta');
     expect(out).toContain('unplaced S01E06 · Foxtrot (name silent): Show.S01E06 -> suggestion --place 6:7');
     expect(out).toContain('digest abc123');
+  });
+
+  it('release-list reads a movie or one episode, read-only, optionally as JSON (DESIGN-055 D-06, PLAN-077 P5)', () => {
+    expect(parseRepairGuideArgs(['release-list', '--tmdb', '9428'])).toMatchObject({ command: 'release-list', tmdb: 9428 });
+    expect(parseRepairGuideArgs(['release-list', '--tvdb', '475718', '--episode', 'S01E11', '--json'])).toMatchObject({
+      command: 'release-list',
+      tvdb: 475718,
+      episode: { season: 1, episode: 11 },
+      json: true,
+    });
+    expect(() => parseRepairGuideArgs(['release-list', '--tvdb', '475718', '--season', '1'])).toThrow(/--episode/);
+    expect(() => parseRepairGuideArgs(['search-plan', '--tmdb', '1', '--json'])).toThrow(/--json/);
+  });
+
+  it("release-grab is staff's Release Pick: it needs the row key release-list printed (DESIGN-055 P5 decision 14)", () => {
+    expect(parseRepairGuideArgs(['release-grab', '--tvdb', '475718', '--episode', 'S01E11', '--key', '0123456789abcdef'])).toMatchObject({
+      command: 'release-grab',
+      key: '0123456789abcdef',
+    });
+    expect(() => parseRepairGuideArgs(['release-grab', '--tvdb', '475718', '--episode', 'S01E11'])).toThrow(/--key/);
+    expect(() => parseRepairGuideArgs(['release-grab', '--tvdb', '475718', '--episode', 'S01E11', '--key', 'nope'])).toThrow(/16-character/);
+    expect(() => parseRepairGuideArgs(['release-list', '--tmdb', '1', '--key', '0123456789abcdef'])).toThrow(/only it/);
+  });
+
+  it('prints the Release Pick preview: the counts, then each row with its reasons beside the *arr words', () => {
+    const lines = formatReleaseList('Regular Show: The Lost Tapes', {
+      status: 'list',
+      kind: 'sonarr',
+      targetLabel: 'S01E11 · Spice It Up',
+      listId: null,
+      searchedAt: '2026-10-13T11:00:00.000Z',
+      download: null,
+      reasonsVersion: 1,
+      recommendedKey: 'aaaaaaaaaaaaaaaa',
+      offers: 1,
+      counts: { grab: 0, override: 1, notAllowed: 1, sources: 5, dropped: 3 },
+      rows: [
+        {
+          key: 'aaaaaaaaaaaaaaaa', keys: ['aaaaaaaaaaaaaaaa'], title: 'Regular.Show.The.Lost.Tapes.S01E10.Spice.It.Up.1080p.HMAX.WEB-DL.DDP2.0.H.265-OldT',
+          sizeBytes: 352_000_000, qualityName: 'WEBDL-1080p', qualityPlain: '1080p', languages: ['English'], customFormatScore: -9925,
+          ageHours: 640, indexer: 'NZBgeek (Prowlarr)', protocol: 'usenet', releaseGroup: 'OldT', state: 'override', recommended: true,
+          numberedAs: 'S01E10 · Stilt Walkers', evidence: { verdict: 'agrees', namedLabel: null },
+          reasons: [
+            { code: 'score_below_minimum', class: 'overridable', text: 'Lower quality than the library usually keeps', arrText: 'Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0' },
+          ],
+        },
+        {
+          key: 'bbbbbbbbbbbbbbbb', keys: ['bbbbbbbbbbbbbbbb', 'cccccccccccccccc'], title: 'Regular.Show.The.Lost.Tapes.S01E11.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA',
+          sizeBytes: null, qualityName: 'WEBDL-1080p', qualityPlain: '1080p', languages: ['English'], customFormatScore: 75,
+          ageHours: 369, indexer: 'DrunkenSlug (Prowlarr)', protocol: 'usenet', releaseGroup: 'BiOMA', state: 'not_allowed', recommended: false,
+          numberedAs: null, evidence: { verdict: 'silent', namedLabel: null },
+          reasons: [{ code: 'blocklisted', class: 'hard', text: 'Blocked after an earlier download of it failed or was removed', arrText: 'Release is blocklisted' }],
+        },
+      ],
+    });
+    expect(lines[0]).toBe('Regular Show: The Lost Tapes S01E11 · Spice It Up: list');
+    expect(lines[1]).toMatch(/5 sources, 3 for other episodes or titles dropped; 0 grab, 1 override, 1 not allowed/);
+    expect(lines[2]).toMatch(/^\* \[OVERRIDE\] Regular\.Show.*OldT \| WEBDL-1080p 0\.33 GB \| NZBgeek \(Prowlarr\) title:agrees \| key a{16}$/);
+    expect(lines[3]).toBe(
+      '      overridable: Lower quality than the library usually keeps  [Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0]',
+    );
+    expect(lines[4]).toMatch(/^ {2}\[NOT ALLOWED\] .*BiOMA \| WEBDL-1080p \? \| DrunkenSlug \(Prowlarr\) \+1 more title:silent \| key b{16}$/);
   });
 
   it('refuses what it does not understand', () => {

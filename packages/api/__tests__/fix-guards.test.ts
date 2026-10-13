@@ -644,6 +644,8 @@ describe('the settings and the kill switch (DESIGN-055 D-01)', () => {
         import_check: false,
         // PLAN-077 P4 (DESIGN-055 D-04): the Episode Re-map's remedy, untouched by this write, ships off.
         episode_remap: false,
+        // PLAN-077 P5 (DESIGN-055 D-06): the Release Pick's remedy, untouched by this write, ships off.
+        release_pick: false,
       },
       knownIssueServers: ['haynesops'],
     });
@@ -660,6 +662,10 @@ describe('the settings and the kill switch (DESIGN-055 D-01)', () => {
     await adminApi.fix.setGuideSettings({ remedies: { import_check: true } });
     expect(await memberApi.fix.guideConfig()).toMatchObject({ guideOn: false, importCheckOn: true });
     await adminApi.fix.setGuideSettings({ remedies: { import_check: false } });
+    // Nor does the Release Pick's (DESIGN-055 D-06, PLAN-077 P5).
+    await adminApi.fix.setGuideSettings({ remedies: { release_pick: true } });
+    expect(await memberApi.fix.guideConfig()).toMatchObject({ guideOn: false, releasePickOn: true });
+    await adminApi.fix.setGuideSettings({ remedies: { release_pick: false } });
 
     const item = await seedMediaItem(tdb.db, 'radarr', { title: 'Switch Off', arrItemId: 5001 });
     const stub = stubArrBundle(radarrRoutes({ files: [movieFile(51)], releases: [] }));

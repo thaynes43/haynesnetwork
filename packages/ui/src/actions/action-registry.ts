@@ -18,7 +18,9 @@ export type MediaActionType =
   | 'retryImport'
   | 'notOnDisk'
   | 'importDownload'
-  | 'moveFile';
+  | 'moveFile'
+  | 'pickRelease'
+  | 'grabRelease';
 
 /** The two canonical looks: `primary` = green accent pill (`.btn.primary`); `outline` = neutral
  *  surface pill (`.btn`). Owner rule (ADR-071): Fix is ALWAYS the green pill; Force Search is
@@ -55,6 +57,13 @@ export interface MediaActionSpec {
  *   whose file's own name says it is another episode. It opens the Repair Guide at the Episode Re-map preview (the
  *   explanatory Modal), where the counted confirm ("Move 1 file") runs it; a re-map never deletes a file, so it is not
  *   destructive. An outline pill, so it never competes with the row's green Fix.
+ * - `pickRelease`: ADR-109 C-06 / DESIGN-055 D-06 (PLAN-077 P5): "See every release", the Release Pick's entry beside
+ *   Force Search (a missing episode or movie) and on an episode a re-map left empty. It opens the release list inside the
+ *   guide's Modal (one hourly media action); nothing is grabbed until the person confirms there, so it is not destructive.
+ *   An outline pill, like the Force Search it sits beside.
+ * - `grabRelease`: DESIGN-055 D-01, D-06: "Grab this release", the Release Pick's confirm. Shown only on the guide's
+ *   explanatory confirm step (hard rule 8), which says what it found and what it will do; it downloads one release and
+ *   deletes or blocks nothing, so it is not destructive. A green primary, like "Import it".
  */
 export const MEDIA_ACTIONS: Record<MediaActionType, MediaActionSpec> = {
   fix: { type: 'fix', label: 'Fix', variant: 'primary', destructive: false },
@@ -65,6 +74,8 @@ export const MEDIA_ACTIONS: Record<MediaActionType, MediaActionSpec> = {
   notOnDisk: { type: 'notOnDisk', label: 'Not on Disk', variant: 'outline', destructive: false },
   importDownload: { type: 'importDownload', label: 'Import it', variant: 'primary', destructive: false },
   moveFile: { type: 'moveFile', label: 'Move it', variant: 'outline', destructive: false },
+  pickRelease: { type: 'pickRelease', label: 'See every release', variant: 'outline', destructive: false },
+  grabRelease: { type: 'grabRelease', label: 'Grab this release', variant: 'primary', destructive: false },
 };
 
 /** The action types (registry keys) — for exhaustive iteration in guards/tests. */

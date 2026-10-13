@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
+- **Last updated:** 2026-10-13 (P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
@@ -87,7 +87,7 @@ at L2. App usage: 2 Fix requests in 90 days (one person), 1 Helpdesk ticket ever
   Fix on another episode of the same season, which touches a different file (seen in e2e: a Fix still waiting for its
   replacement on S01E02 would otherwise block importing S01E10 for up to 48 hours). The writer can also take the
   season's episode ids, for a remedy that moves files across the season (P4's re-map). `release_list_requested` arrives
-  with P5. The `refused` status exists but P2 never writes it: every refusal is thrown before the row, as in P1.
+  with P5 (P5 decision 8), and P5 narrows the open check for an episode remedy to its episode (P5 decision 6). The `refused` status exists but P2 never writes it: every refusal is thrown before the row, as in P1.
 
 ### D-03 The write surface (hard rule 4)
 
@@ -446,6 +446,90 @@ The remedy for "nothing acceptable was found": an interactive release list for o
   within their hourly Fix budget, and only when every rejection reason is on the overridable list. The hard-refusal
   list applies to everyone, admins included. A Not allowed row offers "Ask staff", which opens a Helpdesk ticket
   prefilled with the target (ADR-061 locator) and the release title.
+
+**P5 decisions (2026-10-13, PLAN-077 P5).** What the build settled, with the live reads behind it (Regular Show: The Lost
+Tapes S01E11 and S01E13, Sonarr 4.0.20.3012, read 2026-10-13):
+
+1. **The kill switch.** One more remedy in `repair_guide_remedies`, `release_pick`, ships off. It is not a Fix remedy
+   (it never opens the Fix guide on its own): Force Search's guide offers "See every release" beside its search and when
+   the ADR-028 window ends `nothing_found`, and the re-map result offers it for each emptied episode (D-04 rule 9). The
+   server applies the switch to every caller.
+2. **The read is Sonarr's season list, narrowed to the episode.** The rows kept are those numbered for the target (a
+   pack or a multi-episode file that holds it is shown, Not allowed) and a one-episode row numbered for another episode of
+   the season whose own title names the target (Title Evidence `agrees` against the target). Why not `?episodeId=`: Case
+   A's hand pick, OldT's `S01E10.Spice.It.Up` that held E11, is numbered for E10, and an episode search never returns it
+   (the live E11 search listed only rows numbered S01E11). One season search also serves every missing episode of the
+   season (P1's cache key `sonarr:season:<series>:<season>`). What a season search adds that does not apply to one episode
+   grabbed on its own ("season pack required", "Full season release rejected") is dropped, and so are a renumbered row's
+   rejections about its own episode ("Episode wasn't requested", an Existing-File Rejection on that episode's file). Rows
+   the *arr could not match to the title are dropped. Radarr reads the movie's list.
+3. **Q-07, override half: resolved** from the source at the running tags. The plain grab is `{guid, indexerId}`
+   (InteractiveSearchRow, a row with `downloadAllowed`); the override (OverrideMatchModalContent) is Sonarr's `{guid,
+   indexerId, seriesId, episodeIds, quality, languages, downloadClientId, shouldOverride: true}` and Radarr's `{indexerId,
+   guid, movieId, quality, languages, downloadClientId, shouldOverride: true}`, `downloadClientId` null, `quality` and
+   `languages` the row's own objects echoed unchanged (pinned in `release-grab-clients.test.ts`). The app sends the plain
+   body only for a row the *arr approved and mapped and that is numbered for the target; every other grab is the
+   override, pinned to the target, so the queue record and the grab history name the person's chosen episode. The *arr
+   finds the row in its own release cache (30 minutes after the search): a grab never searches again, and answers 404 when
+   the row is gone, 409 when the site will not hand the file over.
+4. **The reasons in plain words** (`RELEASE_REASONS_VERSION` 1): every rejection text of both *arrs' decision engines is
+   mapped to plain words and a class, Overridable Reason (T-320), Hard Refusal (T-321) or neither; unknown words are shown
+   verbatim and allow nothing. The *arr's own words sit under the plain ones ("What Sonarr says"). A row on neither list is
+   Not allowed (Q-01: Override needs every reason overridable). Hard refusals the app adds to the *arr's: early copies
+   (CAM, TELESYNC, and TELECINE, DVDSCR and REGIONAL as the same theatre-or-screener family), Unknown quality, the size caps,
+   Title Evidence `disagrees` against the target and a series-year conflict (P2 decision 7). Hard refusals win over an
+   approval.
+5. **The size caps apply to every row.** The profile's own limit arrives as the *arr's rejection (hard). Whether a profile
+   sets a limit for a quality is not on the release list, so the 15 GB (episode) and 100 GB (movie) caps apply to every
+   row: a larger pick for one missing item is a staff call.
+6. **The open check, per episode.** An episode remedy (`import_download`, `release_pick`) meets a season-wide repair on
+   its season (a re-map) and any open repair holding its episode, but not one on another episode of the season, which
+   touches a different file: Case A's two missing episodes are picked one after the other. A re-map still meets every open
+   repair on its season. An import onto an episode is never held up by that episode's open pick: it is how the pick lands.
+   This narrows P2's season grain for imports (D-02).
+7. **The Release List (T-319).** The list a person saw is stored with its grab data, the guid and indexer id kept on the
+   server; the grab names a row by an opaque key. A grab after 25 minutes is refused (`list_stale`), under the *arr's
+   30-minute cache. The rows of one release found on several sites (the same title, protocol, state and reasons) are one row
+   carrying every source's key: a site that refuses lets the person try the next. Lists are pruned after a week.
+8. **Budget.** Opening a list writes the Release List and its `release_list_requested` event in one transaction under the
+   requester's lock, after the budget check, and is refused before searching when the hourly budget is used up;
+   `countRecentFixBudget` counts the event. Reopening the same target's list within 5 minutes returns the same list free. A
+   target with a file or a download in the queue gets no list and costs nothing. The grab is a Repair Request (`release_pick`):
+   another unit. P1's member throttle (12 live searches an hour per web pod) also covers the list's search.
+9. **Missing items only (Q-01).** A target with a file answers `has_file`; a download on its way `on_its_way`, with its
+   progress; a stuck or failed one `queue_stuck`, for Force Search's Import Check. The grab reads the target and its queue
+   again just before sending and refuses, sending nothing, when either changed.
+10. **The follow-through is P2's.** The grab goes to the chosen episode; when the *arr cannot file the download (a
+    renumbered name: "were not found in the grabbed release"), the Import Check imports it there, from the person's Force
+    Search on that episode (the queue record names it) or the janitor's enforced `importable` cell. The result step offers
+    Force Search when the live phase stalls. Nothing new acts on its own.
+11. **Completion and failure are read.** `completeRepairRequests` completes an actioned pick once its target records an
+    `imported` event; `settleReleasePicks` (after every sync run, and before every list and grab) closes a pick whose target
+    recorded `download_failed` and no import as `failed`, with its `repair_failed` event, which frees the episode for another
+    pick. Before a list or a grab for a target with an open pick and nothing in its queue, the *arr's own history settles
+    it at once (the pick's grab, by its release title, and a `downloadFailed` or `downloadIgnored` record for the same
+    download), so "Pick another release" never waits for the sync; a pick still open after that holds the target (no list,
+    no cost). A list a grab went out from is spent: it is neither reused nor grabbed from again (what it offered may since
+    have failed and been blocklisted); a grab the site refused leaves it usable for another site. Only a 4xx answer means
+    nothing went out (404: the *arr's cache dropped the row; 409: the site refused; any other: the *arr refused the
+    request). A timeout, a dropped connection or a 5xx may come after the *arr handed the release on, so the grab answers
+    `unsure`: the pick stays open and the list spent (nothing is grabbed twice), the live chip shows what happened, and the
+    history settles it, closing it as failed when no grab is recorded 10 minutes on (`UNSURE_GRAB_SETTLE_MS`). A grab also forgets the
+    cached list, so the next list searches again and shows the failed release blocklisted. `fix.repairProgress` is the
+    grab's live phase (ADR-028), the row authoritative for its terminals.
+12. **The recommended pick:** the first Grab in the *arr's order; else the Override whose title names the target and whose
+    number matches it, then one renumbered whose title names it, then the *arr's order. Case A, read on the live lists with
+    the episodes missing: E11's pick is OldT's E10-numbered release (the hand fix); E13's the AndreMor 720p release. Every
+    other row of both is refused (the hand profile's terms, a blocklisted posting, an H.265 release whose title is E12's or
+    E14's).
+13. **The in-cluster tool.** `tsx /sync/src/scripts/repair-guide.ts release-list (--tmdb <id> | --tvdb <id> --episode
+    S01E05) [--json]` prints the list read-only, each row with its key: it searches the indexers, and records and grabs
+    nothing.
+14. **Staff's Release Pick** (the P4 decision 17 pattern): `repair-guide.ts release-grab (--tmdb <id> | --tvdb <id>
+    --episode S01E05) --key <row key>` opens a fresh list as staff (requester null: no budget, no throttle) and grabs the
+    row with that key exactly as the guide does: the same states and refusals (a Not allowed row is never grabbed, by
+    anyone), one Repair Request with no requester, the plain or the override body. It is how staff work a Seerr issue
+    through the self-service tools (D-12) from the cluster, where a person's sign-in cannot be driven.
 
 ### D-07 Queue-aware Force Search and the Import Check (issue #597 Part 1)
 
@@ -873,5 +957,5 @@ Driver items, resolved inside PLAN-077 (not owner questions):
 | ID | Question | Resolution |
 |----|----------|------------|
 | Q-06 | The Title Evidence thresholds (0.8 and 0.3). | **Resolved in P4 (2026-10-13): kept.** Read on the library-wide census rather than a week: 18,205 files judged, 692 disagreed, and 546 of those scored 1.0 for the named episode against 0 for their own. On inspection they are real name-against-number conflicts, and 3 subtitle spot-checks out of 3 confirmed the names. The only false positives came from library-shaped names, and decision 16 handles those, not the thresholds. OC-053 re-reads the first week of hourly runs. |
-| Q-07 | The exact override fields of Sonarr's and Radarr's `POST /release`, and whether `GET /release` returns releases in decision order. | **Order: resolved in P1 (2026-10-12).** Both *arrs return the decision order (D-09, P1 decision 3). The override fields stay open for P5. |
+| Q-07 | The exact override fields of Sonarr's and Radarr's `POST /release`, and whether `GET /release` returns releases in decision order. | **Order: resolved in P1 (2026-10-12).** Both *arrs return the decision order (D-09, P1 decision 3). **Override fields: resolved in P5 (2026-10-13)** from the UIs' source at the running tags (P5 decision 3): Sonarr `{guid, indexerId, seriesId, episodeIds, quality, languages, downloadClientId, shouldOverride}`, Radarr `{indexerId, guid, movieId, quality, languages, downloadClientId, shouldOverride}`. |
 | Q-08 | Does Plex offer a preferred audio language for a movie, as it does for a show? | (open: checked in P6) |

@@ -202,3 +202,6 @@ export * from './trash-title-exclusions';
 // Sonarr episode file) and the Mislabel Block's terms. Both guarded single-writer tables.
 export * from './title-checks';
 export * from './mislabel-block-terms';
+// ADR-109 C-04, C-06 / DESIGN-055 D-06 (PLAN-077 P5, migration 0103) — the Release Pick's lists (T-319): what one person
+// was shown for one missing episode or movie, with the grab data kept server-side. Guarded single-writer table.
+export * from './release-pick-lists';

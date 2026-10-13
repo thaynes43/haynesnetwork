@@ -26,6 +26,8 @@ import {
   keepTrashSaves,
   expireStaleFixRequests,
   expireStaleRepairRequests,
+  pruneReleaseLists,
+  settleReleasePicks,
   deliverOutbox,
   runFailureDigest,
   evaluateActivityFailures,
@@ -1922,6 +1924,16 @@ async function runSyncPass(options: RunSyncOptions): Promise<SyncReport> {
     if (timedOut.length > 0) logger.info('stale repair requests timed out', { count: timedOut.length });
   } catch (error) {
     logger.error('repair timeout sweep failed', { error: error instanceof Error ? error.message : String(error) });
+  }
+  // ADR-109 C-06 / DESIGN-055 D-06 (PLAN-077 P5) — a Release Pick whose download failed closes as failed (the episode or
+  // movie is free for another pick), and Release Lists older than a week are pruned. Isolated like the steps above.
+  try {
+    const { failed } = await settleReleasePicks({ db });
+    if (failed.length > 0) logger.info('release picks closed after a failed download', { count: failed.length });
+    const { pruned } = await pruneReleaseLists({ db });
+    if (pruned > 0) logger.info('old release lists pruned', { count: pruned });
+  } catch (error) {
+    logger.error('release pick settling failed', { error: error instanceof Error ? error.message : String(error) });
   }
 
   // ADR-035 — refresh the Trash candidate read-model (skip-if-absent, isolated like every other

@@ -2,8 +2,9 @@
 // split). ADR-008: the ONLY sanctioned *arr write-backs are Fix (mark-failed / delete /
 // search) and Restore (add-item / create-tag), plus the later ruled additions (the ADR-083 queue janitor; the
 // ADR-093 Release Block profile and Seerr watchlist enrollment; the ADR-094 janitor release block on Lidarr; the ADR-097
-// title exclusion on Radarr and Sonarr; the ADR-109 ManualImport of the Import Check, DESIGN-055 D-07, and the Episode
-// Re-map's ManualImport of library files and RenameFiles, D-04). This
+// title exclusion on Radarr and Sonarr; the ADR-109 ManualImport of the Import Check, DESIGN-055 D-07, the Episode
+// Re-map's ManualImport of library files and RenameFiles, D-04, and the Release Pick's interactive-search grab, D-06).
+// This
 // entrypoint may be imported ONLY by
 // packages/domain — enforced by the D-12 guard test. Exercised exclusively via fetch stubs in tests.
 import { assertArrEnv, type ArrEnvConfig } from './config';
@@ -27,11 +28,12 @@ import {
 } from './schemas/release-block';
 import { commandResponseSchema, tagSchema, type ArrCommandResponse, type ArrTag } from './schemas/common';
 import type { ManualImportMode, RadarrManualImportFile, SonarrManualImportFile } from './schemas/manual-import';
+import type { ArrReleaseGrab, RadarrReleaseOverrideGrab, SonarrReleaseOverrideGrab } from './schemas/release';
 import { sonarrSeriesSchema, type SonarrSeries } from './schemas/sonarr';
 import { radarrMovieSchema, type RadarrMovie } from './schemas/radarr';
 import { lidarrArtistSchema, type LidarrArtist } from './schemas/lidarr';
 import { z } from 'zod';
-import type { ArrClientOptions } from './read';
+import { RELEASE_SEARCH_TIMEOUT_MS, type ArrClientOptions } from './read';
 
 // ---------- add-item payloads (D-16 step 2: Restore re-adds with searches OFF) ----------
 
@@ -193,8 +195,17 @@ abstract class ReleaseProfileWriteClient extends ArrWriteClientBase {
 
 /** Sonarr v3 write client. */
 export class SonarrWriteClient extends ReleaseProfileWriteClient {
+  /** DESIGN-055 D-06 — the grab waits on the indexer and the download client: the release search's bound, no retry. */
+  private readonly grabHttp: ArrHttp;
+
   constructor(options: ArrClientOptions) {
     super(options, '/api/v3');
+    this.grabHttp = new ArrHttp({
+      ...options,
+      apiBasePath: '/api/v3',
+      timeoutMs: Math.max(options.timeoutMs ?? 0, RELEASE_SEARCH_TIMEOUT_MS),
+      getRetries: 0,
+    });
   }
 
   /** `DELETE /episodefile/{id}` — Fix fallback path (AC-08). */
@@ -252,6 +263,17 @@ export class SonarrWriteClient extends ReleaseProfileWriteClient {
     return this.runCommand({ name: 'RenameFiles', seriesId, files });
   }
 
+  /**
+   * ADR-109 C-02, C-06 / DESIGN-055 D-06 (PLAN-077 P5) — `POST /release`: grab one row of an interactive search, the
+   * plain body (`{guid, indexerId}`) or the override body (the row grabbed for these episodes at its own quality), each
+   * exactly as Sonarr 4.0.20.3012's UI sends it (pinned in write-clients.test.ts). The *arr fetches the file from the
+   * indexer and hands it to the download client before it answers, so the call gets the release search's long bound
+   * and is never retried. Hard rule 4: the Release Pick's grab, after its Repair Request row is committed.
+   */
+  grabRelease(body: ArrReleaseGrab | SonarrReleaseOverrideGrab): Promise<void> {
+    return this.grabHttp.requestVoid('POST', 'release', { body });
+  }
+
   /** `POST /series` — Restore re-add (D-16). */
   addSeries(payload: AddSeriesPayload): Promise<SonarrSeries> {
     return this.http.requestJson('POST', 'series', sonarrSeriesSchema, { body: payload });
@@ -272,8 +294,26 @@ export class SonarrWriteClient extends ReleaseProfileWriteClient {
 
 /** Radarr v3 write client. */
 export class RadarrWriteClient extends ReleaseProfileWriteClient {
+  /** DESIGN-055 D-06 — the grab waits on the indexer and the download client: the release search's bound, no retry. */
+  private readonly grabHttp: ArrHttp;
+
   constructor(options: ArrClientOptions) {
     super(options, '/api/v3');
+    this.grabHttp = new ArrHttp({
+      ...options,
+      apiBasePath: '/api/v3',
+      timeoutMs: Math.max(options.timeoutMs ?? 0, RELEASE_SEARCH_TIMEOUT_MS),
+      getRetries: 0,
+    });
+  }
+
+  /**
+   * ADR-109 C-02, C-06 / DESIGN-055 D-06 (PLAN-077 P5) — `POST /release`: grab one row of an interactive search, the
+   * plain body or the override body (the row grabbed for this movie at its own quality), each exactly as Radarr
+   * 6.4.4.10685's UI sends it (pinned in write-clients.test.ts). Hard rule 4: the Release Pick's grab.
+   */
+  grabRelease(body: ArrReleaseGrab | RadarrReleaseOverrideGrab): Promise<void> {
+    return this.grabHttp.requestVoid('POST', 'release', { body });
   }
 
   /** `DELETE /moviefile/{id}` — Fix fallback path (AC-08). */

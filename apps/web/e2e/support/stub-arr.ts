@@ -42,6 +42,15 @@
 //                        it orphaned); `RenameFiles` renames in id order and skips a name another file holds; `GET
 //                        /rename` lists stale names; `GET /history/since` serves the season's import records for the
 //                        Title Check. Cleared by reset. `GET /_stub/remap` reads the season back for specs.
+//   POST /_stub/release-pick → 204; body { on } — ADR-109 C-02, C-06 / DESIGN-055 D-06 (PLAN-077 P5): serve the Release Pick
+//                        fixtures (cleared by reset). Breaking Prod gains Season 4 (releasePickEpisodeRows()): E03 "Rollback
+//                        Rodeo" (target A) and E05 "Hotfix Hootenanny" (target B) are missing, E04 "Cache Me Outside" is
+//                        B's neighbour, and `GET /release?seriesId=501&seasonNumber=4` serves the season list
+//                        (releasePickSeasonList(): a Grab row for A; for B an Override with a custom-format score, one with
+//                        a quality not wanted, a mislabeled one numbered E04, a blocklisted and a wrong-title Not allowed
+//                        row, and an Override whose grab 409s). `POST /release` records its body (404 for an unknown guid,
+//                        409 for guid `stub-rp-b-409`, else 200 echo); `GET /_stub/release-grabs` reads the bodies back; a
+//                        grabbed release then shows in `GET /queue` as a downloading record for its episode.
 //   Always: `POST /command` `ManualImport` is recorded like any write, and afterwards its files' episodes (or movie)
 //   report `hasFile: true` and the download's queue records are gone; `GET /command/{id}` answers `completed`.
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -781,6 +790,237 @@ function invalidEventTypeBody(value: string) {
   };
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// ADR-109 C-02, C-06 / DESIGN-055 D-06 (PLAN-077 P5) — the Release Pick season (POST /_stub/release-pick)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** The Release Pick season and its episode ids (50500 + episode number); a season no other spec relies on. */
+export const RELEASE_PICK_SEASON = 4;
+export const releasePickEpisodeIdFor = (episodeNumber: number) => STUB_SERIES_ID * 100 + 400 + episodeNumber;
+/** Target A (Grab row) and target B (the Override rows), both missing and monitored; B-1 is B's on-disk neighbour. */
+export const RELEASE_PICK_A_EPISODE = 3;
+export const RELEASE_PICK_B_EPISODE = 5;
+export const RELEASE_PICK_B_PREVIOUS_EPISODE = 4;
+export const RELEASE_PICK_A_EPISODE_ID = releasePickEpisodeIdFor(RELEASE_PICK_A_EPISODE);
+export const RELEASE_PICK_B_EPISODE_ID = releasePickEpisodeIdFor(RELEASE_PICK_B_EPISODE);
+export const RELEASE_PICK_TITLES: Readonly<Record<number, string>> = {
+  1: 'Pilot Light',
+  2: 'Legacy Code',
+  3: 'Rollback Rodeo',
+  4: 'Cache Me Outside',
+  5: 'Hotfix Hootenanny',
+  6: 'Standup Showdown',
+};
+/** Season 4's on-disk episodes (the rest are missing). */
+const RELEASE_PICK_ON_DISK = new Set([1, 2, 4, 6]);
+/** The guid whose grab the stub answers 409 (the site would not hand the file over). */
+export const RELEASE_PICK_REFUSED_GUID = 'stub-rp-b-409';
+
+function releasePickEpisodeRows() {
+  return Object.keys(RELEASE_PICK_TITLES)
+    .map(Number)
+    .map((n) => ({
+      id: releasePickEpisodeIdFor(n),
+      seriesId: STUB_SERIES_ID,
+      seasonNumber: RELEASE_PICK_SEASON,
+      episodeNumber: n,
+      title: RELEASE_PICK_TITLES[n],
+      airDateUtc: `2024-05-${String(n).padStart(2, '0')}T01:00:00Z`,
+      hasFile: RELEASE_PICK_ON_DISK.has(n),
+      monitored: true,
+      ...(RELEASE_PICK_ON_DISK.has(n) ? { episodeFileId: 3400 + n } : {}),
+    }));
+}
+
+function releasePickFileRows() {
+  return [...RELEASE_PICK_ON_DISK].map((n) => ({
+    id: 3400 + n,
+    seriesId: STUB_SERIES_ID,
+    quality: { quality: { id: 4, name: 'WEBDL-1080p', resolution: 1080 } },
+    seasonNumber: RELEASE_PICK_SEASON,
+    relativePath: `Season ${RELEASE_PICK_SEASON}/Breaking Prod - S04E${String(n).padStart(2, '0')} [WEBDL-1080p]-STUB.mkv`,
+    sceneName: `Breaking.Prod.S04E${String(n).padStart(2, '0')}.1080p.WEB-DL.DDP5.1.H.264-STUB`,
+    releaseGroup: 'STUB',
+    size: 1_073_741_824,
+  }));
+}
+
+const rpQuality = (id: number, name: string, resolution: number) => ({
+  quality: { id, name, source: 'web', resolution, modifier: 'none' },
+  revision: { version: 1, real: 0, isRepack: false },
+});
+const RP_ENGLISH = [{ id: 1, name: 'English' }];
+const RP_CF_REJECTION = 'Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0';
+const rpCode = (episode: number) => `S0${RELEASE_PICK_SEASON}E${String(episode).padStart(2, '0')}`;
+
+/** One row of the Sonarr season release list, with the fields the live shape carries. */
+function rpRow(r: {
+  guid: string;
+  indexerId: number;
+  title: string;
+  size: number;
+  quality: ReturnType<typeof rpQuality>;
+  releaseGroup: string;
+  episode: number;
+  approved: boolean;
+  rejections: string[];
+  customFormatScore: number;
+}) {
+  return {
+    guid: r.guid,
+    quality: r.quality,
+    ageHours: 120.5,
+    size: r.size,
+    indexerId: r.indexerId,
+    indexer: 'StubIndexer (Prowlarr)',
+    releaseGroup: r.releaseGroup,
+    title: r.title,
+    fullSeason: false,
+    seasonNumber: RELEASE_PICK_SEASON,
+    languages: RP_ENGLISH,
+    episodeNumbers: [r.episode],
+    mappedSeasonNumber: RELEASE_PICK_SEASON,
+    mappedEpisodeNumbers: [r.episode],
+    approved: r.approved,
+    temporarilyRejected: false,
+    rejected: !r.approved,
+    rejections: r.rejections,
+    customFormatScore: r.customFormatScore,
+    protocol: 'usenet',
+    downloadAllowed: true,
+    indexerFlags: 0,
+  };
+}
+
+/** `GET /release?seriesId=501&seasonNumber=4`, in the *arr's decision order. */
+function releasePickSeasonList() {
+  const a = RELEASE_PICK_A_EPISODE;
+  const b = RELEASE_PICK_B_EPISODE;
+  const bPrev = RELEASE_PICK_B_PREVIOUS_EPISODE;
+  const aTitle = dotted(RELEASE_PICK_TITLES[a]!);
+  const bTitle = dotted(RELEASE_PICK_TITLES[b]!);
+  const otherTitle = dotted(RELEASE_PICK_TITLES[2]!);
+  const unrelated = 6;
+  return [
+    rpRow({
+      guid: 'stub-rp-a1',
+      indexerId: 1,
+      title: `Breaking.Prod.${rpCode(a)}.${aTitle}.1080p.WEB-DL.DDP5.1.H.264-GOOD`,
+      size: 612_000_000,
+      quality: rpQuality(3, 'WEBDL-1080p', 1080),
+      releaseGroup: 'GOOD',
+      episode: a,
+      approved: true,
+      rejections: [],
+      customFormatScore: 100,
+    }),
+    rpRow({
+      guid: 'stub-rp-b1',
+      indexerId: 1,
+      title: `Breaking.Prod.${rpCode(b)}.${bTitle}.1080p.HMAX.WEB-DL.DDP2.0.H.265-OldT`,
+      size: 689_000_000,
+      quality: rpQuality(3, 'WEBDL-1080p', 1080),
+      releaseGroup: 'OldT',
+      episode: b,
+      approved: false,
+      rejections: [RP_CF_REJECTION],
+      customFormatScore: -9925,
+    }),
+    rpRow({
+      guid: 'stub-rp-b2',
+      indexerId: 2,
+      title: `Breaking.Prod.${rpCode(b)}.720p.WEB.h264-WvF`,
+      size: 310_000_000,
+      quality: rpQuality(5, 'WEBDL-720p', 720),
+      releaseGroup: 'WvF',
+      episode: b,
+      approved: false,
+      rejections: ['WEBDL-720p is not wanted in profile'],
+      customFormatScore: 0,
+    }),
+    rpRow({
+      guid: 'stub-rp-b3',
+      indexerId: 2,
+      title: `Breaking.Prod.${rpCode(bPrev)}.${bTitle}.1080p.HMAX.WEB-DL-OldT`,
+      size: 655_000_000,
+      quality: rpQuality(3, 'WEBDL-1080p', 1080),
+      releaseGroup: 'OldT',
+      episode: bPrev,
+      approved: false,
+      rejections: [RP_CF_REJECTION],
+      customFormatScore: -9925,
+    }),
+    rpRow({
+      guid: 'stub-rp-b4',
+      indexerId: 1,
+      title: `Breaking.Prod.${rpCode(b)}.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA`,
+      size: 598_000_000,
+      quality: rpQuality(3, 'WEBDL-1080p', 1080),
+      releaseGroup: 'BiOMA',
+      episode: b,
+      approved: false,
+      rejections: ['Release is blocklisted'],
+      customFormatScore: 50,
+    }),
+    rpRow({
+      guid: 'stub-rp-b5',
+      indexerId: 2,
+      title: `Breaking.Prod.${rpCode(b)}.${otherTitle}.1080p.WEB-DL-OldT`,
+      size: 640_000_000,
+      quality: rpQuality(3, 'WEBDL-1080p', 1080),
+      releaseGroup: 'OldT',
+      episode: b,
+      approved: false,
+      rejections: [RP_CF_REJECTION],
+      customFormatScore: -9925,
+    }),
+    rpRow({
+      guid: RELEASE_PICK_REFUSED_GUID,
+      indexerId: 1,
+      title: `Breaking.Prod.${rpCode(b)}.480p.WEB.h264-NOPE`,
+      size: 305_000_000,
+      quality: rpQuality(8, 'WEBDL-480p', 480),
+      releaseGroup: 'NOPE',
+      episode: b,
+      approved: false,
+      rejections: ['WEBDL-480p is not wanted in profile'],
+      customFormatScore: 0,
+    }),
+    // An unrelated episode with its own, non-matching title: the app drops it from both targets' lists.
+    rpRow({
+      guid: 'stub-rp-u1',
+      indexerId: 2,
+      title: `Breaking.Prod.${rpCode(unrelated)}.${dotted(RELEASE_PICK_TITLES[unrelated]!)}.1080p.WEB-DL.DDP5.1.H.264-GOOD`,
+      size: 570_000_000,
+      quality: rpQuality(3, 'WEBDL-1080p', 1080),
+      releaseGroup: 'GOOD',
+      episode: unrelated,
+      approved: true,
+      rejections: [],
+      customFormatScore: 100,
+    }),
+  ];
+}
+
+/** The downloading queue record a successful Release Pick grab leaves behind (the shape of the staged queue's records). */
+function releasePickQueueRecord(guid: string, title: string, episodeId: number, seq: number): Record<string, unknown> {
+  return {
+    id: 93000 + seq,
+    seriesId: STUB_SERIES_ID,
+    episodeId,
+    seasonNumber: RELEASE_PICK_SEASON,
+    downloadId: `stub-rp-dl-${guid}`,
+    status: 'downloading',
+    trackedDownloadStatus: 'ok',
+    trackedDownloadState: 'downloading',
+    size: 1_000_000_000,
+    sizeleft: 500_000_000,
+    timeleft: '00:08:20',
+    added: '2026-10-13T00:00:00Z',
+    title,
+  };
+}
+
 function episodes() {
   // Season 1: 10 episodes, E10 missing (the seeded ledger row mirrors this as 9/10).
   const season1 = Array.from({ length: EPISODE_COUNT }, (_, i) => {
@@ -992,6 +1232,11 @@ export async function startStubArr(): Promise<StubArrServer> {
   let seerrIssuesOverride: Array<Record<string, unknown>> | null = null;
   // ADR-109 C-02 / DESIGN-055 D-04 — the Episode Re-map season (POST /_stub/remap); null while off.
   let remapState: RemapStubState | null = null;
+  // ADR-109 / DESIGN-055 D-06 — the Release Pick fixtures (POST /_stub/release-pick), the bodies of the `POST /release`
+  // grabs this stub accepted, and the download each one left in the queue (all cleared by reset).
+  let releasePickFixtures = false;
+  let releaseGrabs: unknown[] = [];
+  let releaseGrabQueue: Record<string, unknown>[] = [];
   // Every command this stub accepted (`GET /command` lists them; each is completed at once).
   let commandLog: Array<{ id: number; name: string; status: string }> = [];
   let nextCommandId = 4242;
@@ -1024,6 +1269,9 @@ export async function startStubArr(): Promise<StubArrServer> {
         seerrSyncFlags = new Map([[1, { movies: true, tv: true }]]);
         seerrAnimeTags = [];
         repairGuideFixtures = false;
+        releasePickFixtures = false;
+        releaseGrabs = [];
+        releaseGrabQueue = [];
         importCheckFixtures = false;
         seerrIssuesOverride = null;
         remapState = null;
@@ -1189,6 +1437,15 @@ export async function startStubArr(): Promise<StubArrServer> {
         res.writeHead(204);
         return res.end();
       }
+      if (url.pathname === '/_stub/release-pick' && method === 'POST') {
+        const raw = await readBody(req);
+        releasePickFixtures = raw !== '' && (JSON.parse(raw) as { on?: unknown }).on === true;
+        res.writeHead(204);
+        return res.end();
+      }
+      if (url.pathname === '/_stub/release-grabs' && method === 'GET') {
+        return json(res, 200, releaseGrabs);
+      }
       if (url.pathname === '/_stub/remap' && method === 'POST') {
         const raw = await readBody(req);
         remapState = raw !== '' && (JSON.parse(raw) as { on?: unknown }).on === true ? remapSeasonFixture() : null;
@@ -1270,6 +1527,20 @@ export async function startStubArr(): Promise<StubArrServer> {
           const id = nextCommandId++;
           commandLog.push({ id, name, status: 'completed' });
           return json(res, 201, { id, name });
+        }
+        // DESIGN-055 D-06 — the Release Pick's grab (`POST /release`), only while its fixtures are on.
+        if (method === 'POST' && path === '/release' && releasePickFixtures) {
+          const grab = (body ?? {}) as { guid?: unknown; episodeIds?: unknown };
+          const guid = typeof grab.guid === 'string' ? grab.guid : '';
+          const row = releasePickSeasonList().find((r) => r.guid === guid);
+          if (!row) return json(res, 404, { message: "Couldn't find requested release in cache, try searching again" });
+          if (guid === RELEASE_PICK_REFUSED_GUID) return json(res, 409, { message: 'Getting release from indexer failed' });
+          releaseGrabs.push(body);
+          const target = Array.isArray(grab.episodeIds) && typeof grab.episodeIds[0] === 'number'
+            ? grab.episodeIds[0]
+            : releasePickEpisodeIdFor(row.episodeNumbers[0]!);
+          releaseGrabQueue.push(releasePickQueueRecord(guid, row.title, target, releaseGrabQueue.length + 1));
+          return json(res, 200, body ?? {});
         }
         // File deletes (AC-08 fallback) — accepted, recorded.
         if (method === 'DELETE' && /^\/(episodefile|moviefile|trackfile)\/\d+$/.test(path)) {
@@ -1460,6 +1731,8 @@ export async function startStubArr(): Promise<StubArrServer> {
               })),
               // D-04 — the re-map season, while its fixtures are on.
               ...(remapState ? remapEpisodeRows(remapState) : []),
+              // DESIGN-055 D-06 — the Release Pick season, while its fixtures are on.
+              ...(releasePickFixtures ? releasePickEpisodeRows() : []),
             ],
           );
         }
@@ -1481,12 +1754,24 @@ export async function startStubArr(): Promise<StubArrServer> {
               releaseGroup: 'STUB',
               size: 1_073_741_824,
             }));
-          return json(res, 200, [...files, ...(remapState ? remapFileRows(remapState) : [])]);
+          return json(res, 200, [
+            ...files,
+            ...(remapState ? remapFileRows(remapState) : []),
+            ...(releasePickFixtures ? releasePickFileRows() : []),
+          ]);
         }
         case '/release': {
           // ADR-109 / DESIGN-055 D-09 — the interactive release list, only while the repair-guide fixtures are on.
           if (repairGuideFixtures && isSameReleaseMovie(Number(query.movieId))) {
             return json(res, 200, sameReleaseList());
+          }
+          // DESIGN-055 D-06 — the Release Pick's Sonarr season list.
+          if (
+            releasePickFixtures &&
+            Number(query.seriesId) === STUB_SERIES_ID &&
+            Number(query.seasonNumber) === RELEASE_PICK_SEASON
+          ) {
+            return json(res, 200, releasePickSeasonList());
           }
           return json(res, 200, []);
         }
@@ -1566,10 +1851,11 @@ export async function startStubArr(): Promise<StubArrServer> {
           const parentParam =
             query.seriesIds ?? query.movieIds ?? query.artistIds ?? undefined;
           const parentId = parentParam !== undefined ? Number(parentParam) : undefined;
+          const served = releasePickFixtures ? [...queueRecords, ...releaseGrabQueue] : queueRecords;
           const records =
             parentId === undefined
-              ? queueRecords
-              : queueRecords.filter(
+              ? served
+              : served.filter(
                   (r) =>
                     r.seriesId === parentId || r.movieId === parentId || r.artistId === parentId,
                 );

@@ -147,7 +147,7 @@ test.describe('live *arr action feedback (ADR-028 / PLAN-015)', () => {
 
     // Stage: actively downloading — the meter fills to 62% and the ETA reads out.
     await stageQueue([episodeQueueRecord()]);
-    await expect(live).toContainText('Downloading — 62%');
+    await expect(live).toContainText('Downloading, 62%');
     await expect(live).toContainText('min left');
     await expect(live.locator('.progress-meter [role="progressbar"]')).toHaveAttribute(
       'aria-valuenow',
@@ -224,11 +224,11 @@ test.describe('live *arr action feedback (ADR-028 / PLAN-015)', () => {
         title: 'The.Fixture.2022.REPACK.1080p.WEB-DL',
       },
     ]);
-    await expect(live).toContainText('Downloading — 45%');
+    await expect(live).toContainText('Downloading, 45%');
 
     await stageQueue([]);
     ingestImport(mediaItemId, 'radarr');
-    await expect(live).toContainText('Done — the new copy imported.', { timeout: 20_000 });
+    await expect(live).toContainText('Done. The new copy is in.', { timeout: 20_000 });
     await expect(live.locator('.phase-chip')).toHaveAttribute('data-phase', 'completed');
     await dialog.getByRole('button', { name: 'Done' }).click();
 

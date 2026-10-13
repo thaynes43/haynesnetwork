@@ -380,6 +380,28 @@ names, never deleting a file, after a watch-state check on every Plex server and
   override row's state follows the Q-01 ruling (Override for anyone who can use Fix, within the budget).
 - **Live check:** open the list for a real missing episode as a non-admin and check that each row's state matches
   Sonarr's own interactive search for the same episode.
+- **Build (2026-10-13):** DESIGN-055's "P5 decisions" (items 1-13, after D-06) record what landed and why.
+  - Step 1: `release-pick.ts` (`describeRejection`, the plain words, `RELEASE_REASONS_VERSION` 1; `classifyReleases`, the
+    three row states, hard refusals winning, rows of one release on several sites grouped, the recommended pick;
+    `openReleaseList`, `previewReleaseList`). The read is Sonarr's season list narrowed to the episode (P5 decision 2: Case
+    A's E10-numbered pick never comes back from an episode search). Migration 0103: `release_pick_lists` (T-319, the guid
+    kept server-side) and the `release_list_requested` ledger event; the budget counts it; the remedy `release_pick`
+    (ships off, not a Fix remedy).
+  - Step 2: `grabRelease` on both write clients, Q-07's override half resolved from the UIs' source at the running tags
+    and pinned in `release-grab-clients.test.ts`; `grabFromReleaseList` (one `release_pick` Repair Request, then the plain
+    or the override body); the follow-through is P2's Import Check; `settleReleasePicks` closes a pick whose download
+    failed and `completeRepairRequests` completes one that imported (both in the sync post-steps); `computeRepairProgress`
+    and `fix.repairProgress` for the live chip. The open check for an episode remedy is its episode (P5 decision 6).
+  - Step 3: Q-01 in `classifyReleases` and `openReleaseList` (missing items only, every reason overridable, `canPick` from
+    the budget); Not allowed rows offer "Ask staff" (a prefilled Helpdesk ticket).
+  - Step 4: CLAUDE.md hard rule 4.
+  - The router's `releaseList` (a mutation), `releaseGrab`, `repairProgress`; the in-cluster tools
+    `tsx /sync/src/scripts/repair-guide.ts release-list (--tmdb <id> | --tvdb <id> --episode S01E05) [--json]` (read-only)
+    and `release-grab ... --key <row key>` (staff's Release Pick, requester null, P5 decision 14).
+  - Tests: `release-pick.test.ts` (domain: the plain words, Case A's E11 and E13 lists read live, the end-to-end list,
+    grab, follow-through, settling and completion, the refusals, the budget, a movie), `repair-requests.test.ts` (the
+    per-episode open check), `release-grab-clients.test.ts` (arr), `release-pick.test.ts` (api), the migration 0103 test,
+    the repair-guide script test.
 
 ### P6: language-aware Wrong language
 

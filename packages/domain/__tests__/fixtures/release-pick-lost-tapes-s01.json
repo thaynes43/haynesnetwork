@@ -1,0 +1,1530 @@
+{
+ "_comment": "DESIGN-055 D-06 (PLAN-077 P5). Sonarr 4.0.20.3012, Regular Show: The Lost Tapes (series 1061) S01: the live GET /release?episodeId= lists for E11 and E13 read 2026-10-13 (guids replaced, no URL fields, the Existing-File Rejections removed because both episodes were missing on 2026-10-12, the hand profile's must-not-contain terms kept), plus Case A's hand pick (OldT's release numbered for E10 that held E11) as a season list carries it, and one row of another episode. Episodes: the live season.",
+ "seriesId": 1061,
+ "seriesYear": 2026,
+ "episodes": [
+  {
+   "id": 118397,
+   "seasonNumber": 1,
+   "episodeNumber": 1,
+   "title": "Fix That Tape"
+  },
+  {
+   "id": 118398,
+   "seasonNumber": 1,
+   "episodeNumber": 2,
+   "title": "Skips' Luau"
+  },
+  {
+   "id": 118399,
+   "seasonNumber": 1,
+   "episodeNumber": 3,
+   "title": "Blade Games"
+  },
+  {
+   "id": 118400,
+   "seasonNumber": 1,
+   "episodeNumber": 4,
+   "title": "Nap Spot"
+  },
+  {
+   "id": 118401,
+   "seasonNumber": 1,
+   "episodeNumber": 5,
+   "title": "Coffee Shop Wars"
+  },
+  {
+   "id": 118402,
+   "seasonNumber": 1,
+   "episodeNumber": 6,
+   "title": "Boba or Bo-Bust"
+  },
+  {
+   "id": 118403,
+   "seasonNumber": 1,
+   "episodeNumber": 7,
+   "title": "Corpse Flower"
+  },
+  {
+   "id": 118404,
+   "seasonNumber": 1,
+   "episodeNumber": 8,
+   "title": "Beginson"
+  },
+  {
+   "id": 118405,
+   "seasonNumber": 1,
+   "episodeNumber": 9,
+   "title": "Good Mitch Spiking"
+  },
+  {
+   "id": 118406,
+   "seasonNumber": 1,
+   "episodeNumber": 10,
+   "title": "Stilt Walkers"
+  },
+  {
+   "id": 118407,
+   "seasonNumber": 1,
+   "episodeNumber": 11,
+   "title": "Spice It Up"
+  },
+  {
+   "id": 118408,
+   "seasonNumber": 1,
+   "episodeNumber": 12,
+   "title": "Secret Menu Item"
+  },
+  {
+   "id": 118409,
+   "seasonNumber": 1,
+   "episodeNumber": 13,
+   "title": "Regular Show Presents: Terror Tales of the Park VII Halloween Special"
+  },
+  {
+   "id": 118410,
+   "seasonNumber": 1,
+   "episodeNumber": 14,
+   "title": "Smoke Alarm on the Water"
+  },
+  {
+   "id": 118411,
+   "seasonNumber": 1,
+   "episodeNumber": 15,
+   "title": "Party Horse 4: Third Time's a Charm"
+  },
+  {
+   "id": 119205,
+   "seasonNumber": 1,
+   "episodeNumber": 16,
+   "title": "Clean the Living Room"
+  },
+  {
+   "id": 118413,
+   "seasonNumber": 1,
+   "episodeNumber": 17,
+   "title": "Artist's Block"
+  },
+  {
+   "id": 118414,
+   "seasonNumber": 1,
+   "episodeNumber": 18,
+   "title": "That's Funny"
+  },
+  {
+   "id": 118415,
+   "seasonNumber": 1,
+   "episodeNumber": 19,
+   "title": "Cool Boss"
+  },
+  {
+   "id": 118416,
+   "seasonNumber": 1,
+   "episodeNumber": 20,
+   "title": "Skips' Van"
+  },
+  {
+   "id": 118417,
+   "seasonNumber": 1,
+   "episodeNumber": 21,
+   "title": "Super Strong Johns"
+  },
+  {
+   "id": 118418,
+   "seasonNumber": 1,
+   "episodeNumber": 22,
+   "title": "Car Wash"
+  },
+  {
+   "id": 118419,
+   "seasonNumber": 1,
+   "episodeNumber": 23,
+   "title": "All You Can Fit"
+  },
+  {
+   "id": 118420,
+   "seasonNumber": 1,
+   "episodeNumber": 24,
+   "title": "Don's Back"
+  },
+  {
+   "id": 118421,
+   "seasonNumber": 1,
+   "episodeNumber": 25,
+   "title": "Life & Death of Robot Dog"
+  },
+  {
+   "id": 118422,
+   "seasonNumber": 1,
+   "episodeNumber": 26,
+   "title": "Before Sunrise"
+  },
+  {
+   "id": 118423,
+   "seasonNumber": 1,
+   "episodeNumber": 27,
+   "title": "Recycle Yo!"
+  },
+  {
+   "id": 118424,
+   "seasonNumber": 1,
+   "episodeNumber": 28,
+   "title": "Hi Five's Throat"
+  },
+  {
+   "id": 118425,
+   "seasonNumber": 1,
+   "episodeNumber": 29,
+   "title": "Carter & Briggs Are Here"
+  },
+  {
+   "id": 118426,
+   "seasonNumber": 1,
+   "episodeNumber": 30,
+   "title": "Wet Phone"
+  },
+  {
+   "id": 118427,
+   "seasonNumber": 1,
+   "episodeNumber": 31,
+   "title": "Dip Deep"
+  },
+  {
+   "id": 118428,
+   "seasonNumber": 1,
+   "episodeNumber": 32,
+   "title": "Ketch of the Day"
+  },
+  {
+   "id": 118429,
+   "seasonNumber": 1,
+   "episodeNumber": 33,
+   "title": "Thanks for the Memories"
+  },
+  {
+   "id": 118430,
+   "seasonNumber": 1,
+   "episodeNumber": 34,
+   "title": "Master Curator"
+  },
+  {
+   "id": 118431,
+   "seasonNumber": 1,
+   "episodeNumber": 35,
+   "title": "12,000 Seconds"
+  },
+  {
+   "id": 118432,
+   "seasonNumber": 1,
+   "episodeNumber": 36,
+   "title": "The Afterheist"
+  },
+  {
+   "id": 118433,
+   "seasonNumber": 1,
+   "episodeNumber": 37,
+   "title": "Japlan"
+  },
+  {
+   "id": 118434,
+   "seasonNumber": 1,
+   "episodeNumber": 38,
+   "title": "The Ultimate Format War"
+  }
+ ],
+ "releases": [
+  {
+   "guid": "lost-tapes-s01-pick-1",
+   "indexerId": 1,
+   "indexer": "DrunkenSlug (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E11.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA",
+   "size": 489693272,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "BiOMA",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Contains these ignored terms: /\\bDUAL[ ._-]BiOMA\\b/i"
+   ],
+   "customFormatScore": 75,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 369.25,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-2",
+   "indexerId": 2,
+   "indexer": "NinjaCentral (Prowlarr)",
+   "title": "Regular Show The Lost Tapes S01E11 1080p AMZN WEB-DL DDP5 1 H 264 DUAL-BiOMA",
+   "size": 470107254,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "BiOMA",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Contains these ignored terms: /\\bDUAL[ ._-]BiOMA\\b/i"
+   ],
+   "customFormatScore": 75,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 367.99,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-3",
+   "indexerId": 4,
+   "indexer": "NZBgeek (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E11.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA",
+   "size": 489693000,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "BiOMA",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Contains these ignored terms: /\\bDUAL[ ._-]BiOMA\\b/i"
+   ],
+   "customFormatScore": 75,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 369.25,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-4",
+   "indexerId": 4,
+   "indexer": "NZBgeek (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E11.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA",
+   "size": 489693000,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "BiOMA",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Contains these ignored terms: /\\bDUAL[ ._-]BiOMA\\b/i"
+   ],
+   "customFormatScore": 75,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    },
+    {
+     "id": 18,
+     "name": "Portuguese"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 369.25,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-5",
+   "indexerId": 1,
+   "indexer": "DrunkenSlug (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E11.Spice.It.Up.Beyond.Underdome.HMAX.1080p.WEB-DL-AURORA",
+   "size": 210868744,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "AURORA",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Release is blocklisted"
+   ],
+   "customFormatScore": 0,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 384.0,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-6",
+   "indexerId": 3,
+   "indexer": "NZBFinder (Prowlarr)",
+   "title": "Regular.Show.Die.verlorenen.Videos.S01E11.GERMAN.DL.1080P.WEB.H264-WAYNE",
+   "size": 436880183,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "WAYNE",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Contains these ignored terms: /\\bverlorenen[ ._-]Videos\\b/i"
+   ],
+   "customFormatScore": 0,
+   "languages": [
+    {
+     "id": 4,
+     "name": "German"
+    },
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 869.04,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-7",
+   "indexerId": 3,
+   "indexer": "NZBFinder (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E11.Spice.It.Up.Beyond.Underdome.HMAX.1080p.WEB-DL-AURORA",
+   "size": 210868744,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "AURORA",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Release is blocklisted"
+   ],
+   "customFormatScore": 0,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 384.0,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-8",
+   "indexerId": 3,
+   "indexer": "NZBFinder (Prowlarr)",
+   "title": "regular.show.die.verlorenen.videos.s01e11.german.dl.1080p.web.h264-wayne",
+   "size": 411358973,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "wayne",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Contains these ignored terms: /\\bverlorenen[ ._-]Videos\\b/i"
+   ],
+   "customFormatScore": 0,
+   "languages": [
+    {
+     "id": 4,
+     "name": "German"
+    },
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 856.46,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-9",
+   "indexerId": 1,
+   "indexer": "DrunkenSlug (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E11.Secret.Menu.Item.1080p.HMAX.WEB-DL.DDP2.0.H.265-OldT",
+   "size": 345975034,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "OldT",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0",
+    "Contains these ignored terms: /\\bS01E11[ ._-]+Secret[ ._-]+Menu\\b/i"
+   ],
+   "customFormatScore": -9925,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 664.9,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-10",
+   "indexerId": 4,
+   "indexer": "NZBgeek (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E11.Secret.Menu.Item.1080p.HMAX.WEB-DL.DDP2.0.H.265-OldT",
+   "size": 345975000,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "OldT",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0",
+    "Contains these ignored terms: /\\bS01E11[ ._-]+Secret[ ._-]+Menu\\b/i"
+   ],
+   "customFormatScore": -9925,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    },
+    {
+     "id": 25,
+     "name": "Czech"
+    },
+    {
+     "id": 22,
+     "name": "Hungarian"
+    },
+    {
+     "id": 12,
+     "name": "Polish"
+    },
+    {
+     "id": 35,
+     "name": "Romanian"
+    },
+    {
+     "id": 11,
+     "name": "Russian"
+    },
+    {
+     "id": 40,
+     "name": "Serbian"
+    },
+    {
+     "id": 46,
+     "name": "Slovenian"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 664.91,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-11",
+   "indexerId": 3,
+   "indexer": "NZBFinder (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E11.Secret.Menu.Item.1080p.HMAX.WEB-DL.DDP2.0.H.265-OldT",
+   "size": 345975034,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "OldT",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0",
+    "Contains these ignored terms: /\\bS01E11[ ._-]+Secret[ ._-]+Menu\\b/i"
+   ],
+   "customFormatScore": -9925,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 664.91,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-12",
+   "indexerId": 3,
+   "indexer": "NZBFinder (Prowlarr)",
+   "title": "Regular.Show.Die.verlorenen.Videos.S01E11.German.DL.720p.WEB.h264-WvF",
+   "size": 245861740,
+   "quality": {
+    "quality": {
+     "id": 5,
+     "name": "WEBDL-720p",
+     "source": "web",
+     "resolution": 720
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "WvF",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "WEBDL-720p is not wanted in profile",
+    "Contains these ignored terms: /\\bverlorenen[ ._-]Videos\\b/i"
+   ],
+   "customFormatScore": 0,
+   "languages": [
+    {
+     "id": 4,
+     "name": "German"
+    },
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 860.12,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    11
+   ],
+   "mappedEpisodeNumbers": [
+    11
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-13",
+   "indexerId": 1,
+   "indexer": "DrunkenSlug (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E13.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-BiOMA",
+   "size": 563776033,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "BiOMA",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Contains these ignored terms: /\\bDUAL[ ._-]BiOMA\\b/i"
+   ],
+   "customFormatScore": 75,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 369.24,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13
+   ],
+   "mappedEpisodeNumbers": [
+    13
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-14",
+   "indexerId": 2,
+   "indexer": "NinjaCentral (Prowlarr)",
+   "title": "Regular Show The Lost Tapes S01E13 1080p AMZN WEB-DL DDP5 1 H 264 DUAL-BiOMA",
+   "size": 539769623,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "BiOMA",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Contains these ignored terms: /\\bDUAL[ ._-]BiOMA\\b/i"
+   ],
+   "customFormatScore": 75,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 368.8,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13
+   ],
+   "mappedEpisodeNumbers": [
+    13
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-15",
+   "indexerId": 1,
+   "indexer": "DrunkenSlug (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E13.Smoke.Alarm.on.the.Water.1080p.HMAX.WEB-DL.DDP2.0.H.265-AKARi",
+   "size": 236010141,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "AKARi",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0",
+    "Contains these ignored terms: /\\bS01E13[ ._-]+Smoke[ ._-]+Alarm\\b/i"
+   ],
+   "customFormatScore": -9925,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 87.81,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13
+   ],
+   "mappedEpisodeNumbers": [
+    13
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-16",
+   "indexerId": 4,
+   "indexer": "NZBgeek (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E13.Smoke.Alarm.on.the.Water.1080p.HMAX.WEB-DL.DDP2.0.H.265-OldT",
+   "size": 381623000,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "OldT",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0",
+    "Contains these ignored terms: /\\bS01E13[ ._-]+Smoke[ ._-]+Alarm\\b/i"
+   ],
+   "customFormatScore": -9925,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    },
+    {
+     "id": 25,
+     "name": "Czech"
+    },
+    {
+     "id": 22,
+     "name": "Hungarian"
+    },
+    {
+     "id": 12,
+     "name": "Polish"
+    },
+    {
+     "id": 35,
+     "name": "Romanian"
+    },
+    {
+     "id": 11,
+     "name": "Russian"
+    },
+    {
+     "id": 40,
+     "name": "Serbian"
+    },
+    {
+     "id": 46,
+     "name": "Slovenian"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 663.4,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13
+   ],
+   "mappedEpisodeNumbers": [
+    13
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-17",
+   "indexerId": 3,
+   "indexer": "NZBFinder (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E13.Smoke.Alarm.on.the.Water.1080p.HMAX.WEB-DL.DDP2.0.H.265-AKARi",
+   "size": 236010141,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "AKARi",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0",
+    "Contains these ignored terms: /\\bS01E13[ ._-]+Smoke[ ._-]+Alarm\\b/i"
+   ],
+   "customFormatScore": -9925,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 87.81,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13
+   ],
+   "mappedEpisodeNumbers": [
+    13
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-18",
+   "indexerId": 3,
+   "indexer": "NZBFinder (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E13.Smoke.Alarm.on.the.Water.1080p.HMAX.WEB-DL.DDP2.0.H.265-AKARi",
+   "size": 236009820,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "AKARi",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0",
+    "Contains these ignored terms: /\\bS01E13[ ._-]+Smoke[ ._-]+Alarm\\b/i"
+   ],
+   "customFormatScore": -9925,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 654.47,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13
+   ],
+   "mappedEpisodeNumbers": [
+    13
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-19",
+   "indexerId": 3,
+   "indexer": "NZBFinder (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E13.Smoke.Alarm.on.the.Water.1080p.HMAX.WEB-DL.DDP2.0.H.265-OldT",
+   "size": 381623306,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "OldT",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0",
+    "Contains these ignored terms: /\\bS01E13[ ._-]+Smoke[ ._-]+Alarm\\b/i"
+   ],
+   "customFormatScore": -9925,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 663.41,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13
+   ],
+   "mappedEpisodeNumbers": [
+    13
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-20",
+   "indexerId": 1,
+   "indexer": "DrunkenSlug (Prowlarr)",
+   "title": "Regular.Show..The.Lost.Tapes.S01E13.Regular.Show.Presents.Terror.Tales.of.the.Park.VII.Halloween.Special.MULTI.720p.HMAX.WEB-DL.DDP5.1.x264-AndreMor",
+   "size": 671334345,
+   "quality": {
+    "quality": {
+     "id": 5,
+     "name": "WEBDL-720p",
+     "source": "web",
+     "resolution": 720
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "AndreMor",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "WEBDL-720p is not wanted in profile"
+   ],
+   "customFormatScore": 75,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 88.2,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13
+   ],
+   "mappedEpisodeNumbers": [
+    13
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-21",
+   "indexerId": 4,
+   "indexer": "NZBgeek (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E13.Regular.Show.Presents.Terror.Tales.of.the.Park.VII.Halloween.Special.MULTI.720p.HMAX.WEB-DL.DDP5.1.x264-AndreMor",
+   "size": 671334000,
+   "quality": {
+    "quality": {
+     "id": 5,
+     "name": "WEBDL-720p",
+     "source": "web",
+     "resolution": 720
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "AndreMor",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "WEBDL-720p is not wanted in profile"
+   ],
+   "customFormatScore": 75,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    },
+    {
+     "id": 18,
+     "name": "Portuguese"
+    },
+    {
+     "id": 3,
+     "name": "Spanish"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 88.19,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13
+   ],
+   "mappedEpisodeNumbers": [
+    13
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-22",
+   "indexerId": 3,
+   "indexer": "NZBFinder (Prowlarr)",
+   "title": "Regular.Show..The.Lost.Tapes.S01E13.Regular.Show.Presents.Terror.Tales.of.the.Park.VII.Halloween.Special.MULTI.720p.HMAX.WEB-DL.DDP5.1.x264-AndreMor",
+   "size": 671334345,
+   "quality": {
+    "quality": {
+     "id": 5,
+     "name": "WEBDL-720p",
+     "source": "web",
+     "resolution": 720
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "AndreMor",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "WEBDL-720p is not wanted in profile"
+   ],
+   "customFormatScore": 75,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 88.2,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13
+   ],
+   "mappedEpisodeNumbers": [
+    13
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-23",
+   "indexerId": 1,
+   "indexer": "DrunkenSlug (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E13E14.Terror.Tales.of.the.Park.VII.1080p.HDTV.DD5.1.x264-Slurpuff",
+   "size": 675589099,
+   "quality": {
+    "quality": {
+     "id": 9,
+     "name": "HDTV-1080p",
+     "source": "television",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "Slurpuff",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "HDTV-1080p is not wanted in profile",
+    "Contains these ignored terms: /\\bS01E13[ ._-]?E14\\b/i"
+   ],
+   "customFormatScore": 0,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 228.44,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13,
+    14
+   ],
+   "mappedEpisodeNumbers": [
+    13,
+    14
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-24",
+   "indexerId": 3,
+   "indexer": "NZBFinder (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E13E14.Terror.Tales.of.the.Park.VII.1080p.HDTV.DD5.1.x264-Slurpuff",
+   "size": 675589099,
+   "quality": {
+    "quality": {
+     "id": 9,
+     "name": "HDTV-1080p",
+     "source": "television",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "Slurpuff",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "HDTV-1080p is not wanted in profile",
+    "Contains these ignored terms: /\\bS01E13[ ._-]?E14\\b/i"
+   ],
+   "customFormatScore": 0,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 228.44,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    13,
+    14
+   ],
+   "mappedEpisodeNumbers": [
+    13,
+    14
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-25",
+   "indexerId": 3,
+   "indexer": "NZBgeek (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E10.Spice.It.Up.1080p.HMAX.WEB-DL.DDP2.0.H.265-OldT",
+   "size": 352000000,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "OldT",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Custom Formats HMAX, x265 (HD) have score -9925 below Series profile minimum 0",
+    "Existing file on disk has a equal or higher Custom Format score: 75",
+    "Last episode in this season aired more than 14 days ago, season pack required."
+   ],
+   "customFormatScore": -9925,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 640.5,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    10
+   ],
+   "mappedEpisodeNumbers": [
+    10
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  },
+  {
+   "guid": "lost-tapes-s01-pick-26",
+   "indexerId": 3,
+   "indexer": "NZBgeek (Prowlarr)",
+   "title": "Regular.Show.The.Lost.Tapes.S01E09.Good.Mitch.Spiking.1080p.AMZN.WEB-DL.DDP5.1.H.264-Kitsune",
+   "size": 480000000,
+   "quality": {
+    "quality": {
+     "id": 3,
+     "name": "WEBDL-1080p",
+     "source": "web",
+     "resolution": 1080
+    },
+    "revision": {
+     "version": 1,
+     "real": 0,
+     "isRepack": false
+    }
+   },
+   "releaseGroup": "Kitsune",
+   "approved": false,
+   "temporarilyRejected": false,
+   "rejected": true,
+   "rejections": [
+    "Existing file on disk has a equal or higher Custom Format score: 1780"
+   ],
+   "customFormatScore": 1780,
+   "languages": [
+    {
+     "id": 1,
+     "name": "English"
+    }
+   ],
+   "protocol": "usenet",
+   "ageHours": 900.0,
+   "seasonNumber": 1,
+   "mappedSeasonNumber": 1,
+   "episodeNumbers": [
+    9
+   ],
+   "mappedEpisodeNumbers": [
+    9
+   ],
+   "fullSeason": false,
+   "downloadAllowed": true
+  }
+ ]
+}

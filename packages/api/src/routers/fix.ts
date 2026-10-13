@@ -18,7 +18,10 @@ import {
   anyRemedyOn,
   closeFixManually,
   computeFixProgress,
+  computeRepairProgress,
   computeSearchProgress,
+  grabFromReleaseList,
+  openReleaseList,
   getKnownIssueServers,
   getRepairGuideRemedies,
   addMislabelTermFromRemap,
@@ -114,6 +117,8 @@ export const fixRouter = router({
       importCheckOn: remedies.import_check,
       /** DESIGN-055 D-04 — the guide offers the Episode Re-map ("this file is really episode N", "shifted by one"). */
       remapOn: remedies.episode_remap,
+      /** DESIGN-055 D-06 — Force Search and a re-map's emptied episodes offer "See every release" (the Release Pick). */
+      releasePickOn: remedies.release_pick,
       knownIssueServers: await getKnownIssueServers(ctx.db),
     };
   }),
@@ -505,6 +510,77 @@ export const fixRouter = router({
         });
         return result; // {outcome, eventId, repairRequestId, targetLabel, commandName}
       });
+    }),
+
+  /**
+   * ADR-109 C-06 / DESIGN-055 D-06 (PLAN-077 P5) — open the Release Pick's list for one missing episode or one movie:
+   * every release with the *arr's reasons in plain words, each row Grab, Override or Not allowed (Q-01 ruling), and the
+   * recommended pick. A live search of every indexer, so it is a mutation: one unit of the hourly budget (the
+   * `release_list_requested` event with its Release List row), free when the same person reopens the same list within 5
+   * minutes. A target with a file or a download in the queue gets no list (`status`) and costs nothing.
+   */
+  releaseList: authedProcedure
+    .input(
+      z
+        .object({
+          mediaItemId: z.uuid(),
+          scope: z.enum(ACTION_SCOPES).optional(),
+          targetChildId: z.number().int().positive().optional(),
+        })
+        .refine(refineScopeShape, { error: 'scope/target/season combination is invalid' }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        openReleaseList({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          mediaItemId: input.mediaItemId,
+          scope: input.scope,
+          targetChildId: input.targetChildId,
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
+        }),
+      );
+    }),
+
+  /**
+   * ADR-109 C-02, C-06 / DESIGN-055 D-06 — grab the row the person chose from their own list (`listId`, the row's opaque
+   * `key`; the release's guid never leaves the server). One Repair Request (`release_pick`, a budget unit) before the
+   * `POST /release`. Expected refusals come back as an `outcome` with the guide's words (the list is out of date, the
+   * site refused it, the episode has a file now), so the guide can offer the next step.
+   */
+  releaseGrab: authedProcedure
+    .input(z.object({ listId: z.uuid(), key: z.string().regex(/^[0-9a-f]{16}$/) }))
+    .mutation(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        grabFromReleaseList({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          listId: input.listId,
+          key: input.key,
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
+        }),
+      );
+    }),
+
+  /**
+   * ADR-028 / DESIGN-055 D-06 — the live phase of a Repair Request that grabbed a release (the Release Pick's chip):
+   * the row's own terminals, then the queue and ledger milestones for its episode or movie. The person who asked, or an
+   * admin (else NOT_FOUND).
+   */
+  repairProgress: authedProcedure
+    .input(z.object({ repairRequestId: z.uuid() }))
+    .query(async ({ ctx, input }) => {
+      return mapDomainErrors(async () =>
+        computeRepairProgress({
+          db: ctx.db,
+          arr: resolveArrBundle(ctx),
+          repairRequestId: input.repairRequestId,
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
+        }),
+      );
     }),
 
   /**

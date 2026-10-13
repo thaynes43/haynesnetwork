@@ -32,9 +32,12 @@ export function normalizeRemedies(stored: unknown): RepairGuideRemedies {
 
 /**
  * The remedies that belong to Fix (DESIGN-055 D-08, D-09). `import_check` (D-07, PLAN-077 P2) belongs to Force Search,
- * so it never opens the Fix guide on its own.
+ * and `release_pick` (D-06, PLAN-077 P5) to Force Search and a re-map's emptied episodes, so neither opens the Fix guide
+ * on its own.
  */
-export const FIX_GUIDE_REMEDIES: readonly RepairGuideRemedy[] = REPAIR_GUIDE_REMEDIES.filter((r) => r !== 'import_check');
+export const FIX_GUIDE_REMEDIES: readonly RepairGuideRemedy[] = REPAIR_GUIDE_REMEDIES.filter(
+  (r) => r !== 'import_check' && r !== 'release_pick',
+);
 
 /** Whether any Fix remedy is on (the web app shows the Repair Guide instead of today's Fix dialog). */
 export function anyRemedyOn(remedies: RepairGuideRemedies): boolean {

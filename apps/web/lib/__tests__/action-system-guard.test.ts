@@ -86,6 +86,19 @@ describe('action-anatomy ESLint guard — violations (ADR-071 / DESIGN-004 D-24)
     expect(guardHits(`export const X = () => <MediaAction action="moveFile" size="sm" onFire={f} />;`)).toEqual([]);
   });
 
+  it('FAILS a hand-rolled "See every release" or "Grab this release" button (DESIGN-055 D-06: the Release Pick verbs)', () => {
+    for (const code of [
+      `export const X = () => <button type="button" className="btn">See every release</button>;`,
+      `export const X = () => <button type="button" className="btn primary">Grab this release</button>;`,
+    ]) {
+      const hits = guardHits(code);
+      expect(hits.length, code).toBeGreaterThan(0);
+      expect(hits[0]!.message).toBe(ACTION_ANATOMY_MESSAGES.R1);
+    }
+    expect(guardHits(`export const X = () => <MediaAction action="pickRelease" onFire={f} />;`)).toEqual([]);
+    expect(guardHits(`export const X = () => <MediaAction action="grabRelease" onFire={f} />;`)).toEqual([]);
+  });
+
   it('FAILS an action smuggled via aria-label on an icon-only btn button', () => {
     const hits = guardHits(
       `export const X = () => <button className="btn" aria-label="Fix"><Icon /></button>;`,
@@ -185,8 +198,10 @@ describe('action-anatomy ESLint guard — sanctioned + non-action forms pass', (
 });
 
 describe('action-anatomy guard mirrors the @hnet/ui registry (parity lock)', () => {
-  it('the guard label MIRROR equals the ACTIVE-fire registry labels (fix/forceSearch/retryImport/importDownload/moveFile)', () => {
-    const activeLabels = (['fix', 'forceSearch', 'retryImport', 'importDownload', 'moveFile'] as const).map(
+  it('the guard label MIRROR equals the ACTIVE-fire registry labels (every verb but consume and notOnDisk)', () => {
+    const activeLabels = (
+      ['fix', 'forceSearch', 'retryImport', 'importDownload', 'moveFile', 'pickRelease', 'grabRelease'] as const
+    ).map(
       (t) => MEDIA_ACTIONS[t].label,
     );
     expect(new Set(CANONICAL_ACTION_LABELS)).toEqual(new Set(activeLabels));
