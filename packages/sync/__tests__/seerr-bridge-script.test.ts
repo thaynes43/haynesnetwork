@@ -6,15 +6,22 @@ import { parseSeerrBridgeArgs } from '../src/scripts/seerr-bridge';
 describe('seerr-bridge arguments', () => {
   it('parses the three commands', () => {
     expect(parseSeerrBridgeArgs(['--show'])).toEqual({ kind: 'show' });
+    expect(parseSeerrBridgeArgs(['--smoke'])).toEqual({ kind: 'smoke', cleanupOnly: false });
+    expect(parseSeerrBridgeArgs(['--smoke-cleanup'])).toEqual({ kind: 'smoke', cleanupOnly: true });
     expect(parseSeerrBridgeArgs(['--run'])).toEqual({ kind: 'run', issueId: null });
     expect(parseSeerrBridgeArgs(['--run', '--issue', '12'])).toEqual({ kind: 'run', issueId: 12 });
-    expect(parseSeerrBridgeArgs(['--set', '--user', '19', '--comment', 'on', '--resolve', 'off'])).toEqual({
+    expect(
+      parseSeerrBridgeArgs(['--set', '--user', '19', '--comment', 'on', '--resolve', 'off']),
+    ).toEqual({
       kind: 'set',
       user: 19,
       comment: true,
       resolve: false,
     });
-    expect(parseSeerrBridgeArgs(['--set', '--comment', 'off'])).toEqual({ kind: 'set', comment: false });
+    expect(parseSeerrBridgeArgs(['--set', '--comment', 'off'])).toEqual({
+      kind: 'set',
+      comment: false,
+    });
     expect(parseSeerrBridgeArgs(['--set', '--user', 'none'])).toEqual({ kind: 'set', user: null });
     expect(parseSeerrBridgeArgs([])).toBe('help');
     expect(parseSeerrBridgeArgs(['--show', '--help'])).toBe('help');
@@ -30,5 +37,8 @@ describe('seerr-bridge arguments', () => {
     expect(() => parseSeerrBridgeArgs(['--run', '--all'])).toThrow(/only --issue/);
     expect(() => parseSeerrBridgeArgs(['--show', 'x'])).toThrow(/no options/);
     expect(() => parseSeerrBridgeArgs(['--delete'])).toThrow(/unknown command/);
+    expect(() => parseSeerrBridgeArgs(['--smoke-cleanup', '--issue', '4'])).toThrow(
+      /no options or issue id/,
+    );
   });
 });

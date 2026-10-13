@@ -138,6 +138,7 @@ export const seerrIssueSchema = z.object({
   updatedAt: z.string(),
   media: z
     .object({
+      id: z.number().int().nullish(),
       mediaType: z.string().nullish(),
       tmdbId: z.number().int().nullish(),
       tvdbId: z.number().int().nullish(),

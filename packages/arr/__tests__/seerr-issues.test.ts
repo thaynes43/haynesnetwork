@@ -171,8 +171,46 @@ describe('the Seerr Issue bridge clients (PLAN-077 P7)', () => {
     for (const bad of [1, 0, -3, 1.5, Number.NaN]) {
       expect(() => seerr.commentOnIssue(12, 'x', bad)).toThrow(/never user 1/);
       expect(() => seerr.resolveIssue(12, bad)).toThrow(/never user 1/);
+      expect(() => seerr.createIssue(10974, 'staff smoke', bad)).toThrow(/never user 1/);
+      expect(() => seerr.deleteIssue(12, bad)).toThrow(/never user 1/);
     }
     expect(calls).toEqual([]);
+  });
+
+  it('reads only the movie fixture identity, creates as the bridge reporter, and deletes with no body', async () => {
+    const read = client([
+      {
+        path: '/api/v1/movie/65465',
+        body: {
+          title: 'The Canterville Ghost',
+          mediaInfo: { id: 10974, tmdbId: 65465, status: 5 },
+          overview: 'not consumed',
+        },
+      },
+    ]);
+    expect(await read.client.getMovieIssueTarget(65465)).toEqual({
+      title: 'The Canterville Ghost',
+      mediaInfo: { id: 10974, tmdbId: 65465 },
+    });
+    const { client: seerr, calls } = writer([
+      { method: 'POST', path: '/api/v1/issue', body: ISSUE },
+      { method: 'DELETE', path: '/api/v1/issue/12', body: undefined },
+    ]);
+    await seerr.createIssue(10974, 'marked staff smoke', 19);
+    await seerr.deleteIssue(12, 19);
+    expect(
+      calls.map((c) => [c.method, c.url.pathname, c.body, c.headers.get('x-api-user')]),
+    ).toEqual([
+      [
+        'POST',
+        '/api/v1/issue',
+        { issueType: 4, mediaId: 10974, message: 'marked staff smoke' },
+        '19',
+      ],
+      ['DELETE', '/api/v1/issue/12', undefined, '19'],
+    ]);
+    for (const id of [1, 2, 3, 4]) expect(() => seerr.deleteIssue(id, 19)).toThrow(/issues 1 to 4/);
+    expect(calls).toHaveLength(2);
   });
 
   it('a refused write is an error with its status, and is not retried (a POST is not idempotent)', async () => {

@@ -4,8 +4,11 @@ import { mediaItems } from './media-items';
 
 const sqlList = (values: readonly string[]) => values.map((v) => `'${v}'`).join(',');
 
-/** ADR-114 — what moved the content: a Season Re-map, a show's Plex ordering switch, or the Second-Copy Fix. */
-export const WATCH_CARRY_KINDS = ['season_remap', 'show_ordering', 'second_copy'] as const;
+/**
+ * ADR-114 — what moved the content: a Season Re-map, a show's Plex ordering switch, the Second-Copy Fix, or (DESIGN-055
+ * P4 decision 38, migration 0106) the Wrong-Content Replace.
+ */
+export const WATCH_CARRY_KINDS = ['season_remap', 'show_ordering', 'second_copy', 'wrong_content'] as const;
 export type WatchCarryKind = (typeof WATCH_CARRY_KINDS)[number];
 
 /**

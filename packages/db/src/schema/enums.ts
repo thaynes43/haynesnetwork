@@ -929,6 +929,8 @@ export const APP_SETTING_KEYS = [
   // nothing is ever written to Seerr. Admin-mutated + audited through setAppSetting (setSeerrIssueBridge validates
   // first). migration 0105.
   'seerr_issue_bridge',
+  // DESIGN-055 P7 decision 11: staff's one bounded, audited bridge smoke fixture (migration 0107).
+  'seerr_issue_bridge_smoke',
 ] as const;
 export type AppSettingKey = (typeof APP_SETTING_KEYS)[number];
 

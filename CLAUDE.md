@@ -97,6 +97,11 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    `seerr_issue_bridge` setting, written only by `seerr-issue-writes.ts` (one `seerr_issue_writes` row per issue and kind,
    committed before the call). It never deletes, reopens or edits an issue or a comment. Through `@hnet/arr/write` from
    `packages/domain` only.
+   **The owner-authorized P7 staff smoke test** (DESIGN-055 P7 decision 11) additionally creates and deletes its own
+   marked fixture only, on Seerr media 10974 (The Canterville Ghost, TMDB 65465), as user 19. Its sole writer is
+   `seerr-bridge-smoke.ts`, with durable intents and results through the audited `seerr_issue_bridge_smoke` setting;
+   it refuses issues 1 to 4 and any issue it did not create. Its simulated repair uses the normal Repair Request
+   lifecycle writers and performs no library write. Through `@hnet/arr/write` from `packages/domain` only.
    **ADR-114 adds the Watch Carry** (DESIGN-055 P4 decisions 26-34; owner ruling on #928, "Carry marks, then move"): inside
    a staff move only (`season-run`, `copy-run`, `ordering-run`, and `carry-finish` / `carry-revert`), each account's Plex
    plays and resume point (`scrobble`, `unscrobble`, `progress`) are written as that account, with the per-server token
@@ -135,6 +140,13 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    missing item, within the budget; the hard-refusal list applies to everyone, admins included). It downloads, never
    deletes or blocks anything; a grab the *arr cannot file is imported through the Import Check above. Through
    `@hnet/arr/write` from `packages/domain` only.
+   **DESIGN-055 P4 decision 38 adds the staff Wrong-Content Replace:** a correct release is chosen before deleting
+   one or more wrong-content episode files, under one staff Fix Request (`wrong_content`, requester null) and a
+   Watch Carry (migration 0106). Only after every target file's deletion is read back does the Release Pick writer
+   grab the chosen releases onto those now-missing episodes. A deletion failure stops all grabs; retained files keep
+   their audited watch state, and unverified deletions keep the carry open until a fresh read-back. Marks from the
+   wrong content go only to its evidenced copies, or are audited as dropped after confirmed removal, never onto the
+   replacement. Through `@hnet/arr/write` and `@hnet/plex/write` from `packages/domain` only.
    **ADR-109 adds the language-aware Wrong language** (C-02, C-07; DESIGN-055 D-08, PLAN-077 P6). **The Audio
    Preference**, a Plex write: a show's preferred audio language (`PUT /library/metadata/{key}/prefs?audioLanguage=`),
    on every Plex server that carries the show, only when the person's file already has the wanted audio and that

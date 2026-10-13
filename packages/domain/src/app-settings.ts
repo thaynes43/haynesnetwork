@@ -335,6 +335,31 @@ export interface AppSettingValueMap {
   // getAppSetting typeof-guard treats it like motd); read through getSeerrIssueBridge (strict booleans, a bridge user
   // that is never Seerr user 1), written through setSeerrIssueBridge.
   seerr_issue_bridge: SeerrIssueBridgeSetting;
+  seerr_issue_bridge_smoke: SeerrBridgeSmokeState | null;
+}
+
+/** DESIGN-055 P7 decision 11: durable staff-test ownership, checkpoints and the recoverable external-call intent. */
+export interface SeerrBridgeSmokeState {
+  runId: string;
+  startedAt: string;
+  marker: string;
+  issueId: number | null;
+  repairRequestId: string | null;
+  operation:
+    | 'ready'
+    | 'create_intended'
+    | 'created'
+    | 'repair_pending'
+    | 'repair_completed'
+    | 'verified'
+    | 'delete_intended'
+    | 'deleted';
+  invitationVerified: boolean;
+  pendingVerified: boolean;
+  resolveVerified: boolean;
+  lastError: string | null;
+  leaseOwner: string | null;
+  leaseUntil: string | null;
 }
 
 /**
@@ -425,6 +450,7 @@ export const APP_SETTING_DEFAULTS: AppSettingValueMap = {
   playback_known_issue_servers: [],
   // ADR-111 C-03 — absent key: no bridge user and both writes off, so nothing is ever written to Seerr.
   seerr_issue_bridge: { comment: false, resolve: false, bridgeUserId: null, commentFrom: null },
+  seerr_issue_bridge_smoke: null,
 };
 
 /**

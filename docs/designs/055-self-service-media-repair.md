@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P7 decisions 1-10 after D-11: the Seerr Issue bridge as built, the bridge user, the `seerr_issue_bridge` setting, the comment's wording, one write per issue and kind, the exact link, when the resolve happens; Q-12 raised). Before that 2026-10-13 (P6 decision 14 scoped to the audit's flagged shows, ADR-115). Before that 2026-10-13 (P4 decisions 35 to 37, issue #928's evidence: a placement may change the episode count, a second parking episode for a second open cycle, the Second-Copy Fix takes a multi-episode copy). Before that 2026-10-13 (P6 decision 14 and Q-03 amended: the owner's ruling on #955, "English if present", for staff defaults). Before that 2026-10-13 (P6 decision 3: a server's item is the one in a library of the title's own kind, PR #954; P6's live status and sweep in PLAN-077). Before that 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
+- **Last updated:** 2026-10-13 (P4 decision 38, the coordinator's ruling on #928: the staff Wrong-Content Replace). Before that 2026-10-13 (P7 decisions 1-10 after D-11: the Seerr Issue bridge as built, the bridge user, the `seerr_issue_bridge` setting, the comment's wording, one write per issue and kind, the exact link, when the resolve happens; Q-12 raised). Before that 2026-10-13 (P6 decision 14 scoped to the audit's flagged shows, ADR-115). Before that 2026-10-13 (P4 decisions 35 to 37, issue #928's evidence: a placement may change the episode count, a second parking episode for a second open cycle, the Second-Copy Fix takes a multi-episode copy). Before that 2026-10-13 (P6 decision 14 and Q-03 amended: the owner's ruling on #955, "English if present", for staff defaults). Before that 2026-10-13 (P6 decision 3: a server's item is the one in a library of the title's own kind, PR #954; P6's live status and sweep in PLAN-077). Before that 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
   missing, is a pick for all of them). Before that 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
@@ -539,6 +539,65 @@ do not edit)", "must not contain" terms only, no tags.
     Simpsons S38E02 and E01: 719,258,375 bytes each) is one content already; the carry tells the copy's item apart by
     its file name, clears it, and credits its plays to the original's item. The carry's wait checks files of one size
     together (each must sit on its own Sonarr episode).
+38. **The Wrong-Content Replace** (coordinator ruling on #928, 2026-10-13: wrong-content files are bugs; find a correct
+    release first, then replace). A file that holds the wrong content (Mickey Mouse: Mixed-Up Adventures S01's files
+    are Season 3 stories; Pokémon S03E01-E34 are Pokémon Horizons episodes; Ben 10 (2016) S01E10 and E12 are Ben 10
+    (2005) episodes) is replaced only when a correct release exists. `repair-guide.ts replace-plan --tvdb <id> --episode
+    S03E01` only reads: the Release Pick's season search, judged as if the file were already gone
+    (`previewReplacementList`: the slot's episodes count as missing, and a rejection about that file alone, an
+    Existing-File Rejection or "Episode file on disk contains more episodes", goes with it). It keeps the releases whose
+    names agree with the slot's episode (Title Evidence `agrees`; a name without a title is no evidence here, since
+    Pokémon Horizons' own `S03E01` releases are what put the wrong files there) and that cover exactly the slot's
+    episodes, a plain grab first. With none, the plan refuses `no_release` and the wrong file stays, flagged, waiting for
+    a release (an empty slot helps nobody). `replace-run ... --key <k> --digest <d> --evidence "<what was read>"
+    [--same-as S03E07,S03E08]` re-plans (one fresh search), snapshots the watch state (Watch Carry kind `wrong_content`,
+    migration 0106), opens a Fix Request (requester null, `wrong_content`), deletes the file, reads the slot back empty,
+    and grabs the chosen release onto the slot's episodes with Sonarr's override body (`sendReleaseGrab`: the *arr judged
+    it while the file was there). A mark on the wrong content never lands on the replacement: `--same-as` names the
+    episodes of the show whose own file holds that story, and the carry credits the plays there; without it the marks are
+    dropped, each recorded on the carry (`droppedDetail`: account index, file size, state) beside the pre-clear audit
+    row. Each import is then checked by subtitles or a title card.
+
+    **Deletion recovery:** before the first delete, the carry records every planned file as awaiting read-back. A
+    failed delete stops the run before any grab. Sonarr's file list and every named episode distinguish removed files
+    from retained files; missing episodes or failed reads leave the outcome unresolved. The carry's single writer
+    stores that evidence and its resulting scope together. Retained files get their pre-clear restored, with each
+    write audited; only confirmed removals can credit a copy or drop a mark. If the outcome remains unresolved,
+    the carry stays open and neither `carry-finish` nor `carry-revert` may apply the planned deletion scope.
+    `carry-finish --carry <id>` first repeats that bounded Sonarr read-back for a Wrong-Content Replace, then restores
+    retained content and finishes confirmed removals. Restoration verifies the current file's name and size, so a
+    new correct file cannot receive the wrong content's marks. A failed grab leaves its affected episodes missing;
+    staff use `release-list` or Fix for a new pick, because deleting a file does not start a Sonarr search.
+    Copy mappings remain keyed by the source file id. Equal-size source files with different copy mappings refuse
+    before writes; a partial deletion that cannot distinguish a removed source's mapping from a retained equal-size
+    source keeps those sources unresolved, rather than crediting another file's marks.
+    The run requires a Plex adapter and a stored Watch Carry; an absent adapter refuses before any write. Read-only
+    planning remains available without Plex.
+    The Fix records successful delete attempts and the per-file/episode read-back before loading or settling the
+    carry. A post-delete audit or recovery error stops every grab and attempts a failed transition with that evidence.
+    If the audit cannot be saved, the error says so and points staff to `carry-status` and `carry-finish`; the stored
+    carry remains the recovery source. Partial-delete errors name confirmed missing episodes and direct staff to
+    `release-list` or Fix for a new pick.
+    The Fix creation and its carry link commit together; a failed link rolls the Fix back before any delete. The
+    stored deletion plan records its version and `grabStarted: false`, then commits `true` before the first release
+    POST. Staff recovery keeps a durable no-grab closure marker before changing the scope, validates the linked
+    staff Fix and media, and closes a pending/actioned parent through `recordFixAction` once recovery succeeds. A
+    repeated recovery is idempotent. Recorded or possible grabs, search-triggered parents and completed parents keep
+    their lifecycle. A failed pre-clear restoration names `carry-finish` for Wrong-Content Replace, because its
+    pending deletion scope blocks a generic revert.
+
+    The live plans (2026-10-13) added four things. **Several files:** `--also 34` replaces more files with the slot
+    when one release holds all their episodes (Mickey's S01E33 and E34 files each sit on one episode, and the right
+    release `S01E33E34` holds both); `--same-as 33:S03E65,34:S03E67` names which file each copy belongs to.
+    **Parts:** a slot may be filled by several releases that together land on each of its episodes once (`--key a,b`;
+    Mickey's S01E13-E16 file is refilled by `S01E13E14` and `S01E15E16`); any other set is refused before anything is
+    written. **Renumbered releases:** Sonarr files Mickey's `S01E01E02.Mickeys.Wild.Tire..Sittin.Kitty` on E01 to E04
+    (scene numbering, doubled); in replace mode the Release Pick judges such a row by its own name, holding the episodes
+    its name numbers, as an override, and a pick only when its titles name them (`classifyReleases` with `replacing`;
+    the person's Release Pick still refuses it). **One search:** each plan and run reads the season list once and the
+    list is cached (five minutes); `replace-plan --season <n> --slots 1,3,33+34` plans many slots from it and
+    `replace-batch --batch '<json>'` runs them in one process, keeping the list after each grab, pausing between slots
+    and stopping at the first refusal. Indexer API hits are capped, and a season search per slot would spend hundreds.
 
 ### D-06 Release Pick
 
@@ -1199,6 +1258,18 @@ and resolve, as a dedicated Seerr user, never as the owner's account), with the 
 10. **Delivery** (D-11): Seerr sends a comment to its reporter through its notification agents, and on 2026-10-13 only
     the webhook to this app is on (email and web push are off). A reporter sees the comment when they open the issue
     in Seerr. Q-12 asks whether to change that.
+11. **Staff smoke test** (owner-authorized, 2026-10-13): `seerr-bridge.ts --smoke` creates one explicitly marked
+    staff test on The Canterville Ghost (1986), Seerr media 10974 / TMDB 65465, as user 19. It checks exactly one
+    bridge invitation, links a simulated Repair Request through the normal writer, checks that pending does not
+    resolve and completed resolves once, then deletes only that fixture. It never changes a library file, download,
+    Plex mark or notification setting. The initial marked report and the resolve note are distinct from the one
+    invitation. Every test intent and result is kept through `setAppSetting` (actor null) in
+    `seerr_issue_bridge_smoke`, with its permission audit in the same transaction; migration 0107 admits that key.
+    A unique run marker, the stored issue id above 4, the matching media, reporter and creation time all guard
+    cleanup. An ambiguous create is adopted by its marker, never blindly posted again. `--smoke-cleanup` resumes
+    only the recorded fixture after an interruption. The normal bridge gains no general delete surface. The test
+    mirror remains marked as removed and its audits survive; OC-052 excludes removed rows and this test marker,
+    because a smoke test is not a real person's report.
 
 ### D-12 Working practice and the readiness judgment
 

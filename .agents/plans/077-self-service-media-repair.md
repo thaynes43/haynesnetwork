@@ -565,6 +565,24 @@ names, never deleting a file, after a watch-state check on every Plex server and
         the owner.
     - **Title Check:** 321 open flags at the start of the work order, 310 just before the first run, 155 after (Ben 10's
       re-maps cleared flags, and the hourly census re-judges the files that moved).
+    - **The Wrong-Content Replace** (DESIGN-055 P4 decision 38; coordinator ruling on #928: "they are bugs, fix them",
+      C then A): `wrong-content-replace.ts`, `previewReplacementList` and `sendReleaseGrab` in `release-pick.ts`,
+      migration 0106 (Watch Carry kind `wrong_content`), the carry's `droppedDetail`, and `repair-guide.ts replace-plan |
+      replace-run`. Tests: `watch-carry.test.ts`: a replace that drops a mark on content held nowhere else; and a slot
+      kept while no release names it, then replaced with its mark credited to the copy elsewhere; two files replaced at
+      once from parts, with a renumbered release judged by its own name and one search for the run. Also migration 0106
+      and the script test (`--also`, `--key a,b`, `--slots`, `replace-batch`).
+      Review recovery: deletion failures stop grabs; the persisted carry separates confirmed removed, retained and
+      unresolved files. `carry-finish` reads Sonarr again before reconciling a Wrong-Content Replace; a retained file's
+      marks are restored only to that same file, and unresolved outcomes keep the carry open. Failure-path tests cover
+      total and partial deletion failure, unverified read-back and failed grabs. No automatic search is promised.
+      Follow-up review: the delete trail is saved before carry recovery; load/settle failures record a failed Fix when
+      the database is reachable, otherwise explicitly report the unsaved audit and recovery commands. Partial-delete
+      failures list confirmed missing episodes with `release-list` / Fix guidance.
+      Interrupted no-grab recovery closes its linked Fix once the database is back, with a durable obligation before
+      scope changes and explicit grab-start intent before each run's first POST. Fix creation/carry linking are atomic;
+      successful or possible grabs keep their lifecycle. A failed Wrong-Content Replace pre-clear restoration directs
+      staff to `carry-finish`.
     - **Held** (#928 and OC-056 list them with reasons):
       - Waiting for open Fix requests to close (48 hours): Bubble Guppies S5, whose only parking episodes are the
         emptied S1 slots, and Paw Patrol S5 E43-E47 (`--place 44-45:43-44,46:45,47:46-47`).
@@ -805,6 +823,10 @@ names, never deleting a file, after a watch-state check on every Plex server and
 - **Tests:** `seerr-issue-writes.test.ts`: one comment across a crash and a retry; resolve only after completion.
 - **e2e:** stub Seerr records the acting user. Journey: AC-43's write half.
 - **Live check:** the next real issue gets exactly one comment from the bridge user, and is resolved after its repair.
+- **Staff smoke preparation (2026-10-13):** DESIGN-055 P7 decision 11 adds the audited, bounded
+  `seerr-bridge.ts --smoke` / `--smoke-cleanup` fixture tool, migration 0107. It creates only media 10974's marked
+  staff test as user 19, distinguishes the invitation from the initial test report, simulates a linked repair with
+  no library writes, checks one resolve, and deletes only its own fixture. The test does not satisfy OC-052.
 - **Bridge user (staff one-off, 2026-10-13 20:18Z, P7 decision 1):** `POST /api/v1/user` on Seerr (local user, username
   "haynesnetwork.com", email `seerr-bridge@haynesnetwork.com`, random password never stored; Seerr's local login is off),
   then `POST /api/v1/user/19/settings/permissions` with `1048576` (MANAGE_ISSUES only), read back: Seerr user 19,

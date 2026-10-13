@@ -133,6 +133,7 @@ export * from './queue-aware-search';
 export * from './seerr-issues';
 // ADR-111 C-03 / DESIGN-055 D-10 (PLAN-077 P7) — the Seerr Issue bridge's comment and resolve.
 export * from './seerr-issue-writes';
+export * from './seerr-bridge-smoke';
 export * from './seerr-issue-link';
 // DESIGN-055 D-07 P2 decision 13 (PLAN-077 P3) — Activity's admin Import Check row.
 export * from './activity-import-check';
@@ -316,3 +317,6 @@ export * from './second-copy-fix';
 export * from './watch-carry';
 export * from './watch-carry-plex';
 export * from './show-ordering';
+// DESIGN-055 P4 decision 38 (issue #928) — the staff Wrong-Content Replace: a correct release found first, then the wrong
+// file deleted and that release grabbed, inside a Watch Carry.
+export * from './wrong-content-replace';

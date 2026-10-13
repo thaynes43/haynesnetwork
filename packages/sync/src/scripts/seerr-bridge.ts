@@ -17,22 +17,26 @@ import {
   getSeerrIssueBridge,
   readSeerrIssueBridgeStatus,
   runSeerrIssueBridgeFromEnv,
+  runSeerrIssueBridgeSmokeFromEnv,
   seerrIssueWritesFor,
   setSeerrIssueBridge,
 } from '@hnet/domain';
 import { createConsoleLogger } from '../logger';
 
-const USAGE = `Usage: seerr-bridge.ts --show | --set [--user <id>|none] [--comment on|off] [--resolve on|off] | --run [--issue <id>]
+const USAGE = `Usage: seerr-bridge.ts --show | --set [--user <id>|none] [--comment on|off] [--resolve on|off] | --run [--issue <id>] | --smoke | --smoke-cleanup
 
   --show                  the setting, the bridge user as Seerr has it, and the bridge's recent writes
   --set                   change the audited seerr_issue_bridge setting (a value left out keeps what is stored)
     --user <id>|none      the Seerr user the comment and resolve post as (never 1, the owner)
     --comment on|off      the fix-it-yourself comment on each new issue
     --resolve on|off      the resolve once the repair a report's guide ran has completed
-  --run [--issue <id>]    one bridge pass now, for every issue or one`;
+  --run [--issue <id>]    one bridge pass now, for every issue or one
+  --smoke                 one audited staff fixture on media 10974, simulated repair, then cleanup
+  --smoke-cleanup         resume cleanup of only the saved fixture after an interruption`;
 
 export type SeerrBridgeCommand =
   | { kind: 'show' }
+  | { kind: 'smoke'; cleanupOnly: boolean }
   | { kind: 'set'; user?: number | null; comment?: boolean; resolve?: boolean }
   | { kind: 'run'; issueId: number | null };
 
@@ -44,20 +48,26 @@ const onOff = (flag: string, v: string | undefined): boolean => {
 
 const positiveInt = (flag: string, v: string | undefined): number => {
   const n = Number(v);
-  if (v === undefined || !Number.isSafeInteger(n) || n <= 0) throw new Error(`${flag} expects a positive id`);
+  if (v === undefined || !Number.isSafeInteger(n) || n <= 0)
+    throw new Error(`${flag} expects a positive id`);
   return n;
 };
 
 export function parseSeerrBridgeArgs(argv: readonly string[]): SeerrBridgeCommand | 'help' {
   if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) return 'help';
   const [command, ...rest] = argv;
+  if (command === '--smoke' || command === '--smoke-cleanup') {
+    if (rest.length > 0) throw new Error(`${command} takes no options or issue id`);
+    return { kind: 'smoke', cleanupOnly: command === '--smoke-cleanup' };
+  }
   if (command === '--show') {
     if (rest.length > 0) throw new Error('--show takes no options');
     return { kind: 'show' };
   }
   if (command === '--run') {
     if (rest.length === 0) return { kind: 'run', issueId: null };
-    if (rest.length === 2 && rest[0] === '--issue') return { kind: 'run', issueId: positiveInt('--issue', rest[1]) };
+    if (rest.length === 2 && rest[0] === '--issue')
+      return { kind: 'run', issueId: positiveInt('--issue', rest[1]) };
     throw new Error('--run takes only --issue <id>');
   }
   if (command === '--set') {
@@ -73,7 +83,8 @@ export function parseSeerrBridgeArgs(argv: readonly string[]): SeerrBridgeComman
     if (out.user === undefined && out.comment === undefined && out.resolve === undefined) {
       throw new Error('--set needs at least one of --user, --comment, --resolve');
     }
-    if (out.user === 1) throw new Error('--user 1 is the owner; the bridge never posts as the owner');
+    if (out.user === 1)
+      throw new Error('--user 1 is the owner; the bridge never posts as the owner');
     return out;
   }
   throw new Error(`unknown command "${command}"`);
@@ -109,6 +120,16 @@ async function main(): Promise<number> {
     console.log(JSON.stringify(res, null, 2));
     return 0;
   }
+  if (cmd.kind === 'smoke') {
+    console.log(
+      JSON.stringify(
+        await runSeerrIssueBridgeSmokeFromEnv({ cleanupOnly: cmd.cleanupOnly }),
+        null,
+        2,
+      ),
+    );
+    return 0;
+  }
   if (cmd.kind === 'run') {
     const report = await runSeerrIssueBridgeFromEnv({
       ...(cmd.issueId !== null ? { issueIds: [cmd.issueId] } : {}),
@@ -122,10 +143,16 @@ async function main(): Promise<number> {
     `SELECT seerr_issue_id AS id FROM seerr_issues WHERE status = 'open' OR updated_at > now() - interval '14 days'
      ORDER BY seerr_issue_id DESC LIMIT 20`,
   );
-  const writes = await seerrIssueWritesFor(undefined, rows.map((r) => r.id));
+  const writes = await seerrIssueWritesFor(
+    undefined,
+    rows.map((r) => r.id),
+  );
   console.log(
     JSON.stringify(
-      { ...status, writes: Object.fromEntries([...writes.entries()].map(([id, w]) => [String(id), w])) },
+      {
+        ...status,
+        writes: Object.fromEntries([...writes.entries()].map(([id, w]) => [String(id), w])),
+      },
       null,
       2,
     ),
