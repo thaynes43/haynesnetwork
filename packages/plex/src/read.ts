@@ -10,6 +10,13 @@ import { readAllContainerPages, type PagedContainer, type PlexPagedListing } fro
 import { childrenNamed, parseXml, type XmlElement } from './xml';
 import { PlexHttpError, PlexParseError } from './errors';
 import {
+  parseSharedServerAccess,
+  readLeafFiles,
+  readShowOrdering,
+  type PlexLeafFile,
+  type PlexSharedServerAccess,
+} from './carry-read';
+import {
   DISCOVER_TYPE,
   discoverExternalIds,
   isDiscoverId,
@@ -684,6 +691,36 @@ export class PlexReadClient {
     const all = await this.listSharedServers();
     return all.find((ss) => ss.userID === plexUserId) ?? null;
   }
+
+  // ---- ADR-114 / DESIGN-055 P4 decisions 26-34 — the Watch Carry's reads (carry-read.ts) ----
+
+  /**
+   * `GET /library/metadata/{show}/allLeaves`, paged to completion: every episode with the TOKEN ACCOUNT's play count,
+   * resume point and last watch, and the files each item plays (name and byte size). Built with a friend's own
+   * per-server token, it answers that friend's state. Throws when the listing cannot be read completely. Read-only.
+   */
+  async listLeafFiles(showRatingKey: string): Promise<PlexLeafFile[]> {
+    return readLeafFiles(this.http, `${this.baseUrl}/library/metadata/${encodeURIComponent(showRatingKey)}/allLeaves`);
+  }
+
+  /** A show's own Plex "Episode ordering" (`''` = the library default; null when the item offers none). Read-only. */
+  async getShowOrdering(showRatingKey: string): Promise<string | null> {
+    return readShowOrdering(this.http, `${this.baseUrl}/library/metadata/${encodeURIComponent(showRatingKey)}`);
+  }
+
+  /**
+   * `GET {plex.tv}/api/servers/{machineId}/shared_servers` (owner token), keeping each friend's per-server
+   * `accessToken` and shared section keys. THE TOKENS ARE SECRETS (ADR-114 C-02): the caller builds that friend's own
+   * client with one and drops it; nothing stores, logs or prints it. `listSharedServers` stays token-free for every
+   * other reader.
+   */
+  async listSharedServerAccess(): Promise<PlexSharedServerAccess[]> {
+    const root = await this.http.requestXml(
+      'GET',
+      `${this.plexTvBaseUrl}/api/servers/${this.machineIdentifier}/shared_servers`,
+    );
+    return parseSharedServerAccess(root);
+  }
 }
 
 export function plexReadClient(options: PlexClientOptions): PlexReadClient {
@@ -702,3 +739,5 @@ export type {
 
 // ADR-093 / DESIGN-052 D-01..D-03 (PLAN-072) — the Watchlist Registry's owner-token plex.tv reads.
 export * from './registry';
+// ADR-114 / DESIGN-055 P4 decisions 26-34 — the Watch Carry's read types and helpers.
+export * from './carry-read';

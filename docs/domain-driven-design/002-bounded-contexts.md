@@ -1,7 +1,7 @@
 # DDD-002: Bounded Contexts
 
 - **Status:** Accepted
-- **Last updated:** 2026-10-13 (ADR-109 / DESIGN-055 P6: BC-03's Wrong language writes a show's Audio Preference to Plex and runs the Language Replace). Prior: 2026-10-13 (ADR-109 / DESIGN-055 P5: BC-03 owns the Release List and the Release Pick's grab). Prior: 2026-10-13 (ADR-110 / DESIGN-055 P4: BC-03 owns the Title Check census and the Mislabel Block). Prior: 2026-10-12 (ADR-111 / DESIGN-055 P3: BC-05 owns the Seerr Issue mirror). Prior: 2026-10-11 (ADR-107 / DESIGN-054: BC-06 supplies personal evidence for agent-owned recommendations). Prior: 2026-09-26 (BC-03 gains watchlist protection for Trash: the Watchlist Registry, the Release Block write-back and a Seerr settings write — ADR-093, DESIGN-052; the "Seerr is read-only" rule is amended). Prior: 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
+- **Last updated:** 2026-10-13 (ADR-114 / DESIGN-055 P4 decisions 26 to 34: BC-03 owns the Watch Carry, a staff move's carry of every person's Plex watch state). Prior: 2026-10-13 (ADR-109 / DESIGN-055 P6: BC-03's Wrong language writes a show's Audio Preference to Plex and runs the Language Replace). Prior: 2026-10-13 (ADR-109 / DESIGN-055 P5: BC-03 owns the Release List and the Release Pick's grab). Prior: 2026-10-13 (ADR-110 / DESIGN-055 P4: BC-03 owns the Title Check census and the Mislabel Block). Prior: 2026-10-12 (ADR-111 / DESIGN-055 P3: BC-05 owns the Seerr Issue mirror). Prior: 2026-10-11 (ADR-107 / DESIGN-054: BC-06 supplies personal evidence for agent-owned recommendations). Prior: 2026-09-26 (BC-03 gains watchlist protection for Trash: the Watchlist Registry, the Release Block write-back and a Seerr settings write — ADR-093, DESIGN-052; the "Seerr is read-only" rule is amended). Prior: 2026-09-25 (BC-06 also writes the owner's plex.tv watchlist — ADR-092, DESIGN-051; its Outbound list says so too, PR #580 review F7). Prior: 2026-09-23 (BC-06 gains the public connector surface — ADR-091, DESIGN-050). Prior: 2026-09-23 (BC-06 Watch Companion — ADR-087/088/089, DESIGN-049)
 - **Related:** PRD-001, DDD-001
 
 Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs as
@@ -135,6 +135,13 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
   language through the import-confined `@hnet/plex/write` (ADR-109 C-07, owner ruling Q-03), and the **Language
   Replace** (T-324), a Fix whose search is a grab of a release in the wanted language.
 
+- **Watch Carry (ADR-114, T-326):** a staff move (the Season Re-map, the Second-Copy Fix, a show's Plex ordering
+  switch) carries every person's Plex plays and resume points onto the item that now plays the file they watched. BC-03
+  owns the carry and its Carry Snapshot (`watch_carries`, `watch_carry_states`, `watch_carry_marks`); it reads each
+  account with that account's own per-server token (BC-04's plex.tv share list, read at run time, never stored) and
+  writes through the import-confined `@hnet/plex/write`. BC-06's Watch Marks stay the owner's own; the carry never
+  records a Watch Event.
+
 ### BC-04 — Plex Sharing (Phase 3 — **built**: ADR-017 / DESIGN-007)
 
 - **Purpose:** the enforcement arm for library access. Registry of the three **Plex
@@ -249,3 +256,4 @@ Bounded contexts, one per cohesive model. Stable IDs `BC-NN`, cited across docs 
 | 2026-09-26 | Opus 5.5 | **BC-03 gains watchlist protection for Trash** (ADR-093 / DESIGN-052, PLAN-072): owns the Watchlist Registry and the Deleted-Release Record; reads plex.tv, community.plex.tv and Seerr per-user watchlists as guard input; two new confined writes (the Release Block release profiles in Radarr/Sonarr, the Seerr watchlist-sync flags). The "Seerr is read-only" rule is amended. No new context. |
 | 2026-10-12 | Opus 5.5 | **BC-05 gains the Seerr Issue** (ADR-111 / DESIGN-055 D-10, PLAN-077 P3): the read-only `seerr_issues` mirror (sync mode `seerr-issues`, issue webhooks trigger a fresh read, never a Notification), its audited staff note, and the `/r/seerr/<id>` link. |
 | 2026-10-13 | Opus 5.5 | **BC-03 gains the Title Check and the Mislabel Block** (ADR-110 / DESIGN-055 D-04, D-05, PLAN-077 P4): the `title_checks` census (sync mode `title-check`, read-only toward Sonarr), the `mislabel_block_terms` single-writer profile, and the Episode Re-map's library-file manual import and rename as new narrow write-backs. |
+| 2026-10-13 | Opus 5.5 | ADR-114 / DESIGN-055 P4 decisions 26 to 34 (owner ruling on issue #928): BC-03 owns the **Watch Carry** (T-326) and its **Carry Snapshot** (T-327), writing each account's Plex watch state with that account's own token, staff moves only. |

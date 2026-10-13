@@ -23,6 +23,19 @@ import { getRepairGuideRemedies } from './repair-guide-settings';
 import { appendRepairActions, createRepairRequest, recordRepairTransition } from './repair-requests';
 import { carryTitleCheckForward } from './title-check';
 import {
+  abandonWatchCarry,
+  carryWatchState,
+  markWatchCarryWaiting,
+  noteWatchCarry,
+  preClearWatchCarry,
+  takeWatchCarrySnapshot,
+  waitForCarryPlaces,
+  type CarryExpectedPlace,
+  type WatchCarryPlex,
+  type WatchCarryResult,
+  type WatchCarrySnapshot,
+} from './watch-carry';
+import {
   REMAP_COMMAND_WAIT,
   readBackRemapMove,
   readRemapSeasonState,
@@ -278,6 +291,26 @@ export interface RunSeasonRemapInput extends SeasonRemapRequest {
   commandWait?: { timeoutMs: number; intervalMs: number };
   /** Pause between steps, to pace Sonarr (tests set 0). */
   stepPauseMs?: number;
+  /**
+   * ADR-114 / P4 decisions 26-34 — the Watch Carry's Plex clients. When given, the run snapshots every account's watch
+   * state first (refusing when it cannot), clears the items the move takes files away from, and after the steps
+   * carries each account's state onto the items that now play the files. The staff tool always passes it.
+   */
+  watchCarry?: WatchCarryPlex | null;
+  /** The carry's wait for Plex to show each moved file on its new item (tests shorten it). */
+  carryWait?: { timeoutMs: number; intervalMs: number };
+  /** Pause between the carry's Plex calls (tests set 0). */
+  carryPauseMs?: number;
+}
+
+/** ADR-114 — what the run's Watch Carry did: its id, status and per-account counts (no names). */
+export interface SeasonRemapCarryOutcome {
+  carryId: string;
+  status: string;
+  accountsWithState: number;
+  /** The carry's result once it ran (null while it waits for Plex, or when it failed; `carry-finish` completes it). */
+  result: WatchCarryResult | null;
+  error: string | null;
 }
 
 export interface SeasonRemapRunResult {
@@ -294,6 +327,8 @@ export interface SeasonRemapRunResult {
   fileCountUnchanged: boolean;
   vacated: RemapEpisodeRef[];
   stoppedText: string | null;
+  /** ADR-114 — the Watch Carry (null when the run was given no carry clients). */
+  carry: SeasonRemapCarryOutcome | null;
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -327,6 +362,34 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
     );
   }
 
+  // ADR-114 C-02, C-03 — snapshot every account's watch state and clear what the move takes away, before anything moves.
+  let carry: WatchCarrySnapshot | null = null;
+  if (input.watchCarry) {
+    const sizeOf = new Map(season.files.map((f) => [f.id, f.size] as const));
+    const movingIds = [...new Set(plan.steps.map((s) => s.fileId))];
+    const sizes = movingIds.map((id) => sizeOf.get(id) ?? null);
+    if (sizes.some((size) => size === null || size <= 0)) {
+      throw new FixRefusedError('remap_refused', 'Sonarr does not list the size of every file that would move, so their watch state cannot be carried. Nothing moved.');
+    }
+    const seasons = [...new Set([input.seasonNumber, ...(plan.parking ? [plan.parking.seasonNumber] : [])])];
+    try {
+      carry = await takeWatchCarrySnapshot({
+        db: input.db,
+        plex: input.watchCarry,
+        kind: 'season_remap',
+        mediaItemId: season.mediaItemId,
+        seriesId: season.seriesId,
+        seasons,
+        scope: { moved: sizes as number[] },
+        detail: { planDigest: plan.digest, seasonNumber: input.seasonNumber },
+        pauseMs: input.carryPauseMs,
+      });
+      await preClearWatchCarry({ db: input.db, plex: input.watchCarry, snapshot: carry, pauseMs: input.carryPauseMs });
+    } catch (err) {
+      throw new FixRefusedError('remap_refused', `The watch state could not be carried (${errText(err)}). Nothing moved.`);
+    }
+  }
+
   const arr = input.arr;
   const sonarr = arr.read.sonarr;
   const seasonOfEpisode = new Map(season.episodes.map((e) => [e.id, e.seasonNumber] as const));
@@ -335,7 +398,9 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
   const filesBefore = season.files.length;
   const namesOf = new Map(season.files.map((f) => [f.id, f.sourceNames] as const));
   const evidenceEpisodes = season.episodes.map((e) => ({ id: e.id, seasonNumber: e.seasonNumber, episodeNumber: e.episodeNumber, title: e.title }));
-  const { repairRequestId } = await createRepairRequest({
+  let repairRequestId: string;
+  try {
+    ({ repairRequestId } = await createRepairRequest({
     db: input.db,
     requesterId: null,
     requesterIsAdmin: true,
@@ -372,8 +437,17 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
       ignorePlex: input.ignorePlex === true,
       // No Mislabel offer from a season re-map (it is not a shift).
       mislabelGroups: [],
+      watchCarry: carry ? { carryId: carry.carryId, accountsWithState: carry.accountsWithState, touchedStates: carry.touchedStates } : null,
     },
-  });
+  }));
+  } catch (err) {
+    // The move will not run: put back what the carry cleared.
+    if (carry && input.watchCarry) {
+      await abandonWatchCarry({ db: input.db, plex: input.watchCarry, carryId: carry.carryId, reason: errText(err), pauseMs: input.carryPauseMs }).catch(() => {});
+    }
+    throw err;
+  }
+  if (carry) await noteWatchCarry({ db: input.db, carryId: carry.carryId, detail: { repairRequestId } });
 
   const wait = input.commandWait ?? REMAP_COMMAND_WAIT;
   const pause = input.stepPauseMs ?? 1_000;
@@ -521,6 +595,23 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
     parked = { fileId: now.get(parkStep.fileId)?.id ?? parkStep.fileId, on: parkStep.to[0]!, belongs: back?.to ?? [] };
   }
   const movedFiles = new Set(doneSteps.filter((s) => s.kind !== 'park').map((s) => s.fileId)).size;
+
+  // ADR-114 C-04..C-06 — carry every account's state onto the items that now play the files, then verify.
+  let carryOutcome: SeasonRemapCarryOutcome | null = null;
+  const carryActions: TrailAction[] = [];
+  if (carry && input.watchCarry) {
+    carryOutcome = await finishSeasonCarry({ input, season, carry, plex: input.watchCarry });
+    carryActions.push({
+      step: 'season_remap_watch_carry',
+      at: at(),
+      ok: carryOutcome.status === 'verified',
+      carryId: carryOutcome.carryId,
+      status: carryOutcome.status,
+      totals: carryOutcome.result?.totals ?? null,
+      ...(carryOutcome.error ? { error: carryOutcome.error } : {}),
+    });
+  }
+
   const closing: TrailAction = {
     step: stoppedText === null ? 'season_remap_done' : 'season_remap_stopped',
     at: at(),
@@ -535,7 +626,7 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
     db: input.db,
     repairRequestId,
     transition: stoppedText === null ? 'completed' : 'failed',
-    actions: [closing],
+    actions: [closing, ...carryActions],
   });
   return {
     outcome: stoppedText === null ? 'moved' : 'stopped',
@@ -547,7 +638,52 @@ export async function runSeasonRemap(input: RunSeasonRemapInput): Promise<Season
     fileCountUnchanged,
     vacated: stoppedText === null ? plan.vacated : [],
     stoppedText,
+    carry: carryOutcome,
   };
+}
+
+/**
+ * ADR-114 C-04 — where Sonarr has each of the carry's files now: its season and first episode (Plex shows a two-episode
+ * file as one item there).
+ */
+export function expectedCarryPlaces(
+  sizes: readonly number[],
+  state: Pick<RemapSeasonState, 'episodes' | 'files'>,
+): CarryExpectedPlace[] {
+  const out: CarryExpectedPlace[] = [];
+  for (const size of sizes) {
+    const file = state.files.find((f) => f.size === size);
+    if (!file) continue;
+    const on = state.episodes.filter((e) => e.episodeFileId === file.id).sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);
+    if (on.length === 0) continue;
+    out.push({ size, season: on[0]!.seasonNumber, episode: on[0]!.episodeNumber });
+  }
+  return out;
+}
+
+/** After the steps: wait for Plex to show each moved file on its new item, then carry and verify (never throws). */
+async function finishSeasonCarry(args: {
+  input: RunSeasonRemapInput;
+  season: RemapSeasonState;
+  carry: WatchCarrySnapshot;
+  plex: WatchCarryPlex;
+}): Promise<SeasonRemapCarryOutcome> {
+  const { input, carry, plex } = args;
+  const base = { carryId: carry.carryId, accountsWithState: carry.accountsWithState };
+  try {
+    const sizes = carry.scope.moved === 'all' ? [] : carry.scope.moved;
+    const after = await readRemapSeasonState(input);
+    const expected = expectedCarryPlaces(sizes, after);
+    const wait = await waitForCarryPlaces({ plex, snapshot: carry, expected, ...(input.carryWait ?? {}) });
+    if (!wait.ready) {
+      await markWatchCarryWaiting({ db: input.db, carryId: carry.carryId, wait });
+      return { ...base, status: 'waiting', result: null, error: null };
+    }
+    const result = await carryWatchState({ db: input.db, plex, carryId: carry.carryId, pauseMs: input.carryPauseMs });
+    return { ...base, status: result.status, result, error: null };
+  } catch (err) {
+    return { ...base, status: 'cleared', result: null, error: errText(err) };
+  }
 }
 
 /** The ledger item for a Sonarr series by its tvdb id (the staff tool's target lookup). */

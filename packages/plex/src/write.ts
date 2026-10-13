@@ -13,6 +13,7 @@
 // read-merge-write invariant (never blind-overwrite a user's section set — ADR-017 D-02) is
 // the domain orchestrator's job; this client issues the single computed mutation it is given.
 import { PLEX_DISCOVER_BASE_URL, PLEX_TV_BASE_URL } from './config';
+import { isShowOrdering } from './carry-read';
 import { requireDiscoverId } from './discover';
 import { PlexHttp } from './http';
 import { childrenNamed } from './xml';
@@ -46,6 +47,12 @@ interface SharedServerAllBody {
 
 /** The library plugin identifier Plex's watched-state endpoints require. */
 const LIBRARY_IDENTIFIER = 'com.plexapp.plugins.library';
+
+// ADR-114 (owner ruling on issue #928, 2026-10-13: "Carry marks, then move") — the WATCH CARRY. A client built with a
+// FRIEND's per-server token (plex.tv shared_servers `accessToken`) writes THAT friend's state: `scrobble`,
+// `unscrobble` and `setProgress` carry each account's plays and resume point onto the item that now plays the file
+// they watched, and `setShowOrdering` / `refreshMetadata` switch a show's Plex ordering inside a carry. Reached ONLY
+// from the Watch Carry in @hnet/domain (watch-carry.ts), staff-started, each write audited (ADR-114 C-07, C-09).
 
 export class PlexWriteClient {
   private readonly http: PlexHttp;
@@ -160,6 +167,48 @@ export class PlexWriteClient {
       query: { ratingKey: requireDiscoverId(id) },
       accept: 'application/json',
     });
+  }
+
+  /**
+   * ADR-114 C-04 — set the TOKEN ACCOUNT's resume point on an item:
+   * `GET {baseUrl}/:/progress?key=<ratingKey>&identifier=com.plexapp.plugins.library&time=<ms>&state=stopped` (the
+   * call python-plexapi's `updateProgress` makes). Verified live 2026-10-13: an unwatched item keeps a point above 60 s
+   * (61 s, 75 s, 120 s, 300 s were kept; 30 s and 60 s were not), and a watched item keeps its plays and gains the point.
+   * Idempotent on the stored point, so retried like a GET. Only the Watch Carry calls it.
+   */
+  async setProgress(ratingKey: string, offsetMs: number): Promise<void> {
+    const time = Math.round(Number(offsetMs));
+    if (!Number.isFinite(time) || time <= 0) throw new TypeError('PlexWriteClient: a resume point must be a positive ms count');
+    await this.http.requestIdempotentGet(`${this.baseUrl}/:/progress`, {
+      query: { key: requireRatingKey(ratingKey), identifier: LIBRARY_IDENTIFIER, time, state: 'stopped' },
+      accept: 'application/xml',
+    });
+  }
+
+  /**
+   * ADR-114 C-08 — set a show's Plex "Episode ordering" on this server, for everyone:
+   * `PUT {baseUrl}/library/metadata/{show}/prefs?showOrdering=<value>` (Plex Web's "Edit > Advanced > Episode
+   * ordering"; `''` is the library default). The value is one of Plex's own options, checked before the URL is built.
+   * Idempotent on the stored value, so retried like a GET. Only the Watch Carry's ordering switch calls it, inside a
+   * carry, and reads the value back.
+   */
+  async setShowOrdering(showRatingKey: string, ordering: string): Promise<void> {
+    if (!isShowOrdering(ordering)) throw new TypeError(`PlexWriteClient: ${JSON.stringify(ordering)} is not a Plex episode ordering`);
+    await this.http.requestIdempotentPut(
+      `${this.baseUrl}/library/metadata/${encodeURIComponent(requireRatingKey(showRatingKey))}/prefs`,
+      { query: { showOrdering: ordering }, accept: 'application/json' },
+    );
+  }
+
+  /**
+   * ADR-114 C-08 — ask the server to refresh an item's metadata (`PUT {baseUrl}/library/metadata/{key}/refresh`), so a
+   * show re-matches its episodes after an ordering change. Plex answers at once and refreshes in the background.
+   */
+  async refreshMetadata(ratingKey: string): Promise<void> {
+    await this.http.requestIdempotentPut(
+      `${this.baseUrl}/library/metadata/${encodeURIComponent(requireRatingKey(ratingKey))}/refresh`,
+      { accept: 'application/json' },
+    );
   }
 
   private sharedServersUrl(sharedServerId?: string): string {

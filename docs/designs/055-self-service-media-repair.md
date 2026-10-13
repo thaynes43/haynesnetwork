@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
+- **Last updated:** 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
   missing, is a pick for all of them). Before that 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
@@ -104,6 +104,8 @@ Every write goes through `@hnet/arr/write`, `@hnet/plex/write` or the Seerr writ
 | Mislabel Block profile write | Sonarr | `/api/v3/releaseprofile` | D-05 |
 | `setAudioLanguagePreference(ratingKey, locale)` (named `setItemPreference` before P6) | each Plex server that carries the show | `PUT /library/metadata/{ratingKey}/prefs?audioLanguage=<locale>` | D-08, a show's original language only (Q-03 ruling, Q-08: a show only; P6 decision 2) |
 | `commentOnIssue`, `resolveIssue` | Seerr, with `X-API-User` | `POST /api/v1/issue/{id}/comment`, `POST /api/v1/issue/{id}/resolved` | D-10, as the bridge user (Q-02 ruling) |
+| `scrobble`, `unscrobble`, `setProgress` as each account | each Plex server, with the account's own token (the owner's, or a friend's per-server token from plex.tv `shared_servers`) | `/:/scrobble`, `/:/unscrobble`, `/:/progress` | P4 decisions 26-34, the Watch Carry (ADR-114), staff moves only |
+| `setShowOrdering`, `refreshMetadata` | each Plex server carrying the show | `PUT /library/metadata/{show}/prefs?showOrdering=`, `PUT /library/metadata/{show}/refresh` | P4 decision 31, inside a Watch Carry only |
 
 New reads (`@hnet/arr/read` and the Plex and Seerr read clients): `getManualImport` by `downloadId` or by folder
 (series, season), `listReleases` by episode or movie, queue records for a target, episode and movie files with
@@ -300,7 +302,9 @@ do not edit)", "must not contain" terms only, no tags.
     does not touch Plex: after it, the marks stay on the episode numbers, and the preview says so in one line. A Plex
     episode-ordering change (Case 3 of the P4 work order, The Loud House S10, fixed by hand by switching the show to TVDB
     ordering once nobody had watch state on it) moves watched marks; it is not built here. It would need its own ADR, a
-    Plex write and a watch-state check first.
+    Plex write and a watch-state check first. **Amended (P4 decisions 26 to 34, ADR-114):** a staff move now carries
+    every account's marks onto the content (the Watch Carry), and the ordering switch is built inside it (decision 31).
+    The person's own re-map still does not touch Plex.
 11. **What names can and cannot see.** LAZY's Amazon season packs of The Loud House S05 and S06 carry no episode titles
     (`The.Loud.House.S05E01.1080p.AMZN.WEBRip.DDP2.0.H.264-LAZY`), so Title Evidence is `silent` and the Title Check
     cannot flag them; subtitle and title-card evidence stay out of scope (Alternatives). A person who sees it can still
@@ -373,8 +377,8 @@ do not edit)", "must not contain" terms only, no tags.
     placed by staff on an open episode of its own chain so the rest of the chain lands: it stays wrong there, still
     flagged (its name still disagrees), and that episode's own file is missing from the library (Fix or Release Pick).
 20. **Order and the parking episode.** A step is ready when the episodes it moves onto are free (no file, or left by an
-    earlier step). When no step is ready the waits form a cycle (a swap or a rotation): its lowest single-episode file
-    moves first to the **Parking Episode** (an episode of the series with no file that no step targets and no queued
+    earlier step). When no step is ready the waits form a cycle (a swap or a rotation): its lowest single-episode file (in a cycle of
+    two-episode files only, its lowest file, decision 34) moves first to the **Parking Episode** (an episode of the series with no file that no step targets and no queued
     download or season pack targets, since an import landing on a parked file would replace it; an unmonitored episode
     first, as Sonarr grabs nothing for it, then this season, then specials, then any other season), the rest of the
     cycle follows, and the parked file then moves to its own episode. One parking episode serves every cycle in turn. A series with no free episode at all refuses a cycle
@@ -391,7 +395,7 @@ do not edit)", "must not contain" terms only, no tags.
     no worse, and goes ahead with the rest. A run refuses any move that makes Plex worse, or a check that could not be
     done (the plan prints the server's error), unless staff pass `--ignore-plex` (recorded on the Repair Request). So a
     season whose Plex numbering follows the release is left alone: moving it in Sonarr would put the wrong title on it
-    in Plex. Switching a show's Plex ordering stays out of scope (decision 10).
+    in Plex. Switching a show's Plex ordering is staff's `ordering-run` inside a Watch Carry (decision 31).
 22. **The run renames as it goes.** Each step: the file's own manual-import candidate, read from the season it sits in
     now (a parked file sits in the parking season); one `ManualImport` (`move`, the decision 6 fields) onto the step's
     episodes; the read-back (the file at its path holds exactly those episodes, under its new id); one `RenameFiles` for
@@ -411,6 +415,9 @@ do not edit)", "must not contain" terms only, no tags.
     server's database for that season, read only, for every account (`metadata_item_settings` view count and offset,
     and `metadata_item_views`). A season where any real person has watch state is not moved; it is listed for the owner
     with the counts. The app's Plex token sees only the owner's own state, so this is a staff step, not a code check.
+    **Superseded by decisions 26 to 34 (owner ruling on #928, 2026-10-13: "Carry marks, then move"):** `season-run`
+    now reads every account itself (the Carry Snapshot) and carries their state across the move, so a season with
+    watch state is moved, and the database read is no longer needed.
 24. **Evidence before each season** (owner ruling, 2026-10-13). Staff spot-check at least one swapped pair per season
     against the files' own subtitle streams (short reads, no full decodes; a title card frame when a file carries no
     text subtitles) and the TVDB overviews. A season where the evidence contradicts the names is skipped and reported.
@@ -431,6 +438,87 @@ do not edit)", "must not contain" terms only, no tags.
     (else it stops before searching), and sends one EpisodeSearch for the slot. The person's Replacement Preview is not
     a gate here: the copy's content stays on its own episode, so nothing is lost if no release is found and the slot
     shows as missing. Staff confirm first, by subtitles or durations, that both files hold the same episode.
+
+**The Watch Carry** (P4 decisions 26 to 34; ADR-114; owner ruling on issue #928, 2026-10-13: "Carry marks, then move").
+
+26. **What it is.** Plex keeps a person's plays, watch date and resume point on the episode item (by its guid), not on
+    the file. A staff move changes what those marks point at, so every staff move carries them: `season-run`,
+    `copy-run` and `ordering-run` always run inside a **Watch Carry** (`watch-carry.ts`): (1) a stored **Carry
+    Snapshot** of every account's state, refused when it cannot be read; (2) the items the move takes files away from
+    are cleared; (3) the move; (4) once Plex shows each moved file on its new item, each account's state is written onto
+    the item that plays the file they watched; (5) every account is read again and checked. The person's own re-map
+    (D-04) does not carry, and does not need to: it never moves a season anyone has watched without staff (decision 15).
+27. **Content is the file.** On each Plex server a file is known by its byte size (a move and a rename keep it; the
+    item's file name is kept for reading the record). An account's state for a file is its state on the item that
+    played it, summed over every item that played it (plays), with the latest resume point. Plex shows a two-episode file
+    as **one** item, at its first episode's number (read live: Mickey Mouse: Mixed-Up Adventures S01, `S01E13-14-15-16`
+    is item E13 alone), and plays the whole file from it, so a mark on that item means the person watched the whole
+    file, both segments. A second copy's plays count for its original's file (decision 32).
+28. **The snapshot.** For every Plex server that carries the series (`media_plex_matches`), the owner's token reads the
+    show's library section and every item of the scope with its files (`allLeaves` with `Media[].Part[]`), and every
+    account that can see that section is read with its own token: the owner, and each friend whose plex.tv
+    `shared_servers` share includes the section (their per-server `accessToken`, read at run time, held only inside
+    that friend's client, never stored, logged or printed). The scope is the season and the parking season (a re-map),
+    the season (a second copy), or the whole show (an ordering switch). Rows: `watch_carries` (the item map per server,
+    the scope, the counts by account index) and `watch_carry_states` (one per account and item with state: plays,
+    resume point, last watch, the files). Any account that cannot be read refuses the move, writing nothing. A new
+    snapshot of a series is refused while an earlier carry is `cleared`, `waiting` or `mismatch` (it would read the
+    cleared or not yet carried items as unwatched, and those marks would be lost): `carry-finish` or `carry-revert`
+    first. HaynesTower on 2026-10-13: the owner and 40 friends can see the
+    TV library; 11 have state on the held seasons. Plex Home managed users have no token here and are not read.
+29. **Clear what would be orphaned, before the move.** HaynesTower empties the trash after every scan, so an item whose
+    file leaves disappears, and its guid's state outlives it: the next file to land on that episode would come back
+    "watched". So the items holding a file the move takes away (a re-map's moving files; a second copy) are cleared for
+    every account with state on them (`unscrobble`) before the move. An ordering switch clears the items whose Plex
+    title differs from Sonarr's for the same number (the items it re-matches). The snapshot keeps what was cleared. The
+    carry is marked `cleared` before the first clear, so a run that dies part-way blocks a new snapshot. Any failure (a
+    write, a read, the audit) puts back every item already cleared, from its state now (a clear that landed but timed
+    out is not doubled), and refuses the move (`refused`); an item that cannot be put back leaves the carry `cleared`
+    and the error asks for `carry-revert`.
+30. **The carry.** After the move, for each account and each item of the write scope (an item that holds a touched file
+    now, or that held one before and still exists), the target is the state of the file it holds: **carried**, the plays
+    (one `scrobble` each, at most 5) and the resume point when the person had watched the file; **partial**, only the
+    resume point (above 60 s, the least Plex keeps on an unwatched item) when they had played part of it; **stale**,
+    nothing, when they never played that file (its old mark is cleared). An item playing two files counts as watched
+    only when both were (otherwise `partial`). Calls: nothing when the item already matches (plays equal, resume within
+    5 s); a lone `progress` when only the resume point differs; otherwise `unscrobble` (when anything is set), the
+    scrobbles, then `progress`. Items whose file did not change are never written. An item the account played after the
+    snapshot that the carry did not write is left alone (a real new view). **Two-segment re-pairings:** the file is the
+    unit, so a mark is carried only when the person watched the whole file that the new item plays; a resume point inside
+    it is carried as a resume point, never as a mark, and recorded `partial`. Before writing, the carry waits (paced, up
+    to 15 minutes) until every server shows each moved file on the item of its Sonarr season and first episode; Sonarr
+    asks both servers to scan the folder after each rename, so this is usually immediate. A wait that runs out leaves the
+    carry `waiting` for `carry-finish`.
+31. **The Plex ordering switch** (decision 10's ADR is ADR-114). `repair-guide.ts ordering-plan --tvdb <id> --ordering
+    tvdbAiring` reads each server's current ordering and how its titles agree with Sonarr's (the items that differ will
+    re-match), with a digest. `ordering-run ... --digest <d>` re-plans, takes a whole-show snapshot, clears the
+    differing items, then per server sets `showOrdering` (`PUT .../prefs`), reads it back and refreshes the show
+    (`PUT .../refresh`). It then waits (paced, up to 20 minutes) until each server's listing is unchanged across two
+    reads with 90% of the re-matched files on items titled as Sonarr titles them, or unchanged across five reads (Plex's
+    own TVDB data can differ from Sonarr's, as The Thundermans S4 does), and carries and verifies over the whole show.
+    The switch's before and after per server are on the carry. `''` (`--ordering default`) puts the library default
+    back, inside a carry too.
+32. **The Second-Copy Fix carries too** (the #928 case: The Simpsons S38E02 holds S38E01's content, and one person
+    watched it). `copy-run` snapshots the season with the copy's file deleted and the same as the original's, clears the
+    copy's item for everyone with state on it before the delete, and after the delete credits each person's plays of the
+    copy to the original's item. Nobody keeps a mark on the emptied episode, so its real episode comes back unwatched for
+    everyone who never saw it.
+33. **Verification and records.** After the writes each account with state, or written, is read again: every watched
+    file shows watched on the item that plays it, every resume point sits on the item holding its file, and no item in
+    the write scope whose file the account never played shows a mark. The counts per server and account index (watched
+    files carried, resume points, clean items, new views left alone, failed writes, mismatches) are on the carry and
+    printed by the tool, never a name. Status `verified` or `mismatch`; the season re-map's Repair Request and the copy's
+    Fix Request record the carry's id and status. Every mark written is one append-only `watch_carry_marks` row (the
+    state found, the state written, the calls, the result, the phase), in the transaction of the carry's counters.
+    `carry-status (--carry <id> | --tvdb <id>)` prints carries; `carry-finish --carry <id>` runs decision 30 again from
+    the stored snapshot (writing only what still differs); `carry-revert --carry <id>` puts every item the carry wrote
+    back to its state before the carry first wrote it, newest first. The watch date of a carried mark is the carry's time
+    and plays above 5 are carried as 5 (the snapshot keeps both). Pacing: 200 ms between accounts' reads and between
+    writes; one season at a time.
+34. **A two-episode file passes through the parking episode** (found planning Daniel Tiger's Neighborhood S05, whose
+    two-story files are paired against TVDB in two swaps). A cycle with no single-episode file used to refuse
+    (`no_parking`); now its lowest two-episode file parks on the one parking episode (Sonarr maps a file to whatever
+    episodes the import names) and its move back puts it on both its episodes again. Decision 20 is otherwise unchanged.
 
 ### D-06 Release Pick
 

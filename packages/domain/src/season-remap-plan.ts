@@ -344,7 +344,9 @@ export function buildSeasonRemapPlan(input: SeasonRemapInput): SeasonRemapPlan {
     }
     // Every pending file waits on another pending file. Walk the waits from the lowest one until it repeats: that is
     // a cycle (a file waiting on a cycle is not one, and parking it would free nothing the cycle needs). Park the
-    // cycle's lowest single-episode file.
+    // cycle's lowest single-episode file; a cycle of two-episode files only (P4 decision 34: Daniel Tiger's
+    // Neighborhood S05 swaps two-story files) parks its lowest file on the one parking episode, and that file's move
+    // back puts it on both its episodes again.
     if (parkedId !== null || parking === null) return finish([], 'no_parking', null, null, unplaced, open);
     const waitsOn = (id: number) => occupant.get(desire.get(id)!.find((e) => !free(id, e))!.id)!;
     const lowest = [...pending].sort((a, b) => byNumber(current.get(a)![0]!, current.get(b)![0]!))[0]!;
@@ -355,9 +357,9 @@ export function buildSeasonRemapPlan(input: SeasonRemapInput): SeasonRemapPlan {
       at = waitsOn(at);
     }
     const cycle = walk.slice(walk.indexOf(at));
-    const candidate = cycle
-      .filter((id) => current.get(id)!.length === 1)
-      .sort((a, b) => byNumber(current.get(a)![0]!, current.get(b)![0]!))[0];
+    const lowestFirst = (a: number, b: number) => byNumber(current.get(a)![0]!, current.get(b)![0]!);
+    const candidate =
+      cycle.filter((id) => current.get(id)!.length === 1).sort(lowestFirst)[0] ?? [...cycle].sort(lowestFirst)[0];
     if (candidate === undefined) return finish([], 'no_parking', null, null, unplaced, open);
     apply('park', candidate, [parking]);
     parkedId = candidate;
