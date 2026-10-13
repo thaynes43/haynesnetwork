@@ -553,6 +553,11 @@ Tapes S01E11 and S01E13, Sonarr 4.0.20.3012, read 2026-10-13):
     Refusal ("Its name is for a different movie"), approved or not; `silent` (an obfuscated name) is not. A whole disc
     image (BR-DISK, Raw-HD) is not a file Plex can play: it is never a pick (neither list, Not allowed). The plain words
     are `RELEASE_REASONS_VERSION` 2, so a stored list of version 1 is never shown again nor grabbed from.
+16. **The recommended override weighs the library's custom formats (found in the live check of v0.118.1).** SpongeBob
+    SquarePants S17E18, missing, had only rejected releases. The *arr's order led with an x265 WEBRip the profile scores
+    -9925, a format the owner refuses; an HDTV 1080p h264 release was only a quality the profile does not list. Among
+    Overrides of the same title evidence, the one with the higher custom-format score is now recommended first, then the
+    *arr's order. The list itself keeps the *arr's order.
 
 ### D-07 Queue-aware Force Search and the Import Check (issue #597 Part 1)
 
