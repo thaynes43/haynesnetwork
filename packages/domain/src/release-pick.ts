@@ -63,7 +63,7 @@ import {
 // ---------------------------------------------------------------------------------------------------------------------
 
 /** Bump when a reason's class or words change, so a stored list can be told apart from one the current rules give. */
-export const RELEASE_REASONS_VERSION = 1;
+export const RELEASE_REASONS_VERSION = 2;
 
 /**
  * DESIGN-055 D-06 — how long after the *arr's search a row can still be grabbed. The *arr keeps the rows it listed in
@@ -78,6 +78,9 @@ export const RELEASE_PICK_MOVIE_SIZE_CAP = 100 * 1024 ** 3;
 
 /** The qualities that are never the real release: theatre recordings, screeners and work prints (hard refusal). */
 const EARLY_COPY_QUALITIES = new Set(['cam', 'telesync', 'telecine', 'workprint', 'dvdscr', 'regional']);
+
+/** Whole disc images (P5 decision 15): not a file Plex can play, so not a person's pick. */
+const DISC_IMAGE_QUALITIES = new Set(['br-disk', 'raw-hd']);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Reasons in plain words
@@ -106,6 +109,7 @@ export type ReleaseReasonCode =
   | 'in_queue'
   | 'title_names_other_episode'
   | 'other_show'
+  | 'other_movie'
   // neither
   | 'not_this_episode'
   | 'existing_file'
@@ -409,10 +413,13 @@ function appReasons(release: ArrRelease, target: ReleasePickTarget, ctx: Describ
     out.push(reason('early_copy', 'hard', 'A camera recording or early copy, not the real release', null));
   } else if (q === '' || q === 'unknown') {
     out.push(reason('unknown_quality', 'hard', "Its quality can't be told from its name", null));
+  } else if (DISC_IMAGE_QUALITIES.has(q) && !have.some((r) => r.code === 'raw_disc')) {
+    // P5 decision 15: a whole disc image (BR-DISK, Raw-HD) is not a file Plex can play; never a person's pick.
+    out.push(reason('raw_disc', 'other', "A raw disc copy the library can't use", null));
   }
   const cap = target.kind === 'radarr' ? RELEASE_PICK_MOVIE_SIZE_CAP : RELEASE_PICK_EPISODE_SIZE_CAP;
   if (release.size !== null && release.size > cap && !have.some((r) => r.code === 'too_big')) {
-    out.push(reason('too_big', 'hard', `Much bigger than a ${noun(ctx)} should be`, null));
+    out.push(reason('too_big', 'hard', `Much bigger than ${target.kind === 'radarr' ? 'a movie' : 'an episode'} should be`, null));
   }
   return out;
 }
@@ -510,6 +517,13 @@ export function classifyReleases(releases: readonly ArrRelease[], target: Releas
       const te = movieTitleEvidence({ name: release.title, titles: target.titles, year: target.year });
       title = { verdict: te.verdict, namedLabel: null };
       if (te.verdict === 'agrees') evidenceRank = 0;
+      // P5 decision 15: a movie's Title Evidence has no `disagrees`; `ambiguous` is its mismatch (the name does not
+      // carry any of the movie's titles, or names another year), as for the Import Check (P2 decision 8). An indexer can
+      // tag another movie's release with this movie's id, and Radarr approves it (Zom 100's list, 2026-10-13, carried
+      // "The Convert 2023" and "The List 2023" as approved): it is never a pick, approved or not.
+      if (te.verdict === 'ambiguous') {
+        extra.push(reason('other_movie', 'hard', 'Its name is for a different movie', null));
+      }
     }
 
     const ctx: DescribeContext = { ...ctxBase, mislabeled: mislabeledAs !== null };
@@ -1123,6 +1137,8 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
   });
   const now = input.now ? input.now() : Date.now();
   if (now - list.searchedAt.getTime() > RELEASE_PICK_GRAB_WINDOW_MS) return refuse('list_stale');
+  // A list written under older rules is neither shown again nor grabbed from (P5 decision 15).
+  if (list.reasonsVersion !== RELEASE_REASONS_VERSION) return refuse('list_stale');
   // A list a grab already went out from is spent: what it offered may since have failed and been blocklisted. A grab
   // the site refused (nothing sent to the download client) leaves it usable, so another site can be tried.
   if (await listWasGrabbed(input.db, list.id)) return refuse('list_stale');
