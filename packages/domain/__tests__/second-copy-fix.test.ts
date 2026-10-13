@@ -20,7 +20,7 @@ const TITLES = ['Alpha Run', 'Bravo Night', 'Charlie Comes Home', 'Delta Force F
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** Season 1: E3's file is a second copy of E5 ("Echo Lake"); E5 has its own file. `names` overrides scene names. */
-function stubSonarr(opts: { e5HasFile?: boolean; names?: Record<number, string> } = {}) {
+function stubSonarr(opts: { e5HasFile?: boolean; names?: Record<number, string>; deleteNoop?: boolean } = {}) {
   const episodes = TITLES.map((title, i) => ({ id: 300 + i + 1, seasonNumber: 1, episodeNumber: i + 1, title, episodeFileId: 0 }));
   const files = new Map<number, { id: number; relativePath: string; sceneName: string; size: number }>();
   const contentOn: Array<[number, number]> = [[1, 1], [2, 2], [3, 5], [4, 4]];
@@ -55,6 +55,7 @@ function stubSonarr(opts: { e5HasFile?: boolean; names?: Record<number, string> 
     const del = /^\/api\/v3\/episodefile\/(\d+)$/.exec(p);
     if (method === 'DELETE' && del) {
       const id = Number(del[1]);
+      if (opts.deleteNoop) return json({});
       files.delete(id);
       for (const e of episodes) if (e.episodeFileId === id) e.episodeFileId = 0;
       state.deleted.push(id);
@@ -139,6 +140,17 @@ describe('Second-Copy Fix (DESIGN-055 P4 decision 25)', () => {
     const named = await planSecondCopyFix({ db: t.db, arr: agrees.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 2, copyOf: 4 });
     expect(named.refusal).toBeNull();
     expect(named.original).toMatchObject({ episodeNumber: 4 });
+  });
+
+  it('stops as failed, without searching, when the delete does not read back', async () => {
+    const arr = stubSonarr({ deleteNoop: true });
+    const target = { db: t.db, arr: arr.bundle, mediaItemId: itemId, seasonNumber: 1, episodeNumber: 3 };
+    const plan = await planSecondCopyFix(target);
+    await expect(runSecondCopyFix({ ...target, planDigest: plan.digest, evidence: EVIDENCE })).rejects.toBeInstanceOf(FixRefusedError);
+    expect(arr.state.searched).toEqual([]);
+    const [row] = await t.db.select().from(fixRequests).where(eq(fixRequests.mediaItemId, itemId));
+    expect(row!.status).toBe('failed');
+    expect((row!.actionsTaken as Array<{ step: string }>).map((a) => a.step)).toContain('delete_not_landed');
   });
 
   it('refuses a changed plan and a run without evidence, writing nothing', async () => {

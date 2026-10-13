@@ -199,11 +199,27 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
     await fail('delete_file', err);
     throw err;
   }
-  // Read back: the slot is empty and the original still holds its own file.
-  const [episodes, files] = await Promise.all([
-    remapGuarded('episodes', () => input.arr.read.sonarr.listEpisodes(plan.seriesId)),
-    remapGuarded('episode files', () => input.arr.read.sonarr.listEpisodeFileReleases(plan.seriesId)),
-  ]);
+  // Read back: the slot is empty and the original still holds its own file. A failed read closes the request `failed`
+  // with the delete on record (it happened), so the row neither hides it nor blocks a later Fix of the episode.
+  let episodes: Awaited<ReturnType<typeof input.arr.read.sonarr.listEpisodes>>;
+  let files: Awaited<ReturnType<typeof input.arr.read.sonarr.listEpisodeFileReleases>>;
+  try {
+    [episodes, files] = await Promise.all([
+      remapGuarded('episodes', () => input.arr.read.sonarr.listEpisodes(plan.seriesId)),
+      remapGuarded('episode files', () => input.arr.read.sonarr.listEpisodeFileReleases(plan.seriesId)),
+    ]);
+  } catch (err) {
+    await recordFixAction({
+      db: input.db,
+      fixRequestId,
+      transition: 'failed',
+      actions: [
+        { step: 'delete_file', endpoint, ok: true, at: at(), status: 200, copyFileId: plan.copy.fileId },
+        { step: 'delete_read_back', endpoint: 'GET /api/v3/episode, /episodefile', ok: false, at: at(), error: err instanceof Error ? err.message : String(err) },
+      ],
+    });
+    throw err;
+  }
   const slot = episodes.find((e) => e.id === plan.episode.id);
   const orig = episodes.find((e) => e.id === plan.original!.id);
   const readBack = {
@@ -230,10 +246,20 @@ export async function runSecondCopyFix(input: RunSecondCopyFixInput): Promise<Se
       { step: 'delete_read_back', endpoint: 'GET /api/v3/episode, /episodefile', ok: readBack.slotEmpty && readBack.copyGone && readBack.originalKept, at: at(), ...readBack },
     ],
   });
-  if (!readBack.originalKept) {
-    // Never search over a library that lost the original: staff look first.
-    await recordFixAction({ db: input.db, fixRequestId, transition: 'failed', actions: [{ step: 'original_missing', endpoint: 'GET /api/v3/episode', ok: false, at: at() }] });
-    throw new FixRefusedError('copy_refused', 'The copy was removed but the original no longer reads back on its episode. Nothing was searched.');
+  if (!readBack.slotEmpty || !readBack.copyGone || !readBack.originalKept) {
+    // Never search when the delete did not take, or over a library that lost the original: staff look first.
+    await recordFixAction({
+      db: input.db,
+      fixRequestId,
+      transition: 'failed',
+      actions: [{ step: readBack.originalKept ? 'delete_not_landed' : 'original_missing', endpoint: 'GET /api/v3/episode', ok: false, at: at(), ...readBack }],
+    });
+    throw new FixRefusedError(
+      'copy_refused',
+      readBack.originalKept
+        ? 'Sonarr still shows the copy on its episode, so nothing was searched.'
+        : 'The copy was removed but the original no longer reads back on its episode. Nothing was searched.',
+    );
   }
   let searchCommandId: number;
   try {

@@ -32,6 +32,12 @@ type StatusFilter = (typeof STATUS_FILTERS)[number];
 /** Client mirror of @hnet/domain OPEN_FIX_STATUSES — only these can be closed manually. */
 const OPEN_FIX_STATUSES = new Set(['pending', 'actioned', 'search_triggered']);
 
+/** DESIGN-055 P4 decision 25: a Fix the staff tool ran has no requester; its first trail step names the tool. */
+function fromStaffTool(actions: unknown): boolean {
+  const first = Array.isArray(actions) ? (actions[0] as { requester?: { staffTool?: unknown } } | undefined) : undefined;
+  return typeof first?.requester?.staffTool === 'string';
+}
+
 export default function AdminFixesPage() {
   const [status, setStatus] = useState<StatusFilter>(undefined);
   const utils = trpc.useUtils();
@@ -92,7 +98,7 @@ export default function AdminFixesPage() {
             {rows.map((fix) => (
               <tr key={fix.id}>
                 <td data-label="Requested">{formatWhen(fix.createdAt)}</td>
-                <td data-label="Requester">{fix.requester?.displayName ?? '(deleted user)'}</td>
+                <td data-label="Requester">{fix.requester?.displayName ?? (fromStaffTool(fix.actionsTaken) ? 'Staff' : '(deleted user)')}</td>
                 <td data-label="Item">
                   <Link className="row-link" href={`/library/${fix.item.id}`}>
                     {fix.item.title}
