@@ -51,12 +51,13 @@ export const radarrMovieSchema = z.object({
   hasFile: z.boolean(),
   movieFileId: z.number().int(),
   sizeOnDisk: z.number(),
-  // Absent on a movie Radarr has not refreshed yet, like Sonarr's series (2026-10-13): reads as no file.
+  // Optional: absent on a movie Radarr has not refreshed yet, like Sonarr's series (2026-10-13). Unlike Sonarr, `hasFile`
+  // is still there, so the adapter falls back to it (PR #951 review) instead of reading the movie as fileless.
   statistics: z
     .object({
       movieFileCount: z.number().int(),
     })
-    .default({ movieFileCount: 0 }),
+    .optional(),
   // Restore-fidelity extras (D-02 / D-05 arr_attrs)
   minimumAvailability: z.string(),
   status: z.string(),
