@@ -1,5 +1,37 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-13 16:30Z: Release Pick follow-ups #931 and #936; v0.120.1 live; Zom 100 and Croc fixed; `title_mismatch` stays report only
+
+- **#931 (Radarr grabbed The Convert for Zom 100):**
+  - Zom 100 is fixed. A staff Release Pick of the OzONE 1080p NF WEB-DL imported at 14:45Z (Radarr 9830), and Plex
+    shows the right 130-minute film. The first pick, the 2160p DUAL, failed in SABnzbd and closed as failed.
+  - A census of every Radarr grab since 2026-07-03 found 8 wrong-movie grabs. Croc (Supergator) is fixed with a staff
+    override pick of an English 720p WEB. A Movie of Eggs and Star Wars Rebels: Spark of Rebellion have no real
+    release anywhere.
+  - `title_mismatch` was **not** enforced. ADR-110 C-02 gives it no cell, and the fresh spot-check fails the bar:
+    Radarr's only row is a right release (Hope, `Hopeu.2026`), and 10 of Sonarr's 26 are probably right
+    (Peppa.Pig.2022). PLAN-065's ladder log, 2026-10-13, has the evidence.
+  - The Radarr per-movie Mislabel Block is not built: it needs movie tags, a new write kind. The design decision is
+    parked in [#940](https://github.com/thaynes43/haynesnetwork/issues/940), with the recommendation to leave it for
+    now. NinjaCentral was not reported, because there is no channel from the cluster.
+- **#936 (a release that holds several missing episodes):**
+  - Shipped in [#939](https://github.com/thaynes43/haynesnetwork/pull/939) (v0.120.0) as DESIGN-055 P5 decision 17.
+  - Its live check found Sonarr's scene mapping filing Spidey's untitled `S05E09E10` (E09 and E10 by subtitles) on
+    E17 to E20. Staff deleted that file at 15:56Z with a read-back, so E17 to E20 are missing again.
+  - [#945](https://github.com/thaynes43/haynesnetwork/pull/945) (v0.120.1) refuses a multi-episode row the *arr
+    renumbered (`renumbered`). Read live on v0.120.1 at 16:26Z: S05E20's JFF and RBB rows are Not allowed with that
+    reason. Spidey S05E17 to E20 cannot be fixed from the app, because no indexer has their content. Plex shows no
+    E13 to E20 on either server. The pick's Repair Request reads `completed`, since the import did land before the
+    delete.
+- **Spidey S5's other files were already misfiled:** five of six sit on the wrong episodes. The subtitle evidence and
+  the right placement are on [#928](https://github.com/thaynes43/haynesnetwork/issues/928#issuecomment-6149686202).
+  It needs hand ManualImports.
+- **Deployed:** haynes-ops [#3894](https://github.com/thaynes43/haynes-ops/pull/3894) (v0.120.0) and [#3895](https://github.com/thaynes43/haynes-ops/pull/3895)
+  (v0.120.1). The web pods, 24 sync CronJobs, the owed-check runner and the Books Census are all on v0.120.1. No
+  migration.
+- **Open:** #940 (owner decision, not urgent). Spidey S5 is on #928. OC-054 (the first person's pick) continues.
+- **Next:** P6 (language-aware Wrong language), in progress by another agent.
+
 ## 2026-10-13 15:10Z: #928 round: Plex ordering, Second-Copy Fix (v0.119.0), watched-season facts; open flags 400 to 321
 
 - **Plex ordering (staff hand op, coordinator ruling: no app write, no ADR).**
