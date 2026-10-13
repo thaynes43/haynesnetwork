@@ -460,7 +460,9 @@ names, never deleting a file, after a watch-state check on every Plex server and
   - Deployed by haynes-ops [#3889](https://github.com/thaynes43/haynes-ops/pull/3889),
     [#3890](https://github.com/thaynes43/haynes-ops/pull/3890) and [#3892](https://github.com/thaynes43/haynes-ops/pull/3892):
     3/3 web pods, all sync CronJobs, the owed-check runner and the Books Census on v0.119.1 (26 CronJobs). Migration 0103
-    is applied. On v0.119.1 the recommended pick for SpongeBob S17E17 is the HDTV 1080p h264 release, not the x265 one.
+    is applied. Decision 16 checked live on v0.119.1: E18 had a file by then, so it was read on S17E17 "Duct Tape Dystopia",
+    the next missing episode, which has the same release shape. Its recommended pick is the HDTV 1080p h264 release, not
+    the x265 one.
   - `release_pick` was switched on at 13:35Z (audited, actor null).
   - The live checks used `repair-guide.ts release-list` in a web pod, read-only, against Sonarr's own `GET /release`:
     - **SpongeBob SquarePants S17E18** (missing, monitored): Sonarr's episode search returned 22 rows, all rejected for
