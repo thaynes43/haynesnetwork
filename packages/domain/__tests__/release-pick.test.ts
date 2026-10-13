@@ -18,6 +18,7 @@ import {
   buildArrClientBundle,
   classifyReleases,
   completeRepairRequests,
+  computeRepairProgress,
   createRepairRequest,
   describeRejection,
   grabFromReleaseList,
@@ -155,10 +156,56 @@ describe('classifyReleases on the live Lost Tapes S01 lists (Case A, AC-40 relea
     const smokeAlarm = rows.find((r) => r.title.includes('Smoke.Alarm') && r.releaseGroup === 'AKARi')!;
     expect(smokeAlarm.state).toBe('not_allowed');
     expect(smokeAlarm.reasons.map((r) => r.code)).toContain('title_names_other_episode');
-    // The two-episode file holds E13 and E14: shown, never picked.
+    // The two-episode file holds E13 and E14. Whether E14 has a file is not known here, so it counts as having one: the
+    // release is shown, never picked (P5 decision 17).
     const pack = rows.find((r) => r.title.includes('S01E13E14'))!;
     expect(pack.state).toBe('not_allowed');
-    expect(pack.reasons.map((r) => r.code)).toContain('pack');
+    expect(pack.reasons.find((r) => r.code === 'holds_episode_with_file')).toMatchObject({
+      class: 'other',
+      text: 'Also holds S01E14, which already has a file',
+    });
+    expect(pack.holds).toBeNull();
+  });
+
+  it('a two-episode release whose episodes are all missing is a pick for both (P5 decision 17, issue #936)', () => {
+    // The shape of Spidey and His Amazing Friends S05E19 and E20: a scene-numbered two-segment file the *arr maps onto
+    // two missing episodes, rejected only by the profile's rules.
+    const two = releases().find((r) => r.title.includes('S01E13E14'))!;
+    const clean: ArrRelease = { ...two, guid: 'two-ep', rejections: ['HDTV-1080p is not wanted in profile'] };
+    const missing = (ids: number[]) => ({
+      ...episodeTarget(E13),
+      seasonEpisodes: lostTapes.episodes.map((e) => ({ ...e, hasFile: !ids.includes(e.id) })),
+    });
+    const E14 = lostTapes.episodes.find((e) => e.episodeNumber === 14)!;
+
+    const both = classifyReleases([clean], missing([E13.id, E14.id]));
+    expect(both.rows[0]).toMatchObject({
+      state: 'override',
+      recommended: true,
+      holds: [`S01E13 · ${E13.title}`, `S01E14 · ${E14.title}`],
+    });
+    // Its name is judged against both episodes; only a name that says it is another episode refuses it.
+    expect(both.rows[0]!.evidence!.verdict).not.toBe('disagrees');
+    expect(both.rows[0]!.reasons.map((r) => r.code)).toEqual(['quality_not_wanted']);
+    expect(both.offers).toEqual([
+      expect.objectContaining({ key: releaseKey(clean), state: 'override', overrideBody: true, episodeIds: [E13.id, E14.id] }),
+    ]);
+    // A one-episode release of the target ranks ahead of it: the person asked for this episode.
+    const single: ArrRelease = { ...clean, guid: 'one-ep', title: 'Regular.Show.The.Lost.Tapes.S01E13.Terror.Tales.of.the.Park.VII.720p.HDTV.x264-GRP', episodeNumbers: [13] };
+    expect(classifyReleases([clean, single], missing([E13.id, E14.id])).rows.find((r) => r.recommended)!.title).toBe(single.title);
+
+    // The same release when E14 has a file: Not allowed, and the reason names the episode.
+    // Both missing, but a Hard Refusal (the fixture's own blocked term): Not allowed, and it promises nothing.
+    const blocked = classifyReleases([two], missing([E13.id, E14.id]));
+    expect(blocked.rows[0]).toMatchObject({ state: 'not_allowed', holds: null });
+    expect(blocked.rows[0]!.reasons.map((r) => r.code)).toContain('blocked_term');
+    const oneHas = classifyReleases([clean], missing([E13.id]));
+    expect(oneHas.rows[0]).toMatchObject({ state: 'not_allowed', holds: null });
+    expect(oneHas.rows[0]!.reasons.map((r) => r.text)).toContain('Also holds S01E14, which already has a file');
+    expect(oneHas.offers).toEqual([]);
+    // A whole-season release stays Not allowed whatever is missing.
+    const season: ArrRelease = { ...clean, guid: 'season', title: 'Regular.Show.The.Lost.Tapes.S01.1080p.HDTV.x264-GRP', fullSeason: true, episodeNumbers: [] };
+    expect(classifyReleases([season], missing(lostTapes.episodes.map((e) => e.id))).rows[0]!.reasons.map((r) => r.code)).toContain('pack');
   });
 
   it('recommends the override the library scores highest among those whose name matches (P5 decision 16)', () => {
@@ -283,6 +330,8 @@ function stubArr() {
     movieHasFile: false,
     grabStatus: new Map<string, number>(),
     movieReleases: [] as Array<Record<string, unknown>>,
+    /** Sonarr's season list (the live Lost Tapes reads unless a test sets its own). */
+    releases: lostTapes.releases as Array<Record<string, unknown>>,
     history: [] as Array<Record<string, unknown>>,
     calls: [] as Call[],
   };
@@ -320,18 +369,20 @@ function stubArr() {
       return json({ ...(arrFixture('radarr.movie-byid') as Record<string, unknown>), hasFile: state.movieHasFile, monitored: true });
     }
     if (method === 'GET' && (p === '/api/v3/history/series' || p === '/api/v3/history/movie')) return json(state.history);
-    if (method === 'GET' && p === '/api/v3/release') return json(sonarr ? lostTapes.releases : state.movieReleases);
+    if (method === 'GET' && p === '/api/v3/release') return json(sonarr ? state.releases : state.movieReleases);
     if (method === 'POST' && p === '/api/v3/release') {
       const guid = (body as { guid: string }).guid;
       const status = state.grabStatus.get(guid) ?? 200;
       if (status !== 200) return json({ message: status === 404 ? "Couldn't find requested release in cache, try searching again" : 'Getting release from indexer failed' }, status);
       if (sonarr) {
-        const episodeId = (body as { episodeIds?: number[] }).episodeIds?.[0] ?? E11.id;
-        state.queue.push({
-          id: 5000 + state.queue.length, seriesId: lostTapes.seriesId, episodeId, seasonNumber: 1, downloadId: `dl-${guid}`,
-          title: 'grabbed', status: 'downloading', trackedDownloadStatus: 'ok', trackedDownloadState: 'downloading',
-          size: 1e9, sizeleft: 5e8, added: new Date().toISOString(),
-        });
+        // Sonarr's queue holds one record per episode of the download.
+        for (const episodeId of (body as { episodeIds?: number[] }).episodeIds ?? [E11.id]) {
+          state.queue.push({
+            id: 5000 + state.queue.length, seriesId: lostTapes.seriesId, episodeId, seasonNumber: 1, downloadId: `dl-${guid}`,
+            title: 'grabbed', status: 'downloading', trackedDownloadStatus: 'ok', trackedDownloadState: 'downloading',
+            size: 1e9, sizeleft: 5e8, added: new Date().toISOString(),
+          });
+        }
       }
       return json(body);
     }
@@ -497,6 +548,77 @@ describe('the Release Pick over embedded Postgres (DESIGN-055 D-06)', () => {
       .from(ledgerEvents)
       .where(and(eq(ledgerEvents.mediaItemId, showId), eq(ledgerEvents.eventType, 'repair_failed')));
     expect(failedEvents).toHaveLength(1);
+  });
+
+  it('a two-episode release lands on both missing episodes: one override grab, one Repair Request, completion waits for both (P5 decision 17)', async () => {
+    const arr = stubArr();
+    const E14 = lostTapes.episodes.find((e) => e.episodeNumber === 14)!;
+    arr.state.hasFile.delete(E14.id);
+    const two = lostTapes.releases.find((r) => String(r.title).includes('S01E13E14'))!;
+    arr.state.releases = [{ ...two, guid: 'two-ep', rejections: ['HDTV-1080p is not wanted in profile'] }];
+    const labels = [`S01E13 · ${E13.title}`, `S01E14 · ${E14.title}`];
+
+    const list = await openReleaseList({ db: t.db, arr: arr.bundle, ...e13(), requesterId: memberId });
+    const row = list.rows.find((r) => r.recommended)!;
+    expect(row).toMatchObject({ state: 'override', holds: labels });
+
+    // E14 got a file meanwhile: refused, nothing sent, and the answer names E14.
+    arr.state.hasFile.add(E14.id);
+    expect(
+      await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: row.key, requesterId: memberId }),
+    ).toMatchObject({ outcome: 'has_file', targetLabel: labels[1], repairRequestId: null });
+    // Something for E14 is in the queue: refused the same way.
+    arr.state.hasFile.delete(E14.id);
+    arr.state.queue = [{ id: 4000, seriesId: lostTapes.seriesId, episodeId: E14.id, seasonNumber: 1, downloadId: 'dl-other', title: 'other', status: 'downloading', trackedDownloadStatus: 'ok', trackedDownloadState: 'downloading', size: 1e9, sizeleft: 5e8 }];
+    expect(
+      await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: row.key, requesterId: memberId }),
+    ).toMatchObject({ outcome: 'on_its_way', targetLabel: labels[1] });
+    arr.state.queue = [];
+    expect(arr.grabs()).toHaveLength(0);
+
+    const result = await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: row.key, requesterId: memberId });
+    expect(result).toMatchObject({ outcome: 'grabbed', override: true, targetLabel: `${labels[0]} and ${labels[1]}` });
+    // The override body lists every episode.
+    expect(arr.grabs()).toEqual([
+      expect.objectContaining({ guid: 'two-ep', seriesId: lostTapes.seriesId, episodeIds: [E13.id, E14.id], shouldOverride: true }),
+    ]);
+    const [repair] = await t.db.select().from(repairRequests).where(eq(repairRequests.id, result.repairRequestId!));
+    expect(repair).toMatchObject({ kind: 'release_pick', scope: 'episode', targetChildIds: [E13.id, E14.id], targetLabel: `${labels[0]} and ${labels[1]}` });
+    expect(repair!.preview).toMatchObject({ episodes: labels });
+
+    // The other episode is held too: its list shows the download on its way; a second pick on it is refused.
+    const e14 = { mediaItemId: showId, scope: 'episode' as const, targetChildId: E14.id };
+    expect(await openReleaseList({ db: t.db, arr: arr.bundle, ...e14, requesterId: memberId })).toMatchObject({ status: 'on_its_way' });
+    await expect(
+      createRepairRequest({ db: t.db, requesterId: memberId, mediaItemId: showId, kind: 'release_pick', scope: 'episode', seasonNumber: 1, targetChildIds: [E14.id], preview: {} }),
+    ).rejects.toBeInstanceOf(FixAlreadyOpenError);
+
+    // The live chip follows the download of either episode.
+    const progress = () =>
+      computeRepairProgress({ db: t.db, arr: arr.bundle, repairRequestId: result.repairRequestId!, requesterId: memberId });
+    expect((await progress()).phase).toBe('downloading');
+
+    // Completion waits for every import, and so does the live chip.
+    arr.state.queue = [];
+    await t.db.insert(ledgerEvents).values({ mediaItemId: showId, eventType: 'imported', source: 'sonarr', occurredAt: new Date(Date.now() + 1000), payload: { episodeId: E13.id } });
+    expect((await completeRepairRequests({ db: t.db })).completed).not.toContain(result.repairRequestId);
+    expect((await progress()).phase).not.toBe('completed');
+    await t.db.insert(ledgerEvents).values({ mediaItemId: showId, eventType: 'imported', source: 'sonarr', occurredAt: new Date(Date.now() + 1000), payload: { episodeId: E14.id } });
+    expect((await progress()).phase).toBe('completed');
+    expect((await completeRepairRequests({ db: t.db })).completed).toContain(result.repairRequestId);
+  });
+
+  it('a two-episode pick whose download fails on either episode closes as failed (P5 decision 17)', async () => {
+    const arr = stubArr();
+    const E14 = lostTapes.episodes.find((e) => e.episodeNumber === 14)!;
+    arr.state.hasFile.delete(E14.id);
+    const two = lostTapes.releases.find((r) => String(r.title).includes('S01E13E14'))!;
+    arr.state.releases = [{ ...two, guid: 'two-ep', rejections: ['HDTV-1080p is not wanted in profile'] }];
+    const list = await openReleaseList({ db: t.db, arr: arr.bundle, ...e13(), requesterId: memberId });
+    const result = await grabFromReleaseList({ db: t.db, arr: arr.bundle, listId: list.listId!, key: list.recommendedKey!, requesterId: memberId });
+    expect(result.outcome).toBe('grabbed');
+    await t.db.insert(ledgerEvents).values({ mediaItemId: showId, eventType: 'download_failed', source: 'sonarr', occurredAt: new Date(Date.now() + 1000), payload: { episodeId: E14.id } });
+    expect((await settleReleasePicks({ db: t.db })).failed).toEqual([result.repairRequestId]);
   });
 
   it("a failed download frees the episode at once, read from the *arr's history, so the person can pick another", async () => {

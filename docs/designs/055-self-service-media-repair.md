@@ -2,7 +2,8 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
+- **Last updated:** 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
+  missing, is a pick for all of them). Before that 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
   D-17, one search per Fix D-25), DESIGN-046 (the queue janitor), DESIGN-052 (term grammar and single-writer profiles),
@@ -470,7 +471,7 @@ Tapes S01E11 and S01E13, Sonarr 4.0.20.3012, read 2026-10-13):
    the ADR-028 window ends `nothing_found`, and the re-map result offers it for each emptied episode (D-04 rule 9). The
    server applies the switch to every caller.
 2. **The read is Sonarr's season list, narrowed to the episode.** The rows kept are those numbered for the target (a
-   pack or a multi-episode file that holds it is shown, Not allowed) and a one-episode row numbered for another episode of
+   pack is shown, Not allowed; a multi-episode file that holds it follows decision 17) and a one-episode row numbered for another episode of
    the season whose own title names the target (Title Evidence `agrees` against the target). Why not `?episodeId=`: Case
    A's hand pick, OldT's `S01E10.Spice.It.Up` that held E11, is numbered for E10, and an episode search never returns it
    (the live E11 search listed only rows numbered S01E11). One season search also serves every missing episode of the
@@ -558,6 +559,40 @@ Tapes S01E11 and S01E13, Sonarr 4.0.20.3012, read 2026-10-13):
     -9925, a format the owner refuses; an HDTV 1080p h264 release was only a quality the profile does not list. Among
     Overrides of the same title evidence, the one with the higher custom-format score is now recommended first, then the
     *arr's order. The list itself keeps the *arr's order.
+17. **A release that holds several episodes, every one of them missing, is a pick for all of them (issue #936, ruled by
+    the coordinator on its proposal, 2026-10-13).** Spidey and His Amazing Friends S05E19 and S05E20 were missing, and
+    the only releases were files named `S05E09E10` in scene numbering. A scene episode is one broadcast of two segments,
+    and TVDB numbers each segment, so Sonarr maps these files onto E17 to E20, all four missing (read live 2026-10-13).
+    Disney's two-segment kids shows do this often. Until now such a row was Not allowed ("Holds more than this one
+    episode"), so the episodes could not be fixed from the app.
+    - **Which rows.** A row numbered for the target that holds more than one episode of the season (the *arr's mapped
+      numbers), and is not a season pack, is judged on the episodes it holds. When every one of them is on the season's
+      episode list and has no file, the row is a pick like any other: Grab, Override or Not allowed by its reasons. Title
+      Evidence judges its name against all of them, so a name that says it is another episode is still a Hard Refusal.
+    - **Not allowed when it would replace a file.** When another episode it holds has a file, the row stays Not allowed,
+      with the reason in plain words ("Also holds S01E14, which already has a file"; code `holds_episode_with_file`,
+      neither list). Replacing a file is what Fix is for. An episode whose file state is unknown counts as having one. A
+      season pack, and a row that holds an episode missing from the season's list, keep `pack`.
+    - **The grab.** The offer carries every episode id. The override body lists all of them in `episodeIds`; an approved
+      row keeps the plain body, which Sonarr maps onto all of them itself. Just before sending, every episode is read
+      again: one that has a file now, or has a download in the queue, refuses the grab with nothing sent, and the answer
+      names that episode.
+    - **One Repair Request for all of them.** `targetChildIds` holds every episode, under decision 6's open check per
+      episode: an open repair on any of them refuses the pick, and the pick holds each of them (its list answers
+      `on_its_way`). The request's label names each episode ("S05E19 · ... and S05E20 · ..."), and its preview keeps them
+      as `episodes`.
+    - **The confirm names each episode** ("Download this release for both of the missing episodes it holds:", then one
+      line per episode), and a row someone can pick says "Holds S05E19 and S05E20, both missing" where a one-episode row
+      shows its Title Evidence (a Not allowed row does not, so the line never sits beside a Hard Refusal). An override
+      is "an exception for these episodes".
+    - **Completion waits for every import.** `completeRepairRequests` already completes only when every target episode
+      has an `imported` event. The live chip (`fix.repairProgress`) follows the queue records of any of them, and reads
+      `completed` only once all of them imported. A `download_failed` on any of them closes the pick as failed.
+    - **The recommended pick.** Among Overrides, a release that holds several episodes ranks after every one that is the
+      target alone (evidence rank 3), then the custom-format score, then the *arr's order. The first Grab still leads.
+    - The plain words are `RELEASE_REASONS_VERSION` 3. Pinned by `release-pick.test.ts` (the pure rows on the Lost Tapes
+      S01E13E14 file, then the grab, the refusals, the open check, the live chip and completion over the embedded harness)
+      and `release-pick-guide.test.ts` (the words).
 
 ### D-07 Queue-aware Force Search and the Import Check (issue #597 Part 1)
 

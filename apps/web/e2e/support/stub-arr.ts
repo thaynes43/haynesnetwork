@@ -48,9 +48,11 @@
 //                        B's neighbour, and `GET /release?seriesId=501&seasonNumber=4` serves the season list
 //                        (releasePickSeasonList(): a Grab row for A; for B an Override with a custom-format score, one with
 //                        a quality not wanted, a mislabeled one numbered E04, a blocklisted and a wrong-title Not allowed
-//                        row, and an Override whose grab 409s). `POST /release` records its body (404 for an unknown guid,
-//                        409 for guid `stub-rp-b-409`, else 200 echo); `GET /_stub/release-grabs` reads the bodies back; a
-//                        grabbed release then shows in `GET /queue` as a downloading record for its episode.
+//                        row, and an Override whose grab 409s; E07 "Merge Conflict" and E08 "Deploy Day" are missing and
+//                        their only release is one two-episode file, P5 decision 17). `POST /release` records its body
+//                        (404 for an unknown guid, 409 for guid `stub-rp-b-409`, else 200 echo); `GET /_stub/release-grabs`
+//                        reads the bodies back; a grabbed release then shows in `GET /queue` as a downloading record for
+//                        each of its episodes.
 //   Always: `POST /command` `ManualImport` is recorded like any write, and afterwards its files' episodes (or movie)
 //   report `hasFile: true` and the download's queue records are gone; `GET /command/{id}` answers `completed`.
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -803,6 +805,10 @@ export const RELEASE_PICK_B_EPISODE = 5;
 export const RELEASE_PICK_B_PREVIOUS_EPISODE = 4;
 export const RELEASE_PICK_A_EPISODE_ID = releasePickEpisodeIdFor(RELEASE_PICK_A_EPISODE);
 export const RELEASE_PICK_B_EPISODE_ID = releasePickEpisodeIdFor(RELEASE_PICK_B_EPISODE);
+/** P5 decision 17 (issue #936): E07 and E08 are both missing, and their only release is one two-episode file. */
+export const RELEASE_PICK_C_EPISODES = [7, 8] as const;
+export const RELEASE_PICK_C_EPISODE_IDS = RELEASE_PICK_C_EPISODES.map(releasePickEpisodeIdFor);
+export const RELEASE_PICK_C_GUID = 'stub-rp-c1';
 export const RELEASE_PICK_TITLES: Readonly<Record<number, string>> = {
   1: 'Pilot Light',
   2: 'Legacy Code',
@@ -810,6 +816,8 @@ export const RELEASE_PICK_TITLES: Readonly<Record<number, string>> = {
   4: 'Cache Me Outside',
   5: 'Hotfix Hootenanny',
   6: 'Standup Showdown',
+  7: 'Merge Conflict',
+  8: 'Deploy Day',
 };
 /** Season 4's on-disk episodes (the rest are missing). */
 const RELEASE_PICK_ON_DISK = new Set([1, 2, 4, 6]);
@@ -862,6 +870,8 @@ function rpRow(r: {
   quality: ReturnType<typeof rpQuality>;
   releaseGroup: string;
   episode: number;
+  /** A multi-episode file: every episode it holds (the *arr's mapped numbers); default the one `episode`. */
+  episodes?: number[];
   approved: boolean;
   rejections: string[];
   customFormatScore: number;
@@ -878,9 +888,9 @@ function rpRow(r: {
     fullSeason: false,
     seasonNumber: RELEASE_PICK_SEASON,
     languages: RP_ENGLISH,
-    episodeNumbers: [r.episode],
+    episodeNumbers: r.episodes ?? [r.episode],
     mappedSeasonNumber: RELEASE_PICK_SEASON,
-    mappedEpisodeNumbers: [r.episode],
+    mappedEpisodeNumbers: r.episodes ?? [r.episode],
     approved: r.approved,
     temporarilyRejected: false,
     rejected: !r.approved,
@@ -998,6 +1008,20 @@ function releasePickSeasonList() {
       approved: true,
       rejections: [],
       customFormatScore: 100,
+    }),
+    // P5 decision 17: one two-segment file that holds E07 and E08, both missing (Spidey and His Amazing Friends' shape).
+    rpRow({
+      guid: RELEASE_PICK_C_GUID,
+      indexerId: 2,
+      title: `Breaking.Prod.${rpCode(RELEASE_PICK_C_EPISODES[0])}E${String(RELEASE_PICK_C_EPISODES[1]).padStart(2, '0')}.720p.WEB.H.264-JFF`,
+      size: 640_000_000,
+      quality: rpQuality(5, 'WEBDL-720p', 720),
+      releaseGroup: 'JFF',
+      episode: RELEASE_PICK_C_EPISODES[0],
+      episodes: [...RELEASE_PICK_C_EPISODES],
+      approved: false,
+      rejections: ['WEBDL-720p is not wanted in profile'],
+      customFormatScore: 0,
     }),
   ];
 }
@@ -1536,10 +1560,14 @@ export async function startStubArr(): Promise<StubArrServer> {
           if (!row) return json(res, 404, { message: "Couldn't find requested release in cache, try searching again" });
           if (guid === RELEASE_PICK_REFUSED_GUID) return json(res, 409, { message: 'Getting release from indexer failed' });
           releaseGrabs.push(body);
-          const target = Array.isArray(grab.episodeIds) && typeof grab.episodeIds[0] === 'number'
-            ? grab.episodeIds[0]
-            : releasePickEpisodeIdFor(row.episodeNumbers[0]!);
-          releaseGrabQueue.push(releasePickQueueRecord(guid, row.title, target, releaseGrabQueue.length + 1));
+          // Sonarr's queue holds one record per episode of the download.
+          const targets =
+            Array.isArray(grab.episodeIds) && grab.episodeIds.every((id) => typeof id === 'number')
+              ? (grab.episodeIds as number[])
+              : row.episodeNumbers.map(releasePickEpisodeIdFor);
+          for (const target of targets) {
+            releaseGrabQueue.push(releasePickQueueRecord(guid, row.title, target, releaseGrabQueue.length + 1));
+          }
           return json(res, 200, body ?? {});
         }
         // File deletes (AC-08 fallback) — accepted, recorded.

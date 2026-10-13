@@ -771,6 +771,8 @@ export function formatReleaseList(title: string, list: Awaited<ReturnType<typeof
       `${row.recommended ? '* ' : '  '}[${state}] ${row.title} | ${row.qualityName ?? '?'} ${gb(row.sizeBytes)} | ` +
         `${row.indexer ?? '?'}${row.keys.length > 1 ? ` +${row.keys.length - 1} more` : ''}${evidence} | key ${row.key}`,
     );
+    // P5 decision 17: a release that holds several missing episodes lands on every one of them.
+    if (row.holds) lines.push(`      holds: ${row.holds.join(' + ')}`);
     for (const r of row.reasons) {
       lines.push(`      ${r.class}: ${r.text}${r.arrText && r.arrText !== r.text ? `  [${r.arrText}]` : ''}`);
     }

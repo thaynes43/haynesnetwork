@@ -129,6 +129,24 @@ function codeOf(label: string): string {
   return label.split(' · ')[0] ?? label;
 }
 
+/** "S05E19 and S05E20", "S01E01, S01E02 and S01E03". */
+function andList(items: readonly string[]): string {
+  return items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
+}
+
+/** "both" for two, "all 3" for more. */
+function bothOrAll(n: number): string {
+  return n === 2 ? 'both' : `all ${n}`;
+}
+
+/**
+ * DESIGN-055 P5 decision 17 (issue #936): a release that holds several episodes, every one of them missing, fills them
+ * all. The line under its facts says which.
+ */
+export function holdsText(holds: readonly string[]): string {
+  return `Holds ${andList(holds.map(codeOf))}, ${holds.length === 2 ? 'both' : 'all'} missing`;
+}
+
 export type EvidenceTone = 'good' | 'quiet';
 
 /**
@@ -136,9 +154,10 @@ export type EvidenceTone = 'good' | 'quiet';
  * is another episode is not repeated here: its hard reason already says so, in the alert tone.
  */
 export function evidenceText(
-  row: Pick<ReleaseRow, 'evidence' | 'numberedAs'>,
+  row: Pick<ReleaseRow, 'evidence' | 'numberedAs' | 'holds'>,
   kind: PickArrKind,
 ): { text: string; tone: EvidenceTone } | null {
+  if (row.holds && row.holds.length > 1) return { text: holdsText(row.holds), tone: 'good' };
   if (row.numberedAs) {
     return { text: `Numbered as ${codeOf(row.numberedAs)}, but its title is this episode’s`, tone: 'good' };
   }
@@ -195,8 +214,12 @@ export function rowStateTag(row: Pick<ReleaseRow, 'state'>): string {
 export const BEST_CHOICE_LABEL = 'Best choice';
 
 /** One line on why the recommended row is the best choice. */
-export function bestChoiceWhy(row: Pick<ReleaseRow, 'state' | 'evidence' | 'numberedAs'>, kind: PickArrKind): string {
-  const matches = row.evidence?.verdict === 'agrees';
+export function bestChoiceWhy(
+  row: Pick<ReleaseRow, 'state' | 'evidence' | 'numberedAs' | 'holds'>,
+  kind: PickArrKind,
+): string {
+  // A release that fills several episodes: its line under the facts says which, so the name is not claimed for this one.
+  const matches = row.evidence?.verdict === 'agrees' && !(row.holds && row.holds.length > 1);
   if (row.state === 'grab') {
     return matches
       ? `It’s the one the library would pick on its own, and its name matches this ${noun(kind)}.`
@@ -315,13 +338,17 @@ export interface ConfirmLine {
  * hourly action it uses (for someone with a limit).
  */
 export function confirmPlan(
-  row: Pick<ReleaseRow, 'state' | 'reasons' | 'numberedAs'>,
+  row: Pick<ReleaseRow, 'state' | 'reasons' | 'numberedAs' | 'holds'>,
   input: { kind: PickArrKind; targetLabel: string; limited: boolean },
 ): ConfirmLine[] {
-  const lines: ConfirmLine[] = [{ text: `Download this release for ${input.targetLabel}.`, sub: [] }];
+  // P5 decision 17: a release that holds several missing episodes names each one it fills.
+  const holds = row.holds && row.holds.length > 1 ? row.holds : null;
+  const lines: ConfirmLine[] = holds
+    ? [{ text: `Download this release for ${bothOrAll(holds.length)} of the missing episodes it holds:`, sub: [...holds] }]
+    : [{ text: `Download this release for ${input.targetLabel}.`, sub: [] }];
   if (row.state === 'override') {
     lines.push({
-      text: `It is outside the library’s usual rules, so the library would not take it on its own. Grabbing it makes an exception for this one ${noun(input.kind)}.`,
+      text: `It is outside the library’s usual rules, so the library would not take it on its own. Grabbing it makes an exception for ${holds ? 'these episodes' : `this one ${noun(input.kind)}`}.`,
       sub: displayReasons(row)
         .filter((r) => r.class === 'overridable')
         .map((r) => r.text),

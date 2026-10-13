@@ -434,6 +434,18 @@ function flagsForTarget(events: MilestoneEvent[], childId: number | null): Targe
   return flags;
 }
 
+/** One target's flags from several episodes': imported only when every one imported, the rest when any did. */
+function combinedFlags(all: TargetFlags[]): TargetFlags {
+  if (all.length === 1) return all[0]!;
+  const latest = all.map((f) => f.lastActivityAt).filter((d): d is Date => d !== undefined);
+  return {
+    hasImported: all.every((f) => f.hasImported),
+    hasGrabbed: all.some((f) => f.hasGrabbed),
+    hasDownloadFailed: all.some((f) => f.hasDownloadFailed),
+    ...(latest.length > 0 ? { lastActivityAt: new Date(Math.max(...latest.map((d) => d.getTime()))) } : {}),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Roll-up projection (season episodes / artist albums).
 // ---------------------------------------------------------------------------
@@ -829,8 +841,11 @@ export async function computeRepairProgress(input: ComputeRepairProgressInput): 
   const childId = row.arrKind === 'radarr' ? null : (row.targetChildIds[0] ?? null);
   const queue = await readNormalizedQueue(input.arr, row.arrKind, row.arrItemId);
   const events = await loadMilestones(db, row.mediaItemId, anchorAt);
-  const records = childId === null ? queue : queue.filter((r) => r.childId === childId);
-  const flags = flagsForTarget(events, childId);
+  // DESIGN-055 P5 decision 17: a multi-episode Release Pick holds several episodes. Its download is any of theirs, and
+  // it is added only once every one of them has imported.
+  const children = row.arrKind === 'radarr' || row.targetChildIds.length <= 1 ? [childId] : row.targetChildIds;
+  const records = childId === null ? queue : queue.filter((r) => r.childId !== null && children.includes(r.childId));
+  const flags = combinedFlags(children.map((c) => flagsForTarget(events, c)));
   let hasGrabbed = flags.hasGrabbed;
   let lastActivityAt = flags.lastActivityAt;
   // The grab was sent before the row moved to `actioned`, so an empty queue right after it is the lag between the *arr
