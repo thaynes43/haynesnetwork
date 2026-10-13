@@ -1851,3 +1851,43 @@ checks:
       - "2026-10-13 00:40Z first seerr-issues run: 4 of 4 issues mirrored (all resolved), titles and episodes right (PLAN-077 P3 status)."
     links:
       prs: ['https://github.com/thaynes43/haynesnetwork/pull/911', 'https://github.com/thaynes43/haynes-ops/pull/3857']
+  - id: OC-053
+    title: 'P4 first week: the hourly Title Check census, the first person-run re-map, the Mislabel upkeep (PLAN-077 P4)'
+    opened: 2026-10-13
+    after: v0.116.0 deployed (haynes-ops 3882), episode_remap on at 03:05Z, the library-wide backfill written
+    not_before: 2026-10-20T03:00:00Z
+    due: 2026-11-12T00:00:00Z
+    owner: haynesnetwork coordinator (PLAN-077)
+    status: pending
+    check: |
+      1. Read a week of hourly `title-check` runs (CronJob logs, `title_checks` rows with origin 'history'): flags
+         opened, cleared, deferred, abandoned. Spot-check every new `disagrees` flag against the file (subtitles,
+         title card or runtime) and record whether the name was right. A false positive from a new name shape is a bug:
+         fix it (DESIGN-055 P4 decision 16 is the pattern). This is DESIGN-055 Q-06's week, read after the library-wide
+         census already kept the thresholds.
+      2. The first re-map a person runs from the title page or the Fix guide: its Repair Request completed, every move
+         read back, the files renamed, nothing orphaned (file count on disk unchanged), Plex showing the moved files on
+         their episodes. If none happened in the week, move the review a month with an evidence line.
+      3. The Mislabel Block: the hourly upkeep reports no drift and no error; profile 4 still holds the BiOMA term.
+      4. The remaining open flags (622 on 2026-10-13, 17 movable by a person): how many people moved, and whether any
+         "Ask staff" ticket came in. The rest wait on DESIGN-055 Q-11 (issue #916).
+    auto:
+      - name: the Mislabel Block holds the adopted Lost Tapes term
+        source: app-db
+        query: |
+          select count(*) as n from mislabel_block_terms where state = 'active' and series_id = 1061
+        expect: {min: 1}
+        mismatch: fail
+      - name: a person has run a re-map (requester set)
+        source: app-db
+        query: |
+          select count(*) as n from repair_requests where kind = 'remap' and requester_id is not null
+        expect: {min: 1}
+        mismatch: wait
+    auto_covers: part
+    evidence:
+      - "2026-10-13 02:35Z first hourly run: 194 imports, 14 disagree (12 were Loud House hold-folder names, now silent by decision 16)."
+      - "2026-10-13 03:4xZ staff re-maps (remap-run): Ben 10 (2016) S3 20 moves, Clarence S2 32, three singles; 55 moves, all read back and renamed."
+    links:
+      prs: ['https://github.com/thaynes43/haynesnetwork/pull/915', 'https://github.com/thaynes43/haynesnetwork/pull/918', 'https://github.com/thaynes43/haynesnetwork/pull/920']
+      issues: ['https://github.com/thaynes43/haynesnetwork/issues/916']

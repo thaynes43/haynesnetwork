@@ -4,7 +4,9 @@
   DESIGN-055 Q-01..Q-05 (the recommended option each time) and approved P1..P8 in this order, one phase per release,
   each verified live before the next. P0 (v0.111.2), P1 (v0.112.1), P2 (v0.113.1) and P3 (v0.114.0) are shipped and
   verified live; P0's week of census is owed (OC-048), P1's first guided Fixes OC-050, P2's first presses OC-051, P3's
-  first real Seerr issue OC-052. P4 is next.
+  first real Seerr issue OC-052. P4 (v0.115.0, v0.115.1, v0.116.0) is shipped and verified live, remedy on; its first
+  week of Title Check census and first person-run re-map are OC-053. Two owner questions are open: DESIGN-055 Q-10 (the
+  hand profile's five non-group blocks) and Q-11 (the library's whole-season reorderings, issue #916). P5 is next.
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45 / DESIGN-055.
 - **Owner goal (2026-10-12):** steer Plex users away from filing Seerr issues for staff and toward fixing problems
   themselves on haynesnetwork.com. It becomes a hard rule only once the platform reliably fixes what people report.
@@ -264,7 +266,36 @@ Priority is how often real reports need the remedy, and how much harm today's be
 - **Live check:** run a preview-only re-map on The Lost Tapes S01 (already fixed by hand, so the guide must find nothing
   to move) and read the first week's Title Check flags.
 - **Done when** the remedy is on and the first Mislabel term is the adopted Lost Tapes one.
-- **Build (2026-10-13):** DESIGN-055's "P4 decisions" (items 1-14, after D-05) record what landed and why.
+- **Status (2026-10-13): shipped, verified live, remedy on.** [#915](https://github.com/thaynes43/haynesnetwork/pull/915)
+  (v0.115.0), [#918](https://github.com/thaynes43/haynesnetwork/pull/918) (v0.115.1: a flag a person cannot move goes
+  to staff; a library's own file names are no evidence) and [#920](https://github.com/thaynes43/haynesnetwork/pull/920)
+  (v0.116.0: staff run the re-map from the cluster; the in-cluster tools drain stdout before exiting), deployed by
+  haynes-ops [#3861](https://github.com/thaynes43/haynes-ops/pull/3861), [#3873](https://github.com/thaynes43/haynes-ops/pull/3873)
+  and [#3882](https://github.com/thaynes43/haynes-ops/pull/3882): 3/3 web pods and all 24 CronJobs (the new
+  `sync-title-check` hourly at :35) on v0.116.0; migration 0101 applied. `episode_remap` switched on at 03:05Z (audited,
+  actor null). Live checks:
+  - Preview-only re-map of The Lost Tapes S01 (`repair-guide.ts remap-plan --tvdb 475718 --season 1`): nothing to move,
+    no suggestion.
+  - Library-wide Title Check (`title-check --backfill`, after a dry run): 18,205 files judged from 22,546 import records
+    (529 series). 692 disagreed. 15 of those named the library's own earlier mapping (12 from The Loud House hand fix
+    re-imported from a hold folder, 3 Be Cool, Scooby-Doo!); decision 16 records them silent, leaving 677 across 44
+    series. Spot-checks against the files' subtitles confirmed the names 3 of 3 (Abbott Elementary S01E08 holds "Step
+    Class", Guy's Grocery Games S03E05 holds "Around the World in Three Carts", Ben 10 (2016) S03E42 holds "My
+    Bodyguard"). Plex orders TV by TMDB on both servers (The Loud House by TVDB); for 548 of the 692, Plex shows the
+    slot's own title, so viewers saw one title and got another episode.
+  - The first hourly run (02:35Z) judged 194 imports from the last 48 hours: 14 disagreed, 12 of them the Loud House
+    hold-folder names (now silent).
+  - Fixed through the re-map, as staff (`remap-run`, decision 17), the five seasons a single claim could fix, after
+    checking no one had watch state on them: Ben 10 (2016) S3 (20 files, +1), Clarence (2014) S2 (32 files, -1), Guy's
+    Grocery Games S32E10, The Practice S06E17, Bob the Builder S15E08. 55 moves, each read back, all renamed; file counts
+    on disk unchanged; Plex shows the moved Ben 10 files on their right episodes. 622 flags stay open: 17 a person can
+    move from the title page, 605 need staff because the episode the name points at keeps its own file (whole-season
+    reorderings and rotations, issue #916, DESIGN-055 Q-11).
+  - Mislabel adoption: the BiOMA term on The Lost Tapes is the first Mislabel term (profile id 4, read back). The hand
+    profile (id 3, tag 31) stays with its five other blocks until Q-10 is ruled.
+  - No Seerr issue or person pressed the re-map yet; e2e `remap-episodes.spec.ts` covers the UI, and dev:local
+    screenshots at 1280 and 390 wide were checked (flags, the shift question, the preview, the result with the offer).
+- **Build (2026-10-13):** DESIGN-055's "P4 decisions" (items 1-17, after D-05) record what landed and why.
   - Step 1: migration 0101 (`title_checks`, `mislabel_block_terms`, run kind `title-check`, audit action
     `remove_mislabel_term`); `title-check.ts` (`runTitleCheck`, `backfillTitleChecks`, `listTitleFlags`,
     `titleCheckSummary`); sync mode `title-check` (the census, then the Mislabel upkeep); the nightly digest line;
