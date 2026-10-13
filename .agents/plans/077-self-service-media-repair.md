@@ -541,7 +541,50 @@ names, never deleting a file, after a watch-state check on every Plex server and
     - The UI was driven on dev:local, with screenshots at 390 and 1280 wide checked: the list, the closed section, each
       confirm step, a refusal, the grabbed step, on-its-way and admin.
   - No person has picked yet. The first person's pick is OC-054.
-- **Build (2026-10-13):** DESIGN-055's "P5 decisions" (items 1-16, after D-06) record what landed and why.
+- **Follow-ups (2026-10-13, 14:30Z to 16:30Z): issues #931 and #936.**
+  - **#931, Radarr grabbing another movie for Zom 100.**
+    - **Zom 100:** staff picks with `release-grab`. The recommended 2160p NF WEB-DL DUAL failed in SABnzbd ("Aborted,
+      cannot be completed", an old post), and its pick closed as failed from the history. The OzONE 1080p NF WEB-DL
+      (Grab) imported at 14:45Z onto Radarr movie 9830, and both Repair Requests closed as they should. Plex HaynesTower
+      and PlexOps show the 130-minute film. The Convert runs about 107 minutes.
+    - **Find the rest:** read-only, every Radarr grab since 2026-07-03 (1362 grabs) through `movieTitleEvidence`.
+      Eight movies had another movie's release grabbed:
+      - The four still missing: Zom 100 (The Convert), Croc (Supergator, DrunkenSlug), A Movie of Eggs (Alatriste) and
+        Star Wars Rebels: Spark of Rebellion (four Star Wars Rebels season packs).
+      - Croc: staff override pick of the English `Croc.2007.720p.WEB.x264-ASSOCiATE` (the only real releases are 720p or
+        below), imported 14:41Z. Plex on both servers shows the 88-minute film.
+      - A Movie of Eggs and Spark of Rebellion: no indexer has a real release. Every listed one is the wrong title and is
+        blocklisted or below the profile, so Radarr cannot grab one on its own.
+      - The other four have a file that is not the wrong grab. Hannibal Rising, Horrible Bosses 2 and Scooby-Doo carry
+        their own scene names, and Josee's file predates the grabs. That grab was probably the Korean live-action Josee
+        (2020).
+    - **`title_mismatch` not enforced:** there is no cell (ADR-110 C-02), and the fresh spot-check fails the ladder's
+      bar. Radarr's only row is a right release (Hope, `Hopeu.2026`), and 10 of Sonarr's 26 are probably right
+      (Peppa.Pig.2022). Evidence is in PLAN-065's ladder log, 2026-10-13.
+    - **The Radarr Mislabel Block:** not built. Release names carry nothing of the movie they were tagged for, so it
+      needs movie tags, a new write kind. Radarr never imports these on its own ("matched to movie by ID"). The
+      decision is parked with evidence and options in [#940](https://github.com/thaynes43/haynesnetwork/issues/940).
+    - **NinjaCentral:** not reported. Its per-release report needs a signed-in browser session; there is no other
+      channel from the cluster.
+  - **#936, a multi-episode release fills every missing episode it holds (DESIGN-055 P5 decision 17).**
+    - [#939](https://github.com/thaynes43/haynesnetwork/pull/939) (v0.120.0, deployed by haynes-ops
+      [#3894](https://github.com/thaynes43/haynes-ops/pull/3894)). The override lists every episode, one Repair Request
+      holds them all, the confirm names each, and completion and the live chip wait for every import.
+    - **Live check, 15:50Z: the motivating case was wrong.** Spidey S05E20's list offered the untitled `S05E09E10`
+      files for E17 to E20, because Sonarr's scene mapping files them there. Staff picked RBB's, and it imported onto
+      E17 to E20. Its own subtitles open with "Aunt May's Flying House" and "Spiders Versus Flies": TVDB E09 and E10.
+      The file was deleted by hand at 15:56Z and read back. E17 to E20 are missing again, PlexOps' Season 5 was
+      rescanned, and no Plex account had watched any S5 episode.
+    - [#945](https://github.com/thaynes43/haynesnetwork/pull/945) (v0.120.1, haynes-ops [#3895](https://github.com/thaynes43/haynes-ops/pull/3895)): a multi-episode
+      release the *arr renumbers (mapped numbers other than the name's) is never a pick, code `renumbered`. Read live
+      on v0.120.1: S05E20's JFF and RBB rows are Not allowed with that reason. S05E17 to E20 cannot be fixed from the
+      app: no indexer has their content.
+    - **The rest of Spidey S5 was already misfiled:** five of its six 24-minute files sit on the wrong episodes. The
+      subtitle evidence and the right placement are on
+      [#928](https://github.com/thaynes43/haynesnetwork/issues/928#issuecomment-6149686202). This needs hand
+      ManualImports: the Season Re-map's `--place` cannot shrink a four-episode mapping to two.
+- **Build (2026-10-13):** DESIGN-055's "P5 decisions" (items 1-16, after D-06, and 17 from the follow-ups) record what
+  landed and why.
   - Step 1: `release-pick.ts` (`describeRejection`, the plain words, `RELEASE_REASONS_VERSION` 1; `classifyReleases`, the
     three row states, hard refusals winning, rows of one release on several sites grouped, the recommended pick;
     `openReleaseList`, `previewReleaseList`). The read is Sonarr's season list narrowed to the episode (P5 decision 2: Case
