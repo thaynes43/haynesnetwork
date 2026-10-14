@@ -66,3 +66,20 @@ describe('stub Plex — the discover watchlist round trip (DESIGN-051 D-11)', ()
     ]);
   });
 });
+
+describe('stub Plex — physical-file audio evidence (DESIGN-055 P6 decision 15)', () => {
+  it('lists and reads the same Sonarr fixture file through the real Plex readers, without writes', async () => {
+    const tower = bundle().read.haynestower;
+    const writesBefore = stub.calls.length;
+    const file = { name: 'Breaking Prod - S01E03 [WEBDL-1080p]-STUB.mkv', size: 1_073_741_824 };
+    const episode = (await tower.listLeafFiles('501')).find((e) => e.season === 1 && e.episode === 3);
+    expect(episode?.parts).toEqual([file]);
+    const tracks = await tower.getAudioTracks(episode!.ratingKey, file);
+    expect(tracks?.map((t) => [t.displayTitle, t.isDefault])).toEqual([
+      ['Português (EAC3 5.1)', true],
+      ['English (EAC3 5.1)', false],
+    ]);
+    expect(await tower.getAudioTracks(episode!.ratingKey, { ...file, size: file.size + 1 })).toBeNull();
+    expect(stub.calls).toHaveLength(writesBefore);
+  });
+});

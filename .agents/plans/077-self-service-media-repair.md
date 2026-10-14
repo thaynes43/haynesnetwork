@@ -736,6 +736,20 @@ names, never deleting a file, after a watch-state check on every Plex server and
 
 ### P6: language-aware Wrong language
 
+- **Live corrective follow-up, 2026-10-14:** Mickey's S1 E1/E2 is one correctly imported physical file and one
+  Plex item. E2 retains its show-level play link and playback evidence, but the exact-index track-hint lookup loses
+  the 24 actual audio track names. DESIGN-055 P6 decision 15 specifies unique physical-file hint resolution for that
+  paired episode, including stale/ambiguous refusals and the scan sibling. Implement and test the read-only correction,
+  release/deploy it, then verify the E1 and E2 live previews expose the same real tracks. No audio eligibility or
+  preference-write rule changes.
+  - Implementation: `audio-preference.ts` resolves the show-local leaves by exact name, bytes and full Sonarr coverage;
+    `language-check.ts` reuses its internal read snapshot without adding public fields; `getAudioTracks` reads the exact
+    matching Part, including a later media version, and refuses missing, stale or repeated proof. The ordinary preview
+    and scan share that resolver. The e2e Plex fixture now serves the same physical Part on the leaf and stream reads.
+  - Local validation: domain `language-aware`, `fix-guards`, `fix-lifecycle` (83 tests), the full Plex package (141),
+    the web fixture smoke (2), domain/Plex/web typechecks and affected lint passed under nice 19 with one test worker.
+    Release, deployment and live E1/E2 verification remain the coordinator's next steps.
+
 **Live bug found 2026-10-13 23:26Z (v0.125.0 replacement follow-up).** Ben 10 (2016) S01E10's new MZABI file 79991
 contains only an Arabic track, confirmed by ffprobe; E12's LAZY file 79992 has English audio and its actual title card
 reads Adventures In Babysitting. The read-only English Language Replace plan for E10 chose Sonarr-approved

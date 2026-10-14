@@ -121,7 +121,7 @@ export * from './fix-flow';
 export * from './repair-guide-settings';
 export * from './fix-guards';
 export * from './fix-plan';
-export * from './language-check';
+export { readFileAudio, languageVerdict, type FileAudio, type FileAudioLanguages, type LanguageVerdict } from './language-check';
 export * from './audio-preference';
 export * from './language-replace';
 export * from './playback-evidence';
