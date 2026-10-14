@@ -14,7 +14,23 @@ concrete envelope before execution. The older mapping snapshot below is evidence
 replace those fresh reads. The latest offline review covers late-observe handling, actual mutating-GET deadline
 guards and v0.125.4 native-adoption code. It authorizes no media or cluster command.
 
-Recomputed current artifact hashes match the private `final13-16-preparation/artifact-hashes.json`:
+**Subsequent offline contract review, 2026-10-14T12:11:38Z:** the frozen initial worker exits naturally immediately after its accepted E51/E52
+finish. Capture its actual live pre-final state, full earlier completed prefix and verified parts before that finish,
+explicitly marked pre-final and nonterminal. After the finish, require the exact same Job/Pod UIDs, native
+Complete/succeeded=1/active=0 and every main/init container's actual exit 0/finishedAt, together with the actual
+`slot_fully_verified` 51 event and following `next_slot_gate` done/null/`final13to16Held=true` event. Combine those
+actual records with all 23 completed rows and current normal/file/account proofs. Do not claim a post-terminal
+Pod-exec state or finished-Plex-file capture, or reconstruct a terminal checkpoint. The controller and runtime
+consume native termination facts and completed rows; neither requires those unavailable terminal files.
+This clarifies the recipe's evidence provenance without changing worker/control code or weakening termination,
+all-23, fresh-prefix, root-mapping or sealing requirements. Future captures/expiry/identity remain blank.
+
+The approved host lifecycle helper is SHA `dc39136f3b5e5d54d739a903e210b81cb3d1391fd4416a4500692419fb72f575`;
+its contract proof is SHA `3b6c52a9060023b848494e61b8393f3ee84fc2d9543d08e1f0a3e9c53e491acd`. That read-only
+contract proof explicitly separates observed live E37 state from the not-yet-actual final-event shape; it is not
+the predecessor's terminal proof. The recipe-only provenance correction follows this docs-first clarification.
+
+The following hashes remain the original frozen **11:59:39Z** artifact snapshot, including the then-current recipe:
 
 | Prepared artifact | SHA-256 |
 | --- | --- |
@@ -23,6 +39,13 @@ Recomputed current artifact hashes match the private `final13-16-preparation/art
 | `job.suspended-proposal.json` | `c8dba3e9e0b528d079124feeef12170417ecf0a2eccdacd9befa1feed9c1b960` |
 | `envelope.prepared.json` | `3c3ea879061036a3ca4ff12c84232309fb0e9dbdc4f0bd393907f6d69567e94f` |
 | `execution-recipe.json` | `535b16267a1437ef8f85dde6d74aed06b22f61672befb7ac42a2b9ee07ab3932` |
+
+After the subsequent offline contract review above, only `execution-recipe.json` and its private manifest entry
+changed. The current recipe is **11155 bytes**, SHA
+`cf73b2ed7e5e4bb0aa0410aaf9cf52a9ca01a7379fcfb007fd033290c5d20e91`. Worker, controller, prepared envelope
+and suspended Job hashes remain exactly those in the frozen table. Preparation is still `preparedOnly=true`,
+the proposal is suspended, completed rows remain unsealed and future capture/expiry/identity fields are blank.
+No live prefix/mapping capture, sealing, command delivery or Job creation occurred during this offline review.
 
 See the [runtime checkpoint](2026-10-14-self-service-repair-runtime-proof.md) for actual rollout, immutable worker
 identities/bounds and the completed E37/E38 row. PLAN-077 remains Active; formal Step 5, Step 6 and P8 remain in
