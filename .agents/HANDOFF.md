@@ -1,5 +1,25 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14 10:42Z: Pokemon through E26; Mickey through E25/E26; multipart recovery PR in review
+
+- Pokemon E24/E26 completed normally and passed finishes 23/29. Twenty-four approved slots are complete;
+  eight replacements remain, plus held E8/E31. E28 is in progress. Its same-number destination is a different
+  season/file, S20E28. The [completed table](context/2026-10-14-pokemon-completed-slot-proof.md) records full IDs.
+- Mickey E21/E22, E23/E24 and E25/E26 passed finishes 56/62/68, with measured English/resolution, actual whole
+  imports, equal source/library SHA, original normal completion, strict captured-account marks and protected files.
+  Eleven initial slots are complete. E29/E30 has natively imported; physical ratification is pending. Never replay
+  that import. Final E13 to E16 runs last after all twenty-three initial slots and a fresh reviewed mapping.
+- [PR 987](https://github.com/thaynes43/haynesnetwork/pull/987) contains decision-40 multipart recovery. Focused
+  local validation passed. Two actual advisory findings are being corrected: an unresolved GRAB needs a narrow
+  queue hold without invented GUID ownership, and private command errors must name the correct flags. Renewed
+  review, all four required checks, signed release and verified deployment precede the final multipart run.
+- Signed v0.125.3 and both actual workers, cutoffs and declaration remain unchanged. Exact proof is in the
+  [runtime record](context/2026-10-14-self-service-repair-runtime-proof.md). Q-12 remains asked and unanswered.
+  OC-056 stays held until 2026-10-15T20:10Z and closed blocking Fixes, with Paw Patrol ordering inside its verified
+  Carry first. Final owed evidence follows the repairs and formal hold. P8 remains staff practice; readiness is
+  the owner's judgment.
+
+
 ## 2026-10-14 10:04Z: Pokemon through E23; Mickey through E19/E20; recovery tests underway
 
 - Pokemon E22/E23 completed normally and passed finishes 12/18. Twenty-two approved slots are complete; ten

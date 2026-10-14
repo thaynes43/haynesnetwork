@@ -48,7 +48,8 @@ import {
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { setAppSetting } from './app-settings';
 import { resolveDb } from './db-client';
-import { deferredWrongContentFailures } from './wrong-content-retry';
+import { deferredWrongContentFailures, WRONG_CONTENT_RETRY_HOLD } from './wrong-content-retry';
+import { selectedWrongContentQueueHolds } from './wrong-content-parts';
 import { QueueCleanupConfigInvalidError } from './errors';
 import {
   JANITOR_BLOCK_KINDS,
@@ -651,6 +652,8 @@ export interface QueueCleanupQueueItem {
    *  absent when the record carries none (an unknown-artist Lidarr record). Persisted as the row's `targetId`;
    *  keys the manual_match loop guard and the digest's repeat-search list. */
   targetId?: number | null;
+  /** Native Sonarr series identity, used only for exact selected-part queue ownership. */
+  parentId?: number | null;
 }
 
 /** The per-instance surface the evaluator drives. Tests inject a stub; prod wires the real *arr clients. */
@@ -913,7 +916,7 @@ export function buildQueueCleanupClients(clients: {
         sonarrPass = sonarrImportReads();
         const records = await clients.read.sonarr.getQueueAll();
         return records.map((r: SonarrQueueRecord) =>
-          remember(normalizeItem(r, r.episodeId ?? null), {
+          remember({ ...normalizeItem(r, r.episodeId ?? null), parentId: r.seriesId ?? null }, {
             parentId: r.seriesId ?? null,
             childId: r.episodeId ?? null,
           }),
@@ -2701,6 +2704,9 @@ export async function evaluateQueueCleanup(input: {
       }
     }
 
+    const selectedPartHolds =
+      instance === 'sonarr' ? await selectedWrongContentQueueHolds({ db: input.db, items }) : new Set<string>();
+
     // 2. One decision per download (D-11), in first-seen queue order — the cap is spent per download.
     const results = new Map<QueueCleanupQueueItem, RecordResult>();
     let actionsTaken = 0;
@@ -2718,6 +2724,13 @@ export async function evaluateQueueCleanup(input: {
       const setAll = (r: RecordResult) => {
         for (const m of members) results.set(m.item, r);
       };
+      if (
+        members.some((m) => selectedPartHolds.has(`${m.item.downloadId}\u0000${m.item.parentId}\u0000${m.item.title}`))
+      ) {
+        for (const m of members) m.reason = WRONG_CONTENT_RETRY_HOLD;
+        setAll(result('none'));
+        continue;
+      }
 
       // Nothing to enforce, or a mixed download: no call. A record that would have acted on its own records
       // `skipped_mixed`; the rest keep their own verdict (rule 3). A record held by the loop guard is

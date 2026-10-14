@@ -146,6 +146,8 @@ import {
   runWrongContentReplace,
   finishWrongContentReplaceCarry,
   wrongContentRefusalText,
+  planWrongContentPartResume,
+  runWrongContentPartResume,
   planWrongContentRetry,
   runWrongContentRetry,
   wrongContentRetryRefusalText,
@@ -181,8 +183,10 @@ const USAGE = `Usage:
   repair-guide.ts replace-plan --tvdb <id> (--episode S03E01 [--also <n>,...] | --season <n> --slots 1,2,33+34)
   repair-guide.ts replace-run  --tvdb <id> --episode S03E01 [--also <n>,...] --key <key>[,<key>] --digest <the replace-plan digest> --evidence "<note>" [--same-as [<n>:]S03E07,...]
   repair-guide.ts replace-batch --tvdb <id> --season <n> --batch '<json list>' [--pause-ms <ms>]
-  repair-guide.ts replace-retry-plan --parent fix:<id> [--discard-download <id>] [--key <key>]
-  repair-guide.ts replace-retry-run --parent fix:<id> [--discard-download <id> --conflict-evidence "<proof>"] --key <key> --digest <d> --evidence "<proof>"
+  repair-guide.ts replace-part-plan --parent fix:<id> --part <stored-part-id>
+  repair-guide.ts replace-part-run --parent fix:<id> --part <stored-part-id> --digest <d> --evidence "<proof>"
+  repair-guide.ts replace-retry-plan --parent fix:<id> [--failed-download <id>] [--discard-download <id>] [--key <key>]
+  repair-guide.ts replace-retry-run --parent fix:<id> [--failed-download <id>] [--discard-download <id> --conflict-evidence "<proof>"] --key <key> --digest <d> --evidence "<proof>"
   repair-guide.ts owned-import-plan --parent fix:<id>|release_pick:<id> --download <id>
   repair-guide.ts owned-import-run --parent <kind>:<id> --download <id> --digest <d> --evidence "<physical proof>"
 
@@ -239,6 +243,8 @@ export interface RepairGuideArgs {
     | 'replace-plan'
     | 'replace-run'
     | 'replace-batch'
+    | 'replace-part-plan'
+    | 'replace-part-run'
     | 'replace-retry-plan'
     | 'replace-retry-run'
     | 'owned-import-plan'
@@ -246,6 +252,8 @@ export interface RepairGuideArgs {
   parent?: OwnedImportParent;
   download?: string;
   conflictingDownload?: string;
+  failedDownload?: string;
+  part?: string;
   conflictEvidence?: string;
   /**
    * replace-run: the episodes (this show) whose own file holds a wrong file's story; `copyOf` names the slot episode
@@ -391,6 +399,8 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'replace-plan' &&
     command !== 'replace-run' &&
     command !== 'replace-batch' &&
+    command !== 'replace-part-plan' &&
+    command !== 'replace-part-run' &&
     command !== 'replace-retry-plan' &&
     command !== 'replace-retry-run' &&
     command !== 'owned-import-plan' &&
@@ -410,6 +420,12 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         i += 1;
         break;
       }
+      case '--part':
+        if (!value || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) throw new Error('--part needs the stored part id');
+        args.part = value; i += 1; break;
+      case '--failed-download':
+        if (!value || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) throw new Error('--failed-download needs the failed download id');
+        args.failedDownload = value; i += 1; break;
       case '--download':
         if (!value || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) throw new Error('--download needs the owned download id');
         args.download = value;
@@ -631,12 +647,21 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         throw new Error(`unknown argument "${flag}"`);
     }
   }
+  if (command === 'replace-part-plan' || command === 'replace-part-run') {
+    const allowed = ['command', 'replaceFile', 'parent', 'part', 'digest', 'evidence'];
+    if (Object.keys(args).some(k => !allowed.includes(k)) || args.parent?.kind !== 'fix' || !args.part ||
+      (command === 'replace-part-run' ? !args.digest || !args.evidence : args.digest || args.evidence))
+      throw new Error('replace-part-plan needs only --parent fix:<id> and --part; replace-part-run also needs the reviewed --digest and physical --evidence');
+    return args;
+  }
+  if (args.part) throw new Error('--part belongs only to replace-part commands');
   if (command === 'replace-retry-plan' || command === 'replace-retry-run') {
     const allowed = [
       'command',
       'replaceFile',
       'parent',
       'conflictingDownload',
+      'failedDownload',
       'key',
       'digest',
       'evidence',
@@ -659,7 +684,7 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
       );
     return args;
   }
-  if (args.conflictingDownload || args.conflictEvidence)
+  if (args.failedDownload || args.conflictingDownload || args.conflictEvidence)
     throw new Error('Discard flags belong only to staff replace-retry commands');
   if (command === 'owned-import-plan' || command === 'owned-import-run') {
     const allowed = ['command', 'replaceFile', 'parent', 'download', 'digest', 'evidence'];
@@ -910,12 +935,21 @@ async function main(): Promise<number> {
     return 2;
   }
   const db = defaultDb;
+  if (args.command === 'replace-part-plan' || args.command === 'replace-part-run') {
+    const request = { db, arr: arrClientBundleFromEnv(), actor: { kind: 'staff' as const },
+      fixRequestId: args.parent!.id, partId: args.part! };
+    const result = args.command === 'replace-part-plan' ? await planWrongContentPartResume(request)
+      : await runWrongContentPartResume({ ...request, digest: args.digest!, evidence: args.evidence! });
+    console.log(JSON.stringify(result, null, 2));
+    return 0;
+  }
   if (args.command === 'replace-retry-plan' || args.command === 'replace-retry-run') {
     const request = {
       db,
       arr: arrClientBundleFromEnv(),
       actor: { kind: 'staff' as const },
       fixRequestId: args.parent!.id,
+      failedDownloadId: args.failedDownload,
       conflictingDownloadId: args.conflictingDownload,
       key: args.key,
     };
@@ -1575,7 +1609,7 @@ if (process.argv[1]?.endsWith('repair-guide.ts')) {
       process.stdout.write('', () => process.exit(code));
     })
     .catch(async (error: unknown) => {
-      if (process.argv[2]?.startsWith('replace-retry-')) {
+      if (process.argv[2]?.startsWith('replace-retry-') || process.argv[2]?.startsWith('replace-part-')) {
         const e = error !== null && typeof error === 'object'
           ? error as { name?: unknown; code?: unknown }
           : {};

@@ -1,3 +1,9 @@
+import {
+  readWrongContentPartSelection,
+  selectedPartBindings,
+  assertWrongContentPartInterlock,
+  type WrongContentPartSelection,
+} from './wrong-content-parts';
 // DESIGN-055 P4 decision 38: explicitly confirmed import follows the request that owns the grab.
 // No public parent IDs, parallel repair, library remap, rejection stripping or uncertain-command replay.
 import { createHash, randomUUID } from 'node:crypto';
@@ -168,6 +174,7 @@ type ParentState = {
   intents: Array<{ title: string; ids: number[] }>;
   seriesId: number;
   fingerprint: string;
+  partSelection?: WrongContentPartSelection | null;
 };
 function refuse(message: string): never {
   throw new FixRefusedError('needs_guide', message);
@@ -249,7 +256,10 @@ async function loadParent(input: OwnedSonarrImportInput, lock = false): Promise<
       refuse('The owning Fix needs its verified Watch Carry and recorded grab intent.');
     }
     carrySeriesId = carry.seriesId;
+    const partSelection = readWrongContentPartSelection(carry.detail);
+    if (partSelection) assertWrongContentPartInterlock(partSelection, p.actionsTaken);
     carryFingerprint = {
+      partSelection,
       id: carry.id,
       status: carry.status,
       seriesId: carry.seriesId,
@@ -290,6 +300,7 @@ async function loadParent(input: OwnedSonarrImportInput, lock = false): Promise<
       actions: p.actionsTaken,
       allowed,
       intents,
+      partSelection,
     };
   } else {
     const query = db.select().from(repairRequests).where(eq(repairRequests.id, input.parent.id));
@@ -459,36 +470,75 @@ async function buildPlan(input: OwnedSonarrImportInput): Promise<InternalPlan> {
   let chosen = matches.length === 1 ? matches[0]! : null;
   const targetIds = ids(grabbed.map((h) => h.episodeId));
   // Decision 39 retry titles need their actual call/GUID proof, not the original parent's creation timestamp.
-  const retries = p.actions.filter((a) => a.step === 'wrong_content_retry_grab_intent' &&
-    titles.length === 1 && a.title === titles[0]);
+  const retries = p.actions.filter(
+    (a) =>
+      a.step === 'wrong_content_retry_grab_intent' && titles.length === 1 && a.title === titles[0],
+  );
   if (retries.length) {
     if (!retries.some((a) => same(ids(a.episodeIds), targetIds)))
       refuse('The download is not the exact grab recorded by this parent.');
     let missingProof = false;
     const bound = retries.filter((retry) => {
-      const call = p.actions.find((a) => a.step === 'wrong_content_retry_grab_call_result' &&
-        a.attemptId === retry.attemptId && a.title === retry.title &&
-        same(ids(a.targetEpisodeIds), ids(retry.episodeIds)));
-      const start = Date.parse(String(call?.startedAt)), end = Date.parse(String(call?.finishedAt));
+      const call = p.actions.find(
+        (a) =>
+          a.step === 'wrong_content_retry_grab_call_result' &&
+          a.attemptId === retry.attemptId &&
+          a.title === retry.title &&
+          same(ids(a.targetEpisodeIds), ids(retry.episodeIds)),
+      );
+      const start = Date.parse(String(call?.startedAt)),
+        end = Date.parse(String(call?.finishedAt));
       if (!call || !Number.isFinite(start) || !Number.isFinite(end) || end < start) {
         missingProof = true;
         return false;
       }
-      const bounded = history.filter((h) => h.eventType === 'grabbed' && h.sourceTitle === retry.title &&
-        h.downloadId && h.date && Date.parse(h.date) >= Math.floor(start / 1000) * 1000 && Date.parse(h.date) <= end);
+      const bounded = history.filter(
+        (h) =>
+          h.eventType === 'grabbed' &&
+          h.sourceTitle === retry.title &&
+          h.downloadId &&
+          h.date &&
+          Date.parse(h.date) >= Math.floor(start / 1000) * 1000 &&
+          Date.parse(h.date) <= end,
+      );
       if (typeof call.downloadId !== 'string') {
         if (bounded.some((h) => h.downloadId === input.downloadId)) missingProof = true;
         return false;
       }
       const downloads = [...new Set(bounded.map((h) => h.downloadId))];
-      return downloads.length === 1 && downloads[0] === input.downloadId &&
-        call.downloadId === input.downloadId && same(ids(bounded.map((h) => h.episodeId)), ids(retry.episodeIds));
+      return (
+        downloads.length === 1 &&
+        downloads[0] === input.downloadId &&
+        call.downloadId === input.downloadId &&
+        same(ids(bounded.map((h) => h.episodeId)), ids(retry.episodeIds))
+      );
     });
     if (bound.length !== 1) {
-      if (missingProof) refuse('The retry has no saved actual GRAB call proof; staff must observe it.');
+      if (missingProof)
+        refuse('The retry has no saved actual GRAB call proof; staff must observe it.');
       refuse('The download is not the exact retry GRAB recorded by this parent.');
     }
     chosen = { title: String(bound[0]!.title), ids: ids(bound[0]!.episodeIds) };
+  }
+  if (p.partSelection) {
+    const page = await input.arr.read.sonarr.getHistory({
+      page: 1,
+      pageSize: 200,
+      sortKey: 'date',
+      sortDirection: 'descending',
+    });
+    const bindings = selectedPartBindings(
+      p.partSelection,
+      p.actions,
+      page.records.filter((h) => h.seriesId === p.seriesId),
+    );
+    const owned = bindings.all.filter((b) => b.downloadId === input.downloadId);
+    if (
+      owned.length !== 1 ||
+      bindings.latest.get(owned[0]!.part.id)?.downloadId !== input.downloadId
+    )
+      refuse('The download is not the exact grab recorded by this parent.');
+    chosen = { title: String(owned[0]!.intent.title), ids: owned[0]!.part.episodeIds };
   }
   if (!chosen || !same(chosen.ids, targetIds))
     refuse('The download is not the exact grab recorded by this parent.');

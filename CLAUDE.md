@@ -161,6 +161,15 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    intent/receipt audits on that parent. No repeated library deletion, new Carry or parallel request; uncertain
    writes are never replayed. The failed-download janitor records a hold for that active verified replacement by
    download GUID and Carry scope. All writes remain through `@hnet/arr/write` from `packages/domain` only.
+   **DESIGN-055 P4 decision 40 adds selected-part continuation** (`wrong-content-parts.ts`): a canonical disjoint
+   selection recorded before the original deletion, one claimed release call per original part, and an exact
+   failed-GUID retry or never-claimed original-part resume on the same null-staff Fix and verified Carry. It never
+   deletes a library file again. A multipart failed queue removal is confined to its positively owned failed
+   download, with blocklist off, client deletion off and redownload skipped, without search. Failure alone never
+   proves a bad release; this preserves P0's unpack rule and D39's separate physical wrong-source discard. Call start/end,
+   bounded native GUID/whole-part binding, receipts and immutable native import read-back use that parent audit.
+   Unknown commands remain observe-only, unselected parts and completed files remain protected, and the full-slot
+   normal completion obligation stays intact. Through `@hnet/arr/write` from `packages/domain` only.
    **ADR-109 adds the language-aware Wrong language** (C-02, C-07; DESIGN-055 D-08, PLAN-077 P6). **The Audio
    Preference**, a Plex write: a show's preferred audio language (`PUT /library/metadata/{key}/prefs?audioLanguage=`),
    on every Plex server that carries the show, only when the person's file already has the wanted audio and that

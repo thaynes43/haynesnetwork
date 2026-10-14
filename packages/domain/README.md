@@ -96,6 +96,17 @@ Its claim transactions contain DB reads/writers only; all Sonarr reads and remot
 post-import neutral queue forget has its own claim/audit and may append the strictly owned follow-through trail after
 the normal matcher completed a parent, without changing its lifecycle or replaying library import.
 
+`wrong-content-parts.ts` continues a staff multipart replacement on its original Fix and verified Carry
+(DESIGN-055 P4 decision 40). The original writer stores the immutable disjoint selection before deleting the
+wrong file once, claims before each part's release call and saves each actual call window independently. Private
+`replace-part-plan/run` resumes only a positively never-claimed original part or audits a genuine native import;
+`replace-retry-plan/run --failed-download` derives one proved failed part from the stored selection and actual
+GUID. Queue cleanup removes only that owned failed download with no client deletion, blocklist or search, preserving
+P0's unpack-failure rule. D39's physically proved wrong-source discard retains its existing blocklist. All claims and
+receipts go through the original Fix audit under its row lock; uncertain calls are observed without replay.
+Other parts and the completed prefix stay protected, and completion still requires the original whole slot.
+The JSONB records use existing columns and writers; no migration or terminal-parent reopening is needed.
+
 OAuth DELETEs are confined further than the repo-wide guard: `__tests__/oauth-delete-paths.test.ts` allows them
 only inside `pruneExpired` and the two consent writers (which delete the request they decide); `oauth_audit` is
 never deleted. `consumeRateLimit` (`rate-limit.ts`) is the shared fixed-window limiter the `/oauth/*` routes use
