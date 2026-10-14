@@ -22,20 +22,29 @@
   hardware-transcodes; P1 triage).
 - **Validation:** each phase's live check below, then P8's owner review.
 
-**Takeover update, 2026-10-14 07:56Z:** signed
+**Takeover update, 2026-10-14 09:06Z:** signed
 [v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is verified live through
 [haynes-ops 3922](https://github.com/thaynes43/haynes-ops/pull/3922) and its merged actual report
-[3924](https://github.com/thaynes43/haynes-ops/pull/3924). Ben S1 E10/E12, Pokemon S3 E1 to E7 and E9 to E20,
-and Mickey S1 E1 to E6 are physically verified and normally completed. Pokemon's old worker stopped only after its
-verified idle E20 checkpoint; actual Job/Pod absence and complete post-deletion read-only proof passed. Its corrected
-cold worker passed independent review, with launch-contract review pending. No completed replacement is replayed.
-Mickey E7/E8's same-Fix recovery and scoped janitor hold shipped in
-[978](https://github.com/thaynes43/haynesnetwork/pull/978). Its first cold Job refused startup before any media write
-because a temporary guard expected a file ID in the normal ledger payload. The real source-event/episode/download
-contract is being bound to actual import history and whole-slot file proof before a new reviewed cold launch. See the
-[runtime proof](../context/2026-10-14-self-service-repair-runtime-proof.md).
-Q-12 remains asked and unanswered. OC-056's earliest time remains 2026-10-15T20:10Z, with Paw Patrol ordering
-first inside a Watch Carry.
+[3924](https://github.com/thaynes43/haynes-ops/pull/3924). All three serving apps and successful migrators, twenty-four frontend
+and two downloads CronJob templates and both owned bounded verification Jobs passed. These Jobs do not satisfy
+dated or member-use observations. Ben S1 E10/E12, Pokemon S3 E1 to E7 and E9 to E20, and Mickey S1 E1 to E8 are
+fully proved and normally completed. Pokemon's finite v0.125.3 continuation actually launched at 08:42:01Z after
+complete fresh post-deletion proof and adopted only the nineteen completed slots without replay. E21 replacement
+is in progress under a verified Carry; actual English and root-viewed frames support its Foul Weather Friends story
+inference. Root authorized one owned import at 09:03Z; IMPORT4 was delivered once under root authorization and
+accepted at 09:05:01.977Z after fresh PLAN3, source and protected-file checks. Normal completion and Plex proof
+remain pending. E8/E31 stay held, never Saon.
+Mickey's same-Fix recovery shipped in [978](https://github.com/thaynes43/haynesnetwork/pull/978). The corrected
+native-ledger binding passed focused and actual read-only checks before its signed cold Job started at 08:14:03Z.
+E7/E8 then completed under the original Fix/Carry with one audited retry, whole import, physical English/cards,
+matching bytes, strict Plex proof and preserved correct-copy marks. E9/E10 is in progress; source story/English
+remain pending, with no import authorized. E13 to E16 runs last after twenty-three initial slots and fresh root
+mapping. Interim notes merged in [982](https://github.com/thaynes43/haynesnetwork/pull/982). See the
+[runtime proof](../context/2026-10-14-self-service-repair-runtime-proof.md) for actual Job identities and finite cutoffs.
+Q-12 remains asked and unanswered, with no notification writes; the delivered receipt page did not authorize them.
+OC-056 stays held until 2026-10-15T20:10Z and closed blocking Fixes, with Paw Patrol's tvdbAiring switch first inside
+a verified Watch Carry, then a regenerated season plan preserving Runaway Stargazer. Final step-6 evidence follows
+the repairs and formal hold. P8 remains staff practice, with no readiness metrics or gates.
 
 ## Why
 

@@ -274,6 +274,29 @@ confirms E16's real GRAB 66874 at 06:11:32Z lies between its exact `grab_intent`
 `release_grab` receipt at 06:12:17.374Z, with target 49214 and the already recorded native import 66875. No new claim,
 mark change or import replay was used. The corrected cold worker must retain its actual current-zero predicate.
 
+The corrected cold worker, SHA `419610f806c90f44c3d706055f3cce62539205d6a6edde0856cfc3001a50f446`, and its
+seed, generator and UID-bound control contract passed independent review. All actual component times must match
+their hashed source files, aggregate sections must match those files, and every complete read-only component must
+be fresh. Partial proof and timestamp-only refresh cases refuse. Eighty-nine focused isolated guards, the real
+generated preview's refusal before evaluation, and affected types passed under nice 19 with one process.
+
+An attempted launch at 08:35Z refused because the genuine proof had aged out; no Kubernetes mutation or media
+command occurred. A complete real refresh then reread all four components, nineteen parents/Carries/normal import
+anchors, thirty-four mappings, sixty-nine distinct physical files and both Plex servers with every captured account.
+Original checkpoint, state and capture time stayed unchanged. Final complete proof SHA
+`93a69fa898bf8bd5076c68dc5c15ceef2a945d49f5ab86229e4137b75c27c6e5` completed at 08:37:13Z. Root reviewed the
+concrete Job and seed and created it directly while all four actual components remained fresh. Native creation
+was accepted at 08:42:01Z; no creation request was replayed.
+
+Current continuation `frontend/pokemon-owned-cont-v1253-20261014-0830`, Job UID
+`998d39b1-cf59-42bb-bec1-9f32126635a3`, Pod UID `c3b0b685-8ee9-4d95-86bc-292935d6c654`, runs Ready on talosw02
+with the exact signed v0.125.3 digest and a 500m CPU limit. Root independently checked its native identity and
+image. Actual startup proof at 08:45:01Z confirms all four runtime hashes, adoption of only the nineteen completed
+slots, index 19, no pending parent/download and next E21. Its control namespace starts at 1; historical accepted
+serial 39 remains preserved. Job manifest SHA is `dc14c194a0288178da8bf7f97d261f4f36afb92efbb8dca2388454f19e9b00c8`;
+seed SHA is `de1f6ec9cdcd5215d30461c10ed08e226efc0d29c90d5e2d1f245ba1b4d01b06`. Absolute expiry is 13:40:21Z;
+every actual write checks the 13:25:21Z cutoff. The declaration covers its expiry and shutdown margin. E8/E31 stay held.
+
 Mickey's initial slots E1/E2, E3/E4 and E5/E6 are physically verified and normally completed, with literal cards,
 English, full paired imports, actual queue cleanup and strict per-account Plex proof. The next slot, E7/E8, is held.
 This is an interim verified checkpoint. Merge each additional repair's full per-slot proof into this record before
@@ -317,6 +340,57 @@ zero retry/import claims. The cold guard fix must join that real ledger identity
 and immutable audited whole-slot file IDs/bytes, keeping all current-file, English, physical/account and mark checks.
 Never invent a payload field or force completion. A new reviewed cold successor needs both predecessors actually
 terminal, fresh evidence and actual declaration coverage; the failed worker is not patched or replayed.
+
+The corrected prefix guard binds the real normal ledger source-event/episode/download identity to bounded native
+imports and the latest immutable audited whole-slot file read-back. Three real production cases with no ledger
+file ID and twelve meaningful refusal cases passed, along with affected types. Independent review approved frozen
+worker SHA `3259b55c62daa4fd0e229b372403622370bffa38bb3232f52278853bd1f20127`; full affected read-only validation
+on production passed at 08:07:29Z. Both terminal predecessor Job/Pod pairs remained preserved and were freshly
+checked before the new launch.
+
+Job `frontend/p077-mickey-resume-v1253-r2`, UID `5c04bbf3-135e-4330-a52a-cb6fce15a56e`, started at 08:14:03Z.
+Pod UID `610f5a36-6f21-4a3a-a4cd-8e3137db7b2c` is Ready on talosw02 with signed v0.125.3 and a 500m CPU limit.
+Actual startup adopted only completed slots 1/3/5 before recovery. Root reviewed manifest SHA
+`bc69a85f747c58c7e66f684ccdba610d3ad440d75ccae2356b2243e3a8fb5b61` and envelope SHA
+`8372c5dd98344f9d9975e84eedceff7538c7276e925a0f98760bbb3c30de1ff7`. Expiry is 14:10:35Z, with a write cutoff
+of 13:55:35Z, inside the actual declaration. Original terminal-worker serial 5, later reconciled serial 20 and the
+failed first cold startup remain distinct provenance.
+
+The audited retry ran once under the original Fix and Carry. Attempt `70005338-2d1c-40aa-9f53-7d5c29f60bcb`
+abandoned only the exact proved wrong foreign queue item, read back its absence, retained the download client and
+skipped redownload/search. The actual new grab call at 08:17:06.094Z to 08:17:06.794Z binds download
+`04f547da-7099-42e8-b396-aff4ac1aa00c` and native GRABs 66897/66898 to precisely episodes 37187/37188.
+The existing Fix, verified Carry, all 181 episode identities, completed prefix and old final file remained unchanged.
+
+Root viewed both literal replacement title cards: Agent Double-O-Goof at 60s and Egg-xasperating! at 691.54s.
+Actual source is 599908341 bytes, 1351.072s, with English EAC3 stream 1 and Romanian stream 2. File SHA is
+`72d69a36b932843e9452f5ecae607676bcefa5bb9de558333592d4f8a2cdca9a`. Physical metadata was checked; no speech
+recognition or unseen story action was claimed. The native queue reparsed this correct source as E13 to E16, so it
+remained held for target re-evaluation. The protected existing E13 to E16 file was not overwritten.
+
+One audited owned import passed genuine target re-evaluation for E7/E8 and imported only that pair. Actual file
+80038/599908341 covers exactly episodes 37187/37188; native imports 66899/66900 occurred at 08:29:38Z on the new
+download. Verified read-back preceded the audited neutral owned-queue cleanup. A measured library-file hash matches
+the approved source byte for byte, retaining both viewed cards and the physical English track.
+
+Original Fix `d26e411f-7b47-42e4-a363-2633de493d64` completed normally from real event
+`dcb744aa-22af-4f4d-a635-14fe337e1e83`; no settlement write or borrowed requester was used. Both Plex servers expose
+one actual index-7 item covering the pair, keys 109432/556273. Strict owner/every-captured-account physical and
+English checks passed with zero current plays/resume; the correct S3E7 copy retains the affected account's five
+plays. Old final E13 to E16 file 65359/1377201632 stayed unchanged. Finish control 26 was accepted at 08:42:17Z only
+after all checks. The next initial slot is E9/E10. Final E13 to E16 execution still waits for every initial slot and
+fresh root-reviewed physical same-content mapping.
+
+At 09:03Z, Pokemon E21's fresh replacement is awaiting its one audited owned import. Fix
+`34e35777-d724-4a28-a34c-706953558413` retains verified Carry `f2c2b02c-6e83-4339-800d-c6e557d26dbe`.
+The actual grab completed at 08:48:38.037Z; source download `0be8b42d-2d16-4181-923e-c5aad351e3b7` measures
+1469914845 bytes, 1920 by 1080, with English AAC stream 4. Root viewed source frames at 300s and 750s: the
+caretaker beside a wire-net enclosure, then the same caretaker and group facing a collapsed house under cloudy
+skies. These support the [Foul Weather Friends](https://www.pokemon.com/us/animation/seasons/3/episode-21-foul-weather-friends)
+story inference, corroborated by the [episode synopsis](https://bulbapedia.bulbagarden.net/wiki/Foul_Weather_Friends).
+No literal card, unseen species or weather cause was claimed. Root authorized one owned import only after fresh
+source, whole target 49219, plan and protected raw E32 file 34245/1104231692 checks. This is source ratification,
+not completion evidence; the actual library import, normal event and strict account/Plex checks remain required.
 
 Pokemon E8 and E31 retain their wrong files. Two bounded NZB reads found only obfuscated split archives and parity
 subjects. Correct story, release group and English remain unproved; that does not establish that no release exists.

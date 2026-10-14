@@ -36,20 +36,23 @@ Before that becomes the default, the platform must reliably fix the kinds of pro
 | P7 | Seerr bridge: bot comments once per issue, resolves on completed repair | **Live and on in v0.125.0**, checked 2026-10-13 23:09Z |
 | P8 | Working practice per ADR-112 | Admin guidance live in v0.125.1; practice only, owner readiness decision pending |
 
-Production [v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is verified as of 2026-10-14 07:45Z,
+Production [v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is verified as of 2026-10-14 09:06Z,
 deployed by [haynes-ops 3922](https://github.com/thaynes43/haynes-ops/pull/3922), with its actual report merged in
-[3924](https://github.com/thaynes43/haynes-ops/pull/3924). All three web replicas and migrators, all 26 app CronJob
-templates, health, migrations 0105 to 0107, reviewed source hashes and both bounded verification Jobs passed. The
-earlier v0.125.2 paired-file audio previews matched the real physical Plex tracks. Its finite Pokemon continuation
+[3924](https://github.com/thaynes43/haynes-ops/pull/3924). All three web replicas and migrators, twenty-four frontend
+and two downloads CronJob templates, health, migrations 0105 to 0107, reviewed source hashes and both bounded
+verification Jobs passed. The earlier v0.125.2 paired-file audio previews matched the real physical Plex tracks.
+Its finite Pokemon continuation
 completed E20, held the verified checkpoint, then stopped with actual Job/Pod absence confirmed. Retained finished
-Job pods are historical evidence. Read the newer
+Job pods are historical evidence; runner completion does not satisfy dated or member-use observations. Read the newer
 [runtime proof](2026-10-14-self-service-repair-runtime-proof.md) for exact current state.
 
-At 07:56Z, [978](https://github.com/thaynes43/haynesnetwork/pull/978) and
+At 09:06Z, [978](https://github.com/thaynes43/haynesnetwork/pull/978) and
 [release 980](https://github.com/thaynes43/haynesnetwork/pull/980) have merged, all four required checks passed, and
 v0.125.3's exact GHCR digest and actual successful cosign verification are independently confirmed. Its deployment
-is verified live. Cold Pokemon launch-contract review and the Mickey startup ledger-binding fix remain in progress.
-Do not treat a prepared continuation as launched.
+is verified live; interim notes merged in [982](https://github.com/thaynes43/haynesnetwork/pull/982). Both corrected
+cold continuations actually launched on the signed image. Pokemon E21's normal completion and Plex proof remain pending; Mickey
+E1 to E8 is normally complete and E9/E10 is in progress. Preserve the distinction between source proof, an accepted
+write and full normal completion.
 
 ## Resume steps, in order
 
@@ -65,8 +68,10 @@ Do not treat a prepared continuation as launched.
    `--smoke-cleanup` for any future test, never arbitrary Seerr create/delete calls.
 3. **Asked, answer pending:** Q-12 (DESIGN-055) was sent through the owner's question tool after the live check,
    recommending Seerr web push. Email and web push were read back off, so reporters currently see the comment
-   only when opening their issue. Do not change delivery without the ruling; continue the independent repairs.
-4. **In progress, 2026-10-14 07:56Z:** do not rerun any original batch. Signed v0.125.1 deployed
+   only when opening their issue. The requested receipt page was delivered, which did not authorize changing
+   Seerr notifications. No notification writes occurred. Do not change delivery without the ruling; continue the
+   independent repairs.
+4. **In progress, 2026-10-14 09:06Z:** do not rerun any original batch. Signed v0.125.1 deployed
    [#970](https://github.com/thaynes43/haynesnetwork/pull/970) and
    [#972](https://github.com/thaynes43/haynesnetwork/pull/972); the original owned downloads resumed under their
    existing parents and verified Carries. See the [runtime proof](2026-10-14-self-service-repair-runtime-proof.md).
@@ -75,22 +80,38 @@ Do not treat a prepared continuation as launched.
      80009/454603103 is the reboot Animo Farm story with English and both-server proof. Its Fix completed normally.
    - Pokemon E1 to E7 and E9 to E20 completed normally with actual whole imports, physical English/story and
      per-account Plex proof. Fresh strict audit includes both owners, every captured affected account and complete
-     nonempty physical coverage. The corrected continuation adopted the sealed, freshly revalidated prefix without
-     replay. Finish 39 reached a verified idle checkpoint before E21. Former Job
+     nonempty physical coverage. Finish 39 reached a verified idle checkpoint before E21. Former Job
      `frontend/pokemon-owned-cont-v1252-20261014-0530`, UID `adcad698-99a1-4b2d-9092-50c8f6e1ba29`, and its Pod
-     were confirmed gone before complete fresh post-deletion proof. The corrected cold v0.125.3 worker passed
-     independent review; generator/seed/control-contract review and fresh complete proof still precede launch.
-     Preserve the actual original capture and checkpoint; never replay the nineteen completed slots.
-   - Mickey E1/E2, E3/E4 and E5/E6 are complete with actual paired imports, literal cards, English and strict Plex
-     proof. E7/E8 failed as Duplicate NZB after the verified Carry and old-file removal. No import was claimed.
-     Janitor re-search fetched physically wrong Season 3 stories. P4 decision 39 specifies an audited retry under the
-     same Fix/Carry and a janitor hold, before implementation. Do not import that wrong source, borrow a member actor,
-     delete again or create a second Carry. A distinct iVy English offer exists in the proper replacing-mode plan;
-     v0.125.3 is verified live and its fresh exact iVy plan was reviewed. The first cold recovery Job refused startup
-     before any media command because its prefix guard expected a file ID in the normal ledger payload. Correct that
-     temporary contract against actual native import and immutable whole-slot file proof. Keep both predecessors
-     terminal and revalidate the fresh exact plan, complete physical/account proof and actual declaration lifetime
-     before a new reviewed launch. The controller also refuses late transport writes and unbounded history.
+     were confirmed gone before complete fresh post-deletion proof. Complete fresh four-component proof finished
+     at 08:37:13Z; root reviewed the frozen source, seed and actual manifest before native creation at 08:42:01Z.
+     Current Job `frontend/pokemon-owned-cont-v1253-20261014-0830`, UID
+     `998d39b1-cf59-42bb-bec1-9f32126635a3`, adopted only those nineteen completed slots and starts new controls
+     at 1. Preserve the actual original capture and checkpoint; never replay the completed slots. Its absolute
+     expiry is 13:40:21.983Z and every actual write checks the 13:25:21.983Z cutoff.
+   - Pokemon E21 replacement is in progress under Fix `34e35777-d724-4a28-a34c-706953558413`, verified Carry
+     `f2c2b02c-6e83-4339-800d-c6e557d26dbe`, download `0be8b42d-2d16-4181-923e-c5aad351e3b7`. Actual source
+     is 1920x1080/1469914845 bytes with English AAC stream 4. Root viewed 300s/750s frames; caretaker, net
+     enclosure and collapsed house support the Foul Weather Friends story inference, without an unseen title-card
+     claim. At 09:03Z root authorized one owned import after fresh guards; IMPORT4 was delivered once under root
+     authorization and accepted at 09:05:01.977Z after fresh PLAN3, source and protected-file checks.
+     **Normal completion and Plex proof remain pending.**
+   - Mickey E1/E2, E3/E4, E5/E6 and E7/E8 are the first four fully proved and normally completed initial slots.
+     The failed first cold startup and original terminal predecessor remain preserved. The corrected worker binds
+     production's native source-event/episode/download ledger identity to bounded imports and audited whole-slot
+     files, without inventing a ledger file ID. Fifteen focused cases, affected types and actual three-prefix
+     read-only validation passed before reviewed signed Job `frontend/p077-mickey-resume-v1253-r2`, UID
+     `5c04bbf3-135e-4330-a52a-cb6fce15a56e`, started at 08:14:03Z. Its expiry/cutoff is
+     14:10:35.213Z/13:55:35.213Z. E7/E8 reused original Fix `d26e411f-7b47-42e4-a363-2633de493d64` and verified
+     Carry `76419c02-7b27-41e7-afba-baac49a21d24`: one audited retry removed only the proved wrong queue item,
+     with blocklist on, client deletion off and no search, then grabbed distinct download
+     `04f547da-7099-42e8-b396-aff4ac1aa00c`. Actual native grabs 66897/66898 and imports 66899/66900 bind file
+     80038/599908341 to the whole pair 37187/37188. Root viewed Agent Double-O-Goof at 60s and Egg-xasperating!
+     at 691.54s; English EAC3 stream 1 and equal source/library whole-file hashes passed. Normal completion event
+     `dcb744aa-22af-4f4d-a635-14fe337e1e83`, both Plex servers' actual index-7 pair coverage, every captured
+     account's current-zero state and the correct S3 copy's five plays are verified. Protected final file 65359
+     is unchanged. Finish was accepted at 08:42:17Z. E9/E10 is now in progress; source story/English remain pending
+     and no import is authorized. E13 to E16 runs last after all twenty-three initial slots and fresh root-reviewed
+     physical same-content mapping.
    - Pokémon E8 and E31 remain untouched. Two bounded NZB reads found only obfuscated split-archive and parity
      subjects; correct story, release group and English are unproved. Do not describe this as no release existing.
    Use the audited `owned-import-plan` / `owned-import-run` on the existing parent and exact download. A native
@@ -98,11 +119,13 @@ Do not treat a prepared continuation as launched.
    Verify actual English, story, file identity, unchanged protected files, both Plex servers and per-account carry
    marks before the next individually approved replacement. Fresh plans must still match the exact approved source.
    Current activity is `act-073758-527071`, expiry 2026-10-14T14:37:58Z; root renews and ends it. Long work runs
-   as bounded, CPU-limited worker Jobs. Preserve logs and merge per-slot proof to main in the same session.
-   - Ben 10 (2016), tvdb 318145: S1 E10 and E12 hold Ben 10 (2005) episodes.
-   - Pokémon, tvdb 76703: S3 E01-24, E26, E28-34, E36 and E38 hold Pokémon Horizons. Never pick the Saon x265
+   as bounded, CPU-limited worker Jobs. The declaration covers frontend, media, downloads, Plex, PlexOps, Sonarr,
+   SABnzbd and HaynesTower. Preserve logs and merge per-slot proof to main in the same session.
+   - **Original repair scope, not current file status:** Ben 10 (2016), tvdb 318145, S1 E10 and E12 held Ben 10
+     (2005) episodes.
+   - Pokémon, tvdb 76703: original S3 E01-24, E26, E28-34, E36 and E38 held Pokémon Horizons. Never pick the Saon x265
      releases.
-   - Mickey Mouse, tvdb 320725: 23 S1 slots hold Season 3 stories. Do E13-16 last.
+   - Mickey Mouse, tvdb 320725: twenty-three original S1 slots held Season 3 stories. Do E13-16 last.
    - **Durable content proofs:** [Ben 10 and Mickey mappings](2026-10-13-ben-mickey-wrong-content-copy-mappings.md)
      and [Pokémon mappings](2026-10-13-pokemon-wrong-content-copy-mappings.md). These anchor source and destination
      IDs, names, bytes and independent content evidence. Recheck them against the fresh plan; an unchanged episode
@@ -115,15 +138,18 @@ Do not treat a prepared continuation as launched.
      - If no correct release exists, keep the wrong file and leave it flagged. An empty slot helps nobody.
 5. **OC-056** cannot run before **2026-10-15T20:10Z**.
    - Run the Bubble Guppies S5 and Paw Patrol S5 E43-47 season re-maps once their open Fix requests close.
-   - Paw Patrol's Plex ordering is not TVDB: only 7 of 26 S5 titles are right. Switch it with `ordering-run`, which
-     runs inside a Watch Carry. That is a bug fix, not an owner question.
+   - Paw Patrol's Plex ordering is not TVDB: only 7 of 26 S5 titles are right. Switch it to tvdbAiring with
+     `ordering-run` inside a verified Watch Carry, then regenerate its season plan. Preserve the only Runaway
+     Stargazer copy. That is a bug fix, not an owner question.
 6. **Owed checks.** OC-048 (archive census week, from 2026-10-19), OC-050 (P1's first webhooks and guided Fixes),
    OC-051 (first real queue-aware Force Search), OC-052 (first real Seerr issue after P3), OC-053 (first person's
    re-map, and a week of hourly Title Checks), OC-054 (first person's Release Pick), OC-055 (first person's Wrong
-   language) and OC-056. Issue #853 tracks overdue owed checks.
+   language) and OC-056. Issue #853 tracks overdue owed checks. The final step-6 snapshot follows current repairs
+   and the formal dated hold; verification Job completion does not satisfy first-member evidence.
 7. **P8.** The staff lead is live in the admin view from v0.125.1. Record its linked working practice and the final
    owed evidence in the docs; no counters or readiness gate. The owner has not ruled that self-service is the default.
-8. **The Title Check has 155 open flags.** #928 holds the list of held items and why each is held:
+8. **The original handoff census recorded 155 open flags; re-read current flags during the final snapshot.**
+   [#928](https://github.com/thaynes43/haynesnetwork/issues/928) holds the list of held items and why each is held:
    - Mecha Builders S1: no free episode to park on.
    - Alaskan Bush People S4: Plex's own data keeps the old numbering.
    - Fireman Sam S6E01-13: copies across seasons.
