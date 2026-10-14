@@ -109,15 +109,15 @@ identities use observed scenes and canonical synopsis evidence, not invented tit
 The continuation also verified E9, The Little Big Horn (80023/1554931427), and E10, The Chikorita Rescue
 (80024/1583822286), with English track 4 and normal full completion. Root spot-checked E9's bandaged Stantler fawn
 and its later capture in a net, and E10's visibly injured Chikorita and later snowy-forest scene. Both Plex copies,
-old-content correct-copy marks, new current-zero state and protected E20/E21 files passed. Next is E11.
+old-content correct-copy marks, new current-zero state and protected E20/E21 files passed. At that checkpoint, E11 was next.
 
 The first finite worker was stopped only at an idle, verified prefix. Its exact UID and successful deletion are bound
 to the saved checkpoint; a fresh read-only revalidation at 04:09Z checked the completed parents, full Carries, files,
 protected identities, Plex copies and marks. Continuation `frontend/pokemon-owned-cont-v1251-20261014-0415`, UID
 `ba9e6537-1546-47e5-bcfc-3488270913b7`, started at 04:14:16Z on a worker node with a 500m CPU limit. It verified
 the sealed seed and worker hashes and adopted E1 to E7 before its first new control. It resumed at E9; E8 stays held.
-The continuation intentionally uses the verified v0.125.1 helper, with a finite deadline of 09:14:16Z. Its running
-image must be reported honestly during the v0.125.2 rollout. It is not restarted to make an inventory look uniform.
+That continuation used the verified v0.125.1 helper, with a finite deadline of 09:14:16Z. Its older running image
+was recorded during the v0.125.2 rollout. The later E12 checkpoint and corrected successor are recorded below.
 
 E11 exposed a temporary verification-reader bug: slicing the last two digits read S20E100 as E0. The external
 reader and cold continuation collector now parse the full anchored season/episode coordinate; seven actual positive
@@ -165,7 +165,8 @@ card or unseen catch was claimed. Fix `141185f2-8f09-45dc-9815-a80090a1ae4a` com
 
 Mickey's initial slots E1/E2, E3/E4 and E5/E6 are physically verified and normally completed, with literal cards,
 English, full paired imports, actual queue cleanup and strict per-account Plex proof. The next slot, E7/E8, is held.
-Append the final per-slot proof before merging this note; a grab or prepared script does not establish completion.
+This is an interim verified checkpoint. Merge each additional repair's full per-slot proof into this record before
+ending the same session; a grab or prepared script does not establish completion.
 
 ### Mickey E7/E8 failed-download recovery
 
