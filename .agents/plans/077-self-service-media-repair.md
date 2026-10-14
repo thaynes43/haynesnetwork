@@ -629,6 +629,8 @@ names, never deleting a file, after a watch-state check on every Plex server and
       owned import and normal ledger completion validate the new download and every original slot episode.
       Focused validation covers complete same-parent recovery, preserved old E13-E16, refusal and concurrency,
       real accepted GRAB with lost response/audit, wrong new raw numbering, and old/new janitor ownership.
+      Missing retry-call proof produces explicit observed holds only for potentially matching failure rows;
+      unrelated failures continue in the same janitor run. Validate that mixed pass and its unchanged search budget.
       Review follow-through preserves original production `release`/`title` and single-release legacy bindings,
       saves actual retry-call start/end and unique native GUID separately from canonical receipt audit, and requires
       that proof in both janitor and owned import. Missing proof fails evaluation closed; an indefinite intent or

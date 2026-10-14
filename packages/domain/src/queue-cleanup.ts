@@ -48,7 +48,7 @@ import {
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { setAppSetting } from './app-settings';
 import { resolveDb } from './db-client';
-import { deferredWrongContentFailures, WRONG_CONTENT_RETRY_HOLD } from './wrong-content-retry';
+import { deferredWrongContentFailures } from './wrong-content-retry';
 import { QueueCleanupConfigInvalidError } from './errors';
 import {
   JANITOR_BLOCK_KINDS,
@@ -2343,18 +2343,19 @@ async function retryFailedDownloads(ctx: {
 
   // D-055 P4 decision 39: a verified replacement owns its actual GRAB download, even when Sonarr reparses
   // its failure onto other episode numbers. The hold records the configured mode and spends no search budget.
-  let ownedHolds: Set<string>;
+  let ownedHolds: Map<string, string>;
   try {
     ownedHolds =
       instance === 'sonarr'
         ? await deferredWrongContentFailures({ db, failures: fresh })
-        : new Set();
+        : new Map();
   } catch (err) {
     warn('replacement ownership read failed', err);
     return out;
   }
   const retryable = fresh.filter((f) => {
-    if (!ownedHolds.has(`${f.downloadId ?? ''}\u0000${f.parentId}`)) return true;
+    const holdReason = ownedHolds.get(`${f.downloadId ?? ''}\u0000${f.parentId}`);
+    if (!holdReason) return true;
     out.rows.push({
       instance,
       queueItemId: null,
@@ -2365,7 +2366,7 @@ async function retryFailedDownloads(ctx: {
       mode,
       action: 'none',
       outcome: 'observed',
-      reason: WRONG_CONTENT_RETRY_HOLD,
+      reason: holdReason,
     });
     return false;
   });

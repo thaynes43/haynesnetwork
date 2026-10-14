@@ -716,6 +716,11 @@ do not edit)", "must not contain" terms only, no tags.
     owned GUID or repeated release POST. The janitor must report that missing proof and fail closed for potentially
     affected retries, without calling an unrelated GUID owned or sealing a successful removal. Queue absence is a
     separate observation of an exact recorded discard attempt, not proof that its external command succeeded.
+    Missing call proof holds only failure rows matching the validated parent's series and full-slot release intent,
+    with available native GRAB identity and recorded time bounds checked. Record those rows as observations with
+    an explicit unresolved-proof reason; this is not positive download ownership or permission to import or replay.
+    Other series, release titles and downloads outside a known call window continue through their ordinary policy
+    in the same run. One unresolved repair must not abort the entire Sonarr failed-download pass.
     Read old production intents from their recorded `release` or `title` field, including the single-release legacy
     Carry, so a newer receipt does not erase the original download's ownership.
     A fast native import may complete that same Fix before its HTTP response evidence is saved. Factual post-call

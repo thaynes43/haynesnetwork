@@ -299,7 +299,9 @@ async function parent(db: DbClient | undefined, id: string, lock = false, interl
 }
 
 export const WRONG_CONTENT_RETRY_HOLD =
-  'Active verified Wrong-Content Replace owns this failed download; staff recovery holds automatic search.';
+  'This failed download belongs to a verified replacement. Staff need to finish its recovery before automatic search resumes.';
+export const WRONG_CONTENT_RETRY_UNRESOLVED_HOLD =
+  'This failed download may belong to an unfinished replacement. Staff need to check its recorded command before automatic search resumes.';
 
 /** Match actual stored GRAB download GUID and parent series, never reparsed failure episode numbers. */
 export async function deferredWrongContentFailures(input: {
@@ -311,12 +313,12 @@ export async function deferredWrongContentFailures(input: {
     failedAt: Date;
     grabbedHistory?: { id: number; downloadId: string; title: string; date: string };
   }>;
-}): Promise<Set<string>> {
+}): Promise<Map<string, string>> {
   const exec = resolveDb(input.db),
     downloads = [
       ...new Set(input.failures.map((f) => f.downloadId).filter((d): d is string => !!d)),
     ];
-  const held = new Set<string>();
+  const held = new Map<string, string>();
   if (!downloads.length) return held;
   const active = await exec
     .select({ id: fixRequests.id })
@@ -337,23 +339,30 @@ export async function deferredWrongContentFailures(input: {
       if (e instanceof FixRefusedError) continue;
       throw e;
     }
-    if (
-      input.failures.some(
-        (failure) =>
-          failure.parentId === p.item.arrItemId &&
-          p.unresolvedIntents.some((i) => {
-            const at = failure.grabbedHistory ? Date.parse(failure.grabbedHistory.date) : null;
-            return (
-              i.title === failure.title &&
-              failure.failedAt.getTime() >= i.since &&
-              (at === null || (at >= i.since && (i.until === null || at <= i.until)))
-            );
-          }),
+    for (const failure of input.failures) {
+      if (!failure.downloadId || failure.parentId !== p.item.arrItemId) continue;
+      const native = failure.grabbedHistory;
+      const key = `${failure.downloadId}\u0000${failure.parentId}`;
+      if (
+        !held.has(key) &&
+        p.unresolvedIntents.some((i) => {
+          const at = native ? Date.parse(native.date) : 0;
+          return (
+            i.title === failure.title &&
+            failure.failedAt.getTime() >= i.since &&
+            (!native ||
+              (Number.isInteger(native.id) &&
+                native.id > 0 &&
+                native.downloadId === failure.downloadId &&
+                native.title === i.title &&
+                at >= i.since &&
+                at <= failure.failedAt.getTime() &&
+                (i.until === null || at <= i.until)))
+          );
+        })
       )
-    )
-      refuse(
-        'A retry command has no saved call or download proof. Automatic retry must wait for staff observation.',
-      );
+        held.set(key, WRONG_CONTENT_RETRY_UNRESOLVED_HOLD);
+    }
     const grabs = await exec
       .select()
       .from(ledgerEvents)
@@ -398,7 +407,7 @@ export async function deferredWrongContentFailures(input: {
               )),
         )
       )
-        held.add(`${failure.downloadId}\u0000${failure.parentId}`);
+        held.set(`${failure.downloadId}\u0000${failure.parentId}`, WRONG_CONTENT_RETRY_HOLD);
     }
   }
   return held;

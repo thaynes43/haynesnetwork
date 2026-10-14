@@ -27,6 +27,7 @@ import {
   evaluateQueueCleanup,
   ARR_QUEUE_CLEANUP_CONFIG_DEFAULT,
   WRONG_CONTENT_RETRY_HOLD,
+  WRONG_CONTENT_RETRY_UNRESOLVED_HOLD,
   wrongContentRetryRefusalText,
   FixRefusedError,
 } from '../src/index';
@@ -126,7 +127,12 @@ function stub() {
           records: state.history,
         });
       }
-      if (u.pathname.endsWith('/episode')) return json(state.episodes);
+      if (u.pathname.endsWith('/episode'))
+        return json(
+          state.episodes.filter(
+            (episode) => episode.seriesId === Number(u.searchParams.get('seriesId')),
+          ),
+        );
       if (u.pathname.endsWith('/episodefile'))
         return json(state.files.map((f) => ({ ...f, quality: QUALITY, mediaInfo: {} })));
       if (u.pathname.endsWith('/series/439')) return json({ ...SERIES, id: 439, year: 2017 });
@@ -900,7 +906,7 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
           },
         ],
       }),
-    ).toEqual(new Set(['new-ivy\u0000439']));
+    ).toEqual(new Map([['new-ivy\u0000439', WRONG_CONTENT_RETRY_HOLD]]));
   });
   it('binds accepted-unknown NEW history while refusing earlier and later same-title foreign downloads', async () => {
     const s = await setup();
@@ -969,7 +975,7 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
           };
         }),
       }),
-    ).toEqual(new Set(['new-ivy\u0000439']));
+    ).toEqual(new Map([['new-ivy\u0000439', WRONG_CONTENT_RETRY_HOLD]]));
   });
   it('does not adopt a late same-title foreign GRAB after a rejected retry POST', async () => {
     const s = await setup(),
@@ -1012,7 +1018,7 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
           },
         ],
       }),
-    ).toEqual(new Set());
+    ).toEqual(new Map());
     await expect(
       planOwnedSonarrImport({
         db: t.db,
@@ -1097,7 +1103,7 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
               };
             }),
           }),
-        ).toEqual(new Set(accepted ? ['new-ivy\u0000439'] : []));
+        ).toEqual(new Map(accepted ? [['new-ivy\u0000439', WRONG_CONTENT_RETRY_HOLD]] : []));
       } finally {
         vi.useRealTimers();
       }
@@ -1199,10 +1205,10 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
           };
         }),
       }),
-    ).toEqual(new Set(['new-ivy\u0000439']));
+    ).toEqual(new Map([['new-ivy\u0000439', WRONG_CONTENT_RETRY_HOLD]]));
     expect(s.state.writes.filter((w) => w.path.endsWith('/release'))).toHaveLength(1);
   });
-  it('missing all post-call audit facts refuses ownership and never replays the accepted command', async () => {
+  it('missing post-call proof holds only matching janitor failures and never authorizes import or replay', async () => {
     const s = await setup(),
       plan = await selected(s.input);
     await t.pool.query(
@@ -1235,8 +1241,8 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
       }),
     ).rejects.toThrow('no saved actual GRAB call proof');
     const h = s.state.history.find((h) => h.downloadId === 'new-ivy')!;
-    await expect(
-      deferredWrongContentFailures({
+    expect(
+      await deferredWrongContentFailures({
         db: t.db,
         failures: [
           {
@@ -1248,7 +1254,94 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
           },
         ],
       }),
-    ).rejects.toThrow('no saved call or download proof');
+    ).toEqual(new Map([['new-ivy\u0000439', WRONG_CONTENT_RETRY_UNRESOLVED_HOLD]]));
+    // The native command happened but its call audit is unavailable. Keep that uncertainty local;
+    // an unrelated title in this series and the same title in another series retain normal retry policy.
+    await t.db.delete(ledgerEvents);
+    s.state.removed = true;
+    s.state.episodes.push({
+      id: 49200,
+      seriesId: 549,
+      seasonNumber: 1,
+      episodeNumber: 2,
+      title: 'Unrelated episode',
+      monitored: true,
+      hasFile: false,
+      episodeFileId: 0,
+    });
+    const failedAt = new Date(Date.now() + 1000).toISOString();
+    for (const grabbed of s.state.history.filter(
+      (record) => record.downloadId === 'new-ivy' && record.eventType === 'grabbed',
+    ))
+      s.state.history.push({
+        ...grabbed,
+        id: grabbed.id + 1000000,
+        eventType: 'downloadFailed',
+        date: failedAt,
+        data: { message: 'Actual retry failed' },
+      });
+    for (const [downloadId, seriesId, episodeId, sourceTitle] of [
+      ['other-title', 439, 37193, 'Unrelated legitimate release'],
+      ['other-series', 549, 49200, RIGHT],
+    ] as const) {
+      s.state.history.push({
+        ...h,
+        id: 900000 + episodeId,
+        seriesId,
+        episodeId,
+        downloadId,
+        sourceTitle,
+      });
+      s.state.history.push({
+        ...h,
+        id: 1000000 + episodeId,
+        seriesId,
+        episodeId,
+        downloadId,
+        sourceTitle,
+        eventType: 'downloadFailed',
+        date: failedAt,
+        data: { message: 'Actual unrelated download failed' },
+      });
+    }
+    const clients = buildQueueCleanupClients(s.arr);
+    clients.radarr.getQueueAll = async () => [];
+    clients.lidarr.getQueueAll = async () => [];
+    const config = structuredClone(ARR_QUEUE_CLEANUP_CONFIG_DEFAULT);
+    config.modes.sonarr.bad_release = 'enforce';
+    const writesBefore = s.state.writes.length;
+    await evaluateQueueCleanup({ db: t.db, clients, config, now: new Date(failedAt) });
+    const rows = await t.db.select().from(arrQueueCleanupActions);
+    expect(rows.filter((row) => row.downloadId === 'new-ivy')).toHaveLength(2);
+    expect(
+      rows
+        .filter((row) => row.downloadId === 'new-ivy')
+        .every(
+          (row) =>
+            row.mode === 'enforce' &&
+            row.action === 'none' &&
+            row.outcome === 'observed' &&
+            row.reason === WRONG_CONTENT_RETRY_UNRESOLVED_HOLD,
+        ),
+    ).toBe(true);
+    for (const downloadId of ['other-title', 'other-series'])
+      expect(rows.find((row) => row.downloadId === downloadId)).toMatchObject({
+        mode: 'enforce',
+        action: 'blocklisted_searched',
+        outcome: 'done',
+      });
+    expect(s.state.writes.slice(writesBefore)).toEqual([
+      { path: '/api/v3/command', body: { name: 'EpisodeSearch', episodeIds: [37193] } },
+      { path: '/api/v3/command', body: { name: 'EpisodeSearch', episodeIds: [49200] } },
+    ]);
+    await evaluateQueueCleanup({
+      db: t.db,
+      clients,
+      config,
+      now: new Date(Date.parse(failedAt) + 1000),
+    });
+    expect(await t.db.select().from(arrQueueCleanupActions)).toHaveLength(rows.length);
+    expect(s.state.writes).toHaveLength(writesBefore + 2);
     const observe = await planWrongContentRetry({ ...s.input, key: plan.candidates[0]!.key });
     await runWrongContentRetry({
       ...s.input,
@@ -1569,7 +1662,7 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
           { ...failure, downloadId: foreign.downloadId, grabbedHistory: foreign },
         ],
       }),
-    ).toEqual(new Set(['301dc\u0000439']));
+    ).toEqual(new Map([['301dc\u0000439', WRONG_CONTENT_RETRY_HOLD]]));
   });
   it('defers only the actual verified staff-owned failed download, not a same-grain foreign download or member parent', async () => {
     const s = await setup(),
@@ -1580,13 +1673,13 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
         db: t.db,
         failures: [failure, { ...failure, downloadId: 'foreign' }, { ...failure, parentId: 549 }],
       }),
-    ).toEqual(new Set(['301dc\u0000439']));
+    ).toEqual(new Map([['301dc\u0000439', WRONG_CONTENT_RETRY_HOLD]]));
     await t.db
       .update(fixRequests)
       .set({ requesterId: userId })
       .where(eq(fixRequests.id, s.fixRequestId));
     expect(await deferredWrongContentFailures({ db: t.db, failures: [failure] })).toEqual(
-      new Set(),
+      new Map(),
     );
   });
   it('retains the original single-release legacy Carry binding after a new successful receipt', async () => {
@@ -1612,6 +1705,6 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
           { downloadId: '301dc', parentId: 439, title: OLD, failedAt: new Date(Date.now() + 1000) },
         ],
       }),
-    ).toEqual(new Set(['301dc\u0000439']));
+    ).toEqual(new Map([['301dc\u0000439', WRONG_CONTENT_RETRY_HOLD]]));
   });
 });
