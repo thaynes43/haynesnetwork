@@ -1,5 +1,25 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14 10:04Z: Pokemon through E23; Mickey through E19/E20; recovery tests underway
+
+- Pokemon E22/E23 completed normally and passed finishes 12/18. Twenty-two approved slots are complete; ten
+  approved replacements remain, plus held E8/E31. E24 is in progress. The [completed-slot proof](context/2026-10-14-pokemon-completed-slot-proof.md)
+  records full Fix, Carry and normal-event UUIDs. Preserve E23's first-completed observation separately from its
+  ledger recording and later factual-audit update. Never replay any submitted import.
+- Mickey E17/E18 and E19/E20 passed finishes 44/50, with actual whole imports, measured English/resolution,
+  equal source/library bytes, normal events, strict captured-account marks and unchanged protected files.
+  Eight initial slots are complete; E21/E22 is next. Final E13 to E16 stays last.
+- The decision-40 recovery implementation has passed focused multipart and existing recovery cases; remaining
+  boundaries, CLI and type/lint checks are in progress. It still needs root review, all four required PR checks,
+  signed release and live verification before the final multipart run. Generic normal matching is unchanged.
+  The [proposed final review](context/2026-10-14-mickey-final13-16-carry-review.md) now distinguishes an owned
+  import from verified adoption of Sonarr's native import; neither permits replay or another original deletion.
+- Signed v0.125.3 remains live; both finite workers and actual activity/cutoffs below are unchanged. Exact new
+  file/event identities are in the [runtime record](context/2026-10-14-self-service-repair-runtime-proof.md).
+  Q-12 is asked and unanswered. OC-056 remains held until 2026-10-15T20:10Z and closed blocking Fixes, with Paw
+  Patrol ordering inside a verified Carry first. Final owed evidence follows the repairs and formal hold.
+  P8 remains staff practice, with readiness judged by the owner.
+
 ## 2026-10-14 09:37Z: Pokemon E21 and Mickey E11/E12 complete; untagged English proof and multipart recovery
 
 - Signed v0.125.3 remains live. [983](https://github.com/thaynes43/haynesnetwork/pull/983) merged the actual

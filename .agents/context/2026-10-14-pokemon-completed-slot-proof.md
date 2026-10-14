@@ -34,8 +34,10 @@ E16 is the approved SRS 480p fallback. Its actual import was native: no ManualIm
 
 ## Signed v0.125.3 continuation
 
-The original nineteen-slot prefix above remains preserved. E21 adds the twentieth completed slot after fresh source ratification, an actual import, natural completion and strict finish.
+The original nineteen-slot prefix above remains preserved. E21 to E23 add three completed slots after fresh source ratification, actual imports, natural completion and strict finish. Completion observations and ledger recording times remain distinct.
 
-| Slot | File / bytes | Native import | Fix UUID | Carry UUID | Full normal event UUID | Source / library | Plex and protection | Accepted finish |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| E21 | 80039 / 1469914845 | 66911 | 34e35777-d724-4a28-a34c-706953558413 | f2c2b02c-6e83-4339-800d-c6e557d26dbe | 703630ce-80f2-4af8-85b1-abf1e0a28155 | 1920×1080 / 1920×1080, English AAC4 | Both servers, owner and all captured accounts, 4 contexts; current 0/0, correct copy marks preserved; rawE32 34245 / 1104231692 unchanged | 2026-10-14T09:25:50.193Z |
+|Slot|File/bytes|Native import|Fix UUID|Carry UUID|Normal event UUID|Normal completion|Source/library|English|Plex|Protected|Accepted finish|
+|---|---|---|---|---|---|---|---|---|---|---|---|
+|21|80039/1469914845|66911|34e35777-d724-4a28-a34c-706953558413|f2c2b02c-6e83-4339-800d-c6e557d26dbe|703630ce-80f2-4af8-85b1-abf1e0a28155|2026-10-14T09:15:03.843Z|1920x1080/1920x1080|AAC4|both servers, owner + all captured, current0/0, copy marks pass|34245/1104231692|2026-10-14T09:25:50.193Z|
+|22|80043/1576411922|66940|05f08c49-cfa2-4021-95ab-2f2bb1f777f8|0fc8844c-cbd5-4621-861a-4ab5196cbe8f|8020af10-7829-430b-aa05-34b683fd16e9|2026-10-14T09:45:04.300Z|1920x1080/1920x1080|AAC4|both servers, owner + all captured, current0/0, copy marks pass|34277/1083194684|2026-10-14T09:50:57.775Z|
+|23|80045/1624337947|66953|776f8333-9f18-4f61-87e2-9876b51c52a7|25fd4405-d042-4460-ae12-95e5af859334|21693071-b2a8-4d7f-868d-e7b78b82d972|By 2026-10-14T10:00:22.881Z|1920x1080/1920x1080|AAC4|both servers, owner + all captured, current0/0, copy marks pass|34308/1093478129|2026-10-14T10:04:12.068Z|
