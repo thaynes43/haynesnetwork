@@ -1,5 +1,43 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14 05:58Z: v0.125.2 verified live; Pokemon through E14; Mickey retry under review
+
+- [PLAN-077](plans/077-self-service-media-repair.md) remains active. Signed
+  [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975) is verified live through
+  [haynes-ops 3919](https://github.com/thaynes43/haynes-ops/pull/3919): all three serving app/migrator pairs, all 26
+  templates, health, migrations and both bounded verification Jobs passed. Its read-only paired-file hint check also
+  passed against all 24 real audio tracks on both Plex servers. It includes
+  [974](https://github.com/thaynes43/haynesnetwork/pull/974) and the proved PostgreSQL
+  fixture teardown fix [976](https://github.com/thaynes43/haynesnetwork/pull/976), each with all required checks green.
+  Read the [runtime proof](context/2026-10-14-self-service-repair-runtime-proof.md) and
+  [cold-start note](context/2026-10-13-self-service-repair-codex-handoff.md).
+- Ben S1 E10 and E12 are correct, physically English and verified on both Plex servers. Pokemon S3 E1 to E7 and
+  E9 to E14 completed normally with per-file, story, English, protected-file and account-state proof. The old
+  continuation was stopped at its verified idle checkpoint to correct bounded native-history observation. Its actual
+  Job and Pod UIDs were confirmed gone before full read-only revalidation. The corrected signed v0.125.2 successor,
+  `frontend/pokemon-owned-cont-v1252-20261014-0530`, UID `adcad698-99a1-4b2d-9092-50c8f6e1ba29`, started at
+  05:36:31Z, adopted only the sealed eleven-slot prefix, then verified E13/E14. E15 is now active. Never replay completed replacements.
+- Mickey's E1/E2, E3/E4 and E5/E6 are verified and completed. E7/E8's original correct download failed as a Duplicate
+  NZB after its verified Carry and old-file removal. The janitor's later download physically contains the old wrong
+  stories and must not be imported. Fresh replacing-mode offers include a distinct English iVy release; absence of
+  ordinary Release Pick offers was not a no-source conclusion. P4 decision 39 documents a same-Fix audited retry and
+  janitor interlock before code. Further recovery writes wait for [978](https://github.com/thaynes43/haynesnetwork/pull/978), its signed deployment
+  and exact plan review. Review caught ownership, receipt-lifetime and repeated-failure defects; each is being fixed.
+- Pokemon E8 and E31 retain their wrong files: group, correct story and English remain unproved. Never choose Saon.
+  Mickey E13 to E16 still run last, after the new E7/E8 content and all initial slots have been proved. Carried marks
+  on old stories never credit a replacement. Final per-slot proof must reach main with the program notes.
+- [977](https://github.com/thaynes43/haynesnetwork/pull/977) fixed owned Seerr test-process cleanup and merged after
+  all four checks. Its two advisory findings were addressed; the renewed review had no findings.
+- P7 comment and resolve remain on as user 19; the 04:42Z read-only audit preserved all protected Seerr issues 1 to 4
+  and found zero bridge-write rows for them. The removed Ghost
+  smoke fixture is excluded from real-report evidence. Q-12 is asked and unanswered; email and web push remain off.
+  P8's admin guidance is live as staff working practice. The owner alone judges readiness, with no counter or gate.
+- OC-056 is held until **2026-10-15T20:10Z** and closed blocking Fixes. Paw Patrol's tvdbAiring ordering switch
+  comes first inside a verified Watch Carry, then regenerate its season plan and preserve Runaway Stargazer.
+  Final step-6 owed evidence still follows the current repairs; staff work is not first-member use.
+- Root declaration `act-051827-491938` expires 2026-10-14T11:18:27Z. The continuation deadline is 10:36:31Z;
+  start no replacement after 10:21:31Z, reserving time for a safe idle checkpoint. Only owned processes stop.
+
 ## 2026-10-14 01:25Z: owned imports corrected; release v0.125.1 pending; never replay the old batches
 
 - [PLAN-077](plans/077-self-service-media-repair.md) stays active. Production remains v0.125.0; P7 is on as user 19,

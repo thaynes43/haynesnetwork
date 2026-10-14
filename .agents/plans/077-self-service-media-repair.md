@@ -22,6 +22,16 @@
   hardware-transcodes; P1 triage).
 - **Validation:** each phase's live check below, then P8's owner review.
 
+**Takeover update, 2026-10-14 05:58Z:** signed [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975)
+is deployed and its read-only paired-file hint check passed. Ben S1 E10/E12, Pokemon S3 E1 to E7 and E9 to E14,
+and Mickey S1 E1 to E6 are physically verified and normally completed. Pokemon's corrected finite continuation
+adopted the freshly revalidated E12 checkpoint without replay and now works E15. Mickey E7/E8 exposed a failed
+correct grab followed by a janitor grab of the wrong stories; pending [978](https://github.com/thaynes43/haynesnetwork/pull/978)
+records its same-Fix recovery design before code. That recovery stays held for final review, signed release and
+verified deployment. See the [runtime proof](../context/2026-10-14-self-service-repair-runtime-proof.md).
+Q-12 remains asked and unanswered. OC-056's earliest time remains 2026-10-15T20:10Z, with Paw Patrol ordering
+first inside a Watch Carry.
+
 ## Why
 
 Three Seerr issues worked by hand on 2026-10-12 (DESIGN-055 Overview has the full table) could not have been fixed by a
@@ -923,6 +933,12 @@ Owner clarification, 2026-10-12 (ADR-112, DESIGN-055 D-12): "The gate is a judgm
 2. When the owner decides coverage is good enough, record it here and in HANDOFF, then apply Q-05's ruling: Seerr filing
    stays open; the Seerr comment wording, the About page and the MOTD copy say to try fixing it on haynesnetwork.com
    first.
+- **Working practice, 2026-10-14:** the staff lead in the [Seerr admin view](https://haynesnetwork.com/admin/seerr)
+  shipped in [972](https://github.com/thaynes43/haynesnetwork/pull/972) and is deployed in v0.125.1. It links the
+  member tools and this plan, teaches the tool that succeeded, and records a hand repair and its missing capability.
+  Staff repair proofs and the removed bridge smoke fixture remain distinct from real-report and first-member-use
+  evidence. The pending owed checks keep their original dates. This is the working practice in ADR-112; the owner
+  has not made self-service the default, and no readiness counter or gate is introduced.
 - **Done when** the owner confirms the rule is in effect. Then move this plan to `completed/`.
 
 ## Out of scope
