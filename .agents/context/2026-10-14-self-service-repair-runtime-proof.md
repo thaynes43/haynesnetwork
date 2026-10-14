@@ -53,6 +53,20 @@ capability when a hand repair is needed. There is no readiness counter or defaul
   direct Node sync process, cancels on timeout and waits for actual closure before cleanup. Nine deterministic
   ownership tests and both focused browser cases passed; both advisory findings were addressed and the renewed
   review had no findings. This changes test lifetime only; the original stalled UI action remains unknown.
+- [978](https://github.com/thaynes43/haynesnetwork/pull/978) merged as
+  `7deef24087a56585de137a8cb0c6214424182a9d` at 06:53:08Z after all four required checks and a renewed review
+  without findings. It adds the documented same-Fix failed-download recovery and the janitor's scoped ownership
+  hold. Recovery retains the original verified Carry, binds each actual grab attempt and whole-file import, and
+  observes uncertain commands without replay. Unrelated janitor searches retain their existing policy and budget.
+- [Release 980](https://github.com/thaynes43/haynesnetwork/pull/980), v0.125.3, merged as
+  `61f83a55eca470d41f9d27941699b8abf29fd6cb` at 07:12:07Z after all four required checks. Publisher
+  [38526806143](https://github.com/thaynes43/haynesnetwork/actions/runs/38526806143) explicitly verified the exact
+  cosign workflow identity on its first attempt at 07:15:54Z. Root independently confirmed the matching registry
+  body digests at 07:21:29Z and the actual successful verification step. The image is
+  `sha256:463eb1c92e375f2d52d22c345b42e4f05a0fdf06c19a89e7ae50681f704c0f16`; its signature manifest is
+  `sha256:33c81b2479780344cc2ae91801221e6d25156c4a7d6e74e59379fbfd22053d15`. Both returned HTTP 200.
+  Deployment is in progress. These artifact checks do not establish live deployment or authorize the prepared
+  Mickey continuation.
 
 ## P7 and notifications
 
@@ -162,6 +176,57 @@ captured contexts and S20E103 correct-copy marks. The already correct E25 file 7
 Root checked the classroom lesson/pointer and teacher with children against the canonical academy story; no title
 card or unseen catch was claimed. Fix `141185f2-8f09-45dc-9815-a80090a1ae4a` completed from actual event
 `62a20d41-db99-4717-979c-54694227b91a` at 05:56:43Z. Finish serial 10 was accepted at 05:57:19Z; E15 began next.
+
+E15, Fighting Flyer with Fire, passed: file 80029/1496452289, actual 1920 by 1080 video and English track 4,
+import 66872, both Plex copies, S20E104 correct-copy marks and protected E26 file 33958/1110340701. The observed
+Falkner/Hoothoot and Charizard/Pidgeot gym battle corroborate the story; no title card or unseen victory was claimed.
+Its original Fix completed normally from actual event `0777617d-45bb-462a-8340-9dd44f50ac4d` with the ledger cursor
+unchanged.
+
+E16, For Cryin' Out Loud!, used the approved SRS fallback: file 80030/856208430, actual 640 by 480 video and one
+English AAC track 1. Native GRAB 66874 and import 66875 share download `4efb7294-f99e-4522-8ba1-6e3d71b70cd4`
+and episode 49214. The corrected observer's one bounded 200-row page proved the exact import and full file scope.
+It adopted that existing import without ManualImport, re-grab, invented import intent or queue removal. Fix
+`fe7c0be2-feda-4096-a49c-b35b3039c67e` was already completed normally, confirmed read-only at 06:21:35Z against
+actual event `b6bb88d5-8c37-4542-a35a-b75fce5cdd1f`. Marill, its parasol-carrying owner and carriage scenes
+corroborate the story; no title card or unseen crying was claimed. Both Plex copies, S20E105 marks and the source/
+copy identities passed. No quality upgrade or household preference write occurred.
+
+E17, Tanks a Lot!, passed: file 80031/1516961341, actual 1920 by 1080 video, English track 4 and import 66878.
+The purple tracked tank, Sentret family and vehicle wedged on the cliff corroborate the canonical story; no title
+card or unseen controls were claimed. Both Plex copies and S20E106 marks passed; protected E28 file
+34091/918877254 stayed unchanged. Normal Fix completion used actual event `03e11c68-a043-4472-b884-494aff45a535`
+with the cursor unchanged. Finish serial 24 was accepted before E18 began. Full immutable slot identities are retained
+in the packet and will be folded into the final same-session per-slot record.
+
+E18, Charizard's Burning Ambitions, passed: file 80032/1605039096, actual 1920 by 1080 video, English AAC track 4
+and import 66881. The valley caretaker and Charizard community corroborate the canonical story; no unseen training
+or title card was claimed. Fix `317c0492-2e89-4ae4-abc9-ae391ef2f451`, verified Carry
+`4210af9e-04d0-4690-81e4-5b7ced9e240f`, completed normally from event
+`a6ac85c5-6363-4fda-b688-6d749ab9b351`. Both Plex copies, S20E107 marks and protected E29 file
+34129/921776375 passed. Finish serial 29 was accepted at 06:51:27Z.
+
+E19, Grin to Win!, passed: file 80033/1576515027, actual 1920 by 1080 video, English AAC track 4 and import 66884.
+Root viewed the group with Sunflora and the trainer holding a Sunflora-topped trophy against the canonical annual
+contest story. This is scene-based inference, without an observed title card or unseen contest action. Original Fix
+`f3f2a2ce-8235-426e-a567-6faec2cf68e2`, verified Carry `0ef04fda-b579-4214-9595-45671f5c4f99`, completed normally
+at 07:15:03Z from real event `85014d66-5471-43f1-8a76-b63973929f60`. Its old source maps only to the proved S20E108
+copy, file 35671/763997137. Both Plex copies, correct-copy marks and protected raw E30 file 34168/920793882 passed.
+Finish serial 34 was accepted at 07:20:54Z; E20 then began.
+
+A fresh strict read-only audit at 07:19:54Z revalidated all eighteen accepted files through E19 on both Plex servers,
+including the owner and every captured affected account. All required leaf listings were complete and nonempty;
+each current and correct-copy physical part matched uniquely, current marks were zero, and carried marks matched.
+The host verifier now checks every Media.Part and refuses empty proof arrays. Its three positive and twelve
+missing-account, empty-leaf, wrong-part and duplicate guard cases passed with one process under nice 19. The frozen
+worker was not patched.
+
+Review also found a timing gap in the finite worker: its command admission and outer loop check the deadline, but
+the actual Arr/Plex transports do not recheck the reserve immediately before each write. Finish the current E20,
+then hold at its verified idle checkpoint before any E21 replacement. A corrected cold successor needs actual
+predecessor Job/Pod absence, fresh full post-deletion read-only proof, signed v0.125.3 verified live, complete account
+and physical coverage, bounded underlying history, and a real activity declaration covering its finite lifetime.
+Do not hotpatch the worker, replay a completed replacement or relabel a prepared envelope as live evidence.
 
 Mickey's initial slots E1/E2, E3/E4 and E5/E6 are physically verified and normally completed, with literal cards,
 English, full paired imports, actual queue cleanup and strict per-account Plex proof. The next slot, E7/E8, is held.

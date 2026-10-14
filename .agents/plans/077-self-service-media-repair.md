@@ -22,13 +22,16 @@
   hardware-transcodes; P1 triage).
 - **Validation:** each phase's live check below, then P8's owner review.
 
-**Takeover update, 2026-10-14 05:58Z:** signed [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975)
-is deployed and its read-only paired-file hint check passed. Ben S1 E10/E12, Pokemon S3 E1 to E7 and E9 to E14,
-and Mickey S1 E1 to E6 are physically verified and normally completed. Pokemon's corrected finite continuation
-adopted the freshly revalidated E12 checkpoint without replay and now works E15. Mickey E7/E8 exposed a failed
-correct grab followed by a janitor grab of the wrong stories; pending [978](https://github.com/thaynes43/haynesnetwork/pull/978)
-records its same-Fix recovery design before code. That recovery stays held for final review, signed release and
-verified deployment. See the [runtime proof](../context/2026-10-14-self-service-repair-runtime-proof.md).
+**Takeover update, 2026-10-14 07:25Z:** [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975)
+is verified live and its read-only paired-file hint check passed. Ben S1 E10/E12, Pokemon S3 E1 to E7 and E9 to E19,
+and Mickey S1 E1 to E6 are physically verified and normally completed. Current Pokemon E20 is in progress, followed
+by an idle checkpoint for a cold successor with actual write-time reserve guards and complete account/physical
+coverage. No completed replacement is replayed. Mickey E7/E8 exposed a failed correct grab followed by a janitor
+grab of the wrong stories. Its documented same-Fix recovery and scoped janitor hold merged in
+[978](https://github.com/thaynes43/haynesnetwork/pull/978); signed
+[v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is confirmed in GHCR and deploying. Recovery stays
+held for verified live deployment, fresh exact plan and real finite-worker activity coverage. See the
+[runtime proof](../context/2026-10-14-self-service-repair-runtime-proof.md).
 Q-12 remains asked and unanswered. OC-056's earliest time remains 2026-10-15T20:10Z, with Paw Patrol ordering
 first inside a Watch Carry.
 
