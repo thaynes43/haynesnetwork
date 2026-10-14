@@ -1,4 +1,4 @@
-# Pokémon completed-slot proof through S03E20
+# Pokémon completed-slot proof
 
 **Current checkpoint, frozen 2026-10-14T11:59:39.296664418Z:** the original nineteen-slot prefix below plus the
 eight continuation rows through E30 prove **27 of 32 approved slots** complete. E32/E33/E34/E36/E38 remain;
