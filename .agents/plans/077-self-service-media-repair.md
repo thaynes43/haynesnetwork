@@ -639,7 +639,10 @@ names, never deleting a file, after a watch-state check on every Plex server and
       and download GUID. A later verified terminal failure can receive a distinct reviewed attempt on the same
       parent/Carry, including an accepted-but-503 call proved by native history; no canonical200 is invented.
       Earlier uncertain commands remain observe-only, read-backs are attempt scoped, and protected identities
-      persist across attempts. Twenty-eight recovery cases and 27 existing owned-import cases passed together;
+      persist across attempts. Actual sources follow durable pre-command intent order, so an older late receipt
+      cannot regress authority after a newer proved failed download. Twenty-eight recovery cases and 27 existing
+      owned-import cases passed together; five ordering/attempt cases then passed with the new delayed-receipt
+      regression (29 recovery cases covered in total);
       nine existing janitor retry/real-client cases and 24 CLI cases passed, with domain/sync typechecks and targeted
       lint. No live recovery has run from this implementation.
     - **Held** (#928 and OC-056 list them with reasons):

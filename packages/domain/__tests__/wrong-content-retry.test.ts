@@ -525,6 +525,84 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
     ).rejects.toThrow('Protected files changed');
     expect(s.state.writes.filter((w) => w.path.endsWith('/release'))).toHaveLength(1);
   });
+  it('does not let a delayed older HTTP200 receipt outrank a newer actual503 download and terminal failure', async () => {
+    const s = await setup(),
+      first = await selected(s.input);
+    await t.pool.query(
+      `CREATE FUNCTION delay_first_retry_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.actions_taken @> '[{"step":"wrong_content_retry_grab_result","ok":true}]'::jsonb THEN RAISE EXCEPTION 'test delayed receipt'; END IF; RETURN NEW; END $$`,
+    );
+    await t.pool.query(
+      'CREATE TRIGGER delay_first_retry_receipt BEFORE UPDATE ON fix_requests FOR EACH ROW EXECUTE FUNCTION delay_first_retry_receipt()',
+    );
+    try {
+      await expect(
+        runWrongContentRetry({
+          ...s.input,
+          digest: first.digest,
+          key: first.candidates[0]!.key,
+          evidence,
+          conflictEvidence: 'Physical source proves wrong S3 pair.',
+        }),
+      ).rejects.toThrow('test delayed receipt');
+    } finally {
+      await t.pool.query('DROP TRIGGER delay_first_retry_receipt ON fix_requests');
+      await t.pool.query('DROP FUNCTION delay_first_retry_receipt()');
+    }
+    const [a] = await t.db.select().from(fixRequests);
+    const callA = a!.actionsTaken.find((x) => x.step === 'wrong_content_retry_grab_call_result')!;
+    expect(callA.accepted).toBe(true);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.parse(String(callA.finishedAt)) + 5000);
+    try {
+      failDownloadedPair(s);
+      vi.setSystemTime(Date.parse(String(callA.finishedAt)) + 10000);
+      s.state.releaseGuid = 'second-source';
+      s.state.grabAcceptedButError = true;
+      const input = { ...s.input, conflictingDownloadId: undefined },
+        second = await selected(input);
+      await runWrongContentRetry({
+        ...input,
+        digest: second.digest,
+        key: second.candidates[0]!.key,
+        evidence,
+      });
+      const [b] = await t.db.select().from(fixRequests);
+      const callB = b!.actionsTaken.find(
+        (x) => x.step === 'wrong_content_retry_grab_call_result' && x.downloadId === 'new-ivy-2',
+      )!;
+      expect(callB.accepted).toBe(false);
+      vi.setSystemTime(Date.parse(String(callA.finishedAt)) + 15000);
+      failDownloadedPair(s);
+      // Save A's real, delayed response after B's native proof; this is factual audit, never a synthetic GRAB event.
+      await appendFixActions({
+        db: t.db,
+        fixRequestId: s.fixRequestId,
+        actions: [
+          {
+            step: 'release_grab',
+            at: String(callA.finishedAt),
+            attemptId: callA.attemptId,
+            ok: true,
+            release: RIGHT,
+          },
+        ],
+      });
+      vi.setSystemTime(Date.parse(String(callA.finishedAt)) + 20000);
+      s.state.releaseGuid = 'third-source';
+      const next = await selected(input);
+      expect(next.state).toBe('ready');
+      expect(next.failedDownloadId).toBe('new-ivy-2');
+      expect(next.failedGrabAttemptId).toBe(callB.attemptId);
+      expect(next.failedGrabHttpAccepted).toBe(false);
+      expect(s.state.writes.map((w) => w.path)).toEqual([
+        '/api/v3/queue/1000',
+        '/api/v3/release',
+        '/api/v3/release',
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('observes a second-attempt uncertain discard on its own audit without replaying either attempt', async () => {
     const s = await setup(),
       first = await selected(s.input);

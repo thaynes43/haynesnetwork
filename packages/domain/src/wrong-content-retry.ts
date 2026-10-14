@@ -162,15 +162,25 @@ async function parent(db: DbClient | undefined, id: string, lock = false, interl
     source: 'receipt' as 'receipt' | 'native_call',
     httpAccepted: true,
   };
-  const actualCall = [...fix.actionsTaken]
-    .reverse()
-    .find(
+  const actualCall = fix.actionsTaken
+    .filter(
       (a) =>
         a.step === 'wrong_content_retry_grab_call_result' &&
         typeof a.downloadId === 'string' &&
-        typeof a.title === 'string' &&
-        (fix.actionsTaken.indexOf(a) > grabIndex || a.attemptId === grab.attemptId),
-    );
+        typeof a.title === 'string',
+    )
+    .map((call) => ({
+      call,
+      intentIndex: fix.actionsTaken.findIndex(
+        (a) =>
+          a.step === 'wrong_content_retry_grab_intent' &&
+          a.attemptId === call.attemptId &&
+          a.title === call.title &&
+          same(ids(a.episodeIds), slot),
+      ),
+    }))
+    .filter((bound) => bound.intentIndex >= 0)
+    .sort((a, b) => b.intentIndex - a.intentIndex)[0]?.call;
   if (actualCall) {
     const ownIntent = fix.actionsTaken.find(
       (a) =>

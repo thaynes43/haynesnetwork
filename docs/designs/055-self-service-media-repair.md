@@ -732,6 +732,9 @@ do not edit)", "must not contain" terms only, no tags.
     Preserve every earlier claim and outcome; never replay their removal or grab. Read-back and source/conflict
     fingerprints belong to the selected attempt, and a newer attempt cannot silently reset the protected-file
     boundary. Repeated release titles require the actual GUID and call window to identify the owned continuation.
+    Durable pre-command grab-intent order determines attempt succession. A delayed factual receipt from an older
+    call must never outrank a newer verified actual GRAB; join call facts to that intent's attempt identity and
+    exact scope, independent of their later append order. A newer unproved command remains observe-only.
     The janitor keeps its existing enforcement modes and search budgets throughout.
 
 ### D-06 Release Pick
