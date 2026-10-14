@@ -1,5 +1,43 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14 09:06Z: v0.125.3 live; Mickey E1 to E8 complete; Pokemon E21 import pending
+
+- Signed [v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is verified live through
+  [haynes-ops 3922](https://github.com/thaynes43/haynes-ops/pull/3922) and report
+  [3924](https://github.com/thaynes43/haynes-ops/pull/3924): all three serving apps and successful migrators, twenty-four frontend
+  and two downloads CronJob templates, health, migrations and reviewed source hashes passed. Both owned bounded
+  Books Census and owed-checks Jobs completed on the signed image. The same-Fix recovery is on main in
+  [978](https://github.com/thaynes43/haynesnetwork/pull/978); interim evidence merged in
+  [982](https://github.com/thaynes43/haynesnetwork/pull/982). Runner completion does not satisfy dated or member-use
+  evidence. [PLAN-077](plans/077-self-service-media-repair.md) remains active; exact identities and proof are in the
+  [runtime record](context/2026-10-14-self-service-repair-runtime-proof.md).
+- Pokemon E1 to E7 and E9 to E20 are nineteen normally completed, fully proved slots. The v0.125.2 predecessor
+  was confirmed gone before fresh complete post-deletion proof. Current finite Job
+  `frontend/pokemon-owned-cont-v1253-20261014-0830` was actually created at 08:42:01Z on signed v0.125.3 after
+  complete fresh proof and root manifest review. It adopted those nineteen slots without replay and started a new
+  control namespace at 1. Preserve the original checkpoint and capture time. E8/E31 retain their files; never use Saon.
+- Pokemon E21 now has its own replacement Fix and verified Carry. The actual source is 1920x1080/1469914845 bytes,
+  with English AAC stream 4. Root viewed frames at 300s/750s; caretaker, net enclosure and collapsed house support
+  the Foul Weather Friends story inference. One owned import was authorized at 09:03Z after fresh guards;
+  IMPORT4 was delivered once under root authorization and accepted at 09:05:01.977Z after fresh PLAN3, source
+  and protected-file checks.
+  **Normal completion and Plex proof are still pending**; control delivery does not establish completion.
+- Mickey E1 to E8 are the first four fully proved, normally completed initial slots. The reviewed native-ledger
+  contract fix passed fifteen focused cases, affected types and the actual three-prefix read-only check before
+  signed Job `frontend/p077-mickey-resume-v1253-r2` started at 08:14:03Z. E7/E8 recovered under the original
+  Fix/Carry, with one audited retry, whole paired import, English and literal cards, matching source/library bytes,
+  both-server/current-zero proof and preserved five plays on the correct S3 copy. Finish was accepted at 08:42:17Z.
+  E9/E10 is now in progress; source story and English remain pending and no import is authorized. Final E13 to E16
+  runs last, after all twenty-three initial slots and a fresh root-reviewed physical same-content mapping.
+- Actual Pokemon expiry/cutoff is 13:40:21.983Z/13:25:21.983Z; Mickey is 14:10:35.213Z/13:55:35.213Z.
+  Declaration `act-073758-527071` covers frontend, media, downloads, Plex, PlexOps, Sonarr, SABnzbd and HaynesTower
+  until **2026-10-14T14:37:58Z**. Root owns renewal and ending it. Keep each write inside its finite cutoff.
+- Ben remains done. Q-12 remains asked and unanswered, with no notification writes. The requested receipt page
+  was delivered; that did not authorize changing Seerr notification settings. OC-056 stays held until
+  **2026-10-15T20:10Z** and closed blocking Fixes. Paw Patrol's tvdbAiring ordering switch must finish inside its
+  verified Carry before regenerating the season plan; preserve Runaway Stargazer. Final step-6 evidence follows
+  the repairs and formal hold. P8 remains staff practice, with no readiness metrics or gates.
+
 ## 2026-10-14 07:56Z: v0.125.3 verified live; Pokemon E20 checkpoint; Mickey startup contract fix
 
 - Signed [v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is verified live through
