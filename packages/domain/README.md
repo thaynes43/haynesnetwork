@@ -85,6 +85,17 @@ Orchestrators (compose the writers above + the *arr bundle, open no transaction 
 own): `runFixRequest` (`fix-flow.ts`), `runForceSearch` (`search-flow.ts`),
 `computeRestoreDiff` + `executeRestore` (`restore-flow.ts`).
 
+`owned-sonarr-import.ts` continues an explicitly confirmed import under its original open Fix or `release_pick`
+Repair Request. Targets come from stored parent intent and exact grab history. It claims once under that parent's
+row lock, appends intent/result/read-back through `appendFixActions` / `appendRepairActions`, asks Sonarr to re-evaluate
+its real import decisions, then uses the existing ManualImport writer only when whole-file coverage and protected
+file fingerprints pass. A claimed or uncertain command is observed without replay; normal import ingestion completes
+the parent. Staff call `repair-guide.ts owned-import-plan | owned-import-run`; public callers derive ownership from
+authenticated server context and supply no parent ID. See DESIGN-055 P4 decision 38.
+Its claim transactions contain DB reads/writers only; all Sonarr reads and remote calls run outside them. Verified
+post-import neutral queue forget has its own claim/audit and may append the strictly owned follow-through trail after
+the normal matcher completed a parent, without changing its lifecycle or replaying library import.
+
 OAuth DELETEs are confined further than the repo-wide guard: `__tests__/oauth-delete-paths.test.ts` allows them
 only inside `pruneExpired` and the two consent writers (which delete the request they decide); `oauth_audit` is
 never deleted. `consumeRateLimit` (`rate-limit.ts`) is the shared fixed-window limiter the `/oauth/*` routes use

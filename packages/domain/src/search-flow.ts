@@ -69,6 +69,8 @@ export interface RunForceSearchResult {
   eventId: string | null;
   /** The Repair Request, when the press imported. */
   repairRequestId: string | null;
+  /** The existing Fix, when its owned download was continued without creating a Repair Request. */
+  fixRequestId: string | null;
   targetLabel: string | null;
   /** The *arr command that was accepted, e.g. 'EpisodeSearch' or 'ManualImport' — surfaced to the UI. */
   commandName: string | null;
@@ -101,7 +103,7 @@ export async function runForceSearch(input: RunForceSearchInput): Promise<RunFor
     }
   }
   const r = await searchOnce(input, {});
-  return { outcome: 'searched', eventId: r.eventId, repairRequestId: null, targetLabel: r.targetLabel, commandName: r.commandName };
+  return { outcome: 'searched', eventId: r.eventId, repairRequestId: null, fixRequestId: null, targetLabel: r.targetLabel, commandName: r.commandName };
 }
 
 /**

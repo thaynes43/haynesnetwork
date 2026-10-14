@@ -500,7 +500,7 @@ describe('the Release Pick over embedded Postgres (DESIGN-055 D-06)', () => {
     ]);
     const [repair] = await t.db.select().from(repairRequests).where(eq(repairRequests.id, result.repairRequestId!));
     expect(repair).toMatchObject({ kind: 'release_pick', scope: 'episode', seasonNumber: 1, targetChildIds: [E11.id], status: 'actioned' });
-    expect(repair!.actionsTaken.map((a) => a.step)).toEqual(['created', 'grab']);
+    expect(repair!.actionsTaken.map((a) => a.step)).toEqual(['created', 'grab_intent', 'grab']);
     expect(repair!.preview).toMatchObject({ releaseListId: list.listId, state: 'override', numberedAs: 'S01E10 · Stilt Walkers' });
 
     // E11 now has a download on its way: its list shows that, costs nothing and does not search.

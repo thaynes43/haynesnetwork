@@ -345,6 +345,8 @@ export async function appendRepairActions(input: {
   db?: DbClient;
   repairRequestId: string;
   actions: FixActionEntry[];
+  /** Verified-import follow-through audit only; completed lifecycle is retained. */
+  allowCompleted?: boolean;
 }): Promise<void> {
   if (input.actions.length === 0) return;
   await inTransaction(input.db, async (tx) => {
@@ -354,7 +356,8 @@ export async function appendRepairActions(input: {
       .where(eq(repairRequests.id, input.repairRequestId))
       .for('update');
     if (!row) throw new NotFoundError(`Repair request ${input.repairRequestId} not found`);
-    if (!(OPEN_REPAIR_STATUSES as readonly string[]).includes(row.status)) {
+    if (!(OPEN_REPAIR_STATUSES as readonly string[]).includes(row.status) &&
+      !(input.allowCompleted && row.status === 'completed')) {
       throw new InvalidFixTransitionError(`Repair request ${row.id} is ${row.status}; its trail is closed`);
     }
     await tx

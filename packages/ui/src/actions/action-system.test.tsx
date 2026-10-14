@@ -33,7 +33,7 @@ describe('MEDIA_ACTIONS registry', () => {
     expect(MEDIA_ACTIONS.forceSearch.variant).toBe('outline');
   });
 
-  it('has exactly the nine action types', () => {
+  it('has exactly the ten action types', () => {
     expect(MEDIA_ACTION_TYPES.sort()).toEqual(
       [
         'consume',
@@ -41,6 +41,7 @@ describe('MEDIA_ACTIONS registry', () => {
         'forceSearch',
         'grabRelease',
         'importDownload',
+        'checkImportDownload',
         'moveFile',
         'notOnDisk',
         'pickRelease',
@@ -68,6 +69,12 @@ describe('MEDIA_ACTIONS registry', () => {
     expect(MEDIA_ACTIONS.importDownload.label).toBe('Import it');
     expect(MEDIA_ACTIONS.importDownload.variant).toBe('primary');
     expect(MEDIA_ACTIONS.importDownload.destructive).toBe(false);
+  });
+
+  it('names the target-check action "Check and import", a primary confirm that evaluates before importing', () => {
+    expect(MEDIA_ACTIONS.checkImportDownload).toMatchObject({
+      label: 'Check and import', variant: 'primary', destructive: false,
+    });
   });
 
   it('never uses the retired forked labels', () => {

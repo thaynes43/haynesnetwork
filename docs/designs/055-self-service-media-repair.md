@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
-- **Last updated:** 2026-10-13 (P4 decision 38, the coordinator's ruling on #928: the staff Wrong-Content Replace). Before that 2026-10-13 (P7 decisions 1-10 after D-11: the Seerr Issue bridge as built, the bridge user, the `seerr_issue_bridge` setting, the comment's wording, one write per issue and kind, the exact link, when the resolve happens; Q-12 raised). Before that 2026-10-13 (P6 decision 14 scoped to the audit's flagged shows, ADR-115). Before that 2026-10-13 (P4 decisions 35 to 37, issue #928's evidence: a placement may change the episode count, a second parking episode for a second open cycle, the Second-Copy Fix takes a multi-episode copy). Before that 2026-10-13 (P6 decision 14 and Q-03 amended: the owner's ruling on #955, "English if present", for staff defaults). Before that 2026-10-13 (P6 decision 3: a server's item is the one in a library of the title's own kind, PR #954; P6's live status and sweep in PLAN-077). Before that 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
+- **Last updated:** 2026-10-14 (P4 decision 38 owned-import follow-through and D-12 staff guidance). Before that 2026-10-13 (P4 decision 38, the coordinator's ruling on #928: the staff Wrong-Content Replace). Before that 2026-10-13 (P7 decisions 1-10 after D-11: the Seerr Issue bridge as built, the bridge user, the `seerr_issue_bridge` setting, the comment's wording, one write per issue and kind, the exact link, when the resolve happens; Q-12 raised). Before that 2026-10-13 (P6 decision 14 scoped to the audit's flagged shows, ADR-115). Before that 2026-10-13 (P4 decisions 35 to 37, issue #928's evidence: a placement may change the episode count, a second parking episode for a second open cycle, the Second-Copy Fix takes a multi-episode copy). Before that 2026-10-13 (P6 decision 14 and Q-03 amended: the owner's ruling on #955, "English if present", for staff defaults). Before that 2026-10-13 (P6 decision 3: a server's item is the one in a library of the title's own kind, PR #954; P6's live status and sweep in PLAN-077). Before that 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
   missing, is a pick for all of them). Before that 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
   (episode-title evidence; amended by ADR-113, mislabelled-name terms), ADR-111 (Seerr issue bridge and readiness gate). Extends DESIGN-005 (Fix D-15, Force Search
@@ -598,6 +598,70 @@ do not edit)", "must not contain" terms only, no tags.
     list is cached (five minutes); `replace-plan --season <n> --slots 1,3,33+34` plans many slots from it and
     `replace-batch --batch '<json>'` runs them in one process, keeping the list after each grab, pausing between slots
     and stopping at the first refusal. Indexer API hits are capped, and a season search per slot would spend hundreds.
+
+    **Owned import recovery (2026-10-13, #928 live evidence).** A release override can record the intended episodes in
+    Sonarr's `grabbed` history while its tracked queue reparses the original release numbers. Pokémon's named Johto
+    E01 was grabbed for E01 but the queue tracked E12; Mickey's E01/E02 queue tracked E01-E04. Native import remained
+    blocked and the unselected library files stayed intact. The queue guard and the janitor's class/mode remain
+    unchanged: the real enforced Import Check refuses these downloads. Opening another `import_download` repair also
+    refuses while the request that owns the grab is open. Completing that parent to bypass this guard is forbidden.
+    An internal, parent-owned Sonarr Import Check therefore plans/runs the existing explicit import write-back under
+    the original Fix or `release_pick` Repair Request. Its targets come from the stored parent intent and an exact
+    matching `grabbed` history download/title, never episode IDs supplied by the caller. The parent must be open and
+    belong to the caller (or an authenticated admin); actor-null staff is an explicit internal call, not public input.
+    For a Wrong-Content Replace the linked carry, durable grab-start intent and verified deletion are required.
+    Planning preserves every Import Check refusal and requires whole-file coverage to equal the intended episodes,
+    all intended episodes to be empty, and fresh candidate/source/unchosen file identities in the confirmation digest.
+    Ownership never strips a quality rule. Sonarr 4.0.20.3012's transient `POST /api/v3/manualimport` reprocess endpoint
+    (not PUT) reruns its real import decisions against selected episode IDs without importing a file
+    ([controller](https://github.com/Sonarr/Sonarr/blob/v4.0.20.3012/src/Sonarr.Api.V3/ManualImport/ManualImportController.cs),
+    [service](https://github.com/Sonarr/Sonarr/blob/v4.0.20.3012/src/NzbDrone.Core/MediaFiles/EpisodeImport/Manual/ManualImportService.cs)).
+    The parent audits that evaluation before the call and preserves every fresh rejection it returns. This can remove
+    a comparison against an unselected existing file while keeping a genuine quality/title/other hard rejection.
+    Before ManualImport the original parent records the intent through its audit writer. Its result, command read-back,
+    target file identities and unchanged unselected files join that same trail. A claimed/uncertain attempt is observed,
+    never replayed; a finished import is adopted without a second command. Completion remains the normal import-ledger
+    matcher. This staff recovery adds no public parent-ID argument, parallel repair, implicit re-map or automatic batch
+    replay. Staff finish one owned download and verify its physical story/language before a fresh remaining-slot plan.
+    The same continuation belongs in a person's Import Check: Force Search derives the parent and download from its
+    authenticated server context, target and grab history before native queue-number filtering. It exposes the existing
+    Import Check shape with the entire intended file coverage, never public parent/actor arguments or a sliced import.
+    Its confirmed run uses the same parent claim and preserves other requests' guards. Public audit evidence records
+    confirmation of the shown plan, without inventing physical probes; staff's CLI evidence records actual story/audio
+    checks. The GET-only preview retains the current refusal and marks a required selected-target check; it never
+    claims that an unevaluated file is already importable. The driver-approved UI uses canonical
+    `MEDIA_ACTIONS.checkImportDownload`, label **Check and import**, as the primary non-destructive action inside the
+    existing explanatory Modal. Its heading is **Check this download for {targetLabel}** and its explanation is
+    **This download was matched to different episode numbers. Check it against the episodes you requested before importing.**
+    The raw rejection stays visible. Confirmation checks the whole intended set, then imports only when Sonarr's fresh
+    selected-target decision approves. The action-anatomy mirror/parity checks cover the new registry action. An existing
+    library-command claim is observed without another import command; transient evaluation is audited separately before
+    the actual import claim, so a rejected evaluation never pretends a command is in flight.
+    An exact owned grab that is still downloading returns `waiting` (the existing `on_its_way` UI), including when its
+    native queue numbers differ from the intended episodes. It neither opens another request nor sends a search/import.
+    Discovery distinguishes an executable owned import from read-only request status. An ordinary Fix/repair or another
+    person's open parent still owns its matching episode/season: a positively associated downloading queue shows
+    `on_its_way`; a blocked or unanchored request shows the existing staff state. A missing grab-history anchor never
+    permits a new search or import. Only a fully validated owned parent and exact history can expose an import handle;
+    read-only status does not grant ownership or bypass another open request.
+    The public plan marks this read-only case `activeRequest: true`, retaining any native queue evidence. Waiting uses
+    **A repair is already running** and **This episode already has a repair in progress. You can check it again in
+    a little while.** Staff uses **This repair needs staff** and **A repair is already open for {targetLabel}.
+    Staff can check its progress and the download.** These states expose no import/search action or executable parent ID.
+    Sonarr's manual-import service marks a tracked download Imported only when the imported episode count reaches its
+    parsed remote episode count. The queue service emits one row for each of those remote episodes. Mickey's parsed four
+    episodes therefore cannot settle from the intended two-episode import alone. After exact owned download/time/import
+    history file-ID/byte coverage and unchanged unselected files are verified, continuation forgets only still-present,
+    completed, exact-title/series queue rows of that owned misnumbered download through the existing queue writer:
+    `removeFromClient: false`, `blocklist: false`, `skipRedownload: true`; no client deletion or search. Original-parent
+    intent/result/absence read-back audit that step; absent rows are adopted on retry and library import is never replayed.
+    A verified completed parent's audit trail may append this bounded follow-through without changing its lifecycle.
+    Import history's title is its scene name or physical basename (Sonarr `HistoryService`), so it is retained as evidence;
+    immutable parent/download/time/episode/file IDs and bytes prove the import, rather than literal grab-title equality.
+    A multipart Wrong-Content Replace keeps its Fix open until every intended deletion-slot episode in its linked
+    verified versioned carry has a later actual import ledger event. The first part alone cannot close the parent and
+    strand its remaining owned download. Missing, ambiguous or malformed slot metadata keeps that Fix open; ordinary
+    episode/season Fix matching is unchanged. The normal matcher records all matched episode/event IDs in completion.
 
 ### D-06 Release Pick
 
@@ -1280,6 +1344,12 @@ and resolve, as a dedicated Seerr user, never as the owner's account), with the 
     because a smoke test is not a real person's report.
 
 ### D-12 Working practice and the readiness judgment
+
+**Admin guidance (2026-10-14, PLAN-077 P8 working practice).** The issues list links to Seerr, the Library and
+PLAN-077. Staff open the report's self-service link and try the tools as a member would. If a tool fixes it, their
+reply names that tool and links to the report. A hand fix records the missing capability and adds it to the plan.
+The report URL can be opened directly or copied. This guidance adds no counters and does not declare readiness
+or change the default; that remains the owner's judgment below.
 
 **Owner clarification (2026-10-12), ADR-112:** "The gate is a judgment call, not a count. The intention is to keep building haynesnetwork.com until it can handle the kinds of problems people actually report, then steer users to fix things themselves instead of staff fixing them. Working practice: every new Seerr issue is worked through haynesnetwork.com's self-service tools first, as a user would. When a tool fixes it, the reply teaches the user that tool. When no tool can, staff fix it by hand and the missing capability is added to the plan. The owner decides when coverage is good enough to make self-service the default."
 

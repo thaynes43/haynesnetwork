@@ -26,6 +26,13 @@ import { episodeLabel } from './media-children';
 import { getRepairGuideRemedies } from './repair-guide-settings';
 import { createRepairRequest, recordRepairTransition } from './repair-requests';
 import {
+  findOwnedSonarrImport,
+  planOwnedSonarrImport,
+  runOwnedSonarrImport,
+  type OwnedSonarrImportInput,
+  type OwnedSonarrImportPlan,
+} from './owned-sonarr-import';
+import {
   checkRadarrImport,
   checkSonarrImport,
   checkSonarrImportOnto,
@@ -115,6 +122,12 @@ export interface ForceSearchPlan {
   removeWhy: 'failed' | 'defect' | null;
   /** A stable digest of what the press will DO; the confirm sends it back. */
   digest: string;
+  /** The owned download still needs Sonarr's authoritative check against its intended targets; not an approval. */
+  needsTargetCheck?: boolean;
+  /** Whole-file coverage from the existing request and exact grab history, separate from the raw Import Check. */
+  intendedImportTargetIds?: number[];
+  /** An open request is being observed; this plan grants no new import or search and reveals no parent identity. */
+  activeRequest?: boolean;
 }
 
 export interface ForceSearchPlanInput {
@@ -126,6 +139,9 @@ export interface ForceSearchPlanInput {
   seasonNumber?: number;
   /** Read-only previews only (the in-cluster tool): plan as if the remedy were on, whatever the switch says. */
   importCheckOn?: boolean;
+  /** Authenticated server context only. Omitted previews never infer staff authority. */
+  requesterId?: string;
+  requesterIsAdmin?: boolean;
 }
 
 /** The plan plus what executing it needs (never sent to a client). */
@@ -140,6 +156,7 @@ interface InternalPlan extends ForceSearchPlan {
   sonarrCheck: SonarrImportCheck | null;
   sonarrCheckInput: SonarrImportCheckInput | null;
   radarrCheck: RadarrImportCheck | null;
+  ownedImport: { input: OwnedSonarrImportInput; plan: OwnedSonarrImportPlan } | null;
 }
 
 type QueueRecord = SonarrQueueRecord | RadarrQueueRecord;
@@ -224,6 +241,11 @@ export function publicPlan(plan: ForceSearchPlan): ForceSearchPlan {
     replaces: plan.replaces,
     removeWhy: plan.removeWhy,
     digest: plan.digest,
+    ...(plan.needsTargetCheck !== undefined ? { needsTargetCheck: plan.needsTargetCheck } : {}),
+    ...(plan.intendedImportTargetIds
+      ? { intendedImportTargetIds: plan.intendedImportTargetIds }
+      : {}),
+    ...(plan.activeRequest ? { activeRequest: true } : {}),
   };
 }
 
@@ -278,6 +300,7 @@ async function buildPlan(input: ForceSearchPlanInput): Promise<InternalPlan> {
     sonarrCheck: null,
     sonarrCheckInput: null,
     radarrCheck: null,
+    ownedImport: null,
   };
   const remedies = await getRepairGuideRemedies(db);
   const importCheckOn = input.importCheckOn ?? remedies.import_check;
@@ -344,6 +367,45 @@ async function buildPlan(input: ForceSearchPlanInput): Promise<InternalPlan> {
     targetLabel: label(target.id),
     seasonNumber: target.seasonNumber,
   };
+  // A numbered override's native queue can point elsewhere. Discover its existing owner from server context and
+  // exact grab history before filtering by the queue's parsed episode ID. No client chooses a parent or its targets.
+  if (input.requesterId !== undefined) {
+    const requesterId = input.requesterId;
+    const ownedInput = await guarded('owned import read', () =>
+      findOwnedSonarrImport({
+        db: input.db,
+        arr: input.arr,
+        mediaItemId: item.id,
+        targetEpisodeId: target.id,
+        actor: { kind: 'user', userId: requesterId, isAdmin: input.requesterIsAdmin === true },
+      }),
+    );
+    if (ownedInput) {
+      if ('state' in ownedInput) {
+        const records = ownedInput.downloadId !== null
+          ? queue.filter((r) => r.downloadId === ownedInput.downloadId)
+          : queue.filter((r) => r.episodeId === target.id);
+        return finish({
+          ...plan,
+          state: ownedInput.state === 'waiting' ? 'on_its_way' : 'staff',
+          activeRequest: true,
+          download: records.length ? downloadSummary(records) : null,
+        });
+      }
+      const ownedPlan = await guarded('owned import plan', () => planOwnedSonarrImport(ownedInput));
+      const records = queue.filter((r) => r.downloadId === ownedPlan.downloadId);
+      return finish({
+        ...plan,
+        state: ownedPlan.state === 'observe' || ownedPlan.state === 'waiting' ? 'on_its_way' : 'import',
+        download: records.length ? downloadSummary(records) : null,
+        check: ownedPlan.check ? publicCheck(ownedPlan.check) : null,
+        sonarrCheck: ownedPlan.check,
+        needsTargetCheck: ownedPlan.state === 'reevaluate',
+        intendedImportTargetIds: ownedPlan.targetEpisodeIds,
+        ownedImport: { input: ownedInput, plan: ownedPlan },
+      });
+    }
+  }
   const picked = pickDownload(queue.filter((r) => r.episodeId === target.id));
   if (!picked) return finish(plan);
   plan.download = downloadSummary(picked.records);
@@ -435,6 +497,8 @@ function finish(plan: InternalPlan): InternalPlan {
       replaces: plan.replaces.map((r) => [r.targetId, r.fileName]),
       removeWhy: plan.removeWhy,
       reason: plan.check?.reason ?? null,
+      ...(plan.ownedImport ? { ownedImport: plan.ownedImport.plan.digest } : {}),
+      ...(plan.activeRequest ? { activeRequest: true } : {}),
     }),
   };
 }
@@ -473,13 +537,19 @@ export interface QueueAwareSearchResult {
   outcome: ForceSearchOutcome;
   eventId: string | null;
   repairRequestId: string | null;
+  /** An existing Fix owning this import; never substituted for a Repair Request ID. */
+  fixRequestId: string | null;
   targetLabel: string | null;
   commandName: string | null;
 }
 
 /** The search half, supplied by search-flow.ts (it records the event and sends the *arr command). */
 export type SearchOnce = (opts: {
-  queueRemoval?: { downloadId: string | null; title: string | null; why: 'failed' | 'defect' } | null;
+  queueRemoval?: {
+    downloadId: string | null;
+    title: string | null;
+    why: 'failed' | 'defect';
+  } | null;
   beforeSearch?: () => Promise<void>;
 }) => Promise<{ eventId: string; targetLabel: string | null; commandName: string }>;
 
@@ -523,13 +593,57 @@ export async function runQueueAwareForceSearch(
   }
   if (plan.state === 'search') {
     const r = await search({});
-    return { outcome: 'searched', eventId: r.eventId, repairRequestId: null, targetLabel: r.targetLabel, commandName: r.commandName };
+    return {
+      outcome: 'searched',
+      eventId: r.eventId,
+      repairRequestId: null,
+      fixRequestId: null,
+      targetLabel: r.targetLabel,
+      commandName: r.commandName,
+    };
+  }
+  if (plan.ownedImport && input.confirm?.ontoEpisodeId !== undefined) {
+    throw new FixRefusedError(
+      'needs_guide',
+      'This download must cover all the episodes in its original request.',
+    );
   }
   if (plan.state === 'on_its_way') {
-    return { outcome: 'on_its_way', eventId: null, repairRequestId: null, targetLabel: label, commandName: null };
+    return {
+      outcome: 'on_its_way',
+      eventId: null,
+      repairRequestId:
+        plan.ownedImport?.plan.parent.kind === 'release_pick'
+          ? plan.ownedImport.plan.parent.id
+          : null,
+      fixRequestId:
+        plan.ownedImport?.plan.parent.kind === 'fix' ? plan.ownedImport.plan.parent.id : null,
+      targetLabel: label,
+      commandName: null,
+    };
   }
   if (!input.confirm || plan.state === 'staff') {
-    throw new FixRefusedError('needs_guide', REFUSAL_COPY[plan.state] ?? 'Open Force Search again to review it.');
+    throw new FixRefusedError(
+      'needs_guide',
+      REFUSAL_COPY[plan.state] ?? 'Open Force Search again to review it.',
+    );
+  }
+
+  if (plan.ownedImport) {
+    const owned = plan.ownedImport;
+    const result = await runOwnedSonarrImport({
+      ...owned.input,
+      digest: owned.plan.digest,
+      evidence: `Authenticated user ${input.requesterId} confirmed the shown Import Check and whole intended coverage: ${owned.plan.targetEpisodeIds.join(', ')}.`,
+    });
+    return {
+      outcome: result.outcome,
+      eventId: null,
+      repairRequestId: result.parent.kind === 'release_pick' ? result.parent.id : null,
+      fixRequestId: result.parent.kind === 'fix' ? result.parent.id : null,
+      targetLabel: label,
+      commandName: 'ManualImport',
+    };
   }
 
   if (plan.state === 'remove_and_search') {
@@ -550,6 +664,7 @@ export async function runQueueAwareForceSearch(
       outcome: 'removed_and_searched',
       eventId: r.eventId,
       repairRequestId: null,
+      fixRequestId: null,
       targetLabel: r.targetLabel,
       commandName: r.commandName,
     };
@@ -648,7 +763,14 @@ export async function runQueueAwareForceSearch(
         transition: 'completed',
         actions: [{ step: 'read_back', at: new Date().toISOString(), ok: true, commandId }],
       });
-      return { outcome: 'imported', eventId: null, repairRequestId, targetLabel: label, commandName };
+      return {
+        outcome: 'imported',
+        eventId: null,
+        repairRequestId,
+        fixRequestId: null,
+        targetLabel: label,
+        commandName,
+      };
     }
     if (landed === false) {
       await recordRepairTransition({
@@ -668,13 +790,23 @@ export async function runQueueAwareForceSearch(
     });
     throw new FixRefusedError('needs_guide', 'The download could not be added. Ask staff for help.');
   }
-  return { outcome: 'importing', eventId: null, repairRequestId, targetLabel: label, commandName };
+  return {
+    outcome: 'importing',
+    eventId: null,
+    repairRequestId,
+    fixRequestId: null,
+    targetLabel: label,
+    commandName,
+  };
 }
 
 async function targetHasFile(arr: ArrClientBundle, plan: InternalPlan, targetIds: number[]): Promise<boolean> {
   if (plan.kind === 'radarr') return (await arr.read.radarr.getMovieById(plan.arrItemId)).hasFile;
   const episodes = await arr.read.sonarr.listEpisodes(plan.arrItemId);
-  return targetIds.length > 0 && targetIds.every((id) => episodes.find((e) => e.id === id)?.hasFile === true);
+  return (
+    targetIds.length > 0 &&
+    targetIds.every((id) => episodes.find((e) => e.id === id)?.hasFile === true)
+  );
 }
 
 const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err));

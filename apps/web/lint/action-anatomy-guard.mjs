@@ -50,6 +50,7 @@ export const CANONICAL_ACTION_LABELS = [
   'Force Search',
   'Retry import',
   'Import it',
+  'Check and import',
   'Move it',
   'See every release',
   'Grab this release',
@@ -81,6 +82,7 @@ export const MEDIA_ACTION_KEYS = [
   'retryImport',
   'notOnDisk',
   'importDownload',
+  'checkImportDownload',
   'moveFile',
   'pickRelease',
   'grabRelease',
@@ -134,7 +136,7 @@ const R2_MESSAGE =
 // prop; this catches a loosened type / a stray literal and gives the actionable message).
 const R3_MESSAGE =
   'Unknown media-action key on <MediaAction action="…"> (ADR-071). The value must be a MEDIA_ACTIONS ' +
-  'registry key (fix | forceSearch | consume | retryImport | notOnDisk | importDownload | moveFile | pickRelease | ' +
+  'registry key (fix | forceSearch | consume | retryImport | notOnDisk | importDownload | checkImportDownload | moveFile | pickRelease | ' +
   'grabRelease); add a registry entry rather ' +
   'than passing an off-registry literal.';
 const unknownKeyPattern = `^(?!(${alternation(MEDIA_ACTION_KEYS)})$).+$`;

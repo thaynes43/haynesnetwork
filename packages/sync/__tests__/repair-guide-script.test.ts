@@ -5,6 +5,17 @@ import { formatAudioScan, formatCarryResult, formatReleaseList, formatSeasonPlan
 import type { SeasonRemapView, WatchCarryResult } from '@hnet/domain';
 
 describe('repair-guide.ts arguments', () => {
+  it('owned import derives targets from its parent and requires reviewed confirmation only for run', () => {
+    const p = 'fix:ac29d8ad-fd56-439f-810d-51a86e170ae3';
+    expect(parseRepairGuideArgs(['owned-import-plan', '--parent', p, '--download', 'owned-dl']))
+      .toMatchObject({ command: 'owned-import-plan', parent: { kind: 'fix' }, download: 'owned-dl' });
+    expect(() => parseRepairGuideArgs(['owned-import-run', '--parent', p, '--download', 'owned-dl']))
+      .toThrow(/reviewed/);
+    expect(() => parseRepairGuideArgs(['owned-import-plan', '--parent', p, '--download', 'owned-dl', '--episode', 'S03E12']))
+      .toThrow(/needs only/);
+    expect(parseRepairGuideArgs(['owned-import-run', '--parent', p, '--download', 'owned-dl', '--digest', 'abcdef012345',
+      '--evidence', 'Physical episode and English audio confirmed'])).toMatchObject({ command: 'owned-import-run' });
+  });
   it('preview a movie, an episode, a season with chosen episodes', () => {
     expect(parseRepairGuideArgs(['preview', '--tmdb', '769'])).toMatchObject({ command: 'preview', tmdb: 769 });
     expect(parseRepairGuideArgs(['preview', '--tvdb', '1', '--episode', 'S01E05'])).toMatchObject({

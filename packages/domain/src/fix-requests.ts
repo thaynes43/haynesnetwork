@@ -4,6 +4,7 @@ import {
   mediaItems,
   repairRequests,
   users,
+  watchCarries,
   type DbClient,
   type FixActionEntry,
   type FixPath,
@@ -466,6 +467,29 @@ export async function recordFixAction(input: RecordFixActionInput): Promise<Reco
   });
 }
 
+/** Append a follow-through step to the original open Fix without pretending its lifecycle completed. */
+export async function appendFixActions(input: {
+  db?: DbClient;
+  fixRequestId: string;
+  actions: FixActionEntry[];
+  /** Verified-import follow-through audit only; completed lifecycle is retained. */
+  allowCompleted?: boolean;
+}): Promise<void> {
+  if (input.actions.length === 0) return;
+  await inTransaction(input.db, async (tx) => {
+    const [row] = await tx.select({ status: fixRequests.status }).from(fixRequests)
+      .where(eq(fixRequests.id, input.fixRequestId)).for('update');
+    if (!row || (!(OPEN_FIX_STATUSES as readonly string[]).includes(row.status) &&
+      !(input.allowCompleted && row.status === 'completed'))) {
+      throw new InvalidFixTransitionError('The Fix audit trail is closed');
+    }
+    await tx.update(fixRequests).set({
+      actionsTaken: sql`${fixRequests.actionsTaken} || ${JSON.stringify(input.actions)}::jsonb`,
+      updatedAt: sql`now()`,
+    }).where(eq(fixRequests.id, input.fixRequestId));
+  });
+}
+
 export interface CompleteFixRequestsInput {
   db?: DbClient;
 }
@@ -498,6 +522,9 @@ export async function completeFixRequests(
         mediaItemId: fixRequests.mediaItemId,
         targetArrChildId: fixRequests.targetArrChildId,
         createdAt: fixRequests.createdAt,
+        reason: fixRequests.reason,
+        pathTaken: fixRequests.pathTaken,
+        actionsTaken: fixRequests.actionsTaken,
       })
       .from(fixRequests)
       .where(
@@ -510,12 +537,41 @@ export async function completeFixRequests(
 
     const completed: CompletedFix[] = [];
     for (const fix of open) {
+      const matchedEventIds: string[] = [];
+      let replacementIds: number[] | null = null;
+      if (fix.reason === 'wrong_content' && fix.pathTaken === 'delete_search' &&
+        fix.actionsTaken.some(a => a.step === 'wrong_content_replace')) {
+        const carries = await tx.select().from(watchCarries).where(and(eq(watchCarries.mediaItemId, fix.mediaItemId),
+          eq(watchCarries.kind, 'wrong_content')));
+        const linked = carries.filter(c => c.detail.fixRequestId === fix.id);
+        const carry = linked.length === 1 ? linked[0]! : null;
+        const deletion = carry?.detail.wrongContentDeletion as { version?: number; grabStarted?: boolean; files?: Array<{
+          id?: number; name?: string; size?: number; episodeIds?: number[] }> } | undefined;
+        if (!carry || carry.status !== 'verified' || deletion?.version !== 1 || deletion.grabStarted !== true ||
+          !Array.isArray(deletion.files) || !deletion.files.length || (Array.isArray(carry.scope.pendingDeletes) && carry.scope.pendingDeletes.length)) continue;
+        if (deletion.files.some(f => !f || !Number.isInteger(f.id) || (f.id ?? 0) <= 0 || typeof f.name !== 'string' || !f.name ||
+          typeof f.size !== 'number' || f.size <= 0 || !Array.isArray(f.episodeIds) || !f.episodeIds.length ||
+          f.episodeIds.some(n => !Number.isInteger(n) || n <= 0))) continue;
+        replacementIds = deletion.files.flatMap(f => f.episodeIds!);
+        const [item] = await tx.select({ arrKind: mediaItems.arrKind, arrItemId: mediaItems.arrItemId }).from(mediaItems)
+          .where(eq(mediaItems.id, fix.mediaItemId));
+        if (!item || item.arrKind !== 'sonarr' || item.arrItemId !== carry.seriesId ||
+          !replacementIds.includes(fix.targetArrChildId ?? -1) || new Set(replacementIds).size !== replacementIds.length) continue;
+        for (const episodeId of replacementIds) {
+          const [event] = await tx.select({ id: ledgerEvents.id }).from(ledgerEvents).where(and(
+            eq(ledgerEvents.mediaItemId, fix.mediaItemId), eq(ledgerEvents.eventType, 'imported'),
+            gte(ledgerEvents.occurredAt, fix.createdAt), sql`${ledgerEvents.payload}->>'episodeId' = ${String(episodeId)}`))
+            .orderBy(ledgerEvents.occurredAt).limit(1);
+          if (event) matchedEventIds.push(event.id);
+        }
+        if (matchedEventIds.length !== replacementIds.length) continue;
+      }
       const childMatch =
         fix.targetArrChildId === null
           ? sql`true`
           : sql`(${ledgerEvents.payload}->>'episodeId' = ${String(fix.targetArrChildId)}
               OR ${ledgerEvents.payload}->>'albumId' = ${String(fix.targetArrChildId)})`;
-      const [event] = await tx
+      const [ordinaryEvent] = replacementIds ? [] : await tx
         .select({ id: ledgerEvents.id })
         .from(ledgerEvents)
         .where(
@@ -528,6 +584,7 @@ export async function completeFixRequests(
         )
         .orderBy(ledgerEvents.occurredAt)
         .limit(1);
+      const event = replacementIds ? { id: matchedEventIds[0]! } : ordinaryEvent;
       if (!event) continue;
 
       await tx
@@ -539,7 +596,8 @@ export async function completeFixRequests(
         eventType: 'fix_completed',
         source: 'app',
         occurredAt: new Date(),
-        payload: { fixRequestId: fix.id, completedEventId: event.id },
+        payload: { fixRequestId: fix.id, completedEventId: event.id,
+          ...(replacementIds ? { targetEpisodeIds: replacementIds, completedEventIds: matchedEventIds } : {}) },
       });
       completed.push({ fixRequestId: fix.id, completedEventId: event.id });
     }

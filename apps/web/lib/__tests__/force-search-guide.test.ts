@@ -165,13 +165,20 @@ describe('what it found: the evidence', () => {
 
   it('names every episode a multi-episode file lands on, the target first', () => {
     const labels: Record<number, string> = { 11: 'S01E11 · Two', 12: 'S01E12 · Three' };
-    expect(importTargetLabels([10], { id: 10, label: 'S01E10 · One' }, () => null)).toEqual(['S01E10 · One']);
-    expect(importTargetLabels([12, 10, 11], { id: 10, label: 'S01E10 · One' }, (id) => labels[id] ?? null)).toEqual([
+    expect(importTargetLabels([10], { id: 10, label: 'S01E10 · One' }, () => null)).toEqual([
       'S01E10 · One',
-      'S01E12 · Three',
-      'S01E11 · Two',
     ]);
-    expect(importTargetLabels([10, 99], { id: 10, label: 'S01E10 · One' }, () => null)).toEqual(['S01E10 · One', 'another episode']);
+    expect(
+      importTargetLabels(
+        [12, 10, 11],
+        { id: 10, label: 'S01E10 · One' },
+        (id) => labels[id] ?? null,
+      ),
+    ).toEqual(['S01E10 · One', 'S01E12 · Three', 'S01E11 · Two']);
+    expect(importTargetLabels([10, 99], { id: 10, label: 'S01E10 · One' }, () => null)).toEqual([
+      'S01E10 · One',
+      'another episode',
+    ]);
     expect(joinLabels(['A', 'B', 'C'])).toBe('A, B and C');
     expect(joinLabels(['A'])).toBe('A');
   });
@@ -182,7 +189,21 @@ describe('the step for each state (D-07)', () => {
   it('heads each step with what it found', () => {
     expect(stepHeading(plan({ state: 'search' }), t, null)).toBe(`Nothing for ${t} is in the download queue.`);
     expect(stepHeading(plan({ state: 'on_its_way' }), t, null)).toBe('Already on its way');
-    expect(stepHeading(plan({ state: 'import' }), t, null)).toBe(`A finished download for ${t} is waiting to be added`);
+    expect(stepHeading(plan({ state: 'on_its_way', activeRequest: true }), t, null)).toBe(
+      'A repair is already running',
+    );
+    expect(stepHeading(plan({ state: 'staff', activeRequest: true }), t, null)).toBe(
+      'This repair needs staff',
+    );
+    expect(stepHeading(plan({ state: 'import' }), t, null)).toBe(
+      `A finished download for ${t} is waiting to be added`,
+    );
+    const needsTargetCheck = plan({
+      state: 'import', needsTargetCheck: true, intendedImportTargetIds: [85215],
+      check: check({ verdict: 'not_importable', reason: 'have_better', detail: 'Not a Custom Format upgrade for existing episode file(s).' }),
+    });
+    expect(stepHeading(needsTargetCheck, t, null)).toBe(`Check this download for ${t}`);
+    expect(needsTargetCheck.check?.reason).toBe('have_better');
     expect(stepHeading(plan({ state: 'import_onto' }), t, 'S02E07 · Dueling Pencils')).toBe(
       "This download's name says it is S02E07 · Dueling Pencils",
     );
@@ -257,6 +278,9 @@ describe('the staff path: one sentence per Import Check reason', () => {
     expect(staffText({ check: null, targetLabel: t, kind: 'sonarr' })).toBe(
       `A download for ${t} is stuck in the queue, and it cannot be added on its own.`,
     );
+    expect(staffText({ check: null, targetLabel: t, kind: 'sonarr', activeRequest: true })).toBe(
+      `A repair is already open for ${t}. Staff can check its progress and the download.`,
+    );
   });
 });
 
@@ -267,14 +291,18 @@ describe('the outcome line (D-07)', () => {
     expect(outcomeText({ outcome: 'importing', removeWhy: null, targetLabel: t })).toBe(
       `Found a finished download and started the import. ${t} shows up here when it finishes.`,
     );
-    expect(outcomeText({ outcome: 'removed_and_searched', removeWhy: 'failed', targetLabel: t })).toBe(
-      'Removed a failed download and searched again.',
+    expect(
+      outcomeText({ outcome: 'removed_and_searched', removeWhy: 'failed', targetLabel: t }),
+    ).toBe('Removed a failed download and searched again.');
+    expect(
+      outcomeText({ outcome: 'removed_and_searched', removeWhy: 'defect', targetLabel: t }),
+    ).toBe('Removed a bad download and searched again.');
+    expect(outcomeText({ outcome: 'on_its_way', removeWhy: null, targetLabel: t })).toBe(
+      'Already on its way.',
     );
-    expect(outcomeText({ outcome: 'removed_and_searched', removeWhy: 'defect', targetLabel: t })).toBe(
-      'Removed a bad download and searched again.',
+    expect(outcomeText({ outcome: 'searched', removeWhy: null, targetLabel: t })).toContain(
+      'search is running',
     );
-    expect(outcomeText({ outcome: 'on_its_way', removeWhy: null, targetLabel: t })).toBe('Already on its way.');
-    expect(outcomeText({ outcome: 'searched', removeWhy: null, targetLabel: t })).toContain('search is running');
   });
 
   it('only a search hands over to the live progress view', () => {

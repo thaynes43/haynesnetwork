@@ -144,8 +144,13 @@ export function importTargetLabels(
   labelOf: (id: number) => string | null,
 ): string[] {
   if (targetIds.length <= 1) return [target.label];
-  const ordered = target.id !== null && targetIds.includes(target.id) ? [target.id, ...targetIds.filter((id) => id !== target.id)] : [...targetIds];
-  return ordered.map((id) => (id === target.id ? target.label : (labelOf(id) ?? 'another episode')));
+  const ordered =
+    target.id !== null && targetIds.includes(target.id)
+      ? [target.id, ...targetIds.filter((id) => id !== target.id)]
+      : [...targetIds];
+  return ordered.map((id) =>
+    id === target.id ? target.label : (labelOf(id) ?? 'another episode'),
+  );
 }
 
 /** "A, B and C". */
@@ -159,14 +164,23 @@ export function joinLabels(labels: readonly string[]): string {
 // ---------------------------------------------------------------------------
 
 /** The heading of the step for a plan. */
-export function stepHeading(plan: Pick<SearchPlan, 'state' | 'removeWhy'>, targetLabel: string, ontoSuggested: string | null): string {
+export function stepHeading(
+  plan: Pick<SearchPlan, 'state' | 'removeWhy'> & {
+    needsTargetCheck?: boolean;
+    activeRequest?: boolean;
+  },
+  targetLabel: string,
+  ontoSuggested: string | null,
+): string {
   switch (plan.state) {
     case 'search':
       return `Nothing for ${targetLabel} is in the download queue.`;
     case 'on_its_way':
-      return 'Already on its way';
+      return plan.activeRequest ? 'A repair is already running' : 'Already on its way';
     case 'import':
-      return `A finished download for ${targetLabel} is waiting to be added`;
+      return plan.needsTargetCheck
+        ? `Check this download for ${targetLabel}`
+        : `A finished download for ${targetLabel} is waiting to be added`;
     case 'import_onto':
       return ontoSuggested !== null
         ? `This download's name says it is ${ontoSuggested}`
@@ -176,7 +190,9 @@ export function stepHeading(plan: Pick<SearchPlan, 'state' | 'removeWhy'>, targe
         ? `The download for ${targetLabel} is broken.`
         : `The last download for ${targetLabel} failed.`;
     case 'staff':
-      return `A download for ${targetLabel} needs staff`;
+      return plan.activeRequest
+        ? 'This repair needs staff'
+        : `A download for ${targetLabel} needs staff`;
   }
 }
 
@@ -196,11 +212,15 @@ export function staffText(input: {
   check: Pick<SearchPlanCheck, 'reason' | 'detail' | 'title'> | null;
   targetLabel: string;
   kind: GuideArrKind;
+  activeRequest?: boolean;
 }): string {
   const { check, targetLabel, kind } = input;
   const app = arrName(kind);
   const what = kind === 'radarr' ? 'movie' : 'episode';
-  if (!check) return `A download for ${targetLabel} is stuck in the queue, and it cannot be added on its own.`;
+  if (input.activeRequest)
+    return `A repair is already open for ${targetLabel}. Staff can check its progress and the download.`;
+  if (!check)
+    return `A download for ${targetLabel} is stuck in the queue, and it cannot be added on its own.`;
   const mismatch = `This download's name does not match ${targetLabel}, so it will not be added automatically.`;
   switch (check.reason) {
     case 'archive':
