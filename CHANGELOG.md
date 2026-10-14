@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.125.3](https://github.com/thaynes43/haynesnetwork/compare/v0.125.2...v0.125.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* retry failed wrong-content grabs on their original repair ([#978](https://github.com/thaynes43/haynesnetwork/issues/978)) ([7deef24](https://github.com/thaynes43/haynesnetwork/commit/7deef24087a56585de137a8cb0c6214424182a9d))
+
 ## [0.125.2](https://github.com/thaynes43/haynesnetwork/compare/v0.125.1...v0.125.2) (2026-10-14)
 
 
