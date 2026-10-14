@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.125.2](https://github.com/thaynes43/haynesnetwork/compare/v0.125.1...v0.125.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* retain audio hints for paired episode files ([#974](https://github.com/thaynes43/haynesnetwork/issues/974)) ([9e04260](https://github.com/thaynes43/haynesnetwork/commit/9e042609d44aabd3a8eaad3ff8e882396a4b7274))
+
 ## [0.125.1](https://github.com/thaynes43/haynesnetwork/compare/v0.125.0...v0.125.1) (2026-10-14)
 
 
