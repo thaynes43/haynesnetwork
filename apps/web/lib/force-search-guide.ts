@@ -144,8 +144,13 @@ export function importTargetLabels(
   labelOf: (id: number) => string | null,
 ): string[] {
   if (targetIds.length <= 1) return [target.label];
-  const ordered = target.id !== null && targetIds.includes(target.id) ? [target.id, ...targetIds.filter((id) => id !== target.id)] : [...targetIds];
-  return ordered.map((id) => (id === target.id ? target.label : (labelOf(id) ?? 'another episode')));
+  const ordered =
+    target.id !== null && targetIds.includes(target.id)
+      ? [target.id, ...targetIds.filter((id) => id !== target.id)]
+      : [...targetIds];
+  return ordered.map((id) =>
+    id === target.id ? target.label : (labelOf(id) ?? 'another episode'),
+  );
 }
 
 /** "A, B and C". */
@@ -159,14 +164,20 @@ export function joinLabels(labels: readonly string[]): string {
 // ---------------------------------------------------------------------------
 
 /** The heading of the step for a plan. */
-export function stepHeading(plan: Pick<SearchPlan, 'state' | 'removeWhy'>, targetLabel: string, ontoSuggested: string | null): string {
+export function stepHeading(
+  plan: Pick<SearchPlan, 'state' | 'removeWhy'> & { needsTargetCheck?: boolean },
+  targetLabel: string,
+  ontoSuggested: string | null,
+): string {
   switch (plan.state) {
     case 'search':
       return `Nothing for ${targetLabel} is in the download queue.`;
     case 'on_its_way':
       return 'Already on its way';
     case 'import':
-      return `A finished download for ${targetLabel} is waiting to be added`;
+      return plan.needsTargetCheck
+        ? `Check this download for ${targetLabel}`
+        : `A finished download for ${targetLabel} is waiting to be added`;
     case 'import_onto':
       return ontoSuggested !== null
         ? `This download's name says it is ${ontoSuggested}`

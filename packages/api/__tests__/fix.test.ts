@@ -633,6 +633,7 @@ describe('fix.forceSearch — roll-up scopes (media-hierarchy actions, D-17)', (
     const api = caller(makeCtx(tdb.db, sessionUser(member), stub.bundle));
 
     const result = await api.fix.forceSearch({ mediaItemId: item.id, scope: 'show' });
+    expect(result).toMatchObject({ outcome: 'searched', repairRequestId: null, fixRequestId: null });
     expect(result.commandName).toBe('SeriesSearch');
     expect(stub.callsFor('POST', '/api/v3/command')[0]!.body).toEqual({
       name: 'SeriesSearch',

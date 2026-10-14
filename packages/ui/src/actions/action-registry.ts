@@ -18,6 +18,7 @@ export type MediaActionType =
   | 'retryImport'
   | 'notOnDisk'
   | 'importDownload'
+  | 'checkImportDownload'
   | 'moveFile'
   | 'pickRelease'
   | 'grabRelease';
@@ -53,6 +54,9 @@ export interface MediaActionSpec {
  * - `importDownload` — ADR-109 / DESIGN-055 D-01, D-07: the Repair Guide's "Import it" confirm, which adds a finished
  *   download that passed the Import Check to its missing episode or movie. Shown only inside the guide's Modal (the
  *   explanatory confirm, hard rule 8), so it is not destructive here: nothing is deleted or blocked.
+ * - `checkImportDownload` — DESIGN-055 D-05 owned-import amendment: "Check and import" evaluates a finished
+ *   download against the request's entire intended episode set before importing. Its raw Import Check remains visible
+ *   in the explanatory Modal; an existing file is never replaced by this continuation.
  * - `moveFile` — ADR-109 / DESIGN-055 D-04, D-05 (PLAN-077 P4): "Move it", the Title Check flag's action on an episode
  *   whose file's own name says it is another episode. It opens the Repair Guide at the Episode Re-map preview (the
  *   explanatory Modal), where the counted confirm ("Move 1 file") runs it; a re-map never deletes a file, so it is not
@@ -72,7 +76,18 @@ export const MEDIA_ACTIONS: Record<MediaActionType, MediaActionSpec> = {
   consume: { type: 'consume', label: '', variant: 'primary', external: true, destructive: false },
   retryImport: { type: 'retryImport', label: 'Retry import', variant: 'outline', destructive: false },
   notOnDisk: { type: 'notOnDisk', label: 'Not on Disk', variant: 'outline', destructive: false },
-  importDownload: { type: 'importDownload', label: 'Import it', variant: 'primary', destructive: false },
+  importDownload: {
+    type: 'importDownload',
+    label: 'Import it',
+    variant: 'primary',
+    destructive: false,
+  },
+  checkImportDownload: {
+    type: 'checkImportDownload',
+    label: 'Check and import',
+    variant: 'primary',
+    destructive: false,
+  },
   moveFile: { type: 'moveFile', label: 'Move it', variant: 'outline', destructive: false },
   pickRelease: { type: 'pickRelease', label: 'See every release', variant: 'outline', destructive: false },
   grabRelease: { type: 'grabRelease', label: 'Grab this release', variant: 'primary', destructive: false },

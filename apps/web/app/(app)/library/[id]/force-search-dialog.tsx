@@ -159,7 +159,7 @@ function QueueAwareForceSearch({
   const app = arrName(kind);
 
   // The other episodes a multi-episode file lands on are named from the title's episode list.
-  const fileTargets = data?.check?.file?.targetIds ?? [];
+  const fileTargets = data?.intendedImportTargetIds ?? data?.check?.file?.targetIds ?? [];
   const children = trpc.ledger.children.useQuery(
     { mediaItemId: item.id },
     { enabled: kind === 'sonarr' && data?.state === 'import' && fileTargets.length > 1, staleTime: 60_000 },
@@ -185,6 +185,13 @@ function QueueAwareForceSearch({
     },
     onSuccess: (result, variables) => {
       setError(null);
+      if (result.fixRequestId)
+        void utils.fix.progress.invalidate({ fixRequestId: result.fixRequestId });
+      if (result.repairRequestId)
+        void utils.fix.repairProgress.invalidate({ repairRequestId: result.repairRequestId });
+      void utils.fix.myFixes.invalidate();
+      void utils.activity.list.invalidate();
+      void utils.activity.wallStages.invalidate();
       const input: SearchProgressInput = {
         mediaItemId: variables.mediaItemId,
         scope: variables.scope,
@@ -409,7 +416,9 @@ function QueueAwareForceSearch({
                 Cancel
               </button>
             </div>
-            {releasePickOn ? <p className="muted release-pick__entry-note">{PICK_ENTRY_NOTE}</p> : null}
+            {releasePickOn ? (
+              <p className="muted release-pick__entry-note">{PICK_ENTRY_NOTE}</p>
+            ) : null}
           </div>
         );
 
@@ -449,11 +458,24 @@ function QueueAwareForceSearch({
           <div className="repair-guide__step">
             {targetLine}
             <h3 className="repair-guide__question">{heading}</h3>
+            {data.needsTargetCheck ? (
+              <p>
+                This download was matched to different episode numbers. Check it against the
+                episodes you requested before importing.
+              </p>
+            ) : null}
             {evidence(data)}
             <section className="repair-guide__group">
               <h4>What it will do</h4>
               <ul className="repair-guide__facts">
-                <li>Add this file to {joinLabels(targets)}.</li>
+                {data.needsTargetCheck ? (
+                  <>
+                    <li>Check this download for {joinLabels(targets)}.</li>
+                    <li>If it matches, add it to those episodes.</li>
+                  </>
+                ) : (
+                  <li>Add this file to {joinLabels(targets)}.</li>
+                )}
                 {data.replaces.length === 0 ? (
                   <li>Nothing is deleted or blocked.</li>
                 ) : (
@@ -478,7 +500,7 @@ function QueueAwareForceSearch({
             ) : null}
             <div className="form-actions">
               <MediaAction
-                action="importDownload"
+                action={data.needsTargetCheck ? 'checkImportDownload' : 'importDownload'}
                 disabled={search.isPending || (data.replaces.length > 0 && !acked)}
                 onFire={() => submit(data)}
               />
@@ -512,8 +534,12 @@ function QueueAwareForceSearch({
                       />
                       <span>
                         {c.label}
-                        {c.suggested ? <span className="muted"> (what the file name says)</span> : null}
-                        {c.grabTarget ? <span className="muted"> (the episode you searched for)</span> : null}
+                        {c.suggested ? (
+                          <span className="muted"> (what the file name says)</span>
+                        ) : null}
+                        {c.grabTarget ? (
+                          <span className="muted"> (the episode you searched for)</span>
+                        ) : null}
                       </span>
                     </label>
                   </li>

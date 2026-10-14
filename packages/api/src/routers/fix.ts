@@ -549,6 +549,8 @@ export const fixRouter = router({
         planForceSearch({
           db: ctx.db,
           arr: resolveArrBundle(ctx),
+          requesterId: ctx.user.id,
+          requesterIsAdmin: ctx.user.role.isAdmin,
           mediaItemId: input.mediaItemId,
           scope: input.scope,
           targetChildId: input.targetChildId,
@@ -598,7 +600,7 @@ export const fixRouter = router({
               : null,
           seerrIssueId: input.seerrIssueId ?? null,
         });
-        return result; // {outcome, eventId, repairRequestId, targetLabel, commandName}
+        return result; // {outcome, eventId, repairRequestId, fixRequestId, targetLabel, commandName}
       });
     }),
 

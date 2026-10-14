@@ -70,7 +70,9 @@ function CopyLink({ url }: { url: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   return (
     <span className="seerr-admin__link">
-      <code className="seerr-admin__url">{url}</code>
+      <code className="seerr-admin__url">
+        <a href={url}>{url}</a>
+      </code>
       <button
         type="button"
         className="btn sm"
@@ -195,11 +197,16 @@ function IssueCard({
           <span className="muted">Not in the Library</span>
         )}
       </p>
-      {issue.message ? <blockquote className="seerr-report__message">{issue.message}</blockquote> : null}
+      {issue.message ? (
+        <blockquote className="seerr-report__message">{issue.message}</blockquote>
+      ) : null}
       <p className="seerr-admin__meta muted">
         Reported by {issue.reporterName ?? 'an unknown Seerr user'}
-        {issue.reporterAccount ? ` (account: ${issue.reporterAccount.displayName})` : ' (no haynesnetwork account yet)'} on{' '}
-        {formatWhen(issue.reportedAt)}. {issue.commentCount} {issue.commentCount === 1 ? 'comment' : 'comments'}.{' '}
+        {issue.reporterAccount
+          ? ` (account: ${issue.reporterAccount.displayName})`
+          : ' (no haynesnetwork account yet)'}{' '}
+        on {formatWhen(issue.reportedAt)}. {issue.commentCount}{' '}
+        {issue.commentCount === 1 ? 'comment' : 'comments'}.{' '}
         <a href={seerrIssueUrl(issue.seerrIssueId)} target="_blank" rel="noreferrer">
           Open in Seerr
         </a>
@@ -272,7 +279,7 @@ function IssueCard({
               className="btn btn--sm"
               label="Clear the mark"
               data-testid="seerr-admin-clear"
-              restingAriaLabel={`Clear the fixed-by-hand mark on report ${issue.seerrIssueId} — click twice to confirm`}
+              restingAriaLabel={`Clear the fixed-by-hand mark on report ${issue.seerrIssueId}, click twice to confirm`}
               confirmAriaLabel={`Confirm clearing the fixed-by-hand mark on report ${issue.seerrIssueId}`}
               disabled={clear.isPending}
               onConfirm={() => clear.mutate({ seerrIssueId: issue.seerrIssueId, note: null, fixedByHand: false })}
@@ -299,9 +306,15 @@ export function SeerrIssuesAdmin({ linkOrigin }: { linkOrigin: string }) {
     <>
       <h1>Seerr issues</h1>
       <p className="seerr-admin__lead muted">
-        Every problem reported in <a href={SEERR_URL}>Seerr</a>, with the repairs made on haynesnetwork since. Work each
-        new report through the Library&apos;s own tools first, the way a member would. When none of them can fix it,
-        fix it by hand and note what was missing. Reports sync from Seerr every ten minutes.
+        Reports from <a href={SEERR_URL}>Seerr</a>, with their linked repairs. Open each
+        report&apos;s fix-it-yourself link and try the <Link href="/library">Library</Link> tools as
+        a member would. When a tool fixes it, reply in Seerr with the tool&apos;s name and the
+        report link. If the tools cannot fix it, fix it by hand, record what was missing, and add
+        that capability to the{' '}
+        <a href="https://github.com/thaynes43/haynesnetwork/blob/main/.agents/plans/077-self-service-media-repair.md">
+          repair plan
+        </a>
+        . Reports sync every ten minutes.
       </p>
       <SeerrBridgeSettings />
       <div className="library-filters admin-filterbar">
@@ -356,7 +369,9 @@ export function SeerrIssuesAdmin({ linkOrigin }: { linkOrigin: string }) {
         </div>
       ) : null}
 
-      {editing ? <NoteDialog issue={editing} onClose={() => setEditing(null)} onSaved={refresh} /> : null}
+      {editing ? (
+        <NoteDialog issue={editing} onClose={() => setEditing(null)} onSaved={refresh} />
+      ) : null}
     </>
   );
 }

@@ -183,6 +183,12 @@ describe('the step for each state (D-07)', () => {
     expect(stepHeading(plan({ state: 'search' }), t, null)).toBe(`Nothing for ${t} is in the download queue.`);
     expect(stepHeading(plan({ state: 'on_its_way' }), t, null)).toBe('Already on its way');
     expect(stepHeading(plan({ state: 'import' }), t, null)).toBe(`A finished download for ${t} is waiting to be added`);
+    const needsTargetCheck = plan({
+      state: 'import', needsTargetCheck: true, intendedImportTargetIds: [85215],
+      check: check({ verdict: 'not_importable', reason: 'have_better', detail: 'Not a Custom Format upgrade for existing episode file(s).' }),
+    });
+    expect(stepHeading(needsTargetCheck, t, null)).toBe(`Check this download for ${t}`);
+    expect(needsTargetCheck.check?.reason).toBe('have_better');
     expect(stepHeading(plan({ state: 'import_onto' }), t, 'S02E07 · Dueling Pencils')).toBe(
       "This download's name says it is S02E07 · Dueling Pencils",
     );
