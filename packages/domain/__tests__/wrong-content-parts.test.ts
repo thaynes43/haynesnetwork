@@ -455,6 +455,89 @@ describe('multipart original-parent recovery', () => {
     expect(w.state.deletes).toEqual([123]);
     expect(w.state.calls).toHaveLength(2);
   });
+  it.each(['missing_native_read', 'unknown_transport', 'missing_call_receipt'] as const)(
+    'holds an unresolved %s queue dispatch without assigning foreign GUID ownership or replaying it',
+    async (outage) => {
+      const w = world();
+      if (outage === 'missing_native_read') {
+        const readHistory = w.arr.read.sonarr.getHistory.bind(w.arr.read.sonarr);
+        vi.spyOn(w.arr.read.sonarr, 'getHistory').mockImplementation(async (input) => {
+          if (w.state.calls.length) throw new Error('native read unavailable');
+          return readHistory(input);
+        });
+      } else if (outage === 'unknown_transport') {
+        w.state.mode = 'unknown';
+        w.state.failGuid = 'one';
+      } else {
+        const append = fixWriters.appendFixActions;
+        vi.spyOn(fixWriters, 'appendFixActions').mockImplementation(async (input) => {
+          if (input.actions.some((a) => a.step === 'wrong_content_part_call_result'))
+            throw new Error('call receipt unavailable');
+          return append(input);
+        });
+      }
+      if (outage === 'missing_call_receipt')
+        await expect(start(w)).rejects.toThrow('call receipt unavailable');
+      else expect((await start(w)).waiting).toBe(true);
+      vi.restoreAllMocks();
+      const [fix] = await t.db.select().from(fixRequests),
+        [carry] = await t.db.select().from(watchCarries),
+        selection = readWrongContentPartSelection(carry!.detail)!,
+        bindings = selectedPartBindings(selection, fix!.actionsTaken),
+        title = selection.parts[0]!.title;
+      expect(bindings.all).toHaveLength(0);
+      expect(bindings.unresolved).toHaveLength(1);
+      const pending: QueueCleanupQueueItem = {
+        queueItemId: 991,
+        downloadId: 'dl-one-1',
+        parentId: 439,
+        title,
+        targetId: 401,
+        addedAt: null,
+        status: 'failed',
+        trackedDownloadStatus: 'error',
+        trackedDownloadState: 'failed',
+        errorMessage: 'Unpacking failed',
+        statusMessages: null,
+      };
+      const records = [
+        pending,
+        { ...pending, queueItemId: 992, downloadId: 'possibly-foreign-same-title' },
+        { ...pending, queueItemId: 993, downloadId: 'foreign-series', parentId: 440 },
+        { ...pending, queueItemId: 994, downloadId: 'foreign-title', title: 'Another release' },
+        { ...pending, queueItemId: 995, downloadId: 'unclaimed-part', title: selection.parts[1]!.title },
+      ];
+      const deleted: number[] = [];
+      const client = (items: QueueCleanupQueueItem[]): QueueCleanupInstanceClient => ({
+        async getQueueAll() { return items; },
+        async deleteQueueItem(item) { deleted.push(item.queueItemId); },
+        async processMonitoredDownloads() { throw new Error('no retry'); },
+        async monitoredTargets() { return []; },
+        async searchTargets() { throw new Error('no search'); },
+      });
+      const config = structuredClone(ARR_QUEUE_CLEANUP_CONFIG_DEFAULT);
+      config.minItemAgeHours = 0;
+      config.modes.sonarr.bad_release = 'enforce';
+      await evaluateQueueCleanup({
+        db: t.db,
+        clients: { sonarr: client(records), radarr: client([]), lidarr: client([]) },
+        config,
+      });
+      expect(deleted).toEqual([993, 994, 995]);
+      await expect(planOwnedSonarrImport({
+        db: t.db, arr: w.arr, actor: staff,
+        parent: { kind: 'fix', id: fix!.id }, downloadId: 'possibly-foreign-same-title',
+      })).rejects.toThrow();
+      const input = {
+        db: t.db, arr: w.arr, actor: staff, fixRequestId: fix!.id, partId: selection.parts[0]!.id,
+      };
+      const plan = await planWrongContentPartResume(input);
+      expect(plan.state).toBe('observe');
+      await runWrongContentPartResume({ ...input, digest: plan.digest, evidence });
+      expect(w.state.calls).toHaveLength(1);
+      expect(w.state.deletes).toEqual([123]);
+    },
+  );
   it.each(['503', 'unknown'] as const)(
     'keeps a post-delete %s call open and never replays its claimed original part',
     async (mode) => {

@@ -346,7 +346,7 @@ export async function readWrongContentPartsForInterlock(
 ) {
   return parent({ db, fixRequestId, actor: { kind: 'staff' } });
 }
-/** Queue enforcement must not bypass the selected-part writer's neutral failed-download removal. */
+/** Queue enforcement must not bypass neutral selected-part cleanup or mutate an unresolved dispatch. */
 export async function selectedWrongContentQueueHolds(input: {
   db?: DbClient;
   items: Array<{ downloadId: string | null; parentId?: number | null; title: string | null }>;
@@ -377,7 +377,10 @@ export async function selectedWrongContentQueueHolds(input: {
     for (const item of input.items)
       if (
         item.parentId === p.selection.seriesId &&
-        bindings.all.some((b) => b.downloadId === item.downloadId && b.intent.title === item.title)
+        (bindings.all.some((b) => b.downloadId === item.downloadId && b.intent.title === item.title) ||
+          // A queue record has no actual GRAB time. Until native proof settles this attempt, hold only
+          // its exact dispatched series/title; do not treat the record's GUID as owned or replayable.
+          bindings.unresolved.some((i) => i.title === item.title))
       )
         held.add(`${item.downloadId}\u0000${item.parentId}\u0000${item.title}`);
   }

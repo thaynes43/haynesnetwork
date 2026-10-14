@@ -828,8 +828,12 @@ do not edit)", "must not contain" terms only, no tags.
     **Ownership and completion.** Owned import and failed-download janitor ownership consume the same canonical
     part/attempt/GUID binding, including all original and later owned attempts. Import targets equal that entire
     part, never the whole original slot or a sliced file. The queue janitor also holds an active verified selected
-    download before queue enforcement only when its saved actual GUID, native series and exact title all agree;
-    this prevents the ordinary bad-release removal from bypassing selected-part neutral cleanup. The failed-history
+    download before queue enforcement when its saved actual GUID, native series and exact title all agree.
+    While a dispatched attempt lacks its actual call/GUID proof, queue enforcement conservatively holds only
+    records matching that active verified parent's native series and exact dispatched title. This uncertainty
+    hold does not assign ownership to the queue GUID or authorize cleanup, import or another release POST;
+    never-dispatched selections and other series/titles retain normal policy. These holds prevent the ordinary
+    bad-release removal from bypassing selected-part neutral cleanup. The failed-history
     janitor defers only those active verified owned failures; unresolved proof holds remain narrowly scoped, and unrelated failures keep their current policy,
     enforcement modes and search budget. The original full-slot completion obligation stays in the verified Carry.
     Keep the normal generic episode/time ledger matcher; do not impose GUID matching on ordinary Fixes. Runtime

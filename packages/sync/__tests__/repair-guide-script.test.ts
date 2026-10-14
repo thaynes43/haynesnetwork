@@ -486,7 +486,10 @@ describe('repair-guide.ts arguments', () => {
     expect(parseRepairGuideArgs(['replace-part-run','--parent',parent,'--part',part,'--digest','abcdef0123456789','--evidence','Actual physical source proof'])).toMatchObject({command:'replace-part-run',part});
     expect(parseRepairGuideArgs(['replace-retry-plan','--parent',parent,'--failed-download','dl-actual'])).toMatchObject({failedDownload:'dl-actual'});
     expect(()=>parseRepairGuideArgs(['replace-part-plan','--parent',parent,'--part',part,'--tvdb','320725'])).toThrow();
-    expect(()=>parseRepairGuideArgs(['replace-part-run','--parent',parent,'--part',part])).toThrow();
+    expect(()=>parseRepairGuideArgs(['replace-part-run','--parent',parent,'--part',part])).toThrow(/replace-part-run.*reviewed --digest/);
+    expect(()=>parseRepairGuideArgs(['replace-part-plan','--parent',parent,'--part','invalid/id'])).toThrow('--part needs the stored part id');
+    expect(()=>parseRepairGuideArgs(['replace-retry-plan','--parent',parent,'--failed-download','invalid/id'])).toThrow('--failed-download needs the failed download id');
+    expect(()=>parseRepairGuideArgs(['preview','--tmdb','1','--part',part])).toThrow('--part belongs only to replace-part commands');
     expect(()=>parseRepairGuideArgs(['replace-retry-plan','--parent',parent,'--failed-download','dl-actual','--episode','S01E13'])).toThrow();
   });
 

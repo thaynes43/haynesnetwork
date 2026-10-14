@@ -421,10 +421,10 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         break;
       }
       case '--part':
-        if (!value || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) throw new Error('--download needs the owned download id');
+        if (!value || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) throw new Error('--part needs the stored part id');
         args.part = value; i += 1; break;
       case '--failed-download':
-        if (!value || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) throw new Error('--download needs the owned download id');
+        if (!value || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) throw new Error('--failed-download needs the failed download id');
         args.failedDownload = value; i += 1; break;
       case '--download':
         if (!value || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) throw new Error('--download needs the owned download id');
@@ -651,10 +651,10 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     const allowed = ['command', 'replaceFile', 'parent', 'part', 'digest', 'evidence'];
     if (Object.keys(args).some(k => !allowed.includes(k)) || args.parent?.kind !== 'fix' || !args.part ||
       (command === 'replace-part-run' ? !args.digest || !args.evidence : args.digest || args.evidence))
-      throw new Error('owned-import-run needs the reviewed --digest and physical --evidence; plan only reads');
+      throw new Error('replace-part-plan needs only --parent fix:<id> and --part; replace-part-run also needs the reviewed --digest and physical --evidence');
     return args;
   }
-  if (args.part) throw new Error('--parent and --download are only for owned-import commands');
+  if (args.part) throw new Error('--part belongs only to replace-part commands');
   if (command === 'replace-retry-plan' || command === 'replace-retry-run') {
     const allowed = [
       'command',

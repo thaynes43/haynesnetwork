@@ -36,7 +36,22 @@ Before that becomes the default, the platform must reliably fix the kinds of pro
 | P7 | Seerr bridge: bot comments once per issue, resolves on completed repair | **Live and on in v0.125.0**, checked 2026-10-13 23:09Z |
 | P8 | Working practice per ADR-112 | Admin guidance live in v0.125.1; practice only, owner readiness decision pending |
 
-**Latest repair state, 2026-10-14 10:04Z:** Pokemon E22/E23 completed normally and passed finishes 12/18;
+**Latest repair state, 2026-10-14 10:42Z:** Pokemon E24/E26 completed normally and passed finishes 23/29; twenty-four approved slots are complete.
+E28 is in progress, with its distinct S03E28 to S20E28 same-content mapping retained. Eight approved replacements
+remain, with E8/E31 held. Mickey E21/E22, E23/E24 and E25/E26 passed finishes 56/62/68; eleven initial slots are
+complete. E29/E30 has natively imported under its original download and awaits physical story/English ratification;
+never replay it as ManualImport. Final E13 to E16 stays last, after all twenty-three initial slots and fresh root
+mapping on the signed recovery release. [PR 987](https://github.com/thaynes43/haynesnetwork/pull/987) contains the
+decision-40 multipart recovery change; local focused checks passed and two actual advisory findings are being
+fixed before renewed review and required checks. It is not deployed yet. Signed v0.125.3, the actual finite worker
+cutoffs and activity declaration remain unchanged. Exact full identities are in the
+[runtime proof](2026-10-14-self-service-repair-runtime-proof.md) and
+[completed-slot table](2026-10-14-pokemon-completed-slot-proof.md). Q-12 remains asked and unanswered;
+OC-056 stays held until 2026-10-15T20:10Z and closed blocking Fixes, with Paw Patrol ordering inside its verified
+Carry first. Final owed evidence follows the repairs and formal hold. P8 remains staff practice, with readiness
+judged by the owner.
+
+**Earlier repair state, 2026-10-14 10:04Z:** Pokemon E22/E23 completed normally and passed finishes 12/18;
 twenty-two approved slots are complete and E24 is in progress. Mickey E17/E18 and E19/E20 completed normally and
 passed finishes 44/50; eight initial slots are complete and E21/E22 is next. Final E13 to E16 remains last. The
 decision-40 recovery implementation has passed focused and existing recovery cases, with boundary, CLI and

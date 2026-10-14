@@ -22,7 +22,22 @@
   hardware-transcodes; P1 triage).
 - **Validation:** each phase's live check below, then P8's owner review.
 
-**Latest repair update, 2026-10-14 10:04Z:** Pokemon E22/E23 completed normally and passed finishes 12/18;
+**Latest repair update, 2026-10-14 10:42Z:** Pokemon E24/E26 completed normally and passed finishes 23/29; twenty-four approved slots are complete.
+E28 is in progress, with its distinct S03E28 to S20E28 same-content mapping retained. Eight approved replacements
+remain, with E8/E31 held. Mickey E21/E22, E23/E24 and E25/E26 passed finishes 56/62/68; eleven initial slots are
+complete. E29/E30 has natively imported under its original download and awaits physical story/English ratification;
+never replay it as ManualImport. Final E13 to E16 stays last, after all twenty-three initial slots and fresh root
+mapping on the signed recovery release. [PR 987](https://github.com/thaynes43/haynesnetwork/pull/987) contains the
+decision-40 multipart recovery change; local focused checks passed and two actual advisory findings are being
+fixed before renewed review and required checks. It is not deployed yet. Signed v0.125.3, the actual finite worker
+cutoffs and activity declaration remain unchanged. Exact full identities are in the
+[runtime proof](../context/2026-10-14-self-service-repair-runtime-proof.md) and
+[completed-slot table](../context/2026-10-14-pokemon-completed-slot-proof.md). Q-12 remains asked and unanswered;
+OC-056 stays held until 2026-10-15T20:10Z and closed blocking Fixes, with Paw Patrol ordering inside its verified
+Carry first. Final owed evidence follows the repairs and formal hold. P8 remains staff practice, with readiness
+judged by the owner.
+
+**Earlier repair update, 2026-10-14 10:04Z:** Pokemon E22/E23 completed normally and passed finishes 12/18;
 twenty-two approved slots are complete and E24 is in progress. Mickey E17/E18 and E19/E20 completed normally and
 passed finishes 44/50; eight initial slots are complete and E21/E22 is next. Full new identities and actual
 source/library, native, normal and strict Plex proof are in the [runtime record](../context/2026-10-14-self-service-repair-runtime-proof.md)
@@ -723,6 +738,10 @@ names, never deleting a file, after a watch-state check on every Plex server and
   blocklist off, redownload skipped and no search; never delete a library file again or replay an uncertain command.
   This preserves P0's unpack-failure ruling: failure alone is not physical wrong-content proof. Decision 39's
   existing positively proved wrong-source discard keeps its blocklist behavior.
+- **Advisory correction:** unresolved dispatched attempts conservatively hold queue records only on their active
+  verified parent's native series and exact dispatched title. The hold grants no queue-GUID ownership or replay;
+  proved attempts still require exact GUID/series/title, and never-dispatched parts retain normal janitor policy.
+  Private recovery CLI validation names the actual part/retry command and selector.
 - **Completion and policy:** keep generic normal episode/time matching and the original full-slot obligation.
   Runtime finish separately proves every actual GUID, native import, file/bytes, English/story, ledger event and
   strict Plex/Carry state. Extend per-part owned-import and janitor bindings without changing janitor modes or
@@ -730,7 +749,9 @@ names, never deleting a file, after a watch-state check on every Plex server and
 - **Local validation:** the four affected domain files passed 110 focused cases before the final boundary corrections;
   all 22 multipart cases have passed across focused runs, including unpack-only neutral cleanup, missing Carry,
   pre-claim lookup failure and exact queue-janitor ownership. The private CLI suite passed 25 cases. Domain and sync
-  typechecks and changed-file lint passed. Hard rule 4 and the domain writer README are updated in this change.
+  typechecks and changed-file lint passed. Advisory follow-through added three unresolved queue-dispatch cases;
+  all five focused hold cases and the 25 CLI cases passed again with corrected messages. Hard rule 4 and the
+  domain writer README are updated in this change.
 - **Next:** root review and required PR checks, followed by a signed release and verified live deployment. Tests
   ran under nice 19 with one worker only. No CPU burners or wide/looped parallel
   tests on this shared production node. Mickey E13 to E16 remains last, after all twenty-three initial slots and a fresh

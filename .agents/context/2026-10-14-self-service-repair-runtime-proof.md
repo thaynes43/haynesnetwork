@@ -495,6 +495,57 @@ completion event is `1c9cff9d-60bc-4612-9c51-af937e8c0a79`. Both actual index-19
 cover the pair; strict owner/captured current-zero, correct-copy marks and all protected files, including 65359,
 passed. Eight initial slots are complete; E21/E22 is next. Final E13 to E16 remains held last.
 
+Pokemon E24 passed finish 23 at 10:16:44.838Z. Actual file 80047/1571149461, native import 66966 and whole
+49222 bind Fix `cab8005d-9e78-46b3-9f4d-1edcab83bec4`, verified Carry
+`aa2d614b-2b62-4fd8-8963-799178231212` and download `70bacf20-6730-4596-99d3-cafa6d7f095b`. One IMPORT22
+was accepted at 10:12:36.012Z, after genuine intended-target reevaluation, without a rejection override. Normal
+ledger event `373a6932-026b-4562-baa5-f4eb3106d365` was recorded at 10:15:04.135Z; first completed observation
+was 10:15:32.863Z. Root-viewed tatami and dojo-trainer scenes support the
+[Wired for Battle](https://bulbapedia.bulbagarden.net/wiki/EP140) inference, with no unseen card or action claimed.
+Source/library measure 1920 by 1080 with English AAC4 and equal sampled 480s PNG. Four complete nonempty Plex
+contexts passed current-zero/correct-copy marks with preferences unset; protected raw E35 file 34366/174244980
+remained unchanged. Checkpoint SHA is `0bd29057e6d21ec2cf40a68a43ad773ed23572e4b23efffcd8c954d16ca170a2`.
+
+Pokemon E26 passed finish 29 at 10:31:13.393Z. Actual file 80049/1576134020, native import 66984 and whole
+49224 bind Fix `07f3b58b-dbca-43dd-b4db-3fd4a850cbab`, verified Carry
+`856b1aab-cf2f-4d16-8ea1-f1f2f48cfb18` and download `a8396803-134e-4ef0-afee-aabb0aeffd71`. One IMPORT27
+was accepted at 10:24:35.128Z after genuine intended-target reevaluation; observation 28 verified it without replay.
+Normal event `5bd1d0d3-48d8-4c8c-aa9f-c9ed57486cd4` was recorded at 10:30:04.107Z; first completed observation
+was 10:30:25.573Z. Root-viewed cave-water and costume scenes support the
+[A Shadow of a Drought](https://bulbapedia.bulbagarden.net/wiki/EP142) inference, with no unseen cause or action
+claimed. Source/library measure 1920 by 1080 with English AAC4 and equal sampled 750s PNG. Four complete nonempty
+Plex contexts passed current-zero/correct-copy marks, preferences unset and protected raw E37 file 34433/186411294.
+Checkpoint SHA `6e243d11a20e1818c19a59e0260179da371707e1868b6ffcdffad12b73c2a06b` preserves twenty-four slots.
+E28 replacement 30 was delivered once at 10:31:57.533Z under Fix `ddd28c27-f20e-4f12-8039-9753c70783e9`,
+verified Carry `09ea4310-7b5e-4530-b060-49438d76d2e2` and download `680b60b7-777f-42a9-ae9b-91daf20daaea`.
+Root viewed its forest-arena trainer and Metapod/judge scenes and ratified the
+[Gettin' the Bugs Out](https://bulbapedia.bulbagarden.net/wiki/EP144) inference and measured English AAC4.
+Import 34 was authorized after fresh guards; actual import and final proof are pending at this snapshot. Its
+S03E28 to S20E28 mapping refers to distinct seasons/files and never a self-copy. Protected raw E39 is 34503/150918956.
+
+Mickey E21/E22, E23/E24 and E25/E26 passed finishes 56/62/68 at 10:10:48.365Z, 10:21:59.940Z and
+10:33:22.606Z. Root viewed both actual cards for each pair; every file measures 1920 by 1080 with English AAC7.
+
+| Slot | File / bytes / source-library SHA | Full native imports / original download | Original Fix / verified Carry / normal completed event | Actual Plex keys |
+| --- | --- | --- | --- | --- |
+| E21/E22 | 80046/1439091186<br>`9354b2aa136049d11f06aa24500a897277d667350ba512841c370eb6a69d417d` | 66960/66961<br>`e002da33-d3e6-4767-9182-902a3009f935` | Fix `af02ae2b-7dc0-4712-8ab3-57cc291ecba3`<br>Carry `754c6ee1-53bd-4450-bf9f-4e04d41fcb52`<br>event `4efa3a24-7f6a-4f7c-a520-022a29889b78` | 58503/556281 |
+| E23/E24 | 80048/1496949994<br>`0eea9fb50fe7f4e6769fd52ec897df88338a3c3738dc3ddc5f43cadbecca7c43` | 66972/66973<br>`e1bee361-6cbb-48a7-a81a-6c266950a69c` | Fix `c56c1a9d-b652-4f29-8286-c0cb6f7cef55`<br>Carry `094505b8-abe0-491c-b82c-154ff9d01f97`<br>event `6dab6d78-7e92-4a06-ba5c-0cc52b581381` | 58504/556283 |
+| E25/E26 | 80050/1359342126<br>`bf35018019836d451b7a70e5af0cfc770b8f126a7ab057077b074022f427eca7` | 66985/66986<br>`7e8c69ef-2ae9-477f-ab07-324067cd676b` | Fix `8ed6b6ad-ee48-42d9-a162-16fca60b776f`<br>Carry `ca7697cc-b4e4-415c-8e71-25544cb00cea`<br>event `cdc9314b-0418-4017-bd0f-20b5e3c1d0e4` | 58505/556285 |
+
+Each actual single Plex item covers its independently proved Sonarr pair. Strict owner/every captured context
+passed new current-zero and correct-copy marks, with all protected files including final 65359 unchanged. E21/E22
+and E23/E24 used authorized ingestion of two real native imports from one 200-row page and normal settlement of
+only the original Fix, leaving the cursor unchanged. E25/E26 completed naturally and its settlement was read-only.
+Eleven initial slots are complete. E29/E30 natively imported at 10:37:00Z as 80052/1451468663, full 37209/37210,
+native events 66999/67000, original download `b193b63e-bb92-48ae-b48b-197fdf3a7e01`. Physical ratification and
+strict finish are pending; do not issue ManualImport or invent an owned import intent for this native result.
+
+[PR 987](https://github.com/thaynes43/haynesnetwork/pull/987) implements the reviewed decision-40 architecture.
+Focused local checks passed. Review found that queue enforcement must conservatively hold an unresolved selected
+GRAB on its exact native series/dispatched title without inventing GUID ownership; private parser messages also
+need their actual flag/command names. These findings are being corrected before renewed review and required
+checks. Final multipart E13 to E16 remains held until that signed fix is deployed and all initial slots finish.
+
 Pokemon E8 and E31 retain their wrong files. Two bounded NZB reads found only obfuscated split archives and parity
 subjects. Correct story, release group and English remain unproved; that does not establish that no release exists.
 Never use Saon. Mickey E13 to E16 remain held until new E7/E8 content is proved and a fresh same-content mapping is
