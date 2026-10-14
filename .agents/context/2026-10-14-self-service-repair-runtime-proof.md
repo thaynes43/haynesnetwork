@@ -119,6 +119,20 @@ the sealed seed and worker hashes and adopted E1 to E7 before its first new cont
 The continuation intentionally uses the verified v0.125.1 helper, with a finite deadline of 09:14:16Z. Its running
 image must be reported honestly during the v0.125.2 rollout. It is not restarted to make an inventory look uniform.
 
+E11 exposed a temporary verification-reader bug: slicing the last two digits read S20E100 as E0. The external
+reader and cold continuation collector now parse the full anchored season/episode coordinate; seven actual positive
+and six malformed/cross-season cases passed. The serving domain writer already used full coordinates, and the running
+worker's embedded collector is used only at startup. E11's file 80025/1592293332, English track 4, both Plex copies,
+correct-copy S20E100 marks and protected E22 file passed before finish at 05:05:52Z. No Plex change or import replay
+was used to overcome the false refusal.
+
+The worker's separate native-import observation still used an unpaged series-history read, reached only when a file
+already exists and no library command was claimed. Before a native-import opportunity, finish the current E12 slot
+and hold new replacements at a verified idle checkpoint. A reviewed cold successor must use one descending history
+page of at most 200 rows, with exact download/import anchors and refusal when proof is missing. Preserve the original
+running hash and checkpoint; the successor has its own corrected hash, fresh full-prefix revalidation, actual UID
+stop/gone proof and deadline. Never patch a running function, relabel captured state or replay a library command.
+
 Mickey's initial slots E1/E2, E3/E4 and E5/E6 are physically verified and normally completed, with literal cards,
 English, full paired imports, actual queue cleanup and strict per-account Plex proof. The next slot, E7/E8, is held.
 Append the final per-slot proof before merging this note; a grab or prepared script does not establish completion.
