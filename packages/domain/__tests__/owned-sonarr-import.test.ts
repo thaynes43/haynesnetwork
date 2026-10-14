@@ -455,32 +455,47 @@ describe('parent-owned Sonarr Import Check (bounded, single worker)', () => {
     ).rejects.toThrow(/unselected/);
     expect(s.state.writes.map((w) => w.path)).toEqual(['/api/v3/manualimport', '/api/v3/command']);
   });
-  it('adopts a completed parent with its still-present owned queue once, concurrent observers cannot repeat cleanup or import', async () => {
-    const s = await setup();
-    s.state.keepForeignQueue = true;
-    s.state.afterImport = async () => {
-      await t.db.update(fixRequests).set({ status: 'completed' });
-    };
-    const plan = await planOwnedSonarrImport(s.input);
-    await expect(
-      runOwnedSonarrImport({ ...s.input, digest: plan.digest, evidence }),
-    ).rejects.toThrow(/closed/);
-    const results = await Promise.all([
-      runOwnedSonarrImport({ ...s.input, digest: plan.digest, evidence }),
-      runOwnedSonarrImport({ ...s.input, digest: plan.digest, evidence }),
-    ]);
-    expect(results.every((r) => r.verified)).toBe(true);
-    expect(s.state.writes.filter((w) => w.path === '/api/v3/command')).toHaveLength(1);
-    expect(s.state.writes.filter((w) => w.path === '/api/v3/queue/1000')).toHaveLength(1);
-    expect(s.state.writes.at(-1)!.body).toEqual({
-      removeFromClient: 'false',
-      blocklist: 'false',
-      skipRedownload: 'true',
-    });
-    expect((await s.arr.read.sonarr.getQueue(s.sid)).map((q) => q.downloadId)).toEqual([
-      'unrelated-download',
-    ]);
-  });
+  it.each(['fix', 'release_pick'] as const)(
+    'adopts a completed %s with its still-present owned queue once, concurrent observers cannot repeat cleanup or import',
+    async (kind) => {
+      const s = await setup(stub(), kind);
+      s.state.keepForeignQueue = true;
+      let started!: () => void;
+      let release!: () => void;
+      const imported = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const continueResponse = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      s.state.afterImport = async () => {
+        if (kind === 'fix') await t.db.update(fixRequests).set({ status: 'completed' });
+        else await t.db.update(repairRequests).set({ status: 'completed' });
+        started();
+        await continueResponse;
+      };
+      const plan = await planOwnedSonarrImport(s.input);
+      const first = runOwnedSonarrImport({ ...s.input, digest: plan.digest, evidence });
+      await imported;
+      const results = await Promise.all([
+        runOwnedSonarrImport({ ...s.input, digest: plan.digest, evidence }),
+        runOwnedSonarrImport({ ...s.input, digest: plan.digest, evidence }),
+      ]);
+      release();
+      results.push(await first);
+      expect(results.every((r) => r.verified)).toBe(true);
+      expect(s.state.writes.filter((w) => w.path === '/api/v3/command')).toHaveLength(1);
+      expect(s.state.writes.filter((w) => w.path === '/api/v3/queue/1000')).toHaveLength(1);
+      expect(s.state.writes.at(-1)!.body).toEqual({
+        removeFromClient: 'false',
+        blocklist: 'false',
+        skipRedownload: 'true',
+      });
+      expect((await s.arr.read.sonarr.getQueue(s.sid)).map((q) => q.downloadId)).toEqual([
+        'unrelated-download',
+      ]);
+    },
+  );
   it('adopts neutral-delete absence after a 404, without repeating its command', async () => {
     const s = await setup();
     s.state.queueDeleteReturns404AfterRemoval = true;
@@ -557,41 +572,35 @@ describe('parent-owned Sonarr Import Check (bounded, single worker)', () => {
         { step: 'release_grab', ok: true, at: new Date().toISOString(), release: s.title },
       ],
     });
-    await t.db
-      .update(watchCarries)
-      .set({
-        detail: {
-          fixRequestId: s.input.parent.id,
-          releases: [s.title],
-          wrongContentDeletion: {
-            version: 1,
-            grabStarted: true,
-            files: [
-              { id: 123, name: 'wrong-shared-file.mkv', size: 1234567, episodeIds: [37181, 37182] },
-            ],
-          },
+    await t.db.update(watchCarries).set({
+      detail: {
+        fixRequestId: s.input.parent.id,
+        releases: [s.title],
+        wrongContentDeletion: {
+          version: 1,
+          grabStarted: true,
+          files: [
+            { id: 123, name: 'wrong-shared-file.mkv', size: 1234567, episodeIds: [37181, 37182] },
+          ],
         },
-      });
-    await t.db
-      .insert(ledgerEvents)
-      .values({
-        mediaItemId: itemIds[439]!,
-        eventType: 'imported',
-        source: 'sonarr',
-        occurredAt: new Date(Date.now() + 1000),
-        payload: { episodeId: 37181 },
-      });
+      },
+    });
+    await t.db.insert(ledgerEvents).values({
+      mediaItemId: itemIds[439]!,
+      eventType: 'imported',
+      source: 'sonarr',
+      occurredAt: new Date(Date.now() + 1000),
+      payload: { episodeId: 37181 },
+    });
     expect((await completeFixRequests({ db: t.db })).completed).toEqual([]);
     expect((await t.db.select().from(fixRequests))[0]!.status).toBe('search_triggered');
-    await t.db
-      .insert(ledgerEvents)
-      .values({
-        mediaItemId: itemIds[439]!,
-        eventType: 'imported',
-        source: 'sonarr',
-        occurredAt: new Date(Date.now() + 1000),
-        payload: { episodeId: 37182 },
-      });
+    await t.db.insert(ledgerEvents).values({
+      mediaItemId: itemIds[439]!,
+      eventType: 'imported',
+      source: 'sonarr',
+      occurredAt: new Date(Date.now() + 1000),
+      payload: { episodeId: 37182 },
+    });
     expect((await completeFixRequests({ db: t.db })).completed.map((c) => c.fixRequestId)).toEqual([
       s.input.parent.id,
     ]);
@@ -601,27 +610,23 @@ describe('parent-owned Sonarr Import Check (bounded, single worker)', () => {
     await t.db
       .update(fixRequests)
       .set({ actionsTaken: [{ step: 'wrong_content_replace', at: new Date().toISOString() }] });
-    await t.db
-      .update(watchCarries)
-      .set({
-        detail: {
-          fixRequestId: s.input.parent.id,
-          wrongContentDeletion: {
-            version: 1,
-            grabStarted: true,
-            files: [{ id: 123, name: 'wrong.mkv', size: 123 }],
-          },
+    await t.db.update(watchCarries).set({
+      detail: {
+        fixRequestId: s.input.parent.id,
+        wrongContentDeletion: {
+          version: 1,
+          grabStarted: true,
+          files: [{ id: 123, name: 'wrong.mkv', size: 123 }],
         },
-      });
-    await t.db
-      .insert(ledgerEvents)
-      .values({
-        mediaItemId: itemIds[439]!,
-        eventType: 'imported',
-        source: 'sonarr',
-        occurredAt: new Date(Date.now() + 1000),
-        payload: { episodeId: 37181 },
-      });
+      },
+    });
+    await t.db.insert(ledgerEvents).values({
+      mediaItemId: itemIds[439]!,
+      eventType: 'imported',
+      source: 'sonarr',
+      occurredAt: new Date(Date.now() + 1000),
+      payload: { episodeId: 37181 },
+    });
     expect((await completeFixRequests({ db: t.db })).completed).toEqual([]);
     expect((await t.db.select().from(fixRequests))[0]!.status).toBe('search_triggered');
   });

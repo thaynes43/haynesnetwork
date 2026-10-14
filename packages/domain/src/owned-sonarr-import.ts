@@ -1027,29 +1027,37 @@ export async function runOwnedSonarrImport(
         transition: 'actioned',
         actions: [action],
       });
-    } else await append(input, [action]);
+    } else await append(input, [action], true);
     const status = await input.arr.read.sonarr.getCommand(command.id).catch(() => null);
-    await append(input, [
-      {
-        step: 'owned_import_command_read_back',
-        at: new Date().toISOString(),
-        downloadId: input.downloadId,
-        commandId: command.id,
-        status: status?.status ?? 'unknown',
-      },
-    ]);
+    await append(
+      input,
+      [
+        {
+          step: 'owned_import_command_read_back',
+          at: new Date().toISOString(),
+          downloadId: input.downloadId,
+          commandId: command.id,
+          status: status?.status ?? 'unknown',
+        },
+      ],
+      true,
+    );
     return observe(input, plan);
   } catch (error) {
-    await append(input, [
-      {
-        step: 'owned_import_stopped',
-        at: new Date().toISOString(),
-        downloadId: input.downloadId,
-        ok: false,
-        error: error instanceof Error ? error.message : 'Owned import failed',
-        replayAllowed: false,
-      },
-    ]);
+    await append(
+      input,
+      [
+        {
+          step: 'owned_import_stopped',
+          at: new Date().toISOString(),
+          downloadId: input.downloadId,
+          ok: false,
+          error: error instanceof Error ? error.message : 'Owned import failed',
+          replayAllowed: false,
+        },
+      ],
+      true,
+    );
     throw error;
   }
 }
