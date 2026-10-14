@@ -44,7 +44,7 @@ optional training, and other repeatable support escalations.
 |---|---|---|
 | [1 / PLAN-079: Seerr loop](079-seerr-repair-loop-spike.md) | One bounded report-to-verified-outcome loop, including truthful response and safe failure | Fresh grooming and execution decision |
 | [2 / PLAN-080: Website reports](080-website-repair-intake-spike.md) | Website intake using the same repair/outcome contract | 079 usable loop accepted |
-| [3 / PLAN-081: Model family baseline](081-repair-model-family-spike.md) | Reproducible comparison on verified real cases | 079 usable loop accepted; 080 supplies website cases if accepted |
+| [3 / PLAN-081: Model family baseline](081-repair-model-family-spike.md) | Reproducible comparison on verified real cases. Includes the paused, ungroomed media-inspection toolkit lesson from suspended R1 / Mickey file 80066 | 079 usable loop accepted; 080 supplies website cases if accepted |
 | [4 / PLAN-082: Verified knowledge](082-verified-repair-knowledge-spike.md) | Small searchable case KB and tested skills/playbooks | 079 and 081 evidence |
 | [5 / PLAN-083: Proactive reconciliation](083-proactive-media-reconciliation-spike.md) | Reviewable movie/TV/book/audiobook/metadata findings and bounded repair feasibility | 082; same outcome contract as 079/080 |
 | [6 / PLAN-084: Local model adoption](084-local-repair-models-spike.md) | Evidence for gradual Qwen/other local use, with controlled fallback | 081/082; suitable new GPUs verified ready |
