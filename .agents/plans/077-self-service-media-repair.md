@@ -22,15 +22,17 @@
   hardware-transcodes; P1 triage).
 - **Validation:** each phase's live check below, then P8's owner review.
 
-**Takeover update, 2026-10-14 07:25Z:** [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975)
-is verified live and its read-only paired-file hint check passed. Ben S1 E10/E12, Pokemon S3 E1 to E7 and E9 to E19,
-and Mickey S1 E1 to E6 are physically verified and normally completed. Current Pokemon E20 is in progress, followed
-by an idle checkpoint for a cold successor with actual write-time reserve guards and complete account/physical
-coverage. No completed replacement is replayed. Mickey E7/E8 exposed a failed correct grab followed by a janitor
-grab of the wrong stories. Its documented same-Fix recovery and scoped janitor hold merged in
-[978](https://github.com/thaynes43/haynesnetwork/pull/978); signed
-[v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is confirmed in GHCR and deploying. Recovery stays
-held for verified live deployment, fresh exact plan and real finite-worker activity coverage. See the
+**Takeover update, 2026-10-14 07:56Z:** signed
+[v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is verified live through
+[haynes-ops 3922](https://github.com/thaynes43/haynes-ops/pull/3922) and its merged actual report
+[3924](https://github.com/thaynes43/haynes-ops/pull/3924). Ben S1 E10/E12, Pokemon S3 E1 to E7 and E9 to E20,
+and Mickey S1 E1 to E6 are physically verified and normally completed. Pokemon's old worker stopped only after its
+verified idle E20 checkpoint; actual Job/Pod absence and complete post-deletion read-only proof passed. Its corrected
+cold worker passed independent review, with launch-contract review pending. No completed replacement is replayed.
+Mickey E7/E8's same-Fix recovery and scoped janitor hold shipped in
+[978](https://github.com/thaynes43/haynesnetwork/pull/978). Its first cold Job refused startup before any media write
+because a temporary guard expected a file ID in the normal ledger payload. The real source-event/episode/download
+contract is being bound to actual import history and whole-slot file proof before a new reviewed cold launch. See the
 [runtime proof](../context/2026-10-14-self-service-repair-runtime-proof.md).
 Q-12 remains asked and unanswered. OC-056's earliest time remains 2026-10-15T20:10Z, with Paw Patrol ordering
 first inside a Watch Carry.

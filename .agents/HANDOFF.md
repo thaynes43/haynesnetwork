@@ -1,5 +1,38 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14 07:56Z: v0.125.3 verified live; Pokemon E20 checkpoint; Mickey startup contract fix
+
+- Signed [v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is verified live through
+  [haynes-ops 3922](https://github.com/thaynes43/haynes-ops/pull/3922) and its merged actual report
+  [3924](https://github.com/thaynes43/haynes-ops/pull/3924). All three app/migrator pairs, all 26 templates, health,
+  107 migrations and reviewed source hashes passed; both bounded worker-node verification Jobs completed on the
+  signed image. Runner completion does not satisfy member-use or dated evidence. [PLAN-077](plans/077-self-service-media-repair.md)
+  remains active; read the [runtime proof](context/2026-10-14-self-service-repair-runtime-proof.md).
+- Pokemon E20 completed normally. The [completed-slot proof](context/2026-10-14-pokemon-completed-slot-proof.md)
+  records nineteen accepted slots with full Fix/Carry/event identities. The old worker held at finish 39 with no
+  E21 control, then its exact Job UID was deleted; actual Job and Pod were confirmed gone. Fresh complete
+  post-deletion proof passed on v0.125.3, with both Plex servers, every captured account, all physical parts and
+  protected identities. Preserve the original capture time and checkpoint SHA `34ffb14696bef28fdeaed3bc44995398572ba36f62fab1ed33c5c2a165606ad2`.
+- The corrected cold Pokemon worker has write-time reserve checks, complete account/physical coverage, bounded
+  underlying history and exact original-grab receipt authority. Exact worker SHA
+  `2b24b60ed6b2ee87b499a6ec89e2b7134d866a24a17dc7256d2aa15706849d3d` passed independent review. Generator, actual
+  complete post-deletion evidence and the new UID-bound control helper still need final launch review. No successor
+  or E21 control is authorized by this note. Never use a partial proof or timestamp-only freshness update.
+- Mickey's first cold recovery Job `8ad2f439-73af-41b9-b304-b76be1dc5cba` refused startup at 07:52:19Z before any
+  control or media write. It wrongly expected a file ID in production's normal ledger payload. Fix the temporary
+  guard by joining real native source-event ID/episode/download to bounded import history and immutable audited
+  whole-slot files; retain all strict physical/mark checks. Keep both the original terminal predecessor and this
+  failed startup as evidence. Original pending Fix/Carry, empty E7/E8 and zero retry/import claims are unchanged.
+  Fresh plan digest `1b07bfb991bba22f07a29a4450931ec79ea838021ab0d3fbf209231a2e70b34c`, iVy key `de801bbbf5384ede`
+  is reviewed; a new cold launch needs independent code review, actual fresh guard and root manifest review.
+- Root ended old declaration `act-051827-491938` after its successor was active and the Pokemon predecessor gone.
+  Current declaration `act-073758-527071` expires **2026-10-14T14:37:58Z** and covers both finite continuations.
+  Each absolute expiry plus shutdown margin must fit the actual record. Root ends it after verification.
+- Ben remains done; Pokemon E8/E31 retain their wrong files and Mickey E13 to E16 still run last. Q-12 remains
+  asked and unanswered; P7 is on as user 19 without writes to protected issues 1 to 4. OC-056 remains held until
+  **2026-10-15T20:10Z** and closed blocking Fixes, with Paw Patrol ordering first inside a verified Watch Carry.
+  Final step-6 snapshot follows the repairs and formal hold. P8 remains staff practice; the owner judges readiness.
+
 ## 2026-10-14 07:25Z: signed v0.125.3 deploying; Pokemon through E19; cold worker guards corrected
 
 - [PLAN-077](plans/077-self-service-media-repair.md) remains active. The audited same-Fix recovery and scoped
