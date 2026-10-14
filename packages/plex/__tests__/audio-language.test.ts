@@ -134,6 +134,35 @@ describe('PlexReadClient — getAudioTracks (DESIGN-055 D-08)', () => {
       { position: 2, languageCode: 'eng', displayTitle: 'English (EAC3 5.1)', isDefault: false },
     ]);
   });
+
+  it('uses the exact basename and bytes to read a later media version’s real tracks', async () => {
+    const file = { name: 'Pair.mkv', size: 1_476_355_129 };
+    const body = structuredClone(S01E12_STREAMS);
+    const oldMedia = { id: 0, Part: [{ id: 0, Stream: [{ id: 0, streamType: 2, index: 0, languageCode: 'ger', displayTitle: 'Deutsch' }] }] };
+    Object.assign(oldMedia.Part[0]!, { file: '/tv/Old.mkv', size: 42 });
+    body.MediaContainer.Metadata[0]!.Media.unshift(oldMedia);
+    const part = body.MediaContainer.Metadata[0]!.Media[1]!.Part[0]!;
+    Object.assign(part, { file: 'D:\\TV\\Pair.mkv', size: String(file.size) });
+    const stub = plexStub([{ path: '/library/metadata/106075', body }]);
+    expect((await read(stub).getAudioTracks('106075', file))?.map((t) => t.languageCode)).toEqual(['por', 'eng']);
+    // The pre-existing movie/unspecified-file behavior still takes the first media part.
+    expect((await read(stub).getAudioTracks('106075'))?.map((t) => t.languageCode)).toEqual(['ger']);
+  });
+
+  it.each(['missing', 'stale-name', 'stale-bytes', 'duplicate', 'no-audio'])(
+    'refuses an unproved physical file or returns no unseen tracks: %s', async (variant) => {
+      const file = { name: 'Pair.mkv', size: 1_476_355_129 };
+      const body = structuredClone(S01E12_STREAMS);
+      const part = body.MediaContainer.Metadata[0]!.Media[0]!.Part[0]!;
+      if (variant !== 'missing') Object.assign(part, { file: `/tv/${variant === 'stale-name' ? 'Other.mkv' : file.name}`, size: variant === 'stale-bytes' ? file.size + 1 : file.size });
+      if (variant === 'duplicate') body.MediaContainer.Metadata[0]!.Media[0]!.Part.push(structuredClone(part));
+      if (variant === 'no-audio') part.Stream = part.Stream.filter((s) => s.streamType !== 2);
+      const stub = plexStub([{ path: '/library/metadata/106075', body }]);
+      const tracks = await read(stub).getAudioTracks('106075', file);
+      if (variant === 'no-audio') expect(tracks).toEqual([]);
+      else expect(tracks).toBeNull();
+    },
+  );
 });
 
 describe('PlexWriteClient — setAudioLanguagePreference (ADR-109 C-07)', () => {

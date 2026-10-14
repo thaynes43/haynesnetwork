@@ -229,6 +229,7 @@ function stubArr(
     series?: ReturnType<typeof seriesBody>;
     fileGroup?: string;
     fileSceneName?: string;
+    files?: Array<Record<string, unknown>>;
   } = {},
 ) {
   const calls: Array<{ method: string; path: string; body: unknown }> = [];
@@ -236,7 +237,7 @@ function stubArr(
   const episodes = over.episodes ?? EPISODES;
   const first = episodes[0]!;
   const sceneName = over.fileSceneName ?? 'Regular.Show.The.Lost.Tapes.S01E05.1080p.WEB-DL.DUBLADO-PTGroup';
-  const files = episodes.map((e, index) => ({
+  const files = over.files ?? episodes.map((e, index) => ({
     id: e.fileId, seriesId: series.id, seasonNumber: e.seasonNumber,
     relativePath: `Season ${e.seasonNumber}/S01E${String(e.episodeNumber).padStart(2, '0')}.mkv`,
     ...(index === 0 ? { sceneName } : {}),
@@ -317,17 +318,34 @@ function seriesBody() {
 }
 
 /** Plex as the three servers answer: a show's prefs and its S01E12 tracks; a movie offers no audio language. */
-function stubPlex(initial: { tower?: string; ops?: string; readBack?: string } = {}) {
+function stubPlex(initial: {
+  tower?: string;
+  ops?: string;
+  readBack?: string;
+  leaves?: Array<Record<string, unknown>>;
+  metadata?: Record<string, Record<string, unknown>>;
+} = {}) {
   const prefs = new Map<string, string>([
     ['tower:552877', initial.tower ?? 'en-US'],
     ['ops:106050', initial.ops ?? ''],
   ]);
   const writes: string[] = [];
+  const calls: Array<{ method: string; path: string }> = [];
+  const streams = [
+    { streamType: 1, displayTitle: '1080p' },
+    { streamType: 2, languageCode: 'por', default: true, displayTitle: 'Português (EAC3 5.1)' },
+    { streamType: 2, languageCode: 'eng', displayTitle: 'English (EAC3 5.1)' },
+  ];
+  const leaves = initial.leaves ?? EPISODES.map((e, index) => ({
+    ratingKey: `episode-${e.id}`, type: 'episode', title: e.title, index: e.episodeNumber, parentIndex: e.seasonNumber,
+    Media: [{ Part: [{ file: `/tv/Season ${e.seasonNumber}/S01E${String(e.episodeNumber).padStart(2, '0')}.mkv`, size: index === 0 ? 420_000_000 : index === 1 ? 445_000_000 : 500_000_000, Stream: streams }] }],
+  }));
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   const fetchImpl = (async (input: unknown, init: RequestInit = {}) => {
     const url = new URL(String(input));
     const method = init.method ?? 'GET';
+    calls.push({ method, path: url.pathname });
     const host = url.host.startsWith('tower') ? 'tower' : url.host.startsWith('ops') ? 'ops' : 'kube';
     const m = /^\/library\/metadata\/([^/]+)(\/.*)?$/.exec(url.pathname);
     if (!m) return json({ message: 'no stub' }, 404);
@@ -352,7 +370,12 @@ function stubPlex(initial: { tower?: string; ops?: string; readBack?: string } =
         return json({ MediaContainer: { Metadata: EPISODES.map((e) => ({ ratingKey: `${rk}-e${e.episodeNumber}`, type: 'episode', title: e.title, index: e.episodeNumber })) } });
       }
     }
+    if (method === 'GET' && rest === '/allLeaves' && (rk === '552877' || rk === '106050')) {
+      return json({ MediaContainer: { totalSize: leaves.length, Metadata: leaves } });
+    }
     if (method === 'GET' && rest === undefined) {
+      const item = initial.metadata?.[rk] ?? leaves.find((e) => e.ratingKey === rk);
+      if (item) return json({ MediaContainer: { Metadata: [item] } });
       return json({
         MediaContainer: {
           Metadata: [
@@ -363,11 +386,7 @@ function stubPlex(initial: { tower?: string; ops?: string; readBack?: string } =
                 {
                   Part: [
                     {
-                      Stream: [
-                        { streamType: 1, displayTitle: '1080p' },
-                        { streamType: 2, languageCode: 'por', default: true, displayTitle: 'Português (EAC3 5.1)' },
-                        { streamType: 2, languageCode: 'eng', displayTitle: 'English (EAC3 5.1)' },
-                      ],
+                      Stream: streams,
                     },
                   ],
                 },
@@ -385,7 +404,7 @@ function stubPlex(initial: { tower?: string; ops?: string; readBack?: string } =
     haynesops: opt('ops', '80b33acb1d207508990637ec151fe9abad8d3d7a'),
     hayneskube: opt('kube', 'kube-mid'),
   });
-  return { bundle, prefs, writes };
+  return { bundle, prefs, writes, calls };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -465,6 +484,30 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
   });
 
   describe('the Audio Preference (rule 3)', () => {
+    const pairedEpisodes = [
+      { ...E05, episodeNumber: 1, fileId: 80010 },
+      { ...E06, episodeNumber: 2, fileId: 80010 },
+    ];
+    const pairedFile = {
+      id: 80010, seriesId: SERIES, seasonNumber: 1, relativePath: 'Season 1/Mickey.S01E01-E02.mkv', size: 1_476_355_129,
+      quality: { quality: { id: 3, name: 'WEBDL-1080p', resolution: 1080 } }, mediaInfo: { audioLanguages: 'por/eng' },
+    };
+    const pairedLeaf = (ratingKey = 'paired-first', index = 1, part: Record<string, unknown> = {}) => ({
+      ratingKey, type: 'episode', title: 'Two stories', parentIndex: 1, index,
+      Media: [{ Part: [{
+        file: `/tv/Mickey/${pairedFile.relativePath}`, size: pairedFile.size,
+        Stream: [
+          { streamType: 1, displayTitle: '1080p' },
+          { streamType: 2, languageCode: 'por', displayTitle: 'Português (EAC3 5.1)', default: true },
+          { streamType: 2, languageCode: 'eng', displayTitle: 'English (EAC3 5.1)' },
+        ],
+        ...part,
+      }] }],
+    });
+    const pairedArr = () => stubArr({ episodes: pairedEpisodes, files: [pairedFile] });
+    const pairedPreview = (arr: ReturnType<typeof stubArr>, plex: ReturnType<typeof stubPlex>, targetChildId = E06.id) =>
+      previewAudioPreference({ db: t.db, arr: arr.bundle, plex: plex.bundle, mediaItemId: showId, scope: 'episode', targetChildId, wantedLanguage: 'eng' });
+
     it('Case A: English is in the file and is the show’s original language, so the preview offers the write', async () => {
       const plex = stubPlex();
       const preview = await previewAudioPreference({ db: t.db, arr: stubArr().bundle, plex: plex.bundle, ...e12(), wantedLanguage: 'eng' });
@@ -487,6 +530,106 @@ describe('the language-aware Wrong language over embedded Postgres (DESIGN-055 D
         ['Português (EAC3 5.1)', true],
         ['English (EAC3 5.1)', false],
       ]);
+      expect(plex.writes).toEqual([]);
+    });
+
+    it('reads both episodes of one physical file from Plex’s one first-episode item, without extra Sonarr reads or writes', async () => {
+      const arr = pairedArr();
+      const plex = stubPlex({ leaves: [pairedLeaf()] });
+      const second = await pairedPreview(arr, plex);
+      expect(second.tracks?.tracks.map((tr) => tr.displayTitle)).toEqual(['Português (EAC3 5.1)', 'English (EAC3 5.1)']);
+      expect(arr.calls.filter((c) => c.path === '/api/v3/episode')).toHaveLength(1);
+      expect(arr.calls.filter((c) => c.path === '/api/v3/episodefile')).toHaveLength(1);
+      expect(plex.calls.filter((c) => c.path.endsWith('/allLeaves')).map((c) => c.path)).toEqual(['/library/metadata/106050/allLeaves']);
+      const first = await pairedPreview(pairedArr(), plex, E05.id);
+      expect(first.tracks).toEqual(second.tracks);
+      expect(first.digest).toBe(second.digest);
+      expect(second).toMatchObject({ action: 'set', verdict: 'present', toWrite: ['haynesops'] });
+      expect(arr.writes()).toEqual([]);
+      expect(plex.writes).toEqual([]);
+      expect(await t.db.select().from(repairRequests)).toHaveLength(0);
+    });
+
+    it('prefers the requested episode when its exact physical file agrees, even when the first episode also lists it', async () => {
+      const plex = stubPlex({ leaves: [pairedLeaf(), pairedLeaf('paired-second', 2)] });
+      expect((await pairedPreview(pairedArr(), plex)).tracks).not.toBeNull();
+      expect(plex.calls.some((c) => c.path === '/library/metadata/paired-second')).toBe(true);
+      expect(plex.calls.some((c) => c.path === '/library/metadata/paired-first')).toBe(false);
+    });
+
+    it.each([
+      ['stale exact episode with different bytes', [pairedLeaf('stale', 2, { size: pairedFile.size + 1 })]],
+      ['same bytes with a different basename', [pairedLeaf('different-name', 2, { file: '/tv/Other.mkv' })]],
+      ['two fallback items for the same file', [pairedLeaf(), pairedLeaf('duplicate', 1)]],
+      ['two exact items for the same file', [pairedLeaf('exact-a', 2), pairedLeaf('exact-b', 2)]],
+      ['a matching file outside its episode coverage', [pairedLeaf('outside', 3)]],
+      ['a matching file in another season', [{ ...pairedLeaf(), parentIndex: 2 }]],
+      ['a conflicting in-coverage and outside-coverage match', [pairedLeaf(), pairedLeaf('outside', 3)]],
+      ['no physical-file metadata', [pairedLeaf('missing', 2, { file: undefined, size: undefined })]],
+    ])('keeps generic guidance for %s', async (_name, leaves) => {
+      const plex = stubPlex({ leaves });
+      expect((await pairedPreview(pairedArr(), plex)).tracks).toBeNull();
+      expect(plex.calls.filter((c) => !c.path.endsWith('/allLeaves') && c.path.includes('paired'))).toEqual([]);
+      expect(plex.writes).toEqual([]);
+    });
+
+    it('does not guess the first episode when Sonarr says the requested episode has a different file', async () => {
+      const arr = stubArr({
+        episodes: [pairedEpisodes[0]!, { ...pairedEpisodes[1]!, fileId: 80011 }],
+        files: [pairedFile, { ...pairedFile, id: 80011, relativePath: 'Season 1/Mickey.S01E02.mkv' }],
+      });
+      expect((await pairedPreview(arr, stubPlex({ leaves: [pairedLeaf()] }))).tracks).toBeNull();
+    });
+
+    it('refuses a file that changed between the show listing and stream read', async () => {
+      const plex = stubPlex({ leaves: [pairedLeaf()], metadata: { 'paired-first': pairedLeaf('paired-first', 1, { size: pairedFile.size + 1 }) } });
+      expect((await pairedPreview(pairedArr(), plex)).tracks).toBeNull();
+    });
+
+    it('uses the proved paired file instead of a stale different file at the exact episode number', async () => {
+      const plex = stubPlex({ leaves: [pairedLeaf(), pairedLeaf('stale-second', 2, { size: 42 })] });
+      expect((await pairedPreview(pairedArr(), plex)).tracks?.tracks.map((tr) => tr.languageCode)).toEqual(['por', 'eng']);
+      expect(plex.calls.some((c) => c.path === '/library/metadata/stale-second')).toBe(false);
+    });
+
+    it.each([
+      ['missing Sonarr basename', [{ ...pairedFile, relativePath: null }]],
+      ['missing Sonarr bytes', [{ ...pairedFile, size: null }]],
+      ['zero Sonarr bytes', [{ ...pairedFile, size: 0 }]],
+      ['duplicate Sonarr file identity', [pairedFile, pairedFile]],
+    ])('refuses to infer physical-file proof from %s', async (_name, files) => {
+      const arr = stubArr({ episodes: pairedEpisodes, files });
+      const plex = stubPlex({ leaves: [pairedLeaf()] });
+      expect((await pairedPreview(arr, plex)).tracks).toBeNull();
+      expect(plex.calls.some((c) => c.path.endsWith('/allLeaves'))).toBe(false);
+    });
+
+    it('reads the matched file’s own streams when another Plex media version comes first', async () => {
+      const leaf = pairedLeaf();
+      leaf.Media.unshift({ Part: [{ file: '/tv/OldVersion.mkv', size: 42, Stream: [{ streamType: 2, languageCode: 'ger', displayTitle: 'Deutsch', default: true }] }] });
+      const preview = await pairedPreview(pairedArr(), stubPlex({ leaves: [leaf] }));
+      expect(preview.tracks?.tracks.map((tr) => tr.languageCode)).toEqual(['por', 'eng']);
+    });
+
+    it('the scan uses the same file proof when its sample is the second episode of a one-item pair', async () => {
+      const arr = stubArr({ episodes: [...pairedEpisodes].reverse(), files: [pairedFile] });
+      const plex = stubPlex({ leaves: [pairedLeaf()] });
+      const report = await scanAudioDefaults({ db: t.db, arr: arr.bundle, plex: plex.bundle });
+      expect(report.findings[0]).toMatchObject({ sample: { episodeId: E06.id, label: 'S01E02' }, plexDefault: 'por' });
+      expect(arr.calls.filter((c) => c.path === '/api/v3/episode')).toHaveLength(1);
+      expect(arr.calls.filter((c) => c.path === '/api/v3/episodefile')).toHaveLength(1);
+      expect(arr.writes()).toEqual([]);
+      expect(plex.writes).toEqual([]);
+      const stale = await scanAudioDefaults({ db: t.db, arr: arr.bundle, plex: stubPlex({ leaves: [pairedLeaf('stale', 2, { size: 42 })] }).bundle });
+      expect(stale.findings[0]?.plexDefault).toBeNull();
+    });
+
+    it('preserves the movie’s first-part hints and does not read show leaves', async () => {
+      const plex = stubPlex();
+      const preview = await previewAudioPreference({ db: t.db, arr: stubArr().bundle, plex: plex.bundle, mediaItemId: movieId, wantedLanguage: 'spa' });
+      expect(preview).toMatchObject({ action: 'guidance', reason: 'movie', tracks: { server: 'HaynesTower' } });
+      expect(preview.tracks?.tracks.map((tr) => tr.languageCode)).toEqual(['por', 'eng']);
+      expect(plex.calls.some((c) => c.path.endsWith('/allLeaves'))).toBe(false);
       expect(plex.writes).toEqual([]);
     });
 

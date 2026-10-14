@@ -348,7 +348,13 @@ export const itemStreamsContainerSchema = z.object({
           index: z.number().int().nullish(),
           parentIndex: z.number().int().nullish(),
           Media: z
-            .array(z.looseObject({ Part: z.array(z.looseObject({ Stream: z.array(plexStreamSchema).default([]) })).default([]) }))
+            .array(z.looseObject({
+              Part: z.array(z.looseObject({
+                file: z.string().nullish(),
+                size: z.union([z.string(), z.number()]).transform(Number).nullish(),
+                Stream: z.array(plexStreamSchema).default([]),
+              })).default([]),
+            }))
             .default([]),
         }),
       )

@@ -23,7 +23,7 @@ import type { PlexClientBundle } from './plex-clients';
 import { FixPlanChangedError, FixRefusedError, LedgerItemTombstonedError, NotFoundError } from './errors';
 import { guardArrCall, listMediaChildren } from './media-children';
 import { resolveFixTarget, type SearchScope } from './action-scope';
-import { languageVerdict, readFileAudio, type LanguageVerdict } from './language-check';
+import { languageVerdict, readFileAudioSnapshot, type LanguageVerdict } from './language-check';
 import {
   audioLanguageName,
   canonicalLanguageCode,
@@ -218,12 +218,33 @@ function previewDigest(p: Pick<AudioPreferencePreview, 'action' | 'servers' | 't
     .slice(0, 24);
 }
 
+type EpisodeNumber = { seasonNumber: number; episodeNumber: number };
+type EpisodeFileHint = {
+  name: string;
+  size: number;
+  requested: EpisodeNumber;
+  coverage: EpisodeNumber[];
+};
+
+/** Internal physical-file evidence, derived only from the same complete Sonarr read as the language check/scan. */
+function episodeFileHint(
+  requested: EpisodeNumber,
+  file: { relativePath?: string | null; size?: number | null },
+  coverage: EpisodeNumber[],
+): EpisodeFileHint | null {
+  const name = file.relativePath?.split(/[\\/]/).pop();
+  const size = file.size;
+  if (!name || typeof size !== 'number' || !Number.isSafeInteger(size) || size <= 0 || coverage.length === 0) return null;
+  if (!coverage.some((e) => e.seasonNumber === requested.seasonNumber && e.episodeNumber === requested.episodeNumber)) return null;
+  return { name, size, requested, coverage };
+}
+
 /** The scope's single file in Plex (an episode or the movie), for the guidance's track names. Best effort. */
 async function readTrackHint(input: {
   plex: Pick<PlexClientBundle, 'read'>;
   servers: readonly AudioPreferenceServer[];
   isShow: boolean;
-  episode: { seasonNumber: number; episodeNumber: number } | null;
+  episodeFile: EpisodeFileHint | null;
 }): Promise<AudioTrackHint | null> {
   const server = input.servers.find((s) => !s.unreachable);
   if (!server) return null;
@@ -231,15 +252,19 @@ async function readTrackHint(input: {
   try {
     let ratingKey: string | null = server.ratingKey;
     if (input.isShow) {
-      if (!input.episode) return null;
-      const seasons = await client.listMetadataChildren(server.ratingKey);
-      const season = seasons.items.find((i) => i.index === input.episode!.seasonNumber);
-      if (!season) return null;
-      const episodes = await client.listMetadataChildren(season.ratingKey);
-      ratingKey = episodes.items.find((i) => i.index === input.episode!.episodeNumber)?.ratingKey ?? null;
+      const file = input.episodeFile;
+      if (!file) return null;
+      // listLeafFiles is complete and confined to this matched show. Number alone never proves a file's identity.
+      const leaves = await client.listLeafFiles(server.ratingKey);
+      const matches = leaves.filter((e) => e.parts.some((p) => p.name === file.name && p.size === file.size));
+      if (matches.some((e) => !file.coverage.some((c) => c.seasonNumber === e.season && c.episodeNumber === e.episode))) return null;
+      const exact = matches.filter((e) => e.season === file.requested.seasonNumber && e.episode === file.requested.episodeNumber);
+      const chosen = exact.length === 1 ? exact[0] : exact.length === 0 && matches.length === 1 ? matches[0] : null;
+      ratingKey = chosen?.ratingKey ?? null;
     }
     if (!ratingKey) return null;
-    const tracks = await client.getAudioTracks(ratingKey);
+    // Re-check the file on the stream read too: Plex may have changed, or list several media versions on one item.
+    const tracks = await client.getAudioTracks(ratingKey, input.isShow ? input.episodeFile! : undefined);
     return tracks && tracks.length > 0 ? { server: server.name, tracks } : null;
   } catch {
     return null;
@@ -271,8 +296,8 @@ export async function previewAudioPreference(input: AudioPreferenceInput): Promi
     seasonNumber: input.seasonNumber,
   });
 
-  const [audio, originalName] = await Promise.all([
-    readFileAudio({
+  const [snapshot, originalName] = await Promise.all([
+    readFileAudioSnapshot({
       db: input.db,
       arr: input.arr,
       mediaItemId: item.id,
@@ -288,6 +313,7 @@ export async function previewAudioPreference(input: AudioPreferenceInput): Promi
           (m) => m.originalLanguage?.name ?? null,
         ),
   ]);
+  const { audio, sonarr } = snapshot;
   const verdict = languageVerdict(audio, wanted);
   const originalCode = languageCodeFromArrName(originalName);
 
@@ -299,15 +325,19 @@ export async function previewAudioPreference(input: AudioPreferenceInput): Promi
     }),
   );
 
-  let episode: { seasonNumber: number; episodeNumber: number } | null = null;
-  if (isShow && resolved.scope === 'episode' && resolved.targetChildId !== null) {
-    const children = await listMediaChildren({ db: input.db, arr: input.arr, mediaItemId: item.id });
+  let episodeFile: EpisodeFileHint | null = null;
+  if (sonarr && resolved.scope === 'episode' && resolved.targetChildId !== null) {
+    const { children, files } = sonarr;
     const child = children.find((c) => c.arrChildId === resolved.targetChildId);
-    if (child && child.seasonNumber !== null && child.episodeNumber !== null) {
-      episode = { seasonNumber: child.seasonNumber, episodeNumber: child.episodeNumber };
+    const matchingFiles = files.filter((f) => f.id === child?.episodeFileId);
+    if (child?.hasFile && child.seasonNumber !== null && child.episodeNumber !== null && matchingFiles.length === 1) {
+      const coverage = children
+        .filter((c) => c.episodeFileId === child.episodeFileId && c.hasFile && c.seasonNumber !== null && c.episodeNumber !== null)
+        .map((c) => ({ seasonNumber: c.seasonNumber!, episodeNumber: c.episodeNumber! }));
+      episodeFile = episodeFileHint({ seasonNumber: child.seasonNumber, episodeNumber: child.episodeNumber }, matchingFiles[0]!, coverage);
     }
   }
-  const tracks = await readTrackHint({ plex: input.plex, servers, isShow, episode });
+  const tracks = await readTrackHint({ plex: input.plex, servers, isShow, episodeFile });
 
   const decision = decideAudioPreference({ isShow, verdict, wanted, original: originalCode, servers, rule: input.rule });
   const remedies = await getRepairGuideRemedies(input.db);
@@ -598,6 +628,7 @@ export async function scanAudioDefaults(input: {
       .from(mediaItems)
       .where(and(eq(mediaItems.arrKind, 'sonarr'), eq(mediaItems.arrItemId, s.id), isNull(mediaItems.deletedFromArrAt)));
     let sample: AudioScanFinding['sample'] = null;
+    let sampleHint: EpisodeFileHint | null = null;
     let englishSample: AudioScanFinding['english']['sample'] = null;
     if (sampleFile || englishFile) {
       const episodes = await guardArrCall(`sonarr GET /episode?seriesId=${s.id}`, () => sonarr.listEpisodes(s.id));
@@ -610,6 +641,9 @@ export async function scanAudioDefaults(input: {
           label: label(ep),
           fileName: (sampleFile.relativePath ?? '').split(/[\\/]/).pop() || null,
         };
+        if (files.filter((f) => f.id === sampleFile!.id).length === 1) {
+          sampleHint = episodeFileHint(ep, sampleFile, episodes.filter((e) => e.hasFile && e.episodeFileId === sampleFile!.id));
+        }
       }
       const enEp = englishFile ? episodes.find((e) => e.episodeFileId === englishFile!.id) : undefined;
       if (enEp) englishSample = { episodeId: enEp.id, label: label(enEp) };
@@ -625,12 +659,11 @@ export async function scanAudioDefaults(input: {
     }
     let plexDefault: string | null = null;
     if (sample) {
-      const m = /^S(\d+)E(\d+)$/.exec(sample.label)!;
       const hint = await readTrackHint({
         plex: input.plex,
         servers,
         isShow: true,
-        episode: { seasonNumber: Number(m[1]), episodeNumber: Number(m[2]) },
+        episodeFile: sampleHint,
       });
       plexDefault = hint ? effectiveDefaultLanguage(hint.tracks) : null;
     }

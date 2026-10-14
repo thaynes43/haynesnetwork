@@ -6,11 +6,12 @@
 // stream list and the preferred-audio write come with PLAN-077 P6 (DESIGN-055 Q-03 ruling); until then a file that has
 // the wanted language gets guidance only, and the Fix refuses to destroy it.
 import { mediaItems, type DbClient } from '@hnet/db';
+import type { SonarrEpisodeFileRelease } from '@hnet/arr';
 import { eq } from 'drizzle-orm';
 import { LedgerItemTombstonedError, NotFoundError } from './errors';
 import { resolveDb } from './db-client';
 import type { ArrClientBundle } from './arr-clients';
-import { guardArrCall, listMediaChildren } from './media-children';
+import { guardArrCall, listMediaChildren, type MediaChildTarget } from './media-children';
 import { resolveFixTarget, type SearchScope } from './action-scope';
 import { audioLanguageName, fileHasLanguage, parseAudioLanguages } from './fix-guards';
 
@@ -28,15 +29,25 @@ export interface FileAudio {
   languages: Array<{ code: string; name: string }>;
 }
 
-/** Read the audio languages of the file(s) a Fix would touch. Sonarr and Radarr only. */
-export async function readFileAudio(input: {
+type FileAudioInput = {
   db?: DbClient;
   arr: Pick<ArrClientBundle, 'read'>;
   mediaItemId: string;
   scope?: SearchScope;
   targetChildId?: number;
   seasonNumber?: number;
-}): Promise<FileAudio> {
+};
+
+/** Read the files' audio languages; the public result stays free of the internal evidence used by Plex track hints. */
+export async function readFileAudio(input: FileAudioInput): Promise<FileAudio> {
+  return (await readFileAudioSnapshot(input)).audio;
+}
+
+/** Internal read snapshot: reuse the live Sonarr children and files without another upstream read. */
+export async function readFileAudioSnapshot(input: FileAudioInput): Promise<{
+  audio: FileAudio;
+  sonarr: { children: MediaChildTarget[]; files: SonarrEpisodeFileRelease[] } | null;
+}> {
   const db = resolveDb(input.db);
   const [item] = await db
     .select({ id: mediaItems.id, arrKind: mediaItems.arrKind, arrItemId: mediaItems.arrItemId, deletedFromArrAt: mediaItems.deletedFromArrAt })
@@ -47,6 +58,7 @@ export async function readFileAudio(input: {
     throw new LedgerItemTombstonedError(`Media item ${input.mediaItemId} is tombstoned — nothing to fix in the *arr`);
   }
   const files: FileAudioLanguages[] = [];
+  let sonarr: { children: MediaChildTarget[]; files: SonarrEpisodeFileRelease[] } | null = null;
   if (item.arrKind === 'radarr') {
     const movieFiles = await guardArrCall(`radarr GET /moviefile?movieId=${item.arrItemId}`, () =>
       input.arr.read.radarr.listMovieFiles(item.arrItemId),
@@ -59,6 +71,7 @@ export async function readFileAudio(input: {
       seasonNumber: input.seasonNumber,
     });
     const children = await listMediaChildren({ db: input.db, arr: input.arr, mediaItemId: item.id });
+    sonarr = { children, files: [] };
     const inScope = children.filter((c) =>
       resolved.scope === 'season'
         ? c.seasonNumber === resolved.seasonNumber && c.hasFile
@@ -69,6 +82,7 @@ export async function readFileAudio(input: {
       const episodeFiles = await guardArrCall(`sonarr GET /episodefile?seriesId=${item.arrItemId}`, () =>
         input.arr.read.sonarr.listEpisodeFileReleases(item.arrItemId),
       );
+      sonarr.files = episodeFiles;
       for (const child of inScope) {
         const f = episodeFiles.find((e) => e.id === child.episodeFileId);
         if (f) files.push({ label: child.label, codes: parseAudioLanguages(f.mediaInfo?.audioLanguages) });
@@ -77,7 +91,7 @@ export async function readFileAudio(input: {
   }
   const all: string[] = [];
   for (const f of files) for (const c of f.codes) if (!all.includes(c)) all.push(c);
-  return { files, languages: all.map((code) => ({ code, name: audioLanguageName(code) })) };
+  return { audio: { files, languages: all.map((code) => ({ code, name: audioLanguageName(code) })) }, sonarr };
 }
 
 export type LanguageVerdict = 'present' | 'missing' | 'unknown';

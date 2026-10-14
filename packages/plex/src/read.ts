@@ -13,7 +13,9 @@ import {
   parseSharedServerAccess,
   readLeafFiles,
   readShowOrdering,
+  partName,
   type PlexLeafFile,
+  type PlexLeafPart,
   type PlexSharedServerAccess,
 } from './carry-read';
 import {
@@ -383,17 +385,27 @@ export class PlexReadClient {
    * ADR-109 C-07 / DESIGN-055 D-08 (PLAN-077 P6) — the audio tracks of one episode or movie on this server, in the
    * file's own order (`GET /library/metadata/{ratingKey}`, `Media[].Part[].Stream[]` with `streamType` 2): the language,
    * Plex's display title (`English (EAC3 5.1)`, written in that language) and the file's default flag. The first
-   * part of the first media only (the file a play starts with). Read-only. A missing item returns null.
+   * part of the first media by default (the file a play starts with). With physical-file evidence, only that exact
+   * basename and byte size may supply tracks; missing or repeated parts refuse the hint. Read-only.
    */
-  async getAudioTracks(ratingKey: string): Promise<PlexAudioTrack[] | null> {
+  async getAudioTracks(ratingKey: string, file?: PlexLeafPart): Promise<PlexAudioTrack[] | null> {
     const body = await this.http.requestJson(
       'GET',
       `${this.baseUrl}/library/metadata/${encodeURIComponent(ratingKey)}`,
       itemStreamsContainerSchema,
     );
     const item = body.MediaContainer.Metadata[0];
-    if (!item) return null;
-    const streams = item.Media[0]?.Part[0]?.Stream ?? [];
+    if (!item || item.ratingKey !== ratingKey) return null;
+    let part = item.Media[0]?.Part[0];
+    if (file) {
+      if (!file.name || !Number.isSafeInteger(file.size) || file.size <= 0) return null;
+      const matches = item.Media.flatMap((m) => m.Part).filter(
+        (p) => p.file && partName(p.file) === file.name && p.size === file.size,
+      );
+      if (matches.length !== 1) return null;
+      part = matches[0];
+    }
+    const streams = part?.Stream ?? [];
     return streams
       .filter((s) => s.streamType === 2)
       .map((s, i) => ({

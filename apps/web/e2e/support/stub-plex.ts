@@ -464,13 +464,23 @@ const WATCH_CHILDREN: Record<string, StubSectionItem[]> = {
 // then English, like Regular Show: The Lost Tapes S01E12.
 const AUDIO_LANGUAGE_ENUM =
   ':Account default|en-US:English|pt-BR:Português|de-DE:Deutsch|en-GB:English (UK)|es-ES:Español|fr-FR:Français|ja-JP:日本語';
-const AUDIO_STREAMS: Record<string, Array<Record<string, unknown>>> = {
-  '50113': [
-    { id: 1, streamType: 1, index: 0, displayTitle: '1080p (H.264)' },
-    { id: 2, streamType: 2, index: 1, languageCode: 'por', languageTag: 'pt-BR', default: true, displayTitle: 'Português (EAC3 5.1)' },
-    { id: 3, streamType: 2, index: 2, languageCode: 'eng', languageTag: 'en-US', displayTitle: 'English (EAC3 5.1)' },
-  ],
+const AUDIO_PARTS: Record<string, { file: string; size: number; Stream: Array<Record<string, unknown>> }> = {
+  '50113': {
+    // The same physical file Sonarr's language fixture serves; both Plex reads carry its identity.
+    file: '/tv/Breaking Prod/Season 1/Breaking Prod - S01E03 [WEBDL-1080p]-STUB.mkv',
+    size: 1_073_741_824,
+    Stream: [
+      { id: 1, streamType: 1, index: 0, displayTitle: '1080p (H.264)' },
+      { id: 2, streamType: 2, index: 1, languageCode: 'por', languageTag: 'pt-BR', default: true, displayTitle: 'Português (EAC3 5.1)' },
+      { id: 3, streamType: 2, index: 2, languageCode: 'eng', languageTag: 'en-US', displayTitle: 'English (EAC3 5.1)' },
+    ],
+  },
 };
+
+function audioMediaFor(key: string) {
+  const part = AUDIO_PARTS[key];
+  return part ? { Media: [{ id: 1, Part: [{ id: 1, ...part }] }] } : {};
+}
 
 /** The owning section of every watch item (the metadata/children `librarySectionID`). */
 const WATCH_SECTION_OF: Record<string, string> = Object.fromEntries([
@@ -1143,7 +1153,7 @@ export async function startStubPlex(): Promise<StubPlexServer> {
         const sectionId = METADATA_SECTION[key] ?? WATCH_SECTION_OF[key];
         return json(res, 200, {
           MediaContainer: {
-            ...containerPage(leavesOf(item).map(overlay), url.searchParams),
+            ...containerPage(leavesOf(item).map((leaf) => ({ ...overlay(leaf), ...audioMediaFor(leaf.ratingKey) })), url.searchParams),
             librarySectionID: sectionId ? Number(sectionId) : undefined,
           },
         });
@@ -1201,7 +1211,7 @@ export async function startStubPlex(): Promise<StubPlexServer> {
                 },
               }
             : {};
-        const streams = AUDIO_STREAMS[key] ? { Media: [{ id: 1, Part: [{ id: 1, Stream: AUDIO_STREAMS[key] }] }] } : {};
+        const streams = audioMediaFor(key);
         return json(res, 200, {
           MediaContainer: {
             size: 1,
