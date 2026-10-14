@@ -629,9 +629,14 @@ names, never deleting a file, after a watch-state check on every Plex server and
       owned import and normal ledger completion validate the new download and every original slot episode.
       Focused validation covers complete same-parent recovery, preserved old E13-E16, refusal and concurrency,
       real accepted GRAB with lost response/audit, wrong new raw numbering, and old/new janitor ownership.
-      Twelve recovery cases passed before the final interlock refinement; its four affected cases then passed
-      (including the new old-receipt regression). Nine existing janitor retry/real-client cases and 24 CLI cases
-      passed, with domain/sync typechecks and targeted lint. No live recovery has run from this implementation.
+      Review follow-through preserves original production `release`/`title` and single-release legacy bindings,
+      saves actual retry-call start/end and unique native GUID separately from canonical receipt audit, and requires
+      that proof in both janitor and owned import. Missing proof fails evaluation closed; an indefinite intent or
+      parent creation time never owns a later foreign grab. No-conflict recovery emits no removal audit; queue
+      disappearance after an uncertain discard is observation, with no claim of executed success. CLI reasons
+      come only from fixed local domain errors. Twenty recovery cases and 27 existing owned-import cases passed;
+      nine existing janitor retry/real-client cases and 24 CLI cases passed, with domain/sync typechecks and targeted
+      lint. No live recovery has run from this implementation.
     - **Held** (#928 and OC-056 list them with reasons):
       - Waiting for open Fix requests to close (48 hours): Bubble Guppies S5, whose only parking episodes are the
         emptied S1 slots, and Paw Patrol S5 E43-E47 (`--place 44-45:43-44,46:45,47:46-47`).

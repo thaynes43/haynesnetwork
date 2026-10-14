@@ -25,6 +25,8 @@ const ids = (x: unknown): number[] =>
   Array.isArray(x) && x.length > 0 && x.every((n) => Number.isInteger(n) && n > 0)
     ? [...new Set(x as number[])].sort((a, b) => a - b)
     : [];
+const titleOf = (a: FixActionEntry): string | null =>
+  typeof (a.release ?? a.title) === 'string' ? String(a.release ?? a.title) : null;
 const same = (a: readonly number[], b: readonly number[]) =>
   JSON.stringify([...a].sort((x, y) => x - y)) === JSON.stringify([...b].sort((x, y) => x - y));
 function canonical(x: unknown): unknown {
@@ -42,8 +44,20 @@ const hash = (x: unknown) =>
   createHash('sha256')
     .update(JSON.stringify(canonical(x)))
     .digest('hex');
+// Only fixed local reasons are safe for staff output; external errors never enter this registry.
+const safeRefusalReasons = new WeakMap<Error, string>();
+export function wrongContentRetryRefusalText(error: unknown): string | null {
+  return error instanceof Error ? (safeRefusalReasons.get(error) ?? null) : null;
+}
 function refuse(text: string): never {
-  throw new FixRefusedError('copy_refused', text);
+  const error = new FixRefusedError('copy_refused', text);
+  safeRefusalReasons.set(error, text);
+  throw error;
+}
+function changed(text: string): never {
+  const error = new FixPlanChangedError(text);
+  safeRefusalReasons.set(error, text);
+  throw error;
 }
 const safeError = (e: unknown) => {
   const x = object(e);
@@ -115,7 +129,7 @@ async function parent(db: DbClient | undefined, id: string, lock = false, interl
   if (!grab) refuse('The parent has no successful recorded grab.');
   const intent = [...fix.actionsTaken]
     .reverse()
-    .find((a) => a.step === 'grab_intent' && a.title === grab.release);
+    .find((a) => a.step === 'grab_intent' && titleOf(a) === grab.release);
   const legacy = Array.isArray(carry.detail.releases) ? carry.detail.releases : [];
   const intended = intent
     ? ids(intent.episodeIds)
@@ -134,34 +148,71 @@ async function parent(db: DbClient | undefined, id: string, lock = false, interl
   const receiptUntil = Math.floor(Date.parse(grab.at) / 1000) * 1000 + 1999;
   // A newer retry does not surrender the older owned failure to an automatic search.
   // Each completed receipt bounds its own intent; an uncertain intent needs actual GRAB proof below.
+  const unresolvedIntents: Array<{ title: string; since: number; until: number | null }> = [];
   const ownershipBindings = fix.actionsTaken.flatMap((a, i) => {
-    if (a.step !== 'grab_intent' || typeof a.title !== 'string' || !same(ids(a.episodeIds), slot))
-      return [];
+    const title = titleOf(a);
+    if (a.step !== 'grab_intent' || !title || !same(ids(a.episodeIds), slot)) return [];
     const next = fix.actionsTaken.slice(i + 1);
     const nextIntent = next.findIndex((b) => b.step === 'grab_intent');
     const receipt = (nextIntent < 0 ? next : next.slice(0, nextIntent)).find(
-      (b) => b.step === 'release_grab' && b.ok === true && b.release === a.title,
+      (b) => b.step === 'release_grab' && b.ok === true && b.release === title,
     );
+    const retry = fix.actionsTaken.find(
+      (b) =>
+        b.step === 'wrong_content_retry_grab_intent' &&
+        b.attemptId === a.attemptId &&
+        b.title === title,
+    );
+    const call = retry
+      ? fix.actionsTaken.find(
+          (b) =>
+            b.step === 'wrong_content_retry_grab_call_result' &&
+            b.attemptId === a.attemptId &&
+            b.title === title,
+        )
+      : null;
+    const since = Math.floor(Date.parse(String(call?.startedAt ?? a.at)) / 1000) * 1000;
+    if (
+      retry &&
+      (!call ||
+        !Number.isFinite(Date.parse(String(call.finishedAt))) ||
+        Date.parse(String(call.finishedAt)) < since)
+    ) {
+      unresolvedIntents.push({ title, since, until: null });
+      return [];
+    }
+    if (!call && !receipt) return [];
+    const until =
+      Math.floor(Date.parse(String(call?.finishedAt ?? receipt!.at)) / 1000) * 1000 + 1999;
+    if (retry && typeof call?.downloadId !== 'string') {
+      unresolvedIntents.push({ title, since, until });
+      return [];
+    }
     return [
       {
-        title: a.title,
-        since: Math.floor(Date.parse(a.at) / 1000) * 1000,
-        until: receipt
-          ? Math.floor(Date.parse(receipt.at) / 1000) * 1000 + 1999
-          : nextIntent >= 0
-            ? Date.parse(next[nextIntent]!.at)
-            : Number.POSITIVE_INFINITY,
+        title,
+        since,
+        until,
+        downloadId: typeof call?.downloadId === 'string' ? call.downloadId : null,
       },
     ];
   });
-  if (!intent && legacy.length === 1 && legacy[0] === grab.release)
+  const legacyReceipt =
+    legacy.length === 1 && typeof legacy[0] === 'string'
+      ? fix.actionsTaken.find(
+          (a) => a.step === 'release_grab' && a.ok === true && a.release === legacy[0],
+        )
+      : null;
+  if (legacyReceipt && !ownershipBindings.some((b) => b.title === legacy[0]))
     ownershipBindings.push({
-      title: String(grab.release),
+      title: String(legacy[0]),
       since: Math.floor(fix.createdAt.getTime() / 1000) * 1000,
-      until: receiptUntil,
+      until: Math.floor(Date.parse(legacyReceipt.at) / 1000) * 1000 + 1999,
+      downloadId: null,
     });
   return {
     ownershipBindings,
+    unresolvedIntents,
     receiptUntil,
     fix,
     carry,
@@ -213,6 +264,24 @@ export async function deferredWrongContentFailures(input: {
       if (e instanceof FixRefusedError) continue;
       throw e;
     }
+    if (
+      input.failures.some(
+        (failure) =>
+          failure.parentId === p.item.arrItemId &&
+          p.unresolvedIntents.some((i) => {
+            const at = failure.grabbedHistory
+              ? Date.parse(failure.grabbedHistory.date)
+              : null;
+            return (
+              i.title === failure.title && failure.failedAt.getTime() >= i.since &&
+              (at === null || (at >= i.since && (i.until === null || at <= i.until)))
+            );
+          }),
+      )
+    )
+      refuse(
+        'A retry command has no saved call or download proof. Automatic retry must wait for staff observation.',
+      );
     const grabs = await exec
       .select()
       .from(ledgerEvents)
@@ -238,6 +307,7 @@ export async function deferredWrongContentFailures(input: {
         p.ownershipBindings.some(
           (b) =>
             failure.title === b.title &&
+            (!b.downloadId || b.downloadId === failure.downloadId) &&
             ((native &&
               Number.isInteger(native.id) &&
               native.id > 0 &&
@@ -552,11 +622,12 @@ export async function runWrongContentRetry(
 ) {
   const current = await build(input),
     { plan, p, claim } = current;
-  if (plan.digest !== input.digest)
-    throw new FixPlanChangedError('The recovery changed. Read a fresh plan.');
+  if (plan.digest !== input.digest) changed('The recovery changed. Read a fresh plan.');
   if (claim) {
-    // Read-back may adopt a queue removal, but neither external command can be replayed.
+    // An absent queue is evidence about current state, not proof that our uncertain command removed it.
+    const discard = object(claim.conflict);
     if (
+      typeof discard.downloadId === 'string' &&
       plan.conflict === null &&
       !p.fix.actionsTaken.some((a) => a.step === 'wrong_content_retry_remove_read_back')
     )
@@ -567,9 +638,18 @@ export async function runWrongContentRetry(
           {
             step: 'wrong_content_retry_remove_read_back',
             at: new Date().toISOString(),
-            ok: true,
             attemptId: claim.attemptId,
-            adopted: true,
+            downloadId: discard.downloadId,
+            queueAbsent: true,
+            observationOnly: true,
+            commandOutcome: p.fix.actionsTaken.some(
+              (a) =>
+                a.step === 'wrong_content_retry_remove_result' &&
+                a.attemptId === claim.attemptId &&
+                a.ok === true,
+            )
+              ? 'accepted'
+              : 'unknown',
           },
         ],
       });
@@ -611,7 +691,7 @@ export async function runWrongContentRetry(
   await inTransaction(input.db, async (tx) => {
     const locked = await parent(tx, p.fix.id, true);
     if (locked.fingerprint !== p.fingerprint)
-      throw new FixPlanChangedError('The owning repair changed before its claim.');
+      changed('The owning repair changed before its claim.');
     await appendFixActions({ db: tx, fixRequestId: p.fix.id, actions: [claimAction] });
   });
   if (plan.conflict) {
@@ -662,12 +742,23 @@ export async function runWrongContentRetry(
   await inTransaction(input.db, async (tx) => {
     const locked = await parent(tx, p.fix.id, true);
     if (locked.fingerprint !== checked.p.fingerprint)
-      throw new FixPlanChangedError('The owning repair changed before the grab claim.');
+      changed('The owning repair changed before the grab claim.');
     await appendFixActions({
       db: tx,
       fixRequestId: p.fix.id,
       actions: [
-        { step: 'wrong_content_retry_remove_read_back', at: at(), attemptId, ok: true },
+        ...(plan.conflict
+          ? [
+              {
+                step: 'wrong_content_retry_remove_read_back',
+                at: at(),
+                attemptId,
+                downloadId: plan.conflict.downloadId,
+                queueAbsent: true,
+                commandOutcome: 'accepted',
+              },
+            ]
+          : []),
         {
           step: 'wrong_content_retry_grab_intent',
           at: at(),
@@ -680,9 +771,67 @@ export async function runWrongContentRetry(
       ],
     });
   });
+  const startedAt = at();
+  let grabError: unknown;
+  let accepted = false;
   try {
     await sendReleaseGrab({ arr: input.arr, target: current.target, offer, episodeIds: p.slot });
+    accepted = true;
   } catch (e) {
+    grabError = e;
+  }
+  const finishedAt = at();
+  // Save actual call facts separately: a later canonical receipt audit can fail without losing this boundary.
+  let nativeGrabs: Array<{ id: number; date: string; downloadId: string; episodeId: number }> = [];
+  let historyReadAvailable = false;
+  try {
+    const page = await input.arr.read.sonarr.getHistory({
+      page: 1,
+      pageSize: 200,
+      sortKey: 'date',
+      sortDirection: 'descending',
+    });
+    historyReadAvailable = true;
+    nativeGrabs = page.records
+      .filter(
+        (h) =>
+          h.eventType === 'grabbed' &&
+          h.seriesId === p.item.arrItemId &&
+          h.sourceTitle === offer.title &&
+          h.downloadId &&
+          h.episodeId &&
+          Date.parse(h.date) >= Math.floor(Date.parse(startedAt) / 1000) * 1000 &&
+          Date.parse(h.date) <= Math.floor(Date.parse(finishedAt) / 1000) * 1000 + 1999,
+      )
+      .map((h) => ({ id: h.id, date: h.date, downloadId: h.downloadId!, episodeId: h.episodeId! }));
+  } catch {
+    /* Missing native proof stays unresolved; never synthesize a download GUID. */
+  }
+  const downloads = [...new Set(nativeGrabs.map((h) => h.downloadId))];
+  await appendFixActions({
+    db: input.db,
+    fixRequestId: p.fix.id,
+    actions: [
+      {
+        step: 'wrong_content_retry_grab_call_result',
+        at: finishedAt,
+        attemptId,
+        title: offer.title,
+        targetEpisodeIds: p.slot,
+        startedAt,
+        finishedAt,
+        accepted,
+        downloadId:
+          downloads.length === 1 && same(ids(nativeGrabs.map((h) => h.episodeId)), p.slot)
+            ? downloads[0]
+            : null,
+        grabbedHistory: nativeGrabs,
+        historyReadAvailable,
+        ...(accepted ? {} : { error: safeError(grabError) }),
+      },
+    ],
+  });
+  if (!accepted) {
     await appendFixActions({
       db: input.db,
       fixRequestId: p.fix.id,
@@ -692,7 +841,7 @@ export async function runWrongContentRetry(
           at: at(),
           attemptId,
           ok: false,
-          error: safeError(e),
+          error: safeError(grabError),
         },
       ],
     });

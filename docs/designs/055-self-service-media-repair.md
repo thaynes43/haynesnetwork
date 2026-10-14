@@ -695,11 +695,28 @@ do not edit)", "must not contain" terms only, no tags.
     `--discard-download <id>`, and the selected `--key`; run also requires its fresh `--digest`, `--evidence`,
     and `--conflict-evidence` when discarding. The failure proof reads one history page of at most 200 rows;
     missing anchors refuse. Short database claims contain no HTTP calls. Each old or new recorded whole-slot
-    grab retains its own bounded receipt binding for the janitor, including an uncertain new receipt proved by
-    actual native GRAB history. Hold rows keep the janitor's existing once-per-failure policy. The owned-import
+    grab retains its own bounded receipt binding for the janitor. A retry also records its actual HTTP call start
+    and returned end separately from the canonical receipt audit, with the unique native download GUID when
+    available. An uncertain retry is owned only inside that factual call window and actual GUID binding; intent
+    alone never creates an indefinite title match. Both the janitor and owned-import helper consume this proof,
+    keeping earlier and later same-title foreign grabs outside the continuation. If no post-call fact can save,
+    staff must observe the unresolved command; no import handle or title-only ownership is manufactured.
+    Hold rows keep the janitor's existing once-per-failure policy. The owned-import
     runner still requires actual new GRAB episode coverage to equal the stored intended slot; it refuses a newly
     reparsed grab rather than importing into protected episodes. Accepted commands whose response or audit is
     lost retain their durable intent and require observation, never a second release POST.
+
+    **An intent is not a download receipt.** Save the actual release call's start and returned end separately
+    from its accepted or uncertain canonical receipt. Bind at most one actual native download GUID, with full
+    intended episode coverage and GRAB times inside that recorded call window. The janitor and owned-import
+    continuation use the same binding. Neither the original Fix creation time nor an unbounded pending intent
+    admits an earlier or later same-title foreign grab. A receipt-only audit failure may retain independently saved
+    call facts. If a full database outage loses those facts, ownership remains unresolved: no import handle, claimed
+    owned GUID or repeated release POST. The janitor must report that missing proof and fail closed for potentially
+    affected retries, without calling an unrelated GUID owned or sealing a successful removal. Queue absence is a
+    separate observation of an exact recorded discard attempt, not proof that its external command succeeded.
+    Read old production intents from their recorded `release` or `title` field, including the single-release legacy
+    Carry, so a newer receipt does not erase the original download's ownership.
 
 ### D-06 Release Pick
 

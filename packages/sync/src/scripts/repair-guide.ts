@@ -148,6 +148,7 @@ import {
   wrongContentRefusalText,
   planWrongContentRetry,
   runWrongContentRetry,
+  wrongContentRetryRefusalText,
   planOwnedSonarrImport,
   runOwnedSonarrImport,
   type OwnedImportParent,
@@ -1582,6 +1583,7 @@ if (process.argv[1]?.endsWith('repair-guide.ts')) {
           state: 'recovery_refused_or_unavailable',
           name: /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(String(e.name)) ? e.name : 'Error',
           code: /^[A-Z0-9_]{1,60}$/.test(String(e.code)) ? e.code : null,
+          reason: wrongContentRetryRefusalText(error),
           action: 'Read a fresh retry plan or observe the original parent; do not replay a claimed write.',
         }));
       } else console.error(error instanceof Error ? error.message : String(error));

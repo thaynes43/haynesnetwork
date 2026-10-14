@@ -460,6 +460,28 @@ async function buildPlan(input: OwnedSonarrImportInput): Promise<InternalPlan> {
   const targetIds = ids(grabbed.map((h) => h.episodeId));
   if (!chosen || !same(chosen.ids, targetIds))
     refuse('The download is not the exact grab recorded by this parent.');
+  // Decision 39 retry titles need their actual call/GUID proof, not the original parent's creation timestamp.
+  const retry = [...p.actions].reverse().find((a) =>
+    a.step === 'wrong_content_retry_grab_intent' && a.title === chosen.title &&
+    same(ids(a.episodeIds), chosen.ids));
+  if (retry) {
+    const call = p.actions.find((a) =>
+      a.step === 'wrong_content_retry_grab_call_result' && a.attemptId === retry.attemptId &&
+      a.title === chosen.title && same(ids(a.targetEpisodeIds), chosen.ids));
+    const start = Date.parse(String(call?.startedAt)), end = Date.parse(String(call?.finishedAt));
+    if (!call || !Number.isFinite(start) || !Number.isFinite(end) || end < start)
+      refuse('The retry has no saved actual GRAB call proof; staff must observe it.');
+    const bounded = history.filter((h) =>
+      h.eventType === 'grabbed' &&
+      h.sourceTitle === chosen.title && h.downloadId && h.date &&
+      Date.parse(h.date) >= Math.floor(start / 1000) * 1000 &&
+      Date.parse(h.date) <= Math.floor(end / 1000) * 1000 + 1999);
+    const downloads = [...new Set(bounded.map((h) => h.downloadId))];
+    if (downloads.length !== 1 || downloads[0] !== input.downloadId ||
+      (typeof call.downloadId === 'string' && call.downloadId !== input.downloadId) ||
+      !same(ids(bounded.map((h) => h.episodeId)), chosen.ids))
+      refuse('The download is not the exact retry GRAB recorded by this parent.');
+  }
   const targetSeasons = [
     ...new Set(episodes.filter((e) => targetIds.includes(e.id)).map((e) => e.seasonNumber)),
   ];

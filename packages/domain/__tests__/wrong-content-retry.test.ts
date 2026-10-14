@@ -13,6 +13,7 @@ import {
   buildArrClientBundle,
   createFixRequest,
   recordFixAction,
+  appendFixActions,
   ingestLedgerEvents,
   upsertMediaItemsBatch,
   setRepairGuideRemedies,
@@ -26,6 +27,8 @@ import {
   evaluateQueueCleanup,
   ARR_QUEUE_CLEANUP_CONFIG_DEFAULT,
   WRONG_CONTENT_RETRY_HOLD,
+  wrongContentRetryRefusalText,
+  FixRefusedError,
 } from '../src/index';
 import { bootMigratedDb, createUser, type TestDb } from './helpers';
 
@@ -316,7 +319,7 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
       pathTaken: 'delete_search',
       actions: [
         { step: 'wrong_content_replace', at },
-        { step: 'grab_intent', at, title: OLD, episodeIds: [37187, 37188] },
+        { step: 'grab_intent', at, release: OLD, episodeIds: [37187, 37188] },
         { step: 'release_grab', at, ok: true, release: OLD },
       ],
     });
@@ -493,6 +496,84 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
       evidence,
     });
     expect(s.state.writes.map((w) => w.path)).toEqual(['/api/v3/queue/1000']);
+    const [parent] = await t.db.select().from(fixRequests);
+    expect(
+      parent!.actionsTaken.find((a) => a.step === 'wrong_content_retry_remove_read_back'),
+    ).toMatchObject({
+      downloadId: 'f707',
+      queueAbsent: true,
+      observationOnly: true,
+      commandOutcome: 'unknown',
+    });
+    expect(
+      parent!.actionsTaken.find((a) => a.step === 'wrong_content_retry_remove_read_back')?.ok,
+    ).toBeUndefined();
+  });
+  it('observes a no-conflict interrupted claim without inventing a queue removal audit', async () => {
+    const s = await setup();
+    s.state.removed = true;
+    const input = { ...s.input, conflictingDownloadId: undefined },
+      plan = await selected(input);
+    await appendFixActions({
+      db: t.db,
+      fixRequestId: s.fixRequestId,
+      actions: [
+        {
+          step: 'wrong_content_retry_intent',
+          at: new Date().toISOString(),
+          attemptId: 'interrupted-no-conflict',
+          conflict: null,
+          protectedFiles: plan.protectedFiles,
+        },
+      ],
+    });
+    const observed = await selected({ ...input, key: plan.candidates[0]!.key });
+    await runWrongContentRetry({
+      ...input,
+      digest: observed.digest,
+      key: plan.candidates[0]!.key,
+      evidence,
+    });
+    const [parent] = await t.db.select().from(fixRequests);
+    expect(
+      parent!.actionsTaken.filter((a) => a.step.startsWith('wrong_content_retry_remove_')),
+    ).toEqual([]);
+    expect(s.state.writes).toEqual([]);
+  });
+  it('runs a no-conflict retry without claiming a queue removal', async () => {
+    const s = await setup();
+    s.state.removed = true;
+    const input = { ...s.input, conflictingDownloadId: undefined },
+      plan = await selected(input);
+    await runWrongContentRetry({
+      ...input,
+      digest: plan.digest,
+      key: plan.candidates[0]!.key,
+      evidence,
+    });
+    const [parent] = await t.db.select().from(fixRequests);
+    expect(
+      parent!.actionsTaken.filter((a) => a.step.startsWith('wrong_content_retry_remove_')),
+    ).toEqual([]);
+    expect(s.state.writes.map((w) => w.path)).toEqual(['/api/v3/release']);
+  });
+  it('exposes fixed local refusal reasons without exposing arbitrary external errors', async () => {
+    const s = await setup();
+    s.state.episodes[0]!.hasFile = true;
+    try {
+      await planWrongContentRetry(s.input);
+      expect.fail('The nonempty slot should refuse');
+    } catch (e) {
+      expect(wrongContentRetryRefusalText(e)).toBe(
+        'Every intended episode must still be empty in the original season.',
+      );
+    }
+    expect(
+      wrongContentRetryRefusalText(
+        new FixRefusedError('copy_refused', 'External API key should stay private'),
+      ),
+    ).toBeNull();
+    expect(wrongContentRetryRefusalText(new Error('External credential'))).toBeNull();
   });
   it('accepted GRAB with a 503 response still binds the real NEW download and never replays the release', async () => {
     const s = await setup(),
@@ -541,6 +622,128 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
         ],
       }),
     ).toEqual(new Set(['new-ivy\u0000439']));
+  });
+  it('binds accepted-unknown NEW history while refusing earlier and later same-title foreign downloads', async () => {
+    const s = await setup();
+    await t.db
+      .update(fixRequests)
+      .set({ createdAt: new Date(Date.now() - 120000) })
+      .where(eq(fixRequests.id, s.fixRequestId));
+    // An aged original parent can see a foreign same-title grab before this retry; creation time is no authority.
+    const addForeign = (downloadId: string, date: string) => {
+      for (const episodeId of [37187, 37188])
+        s.state.history.push({
+          ...s.state.history[0]!,
+          id: 90000 + s.state.history.length,
+          eventType: 'grabbed',
+          episodeId,
+          downloadId,
+          sourceTitle: RIGHT,
+          date,
+        });
+    };
+    addForeign('earlier-foreign', new Date(Date.now() - 60000).toISOString());
+    const plan = await selected(s.input);
+    s.state.grabAcceptedButError = true;
+    await runWrongContentRetry({
+      ...s.input,
+      digest: plan.digest,
+      key: plan.candidates[0]!.key,
+      evidence,
+      conflictEvidence: 'Physical source proves wrong S3 pair.',
+    });
+    const [parent] = await t.db.select().from(fixRequests);
+    const call = parent!.actionsTaken.find(
+      (a) => a.step === 'wrong_content_retry_grab_call_result',
+    )!;
+    expect(call.downloadId).toBe('new-ivy');
+    addForeign(
+      'later-foreign',
+      new Date(Date.parse(String(call.finishedAt)) + 60000).toISOString(),
+    );
+    const input = {
+      db: t.db,
+      arr: s.arr,
+      actor,
+      parent: { kind: 'fix' as const, id: s.fixRequestId },
+    };
+    expect(
+      (await planOwnedSonarrImport({ ...input, downloadId: 'new-ivy' })).targetEpisodeIds,
+    ).toEqual([37187, 37188]);
+    await expect(
+      planOwnedSonarrImport({ ...input, downloadId: 'earlier-foreign' }),
+    ).rejects.toThrow('not the exact retry GRAB');
+    await expect(planOwnedSonarrImport({ ...input, downloadId: 'later-foreign' })).rejects.toThrow(
+      'not the exact retry GRAB',
+    );
+    expect(
+      await deferredWrongContentFailures({
+        db: t.db,
+        failures: ['new-ivy', 'later-foreign'].map((downloadId) => {
+          const h = s.state.history.find((h) => h.downloadId === downloadId)!;
+          return {
+            downloadId,
+            parentId: 439,
+            title: RIGHT,
+            failedAt: new Date(Date.now() + 120000),
+            grabbedHistory: { id: h.id, date: h.date, title: RIGHT, downloadId },
+          };
+        }),
+      }),
+    ).toEqual(new Set(['new-ivy\u0000439']));
+  });
+  it('does not adopt a late same-title foreign GRAB after a rejected retry POST', async () => {
+    const s = await setup(),
+      plan = await selected(s.input);
+    s.state.grabUncertain = true;
+    await runWrongContentRetry({
+      ...s.input,
+      digest: plan.digest,
+      key: plan.candidates[0]!.key,
+      evidence,
+      conflictEvidence: 'Physical source proves wrong S3 pair.',
+    });
+    const [parent] = await t.db.select().from(fixRequests);
+    const call = parent!.actionsTaken.find(
+      (a) => a.step === 'wrong_content_retry_grab_call_result',
+    )!;
+    expect(call.downloadId).toBeNull();
+    const date = new Date(Date.parse(String(call.finishedAt)) + 60000).toISOString();
+    for (const episodeId of [37187, 37188])
+      s.state.history.push({
+        ...s.state.history[0]!,
+        id: 99000 + episodeId,
+        eventType: 'grabbed',
+        episodeId,
+        downloadId: 'later-foreign',
+        sourceTitle: RIGHT,
+        date,
+      });
+    const h = s.state.history.find((h) => h.downloadId === 'later-foreign')!;
+    expect(
+      await deferredWrongContentFailures({
+        db: t.db,
+        failures: [
+          {
+            downloadId: 'later-foreign',
+            parentId: 439,
+            title: RIGHT,
+            failedAt: new Date(Date.parse(date) + 60000),
+            grabbedHistory: { id: h.id, date, title: RIGHT, downloadId: 'later-foreign' },
+          },
+        ],
+      }),
+    ).toEqual(new Set());
+    await expect(
+      planOwnedSonarrImport({
+        db: t.db,
+        arr: s.arr,
+        actor,
+        parent: { kind: 'fix', id: s.fixRequestId },
+        downloadId: 'later-foreign',
+      }),
+    ).rejects.toThrow('not the exact retry GRAB');
+    expect(s.state.writes.filter((w) => w.path.endsWith('/release'))).toHaveLength(1);
   });
   it('refuses NEW wrong-raw GRAB history before import or foreign adoption', async () => {
     const s = await setup(),
@@ -591,6 +794,19 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
     const [row] = await t.db.select().from(fixRequests);
     expect(row!.actionsTaken.some((a) => a.step === 'grab_intent' && a.title === RIGHT)).toBe(true);
     expect(row!.actionsTaken.some((a) => a.step === 'wrong_content_retry_grab_result')).toBe(false);
+    const call = row!.actionsTaken.find((a) => a.step === 'wrong_content_retry_grab_call_result')!;
+    expect(call.downloadId).toBe('new-ivy');
+    const foreignDate = new Date(Date.parse(String(call.finishedAt)) + 60000).toISOString();
+    for (const episodeId of [37187, 37188])
+      s.state.history.push({
+        ...s.state.history[0]!,
+        id: 89000 + episodeId,
+        eventType: 'grabbed',
+        episodeId,
+        downloadId: 'foreign-after-audit-outage',
+        sourceTitle: RIGHT,
+        date: foreignDate,
+      });
     expect(
       (
         await planOwnedSonarrImport({
@@ -602,6 +818,86 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
         })
       ).targetEpisodeIds,
     ).toEqual([37187, 37188]);
+    await expect(
+      planOwnedSonarrImport({
+        db: t.db,
+        arr: s.arr,
+        actor,
+        parent: { kind: 'fix', id: s.fixRequestId },
+        downloadId: 'foreign-after-audit-outage',
+      }),
+    ).rejects.toThrow('not the exact retry GRAB');
+    expect(
+      await deferredWrongContentFailures({
+        db: t.db,
+        failures: ['new-ivy', 'foreign-after-audit-outage'].map((downloadId) => {
+          const h = s.state.history.find((h) => h.downloadId === downloadId)!;
+          return {
+            downloadId,
+            parentId: 439,
+            title: RIGHT,
+            failedAt: new Date(Date.now() + 120000),
+            grabbedHistory: { id: h.id, date: h.date, title: RIGHT, downloadId },
+          };
+        }),
+      }),
+    ).toEqual(new Set(['new-ivy\u0000439']));
+    expect(s.state.writes.filter((w) => w.path.endsWith('/release'))).toHaveLength(1);
+  });
+  it('missing all post-call audit facts refuses ownership and never replays the accepted command', async () => {
+    const s = await setup(),
+      plan = await selected(s.input);
+    await t.pool.query(
+      `CREATE FUNCTION reject_retry_call() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.actions_taken @> '[{"step":"wrong_content_retry_grab_call_result"}]'::jsonb THEN RAISE EXCEPTION 'test call audit unavailable'; END IF; RETURN NEW; END $$`,
+    );
+    await t.pool.query(
+      'CREATE TRIGGER reject_retry_call BEFORE UPDATE ON fix_requests FOR EACH ROW EXECUTE FUNCTION reject_retry_call()',
+    );
+    try {
+      await expect(
+        runWrongContentRetry({
+          ...s.input,
+          digest: plan.digest,
+          key: plan.candidates[0]!.key,
+          evidence,
+          conflictEvidence: 'Physical source proves wrong S3 pair.',
+        }),
+      ).rejects.toThrow('test call audit unavailable');
+    } finally {
+      await t.pool.query('DROP TRIGGER reject_retry_call ON fix_requests');
+      await t.pool.query('DROP FUNCTION reject_retry_call()');
+    }
+    await expect(
+      planOwnedSonarrImport({
+        db: t.db,
+        arr: s.arr,
+        actor,
+        parent: { kind: 'fix', id: s.fixRequestId },
+        downloadId: 'new-ivy',
+      }),
+    ).rejects.toThrow('no saved actual GRAB call proof');
+    const h = s.state.history.find((h) => h.downloadId === 'new-ivy')!;
+    await expect(
+      deferredWrongContentFailures({
+        db: t.db,
+        failures: [
+          {
+            downloadId: h.downloadId,
+            parentId: 439,
+            title: RIGHT,
+            failedAt: new Date(Date.now() + 1000),
+            grabbedHistory: { id: h.id, date: h.date, title: RIGHT, downloadId: h.downloadId },
+          },
+        ],
+      }),
+    ).rejects.toThrow('no saved call or download proof');
+    const observe = await planWrongContentRetry({ ...s.input, key: plan.candidates[0]!.key });
+    await runWrongContentRetry({
+      ...s.input,
+      digest: observe.digest,
+      key: plan.candidates[0]!.key,
+      evidence,
+    });
     expect(s.state.writes.filter((w) => w.path.endsWith('/release'))).toHaveLength(1);
   });
   it('claims concurrent retries once and records only one queue removal and one grab', async () => {
@@ -859,5 +1155,30 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
     expect(await deferredWrongContentFailures({ db: t.db, failures: [failure] })).toEqual(
       new Set(),
     );
+  });
+  it('retains the original single-release legacy Carry binding after a new successful receipt', async () => {
+    const s = await setup();
+    // A historical version-1 Carry predates the explicit grab_intent marker; the receipt is genuine.
+    const [original] = await t.db.select().from(fixRequests);
+    await t.db
+      .update(fixRequests)
+      .set({ actionsTaken: original!.actionsTaken.filter((a) => a.step !== 'grab_intent') })
+      .where(eq(fixRequests.id, s.fixRequestId));
+    const plan = await selected(s.input);
+    await runWrongContentRetry({
+      ...s.input,
+      digest: plan.digest,
+      key: plan.candidates[0]!.key,
+      evidence,
+      conflictEvidence: 'Physical source proves wrong S3 pair.',
+    });
+    expect(
+      await deferredWrongContentFailures({
+        db: t.db,
+        failures: [
+          { downloadId: '301dc', parentId: 439, title: OLD, failedAt: new Date(Date.now() + 1000) },
+        ],
+      }),
+    ).toEqual(new Set(['301dc\u0000439']));
   });
 });
