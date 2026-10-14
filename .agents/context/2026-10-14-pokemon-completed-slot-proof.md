@@ -31,3 +31,11 @@ This snapshot contains the 19 accepted finished slots in the through-E20 checkpo
 Every row is bound to an accepted finish, the matching checkpoint file/byte identity, verified Carry, actual import history and normal completion evidence. E1's full completed-event UUID comes from the later read-only prefix adoption of the same original Fix and exact file/bytes. All 19 completed-event UUIDs are present.
 
 E16 is the approved SRS 480p fallback. Its actual import was native: no ManualImport, regrab or queue DELETE was performed for that native continuation.
+
+## Signed v0.125.3 continuation
+
+The original nineteen-slot prefix above remains preserved. E21 adds the twentieth completed slot after fresh source ratification, an actual import, natural completion and strict finish.
+
+| Slot | File / bytes | Native import | Fix UUID | Carry UUID | Full normal event UUID | Source / library | Plex and protection | Accepted finish |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| E21 | 80039 / 1469914845 | 66911 | 34e35777-d724-4a28-a34c-706953558413 | f2c2b02c-6e83-4339-800d-c6e557d26dbe | 703630ce-80f2-4af8-85b1-abf1e0a28155 | 1920×1080 / 1920×1080, English AAC4 | Both servers, owner and all captured accounts, 4 contexts; current 0/0, correct copy marks preserved; rawE32 34245 / 1104231692 unchanged | 2026-10-14T09:25:50.193Z |

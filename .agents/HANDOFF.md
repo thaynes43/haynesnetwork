@@ -1,5 +1,30 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14 09:37Z: Pokemon E21 and Mickey E11/E12 complete; untagged English proof and multipart recovery
+
+- Signed v0.125.3 remains live. [983](https://github.com/thaynes43/haynesnetwork/pull/983) merged the actual
+  cold launches and E7/E8 recovery. [984](https://github.com/thaynes43/haynesnetwork/pull/984) fixed its advisory
+  finding by recording E21's single IMPORT4 delivery in the runtime record. Never resubmit that import.
+- Pokemon E21 completed normally at 09:15:03.843Z and passed finish 6 at 09:25:50.193Z. Twenty approved slots
+  are complete; twelve approved replacements remain, plus held E8/E31. E22 is in progress. The current immutable
+  worker, write cutoff and declaration are unchanged. See the [completed-slot proof](context/2026-10-14-pokemon-completed-slot-proof.md).
+- Mickey E9/E10 completed normally and passed finish 32 at 09:17:21.448Z. Six initial slots are complete.
+  E11/E12 has correct viewed cards and positive English dialogue from two bounded internal speech checks, but its
+  sole physical AAC track has no language tag. Import 36 was accepted once at 09:29:49Z; observe it, never replay.
+  Actual library, native imports 66924/66925 and normal completion then passed. Every required actual Plex context
+  naturally exposed one default English track, while the physical file tag stayed null. Finish 38 passed at
+  09:34:58.909Z under unchanged guards, with current-zero, correct-copy marks and all protected files proved.
+  No metadata/preference write, running-worker edit or successor was needed. Next initial slot is E17/E18.
+- Final E13 to E16 still runs last. Its [proposed mapping](context/2026-10-14-mickey-final13-16-carry-review.md)
+  uses proved new E7/E8 as the same-content destination. The existing API accepts two releases covering the full
+  original slot, but one failed part currently strands the parent. Root reviewed the docs-first decision-40
+  recovery design at 09:36Z and authorized implementation, with required checks and verified release still ahead;
+  the proposed choices are not approval to execute the final slot.
+- The [runtime record](context/2026-10-14-self-service-repair-runtime-proof.md) contains exact identities and
+  event evidence. Q-12 remains asked and unanswered. OC-056 stays held until 2026-10-15T20:10Z and closed blocking
+  Fixes, with Paw Patrol ordering inside a verified Carry first. Final owed evidence follows the repairs and formal
+  hold. P8 is staff practice; readiness remains the owner's judgment.
+
 ## 2026-10-14 09:06Z: v0.125.3 live; Mickey E1 to E8 complete; Pokemon E21 import pending
 
 - Signed [v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is verified live through

@@ -22,7 +22,22 @@
   hardware-transcodes; P1 triage).
 - **Validation:** each phase's live check below, then P8's owner review.
 
-**Takeover update, 2026-10-14 09:06Z:** signed
+**Latest repair update, 2026-10-14 09:37Z:** Pokemon E21 completed normally and passed finish 6; twenty approved
+slots are complete and E22 is in progress. Mickey E9/E10 completed normally and passed finish 32. Its E11/E12
+source has correct viewed cards and positive English dialogue from bounded internal speech checks; the sole AAC
+track remains untagged. One import 36 was accepted at 09:29:49Z; actual library, native imports 66924/66925 and
+normal completion then passed. Actual Plex contexts naturally exposed one default English track, with no metadata
+or preference write. Finish 38 passed at 09:34:58.909Z under unchanged strict guards. Six initial slots are complete;
+E17/E18 is next. Do not replay imports or forge metadata labels. Final E13 to E16 remains last,
+with [proposed same-content mapping](../context/2026-10-14-mickey-final13-16-carry-review.md) to new E7/E8. A
+docs-first recovery change for the supported two-release path when one selected part fails was reviewed and
+authorized for implementation at 09:36Z; tests, required PR checks and a verified signed release remain ahead.
+See the [runtime record](../context/2026-10-14-self-service-repair-runtime-proof.md) and
+[completed-slot proof](../context/2026-10-14-pokemon-completed-slot-proof.md). The deployment and all dated holds
+below remain unchanged; [984](https://github.com/thaynes43/haynesnetwork/pull/984) corrected the earlier runtime
+delivery record after advisory review.
+
+**Deployment snapshot, 2026-10-14 09:06Z:** signed
 [v0.125.3](https://github.com/thaynes43/haynesnetwork/pull/980) is verified live through
 [haynes-ops 3922](https://github.com/thaynes43/haynes-ops/pull/3922) and its merged actual report
 [3924](https://github.com/thaynes43/haynes-ops/pull/3924). All three serving apps and successful migrators, twenty-four frontend
