@@ -22,13 +22,15 @@
   hardware-transcodes; P1 triage).
 - **Validation:** each phase's live check below, then P8's owner review.
 
-**Takeover update, 2026-10-14 04:45Z:** verified v0.125.1 includes the owned-parent continuation and English-title
-guards. Ben S1 E10/E12, Pokemon S3 E1 to E7/E9/E10 and Mickey S1 E1 to E6 are physically verified and normally
-completed. The Pokemon continuation next works E11 from a sealed, freshly checked prefix. Mickey E7/E8 exposed a
-failed correct grab followed by a janitor grab of the wrong stories; P4 decision 39 specifies its same-Fix recovery
-before code. Signed [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975) is deployed and its read-only
-paired-file hint check passed. See the [runtime proof](../context/2026-10-14-self-service-repair-runtime-proof.md). Q-12 remains asked and
-unanswered. OC-056's earliest time remains 2026-10-15T20:10Z, with Paw Patrol ordering first inside a Watch Carry.
+**Takeover update, 2026-10-14 05:58Z:** signed [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975)
+is deployed and its read-only paired-file hint check passed. Ben S1 E10/E12, Pokemon S3 E1 to E7 and E9 to E14,
+and Mickey S1 E1 to E6 are physically verified and normally completed. Pokemon's corrected finite continuation
+adopted the freshly revalidated E12 checkpoint without replay and now works E15. Mickey E7/E8 exposed a failed
+correct grab followed by a janitor grab of the wrong stories; pending [978](https://github.com/thaynes43/haynesnetwork/pull/978)
+records its same-Fix recovery design before code. That recovery stays held for final review, signed release and
+verified deployment. See the [runtime proof](../context/2026-10-14-self-service-repair-runtime-proof.md).
+Q-12 remains asked and unanswered. OC-056's earliest time remains 2026-10-15T20:10Z, with Paw Patrol ordering
+first inside a Watch Carry.
 
 ## Why
 
