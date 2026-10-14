@@ -163,6 +163,27 @@ Root checked the classroom lesson/pointer and teacher with children against the 
 card or unseen catch was claimed. Fix `141185f2-8f09-45dc-9815-a80090a1ae4a` completed from actual event
 `62a20d41-db99-4717-979c-54694227b91a` at 05:56:43Z. Finish serial 10 was accepted at 05:57:19Z; E15 began next.
 
+E15, Fighting Flyer with Fire, passed: file 80029/1496452289, actual 1920 by 1080 video and English track 4,
+import 66872, both Plex copies, S20E104 correct-copy marks and protected E26 file 33958/1110340701. The observed
+Falkner/Hoothoot and Charizard/Pidgeot gym battle corroborate the story; no title card or unseen victory was claimed.
+Its original Fix completed normally from actual event `0777617d` with the ledger cursor unchanged.
+
+E16, For Cryin' Out Loud!, used the approved SRS fallback: file 80030/856208430, actual 640 by 480 video and one
+English AAC track 1. Native GRAB 66874 and import 66875 share download `4efb7294-f99e-4522-8ba1-6e3d71b70cd4`
+and episode 49214. The corrected observer's one bounded 200-row page proved the exact import and full file scope.
+It adopted that existing import without ManualImport, re-grab, invented import intent or queue removal. Fix
+`fe7c0be2-feda-4096-a49c-b35b3039c67e` was already completed normally, confirmed read-only at 06:21:35Z against
+actual event `b6bb88d5-8c37-4542-a35a-b75fce5cdd1f`. Marill, its parasol-carrying owner and carriage scenes
+corroborate the story; no title card or unseen crying was claimed. Both Plex copies, S20E105 marks and the source/
+copy identities passed. No quality upgrade or household preference write occurred.
+
+E17, Tanks a Lot!, passed: file 80031/1516961341, actual 1920 by 1080 video, English track 4 and import 66878.
+The purple tracked tank, Sentret family and vehicle wedged on the cliff corroborate the canonical story; no title
+card or unseen controls were claimed. Both Plex copies and S20E106 marks passed; protected E28 file
+34091/918877254 stayed unchanged. Normal Fix completion used actual event `03e11c68` with the cursor unchanged.
+Finish serial 24 was accepted before E18 began. Full UUIDs and immutable slot identities are retained in the packet
+and will be folded into the final same-session per-slot record.
+
 Mickey's initial slots E1/E2, E3/E4 and E5/E6 are physically verified and normally completed, with literal cards,
 English, full paired imports, actual queue cleanup and strict per-account Plex proof. The next slot, E7/E8, is held.
 This is an interim verified checkpoint. Merge each additional repair's full per-slot proof into this record before
