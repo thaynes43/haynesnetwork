@@ -645,8 +645,8 @@ do not edit)", "must not contain" terms only, no tags.
     permits a new search or import. Only a fully validated owned parent and exact history can expose an import handle;
     read-only status does not grant ownership or bypass another open request.
     The public plan marks this read-only case `activeRequest: true`, retaining any native queue evidence. Waiting uses
-    **A repair is already running** and **A repair is already open for this episode. Its progress will update when the
-    download is confirmed.** Staff uses **This repair needs staff** and **A repair is already open for {targetLabel}.
+    **A repair is already running** and **This episode already has a repair in progress. You can check it again in
+    a little while.** Staff uses **This repair needs staff** and **A repair is already open for {targetLabel}.
     Staff can check its progress and the download.** These states expose no import/search action or executable parent ID.
     Sonarr's manual-import service marks a tracked download Imported only when the imported episode count reaches its
     parsed remote episode count. The queue service emits one row for each of those remote episodes. Mickey's parsed four

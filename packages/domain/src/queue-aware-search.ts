@@ -126,6 +126,8 @@ export interface ForceSearchPlan {
   needsTargetCheck?: boolean;
   /** Whole-file coverage from the existing request and exact grab history, separate from the raw Import Check. */
   intendedImportTargetIds?: number[];
+  /** An open request is being observed; this plan grants no new import or search and reveals no parent identity. */
+  activeRequest?: boolean;
 }
 
 export interface ForceSearchPlanInput {
@@ -243,6 +245,7 @@ export function publicPlan(plan: ForceSearchPlan): ForceSearchPlan {
     ...(plan.intendedImportTargetIds
       ? { intendedImportTargetIds: plan.intendedImportTargetIds }
       : {}),
+    ...(plan.activeRequest ? { activeRequest: true } : {}),
   };
 }
 
@@ -378,6 +381,17 @@ async function buildPlan(input: ForceSearchPlanInput): Promise<InternalPlan> {
       }),
     );
     if (ownedInput) {
+      if ('state' in ownedInput) {
+        const records = ownedInput.downloadId !== null
+          ? queue.filter((r) => r.downloadId === ownedInput.downloadId)
+          : queue.filter((r) => r.episodeId === target.id);
+        return finish({
+          ...plan,
+          state: ownedInput.state === 'waiting' ? 'on_its_way' : 'staff',
+          activeRequest: true,
+          download: records.length ? downloadSummary(records) : null,
+        });
+      }
       const ownedPlan = await guarded('owned import plan', () => planOwnedSonarrImport(ownedInput));
       const records = queue.filter((r) => r.downloadId === ownedPlan.downloadId);
       return finish({
@@ -484,6 +498,7 @@ function finish(plan: InternalPlan): InternalPlan {
       removeWhy: plan.removeWhy,
       reason: plan.check?.reason ?? null,
       ...(plan.ownedImport ? { ownedImport: plan.ownedImport.plan.digest } : {}),
+      ...(plan.activeRequest ? { activeRequest: true } : {}),
     }),
   };
 }

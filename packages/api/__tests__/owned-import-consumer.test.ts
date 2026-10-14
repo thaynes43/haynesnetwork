@@ -3,8 +3,19 @@
 import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { fixRequests, ledgerEvents, repairRequests, watchCarries } from '@hnet/db';
-import { buildArrClientBundle, setRepairGuideRemedies } from '@hnet/domain';
+import { fixRequests, ledgerEvents, repairRequests } from '@hnet/db';
+import {
+  buildArrClientBundle,
+  createFixRequest,
+  createRepairRequest,
+  recordFixAction,
+  recordRepairTransition,
+  setRepairGuideRemedies,
+} from '@hnet/domain';
+import {
+  seedOverlappingOwnedRemapForTest,
+  seedVerifiedOwnedCarryForTest,
+} from '../../domain/__tests__/fixtures/owned-import-parents';
 import {
   bootMigratedDb,
   caller,
@@ -27,8 +38,9 @@ const seriesFixture = JSON.parse(
   readFileSync(new URL('../../arr/__fixtures__/sonarr.series-byid.json', import.meta.url), 'utf8'),
 );
 
+let nextFixtureSeriesId = 6000;
 function ownedArr(mickey = false) {
-  const seriesId = mickey ? 439 : 549;
+  const seriesId = ++nextFixtureSeriesId;
   const title = mickey ? MICKEY : POKE;
   const targetIds = mickey ? [37181, 37182] : [49199];
   const rawIds = mickey ? [37181, 37182, 37183, 37184] : [49210];
@@ -52,6 +64,12 @@ function ownedArr(mickey = false) {
       ]
     : [episode(49199, 1, "Don't Touch That 'Dile"), episode(49210, 12, 'The Whistle Stop', 33229)];
   const state = {
+    // The deleted original is absent from the live file list, but its identity remains in the carry's deletion plan.
+    originalFile: {
+      id: mickey ? 24799 : 33228,
+      name: 'removed-wrong-story-source.mkv',
+      size: 1_108_994_733,
+    },
     episodes,
     files: [
       {
@@ -171,9 +189,9 @@ function ownedArr(mickey = false) {
                 eventType: 'downloadFolderImported',
                 episodeId: id,
                 downloadId,
-              sourceTitle: title,
-              date: new Date().toISOString(),
-              data: { fileId: '90001' },
+                sourceTitle: title,
+                date: new Date().toISOString(),
+                data: { fileId: '90001' },
               });
             }
           state.files.push({
@@ -207,12 +225,15 @@ describe('authenticated parent-owned Force Search continuation', () => {
     await t?.stop();
   });
   beforeEach(async () => {
-    await t.db.delete(repairRequests);
-    await t.db.delete(fixRequests);
-    await t.db.delete(watchCarries);
     await setRepairGuideRemedies({ db: t.db, remedies: { import_check: true }, actorId: null });
   });
-  async function setup(mickey = false, staffFix = false) {
+  const repairRows = (mediaItemId: string) =>
+    t.db.select().from(repairRequests).where(eq(repairRequests.mediaItemId, mediaItemId));
+  async function setup(
+    mickey = false,
+    staffFix = false,
+    ordinaryParent?: 'wrong_language' | 'wont_play_corrupt' | 'import_download',
+  ) {
     const s = ownedArr(mickey);
     const user = await createUser(t.db, { admin: staffFix });
     const item = await seedMediaItem(t.db, 'sonarr', {
@@ -220,57 +241,70 @@ describe('authenticated parent-owned Force Search continuation', () => {
       title: 'Owned import fixture',
     });
     let parentId: string;
-    if (staffFix) {
-      const [parent] = await t.db
-        .insert(fixRequests)
-        .values({
-          mediaItemId: item.id,
-          requesterId: null,
-          reason: 'wrong_content',
-          targetScope: 'episode',
-          targetArrChildId: s.targetIds[0],
-          status: 'search_triggered',
-          pathTaken: 'delete_search',
-          actionsTaken: [
-            { step: 'release_grab', at: new Date().toISOString(), ok: true, release: s.title },
-          ],
-        })
-        .returning();
-      parentId = parent!.id;
-      await t.db.insert(watchCarries).values({
-        kind: 'wrong_content',
+    if (staffFix || ordinaryParent === 'wrong_language' || ordinaryParent === 'wont_play_corrupt') {
+      const parent = await createFixRequest({
+        db: t.db,
         mediaItemId: item.id,
-        seriesId: s.seriesId,
-        status: 'verified',
-        takenAt: new Date(),
-        scope: { pendingDeletes: [] },
-        detail: {
-          fixRequestId: parentId,
-          releases: [s.title],
-          wrongContentDeletion: {
-            version: 1,
-            grabStarted: true,
-            files: [{ episodeIds: s.targetIds }],
-          },
-        },
+        requesterId: staffFix ? null : user.id,
+        reason:
+          ordinaryParent === 'wrong_language' || ordinaryParent === 'wont_play_corrupt'
+            ? ordinaryParent
+            : 'wrong_content',
+        scope: 'episode',
+        targetArrChildId: s.targetIds[0],
       });
-    } else {
-      const [parent] = await t.db
-        .insert(repairRequests)
-        .values({
+      parentId = parent.fixRequestId;
+      await recordFixAction({
+        db: t.db,
+        fixRequestId: parentId,
+        transition: 'actioned',
+        pathTaken: 'delete_search',
+        actions: [
+          ...(staffFix ? [{ step: 'wrong_content_replace', at: new Date().toISOString() }] : []),
+          { step: 'release_grab', at: new Date().toISOString(), ok: true, release: s.title },
+        ],
+      });
+      await recordFixAction({ db: t.db, fixRequestId: parentId, transition: 'search_triggered' });
+      if (staffFix)
+        await seedVerifiedOwnedCarryForTest({
+          testDb: t.db,
           mediaItemId: item.id,
-          requesterId: user.id,
-          kind: 'release_pick',
-          scope: 'episode',
-          seasonNumber: mickey ? 1 : 3,
-          targetChildIds: s.targetIds,
-          status: 'actioned',
-          preview: { title: s.title },
-          actionsTaken: [{ step: 'grab', at: new Date().toISOString(), ok: true, title: s.title }],
-        })
-        .returning();
-      parentId = parent!.id;
+          seriesId: s.seriesId,
+          fixRequestId: parentId,
+          title: s.title,
+          episodeIds: s.targetIds,
+          originalFile: s.state.originalFile,
+        });
+    } else {
+      const parent = await createRepairRequest({
+        db: t.db,
+        mediaItemId: item.id,
+        requesterId: user.id,
+        kind: ordinaryParent === 'import_download' ? 'import_download' : 'release_pick',
+        scope: 'episode',
+        seasonNumber: mickey ? 1 : 3,
+        targetChildIds: s.targetIds,
+        preview:
+          ordinaryParent === 'import_download'
+            ? { download: { title: s.title, downloadId: s.state.candidate.downloadId } }
+            : { title: s.title },
+      });
+      parentId = parent.repairRequestId;
+      await recordRepairTransition({
+        db: t.db,
+        repairRequestId: parentId,
+        transition: 'actioned',
+        actions: [
+          {
+            step: ordinaryParent === 'import_download' ? 'manual_import' : 'grab',
+            at: new Date().toISOString(),
+            ok: true,
+            title: s.title,
+          },
+        ],
+      });
     }
+    for (const grab of s.state.history) grab.date = new Date().toISOString();
     return {
       ...s,
       user,
@@ -353,7 +387,7 @@ describe('authenticated parent-owned Force Search continuation', () => {
     ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
     expect(s.state.writes.map((w) => w.path)).toEqual(['/api/v3/manualimport']);
     expect(s.state.episodes.map((e) => e.episodeFileId)).toEqual([0, 0, 24800, 24800]);
-    expect(await t.db.select().from(repairRequests)).toHaveLength(1);
+    expect(await repairRows(s.item.id)).toHaveLength(1);
   });
 
   it('refuses stale source identity and an attempt to slice or redirect an owned whole file', async () => {
@@ -367,7 +401,7 @@ describe('authenticated parent-owned Force Search continuation', () => {
       s.api.fix.forceSearch({ ...s.target, planDigest: plan.digest }),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
     expect(s.state.writes).toEqual([]);
-    expect(await t.db.select().from(repairRequests)).toHaveLength(1);
+    expect(await repairRows(s.item.id)).toHaveLength(1);
   });
 
   it('cannot use injected owner/admin/parent fields to continue another user request', async () => {
@@ -380,32 +414,37 @@ describe('authenticated parent-owned Force Search continuation', () => {
       requesterIsAdmin: true,
       parentId: s.parentId,
     };
-    await expect(api.fix.searchPlan(injected)).rejects.toMatchObject({
-      code: 'PRECONDITION_FAILED',
-    });
-    await expect(api.fix.forceSearch(injected)).rejects.toMatchObject({
+    const plan = await api.fix.searchPlan(injected);
+    expect(plan).toMatchObject({ state: 'staff', activeRequest: true });
+    expect(JSON.stringify(plan)).not.toContain(s.parentId);
+    expect(JSON.stringify(plan)).not.toContain(s.user.id);
+    await expect(
+      api.fix.forceSearch({ ...injected, planDigest: plan.digest }),
+    ).rejects.toMatchObject({
       code: 'PRECONDITION_FAILED',
     });
     expect(s.state.writes).toEqual([]);
-    expect(await t.db.select().from(repairRequests)).toHaveLength(1);
+    expect(await repairRows(s.item.id)).toHaveLength(1);
   });
 
   it('keeps another overlapping parent blocked instead of opening a parallel import', async () => {
     const s = await setup();
-    await t.db.insert(repairRequests).values({
+    await seedOverlappingOwnedRemapForTest({
+      testDb: t.db,
       mediaItemId: s.item.id,
       requesterId: s.user.id,
-      kind: 'remap',
-      scope: 'season',
       seasonNumber: 3,
-      targetChildIds: [49199],
-      status: 'pending',
+      episodeIds: [49199],
     });
-    await expect(s.api.fix.searchPlan(s.target)).rejects.toMatchObject({
+    const plan = await s.api.fix.searchPlan(s.target);
+    expect(plan).toMatchObject({ state: 'staff', activeRequest: true });
+    await expect(
+      s.api.fix.forceSearch({ ...s.target, planDigest: plan.digest }),
+    ).rejects.toMatchObject({
       code: 'PRECONDITION_FAILED',
     });
     expect(s.state.writes).toEqual([]);
-    expect(await t.db.select().from(repairRequests)).toHaveLength(2);
+    expect(await repairRows(s.item.id)).toHaveLength(2);
   });
 
   it('observes a recorded import intent without sending another command or pretending the parent completed', async () => {
@@ -423,7 +462,7 @@ describe('authenticated parent-owned Force Search continuation', () => {
       repairRequestId: s.parentId,
     });
     expect(s.state.writes).toHaveLength(2);
-    expect((await t.db.select().from(repairRequests))[0]!.status).toBe('actioned');
+    expect((await repairRows(s.item.id))[0]!.status).toBe('actioned');
   });
 
   it('shows an owned wrong-number download still in progress as on its way, with no search or parallel repair', async () => {
@@ -439,7 +478,7 @@ describe('authenticated parent-owned Force Search continuation', () => {
       commandName: null,
     });
     expect(s.state.writes).toEqual([]);
-    expect(await t.db.select().from(repairRequests)).toHaveLength(1);
+    expect(await repairRows(s.item.id)).toHaveLength(1);
     const events = await t.db
       .select()
       .from(ledgerEvents)
@@ -455,7 +494,107 @@ describe('authenticated parent-owned Force Search continuation', () => {
       repairRequestId: null,
       fixRequestId: s.parentId,
     });
-    expect(await t.db.select().from(repairRequests)).toEqual([]);
-    expect((await t.db.select().from(fixRequests))[0]!.status).toBe('search_triggered');
+    expect(await repairRows(s.item.id)).toEqual([]);
+    expect(
+      (await t.db.select().from(fixRequests).where(eq(fixRequests.mediaItemId, s.item.id)))[0]!
+        .status,
+    ).toBe('search_triggered');
+  });
+
+  it.each(['wrong_language', 'wont_play_corrupt'] as const)(
+    'observes an ordinary %s Fix download without granting another operation',
+    async (reason) => {
+      const s = await setup(false, false, reason);
+      s.state.queueStatus = 'downloading';
+      s.state.queueTrackedState = 'downloading';
+      const plan = await s.api.fix.searchPlan(s.target);
+      expect(plan).toMatchObject({
+        state: 'on_its_way',
+        activeRequest: true,
+        download: { status: 'downloading' },
+      });
+      expect(JSON.stringify(plan)).not.toContain(s.parentId);
+      expect(await s.api.fix.forceSearch({ ...s.target, planDigest: plan.digest })).toMatchObject({
+        outcome: 'on_its_way',
+        repairRequestId: null,
+        fixRequestId: null,
+        commandName: null,
+      });
+      expect(s.state.writes).toEqual([]);
+      expect(await repairRows(s.item.id)).toEqual([]);
+      expect(
+        (await t.db.select().from(fixRequests).where(eq(fixRequests.mediaItemId, s.item.id)))[0]!
+          .status,
+      ).toBe('search_triggered');
+    },
+  );
+
+  it('reopens an ordinary actioned Import Check while its completed download is still importing', async () => {
+    const s = await setup(false, false, 'import_download');
+    s.state.queueTrackedState = 'importing';
+    const plan = await s.api.fix.searchPlan(s.target);
+    expect(plan).toMatchObject({
+      state: 'on_its_way',
+      activeRequest: true,
+      download: { trackedState: 'importing' },
+    });
+    expect(await s.api.fix.forceSearch({ ...s.target, planDigest: plan.digest })).toMatchObject({
+      outcome: 'on_its_way',
+      repairRequestId: null,
+    });
+    expect(s.state.writes).toEqual([]);
+    expect(await repairRows(s.item.id)).toHaveLength(1);
+    expect((await repairRows(s.item.id))[0]!.status).toBe('actioned');
+  });
+
+  it('shows another owner queued download as running without revealing their identity or granting their continuation', async () => {
+    const s = await setup();
+    s.state.queueStatus = 'queued';
+    s.state.queueTrackedState = 'downloading';
+    const other = await createUser(t.db);
+    const api = caller(makeCtx(t.db, sessionUser(other), s.arr));
+    const plan = await api.fix.searchPlan(s.target);
+    expect(plan).toMatchObject({ state: 'on_its_way', activeRequest: true });
+    expect(JSON.stringify(plan)).not.toContain(s.parentId);
+    expect(JSON.stringify(plan)).not.toContain(s.user.id);
+    expect(await api.fix.forceSearch({ ...s.target, planDigest: plan.digest })).toMatchObject({
+      outcome: 'on_its_way',
+      repairRequestId: null,
+      fixRequestId: null,
+    });
+    expect(s.state.writes).toEqual([]);
+    expect(await repairRows(s.item.id)).toHaveLength(1);
+  });
+
+  it('shows a queued Release Pick before grab history arrives without an unguarded search', async () => {
+    const s = await setup();
+    s.state.history = [];
+    s.state.queueStatus = 'queued';
+    s.state.queueTrackedState = 'downloading';
+    const plan = await s.api.fix.searchPlan(s.target);
+    expect(plan).toMatchObject({ state: 'on_its_way', activeRequest: true });
+    expect(await s.api.fix.forceSearch({ ...s.target, planDigest: plan.digest })).toMatchObject({
+      outcome: 'on_its_way',
+      repairRequestId: null,
+    });
+    expect(s.state.writes).toEqual([]);
+    expect(await repairRows(s.item.id)).toHaveLength(1);
+  });
+
+  it('shows staff guidance while an open Release Pick has neither a queue record nor grab history', async () => {
+    const s = await setup();
+    s.state.history = [];
+    s.state.queueForgotten = true;
+    const plan = await s.api.fix.searchPlan(s.target);
+    expect(plan).toMatchObject({ state: 'staff', activeRequest: true, download: null });
+    await expect(
+      s.api.fix.forceSearch({ ...s.target, planDigest: plan.digest }),
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    expect(s.state.writes).toEqual([]);
+    const events = await t.db
+      .select()
+      .from(ledgerEvents)
+      .where(eq(ledgerEvents.mediaItemId, s.item.id));
+    expect(events.some((e) => e.eventType === 'search_requested')).toBe(false);
   });
 });

@@ -429,6 +429,12 @@ function QueueAwareForceSearch({
           <div className="repair-guide__step">
             {targetLine}
             <h3 className="repair-guide__question">{heading}</h3>
+            {data.activeRequest ? (
+              <p>
+                This episode already has a repair in progress. You can check it again in a little
+                while.
+              </p>
+            ) : null}
             {d ? (
               <div className="repair-guide__card">
                 <span className="repair-guide__card-label">In the download queue</span>
@@ -611,7 +617,12 @@ function QueueAwareForceSearch({
       }
 
       case 'staff': {
-        const why = staffText({ check: data.check, targetLabel: label, kind });
+        const why = staffText({
+          check: data.check,
+          targetLabel: label,
+          kind,
+          activeRequest: data.activeRequest,
+        });
         return (
           <div className="repair-guide__step">
             {targetLine}
@@ -619,8 +630,17 @@ function QueueAwareForceSearch({
             <p>{why}</p>
             {evidence(data)}
             <p>
-              Staff can add it by hand. <Link href={ticketHref(data, why)}>Open a ticket</Link> with the details filled
-              in and it goes straight to them. Nothing was changed.
+              {data.activeRequest ? (
+                <>
+                  <Link href={ticketHref(data, why)}>Ask staff to check this repair</Link>. The
+                  report details are filled in for you.
+                </>
+              ) : (
+                <>
+                  Staff can add it by hand. <Link href={ticketHref(data, why)}>Open a ticket</Link>{' '}
+                  with the details filled in and it goes straight to them. Nothing was changed.
+                </>
+              )}
             </p>
             {doneButton}
           </div>

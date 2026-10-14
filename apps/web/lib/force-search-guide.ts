@@ -165,7 +165,10 @@ export function joinLabels(labels: readonly string[]): string {
 
 /** The heading of the step for a plan. */
 export function stepHeading(
-  plan: Pick<SearchPlan, 'state' | 'removeWhy'> & { needsTargetCheck?: boolean },
+  plan: Pick<SearchPlan, 'state' | 'removeWhy'> & {
+    needsTargetCheck?: boolean;
+    activeRequest?: boolean;
+  },
   targetLabel: string,
   ontoSuggested: string | null,
 ): string {
@@ -173,7 +176,7 @@ export function stepHeading(
     case 'search':
       return `Nothing for ${targetLabel} is in the download queue.`;
     case 'on_its_way':
-      return 'Already on its way';
+      return plan.activeRequest ? 'A repair is already running' : 'Already on its way';
     case 'import':
       return plan.needsTargetCheck
         ? `Check this download for ${targetLabel}`
@@ -187,7 +190,9 @@ export function stepHeading(
         ? `The download for ${targetLabel} is broken.`
         : `The last download for ${targetLabel} failed.`;
     case 'staff':
-      return `A download for ${targetLabel} needs staff`;
+      return plan.activeRequest
+        ? 'This repair needs staff'
+        : `A download for ${targetLabel} needs staff`;
   }
 }
 
@@ -207,11 +212,15 @@ export function staffText(input: {
   check: Pick<SearchPlanCheck, 'reason' | 'detail' | 'title'> | null;
   targetLabel: string;
   kind: GuideArrKind;
+  activeRequest?: boolean;
 }): string {
   const { check, targetLabel, kind } = input;
   const app = arrName(kind);
   const what = kind === 'radarr' ? 'movie' : 'episode';
-  if (!check) return `A download for ${targetLabel} is stuck in the queue, and it cannot be added on its own.`;
+  if (input.activeRequest)
+    return `A repair is already open for ${targetLabel}. Staff can check its progress and the download.`;
+  if (!check)
+    return `A download for ${targetLabel} is stuck in the queue, and it cannot be added on its own.`;
   const mismatch = `This download's name does not match ${targetLabel}, so it will not be added automatically.`;
   switch (check.reason) {
     case 'archive':
