@@ -811,6 +811,7 @@ export async function runWrongContentRetry(
   await appendFixActions({
     db: input.db,
     fixRequestId: p.fix.id,
+    allowCompleted: true,
     actions: [
       {
         step: 'wrong_content_retry_grab_call_result',
@@ -835,6 +836,7 @@ export async function runWrongContentRetry(
     await appendFixActions({
       db: input.db,
       fixRequestId: p.fix.id,
+      allowCompleted: true,
       actions: [
         {
           step: 'wrong_content_retry_grab_result',
@@ -855,6 +857,7 @@ export async function runWrongContentRetry(
   await appendFixActions({
     db: input.db,
     fixRequestId: p.fix.id,
+    allowCompleted: true,
     actions: [
       {
         step: 'release_grab',

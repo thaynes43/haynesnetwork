@@ -718,6 +718,12 @@ do not edit)", "must not contain" terms only, no tags.
     separate observation of an exact recorded discard attempt, not proof that its external command succeeded.
     Read old production intents from their recorded `release` or `title` field, including the single-release legacy
     Carry, so a newer receipt does not erase the original download's ownership.
+    A fast native import may complete that same Fix before its HTTP response evidence is saved. Factual post-call
+    audits may append to the completed parent under the existing claimed attempt; they preserve its lifecycle and
+    cannot authorize another command. New claims still require the original open, verified repair. Test this race
+    through actual native-history ingestion and normal whole-slot completion rather than forcing a database status.
+    Actual post-command call/result evidence may append after normal whole-slot import completion, preserving
+    that completed lifecycle. Prewrite claims still require an open parent; no completed repair starts a new command.
 
 ### D-06 Release Pick
 

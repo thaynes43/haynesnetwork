@@ -93,6 +93,7 @@ function stub() {
     newGrabWrongTargets: false,
     afterDelete: null as null | (() => void),
     afterGrab: null as null | (() => void),
+    afterGrabHistoryRead: null as null | (() => Promise<void>),
     rejections: [] as string[],
     writes: [] as Array<{ path: string; body: unknown }>,
     pages: [] as string[],
@@ -110,6 +111,11 @@ function stub() {
       if (u.pathname.endsWith('/history/since')) return json(state.history);
       if (u.pathname.endsWith('/history/series')) return json(state.history);
       if (u.pathname.endsWith('/history')) {
+        if (state.retryGrabbed && state.afterGrabHistoryRead) {
+          const observed = state.afterGrabHistoryRead;
+          state.afterGrabHistoryRead = null;
+          await observed();
+        }
         state.pages.push(u.search);
         return json({
           page: 1,
@@ -998,6 +1004,81 @@ describe('same-parent staff wrong-content failed-grab recovery', () => {
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(s.state.writes.map((w) => w.path)).toEqual(['/api/v3/queue/1000', '/api/v3/release']);
   });
+  it.each([false, true])(
+    'preserves actual command audits when native imports complete the parent before the response audit (uncertain=%s)',
+    async (uncertain) => {
+      const s = await setup(),
+        plan = await selected(s.input);
+      s.state.grabAcceptedButError = uncertain;
+      s.state.afterGrabHistoryRead = async () => {
+        const imported = [37187, 37188].map((episodeId) => ({
+          ...s.state.history[0]!,
+          id: 87000 + episodeId,
+          eventType: 'downloadFolderImported',
+          episodeId,
+          downloadId: 'new-ivy',
+          sourceTitle: RIGHT,
+          date: new Date().toISOString(),
+          data: { fileId: '80025' },
+        }));
+        // The native server imported the complete file; normal sync can settle it before our HTTP evidence saves.
+        s.state.history.unshift(...imported);
+        for (const episodeId of [37187, 37188]) {
+          const episode = s.state.episodes.find((e) => e.id === episodeId)!;
+          episode.hasFile = true;
+          episode.episodeFileId = 80025;
+        }
+        s.state.files.push({
+          id: 80025,
+          seriesId: 439,
+          relativePath: 'native-correct7-8.mkv',
+          size: 682447000,
+        });
+        await ingestLedgerEvents({
+          db: t.db,
+          source: 'sonarr',
+          events: imported.map((h) => ({
+            mediaItemId: itemId,
+            eventType: 'imported' as const,
+            source: 'sonarr' as const,
+            sourceEventId: String(h.id),
+            occurredAt: new Date(h.date),
+            payload: { downloadId: h.downloadId, episodeId: h.episodeId, fileId: 80025 },
+          })),
+        });
+        expect(
+          (await completeFixRequests({ db: t.db })).completed.map((f) => f.fixRequestId),
+        ).toEqual([s.fixRequestId]);
+      };
+      expect(
+        (
+          await runWrongContentRetry({
+            ...s.input,
+            digest: plan.digest,
+            key: plan.candidates[0]!.key,
+            evidence,
+            conflictEvidence: 'Physical source proves wrong S3 pair.',
+          })
+        ).outcome,
+      ).toBe(uncertain ? 'observe' : 'grabbed');
+      const [parent] = await t.db.select().from(fixRequests);
+      expect(parent!.status).toBe('completed');
+      expect(
+        parent!.actionsTaken.find((a) => a.step === 'wrong_content_retry_grab_call_result'),
+      ).toMatchObject({ downloadId: 'new-ivy' });
+      expect(
+        parent!.actionsTaken.find((a) => a.step === 'wrong_content_retry_grab_result'),
+      ).toMatchObject({ ok: !uncertain });
+      if (!uncertain)
+        expect(
+          parent!.actionsTaken.some(
+            (a) => a.step === 'release_grab' && a.release === RIGHT && a.ok === true,
+          ),
+        ).toBe(true);
+      await expect(planWrongContentRetry(s.input)).rejects.toThrow('not an active staff');
+      expect(s.state.writes.map((w) => w.path)).toEqual(['/api/v3/queue/1000', '/api/v3/release']);
+    },
+  );
   it('an audit outage saving grab intent stops before POST and leaves a durable observable removal claim', async () => {
     const s = await setup(),
       plan = await selected(s.input);
