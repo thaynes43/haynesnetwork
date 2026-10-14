@@ -599,6 +599,61 @@ do not edit)", "must not contain" terms only, no tags.
     `replace-batch --batch '<json>'` runs them in one process, keeping the list after each grab, pausing between slots
     and stopping at the first refusal. Indexer API hits are capped, and a season search per slot would spend hundreds.
 
+    **Owned import recovery (2026-10-13, #928 live evidence).** A release override can record the intended episodes in
+    Sonarr's `grabbed` history while its tracked queue reparses the original release numbers. Pokémon's named Johto
+    E01 was grabbed for E01 but the queue tracked E12; Mickey's E01/E02 queue tracked E01-E04. Native import remained
+    blocked and the unselected library files stayed intact. The queue guard and the janitor's class/mode remain
+    unchanged: the real enforced Import Check refuses these downloads. Opening another `import_download` repair also
+    refuses while the request that owns the grab is open. Completing that parent to bypass this guard is forbidden.
+    An internal, parent-owned Sonarr Import Check therefore plans/runs the existing explicit import write-back under
+    the original Fix or `release_pick` Repair Request. Its targets come from the stored parent intent and an exact
+    matching `grabbed` history download/title, never episode IDs supplied by the caller. The parent must be open and
+    belong to the caller (or an authenticated admin); actor-null staff is an explicit internal call, not public input.
+    For a Wrong-Content Replace the linked carry, durable grab-start intent and verified deletion are required.
+    Planning preserves every Import Check refusal and requires whole-file coverage to equal the intended episodes,
+    all intended episodes to be empty, and fresh candidate/source/unchosen file identities in the confirmation digest.
+    Ownership never strips a quality rule. Sonarr 4.0.20.3012's transient `POST /api/v3/manualimport` reprocess endpoint
+    (not PUT) reruns its real import decisions against selected episode IDs without importing a file
+    ([controller](https://github.com/Sonarr/Sonarr/blob/v4.0.20.3012/src/Sonarr.Api.V3/ManualImport/ManualImportController.cs),
+    [service](https://github.com/Sonarr/Sonarr/blob/v4.0.20.3012/src/NzbDrone.Core/MediaFiles/EpisodeImport/Manual/ManualImportService.cs)).
+    The parent audits that evaluation before the call and preserves every fresh rejection it returns. This can remove
+    a comparison against an unselected existing file while keeping a genuine quality/title/other hard rejection.
+    Before ManualImport the original parent records the intent through its audit writer. Its result, command read-back,
+    target file identities and unchanged unselected files join that same trail. A claimed/uncertain attempt is observed,
+    never replayed; a finished import is adopted without a second command. Completion remains the normal import-ledger
+    matcher. This staff recovery adds no public parent-ID argument, parallel repair, implicit re-map or automatic batch
+    replay. Staff finish one owned download and verify its physical story/language before a fresh remaining-slot plan.
+    The same continuation belongs in a person's Import Check: Force Search derives the parent and download from its
+    authenticated server context, target and grab history before native queue-number filtering. It exposes the existing
+    Import Check shape with the entire intended file coverage, never public parent/actor arguments or a sliced import.
+    Its confirmed run uses the same parent claim and preserves other requests' guards. Public audit evidence records
+    confirmation of the shown plan, without inventing physical probes; staff's CLI evidence records actual story/audio
+    checks. The GET-only preview retains the current refusal and marks a required selected-target check; it never
+    claims that an unevaluated file is already importable. The driver-approved UI uses canonical
+    `MEDIA_ACTIONS.checkImportDownload`, label **Check and import**, as the primary non-destructive action inside the
+    existing explanatory Modal. Its heading is **Check this download for {targetLabel}** and its explanation is
+    **This download was matched to different episode numbers. Check it against the episodes you requested before importing.**
+    The raw rejection stays visible. Confirmation checks the whole intended set, then imports only when Sonarr's fresh
+    selected-target decision approves. The action-anatomy mirror/parity checks cover the new registry action. An existing
+    library-command claim is observed without another import command; transient evaluation is audited separately before
+    the actual import claim, so a rejected evaluation never pretends a command is in flight.
+    An exact owned grab that is still downloading returns `waiting` (the existing `on_its_way` UI), including when its
+    native queue numbers differ from the intended episodes. It neither opens another request nor sends a search/import.
+    Sonarr's manual-import service marks a tracked download Imported only when the imported episode count reaches its
+    parsed remote episode count. The queue service emits one row for each of those remote episodes. Mickey's parsed four
+    episodes therefore cannot settle from the intended two-episode import alone. After exact owned download/time/import
+    history file-ID/byte coverage and unchanged unselected files are verified, continuation forgets only still-present,
+    completed, exact-title/series queue rows of that owned misnumbered download through the existing queue writer:
+    `removeFromClient: false`, `blocklist: false`, `skipRedownload: true`; no client deletion or search. Original-parent
+    intent/result/absence read-back audit that step; absent rows are adopted on retry and library import is never replayed.
+    A verified completed parent's audit trail may append this bounded follow-through without changing its lifecycle.
+    Import history's title is its scene name or physical basename (Sonarr `HistoryService`), so it is retained as evidence;
+    immutable parent/download/time/episode/file IDs and bytes prove the import, rather than literal grab-title equality.
+    A multipart Wrong-Content Replace keeps its Fix open until every intended deletion-slot episode in its linked
+    verified versioned carry has a later actual import ledger event. The first part alone cannot close the parent and
+    strand its remaining owned download. Missing, ambiguous or malformed slot metadata keeps that Fix open; ordinary
+    episode/season Fix matching is unchanged. The normal matcher records all matched episode/event IDs in completion.
+
 ### D-06 Release Pick
 
 The remedy for "nothing acceptable was found": an interactive release list for one missing episode or movie.

@@ -25,7 +25,7 @@ import { eq } from 'drizzle-orm';
 import { inTransaction, resolveDb } from './db-client';
 import type { ArrClientBundle } from './arr-clients';
 import { FixPlanChangedError, FixRefusedError } from './errors';
-import { createFixRequest, recordFixAction } from './fix-requests';
+import { appendFixActions, createFixRequest, recordFixAction } from './fix-requests';
 import { episodeLabel } from './media-children';
 import {
   previewReplacementList,
@@ -1118,6 +1118,10 @@ export async function runWrongContentReplace(
         });
         wrongContentDeletion.grabStarted = true;
       }
+      await appendFixActions({
+        db: input.db, fixRequestId,
+        actions: [{ step: 'grab_intent', at: at(), release: p.offer.title, key: p.offer.key, episodeIds: p.ids }],
+      });
       await sendReleaseGrab({
         arr: input.arr,
         target,

@@ -47,9 +47,10 @@ import { countRecentFixBudget } from './fix-requests';
 import { forgetReleaseLists, readReleaseListCached, RELEASE_LIST_TTL_MS } from './fix-plan';
 import { isExistingFileRejection } from './fix-guards';
 import { getRepairGuideRemedies } from './repair-guide-settings';
-import { createRepairRequest, recordRepairTransition } from './repair-requests';
+import { appendRepairActions, createRepairRequest, recordRepairTransition } from './repair-requests';
 import { consoleDomainLogger } from './domain-logger';
 import { queueRecordState } from './queue-aware-search';
+import { isVerifiedOwnedQueueForget } from './owned-sonarr-import';
 import {
   episodeTitleEvidence,
   movieTitleEvidence,
@@ -1385,6 +1386,11 @@ export async function grabFromReleaseList(input: GrabFromReleaseListInput): Prom
 
   const at = () => new Date().toISOString();
   try {
+    await appendRepairActions({
+      db: input.db, repairRequestId,
+      actions: [{ step: 'grab_intent', at: at(), title: offer.title,
+        episodeIds: target.kind === 'sonarr' ? (held ?? [target.episodeId]) : [] }],
+    });
     if (target.kind === 'radarr') {
       await input.arr.write.radarr.grabRelease(
         offer.overrideBody
@@ -1563,11 +1569,21 @@ async function settleTargetLive(input: {
     const unsure = pick.actionsTaken.some((a) => a.step === 'grab' && a.uncertain === true);
     const neverArrived =
       unsure && downloads.size === 0 && Date.now() - pick.createdAt.getTime() > UNSURE_GRAB_SETTLE_MS;
-    const failed =
+    let failed =
       neverArrived ||
       forTarget.some(
         (h) => /^download(failed|ignored)$/i.test(h.eventType) && h.downloadId !== null && downloads.has(h.downloadId),
       );
+    if (failed && !neverArrived && target.kind === 'sonarr') {
+      const failures = forTarget.filter(h => /^download(failed|ignored)$/i.test(h.eventType) && h.downloadId !== null && downloads.has(h.downloadId));
+      let genuineFailure = false;
+      for (const h of failures) {
+        if (h.eventType !== 'downloadIgnored' || !await isVerifiedOwnedQueueForget({ arr: input.arr,
+          parent: { kind: 'release_pick', id: pick.id }, actions: pick.actionsTaken, targetEpisodeIds: pick.targetChildIds,
+          seriesId: target.seriesId, downloadId: h.downloadId!, ignoredAt: h.date })) genuineFailure = true;
+      }
+      failed = genuineFailure;
+    }
     if (!failed) {
       stillOpen += 1;
       continue;

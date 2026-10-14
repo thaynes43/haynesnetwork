@@ -27,7 +27,7 @@ import {
   type SeerrUserWatchlistSync,
 } from './schemas/release-block';
 import { commandResponseSchema, tagSchema, type ArrCommandResponse, type ArrTag } from './schemas/common';
-import type { ManualImportMode, RadarrManualImportFile, SonarrManualImportFile } from './schemas/manual-import';
+import { sonarrManualImportCandidateSchema, type ManualImportMode, type RadarrManualImportFile, type SonarrManualImportFile, type SonarrManualImportCandidate } from './schemas/manual-import';
 import type { ArrReleaseGrab, RadarrReleaseOverrideGrab, SonarrReleaseOverrideGrab } from './schemas/release';
 import { sonarrSeriesSchema, type SonarrSeries } from './schemas/sonarr';
 import { radarrMovieSchema, type RadarrMovie } from './schemas/radarr';
@@ -252,6 +252,11 @@ export class SonarrWriteClient extends ReleaseProfileWriteClient {
    */
   manualImport(files: SonarrManualImportFile[], importMode: ManualImportMode = 'auto'): Promise<ArrCommandResponse> {
     return this.runCommand({ name: 'ManualImport', files, importMode });
+  }
+
+  /** Sonarr 4.0.20.3012 POST /manualimport: transient validation of selected targets; it imports no files. */
+  reprocessManualImport(files: SonarrManualImportFile[]): Promise<SonarrManualImportCandidate[]> {
+    return this.http.requestJson('POST', 'manualimport', z.array(sonarrManualImportCandidateSchema), { body: files });
   }
 
   /**

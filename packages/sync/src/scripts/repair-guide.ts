@@ -146,6 +146,9 @@ import {
   runWrongContentReplace,
   finishWrongContentReplaceCarry,
   wrongContentRefusalText,
+  planOwnedSonarrImport,
+  runOwnedSonarrImport,
+  type OwnedImportParent,
 } from '@hnet/domain';
 
 const USAGE = `Usage:
@@ -175,6 +178,8 @@ const USAGE = `Usage:
   repair-guide.ts replace-plan --tvdb <id> (--episode S03E01 [--also <n>,...] | --season <n> --slots 1,2,33+34)
   repair-guide.ts replace-run  --tvdb <id> --episode S03E01 [--also <n>,...] --key <key>[,<key>] --digest <the replace-plan digest> --evidence "<note>" [--same-as [<n>:]S03E07,...]
   repair-guide.ts replace-batch --tvdb <id> --season <n> --batch '<json list>' [--pause-ms <ms>]
+  repair-guide.ts owned-import-plan --parent fix:<id>|release_pick:<id> --download <id>
+  repair-guide.ts owned-import-run --parent <kind>:<id> --download <id> --digest <d> --evidence "<physical proof>"
 
 preview, evidence, audio, search-plan, release-list, queue-check and remap-plan only read (remap-plan plans as if episode_remap were on). settings writes only with --set or --known-issue (audited, actor null).
 title-check only reads Sonarr; --backfill writes title_checks rows unless --dry-run, --flags clears a stale flag.
@@ -228,7 +233,11 @@ export interface RepairGuideArgs {
     | 'carry-revert'
     | 'replace-plan'
     | 'replace-run'
-    | 'replace-batch';
+    | 'replace-batch'
+    | 'owned-import-plan'
+    | 'owned-import-run';
+  parent?: OwnedImportParent;
+  download?: string;
   /**
    * replace-run: the episodes (this show) whose own file holds a wrong file's story; `copyOf` names the slot episode
    * whose file it copies (needed when the slot has several files).
@@ -372,7 +381,9 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'carry-revert' &&
     command !== 'replace-plan' &&
     command !== 'replace-run' &&
-    command !== 'replace-batch'
+    command !== 'replace-batch' &&
+    command !== 'owned-import-plan' &&
+    command !== 'owned-import-run'
   ) {
     throw new Error(`unknown command "${command}"`);
   }
@@ -381,6 +392,18 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     const flag = rest[i]!;
     const value = rest[i + 1];
     switch (flag) {
+      case '--parent': {
+        const match = /^(fix|release_pick):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.exec(value ?? '');
+        if (!match) throw new Error('--parent needs fix:<id> or release_pick:<id>');
+        args.parent = { kind: match[1] as OwnedImportParent['kind'], id: match[2]! };
+        i += 1;
+        break;
+      }
+      case '--download':
+        if (!value || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) throw new Error('--download needs the owned download id');
+        args.download = value;
+        i += 1;
+        break;
       case '--tmdb':
         args.tmdb = positiveInt(flag, value);
         i += 1;
@@ -586,6 +609,17 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         throw new Error(`unknown argument "${flag}"`);
     }
   }
+  if (command === 'owned-import-plan' || command === 'owned-import-run') {
+    const allowed = ['command', 'replaceFile', 'parent', 'download', 'digest', 'evidence'];
+    if (Object.keys(args).some(k => !allowed.includes(k)) || !args.parent || !args.download) {
+      throw new Error(`${command} needs only --parent and --download, plus the run's --digest and --evidence`);
+    }
+    if (command === 'owned-import-run' ? !args.digest || !args.evidence : args.digest || args.evidence) {
+      throw new Error('owned-import-run needs the reviewed --digest and physical --evidence; plan only reads');
+    }
+    return args;
+  }
+  if (args.parent || args.download) throw new Error('--parent and --download are only for owned-import commands');
   if (command === 'carry-status' || command === 'carry-finish' || command === 'carry-revert') {
     const extra = args.tmdb !== undefined || args.episode || args.season !== undefined || args.digest || args.ordering !== undefined || args.language !== undefined || args.applyOriginal !== undefined;
     if (extra) throw new Error(`${command} takes only --carry${command === 'carry-status' ? ' or --tvdb' : ''}`);
@@ -824,6 +858,14 @@ async function main(): Promise<number> {
     return 2;
   }
   const db = defaultDb;
+  if (args.command === 'owned-import-plan' || args.command === 'owned-import-run') {
+    const request = { db, arr: arrClientBundleFromEnv(), parent: args.parent!, downloadId: args.download!,
+      actor: { kind: 'staff' as const } };
+    const result = args.command === 'owned-import-plan' ? await planOwnedSonarrImport(request)
+      : await runOwnedSonarrImport({ ...request, digest: args.digest!, evidence: args.evidence! });
+    console.log(JSON.stringify(result, null, 2));
+    return 0;
+  }
 
   if (args.command === 'settings') {
     if (args.set) await setRepairGuideRemedies({ db, remedies: args.set, actorId: null });

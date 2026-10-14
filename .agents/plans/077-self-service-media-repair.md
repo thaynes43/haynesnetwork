@@ -583,6 +583,22 @@ names, never deleting a file, after a watch-state check on every Plex server and
       scope changes and explicit grab-start intent before each run's first POST. Fix creation/carry linking are atomic;
       successful or possible grabs keep their lifecycle. A failed Wrong-Content Replace pre-clear restoration directs
       staff to `carry-finish`.
+      Live follow-up (#928, 2026-10-13): native numbering reparse can disagree with an override's exact `grabbed`
+      history. The blocked native import preserved Pokémon E12 and Mickey E3/E4; the existing enforced janitor correctly
+      refused both. An internal parent-owned Import Check is required because the original open Fix blocks a parallel
+      import repair. Build a read-only `owned-import-plan` and confirmed `owned-import-run`, using stored parent/grab
+      intent, strict ownership, whole-file Import Check coverage and fresh unselected-file identities. Intent/result/
+      read-back stay on that parent; possible writes are never replayed and completion follows actual import ingestion.
+      Keep quality/title refusals, queue guards and janitor modes intact. Validate the Pokémon E12→E1 and Mickey 1-4→1/2
+      boundaries, wrong owners/parents/downloads, extra coverage, stale files and idempotent recovery with affected tests
+      only under `nice -n 19`, one worker. Live imports wait for review and the signed deployed release; no batch replay.
+      The existing authenticated Force Search/Import Check also derives and continues its own Fix or Release Pick
+      from server context and exact grab history; no public parent IDs, parallel request or bypass of
+      another owner's guard. Its audit records the confirmed plan, not a claim that physical probes were performed.
+      A GET-only preview keeps the raw refusal and exposes `needsTargetCheck`; the canonical **Check and import** action
+      explains the selected-target evaluation before any import. Exact downloading parents show `on_its_way`. After
+      verified owned import, neutral queue forget clears only that completed misnumbered download, without client
+      deletion, blocklist or search, on its parent audit trail. Actual import ingestion still completes the parent.
     - **Held** (#928 and OC-056 list them with reasons):
       - Waiting for open Fix requests to close (48 hours): Bubble Guppies S5, whose only parking episodes are the
         emptied S1 slots, and Paw Patrol S5 E43-E47 (`--place 44-45:43-44,46:45,47:46-47`).

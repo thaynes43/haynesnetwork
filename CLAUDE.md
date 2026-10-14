@@ -114,6 +114,13 @@ Agent working state lives in `.agents/` (`HANDOFF.md` is the resume point; dated
    Title Evidence agree on; it adds files, never deletes one. Two callers: a person's queue-aware Force Search on a missing
    episode or movie (one Repair Request, `import_download`, only with the plan the person confirmed, behind the
    `import_check` remedy) and the janitor's `importable` cell (DESIGN-046 D-27, census until promoted, loop-guarded). The same
+   explicit import may continue its own open Fix or Release Pick through `owned-sonarr-import.ts` (DESIGN-055 P4
+   decision 38): server-derived parent/grab targets, verified linked carry for Wrong-Content Replace, one claimed
+   parent audit trail and no uncertain-command replay. Its audited `POST /api/v3/manualimport` re-evaluation runs
+   Sonarr's actual decisions against those targets without importing files; every fresh hard rejection is retained.
+   After an owned import's immutable file/history/bytes and untouched unselected files are verified, this continuation
+   may forget only that completed misnumbered queue download, with no client deletion, blocklist or search and with
+   intent/result/read-back on the same parent's audit trail. It never replays a library import or changes janitor modes.
    Force Search may also remove a failed or defective download from the queue with blocklist and `skipRedownload` before its
    one search (audited in its `search_requested` event). Through `@hnet/arr/write` from `packages/domain` only.
    **ADR-109 and ADR-110 add the Episode Re-map and the Mislabel Block** (DESIGN-055 D-04, D-05, PLAN-077 P4). The
