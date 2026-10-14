@@ -520,7 +520,8 @@ E28 replacement 30 was delivered once at 10:31:57.533Z under Fix `ddd28c27-f20e-
 verified Carry `09ea4310-7b5e-4530-b060-49438d76d2e2` and download `680b60b7-777f-42a9-ae9b-91daf20daaea`.
 Root viewed its forest-arena trainer and Metapod/judge scenes and ratified the
 [Gettin' the Bugs Out](https://bulbapedia.bulbagarden.net/wiki/EP144) inference and measured English AAC4.
-Import 34 was authorized after fresh guards; actual import and final proof are pending at this snapshot. Its
+IMPORT34 was delivered once at 10:42:20.823Z after fresh PLAN33/source/protected checks. Observe it without replay;
+actual import read-back, normal completion and final proof are pending at this snapshot. Its
 S03E28 to S20E28 mapping refers to distinct seasons/files and never a self-copy. Protected raw E39 is 34503/150918956.
 
 Mickey E21/E22, E23/E24 and E25/E26 passed finishes 56/62/68 at 10:10:48.365Z, 10:21:59.940Z and
