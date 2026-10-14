@@ -446,6 +446,55 @@ the final run; root approved its concrete decision-40 architecture for implement
 release choices are not an execution approval, and the new recovery still needs tests, required PR checks, a signed
 release and live verification.
 
+At 09:50:57.775Z Pokemon E22 passed finish 12. Actual file 80043/1576411922, native import 66940 and whole episode
+49220 bind original Fix `05f08c49-cfa2-4021-95ab-2f2bb1f777f8`, verified Carry
+`0fc8844c-cbd5-4621-861a-4ab5196cbe8f` and download `69ee26d0-33d2-4d04-a344-9a07fb6be3cf`. The scheduled
+pipeline completed it at 09:45:04.300Z through ledger event `8020af10-7829-430b-aa05-34b683fd16e9`, without task
+ingestion or status writes. Source/library both measure 1920 by 1080, with English AAC stream 4; the imported
+300s frame matches the root-viewed source PNG hash. Strict both-server proof at 09:49:54Z covers owners and every
+captured account, four complete nonempty contexts, current-zero, preserved correct-copy marks and unset preferences.
+Protected raw E33 file 34277/1083194684 stayed unchanged. Checkpoint SHA is
+`889a5119d4498ff880a8e109fe5c109e518f5cfe17b895a9e1d9e4b7fb2ef4fb`; twenty-one approved slots are complete.
+
+Pokemon E23's actual source measures 1624337947 bytes, 1920 by 1080, English AAC stream 4. Root viewed 300s and
+600s frames: a girl in pink/red with the group in the mountains, then ribboned Mareep facing Pikachu at sunset.
+Those support the [Mild 'n Wooly](https://bulbapedia.bulbagarden.net/wiki/EP139) inference; no literal card or
+unseen battle action was claimed. Guarded fresh plan 15 and source/protected checks passed before **one IMPORT16
+delivery at 09:59:58.646Z**. Original Fix `776f8333-9f18-4f61-87e2-9876b51c52a7`, verified Carry
+`25fd4405-d042-4460-ae12-95e5af859334`, download `7ae657f1-36e2-477a-a5a0-99bc04fcaf9c`, whole target 49221
+and digest `7dee987be266b15b44532869` remain bound to that command. Never resubmit it. Actual import, normal
+completion and strict final proof remained pending at delivery; protected raw E34 is 34308/1093478129.
+
+E23 then imported as file 80045/1624337947, native event 66953, whole episode 49221 on the original download.
+Normal event `21693071-b2a8-4d7f-868d-e7b78b82d972` was recorded at 10:00:04.395Z; the original parent was
+first observed completed at 10:00:22.881Z. Its later updatedAt reflects factual owned observation, not a new
+completion time. Source/library both measure 1920 by 1080 with English AAC stream 4; the imported 600s PNG
+matches the root-viewed source hash. Both-server owner/every-captured-account proof passed at 10:02:17Z: four
+complete nonempty contexts, current-zero, correct-copy marks and unset preferences, with protected raw E34
+unchanged. Finish 18 was accepted at 10:04:12.068Z; checkpoint SHA
+`42fcedf6d54ea93865a342f6fa92c5bc79f29ab79a009e84e62746a58b0570f8` preserves twenty-two completed slots.
+E24 is next; ten approved replacements remain, with E8/E31 still held.
+
+Mickey E17/E18 passed finish 44 at 09:46:47Z. Actual file 80042/1387613620 covers 37197/37198, measured
+1920 by 1080 with English AAC stream 7 and equal source/library SHA
+`16b22bec2766c58904f19f1692b26cab6789a853a4daecffcdf31038bf6a9465`. Root viewed both literal cards at 62s and
+691.65s. Native imports 66934/66935 bind original Fix `9cc5295d-255e-47b4-a4f2-9f76372c4b57`, verified Carry
+`507dadd3-1bf0-417c-82f8-257145f32adf` and download `fe91241b-91ff-485c-adba-554f09df2107`. Normal event is
+`5c8b4fe4-0555-479f-939d-d07f16f04ba5`; the scoped settle was a no-op after natural completion. Both actual
+index-17 Plex items, keys 58501/556277, cover the pair. Owner/captured current-zero and correct-copy marks passed;
+protected raw E33 to E36 and final file 65359 remained unchanged.
+
+Mickey E19/E20 passed finish 50 at 10:00:02Z. Actual file 80044/1489695593 covers 37199/37200, measured
+1920 by 1080 with English AAC stream 7 and equal source/library SHA
+`3203b502dbea21eacf14afc8f450a7ac81a4c34e80355cb99c4470efd9025870`. Root viewed the actual Going Upppppppppp!
+and Gone Fishin'! cards at 61s/691.65s. Native imports 66947/66948 bind Fix
+`00e5ca72-a5ed-4d82-9e24-8d48e8192d19`, verified Carry `2596c737-709d-4fd3-bd29-fb1a47852c16` and download
+`e14e2b3c-1f34-4cc6-ac3d-df816f61f56f`. Authorized scoped ingestion recorded those two real imports from one
+bounded 200-row page and normal matching completed that original Fix only, with the cursor unchanged. Actual
+completion event is `1c9cff9d-60bc-4612-9c51-af937e8c0a79`. Both actual index-19 Plex items, keys 58502/556279,
+cover the pair; strict owner/captured current-zero, correct-copy marks and all protected files, including 65359,
+passed. Eight initial slots are complete; E21/E22 is next. Final E13 to E16 remains held last.
+
 Pokemon E8 and E31 retain their wrong files. Two bounded NZB reads found only obfuscated split archives and parity
 subjects. Correct story, release group and English remain unproved; that does not establish that no release exists.
 Never use Saon. Mickey E13 to E16 remain held until new E7/E8 content is proved and a fresh same-content mapping is

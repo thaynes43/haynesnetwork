@@ -22,7 +22,17 @@
   hardware-transcodes; P1 triage).
 - **Validation:** each phase's live check below, then P8's owner review.
 
-**Latest repair update, 2026-10-14 09:37Z:** Pokemon E21 completed normally and passed finish 6; twenty approved
+**Latest repair update, 2026-10-14 10:04Z:** Pokemon E22/E23 completed normally and passed finishes 12/18;
+twenty-two approved slots are complete and E24 is in progress. Mickey E17/E18 and E19/E20 completed normally and
+passed finishes 44/50; eight initial slots are complete and E21/E22 is next. Full new identities and actual
+source/library, native, normal and strict Plex proof are in the [runtime record](../context/2026-10-14-self-service-repair-runtime-proof.md)
+and [completed-slot table](../context/2026-10-14-pokemon-completed-slot-proof.md). Decision-40 implementation has
+passed focused multipart and existing recovery cases, with remaining boundaries, CLI and type/lint checks in
+progress; required PR checks, root review and a verified signed release still precede the final multipart run.
+Current worker cutoffs, declaration, held E8/E31, unanswered Q-12, OC-056's dated hold and P8 staff practice remain
+unchanged. Final Mickey E13 to E16 still runs last.
+
+**Earlier repair snapshot, 2026-10-14 09:37Z:** Pokemon E21 completed normally and passed finish 6; twenty approved
 slots are complete and E22 is in progress. Mickey E9/E10 completed normally and passed finish 32. Its E11/E12
 source has correct viewed cards and positive English dialogue from bounded internal speech checks; the sole AAC
 track remains untagged. One import 36 was accepted at 09:29:49Z; actual library, native imports 66924/66925 and

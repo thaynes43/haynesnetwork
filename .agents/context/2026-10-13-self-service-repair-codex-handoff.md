@@ -36,7 +36,16 @@ Before that becomes the default, the platform must reliably fix the kinds of pro
 | P7 | Seerr bridge: bot comments once per issue, resolves on completed repair | **Live and on in v0.125.0**, checked 2026-10-13 23:09Z |
 | P8 | Working practice per ADR-112 | Admin guidance live in v0.125.1; practice only, owner readiness decision pending |
 
-**Latest repair state, 2026-10-14 09:37Z:** Pokemon E21 is normally complete and finish 6 passed; E22 is in
+**Latest repair state, 2026-10-14 10:04Z:** Pokemon E22/E23 completed normally and passed finishes 12/18;
+twenty-two approved slots are complete and E24 is in progress. Mickey E17/E18 and E19/E20 completed normally and
+passed finishes 44/50; eight initial slots are complete and E21/E22 is next. Final E13 to E16 remains last. The
+decision-40 recovery implementation has passed focused and existing recovery cases, with boundary, CLI and
+type/lint checks in progress; root review, required PR checks and a verified signed release still precede the final
+run. See the [runtime record](2026-10-14-self-service-repair-runtime-proof.md) and
+[completed-slot table](2026-10-14-pokemon-completed-slot-proof.md) for current exact evidence. Existing worker
+cutoffs, declaration, holds, unanswered Q-12 and P8 staff practice are unchanged.
+
+**Earlier repair state, 2026-10-14 09:37Z:** Pokemon E21 is normally complete and finish 6 passed; E22 is in
 progress. Mickey E9/E10 is normally complete and finish 32 passed. E11/E12's sole untagged AAC track has positive
 English dialogue evidence from two bounded internal speech checks, and both literal cards were viewed. Import 36
 was accepted once at 09:29:49Z; actual library, native imports 66924/66925 and normal completion then passed.
