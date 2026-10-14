@@ -31,7 +31,7 @@ Each actual Plex item covers its independently confirmed whole Sonarr file. The 
 The read-only preview digest is `89c905f48a84e5ed0bdaedd817766907`; it is evidence of available choices, not an executable approval. Ongoing initial repairs change protected fingerprints, so final execution must freshly plan the complete four-episode slot, verify full original/destination identity, and obtain driver approval.
 
 | Key | Exact release | Landing coverage | Refusals / state |
-|---|---|---|
+|---|---|---|---|
 | `33d04f8818a5d4d4` | `Mickey.Mouse..MixedUp.Adventures.S01E13E14.Ye.Olde.Royal.Heist..Tea.Time.Trouble.MULTI.1080p.DSNP.WEB-DL.AAC2.0.x264-AndreMor` | S01E13 · Ye Olde Royal Heist, S01E14 · Tea Time Trouble! | override; renumbered only |
 | `510923351a39d052` | `Mickey.Mouse..MixedUp.Adventures.S01E15E16.AbrakaGoof..Happy.Birthday.Helpers.MULTI.1080p.DSNP.WEB-DL.AAC2.0.x264-AndreMor` | S01E15 · Abra-ka-Goof!, S01E16 · Happy Birthday Helpers! | override; renumbered only |
 
