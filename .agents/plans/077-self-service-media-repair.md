@@ -611,6 +611,42 @@ names, never deleting a file, after a watch-state check on every Plex server and
       never falls through to a new search/import. An executable continuation still requires the exact owned parent anchor.
       After verified owned import, neutral queue forget clears only that completed misnumbered download, without client
       deletion, blocklist or search, on its parent audit trail. Actual import ingestion still completes the parent.
+      Live failed-grab follow-up (#928, 2026-10-14): Mickey E7/E8's selected NZB failed as Duplicate NZB, and the
+      enforced failed-download retry grabbed physically proved wrong content. The existing parent and verified Carry
+      remain the recovery anchor; ordinary P5 discovery's empty list did not establish source absence. DESIGN-055 P4
+      decision 39 specifies a fresh same-parent staff retry using P4's named multipart classification, one audited
+      wrong-download abandonment without client-file deletion or search, and one actual release grab. Protect old
+      E13-E16 and every completed slot; no repeated deletion, new Carry, borrowed user identity or synthetic history.
+      The distinct iVy E7/E8 encode is the preferred live candidate after a fresh reviewed plan. Verify physical
+      English and both intended stories before import, then whole-slot history, both Plex copies and carried marks.
+      The janitor defers failed-grab re-search for that active verified replacement without a class/mode change or
+      extra budget. Test the real duplicate/foreign-grab boundary, stale identities, member/foreign parents,
+      uncertain claims, refusal preservation and normal final completion under nice 19 with one worker only.
+      This recovery waits for final review, signed release and deployment; its live writes remain held.
+      Implementation: private `replace-retry-plan/run` uses only the original `fix:<id>`, exact optional discard
+      download and a freshly selected release key/digest; it derives all episode IDs from the verified Carry.
+      The new domain writer keeps command claims, actual receipts and unknown outcomes on that parent. Existing
+      owned import and normal ledger completion validate the new download and every original slot episode.
+      Focused validation covers complete same-parent recovery, preserved old E13-E16, refusal and concurrency,
+      real accepted GRAB with lost response/audit, wrong new raw numbering, and old/new janitor ownership.
+      Missing retry-call proof produces explicit observed holds only for potentially matching failure rows;
+      unrelated failures continue in the same janitor run. Validate that mixed pass and its unchanged search budget.
+      Review follow-through preserves original production `release`/`title` and single-release legacy bindings,
+      saves actual retry-call start/end and unique native GUID separately from canonical receipt audit, and requires
+      that proof in both janitor and owned import. Missing proof fails evaluation closed; an indefinite intent or
+      parent creation time never owns a later foreign grab. No-conflict recovery emits no removal audit; queue
+      disappearance after an uncertain discard is observation, with no claim of executed success. CLI reasons
+      come only from fixed local domain errors. Actual post-command audits preserve normal native completion;
+      completed parents cannot claim another command. Each retry claim is bound to its failed actual GRAB attempt
+      and download GUID. A later verified terminal failure can receive a distinct reviewed attempt on the same
+      parent/Carry, including an accepted-but-503 call proved by native history; no canonical200 is invented.
+      Earlier uncertain commands remain observe-only, read-backs are attempt scoped, and protected identities
+      persist across attempts. Actual sources follow durable pre-command intent order, so an older late receipt
+      cannot regress authority after a newer proved failed download. Twenty-eight recovery cases and 27 existing
+      owned-import cases passed together; five ordering/attempt cases then passed with the new delayed-receipt
+      regression (29 recovery cases covered in total);
+      nine existing janitor retry/real-client cases and 24 CLI cases passed, with domain/sync typechecks and targeted
+      lint. No live recovery has run from this implementation.
     - **Held** (#928 and OC-056 list them with reasons):
       - Waiting for open Fix requests to close (48 hours): Bubble Guppies S5, whose only parking episodes are the
         emptied S1 slots, and Paw Patrol S5 E43-E47 (`--place 44-45:43-44,46:45,47:46-47`).

@@ -146,6 +146,9 @@ import {
   runWrongContentReplace,
   finishWrongContentReplaceCarry,
   wrongContentRefusalText,
+  planWrongContentRetry,
+  runWrongContentRetry,
+  wrongContentRetryRefusalText,
   planOwnedSonarrImport,
   runOwnedSonarrImport,
   type OwnedImportParent,
@@ -178,6 +181,8 @@ const USAGE = `Usage:
   repair-guide.ts replace-plan --tvdb <id> (--episode S03E01 [--also <n>,...] | --season <n> --slots 1,2,33+34)
   repair-guide.ts replace-run  --tvdb <id> --episode S03E01 [--also <n>,...] --key <key>[,<key>] --digest <the replace-plan digest> --evidence "<note>" [--same-as [<n>:]S03E07,...]
   repair-guide.ts replace-batch --tvdb <id> --season <n> --batch '<json list>' [--pause-ms <ms>]
+  repair-guide.ts replace-retry-plan --parent fix:<id> [--discard-download <id>] [--key <key>]
+  repair-guide.ts replace-retry-run --parent fix:<id> [--discard-download <id> --conflict-evidence "<proof>"] --key <key> --digest <d> --evidence "<proof>"
   repair-guide.ts owned-import-plan --parent fix:<id>|release_pick:<id> --download <id>
   repair-guide.ts owned-import-run --parent <kind>:<id> --download <id> --digest <d> --evidence "<physical proof>"
 
@@ -234,10 +239,14 @@ export interface RepairGuideArgs {
     | 'replace-plan'
     | 'replace-run'
     | 'replace-batch'
+    | 'replace-retry-plan'
+    | 'replace-retry-run'
     | 'owned-import-plan'
     | 'owned-import-run';
   parent?: OwnedImportParent;
   download?: string;
+  conflictingDownload?: string;
+  conflictEvidence?: string;
   /**
    * replace-run: the episodes (this show) whose own file holds a wrong file's story; `copyOf` names the slot episode
    * whose file it copies (needed when the slot has several files).
@@ -382,6 +391,8 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
     command !== 'replace-plan' &&
     command !== 'replace-run' &&
     command !== 'replace-batch' &&
+    command !== 'replace-retry-plan' &&
+    command !== 'replace-retry-run' &&
     command !== 'owned-import-plan' &&
     command !== 'owned-import-run'
   ) {
@@ -588,6 +599,17 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         args.sameAs = parseSameAs(value ?? '');
         i += 1;
         break;
+      case '--discard-download':
+        if (!value || !/^[A-Za-z0-9_-]{1,128}$/.test(value))
+          throw new Error('--discard-download needs an exact download ID');
+        args.conflictingDownload = value;
+        i += 1;
+        break;
+      case '--conflict-evidence':
+        if (!value) throw new Error('--conflict-evidence needs the physical wrong-story proof');
+        args.conflictEvidence = value;
+        i += 1;
+        break;
       case '--also':
         args.also = (value ?? '').split(',').map((n) => positiveInt(flag, n.trim()));
         i += 1;
@@ -609,6 +631,36 @@ export function parseRepairGuideArgs(argv: readonly string[]): RepairGuideArgs |
         throw new Error(`unknown argument "${flag}"`);
     }
   }
+  if (command === 'replace-retry-plan' || command === 'replace-retry-run') {
+    const allowed = [
+      'command',
+      'replaceFile',
+      'parent',
+      'conflictingDownload',
+      'key',
+      'digest',
+      'evidence',
+      'conflictEvidence',
+    ];
+    if (Object.keys(args).some((k) => !allowed.includes(k)) || args.parent?.kind !== 'fix')
+      throw new Error(
+        'Staff retry needs only --parent fix:<id> and optional --discard-download; scope comes from the original Carry',
+      );
+    if (
+      command === 'replace-retry-run'
+        ? !args.key ||
+          !args.digest ||
+          !args.evidence ||
+          (args.conflictingDownload && !args.conflictEvidence)
+        : args.digest || args.evidence || args.conflictEvidence
+    )
+      throw new Error(
+        'Retry run needs fresh --key/--digest/--evidence and physical --conflict-evidence when discarding; plan only reads',
+      );
+    return args;
+  }
+  if (args.conflictingDownload || args.conflictEvidence)
+    throw new Error('Discard flags belong only to staff replace-retry commands');
   if (command === 'owned-import-plan' || command === 'owned-import-run') {
     const allowed = ['command', 'replaceFile', 'parent', 'download', 'digest', 'evidence'];
     if (Object.keys(args).some(k => !allowed.includes(k)) || !args.parent || !args.download) {
@@ -858,6 +910,28 @@ async function main(): Promise<number> {
     return 2;
   }
   const db = defaultDb;
+  if (args.command === 'replace-retry-plan' || args.command === 'replace-retry-run') {
+    const request = {
+      db,
+      arr: arrClientBundleFromEnv(),
+      actor: { kind: 'staff' as const },
+      fixRequestId: args.parent!.id,
+      conflictingDownloadId: args.conflictingDownload,
+      key: args.key,
+    };
+    const result =
+      args.command === 'replace-retry-plan'
+        ? await planWrongContentRetry(request)
+        : await runWrongContentRetry({
+            ...request,
+            digest: args.digest!,
+            key: args.key!,
+            evidence: args.evidence!,
+            conflictEvidence: args.conflictEvidence,
+          });
+    console.log(JSON.stringify(result, null, 2));
+    return 0;
+  }
   if (args.command === 'owned-import-plan' || args.command === 'owned-import-run') {
     const request = { db, arr: arrClientBundleFromEnv(), parent: args.parent!, downloadId: args.download!,
       actor: { kind: 'staff' as const } };
@@ -1501,7 +1575,18 @@ if (process.argv[1]?.endsWith('repair-guide.ts')) {
       process.stdout.write('', () => process.exit(code));
     })
     .catch(async (error: unknown) => {
-      console.error(error instanceof Error ? error.message : String(error));
+      if (process.argv[2]?.startsWith('replace-retry-')) {
+        const e = error !== null && typeof error === 'object'
+          ? error as { name?: unknown; code?: unknown }
+          : {};
+        console.error(JSON.stringify({
+          state: 'recovery_refused_or_unavailable',
+          name: /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(String(e.name)) ? e.name : 'Error',
+          code: /^[A-Z0-9_]{1,60}$/.test(String(e.code)) ? e.code : null,
+          reason: wrongContentRetryRefusalText(error),
+          action: 'Read a fresh retry plan or observe the original parent; do not replay a claimed write.',
+        }));
+      } else console.error(error instanceof Error ? error.message : String(error));
       await getPool()
         .end()
         .catch(() => {});

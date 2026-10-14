@@ -5,6 +5,34 @@ import { formatAudioScan, formatCarryResult, formatReleaseList, formatSeasonPlan
 import type { SeasonRemapView, WatchCarryResult } from '@hnet/domain';
 
 describe('repair-guide.ts arguments', () => {
+  it('staff failed-grab retry derives scope only from the original Fix and requires physical discard proof', () => {
+    const p = 'fix:123e4567-e89b-12d3-a456-426614174000';
+    expect(parseRepairGuideArgs([
+      'replace-retry-plan', '--parent', p, '--discard-download', 'f707', '--key', '0123456789abcdef',
+    ])).toMatchObject({
+      command: 'replace-retry-plan', parent: { kind: 'fix' },
+      conflictingDownload: 'f707', key: '0123456789abcdef',
+    });
+    expect(() => parseRepairGuideArgs([
+      'replace-retry-plan', '--parent', p, '--episode', 'S01E07',
+    ])).toThrow(/scope comes/);
+    expect(() => parseRepairGuideArgs([
+      'replace-retry-plan', '--parent', p, '--download', 'old-failed',
+    ])).toThrow(/scope comes/);
+    expect(() => parseRepairGuideArgs([
+      'replace-retry-plan', '--parent', p.replace('fix:', 'release_pick:'),
+    ])).toThrow(/scope comes/);
+    const run = [
+      'replace-retry-run', '--parent', p, '--key', '0123456789abcdef',
+      '--digest', 'abcdef0123456789', '--evidence', 'Correct whole-pair physical proof before import',
+    ];
+    expect(() => parseRepairGuideArgs([...run, '--discard-download', 'f707'])).toThrow(/physical/);
+    expect(parseRepairGuideArgs([
+      ...run, '--discard-download', 'f707', '--conflict-evidence',
+      'Actual wrong stories and original byte identity proved',
+    ])).toMatchObject({ command: 'replace-retry-run' });
+  });
+
   it('owned import derives targets from its parent and requires reviewed confirmation only for run', () => {
     const p = 'fix:ac29d8ad-fd56-439f-810d-51a86e170ae3';
     expect(parseRepairGuideArgs(['owned-import-plan', '--parent', p, '--download', 'owned-dl']))
