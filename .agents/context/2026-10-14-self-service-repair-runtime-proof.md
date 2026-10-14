@@ -381,7 +381,7 @@ plays. Old final E13 to E16 file 65359/1377201632 stayed unchanged. Finish contr
 after all checks. The next initial slot is E9/E10. Final E13 to E16 execution still waits for every initial slot and
 fresh root-reviewed physical same-content mapping.
 
-At 09:03Z, Pokemon E21's fresh replacement is awaiting its one audited owned import. Fix
+At 09:03Z, root ratified Pokemon E21's fresh replacement source. Fix
 `34e35777-d724-4a28-a34c-706953558413` retains verified Carry `f2c2b02c-6e83-4339-800d-c6e557d26dbe`.
 The actual grab completed at 08:48:38.037Z; source download `0be8b42d-2d16-4181-923e-c5aad351e3b7` measures
 1469914845 bytes, 1920 by 1080, with English AAC stream 4. Root viewed source frames at 300s and 750s: the
@@ -389,8 +389,12 @@ caretaker beside a wire-net enclosure, then the same caretaker and group facing 
 skies. These support the [Foul Weather Friends](https://www.pokemon.com/us/animation/seasons/3/episode-21-foul-weather-friends)
 story inference, corroborated by the [episode synopsis](https://bulbapedia.bulbagarden.net/wiki/Foul_Weather_Friends).
 No literal card, unseen species or weather cause was claimed. Root authorized one owned import only after fresh
-source, whole target 49219, plan and protected raw E32 file 34245/1104231692 checks. This is source ratification,
-not completion evidence; the actual library import, normal event and strict account/Plex checks remain required.
+source, whole target 49219, plan and protected raw E32 file 34245/1104231692 checks. Fresh PLAN3 completed at
+09:03:46.412Z with unchanged digest `9e1cb185d126697990c86e08`, source bytes and whole target. Actual source and
+protected-file stats passed at 09:04:35Z. Guarded IMPORT4 was delivered once at **09:05:01.977177Z**, under the
+exact Job/Pod UID, source-hash and write-cutoff checks. Do not resubmit that import. Observe the original claim and
+actual result; normal completion, imported library identity and strict account/Plex proof remain pending in this
+snapshot. Source ratification and control delivery are not completion evidence.
 
 Pokemon E8 and E31 retain their wrong files. Two bounded NZB reads found only obfuscated split archives and parity
 subjects. Correct story, release group and English remain unproved; that does not establish that no release exists.
