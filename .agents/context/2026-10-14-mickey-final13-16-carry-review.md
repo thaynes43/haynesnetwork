@@ -1,6 +1,34 @@
 # Mickey final S01E13–16 carry review
 
-**Update, 2026-10-14 11:21Z:** D40's original-part/failed-part recovery and both-native factual adoption are merged
+**Current status, frozen 2026-10-14T11:59:39.296664418Z: PREPARED and held.** Signed v0.125.4 is verified live
+through [haynes-ops 3925](https://github.com/thaynes43/haynes-ops/pull/3925) and merged actual proof
+[3926](https://github.com/thaynes43/haynes-ops/pull/3926), with exact image
+`sha256:5522d758426a317b42fec609fbe02f8f27cdc042f03b133833002f8ccb2f881f`. Sixteen of 23 initial slots are fully
+proved through E37/E38. E39/E41/E43/E45/E47/E49/E51 remain; adoption 99 for E39 is delivered but its full finish
+is pending. The original finite initial worker is unchanged. The final-only proposal is reviewed offline,
+suspended and disabled for execution. Future capture/expiry/identity/prefix-proof fields remain blank.
+
+Require all 23 actual initial finishes, actual predecessor termination, fresh complete prefix and physical
+same-content mapping, exact deployed signed sources, actual finite activity and a new root review of the sealed
+concrete envelope before execution. The older mapping snapshot below is evidence for preparation; it does not
+replace those fresh reads. The latest offline review covers late-observe handling, actual mutating-GET deadline
+guards and v0.125.4 native-adoption code. It authorizes no media or cluster command.
+
+Recomputed current artifact hashes match the private `final13-16-preparation/artifact-hashes.json`:
+
+| Prepared artifact | SHA-256 |
+| --- | --- |
+| `final-worker.ts` | `5c603b3768ee6a61158eafc5fe3924aafc6d4183ddf4fc4a3f00d60306d3878c` |
+| `final-control.py` | `fa8c30bdf1dd93a074ef42642cd454ee9fe05b67481e936033696ad755770f87` |
+| `job.suspended-proposal.json` | `c8dba3e9e0b528d079124feeef12170417ecf0a2eccdacd9befa1feed9c1b960` |
+| `envelope.prepared.json` | `3c3ea879061036a3ca4ff12c84232309fb0e9dbdc4f0bd393907f6d69567e94f` |
+| `execution-recipe.json` | `535b16267a1437ef8f85dde6d74aed06b22f61672befb7ac42a2b9ee07ab3932` |
+
+See the [runtime checkpoint](2026-10-14-self-service-repair-runtime-proof.md) for actual rollout, immutable worker
+identities/bounds and the completed E37/E38 row. PLAN-077 remains Active; formal Step 5, Step 6 and P8 remain in
+the original order, with no readiness/default-policy ruling.
+
+**Earlier update, 2026-10-14 11:21Z:** D40's original-part/failed-part recovery and both-native factual adoption are merged
 in [987](https://github.com/thaynes43/haynesnetwork/pull/987), with all four checks and renewed review passed.
 [Release 988](https://github.com/thaynes43/haynesnetwork/pull/988), v0.125.4, is merged; cosign and both registry artifacts were subsequently verified at 11:25/11:26Z.
 Deployment verification remains pending. Fifteen initial slots are fully proved. The separate final-only

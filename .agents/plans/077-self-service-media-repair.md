@@ -22,7 +22,30 @@
   hardware-transcodes; P1 triage).
 - **Validation:** each phase's live check below, then P8's owner review.
 
-**Latest repair update, 2026-10-14 11:21Z:** Pokemon E28/E29 passed finishes 36/43; twenty-six approved replacements are complete, six remain, with E8/E31
+**Latest repair update, frozen 2026-10-14T11:59:39.296664418Z:** signed v0.125.4 is verified live through
+[haynes-ops 3925](https://github.com/thaynes43/haynes-ops/pull/3925), merge
+`ef7936cfe41024f05aed8c145b66ad51a0947346` at 11:38:18Z, and actual proof
+[3926](https://github.com/thaynes43/haynes-ops/pull/3926), merge
+`254966b069715f77f8bc69c550fe61f70b24b74a` at 11:58:03Z. All three serving replicas/successful migrators,
+24 frontend and two downloads templates, health, 107 migrations and reviewed sources/CLI passed on exact signed
+`sha256:5522d758426a317b42fec609fbe02f8f27cdc042f03b133833002f8ccb2f881f`. Sequential bounded Books Census and
+owed-checks Jobs completed natively at 11:49:08Z/11:50:29Z, exit 0; their known failures/manual/dates/member holds
+remain, with no Step 6 or readiness claim. Pokemon E30 passed finish 49 at 11:46:41.601Z: 27 of 32 approved slots
+complete, E32/E33/E34/E36/E38 remaining and E8/E31 held. Mickey E37/E38 passed finish 95 at 11:31:55.517Z:
+16 of 23 initial slots complete, E39/E41/E43/E45/E47/E49/E51 remaining. E32 and E39 are not completed by this
+snapshot; E39 native adoption 99 is delivered but full finish pending. Both original signed v0.125.3 media workers
+retain their immutable hashes/UIDs and original cutoffs/expiry, covered by `act-073758-527071` until 14:37:58Z.
+Their final post-terminal inventory remains owed. Final Mickey E13 to E16 is PREPARED and held, reviewed offline
+only, with future evidence/timestamps blank; all 23 actual initial finishes, actual predecessor termination,
+fresh complete prefix/mapping, deployed signed source, finite activity and new root sealed-envelope review still
+precede execution. See the [runtime proof](../context/2026-10-14-self-service-repair-runtime-proof.md),
+[completed table](../context/2026-10-14-pokemon-completed-slot-proof.md) and
+[final proposal](../context/2026-10-14-mickey-final13-16-carry-review.md). P7 stays on/on as user 19 with fixture 5
+deleted and no historical issue 1 to 4 writes. Q-12 is unanswered, email/web push off. Step 5 holds OC-056 until
+2026-10-15T20:10Z and closed blocking Fixes, with Paw ordering inside its verified Carry first. Step 6/P8 follow in
+the original order; PLAN-077 remains Active and readiness remains the owner's judgment under ADR-112.
+
+**Earlier repair update, 2026-10-14 11:21Z:** Pokemon E28/E29 passed finishes 36/43; twenty-six approved replacements are complete, six remain, with E8/E31
 held. E30 replacement 44 was delivered once at 11:18:05.361Z and is in progress. Mickey E29/E30, E31/E32,
 E33/E34 and E35/E36 passed finishes 74/80/85/90; fifteen initial slots are complete and E37 is in progress.
 These four pairs imported natively, with no ManualImport, regrab or invented owned-import intent. Source/English,
@@ -736,7 +759,7 @@ names, never deleting a file, after a watch-state check on every Plex server and
         - Pokémon S8: the flag is a false positive; the title card shows E32 is right.
         - Paw Patrol S5E29-30: holds E25's story and a copy of E32.
 
-### P4 follow-up: recover a failed selected replacement part (In progress, 2026-10-14)
+### P4 follow-up: recover a failed selected replacement part (Shipped and verified live, 2026-10-14)
 
 - **Implementation authorized:** driving-agent review approved DESIGN-055 P4 decision 40 at 09:36Z, extending the existing staff multipart
   Wrong-Content Replace. A four-episode wrong file may be filled by two exact pair releases, but the shipped
@@ -779,7 +802,10 @@ names, never deleting a file, after a watch-state check on every Plex server and
   domain writer README are updated in this change. The final native-adoption correction passed all 34 multipart
   cases, including both-native adoption on open and normally completed parents with zero media writes, foreign/
   partial/unsettled refusals, unchanged retry-audit guards and stale name/byte/digest refusals.
-- **Next:** root review and required PR checks, followed by a signed release and verified live deployment. Tests
+- **Shipped:** [987](https://github.com/thaynes43/haynesnetwork/pull/987) merged after all four required checks
+  and renewed advisory review without findings; [release 988](https://github.com/thaynes43/haynesnetwork/pull/988)
+  shipped signed v0.125.4, deployed and verified by [haynes-ops 3925](https://github.com/thaynes43/haynes-ops/pull/3925)
+  and [3926](https://github.com/thaynes43/haynes-ops/pull/3926). The final execution remains held. Tests
   ran under nice 19 with one worker only. No CPU burners or wide/looped parallel
   tests on this shared production node. Mickey E13 to E16 remains last, after all twenty-three initial slots and a fresh
   root-ratified physical same-content mapping; implementation authorization is not execution approval.

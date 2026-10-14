@@ -36,7 +36,30 @@ Before that becomes the default, the platform must reliably fix the kinds of pro
 | P7 | Seerr bridge: bot comments once per issue, resolves on completed repair | **Live and on in v0.125.0**, checked 2026-10-13 23:09Z |
 | P8 | Working practice per ADR-112 | Admin guidance live in v0.125.1; practice only, owner readiness decision pending |
 
-**Latest repair state, 2026-10-14 11:21Z:** Pokemon E28/E29 passed finishes 36/43; twenty-six approved replacements are complete, six remain, with E8/E31
+**Latest repair state, frozen 2026-10-14T11:59:39.296664418Z:** signed v0.125.4 is verified live through
+[haynes-ops 3925](https://github.com/thaynes43/haynes-ops/pull/3925), merge
+`ef7936cfe41024f05aed8c145b66ad51a0947346` at 11:38:18Z, and actual proof
+[3926](https://github.com/thaynes43/haynes-ops/pull/3926), merge
+`254966b069715f77f8bc69c550fe61f70b24b74a` at 11:58:03Z. All three serving replicas/successful migrators,
+24 frontend and two downloads templates, health, 107 migrations and reviewed sources/CLI passed on exact signed
+`sha256:5522d758426a317b42fec609fbe02f8f27cdc042f03b133833002f8ccb2f881f`. Sequential bounded Books Census and
+owed-checks Jobs completed natively at 11:49:08Z/11:50:29Z, exit 0; known failures OC-015/034/035/038, manual
+OC-009/046 and dated/member holds remain. This is not Step 6 or a readiness claim. Pokemon E30 passed finish 49
+at 11:46:41.601Z: 27 of 32 approved slots complete, E32/E33/E34/E36/E38 remaining and E8/E31 held. Mickey E37/E38
+passed finish 95 at 11:31:55.517Z: 16 of 23 initial slots complete, E39/E41/E43/E45/E47/E49/E51 remaining.
+Neither E32 nor E39 is completed by this snapshot; E39 native adoption 99 is delivered but full finish pending.
+Both original signed v0.125.3 workers retain immutable code/UIDs and the original finite bounds, covered by
+`act-073758-527071` until 14:37:58Z; the final post-terminal inventory is owed. Final E13 to E16 remains PREPARED
+and held, reviewed offline only. Require all 23 actual initial finishes, actual predecessor termination, fresh
+complete prefix/physical mapping, deployed signed source, finite activity and a new root sealed-envelope review;
+future captures/expiry/identity remain blank. See the [runtime proof](2026-10-14-self-service-repair-runtime-proof.md),
+[completed table](2026-10-14-pokemon-completed-slot-proof.md) and
+[final proposal](2026-10-14-mickey-final13-16-carry-review.md). P7 remains on/on as user 19, fixture 5 deleted and
+historical issues 1 to 4 protected. Q-12 is unanswered, email/web push off. Step 5 holds OC-056 until
+2026-10-15T20:10Z and closed blocking Fixes, with Paw's tvdbAiring switch inside its verified Carry first. Step 6
+and P8 follow in the original order. PLAN-077 remains Active; ADR-112 readiness is the owner's judgment.
+
+**Earlier repair state, 2026-10-14 11:21Z:** Pokemon E28/E29 passed finishes 36/43; twenty-six approved replacements are complete, six remain, with E8/E31
 held. E30 replacement 44 was delivered once at 11:18:05.361Z and is in progress. Mickey E29/E30, E31/E32,
 E33/E34 and E35/E36 passed finishes 74/80/85/90; fifteen initial slots are complete and E37 is in progress.
 These four pairs imported natively, with no ManualImport, regrab or invented owned-import intent. Source/English,
@@ -129,7 +152,9 @@ write and full normal completion.
    only when opening their issue. The requested receipt page was delivered, which did not authorize changing
    Seerr notifications. No notification writes occurred. Do not change delivery without the ruling; continue the
    independent repairs.
-4. **In progress, 2026-10-14 09:06Z:** do not rerun any original batch. Signed v0.125.1 deployed
+4. **In progress:** use the frozen 11:59:39Z checkpoint above for current counts and signed deployment. The
+   following detailed provenance remains the 09:06Z snapshot; its pending-slot statements are historical.
+   Do not rerun any original batch. Signed v0.125.1 deployed
    [#970](https://github.com/thaynes43/haynesnetwork/pull/970) and
    [#972](https://github.com/thaynes43/haynesnetwork/pull/972); the original owned downloads resumed under their
    existing parents and verified Carries. See the [runtime proof](2026-10-14-self-service-repair-runtime-proof.md).

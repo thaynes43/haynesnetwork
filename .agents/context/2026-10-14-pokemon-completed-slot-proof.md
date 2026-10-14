@@ -1,6 +1,12 @@
 # Pokémon completed-slot proof through S03E20
 
-This snapshot contains the 19 accepted finished slots in the through-E20 checkpoint accepted at 2026-10-14T07:30:49.768Z: S03E01–E07 and S03E09–E20. E21 has no delivered control and is excluded. Held E08/E31 are excluded. This table makes no completion claim for other approved slots.
+**Current checkpoint, frozen 2026-10-14T11:59:39.296664418Z:** the original nineteen-slot prefix below plus the
+eight continuation rows through E30 prove **27 of 32 approved slots** complete. E32/E33/E34/E36/E38 remain;
+retained held E8/E31 are outside that approved count. No E32 completion is claimed by this snapshot.
+The [runtime record](2026-10-14-self-service-repair-runtime-proof.md) records the signed v0.125.4 rollout and the
+unchanged original signed v0.125.3 continuation. Earlier timestamped rows and observations remain preserved.
+
+The original through-E20 snapshot contains the 19 accepted finished slots in the checkpoint accepted at 2026-10-14T07:30:49.768Z: S03E01–E07 and S03E09–E20. At that original snapshot E21 had no delivered control and was excluded. Held E08/E31 are excluded. These original rows make no completion claim for other approved slots; later continuation rows follow below.
 
 | Slot / canonical title | Actual new file / bytes / resolution / English track | Actual import IDs / download GUID | Original Fix / verified Carry / full normal completed-event UUID | Same-content destination / file / bytes | Protected file IDs / bytes | Literal card / observed-scene inference |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -34,7 +40,7 @@ E16 is the approved SRS 480p fallback. Its actual import was native: no ManualIm
 
 ## Signed v0.125.3 continuation
 
-The original nineteen-slot prefix above remains preserved. E21 to E24, E26, E28 and E29 add seven completed slots after fresh source ratification, actual imports, natural completion and strict finish. Completion observations and ledger recording times remain distinct.
+The original nineteen-slot prefix above remains preserved. E21 to E24, E26, E28, E29 and E30 add eight completed slots after fresh source ratification, actual imports, natural completion and strict finish. Completion observations and ledger recording times remain distinct.
 
 |Slot|File/bytes|Native import|Fix UUID|Carry UUID|Normal event UUID|Normal completion|Source/library|English|Plex|Protected|Accepted finish|
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -45,3 +51,16 @@ The original nineteen-slot prefix above remains preserved. E21 to E24, E26, E28 
 |26|80049/1576134020|66984|07f3b58b-dbca-43dd-b4db-3fd4a850cbab|856b1aab-cf2f-4d16-8ea1-f1f2f48cfb18|5bd1d0d3-48d8-4c8c-aa9f-c9ed57486cd4|By 2026-10-14T10:30:25.573Z|1920x1080/1920x1080|AAC4|both servers, owner + all captured, current0/0, copy marks pass|34433/186411294|2026-10-14T10:31:13.393Z|
 |28|80053/1478614008|67001|ddd28c27-f20e-4f12-8039-9753c70783e9|09ea4310-7b5e-4530-b060-49438d76d2e2|ee636b7c-492f-4499-a930-75f1666ef898|By 2026-10-14T10:46:41.781Z|1920x1080/1920x1080|AAC4|both servers, owner + all captured, current0/0, copy marks pass|34503/150918956|2026-10-14T10:50:12.051Z|
 |29|80056/1477524293|67016|0ff7cb78-cf1c-4c33-baa0-9bc32d3c2b94|1a4781b0-de89-4339-b145-4189ec85727e|11b96cd0-9314-4890-bda9-e72862ac03aa|By 2026-10-14T11:15:27.277Z|1920x1080/1920x1080|AAC4|both servers, owner + all captured, current0/0, copy marks pass|34579/184582512|2026-10-14T11:17:10.644Z|
+|30|80059/1501485589|67031|5e9a3884-5493-4b34-a011-d0975ba9b1d1|9dd8d976-3eda-4510-90f1-727f9d971619|4b85eeed-54c9-485a-ba35-ea475a135f56|By 2026-10-14T11:45:04.789Z|1920x1080/1920x1080|AAC4|both servers, owner + all captured, current0/0, copy marks pass|34640/178856668|2026-10-14T11:46:41.601Z|
+
+E30's event was recorded at 11:45:03.611Z, before its first completed observation at 11:45:04.789Z; accepted
+finish 49 was at 11:46:41.601Z. Checkpoint SHA
+`99149422e2b6ba06269a87cb9eb1f8a31b7bb2b7b217dc841173ca741b446361` preserves all 27 completions. Exact native
+import 67031 covers episode 49228 on original download `0714123b-0fb4-4e20-8d0f-c326aab31e19`; IMPORT47 was
+delivered once at 11:32:29.608Z. Its correct-copy mapping remains distinct S20E30. Source/library video measured
+1920 by 1080 with English AAC4. Root viewed 150s showing a maroon-shirted boy beside Wobbuffet on a palm-lined
+walkway and 300s showing Professor Oak with a green mug on the trio's video call. Those observations support the
+[official Tricks of the Trade](https://www.pokemon.com/us/animation/seasons/3/episode-30-tricks-of-the-trade)
+story inference, corroborated by [EP146](https://bulbapedia.bulbagarden.net/wiki/EP146). No literal card or unseen
+trade, battle or call purpose is claimed. All four complete nonempty owner/captured Plex contexts passed
+current-zero/correct-copy marks with show preferences unset; protected raw E41 34640/178856668 remained unchanged.
