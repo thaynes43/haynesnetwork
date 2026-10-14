@@ -1,5 +1,15 @@
 # The plan queue — how Fable 5 works it
 
+## Ungroomed spike exclusion (owner direction, 2026-10-14)
+
+[PLAN-078](078-repair-agent-saga.md) and its PLAN-079 through PLAN-088 phases are
+**PAUSED, UNGROOMED SPIKES**, not entries in the automatic release queue below.
+SAGA means the full project; each phase is an epic-level usable deliverable spike;
+proposed stories are bounded to one agent in one session. Dependencies determine
+possible serial/parallel work only after grooming. Do not dispatch from numbering,
+directory presence, spare capacity or a merged document. Each story needs explicit
+execution authorization, and each next epic needs a separate grooming decision.
+
 This folder is a **queue of release-sized plans**. Each `NNN-<slug>.md` is one plan ≈ one
 release. Fable 5 (the autonomous orchestrator) works the queue **lowest active number first**,
 takes each plan end-to-end as its own release, then moves it to `completed/` and picks up the

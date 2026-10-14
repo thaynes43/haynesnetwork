@@ -1,5 +1,21 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14: repair work paused; repair-agent saga captured as ungroomed spikes
+
+- [Repair pause #992](https://github.com/thaynes43/haynesnetwork/issues/992) is the
+  authoritative stopping point and supersedes the older running-worker notes below.
+  The original repair owner and Seerr Repair Bot were verified idle; both owned
+  repair Jobs/Pods stopped, with files/watch history preserved. Do not restart them.
+- [Bot scope #991](https://github.com/thaynes43/haynesnetwork/issues/991) remains benched.
+  The former conditional kickoff and keep-moving monitoring are cancelled.
+- [PLAN-078: Repair Agent Saga](plans/078-repair-agent-saga.md) captures the voice
+  brainstorming. Separate PLAN-079 through PLAN-088 files are **ungroomed epic-level
+  spikes**, with proposed one-agent/one-session stories, dependencies, evidence,
+  usable outputs, proposed caps and explicit grooming/next-epic gates.
+- This change is documentation only. No story, implementation, repair, benchmark,
+  training, model/configuration change, bot/UI activation or schedule is authorized.
+  Future ideas remain phases of the same saga; an explicit new decision is required.
+
 ## 2026-10-14 11:59:39Z: v0.125.4 verified live; Pokemon E30 and Mickey E37/E38 complete
 
 - Frozen checkpoint: **2026-10-14T11:59:39.296664418Z**. Signed v0.125.4 deployed through
