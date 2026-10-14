@@ -1,5 +1,19 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14: voice-call vision amendment saved; all execution remains paused
+
+- [Shared platform vision](context/2026-10-14-haynes-os-vision.md): tentative
+  “Haynes OS,” dev-env v2 foundation, domain-extensible contracts and HaynesNetwork
+  as the proving ground for full local-first Plex/books/audiobooks support.
+- [PLAN-088](plans/088-support-escalation-director-spike.md) preserves local -> paid
+  -> one persistent director identity and prompt bounded improvement dispatch only
+  within approved controls and without a usage hold; regression validation precedes deployment.
+- [PLAN-089](plans/089-smart-home-saga.md) is a separate lightweight future saga,
+  covering local voice/chat examples and domain-specific Zigbee/dongle fixtures.
+  No deep design, device action or implementation is authorized.
+- All saga/epic spikes remain ungroomed and paused. Issues #991/#992 and the existing
+  no-restart/no-monitoring boundary remain unchanged.
+
 ## 2026-10-14: repair work paused; repair-agent saga captured as ungroomed spikes
 
 - [Repair pause #992](https://github.com/thaynes43/haynesnetwork/issues/992) is the

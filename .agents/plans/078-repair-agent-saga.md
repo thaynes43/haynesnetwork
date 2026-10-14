@@ -12,6 +12,19 @@
   The latter supersedes earlier live-worker observations in HANDOFF. Do not resume
   PLAN-077 or the existing Seerr Repair Bot session from this saga.
 
+## Full support goal and shared platform
+
+The goal is full **local-first user support across the HaynesNetwork Plex, books
+and audiobooks suite**, with reliable media-item repair proven before general
+support. It is not a promise that every case can be solved locally.
+
+The tentative [Haynes OS vision](../context/2026-10-14-haynes-os-vision.md) describes
+dev-env v2 as the shared multiprovider execution/coordination foundation and
+HaynesNetwork as the high-activity, noncritical proving ground. The name is not final;
+framework contracts remain exploratory and domain-extensible. The separate future
+[smart-home saga](089-smart-home-saga.md) is not a phase of this media/support saga.
+All ten media phases below remain ungroomed and paused.
+
 ## Purpose and sequence
 
 First investigate a usable closed loop for reported media problems using the
