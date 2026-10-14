@@ -53,14 +53,30 @@ Production runs **v0.125.0** as of 2026-10-13 23:09Z. All three web replicas, ev
 3. **Asked, answer pending:** Q-12 (DESIGN-055) was sent through the owner's question tool after the live check,
    recommending Seerr web push. Email and web push were read back off, so reporters currently see the comment
    only when opening their issue. Do not change delivery without the ruling; continue the independent repairs.
-4. **In progress, 2026-10-13 23:20Z:** Ben's approved batch Job is
-   `frontend/p077-ben10-replace-batch-10132320` (E10/E12). Mickey's 23 initial slots are approved and follow Ben's
-   verified carries; Pokémon's fresh plan and alternatives are under final review. The media declaration is
-   `act-231926-392897`, expiry 2026-10-14T01:19:26Z. Inspect jobs and domain audits before resuming; never replay
-   completed slots. Actual imported stories, episode coverage and watch-state verification are owed.
-   **Replace the wrong-content files.** This is #928, and the PR #965 comment has the exact slot lists, release
-   preferences and copy mappings. Run `declare-activity` first, then `replace-plan --slots`, then one `replace-batch`
-   Job per season. Stream each Job's logs while it runs, because finished staff Jobs vanish quickly.
+4. **In progress, 2026-10-14 01:25Z:** the initial Jobs stopped after their verified first carries. Do not rerun
+   any original batch. Production is still v0.125.0. [#970](https://github.com/thaynes43/haynesnetwork/pull/970)
+   and [#972](https://github.com/thaynes43/haynesnetwork/pull/972) are merged; release
+   [#971](https://github.com/thaynes43/haynesnetwork/pull/971), v0.125.1, contains both and awaits current-head checks.
+   Verify its image plus signature, deploy all three pins and verify live before resuming these exact parents:
+   - Ben E12: file 79992, 709759175 bytes, English audio and Adventures in Babysitting title card verified. Ben E10:
+     file 79991, 342394594 bytes, correct Animo Farm story but Arabic only. The reviewed P6 English candidate is
+     `d1937044088c21f3`; regenerate and verify the full Language Replace plan before the existing writer runs.
+   - Mickey E1/E2: Fix `634962cc-05dc-4cb9-bcf6-eea6116a2adb`, verified carry
+     `f96bd984-8e9d-47d4-969d-a55bd1436ab6`, owned download `c2b268d1-9a61-4bc1-8653-7fd81724b64c`.
+     Only E1/E2 were cleared. Native numbering claims E1 to E4; protected E3/E4 file 24800 remains unchanged.
+   - Pokémon E1: Fix `ac29d8ad-fd56-439f-810d-51a86e170ae3`, verified carry
+     `3ada7188-899c-4865-b698-4a6fe098a4cb`, owned download `7d744369-583d-4764-a8d2-87bfd4535cb7`.
+     Only E1 was cleared. The completed T0Bi source is 1563438952 bytes, with Hindi, Telugu, Tamil and English audio.
+     Suicune, Professor Elm and Totodile establish the classic Johto story; no literal title card was observed.
+     Native numbering claims E12; protected E12 file 33229 remains unchanged.
+   - Pokémon E8 and E31 remain untouched. Two bounded NZB reads found only obfuscated split-archive and parity
+     subjects; correct story, release group and English are unproved. Do not describe this as no release existing.
+   Use the audited `owned-import-plan` / `owned-import-run` on the existing parent and exact download. A native
+   import is adopted only through actual history, full-target file and physical proof, with no invented command.
+   Verify actual English, story, file identity, unchanged protected files, both Plex servers and per-account carry
+   marks before the next individually approved replacement. Fresh plans must still match the exact approved source.
+   Current activity is `act-005117-418778`, expiry 2026-10-14T02:51:17Z; root renews and ends it. Long work runs
+   as bounded, CPU-limited worker Jobs. Preserve logs and merge per-slot proof to main in the same session.
    - Ben 10 (2016), tvdb 318145: S1 E10 and E12 hold Ben 10 (2005) episodes.
    - Pokémon, tvdb 76703: S3 E01-24, E26, E28-34, E36 and E38 hold Pokémon Horizons. Never pick the Saon x265
      releases.
