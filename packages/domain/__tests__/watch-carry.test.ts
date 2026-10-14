@@ -225,6 +225,7 @@ function stubSonarr(opts: { contentOn?: Array<[number, number]>; copyNames?: Rec
     /** Sonarr's season release list (the Wrong-Content Replace's search), and the grabs sent. */
     releases: [] as Array<Record<string, unknown>>,
     grabs: [] as Array<Record<string, unknown>>,
+    history: [] as Array<Record<string, unknown>>,
     searches: 0,
     deleteAttempts: [] as number[],
     deleteFailures: new Set<number>(),
@@ -265,6 +266,7 @@ function stubSonarr(opts: { contentOn?: Array<[number, number]>; copyNames?: Rec
       if (state.deleteAttempts.length > 0 && state.failDeletionReadBack) return json({ message: 'file read-back unavailable' }, 400);
       return json([...files.values()].map((f) => ({ id: f.id, seriesId: SERIES_ID, seasonNumber: seasonOf(f), relativePath: f.relativePath, sceneName: f.sceneName, releaseGroup: 'GRP', size: f.size, quality })));
     }
+    if (method === 'GET' && p === '/api/v3/history') return json({ page: 1, pageSize: 200, totalRecords: state.history.length, records: state.history });
     if (method === 'GET' && p === '/api/v3/queue') return json({ page: 1, pageSize: 200, totalRecords: 0, records: [] });
     if (method === 'GET' && p === `/api/v3/series/${SERIES_ID}`) {
       return json({ ...(arrFixture('sonarr.series-byid') as Record<string, unknown>), id: SERIES_ID, title: 'Show', year: 2020 });
@@ -276,6 +278,7 @@ function stubSonarr(opts: { contentOn?: Array<[number, number]>; copyNames?: Rec
     if (method === 'POST' && p === '/api/v3/release') {
       if (state.failGrabs) return json({ message: 'release grab refused' }, 400);
       state.grabs.push(body as Record<string, unknown>);
+      for (const episodeId of body.episodeIds as number[]) state.history.push({ id: 1000 + state.history.length, date: new Date().toISOString(), eventType: 'grabbed', seriesId: SERIES_ID, episodeId, sourceTitle: state.releases.find(r => r.guid === body.guid)?.title, downloadId: `dl-${body.guid}`, data: {} });
       return json(body);
     }
     if (method === 'GET' && p === '/api/v3/manualimport') {

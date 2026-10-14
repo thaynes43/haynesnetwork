@@ -121,7 +121,13 @@ export * from './fix-flow';
 export * from './repair-guide-settings';
 export * from './fix-guards';
 export * from './fix-plan';
-export { readFileAudio, languageVerdict, type FileAudio, type FileAudioLanguages, type LanguageVerdict } from './language-check';
+export {
+  readFileAudio,
+  languageVerdict,
+  type FileAudio,
+  type FileAudioLanguages,
+  type LanguageVerdict,
+} from './language-check';
 export * from './audio-preference';
 export * from './language-replace';
 export * from './playback-evidence';
@@ -324,3 +330,6 @@ export * from './wrong-content-replace';
 
 // DESIGN-055 P4 decision 39 — private staff failed-grab continuation.
 export * from './wrong-content-retry';
+
+// DESIGN-055 P4 decision 40: private original-part continuation.
+export { planWrongContentPartResume, runWrongContentPartResume } from './wrong-content-parts';

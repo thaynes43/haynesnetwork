@@ -1,5 +1,12 @@
 // DESIGN-055 P4 decision 39: one staff retry on the original verified Wrong-Content Replace.
 // The caller never supplies episode IDs. Claims precede external writes; uncertain claims are never replayed.
+import {
+  hasWrongContentParts,
+  planWrongContentPartRetry,
+  runWrongContentPartRetry,
+  selectedPartBindings,
+  readWrongContentPartsForInterlock,
+} from './wrong-content-parts';
 import { createHash, randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
@@ -332,6 +339,86 @@ export async function deferredWrongContentFailures(input: {
       ),
     );
   for (const f of active) {
+    let multipart = false;
+    try {
+      multipart = await hasWrongContentParts(input.db, f.id);
+    } catch (e) {
+      if (e instanceof FixRefusedError) continue;
+      throw e;
+    }
+    if (multipart) {
+      let owned: Awaited<ReturnType<typeof readWrongContentPartsForInterlock>>;
+      try {
+        owned = await readWrongContentPartsForInterlock(input.db, f.id);
+      } catch (e) {
+        if (e instanceof FixRefusedError) continue;
+        throw e;
+      }
+      const { fix, carry, selection } = owned;
+      const ledgerGrabs = await exec
+        .select()
+        .from(ledgerEvents)
+        .where(
+          and(
+            eq(ledgerEvents.mediaItemId, fix.mediaItemId),
+            eq(ledgerEvents.source, 'sonarr'),
+            eq(ledgerEvents.eventType, 'grabbed'),
+            sql`${ledgerEvents.payload}->>'downloadId' IN (${sql.join(
+              downloads.map((d) => sql`${d}`),
+              sql`, `,
+            )})`,
+          ),
+        );
+      const bindings = selectedPartBindings(selection, fix.actionsTaken);
+      for (const failure of input.failures) {
+        if (!failure.downloadId || failure.parentId !== carry.seriesId) continue;
+        if (
+          bindings.all.some(
+            (b) =>
+              b.downloadId === failure.downloadId &&
+              b.intent.title === failure.title &&
+              b.grabs.every((g) => Date.parse(g.date) <= failure.failedAt.getTime()),
+          )
+        )
+          held.set(`${failure.downloadId}\u0000${failure.parentId}`, WRONG_CONTENT_RETRY_HOLD);
+        else if (
+          bindings.unresolved.some((i) => {
+            const call = fix.actionsTaken.find(
+              (a) => a.step === 'wrong_content_part_call_result' && a.attemptId === i.attemptId,
+            );
+            const since = Math.floor(Date.parse(String(call?.startedAt ?? i.at)) / 1000) * 1000;
+            const until = call ? Date.parse(String(call.finishedAt)) : null;
+            const native = failure.grabbedHistory;
+            return (
+              i.title === failure.title &&
+              failure.failedAt.getTime() >= since &&
+              (native
+                ? native.downloadId === failure.downloadId &&
+                  native.title === i.title &&
+                  Date.parse(native.date) >= since &&
+                  (until === null || Date.parse(native.date) <= until)
+                : !ledgerGrabs.some(
+                    (g) =>
+                      g.payload.downloadId === failure.downloadId &&
+                      g.payload.sourceTitle === i.title,
+                  ) ||
+                  ledgerGrabs.some(
+                    (g) =>
+                      g.payload.downloadId === failure.downloadId &&
+                      g.payload.sourceTitle === i.title &&
+                      g.occurredAt.getTime() >= since &&
+                      (until === null || g.occurredAt.getTime() <= until),
+                  ))
+            );
+          })
+        )
+          held.set(
+            `${failure.downloadId}\u0000${failure.parentId}`,
+            WRONG_CONTENT_RETRY_UNRESOLVED_HOLD,
+          );
+      }
+      continue;
+    }
     let p: Awaited<ReturnType<typeof parent>>;
     try {
       p = await parent(input.db, f.id, false, true);
@@ -432,6 +519,7 @@ export interface WrongContentRetryInput {
   /** Trusted private staff invocation, never accepted by a public router. */
   actor: { kind: 'staff' };
   fixRequestId: string;
+  failedDownloadId?: string;
   /** Optional exact wrong-story download to discard. No caller episode IDs. */
   conflictingDownloadId?: string;
   /** Bind a particular offer after inspecting the candidate list. */
@@ -460,6 +548,13 @@ export interface WrongContentRetryPlan {
     queueItemId: number;
     title: string;
     source: { path: string; size: number };
+  };
+  /** D40 selected-part cleanup; absence leaves the legacy D39 plan unchanged. */
+  failedQueue?: null | {
+    downloadId: string;
+    queueItemIds: number[];
+    title: string;
+    options: { removeFromClient: false; blocklist: false; skipRedownload: true };
   };
   candidates: Array<{
     key: string;
@@ -720,6 +815,10 @@ async function build(input: WrongContentRetryInput) {
 export async function planWrongContentRetry(
   input: WrongContentRetryInput,
 ): Promise<WrongContentRetryPlan> {
+  if (await hasWrongContentParts(input.db, input.fixRequestId))
+    return planWrongContentPartRetry(input);
+  if (input.failedDownloadId)
+    refuse('The latest successful grab does not identify the complete original slot.');
   return (await build(input)).plan;
 }
 
@@ -731,6 +830,10 @@ export async function runWrongContentRetry(
     conflictEvidence?: string;
   },
 ) {
+  if (await hasWrongContentParts(input.db, input.fixRequestId))
+    return runWrongContentPartRetry(input);
+  if (input.failedDownloadId)
+    refuse('The latest successful grab does not identify the complete original slot.');
   const current = await build(input),
     { plan, p, claim } = current;
   if (plan.digest !== input.digest) changed('The recovery changed. Read a fresh plan.');

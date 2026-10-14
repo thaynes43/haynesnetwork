@@ -2,6 +2,8 @@
 
 - **Status:** Accepted (owner, 2026-10-12: ADR-109, ADR-110 and ADR-111 accepted; Q-01..Q-05 ruled below; P1..P8
   approved in PLAN-077's order, one phase per release, each verified live before the next)
+- **Implementation amendment, 2026-10-14:** driving-agent design review authorized P4 decision 40 implementation
+  at 09:36Z. This is not a new owner ADR ruling or approval for live execution. Accepted ADRs stay unchanged.
 - **Last updated:** 2026-10-14 (P4 decision 39 failed-grab staff continuation). Before that 2026-10-14 (P6 decision 15 paired-file track hints). Before that 2026-10-14 (P4 decision 38 owned-import follow-through and D-12 staff guidance). Before that 2026-10-13 (P4 decision 38, the coordinator's ruling on #928: the staff Wrong-Content Replace). Before that 2026-10-13 (P7 decisions 1-10 after D-11: the Seerr Issue bridge as built, the bridge user, the `seerr_issue_bridge` setting, the comment's wording, one write per issue and kind, the exact link, when the resolve happens; Q-12 raised). Before that 2026-10-13 (P6 decision 14 scoped to the audit's flagged shows, ADR-115). Before that 2026-10-13 (P4 decisions 35 to 37, issue #928's evidence: a placement may change the episode count, a second parking episode for a second open cycle, the Second-Copy Fix takes a multi-episode copy). Before that 2026-10-13 (P6 decision 14 and Q-03 amended: the owner's ruling on #955, "English if present", for staff defaults). Before that 2026-10-13 (P6 decision 3: a server's item is the one in a library of the title's own kind, PR #954; P6's live status and sweep in PLAN-077). Before that 2026-10-13 (P6 decision 13: the Language Replace never takes another post of the file's own release; decision 2: Plex lists a show's own track languages first). Before that 2026-10-13 (P4 decisions 26 to 34, ADR-114, the owner's ruling on issue #928 "Carry marks, then move": the Watch Carry, the Plex ordering switch inside it, and a two-episode file through the parking episode; decisions 10, 20, 21 and 23 amended). Before that 2026-10-13 (P6 decisions 1-12 after D-08: the language-aware Wrong language as built, Q-08 answered (a show only), the Audio Preference write and read-back, the track advice, the Language Replace, no removal without a release in the language, a season one episode at a time, the staff scan). Before that 2026-10-13 (P5 decision 17, issue #936: a release that holds several episodes, every one of them
   missing, is a pick for all of them). Before that 2026-10-13 (P4 decision 25, issue #928: the staff Second-Copy Fix). Before that 2026-10-13 (P5 decision 15: another movie's release is refused; P5 decisions 1-14 after D-06: the Release Pick as built, the season list narrowed to the episode, Q-07's override half resolved, the Release List, the open check per episode, the follow-through). Before that 2026-10-13 (P4 decisions 18 to 24, the owner's ruling on Q-11: staff's Season Re-map puts every file of a season where its own name says, passing cycles through a parking episode, after a Plex check, a watch-state check and an evidence spot-check). Before that 2026-10-13 (Q-10 ruled A, ADR-113: the Mislabel Block's mislabelled-name terms, D-05 "Q-10 ruling decisions"). Before that 2026-10-13 (P4 decisions after D-05: the Episode Re-map as built, no discard, the Title Check and the Mislabel Block as built; decisions 15 to 17: a flag the person cannot act on goes to staff, a library's own names are no evidence, staff run the re-map from the cluster). Before that 2026-10-12 (P3 decisions after D-11: the Seerr Issue mirror, the title page reports, the `/r/seerr/<id>` link, the admin list and Activity's Import Check row; P2 decisions in D-02, D-05 and D-07; P1 decisions in D-08 and D-09; D-12 and Q-04 and Q-09 amended: the readiness gate is the owner's judgment, ADR-112)
 - **Satisfies:** PRD-001 R-262..R-271, US-18, US-19, AC-40..AC-45; governed by ADR-109 (repair in place), ADR-110
@@ -743,6 +745,106 @@ do not edit)", "must not contain" terms only, no tags.
     call must never outrank a newer verified actual GRAB; join call facts to that intent's attempt identity and
     exact scope, independent of their later append order. A newer unproved command remains observe-only.
     The janitor keeps its existing enforcement modes and search budgets throughout.
+
+40. **Recover one selected part of a Wrong-Content Replace (implementation authorized, 2026-10-14).** Decision 38 already accepts
+    several disjoint releases for one original file. Mickey's final S1 E13 to E16 file holds E7/E8 stories; two
+    selected releases refill E13/E14 and E15/E16. Today decision 39 requires one failed grab to cover the entire
+    original slot, and an initial release-call exception makes its parent terminal `failed`. A successful first
+    part or an accepted call whose response is lost can then be stranded. The proposal extends the same staff
+    repair, with one original deletion and one verified Carry; it never creates a second Fix or Carry.
+
+    **Immutable selection.** Before the original deletion, store a versioned selection on the Carry beside the
+    existing version-1 `wrongContentDeletion`: each part's stable identity, selected key, release GUID/indexer,
+    exact release title and sorted episode IDs. Its canonical disjoint union must equal every original deletion-slot
+    episode exactly once. Store the selection digest and the full series boundary outside that original slot. A malformed,
+    overlapping, missing or ambiguous selection refuses before writes. Caller episode IDs never define a part.
+    Preserve decision 38's snapshot, pre-clear, same-content mapping, deletion read-back and Carry verification.
+
+    **Truthful open lifecycle.** Once deletion is confirmed, a release-call error appends its part/attempt evidence
+    through the domain writer and stops further dispatch; it does not transition this incomplete repair to
+    terminal `failed`. Keep `actioned` until an actual accepted receipt or positively bound native GRAB supports
+    `recordFixAction(..., search_triggered)`. Save each part's factual receipt immediately, before the next part.
+    If a prior part already established `search_triggered`, append the later error without regressing that state.
+    No plain SQL status repair, reopened terminal parent or new lifecycle enum is proposed. Pre-delete failures
+    retain their existing recovery rules. Completed parents accept factual follow-through only, never new claims.
+
+    **Three distinct cases.** A genuinely failed selected download may receive one reviewed retry for its stored
+    part. Its finite actual call window, unique native GUID, full-part GRAB coverage and later genuine same-GUID
+    failure must be proved; no import or import claim may exist for that failed GUID. A release POST exception
+    alone is not a failed download. Lost response/audit, missing native identity and uncertain cleanup remain
+    observe-only; absence from a bounded history page never authorizes another POST. An original selected part
+    with no durable dispatch claim may be resumed once from the immutable original selection after a fresh plan.
+    A claimed part is never reclassified as unattempted. This resume requires a complete selection produced by
+    the new writer contract that claims before every dispatch; missing intent in an older writer's audit is not
+    proof of no dispatch. Unresolved transport on this parent blocks new dispatch
+    until actual proof reconciles it, even if the next part is disjoint.
+
+    **Private API.** Extend `replace-retry-plan/run` with an exact `--failed-download` selector for a multipart
+    parent; derive its part from saved attempts and native history, not from input episode IDs or raw queue numbers.
+    The existing one-part decision 39 interface and guards remain compatible. For an original never-claimed part,
+    provide private `replace-part-plan/run --parent fix:<id> --part <stored-part-id>`; only its exact original
+    selected offer may be dispatched, after fresh classification. Both runs require a fresh digest and staff
+    evidence. The caller is explicitly staff and the original requester remains null. Public routes gain no
+    parent, part, actor or override argument; reuse existing safe local refusal reasons.
+    Persist this in existing Carry `detail` and Fix `actionsTaken` JSONB, using existing parent row locks and
+    audit writers. No new table, column, status enum, DDL or migration is needed.
+
+    **Other parts and protected files.** The retry target must still be empty. Every other selected part is either
+    empty and positively unclaimed under the complete new writer contract or genuinely pending under its recorded
+    attempts, or imported from its exact positively bound selected
+    GUID with immutable parent-audited native import IDs, whole-part episode/file IDs, names and source bytes.
+    A native auto-import may be adopted only after the same evidence is recorded, without replaying ManualImport.
+    Staff ratifies actual English and all intended stories; a filename or HTTP receipt alone is not that proof.
+    An unsettled import claim, foreign file or changed original/destination identity refuses. All episodes outside
+    the retry target, including imported other parts and the completed prefix, are protected in the fresh digest
+    and actual pre-command/read-back boundary. A pending part may advance the original boundary only through
+    proved same-parent selected import evidence; never silently replace a protected fingerprint with current data.
+
+    **Claims and transport.** Use the original Fix row lock and append-only actions for one positive pre-write
+    claim per part/failed-GUID/attempt. Revalidate the canonical selection, part state, all protected identities,
+    fresh allowed offer and parent fingerprint before claiming. Claims contain database work only. One claimed
+    external command executes once, outside the transaction, with bounded transport and actual start/returned-end
+    timestamps saved separately from its canonical receipt. Resolve and validate read-only target lookup before
+    the positive dispatch claim, then revalidate the locked database fingerprint; a lookup failure cannot strand
+    an unissued original part behind a transport claim. Every original and retry part saves its actual call
+    completion before another call; never substitute the next part's end time or reconstruct a transport timestamp.
+    Bind at most one native GUID whose complete part GRAB
+    coverage is inside that factual window, from the floored start second through the exact returned end, with no
+    future grace period. Missing actual call facts do not gain authority from the parent creation time or an open
+    intent. Serialize new mutating commands on the same parent while a command remains unsettled, including owned
+    imports. Join late factual receipts to their part and attempt; durable pre-command intent order determines the
+    latest attempt for that part. Late A evidence never outranks B, and unproved B stays observe-only.
+
+    **Failed queue cleanup.** A multipart retry may remove only its exact positively owned, genuinely failed
+    native download, after checking the current queue identity and saved full-part GRAB binding. Audit intent,
+    result and absence read-back on the same parent, using `removeFromClient: false`, `blocklist: false`,
+    `skipRedownload: true` and no search. An uncertain removal is observed, never repeated. Re-read the empty retry
+    targets and every protected file before the grab. No library delete occurs. This does not broaden decision
+    39's existing whole-slot wrong-source discard or grant ownership of a foreign reparsed queue row.
+    P0 classifies an unextracted archive as report-only, not a bad release. A genuinely failed selected download
+    does not by itself prove physical wrong content or authorize blocklisting, so selected-part cleanup preserves
+    the release. Decision 39's physically proved wrong-source discard retains its existing blocklist behavior.
+
+    **Ownership and completion.** Owned import and failed-download janitor ownership consume the same canonical
+    part/attempt/GUID binding, including all original and later owned attempts. Import targets equal that entire
+    part, never the whole original slot or a sliced file. The queue janitor also holds an active verified selected
+    download before queue enforcement only when its saved actual GUID, native series and exact title all agree;
+    this prevents the ordinary bad-release removal from bypassing selected-part neutral cleanup. The failed-history
+    janitor defers only those active verified owned failures; unresolved proof holds remain narrowly scoped, and unrelated failures keep their current policy,
+    enforcement modes and search budget. The original full-slot completion obligation stays in the verified Carry.
+    Keep the normal generic episode/time ledger matcher; do not impose GUID matching on ordinary Fixes. Runtime
+    finish still requires every original-slot episode's actual selected GUID/native import/file/bytes, physical
+    English and story proof, normal ledger event and strict per-account Plex/Carry verification. One part, a grab
+    or a prepared command cannot satisfy it. No synthetic history or forced completed state is introduced.
+
+    **Review and validation hold.** Driving-agent design review authorized implementation at 09:36Z; no owner
+    acceptance or new ADR ruling is implied. Test a single original four-episode file filled by two pair releases,
+    one-pair failure with the other empty or genuinely imported, accepted-but-503 calls, lost audits, concurrent
+    claims, unknown transport, never-claimed continuation, stale or foreign files/GUIDs, overlapping selections,
+    raw numbering mismatches, native auto-import adoption, delayed A receipts after B, normal all-four completion
+    and mixed janitor ownership. Preserve every decision 39 regression. Run only affected tests under nice 19 with
+    one worker; no CPU burners, wide parallel suites or looped load reproduction on the shared production node.
+    Root copy review, required PR checks, signed release and verified deployment precede any live multipart recovery.
 
 ### D-06 Release Pick
 

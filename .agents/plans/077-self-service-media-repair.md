@@ -700,6 +700,42 @@ names, never deleting a file, after a watch-state check on every Plex server and
         - Pokémon S8: the flag is a false positive; the title card shows E32 is right.
         - Paw Patrol S5E29-30: holds E25's story and a copy of E32.
 
+### P4 follow-up: recover a failed selected replacement part (In progress, 2026-10-14)
+
+- **Implementation authorized:** driving-agent review approved DESIGN-055 P4 decision 40 at 09:36Z, extending the existing staff multipart
+  Wrong-Content Replace. A four-episode wrong file may be filled by two exact pair releases, but the shipped
+  retry requires a failed whole-slot grab and an initial POST exception terminally fails the original parent.
+  This is a supported-path defect; one failed or uncertain part must not require another Fix, Carry or deletion.
+- **Implementation:** record a canonical immutable disjoint part selection before deletion; preserve
+  the original full-slot Carry and completion obligation. Keep the parent truthfully open after post-delete
+  release errors, save each actual part receipt before advancing, and use existing lifecycle/audit writers only.
+  Extend private retry selection with the exact failed GUID, deriving its entire part from saved native proof.
+  The reviewed private continuation may dispatch an original never-claimed selected part once; a
+  claimed uncertain command remains observe-only. No terminal-parent reopening or public override is proposed.
+  Use existing Carry `detail`/Fix `actionsTaken` JSONB and parent row locks; no DDL or migration is needed.
+- **Required guards:** original null staff ownership, verified same-content Carry, empty retry targets, finite
+  actual call/GUID/full-part failure proof, no import claim for the failed GUID, and a fresh allowed exact-part
+  offer. Other parts must be empty and positively unclaimed under the new writer contract or genuinely pending,
+  or imported from their recorded selected GUID with
+  immutable whole-part native/file/byte read-back. Protect all unselected current parts and every completed-prefix
+  file. Serialize positive claims and unsettled transport on the original parent; late receipts cannot outrank
+  newer pre-command intent. Remove only an exact owned failed queue download, audited with client deletion off,
+  blocklist off, redownload skipped and no search; never delete a library file again or replay an uncertain command.
+  This preserves P0's unpack-failure ruling: failure alone is not physical wrong-content proof. Decision 39's
+  existing positively proved wrong-source discard keeps its blocklist behavior.
+- **Completion and policy:** keep generic normal episode/time matching and the original full-slot obligation.
+  Runtime finish separately proves every actual GUID, native import, file/bytes, English/story, ledger event and
+  strict Plex/Carry state. Extend per-part owned-import and janitor bindings without changing janitor modes or
+  search budgets. Existing whole-slot decision 39 behavior and focused regressions remain intact.
+- **Local validation:** the four affected domain files passed 110 focused cases before the final boundary corrections;
+  all 22 multipart cases have passed across focused runs, including unpack-only neutral cleanup, missing Carry,
+  pre-claim lookup failure and exact queue-janitor ownership. The private CLI suite passed 25 cases. Domain and sync
+  typechecks and changed-file lint passed. Hard rule 4 and the domain writer README are updated in this change.
+- **Next:** root review and required PR checks, followed by a signed release and verified live deployment. Tests
+  ran under nice 19 with one worker only. No CPU burners or wide/looped parallel
+  tests on this shared production node. Mickey E13 to E16 remains last, after all twenty-three initial slots and a fresh
+  root-ratified physical same-content mapping; implementation authorization is not execution approval.
+
 ### P5: Release Pick
 
 1. Release list display, plain-words rejection mapping, the three row states, hard refusals (D-06).

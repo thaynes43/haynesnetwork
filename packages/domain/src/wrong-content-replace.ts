@@ -14,6 +14,10 @@
 // `@hnet/arr/write` from this package (hard rule 4), inside one Fix Request per slot (requester null: the staff tool).
 import { createHash } from 'node:crypto';
 import {
+  makeWrongContentPartSelection,
+  dispatchWrongContentSelectedPart,
+} from './wrong-content-parts';
+import {
   fixRequests,
   watchCarries,
   type DbClient,
@@ -281,6 +285,7 @@ export interface RunWrongContentReplaceInput extends WrongContentRequest {
 export interface WrongContentReplaceResult {
   fixRequestId: string;
   grabbed: Array<{ key: string; title: string; lands: string[] }>;
+  waiting?: boolean;
   carry: {
     carryId: string;
     status: string;
@@ -730,6 +735,15 @@ export async function runWrongContentReplace(
     }
   }
 
+  const partSelection =
+    picks.length > 1
+      ? makeWrongContentPartSelection({
+          picks,
+          slot: slotIds,
+          episodes: await input.arr.read.sonarr.listEpisodes(plan.seriesId),
+          files: await input.arr.read.sonarr.listEpisodeFileReleases(plan.seriesId),
+        })
+      : null;
   let carry: WatchCarrySnapshot | null = null;
   let wrongContentDeletion: DeletionSnapshot | null = null;
   if (input.watchCarry) {
@@ -779,6 +793,7 @@ export async function runWrongContentReplace(
           releases: picks.map((p) => p.offer.title),
           sameAs: sameAsFiles,
           wrongContentDeletion,
+          ...(partSelection ? { wrongContentSelection: partSelection } : {}),
         },
         pauseMs: input.carryPauseMs,
       });
@@ -946,6 +961,11 @@ export async function runWrongContentReplace(
 
   const sonarr = input.arr.write.sonarr;
   const deletes: FixActionEntry[] = [];
+  if (partSelection && (!carry || !wrongContentDeletion))
+    throw new FixRefusedError(
+      'copy_refused',
+      'The original full-slot Watch Carry is not verified.',
+    );
   for (const f of plan.files) {
     const endpoint = `DELETE /api/v3/episodefile/${f.id}`;
     try {
@@ -1106,6 +1126,38 @@ export async function runWrongContentReplace(
     .catch(() => null);
   const grabbed: WrongContentReplaceResult['grabbed'] = [];
   const label = (id: number) => plan.slot.find((e) => e.id === id)?.label ?? String(id);
+  if (partSelection) {
+    if (!carry || !wrongContentDeletion)
+      throw new FixRefusedError(
+        'copy_refused',
+        'The original full-slot Watch Carry is not verified.',
+      );
+    await runCarry();
+    if ((carryOutcome as WrongContentReplaceResult['carry'])?.status !== 'verified')
+      throw new FixRefusedError(
+        'copy_refused',
+        'The original full-slot Watch Carry is not verified.',
+      );
+    await noteWatchCarry({
+      db: input.db,
+      carryId: carry.carryId,
+      detail: { wrongContentDeletion: { ...wrongContentDeletion, grabStarted: true } },
+    });
+    for (const [index, p] of picks.entries()) {
+      const result = await dispatchWrongContentSelectedPart({
+        db: input.db,
+        arr: input.arr,
+        actor: { kind: 'staff' },
+        fixRequestId,
+        partId: partSelection.parts[index]!.id,
+        offer: p.offer,
+      });
+      if (result.outcome !== 'grabbed')
+        return { fixRequestId, grabbed, carry: carryOutcome, waiting: true };
+      grabbed.push({ key: p.offer.key, title: p.offer.title, lands: p.ids.map(label) });
+    }
+    return { fixRequestId, grabbed, carry: carryOutcome };
+  }
   for (const p of picks) {
     try {
       if (!target || target.kind !== 'sonarr')
@@ -1119,8 +1171,17 @@ export async function runWrongContentReplace(
         wrongContentDeletion.grabStarted = true;
       }
       await appendFixActions({
-        db: input.db, fixRequestId,
-        actions: [{ step: 'grab_intent', at: at(), release: p.offer.title, key: p.offer.key, episodeIds: p.ids }],
+        db: input.db,
+        fixRequestId,
+        actions: [
+          {
+            step: 'grab_intent',
+            at: at(),
+            release: p.offer.title,
+            key: p.offer.key,
+            episodeIds: p.ids,
+          },
+        ],
       });
       await sendReleaseGrab({
         arr: input.arr,
