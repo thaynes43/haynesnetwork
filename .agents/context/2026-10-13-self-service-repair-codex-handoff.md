@@ -58,16 +58,16 @@ started at 05:36:31Z after actual predecessor deletion and full read-only revali
 3. **Asked, answer pending:** Q-12 (DESIGN-055) was sent through the owner's question tool after the live check,
    recommending Seerr web push. Email and web push were read back off, so reporters currently see the comment
    only when opening their issue. Do not change delivery without the ruling; continue the independent repairs.
-4. **In progress, 2026-10-14 05:50Z:** do not rerun any original batch. Signed v0.125.1 deployed
+4. **In progress, 2026-10-14 05:58Z:** do not rerun any original batch. Signed v0.125.1 deployed
    [#970](https://github.com/thaynes43/haynesnetwork/pull/970) and
    [#972](https://github.com/thaynes43/haynesnetwork/pull/972); the original owned downloads resumed under their
    existing parents and verified Carries. See the [runtime proof](2026-10-14-self-service-repair-runtime-proof.md).
    - Ben E12 is complete: file 79992/709759175, English and literal Adventures in Babysitting card. Ben E10's
      correct but Arabic-only first import was replaced through the existing Language Replace writer; final
      80009/454603103 is the reboot Animo Farm story with English and both-server proof. Its Fix completed normally.
-   - Pokemon E1 to E7 and E9 to E12 completed normally with actual whole imports, physical English/story and
+   - Pokemon E1 to E7 and E9 to E14 completed normally with actual whole imports, physical English/story and
      per-account Plex proof. The old finite Job was deleted only at a verified idle checkpoint. Its corrected
-     continuation adopted the sealed, freshly revalidated prefix and next works E13. Never replay completed
+     continuation adopted the sealed, freshly revalidated prefix, verified E13/E14 and now works E15. Never replay completed
      replacements. The active Job is `frontend/pokemon-owned-cont-v1252-20261014-0530`, UID
      `adcad698-99a1-4b2d-9092-50c8f6e1ba29`, deadline 2026-10-14T10:36:31Z; start no new replacement after
      10:21:31Z. Keep its reviewed signed helper pinned until it finishes.

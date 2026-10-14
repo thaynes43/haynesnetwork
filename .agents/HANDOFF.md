@@ -1,6 +1,6 @@
 # HANDOFF — cold-start resume point
 
-## 2026-10-14 05:50Z: v0.125.2 verified live; Pokemon resumed from E12; Mickey retry under review
+## 2026-10-14 05:58Z: v0.125.2 verified live; Pokemon through E14; Mickey retry under review
 
 - [PLAN-077](plans/077-self-service-media-repair.md) remains active. Signed
   [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975) is verified live through
@@ -12,11 +12,11 @@
   Read the [runtime proof](context/2026-10-14-self-service-repair-runtime-proof.md) and
   [cold-start note](context/2026-10-13-self-service-repair-codex-handoff.md).
 - Ben S1 E10 and E12 are correct, physically English and verified on both Plex servers. Pokemon S3 E1 to E7 and
-  E9 to E12 completed normally with per-file, story, English, protected-file and account-state proof. The old
+  E9 to E14 completed normally with per-file, story, English, protected-file and account-state proof. The old
   continuation was stopped at its verified idle checkpoint to correct bounded native-history observation. Its actual
   Job and Pod UIDs were confirmed gone before full read-only revalidation. The corrected signed v0.125.2 successor,
   `frontend/pokemon-owned-cont-v1252-20261014-0530`, UID `adcad698-99a1-4b2d-9092-50c8f6e1ba29`, started at
-  05:36:31Z, adopted only the sealed eleven-slot prefix and moves next to E13. Never replay completed replacements.
+  05:36:31Z, adopted only the sealed eleven-slot prefix, then verified E13/E14. E15 is now active. Never replay completed replacements.
 - Mickey's E1/E2, E3/E4 and E5/E6 are verified and completed. E7/E8's original correct download failed as a Duplicate
   NZB after its verified Carry and old-file removal. The janitor's later download physically contains the old wrong
   stories and must not be imported. Fresh replacing-mode offers include a distinct English iVy release; absence of

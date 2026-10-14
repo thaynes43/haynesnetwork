@@ -157,6 +157,12 @@ story. This is scene-based inference, without an observed title card. Fix `a5d2c
 completed normally; read-only event proof was already completed at 05:46:06Z. Finish serial 5 was accepted at
 05:46:41Z only after all read-backs, then E14 began. Private account IDs stay in the runtime audit packet.
 
+E14, A Bout With Sprout, passed: file 80028/1500200216, import 66869, English AAC track 4, both Plex copies,
+captured contexts and S20E103 correct-copy marks. The already correct E25 file 79757/1464300940 stayed unchanged.
+Root checked the classroom lesson/pointer and teacher with children against the canonical academy story; no title
+card or unseen catch was claimed. Fix `141185f2-8f09-45dc-9815-a80090a1ae4a` completed from actual event
+`62a20d41-db99-4717-979c-54694227b91a` at 05:56:43Z. Finish serial 10 was accepted at 05:57:19Z; E15 began next.
+
 Mickey's initial slots E1/E2, E3/E4 and E5/E6 are physically verified and normally completed, with literal cards,
 English, full paired imports, actual queue cleanup and strict per-account Plex proof. The next slot, E7/E8, is held.
 Append the final per-slot proof before merging this note; a grab or prepared script does not establish completion.
