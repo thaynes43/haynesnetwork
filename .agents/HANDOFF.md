@@ -1,5 +1,38 @@
 # HANDOFF — cold-start resume point
 
+## 2026-10-14 11:59:39Z: v0.125.4 verified live; Pokemon E30 and Mickey E37/E38 complete
+
+- Frozen checkpoint: **2026-10-14T11:59:39.296664418Z**. Signed v0.125.4 deployed through
+  [haynes-ops 3925](https://github.com/thaynes43/haynes-ops/pull/3925), merged at 11:38:18Z as
+  `ef7936cfe41024f05aed8c145b66ad51a0947346`. The actual report and credential-free proof merged in
+  [3926](https://github.com/thaynes43/haynes-ops/pull/3926) at 11:58:03Z as
+  `254966b069715f77f8bc69c550fe61f70b24b74a`. All three serving replicas and successful migrators use exact
+  `sha256:5522d758426a317b42fec609fbe02f8f27cdc042f03b133833002f8ccb2f881f`; all 24 frontend and two downloads
+  templates, HTTP 200/ok health, 107 migration rows, baked 0105 to 0107, four domain sources and the private CLI passed.
+- Sequential bounded Books Census and owed-checks Jobs completed natively at 11:49:08Z and 11:50:29Z, exit 0,
+  on that signed digest. Known failures OC-015/034/035/038, manual OC-009/046 and dated/member holds remain.
+  These runner results do not complete Step 6 or establish readiness.
+- Pokemon E30 passed full finish 49 at 11:46:41.601Z after one IMPORT47, actual whole native import, physical
+  English/story ratification, normal completion and four strict Plex contexts. **27 of 32 approved slots are
+  complete**; E32/E33/E34/E36/E38 remain, plus retained held E8/E31. E32 is not completed by this snapshot.
+  Full immutable identities are in the [completed table](context/2026-10-14-pokemon-completed-slot-proof.md).
+- Mickey E37/E38 passed finish 95 at 11:31:55.517Z after literal cards, physical English, native read-only
+  adoption 94, source/library SHA equality, original normal completion and strict Plex/protected-file proof.
+  **16 of 23 initial slots are complete**; E39/E41/E43/E45/E47/E49/E51 remain. Native adoption 99 for E39 is
+  delivered, but its full finish remains pending; it is excluded from the completed count.
+- Only the two original signed v0.125.3 media workers remain intentional older running executions. Their frozen
+  hashes, actual Job/Pod UIDs, write cutoffs, expiry and activity `act-073758-527071` are unchanged. Repeat and merge
+  the final all-image inventory after both become natively terminal; do not replace, stop or extend them here.
+- Final E13 to E16 remains **PREPARED and held**, reviewed offline only. Require all 23 actual initial finishes,
+  actual predecessor termination, a fresh complete prefix and physical mapping, deployed signed source, finite
+  activity and a new root review of the sealed envelope. Future captures/expiry/identity remain blank. Read the
+  [runtime proof](context/2026-10-14-self-service-repair-runtime-proof.md) and
+  [final proposal](context/2026-10-14-mickey-final13-16-carry-review.md) for exact current hashes.
+- P7 comment/resolve remain on as user 19; fixture 5 is deleted and historical issues 1 to 4 remain protected.
+  Q-12 is unanswered, email/web push off. Step 5 holds OC-056 until **2026-10-15T20:10Z** and closed blocking
+  Fixes, with Paw Patrol's tvdbAiring switch inside its verified Carry before a fresh season plan. Step 6 and P8
+  follow in the original order. PLAN-077 stays Active; the owner has made no readiness/default-policy ruling.
+
 ## 2026-10-14 11:21Z: multipart recovery merged; v0.125.4 publishing; later native repairs proved
 
 - [987](https://github.com/thaynes43/haynesnetwork/pull/987) merged at 11:08:27Z after all four required checks

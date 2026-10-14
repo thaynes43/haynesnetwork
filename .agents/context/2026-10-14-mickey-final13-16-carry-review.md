@@ -1,6 +1,57 @@
 # Mickey final S01E13–16 carry review
 
-**Update, 2026-10-14 11:21Z:** D40's original-part/failed-part recovery and both-native factual adoption are merged
+**Current status, frozen 2026-10-14T11:59:39.296664418Z: PREPARED and held.** Signed v0.125.4 is verified live
+through [haynes-ops 3925](https://github.com/thaynes43/haynes-ops/pull/3925) and merged actual proof
+[3926](https://github.com/thaynes43/haynes-ops/pull/3926), with exact image
+`sha256:5522d758426a317b42fec609fbe02f8f27cdc042f03b133833002f8ccb2f881f`. Sixteen of 23 initial slots are fully
+proved through E37/E38. E39/E41/E43/E45/E47/E49/E51 remain; adoption 99 for E39 is delivered but its full finish
+is pending. The original finite initial worker is unchanged. The final-only proposal is reviewed offline,
+suspended and disabled for execution. Future capture/expiry/identity/prefix-proof fields remain blank.
+
+Require all 23 actual initial finishes, actual predecessor termination, fresh complete prefix and physical
+same-content mapping, exact deployed signed sources, actual finite activity and a new root review of the sealed
+concrete envelope before execution. The older mapping snapshot below is evidence for preparation; it does not
+replace those fresh reads. The latest offline review covers late-observe handling, actual mutating-GET deadline
+guards and v0.125.4 native-adoption code. It authorizes no media or cluster command.
+
+**Subsequent offline contract review, 2026-10-14T12:11:38Z:** the frozen initial worker exits naturally immediately after its accepted E51/E52
+finish. Capture its actual live pre-final state, full earlier completed prefix and verified parts before that finish,
+explicitly marked pre-final and nonterminal. After the finish, require the exact same Job/Pod UIDs, native
+Complete/succeeded=1/active=0 and every main/init container's actual exit 0/finishedAt, together with the actual
+`slot_fully_verified` 51 event and following `next_slot_gate` done/null/`final13to16Held=true` event. Combine those
+actual records with all 23 completed rows and current normal/file/account proofs. Do not claim a post-terminal
+Pod-exec state or finished-Plex-file capture, or reconstruct a terminal checkpoint. The controller and runtime
+consume native termination facts and completed rows; neither requires those unavailable terminal files.
+This clarifies the recipe's evidence provenance without changing worker/control code or weakening termination,
+all-23, fresh-prefix, root-mapping or sealing requirements. Future captures/expiry/identity remain blank.
+
+The approved host lifecycle helper is SHA `dc39136f3b5e5d54d739a903e210b81cb3d1391fd4416a4500692419fb72f575`;
+its contract proof is SHA `3b6c52a9060023b848494e61b8393f3ee84fc2d9543d08e1f0a3e9c53e491acd`. That read-only
+contract proof explicitly separates observed live E37 state from the not-yet-actual final-event shape; it is not
+the predecessor's terminal proof. The recipe-only provenance correction follows this docs-first clarification.
+
+The following hashes remain the original frozen **11:59:39Z** artifact snapshot, including the then-current recipe:
+
+| Prepared artifact | SHA-256 |
+| --- | --- |
+| `final-worker.ts` | `5c603b3768ee6a61158eafc5fe3924aafc6d4183ddf4fc4a3f00d60306d3878c` |
+| `final-control.py` | `fa8c30bdf1dd93a074ef42642cd454ee9fe05b67481e936033696ad755770f87` |
+| `job.suspended-proposal.json` | `c8dba3e9e0b528d079124feeef12170417ecf0a2eccdacd9befa1feed9c1b960` |
+| `envelope.prepared.json` | `3c3ea879061036a3ca4ff12c84232309fb0e9dbdc4f0bd393907f6d69567e94f` |
+| `execution-recipe.json` | `535b16267a1437ef8f85dde6d74aed06b22f61672befb7ac42a2b9ee07ab3932` |
+
+After the subsequent offline contract review above, only `execution-recipe.json` and its private manifest entry
+changed. The current recipe is **11155 bytes**, SHA
+`cf73b2ed7e5e4bb0aa0410aaf9cf52a9ca01a7379fcfb007fd033290c5d20e91`. Worker, controller, prepared envelope
+and suspended Job hashes remain exactly those in the frozen table. Preparation is still `preparedOnly=true`,
+the proposal is suspended, completed rows remain unsealed and future capture/expiry/identity fields are blank.
+No live prefix/mapping capture, sealing, command delivery or Job creation occurred during this offline review.
+
+See the [runtime checkpoint](2026-10-14-self-service-repair-runtime-proof.md) for actual rollout, immutable worker
+identities/bounds and the completed E37/E38 row. PLAN-077 remains Active; formal Step 5, Step 6 and P8 remain in
+the original order, with no readiness/default-policy ruling.
+
+**Earlier update, 2026-10-14 11:21Z:** D40's original-part/failed-part recovery and both-native factual adoption are merged
 in [987](https://github.com/thaynes43/haynesnetwork/pull/987), with all four checks and renewed review passed.
 [Release 988](https://github.com/thaynes43/haynesnetwork/pull/988), v0.125.4, is merged; cosign and both registry artifacts were subsequently verified at 11:25/11:26Z.
 Deployment verification remains pending. Fifteen initial slots are fully proved. The separate final-only

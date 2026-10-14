@@ -4,6 +4,114 @@ This records actual work in the Codex takeover. PLAN-077 stays active. The owner
 Staff work each new report through the member tools first, teach the tool that succeeds, and record a missing
 capability when a hand repair is needed. There is no readiness counter or default-policy ruling here.
 
+## Frozen checkpoint at 2026-10-14T11:59:39.296664418Z
+
+This checkpoint supersedes pending-state statements in the earlier timestamped snapshots below. Signed v0.125.4
+is verified live; only the two independently authorized immutable initial media workers intentionally remain on
+signed v0.125.3. Pokemon has **27 of 32 approved slots complete** and Mickey has **16 of 23 initial slots complete**.
+Pokemon E32 and Mickey E39 are not completed by this snapshot. Final Mickey E13 to E16 remains PREPARED and held,
+reviewed offline only. PLAN-077 is Active, Step 5's formal hold remains, and Step 6/P8 evidence is still pending.
+
+### Actual v0.125.4 rollout and verification
+
+[haynes-ops 3925](https://github.com/thaynes43/haynes-ops/pull/3925) merged at 11:38:18Z as
+`ef7936cfe41024f05aed8c145b66ad51a0947346`, after both required checks and advisory review without findings.
+The actual report and credential-free proof merged in [3926](https://github.com/thaynes43/haynes-ops/pull/3926)
+at 11:58:03Z as `254966b069715f77f8bc69c550fe61f70b24b74a`. See its
+[report](https://github.com/thaynes43/haynes-ops/blob/254966b069715f77f8bc69c550fe61f70b24b74a/.agents/reports/haynesnetwork-v0.125.4-deploy-2026-10-14.md)
+and [native proof](https://github.com/thaynes43/haynes-ops/blob/254966b069715f77f8bc69c550fe61f70b24b74a/.agents/evidence/haynesnetwork-v0.125.4-deployment-20261014.json).
+
+The live verification completed at 11:51:25.643441Z. The source and all three affected Kustomizations applied
+the deployment commit; the HelmRelease was Ready at observed generation 283. All three serving replicas and
+successful migrators used exact signed digest
+`sha256:5522d758426a317b42fec609fbe02f8f27cdc042f03b133833002f8ccb2f881f`. All 24 frontend and two downloads
+CronJob templates pin v0.125.4. Every replica's local health and public ingress returned 200/ok. The journal has
+107 rows; baked 0105 to 0107 and their applied hashes agree, with all four expected schema features present.
+Four deployed domain sources and the private CLI match release `ab8181c36b00d389dbdb05db534b0a10845b6178`:
+
+| Deployed source | SHA-256 |
+| --- | --- |
+| `wrong-content-parts.ts` | `6edb2b9ded0ef44ad4339163c3f323207eb175ac235fd04927dbdb8b762d751a` |
+| `owned-sonarr-import.ts` | `98fff1fc757d20e120fcee12edd6bc512aa87c8cc386524ccef8ecd55d241c0f` |
+| `wrong-content-retry.ts` | `a044c89f43b18f1ebf33422e1db7aee29cc386871fd5fe777366e55190bb20ed` |
+| `queue-cleanup.ts` | `acce8e62dd3ea21af7b8aa2c6feaa9962400b7436c63eea216dfcea8d8540d88` |
+| `repair-guide.ts` | `5ff0d6f51f6ae56b50b18e59f3cce1f051705d1957302d567f1ff696df4eaa4c` |
+
+Exactly two new bounded verification Jobs ran sequentially on talosw03 with nice 19, CPU limit 500m, deadline
+300s, backoff 0, restartPolicy Never, TTL 86400 and no service-account token. Both used the exact signed digest,
+reported native Complete=True/succeeded=1, exited 0 and had zero restarts. Books completed before owed was created.
+
+| Job | Actual Job UID / Pod UID | Created / native Complete |
+| --- | --- | --- |
+| `verify-books-v1254-20261014-114755` | `9e96ed9b-763d-47b7-8b43-2865fd355415` / `ec8d9918-0e73-4450-8774-8deb2cd60109` | 11:47:55Z / 11:49:08Z |
+| `verify-owed-v1254-20261014-115020` | `d155e9c8-bdc1-43be-bf36-4be11390157a` / `cfdf450c-8825-439b-bfd9-d83d462221a5` | 11:50:20Z / 11:50:29Z |
+
+Books observed 1606 books, 1258 ebook files, 753 audio files, zero unreadable/missing, sixteen wrong files and
+nine holds. Owed observed 56 rows, 28 pending, nine overdue and 22 evaluated: eleven pass, seven wait, 28 closed,
+two manual, four fail and four not_yet. Existing failures OC-015/034/035/038 and manual OC-009/046 remain, with
+all dated/member-use waits retained. These are runner observations, with no library repair, owed-YAML update,
+row closure, Step 6 execution or readiness judgment. All 52 historical terminal Pods were retained.
+
+### Immutable media workers and new accepted finishes
+
+The 11:51:25.643410Z running inventory found exactly the following two intentional older executions; every other
+running haynesnetwork Pod was a verified v0.125.4 serving replica. Their original code, identities, captures and
+bounds remain unchanged. This checkpoint performs no cluster or media write.
+
+| Worker | Frozen worker SHA-256 | Actual Job UID / Pod UID | Original write cutoff / expiry |
+| --- | --- | --- | --- |
+| `frontend/pokemon-owned-cont-v1253-20261014-0830` | `419610f806c90f44c3d706055f3cce62539205d6a6edde0856cfc3001a50f446` | `998d39b1-cf59-42bb-bec1-9f32126635a3` / `c3b0b685-8ee9-4d95-86bc-292935d6c654` | 13:25:21.983024Z / 13:40:21.983024Z |
+| `frontend/p077-mickey-resume-v1253-r2` | `3259b55c62daa4fd0e229b372403622370bffa38bb3232f52278853bd1f20127` | `5c04bbf3-135e-4330-a52a-cb6fce15a56e` / `610f5a36-6f21-4a3a-a4cd-8e3137db7b2c` | 13:55:35.213261Z / 14:10:35.213261Z |
+
+Both retain signed v0.125.3 digest
+`sha256:463eb1c92e375f2d52d22c345b42e4f05a0fdf06c19a89e7ae50681f704c0f16`. Actual declaration
+`act-073758-527071` covers frontend, media, downloads, Plex, PlexOps, Sonarr, SABnzbd and HaynesTower until
+2026-10-14T14:37:58Z; record SHA is `7e4a5046caa6fb82d67ea6c3c755773d2b4124c69e4d2b55e45f42dd2e4a6dfb`.
+Root owns its renewal/end. Final post-terminal all-image inventory is still owed: observe both native terminal
+outcomes and exact identities, repeat the inventory, and merge that proof. Do not patch, replace, stop or extend
+these original workers on the strength of the rollout.
+
+Pokemon E30's one IMPORT47 was delivered at 11:32:29.608Z. Actual file 80059/1501485589, native import 67031,
+whole episode 49228 and download `0714123b-0fb4-4e20-8d0f-c326aab31e19` bind original Fix
+`5e9a3884-5493-4b34-a011-d0975ba9b1d1` and verified Carry `9dd8d976-3eda-4510-90f1-727f9d971619`.
+Normal event `4b85eeed-54c9-485a-ba35-ea475a135f56` was recorded at 11:45:03.611Z; first completed observation
+was 11:45:04.789Z. Measured source/library are 1920 by 1080 with English AAC4. Root's viewed 150s Wobbuffet/
+maroon-shirted-boy and 300s Professor Oak/green-mug/video-call scenes support the
+[official Tricks of the Trade](https://www.pokemon.com/us/animation/seasons/3/episode-30-tricks-of-the-trade)
+identity, corroborated by [EP146](https://bulbapedia.bulbagarden.net/wiki/EP146); this is story inference, without a
+literal-card or unseen-action claim. Four complete nonempty Plex contexts passed current-zero/correct-copy marks,
+distinct S20E30 coverage and unset preferences. Protected raw E41 34640/178856668 is unchanged. Finish 49 passed
+at 11:46:41.601Z; checkpoint SHA `99149422e2b6ba06269a87cb9eb1f8a31b7bb2b7b217dc841173ca741b446361` preserves
+27 completions. E32/E33/E34/E36/E38 remain, plus retained held E8/E31. Full rows are in the
+[completed table](2026-10-14-pokemon-completed-slot-proof.md).
+
+Mickey E37/E38 imported natively as 80058/1463747016, whole episodes 37217/37218, import rows 67029/67030 and
+download `f8696055-485d-4ec8-aa43-227cb3dd27fe`. Root viewed literal Garage Alone at 62s and Camp Happy Helpers
+at 693.63s. Source/library measured 1920 by 1080 with English AAC7 and equal SHA
+`8c5cd2560e8fb4eb9205a1a039403d2da6a943f50215d4c465617e42055d27bd`. Native adoption 94 was read-only, with no
+ManualImport, owned-import intent or queue cleanup. Original normal event `e8b199e0-b05a-4e75-97f5-5311382c1c60`
+completed on Fix `7cbb67e7-8447-4727-b1f4-399521f3a83c`/verified Carry `07a4042f-a001-42eb-916b-c6f32e88a9d6`.
+Strict actual Plex items 58513/556295 at index 37 covered the whole pair; owners/every captured account passed
+current-zero/correct-copy marks, with protected final 65359/1377201632 unchanged. Finish 95 passed at
+11:31:55.517Z. Sixteen initial slots are complete; E39/E41/E43/E45/E47/E49/E51 remain. E39 native adoption 99 is
+delivered but full finish pending, so it is excluded. The completed row is appended to the Mickey table below.
+
+### Final proposal and continuing holds
+
+The final E13 to E16 packet is PREPARED, suspended and held. Its offline review covered late-observe handling,
+live mutating-GET deadline guards and v0.125.4 native-adoption code. The exact five current artifact hashes are in
+the [final proposal record](2026-10-14-mickey-final13-16-carry-review.md); recomputation matched its private
+artifact manifest. Future capture, expiry, identity and prefix-proof fields remain blank. Before any execution,
+require all 23 actual initial finishes, actual predecessor termination, a fresh complete actual prefix and physical
+same-content mapping, signed deployed `5522d758...` source, actual finite activity and a new root review of the
+sealed concrete envelope. Offline review is not execution authorization; never load this into a running worker.
+
+P7 remains on/on as user 19, fixture 5 deleted, protected historical issues 1 to 4 unchanged. Q-12 remains asked
+and unanswered, with email/web push off. Step 5 still holds OC-056 until 2026-10-15T20:10Z and closed blocking
+Fixes. Paw Patrol's tvdbAiring change must complete inside its verified Carry before a regenerated season plan;
+preserve Runaway Stargazer. Step 6 and P8 follow the repairs and formal hold in the original order. There is no
+readiness/default-policy ruling or metric gate; ADR-112 keeps readiness with the owner.
+
 ## Signed deployment
 
 - Initial takeover: PRs [965](https://github.com/thaynes43/haynesnetwork/pull/965) and
@@ -582,7 +690,8 @@ marks, English for owners and unset preferences. Distinct S20E29 copy 34143/1876
 replacement 44 was delivered once at 11:18:05.361Z; source ratification/import/normal/final proof are pending at
 this snapshot. Preserve its distinct S20E30 mapping and never replay an already submitted command.
 
-Mickey's next four pairs imported natively. Explicit native adoption controls 73/79/84/89 recorded actual observed
+At the earlier 11:21Z snapshot, Mickey's next four pairs had imported natively. The table also appends the later
+accepted E37/E38 row. Explicit native adoption controls 73/79/84/89 recorded actual observed
 results, with no ManualImport, regrab, owned-import intent or queue cleanup. Root viewed both literal cards for each
 pair; actual measured files are 1920 by 1080 with English AAC7, and source/library SHA agrees.
 
@@ -592,6 +701,7 @@ pair; actual measured files are 1920 by 1080 with English AAC7, and source/libra
 | 31 | 2026-10-14T10:56:26.824Z | 80054/1449008566<br>`98cdbb75baff438de88d4f56a460e6728b9d525f21f4c0560598bfe8eaeb2f6a` | 67006/67007<br>`3672b4c6-95b2-494c-accf-0f5621c11cc5` | Fix `f42ca203-e7ff-4e43-9e5a-7d157dced5a7`<br>Carry `56c69636-5d17-4e37-baea-336b836ec90e`<br>event `49fbb173-16a9-4bd0-9936-2a7c360cc3bb` | 58508/556291 |
 | 33+34 | 2026-10-14T11:04:48.204Z | 80055/1422068449<br>`e0ac549866841ad4be505f581452ea0774befa7faa3a9ffd8b7e18a555b5214d` | 67014/67015<br>`140af96f-0a43-40e9-90b7-5e7f0f28dc71` | Fix `2b5f8c56-6ded-419b-a226-cca91bdda123`<br>Carry `cac066b7-c68d-4502-9c64-3e8f3da6fd0b`<br>event `e707018c-a64f-4f68-b70b-82d236c8977e` | 58509/556292 |
 | 35+36 | 2026-10-14T11:16:55.598Z | 80057/1537356210<br>`3a03fffa2e23883e5c305623d867b9f2f6c8ac1afd226ec9eefe1b73cab2bf46` | 67021/67022<br>`b9f965e6-ac61-4bb4-aacb-4c5924f94c03` | Fix `78b7a280-c49b-4f03-83f7-1285a2d3a56c`<br>Carry `bc1dd372-5a96-4922-aea3-12267289c67b`<br>event `565cebfa-e549-4c1c-9bb2-80fe1cc9c287` | 58511/556294 |
+| 37 | 2026-10-14T11:31:55.517Z | 80058/1463747016<br>`8c5cd2560e8fb4eb9205a1a039403d2da6a943f50215d4c465617e42055d27bd` | 67029/67030<br>`f8696055-485d-4ec8-aa43-227cb3dd27fe` | Fix `7cbb67e7-8447-4727-b1f4-399521f3a83c`<br>Carry `07a4042f-a001-42eb-916b-c6f32e88a9d6`<br>event `e8b199e0-b05a-4e75-97f5-5311382c1c60` | 58513/556295 |
 
 Each actual single Plex item covers its independently proved pair. All owners/every captured account passed strict
 new current-zero, correct-copy marks and protected identities, including final 65359. E29/E30 and E33/E34 completed
@@ -599,7 +709,8 @@ naturally; settlement was read-only. E31/E32 and E35/E36 used only two real nati
 the original normal matcher, with the cursor unchanged. E33/E34's two original files cover only one Sonarr episode
 each, not a four-episode original; exact distinct mappings 33 to S3E65/E66 and 34 to S3E67/E68 were preserved.
 E35/E36 likewise retained source prefixes 35 to S3E69/E70 and 36 to S3E71/E72. No original scope was reduced to
-fit the single-key worker. Fifteen initial slots are complete; E37 is next. Earlier missing/failed card samples are
+fit the single-key worker. At the earlier 11:21Z snapshot, fifteen initial slots were complete and E37 was next;
+the appended E37/E38 row now brings the frozen 11:59:39Z count to sixteen. Earlier missing/failed card samples are
 retained as misses; the physical observation 'Mouse vs. Machine' has no exclamation, stored separately from the
 canonical Sonarr label.
 
