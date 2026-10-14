@@ -1,17 +1,20 @@
 # HANDOFF — cold-start resume point
 
-## 2026-10-14 04:26Z: v0.125.2 signed; Pokemon continuation running; Mickey recovery needs its audited retry
+## 2026-10-14 04:45Z: v0.125.2 verified live; Pokemon continuation running; Mickey recovery needs its audited retry
 
-- [PLAN-077](plans/077-self-service-media-repair.md) remains active. Production v0.125.1 is verified; signed
-  [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975) awaits the three-pin rollout and the live paired-file
-  hint check. It includes [974](https://github.com/thaynes43/haynesnetwork/pull/974) and the proved PostgreSQL
+- [PLAN-077](plans/077-self-service-media-repair.md) remains active. Signed
+  [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975) is verified live through
+  [haynes-ops 3919](https://github.com/thaynes43/haynes-ops/pull/3919): all three serving app/migrator pairs, all 26
+  templates, health, migrations and both bounded verification Jobs passed. Its read-only paired-file hint check also
+  passed against all 24 real audio tracks on both Plex servers. It includes
+  [974](https://github.com/thaynes43/haynesnetwork/pull/974) and the proved PostgreSQL
   fixture teardown fix [976](https://github.com/thaynes43/haynesnetwork/pull/976), each with all required checks green.
   Read the [runtime proof](context/2026-10-14-self-service-repair-runtime-proof.md) and
   [cold-start note](context/2026-10-13-self-service-repair-codex-handoff.md).
-- Ben S1 E10 and E12 are correct, physically English and verified on both Plex servers. Pokemon S3 E1 to E7
+- Ben S1 E10 and E12 are correct, physically English and verified on both Plex servers. Pokemon S3 E1 to E7/E9/E10
   completed normally with per-file, story, English, protected-file and account-state proof. Its finite continuation
   `frontend/pokemon-owned-cont-v1251-20261014-0415` started at 04:14:16Z, adopted only that verified prefix and moves
-  next to E9. It intentionally retains the signed v0.125.1 helper while web and CronJob templates roll forward.
+  next to E11. It intentionally retains the signed v0.125.1 helper while web and CronJob templates roll forward.
   Do not replay completed slots or stop it merely to report a uniform image inventory.
 - Mickey's E1/E2, E3/E4 and E5/E6 are verified and completed. E7/E8's original correct download failed as a Duplicate
   NZB after its verified Carry and old-file removal. The janitor's later download physically contains the old wrong
@@ -21,7 +24,10 @@
 - Pokemon E8 and E31 retain their wrong files: group, correct story and English remain unproved. Never choose Saon.
   Mickey E13 to E16 still run last, after the new E7/E8 content and all initial slots have been proved. Carried marks
   on old stories never credit a replacement. Final per-slot proof must reach main with the program notes.
-- P7 comment and resolve remain on as user 19; protected Seerr issues 1 to 4 remain unchanged. The removed Ghost
+- [977](https://github.com/thaynes43/haynesnetwork/pull/977) fixed owned Seerr test-process cleanup and merged after
+  all four checks. Its two advisory findings were addressed; the renewed review had no findings.
+- P7 comment and resolve remain on as user 19; the 04:42Z read-only audit preserved all protected Seerr issues 1 to 4
+  and found zero bridge-write rows for them. The removed Ghost
   smoke fixture is excluded from real-report evidence. Q-12 is asked and unanswered; email and web push remain off.
   P8's admin guidance is live as staff working practice. The owner alone judges readiness, with no counter or gate.
 - OC-056 is held until **2026-10-15T20:10Z** and closed blocking Fixes. Paw Patrol's tvdbAiring ordering switch

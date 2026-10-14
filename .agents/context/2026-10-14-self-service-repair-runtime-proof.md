@@ -35,15 +35,35 @@ capability when a hand repair is needed. There is no readiness counter or defaul
   [38510333350](https://github.com/thaynes43/haynesnetwork/actions/runs/38510333350) explicitly verified cosign on
   attempt 1; image and signature manifests returned HTTP 200 with matching body digests at 04:26Z. The verified
   image is `sha256:b57e1a6a3a5f37151b9f193c01356169ca94b4cc4eddf68bc3589bd7f4654981`.
-  Deployment and the live paired-file hint check are pending in this interim record.
+  [haynes-ops 3919](https://github.com/thaynes43/haynes-ops/pull/3919) merged at 04:34:44Z as
+  `9d2556a46a09e50468a0526b07a47ac02ef26f47` after both required checks and a review without findings.
+  Live verification at 04:45:35Z confirmed three Ready apps and three successful migrators on that exact signed
+  digest, all 24 frontend and both downloads CronJob templates, both health endpoints and migration 107 with all
+  baked SQL hashes. The deliberately pinned Pokemon continuation was the sole older running execution; no pending
+  app pods remained. Retained finished Job pods were preserved.
+- The bounded v0.125.2 Books Census Job, UID `1977f6a6-fcd8-4d30-82ee-e027367f7fb1`, completed at 04:42:32Z;
+  owed-checks, UID `ad4a66a9-f243-4bd9-bf89-7f79c16848ab`, completed at 04:43:30Z. Both exited zero with the exact
+  signed digest. Root independently read their native completion and identities. This records successful runner
+  execution; real member observations and dated holds remain owed.
+- The live paired-file check passed after the rollout: E1 and E2 previews agree with all 24 audio tracks on the
+  independently matched physical file on both Plex servers, including names, ordering, language and default flags.
+  Both previews are `already_set`/`present`, with specific audio guidance. It used 21 reads and zero media writes.
+- [977](https://github.com/thaynes43/haynesnetwork/pull/977) merged as
+  `1c7a44245ceb132d94d9f97103a8e7a34830f902` at 04:45:38Z after all four required checks. The test fixture owns its
+  direct Node sync process, cancels on timeout and waits for actual closure before cleanup. Nine deterministic
+  ownership tests and both focused browser cases passed; both advisory findings were addressed and the renewed
+  review had no findings. This changes test lifetime only; the original stalled UI action remains unknown.
 
 ## P7 and notifications
 
 P7 comment and resolve remain on as user 19. Owned Ghost fixture 5 received one invitation and one outcome/resolve,
 then was deleted on 2026-10-13 at 23:09Z. It made no library writes and is excluded from real-report/member evidence.
 Read-only follow-up at 01:34Z preserved issues 1 to 4 exactly: resolved, comment counts 1/3/3/2, unchanged full
-comment hashes and zero bridge-write rows. Closed historical issues are ineligible. Q-12 was asked with web push
-recommended; answer pending. Email and web push remain off.
+comment hashes and zero bridge-write rows. A final bounded read-only audit on v0.125.2 at 04:42Z again matched the
+original full text/ID/author hashes and statuses of issues 1 to 4, with zero domain bridge-write rows and zero closed
+historical eligibility. Comment and resolve remain on for the expected bridge user; email and web push remain off.
+Q-12 was asked with web push recommended; answer pending. The audit used five Seerr GETs and a read-only database
+transaction, without touching the removed fixture, other reports or member accounts.
 
 ## Ben 10 (2016), S1 E10 and E12
 
@@ -86,11 +106,16 @@ E3 is A Sappy Ending (80012/1541428706); E4 is Roll On, Pokemon! (80014/15895684
 (80016/1541624177); E6 is Flower Power (80017/1550397917); E7 is Spinarak Attack (80021/1523071195). These story
 identities use observed scenes and canonical synopsis evidence, not invented title cards.
 
+The continuation also verified E9, The Little Big Horn (80023/1554931427), and E10, The Chikorita Rescue
+(80024/1583822286), with English track 4 and normal full completion. Root spot-checked E9's bandaged Stantler fawn
+and its later capture in a net, and E10's visibly injured Chikorita and later snowy-forest scene. Both Plex copies,
+old-content correct-copy marks, new current-zero state and protected E20/E21 files passed. Next is E11.
+
 The first finite worker was stopped only at an idle, verified prefix. Its exact UID and successful deletion are bound
 to the saved checkpoint; a fresh read-only revalidation at 04:09Z checked the completed parents, full Carries, files,
 protected identities, Plex copies and marks. Continuation `frontend/pokemon-owned-cont-v1251-20261014-0415`, UID
 `ba9e6537-1546-47e5-bcfc-3488270913b7`, started at 04:14:16Z on a worker node with a 500m CPU limit. It verified
-the sealed seed and worker hashes and adopted E1 to E7 before its first new control. Next is E9; E8 stays held.
+the sealed seed and worker hashes and adopted E1 to E7 before its first new control. It resumed at E9; E8 stays held.
 The continuation intentionally uses the verified v0.125.1 helper, with a finite deadline of 09:14:16Z. Its running
 image must be reported honestly during the v0.125.2 rollout. It is not restarted to make an inventory look uniform.
 

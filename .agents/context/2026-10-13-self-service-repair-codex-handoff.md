@@ -36,11 +36,12 @@ Before that becomes the default, the platform must reliably fix the kinds of pro
 | P7 | Seerr bridge: bot comments once per issue, resolves on completed repair | **Live and on in v0.125.0**, checked 2026-10-13 23:09Z |
 | P8 | Working practice per ADR-112 | Admin guidance live in v0.125.1; practice only, owner readiness decision pending |
 
-Production v0.125.1 is verified as of 2026-10-14 02:11Z. All three web replicas, active app pods and all 26 app
-CronJob templates used its signed image; migrations 0105 to 0107 and the bounded verification Jobs passed.
-[v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975) is signed at 04:26Z and awaits deployment. Its rollout
-must preserve the active, deliberately pinned v0.125.1 media continuation. Retained finished Job pods are historical
-evidence. Read the newer [runtime proof](2026-10-14-self-service-repair-runtime-proof.md) for exact current state.
+Production [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975) is verified as of 2026-10-14 04:45Z,
+deployed by [haynes-ops 3919](https://github.com/thaynes43/haynes-ops/pull/3919). All three web replicas and migrators,
+all 26 app CronJob templates, health, migrations 0105 to 0107 and both bounded verification Jobs passed. Both
+paired-file audio previews match the real physical Plex tracks. The active, deliberately pinned v0.125.1 Pokemon
+continuation is preserved. Retained finished Job pods are historical evidence. Read the newer
+[runtime proof](2026-10-14-self-service-repair-runtime-proof.md) for exact current state.
 
 ## Resume steps, in order
 
@@ -64,9 +65,9 @@ evidence. Read the newer [runtime proof](2026-10-14-self-service-repair-runtime-
    - Ben E12 is complete: file 79992/709759175, English and literal Adventures in Babysitting card. Ben E10's
      correct but Arabic-only first import was replaced through the existing Language Replace writer; final
      80009/454603103 is the reboot Animo Farm story with English and both-server proof. Its Fix completed normally.
-   - Pokemon E1 to E7 completed normally with actual whole imports, physical English/story and per-account Plex
-     proof. The old finite Job was deleted only at a verified idle checkpoint. Its continuation adopted the sealed,
-     freshly revalidated prefix and next works E9. Never replay the seven completed replacements. The active Job is
+   - Pokemon E1 to E7, E9 and E10 completed normally with actual whole imports, physical English/story and
+     per-account Plex proof. The old finite Job was deleted only at a verified idle checkpoint. Its continuation
+     adopted the sealed, freshly revalidated prefix and next works E11. Never replay completed replacements. The active Job is
      `frontend/pokemon-owned-cont-v1251-20261014-0415`, UID `ba9e6537-1546-47e5-bcfc-3488270913b7`, deadline
      2026-10-14T09:14:16Z. Keep its reviewed signed helper pinned until it finishes.
    - Mickey E1/E2, E3/E4 and E5/E6 are complete with actual paired imports, literal cards, English and strict Plex
