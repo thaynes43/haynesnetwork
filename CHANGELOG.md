@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.125.1](https://github.com/thaynes43/haynesnetwork/compare/v0.125.0...v0.125.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* continue owned Sonarr downloads through Import Check ([#972](https://github.com/thaynes43/haynesnetwork/issues/972)) ([2c65d28](https://github.com/thaynes43/haynesnetwork/commit/2c65d28071cd63d039786fbb0c4cd13100a7976a))
+* **domain:** reject ambiguous episode titles in language replacements ([#970](https://github.com/thaynes43/haynesnetwork/issues/970)) ([2f03f3c](https://github.com/thaynes43/haynesnetwork/commit/2f03f3c3da3e5f4cdeedfe10cbac4587c603198b))
+
 ## [0.125.0](https://github.com/thaynes43/haynesnetwork/compare/v0.124.0...v0.125.0) (2026-10-13)
 
 
