@@ -126,12 +126,29 @@ worker's embedded collector is used only at startup. E11's file 80025/1592293332
 correct-copy S20E100 marks and protected E22 file passed before finish at 05:05:52Z. No Plex change or import replay
 was used to overcome the false refusal.
 
-The worker's separate native-import observation still used an unpaged series-history read, reached only when a file
-already exists and no library command was claimed. Before a native-import opportunity, finish the current E12 slot
-and hold new replacements at a verified idle checkpoint. A reviewed cold successor must use one descending history
-page of at most 200 rows, with exact download/import anchors and refusal when proof is missing. Preserve the original
-running hash and checkpoint; the successor has its own corrected hash, fresh full-prefix revalidation, actual UID
-stop/gone proof and deadline. Never patch a running function, relabel captured state or replay a library command.
+E12, Whistle Stop, also passed: file 80026/1491996742, English track 4, real import 66863, both Plex copies, strict
+S20E101 correct-copy state and protected E23 file 33682/1158933679. Observed Ledyba, orchard and silver-whistle scenes
+corroborate the canonical story; no unseen title card was claimed. Its Fix completed normally at 05:14:43Z, and
+finish serial 20 reached the idle eleven-slot prefix before any E13 replacement.
+
+The worker's native-import observer needed a bounded history page. Root deleted only that idle predecessor
+Job, UID `ba9e6537-1546-47e5-bcfc-3488270913b7`, with a UID precondition at 05:26:38Z. Both its Job and Pod were
+confirmed gone at 05:28:06Z. The captured state SHA was
+`e3df4700a1dcdc943c4702aaa951c1cb1db96efb99952b3946286a727a7c5e00`. Full read-only revalidation at 05:29:46Z
+checked all eleven completed parents and Carries, actual files, both Plex servers, captured contexts, English and
+protected identities; proof SHA `9e7b34618894e51c78b9eecf0c637c601c49e4f6b6400f0483456ba045b4bf4b`.
+
+The corrected worker SHA is `454567817d5ecaf737bf4d7c75d138daf03dc866539fc0b352ef0638eb8bf35d`. It reads one
+descending native-history page of at most 200 rows with exact download/import anchors, refusing incomplete proof;
+it also parses full positive season/episode coordinates. The reviewed generator requires actual predecessor absence
+and completed post-deletion revalidation even for a fresh captured state. Positive and refusal cases passed, with
+zero cluster calls in guard tests. No running function was patched, captured state relabeled or library command replayed.
+
+Successor `frontend/pokemon-owned-cont-v1252-20261014-0530`, Job UID `adcad698-99a1-4b2d-9092-50c8f6e1ba29`,
+Pod UID `54f03285-c0d4-488e-b68a-e6de13a18264`, started natively at 05:36:31Z on talosw01, Ready on the exact signed
+v0.125.2 image. Startup adopted only the freshly revalidated eleven-slot prefix, with no pending parent, download or
+control, and next selected E13. Its deadline is 10:36:31Z; no new replacement starts after 10:21:31Z. The predecessor
+image exception during the earlier rollout is historical, not a current running workload.
 
 Mickey's initial slots E1/E2, E3/E4 and E5/E6 are physically verified and normally completed, with literal cards,
 English, full paired imports, actual queue cleanup and strict per-account Plex proof. The next slot, E7/E8, is held.
@@ -176,5 +193,5 @@ finish in a verified Watch Carry before its season plan is regenerated. Preserve
 The later archive-week and first-member-use observations remain pending; staff repairs and the removed bridge
 fixture do not satisfy member-use checks. The final step-6 evidence belongs here after the current repairs.
 
-Root activity `act-034019-464174` covers the scoped rollout and media work until 2026-10-14T09:40:19Z. Root must end
+Root activity `act-051827-491938` covers the scoped rollout and media work until 2026-10-14T11:18:27Z. The preceding declaration ended at 05:18Z after its successor was active. Root must end
 it after verification or renew it before expiry while actual work continues. Only owned Jobs/processes may be stopped.

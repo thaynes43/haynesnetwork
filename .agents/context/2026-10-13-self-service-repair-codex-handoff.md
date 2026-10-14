@@ -39,8 +39,8 @@ Before that becomes the default, the platform must reliably fix the kinds of pro
 Production [v0.125.2](https://github.com/thaynes43/haynesnetwork/pull/975) is verified as of 2026-10-14 04:45Z,
 deployed by [haynes-ops 3919](https://github.com/thaynes43/haynes-ops/pull/3919). All three web replicas and migrators,
 all 26 app CronJob templates, health, migrations 0105 to 0107 and both bounded verification Jobs passed. Both
-paired-file audio previews match the real physical Plex tracks. The active, deliberately pinned v0.125.1 Pokemon
-continuation is preserved. Retained finished Job pods are historical evidence. Read the newer
+paired-file audio previews match the real physical Plex tracks. A corrected signed v0.125.2 Pokemon continuation
+started at 05:36:31Z after actual predecessor deletion and full read-only revalidation of the E12 checkpoint. Retained finished Job pods are historical evidence. Read the newer
 [runtime proof](2026-10-14-self-service-repair-runtime-proof.md) for exact current state.
 
 ## Resume steps, in order
@@ -58,18 +58,19 @@ continuation is preserved. Retained finished Job pods are historical evidence. R
 3. **Asked, answer pending:** Q-12 (DESIGN-055) was sent through the owner's question tool after the live check,
    recommending Seerr web push. Email and web push were read back off, so reporters currently see the comment
    only when opening their issue. Do not change delivery without the ruling; continue the independent repairs.
-4. **In progress, 2026-10-14 04:26Z:** do not rerun any original batch. Signed v0.125.1 deployed
+4. **In progress, 2026-10-14 05:50Z:** do not rerun any original batch. Signed v0.125.1 deployed
    [#970](https://github.com/thaynes43/haynesnetwork/pull/970) and
    [#972](https://github.com/thaynes43/haynesnetwork/pull/972); the original owned downloads resumed under their
    existing parents and verified Carries. See the [runtime proof](2026-10-14-self-service-repair-runtime-proof.md).
    - Ben E12 is complete: file 79992/709759175, English and literal Adventures in Babysitting card. Ben E10's
      correct but Arabic-only first import was replaced through the existing Language Replace writer; final
      80009/454603103 is the reboot Animo Farm story with English and both-server proof. Its Fix completed normally.
-   - Pokemon E1 to E7, E9 and E10 completed normally with actual whole imports, physical English/story and
-     per-account Plex proof. The old finite Job was deleted only at a verified idle checkpoint. Its continuation
-     adopted the sealed, freshly revalidated prefix and next works E11. Never replay completed replacements. The active Job is
-     `frontend/pokemon-owned-cont-v1251-20261014-0415`, UID `ba9e6537-1546-47e5-bcfc-3488270913b7`, deadline
-     2026-10-14T09:14:16Z. Keep its reviewed signed helper pinned until it finishes.
+   - Pokemon E1 to E7 and E9 to E12 completed normally with actual whole imports, physical English/story and
+     per-account Plex proof. The old finite Job was deleted only at a verified idle checkpoint. Its corrected
+     continuation adopted the sealed, freshly revalidated prefix and next works E13. Never replay completed
+     replacements. The active Job is `frontend/pokemon-owned-cont-v1252-20261014-0530`, UID
+     `adcad698-99a1-4b2d-9092-50c8f6e1ba29`, deadline 2026-10-14T10:36:31Z; start no new replacement after
+     10:21:31Z. Keep its reviewed signed helper pinned until it finishes.
    - Mickey E1/E2, E3/E4 and E5/E6 are complete with actual paired imports, literal cards, English and strict Plex
      proof. E7/E8 failed as Duplicate NZB after the verified Carry and old-file removal. No import was claimed.
      Janitor re-search fetched physically wrong Season 3 stories. P4 decision 39 specifies an audited retry under the
@@ -82,7 +83,7 @@ continuation is preserved. Retained finished Job pods are historical evidence. R
    import is adopted only through actual history, full-target file and physical proof, with no invented command.
    Verify actual English, story, file identity, unchanged protected files, both Plex servers and per-account carry
    marks before the next individually approved replacement. Fresh plans must still match the exact approved source.
-   Current activity is `act-034019-464174`, expiry 2026-10-14T09:40:19Z; root renews and ends it. Long work runs
+   Current activity is `act-051827-491938`, expiry 2026-10-14T11:18:27Z; root renews and ends it. Long work runs
    as bounded, CPU-limited worker Jobs. Preserve logs and merge per-slot proof to main in the same session.
    - Ben 10 (2016), tvdb 318145: S1 E10 and E12 hold Ben 10 (2005) episodes.
    - Pokémon, tvdb 76703: S3 E01-24, E26, E28-34, E36 and E38 hold Pokémon Horizons. Never pick the Saon x265
